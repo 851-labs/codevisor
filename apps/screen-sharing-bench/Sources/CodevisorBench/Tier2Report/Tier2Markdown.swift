@@ -10,7 +10,8 @@ struct Tier2Markdown {
   var text: String {
     [
       targetTable, verdictTable, Tier2InputTable(measurements, floors: inputFloors).text,
-      Tier2Milestone(report: report, floors: floors).text, Tier2V2Table(report.results).text,
+      Tier2Milestone(report: report, floors: floors).text, Tier2BottomTable(measurements).text,
+      Tier2V2Table(report.results).text,
       Tier2TextTable(measurements).text,
       floorTable, interferenceTable, Tier2RunTable(measurements).text,
     ]

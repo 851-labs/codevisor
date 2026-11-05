@@ -67,6 +67,12 @@ measure() {
     $(tier2_stills_options "$scene" "$system" "$dir/viewer-stills") \
     >"$dir/viewer-observe.json" 2>"$dir/viewer-observe.err" &
   pids+=($!)
+  if tier2_has_bottom_barcode "$scene" "$system"; then
+    bench observe --duration "$((TIER2_DURATION + 14))" --output "$dir/viewer-bottom.jsonl" --barcode-anchor bottom \
+      --block-size "$(tier2_viewer_block_size "$system")" ${display[@]+"${display[@]}"} \
+      >"$dir/viewer-bottom-observe.json" 2>"$dir/viewer-bottom-observe.err" &
+    pids+=($!)
+  fi
   bench sample --duration "$((TIER2_DURATION + 10))" --interface en0 --processes "$viewer_processes" \
     --output "$dir/viewer-usage.jsonl" >"$dir/viewer-sample.json" 2>"$dir/viewer-sample.err" &
   pids+=($!)

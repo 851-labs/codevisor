@@ -73,6 +73,11 @@ measure() {
       ${display[@]+"${display[@]}"} $(tier2_stills_options "$scene" "$system" "$dir/host-stills") \
       >"$dir/host-observe.json" 2>"$dir/host-observe.err" &
     pids+=($!)
+    if tier2_has_bottom_barcode "$scene" "$system"; then
+      bench observe --duration "$((TIER2_DURATION + 12))" --output "$dir/host-bottom.jsonl" --barcode-anchor bottom \
+        ${display[@]+"${display[@]}"} >"$dir/host-bottom-observe.json" 2>"$dir/host-bottom-observe.err" &
+      pids+=($!)
+    fi
   fi
   bench sample --duration "$((TIER2_DURATION + 10))" --interface en0 --processes "$host_processes" \
     --output "$dir/host-usage.jsonl" >"$dir/host-sample.json" 2>"$dir/host-sample.err" &

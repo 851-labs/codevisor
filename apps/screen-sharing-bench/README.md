@@ -48,7 +48,7 @@ started next to the player never takes focus from it). Hide the menu bar only on
 
 A scene is a seeded script: `BenchScene.timeline` maps a 60 Hz tick to a version, and the version alone decides
 the pixels. The player and the generator draw through the same `BenchSceneRenderer`, so a seed gives the same
-pixels in both. Every frame carries the T1 luma barcode of its version in the top-left corner, above the content.
+pixels in both. Every frame carries the T1 luma barcode of its version in the top-left corner, above the content. Every scene but test cards also carries it in the bottom-left corner (851-3976), so a viewer that shows the tiles of an update at different times can be seen: the top barcode lands in the top tile and the bottom one in the bottom tile.
 
 | Scene         | Versions                                                                                   |
 | ------------- | ------------------------------------------------------------------------------------------ |
@@ -87,7 +87,7 @@ Each command prints one JSON result to stdout; a check that fails its pass crite
   `(version, pts_ns, callback_ns)` lines after a header naming the clock (`BenchObserverLog`). Unreadable
   frames are kept, with the reason. `--region barcode` (the default) captures only the 512×32 px strip, so
   the observer costs little; the summary reports the observer's own CPU and power from `proc_pid_rusage`.
-  `--barcode-x`, `--barcode-y` and `--block-size` move the strip. With `--region full`,
+  `--barcode-x`, `--barcode-y` and `--block-size` move the strip; `--barcode-anchor bottom` measures `--barcode-y` up from the display's bottom edge instead, for the bottom barcode. With `--region full`,
   `--stills <dir> --stills-versions <v>,<v>…` also writes, for each listed version, its last frame within 2 s of its
   first as `<dir>/<version>.png`, captured in sRGB (T8 below). The 2 s cut keeps a viewer that updates in tiles from
   saving a frame where the next card has started to arrive under the old barcode.
@@ -272,7 +272,7 @@ barcode blocks. The floor runs on the physical display, so "above floor" for `R1
 floor window), `measure` (the host's preflight during the run) and `done`. Measurement starts at `measure`:
 the viewer's observer, clock probes and sampler, the host's observer and sampler, and 3 s later the
 player. A failed status at a barrier skips the run on both Macs. The `report` job merges both artifacts and
-runs `tier2-report`, which writes `report.json` and `summary.md` (also the job summary).
+runs `tier2-report`, which writes `report.json` and `summary.md` (also the job summary). In every scene but test cards and input, each side also runs a second observer on the bottom barcode (`host-bottom.jsonl`, `viewer-bottom.jsonl`). The summary's top-and-bottom table gives the image age at both barcodes and the share of viewer frames whose two barcodes show different versions (torn frames: the two observers' frames are paired when they're within 2 ms of each other, inside the run's window). The host draws both barcodes in one frame, so its torn share is a check on the pairing and should be 0.
 
 - `rendezvous --serve` holds each named barrier until both parties arrive, then tells both every party's
   status; `rendezvous --host <ipv4> --barrier <name> --party host|viewer [--status <text>]` exits 1 unless
