@@ -12,7 +12,7 @@
     public var body: some View {
       ZStack {
         Color(uiColor: .secondarySystemBackground).ignoresSafeArea()
-        if model.receiver != nil {
+        if model.session != nil {
           ScreenSharingCanvas(model: model)
             .ignoresSafeArea(.container)
             .opacity(model.phase == .viewing ? 1 : 0)
@@ -23,6 +23,7 @@
       .overlay(alignment: .bottom) {
         if showsHint { hint.padding(.bottom, 16).transition(.move(edge: .bottom).combined(with: .opacity)) }
       }
+      .sheet(isPresented: Bindable(model).connectionDetailsShown) { ScreenSharingConnectionDetails(model: model) }
       .animation(.snappy, value: model.control?.notice)
       .animation(.snappy, value: showsHint)
       .onAppear { model.appeared() }
@@ -113,6 +114,7 @@
           if model.control?.state == .controlling {
             Button("Stop Controlling", systemImage: "hand.raised.slash") { model.control?.release() }
           }
+          Button("Connection Details", systemImage: "info.circle") { model.connectionDetailsShown = true }
           Button("Reconnect", systemImage: "arrow.clockwise") { model.retry() }
         } label: {
           Label("More", systemImage: "ellipsis")

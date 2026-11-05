@@ -2,6 +2,7 @@ import CodevisorCore
 import CodevisorUI
 import Combine
 import Network
+import ScreenSharingPane
 import SwiftUI
 
 @main
@@ -99,6 +100,7 @@ struct CodevisorApp: App {
       cloudCredentialStore: KeychainCloudCredentialStore.shared,
       paneGroups: DefaultPaneGroupRepository(store: store)
     )
+    ScreenSharingPaneModel.enableEngineV2(environment: environment)
     #if DEBUG
       if !HomeSidebarSampleData.isEnabled {
         environment.syncClientPreferences(SidebarPreferenceKey.synced)

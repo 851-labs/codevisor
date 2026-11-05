@@ -48,7 +48,7 @@ final class ScreenSharingHostSession {
 
   enum Engine {
     case webRTC(ServerScreenSharingConnectivity)
-    case v2(viewerEndpointId: String)
+    case v2(viewerEndpointId: String, encoder: ScreenSharingV2EncoderKind)
   }
 
   init(
@@ -66,9 +66,11 @@ final class ScreenSharingHostSession {
       peer = try await ScreenSharingSender(
         configuration: configuration, metrics: metrics, connectivity: connectivity.native())
       v2 = nil
-    case .v2(let viewerEndpointId):
+    case .v2(let viewerEndpointId, let encoder):
       configuration = try ScreenSharingV2Profile.captureConfiguration(width: display.width, height: display.height)
-      peer = ScreenSharingV2HostLink(configuration: configuration, metrics: metrics)
+      peer = ScreenSharingV2HostLink(configuration: configuration, metrics: metrics) { configuration, metrics in
+        try await ScreenSharingV2Encoders.make(encoder, configuration: configuration, metrics: metrics)
+      }
       v2 = V2(token: Self.makeToken(), viewerEndpointId: viewerEndpointId)
     }
     physicalConfiguration = configuration

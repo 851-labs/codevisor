@@ -1,6 +1,5 @@
 #if os(iOS)
   import ScreenSharing
-  import ScreenSharingWebRTC
   import SwiftUI
   import UIKit
 
@@ -10,7 +9,7 @@
     func makeUIView(context: Context) -> ScreenSharingCanvasView { ScreenSharingCanvasView(model: model) }
 
     func updateUIView(_ view: ScreenSharingCanvasView, context: Context) {
-      view.attach(model.receiver)
+      view.attach(model.session)
       view.showKeyboard(model.keyboardShown)
     }
 
@@ -59,17 +58,17 @@
 
     override var canBecomeFirstResponder: Bool { true }
 
-    func attach(_ receiver: ScreenSharingReceiver?) {
-      guard let receiver else {
+    func attach(_ session: (any ScreenSharingViewingSession)?) {
+      guard let session else {
         detachVideo()
         return
       }
-      guard receiver.mailbox !== mailbox else { return }
+      guard session.frames !== mailbox else { return }
       detachVideo()
-      mailbox = receiver.mailbox
+      mailbox = session.frames
       guard
         let metal = try? ScreenSharingMetalView(
-          mailbox: receiver.mailbox, metrics: receiver.metrics, renderOnArrival: true)
+          mailbox: session.frames, metrics: session.metrics, renderOnArrival: true)
       else { return }
       metal.isUserInteractionEnabled = false
       metal.frame = content.bounds

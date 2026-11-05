@@ -11,10 +11,16 @@ enum ScreenSharingV2DecompressionSessionFactory {
         Unmanaged<ScreenSharingV2DecodeContext>.fromOpaque(context).takeRetainedValue()
           .deliver(status: status, image: image)
       }, decompressionOutputRefCon: nil)
+    return try make(format: format, callback: &callback)
+  }
+
+  static func make(
+    format: CMVideoFormatDescription, callback: UnsafePointer<VTDecompressionOutputCallbackRecord>?
+  ) throws -> VTDecompressionSession {
     var created: VTDecompressionSession?
     let status = VTDecompressionSessionCreate(
       allocator: kCFAllocatorDefault, formatDescription: format, decoderSpecification: specification,
-      imageBufferAttributes: attributes(pixelFormat: decodedPixelFormat(format)), outputCallback: &callback,
+      imageBufferAttributes: attributes(pixelFormat: decodedPixelFormat(format)), outputCallback: callback,
       decompressionSessionOut: &created)
     guard status == noErr, let created else { throw ScreenSharingError.codec("Create hardware decoder", status) }
 

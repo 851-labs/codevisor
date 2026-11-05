@@ -70,7 +70,7 @@ final class ComputerUseRemotePreviewConnection {
     target = ComputerUseStreamTarget.displayId(sessionID: chatSessionID.uuidString)
     backend = .native(
       client: client, workspaceId: workspaceId, paneId: paneId,
-      v2: .live(),
+      v2: ScreenSharingViewerMedia.connector,
       sleep: { try await Task.sleep(for: $0) },
       makeSession: nil,
       makeSurface: { [weak self] session in

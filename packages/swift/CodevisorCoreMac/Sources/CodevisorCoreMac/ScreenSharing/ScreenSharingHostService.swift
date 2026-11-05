@@ -136,8 +136,7 @@ final class ScreenSharingHostService {
         }
         let session = try await ScreenSharingHostSession(
           request: request, display: display.description, displayID: display.id,
-          engine: try viewerMedia.map { .v2(viewerEndpointId: $0.endpointId) }
-            ?? .webRTC(connectivity.make(viewerId: request.viewerId)))
+          engine: try engine(for: request, viewerMedia: viewerMedia))
         if Task.isCancelled {
           session.peer.close()
           throw CancellationError()
@@ -161,6 +160,14 @@ final class ScreenSharingHostService {
         return try await answer(offer, for: session)
       } catch { return .init(status: "failed", message: error.localizedDescription) }
     }
+  }
+
+  private func engine(
+    for request: ServerScreenSharingRequest, viewerMedia: ServerScreenSharingMediaAddress?
+  ) throws -> ScreenSharingHostSession.Engine {
+    guard let viewerMedia else { return .webRTC(try connectivity.make(viewerId: request.viewerId)) }
+
+    return .v2(viewerEndpointId: viewerMedia.endpointId, encoder: .forViewer(chroma: request.chroma))
   }
 
   private func startMedia(

@@ -65,7 +65,7 @@ let package = Package(
       swiftSettings: strictSwiftSettings
     ),
     .target(
-      name: "ScreenSharingV2", dependencies: ["ScreenSharing", "CodevisorNet"],
+      name: "ScreenSharingV2", dependencies: ["ScreenSharing", "CodevisorClient", "CodevisorNet"],
       path: "ScreenSharing/Sources/ScreenSharingV2", swiftSettings: strictSwiftSettings),
     .testTarget(
       name: "ScreenSharingV2Tests", dependencies: ["ScreenSharingV2", "CodevisorNet", "CodevisorTestSupport"],
@@ -357,6 +357,7 @@ let package = Package(
         "TranscriptKit",
         "CodevisorClient",
         "CodevisorCloud",
+        "CodevisorNet",
         .product(name: "PostHog", package: "posthog-ios"),
         "Sentry",
       ],
@@ -407,13 +408,13 @@ let package = Package(
     ),
     .target(
       name: "ScreenSharingPane",
-      dependencies: ["CodevisorCloud", "CodevisorCore", "ScreenSharing", "ScreenSharingWebRTC"],
+      dependencies: ["CodevisorCloud", "CodevisorCore", "ScreenSharing", "ScreenSharingWebRTC", "ScreenSharingV2"],
       path: "ScreenSharingPane/Sources/ScreenSharingPane",
       swiftSettings: strictSwiftSettings
     ),
     .testTarget(
       name: "ScreenSharingPaneTests",
-      dependencies: ["ScreenSharingPane", "CodevisorTestSupport"],
+      dependencies: ["ScreenSharingPane", "ScreenSharingV2", "CodevisorNet", "CodevisorTestSupport"],
       path: "ScreenSharingPane/Tests/ScreenSharingPaneTests",
       swiftSettings: strictSwiftSettings,
       linkerSettings: frameworksBesideTestBundle

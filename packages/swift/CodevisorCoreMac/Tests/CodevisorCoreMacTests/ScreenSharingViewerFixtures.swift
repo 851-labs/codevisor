@@ -1,6 +1,8 @@
 import AppKit
 import CodevisorClient
 import ScreenSharing
+import ScreenSharingV2
+import ScreenSharingWebRTC
 import CodevisorTestSupport
 import Foundation
 import Observation
@@ -42,7 +44,7 @@ final class FakeChannel<Message: Sendable & Equatable>: ScreenSharingMessageChan
 }
 
 @MainActor
-final class FakeMediaSession: NativeScreenSharingMediaSession {
+final class FakeMediaSession: ScreenSharingOfferingSession {
   let capabilities: ScreenSharingCapabilities
   let frames = ScreenSharingFrameMailbox()
   let metrics = ScreenSharingMetrics()
@@ -288,4 +290,4 @@ final class NativeBackendHarness {
   }
 }
 
-extension FakeMediaSession: NativeScreenSharingV2Session {}
+extension FakeMediaSession: ScreenSharingV2StartableSession {}

@@ -16,7 +16,8 @@ export const ScreenSharingRequest = Schema.Struct({
   scale: Schema.optional(Schema.Literals([1, 2])),
   tunnelMedia: Schema.optional(Schema.Struct({ endpointId: Schema.String, flowId: Schema.Number })),
   engine: Schema.optional(Schema.Literal("v2")),
-  media: Schema.optional(ScreenSharingMediaAddress)
+  media: Schema.optional(ScreenSharingMediaAddress),
+  chroma: Schema.optional(Schema.Literals(["444", "420"]))
 })
 export type ScreenSharingRequest = typeof ScreenSharingRequest.Type
 

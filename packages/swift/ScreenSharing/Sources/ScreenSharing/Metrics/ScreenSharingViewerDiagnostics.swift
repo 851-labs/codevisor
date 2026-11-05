@@ -1,4 +1,3 @@
-import ScreenSharing
 import Foundation
 import Observation
 
@@ -20,6 +19,8 @@ public final class ScreenSharingViewerDiagnostics {
   public private(set) var engine: String?
   public private(set) var recovery: String?
   @ObservationIgnored private var previous: (time: TimeInterval, frames: Int, bytes: Double, updates: Int)?
+
+  public init() {}
 
   static func streams(_ labels: [String: String]) -> String? {
     let parts = [
@@ -53,7 +54,7 @@ public final class ScreenSharingViewerDiagnostics {
     recovery = Self.v2Recovery(statistics)
   }
 
-  func update(metrics: ScreenSharingMetrics.Snapshot, statistics: [String: String], now: TimeInterval) {
+  public func update(metrics: ScreenSharingMetrics.Snapshot, statistics: [String: String], now: TimeInterval) {
     let vncTransport = statistics["vnc.transport"]
     let v2 = statistics["v2.engine"] != nil
     let frames = metrics.counters["presentedFrames", default: 0]
