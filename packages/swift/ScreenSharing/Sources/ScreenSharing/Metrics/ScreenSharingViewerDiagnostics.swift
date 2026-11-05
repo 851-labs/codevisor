@@ -31,12 +31,6 @@ public final class ScreenSharingViewerDiagnostics {
     return parts.isEmpty ? nil : parts.joined(separator: " · ")
   }
 
-  nonisolated static func webRTCRoute(candidateTypes: some Collection<String>, transport: String) -> String {
-    guard !candidateTypes.isEmpty else { return "Connecting" }
-    let path = candidateTypes.contains("relay") ? "Relay" : "Direct"
-    return path + (transport.isEmpty ? "" : " · " + transport)
-  }
-
   static func v2Recovery(_ statistics: [String: String]) -> String? {
     guard let loss = statistics["v2.lossPercent"].flatMap(Double.init) else { return nil }
 
@@ -62,10 +56,7 @@ public final class ScreenSharingViewerDiagnostics {
     let bytes =
       vncTransport != nil
       ? Double(metrics.counters["vncBytesReceived", default: 0])
-      : v2
-        ? statistics["v2.bytesReceived"].flatMap(Double.init) ?? 0
-        : statistics.filter { $0.key.hasPrefix("inbound-rtp.") && $0.key.hasSuffix(".bytesReceived") }
-          .values.compactMap(Double.init).reduce(0, +)
+      : statistics["v2.bytesReceived"].flatMap(Double.init) ?? 0
     if let previous, now > previous.time {
       let elapsed = now - previous.time
       framesPerSecond = Double(max(0, frames - previous.frames)) / elapsed
@@ -82,22 +73,13 @@ public final class ScreenSharingViewerDiagnostics {
     droppedFrames = metrics.counters["renderDrops", default: 0]
     streams = Self.streams(metrics.labels)
     if v2 { return updateV2(metrics: metrics, statistics: statistics) }
-    if let vncTransport {
-      let pushed = metrics.labels["vncUpdateMode"] == "continuous"
-      route =
-        "VNC · \(vncTransport)" + (pushed ? " · continuous" : "")
-        + (metrics.labels["vncQuality"].map { " · \($0)" } ?? "")
-      updateLatencyMilliseconds = metrics.timings["vncUpdateLatency"]?.p95Ms
-      roundTripMilliseconds = metrics.timings["vncRoundTrip"]?.p50Ms
-      return
-    }
-    roundTripMilliseconds = statistics.first { $0.key.hasSuffix(".currentRoundTripTime") }
-      .flatMap { Double($0.value) }.map { $0 * 1000 }
-    let types = statistics.filter { $0.key.hasSuffix(".candidateType") }.values
-    let transport =
-      (statistics.first { $0.key.hasSuffix(".relayProtocol") }
-      ?? statistics.first { $0.key.hasSuffix(".protocol") })?.value.uppercased() ?? ""
-    route = Self.webRTCRoute(candidateTypes: types, transport: transport)
-    decodeMilliseconds = metrics.timings["decode"]?.p95Ms
+    guard let vncTransport else { return }
+
+    let pushed = metrics.labels["vncUpdateMode"] == "continuous"
+    route =
+      "VNC · \(vncTransport)" + (pushed ? " · continuous" : "")
+      + (metrics.labels["vncQuality"].map { " · \($0)" } ?? "")
+    updateLatencyMilliseconds = metrics.timings["vncUpdateLatency"]?.p95Ms
+    roundTripMilliseconds = metrics.timings["vncRoundTrip"]?.p50Ms
   }
 }

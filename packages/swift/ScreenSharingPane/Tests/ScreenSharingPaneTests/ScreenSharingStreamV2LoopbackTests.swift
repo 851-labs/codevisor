@@ -30,14 +30,13 @@ extension HardwareCodecTests {
       }
       defer { host.close() }
       let accepted = Task { try await host.accept(pair.host) { $0 == StreamHarness.grant.token ? nil : "wrong token" } }
-      var sponsor = ScreenSharingStreamSponsor(
+      let sponsor = ScreenSharingStreamSponsor(
         workspaceId: UUID(), paneId: UUID(),
-        client: CodevisorServerClient(config: .init(requestTransport: transport)), openTunnel: nil,
+        client: CodevisorServerClient(config: .init(requestTransport: transport)),
         v2: ScreenSharingV2Connector(
           address: { StreamHarness.viewerMedia },
           connect: { _ in ScreenSharingV2ViewingSession(connection: pair.viewer) },
           chroma: { .subsampled }))
-      sponsor.makeWebRTC = { _ in throw ScreenSharingError.unavailable("This test never falls back to WebRTC.") }
       let stream = ScreenSharingStream(displayId: "display", sponsor: sponsor)
       stream.start()
       defer { stream.stop() }

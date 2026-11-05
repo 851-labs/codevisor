@@ -93,7 +93,7 @@ final class ScreenSharingPane: Pane {
     } withDependencies: {
       $0[ScreenSharingViewerBackend.self] = .native(
         client: client, workspaceId: workspaceId, paneId: descriptor.id, machineId: context.machine.id,
-        role: role, tunnelMedia: context.openTunnelMedia)
+        role: role)
     }
   }
 

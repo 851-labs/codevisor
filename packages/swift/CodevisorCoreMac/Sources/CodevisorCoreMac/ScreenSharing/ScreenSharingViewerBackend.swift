@@ -2,7 +2,6 @@ import CodevisorClient
 import CodevisorCore
 import ScreenSharing
 import ScreenSharingV2
-import ScreenSharingWebRTC
 import ComposableArchitecture
 import Foundation
 
@@ -28,38 +27,20 @@ public struct ScreenSharingViewerBackend: Sendable {
   public var liveStreams: @Sendable () async -> AsyncStream<Void> = { .finished }
 }
 
-public struct ScreenSharingTunnelMedia: Sendable {
-  public let endpointId: String
-  public let flowId: Int
-  public let localPort: UInt16
-  public let close: @Sendable () -> Void
-
-  public init(endpointId: String, flowId: Int, localPort: UInt16, close: @escaping @Sendable () -> Void) {
-    self.endpointId = endpointId
-    self.flowId = flowId
-    self.localPort = localPort
-    self.close = close
-  }
-}
-
 extension ScreenSharingViewerBackend: TestDependencyKey {
   public static var testValue: Self { Self() }
 }
 
 extension ScreenSharingViewerBackend {
-  public typealias TunnelMediaProvider = @MainActor () async -> ScreenSharingTunnelMedia?
-
   @MainActor
   public static func native(
     client: any CodevisorServerClienting, workspaceId: UUID, paneId: UUID, machineId: String? = nil,
-    role: ScreenSharingViewerRole = .tab, tunnelMedia: TunnelMediaProvider? = nil
+    role: ScreenSharingViewerRole = .tab
   ) -> Self {
     native(
       client: client, workspaceId: workspaceId, paneId: paneId, machineId: machineId, role: role,
-      tunnelMedia: tunnelMedia,
       v2: ScreenSharingViewerMedia.connector,
       sleep: { try await Task.sleep(for: $0) },
-      makeSession: { try await ScreenSharingReceiver.process(connectivity: $0) },
       makeSurface: { session in
         try ScreenSharingVideoSurface(mailbox: session.frames, metrics: session.metrics)
       },
@@ -70,16 +51,13 @@ extension ScreenSharingViewerBackend {
   }
 
   typealias NativeVNCOpen = @Sendable (String) async throws -> (client: RFBClient, outcome: RFBHandshake.Outcome)
-  typealias NativeMakeSession =
-    @MainActor (ServerScreenSharingConnectivity?) async throws -> any ScreenSharingOfferingSession
 
   @MainActor
   static func native(
     client: any CodevisorServerClienting, workspaceId: UUID, paneId: UUID, machineId: String? = nil,
-    role: ScreenSharingViewerRole = .tab, tunnelMedia: TunnelMediaProvider? = nil,
-    v2: ScreenSharingV2Connector? = nil,
+    role: ScreenSharingViewerRole = .tab,
+    v2: ScreenSharingV2Connector,
     sleep: @escaping @Sendable (Duration) async throws -> Void,
-    makeSession: NativeMakeSession?,
     makeSurface: @escaping @MainActor (any ScreenSharingViewingSession) throws -> any ScreenSharingViewerSurface,
     vncOpen: @escaping NativeVNCOpen = { _ in throw RFBError.transport("This machine has no VNC display.") },
     target: String? = nil,
@@ -87,8 +65,8 @@ extension ScreenSharingViewerBackend {
   ) -> Self {
     let sharesStream = machineId != nil
     let runner = NativeScreenSharingViewerRunner(
-      client: client, workspaceId: workspaceId, paneId: paneId, sleep: sleep, makeSession: makeSession,
-      makeSurface: makeSurface, vncOpen: vncOpen, target: target, tunnelMedia: tunnelMedia, v2: v2,
+      client: client, workspaceId: workspaceId, paneId: paneId, sleep: sleep,
+      makeSurface: makeSurface, vncOpen: vncOpen, target: target, v2: v2,
       heartbeatInterval: heartbeatInterval, sound: !sharesStream)
     guard let machineId else {
       return Self(
@@ -110,7 +88,6 @@ private final class NativeScreenSharingViewerRunner: ScreenSharingViewerConnecti
   private let workspaceId: UUID
   private let paneId: UUID
   private let sleep: @Sendable (Duration) async throws -> Void
-  private let makeSession: ScreenSharingViewerBackend.NativeMakeSession?
   private let makeSurface: @MainActor (any ScreenSharingViewingSession) throws -> any ScreenSharingViewerSurface
   private let vncOpen: ScreenSharingViewerBackend.NativeVNCOpen
   private var previous: Task<Void, Never>?
@@ -119,21 +96,16 @@ private final class NativeScreenSharingViewerRunner: ScreenSharingViewerConnecti
   private var vncRunners: [String: VNCScreenSharingViewerRunner] = [:]
   private let target: String?
   private let heartbeatInterval: Duration
-  private let tunnelMedia: ScreenSharingViewerBackend.TunnelMediaProvider?
-  private let v2: ScreenSharingV2Connector?
-  private var v2Failed = false
-  private var startsFresh = false
+  private let v2: ScreenSharingV2Connector
   private let sound: Bool
 
   init(
     client: any CodevisorServerClienting, workspaceId: UUID, paneId: UUID,
     sleep: @escaping @Sendable (Duration) async throws -> Void,
-    makeSession: ScreenSharingViewerBackend.NativeMakeSession?,
     makeSurface: @escaping @MainActor (any ScreenSharingViewingSession) throws -> any ScreenSharingViewerSurface,
     vncOpen: @escaping ScreenSharingViewerBackend.NativeVNCOpen,
     target: String? = nil,
-    tunnelMedia: ScreenSharingViewerBackend.TunnelMediaProvider? = nil,
-    v2: ScreenSharingV2Connector? = nil,
+    v2: ScreenSharingV2Connector,
     heartbeatInterval: Duration = .seconds(8),
     sound: Bool = true
   ) {
@@ -141,12 +113,10 @@ private final class NativeScreenSharingViewerRunner: ScreenSharingViewerConnecti
     self.v2 = v2
     self.target = target
     self.heartbeatInterval = heartbeatInterval
-    self.tunnelMedia = tunnelMedia
     self.client = client
     self.workspaceId = workspaceId
     self.paneId = paneId
     self.sleep = sleep
-    self.makeSession = makeSession
     self.makeSurface = makeSurface
     self.vncOpen = vncOpen
   }
@@ -201,24 +171,20 @@ private final class NativeScreenSharingViewerRunner: ScreenSharingViewerConnecti
     return runner
   }
 
-  private enum Outcome { case lost, ended(String), cancelled, fallback }
+  private enum Outcome { case lost, ended(String), cancelled }
 
   @MainActor
   private final class Attempt {
     var endpoint: ScreenSharingViewerEndpoint?
-    var tunnelMedia: ScreenSharingTunnelMedia?
     var body: Task<Outcome, Never>?
     var ready = false
     var started = false
     var outcome: Outcome?
     var transportEnded = false
-    var triedV2 = false
   }
 
   private func run(display: String, emit: @escaping @Sendable (ScreenSharingViewerEvent) -> Void) async {
     let viewerId = UUID()
-    v2Failed = false
-    startsFresh = false
     var restarts = 0
     var started = false
     var message: String?
@@ -235,13 +201,6 @@ private final class NativeScreenSharingViewerRunner: ScreenSharingViewerConnecti
         break attempts
       case .cancelled:
         break attempts
-      case .fallback:
-        guard makeSession != nil else {
-          message = Self.v2Failed
-          break attempts
-        }
-        v2Failed = true
-        startsFresh = true
       }
     }
     if let message { emit(.ended(message)) }
@@ -266,31 +225,11 @@ private final class NativeScreenSharingViewerRunner: ScreenSharingViewerConnecti
         guard capabilities.version == 1, ["available", "busy"].contains(capabilities.status) else {
           return .ended(capabilities.message ?? "Screen Sharing is unavailable on this Mac.")
         }
-        if let v2, !v2Failed, capabilities.engines?.contains(ScreenSharingEngine.v2.rawValue) == true {
-          return try await attemptV2(
-            v2, attempt: attempt, viewerId: viewerId, display: display, restarts: restarts, emit: emit)
+        guard capabilities.engines?.contains(ScreenSharingEngine.v2.rawValue) == true else {
+          return .ended(Self.v2Unavailable)
         }
-        guard let makeSession else { return .ended(Self.v2Unavailable) }
-        let session = try await makeSession(capabilities.connectivity)
-        try open(session, attempt: attempt, display: display, restarts: restarts, emit: emit)
-        let offer = try await session.offer()
-        try Task.checkCancellation()
-        attempt.started = true
-        var start = request(
-          takeFreshStart() || restarts == 0 ? .start : .restart, viewerId: viewerId, displayId: display, offer: offer)
-        let media = await tunnelMedia?()
-        attempt.tunnelMedia = media
-        if let media { start.tunnelMedia = .init(endpointId: media.endpointId, flowId: media.flowId) }
-        let reply = try await ScreenSharingTransientRetry.run(sleep: sleep) { [client, start] in
-          try await client.screenSharing(start)
-        }
-        try Task.checkCancellation()
-        guard reply.version == 1, reply.status == "connecting", let answer = reply.answer else {
-          return .ended(reply.message ?? "This Mac cannot start screen sharing right now.")
-        }
-        try await session.accept(Self.remoteAnswer(answer, offer: offer, media: media, bridge: reply.tunnelMedia))
-        return try await heartbeats(
-          viewerId: viewerId, attempt: attempt, session: session, notice: reply.message, emit: emit)
+        return try await attemptV2(
+          attempt: attempt, viewerId: viewerId, display: display, restarts: restarts, emit: emit)
       } catch {
         return isTaskCancellation(error) ? .cancelled : .ended(serverErrorMessage(error))
       }
@@ -302,7 +241,6 @@ private final class NativeScreenSharingViewerRunner: ScreenSharingViewerConnecti
       body.cancel()
     }
     attempt.endpoint?.close()
-    attempt.tunnelMedia?.close()
     return (await outcome(of: attempt, result: result, viewerId: viewerId), attempt.started)
   }
 
@@ -312,16 +250,16 @@ private final class NativeScreenSharingViewerRunner: ScreenSharingViewerConnecti
     {
       outcome = .ended(reason)
     }
-    if attempt.triedV2, !attempt.ready, makeSession != nil, case .ended = outcome { return .fallback }
     return outcome
   }
 
   private static let v2Unavailable =
-    "The host Mac can't stream over engine v2. Update Codevisor on both Macs, then retry."
+    "The host Mac needs a newer version of Codevisor to share its screen. Update Codevisor on it, then retry."
   private static let v2Failed =
     "This Mac couldn't connect to the host Mac over engine v2. Check the connection, then retry."
 
   private static let missingVideoTimeout: Duration = .seconds(24)
+  private static let maximumRestarts = 3
 
   private func open(
     _ session: any ScreenSharingViewingSession, attempt: Attempt, display: String, restarts: Int,
@@ -345,16 +283,11 @@ private final class NativeScreenSharingViewerRunner: ScreenSharingViewerConnecti
       guard ["failed", "disconnected", "closed"].contains(transport), attempt.outcome == nil else { return }
       attempt.transportEnded = true
       attempt.outcome =
-        attempt.ready && restarts < 3 && transport != "closed"
+        (attempt.ready || restarts > 0) && restarts < Self.maximumRestarts && transport != "closed"
         ? .lost : .ended("The screen-sharing connection ended. Reconnect to continue.")
       attempt.body?.cancel()
     }
     emit(.opened(endpoint))
-  }
-
-  private func takeFreshStart() -> Bool {
-    defer { startsFresh = false }
-    return startsFresh
   }
 
   private func heartbeats(
@@ -388,41 +321,44 @@ private final class NativeScreenSharingViewerRunner: ScreenSharingViewerConnecti
   }
 
   private func attemptV2(
-    _ v2: ScreenSharingV2Connector, attempt: Attempt, viewerId: UUID, display: String, restarts: Int,
+    attempt: Attempt, viewerId: UUID, display: String, restarts: Int,
     emit: @escaping @Sendable (ScreenSharingViewerEvent) -> Void
   ) async throws -> Outcome {
-    guard let address = await v2.address() else { return .fallback }
+    guard let address = await v2.address() else { return Self.connectFailed(restarts: restarts) }
     try Task.checkCancellation()
-    var start = request(takeFreshStart() || restarts == 0 ? .start : .restart, viewerId: viewerId, displayId: display)
+    var start = request(restarts == 0 ? .start : .restart, viewerId: viewerId, displayId: display)
     start.engine = ScreenSharingEngine.v2.rawValue
     start.media = address
     start.chroma = await v2.chroma().rawValue
     attempt.started = true
-    attempt.triedV2 = true
     let reply = try await ScreenSharingTransientRetry.run(sleep: sleep) { [client, start] in
       try await client.screenSharing(start)
     }
     try Task.checkCancellation()
     guard reply.version == 1, reply.status == "connecting", let grant = reply.media else {
-      return reply.status == "failed" || reply.status == "connecting"
-        ? .fallback : .ended(reply.message ?? "This Mac cannot start screen sharing right now.")
+      return .ended(
+        reply.message ?? (reply.status == "failed" ? Self.v2Failed : "This Mac cannot start screen sharing right now."))
     }
 
     var session: any ScreenSharingV2StartableSession
     do {
       session = try await v2.connect(grant)
     } catch {
-      return Task.isCancelled ? .cancelled : .fallback
+      return Task.isCancelled ? .cancelled : Self.connectFailed(restarts: restarts)
     }
     session.presentsTiles = true
     try open(session, attempt: attempt, display: display, restarts: restarts, emit: emit)
     do {
       try await session.start(token: grant.token)
     } catch {
-      return Task.isCancelled ? .cancelled : .fallback
+      return Task.isCancelled ? .cancelled : Self.connectFailed(restarts: restarts)
     }
     return try await heartbeats(
       viewerId: viewerId, attempt: attempt, session: session, notice: reply.message, emit: emit)
+  }
+
+  private static func connectFailed(restarts: Int) -> Outcome {
+    restarts > 0 && restarts < maximumRestarts ? .lost : .ended(v2Failed)
   }
 
   private func hostEndReason(viewerId: UUID) async -> String? {
@@ -434,21 +370,12 @@ private final class NativeScreenSharingViewerRunner: ScreenSharingViewerConnecti
     return reply.message
   }
 
-  static func remoteAnswer(
-    _ answer: String, offer: String, media: ScreenSharingTunnelMedia?, bridge: ServerScreenSharingTunnelMediaBridge?
-  ) -> String {
-    guard let media, bridge?.flowId == media.flowId,
-      let address = ScreenSharingTunnelSDP.localIPv4(inOffer: offer)
-    else { return answer }
-    return ScreenSharingTunnelSDP.answer(answer, routedTo: address, port: media.localPort)
-  }
-
   private func request(
-    _ operation: ServerScreenSharingRequest.Operation, viewerId: UUID, displayId: String? = nil, offer: String? = nil
+    _ operation: ServerScreenSharingRequest.Operation, viewerId: UUID, displayId: String? = nil
   ) -> ServerScreenSharingRequest {
     .init(
       operation: operation, workspaceId: workspaceId, paneId: paneId, viewerId: viewerId,
-      displayId: displayId ?? target, offer: offer)
+      displayId: displayId ?? target)
   }
 
   private struct ViewerError: LocalizedError {

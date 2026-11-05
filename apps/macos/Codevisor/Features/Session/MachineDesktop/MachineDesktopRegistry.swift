@@ -29,22 +29,10 @@ final class MachineDesktopRegistry {
         screenSharing: ScreenSharingPanePreferences())
       let context = PaneContext(
         paneId: paneId, sessionId: nil, terminalKey: descriptor.terminalKey, machine: machine, session: nil,
-        project: project, workspaceRootDirectory: workspace.rootDirectory, workspaceId: workspace.id, client: client,
-        openTunnelMedia: Self.tunnelMedia(serverId: workspace.serverId, machines: environment.machines))
+        project: project, workspaceRootDirectory: workspace.rootDirectory, workspaceId: workspace.id, client: client)
       return ScreenSharingPane(context: context, descriptor: descriptor, role: role)
     }
     return MachineDesktopSession(
       preview: pane(.watcher), window: pane(.window), workspaceId: workspace.id, client: client)
-  }
-
-  private static func tunnelMedia(
-    serverId: String, machines: MachineController
-  ) -> ScreenSharingViewerBackend.TunnelMediaProvider {
-    { [weak machines] in
-      guard let route = await machines?.tunnelMediaRoute(forMachineId: serverId) else { return nil }
-      return ScreenSharingTunnelMedia(
-        endpointId: route.endpointId, flowId: Int(route.flowId), localPort: route.localPort,
-        close: { route.close() })
-    }
   }
 }

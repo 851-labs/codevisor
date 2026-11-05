@@ -27,7 +27,7 @@ struct NativeScreenSharingViewerBackendTests {
     await awaitObserved { !harness.log.events.isEmpty }
     let endpoint = try #require(harness.log.endpoints.first)
     expectNoDifference(harness.log.events, [.opened(endpoint)])
-    #expect(harness.sessions[0].offers == 1 && harness.sessions[0].answers == ["fixture answer"])
+    #expect(harness.sessions[0].tokens == ["fixture token"])
     harness.surfaces[0].present()
     await awaitObserved { harness.log.events.count >= 2 }
     expectNoDifference(harness.log.events, [.opened(endpoint), .ready])
@@ -137,14 +137,12 @@ struct NativeScreenSharingViewerBackendTests {
     let harness = NativeBackendHarness(transport: SharingTransport(blockFirstStart: true))
     let first = harness.connect()
     await harness.transport.started.wait()
-    await awaitObserved { harness.log.endpoints.count == 1 }
-    #expect(harness.log.endpoints.count == 1)
+    #expect(harness.log.endpoints.isEmpty, "a v2 session opens only once the host grants it")
     first.cancel()
     await first.value
     harness.connect()
     harness.transport.releaseFirstStart.signal()
     await awaitObserved { harness.log.events.contains(.ready) }
-    harness.surfaces[0].present()
     #expect(harness.log.events.filter { $0 == .ready }.count == 1)
     let requests = await harness.transport.requests
     let starts = requests.filter { $0.operation == .start }
@@ -153,7 +151,7 @@ struct NativeScreenSharingViewerBackendTests {
     let newStart = try #require(requests.firstIndex { $0.operation == .start && $0.viewerId == starts[1].viewerId })
     #expect(oldStop < newStart)
     #expect(await harness.transport.stopWasCancelled == false)
-    #expect(harness.sessions[0].closed && !harness.sessions[1].closed)
+    #expect(harness.sessions.count == 1 && !harness.sessions[0].closed, "the cancelled start never connected")
     await harness.cancelConsumers()
     await harness.transport.stopped.wait(for: 2)
     #expect(harness.sessions.allSatisfy { $0.closed })
