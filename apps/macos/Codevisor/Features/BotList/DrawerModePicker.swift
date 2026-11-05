@@ -13,6 +13,9 @@ struct DrawerModePicker: NSViewRepresentable {
     let control = ToolbarSegmentedControl(
       titles: SidebarMode.allCases.map(\.title), target: context.coordinator, action: #selector(Coordinator.select))
     control.setAccessibilityLabel("Sidebar Mode")
+    for (segment, mode) in SidebarMode.allCases.enumerated() {
+      control.setToolTip(SidebarModeShortcut.help(for: mode), forSegment: segment)
+    }
     let glass = NSGlassEffectView()
     glass.contentView = control
     glass.cornerRadius = control.fittingSize.height / 2

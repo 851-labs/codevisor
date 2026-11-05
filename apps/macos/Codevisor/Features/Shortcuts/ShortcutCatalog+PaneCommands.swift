@@ -25,8 +25,6 @@ extension ShortcutCatalog {
   private static let paneCommandBindings: [(ShortcutID, PaneGroupCommand)] = [
     (.previousTab, .previousTab),
     (.nextTab, .nextTab),
-    (.previousTabInWorkspace, .previousTabInWorkspace),
-    (.nextTabInWorkspace, .nextTabInWorkspace),
     (.previousWorkspace, .previousWorkspace),
     (.nextWorkspace, .nextWorkspace),
     (.focusSplitLeft, .focusSplit(.leading)),

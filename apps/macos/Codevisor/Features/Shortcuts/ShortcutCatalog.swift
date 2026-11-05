@@ -27,6 +27,8 @@ enum ShortcutID: String, CaseIterable, Identifiable, Sendable {
   case focusSplitAbove
   case focusSplitBelow
 
+  case switchToChat
+  case switchToCode
   case commandPalette
   case toggleDebugOverlay
 
@@ -109,7 +111,7 @@ enum ShortcutCatalog {
     case .previousSplit, .nextSplit, .splitLeft, .splitRight, .splitUp, .splitDown, .focusSplitLeft, .focusSplitRight,
       .focusSplitAbove, .focusSplitBelow:
       splitDefinition(for: id)
-    case .commandPalette, .toggleDebugOverlay:
+    case .switchToChat, .switchToCode, .commandPalette, .toggleDebugOverlay:
       viewDefinition(for: id)
     case .browserZoomIn, .browserZoomOut, .browserResetZoom:
       browserDefinition(for: id)
@@ -200,13 +202,9 @@ enum ShortcutCatalog {
         .nextTab, "Next Sidebar Item", ShortcutCombo("]", [.command, .shift]), category: .tabsAndSplits,
         context: "Next tab while the sidebar is hidden")
     case .previousTabInWorkspace:
-      ShortcutDefinition(
-        .previousTabInWorkspace, "Previous Tab in Workspace",
-        ShortcutCombo(.leftArrow, [.command, .option]), category: .tabsAndSplits)
+      ShortcutDefinition(.previousTabInWorkspace, "Previous Tab in Workspace", nil, category: .tabsAndSplits)
     case .nextTabInWorkspace:
-      ShortcutDefinition(
-        .nextTabInWorkspace, "Next Tab in Workspace",
-        ShortcutCombo(.rightArrow, [.command, .option]), category: .tabsAndSplits)
+      ShortcutDefinition(.nextTabInWorkspace, "Next Tab in Workspace", nil, category: .tabsAndSplits)
     case .previousWorkspace:
       ShortcutDefinition(
         .previousWorkspace, "Previous Workspace", ShortcutCombo(.upArrow, [.command, .option]),
@@ -250,6 +248,14 @@ enum ShortcutCatalog {
 
   private static func viewDefinition(for id: ShortcutID) -> ShortcutDefinition {
     switch id {
+    case .switchToChat:
+      ShortcutDefinition(
+        .switchToChat, "Switch to Chat", ShortcutCombo(.leftArrow, [.command, .option]), category: .view,
+        context: "While Bots is on")
+    case .switchToCode:
+      ShortcutDefinition(
+        .switchToCode, "Switch to Code", ShortcutCombo(.rightArrow, [.command, .option]), category: .view,
+        context: "While Bots is on")
     case .commandPalette:
       ShortcutDefinition(
         .commandPalette, "Command Palette…", ShortcutCombo("k", .command), category: .view,
