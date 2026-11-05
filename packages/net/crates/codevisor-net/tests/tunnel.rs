@@ -6,7 +6,7 @@ use std::{
 
 use base64::Engine;
 use codevisor_net::{
-    ALPN_CHANNELS, ALPN_MEDIA, CancelToken, MediaFlow, MessageKind, NetAddr, NetConfig, NetEndpoint, PathPolicy,
+    ALPN_CHANNELS, CancelToken, MessageKind, NetAddr, NetConfig, NetEndpoint, PathPolicy,
     RelaySpec, endpoint_id_for, generate_secret_key,
 };
 use iroh_relay::server::{AllowAll, CertConfig, QuicConfig, RelayConfig, Server, ServerConfig, TlsConfig};
@@ -21,7 +21,7 @@ fn config(policy: PathPolicy, relays: Vec<RelaySpec>, anchors: Vec<String>) -> N
         trust_anchors_pem: anchors,
         bind_addrs: if policy == PathPolicy::RelayOnly { vec![] } else { vec!["127.0.0.1:0".into()] },
         path_policy: policy,
-        alpns: vec![ALPN_CHANNELS.to_vec(), ALPN_MEDIA.to_vec()],
+        alpns: vec![ALPN_CHANNELS.to_vec()],
     }
 }
 
@@ -108,41 +108,6 @@ async fn messages_cross_a_relay_trusted_by_extra_anchor() {
     let connection = round_trip(&client, &addr).await;
     let paths = connection.paths();
     assert!(!paths.is_empty() && paths.iter().all(|path| path.is_relay));
-}
-
-#[tokio::test]
-async fn media_flow_bridges_loopback_udp_both_ways() {
-    let host = Arc::new(NetEndpoint::bind(config(PathPolicy::DirectOnly, vec![], vec![])).await.unwrap());
-    let viewer = NetEndpoint::bind(config(PathPolicy::DirectOnly, vec![], vec![])).await.unwrap();
-
-    let target = UdpSocket::bind((Ipv4Addr::LOCALHOST, 0)).await.unwrap();
-    let target_addr = target.local_addr().unwrap();
-    tokio::spawn(async move {
-        let mut buffer = [0u8; 2048];
-        while let Ok((len, from)) = target.recv_from(&mut buffer).await {
-            let mut reply = b"ack:".to_vec();
-            reply.extend_from_slice(&buffer[..len]);
-            target.send_to(&reply, from).await.unwrap();
-        }
-    });
-
-    let (flow_tx, flow_rx) = tokio::sync::oneshot::channel();
-    let host_side = host.clone();
-    tokio::spawn(async move {
-        let connection = host_side.accept().await.unwrap().unwrap();
-        let flow = MediaFlow::forward(connection.media(), 7, target_addr).await.unwrap();
-        flow_tx.send((connection, flow)).ok();
-    });
-    let connection = viewer.connect(&host.addr(), ALPN_MEDIA).await.unwrap();
-    let viewer_flow = MediaFlow::bind(connection.media(), 7).await.unwrap();
-    let _host_side = flow_rx.await.unwrap();
-    assert!(connection.media().max_payload().unwrap() >= 1100);
-
-    let app = UdpSocket::bind((Ipv4Addr::LOCALHOST, 0)).await.unwrap();
-    let mut buffer = [0u8; 2048];
-    app.send_to(b"rtp-1", (Ipv4Addr::LOCALHOST, viewer_flow.local_port())).await.unwrap();
-    let (len, _) = app.recv_from(&mut buffer).await.unwrap();
-    assert_eq!(&buffer[..len], b"ack:rtp-1");
 }
 
 async fn spawn_reply_dropping_hop(target: SocketAddr) -> (SocketAddr, oneshot::Receiver<()>) {

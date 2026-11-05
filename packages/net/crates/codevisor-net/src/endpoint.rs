@@ -16,7 +16,6 @@ use tokio::{
 use crate::{
     ALPN_SCREEN,
     config::{NetConfig, PathPolicy},
-    media::DatagramRouter,
     message_stream::MessageStream,
     pinned_path::FirstPathSelector,
     screen_transport,
@@ -309,12 +308,11 @@ fn iroh_relay_quic_config(port: u16) -> iroh_relay::RelayQuicConfig {
 #[derive(Clone)]
 pub struct NetConnection {
     connection: Connection,
-    media: Arc<std::sync::OnceLock<Arc<DatagramRouter>>>,
 }
 
 impl NetConnection {
     fn new(connection: Connection) -> Self {
-        Self { connection, media: Arc::default() }
+        Self { connection }
     }
 
     pub fn remote_id(&self) -> String {
@@ -379,12 +377,6 @@ impl NetConnection {
 
     pub fn rtt(&self) -> Option<Duration> {
         self.connection.paths().iter().find(|path| path.is_selected()).map(|path| path.rtt())
-    }
-
-    pub fn media(&self) -> Arc<DatagramRouter> {
-        self.media
-            .get_or_init(|| DatagramRouter::start(self.connection.clone()))
-            .clone()
     }
 
     pub fn close(&self, code: u32, reason: &str) {

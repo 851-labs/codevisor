@@ -3,7 +3,6 @@ import { dirname, join } from "node:path"
 import { fileURLToPath } from "node:url"
 
 export const ALPN_CHANNELS = "codevisor/channels/1"
-export const ALPN_MEDIA = "codevisor/media/1"
 
 export type PathPolicy = "auto" | "relay-only" | "direct-only"
 
@@ -48,20 +47,12 @@ export interface TunnelMessageStream {
   finish(): Promise<void>
 }
 
-export interface TunnelMediaFlow {
-  localPort(): number
-  close(): void
-}
-
 export interface TunnelConnection {
   remoteId(): string
   alpn(): string
   openMessageStream(): Promise<TunnelMessageStream>
   acceptMessageStream(): Promise<TunnelMessageStream>
   paths(): TunnelPath[]
-  maxMediaPayload(): number | null
-  forwardMedia(flowId: number, targetAddr: string): Promise<TunnelMediaFlow>
-  bindMedia(flowId: number): Promise<TunnelMediaFlow>
   close(code: number, reason: string): void
   closed(): Promise<string>
 }
