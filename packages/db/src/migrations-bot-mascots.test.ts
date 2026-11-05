@@ -62,9 +62,21 @@ describe("bot mascot upgrade", () => {
     expect(
       (await run(upgraded.listBots)).map((bot) => [bot.id, bot.symbolName, bot.mascot])
     ).toEqual([
-      ["bot-first", "ant", { color: "sunny", hat: "none", eyewear: "none" }],
-      ["bot-second", "ant", { color: "mint", hat: "none", eyewear: "none" }],
-      ["bot-third", "ant", { color: "lilac", hat: "none", eyewear: "none" }]
+      [
+        "bot-first",
+        "ant",
+        { color: "sunny", hat: "none", hatColor: "auto", eyewear: "none", eyewearColor: "auto" }
+      ],
+      [
+        "bot-second",
+        "ant",
+        { color: "mint", hat: "none", hatColor: "auto", eyewear: "none", eyewearColor: "auto" }
+      ],
+      [
+        "bot-third",
+        "ant",
+        { color: "lilac", hat: "none", hatColor: "auto", eyewear: "none", eyewearColor: "auto" }
+      ]
     ])
   })
 })

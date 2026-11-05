@@ -16,20 +16,32 @@ export type BotMode = typeof BotMode.Type
 export const BotMascot = Schema.Struct({
   color: Schema.String,
   hat: Schema.String,
-  eyewear: Schema.String
+  hatColor: Schema.optional(Schema.String),
+  eyewear: Schema.String,
+  eyewearColor: Schema.optional(Schema.String)
 })
 export type BotMascot = typeof BotMascot.Type
 
+export const BotMascotSwatch = Schema.Struct({
+  id: Schema.String,
+  title: Schema.String,
+  hex: Schema.String
+})
+export type BotMascotSwatch = typeof BotMascotSwatch.Type
+
 export const BotMascotChoice = Schema.Struct({
   id: Schema.String,
-  title: Schema.String
+  title: Schema.String,
+  swatches: Schema.optional(Schema.Array(BotMascotSwatch)),
+  hasAuto: Schema.optional(Schema.Boolean)
 })
 export type BotMascotChoice = typeof BotMascotChoice.Type
 
 export const BotMascotColorChoice = Schema.Struct({
   id: Schema.String,
   title: Schema.String,
-  gradient: Schema.Array(Schema.String)
+  gradient: Schema.Array(Schema.String),
+  accent: Schema.optional(Schema.String)
 })
 export type BotMascotColorChoice = typeof BotMascotColorChoice.Type
 

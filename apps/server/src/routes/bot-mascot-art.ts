@@ -46,7 +46,14 @@ export const renderMascotLoop = (
   config: BotMascotConfig,
   loop: BotMascotLoop
 ): Promise<MascotArt> => {
-  const key = JSON.stringify([config.color, config.hat, config.eyewear, loop])
+  const key = JSON.stringify([
+    config.color,
+    config.hat,
+    config.hatColor,
+    config.eyewear,
+    config.eyewearColor,
+    loop
+  ])
   const cached = loops.get(key) ?? encodeLoop(config, loop)
   remember(key, cached)
   return cached

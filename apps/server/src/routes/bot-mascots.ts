@@ -4,15 +4,18 @@ import type {
   BotMascot,
   BotMascotChoice,
   BotMascotColorChoice,
-  BotMascotOptions
+  BotMascotOptions,
+  BotMascotSwatch
 } from "@codevisor/api"
 import {
   botMascotColors,
   botMascotEyewear,
   botMascotHats,
+  botMascotSwatches,
   type BotMascotConfig,
   type ColorOption,
-  type ItemOption
+  type ItemOption,
+  type SwatchChoice
 } from "@codevisor/bot-mascot"
 
 import { HttpFailure, run, writeJson, type CodevisorServerServices } from "../server-context.js"
@@ -23,11 +26,17 @@ import {
   renderMascotStill,
   type MascotArt
 } from "./bot-mascot-art.js"
-import { mascotRiveFile, mascotRiveValues } from "./bot-mascot-rive.js"
+import { mascotRiveFile, mascotRiveValues, type RiveFile } from "./bot-mascot-rive.js"
 
 type ArtRenderer = (config: BotMascotConfig, query: URLSearchParams) => Promise<MascotArt>
 
+interface WornItem<Id extends string> {
+  readonly id: Id | "none"
+  readonly color: SwatchChoice
+}
+
 const none: BotMascotChoice = { id: "none", title: "None" }
+const autoColor = "auto"
 
 export const routeBotMascots = async (
   services: CodevisorServerServices,
@@ -41,7 +50,7 @@ export const routeBotMascots = async (
     return true
   }
   if (url.pathname === "/v1/bot-mascots/rive") {
-    writeArt(response, await mascotRiveFile())
+    writeRevalidated(request, response, await mascotRiveFile())
     return true
   }
   if (url.pathname === "/v1/bot-mascots/rive-values") {
@@ -79,44 +88,84 @@ export const newBotMascot = async (
 const nextBotMascot = async (services: CodevisorServerServices): Promise<BotMascot> => {
   const botCount = (await run(services.db.listBots)).length
   const color = botMascotColors[botCount % botMascotColors.length]!
-  return { color: color.id, hat: none.id, eyewear: none.id }
+  return {
+    color: color.id,
+    hat: none.id,
+    hatColor: autoColor,
+    eyewear: none.id,
+    eyewearColor: autoColor
+  }
 }
 
 const mascotOptions = async (services: CodevisorServerServices): Promise<BotMascotOptions> => ({
   colors: botMascotColors.map(colorChoice),
-  hats: [none, ...botMascotHats.map(choice)],
-  eyewear: [none, ...botMascotEyewear.map(choice)],
+  hats: [none, ...botMascotHats.map(itemChoice)],
+  eyewear: [none, ...botMascotEyewear.map(itemChoice)],
   nextBotMascot: await nextBotMascot(services)
 })
 
 const colorChoice = (color: ColorOption): BotMascotColorChoice => ({
   id: color.id,
   title: color.title,
-  gradient: color.gradient.map(([, hex]) => hex)
+  gradient: color.gradient.map(([, hex]) => hex),
+  accent: color.accent
 })
 
-const choice = ({ id, title }: ItemOption<string>): BotMascotChoice => ({ id, title })
+const itemChoice = (item: ItemOption<string>): BotMascotChoice => {
+  if (item.swatches.length === 0) return { id: item.id, title: item.title }
+
+  return {
+    id: item.id,
+    title: item.title,
+    swatches: item.swatches.map(swatchChoice),
+    hasAuto: item.hasAuto
+  }
+}
+
+const swatchChoice = (id: string): BotMascotSwatch => ({
+  id,
+  title: id.charAt(0).toUpperCase() + id.slice(1),
+  hex: botMascotSwatches.find((swatch) => swatch.id === id)!.hex
+})
 
 const mascotConfig = (mascot: BotMascot): BotMascotConfig | undefined => {
   const color = botMascotColors.find((option) => option.id === mascot.color)?.id
-  const hat = itemId(botMascotHats, mascot.hat)
-  const eyewear = itemId(botMascotEyewear, mascot.eyewear)
+  const hat = wornItem(botMascotHats, mascot.hat, mascot.hatColor)
+  const eyewear = wornItem(botMascotEyewear, mascot.eyewear, mascot.eyewearColor)
   if (color === undefined || hat === undefined || eyewear === undefined) return undefined
-  return { color, hat, eyewear }
+  return {
+    color,
+    hat: hat.id,
+    hatColor: hat.color,
+    eyewear: eyewear.id,
+    eyewearColor: eyewear.color
+  }
 }
 
-const itemId = <Id extends string>(
+const wornItem = <Id extends string>(
   items: ReadonlyArray<ItemOption<Id>>,
-  id: string
-): Id | "none" | undefined => {
-  if (id === none.id) return "none"
-  return items.find((item) => item.id === id)?.id
+  id: string,
+  color: string = autoColor
+): WornItem<Id> | undefined => {
+  if (id === none.id) return color === autoColor ? { id: "none", color } : undefined
+
+  const item = items.find((option) => option.id === id)
+  const swatch = item && itemSwatch(item, color)
+  if (item === undefined || swatch === undefined) return undefined
+  return { id: item.id, color: swatch }
+}
+
+const itemSwatch = (item: ItemOption<string>, color: string): SwatchChoice | undefined => {
+  if (color === autoColor) return autoColor
+  return item.swatches.find((swatch) => swatch === color)
 }
 
 const mascotFromQuery = (query: URLSearchParams): BotMascot => ({
   color: query.get("color") ?? "",
   hat: query.get("hat") ?? none.id,
-  eyewear: query.get("eyewear") ?? none.id
+  hatColor: query.get("hatColor") ?? autoColor,
+  eyewear: query.get("eyewear") ?? none.id,
+  eyewearColor: query.get("eyewearColor") ?? autoColor
 })
 
 const unknownMascot = (status: number, mascot: BotMascot): HttpFailure =>
@@ -139,6 +188,31 @@ const queryChoice = <Choice extends string>(
   if (found === undefined) throw new HttpFailure(400, `Unknown ${name}: ${value}`)
   return found
 }
+
+const writeRevalidated = (
+  request: IncomingMessage,
+  response: ServerResponse,
+  file: RiveFile
+): void => {
+  if (request.headers["if-none-match"] !== file.etag) return writeFile(response, file)
+
+  response.writeHead(304, revalidatedHeaders(file))
+  response.end()
+}
+
+const writeFile = (response: ServerResponse, file: RiveFile): void => {
+  response.writeHead(200, {
+    ...revalidatedHeaders(file),
+    "Content-Length": String(file.bytes.byteLength),
+    "Content-Type": file.contentType
+  })
+  response.end(file.bytes)
+}
+
+const revalidatedHeaders = (file: RiveFile): Record<string, string> => ({
+  "Cache-Control": "private, no-cache",
+  ETag: file.etag
+})
 
 const writeArt = (response: ServerResponse, art: MascotArt): void => {
   response.writeHead(200, {

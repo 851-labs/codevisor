@@ -278,7 +278,7 @@ A **bot** is a Codevisor chat with its own folder and read-only checkouts of one
 - `harnessId` is an id from `harnesses.list()` and can't change later.
 - `configSelections` sets the bot chat's options, such as `{ model }`. `server.capabilities({ harnessId })` lists each option's `id` and values. Leave it out for the harness defaults. `bots.get` and `bots.list` return the bot's current `configSelections`.
 - `mode` is `conversation` (the default), `transcript`, or `bubbles`.
-- `mascot` is the bot's avatar: `{ color, hat, eyewear }`, with the choices listed in the tool's input schema. A new bot gets the next color in turn and no hat or eyewear.
+- `mascot` is the bot's avatar: `{ color, hat, hatColor?, eyewear, eyewearColor? }`, with the choices listed in the tool's input schema. `hatColor` and `eyewearColor` only apply to items that offer colors and default to `auto`. A new bot gets the next color in turn and no hat or eyewear.
 
 ## Common mistakes
 

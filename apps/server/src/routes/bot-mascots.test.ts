@@ -15,7 +15,13 @@ describe("bot mascot routes", () => {
   it("gives each new bot the next color unless one is chosen, and saves edits", async () => {
     const running = await setUp()
     await running.addProject("api-project", "api")
-    const chosen = { color: "sky", hat: "crown", eyewear: "monocle" }
+    const chosen = {
+      color: "sky",
+      hat: "beanie",
+      hatColor: "red",
+      eyewear: "goggles",
+      eyewearColor: "auto"
+    }
 
     const options = await mascotOptions(running)
     const first = decodeBot((await createBot(running, { projectIds: ["api-project"] })).body)
@@ -25,8 +31,20 @@ describe("bot mascot routes", () => {
     )
 
     expect(options.hats[0]).toEqual({ id: "none", title: "None" })
+    expect(options.hats.find((hat) => hat.id === "crown")).toEqual({ id: "crown", title: "Crown" })
+    expect(options.hats.find((hat) => hat.id === "beanie")).toMatchObject({
+      hasAuto: true,
+      swatches: expect.arrayContaining([{ id: "red", title: "Red", hex: "#E5484D" }])
+    })
+    expect(options.colors.find((color) => color.id === "sunny")?.accent).toBe("#4F7BFF")
     expect(options.eyewear.map((item) => item.id)).toContain("monocle")
-    expect(options.nextBotMascot).toEqual({ color: "sunny", hat: "none", eyewear: "none" })
+    expect(options.nextBotMascot).toEqual({
+      color: "sunny",
+      hat: "none",
+      hatColor: "auto",
+      eyewear: "none",
+      eyewearColor: "auto"
+    })
     expect(first.mascot).toEqual(options.nextBotMascot)
     expect(second.mascot).toEqual(chosen)
     expect((await mascotOptions(running)).nextBotMascot.color).toBe("lilac")
@@ -37,16 +55,20 @@ describe("bot mascot routes", () => {
     )
   })
 
-  it("refuses a mascot item the package doesn't draw", async () => {
+  it.each([
+    ["an item the package doesn't draw", { color: "mint", hat: "fez", eyewear: "none" }],
+    [
+      "a color the hat doesn't offer",
+      { color: "mint", hat: "crown", hatColor: "red", eyewear: "none" }
+    ],
+    ["a color for no eyewear", { color: "mint", hat: "none", eyewear: "none", eyewearColor: "red" }]
+  ])("refuses a mascot with %s", async (_case, mascot) => {
     const running = await setUp()
     await running.addProject("api-project", "api")
     const bot = decodeBot((await createBot(running, { projectIds: ["api-project"] })).body)
-    const unknownHat = { color: "mint", hat: "fez", eyewear: "none" }
 
-    expect((await patchBot(running, bot.id, { mascot: unknownHat })).status).toBe(422)
-    expect(
-      (await createBot(running, { projectIds: ["api-project"], mascot: unknownHat })).status
-    ).toBe(422)
+    expect((await patchBot(running, bot.id, { mascot })).status).toBe(422)
+    expect((await createBot(running, { projectIds: ["api-project"], mascot })).status).toBe(422)
     expect(
       decodeBot((await jsonRequest(running.server, `/v1/bots/${bot.id}`)).body).mascot
     ).toEqual(bot.mascot)
@@ -92,10 +114,21 @@ describe("bot mascot routes", () => {
     const query = "color=mint&hat=wizard&eyewear=goggles"
 
     const file = await fetch(`${running.server.url}/v1/bot-mascots/rive`)
+    const etag = file.headers.get("etag") ?? ""
+    const unchanged = await fetch(`${running.server.url}/v1/bot-mascots/rive`, {
+      headers: { "If-None-Match": etag }
+    })
     const values = await jsonRequest(running.server, `/v1/bot-mascots/rive-values?${query}`)
+    const teal = await jsonRequest(
+      running.server,
+      `/v1/bot-mascots/rive-values?${query}&hatColor=teal`
+    )
     const missing = await fetch(`${running.server.url}/v1/bot-mascots/rive-values?color=plaid`)
 
     expect(file.headers.get("content-type")).toBe("application/octet-stream")
+    expect(file.headers.get("cache-control")).toBe("private, no-cache")
+    expect(etag).not.toBe("")
+    expect(unchanged.status).toBe(304)
     expect(
       Buffer.from(await file.arrayBuffer())
         .subarray(0, 4)
@@ -106,6 +139,8 @@ describe("bot mascot routes", () => {
       "face/eyewear": "goggles",
       body0: expect.any(String)
     })
+    expect(teal.body).toMatchObject({ hat: "wizard" })
+    expect(teal.body).not.toEqual(values.body)
     expect(missing.status).toBe(400)
   })
 })

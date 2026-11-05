@@ -9,7 +9,7 @@ public struct ServerBotMascotArt: Hashable, Sendable {
     case riveValues
   }
 
-  private static let revision = "3"
+  private static let revision = "4"
 
   public var mascot: ServerBotMascot
   public var kind: Kind

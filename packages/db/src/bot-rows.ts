@@ -20,7 +20,9 @@ export interface BotRow {
   readonly symbol_name: string
   readonly mascot_color: string
   readonly mascot_hat: string
+  readonly mascot_hat_color: string
   readonly mascot_eyewear: string
+  readonly mascot_eyewear_color: string
   readonly slug: string
   readonly project_id: string
   readonly session_id: string
@@ -49,7 +51,9 @@ export const botRows = rowReader<BotRow>({
   symbol_name: text,
   mascot_color: text,
   mascot_hat: text,
+  mascot_hat_color: text,
   mascot_eyewear: text,
+  mascot_eyewear_color: text,
   slug: text,
   project_id: text,
   session_id: text,

@@ -27,10 +27,10 @@ export interface HatItem extends Colorable {
 
 export const hatItems = {
   beanie: { title: "Beanie", colors: "fabric", auto: true, draw: beanie },
-  party: { title: "Party hat", draw: partyHat },
+  party: { title: "Party hat", colors: "fabric", auto: true, draw: partyHat },
   propeller: { title: "Propeller cap", draw: propellerCap },
   crown: { title: "Crown", draw: crown },
-  tophat: { title: "Top hat", draw: topHat },
+  tophat: { title: "Top hat", colors: "fabric", auto: true, draw: topHat },
   pumpkin: { title: "Jack-o'-lantern", draw: pumpkin },
   antennae: { title: "Antenna", soft: true, draw: antenna },
   wizard: { title: "Wizard hat", colors: "wizard", draw: wizardHat },
@@ -41,9 +41,9 @@ export const hatItems = {
   cowboy: { title: "Cowboy hat", draw: cowboyHat },
   conical: { title: "Conical hat", draw: conicalHat },
   straw: { title: "Straw hat", draw: strawHat },
-  floppy: { title: "Floppy hat", draw: floppyHat },
-  beret: { title: "Beret", draw: beret },
-  bucket: { title: "Bucket hat", draw: bucketHat }
+  floppy: { title: "Floppy hat", colors: "fabric", auto: true, draw: floppyHat },
+  beret: { title: "Beret", colors: "fabric", auto: true, draw: beret },
+  bucket: { title: "Bucket hat", colors: "fabric", auto: true, draw: bucketHat }
 } as const satisfies Readonly<Record<string, HatItem>>
 
 export type HatKind = keyof typeof hatItems

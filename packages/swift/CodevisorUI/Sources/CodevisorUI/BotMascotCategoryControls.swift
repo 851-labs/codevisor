@@ -30,15 +30,15 @@ public struct BotMascotCategoryControls: View {
     case .color:
       BotMascotColorRow(colors: options.colors, side: swatchSide, selection: $mascot.color)
     case .headwear:
-      itemGrid(options.hats, part: \.hat)
+      itemPicker(.hat)
     case .eyewear:
-      itemGrid(options.eyewear, part: \.eyewear)
+      itemPicker(.eyewear)
     }
   }
 
-  private func itemGrid(
-    _ items: [ServerBotMascotOptions.Choice], part: WritableKeyPath<ServerBotMascot, String>
-  ) -> some View {
-    BotMascotItemGrid(items: items, part: part, columns: columns, mascot: $mascot, serverId: serverId)
+  private func itemPicker(_ part: ServerBotMascotPart) -> some View {
+    BotMascotItemPicker(
+      part: part, options: options, serverId: serverId, columns: columns, swatchSide: swatchSide, mascot: $mascot
+    )
   }
 }

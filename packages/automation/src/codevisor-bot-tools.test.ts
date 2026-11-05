@@ -57,7 +57,7 @@ describe("bot tools", () => {
       name: "Notes",
       harnessId: "codex",
       projectIds: ["p1"],
-      mascot: { color: "sky", hat: "crown", eyewear: "none" },
+      mascot: { color: "sky", hat: "beanie", hatColor: "red", eyewear: "none" },
       mode: "transcript"
     })
 
@@ -76,7 +76,7 @@ describe("bot tools", () => {
         harnessId: "codex",
         projectIds: ["p1"],
         symbolName: "sparkles",
-        mascot: { color: "sky", hat: "crown", eyewear: "none" },
+        mascot: { color: "sky", hat: "beanie", hatColor: "red", eyewear: "none" },
         mode: "transcript"
       }
     ])

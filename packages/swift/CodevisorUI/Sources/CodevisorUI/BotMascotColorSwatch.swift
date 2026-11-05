@@ -5,15 +5,18 @@ import SwiftUI
 struct BotMascotColorSwatch: View {
   private static let ringWidth: CGFloat = 2.5
 
-  let color: ServerBotMascotOptions.ColorChoice
+  let title: String
+  let hexes: [String]
   let side: CGFloat
   let isSelected: Bool
+  var badge: String?
   let select: () -> Void
 
   var body: some View {
     Button(action: select) {
       Circle()
         .fill(fill)
+        .overlay { badgeImage }
         .padding(ringGap)
         .overlay {
           if isSelected {
@@ -24,9 +27,18 @@ struct BotMascotColorSwatch: View {
         .contentShape(.circle)
     }
     .buttonStyle(.plain)
-    .help(color.title)
-    .accessibilityLabel(color.title)
+    .help(title)
+    .accessibilityLabel(title)
     .accessibilityAddTraits(isSelected ? .isSelected : [])
+  }
+
+  @ViewBuilder private var badgeImage: some View {
+    if let badge {
+      Image(systemName: badge)
+        .font(.system(size: side * 0.45, weight: .semibold))
+        .foregroundStyle(.white)
+        .shadow(radius: 1)
+    }
   }
 
   private var ringGap: CGFloat {
@@ -35,7 +47,7 @@ struct BotMascotColorSwatch: View {
 
   private var fill: LinearGradient {
     LinearGradient(
-      colors: color.gradient.compactMap(RGBA.init(hex:)).map(Color.init(rgba:)),
+      colors: hexes.compactMap(RGBA.init(hex:)).map(Color.init(rgba:)),
       startPoint: .top,
       endPoint: .bottom
     )

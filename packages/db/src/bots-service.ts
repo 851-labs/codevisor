@@ -1,4 +1,4 @@
-import type { Bot, Workspace } from "@codevisor/api"
+import type { Bot, BotMascot, Workspace } from "@codevisor/api"
 import { isoTimestamp } from "@codevisor/api"
 
 import {
@@ -37,7 +37,7 @@ export const makeBotsService = (
       serverId: row.server_id,
       name: row.name,
       symbolName: row.symbol_name,
-      mascot: { color: row.mascot_color, hat: row.mascot_hat, eyewear: row.mascot_eyewear },
+      mascot: mascotFromRow(row),
       harnessId: row.harness_id,
       ...(Object.keys(configSelections).length === 0 ? {} : { configSelections }),
       projectId: row.project_id,
@@ -86,7 +86,9 @@ export const makeBotsService = (
               record.symbolName,
               record.mascot.color,
               record.mascot.hat,
+              record.mascot.hatColor ?? autoColor,
               record.mascot.eyewear,
+              record.mascot.eyewearColor ?? autoColor,
               record.slug,
               canonicalUuid(record.projectId),
               canonicalUuid(record.sessionId),
@@ -114,7 +116,7 @@ export const makeBotsService = (
       attempt("updateBot", () => {
         const row = requireBotRow(id)
         const current = botFromRow(row)
-        const mascot = record.mascot ?? current.mascot
+        const mascot = nextMascot(mascotFromRow(row), record.mascot)
         sqlite
           .prepare(botSql.update)
           .run(
@@ -122,7 +124,9 @@ export const makeBotsService = (
             record.symbolName ?? current.symbolName,
             mascot.color,
             mascot.hat,
+            mascot.hatColor,
             mascot.eyewear,
+            mascot.eyewearColor,
             (record.mode ?? current.mode) === "conversation" ? 1 : 0,
             record.mode ?? current.mode,
             nextArchivedAt(record.isArchived, row),
@@ -233,6 +237,37 @@ const fleetBotLink = (workspace: WorkspaceRow): RemoteBotLink | undefined => {
   return { parentSessionId, bot: { botId, botMachineId } }
 }
 
+interface StoredMascot extends BotMascot {
+  readonly hatColor: string
+  readonly eyewearColor: string
+}
+
+const autoColor = "auto"
+
+const mascotFromRow = (row: BotRow): StoredMascot => ({
+  color: row.mascot_color,
+  hat: row.mascot_hat,
+  hatColor: row.mascot_hat_color,
+  eyewear: row.mascot_eyewear,
+  eyewearColor: row.mascot_eyewear_color
+})
+
+const nextMascot = (current: StoredMascot, requested: BotMascot | undefined): StoredMascot => {
+  if (requested === undefined) return current
+
+  return {
+    color: requested.color,
+    hat: requested.hat,
+    hatColor: requested.hatColor ?? keptColor(current.hat, requested.hat, current.hatColor),
+    eyewear: requested.eyewear,
+    eyewearColor:
+      requested.eyewearColor ?? keptColor(current.eyewear, requested.eyewear, current.eyewearColor)
+  }
+}
+
+const keptColor = (wornItem: string, nextItem: string, color: string): string =>
+  wornItem === nextItem ? color : autoColor
+
 const nextArchivedAt = (requested: boolean | undefined, row: BotRow): string | null => {
   if (requested === undefined || requested === (row.archived_at !== null)) return row.archived_at
   return requested ? isoTimestamp() : null
@@ -246,11 +281,13 @@ const botSql = {
   byId: `${botSelect} where bots.id = ?`,
   list: `${botSelect} order by bots.created_at asc, bots.id asc`,
   insert: `insert into bots (
-                id, server_id, name, symbol_name, mascot_color, mascot_hat, mascot_eyewear, slug,
-                project_id, session_id, workspace_id, conversational, mode, created_at
-              ) values (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+                id, server_id, name, symbol_name, mascot_color, mascot_hat, mascot_hat_color,
+                mascot_eyewear, mascot_eyewear_color, slug, project_id, session_id, workspace_id,
+                conversational, mode, created_at
+              ) values (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
   update: `update bots set name = ?, symbol_name = ?, mascot_color = ?, mascot_hat = ?,
-       mascot_eyewear = ?, conversational = ?, mode = ?, archived_at = ?, updated_at = ? where id = ?`,
+       mascot_hat_color = ?, mascot_eyewear = ?, mascot_eyewear_color = ?, conversational = ?,
+       mode = ?, archived_at = ?, updated_at = ? where id = ?`,
   touch: "update bots set updated_at = ? where id = ?",
   delete: "delete from bots where id = ?",
   owning: `${botSelect}

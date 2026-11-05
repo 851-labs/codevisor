@@ -121,13 +121,25 @@ describe("bots service", () => {
     useWorktreesRoot()
     const db = await openDatabase()
     await seedBot(db)
-    const mascot = { color: "sky", hat: "crown", eyewear: "monocle" }
+    const mascot = {
+      color: "sky",
+      hat: "beanie",
+      hatColor: "red",
+      eyewear: "goggles",
+      eyewearColor: "pink"
+    }
 
     const renamed = await run(db.updateBot("bot-helper", { name: "Reviewer" }))
     expect(renamed).toMatchObject({
       name: "Reviewer",
       symbolName: "sparkles",
-      mascot: { color: "mint", hat: "none", eyewear: "none" }
+      mascot: {
+        color: "mint",
+        hat: "none",
+        hatColor: "auto",
+        eyewear: "none",
+        eyewearColor: "auto"
+      }
     })
     expect(renamed.updatedAt).toBeDefined()
     expect(await run(db.updateBot("bot-helper", { symbolName: "ant", mascot }))).toMatchObject({
@@ -137,6 +149,35 @@ describe("bots service", () => {
     })
     expect((await run(db.getBot("bot-helper")))?.mascot).toEqual(mascot)
     await expect(run(db.updateBot("missing", { name: "Nope" }))).rejects.toThrow(/Bot not found/)
+  })
+
+  it("keeps an item's color when an update leaves it out, and resets it when the item changes", async () => {
+    useWorktreesRoot()
+    const db = await openDatabase()
+    await seedBot(db)
+    await run(
+      db.updateBot("bot-helper", {
+        mascot: {
+          color: "sky",
+          hat: "beanie",
+          hatColor: "red",
+          eyewear: "goggles",
+          eyewearColor: "pink"
+        }
+      })
+    )
+
+    const updated = await run(
+      db.updateBot("bot-helper", { mascot: { color: "lilac", hat: "beanie", eyewear: "specs" } })
+    )
+
+    expect(updated.mascot).toEqual({
+      color: "lilac",
+      hat: "beanie",
+      hatColor: "red",
+      eyewear: "specs",
+      eyewearColor: "auto"
+    })
   })
 
   it("archives and unarchives a bot without touching its other fields", async () => {

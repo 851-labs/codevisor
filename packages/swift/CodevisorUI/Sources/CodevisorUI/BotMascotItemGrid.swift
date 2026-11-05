@@ -5,7 +5,7 @@ struct BotMascotItemGrid: View {
   private static let spacing: CGFloat = 12
 
   let items: [ServerBotMascotOptions.Choice]
-  let part: WritableKeyPath<ServerBotMascot, String>
+  let part: ServerBotMascotPart
   let columns: [GridItem]
   @Binding var mascot: ServerBotMascot
   let serverId: String
@@ -15,19 +15,13 @@ struct BotMascotItemGrid: View {
       ForEach(items) { item in
         BotMascotItemTile(
           title: item.title,
-          mascot: wearing(item),
+          mascot: mascot.wearing(item, on: part),
           serverId: serverId,
-          isSelected: mascot[keyPath: part] == item.id
+          isSelected: mascot[keyPath: part.item] == item.id
         ) {
-          mascot[keyPath: part] = item.id
+          mascot = mascot.wearing(item, on: part)
         }
       }
     }
-  }
-
-  private func wearing(_ item: ServerBotMascotOptions.Choice) -> ServerBotMascot {
-    var tile = mascot
-    tile[keyPath: part] = item.id
-    return tile
   }
 }

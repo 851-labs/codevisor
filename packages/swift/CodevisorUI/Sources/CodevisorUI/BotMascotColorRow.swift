@@ -7,16 +7,9 @@ struct BotMascotColorRow: View {
   @Binding var selection: String
 
   var body: some View {
-    ViewThatFits(in: .horizontal) {
-      swatches
-      ScrollView(.horizontal, showsIndicators: false) { swatches }
-    }
-  }
-
-  private var swatches: some View {
-    HStack(spacing: side / 4) {
+    BotMascotSwatchStrip(spacing: side / 4) {
       ForEach(colors) { color in
-        BotMascotColorSwatch(color: color, side: side, isSelected: color.id == selection) {
+        BotMascotColorSwatch(title: color.title, hexes: color.gradient, side: side, isSelected: color.id == selection) {
           selection = color.id
         }
       }

@@ -16,7 +16,13 @@ import {
   type Lens
 } from "./eyewear-lens.js"
 
-const MIRROR = ["#FF6FA5", "#8B5CF6", "#4F7BFF", "#2FB5B0", "#FFC93C"] as const
+const MIRROR: ReadonlyArray<readonly [string, number]> = [
+  ["#ffffff", 0.55],
+  ["#ffffff", 0.15],
+  ["#000000", 0],
+  ["#000000", 0.35],
+  ["#ffffff", 0.3]
+]
 
 export function specs(lens: Lens): string {
   const rx = 40 * lens.k
@@ -54,7 +60,7 @@ export function shades(lens: Lens): string {
   const shield = shieldShape(X, Y)
   return (
     shadeArms(lens, Y, C) +
-    `<linearGradient id="${lens.id}m" x1="0" y1="0" x2="1" y2="1">${mirrorStops()}</linearGradient>` +
+    `<linearGradient id="${lens.id}m" x1="0" y1="0" x2="1" y2="1">${mirrorStops(C)}</linearGradient>` +
     `<clipPath id="${lens.id}c"><path d="${shield}"/></clipPath>` +
     `<path d="${shield}" fill="url(#${lens.id}m)" fill-opacity=".94" ${outlined(lens, 6)}/>` +
     `<g class="glare" clip-path="url(#${lens.id}c)">` +
@@ -74,9 +80,12 @@ function shieldShape(X: Axis, Y: Axis): string {
   )
 }
 
-function mirrorStops(): string {
+function mirrorStops(C: string): string {
   const last = MIRROR.length - 1
-  return MIRROR.map((c, i) => `<stop offset="${f2(i / last)}" stop-color="${c}"/>`).join("")
+  return MIRROR.map(
+    ([toward, amount], i) =>
+      `<stop offset="${f2(i / last)}" stop-color="${mix(C, toward, amount)}"/>`
+  ).join("")
 }
 
 function shadeBar(lens: Lens, X: Axis, Y: Axis, C: string): string {

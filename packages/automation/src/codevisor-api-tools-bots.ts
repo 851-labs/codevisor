@@ -1,18 +1,39 @@
 import { AddBotProjectRequest, BotMode, CreateBotRequest, UpdateBotRequest } from "@codevisor/api"
-import { botMascotColors, botMascotEyewear, botMascotHats } from "@codevisor/bot-mascot"
+import {
+  botMascotColors,
+  botMascotEyewear,
+  botMascotHats,
+  botMascotSwatches,
+  type ItemOption
+} from "@codevisor/bot-mascot"
 import { Schema } from "effect"
 
 import { apiTool, type CodevisorApiToolSpec } from "./codevisor-api-tool-spec.js"
 
 export const BOT_TOOL_DEFAULTS = { symbolName: "sparkles", mode: "conversation" } as const
 
+const colorable = (items: ReadonlyArray<ItemOption<string>>): string =>
+  items
+    .filter((item) => item.swatches.length > 0)
+    .map((item) => `${item.id} (${item.swatches.join(", ")})`)
+    .join("; ")
+
+const ItemColor = (part: string, items: ReadonlyArray<ItemOption<string>>) =>
+  Schema.optional(
+    Schema.Literals(["auto", ...botMascotSwatches.map((swatch) => swatch.id)])
+  ).annotate({
+    description: `The ${part}'s color. auto (the default) picks one to suit the body color. Only these take a color, from their own list: ${colorable(items)}.`
+  })
+
 const BotMascot = Schema.Struct({
   color: Schema.Literals(botMascotColors.map((color) => color.id)),
   hat: Schema.Literals(["none", ...botMascotHats.map((hat) => hat.id)]),
-  eyewear: Schema.Literals(["none", ...botMascotEyewear.map((eyewear) => eyewear.id)])
+  hatColor: ItemColor("hat", botMascotHats),
+  eyewear: Schema.Literals(["none", ...botMascotEyewear.map((eyewear) => eyewear.id)]),
+  eyewearColor: ItemColor("eyewear", botMascotEyewear)
 }).annotate({
   description:
-    "The bot's avatar, a mascot with a body color, a hat and eyewear (none for neither). A new bot gets the next color in turn and no hat or eyewear."
+    "The bot's avatar, a mascot with a body color, a hat and eyewear (none for neither), and colors for a hat or eyewear that offers them. A new bot gets the next color in turn and no hat or eyewear."
 })
 
 const ConfigSelections = Schema.Record(Schema.String, Schema.String).annotate({
