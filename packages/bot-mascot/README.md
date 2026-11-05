@@ -87,7 +87,8 @@ Working and Calling with his arms. `hatRider` and `dangle` are the springs behin
 
 ## Playground
 
-`bun run dev:mascot-playground` opens `apps/mascot-playground`, which draws this package from `src/` with
+`bun run dev:mascot-playground` opens `apps/mascot-playground`, which shows the Rive character (Outfit,
+Animation and Compare against today's renderer), and keeps the developer tools below under Advanced. It draws this package from `src/` with
 hot reload: every outfit, every animation segment (play, pause, scrub, speed, loop), the arm rig's pose with debug
 overlays, the app's sidebar figure and circle avatar at 1×, 2× and 3×, and PNG and SVG export. Its URL holds
 the whole state, so a link opens the same look, animation and frame.
@@ -116,20 +117,54 @@ docs/            the arm rig, its rules and the shading
 
 ## The Rive character
 
-`rive/bot-mascot/scene.rml` is generated. Its view model `BotMascot` has `mood` (enum `BotMascotMood`,
-which only has idle), `wave` (a trigger: a lean-and-hop hello, also fired by a
-tap) and `shadow` (the ground shadow). The scripts need only Python 3:
+`rive/mascot/` is the Rive project the apps are moving to (851-3991), and its RML is the source of truth:
+edit `1-character.rml`, `2-face.rml` and `3-data.rml` directly, then build with the Rive CLI
+(`brew install --cask rive-app/tap/rive-cli`). The build needs no Rive login and is byte-for-byte
+reproducible. It writes `resources/mascot.riv`, which is checked in and which the server serves to the apps:
 
 ```bash
-python3 packages/bot-mascot/rive/tools/bot_mascot.py
-rive packages/bot-mascot/rive/bot-mascot --verify
+rive packages/bot-mascot/rive/mascot --verify
+rive packages/bot-mascot/rive/mascot --once
 ```
 
-`bot_mascot.py` takes `--palette=<color>` and `--backdrop[=ARGB]` (preview captures only). The current
-`scene.rml` was regenerated without `rive --verify` (the CLI wasn't installed), so run it before pushing the
-file to Rive.
+The artboard `Bot Mascot` and state machine `Bot Mascot` use the view model `BotMascot`:
 
-`src/data/bot-mascot-data.json` comes from the same vertices, so the SVG and the Rive file match:
+| Property                                                           | Meaning                                                    |
+| ------------------------------------------------------------------ | ---------------------------------------------------------- |
+| `mode`                                                             | enum: `idle`, `working` or `calling`                       |
+| `hangUp`, `angryHangUp`                                            | triggers that end a call                                   |
+| `hat`, `outfit`                                                    | enums: `none` or an item id                                |
+| `body0…`, `hat0…`, `outfit0…`                                      | color slots for the body, the hat and the outfit           |
+| `gazeX`, `gazeY`, `gazeWeight`                                     | the look direction (-1 to 1, already eased) and its weight |
+| `face/eyewear`                                                     | enum: `none` or an eyewear id                              |
+| `face/lashesOn`, `face/blushOn`, `face/frecklesOn`                 | 0 or 1                                                     |
+| `face/face0…`, `face/blush0…`, `face/freckles0…`, `face/eyewear0…` | color slots for the face parts                             |
+
+`riveValues(config)` turns a look into those values, using `src/data/rive-colors.json` (every item × color
+choice × body color, so a host never computes colors). The face is the nested `Face` artboard: three row
+timelines (looking up, ahead and down), scrubbed by turn and mixed by how far up or down he looks. Idle
+blends two timelines. `Idle look` (his own glances and lean) fades out as `gazeWeight` rises, and blinks
+keep going.
+
+`mode` moves him from idle into Working or Calling and back. Fire `hangUp` or `angryHangUp` to end a call,
+and set `mode` back to `idle` with it. The state machine has two layers: `Face` blends between moves so his
+eye and gaze never jump, and `Body` switches his pose, arms, phone and clipboard at once, so the arms always
+fit the body they were baked against. His arms and shoulders are baked from the TypeScript compositor. Each
+arm is one path with its outline drawn as trimmed strokes. During moves the body's outline around the
+shoulders is keyed to the TypeScript body, so the arms fit it exactly, and a join shape redraws the merged
+body-and-arm silhouette, fillets included, wherever an arm pushes past the body. Grow and collapse are
+keyed every frame and the rest every other frame. A draw rule moves the right arm behind the clipboard or
+between its pages, and outfits with sleeves get clipped sleeves.
+
+`rive/bootstrap/` generated the first version of these files once, from the TypeScript renderer
+(`bun packages/bot-mascot/rive/bootstrap/build.ts`). It's kept as a record until the TypeScript renderer is
+retired. Rerunning it overwrites any hand edits.
+
+The editor round trip is optional and needs a Rive account. Run `rive login` once, then `rive pull` or
+`rive push` from `rive/mascot/`. A pull may renumber ids.
+
+`rive/bot-mascot/` and `rive/tools/` are the earlier Rive character and the Python scripts. They also export
+`src/data/bot-mascot-data.json`:
 
 ```bash
 python3 packages/bot-mascot/rive/tools/export_data.py && bun run format

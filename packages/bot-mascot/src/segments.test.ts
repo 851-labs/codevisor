@@ -78,11 +78,12 @@ describe("mascot segments", () => {
     expect(draw(at("angryHangUp", 0, 4))).toBe(onTheLine)
   })
 
-  it("lowers the phone and puts it away on a normal hang-up", () => {
-    expect(holdsPhone(draw(at("hangUp", 1)))).toBe(true)
-    expect(flyingPhone(draw(at("hangUp", 1.4)))).toBe(true)
-    expect(holdsPhone(draw(at("hangUp", 1.4)))).toBe(false)
+  it("puts the phone down on the ground and lets go on a normal hang-up", () => {
+    expect(holdsPhone(draw(at("hangUp", 0.5)))).toBe(true)
+    expect(holdsPhone(draw(at("hangUp", 1)))).toBe(false)
+    expect(flyingPhone(draw(at("hangUp", 1)))).toBe(true)
     expect(flyingPhone(draw(at("hangUp", 1.9)))).toBe(false)
+    expect(holdsPhone(draw(at("hangUp", 1.9)))).toBe(false)
   })
 
   it("throws the phone on an angry hang-up", () => {

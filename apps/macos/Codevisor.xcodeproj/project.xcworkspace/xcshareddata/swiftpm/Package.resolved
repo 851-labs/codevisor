@@ -1,5 +1,5 @@
 {
-  "originHash" : "038ca1954aa255f49ffb3421fd6101769e2f11c01e339acebd351874c62f069d",
+  "originHash" : "fa53fadb5687e507a14bd48d964d8fc341de49ad195c6fd392ce0eb9afdde70f",
   "pins" : [
     {
       "identity" : "combine-schedulers",
@@ -17,6 +17,15 @@
       "state" : {
         "revision" : "179438b8e0c9a357ab0caf453577f766ffddbcb3",
         "version" : "3.59.3"
+      }
+    },
+    {
+      "identity" : "rive-ios",
+      "kind" : "remoteSourceControl",
+      "location" : "https://github.com/rive-app/rive-ios.git",
+      "state" : {
+        "revision" : "ec9ae3662d260ce92ac31b471d500d323d3d2bcf",
+        "version" : "6.29.0"
       }
     },
     {

@@ -4,14 +4,14 @@ import PackageDescription
 let strictSwiftSettings: [SwiftSetting] = [.swiftLanguageMode(.v6), .treatAllWarnings(as: .error)]
 let strictCSettings: [CSetting] = [.treatAllWarnings(as: .error)]
 let vendoredTreeSitterCSettings: [CSetting] = strictCSettings + [.disableWarning("shorten-64-to-32")]
+let frameworksBesideTestBundle: [LinkerSetting] = [
+  .unsafeFlags(["-Xlinker", "-rpath", "-Xlinker", "@loader_path/../../.."], .when(platforms: [.macOS]))
+]
 
 let package = Package(
   name: "CodevisorKit",
   defaultLocalization: "en",
-  platforms: [
-    .macOS("26.0"),
-    .iOS("26.0"),
-  ],
+  platforms: [.macOS("26.0"), .iOS("26.0")],
   products: [
     .library(name: "ACPKit", targets: ["ACPKit"]),
     .library(name: "MarkdownCore", targets: ["MarkdownCore"]),
@@ -37,6 +37,7 @@ let package = Package(
     .package(url: "https://github.com/PostHog/posthog-ios.git", exact: "3.59.3"),
     .package(url: "https://github.com/pointfreeco/swift-composable-architecture.git", exact: "1.26.2"),
     .package(url: "https://github.com/pointfreeco/swift-concurrency-extras.git", exact: "1.4.1"),
+    .package(url: "https://github.com/rive-app/rive-ios.git", exact: "6.29.0"),
   ],
   targets: [
     .systemLibrary(name: "CZlib", path: "ScreenSharing/CZlib"),
@@ -120,18 +121,14 @@ let package = Package(
       dependencies: ["CodevisorBench"],
       path: "ScreenSharing/Tests/CodevisorBenchTests",
       swiftSettings: strictSwiftSettings,
-      linkerSettings: [
-        .unsafeFlags(["-Xlinker", "-rpath", "-Xlinker", "@loader_path/../../.."], .when(platforms: [.macOS]))
-      ]
+      linkerSettings: frameworksBesideTestBundle
     ),
     .testTarget(
       name: "ScreenSharingWebRTCTests",
       dependencies: ["ScreenSharingWebRTC", "CodevisorTestSupport"],
       path: "ScreenSharing/Tests/ScreenSharingWebRTCTests",
       swiftSettings: strictSwiftSettings,
-      linkerSettings: [
-        .unsafeFlags(["-Xlinker", "-rpath", "-Xlinker", "@loader_path/../../.."], .when(platforms: [.macOS]))
-      ]
+      linkerSettings: frameworksBesideTestBundle
     ),
     .target(name: "CodevisorTestSupport", path: "TestSupport", swiftSettings: strictSwiftSettings),
     .testTarget(
@@ -406,9 +403,7 @@ let package = Package(
       dependencies: ["SimulatorPane", "CodevisorTestSupport"],
       path: "SimulatorPane/Tests/SimulatorPaneTests",
       swiftSettings: strictSwiftSettings,
-      linkerSettings: [
-        .unsafeFlags(["-Xlinker", "-rpath", "-Xlinker", "@loader_path/../../.."], .when(platforms: [.macOS]))
-      ]
+      linkerSettings: frameworksBesideTestBundle
     ),
     .target(
       name: "ScreenSharingPane",
@@ -421,15 +416,14 @@ let package = Package(
       dependencies: ["ScreenSharingPane", "CodevisorTestSupport"],
       path: "ScreenSharingPane/Tests/ScreenSharingPaneTests",
       swiftSettings: strictSwiftSettings,
-      linkerSettings: [
-        .unsafeFlags(["-Xlinker", "-rpath", "-Xlinker", "@loader_path/../../.."], .when(platforms: [.macOS]))
-      ]
+      linkerSettings: frameworksBesideTestBundle
     ),
     .target(
       name: "CodevisorUI",
       dependencies: [
         "CodevisorCore", "CodevisorTheming", "StreamMarkdown", "DefaultBrowser", "CodeHighlighter", "TranscriptKit",
         "Autocomplete",
+        .product(name: "RiveRuntime", package: "rive-ios"),
       ],
       path: "CodevisorUI/Sources/CodevisorUI",
       resources: [
@@ -450,7 +444,8 @@ let package = Package(
         "ACPKit",
       ],
       path: "CodevisorUI/Tests/CodevisorUITests",
-      swiftSettings: strictSwiftSettings
+      swiftSettings: strictSwiftSettings,
+      linkerSettings: frameworksBesideTestBundle
     ),
 
     .target(
@@ -478,9 +473,7 @@ let package = Package(
       ],
       path: "CodevisorCoreMac/Tests/CodevisorCoreMacTests",
       swiftSettings: strictSwiftSettings,
-      linkerSettings: [
-        .unsafeFlags(["-Xlinker", "-rpath", "-Xlinker", "@loader_path/../../.."], .when(platforms: [.macOS]))
-      ]
+      linkerSettings: frameworksBesideTestBundle
     ),
 
     .target(
@@ -506,7 +499,8 @@ let package = Package(
       name: "TranscriptSurfaceTests",
       dependencies: ["TranscriptSurface", "CodevisorTestSupport"],
       path: "TranscriptSurface/Tests/TranscriptSurfaceTests",
-      swiftSettings: [.treatAllWarnings(as: .error)]
+      swiftSettings: [.treatAllWarnings(as: .error)],
+      linkerSettings: frameworksBesideTestBundle
     ),
   ]
 )

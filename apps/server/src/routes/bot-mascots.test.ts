@@ -86,4 +86,26 @@ describe("bot mascot routes", () => {
     })
     expect(unknown.status).toBe(400)
   })
+
+  it("serves the Rive file and a mascot's values for it", async () => {
+    const running = await setUp()
+    const query = "color=mint&hat=wizard&eyewear=goggles"
+
+    const file = await fetch(`${running.server.url}/v1/bot-mascots/rive`)
+    const values = await jsonRequest(running.server, `/v1/bot-mascots/rive-values?${query}`)
+    const missing = await fetch(`${running.server.url}/v1/bot-mascots/rive-values?color=plaid`)
+
+    expect(file.headers.get("content-type")).toBe("application/octet-stream")
+    expect(
+      Buffer.from(await file.arrayBuffer())
+        .subarray(0, 4)
+        .toString()
+    ).toBe("RIVE")
+    expect(values.body).toMatchObject({
+      hat: "wizard",
+      "face/eyewear": "goggles",
+      body0: expect.any(String)
+    })
+    expect(missing.status).toBe(400)
+  })
 })

@@ -4,11 +4,15 @@ import TranscriptKit
 enum BotTypingStatus: Equatable {
   case thinking
   case typing
+  case callingAgent
   case step(String)
+
+  private static let callingLabel = "Talking to an agent…"
 
   init(activity: WorkedSectionActivity) {
     switch activity {
     case .step("Thinking"), .pending, .starting: self = .thinking
+    case .step(Self.callingLabel): self = .callingAgent
     case let .step(label): self = .step(label)
     case .answering, .writing: self = .typing
     }
@@ -17,6 +21,7 @@ enum BotTypingStatus: Equatable {
   static func activity(of turn: AssistantTurn?) -> WorkedSectionActivity {
     guard let turn else { return .starting }
     if turn.toolCalls.contains(where: { !$0.isSettled && $0.sendsBotMessage }) { return .writing }
+    if turn.toolCalls.contains(where: { !$0.isSettled && $0.talksToAgent }) { return .step(callingLabel) }
     return turn.workedSectionActivity
   }
 
@@ -24,19 +29,32 @@ enum BotTypingStatus: Equatable {
     switch self {
     case .thinking: "Thinking…"
     case .typing: "Typing…"
+    case .callingAgent: Self.callingLabel
     case let .step(label): label
     }
   }
 
   var motion: BotMascotMotion {
-    self == .thinking ? .idle : .working
+    self == .callingAgent ? .calling : .working
   }
 }
 
 extension ToolCall {
+  fileprivate static let agentPaths = ["agents.start", "agents.message", "agents.answer"]
+
   fileprivate var sendsBotMessage: Bool {
-    let sendPath = "messages.send"
-    if codevisorExecution?.calls.contains(where: { $0.path.hasSuffix(sendPath) }) == true { return true }
-    return codevisorGatewayOperation == .execute && rawInput?["code"]?.stringValue?.contains(sendPath) == true
+    calls(["messages.send"])
+  }
+
+  fileprivate var talksToAgent: Bool {
+    calls(Self.agentPaths)
+  }
+
+  private func calls(_ paths: [String]) -> Bool {
+    if codevisorExecution?.calls.contains(where: { call in paths.contains { call.path.hasSuffix($0) } }) == true {
+      return true
+    }
+    let code = rawInput?["code"]?.stringValue ?? ""
+    return codevisorGatewayOperation == .execute && paths.contains { code.contains($0) }
   }
 }

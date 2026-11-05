@@ -63,11 +63,12 @@ describe("the arm rig", () => {
     expect(Math.abs(along)).toBeLessThan(0.01)
   })
 
-  it("grows out of the same shoulder opening", () => {
+  it("grows out of the same shoulder opening at full thickness, only longer", () => {
     const small = poseArm(torso, { side: 1, grow: 0.3, target: [430, 300] })!
     const full = poseArm(torso, { side: 1, grow: 1, target: [430, 300] })!
-    expect(small.arm!.R).toEqual(full.arm!.R)
-    expect(small.arm!.scale).toBeLessThan(1)
+    expect(small.arm!.pivot).toEqual(full.arm!.R)
+    expect(small.arm!.L).toBeLessThan(full.arm!.L)
+    expect(small.arm!.scale ?? 1).toBe(1)
     expect(poseArm(torso, { side: 1, grow: 0, target: [430, 300] })).toBeNull()
   })
 

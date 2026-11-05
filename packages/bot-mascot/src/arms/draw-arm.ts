@@ -5,6 +5,7 @@ import {
   lerp2,
   normalize,
   pointText,
+  RAD,
   s01,
   subtract,
   type Point
@@ -14,7 +15,14 @@ import { armEdges, type EdgeSample } from "./arm-edges.js"
 import { mouthOf } from "./arm-mouth.js"
 import { armRing, twists, type ArmRing } from "./arm-ring.js"
 import { outlinePoly, signedDistance, type Poly } from "./outline-poly.js"
-import { ARM_LENGTH, rootRadius, type ArmSleeve, type RigArm } from "./rig-arm.js"
+import {
+  ARM_LENGTH,
+  grownBy,
+  rootRadius,
+  spineTip,
+  type ArmSleeve,
+  type RigArm
+} from "./rig-arm.js"
 
 export interface ArmDrawing {
   readonly ring: ReadonlyArray<Point>
@@ -35,6 +43,9 @@ export interface ArmDrawing {
 
 const NUDGE = `${LIGHT[0]} ${LIGHT[1]}`
 const MARGIN = 40
+const HAND_FORM = 11
+const SLOT_OPEN = 40
+const OPEN_FROM = 0.55
 
 export const lineTo = (q: ReadonlyArray<Point>): string => q.map((p) => `L${pointText(p)}`).join("")
 
@@ -56,7 +67,8 @@ export function drawArm(
     armRing(mouth, mouth.preferred, tsF, bs, cap),
     armRing(mouth, -mouth.preferred, tsF, bs, cap)
   )
-  const { ring, nT, NC, top, bot } = picked
+  const { nT, NC, top, bot } = picked
+  const ring = throughSlot(poly, arm, picked.ring)
   const back = closingRun(poly, picked.endT, picked.endB)
   const fill = `M${pointText(ring[0]!)}${lineTo([...ring.slice(1), ...back])}Z`
   const wc = crescentWeight(poly, arm, ring[nT + (NC >> 1)]!, sc)
@@ -106,6 +118,82 @@ export function drawArm(
     poly: [...ring, ...back],
     slv: sleeve?.pts ?? null
   }
+}
+
+export interface Slot {
+  readonly at: Point
+  readonly keep: Point
+}
+
+export function slotOf(poly: Poly, arm: RigArm): Slot | null {
+  if (!arm.pivot) return null
+  const { q, n } = signedDistance(poly, arm.pivot)
+  const a = (arm.th + arm.turn(0)) * RAD
+  const outward = Math.cos(a) * n[0] + Math.sin(a) * n[1] > 0
+  const keep: Point = outward ? n : [-n[0], -n[1]]
+  const open = SLOT_OPEN * slotOpening(arm)
+  return { at: [q[0] - keep[0] * open, q[1] - keep[1] * open], keep }
+}
+
+export function handEmergence(poly: Poly, arm: RigArm): number {
+  if (!arm.pivot) return 1
+  const { q, n } = signedDistance(poly, arm.pivot)
+  const a = (arm.th + arm.turn(0)) * RAD
+  const outward = Math.cos(a) * n[0] + Math.sin(a) * n[1] > 0
+  const keep: Point = outward ? n : [-n[0], -n[1]]
+  const tip = spineTip(arm).tip
+  const clear = (tip[0] - q[0]) * keep[0] + (tip[1] - q[1]) * keep[1]
+  return Math.max(s01(clear / HAND_FORM), slotOpening(arm))
+}
+
+const slotOpening = (arm: RigArm): number => s01((grownBy(arm) - OPEN_FROM) / (1 - OPEN_FROM))
+
+function throughSlot(poly: Poly, arm: RigArm, ring: ReadonlyArray<Point>): ReadonlyArray<Point> {
+  const slot = slotOf(poly, arm)
+  if (!slot) return ring
+  const past = ring.map(
+    (p) => (p[0] - slot.at[0]) * slot.keep[0] + (p[1] - slot.at[1]) * slot.keep[1]
+  )
+  if (past.every((v) => v < 0)) return ring.map(() => slot.at)
+  const out = [...ring]
+  for (const run of hiddenRuns(past)) {
+    const a =
+      crossing(ring, past, run.from - 1, run.from) ?? crossing(ring, past, run.to, run.to + 1)!
+    const b = crossing(ring, past, run.to, run.to + 1) ?? a
+    const n = run.to - run.from + 1
+    for (let k = 0; k < n; k++) out[run.from + k] = lerp2(a, b, (k + 1) / (n + 1))
+  }
+  return out
+}
+
+interface Run {
+  readonly from: number
+  readonly to: number
+}
+
+function hiddenRuns(past: ReadonlyArray<number>): Run[] {
+  const runs: Run[] = []
+  let from = -1
+  past.forEach((v, i) => {
+    if (v < 0 && from < 0) from = i
+    if (v >= 0 && from >= 0) {
+      runs.push({ from, to: i - 1 })
+      from = -1
+    }
+  })
+  if (from >= 0) runs.push({ from, to: past.length - 1 })
+  return runs
+}
+
+function crossing(
+  ring: ReadonlyArray<Point>,
+  past: ReadonlyArray<number>,
+  i: number,
+  j: number
+): Point | null {
+  if (i < 0 || j >= ring.length) return null
+  const u = past[i]! / (past[i]! - past[j]!)
+  return lerp2(ring[i]!, ring[j]!, u)
 }
 
 function pickRing(preferred: ArmRing, other: ArmRing): ArmRing {

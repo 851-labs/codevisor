@@ -1,4 +1,5 @@
-import { s01, smootherstep, type Point } from "../geometry/math.js"
+import { s01, type Point } from "../geometry/math.js"
+import { LIFT_FROM, PICK_UP, PICKED_UP } from "./calling-ground.js"
 import type { PlacedProp } from "./matrix.js"
 
 export interface PhoneFlight extends PlacedProp {
@@ -9,11 +10,12 @@ export const WIND = [6.5, 6.95] as const
 export const FLING = [6.95, 7.35] as const
 export const RELEASE = FLING[0] + 0.12 * (FLING[1] - FLING[0])
 export const TUCK = RELEASE + 0.75
-export const LIFT_START = 0.8
-export const GRAB = 0.72
-export const LOW_PHONE = [320, 374, 18] as const
 export const STILL_PHONE = "translate(0 0) rotate(0) scale(1.15)"
 
+const MOOD_LOW = 0.4
+const MOOD_EAR = 0.95
+const MOOD_JOIN = 1.6
+const MOOD_SETTLED = 1.496
 const WIND_ROT = 18
 const SPIN = -1000
 const THROW: readonly [Point, Point, Point] = [
@@ -28,11 +30,15 @@ const SETTLE: Point = [204, 334]
 const PHONE_TRANSFORM = /translate\(([-\d.]+) ([-\d.]+)\) rotate\(([-\d.]+)\) scale\(([-\d.]+)\)/
 
 export const warp = (t: number): number => {
-  if (t < LIFT_START) return (0.38 * t) / LIFT_START
-  if (t < LIFT_START + 0.55) return 0.4 + (t - LIFT_START)
-  if (t < 1.6) return 0.95 + ((t - LIFT_START - 0.55) * (1.6 - 0.95)) / (1.6 - LIFT_START - 0.55)
+  if (t < LIFT_FROM) return (MOOD_LOW * t) / LIFT_FROM
+  if (t < PICKED_UP) return between(t, LIFT_FROM, PICKED_UP, MOOD_LOW, MOOD_EAR)
+  if (t < PICK_UP) return between(t, PICKED_UP, PICK_UP, MOOD_EAR, MOOD_SETTLED)
+  if (t < MOOD_JOIN) return between(t, PICK_UP, MOOD_JOIN, MOOD_SETTLED, MOOD_JOIN)
   return t
 }
+
+const between = (t: number, t0: number, t1: number, w0: number, w1: number): number =>
+  w0 + ((t - t0) * (w1 - w0)) / (t1 - t0)
 
 export const spring = (x: number, hz = 2.8, z = 0.42): number => {
   if (x <= 0) return 0
@@ -42,8 +48,6 @@ export const spring = (x: number, hz = 2.8, z = 0.42): number => {
     1 - Math.exp(-z * w * x) * (Math.cos(wd * x) + (z / Math.sqrt(1 - z * z)) * Math.sin(wd * x))
   )
 }
-
-export const reachGrowth = (t: number): number => smootherstep((t - 0.22) / (GRAB - 0.24))
 
 export function phoneFlight(phoneTransform: string, held: boolean, t: number): PhoneFlight {
   const m = PHONE_TRANSFORM.exec(phoneTransform)

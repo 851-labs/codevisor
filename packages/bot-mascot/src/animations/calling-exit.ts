@@ -1,5 +1,8 @@
-import { poseArm, type Matrix, type PosedArm } from "../arms/arm-pose.js"
-import type { Torso } from "../arms/rig-arm.js"
+import { poseArm, type ArmProp, type Matrix, type PosedArm } from "../arms/arm-pose.js"
+import { handEmergence } from "../arms/draw-arm.js"
+import { outlinePoly } from "../arms/outline-poly.js"
+import { SMALLEST_HAND } from "../arms/prop-hand.js"
+import { growFor, grownBy, type Torso } from "../arms/rig-arm.js"
 import { s01, smootherstep } from "../geometry/math.js"
 import { apply, matrixText, multiply } from "./matrix.js"
 
@@ -17,16 +20,17 @@ export function phoneLeaving(
   TF: Matrix,
   arm: PosedArm | null,
   flying: string,
-  phoneSvg: string,
+  phone: ArmProp,
   u: number
 ): LeavingScene {
   const M = phoneMatrix(TF, arm, flying)
   const x = u / 0.28
-  const k = x >= 1 ? 0 : 1 + 0.12 * Math.sin(Math.PI * Math.min(1, x / 0.35)) - s01((x - 0.3) / 0.7)
-  return {
-    arm: shrinking(torso, arm, u),
-    flying: M && k > 0.01 ? poppingPhone(M, k, phoneSvg) : ""
-  }
+  const pop =
+    x >= 1 ? 0 : 1 + 0.12 * Math.sin(Math.PI * Math.min(1, x / 0.35)) - s01((x - 0.3) / 0.7)
+  const shrunk = shrinking(torso, arm, phone, u)
+  const leaving = shrunk?.over ? { ...shrunk, over: Math.min(shrunk.over, pop) } : shrunk
+  const k = Math.min(pop, handSize(torso, leaving))
+  return { arm: leaving, flying: M && k > SMALLEST_HAND ? poppingPhone(M, k, phone.svg) : "" }
 }
 
 function phoneMatrix(TF: Matrix, arm: PosedArm | null, flying: string): Matrix | null {
@@ -42,9 +46,20 @@ function poppingPhone(M: Matrix, k: number, phoneSvg: string): string {
   return `<g transform="matrix(${matrixText(scaled)})">${phoneSvg}</g>`
 }
 
-function shrinking(torso: Torso, arm: PosedArm | null, u: number): PosedArm | null {
+function shrinking(torso: Torso, arm: PosedArm | null, phone: ArmProp, u: number): PosedArm | null {
   if (!arm?.arm) return null
-  const g = (arm.arm.scale ?? 1) * (1 - smootherstep((u - 0.08) / 0.4))
+  const g = grownBy(arm.arm) * (1 - smootherstep((u - 0.04) / 0.44))
   if (!(g > 0.005)) return null
-  return poseArm(torso, { side: 1, grow: g, target: arm.tip })
+  const posed = poseArm(torso, { side: 1, grow: growFor(g), target: arm.tip, grip: phone })
+  return posed ? emptyHanded(posed) : null
+}
+
+function handSize(torso: Torso, p: PosedArm | null): number {
+  if (!p?.arm) return 0
+  return (p.over ?? 0) * handEmergence(outlinePoly(torso.d), p.arm)
+}
+
+function emptyHanded(p: PosedArm): PosedArm {
+  const { side, arm, tip, tipDir, layer } = p
+  return { side, arm, tip, tipDir, layer, ...(p.over === undefined ? {} : { over: p.over }) }
 }

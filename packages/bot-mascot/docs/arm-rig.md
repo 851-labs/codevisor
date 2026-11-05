@@ -22,9 +22,21 @@ const drawn = drawRig(ctx, svg, p ? [p] : [], { uid: "pg", pal: "sunny", pose })
   height (`body.shoulderY`: 322.1 on his official body, 292 on the original; see Body zones). Every
   arm grows, raises and reaches from that point, and no rule moves it: not the angle, not the grow amount, not
   raising the arm.
-- **Grow.** `grow` runs from 0 to 1. The arm grows out of the pivot, scaled up in length and width, while it
-  swings from the bud's angle into its pose. A bud starts inside him and comes out of his side; nothing of it
-  shows until it's out, and under 2% grown there's no arm. Shrinking back is the same thing run backward.
+- **Grow.** `grow` runs from 0 to 1. He grows each arm out of his side when he needs it (`emerging`): at 0
+  there's nothing outside his outline, and the arm grows out continuously, tip first, along its final arc until
+  it's full length at the hand target. It's full thickness the whole time; only its length grows. While it's
+  short its root slides back behind his side and his side acts as a slot: anything behind the slot line is
+  cut away (`throughSlot`), so the round tip slides out through his outline and the outline stays merged
+  with his body. The slot eases open as the arm nears full length. Shrinking back is the exact reverse: the
+  arm retracts tip-last into his side.
+  - **Picking the phone up off the ground** (`calling-ground.ts`). The phone pops onto the ground beside
+    him first (0.16 s); his right arm grows out of his side straight to it (by 0.4 s), the hand closes on top
+    (0.06 s), and he lifts it to his ear along a short arc (by 0.9 s). Hanging up is the same in reverse: he
+    lowers it to the same spot on the ground, the hand opens, the arm retracts into his side, then the phone
+    shrinks away. The arm is the same arm as Working's; only the hand on top shows he's holding something.
+  - **Props come in with the hands, never ahead.** The clipboard's pop follows the arms' growth, starting once
+    they're a third of the way out and filling as the hands arrive (no overshoot), and shrinks the same way as
+    they go back in.
 - **Reach.** The spine ends exactly on the target. The arm stretches as long as it needs to (no cap) and bends
   smoothly with the rig's one curve (`CURVE`: almost straight at the shoulder, bending more toward the tip), no elbow.
   - **A shorter reach is the same arm, shorter** (Dylan: "we just need to make the arm shorter, we don't need to
@@ -167,7 +179,7 @@ const drawn = drawRig(ctx, svg, p ? [p] : [], { uid: "pg", pal: "sunny", pose })
   - **The hand over it** (Dylan: one clean grip, the same for any held prop). The arm runs under the prop, and over
     it there's one clean closed hand: the arm's round tip folded back over the grip, a smooth rounded mitten of a
     fixed size (`HAND`: 29 along the arm, 22 across, a superellipse; about the flipper's width), scaled with the
-    arm, in his colour with his outline (a 16 line under its fill, as his own). It's centred on the grip at the
+    arm, in his colour with his outline (a 16 line under its fill, as his own, thinner on a hand still forming). It's centred on the grip at the
     arm's end and lies along the arm's way there, so it wraps from that arm's own side. Its fill hides whatever is
     under it, so the arm's edges go under the hand, never through it, with no second loop. It looks the same at
     every pose (at his ear, yelling, the wind-up, held out, held across, at the

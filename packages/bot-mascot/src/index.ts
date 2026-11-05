@@ -58,6 +58,16 @@ export {
 } from "./segments.js"
 export { renderBotMascotSegmentFrame, type SegmentFrameOptions } from "./render-segment.js"
 export {
+  isRiveColor,
+  RIVE_ARTBOARD,
+  RIVE_STATE_MACHINE,
+  riveColorTable,
+  riveValues,
+  type RiveColorTable,
+  type RiveValue,
+  type RiveValues
+} from "./rive/values.js"
+export {
   GAZE_RANGE,
   gazeOrigin,
   lookingAt,
@@ -165,7 +175,7 @@ export {
   blendArms,
   growth,
   restArm,
-  scaled,
+  emerging,
   shoulder,
   spinePoints,
   spineTip,

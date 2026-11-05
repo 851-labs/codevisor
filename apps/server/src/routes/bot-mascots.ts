@@ -23,6 +23,7 @@ import {
   renderMascotStill,
   type MascotArt
 } from "./bot-mascot-art.js"
+import { mascotRiveFile, mascotRiveValues } from "./bot-mascot-rive.js"
 
 type ArtRenderer = (config: BotMascotConfig, query: URLSearchParams) => Promise<MascotArt>
 
@@ -39,15 +40,26 @@ export const routeBotMascots = async (
     writeJson(response, 200, await mascotOptions(services))
     return true
   }
+  if (url.pathname === "/v1/bot-mascots/rive") {
+    writeArt(response, await mascotRiveFile())
+    return true
+  }
+  if (url.pathname === "/v1/bot-mascots/rive-values") {
+    writeJson(response, 200, mascotRiveValues(requiredConfig(url.searchParams)))
+    return true
+  }
   const render = artRenderers[url.pathname]
   if (render === undefined) return false
 
-  const mascot = mascotFromQuery(url.searchParams)
+  writeArt(response, await render(requiredConfig(url.searchParams), url.searchParams))
+  return true
+}
+
+const requiredConfig = (query: URLSearchParams): BotMascotConfig => {
+  const mascot = mascotFromQuery(query)
   const config = mascotConfig(mascot)
   if (config === undefined) throw unknownMascot(400, mascot)
-
-  writeArt(response, await render(config, url.searchParams))
-  return true
+  return config
 }
 
 export const assertBotMascot = (mascot: BotMascot): void => {

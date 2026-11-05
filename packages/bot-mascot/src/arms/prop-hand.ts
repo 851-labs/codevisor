@@ -6,9 +6,14 @@ export const HAND = { len: 29, w: 22, round: 2.4 } as const
 
 const HAND_POINTS = 48
 
-export function handOverGrip(arm: RigArm, P: Palette, grad: string): string {
-  const sc = Math.max(0.4, arm.scale ?? 1)
-  const { tip: G, dir } = spineTip(arm)
+export const SMALLEST_HAND = 0.12
+
+export const handScale = (arm: RigArm, size: number): number => Math.max(0.4, arm.scale ?? 1) * size
+
+export function handOverGrip(arm: RigArm, P: Palette, grad: string, size = 1, at?: Point): string {
+  const sc = handScale(arm, size)
+  const { tip, dir } = spineTip(arm)
+  const G = at ?? tip
   const a0 = dir * RAD
   const ax: Point = [Math.cos(a0), Math.sin(a0)]
   const ay: Point = [-ax[1], ax[0]]
@@ -25,5 +30,5 @@ export function handOverGrip(arm: RigArm, P: Palette, grad: string): string {
     pts.push([G[0] + ax[0] * x + ay[0] * y, G[1] + ax[1] * x + ay[1] * y])
   }
   const hd = `M${pts.map(pointText).join("L")}Z`
-  return `<path data-r="hand" d="${hd}" fill="none" stroke="${P.outline}" stroke-width="16" stroke-linejoin="round"/><path d="${hd}" fill="url(#${grad})"/>`
+  return `<path data-r="hand" d="${hd}" fill="none" stroke="${P.outline}" stroke-width="${+(16 * Math.min(1, sc)).toFixed(2)}" stroke-linejoin="round"/><path d="${hd}" fill="url(#${grad})"/>`
 }

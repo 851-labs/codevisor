@@ -17,6 +17,8 @@ export interface RigArm {
   readonly scale?: number
   readonly c?: number
   readonly sleeve?: ArmSleeve
+  readonly fullLength?: number
+  readonly pivot?: Point
 }
 
 export interface Torso {
@@ -89,8 +91,34 @@ export const blendArms = (a: RigArm, b: RigArm, w: number): RigArm => ({
 
 export const growth = (w: number): number => smootherstep(Math.min(1, w * 1.6))
 
-export const scaled = (arm: RigArm, g: number): RigArm =>
-  g < 1 ? { ...arm, L: arm.L * g, scale: g, turn: arm.turn } : arm
+export function growFor(g: number): number {
+  let lo = 0
+  let hi = 1 / 1.6
+  for (let i = 0; i < 40; i++) {
+    const mid = (lo + hi) / 2
+    if (growth(mid) < g) lo = mid
+    else hi = mid
+  }
+  return (lo + hi) / 2
+}
+
+export function grownBy(arm: RigArm): number {
+  if (arm.fullLength === undefined) return 1
+  return clamp01(arm.L / (arm.fullLength || 1))
+}
+
+const clamp01 = (v: number): number => Math.max(0, Math.min(1, v))
+
+export const EMERGE_BACK = 22
+
+export function emerging(arm: RigArm, g: number): RigArm {
+  if (!(g < 1)) return arm
+  const a = (arm.th + arm.turn(0)) * RAD
+  const back = EMERGE_BACK * (1 - g)
+  const R: Point = [arm.R[0] - Math.cos(a) * back, arm.R[1] - Math.sin(a) * back]
+  const L = Math.max(0.5, arm.L * g)
+  return { ...arm, R, L, turn: (u) => arm.turn(u * g), fullLength: arm.L, pivot: arm.R }
+}
 
 export const rootRadius = (arm: RigArm): number =>
   0.8 * ARM_LENGTH * Math.max(0.3, Math.min(1, arm.scale ?? 1))

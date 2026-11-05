@@ -40,12 +40,12 @@ struct BotConversationRow: View {
   }
 
   private var motion: BotMascotMotion {
-    if conversation.activity == .working {
+    if conversation.isTalkingToAgent {
+      .calling
+    } else if conversation.activity == .working {
       .working
-    } else if isSelected {
-      .idle
     } else {
-      .still
+      .idle
     }
   }
 

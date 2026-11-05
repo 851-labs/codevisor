@@ -1,5 +1,6 @@
 import { poseArm } from "../arms/arm-pose.js"
 import { compose, type ComposeItem } from "../arms/compose.js"
+import { growth } from "../arms/rig-arm.js"
 import { clipboardPopScale } from "../effects/clipboard.js"
 import type { HandOptions } from "../effects/hands.js"
 import { f2, lerp2, s01, smootherstep, type Point } from "../geometry/math.js"
@@ -45,6 +46,7 @@ interface Board {
 
 const BOARD_CLIP = /(<rect x="238" y="[^"]*"[^>]*fill="#AEB4C0"[^>]*\/>)/
 const workingPose = botMascotMoods.working.pose
+const BOARD_LAG = 0.35
 
 export function armsFrameState(
   t: number,
@@ -58,21 +60,21 @@ export function armsFrameState(
 
   const W = workingPose(Math.max(0, tw))
   if (t < at.out) {
-    return {
-      pose: { ...blendPoses(I, W, s01((t - at.in) / 0.45)), fx: W.fx ?? [] },
-      w: smootherstep((t - at.in) / swing),
-      tw
-    }
+    const w = smootherstep((t - at.in) / swing)
+    const fx = withBoardPop(W, w)
+    return { pose: { ...blendPoses(I, W, s01((t - at.in) / 0.45)), fx }, w, tw }
   }
-  const pop = Math.max(0, 1 - (t - at.out) / 0.35)
-  const fx = (W.fx || []).map((f) => ({ ...f, pop }))
-  const W2 = { ...W, fx }
-  return {
-    pose: { ...blendPoses(W2, I, s01((t - at.out) / 0.5)), fx },
-    w: 1 - smootherstep((t - at.out) / swing),
-    tw
-  }
+  const w = 1 - smootherstep((t - at.out) / swing)
+  const fx = withBoardPop(W, w)
+  return { pose: { ...blendPoses({ ...W, fx }, I, s01((t - at.out) / 0.5)), fx }, w, tw }
 }
+
+export const boardPop = (w: number): number => s01((growth(w) - BOARD_LAG) / (1 - BOARD_LAG))
+
+const withBoardPop = (W: BotMascotPose, w: number): NonNullable<BotMascotPose["fx"]> =>
+  (W.fx ?? []).map((f) =>
+    f.kind === "clipboard" ? { ...f, pop: Math.min(f.pop, boardPop(w)) } : f
+  )
 
 export function renderIdleWorking(
   ctx: RenderContext,

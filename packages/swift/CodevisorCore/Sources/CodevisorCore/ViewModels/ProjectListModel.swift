@@ -37,6 +37,13 @@ public final class ProjectListModel {
     navigationStore?.enqueue(intent, machineId: serverId, origin: origin)
   }
 
+  public func runningAgents(startedBy session: ChatSession, isRunning: (ChatSession) -> Bool) -> Bool {
+    let parent = session.id.uuidString.lowercased()
+    return sessions.contains {
+      $0.serverId == session.serverId && $0.parentSessionId?.lowercased() == parent && isRunning($0)
+    }
+  }
+
   public func session(_ id: UUID, serverId: String) -> ChatSession? {
     sessionPositions[SessionKey(serverId: serverId, id: id)].map { sessions[$0] }
   }

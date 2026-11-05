@@ -11,6 +11,7 @@
   },
   "dependencies": {
     "@codevisor/bot-mascot": "workspace:*",
+    "@rive-app/canvas": "2.49.2",
     "react": "19.2.7",
     "react-dom": "19.2.7"
   },

@@ -1,0 +1,6 @@
+name: mascot
+output:
+  dir: ../../resources
+logs:
+  file: build/rive.log
+  problems: build/problems.log

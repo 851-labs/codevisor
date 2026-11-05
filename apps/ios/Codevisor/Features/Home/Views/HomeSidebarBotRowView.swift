@@ -179,12 +179,12 @@ struct HomeSidebarBotRowView: View, Equatable {
   }
 
   private var motion: BotMascotMotion {
-    if bot.status == .inProgress {
+    if bot.conversation.isTalkingToAgent {
+      .calling
+    } else if bot.status == .inProgress {
       .working
-    } else if isOpen {
-      .idle
     } else {
-      .still
+      .idle
     }
   }
 

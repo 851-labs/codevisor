@@ -3,11 +3,11 @@ import { botMascotMoods } from "../moods/moods.js"
 import { hold, lidAt } from "../moods/timing.js"
 import type { BotMascotPose } from "../pose.js"
 import { warp } from "./calling-flight.js"
+import { PICK_UP } from "./calling-ground.js"
 
-export const PICK_UP = 1.56
+export { PICK_UP } from "./calling-ground.js"
 export const TALK_LOOP = 6.4
 export const HANG_UP = 2.3
-export const LET_GO = 1.35
 
 interface Motion {
   readonly nod: number
@@ -22,7 +22,7 @@ const TALK_FROM = warp(PICK_UP)
 const BREATH = 1.6
 const AT_EAR = 0.95
 const AT_LOW = 0.4
-const LOWER = [0.45, 1.25] as const
+const LOWER = [0.3, 0.78] as const
 const settled = botMascotMoods.calling.pose(TALK_FROM)
 
 const talkTurn = hold(
@@ -53,7 +53,7 @@ export function talkingPose(t: number): BotMascotPose {
       tilt: -2 * speaking,
       turn: talkTurn(t),
       up: talkUp(t) - 0.05 * speaking,
-      blink: lidAt(t, 0.16, 1.15, 3.45, 5.7),
+      blink: lidAt(t, 0.14, 1.15, 3.45, 5.7),
       bob: 1.5 * syllables
     },
     TALK_FROM
@@ -70,7 +70,7 @@ export function hangUpPose(t: number): BotMascotPose {
       tilt: -6 * down,
       turn: 0.15 * down,
       up: 0.22 * down + 0.3 * glance,
-      blink: lidAt(t, 0.2, 1.9),
+      blink: lidAt(t, 0.14, 0.95),
       bob: 0
     },
     phoneWhileHangingUp(t)

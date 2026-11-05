@@ -21,9 +21,9 @@ import {
   type ClipPaths
 } from "./clip.js"
 import { drapeAside, overRootCopies } from "./drape-depth.js"
-import { drawArm, type ArmDrawing } from "./draw-arm.js"
+import { drawArm, handEmergence, type ArmDrawing } from "./draw-arm.js"
 import { densePoly } from "./outline-poly.js"
-import { handOverGrip } from "./prop-hand.js"
+import { handOverGrip, SMALLEST_HAND } from "./prop-hand.js"
 import type { ArmSleeve, RigArm } from "./rig-arm.js"
 
 export type ArmLayer = "body" | "behind" | "between" | "front"
@@ -120,7 +120,10 @@ export function compose(
   for (const art of arts) {
     const own = armArt(art, arts, sil, poly, P, grad, sleeve, s, svgUid(svg))
     const copied = placeArm(layers, art, own)
-    if (copied && art.it.over) tops[art.it.side] = handOverGrip(art.it.arm, P, grad)
+    if (copied && art.it.over) {
+      const size = art.it.over * handEmergence(poly, art.it.arm)
+      if (size > SMALLEST_HAND) tops[art.it.side] = handOverGrip(art.it.arm, P, grad, size)
+    }
   }
   if (joined) s = replaceBody(s, joined)
   s = withArmsInBody(s, layers.inBody, P, svgUid(svg))

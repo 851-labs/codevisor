@@ -1,8 +1,8 @@
 import { poseArm, type Matrix, type PosedArm } from "../arms/arm-pose.js"
-import type { Torso } from "../arms/rig-arm.js"
+import { growFor, type Torso } from "../arms/rig-arm.js"
 import { drawRig, phoneProp } from "../arms/rig-draw.js"
 import type { HandOptions } from "../effects/hands.js"
-import { s01, smootherstep, type Point } from "../geometry/math.js"
+import { smootherstep, type Point } from "../geometry/math.js"
 import { botMascotMoods } from "../moods/moods.js"
 import type { BotMascotPose } from "../pose.js"
 import { renderContext, withHands, type RenderContext } from "../render/context.js"
@@ -11,19 +11,15 @@ import { appendBeforeClose, svgBody, svgTransform } from "../render/svg-parts.js
 import { phoneLeaving } from "./calling-exit.js"
 import {
   followThrough,
-  GRAB,
-  LIFT_START,
-  LOW_PHONE,
   phoneFlight,
-  reachGrowth,
   RELEASE,
-  spring,
   STILL_PHONE,
   TUCK,
   warp,
   WIND,
   FLING
 } from "./calling-flight.js"
+import { EAR, PICKED_UP, pickUpScene, type PhoneScene } from "./calling-ground.js"
 import {
   apply,
   IDENTITY,
@@ -43,6 +39,7 @@ export interface CallingSwapOptions {
   readonly backdrop?: Backdrop
   readonly pose?: BotMascotPose
   readonly exit?: number
+  readonly phone?: PhoneScene
 }
 
 export interface OriginalCalling {
@@ -57,7 +54,7 @@ export interface OriginalCalling {
   readonly open: { readonly p: Point; readonly s: number } | null
 }
 
-interface Scene {
+export interface Scene {
   arm: PosedArm | null
   flying: string
 }
@@ -89,16 +86,16 @@ export function renderCallingSwap(
   const f = originalCalling(ctx, pal, t, frame, o.pose)
   const torso = { d: svgBody(f.s), shoulderY: ctx.body.shoulderY }
   let s = f.s.replace(RING, "")
-  if (f.phoneGroup && (f.held || t >= WIND[0])) s = s.replace(f.phoneGroup, "")
-  let scene = t0 < LIFT_START ? pickingUp(torso, f, pal, t0) : onTheCall(torso, f, pal, t)
+  const staged = o.phone ?? (t0 < PICKED_UP ? pickUpScene(t0) : undefined)
+  if (f.phoneGroup && (staged || f.held || t >= WIND[0])) s = s.replace(f.phoneGroup, "")
+  let scene = staged ? phoneScene(torso, f, pal, staged) : onTheCall(torso, f, pal, t)
   const follow = t >= RELEASE ? followingThrough(ctx, torso, f, pal, t) : undefined
   if (follow !== undefined) scene = { ...scene, arm: follow }
   if (o.exit != null)
-    scene = phoneLeaving(torso, f.TF, scene.arm, scene.flying, phoneProp(pal).svg, o.exit)
-  const out = scene.arm?.arm
-    ? drawRig(ctx, s, [scene.arm], { uid: `${uid}a`, pal, pose: f.pose })
-    : s
-  return scene.flying ? appendBeforeClose(out, scene.flying) : out
+    scene = phoneLeaving(torso, f.TF, scene.arm, scene.flying, phoneProp(pal), o.exit)
+  if (!scene.arm?.arm) return scene.flying ? appendBeforeClose(s, scene.flying) : s
+  const rig = { uid: `${uid}a`, pal, pose: f.pose, underHands: scene.flying }
+  return drawRig(ctx, s, [scene.arm], rig)
 }
 
 export function originalCalling(
@@ -145,22 +142,26 @@ function holding(torso: Torso, pal: string, propM: Matrix, grow = 1): PosedArm |
   return poseArm(torso, { side: 1, grow, grip: phoneProp(pal), propM })
 }
 
-function pickingUp(torso: Torso, f: OriginalCalling, pal: string, t0: number): Scene {
+export function phoneScene(torso: Torso, f: OriginalCalling, pal: string, ps: PhoneScene): Scene {
   const toBody = invert(f.TF)
-  const k = Math.max(0, spring(t0 - 0.02))
-  const q = { x: LOW_PHONE[0], y: LOW_PHONE[1], rot: LOW_PHONE[2], k: 1.15 * k }
-  const M = multiply(f.OM, placement(q))
-  if (t0 >= GRAB) return { arm: holding(torso, pal, multiply(toBody, M)), flying: "" }
-  const flying = k > 0.005 ? phoneSvg(M, phoneProp(pal).svg) : ""
-  const g = reachGrowth(t0)
-  if (!(g > 0.005)) return { arm: null, flying }
-  const reaching = holding(
+  const M = multiply(f.OM, placement(ps.q))
+  if (ps.hold === "held")
+    return { arm: withHand(holding(torso, pal, multiply(toBody, M)), ps.hand), flying: "" }
+  const flying = ps.q.k > 0.01 ? phoneSvg(M, phoneProp(pal).svg) : ""
+  if (!(ps.arm > 0.005)) return { arm: null, flying }
+  const grip = holding(
     torso,
     pal,
-    multiply(toBody, multiply(f.OM, placement({ ...q, k: 1.15 }))),
-    g
+    multiply(toBody, multiply(f.OM, placement({ ...ps.q, k: EAR.k })))
   )
-  return { arm: reaching ? withoutProp(reaching) : null, flying }
+  if (!grip) return { arm: null, flying }
+  const reaching = poseArm(torso, {
+    side: 1,
+    grow: growFor(ps.arm),
+    target: grip.tip,
+    grip: phoneProp(pal)
+  })
+  return { arm: reaching ? emptyHanded(reaching, ps.hand) : null, flying }
 }
 
 function onTheCall(torso: Torso, f: OriginalCalling, pal: string, t: number): Scene {
@@ -187,10 +188,7 @@ function followingThrough(
   if (!(g > 0.005)) return undefined
   const tip = tipAtRelease(ctx, pal)
   const b = apply(invert(f.TF), followThrough(tip, ctx.body.zones?.dy ?? 0, Math.min(t, TUCK)))
-  const k2 = s01((t - TUCK) / 0.36)
-  const side: Point = [346, ctx.body.shoulderY + 26]
-  const target: Point = [b[0] + (side[0] - b[0]) * k2, b[1] + (side[1] - b[1]) * k2]
-  return poseArm(torso, { side: 1, grow: g, target })
+  return poseArm(torso, { side: 1, grow: g, target: b })
 }
 
 function tipAtRelease(ctx: RenderContext, pal: string): Point {
@@ -209,7 +207,12 @@ function tipAtRelease(ctx: RenderContext, pal: string): Point {
   return tip
 }
 
-function withoutProp(p: PosedArm): PosedArm {
+function withHand(p: PosedArm | null, hand: number): PosedArm | null {
+  return p?.over ? { ...p, over: p.over * hand } : p
+}
+
+function emptyHanded(p: PosedArm, hand: number): PosedArm {
   const { side, arm, tip, tipDir, layer } = p
-  return { side, arm, tip, tipDir, layer, ...(p.over === undefined ? {} : { over: p.over }) }
+  const over = (p.over ?? 0) * hand
+  return { side, arm, tip, tipDir, layer, ...(over > 0 ? { over } : {}) }
 }

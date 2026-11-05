@@ -7,7 +7,7 @@ import {
   poseArm,
   renderBotMascotFrame,
   renderContext,
-  scaled,
+  emerging,
   spineTip,
   withHands,
   type BotMascotPose,
@@ -96,7 +96,7 @@ function directArm(torso: Torso, side: number, controls: ArmControls): PosedArm 
   const g = growth(controls.grow)
   if (g < minimumGrowth) return null
 
-  const arm = scaled(straightArm(torso, side, controls), g)
+  const arm = emerging(straightArm(torso, side, controls), g)
   const { tip, dir } = spineTip(arm)
   return { side, arm, tip, tipDir: dir, layer: controls.layer }
 }

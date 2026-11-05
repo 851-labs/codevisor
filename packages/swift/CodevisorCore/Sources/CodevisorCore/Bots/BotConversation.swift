@@ -13,13 +13,15 @@ public struct BotConversation: Identifiable, Equatable, Sendable {
   public let lastActivityAt: Date?
   public let activity: Activity
   public let isUnread: Bool
+  public let isTalkingToAgent: Bool
 
-  public init(bot: Bot, session: ChatSession?, activity: Activity, isUnread: Bool) {
+  public init(bot: Bot, session: ChatSession?, activity: Activity, isUnread: Bool, isTalkingToAgent: Bool = false) {
     self.bot = bot
     self.preview = session.flatMap { Self.previewText($0.latestBotMessage) }
     self.lastActivityAt = session.map { $0.updatedAt ?? $0.createdAt }
     self.activity = activity
     self.isUnread = isUnread
+    self.isTalkingToAgent = activity == .working && isTalkingToAgent
   }
 
   public var id: UUID { bot.id }

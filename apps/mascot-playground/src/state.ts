@@ -5,6 +5,9 @@ export type ArmPropChoice = "none" | "phone"
 export type ArmLayerChoice = "front" | "behind" | "body"
 export type Backdrop = "light" | "dark"
 export type ArmSide = "left" | "right"
+export type View = "outfit" | "animation"
+export type Theme = "light" | "dark"
+export type Move = "idle" | "working" | "calling" | "hangUp" | "angryHangUp"
 
 export interface ArmControls {
   readonly on: boolean
@@ -46,6 +49,10 @@ export interface PlaygroundState {
   readonly fps: number
   readonly backdrop: Backdrop
   readonly rig: RigControls
+  readonly view: View
+  readonly theme: Theme
+  readonly follow: boolean
+  readonly move: Move
 }
 
 export const overlayNames: ReadonlyArray<keyof Overlays> = [
@@ -60,6 +67,9 @@ export const armModes: ReadonlyArray<ArmMode> = ["reach", "direct"]
 export const armProps: ReadonlyArray<ArmPropChoice> = ["none", "phone"]
 export const armLayers: ReadonlyArray<ArmLayerChoice> = ["front", "behind", "body"]
 export const backdrops: ReadonlyArray<Backdrop> = ["light", "dark"]
+export const views: ReadonlyArray<View> = ["outfit", "animation"]
+export const themes: ReadonlyArray<Theme> = ["light", "dark"]
+export const moves: ReadonlyArray<Move> = ["idle", "working", "calling", "hangUp", "angryHangUp"]
 export const frameRates: ReadonlyArray<number> = [12, 24, 30, 60]
 export const speeds: ReadonlyArray<number> = [0.1, 0.25, 0.5, 1, 1.5, 2]
 
@@ -93,7 +103,11 @@ export const defaultState: PlaygroundState = {
     left: restingArm(80),
     right: restingArm(420),
     overlays: { silhouette: false, edges: false, outline: false, points: false }
-  }
+  },
+  view: "outfit",
+  theme: "light",
+  follow: true,
+  move: "idle"
 }
 
 export const frameOf = (state: PlaygroundState): number => Math.floor(state.time * state.fps + 1e-6)

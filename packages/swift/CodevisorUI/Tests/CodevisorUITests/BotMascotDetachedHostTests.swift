@@ -10,7 +10,7 @@
   struct BotMascotDetachedHostTests {
     enum Mascot: CaseIterable {
       case figure
-      case loop
+      case rive
     }
 
     private static let slot: CGFloat = 26
@@ -35,9 +35,9 @@
       switch mascot {
       case .figure:
         AnyView(BotMascotFigure(mascot: Self.mascot, serverId: "local", slot: slot, motion: .working))
-      case .loop:
+      case .rive:
         AnyView(
-          BotMascotLoopPlayer(mascot: Self.mascot, serverId: "local", loop: .working)
+          BotMascotRiveView(mascot: Self.mascot, serverId: "local", mode: .working)
             .frame(width: slot, height: slot))
       }
     }

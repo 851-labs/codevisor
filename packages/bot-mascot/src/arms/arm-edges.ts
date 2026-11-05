@@ -18,12 +18,13 @@ export interface ArmEdges {
 const SPINE_STEPS = 160
 const BEHIND_ROOT = 24
 const EDGE_STEPS = 120
+const TIP_SHARE = 0.4
 
 export function armEdges(arm: RigArm, side: number): ArmEdges {
   const { L } = arm
   const at = spineWalker(arm)
   const sc = arm.scale ?? 1
-  const pf = profileOf(L, sc)
+  const pf = telescoped(profileOf(arm.fullLength ?? L, sc), L, arm.fullLength ?? L)
   const sideNormal = (a: number): Point =>
     side > 0 ? [Math.sin(a), -Math.cos(a)] : [-Math.sin(a), Math.cos(a)]
   const top = (s: number): Point => {
@@ -76,6 +77,19 @@ function spineWalker(arm: RigArm): (s: number) => SpineSample {
     const u = f - i
     return { p: lerp2(pts[i]!, pts[i + 1]!, u), a: lerp(dirs[i]!, dirs[i + 1]!, u) * RAD }
   }
+}
+
+function telescoped(
+  natural: (s: number) => number,
+  L: number,
+  fullLength: number
+): (s: number) => number {
+  if (!(fullLength > L)) return natural
+  const tip = TIP_SHARE * fullLength
+  if (L <= tip) return (s) => natural(fullLength - L + s)
+  const shaft = L - tip
+  const fullShaft = fullLength - tip
+  return (s) => (s <= shaft ? natural((s * fullShaft) / shaft) : natural(fullShaft + s - shaft))
 }
 
 function profileOf(L: number, sc: number): (s: number) => number {

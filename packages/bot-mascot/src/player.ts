@@ -135,7 +135,8 @@ export class BotMascotPlayer {
         viewBox,
         uid: this.uid,
         pose,
-        ...(c.exit === undefined ? {} : { exit: c.exit })
+        ...(c.exit === undefined ? {} : { exit: c.exit }),
+        ...(c.phone === undefined ? {} : { phone: c.phone })
       })
     return renderIdleWorking(ctx, pal, t, viewBox, this.uid, { state: { ...st, pose } })
   }

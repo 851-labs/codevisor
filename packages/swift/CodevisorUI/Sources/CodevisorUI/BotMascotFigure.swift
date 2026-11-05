@@ -23,7 +23,7 @@ public struct BotMascotFigure: View {
   public var body: some View {
     Group {
       if let playing {
-        BotMascotLoopPlayer(mascot: mascot, serverId: serverId, loop: playing)
+        BotMascotRiveView(mascot: mascot, serverId: serverId, mode: playing)
       } else {
         BotMascotImage(mascot: mascot, serverId: serverId, kind: .figure)
       }
@@ -39,9 +39,9 @@ public struct BotMascotFigure: View {
     slot * Self.overhang
   }
 
-  private var playing: ServerBotMascotLoop? {
+  private var playing: BotMascotRiveMode? {
     guard canAnimate else { return nil }
-    return motion.loop
+    return motion.riveMode
   }
 
   private var canAnimate: Bool {

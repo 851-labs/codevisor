@@ -22,7 +22,10 @@ import {
   type ArmSide,
   type Overlays,
   type PlaygroundState,
-  type RigControls
+  type RigControls,
+  moves,
+  themes,
+  views
 } from "./state.js"
 import { leafText, leaves, UrlReader } from "./url-reader.js"
 
@@ -71,7 +74,11 @@ const sharedState = (read: UrlReader): PlaygroundState => {
     showGaze: read.flag("showGaze", d.showGaze),
     fps: read.numberFrom("fps", frameRates, d.fps),
     backdrop: read.choice("backdrop", backdrops, d.backdrop),
-    rig: rigFrom(read, d.rig)
+    rig: rigFrom(read, d.rig),
+    view: read.choice("view", views, d.view),
+    theme: read.choice("theme", themes, d.theme),
+    follow: read.flag("follow", d.follow),
+    move: read.choice("move", moves, d.move)
   }
 }
 

@@ -92,6 +92,36 @@ function PreviewRow({
   )
 }
 
+interface Painter {
+  readonly paint: (canvas: HTMLCanvasElement, svg: string, scale: number) => void
+  readonly stop: () => void
+}
+
+function latestOnly(draw: PreviewDrawer): Painter {
+  let busy = false
+  let stopped = false
+  let next: Parameters<PreviewDrawer> | null = null
+  const run = async (job: Parameters<PreviewDrawer>) => {
+    busy = true
+    await draw(...job).catch(() => undefined)
+    busy = false
+    const queued = next
+    next = null
+    if (queued && !stopped) void run(queued)
+  }
+  return {
+    paint: (canvas, svg, scale) => {
+      if (stopped) return
+      if (busy) next = [canvas, svg, scale]
+      else void run([canvas, svg, scale])
+    },
+    stop: () => {
+      stopped = true
+      next = null
+    }
+  }
+}
+
 function PreviewCanvas({
   svg,
   scale,
@@ -106,10 +136,12 @@ function PreviewCanvas({
   readonly draw: PreviewDrawer
 }) {
   const canvas = useRef<HTMLCanvasElement>(null)
+  const painter = useMemo(() => latestOnly(draw), [draw])
 
   useEffect(() => {
-    if (canvas.current) void draw(canvas.current, svg, scale)
-  }, [svg, scale, draw])
+    if (canvas.current) painter.paint(canvas.current, svg, scale)
+  }, [painter, svg, scale])
+  useEffect(() => () => painter.stop(), [painter])
 
   return <canvas ref={canvas} style={{ width: points * zoom, height: points * zoom }} />
 }

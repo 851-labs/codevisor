@@ -48,13 +48,19 @@ export function renderBotMascotSegmentFrame(options: SegmentFrameOptions): strin
 const calling =
   (segment: CallSegment): Renderer =>
   (shot, frame) => {
-    const { t0, pose, exit } = callShot(segment, frame.t, shot.idle(frame.clock), frame.leftCallAt)
+    const { t0, pose, exit, phone } = callShot(
+      segment,
+      frame.t,
+      shot.idle(frame.clock),
+      frame.leftCallAt
+    )
     return renderCallingSwap(shot.ctx, shot.color, t0, {
       viewBox: shot.viewBox,
       uid: shot.uid,
       pose: shot.edit(pose),
       ...(shot.size ? { size: shot.size } : {}),
-      ...(exit === undefined ? {} : { exit })
+      ...(exit === undefined ? {} : { exit }),
+      ...(phone === undefined ? {} : { phone })
     })
   }
 

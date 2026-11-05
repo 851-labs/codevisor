@@ -5,6 +5,8 @@ public struct ServerBotMascotArt: Hashable, Sendable {
     case portrait
     case figure
     case loop(ServerBotMascotLoop)
+    case rive
+    case riveValues
   }
 
   private static let revision = "3"
@@ -19,7 +21,7 @@ public struct ServerBotMascotArt: Hashable, Sendable {
 
   var path: String {
     var query = URLComponents()
-    query.queryItems = mascot.queryItems + kindQueryItems + [URLQueryItem(name: "revision", value: Self.revision)]
+    query.queryItems = mascotQueryItems + kindQueryItems + [URLQueryItem(name: "revision", value: Self.revision)]
     return "\(route)?\(query.percentEncodedQuery ?? "")"
   }
 
@@ -27,12 +29,18 @@ public struct ServerBotMascotArt: Hashable, Sendable {
     switch kind {
     case .portrait, .figure: "/v1/bot-mascots/image"
     case .loop: "/v1/bot-mascots/animation"
+    case .rive: "/v1/bot-mascots/rive"
+    case .riveValues: "/v1/bot-mascots/rive-values"
     }
+  }
+
+  private var mascotQueryItems: [URLQueryItem] {
+    kind == .rive ? [] : mascot.queryItems
   }
 
   private var kindQueryItems: [URLQueryItem] {
     switch kind {
-    case .portrait: []
+    case .portrait, .rive, .riveValues: []
     case .figure: [URLQueryItem(name: "framing", value: "figure")]
     case let .loop(loop): [URLQueryItem(name: "loop", value: loop.rawValue)]
     }

@@ -4,11 +4,10 @@ import { outlinePoly, signedDistance } from "./outline-poly.js"
 import { bendOf, reach } from "./reach.js"
 import {
   armOrigin,
-  blendArms,
+  emerging,
   growth,
   MEDIUM_REACH,
   restArm,
-  scaled,
   spineTip,
   type RigArm,
   type Torso
@@ -65,17 +64,17 @@ export function poseArm(torso: Torso, opts: ArmPoseOptions): PosedArm | null {
   const w = Math.max(0, Math.min(1, opts.grow ?? 1))
   const g = growth(w)
   const bud = restArm(torso, side, opts.t || 0)
-  const handLen = grip && grip.over === "hand" ? (grip.hand?.len ?? 20) * Math.max(0.4, g) : 0
-  if (g < 0.02) return null
+  const handSize = grip && grip.over === "hand" ? g : 0
+  if (g < 0.005) return null
 
   const O0 = armOrigin(torso, side)
   const target = given ? given.G : opts.target
   const full = alignedWith(bud, target ? reachFor(torso, side, O0, target, bud, opts.curl) : bud)
-  const arm = scaled({ ...blendArms(bud, full, w), R: O0 }, g)
+  const arm = emerging({ ...full, R: O0 }, g)
   const { tip, dir } = spineTip(arm)
   const prop = heldProp(torso, side, tip, dir, grip, opts.propM, given !== null)
   const posed: PosedArm = { side, arm, tip, tipDir: dir, layer: "front", ...(prop ? { prop } : {}) }
-  return prop && handLen ? { ...posed, over: handLen } : posed
+  return prop && handSize ? { ...posed, over: handSize } : posed
 }
 
 function reachFor(

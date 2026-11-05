@@ -11,6 +11,7 @@ export interface RigDrawOptions {
   readonly uid?: string
   readonly pal: string
   readonly pose?: BotMascotPose
+  readonly underHands?: string
 }
 
 const PHONE_GROUP =
@@ -50,12 +51,14 @@ export function drawRig(
   })
   const top = live
     .map((p) => {
-      if (!p.prop) return ""
+      const hand = c.tops[p.side] || ""
+      if (!p.prop) return hand ? `<g transform="${tf}">${hand}</g>` : ""
       const matrix = p.prop.M.map((v) => v.toFixed(4)).join(" ")
-      return `<g transform="${tf}"><g transform="matrix(${matrix})">${p.prop.svg}</g>${c.tops[p.side] || ""}</g>`
+      return `<g transform="${tf}"><g transform="matrix(${matrix})">${p.prop.svg}</g>${hand}</g>`
     })
     .join("")
-  return top ? c.svg.replace(/<\/svg>$/, `${top}</svg>`) : c.svg
+  const above = (opts.underHands ?? "") + top
+  return above ? c.svg.replace(/<\/svg>$/, `${above}</svg>`) : c.svg
 }
 
 export function phoneProp(pal: string): ArmProp {

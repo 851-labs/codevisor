@@ -60,8 +60,7 @@ export function clipboardPose(t: number): BotMascotPose {
   }
 }
 
-export const clipboardPopScale = (pop: number): number =>
-  pop < 1 ? Math.min(1.18, s01(pop / 0.7) * 1.18) - 0.18 * s01((pop - 0.7) / 0.3) : 1
+export const clipboardPopScale = (pop: number): number => s01(pop)
 
 export function clipboardSvg(
   ctx: RenderContext,

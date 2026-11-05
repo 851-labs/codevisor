@@ -62,10 +62,12 @@ const frame = (t: number, exit?: number): string =>
   })
 
 describe("Calling with the arm rig", () => {
-  it("reaches for the phone, holds it on the call and throws it away", () => {
+  it("picks the phone up off the ground, holds it on the call and throws it away", () => {
+    expect(flyingPhone(frame(0.2))).toBe(true)
+    expect(hasArms(frame(0.3))).toBe(true)
     expect(holdsPhone(frame(0.3))).toBe(false)
-    expect(flyingPhone(frame(0.3))).toBe(true)
-    expect(holdsPhone(frame(0.75))).toBe(true)
+    expect(holdsPhone(frame(0.6))).toBe(true)
+    expect(flyingPhone(frame(0.6))).toBe(false)
     expect(holdsPhone(frame(3))).toBe(true)
     expect(holdsPhone(frame(6.7))).toBe(true)
     expect(flyingPhone(frame(7.1))).toBe(true)
@@ -74,8 +76,8 @@ describe("Calling with the arm rig", () => {
     expect(hasArms(frame(CALLING_SWAP_LOOP - 0.1))).toBe(false)
   })
 
-  it("lets go of the phone and tucks the arm away when the call ends", () => {
-    expect(holdsPhone(frame(3, 0.05))).toBe(false)
+  it("tucks the phone away in his hand when the call ends", () => {
+    expect(holdsPhone(frame(3, 0.05))).toBe(true)
     expect(flyingPhone(frame(3, 0.05))).toBe(true)
     expect(hasArms(frame(3, 0.05))).toBe(true)
     expect(flyingPhone(frame(3, 0.4))).toBe(false)
