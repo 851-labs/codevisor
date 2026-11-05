@@ -32,11 +32,9 @@ struct NativeScreenSharingV2ViewerBackendTests {
     #expect(harness.sessions[0].offers == 0)
   }
 
-  @Test(arguments: [(engines: [String]?.none, enabled: true), (engines: ["v2"], enabled: false)])
-  func webRTCIsUsedUnlessBothTheHostAdvertisesAndThisMacChoosesV2(engines: [String]?, enabled: Bool) async throws {
+  @Test func webRTCIsUsedWhenTheHostDoesNotAdvertiseV2() async throws {
     let v2 = NativeBackendHarness.V2()
-    v2.enabled = enabled
-    let harness = NativeBackendHarness(transport: SharingTransport(engines: engines), v2: v2)
+    let harness = NativeBackendHarness(transport: SharingTransport(engines: nil), v2: v2)
     let requests = await run(harness)
 
     expectNoDifference(requests.map(\.operation), [.capabilities, .start, .stop])
@@ -59,6 +57,23 @@ struct NativeScreenSharingV2ViewerBackendTests {
     #expect(requests[1].engine == "v2")
     #expect(requests[3].engine == nil && requests[3].offer == "fixture offer")
     #expect(harness.sessions.count == 1 && harness.sessions[0].answers == ["fixture answer"])
+    #expect(!harness.log.events.contains { if case .ended = $0 { true } else { false } })
+  }
+
+  @Test func aV2SessionWhoseTransportFailsBeforeAnyVideoFallsBackToWebRTC() async throws {
+    let harness = NativeBackendHarness(transport: SharingTransport(engines: ["v2"]), v2: NativeBackendHarness.V2())
+    harness.configureSession = { [weak harness] session in session.deliversVideo = harness?.sessions.isEmpty == false }
+    harness.connect()
+    await awaitObserved { harness.log.events.contains { if case .opened = $0 { true } else { false } } }
+    harness.sessions[0].onConnectionChanged?("failed")
+    await awaitObserved { harness.log.events.contains(.ready) }
+    await harness.cancelConsumers()
+    await harness.transport.stopped.wait()
+    let starts = await harness.transport.requests.filter { [.start, .restart].contains($0.operation) }
+
+    expectNoDifference(starts.map(\.operation), [.start, .start])
+    #expect(starts.map(\.engine) == ["v2", nil])
+    #expect(starts[1].offer == "fixture offer")
     #expect(!harness.log.events.contains { if case .ended = $0 { true } else { false } })
   }
 

@@ -30,17 +30,6 @@ struct ScreenSharingMachineSettingsTests {
     #expect(draft.changes(from: Self.original).isEmpty)
   }
 
-  @Test func choosingAnotherEngineReconnects() {
-    var withEngine = Self.original
-    withEngine.engine = .webRTC
-    var draft = ScreenSharingMachineSettingsDraft(withEngine)
-    draft.settings.engine = .v2
-    var expected = ScreenSharingMachineSettingsChanges()
-    expected.engine = .v2
-    #expect(draft.changes(from: withEngine) == expected)
-    #expect(draft.changes(from: withEngine).reconnects)
-  }
-
   @Test func hdrChangesApplyWithoutReconnecting() {
     var withHDR = Self.original
     withHDR.highDynamicRange = false

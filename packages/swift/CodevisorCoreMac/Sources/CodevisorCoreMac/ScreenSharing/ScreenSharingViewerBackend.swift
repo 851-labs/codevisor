@@ -51,13 +51,12 @@ extension ScreenSharingViewerBackend {
   @MainActor
   public static func native(
     client: any CodevisorServerClienting, workspaceId: UUID, paneId: UUID, machineId: String? = nil,
-    role: ScreenSharingViewerRole = .tab, tunnelMedia: TunnelMediaProvider? = nil,
-    engine: ScreenSharingEngine? = nil
+    role: ScreenSharingViewerRole = .tab, tunnelMedia: TunnelMediaProvider? = nil
   ) -> Self {
     native(
       client: client, workspaceId: workspaceId, paneId: paneId, machineId: machineId, role: role,
       tunnelMedia: tunnelMedia,
-      v2: .live(enabled: { (engine ?? ScreenSharingEngine.selected(machineId: machineId)) == .v2 }),
+      v2: .live(),
       sleep: { try await Task.sleep(for: $0) },
       makeSession: { try await ScreenSharingReceiver.process(connectivity: $0) },
       makeSurface: { session in
@@ -213,6 +212,7 @@ private final class NativeScreenSharingViewerRunner: ScreenSharingViewerConnecti
     var started = false
     var outcome: Outcome?
     var transportEnded = false
+    var triedV2 = false
   }
 
   private func run(display: String, emit: @escaping @Sendable (ScreenSharingViewerEvent) -> Void) async {
@@ -262,7 +262,7 @@ private final class NativeScreenSharingViewerRunner: ScreenSharingViewerConnecti
         guard capabilities.version == 1, ["available", "busy"].contains(capabilities.status) else {
           return .ended(capabilities.message ?? "Screen Sharing is unavailable on this Mac.")
         }
-        if let v2, v2.enabled(), !v2Failed, capabilities.engines?.contains(ScreenSharingEngine.v2.rawValue) == true {
+        if let v2, !v2Failed, capabilities.engines?.contains(ScreenSharingEngine.v2.rawValue) == true {
           return try await attemptV2(
             v2, attempt: attempt, viewerId: viewerId, display: display, restarts: restarts, emit: emit)
         }
@@ -298,12 +298,17 @@ private final class NativeScreenSharingViewerRunner: ScreenSharingViewerConnecti
     }
     attempt.endpoint?.close()
     attempt.tunnelMedia?.close()
+    return (await outcome(of: attempt, result: result, viewerId: viewerId), attempt.started)
+  }
+
+  private func outcome(of attempt: Attempt, result: Outcome, viewerId: UUID) async -> Outcome {
     var outcome = Task.isCancelled ? .cancelled : (attempt.outcome ?? result)
     if attempt.transportEnded, attempt.started, !Task.isCancelled, let reason = await hostEndReason(viewerId: viewerId)
     {
       outcome = .ended(reason)
     }
-    return (outcome, attempt.started)
+    if attempt.triedV2, !attempt.ready, case .ended = outcome { return .fallback }
+    return outcome
   }
 
   private static let missingVideoTimeout: Duration = .seconds(24)
@@ -382,6 +387,7 @@ private final class NativeScreenSharingViewerRunner: ScreenSharingViewerConnecti
     start.engine = ScreenSharingEngine.v2.rawValue
     start.media = address
     attempt.started = true
+    attempt.triedV2 = true
     let reply = try await ScreenSharingTransientRetry.run(sleep: sleep) { [client, start] in
       try await client.screenSharing(start)
     }
