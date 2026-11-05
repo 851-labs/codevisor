@@ -7,7 +7,12 @@ import TranscriptKit
 
 extension ChatScreen {
   var composerOverlay: some View {
-    VStack(spacing: ComposerGlassStyle.clusterSpacing) {
+    let childAgents = visibleChildAgents
+    return VStack(spacing: ComposerGlassStyle.clusterSpacing) {
+      if let store = workspaceChildAgents?.store, !childAgents.isEmpty {
+        ChildAgentsPill(agents: childAgents, store: store, glassNamespace: composerGlassNamespace)
+          .frame(maxWidth: .infinity, alignment: .leading)
+      }
       if let todos = controller.visibleTodos {
         TodoPanelView(
           plan: todos,
@@ -60,6 +65,7 @@ extension ChatScreen {
         composerCardHeight = $0
       }
     }
+    .onPreferenceChange(ComposerSlashPalettePresentedPreference.self) { isSlashPalettePresented = $0 }
     .padding(.horizontal, Self.composerHorizontalPadding)
     .frame(maxWidth: Self.composerMaxWidth)
     .padding(.bottom, Self.composerBottomMargin)
@@ -71,7 +77,20 @@ extension ChatScreen {
       composerHeight = $0
       presentationSurface.updateComposerHeight($0)
     }
-    .animation(Motion.quick(reduceMotion: reduceMotion), value: visibleComposerGlassElements)
+    .animation(
+      Motion.quick(reduceMotion: reduceMotion),
+      value: visibleComposerGlassElements(showsChildAgents: !childAgents.isEmpty)
+    )
+  }
+
+  private var visibleChildAgents: [WorkspaceInspectorAgent] {
+    guard !isSlashPalettePresented, let workspaceChildAgents, let workspace = hostWorkspace else { return [] }
+    return workspaceChildAgents.activeChildren(of: workspace)
+  }
+
+  private var hostWorkspace: Workspace? {
+    let sessionWorkspaceId = controller.serverSession.flatMap { environment.workspaces.workspaceId(forSession: $0.id) }
+    return (sessionWorkspaceId ?? controller.hostWorkspaceId).flatMap { environment.workspaces.workspace(id: $0) }
   }
 
   var hasPromptQueue: Bool {
@@ -124,9 +143,10 @@ extension ChatScreen {
     }
   }
 
-  var visibleComposerGlassElements: [ComposerGlassElement] {
+  func visibleComposerGlassElements(showsChildAgents: Bool) -> [ComposerGlassElement] {
     let hasTodos = controller.visibleTodos != nil
     return ComposerGlassElements.visible(
+      showsChildAgents: showsChildAgents,
       hasTodos: hasTodos,
       showsGoal: controller.supportsGoals && !controller.isGoalEditing
         && (controller.goal ?? controller.draftGoal) != nil
