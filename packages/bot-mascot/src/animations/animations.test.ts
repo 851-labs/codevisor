@@ -61,27 +61,32 @@ const frame = (t: number, exit?: number): string =>
     ...(exit === undefined ? {} : { exit })
   })
 
+const observe = (svg: string) => ({
+  flying: flyingPhone(svg),
+  arms: hasArms(svg),
+  holds: holdsPhone(svg)
+})
+
 describe("Calling with the arm rig", () => {
-  it("picks the phone up off the ground, holds it on the call and throws it away", () => {
-    expect(flyingPhone(frame(0.2))).toBe(true)
-    expect(hasArms(frame(0.3))).toBe(true)
-    expect(holdsPhone(frame(0.3))).toBe(false)
-    expect(holdsPhone(frame(0.6))).toBe(true)
-    expect(flyingPhone(frame(0.6))).toBe(false)
-    expect(holdsPhone(frame(3))).toBe(true)
-    expect(holdsPhone(frame(6.7))).toBe(true)
-    expect(flyingPhone(frame(7.1))).toBe(true)
-    expect(holdsPhone(frame(7.1))).toBe(false)
-    expect(hasArms(frame(7.4))).toBe(true)
-    expect(hasArms(frame(CALLING_SWAP_LOOP - 0.1))).toBe(false)
+  it.each([
+    [0.2, "the phone lies on the ground", { flying: true }],
+    [0.3, "he reaches for it", { arms: true, holds: false }],
+    [0.6, "he picks it up", { holds: true, flying: false }],
+    [3, "he holds it on the call", { holds: true }],
+    [6.7, "he still holds it as the call ends", { holds: true }],
+    [7.1, "he throws it away", { flying: true, holds: false }],
+    [7.4, "his arms follow through", { arms: true }],
+    [CALLING_SWAP_LOOP - 0.1, "his arms are gone before the loop restarts", { arms: false }]
+  ])("at %ss %s", (t, _, expected) => {
+    expect(observe(frame(t))).toMatchObject(expected)
   })
 
-  it("tucks the phone away in his hand when the call ends", () => {
-    expect(holdsPhone(frame(3, 0.05))).toBe(true)
-    expect(flyingPhone(frame(3, 0.05))).toBe(true)
-    expect(hasArms(frame(3, 0.05))).toBe(true)
-    expect(flyingPhone(frame(3, 0.4))).toBe(false)
-    expect(hasArms(frame(3, 0.6))).toBe(false)
-    expect(flyingPhone(frame(7.1, 0.1))).toBe(true)
+  it.each([
+    [3, 0.05, "right after the call", { holds: true, flying: true, arms: true }],
+    [3, 0.4, "the phone is tucked away", { flying: false }],
+    [3, 0.6, "his arms are gone", { arms: false }],
+    [7.1, 0.1, "a thrown phone keeps flying", { flying: true }]
+  ])("tucks the phone away when the call ends at %ss, exit %s: %s", (t, exit, _, expected) => {
+    expect(observe(frame(t, exit))).toMatchObject(expected)
   })
 })
