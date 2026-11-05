@@ -1,0 +1,5 @@
+noise 1x 3840x2160: max 1 at (72,1088), pixels > 2 levels 0, rows differing [1088, 1632], rows away from an edge 0 (max 0), edges at ["544.0", "1088.0", "1632.0"]
+noise 1.5x 5760x3240: max 1 at (0,815), pixels > 2 levels 0, rows differing [815, 816, 1631, 1632, 2447, 2448], rows away from an edge 0 (max 0), edges at ["816.0", "1632.0", "2448.0"]
+noise 1-over-1.5x 2560x1440: max 1 at (15,725), pixels > 2 levels 0, rows differing [725], rows away from an edge 0 (max 0), edges at ["362.7", "725.3", "1088.0"]
+noise window-1373x772 1373x772: max 2 at (35,276), pixels > 2 levels 0, rows differing [194, 276, 391, 469, 521, 584, 662, 714, 751], rows away from an edge 7 (max 2), edges at ["194.4", "388.9", "583.3"]
+noise 2x 1920x1080: max 0 at (0,0), pixels > 2 levels 0, rows differing [], rows away from an edge 0 (max 0), edges at ["272.0", "544.0", "816.0"]
