@@ -11,4 +11,5 @@ struct PlayerConfiguration {
   let inputRegion: BenchInputRegion
   let hashLog: String?
   let selfInputHz: Int
+  let bottomBarcode: Bool
 }

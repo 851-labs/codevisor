@@ -12,7 +12,7 @@ enum SceneShaderSource {
       int2 size;
       int2 extent;
       uint seed;
-      int spare;
+      int bottomBarcode;
     };
 
     struct Raster {
@@ -46,10 +46,11 @@ enum SceneShaderSource {
       return inside(p, int2(0), size) ? barcode.read(uint2(p)) : color;
     }
 
-    static float4 withBarcodes(int2 p, float4 color, texture2d<float, access::read> barcode, int2 extent) {
+    static float4 withBarcodes(int2 p, float4 color, texture2d<float, access::read> barcode, constant SceneUniforms &u) {
       int2 size = int2(barcode.get_width(), barcode.get_height());
-      int2 bottom = int2(0, extent.y - size.y);
-      return inside(p, bottom, size) ? barcode.read(uint2(p - bottom)) : withBarcode(p, color, barcode);
+      int2 bottom = int2(0, u.extent.y - size.y);
+      bool atBottom = u.bottomBarcode != 0 && inside(p, bottom, size);
+      return atBottom ? barcode.read(uint2(p - bottom)) : withBarcode(p, color, barcode);
     }
 
     static uint hashed(uint3 v) {
@@ -67,7 +68,7 @@ enum SceneShaderSource {
       int2 p = pixelOf(in);
       float4 color = gray(page.read(uint2(p)).r);
       if (u.count != 0 && inside(p, u.offset, u.size)) color = black;
-      return withBarcodes(p, color, barcode, u.extent);
+      return withBarcodes(p, color, barcode, u);
     }
 
     fragment float4 typing(
@@ -82,7 +83,7 @@ enum SceneShaderSource {
         uint order = cells.read(uint2((p - u.offset) / u.size)).r;
         if (order < uint(u.count)) color = gray(page.read(uint2(p)).r);
       }
-      return withBarcodes(p, color, barcode, u.extent);
+      return withBarcodes(p, color, barcode, u);
     }
 
     fragment float4 scroll(
@@ -91,7 +92,7 @@ enum SceneShaderSource {
     ) {
       int2 p = pixelOf(in);
       uint y = (uint(p.y) + uint(u.offset.y)) % document.get_height();
-      return withBarcodes(p, gray(document.read(uint2(p.x, y)).r), barcode, u.extent);
+      return withBarcodes(p, gray(document.read(uint2(p.x, y)).r), barcode, u);
     }
 
     static float4 desktop(int2 p, int2 extent) {
@@ -108,7 +109,7 @@ enum SceneShaderSource {
       int2 p = pixelOf(in);
       int2 size = int2(window.get_width(), window.get_height());
       float4 color = inside(p, u.offset, size) ? window.read(uint2(p - u.offset)) : desktop(p, u.extent);
-      return withBarcodes(p, color, barcode, u.extent);
+      return withBarcodes(p, color, barcode, u);
     }
 
     fragment float4 video(
@@ -125,7 +126,7 @@ enum SceneShaderSource {
         + float3(0.90, 0.35, 0.20) * (1.0 - saturate(distance(uv, a) * 1.6))
         + float3(0.15, 0.45, 0.95) * (1.0 - saturate(distance(uv, b) * 1.4));
       color += (noise.read(grain).r - 0.5) * 0.35;
-      return withBarcodes(p, float4(saturate(color), 1.0), barcode, u.extent);
+      return withBarcodes(p, float4(saturate(color), 1.0), barcode, u);
     }
 
     static float4 photo(int2 p, int2 extent, uint seed) {
@@ -174,7 +175,7 @@ enum SceneShaderSource {
       int2 p = pixelOf(in);
       float4 color = gray(0.5);
       if (inside(p, u.offset, u.size)) color = (u.version % 2 == 0) ? black : white;
-      return withBarcodes(p, color, barcode, u.extent);
+      return withBarcode(p, color, barcode);
     }
     """
 }

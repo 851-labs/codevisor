@@ -7,14 +7,14 @@ public actor BenchSceneGenerator {
   private let queue: any MTLCommandQueue
   private let frames: ScenePixelBufferPool
 
-  public init(setup: BenchSceneSetup) throws {
+  public init(setup: BenchSceneSetup, bottomBarcode: Bool = false) throws {
     guard let device = MTLCreateSystemDefaultDevice(), let queue = device.makeCommandQueue() else {
       throw BenchSceneError.metalUnavailable
     }
 
     self.setup = setup
     self.queue = queue
-    renderer = try BenchSceneRenderer(setup: setup, device: device)
+    renderer = try BenchSceneRenderer(setup: setup, device: device, bottomBarcode: bottomBarcode)
     frames = try ScenePixelBufferPool(device: device, canvas: setup.canvas)
   }
 

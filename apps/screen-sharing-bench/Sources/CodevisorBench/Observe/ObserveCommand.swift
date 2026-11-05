@@ -36,7 +36,7 @@ struct ObserveCommand: BenchCommand {
     let display = try await ScreenObserver.display(id: displayID)
     let meter = ProcessUsageMeter()
     let observer = try await ScreenObserver.start(
-      display: display, region: region, layout: anchor.layout(layout, on: display),
+      display: display, region: region, layout: layout, anchor: anchor,
       relay: try relay.map(VersionRelay.init(target:)), stills: try stills.map(StillKeeper.init))
     try await Task.sleep(for: .seconds(duration))
 

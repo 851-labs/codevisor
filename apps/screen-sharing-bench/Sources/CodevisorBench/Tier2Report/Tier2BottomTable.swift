@@ -4,7 +4,9 @@ struct Tier2BottomTable {
   private let measurements: [Tier2Measurement]
 
   init(_ measurements: [Tier2Measurement]) {
-    self.measurements = measurements.filter { $0.invalidReason == nil && $0.bottom != nil && $0.result != nil }
+    self.measurements = measurements.filter {
+      $0.invalidReason == nil && $0.files.meta.hostObserver && $0.bottom != nil && $0.result != nil
+    }
   }
 
   var text: String? {
@@ -13,8 +15,9 @@ struct Tier2BottomTable {
     let header = [
       "### Top and bottom tiles (second barcode, median of valid repetitions)", "",
       "Image age at the top-left barcode (the target table's) and at a second barcode in the bottom-left corner, "
-        + "and the share of frames whose two barcodes show different versions (torn frames). The host draws both "
-        + "barcodes in the same frame, so its torn share should be 0.", "",
+        + "and the share of frames whose two barcodes show different versions (torn frames: at each frame either "
+        + "observer records, the latest version each has seen). The host draws both barcodes in the same frame, so "
+        + "its torn share should be 0.", "",
       "| Scene | Resolution | Network | System | Top p50 ms | Top p95 | Bottom p50 ms | Bottom p95 "
         + "| Torn frames, viewer % | Torn frames, host % | Reps |",
       "| --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |",

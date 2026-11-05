@@ -4,23 +4,28 @@ import Testing
 @testable import CodevisorBench
 
 struct Tier2BottomTileTests {
-  @Test func aFrameWhoseTwoBarcodesShowDifferentVersionsCountsAsTorn() {
-    let top = Self.observations([(1_000_000, 1), (17_000_000, 2), (33_000_000, 3), (50_000_000, 4)])
-    let bottom = Self.observations([(1_200_000, 1), (17_100_000, 1), (33_000_000, 3), (50_000_000, 4)])
-
-    #expect(Tier2BottomTile.tornFraction(top: top, bottom: bottom) { _ in true } == 0.25)
-  }
-
-  @Test func onlyFramesInsideTheWindowAndWithinTwoMillisecondsOfEachOtherArePaired() {
+  @Test func aFrameWhoseTopShowsANewerVersionThanItsBottomCountsAsTorn() {
     let top = Self.observations([(1_000_000, 1), (17_000_000, 2), (33_000_000, 3)])
-    let bottom = Self.observations([(1_000_000, 9), (20_000_000, 1), (33_000_000, 3)])
+    let bottom = Self.observations([(1_200_000, 1), (33_100_000, 3)])
 
-    let fraction = Tier2BottomTile.tornFraction(top: top, bottom: bottom) { $0 > 10_000_000 }
-
-    #expect(fraction == 0)
+    #expect(Tier2BottomTile.tornFraction(top: top, bottom: bottom) { _ in true } == 1.0 / 3)
   }
 
-  @Test func noPairedFramesGiveNoTornShare() {
+  @Test func aBottomThatChangesOnlyAFrameLaterIsTornForThatFrame() {
+    let top = Self.observations([(1_000_000, 1), (17_000_000, 2)])
+    let bottom = Self.observations([(1_000_000, 1), (33_000_000, 2)])
+
+    #expect(Tier2BottomTile.tornFraction(top: top, bottom: bottom) { _ in true } == 1.0 / 3)
+  }
+
+  @Test func onlyFramesInsideTheWindowCount() {
+    let top = Self.observations([(1_000_000, 1), (17_000_000, 2), (33_000_000, 3)])
+    let bottom = Self.observations([(1_000_000, 9), (17_000_000, 2), (33_000_000, 3)])
+
+    #expect(Tier2BottomTile.tornFraction(top: top, bottom: bottom) { $0 > 10_000_000 } == 0)
+  }
+
+  @Test func noFrameWithBothBarcodesReadGivesNoTornShare() {
     let top = Self.observations([(1_000_000, 1)])
 
     #expect(Tier2BottomTile.tornFraction(top: top, bottom: []) { _ in true } == nil)

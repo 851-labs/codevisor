@@ -92,8 +92,10 @@ measure() {
     pids+=($!)
   fi
   sleep 3
+  local bottom=()
+  tier2_has_bottom_barcode "$scene" "$system" && bottom=(--bottom-barcode)
   bench_window player --scene "$scene" --seed "$TIER2_SEED" --duration "$((TIER2_DURATION + 6))" \
-    ${player_display[@]+"${player_display[@]}"} \
+    ${player_display[@]+"${player_display[@]}"} ${bottom[@]+"${bottom[@]}"} \
     >"$dir/player.json" 2>"$dir/player.err" &
   pids+=($!)
   local failed=0

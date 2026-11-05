@@ -7,7 +7,7 @@ struct PlayerCommand: BenchCommand {
   static let usage = """
     [--scene \(BenchScene.allCases.map(\.rawValue).joined(separator: "|"))] [--seed <n>] [--duration <seconds>]
       [--resolution native|R1|R1x2|R2|R3] [--display main|virtual] [--display-id <id>] [--input-region large|small]
-      [--hash-log <path>] [--self-input-hz <n>]
+      [--hash-log <path>] [--self-input-hz <n>] [--bottom-barcode]
     """
 
   private static let durations = 1...3600
@@ -26,7 +26,8 @@ struct PlayerCommand: BenchCommand {
       displayID: try DisplayOption.id(from: options, named: "display-id"),
       inputRegion: try options.choice("input-region", default: BenchInputRegion.large),
       hashLog: try options.string("hash-log"),
-      selfInputHz: try options.integer("self-input-hz", default: 0, in: Self.selfInputRates))
+      selfInputHz: try options.integer("self-input-hz", default: 0, in: Self.selfInputRates),
+      bottomBarcode: try options.flag("bottom-barcode"))
   }
 
   func run() async throws {

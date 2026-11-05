@@ -1,7 +1,7 @@
 import ScreenSharingBench
 
 struct Tier2BottomTile {
-  static let matchToleranceNs: Int64 = 2_000_000
+  static let sameFrameNs: Int64 = 2_000_000
 
   let imageAgeMs: BenchDistribution?
   let viewerTornFraction: Double?
@@ -10,10 +10,13 @@ struct Tier2BottomTile {
   init?(_ files: Tier2RunFiles, clock: BenchClockTrack, window: BenchSharingWindow) {
     guard let viewerBottom = files.viewerBottom else { return nil }
 
+    let shown = BenchObservedVersions(viewerBottom).firstPtsNs
     imageAgeMs = files.hostBottom.flatMap { hostBottom in
-      BenchSharingAnalysis(
-        host: hostBottom, viewer: viewerBottom, viewerNs: clock.localNs(fromRemote:), countsFreezes: false)?
-        .imageAgeMs
+      let produced = BenchObservedVersions(hostBottom).firstPtsNs.mapValues(clock.localNs(fromRemote:))
+      return BenchDistribution(
+        produced.filter { window.contains($0.value) }.compactMap { version, producedNs in
+          shown[version].map { Double($0 - producedNs) / 1_000_000 }
+        })
     }
     viewerTornFraction = Self.tornFraction(top: files.viewer, bottom: viewerBottom) { window.contains($0) }
     hostTornFraction = files.hostBottom.flatMap { hostBottom in
@@ -26,32 +29,28 @@ struct Tier2BottomTile {
   static func tornFraction(
     top: [BenchObservation], bottom: [BenchObservation], inWindow: (Int64) -> Bool
   ) -> Double? {
-    let tops = top.compactMap { observation in observation.version.map { (observation.ptsNs, $0) } }
-      .filter { inWindow($0.0) }.sorted { $0.0 < $1.0 }
-    let pairs = bottom.compactMap { observation -> (Int, Int)? in
-      guard let version = observation.version, inWindow(observation.ptsNs),
-        let match = nearest(observation.ptsNs, in: tops)
-      else { return nil }
+    let events = (Self.readings(top, side: 0) + Self.readings(bottom, side: 1)).sorted { $0.ptsNs < $1.ptsNs }
+    var latest: [Int?] = [nil, nil]
+    var frames = 0
+    var torn = 0
+    var index = events.startIndex
+    while index < events.endIndex {
+      let frameNs = events[index].ptsNs
+      while index < events.endIndex, events[index].ptsNs - frameNs <= sameFrameNs {
+        latest[events[index].side] = events[index].version
+        index += 1
+      }
+      guard inWindow(frameNs), let shownTop = latest[0], let shownBottom = latest[1] else { continue }
 
-      return (match, version)
+      frames += 1
+      if shownTop != shownBottom { torn += 1 }
     }
-    guard !pairs.isEmpty else { return nil }
-
-    return Double(pairs.count { $0.0 != $0.1 }) / Double(pairs.count)
+    return frames > 0 ? Double(torn) / Double(frames) : nil
   }
 
-  private static func nearest(_ ptsNs: Int64, in sorted: [(Int64, Int)]) -> Int? {
-    var low = 0
-    var high = sorted.count
-    while low < high {
-      let middle = (low + high) / 2
-      if sorted[middle].0 < ptsNs { low = middle + 1 } else { high = middle }
-    }
-    let candidates = [low - 1, low].filter(sorted.indices.contains)
-    guard let best = candidates.min(by: { abs(sorted[$0].0 - ptsNs) < abs(sorted[$1].0 - ptsNs) }),
-      abs(sorted[best].0 - ptsNs) <= matchToleranceNs
-    else { return nil }
-
-    return sorted[best].1
+  private static func readings(
+    _ observations: [BenchObservation], side: Int
+  ) -> [(ptsNs: Int64, side: Int, version: Int)] {
+    observations.compactMap { observation in observation.version.map { (observation.ptsNs, side, $0) } }
   }
 }
