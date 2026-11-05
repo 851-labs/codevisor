@@ -153,7 +153,7 @@ jobs:
         with:
           path: packages/net/target
           key: ${{ steps.net-cargo-key.outputs.key }}
-      - run: bun run test:coverage
+      - run: bun run test:coverage --filter=!@codevisor/server
       - run: bun run dev:scripts:test
       - run: bun run release:scripts:test
       - name: Save net Cargo target cache
@@ -162,6 +162,18 @@ jobs:
         with:
           path: packages/net/target
           key: ${{ steps.net-cargo-key.outputs.key }}
+
+  test-server:
+    needs: metadata
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+      - uses: ./.github/actions/setup-node
+      - uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6
+        with:
+          bun-version-file: package.json
+      - run: bun install --frozen-lockfile
+      - run: bun run test:coverage --filter=@codevisor/server
 
   net-test:
     needs: metadata
@@ -526,6 +538,7 @@ jobs:
         lint,
         typecheck,
         test-js,
+        test-server,
         net-test,
         net-e2e,
         server-linux-x64,
