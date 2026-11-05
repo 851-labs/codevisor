@@ -35,16 +35,19 @@ struct SidebarRowsTests {
   private func nested(
     _ items: [WorkspaceSidebarItem], _ grouping: SidebarGrouping = .machine, pinned: [UUID] = [],
     archived: [WorkspaceSidebarItem] = [], archivedVisibleCount: Int = sidebarArchivedPageSize,
-    collapsed: [WorkspaceSidebarItem] = [],
-    expansion: SidebarRows.Expansion = SidebarRows.Expansion(), selecting selected: UUID? = nil
+    collapsed: [WorkspaceSidebarItem] = [], tabs: [UUID: [UUID]] = [:],
+    expansion: SidebarRows.Expansion = SidebarRows.Expansion(), selecting selected: UUID? = nil,
+    selectingTab selectedTab: UUID? = nil
   ) -> Layout {
     let tree = SidebarWorkspaceTree(items, pinnedIDs: pinned.map(\.uuidString))
     var expansion = expansion
     expansion.collapsedGroupIDs.formUnion(collapsed.map { SidebarRows.childrenGroupID($0.id) })
     return derive(
       SidebarRows.State(
-        groups: groups(tree.roots, grouping, pinned: pinned), children: tree.children, archived: archived,
-        archivedVisibleCount: archivedVisibleCount, expansion: expansion, selectedWorkspaceID: selected))
+        groups: groups(tree.roots, grouping, pinned: pinned), children: tree.children, tabs: tabs,
+        archived: archived,
+        archivedVisibleCount: archivedVisibleCount, expansion: expansion, selectedWorkspaceID: selected,
+        selectedTabID: selectedTab))
   }
 
   private struct Layout {
@@ -430,5 +433,34 @@ struct SidebarRowsTests {
     let moved = ListReorder.moving(
       second.id, to: 0, within: SidebarRows.siblings(of: second.id, in: rows), in: all.map(\.id))
     #expect(moved == [parent.id, second.id, nephew.id, first.id, root.id])
+  }
+
+  @Test("A workspace's tabs nest above its children under the same disclosure; collapsed, only the selected tab stays")
+  func tabsNestAboveChildren() {
+    let parent = item(studio)
+    let child = item(studio, parent: parent)
+    let (alone, after) = (item(studio), item(studio))
+    let (terminal, browser, aloneTab) = (UUID(), UUID(), UUID())
+    let all = [parent, child, alone, after]
+    let tabs = [parent.id: [terminal, browser], alone.id: [aloneTab]]
+
+    let expanded = nested(all, tabs: tabs)
+    #expect(
+      expanded.ids.dropFirst(2) == [
+        .workspace(parent.id), .tab(terminal), .tab(browser), .workspace(child.id), .workspace(alone.id),
+        .tab(aloneTab), .workspace(after.id),
+      ])
+    #expect(expanded.rows.first { $0.id == .tab(terminal) }?.depth == 2)
+    #expect(expanded.isExpanded(alone.id) == true)
+    #expect(SidebarRows.tabs(of: parent.id, in: expanded.rows) == [terminal, browser])
+    #expect(
+      SidebarRows.activeWorkspaceSections(expanded.rows).map { $0.map(\.id) } == [all.map(\.id)])
+
+    let collapsed = nested(all, collapsed: [parent, alone], tabs: tabs)
+    #expect(collapsed.ids.dropFirst(2) == [.workspace(parent.id), .workspace(alone.id), .workspace(after.id)])
+    #expect(collapsed.isExpanded(alone.id) == false)
+
+    let keepsSelected = nested(all, collapsed: [parent], tabs: tabs, selecting: parent.id, selectingTab: browser)
+    #expect(keepsSelected.ids.dropFirst(2).prefix(3) == [.workspace(parent.id), .tab(browser), .workspace(alone.id)])
   }
 }

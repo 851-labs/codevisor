@@ -19,8 +19,8 @@ struct SidebarWorkspaceNavigator {
     }
   }
 
-  func activate(_ item: SidebarWorkspaceListItem) {
-    guard let tab = item.workspace.selectedCenterTab ?? item.workspace.centerTabs.first else { return }
+  func activate(_ item: SidebarWorkspaceListItem, tabId: UUID? = nil) {
+    guard let tab = activatedTab(of: item.workspace, preferring: tabId) else { return }
 
     let workspace = item.workspace
     guard store?.selectDestination(.tab(tab.id), in: workspace.id) == true else { return }
@@ -30,6 +30,10 @@ struct SidebarWorkspaceNavigator {
         routingSessionId: item.routingSession?.id,
         selectionAlreadyRoutesWorkspace: routesSelectedSession(workspace)
       ))
+  }
+
+  private func activatedTab(of workspace: Workspace, preferring tabId: UUID? = nil) -> WorkspaceTab? {
+    workspace.centerTabs.first { $0.id == tabId } ?? workspace.selectedCenterTab ?? workspace.centerTabs.first
   }
 
   private func apply(_ route: WorkspaceSelectionRoute?) {

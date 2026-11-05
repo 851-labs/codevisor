@@ -10,11 +10,11 @@ extension SidebarView {
     let listing = workspaceListing
     let tree = listing.tree
     return SidebarRows.State(
-      groups: listing.groups(of: tree.roots), children: tree.children,
+      groups: listing.groups(of: tree.roots), children: tree.children, tabs: nestedTabs,
       archived: archivedSidebarItems, archivedVisibleCount: archivedVisibleCount,
       expansion: SidebarRows.Expansion(
         pinned: pinnedExpanded, list: listExpanded, archived: archivedExpanded,
         collapsedGroupIDs: SidebarChildDisclosure.current().collapsedGroupIDs(in: tree)),
-      selectedWorkspaceID: selectedWorkspaceID)
+      selectedWorkspaceID: selectedWorkspaceID, selectedTabID: selectedSidebarTabID)
   }
 }

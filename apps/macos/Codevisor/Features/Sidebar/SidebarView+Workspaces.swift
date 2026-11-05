@@ -9,7 +9,7 @@ extension SidebarView {
 
   var rowActions: SidebarWorkspaceSection.Actions {
     SidebarWorkspaceSection.Actions(
-      activate: { activateWorkspace($0) },
+      activate: { activateWorkspace($0, tabId: $0.workspace.mainTab.id) },
       togglePin: { togglePin($0) },
       newTab: { addTab(in: $0) },
       rename: { workspace in
@@ -93,8 +93,8 @@ extension SidebarView {
     navigator.routesSelectedSession(workspace)
   }
 
-  func activateWorkspace(_ item: SidebarWorkspaceListItem) {
-    navigator.activate(item)
+  func activateWorkspace(_ item: SidebarWorkspaceListItem, tabId: UUID? = nil) {
+    navigator.activate(item, tabId: tabId)
   }
 
   func addTab(in item: SidebarWorkspaceListItem) {

@@ -88,7 +88,12 @@ struct SidebarWorkspaceRow: View {
     }
     .contextMenu {
       switch lifecycle {
-      case let .active(isPinned, onTogglePin, _, onRename, onArchive):
+      case let .active(isPinned, onTogglePin, onNewTab, onRename, onArchive):
+        Button(action: onNewTab) {
+          Label("New Tab", systemImage: "plus")
+            .labelStyle(.titleAndIcon)
+        }
+        Divider()
         Button(action: onTogglePin) {
           Label(isPinned ? "Unpin" : "Pin", systemImage: isPinned ? "pin.slash" : "pin")
             .labelStyle(.titleAndIcon)
@@ -124,7 +129,8 @@ struct SidebarWorkspaceRow: View {
   private var hoverActions: some View {
     HStack(spacing: Self.trailingSpacing) {
       switch lifecycle {
-      case let .active(isPinned, onTogglePin, _, _, onArchive):
+      case let .active(isPinned, onTogglePin, onNewTab, _, onArchive):
+        hoverButton(systemImage: "plus", help: "New tab", label: "New tab in", action: onNewTab)
         hoverButton(
           systemImage: isPinned ? "pin.slash" : "pin",
           help: isPinned ? "Unpin workspace" : "Pin workspace",
@@ -143,17 +149,9 @@ struct SidebarWorkspaceRow: View {
   private func hoverButton(
     systemImage: String, help: String, label: String, action: @escaping () -> Void
   ) -> some View {
-    Button(action: action) {
-      Image(systemName: systemImage)
-        .font(.system(size: SidebarRowIcon.trailingSize, weight: SidebarRowIcon.weight))
-        .frame(width: SidebarRowIcon.trailingSlot, height: SidebarRowIcon.trailingSlot)
-        .contentShape(Rectangle())
-    }
-    .buttonStyle(.plain)
-    .foregroundStyle(.secondary)
-    .help(help)
-    .accessibilityLabel("\(label) \(SidebarWorkspaceRowLabel.title(for: name))")
-    .accessibilityHidden(true)
+    SidebarRowHoverButton(
+      systemImage: systemImage, help: help,
+      accessibilityLabel: "\(label) \(SidebarWorkspaceRowLabel.title(for: name))", action: action)
   }
 }
 

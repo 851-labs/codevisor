@@ -26,11 +26,19 @@ extension SessionContainerView {
   }
 
   func addCenterTab() {
+    openCenterTab(continuingBrowsing: activeBrowserModel != nil)
+  }
+
+  func addPaletteTab() {
+    openCenterTab(continuingBrowsing: false)
+  }
+
+  private func openCenterTab(continuingBrowsing: Bool) {
     guard !isSinglePane else { return }
     var workspace = selectedWorkspace
     var state = PaneGroupState()
     var pane = state.addNewTabPane()
-    if activeBrowserModel != nil, let browser = state.convertNewTabPane(id: pane.id, to: .browser, sessionId: nil) {
+    if continuingBrowsing, let browser = state.convertNewTabPane(id: pane.id, to: .browser, sessionId: nil) {
       ChromiumBrowserModels.shared.expectNewTab(browser.id, focusingAddress: true)
       pane = browser
     }
@@ -52,14 +60,6 @@ extension SessionContainerView {
     environment.workspaceSync.keepTab(workspaceId: selectedWorkspace.id, tabId: tabId)
   }
 
-  func selectCenterTab(_ tabId: UUID) {
-    store.selectDestination(.tab(tabId), in: selectedWorkspace.id)
-  }
-
-  func moveCenterTab(_ tabId: UUID, before successorId: UUID?) {
-    environment.workspaceSync.moveTab(tabId, before: successorId, inWorkspace: selectedWorkspace.id)
-  }
-
   func singlePaneChatLeaf(in workspace: Workspace) -> (id: UUID, state: PaneGroupState)? {
     guard isSinglePane, let session else { return nil }
 
@@ -69,45 +69,6 @@ extension SessionContainerView {
       }
     }
     return nil
-  }
-
-  func showsCenterTabBar(in workspace: Workspace) -> Bool {
-    !isSinglePane && workspace.centerTabs.count > 1
-  }
-
-  func centerTabItems(in workspace: Workspace) -> [PaneTabStripItem] {
-    workspace.centerTabs.enumerated().map { index, tab in
-      let descriptor = centerTabDescriptor(tab, in: workspace)
-      let title = centerTabTitle(tab, descriptor: descriptor)
-      return PaneTabStripItem(
-        id: tab.id,
-        name: title,
-        icon: .workspaceTab(
-          descriptor, title: title, serverId: workspace.serverId, environment: environment, store: store),
-        canClose: !workspace.holdsMainChat(tab),
-        shortcutHint: index < 9 ? "⌘\(index + 1)" : nil,
-        isPreview: tab.isPreview
-      )
-    }
-  }
-
-  private func centerTabTitle(_ tab: WorkspaceTab, descriptor: PaneDescriptorState?) -> String {
-    guard let descriptor else { return tab.customTitle ?? "New Tab" }
-    if descriptor.kind == .chat { return paneTitle(descriptor) }
-    return tab.customTitle ?? paneTitle(descriptor)
-  }
-
-  private func centerTabDescriptor(_ tab: WorkspaceTab, in workspace: Workspace) -> PaneDescriptorState? {
-    let persisted = tab.root.group(id: tab.activeLeafId)
-    let liveKey = SessionStore.CenterLeafKey(workspaceId: workspace.id, groupId: tab.activeLeafId)
-    guard var live = store.centerLeafGroups[liveKey]?.state.selectedPane else {
-      return persisted?.selectedPane ?? tab.root.allGroups.first?.state.selectedPane
-    }
-    if let record = persisted?.panes.first(where: { $0.id == live.id }) {
-      live.liveTitle = record.liveTitle
-      live.terminalActivity = record.terminalActivity
-    }
-    return live
   }
 
   func closeCenterTab(_ tabId: UUID) {
