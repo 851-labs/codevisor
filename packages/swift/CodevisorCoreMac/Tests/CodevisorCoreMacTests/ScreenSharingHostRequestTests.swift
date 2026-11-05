@@ -135,8 +135,8 @@ struct ScreenSharingHostRequestTests {
   }
 
   @Test func onlyAHostWithAMediaEndpointAdvertisesEngineV2() async {
-    let plain = makeHost { [] }
-    let capable = makeHost(mediaEndpoint: unboundEndpoint()) { [] }
+    let plain = makeHost(mediaEndpoint: ScreenSharingMediaEndpoint()) { [] }
+    let capable = makeHost { [] }
     #expect(await plain.handle(capabilities()).engines == nil)
     #expect(await capable.handle(capabilities()).engines == ["v2"])
     await plain.shutdown()
@@ -144,16 +144,17 @@ struct ScreenSharingHostRequestTests {
   }
 
   @Test func aV2StartIsRefusedByAHostWithoutAMediaEndpoint() async {
-    let host = makeHost { [self.display] }
-    let reply = await host.handle(v2Request())
+    let host = makeHost(mediaEndpoint: ScreenSharingMediaEndpoint()) { [self.display] }
+    let reply = await host.handle(request())
     #expect(reply.status == "failed" && reply.media == nil)
+    #expect(reply.message == "This Mac's screen-sharing endpoint isn't available.")
     #expect(await host.handle(capabilities()).status == "available")
     await host.shutdown()
   }
 
   @Test func aV2StartWhoseEndpointCantBindFailsAndLeavesTheHostFree() async {
-    let host = makeHost(mediaEndpoint: unboundEndpoint()) { [self.display] }
-    let reply = await host.handle(v2Request())
+    let host = makeHost { [self.display] }
+    let reply = await host.handle(request())
     #expect(reply.status == "failed")
     #expect(reply.message == "This Mac's screen-sharing endpoint isn't available.")
     #expect(await host.handle(capabilities()).status == "available")
@@ -164,7 +165,7 @@ struct ScreenSharingHostRequestTests {
     (CGMainDisplayID(), ServerScreenSharingDisplay(id: "display", name: "Display", width: 1280, height: 720))
   }
 
-  private func unboundEndpoint() -> ScreenSharingMediaEndpoint {
+  private static func unboundEndpoint() -> ScreenSharingMediaEndpoint {
     let endpoint = ScreenSharingMediaEndpoint()
     endpoint.configure { nil }
     return endpoint
@@ -174,7 +175,7 @@ struct ScreenSharingHostRequestTests {
     .init(operation: .capabilities, workspaceId: UUID(), paneId: UUID(), viewerId: UUID())
   }
 
-  private func v2Request() -> ServerScreenSharingRequest {
+  private func request() -> ServerScreenSharingRequest {
     var request = ServerScreenSharingRequest(
       operation: .start, workspaceId: UUID(), paneId: UUID(), viewerId: UUID(), displayId: "display")
     request.engine = "v2"
@@ -183,18 +184,12 @@ struct ScreenSharingHostRequestTests {
   }
 
   private func makeHost(
-    mediaEndpoint: ScreenSharingMediaEndpoint = ScreenSharingMediaEndpoint(),
+    mediaEndpoint: ScreenSharingMediaEndpoint = ScreenSharingHostRequestTests.unboundEndpoint(),
     enumerate: @escaping () async throws -> [ScreenSharingHostService.Display]
   ) -> ScreenSharingHostService {
     ScreenSharingHostService(
       captureAccess: { true }, notificationCenter: NotificationCenter(),
       workspaceNotificationCenter: NotificationCenter(), enumerateDisplays: enumerate, mediaEndpoint: mediaEndpoint)
-  }
-
-  private func request() -> ServerScreenSharingRequest {
-    .init(
-      operation: .start, workspaceId: UUID(), paneId: UUID(), viewerId: UUID(), displayId: "display",
-      offer: "a=fingerprint:sha-256 fixture")
   }
 
   private func stop(_ start: ServerScreenSharingRequest) -> ServerScreenSharingRequest {

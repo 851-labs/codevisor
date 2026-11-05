@@ -58,16 +58,7 @@ Connection Details shows the selected direct/relay route, transport, decoded res
 
 ## Connectivity and recovery
 
-The native host reads optional deployment configuration from its launch environment:
-
-| Variable | Meaning |
-| --- | --- |
-| `CODEVISOR_SCREEN_SHARING_STUN_URLS` | Comma-separated `stun:` or `stuns:` URLs |
-| `CODEVISOR_SCREEN_SHARING_TURN_URLS` | Comma-separated `turn:` or `turns:` URLs, optionally `?transport=udp` or `?transport=tcp` |
-| `CODEVISOR_SCREEN_SHARING_TURN_SECRET` | Host-only TURN REST shared secret; never shipped in the viewer |
-| `CODEVISOR_SCREEN_SHARING_RELAY_ONLY` | `1` forces a TURN route; default `0` allows direct connections |
-
-With no configuration, neither peer contacts a third-party ICE server. The host mints five-minute, viewer-specific TURN REST credentials using HMAC-SHA1. The viewer requests fresh credentials immediately before negotiation through the authenticated, uncached machine API. This matches [coturn's TURN REST mechanism](https://github.com/coturn/coturn/blob/master/README.turnserver#turn-rest-api). No relay infrastructure or fixed client secret ships with Codevisor.
+The product streams over engine v2 (below), which routes through the app's iroh endpoint: direct when Local Network access allows it, otherwise through the cloud relay. The WebRTC host settings `CODEVISOR_SCREEN_SHARING_STUN_URLS`, `CODEVISOR_SCREEN_SHARING_TURN_URLS`, `CODEVISOR_SCREEN_SHARING_TURN_SECRET` and `CODEVISOR_SCREEN_SHARING_RELAY_ONLY` are gone (851-3826), and so are the `connectivity`, `offer`, `answer` and `tunnelMedia` signaling fields. The recovery notes that follow describe the WebRTC path; only the bench still runs it, and a later 851-3826 change removes it and these notes.
 
 After an established connection drops, the viewer releases input, discards the old native peer and its frame mailbox, and renegotiates using `restart`. The host accepts replacement only for the same still-live viewer lease and display. Host stop, sleep, display change, cancellation and lease expiry prevent renewal. Replacement uses fresh ICE/DTLS and codec state rather than restarting ICE inside the old peer; control must be requested again. Three automatic replacements are allowed before explicit reconnect is required. This avoids replaying queued input or decoder state across routes.
 

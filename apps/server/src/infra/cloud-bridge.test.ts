@@ -120,7 +120,6 @@ describe("cloud connect", () => {
       acceptDirect: () => undefined,
       machines: () => undefined,
       requestGateway: notUsed,
-      bridgeTunnelMedia: notUsed,
       setDirectPaths: (allowed) => (allowed ? "auto" : "relay-only")
     }
     const dir = mkdtempSync(join(tmpdir(), "cloud-bridge-"))

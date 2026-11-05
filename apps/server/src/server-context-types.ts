@@ -127,10 +127,6 @@ export interface CloudServerControl {
     body: string,
     signal?: AbortSignal
   ) => Promise<import("@codevisor/cloud-client").GatewayExchange>
-  readonly bridgeTunnelMedia?: (
-    request: import("@codevisor/cloud-client").TunnelMediaRequest,
-    answer: string
-  ) => Promise<import("@codevisor/cloud-client").TunnelMediaBridge | undefined>
   readonly setDirectPaths?: (allowed: boolean) => import("@codevisor/net").PathPolicy | undefined
 }
 

@@ -3,7 +3,6 @@ import CoreGraphics
 import Foundation
 import ScreenSharing
 import ScreenSharingV2
-import ScreenSharingWebRTC
 
 enum ComputerUseStreamTarget {
   static let prefix = "computer-use:"
@@ -21,7 +20,7 @@ enum ComputerUseStreamTarget {
 protocol ComputerUseStreamPeer: AnyObject {
   var onConnectionChanged: ((String) -> Void)? { get set }
   var sink: any ComputerUseFrameSink { get }
-  func start(failed: @escaping @MainActor (String) -> Void) async throws -> ScreenSharingStreamGrant
+  func start(failed: @escaping @MainActor (String) -> Void) async throws -> ServerScreenSharingMediaGrant
   func close()
 }
 
@@ -52,7 +51,7 @@ final class ComputerUseV2Peer: ComputerUseStreamPeer {
     set { stream.link.onConnectionChanged = newValue }
   }
 
-  func start(failed: @escaping @MainActor (String) -> Void) async throws -> ScreenSharingStreamGrant {
+  func start(failed: @escaping @MainActor (String) -> Void) async throws -> ServerScreenSharingMediaGrant {
     try await stream.listen(for: viewerEndpointId, failed: failed)
   }
 
@@ -81,63 +80,6 @@ final class ComputerUseV2Sink: ComputerUseFrameSink {
   }
 }
 
-@MainActor
-final class ComputerUseSenderPeer: ComputerUseStreamPeer {
-  private let sender: ScreenSharingSender
-  private let control: ScreenSharingHostControl
-  private let offer: String
-  let sink: any ComputerUseFrameSink
-
-  init(size: CGSize, offer: String, connectivity: ServerScreenSharingConnectivity) async throws {
-    let metrics = ScreenSharingMetrics()
-    let configuration = try computerUseStreamVideoConfiguration(size: size)
-    var options = ScreenSharingPeerOptions()
-    options.codec = .hevc
-    options.fallbackCodecs = [.h264]
-    let sender = try await ScreenSharingSender(
-      configuration: configuration, metrics: metrics, options: options, connectivity: connectivity.native())
-    self.sender = sender
-    self.offer = offer
-    sink = ComputerUseSenderSink(sender: sender)
-    control = viewOnlyControl { [weak sender] in sender?.controlChannel.send($0) ?? false }
-    sender.controlChannel.onMessage = { [weak control] in control?.receive($0) }
-  }
-
-  var onConnectionChanged: ((String) -> Void)? {
-    get { sender.onConnectionChanged }
-    set { sender.onConnectionChanged = newValue }
-  }
-
-  func start(failed: @escaping @MainActor (String) -> Void) async throws -> ScreenSharingStreamGrant {
-    try await sender.accept(.init(kind: "offer", sdp: offer))
-    return .answer(try await sender.makeDescription(offer: false).sdp)
-  }
-
-  func close() {
-    control.revoke("The live view ended.")
-    sender.close()
-  }
-}
-
-final class ComputerUseSenderSink: ComputerUseFrameSink {
-  private let frameSender: ScreenSharingFrameSender
-  @MainActor private weak var sender: ScreenSharingSender?
-
-  @MainActor init(sender: ScreenSharingSender) {
-    self.sender = sender
-    frameSender = sender.frameSender
-  }
-
-  @MainActor func prepare(size: CGSize) {
-    guard let configuration = try? computerUseStreamVideoConfiguration(size: size) else { return }
-    sender?.updateVideoConfiguration(configuration)
-  }
-
-  func push(_ frame: ScreenSharingVideoFrame) {
-    frameSender.push(frame)
-  }
-}
-
 func computerUseStreamVideoConfiguration(size: CGSize) throws -> ScreenSharingVideoConfiguration {
   func dimension(_ value: CGFloat, limit: Int) -> Int {
     min(limit, max(64, Int(value) / 2 * 2))
@@ -159,30 +101,18 @@ final class ComputerUseLivePreviewHost {
     var attach: @MainActor (_ bridgeSessionID: String, _ sink: any ComputerUseFrameSink) -> UUID
     var detach: @MainActor (_ bridgeSessionID: String, _ token: UUID) -> Void
     var makePeer:
-      @MainActor (_ size: CGSize, _ media: ScreenSharingStreamMedia, _ viewerId: UUID) async throws
-        -> any ComputerUseStreamPeer
-    var makeConnectivity: @MainActor (_ viewerId: UUID) throws -> ServerScreenSharingConnectivity
+      @MainActor (_ size: CGSize, _ media: ScreenSharingStreamMedia) async throws -> any ComputerUseStreamPeer
     var offersV2: @MainActor () -> Bool
     var now: @MainActor () -> TimeInterval
 
     @MainActor static var live: Dependencies {
-      let connectivity = ScreenSharingHostConnectivity(environment: ProcessInfo.processInfo.environment)
-      return Dependencies(
+      Dependencies(
         captureAccess: { CGPreflightScreenCaptureAccess() },
         activity: { ComputerUseLivePreview.shared.activity(forSessionID: $0) },
         streamSize: { ComputerUseNativeSharing.shared.previewSize(sessionID: $0) },
         attach: { ComputerUseLivePreview.shared.attachSink(sessionID: $0, sink: $1) },
         detach: { ComputerUseLivePreview.shared.detachSink(sessionID: $0, token: $1) },
-        makePeer: { size, media, viewerId in
-          switch media {
-          case .v2(let viewerEndpointId):
-            return try ComputerUseV2Peer(size: size, viewerEndpointId: viewerEndpointId)
-          case .webRTC(let offer):
-            return try await ComputerUseSenderPeer(
-              size: size, offer: offer, connectivity: try connectivity.make(viewerId: viewerId))
-          }
-        },
-        makeConnectivity: { try connectivity.make(viewerId: $0) },
+        makePeer: { size, media in try ComputerUseV2Peer(size: size, viewerEndpointId: media.viewerEndpointId) },
         offersV2: { ScreenSharingMediaEndpoint.shared.isAvailable },
         now: { ProcessInfo.processInfo.systemUptime }
       )
@@ -262,14 +192,10 @@ final class ComputerUseLivePreviewHost {
   private func capabilities(_ request: ServerScreenSharingRequest, sessionID: String) -> ServerScreenSharingReply {
     guard dependencies.captureAccess() else { return Self.permissionRequired }
     guard let activity = liveActivity(sessionID) else { return Self.notControlling }
-    do {
-      var reply = ServerScreenSharingReply(
-        status: "available",
-        displays: [display(for: activity, target: request.displayId ?? "")],
-        connectivity: try dependencies.makeConnectivity(request.viewerId))
-      if dependencies.offersV2() { reply.engines = [ScreenSharingEngine.v2.rawValue] }
-      return reply
-    } catch { return .init(status: "unavailable", message: error.localizedDescription) }
+    var reply = ServerScreenSharingReply(
+      status: "available", displays: [display(for: activity, target: request.displayId ?? "")])
+    if dependencies.offersV2() { reply.engines = [ScreenSharingEngine.v2.rawValue] }
+    return reply
   }
 
   private func start(
@@ -286,7 +212,7 @@ final class ComputerUseLivePreviewHost {
     guard let activity = liveActivity(sessionID) else { return Self.notControlling }
     let size = dependencies.streamSize(activity.bridgeSessionID) ?? activity.windowFrame.size
     do {
-      let peer = try await dependencies.makePeer(size, media, request.viewerId)
+      let peer = try await dependencies.makePeer(size, media)
       guard !isShutdown else {
         peer.close()
         return .init(status: "stopped")

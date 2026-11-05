@@ -3,13 +3,12 @@ import CodevisorCore
 import Foundation
 import ScreenSharing
 import ScreenSharingV2
-import ScreenSharingWebRTC
 
 @MainActor
 final class ScreenSharingHostSession {
   let owner: ScreenSharingHostLease.Owner
-  let peer: any ScreenSharingHostPeer
-  let v2: V2?
+  let peer: ScreenSharingV2HostLink
+  let v2: V2
   var mediaAccept: Task<Void, Never>?
   let capture: ScreenSharingCapture
   let metrics: ScreenSharingMetrics
@@ -32,47 +31,32 @@ final class ScreenSharingHostSession {
   private var cursorStream: ScreenSharingHostCursorStream?
   private var audioStream: ScreenSharingHostAudioStream?
   var control: ScreenSharingHostControl?
-  var codec: ScreenSharingVideoCodec?
   var hdr = ScreenSharingHostService.DynamicRangeState()
   var clipboard: ScreenSharingHostClipboard?
   var stopping = false
   var ending: Task<Void, Never>?
   var watchdog: Task<Void, Never>?
   var captureTask: Task<Void, Never>?
-  var qualityTask: Task<Void, Never>?
 
   struct V2 {
     let token: String
     let viewerEndpointId: String
   }
 
-  enum Engine {
-    case webRTC(ServerScreenSharingConnectivity)
-    case v2(viewerEndpointId: String, encoder: ScreenSharingV2EncoderKind)
-  }
-
   init(
-    request: ServerScreenSharingRequest, display: ServerScreenSharingDisplay, displayID: UInt32, engine: Engine
-  ) async throws {
+    request: ServerScreenSharingRequest, display: ServerScreenSharingDisplay, displayID: UInt32,
+    viewerEndpointId: String, encoder: ScreenSharingV2EncoderKind
+  ) throws {
     owner = .init(request)
     self.display = display; self.displayID = displayID
     displayIdentity = ScreenSharingDisplayIdentity(display: displayID)
     capture = ScreenSharingCapture()
     metrics = ScreenSharingMetrics()
-    switch engine {
-    case .webRTC(let connectivity):
-      configuration = try ScreenSharingProductProfile.captureConfiguration(
-        width: display.width, height: display.height)
-      peer = try await ScreenSharingSender(
-        configuration: configuration, metrics: metrics, connectivity: connectivity.native())
-      v2 = nil
-    case .v2(let viewerEndpointId, let encoder):
-      configuration = try ScreenSharingV2Profile.captureConfiguration(width: display.width, height: display.height)
-      peer = ScreenSharingV2HostLink(configuration: configuration, metrics: metrics) { configuration, metrics in
-        try await ScreenSharingV2Encoders.make(encoder, configuration: configuration, metrics: metrics)
-      }
-      v2 = V2(token: Self.makeToken(), viewerEndpointId: viewerEndpointId)
+    configuration = try ScreenSharingV2Profile.captureConfiguration(width: display.width, height: display.height)
+    peer = ScreenSharingV2HostLink(configuration: configuration, metrics: metrics) { configuration, metrics in
+      try await ScreenSharingV2Encoders.make(encoder, configuration: configuration, metrics: metrics)
     }
+    v2 = V2(token: Self.makeToken(), viewerEndpointId: viewerEndpointId)
     physicalConfiguration = configuration
   }
 

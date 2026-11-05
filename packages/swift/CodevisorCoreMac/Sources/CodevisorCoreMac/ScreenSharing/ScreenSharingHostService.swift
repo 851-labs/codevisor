@@ -3,7 +3,6 @@ import CodevisorNet
 import CodevisorCore
 import ScreenSharing
 import ScreenSharingV2
-import ScreenSharingWebRTC
 import Foundation
 import OSLog
 
@@ -19,7 +18,6 @@ final class ScreenSharingHostService {
   private var lease = ScreenSharingHostLease()
   private let indicator = ScreenSharingHostIndicator()
   private var observers: [NSObjectProtocol] = []
-  private let connectivity = ScreenSharingHostConnectivity(environment: ProcessInfo.processInfo.environment)
   private let captureAccess: () -> Bool
   private let enumerateDisplays: () async throws -> [Display]
   private let notificationCenter: NotificationCenter
@@ -88,126 +86,102 @@ final class ScreenSharingHostService {
       guard captureAccess() else { return permissionRequired() }
       do {
         var reply = ServerScreenSharingReply(
-          status: current == nil ? "available" : "busy", displays: try await enumerateDisplays().map(\.description),
-          connectivity: try connectivity.make(viewerId: request.viewerId))
+          status: current == nil ? "available" : "busy", displays: try await enumerateDisplays().map(\.description))
         if mediaEndpoint.isAvailable { reply.engines = [ScreenSharingEngine.v2.rawValue] }
         return reply
       } catch { return .init(status: "unavailable", message: error.localizedDescription) }
     case .start, .restart:
-      var replacement: ScreenSharingHostLease.ReplacementPermit?
-      if request.operation == .restart {
-        guard let old = current, !old.stopping, old.owner == .init(request),
-          old.display.id == request.displayId,
-          let permit = lease.replacementPermit(
-            old.owner, revision: stopGeneration, now: ProcessInfo.processInfo.systemUptime)
-        else {
-          return .init(
-            status: "stopped", message: "The host ended this sharing session. Connect again to start a new one.")
-        }
-        replacement = permit
-        await end(old)
-        guard !isShutdown, permit.isValid(revision: stopGeneration, now: ProcessInfo.processInfo.systemUptime) else {
-          return .init(status: "stopped", message: "Screen sharing ended on the host Mac.")
-        }
-      }
-      if request.operation == .start, let old = current, old.owner.isSamePane(as: .init(request)) {
-        await end(old)
-        guard !isShutdown, attempt.map({ pendingStarts[$0] != nil }) == true else { return .init(status: "stopped") }
-      }
-      guard current == nil else {
-        return .init(status: "busy", message: "This Mac is already sharing with another viewer.")
-      }
-      guard captureAccess() else { return permissionRequired() }
-      guard let (displayId, offer, viewerMedia) = startMedia(request) else {
-        return .init(status: "failed", message: "Invalid Screen Sharing request.")
-      }
-      do {
-        let available = try await enumerateDisplays()
-        try Task.checkCancellation()
-        guard !isShutdown, let attempt, pendingStarts[attempt] != nil else { return .init(status: "stopped") }
-        if let replacement, !replacement.isValid(revision: stopGeneration, now: ProcessInfo.processInfo.systemUptime) {
-          return .init(status: "stopped", message: "Screen sharing ended on the host Mac.")
-        }
-        guard current == nil else {
-          return .init(status: "busy", message: "This Mac is already sharing with another viewer.")
-        }
-        guard let display = available.first(where: { $0.description.id == displayId }) else {
-          return .init(status: "unavailable", message: "The selected display is no longer available.")
-        }
-        let session = try await ScreenSharingHostSession(
-          request: request, display: display.description, displayID: display.id,
-          engine: try engine(for: request, viewerMedia: viewerMedia))
-        if Task.isCancelled {
-          session.peer.close()
-          throw CancellationError()
-        }
-        guard !isShutdown, pendingStarts[attempt] != nil else {
-          session.peer.close()
-          return .init(status: "stopped")
-        }
-        if let replacement, !replacement.isValid(revision: stopGeneration, now: ProcessInfo.processInfo.systemUptime) {
-          session.peer.close()
-          return .init(status: "stopped", message: "Screen sharing ended on the host Mac.")
-        }
-        guard current == nil, lease.reserve(session.owner, now: ProcessInfo.processInfo.systemUptime) else {
-          session.peer.close()
-          return .init(status: "busy", message: "This Mac is already sharing with another viewer.")
-        }
-        current = session
-        lastEnd = nil
-        configure(session)
-        if let v2 = session.v2 { return await startV2(session, token: v2.token) }
-        return try await answer(offer, for: session)
-      } catch { return .init(status: "failed", message: error.localizedDescription) }
+      guard let attempt else { return .init(status: "stopped") }
+      return await start(request, attempt: attempt)
     }
   }
 
-  private func engine(
-    for request: ServerScreenSharingRequest, viewerMedia: ServerScreenSharingMediaAddress?
-  ) throws -> ScreenSharingHostSession.Engine {
-    guard let viewerMedia else { return .webRTC(try connectivity.make(viewerId: request.viewerId)) }
+  private func start(_ request: ServerScreenSharingRequest, attempt: UUID) async -> ServerScreenSharingReply {
+    var replacement: ScreenSharingHostLease.ReplacementPermit?
+    if request.operation == .restart {
+      guard let old = current, !old.stopping, old.owner == .init(request),
+        old.display.id == request.displayId,
+        let permit = lease.replacementPermit(
+          old.owner, revision: stopGeneration, now: ProcessInfo.processInfo.systemUptime)
+      else {
+        return .init(
+          status: "stopped", message: "The host ended this sharing session. Connect again to start a new one.")
+      }
+      replacement = permit
+      await end(old)
+      guard !isShutdown, permit.isValid(revision: stopGeneration, now: ProcessInfo.processInfo.systemUptime) else {
+        return .init(status: "stopped", message: "Screen sharing ended on the host Mac.")
+      }
+    }
+    if request.operation == .start, let old = current, old.owner.isSamePane(as: .init(request)) {
+      await end(old)
+      guard !isShutdown, pendingStarts[attempt] != nil else { return .init(status: "stopped") }
+    }
+    guard current == nil else {
+      return .init(status: "busy", message: "This Mac is already sharing with another viewer.")
+    }
+    guard captureAccess() else { return permissionRequired() }
+    guard mediaEndpoint.isAvailable else {
+      return .init(status: "failed", message: "This Mac's screen-sharing endpoint isn't available.")
+    }
+    guard let (displayId, viewerMedia) = startMedia(request) else {
+      return .init(status: "failed", message: "Invalid Screen Sharing request.")
+    }
+    do {
+      return try await startSession(
+        request, attempt: attempt, replacement: replacement, displayId: displayId, viewerMedia: viewerMedia)
+    } catch { return .init(status: "failed", message: error.localizedDescription) }
+  }
 
-    return .v2(viewerEndpointId: viewerMedia.endpointId, encoder: .forViewer(chroma: request.chroma))
+  private func startSession(
+    _ request: ServerScreenSharingRequest, attempt: UUID, replacement: ScreenSharingHostLease.ReplacementPermit?,
+    displayId: String, viewerMedia: ServerScreenSharingMediaAddress
+  ) async throws -> ServerScreenSharingReply {
+    let available = try await enumerateDisplays()
+    try Task.checkCancellation()
+    guard !isShutdown, pendingStarts[attempt] != nil else { return .init(status: "stopped") }
+    if let replacement, !replacement.isValid(revision: stopGeneration, now: ProcessInfo.processInfo.systemUptime) {
+      return .init(status: "stopped", message: "Screen sharing ended on the host Mac.")
+    }
+    guard current == nil else {
+      return .init(status: "busy", message: "This Mac is already sharing with another viewer.")
+    }
+    guard let display = available.first(where: { $0.description.id == displayId }) else {
+      return .init(status: "unavailable", message: "The selected display is no longer available.")
+    }
+    let session = try ScreenSharingHostSession(
+      request: request, display: display.description, displayID: display.id,
+      viewerEndpointId: viewerMedia.endpointId, encoder: .forViewer(chroma: request.chroma))
+    if Task.isCancelled {
+      session.peer.close()
+      throw CancellationError()
+    }
+    guard !isShutdown, pendingStarts[attempt] != nil else {
+      session.peer.close()
+      return .init(status: "stopped")
+    }
+    if let replacement, !replacement.isValid(revision: stopGeneration, now: ProcessInfo.processInfo.systemUptime) {
+      session.peer.close()
+      return .init(status: "stopped", message: "Screen sharing ended on the host Mac.")
+    }
+    guard current == nil, lease.reserve(session.owner, now: ProcessInfo.processInfo.systemUptime) else {
+      session.peer.close()
+      return .init(status: "busy", message: "This Mac is already sharing with another viewer.")
+    }
+    current = session
+    lastEnd = nil
+    configureChannels(session)
+    return await startV2(session)
   }
 
   private func startMedia(
     _ request: ServerScreenSharingRequest
-  ) -> (displayId: String, offer: String?, viewerMedia: ServerScreenSharingMediaAddress?)? {
-    let viewerMedia = request.engine == ScreenSharingEngine.v2.rawValue ? request.media : nil
-    let offer = request.offer.flatMap {
-      $0.utf8.count <= 256 * 1024 && $0.contains("a=fingerprint:sha-256 ") ? $0 : nil
-    }
-    guard let displayId = request.displayId, viewerMedia != nil || offer != nil,
-      viewerMedia == nil || mediaEndpoint.isAvailable
+  ) -> (displayId: String, viewerMedia: ServerScreenSharingMediaAddress)? {
+    guard request.engine == ScreenSharingEngine.v2.rawValue, let viewerMedia = request.media,
+      let displayId = request.displayId
     else { return nil }
 
-    return (displayId, offer, viewerMedia)
-  }
-
-  private func answer(
-    _ offer: String?, for session: ScreenSharingHostSession
-  ) async throws
-    -> ServerScreenSharingReply
-  {
-    guard let peer = session.peer as? ScreenSharingSender, let offer else {
-      await end(session)
-      return .init(status: "failed", message: "Invalid Screen Sharing request.")
-    }
-    do {
-      try await peer.accept(.init(kind: "offer", sdp: offer))
-      let answer = try await peer.makeDescription(offer: false)
-      if let codec = ScreenSharingVideoCodec.negotiated(inDescription: answer.sdp) {
-        session.capture.pixelFormat = codec.capturePixelFormat
-        session.codec = codec
-        session.metrics.label("negotiatedCodec", codec.rawValue)
-      }
-      try Task.checkCancellation()
-      guard current === session, !session.stopping else { throw CancellationError() }
-      return .init(status: "connecting", answer: answer.sdp)
-    } catch {
-      await end(session)
-      throw error
-    }
+    return (displayId, viewerMedia)
   }
 
   func mediaEndpointHandle() async -> NetEndpointHandle? {
@@ -224,35 +198,6 @@ final class ScreenSharingHostService {
       workspaceNotificationCenter.removeObserver(observer)
     }
     observers = []
-  }
-
-  private func configure(_ session: ScreenSharingHostSession) {
-    if let peer = session.peer as? ScreenSharingSender { configureQuality(session, peer: peer) }
-    configureChannels(session)
-  }
-
-  private func configureQuality(_ session: ScreenSharingHostSession, peer: ScreenSharingSender) {
-    session.qualityTask = Task { [weak self, weak session, weak peer] in
-      await ScreenSharingQualityLoop.run(
-        base: { session.flatMap { $0.stopping ? nil : $0.configuration } },
-        isViewing: { session?.state == "viewing" },
-        statistics: { await peer?.statistics() ?? [:] },
-        apply: { configuration, level in
-          guard let session, let peer else { return false }
-          peer.updateVideoConfiguration(configuration)
-          do {
-            try await session.capture.update(configuration: configuration)
-          } catch {
-            if !Task.isCancelled {
-              session.metrics.label("captureError", "Unable to adjust capture quality.")
-              self?.scheduleEnd(session)
-            }
-            return false
-          }
-          session.metrics.label("adaptiveQualityLevel", String(level))
-          return true
-        })
-    }
   }
 
   private func configureChannels(_ session: ScreenSharingHostSession) {
@@ -363,7 +308,6 @@ final class ScreenSharingHostService {
       "Host ended: \(session.state, privacy: .public), \(String(describing: metrics.counters), privacy: .public), \(String(describing: metrics.labels), privacy: .public)"
     )
     session.watchdog?.cancel()
-    session.qualityTask?.cancel()
     session.mediaAccept?.cancel()
     session.stopMediaPublishing()
     session.pendingResize?.cancel()

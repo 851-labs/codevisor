@@ -75,7 +75,6 @@ export interface CloudBridge {
     body: string,
     signal?: AbortSignal
   ) => Promise<GatewayExchange>
-  readonly bridgeTunnelMedia: NonNullable<CloudServerControl["bridgeTunnelMedia"]>
   readonly setDirectPaths: NonNullable<CloudServerControl["setDirectPaths"]>
 }
 
@@ -311,7 +310,6 @@ const makeBridge = async (
         body,
         signal === undefined ? {} : { signal }
       ),
-    bridgeTunnelMedia: async (request, answer) => tunnel?.bridgeMedia(request, answer),
     setDirectPaths: (allowed) => tunnel?.setDirectPaths(allowed)
   }
 }
@@ -460,7 +458,6 @@ export const makeCloudServerControl = (
       }
       return current.requestGateway(deviceId, body, signal)
     },
-    bridgeTunnelMedia: async (request, answer) => current?.bridgeTunnelMedia(request, answer),
     setDirectPaths: (allowed) => {
       directPaths = allowed
       return current?.setDirectPaths(allowed)

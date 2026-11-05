@@ -44,11 +44,3 @@ extension CloudAccountController {
     return (machine, key)
   }
 }
-
-extension CloudAccountController {
-  public func tunnelMediaRoute(for machine: CloudMachine) async -> CloudTunnelMediaRoute? {
-    guard state.isSignedIn, let address = machine.tunnel, verifiedMachineKey(for: machine) != nil
-    else { return nil }
-    return await directPaths.tunnel.openMediaRoute(to: address)
-  }
-}

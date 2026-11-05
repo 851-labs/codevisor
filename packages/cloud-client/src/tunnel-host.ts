@@ -13,7 +13,6 @@ import type { CloudSocket } from "./machine-socket.js"
 import type { PeerKeyPinStore } from "./peer-pins.js"
 
 export const TUNNEL_ALPN_CHANNELS = "codevisor/channels/1"
-export const TUNNEL_ALPN_MEDIA = "codevisor/media/1"
 
 const TEXT = 0
 const BINARY = 1
@@ -104,14 +103,11 @@ export const admitTunnelHello =
     return true
   }
 
-export type MediaConnectionHandler = (connection: TunnelConnection) => void
-
 export interface MachineTunnelOptions {
   bind: (options: EndpointOptions) => Promise<TunnelEndpoint>
   secretKeyHex: string
   host: Pick<DirectChannelHost, "accept">
   onAddr: (tunnel: CloudTunnelInfo) => void
-  onMedia?: MediaConnectionHandler
   trustAnchorsPem?: string[]
   bindAddrs?: string[]
   pathPolicy?: PathPolicy
@@ -164,7 +160,7 @@ export class MachineTunnel {
       trustAnchorsPem: this.options.trustAnchorsPem ?? [],
       bindAddrs: this.options.bindAddrs ?? [],
       pathPolicy,
-      alpns: [TUNNEL_ALPN_CHANNELS, TUNNEL_ALPN_MEDIA]
+      alpns: [TUNNEL_ALPN_CHANNELS]
     })
     if (generation !== this.#generation) {
       await endpoint.close()
@@ -223,10 +219,6 @@ export class MachineTunnel {
   }
 
   async #serve(connection: TunnelConnection): Promise<void> {
-    if (connection.alpn() === TUNNEL_ALPN_MEDIA && this.options.onMedia !== undefined) {
-      this.options.onMedia(connection)
-      return
-    }
     if (connection.alpn() !== TUNNEL_ALPN_CHANNELS) {
       connection.close(1, "unsupported service")
       return

@@ -11,7 +11,6 @@ import Testing
 struct ComputerUseLivePreviewHostTests {
   static let session = "0f8fad5b-d9cb-469f-a165-70867728950e"
   static let target = "computer-use:\(session)"
-  static let offer = "v=0\r\na=fingerprint:sha-256 fixture\r\n"
   static let viewerEndpoint = String(repeating: "b", count: 64)
   static let grant = ServerScreenSharingMediaGrant(
     endpointId: String(repeating: "a", count: 64), relayUrl: nil, directAddrs: ["10.0.0.2:4433"], token: "token")
@@ -41,7 +40,6 @@ struct ComputerUseLivePreviewHostTests {
     #expect(reply.displays.map(\.id) == [Self.target])
     #expect(reply.displays.first?.name == "TextEdit")
     #expect(reply.displays.first?.width == 960)
-    #expect(reply.connectivity != nil)
 
     world.activityState = .idle
     let idle = await host.handle(world.request(.capabilities))
@@ -58,15 +56,15 @@ struct ComputerUseLivePreviewHostTests {
     ComputerUseLivePreview.remoteActivityIsActive(reply: reply, target: target)
   }
 
-  @Test("Answers, feeds frames, reports connection state, and releases on stop")
+  @Test("Grants media, feeds frames, reports connection state, and releases on stop")
   func lifecycle() async throws {
     let world = World()
     world.activityState = .active
     let host = world.host()
 
-    let started = await host.handle(world.request(.start, offer: Self.offer))
+    let started = await host.handle(world.request(.start))
     #expect(started.status == "connecting")
-    #expect(started.answer == "answer")
+    #expect(started.media == Self.grant)
     let peer = try #require(world.peers.first)
     #expect(world.attached.count == 1)
     #expect(world.attached.first?.sessionID == "BRIDGE-ID")
@@ -94,15 +92,11 @@ struct ComputerUseLivePreviewHostTests {
     world.offersV2 = true
     #expect(await host.handle(world.request(.capabilities)).engines == ["v2"])
 
-    var start = world.request(.start)
-    start.engine = "v2"
-    start.media = .init(endpointId: Self.viewerEndpoint, relayUrl: nil, directAddrs: [])
-    let started = await host.handle(start)
+    let started = await host.handle(world.request(.start))
 
     #expect(started.status == "connecting")
     #expect(started.media == Self.grant)
-    #expect(started.answer == nil)
-    #expect(world.requestedMedia == [.v2(viewerEndpointId: Self.viewerEndpoint)])
+    #expect(world.requestedMedia == [.init(viewerEndpointId: Self.viewerEndpoint)])
     #expect(world.attached.first?.sink === world.peers.first?.sink)
   }
 
@@ -112,7 +106,7 @@ struct ComputerUseLivePreviewHostTests {
     world.activityState = .active
     world.windowVisibility = .appHidden
     let host = world.host()
-    let started = await host.handle(world.request(.start, offer: Self.offer))
+    let started = await host.handle(world.request(.start))
     #expect(started.status == "connecting")
     #expect(started.message == "TextEdit is hidden")
     world.windowVisibility = .minimized
@@ -128,8 +122,8 @@ struct ComputerUseLivePreviewHostTests {
     let world = World()
     world.activityState = .active
     let host = world.host()
-    _ = await host.handle(world.request(.start, offer: Self.offer))
-    #expect(await host.handle(world.request(.restart, offer: Self.offer)).status == "connecting")
+    _ = await host.handle(world.request(.start))
+    #expect(await host.handle(world.request(.restart)).status == "connecting")
     #expect(world.peers.count == 2)
     #expect(world.peers[0].closed)
     #expect(!world.peers[1].closed)
@@ -141,7 +135,7 @@ struct ComputerUseLivePreviewHostTests {
     let world = World()
     world.activityState = .active
     let host = world.host()
-    _ = await host.handle(world.request(.start, offer: Self.offer))
+    _ = await host.handle(world.request(.start))
     world.activityState = .stopped
     host.activityChanged()
     #expect(world.peers.first?.closed == true)
@@ -153,7 +147,7 @@ struct ComputerUseLivePreviewHostTests {
     let world = World()
     world.activityState = .active
     let host = world.host()
-    _ = await host.handle(world.request(.start, offer: Self.offer))
+    _ = await host.handle(world.request(.start))
     world.clock += ComputerUseLivePreviewHost.lifetime + 1
     #expect(await host.handle(world.request(.heartbeat)).status == "stopped")
     #expect(world.peers.first?.closed == true)
@@ -165,10 +159,10 @@ struct ComputerUseLivePreviewHostTests {
     world.activityState = .active
     let host = world.host()
     for _ in 0..<ComputerUseLivePreviewHost.maximumSessions {
-      let reply = await host.handle(world.request(.start, offer: Self.offer, viewer: UUID()))
+      let reply = await host.handle(world.request(.start, viewer: UUID()))
       #expect(reply.status == "connecting")
     }
-    let extra = await host.handle(world.request(.start, offer: Self.offer, viewer: UUID()))
+    let extra = await host.handle(world.request(.start, viewer: UUID()))
     #expect(extra.status == "busy")
     #expect(host.sessionCount == ComputerUseLivePreviewHost.maximumSessions)
     host.shutdown()
@@ -176,12 +170,14 @@ struct ComputerUseLivePreviewHostTests {
     #expect(await host.handle(world.request(.capabilities)).status == "stopped")
   }
 
-  @Test("Rejects invalid offers and targets without creating media")
+  @Test("Rejects starts without a v2 viewer address, and invalid targets, without creating media")
   func validation() async {
     let world = World()
     world.activityState = .active
     let host = world.host()
-    #expect(await host.handle(world.request(.start, offer: "v=0")).status == "failed")
+    var noMedia = world.request(.start)
+    noMedia.media = nil
+    #expect(await host.handle(noMedia).status == "failed")
     var wrong = world.request(.capabilities)
     wrong.displayId = "computer-use:nope"
     #expect(await host.handle(wrong).status == "failed")
@@ -194,7 +190,7 @@ struct ComputerUseLivePreviewHostTests {
     world.activityState = .active
     world.peerGate = TestSignal()
     let host = world.host()
-    let start = Task { await host.handle(world.request(.start, offer: Self.offer)) }
+    let start = Task { await host.handle(world.request(.start)) }
     await world.peerRequested.wait()
     host.shutdown()
     world.peerGate?.signal()
@@ -221,14 +217,15 @@ private final class World {
   let pane = UUID()
   let viewer = UUID()
 
-  func request(
-    _ operation: ServerScreenSharingRequest.Operation,
-    offer: String? = nil,
-    viewer: UUID? = nil
-  ) -> ServerScreenSharingRequest {
-    .init(
+  func request(_ operation: ServerScreenSharingRequest.Operation, viewer: UUID? = nil) -> ServerScreenSharingRequest {
+    var request = ServerScreenSharingRequest(
       operation: operation, workspaceId: workspace, paneId: pane, viewerId: viewer ?? self.viewer,
-      displayId: ComputerUseLivePreviewHostTests.target, offer: offer)
+      displayId: ComputerUseLivePreviewHostTests.target)
+    if [.start, .restart].contains(operation) {
+      request.engine = "v2"
+      request.media = .init(endpointId: ComputerUseLivePreviewHostTests.viewerEndpoint, relayUrl: nil, directAddrs: [])
+    }
+    return request
   }
 
   func host() -> ComputerUseLivePreviewHost {
@@ -249,16 +246,14 @@ private final class World {
           return token
         },
         detach: { [unowned self] _, token in detached.append(token) },
-        makePeer: { [unowned self] _, media, _ in
+        makePeer: { [unowned self] _, media in
           requestedMedia.append(media)
           peerRequested.signal()
           if let peerGate { await peerGate.wait() }
           let peer = FakePeer()
-          peer.media = media
           peers.append(peer)
           return peer
         },
-        makeConnectivity: { _ in .init(servers: [], relayOnly: false, expiresAt: 0) },
         offersV2: { [unowned self] in offersV2 },
         now: { [unowned self] in clock }
       ))
@@ -267,16 +262,12 @@ private final class World {
 
 @MainActor
 private final class FakePeer: ComputerUseStreamPeer {
-  var media: ScreenSharingStreamMedia?
   var onConnectionChanged: ((String) -> Void)?
   let sink: any ComputerUseFrameSink = RecordingSink()
   var closed = false
 
-  func start(failed: @escaping @MainActor (String) -> Void) async throws -> ScreenSharingStreamGrant {
-    switch media {
-    case .v2: .media(ComputerUseLivePreviewHostTests.grant)
-    case .webRTC, nil: .answer("answer")
-    }
+  func start(failed: @escaping @MainActor (String) -> Void) async throws -> ServerScreenSharingMediaGrant {
+    ComputerUseLivePreviewHostTests.grant
   }
   func close() { closed = true }
 }

@@ -1,6 +1,5 @@
 import AppKit
 import ScreenSharing
-import ScreenSharingWebRTC
 
 extension ScreenSharingHostService {
   func configureDisplay(_ session: ScreenSharingHostSession) {

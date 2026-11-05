@@ -11,7 +11,7 @@ import Testing
 @MainActor
 @Suite("Touch viewer over engine v2", .timeLimit(.minutes(1)))
 struct ScreenSharingStreamTests {
-  @Test("A Mac that lists engine v2 is viewed over v2 with the viewer's address and chroma, and no offer")
+  @Test("A Mac that lists engine v2 is viewed over v2 with the viewer's address and chroma")
   func viewsOverV2() async {
     let harness = StreamHarness(engines: ["v2"], chroma: .subsampled)
     let stream = harness.start()
@@ -20,7 +20,7 @@ struct ScreenSharingStreamTests {
 
     let starts = await harness.transport.starts
     #expect(starts.map(\.operation) == [.start])
-    #expect(starts[0].engine == "v2" && starts[0].offer == nil)
+    #expect(starts[0].engine == "v2")
     #expect(starts[0].media == StreamHarness.viewerMedia && starts[0].chroma == "420")
     #expect(harness.sessions[0].tokens == ["grant token"])
     #expect(stream.session === harness.sessions[0] && stream.control != nil)
