@@ -43,6 +43,7 @@ struct SessionTranscriptView: View {
   @Environment(AppEnvironment.self) var environment
   @State private var presentationOwner = UUID()
   var disclosure: TranscriptDisclosureStore { presentationSurface.disclosure }
+  var quickLook: QuickLookController { presentationSurface.quickLook }
   @Namespace var composerGlassNamespace
   @State var composerCardHeight: CGFloat = 96
   @State var sendAnimationsStarted = 0
@@ -60,7 +61,6 @@ struct SessionTranscriptView: View {
   @State var keyboardInset = ChatKeyboardInset()
   @State var holdsQueueEntrance = false
   @State var composerExpanded = false
-  @State var quickLook = QuickLookController()
   @State var scrollCommand = TranscriptScrollCommand()
   @State var historyLoadTask: Task<Void, Never>?
   @State var olderHistoryPresentation = TranscriptPaginationPresentationGate()

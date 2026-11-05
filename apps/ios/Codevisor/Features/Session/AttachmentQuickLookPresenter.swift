@@ -49,16 +49,39 @@ private struct AttachmentQuickLookPresenter: UIViewControllerRepresentable {
 
     func updatePresentation() {
       guard let url = selection.wrappedValue else {
-        if let preview, !preview.isBeingDismissed {
-          preview.dismiss(animated: true) { [weak self, weak preview] in
-            guard let preview else { return }
-            self?.didDismiss(preview)
-          }
-        }
+        dismissPreview()
         return
       }
       guard preview == nil, viewIfLoaded?.window != nil else { return }
+
       let source = PreviewSource(url: url)
+      let navigation = makePreview(for: source)
+      present(navigation, animated: true)
+      guard navigation.presentingViewController != nil else {
+        abandonSelection(url)
+        return
+      }
+
+      self.source = source
+      preview = navigation
+    }
+
+    private func dismissPreview() {
+      guard let preview, !preview.isBeingDismissed else { return }
+      preview.dismiss(animated: true) { [weak self, weak preview] in
+        guard let preview else { return }
+        self?.didDismiss(preview)
+      }
+    }
+
+    private func abandonSelection(_ url: URL) {
+      Task { [weak self] in
+        guard let self, selection.wrappedValue == url else { return }
+        selection.wrappedValue = nil
+      }
+    }
+
+    private func makePreview(for source: PreviewSource) -> UINavigationController {
       let controller = QLPreviewController()
       controller.dataSource = source
       controller.delegate = self
@@ -76,9 +99,7 @@ private struct AttachmentQuickLookPresenter: UIViewControllerRepresentable {
           }
         }
       )
-      self.source = source
-      preview = navigation
-      present(navigation, animated: true)
+      return navigation
     }
 
     func previewControllerDidDismiss(_ controller: QLPreviewController) {
@@ -93,6 +114,7 @@ private struct AttachmentQuickLookPresenter: UIViewControllerRepresentable {
       }
       preview = nil
       source = nil
+      updatePresentation()
     }
 
     func presentationControllerDidDismiss(_ presentationController: UIPresentationController) {

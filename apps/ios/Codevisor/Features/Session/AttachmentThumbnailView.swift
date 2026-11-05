@@ -39,7 +39,7 @@ struct AttachmentThumbnailView: View {
             if file.isPDF { PDFBadge() }
           }
           .overlay {
-            if file.isVideo { VideoPlayBadge() }
+            if file.isVideo, !isLoadingPreview { VideoPlayBadge() }
           }
           .overlay {
             AttachmentLoadingOverlay(isLoading: isLoadingPreview)
