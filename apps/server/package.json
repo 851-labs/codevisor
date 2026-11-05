@@ -57,6 +57,7 @@
   "devDependencies": {
     "@codevisor/cloud-crypto": "workspace:*",
     "@codevisor/plugin-test-events": "workspace:*",
+    "@codevisor/vitest-config": "workspace:*",
     "@modelcontextprotocol/core": "2.4.0",
     "@types/better-sqlite3": "7.6.13",
     "@types/proper-lockfile": "4.1.4",

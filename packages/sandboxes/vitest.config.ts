@@ -1,8 +1,8 @@
 import { availableParallelism } from "node:os"
 
-import { defineConfig } from "vitest/config"
+import { defineTestConfig } from "@codevisor/vitest-config"
 
-export default defineConfig({
+export default defineTestConfig({
   test: {
     maxWorkers: Math.max(2, Math.floor(availableParallelism() / 4)),
     coverage: {

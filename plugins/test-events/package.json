@@ -18,6 +18,7 @@
     "zod": "4.4.3"
   },
   "devDependencies": {
+    "@codevisor/vitest-config": "workspace:*",
     "@modelcontextprotocol/client": "2.4.0",
     "vitest": "4.1.6"
   }

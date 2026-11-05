@@ -1,9 +1,10 @@
-import { defineConfig } from "vitest/config"
+import { defineTestConfig } from "@codevisor/vitest-config"
 
-export default defineConfig({
+export default defineTestConfig({
   test: {
     env: { CODEVISOR_COMMAND_PRIORITY: "normal" },
     include: ["src/**/*.test.ts", "test/**/*.test.ts"],
+    setupFiles: ["./src/test-setup.ts"],
     testTimeout: 30_000,
     hookTimeout: 30_000,
     coverage: {
@@ -12,6 +13,8 @@ export default defineConfig({
         "**/dist/**",
         "**/*.test.ts",
         "src/test-support.ts",
+        "src/test-setup.ts",
+        "src/test-support-resources.ts",
         "src/infra/sandbox-test-support.ts",
         "src/infra/sandbox-manager-test-support.ts",
         "src/changes-test-support.ts",

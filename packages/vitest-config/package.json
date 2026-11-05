@@ -1,0 +1,14 @@
+{
+  "name": "@codevisor/vitest-config",
+  "private": true,
+  "type": "module",
+  "exports": {
+    ".": "./src/index.ts"
+  },
+  "scripts": {
+    "typecheck": "tsc -p tsconfig.json --noEmit --tsBuildInfoFile tmp/typecheck.tsbuildinfo --pretty false"
+  },
+  "devDependencies": {
+    "vitest": "4.1.6"
+  }
+}

@@ -22,8 +22,9 @@
     "@codevisor/processes": "workspace:*"
   },
   "devDependencies": {
-    "vitest": "4.1.6",
     "@codevisor/adapter-claude": "workspace:*",
-    "@codevisor/adapter-codex": "workspace:*"
+    "@codevisor/adapter-codex": "workspace:*",
+    "@codevisor/vitest-config": "workspace:*",
+    "vitest": "4.1.6"
   }
 }

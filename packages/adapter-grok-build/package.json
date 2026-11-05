@@ -23,6 +23,7 @@
     "smol-toml": "1.7.0"
   },
   "devDependencies": {
+    "@codevisor/vitest-config": "workspace:*",
     "vitest": "4.1.6"
   }
 }

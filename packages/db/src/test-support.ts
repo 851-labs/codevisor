@@ -10,7 +10,7 @@ import {
 } from "@codevisor/api"
 import Database from "better-sqlite3"
 import { Effect, Schema } from "effect"
-import { afterEach, onTestFinished } from "vitest"
+import { onTestFinished } from "vitest"
 
 import { createService } from "./create-service.js"
 import type { DatabaseError } from "./errors.js"
@@ -19,22 +19,14 @@ import { eventFromRow, sessionEventFromRow } from "./row-mappers.js"
 import { eventRows, sessionEventRows } from "./rows.js"
 import type { CodevisorDatabaseConfig, CodevisorDatabaseService } from "./service.js"
 
-const tempDirs: Array<string> = []
-
 export const tempDatabase = (): string => {
   const dir = mkdtempSync(join(tmpdir(), "codevisor-db-"))
-  tempDirs.push(dir)
+  onTestFinished(() => rmSync(dir, { force: true, recursive: true }))
   return join(dir, "codevisor.sqlite")
 }
 
 export const run = <A>(effect: Effect.Effect<A, DatabaseError>): Promise<A> =>
   Effect.runPromise(effect)
-
-afterEach(() => {
-  for (const dir of tempDirs.splice(0)) {
-    rmSync(dir, { force: true, recursive: true })
-  }
-})
 
 const readDatabase = <A>(filename: string, read: (sqlite: Database.Database) => A): A => {
   const sqlite = new Database(filename, { readonly: true })

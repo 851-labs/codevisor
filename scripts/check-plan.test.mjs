@@ -6,7 +6,8 @@ import { planChecks, relativeImports } from "./check-plan.mjs"
 const context = {
   workspaces: [
     { directory: "apps/server", name: "@codevisor/server" },
-    { directory: "packages/db", name: "@codevisor/db" }
+    { directory: "packages/db", name: "@codevisor/db" },
+    { directory: "packages/vitest-config", name: "@codevisor/vitest-config" }
   ],
   scriptInputs: {
     "scripts/test-swift.mjs": ["scripts/test-swift.mjs", "scripts/swift-artifacts.mjs"],
@@ -51,6 +52,11 @@ test("Vitest config changes type-check every Vitest config", () => {
     "typecheck:configs": []
   })
   assert.deepEqual(planned(["tsconfig.configs.json"]), { "typecheck:configs": [] })
+  assert.deepEqual(planned(["packages/vitest-config/src/index.ts"]), {
+    typecheck: ["--filter=...@codevisor/vitest-config"],
+    "test:coverage": ["--filter=...@codevisor/vitest-config"],
+    "typecheck:configs": []
+  })
 })
 
 test("release tests follow the release scripts, the installer, and the modules they import", () => {

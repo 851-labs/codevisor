@@ -3,8 +3,7 @@ import { defaultClientConditions, defaultServerConditions, defineConfig } from "
 
 const sourceCondition = "@codevisor/source"
 
-export default defineConfig({
-  plugins: [viteReact()],
+export const sourceFirstResolution = {
   resolve: {
     conditions: [sourceCondition, ...defaultClientConditions]
   },
@@ -13,4 +12,9 @@ export default defineConfig({
       conditions: [sourceCondition, ...defaultServerConditions]
     }
   }
+}
+
+export default defineConfig({
+  plugins: [viteReact()],
+  ...sourceFirstResolution
 })

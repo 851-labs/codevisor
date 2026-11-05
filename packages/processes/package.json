@@ -15,6 +15,7 @@
     "test:coverage": "vitest run src --coverage"
   },
   "devDependencies": {
+    "@codevisor/vitest-config": "workspace:*",
     "vitest": "4.1.6"
   }
 }

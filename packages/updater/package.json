@@ -18,6 +18,7 @@
     "@codevisor/agent-runtime": "workspace:*"
   },
   "devDependencies": {
+    "@codevisor/vitest-config": "workspace:*",
     "vitest": "4.1.6"
   }
 }

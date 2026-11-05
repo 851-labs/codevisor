@@ -1,14 +1,13 @@
 import { fixtureChanged, observeDatabase } from "./changes-test-support.js"
 import { field } from "./unknown-values.js"
 export { waitFor, observableFixture } from "./changes-test-support.js"
-import { mkdtempSync, rmSync } from "node:fs"
+import { mkdtempSync } from "node:fs"
 import { createServer } from "node:http"
 import { tmpdir } from "node:os"
 import { dirname, join } from "node:path"
 
 import { EventKind, type EventEnvelope } from "@codevisor/api"
 import { canonicalUuid, makeAttachmentStore, makeDatabase } from "@codevisor/db"
-import type { CodevisorDatabaseService } from "@codevisor/db"
 import { makeMcpManager, type McpManagerConfig } from "@codevisor/mcp"
 import type {
   TerminalHandlers,
@@ -19,7 +18,7 @@ import type {
 import { makeTerminalManager } from "@codevisor/terminal"
 import Database from "better-sqlite3"
 import { Effect, Schema } from "effect"
-import { afterEach, beforeEach, onTestFinished, vi } from "vitest"
+import { onTestFinished } from "vitest"
 import { WebSocket } from "ws"
 
 import { BrowserProxy } from "./infra/browser-proxy.js"
@@ -35,8 +34,10 @@ import {
 import type { RunningCodevisorServer } from "./server.js"
 import type { CodevisorServerConfig, CodevisorServerServices, RouteState } from "./server.js"
 import { run, makeAgents } from "./test-support-agents.js"
+import { databases, mcpManagers, runningServers, tempDirs } from "./test-support-resources.js"
 import { idleRestartCoordinator, idleUpdateRun } from "./test-support-stubs.js"
 export * from "./test-support-agents.js"
+export { databases, runningServers, tempDirs } from "./test-support-resources.js"
 export * from "./test-support-stubs.js"
 
 export const idleRouteState = (): RouteState => ({
@@ -102,58 +103,6 @@ const makeSpawner = (): TerminalSpawner & {
       })
   }
 }
-
-export const tempDirs: Array<string> = []
-export const runningServers: Array<RunningCodevisorServer> = []
-export const databases: Array<CodevisorDatabaseService> = []
-const mcpManagers: Array<ReturnType<typeof makeMcpManager>> = []
-const realFetch = globalThis.fetch
-
-beforeEach(() => {
-  vi.stubGlobal("fetch", (input: string | URL | Request, init?: RequestInit) => {
-    const url = new URL(input instanceof Request ? input.url : input)
-    if (!["127.0.0.1", "localhost", "[::1]"].includes(url.hostname)) {
-      return Promise.reject(new TypeError("External upstream unavailable in this fixture"))
-    }
-    const headers = new Headers(init?.headers ?? (input instanceof Request ? input.headers : {}))
-    headers.set("Connection", "close")
-    return realFetch(input, { ...init, headers })
-  })
-})
-
-afterEach(async () => {
-  const closed = await Promise.allSettled(
-    runningServers.splice(0).map((server) => run(server.close))
-  )
-  const failures = closed.flatMap((result) => (result.status === "rejected" ? [result.reason] : []))
-  for (const mcp of mcpManagers.splice(0)) {
-    try {
-      await mcp.close()
-    } catch (cause) {
-      failures.push(cause)
-    }
-  }
-  for (const database of databases.splice(0)) {
-    try {
-      await run(database.close)
-    } catch (cause) {
-      failures.push(cause)
-    }
-  }
-  for (const dir of tempDirs.splice(0)) {
-    try {
-      rmSync(dir, { force: true, recursive: true })
-    } catch (cause) {
-      failures.push(cause)
-    }
-  }
-  try {
-    vi.unstubAllGlobals()
-  } catch (cause) {
-    failures.push(cause)
-  }
-  if (failures.length > 0) throw new AggregateError(failures, "Cleaning up test resources failed")
-})
 
 export const makeServices = async (
   serverId = "test",

@@ -1,6 +1,6 @@
-import { defineConfig } from "vitest/config"
+import { defineTestConfig } from "@codevisor/vitest-config"
 
-export default defineConfig({
+export default defineTestConfig({
   test: {
     testTimeout: 30_000,
     hookTimeout: 30_000,

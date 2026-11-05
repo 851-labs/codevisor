@@ -1,5 +1,5 @@
-import { defineConfig } from "vitest/config"
+import { defineTestConfig } from "@codevisor/vitest-config"
 
-export default defineConfig({
+export default defineTestConfig({
   test: { coverage: { provider: "v8", reporter: ["text", "json"] } }
 })

@@ -3,16 +3,7 @@ import { mkdtempSync, rmSync, writeFileSync } from "node:fs"
 import { tmpdir } from "node:os"
 import { join } from "node:path"
 
-import { afterEach, beforeEach, expect, onTestFinished, vi } from "vitest"
-
-beforeEach(() => {
-  vi.stubEnv("GIT_CONFIG_GLOBAL", "/dev/null")
-  vi.stubEnv("GIT_CONFIG_SYSTEM", "/dev/null")
-  vi.stubEnv("GIT_CONFIG_NOSYSTEM", "1")
-  vi.stubEnv("GIT_CONFIG_COUNT", "0")
-  vi.stubEnv("GIT_TERMINAL_PROMPT", "0")
-})
-afterEach(() => vi.unstubAllEnvs())
+import { expect, onTestFinished } from "vitest"
 
 export const testTempDir = (prefix: string): string => {
   const root = mkdtempSync(prefix)

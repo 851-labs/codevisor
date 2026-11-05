@@ -2,15 +2,9 @@ import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs"
 import { tmpdir } from "node:os"
 import { join } from "node:path"
 
-import { afterEach } from "vitest"
+import { onTestFinished } from "vitest"
 
 import type { RegistryServer } from "./registry-server.js"
-
-const roots: Array<string> = []
-
-afterEach(() => {
-  for (const root of roots.splice(0)) rmSync(root, { force: true, recursive: true })
-})
 
 export const grafanaServer: RegistryServer = {
   name: "dev.codevisor/grafana",
@@ -54,7 +48,7 @@ export const pluginsFixture = (
   popular: ReadonlyArray<RegistryServer> = [linearServer]
 ): string => {
   const root = mkdtempSync(join(tmpdir(), "codevisor-catalog-"))
-  roots.push(root)
+  onTestFinished(() => rmSync(root, { force: true, recursive: true }))
   const plugins = join(root, "plugins")
   mkdirSync(plugins, { recursive: true })
   writeFileSync(

@@ -1,6 +1,7 @@
-import { configDefaults, defineConfig } from "vitest/config"
+import { defineTestConfig } from "@codevisor/vitest-config"
+import { configDefaults } from "vitest/config"
 
-export default defineConfig({
+export default defineTestConfig({
   test: {
     exclude: [...configDefaults.exclude, "src/**/*.chrome.test.ts"],
     maxWorkers: 4,

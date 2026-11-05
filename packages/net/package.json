@@ -16,6 +16,7 @@
     "test:coverage": "node ../../scripts/net-artifact.mjs ensure-node && vitest run src --coverage"
   },
   "devDependencies": {
+    "@codevisor/vitest-config": "workspace:*",
     "vitest": "4.1.6"
   }
 }

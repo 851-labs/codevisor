@@ -7,13 +7,7 @@ const toolingInputs = [
   "scripts/check.mjs",
   "scripts/check-plan.mjs"
 ]
-const javascriptInputs = [
-  ".node-version",
-  "tsconfig.base.json",
-  "tsconfig.json",
-  "turbo.json",
-  "vitest.config.ts"
-]
+const javascriptInputs = [".node-version", "tsconfig.base.json", "tsconfig.json", "turbo.json"]
 const nativeInputs = [
   "packages/net/**",
   "scripts/net-build.lock.json",
@@ -87,6 +81,7 @@ const checkSteps = [
   turboStep("test:coverage"),
   pathStep("typecheck:configs", "javascript", [
     "**/vitest*.config.ts",
+    "packages/vitest-config/**",
     "tsconfig.base.json",
     "tsconfig.configs.json"
   ]),

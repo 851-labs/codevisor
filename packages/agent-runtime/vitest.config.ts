@@ -1,10 +1,10 @@
 import { fileURLToPath } from "node:url"
 
-import { defineConfig } from "vitest/config"
+import { defineTestConfig } from "@codevisor/vitest-config"
 
 const src = (path: string): string => fileURLToPath(new URL(path, import.meta.url))
 
-export default defineConfig({
+export default defineTestConfig({
   resolve: {
     alias: {
       "@codevisor/agent-runtime": src("./src/index.ts"),
