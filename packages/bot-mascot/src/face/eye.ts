@@ -13,6 +13,7 @@ import {
   radiusAt,
   type EyeFrame
 } from "./eye-shape.js"
+import { eyewearItem } from "./eyewear.js"
 import type { FaceState } from "./face-state.js"
 
 export function eyeSvg(P: Palette, f: FaceState, uid: string): string {
@@ -71,7 +72,7 @@ function madEye(P: Palette, x: number, eye: string): string {
 }
 
 function brow(P: Palette, f: FaceState, x: number): string {
-  if (f.eyewear === "goggles" || !f.brow) return ""
+  if (eyewearItem(f.eyewear)?.hidesBrow || !f.brow) return ""
   return `<path d="M${f2(x - BROW * 0.8)} ${f2(EYE_Y - BROW + 6)}L${f2(x + BROW * 0.8)} ${f2(EYE_Y - BROW - 6)}" fill="none" stroke="${P.eye}" stroke-width="8" stroke-linecap="round" transform="rotate(${f.brow} ${f2(x)} ${f2(EYE_Y - BROW)})"/>`
 }
 

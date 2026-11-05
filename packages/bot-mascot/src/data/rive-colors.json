@@ -2561,6 +2561,166 @@
           "C2262931"
         ]
       }
+    },
+    "safety": {
+      "auto": {
+        "sunny": ["FF3B2410"],
+        "mint": ["FF16161A"],
+        "lilac": ["FF2A1B57"],
+        "bubblegum": ["FF16161A"],
+        "sky": ["FF0F2A44"],
+        "tomato": ["FF3D0F0A"],
+        "electric": ["FF16161A"],
+        "dream": ["FF2A1B57"]
+      }
+    },
+    "shades": {
+      "auto": {
+        "sunny": ["FF3B5CBF", "FF3B2410", "FF4F7BFF", "FFB0C4FF"],
+        "mint": ["FFBF537C", "FF16161A", "FFFF6FA5", "FFFFBED7"],
+        "lilac": ["FFBF972D", "FF2A1B57", "FFFFC93C", "FFFFE7A7"],
+        "bubblegum": ["FF238884", "FF16161A", "FF2FB5B0", "FFA1DEDB"],
+        "sky": ["FFBF682E", "FF0F2A44", "FFFF8A3D", "FFFFCAA8"],
+        "tomato": ["FF3B5CBF", "FF3D0F0A", "FF4F7BFF", "FFB0C4FF"],
+        "electric": ["FFBF972D", "FF16161A", "FFFFC93C", "FFFFE7A7"],
+        "dream": ["FF238884", "FF2A1B57", "FF2FB5B0", "FFA1DEDB"]
+      },
+      "red": {
+        "sunny": ["FFAC363A", "FF3B2410", "FFE5484D", "FFF3ADAF"],
+        "mint": ["FFAC363A", "FF16161A", "FFE5484D", "FFF3ADAF"],
+        "lilac": ["FFAC363A", "FF2A1B57", "FFE5484D", "FFF3ADAF"],
+        "bubblegum": ["FFAC363A", "FF16161A", "FFE5484D", "FFF3ADAF"],
+        "sky": ["FFAC363A", "FF0F2A44", "FFE5484D", "FFF3ADAF"],
+        "tomato": ["FFAC363A", "FF3D0F0A", "FFE5484D", "FFF3ADAF"],
+        "electric": ["FFAC363A", "FF16161A", "FFE5484D", "FFF3ADAF"],
+        "dream": ["FFAC363A", "FF2A1B57", "FFE5484D", "FFF3ADAF"]
+      },
+      "orange": {
+        "sunny": ["FFBF682E", "FF3B2410", "FFFF8A3D", "FFFFCAA8"],
+        "mint": ["FFBF682E", "FF16161A", "FFFF8A3D", "FFFFCAA8"],
+        "lilac": ["FFBF682E", "FF2A1B57", "FFFF8A3D", "FFFFCAA8"],
+        "bubblegum": ["FFBF682E", "FF16161A", "FFFF8A3D", "FFFFCAA8"],
+        "sky": ["FFBF682E", "FF0F2A44", "FFFF8A3D", "FFFFCAA8"],
+        "tomato": ["FFBF682E", "FF3D0F0A", "FFFF8A3D", "FFFFCAA8"],
+        "electric": ["FFBF682E", "FF16161A", "FFFF8A3D", "FFFFCAA8"],
+        "dream": ["FFBF682E", "FF2A1B57", "FFFF8A3D", "FFFFCAA8"]
+      },
+      "yellow": {
+        "sunny": ["FFBF972D", "FF3B2410", "FFFFC93C", "FFFFE7A7"],
+        "mint": ["FFBF972D", "FF16161A", "FFFFC93C", "FFFFE7A7"],
+        "lilac": ["FFBF972D", "FF2A1B57", "FFFFC93C", "FFFFE7A7"],
+        "bubblegum": ["FFBF972D", "FF16161A", "FFFFC93C", "FFFFE7A7"],
+        "sky": ["FFBF972D", "FF0F2A44", "FFFFC93C", "FFFFE7A7"],
+        "tomato": ["FFBF972D", "FF3D0F0A", "FFFFC93C", "FFFFE7A7"],
+        "electric": ["FFBF972D", "FF16161A", "FFFFC93C", "FFFFE7A7"],
+        "dream": ["FFBF972D", "FF2A1B57", "FFFFC93C", "FFFFE7A7"]
+      },
+      "green": {
+        "sunny": ["FF2F8F5F", "FF3B2410", "FF3FBF7F", "FFA9E2C5"],
+        "mint": ["FF2F8F5F", "FF16161A", "FF3FBF7F", "FFA9E2C5"],
+        "lilac": ["FF2F8F5F", "FF2A1B57", "FF3FBF7F", "FFA9E2C5"],
+        "bubblegum": ["FF2F8F5F", "FF16161A", "FF3FBF7F", "FFA9E2C5"],
+        "sky": ["FF2F8F5F", "FF0F2A44", "FF3FBF7F", "FFA9E2C5"],
+        "tomato": ["FF2F8F5F", "FF3D0F0A", "FF3FBF7F", "FFA9E2C5"],
+        "electric": ["FF2F8F5F", "FF16161A", "FF3FBF7F", "FFA9E2C5"],
+        "dream": ["FF2F8F5F", "FF2A1B57", "FF3FBF7F", "FFA9E2C5"]
+      },
+      "teal": {
+        "sunny": ["FF238884", "FF3B2410", "FF2FB5B0", "FFA1DEDB"],
+        "mint": ["FF238884", "FF16161A", "FF2FB5B0", "FFA1DEDB"],
+        "lilac": ["FF238884", "FF2A1B57", "FF2FB5B0", "FFA1DEDB"],
+        "bubblegum": ["FF238884", "FF16161A", "FF2FB5B0", "FFA1DEDB"],
+        "sky": ["FF238884", "FF0F2A44", "FF2FB5B0", "FFA1DEDB"],
+        "tomato": ["FF238884", "FF3D0F0A", "FF2FB5B0", "FFA1DEDB"],
+        "electric": ["FF238884", "FF16161A", "FF2FB5B0", "FFA1DEDB"],
+        "dream": ["FF238884", "FF2A1B57", "FF2FB5B0", "FFA1DEDB"]
+      },
+      "blue": {
+        "sunny": ["FF3B5CBF", "FF3B2410", "FF4F7BFF", "FFB0C4FF"],
+        "mint": ["FF3B5CBF", "FF16161A", "FF4F7BFF", "FFB0C4FF"],
+        "lilac": ["FF3B5CBF", "FF2A1B57", "FF4F7BFF", "FFB0C4FF"],
+        "bubblegum": ["FF3B5CBF", "FF16161A", "FF4F7BFF", "FFB0C4FF"],
+        "sky": ["FF3B5CBF", "FF0F2A44", "FF4F7BFF", "FFB0C4FF"],
+        "tomato": ["FF3B5CBF", "FF3D0F0A", "FF4F7BFF", "FFB0C4FF"],
+        "electric": ["FF3B5CBF", "FF16161A", "FF4F7BFF", "FFB0C4FF"],
+        "dream": ["FF3B5CBF", "FF2A1B57", "FF4F7BFF", "FFB0C4FF"]
+      },
+      "purple": {
+        "sunny": ["FF6845B9", "FF3B2410", "FF8B5CF6", "FFCBB6FB"],
+        "mint": ["FF6845B9", "FF16161A", "FF8B5CF6", "FFCBB6FB"],
+        "lilac": ["FF6845B9", "FF2A1B57", "FF8B5CF6", "FFCBB6FB"],
+        "bubblegum": ["FF6845B9", "FF16161A", "FF8B5CF6", "FFCBB6FB"],
+        "sky": ["FF6845B9", "FF0F2A44", "FF8B5CF6", "FFCBB6FB"],
+        "tomato": ["FF6845B9", "FF3D0F0A", "FF8B5CF6", "FFCBB6FB"],
+        "electric": ["FF6845B9", "FF16161A", "FF8B5CF6", "FFCBB6FB"],
+        "dream": ["FF6845B9", "FF2A1B57", "FF8B5CF6", "FFCBB6FB"]
+      },
+      "pink": {
+        "sunny": ["FFBF537C", "FF3B2410", "FFFF6FA5", "FFFFBED7"],
+        "mint": ["FFBF537C", "FF16161A", "FFFF6FA5", "FFFFBED7"],
+        "lilac": ["FFBF537C", "FF2A1B57", "FFFF6FA5", "FFFFBED7"],
+        "bubblegum": ["FFBF537C", "FF16161A", "FFFF6FA5", "FFFFBED7"],
+        "sky": ["FFBF537C", "FF0F2A44", "FFFF6FA5", "FFFFBED7"],
+        "tomato": ["FFBF537C", "FF3D0F0A", "FFFF6FA5", "FFFFBED7"],
+        "electric": ["FFBF537C", "FF16161A", "FFFF6FA5", "FFFFBED7"],
+        "dream": ["FFBF537C", "FF2A1B57", "FFFF6FA5", "FFFFBED7"]
+      },
+      "cream": {
+        "sunny": ["FFB7B3AA", "FF3B2410", "FFF4EEE2", "FFFAF7F2"],
+        "mint": ["FFB7B3AA", "FF16161A", "FFF4EEE2", "FFFAF7F2"],
+        "lilac": ["FFB7B3AA", "FF2A1B57", "FFF4EEE2", "FFFAF7F2"],
+        "bubblegum": ["FFB7B3AA", "FF16161A", "FFF4EEE2", "FFFAF7F2"],
+        "sky": ["FFB7B3AA", "FF0F2A44", "FFF4EEE2", "FFFAF7F2"],
+        "tomato": ["FFB7B3AA", "FF3D0F0A", "FFF4EEE2", "FFFAF7F2"],
+        "electric": ["FFB7B3AA", "FF16161A", "FFF4EEE2", "FFFAF7F2"],
+        "dream": ["FFB7B3AA", "FF2A1B57", "FFF4EEE2", "FFFAF7F2"]
+      },
+      "charcoal": {
+        "sunny": ["FF2C2F38", "FF3B2410", "FF3A3F4B", "FFA6A9AE"],
+        "mint": ["FF2C2F38", "FF16161A", "FF3A3F4B", "FFA6A9AE"],
+        "lilac": ["FF2C2F38", "FF2A1B57", "FF3A3F4B", "FFA6A9AE"],
+        "bubblegum": ["FF2C2F38", "FF16161A", "FF3A3F4B", "FFA6A9AE"],
+        "sky": ["FF2C2F38", "FF0F2A44", "FF3A3F4B", "FFA6A9AE"],
+        "tomato": ["FF2C2F38", "FF3D0F0A", "FF3A3F4B", "FFA6A9AE"],
+        "electric": ["FF2C2F38", "FF16161A", "FF3A3F4B", "FFA6A9AE"],
+        "dream": ["FF2C2F38", "FF2A1B57", "FF3A3F4B", "FFA6A9AE"]
+      }
+    },
+    "anaglyph": {
+      "auto": {
+        "sunny": [],
+        "mint": [],
+        "lilac": [],
+        "bubblegum": [],
+        "sky": [],
+        "tomato": [],
+        "electric": [],
+        "dream": []
+      }
+    },
+    "welder": {
+      "auto": {
+        "sunny": ["FF3B2410"],
+        "mint": ["FF16161A"],
+        "lilac": ["FF2A1B57"],
+        "bubblegum": ["FF16161A"],
+        "sky": ["FF0F2A44"],
+        "tomato": ["FF3D0F0A"],
+        "electric": ["FF16161A"],
+        "dream": ["FF2A1B57"]
+      }
+    },
+    "nightVision": {
+      "auto": {
+        "sunny": ["FF3B2410"],
+        "mint": ["FF16161A"],
+        "lilac": ["FF2A1B57"],
+        "bubblegum": ["FF16161A"],
+        "sky": ["FF0F2A44"],
+        "tomato": ["FF3D0F0A"],
+        "electric": ["FF16161A"],
+        "dream": ["FF2A1B57"]
+      }
     }
   },
   "phone": {

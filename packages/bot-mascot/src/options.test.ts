@@ -56,7 +56,16 @@ describe("bot mascot options", () => {
       "beret",
       "bucket"
     ])
-    expect(ids(botMascotEyewear)).toEqual(["specs", "monocle", "goggles"])
+    expect(ids(botMascotEyewear)).toEqual([
+      "specs",
+      "monocle",
+      "goggles",
+      "safety",
+      "shades",
+      "anaglyph",
+      "welder",
+      "nightVision"
+    ])
     expect(ids(botMascotOutfits)).toEqual(["tie", "tutu", "dress", "robe", "suit", "overalls"])
     expect(ids(botMascotMakeup)).toEqual(["blush", "freckles", "lashes"])
     expect(ids(botMascotMoodOptions)).toEqual(["idle", "working", "calling"])
