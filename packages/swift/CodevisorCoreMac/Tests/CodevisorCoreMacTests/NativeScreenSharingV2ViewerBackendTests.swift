@@ -25,7 +25,7 @@ struct NativeScreenSharingV2ViewerBackendTests {
 
     expectNoDifference(requests.map(\.operation), [.capabilities, .start, .stop])
     let start = requests[1]
-    #expect(start.engine == "v2" && start.offer == nil)
+    #expect(start.engine == "v2")
     #expect(start.media == ScreenSharingViewerFixtures.viewerMedia)
     #expect(v2.grants == [ScreenSharingViewerFixtures.mediaGrant])
     #expect(harness.sessions.map(\.tokens) == [["fixture token"]])
@@ -64,7 +64,6 @@ struct NativeScreenSharingV2ViewerBackendTests {
     let expected: [ServerScreenSharingRequest.Operation] =
       failure == .address ? [.capabilities] : [.capabilities, .start, .stop]
     expectNoDifference(requests.map(\.operation), expected)
-    #expect(requests.allSatisfy { $0.offer == nil && $0.tunnelMedia == nil })
     #expect(harness.sessions.isEmpty)
   }
 

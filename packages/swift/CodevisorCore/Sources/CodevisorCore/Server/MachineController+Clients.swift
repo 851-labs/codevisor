@@ -188,9 +188,4 @@ extension MachineController {
       try? await scheduler.sleep(.milliseconds(100))
     }
   }
-
-  public func tunnelMediaRoute(forMachineId machineId: String) async -> CloudTunnelMediaRoute? {
-    guard let cloud = cloudMachine(forMachineId: machineId) else { return nil }
-    return await cloudProvider?.tunnelMediaRoute(for: cloud)
-  }
 }

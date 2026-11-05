@@ -53,11 +53,6 @@ const isKnownTarget = (displayId: string): boolean =>
   computerUseSessionId(displayId) !== undefined ||
   isSimulatorTarget(displayId)
 
-const isOffer = (offer: string | undefined): boolean =>
-  offer !== undefined &&
-  Buffer.byteLength(offer) <= 256 * 1024 &&
-  offer.includes("a=fingerprint:sha-256 ")
-
 const endpointId = /^[0-9a-f]{64}$/i
 const maxMediaAddrs = 32
 
@@ -84,20 +79,28 @@ export const routeScreenSharing = async (
   for await (const chunk of request)
     if (!received.accept(chunk)) throw new HttpFailure(413, "Screen Sharing request is too large")
   let payload: ScreenSharingRequest
+  let body: unknown
   try {
-    payload = Schema.decodeUnknownSync(ScreenSharingRequest)(JSON.parse(received.text()))
+    body = JSON.parse(received.text())
+    payload = Schema.decodeUnknownSync(ScreenSharingRequest)(body)
   } catch {
     throw new HttpFailure(400, "Invalid Screen Sharing request")
   }
+  if (typeof body === "object" && body !== null && "offer" in body && payload.engine !== "v2")
+    throw new HttpFailure(
+      400,
+      "Update Codevisor on this device to view this Mac. Screen Sharing no longer uses WebRTC."
+    )
   if (![payload.workspaceId, payload.paneId, payload.viewerId].every((id) => uuid.test(id)))
     throw new HttpFailure(400, "Invalid Screen Sharing identity")
   if (
     (payload.operation === "start" || payload.operation === "restart") &&
-    (!(payload.engine === "v2" ? isMediaAddress(payload.media) : isOffer(payload.offer)) ||
+    (payload.engine !== "v2" ||
+      !isMediaAddress(payload.media) ||
       payload.displayId === undefined ||
       !isKnownTarget(payload.displayId))
   )
-    throw new HttpFailure(400, "Invalid Screen Sharing offer or display")
+    throw new HttpFailure(400, "Invalid Screen Sharing media or display")
   if (payload.displayId !== undefined && !isKnownTarget(payload.displayId))
     throw new HttpFailure(400, "Invalid Screen Sharing display")
   if (["start", "restart", "heartbeat"].includes(payload.operation)) {
@@ -125,10 +128,6 @@ export const routeScreenSharing = async (
     result = Schema.decodeUnknownSync(ScreenSharingReply)(await config.screenSharing(payload))
   } catch (cause) {
     throw screenSharingHostFailure(cause)
-  }
-  if (payload.tunnelMedia !== undefined && result.answer !== undefined) {
-    const bridged = await config.cloud?.bridgeTunnelMedia?.(payload.tunnelMedia, result.answer)
-    if (bridged !== undefined) result = { ...result, tunnelMedia: bridged }
   }
   writeJson(response, 200, result)
   return true

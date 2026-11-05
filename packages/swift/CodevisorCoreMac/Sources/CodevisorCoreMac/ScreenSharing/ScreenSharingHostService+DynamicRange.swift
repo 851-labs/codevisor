@@ -1,5 +1,4 @@
 import ScreenSharing
-import ScreenSharingWebRTC
 
 extension ScreenSharingHostService {
   struct DynamicRangeState {
@@ -19,7 +18,7 @@ extension ScreenSharingHostService {
   @discardableResult
   func applyDynamicRange(_ session: ScreenSharingHostSession) -> Task<Void, Never> {
     let decision = ScreenSharingDynamicRangePolicy.decide(
-      viewerSupports: session.hdr.viewerSupports, codec: session.codec,
+      viewerSupports: session.hdr.viewerSupports, codec: nil,
       displayHeadroom: ScreenSharingDynamicRangePolicy.headroom(of: session.captureDisplayID))
     let task = Task { [weak session, previous = session.hdr.task] in
       await previous?.value

@@ -12,9 +12,7 @@ export const ScreenSharingRequest = Schema.Struct({
   paneId: Schema.String,
   viewerId: Schema.String,
   displayId: Schema.optional(Schema.String),
-  offer: Schema.optional(Schema.String),
   scale: Schema.optional(Schema.Literals([1, 2])),
-  tunnelMedia: Schema.optional(Schema.Struct({ endpointId: Schema.String, flowId: Schema.Number })),
   engine: Schema.optional(Schema.Literal("v2")),
   media: Schema.optional(ScreenSharingMediaAddress),
   chroma: Schema.optional(Schema.Literals(["444", "420"]))
@@ -37,23 +35,6 @@ export const ScreenSharingReply = Schema.Struct({
       defaultWidth: Schema.optional(Schema.Number),
       defaultHeight: Schema.optional(Schema.Number)
     })
-  ),
-  answer: Schema.optional(Schema.String),
-  connectivity: Schema.optional(
-    Schema.Struct({
-      servers: Schema.Array(
-        Schema.Struct({
-          urls: Schema.Array(Schema.String),
-          username: Schema.String,
-          credential: Schema.String
-        })
-      ),
-      relayOnly: Schema.Boolean,
-      expiresAt: Schema.Number
-    })
-  ),
-  tunnelMedia: Schema.optional(
-    Schema.Struct({ flowId: Schema.Number, maxPayload: Schema.optional(Schema.Number) })
   ),
   engines: Schema.optional(Schema.Array(Schema.String)),
   media: Schema.optional(

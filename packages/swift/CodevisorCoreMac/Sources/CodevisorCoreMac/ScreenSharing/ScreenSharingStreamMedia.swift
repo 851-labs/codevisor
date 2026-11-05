@@ -4,40 +4,25 @@ import ScreenSharing
 import ScreenSharingV2
 import Synchronization
 
-enum ScreenSharingStreamMedia: Equatable {
-  case v2(viewerEndpointId: String)
-  case webRTC(offer: String)
+struct ScreenSharingStreamMedia: Equatable {
+  let viewerEndpointId: String
+
+  init(viewerEndpointId: String) {
+    self.viewerEndpointId = viewerEndpointId
+  }
 
   init?(_ request: ServerScreenSharingRequest) {
-    if request.engine == ScreenSharingEngine.v2.rawValue {
-      guard let media = request.media else { return nil }
+    guard request.engine == ScreenSharingEngine.v2.rawValue, let media = request.media else { return nil }
 
-      self = .v2(viewerEndpointId: media.endpointId)
-    } else {
-      guard let offer = request.offer, offer.utf8.count <= 256 * 1024, offer.contains("a=fingerprint:sha-256 ") else {
-        return nil
-      }
-
-      self = .webRTC(offer: offer)
-    }
+    viewerEndpointId = media.endpointId
   }
 }
 
-enum ScreenSharingStreamGrant: Equatable {
-  case media(ServerScreenSharingMediaGrant)
-  case answer(String)
-}
-
 extension ServerScreenSharingReply {
-  static func connecting(_ grant: ScreenSharingStreamGrant, message: String? = nil) -> Self {
-    switch grant {
-    case .media(let media):
-      var reply = Self(status: "connecting", message: message)
-      reply.media = media
-      return reply
-    case .answer(let answer):
-      return Self(status: "connecting", message: message, answer: answer)
-    }
+  static func connecting(_ grant: ServerScreenSharingMediaGrant, message: String? = nil) -> Self {
+    var reply = Self(status: "connecting", message: message)
+    reply.media = grant
+    return reply
   }
 }
 
@@ -61,7 +46,7 @@ final class ScreenSharingV2StreamLink {
 
   func listen(
     for viewerEndpointId: String, failed: @escaping @MainActor (String) -> Void
-  ) async throws -> ScreenSharingStreamGrant {
+  ) async throws -> ServerScreenSharingMediaGrant {
     guard let endpoint = await ScreenSharingMediaEndpoint.shared.ready() else {
       throw ScreenSharingError.unavailable("This Mac's screen-sharing endpoint isn't available.")
     }
@@ -87,8 +72,8 @@ final class ScreenSharingV2StreamLink {
       }
     }
     let address = ScreenSharingMediaEndpoint.address(of: endpoint)
-    return .media(
-      .init(endpointId: address.endpointId, relayUrl: address.relayUrl, directAddrs: address.directAddrs, token: token))
+    return .init(
+      endpointId: address.endpointId, relayUrl: address.relayUrl, directAddrs: address.directAddrs, token: token)
   }
 
   func close() {

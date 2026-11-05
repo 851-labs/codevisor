@@ -284,7 +284,8 @@ describe("simulator routes", () => {
       paneId,
       viewerId: randomUUID(),
       displayId,
-      offer: "v=0\r\na=fingerprint:sha-256 fixture\r\n"
+      engine: "v2",
+      media: { endpointId: "a".repeat(64), directAddrs: [] }
     })
     const post = (body: ScreenSharingRequest) =>
       jsonRequest(server, "/v1/screen-sharing", { method: "POST", body: JSON.stringify(body) })

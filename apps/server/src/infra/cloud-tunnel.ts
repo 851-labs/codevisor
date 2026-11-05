@@ -10,10 +10,7 @@ import {
   makePeerKeyPinStore,
   parsePeerKeyPins,
   type PeerKeyPinStore,
-  serializePeerKeyPins,
-  type TunnelMediaBridge,
-  type TunnelMediaRequest,
-  TunnelMediaRoutes
+  serializePeerKeyPins
 } from "@codevisor/cloud-client"
 import { loadNet, type NetModule, type PathPolicy } from "@codevisor/net"
 
@@ -23,10 +20,6 @@ export interface MachineTunnelBridge {
   readonly endpointId: string
   readonly onTunnelConfig: (config: { relays: readonly CloudRelayInfo[]; enabled: boolean }) => void
   readonly onPeerDevices: (devices: readonly CloudVouchedDevice[]) => void
-  readonly bridgeMedia: (
-    request: TunnelMediaRequest,
-    answer: string
-  ) => Promise<TunnelMediaBridge | undefined>
   readonly setDirectPaths: (allowed: boolean) => PathPolicy
   readonly stop: () => void
 }
@@ -102,15 +95,10 @@ export const prepareMachineTunnel = async (
     ...(options.env.CODEVISOR_NET_CA_PEM ? [options.env.CODEVISOR_NET_CA_PEM] : [])
   ]
   let vouched = new Map<string, CloudVouchedDevice>()
-  const admittedEndpoints = new Set<string>()
   const admitHello = admitTunnelHello(
     { keys: options.peerKeyPins, endpoints: endpointPins },
     () => vouched
   )
-  const media = new TunnelMediaRoutes({
-    admit: (endpointId) => admittedEndpoints.has(endpointId),
-    log: options.log
-  })
   const host = new DirectChannelHost({
     deviceId: options.deviceId,
     secretKey: options.secretKey,
@@ -118,11 +106,7 @@ export const prepareMachineTunnel = async (
     peerKeyPins: options.peerKeyPins,
     compressPayload: options.compressPayload,
     decompressPayload: options.decompressPayload,
-    admitHello: (device, peer) => {
-      const admitted = admitHello(device, peer)
-      if (admitted && peer.endpointId !== undefined) admittedEndpoints.add(peer.endpointId)
-      return admitted
-    },
+    admitHello,
     log: options.log
   })
   let lastAddr: CloudTunnelInfo | undefined
@@ -135,7 +119,6 @@ export const prepareMachineTunnel = async (
       lastAddr = addr
       options.sendAddr(addr)
     },
-    onMedia: (connection) => media.offer(connection),
     trustAnchorsPem,
     bindAddrs: (options.env.CODEVISOR_NET_BIND ?? "")
       .split(",")
@@ -157,7 +140,6 @@ export const prepareMachineTunnel = async (
     onPeerDevices: (devices) => {
       vouched = new Map(devices.map((device) => [device.deviceId, device]))
     },
-    bridgeMedia: (request, answer) => media.bridge(request, answer),
     setDirectPaths: (allowed) => {
       if (overridePolicy !== undefined) return overridePolicy
       const policy = allowed ? "auto" : "relay-only"

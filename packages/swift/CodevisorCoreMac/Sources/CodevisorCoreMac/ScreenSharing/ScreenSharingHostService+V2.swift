@@ -7,7 +7,7 @@ import ScreenSharingV2
 extension ScreenSharingHostService {
   static let v2AcceptTimeout: Duration = .seconds(20)
 
-  func startV2(_ session: ScreenSharingHostSession, token: String) async -> ServerScreenSharingReply {
+  func startV2(_ session: ScreenSharingHostSession) async -> ServerScreenSharingReply {
     guard let endpoint = await mediaEndpointHandle() else {
       await end(session)
       return .init(status: "failed", message: "This Mac's screen-sharing endpoint isn't available.")
@@ -16,15 +16,15 @@ extension ScreenSharingHostService {
 
     acceptV2(session, on: endpoint)
     let address = ScreenSharingMediaEndpoint.address(of: endpoint)
-    var reply = ServerScreenSharingReply(status: "connecting")
-    reply.media = .init(
-      endpointId: address.endpointId, relayUrl: address.relayUrl, directAddrs: address.directAddrs, token: token)
-    return reply
+    return .connecting(
+      .init(
+        endpointId: address.endpointId, relayUrl: address.relayUrl, directAddrs: address.directAddrs,
+        token: session.v2.token))
   }
 
   private func acceptV2(_ session: ScreenSharingHostSession, on endpoint: NetEndpointHandle) {
-    guard let v2 = session.v2, let link = session.peer as? ScreenSharingV2HostLink else { return }
-
+    let v2 = session.v2
+    let link = session.peer
     let ticket = ScreenSharingV2Acceptor.shared.expect(v2.viewerEndpointId, token: v2.token, on: endpoint)
     session.mediaAccept = Task { [weak self, weak session] in
       do {

@@ -3,7 +3,6 @@ import { randomUUID } from "node:crypto"
 import type { ScreenSharingRequest } from "@codevisor/api"
 import { describe, expect, it, vi } from "vitest"
 
-import type { CloudServerControl } from "./server-context-types.js"
 import { jsonRequest, makeServices, run, startWithApp } from "./test-support.js"
 
 const capabilities = (): ScreenSharingRequest => ({
@@ -13,18 +12,19 @@ const capabilities = (): ScreenSharingRequest => ({
   paneId: randomUUID(),
   viewerId: randomUUID()
 })
-const offer = "v=0\r\na=fingerprint:sha-256 fixture\r\n"
 const reply = { version: 1, status: "available", displays: [] }
+const media = { endpointId: "a".repeat(64), directAddrs: ["192.168.1.2:4433"] }
+const grant = {
+  endpointId: "b".repeat(64),
+  directAddrs: ["192.168.1.3:4433"],
+  token: "t".repeat(64)
+}
 
 const fixture = async (
-  screenSharing: (request: ScreenSharingRequest) => Promise<unknown> = async () => reply,
-  cloud?: CloudServerControl
+  screenSharing: (request: ScreenSharingRequest) => Promise<unknown> = async () => reply
 ) => {
   const { services } = await makeServices()
-  const server = await startWithApp(services, undefined, {
-    screenSharing,
-    ...(cloud === undefined ? {} : { cloud })
-  })
+  const server = await startWithApp(services, undefined, { screenSharing })
   const project = await run(services.db.createProject({ folderPath: "/fixture/screen-sharing" }))
   const workspace = await run(
     services.db.upsertWorkspace({
@@ -47,7 +47,8 @@ const fixture = async (
     workspaceId: workspace.id,
     paneId: pane.id,
     displayId: randomUUID(),
-    offer
+    engine: "v2",
+    media
   }
   const post = (body: unknown = request, headers: Record<string, string> = {}) =>
     jsonRequest(server, "/v1/screen-sharing", {
@@ -58,66 +59,8 @@ const fixture = async (
   return { server, services, project, workspace, pane, request, post }
 }
 
-const cloudControl = (bridge?: CloudServerControl["bridgeTunnelMedia"]): CloudServerControl => ({
-  deviceId: () => "machine-1",
-  state: () => "connected",
-  managedBy: () => "external",
-  connect: async () => "machine-1",
-  disconnect: async () => ({ removedFromAccount: true }),
-  ...(bridge === undefined ? {} : { bridgeTunnelMedia: bridge })
-})
-
-const answeringHost = async (request: ScreenSharingRequest) => ({
-  ...reply,
-  status: "connecting",
-  ...(request.operation === "start" ? { answer: "fixture answer" } : {})
-})
-
-describe("Screen Sharing media over the tunnel", () => {
-  const tunnelMedia = { endpointId: "e".repeat(64), flowId: 3 }
-
-  it("bridges the viewer's flow to the host answer and reports it", async () => {
-    const bridge = vi.fn(async () => ({ flowId: 3, maxPayload: 1150 }))
-    const { request, post } = await fixture(answeringHost, cloudControl(bridge))
-    const response = await post({ ...request, tunnelMedia })
-    expect(response.body).toMatchObject({
-      answer: "fixture answer",
-      tunnelMedia: { flowId: 3, maxPayload: 1150 }
-    })
-    expect(bridge).toHaveBeenCalledWith(tunnelMedia, "fixture answer")
-  })
-
-  it("keeps plain WebRTC when the flow can't be bridged", async () => {
-    const unbridged = await fixture(
-      answeringHost,
-      cloudControl(async () => undefined)
-    )
-    const noBridgeSupport = await fixture(answeringHost, cloudControl())
-    const noCloud = await fixture(answeringHost)
-    for (const { request, post } of [unbridged, noBridgeSupport, noCloud]) {
-      const response = await post({ ...request, tunnelMedia })
-      expect(response.status).toBe(200)
-      expect(response.body).not.toHaveProperty("tunnelMedia")
-    }
-  })
-
-  it("only bridges when the host produced an answer", async () => {
-    const bridge = vi.fn(async () => ({ flowId: 3 }))
-    const { request, post } = await fixture(answeringHost, cloudControl(bridge))
-    await post({ ...request, operation: "heartbeat", tunnelMedia })
-    expect(bridge).not.toHaveBeenCalled()
-  })
-})
-
 describe("Screen Sharing engine v2 signaling", () => {
-  const media = { endpointId: "a".repeat(64), directAddrs: ["192.168.1.2:4433"] }
-  const grant = {
-    endpointId: "b".repeat(64),
-    directAddrs: ["192.168.1.3:4433"],
-    token: "t".repeat(64)
-  }
-
-  it("starts v2 without an SDP offer, forwards the viewer's chroma and returns the host's media grant", async () => {
+  it("starts v2, forwards the viewer's chroma and returns the host's media grant", async () => {
     const helper = vi.fn(async (request: ScreenSharingRequest) => ({
       ...reply,
       status: "connecting",
@@ -125,7 +68,7 @@ describe("Screen Sharing engine v2 signaling", () => {
       ...(request.engine === "v2" ? { media: grant } : {})
     }))
     const { request, post } = await fixture(helper)
-    const { offer: _, ...v2 } = { ...request, engine: "v2", media, chroma: "420" }
+    const v2 = { ...request, chroma: "420" }
     for (const operation of ["start", "restart"])
       expect((await post({ ...v2, operation })).body).toMatchObject({
         engines: ["v2"],
@@ -136,11 +79,11 @@ describe("Screen Sharing engine v2 signaling", () => {
     )
   })
 
-  it("rejects a v2 start without a valid viewer address before invoking the helper", async () => {
+  it("rejects a start without engine v2 or a valid viewer address before invoking the helper", async () => {
     const helper = vi.fn(async () => reply)
-    const { request, post } = await fixture(helper)
-    const { offer: _, ...v2 } = { ...request, engine: "v2" }
+    const { request: v2, post } = await fixture(helper)
     for (const change of [
+      { engine: undefined },
       { media: undefined },
       { media: { ...media, endpointId: "not-hex" } },
       { media: { ...media, directAddrs: Array.from({ length: 33 }, () => "10.0.0.1:1") } },
@@ -190,11 +133,11 @@ describe("native Screen Sharing signaling", () => {
     expect(helper).toHaveBeenCalledOnce()
   })
 
-  it("advertises availability, passes a valid offer transiently, and permits stop after pane deletion", async () => {
+  it("advertises availability, passes a valid start transiently, and permits stop after pane deletion", async () => {
     const helper = vi.fn(async (request: ScreenSharingRequest) => ({
       ...reply,
       status: request.operation === "start" ? "connecting" : "stopped",
-      answer: "fixture answer"
+      media: grant
     }))
     const { server, services, workspace, pane, request, post } = await fixture(helper)
     expect((await jsonRequest(server, "/v1/info")).body).toMatchObject({
@@ -206,10 +149,7 @@ describe("native Screen Sharing signaling", () => {
     })
     expect(response.status).toBe(200)
     expect(response.headers.get("cache-control")).toBe("no-store")
-    expect(await response.json()).toMatchObject({
-      status: "connecting",
-      answer: "fixture answer"
-    })
+    expect(await response.json()).toMatchObject({ status: "connecting", media: grant })
     expect(helper).toHaveBeenLastCalledWith(request)
     expect((await post({ ...request, operation: "restart" })).status).toBe(200)
     expect((await post({ ...request, operation: "heartbeat" })).status).toBe(200)
@@ -239,44 +179,19 @@ describe("native Screen Sharing signaling", () => {
       expect((await post({ ...request, [field]: "invalid" })).status).toBe(400)
     }
     for (const change of [
-      { offer: undefined },
-      { offer: "x".repeat(256 * 1024 + 1) },
-      { offer: "v=0" },
+      { media: undefined },
       { displayId: undefined },
       { displayId: "invalid" }
     ]) {
       expect((await post({ ...request, ...change })).status).toBe(400)
       expect((await post({ ...request, operation: "restart", ...change })).status).toBe(400)
     }
-    expect((await post({ ...request, offer: "x".repeat(301 * 1024) })).status).toBe(413)
+    expect((await post({ ...request, displayId: "x".repeat(301 * 1024) })).status).toBe(413)
+    const { engine: _, media: __, ...webRTC } = request
+    const oldViewer = await post({ ...webRTC, offer: "v=0\r\na=fingerprint:sha-256 fixture\r\n" })
+    expect(oldViewer.status).toBe(400)
+    expect(oldViewer.body).toMatchObject({ error: expect.stringContaining("Update Codevisor") })
     expect(helper).not.toHaveBeenCalled()
-  })
-
-  it("returns short-lived connectivity credentials without persisting them or allowing caching", async () => {
-    const connectivity = {
-      servers: [
-        {
-          urls: ["turn:relay.example.test:3478"],
-          username: "fixture-viewer",
-          credential: "ephemeral-password"
-        }
-      ],
-      relayOnly: true,
-      expiresAt: 1700000300
-    }
-    const { server, request, services, pane } = await fixture(async () => ({
-      ...reply,
-      connectivity
-    }))
-    const response = await fetch(`${server.url}/v1/screen-sharing`, {
-      method: "POST",
-      body: JSON.stringify({ ...request, operation: "capabilities" })
-    })
-    expect(response.headers.get("cache-control")).toBe("no-store")
-    expect(await response.json()).toEqual({ ...reply, connectivity })
-    expect((await run(services.db.listWorkspacePanes)).find((item) => item.id === pane.id)).toEqual(
-      pane
-    )
   })
 
   it("validates workspace, pane, provider and archive state for start and heartbeat", async () => {
@@ -395,7 +310,7 @@ describe("native Screen Sharing signaling", () => {
     const helper = vi.fn(async (request: ScreenSharingRequest) => ({
       ...reply,
       status: request.operation === "start" ? "connecting" : "viewing",
-      answer: "fixture answer"
+      ...(request.operation === "start" ? { media: grant } : {})
     }))
     const { server, services, project, workspace, request, post } = await fixture(helper)
     expect((await jsonRequest(server, "/v1/info")).body).toMatchObject({

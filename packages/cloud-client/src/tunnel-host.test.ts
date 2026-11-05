@@ -14,7 +14,6 @@ import {
   admitTunnelHello,
   MachineTunnel,
   TUNNEL_ALPN_CHANNELS,
-  TUNNEL_ALPN_MEDIA,
   tunnelSocket
 } from "./tunnel-host.js"
 
@@ -228,7 +227,6 @@ const tunnelSetup = () => {
   const endpoints: FakeEndpoint[] = []
   const bindOptions: EndpointOptions[] = []
   const accepted = new Pending<{ endpointId?: string }>()
-  const media: TunnelConnection[] = []
   const addrs = new Pending<unknown>()
   const logs: string[] = []
   const tunnel = new MachineTunnel({
@@ -241,10 +239,9 @@ const tunnelSetup = () => {
     secretKeyHex: "11".repeat(32),
     host: { accept: (_socket, peer) => accepted.push(peer ?? {}) },
     onAddr: (addr) => addrs.push(addr),
-    onMedia: (conn) => media.push(conn),
     log: (line) => logs.push(line)
   })
-  return { tunnel, endpoints, bindOptions, accepted, media, addrs, logs }
+  return { tunnel, endpoints, bindOptions, accepted, addrs, logs }
 }
 
 describe("MachineTunnel", () => {
@@ -264,7 +261,7 @@ describe("MachineTunnel", () => {
       trustAnchorsPem: [],
       bindAddrs: [],
       pathPolicy: "auto",
-      alpns: [TUNNEL_ALPN_CHANNELS, TUNNEL_ALPN_MEDIA]
+      alpns: [TUNNEL_ALPN_CHANNELS]
     })
 
     await tunnel.configure({ relays: [{ url: "https://relay-b.test" }], enabled: true })
@@ -327,13 +324,13 @@ describe("MachineTunnel", () => {
   })
 
   it("routes channel connections to the host with the verified endpoint id", async () => {
-    const { tunnel, endpoints, accepted, media, logs } = tunnelSetup()
+    const { tunnel, endpoints, accepted, logs } = tunnelSetup()
     await tunnel.configure({ relays, enabled: true })
     const endpoint = endpoints[0]!
     const unsupported = connection("other/1")
-    const mediaConnection = connection(TUNNEL_ALPN_MEDIA)
+    const retiredMedia = connection("codevisor/media/1")
     endpoint.incoming.push({ error: new Error("bad handshake") })
-    endpoint.incoming.push({ value: mediaConnection })
+    endpoint.incoming.push({ value: retiredMedia })
     endpoint.incoming.push({ value: unsupported })
     endpoint.incoming.push({
       value: connection(TUNNEL_ALPN_CHANNELS, "g", Promise.reject(new Error("gone")))
@@ -341,7 +338,7 @@ describe("MachineTunnel", () => {
     endpoint.incoming.push({ value: connection(TUNNEL_ALPN_CHANNELS, "f".repeat(64)) })
 
     expect(await accepted.next()).toEqual({ endpointId: "f".repeat(64) })
-    expect(media).toEqual([mediaConnection])
+    expect(retiredMedia.close).toHaveBeenCalledWith(1, "unsupported service")
     expect(unsupported.close).toHaveBeenCalledWith(1, "unsupported service")
     expect(logs).toContain("Tunnel: handshake failed: Error: bad handshake")
   })

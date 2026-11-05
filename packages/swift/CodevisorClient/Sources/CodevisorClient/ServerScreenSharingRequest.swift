@@ -25,19 +25,17 @@ public struct ServerScreenSharingRequest: Codable, Sendable {
   public let paneId: UUID
   public let viewerId: UUID
   public var displayId: String?
-  public var offer: String?
   public var scale: Int?
-  public var tunnelMedia: ServerScreenSharingTunnelMedia?
   public var engine: String?
   public var media: ServerScreenSharingMediaAddress?
   public var chroma: String?
 
   public init(
     operation: Operation, workspaceId: UUID, paneId: UUID, viewerId: UUID,
-    displayId: String? = nil, offer: String? = nil, scale: Int? = nil
+    displayId: String? = nil, scale: Int? = nil
   ) {
     version = 1; self.operation = operation; self.workspaceId = workspaceId
-    self.paneId = paneId; self.viewerId = viewerId; self.displayId = displayId; self.offer = offer
+    self.paneId = paneId; self.viewerId = viewerId; self.displayId = displayId
     self.scale = scale
   }
 }
@@ -47,37 +45,16 @@ public struct ServerScreenSharingReply: Codable, Sendable {
   public var status: String
   public var message: String?
   public var displays: [ServerScreenSharingDisplay]
-  public var answer: String?
-  public var connectivity: ServerScreenSharingConnectivity?
   public var provider: String?
   public var controlLease: Bool?
-  public var tunnelMedia: ServerScreenSharingTunnelMediaBridge?
   public var engines: [String]?
   public var media: ServerScreenSharingMediaGrant?
 
   public init(
-    status: String, message: String? = nil, displays: [ServerScreenSharingDisplay] = [], answer: String? = nil,
-    connectivity: ServerScreenSharingConnectivity? = nil, provider: String? = nil
+    status: String, message: String? = nil, displays: [ServerScreenSharingDisplay] = [], provider: String? = nil
   ) {
-    version = 1; self.status = status; self.message = message; self.displays = displays; self.answer = answer
-    self.connectivity = connectivity
+    version = 1; self.status = status; self.message = message; self.displays = displays
     self.provider = provider
-  }
-}
-
-public struct ServerScreenSharingTunnelMedia: Codable, Sendable, Equatable {
-  public let endpointId: String
-  public let flowId: Int
-  public init(endpointId: String, flowId: Int) {
-    self.endpointId = endpointId; self.flowId = flowId
-  }
-}
-
-public struct ServerScreenSharingTunnelMediaBridge: Codable, Sendable, Equatable {
-  public let flowId: Int
-  public let maxPayload: Int?
-  public init(flowId: Int, maxPayload: Int? = nil) {
-    self.flowId = flowId; self.maxPayload = maxPayload
   }
 }
 
@@ -101,23 +78,6 @@ public struct ServerScreenSharingMediaGrant: Codable, Sendable, Equatable {
 
   public var address: ServerScreenSharingMediaAddress {
     .init(endpointId: endpointId, relayUrl: relayUrl, directAddrs: directAddrs)
-  }
-}
-
-public struct ServerScreenSharingConnectivity: Codable, Sendable {
-  public struct Server: Codable, Sendable {
-    public let urls: [String]
-    public let username: String
-    public let credential: String
-    public init(urls: [String], username: String = "", credential: String = "") {
-      self.urls = urls; self.username = username; self.credential = credential
-    }
-  }
-  public let servers: [Server]
-  public let relayOnly: Bool
-  public let expiresAt: Int
-  public init(servers: [Server], relayOnly: Bool, expiresAt: Int) {
-    self.servers = servers; self.relayOnly = relayOnly; self.expiresAt = expiresAt
   }
 }
 
