@@ -55,14 +55,6 @@ public struct ScreenSharingMachinePreferences {
     defaults.set(enabled, forKey: "screenSharing.sharedClipboard.\(machineId)")
   }
 
-  public func engine(machineId: String) -> ScreenSharingEngine? {
-    defaults.string(forKey: "screenSharing.engine.\(machineId)").flatMap(ScreenSharingEngine.init(rawValue:))
-  }
-
-  public func setEngine(_ engine: ScreenSharingEngine?, machineId: String) {
-    defaults.set(engine?.rawValue, forKey: "screenSharing.engine.\(machineId)")
-  }
-
   public func lastConnected(machineId: String) -> Date? {
     defaults.object(forKey: "screenSharing.lastConnected.\(machineId)") as? Date
   }

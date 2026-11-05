@@ -238,7 +238,7 @@ final class NativeBackendHarness {
     let clock = clock
     let connector = v2.map { v2 in
       ScreenSharingV2Connector(
-        enabled: { v2.enabled }, address: { ScreenSharingViewerFixtures.viewerMedia },
+        address: { ScreenSharingViewerFixtures.viewerMedia },
         connect: { [unowned self] grant in
           v2.grants.append(grant)
           if v2.failsConnect { throw RFBError.transport("No route to the host in this test.") }
@@ -266,7 +266,6 @@ final class NativeBackendHarness {
 
   @MainActor
   final class V2 {
-    var enabled = true
     var failsConnect = false
     var grants: [ServerScreenSharingMediaGrant] = []
   }
