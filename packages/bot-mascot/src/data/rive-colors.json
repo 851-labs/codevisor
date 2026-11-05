@@ -1093,6 +1093,114 @@
         "electric": ["FF16161A", "8016161A"],
         "dream": ["FF2A1B57", "802A1B57"]
       }
+    },
+    "hardhat": {
+      "auto": {
+        "sunny": ["FF3B2410", "8C3B2410"],
+        "mint": ["FF16161A", "8C16161A"],
+        "lilac": ["FF2A1B57", "8C2A1B57"],
+        "bubblegum": ["FF16161A", "8C16161A"],
+        "sky": ["FF0F2A44", "8C0F2A44"],
+        "tomato": ["FF3D0F0A", "8C3D0F0A"],
+        "electric": ["FF16161A", "8C16161A"],
+        "dream": ["FF2A1B57", "8C2A1B57"]
+      }
+    },
+    "chef": {
+      "auto": {
+        "sunny": ["FF3B2410", "4D3B2410"],
+        "mint": ["FF16161A", "4D16161A"],
+        "lilac": ["FF2A1B57", "4D2A1B57"],
+        "bubblegum": ["FF16161A", "4D16161A"],
+        "sky": ["FF0F2A44", "4D0F2A44"],
+        "tomato": ["FF3D0F0A", "4D3D0F0A"],
+        "electric": ["FF16161A", "4D16161A"],
+        "dream": ["FF2A1B57", "4D2A1B57"]
+      }
+    },
+    "sailor": {
+      "auto": {
+        "sunny": ["FF3B2410", "403B2410"],
+        "mint": ["FF16161A", "4016161A"],
+        "lilac": ["FF2A1B57", "402A1B57"],
+        "bubblegum": ["FF16161A", "4016161A"],
+        "sky": ["FF0F2A44", "400F2A44"],
+        "tomato": ["FF3D0F0A", "403D0F0A"],
+        "electric": ["FF16161A", "4016161A"],
+        "dream": ["FF2A1B57", "402A1B57"]
+      }
+    },
+    "cowboy": {
+      "auto": {
+        "sunny": ["FF3B2410", "593B2410"],
+        "mint": ["FF16161A", "5916161A"],
+        "lilac": ["FF2A1B57", "592A1B57"],
+        "bubblegum": ["FF16161A", "5916161A"],
+        "sky": ["FF0F2A44", "590F2A44"],
+        "tomato": ["FF3D0F0A", "593D0F0A"],
+        "electric": ["FF16161A", "5916161A"],
+        "dream": ["FF2A1B57", "592A1B57"]
+      }
+    },
+    "conical": {
+      "auto": {
+        "sunny": ["FF3B2410"],
+        "mint": ["FF16161A"],
+        "lilac": ["FF2A1B57"],
+        "bubblegum": ["FF16161A"],
+        "sky": ["FF0F2A44"],
+        "tomato": ["FF3D0F0A"],
+        "electric": ["FF16161A"],
+        "dream": ["FF2A1B57"]
+      }
+    },
+    "straw": {
+      "auto": {
+        "sunny": ["FF3B2410", "803B2410"],
+        "mint": ["FF16161A", "8016161A"],
+        "lilac": ["FF2A1B57", "802A1B57"],
+        "bubblegum": ["FF16161A", "8016161A"],
+        "sky": ["FF0F2A44", "800F2A44"],
+        "tomato": ["FF3D0F0A", "803D0F0A"],
+        "electric": ["FF16161A", "8016161A"],
+        "dream": ["FF2A1B57", "802A1B57"]
+      }
+    },
+    "floppy": {
+      "auto": {
+        "sunny": ["FF799BFF", "FF476FE6", "FF3B2410", "733B2410", "4D3B2410"],
+        "mint": ["FFFF92BB", "FFE66495", "FF16161A", "7316161A", "4D16161A"],
+        "lilac": ["FFFFD66B", "FFE6B536", "FF2A1B57", "732A1B57", "4D2A1B57"],
+        "bubblegum": ["FF61C7C3", "FF2AA39E", "FF16161A", "7316161A", "4D16161A"],
+        "sky": ["FFFFA66C", "FFE67C37", "FF0F2A44", "730F2A44", "4D0F2A44"],
+        "tomato": ["FF799BFF", "FF476FE6", "FF3D0F0A", "733D0F0A", "4D3D0F0A"],
+        "electric": ["FFFFD66B", "FFE6B536", "FF16161A", "7316161A", "4D16161A"],
+        "dream": ["FF61C7C3", "FF2AA39E", "FF2A1B57", "732A1B57", "4D2A1B57"]
+      }
+    },
+    "beret": {
+      "auto": {
+        "sunny": ["FF3B2410", "FF3F62CC", "FF799BFF", "FF476FE6", "593B2410"],
+        "mint": ["FF16161A", "FFCC5984", "FFFF92BB", "FFE66495", "5916161A"],
+        "lilac": ["FF2A1B57", "FFCCA130", "FFFFD66B", "FFE6B536", "592A1B57"],
+        "bubblegum": ["FF16161A", "FF26918D", "FF61C7C3", "FF2AA39E", "5916161A"],
+        "sky": ["FF0F2A44", "FFCC6E31", "FFFFA66C", "FFE67C37", "590F2A44"],
+        "tomato": ["FF3D0F0A", "FF3F62CC", "FF799BFF", "FF476FE6", "593D0F0A"],
+        "electric": ["FF16161A", "FFCCA130", "FFFFD66B", "FFE6B536", "5916161A"],
+        "dream": ["FF2A1B57", "FF26918D", "FF61C7C3", "FF2AA39E", "592A1B57"]
+      }
+    },
+    "bucket": {
+      "auto": {
+        "sunny": ["FF799BFF", "FF476FE6", "FF3B2410", "593B2410"],
+        "mint": ["FFFF92BB", "FFE66495", "FF16161A", "5916161A"],
+        "lilac": ["FFFFD66B", "FFE6B536", "FF2A1B57", "592A1B57"],
+        "bubblegum": ["FF61C7C3", "FF2AA39E", "FF16161A", "5916161A"],
+        "sky": ["FFFFA66C", "FFE67C37", "FF0F2A44", "590F2A44"],
+        "tomato": ["FF799BFF", "FF476FE6", "FF3D0F0A", "593D0F0A"],
+        "electric": ["FFFFD66B", "FFE6B536", "FF16161A", "5916161A"],
+        "dream": ["FF61C7C3", "FF2AA39E", "FF2A1B57", "592A1B57"]
+      }
     }
   },
   "outfit": {

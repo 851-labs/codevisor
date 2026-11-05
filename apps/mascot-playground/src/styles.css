@@ -622,3 +622,127 @@ button[aria-pressed="true"] {
   opacity: 0.35;
   pointer-events: none;
 }
+
+@media (max-width: 720px) {
+  .app {
+    padding: 12px 12px 40px;
+    gap: 12px;
+    overflow-x: clip;
+  }
+
+  .hero {
+    flex-wrap: wrap;
+    gap: 10px;
+  }
+
+  .hero h1 {
+    font-size: 22px;
+  }
+
+  .hero .segmented {
+    order: 3;
+    flex-basis: 100%;
+  }
+
+  .segmented button {
+    flex: 1;
+    padding: 10px 12px;
+  }
+
+  .studio {
+    grid-template-columns: minmax(0, 1fr);
+    gap: 12px;
+  }
+
+  .stage-area {
+    display: contents;
+  }
+
+  .stage-card.big {
+    position: sticky;
+    top: 0;
+    z-index: 5;
+    border-radius: 0 0 22px 22px;
+    margin: -12px -12px 0;
+  }
+
+  .stage-card.big .stage-art {
+    width: min(100%, 38svh);
+    margin: 0 auto;
+  }
+
+  .in-the-app {
+    order: 3;
+    gap: 20px;
+    padding: 12px 16px;
+  }
+
+  .controls-card {
+    min-width: 0;
+    padding: 14px;
+    border-radius: 18px;
+  }
+
+  .picker {
+    gap: 20px;
+  }
+
+  .color-row,
+  .tiles {
+    gap: 8px;
+  }
+
+  .tile,
+  .color-swatch {
+    min-height: 88px;
+    min-width: 0;
+    padding: 10px 2px;
+    overflow-wrap: anywhere;
+  }
+
+  .tile-art {
+    width: 56px;
+    height: 56px;
+  }
+
+  .moves {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 8px;
+  }
+
+  .move {
+    min-height: 64px;
+    padding: 12px 14px;
+  }
+
+  .move strong {
+    font-size: 16px;
+  }
+
+  .move span {
+    font-size: 12px;
+  }
+
+  .playback .primary {
+    flex: 1;
+    min-height: 48px;
+  }
+
+  .pill-toggle {
+    min-height: 44px;
+  }
+
+  .swatch {
+    width: 36px;
+    height: 36px;
+  }
+
+  .swatch.auto {
+    min-height: 36px;
+  }
+
+  .advanced-grid {
+    grid-template-columns: minmax(0, 1fr);
+  }
+}

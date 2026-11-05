@@ -4,7 +4,17 @@ import { colorOf, hatTint, type Colorable } from "../color/colors.js"
 import type { Palette } from "../color/palette.js"
 import { fa } from "../geometry/math.js"
 import type { BotMascotPose, HatPose } from "../pose.js"
-import { crown, propellerCap, pumpkin, rubberDuck, topHat } from "./hard-hats.js"
+import {
+  beret,
+  bucketHat,
+  chefHat,
+  conicalHat,
+  cowboyHat,
+  floppyHat,
+  sailorHat,
+  strawHat
+} from "./brim-hats.js"
+import { crown, hardHat, propellerCap, pumpkin, rubberDuck, topHat } from "./hard-hats.js"
 import { antenna, beanie, partyHat, wizardHat } from "./soft-hats.js"
 
 export type HatDrawing = (P: Palette, A: string, id: string, hat: HatPose) => string
@@ -24,7 +34,16 @@ export const hatItems = {
   pumpkin: { title: "Jack-o'-lantern", draw: pumpkin },
   antennae: { title: "Antenna", soft: true, draw: antenna },
   wizard: { title: "Wizard hat", colors: "wizard", draw: wizardHat },
-  duck: { title: "Rubber duck", draw: rubberDuck }
+  duck: { title: "Rubber duck", draw: rubberDuck },
+  hardhat: { title: "Hard hat", draw: hardHat },
+  chef: { title: "Chef hat", draw: chefHat },
+  sailor: { title: "Sailor hat", draw: sailorHat },
+  cowboy: { title: "Cowboy hat", draw: cowboyHat },
+  conical: { title: "Conical hat", draw: conicalHat },
+  straw: { title: "Straw hat", draw: strawHat },
+  floppy: { title: "Floppy hat", draw: floppyHat },
+  beret: { title: "Beret", draw: beret },
+  bucket: { title: "Bucket hat", draw: bucketHat }
 } as const satisfies Readonly<Record<string, HatItem>>
 
 export type HatKind = keyof typeof hatItems

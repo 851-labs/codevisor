@@ -91,6 +91,25 @@ export function pumpkin(P: Palette, _A: string, id: string): string {
   )
 }
 
+export function hardHat(P: Palette, _A: string, id: string): string {
+  const dome = "M-56 6C-56 -38 -32 -60 0 -60C32 -60 56 -38 56 6Q0 14 -56 6Z"
+  const ridge = "M-11 -59C-13 -40 -13 -16 -11 9L11 9C13 -16 13 -40 11 -59Q0 -61.5 -11 -59Z"
+  return (
+    `<defs>${litGradient(id + "y", "#FFD84D", "#F4A21A")}${litGradient(id + "r", "#FFE680", "#F7B52A")}<clipPath id="${id}c"><path d="${dome}"/></clipPath></defs>` +
+    `<path d="${dome}" fill="url(#${id}y)" ${strokeOf(P, 14)}/>` +
+    `<g clip-path="url(#${id}c)">` +
+    `<path d="${ridge}" fill="url(#${id}r)"/>` +
+    rib("M-30 -53Q-44 -28 -42 8", "#C9770E") +
+    rib("M30 -53Q44 -28 42 8", "#C9770E") +
+    glint("M16 -48Q32 -44 42 -30") +
+    `</g>` +
+    `<path d="M-11 -59C-13 -40 -13 -16 -11 9M11 -59C13 -40 13 -16 11 9" fill="none" stroke="${P.outline}" stroke-width="3.5" stroke-opacity=".55"/>` +
+    `<path d="${dome}" fill="none" stroke="${P.outline}" stroke-width="6" stroke-linejoin="round"/>` +
+    `<path d="M-74 10Q-76 0 -56 2Q0 9 56 2Q76 0 74 10Q0 24 -74 10Z" fill="url(#${id}y)" ${strokeOf(P, 12)}/>` +
+    glint("M38 9Q52 8 62 6", 3.2)
+  )
+}
+
 export function rubberDuck(P: Palette, _A: string, id: string): string {
   const S = strokeOf(P, 12)
   return (
@@ -104,5 +123,5 @@ export function rubberDuck(P: Palette, _A: string, id: string): string {
   )
 }
 
-const rib = (d: string): string =>
-  `<path d="${d}" fill="none" stroke="#B4400F" stroke-width="4" stroke-linecap="round" stroke-opacity=".85"/>`
+const rib = (d: string, color = "#B4400F"): string =>
+  `<path d="${d}" fill="none" stroke="${color}" stroke-width="4" stroke-linecap="round" stroke-opacity=".85"/>`

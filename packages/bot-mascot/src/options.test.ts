@@ -45,7 +45,16 @@ describe("bot mascot options", () => {
       "pumpkin",
       "antennae",
       "wizard",
-      "duck"
+      "duck",
+      "hardhat",
+      "chef",
+      "sailor",
+      "cowboy",
+      "conical",
+      "straw",
+      "floppy",
+      "beret",
+      "bucket"
     ])
     expect(ids(botMascotEyewear)).toEqual(["specs", "monocle", "goggles"])
     expect(ids(botMascotOutfits)).toEqual(["tie", "tutu", "dress", "robe", "suit", "overalls"])
