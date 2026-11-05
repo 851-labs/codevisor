@@ -20,14 +20,16 @@ final class CodevisorV2Viewer {
   private var control: BenchViewerControl?
 
   static func run(
-    in window: ViewerWindow, host: String, port: UInt16, presentation: V2Presentation, takesControl: Bool,
+    in window: ViewerWindow, host: String, port: UInt16, presentation: V2Presentation, presentsTiles: Bool,
+    takesControl: Bool,
     until deadline: ContinuousClock.Instant, signals: BenchSignalFiles
   ) async throws -> CodevisorV2ViewResult {
     let signaling = try await SignalingSocket.connect(host: host, port: port, until: deadline, retry: connectRetry)
     let address = try await receive(signaling)
     let channel = SignalingControlChannel(signaling)
     channel.startReceiving()
-    let viewer = try await CodevisorV2Viewer(host: host, address: address, presentation: presentation)
+    let viewer = try await CodevisorV2Viewer(
+      host: host, address: address, presentation: presentation, presentsTiles: presentsTiles)
     window.show(viewer.surface.view)
     defer { viewer.stop() }
 
@@ -44,13 +46,16 @@ final class CodevisorV2Viewer {
     control = try await BenchViewerControl.acquire(over: channel, surface: videoSurface, timeout: Self.controlTimeout)
   }
 
-  private init(host: String, address: V2EndpointMessage, presentation: V2Presentation) async throws {
+  private init(
+    host: String, address: V2EndpointMessage, presentation: V2Presentation, presentsTiles: Bool
+  ) async throws {
     let endpoint = try await V2Endpoint.bind()
     let connection = try await endpoint.connect(
       addr: address.addr(reachingHost: host), alpn: mediaAlpn(), cancel: nil)
     let transport = ScreenSharingIrohMediaTransport(
       session: await connection.openMediaSession(config: ScreenSharingIrohMediaTransport.sessionConfig))
-    let viewer = ScreenSharingV2Viewer(transport: transport, metrics: ScreenSharingMetrics(), presentsTiles: true)
+    let viewer = ScreenSharingV2Viewer(
+      transport: transport, metrics: ScreenSharingMetrics(), presentsTiles: presentsTiles)
     viewer.metrics.commits.isRecording = true
     continuousMinusAbsoluteNs = BenchMachClock.continuousMinusAbsoluteNs()
     viewer.frames.retainsLatest = true

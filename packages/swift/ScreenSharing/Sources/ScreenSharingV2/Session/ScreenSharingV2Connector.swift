@@ -5,6 +5,7 @@ import ScreenSharing
 
 @MainActor
 public protocol ScreenSharingV2StartableSession: ScreenSharingViewingSession {
+  var presentsTiles: Bool { get set }
   func start(token: String) async throws
 }
 

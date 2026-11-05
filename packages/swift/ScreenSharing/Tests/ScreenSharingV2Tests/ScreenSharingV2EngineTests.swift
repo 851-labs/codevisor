@@ -92,8 +92,7 @@ extension HardwareCodecTests {
       let (hostSide, viewerSide) = LoopbackMediaTransport.pair()
       let host = try Self.host(transport: hostSide, metrics: ScreenSharingMetrics(), tiles: 4)
       let metrics = ScreenSharingMetrics()
-      let viewer = ScreenSharingV2Viewer(
-        transport: viewerSide, metrics: metrics, presentsTiles: true, showsTilesEarly: true)
+      let viewer = ScreenSharingV2Viewer(transport: viewerSide, metrics: metrics, presentsTiles: true)
       let decoded = DecodedFrames(viewer.frames)
       host.start()
       viewer.start()
@@ -104,14 +103,14 @@ extension HardwareCodecTests {
       host.push(
         try TestPixels.frame(
           shades: [40, 90, 230, 190], timestampNs: 2_000, dirtyRects: [CGRect(x: 0, y: 180, width: 640, height: 90)]))
-      while decoded.frames.last.map({ abs(Self.shade($0, row: 225) - 230) > 3 }) ?? true {
-        await decoded.arrivals.cancellableWait(for: decoded.frames.count + 1)
-      }
+      await decoded.arrivals.cancellableWait(for: 2)
 
-      #expect(decoded.frames.allSatisfy { $0.tiles?.count == 4 && $0.size == CGSize(width: 640, height: 360) })
-      #expect(abs(Self.shade(try #require(decoded.frames.last), row: 45) - 40) <= 3)
-      #expect(abs(Self.shade(try #require(decoded.frames.first), row: 225) - 140) <= 3)
-      #expect(metrics.counter("tilesShownEarly") == 1)
+      let frames = decoded.frames
+      #expect(frames.allSatisfy { $0.tiles?.count == 4 && $0.size == CGSize(width: 640, height: 360) })
+      #expect(frames.map { Self.shade($0, row: 225) }.map { abs($0 - 140) <= 3 } == [true, false])
+      #expect(abs(Self.shade(try #require(frames.last), row: 225) - 230) <= 3)
+      #expect(abs(Self.shade(try #require(frames.last), row: 45) - 40) <= 3)
+      #expect(metrics.snapshot().timings["compose"] == nil)
     }
 
     @Test(.enabled(if: VTIsHardwareDecodeSupported(kCMVideoCodecType_HEVC), "No hardware HEVC on this machine."))

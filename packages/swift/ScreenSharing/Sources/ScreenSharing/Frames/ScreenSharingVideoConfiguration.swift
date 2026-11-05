@@ -52,6 +52,7 @@ public struct ScreenSharingVideoTile: @unchecked Sendable {
 public struct ScreenSharingVideoFrame: @unchecked Sendable {
   public let pixelBuffer: CVPixelBuffer
   public let tiles: [ScreenSharingVideoTile]?
+  public let size: CGSize
   public let timestampNs: Int64
   public let rtpTimestamp: UInt32
   public let receivedAtSeconds: Double?
@@ -64,6 +65,7 @@ public struct ScreenSharingVideoFrame: @unchecked Sendable {
   ) {
     self.pixelBuffer = pixelBuffer
     tiles = nil
+    size = CGSize(width: CVPixelBufferGetWidth(pixelBuffer), height: CVPixelBufferGetHeight(pixelBuffer))
     self.timestampNs = timestampNs
     self.rtpTimestamp = rtpTimestamp
     self.receivedAtSeconds = receivedAtSeconds
@@ -72,26 +74,19 @@ public struct ScreenSharingVideoFrame: @unchecked Sendable {
   }
 
   public init?(
-    tiles: [ScreenSharingVideoTile], timestampNs: Int64, rtpTimestamp: UInt32 = 0,
+    tiles: [ScreenSharingVideoTile], size: CGSize, timestampNs: Int64, rtpTimestamp: UInt32 = 0,
     receivedAtSeconds: Double? = nil, sourceTimestampNs: Int64? = nil
   ) {
     guard let first = tiles.first else { return nil }
 
     pixelBuffer = first.pixelBuffer
     self.tiles = tiles
+    self.size = size
     self.timestampNs = timestampNs
     self.rtpTimestamp = rtpTimestamp
     self.receivedAtSeconds = receivedAtSeconds
     self.sourceTimestampNs = sourceTimestampNs
     dirtyRects = nil
-  }
-
-  public var size: CGSize {
-    guard let tiles else {
-      return CGSize(width: CVPixelBufferGetWidth(pixelBuffer), height: CVPixelBufferGetHeight(pixelBuffer))
-    }
-
-    return CGSize(width: CVPixelBufferGetWidth(pixelBuffer), height: tiles.map(\.rows.upperBound).max() ?? 0)
   }
 }
 

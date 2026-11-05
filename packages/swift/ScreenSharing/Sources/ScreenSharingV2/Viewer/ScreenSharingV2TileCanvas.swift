@@ -7,6 +7,8 @@ struct ScreenSharingV2TileCanvas: @unchecked Sendable {
     let images: [Int: CVPixelBuffer]
     let pixelFormat: OSType
 
+    var size: CGSize { CGSize(width: layout.width, height: layout.height) }
+
     var tiles: [ScreenSharingVideoTile]? {
       guard layout.count > 1, images.count == layout.count,
         images.values.allSatisfy({ CVPixelBufferGetPixelFormatType($0) == pixelFormat })
@@ -30,8 +32,6 @@ struct ScreenSharingV2TileCanvas: @unchecked Sendable {
     images[tile] = image
     newestFormat = CVPixelBufferGetPixelFormatType(image)
   }
-
-  var isComplete: Bool { layout.count > 1 && images.count == layout.count }
 
   var snapshot: Snapshot? {
     newestFormat.map { Snapshot(layout: layout, images: images, pixelFormat: $0) }

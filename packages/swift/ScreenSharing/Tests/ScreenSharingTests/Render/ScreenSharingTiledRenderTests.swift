@@ -9,11 +9,12 @@ struct ScreenSharingTiledRenderTests {
   private static let width = 64
   private static let height = 256
   private static let tileRows = [0..<64, 64..<128, 128..<192, 192..<256]
+  private static let size = CGSize(width: width, height: height)
 
   @Test func aTiledFrameIsTheSizeOfTheWholePicture() throws {
     let frame = try #require(try Self.tiledFrame())
 
-    #expect(ScreenSharingMetalEncoder.videoSize(of: frame) == CGSize(width: Self.width, height: Self.height))
+    #expect(frame.size == Self.size)
   }
 
   @Test func tilesDrawnAtHalfSizeMatchTheWholePictureExactly() throws {
@@ -44,17 +45,32 @@ struct ScreenSharingTiledRenderTests {
     }
 
     let whole = try gpu.render(ScreenSharingVideoFrame(pixelBuffer: try Self.picture(), timestampNs: 1), 32, 128)
-    let tiled = try gpu.render(try #require(ScreenSharingVideoFrame(tiles: padded, timestampNs: 1)), 32, 128)
+    let tiled = try gpu.render(
+      try #require(ScreenSharingVideoFrame(tiles: padded, size: Self.size, timestampNs: 1)), 32, 128)
+
+    #expect(tiled == whole)
+  }
+
+  @Test func aTileDecodedIntoAWiderBufferShowsOnlyThePicturesColumns() throws {
+    let gpu = try TiledRenderFixture()
+    let wide = try Self.tileRows.map { rows in
+      ScreenSharingVideoTile(pixelBuffer: try Self.picture(rows: rows, width: Self.width + 32), rows: rows)
+    }
+
+    let whole = try gpu.render(ScreenSharingVideoFrame(pixelBuffer: try Self.picture(), timestampNs: 1), 32, 128)
+    let tiled = try gpu.render(
+      try #require(ScreenSharingVideoFrame(tiles: wide, size: Self.size, timestampNs: 1)), 32, 128)
 
     #expect(tiled == whole)
   }
 
   private static func tiledFrame() throws -> ScreenSharingVideoFrame? {
     ScreenSharingVideoFrame(
-      tiles: try tileRows.map { ScreenSharingVideoTile(pixelBuffer: try picture(rows: $0), rows: $0) }, timestampNs: 1)
+      tiles: try tileRows.map { ScreenSharingVideoTile(pixelBuffer: try picture(rows: $0), rows: $0) }, size: size,
+      timestampNs: 1)
   }
 
-  private static func picture(rows: Range<Int> = 0..<height) throws -> CVPixelBuffer {
+  private static func picture(rows: Range<Int> = 0..<height, width: Int = width) throws -> CVPixelBuffer {
     var created: CVPixelBuffer?
     let attributes =
       [kCVPixelBufferMetalCompatibilityKey: true, kCVPixelBufferIOSurfacePropertiesKey: [:] as CFDictionary]
@@ -66,8 +82,8 @@ struct ScreenSharingTiledRenderTests {
     let base = try #require(CVPixelBufferGetBaseAddress(buffer)).assumingMemoryBound(to: UInt8.self)
     let stride = CVPixelBufferGetBytesPerRow(buffer)
     for (index, row) in rows.enumerated() {
-      let level = UInt8((row * 37) % 256)
       for column in 0..<width {
+        let level = UInt8(column < Self.width ? (row * 37) % 256 : 255)
         let pixel = base + index * stride + column * 4
         (pixel[0], pixel[1], pixel[2], pixel[3]) = (level, level, level, 255)
       }

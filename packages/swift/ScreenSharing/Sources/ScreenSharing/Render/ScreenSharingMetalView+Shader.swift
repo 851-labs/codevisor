@@ -5,10 +5,10 @@ extension ScreenSharingMetalView {
     #include <metal_stdlib>
     using namespace metal;
     struct ScreenVertex { float4 position [[position]]; float2 uv; };
-    vertex ScreenVertex screenVertex(uint id [[vertex_id]], constant float2& placement [[buffer(0)]]) {
+    vertex ScreenVertex screenVertex(uint id [[vertex_id]], constant float4& placement [[buffer(0)]]) {
       float2 positions[3] = {float2(-1,-1), float2(3,-1), float2(-1,3)};
       float2 p = positions[id];
-      return {float4(p,0,1), float2((p.x+1)*0.5, ((1-p.y)*0.5 - placement.x) * placement.y)};
+      return {float4(p,0,1), float2((p.x+1)*0.5 * placement.z, ((1-p.y)*0.5 - placement.x) * placement.y)};
     }
     // Offsets and scales that take normalized plane samples to Y 0...1 and CbCr -0.5...0.5.
     struct ScreenRange { float yOffset; float yScale; float cOffset; float cScale; };

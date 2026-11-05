@@ -11,7 +11,7 @@ struct ViewCommand: BenchCommand {
   static let summary =
     "Show the Codevisor stream from the host full screen, or (--source null) the floor: barcodes drawn from UDP"
   static let usage = """
-    --source codevisor --host <ipv4> [--port <port>] [--engine v1|v2] [--present arrival|display-link] \
+    --source codevisor --host <ipv4> [--port <port>] [--engine v1|v2] [--present arrival|display-link] [--tiles on|off] \
       [--control] [--duration <seconds>] \(VirtualDisplayOption.usage) \(BenchSignalFiles.usage)
       view --source null [--port <udp port>] [--duration <seconds>] \(VirtualDisplayOption.usage) \(BenchSignalFiles.usage)
     """
@@ -24,6 +24,7 @@ struct ViewCommand: BenchCommand {
   private let source: Source
   private let engine: BenchEngine
   private let presentation: V2Presentation
+  private let presentsTiles: Bool
   private let takesControl: Bool
   private let host: String?
   private let port: UInt16
@@ -35,6 +36,7 @@ struct ViewCommand: BenchCommand {
     source = try options.choice("source", default: Source.codevisor)
     engine = try options.choice("engine", default: BenchEngine.v1)
     presentation = try options.choice("present", default: V2Presentation.arrival)
+    presentsTiles = try options.choice("tiles", default: V2Tiles.on) == .on
     takesControl = try options.flag("control")
     host = try options.string("host")
     let defaultPort = source == .codevisor ? SignalingSocket.defaultPort : Self.defaultFloorPort
@@ -65,7 +67,8 @@ struct ViewCommand: BenchCommand {
     case .codevisor where engine == .v2:
       try BenchOutput.print(
         try await CodevisorV2Viewer.run(
-          in: window, host: host ?? "", port: port, presentation: presentation, takesControl: takesControl,
+          in: window, host: host ?? "", port: port, presentation: presentation, presentsTiles: presentsTiles,
+          takesControl: takesControl,
           until: deadline, signals: signals))
     case .codevisor:
       try BenchOutput.print(

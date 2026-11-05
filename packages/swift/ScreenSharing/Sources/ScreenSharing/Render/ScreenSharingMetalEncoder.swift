@@ -40,6 +40,7 @@ package struct ScreenSharingMetalEncoder: @unchecked Sendable {
       let planes: Planes
       let rows: Range<Int>?
       var pixelRows = 0
+      var pixelColumns = 0
     }
     let frame: ScreenSharingVideoFrame
     let layers: [Layer]
@@ -109,10 +110,6 @@ package struct ScreenSharingMetalEncoder: @unchecked Sendable {
     textureCache = cache
   }
 
-  package static func videoSize(of frame: ScreenSharingVideoFrame) -> CGSize {
-    frame.size
-  }
-
   static func viewport(video: CGSize, target: CGSize) -> MTLViewport {
     let scale = min(target.width / video.width, target.height / video.height)
     return MTLViewport(
@@ -132,7 +129,9 @@ package struct ScreenSharingMetalEncoder: @unchecked Sendable {
       else { return nil }
 
       layers.append(
-        Textures.Layer(planes: planes, rows: tile.rows, pixelRows: CVPixelBufferGetHeight(tile.pixelBuffer)))
+        Textures.Layer(
+          planes: planes, rows: tile.rows, pixelRows: CVPixelBufferGetHeight(tile.pixelBuffer),
+          pixelColumns: CVPixelBufferGetWidth(tile.pixelBuffer)))
     }
     return Textures(frame: frame, layers: layers)
   }
@@ -175,8 +174,8 @@ package struct ScreenSharingMetalEncoder: @unchecked Sendable {
 
         encoder.setScissorRect(scissor)
       }
-      var placement = Self.placement(of: layer.rows, pixelRows: layer.pixelRows, in: video.height)
-      encoder.setVertexBytes(&placement, length: MemoryLayout<SIMD2<Float>>.size, index: 0)
+      var placement = Self.placement(of: layer, in: video)
+      encoder.setVertexBytes(&placement, length: MemoryLayout<SIMD4<Float>>.size, index: 0)
       guard draw(layer.planes, with: encoder, hdrTarget: hdrTarget) else {
         encoder.endEncoding()
         return nil
@@ -186,10 +185,14 @@ package struct ScreenSharingMetalEncoder: @unchecked Sendable {
     return Encoded(buffer: buffer, retained: TextureFrame(frame: textures.frame, textures: textures.retained))
   }
 
-  static func placement(of rows: Range<Int>?, pixelRows: Int, in height: CGFloat) -> SIMD2<Float> {
-    guard let rows, height > 0, !rows.isEmpty else { return SIMD2(0, 1) }
+  static func placement(of layer: Textures.Layer, in picture: CGSize) -> SIMD4<Float> {
+    guard let rows = layer.rows, picture.height > 0, picture.width > 0, !rows.isEmpty else {
+      return SIMD4(0, 1, 1, 0)
+    }
 
-    return SIMD2(Float(CGFloat(rows.lowerBound) / height), Float(height / CGFloat(max(rows.count, pixelRows))))
+    let rowScale = picture.height / CGFloat(max(rows.count, layer.pixelRows))
+    let columnScale = picture.width / CGFloat(max(Int(picture.width), layer.pixelColumns))
+    return SIMD4(Float(CGFloat(rows.lowerBound) / picture.height), Float(rowScale), Float(columnScale), 0)
   }
 
   static func scissor(
