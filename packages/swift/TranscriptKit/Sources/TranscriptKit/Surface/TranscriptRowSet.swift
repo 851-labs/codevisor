@@ -70,9 +70,18 @@ public struct TranscriptRowSet: Sendable {
   @discardableResult
   public mutating func replaceRows(_ newRows: [Row]) -> [String: Row] {
     let previousRowsByKey = rowByKey
-    rows = newRows
-    rowByKey = Dictionary(uniqueKeysWithValues: newRows.map { ($0.layoutKey, $0) })
+    rows = Self.droppingDuplicateLayoutKeys(newRows)
+    rowByKey = Self.rowsByLayoutKey(rows)
     return previousRowsByKey
+  }
+
+  public static func droppingDuplicateLayoutKeys(_ rows: [Row]) -> [Row] {
+    var seenKeys = Set<String>()
+    return rows.filter { seenKeys.insert($0.layoutKey).inserted }
+  }
+
+  public static func rowsByLayoutKey(_ rows: [Row]) -> [String: Row] {
+    Dictionary(rows.map { ($0.layoutKey, $0) }, uniquingKeysWith: { first, _ in first })
   }
 
   public enum ActiveReplacement: Equatable, Sendable {

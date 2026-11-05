@@ -11,13 +11,19 @@ extension SessionModel {
 
   func appendSettled(_ item: ConversationItem) {
     guard item.hasRenderableTranscriptContent else { return }
+    if let index = settledIndexById[item.id], index < settledConversation.count {
+      settledConversation[index] = item
+      return
+    }
+
     settledIndexById[item.id] = settledConversation.count
     settledConversation.append(item)
   }
 
   func rebuildSettledIndex() {
     settledIndexById = Dictionary(
-      uniqueKeysWithValues: settledConversation.enumerated().map { ($0.element.id, $0.offset) }
+      settledConversation.enumerated().map { ($0.element.id, $0.offset) },
+      uniquingKeysWith: { _, latest in latest }
     )
   }
 

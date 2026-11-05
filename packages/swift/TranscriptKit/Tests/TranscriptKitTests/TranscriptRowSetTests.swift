@@ -99,6 +99,19 @@ struct TranscriptRowSetTests {
     #expect(set.rowByKey[b.layoutKey] == b)
   }
 
+  @Test func replaceRowsKeepsTheFirstRowWhenLayoutKeysRepeat() {
+    let turn = UUID()
+    let settledCopy = settledResult(turn, height: 40)
+    let streamingCopy = Row(id: .activeResult(turn), content: .error(""), estimatedHeight: 90)
+    let tail = spacer(10)
+    var set = TranscriptRowSet()
+
+    set.replaceRows([settledCopy, streamingCopy, tail])
+
+    #expect(set.rows == [settledCopy, tail])
+    #expect(set.rowByKey[settledCopy.layoutKey] == settledCopy)
+  }
+
   @Test func replaceActiveRowsPatchesInPlaceWhenKeysAreStable() {
     let turn = UUID()
     let head = settled(UUID())
