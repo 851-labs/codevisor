@@ -6,6 +6,8 @@ struct Tier2RunFiles {
   let meta: Tier2RunMeta
   let host: [BenchObservation]?
   let viewer: [BenchObservation]
+  let hostBottom: [BenchObservation]?
+  let viewerBottom: [BenchObservation]?
   let clockBursts: [[BenchClockExchange]]
   let hostUsage: [BenchUsageSecond]
   let viewerUsage: [BenchUsageSecond]
@@ -21,6 +23,12 @@ struct Tier2RunFiles {
     meta = try Self.snakeCase.decode(Tier2RunMeta.self, from: Data(contentsOf: directory.appending(path: "meta.json")))
     host = try Self.optional(directory, "host.jsonl").map { try BenchObserverLog(jsonLines: $0).observations }
     viewer = try BenchObserverLog(jsonLines: Data(contentsOf: directory.appending(path: "viewer.jsonl"))).observations
+    hostBottom = try Self.optional(directory, "host-bottom.jsonl").map {
+      try BenchObserverLog(jsonLines: $0).observations
+    }
+    viewerBottom = try Self.optional(directory, "viewer-bottom.jsonl").map {
+      try BenchObserverLog(jsonLines: $0).observations
+    }
     clockBursts = try Self.bursts(Data(contentsOf: directory.appending(path: "clock.jsonl")))
     hostUsage = try Self.lines(BenchUsageSecond.self, Self.optional(directory, "host-usage.jsonl"), Self.plain)
     viewerUsage = try Self.lines(BenchUsageSecond.self, Self.optional(directory, "viewer-usage.jsonl"), Self.plain)

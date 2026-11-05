@@ -21,11 +21,12 @@ final class ScreenObserver {
   }
 
   static func start(
-    display: SCDisplay, region: ObserverRegion, layout: BenchBarcodeLayout, relay: VersionRelay? = nil,
-    stills: StillKeeper? = nil
+    display: SCDisplay, region: ObserverRegion, layout anchored: BenchBarcodeLayout, anchor: BarcodeAnchor = .top,
+    relay: VersionRelay? = nil, stills: StillKeeper? = nil
   ) async throws -> ScreenObserver {
     let filter = SCContentFilter(display: display, excludingWindows: [])
     let scale = CGFloat(filter.pointPixelScale)
+    let layout = try anchor.layout(anchored, displayPixelHeight: Int(CGFloat(display.height) * scale))
     let collector = FrameCollector(layout: capturedLayout(layout, region: region), relay: relay, stills: stills)
     let configuration = configuration(display, region, layout, scale)
     if stills != nil { configuration.colorSpaceName = CGColorSpace.sRGB }

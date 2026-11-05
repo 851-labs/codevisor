@@ -165,6 +165,10 @@ tier2_stills_versions() {
   echo "${versions[*]}"
 }
 
+tier2_has_bottom_barcode() {
+  [[ "$1" != test-cards && "$1" != input && "$2" != floor ]]
+}
+
 tier2_stills_options() {
   local scene=$1 system=$2 directory=$3 versions
   [[ "$scene" == test-cards && "$system" != floor ]] || return 0

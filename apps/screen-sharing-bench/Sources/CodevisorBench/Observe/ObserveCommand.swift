@@ -7,7 +7,7 @@ struct ObserveCommand: BenchCommand {
   static let summary = "Record when each barcode version reaches this Mac's compositor (ScreenCaptureKit)"
   static let usage =
     "[--duration <seconds>] [--region barcode|full] [--display <id>] [--output <file.jsonl>] [--relay <ipv4>:<port>] "
-    + BarcodeOptions.usage + " " + StillsOptions.usage
+    + "[--barcode-anchor top|bottom] " + BarcodeOptions.usage + " " + StillsOptions.usage
 
   private static let durations = 1...3600
 
@@ -16,6 +16,7 @@ struct ObserveCommand: BenchCommand {
   private let region: ObserverRegion
   private let displayID: CGDirectDisplayID?
   private let layout: BenchBarcodeLayout
+  private let anchor: BarcodeAnchor
   private let output: String?
   private let relay: BenchUDPAddress?
   private let stills: StillsOptions?
@@ -25,6 +26,7 @@ struct ObserveCommand: BenchCommand {
     region = try options.choice("region", default: .barcode)
     displayID = try DisplayOption.id(from: options)
     layout = try BarcodeOptions.layout(from: options)
+    anchor = try options.choice("barcode-anchor", default: .top)
     output = try options.string("output")
     relay = try VersionRelay.target(from: options)
     stills = try StillsOptions.read(from: options, region: region)
@@ -34,8 +36,8 @@ struct ObserveCommand: BenchCommand {
     let display = try await ScreenObserver.display(id: displayID)
     let meter = ProcessUsageMeter()
     let observer = try await ScreenObserver.start(
-      display: display, region: region, layout: layout, relay: try relay.map(VersionRelay.init(target:)),
-      stills: try stills.map(StillKeeper.init))
+      display: display, region: region, layout: layout, anchor: anchor,
+      relay: try relay.map(VersionRelay.init(target:)), stills: try stills.map(StillKeeper.init))
     try await Task.sleep(for: .seconds(duration))
 
     let observations = try await observer.stop()

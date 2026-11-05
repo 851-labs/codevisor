@@ -8,6 +8,7 @@ struct Tier2Measurement {
   let files: Tier2RunFiles
   let clock: BenchClockTrack?
   let analysis: BenchSharingAnalysis?
+  let bottom: Tier2BottomTile?
   let hostUsage: BenchUsageSummary?
   let viewerUsage: BenchUsageSummary?
   let inputToPhoton: BenchInputToPhoton?
@@ -24,6 +25,7 @@ struct Tier2Measurement {
     self.files = files
     self.clock = clock
     self.analysis = analysis
+    bottom = clock.flatMap { clock in analysis.flatMap { Tier2BottomTile(files, clock: clock, window: $0.window) } }
     hostUsage = analysis.flatMap { Self.hostUsage(files, clock: clock, window: $0.window) }
     viewerUsage = analysis.map {
       BenchUsageSummary(files.viewerUsage, in: $0.window, processes: Tier2Processes.viewer(files.meta.system))

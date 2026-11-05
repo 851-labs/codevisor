@@ -9,9 +9,11 @@ public final class BenchSceneRenderer {
   private let pipeline: any MTLRenderPipelineState
   private let barcodes: MetalRecycler<any MTLTexture>
   private let textures: SceneTextureFactory
+  private let bottomBarcode: Bool
 
-  public init(setup: BenchSceneSetup, device: any MTLDevice) throws {
+  public init(setup: BenchSceneSetup, device: any MTLDevice, bottomBarcode: Bool = false) throws {
     self.setup = setup
+    self.bottomBarcode = bottomBarcode
     textures = SceneTextureFactory(device: device)
     content = try SceneContents.make(setup, device: device)
     pipeline = try ScenePipeline.make(device: device, fragmentFunction: content.fragmentFunction)
@@ -38,6 +40,7 @@ public final class BenchSceneRenderer {
     var uniforms = content.uniforms(forVersion: version)
     uniforms.version = Int32(version)
     uniforms.extent = SIMD2(Int32(setup.canvas.pixelWidth), Int32(setup.canvas.pixelHeight))
+    uniforms.bottomBarcode = bottomBarcode ? 1 : 0
     return uniforms
   }
 

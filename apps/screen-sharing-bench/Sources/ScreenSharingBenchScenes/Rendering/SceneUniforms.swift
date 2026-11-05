@@ -5,5 +5,5 @@ struct SceneUniforms {
   var size: SIMD2<Int32> = .zero
   var extent: SIMD2<Int32> = .zero
   var seed: UInt32 = 0
-  var spare: Int32 = 0
+  var bottomBarcode: Int32 = 0
 }
