@@ -2,6 +2,7 @@ import SwiftUI
 
 enum ShortcutID: String, CaseIterable, Identifiable, Sendable {
   case newChat
+  case newBot
   case newProject
   case archiveWorkspace
 
@@ -103,7 +104,7 @@ struct ShortcutDefinition: Identifiable, Sendable {
 enum ShortcutCatalog {
   static func definition(for id: ShortcutID) -> ShortcutDefinition {
     switch id {
-    case .newChat, .newProject, .archiveWorkspace:
+    case .newChat, .newBot, .newProject, .archiveWorkspace:
       chatDefinition(for: id)
     case .newTab, .closeSplit, .closeTab, .reopenClosedPane, .selectTab, .previousTab, .nextTab,
       .previousTabInWorkspace, .nextTabInWorkspace, .previousWorkspace, .nextWorkspace:
@@ -147,8 +148,10 @@ enum ShortcutCatalog {
     ShortcutID.allCases.map { definition(for: $0) }
   }
 
-  static var listedByCategory: [(category: ShortcutCategory, shortcuts: [ShortcutDefinition])] {
-    let listable = all.filter { $0.displayString != nil }
+  static func listedByCategory(
+    excluding hidden: Set<ShortcutID>
+  ) -> [(category: ShortcutCategory, shortcuts: [ShortcutDefinition])] {
+    let listable = all.filter { $0.displayString != nil && !hidden.contains($0.id) }
     return ShortcutCategory.allCases.compactMap { category in
       let shortcuts = listable.filter { $0.category == category }
       return shortcuts.isEmpty ? nil : (category, shortcuts)
@@ -159,6 +162,8 @@ enum ShortcutCatalog {
     switch id {
     case .newChat:
       ShortcutDefinition(.newChat, "New Chat", ShortcutCombo("n", .command), category: .chats)
+    case .newBot:
+      ShortcutDefinition(.newBot, "New Bot…", ShortcutCombo("n", [.command, .shift]), category: .chats)
     case .newProject:
       ShortcutDefinition(.newProject, "New Project…", nil, category: .chats)
     case .archiveWorkspace:

@@ -15,7 +15,7 @@ private struct CommandPaletteMenuItem: View {
   @FocusedValue(\.commandPalette) private var palette
   @FocusedValue(\.sidebarActions) private var sidebar
   @FocusedValue(\.botListActions) private var botList
-  @FocusedValue(\.newBotAction) private var newBot
+  @FocusedValue(\.rootSidebarActions) private var root
   @FocusedValue(\.paletteDestinations) private var destinations
   @FocusedValue(\.newChatComposerFocus) private var composerFocus
   @FocusedValue(\.workspaceLayoutActions) private var layout
@@ -35,7 +35,7 @@ private struct CommandPaletteMenuItem: View {
 
   private var catalog: CommandPaletteCatalog {
     CommandPaletteCatalog(
-      sidebar: sidebar, botList: botList, newBot: newBot, destinations: destinations, composerFocus: composerFocus,
+      sidebar: sidebar, botList: botList, root: root, destinations: destinations, composerFocus: composerFocus,
       layout: layout, file: file, chatFind: chatFind,
       browser: browser, debugOverlay: debugOverlay, sidebarVisibility: sidebarVisibility, inspector: inspector,
       developerMode: developerMode,

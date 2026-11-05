@@ -1,0 +1,21 @@
+import SwiftUI
+
+struct RootSidebarActions: Equatable {
+  let newChat: @MainActor () -> Void
+  let newBot: (@MainActor () -> Void)?
+
+  static func == (lhs: RootSidebarActions, rhs: RootSidebarActions) -> Bool {
+    (lhs.newBot == nil) == (rhs.newBot == nil)
+  }
+}
+
+private struct RootSidebarActionsKey: FocusedValueKey {
+  typealias Value = RootSidebarActions
+}
+
+extension FocusedValues {
+  var rootSidebarActions: RootSidebarActions? {
+    get { self[RootSidebarActionsKey.self] }
+    set { self[RootSidebarActionsKey.self] = newValue }
+  }
+}

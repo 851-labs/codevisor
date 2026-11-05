@@ -246,7 +246,6 @@ struct RemoteDirectoryBrowserSheet: View {
     Group {
       Button("") { presentNewFolder() }
         .keyboardShortcut("n", modifiers: [.command, .shift])
-        .disabled(currentColumn == nil)
       Button("") { showHiddenBinding.wrappedValue.toggle() }
         .keyboardShortcut(".", modifiers: [.command, .shift])
       Button("") { openGoTo() }

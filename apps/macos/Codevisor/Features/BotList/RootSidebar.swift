@@ -27,7 +27,7 @@ struct RootSidebar: View {
         PaletteDestinationsPublisher(
           selection: navigation.committed, store: store, revealRequest: revealRequest, isEnabled: publishesSceneActions)
       )
-      .focusedSceneValue(\.newBotAction, newBotAction)
+      .focusedSceneValue(\.rootSidebarActions, sceneActions)
       .background {
         if !isDrawer {
           SplitColumnExtentReader { visibleColumnWidth = $0 }.frame(width: 0, height: 0)
@@ -48,9 +48,16 @@ struct RootSidebar: View {
       }
   }
 
-  private var newBotAction: NewBotAction? {
-    guard publishesSceneActions, botsEnabled, !environment.bots.botMachines.isEmpty else { return nil }
-    return NewBotAction(perform: openNewBot)
+  private var sceneActions: RootSidebarActions? {
+    guard publishesSceneActions, store != nil else { return nil }
+    return RootSidebarActions(newChat: openNewChat, newBot: canCreateBots ? openNewBot : nil)
+  }
+
+  private var canCreateBots: Bool { botsEnabled && !environment.bots.botMachines.isEmpty }
+
+  private func openNewChat() {
+    navigation.go(to: .newChat(nil))
+    storedMode = .code
   }
 
   private func openNewBot() {
