@@ -19,6 +19,8 @@ struct SidebarView: View {
   @State var sectionPrompt: SectionPrompt?
   @State var drag: SidebarDrag?
   @State var groupDrag: SidebarGroupDrag?
+  @State var tabDrag: SidebarTabDrag?
+  @State var renamingTab: SidebarTabRename?
   @State var holdsGroupToggles = false
   @State var revealRequest = SidebarRevealRequest()
   @ClientPreference(SidebarGrouping.preferenceKey, default: SidebarGrouping.flat) var grouping
@@ -35,7 +37,7 @@ struct SidebarView: View {
 
   var list: ProjectListModel { environment.projectList }
   var rowDetails: [SidebarRowDetail] { ClientPreferences.shared.sidebarRowDetails }
-  var isReordering: Bool { drag != nil || groupDrag != nil }
+  var isReordering: Bool { drag != nil || groupDrag != nil || tabDrag != nil }
 
   var isNewChatSelected: Bool {
     switch selection {
@@ -72,6 +74,7 @@ struct SidebarView: View {
     .coordinateSpace(.named(Self.reorderSpace))
     .overlay(alignment: .topLeading) { reorderOverlay }
     .overlay(alignment: .topLeading) { groupReorderOverlay }
+    .overlay(alignment: .topLeading) { tabReorderOverlay }
   }
 
   private var newChatRows: some View {
@@ -188,6 +191,12 @@ struct SidebarView: View {
         )
       )
       .modifier(SectionPromptModifier(prompt: $sectionPrompt, store: environment.workspaceSections))
+      .modifier(
+        SidebarTabRenameAlert(renaming: $renamingTab) { rename in
+          environment.workspaceSync.renameTab(
+            workspaceId: rename.workspaceId, tabId: rename.tabId,
+            to: rename.title.trimmingCharacters(in: .whitespacesAndNewlines))
+        })
   }
 
   private var sidebarConfiguredView: some View {

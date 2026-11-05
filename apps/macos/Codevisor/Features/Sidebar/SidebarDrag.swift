@@ -6,6 +6,7 @@ import SwiftUI
 final class SidebarDragGeometryStore {
   var workspaces: [UUID: CGRect] = [:]
   var workspacePlacements: [UUID: SidebarRow.Placement] = [:]
+  var tabs: [UUID: CGRect] = [:]
   var headings: [String: CGRect] = [:]
 }
 
@@ -70,8 +71,9 @@ extension SidebarView {
     for sibling in SidebarRows.siblings(of: id, in: rows) {
       guard let frame = dragGeometry.workspaces[sibling] else { continue }
       order.append(sibling)
-      frames[sibling] = SidebarRows.subtree(of: sibling, in: rows).compactMap { dragGeometry.workspaces[$0] }
-        .reduce(frame) { $0.union($1) }
+      let members = SidebarRows.subtree(of: sibling, in: rows)
+      let tabFrames = members.flatMap { SidebarRows.tabs(of: $0, in: rows) }.compactMap { dragGeometry.tabs[$0] }
+      frames[sibling] = (members.compactMap { dragGeometry.workspaces[$0] } + tabFrames).reduce(frame) { $0.union($1) }
     }
     return (order, frames)
   }

@@ -24,6 +24,23 @@ struct WorkspaceClosingTests {
     #expect(!workspace.holdsMainChat(sideTab))
   }
 
+  @Test("The tab holding the main chat leads the tab order, wherever it sits; without one the first tab leads")
+  func mainTabLeadsTheTabOrder() {
+    let main = UUID()
+    let (terminal, mainTab, browser) = (
+      WorkspaceTab(root: .leaf(PaneGroupState())), WorkspaceTab(root: .leaf(.centerInitial(sessionId: main))),
+      WorkspaceTab(root: .leaf(PaneGroupState()))
+    )
+    var workspace = makeWorkspace(tabs: [terminal, mainTab, browser], selected: browser.id)
+    #expect(workspace.mainFirstTabs.map(\.id) == [terminal.id, mainTab.id, browser.id])
+
+    workspace.mainSessionId = main
+
+    #expect(workspace.mainTab.id == mainTab.id)
+    #expect(workspace.sideTabs.map(\.id) == [terminal.id, browser.id])
+    #expect(workspace.mainFirstTabs.map(\.id) == [mainTab.id, terminal.id, browser.id])
+  }
+
   @Test("Closing an inactive tab preserves the selected tab and split")
   func closingInactiveTabKeepsSelection() {
     let closing = WorkspaceTab(root: .leaf(PaneGroupState()))

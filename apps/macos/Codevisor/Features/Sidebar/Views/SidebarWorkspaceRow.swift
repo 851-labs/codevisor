@@ -6,7 +6,7 @@ import SwiftUI
 struct SidebarWorkspaceRow: View {
   enum Lifecycle {
     case active(
-      isPinned: Bool, onTogglePin: () -> Void, onNewTab: () -> Void, onRename: () -> Void, onArchive: () -> Void
+      isPinned: Bool, onTogglePin: () -> Void, onRename: () -> Void, onArchive: () -> Void
     )
     case archived(onRestore: () -> Void)
   }
@@ -66,9 +66,8 @@ struct SidebarWorkspaceRow: View {
             Button(isExpanded ? "Collapse" : "Expand", action: onToggleChildren)
           }
           switch lifecycle {
-          case let .active(isPinned, onTogglePin, onNewTab, onRename, onArchive):
+          case let .active(isPinned, onTogglePin, onRename, onArchive):
             Button(isPinned ? "Unpin" : "Pin", action: onTogglePin)
-            Button("New Tab", action: onNewTab)
             Button("Rename", action: onRename)
             Button("Archive", action: onArchive)
           case let .archived(onRestore):
@@ -88,7 +87,7 @@ struct SidebarWorkspaceRow: View {
     }
     .contextMenu {
       switch lifecycle {
-      case let .active(isPinned, onTogglePin, _, onRename, onArchive):
+      case let .active(isPinned, onTogglePin, onRename, onArchive):
         Button(action: onTogglePin) {
           Label(isPinned ? "Unpin" : "Pin", systemImage: isPinned ? "pin.slash" : "pin")
             .labelStyle(.titleAndIcon)
@@ -124,7 +123,7 @@ struct SidebarWorkspaceRow: View {
   private var hoverActions: some View {
     HStack(spacing: Self.trailingSpacing) {
       switch lifecycle {
-      case let .active(isPinned, onTogglePin, _, _, onArchive):
+      case let .active(isPinned, onTogglePin, _, onArchive):
         hoverButton(
           systemImage: isPinned ? "pin.slash" : "pin",
           help: isPinned ? "Unpin workspace" : "Pin workspace",
@@ -143,17 +142,9 @@ struct SidebarWorkspaceRow: View {
   private func hoverButton(
     systemImage: String, help: String, label: String, action: @escaping () -> Void
   ) -> some View {
-    Button(action: action) {
-      Image(systemName: systemImage)
-        .font(.system(size: SidebarRowIcon.trailingSize, weight: SidebarRowIcon.weight))
-        .frame(width: SidebarRowIcon.trailingSlot, height: SidebarRowIcon.trailingSlot)
-        .contentShape(Rectangle())
-    }
-    .buttonStyle(.plain)
-    .foregroundStyle(.secondary)
-    .help(help)
-    .accessibilityLabel("\(label) \(SidebarWorkspaceRowLabel.title(for: name))")
-    .accessibilityHidden(true)
+    SidebarRowHoverButton(
+      systemImage: systemImage, help: help,
+      accessibilityLabel: "\(label) \(SidebarWorkspaceRowLabel.title(for: name))", action: action)
   }
 }
 

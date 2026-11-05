@@ -85,13 +85,9 @@ struct SessionContainerView: View {
       .onChange(of: workspaceEntry.generation, initial: true) { _, _ in
         synchronizeMountedPaneGroups()
       }
-      .onChange(of: store.newCenterTabRequest, initial: true) { _, request in
-        guard let request, store.newCenterTabRequest == request,
-          request.workspaceId == workspace.id
-        else { return }
-        store.newCenterTabRequest = nil
-        addCenterTab()
-      }
+      .modifier(
+        CenterTabRequests(store: store, workspaceId: workspace.id, onClose: closeCenterTab)
+      )
       .onChange(of: store.inspectorOpenRequest) { _, request in
         guard let request, request.workspaceId == workspace.id else { return }
         store.inspectorOpenRequest = nil
@@ -184,21 +180,8 @@ struct SessionContainerView: View {
 
   var contentColumn: some View {
     let workspace = selectedWorkspace
-    let showsTabBar = showsCenterTabBar(in: workspace)
     let chatLeaf = singlePaneChatLeaf(in: workspace)
     return VStack(spacing: 0) {
-      if showsTabBar {
-        WorkspaceTabBar(
-          items: centerTabItems(in: workspace),
-          selectedTabId: workspace.selectedCenterTabId,
-          onSelect: selectCenterTab,
-          onClose: closeCenterTab,
-          onMove: moveCenterTab,
-          onRename: renameCenterTab,
-          onKeep: keepCenterTab,
-          onNew: addCenterTab
-        )
-      }
       SessionScreen(
         centerGroup: chatLeaf.map { configuredCenterModel(leafId: $0.id) } ?? activeCenterModel(in: workspace),
         focus: sessionFocus,
@@ -224,7 +207,7 @@ struct SessionContainerView: View {
       .environment(\.usesSlimComposer, isSinglePane)
     }
     .overlay(alignment: .top) {
-      if !showsTabBar && !isSinglePane {
+      if !isSinglePane {
         Color.separatorColor
           .frame(height: 1)
           .frame(maxWidth: .infinity)

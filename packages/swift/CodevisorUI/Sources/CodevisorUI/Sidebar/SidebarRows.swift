@@ -12,6 +12,7 @@ public enum SidebarRowID: Hashable, Sendable {
   case section(SidebarSection)
   case group(String)
   case workspace(UUID)
+  case tab(UUID)
   case showMoreArchived
 }
 
@@ -27,6 +28,7 @@ public struct SidebarRow: Identifiable, Equatable {
     case section(SidebarSection, isExpanded: Bool)
     case group(id: String, heading: SidebarWorkspaceGroup.Heading, isExpanded: Bool)
     case workspace(WorkspaceSidebarItem, Placement)
+    case tab(UUID, workspaceID: UUID, Placement)
     case showMoreArchived
   }
 
@@ -47,13 +49,7 @@ public struct SidebarRow: Identifiable, Equatable {
     case let .section(section, _): section
     case .group: .list
     case .showMoreArchived: .archived
-    case let .workspace(_, placement):
-      switch placement {
-      case .pinned: .pinned
-      case let .custom(id): .custom(id)
-      case .group: .list
-      case .archived: .archived
-      }
+    case let .workspace(_, placement), let .tab(_, _, placement): placement.section
     }
   }
 
@@ -62,7 +58,19 @@ public struct SidebarRow: Identifiable, Equatable {
     case let .section(section, _): .section(section)
     case let .group(id, _, _): .group(id)
     case let .workspace(item, _): .workspace(item.id)
+    case let .tab(id, _, _): .tab(id)
     case .showMoreArchived: .showMoreArchived
+    }
+  }
+}
+
+extension SidebarRow.Placement {
+  fileprivate var section: SidebarSection {
+    switch self {
+    case .pinned: .pinned
+    case let .custom(id): .custom(id)
+    case .group: .list
+    case .archived: .archived
     }
   }
 }
@@ -87,22 +95,26 @@ public enum SidebarRows {
   public struct State: Equatable {
     public var groups: [SidebarWorkspaceGroup]
     public var children: [UUID: [WorkspaceSidebarItem]]
+    public var tabs: [UUID: [UUID]]
     public var archived: [WorkspaceSidebarItem]
     public var archivedVisibleCount: Int
     public var expansion: Expansion
     public var selectedWorkspaceID: UUID?
+    public var selectedTabID: UUID?
 
     public init(
-      groups: [SidebarWorkspaceGroup], children: [UUID: [WorkspaceSidebarItem]] = [:],
+      groups: [SidebarWorkspaceGroup], children: [UUID: [WorkspaceSidebarItem]] = [:], tabs: [UUID: [UUID]] = [:],
       archived: [WorkspaceSidebarItem] = [], archivedVisibleCount: Int = sidebarArchivedPageSize,
-      expansion: Expansion = Expansion(), selectedWorkspaceID: UUID? = nil
+      expansion: Expansion = Expansion(), selectedWorkspaceID: UUID? = nil, selectedTabID: UUID? = nil
     ) {
       self.groups = groups
       self.children = children
+      self.tabs = tabs
       self.archived = archived
       self.archivedVisibleCount = archivedVisibleCount
       self.expansion = expansion
       self.selectedWorkspaceID = selectedWorkspaceID
+      self.selectedTabID = selectedTabID
     }
   }
 
@@ -117,10 +129,16 @@ public enum SidebarRows {
       showing: Bool
     ) {
       let children = state.children[item.id] ?? []
+      let tabs = state.tabs[item.id] ?? []
       let childrenExpanded = !expansion.collapsedGroupIDs.contains(childrenGroupID(item.id))
-      if showing || item.id == state.selectedWorkspaceID {
-        let isExpanded = !children.isEmpty && showing ? childrenExpanded : nil
+      let isSelected = item.id == state.selectedWorkspaceID
+      if showing || isSelected {
+        let nests = !children.isEmpty || !tabs.isEmpty
+        let isExpanded = nests && showing ? childrenExpanded : nil
         rows.append(SidebarRow(.workspace(item, placement), depth: depth, parentID: parentID, isExpanded: isExpanded))
+        let selectedTab = isSelected ? state.selectedTabID : nil
+        let shownTabs = showing && childrenExpanded ? tabs : keptTab(of: tabs, selected: selectedTab)
+        rows += tabRows(shownTabs, of: item.id, placement, depth: depth + 1)
       }
       for child in children {
         appendWorkspace(
@@ -169,11 +187,30 @@ public enum SidebarRows {
       : SidebarCollapse.shown(state.archived, isExpanded: false, keeping: state.selectedWorkspaceID)
     for item in shown {
       rows.append(SidebarRow(.workspace(item, .archived)))
+      rows += tabRows(state.tabs[item.id] ?? [], of: item.id, .archived, depth: 1)
     }
     if expansion.archived && state.archived.count > state.archivedVisibleCount {
       rows.append(SidebarRow(.showMoreArchived))
     }
     return rows
+  }
+
+  private static func keptTab(of tabs: [UUID], selected: UUID?) -> [UUID] {
+    guard let selected, tabs.contains(selected) else { return [] }
+    return [selected]
+  }
+
+  private static func tabRows(
+    _ tabs: [UUID], of workspaceID: UUID, _ placement: SidebarRow.Placement, depth: Int
+  ) -> [SidebarRow] {
+    tabs.map { SidebarRow(.tab($0, workspaceID: workspaceID, placement), depth: depth, parentID: workspaceID) }
+  }
+
+  public static func tabs(of workspaceID: UUID, in rows: [SidebarRow]) -> [UUID] {
+    rows.compactMap { row in
+      guard case let .tab(id, owner, _) = row.kind, owner == workspaceID else { return nil }
+      return id
+    }
   }
 
   public static func siblings(of id: UUID, in rows: [SidebarRow]) -> [UUID] {
@@ -202,6 +239,7 @@ public enum SidebarRows {
     var sections: [[WorkspaceSidebarItem]] = []
     var current: SidebarRow.Placement?
     for row in rows {
+      if case .tab = row.kind { continue }
       guard case let .workspace(item, placement) = row.kind, placement != .archived else {
         current = nil
         continue

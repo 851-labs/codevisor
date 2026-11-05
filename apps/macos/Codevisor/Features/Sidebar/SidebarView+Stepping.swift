@@ -6,13 +6,16 @@ extension SidebarView {
   enum SidebarStop {
     case newChat
     case workspace(SidebarWorkspaceListItem)
+    case tab(UUID, workspaceID: UUID)
     case archived(Workspace)
   }
 
-  var sidebarStops: [SidebarStop] {
+  func sidebarStops(in rows: [SidebarRow]) -> [SidebarStop] {
     [.newChat]
-      + sidebarRows.compactMap { row in
+      + rows.compactMap { row in
         switch row.kind {
+        case let .tab(id, workspaceID, _):
+          SidebarStop.tab(id, workspaceID: workspaceID)
         case let .workspace(item, .archived):
           environment.navigationStore.workspaceEntries.entry(item.id).workspace.map(SidebarStop.archived)
         case let .workspace(item, _):
@@ -24,21 +27,25 @@ extension SidebarView {
   }
 
   func stepWorkspace(_ offset: Int) {
-    let stops = sidebarStops
-    guard let current = stops.firstIndex(where: isSelected) else { return }
+    let rows = sidebarRows
+    let stops = sidebarStops(in: rows)
+    let selected = selectedRowID(in: rows)
+    guard let current = stops.firstIndex(where: { isSelected($0, selected: selected) }) else { return }
     let target = current + offset
     guard target != current, stops.indices.contains(target) else { return }
     activate(stops[target])
   }
 
-  private func isSelected(_ stop: SidebarStop) -> Bool {
+  private func isSelected(_ stop: SidebarStop, selected: SidebarRowID?) -> Bool {
     switch stop {
     case .newChat:
       isNewChatSelected
     case let .workspace(item):
-      routesSelectedSession(item.workspace)
+      selected == .workspace(item.workspace.id)
+    case let .tab(id, _):
+      selected == .tab(id)
     case let .archived(workspace):
-      selection == .archivedWorkspace(serverId: workspace.serverId, id: workspace.id)
+      selected == .workspace(workspace.id)
     }
   }
 
@@ -48,10 +55,12 @@ extension SidebarView {
       selection = .newChat(nil)
     case let .workspace(item):
       revealRequest.rowID = item.workspace.id
-      activateWorkspace(item)
+      activateWorkspace(item, tabId: item.workspace.mainTab.id)
+    case let .tab(id, workspaceID):
+      selectTab(id, in: workspaceID)
     case let .archived(workspace):
       revealRequest.rowID = workspace.id
-      selection = .archivedWorkspace(serverId: workspace.serverId, id: workspace.id)
+      selectTab(workspace.mainTab.id, in: workspace.id)
     }
   }
 }

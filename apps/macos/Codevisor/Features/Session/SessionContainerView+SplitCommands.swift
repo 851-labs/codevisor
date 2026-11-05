@@ -40,7 +40,7 @@ extension SessionContainerView {
       store.workspaceStepHandler?(1)
     case let .selectTab(index):
       let workspace = navigationWorkspace
-      let tabs = workspace.centerTabs
+      let tabs = workspace.mainFirstTabs
       guard tabs.indices.contains(index) else { return true }
       store.selectDestination(.tab(tabs[index].id), in: workspace.id)
     case let .split(edge):
@@ -69,7 +69,7 @@ extension SessionContainerView {
 
   func selectRelativeCenterTab(offset: Int) {
     let workspace = navigationWorkspace
-    let tabs = workspace.centerTabs
+    let tabs = workspace.mainFirstTabs
     guard tabs.count > 1,
       let index = tabs.firstIndex(where: { $0.id == workspace.selectedCenterTabId })
     else { return }

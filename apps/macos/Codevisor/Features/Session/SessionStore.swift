@@ -11,8 +11,9 @@ struct ClosedPaneRecord: Equatable {
   let tabIndex: Int
 }
 
-struct NewCenterTabRequest: Equatable {
+struct CloseCenterTabRequest: Equatable {
   let workspaceId: UUID
+  let tabId: UUID
 }
 
 @MainActor
@@ -66,7 +67,8 @@ final class SessionStore {
     }
   }
   @ObservationIgnored var navigationRevision = 0
-  var newCenterTabRequest: NewCenterTabRequest?
+  var closeCenterTabRequest: CloseCenterTabRequest?
+  var archivedTabSelection: [UUID: UUID] = [:]
   var inspectorOpenRequest: WorkspaceInspectorOpenRequest?
   @ObservationIgnored private(set) var workspaceStepHandler: ((Int) -> Void)?
   @ObservationIgnored private var workspaceStepOwner: UUID?

@@ -4,14 +4,14 @@ import SwiftUI
 
 extension SidebarView {
   func workspaceRowList(_ rows: [SidebarRow]) -> some View {
-    let routed = routedWorkspace
+    let selected = selectedRowID(in: rows)
     let actions = rowActions
     let namingMachine = Self.placementsNamingMachine(in: rows)
     let sections = environment.workspaceSections.sections
     let membership = environment.workspaceSections.membership
     return SidebarRowList(rows: rows, id: \.placedID, animation: Motion.listReflow(reduceMotion: reduceMotion)) { row in
       workspaceRegionRow(
-        row, routed: routed, actions: actions, namingMachine: namingMachine, sections: sections,
+        row, selected: selected, actions: actions, namingMachine: namingMachine, sections: sections,
         membership: membership)
     }
   }
@@ -26,7 +26,7 @@ extension SidebarView {
 
   @ViewBuilder
   private func workspaceRegionRow(
-    _ row: SidebarRow, routed: (serverId: String, id: UUID)?,
+    _ row: SidebarRow, selected: SidebarRowID?,
     actions: SidebarWorkspaceSection.Actions, namingMachine: Set<SidebarRow.Placement>, sections: [CustomSection],
     membership: [UUID: UUID]
   ) -> some View {
@@ -46,22 +46,20 @@ extension SidebarView {
       SidebarSectionHeader(title: "Archived", isExpanded: isExpanded) { toggleArchived() }
     case let .workspace(item, .archived):
       if let workspace = environment.navigationStore.workspaceEntries.entry(item.id).workspace {
-        archivedRow(workspace, item: item)
+        archivedRow(workspace, item: item, isSelected: selected == row.id)
           .id(workspace.id)
       }
+    case let .tab(tabID, workspaceID, placement):
+      reorderableTabRow(
+        tabID, of: workspaceID, reorders: placement != .archived, depth: row.depth, isSelected: selected == row.id)
     case .showMoreArchived:
-      SidebarActionRow(
-        title: "Show More", systemImage: "ellipsis", isSelected: false, isHoverEnabled: !isReordering,
-        titleStyle: .secondary
-      ) {
-        archivedVisibleCount += sidebarArchivedPageSize
-      }
+      showMoreArchivedRow
     case let .group(id, heading, isExpanded):
       groupHeadingRow(id: id, heading: heading, isExpanded: isExpanded)
     case let .workspace(item, placement):
       SidebarWorkspaceSection(
         item: item, store: store, grouping: grouping, rowDetails: rowDetails,
-        isSelected: routed?.serverId == item.serverId && routed?.id == item.id,
+        isSelected: selected == row.id,
         isPinned: placement == .pinned, headingNamesMachine: namingMachine.contains(placement),
         isReordering: isReordering, isExpanded: row.isExpanded,
         sectionPlacement: WorkspaceSectionPlacement(row, membership: membership),

@@ -9,6 +9,19 @@ extension Workspace {
     tab.root.allGroups.contains { $0.state.panes.contains(where: isMainChatPane) }
   }
 
+  public var mainTab: WorkspaceTab {
+    centerTabs.first(where: holdsMainChat) ?? centerTabs[0]
+  }
+
+  public var sideTabs: [WorkspaceTab] {
+    let mainId = mainTab.id
+    return centerTabs.filter { $0.id != mainId }
+  }
+
+  public var mainFirstTabs: [WorkspaceTab] {
+    [mainTab] + sideTabs
+  }
+
   public var mainFirstChatSessionIds: [UUID] {
     let panes = chatSessionIds
     guard let mainSessionId else { return panes }

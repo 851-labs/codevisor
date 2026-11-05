@@ -7,8 +7,12 @@ struct ArchivedWorkspaceRouteView: View {
   let serverId: String
   let workspaceId: UUID
   let onRestored: (Workspace, _ tabId: UUID?) -> Void
-  @State private var selectedTabId: UUID?
   @State private var focus = TerminalFocusController()
+
+  private var selectedTabId: UUID? {
+    get { store.archivedTabSelection[workspaceId] }
+    nonmutating set { store.archivedTabSelection[workspaceId] = newValue }
+  }
 
   var body: some View {
     let workspace = environment.navigationStore.workspaceEntries.entry(workspaceId).workspace
@@ -35,14 +39,7 @@ struct ArchivedWorkspaceRouteView: View {
   private func content(_ workspace: Workspace) -> some View {
     let tabs = workspace.centerTabs
     let tab = tabs.first { $0.id == selectedTabId } ?? workspace.selectedCenterTab ?? tabs.first
-    return VStack(spacing: 0) {
-      if tabs.count > 1, let tab {
-        WorkspaceTabBar(
-          items: tabs.map { tabItem($0, in: workspace) },
-          selectedTabId: tab.id,
-          onSelect: { selectedTabId = $0 }
-        )
-      }
+    return Group {
       if let tab, let pane = selectedPane(of: tab) {
         paneContent(pane, in: workspace)
           .frame(maxWidth: .infinity, maxHeight: .infinity)
@@ -57,7 +54,7 @@ struct ArchivedWorkspaceRouteView: View {
   }
 
   private func tabCycling(in workspace: Workspace) -> WorkspaceTabCycling? {
-    let tabIds = workspace.centerTabs.map(\.id)
+    let tabIds = workspace.mainFirstTabs.map(\.id)
     guard tabIds.count > 1 else { return nil }
     let step: @MainActor (Int) -> Void = { offset in
       let current = selectedTabId ?? workspace.selectedCenterTabId
@@ -70,21 +67,6 @@ struct ArchivedWorkspaceRouteView: View {
 
   private func selectedPane(of tab: WorkspaceTab) -> PaneDescriptorState? {
     tab.root.group(id: tab.activeLeafId)?.selectedPane ?? tab.root.allGroups.first?.state.selectedPane
-  }
-
-  private func tabItem(_ tab: WorkspaceTab, in workspace: Workspace) -> PaneTabStripItem {
-    let pane = selectedPane(of: tab)
-    let chatTitle = pane?.chatSessionId.flatMap {
-      environment.projectList.session($0, serverId: workspace.serverId).map(workspace.title(ofChat:))
-    }
-    let title = tab.displayTitle(for: pane, chatTitle: chatTitle)
-    return PaneTabStripItem(
-      id: tab.id,
-      name: title,
-      icon: .workspaceTab(
-        pane, title: title, serverId: workspace.serverId, environment: environment, store: store),
-      canClose: false
-    )
   }
 
   @ViewBuilder

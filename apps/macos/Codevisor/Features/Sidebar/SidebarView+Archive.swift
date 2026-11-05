@@ -14,15 +14,23 @@ extension SidebarView {
     archivedExpanded.toggle()
   }
 
-  func archivedRow(_ workspace: Workspace, item: WorkspaceSidebarItem) -> some View {
+  func archivedRow(_ workspace: Workspace, item: WorkspaceSidebarItem, isSelected: Bool) -> some View {
     let listItem = SidebarWorkspaceListItem(workspace: workspace, routingSession: routingSession(for: item))
-    let selected = SidebarSelection.archivedWorkspace(serverId: workspace.serverId, id: workspace.id)
     return row(
       for: workspace,
       icon: icon(for: listItem),
-      isSelected: selection == selected,
-      onActivate: { selection = selected },
+      isSelected: isSelected,
+      onActivate: { selectTab(workspace.mainTab.id, in: workspace.id) },
       lifecycle: .archived(onRestore: { environment.unarchiveWorkspace(workspace) })
     )
+  }
+
+  var showMoreArchivedRow: some View {
+    SidebarActionRow(
+      title: "Show More", systemImage: "ellipsis", isSelected: false, isHoverEnabled: !isReordering,
+      titleStyle: .secondary
+    ) {
+      archivedVisibleCount += sidebarArchivedPageSize
+    }
   }
 }
