@@ -4,7 +4,6 @@ import Testing
 
 @testable import ScreenSharing
 
-@MainActor
 struct ScreenSharingTiledRenderTests {
   private static let width = 64
   private static let height = 256
@@ -31,21 +30,11 @@ struct ScreenSharingTiledRenderTests {
   ])
   func atEveryScaleATiledPictureIsWithinTwoLevelsOfTheComposedOneEvenAtTheTileEdges(width: Int, height: Int) throws {
     let gpu = try TiledRenderFixture()
-    for format in VideoContent.formats {
-      for content in [VideoContent.noise, .text] {
-        let whole = ScreenSharingVideoFrame(
-          pixelBuffer: try content.picture(rows: 0..<720, format: format), timestampNs: 1)
-        let tiles = try VideoContent.rows.map {
-          ScreenSharingVideoTile(pixelBuffer: try content.picture(rows: $0, format: format), rows: $0)
-        }
-        let tiled = try #require(
-          ScreenSharingVideoFrame(tiles: tiles, size: CGSize(width: 1280, height: 720), timestampNs: 1))
+    for picture in try VideoContent.wholeAndTiled.get() {
+      let difference = TiledRenderFixture.largestDifference(
+        try gpu.renderAll(picture.whole, width, height), try gpu.renderAll(picture.tiled, width, height))
 
-        let difference = TiledRenderFixture.largestDifference(
-          try gpu.renderAll(whole, width, height), try gpu.renderAll(tiled, width, height))
-
-        #expect(difference <= 2, "\(content) \(format) at \(width)x\(height): \(difference) levels")
-      }
+      #expect(difference <= 2, "\(picture.label) at \(width)x\(height): \(difference) levels")
     }
   }
 
@@ -134,6 +123,28 @@ private enum VideoContent {
     kCVPixelFormatType_444YpCbCr8BiPlanarFullRange, kCVPixelFormatType_420YpCbCr8BiPlanarVideoRange,
   ]
 
+  struct WholeAndTiled: Sendable {
+    let label: String
+    let whole: ScreenSharingVideoFrame
+    let tiled: ScreenSharingVideoFrame
+  }
+
+  static let wholeAndTiled = Result {
+    try formats.flatMap { format in
+      try [VideoContent.noise, .text].map { content in
+        let tiles = try rows.map {
+          ScreenSharingVideoTile(pixelBuffer: try content.picture(rows: $0, format: format), rows: $0)
+        }
+        return WholeAndTiled(
+          label: "\(content) \(format)",
+          whole: ScreenSharingVideoFrame(
+            pixelBuffer: try content.picture(rows: 0..<720, format: format), timestampNs: 1),
+          tiled: try #require(
+            ScreenSharingVideoFrame(tiles: tiles, size: CGSize(width: 1280, height: 720), timestampNs: 1)))
+      }
+    }
+  }
+
   func picture(rows: Range<Int>, format: OSType, width: Int = 1280) throws -> CVPixelBuffer {
     var created: CVPixelBuffer?
     let attributes =
@@ -199,7 +210,6 @@ extension CVPixelBuffer {
   }
 }
 
-@MainActor
 private struct TiledRenderFixture {
   let device: any MTLDevice
   let encoder: ScreenSharingMetalEncoder
@@ -217,11 +227,21 @@ private struct TiledRenderFixture {
   }
 
   static func largestDifference(_ first: [UInt8], _ second: [UInt8]) -> Int {
-    var largest = 0
-    for index in first.indices where index % 4 != 3 {
-      largest = max(largest, abs(Int(first[index]) - Int(second[index])))
+    precondition(first.count == second.count)
+    return first.withUnsafeBufferPointer { firstBytes in
+      second.withUnsafeBufferPointer { secondBytes in
+        var largest: UInt8 = 0
+        var index = 0
+        while index < firstBytes.count {
+          if index & 3 != 3 {
+            let (one, other) = (firstBytes[index], secondBytes[index])
+            largest = max(largest, one > other ? one - other : other - one)
+          }
+          index += 1
+        }
+        return Int(largest)
+      }
     }
-    return largest
   }
 
   func renderAll(_ frame: ScreenSharingVideoFrame, _ width: Int, _ height: Int) throws -> [UInt8] {
