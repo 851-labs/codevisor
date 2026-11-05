@@ -168,16 +168,23 @@ package struct ScreenSharingMetalEncoder: @unchecked Sendable {
     let viewport = Self.viewport(video: video, target: targetSize)
     encoder.setViewport(viewport)
     let hdrTarget = targetTexture.pixelFormat == Self.highDynamicRangePixelFormat
+    let resolved = textures.layers.map { Self.metalTextures($0.planes) }
     for (index, layer) in textures.layers.enumerated() {
+      let own = resolved[index]
       if let rows = layer.rows {
         guard let scissor = Self.scissor(rows, of: video.height, in: viewport, target: targetSize) else { continue }
 
         encoder.setScissorRect(scissor)
       }
-      let neighbours = Self.neighbours(of: index, in: textures.layers)
-      var tile = Self.tile(layer, above: neighbours.above, below: neighbours.below, in: video)
-      encoder.setFragmentBytes(&tile, length: MemoryLayout<Float>.stride * tile.count, index: 1)
-      guard draw(layer.planes, neighbours: neighbours, with: encoder, hdrTarget: hdrTarget) else {
+      let neighbours = Self.neighbours(of: index, in: textures.layers, resolved: resolved)
+      var tile = ScreenTile(layer, above: neighbours.above?.layer, below: neighbours.below?.layer, in: video)
+      encoder.setFragmentBytes(&tile, length: MemoryLayout<ScreenTile>.stride, index: 1)
+      for (slot, neighbour) in [(2, neighbours.above), (4, neighbours.below)] {
+        for (offset, texture) in (neighbour?.textures ?? own).enumerated() {
+          encoder.setFragmentTexture(texture, index: slot + offset)
+        }
+      }
+      guard draw(layer.planes, textures: own, with: encoder, hdrTarget: hdrTarget) else {
         encoder.endEncoding()
         return nil
       }
@@ -186,32 +193,53 @@ package struct ScreenSharingMetalEncoder: @unchecked Sendable {
     return Encoded(buffer: buffer, retained: TextureFrame(frame: textures.frame, textures: textures.retained))
   }
 
-  static func neighbours(
-    of index: Int, in layers: [Textures.Layer]
-  ) -> (above: Textures.Layer?, below: Textures.Layer?) {
-    guard let rows = layers[index].rows else { return (nil, nil) }
+  struct ScreenTile {
+    var tiled: Float = 0
+    var pictureRows: Float = 1
+    var pictureColumns: Float = 1
+    var pixelColumns: Float = 1
+    var start: Float = 0
+    var rows: Float = 1
+    var aboveRows: Float = 0
+    var hasAbove: Float = 0
+    var hasBelow: Float = 0
 
-    let above = layers.indices.contains(index - 1) ? layers[index - 1] : nil
-    let below = layers.indices.contains(index + 1) ? layers[index + 1] : nil
-    return (
-      above.flatMap { $0.rows?.upperBound == rows.lowerBound ? $0 : nil },
-      below.flatMap { $0.rows?.lowerBound == rows.upperBound ? $0 : nil }
-    )
+    init(_ layer: Textures.Layer, above: Textures.Layer?, below: Textures.Layer?, in picture: CGSize) {
+      guard let rows = layer.rows, picture.height > 0, picture.width > 0, !rows.isEmpty, layer.pixelColumns > 0
+      else { return }
+
+      tiled = 1
+      pictureRows = Float(picture.height)
+      pictureColumns = Float(picture.width)
+      pixelColumns = Float(layer.pixelColumns)
+      start = Float(rows.lowerBound)
+      self.rows = Float(rows.count)
+      aboveRows = Float(above?.rows?.count ?? 0)
+      hasAbove = above == nil ? 0 : 1
+      hasBelow = below == nil ? 0 : 1
+    }
   }
 
-  static func tile(
-    _ layer: Textures.Layer, above: Textures.Layer?, below: Textures.Layer?, in picture: CGSize
-  ) -> [Float] {
-    guard let rows = layer.rows, picture.height > 0, picture.width > 0, !rows.isEmpty else {
-      return [0, 1, 0, 1, 1, 0, 0, 0, 1]
-    }
+  static func neighbours(
+    of index: Int, in layers: [Textures.Layer], resolved: [[any MTLTexture]]
+  ) -> (
+    above: (layer: Textures.Layer, textures: [any MTLTexture])?,
+    below: (layer: Textures.Layer, textures: [any MTLTexture])?
+  ) {
+    guard let rows = layers[index].rows else { return (nil, nil) }
 
-    let pixelRows = max(rows.count, layer.pixelRows)
-    let columnScale = picture.width / CGFloat(max(Int(picture.width), layer.pixelColumns))
-    return [
-      1, Float(picture.height), Float(rows.lowerBound), Float(pixelRows), Float(rows.count),
-      Float(above?.rows?.count ?? 0), above == nil ? 0 : 1, below == nil ? 0 : 1, Float(columnScale),
-    ]
+    let neighbour = {
+      (other: Int, touches: (Range<Int>) -> Bool) -> (layer: Textures.Layer, textures: [any MTLTexture])? in
+      guard layers.indices.contains(other), let otherRows = layers[other].rows, touches(otherRows),
+        !resolved[other].isEmpty, resolved[other].count == resolved[index].count
+      else { return nil }
+
+      return (layers[other], resolved[other])
+    }
+    return (
+      neighbour(index - 1) { $0.upperBound == rows.lowerBound },
+      neighbour(index + 1) { $0.lowerBound == rows.upperBound }
+    )
   }
 
   static func scissor(
@@ -228,23 +256,14 @@ package struct ScreenSharingMetalEncoder: @unchecked Sendable {
   }
 
   private func draw(
-    _ planes: Textures.Planes, neighbours: (above: Textures.Layer?, below: Textures.Layer?),
-    with encoder: any MTLRenderCommandEncoder, hdrTarget: Bool
+    _ planes: Textures.Planes, textures own: [any MTLTexture], with encoder: any MTLRenderCommandEncoder,
+    hdrTarget: Bool
   ) -> Bool {
-    let own = Self.metalTextures(planes)
     guard !own.isEmpty else { return false }
 
-    for (slot, neighbour) in [(2, neighbours.above), (4, neighbours.below)] {
-      let textures = neighbour.map { Self.metalTextures($0.planes) } ?? own
-      for (offset, texture) in (textures.count == own.count ? textures : own).enumerated() {
-        encoder.setFragmentTexture(texture, index: slot + offset)
-      }
-    }
+    for (index, texture) in own.enumerated() { encoder.setFragmentTexture(texture, index: index) }
     switch planes {
-    case .biplanar(let y, let uv, let range):
-      guard let yTexture = CVMetalTextureGetTexture(y), let uvTexture = CVMetalTextureGetTexture(uv) else {
-        return false
-      }
+    case .biplanar(_, _, let range):
       let pipeline: any MTLRenderPipelineState =
         switch (range.dynamicRange, hdrTarget) {
         case (.standard, false): pipelines.biplanar
@@ -253,15 +272,10 @@ package struct ScreenSharingMetalEncoder: @unchecked Sendable {
         case (.high, false): pipelines.biplanarPQToSDR
         }
       encoder.setRenderPipelineState(pipeline)
-      encoder.setFragmentTexture(yTexture, index: 0)
-      encoder.setFragmentTexture(uvTexture, index: 1)
       var uniform = range.uniform
       encoder.setFragmentBytes(&uniform, length: MemoryLayout<SIMD4<Float>>.size, index: 0)
-    case .bgra(let plane):
-      guard let planeTexture = CVMetalTextureGetTexture(plane) else { return false }
-
+    case .bgra:
       encoder.setRenderPipelineState(hdrTarget ? pipelines.bgraSDRToLinear : pipelines.bgra)
-      encoder.setFragmentTexture(planeTexture, index: 0)
     }
     encoder.drawPrimitives(type: .triangle, vertexStart: 0, vertexCount: 3)
     return true

@@ -11,16 +11,16 @@ extension ScreenSharingMetalView {
       return {float4(p,0,1), float2((p.x+1)*0.5, (1-p.y)*0.5)};
     }
     struct ScreenTile {
-      float tiled; float pictureRows; float start; float pixelRows; float rows; float aboveRows; float hasAbove;
-      float hasBelow; float scaleX;
+      float tiled; float pictureRows; float pictureColumns; float pixelColumns; float start; float rows;
+      float aboveRows; float hasAbove; float hasBelow;
     };
     float4 tileSample(texture2d<float> plane, texture2d<float> above, texture2d<float> below, float2 uv,
       constant ScreenTile& t) {
       constexpr sampler whole(filter::linear, address::clamp_to_edge);
       if (t.tiled < 0.5) return plane.sample(whole, uv);
       constexpr sampler s(coord::pixel, filter::linear, address::clamp_to_edge);
-      float k = float(plane.get_height()) / t.pixelRows;
-      float x = uv.x * float(plane.get_width()) * t.scaleX;
+      float k = float(plane.get_width()) / t.pixelColumns;
+      float x = min(uv.x * (t.pictureColumns * k), t.pictureColumns * k - 0.5);
       float y = uv.y * (t.pictureRows * k) - t.start * k;
       float last = t.rows * k;
       if (t.hasAbove > 0.5 && y < 0.5) {
@@ -32,7 +32,7 @@ extension ScreenSharingMetalView {
         if (y >= last + 0.5) return below.sample(s, float2(x, y - last));
         return mix(plane.sample(s, float2(x, last - 0.5)), below.sample(s, float2(x, 0.5)), y - (last - 0.5));
       }
-      return plane.sample(s, float2(x, y));
+      return plane.sample(s, float2(x, min(y, last - 0.5)));
     }
     #define SCREEN_PLANES texture2d<float> yPlane [[texture(0)]], texture2d<float> uvPlane [[texture(1)]], \
       texture2d<float> yAbove [[texture(2)]], texture2d<float> uvAbove [[texture(3)]], \
