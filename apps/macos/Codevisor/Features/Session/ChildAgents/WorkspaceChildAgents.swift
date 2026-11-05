@@ -13,29 +13,29 @@ struct WorkspaceChildAgents {
   var revealRequest: SidebarRevealRequest?
 
   func parent(of workspace: Workspace) -> WorkspaceInspectorAgent? {
-    agents(parentItems(of: workspace)).first
+    agents(parentItems(of: workspace), isQuiet: SidebarQuietChildren.current(in: environment).contains).first
   }
 
   func children(of workspace: Workspace) -> [WorkspaceInspectorAgent] {
-    agents(childItems(of: workspace))
+    agents(childItems(of: workspace), isQuiet: SidebarQuietChildren.current(in: environment).contains)
   }
 
-  func activeChildren(of workspace: Workspace) -> [WorkspaceInspectorAgent] {
-    ActiveChildAgents.select(children(of: workspace)) { activity(of: $0.icon) }
+  func pill(for workspace: Workspace) -> ChildAgentsPillContent? {
+    let children = agents(childItems(of: workspace), isQuiet: { _ in true })
+    guard let summary = ChildAgentsSummary(children, isWorking: isWorking) else { return nil }
+
+    return ChildAgentsPillContent(summary: summary, agents: children, store: store)
   }
 
-  private func activity(of icon: SidebarWorkspaceIcon) -> ChildAgentActivity {
-    switch icon {
-    case let .chat(session, _):
-      ChildAgentActivity(isWaitingOnUser: store.isWaitingOnUser(session), isWorking: store.isInProgress(session))
-    case .workingTerminal:
-      .working
-    case .workspace:
-      .idle
+  private func isWorking(_ agent: WorkspaceInspectorAgent) -> Bool {
+    switch agent.icon {
+    case let .chat(session, _): store.isInProgress(session)
+    case .workingTerminal: true
+    case .workspace: false
     }
   }
 
-  private func agents(_ items: [WorkspaceSidebarItem]) -> [WorkspaceInspectorAgent] {
+  private func agents(_ items: [WorkspaceSidebarItem], isQuiet: (UUID) -> Bool) -> [WorkspaceInspectorAgent] {
     let content = SidebarRowContent(
       environment: environment, store: store, grouping: grouping,
       rowDetails: ClientPreferences.shared.sidebarRowDetails)
@@ -43,14 +43,13 @@ struct WorkspaceChildAgents {
       environment: environment, botsEnabled: botsEnabled, grouping: grouping, pinnedIDs: pinnedIDs,
       machineOrder: [], projectOrder: [])
     let navigator = SidebarWorkspaceNavigator(environment: environment, store: store, selection: $selection)
-    let quiet = SidebarQuietChildren.current(in: environment)
     return items.compactMap { content.listItem(for: $0) }
       .map { item in
         let workspace = item.workspace
         return WorkspaceInspectorAgent(
           id: workspace.id, name: workspace.name,
           subtitle: content.subtitle(for: workspace, isPinned: false),
-          icon: content.icon(for: item, isQuiet: quiet.contains(workspace.id)),
+          icon: content.icon(for: item, isQuiet: isQuiet(workspace.id)),
           pullRequest: content.pullRequest(for: workspace),
           machine: content.machine(for: workspace, headingNamesMachine: listing.headingNamesMachine(workspace.id))
         ) {

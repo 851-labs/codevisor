@@ -10,7 +10,7 @@ struct ChildAgentsPopover: View {
 
   var body: some View {
     VStack(alignment: .leading, spacing: 6) {
-      Text("Active Children")
+      Text("Child Agents")
         .font(.subheadline.weight(.semibold))
         .foregroundStyle(.secondary)
         .padding(.horizontal, 10)

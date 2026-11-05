@@ -2,84 +2,37 @@ import CodevisorUI
 import SwiftUI
 
 struct ChildAgentsPill: View {
-  let agents: [WorkspaceInspectorAgent]
-  let store: SessionStore
+  let content: ChildAgentsPillContent
   let glassNamespace: Namespace.ID
-  @State private var isShowingAll = false
-
-  private static let shownLimits = [3, 2, 1]
+  @State private var isShowingChildren = false
 
   var body: some View {
     Button {
-      isShowingAll.toggle()
+      isShowingChildren.toggle()
     } label: {
-      ViewThatFits(in: .horizontal) {
-        ForEach(Self.shownLimits, id: \.self) { limit in
-          ChildAgentsPillRow(overflow: ChildAgentsOverflow(agents, limit: limit), store: store)
-        }
-      }
+      ChildAgentsPillLabel(summary: content.summary)
     }
     .buttonStyle(ChildAgentsPillButtonStyle())
     .composerGlassSurface(shape: Capsule(), id: .childAgents, in: glassNamespace)
-    .popover(isPresented: $isShowingAll, arrowEdge: .top) {
-      ChildAgentsPopover(agents: agents, store: store) { isShowingAll = false }
+    .popover(isPresented: $isShowingChildren, arrowEdge: .top) {
+      ChildAgentsPopover(agents: content.agents, store: content.store) { isShowingChildren = false }
     }
-    .help("Show active child agents")
-    .accessibilityLabel(accessibilityLabel)
-  }
-
-  private var accessibilityLabel: String {
-    let names = agents.map { SidebarWorkspaceRowLabel.title(for: $0.name) }
-    let noun = agents.count == 1 ? "child agent" : "child agents"
-    return "\(agents.count) active \(noun): \(names.joined(separator: ", "))"
+    .help("Show child agents")
+    .accessibilityLabel("\(content.summary.title) working")
   }
 }
 
-private struct ChildAgentsPillRow: View {
-  let overflow: ChildAgentsOverflow<WorkspaceInspectorAgent>
-  let store: SessionStore
-
-  var body: some View {
-    HStack(spacing: 12) {
-      ForEach(overflow.shown) { agent in
-        ChildAgentsPillChip(agent: agent, store: store)
-      }
-      if overflow.hiddenCount > 0 {
-        ChildAgentsPillOverflowChip(count: overflow.hiddenCount)
-      }
-    }
-    .fixedSize()
-  }
-}
-
-private struct ChildAgentsPillChip: View {
-  let agent: WorkspaceInspectorAgent
-  let store: SessionStore
-
-  private static let maxTitleWidth: CGFloat = 170
+private struct ChildAgentsPillLabel: View {
+  let summary: ChildAgentsSummary
 
   var body: some View {
     HStack(spacing: 4) {
-      SidebarWorkspaceLeadingIcon(icon: agent.icon, store: store)
-      Text(SidebarWorkspaceRowLabel.title(for: agent.name))
-        .lineLimit(1)
-        .truncationMode(.tail)
-        .frame(maxWidth: Self.maxTitleWidth, alignment: .leading)
-        .fixedSize(horizontal: false, vertical: true)
+      AgentActivityIndicator(color: .secondary)
+        .frame(width: 18)
+      Text(summary.title)
+        .monospacedDigit()
     }
-  }
-}
-
-private struct ChildAgentsPillOverflowChip: View {
-  let count: Int
-
-  var body: some View {
-    Text("+\(count)")
-      .monospacedDigit()
-      .foregroundStyle(.secondary)
-      .padding(.horizontal, 6)
-      .padding(.vertical, 1)
-      .background(Color.primary.opacity(0.06), in: Capsule())
+    .fixedSize()
   }
 }
 
