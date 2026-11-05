@@ -12,6 +12,9 @@ struct ComputerUseLivePreviewHostTests {
   static let session = "0f8fad5b-d9cb-469f-a165-70867728950e"
   static let target = "computer-use:\(session)"
   static let offer = "v=0\r\na=fingerprint:sha-256 fixture\r\n"
+  static let viewerEndpoint = String(repeating: "b", count: 64)
+  static let grant = ServerScreenSharingMediaGrant(
+    endpointId: String(repeating: "a", count: 64), relayUrl: nil, directAddrs: ["10.0.0.2:4433"], token: "token")
 
   @Test("Parses only computer-use targets naming a session")
   func targets() {
@@ -80,6 +83,27 @@ struct ComputerUseLivePreviewHostTests {
     #expect(world.detached == world.attached.map(\.token))
     #expect(host.sessionCount == 0)
     #expect(await host.handle(world.request(.heartbeat)).status == "stopped")
+  }
+
+  @Test("Lists engine v2 when this Mac has a media endpoint, and starts a v2 viewer with a media grant")
+  func engineV2() async throws {
+    let world = World()
+    world.activityState = .active
+    let host = world.host()
+    #expect(await host.handle(world.request(.capabilities)).engines == nil)
+    world.offersV2 = true
+    #expect(await host.handle(world.request(.capabilities)).engines == ["v2"])
+
+    var start = world.request(.start)
+    start.engine = "v2"
+    start.media = .init(endpointId: Self.viewerEndpoint, relayUrl: nil, directAddrs: [])
+    let started = await host.handle(start)
+
+    #expect(started.status == "connecting")
+    #expect(started.media == Self.grant)
+    #expect(started.answer == nil)
+    #expect(world.requestedMedia == [.v2(viewerEndpointId: Self.viewerEndpoint)])
+    #expect(world.attached.first?.sink === world.peers.first?.sink)
   }
 
   @Test("Tells viewers why no video is coming while the window is out of sight, and clears it once shown")
@@ -189,6 +213,8 @@ private final class World {
   var peerGate: TestSignal?
   let peerRequested = TestSignal()
   var peers: [FakePeer] = []
+  var requestedMedia: [ScreenSharingStreamMedia] = []
+  var offersV2 = false
   var attached: [(sessionID: String, sink: any ComputerUseFrameSink, token: UUID)] = []
   var detached: [UUID] = []
   let workspace = UUID()
@@ -223,14 +249,17 @@ private final class World {
           return token
         },
         detach: { [unowned self] _, token in detached.append(token) },
-        makePeer: { [unowned self] _, _ in
+        makePeer: { [unowned self] _, media, _ in
+          requestedMedia.append(media)
           peerRequested.signal()
           if let peerGate { await peerGate.wait() }
           let peer = FakePeer()
+          peer.media = media
           peers.append(peer)
           return peer
         },
         makeConnectivity: { _ in .init(servers: [], relayOnly: false, expiresAt: 0) },
+        offersV2: { [unowned self] in offersV2 },
         now: { [unowned self] in clock }
       ))
   }
@@ -238,10 +267,16 @@ private final class World {
 
 @MainActor
 private final class FakePeer: ComputerUseStreamPeer {
+  var media: ScreenSharingStreamMedia?
   var onConnectionChanged: ((String) -> Void)?
   let sink: any ComputerUseFrameSink = RecordingSink()
   var closed = false
 
-  func answer(offer: String) async throws -> String { "answer" }
+  func start(failed: @escaping @MainActor (String) -> Void) async throws -> ScreenSharingStreamGrant {
+    switch media {
+    case .v2: .media(ComputerUseLivePreviewHostTests.grant)
+    case .webRTC, nil: .answer("answer")
+    }
+  }
   func close() { closed = true }
 }

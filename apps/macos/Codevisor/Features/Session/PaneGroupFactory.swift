@@ -163,8 +163,7 @@ struct PaneGroupFactory {
           return ScreenSharingTunnelMedia(
             endpointId: route.endpointId, flowId: Int(route.flowId), localPort: route.localPort,
             close: { route.close() })
-        },
-        openTunnelRoute: { await machines?.tunnelMediaRoute(forMachineId: serverId) }
+        }
       )
     }
   }

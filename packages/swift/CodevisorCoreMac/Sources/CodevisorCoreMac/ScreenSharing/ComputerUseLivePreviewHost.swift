@@ -2,6 +2,7 @@ import CodevisorCore
 import CoreGraphics
 import Foundation
 import ScreenSharing
+import ScreenSharingV2
 import ScreenSharingWebRTC
 
 enum ComputerUseStreamTarget {
@@ -20,17 +21,74 @@ enum ComputerUseStreamTarget {
 protocol ComputerUseStreamPeer: AnyObject {
   var onConnectionChanged: ((String) -> Void)? { get set }
   var sink: any ComputerUseFrameSink { get }
-  func answer(offer: String) async throws -> String
+  func start(failed: @escaping @MainActor (String) -> Void) async throws -> ScreenSharingStreamGrant
   func close()
+}
+
+@MainActor
+private func viewOnlyControl(send: @escaping (ScreenSharingControlMessage) -> Bool) -> ScreenSharingHostControl {
+  ScreenSharingHostControl(availability: { "This live view is view-only." }, inject: { _ in }, send: send)
+}
+
+@MainActor
+final class ComputerUseV2Peer: ComputerUseStreamPeer {
+  private let stream: ScreenSharingV2StreamLink
+  private let viewerEndpointId: String
+  private let control: ScreenSharingHostControl
+  let sink: any ComputerUseFrameSink
+
+  init(size: CGSize, viewerEndpointId: String) throws {
+    let stream = ScreenSharingV2StreamLink(configuration: try computerUseStreamVideoConfiguration(size: size))
+    self.stream = stream
+    self.viewerEndpointId = viewerEndpointId
+    sink = ComputerUseV2Sink(stream: stream)
+    let channel = stream.link.linkChannels.control
+    control = viewOnlyControl { [weak channel] in channel?.send($0) ?? false }
+    channel.onMessage = { [weak control] in control?.receive($0) }
+  }
+
+  var onConnectionChanged: ((String) -> Void)? {
+    get { stream.link.onConnectionChanged }
+    set { stream.link.onConnectionChanged = newValue }
+  }
+
+  func start(failed: @escaping @MainActor (String) -> Void) async throws -> ScreenSharingStreamGrant {
+    try await stream.listen(for: viewerEndpointId, failed: failed)
+  }
+
+  func close() {
+    control.revoke("The live view ended.")
+    stream.close()
+  }
+}
+
+final class ComputerUseV2Sink: ComputerUseFrameSink {
+  private let frames: ScreenSharingV2LatestFrame
+  @MainActor private weak var link: ScreenSharingV2HostLink?
+
+  @MainActor init(stream: ScreenSharingV2StreamLink) {
+    link = stream.link
+    frames = stream.frames
+  }
+
+  @MainActor func prepare(size: CGSize) {
+    guard let configuration = try? computerUseStreamVideoConfiguration(size: size) else { return }
+    link?.updateVideoConfiguration(configuration)
+  }
+
+  func push(_ frame: ScreenSharingVideoFrame) {
+    frames.push(frame)
+  }
 }
 
 @MainActor
 final class ComputerUseSenderPeer: ComputerUseStreamPeer {
   private let sender: ScreenSharingSender
   private let control: ScreenSharingHostControl
+  private let offer: String
   let sink: any ComputerUseFrameSink
 
-  init(size: CGSize, connectivity: ServerScreenSharingConnectivity) async throws {
+  init(size: CGSize, offer: String, connectivity: ServerScreenSharingConnectivity) async throws {
     let metrics = ScreenSharingMetrics()
     let configuration = try computerUseStreamVideoConfiguration(size: size)
     var options = ScreenSharingPeerOptions()
@@ -39,12 +97,9 @@ final class ComputerUseSenderPeer: ComputerUseStreamPeer {
     let sender = try await ScreenSharingSender(
       configuration: configuration, metrics: metrics, options: options, connectivity: connectivity.native())
     self.sender = sender
+    self.offer = offer
     sink = ComputerUseSenderSink(sender: sender)
-    control = ScreenSharingHostControl(
-      availability: { "This live view is view-only." },
-      inject: { _ in },
-      send: { [weak sender] in sender?.controlChannel.send($0) ?? false }
-    )
+    control = viewOnlyControl { [weak sender] in sender?.controlChannel.send($0) ?? false }
     sender.controlChannel.onMessage = { [weak control] in control?.receive($0) }
   }
 
@@ -53,9 +108,9 @@ final class ComputerUseSenderPeer: ComputerUseStreamPeer {
     set { sender.onConnectionChanged = newValue }
   }
 
-  func answer(offer: String) async throws -> String {
+  func start(failed: @escaping @MainActor (String) -> Void) async throws -> ScreenSharingStreamGrant {
     try await sender.accept(.init(kind: "offer", sdp: offer))
-    return try await sender.makeDescription(offer: false).sdp
+    return .answer(try await sender.makeDescription(offer: false).sdp)
   }
 
   func close() {
@@ -104,9 +159,10 @@ final class ComputerUseLivePreviewHost {
     var attach: @MainActor (_ bridgeSessionID: String, _ sink: any ComputerUseFrameSink) -> UUID
     var detach: @MainActor (_ bridgeSessionID: String, _ token: UUID) -> Void
     var makePeer:
-      @MainActor (_ size: CGSize, _ connectivity: ServerScreenSharingConnectivity) async throws
+      @MainActor (_ size: CGSize, _ media: ScreenSharingStreamMedia, _ viewerId: UUID) async throws
         -> any ComputerUseStreamPeer
     var makeConnectivity: @MainActor (_ viewerId: UUID) throws -> ServerScreenSharingConnectivity
+    var offersV2: @MainActor () -> Bool
     var now: @MainActor () -> TimeInterval
 
     @MainActor static var live: Dependencies {
@@ -117,8 +173,17 @@ final class ComputerUseLivePreviewHost {
         streamSize: { ComputerUseNativeSharing.shared.previewSize(sessionID: $0) },
         attach: { ComputerUseLivePreview.shared.attachSink(sessionID: $0, sink: $1) },
         detach: { ComputerUseLivePreview.shared.detachSink(sessionID: $0, token: $1) },
-        makePeer: { try await ComputerUseSenderPeer(size: $0, connectivity: $1) },
+        makePeer: { size, media, viewerId in
+          switch media {
+          case .v2(let viewerEndpointId):
+            return try ComputerUseV2Peer(size: size, viewerEndpointId: viewerEndpointId)
+          case .webRTC(let offer):
+            return try await ComputerUseSenderPeer(
+              size: size, offer: offer, connectivity: try connectivity.make(viewerId: viewerId))
+          }
+        },
         makeConnectivity: { try connectivity.make(viewerId: $0) },
+        offersV2: { ScreenSharingMediaEndpoint.shared.isAvailable },
         now: { ProcessInfo.processInfo.systemUptime }
       )
     }
@@ -173,14 +238,7 @@ final class ComputerUseLivePreviewHost {
     let owner = Owner(request)
     switch request.operation {
     case .capabilities:
-      guard dependencies.captureAccess() else { return Self.permissionRequired }
-      guard let activity = liveActivity(sessionID) else { return Self.notControlling }
-      do {
-        return .init(
-          status: "available",
-          displays: [display(for: activity, target: request.displayId ?? "")],
-          connectivity: try dependencies.makeConnectivity(request.viewerId))
-      } catch { return .init(status: "unavailable", message: error.localizedDescription) }
+      return capabilities(request, sessionID: sessionID)
     case .stop:
       if let session = sessions[owner] { end(owner: owner, session: session) }
       return .init(status: "stopped")
@@ -197,50 +255,78 @@ final class ComputerUseLivePreviewHost {
       session.expiresAt = dependencies.now() + Self.lifetime
       return .init(status: session.state, message: activity.windowNotice)
     case .start, .restart:
-      if let old = sessions[owner] { end(owner: owner, session: old) }
+      return await start(request, owner: owner, sessionID: sessionID)
+    }
+  }
+
+  private func capabilities(_ request: ServerScreenSharingRequest, sessionID: String) -> ServerScreenSharingReply {
+    guard dependencies.captureAccess() else { return Self.permissionRequired }
+    guard let activity = liveActivity(sessionID) else { return Self.notControlling }
+    do {
+      var reply = ServerScreenSharingReply(
+        status: "available",
+        displays: [display(for: activity, target: request.displayId ?? "")],
+        connectivity: try dependencies.makeConnectivity(request.viewerId))
+      if dependencies.offersV2() { reply.engines = [ScreenSharingEngine.v2.rawValue] }
+      return reply
+    } catch { return .init(status: "unavailable", message: error.localizedDescription) }
+  }
+
+  private func start(
+    _ request: ServerScreenSharingRequest, owner: Owner, sessionID: String
+  ) async -> ServerScreenSharingReply {
+    if let old = sessions[owner] { end(owner: owner, session: old) }
+    guard sessions.count < Self.maximumSessions else {
+      return .init(status: "busy", message: "Too many viewers are watching this agent.")
+    }
+    guard dependencies.captureAccess() else { return Self.permissionRequired }
+    guard let media = ScreenSharingStreamMedia(request) else {
+      return .init(status: "failed", message: "Invalid live view request.")
+    }
+    guard let activity = liveActivity(sessionID) else { return Self.notControlling }
+    let size = dependencies.streamSize(activity.bridgeSessionID) ?? activity.windowFrame.size
+    do {
+      let peer = try await dependencies.makePeer(size, media, request.viewerId)
+      guard !isShutdown else {
+        peer.close()
+        return .init(status: "stopped")
+      }
+      if let raced = sessions[owner] { end(owner: owner, session: raced) }
       guard sessions.count < Self.maximumSessions else {
+        peer.close()
         return .init(status: "busy", message: "Too many viewers are watching this agent.")
       }
-      guard dependencies.captureAccess() else { return Self.permissionRequired }
-      guard let offer = request.offer, offer.utf8.count <= 256 * 1024,
-        offer.contains("a=fingerprint:sha-256 ")
-      else { return .init(status: "failed", message: "Invalid live view request.") }
-      guard let activity = liveActivity(sessionID) else { return Self.notControlling }
-      let size = dependencies.streamSize(activity.bridgeSessionID) ?? activity.windowFrame.size
-      do {
-        let peer = try await dependencies.makePeer(size, try dependencies.makeConnectivity(request.viewerId))
-        guard !isShutdown else {
-          peer.close()
-          return .init(status: "stopped")
-        }
-        if let raced = sessions[owner] { end(owner: owner, session: raced) }
-        guard sessions.count < Self.maximumSessions else {
-          peer.close()
-          return .init(status: "busy", message: "Too many viewers are watching this agent.")
-        }
-        let session = Session(
-          sessionID: sessionID, bridgeSessionID: activity.bridgeSessionID, peer: peer,
-          expiresAt: dependencies.now() + Self.lifetime)
-        sessions[owner] = session
-        peer.onConnectionChanged = { [weak self, weak session] state in
-          guard let self, let session, self.sessions[owner] === session else { return }
-          if state == "connected" {
-            session.state = "viewing"
-          } else if ["disconnected", "failed", "closed"].contains(state) {
-            session.state = "reconnecting"
-          }
-        }
-        startWatchdog()
-        do {
-          let answer = try await peer.answer(offer: offer)
-          guard !isShutdown, sessions[owner] === session else { throw CancellationError() }
-          session.token = dependencies.attach(session.bridgeSessionID, peer.sink)
-          return .init(status: "connecting", message: activity.windowNotice, answer: answer)
-        } catch {
-          if sessions[owner] === session { end(owner: owner, session: session) } else { peer.close() }
-          throw error
-        }
-      } catch { return .init(status: "failed", message: error.localizedDescription) }
+      return try await connect(peer, activity: activity, owner: owner, sessionID: sessionID)
+    } catch { return .init(status: "failed", message: error.localizedDescription) }
+  }
+
+  private func connect(
+    _ peer: any ComputerUseStreamPeer, activity: ComputerUseLivePreview.Activity, owner: Owner, sessionID: String
+  ) async throws -> ServerScreenSharingReply {
+    let session = Session(
+      sessionID: sessionID, bridgeSessionID: activity.bridgeSessionID, peer: peer,
+      expiresAt: dependencies.now() + Self.lifetime)
+    sessions[owner] = session
+    peer.onConnectionChanged = { [weak self, weak session] state in
+      guard let self, let session, self.sessions[owner] === session else { return }
+      if state == "connected" {
+        session.state = "viewing"
+      } else if ["disconnected", "failed", "closed"].contains(state) {
+        session.state = "reconnecting"
+      }
+    }
+    startWatchdog()
+    do {
+      let grant = try await peer.start { [weak self, weak session] _ in
+        guard let self, let session, self.sessions[owner] === session else { return }
+        self.end(owner: owner, session: session)
+      }
+      guard !isShutdown, sessions[owner] === session else { throw CancellationError() }
+      session.token = dependencies.attach(session.bridgeSessionID, peer.sink)
+      return .connecting(grant, message: activity.windowNotice)
+    } catch {
+      if sessions[owner] === session { end(owner: owner, session: session) } else { peer.close() }
+      throw error
     }
   }
 

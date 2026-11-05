@@ -231,7 +231,8 @@ final class NativeBackendHarness {
     },
     target: String? = nil,
     heartbeatInterval: Duration = .seconds(8),
-    v2: V2? = nil
+    v2: V2? = nil,
+    webRTC: Bool = true
   ) {
     self.transport = transport
     let client = CodevisorServerClient(config: .init(requestTransport: transport))
@@ -245,9 +246,10 @@ final class NativeBackendHarness {
           return makeSession()
         })
     }
+    let webRTCSession: ScreenSharingViewerBackend.NativeMakeSession = { @MainActor [unowned self] _ in makeSession() }
     backend = .native(
       client: client, workspaceId: UUID(), paneId: UUID(), v2: connector, sleep: { try await clock.sleep(for: $0) },
-      makeSession: { [unowned self] _ in makeSession() },
+      makeSession: webRTC ? webRTCSession : nil,
       makeSurface: { [unowned self] session in
         let surface = FakeSurface()
         (session as? FakeMediaSession)?.surface = surface

@@ -6,4 +6,5 @@ enum ScreenSharingV2ChannelKind: UInt8, CaseIterable, Sendable {
   case videoFormat = 5
   case cursor = 6
   case audio = 7
+  case simulator = 8
 }

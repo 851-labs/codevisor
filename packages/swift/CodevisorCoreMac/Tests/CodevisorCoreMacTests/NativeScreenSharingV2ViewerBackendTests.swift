@@ -60,6 +60,24 @@ struct NativeScreenSharingV2ViewerBackendTests {
     #expect(!harness.log.events.contains { if case .ended = $0 { true } else { false } })
   }
 
+  enum V2OnlyFailure: CaseIterable, Sendable { case hostWithoutV2, connect }
+
+  @Test(arguments: V2OnlyFailure.allCases)
+  func aViewerWithoutWebRTCEndsInsteadOfFallingBack(_ failure: V2OnlyFailure) async throws {
+    let v2 = NativeBackendHarness.V2()
+    v2.failsConnect = failure == .connect
+    let harness = NativeBackendHarness(
+      transport: SharingTransport(engines: failure == .hostWithoutV2 ? nil : ["v2"]), v2: v2, webRTC: false)
+    await harness.connect().value
+    let requests = await harness.transport.requests
+
+    #expect(harness.log.events.contains { if case .ended = $0 { true } else { false } })
+    expectNoDifference(
+      requests.map(\.operation), failure == .hostWithoutV2 ? [.capabilities] : [.capabilities, .start, .stop])
+    #expect(requests.allSatisfy { $0.offer == nil })
+    #expect(harness.sessions.isEmpty)
+  }
+
   @Test func aV2SessionWhoseTransportFailsBeforeAnyVideoFallsBackToWebRTC() async throws {
     let harness = NativeBackendHarness(transport: SharingTransport(engines: ["v2"]), v2: NativeBackendHarness.V2())
     harness.configureSession = { [weak harness] session in session.deliversVideo = harness?.sessions.isEmpty == false }

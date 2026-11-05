@@ -17,7 +17,6 @@ struct PaneContext {
   var resolveHTTPBaseURL: (@MainActor () async -> URL?)? = nil
   var resolveServerConfig: (@MainActor () -> CodevisorServerConfig)? = nil
   var openTunnelMedia: ScreenSharingViewerBackend.TunnelMediaProvider? = nil
-  var openTunnelRoute: (@MainActor () async -> CloudTunnelMediaRoute?)? = nil
 }
 
 enum PaneGroupCommand {

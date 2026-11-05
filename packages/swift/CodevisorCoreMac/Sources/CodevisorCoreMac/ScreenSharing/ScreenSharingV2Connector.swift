@@ -15,40 +15,45 @@ struct ScreenSharingV2Connector {
   var address: @MainActor () async -> ServerScreenSharingMediaAddress?
   var connect: @MainActor (ServerScreenSharingMediaGrant) async throws -> any NativeScreenSharingV2Session
 
-  static let connectTimeout: Duration = .seconds(15)
-
   @MainActor
   static func live(endpoint: ScreenSharingMediaEndpoint = .shared) -> Self {
-    let handle = HandleBox()
-    return Self(
-      address: {
-        guard let ready = await endpoint.ready() else { return nil }
-        handle.value = ready
-        return ScreenSharingMediaEndpoint.address(of: ready)
-      },
-      connect: { grant in
-        guard let ready = handle.value else { throw ScreenSharingError.unavailable("No screen-sharing endpoint.") }
-        guard grant.endpointId != ready.endpointId() else {
-          throw ScreenSharingError.unavailable("Engine v2 can't connect a Mac to itself.")
-        }
-        let cancel = NetCancelToken()
-        let timeout = Task {
-          try await Task.sleep(for: connectTimeout)
-          cancel.cancel()
-        }
-        defer { timeout.cancel() }
-        let connection = try await withTaskCancellationHandler {
-          try await ready.connect(
-            addr: ScreenSharingMediaEndpoint.tunnelAddress(grant.address), alpn: mediaAlpn(), cancel: cancel)
-        } onCancel: {
-          cancel.cancel()
-        }
-        return ScreenSharingV2ViewingSession(connection: ScreenSharingV2IrohConnection(connection))
-      })
+    Self(address: { await endpoint.viewerAddress() }, connect: { try await endpoint.connectViewer(to: $0) })
+  }
+}
+
+extension ScreenSharingMediaEndpoint {
+  static let connectTimeout: Duration = .seconds(15)
+
+  public func viewerAddress() async -> ServerScreenSharingMediaAddress? {
+    guard let ready = await ready() else { return nil }
+
+    viewerHandle = ready
+    return Self.address(of: ready)
   }
 
-  @MainActor
-  private final class HandleBox {
-    var value: NetEndpointHandle?
+  public func connectViewer(to grant: ServerScreenSharingMediaGrant) async throws -> ScreenSharingV2ViewingSession {
+    let handle: NetEndpointHandle?
+    if let viewerHandle { handle = viewerHandle } else { handle = await ready() }
+    guard let ready = handle else { throw ScreenSharingError.unavailable("No screen-sharing endpoint.") }
+    guard grant.endpointId != ready.endpointId() else {
+      guard let local = ScreenSharingV2Acceptor.shared.connectLocally(token: grant.token) else {
+        throw ScreenSharingError.unavailable("This Mac's screen-sharing session ended.")
+      }
+
+      return ScreenSharingV2ViewingSession(connection: local)
+    }
+
+    let cancel = NetCancelToken()
+    let timeout = Task {
+      try await Task.sleep(for: Self.connectTimeout)
+      cancel.cancel()
+    }
+    defer { timeout.cancel() }
+    let connection = try await withTaskCancellationHandler {
+      try await ready.connect(addr: Self.tunnelAddress(grant.address), alpn: mediaAlpn(), cancel: cancel)
+    } onCancel: {
+      cancel.cancel()
+    }
+    return ScreenSharingV2ViewingSession(connection: ScreenSharingV2IrohConnection(connection))
   }
 }

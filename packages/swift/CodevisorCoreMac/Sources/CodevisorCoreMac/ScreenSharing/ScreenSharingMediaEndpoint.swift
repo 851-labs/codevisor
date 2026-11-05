@@ -21,6 +21,7 @@ public final class ScreenSharingMediaEndpoint {
   public static let shared = ScreenSharingMediaEndpoint()
   private static let addressWait: UInt32 = 2000
   private var provider: Provider?
+  var viewerHandle: NetEndpointHandle?
 
   public func configure(_ provider: Provider?) {
     self.provider = provider
