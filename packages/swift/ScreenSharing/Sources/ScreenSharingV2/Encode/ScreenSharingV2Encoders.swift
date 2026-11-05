@@ -4,25 +4,35 @@ public enum ScreenSharingV2Encoders {
   public static func make(
     _ kind: ScreenSharingV2EncoderKind, configuration: ScreenSharingVideoConfiguration, metrics: ScreenSharingMetrics
   ) async throws -> any ScreenSharingTileEncoder {
-    let videoToolbox = try ScreenSharingVideoToolboxTileEncoder(configuration: configuration, metrics: metrics)
-    guard kind == .videoProcessing else { return videoToolbox }
+    guard kind == .videoProcessing else {
+      return try ScreenSharingVideoToolboxTileEncoder(configuration: configuration, metrics: metrics)
+    }
 
     do {
-      return try await videoProcessing(configuration, metrics: metrics, fallback: videoToolbox)
+      return try await videoProcessing(configuration, metrics: metrics)
     } catch {
       metrics.increment("encoderFallbacks")
       metrics.label("encoderFallbackReason", error.localizedDescription)
-      return videoToolbox
+      return try ScreenSharingVideoToolboxTileEncoder(configuration: configuration, metrics: metrics)
+    }
+  }
+
+  public static func withVideoToolboxFallback(
+    _ primary: any ScreenSharingTileEncoder, configuration: ScreenSharingVideoConfiguration,
+    metrics: ScreenSharingMetrics
+  ) -> ScreenSharingFallbackTileEncoder {
+    ScreenSharingVideoToolboxWarmUp.start()
+    return ScreenSharingFallbackTileEncoder(primary: primary, metrics: metrics) { layout in
+      try ScreenSharingVideoToolboxTileEncoder(configuration: configuration, layout: layout, metrics: metrics)
     }
   }
 
   private static func videoProcessing(
-    _ configuration: ScreenSharingVideoConfiguration, metrics: ScreenSharingMetrics,
-    fallback: any ScreenSharingTileEncoder
+    _ configuration: ScreenSharingVideoConfiguration, metrics: ScreenSharingMetrics
   ) async throws -> any ScreenSharingTileEncoder {
     try await ScreenSharingVCPSelfTest.pass()
     let primary = try ScreenSharingVCPTileEncoder(
-      configuration: configuration, layout: fallback.layout, metrics: metrics)
-    return try ScreenSharingFallbackTileEncoder(primary: primary, fallback: fallback, metrics: metrics)
+      configuration: configuration, layout: ScreenSharingV2Profile.tileLayout(for: configuration), metrics: metrics)
+    return withVideoToolboxFallback(primary, configuration: configuration, metrics: metrics)
   }
 }

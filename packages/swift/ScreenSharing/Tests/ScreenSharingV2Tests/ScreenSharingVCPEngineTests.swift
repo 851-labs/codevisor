@@ -133,9 +133,10 @@ extension HardwareCodecTests {
       let metrics = ScreenSharingMetrics()
       try await HardwareEncoderBudget.require(vcpTiles: Self.tiles, videoToolboxTiles: Self.tiles)
       let failing = FailingTileEncoder(try Self.vcp(tiles: Self.tiles, metrics: metrics))
-      let fallback = try ScreenSharingVideoToolboxTileEncoder(
-        configuration: try Self.configuration(), layout: failing.layout, metrics: metrics)
-      let encoder = try ScreenSharingFallbackTileEncoder(primary: failing, fallback: fallback, metrics: metrics)
+      let configuration = try Self.configuration()
+      let encoder = ScreenSharingFallbackTileEncoder(primary: failing, metrics: metrics) { layout in
+        try ScreenSharingVideoToolboxTileEncoder(configuration: configuration, layout: layout, metrics: metrics)
+      }
       let host = Self.host(encoder, transport: hostSide)
       let viewer = ScreenSharingV2Viewer(transport: viewerSide, metrics: ScreenSharingMetrics())
       let decoded = DecodedFrames(viewer.frames)
