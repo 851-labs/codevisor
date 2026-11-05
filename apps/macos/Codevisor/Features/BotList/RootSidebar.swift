@@ -3,7 +3,7 @@ import CodevisorUI
 import SwiftUI
 
 struct RootSidebar: View {
-  @Binding var selection: SidebarSelection?
+  let navigation: SidebarNavigation
   let store: SessionStore?
   let revealRequest: SidebarRevealRequest
   var publishesSceneActions = true
@@ -23,7 +23,7 @@ struct RootSidebar: View {
     layout
       .modifier(
         PaletteDestinationsPublisher(
-          selection: $selection, store: store, revealRequest: revealRequest, isEnabled: publishesSceneActions)
+          selection: navigation.committed, store: store, revealRequest: revealRequest, isEnabled: publishesSceneActions)
       )
       .background {
         if !isDrawer {
@@ -91,7 +91,7 @@ struct RootSidebar: View {
     }
     .onChange(of: activeMode, initial: true) { _, mode in
       visitedModes.insert(mode)
-      parkedSelection = selection
+      parkedSelection = navigation.committed.wrappedValue
       parkedMode = SidebarMode.allCases.first { $0 != mode }
     }
   }
@@ -100,19 +100,22 @@ struct RootSidebar: View {
     mode == activeMode || (botsEnabled && visitedModes.contains(mode))
   }
 
-  private func listSelection(for mode: SidebarMode) -> Binding<SidebarSelection?> {
-    mode != activeMode && mode == parkedMode ? $parkedSelection : $selection
+  private func listNavigation(for mode: SidebarMode) -> SidebarNavigation {
+    guard mode != activeMode && mode == parkedMode else { return navigation }
+    return SidebarNavigation(committed: $parkedSelection)
   }
 
   @ViewBuilder
   private func modeList(_ mode: SidebarMode) -> some View {
     switch mode {
     case .chat:
-      BotListSidebar(selection: listSelection(for: mode), store: store, publishesSceneActions: publishesSceneActions)
-        .modifier(SidebarModeLayer(isActive: mode == activeMode))
+      BotListSidebar(
+        selection: listNavigation(for: mode).selection, store: store, publishesSceneActions: publishesSceneActions
+      )
+      .modifier(SidebarModeLayer(isActive: mode == activeMode))
     case .code:
       SidebarView(
-        selection: listSelection(for: mode), store: store, publishesSceneActions: publishesSceneActions,
+        navigation: listNavigation(for: mode), store: store, publishesSceneActions: publishesSceneActions,
         revealRequest: revealRequest)
     }
   }

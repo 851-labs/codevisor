@@ -86,15 +86,19 @@ extension SidebarView {
   }
 
   var navigator: SidebarWorkspaceNavigator {
-    SidebarWorkspaceNavigator(environment: environment, store: store, selection: $selection)
+    SidebarWorkspaceNavigator(environment: environment, store: store, selection: navigation.committed)
   }
 
   func routesSelectedSession(_ workspace: Workspace) -> Bool {
-    navigator.routesSelectedSession(workspace)
+    navigator.routes(selection, to: workspace)
   }
 
   func activateWorkspace(_ item: SidebarWorkspaceListItem) {
-    navigator.activate(item)
+    let navigator = navigator
+    guard navigator.canActivate(item) else { return }
+
+    let workspace = item.workspace
+    navigation.show(.workspace(serverId: workspace.serverId, id: workspace.id)) { navigator.activate(item) }
   }
 
   func addTab(in item: SidebarWorkspaceListItem) {

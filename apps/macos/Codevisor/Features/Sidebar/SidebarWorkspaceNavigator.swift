@@ -8,6 +8,10 @@ struct SidebarWorkspaceNavigator {
   @Binding var selection: SidebarSelection?
 
   func routesSelectedSession(_ workspace: Workspace) -> Bool {
+    routes(selection, to: workspace)
+  }
+
+  func routes(_ selection: SidebarSelection?, to workspace: Workspace) -> Bool {
     switch selection {
     case let .session(serverId, sessionId):
       guard serverId == workspace.serverId else { return false }
@@ -19,8 +23,12 @@ struct SidebarWorkspaceNavigator {
     }
   }
 
+  func canActivate(_ item: SidebarWorkspaceListItem) -> Bool {
+    activatedTab(of: item.workspace) != nil
+  }
+
   func activate(_ item: SidebarWorkspaceListItem) {
-    guard let tab = item.workspace.selectedCenterTab ?? item.workspace.centerTabs.first else { return }
+    guard let tab = activatedTab(of: item.workspace) else { return }
 
     let workspace = item.workspace
     guard store?.selectDestination(.tab(tab.id), in: workspace.id) == true else { return }
@@ -30,6 +38,10 @@ struct SidebarWorkspaceNavigator {
         routingSessionId: item.routingSession?.id,
         selectionAlreadyRoutesWorkspace: routesSelectedSession(workspace)
       ))
+  }
+
+  private func activatedTab(of workspace: Workspace) -> WorkspaceTab? {
+    workspace.selectedCenterTab ?? workspace.centerTabs.first
   }
 
   private func apply(_ route: WorkspaceSelectionRoute?) {

@@ -42,6 +42,7 @@ struct RootView: View {
   @State var clientWindow = ClientWindowControl()
   @State var selection: SidebarSelection?
   @State private var sidebarRevealRequest = SidebarRevealRequest()
+  @State private var sidebarHighlight = SidebarHighlight()
   static let sidebarCollapsedKey = "sidebar.collapsed"
   @ClientPreference(Self.sidebarCollapsedKey, default: false) var sidebarCollapsed
   @ClientPreference(FeatureFlag.bots.preferenceKey, default: false) var botsEnabled
@@ -73,6 +74,7 @@ struct RootView: View {
         WindowLayoutReader { panelLayout.updateWindow(width: $0, isFullScreen: $1) }.frame(width: 0, height: 0)
       )
       .onChange(of: selection) { _, newValue in
+        sidebarHighlight.discard()
         guard let store else { return }
         if case let .session(serverId, sessionId) = newValue {
           store.markOpened(sessionId, serverId: serverId)
@@ -147,7 +149,7 @@ struct RootView: View {
 
   private var mainSplit: some View {
     NavigationSplitView(columnVisibility: sidebarColumnVisibility) {
-      RootSidebar(selection: $selection, store: store, revealRequest: sidebarRevealRequest)
+      RootSidebar(navigation: sidebarNavigation, store: store, revealRequest: sidebarRevealRequest)
     } detail: {
       Group {
         if let store {
@@ -167,8 +169,8 @@ struct RootView: View {
         width: min(270, panelLayout.windowWidth - 16)
       ) {
         RootSidebar(
-          selection: $selection, store: store, revealRequest: sidebarRevealRequest, publishesSceneActions: false,
-          isDrawer: true)
+          navigation: sidebarNavigation, store: store, revealRequest: sidebarRevealRequest,
+          publishesSceneActions: false, isDrawer: true)
       }
     }
     .onChange(of: clientSidebarVisible, initial: true) { _, visible in
@@ -177,6 +179,10 @@ struct RootView: View {
     .onChange(of: store.map(ObjectIdentifier.init)) { _, _ in
       store?.isSidebarVisible = clientSidebarVisible
     }
+  }
+
+  private var sidebarNavigation: SidebarNavigation {
+    SidebarNavigation(committed: $selection, highlight: sidebarHighlight)
   }
 
   private var sidebarColumnVisibility: Binding<NavigationSplitViewVisibility> {
