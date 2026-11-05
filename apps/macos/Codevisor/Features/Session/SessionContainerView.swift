@@ -86,7 +86,7 @@ struct SessionContainerView: View {
         synchronizeMountedPaneGroups()
       }
       .modifier(
-        CenterTabRequests(store: store, workspaceId: workspace.id, onNew: addPaletteTab, onClose: closeCenterTab)
+        CenterTabRequests(store: store, workspaceId: workspace.id, onClose: closeCenterTab)
       )
       .onChange(of: store.inspectorOpenRequest) { _, request in
         guard let request, request.workspaceId == workspace.id else { return }

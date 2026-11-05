@@ -26,19 +26,11 @@ extension SessionContainerView {
   }
 
   func addCenterTab() {
-    openCenterTab(continuingBrowsing: activeBrowserModel != nil)
-  }
-
-  func addPaletteTab() {
-    openCenterTab(continuingBrowsing: false)
-  }
-
-  private func openCenterTab(continuingBrowsing: Bool) {
     guard !isSinglePane else { return }
     var workspace = selectedWorkspace
     var state = PaneGroupState()
     var pane = state.addNewTabPane()
-    if continuingBrowsing, let browser = state.convertNewTabPane(id: pane.id, to: .browser, sessionId: nil) {
+    if activeBrowserModel != nil, let browser = state.convertNewTabPane(id: pane.id, to: .browser, sessionId: nil) {
       ChromiumBrowserModels.shared.expectNewTab(browser.id, focusingAddress: true)
       pane = browser
     }

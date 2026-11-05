@@ -6,7 +6,7 @@ import SwiftUI
 struct SidebarWorkspaceRow: View {
   enum Lifecycle {
     case active(
-      isPinned: Bool, onTogglePin: () -> Void, onNewTab: () -> Void, onRename: () -> Void, onArchive: () -> Void
+      isPinned: Bool, onTogglePin: () -> Void, onRename: () -> Void, onArchive: () -> Void
     )
     case archived(onRestore: () -> Void)
   }
@@ -66,9 +66,8 @@ struct SidebarWorkspaceRow: View {
             Button(isExpanded ? "Collapse" : "Expand", action: onToggleChildren)
           }
           switch lifecycle {
-          case let .active(isPinned, onTogglePin, onNewTab, onRename, onArchive):
+          case let .active(isPinned, onTogglePin, onRename, onArchive):
             Button(isPinned ? "Unpin" : "Pin", action: onTogglePin)
-            Button("New Tab", action: onNewTab)
             Button("Rename", action: onRename)
             Button("Archive", action: onArchive)
           case let .archived(onRestore):
@@ -88,12 +87,7 @@ struct SidebarWorkspaceRow: View {
     }
     .contextMenu {
       switch lifecycle {
-      case let .active(isPinned, onTogglePin, onNewTab, onRename, onArchive):
-        Button(action: onNewTab) {
-          Label("New Tab", systemImage: "plus")
-            .labelStyle(.titleAndIcon)
-        }
-        Divider()
+      case let .active(isPinned, onTogglePin, onRename, onArchive):
         Button(action: onTogglePin) {
           Label(isPinned ? "Unpin" : "Pin", systemImage: isPinned ? "pin.slash" : "pin")
             .labelStyle(.titleAndIcon)
@@ -129,8 +123,7 @@ struct SidebarWorkspaceRow: View {
   private var hoverActions: some View {
     HStack(spacing: Self.trailingSpacing) {
       switch lifecycle {
-      case let .active(isPinned, onTogglePin, onNewTab, _, onArchive):
-        hoverButton(systemImage: "plus", help: "New tab", label: "New tab in", action: onNewTab)
+      case let .active(isPinned, onTogglePin, _, onArchive):
         hoverButton(
           systemImage: isPinned ? "pin.slash" : "pin",
           help: isPinned ? "Unpin workspace" : "Pin workspace",

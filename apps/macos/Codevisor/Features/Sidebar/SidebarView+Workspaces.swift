@@ -11,7 +11,6 @@ extension SidebarView {
     SidebarWorkspaceSection.Actions(
       activate: { activateWorkspace($0, tabId: $0.workspace.mainTab.id) },
       togglePin: { togglePin($0) },
-      newTab: { addTab(in: $0) },
       rename: { workspace in
         workspaceRenameTitle = workspace.name
         renamingWorkspace = workspace
@@ -95,14 +94,6 @@ extension SidebarView {
 
   func activateWorkspace(_ item: SidebarWorkspaceListItem, tabId: UUID? = nil) {
     navigator.activate(item, tabId: tabId)
-  }
-
-  func addTab(in item: SidebarWorkspaceListItem) {
-    let workspace = item.workspace
-    store?.newCenterTabRequest = NewCenterTabRequest(workspaceId: workspace.id)
-    if !routesSelectedSession(workspace) {
-      activateWorkspace(item)
-    }
   }
 
   var selectedActiveWorkspace: Workspace? {

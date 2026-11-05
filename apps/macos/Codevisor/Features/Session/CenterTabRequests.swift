@@ -3,16 +3,10 @@ import SwiftUI
 struct CenterTabRequests: ViewModifier {
   let store: SessionStore
   let workspaceId: UUID
-  let onNew: () -> Void
   let onClose: (UUID) -> Void
 
   func body(content: Content) -> some View {
     content
-      .onChange(of: store.newCenterTabRequest, initial: true) { _, request in
-        guard let request, store.newCenterTabRequest == request, request.workspaceId == workspaceId else { return }
-        store.newCenterTabRequest = nil
-        onNew()
-      }
       .onChange(of: store.closeCenterTabRequest, initial: true) { _, request in
         guard let request, store.closeCenterTabRequest == request, request.workspaceId == workspaceId else { return }
         store.closeCenterTabRequest = nil

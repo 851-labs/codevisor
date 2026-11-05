@@ -7,7 +7,6 @@ struct SidebarWorkspaceSection: View, Equatable {
   struct Actions {
     let activate: @MainActor (SidebarWorkspaceListItem) -> Void
     let togglePin: @MainActor (Workspace) -> Void
-    let newTab: @MainActor (SidebarWorkspaceListItem) -> Void
     let rename: @MainActor (Workspace) -> Void
     let archive: @MainActor (Workspace) -> Void
     let toggleChildren: @MainActor (UUID) -> Void
@@ -56,7 +55,6 @@ struct SidebarWorkspaceSection: View, Equatable {
         lifecycle: .active(
           isPinned: isPinned,
           onTogglePin: { actions.togglePin(workspace) },
-          onNewTab: { actions.newTab(listItem) },
           onRename: { actions.rename(workspace) },
           onArchive: { actions.archive(workspace) }
         ),
