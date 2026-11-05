@@ -11,7 +11,8 @@ public enum ScreenSharingViewerMedia {
     await ScreenSharingMediaEndpoint.shared.viewerAddress()
   }
 
-  public static func connect(to grant: ServerScreenSharingMediaGrant) async throws -> any ScreenSharingSimulatorSession {
+  public static func connect(to grant: ServerScreenSharingMediaGrant) async throws -> any ScreenSharingSimulatorSession
+  {
     try await ScreenSharingMediaEndpoint.shared.connectViewer(to: grant, locally: connectLocally)
   }
 
