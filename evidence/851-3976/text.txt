@@ -1,0 +1,5 @@
+text 1x 3840x2160: max 0 at (0,0), pixels > 2 levels 0, rows differing [], rows away from an edge 0 (max 0), edges at ["544.0", "1088.0", "1632.0"]
+text 1.5x 5760x3240: max 36 at (4,815), pixels > 2 levels 17582, rows differing [815, 816, 1631, 1632, 2447, 2448], rows away from an edge 0 (max 0), edges at ["816.0", "1632.0", "2448.0"]
+text 1-over-1.5x 2560x1440: max 54 at (6,362), pixels > 2 levels 2686, rows differing [362, 725], rows away from an edge 0 (max 0), edges at ["362.7", "725.3", "1088.0"]
+text window-1373x772 1373x772: max 66 at (1,194), pixels > 2 levels 709, rows differing [194], rows away from an edge 0 (max 0), edges at ["194.4", "388.9", "583.3"]
+text 2x 1920x1080: max 0 at (0,0), pixels > 2 levels 0, rows differing [], rows away from an edge 0 (max 0), edges at ["272.0", "544.0", "816.0"]
