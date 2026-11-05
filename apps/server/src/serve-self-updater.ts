@@ -90,6 +90,8 @@ export const makeSelfUpdater = (options: {
     }
   >()
 
+  const download = options.fetch ?? globalThis.fetch
+
   const syncedChannel = async (): Promise<ServerUpdateChannel | undefined> => {
     const entries = await Effect.runPromise(options.db.getSyncEntries("settings")).catch(
       () => undefined
@@ -232,14 +234,14 @@ export const makeSelfUpdater = (options: {
 
     const url = release.archiveURL
     console.log(`Downloading Codevisor server ${info.latestVersion} from ${url}`)
-    const response = await fetch(url, { signal: AbortSignal.timeout(300_000) })
+    const response = await download(url, { signal: AbortSignal.timeout(300_000) })
     if (!response.ok || response.body === null) {
       throw new Error(`Failed to download ${url}: HTTP ${response.status}`)
     }
     await pipeline(response.body, createWriteStream(archivePath))
 
     if (release.checksumURL !== undefined) {
-      const checksumResponse = await fetch(release.checksumURL, {
+      const checksumResponse = await download(release.checksumURL, {
         signal: AbortSignal.timeout(30_000)
       })
       if (!checksumResponse.ok) {
