@@ -41,6 +41,20 @@ struct ScreenSharingV2EncoderRouteTests {
     #expect(route.switchDueNs == 1_000 + Self.fastAfterNs)
   }
 
+  @Test func aRoundTripThatStaysHigherStopsRestartingTheHoldOnceTheOldShortestExpires() {
+    var route = ScreenSharingV2EncoderRoute(bitrate: Self.fast, atNs: 0)
+    route.observe(roundTripMs: 5, atNs: 0)
+    let kept = ScreenSharingV2EncoderRoute.shortestRoundTripKeptNs
+
+    route.observe(roundTripMs: 80, atNs: kept)
+    let restartedAt = route.switchDueNs
+    route.observe(roundTripMs: 80, atNs: kept + 1)
+    route.observe(roundTripMs: 80, atNs: kept + 2)
+
+    #expect(restartedAt == kept + Self.fastAfterNs)
+    #expect(route.switchDueNs == kept + Self.fastAfterNs)
+  }
+
   @Test func aSlowLinkStaysOnTheSlowEncoder() {
     var route = ScreenSharingV2EncoderRoute(bitrate: Self.slow, atNs: 0)
     route.observe(roundTripMs: 120, atNs: 10 * Self.fastAfterNs)

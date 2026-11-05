@@ -7,6 +7,7 @@ struct ScreenSharingVideoToolboxSessionFactory {
   let height: Int
   let framesPerSecond: Int
   let bitrate: Int
+  var openingBitrate = ScreenSharingV2Profile.openingBitrate
   var longTermReferences = true
 
   func make() throws -> VTCompressionSession {

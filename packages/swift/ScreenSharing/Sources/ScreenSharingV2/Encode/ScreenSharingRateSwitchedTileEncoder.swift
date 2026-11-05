@@ -62,7 +62,7 @@ public final class ScreenSharingRateSwitchedTileEncoder: ScreenSharingTileEncode
   }
 
   public func encode(_ request: ScreenSharingTileEncodeRequest) throws {
-    updateRoute()
+    switchIfDue()
     let (choice, claimed) = state.withLock { state in
       (state.route.choice, state.owners.claim(request.update.tiles, for: state.route.choice))
     }
@@ -70,22 +70,20 @@ public final class ScreenSharingRateSwitchedTileEncoder: ScreenSharingTileEncode
   }
 
   public func acknowledge(_ tokens: [UInt64], tile: Int) {
-    for choice in [Choice.fast, .slow] {
-      let issued = state.withLock { $0.owners.issued(tokens, tile: tile, by: choice) }
-      if !issued.isEmpty { encoder(choice).acknowledge(issued, tile: tile) }
-    }
+    let acknowledgements = state.withLock { $0.owners.acknowledgements(of: tokens, tile: tile) }
+    for (owner, issued) in acknowledgements where !issued.isEmpty { encoder(owner).acknowledge(issued, tile: tile) }
   }
 
   public func observeNetwork(_ feedback: ScreenSharingTileNetworkFeedback) {
     state.withLock { $0.route.observe(roundTripMs: feedback.roundTripDelayMs, atNs: scheduler.nowNs) }
-    updateRoute()
+    switchIfDue()
     fast.observeNetwork(feedback)
     slow.observeNetwork(feedback)
   }
 
   public func setBitrate(_ bitsPerSecond: Int) throws {
     state.withLock { $0.route.observe(bitrate: bitsPerSecond, atNs: scheduler.nowNs) }
-    updateRoute()
+    switchIfDue()
     let results = [fast, slow].map { encoder in Result { try encoder.setBitrate(bitsPerSecond) } }
     for result in results { try result.get() }
   }
@@ -108,23 +106,33 @@ public final class ScreenSharingRateSwitchedTileEncoder: ScreenSharingTileEncode
     }
   }
 
-  private func updateRoute() {
+  private func switchIfDue() {
+    guard updateRoute() == .fast else { return }
+
+    let frameNs = Int64(ScreenSharingV2Profile.frameIntervalUs) * 1_000
+    scheduler.run(afterNs: frameNs, on: queue) { [weak self] in self?.requestKeyframes() }
+  }
+
+  private func updateRoute() -> Choice? {
     let switched = state.withLock { state -> Choice? in
       guard !state.stopped, state.route.update(atNs: scheduler.nowNs) else { return nil }
 
       return state.route.choice
     }
     scheduleSwitch()
-    guard let switched else { return }
+    guard let switched else { return nil }
 
     metrics.increment("encoderSwitches")
     metrics.label("encoderRoute", switched.rawValue)
-    if switched == .fast { requestKeyframes() }
+    return switched
   }
 
   private func requestKeyframes() {
-    let handler = state.withLock { $0.output }
-    for tile in layout.tiles.sorted() { handler?(.keyframeNeeded(tile: tile)) }
+    let (handler, tiles) = state.withLock { state in
+      let unclaimed = state.route.choice == .fast ? layout.tiles.filter { !state.owners.owns($0, .fast) } : []
+      return (state.output, unclaimed.sorted())
+    }
+    for tile in tiles { handler?(.keyframeNeeded(tile: tile)) }
   }
 
   private func scheduleSwitch() {
@@ -149,7 +157,7 @@ public final class ScreenSharingRateSwitchedTileEncoder: ScreenSharingTileEncode
     }
     guard due else { return }
 
-    updateRoute()
+    switchIfDue()
   }
 
   private func relay(_ output: ScreenSharingTileEncoderOutput, from source: Choice) {

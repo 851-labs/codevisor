@@ -33,12 +33,13 @@ public enum ScreenSharingV2Encoders {
     try await ScreenSharingVCPSelfTest.pass()
     let layout = ScreenSharingV2Profile.tileLayout(for: configuration)
     let primary = try ScreenSharingVCPTileEncoder(configuration: configuration, layout: layout, metrics: metrics)
-    let switched = withVideoToolboxOnSlowLinks(primary, configuration: configuration, metrics: metrics)
-    return withVideoToolboxFallback(switched, configuration: configuration, metrics: metrics)
+    let fast = withVideoToolboxFallback(primary, configuration: configuration, metrics: metrics)
+    return withVideoToolboxOnSlowLinks(fast, configuration: configuration, metrics: metrics)
   }
 
   private static func withVideoToolboxOnSlowLinks(
-    _ fast: ScreenSharingVCPTileEncoder, configuration: ScreenSharingVideoConfiguration, metrics: ScreenSharingMetrics
+    _ fast: any ScreenSharingTileEncoder, configuration: ScreenSharingVideoConfiguration,
+    metrics: ScreenSharingMetrics
   ) -> any ScreenSharingTileEncoder {
     do {
       let slow = try ScreenSharingVideoToolboxTileEncoder(

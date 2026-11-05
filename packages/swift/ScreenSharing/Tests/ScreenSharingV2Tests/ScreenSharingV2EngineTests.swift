@@ -114,15 +114,16 @@ extension HardwareCodecTests {
     }
 
     @Test(.enabled(if: VTIsHardwareDecodeSupported(kCMVideoCodecType_HEVC), "No hardware HEVC on this machine."))
-    func anUpdateSharesTheBitrateBetweenItsTilesAfterEachTileOpenedAtTheOpeningBitrate() async throws {
+    func anUpdateSharesTheBitrateBetweenItsTilesOnceEachTileDeliveredItsOpeningFrame() async throws {
       try await HardwareEncoderBudget.require(videoToolboxTiles: 4)
       let configuration = try ScreenSharingVideoConfiguration(width: 640, height: 360, bitrate: 40_000_000)
       let encoder = try ScreenSharingVideoToolboxTileEncoder(
         configuration: configuration, layout: ScreenSharingV2TileLayout(width: 640, height: 360, count: 4),
         metrics: ScreenSharingMetrics())
       defer { encoder.stop() }
+      let delivered = TestSignal()
+      encoder.onOutput { output in if case .tile = output { delivered.signal() } }
       let pixels = try TestPixels.frame(shade: 80, timestampNs: 1).pixelBuffer
-
       let opening = ScreenSharingV2Profile.openingBitrate / 4
 
       try encoder.encode(
@@ -130,6 +131,7 @@ extension HardwareCodecTests {
           pixelBuffer: pixels, sourceTimestampNs: 1, capturedNs: 1,
           update: ScreenSharingTileUpdate(id: 1, tiles: [0, 1, 2, 3])))
       #expect(encoder.sessions.map(\.bitrate) == Array(repeating: opening, count: 4))
+      await delivered.cancellableWait(for: 4)
 
       try encoder.encode(
         ScreenSharingTileEncodeRequest(

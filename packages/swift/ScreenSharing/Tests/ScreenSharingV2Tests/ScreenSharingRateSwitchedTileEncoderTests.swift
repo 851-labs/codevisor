@@ -12,7 +12,7 @@ struct ScreenSharingRateSwitchedTileEncoderTests {
 
   private let fast = RecordingTileEncoder(layout: Self.tiled)
   private let slow = RecordingTileEncoder(layout: Self.tiled)
-  private let scheduler = SteppedScheduler()
+  private let scheduler = ManualScheduler()
   private let metrics = ScreenSharingMetrics()
   private let outputs = OutputLog()
 
@@ -21,14 +21,28 @@ struct ScreenSharingRateSwitchedTileEncoderTests {
 
     try encoder.encode(try Self.request(id: 1, tiles: [0, 1, 2, 3]))
     feedback(encoder, roundTripMs: 20)
-    scheduler.advance(byNs: ScreenSharingV2EncoderRoute.fastAfterNs - 1)
+    scheduler.step(byNs: ScreenSharingV2EncoderRoute.fastAfterNs - 1)
     try encoder.encode(try Self.request(id: 2, tiles: [0]))
 
     #expect(slow.requests.map(\.update.id) == [1, 2])
     #expect(fast.requests.isEmpty)
   }
 
-  @Test func theSwitchToTheFastEncoderAsksForAKeyframeOfEveryTileAndForcesOneOnEachTileItFirstEncodes() throws {
+  @Test func aFrameAfterTheSwitchToTheFastEncoderItAsksForAKeyframeOfEveryTileItHasNotEncoded() throws {
+    let encoder = try switched(bitrate: Self.fastBitrate)
+    try encoder.encode(try Self.request(id: 1, tiles: [0, 1, 2, 3]))
+
+    switchToFast(encoder)
+    try encoder.encode(try Self.request(id: 2, tiles: [0, 1]))
+    let beforeAFrame = keyframesAskedFor
+    scheduler.step(byNs: Int64(ScreenSharingV2Profile.frameIntervalUs) * 1_000)
+
+    #expect(beforeAFrame.isEmpty)
+    #expect(keyframesAskedFor == [2, 3])
+    #expect(metrics.counter("encoderSwitches") == 1)
+  }
+
+  @Test func eachTilesFirstEncodeOnTheFastEncoderIsAKeyframeWhateverRefreshTheHostAskedFor() throws {
     let encoder = try switched(bitrate: Self.fastBitrate)
     try encoder.encode(try Self.request(id: 1, tiles: [0, 1, 2, 3]))
 
@@ -36,9 +50,7 @@ struct ScreenSharingRateSwitchedTileEncoderTests {
     try encoder.encode(try Self.request(id: 2, tiles: [1], refreshes: [1: .longTermReference]))
     try encoder.encode(try Self.request(id: 3, tiles: [1, 2]))
 
-    #expect(keyframesAskedFor == [0, 1, 2, 3])
     #expect(fast.requests.map(\.refreshes) == [[1: .keyframe], [2: .keyframe]])
-    #expect(metrics.counter("encoderSwitches") == 1)
   }
 
   @Test func aLateTileFromTheEncoderThatLostTheTileIsDroppedAndOthersPass() throws {
@@ -75,10 +87,11 @@ struct ScreenSharingRateSwitchedTileEncoderTests {
     try encoder.encode(try Self.request(id: 1, tiles: [0, 1, 2, 3]))
     switchToFast(encoder)
     try encoder.encode(try Self.request(id: 2, tiles: [3]))
+    scheduler.step(byNs: Int64(ScreenSharingV2Profile.frameIntervalUs) * 1_000)
     clearOutputs()
 
     try encoder.setBitrate(Self.slowBitrate)
-    scheduler.advance(byNs: ScreenSharingV2EncoderRoute.slowAfterNs)
+    scheduler.step(byNs: ScreenSharingV2EncoderRoute.slowAfterNs)
     try encoder.encode(try Self.request(id: 3, tiles: [3]))
 
     #expect(slow.requests.last?.update.id == 3)
@@ -95,7 +108,7 @@ struct ScreenSharingRateSwitchedTileEncoderTests {
   }
 
   private func switchToFast(_ encoder: ScreenSharingRateSwitchedTileEncoder) {
-    scheduler.advance(byNs: ScreenSharingV2EncoderRoute.fastAfterNs)
+    scheduler.step(byNs: ScreenSharingV2EncoderRoute.fastAfterNs)
     feedback(encoder, roundTripMs: 20)
   }
 

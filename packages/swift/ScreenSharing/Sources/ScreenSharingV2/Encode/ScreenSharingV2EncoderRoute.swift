@@ -10,12 +10,14 @@ struct ScreenSharingV2EncoderRoute: Sendable, Equatable {
   static let slowAfterNs: Int64 = 1_000_000_000
   static let feedbackFreshNs: Int64 = 1_000_000_000
   static let queuedAboveMs = 50.0
+  static let shortestRoundTripKeptNs: Int64 = 10_000_000_000
 
   private(set) var choice = Choice.slow
   private var bitrate: Int
   private var wantedSinceNs: Int64?
   private var feedbackNs: Int64?
   private var shortestRoundTripMs: Double?
+  private var shortestRoundTripNs: Int64 = 0
 
   init(bitrate: Int, atNs nowNs: Int64) {
     self.bitrate = bitrate
@@ -40,8 +42,7 @@ struct ScreenSharingV2EncoderRoute: Sendable, Equatable {
     guard roundTripMs > 0 else { return }
 
     feedbackNs = nowNs
-    let shortest = min(shortestRoundTripMs ?? roundTripMs, roundTripMs)
-    shortestRoundTripMs = shortest
+    let shortest = shortestRoundTrip(observing: roundTripMs, atNs: nowNs)
     if wanted == .fast, roundTripMs > shortest + Self.queuedAboveMs { wantedSinceNs = nowNs }
   }
 
@@ -60,6 +61,15 @@ struct ScreenSharingV2EncoderRoute: Sendable, Equatable {
     case .slow: bitrate >= Self.fastFromBitrate ? .fast : nil
     case .fast: bitrate < Self.slowBelowBitrate ? .slow : nil
     }
+  }
+
+  private mutating func shortestRoundTrip(observing roundTripMs: Double, atNs nowNs: Int64) -> Double {
+    let expired = nowNs - shortestRoundTripNs > Self.shortestRoundTripKeptNs
+    if let shortestRoundTripMs, roundTripMs > shortestRoundTripMs, !expired { return shortestRoundTripMs }
+
+    shortestRoundTripMs = roundTripMs
+    shortestRoundTripNs = nowNs
+    return roundTripMs
   }
 
   private func hasEvidence(for choice: Choice, atNs nowNs: Int64) -> Bool {
