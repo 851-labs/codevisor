@@ -8,7 +8,7 @@ struct ScreenSharingFrameTimelineTests {
 
   @Test func onOneClockTheStagesAddUpToCaptureToPresent() throws {
     let timeline = ScreenSharingFrameTimeline(localClock: clock)
-    observeTransport(timeline, roundTripSeconds: 0.004, jitterBufferDelaySeconds: 0.5, emitted: 100)
+    observeTransport(timeline, roundTripSeconds: 0.004, jitterBufferDelaySeconds: 0.3, emitted: 100)
     timeline.decoded(decodedFrame(sourceNs, hostClock: clock, decodeStartMs: 15, decodedMs: 18))
     timeline.presented(sourceTimestampNs: sourceNs, presentation(receivedMs: 19, submittedMs: 23, presentedMs: 40))
 
@@ -17,8 +17,10 @@ struct ScreenSharingFrameTimelineTests {
     expected.capture = 1_000
     expected.hostQueue = 2_000
     expected.encode = 5_000
+    expected.handOff = 500
     expected.network = 2_000
-    expected.jitterBuffer = 5_000
+    expected.assemble = 1_500
+    expected.jitterBuffer = 3_000
     expected.decode = 3_000
     expected.delivery = 1_000
     expected.renderQueue = 4_000
@@ -101,13 +103,15 @@ struct ScreenSharingFrameTimelineTests {
     let stages = try #require(record["stagesUs"] as? [String: Int])
     #expect(
       stages == [
-        "capture": 1000, "hostQueue": 2000, "encode": 5000, "decode": 3000, "delivery": 1000,
+        "capture": 1000, "hostQueue": 2000, "encode": 5000, "handOff": 500, "assemble": 1500, "decode": 3000,
+        "delivery": 1000,
         "renderQueue": 4000, "present": 17000,
       ])
     #expect(record["captureToPresentUs"] as? Int == 40_000 && record["stageSumUs"] == nil)
     let host = try #require(record["host"] as? [String: Int])
     #expect(host["captureCallbackNs"] == Int(sourceNs) + 1_000_000)
     #expect(host["encodeOutputNs"] == Int(sourceNs) + 8_000_000)
+    #expect(host["sendNs"] == Int(sourceNs) + 8_500_000)
     let viewer = try #require(record["viewer"] as? [String: Any])
     #expect(viewer["onGlassSource"] as? String == "presentedTime")
     #expect(viewer["mailboxPutNs"] as? Int == Int(sourceNs) + 19_000_000)
@@ -159,7 +163,9 @@ struct ScreenSharingFrameTimelineTests {
   ) -> ScreenSharingDecodedFrameTiming {
     ScreenSharingDecodedFrameTiming(
       sourceTimestampNs: source,
-      host: ScreenSharingHostFrameTiming(clock: hostClock, captureUs: 1_000, hostQueueUs: 2_000, encodeUs: 5_000),
+      host: ScreenSharingHostFrameTiming(
+        clock: hostClock, captureUs: 1_000, hostQueueUs: 2_000, encodeUs: 5_000, handOffUs: 500),
+      assembleUs: 1_500,
       decodeInputNs: sourceNs + decodeStartMs * 1_000_000, decodeSubmitNs: sourceNs + decodeStartMs * 1_000_000,
       decodedNs: sourceNs + decodedMs * 1_000_000, isKeyFrame: false)
   }

@@ -45,14 +45,16 @@ struct ScreenSharingFrameTimelineSummaryTests {
   }
 
   private func record(decodeUs: Int64, residualUs: Int64?, network: Bool = true) -> ScreenSharingFrameRecord {
-    let host = ScreenSharingHostFrameTiming(clock: 1, captureUs: 1_000, hostQueueUs: 1_000, encodeUs: 1_000)
+    let host = ScreenSharingHostFrameTiming(
+      clock: 1, captureUs: 1_000, hostQueueUs: 1_000, encodeUs: 1_000, handOffUs: 0)
     let decodedNs = decodeUs * 1_000
     let presentedNs = decodedNs + 3_000_000
     let stageSumUs = 3_000 + 2_000 + decodeUs + 3_000
     return ScreenSharingFrameRecord(
       sequence: 1,
       decoded: ScreenSharingDecodedFrameTiming(
-        sourceTimestampNs: presentedNs - (stageSumUs + (residualUs ?? 0)) * 1_000, host: host, decodeInputNs: 0,
+        sourceTimestampNs: presentedNs - (stageSumUs + (residualUs ?? 0)) * 1_000, host: host, assembleUs: 0,
+        decodeInputNs: 0,
         decodeSubmitNs: 0, decodedNs: decodedNs, isKeyFrame: false),
       presentation: ScreenSharingFramePresentation(
         receivedAtNs: decodedNs, submittedAtNs: decodedNs, presentedAtNs: presentedNs),

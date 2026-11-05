@@ -129,6 +129,7 @@ private struct ScreenSharingDetailsButton: View {
         if let recovery = diagnostics.recovery { LabeledContent("Recovery", value: recovery) }
         if let streams = diagnostics.streams { LabeledContent("Streams", value: streams) }
         Text(diagnostics.decoder).font(.caption).foregroundStyle(.secondary)
+        if let timeline = diagnostics.timeline { ScreenSharingTimelineDetails(timeline: timeline) }
       }
       .font(.callout)
     } else {

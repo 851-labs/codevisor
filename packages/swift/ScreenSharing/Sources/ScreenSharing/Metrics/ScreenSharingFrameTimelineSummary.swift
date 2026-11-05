@@ -1,5 +1,5 @@
 public struct ScreenSharingFrameTimelineSummary: Codable, Equatable, Sendable {
-  public static let formatVersion = 1
+  public static let formatVersion = 2
 
   public let version: Int
   public let frames: Int

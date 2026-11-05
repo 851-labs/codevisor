@@ -217,7 +217,7 @@ public final class ScreenSharingViewerEndpoint: Equatable, Identifiable {
     session.metrics.timeline.observeTransport(statistics)
     let metrics = session.metrics.snapshot()
     let now = ProcessInfo.processInfo.systemUptime
-    diagnostics.update(metrics: metrics, statistics: statistics, now: now)
+    diagnostics.update(metrics: metrics, timeline: session.metrics.timeline, statistics: statistics, now: now)
     guard let statsLog else { return exported }
 
     let frames = session.metrics.timeline.records(after: exported)

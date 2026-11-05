@@ -2,7 +2,9 @@ public struct ScreenSharingFrameStages: Codable, Equatable, Sendable {
   public var capture: Int64?
   public var hostQueue: Int64?
   public var encode: Int64?
+  public var handOff: Int64?
   public var network: Int64?
+  public var assemble: Int64?
   public var jitterBuffer: Int64?
   public var decode: Int64?
   public var delivery: Int64?
@@ -16,7 +18,9 @@ public struct ScreenSharingFrameStages: Codable, Equatable, Sendable {
     case .capture: capture
     case .hostQueue: hostQueue
     case .encode: encode
+    case .handOff: handOff
     case .network: network
+    case .assemble: assemble
     case .jitterBuffer: jitterBuffer
     case .decode: decode
     case .delivery: delivery

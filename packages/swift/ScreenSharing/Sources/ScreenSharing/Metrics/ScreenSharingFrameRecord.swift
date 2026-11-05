@@ -32,7 +32,9 @@ public struct ScreenSharingFrameRecord: Codable, Equatable, Sendable {
     stages.capture = decoded.host?.captureUs
     stages.hostQueue = decoded.host?.hostQueueUs
     stages.encode = decoded.host?.encodeUs
+    stages.handOff = decoded.host?.handOffUs
     stages.network = transport.networkUs
+    stages.assemble = decoded.assembleUs
     stages.jitterBuffer = transport.jitterBufferUs
     stages.decode = microseconds(from: viewer.decodeInputNs, to: viewer.decodeOutputNs)
     stages.delivery = viewer.mailboxPutNs.map { microseconds(from: viewer.decodeOutputNs, to: $0) }

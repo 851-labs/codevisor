@@ -29,7 +29,8 @@ final class BarcodePresenter {
     versionsBySourceTimestamp[nowNs] = lastVersion
     view.metrics.timeline.decoded(
       ScreenSharingDecodedFrameTiming(
-        sourceTimestampNs: nowNs, host: nil, decodeInputNs: nowNs, decodeSubmitNs: nowNs, decodedNs: nowNs,
+        sourceTimestampNs: nowNs, host: nil, assembleUs: nil, decodeInputNs: nowNs, decodeSubmitNs: nowNs,
+        decodedNs: nowNs,
         isKeyFrame: false))
     view.mailbox.put(
       ScreenSharingVideoFrame(
