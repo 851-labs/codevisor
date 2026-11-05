@@ -16,7 +16,7 @@ struct WorkspaceInspectorCard<Content: View>: View {
         .fixedSize(horizontal: false, vertical: true)
         .frame(height: isExpanded ? nil : 0, alignment: .top)
         .background(Color.primary.opacity(0.034))
-        .clipShape(.rect(cornerRadius: 10))
+        .clipShape(WorkspaceInspectorCardShape.card)
         .opacity(isExpanded ? 1 : 0)
         .padding(.top, isExpanded ? 6 : 0)
         .padding(.horizontal, 10)
