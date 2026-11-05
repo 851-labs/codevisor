@@ -10,7 +10,8 @@ struct ScreenSharingVCPPixelConverterTests {
   ]
 
   @Test func convertsBGRAToFullRangeBT709FourFourFourExactly() throws {
-    let converter = try ScreenSharingVCPPixelConverter(width: 64, height: 8 * Self.colours.count)
+    let converter = try ScreenSharingVCPPixelConverter(
+      layout: ScreenSharingV2TileLayout(width: 64, height: 8 * Self.colours.count, count: 1))
 
     let converted = try converter.convert(try Self.bands(), capture: 1)
 
@@ -24,8 +25,48 @@ struct ScreenSharingVCPPixelConverterTests {
     #expect(zip(measured, expected).allSatisfy { abs($0.1 - $1.1) <= 1 && abs($0.2 - $1.2) <= 1 }, "\(measured)")
   }
 
+  @Test func tilesConvertedInPlaceMatchTheRowsOfAWholeFrameConversion() throws {
+    let layout = ScreenSharingV2TileLayout(width: 64, height: 8 * Self.colours.count, count: 3, tileHeight: 24)
+    let converter = try ScreenSharingVCPPixelConverter(layout: layout)
+    let source = try Self.bands()
+
+    let whole = try converter.convert(source, capture: 1)
+    let tiles = try #require(try converter.convertTiles(source, capture: 1, tiles: [1, 2, 7]))
+
+    #expect(Set(tiles.keys) == [1, 2])
+    #expect(CVPixelBufferGetHeight(try #require(tiles[2])) == 16)
+    for (tile, buffer) in tiles {
+      #expect(CVPixelBufferGetHeight(buffer) == layout.rows(of: tile).count)
+      for row in [0, 5, layout.rows(of: tile).count - 1] {
+        #expect(Self.sample(buffer, row: row) == Self.sample(whole, row: layout.rows(of: tile).lowerBound + row))
+      }
+    }
+  }
+
+  @Test func aRefinementOfTheSameCaptureReusesItsConvertedTiles() throws {
+    let converter = try ScreenSharingVCPPixelConverter(
+      layout: ScreenSharingV2TileLayout(width: 64, height: 8 * Self.colours.count, count: 4, tileHeight: 16))
+    let source = try Self.bands()
+
+    let first = try #require(try converter.convertTiles(source, capture: 1, tiles: [0, 1]))
+    let again = try #require(try converter.convertTiles(source, capture: 1, tiles: [1, 2]))
+    let next = try #require(try converter.convertTiles(source, capture: 2, tiles: [1]))
+
+    #expect(again[1] === first[1])
+    #expect(again[2] != nil)
+    #expect(next[1] !== first[1])
+  }
+
+  @Test func aScaledCaptureIsLeftToTheWholeFramePath() throws {
+    let converter = try ScreenSharingVCPPixelConverter(
+      layout: ScreenSharingV2TileLayout(width: 128, height: 16 * Self.colours.count, count: 4))
+
+    #expect(try converter.convertTiles(try Self.bands(), capture: 1, tiles: [0]) == nil)
+  }
+
   @Test func scalesACaptureOfAnotherSizeInsteadOfReadingPastIt() throws {
-    let converter = try ScreenSharingVCPPixelConverter(width: 128, height: 16 * Self.colours.count)
+    let converter = try ScreenSharingVCPPixelConverter(
+      layout: ScreenSharingV2TileLayout(width: 128, height: 16 * Self.colours.count, count: 1))
 
     let converted = try converter.convert(try Self.bands(), capture: 1)
 

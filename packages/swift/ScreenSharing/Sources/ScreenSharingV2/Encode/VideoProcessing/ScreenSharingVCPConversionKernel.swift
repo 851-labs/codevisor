@@ -9,9 +9,10 @@ final class ScreenSharingVCPConversionKernel: @unchecked Sendable {
     kernel void bgraTo444(texture2d<float, access::read> source [[texture(0)]],
                           texture2d<float, access::write> luma [[texture(1)]],
                           texture2d<float, access::write> chroma [[texture(2)]],
+                          constant uint &sourceRow [[buffer(0)]],
                           uint2 position [[thread_position_in_grid]]) {
       if (position.x >= luma.get_width() || position.y >= luma.get_height()) { return; }
-      float3 rgb = source.read(position).rgb;
+      float3 rgb = source.read(uint2(position.x, position.y + sourceRow)).rgb;
       float y = dot(rgb, float3(0.2126, 0.7152, 0.0722));
       float cb = (rgb.b - y) / 1.8556 + 128.0 / 255.0;
       float cr = (rgb.r - y) / 1.5748 + 128.0 / 255.0;
@@ -44,17 +45,32 @@ final class ScreenSharingVCPConversionKernel: @unchecked Sendable {
     pipeline = try device.makeComputePipelineState(function: function)
   }
 
+  struct Region {
+    let sourceRow: Int
+    let luma: any MTLTexture
+    let chroma: any MTLTexture
+  }
+
   func run(source: any MTLTexture, luma: any MTLTexture, chroma: any MTLTexture) throws {
+    try run(source: source, regions: [Region(sourceRow: 0, luma: luma, chroma: chroma)])
+  }
+
+  func run(source: any MTLTexture, regions: [Region]) throws {
     guard let buffer = queue.makeCommandBuffer(), let encoder = buffer.makeComputeCommandEncoder() else {
       throw ScreenSharingError.unavailable("No Metal command buffer for the VCP converter.")
     }
 
     encoder.setComputePipelineState(pipeline)
     encoder.setTexture(source, index: 0)
-    encoder.setTexture(luma, index: 1)
-    encoder.setTexture(chroma, index: 2)
-    encoder.dispatchThreads(
-      MTLSize(width: luma.width, height: luma.height, depth: 1), threadsPerThreadgroup: Self.threadgroup)
+    for region in regions {
+      var sourceRow = UInt32(region.sourceRow)
+      encoder.setTexture(region.luma, index: 1)
+      encoder.setTexture(region.chroma, index: 2)
+      encoder.setBytes(&sourceRow, length: MemoryLayout<UInt32>.size, index: 0)
+      encoder.dispatchThreads(
+        MTLSize(width: region.luma.width, height: region.luma.height, depth: 1),
+        threadsPerThreadgroup: Self.threadgroup)
+    }
     encoder.endEncoding()
     buffer.commit()
     buffer.waitUntilCompleted()
