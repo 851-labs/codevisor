@@ -79,17 +79,6 @@ public final class ScreenSharingV2Viewer: @unchecked Sendable {
       return
     }
 
-    decoders.enqueue(stream: frame.stream) { [weak self] in
-      self?.decode(frame, meta: meta, receivedNs: receivedNs, admission: admission)
-    }
-  }
-
-  private func decode(
-    _ frame: ScreenSharingReceivedFrame, meta: ScreenSharingV2FrameMeta, receivedNs: Int64,
-    admission: ScreenSharingV2RecoveryGate.Admission
-  ) {
-    guard !stopped.load(ordering: .relaxed) else { return }
-
     do {
       try decoders.decode(frame, meta: meta, receivedNs: receivedNs) { [weak self] in
         self?.decoded($0, admission: admission)
