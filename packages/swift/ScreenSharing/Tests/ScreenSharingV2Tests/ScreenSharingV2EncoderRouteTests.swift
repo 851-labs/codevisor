@@ -41,6 +41,16 @@ struct ScreenSharingV2EncoderRouteTests {
     #expect(route.switchDueNs == 1_000 + Self.fastAfterNs)
   }
 
+  @Test func aRoundTripThatFallsAsAQueueDrainsStartsTheHoldOver() {
+    var route = ScreenSharingV2EncoderRoute(bitrate: Self.fast, atNs: 0)
+    route.observe(roundTripMs: 1_800, atNs: 0)
+
+    route.observe(roundTripMs: 900, atNs: 1_000)
+    route.observe(roundTripMs: 880, atNs: 2_000)
+
+    #expect(route.switchDueNs == 1_000 + Self.fastAfterNs)
+  }
+
   @Test func aRoundTripThatStaysHigherStopsRestartingTheHoldOnceTheOldShortestExpires() {
     var route = ScreenSharingV2EncoderRoute(bitrate: Self.fast, atNs: 0)
     route.observe(roundTripMs: 5, atNs: 0)

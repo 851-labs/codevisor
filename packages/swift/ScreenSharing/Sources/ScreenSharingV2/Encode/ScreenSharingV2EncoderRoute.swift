@@ -18,6 +18,7 @@ struct ScreenSharingV2EncoderRoute: Sendable, Equatable {
   private var feedbackNs: Int64?
   private var shortestRoundTripMs: Double?
   private var shortestRoundTripNs: Int64 = 0
+  private var lastRoundTripMs: Double?
 
   init(bitrate: Int, atNs nowNs: Int64) {
     self.bitrate = bitrate
@@ -42,8 +43,10 @@ struct ScreenSharingV2EncoderRoute: Sendable, Equatable {
     guard roundTripMs > 0 else { return }
 
     feedbackNs = nowNs
-    let shortest = shortestRoundTrip(observing: roundTripMs, atNs: nowNs)
-    if wanted == .fast, roundTripMs > shortest + Self.queuedAboveMs { wantedSinceNs = nowNs }
+    let queued = roundTripMs > shortestRoundTrip(observing: roundTripMs, atNs: nowNs) + Self.queuedAboveMs
+    let settled = lastRoundTripMs.map { abs(roundTripMs - $0) <= Self.queuedAboveMs } ?? true
+    lastRoundTripMs = roundTripMs
+    if wanted == .fast, queued || !settled { wantedSinceNs = nowNs }
   }
 
   mutating func update(atNs nowNs: Int64) -> Bool {
