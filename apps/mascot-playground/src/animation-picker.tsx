@@ -15,6 +15,7 @@ const moveButtons: ReadonlyArray<MoveButton> = [
   { id: "idle", title: "Idle", hint: "Resting, breathing and looking around" },
   { id: "working", title: "Working", hint: "Reads a clipboard and flips the page" },
   { id: "calling", title: "Calling", hint: "Picks up the phone and talks" },
+  { id: "sleeping", title: "Sleeping", hint: "Dozes off and breathes slowly, with z's" },
   { id: "hangUp", title: "Hang up", hint: "Says bye and puts the phone away" },
   { id: "angryHangUp", title: "Angry hang-up", hint: "Gets annoyed and throws the phone" }
 ]

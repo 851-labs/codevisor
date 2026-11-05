@@ -1,4 +1,5 @@
 import { callSeconds } from "../../src/animations/calling-segments.js"
+import { FALL_ASLEEP, SLEEP_LOOP, WAKE_UP } from "../../src/animations/sleeping.js"
 import type { Matrix } from "../../src/arms/arm-pose.js"
 import { CLIPBOARD_LOOP } from "../../src/effects/clipboard.js"
 import { keyArms, restArmKeys, type ArmKeyIds } from "./arm-keys.js"
@@ -74,7 +75,10 @@ export const moves: ReadonlyArray<Move> = [
     loops: false,
     animation: newId(),
     props: newId()
-  }
+  },
+  { segment: "fallAsleep", seconds: FALL_ASLEEP, loops: false, animation: newId(), props: newId() },
+  { segment: "sleeping", seconds: SLEEP_LOOP, loops: true, animation: newId(), props: newId() },
+  { segment: "wakeUp", seconds: WAKE_UP, loops: false, animation: newId(), props: newId() }
 ]
 
 const rad = (deg: number | undefined) => ((deg ?? 0) * Math.PI) / 180
@@ -199,22 +203,22 @@ export function idlePropsXml(ids: MoveIds): string {
   return `<LinearAnimation duration="1" name="idle props" id="${idleProps}">${tracksXml(tracks)}</LinearAnimation>`
 }
 
-interface StateRefs {
+export interface StateRefs {
   readonly vm: string
   readonly mode: string
-  readonly modeValues: Readonly<Record<"idle" | "working" | "calling", string>>
+  readonly modeValues: Readonly<Record<"idle" | "working" | "calling" | "sleeping", string>>
   readonly hangUp: string
   readonly angryHangUp: string
   readonly idleState: string
 }
 
-const modeIs = (r: StateRefs, value: string, op = "equal") =>
+export const modeIs = (r: StateRefs, value: string, op = "equal") =>
   `<TransitionViewModelCondition opValue="${op}"><TransitionPropertyViewModelComparator><BindablePropertyEnum><DataBindContext sourcePathIds="${r.vm}-${r.mode}" propertyKey="637"/></BindablePropertyEnum></TransitionPropertyViewModelComparator><TransitionValueEnumComparator value="${value}"/></TransitionViewModelCondition>`
 const fired = (r: StateRefs, prop: string) =>
   `<TransitionViewModelCondition><TransitionPropertyViewModelComparator><BindablePropertyTrigger><DataBindContext sourcePathIds="${r.vm}-${prop}" propertyKey="686"/></BindablePropertyTrigger></TransitionPropertyViewModelComparator><TransitionValueTriggerComparator/></TransitionViewModelCondition>`
-const go = (to: string, ms: number, conditions = "") =>
+export const go = (to: string, ms: number, conditions = "") =>
   `<StateTransition stateToId="${to}" duration="${ms}">${conditions}</StateTransition>`
-const after = (to: string, ms = 0) =>
+export const after = (to: string, ms = 0) =>
   `<StateTransition stateToId="${to}" duration="${ms}" enableExitTime="true" exitTimeIsPercetange="true" exitTime="100"/>`
 
 export interface Layer {
@@ -256,7 +260,8 @@ function layerStates(r: StateRefs, layer: Layer): string {
   const idle = layer.idle.replace(
     "<!--transitions-->",
     go(id("startWorking"), ms(250), modeIs(r, r.modeValues.working)) +
-      go(id("pickUp"), ms(250), modeIs(r, r.modeValues.calling))
+      go(id("pickUp"), ms(250), modeIs(r, r.modeValues.calling)) +
+      go(id("fallAsleep"), ms(250), modeIs(r, r.modeValues.sleeping))
   )
   return [
     idle,
@@ -278,6 +283,14 @@ function layerStates(r: StateRefs, layer: Layer): string {
         go(id("hangUp"), ms(250), modeIs(r, r.modeValues.calling, "notEqual"))
     ),
     state("hangUp", 520, 340, after(layer.idleState, ms(200))),
-    state("angryHangUp", 780, 340, after(layer.idleState, ms(200)))
+    state("angryHangUp", 780, 340, after(layer.idleState, ms(200))),
+    state("fallAsleep", 260, 420, after(id("sleeping"))),
+    state(
+      "sleeping",
+      260,
+      560,
+      go(id("wakeUp"), ms(250), modeIs(r, r.modeValues.sleeping, "notEqual"))
+    ),
+    state("wakeUp", 40, 420, after(layer.idleState, ms(200)))
   ].join("\n")
 }

@@ -18,7 +18,7 @@ export interface Framing {
   readonly side: number
 }
 
-export type RiveMove = "idle" | "working" | "calling" | "hangUp" | "angryHangUp"
+export type RiveMove = "idle" | "working" | "calling" | "sleeping" | "hangUp" | "angryHangUp"
 
 export interface RiveStageProps {
   readonly look: ResolvedBotMascotConfig

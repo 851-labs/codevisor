@@ -5,6 +5,7 @@ import {
   renderIdleWorking,
   type ArmsFrameState
 } from "./animations/idle-working.js"
+import { fallingAsleep, FALL_ASLEEP, sleepPose, wakingUp } from "./animations/sleeping.js"
 import { dressed, resolveConfig, type BotMascotConfig } from "./config.js"
 import { gazeOrigin, lookingAt, type BotMascotGaze } from "./gaze/gaze.js"
 import { idleAt } from "./moods/moods.js"
@@ -73,12 +74,18 @@ const working =
       ...(shot.size ? { size: shot.size } : {})
     })
 
-const idleFrame: Renderer = (shot, frame) =>
-  renderIdleWorking(shot.ctx, shot.color, frame.clock, shot.viewBox, shot.uid, {
-    state: { pose: shot.idle(frame.clock), w: 0, tw: null },
-    edit: shot.edit,
-    ...(shot.size ? { size: shot.size } : {})
-  })
+const posed =
+  (pose: (frame: SegmentFrame, idle: Shot["idle"]) => BotMascotPose): Renderer =>
+  (shot, frame) =>
+    renderIdleWorking(shot.ctx, shot.color, frame.clock, shot.viewBox, shot.uid, {
+      state: { pose: pose(frame, shot.idle), w: 0, tw: null },
+      edit: shot.edit,
+      ...(shot.size ? { size: shot.size } : {})
+    })
+
+const idleFrame = posed((f, idle) => idle(f.clock))
+
+const asleepFor = (frame: SegmentFrame): number => frame.since + frame.t - FALL_ASLEEP
 
 const workingSince = (frame: SegmentFrame): number => frame.clock - (frame.since + frame.t)
 
@@ -96,7 +103,10 @@ const renderers: Readonly<Record<BotMascotSegment, Renderer>> = {
   working: atWork,
   stopWorking: working((f, idle) =>
     armsFrameState(f.clock, { in: workingSince(f), out: f.clock - f.t, swing: WORKING_SWING }, idle)
-  )
+  ),
+  fallAsleep: posed((f, idle) => fallingAsleep(f.t, idle(f.clock))),
+  sleeping: posed((f) => sleepPose(asleepFor(f))),
+  wakeUp: posed((f, idle) => wakingUp(f.t, f.since - FALL_ASLEEP, idle(f.clock)))
 }
 
 function shotFor(options: SegmentFrameOptions): Shot {

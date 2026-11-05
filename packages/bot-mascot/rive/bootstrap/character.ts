@@ -10,6 +10,7 @@ import { bodyLayer, idlePropsXml, movesXml, propsLayer, restKeys, type MoveIds }
 import { FEET, PIVOT, mainBodyPart, noMakeup, part, render } from "./parts.js"
 import { clipboardItems, phoneItems, restHanging, restRising } from "./props.js"
 import { upperWeight } from "./skinning.js"
+import { sleepZsAnimationsXml, sleepZsLayer, sleepZsXml } from "./sleep-zs.js"
 import { sleevePart } from "./sleeves.js"
 
 export const bone = { base: newId(), lean: newId(), gaze: newId() }
@@ -233,7 +234,8 @@ const stateRefs = {
   modeValues: {
     idle: modeEnum.values[0],
     working: modeEnum.values[1],
-    calling: modeEnum.values[2]
+    calling: modeEnum.values[2],
+    sleeping: modeEnum.values[3]
   },
   hangUp: prop.hangUp,
   angryHangUp: prop.angryHangUp,
@@ -256,7 +258,9 @@ ${states}
 <StateMachineLayer name="Body" id="${newId()}"><AnyState x="60" y="-120"/><ExitState x="1000" y="-120"/><EntryState x="60" y="0"><StateTransition stateToId="${props.idleState}"/></EntryState>
 ${props.xml}
 </StateMachineLayer>
+${sleepZsLayer(stateRefs)}
 </StateMachine>
+${sleepZsXml(armPaints)}
 <Node x="${f(FEET[0])}" y="${f(FEET[1])}" name="Character" id="${character}">
 <Node x="${f(-FEET[0])}" y="${f(-FEET[1])}" name="Arms" id="${newId()}">
 ${arms.hand}
@@ -288,4 +292,5 @@ ${shadowRml.rml}
 ${idleXml.replace("</LinearAnimation>", `${restKeys(moveIds)}</LinearAnimation>`)}
 ${idlePropsXml(moveIds)}
 ${movesXml(moveIds)}
+${sleepZsAnimationsXml()}
 </Artboard>`

@@ -27,10 +27,13 @@ const at = (segment: BotMascotSegment, t: number, clock = t): SegmentFrame => ({
 })
 const justBefore = (segment: BotMascotSegment): number => botMascotSegments[segment].seconds - 1e-9
 const holdsPhone = (svg: string): boolean => svg.includes('data-r="hand"')
+const zsWhileWaking = (t: number): number => sleepZs(draw({ ...at("wakeUp", t), since: 3 }))
+const sleepZs = (svg: string): number =>
+  svg.match(/stroke-width="4\.5" stroke-linecap="round"/g)?.length ?? 0
 const flyingPhone = (svg: string): boolean =>
   /<\/g><g transform="matrix\([^)]+\)">[^]*<\/g><\/svg>$/.test(svg)
 
-const states: ReadonlyArray<BotMascotState> = ["idle", "calling", "working"]
+const states: ReadonlyArray<BotMascotState> = ["idle", "calling", "working", "sleeping"]
 
 describe("mascot segments", () => {
   it("routes every request through idle", () => {
@@ -44,7 +47,14 @@ describe("mascot segments", () => {
   })
 
   it.each(states)("chains every route from %s into segments that can follow each other", (from) => {
-    for (const request of ["idle", "calling", "working", "hangUp", "angryHangUp"] as const) {
+    for (const request of [
+      "idle",
+      "calling",
+      "working",
+      "sleeping",
+      "hangUp",
+      "angryHangUp"
+    ] as const) {
       const chain = [loopOf(from), ...botMascotRoute(from, request)]
       expect(() => botMascotSequence(chain.map((segment) => ({ segment })))).not.toThrow()
     }
@@ -112,6 +122,24 @@ describe("mascot segments", () => {
       { segment: "angryHangUp" }
     ])
     expect(sequence.at(sequence.seconds - 1).leftCallAt).toBeUndefined()
+  })
+
+  it("falls asleep from idle and wakes back up through idle", () => {
+    expect(botMascotRoute("idle", "sleeping")).toEqual(["fallAsleep", "sleeping"])
+    expect(botMascotRoute("sleeping", "calling")).toEqual(["wakeUp", "pickUp", "calling"])
+    expect(draw(at("fallAsleep", 0))).toBe(draw(at("idle", 0)))
+  })
+
+  it("loops the sleep with the z's still floating", () => {
+    const asleep = draw(at("sleeping", 0, 3))
+    expect(draw(at("sleeping", justBefore("sleeping"), 3))).toBe(asleep)
+    expect(sleepZs(asleep)).toBeGreaterThan(0)
+    expect(sleepZs(draw(at("idle", 0)))).toBe(0)
+  })
+
+  it("lets the z's fade out as he wakes", () => {
+    expect(zsWhileWaking(0.05)).toBeGreaterThan(0)
+    expect(zsWhileWaking(0.5)).toBe(0)
   })
 
   const { in: start, out, end } = IDLE_WORKING_TIMES

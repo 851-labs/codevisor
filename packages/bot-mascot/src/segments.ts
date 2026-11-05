@@ -1,8 +1,9 @@
 import { callSeconds } from "./animations/calling-segments.js"
+import { FALL_ASLEEP, SLEEP_LOOP, WAKE_UP } from "./animations/sleeping.js"
 import { CLIPBOARD_LOOP } from "./effects/clipboard.js"
 import { IDLE_LOOP } from "./moods/expressions.js"
 
-export type BotMascotState = "idle" | "calling" | "working"
+export type BotMascotState = "idle" | "calling" | "working" | "sleeping"
 
 export type BotMascotSegment =
   | "idle"
@@ -13,8 +14,17 @@ export type BotMascotSegment =
   | "startWorking"
   | "working"
   | "stopWorking"
+  | "fallAsleep"
+  | "sleeping"
+  | "wakeUp"
 
-export type BotMascotRequest = "idle" | "calling" | "working" | "hangUp" | "angryHangUp"
+export type BotMascotRequest =
+  | "idle"
+  | "calling"
+  | "working"
+  | "sleeping"
+  | "hangUp"
+  | "angryHangUp"
 
 export interface SegmentInfo {
   readonly title: string
@@ -50,7 +60,8 @@ const CYCLE_EDGE = 1e-6
 const loops: Readonly<Record<BotMascotState, BotMascotSegment>> = {
   idle: "idle",
   calling: "calling",
-  working: "working"
+  working: "working",
+  sleeping: "sleeping"
 }
 
 export const botMascotSegments: Readonly<Record<BotMascotSegment, SegmentInfo>> = {
@@ -64,7 +75,10 @@ export const botMascotSegments: Readonly<Record<BotMascotSegment, SegmentInfo>> 
   angryHangUp: segmentInfo("Angry hang-up", "calling", "idle", callSeconds.angryHangUp),
   startWorking: segmentInfo("Start working", "idle", "working", WORKING_SWING),
   working: { ...segmentInfo("Working", "working", "working", CLIPBOARD_LOOP), loops: true },
-  stopWorking: segmentInfo("Stop working", "working", "idle", WORKING_SWING)
+  stopWorking: segmentInfo("Stop working", "working", "idle", WORKING_SWING),
+  fallAsleep: segmentInfo("Fall asleep", "idle", "sleeping", FALL_ASLEEP),
+  sleeping: { ...segmentInfo("Sleeping", "sleeping", "sleeping", SLEEP_LOOP), loops: true },
+  wakeUp: segmentInfo("Wake up", "sleeping", "idle", WAKE_UP)
 }
 
 export const botMascotSegmentIds: ReadonlyArray<BotMascotSegment> =
@@ -99,8 +113,15 @@ export const soloFrame = (segment: BotMascotSegment, t: number): SegmentFrame =>
   segment,
   t,
   clock: t,
-  since: segment === "working" || segment === "stopWorking" ? WORKING_SWING : 0
+  since: soloSince[segment] ?? 0
 })
+
+const soloSince: Partial<Record<BotMascotSegment, number>> = {
+  working: WORKING_SWING,
+  stopWorking: WORKING_SWING,
+  sleeping: FALL_ASLEEP,
+  wakeUp: FALL_ASLEEP
+}
 
 function isBotMascotSegment(id: string): id is BotMascotSegment {
   return Object.hasOwn(botMascotSegments, id)
@@ -126,12 +147,14 @@ function endingCall(
 function toIdle(from: BotMascotState): ReadonlyArray<BotMascotSegment> {
   if (from === "calling") return ["hangUp"]
   if (from === "working") return ["stopWorking"]
+  if (from === "sleeping") return ["wakeUp"]
   return []
 }
 
 function fromIdle(to: BotMascotState): ReadonlyArray<BotMascotSegment> {
   if (to === "calling") return ["pickUp"]
   if (to === "working") return ["startWorking"]
+  if (to === "sleeping") return ["fallAsleep"]
   return []
 }
 

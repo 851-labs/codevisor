@@ -50,7 +50,7 @@ export const eyewearEnum = enumXml("BotMascotEyewear", [
   "none",
   ...botMascotEyewear.map((e) => e.id)
 ])
-export const modeEnum = enumXml("BotMascotMode", ["idle", "working", "calling"])
+export const modeEnum = enumXml("BotMascotMode", ["idle", "working", "calling", "sleeping"])
 export const prop = {
   mode: newId(),
   hangUp: newId(),

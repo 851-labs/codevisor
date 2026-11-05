@@ -71,7 +71,16 @@ export interface CallingEffect {
   readonly op: number
 }
 
-export type Effect = DotEffect | ClipboardEffect | CallingEffect
+export interface SleepZEffect {
+  readonly kind: "z"
+  readonly x: number
+  readonly y: number
+  readonly size: number
+  readonly rot: number
+  readonly op: number
+}
+
+export type Effect = DotEffect | ClipboardEffect | CallingEffect | SleepZEffect
 
 export interface BotMascotPose {
   readonly y?: number

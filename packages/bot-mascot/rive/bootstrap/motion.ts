@@ -18,6 +18,7 @@ import {
 } from "../../src/animations/calling-swap.js"
 import { armsFrameState, type ArmsFrameState } from "../../src/animations/idle-working.js"
 import { apply, invert, multiply, parseTransform, placement } from "../../src/animations/matrix.js"
+import { fallingAsleep, sleepPose, wakingUp } from "../../src/animations/sleeping.js"
 import { flipState, holdPoint, type CarryLayer } from "../../src/animations/working-flip.js"
 import { poseArm, type Matrix, type PosedArm } from "../../src/arms/arm-pose.js"
 import type { RigArm, Torso } from "../../src/arms/rig-arm.js"
@@ -30,7 +31,9 @@ import { renderContext, withHands } from "../../src/render/context.js"
 import { renderFrame } from "../../src/render/frame.js"
 import { svgBody, svgTransform } from "../../src/render/svg-parts.js"
 
-export type Segment = CallSegment | "startWorking" | "working" | "stopWorking"
+type SleepSegment = "fallAsleep" | "sleeping" | "wakeUp"
+
+export type Segment = CallSegment | SleepSegment | "startWorking" | "working" | "stopWorking"
 
 export interface ArmSample {
   readonly arm: RigArm
@@ -68,7 +71,20 @@ export const tfMatrix = (pose: BotMascotPose): Matrix => {
 export function sample(segment: Segment, t: number): Sample {
   if (segment === "startWorking" || segment === "working" || segment === "stopWorking")
     return workingSample(segment, t)
+  if (segment === "fallAsleep" || segment === "sleeping" || segment === "wakeUp")
+    return sleepSample(sleepPoses[segment](t))
   return callingSample(segment, t)
+}
+
+const sleepPoses: Readonly<Record<SleepSegment, (t: number) => BotMascotPose>> = {
+  fallAsleep: (t) => fallingAsleep(t, idleAt(t)),
+  sleeping: (t) => sleepPose(t),
+  wakeUp: (t) => wakingUp(t, 0, idleAt(t))
+}
+
+function sleepSample(pose: BotMascotPose): Sample {
+  const s = renderFrame(renderContext(), PAL, pose, { viewBox: VIEW, uid: "z" })
+  return { pose, body: svgBody(s), arms: { left: null, right: null }, phone: null, board: null }
 }
 
 function workingSample(segment: Segment, t: number): Sample {

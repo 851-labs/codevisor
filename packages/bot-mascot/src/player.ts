@@ -111,7 +111,7 @@ export class BotMascotPlayer {
     this.config = next
   }
 
-  request(request: BotMascotRequest, now: number): void {
+  request(request: Exclude<BotMascotRequest, "sleeping">, now: number): void {
     if (request === "hangUp" || request === "angryHangUp") return this.endCall(request, now)
     this.update({ mood: request }, now)
   }

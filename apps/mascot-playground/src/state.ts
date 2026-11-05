@@ -7,7 +7,7 @@ export type Backdrop = "light" | "dark"
 export type ArmSide = "left" | "right"
 export type View = "outfit" | "animation"
 export type Theme = "light" | "dark"
-export type Move = "idle" | "working" | "calling" | "hangUp" | "angryHangUp"
+export type Move = "idle" | "working" | "calling" | "sleeping" | "hangUp" | "angryHangUp"
 
 export interface ArmControls {
   readonly on: boolean
@@ -69,7 +69,14 @@ export const armLayers: ReadonlyArray<ArmLayerChoice> = ["front", "behind", "bod
 export const backdrops: ReadonlyArray<Backdrop> = ["light", "dark"]
 export const views: ReadonlyArray<View> = ["outfit", "animation"]
 export const themes: ReadonlyArray<Theme> = ["light", "dark"]
-export const moves: ReadonlyArray<Move> = ["idle", "working", "calling", "hangUp", "angryHangUp"]
+export const moves: ReadonlyArray<Move> = [
+  "idle",
+  "working",
+  "calling",
+  "sleeping",
+  "hangUp",
+  "angryHangUp"
+]
 export const frameRates: ReadonlyArray<number> = [12, 24, 30, 60]
 export const speeds: ReadonlyArray<number> = [0.1, 0.25, 0.5, 1, 1.5, 2]
 
