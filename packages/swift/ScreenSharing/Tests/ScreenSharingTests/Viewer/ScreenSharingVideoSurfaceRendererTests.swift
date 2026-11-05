@@ -20,7 +20,7 @@ import Testing
     labels = plain.snapshot().labels
     #expect(labels["renderPreparation"] == "main actor (MTKView)")
     #expect(labels["drawableAcquisitionPath"] == "MTKView.currentDrawable on main actor")
-    #expect(labels["maximumDrawableCount"] == "2")
+    #expect(labels["maximumDrawableCount"] == "3")
     standard.stop()
   }
 }

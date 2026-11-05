@@ -1,6 +1,7 @@
 import AppKit
 import CodevisorNet
 import ScreenSharing
+import ScreenSharingBench
 import ScreenSharingV2
 
 @MainActor
@@ -14,6 +15,7 @@ final class CodevisorV2Viewer {
   private let connection: NetConnectionHandle
   private let transport: ScreenSharingIrohMediaTransport
   private let viewer: ScreenSharingV2Viewer
+  private let continuousMinusAbsoluteNs: Int64
   private let surface: V2Surface
   private var control: BenchViewerControl?
 
@@ -49,6 +51,8 @@ final class CodevisorV2Viewer {
     let transport = ScreenSharingIrohMediaTransport(
       session: await connection.openMediaSession(config: ScreenSharingIrohMediaTransport.sessionConfig))
     let viewer = ScreenSharingV2Viewer(transport: transport, metrics: ScreenSharingMetrics())
+    viewer.metrics.commits.isRecording = true
+    continuousMinusAbsoluteNs = BenchMachClock.continuousMinusAbsoluteNs()
     viewer.frames.retainsLatest = true
     do {
       surface = try V2Surface(presentation, mailbox: viewer.frames, metrics: viewer.metrics)
@@ -77,6 +81,7 @@ final class CodevisorV2Viewer {
   private func result(host: String, presentation: V2Presentation) -> CodevisorV2ViewResult {
     CodevisorV2ViewResult(
       host: host, presentation: presentation, metrics: viewer.metrics, droppedFrames: viewer.frames.droppedFrames,
+      continuousMinusAbsoluteNs: continuousMinusAbsoluteNs,
       media: V2MediaStatistics.dictionary(transport.session.stats()),
       paths: connection.paths().map { "\($0.isRelay ? "relay" : "direct") \($0.remote) \($0.rttMs) ms" },
       control: control?.summary)

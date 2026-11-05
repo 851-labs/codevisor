@@ -3,40 +3,46 @@ import Foundation
 public struct ScreenSharingCommitRecord: Codable, Equatable, Sendable {
   public let committedNs: Int64
   public let rtpTimestamp: UInt32
-  public let sourceTimestampNs: Int64
-  public var presentedAt: Double?
+  public let sourceTimestampNs: Int64?
+  public var presentedNs: Int64?
 }
 
 public final class ScreenSharingCommitLog: @unchecked Sendable {
   public static let capacity = 4096
 
   private let lock = NSLock()
-  private var records: [ScreenSharingCommitRecord] = []
-  private var first = 0
+  private var ring = [ScreenSharingCommitRecord?](repeating: nil, count: capacity)
+  private var next = 0
+  private var recording = false
 
   package init() {}
 
-  package func record(_ record: ScreenSharingCommitRecord) -> Int {
+  public var isRecording: Bool {
+    get { lock.withLock { recording } }
+    set { lock.withLock { recording = newValue } }
+  }
+
+  package func record(_ record: ScreenSharingCommitRecord) -> Int? {
     lock.withLock {
-      if records.count == Self.capacity {
-        records.removeFirst()
-        first += 1
-      }
-      records.append(record)
-      return first + records.count - 1
+      guard recording else { return nil }
+
+      ring[next % Self.capacity] = record
+      next += 1
+      return next - 1
     }
   }
 
-  package func presented(_ entry: Int, at presentedAt: Double) {
+  package func presented(_ entry: Int, atNs presentedNs: Int64) {
     lock.withLock {
-      let index = entry - first
-      guard records.indices.contains(index) else { return }
+      guard entry >= next - Self.capacity, entry < next else { return }
 
-      records[index].presentedAt = presentedAt
+      ring[entry % Self.capacity]?.presentedNs = presentedNs
     }
   }
 
   public func all() -> [ScreenSharingCommitRecord] {
-    lock.withLock { records }
+    lock.withLock {
+      (max(0, next - Self.capacity)..<next).compactMap { ring[$0 % Self.capacity] }
+    }
   }
 }
