@@ -11,7 +11,7 @@ struct MachineDesktopPreview: View {
 
   var body: some View {
     ZStack {
-      Rectangle().fill(.quaternary)
+      Color.clear
       if isRegistered, isStreaming {
         session.preview.makeView()
           .allowsHitTesting(false)
