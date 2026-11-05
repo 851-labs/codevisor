@@ -5,7 +5,7 @@ import Testing
 struct ScreenSharingV2EncoderRouteTests {
   private static let fastAfterNs = ScreenSharingV2EncoderRoute.fastAfterNs
   private static let slowAfterNs = ScreenSharingV2EncoderRoute.slowAfterNs
-  private static let fast = 20_000_000
+  private static let fast = 30_000_000
   private static let slow = 1_000_000
 
   @Test func aFastLinkMovesToTheFastEncoderOnlyOnceItHeldForTheHoldWithFreshFeedback() {
@@ -100,6 +100,23 @@ struct ScreenSharingV2EncoderRouteTests {
     #expect(!slowSwitched)
     #expect(!fastSwitched)
     #expect((slow.choice, fast.choice) == (.slow, .fast))
+  }
+
+  @Test func afterMovingBackToTheSlowEncoderTheNextMoveUpWaitsLonger() {
+    var route = fastRoute()
+    route.observe(bitrate: Self.slow, atNs: 2 * Self.fastAfterNs)
+    _ = route.update(atNs: 2 * Self.fastAfterNs + Self.slowAfterNs)
+    let backUpAt = 3 * Self.fastAfterNs
+
+    route.observe(bitrate: Self.fast, atNs: backUpAt)
+    route.observe(roundTripMs: 20, atNs: backUpAt + Self.fastAfterNs)
+    let early = route.update(atNs: backUpAt + Self.fastAfterNs)
+    route.observe(roundTripMs: 20, atNs: backUpAt + ScreenSharingV2EncoderRoute.fastAgainAfterNs)
+    let due = route.update(atNs: backUpAt + ScreenSharingV2EncoderRoute.fastAgainAfterNs)
+
+    #expect(!early)
+    #expect(due)
+    #expect(route.choice == .fast)
   }
 
   @Test func aBriefDipDoesNotLeaveTheFastEncoder() {

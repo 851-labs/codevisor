@@ -55,8 +55,8 @@ public enum ScreenSharingV2Encoders {
   }
 
   private static var switchedLabel: String {
-    let fastFrom = ScreenSharingV2EncoderRoute.fastFromBitrate / 1_000_000
-    let slowBelow = ScreenSharingV2EncoderRoute.slowBelowBitrate / 1_000_000
+    let fastFrom = Double(ScreenSharingV2EncoderRoute.fastFromBitrate) / 1_000_000
+    let slowBelow = Double(ScreenSharingV2EncoderRoute.slowBelowBitrate) / 1_000_000
     return "VideoProcessing VCP HEVC 4:4:4 from \(fastFrom) Mbit/s, VideoToolbox HEVC Main below \(slowBelow) Mbit/s"
   }
 }

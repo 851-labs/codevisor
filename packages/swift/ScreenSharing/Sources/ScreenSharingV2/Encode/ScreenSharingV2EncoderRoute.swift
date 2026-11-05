@@ -4,9 +4,10 @@ struct ScreenSharingV2EncoderRoute: Sendable, Equatable {
     case slow
   }
 
-  static let fastFromBitrate = 12_000_000
+  static let fastFromBitrate = ScreenSharingVCPRate.nearLosslessFromBitsPerSecond
   static let slowBelowBitrate = 8_000_000
   static let fastAfterNs: Int64 = 5_000_000_000
+  static let fastAgainAfterNs: Int64 = 30_000_000_000
   static let slowAfterNs: Int64 = 1_000_000_000
   static let feedbackFreshNs: Int64 = 1_000_000_000
   static let queuedAboveMs = 50.0
@@ -19,6 +20,7 @@ struct ScreenSharingV2EncoderRoute: Sendable, Equatable {
   private var shortestRoundTripMs: Double?
   private var shortestRoundTripNs: Int64 = 0
   private var lastRoundTripMs: Double?
+  private var movedToSlow = false
 
   init(bitrate: Int, atNs nowNs: Int64) {
     self.bitrate = bitrate
@@ -28,7 +30,7 @@ struct ScreenSharingV2EncoderRoute: Sendable, Equatable {
   var switchDueNs: Int64? {
     guard let wanted, let wantedSinceNs else { return nil }
 
-    return wantedSinceNs + Self.holdNs(before: wanted)
+    return wantedSinceNs + holdNs(before: wanted)
   }
 
   mutating func observe(bitrate: Int, atNs nowNs: Int64) {
@@ -56,6 +58,7 @@ struct ScreenSharingV2EncoderRoute: Sendable, Equatable {
 
     choice = wanted
     wantedSinceNs = nil
+    movedToSlow = movedToSlow || wanted == .slow
     return true
   }
 
@@ -81,10 +84,10 @@ struct ScreenSharingV2EncoderRoute: Sendable, Equatable {
     return feedbackNs.map { nowNs - $0 <= Self.feedbackFreshNs } ?? false
   }
 
-  private static func holdNs(before choice: Choice) -> Int64 {
+  private func holdNs(before choice: Choice) -> Int64 {
     switch choice {
-    case .fast: fastAfterNs
-    case .slow: slowAfterNs
+    case .fast: movedToSlow ? Self.fastAgainAfterNs : Self.fastAfterNs
+    case .slow: Self.slowAfterNs
     }
   }
 }
