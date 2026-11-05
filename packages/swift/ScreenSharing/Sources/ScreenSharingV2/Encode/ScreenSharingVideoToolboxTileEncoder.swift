@@ -99,7 +99,9 @@ public final class ScreenSharingVideoToolboxTileEncoder: ScreenSharingTileEncode
   }
 
   private func share(_ bitsPerSecond: Int, with session: ScreenSharingVideoToolboxTileSession) {
-    do { try session.share(bitsPerSecond) } catch { metrics.label("lastBitrateError", error.localizedDescription) }
+    let opening = ScreenSharingV2Profile.openingBitrate / layout.count
+    let target = session.hasEncoded ? bitsPerSecond : min(bitsPerSecond, opening)
+    do { try session.share(target) } catch { metrics.label("lastBitrateError", error.localizedDescription) }
   }
 
   private func fail(_ tile: Int, _ request: ScreenSharingTileEncodeRequest, _ error: any Error) {

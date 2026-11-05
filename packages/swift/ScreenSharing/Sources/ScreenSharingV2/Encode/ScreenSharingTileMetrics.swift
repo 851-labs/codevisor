@@ -10,7 +10,10 @@ struct ScreenSharingTileMetrics {
   func record(_ tile: ScreenSharingEncodedTile) {
     metrics.increment("encodedFrames")
     metrics.increment("encodedBytes", by: tile.accessUnit.count)
-    if tile.isKeyFrame { metrics.increment("encodedKeyFrames") }
+    if tile.isKeyFrame {
+      metrics.increment("encodedKeyFrames")
+      metrics.increment("encodedKeyFrameBytes", by: tile.accessUnit.count)
+    }
     if tile.refresh == .longTermReference { metrics.increment("encodedLTRRefreshes") }
     if tile.ltrToken != nil { metrics.increment("encodedLTRFrames") }
     if tile.update.isRefinement { metrics.increment("encodedRefinements") }

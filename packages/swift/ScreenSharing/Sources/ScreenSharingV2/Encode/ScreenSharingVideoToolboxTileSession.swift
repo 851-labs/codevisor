@@ -8,7 +8,7 @@ final class ScreenSharingVideoToolboxTileSession: @unchecked Sendable {
     var inFlight: Set<UInt64> = []
     var nextSubmission: UInt64 = 0
     var acknowledged: [UInt64] = []
-    var lastPresentationNs: Int64 = 0
+    var clock: ScreenSharingEncoderPresentationClock
     var sessionFailed = false
     var closed = false
     var bitrate: Int
@@ -43,11 +43,14 @@ final class ScreenSharingVideoToolboxTileSession: @unchecked Sendable {
     self.factory = factory
     self.metrics = metrics
     self.relay = relay
-    state = Mutex(State(bitrate: factory.bitrate))
+    let clock = ScreenSharingEncoderPresentationClock(framesPerSecond: factory.framesPerSecond)
+    state = Mutex(State(clock: clock, bitrate: factory.bitrate))
     session = try factory.make()
   }
 
   var bitrate: Int { state.withLock { $0.bitrate } }
+
+  var hasEncoded: Bool { state.withLock { $0.nextSubmission > 0 } }
 
   func share(_ bitsPerSecond: Int) throws {
     let applied = bitrate
@@ -134,11 +137,11 @@ final class ScreenSharingVideoToolboxTileSession: @unchecked Sendable {
       state.acknowledged = []
       state.nextSubmission += 1
       state.inFlight.insert(state.nextSubmission)
-      state.lastPresentationNs = max(state.lastPresentationNs + 1, submittedNs)
+      let presentationNs = state.clock.presentationNs(submittedAtNs: submittedNs)
       let submission = Submission(
         id: state.nextSubmission, update: request.update, sourceTimestampNs: request.sourceTimestampNs,
         capturedNs: request.capturedNs, refresh: request.refreshes[tile], submittedNs: submittedNs)
-      return (submission, acknowledged, state.lastPresentationNs)
+      return (submission, acknowledged, presentationNs)
     }
   }
 

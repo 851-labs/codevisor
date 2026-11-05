@@ -31,8 +31,31 @@ public enum ScreenSharingV2Encoders {
     _ configuration: ScreenSharingVideoConfiguration, metrics: ScreenSharingMetrics
   ) async throws -> any ScreenSharingTileEncoder {
     try await ScreenSharingVCPSelfTest.pass()
-    let primary = try ScreenSharingVCPTileEncoder(
-      configuration: configuration, layout: ScreenSharingV2Profile.tileLayout(for: configuration), metrics: metrics)
-    return withVideoToolboxFallback(primary, configuration: configuration, metrics: metrics)
+    let layout = ScreenSharingV2Profile.tileLayout(for: configuration)
+    let primary = try ScreenSharingVCPTileEncoder(configuration: configuration, layout: layout, metrics: metrics)
+    let switched = withVideoToolboxOnSlowLinks(primary, configuration: configuration, metrics: metrics)
+    return withVideoToolboxFallback(switched, configuration: configuration, metrics: metrics)
+  }
+
+  private static func withVideoToolboxOnSlowLinks(
+    _ fast: ScreenSharingVCPTileEncoder, configuration: ScreenSharingVideoConfiguration, metrics: ScreenSharingMetrics
+  ) -> any ScreenSharingTileEncoder {
+    do {
+      let slow = try ScreenSharingVideoToolboxTileEncoder(
+        configuration: configuration, layout: fast.layout, metrics: metrics)
+      let switched = try ScreenSharingRateSwitchedTileEncoder(
+        fast: fast, slow: slow, bitrate: configuration.bitrate, metrics: metrics)
+      metrics.label("encoder", Self.switchedLabel)
+      return switched
+    } catch {
+      metrics.label("encoderRouteError", error.localizedDescription)
+      return fast
+    }
+  }
+
+  private static var switchedLabel: String {
+    let fastFrom = ScreenSharingV2EncoderRoute.fastFromBitrate / 1_000_000
+    let slowBelow = ScreenSharingV2EncoderRoute.slowBelowBitrate / 1_000_000
+    return "VideoProcessing VCP HEVC 4:4:4 from \(fastFrom) Mbit/s, VideoToolbox HEVC Main below \(slowBelow) Mbit/s"
   }
 }

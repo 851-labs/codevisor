@@ -122,6 +122,7 @@ public final class ScreenSharingFallbackTileEncoder: ScreenSharingTileEncoder, @
     case .dropped(let tile, let refresh), .failed(let tile, let refresh, _):
       .failed(tile: tile, refresh: refresh, message: "Encoded after the fallback")
     case .unchanged(let tile, _): .failed(tile: tile, refresh: nil, message: "Encoded after the fallback")
+    case .keyframeNeeded: output
     }
   }
 

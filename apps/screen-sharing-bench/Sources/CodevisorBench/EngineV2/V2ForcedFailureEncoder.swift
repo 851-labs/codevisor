@@ -59,6 +59,7 @@ final class V2ForcedFailureEncoder: ScreenSharingTileEncoder, @unchecked Sendabl
     case .dropped(let tile, let refresh), .failed(let tile, let refresh, _):
       .failed(tile: tile, refresh: refresh, message: message)
     case .unchanged(let tile, _): .failed(tile: tile, refresh: nil, message: message)
+    case .keyframeNeeded: result
     }
   }
 }
