@@ -11,15 +11,19 @@ struct WorkspaceInspectorCardRows<Content: View>: View {
             Rectangle()
               .fill(Color.primary.opacity(0.05))
               .frame(height: 1)
-              .padding(.horizontal, 10)
+              .padding(.horizontal, WorkspaceInspectorCardShape.rowPadding)
           }
           subview
             .frame(maxWidth: .infinity, alignment: .leading)
-            .padding(10)
+            .padding(padding(for: subview))
         }
       }
     }
     .labeledContentStyle(WorkspaceInspectorLabeledContentStyle())
     .labelStyle(WorkspaceInspectorLabelStyle())
+  }
+
+  private func padding(for subview: Subview) -> CGFloat {
+    subview.containerValues.fillsWorkspaceInspectorCardRow ? 0 : WorkspaceInspectorCardShape.rowPadding
   }
 }
