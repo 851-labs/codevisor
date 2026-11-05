@@ -43,8 +43,8 @@ import Testing
 
   private func pane(machine: String = "studio", udid: String = "iphone") -> SimulatorStreamHandle {
     let sponsor = SimulatorStreamSponsor(
-      workspaceId: UUID(), paneId: UUID(), client: CodevisorServerClient(config: .init()), v2: nil,
-      openTunnel: nil)
+      workspaceId: UUID(), paneId: UUID(), client: CodevisorServerClient(config: .init()),
+      v2: SimulatorStreamV2(address: { nil }, connect: { _ in throw CancellationError() }))
     return registry.handle(machineId: machine, udid: udid, sponsor: sponsor)
   }
 

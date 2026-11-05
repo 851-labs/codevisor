@@ -29,8 +29,8 @@ final class SimulatorV2Peer: SimulatorStreamPeer {
   private let viewerEndpointId: String
   private nonisolated let frames: ScreenSharingV2LatestFrame
 
-  init(size: CGSize, viewerEndpointId: String) throws {
-    stream = ScreenSharingV2StreamLink(configuration: try Self.configuration(size: size))
+  init(size: CGSize, viewerEndpointId: String, encoder: ScreenSharingV2EncoderKind) throws {
+    stream = ScreenSharingV2StreamLink(configuration: try Self.configuration(size: size), encoder: encoder)
     self.viewerEndpointId = viewerEndpointId
     frames = stream.frames
   }
@@ -227,7 +227,7 @@ final class SimulatorStreamHost {
       }
       let peer: any SimulatorStreamPeer
       do {
-        peer = try await makePeer(size: size, media: media, viewerId: request.viewerId)
+        peer = try await makePeer(size: size, media: media, request: request)
       } catch {
         release(udid: udid)
         throw error
@@ -275,14 +275,15 @@ final class SimulatorStreamHost {
   }
 
   private func makePeer(
-    size: CGSize, media: ScreenSharingStreamMedia, viewerId: UUID
+    size: CGSize, media: ScreenSharingStreamMedia, request: ServerScreenSharingRequest
   ) async throws -> any SimulatorStreamPeer {
     switch media {
     case .v2(let viewerEndpointId):
-      return try SimulatorV2Peer(size: size, viewerEndpointId: viewerEndpointId)
+      return try SimulatorV2Peer(
+        size: size, viewerEndpointId: viewerEndpointId, encoder: .forViewer(chroma: request.chroma))
     case .webRTC(let offer):
       return try await SimulatorWebRTCPeer(
-        size: size, offer: offer, connectivity: try connectivity.make(viewerId: viewerId))
+        size: size, offer: offer, connectivity: try connectivity.make(viewerId: request.viewerId))
     }
   }
 

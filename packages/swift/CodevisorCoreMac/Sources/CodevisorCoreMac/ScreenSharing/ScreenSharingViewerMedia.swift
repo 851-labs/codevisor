@@ -7,16 +7,7 @@ import ScreenSharingV2
 public enum ScreenSharingViewerMedia {
   static var connector: ScreenSharingV2Connector { .live(connectLocally: connectLocally) }
 
-  public static func address() async -> ServerScreenSharingMediaAddress? {
-    await ScreenSharingMediaEndpoint.shared.viewerAddress()
-  }
-
-  public static func connect(to grant: ServerScreenSharingMediaGrant) async throws -> any ScreenSharingSimulatorSession
-  {
-    try await ScreenSharingMediaEndpoint.shared.connectViewer(to: grant, locally: connectLocally)
-  }
-
-  private static func connectLocally(_ token: String) -> (any ScreenSharingV2Connection)? {
+  public static func connectLocally(_ token: String) -> (any ScreenSharingV2Connection)? {
     ScreenSharingV2Acceptor.shared.connectLocally(token: token)
   }
 }

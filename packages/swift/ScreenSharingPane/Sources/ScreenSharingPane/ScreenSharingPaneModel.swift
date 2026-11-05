@@ -49,7 +49,7 @@ public final class ScreenSharingPaneModel {
         v2: ScreenSharingMediaEndpoint.shared.isAvailable ? Self.engineV2() : nil))
   }
 
-  nonisolated static let requestedChroma = ScreenSharingV2Chroma.subsampled
+  public nonisolated static let requestedChroma = ScreenSharingV2Chroma.subsampled
 
   private static func engineV2() -> ScreenSharingV2Connector {
     var connector = ScreenSharingV2Connector.live()
