@@ -1,15 +1,10 @@
-import CodevisorCore
 import CodevisorUI
 import SwiftUI
 
 struct ShortcutsSettingsView: View {
-  @ClientPreference(FeatureFlag.bots.preferenceKey, default: false) private var botsEnabled
-
-  private var hiddenShortcuts: Set<ShortcutID> { botsEnabled ? [] : [.newBot] }
-
   var body: some View {
     Form {
-      ForEach(ShortcutCatalog.listedByCategory(excluding: hiddenShortcuts), id: \.category) { group in
+      ForEach(ShortcutCatalog.listedByCategory, id: \.category) { group in
         Section {
           ForEach(group.shortcuts) { shortcut in
             ShortcutRow(shortcut: shortcut)

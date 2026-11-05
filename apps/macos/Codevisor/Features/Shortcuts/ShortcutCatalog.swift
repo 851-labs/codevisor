@@ -148,10 +148,8 @@ enum ShortcutCatalog {
     ShortcutID.allCases.map { definition(for: $0) }
   }
 
-  static func listedByCategory(
-    excluding hidden: Set<ShortcutID>
-  ) -> [(category: ShortcutCategory, shortcuts: [ShortcutDefinition])] {
-    let listable = all.filter { $0.displayString != nil && !hidden.contains($0.id) }
+  static var listedByCategory: [(category: ShortcutCategory, shortcuts: [ShortcutDefinition])] {
+    let listable = all.filter { $0.displayString != nil }
     return ShortcutCategory.allCases.compactMap { category in
       let shortcuts = listable.filter { $0.category == category }
       return shortcuts.isEmpty ? nil : (category, shortcuts)
@@ -163,7 +161,7 @@ enum ShortcutCatalog {
     case .newChat:
       ShortcutDefinition(.newChat, "New Chat", ShortcutCombo("n", .command), category: .chats)
     case .newBot:
-      ShortcutDefinition(.newBot, "New Bot…", ShortcutCombo("n", [.command, .shift]), category: .chats)
+      ShortcutDefinition(.newBot, "New Bot…", nil, category: .chats)
     case .newProject:
       ShortcutDefinition(.newProject, "New Project…", nil, category: .chats)
     case .archiveWorkspace:
