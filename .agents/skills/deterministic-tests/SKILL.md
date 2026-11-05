@@ -101,6 +101,16 @@ test target over another bespoke implementation.
 - Never disable parallelism to mask shared-state races; remove the shared
   mutable state. Bound aggregate worker concurrency when real integrations
   would otherwise oversubscribe the machine.
+- Vitest test files share loaded modules within a worker
+  (`@codevisor/vitest-config`). Name a file `*.isolated.test.ts` when it uses
+  `vi.mock`, `vi.doMock`, or `vi.resetModules`. Don't register hooks at the
+  top level of a support module; register cleanup with `onTestFinished` when
+  the resource is created, or put per-file hooks in the package's
+  `src/test-setup.ts`. Test order is shuffled; reproduce an order failure
+  with the printed seed (`--sequence.seed=<seed>`).
+- After overriding a module-level `vi.fn` with `mockImplementation`, reset it
+  in cleanup with `mockReset`/`vi.resetAllMocks`, which restore the original
+  implementation. `clearAllMocks` only clears calls.
 - TCA's `TestStore` and `withMainSerialExecutor` install a process-wide Swift
   executor override. Run the full Swift suites with `bun run swift:test`, which
   isolates those suites from other tests without disabling parallelism. Register

@@ -1,6 +1,43 @@
-import { mergeConfig, type ViteUserConfig } from "vitest/config"
+import {
+  configDefaults,
+  mergeConfig,
+  type TestProjectInlineConfiguration,
+  type ViteUserConfig
+} from "vitest/config"
 
-export const defineTestConfig = (config: ViteUserConfig): ViteUserConfig =>
-  mergeConfig(config, { test: testStateResets })
+const isolatedTestSuffix = ".isolated.test.ts"
 
+export const defineTestConfig = (config: ViteUserConfig): ViteUserConfig => {
+  const { include = defaultInclude, ...test } = config.test ?? {}
+  return mergeConfig(
+    { ...config, test },
+    {
+      test: {
+        ...testStateResets,
+        sequence: { shuffle: true },
+        projects: [sharedModuleTests(include), isolatedModuleTests(include)]
+      }
+    }
+  )
+}
+
+const defaultInclude = ["**/*.test.ts"]
 const testStateResets = { restoreMocks: true, unstubEnvs: true, unstubGlobals: true }
+
+const sharedModuleTests = (include: Array<string>): TestProjectInlineConfiguration => ({
+  extends: true,
+  test: {
+    name: "shared",
+    include,
+    exclude: [...configDefaults.exclude, `**/*${isolatedTestSuffix}`],
+    isolate: false
+  }
+})
+
+const isolatedModuleTests = (include: Array<string>): TestProjectInlineConfiguration => ({
+  extends: true,
+  test: { name: "isolated", include: include.map(isolatedPattern) }
+})
+
+const isolatedPattern = (pattern: string): string =>
+  pattern.replace(/\.test\.ts$/, isolatedTestSuffix)

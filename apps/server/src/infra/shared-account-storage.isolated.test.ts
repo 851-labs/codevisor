@@ -36,7 +36,7 @@ const platform = Object.getOwnPropertyDescriptor(process, "platform")!
 const dirs: string[] = []
 afterEach(async () => {
   Object.defineProperty(process, "platform", platform)
-  vi.clearAllMocks()
+  vi.resetAllMocks()
   vi.unstubAllGlobals()
   for (const dir of dirs.splice(0)) await rm(dir, { recursive: true, force: true })
 })
