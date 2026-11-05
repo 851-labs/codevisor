@@ -109,14 +109,13 @@ test("skipping the hardware codec tests removes them from both test runs and not
   assert.equal(isolated[isolated.indexOf("--filter") + 1], mainSerialExecutorFilter)
   const pattern = new RegExp(hardwareCodecFilter)
   for (const id of [
-    "ScreenSharingTests.HardwareCodecTests/ScreenSharingCodecRoundTripTests/hevcRoundTrips()",
-    "ScreenSharingV2Tests.HardwareCodecTests/ScreenSharingV2EngineTests/streams()",
-    "ScreenSharingWebRTCTests.ScreenSharingPeerLoopbackTests/negotiationConnects()"
+    "ScreenSharingPaneTests.HardwareCodecTests/ScreenSharingStreamV2LoopbackTests/viewsOverQUIC()",
+    "ScreenSharingV2Tests.HardwareCodecTests/ScreenSharingV2EngineTests/streams()"
   ]) {
     assert.ok(pattern.test(id), id)
   }
   assert.ok(!pattern.test("ScreenSharingTests.RFBTightTests/decodesTight()"))
-  assert.ok(!pattern.test("ScreenSharingWebRTCTests.ScreenSharingCodecFactoryTests/adapters()"))
+  assert.ok(!pattern.test("ScreenSharingV2Tests.ScreenSharingV2ChromaTests/encoderChoice()"))
 
   const full = recorder()
   await runSwiftTests([], full)

@@ -16,12 +16,7 @@ export const mainSerialExecutorSuites = JSON.parse(
 
 export const mainSerialExecutorFilter = `(${mainSerialExecutorSuites.join("|")})/`
 
-export const hardwareCodecSuites = [
-  "HardwareCodecTests",
-  "ScreenSharingPeerLoopbackTests",
-  "ScreenSharingHDRLoopbackTests",
-  "ScreenSharingProductProfileTests"
-]
+export const hardwareCodecSuites = ["HardwareCodecTests"]
 
 export const hardwareCodecFilter = `(${hardwareCodecSuites.join("|")})/`
 

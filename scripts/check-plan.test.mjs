@@ -100,7 +100,7 @@ test("Swift tests skip the hardware codec suites unless screen sharing or what i
   }
   for (const file of [
     "packages/swift/ScreenSharing/Sources/ScreenSharing/Encoder.swift",
-    "packages/swift/ScreenSharing/Tests/ScreenSharingWebRTCTests/LoopbackTests.swift",
+    "packages/swift/ScreenSharing/Tests/ScreenSharingV2Tests/LoopbackTests.swift",
     "packages/swift/CodevisorNet/Sources/CodevisorNet/Session.swift",
     "packages/swift/TestSupport/HardwareCodecLock.swift",
     "packages/swift/Package.swift",

@@ -29,7 +29,6 @@ let package = Package(
     .library(name: "ScreenSharingPane", targets: ["ScreenSharingPane"]),
     .library(name: "Autocomplete", targets: ["Autocomplete"]),
     .library(name: "ScreenSharing", targets: ["ScreenSharing"]),
-    .library(name: "ScreenSharingWebRTC", targets: ["ScreenSharingWebRTC"]),
     .library(name: "ScreenSharingV2", targets: ["ScreenSharingV2"]),
     .library(name: "CodevisorTestSupport", targets: ["CodevisorTestSupport"]),
   ],
@@ -45,23 +44,6 @@ let package = Package(
       name: "ScreenSharing",
       dependencies: ["CZlib"],
       path: "ScreenSharing/Sources/ScreenSharing",
-      swiftSettings: strictSwiftSettings
-    ),
-    .target(
-      name: "WebRTCProcessFieldTrials",
-      dependencies: ["WebRTC"],
-      path: "ScreenSharing/Sources/WebRTCProcessFieldTrials",
-      cSettings: strictCSettings
-    ),
-    .target(
-      name: "ScreenSharingWebRTC",
-      dependencies: ["ScreenSharing", "WebRTCProcessFieldTrials", "WebRTC"],
-      path: "ScreenSharing/Sources/ScreenSharingWebRTC",
-      resources: [
-        .copy("Resources/WebRTC-LICENSE.txt"),
-        .copy("Resources/WebRTC-ThirdPartyNotices-macOS.md"),
-        .copy("Resources/WebRTC-ThirdPartyNotices-iOS.md"),
-      ],
       swiftSettings: strictSwiftSettings
     ),
     .target(
@@ -122,13 +104,6 @@ let package = Package(
       path: "ScreenSharing/Tests/CodevisorBenchTests",
       swiftSettings: strictSwiftSettings
     ),
-    .testTarget(
-      name: "ScreenSharingWebRTCTests",
-      dependencies: ["ScreenSharingWebRTC", "CodevisorTestSupport"],
-      path: "ScreenSharing/Tests/ScreenSharingWebRTCTests",
-      swiftSettings: strictSwiftSettings,
-      linkerSettings: frameworksBesideTestBundle
-    ),
     .target(name: "CodevisorTestSupport", path: "TestSupport", swiftSettings: strictSwiftSettings),
     .testTarget(
       name: "CodevisorTestSupportTests",
@@ -140,11 +115,6 @@ let package = Package(
       name: "CGVirtualDisplayPrivate", path: "CGVirtualDisplayPrivate", publicHeadersPath: "include",
       cSettings: strictCSettings, linkerSettings: [.linkedFramework("CoreGraphics")]),
     .binaryTarget(name: "CodevisorNetFFI", path: "Frameworks/CodevisorNetFFI.xcframework"),
-    .binaryTarget(
-      name: "WebRTC",
-      url: "https://updates.codevisor.dev/dev-artifacts/webrtc/152.0.0-codevisor.4/WebRTC.xcframework.zip",
-      checksum: "d3e5002bcc21c6f62948c58333e768ee47cb7c3d1aca618da99a3d21f9391992"
-    ),
     .binaryTarget(
       name: "Sentry",
       url: "https://github.com/getsentry/sentry-cocoa/releases/download/9.23.0/Sentry.xcframework.zip",
