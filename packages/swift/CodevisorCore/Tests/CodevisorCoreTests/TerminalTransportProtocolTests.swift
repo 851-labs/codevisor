@@ -93,16 +93,16 @@ private struct ReconnectTiming: Sendable {
       try await clock.sleep(for: duration)
     } else {
       reconnectWaiting.signal()
-      await releaseReconnect.wait()
+      await releaseReconnect.cancellableWait()
       try Task.checkCancellation()
     }
   }
 }
 
 @MainActor
-@Suite("Terminal transport protocol 2")
+@Suite("Terminal transport protocol 2", .timeLimit(.minutes(1)))
 struct TerminalTransportProtocolTests {
-  @Test("Binary output is delivered, and pings start once the server is ready", .timeLimit(.minutes(1)))
+  @Test("Binary output is delivered, and pings start once the server is ready")
   func binaryOutputAndPings() async throws {
     let socket = ProtocolSocket(messages: [
       .string(#"{"type":"ready","seq":0,"protocol":2}"#),
@@ -128,7 +128,7 @@ struct TerminalTransportProtocolTests {
       if case let .output(output, replayed) = event { received.append((output.text, replayed)) }
       if received.count == 2 { break }
     }
-    await socket.didSend.wait(for: 1)
+    await socket.didSend.cancellableWait(for: 1)
 
     #expect(received.map(\.0) == ["héllo", "\u{1B}cscreen"])
     #expect(received.map(\.1) == [false, true])
@@ -138,7 +138,7 @@ struct TerminalTransportProtocolTests {
     transport.detach()
   }
 
-  @Test("Hide and clear go to protocol 2 servers; older ones get Ctrl-L", .timeLimit(.minutes(1)))
+  @Test("Hide and clear go to protocol 2 servers; older ones get Ctrl-L")
   func hideAndClear() async throws {
     let modern = ProtocolSocket(messages: [.string(#"{"type":"ready","seq":0,"protocol":2}"#)])
     let transport = TerminalTransport(
@@ -152,11 +152,11 @@ struct TerminalTransportProtocolTests {
     )
     transport.sendResize(cols: 80, rows: 24)
     try await transport.open(sessionId: "s", cwd: "/", cols: 80, rows: 24)
-    await modern.didSend.wait(for: 2)
+    await modern.didSend.cancellableWait(for: 2)
     transport.sendHidden()
     transport.sendClear()
     transport.reassertSize()
-    await modern.didSend.wait(for: 5)
+    await modern.didSend.cancellableWait(for: 5)
     let types = modern.sentFrames.compactMap { $0["type"] as? String }.filter { $0 != "ping" }
     #expect(types == ["resize", "hide", "clear", "resize"])
     transport.detach()
@@ -174,13 +174,13 @@ struct TerminalTransportProtocolTests {
     old.sendHidden()
     old.sendFocus()
     old.sendClear()
-    await legacy.didSend.wait(for: 1)
+    await legacy.didSend.cancellableWait(for: 1)
     #expect(legacy.sentFrames.map { $0["type"] as? String } == ["input"])
     #expect(legacy.sentFrames.first?["data"] as? String == "\u{0C}")
     old.detach()
   }
 
-  @Test("Frames a dying socket swallowed are sent again after the reconnect", .timeLimit(.minutes(1)))
+  @Test("Frames a dying socket swallowed are sent again after the reconnect")
   func resendsUnacknowledgedFrames() async throws {
     let first = ProtocolSocket(messages: [
       .string(#"{"type":"ready","seq":0,"protocol":2}"#),
@@ -206,13 +206,13 @@ struct TerminalTransportProtocolTests {
     )
     transport.sendResize(cols: 80, rows: 24)
     try await transport.open(sessionId: "s", cwd: "/", cols: 80, rows: 24)
-    await acknowledged.wait()
-    await first.didSend.wait(for: 2)
+    await acknowledged.cancellableWait()
+    await first.didSend.cancellableWait(for: 2)
     transport.sendInput("ls")
-    await first.didSend.wait(for: 3)
+    await first.didSend.cancellableWait(for: 3)
     first.cancel(with: .abnormalClosure, reason: nil)
-    await sockets.didConnect.wait(for: 2)
-    await second.didSend.wait(for: 3)
+    await sockets.didConnect.cancellableWait(for: 2)
+    await second.didSend.cancellableWait(for: 3)
 
     let resent = second.sentFrames.filter { $0["type"] as? String != "ping" }
     #expect(resent.first?["type"] as? String == "input")
@@ -223,7 +223,7 @@ struct TerminalTransportProtocolTests {
     transport.detach()
   }
 
-  @Test("A claim is made again after a reconnect", .timeLimit(.minutes(1)))
+  @Test("A claim is made again after a reconnect")
   func claimSurvivesReconnect() async throws {
     let first = ProtocolSocket(messages: [.string(#"{"type":"ready","seq":0,"protocol":2}"#)])
     let second = ProtocolSocket(messages: [.string(#"{"type":"ready","seq":0,"protocol":2}"#)])
@@ -242,21 +242,21 @@ struct TerminalTransportProtocolTests {
     transport.sendResize(cols: 80, rows: 24)
     transport.sendFocus()
     try await transport.open(sessionId: "s", cwd: "/", cols: 80, rows: 24)
-    await first.didSend.wait(for: 3)
+    await first.didSend.cancellableWait(for: 3)
     #expect(first.sentFrames.compactMap { $0["type"] as? String }.filter { $0 != "ping" } == ["resize", "focus"])
     await timing.clock.waitForSleep(timing.pingInterval)
     first.cancel(with: .abnormalClosure, reason: nil)
-    await timing.reconnectWaiting.wait()
+    await timing.reconnectWaiting.cancellableWait()
     #expect(sockets.didConnect.value == 1)
     timing.releaseReconnect.signal()
-    await sockets.didConnect.wait(for: 2)
+    await sockets.didConnect.cancellableWait(for: 2)
     await timing.clock.waitForSleep(timing.pingInterval, count: 2)
-    await second.didSend.wait(for: 5)
+    await second.didSend.cancellableWait(for: 5)
     let types = second.sentFrames.compactMap { $0["type"] as? String }.filter { $0 != "ping" }
     #expect(types == ["resize", "focus", "resize", "focus"])
   }
 
-  @Test("Another client's size after the claim ends it", .timeLimit(.minutes(1)))
+  @Test("Another client's size after the claim ends it")
   func claimEndsWhenAnotherClientTakesTheSize() async throws {
     let first = ProtocolSocket(messages: [
       .string(#"{"type":"ready","seq":0,"protocol":2}"#),
@@ -288,18 +288,18 @@ struct TerminalTransportProtocolTests {
     transport.sendResize(cols: 80, rows: 24)
     transport.sendFocus()
     try await transport.open(sessionId: "s", cwd: "/", cols: 80, rows: 24)
-    await sizes.wait(for: 2)
+    await sizes.cancellableWait(for: 2)
     #expect(claimsAtSizes == [true, false])
     await timing.clock.waitForSleep(timing.pingInterval)
     first.cancel(with: .abnormalClosure, reason: nil)
-    await timing.reconnectWaiting.wait()
+    await timing.reconnectWaiting.cancellableWait()
     #expect(sockets.didConnect.value == 1)
     timing.releaseReconnect.signal()
-    await sockets.didConnect.wait(for: 2)
+    await sockets.didConnect.cancellableWait(for: 2)
     await timing.clock.waitForSleep(timing.pingInterval, count: 2)
-    await second.didSend.wait(for: 2)
+    await second.didSend.cancellableWait(for: 2)
     transport.sendClear()
-    await second.didSend.wait(for: 3)
+    await second.didSend.cancellableWait(for: 3)
     let types = second.sentFrames.compactMap { $0["type"] as? String }.filter { $0 != "ping" }
     #expect(types == ["resize", "clear"])
   }

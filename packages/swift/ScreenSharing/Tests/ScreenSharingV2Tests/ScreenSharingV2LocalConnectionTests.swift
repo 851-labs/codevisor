@@ -150,6 +150,7 @@ extension HardwareCodecTests {
     func framesCrossTheInMemoryTransportAndDecodeInOrder() async throws {
       let (hostTransport, viewerTransport) = ScreenSharingV2LocalMediaTransport.pair()
       let metrics = ScreenSharingMetrics()
+      try await HardwareEncoderBudget.require(videoToolboxTiles: 1)
       let encoder = try ScreenSharingVideoToolboxTileEncoder(
         configuration: try ScreenSharingV2Profile.captureConfiguration(width: 640, height: 360), metrics: metrics)
       let host = ScreenSharingV2Host(

@@ -1,24 +1,22 @@
-import CodevisorTestSupport
 import CoreMedia
+import CoreVideo
 import Foundation
 import Testing
 import VideoToolbox
 
-@testable import ScreenSharingV2
+public enum HardwareEncoderBudget {
+  public typealias SessionOpener = @Sendable (_ width: Int, _ height: Int) -> VTCompressionSession?
 
-enum HardwareEncoderBudget {
-  static let maximumSessionsPerTest = 6
-  static let sessionsPerVCPTile = 2
+  private static let maximumSessionsPerTest = 6
   private static let probeLimit = DispatchTimeInterval.seconds(10)
   private static let probeWidth = 640
   private static let probeHeight = 180
 
-  static func require(vcpTiles: Int = 0, videoToolboxTiles: Int = 0) async throws {
-    let needed = vcpTiles * sessionsPerVCPTile + videoToolboxTiles
+  public static func require(sessions needed: Int, opening open: @escaping SessionOpener) async throws {
     try #require(
       needed <= maximumSessionsPerTest, "A test may hold at most \(maximumSessionsPerTest) hardware encoder sessions.")
 
-    guard let opened = await probe(needed) else {
+    guard let opened = await probe(needed, open) else {
       try Test.cancel("Skipped: opening \(needed) hardware HEVC encoder sessions didn't finish in \(probeLimit).")
     }
     guard opened >= needed else {
@@ -28,27 +26,32 @@ enum HardwareEncoderBudget {
     }
   }
 
-  private static func probe(_ count: Int) async -> Int? {
+  private static func probe(_ count: Int, _ open: @escaping SessionOpener) async -> Int? {
     await withCheckedContinuation { continuation in
       let result = ResumeOnce(continuation)
-      Thread.detachNewThread { result.resume(with: workingSessions(upTo: count)) }
+      Thread.detachNewThread { result.resume(with: workingSessions(upTo: count, open)) }
       DispatchQueue.global().asyncAfter(deadline: .now() + probeLimit) { result.resume(with: nil) }
     }
   }
 
-  private static func workingSessions(upTo count: Int) -> Int {
-    let factory = ScreenSharingVideoToolboxSessionFactory(
-      width: probeWidth, height: probeHeight, framesPerSecond: 60, bitrate: 1_000_000)
+  private static func workingSessions(upTo count: Int, _ open: SessionOpener) -> Int {
     var sessions: [VTCompressionSession] = []
     defer { sessions.forEach { VTCompressionSessionInvalidate($0) } }
-    guard let frame = try? TestBGRAPixels.frame(width: probeWidth, height: probeHeight, shades: [128], timestampNs: 0)
-    else { return 0 }
+    guard let pixels = blankFrame() else { return 0 }
 
-    while sessions.count < count, let session = try? factory.make() {
+    while sessions.count < count, let session = open(probeWidth, probeHeight) {
       sessions.append(session)
-      guard encodes(session, frame.pixelBuffer) else { return sessions.count - 1 }
+      guard encodes(session, pixels) else { return sessions.count - 1 }
     }
     return sessions.count
+  }
+
+  private static func blankFrame() -> CVPixelBuffer? {
+    var pixels: CVPixelBuffer?
+    let attributes = [kCVPixelBufferIOSurfacePropertiesKey: [:] as [String: Any]] as CFDictionary
+    CVPixelBufferCreate(
+      kCFAllocatorDefault, probeWidth, probeHeight, kCVPixelFormatType_32BGRA, attributes, &pixels)
+    return pixels
   }
 
   private static func encodes(_ session: VTCompressionSession, _ pixels: CVPixelBuffer) -> Bool {

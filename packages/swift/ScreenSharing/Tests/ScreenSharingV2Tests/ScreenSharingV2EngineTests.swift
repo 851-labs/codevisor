@@ -15,7 +15,7 @@ extension HardwareCodecTests {
     func aDroppedFrameIsRepairedByALongTermReferenceRefreshWithoutAKeyframe() async throws {
       let (hostSide, viewerSide) = LoopbackMediaTransport.pair()
       let metrics = ScreenSharingMetrics()
-      let host = try Self.host(transport: hostSide, metrics: metrics, tiles: 1)
+      let host = try await Self.host(transport: hostSide, metrics: metrics, tiles: 1)
       let viewer = ScreenSharingV2Viewer(transport: viewerSide, metrics: ScreenSharingMetrics())
       let decoded = DecodedFrames(viewer.frames)
       host.start()
@@ -40,7 +40,7 @@ extension HardwareCodecTests {
     func aFrameTheViewerCannotDecodeIsRepairedThroughARefreshRequestWithoutAKeyframe() async throws {
       let (hostSide, viewerSide) = LoopbackMediaTransport.pair()
       let metrics = ScreenSharingMetrics()
-      let host = try Self.host(transport: hostSide, metrics: metrics, tiles: 1)
+      let host = try await Self.host(transport: hostSide, metrics: metrics, tiles: 1)
       let viewer = ScreenSharingV2Viewer(transport: viewerSide, metrics: ScreenSharingMetrics())
       let decoded = DecodedFrames(viewer.frames)
       host.start()
@@ -61,7 +61,7 @@ extension HardwareCodecTests {
     @Test(.enabled(if: VTIsHardwareDecodeSupported(kCMVideoCodecType_HEVC), "No hardware HEVC on this machine."))
     func tilesAreComposedIntoOneSeamlessPictureAndOnlyDirtyTilesAreSent() async throws {
       let (hostSide, viewerSide) = LoopbackMediaTransport.pair()
-      let host = try Self.host(transport: hostSide, metrics: ScreenSharingMetrics(), tiles: 4)
+      let host = try await Self.host(transport: hostSide, metrics: ScreenSharingMetrics(), tiles: 4)
       let viewer = ScreenSharingV2Viewer(transport: viewerSide, metrics: ScreenSharingMetrics())
       let decoded = DecodedFrames(viewer.frames)
       host.start()
@@ -90,7 +90,7 @@ extension HardwareCodecTests {
     @Test(.enabled(if: VTIsHardwareDecodeSupported(kCMVideoCodecType_HEVC), "No hardware HEVC on this machine."))
     func withTilesTheViewerHandsOverEachDecodedTileInsteadOfComposingThePicture() async throws {
       let (hostSide, viewerSide) = LoopbackMediaTransport.pair()
-      let host = try Self.host(transport: hostSide, metrics: ScreenSharingMetrics(), tiles: 4)
+      let host = try await Self.host(transport: hostSide, metrics: ScreenSharingMetrics(), tiles: 4)
       let metrics = ScreenSharingMetrics()
       let viewer = ScreenSharingV2Viewer(transport: viewerSide, metrics: metrics, presentsTiles: true)
       let decoded = DecodedFrames(viewer.frames)
@@ -114,7 +114,8 @@ extension HardwareCodecTests {
     }
 
     @Test(.enabled(if: VTIsHardwareDecodeSupported(kCMVideoCodecType_HEVC), "No hardware HEVC on this machine."))
-    func anUpdateSharesTheBitrateBetweenItsTiles() throws {
+    func anUpdateSharesTheBitrateBetweenItsTiles() async throws {
+      try await HardwareEncoderBudget.require(videoToolboxTiles: 4)
       let configuration = try ScreenSharingVideoConfiguration(width: 640, height: 360, bitrate: 40_000_000)
       let encoder = try ScreenSharingVideoToolboxTileEncoder(
         configuration: configuration, layout: ScreenSharingV2TileLayout(width: 640, height: 360, count: 4),
@@ -136,7 +137,8 @@ extension HardwareCodecTests {
 
     private static func host(
       transport: LoopbackMediaTransport, metrics: ScreenSharingMetrics, tiles: Int
-    ) throws -> ScreenSharingV2Host {
+    ) async throws -> ScreenSharingV2Host {
+      try await HardwareEncoderBudget.require(videoToolboxTiles: tiles)
       let configuration = try ScreenSharingV2Profile.captureConfiguration(width: 640, height: 360)
       let encoder = try ScreenSharingVideoToolboxTileEncoder(
         configuration: configuration, layout: ScreenSharingV2TileLayout(width: 640, height: 360, count: tiles),

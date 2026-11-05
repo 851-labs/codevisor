@@ -77,7 +77,7 @@ private struct CreatedTerminal: ServerRequestTransport {
 }
 
 @MainActor
-@Suite("Terminal transport reconnect")
+@Suite("Terminal transport reconnect", .timeLimit(.minutes(1)))
 struct TerminalTransportReconnectTests {
   private func makeTransport(
     _ sockets: FreshSockets, onEvent: @escaping TerminalTransport.EventHandler = { _ in }
@@ -101,7 +101,7 @@ struct TerminalTransportReconnectTests {
     transport.sendInput("s")
     try await transport.open(sessionId: "s", cwd: "/", cols: 80, rows: 24)
     let socket = try #require(sockets.sockets.first)
-    await socket.didSend.wait(for: 3)
+    await socket.didSend.cancellableWait(for: 3)
 
     let frames = socket.frames
     #expect(frames.map { $0["type"] as? String } == ["input", "input", "resize"])
@@ -119,7 +119,7 @@ struct TerminalTransportReconnectTests {
     transport.sendInput("ok")
     try await transport.open(sessionId: "s", cwd: "/", cols: 80, rows: 24)
     let socket = try #require(sockets.sockets.first)
-    await socket.didSend.wait(for: 1)
+    await socket.didSend.cancellableWait(for: 1)
     #expect(socket.frames.compactMap { $0["data"] as? String } == ["ok"])
     transport.detach()
   }
@@ -132,9 +132,9 @@ struct TerminalTransportReconnectTests {
       if case .output = event { received.signal() }
     }
     try await transport.open(sessionId: "s", cwd: "/", cols: 80, rows: 24)
-    await received.wait()
+    await received.cancellableWait()
     transport.reconnectNow()
-    await sockets.didConnect.wait(for: 2)
+    await sockets.didConnect.cancellableWait(for: 2)
 
     #expect(sockets.sockets.count == 2)
     #expect(sockets.sockets[0].isCancelled)

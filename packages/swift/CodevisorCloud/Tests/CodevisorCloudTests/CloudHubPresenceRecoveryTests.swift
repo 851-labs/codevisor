@@ -3,7 +3,7 @@ import Foundation
 import Testing
 @testable import CodevisorCloud
 
-@Suite("Cloud hub presence recovery")
+@Suite("Cloud hub presence recovery", .timeLimit(.minutes(1)))
 struct CloudHubPresenceRecoveryTests {
   @Test("Only a machine-wide offline error marks a machine offline; the REST roster heals it")
   func offlineErrorsAndAuthoritativeRoster() async throws {

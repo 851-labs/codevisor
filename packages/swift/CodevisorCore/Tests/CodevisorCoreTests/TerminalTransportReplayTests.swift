@@ -91,7 +91,7 @@ private struct TerminalWithHistory: ServerRequestTransport {
 }
 
 @MainActor
-@Suite("Terminal transport replay")
+@Suite("Terminal transport replay", .timeLimit(.minutes(1)))
 struct TerminalTransportReplayTests {
   @Test("History arrives as one replayed event; later output is live")
   func marksReplayedOutput() async throws {
@@ -122,7 +122,7 @@ struct TerminalTransportReplayTests {
     #expect(received.map(\.1) == [true, false])
   }
 
-  @Test("A reset reconstruction is delivered as replayed history", .timeLimit(.minutes(1)))
+  @Test("A reset reconstruction is delivered as replayed history")
   func deliversResetAsReplayed() async throws {
     let socket = ScriptedSocket(frames: [
       #"{"type":"output","seq":1,"data":"superseded"}"#,
@@ -151,7 +151,7 @@ struct TerminalTransportReplayTests {
     #expect(received.map(\.1) == [true, false])
   }
 
-  @Test("History is delivered once complete, without waiting for live output", .timeLimit(.minutes(1)))
+  @Test("History is delivered once complete, without waiting for live output")
   func deliversCompleteHistory() async throws {
     let socket = ScriptedSocket(frames: [
       #"{"type":"output","seq":1,"data":"prompt "}"#,
@@ -180,7 +180,7 @@ struct TerminalTransportReplayTests {
     #expect(replayed)
   }
 
-  @Test("Output missed during a disconnect is caught up as history", .timeLimit(.minutes(1)))
+  @Test("Output missed during a disconnect is caught up as history")
   func catchesUpAfterReconnect() async throws {
     let sockets = ScriptedSocketTransport(sockets: [
       ScriptedSocket(frames: [#"{"type":"output","seq":1,"data":"before"}"#], failsWhenDrained: true),
