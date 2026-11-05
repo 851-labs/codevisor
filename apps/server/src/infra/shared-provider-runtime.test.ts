@@ -278,7 +278,8 @@ describe("OpenCode credentials kept current", () => {
     })
     try {
       expect(vi.getTimerCount()).toBe(1)
-      await Promise.all([vi.advanceTimersByTimeAsync(nearExpiry), rewritten.promise])
+      vi.setSystemTime(nearExpiry)
+      await Promise.all([vi.advanceTimersToNextTimerAsync(), rewritten.promise])
       expect((await document()).openai.access).toBe("rotated")
       await vi.advanceTimersByTimeAsync(24 * 60 * 60_000)
       expect(vi.getTimerCount()).toBe(0)
