@@ -8,6 +8,7 @@ struct RootSidebar: View {
   let revealRequest: SidebarRevealRequest
   var publishesSceneActions = true
   var isDrawer = false
+  @Environment(AppEnvironment.self) private var environment
   @Environment(AdaptivePanelLayout.self) private var panelLayout
   @ClientPreference(FeatureFlag.bots.preferenceKey, default: false) private var botsEnabled
   @ClientPreference(SidebarMode.preferenceKey, default: SidebarMode.code) private var storedMode
@@ -16,6 +17,7 @@ struct RootSidebar: View {
   @State private var visitedModes: Set<SidebarMode> = []
   @State private var parkedMode: SidebarMode?
   @State private var parkedSelection: SidebarSelection?
+  @State private var botEditor: BotEditorTarget?
 
   private var activeMode: SidebarMode { SidebarMode.active(storedMode, botsEnabled: botsEnabled) }
 
@@ -25,6 +27,7 @@ struct RootSidebar: View {
         PaletteDestinationsPublisher(
           selection: navigation.committed, store: store, revealRequest: revealRequest, isEnabled: publishesSceneActions)
       )
+      .focusedSceneValue(\.newBotAction, newBotAction)
       .background {
         if !isDrawer {
           SplitColumnExtentReader { visibleColumnWidth = $0 }.frame(width: 0, height: 0)
@@ -43,6 +46,16 @@ struct RootSidebar: View {
           }
         }
       }
+  }
+
+  private var newBotAction: NewBotAction? {
+    guard publishesSceneActions, botsEnabled, !environment.bots.botMachines.isEmpty else { return nil }
+    return NewBotAction(perform: openNewBot)
+  }
+
+  private func openNewBot() {
+    storedMode = .chat
+    botEditor = .create
   }
 
   private var showsToolbarModePicker: Bool {
@@ -110,7 +123,8 @@ struct RootSidebar: View {
     switch mode {
     case .chat:
       BotListSidebar(
-        selection: listNavigation(for: mode).selection, store: store, publishesSceneActions: publishesSceneActions
+        selection: listNavigation(for: mode).selection, botEditor: $botEditor, store: store,
+        publishesSceneActions: publishesSceneActions
       )
       .modifier(SidebarModeLayer(isActive: mode == activeMode))
     case .code:

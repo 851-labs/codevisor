@@ -5,9 +5,9 @@ import SwiftUI
 struct BotListSidebar: View {
   @Environment(AppEnvironment.self) private var environment
   @Binding var selection: SidebarSelection?
+  @Binding var botEditor: BotEditorTarget?
   var store: SessionStore? = nil
   var publishesSceneActions = true
-  @State private var botEditor: BotEditorTarget?
   @State private var showingAddProject = false
   @State private var deletingBot: Bot?
   @State private var stepHandlerOwner = UUID()

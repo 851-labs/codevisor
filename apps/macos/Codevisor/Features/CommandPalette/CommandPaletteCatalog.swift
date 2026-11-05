@@ -5,6 +5,7 @@ import SwiftUI
 struct CommandPaletteCatalog {
   var sidebar: SidebarActions?
   var botList: BotListActions?
+  var newBot: NewBotAction?
   var destinations: PaletteDestinations?
   var composerFocus: NewChatComposerFocus?
   var layout: WorkspaceLayoutActions?
@@ -45,18 +46,24 @@ struct CommandPaletteCatalog {
         composerFocus?.focus()
       },
       CommandPaletteItem(.newProject, systemImage: "folder.badge.plus", perform: sidebar.newProject),
-    ]
+    ] + newBotCommands(shortcut: nil)
   }
 
   private var botListCommands: [CommandPaletteItem] {
     guard let botList else { return [] }
 
     let newProject = CommandPaletteItem(.newProject, systemImage: "folder.badge.plus", perform: botList.newProject)
-    guard let newBot = botList.newBot else { return [newProject] }
-    let newBotItem = CommandPaletteItem(
-      id: "newBot", title: "New Bot", icon: .symbol("square.and.pencil"),
-      shortcut: ShortcutCatalog.combo(for: .newChat)?.keyboardShortcut, perform: newBot)
-    return [newBotItem, newProject]
+    return newBotCommands(shortcut: ShortcutCatalog.combo(for: .newChat)?.keyboardShortcut) + [newProject]
+  }
+
+  private func newBotCommands(shortcut: KeyboardShortcut?) -> [CommandPaletteItem] {
+    guard let newBot else { return [] }
+
+    return [
+      CommandPaletteItem(
+        id: "newBot", title: "New Bot…", icon: .symbol("square.and.pencil"), shortcut: shortcut,
+        perform: newBot.perform)
+    ]
   }
 
   private var activeWorkspaceSections: [CommandPaletteSection] {
