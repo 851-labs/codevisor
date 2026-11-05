@@ -9,6 +9,7 @@ public final class ScreenSharingMetrics: @unchecked Sendable {
   private var previousEvents: [String: Int64] = [:]
   private let capacity = 1800
   public let timeline = ScreenSharingFrameTimeline()
+  public let commits = ScreenSharingCommitLog()
 
   public init() {}
   public static var nowNs: Int64 { Int64(DispatchTime.now().uptimeNanoseconds) }

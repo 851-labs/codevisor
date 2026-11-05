@@ -21,7 +21,7 @@ public final class ScreenSharingMetalView: MTKView, MTKViewDelegate {
     private var offMainWorker: ScreenSharingMetalPreparer?
   #endif
   private let renderOnArrival: Bool
-  private static let maximumDrawableCount = 3
+  private static func drawableCount(offMain: Bool) -> Int { offMain ? 2 : 3 }
 
   public init(
     mailbox: ScreenSharingFrameMailbox, metrics: ScreenSharingMetrics, renderOnArrival: Bool = false,
@@ -59,7 +59,7 @@ public final class ScreenSharingMetalView: MTKView, MTKViewDelegate {
       wantsLayer = true
       layer?.isOpaque = true
       if let metalLayer = layer as? CAMetalLayer {
-        metalLayer.maximumDrawableCount = Self.maximumDrawableCount
+        metalLayer.maximumDrawableCount = Self.drawableCount(offMain: offMainPreparation)
       }
       if let workerEncoder {
         guard let metalLayer = layer as? CAMetalLayer else {
@@ -72,10 +72,10 @@ public final class ScreenSharingMetalView: MTKView, MTKViewDelegate {
       }
     #else
       isOpaque = true
-      (layer as? CAMetalLayer)?.maximumDrawableCount = Self.maximumDrawableCount
+      (layer as? CAMetalLayer)?.maximumDrawableCount = Self.drawableCount(offMain: offMainPreparation)
       _ = workerEncoder
     #endif
-    metrics.label("maximumDrawableCount", String(Self.maximumDrawableCount))
+    metrics.label("maximumDrawableCount", String(Self.drawableCount(offMain: offMainPreparation)))
     metrics.label("frameSelection", "before drawable acquisition")
     metrics.label("renderPreparation", preparer == nil ? "main actor (MTKView)" : "off-main serial worker")
     metrics.label(

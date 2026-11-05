@@ -231,7 +231,17 @@ package final class ScreenSharingRenderCoordinator {
         self.requestDraw()
       }
     }
+    let commitEntry =
+      isNewFrame
+      ? metrics.commits.record(
+        ScreenSharingCommitRecord(
+          committedNs: ScreenSharingMetrics.nowNs, rtpTimestamp: frame.rtpTimestamp,
+          sourceTimestampNs: frame.sourceTimestampNs))
+      : nil
     submission.onPresented { [weak self] presentedTime, gpuEndTime in
+      if let commitEntry, presentedTime > 0 {
+        metrics.commits.presented(commitEntry, atNs: Int64(presentedTime * 1_000_000_000))
+      }
       metrics.recordPresentation(
         isNewFrame: isNewFrame, presentedAt: presentedTime, submittedAt: submittedAt, receivedAt: frame.receivedAt,
         sourceTimestampNs: frame.sourceTimestampNs, gpuCompletedAt: gpuEndTime)
