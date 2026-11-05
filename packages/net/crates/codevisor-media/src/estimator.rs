@@ -56,6 +56,8 @@ pub struct Estimator {
     max_standing_us: f64,
     overuse: u32,
     last_backoff: Option<Instant>,
+    first_sent: Option<Instant>,
+    bytes_sent: usize,
 }
 
 impl Estimator {
@@ -77,6 +79,8 @@ impl Estimator {
             standing_us: 0,
             overuse: 0,
             last_backoff: None,
+            first_sent: None,
+            bytes_sent: 0,
         }
     }
 
@@ -122,6 +126,8 @@ impl Estimator {
 
     pub fn on_sent(&mut self, now: Instant, bytes: usize) {
         self.sent.push(now, bytes);
+        self.first_sent.get_or_insert(now);
+        self.bytes_sent += bytes;
     }
 
     pub fn on_delivery(&mut self, now: Instant, delivery: Delivery) {
@@ -167,11 +173,26 @@ impl Estimator {
 
     pub fn on_heavy_loss(&mut self, now: Instant, loss: f64) {
         let estimate = self.estimate_bps();
-        let carried = self.acked.bps_until(now).map_or(0.0, |receive| receive * BACKOFF);
-        let target = (estimate * (1.0 - loss / 2.0)).max(carried).min(estimate).max(MIN_RATE_BPS);
+        let target = self.heavy_loss_target(now, estimate, loss).max(MIN_RATE_BPS);
         self.cap = Some(Cap { from_bps: target, since: now, grown_at: now, bps: target });
         self.bursts.clear();
         self.last_backoff = Some(now);
+    }
+
+    fn heavy_loss_target(&self, now: Instant, estimate: f64, loss: f64) -> f64 {
+        if let Some(delivered) = self.delivered_before_any_measurement(now, loss) {
+            return (delivered * BACKOFF).min(estimate);
+        }
+        let carried = self.acked.bps_until(now).map_or(0.0, |receive| receive * BACKOFF);
+        (estimate * (1.0 - loss / 2.0)).max(carried).min(estimate)
+    }
+
+    fn delivered_before_any_measurement(&self, now: Instant, loss: f64) -> Option<f64> {
+        if self.last_backoff.is_some() || self.measured() {
+            return None;
+        }
+        let elapsed = now.saturating_duration_since(self.first_sent?);
+        (elapsed >= RECEIVE_WINDOW).then(|| self.bytes_sent as f64 * 8.0 / elapsed.as_secs_f64() * (1.0 - loss))
     }
 
     fn back_off(&mut self, now: Instant) {
@@ -378,6 +399,17 @@ mod tests {
         assert_eq!(estimator.estimate_bps(), 80e6);
         estimator.on_heavy_loss(start + 200 * MS, 1.0);
         assert_eq!(estimator.estimate_bps(), 60e6 * 0.85, "the link still carried 60 Mbit/s");
+    }
+
+    #[test]
+    fn heavy_loss_before_anything_is_measured_cuts_from_what_was_sent_not_the_initial_guess() {
+        let start = Instant::now();
+        let mut estimator = Estimator::new(100e6, 1e9, FRAME);
+        estimator.on_sent(start, 125_000);
+
+        estimator.on_heavy_loss(start + 1_000 * MS, 0.2);
+
+        assert!((estimator.estimate_bps() - 1e6 * 0.8 * BACKOFF).abs() < 1.0, "{}", estimator.estimate_bps());
     }
 
     #[test]
