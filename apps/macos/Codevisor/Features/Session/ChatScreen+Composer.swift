@@ -9,8 +9,8 @@ extension ChatScreen {
   var composerOverlay: some View {
     let childAgents = visibleChildAgents
     return VStack(spacing: ComposerGlassStyle.clusterSpacing) {
-      if let store = workspaceChildAgents?.store, !childAgents.isEmpty {
-        ChildAgentsPill(agents: childAgents, store: store, glassNamespace: composerGlassNamespace)
+      if let childAgents {
+        ChildAgentsPill(content: childAgents, glassNamespace: composerGlassNamespace)
           .frame(maxWidth: .infinity, alignment: .leading)
       }
       if let todos = controller.visibleTodos {
@@ -79,13 +79,13 @@ extension ChatScreen {
     }
     .animation(
       Motion.quick(reduceMotion: reduceMotion),
-      value: visibleComposerGlassElements(showsChildAgents: !childAgents.isEmpty)
+      value: visibleComposerGlassElements(showsChildAgents: childAgents != nil)
     )
   }
 
-  private var visibleChildAgents: [WorkspaceInspectorAgent] {
-    guard !isSlashPalettePresented, let workspaceChildAgents, let workspace = hostWorkspace else { return [] }
-    return workspaceChildAgents.activeChildren(of: workspace)
+  private var visibleChildAgents: ChildAgentsPillContent? {
+    guard !isSlashPalettePresented, let workspaceChildAgents, let workspace = hostWorkspace else { return nil }
+    return workspaceChildAgents.pill(for: workspace)
   }
 
   private var hostWorkspace: Workspace? {
