@@ -19,8 +19,8 @@ struct MachineDesktopPreview: View {
       openBadge
     }
     .aspectRatio(Self.aspectRatio, contentMode: .fit)
-    .clipShape(.rect(cornerRadius: 10))
-    .contentShape(.rect(cornerRadius: 10))
+    .clipShape(WorkspaceInspectorCardShape.card)
+    .contentShape(WorkspaceInspectorCardShape.card)
     .onTapGesture(perform: onOpen)
     .onHover { isHovered = $0 }
     .task { isRegistered = await session.register() }
@@ -28,6 +28,7 @@ struct MachineDesktopPreview: View {
     .accessibilityLabel("Desktop")
     .accessibilityAddTraits(.isButton)
     .accessibilityAction(.default, onOpen)
+    .containerValue(\.fillsWorkspaceInspectorCardRow, true)
   }
 
   private var openBadge: some View {
