@@ -15,6 +15,7 @@ public final class ScreenSharingV2ViewingSession: ScreenSharingSimulatorSession 
   public private(set) var videoShowsPointer = true
   public var resizesDesktop: Bool { true }
   public var supportsAudio: Bool { true }
+  public var presentsTiles = false
 
   private let connection: any ScreenSharingV2Connection
   private let channels: ScreenSharingV2Channels
@@ -58,7 +59,8 @@ public final class ScreenSharingV2ViewingSession: ScreenSharingSimulatorSession 
     }
 
     feedBox.set(feed)
-    let viewer = ScreenSharingV2Viewer(transport: feed.attach(), metrics: metrics, frames: frames)
+    let viewer = ScreenSharingV2Viewer(
+      transport: feed.attach(), metrics: metrics, frames: frames, presentsTiles: presentsTiles)
     self.viewer = viewer
     viewer.start()
     metrics.label("engine", "v2")

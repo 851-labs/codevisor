@@ -414,6 +414,7 @@ private final class NativeScreenSharingViewerRunner: ScreenSharingViewerConnecti
     } catch {
       return Task.isCancelled ? .cancelled : .fallback
     }
+    (session as? ScreenSharingV2ViewingSession)?.presentsTiles = true
     try open(session, attempt: attempt, display: display, restarts: restarts, emit: emit)
     do {
       try await session.start(token: grant.token)
