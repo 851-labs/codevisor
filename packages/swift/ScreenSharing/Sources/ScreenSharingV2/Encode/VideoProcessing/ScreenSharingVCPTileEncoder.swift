@@ -26,7 +26,7 @@ public final class ScreenSharingVCPTileEncoder: ScreenSharingTileEncoder, @unche
     self.layout = layout
     self.metrics = metrics
     bitsPerSecond = Atomic(configuration.bitrate)
-    converter = try ScreenSharingVCPPixelConverter(width: layout.width, height: layout.height)
+    converter = try ScreenSharingVCPPixelConverter(layout: layout)
     cutter = ScreenSharingV2TileCutter(layout: layout)
     sessions = try Self.sessions(layout: layout, configuration: configuration, metrics: metrics, relay: relay)
     metrics.label("encoder", "VideoProcessing VCP HEVC 4:4:4 (Usage 42), one session per tile, acknowledged references")
@@ -46,21 +46,23 @@ public final class ScreenSharingVCPTileEncoder: ScreenSharingTileEncoder, @unche
     let tiles = request.update.tiles.sorted().filter(sessions.indices.contains)
     let startNs = ScreenSharingMetrics.nowNs
     let pixels = try tilePixels(request, tiles: tiles)
-    if !request.update.isRefinement {
-      metrics.observe("vcpConvert", milliseconds: Double(ScreenSharingMetrics.nowNs - startNs) / 1e6)
-    }
     for tile in tiles { encode(tile, pixels: pixels[tile], request: request) }
     metrics.observe("updateSubmit", milliseconds: Double(ScreenSharingMetrics.nowNs - startNs) / 1e6)
   }
 
   private func tilePixels(_ request: ScreenSharingTileEncodeRequest, tiles: [Int]) throws -> [Int: CVPixelBuffer] {
-    if layout.count > 1,
-      let converted = try converter.convertTiles(
-        request.pixelBuffer, capture: request.sourceTimestampNs, tiles: tiles, layout: layout)
+    let startNs = ScreenSharingMetrics.nowNs
+    let observeConvert = {
+      guard !request.update.isRefinement else { return }
+      self.metrics.observe("vcpConvert", milliseconds: Double(ScreenSharingMetrics.nowNs - startNs) / 1e6)
+    }
+    if let converted = try converter.convertTiles(request.pixelBuffer, capture: request.sourceTimestampNs, tiles: tiles)
     {
+      observeConvert()
       return converted
     }
     let converted = try converter.convert(request.pixelBuffer, capture: request.sourceTimestampNs)
+    observeConvert()
     let cutNs = ScreenSharingMetrics.nowNs
     let pixels = try cutter.cut(converted, tiles: tiles)
     if layout.count > 1 { metrics.observe("tileCut", milliseconds: Double(ScreenSharingMetrics.nowNs - cutNs) / 1e6) }

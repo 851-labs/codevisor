@@ -18,22 +18,23 @@ final class ScreenSharingVCPPixelConverter: @unchecked Sendable {
     let capture: Int64
     let target: CVPixelBuffer
   }
-  private struct TileConversion: @unchecked Sendable {
+  private struct TileConversion {
     let capture: Int64
-    var tiles: [Int: CVPixelBuffer]
+    let tiles: [Int: CVPixelBuffer]
   }
 
   private let kernel: ScreenSharingVCPConversionKernel
   private let cache: CVMetalTextureCache
   private let pool: CVPixelBufferPool
-  private let size: (width: Int, height: Int)
+  private let layout: ScreenSharingV2TileLayout
   private let scalerLock = NSLock()
   private var scaler: VTPixelTransferSession?
   private let last = Mutex<Conversion?>(nil)
-  private let lastTiles = Mutex<TileConversion?>(nil)
+  private let tilesLock = NSLock()
+  private var lastTiles: TileConversion?
   private let tilePools = Mutex<[Int: CVPixelBufferPool]>([:])
 
-  init(width: Int, height: Int) throws {
+  init(layout: ScreenSharingV2TileLayout) throws {
     kernel = try ScreenSharingVCPConversionKernel.shared()
     var cache: CVMetalTextureCache?
     guard CVMetalTextureCacheCreate(nil, nil, kernel.device, nil, &cache) == kCVReturnSuccess, let cache else {
@@ -41,8 +42,9 @@ final class ScreenSharingVCPPixelConverter: @unchecked Sendable {
     }
 
     self.cache = cache
-    size = (width, height)
-    pool = try Self.pool(width: width, height: height)
+    self.layout = layout
+    pool = try ScreenSharingV2PixelPool.make(
+      width: layout.width, height: layout.height, pixelFormat: Self.encodedPixelFormat)
   }
 
   deinit {
@@ -58,50 +60,51 @@ final class ScreenSharingVCPPixelConverter: @unchecked Sendable {
     return target
   }
 
-  func convertTiles(
-    _ source: CVPixelBuffer, capture: Int64, tiles: [Int], layout: ScreenSharingV2TileLayout
-  ) throws -> [Int: CVPixelBuffer]? {
+  func convertTiles(_ source: CVPixelBuffer, capture: Int64, tiles: [Int]) throws -> [Int: CVPixelBuffer]? {
     guard CVPixelBufferGetPixelFormatType(source) == kCVPixelFormatType_32BGRA,
-      CVPixelBufferGetWidth(source) == size.width, CVPixelBufferGetHeight(source) == size.height,
-      layout.width == size.width, layout.height == size.height
+      CVPixelBufferGetWidth(source) == layout.width, CVPixelBufferGetHeight(source) == layout.height
     else { return nil }
 
-    var converted = lastTiles.withLock { $0?.capture == capture ? $0?.tiles ?? [:] : [:] }
-    let missing = tiles.filter { converted[$0] == nil }
-    if !missing.isEmpty {
-      var retained: [CVMetalTexture] = []
-      let source = try texture(source, plane: 0, format: .bgra8Unorm, retaining: &retained)
-      var regions: [ScreenSharingVCPConversionKernel.Region] = []
-      for tile in missing {
-        let rows = layout.rows(of: tile)
-        let target = try tileBuffer(height: rows.count)
-        for (key, value) in Self.colorTags { CVBufferSetAttachment(target, key, value, .shouldPropagate) }
-        regions.append(
-          .init(
-            sourceRow: rows.lowerBound, luma: try texture(target, plane: 0, format: .r8Unorm, retaining: &retained),
-            chroma: try texture(target, plane: 1, format: .rg8Unorm, retaining: &retained)))
-        converted[tile] = target
+    let tiles = tiles.filter(layout.tiles.contains)
+    return try tilesLock.withLock {
+      var converted = lastTiles?.capture == capture ? lastTiles?.tiles ?? [:] : [:]
+      let missing = tiles.filter { converted[$0] == nil }
+      if !missing.isEmpty {
+        try convert(source, tiles: missing, into: &converted)
+        lastTiles = TileConversion(capture: capture, tiles: converted)
       }
-      try kernel.run(source: source, regions: regions)
-      withExtendedLifetime(retained) {}
-      CVMetalTextureCacheFlush(cache, 0)
-      lastTiles.withLock { $0 = TileConversion(capture: capture, tiles: converted) }
+      return converted.filter { tiles.contains($0.key) }
     }
-    return converted.filter { tiles.contains($0.key) }
+  }
+
+  private func convert(_ source: CVPixelBuffer, tiles: [Int], into converted: inout [Int: CVPixelBuffer]) throws {
+    var retained: [CVMetalTexture] = []
+    let source = try texture(source, plane: 0, format: .bgra8Unorm, retaining: &retained)
+    var regions: [ScreenSharingVCPConversionKernel.Region] = []
+    for tile in tiles {
+      let rows = layout.rows(of: tile)
+      let target = try tileBuffer(height: rows.count)
+      for (key, value) in Self.colorTags { CVBufferSetAttachment(target, key, value, .shouldPropagate) }
+      regions.append(
+        .init(
+          sourceRow: rows.lowerBound, luma: try texture(target, plane: 0, format: .r8Unorm, retaining: &retained),
+          chroma: try texture(target, plane: 1, format: .rg8Unorm, retaining: &retained)))
+      converted[tile] = target
+    }
+    try kernel.run(source: source, regions: regions)
+    withExtendedLifetime(retained) {}
+    CVMetalTextureCacheFlush(cache, 0)
   }
 
   private func tileBuffer(height: Int) throws -> CVPixelBuffer {
     let pool = try tilePools.withLock { pools in
       if let pool = pools[height] { return pool }
-      let pool = try Self.pool(width: size.width, height: height)
+      let pool = try ScreenSharingV2PixelPool.make(
+        width: layout.width, height: height, pixelFormat: Self.encodedPixelFormat)
       pools[height] = pool
       return pool
     }
-    var created: CVPixelBuffer?
-    let status = CVPixelBufferPoolCreatePixelBuffer(nil, pool, &created)
-    guard status == kCVReturnSuccess, let created else { throw ScreenSharingError.codec("Allocate VCP tile", status) }
-
-    return created
+    return try ScreenSharingV2PixelPool.buffer(from: pool)
   }
 
   private func transfer(_ source: CVPixelBuffer) throws -> CVPixelBuffer {
@@ -109,13 +112,8 @@ final class ScreenSharingVCPPixelConverter: @unchecked Sendable {
       throw ScreenSharingError.invalid("The VCP converter takes BGRA captures.")
     }
 
-    var created: CVPixelBuffer?
-    let status = CVPixelBufferPoolCreatePixelBuffer(nil, pool, &created)
-    guard status == kCVReturnSuccess, let target = created else {
-      throw ScreenSharingError.codec("Allocate VCP input", status)
-    }
-
-    if CVPixelBufferGetWidth(source) == size.width && CVPixelBufferGetHeight(source) == size.height {
+    let target = try ScreenSharingV2PixelPool.buffer(from: pool)
+    if CVPixelBufferGetWidth(source) == layout.width && CVPixelBufferGetHeight(source) == layout.height {
       try convertExactly(source, into: target)
     } else {
       try scale(source, into: target)
@@ -169,18 +167,5 @@ final class ScreenSharingVCPPixelConverter: @unchecked Sendable {
 
     retained.append(created)
     return texture
-  }
-
-  private static func pool(width: Int, height: Int) throws -> CVPixelBufferPool {
-    let attributes: [CFString: Any] = [
-      kCVPixelBufferPixelFormatTypeKey: encodedPixelFormat, kCVPixelBufferWidthKey: width,
-      kCVPixelBufferHeightKey: height, kCVPixelBufferIOSurfacePropertiesKey: [CFString: Any](),
-      kCVPixelBufferMetalCompatibilityKey: true,
-    ]
-    var pool: CVPixelBufferPool?
-    let status = CVPixelBufferPoolCreate(nil, nil, attributes as CFDictionary, &pool)
-    guard status == kCVReturnSuccess, let pool else { throw ScreenSharingError.codec("Create VCP input pool", status) }
-
-    return pool
   }
 }
