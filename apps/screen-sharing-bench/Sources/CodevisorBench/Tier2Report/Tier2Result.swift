@@ -29,9 +29,9 @@ enum Tier2Result {
     result.text?.streamSize = measurement.streamSize
     if measurement.files.meta.isCodevisor {
       let files = measurement.files
-      result.stagesMs = Tier2V2Readings.stages(
-        viewer: files.system, host: files.share, engineV2: system.isEngineV2)
-      result.media = system.isEngineV2 ? Tier2V2Readings.counters(viewer: files.system, host: files.share) : nil
+      let engineV2 = BenchSystem.engineV2Systems.contains(system)
+      result.stagesMs = Tier2V2Readings.stages(viewer: files.system, host: files.share, engineV2: engineV2)
+      result.media = engineV2 ? Tier2V2Readings.counters(viewer: files.system, host: files.share) : nil
     }
     result.valid = measurement.invalidReason == nil
     result.invalidReason = measurement.invalidReason

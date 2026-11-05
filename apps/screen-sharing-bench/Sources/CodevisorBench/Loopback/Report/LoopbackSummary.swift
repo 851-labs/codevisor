@@ -12,7 +12,7 @@ enum LoopbackSummary {
     let result = outcome.result
     let status = result.invalidReason.map { "invalid: \($0)" } ?? "e2e \(pair(result.e2eMs)) ms"
     return "[\(index + 1)/\(total)] \(result.scene) \(result.network) #\(result.repetition): \(status), "
-      + "\(format(result.updatesPerS)) updates/s, quality level \(outcome.qualityLevel)"
+      + "\(format(result.updatesPerS)) updates/s"
   }
 
   static func markdown(_ report: BenchReport, elapsed: Duration) -> String {

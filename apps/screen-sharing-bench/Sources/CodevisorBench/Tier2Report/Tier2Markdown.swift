@@ -57,7 +57,7 @@ struct Tier2Markdown {
     ]
     let rows = report.comparisons.map { comparison in
       "| \(comparison.scene) | \(comparison.resolution) | \(comparison.network) | "
-        + "\((comparison.system ?? .codevisor).rawValue) | \(comparison.metric) | "
+        + "\(comparison.system?.rawValue ?? "–") | \(comparison.metric) | "
         + "\(Tier2Format.list(comparison.appleHp)) | "
         + "\(Tier2Format.list(comparison.codevisor)) | \(Tier2Format.number(comparison.noiseBandMs)) | "
         + "\(comparison.verdict.rawValue) | \(Tier2Comparisons.basis(of: comparison)) |"

@@ -11,7 +11,7 @@ struct ViewCommand: BenchCommand {
   static let summary =
     "Show the Codevisor stream from the host full screen, or (--source null) the floor: barcodes drawn from UDP"
   static let usage = """
-    --source codevisor --host <ipv4> [--port <port>] [--engine v1|v2] [--present arrival|display-link] [--tiles on|off] \
+    --source codevisor --host <ipv4> [--port <port>] [--present arrival|display-link] [--tiles on|off] \
       [--control] [--duration <seconds>] \(VirtualDisplayOption.usage) \(BenchSignalFiles.usage)
       view --source null [--port <udp port>] [--duration <seconds>] \(VirtualDisplayOption.usage) \(BenchSignalFiles.usage)
     """
@@ -22,7 +22,6 @@ struct ViewCommand: BenchCommand {
 
   let presentsWindows = true
   private let source: Source
-  private let engine: BenchEngine
   private let presentation: V2Presentation
   private let presentsTiles: Bool
   private let takesControl: Bool
@@ -34,7 +33,6 @@ struct ViewCommand: BenchCommand {
 
   init(options: BenchOptions) throws {
     source = try options.choice("source", default: Source.codevisor)
-    engine = try options.choice("engine", default: BenchEngine.v1)
     presentation = try options.choice("present", default: V2Presentation.arrival)
     presentsTiles = try options.choice("tiles", default: V2Tiles.on) == .on
     takesControl = try options.flag("control")
@@ -50,8 +48,8 @@ struct ViewCommand: BenchCommand {
     guard !takesControl || source == .codevisor else {
       throw BenchUsageError(message: "--control needs --source codevisor")
     }
-    guard !takesControl || engine == .v1 || presentation == .arrival else {
-      throw BenchUsageError(message: "--control with --engine v2 needs --present arrival")
+    guard !takesControl || presentation == .arrival else {
+      throw BenchUsageError(message: "--control needs --present arrival")
     }
   }
 
@@ -64,16 +62,12 @@ struct ViewCommand: BenchCommand {
     let signals = signals.describing(display.readyDetail)
 
     switch source {
-    case .codevisor where engine == .v2:
+    case .codevisor:
       try BenchOutput.print(
         try await CodevisorV2Viewer.run(
           in: window, host: host ?? "", port: port, presentation: presentation, presentsTiles: presentsTiles,
           takesControl: takesControl,
           until: deadline, signals: signals))
-    case .codevisor:
-      try BenchOutput.print(
-        try await CodevisorViewer.run(
-          in: window, host: host ?? "", port: port, takesControl: takesControl, until: deadline, signals: signals))
     case .null:
       try BenchOutput.print(try await FloorViewer.run(in: window, port: port, until: deadline, signals: signals))
     }

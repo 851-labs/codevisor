@@ -4,8 +4,5 @@ public enum BenchSystem: String, Codable, Sendable, CaseIterable {
   case codevisorV2 = "codevisor-v2"
   case codevisorV2VCP = "codevisor-v2-vcp"
 
-  public static let codevisorSystems: [BenchSystem] = [.codevisor, .codevisorV2, .codevisorV2VCP]
   public static let engineV2Systems: [BenchSystem] = [.codevisorV2, .codevisorV2VCP]
-
-  public var isEngineV2: Bool { Self.engineV2Systems.contains(self) }
 }

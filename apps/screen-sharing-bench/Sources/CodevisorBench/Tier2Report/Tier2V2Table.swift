@@ -6,7 +6,7 @@ struct Tier2V2Table {
   private let results: [BenchResult]
 
   init(_ results: [BenchResult]) {
-    self.results = results.filter { $0.system.isEngineV2 && $0.valid }
+    self.results = results.filter { BenchSystem.engineV2Systems.contains($0.system) && $0.valid }
   }
 
   var text: String? {

@@ -24,7 +24,7 @@ start_system() {
   case "$system" in
     apple-hp) bench apple-hp --host "$TIER2_APPLE_HOST" ${control[@]+"${control[@]}"} "${signals[@]}" \
       >"$dir/system.json" 2>"$dir/system.err" & ;;
-    codevisor | codevisor-r1x2 | codevisor-v2 | codevisor-v2-vcp) bench_window view --source codevisor --host "$TIER2_HOST_IP" $(tier2_engine_options "$system") \
+    codevisor-v2 | codevisor-v2-vcp) bench_window view --source codevisor --host "$TIER2_HOST_IP" \
       --present "$TIER2_PRESENT" ${control[@]+"${control[@]}"} "${signals[@]}" >"$dir/system.json" 2>"$dir/system.err" & ;;
     floor) bench_window view --source null --port "$TIER2_FLOOR_PORT" "${signals[@]}" >"$dir/system.json" 2>"$dir/system.err" & ;;
   esac
@@ -87,8 +87,8 @@ write_meta() {
   local observed_json=false
   ((observed)) && observed_json=true
   cat >"$dir/meta.json" <<JSON
-{"index": $index, "scene": "$scene", "system": "$(tier2_meta_system "$system")", "resolution": "$(tier2_resolution "$system")",
- "network": "$TIER2_NETWORK", "viewer_display": "$TIER2_VIEWER_DISPLAY", "engine": "$(tier2_engine "$system")", "presentation": "$TIER2_PRESENT",
+{"index": $index, "scene": "$scene", "system": "$system", "resolution": "$(tier2_resolution "$system")",
+ "network": "$TIER2_NETWORK", "viewer_display": "$TIER2_VIEWER_DISPLAY", "presentation": "$TIER2_PRESENT",
  "repetition": $rep, "seed": $TIER2_SEED,
  "duration_s": $TIER2_DURATION, "host_observer": $observed_json, "git_sha": "$commit", "started_at": "$started_at",
  "github_run_id": "${GITHUB_RUN_ID:-}"}

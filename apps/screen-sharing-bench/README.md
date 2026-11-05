@@ -16,7 +16,7 @@ library in `packages/swift/ScreenSharing/Sources/ScreenSharingBench`.
 - `Sources/ScreenSharingBenchScenes` is the scene library (scenes S1–S7, one Metal renderer, the Tier 1
   `BenchSceneGenerator`), linked in the same way as `packages/swift/ScreenSharing/Sources/ScreenSharingBenchScenes`.
 - `Info.plist` is the bundle's plist. The bundle ID is `com.851labs.CodevisorBench`.
-- `scripts/build.sh` builds a release binary into `.build/CodevisorBench.app`, embeds `WebRTC.framework` and signs it.
+- `scripts/build.sh` builds a release binary into `.build/CodevisorBench.app` and signs it.
 - `scripts/build-pinned.sh <directory>` builds and copies the bundle there; CI runs it at the job's commit.
 - `scripts/deploy.sh <ssh-host> [--force]` builds, then installs `~/Applications/CodevisorBench.app` on that Mac (it refuses
   to replace an app signed by another team; see Signing and permissions).
@@ -122,79 +122,77 @@ The checks that capture the screen need **Screen Recording**, C6 needs **Accessi
 
 ## Loopback (851-3593)
 
-`loopback` is Tier 1: one process streams synthetic scenes through the product `ScreenSharingSender` and
-`ScreenSharingReceiver` over an in-process UDP relay that emulates the network, then writes report v1. It needs
-no permission grant and no GUI session (except `--onscreen` and `--source own-window`, which capture the screen and
-so need the session unlocked and a Screen Recording grant), so it runs on any CI Mac.
+`loopback` is Tier 1: one process streams synthetic scenes through engine v2's `ScreenSharingV2Host` and
+`ScreenSharingV2Viewer` (over `codevisor-media` on an iroh connection) through an in-process UDP relay that emulates
+the network, then writes report v1. It needs no permission grant and no GUI session (except `--onscreen` and
+`--source own-window`, which capture the screen and so need the session unlocked and a Screen Recording grant), so it
+runs on any CI Mac.
 
 ```sh
 CodevisorBench loopback                                   # the full matrix: S1–S6 × N0–N7 at R1
 CodevisorBench loopback --scenes scroll,video --networks N0,N3 --duration 30 --warm-up 10 --repetitions 3 \
-  --output report.json
+  --encoder vt --output report.json
 CodevisorBench loopback --frames frames.jsonl --onscreen
 CodevisorBench loopback --source own-window --scenes scroll --networks N0
 ```
 
-- **The product, not a copy.** The sender and receiver use `ScreenSharingProductProfile` (codec order, 45 Mbit/s
-  ceiling, capture box, field trials, keyframe interval, pending frames), the same as `ScreenSharingHostService`.
-  The adaptive quality loop runs as in the product. The viewer renders through the product's render coordinator
-  and Metal encoder into an offscreen texture (`--onscreen`: the product `ScreenSharingMetalView` in a window).
+- **The product, not a copy.** The host and viewer use `ScreenSharingV2Profile` (codec, 45 Mbit/s ceiling, capture
+  box, tiles, refinement), the same as the product's engine v2. No quality loop runs: engine v2 follows the
+  transport's encoder ceiling itself. The viewer renders through the product's render coordinator and Metal encoder
+  into an offscreen texture (`--onscreen`: the product `ScreenSharingMetalView` in a window).
+- **Encoders.** `--encoder vcp` (the default since 851-4048, as in the product) uses the VCP encoder (851-3819) and
+  records its results as `codevisor-v2-vcp`; `--encoder vt` records `codevisor-v2`, so a cell's baseline never mixes
+  the two encoders. Tier 1's baseline plans (`core-v2`, `gate-v2`, `matrix-v2`, and the PR gate) pass `--encoder vt`, so
+  their `codevisor-v2` series and baselines stay VideoToolbox; a `custom` dispatch takes the workflow's `encoder`
+  input (`vt` by default, to match them; `vcp` for `codevisor-v2-vcp`).
 - **Sources.** `synthetic` (the default): `BenchSceneGenerator` renders the next versions ahead, and a strict 60 Hz
-  `DispatchSourceTimer` on a user-interactive queue pushes each new version to the sender's frame sink, stamped when
+  `DispatchSourceTimer` on a user-interactive queue pushes each new version to the host's frame sink, stamped when
   it is pushed, so the capture stage is about 0 and frames are 16.67 ms apart within ±0.06 ms, like ScreenCaptureKit's
-  vsync-stamped frames. (A Swift `sleep` on the cooperative pool wakes up to 8 ms late, and WebRTC's jitter estimate
-  follows that noise.) Like ScreenCaptureKit, nothing is pushed while the scene doesn't change. `own-window` (`--source own-window [--display main|virtual]`):
+  vsync-stamped frames. (A Swift `sleep` on the cooperative pool wakes up to 8 ms late.) Like ScreenCaptureKit,
+  nothing is pushed while the scene doesn't change. `own-window` (`--source own-window [--display main|virtual]`):
   the player draws the scene in a full-screen window, and the product `ScreenSharingCapture` captures that window
   (`SCShareableContent.currentProcess`), so capture is real; versions come from the barcode of each captured frame.
   It needs an unlocked GUI session.
-- **Network.** The relay rewrites each side's SDP to a single host candidate on a relay socket and forwards both
-  directions through `BenchRelayLink` (the T1 `BenchNetworkModel`: capacity, queue, delay, jitter, seeded
-  Bernoulli or Gilbert–Elliott loss). Media and feedback get their own seeded models, so the drop pattern by packet
-  index is the same on every run (`relay.media.first_losses` lists the first 16 seeded losses; drops from a full
-  queue depend on the traffic and are counted in `queue_overflow`; a packet that is both is counted as an
-  overflow, which no N0–N7 condition can produce because only N5 limits the queue and N5 has no random loss). Each peer socket gets its own
-  mapping socket, like a NAT, so every ICE pair goes through the relay.
+- **Network.** Both endpoints bind with the `direct-pinned` path policy and the viewer dials the relay's host-facing
+  socket as the host's only address, so every datagram crosses the emulated network. `direct-pinned` keeps the path a
+  connection was opened on (one remote per endpoint; if that path closes it waits for it rather than taking another):
+  with `direct-only`, iroh's QUIC NAT traversal learns the host's own addresses and moves to the direct loopback path
+  within the first round trip (`codevisor-net`'s `pinned_path` test). A run is invalid when the relay carried under
+  half the media bytes the host's session sent ("media went around the relay"). The relay forwards both directions
+  through `BenchRelayLink` (the T1 `BenchNetworkModel`: capacity, queue, delay, jitter, seeded Bernoulli or
+  Gilbert–Elliott loss). Media and feedback get their own seeded models, so the drop pattern by packet index is the
+  same on every run (`relay.media.first_losses` lists the first 16 seeded losses; drops from a full queue depend on
+  the traffic and are counted in `queue_overflow`; a packet that is both is counted as an overflow, which no N0–N7
+  condition can produce because only N5 limits the queue and N5 has no random loss). Each peer socket gets its own
+  mapping socket, like a NAT.
 - **Measurement.** Each scene runs `--duration` seconds (12 by default; the matrix takes about 11 minutes) and
   the first `--warm-up` seconds (5) are left out. `--repetitions <n>` runs the whole list n times, interleaved (every
   cell once, then every cell again), and each result carries its `repetition`; consumers take the median per cell
-  (`BenchCellSummary`). The report's `run.method` records duration, warm-up, repetitions and the plan (`--plan`). `e2e_ms` is capture to committed (`e2e_endpoint`), or to on-glass
-  with `--onscreen`. `stages_ms` comes from the 851-3583 timeline: capture, capture queue, encode, network (the
-  encoder output to decoder input span: send, the relay, receive and the jitter buffer, exact on one clock),
-  decode, render queue and present. The relay also notes when it delivers the last RTP packet of each video frame
-  (`BenchFrameArrivals`; SRTP leaves the RTP header readable), and the barcode tap gives each decoded frame's RTP
-  timestamp, so the network stage splits into `send` (encoder output → frame complete: pacing, the relay and the
-  emulated network) and `decode_queue` (frame complete → decoder input: the jitter buffer, which holds a frame until its references are complete; the product forces no playout delay).
-  `e2e_outside_jitter_buffer_ms` is e2e without that wait. `timing_frame_check` pairs each WebRTC timing frame (`googTimingFrameInfo`,
-  sampled twice a second; WebRTC keeps the slowest recent frame) with the timeline frame captured within 8 ms of it,
-  and compares encode, decode and capture to decoded; it agrees when each median difference is within 5 ms.
-  Drops are whole-scene counters.
+  (`BenchCellSummary`). The report's `run.method` records duration, warm-up, repetitions and the plan (`--plan`).
+  `e2e_ms` is capture to committed (`e2e_endpoint`), or to on-glass with `--onscreen`. `stages_ms` comes from the
+  851-3583 timeline: capture, capture queue (the admission stage: capture → encode submit), encode, network (the
+  encoder output to decoder input span, exact on one clock), decode, render queue (the compose stage) and present.
+  There is no jitter buffer, so the frame-complete time is the decoder input time, `decode_queue` is 0, and the
+  gate's outside-the-jitter-buffer rule judges whole e2e. A bench-side transport tap (`V2MediaTap`) wraps each side's
+  `ScreenSharingIrohMediaTransport` and notes when each frame was handed to `send_frame`, its frame ack (`queued` and
+  `sending`) and its receipt (`assembling`, how it was recovered), keyed by stream and frame number, and joined to
+  the viewer's timeline by source timestamp (the first presentation of each source frame; an LTR refresh of an
+  already shown capture is not a new sample). `stages_ms.media` splits the network stage: `hand_off` (encoder output
+  → `send_frame`), `queue` (→ first packet out), `send` (first → last packet out), `network` (last packet out → frame
+  complete), `assemble` (first packet in → frame complete, overlapping `send`) and `recover` (the `assemble` of
+  frames that NACK or FEC completed). The result's `media` holds the session's counters for the whole scene: frames
+  sent and given up, tiles skipped, captures replaced before encode (dropped by admission) and admission deferrals,
+  NACKs, retransmissions, parity packets, FEC and NACK repairs, LTR refreshes, keyframes, and the capacity estimate
+  and round trip at the end. Drops are whole-scene counters.
 - **Output.** stdout is the report JSON (`--output` also writes it); stderr has one progress line per scene and a
   Markdown summary with per-stage p50/p95. `--frames` writes one line per measured frame (version and every
-  timestamp). A scene that fails (for example ICE never connects) is reported as invalid with the error, and the
-  matrix goes on.
-- **Engine v2.** `--engine v2` runs the same scenes through engine v2 (`ScreenSharingV2Host` and
-  `ScreenSharingV2Viewer` over `codevisor-media` on an iroh connection) instead of WebRTC; results are the
-  `codevisor-v2` system. Both endpoints bind with the `direct-pinned` path policy and the viewer dials the relay's
-  host-facing socket as the host's only address, so every datagram crosses the emulated network. `direct-pinned`
-  keeps the path a connection was opened on (one remote per endpoint; if that path closes it waits for it rather than
-  taking another): with `direct-only`, iroh's QUIC NAT traversal learns the host's own
-  addresses and moves to the direct loopback path within the first round trip (`codevisor-net`'s `pinned_path` test).
-  A run is invalid when the relay carried under half the media bytes the host's session sent ("media went around the
-  relay"). A bench-side transport tap (`V2MediaTap`) wraps each side's `ScreenSharingIrohMediaTransport` and notes
-  when each frame was handed to `send_frame`, its frame ack (`queued` and `sending`) and its receipt (`assembling`,
-  how it was recovered), keyed by stream and frame number, and joined to the viewer's timeline by source timestamp
-  (the first presentation of each source frame; an LTR refresh of an already shown capture is not a new sample).
-  There is no jitter buffer, so the frame-complete time is the decoder input time and `decode_queue` is 0; the gate's
-  outside-the-jitter-buffer rule then judges whole e2e. `stages_ms.media` splits the network stage: `hand_off`
-  (encoder output → `send_frame`), `queue` (→ first packet out), `send` (first → last packet out), `network` (last
-  packet out → frame complete), `assemble` (first packet in → frame complete, overlapping `send`) and `recover` (the
-  `assemble` of frames that NACK or FEC completed). `capture_queue` is the admission stage (capture → encode submit),
-  `render_queue` the compose stage. The result's `media` holds the session's counters for the whole scene: frames sent
-  and given up, tiles skipped, captures replaced before encode (dropped by admission) and admission deferrals, NACKs,
-  retransmissions, parity packets, FEC and NACK repairs, LTR refreshes, keyframes, and the capacity estimate and
-  round trip at the end. `--source own-window` and `--onscreen` work as for v1. No quality loop runs: engine v2
-  follows the transport's encoder ceiling itself. The v2 viewer's `system.json` keeps its frame records (the timeline's last 1,800) (`frames`: source timestamp, viewer decode, render and on-glass times, and stages), and every render commit of a new frame (`commits`, the last 4,096: commit time, update id, the capture's source timestamp when the frame has one, refinements don't, and `presented_ns` when Metal reports the drawable on glass; on the headless minis it never does, 851-4039), with `continuous_minus_absolute_ns` (sampled when the viewer starts) to put commit times on the observers' clock. The product records commits only when `ScreenSharingMetrics.commits.isRecording` is on, which only the bench viewer sets. A commit's source timestamp names the player version the host observer saw then, and the viewer observer's first sighting of that version gives the commit's real time to the screen, including frames that never get a presentation callback. `share.json` also lists every capture's display time, callback time, dirty-rect count and whether it touched the barcode corner (`captures`, up to 6,000), so a run can tell whether a change reached the encoder late or left it late (851-3975). The host captures without the cursor, as the product does once the viewer subscribes to its cursor stream (851-3823) and as Apple HP's stream leaves it out; with it, T8 charged v2 alone for the cursor (Tier 2 run 41695143473: one cursor block was ~97% of VCP's remaining luma error). `--encoder vcp` (the default since 851-4048, as in the product) uses the VCP encoder (851-3819) and records its results as `codevisor-v2-vcp`; `--encoder vt`
-  records `codevisor-v2`, so a cell's baseline never mixes the two encoders. Tier 1's v2 baseline plans (`core-v2`, `gate-v2`, and the PR gate's v2 run) pass `--encoder vt`, so their `codevisor-v2` series and baselines stay VideoToolbox; a `custom` v2 dispatch uses the default, VCP.
+  timestamp). A scene that fails (for example the connection never opens) is reported as invalid with the error, and
+  the matrix goes on.
+- **Engine v1.** Engine v1 (WebRTC) left the bench in 851-3826, with its `codevisor` and `codevisor-r1x2` systems and
+  the `core`, `gate` and `matrix` plans (now `core-v2`, `gate-v2` and `matrix-v2`). `codevisor` stays a
+  `BenchSystem` so older reports and the results branch's index still decode, and `tier2-report` still reads an
+  older Tier 2 run directory whose `meta.json` says `"system": "codevisor"` (with `"engine": "v2"` it counts as
+  `codevisor-v2`, as it did).
 - **Results come from the workflow.** `Screen Sharing Bench` (below) runs Tier 1 on tamale. Runs over SSH are for
   development only.
 - **Clocks.** The timeline stamps with mach absolute time (what ScreenCaptureKit, Core Animation and Metal use);
@@ -212,8 +210,8 @@ Recording and Accessibility to the same build run from elsewhere, and the grants
 (see Signing and permissions). The build stays
 installed after the run, so the installed app is that of the last Tier 2 (or own-window Tier 1) dispatch. So `gh workflow run
 screen-sharing-bench-tier2.yml --ref <branch>` needs no deploy. Keep a dispatch under about 30 minutes, since the
-minis are the only ARM64 CI runners for this repository and lil.tech: run one scene per dispatch (`scenes` defaults to `scroll`; about 25 minutes with the floor
-and 3 repetitions of the three systems, after the build and the C5 wait for a quiet machine, up to 10 minutes). C4 runs only when
+minis are the only ARM64 CI runners for this repository and lil.tech: run one scene per dispatch (`scenes` defaults to `scroll`; about 18 minutes with the floor
+and 3 repetitions of the two default systems, after the build and the C5 wait for a quiet machine, up to 10 minutes). C4 runs only when
 video is among the scenes. A plan longer than 45 minutes of runs fails at once. `network` picks N0 (no shaping), N3 or N6: the viewer job
 loads dummynet rules into the `com.apple/codevisor-bench` pf anchor (croissant's sudoers allows `dnctl` and `pfctl`).
 N3 is 1 ms of delay and 1% random loss each way (no rate limit: the wired link is already 1 Gbit/s, and a dummynet
@@ -221,7 +219,7 @@ rate limit runs on croissant's 10 ms kernel tick, which added 6–7 ms each way)
 loss and 50 Mbit/s each way, with a 500 KB queue (about 80 ms at 50 Mbit/s, so the link queues rather than drops like
 N6's unlimited queue); dummynet has no jitter, so it lacks Tier 1 N6's 5 ms, and the rate limit's 10 ms tick makes
 the link release in bursts. The rules cover all of tamale's addresses (its IPv4 address and every
-address its Bonjour name resolves to, so Apple HP and WebRTC are shaped whichever path they pick), except the clock
+address its Bonjour name resolves to, so Apple HP and Codevisor are shaped whichever path they pick), except the clock
 probes (UDP 47592), which keep C2 a clean clock reference. Before each run it probes tamale's second responder (UDP
 47596, shaped) for 5 s and records the round trip and loss that took effect (`network-check.json`, the runs table's
 "Network check"). The anchor and pipes are flushed at the start and on exit. Runs over ssh are for
@@ -255,18 +253,17 @@ and it doesn't model the delay a held mini adds to CI.
 
 The `host` job (tamale, `scripts/tier2-host.sh`) and the `viewer` job (croissant, `scripts/tier2-viewer.sh`)
 walk the same plan (`scripts/tier2-lib.sh`): for each scene the null-sharing floor, then per repetition
-(`repetitions`, default 3, `duration` seconds each) Apple HP, Codevisor on a virtual display and Codevisor on
-the physical display, and with `c4` S5 once per primary system with the host observer off. The nightly bench
+(`repetitions`, default 3, `duration` seconds each) each system in `systems` (Apple HP and `codevisor-v2-vcp` by
+default), and with `c4` S5 once per system with the host observer off. The nightly bench
 workflow calls this one through `workflow_call` with the same defaults, so its Tier 2 runs include C4.
 
 Apple HP has no mode that shares the host's physical display: its Display Type offers only "1 Virtual Display"
 and "2 Virtual Displays", and with one virtual display the host's main display becomes "Screen Sharing Virtual
-Display" at 1920×1080 pt @2x (3840×2160 px). So the primary rows compare like for like at `R1x2`: Apple HP on
+Display" at 1920×1080 pt @2x (3840×2160 px). So the rows compare like for like at `R1x2`: Apple HP on
 its virtual display, and Codevisor on a 1920×1080 @2x `CGVirtualDisplay` that `share --virtual-display R1x2`
-creates (the player and host observer draw on and watch it by display ID; the product then scales it to its
-2560×1440 capture box, as it would for any such display). Codevisor on the physical 1920×1080 @1x display is an
-extra `R1` row. On croissant both `R1x2` streams are shown at half size, so the viewer observer reads 8 px
-barcode blocks. The floor runs on the physical display, so "above floor" for `R1x2` rows uses the R1 floor. The host job serves `rendezvous` and the clock probes; the viewer job connects for up to
+creates (the player and host observer draw on and watch it by display ID; engine v2 captures it at 3840×2160 in
+four tiles). On croissant's main display both `R1x2` streams are shown at half size, so the viewer observer reads
+8 px barcode blocks. The floor runs on the physical display, so "above floor" for `R1x2` rows uses the R1 floor. The host job serves `rendezvous` and the clock probes; the viewer job connects for up to
 30 minutes, and the two first agree that they run the same CodevisorBench build. Before each run, the two jobs meet at named barriers: `start` (both preflights pass), `system`
 (the host's `share` is listening), `ready` (the viewer shows Apple HP full screen, the Codevisor stream or the
 floor window), `measure` (the host's preflight during the run) and `done`. Measurement starts at `measure`:
@@ -282,27 +279,34 @@ runs `tier2-report`, which writes `report.json` and `summary.md` (also the job s
   allowed, or the main display is `Screen Sharing Virtual Display` with no allowed peer. Apple HP is itself a
   `:5900` session from the viewer, so the host allows the viewer's IPv4 address and Bonjour name (resolved to
   all its addresses, link-local scopes ignored).
-- `share [--port 47593] [--duration <s>] [--ready-file <path>] [--stop-file <path>]` is the Codevisor host: it waits for one viewer
-  on TCP, answers its offer with a `ScreenSharingSender` built from `ScreenSharingProductProfile`, captures the
-  main display once connected and runs `ScreenSharingQualityLoop`, as the host service does.
-- `share --engine v2` and `view --source codevisor --engine v2 [--present arrival|display-link]` run engine v2
-  (`ScreenSharingV2`) instead: the host binds an iroh endpoint (direct paths only, ALPN `codevisor/screen/1`) and sends
-  its address over the signaling connection; the viewer adds the host's signaling IPv4 to each port and connects. The
-  viewer reports the timeline, the media session's counters and the QUIC round trip as `selected_candidates`, so N3
-  runs prove their shaped path the same way. The workflow's `engine` (v1), `present` (arrival) and `systems`
-  (`apple-hp,codevisor-r1x2,codevisor`) inputs pick them; with `engine: v2` the Codevisor rows are engine v2, and
-  `meta.json` records `engine` and `presentation`. The system `codevisor-v2` is always engine v2 on the same R1x2
-  virtual display as `codevisor-r1x2`, whatever `engine` says, so `systems: apple-hp,codevisor-r1x2,codevisor-v2`
-  compares Apple HP, v1 and v2 in one dispatch, alternating within each repetition. The system `codevisor-v2-vcp` is
-  engine v2 on the same display with the VCP encoder (`share --engine v2 --encoder vcp`, 851-3819), so
-  `systems: apple-hp,codevisor-v2,codevisor-v2-vcp` compares Apple HP with v2's public and private encoders; the
-  `vcp-fail-after` input (seconds, 0 by default) forces a VCP failure that far into each of its runs
-  (`--vcp-fail-after`), so the run shows the VideoToolbox fallback. The v2 table has a row per v2 system and encode p95. The report counts a run as the
-  system its engine ran: `codevisor-v2` for that system and for `codevisor` rows with `engine: v2`. Every v2 system other
-  than `codevisor-v2-vcp` passes `--encoder vt`, so it stays the public encoder's series whatever the default is.
-- `view --source codevisor --host <ipv4>` is the Codevisor viewer: a `ScreenSharingReceiver` with the
-  product's `ScreenSharingVideoSurface` in a full-screen window. It reports the frame timeline summary and
-  the selected candidate pair. `view --source null [--port 47594]` is the floor (C3): it draws the barcode of
+- `share [--port 47593] [--duration <s>] [--ready-file <path>] [--stop-file <path>] [--encoder vt|vcp]` is the
+  Codevisor host and `view --source codevisor --host <ipv4> [--present arrival|display-link] [--tiles on|off]` the
+  Codevisor viewer, both engine v2 (`ScreenSharingV2`). The host waits for one viewer on TCP, binds an iroh endpoint
+  (direct paths only, ALPN `codevisor/screen/1`), sends its address over that signaling connection and captures the
+  shared display; the viewer adds the host's signaling IPv4 to each port, connects and shows the stream with the
+  product's surface in a full-screen window. The viewer reports the timeline, the media session's counters and the
+  QUIC round trip as `selected_candidates`, so N3 runs prove their shaped path. The workflow's `present` (arrival)
+  and `systems` (`apple-hp,codevisor-v2-vcp`) inputs pick them, and `meta.json` records `system` and
+  `presentation`. Both Codevisor systems run on the same R1x2 virtual display: `codevisor-v2-vcp` with the VCP
+  encoder (`share --encoder vcp`, 851-3819) and `codevisor-v2` with VideoToolbox (`--encoder vt`), so
+  `systems: apple-hp,codevisor-v2,codevisor-v2-vcp` compares Apple HP with v2's public and private encoders,
+  alternating within each repetition; the `vcp-fail-after` input (seconds, 0 by default) forces a VCP failure that
+  far into each of its runs (`--vcp-fail-after`), so the run shows the VideoToolbox fallback. The v2 table has a row
+  per Codevisor system and encode p95.
+- The viewer's `system.json` keeps its frame records (the timeline's last 1,800) (`frames`: source timestamp, viewer
+  decode, render and on-glass times, and stages), and every render commit of a new frame (`commits`, the last 4,096:
+  commit time, update id, the capture's source timestamp when the frame has one, refinements don't, and
+  `presented_ns` when Metal reports the drawable on glass; on the headless minis it never does, 851-4039), with
+  `continuous_minus_absolute_ns` (sampled when the viewer starts) to put commit times on the observers' clock. The
+  product records commits only when `ScreenSharingMetrics.commits.isRecording` is on, which only the bench viewer
+  sets. A commit's source timestamp names the player version the host observer saw then, and the viewer observer's
+  first sighting of that version gives the commit's real time to the screen, including frames that never get a
+  presentation callback. `share.json` also lists every capture's display time, callback time, dirty-rect count and
+  whether it touched the barcode corner (`captures`, up to 6,000), so a run can tell whether a change reached the
+  encoder late or left it late (851-3975). The host captures without the cursor, as the product does once the viewer
+  subscribes to its cursor stream (851-3823) and as Apple HP's stream leaves it out; with it, T8 charged v2 alone for
+  the cursor (Tier 2 run 41695143473: one cursor block was ~97% of VCP's remaining luma error).
+- `view --source null [--port 47594]` is the floor (C3): it draws the barcode of
   each version that `observe --relay <viewer ipv4>:47594` on the host sends the moment the host observer
   first sees it (`BenchVersionMessage`, 20 bytes), through the same surface.
   `view` and `apple-hp` take `--virtual-display R1x2`, which shows the window on a virtual display of that size
@@ -319,13 +323,13 @@ runs `tier2-report`, which writes `report.json` and `summary.md` (also the job s
   apart (seeded, as C6), to whatever app is frontmost, and logs each event's kind and the mach continuous time just
   before it was posted (`BenchInputEvent`). It prints how many of each it posted and which app was frontmost for how
   many events. It refuses a schedule longer than `--duration`, and needs **Accessibility**.
-- `view --control` (Codevisor; engine v2 only with `--present arrival`, the presentation with an input surface) takes the control lease like the product's Control mode once
+- `view --control` (Codevisor, with `--present arrival`, the presentation with an input surface) takes the control lease like the product's Control mode once
   the first frame is shown, and marks itself ready only once granted: it sends a request, then a heartbeat every second,
   and forwards the product `ScreenSharingVideoSurface`'s input (its keyboard event tap and mouse handling) through
   `ScreenSharingInputForwarder`. `share` always serves control with the product `ScreenSharingHostControl` and
   `ScreenSharingInputInjector` on the shared display (deadline checked every 250 ms, Accessibility required on the
   host). Both results carry a `control` summary (grants, denials, revocations, forwarded and injected events). Engine
-  v1 carries control messages on the product's negotiated control data channel. Engine v2 has no input path yet (E8
+  v2 has no input path yet (E8
   puts control on QUIC streams), so the bench carries the same `ScreenSharingControlMessage`s as JSON lines on its own
   TCP signaling connection (`SignalingControlChannel`, `TCP_NODELAY`, on the same wired path as the media), which stays
   open for the whole session. That is bench-only: it measures v2's picture path behind a stand-in input transport, not
@@ -378,12 +382,13 @@ a preflight found a problem, or over 1% of the viewer's frames were unreadable (
 more than the noise band, the wider of the two systems' min–max spreads, or when each system has at least 3 valid
 repetitions and the gap between their ranges is wider than the tighter system's spread, and in either case only when
 the medians differ by at least 2% of the larger one; the verdict table names the rule that fired. Each Codevisor system
-(`codevisor`, `codevisor-v2`) is compared with Apple HP on its own repetitions; the comparison's `system` names it
-(absent in reports from before engine v2, meaning `codevisor`). With `codevisor-v2` runs the summary adds the M2
+(`codevisor-v2`, `codevisor-v2-vcp`) is compared with Apple HP on its own repetitions; the comparison's `system`
+names it (absent in reports from before engine v2, meaning engine v1's `codevisor`). With `codevisor-v2` runs the
+summary adds the M2
 targets (p50 at most the floor + 17 ms, p95 at most the floor's p95 + 50 ms, idle-cursor at most 0.5 Mbit/s, N3 shown
 ratio at least 0.9, no image older than 1 s) and a table of v2 stages and counters. Codevisor results carry
 `stages_ms` from the viewer's frame timeline (`hostQueue` is `capture_queue`, the jitter-buffer estimate
-`decode_queue`) and, for v2, `stages_ms.media` (`queue` and `send` from the host's frame acks, `assemble` from the
+`decode_queue`), `stages_ms.media` (`queue` and `send` from the host's frame acks, `assemble` from the
 viewer) and `media` from both sides' counters. These cover the whole session, not only the measured window.
 
 ## Text fidelity: T8 (851-3597)
@@ -422,17 +427,14 @@ Apple HP always gives tamale a 1920×1080 pt @2x display (3840×2160 px), so on 
 shown at half size and is never 1:1. The Tier 2 input `viewer-display: R1x2` makes `view` and `apple-hp`
 (`--virtual-display R1x2`) create a 1920×1080 @2x virtual display on croissant for each run, show their window
 full screen on it, and name it in their ready file, so the viewer observer captures it (barcode blocks scale with
-it: 16 px for a 3840 px host). Engine v1 streams R1x2 at 2560×1440, and the viewer scales that back up to the 3840×2160 viewer
-display, so its R1x2 stills register 1:1 to the host's pixels and get numbers that include the down-and-up scale.
-Engine v2 streams R1x2 natively at 3840×2160 in four tiles (E5), so its rows measure the codec alone. `text.stream_size` records the Codevisor stream's encoded size (`capture_size` from `share.json`;
+it: 16 px for a 3840 px host). Engine v2 streams R1x2 natively at 3840×2160 in four tiles (E5), so its rows
+measure the codec alone. `text.stream_size` records the Codevisor stream's encoded size (`capture_size` from `share.json`;
 absent for Apple HP, whose encoded size isn't visible), and the table marks a stream smaller than the host's display
 "(scaled)".
 
 ```sh
 gh workflow run screen-sharing-bench-tier2.yml --ref <branch> -f scenes=test-cards -f duration=45 \
-  -f floor-repetitions=0 -f c4=false -f viewer-display=R1x2 -f systems=apple-hp,codevisor-r1x2,codevisor-v2
-gh workflow run screen-sharing-bench-tier2.yml --ref <branch> -f scenes=test-cards -f duration=45 \
-  -f floor-repetitions=0 -f c4=false -f engine=v2 -f systems=codevisor
+  -f floor-repetitions=0 -f c4=false -f viewer-display=R1x2 -f systems=apple-hp,codevisor-v2,codevisor-v2-vcp
 ```
 
 ## Benchmark workflow, results and gate (851-3594)
@@ -448,14 +450,15 @@ Tier 2): the minis refused those to a build run from elsewhere, and the grants m
 
 - **Nightly** at 03:00 Pacific (two UTC crons; the `plan` job keeps the one that is 03:00 in Los Angeles), and
   `workflow_dispatch`. The `tier1` job on tamale (concurrency group `screen-sharing-bench`) waits for a quiet machine
-  (C5), then runs `scripts/tier1.sh nightly`: the `core` report (S1–S6 at N0 and N3, 3 interleaved repetitions of
-  30 s with 10 s warm-up, about 20 min), the `gate` report (exactly the PR gate's run: S2, S3 and S5 at N0 and N3,
-  about 10 min), the `matrix` report (N1, N2 and N4–N7, 1 repetition, about 20 min) and the `gate-v2` report (the
-  gate's run on engine v2, about 10 min). `core-v2` (the core plan on engine v2) runs only when `plans` names it. Each report records its plan
-  in `run.method.plan`, and a baseline only uses nightlies of the same plan: the same cell measured among other
-  scenes differs, for example typing's N3 p95 is about 35 ms in `core` and about 52 ms in the gate's run. Reports
-  from before plans existed match no plan, so a new plan's baseline starts empty (`-f plans=gate` seeds it).
-  A dispatch with `scenes` or `networks` set runs one `custom` report instead (on the dispatch's `engine`) (`source` picks `own-window`, which
+  (C5), then runs `scripts/tier1.sh nightly`: the `core-v2` report (S1–S6 at N0 and N3, 3 interleaved repetitions
+  of 30 s with 10 s warm-up, about 20 min) and the `gate-v2` report (exactly the PR gate's run: S2, S3 and S5 at N0
+  and N3, about 10 min) and the `matrix-v2` report (N1, N2 and N4–N7, 1 repetition, about 20 min), all with
+  `--encoder vt`. Each report records its plan in `run.method.plan`, and a baseline
+  only uses nightlies of the same plan: the same cell measured among other scenes differs, for example typing's N3
+  p95 is about 35 ms in a core run and about 52 ms in the gate's run. Reports from before plans existed match no
+  plan, so a new plan's baseline starts empty (`-f plans=gate-v2` seeds it).
+  A dispatch with `scenes` or `networks` set runs one `custom` report instead, with the `encoder` input (`vt` by
+  default, or `vcp`) (`source` picks `own-window`, which
   captures the screen: that run installs the build over `~/Applications/CodevisorBench.app` with
   `scripts/install-granted.sh`, because macOS grants Screen Recording to that path only).
 - **`benchmark-results`.** On `main`, `scripts/publish.sh` commits each report to the orphan branch
@@ -467,22 +470,18 @@ Tier 2): the minis refused those to a build run from elsewhere, and the grants m
   change against the median of the last 7 nightlies with the same method), the stage table, the C5 result and the
   chart. GitHub strips inline SVG from summaries, so the chart (a stacked per-stage bar and the nightly e2e p50 trend
   per cell) is the committed `.svg`, linked at that commit.
-- **PR gate.** A pull request touching `packages/swift/ScreenSharing`, the CodevisorCoreMac screen sharing sources,
-  this app, `codevisor-media`, `codevisor-net`, `codevisor-net-ffi` or the workflow runs the `gate` job on tamale in its own per-PR concurrency group (so it can't cancel a
-  queued nightly or Tier 2 run; the runner takes one job at a time). The `gate` job measures the `gate` plan twice (about
-  20 min), and the `gate` subcommand compares both runs with the nightly `gate` baseline using the design §4.2
+- **PR gate.** A pull request touching `packages/swift/ScreenSharing`, this app, `codevisor-media`, `codevisor-net`,
+  `codevisor-net-ffi` or the workflow runs the `gate` job on tamale in its own per-PR concurrency group (so it can't
+  cancel a queued nightly or Tier 2 run; the runner takes one job at a time). The `gate` job measures the `gate-v2`
+  plan twice (`first-v2.json` and `second-v2.json`, about 20 min), and the `gate` subcommand compares both runs with
+  the nightly `gate-v2` baseline using the design §4.2
   rules (`BenchRegressionGate`): a cell fails only when both runs cross a threshold. At N0, latency (p50 up more
   than max(15%, 3 ms), p95 up more than max(20%, 5 ms)) is judged on e2e outside the jitter buffer once the runs and
   every baseline nightly split it out, and the jitter buffer gets its own rule (p50 up more than max(100%, 40 ms));
   N3 is judged on whole e2e, where jitter-buffer growth under loss is a regression. The jitter buffer's
   wait can swing between processes independently of the rest of the pipeline, so N0 judges it on its own. The summary also
-  says how long the gate waited for tamale and which bench runs were active meanwhile.
-  The gate covers engine v2 with the same rules: `scripts/gate-engines.sh` reads the pull request's changed files and
-  picks v1, v2 or both. `ScreenSharingV2`, its tests, the bench's `EngineV2` and `Loopback/V2` sources and
-  `packages/net` are v2; `ScreenSharingWebRTC`, its tests and the CodevisorCoreMac screen sharing sources are v1;
-  anything else in the watched paths is both. v2 measures the `gate-v2` plan (the gate's cells with `--engine v2 --encoder vt`)
-  as `first-v2.json` and `second-v2.json` and is judged against `gate-v2` nightlies; a cell's baseline only reads
-  cells of its own system. Gating both engines takes about 40 minutes.
+  says how long the gate waited for tamale and which bench runs were active meanwhile. A cell's baseline only reads
+  cells of its own system.
   Closing or merging the pull request starts a `stop-gate` job on a GitHub-hosted runner in that group, which
   cancels a gate still queued or running for it.
 - **Calibration and Tier 2** run after Tier 1 through `workflow_call` when the dispatch inputs ask for them, or every
@@ -495,16 +494,14 @@ Tier 2): the minis refused those to a build run from elsewhere, and the grants m
 open (Finder aside), anyone screen sharing into the Mac, or a locked session (`--allow-locked` skips that check for
 offscreen Tier 1). It also fails when load and Spotlight never stayed quiet for 3 samples in a row before the
 limit (`reached_settle_limit`). `loopback` records Spotlight indexing in `environment.host.spotlight_busy`. The
-`plans` dispatch input (empty: `core,gate,matrix,gate-v2`) applies to the nightly plan only; a dispatch with `scenes` or
-`networks` set runs one custom report and warns if `plans` was given. The plans are `core`, `gate`, `matrix`,
-`core-v2` and `gate-v2`; empty runs all but `core-v2`.
+`plans` dispatch input (`core-v2`, `gate-v2`, `matrix-v2`; empty runs all three) applies to the nightly plan only; a dispatch with
+`scenes` or `networks` set runs one custom report and warns if `plans` was given.
 
 ```sh
 gh workflow run screen-sharing-bench.yml -f kind=nightly                    # the nightly plan, recorded as a baseline
-gh workflow run screen-sharing-bench.yml -f kind=nightly -f plans=gate      # only the gate's baseline (about 12 min)
-gh workflow run screen-sharing-bench.yml -f kind=nightly -f plans=gate-v2   # only the v2 gate baseline
-gh workflow run screen-sharing-bench.yml -f scenes=scroll -f networks=N0,N3 -f engine=v2   # an ad hoc v2 run
-gh workflow run screen-sharing-bench.yml -f scenes=scroll -f networks=N0    # an ad hoc run
+gh workflow run screen-sharing-bench.yml -f kind=nightly -f plans=gate-v2   # only the gate's baseline (about 12 min)
+gh workflow run screen-sharing-bench.yml -f scenes=scroll -f networks=N0,N3 # an ad hoc codevisor-v2 run
+gh workflow run screen-sharing-bench.yml -f scenes=scroll -f networks=N0 -f encoder=vcp   # an ad hoc codevisor-v2-vcp run
 CodevisorBench gate --index index.jsonl --first first.json --second second.json
 CodevisorBench record --report report.json --results <benchmark-results checkout>
 ```
@@ -524,9 +521,9 @@ CodevisorBench encode-lab --scenes scroll,typing --duration 8 --warm-up 2 \
   it to the config's `size` with `VTPixelTransferSession`, and converts it to the encoder's input format (BGRA for
   `hevc444`, as the product feeds it; 4:2:0 for the others). A 60 Hz timer submits each version on its tick, so the
   encoder sees the scene's real cadence; idle ticks submit nothing, like ScreenCaptureKit.
-- **Configs.** `--configs` takes `;`-separated `key=value` lists; every key defaults to the product encoder
-  (`ScreenSharingProductProfile`: HEVC 4:4:4, standard rate control, speed over quality, 45 Mbit/s, 2560×1440;
-  `hevc` and `h264` default to low-latency rate control without speed priority, the product's fallbacks). A `preset`
+- **Configs.** `--configs` takes `;`-separated `key=value` lists; every key defaults to engine v1's product encoder,
+  kept as the lab's baseline (`product`, `EncodeLabConfig.productBaseline`: HEVC 4:4:4, standard rate control, speed over quality, 45 Mbit/s, 2560×1440,
+  a keyframe every 60 s; `hevc` and `h264` default to low-latency rate control without speed priority). A `preset`
   or `cq` keeps its own bitrate and speed unless `mbps` or `speed` is given too.
   Keys: `name`, `engine` (`vt`, or `vcp` below), `codec` (`hevc444`, `hevc`, `h264`), `rc` (`standard`, `ll`), `mbps`
   (or `none`), `size`, `tiles` (horizontal stripes, one session each, the bitrate split evenly), `skip` (encode only the

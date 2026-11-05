@@ -1,15 +1,16 @@
 import CoreVideo
-import ScreenSharingWebRTC
 
 struct EncodeLabConfig: Sendable, Codable, Equatable {
+  static let productBaseline = (megabitsPerSecond: 45.0, width: 2560, height: 1440, keyframeIntervalSeconds: 60)
+
   var name = "product"
   var engine = EncodeLabEngine.videoToolbox
   var codec = EncodeLabCodec.hevc444
   var rateControl = EncodeLabRateControl.standard
   var prioritizeSpeed = true
-  var megabitsPerSecond: Double? = Double(ScreenSharingProductProfile.bitrateCeiling) / 1_000_000
-  var width = Int(ScreenSharingProductProfile.captureBox.width)
-  var height = Int(ScreenSharingProductProfile.captureBox.height)
+  var megabitsPerSecond: Double? = EncodeLabConfig.productBaseline.megabitsPerSecond
+  var width = EncodeLabConfig.productBaseline.width
+  var height = EncodeLabConfig.productBaseline.height
   var tiles = 1
   var skipCleanTiles = false
   var longTermReferences = false

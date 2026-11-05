@@ -23,16 +23,16 @@ on:
         default: ""
         type: string
       plans:
-        description: Tier 1 plans to run, comma-separated (core, gate, matrix, core-v2, gate-v2); empty runs core, gate, matrix and gate-v2
+        description: Tier 1 plans to run, comma-separated (core-v2, gate-v2, matrix-v2); empty runs all three
         required: false
         default: ""
         type: string
-      engine:
-        description: Codevisor engine for a custom Tier 1 run, v1 (WebRTC) or v2
+      encoder:
+        description: Engine v2 encoder for a custom Tier 1 run, vt (VideoToolbox, codevisor-v2, as the baselines) or vcp (codevisor-v2-vcp)
         required: false
-        default: v1
+        default: vt
         type: choice
-        options: [v1, v2]
+        options: [vt, vcp]
       source:
         description: Frame source for a custom run (own-window needs tamale's GUI session unlocked)
         required: false
@@ -68,7 +68,6 @@ on:
     types: [opened, synchronize, reopened, closed]
     paths:
       - packages/swift/ScreenSharing/**
-      - packages/swift/CodevisorCoreMac/Sources/CodevisorCoreMac/ScreenSharing/**
       - apps/screen-sharing-bench/**
       - packages/net/crates/codevisor-media/**
       - packages/net/crates/codevisor-net/**
@@ -157,7 +156,7 @@ jobs:
       NETWORKS: ${{ inputs.networks }}
       TIER1_SOURCE: ${{ inputs.source || 'synthetic' }}
       TIER1_PLANS: ${{ inputs.plans }}
-      TIER1_ENGINE: ${{ inputs.engine || 'v1' }}
+      TIER1_ENCODER: ${{ inputs.encoder || 'vt' }}
       MODE: ${{ needs.plan.outputs.mode }}
       PREFLIGHT: ${{ needs.plan.outputs.preflight }}
     steps:
@@ -165,8 +164,8 @@ jobs:
         run: |
           [[ "$SCENES" =~ ^([a-z-]+(,[a-z-]+)*)?$ ]] || { echo "scenes must be a comma-separated list"; exit 1; }
           [[ "$NETWORKS" =~ ^(N[0-7](,N[0-7])*)?$ ]] || { echo "networks must be like N0,N3"; exit 1; }
-          plan="(core|gate|matrix|core-v2|gate-v2)"
-          [[ -z "$TIER1_PLANS" || "$TIER1_PLANS" =~ ^$plan(,$plan)*$ ]] || { echo "plans must be core, gate, matrix, core-v2 or gate-v2"; exit 1; }
+          plan="(core-v2|gate-v2|matrix-v2)"
+          [[ -z "$TIER1_PLANS" || "$TIER1_PLANS" =~ ^$plan(,$plan)*$ ]] || { echo "plans must be core-v2, gate-v2 or matrix-v2"; exit 1; }
           if [[ "$MODE" == custom && -n "$TIER1_PLANS" ]]; then
             echo "::warning::plans applies to the nightly plan only; a run with scenes or networks set is one custom report"
           fi
@@ -226,21 +225,13 @@ jobs:
     permissions:
       actions: read
       contents: read
-      pull-requests: read
     env:
       TIER1_TRIGGER: pull_request
       GH_TOKEN: ${{ github.token }}
-      PR: ${{ github.event.pull_request.number }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
         with:
           set-safe-directory: false
-      - name: Pick the engines the pull request touches
-        run: |
-          set -o pipefail
-          engines=$(gh pr diff "$PR" --repo "$GITHUB_REPOSITORY" --name-only | apps/screen-sharing-bench/scripts/gate-engines.sh)
-          echo "TIER1_GATE_ENGINES=$engines" >> "$GITHUB_ENV"
-          echo "Gating engines: $engines"
       - name: Note any bench job the gate waited for
         run: |
           mkdir -p "$RUNNER_TEMP/results"
@@ -259,14 +250,9 @@ jobs:
           results="$RUNNER_TEMP/results"
           apps/screen-sharing-bench/scripts/results-branch.sh index "$results/index.jsonl"
           status=0
-          for engine in ${TIER1_GATE_ENGINES//,/ }; do
-            suffix=""
-            [[ "$engine" == v2 ]] && suffix=-v2
-            apps/screen-sharing-bench/scripts/run-installed.sh gate --index "$results/index.jsonl" \
-              --first "$results/first$suffix.json" --second "$results/second$suffix.json" > "$results/gate$suffix.md" || status=1
-            cat "$results/gate$suffix.md" >> "$GITHUB_STEP_SUMMARY"
-          done
-          cat "$results/waited.md" >> "$GITHUB_STEP_SUMMARY"
+          apps/screen-sharing-bench/scripts/run-installed.sh gate --index "$results/index.jsonl" \
+            --first "$results/first-v2.json" --second "$results/second-v2.json" > "$results/gate-v2.md" || status=1
+          cat "$results/gate-v2.md" "$results/waited.md" >> "$GITHUB_STEP_SUMMARY"
           exit "$status"
       - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
         if: always()

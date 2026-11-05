@@ -54,13 +54,10 @@ swift build "${build_options[@]}" --product CodevisorBench >&2
 products="$(swift build "${build_options[@]}" --show-bin-path)"
 
 rm -rf "$bundle"
-mkdir -p "$bundle/Contents/MacOS" "$bundle/Contents/Frameworks"
+mkdir -p "$bundle/Contents/MacOS"
 cp "$app_root/Info.plist" "$bundle/Contents/Info.plist"
 plutil -insert CodevisorBenchCommit -string "$(source_commit)" "$bundle/Contents/Info.plist"
 cp "$products/CodevisorBench" "$bundle/Contents/MacOS/CodevisorBench"
-install_name_tool -add_rpath @executable_path/../Frameworks "$bundle/Contents/MacOS/CodevisorBench"
-ditto "$products/WebRTC.framework" "$bundle/Contents/Frameworks/WebRTC.framework"
-codesign --force --sign "$identity" "$bundle/Contents/Frameworks/WebRTC.framework" >&2
 codesign --force --sign "$identity" "$bundle" >&2
 codesign --verify --strict "$bundle"
 echo "$bundle"

@@ -21,7 +21,7 @@ enum Tier2Comparisons {
     let valid = results.filter(\.valid)
     return Tier2Group.all(valid).flatMap { group in
       let results = valid.filter(group.contains)
-      return BenchSystem.codevisorSystems.flatMap { system in
+      return BenchSystem.allCases.filter { $0 != .appleHP }.flatMap { system in
         metrics.compactMap { compare($0, system: system, in: results, group: group) }
       }
     }

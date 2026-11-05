@@ -1,7 +1,7 @@
 import ScreenSharing
 import ScreenSharingBench
 
-struct LoopbackV2Recording: LoopbackRecorded {
+struct LoopbackV2Recording {
   let system: BenchSystem
   let startNs: Int64
   let produced: [BenchVersionEvent]
@@ -15,11 +15,9 @@ struct LoopbackV2Recording: LoopbackRecorded {
   let viewerMedia: [String: Double]
   let mailboxDrops: Int
   let taps: (host: V2MediaTap, viewer: V2MediaTap)
-  let timingFrames: [BenchTimingFrame] = []
-  let qualityLevel = 0
   private static let leastRelayedShare = 0.5
 
-  func frames(arrivals: BenchFrameArrivals, clockOffsetNs: Int64) -> [BenchFrameTimestamps] {
+  func frames() -> [BenchFrameTimestamps] {
     var seen = Set<Int64>()
     return records.compactMap { record in
       guard let host = record.host, seen.insert(record.sourceTimestampNs).inserted else { return nil }
@@ -72,5 +70,12 @@ struct LoopbackV2Recording: LoopbackRecorded {
 
   func bypassedTheRelay(_ relay: BenchRelayReport) -> Bool {
     Double(relay.media.bytes) < hostMedia["bytes_sent", default: 0] * Self.leastRelayedShare
+  }
+
+  func unreadableFraction(of produced: [BenchVersionEvent]) -> Double {
+    let checked = produced.compactMap { event in barcodes[event.ns].map { $0 == event.version } }
+    guard !checked.isEmpty else { return 0 }
+
+    return Double(checked.count { !$0 }) / Double(checked.count)
   }
 }

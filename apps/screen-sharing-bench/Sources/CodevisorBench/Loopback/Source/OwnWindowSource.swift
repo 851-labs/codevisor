@@ -2,7 +2,6 @@ import ScreenCaptureKit
 import ScreenSharing
 import ScreenSharingBench
 import ScreenSharingBenchScenes
-import ScreenSharingWebRTC
 
 @MainActor
 final class OwnWindowSource: LoopbackSource {

@@ -55,7 +55,7 @@ struct LoopbackV2Cell {
     let startNs = ScreenSharingMetrics.nowNs
     let stop = {
       viewer.stop()
-      return (records: timeline.stop(), barcodes: verifier.stop().versions)
+      return (records: timeline.stop(), barcodes: verifier.stop())
     }
     do {
       try await source.run(for: .seconds(settings.durationSeconds))

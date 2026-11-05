@@ -6,14 +6,13 @@ import Testing
 
 struct Tier2SystemsTests {
   @Test(arguments: [
+    (#""system": "codevisor-v2""#, BenchSystem.codevisorV2),
+    (#""system": "codevisor-v2-vcp""#, BenchSystem.codevisorV2VCP),
+    (#""system": "apple-hp""#, BenchSystem.appleHP),
     (#""system": "codevisor""#, BenchSystem.codevisor),
-    (#""system": "codevisor", "engine": "v1""#, BenchSystem.codevisor),
     (#""system": "codevisor", "engine": "v2""#, BenchSystem.codevisorV2),
-    (#""system": "codevisor-v2", "engine": "v2""#, BenchSystem.codevisorV2),
-    (#""system": "codevisor-v2-vcp", "engine": "v2""#, BenchSystem.codevisorV2VCP),
-    (#""system": "apple-hp", "engine": "v2""#, BenchSystem.appleHP),
   ])
-  func aRunCountsAsTheSystemItsEngineRan(fields: String, system: BenchSystem) throws {
+  func aRunCountsAsTheSystemItsMetaNamesOrItsOlderEngineRan(fields: String, system: BenchSystem) throws {
     let json =
       #"{"index": 1, "scene": "scroll", "repetition": 1, "seed": 1, "duration_s": 60, "#
       + #""host_observer": true, "git_sha": "f00", "started_at": "2026-10-31T10:00:00Z", "# + fields + "}"
