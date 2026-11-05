@@ -73,6 +73,22 @@ struct SessionModelEventApplicationTests {
     #expect(activeTurn(model)?.allToolCalls.isEmpty == true)
   }
 
+  @Test("A turn that restarts under an already settled item id stays one transcript item")
+  func restartedItemIdSettlesOnce() {
+    let model = makeModel()
+    defer { model.shutdown() }
+    let serverItemID = UUID()
+
+    model.apply(.assistantItemStarted(serverItemID))
+    model.apply(.update(.agentMessageChunk(.text("First"))))
+    model.apply(.userMessage(id: UUID().uuidString, text: "next", attachments: []))
+    model.apply(.assistantItemStarted(serverItemID))
+    model.apply(.update(.agentMessageChunk(.text("Again"))))
+    model.apply(.userMessage(id: UUID().uuidString, text: "after", attachments: []))
+
+    #expect(model.settledConversation.filter { $0.id == serverItemID }.count == 1)
+  }
+
   @Test("Tool updates keep reaching resident turns after the route table grows past its limit")
   func toolRoutesSurvivePruning() throws {
     let model = makeModel()

@@ -1,8 +1,11 @@
 import CodevisorCore
 import CoreGraphics
 import Foundation
+import OSLog
 import StreamMarkdown
 import TranscriptKit
+
+let transcriptRowsLog = Logger(subsystem: "dev.codevisor.transcript", category: "rows")
 
 @MainActor
 public protocol TranscriptSurfaceAdapter: AnyObject {
@@ -100,8 +103,9 @@ public final class TranscriptSurfaceController {
 
   @discardableResult
   public func applyRows(
-    _ rows: [TranscriptVirtualRow], layoutChanged: Bool, adapter: any TranscriptSurfaceAdapter
+    _ projectedRows: [TranscriptVirtualRow], layoutChanged: Bool, adapter: any TranscriptSurfaceAdapter
   ) -> Bool {
+    let rows = Self.uniqueRows(projectedRows)
     let geometryChanged = layoutChanged || rowSet.geometryChanged(comparedTo: rows)
     if geometryChanged {
       if !layoutChanged {
@@ -134,11 +138,23 @@ public final class TranscriptSurfaceController {
       return applyRows(resolved, layoutChanged: false, adapter: adapter)
     case let .inPlace(_, previous):
       adapter.reconcileChangedActiveHosts(previousRows: previous)
-      adapter.refreshChangedMountedRootViews(
-        previousRowsByKey: Dictionary(uniqueKeysWithValues: previous.map { ($0.layoutKey, $0) })
-      )
+      adapter.refreshChangedMountedRootViews(previousRowsByKey: TranscriptRowSet.rowsByLayoutKey(previous))
       return false
     }
+  }
+
+  private static func uniqueRows(_ rows: [TranscriptVirtualRow]) -> [TranscriptVirtualRow] {
+    let unique = TranscriptRowSet.droppingDuplicateLayoutKeys(rows)
+    guard unique.count != rows.count else { return rows }
+
+    let duplicates = duplicateLayoutKeys(rows).joined(separator: ", ")
+    transcriptRowsLog.fault("Dropped transcript rows with duplicate layout keys: \(duplicates, privacy: .public)")
+    return unique
+  }
+
+  private static func duplicateLayoutKeys(_ rows: [TranscriptVirtualRow]) -> [String] {
+    let counts = Dictionary(rows.map { ($0.layoutKey, 1) }, uniquingKeysWith: +)
+    return counts.filter { $0.value > 1 }.keys.sorted()
   }
 
   public func installExactSpacerMeasurements() {

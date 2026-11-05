@@ -19,7 +19,7 @@ enum TranscriptRowAssembly {
         TranscriptBubbleConversation.make(input), input: input, options: options)
     }
     var rows: [TranscriptPresentationRow] = []
-    let settled = input.settledConversation.filter(\.isVisibleInTranscript)
+    let settled = input.settledConversation.filter { $0.isVisibleInTranscript && $0.id != input.activeItem?.id }
     rows.reserveCapacity(settled.count + 6)
     let hasSetup = !input.setupPhases.isEmpty && input.activityMessage == nil
     let pendingMessage = pendingMessageNotInHistory(input, settled: settled)
@@ -188,7 +188,8 @@ enum TranscriptRowAssembly {
     if !pendingIsOpeningRow, let message = pendingMessage {
       appendOptimisticMessage(message, input: input, to: &rows)
     }
-    for message in input.outgoingMessages {
+    let settledIDs = Set(settled.map(\.id))
+    for message in input.outgoingMessages where !settledIDs.contains(message.id) {
       TranscriptAssistantRowProjection.appendSettled(
         .user(message), waitingOnBackgroundTask: nil, presentsStopDetail: false, to: &rows)
       if let delivery = input.deliveries[message.id] {
