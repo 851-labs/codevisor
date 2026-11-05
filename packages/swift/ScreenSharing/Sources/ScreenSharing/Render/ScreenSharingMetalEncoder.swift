@@ -168,15 +168,16 @@ package struct ScreenSharingMetalEncoder: @unchecked Sendable {
     let viewport = Self.viewport(video: video, target: targetSize)
     encoder.setViewport(viewport)
     let hdrTarget = targetTexture.pixelFormat == Self.highDynamicRangePixelFormat
-    for layer in textures.layers {
+    for (index, layer) in textures.layers.enumerated() {
       if let rows = layer.rows {
         guard let scissor = Self.scissor(rows, of: video.height, in: viewport, target: targetSize) else { continue }
 
         encoder.setScissorRect(scissor)
       }
-      var placement = Self.placement(of: layer, in: video)
-      encoder.setVertexBytes(&placement, length: MemoryLayout<SIMD4<Float>>.size, index: 0)
-      guard draw(layer.planes, with: encoder, hdrTarget: hdrTarget) else {
+      let neighbours = Self.neighbours(of: index, in: textures.layers)
+      var tile = Self.tile(layer, above: neighbours.above, below: neighbours.below, in: video)
+      encoder.setFragmentBytes(&tile, length: MemoryLayout<Float>.stride * tile.count, index: 1)
+      guard draw(layer.planes, neighbours: neighbours, with: encoder, hdrTarget: hdrTarget) else {
         encoder.endEncoding()
         return nil
       }
@@ -185,14 +186,32 @@ package struct ScreenSharingMetalEncoder: @unchecked Sendable {
     return Encoded(buffer: buffer, retained: TextureFrame(frame: textures.frame, textures: textures.retained))
   }
 
-  static func placement(of layer: Textures.Layer, in picture: CGSize) -> SIMD4<Float> {
+  static func neighbours(
+    of index: Int, in layers: [Textures.Layer]
+  ) -> (above: Textures.Layer?, below: Textures.Layer?) {
+    guard let rows = layers[index].rows else { return (nil, nil) }
+
+    let above = layers.indices.contains(index - 1) ? layers[index - 1] : nil
+    let below = layers.indices.contains(index + 1) ? layers[index + 1] : nil
+    return (
+      above.flatMap { $0.rows?.upperBound == rows.lowerBound ? $0 : nil },
+      below.flatMap { $0.rows?.lowerBound == rows.upperBound ? $0 : nil }
+    )
+  }
+
+  static func tile(
+    _ layer: Textures.Layer, above: Textures.Layer?, below: Textures.Layer?, in picture: CGSize
+  ) -> [Float] {
     guard let rows = layer.rows, picture.height > 0, picture.width > 0, !rows.isEmpty else {
-      return SIMD4(0, 1, 1, 0)
+      return [0, 1, 0, 1, 1, 0, 0, 0, 1]
     }
 
-    let rowScale = picture.height / CGFloat(max(rows.count, layer.pixelRows))
+    let pixelRows = max(rows.count, layer.pixelRows)
     let columnScale = picture.width / CGFloat(max(Int(picture.width), layer.pixelColumns))
-    return SIMD4(Float(CGFloat(rows.lowerBound) / picture.height), Float(rowScale), Float(columnScale), 0)
+    return [
+      1, Float(picture.height), Float(rows.lowerBound), Float(pixelRows), Float(rows.count),
+      Float(above?.rows?.count ?? 0), above == nil ? 0 : 1, below == nil ? 0 : 1, Float(columnScale),
+    ]
   }
 
   static func scissor(
@@ -208,7 +227,19 @@ package struct ScreenSharingMetalEncoder: @unchecked Sendable {
     return MTLScissorRect(x: left, y: top, width: right - left, height: bottom - top)
   }
 
-  private func draw(_ planes: Textures.Planes, with encoder: any MTLRenderCommandEncoder, hdrTarget: Bool) -> Bool {
+  private func draw(
+    _ planes: Textures.Planes, neighbours: (above: Textures.Layer?, below: Textures.Layer?),
+    with encoder: any MTLRenderCommandEncoder, hdrTarget: Bool
+  ) -> Bool {
+    let own = Self.metalTextures(planes)
+    guard !own.isEmpty else { return false }
+
+    for (slot, neighbour) in [(2, neighbours.above), (4, neighbours.below)] {
+      let textures = neighbour.map { Self.metalTextures($0.planes) } ?? own
+      for (offset, texture) in (textures.count == own.count ? textures : own).enumerated() {
+        encoder.setFragmentTexture(texture, index: slot + offset)
+      }
+    }
     switch planes {
     case .biplanar(let y, let uv, let range):
       guard let yTexture = CVMetalTextureGetTexture(y), let uvTexture = CVMetalTextureGetTexture(uv) else {
@@ -234,6 +265,16 @@ package struct ScreenSharingMetalEncoder: @unchecked Sendable {
     }
     encoder.drawPrimitives(type: .triangle, vertexStart: 0, vertexCount: 3)
     return true
+  }
+
+  private static func metalTextures(_ planes: Textures.Planes) -> [any MTLTexture] {
+    switch planes {
+    case .biplanar(let y, let uv, _):
+      guard let y = CVMetalTextureGetTexture(y), let uv = CVMetalTextureGetTexture(uv) else { return [] }
+
+      return [y, uv]
+    case .bgra(let plane): return CVMetalTextureGetTexture(plane).map { [$0] } ?? []
+    }
   }
 
   private func texture(_ buffer: CVPixelBuffer, plane: Int, format: MTLPixelFormat) -> CVMetalTexture? {

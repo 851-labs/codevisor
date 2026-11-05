@@ -26,16 +26,25 @@ struct ScreenSharingTiledRenderTests {
     #expect(tiled == whole)
   }
 
-  @Test func atAnyOtherScaleOnlyTheRowsAtATileEdgeDifferAndOnlyByAFewLevels() throws {
+  @Test(arguments: [
+    (1280, 720), (1920, 1080), (853, 480), (640, 360), (457, 257),
+  ])
+  func atEveryScaleATiledPictureIsWithinTwoLevelsOfTheComposedOneEvenAtTheTileEdges(width: Int, height: Int) throws {
     let gpu = try TiledRenderFixture()
+    for content in [VideoContent.noise, .text] {
+      let whole = ScreenSharingVideoFrame(pixelBuffer: try content.picture(rows: 0..<720), timestampNs: 1)
+      let tiles = try VideoContent.rows.map {
+        ScreenSharingVideoTile(pixelBuffer: try content.picture(rows: $0), rows: $0)
+      }
+      let tiled = try #require(
+        ScreenSharingVideoFrame(tiles: tiles, size: CGSize(width: 1280, height: 720), timestampNs: 1))
 
-    let whole = try gpu.render(ScreenSharingVideoFrame(pixelBuffer: try Self.picture(), timestampNs: 1), 21, 84)
-    let tiled = try gpu.render(try #require(try Self.tiledFrame()), 21, 84)
+      let differences = zip(
+        try gpu.renderAll(whole, width, height), try gpu.renderAll(tiled, width, height)
+      ).map { abs(Int($0) - Int($1)) }
 
-    let differing = (0..<84).filter { whole[$0] != tiled[$0] }
-    let edges = Self.tileRows.dropFirst().map { Double($0.lowerBound) * 84 / Double(Self.height) }
-    #expect(differing.allSatisfy { row in edges.contains { abs(Double(row) + 0.5 - $0) <= 1.5 } }, "\(differing)")
-    #expect(zip(whole, tiled).allSatisfy { abs(Int($0) - Int($1)) <= 4 })
+      #expect(differences.max() ?? 0 <= 2, "\(content) at \(width)x\(height): \(differences.max() ?? 0) levels")
+    }
   }
 
   @Test func aTileDecodedIntoATallerBufferShowsOnlyItsOwnRows() throws {
@@ -92,6 +101,51 @@ struct ScreenSharingTiledRenderTests {
   }
 }
 
+private enum VideoContent {
+  case noise
+  case text
+
+  static let rows = [0..<192, 192..<384, 384..<576, 576..<720]
+
+  func picture(rows: Range<Int>) throws -> CVPixelBuffer {
+    var created: CVPixelBuffer?
+    let attributes =
+      [kCVPixelBufferMetalCompatibilityKey: true, kCVPixelBufferIOSurfacePropertiesKey: [:] as CFDictionary]
+      as CFDictionary
+    CVPixelBufferCreate(nil, 1280, rows.count, kCVPixelFormatType_444YpCbCr8BiPlanarFullRange, attributes, &created)
+    let buffer = try #require(created)
+    CVPixelBufferLockBaseAddress(buffer, [])
+    defer { CVPixelBufferUnlockBaseAddress(buffer, []) }
+    let luma = try #require(CVPixelBufferGetBaseAddressOfPlane(buffer, 0)).assumingMemoryBound(to: UInt8.self)
+    let chroma = try #require(CVPixelBufferGetBaseAddressOfPlane(buffer, 1)).assumingMemoryBound(to: UInt8.self)
+    let lumaStride = CVPixelBufferGetBytesPerRowOfPlane(buffer, 0)
+    let chromaStride = CVPixelBufferGetBytesPerRowOfPlane(buffer, 1)
+    for (index, row) in rows.enumerated() {
+      for column in 0..<1280 {
+        let (y, cb, cr) = sample(row: row, column: column)
+        luma[index * lumaStride + column] = y
+        chroma[index * chromaStride + column * 2] = cb
+        chroma[index * chromaStride + column * 2 + 1] = cr
+      }
+    }
+    return buffer
+  }
+
+  private func sample(row: Int, column: Int) -> (UInt8, UInt8, UInt8) {
+    var hash = UInt32(truncatingIfNeeded: row &* 73_856_093 ^ column &* 19_349_663)
+    hash ^= hash >> 13
+    hash = hash &* 0x5bd1_e995
+    hash ^= hash >> 15
+    switch self {
+    case .noise: return (UInt8(hash & 0xff), UInt8((hash >> 8) & 0xff), UInt8((hash >> 16) & 0xff))
+    case .text:
+      let line = row % 18
+      let ink = line >= 3 && line < 14 && (column / 9 + row / 18) % 7 != 0 && (hash & 3) != 0
+      return ink ? (20, 128, 128) : (235, 128, 128)
+    }
+  }
+}
+
 @MainActor
 private struct TiledRenderFixture {
   let device: any MTLDevice
@@ -105,6 +159,11 @@ private struct TiledRenderFixture {
   }
 
   func render(_ frame: ScreenSharingVideoFrame, _ width: Int, _ height: Int) throws -> [UInt8] {
+    let pixels = try renderAll(frame, width, height)
+    return (0..<height).map { pixels[($0 * width + width / 2) * 3 + 1] }
+  }
+
+  func renderAll(_ frame: ScreenSharingVideoFrame, _ width: Int, _ height: Int) throws -> [UInt8] {
     let textures = try #require(encoder.textures(for: frame))
     let descriptor = MTLTextureDescriptor.texture2DDescriptor(
       pixelFormat: .bgra8Unorm, width: width, height: height, mipmapped: false)
@@ -121,8 +180,8 @@ private struct TiledRenderFixture {
     blit.endEncoding()
     encoded.buffer.commit()
     encoded.buffer.waitUntilCompleted()
-    var pixels = [UInt32](repeating: 0, count: width * height)
+    var pixels = [UInt8](repeating: 0, count: width * height * 4)
     surface.getBytes(&pixels, bytesPerRow: width * 4, from: MTLRegionMake2D(0, 0, width, height), mipmapLevel: 0)
-    return (0..<height).map { UInt8((pixels[$0 * width + width / 2] >> 8) & 0xff) }
+    return pixels.enumerated().filter { $0.offset % 4 != 3 }.map(\.element)
   }
 }
