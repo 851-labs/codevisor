@@ -17,8 +17,6 @@ struct EncodeLabQualityPass {
 
   func run() async throws -> Result {
     let source = try EncodeLabFrameSource(setup: setup, config: trace.config)
-    let reference = try EncodeLabPixelTransfer(
-      width: trace.config.width, height: trace.config.height, format: trace.config.referenceFormat)
     let comparer = try nativeComparer
     var screen = EncodeLabDecodedScreen(config: trace.config)
     var samples: [EncodeLabQualitySample] = []
@@ -32,11 +30,12 @@ struct EncodeLabQualityPass {
       guard strided || settled.contains(event.frame) else { continue }
 
       let native = try await source.nativePicture(forVersion: event.version)
-      let original = try reference.transfer(try source.scaled(native))
+      let reference = EncodeLabReferencePicture.make(
+        from: try source.scaled(native), fullRange: trace.config.comparesInFullRange)
       let nativeQuality = try screen.singleImage.flatMap { try comparer?.compare(native: native, shown: $0) }
       samples.append(
         try screen.compare(
-          with: original, event: event, native: nativeQuality, strided: strided,
+          with: reference, event: event, native: nativeQuality, strided: strided,
           settled: settled.contains(event.frame)))
     }
     return Result(samples: samples, decodeMs: decodeMs, atNativeSize: comparer == nil)

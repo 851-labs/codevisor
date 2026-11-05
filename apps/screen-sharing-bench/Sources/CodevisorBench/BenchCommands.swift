@@ -22,6 +22,7 @@ enum BenchCommands {
     HostLabCommand.self,
     HostRunCommand.self,
     EncoderReleaseCommand.self,
+    VCPLevelsCommand.self,
   ]
 
   static func named(_ name: String) -> (any BenchCommand.Type)? {

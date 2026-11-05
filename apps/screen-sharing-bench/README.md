@@ -547,12 +547,14 @@ CodevisorBench encode-lab --scenes scroll,typing --duration 8 --warm-up 2 \
   `ForceLTRRefresh` with tokens acknowledged after a simulated 33 ms round trip, on the middle tile only.
 - **Quality.** A second pass decodes every frame in order with the hardware decoder and, on `--quality-samples`
   evenly spaced frames, compares the picture a viewer would show (skipped tiles keep their last image) with the
-  source converted to 4:4:4 (BT.709, video range): PSNR of Y and of Cb/Cr (4:2:0 chroma upsampled by nearest
-  neighbour) and SSIM of Y (Wang 2004, 11×11 Gaussian, σ 1.5). A single-tile config smaller than the canvas is also
+  source converted to 4:4:4 (BT.709, video range) on the CPU, rounded to 8 bits: PSNR of Y and of Cb/Cr (4:2:0
+  chroma upsampled by nearest neighbour) and SSIM of Y (Wang 2004, 11×11 Gaussian, σ 1.5). A single-tile config smaller than the canvas is also
   upscaled back and compared with the native frame (`native`), so downscaling counts against it; tiled configs get
   no native score. `engine=vcp` with `444f` input is compared in full range, the range it encodes. **Settled** scores
   the last pass of every version held for at least 0.5 s, after its refinements: the still a viewer keeps looking at,
-  which is what T8 measures on test cards (851-3975).
+  which is what T8 measures on test cards (851-3975). The reference shares no code with the encoder's input
+  conversion (`VTPixelTransferSession`): when it did, the input conversion's errors cancelled out, and the lab never
+  showed the white at 254 that VCP's input had on the minis' M6 (851-4049).
 - **CI.** Dispatch `Screen Sharing Bench` with `encode_lab` set to the configs (and `encode_lab_options` for the
   rest); that runs only the `encode-lab` job on tamale and puts the table in the job summary.
 
@@ -596,6 +598,17 @@ VideoToolbox HEVC sessions (1920×544, one frame each) until one fails, and repo
 stopped it. A leak shows as a count that stays below `before` after a round. On an M1 Pro (macOS 27.2) the count is 32
 before, 24 while a 4-tile VCP encoder is open and 32 after every round. In CI:
 `-f lab='tamale encoder-release --rounds 3'`.
+
+## VCP levels (851-3989)
+
+`vcp-levels` pushes a grey ramp (one flat 32×32 px patch per level, 1024×256) through each stage of engine v2's VCP
+path on this Mac and reports every level that changes (`mismatches`, as `level→shown`). Each of three inputs (BGRA
+through the engine's converter, and `444f` converted on the CPU, with and without the session's colour tags) is
+encoded by a 1-tile `ScreenSharingVCPTileEncoder` at 60 Mbit/s, a change and then `--passes` − 1 refinements (5 in
+all by default), and decoded as the viewer does. The stages are the `444f` decode's Y, the viewer shader
+(`ScreenSharingMetalView.shader`) drawing that decode 1:1 into a BGRA texture, and a decode to BGRA. `conversions`
+gives `VTPixelTransferSession`'s BGRA → `444f` and `444v` for comparison. In CI:
+`-f lab='tamale vcp-levels'`.
 
 ## Signing and permissions
 

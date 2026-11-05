@@ -51,10 +51,6 @@ final class ScreenSharingVCPConversionKernel: @unchecked Sendable {
     let chroma: any MTLTexture
   }
 
-  func run(source: any MTLTexture, luma: any MTLTexture, chroma: any MTLTexture) throws {
-    try run(source: source, regions: [Region(sourceRow: 0, luma: luma, chroma: chroma)])
-  }
-
   func run(source: any MTLTexture, regions: [Region]) throws {
     guard let buffer = queue.makeCommandBuffer(), let encoder = buffer.makeComputeCommandEncoder() else {
       throw ScreenSharingError.unavailable("No Metal command buffer for the VCP converter.")

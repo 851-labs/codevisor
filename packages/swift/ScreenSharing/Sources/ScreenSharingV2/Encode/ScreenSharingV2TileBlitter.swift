@@ -12,22 +12,20 @@ final class ScreenSharingV2TileBlitter: @unchecked Sendable {
   }
 
   private let queue: any MTLCommandQueue
-  private let cache: CVMetalTextureCache
+  private let textures: ScreenSharingV2MetalTextures
 
   init?() {
-    guard let device = MTLCreateSystemDefaultDevice(), let queue = device.makeCommandQueue() else { return nil }
-
-    var cache: CVMetalTextureCache?
-    guard CVMetalTextureCacheCreate(nil, nil, device, nil, &cache) == kCVReturnSuccess, let cache else { return nil }
+    guard let device = MTLCreateSystemDefaultDevice(), let queue = device.makeCommandQueue(),
+      let textures = try? ScreenSharingV2MetalTextures(device: device)
+    else { return nil }
 
     self.queue = queue
-    self.cache = cache
+    self.textures = textures
   }
 
   func copy(_ copies: [Copy]) -> Bool {
     guard !copies.isEmpty,
       let format = copies.first.map({ CVPixelBufferGetPixelFormatType($0.source) }),
-      let formats = Self.planeFormats[format],
       copies.allSatisfy({
         CVPixelBufferGetPixelFormatType($0.source) == format && CVPixelBufferGetPixelFormatType($0.target) == format
       }),
@@ -36,22 +34,20 @@ final class ScreenSharingV2TileBlitter: @unchecked Sendable {
 
     var retained: [CVMetalTexture] = []
     for copy in copies {
-      for (index, pixelFormat) in formats.enumerated() {
-        guard let from = texture(copy.source, plane: index, format: pixelFormat, retaining: &retained),
-          let to = texture(copy.target, plane: index, format: pixelFormat, retaining: &retained)
-        else {
-          blit.endEncoding()
-          return false
-        }
-
-        encode(copy, from: from, to: to, into: blit)
+      guard let from = try? textures.planes(of: copy.source, retaining: &retained),
+        let to = try? textures.planes(of: copy.target, retaining: &retained)
+      else {
+        blit.endEncoding()
+        return false
       }
+
+      for (from, to) in zip(from, to) { encode(copy, from: from, to: to, into: blit) }
     }
     blit.endEncoding()
     buffer.commit()
     buffer.waitUntilCompleted()
     let completed = withExtendedLifetime(retained) { buffer.status == .completed }
-    CVMetalTextureCacheFlush(cache, 0)
+    textures.flush()
     return completed
   }
 
@@ -68,27 +64,4 @@ final class ScreenSharingV2TileBlitter: @unchecked Sendable {
       sourceSize: MTLSize(width: min(from.width, to.width), height: rows, depth: 1), to: to, destinationSlice: 0,
       destinationLevel: 0, destinationOrigin: MTLOrigin(x: 0, y: targetRow, z: 0))
   }
-
-  private func texture(
-    _ pixels: CVPixelBuffer, plane: Int, format: MTLPixelFormat, retaining retained: inout [CVMetalTexture]
-  ) -> (any MTLTexture)? {
-    let planar = CVPixelBufferIsPlanar(pixels)
-    let width = planar ? CVPixelBufferGetWidthOfPlane(pixels, plane) : CVPixelBufferGetWidth(pixels)
-    let height = planar ? CVPixelBufferGetHeightOfPlane(pixels, plane) : CVPixelBufferGetHeight(pixels)
-    var texture: CVMetalTexture?
-    let status = CVMetalTextureCacheCreateTextureFromImage(
-      nil, cache, pixels, nil, format, width, height, plane, &texture)
-    guard status == kCVReturnSuccess, let texture, let metal = CVMetalTextureGetTexture(texture) else { return nil }
-
-    retained.append(texture)
-    return metal
-  }
-
-  private static let planeFormats: [OSType: [MTLPixelFormat]] = [
-    kCVPixelFormatType_420YpCbCr8BiPlanarVideoRange: [.r8Unorm, .rg8Unorm],
-    kCVPixelFormatType_420YpCbCr8BiPlanarFullRange: [.r8Unorm, .rg8Unorm],
-    kCVPixelFormatType_444YpCbCr8BiPlanarVideoRange: [.r8Unorm, .rg8Unorm],
-    kCVPixelFormatType_444YpCbCr8BiPlanarFullRange: [.r8Unorm, .rg8Unorm],
-    kCVPixelFormatType_32BGRA: [.bgra8Unorm],
-  ]
 }
