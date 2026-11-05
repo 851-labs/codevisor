@@ -45,6 +45,8 @@
     "codevisor/no-comments": "error",
     "codevisor/no-effect-ternary": "error",
     "codevisor/named-sql": "error",
+    "codevisor/isolated-module-mocks": "error",
+    "codevisor/no-import-time-test-hooks": "error",
     "typescript/no-floating-promises": [
       "error",
       {
@@ -65,6 +67,13 @@
     ]
   },
   "overrides": [
+    {
+      "files": ["apps/cloud/**"],
+      "rules": {
+        "codevisor/isolated-module-mocks": "off",
+        "codevisor/no-import-time-test-hooks": "off"
+      }
+    },
     {
       "files": [
         "**/*.test.ts",

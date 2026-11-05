@@ -36,6 +36,10 @@ Because modules are loaded once per worker:
 - Module-level state in support modules lives for the whole worker. Keep it
   immutable, or reset it from a hook.
 
+Lint enforces both rules: `codevisor/isolated-module-mocks` and
+`codevisor/no-import-time-test-hooks`. `apps/cloud` is exempt because its
+tests run in the Workers pool, which loads each file on its own.
+
 ## State resets and order
 
 `restoreMocks`, `unstubEnvs`, and `unstubGlobals` undo `vi.spyOn`,

@@ -106,8 +106,9 @@ test target over another bespoke implementation.
   `vi.mock`, `vi.doMock`, or `vi.resetModules`. Don't register hooks at the
   top level of a support module; register cleanup with `onTestFinished` when
   the resource is created, or put per-file hooks in the package's
-  `src/test-setup.ts`. Test order is shuffled; reproduce an order failure
-  with the printed seed (`--sequence.seed=<seed>`).
+  `src/test-setup.ts`. Lint enforces both (`codevisor/isolated-module-mocks`,
+  `codevisor/no-import-time-test-hooks`). Test order is shuffled; reproduce
+  an order failure with the printed seed (`--sequence.seed=<seed>`).
 - After overriding a module-level `vi.fn` with `mockImplementation`, reset it
   in cleanup with `mockReset`/`vi.resetAllMocks`, which restore the original
   implementation. `clearAllMocks` only clears calls.

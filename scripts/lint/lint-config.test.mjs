@@ -10,7 +10,9 @@ import { loadExemptions, repoRoot } from "./exemptions.mjs"
 const styleRules = new Set([
   "eslint(no-nested-ternary)",
   "codevisor(no-effect-ternary)",
-  "codevisor(named-sql)"
+  "codevisor(named-sql)",
+  "codevisor(isolated-module-mocks)",
+  "codevisor(no-import-time-test-hooks)"
 ])
 
 const repoConfig = () => {
@@ -79,6 +81,21 @@ test("migrations, upgrades and tests may inline SQL", (t) => {
     "packages/example/src/rows.ts": inlineSql
   })
   assert.deepEqual(violations, ["packages/example/src/rows.ts codevisor(named-sql)"])
+})
+
+test("cloud tests, which keep per-file isolation, may mock modules and hook from support files", (t) => {
+  const mocking = 'import { vi } from "vitest"\nvi.mock("node:fs")\n'
+  const hooking = 'import { afterEach } from "vitest"\nafterEach(() => {})\n'
+  const violations = lintWithRepoConfig(t, {
+    "apps/cloud/test/storage.test.ts": mocking,
+    "apps/cloud/test/storage-test-support.ts": hooking,
+    "apps/server/src/storage.test.ts": mocking,
+    "apps/server/src/storage-test-support.ts": hooking
+  })
+  assert.deepEqual(violations, [
+    "apps/server/src/storage-test-support.ts codevisor(no-import-time-test-hooks)",
+    "apps/server/src/storage.test.ts codevisor(isolated-module-mocks)"
+  ])
 })
 
 test("every lint exemption names a file that exists and gives a reason", () => {

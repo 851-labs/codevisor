@@ -4,8 +4,10 @@ import { describe, it } from "node:test"
 import { RuleTester } from "oxlint/plugins-dev"
 
 import { repoRoot } from "./exemptions.mjs"
+import { isolatedModuleMocks } from "./isolated-module-mocks.mjs"
 import { namedSql } from "./named-sql.mjs"
 import { noEffectTernary } from "./no-effect-ternary.mjs"
+import { noImportTimeTestHooks } from "./no-import-time-test-hooks.mjs"
 
 RuleTester.describe = describe
 RuleTester.it = it
@@ -82,6 +84,45 @@ describe("codevisor/named-sql", () => {
         filename,
         code: "db.exec(`drop trigger ${other}`)",
         errors: [stale, { message: /to \.exec\(\)/ }]
+      }
+    ]
+  })
+})
+
+describe("codevisor/isolated-module-mocks", () => {
+  const shared = join(repoRoot, "apps/server/src/example.test.ts")
+  const isolated = join(repoRoot, "apps/server/src/example.isolated.test.ts")
+  const message = /Rename it to \*\.isolated\.test\.ts\.$/
+  tester.run("isolated-module-mocks", isolatedModuleMocks, {
+    valid: [
+      { filename: isolated, code: 'vi.mock("node:fs"); vi.doMock("./a.js"); vi.resetModules()' },
+      { filename: shared, code: 'vi.spyOn(console, "error"); vi.fn(); mock("node:fs")' }
+    ],
+    invalid: [
+      { filename: shared, code: 'vi.mock("node:fs")', errors: [{ message: /^vi\.mock\(\)/ }] },
+      { filename: shared, code: 'vi.doMock("./a.js")', errors: [{ message }] },
+      { filename: shared, code: 'vi.unmock("./a.js")', errors: [{ message }] },
+      { filename: shared, code: "vi.resetModules()", errors: [{ message }] }
+    ]
+  })
+})
+
+describe("codevisor/no-import-time-test-hooks", () => {
+  const support = join(repoRoot, "apps/server/src/example-test-support.ts")
+  const message = /runs only for the first test file that imports it/
+  tester.run("no-import-time-test-hooks", noImportTimeTestHooks, {
+    valid: [
+      { filename: join(repoRoot, "apps/server/src/example.test.ts"), code: "afterEach(cleanup)" },
+      { filename: join(repoRoot, "apps/server/src/test-setup.ts"), code: "beforeEach(stub)" },
+      { filename: support, code: "export const temp = () => onTestFinished(cleanup)" },
+      { filename: support, code: "export const fixture = () => { beforeEach(stub) }" }
+    ],
+    invalid: [
+      { filename: support, code: "beforeEach(stub)", errors: [{ message: /^beforeEach\(\)/ }] },
+      {
+        filename: support,
+        code: "afterEach(cleanup)\nbeforeAll(start)\nafterAll(stop)",
+        errors: [{ message }, { message }, { message }]
       }
     ]
   })
