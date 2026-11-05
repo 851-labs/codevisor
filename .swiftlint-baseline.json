@@ -195,21 +195,6 @@
     }
   },
   {
-    "text": "  override init(frame: CGRect) {",
-    "violation": {
-      "location": {
-        "character": 12,
-        "file": "apps/ios/Codevisor/Features/Session/Transcript/VirtualizedTranscriptScrollView.swift",
-        "line": 137
-      },
-      "reason": "Initializer body should span 50 lines or less excluding comments and whitespace: currently spans 52 lines",
-      "ruleDescription": "Function bodies should not span too many lines",
-      "ruleIdentifier": "function_body_length",
-      "ruleName": "Function Body Length",
-      "severity": "error"
-    }
-  },
-  {
     "text": "  override func layoutSubviews() {",
     "violation": {
       "location": {

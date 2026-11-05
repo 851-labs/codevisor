@@ -58,6 +58,7 @@ struct SessionTranscriptView: View {
   @State var keyboardOverlap: CGFloat = 0
   @State var keyboardFreeChatHeight: CGFloat = 0
   @State var keyboardAvoidingChatHeight: CGFloat = 0
+  @State var chatBottomSafeArea: CGFloat = 0
   @State var keyboardInset = ChatKeyboardInset()
   @State var holdsQueueEntrance = false
   @State var composerExpanded = false
@@ -394,7 +395,7 @@ extension SessionTranscriptView {
     WindowFrameProbe { frame in
       transcriptWindowBottom = frame.maxY
     }
-    .ignoresSafeArea(.container, edges: [.top, .bottom])
+    .modifier(transcriptBottomEdgeExtent)
     .allowsHitTesting(false)
     .accessibilityHidden(true)
   }
@@ -405,6 +406,14 @@ extension SessionTranscriptView {
     }
     .allowsHitTesting(false)
     .accessibilityHidden(true)
+  }
+
+  var transcriptBottomEdgeExtent: TranscriptBottomEdgeExtent {
+    TranscriptBottomEdgeExtent(
+      tracksKeyboardInset: tracksKeyboardInset,
+      chatBottomSafeArea: chatBottomSafeArea,
+      isKeyboardUp: keyboardOverlap > 0
+    )
   }
 
   var transcriptBottomObstruction: CGFloat {

@@ -153,14 +153,14 @@ extension VirtualizedTranscriptScrollView {
         deferredActiveRowsRange = nil
         deferredProjectionRevision = nil
         activeRowsRange = resolution.activeRange
-        let bottomSpacerShiftOrigin =
-          layoutFingerprintChanged ? nil : bottomSpacerShrinkOrigin(to: resolution.rows)
+        let spacerShiftOrigin =
+          layoutFingerprintChanged ? nil : bottomSpacerShiftOrigin(to: resolution.rows)
         rebuiltRows = applyRows(
           resolution.rows,
           layoutFingerprintChanged: layoutFingerprintChanged
         )
-        if let bottomSpacerShiftOrigin {
-          animateBottomSpacerShift(from: bottomSpacerShiftOrigin)
+        if let spacerShiftOrigin {
+          animateBottomSpacerShift(from: spacerShiftOrigin)
         }
         appliedProjectionRevision = newProjectionRevision
       }
@@ -219,7 +219,7 @@ extension VirtualizedTranscriptScrollView {
 extension VirtualizedTranscriptScrollView {
   static let bottomSpacerShiftDuration: TimeInterval = 0.32
 
-  func bottomSpacerShrinkOrigin(to newRows: [TranscriptVirtualRow]) -> CGFloat? {
+  func bottomSpacerShiftOrigin(to newRows: [TranscriptVirtualRow]) -> CGFloat? {
     guard initialPositionApplied, !reduceMotion, !isNativeScrollInteractionActive,
       !sendTransitions.isPushing, rows.count == newRows.count,
       currentDistanceFromBottom() <= Self.atBottomThreshold,
@@ -227,7 +227,7 @@ extension VirtualizedTranscriptScrollView {
       newRows[spacerIndex].id == .bottomSpacer,
       case let .bottomSpacer(oldHeight) = rows[spacerIndex].content,
       case let .bottomSpacer(newHeight) = newRows[spacerIndex].content,
-      newHeight < oldHeight,
+      newHeight != oldHeight,
       zip(rows, newRows).enumerated().allSatisfy({ $0.offset == spacerIndex || $0.element.0 == $0.element.1 })
     else { return nil }
     return contentOffset.y

@@ -166,7 +166,7 @@ extension SessionTranscriptView {
         )
       )
     }
-    .ignoresSafeArea(.container, edges: [.top, .bottom])
+    .modifier(transcriptBottomEdgeExtent)
     .onChange(of: controller.userSendSignal) { _, _ in
       followsLatest = true
       scrollCommand.token &+= 1

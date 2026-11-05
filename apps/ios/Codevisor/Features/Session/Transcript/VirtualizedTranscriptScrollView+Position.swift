@@ -49,6 +49,18 @@ extension VirtualizedTranscriptScrollView {
     lastDistanceFromBottom = currentDistanceFromBottom()
   }
 
+  func pinBottomThroughResize(from oldBounds: CGRect) {
+    guard abs(oldBounds.height - bounds.height) > 0.5, oldBounds.height > 0, initialPositionApplied,
+      !isDetaching, !sendTransitions.isPushing,
+      TranscriptViewportResizeAdjustment.resolve(
+        previousDistanceFromBottom: lastDistanceFromBottom,
+        atBottomThreshold: Self.atBottomThreshold,
+        isUserInteracting: isNativeScrollInteractionActive && !holdsForKeyboardDrag
+      ) == .pinToBottom
+    else { return }
+    setDistanceFromBottom(0, synchronizesWithActiveLayoutAnimation: true)
+  }
+
   func compensateViewport(
     toDistanceFromBottom distance: CGFloat,
     previousOffsetY: CGFloat

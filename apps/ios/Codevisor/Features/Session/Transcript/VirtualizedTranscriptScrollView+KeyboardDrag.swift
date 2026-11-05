@@ -11,8 +11,14 @@ extension VirtualizedTranscriptScrollView {
     window?.keyboardLayoutGuide.keyboardDismissPadding = padding
   }
 
+  var heightBehindKeyboard: CGFloat {
+    guard let window, let keyboardScreenFrame else { return 0 }
+    let keyboardTop = window.convert(keyboardScreenFrame, from: window.screen.coordinateSpace).minY
+    return max(0, convert(bounds, to: window).maxY - keyboardTop)
+  }
+
   func beginKeyboardDrag() {
-    setKeyboardDismissPadding(max(0, verticalScrollIndicatorInsets.bottom))
+    setKeyboardDismissPadding(max(0, verticalScrollIndicatorInsets.bottom - heightBehindKeyboard))
     holdsForKeyboardDrag = isKeyboardShown && currentDistanceFromBottom() <= Self.atBottomThreshold
   }
 

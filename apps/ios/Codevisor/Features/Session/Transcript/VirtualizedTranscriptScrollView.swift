@@ -107,6 +107,7 @@ final class VirtualizedTranscriptScrollView: UIScrollView, UIScrollViewDelegate 
   var holdsForKeyboardDrag = false
   var isKeyboardUp = false
   var heightWithoutKeyboard: CGFloat = 0
+  var keyboardScreenFrame: CGRect?
   var keyboardObservers: [NSObjectProtocol] = []
   var isHoldingForKeyboardDrag = false
   var lastStableScrollState: SessionScrollState?
@@ -171,11 +172,30 @@ final class VirtualizedTranscriptScrollView: UIScrollView, UIScrollViewDelegate 
     ) { [weak self] _ in
       Self.onMain { [weak self] in self?.sendTransitions.interrupt() }
     }
-    keyboardObservers = [
+    keyboardObservers = observeKeyboard()
+  }
+
+  convenience init() {
+    self.init(frame: .zero)
+  }
+
+  @available(*, unavailable)
+  required init?(coder _: NSCoder) {
+    fatalError("init(coder:) has not been implemented")
+  }
+
+  private func observeKeyboard() -> [NSObjectProtocol] {
+    [
       NotificationCenter.default.addObserver(
         forName: UIResponder.keyboardWillShowNotification, object: nil, queue: nil
       ) { [weak self] _ in
         Self.onMain { [weak self] in self?.isKeyboardUp = true }
+      },
+      NotificationCenter.default.addObserver(
+        forName: UIResponder.keyboardWillChangeFrameNotification, object: nil, queue: nil
+      ) { [weak self] notification in
+        let frame = (notification.userInfo?[UIResponder.keyboardFrameEndUserInfoKey] as? NSValue)?.cgRectValue
+        Self.onMain { [weak self] in self?.keyboardScreenFrame = frame }
       },
       NotificationCenter.default.addObserver(
         forName: UIResponder.keyboardDidHideNotification, object: nil, queue: nil
@@ -187,15 +207,6 @@ final class VirtualizedTranscriptScrollView: UIScrollView, UIScrollViewDelegate 
         }
       },
     ]
-  }
-
-  convenience init() {
-    self.init(frame: .zero)
-  }
-
-  @available(*, unavailable)
-  required init?(coder _: NSCoder) {
-    fatalError("init(coder:) has not been implemented")
   }
 
   nonisolated private static func onMain(_ work: @escaping @MainActor () -> Void) {
@@ -242,6 +253,12 @@ final class VirtualizedTranscriptScrollView: UIScrollView, UIScrollViewDelegate 
     super.didMoveToWindow()
     if window != nil {
       installPresentationDisplayLink()
+    }
+  }
+
+  override var bounds: CGRect {
+    didSet {
+      pinBottomThroughResize(from: oldValue)
     }
   }
 

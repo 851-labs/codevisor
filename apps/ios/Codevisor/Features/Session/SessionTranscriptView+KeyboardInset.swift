@@ -9,6 +9,11 @@ extension SessionTranscriptView {
         keyboardFreeChatHeight = height
         adoptKeyboardOverlap(measuredKeyboardOverlap, animated: false)
       }
+      .onGeometryChange(for: CGFloat.self) {
+        $0.safeAreaInsets.bottom
+      } action: { inset in
+        chatBottomSafeArea = inset
+      }
       .allowsHitTesting(false)
       .accessibilityHidden(true)
       .overlay {
