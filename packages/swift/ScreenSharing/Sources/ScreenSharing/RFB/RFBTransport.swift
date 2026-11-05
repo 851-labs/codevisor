@@ -18,6 +18,7 @@ public final class RFBNetworkTransport: RFBTransport, @unchecked Sendable {
   private let queue = DispatchQueue(label: "com.851labs.Codevisor.rfb")
   private let lock = NSLock()
   private var streamEnded = false
+  private var closed = false
 
   public static func connect(host: String, port: UInt16, timeout: TimeInterval = 10) async throws -> RFBNetworkTransport
   {
@@ -58,11 +59,13 @@ public final class RFBNetworkTransport: RFBTransport, @unchecked Sendable {
   }
 
   public func read(maximum: Int) async throws -> [UInt8] {
-    guard !lock.withLock({ streamEnded }) else { return [] }
+    guard !lock.withLock({ streamEnded && !closed }) else { return [] }
     return try await withCheckedThrowingContinuation { continuation in
       connection.receive(minimumIncompleteLength: 1, maximumLength: max(1, maximum)) { data, _, complete, error in
         if complete { self.markStreamEnded() }
-        if let data, !data.isEmpty {
+        if self.isClosed {
+          continuation.resume(throwing: RFBError.connectionClosed)
+        } else if let data, !data.isEmpty {
           continuation.resume(returning: [UInt8](data))
         } else if let error, !complete {
           continuation.resume(throwing: RFBError.transport(Self.describe(error)))
@@ -79,7 +82,7 @@ public final class RFBNetworkTransport: RFBTransport, @unchecked Sendable {
         content: Data(bytes),
         completion: .contentProcessed { error in
           if let error {
-            continuation.resume(throwing: Self.writeFailure(error))
+            continuation.resume(throwing: self.isClosed ? RFBError.connectionClosed : Self.writeFailure(error))
           } else {
             continuation.resume()
           }
@@ -87,7 +90,12 @@ public final class RFBNetworkTransport: RFBTransport, @unchecked Sendable {
     }
   }
 
-  public func close() { connection.cancel() }
+  public func close() {
+    lock.withLock { closed = true }
+    connection.cancel()
+  }
+
+  private var isClosed: Bool { lock.withLock { closed } }
 
   private func markStreamEnded() { lock.withLock { streamEnded = true } }
 
