@@ -1,14 +1,11 @@
 import CodevisorCore
 import CodevisorUI
-import Combine
-import Network
 import ScreenSharingPane
 import SwiftUI
 
 @main
 struct CodevisorApp: App {
   @Environment(\.scenePhase) private var scenePhase
-  @StateObject private var networkPath = NetworkPathObserver()
   @State private var environment: AppEnvironment?
   @State private var startupError: String?
   @State private var startupInProgress = false
@@ -61,7 +58,7 @@ struct CodevisorApp: App {
           guard phase == .active, hasCompletedBootstrap else { return }
           Task { await recoverAfterForeground(environment: environment) }
         }
-        .onChange(of: networkPath.recoveryToken) { _, _ in
+        .onChange(of: environment.networkPath.recoveryToken) { _, _ in
           guard scenePhase == .active, hasCompletedBootstrap else { return }
           Task { await recoverAfterForeground(environment: environment) }
         }
@@ -102,6 +99,7 @@ struct CodevisorApp: App {
       paneGroups: DefaultPaneGroupRepository(store: store)
     )
     ScreenSharingPaneModel.enableEngineV2(environment: environment)
+    environment.startNetworkMonitoring()
     #if DEBUG
       if !HomeSidebarSampleData.isEnabled {
         environment.syncClientPreferences(SidebarPreferenceKey.synced)
@@ -172,10 +170,10 @@ struct CodevisorApp: App {
       recoveryRequestedAgain = false
       async let roster: Void = environment.cloud.retryIfUnverified()
       async let hub: Void = environment.cloud.reconnectHub()
-      async let machineRecovery: Void = environment.prepareAllMachines()
+      environment.machines.verifyConnections()
       async let chatRecovery: Void = ChatControllerCache.shared.reconcileInFlightControllers()
       TerminalSessionCache.shared.reconnectAll()
-      _ = await (roster, hub, machineRecovery, chatRecovery)
+      _ = await (roster, hub, chatRecovery)
     } while recoveryRequestedAgain
     Task { await environment.updateCenter.backgroundRefresh() }
   }
@@ -224,49 +222,6 @@ private struct CodevisorStartupSplashView: View {
         }
       }
     }
-  }
-}
-
-private final class NetworkPathObserver: ObservableObject {
-  @Published private(set) var recoveryToken = 0
-
-  private let monitor = NWPathMonitor()
-
-  init() {
-    monitor.pathUpdateHandler = Self.pathUpdateHandler(NetworkPathTransitions()) { [weak self] in
-      Task { @MainActor [weak self] in self?.recoveryToken &+= 1 }
-    }
-    monitor.start(queue: DispatchQueue(label: "dev.codevisor.ios.network-path"))
-  }
-
-  deinit {
-    monitor.cancel()
-  }
-
-  nonisolated private static func pathUpdateHandler(
-    _ transitions: NetworkPathTransitions,
-    onRecovery: @escaping @Sendable () -> Void
-  ) -> @Sendable (NWPath) -> Void {
-    { path in
-      if transitions.isRecovery(path) { onRecovery() }
-    }
-  }
-}
-
-nonisolated private final class NetworkPathTransitions: @unchecked Sendable {
-  private var previousSignature: String?
-
-  func isRecovery(_ path: NWPath) -> Bool {
-    let signature = [
-      String(describing: path.status),
-      path.usesInterfaceType(.wifi) ? "wifi" : "",
-      path.usesInterfaceType(.cellular) ? "cellular" : "",
-      path.usesInterfaceType(.wiredEthernet) ? "ethernet" : "",
-      path.isExpensive ? "expensive" : "",
-      path.isConstrained ? "constrained" : "",
-    ].joined(separator: ":")
-    defer { previousSignature = signature }
-    return previousSignature != nil && previousSignature != signature && path.status == .satisfied
   }
 }
 

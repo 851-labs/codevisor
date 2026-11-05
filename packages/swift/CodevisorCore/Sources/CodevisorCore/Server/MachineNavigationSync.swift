@@ -11,8 +11,6 @@ final class MachineNavigationSync {
   @ObservationIgnored private var token: UUID?
   @ObservationIgnored var manualRefresh: MachineNavigationRefresh?
   @ObservationIgnored var pendingRefreshTask: Task<Void, Never>?
-  @ObservationIgnored var retryTask: Task<Void, Never>?
-  @ObservationIgnored private(set) var failures = 0
 
   var isWaitingForCatchUp: Bool {
     task == nil && state == .catchingUp
@@ -49,14 +47,6 @@ final class MachineNavigationSync {
 
   func markCurrent() {
     state = .current
-    failures = 0
-    retryTask?.cancel()
-    retryTask = nil
-  }
-
-  func nextRetryDelay() -> Duration {
-    failures += 1
-    return .seconds(RetryBackoff.multiplier(afterFailures: failures))
   }
 
   func stopEventStream() {
@@ -70,8 +60,6 @@ final class MachineNavigationSync {
     task = nil
     pendingRefreshTask?.cancel()
     pendingRefreshTask = nil
-    retryTask?.cancel()
-    retryTask = nil
     stopEventStream()
   }
 
@@ -82,8 +70,6 @@ final class MachineNavigationSync {
     eventStreamTask = nil
     pendingRefreshTask?.cancel()
     pendingRefreshTask = nil
-    retryTask?.cancel()
-    retryTask = nil
     task?.cancel()
     task = nil
     token = nil

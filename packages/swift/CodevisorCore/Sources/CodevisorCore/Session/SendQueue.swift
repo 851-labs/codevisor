@@ -7,8 +7,7 @@ import Observation
 final class SendQueue {
   enum Readiness: Equatable {
     case ready
-    case waiting(String)
-    case waking(failure: String)
+    case waiting
     case failed(String)
   }
 
@@ -34,8 +33,6 @@ final class SendQueue {
     let delivery: TranscriptDelivery?
   }
 
-  static let readinessTimeout: Duration = .seconds(60)
-  static let wakeTimeout: Duration = .seconds(300)
   static let progressDelay: Duration = .seconds(1)
 
   private enum Stage: Equatable {
@@ -56,6 +53,7 @@ final class SendQueue {
     let route: Route
     var stage = Stage.preparing
     var showsProgress = false
+    var isStale = false
 
     var delivery: TranscriptDelivery? {
       if case let .failed(reason) = stage { return .failed(reason: reason) }
@@ -93,6 +91,7 @@ final class SendQueue {
 
   func enqueue(_ message: UserMessage, attachmentIDs: [UUID], route: Route) {
     entries.append(Entry(message: message, attachmentIDs: attachmentIDs, route: route))
+    markStale(message.id, after: StaleSend.limit)
     startWorker()
   }
 
@@ -111,6 +110,8 @@ final class SendQueue {
     for attachmentID in entries[index].attachmentIDs { attachments.retryAttachment(id: attachmentID) }
     entries[index].stage = .preparing
     entries[index].showsProgress = false
+    entries[index].isStale = false
+    markStale(id, after: StaleSend.limit)
     startWorker()
   }
 
@@ -165,29 +166,34 @@ final class SendQueue {
   }
 
   private func send(_ message: UserMessage) async {
-    switch await preparedModel(for: message) {
+    if let failure = await readinessFailure() { return failPreparing(failure) }
+    if failIfStale(message.id) { return }
+
+    switch await connect(message) {
     case let .ready(model): await send(message.id, through: model)
     case let .failed(reason): failPreparing(reason)
     case .withdrawn: withdraw(message.id)
     }
   }
 
-  private func preparedModel(for message: UserMessage) async -> Preparation {
-    if let failure = await readinessFailure() { return .failed(failure) }
-    return await connect(message)
+  private func failIfStale(_ id: UUID) -> Bool {
+    guard let index = index(of: id), entries[index].isStale else { return false }
+
+    fail(id, StaleSend.reason)
+    return true
+  }
+
+  private func markStale(_ id: UUID, after limit: Duration) {
+    Task { [weak self, clock] in
+      guard (try? await clock.sleep(for: limit)) != nil else { return }
+      guard let self, self.readiness() == .waiting else { return }
+      guard let index = self.index(of: id), self.entries[index].stage == .preparing else { return }
+      self.entries[index].isStale = true
+    }
   }
 
   private func readinessFailure() async -> String? {
-    let deadline = ReadinessDeadline()
-    let timer = Task { [clock] in
-      guard (try? await clock.sleep(for: Self.readinessTimeout)) != nil else { return }
-      deadline.hasPassed = true
-      guard (try? await clock.sleep(for: Self.wakeTimeout - Self.readinessTimeout)) != nil else { return }
-      deadline.wakeHasPassed = true
-    }
-    defer { timer.cancel() }
-
-    let outcome = await ObservedState.first { Self.settled(readiness(), deadline: deadline) }
+    let outcome = await ObservedState.first { Self.settled(readiness()) }
     guard case let .failed(reason)? = outcome else { return nil }
     return reason
   }
@@ -257,12 +263,8 @@ final class SendQueue {
     return Self.uploadOutcome(of: attachments.sentAttachments(entry.attachmentIDs), expected: entry.attachmentIDs)
   }
 
-  private static func settled(_ readiness: Readiness, deadline: ReadinessDeadline) -> Readiness? {
-    switch readiness {
-    case .ready, .failed: readiness
-    case let .waiting(reason): deadline.waitHasPassed ? .failed(reason) : nil
-    case let .waking(failure): deadline.wakingHasPassed ? .failed(failure) : nil
-    }
+  private static func settled(_ readiness: Readiness) -> Readiness? {
+    readiness == .waiting ? nil : readiness
   }
 
   private static func uploadOutcome(of sent: [ComposerAttachment], expected ids: [UUID]) -> UploadOutcome? {
@@ -279,20 +281,5 @@ final class SendQueue {
   private static func uploadFailure(of attachment: ComposerAttachment) -> String? {
     guard case let .failed(message) = attachment.state else { return nil }
     return "Couldn’t upload “\(attachment.name)”. \(message)"
-  }
-}
-
-@MainActor
-@Observable
-private final class ReadinessDeadline {
-  var hasPassed = false
-  var wakeHasPassed = false
-  @ObservationIgnored private var sawWaking = false
-
-  var waitHasPassed: Bool { sawWaking ? wakeHasPassed : hasPassed }
-
-  var wakingHasPassed: Bool {
-    sawWaking = true
-    return wakeHasPassed
   }
 }

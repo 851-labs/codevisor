@@ -19,7 +19,11 @@ final class WorkspaceEventFixture {
   var projectList: ProjectListModel { navigation.projectList }
   var store: NavigationStore { navigation.store }
 
-  init(navigationClock: any Clock<Duration> = ContinuousClock(), cachesWorkspace: Bool = true) async {
+  init(
+    navigationClock: any Clock<Duration> = ContinuousClock(),
+    connectionScheduler: SessionConnectionRecoveryScheduler = .continuous,
+    cachesWorkspace: Bool = true
+  ) async {
     let createdAt = Date(timeIntervalSince1970: 1_700_000_000)
     let project = Project(serverId: "local", name: "Shared", createdAt: createdAt)
     workspace = Workspace(
@@ -38,7 +42,8 @@ final class WorkspaceEventFixture {
     let client = fake
     controller = MachineController(
       store: InMemoryStore(), projectList: navigation.projectList, workspaceSync: navigation.workspaceSync,
-      clientFactory: { _ in client }, navigationClock: navigationClock)
+      clientFactory: { _ in client }, navigationClock: navigationClock, reconnectNoticeDelay: .seconds(3600),
+      connectionScheduler: connectionScheduler)
     await navigation.install(
       machineId: "local", projects: [project], sessions: [session],
       workspaces: cachesWorkspace ? [workspace] : [], cursor: 0)
@@ -67,7 +72,7 @@ final class WorkspaceEventFixture {
 
   func stop() async {
     let sync = controller.connection(for: serverId).navigationSync
-    let tasks = [sync.eventStreamTask, sync.retryTask, sync.task, sync.pendingRefreshTask].compactMap { $0 }
+    let tasks = [sync.eventStreamTask, sync.task, sync.pendingRefreshTask].compactMap { $0 }
     controller.stopEventSync()
     for task in tasks { await task.value }
   }

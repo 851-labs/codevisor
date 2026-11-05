@@ -22,6 +22,11 @@ struct UnreachedSend: Equatable {
 enum SendOutcome {
   case accepted(ServerPromptAccepted?)
   case failed(any Error)
+
+  var isAccepted: Bool {
+    guard case .accepted = self else { return false }
+    return true
+  }
 }
 
 extension SessionModel {
@@ -90,17 +95,6 @@ extension SessionModel {
     outgoingMessages.removeAll { $0.message.id == id }
   }
 
-  func resendAfterReconnect() async {
-    for outgoing in outgoingMessages where failedMessageReasons[outgoing.message.id] != nil {
-      await retryUnsentMessage(id: outgoing.message.id)
-    }
-    guard !presentsBotConversation, !isSending, let unreached = unreachedSend,
-      let prompt = settledConversation.last(where: { $0.userPrompt != nil })?.userPrompt,
-      prompt.id == unreached.messageID
-    else { return }
-    await retryResponse(to: prompt)
-  }
-
   func confirmOutgoing(_ id: UUID) {
     rememberSteerBubble(id)
     outgoingMessages.removeAll { $0.message.id == id }
@@ -110,34 +104,40 @@ extension SessionModel {
   }
 
   func deliver(_ message: UserMessage, delivery: ServerPromptDelivery?, actionID: String) async -> SendOutcome {
-    let id = message.id
-    var retryDelays = sendRetryDelays[...]
+    let notice = startSendingNotice(for: message.id)
+    defer { notice.cancel() }
+    let startedAt = now()
+    while true {
+      do {
+        return .accepted(try await prompt(message, delivery: delivery, actionID: actionID))
+      } catch {
+        guard ServerConnectionLoss.isConnectionLoss(error) else { return .failed(error) }
+        if message.id == unacceptedTurnPromptID { turnPromptWaitedForConnection = true }
+        guard await transport.waitUntilConnected() else { return .failed(error) }
+        if StaleSend.hasWaitedTooLong(since: startedAt, now: now()) { return .failed(StaleSend.Error()) }
+      }
+    }
+  }
+
+  private func prompt(
+    _ message: UserMessage, delivery: ServerPromptDelivery?, actionID: String
+  ) async throws -> ServerPromptAccepted {
+    try await transport.prompt(
+      message.text,
+      attachments: message.attachments,
+      messageId: message.id.uuidString.lowercased(),
+      clientId: promptClientId,
+      delivery: delivery,
+      clientActionId: actionID
+    )
+  }
+
+  private func startSendingNotice(for id: UUID) -> Task<Void, Never> {
     let noticeDelay = sendingNoticeDelay
-    let notice = Task { [weak self] in
+    return Task { [weak self] in
       try? await Task.sleep(for: noticeDelay)
       guard !Task.isCancelled else { return }
       self?.slowMessageIDs.insert(id)
-    }
-    defer { notice.cancel() }
-    while true {
-      do {
-        return .accepted(
-          try await transport.prompt(
-            message.text,
-            attachments: message.attachments,
-            messageId: id.uuidString.lowercased(),
-            clientId: promptClientId,
-            delivery: delivery,
-            clientActionId: actionID
-          ))
-      } catch {
-        if Self.isTransientSendFailure(error), let delay = retryDelays.popFirst() {
-          try? await Task.sleep(for: delay)
-          continue
-        }
-        if await serverHasMessage(id) { return .accepted(nil) }
-        return .failed(error)
-      }
     }
   }
 
@@ -176,28 +176,5 @@ extension SessionModel {
         if case let .user(message) = item { return message.id == id }
         return false
       }
-  }
-
-  private func serverHasMessage(_ id: UUID) async -> Bool {
-    if presentsBotConversation {
-      await refreshBotConversation()
-      return serverShows(id)
-    }
-    if let queue = await promptQueue.refresh(),
-      queue.contains(where: { $0.id.lowercased() == id.uuidString.lowercased() })
-    {
-      return true
-    }
-    guard let page = try? await transport.transcriptPage(limit: 16) else { return false }
-    return page.conversation.contains { item in
-      if case let .user(message) = item { return message.id == id }
-      return false
-    }
-  }
-
-  private static func isTransientSendFailure(_ error: any Error) -> Bool {
-    if error is CancellationError { return false }
-    guard case let CodevisorServerClientError.httpStatus(status, _) = error else { return true }
-    return status >= 500 || status == 408 || status == 429
   }
 }

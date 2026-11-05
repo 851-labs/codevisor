@@ -29,6 +29,23 @@ public enum CloudRelayTransportError: Error, Equatable, Sendable, LocalizedError
   }
 }
 
+extension CloudRelayTransportError: ServerTransportFailure {
+  public var isConnectionLoss: Bool {
+    switch self {
+    case .invalidRequest, .invalidFrame: false
+    case let .channelClosed(reason): Self.closeMeansConnectionLoss(reason)
+    case .timedOut: true
+    }
+  }
+
+  private static func closeMeansConnectionLoss(_ reason: CloudChannelCloseReason?) -> Bool {
+    switch reason {
+    case nil, .done, .peerDisconnected: true
+    case .rejected, .unsupported, .protocolError, .cryptoError: false
+    }
+  }
+}
+
 enum CloudRelayProxy {
   static let initialCreditBytes = 1024 * 1024
 }

@@ -43,6 +43,51 @@ struct ServerRequestGateTests {
     }
   }
 
+  @Test("A connection loss is only reported for a machine that's connected")
+  func lossIsReportedOnlyWhileConnected() {
+    let gate = ServerRequestGate()
+    let reported = ReportedMachines()
+    gate.onConnectionLost { reported.record($0) }
+    gate.beginWaiting(for: "reconnecting")
+    gate.markFailed(for: "offline", message: "Offline")
+
+    for machine in ["connected", "reconnecting", "offline"] { gate.reportConnectionLost(for: machine) }
+    gate.reportConnectionLost(for: "connected")
+
+    #expect(reported.machineIds == ["connected"])
+  }
+
+  @Test("Requests after a reported loss wait for the machine to reconnect instead of failing straight away")
+  func reportedLossHoldsRequests() async throws {
+    let waiting = TestSignal()
+    let gate = ServerRequestGate(onWait: { waiting.signal() })
+    gate.onConnectionLost { _ in }
+
+    gate.reportConnectionLost(for: "remote")
+    let request = Task { try await gate.waitUntilConnected(for: "remote") }
+    await waiting.wait()
+    gate.markReady(for: "remote")
+
+    try await request.value
+  }
+
+  @Test("Waiting for a connection lasts through a failed attempt and ends once the machine is ready")
+  func connectionWaitOutlastsFailure() async throws {
+    let waiting = TestSignal()
+    let gate = ServerRequestGate(onWait: { waiting.signal() })
+    gate.beginWaiting(for: "remote")
+    let abandoned = Task { try await gate.waitUntilConnected(for: "remote") }
+    let kept = Task { try await gate.waitUntilConnected(for: "remote") }
+    await waiting.wait(for: 2)
+
+    gate.markFailed(for: "remote", message: "Offline")
+    abandoned.cancel()
+    await #expect(throws: CancellationError.self) { try await abandoned.value }
+
+    gate.markReady(for: "remote")
+    try await kept.value
+  }
+
   @Test("Machines without an active lifecycle wait pass through")
   func readyByDefault() async throws {
     let gate = ServerRequestGate()
@@ -95,5 +140,16 @@ private actor CompletionFlag {
 
   func finish() {
     value = true
+  }
+}
+
+private final class ReportedMachines: @unchecked Sendable {
+  private let lock = NSLock()
+  private var recorded: [String] = []
+
+  var machineIds: [String] { lock.withLock { recorded } }
+
+  func record(_ machineId: String) {
+    lock.withLock { recorded.append(machineId) }
   }
 }

@@ -52,6 +52,12 @@ public struct TranscriptBotMessage: Identifiable, Equatable, Sendable {
     self.isTranscriptMarkdown = isTranscriptMarkdown
     self.app = app
   }
+
+  public func withDelivery(_ delivery: TranscriptDelivery?) -> TranscriptBotMessage {
+    TranscriptBotMessage(
+      id: id, sender: sender, text: text, attachments: attachments, sentAt: sentAt, delivery: delivery, files: files,
+      isTranscriptMarkdown: isTranscriptMarkdown, app: app)
+  }
 }
 
 public struct TranscriptBotConversation: Equatable, Sendable {
@@ -61,6 +67,11 @@ public struct TranscriptBotConversation: Equatable, Sendable {
   public init(messages: [TranscriptBotMessage], isWorking: Bool) {
     self.messages = messages
     self.isWorking = isWorking
+  }
+
+  public func mappingDeliveries(_ delivery: (TranscriptBotMessage) -> TranscriptDelivery?) -> TranscriptBotConversation
+  {
+    TranscriptBotConversation(messages: messages.map { $0.withDelivery(delivery($0)) }, isWorking: isWorking)
   }
 
   func merging(_ parts: [TranscriptBotMessage]) -> TranscriptBotConversation {

@@ -16,12 +16,13 @@ struct MachineControllerDataUpgradeTests {
       ],
       immediately: true
     )
-    let clock = TestClock()
+    let scheduler = ManualSessionConnectionRecoveryScheduler()
     let controller = MachineController(
       store: InMemoryStore(),
       projectList: ProjectListModel.fixture(),
       clientFactory: { _ in fake },
-      preparationSleep: clock.sleep
+      reconnectNoticeDelay: .seconds(3600),
+      connectionScheduler: scheduler.scheduler
     )
     defer { controller.stopEventSync() }
     let center = UpdateCenter(machines: controller, appUpdate: AppUpdateModel(currentVersion: "1.0"))
@@ -40,10 +41,10 @@ struct MachineControllerDataUpgradeTests {
     #expect(row.detailText == "Updating chat history 40%")
     #expect(row.machineId == remote.id)
 
-    await clock.waitForSleep(.seconds(2))
-    #expect(connection.preparation.failures == 0)
+    await awaitObserved { scheduler.requestedIntervals.contains(.seconds(2)) }
+    #expect(!scheduler.requestedIntervals.contains(MachineReconnector.baseDelay))
 
-    clock.advance(by: .seconds(2))
+    scheduler.advance()
     try await waitUntil { connection.status?.isReachable == true }
     #expect(controller.availability(for: remote.id) == .ready)
     #expect(connection.dataUpgradeProgress == nil)

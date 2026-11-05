@@ -75,7 +75,7 @@ extension SessionModelTests {
 
     model.apply(.synchronization(.reconnecting))
     await settleUntil { clock.pendingCount == 1 }
-    #expect(clock.requestedIntervals == [.seconds(5)])
+    #expect(clock.requestedIntervals == [.seconds(1)])
     #expect(model.connectionRecoveryMessage == nil)
     model.apply(.synchronization(.catchingUp))
     await settleUntil { clock.pendingCount == 0 }

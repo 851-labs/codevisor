@@ -572,6 +572,8 @@ public extension CodevisorServerClienting {
   }
 }
 extension CodevisorServerClienting {
+  public func waitUntilConnected() async -> Bool { false }
+
   public func sharedHarnessAccount(
     harnessId: String, request: ServerSharedHarnessAccountRequest
   ) async throws -> ServerSharedHarnessAccountResponse {

@@ -8,19 +8,22 @@ public struct TranscriptProjectionKey: Hashable, Sendable {
   public let modelRevision: UInt64
   public let activityMessage: String?
   public let sandboxPower: TranscriptSandboxPower?
+  public let awaitsConnection: Bool
 
   public init(
     sessionID: UUID,
     controllerRevision: UInt64,
     modelRevision: UInt64,
     activityMessage: String? = nil,
-    sandboxPower: TranscriptSandboxPower? = nil
+    sandboxPower: TranscriptSandboxPower? = nil,
+    awaitsConnection: Bool = false
   ) {
     self.sessionID = sessionID
     self.controllerRevision = controllerRevision
     self.modelRevision = modelRevision
     self.activityMessage = activityMessage
     self.sandboxPower = sandboxPower
+    self.awaitsConnection = awaitsConnection
   }
 }
 
@@ -371,7 +374,7 @@ public actor TranscriptRowProjectionCache {
   }
 
   static func showsOptimisticAgentActivity(_ input: TranscriptProjectionInput) -> Bool {
-    guard input.activityMessage == nil, input.sessionErrorMessage == nil else { return false }
+    guard input.activityMessage == nil, input.sessionErrorMessage == nil, !input.awaitsConnection else { return false }
     if case .failed = input.status { return false }
     return input.setupPhases.allSatisfy(\.isSucceeded)
   }

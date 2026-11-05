@@ -6,24 +6,50 @@ import TranscriptKit
 @testable import CodevisorCore
 
 extension SessionModelTests {
-  @Test("A steer the server never took stays in the transcript as Not Delivered, and Try Again delivers it")
+  @Test("A steer whose connection drops waits for it and goes out under the same action once it's back")
+  func droppedSteerWaitsForTheConnection() async {
+    let (client, model) = await busyNormalModel()
+    client.promptDelivery.answerSteers(with: "steered")
+    client.sendAttempts.failuresLeft = 1
+    let (reconnection, reconnect) = AsyncStream.makeStream(of: Void.self)
+    client.sendAttempts.reconnection = reconnection
+    let message = UserMessage(text: "also check the tests")
+    let id = message.id.uuidString.lowercased()
+
+    let send = Task { await model.send(message) }
+    await client.sendAttempts.connectionWaits.wait()
+
+    #expect(model.transcriptOutgoingMessages.map(\.text) == ["also check the tests"])
+    #expect(model.transcriptDeliveries.isEmpty)
+    reconnect.finish()
+    await send.value
+
+    #expect(client.sendAttempts.actionIds.dropFirst() == [id, id])
+    #expect(model.errorMessage == nil)
+    client.emit(userEcho(1, client.sessionId, message))
+    await settleUntil { model.outgoingMessages.isEmpty }
+    #expect(userMessages(model).map(\.text) == ["first", "also check the tests"])
+    model.shutdown()
+  }
+
+  @Test("A steer with no connection to wait on stays in the transcript as Not Delivered, and Try Again delivers it")
   func failedSteerStaysAsNotDelivered() async {
     let (client, model) = await busyNormalModel()
     client.promptDelivery.answerSteers(with: "steered")
-    client.sendAttempts.failuresLeft = 3
+    client.sendAttempts.failuresLeft = 1
     let message = UserMessage(text: "also check the tests")
     let id = message.id.uuidString.lowercased()
 
     await model.send(message)
 
-    #expect(client.sendAttempts.actionIds.dropFirst() == [id, id, id])
+    #expect(client.sendAttempts.actionIds.dropFirst() == [id])
     #expect(model.transcriptOutgoingMessages.map(\.text) == ["also check the tests"])
-    #expect(model.transcriptDeliveries == [message.id: .failed(reason: SessionModel.undeliveredReason)])
+    #expect(model.transcriptDeliveries[message.id]?.isFailed == true)
     #expect(model.errorMessage == nil)
 
     await model.retryUnsentMessage(id: message.id)
 
-    #expect(client.sendAttempts.actionIds.dropFirst() == [id, id, id, id])
+    #expect(client.sendAttempts.actionIds.dropFirst() == [id, id])
     #expect(model.transcriptOutgoingMessages.map(\.text) == ["also check the tests"])
     #expect(model.transcriptDeliveries.isEmpty)
 
@@ -37,11 +63,14 @@ extension SessionModelTests {
   func failedQueueSendStaysInTheQueueRow() async {
     let (client, model) = await busyNormalModel()
     client.promptFailure = .httpStatus(409, "Conflict")
+    let (gate, release) = AsyncStream.makeStream(of: Void.self)
+    client.holdPrompts(until: gate)
     let message = UserMessage(text: "after that, ship it")
 
     let send = Task { await model.send(message, delivery: .queue) }
     await client.promptRequests.wait(for: 2)
     let waiting = model.unsentQueuedMessages
+    release.finish()
     await send.value
 
     #expect(waiting.map(\.text) == ["after that, ship it"])
@@ -60,6 +89,7 @@ extension SessionModelTests {
   func droppedQueueSendLandsInQueue() async {
     let (client, model) = await busyNormalModel()
     client.sendAttempts.failuresLeft = 1
+    client.reconnectsAtOnce()
     let message = UserMessage(text: "queue me")
     let id = message.id.uuidString.lowercased()
 
@@ -105,10 +135,11 @@ extension SessionModelTests {
     model.shutdown()
   }
 
-  @Test("An idle send that blips recovers on its own without a failed turn")
+  @Test("An idle send whose connection blips goes out again under the same action without a failed turn")
   func idleSendRecoversFromABlip() async {
     let (client, model) = normalModel()
     client.sendAttempts.failuresLeft = 2
+    client.reconnectsAtOnce()
     let message = UserMessage(text: "fix the build")
     let id = message.id.uuidString.lowercased()
 
@@ -121,30 +152,27 @@ extension SessionModelTests {
     model.shutdown()
   }
 
-  @Test("An idle send that can't reach the server is Not Delivered, then resends itself once the connection is back")
-  func idleSendResendsAfterReconnect() async {
+  @Test("An idle send that can't reach the server keeps its turn open while it waits for the connection")
+  func idleSendWaitsForTheConnection() async {
     let (client, model) = normalModel()
-    client.sendAttempts.failuresLeft = 3
+    client.sendAttempts.failuresLeft = 1
+    let (reconnection, reconnect) = AsyncStream.makeStream(of: Void.self)
+    client.sendAttempts.reconnection = reconnection
     let message = UserMessage(text: "fix the build")
     let id = message.id.uuidString.lowercased()
 
-    await model.send(message)
+    let send = Task { await model.send(message) }
+    await client.sendAttempts.connectionWaits.wait()
 
-    #expect(!failedTurn(model))
-    #expect(model.errorMessage == nil)
-    #expect(!model.isSending)
-    #expect(model.activeItem == nil)
-    #expect(userMessages(model).isEmpty)
-    #expect(model.transcriptOutgoingMessages.map(\.text) == ["fix the build"])
-    #expect(model.transcriptDeliveries == [message.id: .failed(reason: SessionModel.undeliveredReason)])
-
-    model.apply(.synchronization(.caughtUp))
-
-    await client.promptRequests.wait()
-    #expect(client.sendAttempts.actionIds == [id, id, id, id])
     #expect(model.isSending)
     #expect(userMessages(model).map(\.text) == ["fix the build"])
     #expect(model.transcriptDeliveries.isEmpty)
+    #expect(!failedTurn(model))
+    reconnect.finish()
+    await send.value
+
+    #expect(client.sendAttempts.actionIds == [id, id])
+    #expect(model.errorMessage == nil)
     model.shutdown()
   }
 
@@ -165,31 +193,6 @@ extension SessionModelTests {
     model.shutdown()
   }
 
-  @Test("An idle send whose acknowledgement was lost isn't failed when the server already has it")
-  func idleSendWithLostAcknowledgement() async {
-    let (client, model) = normalModel()
-    let message = UserMessage(text: "fix the build")
-    client.initialTranscriptPage = ServerTranscriptPage(
-      items: [
-        ServerTranscriptItem(
-          id: UUID().uuidString, sessionId: client.sessionId.uuidString, sequence: 1, role: .user,
-          text: "fix the build", createdAt: "2026-10-21T00:00:00.000Z", updatedAt: "2026-10-21T00:00:00.000Z",
-          isGenerating: false, hasDetails: false, messageId: message.id.uuidString.lowercased(), revision: 1)
-      ],
-      hasMore: false,
-      eventCursor: 1
-    )
-    client.promptFailure = .httpStatus(504, "Timed out")
-
-    await model.send(message)
-
-    #expect(userMessages(model).map(\.id) == [message.id])
-    #expect(model.transcriptDeliveries.isEmpty)
-    #expect(!failedTurn(model))
-    #expect(model.errorMessage == nil)
-    model.shutdown()
-  }
-
   private func normalModel() -> (FakeSessionServerClient, SessionModel) {
     let sessionId = UUID()
     let client = FakeSessionServerClient(sessionId: sessionId)
@@ -198,7 +201,6 @@ extension SessionModelTests {
       serverTransport: ServerSessionTransport(client: client, sessionId: sessionId),
       sessionId: sessionId.uuidString
     )
-    model.sendRetryDelays = [.zero, .zero]
     model.sendingNoticeDelay = .seconds(3600)
     return (client, model)
   }

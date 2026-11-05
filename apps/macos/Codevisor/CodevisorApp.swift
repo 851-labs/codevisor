@@ -114,6 +114,7 @@ struct RootView: View {
       }
       .modifier(SidebarModeFollowsSelection(selection: $selection) { panelLayout.dismissDrawer() })
       .modifier(UpdateCenterUpkeep())
+      .modifier(ConnectionRecoveryUpkeep())
       .modifier(ChromiumBrowserHostSync())
       .modifier(ServerDataUpgradePresentation())
       .modifier(CloudAuthDeeplinkHandling())

@@ -637,7 +637,7 @@
         "file": "packages/swift/CodevisorClient/Sources/CodevisorClient/CodevisorServerClient+Events.swift",
         "line": 97
       },
-      "reason": "Function body should span 50 lines or less excluding comments and whitespace: currently spans 96 lines",
+      "reason": "Function body should span 50 lines or less excluding comments and whitespace: currently spans 93 lines",
       "ruleDescription": "Function bodies should not span too many lines",
       "ruleIdentifier": "function_body_length",
       "ruleName": "Function Body Length",

@@ -20,7 +20,7 @@ struct SessionControllerSandboxWakeTests {
     fixture.controller.composerText = "wake up"
     await fixture.controller.send()
     await fixture.owner.wakes.wait()
-    #expect(fixture.controller.sendReadiness == .waking(failure: SessionController.sandboxWakeFailure))
+    #expect(fixture.controller.sendReadiness == .waiting)
 
     fixture.chat.openSessionFailure = nil
     fixture.comeOnline()
@@ -49,7 +49,7 @@ struct SessionControllerSandboxWakeTests {
     await fixture.machines.loadSandboxMachineProfiles()
 
     #expect(fixture.controller.sandboxPower == .waking)
-    #expect(fixture.controller.sendReadiness == .waking(failure: SessionController.sandboxWakeFailure))
+    #expect(fixture.controller.sendReadiness == .waiting)
 
     fixture.finishWake()
     await fixture.machines.loadSandboxMachineProfiles()

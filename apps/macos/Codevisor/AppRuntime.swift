@@ -92,6 +92,7 @@ final class AppRuntime {
         closeFirstLaunchSetup()
       }
       if !AppPreview.isRunning {
+        runtime.environment.startNetworkMonitoring()
         Task { @MainActor in
           await runtime.environment.prepareAllMachines()
           TerminalRuntime.prewarm()

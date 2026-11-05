@@ -212,7 +212,7 @@ public final class CodevisorServerClient: CodevisorServerClienting, @unchecked S
     try await waitForServerIfNeeded(path: path)
     let request = try makeJSONRequest(path, method: method, body: body, timeout: timeout)
 
-    let (data, httpResponse) = try await requestTransport.data(for: request)
+    let (data, httpResponse) = try await reportingConnectionLoss { try await requestTransport.data(for: request) }
     try validateResponse(data, httpResponse)
     return data
   }
@@ -243,7 +243,7 @@ public final class CodevisorServerClient: CodevisorServerClienting, @unchecked S
     var request = try makeRawRequest(path, method: method, body: body, contentType: contentType)
     for (field, value) in headers { request.setValue(value, forHTTPHeaderField: field) }
 
-    let (data, httpResponse) = try await requestTransport.data(for: request)
+    let (data, httpResponse) = try await reportingConnectionLoss { try await requestTransport.data(for: request) }
     try validateResponse(data, httpResponse)
     return (data, httpResponse)
   }
@@ -256,7 +256,9 @@ public final class CodevisorServerClient: CodevisorServerClienting, @unchecked S
     try await waitForServerIfNeeded(path: path)
     let request = try makeUploadRequest(path, contentType: contentType)
 
-    let (data, httpResponse) = try await requestTransport.upload(for: request, fromFile: fileURL)
+    let (data, httpResponse) = try await reportingConnectionLoss {
+      try await requestTransport.upload(for: request, fromFile: fileURL)
+    }
     try validateResponse(data, httpResponse)
     return data
   }
@@ -324,6 +326,28 @@ public final class CodevisorServerClient: CodevisorServerClienting, @unchecked S
         "CLOUDRELAYDBG request.gate.end machine=\(machineId, privacy: .public) path=\(path, privacy: .public)"
       )
     #endif
+  }
+
+  public func waitUntilConnected() async -> Bool {
+    guard let requestGate, let machineId else { return false }
+
+    try? await requestGate.waitUntilConnected(for: machineId)
+    return !Task.isCancelled
+  }
+
+  func reportingConnectionLoss<Result>(_ operation: () async throws -> Result) async throws -> Result {
+    do {
+      return try await operation()
+    } catch {
+      noteConnectionLoss(error)
+      throw error
+    }
+  }
+
+  func noteConnectionLoss(_ error: any Error) {
+    guard let requestGate, let machineId, ServerConnectionLoss.isConnectionLoss(error) else { return }
+
+    requestGate.reportConnectionLost(for: machineId)
   }
 
   private static func isLifecyclePath(_ path: String) -> Bool {

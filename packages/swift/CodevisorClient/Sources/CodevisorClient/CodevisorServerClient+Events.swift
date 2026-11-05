@@ -109,7 +109,7 @@ extension CodevisorServerClient {
         let scoped = path.hasPrefix("/v1/sessions/")
         while !Task.isCancelled {
           do {
-            try await waitForServerIfNeeded(path: path)
+            try await waitForEventConnection()
             var request = URLRequest(url: try websocketURL(for: "\(path)?since=\(cursor)&sync=1"))
             applyAuthorization(to: &request)
             let socket = webSocketTransport.connect(
@@ -186,16 +186,27 @@ extension CodevisorServerClient {
               return
             }
             failures += 1
-            Log.server.error(
-              "Event socket \(path, privacy: .public) at cursor \(cursor, privacy: .public) failed (attempt \(failures)); reconnecting: \(String(describing: error), privacy: .public)"
-            )
-            try? await eventSleep(Self.eventReconnectDelay(failures: failures))
+            await backOff(after: error, path: path, cursor: cursor, failures: failures)
           }
         }
         continuation.finish()
       }
       continuation.onTermination = { _ in task.cancel() }
     }
+  }
+
+  private func backOff(after error: any Error, path: String, cursor: Int, failures: Int) async {
+    noteConnectionLoss(error)
+    Log.server.error(
+      "Event socket \(path, privacy: .public) at cursor \(cursor, privacy: .public) failed (attempt \(failures)); reconnecting: \(String(describing: error), privacy: .public)"
+    )
+    try? await eventSleep(Self.eventReconnectDelay(failures: failures))
+  }
+
+  private func waitForEventConnection() async throws {
+    guard let requestGate, let machineId else { return }
+
+    try await requestGate.waitUntilConnected(for: machineId)
   }
 
   private func eventKindProbe(
@@ -224,7 +235,9 @@ extension CodevisorServerClient {
   static let eventReceiveDeadline: Duration = .seconds(90)
   static let eventOpenDeadline: Duration = .seconds(35)
 
-  struct EventStreamStalledError: Error {}
+  struct EventStreamStalledError: ServerTransportFailure {
+    var isConnectionLoss: Bool { true }
+  }
   struct EventStreamGapError: Error {
     let expected: Int
     let received: Int

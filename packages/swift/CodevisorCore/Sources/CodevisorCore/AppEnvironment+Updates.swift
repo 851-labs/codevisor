@@ -19,6 +19,15 @@ extension AppEnvironment {
     await machines.prepareAllMachines()
   }
 
+  public func startNetworkMonitoring() {
+    networkPath.start()
+  }
+
+  public func recoverConnections() async {
+    machines.verifyConnections()
+    await cloud.reconnectHub()
+  }
+
   func noteMachineConnected(_ machineId: String) {
     checkHarnessNotices(onServer: machineId)
     Task { await bots.refresh(serverId: machineId) }

@@ -11,6 +11,7 @@ public final class MachineController {
   var sandboxAvailabilityRevision = 0
   var sandboxSettingsRevision = 0
   public internal(set) var pluginSubscriptionsRevision = 0
+  public private(set) var isDeviceOffline = false
 
   public typealias ClientFactory = @MainActor (CodevisorMachine) -> any CodevisorServerClienting
 
@@ -24,8 +25,6 @@ public final class MachineController {
   let updatePollInterval: Duration
   let updatePollAttempts: Int
   let updateScheduler: ServerUpdateScheduler
-  let preparationSleep: @Sendable (Duration) async throws -> Void
-  let preparationRetryBaseDelay: Duration
   let navigationClock: any Clock<Duration>
   let connections: MachineConnections
   let catalog: MachineCatalog
@@ -46,15 +45,12 @@ public final class MachineController {
     updatePollInterval: Duration = .seconds(2),
     updatePollAttempts: Int = 90,
     updateScheduler: ServerUpdateScheduler = .continuous,
-    preparationSleep: @escaping @Sendable (Duration) async throws -> Void = { try await Task.sleep(for: $0) },
-    preparationRetryBaseDelay: Duration = .seconds(1),
     navigationClock: any Clock<Duration> = ContinuousClock(),
-    reconnectNoticeDelay: Duration = .seconds(5),
-    reconnectNoticeScheduler: SessionConnectionRecoveryScheduler = .continuous
+    reconnectNoticeDelay: Duration = .seconds(1),
+    connectionScheduler: SessionConnectionRecoveryScheduler = .continuous
   ) {
     let requestGate = ServerRequestGate()
-    let connections = MachineConnections(
-      reconnectNoticeDelay: reconnectNoticeDelay, reconnectNoticeScheduler: reconnectNoticeScheduler)
+    let connections = MachineConnections(reconnectNoticeDelay: reconnectNoticeDelay, scheduler: connectionScheduler)
     self.connections = connections
     self.catalog = MachineCatalog(
       includesLocalMachine: localServer != nil || clientFactory != nil, connections: connections)
@@ -67,8 +63,6 @@ public final class MachineController {
     self.updatePollInterval = updatePollInterval
     self.updatePollAttempts = updatePollAttempts
     self.updateScheduler = updateScheduler
-    self.preparationSleep = preparationSleep
-    self.preparationRetryBaseDelay = preparationRetryBaseDelay
     self.navigationClock = navigationClock
     if let data = store.loadData(forKey: "machines") {
       do {
@@ -95,6 +89,9 @@ public final class MachineController {
       }
     }
     configureNavigationStore()
+    requestGate.onConnectionLost { [weak self] machineId in
+      Task { @MainActor in self?.connectionLost(machineId: machineId) }
+    }
   }
 
   public var cloudProvider: (any CloudMachineProviding)? {
@@ -216,7 +213,11 @@ public final class MachineController {
   }
 
   func connection(for machineId: String) -> MachineConnection {
-    connections.connection(for: machineId)
+    let connection = connections.connection(for: machineId)
+    if connection.reconnector.attempt == nil {
+      connection.reconnector.attempt = { [weak self] in await self?.attemptConnection(machineId) ?? .failed }
+    }
+    return connection
   }
 
   func removeConnection(for machineId: String) {
@@ -243,34 +244,57 @@ public final class MachineController {
     await prepareMachine(machineId)
   }
 
-  func schedulePreparationRetry(for machineId: String, delay override: Duration? = nil) {
-    let connection = connection(for: machineId)
-    connection.preparation.retryTask?.cancel()
-    let delay = override ?? connection.preparation.nextRetryDelay(base: preparationRetryBaseDelay)
-    let sleep = preparationSleep
-    connection.preparation.retryTask = Task { [weak self] in
-      try? await sleep(delay)
-      guard let self, !Task.isCancelled else { return }
-      connection.preparation.retryTask = nil
-      guard self.machine(for: machineId) != nil,
-        connection.preparation.task == nil,
-        case .some(.failed) = connection.availability
-      else { return }
-      await self.prepareMachine(machineId)
+  public func connectionLost(machineId: String) {
+    guard machine(for: machineId) != nil, availability(for: machineId) == .ready else { return }
+    let reconnector = connection(for: machineId).reconnector
+    guard !reconnector.isAttempting else { return reconnector.connectionLost() }
+
+    beginWaiting(for: machineId, reason: .connecting)
+    reconnector.connectionLost()
+  }
+
+  public func verifyConnections() {
+    for machine in allMachines {
+      guard let connection = connectionsById[machine.id] else { continue }
+      guard connection.availability == .ready else {
+        connection.reconnector.nudge()
+        continue
+      }
+      Task { await self.reverify(machine.id) }
     }
   }
 
-  func scheduleRemoteRecovery(for machineId: String) {
-    guard let machine = machine(for: machineId), !machine.isLocal else { return }
-    schedulePreparationRetry(for: machineId)
+  public func applyCloudPresence() {
+    for machine in allMachines where !machine.isLocal {
+      guard let presence = cloudMachine(forMachineId: machine.id) else { continue }
+      guard presence.online else {
+        connectionLost(machineId: machine.id)
+        continue
+      }
+      connectionsById[machine.id]?.reconnector.nudge()
+    }
+  }
+
+  public func deviceNetworkChanged(isOnline: Bool) {
+    guard isDeviceOffline == isOnline else { return }
+
+    isDeviceOffline = !isOnline
+    guard isOnline else {
+      for machine in allMachines where !machine.isLocal { connectionLost(machineId: machine.id) }
+      return
+    }
+    verifyConnections()
+  }
+
+  private func reverify(_ machineId: String) async {
+    await refreshStatus(for: machineId)
+    guard availability(for: machineId) == .ready else { return }
+
+    await refreshNavigationState(for: machineId)
   }
 
   public func cloudMachineBecameReachable(deviceId: String) {
-    let machineId = CodevisorMachine.cloudIdPrefix + deviceId
-    guard machine(for: machineId) != nil, let connection = connections.byId[machineId],
-      connection.preparation.task == nil, case .failed = connection.availability
-    else { return }
-    Task { await self.prepareMachine(machineId) }
+    connectionsById[CodevisorMachine.cloudIdPrefix + deviceId]?.reconnector.nudge()
   }
 
   func pruneCloudTwinRecords(deviceId: String) {
@@ -311,39 +335,6 @@ public final class MachineController {
       removeConnection(for: serverId)
       projectList.removeAllRecords(serverId: serverId)
     }
-  }
-
-  private func isCurrentBackgroundConnection(
-    _ connection: MachineConnection,
-    for machineId: String
-  ) -> Bool {
-    connections.byId[machineId] === connection
-      && machine(for: machineId) != nil
-      && !catalog.isCloudTwinOfConfiguredMachine(machineId)
-  }
-
-  public func connectMachine(_ machineId: String) async {
-    guard machine(for: machineId) != nil else { return }
-    guard !catalog.isCloudTwinOfConfiguredMachine(machineId) else { return }
-    let connection = connection(for: machineId)
-    guard connection.navigationSync.eventStreamTask == nil, !connection.preparation.backgroundConnectInFlight else {
-      return
-    }
-    connection.preparation.backgroundConnectInFlight = true
-    defer { connection.preparation.backgroundConnectInFlight = false }
-    let client = client(for: machineId)
-    await refreshStatus(for: machineId)
-    guard isCurrentBackgroundConnection(connection, for: machineId) else { return }
-    guard connection.status?.isReachable == true else {
-      connection.navigationSyncState = .stale(connection.status?.label ?? "Unreachable")
-      markFailed(for: machineId, message: connection.status?.label ?? "Unreachable")
-      scheduleRemoteRecovery(for: machineId)
-      return
-    }
-    markReady(for: machineId)
-    await synchronizeNavigationState(serverId: machineId, client: client, presentation: .background)
-    guard isCurrentBackgroundConnection(connection, for: machineId) else { return }
-    onMachineConnected?(machineId)
   }
 
   public func ensureBackgroundConnections() {

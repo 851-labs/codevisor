@@ -66,7 +66,13 @@ extension SessionController {
     let local = (model?.unsentQueuedMessages ?? []).map { Self.keepingProgress(of: $0, from: waiting) } + waiting
     return local.filter { message in
       !serverIDs.contains(message.id.uuidString.lowercased()) && seen.insert(message.id).inserted
-    }
+    }.map(sendingWhileReconnecting)
+  }
+
+  private func sendingWhileReconnecting(_ message: UnsentQueuedMessage) -> UnsentQueuedMessage {
+    UnsentQueuedMessage(
+      id: message.id, text: message.text, attachmentCount: message.attachmentCount,
+      delivery: sendingWhileReconnecting(message.delivery))
   }
 
   private static func keepingProgress(
@@ -99,10 +105,10 @@ extension SessionController {
   }
 
   var sendReadiness: SendQueue.Readiness {
-    if transcriptSandboxPower != nil { return .waking(failure: Self.sandboxWakeFailure) }
+    if transcriptSandboxPower != nil { return .waiting }
     if case let .failed(message) = configurationValidationState { return .failed(message) }
     let isSettled = isServerReady && !isConnecting && !isPausedForUpdate && configurationValidationState == .ready
-    return isSettled ? .ready : .waiting(unreachableReason)
+    return isSettled ? .ready : .waiting
   }
 
   func connectForSend(_ message: UserMessage) async -> SendQueue.Preparation {
@@ -160,13 +166,6 @@ extension SessionController {
     restoreComposerPrompt((withdrawn.map(\.text) + [unsentDraft]).filter { !$0.isEmpty }.joined(separator: "\n\n"))
     for message in withdrawn { cancelUserSendAnimation(for: message.id) }
     handleSetupFailure(reason, returnsToNewChat: true)
-  }
-
-  private var unreachableReason: String {
-    if let serverWaitMessage { return serverWaitMessage }
-    return presentsBotConversation
-      ? "The bot isn’t reachable right now. Try again in a moment."
-      : "This chat isn’t reachable right now. Try again in a moment."
   }
 
   private var modelSelectionFailure: String {

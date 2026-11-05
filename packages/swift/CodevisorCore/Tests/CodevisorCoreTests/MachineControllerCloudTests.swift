@@ -232,7 +232,7 @@ extension MachineControllerCloudTests {
     var connectedMachineIds: [String] = []
     controller.onMachineConnected = { connectedMachineIds.append($0) }
 
-    let connect = Task { await controller.connectMachine(twinId) }
+    let connect = Task { await controller.prepareMachine(twinId) }
     await awaitObserved { provider.requestTransport.requestCount(for: "/v1/navigation") == 1 }
     #expect(provider.requestTransport.requestCount(for: "/v1/navigation") == 1)
 

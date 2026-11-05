@@ -30,9 +30,15 @@ public final class ServerRequestGate: @unchecked Sendable {
     case failed(String)
   }
 
+  private enum Waiter {
+    case request(CheckedContinuation<Void, any Error>)
+    case connection(CheckedContinuation<Void, any Error>)
+  }
+
   private let lock = NSLock()
   private var states: [String: State] = [:]
-  private var waiters: [String: [UUID: CheckedContinuation<Void, any Error>]] = [:]
+  private var waiters: [String: [UUID: Waiter]] = [:]
+  private var connectionLostHandler: (@Sendable (String) -> Void)?
 
   private let clock: any Clock<Duration>
   private let onWait: @Sendable () -> Void
@@ -45,6 +51,19 @@ public final class ServerRequestGate: @unchecked Sendable {
     self.onWait = onWait
   }
 
+  public func onConnectionLost(_ handler: @escaping @Sendable (_ machineId: String) -> Void) {
+    lock.withLock { connectionLostHandler = handler }
+  }
+
+  public func reportConnectionLost(for machineId: String) {
+    let handler = lock.withLock { () -> (@Sendable (String) -> Void)? in
+      guard case .ready = states[machineId] ?? .ready, let connectionLostHandler else { return nil }
+      states[machineId] = .waiting
+      return connectionLostHandler
+    }
+    handler?(machineId)
+  }
+
   public func beginWaiting(for machineId: String) {
     lock.withLock {
       states[machineId] = .waiting
@@ -52,43 +71,69 @@ public final class ServerRequestGate: @unchecked Sendable {
   }
 
   public func markReady(for machineId: String) {
-    let continuations = lock.withLock {
+    let released = lock.withLock {
       states[machineId] = .ready
-      let pending = waiters.removeValue(forKey: machineId) ?? [:]
-      return Array(pending.values)
+      return Array((waiters.removeValue(forKey: machineId) ?? [:]).values)
     }
-    for continuation in continuations {
-      continuation.resume()
+    for waiter in released {
+      switch waiter {
+      case let .request(continuation), let .connection(continuation): continuation.resume()
+      }
     }
   }
 
   public func markFailed(for machineId: String, message: String) {
-    let continuations = lock.withLock {
+    let released = lock.withLock {
       states[machineId] = .failed(message)
-      let pending = waiters.removeValue(forKey: machineId) ?? [:]
-      return Array(pending.values)
+      return releaseRequestWaiters(for: machineId)
     }
     let error = ServerRequestGateError(message: message)
-    for continuation in continuations {
+    for continuation in released {
       continuation.resume(throwing: error)
     }
   }
 
   public func waitUntilReady(for machineId: String) async throws {
+    try await wait(for: machineId) { state, continuation in
+      switch state {
+      case .ready: .success(())
+      case let .failed(message): .failure(ServerRequestGateError(message: message))
+      case .waiting: .waiting(.request(continuation))
+      }
+    }
+  }
+
+  public func waitUntilConnected(for machineId: String) async throws {
+    try await wait(for: machineId) { state, continuation in
+      guard case .ready = state else { return .waiting(.connection(continuation)) }
+      return .success(())
+    }
+  }
+
+  public func waitUntilReady(for machineId: String, timeout: Duration) async throws {
+    try await clock.waitUntilReady(for: machineId, gate: self, timeout: timeout)
+  }
+
+  private enum Resolution {
+    case success(Void)
+    case failure(any Error)
+    case waiting(Waiter)
+  }
+
+  private func wait(
+    for machineId: String,
+    resolve: @escaping (State, CheckedContinuation<Void, any Error>) -> Resolution
+  ) async throws {
     let waiterId = UUID()
     try await withTaskCancellationHandler {
       try await withCheckedThrowingContinuation { continuation in
         let resolution: Result<Void, any Error>? = lock.withLock {
-          if Task.isCancelled {
-            return .failure(CancellationError())
-          }
-          switch states[machineId] ?? .ready {
-          case .ready:
-            return .success(())
-          case let .failed(message):
-            return .failure(ServerRequestGateError(message: message))
-          case .waiting:
-            waiters[machineId, default: [:]][waiterId] = continuation
+          if Task.isCancelled { return .failure(CancellationError()) }
+          switch resolve(states[machineId] ?? .ready, continuation) {
+          case .success: return .success(())
+          case let .failure(error): return .failure(error)
+          case let .waiting(waiter):
+            waiters[machineId, default: [:]][waiterId] = waiter
             return nil
           }
         }
@@ -99,15 +144,23 @@ public final class ServerRequestGate: @unchecked Sendable {
         }
       }
     } onCancel: {
-      let continuation = self.lock.withLock {
-        self.waiters[machineId]?.removeValue(forKey: waiterId)
+      let waiter = self.lock.withLock { self.waiters[machineId]?.removeValue(forKey: waiterId) }
+      switch waiter {
+      case let .request(continuation), let .connection(continuation):
+        continuation.resume(throwing: CancellationError())
+      case nil: break
       }
-      continuation?.resume(throwing: CancellationError())
     }
   }
 
-  public func waitUntilReady(for machineId: String, timeout: Duration) async throws {
-    try await clock.waitUntilReady(for: machineId, gate: self, timeout: timeout)
+  private func releaseRequestWaiters(for machineId: String) -> [CheckedContinuation<Void, any Error>] {
+    var released: [CheckedContinuation<Void, any Error>] = []
+    for (id, waiter) in waiters[machineId] ?? [:] {
+      guard case let .request(continuation) = waiter else { continue }
+      released.append(continuation)
+      waiters[machineId]?.removeValue(forKey: id)
+    }
+    return released
   }
 }
 

@@ -11,11 +11,11 @@ extension SessionModelTests {
   @Test("A bot send shows at once with no progress bar while it waits for the bot, and goes out once the bot is ready")
   func botSendWaitsForTheBotToBeReady() async {
     let fixture = await BotSendFixture.make(using: loadedBotModel)
-    fixture.readiness.state = .waiting("Connecting…")
+    fixture.readiness.state = .waiting
     let message = UserMessage(text: "are you there?")
 
     fixture.queue.enqueue(message, attachmentIDs: [], route: .bot(afterSequence: 1))
-    await fixture.clock.waitForSleep(SendQueue.readinessTimeout)
+    await fixture.readiness.reads.wait()
 
     #expect(fixture.clock.requestCount(SendQueue.progressDelay) == 0)
     #expect(fixture.shownDeliveries == [nil])
@@ -28,76 +28,44 @@ extension SessionModelTests {
     fixture.model.shutdown()
   }
 
-  @Test("Bot sends that wait too long for the bot all end as Not Delivered with the reason")
-  func botSendsFailWhenTheBotNeverBecomesReady() async {
+  @Test("Sends wait as long as the machine is away, and every one that waited over 10 minutes is held for Try Again")
+  func staleSendsAreHeld() async {
     let fixture = await BotSendFixture.make(using: loadedBotModel)
-    fixture.readiness.state = .waiting("Dylan’s Mac is offline.")
+    fixture.readiness.state = .waiting
+    let first = UserMessage(text: "first")
+    let second = UserMessage(text: "second")
 
-    fixture.queue.enqueue(UserMessage(text: "first"), attachmentIDs: [], route: .bot(afterSequence: 1))
-    fixture.queue.enqueue(UserMessage(text: "second"), attachmentIDs: [], route: .bot(afterSequence: 1))
-    await fixture.clock.waitForSleep(SendQueue.readinessTimeout)
-    fixture.clock.advance(by: SendQueue.readinessTimeout)
-
-    let failed = TranscriptDelivery.failed(reason: "Dylan’s Mac is offline.")
-    await settleUntil { fixture.shownDeliveries == [failed, failed] }
-    #expect(fixture.client.promptedTexts.isEmpty)
-    fixture.model.shutdown()
-  }
-
-  @Test("A send to a waking sandbox waits past the usual minute and goes out once the sandbox is back")
-  func sendWaitsForASandboxToWake() async {
-    let fixture = await BotSendFixture.make(using: loadedBotModel)
-    fixture.readiness.state = .waking(failure: "The sandbox didn’t wake up.")
-    let message = UserMessage(text: "still there?")
-
-    fixture.queue.enqueue(message, attachmentIDs: [], route: .bot(afterSequence: 1))
-    await fixture.clock.waitForSleep(SendQueue.readinessTimeout)
-    fixture.clock.advance(by: SendQueue.readinessTimeout)
-    await fixture.clock.waitForSleep(SendQueue.wakeTimeout - SendQueue.readinessTimeout)
-
-    #expect(fixture.clock.requestCount(SendQueue.progressDelay) == 0)
-    #expect(fixture.shownDeliveries == [nil])
+    fixture.queue.enqueue(first, attachmentIDs: [], route: .bot(afterSequence: 1))
+    fixture.queue.enqueue(second, attachmentIDs: [], route: .bot(afterSequence: 1))
+    await fixture.clock.waitForSleep(StaleSend.limit, count: 2)
+    let readsBefore = fixture.readiness.reads.value
+    fixture.clock.advance(by: StaleSend.limit)
+    await fixture.readiness.reads.wait(for: readsBefore + 2)
     fixture.readiness.state = .ready
+
+    let stale = TranscriptDelivery.failed(reason: StaleSend.reason)
+    await settleUntil { fixture.shownDeliveries == [stale, stale] }
+    #expect(fixture.client.promptedTexts.isEmpty)
+
+    fixture.queue.retry(first.id)
     await fixture.client.promptRequests.wait()
-    #expect(fixture.client.promptedMessageIds == [message.id.uuidString.lowercased()])
+    #expect(fixture.client.promptedMessageIds == [first.id.uuidString.lowercased()])
     fixture.model.shutdown()
   }
 
-  @Test("A send that waited on a wake keeps the wake's budget while the sandbox reconnects")
-  func sendKeepsTheWakeBudgetWhileReconnecting() async {
+  @Test("A send whose machine comes back within 10 minutes goes out normally")
+  func sendBeforeTheLimitGoesOut() async {
     let fixture = await BotSendFixture.make(using: loadedBotModel)
-    fixture.readiness.state = .waking(failure: "The sandbox didn’t wake up.")
+    fixture.readiness.state = .waiting
     let message = UserMessage(text: "back yet?")
 
     fixture.queue.enqueue(message, attachmentIDs: [], route: .bot(afterSequence: 1))
-    await fixture.clock.waitForSleep(SendQueue.readinessTimeout)
-    fixture.clock.advance(by: SendQueue.readinessTimeout)
-    await fixture.clock.waitForSleep(SendQueue.wakeTimeout - SendQueue.readinessTimeout)
-    let readsBefore = fixture.readiness.reads.value
-    fixture.readiness.state = .waiting("Reconnecting to the sandbox…")
-    await fixture.readiness.reads.wait(for: readsBefore + 1)
-
-    #expect(fixture.clock.requestCount(SendQueue.progressDelay) == 0)
-    #expect(fixture.shownDeliveries == [nil])
+    await fixture.clock.waitForSleep(StaleSend.limit)
+    fixture.clock.advance(by: StaleSend.limit - .seconds(1))
     fixture.readiness.state = .ready
+
     await fixture.client.promptRequests.wait()
     #expect(fixture.client.promptedMessageIds == [message.id.uuidString.lowercased()])
-    fixture.model.shutdown()
-  }
-
-  @Test("A send to a sandbox that never wakes ends as Not Delivered once the wake wait runs out")
-  func sendFailsWhenTheSandboxNeverWakes() async {
-    let fixture = await BotSendFixture.make(using: loadedBotModel)
-    fixture.readiness.state = .waking(failure: "The sandbox didn’t wake up.")
-
-    fixture.queue.enqueue(UserMessage(text: "hello"), attachmentIDs: [], route: .bot(afterSequence: 1))
-    await fixture.clock.waitForSleep(SendQueue.readinessTimeout)
-    fixture.clock.advance(by: SendQueue.readinessTimeout)
-    await fixture.clock.waitForSleep(SendQueue.wakeTimeout - SendQueue.readinessTimeout)
-    fixture.clock.advance(by: SendQueue.wakeTimeout - SendQueue.readinessTimeout)
-
-    await settleUntil { fixture.shownDeliveries == [.failed(reason: "The sandbox didn’t wake up.")] }
-    #expect(fixture.client.promptedTexts.isEmpty)
     fixture.model.shutdown()
   }
 

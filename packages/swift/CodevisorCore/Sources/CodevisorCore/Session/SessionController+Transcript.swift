@@ -9,18 +9,20 @@ extension SessionController {
     return TranscriptAutoResumeStamp.stamping(model?.autoResume, onto: settled)
   }
   public var activeItem: ConversationItem? {
-    TranscriptAutoResumeStamp.stamping(model?.autoResume, onto: model?.activeItem)
+    guard !holdsTurnForConnection else { return nil }
+    return TranscriptAutoResumeStamp.stamping(model?.autoResume, onto: model?.activeItem)
   }
   public var activeItemRevision: UInt64 { model?.activeItemRevision ?? 0 }
   public var activeWorkedTicking: TranscriptActiveWorkedTicking? { model?.activeWorkedTicking }
-  public var hasActiveItem: Bool { model?.hasActiveItem ?? false }
+  public var hasActiveItem: Bool { (model?.hasActiveItem ?? false) && !holdsTurnForConnection }
   public var transcriptProjectionKey: TranscriptProjectionKey {
     TranscriptProjectionKey(
       sessionID: transcriptProjectionID,
       controllerRevision: transcriptProjectionRevision,
       modelRevision: model?.transcriptProjectionRevision ?? 0,
       activityMessage: transcriptSandboxPower == nil ? transcriptActivityOverride : nil,
-      sandboxPower: transcriptSandboxPower
+      sandboxPower: transcriptSandboxPower,
+      awaitsConnection: isWaitingForConnection
     )
   }
 
@@ -42,7 +44,8 @@ extension SessionController {
       botConversation: presentedBotConversation,
       outgoingMessages: outgoing.messages,
       deliveries: outgoing.deliveries,
-      sandboxPower: sandboxPower
+      sandboxPower: sandboxPower,
+      awaitsConnection: awaitsConnection
     )
   }
 
@@ -68,16 +71,53 @@ extension SessionController {
       guard case .agent = entry.route, deliveries[entry.message.id] == nil else { continue }
       deliveries[entry.message.id] = entry.delivery
     }
+    var waiting = Set(messages.map(\.id)).intersection(pendingMessageIDs)
+    if let turnPrompt = model?.unacceptedTurnPromptID { waiting.insert(turnPrompt) }
+    for id in waiting { deliveries[id] = sendingWhileReconnecting(deliveries[id]) }
     let opensChat = model.map { $0.settledConversation.isEmpty && $0.activeItem == nil } ?? true
     let opening = opensChat && !messages.isEmpty ? messages.removeFirst() : nil
     return TranscriptOutgoing(opening: opening, messages: messages, deliveries: deliveries)
   }
 
   private var presentedBotConversation: TranscriptBotConversation? {
+    botConversationWithUnsent.map { conversation in
+      let pending = pendingMessageIDs
+      return conversation.mappingDeliveries { message in
+        guard let id = UUID(uuidString: message.id), pending.contains(id) else { return message.delivery }
+        return sendingWhileReconnecting(message.delivery)
+      }
+    }
+  }
+
+  private var botConversationWithUnsent: TranscriptBotConversation? {
     let unsent = sends.unsentBotMessages
     if let conversation = model?.transcriptBotConversation(adding: unsent) { return conversation }
     guard presentsBotConversation else { return nil }
     return TranscriptBotConversation(messages: unsent.map(\.message), isWorking: false)
+  }
+
+  func sendingWhileReconnecting(_ delivery: TranscriptDelivery?) -> TranscriptDelivery? {
+    guard isWaitingForConnection, delivery == nil else { return delivery }
+    return .sending
+  }
+
+  private var isWaitingForConnection: Bool {
+    machines?.showsReconnectNotice(for: project.serverId) == true
+  }
+
+  private var awaitsConnection: Bool {
+    isWaitingForConnection && (model?.unacceptedTurnPromptID != nil || !pendingMessageIDs.isEmpty)
+  }
+
+  private var holdsTurnForConnection: Bool {
+    isWaitingForConnection && model?.unacceptedTurnPromptID != nil
+  }
+
+  private var pendingMessageIDs: Set<UUID> {
+    let unaccepted = (model?.outgoingMessages.map(\.message.id) ?? []).filter {
+      model?.acceptedMessageIDs.contains($0) != true
+    }
+    return Set(sends.unsent.map(\.message.id)).union(unaccepted)
   }
 
   public var hasOlderBotMessages: Bool { model?.hasOlderBotMessages ?? false }
@@ -192,7 +232,8 @@ extension SessionController {
   public var hasVisibleTranscript: Bool { presentationClock.visibleViewCount > 0 }
 
   public var transcriptActivityOverride: String? {
-    connectionRecoveryMessage ?? serverWaitMessage
+    guard !awaitsConnection else { return nil }
+    return connectionRecoveryMessage ?? serverWaitMessage
       ?? waitingHarnessUpdateName.map { "Waiting for \($0) to finish updating..." }
   }
 

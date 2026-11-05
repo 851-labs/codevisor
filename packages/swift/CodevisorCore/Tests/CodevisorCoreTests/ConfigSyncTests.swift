@@ -220,7 +220,7 @@ struct ConfigSyncTests {
     defer { environment.machines.stopEventSync() }
     signIn(environment.machines, machines: [remote])
 
-    await environment.machines.connectMachine(remote.id)
+    await environment.machines.prepareMachine(remote.id)
 
     try await waitForSync {
       fake.operationLog.contains("mcps.reconcile")

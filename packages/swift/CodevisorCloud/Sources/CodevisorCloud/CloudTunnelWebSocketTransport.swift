@@ -32,9 +32,11 @@ final class CloudTunnelPathProbe: @unchecked Sendable {
   }
 }
 
-enum CloudTunnelError: Error {
+enum CloudTunnelError: ServerTransportFailure {
   case unavailable
   case closed
+
+  var isConnectionLoss: Bool { true }
 }
 
 final class CloudTunnelSocket: ServerWebSocketConnecting, @unchecked Sendable {

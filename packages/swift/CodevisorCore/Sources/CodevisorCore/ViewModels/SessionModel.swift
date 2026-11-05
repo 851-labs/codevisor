@@ -81,7 +81,10 @@ public final class SessionModel {
     }
   }
   var unreachedSend: UnreachedSend?
-  var sendRetryDelays: [Duration] = [.seconds(1), .seconds(3)]
+  public internal(set) var unacceptedTurnPromptID: UUID? {
+    didSet { if unacceptedTurnPromptID != oldValue { transcriptProjectionRevision &+= 1 } }
+  }
+  var turnPromptWaitedForConnection = false
   var sendingNoticeDelay: Duration = .seconds(1)
   public internal(set) var hasOlderBotMessages = false
   public internal(set) var isLoadingOlderBotMessages = false
@@ -209,7 +212,7 @@ public final class SessionModel {
     now: @escaping @Sendable () -> Date = { Date() },
     quietTurnScheduler: SessionQuietTurnScheduler = .continuous,
     connectionRecoveryScheduler: SessionConnectionRecoveryScheduler = .continuous,
-    connectionRecoveryStatusDelay: Duration = .seconds(5),
+    connectionRecoveryStatusDelay: Duration = .seconds(1),
     connectionRecoveryRetryBaseDelay: Duration = .milliseconds(500),
     connectionRecoveryRetryMaximumDelay: Duration = .seconds(5)
   ) {

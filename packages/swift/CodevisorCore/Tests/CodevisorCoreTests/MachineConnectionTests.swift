@@ -73,7 +73,7 @@ struct MachineConnectionTests {
     )
     defer { controller.stopEventSync() }
 
-    await controller.connectMachine(remote.id)
+    await controller.prepareMachine(remote.id)
 
     #expect(
       projectList.sessions.contains {
@@ -93,7 +93,7 @@ struct MachineConnectionTests {
     )
     defer { controller.stopEventSync() }
 
-    await controller.connectMachine(remote.id)
+    await controller.prepareMachine(remote.id)
 
     guard case .stale = controller.navigationSyncStateByMachineId[remote.id] else {
       Issue.record(
@@ -117,7 +117,7 @@ struct MachineConnectionTests {
     defer { controller.stopEventSync() }
     #expect(controller.selectedMachineId == "local")
 
-    await controller.connectMachine(remote.id)
+    await controller.prepareMachine(remote.id)
     try await waitForSync { remoteFake.eventStreamSubscriberCount == 1 }
 
     let session = makeSession(id: UUID(), projectId: UUID(), serverId: remote.id)
@@ -135,7 +135,7 @@ struct MachineConnectionTests {
     #expect(projectList.sessions.allSatisfy { $0.serverId == remote.id })
   }
 
-  @Test("connectMachine is idempotent while a stream is live")
+  @Test("Keeping background connections open leaves an already connected machine alone")
   func connectIsIdempotent() async throws {
     let remote = makeRemote("remote-a")
     let remoteFake = SyncFakeServerClient(projects: [], sessions: [])
@@ -145,8 +145,10 @@ struct MachineConnectionTests {
     )
     defer { controller.stopEventSync() }
 
-    await controller.connectMachine(remote.id)
-    await controller.connectMachine(remote.id)
+    await controller.prepareMachine(remote.id)
+    try await waitForSync { remoteFake.eventStreamSubscriberCount >= 1 }
+    controller.ensureBackgroundConnections()
+    #expect(!controller.connection(for: remote.id).reconnector.isActive)
     #expect(remoteFake.workspaceSnapshotCallCount == 1)
     try await waitForSync { remoteFake.eventStreamSubscriberCount >= 1 }
     #expect(remoteFake.eventStreamSubscriberCount == 1)
@@ -161,7 +163,7 @@ struct MachineConnectionTests {
       remotes: [remote]
     )
     defer { controller.stopEventSync() }
-    await controller.connectMachine(remote.id)
+    await controller.prepareMachine(remote.id)
     try await waitForSync { remoteFake.eventStreamSubscriberCount == 1 }
 
     remoteFake.emit(
@@ -189,7 +191,7 @@ struct MachineConnectionTests {
       remotes: [remote]
     )
     defer { controller.stopEventSync() }
-    await controller.connectMachine(remote.id)
+    await controller.prepareMachine(remote.id)
     try await waitForSync { remoteFake.eventStreamSubscriberCount == 1 }
     let paused = UUID()
     let idle = UUID()
@@ -241,7 +243,7 @@ struct MachineConnectionTests {
       remotes: [remote]
     )
     defer { controller.stopEventSync() }
-    await controller.connectMachine(remote.id)
+    await controller.prepareMachine(remote.id)
     try await waitForSync { remoteFake.eventStreamSubscriberCount == 1 }
 
     remoteFake.emit(
@@ -307,8 +309,8 @@ struct MachineConnectionTests {
     )
     defer { controller.stopEventSync() }
 
-    await controller.connectMachine(remoteA.id)
-    await controller.connectMachine(remoteB.id)
+    await controller.prepareMachine(remoteA.id)
+    await controller.prepareMachine(remoteB.id)
     await controller.refreshServerUpdates()
 
     #expect(controller.serverUpdateInfo(for: remoteA.id)?.latestVersion == "0.2.0")

@@ -114,7 +114,6 @@ extension SessionModelTests {
       sessionId: sessionId.uuidString,
       now: { clock.now }
     )
-    model.sendRetryDelays = [.zero, .zero]
     model.sendingNoticeDelay = .seconds(3600)
     await model.send("first")
     #expect(model.isSending)

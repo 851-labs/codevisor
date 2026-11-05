@@ -8,81 +8,65 @@ import Testing
 @MainActor
 @Suite(.timeLimit(.minutes(1)))
 struct NavigationEventRecoveryTests {
-  @Test("Failed snapshots keep the cached state, stay stale, and retry with backoff without another event")
+  @Test("A failed snapshot keeps the cached state, shows it stale, and the machine reconnects until one lands")
   func workspaceSnapshotRecovery() async throws {
-    let clock = TestClock()
-    let fixture = await WorkspaceEventFixture(navigationClock: clock)
+    let scheduler = ManualSessionConnectionRecoveryScheduler()
+    let fixture = await WorkspaceEventFixture(connectionScheduler: scheduler.scheduler)
     defer { fixture.controller.stopEventSync() }
     fixture.fake.workspaceSnapshotHandler = { throw URLError(.networkConnectionLost) }
     let other = fixture.repository.workspace(id: fixture.otherWorkspace.id)
+    let connection = fixture.controller.connection(for: fixture.serverId)
 
     await fixture.controller.synchronizeNavigationState(
       serverId: fixture.serverId, client: fixture.fake, presentation: .catchUp
     )
-    let connection = fixture.controller.connection(for: fixture.serverId)
+    await awaitObserved { connection.availability?.isFailed == true }
+
     guard case .stale = connection.navigationSyncState else {
       Issue.record("A failed snapshot must not be presented as current")
       return
     }
+    #expect(fixture.fake.workspaceSnapshotCallCount == 2)
     #expect(fixture.repository.workspace(id: fixture.workspace.id)?.isArchived == false)
     #expect(fixture.repository.workspace(id: fixture.workspace.id)?.centerTabs == fixture.workspace.centerTabs)
-    #expect(fixture.fake.workspaceSnapshotCallCount == 1)
-    await clock.waitForSleep(.seconds(2))
-    let firstRetry = try #require(connection.navigationSync.retryTask)
-    clock.advance(by: .seconds(2))
-    await firstRetry.value
-    #expect(fixture.fake.workspaceSnapshotCallCount == 2)
-    guard case .stale = connection.navigationSyncState else {
-      Issue.record("A failed retry must retain the stale state")
-      return
-    }
 
-    await clock.waitForSleep(.seconds(4))
     let snapshot = fixture.archivedSnapshot()
     fixture.fake.workspaceSnapshotHandler = { snapshot }
-    let secondRetry = try #require(connection.navigationSync.retryTask)
-    clock.advance(by: .seconds(4))
-    await secondRetry.value
+    await awaitObserved { scheduler.requestedIntervals.contains(MachineReconnector.baseDelay) }
+    scheduler.advance()
+    await awaitObserved { connection.navigationSyncState == .current }
 
-    #expect(connection.navigationSyncState == .current)
+    #expect(connection.availability == .ready)
     #expect(fixture.repository.workspace(id: fixture.workspace.id)?.isArchived == true)
     #expect(fixture.repository.workspace(id: fixture.otherWorkspace.id) == other)
-    #expect(connection.navigationSync.retryTask == nil)
     await fixture.stop()
-    #expect(clock.pendingCount == 0)
   }
 
-  @Test("An unreadable navigation event recovers through a snapshot without losing the change")
+  @Test("An unreadable navigation event recovers the change through one snapshot without reconnecting")
   func eventRefreshRecovery() async throws {
     let clock = TestClock()
     let fixture = await WorkspaceEventFixture(navigationClock: clock)
     defer { fixture.controller.stopEventSync() }
-    fixture.fake.workspaceSnapshotHandler = { throw URLError(.networkConnectionLost) }
-    let handled = TestSignal()
-    fixture.controller.onMcpStateChanged = { _ in handled.signal() }
+    let snapshot = fixture.archivedSnapshot()
+    fixture.fake.workspaceSnapshotHandler = { snapshot }
     fixture.controller.startEventSync(serverId: fixture.serverId, client: fixture.fake, since: 0)
     let connection = fixture.controller.connection(for: fixture.serverId)
     connection.navigationSyncState = .current
-    fixture.fake.emit(kind: "navigation.changed", subjectId: fixture.workspace.id.uuidString)
-    fixture.fake.emit(kind: "mcp.updated", subjectId: "event-barrier")
-    await handled.wait()
 
+    fixture.fake.emit(kind: "navigation.changed", subjectId: fixture.workspace.id.uuidString)
+    await clock.waitForSleep(.milliseconds(300))
     guard case .stale = connection.navigationSyncState else {
       Issue.record("The failed event must report stale navigation")
       return
     }
-    await clock.waitForSleep(.seconds(2))
-    let snapshot = fixture.archivedSnapshot()
-    fixture.fake.workspaceSnapshotHandler = { snapshot }
-    let retry = try #require(connection.navigationSync.retryTask)
-    clock.advance(by: .seconds(2))
-    await retry.value
+    let refresh = try #require(connection.navigationSync.pendingRefreshTask)
+    clock.advance(by: .milliseconds(300))
+    await refresh.value
 
     #expect(connection.navigationSyncState == .current)
+    #expect(connection.availability == .ready)
     #expect(fixture.repository.workspace(id: fixture.workspace.id)?.isArchived == true)
-    #expect(connection.navigationSync.retryTask == nil)
     await fixture.stop()
-    #expect(clock.pendingCount == 0)
   }
 
   @Test("A delta for a machine with no cache schedules a snapshot instead of guessing")
@@ -107,10 +91,9 @@ struct NavigationEventRecoveryTests {
     await fixture.stop()
   }
 
-  @Test("Ended and failed shell streams reconnect through navigation recovery", arguments: [false, true])
+  @Test("Ended and failed shell streams reconnect the machine at once", arguments: [false, true])
   func endedStreamRecovers(fails: Bool) async throws {
-    let clock = TestClock()
-    let fixture = await WorkspaceEventFixture(navigationClock: clock)
+    let fixture = await WorkspaceEventFixture()
     defer { fixture.controller.stopEventSync() }
     let snapshot = fixture.archivedSnapshot()
     fixture.fake.workspaceSnapshotHandler = { snapshot }
@@ -121,40 +104,40 @@ struct NavigationEventRecoveryTests {
     await handled.wait()
     let connection = fixture.controller.connection(for: fixture.serverId)
     let stream = try #require(connection.navigationSync.eventStreamTask)
+
     fixture.fake.finishEventStreams(throwing: fails ? URLError(.networkConnectionLost) : nil)
     await stream.value
-
-    await clock.waitForSleep(.seconds(2))
-    let retry = try #require(connection.navigationSync.retryTask)
-    clock.advance(by: .seconds(2))
-    await retry.value
+    await awaitObserved { connection.navigationSyncState == .current }
+    #expect(fixture.repository.workspace(id: fixture.workspace.id)?.isArchived == true)
     fixture.fake.emit(kind: "mcp.updated", subjectId: "reconnected-barrier")
     await handled.wait(for: 2)
+
     #expect(connection.navigationSyncState == .current)
-    #expect(fixture.repository.workspace(id: fixture.workspace.id)?.isArchived == true)
+    #expect(connection.availability == .ready)
     await fixture.stop()
-    #expect(clock.pendingCount == 0)
   }
 
-  @Test("Removing a machine cancels its scheduled navigation recovery")
+  @Test("Removing a machine cancels its scheduled reconnect")
   func removedMachineDoesNotRetry() async throws {
-    let clock = TestClock()
-    let fixture = await WorkspaceEventFixture(navigationClock: clock)
+    let scheduler = ManualSessionConnectionRecoveryScheduler()
+    let fixture = await WorkspaceEventFixture(connectionScheduler: scheduler.scheduler)
     fixture.fake.workspaceSnapshotHandler = { throw URLError(.networkConnectionLost) }
     defer { fixture.controller.stopEventSync() }
+    let connection = fixture.controller.connection(for: fixture.serverId)
     await fixture.controller.synchronizeNavigationState(
       serverId: fixture.serverId, client: fixture.fake, presentation: .background
     )
-    await clock.waitForSleep(.seconds(2))
-    let retry = try #require(fixture.controller.connection(for: fixture.serverId).navigationSync.retryTask)
+    await awaitObserved { scheduler.requestedIntervals.contains(MachineReconnector.baseDelay) }
+
     fixture.controller.removeConnection(for: fixture.serverId)
-    await retry.value
-    clock.advance(by: .seconds(60))
-    #expect(fixture.fake.workspaceSnapshotCallCount == 1)
+    scheduler.advance()
+
+    #expect(!connection.reconnector.isActive)
+    #expect(fixture.fake.workspaceSnapshotCallCount == 2)
     #expect(fixture.controller.connectionsById[fixture.serverId] == nil)
   }
 
-  @Test("A timed-out snapshot cannot hold retries or overwrite their result")
+  @Test("A timed-out snapshot cannot hold the reconnect or overwrite its result")
   func stalledSnapshotLosesOwnership() async throws {
     let clock = TestClock()
     let fixture = await WorkspaceEventFixture(navigationClock: clock)
@@ -185,12 +168,8 @@ struct NavigationEventRecoveryTests {
     await started.wait()
     await clock.waitForSleep(.seconds(30))
     clock.advance(by: .seconds(30))
-    await clock.waitForSleep(.seconds(2))
     let connection = fixture.controller.connection(for: fixture.serverId)
-    let retry = try #require(connection.navigationSync.retryTask)
-    clock.advance(by: .seconds(2))
-    await retry.value
-    #expect(connection.navigationSyncState == .current)
+    await awaitObserved { connection.navigationSyncState == .current }
     #expect(fixture.repository.workspace(id: fixture.workspace.id)?.isArchived == true)
 
     release.signal()
@@ -198,7 +177,6 @@ struct NavigationEventRecoveryTests {
     #expect(connection.navigationSyncState == .current)
     #expect(fixture.repository.workspace(id: fixture.workspace.id)?.isArchived == true)
     await fixture.stop()
-    #expect(clock.pendingCount == 0)
   }
 
   @Test("An empty authoritative snapshot removes vanished server workspaces")
@@ -214,5 +192,12 @@ struct NavigationEventRecoveryTests {
     #expect(fixture.store.layouts.layout(for: fixture.workspace.id) == nil)
     #expect(fixture.repository.workspace(id: fixture.otherWorkspace.id) != nil)
     await fixture.stop()
+  }
+}
+
+extension ServerAvailability {
+  fileprivate var isFailed: Bool {
+    guard case .failed = self else { return false }
+    return true
   }
 }

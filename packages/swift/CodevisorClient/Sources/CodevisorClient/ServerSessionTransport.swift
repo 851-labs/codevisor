@@ -26,6 +26,10 @@ public struct ServerSessionTransport: Sendable {
     try await client.botConversation(sessionId: sessionId, before: before, limit: limit)
   }
 
+  public func waitUntilConnected() async -> Bool {
+    await client.waitUntilConnected()
+  }
+
   public func promptQueue() async throws -> [ServerPromptQueueItem] {
     try await client.promptQueue(id: sessionId)
   }

@@ -121,7 +121,7 @@ func makeController(
   localServer: (any LocalServerControlling)? = StubLocalServer(),
   provider: FakeCloudProvider = FakeCloudProvider(),
   clientFactory: MachineController.ClientFactory? = nil,
-  reconnectNoticeScheduler: SessionConnectionRecoveryScheduler = .continuous
+  connectionScheduler: SessionConnectionRecoveryScheduler = .continuous
 ) -> (controller: MachineController, projectList: ProjectListModel, provider: FakeCloudProvider) {
   let projectList = ProjectListModel.fixture()
   let controller = MachineController(
@@ -129,7 +129,7 @@ func makeController(
     projectList: projectList,
     localServer: localServer,
     clientFactory: clientFactory,
-    reconnectNoticeScheduler: reconnectNoticeScheduler
+    connectionScheduler: connectionScheduler
   )
   controller.cloudProvider = provider
   return (controller, projectList, provider)

@@ -8,10 +8,10 @@ import Testing
 @Suite("Machine reachability recovery")
 struct MachineReachabilityRecoveryTests {
   private func chat(
-    on machines: MachineController, machineId: String
+    on machines: MachineController, machineId: String,
+    client: FakeSessionServerClient = FakeSessionServerClient(sessionId: UUID())
   ) -> SessionController {
-    let sessionId = UUID()
-    let client = FakeSessionServerClient(sessionId: sessionId)
+    let sessionId = client.sessionId
     let controller = SessionController(
       project: .runTargetPlaceholder(serverId: machineId),
       configCache: ConfigOptionCache(store: InMemoryStore()),
@@ -28,7 +28,7 @@ struct MachineReachabilityRecoveryTests {
   @Test("A chat whose machine fails just says it's reconnecting, through retries, and clears once it's back")
   func chatReportsAnUnreachableMachine() async {
     let clock = ManualSessionConnectionRecoveryScheduler()
-    let (machines, _, _) = makeController(localServer: nil, reconnectNoticeScheduler: clock.scheduler)
+    let (machines, _, _) = makeController(localServer: nil, connectionScheduler: clock.scheduler)
     let studio = accountMachine("studio", name: "Mac Studio")
     signIn(machines, machines: [studio])
     machines.markReady(for: studio.id)
@@ -52,10 +52,82 @@ struct MachineReachabilityRecoveryTests {
     await awaitObserved { controller.connectionRecoveryMessage == nil }
   }
 
+  @Test("A message waiting on its machine shows the progress bar once its chat says Reconnecting")
+  func pendingMessageShowsProgressWhileReconnecting() async throws {
+    let clock = ManualSessionConnectionRecoveryScheduler()
+    let (machines, _, _) = makeController(localServer: nil, connectionScheduler: clock.scheduler)
+    let studio = accountMachine("studio", name: "Mac Studio")
+    signIn(machines, machines: [studio])
+    let client = FakeSessionServerClient(sessionId: UUID())
+    let (gate, release) = AsyncStream.makeStream(of: Void.self)
+    client.holdPrompts(until: gate)
+    defer { release.finish() }
+    let controller = chat(on: machines, machineId: studio.id, client: client)
+    let model = try #require(controller.model)
+    model.sendingNoticeDelay = .seconds(3600)
+    Task { await model.send("warm up") }
+    await client.promptRequests.wait()
+    let message = UserMessage(text: "still there?")
+    Task { await model.send(message) }
+    await client.promptRequests.wait(for: 2)
+    #expect(controller.transcriptProjectionInput.deliveries[message.id] == nil)
+
+    machines.markFailed(for: studio.id, message: "Offline")
+    await awaitObserved { clock.pendingCount == 1 }
+    clock.advance()
+
+    await awaitObserved { controller.transcriptProjectionInput.deliveries[message.id] == .sending }
+    #expect(controller.connectionRecoveryMessage == "Reconnecting…")
+  }
+
+  @Test("A new turn waiting on its machine shows only the message and its progress, and starts working once sent")
+  func newTurnWaitsQuietlyForTheConnection() async throws {
+    let clock = ManualSessionConnectionRecoveryScheduler()
+    let (machines, _, _) = makeController(localServer: nil, connectionScheduler: clock.scheduler)
+    let studio = accountMachine("studio", name: "Mac Studio")
+    signIn(machines, machines: [studio])
+    let client = FakeSessionServerClient(sessionId: UUID())
+    client.echoOnPrompt = false
+    client.sendAttempts.failuresLeft = 1
+    let (reconnection, reconnect) = AsyncStream.makeStream(of: Void.self)
+    client.sendAttempts.reconnection = reconnection
+    defer { reconnect.finish() }
+    let controller = chat(on: machines, machineId: studio.id, client: client)
+    let time = TurnClock()
+    controller.model = SessionModel(
+      serverTransport: ServerSessionTransport(client: client, sessionId: client.sessionId),
+      sessionId: client.sessionId.uuidString, now: { time.now })
+    let model = try #require(controller.model)
+    model.sendingNoticeDelay = .seconds(3600)
+    machines.markFailed(for: studio.id, message: "Offline")
+    await awaitObserved { clock.pendingCount == 1 }
+    clock.advance()
+    await awaitObserved { controller.connectionRecoveryMessage == "Reconnecting…" }
+
+    let message = UserMessage(text: "still there?")
+    let send = Task { await model.send(message) }
+    await client.sendAttempts.connectionWaits.wait()
+
+    #expect(controller.activeItem == nil)
+    #expect(controller.transcriptActivityOverride == nil)
+    #expect(controller.transcriptProjectionInput.deliveries[message.id] == .sending)
+
+    time.advance(by: 60)
+    machines.markReady(for: studio.id)
+    reconnect.finish()
+    await send.value
+
+    guard case let .assistant(turn)? = controller.activeItem else {
+      Issue.record("The turn should show once the server takes the message")
+      return
+    }
+    #expect(turn.turn.startedAt == time.now)
+  }
+
   @Test("A machine that answers again within a blip never makes its chats say Reconnecting")
   func briefMachineWaitStaysQuiet() async {
     let clock = ManualSessionConnectionRecoveryScheduler()
-    let (machines, _, _) = makeController(localServer: nil, reconnectNoticeScheduler: clock.scheduler)
+    let (machines, _, _) = makeController(localServer: nil, connectionScheduler: clock.scheduler)
     let studio = accountMachine("studio", name: "Mac Studio")
     signIn(machines, machines: [studio])
     machines.markReady(for: studio.id)
@@ -68,25 +140,39 @@ struct MachineReachabilityRecoveryTests {
 
     machines.beginWaiting(for: studio.id, reason: .connecting)
     await awaitObserved { clock.pendingCount == 1 }
-    #expect(clock.requestedIntervals.last == .seconds(5))
+    #expect(clock.requestedIntervals.last == .seconds(1))
     clock.advance()
     await awaitObserved { controller.connectionRecoveryMessage == "Reconnecting…" }
   }
 
-  @Test("A failed machine is prepared as soon as its tunnel is back, not at its next scheduled retry")
+  @Test("A failed machine reconnects as soon as its tunnel is back, not at its next scheduled retry")
   func tunnelReturnRecoversAFailedMachine() async {
-    let (machines, _, _) = makeController(localServer: nil)
+    let clock = ManualSessionConnectionRecoveryScheduler()
+    let (machines, _, _) = makeController(localServer: nil, connectionScheduler: clock.scheduler)
     let studio = accountMachine("studio", name: "Mac Studio")
     let provider = signIn(machines, machines: [studio])
+    await machines.prepareMachine(studio.id)
+    #expect(machines.availability(for: studio.id) != .ready)
+    #expect(machines.connection(for: studio.id).reconnector.isActive)
+
     provider.requestTransport.responsesByPath["/v1/info"] = """
       {"id":"studio","name":"Mac Studio","kind":"remote","version":"1.0.0",
        "platform":"darwin","bindHost":"127.0.0.1"}
       """
-    machines.markFailed(for: studio.id, message: "Offline")
-
     machines.cloudMachineBecameReachable(deviceId: "studio")
 
     await awaitObserved { machines.availability(for: studio.id) == .ready }
     #expect(provider.requestTransport.requestCount(for: "/v1/info") >= 1)
+  }
+}
+
+private final class TurnClock: @unchecked Sendable {
+  private let lock = NSLock()
+  private var current = Date(timeIntervalSince1970: 1_800_000_000)
+
+  var now: Date { lock.withLock { current } }
+
+  func advance(by seconds: TimeInterval) {
+    lock.withLock { current += seconds }
   }
 }

@@ -36,12 +36,10 @@ extension MachineController {
         }
       }
       guard let self, !Task.isCancelled else { return }
-      if let preparation = connection.preparation.task {
-        await preparation.value
-      } else if case .failed = connection.availability {
-        await self.prepareMachine(machineId)
-      } else {
+      if connection.availability == .ready {
         await self.refreshNavigationState(for: machineId)
+      } else {
+        await self.prepareMachine(machineId)
       }
     }
     return refresh

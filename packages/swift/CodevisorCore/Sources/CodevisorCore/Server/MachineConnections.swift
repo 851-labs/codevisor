@@ -7,11 +7,11 @@ final class MachineConnections {
   var byId: [String: MachineConnection] = [:]
 
   @ObservationIgnored private let reconnectNoticeDelay: Duration
-  @ObservationIgnored private let reconnectNoticeScheduler: SessionConnectionRecoveryScheduler
+  @ObservationIgnored private let scheduler: SessionConnectionRecoveryScheduler
 
-  init(reconnectNoticeDelay: Duration, reconnectNoticeScheduler: SessionConnectionRecoveryScheduler) {
+  init(reconnectNoticeDelay: Duration, scheduler: SessionConnectionRecoveryScheduler) {
     self.reconnectNoticeDelay = reconnectNoticeDelay
-    self.reconnectNoticeScheduler = reconnectNoticeScheduler
+    self.scheduler = scheduler
   }
 
   var statusById: [String: MachineStatus] {
@@ -28,13 +28,15 @@ final class MachineConnections {
 
   func connection(for machineId: String) -> MachineConnection {
     if let existing = byId[machineId] { return existing }
-    let connection = MachineConnection(machineId: machineId, reconnectNotice: makeReconnectNotice())
+    let connection = MachineConnection(
+      machineId: machineId, reconnector: MachineReconnector(scheduler: scheduler),
+      reconnectNotice: makeReconnectNotice())
     byId[machineId] = connection
     return connection
   }
 
   func remove(_ machineId: String) {
-    byId[machineId]?.cancelAllWork()
+    byId[machineId]?.cancelSyncWork()
     byId[machineId] = nil
   }
 
@@ -60,6 +62,6 @@ final class MachineConnections {
 
   private func makeReconnectNotice() -> DelayedConnectionNotice {
     DelayedConnectionNotice(
-      delay: reconnectNoticeDelay, now: reconnectNoticeScheduler.now, sleep: reconnectNoticeScheduler.sleep)
+      delay: reconnectNoticeDelay, now: scheduler.now, sleep: scheduler.sleep)
   }
 }

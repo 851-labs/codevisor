@@ -12,11 +12,12 @@ public final class MachineConnection {
 
   let navigationSync = MachineNavigationSync()
   let serverUpdate = ServerUpdateState()
-  let preparation = MachinePreparation()
+  let reconnector: MachineReconnector
   let reconnectNotice: DelayedConnectionNotice
 
-  init(machineId: String, reconnectNotice: DelayedConnectionNotice) {
+  init(machineId: String, reconnector: MachineReconnector, reconnectNotice: DelayedConnectionNotice) {
     self.machineId = machineId
+    self.reconnector = reconnector
     self.reconnectNotice = reconnectNotice
   }
 
@@ -65,14 +66,11 @@ public final class MachineConnection {
   }
 
   var isIdle: Bool {
-    navigationSync.eventStreamTask == nil
-      && preparation.task == nil
-      && !preparation.backgroundConnectInFlight
+    navigationSync.eventStreamTask == nil && !reconnector.isActive
   }
 
   func beginWaiting(_ reason: ServerWaitingReason) {
     navigationSync.stopSyncing()
-    preparation.cancelRetry()
     availability = .waiting(reason)
     reconnectNotice.update(isActive: true)
     navigationSync.beginCatchUp()
@@ -81,7 +79,6 @@ public final class MachineConnection {
   func markReady() {
     availability = .ready
     reconnectNotice.update(isActive: false)
-    preparation.resetRetries()
   }
 
   func markFailed(_ message: String) {
@@ -92,17 +89,6 @@ public final class MachineConnection {
 
   func cancelSyncWork() {
     navigationSync.cancelAll()
-    preparation.cancelRetry()
-  }
-
-  func cancelAllWork() {
-    navigationSync.manualRefresh?.cancel()
-    navigationSync.eventStreamTask?.cancel()
-    preparation.task?.cancel()
-    navigationSync.task?.cancel()
-    navigationSync.pendingRefreshTask?.cancel()
-    navigationSync.retryTask?.cancel()
-    preparation.retryTask?.cancel()
-    preparation.statusRecheckTask?.cancel()
+    reconnector.stop()
   }
 }

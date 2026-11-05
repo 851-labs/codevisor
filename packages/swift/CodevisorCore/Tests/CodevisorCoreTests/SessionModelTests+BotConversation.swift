@@ -49,22 +49,22 @@ extension SessionModelTests {
     #expect(model.transcriptBotConversation?.messages.map(\.id) == ["b1", followUpID])
   }
 
-  @Test("A bot message that keeps failing shows Not Delivered instead of looking sent, and Try Again delivers it")
+  @Test("A bot message with no connection to wait on shows Not Delivered, and Try Again delivers it")
   func botMessageThatKeepsFailingIsMarkedNotDelivered() async {
     let (client, model) = await loadedBotModel()
-    client.sendAttempts.failuresLeft = 3
+    client.sendAttempts.failuresLeft = 1
     let message = UserMessage(text: "are you there?")
     let id = message.id.uuidString.lowercased()
 
     await model.send(message)
 
-    #expect(client.sendAttempts.actionIds == [id, id, id])
-    #expect(deliveries(model) == ["b1": nil, id: .failed(reason: SessionModel.undeliveredReason)])
+    #expect(client.sendAttempts.actionIds == [id])
+    #expect(deliveries(model)[id]??.isFailed == true)
     #expect(model.transcriptBotConversation?.isWorking == false)
 
     await model.retryUnsentMessage(id: message.id)
 
-    #expect(client.sendAttempts.actionIds == [id, id, id, id])
+    #expect(client.sendAttempts.actionIds == [id, id])
     #expect(deliveries(model) == ["b1": nil, id: nil])
     let echo = botFeedMessage(id, .user, "are you there?", sequence: 2, sessionId: client.sessionId)
     client.emit(botEnvelope(1, client.sessionId, "bot.message", ["message": botJSON(echo)]))
@@ -106,44 +106,17 @@ extension SessionModelTests {
     model.shutdown()
   }
 
-  @Test("Failed bot messages are resent once the connection catches up")
-  func failedBotMessagesResendAfterReconnect() async {
-    let (client, model) = await loadedBotModel()
-    client.sendAttempts.failuresLeft = 3
-    let message = UserMessage(text: "still there?")
-    let id = message.id.uuidString.lowercased()
-    await model.send(message)
-    #expect(deliveries(model)[id] == .failed(reason: SessionModel.undeliveredReason))
-
-    let (gate, release) = AsyncStream.makeStream(of: Void.self)
-    client.holdPrompts(until: gate)
-
-    model.apply(.synchronization(.caughtUp))
-
-    await client.promptRequests.wait()
-    #expect(deliveries(model)[id] == .some(.sending))
-    release.finish()
-    await settleUntil { deliveries(model)[id] == .some(nil) }
-    #expect(client.sendAttempts.actionIds == [id, id, id, id])
-    #expect(deliveries(model) == ["b1": nil, id: nil])
-    model.shutdown()
-  }
-
-  @Test("A bot message the server took stays sent when only its acknowledgement was lost")
+  @Test("A bot message whose acknowledgement was lost goes out again under the same action and stays sent")
   func botMessageWithLostAcknowledgementStaysSent() async {
     let (client, model) = await loadedBotModel()
     let message = UserMessage(text: "ship it")
     let id = message.id.uuidString.lowercased()
-    client.botConversationPage = ServerBotConversationPage(
-      messages: [botFeedMessage(id, .user, "ship it", sequence: 2, sessionId: client.sessionId)],
-      hasMore: false,
-      working: true
-    )
-    client.promptFailure = .httpStatus(504, "Timed out")
+    client.sendAttempts.failuresLeft = 1
+    client.reconnectsAtOnce()
 
     await model.send(message)
 
-    #expect(client.sendAttempts.actionIds == [id, id, id])
+    #expect(client.sendAttempts.actionIds == [id, id])
     #expect(deliveries(model) == ["b1": nil, id: nil])
     #expect(model.errorMessage == nil)
     model.shutdown()
@@ -205,7 +178,6 @@ extension SessionModelTests {
       serverTransport: ServerSessionTransport(client: client, sessionId: sessionId),
       sessionId: sessionId.uuidString
     )
-    model.sendRetryDelays = [.zero, .zero]
     model.sendingNoticeDelay = .seconds(3600)
     model.presentBotConversation()
     await model.loadHistoryForInitialDisplay()

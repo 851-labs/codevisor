@@ -1,28 +1,32 @@
 import Foundation
 
 extension MachineController {
-  func navigationSynchronizationFailed(
-    _ message: String, serverId: String, client: any CodevisorServerClienting
-  ) {
+  func navigationConnectionLost(_ message: String, serverId: String) {
     guard !Task.isCancelled else { return }
+
     connection(for: serverId).navigationSyncState = .stale(message)
-    scheduleNavigationRetry(serverId: serverId, client: client)
+    connectionLost(machineId: serverId)
   }
 
-  func scheduleNavigationRetry(serverId: String, client: any CodevisorServerClienting) {
-    let connection = connection(for: serverId)
-    guard connection.navigationSync.retryTask == nil else { return }
-    let delay = connection.navigationSync.nextRetryDelay()
-    let clock = navigationClock
-    connection.navigationSync.retryTask = Task { [weak self] in
-      try? await clock.sleep(for: delay)
-      guard let self, !Task.isCancelled,
-        self.connectionsById[serverId] === connection
-      else { return }
-      connection.navigationSync.retryTask = nil
-      await self.synchronizeNavigationState(
-        serverId: serverId, client: client, presentation: .background
-      )
+  func navigationNeedsSnapshot(_ message: String, serverId: String, client: any CodevisorServerClienting) {
+    guard !Task.isCancelled else { return }
+
+    connection(for: serverId).navigationSyncState = .stale(message)
+    scheduleNavigationRefresh(serverId: serverId, client: client)
+  }
+
+  func navigationStreamFailed(_ error: any Error, serverId: String, client: any CodevisorServerClienting) {
+    guard ServerConnectionLoss.isConnectionLoss(error) else {
+      return navigationNeedsSnapshot(String(describing: error), serverId: serverId, client: client)
     }
+    navigationConnectionLost(String(describing: error), serverId: serverId)
+  }
+
+  func navigationSnapshotFailed(_ error: any Error, serverId: String) {
+    guard ServerConnectionLoss.isConnectionLoss(error) else {
+      connection(for: serverId).navigationSyncState = .stale(String(describing: error))
+      return
+    }
+    navigationConnectionLost(String(describing: error), serverId: serverId)
   }
 }

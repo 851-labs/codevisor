@@ -39,18 +39,14 @@ extension MachineController {
         }
         guard !Task.isCancelled else { return }
         connection.navigationSync.eventStreamTask = nil
-        self?.navigationSynchronizationFailed(
-          "The navigation event stream disconnected.", serverId: serverId, client: client
-        )
+        self?.navigationConnectionLost("The navigation event stream disconnected.", serverId: serverId)
       } catch {
         Log.machines.error(
           "Event sync for \(serverId, privacy: .public) failed; resubscribing: \(String(describing: error), privacy: .public)"
         )
         guard let self, !Task.isCancelled else { return }
         connection.navigationSync.eventStreamTask = nil
-        self.navigationSynchronizationFailed(
-          String(describing: error), serverId: serverId, client: client
-        )
+        self.navigationStreamFailed(error, serverId: serverId, client: client)
       }
     }
   }
@@ -123,7 +119,7 @@ extension MachineController {
     do {
       delta = try await ShellSyncPayload.navigationDelta(payload)
     } catch {
-      navigationSynchronizationFailed(String(describing: error), serverId: serverId, client: client)
+      navigationNeedsSnapshot(String(describing: error), serverId: serverId, client: client)
       return
     }
     if Self.endsWork(delta) { sandboxAvailabilityRevision += 1 }
@@ -206,7 +202,7 @@ extension MachineController {
     }
     let token = connection.navigationSync.begin(task)
     let watchdog = startNavigationSyncWatchdog(
-      for: task, token: token, on: connection, serverId: serverId, client: client)
+      for: task, token: token, on: connection, serverId: serverId)
 
     await task.value
     watchdog.cancel()
@@ -214,8 +210,7 @@ extension MachineController {
   }
 
   private func startNavigationSyncWatchdog(
-    for task: Task<Void, Never>, token: UUID, on connection: MachineConnection,
-    serverId: String, client: any CodevisorServerClienting
+    for task: Task<Void, Never>, token: UUID, on connection: MachineConnection, serverId: String
   ) -> Task<Void, Never> {
     let clock = navigationClock
     return Task {
@@ -224,8 +219,7 @@ extension MachineController {
 
       task.cancel()
       connection.navigationSync.end()
-      connection.navigationSyncState = .stale("Timed out syncing with this machine.")
-      scheduleNavigationRetry(serverId: serverId, client: client)
+      navigationConnectionLost("Timed out syncing with this machine.", serverId: serverId)
     }
   }
 
@@ -260,7 +254,7 @@ extension MachineController {
     do {
       return try await client.navigationSnapshot()
     } catch {
-      navigationSynchronizationFailed(String(describing: error), serverId: serverId, client: client)
+      navigationSnapshotFailed(error, serverId: serverId)
       return nil
     }
   }

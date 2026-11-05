@@ -4,6 +4,7 @@ import Foundation
 import TranscriptKit
 
 public protocol CodevisorServerClienting: BrowserStateClienting, BrowserFaviconClienting, SimulatorClienting {
+  func waitUntilConnected() async -> Bool
   func sharedHarnessAccount(
     harnessId: String, request: ServerSharedHarnessAccountRequest
   ) async throws -> ServerSharedHarnessAccountResponse

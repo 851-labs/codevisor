@@ -50,7 +50,10 @@ extension SessionModel {
 
     let actionID = message.id.uuidString.lowercased()
     unreachedSend = nil
-    switch await deliver(message, delivery: nil, actionID: actionID) {
+    unacceptedTurnPromptID = message.id
+    let outcome = await deliver(message, delivery: nil, actionID: actionID)
+    settleTurnPrompt(accepted: outcome.isAccepted)
+    switch outcome {
     case .accepted:
       slowMessageIDs.remove(message.id)
       onPromptAccepted?(message.attachments.count, false)
@@ -61,6 +64,19 @@ extension SessionModel {
       pendingOptimisticUserMessageIDs.remove(message.id)
       holdUndelivered(message, reason: humanServerErrorMessage(error, fallback: Self.undeliveredReason))
     }
+  }
+
+  private func settleTurnPrompt(accepted: Bool) {
+    if accepted, turnPromptWaitedForConnection { restartActiveTurnClock() }
+    unacceptedTurnPromptID = nil
+    turnPromptWaitedForConnection = false
+  }
+
+  private func restartActiveTurnClock() {
+    guard case var .assistant(message) = activeItem else { return }
+
+    message.turn.startedAt = now()
+    activeItem = .assistant(message)
   }
 
   private func holdUndelivered(_ message: UserMessage, reason: String) {
@@ -184,11 +200,8 @@ extension SessionModel {
     guard state != .cursor else { return }
     streamSynchronization = state
     streamReconnectNotice.update(isActive: state == .reconnecting)
-    if state == .caughtUp {
-      Task {
-        if presentsBotConversation { await refreshBotConversation() }
-        await resendAfterReconnect()
-      }
+    if state == .caughtUp, presentsBotConversation {
+      Task { await refreshBotConversation() }
     }
     if state != .reconnecting {
       connectionRecovery.clearPresentation()

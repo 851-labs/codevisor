@@ -23,6 +23,7 @@ public final class AppEnvironment {
   public let botSections: CustomSectionStore
   public let workspaceSections: CustomSectionStore
   public let sandboxSettings = SandboxSettingsModel()
+  public let networkPath = NetworkPathMonitor()
   @ObservationIgnored public let pendingSends = PendingSendHolder()
 
   @ObservationIgnored var projectRecommendationCache: [String: [ProjectRecommendation]] = [:]
@@ -126,6 +127,9 @@ public final class AppEnvironment {
     cloud.directPaths.onPipeUp = { [weak self] deviceId in
       self?.machines.cloudMachineBecameReachable(deviceId: deviceId)
     }
+    networkPath.onOnlineChange = { [weak self] isOnline in
+      self?.machines.deviceNetworkChanged(isOnline: isOnline)
+    }
     applyLocalNetworkAccess()
     wireAppUpdateRequests()
     wireCloudRefreshAndAdoption()
@@ -158,6 +162,7 @@ public final class AppEnvironment {
       if let access = self?.pluginAccess { Task { try? await access.syncConsent() } }
       self?.machines.reconcileCloudSelection()
       self?.machines.pruneDeadCloudRecords()
+      self?.machines.applyCloudPresence()
       if let self, self.directMachineAdoption.hasPendingMachines {
         Task { await self.directMachineAdoption.adoptPendingMachines(cloud: self.cloud) }
       }

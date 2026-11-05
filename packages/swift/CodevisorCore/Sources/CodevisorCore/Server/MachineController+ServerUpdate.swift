@@ -47,7 +47,7 @@ extension MachineController {
       beginWaiting: { self.beginWaiting(for: machineId, reason: .updating) },
       markReady: { self.markReady(for: machineId) },
       markFailed: { self.markFailed(for: machineId, message: $0) },
-      scheduleRecovery: { self.scheduleRemoteRecovery(for: machineId) },
+      scheduleRecovery: { self.connection(for: machineId).reconnector.connectionLost() },
       resumeEventStream: { self.resumeEventStream(for: machineId) },
       refreshStatus: { await self.refreshStatus(for: machineId) },
       refreshNavigation: { await self.refreshNavigationState(for: machineId) },
@@ -56,6 +56,9 @@ extension MachineController {
   }
 
   private func resumeEventStream(for machineId: String) {
-    Task { await self.connectMachine(machineId) }
+    Task {
+      await self.refreshStatus(for: machineId)
+      await self.refreshNavigationState(for: machineId)
+    }
   }
 }
