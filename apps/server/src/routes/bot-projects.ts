@@ -24,7 +24,7 @@ import {
   type RouteState
 } from "../server-context.js"
 import { checkOut, resolveSources } from "./bot-create.js"
-import { syncBotRepositories } from "./bot-instructions.js"
+import { syncBotInstructions } from "./bot-instructions.js"
 import { drainPromptQueue } from "./prompt-queue.js"
 
 type BotCheckout = Bot["projects"][number]
@@ -118,7 +118,7 @@ const addProject = async (
     ).catch(swallowError)
     throw cause
   })
-  await syncBotRepositories(services, bot)
+  await syncBotInstructions(services, bot).catch(swallowError)
   return {
     bot,
     notice:
@@ -144,7 +144,7 @@ const removeProject = async (
   const project = await getProjectOrFail(services.db, checkout.projectId)
   const bot = await run(services.db.removeBotProject(current.id, checkout.projectId))
   await removeBotCheckout(services, serverId, bot, checkout).catch(swallowError)
-  await syncBotRepositories(services, bot)
+  await syncBotInstructions(services, bot).catch(swallowError)
   return {
     bot,
     notice:

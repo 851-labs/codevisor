@@ -32,7 +32,7 @@ import { resumeSessionsAfterRestart } from "./restart-resume.js"
 import { makeFileRestartSnapshotStore, makeMemoryRestartSnapshotStore } from "./restart-snapshot.js"
 import { makeServerAutoResume } from "./routes/auto-resume-dispatch.js"
 import { makeBotConversationListener } from "./routes/bot-conversation.js"
-import { upgradeAllBotInstructions } from "./routes/bot-instructions.js"
+import { updateAllBotInstructions } from "./routes/bot-instructions-updates.js"
 import { makeUsageHoldReleaseListener } from "./routes/bot-usage-release.js"
 import { handleUpgrade } from "./routes/events.js"
 import { fleetTurnSender } from "./routes/fleet-turns.js"
@@ -178,7 +178,7 @@ export const makeCodevisorServerApp = (
   fleetRetry.unref()
   const unsubscribeSessionEvents = fanout.subscribe(sessionEvents.listener)
   const unsubscribeJobEvents = services.mcp?.jobs.subscribe(sessionEvents.onJobFinished)
-  void upgradeAllBotInstructions(services).catch(swallowError)
+  void updateAllBotInstructions(services, fanout, routeState, config.id).catch(swallowError)
   /* v8 ignore next 3 */
   const staleTurnSweep = setInterval(() => {
     void reconcileStaleStreamingTurns(services, fanout, routeState, config.id).catch(swallowError)

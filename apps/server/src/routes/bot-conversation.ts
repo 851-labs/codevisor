@@ -19,6 +19,7 @@ import {
 import { isRecord } from "../unknown-values.js"
 import { captureMarkdownFiles } from "./assistant-artifacts.js"
 import { captureAssistantFile } from "./assistant-files.js"
+import { listedBotMessages } from "./bot-message-list.js"
 import { conversationalBotForSession, postBotMessage } from "./bot-turns.js"
 import { hasLiveTurn } from "./prompt-queue.js"
 import { attribute } from "./session-event-messages.js"
@@ -31,7 +32,7 @@ const requireBotSession = async (
   sessionId: string
 ): Promise<void> => {
   if ((await conversationalBotForSession(services, sessionId)) === undefined) {
-    throw new HttpFailure(403, "Only a conversational bot's own chat can send messages to the user")
+    throw new HttpFailure(403, "Only a conversational bot's own chat has messages with the user")
   }
 }
 
@@ -72,6 +73,12 @@ export const routeBotConversation = async (
   }
 
   const messagesSessionId = matchRoute(url.pathname, "/v1/sessions/:id/messages")
+  if (messagesSessionId !== undefined && request.method === "GET") {
+    await requireBotSession(services, messagesSessionId)
+    writeJson(response, 200, await listedBotMessages(services, messagesSessionId, url.searchParams))
+    return true
+  }
+
   if (messagesSessionId !== undefined && request.method === "POST") {
     await requireBotSession(services, messagesSessionId)
     const payload = await readSchema(request, SendBotMessageRequest)

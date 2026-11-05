@@ -30,7 +30,8 @@ export const CODEVISOR_API_TOOLS: ReadonlyArray<CodevisorApiToolSpec> = [
 ]
 
 export const CODEVISOR_CONVERSATIONAL_BOT_TOOL_NAMES: ReadonlySet<string> = new Set([
-  "messages.send"
+  "messages.send",
+  "messages.list"
 ])
 
 export const CODEVISOR_BOT_TOOL_NAMES: ReadonlySet<string> = new Set([

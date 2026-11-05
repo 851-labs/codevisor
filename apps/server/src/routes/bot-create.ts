@@ -220,12 +220,11 @@ export const createBot = async (
       created.checkouts.push(await checkOut(services, slug, source, folders))
     }
     const mode = payload.mode ?? (payload.conversational === true ? "conversation" : "transcript")
-    writeInstructions(
-      slug,
+    writeInstructions(slug, {
       name,
-      mode === "conversation",
-      created.checkouts.map(checkoutRepository)
-    )
+      conversational: mode === "conversation",
+      repositories: created.checkouts.map(checkoutRepository)
+    })
     const home = await run(services.db.createProject({ folderPath: botPath(slug), name }))
     created.homeProjectId = home.id
     await appendAndPublish(

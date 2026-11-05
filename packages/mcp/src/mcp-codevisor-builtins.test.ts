@@ -26,7 +26,7 @@ const providers = {
 }
 
 describe("Codevisor built-in tools", () => {
-  it("offers bot tools only to a bot's own session, and messages.send only when it converses", async () => {
+  it("offers bot tools only to a bot's own session, and messages tools only when it converses", async () => {
     const { db, manager } = await testManager(providers)
     manager.setBaseUrl(await listen(createServer(manager.handleGatewayRequest)))
     const project = await run(db.createProject({ folderPath: "/tmp/mcp-bot-home" }))
@@ -81,6 +81,7 @@ describe("Codevisor built-in tools", () => {
         return {
           skill: skills?.description?.includes("- codevisor-messages — ") === true,
           send: await describes("codevisor.messages.send"),
+          list: await describes("codevisor.messages.list"),
           add: await describes("codevisor.bot.projects_add"),
           remove: await describes("codevisor.bot.projects_remove")
         }
@@ -89,9 +90,27 @@ describe("Codevisor built-in tools", () => {
       }
     }
 
-    expect(await view("chat-chatty")).toEqual({ skill: true, send: true, add: true, remove: true })
-    expect(await view("chat-plain")).toEqual({ skill: false, send: false, add: true, remove: true })
-    expect(await view(agent.id)).toEqual({ skill: false, send: false, add: false, remove: false })
+    expect(await view("chat-chatty")).toEqual({
+      skill: true,
+      send: true,
+      list: true,
+      add: true,
+      remove: true
+    })
+    expect(await view("chat-plain")).toEqual({
+      skill: false,
+      send: false,
+      list: false,
+      add: true,
+      remove: true
+    })
+    expect(await view(agent.id)).toEqual({
+      skill: false,
+      send: false,
+      list: false,
+      add: false,
+      remove: false
+    })
   })
 
   it("still finds plugin tools by their old mcps.* names", async () => {

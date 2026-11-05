@@ -23,7 +23,7 @@ import {
   type RouteState
 } from "../server-context.js"
 import { createBot } from "./bot-create.js"
-import { renameInstructions, switchInstructionsMode } from "./bot-instructions.js"
+import { syncBotInstructions } from "./bot-instructions.js"
 import { assertBotMascot } from "./bot-mascots.js"
 import { removeBotCheckout, routeBotProjects, tellBot } from "./bot-projects.js"
 import { refusePlanConfigForBot } from "./bot-session-modes.js"
@@ -87,10 +87,9 @@ const updateBot = async (
     await appendAndPublish(services.db, fanout, "project.updated", project.id, project)
     const workspace = await run(services.db.updateWorkspace(bot.workspaceId, { name }))
     await appendAndPublish(services.db, fanout, "workspace.updated", workspace.id, workspace)
-    renameInstructions(bot.rootPath, name)
   }
+  await syncBotInstructions(services, bot).catch(swallowError)
   if (bot.conversational !== current.conversational) {
-    switchInstructionsMode(bot.rootPath, bot.conversational)
     await tellBot(
       services,
       fanout,

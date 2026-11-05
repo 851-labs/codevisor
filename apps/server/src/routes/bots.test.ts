@@ -223,7 +223,7 @@ describe("bot routes", () => {
     expect(renamed.status).toBe(200)
     expect(decodeBot(renamed.body)).toMatchObject({ name: "Reviewer", symbolName: "ant" })
     const instructions = readFileSync(join(bot.rootPath, "AGENTS.md"), "utf8")
-    expect(instructions.startsWith("# Reviewer\n")).toBe(true)
+    expect(instructions).toContain("<!-- codevisor:begin -->\n\n# Reviewer\n")
     expect(instructions).toContain("## Delegating work")
     const { session } = decode(SessionDetail)(
       (await jsonRequest(running.server, `/v1/sessions/${bot.sessionId}`)).body

@@ -1,6 +1,19 @@
 import { AddBotProjectRequest, SendBotMessageRequest, TerminalCreateRequest } from "@codevisor/api"
 
-import { stringQuery, apiTool, type CodevisorApiToolSpec } from "./codevisor-api-tool-spec.js"
+import {
+  apiTool,
+  integerQuery,
+  stringQuery,
+  type CodevisorApiToolSpec,
+  type QueryParameter
+} from "./codevisor-api-tool-spec.js"
+
+const senderQuery: QueryParameter = {
+  name: "sender",
+  schema: { type: "string", enum: ["user", "bot", "notice"] },
+  description:
+    "Only messages from this sender: user (the user), bot (what you sent with messages.send), or notice (Codevisor's notices in the chat). Leave it out for all of them."
+}
 
 export const codevisorSessionApiTools: ReadonlyArray<CodevisorApiToolSpec> = [
   apiTool(
@@ -9,6 +22,25 @@ export const codevisorSessionApiTools: ReadonlyArray<CodevisorApiToolSpec> = [
     "POST",
     "/v1/sessions/:id/messages",
     { body: SendBotMessageRequest }
+  ),
+  apiTool(
+    "messages.list",
+    "Read the latest messages in your chat with the user, oldest first: what they wrote, what you sent, and Codevisor's notices. Use it when a reply such as \"go for it\" depends on something you said that you can't see. Returns { items: [{ sender, text, attachments?, sentAt }], next? }; pass next back as before for older ones.",
+    "GET",
+    "/v1/sessions/:id/messages",
+    {
+      query: [
+        integerQuery(
+          "limit",
+          "How many messages to return, newest last. Defaults to 10, at most 50."
+        ),
+        senderQuery,
+        integerQuery(
+          "before",
+          "The next value from the previous call, to page back to older messages."
+        )
+      ]
+    }
   ),
   apiTool(
     "bot.projects_add",

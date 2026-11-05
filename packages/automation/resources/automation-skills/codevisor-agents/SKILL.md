@@ -7,6 +7,8 @@ description: Use when you want help with your task (research, reading code, a re
 
 Every Codevisor chat is an **agent**: a coding agent (Claude Code, Codex, …) running in a **workspace** of a **project**. Each one is visible to the user in the sidebar.
 
+How much to hand off depends on what you are. A bot is an orchestrator: it hands nearly all real work to agents and stays free to talk with the user. A coding agent does its own task itself, and starts other agents only for help on the side, such as research or a review, or for separate pieces of work that each need their own branch.
+
 Never use your harness's built-in subagents (a Task or Agent tool, spawn_agent, and the like), even if your harness still offers them. The user can't see or steer them, they edit your checkout unnoticed, and they die on updates. Start a Codevisor agent instead, even for a quick question.
 
 Everything goes through a machine handle. `machine.agents.<tool>(args)` is the same as `machine.tools.codevisor.agents.<tool>(args)`. Ids are passed and returned under the same name: `agentId`, `projectId`, `workspaceId`. Every list is `{ items, next? }`. Check exact inputs with `machine.tools.describe.tool({ path: "codevisor.agents.start" })`.
@@ -75,14 +77,17 @@ To run it on a new sandbox, pass `sandboxProfile` (a profile id or name from `ma
 
 ## Write its prompt
 
-The prompt is the agent's whole brief. Write it as concise, direct instructions about the work:
+The prompt is the agent's whole brief. Write it the way you'd hand work to a capable coworker: the agent can read the code, plan, and work out the steps itself. What it can't do is read your conversation.
 
-- **Goal:** what to change, build, or find out.
-- **Requirements and constraints:** what must be true when it's done. Write each decision as a plain requirement, such as "Keep the CSV header byte-for-byte.", rather than as who said or approved it.
-- **Verification:** how to check the work, such as which tests to run or what behavior to confirm.
-- **Stopping point:** what to hand back, and what to hold for you, such as "Commit, but don't push."
+- **Pass the request on with its reasons.** When the work comes from someone you're talking with, pass their request on nearly word for word, including why they want it. The reasons let the agent make the same judgment calls they would.
+- **Write it as your own request.** Don't mention the person behind it or yourself as a go-between: no "the user wants", "they said", or names. Write "Change x so y happens instead.", not "The user doesn't like x, so they want y."
+- **Keep an open question open.** If they're asking for options, ask the agent for options. Don't turn it into an instruction they never gave.
+- **Add only what it can't know:** context from earlier in your conversation, decisions already made, written as plain requirements such as "Keep the CSV header byte-for-byte.", how to verify the work when that isn't obvious, and where to stop, such as "Open a PR, but don't merge it." or "Commit, but don't push."
+- **Don't write a plan for it.** Leave out step-by-step instructions unless the steps themselves are the requirement.
 
-Your own coordination concerns, such as machine load, disk space, scheduling, or other agents' work, belong in the prompt only when they change how the task is done. Give one complete brief up front, then steer with `agents.message` only when something changes.
+For example, when the user writes "I don't like how the sidebar collapses on small windows, it hides the unread badge. what else could we do?", a good brief is "I don't like how the sidebar collapses on small windows, because it hides the unread badge. What are some other options? Reply with a few and your recommendation; don't change code yet." A poor one is "The user wants the sidebar changed to an overlay. 1. Open Sidebar.swift. 2. …": it drops the reason, answers the question for them, and names the user.
+
+Your own coordination concerns, such as machine load, disk space, scheduling, or other agents' work, belong in the prompt only when they change how the task is done. Give one complete brief up front, then follow up only when something changes.
 
 ## Get its final reply
 
@@ -117,9 +122,17 @@ To check on an agent yourself:
 // { agentId, queueItemId?, delivered: "sent" | "steered" | "queued", steerDeclined? }
 ```
 
+Pick how to follow up by how the new request relates to the work under way:
+
+- **It changes the work** ("also cover the error path", "do it this way instead"): steer, the default. The agent folds it in now instead of finishing the old version first.
+- **It replaces the work** ("never mind, do x instead") and x doesn't build on what the agent has done: stop the agent with `agents.cancel`, archive its workspace or close it, and start a new agent with a fresh brief. Archiving deletes uncommitted work, so ask first if it's unclear whether the work so far is still wanted.
+- **It builds on the result** ("then add tests for it"): queue it, so it starts once the current turn ends.
+
+How delivery works:
+
 - An idle agent starts a turn with your message.
-- While it is working, `delivery: "steer"` (the default) adds it to the running turn, so the agent reads it at its next step. Use that for corrections ("also cover the error path").
-- `delivery: "queue"` waits until the turn finishes. Use that for the next, separate task. Queued messages go in the order you sent them, each once.
+- While it is working, `delivery: "steer"` (the default) adds it to the running turn, so the agent reads it at its next step.
+- `delivery: "queue"` waits until the turn finishes. Queued messages go in the order you sent them, each once.
 - A steer never overtakes messages you queued earlier: they go into the running turn first, in order, then the steer.
 - `steerDeclined: true` with `delivered: "queued"` means the turn couldn't take it, because its harness can't steer or is updating. If it can't wait, `agents.cancel({ agentId })` stops the turn.
 - While Codevisor itself is updating, messages fail with an `updating` error. Chats the update paused continue on their own; send yours again once the update finishes.
@@ -272,6 +285,9 @@ A **bot** is a Codevisor chat with its own folder and read-only checkouts of one
 - Blocking on `agents.wait` or polling `agents.status` for a long task. End your turn; the event carries the final reply.
 - Answering a question the user hasn't settled with your own guess or the agent's recommendation. Ask the user.
 - Answering a discovery without telling the user what the agent found.
-- Writing a prompt that retells your conversation instead of stating the task and its requirements.
+- Breaking a request into step-by-step instructions, or passing on what to do without why.
+- Naming the user in a prompt ("the user wants", "they said"). Write it as your own request.
+- Pasting your whole conversation into a prompt instead of the request and the context it needs.
+- Queueing a change to work that's under way. Steer it, or replace the agent if the work is no longer wanted.
 - Leaving shared helpers open or worktree workspaces unarchived after their work is done.
 - Archiving before the branch is pushed. Archiving releases the branch name.

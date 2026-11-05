@@ -1,6 +1,6 @@
 import { randomUUID } from "node:crypto"
 
-import type { BotMessage } from "@codevisor/api"
+import type { BotMessage, BotMessageSender } from "@codevisor/api"
 import { isoTimestamp } from "@codevisor/api"
 
 import {
@@ -62,10 +62,10 @@ export const makeBotMessagesService = (
           }
         })()
       }),
-    listBotMessages: (rawSessionId, before, limit) =>
+    listBotMessages: (rawSessionId, before, limit, sender) =>
       attempt("listBotMessages", () => {
         const sessionId = canonicalUuid(rawSessionId)
-        const rows = botMessagesBefore(sqlite, sessionId, before, limit)
+        const rows = botMessagesBefore(sqlite, sessionId, { before, limit, sender })
         return {
           messages: rows.slice(0, limit).toReversed().map(botMessageFromRow),
           hasMore: rows.length > limit
@@ -83,17 +83,23 @@ const sessionBotMessage = (
 const savedBotMessage = (sqlite: ServiceContext["sqlite"], id: string) =>
   botMessageRows.one(sqlite.prepare(botMessageSql.byId).get(id))
 
+interface BotMessageWindow {
+  readonly before: number | undefined
+  readonly limit: number
+  readonly sender: BotMessageSender | undefined
+}
+
 const botMessagesBefore = (
   sqlite: ServiceContext["sqlite"],
   sessionId: string,
-  before: number | undefined,
-  limit: number
-) =>
-  botMessageRows.all(
-    sqlite
-      .prepare(botMessageSql.before)
-      .all(sessionId, before ?? Number.MAX_SAFE_INTEGER, limit + 1)
+  window: BotMessageWindow
+) => {
+  const before = window.before ?? Number.MAX_SAFE_INTEGER
+  const sender = window.sender ?? null
+  return botMessageRows.all(
+    sqlite.prepare(botMessageSql.before).all(sessionId, before, sender, sender, window.limit + 1)
   )
+}
 
 const botMessageSql = {
   inSession: "select * from bot_messages where id = ? and session_id = ?",
@@ -103,6 +109,6 @@ const botMessageSql = {
                  select coalesce(max(sequence), 0) + 1 from bot_messages where session_id = ?
                ), ?, ?, ?, ?)`,
   before: `select * from bot_messages
-               where session_id = ? and sequence < ?
+               where session_id = ? and sequence < ? and (? is null or sender = ?)
                order by sequence desc limit ?`
 }

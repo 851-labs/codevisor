@@ -167,6 +167,7 @@ export interface BotsService {
   readonly listBotMessages: (
     sessionId: string,
     before: number | undefined,
-    limit: number
+    limit: number,
+    sender?: BotMessageSender
   ) => Effect.Effect<BotMessagePage, DatabaseError>
 }
