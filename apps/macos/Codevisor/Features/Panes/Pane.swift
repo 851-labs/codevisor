@@ -21,8 +21,6 @@ struct PaneContext {
 enum PaneGroupCommand {
   case previousTab
   case nextTab
-  case previousTabInWorkspace
-  case nextTabInWorkspace
   case newTab
   case selectTab(Int)
   case previousWorkspace

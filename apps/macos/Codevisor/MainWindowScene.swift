@@ -32,6 +32,7 @@ struct MainWindowScene: Scene {
         AppUpdateCommands(environment: environment)
         FileCommands()
         CommandPaletteCommands()
+        SidebarModeCommands()
         WorkspaceLayoutCommands()
         BrowserCommands()
         SimulatorCommands()

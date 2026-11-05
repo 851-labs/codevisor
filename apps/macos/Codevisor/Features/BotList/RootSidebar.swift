@@ -34,7 +34,7 @@ struct RootSidebar: View {
       .toolbar {
         if showsToolbarModePicker {
           ToolbarItem {
-            SidebarModePicker(mode: $storedMode)
+            SidebarModePicker(mode: $storedMode, help: SidebarModeShortcut.help)
               .onGeometryChange(for: CGFloat.self) {
                 $0.size.width
               } action: {

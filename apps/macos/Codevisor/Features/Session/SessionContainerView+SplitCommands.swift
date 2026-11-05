@@ -34,10 +34,6 @@ extension SessionContainerView {
       stepTab(offset: -1)
     case .nextTab:
       stepTab(offset: 1)
-    case .previousTabInWorkspace:
-      selectRelativeCenterTab(offset: -1)
-    case .nextTabInWorkspace:
-      selectRelativeCenterTab(offset: 1)
     case .previousWorkspace:
       store.workspaceStepHandler?(-1)
     case .nextWorkspace:
