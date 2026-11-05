@@ -29,9 +29,9 @@ extension SessionController {
       self?.cancelUserSendAnimation(for: messageID)
     }
     model.onQueuedPromptPromoted = { [weak self] messageID in
-      guard let messageID else { return }
-      self?.onQueuedPromptWillFly?(messageID)
-      self?.requestUserSendAnimation(for: messageID)
+      guard let self, let messageID else { return }
+      if hasVisibleTranscript { onQueuedPromptWillFly?(messageID) }
+      requestUserSendAnimation(for: messageID)
     }
     model.onPlanApprovalChanged = { [weak self] required in
       self?.pendingPlanApproval = required
