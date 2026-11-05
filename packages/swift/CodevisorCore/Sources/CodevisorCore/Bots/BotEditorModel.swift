@@ -77,9 +77,21 @@ public final class BotEditorModel {
     editedBot == nil || environment.bots.supportsProjectChanges(on: serverId)
   }
 
+  public var showsProjects: Bool {
+    editedBot != nil || needsProject
+  }
+
+  private var needsProject: Bool {
+    !environment.bots.supportsProjectlessBots(on: serverId)
+  }
+
   public func canRemoveProject(_ id: UUID) -> Bool {
     guard editedBot != nil else { return true }
-    return canChangeProjects && projectIds.count > 1 && !changingProjectIds.contains(id)
+    return canChangeProjects && hasProjectToSpare && !changingProjectIds.contains(id)
+  }
+
+  private var hasProjectToSpare: Bool {
+    !needsProject || projectIds.count > 1
   }
 
   private var currentBot: Bot? {
@@ -107,7 +119,11 @@ public final class BotEditorModel {
   public var canSave: Bool {
     guard !trimmedName.isEmpty, !isSaving, !didSave else { return false }
     if editedBot != nil { return true }
-    return !selectedProjects.isEmpty && models?.harnessId != nil && models?.isResolving == false
+    return hasRequiredProject && models?.harnessId != nil && models?.isResolving == false
+  }
+
+  private var hasRequiredProject: Bool {
+    !needsProject || !selectedProjects.isEmpty
   }
 
   public func addProject(_ id: UUID) async {

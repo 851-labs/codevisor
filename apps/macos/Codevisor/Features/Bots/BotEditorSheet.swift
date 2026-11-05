@@ -28,21 +28,14 @@ struct BotEditorSheet: View {
     _editor = State(initialValue: BotEditorModel(target: target, environment: environment))
   }
 
+  private var isCreating: Bool { editor.editedBot == nil }
+
   var body: some View {
-    @Bindable var editor = editor
     Form {
-      Section { header }
-      Section {
-        TextField("Name", text: $editor.name, prompt: Text("Bot name"))
-        Picker("Machine", selection: $editor.serverId) {
-          ForEach(editor.machines) { machine in
-            Label(machine.name, systemImage: machine.icon.systemImage).tag(machine.id)
-          }
-        }
-        .pickerStyle(.menu)
-        .disabled(editor.editedBot != nil)
+      identitySection
+      if editor.showsProjects {
+        projectsSection
       }
-      projectsSection
       if let bot = editor.editedBot {
         editedBotModelSection(bot)
       } else {
@@ -64,8 +57,12 @@ struct BotEditorSheet: View {
           .disabled(editor.isSaving)
       }
       ToolbarItem(placement: .confirmationAction) {
-        Button(editor.editedBot == nil ? "Create" : "Save") { Task { await save() } }
-          .disabled(!editor.canSave)
+        if isCreating, editor.isSaving {
+          ProgressView().controlSize(.small)
+        } else {
+          Button(isCreating ? "Create" : "Save") { Task { await save() } }
+            .disabled(!editor.canSave)
+        }
       }
     }
     .task(id: editor.serverId) { await editor.loadModels() }
@@ -87,6 +84,33 @@ struct BotEditorSheet: View {
     .presentationSizing(.form.fitted(horizontal: false, vertical: true))
   }
 
+  @ViewBuilder
+  private var identitySection: some View {
+    if isCreating {
+      Section {
+        identityFields
+      } header: {
+        BotCreateHeader(editor: editor) { editsMascot = true }
+      }
+    } else {
+      Section { header }
+      Section { identityFields }
+    }
+  }
+
+  @ViewBuilder
+  private var identityFields: some View {
+    @Bindable var editor = editor
+    TextField("Name", text: $editor.name, prompt: Text("Bot name"))
+    Picker("Machine", selection: $editor.serverId) {
+      ForEach(editor.machines) { machine in
+        Label(machine.name, systemImage: machine.icon.systemImage).tag(machine.id)
+      }
+    }
+    .pickerStyle(.menu)
+    .disabled(!isCreating)
+  }
+
   private var header: some View {
     SheetHeaderCard(
       title: editor.trimmedName.isEmpty ? "New Bot" : editor.trimmedName, subtitle: subtitle,
@@ -104,7 +128,6 @@ struct BotEditorSheet: View {
   }
 
   private var subtitle: String {
-    if editor.isSaving, editor.editedBot == nil { return "Creating worktrees…" }
     let count = editor.projectCount
     return count == 1 ? "\(editor.machineName) · 1 project" : "\(editor.machineName) · \(count) projects"
   }
@@ -122,6 +145,9 @@ struct BotEditorSheet: View {
         }
       } else if editor.eligibleProjects.isEmpty {
         Text("This machine has no git projects yet.")
+          .foregroundStyle(.secondary)
+      } else if editor.selectedProjects.isEmpty {
+        Text("No projects yet.")
           .foregroundStyle(.secondary)
       } else {
         ForEach(editor.selectedProjects) { project in

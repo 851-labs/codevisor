@@ -138,9 +138,6 @@ const removeProject = async (
   if (checkout === undefined) {
     throw new HttpFailure(404, `Project ${projectId} isn't part of the bot ${current.name}`)
   }
-  if (current.projects.length === 1) {
-    throw new HttpFailure(422, "A bot needs at least one project")
-  }
   const project = await getProjectOrFail(services.db, checkout.projectId)
   const bot = await run(services.db.removeBotProject(current.id, checkout.projectId))
   await removeBotCheckout(services, serverId, bot, checkout).catch(swallowError)

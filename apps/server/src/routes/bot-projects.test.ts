@@ -64,7 +64,7 @@ describe("bot projects", () => {
     expect(promptTexts(running)[0]).toContain("added the repository web")
   })
 
-  it("removes a project's checkout, frees the project, and keeps the last one", async () => {
+  it("removes a project's checkout and frees the project, down to none", async () => {
     const running = await setUp()
     const apiFolder = await running.addProject("api-project", "api")
     await running.addProject("web-project", "web")
@@ -90,8 +90,9 @@ describe("bot projects", () => {
       (await removeProject(running, `/v1/bots/${bot.id}/projects`, "api-project")).status
     ).toBe(404)
     expect(
-      (await removeProject(running, `/v1/bots/${bot.id}/projects`, "web-project")).status
-    ).toBe(422)
+      decodeBot((await removeProject(running, `/v1/bots/${bot.id}/projects`, "web-project")).body)
+        .projects
+    ).toEqual([])
     expect((await removeProject(running, "/v1/bots/missing/projects", "web-project")).status).toBe(
       404
     )

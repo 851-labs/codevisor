@@ -87,6 +87,22 @@ describe("bot routes", () => {
     )
   })
 
+  it("creates a bot with no projects and tells it how to add one", async () => {
+    const running = await setUp()
+
+    const response = await createBot(running, { projectIds: [] })
+
+    expect(response.status).toBe(201)
+    const bot = decodeBot(response.body)
+    expect(bot.projects).toEqual([])
+    const instructions = readFileSync(join(bot.rootPath, "AGENTS.md"), "utf8")
+    expect(instructions).toContain(
+      "`machines.current.tools.codevisor.bot.projects_add({ projectId })`"
+    )
+    expect(running.agents.creations).toContainEqual(["codex", bot.rootPath])
+    expect(await listBots(running)).toEqual([bot])
+  })
+
   it("returns the existing bot when a create request is repeated", async () => {
     const running = await setUp()
     await running.addProject("api-project", "api")
@@ -146,7 +162,6 @@ describe("bot routes", () => {
 
     for (const body of [
       { name: "  ", projectIds: ["api-project"] },
-      { projectIds: [] },
       { projectIds: ["plain-project"] },
       { projectIds: [scratchId] },
       { projectIds: [bot.projectId] }

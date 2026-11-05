@@ -43,7 +43,9 @@ struct BotEditorView: View {
         if isCreating {
           machineSection
         }
-        projectsSection
+        if editor.showsProjects {
+          projectsSection
+        }
         if let bot = editor.editedBot {
           editedBotModelSection(bot)
           displaySection

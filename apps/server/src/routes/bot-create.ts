@@ -58,7 +58,6 @@ export const resolveSources = async (
   projectIds: ReadonlyArray<string>
 ): Promise<ReadonlyArray<BotSource>> => {
   const unique = [...new Map(projectIds.map((id) => [id.toLowerCase(), id])).values()]
-  if (unique.length === 0) throw new HttpFailure(422, "A bot needs at least one project")
   const sources: Array<BotSource> = []
   for (const projectId of unique) {
     const project = await getProjectOrFail(services.db, projectId)

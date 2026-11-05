@@ -51,7 +51,7 @@ export const codevisorSessionApiTools: ReadonlyArray<CodevisorApiToolSpec> = [
   ),
   apiTool(
     "bot.projects_remove",
-    "Remove a project from this bot and delete its checkout from the bot's folder. A bot keeps at least one project. Returns the bot with its remaining projects.",
+    "Remove a project from this bot and delete its checkout from the bot's folder. Returns the bot with its remaining projects.",
     "DELETE",
     "/v1/sessions/:id/bot/projects/:projectId"
   ),

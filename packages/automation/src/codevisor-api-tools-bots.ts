@@ -52,7 +52,7 @@ const CreateBotBody = Schema.Struct({
     description: "The bot's harness, an id from harnesses.list(). It can't change later."
   }),
   projectIds: CreateBotRequest.fields.projectIds.annotate({
-    description: "Projects from projects.list() to check out into the bot's folder. At least one."
+    description: "Projects from projects.list() to check out into the bot's folder. Can be empty."
   }),
   configSelections: Schema.optional(ConfigSelections),
   mascot: Schema.optional(BotMascot),
@@ -102,7 +102,7 @@ export const codevisorBotApiTools: ReadonlyArray<CodevisorApiToolSpec> = [
   ),
   apiTool(
     "bots.projects_remove",
-    "Remove a project from a bot and delete its checkout. A bot keeps at least one project. Returns the bot.",
+    "Remove a project from a bot and delete its checkout. Returns the bot.",
     "DELETE",
     "/v1/bots/:id/projects/:projectId"
   ),

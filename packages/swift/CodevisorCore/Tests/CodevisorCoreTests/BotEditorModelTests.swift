@@ -1,3 +1,4 @@
+import ACPKit
 import Foundation
 import Testing
 
@@ -172,6 +173,67 @@ struct BotEditorModelTests {
           folderPath: project.folderURL.path, createdAt: createdAt, isGitRepository: isGit)
       ])
   }
+
+  @Test("A new bot on a machine that allows project-less bots skips projects and saves without one")
+  func projectlessMachinesCreateWithoutProjects() async {
+    let fake = SyncFakeServerClient(projects: [], sessions: [])
+    fake.configureInfoFeatures(["bots-v1", "bot-projects-v1", "bot-projectless-v1"])
+    fake.capabilitiesHandler = { _ in ServerCapabilities(harnesses: [Self.readyHarness]) }
+    let environment = makeEnvironment(fake)
+    await environment.machines.refreshStatus(for: CodevisorMachine.local.id)
+    let editor = BotEditorModel(target: .create, environment: environment)
+    editor.serverId = CodevisorMachine.local.id
+    editor.name = "Helper"
+
+    await editor.loadModels()
+
+    #expect(!editor.showsProjects)
+    #expect(editor.projectIds.isEmpty)
+    #expect(editor.canSave)
+  }
+
+  @Test("A new bot on an older machine still asks for a project before it can save")
+  func olderMachinesNeedAProjectToCreate() async {
+    let fake = SyncFakeServerClient(projects: [], sessions: [])
+    fake.configureInfoFeatures(["bots-v1", "bot-projects-v1"])
+    fake.capabilitiesHandler = { _ in ServerCapabilities(harnesses: [Self.readyHarness]) }
+    let environment = makeEnvironment(fake)
+    await environment.machines.refreshStatus(for: CodevisorMachine.local.id)
+    let editor = BotEditorModel(target: .create, environment: environment)
+    editor.serverId = CodevisorMachine.local.id
+    editor.name = "Helper"
+
+    await editor.loadModels()
+
+    #expect(editor.showsProjects)
+    #expect(!editor.canSave)
+  }
+
+  @Test("Editing a bot on a machine that allows project-less bots can remove its last project")
+  func projectlessMachinesDropTheLastProject() async throws {
+    let project = UUID()
+    let (editor, fake) = try await editedBot(
+      features: ["bots-v1", "bot-projects-v1", "bot-projectless-v1"], projectIds: [project])
+
+    #expect(editor.showsProjects)
+    #expect(editor.canRemoveProject(project))
+    await editor.removeProject(project)
+
+    #expect(editor.projectIds.isEmpty)
+    #expect(try await fake.listBots().first?.projects.isEmpty == true)
+  }
+
+  nonisolated private static let readyHarness = ServerHarnessCapability(
+    harness: ServerHarness(
+      id: "codex", name: "Codex", symbolName: "sparkle", source: "registry", launchKind: "executable",
+      enabled: true, readiness: ServerHarnessReadiness(state: "ready", detail: nil)),
+    modes: nil,
+    configOptions: [
+      SessionConfigOption(
+        id: "model", name: "Model", category: SessionConfigOption.Category.model, currentValue: "gpt-5",
+        options: [SessionConfigSelectOption(value: "gpt-5", name: "GPT-5")])
+    ]
+  )
 
   @Test("A machine without project changes keeps an existing bot's projects as they are")
   func olderMachinesKeepProjects() async throws {

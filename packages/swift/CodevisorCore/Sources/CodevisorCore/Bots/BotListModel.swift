@@ -34,6 +34,10 @@ public final class BotListModel {
     machines.statusByMachineId[serverId]?.supportsBotProjectChanges == true
   }
 
+  public func supportsProjectlessBots(on serverId: String) -> Bool {
+    machines.statusByMachineId[serverId]?.supportsProjectlessBots == true
+  }
+
   public func supportsArchive(on serverId: String) -> Bool {
     machines.statusByMachineId[serverId]?.supportsBotArchive == true
   }
