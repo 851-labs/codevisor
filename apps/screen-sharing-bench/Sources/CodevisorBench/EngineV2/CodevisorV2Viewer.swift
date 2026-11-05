@@ -50,7 +50,7 @@ final class CodevisorV2Viewer {
       addr: address.addr(reachingHost: host), alpn: mediaAlpn(), cancel: nil)
     let transport = ScreenSharingIrohMediaTransport(
       session: await connection.openMediaSession(config: ScreenSharingIrohMediaTransport.sessionConfig))
-    let viewer = ScreenSharingV2Viewer(transport: transport, metrics: ScreenSharingMetrics())
+    let viewer = ScreenSharingV2Viewer(transport: transport, metrics: ScreenSharingMetrics(), presentsTilesEarly: true)
     viewer.metrics.commits.isRecording = true
     continuousMinusAbsoluteNs = BenchMachClock.continuousMinusAbsoluteNs()
     viewer.frames.retainsLatest = true

@@ -20,6 +20,8 @@ struct ScreenSharingV2TileCanvas: @unchecked Sendable {
     newestFormat = CVPixelBufferGetPixelFormatType(image)
   }
 
+  var isComplete: Bool { layout.count > 1 && images.count == layout.count }
+
   var snapshot: Snapshot? {
     newestFormat.map { Snapshot(layout: layout, images: images, pixelFormat: $0) }
   }
