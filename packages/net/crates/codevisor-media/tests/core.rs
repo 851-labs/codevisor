@@ -838,6 +838,8 @@ fn a_long_jittery_path_keeps_the_frame_rate_and_the_age_flat() {
 fn a_one_megabit_lossy_link_keeps_the_age_flat() {
     let paced = stream_scene(NetworkConditions::N7, 3, 1.0);
     assert_interactive(&paced, 100 * MS, 50.0);
+    let two_frames = stream_scene(NetworkConditions::N7, 3, 2.0);
+    assert_interactive(&two_frames, 100 * MS, 45.0);
     let carrying = stream_scene(NetworkConditions::N7, 3, 8.0);
     assert!(carrying.frames_per_second >= 18.0, "{:.1} frames/s", carrying.frames_per_second);
     let median = carrying.median();
