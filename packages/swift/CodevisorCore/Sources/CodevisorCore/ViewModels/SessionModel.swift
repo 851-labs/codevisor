@@ -84,7 +84,9 @@ public final class SessionModel {
   public internal(set) var unacceptedTurnPromptID: UUID? {
     didSet { if unacceptedTurnPromptID != oldValue { transcriptProjectionRevision &+= 1 } }
   }
-  var turnPromptWaitedForConnection = false
+  var turnPromptWaitedForConnection = false {
+    didSet { if turnPromptWaitedForConnection != oldValue { transcriptProjectionRevision &+= 1 } }
+  }
   var sendingNoticeDelay: Duration = .seconds(1)
   public internal(set) var hasOlderBotMessages = false
   public internal(set) var isLoadingOlderBotMessages = false

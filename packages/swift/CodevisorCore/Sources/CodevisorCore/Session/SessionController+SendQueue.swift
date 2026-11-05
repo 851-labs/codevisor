@@ -136,8 +136,14 @@ extension SessionController {
     case let .bot(afterSequence):
       await model.sendBotMessage(message, afterSequence: afterSequence ?? model.botMessages.last?.sequence)
     case let .agent(delivery, landsInQueue):
-      await model.send(message, startedAt: pendingSendStartedAt, delivery: delivery, landsInQueue: landsInQueue)
+      await model.send(message, startedAt: turnStartedAt, delivery: delivery, landsInQueue: landsInQueue)
     }
+  }
+
+  public var turnStartedAt: Date? {
+    guard let pendingSendStartedAt else { return nil }
+    guard let connectedSince = machines?.connectedSince(project.serverId) else { return pendingSendStartedAt }
+    return max(pendingSendStartedAt, connectedSince)
   }
 
   func rememberUploaded(_ uploaded: Attachment, sentAs sentFileID: String) {

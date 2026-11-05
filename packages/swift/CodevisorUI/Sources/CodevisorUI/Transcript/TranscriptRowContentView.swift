@@ -181,7 +181,7 @@ public struct TranscriptRowContentView: View {
         leaves.userMessage(message)
       }
     case .startingAgent:
-      TranscriptStartingWorkedHeader(startedAt: controller.pendingSendStartedAt ?? Date())
+      TranscriptStartingWorkedHeader(startedAt: controller.turnStartedAt ?? Date())
         .suppressedDuringStreamingTextEntrance()
     case let .backgroundTask(description):
       WaitingOnAgentsLine(description: description)

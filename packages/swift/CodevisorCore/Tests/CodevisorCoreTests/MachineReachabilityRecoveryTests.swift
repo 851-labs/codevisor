@@ -124,6 +124,24 @@ struct MachineReachabilityRecoveryTests {
     #expect(turn.turn.startedAt == time.now)
   }
 
+  @Test("A turn is timed from its send, or from when its machine came back if that was later")
+  func turnIsTimedFromTheLaterOfSendAndReconnect() async {
+    let (machines, _, _) = makeController(localServer: nil)
+    let studio = accountMachine("studio", name: "Mac Studio")
+    signIn(machines, machines: [studio])
+    let controller = chat(on: machines, machineId: studio.id)
+    controller.pendingSendStartedAt = Date(timeIntervalSince1970: 0)
+
+    machines.markFailed(for: studio.id, message: "Offline")
+    machines.markReady(for: studio.id)
+    let reconnectedAt = machines.connectedSince(studio.id)
+
+    #expect(reconnectedAt != nil)
+    #expect(controller.turnStartedAt == reconnectedAt)
+    controller.pendingSendStartedAt = .distantFuture
+    #expect(controller.turnStartedAt == .distantFuture)
+  }
+
   @Test("A machine that answers again within a blip never makes its chats say Reconnecting")
   func briefMachineWaitStaysQuiet() async {
     let clock = ManualSessionConnectionRecoveryScheduler()

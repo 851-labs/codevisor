@@ -9,6 +9,7 @@ public final class MachineConnection {
   public internal(set) var status: MachineStatus?
   public internal(set) var availability: ServerAvailability?
   public internal(set) var reportedIcon: String?
+  public private(set) var connectedSince: Date?
 
   let navigationSync = MachineNavigationSync()
   let serverUpdate = ServerUpdateState()
@@ -77,6 +78,7 @@ public final class MachineConnection {
   }
 
   func markReady() {
+    if availability != .ready { connectedSince = Date() }
     availability = .ready
     reconnectNotice.update(isActive: false)
   }

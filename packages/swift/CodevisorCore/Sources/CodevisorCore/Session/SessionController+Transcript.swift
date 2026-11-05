@@ -110,7 +110,8 @@ extension SessionController {
   }
 
   private var holdsTurnForConnection: Bool {
-    isWaitingForConnection && model?.unacceptedTurnPromptID != nil
+    guard let model, model.unacceptedTurnPromptID != nil else { return false }
+    return model.turnPromptWaitedForConnection || isWaitingForConnection
   }
 
   private var pendingMessageIDs: Set<UUID> {

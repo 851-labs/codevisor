@@ -151,6 +151,10 @@ public final class MachineController {
     connections.updatePauseSubject(machineId: machineId, sessionId: sessionId, harnessId: harnessId)
   }
 
+  public func connectedSince(_ machineId: String) -> Date? {
+    connectionsById[machineId]?.connectedSince
+  }
+
   public func showsReconnectNotice(for machineId: String) -> Bool {
     connections.showsReconnectNotice(for: machineId)
   }
