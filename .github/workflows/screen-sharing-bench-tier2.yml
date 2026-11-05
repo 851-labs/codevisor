@@ -58,6 +58,11 @@ on:
         required: false
         default: "0"
         type: string
+      batched-udp:
+        description: Batch the engine v2 endpoints' UDP sends and receives (sendmsg_x/recvmsg_x) on both minis
+        required: false
+        default: false
+        type: boolean
   workflow_call:
     inputs:
       scenes:
@@ -115,6 +120,11 @@ on:
         required: false
         default: "0"
         type: string
+      batched-udp:
+        description: Batch the engine v2 endpoints' UDP sends and receives (sendmsg_x/recvmsg_x) on both minis
+        required: false
+        default: false
+        type: boolean
 
 permissions:
   actions: read
@@ -138,6 +148,7 @@ env:
   TIER2_VIEWER_DISPLAY: ${{ inputs.viewer-display }}
   TIER2_PROFILE: ${{ inputs.profile && '1' || '0' }}
   TIER2_VCP_FAIL_AFTER: ${{ inputs.vcp-fail-after }}
+  TIER2_BATCHED_UDP: ${{ inputs.batched-udp && '1' || '0' }}
   TIER2_RENDEZVOUS_S: 1800
 
 jobs:

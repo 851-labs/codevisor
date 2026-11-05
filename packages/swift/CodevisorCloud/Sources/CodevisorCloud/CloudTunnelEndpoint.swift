@@ -80,7 +80,8 @@ public actor CloudTunnelEndpoint {
     credentialStore: any CloudCredentialStore,
     trustAnchorsPem: [String] = CloudTunnelEndpoint.environmentTrustAnchors(),
     bindEndpoint: @escaping @Sendable (NetEndpointConfig) async throws -> NetEndpointHandle = {
-      try await netBindEndpoint(config: $0)
+      netSetBatchedUdp(enabled: NetBatchedUDP.configured())
+      return try await netBindEndpoint(config: $0)
     },
     firstConfigWait: Duration = .seconds(5),
     sleep: @escaping @Sendable (Duration) async -> Void = { try? await Task.sleep(for: $0) }

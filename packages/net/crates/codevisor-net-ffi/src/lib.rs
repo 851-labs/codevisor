@@ -83,6 +83,11 @@ pub fn net_endpoint_id_for_secret_key(secret_key_hex: String) -> Result<String, 
     Ok(net::endpoint_id_for(&key))
 }
 
+#[uniffi::export]
+pub fn net_set_batched_udp(enabled: bool) {
+    net::screen_transport::set_batched_udp(enabled);
+}
+
 #[uniffi::export(async_runtime = "tokio")]
 pub async fn net_bind_endpoint(config: NetEndpointConfig) -> Result<Arc<NetEndpointHandle>, NetError> {
     let config = net::NetConfig {

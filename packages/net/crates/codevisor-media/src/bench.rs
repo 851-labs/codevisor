@@ -54,6 +54,9 @@ const ROWS: [Row; 8] = [
 
 pub async fn run(args: Vec<String>) -> Result<String> {
     let options = Options::parse(&args)?;
+    if let Some(batched) = options.batched_udp()? {
+        codevisor_net::screen_transport::set_batched_udp(batched);
+    }
     match args.first().map(String::as_str) {
         Some("viewer") => viewer(&options).await,
         Some("host") => host(&options).await,
@@ -105,6 +108,15 @@ impl Options {
 
     fn seconds(&self) -> Result<f64> {
         Ok(self.or("seconds", "10").parse()?)
+    }
+
+    fn batched_udp(&self) -> Result<Option<bool>> {
+        match self.0.get("batched-udp").map(String::as_str) {
+            None => Ok(None),
+            Some("on") => Ok(Some(true)),
+            Some("off") => Ok(Some(false)),
+            Some(other) => bail!("--batched-udp takes on or off, got {other}"),
+        }
     }
 }
 
@@ -197,7 +209,15 @@ async fn viewer(options: &Options) -> Result<String> {
     let (quic_tally, quic_stats) = serve_viewer(session, idle).await;
     let (udp_tally, udp_stats) = udp_task.await?;
     endpoint.close().await;
-    Ok(format!("{}\n{}\n", viewer_line("iroh", &quic_tally, &quic_stats), viewer_line("udp", &udp_tally, &udp_stats)))
+    let cpu = process_cpu();
+    let frames = quic_tally.frames + udp_tally.frames;
+    Ok(format!(
+        "{}\n{}\nviewer process CPU {:.0} ms for {frames} frames, {:.0} µs per frame\n",
+        viewer_line("iroh", &quic_tally, &quic_stats),
+        viewer_line("udp", &udp_tally, &udp_stats),
+        cpu.as_secs_f64() * 1e3,
+        cpu.as_secs_f64() * 1e6 / frames.max(1) as f64,
+    ))
 }
 
 async fn accept_screen(endpoint: &NetEndpoint) -> Result<codevisor_net::NetConnection> {
@@ -345,6 +365,28 @@ struct Measured {
     lost: u64,
     sent: u64,
     stats: crate::Stats,
+    cpu: Duration,
+    wall: Duration,
+}
+
+impl Measured {
+    fn cpu_us_per_frame(&self) -> f64 {
+        self.cpu.as_secs_f64() * 1e6 / self.sent.max(1) as f64
+    }
+
+    fn cpu_core_pct(&self) -> f64 {
+        self.cpu.as_secs_f64() * 100.0 / self.wall.as_secs_f64().max(f64::EPSILON)
+    }
+}
+
+fn process_cpu() -> Duration {
+    let usage = unsafe {
+        let mut usage: libc::rusage = std::mem::zeroed();
+        libc::getrusage(libc::RUSAGE_SELF, &mut usage);
+        usage
+    };
+    let time = |value: libc::timeval| Duration::new(value.tv_sec as u64, value.tv_usec as u32 * 1000);
+    time(usage.ru_utime) + time(usage.ru_stime)
 }
 
 async fn measure(
@@ -386,8 +428,8 @@ async fn measure(
     table.push_str(
         "| Row | Transport | Frames acked / lost | Round trip p50 / p95 / p99 ms | Added vs UDP p50 / p95 ms | Pacing p50 ms \
          | Frames within RTT+2 ms (lossy ones), RTT from acks | Recovery p50 / p95 ms | Acks later than RTT+2 ms \
-         over the floor | Retransmits / FEC parity / probes |\n\
-         | -- | -- | -- | -- | -- | -- | -- | -- | -- | -- |\n",
+         over the floor | Retransmits / FEC parity / probes | Process CPU µs per frame (% of a core) |\n\
+         | -- | -- | -- | -- | -- | -- | -- | -- | -- | -- | -- |\n",
     );
     let (mut udp_floor, mut quic_floor) = (f64::INFINITY, f64::INFINITY);
     for (index, row) in rows {
@@ -435,7 +477,8 @@ async fn measure(
             };
             writeln!(
                 table,
-                "| {} | {label} | {} / {} | {:.2} / {:.2} / {:.2} | {added} | {:.2} | {} | {:.2} / {:.2} | {} | {} / {} / {} |",
+                "| {} | {label} | {} / {} | {:.2} / {:.2} / {:.2} | {added} | {:.2} | {} | {:.2} / {:.2} | {} | {} / {} / {} \
+                 | {:.0} ({:.1}%) |",
                 row.name,
                 result.acked,
                 result.lost,
@@ -460,12 +503,14 @@ async fn measure(
                 result.stats.packets_retransmitted,
                 result.stats.parity_packets_sent,
                 result.stats.probes_sent,
+                result.cpu_us_per_frame(),
+                result.cpu_core_pct(),
             )?;
             json.push(format!(
                 "{{\"row\":\"{}\",\"transport\":\"{label}\",\"network\":\"{}\",\"sent\":{},\"acked\":{},\"lost\":{},\
                  \"rtt_p50_ms\":{:.3},\"rtt_p95_ms\":{:.3},\"rtt_p99_ms\":{:.3},\"pacing_p50_ms\":{:.3},\
                  \"lossy_frames\":{},\"lossy_within_rtt_2ms\":{},\"rtt_floor_ms\":{:.3},\"recovery_p95_ms\":{:.3},\"over_idle_bound\":{},\"retransmits\":{},\
-                 \"parity\":{},\"probes\":{},\"estimate_mbps\":{:.1}}}",
+                 \"parity\":{},\"probes\":{},\"estimate_mbps\":{:.1},\"cpu_us_per_frame\":{:.1},\"cpu_core_pct\":{:.2}}}",
                 row.name,
                 network.id,
                 result.sent,
@@ -484,6 +529,8 @@ async fn measure(
                 result.stats.parity_packets_sent,
                 result.stats.probes_sent,
                 result.stats.estimate_bps / 1e6,
+                result.cpu_us_per_frame(),
+                result.cpu_core_pct(),
             ));
         }
     }
@@ -496,6 +543,7 @@ async fn measure(
 
 async fn run_row<T: DatagramTransport>(session: &MediaSession<T>, row: Row, stream_base: u8, seconds: f64) -> Measured {
     let before = session.stats();
+    let (cpu_before, started) = (process_cpu(), Instant::now());
     let frames = (seconds / INTERVAL.as_secs_f64()) as u32;
     let mut cache = HashMap::new();
     let mut submitted: HashMap<(u8, u32), Instant> = HashMap::new();
@@ -578,6 +626,8 @@ async fn run_row<T: DatagramTransport>(session: &MediaSession<T>, row: Row, stre
         transport_rejected: after.transport_rejected - before.transport_rejected,
         ..after
     };
+    measured.cpu = process_cpu().saturating_sub(cpu_before);
+    measured.wall = started.elapsed();
     measured
 }
 

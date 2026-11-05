@@ -1,3 +1,4 @@
+import CodevisorNet
 import Foundation
 
 @MainActor
@@ -10,6 +11,8 @@ enum BenchLauncher {
 
     do {
       let options = try BenchOptions(Array(arguments.dropFirst()))
+      let batchedUDP = try options.choice("batched-udp", default: BatchedUDP.off)
+      netSetBatchedUdp(enabled: batchedUDP == .on)
       let instance = try command.init(options: options)
       try options.rejectUnread()
       return .command(instance)
@@ -47,4 +50,7 @@ enum BenchLauncher {
     BenchConsole.error("\(name) failed: \(error)")
     return .failure
   }
+}
+enum BatchedUDP: String, CaseIterable {
+  case on, off
 }

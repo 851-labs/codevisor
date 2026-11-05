@@ -12,6 +12,7 @@ bytes.workspace = true
 tokio.workspace = true
 tracing.workspace = true
 reed-solomon-simd = "3.1"
+libc = "0.2"
 
 [dev-dependencies]
 tokio = { workspace = true, features = ["test-util"] }

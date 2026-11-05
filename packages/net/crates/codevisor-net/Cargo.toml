@@ -8,11 +8,11 @@ publish.workspace = true
 [dependencies]
 iroh.workspace = true
 iroh-relay.workspace = true
+netwatch.workspace = true
 tokio.workspace = true
 anyhow.workspace = true
 bytes.workspace = true
 hex.workspace = true
-rand.workspace = true
 rustls-pki-types.workspace = true
 tracing.workspace = true
 
@@ -24,4 +24,5 @@ iroh-relay = { version = "=1.2.0", default-features = false, features = [
   "tls-ring"
 ] }
 base64 = "0.22"
+noq-udp = "1.3"
 

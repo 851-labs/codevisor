@@ -22,6 +22,10 @@ pub fn transport_config() -> QuicTransportConfig {
         .build()
 }
 
+pub fn set_batched_udp(enabled: bool) {
+    netwatch::set_apple_batching(enabled);
+}
+
 fn ack_frequency() -> AckFrequencyConfig {
     let mut config = AckFrequencyConfig::default();
     config.ack_eliciting_threshold(ACK_ELICITING_THRESHOLD.into()).max_ack_delay(Some(MAX_ACK_DELAY));

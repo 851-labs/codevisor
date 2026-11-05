@@ -16,6 +16,7 @@ results=${2:-}
 : "${TIER1_SOURCE:=synthetic}"
 : "${TIER1_PLANS:=core-v2,gate-v2,matrix-v2}"
 : "${TIER1_ENCODER:=vt}"
+: "${TIER1_BATCHED_UDP:=0}"
 core_networks=N0,N3
 other_networks=N1,N2,N4,N5,N6,N7
 gate_options=(--scenes typing,scroll,video --networks N0,N3 --encoder vt)
@@ -27,6 +28,7 @@ loopback() {
   local name=$1 plan=$2 repetitions=$3
   shift 3
   local started=$SECONDS
+  ((TIER1_BATCHED_UDP)) && set -- "$@" --batched-udp on
   "$scripts/run-installed.sh" loopback --run-id "$run_id-$name" --plan "$plan" --trigger "$TIER1_TRIGGER" \
     --output "$results/$name.json" --frames "$results/$name-frames.jsonl" --duration "$TIER1_DURATION" \
     --warm-up "$TIER1_WARM_UP" --repetitions "$repetitions" "$@" >/dev/null 2>"$results/$name.log"

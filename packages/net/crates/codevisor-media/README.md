@@ -246,8 +246,23 @@ RTT+2 ms over the floor" column counts frames whose ack came more than RTT + 2 m
 trip, timed from the frame's last packet out: at idle that is a loss, or a lost ack, that took longer than a
 tail-loss probe to repair. It is 0 for the other rows.
 
+`--batched-udp on` (any `CodevisorBench` command, or this bench's own option) binds the endpoints with batched UDP
+(below), so a run with each value compares the two datapaths.
+
 Two-Mac runs go through the signed `CodevisorBench.app`, which calls `bench::run` in-process (`media_bench_run`),
 because macOS Local Network privacy drops LAN UDP from unsigned binaries run by the CI runner.
+
+## Batched UDP (851-3950)
+
+By default each datagram costs one `sendmsg` and one `recvmsg`. `codevisor_net::screen_transport::set_batched_udp`
+(`netSetBatchedUdp` in Swift; the app reads `CODEVISOR_NET_BATCHED_UDP=1`) makes endpoints bound after it batch up
+to 32 datagrams per system call on Apple platforms, through the private `sendmsg_x`/`recvmsg_x` that noq-udp's
+`fast-apple-datapath` feature calls. iroh enables that feature but never turns the path on, and noq-udp drops the
+rest of a batch that `sendmsg_x` stops partway through, so `packages/net/Vendor` carries patched copies of netwatch
+0.19.3 (the switch, applied on every bind and rebind) and noq-udp 1.3.0 (send the rest of a short batch). Each change
+is marked `Codevisor patch (851-3950)`; drop the copies once upstream ships both (n0-computer/net-tools#244,
+quinn-rs/quinn#2748). The feature also sizes noq's receive buffer for 32 datagrams per read, about 2 MiB per endpoint
+whether batching is on or off.
 
 ## Not yet
 

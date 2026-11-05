@@ -15,6 +15,7 @@
     "**/worker-configuration.d.ts",
     ".swiftlint-baseline.json",
     ".repos/",
+    "packages/net/Vendor/",
     "apps/www/.source/",
     ".codevisor/"
   ]

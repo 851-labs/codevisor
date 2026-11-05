@@ -291,7 +291,9 @@ runs `tier2-report`, which writes `report.json` and `summary.md` (also the job s
   encoder (`share --encoder vcp`, 851-3819) and `codevisor-v2` with VideoToolbox (`--encoder vt`), so
   `systems: apple-hp,codevisor-v2,codevisor-v2-vcp` compares Apple HP with v2's public and private encoders,
   alternating within each repetition; the `vcp-fail-after` input (seconds, 0 by default) forces a VCP failure that
-  far into each of its runs (`--vcp-fail-after`), so the run shows the VideoToolbox fallback. The v2 table has a row
+  far into each of its runs (`--vcp-fail-after`), so the run shows the VideoToolbox fallback. The `batched-udp` input
+  (off by default) runs both Codevisor ends with `--batched-udp on`, which every `CodevisorBench` command takes: the
+  engine v2 endpoints then batch UDP sends and receives (`sendmsg_x`/`recvmsg_x`, 851-3950). The v2 table has a row
   per Codevisor system and encode p95.
 - The viewer's `system.json` keeps its frame records (the timeline's last 1,800) (`frames`: source timestamp, viewer
   decode, render and on-glass times, and stages), and every render commit of a new frame (`commits`, the last 4,096:

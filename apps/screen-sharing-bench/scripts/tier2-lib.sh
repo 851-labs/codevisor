@@ -15,6 +15,7 @@
 : "${TIER2_SYSTEMS:=apple-hp,codevisor-v2-vcp}"
 : "${TIER2_VIEWER_DISPLAY:=main}"
 : "${TIER2_VCP_FAIL_AFTER:=0}"
+: "${TIER2_BATCHED_UDP:=0}"
 
 tier2_scripts="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 tier2_run_overhead_s=100
@@ -83,6 +84,11 @@ tier2_encoder_options() {
   elif [[ "$1" == codevisor-v2 ]]; then
     echo --encoder vt
   fi
+  return 0
+}
+
+tier2_transport_options() {
+  ((TIER2_BATCHED_UDP)) && echo --batched-udp on
   return 0
 }
 
@@ -197,6 +203,7 @@ tier2_check_inputs() {
   [[ "$TIER2_PRESENT" =~ ^(display-link|arrival)$ ]] || { echo "unknown presentation $TIER2_PRESENT" >&2; return 1; }
   tier2_check_input_scene || return 1
   [[ "$TIER2_VIEWER_DISPLAY" =~ ^(main|R1x2)$ ]] || { echo "viewer display must be main or R1x2" >&2; return 1; }
+  [[ "$TIER2_BATCHED_UDP" =~ ^[01]$ ]] || { echo "batched-udp must be 0 or 1, not $TIER2_BATCHED_UDP" >&2; return 1; }
   [[ "$TIER2_PROFILE" =~ ^[01]$ ]] || { echo "profile must be 0 or 1, not $TIER2_PROFILE" >&2; return 1; }
   [[ "$TIER2_WARM_UP_S" =~ ^[0-9]+$ ]] && ((TIER2_WARM_UP_S == 0 || (TIER2_WARM_UP_S >= 20 && TIER2_WARM_UP_S <= 120))) || {
     echo "warm-up must be 0 (none) or 20 to 120 seconds, not $TIER2_WARM_UP_S" >&2
