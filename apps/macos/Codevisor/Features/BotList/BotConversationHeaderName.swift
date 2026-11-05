@@ -2,6 +2,7 @@ import SwiftUI
 
 struct BotConversationHeaderName: View {
   let name: String
+  let shape: BotConversationHeaderNameShape
 
   var body: some View {
     HStack(spacing: 3) {
@@ -14,6 +15,6 @@ struct BotConversationHeaderName: View {
     }
     .padding(.horizontal, 12)
     .padding(.vertical, 5)
-    .glassEffect(.regular.interactive(), in: .capsule)
+    .glassEffect(.regular.interactive(), in: shape)
   }
 }

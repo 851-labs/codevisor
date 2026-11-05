@@ -4,16 +4,19 @@ import SwiftUI
 struct BotConversationHeader: View {
   static let avatarSize: CGFloat = 44
   static let height: CGFloat = 74
+  static let overlap: CGFloat = 8
 
   let bot: Bot
   let onOpenDetails: (() -> Void)?
 
   var body: some View {
     Button(action: { onOpenDetails?() }) {
-      VStack(spacing: -8) {
+      VStack(spacing: -Self.overlap) {
         BotAvatar(bot: bot, size: Self.avatarSize)
-          .zIndex(1)
-        BotConversationHeaderName(name: bot.name)
+        BotConversationHeaderName(
+          name: bot.name,
+          shape: BotConversationHeaderNameShape(avatarSize: Self.avatarSize, overlap: Self.overlap)
+        )
       }
     }
     .buttonStyle(.plain)
