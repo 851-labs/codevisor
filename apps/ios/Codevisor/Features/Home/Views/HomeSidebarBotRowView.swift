@@ -42,14 +42,15 @@ struct HomeSidebarBotRowView: View, Equatable {
   private var content: some View {
     if isConversation {
       openable(HomeSidebarBotConversationLabel(bot: bot, isOpen: isOpen, showsChevron: !bot.hasNestedRows))
+        .buttonStyle(.plain)
     } else {
-      compactContent
+      openable(compactRow)
     }
   }
 
-  private var compactContent: some View {
+  private var compactRow: some View {
     HStack(spacing: 10) {
-      openable(label)
+      label
       if let machine = bot.machine {
         HomeSidebarSymbol(name: machine.systemImage)
           .imageScale(.small)
@@ -61,15 +62,15 @@ struct HomeSidebarBotRowView: View, Equatable {
           .accessibilityHidden(true)
       }
     }
+    .contentShape(Rectangle())
   }
 
   @ViewBuilder
-  private func openable(_ label: some View) -> some View {
+  private func openable(_ row: some View) -> some View {
     if isSelectionRow {
-      label
+      row
     } else {
-      Button(action: onOpen) { label }
-        .buttonStyle(.plain)
+      Button(action: onOpen) { row }
     }
   }
 
@@ -167,7 +168,6 @@ struct HomeSidebarBotRowView: View, Equatable {
         HomeSidebarSymbol(name: bot.bot.symbolName)
       }
     }
-    .contentShape(Rectangle())
   }
 
   private var showsStatus: Bool {

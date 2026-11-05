@@ -35,14 +35,12 @@ struct HomeSidebarWorkspaceRowView: View, Equatable {
   private func onRestore() { actions.actions.restoreWorkspace(ref) }
 
   var body: some View {
-    HStack(spacing: 10) {
+    Group {
       if isSelectionRow && !workspace.isArchived {
-        label
+        row
       } else {
-        Button(action: onOpen) { label }
-          .buttonStyle(.plain)
+        Button(action: onOpen) { row }
       }
-      trailingDetails
     }
     .opacity(workspace.isArchived ? 0.6 : 1)
     .swipeActions(edge: .leading, allowsFullSwipe: true) {
@@ -138,6 +136,14 @@ struct HomeSidebarWorkspaceRowView: View, Equatable {
     }
   }
 
+  private var row: some View {
+    HStack(spacing: 10) {
+      label
+      trailingDetails
+    }
+    .contentShape(Rectangle())
+  }
+
   private var label: some View {
     Label {
       VStack(alignment: .leading, spacing: 2) {
@@ -151,7 +157,6 @@ struct HomeSidebarWorkspaceRowView: View, Equatable {
     } icon: {
       leadingIcon
     }
-    .contentShape(Rectangle())
   }
 
   @ViewBuilder
