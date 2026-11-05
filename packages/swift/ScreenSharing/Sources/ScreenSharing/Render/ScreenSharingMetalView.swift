@@ -213,7 +213,7 @@ public final class ScreenSharingMetalView: MTKView, MTKViewDelegate {
       if isNewFrame { coordinator.deferPresentation() }
       return
     }
-    coordinator.reportSize(ScreenSharingMetalEncoder.videoSize(of: frame))
+    coordinator.reportSize(frame.size)
     if target.drawable.texture.pixelFormat == ScreenSharingMetalEncoder.highDynamicRangePixelFormat {
       target.pass.colorAttachments[0].clearColor = Self.linear(clearColor)
     }
@@ -367,7 +367,7 @@ package final class TextureFrame: @unchecked Sendable {
           return .init(
             submission: ScreenSharingMetalView.MetalSubmission(
               buffer: encoded.buffer, drawable: drawable, metrics: metrics),
-            retained: encoded.retained, videoSize: ScreenSharingMetalEncoder.videoSize(of: request.frame))
+            retained: encoded.retained, videoSize: request.frame.size)
         }
         completion(prepared)
       }

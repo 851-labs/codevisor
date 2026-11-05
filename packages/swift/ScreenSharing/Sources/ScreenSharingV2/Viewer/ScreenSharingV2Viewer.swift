@@ -25,6 +25,7 @@ public final class ScreenSharingV2Viewer: @unchecked Sendable {
   private let transport: any ScreenSharingMediaTransport
   private let decoders: ScreenSharingV2Decoders
   private let composer = ScreenSharingV2FrameComposer()
+  private let presentsTiles: Bool
   private let presentedComposite = Atomic<UInt64>(0)
   private let state = Mutex(State())
   private let stopped = Atomic(false)
@@ -32,8 +33,9 @@ public final class ScreenSharingV2Viewer: @unchecked Sendable {
 
   public init(
     transport: any ScreenSharingMediaTransport, metrics: ScreenSharingMetrics,
-    frames: ScreenSharingFrameMailbox = ScreenSharingFrameMailbox()
+    frames: ScreenSharingFrameMailbox = ScreenSharingFrameMailbox(), presentsTiles: Bool = false
   ) {
+    self.presentsTiles = presentsTiles
     self.transport = transport
     self.frames = frames
     self.metrics = metrics
@@ -219,9 +221,10 @@ public final class ScreenSharingV2Viewer: @unchecked Sendable {
     guard let composite, !stopped.load(ordering: .relaxed) else { return }
 
     let startNs = ScreenSharingMetrics.nowNs
+    let tiles = presentsTiles ? composite.snapshot.tiles : nil
     let image: CVPixelBuffer
     do {
-      guard let composed = try composer.compose(composite.snapshot) else { return }
+      guard let composed = try tiles?.first?.pixelBuffer ?? composer.compose(composite.snapshot) else { return }
 
       image = composed
     } catch {
@@ -229,7 +232,7 @@ public final class ScreenSharingV2Viewer: @unchecked Sendable {
       return
     }
     let decodedNs = ScreenSharingMetrics.nowNs
-    metrics.observe("compose", milliseconds: Double(decodedNs - startNs) / 1_000_000)
+    if tiles == nil { metrics.observe("compose", milliseconds: Double(decodedNs - startNs) / 1_000_000) }
     guard presentedComposite.max(composite.sequence) else {
       metrics.increment("supersededComposites")
       return
@@ -239,11 +242,19 @@ public final class ScreenSharingV2Viewer: @unchecked Sendable {
     if let timing { metrics.timeline.decoded(timing) }
     metrics.increment("presentedUpdates")
     let sourceTimestampNs = composite.group?.decoded.first?.meta.sourceTimestampNs
-    frames.put(
-      ScreenSharingVideoFrame(
-        pixelBuffer: image, timestampNs: sourceTimestampNs ?? decodedNs,
-        rtpTimestamp: composite.group?.update.id ?? 0, receivedAtSeconds: CACurrentMediaTime(),
-        sourceTimestampNs: timing?.sourceTimestampNs))
+    let timestampNs = sourceTimestampNs ?? decodedNs
+    let rtpTimestamp = composite.group?.update.id ?? 0
+    let frame =
+      tiles.flatMap {
+        ScreenSharingVideoFrame(
+          tiles: $0, size: composite.snapshot.size, timestampNs: timestampNs, rtpTimestamp: rtpTimestamp,
+          receivedAtSeconds: CACurrentMediaTime(),
+          sourceTimestampNs: timing?.sourceTimestampNs)
+      }
+      ?? ScreenSharingVideoFrame(
+        pixelBuffer: image, timestampNs: timestampNs, rtpTimestamp: rtpTimestamp,
+        receivedAtSeconds: CACurrentMediaTime(), sourceTimestampNs: timing?.sourceTimestampNs)
+    frames.put(frame)
   }
 
   private func pollTransport() async {

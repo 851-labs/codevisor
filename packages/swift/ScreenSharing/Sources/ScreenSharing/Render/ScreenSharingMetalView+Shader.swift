@@ -10,19 +10,50 @@ extension ScreenSharingMetalView {
       float2 p = positions[id];
       return {float4(p,0,1), float2((p.x+1)*0.5, (1-p.y)*0.5)};
     }
+    struct ScreenTile {
+      float tiled; float pictureRows; float pictureColumns; float pixelColumns; float start; float rows;
+      float aboveRows; float hasAbove; float hasBelow;
+    };
+    float4 tileSample(texture2d<float> plane, texture2d<float> above, texture2d<float> below, float2 uv,
+      constant ScreenTile& t) {
+      constexpr sampler whole(filter::linear, address::clamp_to_edge);
+      if (t.tiled < 0.5) return plane.sample(whole, uv);
+      constexpr sampler s(coord::pixel, filter::linear, address::clamp_to_edge);
+      float k = float(plane.get_width()) / t.pixelColumns;
+      float x = min(uv.x * (t.pictureColumns * k), t.pictureColumns * k - 0.5);
+      float y = uv.y * (t.pictureRows * k) - t.start * k;
+      float last = t.rows * k;
+      if (t.hasAbove > 0.5 && y < 0.5) {
+        float edge = t.aboveRows * k;
+        if (y <= -0.5) return above.sample(s, float2(x, edge + y));
+        return mix(above.sample(s, float2(x, edge - 0.5)), plane.sample(s, float2(x, 0.5)), y + 0.5);
+      }
+      if (t.hasBelow > 0.5 && y > last - 0.5) {
+        if (y >= last + 0.5) return below.sample(s, float2(x, y - last));
+        return mix(plane.sample(s, float2(x, last - 0.5)), below.sample(s, float2(x, 0.5)), y - (last - 0.5));
+      }
+      return plane.sample(s, float2(x, min(y, last - 0.5)));
+    }
+    #define SCREEN_PLANES texture2d<float> yPlane [[texture(0)]], texture2d<float> uvPlane [[texture(1)]], \
+      texture2d<float> yAbove [[texture(2)]], texture2d<float> uvAbove [[texture(3)]], \
+      texture2d<float> yBelow [[texture(4)]], texture2d<float> uvBelow [[texture(5)]], \
+      constant ScreenRange& range [[buffer(0)]], constant ScreenTile& tile [[buffer(1)]]
+    #define SCREEN_RGB screenRGB(in, yPlane, uvPlane, yAbove, uvAbove, yBelow, uvBelow, range, tile)
+    #define SCREEN_BGRA texture2d<float> plane [[texture(0)]], texture2d<float> above [[texture(2)]], \
+      texture2d<float> below [[texture(4)]], constant ScreenTile& tile [[buffer(1)]]
     // Offsets and scales that take normalized plane samples to Y 0...1 and CbCr -0.5...0.5.
     struct ScreenRange { float yOffset; float yScale; float cOffset; float cScale; };
-    float3 screenRGB(ScreenVertex in, texture2d<float> yPlane, texture2d<float> uvPlane, constant ScreenRange& range) {
-      constexpr sampler sample(filter::linear, address::clamp_to_edge);
-      float y = (yPlane.sample(sample,in.uv).r - range.yOffset) * range.yScale;
-      float2 uv = (uvPlane.sample(sample,in.uv).rg - float2(range.cOffset)) * range.cScale;
+    float3 screenRGB(ScreenVertex in, texture2d<float> yPlane, texture2d<float> uvPlane, texture2d<float> yAbove,
+      texture2d<float> uvAbove, texture2d<float> yBelow, texture2d<float> uvBelow, constant ScreenRange& range,
+      constant ScreenTile& tile) {
+      float y = (tileSample(yPlane, yAbove, yBelow, in.uv, tile).r - range.yOffset) * range.yScale;
+      float2 uv = (tileSample(uvPlane, uvAbove, uvBelow, in.uv, tile).rg - float2(range.cOffset)) * range.cScale;
       // BT.709 matrix: the host's 8-bit sRGB and its HDR capture (Display P3 PQ) both use it.
       return float3(y+1.5748*uv.y, y-0.187324*uv.x-0.468124*uv.y, y+1.8556*uv.x);
     }
     fragment float4 screenFragment(ScreenVertex in [[stage_in]],
-      texture2d<float> yPlane [[texture(0)]], texture2d<float> uvPlane [[texture(1)]],
-      constant ScreenRange& range [[buffer(0)]]) {
-      return float4(screenRGB(in, yPlane, uvPlane, range), 1);
+      SCREEN_PLANES) {
+      return float4(SCREEN_RGB, 1);
     }
     // HDR (851-2380): PQ to light, in Display P3, with the host's SDR white at 1.0. ScreenCaptureKit's
     // HDR capture of a display puts it at 100 nits (tuftlord, 2026-09-30: code 510 of 1023 video
@@ -35,16 +66,14 @@ extension ScreenSharingMetalView {
       return nits / 100.0;
     }
     fragment float4 screenFragmentPQToLinear(ScreenVertex in [[stage_in]],
-      texture2d<float> yPlane [[texture(0)]], texture2d<float> uvPlane [[texture(1)]],
-      constant ScreenRange& range [[buffer(0)]]) {
-      return float4(screenPQToLinear(screenRGB(in, yPlane, uvPlane, range)), 1);
+      SCREEN_PLANES) {
+      return float4(screenPQToLinear(SCREEN_RGB), 1);
     }
     // HDR on a layer that isn't showing HDR yet: highlights clipped, BT.709 primaries, sRGB gamma.
     fragment float4 screenFragmentPQToSDR(ScreenVertex in [[stage_in]],
-      texture2d<float> yPlane [[texture(0)]], texture2d<float> uvPlane [[texture(1)]],
-      constant ScreenRange& range [[buffer(0)]]) {
+      SCREEN_PLANES) {
       float3x3 p3To709 = float3x3(float3(1.2249,-0.0420,-0.0197), float3(-0.2247,1.0419,-0.0786), float3(0,0,1.0979));
-      float3 linear = saturate(p3To709 * screenPQToLinear(screenRGB(in, yPlane, uvPlane, range)));
+      float3 linear = saturate(p3To709 * screenPQToLinear(SCREEN_RGB));
       return float4(select(1.055*pow(linear, float3(1.0/2.4))-0.055, 12.92*linear, linear <= 0.0031308), 1);
     }
     // SDR on a layer showing HDR (the frame before it switches back): sRGB to linear Display P3.
@@ -55,17 +84,14 @@ extension ScreenSharingMetalView {
       return float4(bt709ToP3 * linear, 1);
     }
     fragment float4 screenFragmentSDRToLinear(ScreenVertex in [[stage_in]],
-      texture2d<float> yPlane [[texture(0)]], texture2d<float> uvPlane [[texture(1)]],
-      constant ScreenRange& range [[buffer(0)]]) {
-      return screenSDRToLinear(screenRGB(in, yPlane, uvPlane, range));
+      SCREEN_PLANES) {
+      return screenSDRToLinear(SCREEN_RGB);
     }
-    fragment float4 screenFragmentBGRAToLinear(ScreenVertex in [[stage_in]], texture2d<float> plane [[texture(0)]]) {
-      constexpr sampler sample(filter::linear, address::clamp_to_edge);
-      return screenSDRToLinear(plane.sample(sample,in.uv).rgb);
+    fragment float4 screenFragmentBGRAToLinear(ScreenVertex in [[stage_in]], SCREEN_BGRA) {
+      return screenSDRToLinear(tileSample(plane, above, below, in.uv, tile).rgb);
     }
-    fragment float4 screenFragmentBGRA(ScreenVertex in [[stage_in]], texture2d<float> plane [[texture(0)]]) {
-      constexpr sampler sample(filter::linear, address::clamp_to_edge);
-      return float4(plane.sample(sample,in.uv).rgb, 1);
+    fragment float4 screenFragmentBGRA(ScreenVertex in [[stage_in]], SCREEN_BGRA) {
+      return float4(tileSample(plane, above, below, in.uv, tile).rgb, 1);
     }
     """
 }

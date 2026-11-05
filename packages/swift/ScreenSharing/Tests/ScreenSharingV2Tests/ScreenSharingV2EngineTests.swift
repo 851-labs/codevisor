@@ -88,6 +88,32 @@ extension HardwareCodecTests {
     }
 
     @Test(.enabled(if: VTIsHardwareDecodeSupported(kCMVideoCodecType_HEVC), "No hardware HEVC on this machine."))
+    func withTilesTheViewerHandsOverEachDecodedTileInsteadOfComposingThePicture() async throws {
+      let (hostSide, viewerSide) = LoopbackMediaTransport.pair()
+      let host = try Self.host(transport: hostSide, metrics: ScreenSharingMetrics(), tiles: 4)
+      let metrics = ScreenSharingMetrics()
+      let viewer = ScreenSharingV2Viewer(transport: viewerSide, metrics: metrics, presentsTiles: true)
+      let decoded = DecodedFrames(viewer.frames)
+      host.start()
+      viewer.start()
+      defer { host.stop(); viewer.stop() }
+
+      host.push(try TestPixels.frame(shades: [40, 90, 140, 190], timestampNs: 1_000))
+      await decoded.arrivals.cancellableWait(for: 1)
+      host.push(
+        try TestPixels.frame(
+          shades: [40, 90, 230, 190], timestampNs: 2_000, dirtyRects: [CGRect(x: 0, y: 180, width: 640, height: 90)]))
+      await decoded.arrivals.cancellableWait(for: 2)
+
+      let frames = decoded.frames
+      #expect(frames.allSatisfy { $0.tiles?.count == 4 && $0.size == CGSize(width: 640, height: 360) })
+      #expect(frames.map { Self.shade($0, row: 225) }.map { abs($0 - 140) <= 3 } == [true, false])
+      #expect(abs(Self.shade(try #require(frames.last), row: 225) - 230) <= 3)
+      #expect(abs(Self.shade(try #require(frames.last), row: 45) - 40) <= 3)
+      #expect(metrics.snapshot().timings["compose"] == nil)
+    }
+
+    @Test(.enabled(if: VTIsHardwareDecodeSupported(kCMVideoCodecType_HEVC), "No hardware HEVC on this machine."))
     func anUpdateSharesTheBitrateBetweenItsTiles() throws {
       let configuration = try ScreenSharingVideoConfiguration(width: 640, height: 360, bitrate: 40_000_000)
       let encoder = try ScreenSharingVideoToolboxTileEncoder(
@@ -126,6 +152,12 @@ extension HardwareCodecTests {
       expected.enumerated().map { tile, shade in
         (Int(TestPixels.luma(of: picture, row: tile * 90 + 45, column: 320)), shade)
       }
+    }
+
+    private static func shade(_ frame: ScreenSharingVideoFrame, row: Int) -> Int {
+      guard let tile = frame.tiles?.first(where: { $0.rows.contains(row) }) else { return -1 }
+
+      return Int(TestPixels.luma(of: tile.pixelBuffer, row: row - tile.rows.lowerBound, column: 320))
     }
 
     private static func lumaRow(_ picture: CVPixelBuffer, row: Int) -> UInt8 {

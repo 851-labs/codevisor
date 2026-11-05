@@ -210,6 +210,7 @@ actor StreamTransport: ServerRequestTransport {
 @Observable
 final class FakeViewingSession: ScreenSharingOfferingSession, ScreenSharingV2StartableSession {
   let capabilities: ScreenSharingCapabilities = [.control]
+  var presentsTiles = false
   let frames = ScreenSharingFrameMailbox()
   let metrics = ScreenSharingMetrics()
   let controlChannel: ScreenSharingLocalChannel<ScreenSharingControlMessage>

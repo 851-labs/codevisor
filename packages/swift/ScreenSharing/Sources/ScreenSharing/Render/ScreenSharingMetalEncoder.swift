@@ -36,17 +36,35 @@ package struct ScreenSharingMetalEncoder: @unchecked Sendable {
       case biplanar(y: CVMetalTexture, uv: CVMetalTexture, range: PlaneRange)
       case bgra(CVMetalTexture)
     }
+    struct Layer {
+      let planes: Planes
+      let rows: Range<Int>?
+      var pixelRows = 0
+      var pixelColumns = 0
+    }
     let frame: ScreenSharingVideoFrame
-    let planes: Planes
+    let layers: [Layer]
+    var planes: Planes { layers[0].planes }
     var dynamicRange: ScreenSharingDynamicRange {
       if case .biplanar(_, _, let range) = planes { return range.dynamicRange }
       return .standard
     }
     var retained: [CVMetalTexture] {
-      switch planes {
-      case .biplanar(let y, let uv, _): [y, uv]
-      case .bgra(let plane): [plane]
+      layers.flatMap { layer in
+        switch layer.planes {
+        case .biplanar(let y, let uv, _): [y, uv]
+        case .bgra(let plane): [plane]
+        }
       }
+    }
+
+    init(frame: ScreenSharingVideoFrame, planes: Planes) {
+      self.init(frame: frame, layers: [Layer(planes: planes, rows: nil)])
+    }
+
+    init(frame: ScreenSharingVideoFrame, layers: [Layer]) {
+      self.frame = frame
+      self.layers = layers
     }
   }
   struct PlaneRange: Equatable {
@@ -92,10 +110,6 @@ package struct ScreenSharingMetalEncoder: @unchecked Sendable {
     textureCache = cache
   }
 
-  package static func videoSize(of frame: ScreenSharingVideoFrame) -> CGSize {
-    CGSize(width: CVPixelBufferGetWidth(frame.pixelBuffer), height: CVPixelBufferGetHeight(frame.pixelBuffer))
-  }
-
   static func viewport(video: CGSize, target: CGSize) -> MTLViewport {
     let scale = min(target.width / video.width, target.height / video.height)
     return MTLViewport(
@@ -104,12 +118,29 @@ package struct ScreenSharingMetalEncoder: @unchecked Sendable {
   }
 
   package func textures(for frame: ScreenSharingVideoFrame) -> Textures? {
-    let pixel = frame.pixelBuffer
+    guard let tiles = frame.tiles else {
+      return planes(of: frame.pixelBuffer).map { Textures(frame: frame, planes: $0) }
+    }
+
+    let format = CVPixelBufferGetPixelFormatType(frame.pixelBuffer)
+    var layers: [Textures.Layer] = []
+    for tile in tiles {
+      guard CVPixelBufferGetPixelFormatType(tile.pixelBuffer) == format, let planes = planes(of: tile.pixelBuffer)
+      else { return nil }
+
+      layers.append(
+        Textures.Layer(
+          planes: planes, rows: tile.rows, pixelRows: CVPixelBufferGetHeight(tile.pixelBuffer),
+          pixelColumns: CVPixelBufferGetWidth(tile.pixelBuffer)))
+    }
+    return Textures(frame: frame, layers: layers)
+  }
+
+  private func planes(of pixel: CVPixelBuffer) -> Textures.Planes? {
     let format = CVPixelBufferGetPixelFormatType(pixel)
     guard Self.supportedPixelFormats.contains(format) else { return nil }
     if format == kCVPixelFormatType_32BGRA {
-      guard let plane = texture(pixel, plane: 0, format: .bgra8Unorm) else { return nil }
-      return Textures(frame: frame, planes: .bgra(plane))
+      return texture(pixel, plane: 0, format: .bgra8Unorm).map { .bgra($0) }
     }
     let range = PlaneRange(
       dynamicRange: ScreenSharingDynamicRange(pixelFormat: format),
@@ -118,7 +149,7 @@ package struct ScreenSharingMetalEncoder: @unchecked Sendable {
     guard let y = texture(pixel, plane: 0, format: wide ? .r16Unorm : .r8Unorm),
       let uv = texture(pixel, plane: 1, format: wide ? .rg16Unorm : .rg8Unorm)
     else { return nil }
-    return Textures(frame: frame, planes: .biplanar(y: y, uv: uv, range: range))
+    return .biplanar(y: y, uv: uv, range: range)
   }
 
   func encode(_ textures: Textures, into target: Surface) -> Encoded? {
@@ -132,17 +163,107 @@ package struct ScreenSharingMetalEncoder: @unchecked Sendable {
       let buffer = commandQueue.makeCommandBuffer(),
       let encoder = buffer.makeRenderCommandEncoder(descriptor: pass)
     else { return nil }
-    let pixel = textures.frame.pixelBuffer
-    let video = CGSize(width: CVPixelBufferGetWidth(pixel), height: CVPixelBufferGetHeight(pixel))
+    let video = textures.frame.size
     let targetSize = CGSize(width: targetTexture.width, height: targetTexture.height)
-    encoder.setViewport(Self.viewport(video: video, target: targetSize))
+    let viewport = Self.viewport(video: video, target: targetSize)
+    encoder.setViewport(viewport)
     let hdrTarget = targetTexture.pixelFormat == Self.highDynamicRangePixelFormat
-    switch textures.planes {
-    case .biplanar(let y, let uv, let range):
-      guard let yTexture = CVMetalTextureGetTexture(y), let uvTexture = CVMetalTextureGetTexture(uv) else {
+    let resolved = textures.layers.map { Self.metalTextures($0.planes) }
+    for (index, layer) in textures.layers.enumerated() {
+      let own = resolved[index]
+      if let rows = layer.rows {
+        guard let scissor = Self.scissor(rows, of: video.height, in: viewport, target: targetSize) else { continue }
+
+        encoder.setScissorRect(scissor)
+      }
+      let neighbours = Self.neighbours(of: index, in: textures.layers, resolved: resolved)
+      var tile = ScreenTile(layer, above: neighbours.above?.layer, below: neighbours.below?.layer, in: video)
+      encoder.setFragmentBytes(&tile, length: MemoryLayout<ScreenTile>.stride, index: 1)
+      for (slot, neighbour) in [(2, neighbours.above), (4, neighbours.below)] {
+        for (offset, texture) in (neighbour?.textures ?? own).enumerated() {
+          encoder.setFragmentTexture(texture, index: slot + offset)
+        }
+      }
+      guard draw(layer.planes, textures: own, with: encoder, hdrTarget: hdrTarget) else {
         encoder.endEncoding()
         return nil
       }
+    }
+    encoder.endEncoding()
+    return Encoded(buffer: buffer, retained: TextureFrame(frame: textures.frame, textures: textures.retained))
+  }
+
+  struct ScreenTile {
+    var tiled: Float = 0
+    var pictureRows: Float = 1
+    var pictureColumns: Float = 1
+    var pixelColumns: Float = 1
+    var start: Float = 0
+    var rows: Float = 1
+    var aboveRows: Float = 0
+    var hasAbove: Float = 0
+    var hasBelow: Float = 0
+
+    init(_ layer: Textures.Layer, above: Textures.Layer?, below: Textures.Layer?, in picture: CGSize) {
+      guard let rows = layer.rows, picture.height > 0, picture.width > 0, !rows.isEmpty, layer.pixelColumns > 0
+      else { return }
+
+      tiled = 1
+      pictureRows = Float(picture.height)
+      pictureColumns = Float(picture.width)
+      pixelColumns = Float(layer.pixelColumns)
+      start = Float(rows.lowerBound)
+      self.rows = Float(rows.count)
+      aboveRows = Float(above?.rows?.count ?? 0)
+      hasAbove = above == nil ? 0 : 1
+      hasBelow = below == nil ? 0 : 1
+    }
+  }
+
+  static func neighbours(
+    of index: Int, in layers: [Textures.Layer], resolved: [[any MTLTexture]]
+  ) -> (
+    above: (layer: Textures.Layer, textures: [any MTLTexture])?,
+    below: (layer: Textures.Layer, textures: [any MTLTexture])?
+  ) {
+    guard let rows = layers[index].rows else { return (nil, nil) }
+
+    let neighbour = {
+      (other: Int, touches: (Range<Int>) -> Bool) -> (layer: Textures.Layer, textures: [any MTLTexture])? in
+      guard layers.indices.contains(other), let otherRows = layers[other].rows, touches(otherRows),
+        !resolved[other].isEmpty, resolved[other].count == resolved[index].count
+      else { return nil }
+
+      return (layers[other], resolved[other])
+    }
+    return (
+      neighbour(index - 1) { $0.upperBound == rows.lowerBound },
+      neighbour(index + 1) { $0.lowerBound == rows.upperBound }
+    )
+  }
+
+  static func scissor(
+    _ rows: Range<Int>, of height: CGFloat, in viewport: MTLViewport, target: CGSize
+  ) -> MTLScissorRect? {
+    let edge = { (row: Int) in Int((viewport.originY + CGFloat(row) / height * viewport.height).rounded()) }
+    let top = max(0, edge(rows.lowerBound))
+    let bottom = min(Int(target.height), edge(rows.upperBound))
+    let left = max(0, Int(viewport.originX.rounded(.down)))
+    let right = min(Int(target.width), Int((viewport.originX + viewport.width).rounded(.up)))
+    guard bottom > top, right > left else { return nil }
+
+    return MTLScissorRect(x: left, y: top, width: right - left, height: bottom - top)
+  }
+
+  private func draw(
+    _ planes: Textures.Planes, textures own: [any MTLTexture], with encoder: any MTLRenderCommandEncoder,
+    hdrTarget: Bool
+  ) -> Bool {
+    guard !own.isEmpty else { return false }
+
+    for (index, texture) in own.enumerated() { encoder.setFragmentTexture(texture, index: index) }
+    switch planes {
+    case .biplanar(_, _, let range):
       let pipeline: any MTLRenderPipelineState =
         switch (range.dynamicRange, hdrTarget) {
         case (.standard, false): pipelines.biplanar
@@ -151,21 +272,23 @@ package struct ScreenSharingMetalEncoder: @unchecked Sendable {
         case (.high, false): pipelines.biplanarPQToSDR
         }
       encoder.setRenderPipelineState(pipeline)
-      encoder.setFragmentTexture(yTexture, index: 0)
-      encoder.setFragmentTexture(uvTexture, index: 1)
       var uniform = range.uniform
       encoder.setFragmentBytes(&uniform, length: MemoryLayout<SIMD4<Float>>.size, index: 0)
-    case .bgra(let plane):
-      guard let planeTexture = CVMetalTextureGetTexture(plane) else {
-        encoder.endEncoding()
-        return nil
-      }
+    case .bgra:
       encoder.setRenderPipelineState(hdrTarget ? pipelines.bgraSDRToLinear : pipelines.bgra)
-      encoder.setFragmentTexture(planeTexture, index: 0)
     }
     encoder.drawPrimitives(type: .triangle, vertexStart: 0, vertexCount: 3)
-    encoder.endEncoding()
-    return Encoded(buffer: buffer, retained: TextureFrame(frame: textures.frame, textures: textures.retained))
+    return true
+  }
+
+  private static func metalTextures(_ planes: Textures.Planes) -> [any MTLTexture] {
+    switch planes {
+    case .biplanar(let y, let uv, _):
+      guard let y = CVMetalTextureGetTexture(y), let uv = CVMetalTextureGetTexture(uv) else { return [] }
+
+      return [y, uv]
+    case .bgra(let plane): return CVMetalTextureGetTexture(plane).map { [$0] } ?? []
+    }
   }
 
   private func texture(_ buffer: CVPixelBuffer, plane: Int, format: MTLPixelFormat) -> CVMetalTexture? {

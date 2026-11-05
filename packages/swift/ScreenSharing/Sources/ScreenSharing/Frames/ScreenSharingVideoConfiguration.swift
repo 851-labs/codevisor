@@ -39,8 +39,20 @@ public struct ScreenSharingVideoConfiguration: Sendable, Equatable, Codable {
   }
 }
 
+public struct ScreenSharingVideoTile: @unchecked Sendable {
+  public let pixelBuffer: CVPixelBuffer
+  public let rows: Range<Int>
+
+  public init(pixelBuffer: CVPixelBuffer, rows: Range<Int>) {
+    self.pixelBuffer = pixelBuffer
+    self.rows = rows
+  }
+}
+
 public struct ScreenSharingVideoFrame: @unchecked Sendable {
   public let pixelBuffer: CVPixelBuffer
+  public let tiles: [ScreenSharingVideoTile]?
+  public let size: CGSize
   public let timestampNs: Int64
   public let rtpTimestamp: UInt32
   public let receivedAtSeconds: Double?
@@ -52,11 +64,29 @@ public struct ScreenSharingVideoFrame: @unchecked Sendable {
     receivedAtSeconds: Double? = nil, sourceTimestampNs: Int64? = nil, dirtyRects: [CGRect]? = nil
   ) {
     self.pixelBuffer = pixelBuffer
+    tiles = nil
+    size = CGSize(width: CVPixelBufferGetWidth(pixelBuffer), height: CVPixelBufferGetHeight(pixelBuffer))
     self.timestampNs = timestampNs
     self.rtpTimestamp = rtpTimestamp
     self.receivedAtSeconds = receivedAtSeconds
     self.sourceTimestampNs = sourceTimestampNs
     self.dirtyRects = dirtyRects
+  }
+
+  public init?(
+    tiles: [ScreenSharingVideoTile], size: CGSize, timestampNs: Int64, rtpTimestamp: UInt32 = 0,
+    receivedAtSeconds: Double? = nil, sourceTimestampNs: Int64? = nil
+  ) {
+    guard let first = tiles.first else { return nil }
+
+    pixelBuffer = first.pixelBuffer
+    self.tiles = tiles
+    self.size = size
+    self.timestampNs = timestampNs
+    self.rtpTimestamp = rtpTimestamp
+    self.receivedAtSeconds = receivedAtSeconds
+    self.sourceTimestampNs = sourceTimestampNs
+    dirtyRects = nil
   }
 }
 

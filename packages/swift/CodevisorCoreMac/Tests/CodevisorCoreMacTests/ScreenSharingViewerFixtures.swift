@@ -48,6 +48,7 @@ final class FakeMediaSession: ScreenSharingOfferingSession {
   let capabilities: ScreenSharingCapabilities
   let frames = ScreenSharingFrameMailbox()
   let metrics = ScreenSharingMetrics()
+  var presentsTiles = false
   let controlChannel = FakeChannel<ScreenSharingControlMessage>()
   var control: (any ScreenSharingMessageChannel<ScreenSharingControlMessage>)? {
     capabilities.contains(.control) ? controlChannel : nil

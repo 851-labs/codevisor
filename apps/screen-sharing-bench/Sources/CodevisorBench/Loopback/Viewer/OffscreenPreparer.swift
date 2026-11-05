@@ -35,7 +35,7 @@ final class OffscreenPreparer: ScreenSharingRenderPreparer, @unchecked Sendable 
 
     return ScreenSharingPreparedSubmission(
       submission: OffscreenSubmission(buffer: encoded.buffer), retained: encoded.retained,
-      videoSize: ScreenSharingMetalEncoder.videoSize(of: request.frame))
+      videoSize: request.frame.size)
   }
 
   private func target(_ geometry: ScreenSharingRenderGeometry) -> (any MTLTexture)? {

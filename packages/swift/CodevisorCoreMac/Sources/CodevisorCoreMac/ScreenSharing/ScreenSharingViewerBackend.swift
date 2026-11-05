@@ -408,12 +408,13 @@ private final class NativeScreenSharingViewerRunner: ScreenSharingViewerConnecti
         ? .fallback : .ended(reply.message ?? "This Mac cannot start screen sharing right now.")
     }
 
-    let session: any ScreenSharingV2StartableSession
+    var session: any ScreenSharingV2StartableSession
     do {
       session = try await v2.connect(grant)
     } catch {
       return Task.isCancelled ? .cancelled : .fallback
     }
+    session.presentsTiles = true
     try open(session, attempt: attempt, display: display, restarts: restarts, emit: emit)
     do {
       try await session.start(token: grant.token)

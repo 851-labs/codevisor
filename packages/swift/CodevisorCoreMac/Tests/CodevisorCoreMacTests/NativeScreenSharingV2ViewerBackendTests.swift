@@ -30,6 +30,7 @@ struct NativeScreenSharingV2ViewerBackendTests {
     #expect(v2.grants == [ScreenSharingViewerFixtures.mediaGrant])
     #expect(harness.sessions.map(\.tokens) == [["fixture token"]])
     #expect(harness.sessions[0].offers == 0)
+    #expect(harness.sessions[0].presentsTiles, "the Mac pane's renderer draws v2's tiles")
   }
 
   @Test func webRTCIsUsedWhenTheHostDoesNotAdvertiseV2() async throws {
