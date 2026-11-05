@@ -29,7 +29,7 @@
 
     @ViewBuilder private func rows(_ diagnostics: ScreenSharingViewerDiagnostics) -> some View {
       Section {
-        LabeledContent("Engine", value: diagnostics.engine ?? "WebRTC")
+        if let engine = diagnostics.engine { LabeledContent("Engine", value: engine) }
         LabeledContent("Route", value: diagnostics.route)
         LabeledContent("Video", value: diagnostics.resolution)
         if let fps = diagnostics.framesPerSecond {

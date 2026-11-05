@@ -408,7 +408,7 @@ let package = Package(
     ),
     .target(
       name: "ScreenSharingPane",
-      dependencies: ["CodevisorCloud", "CodevisorCore", "ScreenSharing", "ScreenSharingWebRTC", "ScreenSharingV2"],
+      dependencies: ["CodevisorCore", "ScreenSharing", "ScreenSharingV2"],
       path: "ScreenSharingPane/Sources/ScreenSharingPane",
       swiftSettings: strictSwiftSettings
     ),

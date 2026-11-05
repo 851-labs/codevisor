@@ -2,7 +2,6 @@ import AppKit
 import CodevisorClient
 import ScreenSharing
 import ScreenSharingV2
-import ScreenSharingWebRTC
 import CodevisorTestSupport
 import Foundation
 import Observation
@@ -44,7 +43,7 @@ final class FakeChannel<Message: Sendable & Equatable>: ScreenSharingMessageChan
 }
 
 @MainActor
-final class FakeMediaSession: ScreenSharingOfferingSession {
+final class FakeMediaSession: ScreenSharingV2StartableSession {
   let capabilities: ScreenSharingCapabilities
   let frames = ScreenSharingFrameMailbox()
   let metrics = ScreenSharingMetrics()
@@ -70,22 +69,11 @@ final class FakeMediaSession: ScreenSharingOfferingSession {
   func setDisplayHighDynamicRange(_ supported: Bool) { highDynamicRangeReports.append(supported) }
   var onVideoFormatChanged: ((ScreenSharingDynamicRange, String?) -> Void)?
   weak var surface: FakeSurface?
-  private(set) var offers = 0
   private(set) var tokens: [String] = []
-  private(set) var answers: [String] = []
   private(set) var closed = false
 
   init(capabilities: ScreenSharingCapabilities = [.control, .statistics]) { self.capabilities = capabilities }
 
-  func offer() async throws -> String {
-    offers += 1
-    return "fixture offer"
-  }
-  func accept(_ answer: String) async throws {
-    answers.append(answer)
-    controlChannel.isAvailable = true
-    if deliversVideo { surface?.present() }
-  }
   func start(token: String) async throws {
     tokens.append(token)
     controlChannel.isAvailable = true
@@ -141,24 +129,21 @@ actor SharingTransport: ServerRequestTransport {
   private let capabilitiesStatus: String
   private let heartbeatStatus: String
   private var heartbeatReplies: [ServerScreenSharingReply]
+  private let startStatus: String
   private let restartStatus: String
   private let provider: String?
   private let startNotice: String?
   private let engines: [String]?
-  private let v2StartStatus: String
-  private let v2RestartStatus: String
   private(set) var requests: [ServerScreenSharingRequest] = []
   private(set) var stopWasCancelled = false
 
   init(
     blockFirstStart: Bool = false, capabilitiesStatus: String = "available", heartbeatStatus: String = "viewing",
-    restartStatus: String = "connecting", provider: String? = nil, heartbeatReplies: [ServerScreenSharingReply] = [],
-    startNotice: String? = nil, engines: [String]? = nil, v2StartStatus: String = "connecting",
-    v2RestartStatus: String = "connecting"
+    startStatus: String = "connecting", restartStatus: String = "connecting", provider: String? = nil,
+    heartbeatReplies: [ServerScreenSharingReply] = [], startNotice: String? = nil, engines: [String]? = ["v2"]
   ) {
-    self.v2RestartStatus = v2RestartStatus
     self.engines = engines
-    self.v2StartStatus = v2StartStatus
+    self.startStatus = startStatus
     self.heartbeatReplies = heartbeatReplies
     self.startNotice = startNotice
     self.blockFirstStart = blockFirstStart
@@ -182,12 +167,9 @@ actor SharingTransport: ServerRequestTransport {
       let first = requests.filter { $0.operation == .start }.count == 1
       started.signal()
       if first, blockFirstStart { await releaseFirstStart.wait() }
-      let v2Status = payload.operation == .restart ? v2RestartStatus : v2StartStatus
-      var started = ServerScreenSharingReply(
-        status: payload.engine == "v2" ? v2Status : payload.operation == .restart ? restartStatus : "connecting",
-        message: startNotice,
-        answer: payload.engine == nil ? "fixture answer" : nil)
-      if payload.engine == "v2", v2Status == "connecting" { started.media = ScreenSharingViewerFixtures.mediaGrant }
+      let status = payload.operation == .restart ? restartStatus : startStatus
+      var started = ServerScreenSharingReply(status: status, message: startNotice)
+      if status == "connecting" { started.media = ScreenSharingViewerFixtures.mediaGrant }
       reply = started
     case .heartbeat:
       reply = heartbeatReplies.isEmpty ? .init(status: heartbeatStatus) : heartbeatReplies.removeFirst()
@@ -234,25 +216,23 @@ final class NativeBackendHarness {
     },
     target: String? = nil,
     heartbeatInterval: Duration = .seconds(8),
-    v2: V2? = nil,
-    webRTC: Bool = true
+    v2: V2 = V2()
   ) {
     self.transport = transport
     let client = CodevisorServerClient(config: .init(requestTransport: transport))
     let clock = clock
-    let connector = v2.map { v2 in
-      ScreenSharingV2Connector(
-        address: { ScreenSharingViewerFixtures.viewerMedia },
-        connect: { [unowned self] grant in
-          v2.grants.append(grant)
-          if v2.failsConnect { throw RFBError.transport("No route to the host in this test.") }
-          return makeSession()
-        })
-    }
-    let webRTCSession: ScreenSharingViewerBackend.NativeMakeSession = { @MainActor [unowned self] _ in makeSession() }
+    let connector = ScreenSharingV2Connector(
+      address: { v2.hasAddress ? ScreenSharingViewerFixtures.viewerMedia : nil },
+      connect: { [unowned self] grant in
+        v2.grants.append(grant)
+        if v2.failsConnect || v2.failingConnects > 0 {
+          v2.failingConnects -= 1
+          throw RFBError.transport("No route to the host in this test.")
+        }
+        return makeSession()
+      })
     backend = .native(
       client: client, workspaceId: UUID(), paneId: UUID(), v2: connector, sleep: { try await clock.sleep(for: $0) },
-      makeSession: webRTC ? webRTCSession : nil,
       makeSurface: { [unowned self] session in
         let surface = FakeSurface()
         (session as? FakeMediaSession)?.surface = surface
@@ -271,7 +251,9 @@ final class NativeBackendHarness {
 
   @MainActor
   final class V2 {
+    var hasAddress = true
     var failsConnect = false
+    var failingConnects = 0
     var grants: [ServerScreenSharingMediaGrant] = []
   }
 
@@ -290,5 +272,3 @@ final class NativeBackendHarness {
     for consumer in consumers { await consumer.value }
   }
 }
-
-extension FakeMediaSession: ScreenSharingV2StartableSession {}

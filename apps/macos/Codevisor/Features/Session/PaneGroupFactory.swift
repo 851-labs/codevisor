@@ -157,12 +157,6 @@ struct PaneGroupFactory {
         },
         resolveServerConfig: {
           machines?.serverConfig(for: serverId) ?? machine.serverConfig
-        },
-        openTunnelMedia: {
-          guard let route = await machines?.tunnelMediaRoute(forMachineId: serverId) else { return nil }
-          return ScreenSharingTunnelMedia(
-            endpointId: route.endpointId, flowId: Int(route.flowId), localPort: route.localPort,
-            close: { route.close() })
         }
       )
     }

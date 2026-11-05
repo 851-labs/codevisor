@@ -3,17 +3,6 @@ import Testing
 
 @MainActor
 struct ScreenSharingViewerDiagnosticsTests {
-  @Test func relayTransportDescribesTheClientConnectionRatherThanItsUDPAllocation() {
-    let diagnostics = ScreenSharingViewerDiagnostics()
-    diagnostics.update(
-      metrics: ScreenSharingMetrics().snapshot(),
-      statistics: [
-        "local-candidate.selected.candidateType": "relay",
-        "local-candidate.selected.protocol": "udp",
-        "local-candidate.selected.relayProtocol": "tls",
-      ], now: 10)
-    #expect(diagnostics.route == "Relay · TLS")
-  }
   @Test func engineV2ReportsItsRouteRoundTripBitrateAndRecovery() {
     let metrics = ScreenSharingMetrics()
     let diagnostics = ScreenSharingViewerDiagnostics()
@@ -58,12 +47,12 @@ struct ScreenSharingViewerDiagnosticsTests {
     #expect(diagnostics.route == "VNC · WebSocket · continuous")
   }
 
-  @Test func webRTCSessionsHaveNoVNCUpdateFigures() {
+  @Test func v2SessionsHaveNoVNCUpdateFigures() {
     let metrics = ScreenSharingMetrics()
     let diagnostics = ScreenSharingViewerDiagnostics()
-    diagnostics.update(metrics: metrics.snapshot(), statistics: [:], now: 10)
+    diagnostics.update(metrics: metrics.snapshot(), statistics: ["v2.engine": "v2"], now: 10)
     metrics.increment("presentedFrames", by: 60)
-    diagnostics.update(metrics: metrics.snapshot(), statistics: [:], now: 11)
+    diagnostics.update(metrics: metrics.snapshot(), statistics: ["v2.engine": "v2"], now: 11)
     #expect(diagnostics.updatesPerSecond == nil)
     #expect(diagnostics.bytesPerUpdate == nil)
     #expect(diagnostics.updateLatencyMilliseconds == nil)
@@ -83,21 +72,16 @@ struct ScreenSharingViewerDiagnosticsTests {
     metrics.label("decoder", "VideoToolbox hardware")
     diagnostics.update(
       metrics: metrics.snapshot(),
-      statistics: [
-        "inbound-rtp.video.bytesReceived": "3000000",
-        "candidate-pair.selected.currentRoundTripTime": "0.012",
-        "local-candidate.selected.candidateType": "relay",
-        "remote-candidate.selected.candidateType": "host",
-        "local-candidate.selected.protocol": "udp",
-      ], now: 12)
+      statistics: ["v2.engine": "v2", "v2.bytesReceived": "3000000", "v2.roundTripMs": "12", "v2.route": "relay"],
+      now: 12)
     #expect(diagnostics.framesPerSecond == 60)
     #expect(diagnostics.megabitsPerSecond == 12)
     #expect(diagnostics.roundTripMilliseconds == 12)
-    #expect(diagnostics.route == "Relay · UDP")
+    #expect(diagnostics.route == "Relay")
     #expect(diagnostics.resolution == "1920 × 1080")
     #expect(diagnostics.decodeMilliseconds == 2.5)
     #expect(diagnostics.droppedFrames == 3)
-    diagnostics.update(metrics: metrics.snapshot(), statistics: [:], now: 13)
+    diagnostics.update(metrics: metrics.snapshot(), statistics: ["v2.engine": "v2"], now: 13)
     #expect(diagnostics.framesPerSecond == 0)
     #expect(diagnostics.megabitsPerSecond == 0)
     #expect(diagnostics.roundTripMilliseconds == nil)

@@ -1,5 +1,4 @@
 import CodevisorClient
-import CodevisorCloud
 import CodevisorCore
 import CoreGraphics
 import Foundation
@@ -40,13 +39,12 @@ public final class ScreenSharingPaneModel {
 
   public convenience init(
     client: any CodevisorServerClienting, preferences: ScreenSharingPanePreferences?, workspaceId: UUID,
-    paneId: UUID, openTunnel: (@MainActor () async -> CloudTunnelMediaRoute?)? = nil
+    paneId: UUID
   ) {
     self.init(
       preferences: preferences,
-      sponsor: ScreenSharingStreamSponsor(
-        workspaceId: workspaceId, paneId: paneId, client: client, openTunnel: openTunnel,
-        v2: ScreenSharingMediaEndpoint.shared.isAvailable ? Self.engineV2() : nil))
+      sponsor: ScreenSharingStreamSponsor(workspaceId: workspaceId, paneId: paneId, client: client, v2: Self.engineV2())
+    )
   }
 
   public nonisolated static let requestedChroma = ScreenSharingV2Chroma.subsampled

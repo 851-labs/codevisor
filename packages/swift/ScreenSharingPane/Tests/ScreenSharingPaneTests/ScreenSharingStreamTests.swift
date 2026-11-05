@@ -4,13 +4,12 @@ import Foundation
 import Observation
 import ScreenSharing
 import ScreenSharingV2
-import ScreenSharingWebRTC
 import Testing
 
 @testable import ScreenSharingPane
 
 @MainActor
-@Suite("Touch viewer engine choice", .timeLimit(.minutes(1)))
+@Suite("Touch viewer over engine v2", .timeLimit(.minutes(1)))
 struct ScreenSharingStreamTests {
   @Test("A Mac that lists engine v2 is viewed over v2 with the viewer's address and chroma, and no offer")
   func viewsOverV2() async {
@@ -23,42 +22,39 @@ struct ScreenSharingStreamTests {
     #expect(starts.map(\.operation) == [.start])
     #expect(starts[0].engine == "v2" && starts[0].offer == nil)
     #expect(starts[0].media == StreamHarness.viewerMedia && starts[0].chroma == "420")
-    #expect(harness.sessions[0].tokens == ["grant token"] && harness.sessions[0].offers == 0)
+    #expect(harness.sessions[0].tokens == ["grant token"])
     #expect(stream.session === harness.sessions[0] && stream.control != nil)
     stream.stop()
   }
 
-  @Test("A Mac that doesn't list engine v2 is viewed over WebRTC")
-  func viewsOverWebRTCWithoutV2() async {
+  @Test("A Mac that doesn't list engine v2 ends the stream with an update message, without starting")
+  func endsWithoutV2() async {
     let harness = StreamHarness(engines: nil)
     let stream = harness.start()
-    await awaitObserved { harness.sessions.first?.answers.isEmpty == false }
+    await awaitObserved { stream.phase != .connecting }
 
-    let starts = await harness.transport.starts
-    #expect(starts.map(\.engine) == [nil] && starts[0].offer == "fixture offer")
-    #expect(harness.sessions[0].answers == ["fixture answer"] && harness.v2Grants.isEmpty)
-    stream.stop()
+    #expect(stream.phase == .failed(ScreenSharingStream.v2Unavailable))
+    #expect(await harness.transport.starts.isEmpty && harness.v2Grants.isEmpty)
   }
 
   enum Failure: CaseIterable, Sendable { case connect, hostRefuses, start }
 
-  @Test("A v2 attempt that fails before video starts the stream over WebRTC", arguments: Failure.allCases)
-  func fallsBackBeforeVideo(_ failure: Failure) async {
+  @Test("A first v2 attempt that fails before video ends the stream with a message", arguments: Failure.allCases)
+  func endsWhenTheFirstAttemptFails(_ failure: Failure) async {
     let harness = StreamHarness(engines: ["v2"], v2StartStatus: failure == .hostRefuses ? "failed" : "connecting")
     harness.connectFails = failure == .connect
     harness.startFails = failure == .start
     let stream = harness.start()
-    await awaitObserved { harness.sessions.last?.answers.isEmpty == false }
+    await awaitObserved { stream.phase != .connecting }
 
+    let message = failure == .hostRefuses ? "This Mac can't share its screen right now." : ScreenSharingStream.v2Failed
+    #expect(stream.phase == .failed(message))
     let starts = await harness.transport.starts
-    #expect(starts.map(\.operation) == [.start, .start])
-    #expect(starts.map(\.engine) == ["v2", nil] && starts[1].offer == "fixture offer")
-    #expect(stream.phase == .connecting)
-    stream.stop()
+    #expect(starts.map(\.operation) == [.start] && starts[0].engine == "v2")
   }
 
-  @Test("A v2 stream that shows no video within 24 s starts over WebRTC")
-  func fallsBackWithoutVideo() async {
+  @Test("A v2 stream that shows no video within 24 s ends with a message")
+  func endsWithoutVideo() async {
     let harness = StreamHarness(engines: ["v2"])
     let stream = harness.start()
     await awaitObserved { harness.sessions.count == 1 }
@@ -66,12 +62,10 @@ struct ScreenSharingStreamTests {
       await harness.clock.waitForSleep(ScreenSharingStream.heartbeatInterval)
       harness.clock.advance(by: ScreenSharingStream.heartbeatInterval)
     }
-    await awaitObserved { harness.sessions.count == 2 && harness.sessions[1].answers.isEmpty == false }
+    await awaitObserved { stream.phase != .connecting }
 
-    let starts = await harness.transport.starts
-    #expect(starts.map(\.engine) == ["v2", nil])
-    #expect(harness.sessions[0].closed)
-    stream.stop()
+    #expect(stream.phase == .failed(ScreenSharingStream.missingVideo))
+    #expect(harness.sessions.count == 1 && harness.sessions[0].closed)
   }
 
   @Test("A host notice, such as a capture restart, pauses the wait for v2 video")
@@ -145,8 +139,7 @@ final class StreamHarness {
       chroma: { chroma })
     var sponsor = ScreenSharingStreamSponsor(
       workspaceId: UUID(), paneId: UUID(), client: CodevisorServerClient(config: .init(requestTransport: transport)),
-      openTunnel: nil, v2: v2)
-    sponsor.makeWebRTC = { [unowned self] _ in makeSession(startFails: false) }
+      v2: v2)
     sponsor.clock = clock
     let stream = ScreenSharingStream(displayId: "display", sponsor: sponsor)
     stream.start()
@@ -188,10 +181,6 @@ actor StreamTransport: ServerRequestTransport {
       reply = .init(status: "available", displays: [.init(id: "display", name: "Display", width: 1920, height: 1080)])
       reply.engines = engines
     case .start, .restart:
-      guard payload.engine == "v2" else {
-        reply = .init(status: "connecting", answer: "fixture answer")
-        break
-      }
       reply = .init(status: v2StartStatus)
       if v2StartStatus == "connecting" { reply.media = StreamHarness.grant }
     case .heartbeat:
@@ -208,7 +197,7 @@ actor StreamTransport: ServerRequestTransport {
 
 @MainActor
 @Observable
-final class FakeViewingSession: ScreenSharingOfferingSession, ScreenSharingV2StartableSession {
+final class FakeViewingSession: ScreenSharingV2StartableSession {
   let capabilities: ScreenSharingCapabilities = [.control]
   var presentsTiles = false
   let frames = ScreenSharingFrameMailbox()
@@ -220,22 +209,13 @@ final class FakeViewingSession: ScreenSharingOfferingSession, ScreenSharingV2Sta
   var failure: String? { nil }
   var onConnectionChanged: ((String) -> Void)?
   private let startFails: Bool
-  private(set) var offers = 0
   private(set) var tokens: [String] = []
-  private(set) var answers: [String] = []
   private(set) var closed = false
 
   init(startFails: Bool) {
     self.startFails = startFails
     (controlChannel, host) = ScreenSharingLocalChannel<ScreenSharingControlMessage>.pair()
   }
-
-  func offer() async throws -> String {
-    offers += 1
-    return "fixture offer"
-  }
-
-  func accept(_ answer: String) async throws { answers.append(answer) }
 
   func start(token: String) async throws {
     tokens.append(token)

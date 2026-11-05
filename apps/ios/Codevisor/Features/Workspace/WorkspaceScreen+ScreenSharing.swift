@@ -26,8 +26,7 @@ extension WorkspaceScreen {
     let client = machines.client(for: serverId)
     let model = ScreenSharingPaneCache.shared.model(for: pane.id) {
       ScreenSharingPaneModel(
-        client: client, preferences: pane.screenSharing, workspaceId: workspace.id, paneId: pane.id,
-        openTunnel: { await machines.tunnelMediaRoute(forMachineId: serverId) })
+        client: client, preferences: pane.screenSharing, workspaceId: workspace.id, paneId: pane.id)
     }
     model.applyPreferences(pane.screenSharing ?? ScreenSharingPanePreferences())
     model.onPreferencesChanged = { updateScreenSharing(pane, preferences: $0) }

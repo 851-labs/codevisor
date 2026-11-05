@@ -72,7 +72,6 @@ final class ComputerUseRemotePreviewConnection {
       client: client, workspaceId: workspaceId, paneId: paneId,
       v2: ScreenSharingViewerMedia.connector,
       sleep: { try await Task.sleep(for: $0) },
-      makeSession: nil,
       makeSurface: { [weak self] session in
         let surface = try ComputerUseLivePreviewSurface(mailbox: session.frames, metrics: session.metrics)
         self?.latestSurface = surface
