@@ -27,6 +27,7 @@ public final class ScreenSharingV2Viewer: @unchecked Sendable {
   private let decoders: ScreenSharingV2Decoders
   private let composer = ScreenSharingV2FrameComposer()
   private let presentsTiles: Bool
+  private let showsTilesEarly: Bool
   private let presentedComposite = Atomic<UInt64>(0)
   private let state = Mutex(State())
   private let stopped = Atomic(false)
@@ -34,9 +35,11 @@ public final class ScreenSharingV2Viewer: @unchecked Sendable {
 
   public init(
     transport: any ScreenSharingMediaTransport, metrics: ScreenSharingMetrics,
-    frames: ScreenSharingFrameMailbox = ScreenSharingFrameMailbox(), presentsTiles: Bool = false
+    frames: ScreenSharingFrameMailbox = ScreenSharingFrameMailbox(), presentsTiles: Bool = false,
+    showsTilesEarly: Bool = false
   ) {
     self.presentsTiles = presentsTiles
+    self.showsTilesEarly = presentsTiles && showsTilesEarly
     self.transport = transport
     self.frames = frames
     self.metrics = metrics
@@ -192,7 +195,7 @@ public final class ScreenSharingV2Viewer: @unchecked Sendable {
         state.canvas?.place(image, tile: tile)
       }
       if let composite = compose(&state, presentingLate: !current) { return composite }
-      guard presentsTiles, current, state.canvas?.isComplete == true else { return nil }
+      guard showsTilesEarly, current, state.canvas?.isComplete == true else { return nil }
 
       metrics.increment("tilesShownEarly")
       state.canvas?.place(image, tile: tile)

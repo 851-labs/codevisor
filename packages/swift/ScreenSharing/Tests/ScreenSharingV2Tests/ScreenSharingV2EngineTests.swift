@@ -92,7 +92,8 @@ extension HardwareCodecTests {
       let (hostSide, viewerSide) = LoopbackMediaTransport.pair()
       let host = try Self.host(transport: hostSide, metrics: ScreenSharingMetrics(), tiles: 4)
       let metrics = ScreenSharingMetrics()
-      let viewer = ScreenSharingV2Viewer(transport: viewerSide, metrics: metrics, presentsTiles: true)
+      let viewer = ScreenSharingV2Viewer(
+        transport: viewerSide, metrics: metrics, presentsTiles: true, showsTilesEarly: true)
       let decoded = DecodedFrames(viewer.frames)
       host.start()
       viewer.start()
