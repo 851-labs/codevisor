@@ -1,9 +1,9 @@
 import CodevisorNet
 
 extension AppEnvironment {
-  public func screenSharingEndpoint() async -> NetEndpointHandle? {
+  public func screenSharingEndpoint(requestingLocalNetwork: Bool) async -> NetEndpointHandle? {
     let tunnel = cloud.directPaths.tunnel
-    if localNetworkAccess == .unasked {
+    if requestingLocalNetwork, localNetworkAccess == .unasked {
       setLocalNetworkAccess(.requested)
       await tunnel.setAllowsDirectPaths(true)
     }

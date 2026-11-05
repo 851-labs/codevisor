@@ -74,6 +74,22 @@ struct ScreenSharingStreamTests {
     stream.stop()
   }
 
+  @Test("A host notice, such as a capture restart, pauses the wait for v2 video")
+  func waitsForVideoWhileTheHostExplains() async {
+    let harness = StreamHarness(engines: ["v2"], heartbeatNotice: "Restarting screen capture…")
+    let stream = harness.start()
+    await awaitObserved { harness.sessions.count == 1 }
+    for beat in 1...4 {
+      await harness.clock.waitForSleep(ScreenSharingStream.heartbeatInterval, count: beat)
+      harness.clock.advance(by: ScreenSharingStream.heartbeatInterval)
+    }
+    await harness.clock.waitForSleep(ScreenSharingStream.heartbeatInterval, count: 5)
+
+    #expect(await harness.transport.starts.map(\.engine) == ["v2"])
+    #expect(harness.sessions.count == 1 && !harness.sessions[0].closed)
+    stream.stop()
+  }
+
   @Test("A v2 stream lost after video reconnects over v2")
   func reconnectsOverV2() async {
     let harness = StreamHarness(engines: ["v2"])
@@ -109,8 +125,11 @@ final class StreamHarness {
   var startFails = false
   private let chroma: ScreenSharingV2Chroma
 
-  init(engines: [String]?, v2StartStatus: String = "connecting", chroma: ScreenSharingV2Chroma = .full) {
-    transport = StreamTransport(engines: engines, v2StartStatus: v2StartStatus)
+  init(
+    engines: [String]?, v2StartStatus: String = "connecting", heartbeatNotice: String? = nil,
+    chroma: ScreenSharingV2Chroma = .full
+  ) {
+    transport = StreamTransport(engines: engines, v2StartStatus: v2StartStatus, heartbeatNotice: heartbeatNotice)
     self.chroma = chroma
   }
 
@@ -149,11 +168,13 @@ final class StreamHarness {
 actor StreamTransport: ServerRequestTransport {
   private let engines: [String]?
   private let v2StartStatus: String
+  private let heartbeatNotice: String?
   private(set) var requests: [ServerScreenSharingRequest] = []
 
-  init(engines: [String]?, v2StartStatus: String) {
+  init(engines: [String]?, v2StartStatus: String, heartbeatNotice: String? = nil) {
     self.engines = engines
     self.v2StartStatus = v2StartStatus
+    self.heartbeatNotice = heartbeatNotice
   }
 
   var starts: [ServerScreenSharingRequest] { requests.filter { [.start, .restart].contains($0.operation) } }
@@ -174,7 +195,7 @@ actor StreamTransport: ServerRequestTransport {
       reply = .init(status: v2StartStatus)
       if v2StartStatus == "connecting" { reply.media = StreamHarness.grant }
     case .heartbeat:
-      reply = .init(status: "viewing")
+      reply = .init(status: heartbeatNotice == nil ? "viewing" : "connecting", message: heartbeatNotice)
     case .stop, .setScale:
       reply = .init(status: "stopped")
     }

@@ -64,7 +64,9 @@ public final class ScreenSharingPaneModel {
   }
 
   public static func enableEngineV2(environment: AppEnvironment) {
-    ScreenSharingMediaEndpoint.shared.configure { [weak environment] in await environment?.screenSharingEndpoint() }
+    ScreenSharingMediaEndpoint.shared.configure { [weak environment] in
+      await environment?.screenSharingEndpoint(requestingLocalNetwork: false)
+    }
   }
 
   public var phase: Phase {

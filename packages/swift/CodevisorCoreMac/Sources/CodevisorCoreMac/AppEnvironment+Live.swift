@@ -50,7 +50,9 @@ extension AppEnvironment {
         allowsAlphaUpdates: settings.alphaUpdatesEnabled
       )
     )
-    ScreenSharingMediaEndpoint.shared.configure { [weak environment] in await environment?.screenSharingEndpoint() }
+    ScreenSharingMediaEndpoint.shared.configure { [weak environment] in
+      await environment?.screenSharingEndpoint(requestingLocalNetwork: true)
+    }
     return environment
   }
 }

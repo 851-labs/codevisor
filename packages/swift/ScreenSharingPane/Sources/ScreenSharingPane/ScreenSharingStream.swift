@@ -33,7 +33,7 @@ final class ScreenSharingStream {
   private(set) var phase: Phase = .connecting
   private(set) var session: (any ScreenSharingViewingSession)?
   private(set) var control: ScreenSharingControlSession?
-  let diagnostics = ScreenSharingViewerDiagnostics()
+  private(set) var diagnostics = ScreenSharingViewerDiagnostics()
 
   @ObservationIgnored let displayId: String
   @ObservationIgnored private let sponsor: ScreenSharingStreamSponsor
@@ -154,10 +154,7 @@ final class ScreenSharingStream {
     started = true
     let reply = try await sponsor.client.screenSharing(start)
     try Task.checkCancellation()
-    guard reply.version == 1, reply.status == "connecting", let grant = reply.media else {
-      return reply.status == "failed" || reply.status == "connecting"
-        ? .fallback : .ended(reply.message ?? "This Mac can't share its screen right now.")
-    }
+    guard reply.version == 1, reply.status == "connecting", let grant = reply.media else { return .fallback }
     let session: any ScreenSharingV2StartableSession
     do {
       session = try await v2.connect(grant)
@@ -210,19 +207,21 @@ final class ScreenSharingStream {
       while !Task.isCancelled {
         try? await clock.sleep(for: Self.heartbeatInterval)
         guard let self, !Task.isCancelled else { return }
-        waited += Self.heartbeatInterval
-        if let missingVideo, !self.presented, waited >= missingVideo {
-          outcomes.continuation.yield(.fallback)
-          return
-        }
+        let reply: ServerScreenSharingReply
         do {
-          let reply = try await self.sponsor.client.screenSharing(self.request(.heartbeat))
-          if !["connecting", "viewing"].contains(reply.status) {
-            outcomes.continuation.yield(.ended(reply.message ?? "The Mac stopped sharing its screen."))
-            return
-          }
+          reply = try await self.sponsor.client.screenSharing(self.request(.heartbeat))
         } catch {
           if !Task.isCancelled { outcomes.continuation.yield(.lost) }
+          return
+        }
+        guard ["connecting", "viewing"].contains(reply.status) else {
+          outcomes.continuation.yield(.ended(reply.message ?? "The Mac stopped sharing its screen."))
+          return
+        }
+        guard let missingVideo, !self.presented, reply.message == nil else { continue }
+        waited += Self.heartbeatInterval
+        if waited >= missingVideo {
+          outcomes.continuation.yield(.fallback)
           return
         }
       }
@@ -247,6 +246,7 @@ final class ScreenSharingStream {
 
   private func install(_ session: any ScreenSharingViewingSession) -> AsyncStream<Void> {
     self.session = session
+    diagnostics = ScreenSharingViewerDiagnostics()
     control = session.control.map { ScreenSharingControlSession(channel: $0, clock: ContinuousClock()) }
     let lost = AsyncStream<Void>.makeStream()
     session.onConnectionChanged = { transport in
