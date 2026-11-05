@@ -43,7 +43,6 @@ struct QuestionOptionList: View {
           infoKey: "\(question.id)/other"
         ) {
           choose(QuestionDraft.otherToken, at: question.options.count)
-          focusTargets.focusAnswerEditorWhenReady()
         }
       }
     }
@@ -55,7 +54,11 @@ struct QuestionOptionList: View {
   private func choose(_ token: String, at index: Int) {
     highlighted = index
     draft.pick(token, in: question)
-    if token != QuestionDraft.otherToken { focusTargets.focusPicker() }
+    if token == QuestionDraft.otherToken, draft.isOtherSelected(question) {
+      focusTargets.focusAnswerEditor()
+    } else {
+      focusTargets.focusPicker()
+    }
   }
 
   private func displayLabel(_ label: String) -> String {
