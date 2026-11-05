@@ -47,20 +47,6 @@ final class LoopbackListener: @unchecked Sendable {
     listener.cancel()
   }
 
-  func stopAndWaitUntilUnbound() async {
-    lock.withLock {
-      for connection in connections { connection.cancel() }
-      connections = []
-    }
-    await withCheckedContinuation { continuation in
-      let once = RFBOnce()
-      listener.stateUpdateHandler = { state in
-        if case .cancelled = state, once.claim() { continuation.resume() }
-      }
-      listener.cancel()
-    }
-  }
-
   static func echo(_ connection: NWConnection) {
     connection.receive(minimumIncompleteLength: 1, maximumLength: 1 << 16) { data, _, complete, error in
       if let data, !data.isEmpty { connection.send(content: data, completion: .idempotent) }
@@ -86,6 +72,7 @@ final class LoopbackListener: @unchecked Sendable {
   }
 }
 
+@Suite(.timeLimit(.minutes(1)))
 struct RFBNetworkTransportTests {
   private func readExactly(
     _ count: Int, from transport: RFBNetworkTransport, maximum: Int = 1 << 16
@@ -107,7 +94,7 @@ struct RFBNetworkTransportTests {
     #expect(listener.port != 0)
     let transport = try await RFBNetworkTransport.connect(host: "127.0.0.1", port: listener.port)
     defer { transport.close() }
-    await listener.accepted.wait()
+    await listener.accepted.cancellableWait()
     try await transport.write([1, 2, 3, 4])
     #expect(try await readExactly(4, from: transport) == [1, 2, 3, 4])
   }
@@ -179,38 +166,33 @@ struct RFBNetworkTransportTests {
     await #expect(throws: RFBError.connectionClosed) { _ = try await RFBInputStream(transport: transport).u8() }
   }
 
-  @Test func readsAfterCloseTerminateWithoutData() async throws {
+  @Test func readsAfterCloseReportTheConnectionClosed() async throws {
     let listener = try await LoopbackListener(handle: LoopbackListener.echo)
     defer { listener.stop() }
     let transport = try await RFBNetworkTransport.connect(host: "127.0.0.1", port: listener.port)
+    try await transport.write([5])
+    await listener.accepted.cancellableWait()
     transport.close()
-    do {
-      #expect(try await transport.read(maximum: 64) == [])
-    } catch {
-      #expect(error is RFBError)
-    }
+    await #expect(throws: RFBError.connectionClosed) { try await transport.read(maximum: 64) }
+    await #expect(throws: RFBError.connectionClosed) { try await transport.read(maximum: 64) }
   }
 
-  @Test func aCloseDuringAPendingReadTerminatesIt() async throws {
+  @Test func aCloseDuringAPendingReadReportsTheConnectionClosed() async throws {
     let listener = try await LoopbackListener(handle: LoopbackListener.echo)
     defer { listener.stop() }
     let transport = try await RFBNetworkTransport.connect(host: "127.0.0.1", port: listener.port)
-    await listener.accepted.wait()
+    await listener.accepted.cancellableWait()
     let reading = Task { try await transport.read(maximum: 64) }
     transport.close()
-    do {
-      #expect(try await reading.value == [])
-    } catch {
-      #expect(error is RFBError)
-    }
+    await #expect(throws: RFBError.connectionClosed) { try await reading.value }
   }
 
-  @Test func writingToAClosedTransportFails() async throws {
+  @Test func writingToAClosedTransportReportsTheConnectionClosed() async throws {
     let listener = try await LoopbackListener(handle: LoopbackListener.echo)
     defer { listener.stop() }
     let transport = try await RFBNetworkTransport.connect(host: "127.0.0.1", port: listener.port)
     transport.close()
-    await #expect(throws: RFBError.self) { try await transport.write([1, 2, 3]) }
+    await #expect(throws: RFBError.connectionClosed) { try await transport.write([1, 2, 3]) }
   }
 
   @Test func cancellingTheReadingTaskDoesNotAbandonTheReceive() async throws {
@@ -218,7 +200,7 @@ struct RFBNetworkTransportTests {
     defer { listener.stop() }
     let transport = try await RFBNetworkTransport.connect(host: "127.0.0.1", port: listener.port)
     defer { transport.close() }
-    await listener.accepted.wait()
+    await listener.accepted.cancellableWait()
     let reading = Task { try await transport.read(maximum: 64) }
     reading.cancel()
     try await transport.write([42])
@@ -226,11 +208,10 @@ struct RFBNetworkTransportTests {
   }
 
   @Test func connectingToAPortNobodyIsListeningOnIsRefused() async throws {
-    let listener = try await LoopbackListener(handle: LoopbackListener.echo)
-    let port = listener.port
-    await listener.stopAndWaitUntilUnbound()
+    let held = try HeldLoopbackPort()
+    defer { held.close() }
     await #expect(throws: RFBError.transport("The VNC server refused the connection.")) {
-      _ = try await RFBNetworkTransport.connect(host: "127.0.0.1", port: port)
+      _ = try await RFBNetworkTransport.connect(host: "127.0.0.1", port: held.port)
     }
   }
 }
