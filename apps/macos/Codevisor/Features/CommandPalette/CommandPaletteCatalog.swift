@@ -5,6 +5,7 @@ import SwiftUI
 struct CommandPaletteCatalog {
   var sidebar: SidebarActions?
   var botList: BotListActions?
+  var root: RootSidebarActions?
   var destinations: PaletteDestinations?
   var composerFocus: NewChatComposerFocus?
   var layout: WorkspaceLayoutActions?
@@ -37,26 +38,28 @@ struct CommandPaletteCatalog {
   }
 
   private var generalCommands: [CommandPaletteItem] {
-    guard let sidebar else { return botListCommands }
+    guard let root else { return [] }
 
-    return [
-      CommandPaletteItem(.newChat, systemImage: "square.and.pencil") {
-        sidebar.newChat()
-        composerFocus?.focus()
-      },
-      CommandPaletteItem(.newProject, systemImage: "folder.badge.plus", perform: sidebar.newProject),
-    ]
+    return [newChatCommand(root)] + newBotCommands(root) + newProjectCommands
   }
 
-  private var botListCommands: [CommandPaletteItem] {
-    guard let botList else { return [] }
+  private func newChatCommand(_ root: RootSidebarActions) -> CommandPaletteItem {
+    CommandPaletteItem(.newChat, systemImage: "square.and.pencil") {
+      root.newChat()
+      composerFocus?.focus()
+    }
+  }
 
-    let newProject = CommandPaletteItem(.newProject, systemImage: "folder.badge.plus", perform: botList.newProject)
-    guard let newBot = botList.newBot else { return [newProject] }
-    let newBotItem = CommandPaletteItem(
-      id: "newBot", title: "New Bot", icon: .symbol("square.and.pencil"),
-      shortcut: ShortcutCatalog.combo(for: .newChat)?.keyboardShortcut, perform: newBot)
-    return [newBotItem, newProject]
+  private func newBotCommands(_ root: RootSidebarActions) -> [CommandPaletteItem] {
+    guard let newBot = root.newBot else { return [] }
+
+    return [CommandPaletteItem(.newBot, systemImage: "square.and.pencil", perform: newBot)]
+  }
+
+  private var newProjectCommands: [CommandPaletteItem] {
+    guard let newProject = sidebar?.newProject ?? botList?.newProject else { return [] }
+
+    return [CommandPaletteItem(.newProject, systemImage: "folder.badge.plus", perform: newProject)]
   }
 
   private var activeWorkspaceSections: [CommandPaletteSection] {

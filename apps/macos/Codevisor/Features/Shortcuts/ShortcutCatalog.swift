@@ -2,6 +2,7 @@ import SwiftUI
 
 enum ShortcutID: String, CaseIterable, Identifiable, Sendable {
   case newChat
+  case newBot
   case newProject
   case archiveWorkspace
 
@@ -103,7 +104,7 @@ struct ShortcutDefinition: Identifiable, Sendable {
 enum ShortcutCatalog {
   static func definition(for id: ShortcutID) -> ShortcutDefinition {
     switch id {
-    case .newChat, .newProject, .archiveWorkspace:
+    case .newChat, .newBot, .newProject, .archiveWorkspace:
       chatDefinition(for: id)
     case .newTab, .closeSplit, .closeTab, .reopenClosedPane, .selectTab, .previousTab, .nextTab,
       .previousTabInWorkspace, .nextTabInWorkspace, .previousWorkspace, .nextWorkspace:
@@ -159,6 +160,8 @@ enum ShortcutCatalog {
     switch id {
     case .newChat:
       ShortcutDefinition(.newChat, "New Chat", ShortcutCombo("n", .command), category: .chats)
+    case .newBot:
+      ShortcutDefinition(.newBot, "New Bot…", nil, category: .chats)
     case .newProject:
       ShortcutDefinition(.newProject, "New Project…", nil, category: .chats)
     case .archiveWorkspace:

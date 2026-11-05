@@ -221,7 +221,6 @@ struct SidebarView: View {
 
   private var sceneActions: SidebarActions {
     SidebarActions(
-      newChat: { selection = .newChat(nil) },
       newProject: { startAddProject() },
       stepWorkspace: { stepWorkspace($0) },
       archiveWorkspace: { archiveSelectedWorkspace() },

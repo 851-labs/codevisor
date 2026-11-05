@@ -8,7 +8,6 @@ private struct FilePaneKey: FocusedValueKey {
 }
 
 struct SidebarActions: Equatable {
-  let newChat: @MainActor () -> Void
   let newProject: @MainActor () -> Void
   var stepWorkspace: (@MainActor (Int) -> Void)? = nil
   var archiveWorkspace: (@MainActor () -> Void)? = nil
@@ -65,17 +64,15 @@ struct FileCommands: Commands {
 
   var body: some Commands {
     CommandGroup(replacing: .newItem) {
+      NewChatMenuItem()
+      NewBotMenuItem()
+      NewProjectMenuItem()
       if botActions != nil {
-        NewBotMenuItem()
-        NewProjectMenuItem()
-
         Divider()
 
         CloseWindowMenuItem()
         ArchiveBotMenuItem()
       } else {
-        NewChatMenuItem()
-        NewProjectMenuItem()
         NewTabMenuItem()
 
         Divider()
@@ -136,7 +133,7 @@ private struct CloseWindowMenuItem: View {
 }
 
 private struct NewChatMenuItem: View {
-  @FocusedValue(\.sidebarActions) private var actions
+  @FocusedValue(\.rootSidebarActions) private var actions
   @FocusedValue(\.newChatComposerFocus) private var composerFocus
 
   var body: some View {
