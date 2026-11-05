@@ -120,7 +120,7 @@ extension ComposerBar {
     Menu {
       attachMenuItems
     } label: {
-      Image(systemName: "paperclip")
+      Image(systemName: "plus")
         .font(.subheadline.weight(.medium))
         .foregroundStyle(.secondary)
         .scaledFrame(width: 28, height: 28, relativeTo: .subheadline)
