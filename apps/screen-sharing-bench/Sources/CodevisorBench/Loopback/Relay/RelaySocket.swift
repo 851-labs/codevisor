@@ -88,5 +88,4 @@ final class RelaySocket: Sendable {
 
 enum RelayError: Error, Equatable {
   case system(call: String, errno: Int32)
-  case noHostCandidate
 }

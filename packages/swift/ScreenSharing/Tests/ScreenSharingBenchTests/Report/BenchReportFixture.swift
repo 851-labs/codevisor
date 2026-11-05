@@ -72,13 +72,6 @@ enum BenchReportFixture {
     stages.encode = distribution([4.1, 5, 9.8])
     stages.decodeQueue = distribution([12, 15, 31])
     stages.networkResidual = distribution([0.4, 0.6, 2.2])
-    stages.timingFrameCheck = BenchTimingFrameCheck(
-      timingFrames: [BenchTimingFrame(statisticsValue: "1,100,100,105,0,0,0,0,0,0,120,121,130,0,1")!],
-      frames: [
-        BenchFrameTimestamps(
-          sourceNs: 0, captureCallbackNs: 0, encodeSubmitNs: 0, encodeOutputNs: 5_000_000, decodeInputNs: 20_000_000,
-          decodeOutputNs: 21_000_000, renderCommitNs: 22_000_000)
-      ], timingClockOffsetNs: -100_000_000)
     result.stagesMs = stages
     result.drops = .init(network: 3, jitter: 1, encoder: 0, capture: 0)
     result.codecErrors = 0

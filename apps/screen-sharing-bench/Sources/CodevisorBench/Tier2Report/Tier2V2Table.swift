@@ -24,7 +24,7 @@ struct Tier2V2Table {
   }
 
   private var rows: [String] {
-    BenchSystem.engineV2Systems.flatMap { system in
+    BenchSystem.codevisorSystems.flatMap { system in
       Tier2Group.all(results).compactMap { group in
         let runs = results.filter { $0.system == system && group.contains($0) }
         return runs.isEmpty ? nil : row(system, group, runs: runs)

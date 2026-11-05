@@ -14,12 +14,9 @@ results=${2:-}
 : "${TIER1_NETWORKS:=N0,N3}"
 : "${TIER1_TRIGGER:=manual}"
 : "${TIER1_SOURCE:=synthetic}"
-: "${TIER1_PLANS:=core,gate,matrix,gate-v2}"
-: "${TIER1_ENGINE:=v1}"
-: "${TIER1_GATE_ENGINES:=v1}"
+: "${TIER1_PLANS:=core-v2,gate-v2}"
 core_networks=N0,N3
-other_networks=N1,N2,N4,N5,N6,N7
-gate_options=(--scenes typing,scroll,video --networks N0,N3)
+gate_options=(--scenes typing,scroll,video --networks N0,N3 --encoder vt)
 scripts="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 run_id="gha-${GITHUB_RUN_ID:-local}-${GITHUB_RUN_ATTEMPT:-1}"
 mkdir -p "$results"
@@ -41,54 +38,30 @@ scenes() {
   [[ -z "$TIER1_SCENES" ]] || echo --scenes "$TIER1_SCENES"
 }
 
-engine_options() {
-  echo --engine "$1"
-  [[ "$1" != v2 ]] || echo --encoder vt
-}
-
 nightly() {
   local status=0 plan
-  for plan in core gate matrix core-v2 gate-v2; do
+  for plan in core-v2 gate-v2; do
     [[ ",$TIER1_PLANS," == *",$plan,"* ]] || continue
     "${plan/-v2/_v2}" || status=1
   done
   return "$status"
 }
 
-core() {
-  loopback core core "$TIER1_REPETITIONS" --networks "$core_networks"
-}
-
-matrix() {
-  loopback matrix matrix 1 --networks "$other_networks"
-}
-
 core_v2() {
-  loopback core-v2 core-v2 "$TIER1_REPETITIONS" --networks "$core_networks" $(engine_options v2)
+  loopback core-v2 core-v2 "$TIER1_REPETITIONS" --networks "$core_networks" --encoder vt
 }
 
 custom() {
-  loopback custom custom "$TIER1_REPETITIONS" --networks "$TIER1_NETWORKS" --source "$TIER1_SOURCE" \
-    --engine "$TIER1_ENGINE" $(scenes)
-}
-
-gate() {
-  loopback gate gate "$TIER1_REPETITIONS" "${gate_options[@]}"
+  loopback custom custom "$TIER1_REPETITIONS" --networks "$TIER1_NETWORKS" --source "$TIER1_SOURCE" $(scenes)
 }
 
 gate_v2() {
-  loopback gate-v2 gate-v2 "$TIER1_REPETITIONS" "${gate_options[@]}" $(engine_options v2)
+  loopback gate-v2 gate-v2 "$TIER1_REPETITIONS" "${gate_options[@]}"
 }
 
 pr_gate() {
-  local status=0 engine suffix plan
-  for engine in ${TIER1_GATE_ENGINES//,/ }; do
-    suffix="" plan=gate
-    [[ "$engine" == v2 ]] && suffix=-v2 plan=gate-v2
-    loopback "first$suffix" "$plan" "$TIER1_REPETITIONS" "${gate_options[@]}" $(engine_options "$engine") &&
-      loopback "second$suffix" "$plan" "$TIER1_REPETITIONS" "${gate_options[@]}" $(engine_options "$engine") || status=1
-  done
-  return "$status"
+  loopback first-v2 gate-v2 "$TIER1_REPETITIONS" "${gate_options[@]}" &&
+    loopback second-v2 gate-v2 "$TIER1_REPETITIONS" "${gate_options[@]}"
 }
 
 : >"$results/reports.txt"

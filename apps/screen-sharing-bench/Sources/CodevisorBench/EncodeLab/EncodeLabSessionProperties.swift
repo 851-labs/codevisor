@@ -1,11 +1,10 @@
 import CoreMedia
 import ScreenSharing
-import ScreenSharingWebRTC
 import VideoToolbox
 
 struct EncodeLabSessionProperties {
   static let framesPerSecond = 60
-  static let keyframeIntervalSeconds = ScreenSharingProductProfile.keyframeIntervalSeconds
+  static let keyframeIntervalSeconds = 60
 
   let config: EncodeLabConfig
   let target: any EncodeLabPropertyTarget

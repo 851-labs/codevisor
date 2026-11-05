@@ -84,8 +84,8 @@ let package = Package(
     .executableTarget(
       name: "CodevisorBench",
       dependencies: [
-        "ScreenSharing", "ScreenSharingWebRTC", "ScreenSharingV2", "ScreenSharingBench", "ScreenSharingBenchScenes",
-        "CGVirtualDisplayPrivate", "CodevisorNet",
+        "ScreenSharing", "ScreenSharingV2", "ScreenSharingBench", "ScreenSharingBenchScenes", "CGVirtualDisplayPrivate",
+        "CodevisorNet",
       ],
       path: "ScreenSharing/Sources/CodevisorBench",
       swiftSettings: strictSwiftSettings
@@ -120,8 +120,7 @@ let package = Package(
       name: "CodevisorBenchTests",
       dependencies: ["CodevisorBench"],
       path: "ScreenSharing/Tests/CodevisorBenchTests",
-      swiftSettings: strictSwiftSettings,
-      linkerSettings: frameworksBesideTestBundle
+      swiftSettings: strictSwiftSettings
     ),
     .testTarget(
       name: "ScreenSharingWebRTCTests",

@@ -9,7 +9,7 @@ on:
         default: scroll
         type: string
       repetitions:
-        description: Repetitions per scene of Apple HP, Codevisor R1x2 and Codevisor R1, 1 to 4
+        description: Repetitions per scene of each system, 1 to 4
         required: false
         default: "3"
         type: string
@@ -33,20 +33,15 @@ on:
         required: false
         default: N0
         type: string
-      engine:
-        description: Codevisor engine for the Codevisor systems, v1 (WebRTC) or v2
-        required: false
-        default: v1
-        type: string
       present:
-        description: Engine v2 presentation on the viewer, arrival or display-link
+        description: Codevisor presentation on the viewer, arrival or display-link
         required: false
         default: arrival
         type: string
       systems:
-        description: Comma-separated systems to run besides the floor (apple-hp, codevisor-r1x2, codevisor-v2, codevisor-v2-vcp, codevisor)
+        description: Comma-separated systems to run besides the floor (apple-hp, codevisor-v2, codevisor-v2-vcp)
         required: false
-        default: apple-hp,codevisor-r1x2,codevisor
+        default: apple-hp,codevisor-v2-vcp
         type: string
       viewer-display:
         description: Where croissant shows every system, main (its 1920x1080 display) or R1x2 (a 3840x2160 virtual display, so Apple HP is 1:1)
@@ -71,7 +66,7 @@ on:
         default: scroll
         type: string
       repetitions:
-        description: Repetitions per scene of Apple HP, Codevisor R1x2 and Codevisor R1, 1 to 4
+        description: Repetitions per scene of each system, 1 to 4
         required: false
         default: "3"
         type: string
@@ -95,20 +90,15 @@ on:
         required: false
         default: N0
         type: string
-      engine:
-        description: Codevisor engine for the Codevisor systems, v1 (WebRTC) or v2
-        required: false
-        default: v1
-        type: string
       present:
-        description: Engine v2 presentation on the viewer, arrival or display-link
+        description: Codevisor presentation on the viewer, arrival or display-link
         required: false
         default: arrival
         type: string
       systems:
-        description: Comma-separated systems to run besides the floor (apple-hp, codevisor-r1x2, codevisor-v2, codevisor-v2-vcp, codevisor)
+        description: Comma-separated systems to run besides the floor (apple-hp, codevisor-v2, codevisor-v2-vcp)
         required: false
-        default: apple-hp,codevisor-r1x2,codevisor
+        default: apple-hp,codevisor-v2-vcp
         type: string
       viewer-display:
         description: Where croissant shows every system, main (its 1920x1080 display) or R1x2 (a 3840x2160 virtual display, so Apple HP is 1:1)
@@ -143,7 +133,6 @@ env:
   TIER2_FLOOR_REPS: ${{ inputs.floor-repetitions }}
   TIER2_C4: ${{ inputs.c4 && '1' || '0' }}
   TIER2_NETWORK: ${{ inputs.network }}
-  TIER2_ENGINE: ${{ inputs.engine }}
   TIER2_PRESENT: ${{ inputs.present }}
   TIER2_SYSTEMS: ${{ inputs.systems }}
   TIER2_VIEWER_DISPLAY: ${{ inputs.viewer-display }}

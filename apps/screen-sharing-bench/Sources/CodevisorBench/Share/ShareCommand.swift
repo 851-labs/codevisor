@@ -5,9 +5,9 @@ import ScreenSharingBenchScenes
 
 struct ShareCommand: BenchCommand {
   static let name = "share"
-  static let summary = "Share this Mac's main display through the Codevisor engine (the Tier 2 host)"
+  static let summary = "Share this Mac's main display through Codevisor engine v2 (the Tier 2 host)"
   static let usage =
-    "[--port <port>] [--duration <seconds>] \(VirtualDisplayOption.usage) [--engine v1|v2] \(V2EncoderChoice.usage) "
+    "[--port <port>] [--duration <seconds>] \(VirtualDisplayOption.usage) \(V2EncoderChoice.usage) "
     + BenchSignalFiles.usage
 
   private static let durations = 1...7200
@@ -18,7 +18,6 @@ struct ShareCommand: BenchCommand {
   private let duration: Duration
   private let signals: BenchSignalFiles
   private let virtualDisplay: BenchSceneResolution?
-  private let engine: BenchEngine
   private let encoder: V2EncoderChoice
 
   init(options: BenchOptions) throws {
@@ -26,7 +25,6 @@ struct ShareCommand: BenchCommand {
     duration = .seconds(try options.integer("duration", default: 120, in: Self.durations))
     signals = try BenchSignalFiles(options: options)
     virtualDisplay = try VirtualDisplayOption.read(from: options)
-    engine = try options.choice("engine", default: BenchEngine.v1)
     encoder = try V2EncoderChoice(options: options)
   }
 
@@ -36,13 +34,10 @@ struct ShareCommand: BenchCommand {
     let connection = try await Self.awaitViewer(port: port, timeout: duration, display: shared.id, signals: signals)
     defer { withExtendedLifetime(shared) {} }
 
-    switch engine {
-    case .v1: try await share(try await ShareHost(displayID: shared.id), over: connection, until: deadline)
-    case .v2: try await shareV2(on: shared.id, over: connection, until: deadline)
-    }
+    try await share(on: shared.id, over: connection, until: deadline)
   }
 
-  private func shareV2(
+  private func share(
     on displayID: CGDirectDisplayID, over connection: SignalingConnection, until deadline: ContinuousClock.Instant
   )
     async throws
@@ -53,21 +48,6 @@ struct ShareCommand: BenchCommand {
       try connection.send(host.address)
       try await host.accept(until: deadline)
       await BenchSession.hold(connection, until: deadline, signals: signals, control: control)
-      try BenchOutput.print(await host.finish(viewer: connection.peerIPv4))
-    } catch {
-      _ = await host.finish(viewer: connection.peerIPv4)
-      throw error
-    }
-  }
-
-  private func share(
-    _ host: ShareHost, over connection: SignalingConnection, until deadline: ContinuousClock.Instant
-  )
-    async throws
-  {
-    do {
-      try connection.send(SignalingMessage(sdp: try await host.answer(try await Self.receive(connection).sdp)))
-      await BenchSession.hold(connection, until: deadline, signals: signals)
       try BenchOutput.print(await host.finish(viewer: connection.peerIPv4))
     } catch {
       _ = await host.finish(viewer: connection.peerIPv4)
@@ -86,10 +66,5 @@ struct ShareCommand: BenchCommand {
 
     try signals.markReady("listening display \(display)")
     return try SignalingSocket.accept(on: listener, timeout: timeout)
-  }
-
-  @concurrent
-  private static func receive(_ connection: SignalingConnection) async throws -> SignalingMessage {
-    try connection.receive(SignalingMessage.self)
   }
 }

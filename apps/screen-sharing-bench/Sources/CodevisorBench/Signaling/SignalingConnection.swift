@@ -50,10 +50,6 @@ final class SignalingConnection: Sendable {
     return recv(descriptor, &byte, 1, MSG_PEEK | MSG_DONTWAIT) <= 0
   }
 
-  func waitForClose() {
-    while (try? readChunk()) != nil {}
-  }
-
   func shutDown() {
     Darwin.shutdown(descriptor, SHUT_RDWR)
   }

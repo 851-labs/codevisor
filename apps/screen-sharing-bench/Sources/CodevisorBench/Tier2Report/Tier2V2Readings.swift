@@ -1,7 +1,7 @@
 import ScreenSharingBench
 
 enum Tier2V2Readings {
-  static func stages(viewer: [String: JSONValue]?, host: [String: JSONValue]?, engineV2: Bool) -> BenchStageTimings? {
+  static func stages(viewer: [String: JSONValue]?, host: [String: JSONValue]?) -> BenchStageTimings? {
     guard let timeline = viewer?["timeline"]?["stages"] else { return nil }
 
     var stages = BenchStageTimings()
@@ -12,8 +12,6 @@ enum Tier2V2Readings {
     stages.decode = distribution(timeline["decode"])
     stages.renderQueue = distribution(timeline["renderQueue"])
     stages.present = distribution(timeline["present"])
-    guard engineV2 else { return stages }
-
     var media = BenchMediaStages()
     media.queue = distribution(host?["timings"]?["sendQueue"])
     media.send = distribution(host?["timings"]?["send"])

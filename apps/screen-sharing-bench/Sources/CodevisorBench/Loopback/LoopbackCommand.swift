@@ -9,7 +9,7 @@ struct LoopbackCommand: BenchCommand {
     "Tier 1: stream synthetic scenes through the product sender and receiver over an emulated network"
   static let usage = [
     "[--scenes <scene,…>] [--networks <N0,…>] [--duration <seconds>] [--warm-up <seconds>] [--repetitions <n>]",
-    "[--engine v1|v2] [--encoder vt|vcp] [--plan <name>] [--seed <n>]",
+    "[--encoder vt|vcp] [--plan <name>] [--seed <n>]",
     "[--resolution R1] [--source synthetic|own-window] [--display main|virtual] [--onscreen]",
     "[--output <report.json>] [--frames <frames.jsonl>] [--run-id <id>] [--trigger <name>]",
   ].joined(separator: " ")
@@ -32,7 +32,6 @@ struct LoopbackCommand: BenchCommand {
     networks = try LoopbackMatrix.networks(try options.string("networks"))
     let duration = try options.integer("duration", default: 12, in: Self.durations)
     settings = LoopbackSettings(
-      engine: try options.choice("engine", default: BenchEngine.v1),
       encoder: try options.choice("encoder", default: ScreenSharingV2EncoderKind.configured()),
       durationSeconds: duration,
       warmUpSeconds: try options.integer("warm-up", default: 5, in: 0...(duration - 1)),
@@ -69,7 +68,7 @@ struct LoopbackCommand: BenchCommand {
   private func runMatrix() async throws -> [LoopbackOutcome] {
     let cells = (1...repetitions).flatMap { repetition in
       scenes.flatMap { scene in
-        networks.map { LoopbackCell(scene: scene, conditions: $0, settings: settings, repetition: repetition) }
+        networks.map { LoopbackV2Cell(scene: scene, conditions: $0, settings: settings, repetition: repetition) }
       }
     }
     var outcomes: [LoopbackOutcome] = []

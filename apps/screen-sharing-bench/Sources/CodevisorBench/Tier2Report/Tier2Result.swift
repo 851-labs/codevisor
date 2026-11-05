@@ -29,9 +29,8 @@ enum Tier2Result {
     result.text?.streamSize = measurement.streamSize
     if measurement.files.meta.isCodevisor {
       let files = measurement.files
-      result.stagesMs = Tier2V2Readings.stages(
-        viewer: files.system, host: files.share, engineV2: system.isEngineV2)
-      result.media = system.isEngineV2 ? Tier2V2Readings.counters(viewer: files.system, host: files.share) : nil
+      result.stagesMs = Tier2V2Readings.stages(viewer: files.system, host: files.share)
+      result.media = Tier2V2Readings.counters(viewer: files.system, host: files.share)
     }
     result.valid = measurement.invalidReason == nil
     result.invalidReason = measurement.invalidReason

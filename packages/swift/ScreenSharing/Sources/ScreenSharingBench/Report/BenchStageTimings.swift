@@ -12,7 +12,6 @@ public struct BenchStageTimings: Codable, Sendable, Equatable {
   public var present: BenchDistribution?
   public var networkResidual: BenchDistribution?
   public var media: BenchMediaStages?
-  public var timingFrameCheck: BenchTimingFrameCheck?
 
   public init() {}
 
