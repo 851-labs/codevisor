@@ -159,6 +159,7 @@ struct RootView: View {
       .toolbar { BotComposeToolbarItem() }
     }
     .modifier(WorkspaceInspectorPresentation(store: store, selection: $selection, revealRequest: sidebarRevealRequest))
+    .modifier(WorkspaceChildAgentsEnvironment(store: store, selection: $selection, revealRequest: sidebarRevealRequest))
     .overlay {
       AdaptiveDrawerLayer(
         isPresented: !panelLayout.docksSidebar && panelLayout.activeDrawer == .leading,

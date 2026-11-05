@@ -134,8 +134,8 @@ struct WorkspaceInspectorPresentation: ViewModifier {
       showsBotTranscript: bot.map { $0.mode != .transcript } ?? false,
       harnessChat: chat,
       tasks: shownTab(for: inspected) == .info ? mainChatTasks(of: workspace, store: store) : [],
-      parent: shownTab(for: inspected) == .info ? parent(of: workspace, store: store) : nil,
-      agents: shownTab(for: inspected) == .info ? agents(of: workspace, bot: bot, store: store) : [],
+      parent: shownTab(for: inspected) == .info ? childAgents(store).parent(of: workspace) : nil,
+      agents: shownTab(for: inspected) == .info ? childAgents(store).children(of: workspace) : [],
       store: store,
       usage: usage,
       tabs: tabs(for: inspected),
@@ -175,52 +175,10 @@ struct WorkspaceInspectorPresentation: ViewModifier {
     ).tasks
   }
 
-  private func parent(of workspace: Workspace, store: SessionStore) -> WorkspaceInspectorAgent? {
-    inspectorAgents(parentItems(of: workspace), store: store).first
-  }
-
-  private func agents(of workspace: Workspace, bot: Bot?, store: SessionStore) -> [WorkspaceInspectorAgent] {
-    inspectorAgents(agentItems(of: workspace, bot: bot), store: store)
-  }
-
-  private func inspectorAgents(_ items: [WorkspaceSidebarItem], store: SessionStore) -> [WorkspaceInspectorAgent] {
-    let content = SidebarRowContent(
-      environment: environment, store: store, grouping: sidebarGrouping,
-      rowDetails: ClientPreferences.shared.sidebarRowDetails)
-    let listing = SidebarWorkspaceListing(
-      environment: environment, botsEnabled: botsEnabled, grouping: sidebarGrouping, pinnedIDs: pinnedWorkspaceIDs,
-      machineOrder: [], projectOrder: [])
-    let navigator = SidebarWorkspaceNavigator(environment: environment, store: store, selection: $selection)
-    let quiet = SidebarQuietChildren.current(in: environment)
-    return items.compactMap { content.listItem(for: $0) }
-      .map { item in
-        let workspace = item.workspace
-        return WorkspaceInspectorAgent(
-          id: workspace.id, name: workspace.name,
-          subtitle: content.subtitle(for: workspace, isPinned: false),
-          icon: content.icon(for: item, isQuiet: quiet.contains(workspace.id)),
-          pullRequest: content.pullRequest(for: workspace),
-          machine: content.machine(for: workspace, headingNamesMachine: listing.headingNamesMachine(workspace.id))
-        ) {
-          revealRequest?.rowID = workspace.id
-          navigator.activate(item)
-        }
-      }
-  }
-
-  private func parentItems(of workspace: Workspace) -> [WorkspaceSidebarItem] {
-    let sidebar = environment.navigationStore.workspaceEntries.sidebar
-    guard let parentId = sidebar.first(where: { $0.id == workspace.id })?.parentWorkspaceId else { return [] }
-    return sidebar.filter { $0.id == parentId }
-  }
-
-  private func agentItems(of workspace: Workspace, bot: Bot?) -> [WorkspaceSidebarItem] {
-    let children = environment.navigationStore.workspaceEntries.sidebar.filter { $0.parentWorkspaceId == workspace.id }
-    guard let bot else { return children }
-
-    let botChildren = environment.botSidebarEntries.first { $0.bot.id == bot.id }?.children ?? []
-    let listed = Set(botChildren.map(\.id))
-    return botChildren + children.filter { !listed.contains($0.id) }
+  private func childAgents(_ store: SessionStore) -> WorkspaceChildAgents {
+    WorkspaceChildAgents(
+      environment: environment, store: store, botsEnabled: botsEnabled, grouping: sidebarGrouping,
+      pinnedIDs: pinnedWorkspaceIDs, selection: $selection, revealRequest: revealRequest)
   }
 
   private func refreshKey(for inspected: Inspected) -> RefreshKey {

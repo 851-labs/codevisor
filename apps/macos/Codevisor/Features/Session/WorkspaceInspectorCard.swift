@@ -12,7 +12,7 @@ struct WorkspaceInspectorCard<Content: View>: View {
   var body: some View {
     VStack(alignment: .leading, spacing: 0) {
       header
-      rows
+      WorkspaceInspectorCardRows { content }
         .fixedSize(horizontal: false, vertical: true)
         .frame(height: isExpanded ? nil : 0, alignment: .top)
         .background(Color.primary.opacity(0.034))
@@ -53,26 +53,6 @@ struct WorkspaceInspectorCard<Content: View>: View {
     .accessibilityLabel(title)
     .accessibilityValue(isExpanded ? "Expanded" : "Collapsed")
     .accessibilityAddTraits(.isHeader)
-  }
-
-  private var rows: some View {
-    VStack(alignment: .leading, spacing: 0) {
-      Group(subviews: content) { subviews in
-        ForEach(subviews) { subview in
-          if subview.id != subviews.first?.id {
-            Rectangle()
-              .fill(Color.primary.opacity(0.05))
-              .frame(height: 1)
-              .padding(.horizontal, 10)
-          }
-          subview
-            .frame(maxWidth: .infinity, alignment: .leading)
-            .padding(10)
-        }
-      }
-    }
-    .labeledContentStyle(WorkspaceInspectorLabeledContentStyle())
-    .labelStyle(WorkspaceInspectorLabelStyle())
   }
 }
 

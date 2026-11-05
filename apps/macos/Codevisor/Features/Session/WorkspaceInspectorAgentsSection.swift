@@ -9,6 +9,15 @@ struct WorkspaceInspectorAgent: Identifiable {
   let pullRequest: ServerGitPullRequest?
   let machine: SidebarRowMachine?
   let open: () -> Void
+
+  func opening(then action: @escaping () -> Void) -> WorkspaceInspectorAgent {
+    WorkspaceInspectorAgent(
+      id: id, name: name, subtitle: subtitle, icon: icon, pullRequest: pullRequest, machine: machine
+    ) {
+      open()
+      action()
+    }
+  }
 }
 
 struct WorkspaceInspectorAgentsSection: View {
@@ -23,25 +32,5 @@ struct WorkspaceInspectorAgentsSection: View {
         WorkspaceInspectorAgentRow(agent: agent, store: store)
       }
     }
-  }
-}
-
-private struct WorkspaceInspectorAgentRow: View {
-  let agent: WorkspaceInspectorAgent
-  let store: SessionStore
-
-  private var title: String { SidebarWorkspaceRowLabel.title(for: agent.name) }
-
-  var body: some View {
-    Button(action: agent.open) {
-      HStack(spacing: SidebarWorkspaceRow.trailingSpacing) {
-        SidebarWorkspaceRowLabel(name: agent.name, subtitle: agent.subtitle, icon: agent.icon, store: store)
-        SidebarWorkspaceRowProperties(pullRequest: agent.pullRequest, machine: agent.machine)
-      }
-      .frame(maxWidth: .infinity, alignment: .leading)
-      .contentShape(Rectangle())
-    }
-    .buttonStyle(.plain)
-    .help("Open \(title)")
   }
 }

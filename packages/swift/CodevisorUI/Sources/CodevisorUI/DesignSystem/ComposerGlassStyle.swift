@@ -6,6 +6,7 @@ public enum ComposerGlassStyle {
 
 public enum ComposerGlassElement: String, Hashable {
   case composer
+  case childAgents
   case todos
   case goal
   case queue

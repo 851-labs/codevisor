@@ -92,6 +92,7 @@ struct ComposerCard: View {
         value: !showsSlashCommandPopup
       )
     }
+    .preference(key: ComposerSlashPalettePresentedPreference.self, value: isSlashPalettePresented)
     .overlay {
       if controller.composerQuestion != nil, isQuestionResolving {
         ZStack {
@@ -414,6 +415,8 @@ private extension ComposerCard {
   private var isLoadingSlashCommands: Bool {
     slashToken != nil && controller.isConnectingToHarness && !isSlashMenuDismissed
   }
+
+  private var isSlashPalettePresented: Bool { controller.composerQuestion == nil && showsSlashCommandPopup }
 
   private var showsSlashCommandPopup: Bool {
     isLoadingSlashCommands || !visibleSlashMatches.isEmpty

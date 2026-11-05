@@ -23,6 +23,7 @@ struct ChatScreen: View {
   @Environment(\.transcriptTopChromeHeight) var transcriptTopChromeHeight
   @Environment(AppEnvironment.self) var environment
   @Environment(\.computerUsePiPPane) var computerUsePiPPane
+  @Environment(\.workspaceChildAgents) var workspaceChildAgents
   @Bindable var controller: SessionController
   let focus: TerminalFocusController
   let presentationSurface: TranscriptPresentationSurface
@@ -47,6 +48,7 @@ struct ChatScreen: View {
   @State var presentationVisibilityOwner = UUID()
   @State var showsPromptQueue = false
   @State var queueSends = QueueSendObserver()
+  @State var isSlashPalettePresented = false
   @Namespace var composerGlassNamespace
   var composerCardStyle = ComposerCardStyle()
 
