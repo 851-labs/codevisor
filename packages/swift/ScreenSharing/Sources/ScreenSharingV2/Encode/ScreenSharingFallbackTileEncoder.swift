@@ -3,6 +3,8 @@ import ScreenSharing
 import Synchronization
 
 public final class ScreenSharingFallbackTileEncoder: ScreenSharingTileEncoder, @unchecked Sendable {
+  public typealias MakeFallback = @Sendable (ScreenSharingV2TileLayout) throws -> any ScreenSharingTileEncoder
+
   private struct State {
     var output: (@Sendable (ScreenSharingTileEncoderOutput) -> Void)?
     var fellBackNs: Int64?
@@ -22,24 +24,20 @@ public final class ScreenSharingFallbackTileEncoder: ScreenSharingTileEncoder, @
   public let layout: ScreenSharingV2TileLayout
   public let sourcePixelFormat: OSType
   private let primary: any ScreenSharingTileEncoder
-  private let fallback: any ScreenSharingTileEncoder
+  private let makeFallback: MakeFallback
+  private let fallback = Mutex<(any ScreenSharingTileEncoder)?>(nil)
   private let metrics: ScreenSharingMetrics
   private let state = Mutex(State())
 
   public init(
-    primary: any ScreenSharingTileEncoder, fallback: any ScreenSharingTileEncoder, metrics: ScreenSharingMetrics
-  ) throws {
-    guard primary.layout == fallback.layout else {
-      throw ScreenSharingError.invalid("The fallback encoder has another tile layout.")
-    }
-
+    primary: any ScreenSharingTileEncoder, metrics: ScreenSharingMetrics, makeFallback: @escaping MakeFallback
+  ) {
     layout = primary.layout
     sourcePixelFormat = primary.sourcePixelFormat
     self.primary = primary
-    self.fallback = fallback
+    self.makeFallback = makeFallback
     self.metrics = metrics
     primary.onOutput { [weak self] output in self?.primaryOutput(output) }
-    fallback.onOutput { [weak self] output in self?.fallbackOutput(output) }
   }
 
   public var hasFallenBack: Bool { state.withLock { $0.fellBackNs != nil } }
@@ -49,13 +47,13 @@ public final class ScreenSharingFallbackTileEncoder: ScreenSharingTileEncoder, @
   }
 
   public func encode(_ request: ScreenSharingTileEncodeRequest) throws {
-    guard !hasFallenBack else { return try fallback.encode(request) }
+    guard !hasFallenBack else { return try builtFallback().encode(request) }
 
     do {
       try primary.encode(request)
     } catch {
       fallBack(error.localizedDescription)
-      try fallback.encode(request)
+      try builtFallback().encode(request)
     }
   }
 
@@ -63,16 +61,20 @@ public final class ScreenSharingFallbackTileEncoder: ScreenSharingTileEncoder, @
     guard hasFallenBack else { return primary.acknowledge(tokens, tile: tile) }
 
     let issued = state.withLock { Set($0.fallbackTokens[tile, default: []]) }
-    fallback.acknowledge(tokens.filter(issued.contains), tile: tile)
+    fallback.withLock { $0 }?.acknowledge(tokens.filter(issued.contains), tile: tile)
   }
 
   public func observeNetwork(_ feedback: ScreenSharingTileNetworkFeedback) {
-    active.observeNetwork(feedback)
+    guard hasFallenBack else { return primary.observeNetwork(feedback) }
+
+    fallback.withLock { $0 }?.observeNetwork(feedback)
   }
 
   public func setBitrate(_ bitsPerSecond: Int) throws {
     state.withLock { $0.bitrate = bitsPerSecond }
-    try active.setBitrate(bitsPerSecond)
+    guard hasFallenBack else { return try primary.setBitrate(bitsPerSecond) }
+
+    try builtFallback().setBitrate(bitsPerSecond)
   }
 
   public func stop() {
@@ -81,12 +83,14 @@ public final class ScreenSharingFallbackTileEncoder: ScreenSharingTileEncoder, @
       $0.stopped = true
     }
     primary.stop()
-    fallback.stop()
+    fallback.withLock { $0 }?.stop()
   }
 
-  private var active: any ScreenSharingTileEncoder { hasFallenBack ? fallback : primary }
+  public var refinementPolicy: ScreenSharingV2RefinementPolicy {
+    guard hasFallenBack else { return primary.refinementPolicy }
 
-  public var refinementPolicy: ScreenSharingV2RefinementPolicy { active.refinementPolicy }
+    return fallback.withLock { $0 }?.refinementPolicy ?? .standard
+  }
 
   private func primaryOutput(_ output: ScreenSharingTileEncoderOutput) {
     guard !state.withLock({ $0.stopped }) else { return }
@@ -122,11 +126,40 @@ public final class ScreenSharingFallbackTileEncoder: ScreenSharingTileEncoder, @
     }
     guard first else { return }
 
+    Task { [primary] in primary.stop() }
+    do {
+      let encoder = try builtFallback()
+      if let bitrate { try? encoder.setBitrate(bitrate) }
+    } catch {
+      metrics.label("encoderFallbackBuildError", error.localizedDescription)
+    }
     metrics.increment("encoderFallbacks")
     metrics.label("encoderFallbackReason", reason)
     metrics.label("encoder", "VideoToolbox fallback")
-    if let bitrate { try? fallback.setBitrate(bitrate) }
-    Task { [primary] in primary.stop() }
+  }
+
+  private func builtFallback() throws -> any ScreenSharingTileEncoder {
+    try fallback.withLock { built in
+      if let built { return built }
+      guard !state.withLock({ $0.stopped }) else { throw ScreenSharingError.unavailable("Encoder stopped.") }
+
+      let encoder = try buildFallback()
+      built = encoder
+      return encoder
+    }
+  }
+
+  private func buildFallback() throws -> any ScreenSharingTileEncoder {
+    let startedNs = ScreenSharingMetrics.nowNs
+    let encoder = try makeFallback(layout)
+    guard encoder.layout == layout else {
+      encoder.stop()
+      throw ScreenSharingError.invalid("The fallback encoder has another tile layout.")
+    }
+
+    encoder.onOutput { [weak self] output in self?.fallbackOutput(output) }
+    metrics.observe("encoderFallbackBuild", milliseconds: Double(ScreenSharingMetrics.nowNs - startedNs) / 1_000_000)
+    return encoder
   }
 
   private func noteRecovery(_ tile: ScreenSharingEncodedTile) {

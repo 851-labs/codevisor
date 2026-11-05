@@ -26,12 +26,9 @@ public final class ScreenSharingVideoToolboxTileEncoder: ScreenSharingTileEncode
     self.metrics = metrics
     totalBitrate = Atomic(configuration.bitrate)
     cutter = ScreenSharingV2TileCutter(layout: layout)
-    sessions = try layout.tiles.sorted().map { [relay] tile in
-      let factory = ScreenSharingVideoToolboxSessionFactory(
-        width: layout.width, height: layout.rows(of: tile).count, framesPerSecond: configuration.framesPerSecond,
-        bitrate: configuration.bitrate, longTermReferences: longTermReferences)
-      return try ScreenSharingVideoToolboxTileSession(tile: tile, factory: factory, metrics: metrics, relay: relay)
-    }
+    sessions = try Self.sessions(
+      layout: layout, configuration: configuration, longTermReferences: longTermReferences, metrics: metrics,
+      relay: relay)
     metrics.label(
       "encoder",
       "VideoToolbox HEVC Main, low-latency rate control, \(longTermReferences ? "LTR" : "no LTR"), no periodic keyframe"
@@ -41,6 +38,33 @@ public final class ScreenSharingVideoToolboxTileEncoder: ScreenSharingTileEncode
   }
 
   deinit { stop() }
+
+  private static func sessions(
+    layout: ScreenSharingV2TileLayout, configuration: ScreenSharingVideoConfiguration, longTermReferences: Bool,
+    metrics: ScreenSharingMetrics, relay: ScreenSharingTileOutputRelay
+  ) throws -> [ScreenSharingVideoToolboxTileSession] {
+    let tiles = layout.tiles.sorted()
+    let built = Mutex([Result<ScreenSharingVideoToolboxTileSession, any Error>?](repeating: nil, count: tiles.count))
+    DispatchQueue.concurrentPerform(iterations: tiles.count) { index in
+      let factory = ScreenSharingVideoToolboxSessionFactory(
+        width: layout.width, height: layout.rows(of: tiles[index]).count,
+        framesPerSecond: configuration.framesPerSecond, bitrate: configuration.bitrate,
+        longTermReferences: longTermReferences)
+      let session = Result {
+        try ScreenSharingVideoToolboxTileSession(tile: tiles[index], factory: factory, metrics: metrics, relay: relay)
+      }
+      built.withLock { $0[index] = session }
+    }
+    let results = built.withLock { $0.compactMap(\.self) }
+    let sessions = results.compactMap { try? $0.get() }
+    guard sessions.count == tiles.count else {
+      sessions.forEach { $0.close() }
+      try results.forEach { _ = try $0.get() }
+      throw ScreenSharingError.unavailable("No VideoToolbox session for every tile.")
+    }
+
+    return sessions
+  }
 
   public func onOutput(_ handler: @escaping @Sendable (ScreenSharingTileEncoderOutput) -> Void) {
     relay.set(handler)
