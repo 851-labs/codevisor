@@ -5,7 +5,7 @@ import ACPKit
 import CodevisorClient
 @testable import CodevisorCloud
 
-@Suite("CloudRelay flow control")
+@Suite("CloudRelay flow control", .timeLimit(.minutes(1)))
 struct CloudRelayFlowControlTests {
   @Test("Uploads gate on the machine's window: no grant, no frames")
   func uploadGatesOnCredit() async throws {

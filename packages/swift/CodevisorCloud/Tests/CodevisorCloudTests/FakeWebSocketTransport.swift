@@ -63,7 +63,7 @@ final class FakeWebSocketConnection: ServerWebSocketConnecting, @unchecked Senda
   }
 
   func drain() async {
-    await receiving.wait(for: lock.withLock { pushedCount + 1 })
+    await receiving.cancellableWait(for: lock.withLock { pushedCount + 1 })
   }
 
   func cancel(with closeCode: URLSessionWebSocketTask.CloseCode, reason: Data?) {

@@ -7,7 +7,7 @@ import CodevisorClient
 import CodevisorProtocol
 @testable import CodevisorCloud
 
-@Suite("CloudHubConnection")
+@Suite("CloudHubConnection", .timeLimit(.minutes(1)))
 struct CloudHubConnectionTests {
   @Test("Connects with hello and adopts the welcome's machine list")
   func helloWelcome() async throws {
@@ -94,7 +94,7 @@ struct CloudHubConnectionTests {
     try await hub.waitUntilReady()
     scripted.socket.disconnect()
 
-    await scripted.socket.cancelled.wait()
+    await scripted.socket.cancelled.cancellableWait()
     await #expect(throws: CloudHubConnectionError.rejected(closeCode: 4200)) {
       try await hub.waitUntilReady()
     }

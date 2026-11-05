@@ -119,15 +119,15 @@ struct EventStreamKeepaliveTests {
         delivered.signal()
       }
     }
-    await transport.connected.wait()
-    let first = transport.socket(0)!
+    await transport.connected.cancellableWait()
+    let first = try #require(transport.socket(0))
     first.push(envelope(kind: "keepalive", id: 0))
     first.push(envelope(kind: "session.output", id: 7))
     first.push(envelope(kind: "keepalive", id: 7))
-    await delivered.wait()
+    await delivered.cancellableWait()
 
     first.fail()
-    await transport.connected.wait(for: 2)
+    await transport.connected.cancellableWait(for: 2)
     #expect(since(of: transport.requests.last) == "7")
     #expect(received.value == [7])
     consumer.cancel()
@@ -141,7 +141,7 @@ struct EventStreamKeepaliveTests {
     let consumer = Task {
       for try await _ in client.sessionEventStream(id: UUID(), since: 0) {}
     }
-    await transport.connected.wait()
+    await transport.connected.cancellableWait()
     #expect(transport.maximumMessageSizes == [16 * 1024 * 1024])
     consumer.cancel()
     _ = await consumer.result
@@ -155,12 +155,12 @@ struct EventStreamKeepaliveTests {
     let consumer = Task {
       for try await _ in client.sessionEventStream(id: UUID(), since: sentinel) {}
     }
-    await transport.connected.wait()
-    let first = transport.socket(0)!
+    await transport.connected.cancellableWait()
+    let first = try #require(transport.socket(0))
     first.push(envelope(kind: "keepalive", id: 0))
-    await first.receiving.wait(for: 2)
+    await first.receiving.cancellableWait(for: 2)
     first.fail()
-    await transport.connected.wait(for: 2)
+    await transport.connected.cancellableWait(for: 2)
     #expect(since(of: transport.requests.last) == String(sentinel))
     consumer.cancel()
     _ = await consumer.result
@@ -174,22 +174,22 @@ struct EventStreamKeepaliveTests {
     let consumer = Task {
       for try await _ in client.sessionEventStream(id: UUID(), since: 3) {}
     }
-    await transport.connected.wait()
-    transport.socket(0)!.push(envelope(kind: "keepalive", id: 3))
+    await transport.connected.cancellableWait()
+    try #require(transport.socket(0)).push(envelope(kind: "keepalive", id: 3))
     await clock.waitForSleep(.seconds(90))
     clock.advance(by: .seconds(90))
-    await transport.connected.wait(for: 2)
+    await transport.connected.cancellableWait(for: 2)
     #expect(since(of: transport.requests.last) == "3")
 
     await clock.waitForSleep(CodevisorServerClient.eventOpenDeadline)
     clock.advance(by: CodevisorServerClient.eventOpenDeadline)
-    await transport.connected.wait(for: 3)
+    await transport.connected.cancellableWait(for: 3)
     #expect(since(of: transport.requests.last) == "3")
     consumer.cancel()
     _ = await consumer.result
   }
   @Test("A socket that never delivers its first frame reconnects and reports recovery")
-  func firstFrameDeadline() async {
+  func firstFrameDeadline() async throws {
     let clock = TestClock()
     let transport = ScriptedEventTransport()
     let client = makeClient(transport, clock: clock)
@@ -199,11 +199,11 @@ struct EventStreamKeepaliveTests {
         if event.payload["state"]?.stringValue == "reconnecting" { recovering.signal() }
       }
     }
-    await transport.connected.wait()
+    await transport.connected.cancellableWait()
     await clock.waitForSleep(CodevisorServerClient.eventOpenDeadline)
     clock.advance(by: CodevisorServerClient.eventOpenDeadline)
-    await recovering.wait()
-    await transport.connected.wait(for: 2)
+    await recovering.cancellableWait()
+    await transport.connected.cancellableWait(for: 2)
     #expect(since(of: transport.requests.last) == "12")
     #expect(transport.socket(0)?.lifecycle.prefix(2) == ["unanswered", "cancel"])
     consumer.cancel()
@@ -211,7 +211,7 @@ struct EventStreamKeepaliveTests {
   }
 
   @Test("A revision gap ends the stream before later content is applied")
-  func revisionGapRequiresSnapshot() async {
+  func revisionGapRequiresSnapshot() async throws {
     let transport = ScriptedEventTransport()
     let client = makeClient(transport)
     let consumer = Task { () throws -> [Int] in
@@ -222,10 +222,10 @@ struct EventStreamKeepaliveTests {
       }
       return ids
     }
-    await transport.connected.wait()
+    await transport.connected.cancellableWait()
     let gap = envelope(kind: "session.output", id: 5).replacingOccurrences(
       of: "\"payload\":{}", with: "\"subjectRevision\":5,\"payload\":{}")
-    transport.socket(0)!.push(gap)
+    try #require(transport.socket(0)).push(gap)
     switch await consumer.result {
     case .success: Issue.record("Gap was silently skipped")
     case let .failure(error):
@@ -270,20 +270,20 @@ extension EventStreamKeepaliveTests {
       }
     }
     defer { consumer.cancel() }
-    await transport.connected.wait()
+    await transport.connected.cancellableWait()
     #expect(transport.requests.first?.url?.query?.contains("sync=1") == true)
     if afterFrame {
-      transport.socket(0)!.push(envelope(kind: "keepalive", id: 3))
+      try #require(transport.socket(0)).push(envelope(kind: "keepalive", id: 3))
     }
     let deadline = afterFrame ? CodevisorServerClient.eventReceiveDeadline : CodevisorServerClient.eventOpenDeadline
     await clock.waitForSleep(deadline)
     clock.advance(by: deadline - .milliseconds(1))
     #expect(transport.requests.count == 1)
     clock.advance(by: .milliseconds(1))
-    await transport.connected.wait(for: 2)
+    await transport.connected.cancellableWait(for: 2)
     #expect(since(of: transport.requests.last) == "3")
-    transport.socket(1)!.push(envelope(kind: "session.attention.updated", id: 4))
-    await delivered.wait()
+    try #require(transport.socket(1)).push(envelope(kind: "session.attention.updated", id: 4))
+    await delivered.cancellableWait()
     #expect(received.value == [4])
     consumer.cancel()
     _ = await consumer.result
@@ -291,7 +291,7 @@ extension EventStreamKeepaliveTests {
   }
 
   @Test("Shell keepalive gaps replay from the last event even with kind filtering", arguments: [false, true])
-  func shellCheckpointGap(filtered: Bool) async {
+  func shellCheckpointGap(filtered: Bool) async throws {
     let transport = ScriptedEventTransport()
     let client = makeClient(transport)
     let delivered = TestSignal()
@@ -307,19 +307,19 @@ extension EventStreamKeepaliveTests {
       }
     }
     defer { consumer.cancel() }
-    await transport.connected.wait()
-    transport.socket(0)!.push(envelope(kind: "keepalive", id: 4))
-    await transport.connected.wait(for: 2)
+    await transport.connected.cancellableWait()
+    try #require(transport.socket(0)).push(envelope(kind: "keepalive", id: 4))
+    await transport.connected.cancellableWait(for: 2)
     #expect(since(of: transport.requests.last) == "3")
-    transport.socket(1)!.push(envelope(kind: "session.attention.updated", id: 4))
-    await delivered.wait()
+    try #require(transport.socket(1)).push(envelope(kind: "session.attention.updated", id: 4))
+    await delivered.cancellableWait()
     #expect(received.value == [4])
     consumer.cancel()
     _ = await consumer.result
   }
 
   @Test("Shell predecessor gaps recover before applying later states; filtered events still advance")
-  func shellPredecessorGap() async {
+  func shellPredecessorGap() async throws {
     let transport = ScriptedEventTransport()
     let client = makeClient(transport)
     let received = LockedBox<[Int]>([])
@@ -331,32 +331,32 @@ extension EventStreamKeepaliveTests {
       }
     }
     defer { consumer.cancel() }
-    await transport.connected.wait()
+    await transport.connected.cancellableWait()
     func shellEvent(_ id: Int, previous: Int, kind: String = "session.attention.updated") -> String {
       envelope(kind: kind, id: id).replacingOccurrences(
         of: "\"payload\":{}", with: "\"previousEventId\":\(previous),\"payload\":{}")
     }
-    transport.socket(0)!.push(shellEvent(5, previous: 4))
-    await transport.connected.wait(for: 2)
+    try #require(transport.socket(0)).push(shellEvent(5, previous: 4))
+    await transport.connected.cancellableWait(for: 2)
     #expect(since(of: transport.requests.last) == "3")
     #expect(received.value.isEmpty)
-    let socket = transport.socket(1)!
+    let socket = try #require(transport.socket(1))
     socket.push(shellEvent(4, previous: 3))
     socket.push(shellEvent(5, previous: 4, kind: "plugin.updated"))
     socket.push(shellEvent(8, previous: 5))
     socket.push(shellEvent(8, previous: 5))
     socket.push(shellEvent(9, previous: 8))
-    await delivered.wait(for: 3)
+    await delivered.cancellableWait(for: 3)
     #expect(received.value == [4, 8, 9])
     socket.fail()
-    await transport.connected.wait(for: 3)
+    await transport.connected.cancellableWait(for: 3)
     #expect(since(of: transport.requests.last) == "9")
     consumer.cancel()
     _ = await consumer.result
   }
 
   @Test("Shell heartbeats preserve live-only cursors", arguments: [false, true])
-  func shellSentinel(filtered: Bool) async {
+  func shellSentinel(filtered: Bool) async throws {
     let transport = ScriptedEventTransport()
     let client = makeClient(transport)
     let sentinel = ServerSessionTransport.liveOnlyEventCursor
@@ -366,19 +366,19 @@ extension EventStreamKeepaliveTests {
       : client.eventStream(since: sentinel)
     let consumer = Task { for try await _ in stream {} }
     defer { consumer.cancel() }
-    await transport.connected.wait()
-    let socket = transport.socket(0)!
+    await transport.connected.cancellableWait()
+    let socket = try #require(transport.socket(0))
     socket.push(envelope(kind: "keepalive", id: 0))
-    await socket.receiving.wait(for: 2)
+    await socket.receiving.cancellableWait(for: 2)
     socket.fail()
-    await transport.connected.wait(for: 2)
+    await transport.connected.cancellableWait(for: 2)
     #expect(since(of: transport.requests.last) == String(sentinel))
     consumer.cancel()
     _ = await consumer.result
   }
 
   @Test("Malformed handled shell events request snapshot recovery without advancing past the event")
-  func invalidShellEventRequiresSnapshot() async {
+  func invalidShellEventRequiresSnapshot() async throws {
     let transport = ScriptedEventTransport()
     let client = makeClient(transport)
     let consumer = Task {
@@ -387,8 +387,8 @@ extension EventStreamKeepaliveTests {
       }
     }
     defer { consumer.cancel() }
-    await transport.connected.wait()
-    transport.socket(0)!.push("{\"id\":4,\"kind\":\"session.attention.updated\"}")
+    await transport.connected.cancellableWait()
+    try #require(transport.socket(0)).push("{\"id\":4,\"kind\":\"session.attention.updated\"}")
     switch await consumer.result {
     case .success: Issue.record("Malformed event was silently skipped")
     case let .failure(error): #expect(error is DecodingError)
@@ -397,7 +397,7 @@ extension EventStreamKeepaliveTests {
   }
 
   @Test("Old-server traffic confirms connection before its first heartbeat", arguments: [false, true])
-  func trafficConfirmsConnection(afterFailure: Bool) async {
+  func trafficConfirmsConnection(afterFailure: Bool) async throws {
     let transport = ScriptedEventTransport()
     let client = makeClient(transport)
     let received = LockedBox<[String]>([])
@@ -409,14 +409,14 @@ extension EventStreamKeepaliveTests {
       }
     }
     defer { consumer.cancel() }
-    await transport.connected.wait()
+    await transport.connected.cancellableWait()
     if afterFailure {
-      transport.socket(0)!.fail()
-      await transport.connected.wait(for: 2)
+      try #require(transport.socket(0)).fail()
+      await transport.connected.cancellableWait(for: 2)
     }
-    let socket = transport.socket(afterFailure ? 1 : 0)!
+    let socket = try #require(transport.socket(afterFailure ? 1 : 0))
     socket.push(envelope(kind: "session.output", id: 4))
-    await delivered.wait()
+    await delivered.cancellableWait()
     #expect(received.value == (afterFailure ? ["reconnecting"] : []) + ["catchingUp", "session.output"])
 
     socket.push(envelope(kind: "keepalive", id: 5))
@@ -431,7 +431,7 @@ extension EventStreamKeepaliveTests {
   }
 
   @Test("A checkpoint beyond received events cannot declare the transcript caught up")
-  func checkpointDetectsMissingTail() async {
+  func checkpointDetectsMissingTail() async throws {
     let transport = ScriptedEventTransport()
     let client = makeClient(transport)
     let consumer = Task {
@@ -439,8 +439,8 @@ extension EventStreamKeepaliveTests {
         #expect(event.payload["state"]?.stringValue != "caughtUp")
       }
     }
-    await transport.connected.wait()
-    transport.socket(0)!.push(envelope(kind: "keepalive", id: 4))
+    await transport.connected.cancellableWait()
+    try #require(transport.socket(0)).push(envelope(kind: "keepalive", id: 4))
     switch await consumer.result {
     case .success: Issue.record("Missing tail was accepted as caught up")
     case let .failure(error): #expect(error is CodevisorServerClient.EventStreamGapError)

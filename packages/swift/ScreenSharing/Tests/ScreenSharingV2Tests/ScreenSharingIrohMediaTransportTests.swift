@@ -1,4 +1,5 @@
 import CodevisorNet
+import CodevisorTestSupport
 import Testing
 import VideoToolbox
 
@@ -10,6 +11,7 @@ extension HardwareCodecTests {
   struct ScreenSharingIrohMediaTransportTests {
     @Test(.enabled(if: VTIsHardwareDecodeSupported(kCMVideoCodecType_HEVC), "No hardware HEVC on this machine."))
     func framesCrossARealMediaSessionInOrderWithTheirInBandIdentity() async throws {
+      try await HardwareEncoderBudget.require(videoToolboxTiles: 1)
       let link = try await IrohLoopback.connect()
       defer { link.close() }
       let metrics = ScreenSharingMetrics()

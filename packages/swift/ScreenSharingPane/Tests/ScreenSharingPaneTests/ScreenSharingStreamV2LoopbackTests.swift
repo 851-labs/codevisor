@@ -4,11 +4,11 @@ import CodevisorTestSupport
 import CoreVideo
 import Foundation
 import ScreenSharing
-import ScreenSharingV2
 import Testing
 import VideoToolbox
 
 @testable import ScreenSharingPane
+@testable import ScreenSharingV2
 
 extension HardwareCodecTests {
   @MainActor
@@ -18,6 +18,7 @@ extension HardwareCodecTests {
       "A touch viewer that asks for 4:2:0 gets VideoToolbox video over QUIC and asks for control on it",
       .enabled(if: VTIsHardwareDecodeSupported(kCMVideoCodecType_HEVC), "No hardware HEVC on this machine."))
     func watchesAndControlsAHost() async throws {
+      try await HardwareEncoderBudget.require(sessions: 1, opening: Self.openEncoderSession)
       let pair = try await IrohPair.connect()
       defer { pair.close() }
       let transport = StreamTransport(engines: ["v2"], v2StartStatus: "connecting")
@@ -69,6 +70,13 @@ extension HardwareCodecTests {
       stream.control?.send([.move(ScreenSharingPointer(x: 0.5, y: 0.5), modifiers: 0)])
       await requested.cancellableWait()
       #expect(stream.control?.state == .requesting)
+    }
+
+    nonisolated private static func openEncoderSession(width: Int, height: Int) -> VTCompressionSession? {
+      try? ScreenSharingVideoToolboxSessionFactory(
+        width: width, height: height, framesPerSecond: 60, bitrate: 1_000_000
+      )
+      .make()
     }
 
     private static func frame(shade: UInt8, timestampNs: Int64) throws -> ScreenSharingVideoFrame {

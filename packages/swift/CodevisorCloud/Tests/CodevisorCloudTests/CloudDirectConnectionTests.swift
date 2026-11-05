@@ -6,7 +6,7 @@ import ACPKit
 import CodevisorClient
 @testable import CodevisorCloud
 
-@Suite("CloudDirectConnection")
+@Suite("CloudDirectConnection", .timeLimit(.minutes(1)))
 struct CloudDirectConnectionTests {
   @Test("A silent listener times out instead of hanging the opener")
   func helloTimeout() async throws {
@@ -104,10 +104,11 @@ struct CloudDirectConnectionTests {
       await clock.waitForSleep(.seconds(10))
       clock.advance(by: .seconds(10))
       await clock.waitForSleep(.seconds(5))
+      #expect(await waitUntil { scripted.pings == 1 })
       #expect(downs.messages.isEmpty)
       clock.advance(by: .seconds(5))
       #expect(await waitUntil { downs.messages.count == 1 })
-      #expect(scripted.pings >= 1)
+      await connection.shutdown()
     } catch {
       await connection.shutdown()
       throw error
@@ -163,7 +164,7 @@ struct CloudDirectConnectionTests {
       await connection.shutdown()
 
       #expect(await waitUntil { recorder.closes.count == 1 })
-      await scripted.socket.cancelled.wait()
+      await scripted.socket.cancelled.cancellableWait()
       #expect(downs.messages.isEmpty)
     } catch {
       await connection.shutdown()
