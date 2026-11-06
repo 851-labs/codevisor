@@ -27,7 +27,7 @@ enum VCPLevelsEncoding {
           update: ScreenSharingTileUpdate(id: UInt32(pass + 1), tiles: [0], isRefinement: pass > 0)))
       switch try await output(pass, from: outputs) {
       case .tile(let tile): units.append(tile.accessUnit)
-      case .unchanged, .dropped: continue
+      case .unchanged, .dropped, .keyframeNeeded: continue
       case .failed(_, _, let message): throw BenchUsageError(message: "VCP pass \(pass) failed: \(message)")
       }
     }

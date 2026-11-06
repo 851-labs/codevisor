@@ -35,14 +35,16 @@ final class ManualScheduler: ScreenSharingV2Scheduler {
   func advance(byNs delayNs: Int64) {
     guard let queue = state.withLock({ $0.queue }) else { return }
 
-    queue.async { [self] in
-      let due = state.withLock { state in
-        state.nowNs += delayNs
-        let now = state.nowNs
-        defer { state.works.removeAll { $0.dueNs <= now } }
-        return state.works.filter { $0.dueNs <= now }
-      }
-      for work in due { work.run() }
+    queue.async { [self] in step(byNs: delayNs) }
+  }
+
+  func step(byNs delayNs: Int64) {
+    let due = state.withLock { state in
+      state.nowNs += delayNs
+      let now = state.nowNs
+      defer { state.works.removeAll { $0.dueNs <= now } }
+      return state.works.filter { $0.dueNs <= now }
     }
+    for work in due { work.run() }
   }
 }

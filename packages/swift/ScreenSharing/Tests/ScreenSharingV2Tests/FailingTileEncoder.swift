@@ -59,6 +59,7 @@ final class FailingTileEncoder: ScreenSharingTileEncoder, @unchecked Sendable {
     case .dropped(let tile, let refresh), .failed(let tile, let refresh, _):
       .failed(tile: tile, refresh: refresh, message: "Forced failure.")
     case .unchanged(let tile, _): .failed(tile: tile, refresh: nil, message: "Forced failure.")
+    case .keyframeNeeded: result
     }
   }
 }

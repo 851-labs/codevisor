@@ -19,13 +19,14 @@ public struct BenchMediaCounters: Codable, Sendable, Equatable {
   public var encodedFrames: Int?
   public var encodedBytes: Int?
   public var encodedKeyFrameBytes: Int?
+  public var encoderSwitches: Int?
 
   public init(
     framesSent: Int, framesLost: Int, tilesSkipped: Int, droppedBeforeEncode: Int, admissionDeferrals: Int,
     nacksSent: Int, packetsRetransmitted: Int, parityPackets: Int, fecRepairs: Int, nackRepairs: Int,
     ltrRefreshes: Int, keyframes: Int, capacityKbps: Int?, roundTripMs: Double?, requestedRefreshes: Int? = nil,
     requestedKeyframes: Int? = nil, stalledTiles: Int? = nil, encodedFrames: Int? = nil, encodedBytes: Int? = nil,
-    encodedKeyFrameBytes: Int? = nil
+    encodedKeyFrameBytes: Int? = nil, encoderSwitches: Int? = nil
   ) {
     self.framesSent = framesSent
     self.framesLost = framesLost
@@ -47,5 +48,6 @@ public struct BenchMediaCounters: Codable, Sendable, Equatable {
     self.encodedFrames = encodedFrames
     self.encodedBytes = encodedBytes
     self.encodedKeyFrameBytes = encodedKeyFrameBytes
+    self.encoderSwitches = encoderSwitches
   }
 }
