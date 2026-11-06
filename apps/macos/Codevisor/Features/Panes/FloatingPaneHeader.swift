@@ -49,7 +49,7 @@ struct FloatingPaneHeader: View {
   @ViewBuilder
   private func toolbar(_ slot: PaneHeaderToolbar.Slot) -> some View {
     if let source {
-      PaneHeaderToolbar(source: source, slot: slot, onNewTab: actions.newTab)
+      PaneHeaderToolbar(source: source, slot: slot)
     }
   }
 
