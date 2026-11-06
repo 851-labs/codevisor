@@ -347,15 +347,9 @@ struct WorkspaceScreen: View {
   private var subtitle: String {
     if let promotionNavigationTitle { return promotionNavigationTitle.subtitle }
     guard !isDraft, activePane?.kind == .chat else { return "" }
-    let projectName = resolvedProject.flatMap {
-      $0.isScratch || $0.isRunTargetPlaceholder ? nil : $0.name
-    }
-    return [
-      resolvedWorkspace?.name ?? projectName,
-      environment.machines.fleetMachineName(for: resolvedServerId),
-    ]
-    .compactMap { $0 }
-    .filter { !$0.isEmpty }
-    .joined(separator: " · ")
+    return WorkspaceNavigationTitle.subtitle(
+      branch: resolvedWorkspace?.git?.branch,
+      machineName: environment.machines.fleetMachineName(for: resolvedServerId)
+    )
   }
 }

@@ -3,6 +3,13 @@ import UIKit
 struct WorkspaceNavigationTitle: Equatable {
   let title: String
   let subtitle: String
+
+  static func subtitle(branch: String?, machineName: String?) -> String {
+    [branch, machineName]
+      .compactMap { $0 }
+      .filter { !$0.isEmpty }
+      .joined(separator: " · ")
+  }
 }
 
 @MainActor
