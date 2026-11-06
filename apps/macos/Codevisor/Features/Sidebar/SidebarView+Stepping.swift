@@ -26,20 +26,12 @@ extension SidebarView {
 
   func stepWorkspace(_ offset: Int) {
     let rows = sidebarRows
-    guard let target = stepTarget(in: sidebarStops(in: rows), selected: selectedRowID(in: rows), by: offset)
-    else { return }
+    let stops = sidebarStops(in: rows)
+    let selected = selectedRowID(in: rows)
+    let current = stops.firstIndex { isSelected($0, selected: selected) }
+    guard let target = SidebarStep.target(in: stops, from: current, by: offset) else { return }
 
     activate(target)
-  }
-
-  private func stepTarget(in stops: [SidebarStop], selected: SidebarRowID?, by offset: Int) -> SidebarStop? {
-    guard let current = stops.firstIndex(where: { isSelected($0, selected: selected) }) else {
-      return isShowingNewChat ? stops.first : nil
-    }
-
-    let target = current + offset
-    guard target != current, stops.indices.contains(target) else { return nil }
-    return stops[target]
   }
 
   private func isSelected(_ stop: SidebarStop, selected: SidebarRowID?) -> Bool {

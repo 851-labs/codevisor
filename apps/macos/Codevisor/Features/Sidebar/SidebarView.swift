@@ -38,13 +38,6 @@ struct SidebarView: View {
   var rowDetails: [SidebarRowDetail] { ClientPreferences.shared.sidebarRowDetails }
   var isReordering: Bool { drag != nil || groupDrag != nil || tabDrag != nil }
 
-  var isShowingNewChat: Bool {
-    switch selection {
-    case .newChat, .none: true
-    case .session, .workspace, .archivedWorkspace, .bot: false
-    }
-  }
-
   var body: some View {
     sidebarConfiguredView
   }

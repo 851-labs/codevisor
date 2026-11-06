@@ -14,7 +14,7 @@ struct BotSidebarRowsTests {
       bot: Bot(serverId: "studio", record: record)!, session: nil, activity: .idle, isUnread: false)
   }
 
-  @Test("Stepping walks the derived rows: no selection picks the first bot, and the ends don't wrap")
+  @Test("Stepping walks the derived rows: no selection enters at the end it moves from, and the ends don't wrap")
   func steppingWalksDerivedRows() {
     let (atlas, scout, ledger) = (conversation("Atlas"), conversation("Scout"), conversation("Ledger"))
     let rows = BotSidebarRows.derive(BotSidebarRows.State(conversations: [atlas, scout, ledger]))
@@ -23,6 +23,7 @@ struct BotSidebarRowsTests {
     }
 
     #expect(step(from: nil, by: 1) == atlas.id)
+    #expect(step(from: nil, by: -1) == ledger.id)
     #expect(step(from: atlas, by: 1) == scout.id)
     #expect(step(from: ledger, by: -1) == scout.id)
     #expect(step(from: ledger, by: 1) == nil)

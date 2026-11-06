@@ -95,9 +95,6 @@ public enum BotSidebarRows {
 
   public static func step(from selectedID: UUID?, by offset: Int, in rows: [BotSidebarRow]) -> Bot? {
     let bots = rows.compactMap(\.bot)
-    guard let current = bots.firstIndex(where: { $0.id == selectedID }) else { return bots.first }
-
-    let target = current + offset
-    return bots.indices.contains(target) ? bots[target] : nil
+    return SidebarStep.target(in: bots, from: bots.firstIndex { $0.id == selectedID }, by: offset)
   }
 }
