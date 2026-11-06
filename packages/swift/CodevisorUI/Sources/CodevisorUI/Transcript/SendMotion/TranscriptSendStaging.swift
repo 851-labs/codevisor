@@ -17,6 +17,7 @@ public final class TranscriptSendStaging {
     weak var owner: AnyObject?
     let landing: @MainActor () -> TranscriptSendLanding?
     let holds: @MainActor () -> Bool
+    let depart: @MainActor () -> Void
     let anticipate: @MainActor (CFTimeInterval) -> Void
   }
 
@@ -27,10 +28,12 @@ public final class TranscriptSendStaging {
     owner: AnyObject,
     holds: @escaping @MainActor () -> Bool = { false },
     landing: @escaping @MainActor () -> TranscriptSendLanding?,
+    depart: @escaping @MainActor () -> Void = {},
     anticipate: @escaping @MainActor (CFTimeInterval) -> Void = { _ in }
   ) {
     var providers = (landingProviders[session] ?? []).filter { $0.owner != nil && $0.owner !== owner }
-    providers.append(LandingProvider(owner: owner, landing: landing, holds: holds, anticipate: anticipate))
+    providers.append(
+      LandingProvider(owner: owner, landing: landing, holds: holds, depart: depart, anticipate: anticipate))
     landingProviders[session] = providers
   }
 
@@ -40,10 +43,7 @@ public final class TranscriptSendStaging {
   }
 
   public func releaseHeldSend(session: ObjectIdentifier) {
-    guard let stage = stages[session], stage.morph == nil, let overlay = stage.overlay else { return }
-    if let found = landing(for: session) {
-      beginMorph(stage, toward: found.0, provider: found.1, in: overlay)
-    }
+    guard let stage = stages[session] else { return }
     scheduleTimeout(for: stage, after: TranscriptSendMotion.stagingTimeout)
   }
 
@@ -59,6 +59,7 @@ public final class TranscriptSendStaging {
   ) {
     let corner = stage.track.convert(
       overlay.point(inHostWindow: CGPoint(x: landing.trailing, y: landing.top)), from: overlay)
+    provider.depart()
     stage.beginMorph(
       toward: TranscriptSendLanding(
         trailing: corner.x, top: corner.y, maxBubbleWidth: landing.maxBubbleWidth))
@@ -207,10 +208,8 @@ public final class TranscriptSendStaging {
     let timeout = removal(of: stage, session: session)
     stage.timeout = timeout
     stages[session] = stage
-    let isHeld = holds(session)
-    if isHeld {
-      pill.hidesFill = true
-    } else if let found = landing(for: session) {
+    let lifetime = holds(session) ? TranscriptSendMotion.heldStagingTimeout : TranscriptSendMotion.stagingTimeout
+    if let found = landing(for: session) {
       beginMorph(stage, toward: found.0, provider: found.1, in: overlay)
     } else {
       #if canImport(UIKit)
@@ -219,10 +218,7 @@ public final class TranscriptSendStaging {
         }
       #endif
     }
-    DispatchQueue.main.asyncAfter(
-      deadline: .now()
-        + (isHeld ? TranscriptSendMotion.heldStagingTimeout : TranscriptSendMotion.stagingTimeout),
-      execute: timeout)
+    DispatchQueue.main.asyncAfter(deadline: .now() + lifetime, execute: timeout)
   }
 
   private func pill(for source: StageSource) -> TranscriptSendPillView {

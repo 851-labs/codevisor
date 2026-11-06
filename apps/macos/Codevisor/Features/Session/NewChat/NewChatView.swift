@@ -153,6 +153,8 @@ struct NewChatView: View {
         }
         .frame(maxWidth: 720)
         .padding()
+        .opacity(sendLanding.isDeparting ? 0 : 1)
+        .allowsHitTesting(!sendLanding.isDeparting)
         Spacer()
         Spacer()
         Spacer()
@@ -168,7 +170,7 @@ struct NewChatView: View {
       guard wasSubmitting, !isSubmitting, let controller else { return }
       let session = ObjectIdentifier(controller)
       guard sendLanding.holds(session) else { return }
-      TranscriptSendStaging.shared.cancel(session: session)
+      sendLanding.returnSend(session)
     }
     .overlay(alignment: .top) {
       if let controller, case let .failed(message) = controller.status {
@@ -449,45 +451,4 @@ struct NewChatView: View {
   )
   .environment(environment)
   .frame(width: 900, height: 640)
-}
-
-@MainActor
-private final class NewChatSendLanding {
-  var pageFrame: CGRect = .zero
-  private var heldSession: ObjectIdentifier?
-
-  func hold(_ session: ObjectIdentifier) {
-    if let heldSession, heldSession != session {
-      TranscriptSendStaging.shared.removeLandingProvider(for: heldSession, owner: self)
-    }
-    heldSession = session
-    TranscriptSendStaging.shared.setLandingProvider(
-      for: session,
-      owner: self,
-      holds: { [weak self] in self?.heldSession == session },
-      landing: { [weak self] in self?.landing }
-    )
-  }
-
-  func holds(_ session: ObjectIdentifier) -> Bool {
-    heldSession == session
-  }
-
-  func release(_ session: ObjectIdentifier) {
-    if heldSession == session { heldSession = nil }
-    TranscriptSendStaging.shared.releaseHeldSend(session: session)
-    TranscriptSendStaging.shared.removeLandingProvider(for: session, owner: self)
-  }
-
-  var landing: TranscriptSendLanding? {
-    guard pageFrame.width > 0 else { return nil }
-    let padding = VirtualizedTranscriptScrollView.horizontalPadding
-    let rowWidth = min(VirtualizedTranscriptScrollView.maxRowWidth, max(1, pageFrame.width - padding * 2))
-    let rowX = max(padding, (pageFrame.width - rowWidth) / 2)
-    return TranscriptSendLanding(
-      trailing: pageFrame.minX + rowX + rowWidth,
-      top: pageFrame.minY + VirtualizedTranscriptScrollView.topPadding,
-      maxBubbleWidth: rowWidth - 40
-    )
-  }
 }

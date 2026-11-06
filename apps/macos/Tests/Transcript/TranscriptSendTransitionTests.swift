@@ -200,6 +200,25 @@ struct TranscriptSendTransitionTests {
     #expect(try fixture.stagedBubbleFrame(session: session) == unaimed)
   }
 
+  @Test("A held send flies toward its landing at once and tells the landing it departed")
+  func heldSendFliesAtOnce() throws {
+    let fixture = SendFixture()
+    let session = ObjectIdentifier(fixture)
+    let newChat = NSObject()
+    var departures = 0
+    defer {
+      TranscriptSendStaging.shared.removeLandingProvider(for: session, owner: newChat)
+      fixture.tearDown()
+    }
+    TranscriptSendStaging.shared.setLandingProvider(
+      for: session, owner: newChat, holds: { true },
+      landing: { TranscriptSendLanding(trailing: 800, top: 60, maxBubbleWidth: 400) },
+      depart: { departures += 1 })
+
+    #expect(try fixture.stagedBubbleFrame(session: session).maxX == 800)
+    #expect(departures == 1)
+  }
+
   @Test("A surface replaced before its flight starts leaves the send for its replacement")
   func replacedSurfaceKeepsTheSend() throws {
     let fixture = SendFixture()
