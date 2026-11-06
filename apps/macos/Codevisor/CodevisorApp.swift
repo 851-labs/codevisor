@@ -166,7 +166,7 @@ struct RootView: View {
           ProgressView().frame(maxWidth: .infinity, maxHeight: .infinity)
         }
       }
-      .toolbar { BotComposeToolbarItem(newBot: openNewBot) }
+      .toolbar { SidebarComposeToolbarItem(newChat: openNewChat, newBot: openNewBot) }
     }
     .modifier(WorkspaceInspectorPresentation(store: store, selection: $selection, revealRequest: sidebarRevealRequest))
     .modifier(WorkspaceChildAgentsEnvironment(store: store, selection: $selection, revealRequest: sidebarRevealRequest))

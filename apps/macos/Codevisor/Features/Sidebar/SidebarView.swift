@@ -39,7 +39,7 @@ struct SidebarView: View {
   var rowDetails: [SidebarRowDetail] { ClientPreferences.shared.sidebarRowDetails }
   var isReordering: Bool { drag != nil || groupDrag != nil || tabDrag != nil }
 
-  var isNewChatSelected: Bool {
+  var isShowingNewChat: Bool {
     switch selection {
     case .newChat, .none: true
     case .session, .workspace, .archivedWorkspace, .bot: false
@@ -54,9 +54,13 @@ struct SidebarView: View {
     ScrollViewReader { proxy in
       ScrollView {
         VStack(spacing: 0) {
-          newChatRows
+          if CodevisorAppVariant.isDevelopment && !AppPreview.isRunning {
+            SidebarDevelopmentWorktreeRow()
+              .padding(.horizontal, 10)
+          }
           workspaceGroupList(workspaceGroups)
         }
+        .padding(.top, 8)
       }
       .contextMenu { sidebarOptionsMenu }
       .onChange(of: selectedWorkspaceID, initial: true) { _, current in
@@ -75,25 +79,6 @@ struct SidebarView: View {
     .overlay(alignment: .topLeading) { reorderOverlay }
     .overlay(alignment: .topLeading) { groupReorderOverlay }
     .overlay(alignment: .topLeading) { tabReorderOverlay }
-  }
-
-  private var newChatRows: some View {
-    VStack(alignment: .leading, spacing: 1) {
-      if CodevisorAppVariant.isDevelopment && !AppPreview.isRunning {
-        SidebarDevelopmentWorktreeRow()
-      }
-
-      SidebarActionRow(
-        title: "New chat",
-        systemImage: "square.and.pencil",
-        isSelected: isNewChatSelected,
-        isHoverEnabled: !isReordering
-      ) {
-        selection = .newChat(nil)
-      }
-    }
-    .padding(.horizontal, 10)
-    .padding(.top, 8)
   }
 
   @ViewBuilder
