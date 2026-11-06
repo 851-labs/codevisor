@@ -32,6 +32,7 @@ struct UpdatesSettingsScreen: View {
       }
     }
     .navigationTitle("Updates")
+    .navigationBarTitleDisplayMode(.inline)
     .majorUpdateConfirmation($majorUpdate) { component in Task { await center.update(component) } }
     .animation(.default, value: center.components.map(\.id))
     .refreshable {
