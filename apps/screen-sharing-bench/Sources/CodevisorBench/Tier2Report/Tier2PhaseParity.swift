@@ -28,7 +28,7 @@ struct Tier2PhaseParity {
   static let thresholdMs = 12.0
   static let scenes = ["window-drag", "scroll", "typing"]
   static let network = "N0"
-  static let p50MarginMs = 8.0
+  static let p50MarginMs = Tier2InputTable.m3MarginMs
   static let p95MarginMs = 17.0
   static let systems: [BenchSystem] = [.codevisorV2, .codevisorV2VCP]
 

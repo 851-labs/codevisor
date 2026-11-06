@@ -22,6 +22,7 @@ measure() {
     { rtt[NR] = $1 }
     END {
       loss = 100 * (sent - received) / sent
+      if (NR == 0) { printf "| %s | %d | %d | %.1f | no replies | – | – | – |\n", label, rules, sent, loss; exit }
       printf "| %s | %d | %d | %.1f | %.3f | %.3f | %.3f | %.3f |\n", label, rules, sent, loss,
         rtt[1], rtt[int((NR + 1) * 0.5)], rtt[int((NR + 1) * 0.95)], rtt[NR]
     }'
@@ -33,7 +34,7 @@ release_stale_references() {
     awk 'tolower($0) ~ /token/ { for (i = 1; i <= NF; i++) if (tolower($i) ~ /^token/) column = i; next }
       column && /pfctl/ { print $column }' | while read -r token; do
     sudo -n pfctl -q -X "$token" 2>/dev/null || true
-  done
+  done || true
   sudo -n pfctl -s References >"$results/references-after.txt" 2>&1 || true
 }
 

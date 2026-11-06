@@ -99,7 +99,7 @@ shape() {
   local network=$1
   [[ "$network" == "$shaped_network" ]] && return 0
   shaped_network=""
-  network_apply "$network" || return 1
+  network_apply "$network" || { shaping_failed=1; return 1; }
   shaped_network=$network
 }
 
@@ -136,9 +136,10 @@ run_one() {
 tier2_check_inputs
 "$tier2_scripts/record-installed-commit.sh" "$results"
 commit=$(cat "$results/installed-commit.txt")
-shaped_network=""
+shaped_network="" shaping_failed=0
 network_reset
 meet_on_build viewer "$(tier2_ready_status "$results" viewer "$commit")"
 while read -r index scene system rep observed network; do
   run_one "$index" "$scene" "$system" "$rep" "$observed" "$network"
 done < <(tier2_plan)
+((shaping_failed == 0)) || { say "a network's shaping didn't load, so its runs were skipped"; exit 1; }
