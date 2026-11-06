@@ -58,7 +58,8 @@ private struct SettingsToolbarStyler: NSViewRepresentable {
 
     private func applySidebarWidthLimits(in window: NSWindow) {
       guard let contentView = window.contentView,
-        let (controller, item) = settingsSplitView(in: contentView)
+        let controller = SidebarSplitController.find(in: contentView),
+        let item = controller.splitViewItems.first
       else { return }
 
       if item.minimumThickness != Self.sidebarMinimumWidth {
@@ -85,26 +86,6 @@ private struct SettingsToolbarStyler: NSViewRepresentable {
       )
       guard abs(currentWidth - clampedWidth) > 0.5 else { return }
       controller.splitView.setPosition(clampedWidth, ofDividerAt: 0)
-    }
-
-    private func settingsSplitView(
-      in view: NSView
-    ) -> (controller: NSSplitViewController, item: NSSplitViewItem)? {
-      if let splitView = view as? NSSplitView,
-        splitView.isVertical,
-        let controller = splitView.delegate as? NSSplitViewController,
-        let item = controller.splitViewItems.first,
-        item.behavior == .sidebar
-      {
-        return (controller, item)
-      }
-
-      for subview in view.subviews {
-        if let result = settingsSplitView(in: subview) {
-          return result
-        }
-      }
-      return nil
     }
   }
 }

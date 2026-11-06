@@ -1,3 +1,4 @@
+import AppKit
 import CodevisorCore
 import SwiftUI
 
@@ -5,6 +6,7 @@ struct RootSidebarVisibility {
   static let collapsedKey = "sidebar.collapsed"
 
   let panelLayout: AdaptivePanelLayout
+  var windowControl: ClientWindowControl?
 
   var isVisible: Bool {
     panelLayout.docksSidebar ? !isCollapsed : panelLayout.activeDrawer == .leading
@@ -19,11 +21,25 @@ struct RootSidebarVisibility {
   }
 
   func setVisible(_ visible: Bool) {
+    guard visible != isVisible else { return }
+
     if panelLayout.docksSidebar {
-      setCollapsed(!visible)
-    } else if visible != isVisible {
+      toggleDockedColumn()
+    } else {
       panelLayout.toggleDrawer(.leading)
     }
+  }
+
+  private func toggleDockedColumn() {
+    guard let splitController else {
+      setCollapsed(!isCollapsed)
+      return
+    }
+    splitController.toggleSidebar(nil)
+  }
+
+  private var splitController: NSSplitViewController? {
+    windowControl?.window?.contentView.flatMap(SidebarSplitController.find(in:))
   }
 
   private func applyColumnVisibility(_ visibility: NavigationSplitViewVisibility) {

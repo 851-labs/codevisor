@@ -73,7 +73,7 @@ extension RootView {
   }
 
   var sidebarVisibility: RootSidebarVisibility {
-    RootSidebarVisibility(panelLayout: panelLayout)
+    RootSidebarVisibility(panelLayout: panelLayout, windowControl: clientWindow)
   }
 
   func requireClientReady() throws {
