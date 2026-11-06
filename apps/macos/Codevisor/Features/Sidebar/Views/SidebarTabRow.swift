@@ -12,7 +12,6 @@ struct SidebarTabRow: View {
   let isReordering: Bool
   let onSelect: () -> Void
   var actions: Actions? = nil
-  @GestureState private var isPressed = false
 
   var body: some View {
     HoverableRow(isSelected: isSelected, isHoverEnabled: !isReordering) { isHovered in
@@ -20,7 +19,7 @@ struct SidebarTabRow: View {
         SidebarTabRowLabel(label: label)
           .padding(.vertical, 5)
           .contentShape(Rectangle())
-          .gesture(pressGesture)
+          .onSidebarRowPress(perform: onSelect)
           .simultaneousGesture(TapGesture(count: 2).onEnded { actions?.keep() })
           .accessibilityElement(children: .combine)
           .accessibilityAddTraits(isSelected ? [.isButton, .isSelected] : .isButton)
@@ -33,15 +32,6 @@ struct SidebarTabRow: View {
       .contentShape(Rectangle())
     }
     .contextMenu { contextMenu }
-  }
-
-  private var pressGesture: some Gesture {
-    DragGesture(minimumDistance: 0)
-      .updating($isPressed) { _, isPressed, _ in
-        guard !isPressed else { return }
-        isPressed = true
-        onSelect()
-      }
   }
 
   @ViewBuilder

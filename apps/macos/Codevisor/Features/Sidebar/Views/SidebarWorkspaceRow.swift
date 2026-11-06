@@ -22,7 +22,6 @@ struct SidebarWorkspaceRow: View {
   let onActivate: () -> Void
   let lifecycle: Lifecycle
   var sectionMenu: MoveToSectionMenu? = nil
-  @GestureState private var isPressed = false
 
   static let trailingSpacing: CGFloat = 7
 
@@ -44,14 +43,7 @@ struct SidebarWorkspaceRow: View {
           .opacity(archivedOpacity)
           .padding(.vertical, 5)
           .contentShape(Rectangle())
-          .gesture(
-            DragGesture(minimumDistance: 0)
-              .updating($isPressed) { _, isPressed, _ in
-                guard !isPressed else { return }
-                isPressed = true
-                onActivate()
-              }
-          )
+          .onSidebarRowPress(perform: onActivate)
           .accessibilityElement(children: .combine)
           .accessibilityAddTraits(isSelected ? [.isButton, .isSelected] : .isButton)
           .accessibilityValue(isArchived ? "Archived" : "")

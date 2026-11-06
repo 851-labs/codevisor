@@ -51,7 +51,7 @@ struct BotConversationRows: View {
       conversation: conversation, isSelected: bot.id == selectedBotID,
       isDropTarget: dropTarget == .bot(bot.id), now: now
     )
-    .onTapGesture { actions.select(bot) }
+    .onSidebarRowPress { actions.select(bot) }
     .accessibilityAction(.default) { actions.select(bot) }
     .onDrag { start(.bot(bot.id)) }
     .contextMenu {
@@ -85,7 +85,7 @@ struct BotConversationRows: View {
     let bot = conversation.bot
     return BotConversationRow(conversation: conversation, isSelected: bot.id == selectedBotID, now: now)
       .opacity(0.6)
-      .onTapGesture { actions.select(bot) }
+      .onSidebarRowPress { actions.select(bot) }
       .accessibilityAction(.default) { actions.select(bot) }
       .accessibilityValue("Archived")
       .contextMenu {
