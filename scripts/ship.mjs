@@ -98,12 +98,30 @@ async function waitUntilLanded(pullRequest) {
   }
 }
 
+const pullRequestStateQuery = `query($url: URI!) {
+  resource(url: $url) {
+    ... on PullRequest { state autoMergeRequest { enabledAt } mergeQueueEntry { state } }
+  }
+}`
+
 function pullRequestState(pullRequest) {
-  const fields = JSON.parse(gh(["pr", "view", pullRequest, "--json", "state,autoMergeRequest"]))
+  const response = gh([
+    "api",
+    "graphql",
+    "-f",
+    `query=${pullRequestStateQuery}`,
+    "-F",
+    `url=${pullRequest}`
+  ])
+  const fields = JSON.parse(response).data.resource
   return {
     merged: fields.state === "MERGED",
-    leftQueue: fields.state !== "MERGED" && fields.autoMergeRequest === null
+    leftQueue: fields.state === "OPEN" && !isWaitingToMerge(fields)
   }
+}
+
+function isWaitingToMerge(fields) {
+  return fields.autoMergeRequest !== null || fields.mergeQueueEntry !== null
 }
 
 function git(...args) {
