@@ -1,7 +1,7 @@
 import ScreenSharingBench
 
 struct Tier2V2Table {
-  private static let columns = 19
+  private static let columns = 20
 
   private let results: [BenchResult]
 
@@ -16,7 +16,7 @@ struct Tier2V2Table {
       "### Engine v2 stages and counters (median of valid repetitions, whole session)", "",
       "| System | Scene | Resolution | Network | Encode p50 ms | Encode p95 ms | Send queue p50 | Send p50 "
         + "| Assemble p50 | Decode p50 | Render queue p50 | Present p50 | Frames lost | NACK repairs | FEC repairs "
-        + "| LTR refreshes | Keyframes "
+        + "| LTR refreshes | LTR refreshes as keyframes | Keyframes "
         + "| Dropped before encode | Capacity Mbit/s |",
       "|" + String(repeating: " --- |", count: Self.columns),
     ]
@@ -38,7 +38,8 @@ struct Tier2V2Table {
     ]
     let counters: [(BenchMediaCounters) -> Double?] = [
       { Double($0.framesLost) }, { Double($0.nackRepairs) }, { Double($0.fecRepairs) }, { Double($0.ltrRefreshes) },
-      { Double($0.keyframes) }, { Double($0.droppedBeforeEncode) }, { $0.capacityKbps.map { Double($0) / 1000 } },
+      { $0.ltrRefreshKeyframes.map(Double.init) }, { Double($0.keyframes) }, { Double($0.droppedBeforeEncode) },
+      { $0.capacityKbps.map { Double($0) / 1000 } },
     ]
     let cells =
       [system.rawValue, group.scene, group.resolution, group.network]

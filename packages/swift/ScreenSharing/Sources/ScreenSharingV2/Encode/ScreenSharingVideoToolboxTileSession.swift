@@ -191,7 +191,7 @@ final class ScreenSharingVideoToolboxTileSession: @unchecked Sendable {
     guard !flags.contains(.frameDropped), let sample else { return dropped(submission) }
 
     do {
-      deliver(try encodedTile(submission, sample: ScreenSharingEncodedSample(sample)))
+      deliver(try encodedTile(submission, sample: ScreenSharingEncodedSample(sample)), requested: submission.refresh)
     } catch {
       failed(submission, error.localizedDescription, status: noErr)
     }
@@ -205,9 +205,9 @@ final class ScreenSharingVideoToolboxTileSession: @unchecked Sendable {
       ltrToken: sample.ltrToken, accessUnit: sample.accessUnit)
   }
 
-  private func deliver(_ encoded: ScreenSharingEncodedTile) {
+  private func deliver(_ encoded: ScreenSharingEncodedTile, requested: ScreenSharingTileRefresh?) {
     state.withLock { $0.opened = true }
-    ScreenSharingTileMetrics(metrics).record(encoded)
+    ScreenSharingTileMetrics(metrics).record(encoded, requested: requested)
     relay.emit(.tile(encoded))
   }
 
