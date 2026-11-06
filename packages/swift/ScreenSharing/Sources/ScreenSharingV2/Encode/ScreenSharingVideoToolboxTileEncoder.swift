@@ -117,6 +117,10 @@ public final class ScreenSharingVideoToolboxTileEncoder: ScreenSharingTileEncode
     for session in sessions { session.suspend() }
   }
 
+  public func resume() throws {
+    for session in sessions { try session.resume() }
+  }
+
   public func stop() {
     guard !stopped.exchange(true, ordering: .relaxed) else { return }
 

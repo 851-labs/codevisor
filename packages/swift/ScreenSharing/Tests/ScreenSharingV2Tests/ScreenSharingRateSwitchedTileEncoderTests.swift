@@ -108,6 +108,28 @@ struct ScreenSharingRateSwitchedTileEncoderTests {
     #expect(slow.suspends == 1)
   }
 
+  @Test func aMoveBackToTheSuspendedSlowEncoderResumesItFirst() throws {
+    let encoder = try suspendedSlow()
+
+    try moveToSlow(encoder)
+    try encoder.encode(try Self.request(id: 3, tiles: [0]))
+
+    #expect(slow.resumes == 1)
+    #expect(slow.requests.last?.update.id == 3)
+  }
+
+  @Test func aSlowEncoderThatCannotResumeKeepsTheFastEncoder() throws {
+    let encoder = try suspendedSlow()
+    slow.resumeFails.withLock { $0 = true }
+
+    try moveToSlow(encoder)
+    try encoder.encode(try Self.request(id: 3, tiles: [0]))
+
+    #expect(fast.requests.last?.update.id == 3)
+    #expect(metrics.counter("encoderSlowResumeFailures") == 1)
+    #expect(metrics.counter("encoderSwitches") == 1)
+  }
+
   @Test func referenceAcknowledgementsGoToTheEncoderThatIssuedTheToken() throws {
     let encoder = try switched(bitrate: Self.fastBitrate)
     let first = try Self.request(id: 1, tiles: [0])
@@ -150,6 +172,20 @@ struct ScreenSharingRateSwitchedTileEncoderTests {
       fast: fast ?? self.fast, slow: slow, bitrate: bitrate, metrics: metrics, scheduler: scheduler)
     encoder.onOutput { [outputs] output in outputs.append(output) }
     return encoder
+  }
+
+  private func suspendedSlow() throws -> ScreenSharingRateSwitchedTileEncoder {
+    let encoder = try switched(bitrate: Self.fastBitrate)
+    try encoder.encode(try Self.request(id: 1, tiles: [0, 1, 2, 3]))
+    switchToFast(encoder)
+    try encoder.encode(try Self.request(id: 2, tiles: [0, 1, 2, 3]))
+    return encoder
+  }
+
+  private func moveToSlow(_ encoder: ScreenSharingRateSwitchedTileEncoder) throws {
+    try encoder.setBitrate(Self.slowBitrate)
+    scheduler.step(byNs: ScreenSharingV2EncoderRoute.slowAfterNs)
+    feedback(encoder, roundTripMs: 20, estimate: Self.slowBitrate, loss: ScreenSharingV2EncoderRoute.heavyLoss)
   }
 
   private func switchToFast(_ encoder: ScreenSharingRateSwitchedTileEncoder) {

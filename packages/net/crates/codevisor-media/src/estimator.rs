@@ -165,8 +165,9 @@ impl Estimator {
         let trusted = Duration::from_secs_f64(TRUSTED_SPAN_JITTERS * self.jitter_us / 1e6).max(MIN_SPAN);
         if delivery.receive_span >= trusted && delivery.bytes >= MIN_SAMPLE_BYTES {
             let span = delivery.receive_span.max(delivery.send_span);
-            self.bursts.push(now, delivery.bytes as f64 * 8.0 / span.as_secs_f64());
-            self.measured_bps = self.bursts.best().unwrap_or(self.measured_bps);
+            let sample = delivery.bytes as f64 * 8.0 / span.as_secs_f64();
+            self.bursts.push(now, sample);
+            self.measured_bps = self.bursts.best().unwrap_or(sample);
         }
         self.grow_cap(now);
     }
@@ -228,6 +229,7 @@ impl Estimator {
         let target = self.heavy_loss_target(now, estimate, loss).max(MIN_RATE_BPS);
         self.cap = Some(Cap { from_bps: target, since: now, grown_at: now, bps: target });
         self.bursts.clear();
+        self.measured_bps = 0.0;
         self.last_backoff = Some(now);
     }
 
@@ -288,7 +290,8 @@ impl Estimator {
             let elapsed = now.saturating_duration_since(cap.since).as_secs_f64();
             cap.bps = cap.from_bps * 2f64.powf(elapsed / CAP_DOUBLING.as_secs_f64());
             if cap.bps > ceiling {
-                cap.since = now - CAP_DOUBLING.mul_f64((ceiling / cap.from_bps).log2());
+                let grown_for = CAP_DOUBLING.mul_f64((ceiling / cap.from_bps).log2());
+                cap.since = now.checked_sub(grown_for).unwrap_or(cap.since);
                 cap.bps = ceiling;
             }
         }
@@ -532,24 +535,24 @@ mod tests {
     }
 
     #[test]
-    fn an_app_limited_cap_regrows_to_the_last_measured_link_but_not_past_it() {
+    fn an_app_limited_cap_regrows_to_the_last_measured_link_after_a_delay_back_off_but_not_a_heavy_loss() {
         let start = Instant::now();
         let mut estimator = Estimator::new(100e6, 1e9, FRAME);
         estimator.set_admitting(true);
         estimator.on_delivery(start, burst(125_000, 5 * MS));
-        let mut at = start + BURST_WINDOW + 100 * MS;
-        estimator.on_heavy_loss(at, 0.5);
-        let mut estimates = Vec::new();
-        for _ in 0..600 {
-            at += FRAME;
-            estimator.on_sent(at, 3_000);
-            estimator.on_acked(at, 3_000);
-            estimator.on_delay(at, OFFSET, 20 * MS);
-            estimates.push(estimator.estimate_bps());
-        }
+        let after_window = start + BURST_WINDOW + 100 * MS;
+        let queue = (0..16).map(|_| 0).chain((1..=10).map(|step| step * 2_000));
+        let cut = feed_traffic(&mut estimator, after_window, queue, 3_000, 3_000);
+        let regrown = feed_traffic(&mut estimator, after_window + 104 * MS, (0..2_000).map(|_| 0), 3_000, 3_000);
 
-        assert!(estimates[0] < 200e6 * 0.8, "the cut: {}", estimates[0]);
-        assert_eq!(estimates.last(), Some(&200e6), "back to the 200 Mbit/s measured 10 s before, not past it");
+        assert_eq!(cut.last(), Some(&(200e6 * BACKOFF)));
+        assert_eq!(regrown.last(), Some(&200e6), "back to the 200 Mbit/s measured 10 s before, not past it");
+
+        let lossy = after_window + Duration::from_secs(9);
+        estimator.on_heavy_loss(lossy, 0.9);
+        let lost = estimator.estimate_bps();
+        let held = feed_traffic(&mut estimator, lossy, (0..2_000).map(|_| 0), 3_000, 3_000);
+        assert!(held.last().is_some_and(|estimate| *estimate < lost * 2.0), "{lost} then {:?}", held.last());
     }
 
     #[test]

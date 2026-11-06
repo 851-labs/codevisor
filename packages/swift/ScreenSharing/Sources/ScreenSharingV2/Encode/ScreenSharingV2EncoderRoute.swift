@@ -72,6 +72,11 @@ struct ScreenSharingV2EncoderRoute: Sendable, Equatable {
     return true
   }
 
+  mutating func stayFast(atNs nowNs: Int64) {
+    choice = .fast
+    wantedSinceNs = wanted == nil ? nil : nowNs
+  }
+
   private var wanted: Choice? {
     switch choice {
     case .slow: bitrate >= Self.fastFromBitrate ? .fast : nil

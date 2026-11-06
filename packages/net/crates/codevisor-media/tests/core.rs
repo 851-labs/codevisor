@@ -931,7 +931,8 @@ fn an_app_limited_stream_doesnt_let_the_estimate_grow_past_the_link() {
 
 #[test]
 fn a_queue_that_outlasts_the_base_delay_window_stays_seen_while_it_drains() {
-    let link = NetworkConditions { id: "1 Mbit/s", delay_ms: 50.0, capacity_kbps: Some(1_000), ..NetworkConditions::N0 };
+    let link =
+        NetworkConditions { id: "1 Mbit/s", delay_ms: 50.0, capacity_kbps: Some(1_000), ..NetworkConditions::N0 };
     let mut sim = Sim::new(link, config(FecMode::Adaptive), 1);
     let mut captured_at = std::collections::HashMap::new();
     for index in 0..50 {

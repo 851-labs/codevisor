@@ -22,6 +22,7 @@ public final class ScreenSharingRateSwitchedTileEncoder: ScreenSharingTileEncode
   private let metrics: ScreenSharingMetrics
   private let scheduler: any ScreenSharingV2Scheduler
   private let queue = DispatchQueue(label: "ScreenSharingRateSwitchedTileEncoder")
+  private let suspension = Mutex(())
   private let state: Mutex<State>
 
   public convenience init(
@@ -107,15 +108,34 @@ public final class ScreenSharingRateSwitchedTileEncoder: ScreenSharingTileEncode
   }
 
   private func suspendSlowOnceFastOwnsEveryTile() {
-    let suspend = state.withLock { state in
-      guard state.route.choice == .fast, !state.slowSuspended,
-        layout.tiles.allSatisfy({ state.owners.owns($0, .fast) })
-      else { return false }
+    suspension.withLock { _ in
+      let suspend = state.withLock { state in
+        guard state.route.choice == .fast, !state.slowSuspended,
+          layout.tiles.allSatisfy({ state.owners.owns($0, .fast) })
+        else { return false }
 
-      state.slowSuspended = true
-      return true
+        state.slowSuspended = true
+        return true
+      }
+      if suspend { slow.suspend() }
     }
-    if suspend { slow.suspend() }
+  }
+
+  private func resumeSlow() -> Bool {
+    suspension.withLock { _ in
+      guard state.withLock({ $0.slowSuspended }) else { return true }
+
+      do {
+        try slow.resume()
+        state.withLock { $0.slowSuspended = false }
+        return true
+      } catch {
+        state.withLock { $0.route.stayFast(atNs: scheduler.nowNs) }
+        metrics.increment("encoderSlowResumeFailures")
+        metrics.label("encoderRouteError", error.localizedDescription)
+        return false
+      }
+    }
   }
 
   private func encoder(_ choice: Choice) -> any ScreenSharingTileEncoder {
@@ -136,11 +156,11 @@ public final class ScreenSharingRateSwitchedTileEncoder: ScreenSharingTileEncode
     let switched = state.withLock { state -> Choice? in
       guard !state.stopped, state.route.update(atNs: scheduler.nowNs) else { return nil }
 
-      if state.route.choice == .slow { state.slowSuspended = false }
       return state.route.choice
     }
+    let resumed = switched != .slow || resumeSlow()
     scheduleSwitch()
-    guard let switched else { return nil }
+    guard let switched, resumed else { return nil }
 
     metrics.increment("encoderSwitches")
     metrics.label("encoderRoute", switched.rawValue)

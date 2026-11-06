@@ -10,6 +10,7 @@ public protocol ScreenSharingTileEncoder: AnyObject, Sendable {
   func observeNetwork(_ feedback: ScreenSharingTileNetworkFeedback)
   func setBitrate(_ bitsPerSecond: Int) throws
   func suspend()
+  func resume() throws
   func stop()
 }
 
@@ -17,6 +18,7 @@ extension ScreenSharingTileEncoder {
   public func observeNetwork(_ feedback: ScreenSharingTileNetworkFeedback) {}
 
   public func suspend() {}
+  public func resume() throws {}
 }
 
 extension ScreenSharingTileEncoder {

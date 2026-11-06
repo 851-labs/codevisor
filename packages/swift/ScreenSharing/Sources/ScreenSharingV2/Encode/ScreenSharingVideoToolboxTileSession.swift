@@ -10,6 +10,7 @@ final class ScreenSharingVideoToolboxTileSession: @unchecked Sendable {
     var acknowledged: [UInt64] = []
     var clock: ScreenSharingEncoderPresentationClock
     var sessionFailed = false
+    var suspended = false
     var opened = false
     var openingAttempts = 0
     var closed = false
@@ -55,6 +56,7 @@ final class ScreenSharingVideoToolboxTileSession: @unchecked Sendable {
   var bitrate: Int { state.withLock { $0.bitrate } }
 
   func encode(_ pixels: CVPixelBuffer, request: ScreenSharingTileEncodeRequest, sharing bitsPerSecond: Int) throws {
+    try resume()
     try reopenFailedSession()
     if let target = target(sharing: bitsPerSecond) { apply(target) }
     let (submission, acknowledged, presentationNs) = try begin(request)
@@ -98,13 +100,29 @@ final class ScreenSharingVideoToolboxTileSession: @unchecked Sendable {
   }
 
   func suspend() {
-    let suspended = state.withLock { state in
-      defer { state.sessionFailed = true }
-      return !state.closed && !state.sessionFailed
+    let suspending = state.withLock { state in
+      defer { if !state.closed { state.suspended = true } }
+      return !state.closed && !state.suspended
     }
-    guard suspended else { return }
+    guard suspending else { return }
 
     close(currentSession)
+    metrics.increment("encoderSessionSuspends")
+  }
+
+  func resume() throws {
+    guard state.withLock({ $0.suspended && !$0.closed }) else { return }
+
+    let replacement = try factory.make()
+    sessionLock.withLock { session = replacement }
+    state.withLock { state in
+      state.suspended = false
+      state.sessionFailed = false
+      state.acknowledged = []
+      state.bitrate = factory.startingBitrate
+      state.opened = false
+      state.openingAttempts = 0
+    }
   }
 
   private var currentSession: VTCompressionSession { sessionLock.withLock { session } }

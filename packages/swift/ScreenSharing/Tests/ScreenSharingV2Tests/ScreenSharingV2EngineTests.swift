@@ -147,7 +147,7 @@ extension HardwareCodecTests {
     }
 
     @Test(.enabled(if: VTIsHardwareDecodeSupported(kCMVideoCodecType_HEVC), "No hardware HEVC on this machine."))
-    func aSuspendedVideoToolboxEncoderReopensItsSessionOnTheNextEncode() async throws {
+    func aSuspendedVideoToolboxEncoderOpensItsSessionAgainOnTheNextEncode() async throws {
       try await HardwareEncoderBudget.require(videoToolboxTiles: 1)
       let configuration = try ScreenSharingVideoConfiguration(width: 640, height: 360, bitrate: 10_000_000)
       let metrics = ScreenSharingMetrics()
@@ -174,7 +174,8 @@ extension HardwareCodecTests {
       try encoder.encode(request(2))
       await answered.cancellableWait(for: 2)
 
-      #expect(metrics.counter("encoderSessionReopens") == 1)
+      #expect(metrics.counter("encoderSessionSuspends") == 1)
+      #expect(metrics.counter("encoderSessionReopens") == 0)
       #expect(tiles.withLock { $0.map(\.update.id) } == [1, 2])
     }
 
