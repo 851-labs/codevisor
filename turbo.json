@@ -1,6 +1,11 @@
 {
   "$schema": "https://turbo.build/schema.json",
   "cacheDir": "tmp/build/turbo-cache",
+  "remoteCache": {
+    "apiUrl": "https://turbo-cache.codevisor.dev",
+    "teamSlug": "codevisor",
+    "uploadTimeout": 300
+  },
   "tasks": {
     "build": {
       "dependsOn": ["^build"],

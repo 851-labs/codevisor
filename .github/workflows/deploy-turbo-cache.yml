@@ -1,0 +1,53 @@
+name: Deploy turbo cache
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - "apps/turbo-cache/**"
+      - ".github/workflows/deploy-turbo-cache.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: deploy-turbo-cache
+  cancel-in-progress: false
+
+jobs:
+  deploy:
+    runs-on: ubuntu-24.04
+    defaults:
+      run:
+        working-directory: apps/turbo-cache
+    env:
+      CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+      CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+      - uses: ./.github/actions/setup-node
+      - uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6
+        with:
+          bun-version-file: package.json
+      - run: bun install --frozen-lockfile
+      - run: bun run typecheck && bun run test
+      - name: Create the artifact bucket
+        run: bunx wrangler r2 bucket info codevisor-turbo-cache >/dev/null 2>&1 || bunx wrangler r2 bucket create codevisor-turbo-cache
+      - name: Expire artifacts after 14 days
+        run: bunx wrangler r2 bucket lifecycle set codevisor-turbo-cache --file lifecycle.json --force
+      - name: Sync the cache tokens
+        env:
+          TURBO_TOKEN: ${{ secrets.TURBO_TOKEN }}
+          TURBO_READ_TOKEN: ${{ secrets.TURBO_READ_TOKEN }}
+        run: |
+          : "${TURBO_TOKEN:?TURBO_TOKEN secret is required}" "${TURBO_READ_TOKEN:?TURBO_READ_TOKEN secret is required}"
+          jq -n '{TURBO_TOKEN: env.TURBO_TOKEN, TURBO_READ_TOKEN: env.TURBO_READ_TOKEN}' > "$RUNNER_TEMP/secrets.json"
+          bunx wrangler deploy --secrets-file "$RUNNER_TEMP/secrets.json"
+          rm -f "$RUNNER_TEMP/secrets.json"
+      - name: Check the cache answers
+        env:
+          TURBO_READ_TOKEN: ${{ secrets.TURBO_READ_TOKEN }}
+        run: |
+          curl --fail --silent --show-error -H "Authorization: Bearer $TURBO_READ_TOKEN" \
+            https://turbo-cache.codevisor.dev/v8/artifacts/status
