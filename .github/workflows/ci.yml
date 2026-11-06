@@ -87,6 +87,22 @@ jobs:
           save-if: ${{ github.event_name != 'merge_group' }}
       - run: bun install --frozen-lockfile
       - run: node scripts/check.mjs "${{ needs.plan.outputs.range }}" --lanes=javascript
+      - name: Show the check logs
+        if: failure() || cancelled()
+        run: |
+          for log in tmp/build/check/*.log; do
+            [[ -f "$log" ]] || continue
+            echo "::group::$log"
+            tail -n 300 "$log"
+            echo "::endgroup::"
+          done
+      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
+        if: failure() || cancelled()
+        with:
+          name: check-logs-${{ github.job }}
+          path: tmp/build/check/*.log
+          if-no-files-found: ignore
+          retention-days: 7
 
   checks-swift:
     needs: plan
@@ -108,6 +124,22 @@ jobs:
       - uses: ./.github/actions/setup-rust
       - run: bun install --frozen-lockfile
       - run: node scripts/check.mjs "${{ needs.plan.outputs.range }}" --lanes=swift-style,swift
+      - name: Show the check logs
+        if: failure() || cancelled()
+        run: |
+          for log in tmp/build/check/*.log; do
+            [[ -f "$log" ]] || continue
+            echo "::group::$log"
+            tail -n 300 "$log"
+            echo "::endgroup::"
+          done
+      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
+        if: failure() || cancelled()
+        with:
+          name: check-logs-${{ github.job }}
+          path: tmp/build/check/*.log
+          if-no-files-found: ignore
+          retention-days: 7
 
   test-net:
     needs: plan

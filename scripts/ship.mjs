@@ -90,12 +90,14 @@ function queuePullRequest(pullRequest) {
 async function waitUntilLanded(pullRequest) {
   step("Waiting for the merge queue")
   let unreachablePolls = 0
+  let outOfQueuePolls = 0
   for (;;) {
     const state = pullRequestState(pullRequest)
     unreachablePolls = state === undefined ? unreachablePolls + 1 : 0
+    outOfQueuePolls = state?.leftQueue ? outOfQueuePolls + 1 : 0
     if (unreachablePolls > unreachablePollsAllowed) fail("Lost contact with GitHub while waiting")
     if (state?.merged) return report(`Landed ${pullRequest}`)
-    if (state?.leftQueue)
+    if (outOfQueuePolls > 1)
       fail(`${pullRequest} left the merge queue; see its checks, fix, and ship again`)
 
     await sleep(pollMilliseconds)
