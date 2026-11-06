@@ -96,49 +96,6 @@ private struct ScreenSharingDetailsButton: View {
     }
     .accessibilityLabel("Connection Details")
     .help("Connection Details")
-    .popover(isPresented: $showDiagnostics) { details.padding(16).frame(width: 280) }
-  }
-
-  @ViewBuilder private var details: some View {
-    if let diagnostics = store.endpoint?.diagnostics {
-      VStack(alignment: .leading, spacing: 10) {
-        Text("Connection Details").font(.headline)
-        if let engine = diagnostics.engine { LabeledContent("Engine", value: engine) }
-        LabeledContent("Route", value: diagnostics.route)
-        LabeledContent("Video", value: diagnostics.resolution)
-        if let fps = diagnostics.framesPerSecond { LabeledContent("Presented", value: String(format: "%.1f fps", fps)) }
-        if let rate = diagnostics.megabitsPerSecond {
-          LabeledContent("Receiving", value: String(format: "%.2f Mbps", rate))
-        }
-        if let updates = diagnostics.updatesPerSecond {
-          LabeledContent("Updates", value: String(format: "%.1f /s", updates))
-        }
-        if let size = diagnostics.bytesPerUpdate {
-          LabeledContent(
-            "Per update", value: ByteCountFormatter.string(fromByteCount: Int64(size), countStyle: .binary))
-        }
-        if let latency = diagnostics.updateLatencyMilliseconds {
-          LabeledContent("Update latency p95", value: String(format: "%.0f ms", latency))
-        }
-        if let rtt = diagnostics.roundTripMilliseconds {
-          LabeledContent("Round trip", value: String(format: "%.1f ms", rtt))
-        }
-        if let decode = diagnostics.decodeMilliseconds {
-          LabeledContent("Decode p95", value: String(format: "%.2f ms", decode))
-        }
-        if let recovery = diagnostics.recovery { LabeledContent("Recovery", value: recovery) }
-        if let streams = diagnostics.streams { LabeledContent("Streams", value: streams) }
-        Text(diagnostics.decoder).font(.caption).foregroundStyle(.secondary)
-        if let timeline = diagnostics.timeline { ScreenSharingTimelineDetails(timeline: timeline) }
-      }
-      .font(.callout)
-    } else {
-      VStack(alignment: .leading, spacing: 10) {
-        Text("Connection Details").font(.headline)
-        Text(store.message ?? "Connection details will appear when the screen share is ready.")
-          .foregroundStyle(.secondary)
-      }
-      .font(.callout)
-    }
+    .popover(isPresented: $showDiagnostics) { ScreenSharingDetailsPopover(store: store) }
   }
 }
