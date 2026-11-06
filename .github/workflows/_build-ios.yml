@@ -1,0 +1,78 @@
+name: Build iOS
+
+on:
+  workflow_call:
+    inputs:
+      runner:
+        description: JSON array of runner labels
+        type: string
+        required: true
+      version:
+        type: string
+        required: true
+      build-number:
+        type: string
+        required: true
+      publish:
+        description: Upload release artifacts, debug symbols, and caches
+        type: boolean
+        default: true
+
+permissions:
+  actions: read
+  contents: read
+
+defaults:
+  run:
+    shell: bash
+
+env:
+  TURBO_TOKEN: ${{ secrets.TURBO_TOKEN }}
+  CODEVISOR_SOURCE_REVISION: ${{ github.sha }}
+
+jobs:
+  build:
+    runs-on: ${{ fromJSON(inputs.runner) }}
+    timeout-minutes: 60
+    env:
+      VERSION: ${{ inputs.version }}
+      CODEVISOR_BUILD_NUMBER: ${{ inputs.build-number }}
+      CODEVISOR_APPLE_KEY_DIRECTORY: ${{ github.workspace }}/tmp/codevisor-ios-signing-${{ github.run_id }}-${{ github.run_attempt }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          clean: true
+          set-safe-directory: false
+      - name: Select full Xcode
+        run: echo "DEVELOPER_DIR=$(scripts/release/resolve-xcode.sh)" >> "$GITHUB_ENV"
+      - uses: ./.github/actions/setup-node
+      - uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6
+        with:
+          bun-version-file: package.json
+      - uses: ./.github/actions/setup-rust
+      - name: Ensure Metal Toolchain
+        run: xcodebuild -downloadComponent MetalToolchain
+      - name: Fetch GhosttyKit
+        run: apps/macos/scripts/build-ghostty.sh
+      - name: Build the tunnel xcframework
+        run: node scripts/net-artifact.mjs ensure-swift
+      - name: Archive and cloud-sign the iOS build
+        env:
+          APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
+          APP_STORE_CONNECT_API_KEY_BASE64: ${{ secrets.APP_STORE_CONNECT_API_KEY_BASE64 }}
+          APP_STORE_CONNECT_API_KEY_ID: ${{ secrets.APP_STORE_CONNECT_API_KEY_ID }}
+          APP_STORE_CONNECT_ISSUER_ID: ${{ secrets.APP_STORE_CONNECT_ISSUER_ID }}
+        run: bun scripts/release/build-ios-testflight.mjs "$VERSION"
+      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
+        if: inputs.publish
+        with:
+          name: codevisor-ios
+          path: |
+            tmp/build/ios/testflight/export/Codevisor.ipa
+            tmp/build/ios/testflight/export/Codevisor.xcarchive.zip
+            tmp/build/ios/testflight/export/testflight-build.json
+          if-no-files-found: error
+          retention-days: 14
+      - name: Clean persistent runner workspace
+        if: always()
+        run: rm -rf tmp/build/ios/testflight "$CODEVISOR_APPLE_KEY_DIRECTORY"
