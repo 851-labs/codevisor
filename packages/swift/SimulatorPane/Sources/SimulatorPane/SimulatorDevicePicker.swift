@@ -26,7 +26,7 @@
       }
       .labelsHidden()
       Autocomplete.Footer(id: "actions") {
-        Autocomplete.Action("Manage Simulators…", systemImage: "gearshape.fill") { model.managingSimulators = true }
+        Autocomplete.Action("Manage Simulators…") { model.managingSimulators = true }
           .help("Add, Rename and Delete Simulators")
       }
     }
