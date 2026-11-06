@@ -64,10 +64,10 @@ extension HomeView {
     flow.promotionWorkspaceId = workspace.id
     let navigationTitle = WorkspaceNavigationTitle(
       title: session.title.isEmpty ? "New Chat" : session.title,
-      subtitle: [workspace.name, environment.machines.fleetMachineName(for: session.serverId)]
-        .compactMap { $0 }
-        .filter { !$0.isEmpty }
-        .joined(separator: " · ")
+      subtitle: WorkspaceNavigationTitle.subtitle(
+        branch: workspace.git?.branch,
+        machineName: environment.machines.fleetMachineName(for: session.serverId)
+      )
     )
     flow.promotionNavigationTitle = navigationTitle
     flow.phase = .animating
