@@ -1,0 +1,14 @@
+{
+  "name": "@codevisor/devtools",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "typecheck": "tsc -p tsconfig.json --pretty false",
+    "test": "vitest run src --passWithNoTests",
+    "test:coverage": "vitest run src --coverage"
+  },
+  "devDependencies": {
+    "@codevisor/vitest-config": "workspace:*",
+    "vitest": "4.1.6"
+  }
+}
