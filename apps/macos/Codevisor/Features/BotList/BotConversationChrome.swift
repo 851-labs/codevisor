@@ -4,7 +4,7 @@ import SwiftUI
 struct BotConversationChrome: ViewModifier {
   let bot: Bot
   let showsHeader: Bool
-  @FocusedValue(\.botListActions) private var actions
+  @FocusedValue(\.rootSidebarActions) private var actions
   @Environment(WorkspaceActivity.self) private var workspaceActivity: WorkspaceActivity?
 
   func body(content: Content) -> some View {

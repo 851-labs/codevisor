@@ -4,11 +4,11 @@ import SwiftUI
 
 struct RootSidebar: View {
   @Binding var selection: SidebarSelection?
+  @Binding var botEditor: BotEditorTarget?
   let store: SessionStore?
   let revealRequest: SidebarRevealRequest
   var publishesSceneActions = true
   var isDrawer = false
-  @Environment(AppEnvironment.self) private var environment
   @Environment(AdaptivePanelLayout.self) private var panelLayout
   @ClientPreference(FeatureFlag.bots.preferenceKey, default: false) private var botsEnabled
   @ClientPreference(SidebarMode.preferenceKey, default: SidebarMode.code) private var storedMode
@@ -17,7 +17,6 @@ struct RootSidebar: View {
   @State private var visitedModes: Set<SidebarMode> = []
   @State private var parkedMode: SidebarMode?
   @State private var parkedSelection: SidebarSelection?
-  @State private var botEditor: BotEditorTarget?
 
   private var activeMode: SidebarMode { SidebarMode.active(storedMode, botsEnabled: botsEnabled) }
 
@@ -27,7 +26,6 @@ struct RootSidebar: View {
         PaletteDestinationsPublisher(
           selection: $selection, store: store, revealRequest: revealRequest, isEnabled: publishesSceneActions)
       )
-      .focusedSceneValue(\.rootSidebarActions, sceneActions)
       .background {
         if !isDrawer {
           SplitColumnExtentReader { visibleColumnWidth = $0 }.frame(width: 0, height: 0)
@@ -46,23 +44,6 @@ struct RootSidebar: View {
           }
         }
       }
-  }
-
-  private var sceneActions: RootSidebarActions? {
-    guard publishesSceneActions, store != nil else { return nil }
-    return RootSidebarActions(newChat: openNewChat, newBot: canCreateBots ? openNewBot : nil)
-  }
-
-  private var canCreateBots: Bool { botsEnabled && !environment.bots.botMachines.isEmpty }
-
-  private func openNewChat() {
-    selection = .newChat(nil)
-    storedMode = .code
-  }
-
-  private func openNewBot() {
-    storedMode = .chat
-    botEditor = .create
   }
 
   private var showsToolbarModePicker: Bool {

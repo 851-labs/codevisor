@@ -45,6 +45,8 @@ struct RootView: View {
   static let sidebarCollapsedKey = "sidebar.collapsed"
   @ClientPreference(Self.sidebarCollapsedKey, default: false) var sidebarCollapsed
   @ClientPreference(FeatureFlag.bots.preferenceKey, default: false) var botsEnabled
+  @ClientPreference(SidebarMode.preferenceKey, default: SidebarMode.code) var sidebarMode
+  @State var botEditor: BotEditorTarget?
   @State var store: SessionStore?
   @State private var requiresInitialNewChatProjectResolution = false
   @State var panelLayout = AdaptivePanelLayout()
@@ -67,6 +69,12 @@ struct RootView: View {
       .overlay { ErrorBannerLayer() }
       .overlay { CommandPaletteOverlay(palette: commandPalette, store: store) }
       .focusedSceneValue(\.commandPalette, commandPalette)
+      .focusedSceneValue(\.rootSidebarActions, rootActions)
+      .sheet(item: $botEditor) { target in
+        BotEditorSheet(target: target, environment: environment, store: store) { bot in
+          selection = .bot(serverId: bot.serverId, id: bot.id)
+        }
+      }
       .focusedSceneValue(
         \.sidebarVisibility, SidebarVisibilityToggle(isVisible: clientSidebarVisible, setVisible: setSidebarVisible)
       )
@@ -149,7 +157,7 @@ struct RootView: View {
 
   private var mainSplit: some View {
     NavigationSplitView(columnVisibility: sidebarColumnVisibility) {
-      RootSidebar(selection: $selection, store: store, revealRequest: sidebarRevealRequest)
+      RootSidebar(selection: $selection, botEditor: $botEditor, store: store, revealRequest: sidebarRevealRequest)
     } detail: {
       Group {
         if let store {
@@ -158,7 +166,7 @@ struct RootView: View {
           ProgressView().frame(maxWidth: .infinity, maxHeight: .infinity)
         }
       }
-      .toolbar { BotComposeToolbarItem() }
+      .toolbar { BotComposeToolbarItem(newBot: openNewBot) }
     }
     .modifier(WorkspaceInspectorPresentation(store: store, selection: $selection, revealRequest: sidebarRevealRequest))
     .modifier(WorkspaceChildAgentsEnvironment(store: store, selection: $selection, revealRequest: sidebarRevealRequest))
@@ -169,7 +177,8 @@ struct RootView: View {
         width: min(270, panelLayout.windowWidth - 16)
       ) {
         RootSidebar(
-          selection: $selection, store: store, revealRequest: sidebarRevealRequest, publishesSceneActions: false,
+          selection: $selection, botEditor: $botEditor, store: store, revealRequest: sidebarRevealRequest,
+          publishesSceneActions: false,
           isDrawer: true)
       }
     }

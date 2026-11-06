@@ -1,7 +1,7 @@
 import SwiftUI
 
 struct BotListEmptyDetail: View {
-  @FocusedValue(\.botListActions) private var actions
+  @FocusedValue(\.rootSidebarActions) private var actions
 
   var body: some View {
     ContentUnavailableView {

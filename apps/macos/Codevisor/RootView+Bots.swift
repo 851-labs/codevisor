@@ -8,6 +8,22 @@ extension RootView {
     return true
   }
 
+  var rootActions: RootSidebarActions? {
+    guard store != nil else { return nil }
+    return RootSidebarActions(
+      newChat: openNewChat, newBot: botsEnabled ? openNewBot : nil, editBot: { botEditor = .edit($0) })
+  }
+
+  func openNewChat() {
+    selection = .newChat(nil)
+    sidebarMode = .code
+  }
+
+  func openNewBot() {
+    sidebarMode = .chat
+    botEditor = .create
+  }
+
   func readBotMascotActivity() {
     let activities = BotMascotActivities(environment: environment, store: store)
     BotMascotActivitySource.shared.read { activities.of($0) }

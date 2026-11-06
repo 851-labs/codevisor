@@ -40,8 +40,6 @@ struct BotListSidebar: View {
     return id
   }
 
-  private var canCreateBots: Bool { !environment.bots.botMachines.isEmpty }
-
   var body: some View {
     scrollingContent
       .safeAreaInset(edge: .bottom, spacing: 0) {
@@ -51,7 +49,7 @@ struct BotListSidebar: View {
         }
       }
       .modifier(
-        SidebarBotsModifier(botEditor: $botEditor, deletingBot: $deletingBot, selection: $selection, store: store)
+        SidebarBotsModifier(deletingBot: $deletingBot, selection: $selection)
       )
       .modifier(SectionPromptModifier(prompt: $sectionPrompt, store: sections))
       .sheet(isPresented: $showingAddProject) {
@@ -143,8 +141,7 @@ struct BotListSidebar: View {
 
   private var actions: BotListActions {
     BotListActions(
-      newBot: canCreateBots ? newBot : nil, newProject: { showingAddProject = true }, stepBot: step,
-      editBot: { botEditor = .edit($0) },
+      newProject: { showingAddProject = true }, stepBot: step,
       archiveBot: archivableSelectedBot == nil ? nil : archiveSelectedBot)
   }
 
@@ -174,10 +171,6 @@ struct BotListSidebar: View {
         ErrorReporter.shared.report(isArchived ? "Couldn't archive bot" : "Couldn't unarchive bot", error: error)
       }
     }
-  }
-
-  private func newBot() {
-    botEditor = .create
   }
 
   private func select(_ bot: Bot) {
