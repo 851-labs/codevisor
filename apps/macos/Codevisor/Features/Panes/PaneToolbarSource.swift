@@ -60,7 +60,8 @@ enum PaneToolbarSource {
 
   var hasTrailingControls: Bool {
     switch self {
-    case .screenSharing, .file, .review, .simulator: true
+    case let .file(model): FilePanePreviewToggle.isShown(for: model)
+    case .screenSharing, .review, .simulator: true
     case .browser: false
     }
   }

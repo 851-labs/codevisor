@@ -9,7 +9,6 @@ struct PaneHeaderToolbar: View {
 
   let source: PaneToolbarSource
   let slot: Slot
-  let onNewTab: () -> Void
 
   private static let addressMinimumWidth: CGFloat = 140
 
@@ -49,7 +48,7 @@ struct PaneHeaderToolbar: View {
         ScreenSharingTrailingControls(
           store: store, settings: { pane.machineSettings() }, applySettings: { pane.applyMachineSettings($0) })
       }
-    case let .file(model): FilePaneToolbarActions(model: model, onNewTab: onNewTab)
+    case let .file(model): FilePanePreviewToggle(model: model)
     case let .review(model): ReviewPaneToolbarActions(model: model)
     case let .simulator(model): SimulatorPaneActions(model: model)
     case .browser: EmptyView()

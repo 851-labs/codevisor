@@ -46,7 +46,7 @@ extension SessionContainerView {
   @ToolbarContentBuilder
   private var documentPaneToolbar: some ToolbarContent {
     if let model = activeFileModel {
-      FilePaneToolbar(model: model, onNewTab: addCenterTab)
+      FilePaneToolbar(model: model)
     } else {
       reviewOrSimulatorToolbar
     }

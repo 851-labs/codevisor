@@ -74,7 +74,6 @@ extension SessionContainerView {
     FloatingPaneActions(
       move: { FloatingPanes.shared.move(floatingKey(leafId), to: $0) },
       activate: { configuredCenterModel(leafId: leafId).onActivated?() },
-      newTab: addCenterTab,
       returnToWorkspace: { returnFloatingLeaf(leafId) },
       close: { closeLeaf(leafId) }
     )
