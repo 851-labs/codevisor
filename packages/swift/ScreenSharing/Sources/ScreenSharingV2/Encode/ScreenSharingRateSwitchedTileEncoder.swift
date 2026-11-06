@@ -75,7 +75,7 @@ public final class ScreenSharingRateSwitchedTileEncoder: ScreenSharingTileEncode
   }
 
   public func observeNetwork(_ feedback: ScreenSharingTileNetworkFeedback) {
-    state.withLock { $0.route.observe(roundTripMs: feedback.roundTripDelayMs, atNs: scheduler.nowNs) }
+    state.withLock { $0.route.observe(feedback, atNs: scheduler.nowNs) }
     switchIfDue()
     fast.observeNetwork(feedback)
     slow.observeNetwork(feedback)

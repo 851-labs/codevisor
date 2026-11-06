@@ -92,6 +92,7 @@ struct ScreenSharingRateSwitchedTileEncoderTests {
 
     try encoder.setBitrate(Self.slowBitrate)
     scheduler.step(byNs: ScreenSharingV2EncoderRoute.slowAfterNs)
+    feedback(encoder, roundTripMs: 20, estimate: Self.slowBitrate)
     try encoder.encode(try Self.request(id: 3, tiles: [3]))
 
     #expect(slow.requests.last?.update.id == 3)
@@ -112,10 +113,12 @@ struct ScreenSharingRateSwitchedTileEncoderTests {
     feedback(encoder, roundTripMs: 20)
   }
 
-  private func feedback(_ encoder: ScreenSharingRateSwitchedTileEncoder, roundTripMs: Double) {
+  private func feedback(
+    _ encoder: ScreenSharingRateSwitchedTileEncoder, roundTripMs: Double, estimate: Int = fastBitrate
+  ) {
     encoder.observeNetwork(
       ScreenSharingTileNetworkFeedback(
-        packetErrorRate: 0, roundTripDelayMs: roundTripMs, transmissionBitsPerSecond: Self.fastBitrate))
+        packetErrorRate: 0, roundTripDelayMs: roundTripMs, transmissionBitsPerSecond: estimate))
   }
 
   private func clearOutputs() {

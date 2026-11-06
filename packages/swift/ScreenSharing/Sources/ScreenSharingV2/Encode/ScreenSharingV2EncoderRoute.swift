@@ -10,6 +10,8 @@ struct ScreenSharingV2EncoderRoute: Sendable, Equatable {
   static let fastAgainAfterNs: Int64 = 30_000_000_000
   static let slowAfterNs: Int64 = 1_000_000_000
   static let feedbackFreshNs: Int64 = 1_000_000_000
+  static let slowEvidenceFreshNs: Int64 = 500_000_000
+  static let slowBelowEstimate = Int(Double(slowBelowBitrate) / 0.85)
   static let queuedAboveMs = 50.0
   static let shortestRoundTripKeptNs: Int64 = 10_000_000_000
 
@@ -17,6 +19,7 @@ struct ScreenSharingV2EncoderRoute: Sendable, Equatable {
   private var bitrate: Int
   private var wantedSinceNs: Int64?
   private var feedbackNs: Int64?
+  private var feedbackEstimate = Int.max
   private var shortestRoundTripMs: Double?
   private var shortestRoundTripNs: Int64 = 0
   private var lastRoundTripMs: Double?
@@ -41,10 +44,12 @@ struct ScreenSharingV2EncoderRoute: Sendable, Equatable {
     wantedSinceNs = wanted == nil ? nil : nowNs
   }
 
-  mutating func observe(roundTripMs: Double, atNs nowNs: Int64) {
+  mutating func observe(_ feedback: ScreenSharingTileNetworkFeedback, atNs nowNs: Int64) {
+    let roundTripMs = feedback.roundTripDelayMs
     guard roundTripMs > 0 else { return }
 
     feedbackNs = nowNs
+    feedbackEstimate = feedback.transmissionBitsPerSecond
     let queued = roundTripMs > shortestRoundTrip(observing: roundTripMs, atNs: nowNs) + Self.queuedAboveMs
     let settled = lastRoundTripMs.map { abs(roundTripMs - $0) <= Self.queuedAboveMs } ?? true
     lastRoundTripMs = roundTripMs
@@ -79,9 +84,14 @@ struct ScreenSharingV2EncoderRoute: Sendable, Equatable {
   }
 
   private func hasEvidence(for choice: Choice, atNs nowNs: Int64) -> Bool {
-    guard choice == .fast else { return true }
+    switch choice {
+    case .fast: hasFeedback(within: Self.feedbackFreshNs, atNs: nowNs)
+    case .slow: hasFeedback(within: Self.slowEvidenceFreshNs, atNs: nowNs) && feedbackEstimate < Self.slowBelowEstimate
+    }
+  }
 
-    return feedbackNs.map { nowNs - $0 <= Self.feedbackFreshNs } ?? false
+  private func hasFeedback(within freshNs: Int64, atNs nowNs: Int64) -> Bool {
+    feedbackNs.map { nowNs - $0 <= freshNs } ?? false
   }
 
   private func holdNs(before choice: Choice) -> Int64 {

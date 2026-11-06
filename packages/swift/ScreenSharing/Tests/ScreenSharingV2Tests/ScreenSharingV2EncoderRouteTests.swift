@@ -11,7 +11,7 @@ struct ScreenSharingV2EncoderRouteTests {
   @Test func aFastLinkMovesToTheFastEncoderOnlyOnceItHeldForTheHoldWithFreshFeedback() {
     var route = ScreenSharingV2EncoderRoute(bitrate: Self.fast, atNs: 0)
 
-    route.observe(roundTripMs: 20, atNs: Self.fastAfterNs - 1)
+    route.observe(Self.feedback(20), atNs: Self.fastAfterNs - 1)
     let early = route.update(atNs: Self.fastAfterNs - 1)
     let due = route.update(atNs: Self.fastAfterNs)
 
@@ -22,10 +22,10 @@ struct ScreenSharingV2EncoderRouteTests {
 
   @Test func withoutFreshFeedbackTheSwitchWaitsForTheNextFeedback() {
     var route = ScreenSharingV2EncoderRoute(bitrate: Self.fast, atNs: 0)
-    route.observe(roundTripMs: 20, atNs: 0)
+    route.observe(Self.feedback(20), atNs: 0)
 
     let stale = route.update(atNs: Self.fastAfterNs + ScreenSharingV2EncoderRoute.feedbackFreshNs + 1)
-    route.observe(roundTripMs: 20, atNs: Self.fastAfterNs + 2 * ScreenSharingV2EncoderRoute.feedbackFreshNs)
+    route.observe(Self.feedback(20), atNs: Self.fastAfterNs + 2 * ScreenSharingV2EncoderRoute.feedbackFreshNs)
     let fresh = route.update(atNs: Self.fastAfterNs + 2 * ScreenSharingV2EncoderRoute.feedbackFreshNs)
 
     #expect(!stale)
@@ -34,32 +34,32 @@ struct ScreenSharingV2EncoderRouteTests {
 
   @Test func aRoundTripThatShowsAQueueStartsTheHoldOver() {
     var route = ScreenSharingV2EncoderRoute(bitrate: Self.fast, atNs: 0)
-    route.observe(roundTripMs: 20, atNs: 0)
+    route.observe(Self.feedback(20), atNs: 0)
 
-    route.observe(roundTripMs: 20 + ScreenSharingV2EncoderRoute.queuedAboveMs + 1, atNs: 1_000)
+    route.observe(Self.feedback(20 + ScreenSharingV2EncoderRoute.queuedAboveMs + 1), atNs: 1_000)
 
     #expect(route.switchDueNs == 1_000 + Self.fastAfterNs)
   }
 
   @Test func aRoundTripThatFallsAsAQueueDrainsStartsTheHoldOver() {
     var route = ScreenSharingV2EncoderRoute(bitrate: Self.fast, atNs: 0)
-    route.observe(roundTripMs: 1_800, atNs: 0)
+    route.observe(Self.feedback(1_800), atNs: 0)
 
-    route.observe(roundTripMs: 900, atNs: 1_000)
-    route.observe(roundTripMs: 880, atNs: 2_000)
+    route.observe(Self.feedback(900), atNs: 1_000)
+    route.observe(Self.feedback(880), atNs: 2_000)
 
     #expect(route.switchDueNs == 1_000 + Self.fastAfterNs)
   }
 
   @Test func aRoundTripThatStaysHigherStopsRestartingTheHoldOnceTheOldShortestExpires() {
     var route = ScreenSharingV2EncoderRoute(bitrate: Self.fast, atNs: 0)
-    route.observe(roundTripMs: 5, atNs: 0)
+    route.observe(Self.feedback(5), atNs: 0)
     let kept = ScreenSharingV2EncoderRoute.shortestRoundTripKeptNs
 
-    route.observe(roundTripMs: 80, atNs: kept)
+    route.observe(Self.feedback(80), atNs: kept)
     let restartedAt = route.switchDueNs
-    route.observe(roundTripMs: 80, atNs: kept + 1)
-    route.observe(roundTripMs: 80, atNs: kept + 2)
+    route.observe(Self.feedback(80), atNs: kept + 1)
+    route.observe(Self.feedback(80), atNs: kept + 2)
 
     #expect(restartedAt == kept + Self.fastAfterNs)
     #expect(route.switchDueNs == kept + Self.fastAfterNs)
@@ -67,7 +67,7 @@ struct ScreenSharingV2EncoderRouteTests {
 
   @Test func aSlowLinkStaysOnTheSlowEncoder() {
     var route = ScreenSharingV2EncoderRoute(bitrate: Self.slow, atNs: 0)
-    route.observe(roundTripMs: 120, atNs: 10 * Self.fastAfterNs)
+    route.observe(Self.feedback(120), atNs: 10 * Self.fastAfterNs)
 
     let switched = route.update(atNs: 10 * Self.fastAfterNs)
 
@@ -79,6 +79,7 @@ struct ScreenSharingV2EncoderRouteTests {
     var route = fastRoute()
 
     route.observe(bitrate: Self.slow, atNs: 2 * Self.fastAfterNs)
+    route.observe(Self.feedback(20, estimate: Self.slow), atNs: 2 * Self.fastAfterNs + Self.slowAfterNs - 1)
     let early = route.update(atNs: 2 * Self.fastAfterNs + Self.slowAfterNs - 1)
     let due = route.update(atNs: 2 * Self.fastAfterNs + Self.slowAfterNs)
 
@@ -87,11 +88,27 @@ struct ScreenSharingV2EncoderRouteTests {
     #expect(route.choice == .slow)
   }
 
+  @Test func aLowBitrateThatFreshFeedbackDoesNotConfirmKeepsTheFastEncoder() {
+    var route = fastRoute()
+    let lowAt = 2 * Self.fastAfterNs
+
+    route.observe(bitrate: Self.slow, atNs: lowAt)
+    let unconfirmed = route.update(atNs: lowAt + Self.slowAfterNs)
+    route.observe(Self.feedback(20), atNs: lowAt + Self.slowAfterNs + 1)
+    let contradicted = route.update(atNs: lowAt + Self.slowAfterNs + 1)
+    route.observe(Self.feedback(20, estimate: Self.slow), atNs: lowAt + Self.slowAfterNs + 2)
+    let confirmed = route.update(atNs: lowAt + Self.slowAfterNs + 2)
+
+    #expect(!unconfirmed)
+    #expect(!contradicted)
+    #expect(confirmed)
+  }
+
   @Test func aBitrateBetweenTheThresholdsKeepsEitherEncoder() {
     let between = (ScreenSharingV2EncoderRoute.slowBelowBitrate + ScreenSharingV2EncoderRoute.fastFromBitrate) / 2
     var slow = ScreenSharingV2EncoderRoute(bitrate: between, atNs: 0)
     var fast = fastRoute()
-    slow.observe(roundTripMs: 20, atNs: 10 * Self.fastAfterNs)
+    slow.observe(Self.feedback(20), atNs: 10 * Self.fastAfterNs)
     fast.observe(bitrate: between, atNs: 2 * Self.fastAfterNs)
 
     let slowSwitched = slow.update(atNs: 10 * Self.fastAfterNs)
@@ -105,13 +122,14 @@ struct ScreenSharingV2EncoderRouteTests {
   @Test func afterMovingBackToTheSlowEncoderTheNextMoveUpWaitsLonger() {
     var route = fastRoute()
     route.observe(bitrate: Self.slow, atNs: 2 * Self.fastAfterNs)
+    route.observe(Self.feedback(20, estimate: Self.slow), atNs: 2 * Self.fastAfterNs + Self.slowAfterNs)
     _ = route.update(atNs: 2 * Self.fastAfterNs + Self.slowAfterNs)
     let backUpAt = 3 * Self.fastAfterNs
 
     route.observe(bitrate: Self.fast, atNs: backUpAt)
-    route.observe(roundTripMs: 20, atNs: backUpAt + Self.fastAfterNs)
+    route.observe(Self.feedback(20), atNs: backUpAt + Self.fastAfterNs)
     let early = route.update(atNs: backUpAt + Self.fastAfterNs)
-    route.observe(roundTripMs: 20, atNs: backUpAt + ScreenSharingV2EncoderRoute.fastAgainAfterNs)
+    route.observe(Self.feedback(20), atNs: backUpAt + ScreenSharingV2EncoderRoute.fastAgainAfterNs)
     let due = route.update(atNs: backUpAt + ScreenSharingV2EncoderRoute.fastAgainAfterNs)
 
     #expect(!early)
@@ -130,9 +148,14 @@ struct ScreenSharingV2EncoderRouteTests {
     #expect(route.choice == .fast)
   }
 
+  private static func feedback(_ roundTripMs: Double, estimate: Int = fast) -> ScreenSharingTileNetworkFeedback {
+    ScreenSharingTileNetworkFeedback(
+      packetErrorRate: 0, roundTripDelayMs: roundTripMs, transmissionBitsPerSecond: estimate)
+  }
+
   private func fastRoute() -> ScreenSharingV2EncoderRoute {
     var route = ScreenSharingV2EncoderRoute(bitrate: Self.fast, atNs: 0)
-    route.observe(roundTripMs: 20, atNs: Self.fastAfterNs)
+    route.observe(Self.feedback(20), atNs: Self.fastAfterNs)
     _ = route.update(atNs: Self.fastAfterNs)
     return route
   }
