@@ -531,7 +531,9 @@ Tier 2): the minis refused those to a build run from elsewhere, and the grants m
   `tier2-a` runs idle-cursor, typing, scroll and window-drag at N0 (21 runs with the Apple HP warm-up, about 21
   minutes of runs), then `tier2-b` runs video (with C4), test-cards and input at N0 (18 runs), except on odd days since
   the Unix epoch (UTC), when it runs input at N0 and scroll and typing at N3 instead (`input,scroll@N3,typing@N3`, 16
-  runs). The `tier2_b_scenes` dispatch input overrides that choice. `tier2-summary` then runs `tier2-dispatches` on
+  runs). The `tier2_a_scenes` and `tier2_b_scenes` dispatch inputs override either dispatch's scenes (to try the
+  nightly's jobs in a short dispatch: `-f tier1=false -f tier2=true -f tier2_a_scenes=idle-cursor -f
+tier2_b_scenes=typing`). `tier2-summary` then runs `tier2-dispatches` on
   both reports (`.github/actions/tier2-dispatches-summary`): each dispatch's display phase and 851-4092 status, image age
   by dispatch, and v2's verdicts within each dispatch.
 - **Weekly Apple HP.** Apple HP's image age swings between dispatches (typing 22.0 / 37.8 / 22.5 / 30.9 / 82.3 ms in

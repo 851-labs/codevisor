@@ -54,6 +54,11 @@ on:
         required: false
         default: true
         type: boolean
+      tier2_a_scenes:
+        description: Scenes of the nightly Tier 2's first dispatch; empty runs idle-cursor, typing, scroll and window-drag
+        required: false
+        default: ""
+        type: string
       tier2_b_scenes:
         description: Scenes of the nightly Tier 2's second dispatch; empty picks the night's (alternating N0 and N3)
         required: false
@@ -104,6 +109,7 @@ jobs:
       own_window: ${{ steps.plan.outputs.own_window }}
       publish: ${{ steps.plan.outputs.publish }}
       tier2: ${{ steps.plan.outputs.tier2 }}
+      tier2_a_scenes: ${{ steps.plan.outputs.tier2_a_scenes }}
       tier2_b_scenes: ${{ steps.plan.outputs.tier2_b_scenes }}
       tier1: ${{ steps.plan.outputs.tier1 }}
       calibration: ${{ steps.plan.outputs.calibration }}
@@ -124,6 +130,7 @@ jobs:
           ENCODE_LAB: ${{ inputs.encode_lab }}
           LAB: ${{ inputs.lab }}
           NIGHTLY_TIER2: ${{ vars.SCREEN_SHARING_BENCH_NIGHTLY_TIER2 }}
+          TIER2_A_SCENES: ${{ inputs.tier2_a_scenes }}
           TIER2_B_SCENES: ${{ inputs.tier2_b_scenes }}
           TIER1_INPUT: ${{ inputs.tier1 }}
         run: |
@@ -148,6 +155,7 @@ jobs:
           esac
           [[ "$GITHUB_REF" == refs/heads/main && "$EVENT" != pull_request ]] && publish=true
           [[ "$trigger" == nightly && "$publish" != true ]] && trigger=adhoc
+          tier2_a_scenes=${TIER2_A_SCENES:-idle-cursor,typing,scroll,window-drag}
           tier2_b_scenes=video,test-cards,input
           (($(date -u +%s) / 86400 % 2)) && tier2_b_scenes=input,scroll@N3,typing@N3
           [[ -n "$TIER2_B_SCENES" ]] && tier2_b_scenes=$TIER2_B_SCENES
@@ -156,7 +164,7 @@ jobs:
           {
             echo "run=$run"; echo "mode=$mode"; echo "trigger=$trigger"; echo "preflight=$preflight"
             echo "publish=$publish"; echo "tier2=$tier2"; echo "calibration=$calibration"; echo "own_window=$own_window"
-            echo "encode_lab=$encode_lab"; echo "lab=$lab"; echo "tier2_b_scenes=$tier2_b_scenes"; echo "tier1=$tier1"
+            echo "encode_lab=$encode_lab"; echo "lab=$lab"; echo "tier2_a_scenes=$tier2_a_scenes"; echo "tier2_b_scenes=$tier2_b_scenes"; echo "tier1=$tier1"
           } | tee -a "$GITHUB_OUTPUT"
 
   build:
@@ -315,7 +323,7 @@ jobs:
     with:
       label: a
       bench-artifact: bench-app
-      scenes: idle-cursor,typing,scroll,window-drag
+      scenes: ${{ needs.plan.outputs.tier2_a_scenes }}
       systems: apple-hp,codevisor-v2
       repetitions: "2"
       duration: "30"
