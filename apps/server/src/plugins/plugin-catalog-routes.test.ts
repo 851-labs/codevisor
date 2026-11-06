@@ -1,4 +1,4 @@
-import { decode, McpServer, PluginCatalogResponse } from "@codevisor/api"
+import { decode, FEATURE_FLAGS_NAMESPACE, McpServer, PluginCatalogResponse } from "@codevisor/api"
 import { Schema } from "effect"
 import { describe, expect, it } from "vitest"
 
@@ -47,9 +47,9 @@ const setFlag = (
   deleted = false
 ) =>
   run(
-    running.services.db.mergeSyncEntries("client-preferences", [
+    running.services.db.mergeSyncEntries(FEATURE_FLAGS_NAMESPACE, [
       {
-        key: "featureFlags.mailPlugin",
+        key: "mailPlugin",
         value,
         deleted,
         timestamp: { wallMs: flagEpochMs + ++flagWrites, counter: 0, deviceId: "mac" }

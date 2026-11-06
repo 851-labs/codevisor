@@ -52,7 +52,7 @@ struct DeveloperSettingsView: View {
 
       Section {
         ForEach(FeatureFlag.allCases) { flag in
-          Toggle(isOn: Binding(get: { flag.isEnabled }, set: { flag.isEnabled = $0 })) {
+          Toggle(isOn: Binding(get: { flag.isEnabled }, set: { environment.setFeatureFlag(flag, enabled: $0) })) {
             VStack(alignment: .leading, spacing: 3) {
               Text(flag.title)
               Text(flag.detail)

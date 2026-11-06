@@ -134,6 +134,17 @@ export interface CommandOptions {
   readonly port?: number | undefined
 }
 
+export const routeFailure = (
+  response: { readonly status: number; readonly body: unknown } | undefined,
+  port: number
+): string => {
+  if (response === undefined) {
+    return `Codevisor server is not running on port ${port}; start it with: codevisor start`
+  }
+  const error = field(response.body, "error")
+  return typeof error === "string" ? error : `the server answered HTTP ${response.status}`
+}
+
 export interface UpdateCommandOptions extends CommandOptions {
   readonly alpha?: boolean | undefined
 }

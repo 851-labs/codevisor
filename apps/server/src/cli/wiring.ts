@@ -6,6 +6,7 @@ import { Effect, Option } from "effect"
 import { Argument, Command, Flag, Prompt } from "effect/unstable/cli"
 
 import { authLoginCommand, authLogoutCommand, authStatusCommand } from "./cloud-auth.js"
+import { flagsListCommand, flagsSetCommand } from "./feature-flags.js"
 import {
   machinesAddCommand,
   machinesInviteCommand,
@@ -138,5 +139,31 @@ export const makeMachinesCommand = (runCli: RunCli) => {
   return Command.make("machines").pipe(
     Command.withDescription("Add, list, and remove the machines on your Codevisor account"),
     Command.withSubcommands([list, invite, add, remove])
+  )
+}
+
+export const makeFlagsCommand = (runCli: RunCli) => {
+  const list = Command.make("list", { port: portFlag }, ({ port }) =>
+    runCli((deps) => flagsListCommand(deps, { port: Option.getOrUndefined(port) }))
+  ).pipe(Command.withDescription("List experimental features and whether each is on"))
+
+  const flagArgument = Argument.string("flag").pipe(
+    Argument.withDescription("The flag's id (see codevisor flags list)")
+  )
+
+  const toggle = (name: string, enabled: boolean, description: string) =>
+    Command.make(name, { flag: flagArgument, port: portFlag }, ({ flag, port }) =>
+      runCli((deps) => flagsSetCommand(deps, { flag, enabled, port: Option.getOrUndefined(port) }))
+    ).pipe(Command.withDescription(description))
+
+  return Command.make("flags").pipe(
+    Command.withDescription(
+      "Turn experimental features on or off; the Codevisor apps sync them to your other machines"
+    ),
+    Command.withSubcommands([
+      list,
+      toggle("enable", true, "Turn an experimental feature on"),
+      toggle("disable", false, "Turn an experimental feature off")
+    ])
   )
 }

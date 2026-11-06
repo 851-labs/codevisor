@@ -21,7 +21,13 @@ import {
   updateCommand,
   type CliDeps
 } from "./cli/support.js"
-import { makeAuthCommand, makeMachinesCommand, optionalString, portFlag } from "./cli/wiring.js"
+import {
+  makeAuthCommand,
+  makeFlagsCommand,
+  makeMachinesCommand,
+  optionalString,
+  portFlag
+} from "./cli/wiring.js"
 import { resolveDataDir, resolveLogsDir } from "./infra/data-dir.js"
 import { bundledVersion, runServe } from "./serve.js"
 
@@ -251,6 +257,7 @@ const setup = Command.make("setup", { port: portFlag }, ({ port }) =>
 
 const auth = makeAuthCommand(runCli)
 const machines = makeMachinesCommand(runCli)
+const flags = makeFlagsCommand(runCli)
 
 const root = Command.make("codevisor").pipe(
   Command.withDescription("Control the Codevisor server on this machine"),
@@ -259,6 +266,7 @@ const root = Command.make("codevisor").pipe(
     setup,
     auth,
     machines,
+    flags,
     start,
     stop,
     restart,

@@ -30,6 +30,7 @@ public final class AppEnvironment {
   @ObservationIgnored var failedDialRefresh = CloudRosterRefreshThrottle()
   @ObservationIgnored public var onSessionStateChanged: ((ChatSession, Int?) -> Void)?
   @ObservationIgnored var clientPreferenceSync: ClientPreferenceSync?
+  @ObservationIgnored var featureFlagSync: FeatureFlagSync?
   @ObservationIgnored let harnessNotices = HarnessNoticeCenter()
   @ObservationIgnored var localServerDirectPathsSync: Task<Void, Never>?
   public let paneGroups: any PaneGroupRepository

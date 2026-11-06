@@ -108,9 +108,20 @@ extension AppEnvironment {
     sync.start()
   }
 
+  public func syncFeatureFlags(preferences: ClientPreferences = .shared) {
+    let sync = FeatureFlagSync(preferences: preferences, configSync: configSync)
+    featureFlagSync = sync
+    sync.start()
+  }
+
+  public func setFeatureFlag(_ flag: FeatureFlag, enabled: Bool) {
+    configSync.set(namespace: FeatureFlagSync.namespace, key: flag.rawValue, value: .bool(enabled))
+  }
+
   func applySyncedNamespace(_ namespace: String) {
     if namespace == "settings" { applySyncedSettings() }
     if namespace == ClientPreferenceSync.namespace { clientPreferenceSync?.adoptSyncedValues() }
+    if namespace == FeatureFlagSync.namespace { featureFlagSync?.adoptSyncedValues() }
     if namespace == ConfigSync.skillsNamespace { Task { await configSync.synchronizeSkills() } }
     if namespace == "harnesses" || namespace == "harness-accounts"
       || namespace == "harness-credentials" || namespace == "harness-shared-accounts"

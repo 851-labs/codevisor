@@ -18,6 +18,8 @@ export const endpoints = [
   "POST /v1/machines/invite",
   "POST /v1/machines/add",
   "DELETE /v1/machines/:machineId",
+  "GET /v1/feature-flags",
+  "PUT /v1/feature-flags/:id",
   "GET /v1/sandbox-providers",
   "GET /v1/sandbox-accounts",
   "POST /v1/sandbox-accounts",
@@ -260,6 +262,9 @@ export const summaries: Partial<Record<Endpoint, string>> = {
   "POST /v1/machines/invite": "Create a one-time code that adds a new machine to the account",
   "POST /v1/machines/add": "Install Codevisor on a host over SSH and add it to the account",
   "DELETE /v1/machines/:machineId": "Remove another machine from the account",
+  "GET /v1/feature-flags":
+    "List experimental features and whether each is on; the Codevisor apps sync them across machines",
+  "PUT /v1/feature-flags/:id": "Turn an experimental feature on or off",
   "GET /v1/sandbox-providers":
     "List sandbox providers with their account and profile fields, and what this machine can run",
   "GET /v1/sandbox-accounts": "List sandbox provider accounts, without their secrets",

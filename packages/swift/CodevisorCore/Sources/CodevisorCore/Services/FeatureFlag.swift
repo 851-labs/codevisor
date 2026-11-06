@@ -1,16 +1,15 @@
-import CodevisorCore
-import SwiftUI
+import Foundation
 
-enum FeatureFlag: String, CaseIterable, Identifiable {
+public enum FeatureFlag: String, CaseIterable, Identifiable, Sendable {
   case bots
   case developerMode
   case gmailPlugin
 
-  var id: String { rawValue }
+  public var id: String { rawValue }
 
-  var preferenceKey: String { "featureFlags.\(rawValue)" }
+  public var preferenceKey: String { "featureFlags.\(rawValue)" }
 
-  var title: String {
+  public var title: String {
     switch self {
     case .bots: "Bots"
     case .developerMode: "Developer Mode"
@@ -18,7 +17,7 @@ enum FeatureFlag: String, CaseIterable, Identifiable {
     }
   }
 
-  var detail: String {
+  public var detail: String {
     switch self {
     case .bots: "Adds a Chat mode to the sidebar for long-lived bots that work across several projects."
     case .developerMode: "Adds a Developer section to the command palette with tools such as the debug overlay."
@@ -28,8 +27,7 @@ enum FeatureFlag: String, CaseIterable, Identifiable {
   }
 
   @MainActor
-  var isEnabled: Bool {
-    get { ClientPreferences.shared.value(forKey: preferenceKey, default: false) }
-    nonmutating set { ClientPreferences.shared.set(newValue, forKey: preferenceKey) }
+  public var isEnabled: Bool {
+    ClientPreferences.shared.value(forKey: preferenceKey, default: false)
   }
 }
