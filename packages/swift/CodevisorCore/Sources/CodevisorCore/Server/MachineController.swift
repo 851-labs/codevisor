@@ -113,6 +113,7 @@ public final class MachineController {
 
   public var machines: [CodevisorMachine] { catalog.machines }
   public var allMachines: [CodevisorMachine] { catalog.allMachines }
+  public var allMachineIds: Set<String> { Set(catalog.allMachines.map(\.id)) }
   public var localCloudMachine: CloudMachine? { catalog.localCloudMachine }
   public func machine(for id: String) -> CodevisorMachine? { catalog.machine(for: id) }
   public func cloudMachine(forMachineId id: String) -> CloudMachine? { catalog.cloudMachine(forMachineId: id) }

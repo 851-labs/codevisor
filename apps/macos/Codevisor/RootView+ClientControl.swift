@@ -21,7 +21,7 @@ extension RootView {
       workspaceId: workspaceId, isActive: clientWindow.window?.isKeyWindow == true
     )
     context.capabilities = ClientCapabilities(settingsSections: SettingsTab.allCases.map(\.rawValue), compact: false)
-    context.window = clientWindow.context(sidebarVisible: clientSidebarVisible)
+    context.window = clientWindow.context(sidebarVisible: sidebarVisibility.isVisible)
     let settings = SettingsRouter.shared
     context.page = ClientPageContext(
       page: {
@@ -72,16 +72,8 @@ extension RootView {
     selection = .session(serverId: session.serverId, id: session.id)
   }
 
-  var clientSidebarVisible: Bool {
-    panelLayout.docksSidebar ? !sidebarCollapsed : panelLayout.activeDrawer == .leading
-  }
-
-  func setSidebarVisible(_ visible: Bool) {
-    if panelLayout.docksSidebar {
-      sidebarCollapsed = !visible
-    } else if visible != clientSidebarVisible {
-      panelLayout.toggleDrawer(.leading)
-    }
+  var sidebarVisibility: RootSidebarVisibility {
+    RootSidebarVisibility(panelLayout: panelLayout)
   }
 
   func requireClientReady() throws {
@@ -99,7 +91,7 @@ extension RootView {
     case .window(let request):
       if request.action == "sidebar" {
         guard let visible = request.visible else { throw ClientControlError("Missing sidebar visibility") }
-        setSidebarVisible(visible)
+        sidebarVisibility.setVisible(visible)
       } else {
         try await clientWindow.perform(request)
       }

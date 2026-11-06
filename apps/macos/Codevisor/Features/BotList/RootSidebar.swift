@@ -9,11 +9,8 @@ struct RootSidebar: View {
   let revealRequest: SidebarRevealRequest
   var publishesSceneActions = true
   var isDrawer = false
-  @Environment(AdaptivePanelLayout.self) private var panelLayout
   @ClientPreference(FeatureFlag.bots.preferenceKey, default: false) private var botsEnabled
   @ClientPreference(SidebarMode.preferenceKey, default: SidebarMode.code) private var storedMode
-  @State private var visibleColumnWidth: CGFloat = 0
-  @State private var modePickerWidth: CGFloat?
   @State private var visitedModes: Set<SidebarMode> = []
   @State private var parkedMode: SidebarMode?
   @State private var parkedSelection: SidebarSelection?
@@ -26,45 +23,8 @@ struct RootSidebar: View {
         PaletteDestinationsPublisher(
           selection: $selection, store: store, revealRequest: revealRequest, isEnabled: publishesSceneActions)
       )
-      .background {
-        if !isDrawer {
-          SplitColumnExtentReader { visibleColumnWidth = $0 }.frame(width: 0, height: 0)
-        }
-      }
-      .navigationSplitViewColumnWidth(min: Self.minimumWidth, ideal: 270, max: 360)
-      .toolbar {
-        if showsToolbarModePicker {
-          ToolbarItem {
-            SidebarModePicker(mode: $storedMode, help: SidebarModeShortcut.help)
-              .onGeometryChange(for: CGFloat.self) {
-                $0.size.width
-              } action: {
-                modePickerWidth = $0
-              }
-          }
-        }
-      }
-  }
-
-  private var showsToolbarModePicker: Bool {
-    botsEnabled && !isDrawer && visibleColumnWidth >= widthFittingModePicker
-  }
-
-  private static let minimumWidth = sidebarWidthFitting(pickerWidth: nil, showsWindowControls: true)
-
-  private var widthFittingModePicker: CGFloat {
-    Self.sidebarWidthFitting(pickerWidth: modePickerWidth, showsWindowControls: !panelLayout.isFullScreen)
-  }
-
-  private static func sidebarWidthFitting(pickerWidth: CGFloat?, showsWindowControls: Bool) -> CGFloat {
-    let windowControls: CGFloat = 92
-    let fullScreenLeadingInset: CGFloat = 6
-    let fallbackPickerWidth: CGFloat = 112
-    let toolbarItemPadding: CGFloat = 4
-    let sidebarToggle: CGFloat = 44
-    let trailingInset: CGFloat = 4
-    return (showsWindowControls ? windowControls : fullScreenLeadingInset) + toolbarItemPadding
-      + (pickerWidth ?? fallbackPickerWidth) + toolbarItemPadding + sidebarToggle + trailingInset
+      .modifier(SidebarModeToolbar(isDrawer: isDrawer))
+      .navigationSplitViewColumnWidth(min: SidebarModeToolbar.minimumColumnWidth, ideal: 270, max: 360)
   }
 
   @ViewBuilder

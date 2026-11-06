@@ -13,8 +13,9 @@ struct SidebarWorkspaceListing {
 
   var listedItems: [WorkspaceSidebarItem] {
     let botHomes = botHomeWorkspaceIDs
+    let machineIds = environment.machines.allMachineIds
     return environment.navigationStore.workspaceEntries.sidebar.filter {
-      environment.machines.machine(for: $0.serverId) != nil && !botHomes.contains($0.id)
+      machineIds.contains($0.serverId) && !botHomes.contains($0.id)
     }
   }
 

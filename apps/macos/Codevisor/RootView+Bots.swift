@@ -33,10 +33,6 @@ extension RootView {
     BotMascotActivitySource.shared.read { activities.of($0) }
   }
 
-  var showsBotConversationHeader: Bool {
-    !panelLayout.docksSidebar || sidebarCollapsed
-  }
-
   @ViewBuilder
   func botDetail(_ store: SessionStore, serverId: String, botId: UUID) -> some View {
     if botsEnabled, let bot = environment.bots.bot(serverId: serverId, id: botId) {
@@ -47,7 +43,7 @@ extension RootView {
         onFocusedChatChanged: { _ in },
         onDisposition: { _ in }
       )
-      .modifier(BotConversationChrome(bot: bot, showsHeader: showsBotConversationHeader, onEditBot: editBot))
+      .modifier(BotConversationChrome(bot: bot, onEditBot: editBot))
     } else {
       ContentUnavailableView(
         "Bot Unavailable",

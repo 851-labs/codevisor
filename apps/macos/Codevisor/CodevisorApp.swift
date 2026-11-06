@@ -42,8 +42,6 @@ struct RootView: View {
   @State var clientWindow = ClientWindowControl()
   @State var selection: SidebarSelection?
   @State private var sidebarRevealRequest = SidebarRevealRequest()
-  static let sidebarCollapsedKey = "sidebar.collapsed"
-  @ClientPreference(Self.sidebarCollapsedKey, default: false) var sidebarCollapsed
   @ClientPreference(FeatureFlag.bots.preferenceKey, default: false) var botsEnabled
   @ClientPreference(SidebarMode.preferenceKey, default: SidebarMode.code) var sidebarMode
   @State var botEditor: BotEditorTarget?
@@ -62,17 +60,7 @@ struct RootView: View {
         )
       )
       .background(ClientWindowReader(control: clientWindow).frame(width: 0, height: 0))
-      .background(
-        TransparentTitlebar(
-          isTransparent: showsBotConversation,
-          hoverBandHeight: BotConversationTopBar.height(showsHeader: showsBotConversationHeader)
-        )
-        .frame(width: 0, height: 0)
-      )
-      .background(
-        SidebarToggleHelp(help: PanelToggleShortcut.sidebar.help(isVisible: clientSidebarVisible))
-          .frame(width: 0, height: 0)
-      )
+      .background(RootTitlebar(isBotConversation: showsBotConversation, panelLayout: panelLayout))
       .environment(\.openChat, OpenChatAction { await openChat($0) })
       .environment(\.isAppUpdateInProgress, environment.isUpdateInProgress)
       .task(id: store.map(ObjectIdentifier.init)) { readBotMascotActivity() }
@@ -85,9 +73,6 @@ struct RootView: View {
           selection = .bot(serverId: bot.serverId, id: bot.id)
         }
       }
-      .focusedSceneValue(
-        \.sidebarVisibility, SidebarVisibilityToggle(isVisible: clientSidebarVisible, setVisible: setSidebarVisible)
-      )
       .background(
         WindowLayoutReader { panelLayout.updateWindow(width: $0, isFullScreen: $1) }.frame(width: 0, height: 0)
       )
@@ -166,7 +151,7 @@ struct RootView: View {
   }
 
   private var mainSplit: some View {
-    NavigationSplitView(columnVisibility: sidebarColumnVisibility) {
+    RootSplitView(store: store) {
       RootSidebar(selection: $selection, botEditor: $botEditor, store: store, revealRequest: sidebarRevealRequest)
     } detail: {
       Group {
@@ -192,27 +177,6 @@ struct RootView: View {
           isDrawer: true)
       }
     }
-    .onChange(of: clientSidebarVisible, initial: true) { _, visible in
-      store?.isSidebarVisible = visible
-    }
-    .onChange(of: store.map(ObjectIdentifier.init)) { _, _ in
-      store?.isSidebarVisible = clientSidebarVisible
-    }
-  }
-
-  private var sidebarColumnVisibility: Binding<NavigationSplitViewVisibility> {
-    Binding(
-      get: {
-        panelLayout.docksSidebar && !sidebarCollapsed ? .all : .detailOnly
-      },
-      set: { visibility in
-        if panelLayout.docksSidebar {
-          sidebarCollapsed = visibility == .detailOnly
-        } else if visibility != .detailOnly {
-          panelLayout.toggleDrawer(.leading)
-        }
-      }
-    )
   }
 
   private func detail(_ store: SessionStore, selection: SidebarSelection?) -> some View {

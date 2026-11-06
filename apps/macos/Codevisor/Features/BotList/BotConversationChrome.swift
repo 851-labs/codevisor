@@ -4,8 +4,8 @@ import SwiftUI
 
 struct BotConversationChrome: ViewModifier {
   let bot: Bot
-  let showsHeader: Bool
   let onEditBot: (Bot) -> Void
+  @Environment(AdaptivePanelLayout.self) private var panelLayout
   @Environment(WorkspaceActivity.self) private var workspaceActivity: WorkspaceActivity?
 
   func body(content: Content) -> some View {
@@ -16,6 +16,10 @@ struct BotConversationChrome: ViewModifier {
         BotConversationTopBar(bot: bot, showsHeader: showsHeader, onOpenDetails: openDetails)
       }
       .botMascotOpen(isActive ? bot : nil)
+  }
+
+  private var showsHeader: Bool {
+    RootSidebarVisibility(panelLayout: panelLayout).hidesDockedColumn
   }
 
   private var isActive: Bool {

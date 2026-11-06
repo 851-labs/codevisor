@@ -108,7 +108,7 @@ final class AppRuntime {
   }
 
   private func startFirstLaunchSetup(_ environment: AppEnvironment) {
-    ClientPreferences.shared.set(true, forKey: RootView.sidebarCollapsedKey)
+    ClientPreferences.shared.set(true, forKey: RootSidebarVisibility.collapsedKey)
     ClientPreferences.shared.set(false, forKey: WorkspaceInspectorPresentation.presentedKey)
     let setup = firstLaunchSetup ?? showFirstLaunchSetup()
     Task { await setup.run(LiveFirstLaunchSetupWork(environment: environment)) }

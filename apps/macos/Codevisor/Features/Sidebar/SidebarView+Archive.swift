@@ -4,9 +4,8 @@ import SwiftUI
 
 extension SidebarView {
   var archivedSidebarItems: [WorkspaceSidebarItem] {
-    environment.navigationStore.workspaceEntries.archived.filter {
-      environment.machines.machine(for: $0.serverId) != nil
-    }
+    let machineIds = environment.machines.allMachineIds
+    return environment.navigationStore.workspaceEntries.archived.filter { machineIds.contains($0.serverId) }
   }
 
   func toggleArchived() {
