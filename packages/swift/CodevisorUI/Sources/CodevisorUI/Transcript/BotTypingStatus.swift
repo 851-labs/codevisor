@@ -22,7 +22,12 @@ enum BotTypingStatus: Equatable {
     guard let turn else { return .starting }
     if turn.toolCalls.contains(where: { !$0.isSettled && $0.sendsBotMessage }) { return .writing }
     if turn.toolCalls.contains(where: { !$0.isSettled && $0.talksToAgent }) { return .step(callingLabel) }
+    if runningCall(in: turn)?.isUndescribedWorkflow == true { return .pending }
     return turn.workedSectionActivity
+  }
+
+  private static func runningCall(in turn: AssistantTurn) -> ToolCall? {
+    turn.toolCalls.last { !$0.isSettled && !turn.isUnstartedSubagent($0) }
   }
 
   var text: String {
@@ -47,6 +52,10 @@ extension ToolCall {
 
   fileprivate var talksToAgent: Bool {
     calls(Self.agentPaths)
+  }
+
+  fileprivate var isUndescribedWorkflow: Bool {
+    codevisorGatewayOperation == .execute && integrationDescription == nil
   }
 
   private func calls(_ paths: [String]) -> Bool {
