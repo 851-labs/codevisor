@@ -53,9 +53,10 @@ network_load_rules() {
 }
 
 network_loaded() {
-  [[ -n "$tier2_network_pf_token" ]] &&
-    sudo -n pfctl -a "$tier2_network_anchor" -s dummynet 2>/dev/null | grep -q "pipe 1" &&
-    sudo -n dnctl list 2>/dev/null | grep -q "^00002:"
+  local rules pipes
+  rules=$(sudo -n pfctl -a "$tier2_network_anchor" -s dummynet 2>/dev/null) || return 1
+  pipes=$(sudo -n dnctl list 2>/dev/null) || return 1
+  [[ -n "$tier2_network_pf_token" && "$rules" == *"pipe 1"* && $'\n'"$pipes" == *$'\n00002:'* ]]
 }
 
 network_check() {
