@@ -44,13 +44,7 @@ struct SplitLeafHeader: View {
     .padding(.horizontal, 8)
     .frame(height: 28)
     .overlay(alignment: .bottom) { Divider() }
-    .alert(renameAlertTitle, isPresented: $showingRename) {
-      TextField("Name", text: $renameText)
-      Button("Cancel", role: .cancel) {}
-      Button("Rename") { onRename(renameText) }
-        .disabled(renameText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
-    }
-    .focusesAlertTextField(when: showingRename)
+    .modifier(PaneRenameAlert(kind: pane?.kind, isPresented: $showingRename, text: $renameText, onRename: onRename))
   }
 
   private var iconName: String {
@@ -90,8 +84,7 @@ struct SplitLeafHeader: View {
   }
 
   private var chatSession: ChatSession? {
-    guard pane?.kind == .chat || isChildAgent, let sessionId = pane?.chatSessionId else { return nil }
-    return environment.projectList.sessions.first(where: { $0.id == sessionId })
+    PaneMenuItems.chatSession(of: pane, in: environment.projectList)
   }
 
   private var isChildAgent: Bool { pane?.kind == .childAgent }
@@ -132,16 +125,6 @@ struct SplitLeafHeader: View {
     }
   }
 
-  private var renameAlertTitle: String {
-    switch pane?.kind {
-    case .chat: "Rename Chat"
-    case .terminal: "Rename Terminal"
-    case .newTab, .plugin, .document, .browser, .screenSharing, .subagent, .review, .simulator, .transcript,
-      .childAgent, .none:
-      "Rename Pane"
-    }
-  }
-
   private var actionsMenu: some View {
     Menu {
       splitMenuItem("Split Right", icon: "rectangle.righthalf.inset.filled", edge: .trailing)
@@ -159,16 +142,9 @@ struct SplitLeafHeader: View {
 
       Divider()
 
-      Button {
+      PaneMenuItems(pane: pane, sessionStore: sessionStore) {
         renameText = pane.map(title) ?? "New Tab"
         showingRename = true
-      } label: {
-        Label("Rename", systemImage: "pencil")
-          .labelStyle(.titleAndIcon)
-      }
-
-      if let session = chatSession {
-        ChatSessionUnreadMenuItem(session: session, store: sessionStore)
       }
 
       if let onClose {

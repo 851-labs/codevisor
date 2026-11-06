@@ -62,10 +62,12 @@ extension SessionContainerView {
     }
   }
 
-  private var activeToolbarGroup: PaneGroupModel? {
+  private var activeToolbarSource: PaneToolbarSource? {
     let workspace = selectedWorkspace
-    guard let leafId = workspace.selectedCenterTab?.resolvedActiveLeafId(preferred: activeLeafId) else { return nil }
-    return configuredCenterModel(leafId: leafId)
+    guard let leafId = workspace.selectedCenterTab?.resolvedActiveLeafId(preferred: activeLeafId),
+      !isFloating(leafId)
+    else { return nil }
+    return PaneToolbarSource(group: configuredCenterModel(leafId: leafId))
   }
 
   var activePaneDescriptor: PaneDescriptorState? {
@@ -73,32 +75,15 @@ extension SessionContainerView {
     return selectedWorkspace.selectedPane(inLeaf: leafId)
   }
 
-  var activeBrowserModel: ChromiumBrowserModel? {
-    guard let group = activeToolbarGroup, group.state.selectedPane?.kind == .browser else { return nil }
-    return (group.selectedPane as? BrowserPane)?.model
-  }
+  var activeBrowserModel: ChromiumBrowserModel? { activeToolbarSource?.browser }
 
-  var activeFileModel: FilePaneModel? {
-    guard let group = activeToolbarGroup, group.state.selectedPane?.kind == .document else { return nil }
-    return (group.selectedPane as? FilePane)?.model
-  }
+  var activeFileModel: FilePaneModel? { activeToolbarSource?.file }
 
-  var activeReviewModel: ReviewPaneModel? {
-    guard let group = activeToolbarGroup, group.state.selectedPane?.kind == .review else { return nil }
-    return (group.selectedPane as? ReviewPane)?.model
-  }
+  var activeReviewModel: ReviewPaneModel? { activeToolbarSource?.review }
 
-  var activeSimulatorModel: SimulatorPaneModel? {
-    guard let group = activeToolbarGroup, group.state.selectedPane?.kind == .simulator else { return nil }
-    return (group.selectedPane as? AppleSimulatorPane)?.model
-  }
+  var activeSimulatorModel: SimulatorPaneModel? { activeToolbarSource?.simulator }
 
-  var activeScreenSharingPane: ScreenSharingPane? {
-    guard let group = activeToolbarGroup, group.state.selectedPane?.kind == .screenSharing,
-      let pane = group.selectedPane as? ScreenSharingPane, pane.store != nil
-    else { return nil }
-    return pane
-  }
+  var activeScreenSharingPane: ScreenSharingPane? { activeToolbarSource?.screenSharing }
 
   var paneControlsReplaceTitle: Bool {
     activePaneDescriptor?.kind == .browser || activeFileModel != nil || activeReviewModel != nil

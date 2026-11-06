@@ -42,9 +42,10 @@ struct ChromiumBrowserNavigationButtons: View {
 
 struct ChromiumBrowserToolbar: NSViewRepresentable {
   let model: ChromiumBrowserModel
+  var minimumWidth: CGFloat = 280
 
   func makeNSView(context: Context) -> ChromiumToolbarHost {
-    let view = ChromiumToolbarHost(rootView: ChromiumBrowserToolbarContent(model: model))
+    let view = ChromiumToolbarHost(rootView: ChromiumBrowserToolbarContent(model: model, minimumWidth: minimumWidth))
     view.model = model
     view.sizingOptions = [.intrinsicContentSize]
     return view
@@ -52,7 +53,7 @@ struct ChromiumBrowserToolbar: NSViewRepresentable {
 
   func updateNSView(_ nsView: ChromiumToolbarHost, context: Context) {
     nsView.model = model
-    nsView.rootView = ChromiumBrowserToolbarContent(model: model)
+    nsView.rootView = ChromiumBrowserToolbarContent(model: model, minimumWidth: minimumWidth)
   }
 
   func sizeThatFits(
@@ -60,12 +61,13 @@ struct ChromiumBrowserToolbar: NSViewRepresentable {
   )
     -> CGSize?
   {
-    CGSize(width: min(850, max(280, proposal.width ?? 600)), height: 32)
+    CGSize(width: min(850, max(minimumWidth, proposal.width ?? 600)), height: 32)
   }
 }
 
 struct ChromiumBrowserToolbarContent: View {
   @Bindable var model: ChromiumBrowserModel
+  var minimumWidth: CGFloat = 280
   @State private var address = ""
   @State private var editing = false
   @State private var editedAddress: ChromiumAddressFocus?
@@ -119,7 +121,7 @@ struct ChromiumBrowserToolbarContent: View {
       }
       .frame(maxWidth: .infinity)
     }
-    .frame(minWidth: 280, idealWidth: 600, maxWidth: 850)
+    .frame(minWidth: minimumWidth, idealWidth: 600, maxWidth: 850)
     .onAppear {
       updateAddress()
       if model.address.takeRequest() { beginEditing() }

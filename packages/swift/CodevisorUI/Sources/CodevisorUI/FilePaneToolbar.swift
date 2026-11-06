@@ -32,18 +32,32 @@ public struct FilePaneToolbar: ToolbarContent {
       .sharedBackgroundVisibility(.hidden)
     #endif
     ToolbarItemGroup(placement: .primaryAction) {
-      if !model.isBrowsing {
-        if model.document.hasPreview {
-          Button {
-            model.editor.preview.toggle()
-          } label: {
-            Label(model.editor.preview ? "Edit" : "Preview", systemImage: model.editor.preview ? "pencil" : "eye")
-          }
-          .accessibilityLabel(model.editor.preview ? "Show Editor" : "Show Preview")
-          .help(model.editor.preview ? "Show Editor" : "Show Preview")
+      FilePaneToolbarActions(model: model, onNewTab: onNewTab)
+    }
+  }
+}
+
+public struct FilePaneToolbarActions: View {
+  private let model: FilePaneModel
+  private let onNewTab: () -> Void
+
+  public init(model: FilePaneModel, onNewTab: @escaping () -> Void) {
+    self.model = model
+    self.onNewTab = onNewTab
+  }
+
+  public var body: some View {
+    if !model.isBrowsing {
+      if model.document.hasPreview {
+        Button {
+          model.editor.preview.toggle()
+        } label: {
+          Label(model.editor.preview ? "Edit" : "Preview", systemImage: model.editor.preview ? "pencil" : "eye")
         }
-        FilePaneActions(model: model, onNewTab: onNewTab)
+        .accessibilityLabel(model.editor.preview ? "Show Editor" : "Show Preview")
+        .help(model.editor.preview ? "Show Editor" : "Show Preview")
       }
+      FilePaneActions(model: model, onNewTab: onNewTab)
     }
   }
 }

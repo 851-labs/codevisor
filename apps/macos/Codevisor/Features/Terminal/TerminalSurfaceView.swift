@@ -7,6 +7,13 @@ struct TerminalSurfaceView: NSViewRepresentable {
   final class SurfaceContainerView: NSView {
     var reclaim: (() -> Void)?
     var onAttach: (() -> Void)?
+    weak var movedResponder: NSView?
+
+    func restoreMovedResponder() {
+      guard let responder = movedResponder, let window, responder.window === window else { return }
+      movedResponder = nil
+      window.makeFirstResponder(responder)
+    }
 
     override func layout() {
       super.layout()
@@ -17,6 +24,7 @@ struct TerminalSurfaceView: NSViewRepresentable {
       super.viewDidMoveToWindow()
       if window != nil {
         reclaim?()
+        restoreMovedResponder()
         onAttach?()
       }
     }
@@ -42,7 +50,7 @@ struct TerminalSurfaceView: NSViewRepresentable {
   }
 
   @MainActor
-  private static func attach(pane: TerminalPane, to container: NSView) {
+  private static func attach(pane: TerminalPane, to container: SurfaceContainerView) {
     let surfaceView = pane.ensureSurface().nsView
     guard surfaceView.superview !== container else { return }
     if surfaceView.superview != nil,
@@ -50,6 +58,7 @@ struct TerminalSurfaceView: NSViewRepresentable {
     {
       return
     }
+    container.movedResponder = focusedResponder(in: surfaceView)
     surfaceView.removeFromSuperview()
     container.subviews.forEach { $0.removeFromSuperview() }
     surfaceView.translatesAutoresizingMaskIntoConstraints = false
@@ -60,5 +69,14 @@ struct TerminalSurfaceView: NSViewRepresentable {
       surfaceView.topAnchor.constraint(equalTo: container.topAnchor),
       surfaceView.bottomAnchor.constraint(equalTo: container.bottomAnchor),
     ])
+    container.restoreMovedResponder()
+  }
+
+  @MainActor
+  private static func focusedResponder(in surfaceView: NSView) -> NSView? {
+    guard let responder = surfaceView.window?.firstResponder as? NSView,
+      responder === surfaceView || responder.isDescendant(of: surfaceView)
+    else { return nil }
+    return responder
   }
 }

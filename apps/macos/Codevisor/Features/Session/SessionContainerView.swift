@@ -24,6 +24,7 @@ struct SessionContainerView: View {
   @ClientPreference(FeatureFlag.bots.preferenceKey, default: false) var botsEnabled
   @State var splitDragCoordinator = WorkspaceSplitDragCoordinator()
   @State var sessionFocus = TerminalFocusController()
+  @State var floatingFocusHandoff = PaneFocusHandoff()
 
   @State private var centerTreePreview: WorkspaceTreePreview?
 

@@ -1,3 +1,4 @@
+import CodevisorCore
 import CodevisorCoreMac
 import CodevisorUI
 import SwiftUI
@@ -8,6 +9,7 @@ struct FloatingPaneCard: View {
   let frame: CGRect
   let container: CGSize
   let coordinateSpace: String
+  let sessionStore: SessionStore?
   let actions: FloatingPaneActions
 
   @State private var liveFrame: CGRect?
@@ -20,12 +22,19 @@ struct FloatingPaneCard: View {
   var body: some View {
     let shown = liveFrame ?? frame
     VStack(spacing: 0) {
-      FloatingPaneHeader(title: title, actions: actions)
-        .gesture(dragGesture)
+      FloatingPaneHeader(
+        pane: group.state.selectedPane,
+        title: title,
+        source: PaneToolbarSource(group: group),
+        sessionStore: sessionStore,
+        coordinateSpace: coordinateSpace,
+        actions: actions,
+        drag: drag
+      )
       PaneGroupContent(group: group)
         .frame(maxWidth: .infinity, maxHeight: .infinity)
     }
-    .background { PaneActivationObserver(onActivate: actions.activate) }
+    .background { PaneActivationObserver(onActivate: actions.activate, isFloating: true) }
     .frame(width: shown.width, height: shown.height)
     .background(Color.windowBackgroundColor)
     .clipShape(Self.shape)
@@ -37,14 +46,15 @@ struct FloatingPaneCard: View {
     .offset(x: shown.minX, y: shown.minY)
   }
 
-  private var dragGesture: some Gesture {
-    DragGesture(minimumDistance: 2, coordinateSpace: .named(coordinateSpace))
-      .onChanged { value in
-        liveFrame = FloatingPaneGeometry.moved(frame, by: value.translation, container: container)
-      }
-      .onEnded { _ in
+  private var drag: FloatingPaneDrag {
+    FloatingPaneDrag(
+      changed: { translation in
+        liveFrame = FloatingPaneGeometry.moved(frame, by: translation, container: container)
+      },
+      ended: {
         commit(FloatingPaneGeometry.snapped(liveFrame ?? frame, container: container))
       }
+    )
   }
 
   private func resizeHandles(size: CGSize) -> some View {

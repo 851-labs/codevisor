@@ -18,6 +18,7 @@ extension SessionContainerView {
         panes: floatingPanesInSelectedTab,
         group: { configuredCenterModel(leafId: $0) },
         title: paneTitle,
+        sessionStore: store,
         actions: floatingPaneActions
       )
     }
@@ -28,8 +29,14 @@ extension SessionContainerView {
       floatingLayout.canFloat(leafId, in: tab.root)
     else { return }
 
+    let model = configuredCenterModel(leafId: leafId)
+    floatingFocusHandoff.begin(in: sessionFocus.hostWindow) { responder in
+      PaneActivationObserver.ClickObserverView.isInFloatingPane(responder)
+    }
     FloatingPanes.shared.float(floatingKey(leafId))
     activateLeaf(leafId)
+    sessionFocus.centerGroup = model
+    model.selectedPane?.focus()
     focusSelectedCenterPane()
   }
 
@@ -67,6 +74,8 @@ extension SessionContainerView {
     FloatingPaneActions(
       move: { FloatingPanes.shared.move(floatingKey(leafId), to: $0) },
       activate: { configuredCenterModel(leafId: leafId).onActivated?() },
+      rename: { renameLeaf(leafId, to: $0) },
+      newTab: addCenterTab,
       returnToWorkspace: { returnFloatingLeaf(leafId) },
       close: { closeLeaf(leafId) }
     )
