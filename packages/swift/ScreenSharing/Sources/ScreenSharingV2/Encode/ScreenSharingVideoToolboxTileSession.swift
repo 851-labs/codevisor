@@ -45,7 +45,7 @@ final class ScreenSharingVideoToolboxTileSession: @unchecked Sendable {
     self.metrics = metrics
     self.relay = relay
     let clock = ScreenSharingEncoderPresentationClock(framesPerSecond: factory.framesPerSecond)
-    state = Mutex(State(clock: clock, bitrate: factory.bitrate))
+    state = Mutex(State(clock: clock, bitrate: factory.startingBitrate))
     session = try factory.make()
   }
 
@@ -116,7 +116,7 @@ final class ScreenSharingVideoToolboxTileSession: @unchecked Sendable {
     }
     close(failed)
     state.withLock {
-      $0.sessionFailed = false; $0.delivered = false; $0.acknowledged = []; $0.bitrate = factory.bitrate
+      $0.sessionFailed = false; $0.delivered = false; $0.acknowledged = []; $0.bitrate = factory.startingBitrate
     }
     metrics.increment("encoderSessionReopens")
   }

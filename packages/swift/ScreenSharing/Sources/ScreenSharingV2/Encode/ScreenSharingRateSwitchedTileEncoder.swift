@@ -66,7 +66,12 @@ public final class ScreenSharingRateSwitchedTileEncoder: ScreenSharingTileEncode
     let (choice, claimed) = state.withLock { state in
       (state.route.choice, state.owners.claim(request.update.tiles, for: state.route.choice))
     }
-    try encoder(choice).encode(Self.forcingKeyframes(on: claimed, of: request))
+    do {
+      try encoder(choice).encode(Self.forcingKeyframes(on: claimed, of: request))
+    } catch {
+      state.withLock { $0.owners.release(claimed, from: choice) }
+      throw error
+    }
   }
 
   public func acknowledge(_ tokens: [UInt64], tile: Int) {
@@ -138,9 +143,9 @@ public final class ScreenSharingRateSwitchedTileEncoder: ScreenSharingTileEncode
   private func scheduleSwitch() {
     let nowNs = scheduler.nowNs
     let dueNs = state.withLock { state -> Int64? in
-      guard !state.stopped, let dueNs = state.route.switchDueNs, dueNs > nowNs, state.wakeNs != dueNs else {
-        return nil
-      }
+      guard !state.stopped, let dueNs = state.route.switchDueNs, dueNs > nowNs,
+        state.wakeNs.map({ dueNs < $0 }) ?? true
+      else { return nil }
 
       state.wakeNs = dueNs
       return dueNs

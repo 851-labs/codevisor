@@ -18,6 +18,11 @@ struct ScreenSharingV2TileOwners: Sendable {
     return claimed
   }
 
+  mutating func release(_ tiles: Set<Int>, from owner: Owner) {
+    let other: Owner = owner == .fast ? .slow : .fast
+    for tile in tiles where owners[tile] == owner { owners[tile] = other }
+  }
+
   mutating func remember(_ token: UInt64, tile: Int, issuedBy owner: Owner) {
     issued[owner, default: ScreenSharingIssuedTokens()].remember(token, tile: tile)
   }

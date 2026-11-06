@@ -20,8 +20,7 @@ struct ScreenSharingV2EncoderRoute: Sendable, Equatable {
   private var wantedSinceNs: Int64?
   private var feedbackNs: Int64?
   private var feedbackEstimate = Int.max
-  private var shortestRoundTripMs: Double?
-  private var shortestRoundTripNs: Int64 = 0
+  private var shortestRoundTrip = ScreenSharingV2WindowedMinimum(windowNs: shortestRoundTripKeptNs)
   private var lastRoundTripMs: Double?
   private var movedToSlow = false
 
@@ -46,11 +45,11 @@ struct ScreenSharingV2EncoderRoute: Sendable, Equatable {
 
   mutating func observe(_ feedback: ScreenSharingTileNetworkFeedback, atNs nowNs: Int64) {
     let roundTripMs = feedback.roundTripDelayMs
-    guard roundTripMs > 0 else { return }
+    guard roundTripMs >= 0 else { return }
 
     feedbackNs = nowNs
     feedbackEstimate = feedback.transmissionBitsPerSecond
-    let queued = roundTripMs > shortestRoundTrip(observing: roundTripMs, atNs: nowNs) + Self.queuedAboveMs
+    let queued = roundTripMs > shortestRoundTrip.observe(roundTripMs, atNs: nowNs) + Self.queuedAboveMs
     let settled = lastRoundTripMs.map { abs(roundTripMs - $0) <= Self.queuedAboveMs } ?? true
     lastRoundTripMs = roundTripMs
     if wanted == .fast, queued || !settled { wantedSinceNs = nowNs }
@@ -72,15 +71,6 @@ struct ScreenSharingV2EncoderRoute: Sendable, Equatable {
     case .slow: bitrate >= Self.fastFromBitrate ? .fast : nil
     case .fast: bitrate < Self.slowBelowBitrate ? .slow : nil
     }
-  }
-
-  private mutating func shortestRoundTrip(observing roundTripMs: Double, atNs nowNs: Int64) -> Double {
-    let expired = nowNs - shortestRoundTripNs > Self.shortestRoundTripKeptNs
-    if let shortestRoundTripMs, roundTripMs > shortestRoundTripMs, !expired { return shortestRoundTripMs }
-
-    shortestRoundTripMs = roundTripMs
-    shortestRoundTripNs = nowNs
-    return roundTripMs
   }
 
   private func hasEvidence(for choice: Choice, atNs nowNs: Int64) -> Bool {

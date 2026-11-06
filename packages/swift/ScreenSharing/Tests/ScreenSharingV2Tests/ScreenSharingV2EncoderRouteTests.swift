@@ -65,6 +65,24 @@ struct ScreenSharingV2EncoderRouteTests {
     #expect(route.switchDueNs == kept + Self.fastAfterNs)
   }
 
+  @Test func aLocalLinkThatReportsNoRoundTripStillMovesToTheFastEncoder() {
+    var route = ScreenSharingV2EncoderRoute(bitrate: Self.fast, atNs: 0)
+
+    route.observe(Self.feedback(0), atNs: Self.fastAfterNs)
+    let switched = route.update(atNs: Self.fastAfterNs)
+
+    #expect(switched)
+  }
+
+  @Test func aRoundTripThatStaysQueuedKeepsRestartingTheHold() {
+    var route = ScreenSharingV2EncoderRoute(bitrate: Self.fast, atNs: 0)
+    let step = ScreenSharingV2EncoderRoute.shortestRoundTripKeptNs / 4
+
+    for index in 0...8 { route.observe(Self.feedback(index == 0 ? 20 : 200), atNs: Int64(index) * step / 2) }
+
+    #expect(route.switchDueNs == 8 * step / 2 + Self.fastAfterNs)
+  }
+
   @Test func aSlowLinkStaysOnTheSlowEncoder() {
     var route = ScreenSharingV2EncoderRoute(bitrate: Self.slow, atNs: 0)
     route.observe(Self.feedback(120), atNs: 10 * Self.fastAfterNs)

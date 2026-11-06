@@ -192,7 +192,7 @@ impl Estimator {
             return None;
         }
         let elapsed = now.saturating_duration_since(self.first_sent?);
-        (elapsed >= RECEIVE_WINDOW).then(|| self.bytes_sent as f64 * 8.0 / elapsed.as_secs_f64() * (1.0 - loss))
+        (elapsed >= RECEIVE_WINDOW / 4).then(|| self.bytes_sent as f64 * 8.0 / elapsed.as_secs_f64() * (1.0 - loss))
     }
 
     fn back_off(&mut self, now: Instant) {

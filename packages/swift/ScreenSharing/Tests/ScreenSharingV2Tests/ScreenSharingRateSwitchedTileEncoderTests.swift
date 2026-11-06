@@ -53,6 +53,20 @@ struct ScreenSharingRateSwitchedTileEncoderTests {
     #expect(fast.requests.map(\.refreshes) == [[1: .keyframe], [2: .keyframe]])
   }
 
+  @Test func aTileWhoseFirstEncodeOnTheFastEncoderFailedIsStillAKeyframeOnTheNextTry() throws {
+    let failing = FailingTileEncoder(fast)
+    let encoder = try switched(bitrate: Self.fastBitrate, fast: failing)
+    try encoder.encode(try Self.request(id: 1, tiles: [0, 1, 2, 3]))
+    switchToFast(encoder)
+
+    failing.fail(.throwsOnEncode)
+    #expect(throws: ScreenSharingError.self) { try encoder.encode(try Self.request(id: 2, tiles: [1])) }
+    failing.fail(.none)
+    try encoder.encode(try Self.request(id: 3, tiles: [1]))
+
+    #expect(fast.requests.map(\.refreshes) == [[1: .keyframe]])
+  }
+
   @Test func aLateTileFromTheEncoderThatLostTheTileIsDroppedAndOthersPass() throws {
     let encoder = try switched(bitrate: Self.fastBitrate)
     let first = try Self.request(id: 1, tiles: [0, 1, 2, 3])
@@ -101,9 +115,11 @@ struct ScreenSharingRateSwitchedTileEncoderTests {
     #expect(metrics.counter("encoderSwitches") == 2)
   }
 
-  private func switched(bitrate: Int) throws -> ScreenSharingRateSwitchedTileEncoder {
+  private func switched(
+    bitrate: Int, fast: (any ScreenSharingTileEncoder)? = nil
+  ) throws -> ScreenSharingRateSwitchedTileEncoder {
     let encoder = try ScreenSharingRateSwitchedTileEncoder(
-      fast: fast, slow: slow, bitrate: bitrate, metrics: metrics, scheduler: scheduler)
+      fast: fast ?? self.fast, slow: slow, bitrate: bitrate, metrics: metrics, scheduler: scheduler)
     encoder.onOutput { [outputs] output in outputs.append(output) }
     return encoder
   }

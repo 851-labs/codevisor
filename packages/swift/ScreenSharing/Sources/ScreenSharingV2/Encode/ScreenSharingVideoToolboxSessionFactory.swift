@@ -10,6 +10,8 @@ struct ScreenSharingVideoToolboxSessionFactory {
   var openingBitrate = ScreenSharingV2Profile.openingBitrate
   var longTermReferences = true
 
+  var startingBitrate: Int { min(bitrate, openingBitrate) }
+
   func make() throws -> VTCompressionSession {
     let session = try create()
     do {
@@ -48,7 +50,7 @@ struct ScreenSharingVideoToolboxSessionFactory {
     try set(session, kVTCompressionPropertyKey_AllowFrameReordering, kCFBooleanFalse)
     try set(session, kVTCompressionPropertyKey_ProfileLevel, kVTProfileLevel_HEVC_Main_AutoLevel)
     try set(session, kVTCompressionPropertyKey_ExpectedFrameRate, framesPerSecond as CFNumber)
-    try set(session, kVTCompressionPropertyKey_AverageBitRate, bitrate as CFNumber)
+    try set(session, kVTCompressionPropertyKey_AverageBitRate, startingBitrate as CFNumber)
     try set(session, kVTCompressionPropertyKey_MaxKeyFrameInterval, 0 as CFNumber)
     try set(session, kVTCompressionPropertyKey_MaxKeyFrameIntervalDuration, 0 as CFNumber)
     if longTermReferences { try set(session, kVTCompressionPropertyKey_EnableLTR, kCFBooleanTrue) }
