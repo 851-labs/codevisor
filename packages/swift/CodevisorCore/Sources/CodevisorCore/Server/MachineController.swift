@@ -28,6 +28,7 @@ public final class MachineController {
   let navigationClock: any Clock<Duration>
   let connections: MachineConnections
   let catalog: MachineCatalog
+  let connectSignal = MachineConnectSignal()
   @ObservationIgnored public var onHarnessLifecycleChanged: ((String) -> Void)?
   @ObservationIgnored public var onHarnessAuthChanged: ((String) -> Void)?
   @ObservationIgnored public var onHarnessNotice: ((ServerHarnessNotice) -> Void)?
@@ -236,6 +237,7 @@ public final class MachineController {
   func markReady(for machineId: String) {
     connection(for: machineId).markReady()
     requestGate.markReady(for: machineId)
+    connectSignal.fire(for: machineId)
   }
 
   func markFailed(for machineId: String, message: String) {

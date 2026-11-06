@@ -21,6 +21,11 @@ public enum CodevisorServerClientError: Error, Equatable, Sendable, LocalizedErr
       "The Codevisor server sent data this version of Codevisor couldn't read. Updating Codevisor may fix this."
     }
   }
+
+  public static func isRefusal(_ error: any Error) -> Bool {
+    guard case let .httpStatus(status, _) = error as? CodevisorServerClientError else { return false }
+    return (400..<500).contains(status)
+  }
 }
 
 func serverErrorMessage(_ body: String) -> String? {

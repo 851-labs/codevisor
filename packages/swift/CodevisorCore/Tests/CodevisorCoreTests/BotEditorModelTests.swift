@@ -1,4 +1,5 @@
 import ACPKit
+import CodevisorTestSupport
 import Foundation
 import Testing
 
@@ -93,6 +94,25 @@ struct BotEditorModelTests {
     editor.mascot?.hat = "none"
     #expect(await editor.save())
     #expect(try await editedFake.listBots().first?.mascot?.hat == "none")
+  }
+
+  @Test("Mascot options keep loading until the machine answers, so Edit Mascot appears after a hiccup")
+  func mascotOptionsRetryUntilTheMachineAnswers() async {
+    let fake = SyncFakeServerClient(projects: [], sessions: [])
+    let clock = TestClock()
+    let editor = BotEditorModel(
+      target: .create, environment: makeEnvironment(fake), retryPolicy: RetryPolicy(clock: clock, jitter: 0))
+
+    let load = Task { await editor.loadMascotOptions() }
+    await clock.waitForSleep(.seconds(1))
+    #expect(editor.mascotOptions == nil)
+
+    fake.botMascotOptionsResult = Self.options
+    clock.advance(by: .seconds(1))
+    await load.value
+
+    #expect(editor.mascotOptions == Self.options)
+    #expect(editor.mascot == Self.options.nextBotMascot)
   }
 
   private func makeEnvironment(_ fake: SyncFakeServerClient) -> AppEnvironment {

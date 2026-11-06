@@ -34,6 +34,6 @@ struct BotMascotRiveView: View {
   private func dress() {
     guard let environment else { return }
 
-    stage.dress(as: mascot, serverId: key.serverId, client: environment.machines.client(for: key.serverId))
+    stage.dress(as: mascot, retrying: MachineRetry(machineId: key.serverId, machines: environment.machines))
   }
 }

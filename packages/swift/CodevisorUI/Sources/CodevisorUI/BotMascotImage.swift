@@ -32,7 +32,7 @@ public struct BotMascotImage: View {
   private func load() async {
     guard let environment else { return }
 
-    await images.load(art, from: environment.machines.client(for: serverId))
+    await images.load(art, retrying: MachineRetry(machineId: serverId, machines: environment.machines))
     previous = images.image(for: art) ?? previous
   }
 }

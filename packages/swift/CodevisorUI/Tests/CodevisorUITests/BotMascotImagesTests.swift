@@ -14,35 +14,40 @@ import UniformTypeIdentifiers
 struct BotMascotImagesTests {
   private let art = ServerBotMascotArt(ServerBotMascot(color: "mint", hat: "beanie", eyewear: "none"), .portrait)
 
-  @Test("A failed download is retried while a view still shows the mascot")
-  func retriesFailedDownload() async {
+  @Test("A failed download is retried with the machine's current client, so a machine that comes back is reached")
+  func retriesWithCurrentClient() async {
     let clock = TestClock()
-    let images = BotMascotImages(clock: clock)
-    let client = MascotImageClient(failures: 1)
+    let images = BotMascotImages()
+    let unreachable = MascotImageClient(failures: 1)
+    let reachable = MascotImageClient(failures: 0)
+    let machine = MachineClientSlot(unreachable)
+    let retry = retry(clock: clock) { machine.client }
 
-    let load = Task { await images.load(art, from: client) }
-    await clock.waitForSleep(BotMascotImages.retryDelay)
-
+    let load = Task { await images.load(art, retrying: retry) }
+    await clock.waitForSleep(.seconds(1))
     #expect(images.image(for: art) == nil)
 
-    clock.advance(by: BotMascotImages.retryDelay)
+    machine.client = reachable
+    clock.advance(by: .seconds(1))
     await load.value
 
     #expect(images.image(for: art) != nil)
-    #expect(client.requests == 2)
+    #expect(unreachable.requests == 1)
+    #expect(reachable.requests == 1)
   }
 
   @Test("A view that goes away mid-download still caches the image for the next view")
   func leavingViewKeepsDownload() async {
-    let images = BotMascotImages(clock: TestClock())
+    let images = BotMascotImages()
     let client = MascotImageClient(failures: 0, gated: true)
+    let retry = retry { client }
 
-    let leaving = Task { await images.load(art, from: client) }
+    let leaving = Task { await images.load(art, retrying: retry) }
     await client.requested.wait()
     leaving.cancel()
     client.release.signal()
     await leaving.value
-    await images.load(art, from: client)
+    await images.load(art, retrying: retry)
 
     #expect(images.image(for: art) != nil)
     #expect(client.requests == 1)
@@ -50,13 +55,31 @@ struct BotMascotImagesTests {
 
   @Test("Art the server refuses isn't asked for again, so older servers without loops aren't polled")
   func refusedArtIsNotRetried() async {
-    let images = BotMascotImages(clock: TestClock())
+    let images = BotMascotImages()
     let client = MascotImageClient(failures: 1, failure: .httpStatus(404, "Not found"))
 
-    await images.load(art, from: client)
+    await images.load(art, retrying: retry { client })
 
     #expect(images.image(for: art) == nil)
     #expect(client.requests == 1)
+  }
+
+  private func retry(
+    clock: TestClock = TestClock(), client: @escaping @MainActor () -> any CodevisorServerClienting
+  ) -> MachineRetry {
+    let machines = MachineController(
+      store: InMemoryStore(), projectList: ProjectListModel(), clientFactory: { _ in client() })
+    return MachineRetry(
+      machineId: CodevisorMachine.local.id, machines: machines, policy: RetryPolicy(clock: clock, jitter: 0))
+  }
+}
+
+@MainActor
+private final class MachineClientSlot {
+  var client: any CodevisorServerClienting
+
+  init(_ client: any CodevisorServerClienting) {
+    self.client = client
   }
 }
 

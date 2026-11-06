@@ -23,10 +23,12 @@ public final class BotEditorModel {
   private var addingProjectIds: [UUID] = []
   @ObservationIgnored private let environment: AppEnvironment
   @ObservationIgnored private let botId = UUID()
+  @ObservationIgnored private let retryPolicy: RetryPolicy
 
-  public init(target: BotEditorTarget, environment: AppEnvironment) {
+  public init(target: BotEditorTarget, environment: AppEnvironment, retryPolicy: RetryPolicy = .standard) {
     self.target = target
     self.environment = environment
+    self.retryPolicy = retryPolicy
     projectSetup = BotProjectSetup(environment: environment)
     switch target {
     case .create:
@@ -205,11 +207,24 @@ public final class BotEditorModel {
 
   public func loadMascotOptions() async {
     mascotOptions = nil
-    let options = try? await environment.machines.client(for: serverId).botMascotOptions()
-    guard !Task.isCancelled else { return }
+    let options = await fetchMascotOptions()
+    guard !Task.isCancelled, let options else { return }
 
     mascotOptions = options
-    mascot = mascot ?? options?.nextBotMascot
+    mascot = mascot ?? options.nextBotMascot
+  }
+
+  private func fetchMascotOptions() async -> ServerBotMascotOptions? {
+    let retry = MachineRetry(machineId: serverId, machines: environment.machines, policy: retryPolicy)
+    var failures = 0
+    while true {
+      do {
+        return try await retry.client().botMascotOptions()
+      } catch {
+        failures += 1
+        guard await retry.shouldRetry(after: error, failures: failures) else { return nil }
+      }
+    }
   }
 
   @discardableResult
