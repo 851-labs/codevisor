@@ -304,37 +304,7 @@ struct HomeSidebarList: View {
   private func workspaceRows(
     _ workspaces: [HomeSidebarWorkspace], sections: [CustomSection] = []
   ) -> some View {
-    ForEach(workspaces) { workspace in
-      workspaceRow(workspace, sections: sections)
-    }
-    .onMove { source, destination in
-      guard let index = source.first else { return }
-      let target = destination > index ? destination - 1 : destination
-      actions.actions.reorder(workspaces[index].id, target, workspaces.map(\.id))
-    }
-  }
-
-  @ViewBuilder
-  private func workspaceRow(_ workspace: HomeSidebarWorkspace, sections: [CustomSection] = []) -> some View {
-    let row = HomeSidebarWorkspaceRowView(
-      workspace: workspace, actions: actions, isSelectionRow: isSelectable, sections: sections
-    )
-    .equatable()
-    .tag(workspace.id)
-    if !workspace.hasNestedRows {
-      row
-    } else {
-      DisclosureGroup(isExpanded: workspaceExpansion(workspace)) {
-        if workspace.listsTabs {
-          tabRows(workspace)
-        }
-        if !workspace.children.isEmpty {
-          AnyView(workspaceRows(workspace.children))
-        }
-      } label: {
-        row
-      }
-    }
+    HomeSidebarWorkspaceRows(workspaces: workspaces, sections: sections, actions: actions, isSelectable: isSelectable)
   }
 
   @ViewBuilder
@@ -356,32 +326,12 @@ struct HomeSidebarList: View {
               .tag(tab.id)
           }
         }
-        ForEach(bot.children) { workspace in
-          workspaceRow(workspace)
-        }
+        HomeSidebarWorkspaceRows(
+          workspaces: bot.children, actions: actions, isSelectable: isSelectable, reorders: false)
       } label: {
         row
       }
     }
-  }
-
-  private func tabRows(_ workspace: HomeSidebarWorkspace) -> some View {
-    let ref = workspace.workspace
-    return ForEach(workspace.rows) { row in
-      HomeSidebarTabRowView(row: row, workspace: ref, actions: actions, isSelectionRow: isSelectable)
-        .equatable()
-        .tag(row.id)
-    }
-    .onMove { source, destination in
-      moveTab(in: workspace, from: source, to: destination)
-    }
-  }
-
-  private func moveTab(in workspace: HomeSidebarWorkspace, from source: IndexSet, to destination: Int) {
-    guard let row = source.first, let tabId = workspace.rows[row].tabId else { return }
-    let rowTabIds = workspace.rows.map { $0.tabId ?? $0.id }
-    let successor = SharedTabOrder.successor(of: tabId, droppedAt: destination, rowTabIds: rowTabIds)
-    actions.actions.moveTab(tabId, successor, workspace.workspace)
   }
 
   private func animated(_ binding: Binding<Bool>) -> Binding<Bool> {
@@ -397,29 +347,6 @@ struct HomeSidebarList: View {
           if !isExpanded { collapsedGroupIDs.append(id) }
         }
       ))
-  }
-
-  private func workspaceExpansion(_ workspace: HomeSidebarWorkspace) -> Binding<Bool> {
-    guard !workspace.children.isEmpty else { return tabExpansion(workspace.id) }
-    return childrenExpansion(workspace)
-  }
-
-  private func childrenExpansion(_ workspace: HomeSidebarWorkspace) -> Binding<Bool> {
-    animated(
-      Binding(
-        get: { childrenExpanded(workspace) },
-        set: { SidebarChildDisclosure.choose($0, for: workspace.id) }
-      ))
-  }
-
-  private func childrenExpanded(_ workspace: HomeSidebarWorkspace) -> Bool {
-    SidebarChildDisclosure.current().isExpanded(workspace.id, startsCollapsed: workspace.childrenStartCollapsed)
-  }
-
-  private func isExpanded(_ workspace: HomeSidebarWorkspace) -> Bool {
-    workspace.children.isEmpty
-      ? expandedWorkspaceIDs.contains(workspace.id.uuidString)
-      : childrenExpanded(workspace)
   }
 
   private func tabExpansion(_ id: UUID) -> Binding<Bool> {
@@ -441,7 +368,7 @@ struct HomeSidebarList: View {
     case let .bot(botId):
       return botId
     case let .workspace(workspaceId, paneId):
-      if let paneId, let workspace = content.workspace(workspaceId), workspace.listsTabs, isExpanded(workspace),
+      if let paneId, let workspace = content.workspace(workspaceId), workspace.listsTabs,
         content.row(paneId) != nil
       {
         return paneId

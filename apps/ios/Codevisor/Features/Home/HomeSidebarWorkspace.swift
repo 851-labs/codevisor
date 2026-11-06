@@ -18,15 +18,12 @@ struct HomeSidebarWorkspace: Identifiable, Equatable {
   var sectionSlot: WorkspaceSectionPlacement? = nil
   let rows: [HomeSidebarTabRow]
   var children: [HomeSidebarWorkspace] = []
-  var childrenStartCollapsed = false
 
   var displayName: String { name.isEmpty ? "Workspace" : name }
 
   var status: HomeSessionStatus { rows.map(\.status).min() ?? .idle }
 
   var listsTabs: Bool { rows.count > 1 }
-
-  var hasNestedRows: Bool { listsTabs || !children.isEmpty }
 
   var subtree: [HomeSidebarWorkspace] { [self] + children.flatMap(\.subtree) }
 
@@ -192,9 +189,7 @@ struct HomeSidebarContent: Equatable {
     build: (WorkspaceSidebarItem) -> HomeSidebarWorkspace?
   ) -> HomeSidebarWorkspace? {
     guard var workspace = build(item) else { return nil }
-    let nested = children[item.id] ?? []
-    workspace.children = nested.compactMap { nesting($0, children: children, build: build) }
-    workspace.childrenStartCollapsed = SidebarChildDisclosure.startsCollapsed(nested)
+    workspace.children = (children[item.id] ?? []).compactMap { nesting($0, children: children, build: build) }
     return workspace
   }
 

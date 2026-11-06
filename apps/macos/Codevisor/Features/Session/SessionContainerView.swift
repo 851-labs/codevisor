@@ -88,6 +88,7 @@ struct SessionContainerView: View {
       .modifier(
         CenterTabRequests(store: store, workspaceId: workspace.id, onClose: closeCenterTab)
       )
+      .modifier(ChildAgentSplitRequests(store: store, workspaceId: workspace.id, onOpen: openChildAgent))
       .onChange(of: store.inspectorOpenRequest) { _, request in
         guard let request, request.workspaceId == workspace.id else { return }
         store.inspectorOpenRequest = nil

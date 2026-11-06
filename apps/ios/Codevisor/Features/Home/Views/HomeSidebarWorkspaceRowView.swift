@@ -177,7 +177,7 @@ struct HomeSidebarWorkspaceRowView: View, Equatable {
       HomeSidebarSymbol(name: machine.systemImage)
         .imageScale(.small)
     }
-    if !workspace.hasNestedRows && !workspace.isArchived {
+    if !workspace.isArchived {
       Image(systemName: "chevron.forward")
         .font(.footnote.weight(.semibold))
         .foregroundStyle(.tertiary)

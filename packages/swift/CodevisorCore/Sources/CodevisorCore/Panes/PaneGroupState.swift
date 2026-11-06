@@ -157,7 +157,7 @@ public struct PaneGroupState: Codable, Sendable, Equatable {
       pane = PaneDescriptorState(
         id: paneId, kind: .simulator, name: name ?? "Simulator",
         terminalKey: paneId.uuidString, simulator: SimulatorPanePreferences())
-    case .newTab, .document, .subagent, .transcript:
+    case .newTab, .document, .subagent, .transcript, .childAgent:
       return nil
     }
     panes[index] = pane

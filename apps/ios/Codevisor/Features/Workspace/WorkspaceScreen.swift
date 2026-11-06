@@ -161,7 +161,7 @@ struct WorkspaceScreen: View {
       return "New Tab"
     case .browser:
       return BrowserPaneCache.shared.localTitle(paneId: pane.id) ?? pane.name
-    case .terminal, .plugin, .document, .screenSharing, .subagent, .review, .simulator, .transcript:
+    case .terminal, .plugin, .document, .screenSharing, .subagent, .review, .simulator, .transcript, .childAgent:
       return pane.displayName
     }
   }

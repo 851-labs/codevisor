@@ -364,6 +364,7 @@ private struct SplitLeafHeader: View {
     case .subagent: "wand.and.sparkles"
     case .review: "plusminus"
     case .transcript: "text.page"
+    case .childAgent: "text.bubble"
     case .newTab, .none: "square.dashed"
     }
   }
@@ -388,9 +389,11 @@ private struct SplitLeafHeader: View {
   }
 
   private var chatSession: ChatSession? {
-    guard pane?.kind == .chat, let sessionId = pane?.chatSessionId else { return nil }
+    guard pane?.kind == .chat || isChildAgent, let sessionId = pane?.chatSessionId else { return nil }
     return environment.projectList.sessions.first(where: { $0.id == sessionId })
   }
+
+  private var isChildAgent: Bool { pane?.kind == .childAgent }
 
   private var subagentHarnessId: String? {
     guard pane?.kind == .subagent, let ownerId = pane?.ownerChatSessionId else { return nil }
@@ -404,7 +407,7 @@ private struct SplitLeafHeader: View {
         .foregroundStyle(.secondary)
         .frame(width: 18)
     } else if let session = chatSession {
-      ChatSessionLeadingIcon(session: session, store: sessionStore)
+      ChatSessionLeadingIcon(session: session, store: sessionStore, isQuiet: isChildAgent)
     } else if let status = pane?.terminalAgentStatus {
       AgentStatusIndicator(status: status)
         .frame(width: 18)
@@ -432,7 +435,8 @@ private struct SplitLeafHeader: View {
     switch pane?.kind {
     case .chat: "Rename Chat"
     case .terminal: "Rename Terminal"
-    case .newTab, .plugin, .document, .browser, .screenSharing, .subagent, .review, .simulator, .transcript, .none:
+    case .newTab, .plugin, .document, .browser, .screenSharing, .subagent, .review, .simulator, .transcript,
+      .childAgent, .none:
       "Rename Pane"
     }
   }

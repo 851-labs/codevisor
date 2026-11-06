@@ -93,6 +93,13 @@ extension SessionContainerView {
         id: paneId, kind: .document, name: closed.name,
         terminalKey: paneId.uuidString, documentPath: closed.documentPath
       )
+    case .subagent, .transcript, .childAgent, .newTab:
+      return restoredAgentDescriptor(for: closed, paneId: paneId)
+    }
+  }
+
+  private func restoredAgentDescriptor(for closed: PaneDescriptorState, paneId: UUID) -> PaneDescriptorState? {
+    switch closed.kind {
     case .subagent:
       guard let owner = closed.ownerChatSessionId, selectedWorkspace.pane(containingChat: owner) != nil
       else { return nil }
@@ -105,7 +112,13 @@ extension SessionContainerView {
       return PaneDescriptorState(
         id: paneId, kind: .transcript, name: closed.name, terminalKey: paneId.uuidString,
         ownerChatSessionId: owner)
-    case .newTab:
+    case .childAgent:
+      guard let chatId = closed.chatSessionId,
+        environment.projectList.session(chatId, serverId: selectedWorkspace.serverId) != nil
+      else { return nil }
+      return PaneDescriptorState(
+        id: paneId, kind: .childAgent, name: closed.name, terminalKey: paneId.uuidString, chatSessionId: chatId)
+    case .chat, .terminal, .plugin, .browser, .screenSharing, .review, .simulator, .document, .newTab:
       return nil
     }
   }

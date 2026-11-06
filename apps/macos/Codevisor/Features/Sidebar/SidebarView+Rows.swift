@@ -14,7 +14,7 @@ extension SidebarView {
       archived: archivedSidebarItems, archivedVisibleCount: archivedVisibleCount,
       expansion: SidebarRows.Expansion(
         pinned: pinnedExpanded, list: listExpanded, archived: archivedExpanded,
-        collapsedGroupIDs: SidebarChildDisclosure.current().collapsedGroupIDs(in: tree)),
+        collapsedGroupIDs: Set(collapsedGroupIDs)),
       selectedWorkspaceID: selectedWorkspaceID, selectedTabID: selectedSidebarTabID)
   }
 }

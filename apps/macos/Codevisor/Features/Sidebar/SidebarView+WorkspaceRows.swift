@@ -61,7 +61,7 @@ extension SidebarView {
         item: item, store: store, grouping: grouping, rowDetails: rowDetails,
         isSelected: selected == row.id,
         isPinned: placement == .pinned, headingNamesMachine: namingMachine.contains(placement),
-        isReordering: isReordering, isExpanded: row.isExpanded,
+        isReordering: isReordering,
         sectionPlacement: WorkspaceSectionPlacement(row, membership: membership),
         sections: sections, actions: actions
       )
