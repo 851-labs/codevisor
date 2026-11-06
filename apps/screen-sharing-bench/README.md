@@ -182,8 +182,9 @@ CodevisorBench loopback --source own-window --scenes scroll --networks N0
   complete), `assemble` (first packet in → frame complete, overlapping `send`) and `recover` (the `assemble` of
   frames that NACK or FEC completed). The result's `media` holds the session's counters for the whole scene: frames
   sent and given up, tiles skipped, captures replaced before encode (dropped by admission) and admission deferrals,
-  NACKs, retransmissions, parity packets, FEC and NACK repairs, LTR refreshes, keyframes, and the capacity estimate
-  and round trip at the end. Drops are whole-scene counters.
+  NACKs, retransmissions, parity packets, FEC and NACK repairs, LTR refreshes, LTR refreshes the encoder answered with
+  a keyframe instead (`ltr_refresh_keyframes`, the host's `encodedLTRRefreshKeyFrames`; the Tier 2 v2 table's "LTR
+  refreshes as keyframes"), keyframes, and the capacity estimate and round trip at the end. Drops are whole-scene counters.
 - **Output.** stdout is the report JSON (`--output` also writes it); stderr has one progress line per scene and a
   Markdown summary with per-stage p50/p95. `--frames` writes one line per measured frame (version and every
   timestamp). A scene that fails (for example the connection never opens) is reported as invalid with the error, and
