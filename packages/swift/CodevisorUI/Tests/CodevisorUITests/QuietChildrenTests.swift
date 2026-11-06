@@ -6,60 +6,38 @@ import Testing
 struct QuietChildrenTests {
   private let project = Project(id: UUID(), serverId: "studio", name: "codevisor")
 
-  private func item(parent: WorkspaceSidebarItem? = nil) -> WorkspaceSidebarItem {
+  private func item(parent: WorkspaceSidebarItem? = nil, agentMade: Bool = false) -> WorkspaceSidebarItem {
     WorkspaceSidebarItem(
       id: UUID(), serverId: project.serverId, projectId: project.id, routingChatIds: [],
-      parent: parent.map { WorkspaceParentLink(workspaceId: $0.id, linkedAt: .distantPast, isAgentMade: false) })
+      parent: parent.map { WorkspaceParentLink(workspaceId: $0.id, linkedAt: .distantPast, isAgentMade: agentMade) })
   }
 
-  private func quietChildren(
-    _ items: [WorkspaceSidebarItem], pinned: [WorkspaceSidebarItem] = [], collapsing collapsed: [WorkspaceSidebarItem]
-  ) -> QuietChildren {
-    QuietChildren(
-      tree: SidebarWorkspaceTree(items, pinnedIDs: pinned.map(\.id.uuidString)),
-      disclosure: SidebarChildDisclosure(collapsed: collapsed.map { SidebarRows.childrenGroupID($0.id) }, expanded: []))
-  }
-
-  @Test("A workspace is quiet while any ancestor's children are collapsed, and a top-level row never is")
-  func quietUnderCollapsedAncestors() {
+  @Test("Only agent-made children are quiet; forks, legacy children and top-level workspaces never are")
+  func quietMeansAgentMade() {
     let parent = item()
-    let child = item(parent: parent)
-    let grandchild = item(parent: child)
-    let all = [parent, child, grandchild]
+    let spawned = item(parent: parent, agentMade: true)
+    let fork = item(parent: parent)
+    let forkOfSpawned = item(parent: spawned)
+    let spawnedByFork = item(parent: fork, agentMade: true)
+    let all = [parent, spawned, fork, forkOfSpawned, spawnedByFork]
 
-    func quiet(collapsing collapsed: [WorkspaceSidebarItem]) -> [Bool] {
-      let quiet = quietChildren(all, collapsing: collapsed)
-      return all.map { quiet.contains($0.id) }
-    }
+    let quiet = QuietChildren(all)
 
-    #expect(quiet(collapsing: []) == [false, false, false])
-    #expect(quiet(collapsing: [parent]) == [false, true, true])
-    #expect(quiet(collapsing: [child]) == [false, false, true])
-    #expect(quiet(collapsing: [grandchild]) == [false, false, false])
+    #expect(all.map { quiet.contains($0.id) } == [false, true, false, false, true])
+    #expect(all.map(QuietChildren.isQuiet) == [false, true, false, false, true])
   }
 
-  @Test("A child the sidebar lists at the top level, like one pinned apart from its parent, is never quiet")
-  func topLevelChildIsNeverQuiet() {
+  @Test("An agent-made child's attention is never announced, even with its chat open; everyone else's always is")
+  func announcementsSkipAgentMadeChildren() {
     let parent = item()
-    let pinnedChild = item(parent: parent)
+    let spawned = item(parent: parent, agentMade: true)
+    let fork = item(parent: parent)
+    let quiet = QuietChildren([parent, spawned, fork])
 
-    let quiet = quietChildren([parent, pinnedChild], pinned: [pinnedChild], collapsing: [parent])
-
-    #expect(!quiet.contains(pinnedChild.id))
-  }
-
-  @Test("A quiet child's attention isn't announced unless a window has its chat open; others always are")
-  func announcementsSkipQuietChildrenThatArentOpen() {
-    let parent = item()
-    let child = item(parent: parent)
-    let quiet = quietChildren([parent, child], collapsing: [parent])
-    let expanded = quietChildren([parent, child], collapsing: [])
-    let session = SessionAttentionFocus(serverId: project.serverId, sessionId: UUID())
-
-    #expect(!quiet.announces(session, workspaceId: child.id, openSessions: []))
-    #expect(quiet.announces(session, workspaceId: child.id, openSessions: [session]))
-    #expect(quiet.announces(session, workspaceId: parent.id, openSessions: []))
-    #expect(quiet.announces(session, workspaceId: nil, openSessions: []))
-    #expect(expanded.announces(session, workspaceId: child.id, openSessions: []))
+    #expect(!quiet.announces(workspaceId: spawned.id))
+    #expect(quiet.announces(workspaceId: fork.id))
+    #expect(quiet.announces(workspaceId: parent.id))
+    #expect(quiet.announces(workspaceId: UUID()))
+    #expect(quiet.announces(workspaceId: nil))
   }
 }

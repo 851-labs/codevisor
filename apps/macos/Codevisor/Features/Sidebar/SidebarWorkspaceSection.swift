@@ -9,7 +9,6 @@ struct SidebarWorkspaceSection: View, Equatable {
     let togglePin: @MainActor (Workspace) -> Void
     let rename: @MainActor (Workspace) -> Void
     let archive: @MainActor (Workspace) -> Void
-    let toggleChildren: @MainActor (UUID) -> Void
     let moveToSection: @MainActor (Workspace, UUID?) -> Void
     let newSection: @MainActor (Workspace) -> Void
   }
@@ -22,7 +21,6 @@ struct SidebarWorkspaceSection: View, Equatable {
   let isPinned: Bool
   let headingNamesMachine: Bool
   let isReordering: Bool
-  let isExpanded: Bool?
   let sectionPlacement: WorkspaceSectionPlacement?
   let sections: [CustomSection]
   let actions: Actions
@@ -32,7 +30,7 @@ struct SidebarWorkspaceSection: View, Equatable {
     lhs.item == rhs.item && lhs.store === rhs.store && lhs.grouping == rhs.grouping
       && lhs.rowDetails == rhs.rowDetails && lhs.isSelected == rhs.isSelected && lhs.isPinned == rhs.isPinned
       && lhs.headingNamesMachine == rhs.headingNamesMachine && lhs.isReordering == rhs.isReordering
-      && lhs.isExpanded == rhs.isExpanded && lhs.sectionPlacement == rhs.sectionPlacement
+      && lhs.sectionPlacement == rhs.sectionPlacement
       && lhs.sections == rhs.sections
   }
 
@@ -49,8 +47,6 @@ struct SidebarWorkspaceSection: View, Equatable {
         machine: content.machine(for: workspace, headingNamesMachine: headingNamesMachine),
         isSelected: isSelected,
         isReordering: isReordering,
-        isExpanded: isExpanded,
-        onToggleChildren: { actions.toggleChildren(workspace.id) },
         onActivate: { actions.activate(listItem) },
         lifecycle: .active(
           isPinned: isPinned,

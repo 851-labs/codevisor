@@ -6,12 +6,13 @@ enum ChatPaneRole: Equatable {
   case botConversation
   case botBubbles
   case fullTranscript
+  case childAgent
 
   var botMode: BotMode? {
     switch self {
     case .botConversation: .conversation
     case .botBubbles: .bubbles
-    case .chat, .fullTranscript: nil
+    case .chat, .fullTranscript, .childAgent: nil
     }
   }
   var isReadOnly: Bool { self == .fullTranscript }
@@ -19,7 +20,7 @@ enum ChatPaneRole: Equatable {
 
   func sessionId(of descriptor: PaneDescriptorState) -> UUID? {
     switch self {
-    case .chat, .botConversation, .botBubbles: descriptor.chatSessionId
+    case .chat, .botConversation, .botBubbles, .childAgent: descriptor.chatSessionId
     case .fullTranscript: descriptor.ownerChatSessionId
     }
   }

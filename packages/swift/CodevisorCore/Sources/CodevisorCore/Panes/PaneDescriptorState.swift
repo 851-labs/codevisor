@@ -12,8 +12,9 @@ public enum PaneKind: String, Codable, Sendable, CaseIterable {
   case review
   case simulator
   case transcript
+  case childAgent
 
-  public var isDeviceLocal: Bool { self == .newTab || self == .subagent || self == .transcript }
+  public var isDeviceLocal: Bool { [.newTab, .subagent, .transcript, .childAgent].contains(self) }
 }
 
 public struct PaneDescriptorState: Identifiable, Codable, Sendable, Equatable {

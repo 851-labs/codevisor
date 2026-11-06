@@ -35,13 +35,11 @@ struct SidebarRowsTests {
   private func nested(
     _ items: [WorkspaceSidebarItem], _ grouping: SidebarGrouping = .machine, pinned: [UUID] = [],
     archived: [WorkspaceSidebarItem] = [], archivedVisibleCount: Int = sidebarArchivedPageSize,
-    collapsed: [WorkspaceSidebarItem] = [], tabs: [UUID: [UUID]] = [:],
+    tabs: [UUID: [UUID]] = [:],
     expansion: SidebarRows.Expansion = SidebarRows.Expansion(), selecting selected: UUID? = nil,
     selectingTab selectedTab: UUID? = nil
   ) -> Layout {
     let tree = SidebarWorkspaceTree(items, pinnedIDs: pinned.map(\.uuidString))
-    var expansion = expansion
-    expansion.collapsedGroupIDs.formUnion(collapsed.map { SidebarRows.childrenGroupID($0.id) })
     return derive(
       SidebarRows.State(
         groups: groups(tree.roots, grouping, pinned: pinned), children: tree.children, tabs: tabs,
@@ -57,10 +55,6 @@ struct SidebarRowsTests {
 
     func depth(of id: UUID) -> Int? {
       row(id)?.depth
-    }
-
-    func isExpanded(_ id: UUID) -> Bool? {
-      row(id)?.isExpanded
     }
 
     private func row(_ id: UUID) -> SidebarRow? {
@@ -237,14 +231,14 @@ struct SidebarRowsTests {
     let selections: [UUID?] = [nil, listed[0].id, listed[1].id, listed[3].id, archived[1].id]
 
     for grouping in SidebarGrouping.allCases {
-      for mask in 0..<32 {
+      for mask in 0..<16 {
         for selected in selections {
           let expansion = SidebarRows.Expansion(
             pinned: mask & 1 != 0, list: mask & 2 != 0, archived: mask & 4 != 0,
             collapsedGroupIDs: mask & 8 != 0 ? ["machine:studio", "machine:linux"] : [])
           let ids = nested(
             listed, grouping, pinned: [listed[0].id], archived: archived, archivedVisibleCount: 2,
-            collapsed: mask & 16 != 0 ? [parent, child] : [], expansion: expansion, selecting: selected
+            expansion: expansion, selecting: selected
           ).ids
           #expect(Set(ids).count == ids.count)
           if let selected {
@@ -269,8 +263,8 @@ struct SidebarRowsTests {
       ])
   }
 
-  @Test("Subagent workspaces nest under their parent at any depth, expanded until the parent is collapsed")
-  func nestingIsRecursiveAndExpandedByDefault() {
+  @Test("Forked workspaces nest under their parent at any depth, always expanded")
+  func nestingIsRecursiveAndAlwaysExpanded() {
     let parent = item(studio)
     let (child, sibling) = (item(studio, parent: parent), item(studio, parent: parent))
     let grandchild = item(studio, parent: child)
@@ -282,18 +276,7 @@ struct SidebarRowsTests {
       Array(expanded.ids.dropFirst(2))
         == [parent, child, grandchild, sibling, next].map { .workspace($0.id) })
     #expect([parent, child, grandchild, sibling, next].map { expanded.depth(of: $0.id) } == [1, 2, 3, 2, 1])
-    #expect(
-      [parent, child, grandchild, sibling, next].map { expanded.isExpanded($0.id) } == [true, true, nil, nil, nil])
     #expect(expanded.rows.compactMap(\.parentID) == [parent.id, child.id, parent.id])
-
-    let collapsed = nested(all, collapsed: [parent])
-    #expect(
-      collapsed.ids == [.section(.list), .group("machine:studio"), .workspace(parent.id), .workspace(next.id)])
-    #expect(collapsed.isExpanded(parent.id) == false)
-
-    let childCollapsed = nested(all, collapsed: [child])
-    #expect(childCollapsed.ids.contains(.workspace(grandchild.id)) == false)
-    #expect(childCollapsed.isExpanded(child.id) == false)
   }
 
   @Test("A child nests under its parent even when it belongs to another group, and its own group drops out")
@@ -340,25 +323,17 @@ struct SidebarRowsTests {
     #expect(tree.root(of: underCycle.id) == cyclic.id)
   }
 
-  @Test("A collapsed parent, group or section keeps only the selected descendant, one step under the nearest shown row")
-  func collapsedParentKeepsTheSelectedDescendant() {
+  @Test("A collapsed group or section keeps only the selected descendant, one step under the nearest shown row")
+  func collapsedGroupKeepsTheSelectedDescendant() {
     let parent = item(studio)
     let child = item(studio, parent: parent)
     let grandchild = item(studio, parent: child)
     let all = [parent, child, grandchild]
 
     #expect(nested(all, selecting: grandchild.id).depth(of: grandchild.id) == 3)
-    #expect(nested(all, collapsed: [child], selecting: grandchild.id).depth(of: grandchild.id) == 3)
-
-    let parentCollapsed = nested(all, collapsed: [parent], selecting: grandchild.id)
-    #expect(parentCollapsed.ids.dropFirst(2) == [.workspace(parent.id), .workspace(grandchild.id)])
-    #expect(parentCollapsed.depth(of: grandchild.id) == 2)
-    #expect(parentCollapsed.isExpanded(parent.id) == false)
-    #expect(nested(all, collapsed: [parent, child], selecting: grandchild.id).depth(of: grandchild.id) == 2)
 
     let groupCollapsed = nested(
-      all, collapsed: [parent], expansion: SidebarRows.Expansion(collapsedGroupIDs: ["machine:studio"]),
-      selecting: grandchild.id)
+      all, expansion: SidebarRows.Expansion(collapsedGroupIDs: ["machine:studio"]), selecting: grandchild.id)
     #expect(groupCollapsed.ids == [.section(.list), .group("machine:studio"), .workspace(grandchild.id)])
     #expect(groupCollapsed.depth(of: grandchild.id) == 1)
 
@@ -377,7 +352,6 @@ struct SidebarRowsTests {
         .section(.pinned), .workspace(pinnedChild.id), .section(.list), .group("machine:studio"),
         .workspace(parent.id), .workspace(child.id),
       ])
-    #expect(childPinned.isExpanded(parent.id) == true)
 
     let parentPinned = nested([parent, pinnedChild, child], pinned: [parent.id])
     #expect(
@@ -394,7 +368,6 @@ struct SidebarRowsTests {
 
     let layout = nested(
       [parent], archived: [archivedChild], expansion: SidebarRows.Expansion(archived: true))
-    #expect(layout.isExpanded(parent.id) == nil)
     #expect(layout.depth(of: archivedChild.id) == 0)
 
     let orphaned = nested([liveChild], archived: [archivedChild])
@@ -435,7 +408,7 @@ struct SidebarRowsTests {
     #expect(moved == [parent.id, second.id, nephew.id, first.id, root.id])
   }
 
-  @Test("A workspace's tabs nest above its children under the same disclosure; collapsed, only the selected tab stays")
+  @Test("A workspace's tabs nest above its children; in a collapsed group only the selected tab stays")
   func tabsNestAboveChildren() {
     let parent = item(studio)
     let child = item(studio, parent: parent)
@@ -451,16 +424,13 @@ struct SidebarRowsTests {
         .tab(aloneTab), .workspace(after.id),
       ])
     #expect(expanded.rows.first { $0.id == .tab(terminal) }?.depth == 2)
-    #expect(expanded.isExpanded(alone.id) == true)
     #expect(SidebarRows.tabs(of: parent.id, in: expanded.rows) == [terminal, browser])
     #expect(
       SidebarRows.activeWorkspaceSections(expanded.rows).map { $0.map(\.id) } == [all.map(\.id)])
 
-    let collapsed = nested(all, collapsed: [parent, alone], tabs: tabs)
-    #expect(collapsed.ids.dropFirst(2) == [.workspace(parent.id), .workspace(alone.id), .workspace(after.id)])
-    #expect(collapsed.isExpanded(alone.id) == false)
-
-    let keepsSelected = nested(all, collapsed: [parent], tabs: tabs, selecting: parent.id, selectingTab: browser)
-    #expect(keepsSelected.ids.dropFirst(2).prefix(3) == [.workspace(parent.id), .tab(browser), .workspace(alone.id)])
+    let keepsSelected = nested(
+      all, tabs: tabs, expansion: SidebarRows.Expansion(collapsedGroupIDs: ["machine:studio"]), selecting: parent.id,
+      selectingTab: browser)
+    #expect(keepsSelected.ids.dropFirst(2) == [.workspace(parent.id), .tab(browser)])
   }
 }

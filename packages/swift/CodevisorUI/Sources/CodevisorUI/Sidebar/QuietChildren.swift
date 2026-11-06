@@ -2,23 +2,22 @@ import CodevisorCore
 import Foundation
 
 public struct QuietChildren {
-  private let tree: SidebarWorkspaceTree
-  private let collapsedGroupIDs: Set<String>
+  private let quietIDs: Set<UUID>
 
-  public init(tree: SidebarWorkspaceTree, disclosure: SidebarChildDisclosure) {
-    self.tree = tree
-    collapsedGroupIDs = disclosure.collapsedGroupIDs(in: tree)
+  public init(_ items: [WorkspaceSidebarItem]) {
+    quietIDs = Set(items.filter(Self.isQuiet).map(\.id))
+  }
+
+  public static func isQuiet(_ item: WorkspaceSidebarItem) -> Bool {
+    item.parent?.isAgentMade == true
   }
 
   public func contains(_ workspaceId: UUID) -> Bool {
-    guard let parent = tree.parent(of: workspaceId) else { return false }
-    return collapsedGroupIDs.contains(SidebarRows.childrenGroupID(parent)) || contains(parent)
+    quietIDs.contains(workspaceId)
   }
 
-  public func announces(
-    _ session: SessionAttentionFocus, workspaceId: UUID?, openSessions: Set<SessionAttentionFocus>
-  ) -> Bool {
-    guard let workspaceId, contains(workspaceId) else { return true }
-    return openSessions.contains(session)
+  public func announces(workspaceId: UUID?) -> Bool {
+    guard let workspaceId else { return true }
+    return !contains(workspaceId)
   }
 }

@@ -19,8 +19,6 @@ struct SidebarWorkspaceRow: View {
   var machine: SidebarRowMachine? = nil
   let isSelected: Bool
   let isReordering: Bool
-  var isExpanded: Bool? = nil
-  var onToggleChildren: () -> Void = {}
   let onActivate: () -> Void
   let lifecycle: Lifecycle
   var sectionMenu: MoveToSectionMenu? = nil
@@ -42,38 +40,32 @@ struct SidebarWorkspaceRow: View {
       isHoverForced: false
     ) { isHovered in
       HStack(spacing: 7) {
-        SidebarWorkspaceRowLabel(
-          name: name, subtitle: subtitle, icon: icon, store: store, isExpanded: isExpanded,
-          showsChevron: isExpanded != nil && isHovered && !isReordering, onToggle: onToggleChildren
-        )
-        .opacity(archivedOpacity)
-        .padding(.vertical, 5)
-        .contentShape(Rectangle())
-        .gesture(
-          DragGesture(minimumDistance: 0)
-            .updating($isPressed) { _, isPressed, _ in
-              guard !isPressed else { return }
-              isPressed = true
-              onActivate()
+        SidebarWorkspaceRowLabel(name: name, subtitle: subtitle, icon: icon, store: store)
+          .opacity(archivedOpacity)
+          .padding(.vertical, 5)
+          .contentShape(Rectangle())
+          .gesture(
+            DragGesture(minimumDistance: 0)
+              .updating($isPressed) { _, isPressed, _ in
+                guard !isPressed else { return }
+                isPressed = true
+                onActivate()
+              }
+          )
+          .accessibilityElement(children: .combine)
+          .accessibilityAddTraits(isSelected ? [.isButton, .isSelected] : .isButton)
+          .accessibilityValue(isArchived ? "Archived" : "")
+          .accessibilityAction(.default, onActivate)
+          .accessibilityActions {
+            switch lifecycle {
+            case let .active(isPinned, onTogglePin, onRename, onArchive):
+              Button(isPinned ? "Unpin" : "Pin", action: onTogglePin)
+              Button("Rename", action: onRename)
+              Button("Archive", action: onArchive)
+            case let .archived(onRestore):
+              Button("Restore", action: onRestore)
             }
-        )
-        .accessibilityElement(children: .combine)
-        .accessibilityAddTraits(isSelected ? [.isButton, .isSelected] : .isButton)
-        .accessibilityValue(accessibilityValue)
-        .accessibilityAction(.default, onActivate)
-        .accessibilityActions {
-          if let isExpanded {
-            Button(isExpanded ? "Collapse" : "Expand", action: onToggleChildren)
           }
-          switch lifecycle {
-          case let .active(isPinned, onTogglePin, onRename, onArchive):
-            Button(isPinned ? "Unpin" : "Pin", action: onTogglePin)
-            Button("Rename", action: onRename)
-            Button("Archive", action: onArchive)
-          case let .archived(onRestore):
-            Button("Restore", action: onRestore)
-          }
-        }
         if isHovered {
           hoverActions
         } else {
@@ -115,11 +107,6 @@ struct SidebarWorkspaceRow: View {
     }
   }
 
-  private var accessibilityValue: String {
-    if isArchived { return "Archived" }
-    return isExpanded.map { $0 ? "Expanded" : "Collapsed" } ?? ""
-  }
-
   private var hoverActions: some View {
     HStack(spacing: Self.trailingSpacing) {
       switch lifecycle {
@@ -153,9 +140,6 @@ struct SidebarWorkspaceRowLabel: View {
   var subtitle: String? = nil
   let icon: SidebarWorkspaceIcon
   let store: SessionStore?
-  var isExpanded: Bool? = nil
-  var showsChevron = false
-  var onToggle: () -> Void = {}
 
   static func title(for name: String) -> String {
     name.isEmpty ? "Workspace" : name
@@ -164,23 +148,7 @@ struct SidebarWorkspaceRowLabel: View {
   var body: some View {
     HStack(spacing: 7) {
       SidebarWorkspaceLeadingIcon(icon: icon, store: store)
-        .opacity(showsChevron ? 0 : 1)
         .frame(width: 18)
-        .overlay {
-          if let isExpanded {
-            Image(systemName: "chevron.right")
-              .font(.caption2.weight(.semibold))
-              .foregroundStyle(.secondary)
-              .rotationEffect(.degrees(isExpanded ? 90 : 0))
-              .frame(width: 18, height: 18)
-              .contentShape(Rectangle())
-              .highPriorityGesture(TapGesture().onEnded(onToggle))
-              .opacity(showsChevron ? 1 : 0)
-              .allowsHitTesting(showsChevron)
-              .help(isExpanded ? "Collapse \(Self.title(for: name))" : "Expand \(Self.title(for: name))")
-              .accessibilityHidden(true)
-          }
-        }
       VStack(alignment: .leading, spacing: 2) {
         Text(Self.title(for: name))
           .lineLimit(1)

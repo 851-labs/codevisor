@@ -11,6 +11,7 @@ struct PaneTabIcon: View {
   var pluginIconClient: (any CodevisorServerClienting)? = nil
   var pluginIconCacheNamespace = "preview"
   var chatSession: ChatSession? = nil
+  var isQuietChat = false
   var terminalStatus: AgentPaneStatus? = nil
   var subagentHarnessId: String? = nil
   var documentPath: String? = nil
@@ -18,7 +19,7 @@ struct PaneTabIcon: View {
 
   var body: some View {
     if let chatSession {
-      ChatSessionLeadingIcon(session: chatSession, store: store, activityColor: .secondary)
+      ChatSessionLeadingIcon(session: chatSession, store: store, activityColor: .secondary, isQuiet: isQuietChat)
     } else if let terminalStatus {
       AgentStatusIndicator(status: terminalStatus)
         .frame(width: 18)
@@ -70,6 +71,7 @@ struct PaneTabIcon: View {
     case .subagent: "wand.and.sparkles"
     case .review: "plusminus"
     case .transcript: "text.page"
+    case .childAgent: "text.bubble"
     }
   }
 
@@ -86,6 +88,7 @@ struct PaneTabIcon: View {
     case .subagent: "Subagent"
     case .review: "Review"
     case .transcript: "Full transcript"
+    case .childAgent: "Child agent"
     }
   }
 }
@@ -100,7 +103,7 @@ extension PaneTabIcon {
     store: SessionStore
   ) -> PaneTabIcon {
     let chatSession = descriptor.flatMap { pane -> ChatSession? in
-      guard pane.kind == .chat, let id = pane.chatSessionId else { return nil }
+      guard pane.kind == .chat || pane.kind == .childAgent, let id = pane.chatSessionId else { return nil }
       return environment.projectList.session(id, serverId: serverId)
     }
     let subagentHarnessId = descriptor.flatMap { pane -> String? in
@@ -118,6 +121,7 @@ extension PaneTabIcon {
       pluginIconClient: environment.machines.client(for: serverId),
       pluginIconCacheNamespace: serverId,
       chatSession: chatSession,
+      isQuietChat: descriptor?.kind == .childAgent,
       terminalStatus: descriptor?.terminalAgentStatus,
       subagentHarnessId: subagentHarnessId,
       documentPath: title,

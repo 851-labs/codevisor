@@ -139,7 +139,7 @@ final class PaneGroupModel: Identifiable {
       pane = PluginPaneFactory.make(context: makeContext(descriptor), descriptor: descriptor) { [weak self] title in
         self?.renamePane(id: descriptor.id, to: title)
       }
-    case .chat, .newTab, .subagent, .transcript:
+    case .chat, .newTab, .subagent, .transcript, .childAgent:
       let chat = ChatPane(id: descriptor.id)
       wireChatHost(chat, paneId: descriptor.id)
       pane = chat
@@ -244,7 +244,7 @@ final class PaneGroupModel: Identifiable {
       else { return }
       self.pendingNewTabFocus = nil
       switch descriptor.kind {
-      case .chat:
+      case .chat, .childAgent:
         self.requestComposerFocus?()
       case .newTab:
         if let focusPage = self.newTabFocusHandlers[paneId] {

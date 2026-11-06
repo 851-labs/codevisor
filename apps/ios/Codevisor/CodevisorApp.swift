@@ -124,6 +124,7 @@ struct CodevisorApp: App {
       let directory = URL.applicationSupportDirectory
         .appendingPathComponent("Codevisor", isDirectory: true)
       let storage = try await ClientStorageBootstrap.openAsync(directory: directory)
+      RetiredChildDisclosure.clear()
       environment = Self.makeEnvironment(storage: storage)
       startupError = nil
     } catch {
