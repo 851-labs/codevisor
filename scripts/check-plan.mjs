@@ -11,7 +11,9 @@ const javascriptInputs = [".node-version", "tsconfig.base.json", "tsconfig.json"
 const nativeInputs = [
   "packages/net/**",
   "scripts/net-build.lock.json",
-  "scripts/build-net-swift.sh"
+  "scripts/build-net-swift.sh",
+  "scripts/net-build.mjs",
+  "scripts/net-artifact.mjs"
 ]
 
 const hardwareCodecInputs = [

@@ -1,0 +1,96 @@
+{
+  "$schema": "https://turbo.build/schema.json",
+  "extends": ["//"],
+  "tasks": {
+    "build:swift": {
+      "inputs": [
+        "$TURBO_DEFAULT$",
+        "!native/**",
+        "$TURBO_ROOT$/scripts/net-artifact.mjs",
+        "$TURBO_ROOT$/scripts/net-build.mjs",
+        "$TURBO_ROOT$/scripts/build-net-swift.sh",
+        "$TURBO_ROOT$/scripts/net-build.lock.json"
+      ],
+      "outputs": ["native/apple/**"],
+      "passThroughEnv": [
+        "DEVELOPER_DIR",
+        "CARGO_HOME",
+        "RUSTUP_HOME",
+        "CODEVISOR_CONTAINER_ENGINE",
+        "CODEVISOR_NET_ARTIFACTS_ROOT"
+      ]
+    },
+    "build:node:darwin-arm64": {
+      "inputs": [
+        "$TURBO_DEFAULT$",
+        "!native/**",
+        "$TURBO_ROOT$/scripts/net-artifact.mjs",
+        "$TURBO_ROOT$/scripts/net-build.mjs",
+        "$TURBO_ROOT$/scripts/build-net-swift.sh",
+        "$TURBO_ROOT$/scripts/net-build.lock.json"
+      ],
+      "outputs": ["native/darwin-arm64/**"],
+      "passThroughEnv": [
+        "DEVELOPER_DIR",
+        "CARGO_HOME",
+        "RUSTUP_HOME",
+        "CODEVISOR_CONTAINER_ENGINE",
+        "CODEVISOR_NET_ARTIFACTS_ROOT"
+      ]
+    },
+    "build:node:darwin-x64": {
+      "inputs": [
+        "$TURBO_DEFAULT$",
+        "!native/**",
+        "$TURBO_ROOT$/scripts/net-artifact.mjs",
+        "$TURBO_ROOT$/scripts/net-build.mjs",
+        "$TURBO_ROOT$/scripts/build-net-swift.sh",
+        "$TURBO_ROOT$/scripts/net-build.lock.json"
+      ],
+      "outputs": ["native/darwin-x64/**"],
+      "passThroughEnv": [
+        "DEVELOPER_DIR",
+        "CARGO_HOME",
+        "RUSTUP_HOME",
+        "CODEVISOR_CONTAINER_ENGINE",
+        "CODEVISOR_NET_ARTIFACTS_ROOT"
+      ]
+    },
+    "build:node:linux-x64": {
+      "inputs": [
+        "$TURBO_DEFAULT$",
+        "!native/**",
+        "$TURBO_ROOT$/scripts/net-artifact.mjs",
+        "$TURBO_ROOT$/scripts/net-build.mjs",
+        "$TURBO_ROOT$/scripts/build-net-swift.sh",
+        "$TURBO_ROOT$/scripts/net-build.lock.json"
+      ],
+      "outputs": ["native/linux-x64/**"],
+      "passThroughEnv": [
+        "DEVELOPER_DIR",
+        "CARGO_HOME",
+        "RUSTUP_HOME",
+        "CODEVISOR_CONTAINER_ENGINE",
+        "CODEVISOR_NET_ARTIFACTS_ROOT"
+      ]
+    },
+    "build:node:linux-arm64": {
+      "inputs": [
+        "$TURBO_DEFAULT$",
+        "!native/**",
+        "$TURBO_ROOT$/scripts/net-artifact.mjs",
+        "$TURBO_ROOT$/scripts/net-build.mjs",
+        "$TURBO_ROOT$/scripts/build-net-swift.sh",
+        "$TURBO_ROOT$/scripts/net-build.lock.json"
+      ],
+      "outputs": ["native/linux-arm64/**"],
+      "passThroughEnv": [
+        "DEVELOPER_DIR",
+        "CARGO_HOME",
+        "RUSTUP_HOME",
+        "CODEVISOR_CONTAINER_ENGINE",
+        "CODEVISOR_NET_ARTIFACTS_ROOT"
+      ]
+    }
+  }
+}

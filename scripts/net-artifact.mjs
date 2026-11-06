@@ -1,14 +1,15 @@
 import { spawn } from "node:child_process"
 import { createHash } from "node:crypto"
+import { existsSync, readFileSync } from "node:fs"
 import {
   access,
-  copyFile,
   mkdir,
   readdir,
   readFile,
   readlink,
   rename,
   rm,
+  stat,
   symlink,
   writeFile
 } from "node:fs/promises"
@@ -18,10 +19,12 @@ import process from "node:process"
 import { fileURLToPath } from "node:url"
 
 import { withArtifactLock } from "./artifact-lock.mjs"
-import { retainNetStamp } from "./net-artifact-retention.mjs"
 
-const repoRoot = join(dirname(fileURLToPath(import.meta.url)), "..")
-const netRoot = join(repoRoot, "packages", "net")
+export const repoRoot = join(dirname(fileURLToPath(import.meta.url)), "..")
+export const netRoot = join(repoRoot, "packages", "net")
+export const netNativeRoot = join(netRoot, "native")
+const legacyBuildName = /^[0-9a-f]{16}$/
+const legacyBuildRetentionMs = 7 * 24 * 60 * 60 * 1000
 
 export const hostTarget = (platform = process.platform, arch = process.arch) =>
   `${platform}-${arch}`
@@ -53,7 +56,7 @@ export async function netSourceStamp(root = repoRoot) {
     }
   }
   await walk(join(root, "packages", "net"))
-  for (const file of files.toSorted()) {
+  for (const file of files.toSorted(byCodeUnit)) {
     hash.update(relative(root, file))
     hash.update("\0")
     hash.update(await readFile(file))
@@ -62,11 +65,9 @@ export async function netSourceStamp(root = repoRoot) {
   return hash.digest("hex").slice(0, 16)
 }
 
-async function retainStamp(environment, stamp) {
-  const evicted = await retainNetStamp(netArtifactsRoot(environment), stamp)
-  if (evicted.length === 0) return
-
-  console.warn(`Removed ${evicted.length} unused codevisor-net artifact builds`)
+function byCodeUnit(a, b) {
+  if (a < b) return -1
+  return a > b ? 1 : 0
 }
 
 const exists = (path) =>
@@ -75,7 +76,7 @@ const exists = (path) =>
     () => false
   )
 
-function run(command, args, options = {}) {
+export function run(command, args, options = {}) {
   return new Promise((resolve, reject) => {
     const child = spawn(command, args, { stdio: "inherit", ...options })
     child.on("error", reject)
@@ -121,96 +122,15 @@ export async function cargoEnv(environment = process.env, directories = rustupPr
 }
 
 export async function ensureNodeAddon(environment = process.env) {
-  const stamp = await netSourceStamp()
   const target = hostTarget()
-  const cached = join(netArtifactsRoot(environment), stamp, "node", target, "codevisor_net.node")
-  const installed = join(netRoot, "native", target, "codevisor_net.node")
-  if (!(await exists(cached))) {
-    await withArtifactLock(`${cached}.lock`, async () => {
-      if (await exists(cached)) return
-      console.log(`Building the codevisor-net Node addon (${stamp}, ${target})`)
-      let library
-      if (process.platform === "linux") {
-        const lock = await readNetLock()
-        const triple = `${process.arch === "arm64" ? "aarch64" : "x86_64"}-unknown-linux-gnu`
-        const args = ["--release", "--locked", "-p", "codevisor-net-node"]
-        await run("cargo", ["zigbuild", ...args, "--target", `${triple}.${lock.linuxGlibc}`], {
-          cwd: netRoot,
-          env: await cargoEnv(environment)
-        })
-        library = join(netRoot, "target", triple, "release", "libcodevisor_net_node.so")
-      } else {
-        await run("cargo", ["build", "--release", "--locked", "-p", "codevisor-net-node"], {
-          cwd: netRoot,
-          env: await cargoEnv(environment)
-        })
-        library = join(netRoot, "target", "release", "libcodevisor_net_node.dylib")
-      }
-      await mkdir(dirname(cached), { recursive: true })
-      await copyFile(library, `${cached}.tmp`)
-      await rename(`${cached}.tmp`, cached)
-    })
-  }
-  await retainStamp(environment, stamp)
-  const stampFile = join(dirname(installed), "STAMP")
-  if ((await readFile(stampFile, "utf8").catch(() => "")) !== stamp || !(await exists(installed))) {
-    await mkdir(dirname(installed), { recursive: true })
-    await copyFile(cached, `${installed}.tmp`)
-    await rename(`${installed}.tmp`, installed)
-    await writeFile(stampFile, stamp)
-  }
-  return installed
+  await runNetTask(`build:node:${target}`, environment)
+  return join(netNativeRoot, target, "codevisor_net.node")
 }
 
 export async function ensureLinuxNodeAddon(engine, arch = process.arch, environment = process.env) {
-  const stamp = await netSourceStamp()
-  const lock = await readNetLock()
   const target = `linux-${arch}`
-  const cached = join(netArtifactsRoot(environment), stamp, "node", target, "codevisor_net.node")
-  const installed = join(netRoot, "native", target, "codevisor_net.node")
-  if (!(await exists(cached))) {
-    await withArtifactLock(`${cached}.lock`, async () => {
-      if (await exists(cached)) return
-      console.log(`Building the codevisor-net Linux addon in a container (${stamp}, ${target})`)
-      const cargoHome = join(netArtifactsRoot(environment), "linux-cargo-home")
-      await mkdir(cargoHome, { recursive: true })
-      await run(engine === "apple" ? "container" : "docker", [
-        "run",
-        "--rm",
-        "--cpus",
-        "4",
-        "--memory",
-        "6g",
-        "--volume",
-        `${netRoot}:/src`,
-        "--volume",
-        `${cargoHome}:/cargo-home`,
-        "--env",
-        "CARGO_HOME=/cargo-home",
-        "--workdir",
-        "/src",
-        `rust:${lock.rust}-bookworm`,
-        "cargo",
-        "build",
-        "--release",
-        "--locked",
-        "-p",
-        "codevisor-net-node",
-        "--target-dir",
-        "/src/target/linux"
-      ])
-      await mkdir(dirname(cached), { recursive: true })
-      await copyFile(
-        join(netRoot, "target", "linux", "release", "libcodevisor_net_node.so"),
-        `${cached}.tmp`
-      )
-      await rename(`${cached}.tmp`, cached)
-    })
-  }
-  await retainStamp(environment, stamp)
-  await mkdir(dirname(installed), { recursive: true })
-  await copyFile(cached, installed)
-  return installed
+  await runNetTask(`build:node:${target}`, { ...environment, CODEVISOR_CONTAINER_ENGINE: engine })
+  return join(netNativeRoot, target, "codevisor_net.node")
 }
 
 export async function ensureRelayBinary(environment = process.env) {
@@ -248,39 +168,63 @@ export async function ensureRelayBinary(environment = process.env) {
 }
 
 export async function ensureSwiftFramework(environment = process.env) {
-  const stamp = await netSourceStamp()
-  const cached = join(netArtifactsRoot(environment), stamp, "apple")
-  const framework = join(cached, "CodevisorNetFFI.xcframework")
-  if (!(await exists(join(framework, "Info.plist")))) {
-    await withArtifactLock(`${cached}.lock`, async () => {
-      if (await exists(join(framework, "Info.plist"))) return
-      console.log(`Building CodevisorNetFFI.xcframework (${stamp})`)
-      await rm(`${cached}.staging`, { recursive: true, force: true })
-      await run("bash", [join(repoRoot, "scripts", "build-net-swift.sh"), `${cached}.staging`], {
-        cwd: netRoot,
-        env: await cargoEnv(environment)
-      })
-      await rm(cached, { recursive: true, force: true })
-      await rename(`${cached}.staging`, cached)
-    })
-  }
-  await retainStamp(environment, stamp)
+  await runNetTask("build:swift", environment)
+  const built = join(netNativeRoot, "apple")
   const link = join(repoRoot, "packages", "swift", "Frameworks", "CodevisorNetFFI.xcframework")
-  await mkdir(dirname(link), { recursive: true })
-  if ((await readlink(link).catch(() => undefined)) !== framework) {
-    await rm(link, { recursive: true, force: true })
-    await symlink(framework, link)
-  }
-  const bindings = join(
-    repoRoot,
-    "packages/swift/CodevisorNet/Sources/CodevisorNet/Generated/codevisor_net_ffi.swift"
+  await pointLinkAt(link, relative(dirname(link), join(built, "CodevisorNetFFI.xcframework")))
+  await copyIfChanged(
+    join(built, "codevisor_net_ffi.swift"),
+    join(
+      repoRoot,
+      "packages/swift/CodevisorNet/Sources/CodevisorNet/Generated/codevisor_net_ffi.swift"
+    )
   )
-  const generated = await readFile(join(cached, "codevisor_net_ffi.swift"), "utf8")
-  if ((await readFile(bindings, "utf8").catch(() => "")) !== generated) {
-    await mkdir(dirname(bindings), { recursive: true })
-    await writeFile(bindings, generated)
-  }
   return link
+}
+
+async function runNetTask(task, environment) {
+  await discardLegacyBuilds(environment)
+  await withArtifactLock(join(netNativeRoot, `.${task.replaceAll(":", "-")}.lock`), () =>
+    run(...turboCommand(task), { cwd: repoRoot, env: environment })
+  )
+}
+
+function turboCommand(task) {
+  const args = ["run", task, "--filter=@codevisor/net", "--output-logs=errors-only"]
+  const installed = join(repoRoot, "node_modules", ".bin", "turbo")
+  if (existsSync(installed)) return [installed, args]
+
+  const { turbo } = JSON.parse(readFileSync(join(repoRoot, "package.json"), "utf8")).devDependencies
+  return ["npx", ["--yes", `turbo@${turbo}`, ...args]]
+}
+
+async function discardLegacyBuilds(environment) {
+  const root = netArtifactsRoot(environment)
+  const names = (await readdir(root).catch(() => [])).filter((name) => legacyBuildName.test(name))
+  await Promise.all(names.map((name) => discardIfUnused(join(root, name))))
+}
+
+async function discardIfUnused(path) {
+  const info = await stat(path).catch(() => undefined)
+  if (info === undefined || Date.now() - info.mtimeMs < legacyBuildRetentionMs) return
+
+  await rm(path, { recursive: true, force: true })
+}
+
+async function pointLinkAt(link, target) {
+  if ((await readlink(link).catch(() => undefined)) === target) return
+
+  await mkdir(dirname(link), { recursive: true })
+  await rm(link, { recursive: true, force: true })
+  await symlink(target, link)
+}
+
+async function copyIfChanged(source, destination) {
+  const contents = await readFile(source, "utf8")
+  if ((await readFile(destination, "utf8").catch(() => "")) === contents) return
+
+  await mkdir(dirname(destination), { recursive: true })
+  await writeFile(destination, contents)
 }
 
 async function main(command) {

@@ -10,6 +10,11 @@
   },
   "scripts": {
     "build": "tsc -b tsconfig.json",
+    "build:swift": "node ../../scripts/net-build.mjs swift",
+    "build:node:darwin-arm64": "node ../../scripts/net-build.mjs node darwin-arm64",
+    "build:node:darwin-x64": "node ../../scripts/net-build.mjs node darwin-x64",
+    "build:node:linux-x64": "node ../../scripts/net-build.mjs node linux-x64",
+    "build:node:linux-arm64": "node ../../scripts/net-build.mjs node linux-arm64",
     "build:native": "node ../../scripts/net-artifact.mjs ensure-node",
     "typecheck": "tsc -p tsconfig.json --noEmit --tsBuildInfoFile tmp/typecheck.tsbuildinfo --pretty false",
     "test": "node ../../scripts/net-artifact.mjs ensure-node && vitest run src --passWithNoTests",
