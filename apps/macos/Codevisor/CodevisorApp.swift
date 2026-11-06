@@ -120,7 +120,7 @@ struct RootView: View {
           await environment.cloud.bootstrap()
         }
       }
-      .modifier(SidebarModeFollowsSelection(selection: $selection) { panelLayout.dismissDrawer() })
+      .modifier(SidebarModeSelectionMemory(selection: $selection) { panelLayout.dismissDrawer() })
       .modifier(UpdateCenterUpkeep())
       .modifier(ConnectionRecoveryUpkeep())
       .modifier(ChromiumBrowserHostSync())
@@ -329,7 +329,7 @@ struct RootView: View {
   }
 }
 
-enum SidebarSelection: Hashable {
+nonisolated enum SidebarSelection: Hashable, Codable, Sendable {
   case session(serverId: String, id: UUID)
   case workspace(serverId: String, id: UUID)
   case archivedWorkspace(serverId: String, id: UUID)

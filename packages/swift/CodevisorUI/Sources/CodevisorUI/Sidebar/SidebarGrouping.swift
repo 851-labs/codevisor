@@ -43,7 +43,7 @@ public enum SidebarPreferenceKey {
 
 public let sidebarArchivedPageSize = 10
 
-public struct NewChatTarget: Hashable, Sendable {
+public struct NewChatTarget: Hashable, Codable, Sendable {
   public let serverId: String
   public let projectId: UUID?
   public let sandboxProfileId: String?
