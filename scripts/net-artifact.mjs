@@ -36,6 +36,15 @@ export function netArtifactsRoot(environment = process.env) {
   )
 }
 
+export async function rustToolchain(root = repoRoot) {
+  const channel = /^channel\s*=\s*"([^"]+)"/m.exec(
+    await readFile(join(root, "rust-toolchain.toml"), "utf8")
+  )?.[1]
+  if (channel === undefined) throw new Error("rust-toolchain.toml has no channel")
+
+  return channel
+}
+
 export async function readNetLock(root = repoRoot) {
   return JSON.parse(await readFile(join(root, "scripts", "net-build.lock.json"), "utf8"))
 }
@@ -106,10 +115,10 @@ export async function cargoEnv(environment = process.env, directories = rustupPr
   if (directory === undefined) {
     throw new Error(
       "The tunnel's native code builds with rustup. Install it (brew install rustup, or " +
-        "https://rustup.rs); the Rust version is pinned in scripts/net-build.lock.json."
+        "https://rustup.rs); the Rust version is pinned in rust-toolchain.toml."
     )
   }
-  const { rust } = await readNetLock()
+  const rust = await rustToolchain()
   const env = {
     ...environment,
     PATH: `${directory}:${environment.PATH ?? ""}`,

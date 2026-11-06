@@ -12,7 +12,8 @@ import {
   netRoot,
   readNetLock,
   repoRoot,
-  run
+  run,
+  rustToolchain
 } from "./net-artifact.mjs"
 
 export async function buildNodeAddon(target, environment = process.env) {
@@ -57,11 +58,11 @@ async function compileForHost(environment) {
 }
 
 async function compileInLinuxContainer(target, environment) {
-  const lock = await readNetLock()
+  const rust = await rustToolchain()
   const cargoHome = join(netArtifactsRoot(environment), "linux-cargo-home")
   await mkdir(cargoHome, { recursive: true })
   const engine = environment.CODEVISOR_CONTAINER_ENGINE === "apple" ? "container" : "docker"
-  await run(engine, linuxContainerBuild(target, cargoHome, lock.rust))
+  await run(engine, linuxContainerBuild(target, cargoHome, rust))
   return join(netRoot, "target", target, "release", "libcodevisor_net_node.so")
 }
 

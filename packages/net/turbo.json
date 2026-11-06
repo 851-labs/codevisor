@@ -9,7 +9,8 @@
         "$TURBO_ROOT$/scripts/net-artifact.mjs",
         "$TURBO_ROOT$/scripts/net-build.mjs",
         "$TURBO_ROOT$/scripts/build-net-swift.sh",
-        "$TURBO_ROOT$/scripts/net-build.lock.json"
+        "$TURBO_ROOT$/scripts/net-build.lock.json",
+        "$TURBO_ROOT$/rust-toolchain.toml"
       ],
       "outputs": ["native/apple/**"],
       "passThroughEnv": [
@@ -27,7 +28,8 @@
         "$TURBO_ROOT$/scripts/net-artifact.mjs",
         "$TURBO_ROOT$/scripts/net-build.mjs",
         "$TURBO_ROOT$/scripts/build-net-swift.sh",
-        "$TURBO_ROOT$/scripts/net-build.lock.json"
+        "$TURBO_ROOT$/scripts/net-build.lock.json",
+        "$TURBO_ROOT$/rust-toolchain.toml"
       ],
       "outputs": ["native/darwin-arm64/**"],
       "passThroughEnv": [
@@ -45,7 +47,8 @@
         "$TURBO_ROOT$/scripts/net-artifact.mjs",
         "$TURBO_ROOT$/scripts/net-build.mjs",
         "$TURBO_ROOT$/scripts/build-net-swift.sh",
-        "$TURBO_ROOT$/scripts/net-build.lock.json"
+        "$TURBO_ROOT$/scripts/net-build.lock.json",
+        "$TURBO_ROOT$/rust-toolchain.toml"
       ],
       "outputs": ["native/darwin-x64/**"],
       "passThroughEnv": [
@@ -63,7 +66,8 @@
         "$TURBO_ROOT$/scripts/net-artifact.mjs",
         "$TURBO_ROOT$/scripts/net-build.mjs",
         "$TURBO_ROOT$/scripts/build-net-swift.sh",
-        "$TURBO_ROOT$/scripts/net-build.lock.json"
+        "$TURBO_ROOT$/scripts/net-build.lock.json",
+        "$TURBO_ROOT$/rust-toolchain.toml"
       ],
       "outputs": ["native/linux-x64/**"],
       "passThroughEnv": [
@@ -81,7 +85,8 @@
         "$TURBO_ROOT$/scripts/net-artifact.mjs",
         "$TURBO_ROOT$/scripts/net-build.mjs",
         "$TURBO_ROOT$/scripts/build-net-swift.sh",
-        "$TURBO_ROOT$/scripts/net-build.lock.json"
+        "$TURBO_ROOT$/scripts/net-build.lock.json",
+        "$TURBO_ROOT$/rust-toolchain.toml"
       ],
       "outputs": ["native/linux-arm64/**"],
       "passThroughEnv": [
