@@ -14,11 +14,16 @@ public struct SessionAttentionFocus: Hashable, Sendable {
 @MainActor
 @Observable
 public final class SessionAttentionCoordinator {
+  private struct OwnedFocus {
+    let owner: ObjectIdentifier
+    let session: SessionAttentionFocus
+  }
+
   @ObservationIgnored public var notificationDelivery: (any ChatNotificationDelivering)?
   @ObservationIgnored public var announcementFilter: ((SessionAttentionFocus, Set<SessionAttentionFocus>) -> Bool)?
 
   private let projectList: ProjectListModel
-  private var focusByOwner: [ObjectIdentifier: SessionAttentionFocus] = [:]
+  private var focus: OwnedFocus?
   private var openByOwner: [ObjectIdentifier: SessionAttentionFocus] = [:]
   private var applicationActive = true
   private var manualUnreadHold: SessionAttentionFocus?
@@ -31,14 +36,14 @@ public final class SessionAttentionCoordinator {
   }
 
   public var focusedSession: SessionAttentionFocus? {
-    focusByOwner.values.first
+    focus?.session
   }
 
   public func updateFocus(owner: ObjectIdentifier, session: SessionAttentionFocus?) {
     if let session {
-      focusByOwner[owner] = session
-    } else {
-      focusByOwner.removeValue(forKey: owner)
+      focus = OwnedFocus(owner: owner, session: session)
+    } else if focus?.owner == owner {
+      focus = nil
     }
     if manualUnreadHold != focusedSession {
       manualUnreadHold = nil

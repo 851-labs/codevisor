@@ -35,6 +35,12 @@ extension SessionStore {
     publishFocus()
   }
 
+  func windowClosed() {
+    isWindowFocused = false
+    attentionFocus = SessionAttentionWorkspaceFocus()
+    publishFocus()
+  }
+
   func setFocusedChat(
     _ sessionId: UUID?, serverId: String, sourceId: UUID, workspaceId: UUID, isVisible: Bool
   ) {

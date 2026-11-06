@@ -209,6 +209,52 @@ struct SessionAttentionCoordinatorTests {
     #expect(delivery.delivered.isEmpty)
   }
 
+  @Test("The newest focus wins over a surface that never released its focus")
+  func newestFocusWinsOverStaleSurface() async throws {
+    let project = Project.fromFolder(URL(fileURLWithPath: "/tmp/focus-stale"))
+    let stale = ChatSession(id: UUID(), projectId: project.id, harnessId: "codex", title: "Closed window")
+    let current = ChatSession(id: UUID(), projectId: project.id, harnessId: "codex", title: "Open window")
+    let (model, fakeServer, fixture) = try await makeModel(sessions: [stale, current], projects: [project])
+    await fakeServer.setSessionAttention(id: current.id, latestSequence: 3, lastSeenSequence: 0)
+    await fixture.refresh(from: fakeServer)
+    let coordinator = SessionAttentionCoordinator(projectList: model)
+    let closedWindow = FakeNotificationDelivery()
+    let openWindow = FakeNotificationDelivery()
+    coordinator.notificationDelivery = openWindow
+
+    coordinator.updateFocus(
+      owner: ObjectIdentifier(closedWindow),
+      session: SessionAttentionFocus(serverId: stale.serverId, sessionId: stale.id)
+    )
+    coordinator.updateFocus(
+      owner: ObjectIdentifier(openWindow),
+      session: SessionAttentionFocus(serverId: current.serverId, sessionId: current.id)
+    )
+
+    #expect(coordinator.focusedSession?.sessionId == current.id)
+    #expect(fixture.session(current.id)?.unreadCount == 0)
+    await fixture.flush()
+    #expect(await fakeServer.snapshot().readRequests.map(\.throughSequence) == [3])
+  }
+
+  @Test("A surface releasing focus it no longer holds leaves the current focus alone")
+  func staleReleaseKeepsCurrentFocus() async throws {
+    let (model, _, _) = try await makeModel()
+    let coordinator = SessionAttentionCoordinator(projectList: model)
+    let previousWindow = FakeNotificationDelivery()
+    let currentWindow = FakeNotificationDelivery()
+    let current = SessionAttentionFocus(serverId: "local", sessionId: UUID())
+    coordinator.updateFocus(
+      owner: ObjectIdentifier(previousWindow), session: SessionAttentionFocus(serverId: "local", sessionId: UUID()))
+    coordinator.updateFocus(owner: ObjectIdentifier(currentWindow), session: current)
+
+    coordinator.updateFocus(owner: ObjectIdentifier(previousWindow), session: nil)
+    #expect(coordinator.focusedSession == current)
+
+    coordinator.updateFocus(owner: ObjectIdentifier(currentWindow), session: nil)
+    #expect(coordinator.focusedSession == nil)
+  }
+
   @Test("A finish landing in the focused chat reads instantly with no ping")
   func focusedChatAutoReadsNewFinishes() async throws {
     let project = Project.fromFolder(URL(fileURLWithPath: "/tmp/focus-live"))

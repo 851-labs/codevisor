@@ -37,7 +37,6 @@ struct ClientDataStartupFailureView: View {
 
 struct RootView: View {
   @Environment(AppEnvironment.self) var environment
-  @Environment(\.controlActiveState) var controlActiveState
   @Environment(\.openSettings) var openClientSettings
   @State var clientWindow = ClientWindowControl()
   @State var selection: SidebarSelection?
@@ -60,6 +59,13 @@ struct RootView: View {
         )
       )
       .background(ClientWindowReader(control: clientWindow).frame(width: 0, height: 0))
+      .background(
+        WindowFocusReader(
+          onKeyChange: { [store] in store?.setWindowFocused($0) },
+          onClose: { [store] in store?.windowClosed() }
+        )
+        .frame(width: 0, height: 0)
+      )
       .background(RootTitlebar(isBotConversation: showsBotConversation, panelLayout: panelLayout))
       .environment(\.openChat, OpenChatAction { await openChat($0) })
       .environment(\.isAppUpdateInProgress, environment.isUpdateInProgress)
@@ -94,9 +100,6 @@ struct RootView: View {
       .onChange(of: botsEnabled) { _, enabled in
         if !enabled, case .bot = selection { selection = .newChat(nil) }
       }
-      .onChange(of: controlActiveState, initial: true) { _, state in
-        store?.setWindowFocused(state == .key)
-      }
       .onReceive(NotificationCenter.default.publisher(for: .codevisorOpenChatNotification)) { note in
         guard let sessionIdString = note.userInfo?["sessionId"] as? String,
           let sessionId = UUID(uuidString: sessionIdString),
@@ -108,7 +111,7 @@ struct RootView: View {
         if store == nil {
           let created = SessionStore(environment: environment)
           store = created
-          created.setWindowFocused(controlActiveState == .key)
+          created.setWindowFocused(clientWindow.window?.isKeyWindow == true)
           ChromiumAutomationBridge.shared.addStore(created)
         }
         if !AppPreview.isRunning {
