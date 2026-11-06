@@ -598,7 +598,7 @@ final class ConnectionStatus {
 
 ## Enforced by lint
 
-`bun run check` and the pre-commit hook fail on these:
+`bun run check`, the git hooks, and CI fail on these:
 
 - **No nested ternaries** (rule 4): oxlint `no-nested-ternary`, with no
   exemptions.

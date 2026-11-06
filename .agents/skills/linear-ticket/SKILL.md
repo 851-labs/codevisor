@@ -29,9 +29,10 @@ work on a ticket just because you created it.
    go straight to implementing.
 3. **Tophat:** follow the `tophat` skill. Capture evidence: a screen
    recording for interactions, screenshots for static UI.
-4. **Open a PR** with the diff. The lefthook pre-commit hook runs
-   `bun run check` on the checks your changes affect, so don't skip it. If it can't run on your machine,
-   say so in the PR and note what you ran instead.
+4. **Open a PR** with `bun run ship --review --title "…" --body-file <path>`.
+   The pre-push hook runs the checks your changes affect, so don't bypass it.
+   If it can't run on your machine, say so in the PR and note what you ran
+   instead.
    - Title: `<summary> (<ticket id>)`.
    - Body: `Fixes <ticket id>`, a short summary, tophat notes and the
      tophat assets.
@@ -41,5 +42,6 @@ work on a ticket just because you created it.
    `create_attachment_from_upload`.
 6. **Move the ticket to In Review** once the PR is open and ready for
    review (not while it's a draft or still missing its tophat).
-7. **Merge only after the user approves.** Squash-merge. The ticket closes
+7. **Merge only after the user approves:** `gh pr merge --auto --squash`
+   queues it, and the merge queue lands it once CI passes. The ticket closes
    through `Fixes`.

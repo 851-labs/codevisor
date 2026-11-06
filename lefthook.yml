@@ -1,12 +1,21 @@
 lefthook: bun x lefthook
 
 pre-commit:
-  parallel: false
+  parallel: true
   commands:
     typography:
       run: scripts/check-typography.sh
-    full-suite:
-      run: unset $(git rev-parse --local-env-vars) && bun run check
+    format:
+      glob: "*.{js,mjs,cjs,ts,tsx,jsx,json,jsonc,md,yml,yaml,css,html}"
+      run: bun x oxfmt -c .oxfmtrc.json --disable-nested-config --check {staged_files}
+    lint:
+      glob: "*.{js,mjs,cjs,ts,tsx,jsx}"
+      run: bun x oxlint -c .oxlintrc.json --disable-nested-config --deny-warnings {staged_files}
+
+pre-push:
+  commands:
+    checks:
+      run: unset $(git rev-parse --local-env-vars) && node scripts/check.mjs --base=origin/main --lanes=javascript,swift-style
 
 post-checkout:
   commands:
