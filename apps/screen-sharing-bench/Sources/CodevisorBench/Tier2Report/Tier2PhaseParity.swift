@@ -98,7 +98,7 @@ struct Tier2PhaseParity {
   }
 
   var text: String? {
-    guard let phaseMs else { return nil }
+    guard phaseMs != nil || !rows.isEmpty else { return nil }
 
     let spread = runPhasesMs.min().flatMap { low in runPhasesMs.max().map { (low, $0) } }
     let header = [
@@ -107,7 +107,7 @@ struct Tier2PhaseParity {
       "The display phase is the time from a host refresh to the next viewer refresh: the circular mean of each "
         + "observer's frame timestamps modulo 1/60 s, on the viewer's clock, viewer minus host. The two Macs' "
         + "display clocks set it, so it holds within a dispatch and drifts between dispatches. This dispatch: "
-        + "\(Tier2Format.number(phaseMs)) ms"
+        + (phaseMs.map { "\(Tier2Format.number($0)) ms" } ?? "no steady phase")
         + (spread.map { " (runs \(Tier2Format.number($0.0))–\(Tier2Format.number($0.1)) ms)" } ?? "") + ".",
       "",
       "M3 against Apple HP in the same dispatch: p50 at most HP + \(Int(Self.p50MarginMs)) ms and p95 at most HP + "

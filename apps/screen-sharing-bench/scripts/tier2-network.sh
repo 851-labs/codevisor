@@ -36,7 +36,7 @@ network_shape() {
   local delay_ms=$1 loss=$2
   shift 2
   network_pipes "$delay_ms" "$loss" "$@" || return 1
-  network_rules | network_load_rules
+  network_load_rules < <(network_rules)
 }
 
 network_pipes() {

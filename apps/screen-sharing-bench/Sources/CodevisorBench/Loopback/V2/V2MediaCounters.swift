@@ -19,7 +19,7 @@ enum V2MediaCounters {
       requestedKeyframes: host["requestedKeyframes", default: 0], stalledTiles: viewer["stalledTiles", default: 0],
       encodedFrames: host["encodedFrames"], encodedBytes: host["encodedBytes"],
       encodedKeyFrameBytes: host["encodedKeyFrameBytes"], encoderSwitches: host["encoderSwitches"],
-      ltrRefreshKeyframes: host["encodedLTRRefreshKeyFrames"])
+      ltrRefreshKeyframes: host["encodedLTRRefreshKeyFrames", default: 0])
   }
 
   private static func count(_ value: Double?) -> Int {

@@ -617,7 +617,8 @@ CodevisorBench encode-lab --scenes scroll,typing --duration 8 --warm-up 2 \
 runs only the `lab` job. `-f lab='croissant network-lab'` instead measures each Tier 2 network on croissant alone
 (`scripts/tier2-network-lab.sh`): it loads each network's shaping (ICMP is shaped like the sessions' TCP and UDP),
 pings tamale 600 times 0.1 s apart and prints the loss, the round trip's min, p50, p95 and max, and the loaded pf rules
-and table. It builds and installs the bench on the named mini (`tamale` or `croissant`), then runs
+and table It first releases any pf enable reference a `pfctl` left on croissant (only the bench enables pf there;
+before the fix below, a shaped dispatch lost its token and left pf enabled). It builds and installs the bench on the named mini (`tamale` or `croissant`), then runs
 `scripts/lab.sh`: one subcommand, with a preflight 8 s in so its display list shows what the command created. The
 command's output goes to the job summary and the `lab` artifact. The job has its own concurrency group
 (`screen-sharing-lab-*`), so check `gh run list` and agree on the mini first. The first lab run (41267527233) showed

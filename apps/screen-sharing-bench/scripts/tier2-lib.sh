@@ -65,12 +65,23 @@ tier2_plan() {
       done
     done
   done
-  if ((TIER2_C4)) && [[ ",$TIER2_SCENES," == *,video,* ]]; then
+  local video
+  video=$(tier2_video_network)
+  if ((TIER2_C4)) && [[ -n "$video" ]]; then
     for system in apple-hp codevisor-v2 codevisor-v2-vcp; do
       tier2_runs_system "$system" || continue
-      index=$((index + 1)); echo "$index video $system 1 0 $TIER2_NETWORK"
+      index=$((index + 1)); echo "$index video $system 1 0 $video"
     done
   fi
+}
+
+tier2_video_network() {
+  local token tokens
+  IFS=, read -r -a tokens <<<"$TIER2_SCENES"
+  for token in "${tokens[@]}"; do
+    [[ "$(tier2_token_scene "$token")" == video ]] && { tier2_token_network "$token"; return; }
+  done
+  return 0
 }
 
 tier2_token_scene() {

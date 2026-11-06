@@ -161,7 +161,9 @@ jobs:
 
   build:
     needs: plan
-    if: ${{ needs.plan.outputs.run == 'true' && github.event_name != 'pull_request' }}
+    if: >-
+      ${{ needs.plan.outputs.run == 'true' && github.event_name != 'pull_request'
+      && (needs.plan.outputs.tier1 == 'true' || needs.plan.outputs.tier2 == 'true') }}
     runs-on: [self-hosted, macOS, ARM64, tamale]
     timeout-minutes: 30
     steps:
@@ -302,7 +304,9 @@ jobs:
 
   tier2-a:
     needs: [plan, build, tier1, calibration]
-    if: ${{ !cancelled() && needs.plan.outputs.run == 'true' && needs.plan.outputs.tier2 == 'true' }}
+    if: >-
+      ${{ !cancelled() && needs.build.result == 'success' && needs.plan.outputs.run == 'true'
+      && needs.plan.outputs.tier2 == 'true' }}
     uses: ./.github/workflows/bench-screen-sharing-tier2.yml
     permissions:
       actions: read
@@ -318,8 +322,10 @@ jobs:
       input-events: "40"
 
   tier2-b:
-    needs: [plan, tier2-a]
-    if: ${{ !cancelled() && needs.plan.outputs.run == 'true' && needs.plan.outputs.tier2 == 'true' }}
+    needs: [plan, build, tier2-a]
+    if: >-
+      ${{ !cancelled() && needs.build.result == 'success' && needs.plan.outputs.run == 'true'
+      && needs.plan.outputs.tier2 == 'true' }}
     uses: ./.github/workflows/bench-screen-sharing-tier2.yml
     permissions:
       actions: read
@@ -335,8 +341,10 @@ jobs:
       input-events: "40"
 
   tier2-summary:
-    needs: [plan, tier2-a, tier2-b]
-    if: ${{ !cancelled() && needs.plan.outputs.run == 'true' && needs.plan.outputs.tier2 == 'true' }}
+    needs: [plan, build, tier2-a, tier2-b]
+    if: >-
+      ${{ !cancelled() && needs.build.result == 'success' && needs.plan.outputs.run == 'true'
+      && needs.plan.outputs.tier2 == 'true' }}
     runs-on: [self-hosted, macOS, ARM64, croissant]
     timeout-minutes: 15
     steps:

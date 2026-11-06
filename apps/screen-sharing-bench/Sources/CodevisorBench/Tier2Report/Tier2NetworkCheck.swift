@@ -29,9 +29,12 @@ enum Tier2NetworkCheck {
       "",
       "Before each shaped run the viewer probes tamale through the shaping (`network-check.json`): the round trip is "
         + "the median of each burst's fastest probe, and a probe is lost when its request or its reply is. The "
-        + "unshaped round trip comes from the same runs' clock probes, which the shaping leaves out.",
+        + "unshaped round trip comes from the same runs' clock probes, which the shaping leaves out. The spec's round "
+        + "trip is the unshaped one plus twice the delay; dummynet holds a packet about 0.25 ms past a 1 ms delay "
+        + "(851-3749), so N3 realizes about 0.5 ms more than that. Keep `specs` in step with `network_apply` in "
+        + "scripts/tier2-network.sh.",
       "",
-      "| Network | Spec | Unshaped RTT ms | Realized RTT ms | Expected RTT ms | Lost % | Expected lost % | Probes |",
+      "| Network | Spec | Unshaped RTT ms | Realized RTT ms | Spec RTT ms | Lost % | Spec lost % | Probes |",
       "| --- | --- | --- | --- | --- | --- | --- | --- |",
     ]
     let rows = byNetwork.keys.sorted().map { network in
@@ -42,8 +45,8 @@ enum Tier2NetworkCheck {
 
   private static func row(_ network: String, _ measurements: [Tier2Measurement]) -> String {
     let checks = measurements.compactMap(\.files.realizedNetwork)
-    let probes = checks.map(\.probes).reduce(0, +)
-    let replies = checks.map(\.replies).reduce(0, +)
+    let pooled = BenchResult.NetworkCheck(
+      probes: checks.map(\.probes).reduce(0, +), replies: checks.map(\.replies).reduce(0, +), roundTripMs: nil)
     let realized = BenchSystemComparison.median(checks.compactMap(\.roundTripMs))
     let unshaped = BenchSystemComparison.median(measurements.compactMap(unshapedRoundTripMs))
     let spec = specs[network]
@@ -53,8 +56,8 @@ enum Tier2NetworkCheck {
       spec.map { "\(Tier2Format.number($0.delayMs)) ms, \(Tier2Format.number($0.lossEachWay * 100))% each way" }
         ?? "–",
       Tier2Format.number(unshaped), Tier2Format.number(realized), Tier2Format.number(expected),
-      Tier2Format.number(probes > 0 ? 100 * (1 - Double(replies) / Double(probes)) : nil),
-      Tier2Format.number(spec?.roundTripLossPct), "\(probes)",
+      Tier2Format.number(pooled.probes > 0 ? pooled.lossFraction * 100 : nil),
+      Tier2Format.number(spec?.roundTripLossPct), "\(pooled.probes)",
     ]
     return "| " + cells.joined(separator: " | ") + " |"
   }
