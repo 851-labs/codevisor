@@ -80,7 +80,9 @@ extension SessionContainerView {
   func splitActiveLeaf(edge: SplitEdge) {
     let workspace = selectedWorkspace
     guard let tab = workspace.selectedCenterTab else { return }
-    splitLeaf(activeLeafId ?? tab.activeLeafId, edge: edge)
+    let leafId = activeLeafId ?? tab.activeLeafId
+    guard !isFloating(leafId) else { return }
+    splitLeaf(leafId, edge: edge)
   }
 
   func layoutActions(in workspace: Workspace) -> WorkspaceLayoutActions? {

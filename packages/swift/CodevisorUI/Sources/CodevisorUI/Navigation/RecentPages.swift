@@ -13,13 +13,13 @@ public struct RecentPages<ID: Hashable, Route> {
     self.capacity = capacity
   }
 
-  public func pages(showing route: Route?, in id: ID?, keeping kept: Set<ID> = []) -> [Page] {
+  public func pages(showing route: Route?, in id: ID?) -> [Page] {
     var next = self
-    if let route, let id { next.show(route, in: id, keeping: kept) }
+    if let route, let id { next.show(route, in: id) }
     return next.pages
   }
 
-  public mutating func show(_ route: Route, in id: ID, keeping kept: Set<ID> = []) {
+  public mutating func show(_ route: Route, in id: ID) {
     clock &+= 1
     if let index = pages.firstIndex(where: { $0.id == id }) {
       pages[index].route = route
@@ -27,13 +27,11 @@ public struct RecentPages<ID: Hashable, Route> {
     } else {
       pages.append(Page(id: id, route: route, lastShown: clock))
     }
-    evictOverflow(sparing: kept.union([id]))
+    evictOverflow()
   }
 
-  private mutating func evictOverflow(sparing spared: Set<ID>) {
-    while pages.count > capacity,
-      let oldest = pages.filter({ !spared.contains($0.id) }).min(by: { $0.lastShown < $1.lastShown })
-    {
+  private mutating func evictOverflow() {
+    while pages.count > capacity, let oldest = pages.min(by: { $0.lastShown < $1.lastShown }) {
       pages.removeAll { $0.id == oldest.id }
     }
   }

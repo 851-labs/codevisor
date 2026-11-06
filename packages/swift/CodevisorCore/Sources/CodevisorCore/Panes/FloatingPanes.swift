@@ -1,3 +1,4 @@
+import CoreGraphics
 import Foundation
 
 public struct FloatingPaneKey: Codable, Hashable, Sendable {
@@ -7,6 +8,22 @@ public struct FloatingPaneKey: Codable, Hashable, Sendable {
   public init(workspaceId: UUID, leafId: UUID) {
     self.workspaceId = workspaceId
     self.leafId = leafId
+  }
+}
+
+public struct FloatingPane: Codable, Equatable, Sendable {
+  public let workspaceId: UUID
+  public let leafId: UUID
+  public var frame: CGRect?
+
+  public var key: FloatingPaneKey {
+    FloatingPaneKey(workspaceId: workspaceId, leafId: leafId)
+  }
+
+  func moved(to frame: CGRect) -> FloatingPane {
+    var moved = self
+    moved.frame = frame
+    return moved
   }
 }
 
@@ -21,16 +38,18 @@ public struct FloatingPanes {
     self.preferences = preferences
   }
 
-  public var workspaceIds: Set<UUID> {
-    Set(keys.map(\.workspaceId))
+  public func panes(in workspaceId: UUID) -> [FloatingPane] {
+    all.filter { $0.workspaceId == workspaceId }
   }
 
   public func leafIds(in workspaceId: UUID) -> Set<UUID> {
-    Set(keys.filter { $0.workspaceId == workspaceId }.map(\.leafId))
+    Set(panes(in: workspaceId).map(\.leafId))
   }
 
   public func float(_ key: FloatingPaneKey) {
-    save(keys.union([key]))
+    guard !all.contains(where: { $0.key == key }) else { return }
+
+    save(all + [FloatingPane(workspaceId: key.workspaceId, leafId: key.leafId)])
   }
 
   public func dock(_ key: FloatingPaneKey) {
@@ -38,20 +57,27 @@ public struct FloatingPanes {
   }
 
   public func dock(_ docked: Set<FloatingPaneKey>) {
-    let remaining = keys.subtracting(docked)
-    guard remaining != keys else { return }
+    let remaining = all.filter { !docked.contains($0.key) }
+    guard remaining.count != all.count else { return }
 
     save(remaining)
   }
 
-  private var keys: Set<FloatingPaneKey> {
-    Set(preferences.value(forKey: Self.preferenceKey, default: [FloatingPaneKey]()))
+  public func move(_ key: FloatingPaneKey, to frame: CGRect) {
+    save(all.map { $0.key == key ? $0.moved(to: frame) : $0 })
   }
 
-  private func save(_ keys: Set<FloatingPaneKey>) {
-    let ordered = keys.sorted {
-      ($0.workspaceId.uuidString, $0.leafId.uuidString) < ($1.workspaceId.uuidString, $1.leafId.uuidString)
-    }
-    preferences.set(ordered, forKey: Self.preferenceKey)
+  public func bringToFront(_ key: FloatingPaneKey) {
+    guard let pane = all.first(where: { $0.key == key }), all.last != pane else { return }
+
+    save(all.filter { $0.key != key } + [pane])
+  }
+
+  private var all: [FloatingPane] {
+    preferences.value(forKey: Self.preferenceKey, default: [FloatingPane]())
+  }
+
+  private func save(_ panes: [FloatingPane]) {
+    preferences.set(panes, forKey: Self.preferenceKey)
   }
 }

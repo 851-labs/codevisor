@@ -13,7 +13,7 @@ struct WorkspaceDeck<Page: View>: View {
 
   var body: some View {
     WorkspaceDeckLayout {
-      ForEach(history.pages(showing: active, in: activeSlot, keeping: floatingSlots)) { mounted in
+      ForEach(history.pages(showing: active, in: activeSlot)) { mounted in
         let isActive = mounted.id == activeSlot
         let frozenSize = isActive ? nil : sizes.frozenSize(for: mounted.id)
         WorkspaceDeckPage(route: mounted.route, activity: activity(for: mounted.id)) {
@@ -33,7 +33,7 @@ struct WorkspaceDeck<Page: View>: View {
       syncActivities(active: slot)
       guard let active, let slot else { return }
       focusAnchor.releaseFocus()
-      history.show(active, in: slot, keeping: floatingSlots)
+      history.show(active, in: slot)
     }
   }
 
@@ -42,7 +42,7 @@ struct WorkspaceDeck<Page: View>: View {
   }
 
   private func syncActivities(active: WorkspaceDeckSlot?) {
-    let mounted = Set(history.pages(showing: self.active, in: active, keeping: floatingSlots).map(\.id))
+    let mounted = Set(history.pages(showing: self.active, in: active).map(\.id))
     activities = activities.filter { mounted.contains($0.key) }
     sizes.keep(mounted)
     for slot in mounted where activities[slot] == nil {
@@ -51,10 +51,6 @@ struct WorkspaceDeck<Page: View>: View {
     for (slot, activity) in activities where activity.isActive != (slot == active) {
       activity.isActive = slot == active
     }
-  }
-
-  private var floatingSlots: Set<WorkspaceDeckSlot> {
-    Set(FloatingPanes.shared.workspaceIds.map(WorkspaceDeckSlot.workspace))
   }
 
   private var activeSlot: WorkspaceDeckSlot? {

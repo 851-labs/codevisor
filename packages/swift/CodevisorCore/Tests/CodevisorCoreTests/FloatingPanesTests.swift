@@ -1,3 +1,4 @@
+import CoreGraphics
 import Foundation
 import Testing
 @testable import CodevisorCore
@@ -7,29 +8,47 @@ import Testing
 struct FloatingPanesTests {
   private let workspaceId = UUID()
 
-  @Test("Floated panes are remembered per workspace across instances")
+  private func key() -> FloatingPaneKey {
+    FloatingPaneKey(workspaceId: workspaceId, leafId: UUID())
+  }
+
+  @Test("Floated panes and their frames are remembered per workspace across instances")
   func floatedPanesPersist() {
     let preferences = ClientPreferences()
-    let leafId = UUID()
-    FloatingPanes(preferences: preferences).float(FloatingPaneKey(workspaceId: workspaceId, leafId: leafId))
+    let floated = key()
+    let frame = CGRect(x: 40, y: 60, width: 420, height: 480)
+    FloatingPanes(preferences: preferences).float(floated)
+    FloatingPanes(preferences: preferences).move(floated, to: frame)
 
     let reloaded = FloatingPanes(preferences: preferences)
 
-    #expect(reloaded.leafIds(in: workspaceId) == [leafId])
+    #expect(reloaded.panes(in: workspaceId).map(\.frame) == [frame])
     #expect(reloaded.leafIds(in: UUID()).isEmpty)
-    #expect(reloaded.workspaceIds == [workspaceId])
   }
 
   @Test("Docking a pane forgets only that pane")
   func dockingForgetsOnePane() {
     let panes = FloatingPanes(preferences: ClientPreferences())
-    let kept = FloatingPaneKey(workspaceId: workspaceId, leafId: UUID())
-    let docked = FloatingPaneKey(workspaceId: workspaceId, leafId: UUID())
+    let kept = key()
+    let docked = key()
     panes.float(kept)
     panes.float(docked)
 
     panes.dock(docked)
 
     #expect(panes.leafIds(in: workspaceId) == [kept.leafId])
+  }
+
+  @Test("Bringing a pane to the front stacks it last")
+  func bringToFrontStacksLast() {
+    let panes = FloatingPanes(preferences: ClientPreferences())
+    let back = key()
+    let front = key()
+    panes.float(back)
+    panes.float(front)
+
+    panes.bringToFront(back)
+
+    #expect(panes.panes(in: workspaceId).map(\.leafId) == [front.leafId, back.leafId])
   }
 }

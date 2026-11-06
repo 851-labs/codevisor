@@ -33,24 +33,4 @@ struct RecentPagesTests {
     #expect(recent.pages(showing: nil, in: nil).map(\.id) == ["a"])
     #expect(recent.pages.map(\.id) == ["a"])
   }
-
-  @Test("Overflow spares kept pages and evicts the oldest other page")
-  func overflowSparesKeptPages() {
-    var recent = RecentPages<String, Int>(capacity: 2)
-    recent.show(1, in: "a")
-    recent.show(2, in: "b")
-    recent.show(3, in: "c", keeping: ["a"])
-
-    #expect(recent.pages.map(\.id) == ["a", "c"])
-  }
-
-  @Test("The page being shown is never evicted, even when every other page is kept")
-  func shownPageSurvivesKeptPages() {
-    var recent = RecentPages<String, Int>(capacity: 2)
-    recent.show(1, in: "a")
-    recent.show(2, in: "b")
-    recent.show(3, in: "c", keeping: ["a", "b"])
-
-    #expect(recent.pages.map(\.id) == ["a", "b", "c"])
-  }
 }

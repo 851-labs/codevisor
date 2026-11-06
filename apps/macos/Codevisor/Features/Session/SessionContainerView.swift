@@ -67,16 +67,7 @@ struct SessionContainerView: View {
 
   var body: some View {
     mounted(in: selectedWorkspace)
-  }
-
-  var workspacePaneActions: WorkspacePaneActions {
-    WorkspacePaneActions(
-      pluginAppPresenter: pluginAppPresenter,
-      openFileDocument: OpenFileDocumentAction { openFileDocument($0, rendered: $1) },
-      openSubagent: OpenSubagentAction { parentId, toolCallId, title, placement in
-        openSubagent(parentSessionId: parentId, toolCallId: toolCallId, title: title, placement: placement)
-      }
-    )
+      .environment(\.pluginAppPresenter, pluginAppPresenter)
   }
 
   private func mounted(in workspace: Workspace) -> some View {
@@ -84,14 +75,19 @@ struct SessionContainerView: View {
       .background {
         ActiveWorkspaceOnly { sceneChrome }
       }
-      .modifier(workspacePaneActions)
+      .environment(\.openFileDocument, OpenFileDocumentAction { openFileDocument($0, rendered: $1) })
+      .environment(
+        \.openSubagent,
+        OpenSubagentAction { parentId, toolCallId, title, placement in
+          openSubagent(parentSessionId: parentId, toolCallId: toolCallId, title: title, placement: placement)
+        }
+      )
       .onChange(of: workspaceEntry.generation, initial: true) { _, _ in
         synchronizeMountedPaneGroups()
       }
       .onChange(of: floatingLayout, initial: true) { _, _ in
-        syncFloatingPanes()
+        dockStaleFloatingPanes()
       }
-      .onDisappear(perform: dismissFloatingPanes)
       .modifier(
         CenterTabRequests(store: store, workspaceId: workspace.id, onClose: closeCenterTab)
       )
@@ -109,7 +105,7 @@ struct SessionContainerView: View {
       }
       .onChange(of: activeLeafId) { _, leafId in
         if let openingSplit, openingSplit.leafId != leafId { self.openingSplit = nil }
-        raiseIfFloating(leafId)
+        bringFloatingPaneToFront(leafId)
       }
       .onChange(of: focusedChatCandidate, initial: true) { _, candidate in
         publishFocusedChat(candidate)
@@ -173,8 +169,7 @@ struct SessionContainerView: View {
 
   private func setSelectedPanesVisible(_ visible: Bool) {
     let workspace = selectedWorkspace
-    let floating = floatingLayout.floating
-    for leaf in workspace.selectedCenterTab?.root.allGroups ?? [] where !floating.contains(leaf.id) {
+    for leaf in workspace.selectedCenterTab?.root.allGroups ?? [] {
       let key = SessionStore.CenterLeafKey(workspaceId: workspace.id, groupId: leaf.id)
       store.centerLeafGroups[key]?.selectedPane?.visibilityChanged(visible)
     }
@@ -217,6 +212,7 @@ struct SessionContainerView: View {
         },
         onCenterTreeLiveChanged: { visible in liveCenterTree = restoringFloatingLeaves(visible) }
       )
+      .overlay { floatingPaneOverlay(chatLeaf: chatLeaf) }
       .environment(\.usesSlimComposer, isSinglePane)
     }
     .overlay(alignment: .top) {
