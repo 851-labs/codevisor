@@ -26,6 +26,14 @@ export const devices = {
     height: 2420,
     orientation: "landscape",
     scenes: ["02-conversation"]
+  },
+  "ipad-pro-13": {
+    name: "iPad Pro 13-inch (M5)",
+    type: "com.apple.CoreSimulator.SimDeviceType.iPad-Pro-13-inch-M5-12GB",
+    width: 2064,
+    height: 2752,
+    orientation: "landscape",
+    scenes: ["02-conversation"]
   }
 }
 

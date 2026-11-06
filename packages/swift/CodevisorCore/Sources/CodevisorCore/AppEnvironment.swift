@@ -249,8 +249,8 @@ public final class AppEnvironment {
   }
 
   public func deleteAllData() {
-    AnalyticsClient.shared.setEnabled(false)
-    DiagnosticsClient.shared.setEnabled(false)
+    Analytics.setEnabled(false)
+    Diagnostics.setEnabled(false)
     projectList.removeAll()
     configCache.clear()
     composerDefaults.clear()
@@ -276,12 +276,12 @@ public final class AppEnvironment {
 
   public func setShareAnalytics(_ enabled: Bool) {
     settings.setShareAnalytics(enabled)
-    AnalyticsClient.shared.setEnabled(enabled)
+    Analytics.setEnabled(enabled)
   }
 
   public func setShareCrashReports(_ enabled: Bool) {
     settings.setShareCrashReports(enabled)
-    DiagnosticsClient.shared.setEnabled(enabled)
+    Diagnostics.setEnabled(enabled)
   }
 
   public static func preview(

@@ -13,7 +13,7 @@ const root = await realpath(fileURLToPath(new URL("..", import.meta.url)))
 const options = parseOptions(process.argv.slice(2), root)
 if (options.help) {
   console.log(
-    "Usage: bun run screenshots:ios [--device iphone|iphone-18-pro|ipad-pro-11] [--output directory] [--runtime 'iOS 27.0'] [--appearance all|light|dark]"
+    "Usage: bun run screenshots:ios [--device iphone|iphone-18-pro|ipad-pro-11|ipad-pro-13] [--output directory] [--runtime 'iOS 27.0'] [--appearance all|light|dark]"
   )
   process.exit(0)
 }

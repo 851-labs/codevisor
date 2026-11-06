@@ -3,7 +3,7 @@ import Testing
 
 @MainActor
 @Suite("Analytics privacy primitives")
-struct AnalyticsClientTests {
+struct AnalyticsTests {
   @Test("Event names are a closed manual allowlist")
   func eventAllowlist() {
     #expect(
@@ -20,11 +20,11 @@ struct AnalyticsClientTests {
 
   @Test("Token usage is reduced to coarse buckets")
   func tokenBuckets() {
-    #expect(AnalyticsClient.tokenBucket(nil) == nil)
-    #expect(AnalyticsClient.tokenBucket(0) == "0")
-    #expect(AnalyticsClient.tokenBucket(999) == "1-999")
-    #expect(AnalyticsClient.tokenBucket(1_000) == "1k-9.9k")
-    #expect(AnalyticsClient.tokenBucket(10_000) == "10k-99.9k")
-    #expect(AnalyticsClient.tokenBucket(100_000) == "100k+")
+    #expect(Analytics.tokenBucket(nil) == nil)
+    #expect(Analytics.tokenBucket(0) == "0")
+    #expect(Analytics.tokenBucket(999) == "1-999")
+    #expect(Analytics.tokenBucket(1_000) == "1k-9.9k")
+    #expect(Analytics.tokenBucket(10_000) == "10k-99.9k")
+    #expect(Analytics.tokenBucket(100_000) == "100k+")
   }
 }

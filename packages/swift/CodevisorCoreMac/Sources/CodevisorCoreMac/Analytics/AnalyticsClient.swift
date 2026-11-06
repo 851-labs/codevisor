@@ -1,22 +1,8 @@
+import CodevisorCore
 import Foundation
 import PostHog
 
-public enum AnalyticsEventName: String, Sendable, CaseIterable {
-  case appOpened = "app opened"
-  case chatCreated = "chat created"
-  case messageSent = "message sent"
-  case modelSelected = "model selected"
-  case harnessSelected = "harness selected"
-  case turnCompleted = "turn completed"
-  case turnFailed = "turn failed"
-}
-
-public enum AnalyticsPropertyValue: Sendable, Equatable {
-  case string(String)
-  case integer(Int)
-  case double(Double)
-  case boolean(Bool)
-
+extension AnalyticsPropertyValue {
   fileprivate var postHogValue: Any {
     switch self {
     case let .string(value): value
@@ -28,7 +14,7 @@ public enum AnalyticsPropertyValue: Sendable, Equatable {
 }
 
 @MainActor
-public final class AnalyticsClient {
+public final class AnalyticsClient: AnalyticsSink {
   public static let shared = AnalyticsClient()
 
   private static let projectTokenKey = "CodevisorPostHogProjectToken"
@@ -148,16 +134,5 @@ public final class AnalyticsClient {
     #else
       "release"
     #endif
-  }
-
-  public static func tokenBucket(_ value: UInt64?) -> String? {
-    guard let value else { return nil }
-    return switch value {
-    case 0: "0"
-    case 1..<1_000: "1-999"
-    case 1_000..<10_000: "1k-9.9k"
-    case 10_000..<100_000: "10k-99.9k"
-    default: "100k+"
-    }
   }
 }

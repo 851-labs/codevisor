@@ -1,6 +1,7 @@
+import CodevisorCore
 import Sentry
 import Testing
-@testable import CodevisorCore
+@testable import CodevisorCoreMac
 
 @MainActor
 @Suite("Diagnostics privacy primitives")

@@ -327,8 +327,6 @@ let package = Package(
         "CodevisorClient",
         "CodevisorCloud",
         "CodevisorNet",
-        .product(name: "PostHog", package: "posthog-ios"),
-        "Sentry",
       ],
       path: "CodevisorCore/Sources/CodevisorCore",
       swiftSettings: strictSwiftSettings,
@@ -345,7 +343,6 @@ let package = Package(
         "CodevisorTestSupport",
         "CodevisorCore",
         "ACPKit",
-        "Sentry",
       ],
       path: "CodevisorCore/Tests/CodevisorCoreTests",
       swiftSettings: strictSwiftSettings
@@ -356,6 +353,7 @@ let package = Package(
       dependencies: [
         "CodevisorCore", "ScreenSharing", "ScreenSharingV2", "CodevisorNet",
         "CGVirtualDisplayPrivate", .product(name: "ComposableArchitecture", package: "swift-composable-architecture"),
+        .product(name: "PostHog", package: "posthog-ios"), "Sentry",
       ],
       path: "CodevisorCoreMac/Sources/CodevisorCoreMac",
       swiftSettings: strictSwiftSettings
@@ -440,6 +438,7 @@ let package = Package(
         "ACPKit",
         "ScreenSharing",
         "ScreenSharingTesting",
+        "Sentry",
       ],
       path: "CodevisorCoreMac/Tests/CodevisorCoreMacTests",
       swiftSettings: strictSwiftSettings,

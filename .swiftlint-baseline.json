@@ -874,7 +874,7 @@
     "violation": {
       "location": {
         "character": 3,
-        "file": "packages/swift/CodevisorCore/Tests/CodevisorCoreTests/DiagnosticsClientTests.swift",
+        "file": "packages/swift/CodevisorCoreMac/Tests/CodevisorCoreMacTests/DiagnosticsClientTests.swift",
         "line": 21
       },
       "reason": "Function body should span 50 lines or less excluding comments and whitespace: currently spans 68 lines",

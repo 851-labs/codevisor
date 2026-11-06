@@ -61,7 +61,7 @@ public final class ErrorReporter {
     title: String,
     message: String? = nil
   ) {
-    DiagnosticsClient.shared.capture(issue)
+    Diagnostics.capture(issue)
     report(title, message: message)
   }
 
@@ -70,7 +70,7 @@ public final class ErrorReporter {
   }
 
   public func report(_ issue: DiagnosticIssueName, title: String, error: any Error) {
-    DiagnosticsClient.shared.capture(issue)
+    Diagnostics.capture(issue)
     report(title, message: Self.userFacingMessage(for: error))
   }
 

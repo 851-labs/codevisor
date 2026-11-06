@@ -55,6 +55,8 @@ final class AppRuntime {
       }
     }
     let isFirstLaunch = environment.settings.claimFirstLaunch()
+    Analytics.sink = AnalyticsClient.shared
+    Diagnostics.sink = DiagnosticsClient.shared
     AnalyticsClient.shared.configureFromMainBundle(enabled: environment.settings.shareAnalytics)
     AnalyticsClient.shared.captureAppOpenedOnce()
     DiagnosticsClient.shared.configureFromMainBundle(enabled: environment.settings.shareCrashReports)

@@ -64,7 +64,7 @@ extension MachineController {
   private func handleSyncEvent(
     _ event: ServerEventEnvelope, serverId: String, client: any CodevisorServerClienting
   ) async {
-    DiagnosticsClient.shared.noteSyncEvent(
+    Diagnostics.noteSyncEvent(
       machineIsLocal: serverId == CodevisorMachine.local.id,
       kind: event.kind
     )

@@ -1,29 +1,11 @@
+import CodevisorCore
 import Foundation
 import Observation
 import Sentry
 
-public enum DiagnosticIssueName: String, Sendable, CaseIterable {
-  case corruptPersistedData = "corrupt_persisted_data"
-  case dataDirectoryUnavailable = "data_directory_unavailable"
-  case persistenceWriteFailed = "persistence_write_failed"
-  case terminalOpenFailed = "terminal_open_failed"
-  case appRelaunchFailed = "app_relaunch_failed"
-
-  fileprivate var component: String {
-    switch self {
-    case .corruptPersistedData, .dataDirectoryUnavailable, .persistenceWriteFailed:
-      "persistence"
-    case .terminalOpenFailed:
-      "terminal"
-    case .appRelaunchFailed:
-      "updates"
-    }
-  }
-}
-
 @MainActor
 @Observable
-public final class DiagnosticsClient {
+public final class DiagnosticsClient: DiagnosticsSink {
   public static let shared = DiagnosticsClient()
 
   private static let dsnKey = "CodevisorSentryDSN"
@@ -85,7 +67,7 @@ public final class DiagnosticsClient {
     }
   }
 
-  func noteSyncEvent(machineIsLocal: Bool, kind: String) {
+  public func noteSyncEvent(machineIsLocal: Bool, kind: String) {
     guard consentGate.isEnabled, sdkIsSetUp, Self.allowedSyncEventKinds.contains(kind)
     else { return }
     SentrySDK.configureScope { scope in

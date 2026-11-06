@@ -9,14 +9,14 @@ extension SessionController {
     properties["harness_id"] = .string(harnessId)
     properties["uses_worktree"] = .boolean(serverSession?.worktreeName != nil)
     properties["client"] = .string(project.serverId == "local" ? "local" : "remote")
-    AnalyticsClient.shared.capture(.chatCreated, properties: properties)
+    Analytics.capture(.chatCreated, properties: properties)
   }
 
   func captureMessageSent(model: SessionModel?, attachmentCount: Int, isQueued: Bool) {
     var properties = analyticsSessionProperties(model: model)
     properties["attachment_count"] = .integer(attachmentCount)
     properties["is_queued"] = .boolean(isQueued)
-    AnalyticsClient.shared.capture(.messageSent, properties: properties)
+    Analytics.capture(.messageSent, properties: properties)
   }
 
   func captureModelSelected(modelId: String, previousModelId: String?) {
@@ -25,7 +25,7 @@ extension SessionController {
     if let previousModelId {
       properties["previous_model_id"] = .string(previousModelId)
     }
-    AnalyticsClient.shared.capture(.modelSelected, properties: properties)
+    Analytics.capture(.modelSelected, properties: properties)
   }
 
   func captureHarnessSelected(harnessId: String, previousHarnessId: String?) {
@@ -34,7 +34,7 @@ extension SessionController {
     if let previousHarnessId {
       properties["previous_harness_id"] = .string(previousHarnessId)
     }
-    AnalyticsClient.shared.capture(.harnessSelected, properties: properties)
+    Analytics.capture(.harnessSelected, properties: properties)
   }
 
   func captureTurnEnded(_ model: SessionModel) {
@@ -81,9 +81,9 @@ extension SessionController {
       properties["error_kind"] = .string(
         model.errorRequiresHarnessAuthentication ? "authentication_required" : "runtime_error"
       )
-      AnalyticsClient.shared.capture(.turnFailed, properties: properties)
+      Analytics.capture(.turnFailed, properties: properties)
     } else {
-      AnalyticsClient.shared.capture(.turnCompleted, properties: properties)
+      Analytics.capture(.turnCompleted, properties: properties)
     }
   }
 
@@ -138,7 +138,7 @@ extension SessionController {
   ) {
     guard let current else { return }
     let delta = previous.map { current >= $0 ? current - $0 : current } ?? current
-    if let bucket = AnalyticsClient.tokenBucket(delta) {
+    if let bucket = Analytics.tokenBucket(delta) {
       properties[key] = .string(bucket)
     }
   }

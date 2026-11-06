@@ -28,7 +28,7 @@ const warmUpScene = "04-browser"
 const root = await realpath(fileURLToPath(new URL("..", import.meta.url)))
 const options = parseOptions(process.argv.slice(2), root)
 if (options.help) {
-  console.log(`Usage: bun run screenshots:ios:direct [--device iphone|iphone-18-pro|ipad-pro-11] [--output directory] [--runtime 'iOS 27.0'] [--appearance all|light|dark]
+  console.log(`Usage: bun run screenshots:ios:direct [--device iphone|iphone-18-pro|ipad-pro-11|ipad-pro-13] [--output directory] [--runtime 'iOS 27.0'] [--appearance all|light|dark]
 
 Captures the App Store scenes on a throwaway, headless simulator without the worktree simulator
 owner. The device is created for this run and deleted afterwards; the app runs on offline demo
