@@ -80,7 +80,7 @@ impl Estimator {
             bursts: Windowed::new(BURST_WINDOW, Keep::Largest),
             link_bursts: Windowed::new(BURST_WINDOW, Keep::Largest),
             measured_bps: 0.0,
-            acked: Throughput::restarting_after_idle(),
+            acked: Throughput::default(),
             sent: Throughput::default(),
             lost: Throughput::default(),
             cap: None,
@@ -120,6 +120,10 @@ impl Estimator {
 
     pub fn receive_bps(&self) -> Option<f64> {
         self.acked.bps()
+    }
+
+    fn receive_bps_until(&self, now: Instant) -> Option<f64> {
+        self.acked.active_bps_until(now).or_else(|| self.acked.bps_until(now))
     }
 
     fn link_limited(&self, receive_bps: f64) -> bool {
@@ -245,7 +249,7 @@ impl Estimator {
         if let Some(delivered) = self.delivered_before_any_measurement(now, loss) {
             return (delivered * BACKOFF).min(estimate);
         }
-        let carried = self.acked.bps_until(now).map_or(0.0, |receive| receive * BACKOFF);
+        let carried = self.receive_bps_until(now).map_or(0.0, |receive| receive * BACKOFF);
         let guessed = self.cap.is_none() && self.bursts.is_empty();
         let kept = if guessed { 1.0 - loss } else { 1.0 - loss / 2.0 };
         (estimate * kept).max(carried).min(estimate)
@@ -261,7 +265,7 @@ impl Estimator {
 
     fn back_off(&mut self, now: Instant) {
         let estimate = self.estimate_bps();
-        let receive = self.acked.bps_until(now).or_else(|| self.acked.bps()).unwrap_or(estimate);
+        let receive = self.receive_bps_until(now).or_else(|| self.acked.bps()).unwrap_or(estimate);
         let filling = receive >= estimate * FILLING_SHARE;
         let link_limited = self.link_limited(receive);
         let from = if filling || link_limited { receive.min(estimate) } else { estimate };
@@ -282,7 +286,7 @@ impl Estimator {
         let measured = self.measured_bps;
         if self.cap.is_none() && !queued && self.link_bursts.is_empty() && burst.is_some() {
             let estimate = self.estimate_bps();
-            if sent.is_some_and(|sent| sent >= estimate * FILLING_SHARE) {
+            if estimate < self.max_bps && sent.is_some_and(|sent| sent >= estimate * FILLING_SHARE) {
                 self.cap = Some(Cap { from_bps: estimate, since: now, grown_at: now, bps: estimate });
             }
         }
@@ -320,14 +324,9 @@ impl Estimator {
 struct Throughput {
     entries: VecDeque<(Instant, usize)>,
     bytes: usize,
-    restarts_after_idle: bool,
 }
 
 impl Throughput {
-    fn restarting_after_idle() -> Self {
-        Self { restarts_after_idle: true, ..Self::default() }
-    }
-
     fn push(&mut self, now: Instant, bytes: usize) {
         while self.entries.front().is_some_and(|(at, _)| now.saturating_duration_since(*at) > RECEIVE_WINDOW) {
             let (_, old) = self.entries.pop_front().expect("checked above");
@@ -338,12 +337,8 @@ impl Throughput {
     }
 
     fn bps(&self) -> Option<f64> {
-        let latest = self.latest()?;
-        if self.restarts_after_idle {
-            return self.rate(self.entries.iter().copied(), latest);
-        }
         let (oldest, oldest_bytes) = *self.entries.front()?;
-        let span = latest.saturating_duration_since(oldest);
+        let span = self.entries.back()?.0.saturating_duration_since(oldest);
         (span >= RECEIVE_WINDOW / 4).then(|| (self.bytes - oldest_bytes) as f64 * 8.0 / span.as_secs_f64())
     }
 
@@ -362,30 +357,35 @@ impl Throughput {
     }
 
     fn bps_until(&self, now: Instant) -> Option<f64> {
-        let recent = self
+        let mut recent = self
+            .entries
+            .iter()
+            .filter(|(at, _)| *at <= now && now.saturating_duration_since(*at) <= RECEIVE_WINDOW)
+            .peekable();
+        let oldest = recent.peek()?.0;
+        let bytes: usize = recent.skip(1).map(|(_, bytes)| bytes).sum();
+        let span = now.saturating_duration_since(oldest);
+        (span >= RECEIVE_WINDOW / 4).then(|| bytes as f64 * 8.0 / span.as_secs_f64())
+    }
+
+    fn active_bps_until(&self, now: Instant) -> Option<f64> {
+        let latest = self.entries.iter().rev().find(|(at, _)| *at <= now)?.0;
+        if now.saturating_duration_since(latest) > RECEIVE_IDLE {
+            return None;
+        }
+        let recent: Vec<(Instant, usize)> = self
             .entries
             .iter()
             .copied()
-            .filter(|(at, _)| *at <= now && now.saturating_duration_since(*at) <= RECEIVE_WINDOW);
-        self.rate(recent, now)
-    }
-
-    fn rate(&self, entries: impl Iterator<Item = (Instant, usize)>, end: Instant) -> Option<f64> {
-        let mut start: Option<Instant> = None;
-        let mut previous: Option<Instant> = None;
-        let mut bytes = 0;
-        for (at, size) in entries {
-            let idle = self.restarts_after_idle
-                && previous.is_some_and(|previous| at.saturating_duration_since(previous) > RECEIVE_IDLE);
-            if start.is_none() || idle {
-                start = Some(at);
-                bytes = 0;
-            } else {
-                bytes += size;
-            }
-            previous = Some(at);
-        }
-        let span = end.saturating_duration_since(start?);
+            .filter(|(at, _)| *at <= now && now.saturating_duration_since(*at) <= RECEIVE_WINDOW)
+            .collect();
+        let restart = recent
+            .windows(2)
+            .rposition(|pair| pair[1].0.saturating_duration_since(pair[0].0) > RECEIVE_IDLE)
+            .map_or(0, |gap| gap + 1);
+        let (start, _) = *recent.get(restart)?;
+        let bytes: usize = recent[restart + 1..].iter().map(|(_, bytes)| bytes).sum();
+        let span = now.saturating_duration_since(start);
         (span >= RECEIVE_WINDOW / 4).then(|| bytes as f64 * 8.0 / span.as_secs_f64())
     }
 }

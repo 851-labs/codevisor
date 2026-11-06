@@ -19,7 +19,7 @@ const ONE_WAY: Duration = Duration::from_micros(500);
 type Rule = Box<dyn FnMut(&Bytes) -> bool + Send>;
 
 struct MemoryTransport {
-    out: Mutex<Option<mpsc::UnboundedSender<Bytes>>>,
+    out: Mutex<Option<mpsc::UnboundedSender<(tokio::time::Instant, Bytes)>>>,
     incoming: tokio::sync::Mutex<mpsc::UnboundedReceiver<Bytes>>,
     drop: Mutex<Rule>,
     room: Arc<AtomicUsize>,
@@ -30,12 +30,23 @@ impl MemoryTransport {
         let (to_b, from_a) = mpsc::unbounded_channel();
         let (to_a, from_b) = mpsc::unbounded_channel();
         let end = |out, incoming| Self {
-            out: Mutex::new(Some(out)),
+            out: Mutex::new(Some(Self::link(out))),
             incoming: tokio::sync::Mutex::new(incoming),
             drop: Mutex::new(Box::new(|_: &Bytes| false)),
             room: Arc::new(AtomicUsize::new(usize::MAX)),
         };
         (end(to_b, from_b), end(to_a, from_a))
+    }
+
+    fn link(out: mpsc::UnboundedSender<Bytes>) -> mpsc::UnboundedSender<(tokio::time::Instant, Bytes)> {
+        let (sent, mut in_flight) = mpsc::unbounded_channel::<(tokio::time::Instant, Bytes)>();
+        tokio::spawn(async move {
+            while let Some((arrives, datagram)) = in_flight.recv().await {
+                tokio::time::sleep_until(arrives).await;
+                let _ = out.send(datagram);
+            }
+        });
+        sent
     }
 }
 
@@ -50,12 +61,9 @@ impl DatagramTransport for MemoryTransport {
         }
         self.room.fetch_sub(1, Ordering::SeqCst);
         if !(self.drop.lock().unwrap())(&datagram)
-            && let Some(out) = self.out.lock().unwrap().clone()
+            && let Some(out) = &*self.out.lock().unwrap()
         {
-            tokio::spawn(async move {
-                tokio::time::sleep(ONE_WAY).await;
-                let _ = out.send(datagram);
-            });
+            let _ = out.send((tokio::time::Instant::now() + ONE_WAY, datagram));
         }
         SendOutcome::Sent
     }
