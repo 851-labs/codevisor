@@ -4,33 +4,22 @@ import SwiftUI
 struct ScreenSharingTimelineDetails: View {
   let timeline: ScreenSharingTimelineBreakdown
 
+  private static let spacing: CGFloat = 6
+
   var body: some View {
-    VStack(alignment: .leading, spacing: 6) {
-      Divider()
-      Grid(alignment: .leading, horizontalSpacing: 12, verticalSpacing: 4) {
-        GridRow {
-          Text("Frame timeline")
-          Text("p50").gridColumnAlignment(.trailing)
-          Text("p95").gridColumnAlignment(.trailing)
-        }
-        .fontWeight(.semibold)
-        ForEach(timeline.stages) { ScreenSharingTimelineRow(row: $0) }
-        if let total = timeline.total { ScreenSharingTimelineRow(row: total).fontWeight(.semibold) }
+    VStack(alignment: .leading, spacing: Self.spacing) {
+      Text("Frame timeline · p50 / p95")
+        .font(.subheadline.weight(.semibold))
+        .foregroundStyle(.secondary)
+        .padding(.horizontal, WorkspaceInspectorCardShape.rowPadding)
+      ScreenSharingDetailsCard {
+        ForEach(timeline.stages) { LabeledContent($0.label, value: $0.value) }
+        if let total = timeline.total { LabeledContent(total.label, value: total.value).fontWeight(.semibold) }
       }
-      Text(timeline.caption).font(.caption).foregroundStyle(.secondary)
-    }
-    .monospacedDigit()
-  }
-}
-
-private struct ScreenSharingTimelineRow: View {
-  let row: ScreenSharingTimelineBreakdown.Row
-
-  var body: some View {
-    GridRow {
-      Text(row.label)
-      Text(row.p50)
-      Text(row.p95)
+      Text(timeline.caption)
+        .font(.caption)
+        .foregroundStyle(.secondary)
+        .padding(.horizontal, WorkspaceInspectorCardShape.rowPadding)
     }
   }
 }
