@@ -114,24 +114,34 @@ extension HardwareCodecTests {
     }
 
     @Test(.enabled(if: VTIsHardwareDecodeSupported(kCMVideoCodecType_HEVC), "No hardware HEVC on this machine."))
-    func anUpdateSharesTheBitrateBetweenItsTiles() async throws {
+    func anUpdateSharesTheBitrateBetweenItsTilesOnceEachTileEncodedItsOpeningFrame() async throws {
       try await HardwareEncoderBudget.require(videoToolboxTiles: 4)
       let configuration = try ScreenSharingVideoConfiguration(width: 640, height: 360, bitrate: 40_000_000)
       let encoder = try ScreenSharingVideoToolboxTileEncoder(
         configuration: configuration, layout: ScreenSharingV2TileLayout(width: 640, height: 360, count: 4),
         metrics: ScreenSharingMetrics())
       defer { encoder.stop() }
+      let answered = TestSignal()
+      encoder.onOutput { _ in answered.signal() }
       let pixels = try TestPixels.frame(shade: 80, timestampNs: 1).pixelBuffer
+      let opening = ScreenSharingV2Profile.openingBitrate / 4
 
       try encoder.encode(
         ScreenSharingTileEncodeRequest(
           pixelBuffer: pixels, sourceTimestampNs: 1, capturedNs: 1,
           update: ScreenSharingTileUpdate(id: 1, tiles: [0, 1, 2, 3])))
+      #expect(encoder.sessions.map(\.bitrate) == Array(repeating: opening, count: 4))
+      await answered.cancellableWait(for: 4)
+
+      try encoder.encode(
+        ScreenSharingTileEncodeRequest(
+          pixelBuffer: pixels, sourceTimestampNs: 2, capturedNs: 2,
+          update: ScreenSharingTileUpdate(id: 2, tiles: [0, 1, 2, 3])))
       #expect(encoder.sessions.map(\.bitrate) == Array(repeating: 10_000_000, count: 4))
 
       try encoder.encode(
         ScreenSharingTileEncodeRequest(
-          pixelBuffer: pixels, sourceTimestampNs: 2, capturedNs: 2, update: ScreenSharingTileUpdate(id: 2, tiles: [2])))
+          pixelBuffer: pixels, sourceTimestampNs: 3, capturedNs: 3, update: ScreenSharingTileUpdate(id: 3, tiles: [2])))
       #expect(encoder.sessions.map(\.bitrate) == [10_000_000, 10_000_000, 40_000_000, 10_000_000])
     }
 

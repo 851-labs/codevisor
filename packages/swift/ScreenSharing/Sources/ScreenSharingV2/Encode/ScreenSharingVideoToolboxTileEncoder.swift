@@ -49,7 +49,7 @@ public final class ScreenSharingVideoToolboxTileEncoder: ScreenSharingTileEncode
       let factory = ScreenSharingVideoToolboxSessionFactory(
         width: layout.width, height: layout.rows(of: tiles[index]).count,
         framesPerSecond: configuration.framesPerSecond, bitrate: configuration.bitrate,
-        longTermReferences: longTermReferences)
+        openingBitrate: ScreenSharingV2Profile.openingBitrate / layout.count, longTermReferences: longTermReferences)
       let session = Result {
         try ScreenSharingVideoToolboxTileSession(tile: tiles[index], factory: factory, metrics: metrics, relay: relay)
       }
@@ -90,16 +90,11 @@ public final class ScreenSharingVideoToolboxTileEncoder: ScreenSharingTileEncode
       do {
         guard let tilePixels = pixels.buffers[tile] else { throw ScreenSharingError.invalid("No tile \(tile).") }
 
-        share(bitrateShare, with: sessions[tile])
-        try sessions[tile].encode(tilePixels, request: request)
+        try sessions[tile].encode(tilePixels, request: request, sharing: bitrateShare)
       } catch {
         fail(tile, request, error)
       }
     }
-  }
-
-  private func share(_ bitsPerSecond: Int, with session: ScreenSharingVideoToolboxTileSession) {
-    do { try session.share(bitsPerSecond) } catch { metrics.label("lastBitrateError", error.localizedDescription) }
   }
 
   private func fail(_ tile: Int, _ request: ScreenSharingTileEncodeRequest, _ error: any Error) {

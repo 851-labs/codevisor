@@ -835,9 +835,35 @@ fn a_long_jittery_path_keeps_the_frame_rate_and_the_age_flat() {
 }
 
 #[test]
+fn a_one_megabit_lossy_link_brings_the_estimate_down_to_the_link_after_a_big_first_frame() {
+    let mut sim = Sim::new(NetworkConditions::N7, config(FecMode::Adaptive), 3);
+    let settled_from = sim.now + Duration::from_millis(2_500);
+    let end = sim.now + Duration::from_secs(8);
+    let mut next = sim.now;
+    let mut index = 0u64;
+    let mut highest = 0.0f64;
+    while sim.now < end {
+        let admission = sim.host.admission();
+        if sim.now >= next && admission.admit {
+            let len = if index == 0 { 190_000 } else { 3_000 };
+            sim.send(frame(0, &payload(index, len)));
+            index += 1;
+            next = sim.now + INTERVAL;
+        }
+        if sim.now >= settled_from {
+            highest = highest.max(admission.estimate_bps);
+        }
+        sim.run_until(sim.now + MS);
+    }
+    assert!(highest < 3e6, "{:.1} Mbit/s after 2.5 s", highest / 1e6);
+}
+
+#[test]
 fn a_one_megabit_lossy_link_keeps_the_age_flat() {
     let paced = stream_scene(NetworkConditions::N7, 3, 1.0);
     assert_interactive(&paced, 100 * MS, 50.0);
+    let two_frames = stream_scene(NetworkConditions::N7, 3, 2.0);
+    assert_interactive(&two_frames, 100 * MS, 45.0);
     let carrying = stream_scene(NetworkConditions::N7, 3, 8.0);
     assert!(carrying.frames_per_second >= 18.0, "{:.1} frames/s", carrying.frames_per_second);
     let median = carrying.median();
