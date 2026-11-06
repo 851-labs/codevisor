@@ -427,7 +427,11 @@ Apple HP always gives tamale a 1920×1080 pt @2x display (3840×2160 px), so on 
 shown at half size and is never 1:1. The Tier 2 input `viewer-display: R1x2` makes `view` and `apple-hp`
 (`--virtual-display R1x2`) create a 1920×1080 @2x virtual display on croissant for each run, show their window
 full screen on it, and name it in their ready file, so the viewer observer captures it (barcode blocks scale with
-it: 16 px for a 3840 px host). Engine v2 streams R1x2 natively at 3840×2160 in four tiles (E5), so its rows
+it: 16 px for a 3840 px host). The bench's virtual display gets the system sRGB profile through ColorSync for as
+long as it exists (`PlayerDisplayProfile`). Left to macOS, it got a generated profile whose tone curve isn't sRGB's,
+and sRGB content shown on it came back from the observer's sRGB capture with levels 1–44 one or two lower (851-3989:
+grey 40 as 39, which held VCP's dark text card at 48.3 dB `psnr_y`; `vcp-levels` lab runs 42146297995 before,
+42147875743 after). Engine v2 streams R1x2 natively at 3840×2160 in four tiles (E5), so its rows
 measure the codec alone. `text.stream_size` records the Codevisor stream's encoded size (`capture_size` from `share.json`;
 absent for Apple HP, whose encoded size isn't visible), and the table marks a stream smaller than the host's display
 "(scaled)".
@@ -601,14 +605,24 @@ before, 24 while a 4-tile VCP encoder is open and 32 after every round. In CI:
 
 ## VCP levels (851-3989)
 
-`vcp-levels` pushes a grey ramp (one flat 32×32 px patch per level, 1024×256) through each stage of engine v2's VCP
-path on this Mac and reports every level that changes (`mismatches`, as `level→shown`). Each of three inputs (BGRA
-through the engine's converter, and `444f` converted on the CPU, with and without the session's colour tags) is
-encoded by a 1-tile `ScreenSharingVCPTileEncoder` at 60 Mbit/s, a change and then `--passes` − 1 refinements (5 in
-all by default), and decoded as the viewer does. The stages are the `444f` decode's Y, the viewer shader
-(`ScreenSharingMetalView.shader`) drawing that decode 1:1 into a BGRA texture, and a decode to BGRA. `conversions`
-gives `VTPixelTransferSession`'s BGRA → `444f` and `444v` for comparison. In CI:
-`-f lab='tamale vcp-levels'`.
+`vcp-levels` pushes grey and colour patches (one flat 32×32 px patch for each grey level, then a row of colours,
+1024×288) through each stage of engine v2's VCP path on this Mac, and reports every patch that changes (`mismatches`,
+as `expected→shown`, Y,Cb,Cr or R,G,B). Each of three inputs (BGRA through the engine's converter, and `444f`
+converted on the CPU, with and without the session's colour tags) is encoded by a 1-tile `ScreenSharingVCPTileEncoder`
+at 60 Mbit/s, a change and then `--passes` − 1 refinements (5 in all by default), and decoded as the viewer does. Its
+stages are the `444f` decode, the viewer shader (`ScreenSharingMetalView.shader`) drawing that decode 1:1 into a BGRA
+texture, and a decode to BGRA. The shader and BGRA stages expect the exact 8-bit full-range round trip, so saturated
+colours that 4:4:4 can't hold exactly (red 255 comes back as 254) don't count. `conversions` gives
+`VTPixelTransferSession`'s BGRA → `444f` and `444v`. Unless `--no-capture` is given, it also shows the picture on the
+main display (or on a `--virtual-display`, as Tier 2's viewer does) and captures it with ScreenCaptureKit (`captures`:
+the window as BGRA, `444f` and `420v`, and the display as BGRA), and shows a VCP decode, a `420v` picture and BGRA
+through both engine v2 viewer surfaces and captures them from the display as T8's observer does (`presentations`).
+`display_before` and `display_after` name the display's colour space. In CI:
+`-f lab='tamale vcp-levels'` or `-f lab='croissant vcp-levels --virtual-display R1x2'`.
+
+Findings (macOS 27.2): on the minis' M6, the converter, VCP, the decoder and the shader are exact for every patch.
+ScreenCaptureKit's `444f` is up to 32 levels off on colours, with or without a BT.709 `colorMatrix`, so engine v2
+keeps capturing BGRA and converting it itself (851-4049).
 
 ## Signing and permissions
 

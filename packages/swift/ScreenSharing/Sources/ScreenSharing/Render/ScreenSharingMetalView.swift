@@ -173,7 +173,6 @@ public final class ScreenSharingMetalView: MTKView, MTKViewDelegate {
       guard offMainWorker != nil else { return }
       let size = backingDrawableSize
       guard size.width >= 1, size.height >= 1 else { return }
-      if let window { layer?.contentsScale = window.backingScaleFactor }
       coordinator.setNeedsRedraw()
     }
   #endif
