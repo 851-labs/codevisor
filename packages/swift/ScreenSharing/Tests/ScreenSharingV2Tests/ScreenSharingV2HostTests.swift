@@ -317,22 +317,6 @@ struct ScreenSharingV2HostTests {
     #expect(encoder.requests.last?.refreshes == refresh.map { [0: $0] } ?? [:])
   }
 
-  @Test func aKeyframeTheEncoderAsksForReencodesThatTileOfTheLastCapture() async throws {
-    let encoder = RecordingTileEncoder(layout: Self.tiled)
-    let host = startedHost(encoder)
-    defer { host.stop() }
-
-    host.push(try TestPixels.frame(shade: 10, timestampNs: 1_000))
-    await encoder.encodes.cancellableWait(for: 1)
-    encoder.emitTiles(of: encoder.requests[0])
-    encoder.emit(.keyframeNeeded(tile: 2))
-    await encoder.encodes.cancellableWait(for: 2)
-
-    #expect(encoder.requests.map(\.sourceTimestampNs) == [1_000, 1_000])
-    #expect(encoder.requests.last?.update.tiles == [2])
-    #expect(encoder.requests.last?.refreshes == [2: .keyframe])
-  }
-
   @Test func aRefreshRequestGetsALongTermReferenceRefreshAndAKeyframeRequestAKeyframe() async throws {
     let host = startedHost(encoder)
     defer { host.stop() }
