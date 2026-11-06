@@ -26,7 +26,7 @@ final class CommandPalette {
 
   func run(_ item: CommandPaletteItem) {
     dismiss()
-    item.perform()
+    Task { item.perform() }
   }
 
   private func present(_ sections: [CommandPaletteSection], in window: NSWindow?) {

@@ -2,12 +2,17 @@ import SwiftUI
 
 struct RootSplitView<Sidebar: View, Detail: View>: View {
   let store: SessionStore?
+  let windowControl: ClientWindowControl
   let sidebar: Sidebar
   let detail: Detail
   @Environment(AdaptivePanelLayout.self) private var panelLayout
 
-  init(store: SessionStore?, @ViewBuilder sidebar: () -> Sidebar, @ViewBuilder detail: () -> Detail) {
+  init(
+    store: SessionStore?, windowControl: ClientWindowControl, @ViewBuilder sidebar: () -> Sidebar,
+    @ViewBuilder detail: () -> Detail
+  ) {
     self.store = store
+    self.windowControl = windowControl
     self.sidebar = sidebar()
     self.detail = detail()
   }
@@ -33,7 +38,7 @@ struct RootSplitView<Sidebar: View, Detail: View>: View {
   }
 
   private var visibility: RootSidebarVisibility {
-    RootSidebarVisibility(panelLayout: panelLayout)
+    RootSidebarVisibility(panelLayout: panelLayout, windowControl: windowControl)
   }
 
   private var isVisible: Bool {
