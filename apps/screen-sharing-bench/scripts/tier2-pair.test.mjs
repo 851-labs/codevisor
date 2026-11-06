@@ -11,6 +11,7 @@ const script = fileURLToPath(new URL("./tier2-pair.sh", import.meta.url))
 const fakeCurl = `#!/usr/bin/env node
 const fs = require("node:fs")
 fs.appendFileSync(process.env.FAKE_CALLS, process.argv.at(-1) + "\\n")
+fs.appendFileSync(process.env.FAKE_REQUESTS, JSON.stringify({ args: process.argv.slice(2), stdin: fs.readFileSync(0, "utf8") }) + "\\n")
 const responses = JSON.parse(fs.readFileSync(process.env.FAKE_RESPONSES, "utf8"))
 const index = Number(fs.existsSync(process.env.FAKE_COUNT) ? fs.readFileSync(process.env.FAKE_COUNT, "utf8") : 0)
 fs.writeFileSync(process.env.FAKE_COUNT, String(index + 1))
@@ -30,13 +31,14 @@ function runPair(t, args, responses) {
     chmodSync(join(dir, name), 0o755)
   }
   writeFileSync(join(dir, "responses.json"), JSON.stringify(responses))
-  for (const name of ["output", "calls", "sleeps"]) writeFileSync(join(dir, name), "")
+  for (const name of ["output", "calls", "sleeps", "requests"]) writeFileSync(join(dir, name), "")
   const result = spawnSync("bash", [script, ...args], {
     encoding: "utf8",
     env: {
       PATH: `${dir}:${process.env.PATH}`,
       GITHUB_REPOSITORY: "851-labs/codevisor",
       GH_TOKEN: "token",
+      GITHUB_API_CURL: join(dir, "curl"),
       GITHUB_RUN_ID: "500",
       GITHUB_RUN_ATTEMPT: "1",
       GITHUB_JOB: "host",
@@ -47,11 +49,18 @@ function runPair(t, args, responses) {
       FAKE_RESPONSES: join(dir, "responses.json"),
       FAKE_COUNT: join(dir, "count"),
       FAKE_CALLS: join(dir, "calls"),
+      FAKE_REQUESTS: join(dir, "requests"),
       FAKE_SLEEPS: join(dir, "sleeps")
     }
   })
   const lines = (name) => readFileSync(join(dir, name), "utf8").split("\n").filter(Boolean)
-  return { ...result, output: lines("output"), calls: lines("calls"), sleeps: lines("sleeps") }
+  return {
+    ...result,
+    output: lines("output"),
+    calls: lines("calls"),
+    sleeps: lines("sleeps"),
+    requests: lines("requests").map((line) => JSON.parse(line))
+  }
 }
 
 const jobs = (...list) => ({ jobs: list })
@@ -66,6 +75,18 @@ test("pairs once the peer has been running for the confirm interval", (t) => {
   assert.deepEqual(result.output, ["paired=true"])
   assert.equal(result.calls.length, 4)
   assert.deepEqual(result.sleeps, ["15", "15", "15"])
+})
+
+test("asks the API for this attempt's jobs with the token on stdin, not the command line", (t) => {
+  const result = runPair(t, ["viewer", "600", "yield"], peer("in_progress"))
+  assert.equal(result.status, 0, result.stderr)
+  const [request] = result.requests
+  assert.equal(
+    request.args.at(-1),
+    "https://api.github.com/repos/851-labs/codevisor/actions/runs/500/attempts/1/jobs?per_page=100"
+  )
+  assert.equal(request.stdin, "Authorization: Bearer token\n")
+  assert.ok(!request.args.some((arg) => arg.includes("token")))
 })
 
 test("pairs only with the peer of its own workflow_call caller", (t) => {

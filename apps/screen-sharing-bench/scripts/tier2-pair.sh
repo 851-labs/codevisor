@@ -1,6 +1,7 @@
 #!/usr/bin/env bash
 set -euo pipefail
 source "$(dirname "${BASH_SOURCE[0]}")/github-api.sh"
+[[ -n "${GH_TOKEN:-}" ]] || { echo "GH_TOKEN must be set to read the run's jobs" >&2; exit 2; }
 
 : "${TIER2_PAIR_POLL_S:=30}"
 : "${TIER2_PAIR_CONFIRM_S:=60}"

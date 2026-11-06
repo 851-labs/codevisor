@@ -9,7 +9,7 @@ job="$(github_api "repos/$GITHUB_REPOSITORY/actions/runs/$GITHUB_RUN_ID/attempts
 created="$(jq -r .created_at <<<"$job")"
 started="$(jq -r .started_at <<<"$job")"
 waited=$(( $(/bin/date -juf %Y-%m-%dT%H:%M:%SZ "$started" +%s) - $(/bin/date -juf %Y-%m-%dT%H:%M:%SZ "$created" +%s) ))
-overlapping="$(github_api "repos/$GITHUB_REPOSITORY/actions/runs?created=<$started&per_page=50" |
+overlapping="$(github_api "repos/$GITHUB_REPOSITORY/actions/runs?created=%3C$started&per_page=50" |
   jq -r ".workflow_runs[] | select(.name | test(\"$bench_workflows\")) | select(.id != $GITHUB_RUN_ID)
     | select(.status != \"completed\" or .updated_at > \"$created\")
     | select(.status != \"completed\" or (.updated_at | fromdate) - (.run_started_at | fromdate) > $briefest_bench_s)
