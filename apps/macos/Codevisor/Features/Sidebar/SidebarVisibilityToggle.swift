@@ -4,6 +4,10 @@ struct SidebarVisibilityToggle: Equatable {
   let isVisible: Bool
   let setVisible: @MainActor (Bool) -> Void
 
+  func toggle() {
+    setVisible(!isVisible)
+  }
+
   static func == (lhs: Self, rhs: Self) -> Bool { lhs.isVisible == rhs.isVisible }
 }
 

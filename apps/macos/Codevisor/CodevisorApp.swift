@@ -63,6 +63,10 @@ struct RootView: View {
       )
       .background(ClientWindowReader(control: clientWindow).frame(width: 0, height: 0))
       .background(TransparentTitlebar(isTransparent: showsBotConversation).frame(width: 0, height: 0))
+      .background(
+        SidebarToggleHelp(help: PanelToggleShortcut.sidebar.help(isVisible: clientSidebarVisible))
+          .frame(width: 0, height: 0)
+      )
       .environment(\.openChat, OpenChatAction { await openChat($0) })
       .environment(\.isAppUpdateInProgress, environment.isUpdateInProgress)
       .task(id: store.map(ObjectIdentifier.init)) { readBotMascotActivity() }
