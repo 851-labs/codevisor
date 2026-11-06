@@ -18,6 +18,7 @@ defaults:
     shell: bash
 
 env:
+  TURBO_TOKEN: ${{ secrets.TURBO_TOKEN }}
   CODEVISOR_SOURCE_REVISION: ${{ github.sha }}
 
 jobs:

@@ -1,0 +1,10 @@
+{
+  "$schema": "node_modules/wrangler/config-schema.json",
+  "name": "codevisor-turbo-cache",
+  "main": "src/index.ts",
+  "compatibility_date": "2026-07-13",
+  "routes": [{ "pattern": "turbo-cache.codevisor.dev", "custom_domain": true }],
+  "observability": { "enabled": true, "head_sampling_rate": 0.1 },
+  "r2_buckets": [{ "binding": "ARTIFACTS", "bucket_name": "codevisor-turbo-cache" }],
+  "secrets": { "required": ["TURBO_TOKEN", "TURBO_READ_TOKEN"] }
+}

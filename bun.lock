@@ -117,6 +117,15 @@
         "vitest": "4.1.6",
       },
     },
+    "apps/turbo-cache": {
+      "name": "@codevisor/turbo-cache",
+      "devDependencies": {
+        "@cloudflare/vitest-plugin": "1.4.2",
+        "typescript": "6.0.2",
+        "vitest": "4.1.6",
+        "wrangler": "4.120.0",
+      },
+    },
     "apps/www": {
       "name": "@codevisor/www",
       "dependencies": {
@@ -829,6 +838,8 @@
     "@codevisor/sync": ["@codevisor/sync@workspace:packages/sync"],
 
     "@codevisor/terminal": ["@codevisor/terminal@workspace:packages/terminal"],
+
+    "@codevisor/turbo-cache": ["@codevisor/turbo-cache@workspace:apps/turbo-cache"],
 
     "@codevisor/updater": ["@codevisor/updater@workspace:packages/updater"],
 
