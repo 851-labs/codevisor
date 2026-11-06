@@ -18,6 +18,7 @@ import process from "node:process"
 import { fileURLToPath } from "node:url"
 
 import { withArtifactLock } from "./artifact-lock.mjs"
+import { retainNetStamp } from "./net-artifact-retention.mjs"
 
 const repoRoot = join(dirname(fileURLToPath(import.meta.url)), "..")
 const netRoot = join(repoRoot, "packages", "net")
@@ -59,6 +60,13 @@ export async function netSourceStamp(root = repoRoot) {
     hash.update("\0")
   }
   return hash.digest("hex").slice(0, 16)
+}
+
+async function retainStamp(environment, stamp) {
+  const evicted = await retainNetStamp(netArtifactsRoot(environment), stamp)
+  if (evicted.length === 0) return
+
+  console.warn(`Removed ${evicted.length} unused codevisor-net artifact builds`)
 }
 
 const exists = (path) =>
@@ -143,6 +151,7 @@ export async function ensureNodeAddon(environment = process.env) {
       await rename(`${cached}.tmp`, cached)
     })
   }
+  await retainStamp(environment, stamp)
   const stampFile = join(dirname(installed), "STAMP")
   if ((await readFile(stampFile, "utf8").catch(() => "")) !== stamp || !(await exists(installed))) {
     await mkdir(dirname(installed), { recursive: true })
@@ -198,6 +207,7 @@ export async function ensureLinuxNodeAddon(engine, arch = process.arch, environm
       await rename(`${cached}.tmp`, cached)
     })
   }
+  await retainStamp(environment, stamp)
   await mkdir(dirname(installed), { recursive: true })
   await copyFile(cached, installed)
   return installed
@@ -254,6 +264,7 @@ export async function ensureSwiftFramework(environment = process.env) {
       await rename(`${cached}.staging`, cached)
     })
   }
+  await retainStamp(environment, stamp)
   const link = join(repoRoot, "packages", "swift", "Frameworks", "CodevisorNetFFI.xcframework")
   await mkdir(dirname(link), { recursive: true })
   if ((await readlink(link).catch(() => undefined)) !== framework) {
