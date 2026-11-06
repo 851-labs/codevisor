@@ -49,5 +49,6 @@ jobs:
         env:
           TURBO_READ_TOKEN: ${{ secrets.TURBO_READ_TOKEN }}
         run: |
-          curl --fail --silent --show-error -H "Authorization: Bearer $TURBO_READ_TOKEN" \
+          curl --fail --silent --show-error --retry 12 --retry-delay 10 --retry-all-errors \
+            -H "Authorization: Bearer $TURBO_READ_TOKEN" \
             https://turbo-cache.codevisor.dev/v8/artifacts/status

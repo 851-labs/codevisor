@@ -6,6 +6,8 @@ import { fileURLToPath } from "node:url"
 const repoRoot = fileURLToPath(new URL("..", import.meta.url))
 const pollMilliseconds = 20_000
 const unreachablePollsAllowed = 15
+const ghAttempts = 4
+const ghRetryMilliseconds = 5_000
 const usage =
   "usage: bun run ship [--review] [--wait] [--title <title>] [--body <body> | --body-file <path>]"
 
@@ -133,11 +135,30 @@ function git(...args) {
 }
 
 function gh(args, { allowFailure = false } = {}) {
-  const result = spawnSync("gh", args, { cwd: repoRoot, encoding: "utf8" })
+  const result = ghWithRetries(args)
   if (result.status === 0) return result.stdout.trim()
   if (allowFailure) return undefined
 
   return fail(`gh ${args.join(" ")} failed: ${result.stderr.trim()}`)
+}
+
+function ghWithRetries(args) {
+  for (let attempt = 1; ; attempt += 1) {
+    const result = spawnSync("gh", args, { cwd: repoRoot, encoding: "utf8" })
+    if (result.status === 0 || attempt === ghAttempts || !isTransient(result.stderr)) return result
+
+    sleepSync(ghRetryMilliseconds * attempt)
+  }
+}
+
+function isTransient(stderr) {
+  return /error connecting|timed? ?out|Something went wrong|Internal Server Error|Bad Gateway|Service Unavailable|HTTP 50\d/i.test(
+    stderr ?? ""
+  )
+}
+
+function sleepSync(milliseconds) {
+  Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, milliseconds)
 }
 
 function run(command, args, failure) {
