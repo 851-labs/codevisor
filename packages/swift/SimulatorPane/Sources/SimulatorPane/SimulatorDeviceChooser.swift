@@ -76,7 +76,7 @@ struct SimulatorDeviceChooser: View {
         }
         if !devices.isEmpty {
           Section {
-            Button("Manage Simulators…", systemImage: "gearshape") { model.managingSimulators = true }
+            Button("Manage Simulators…") { model.managingSimulators = true }
           }
         }
       }
