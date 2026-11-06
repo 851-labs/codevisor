@@ -1,18 +1,22 @@
+import AppKit
 import CoreMedia
 import CoreVideo
 import Foundation
+import ScreenSharingBenchScenes
 
 struct VCPLevelsCommand: BenchCommand {
   static let name = "vcp-levels"
   static let summary = "Report the patches VCP's capture, converter, encoder, decoder and viewer shader change"
-  static let usage = "[--passes 5] [--no-capture]"
+  static let usage = "[--passes 5] [--no-capture] \(VirtualDisplayOption.usage)"
 
   private let passes: Int
   private let captures: Bool
+  private let virtualDisplay: BenchSceneResolution?
 
   init(options: BenchOptions) throws {
     passes = try options.integer("passes", default: 5, in: 1...20)
     captures = try !options.flag("no-capture")
+    virtualDisplay = try VirtualDisplayOption.read(from: options)
   }
 
   var presentsWindows: Bool { captures }
@@ -29,10 +33,34 @@ struct VCPLevelsCommand: BenchCommand {
     for (name, picture) in inputs {
       variants.append(try await variant(name, picture: picture, renderer: renderer))
     }
+    let (captured, presented) = try await displayed(bgra)
     try BenchOutput.print(
       VCPLevelsReport(
-        machine: BenchHostName.current, captures: captures ? await VCPLevelsCapture.stages(showing: bgra) : [],
+        machine: BenchHostName.current, captures: captured, presentations: presented,
         conversions: try pixelTransfers(bgra), variants: variants))
+  }
+
+  private func displayed(_ bgra: CVPixelBuffer) async throws -> ([VCPLevelsStage], [VCPLevelsStage]) {
+    guard captures else { return ([], []) }
+
+    let display = try await SharedDisplay.make(virtualDisplay)
+    let screen = try display.screen()
+    let captured = await VCPLevelsCapture.stages(showing: bgra, on: screen)
+    let presented = try await presentations(bgra, on: screen)
+    return withExtendedLifetime(display) { (captured, presented) }
+  }
+
+  private func presentations(_ bgra: CVPixelBuffer, on screen: NSScreen) async throws -> [VCPLevelsStage] {
+    let units = try await VCPLevelsEncoding.accessUnits(of: bgra, passes: passes)
+    let decoded = try VCPLevelsDecoder.decode(units, to: kCVPixelFormatType_444YpCbCr8BiPlanarFullRange)
+    return await VCPLevelsPresentation.stages(
+      [
+        .init(name: "VCP 444f decode", pixels: decoded.image, expectation: .fullRangeRoundTrip),
+        .init(
+          name: "420v converted on the CPU", pixels: try VCPLevelsRamp.videoRange420(),
+          expectation: .videoRangeRoundTrip),
+        .init(name: "BGRA", pixels: bgra, expectation: .rgb),
+      ], on: screen)
   }
 
   private func variant(

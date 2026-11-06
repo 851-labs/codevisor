@@ -12,8 +12,10 @@ enum VCPLevelsCapture {
     let expectation: VCPLevelsExpectation
   }
 
+  private static let bgra = Format(
+    name: "BGRA", pixelFormat: kCVPixelFormatType_32BGRA, matrix: nil, expectation: .rgb)
   private static let formats = [
-    Format(name: "BGRA", pixelFormat: kCVPixelFormatType_32BGRA, matrix: nil, expectation: .rgb),
+    bgra,
     Format(
       name: "444f, BT.709 matrix", pixelFormat: kCVPixelFormatType_444YpCbCr8BiPlanarFullRange,
       matrix: CGDisplayStream.yCbCrMatrix_ITU_R_709_2, expectation: .fullRange),
@@ -24,39 +26,41 @@ enum VCPLevelsCapture {
       name: "420v, BT.709 matrix", pixelFormat: kCVPixelFormatType_420YpCbCr8BiPlanarVideoRange,
       matrix: CGDisplayStream.yCbCrMatrix_ITU_R_709_2, expectation: .videoRange),
   ]
-  private static let settle = Duration.seconds(1)
 
-  static func stages(showing picture: CVPixelBuffer) async -> [VCPLevelsStage] {
+  static func stages(showing picture: CVPixelBuffer, on screen: NSScreen) async -> [VCPLevelsStage] {
     do {
-      let window = try show(picture)
-      defer { window.close() }
-      try await Task.sleep(for: settle)
-      let filter = try await filter(for: window)
+      let shown = VCPLevelsWindow(showing: try imageView(picture), on: screen)
+      defer { shown.close() }
+      try await shown.settle()
+      let filter = try await shown.windowFilter()
       var stages: [VCPLevelsStage] = []
       for format in formats {
-        stages.append(await stage(format, filter: filter))
+        stages.append(await stage("ScreenCaptureKit window, \(format.name), sRGB", format, filter: filter))
       }
+      stages.append(await displayStage("ScreenCaptureKit display, BGRA, sRGB", of: shown, expecting: .rgb))
       return stages
     } catch {
       return [VCPLevelsStage("ScreenCaptureKit capture of the picture", failed: error)]
     }
   }
 
-  private static func stage(_ format: Format, filter: SCContentFilter) async -> VCPLevelsStage {
-    let name = "ScreenCaptureKit \(format.name), sRGB"
+  static func displayStage(
+    _ name: String, of shown: VCPLevelsWindow, expecting expectation: VCPLevelsExpectation
+  ) async -> VCPLevelsStage {
     do {
-      let configuration = SCStreamConfiguration()
-      configuration.width = VCPLevelsRamp.width
-      configuration.height = VCPLevelsRamp.height
-      configuration.pixelFormat = format.pixelFormat
-      configuration.colorSpaceName = CGColorSpace.sRGB
-      if let matrix = format.matrix { configuration.colorMatrix = matrix }
-      configuration.showsCursor = false
-      configuration.ignoreShadowsSingleWindow = true
-      let sample = try await SCScreenshotManager.captureSampleBuffer(
-        contentFilter: filter, configuration: configuration)
-      guard let image = CMSampleBufferGetImageBuffer(sample) else { throw BenchUsageError(message: "no image") }
+      let (filter, sourceRect) = try await shown.displayFilter()
+      let format = Format(name: bgra.name, pixelFormat: bgra.pixelFormat, matrix: nil, expectation: expectation)
+      return await stage(name, format, filter: filter, sourceRect: sourceRect)
+    } catch {
+      return VCPLevelsStage(name, failed: error)
+    }
+  }
 
+  private static func stage(
+    _ name: String, _ format: Format, filter: SCContentFilter, sourceRect: CGRect? = nil
+  ) async -> VCPLevelsStage {
+    do {
+      let image = try await capture(format, filter: filter, sourceRect: sourceRect)
       return VCPLevelsStage(
         name, values: VCPLevelsRamp.values(of: image), expecting: format.expectation, tags: VCPLevelsTags.of(image))
     } catch {
@@ -64,37 +68,33 @@ enum VCPLevelsCapture {
     }
   }
 
-  private static func show(_ picture: CVPixelBuffer) throws -> NSWindow {
-    guard let screen = NSScreen.main, let image = cgImage(picture) else {
-      throw BenchUsageError(message: "no display or picture to show")
-    }
+  private static func capture(
+    _ format: Format, filter: SCContentFilter, sourceRect: CGRect?
+  ) async throws -> CVPixelBuffer {
+    let configuration = SCStreamConfiguration()
+    configuration.width = VCPLevelsRamp.width
+    configuration.height = VCPLevelsRamp.height
+    configuration.pixelFormat = format.pixelFormat
+    configuration.colorSpaceName = CGColorSpace.sRGB
+    if let matrix = format.matrix { configuration.colorMatrix = matrix }
+    if let sourceRect { configuration.sourceRect = sourceRect }
+    configuration.showsCursor = false
+    configuration.ignoreShadowsSingleWindow = true
+    let sample = try await SCScreenshotManager.captureSampleBuffer(contentFilter: filter, configuration: configuration)
+    guard let image = CMSampleBufferGetImageBuffer(sample) else { throw BenchUsageError(message: "no image") }
 
-    let scale = screen.backingScaleFactor
-    let size = NSSize(width: CGFloat(VCPLevelsRamp.width) / scale, height: CGFloat(VCPLevelsRamp.height) / scale)
-    let window = NSWindow(
-      contentRect: NSRect(origin: NSPoint(x: screen.frame.minX + 40, y: screen.frame.minY + 40), size: size),
-      styleMask: [.borderless], backing: .buffered, defer: false)
-    window.isReleasedWhenClosed = false
-    window.hasShadow = false
-    window.level = .mainMenu
-    let view = NSView(frame: NSRect(origin: .zero, size: size))
+    return image
+  }
+
+  private static func imageView(_ picture: CVPixelBuffer) throws -> NSView {
+    guard let image = cgImage(picture) else { throw BenchUsageError(message: "the picture can't be shown") }
+
+    let view = NSView()
     view.wantsLayer = true
     view.layer?.contents = image
     view.layer?.magnificationFilter = .nearest
     view.layer?.minificationFilter = .nearest
-    window.contentView = view
-    NSApplication.shared.activate()
-    window.orderFrontRegardless()
-    return window
-  }
-
-  private static func filter(for window: NSWindow) async throws -> SCContentFilter {
-    let content = try await SCShareableContent.excludingDesktopWindows(false, onScreenWindowsOnly: true)
-    guard let shown = content.windows.first(where: { $0.windowID == CGWindowID(window.windowNumber) }) else {
-      throw BenchUsageError(message: "ScreenCaptureKit doesn't list the probe's window")
-    }
-
-    return SCContentFilter(desktopIndependentWindow: shown)
+    return view
   }
 
   private static func cgImage(_ picture: CVPixelBuffer) -> CGImage? {
@@ -105,11 +105,11 @@ enum VCPLevelsCapture {
       let provider = CGDataProvider(data: Data(bytes: base, count: stride * VCPLevelsRamp.height) as CFData)
     else { return nil }
 
+    let info = CGBitmapInfo(
+      rawValue: CGBitmapInfo.byteOrder32Little.rawValue | CGImageAlphaInfo.noneSkipFirst.rawValue)
     return CGImage(
       width: VCPLevelsRamp.width, height: VCPLevelsRamp.height, bitsPerComponent: 8, bitsPerPixel: 32,
-      bytesPerRow: stride, space: space,
-      bitmapInfo: CGBitmapInfo(
-        rawValue: CGBitmapInfo.byteOrder32Little.rawValue | CGImageAlphaInfo.noneSkipFirst.rawValue),
-      provider: provider, decode: nil, shouldInterpolate: false, intent: .defaultIntent)
+      bytesPerRow: stride, space: space, bitmapInfo: info, provider: provider, decode: nil, shouldInterpolate: false,
+      intent: .defaultIntent)
   }
 }

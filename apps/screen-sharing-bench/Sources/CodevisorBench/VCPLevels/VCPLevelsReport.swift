@@ -41,6 +41,7 @@ struct VCPLevelsVariant: Encodable {
 struct VCPLevelsReport: Encodable {
   let machine: String
   let captures: [VCPLevelsStage]
+  let presentations: [VCPLevelsStage]
   let conversions: [VCPLevelsStage]
   let variants: [VCPLevelsVariant]
 }

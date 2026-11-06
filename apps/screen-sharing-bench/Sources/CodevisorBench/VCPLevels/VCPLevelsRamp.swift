@@ -31,6 +31,13 @@ enum VCPLevelsRamp {
     return buffer
   }
 
+  static func videoRange420() throws -> CVPixelBuffer {
+    let buffer = try make(kCVPixelFormatType_420YpCbCr8BiPlanarVideoRange)
+    try fill(buffer, plane: 0) { [UInt8(VCPLevelsExpectation.videoRange.values($0)[0])] }
+    try fill(buffer, plane: 1) { VCPLevelsExpectation.videoRange.values($0)[1...].map(UInt8.init) }
+    return buffer
+  }
+
   static func values(of buffer: CVPixelBuffer) -> [[Int]] {
     CVPixelBufferLockBaseAddress(buffer, .readOnly)
     defer { CVPixelBufferUnlockBaseAddress(buffer, .readOnly) }
@@ -79,9 +86,11 @@ enum VCPLevelsRamp {
 
     let patches = colours.map(pixel)
     let blank = pixel((0, 0, 0))
-    for y in 0..<height {
-      for x in 0..<width {
-        let index = y / patch * columns + x / patch
+    let planeWidth = plane.map { CVPixelBufferGetWidthOfPlane(buffer, $0) } ?? width
+    let step = width / planeWidth
+    for y in 0..<height / step {
+      for x in 0..<planeWidth {
+        let index = y * step / patch * columns + x * step / patch
         let bytes = index < patches.count ? patches[index] : blank
         (base + y * stride + x * bytes.count).update(from: bytes, count: bytes.count)
       }
