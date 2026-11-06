@@ -112,7 +112,7 @@ private final class CodevisorGhosttySurfaceView: Ghostty.SurfaceView {
       onClear()
       return true
     }
-    if event.type == .keyDown, SidebarModeShortcut.matches(event) { return false }
+    if event.type == .keyDown, WindowShortcut.matches(event) { return false }
     if event.type == .keyDown, window?.firstResponder === self, let onPaneCommand,
       let command = ShortcutCatalog.paneCommand(for: event)
     {

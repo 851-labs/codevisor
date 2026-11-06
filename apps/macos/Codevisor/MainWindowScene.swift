@@ -33,6 +33,7 @@ struct MainWindowScene: Scene {
         FileCommands()
         CommandPaletteCommands()
         SidebarModeCommands()
+        PanelToggleCommands()
         WorkspaceLayoutCommands()
         BrowserCommands()
         SimulatorCommands()

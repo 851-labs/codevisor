@@ -30,6 +30,8 @@ enum ShortcutID: String, CaseIterable, Identifiable, Sendable {
 
   case switchToChat
   case switchToCode
+  case toggleSidebar
+  case toggleInspector
   case commandPalette
   case toggleDebugOverlay
 
@@ -112,7 +114,7 @@ enum ShortcutCatalog {
     case .previousSplit, .nextSplit, .splitLeft, .splitRight, .splitUp, .splitDown, .focusSplitLeft, .focusSplitRight,
       .focusSplitAbove, .focusSplitBelow:
       splitDefinition(for: id)
-    case .switchToChat, .switchToCode, .commandPalette, .toggleDebugOverlay:
+    case .switchToChat, .switchToCode, .toggleSidebar, .toggleInspector, .commandPalette, .toggleDebugOverlay:
       viewDefinition(for: id)
     case .browserZoomIn, .browserZoomOut, .browserResetZoom:
       browserDefinition(for: id)
@@ -259,6 +261,14 @@ enum ShortcutCatalog {
       ShortcutDefinition(
         .switchToCode, "Switch to Code", ShortcutCombo(.rightArrow, [.command, .option]), category: .view,
         context: "While Bots is on")
+    case .toggleSidebar:
+      ShortcutDefinition(
+        .toggleSidebar, "Show/Hide Sidebar", ShortcutCombo("b", .command), category: .view,
+        context: "In Chat and Code")
+    case .toggleInspector:
+      ShortcutDefinition(
+        .toggleInspector, "Show/Hide Inspector", ShortcutCombo("b", [.command, .option]), category: .view,
+        context: "While a workspace is open")
     case .commandPalette:
       ShortcutDefinition(
         .commandPalette, "Command Palette…", ShortcutCombo("k", .command), category: .view,

@@ -184,25 +184,29 @@ struct CommandPaletteCatalog {
   private var sidebarCommands: [CommandPaletteItem] {
     guard let sidebarVisibility else { return [] }
 
-    let title = sidebarVisibility.isVisible ? "Hide Sidebar" : "Show Sidebar"
     return [
-      CommandPaletteItem(
-        id: "toggleSidebar", title: title, icon: .symbol("sidebar.leading"), searchTerms: ["Toggle Sidebar"]
-      ) {
-        sidebarVisibility.setVisible(!sidebarVisibility.isVisible)
-      }
+      panelToggleCommand(
+        .sidebar, isVisible: sidebarVisibility.isVisible, systemImage: "sidebar.leading",
+        perform: sidebarVisibility.toggle)
     ]
   }
 
   private var inspectorToggleCommands: [CommandPaletteItem] {
     guard let inspector else { return [] }
 
-    let title = inspector.isVisible ? "Hide Inspector" : "Show Inspector"
     return [
-      CommandPaletteItem(
-        id: "toggleInspector", title: title, icon: .symbol("sidebar.trailing"), searchTerms: ["Toggle Inspector"],
-        perform: inspector.toggle)
+      panelToggleCommand(
+        .inspector, isVisible: inspector.isVisible, systemImage: "sidebar.trailing", perform: inspector.toggle)
     ]
+  }
+
+  private func panelToggleCommand(
+    _ panel: PanelToggleShortcut, isVisible: Bool, systemImage: String, perform: @escaping @MainActor () -> Void
+  ) -> CommandPaletteItem {
+    CommandPaletteItem(
+      id: panel.id.rawValue, title: panel.title(isVisible: isVisible), icon: .symbol(systemImage),
+      shortcut: ShortcutCatalog.combo(for: panel.id)?.keyboardShortcut, searchTerms: [panel.searchTerm],
+      perform: perform)
   }
 
   private var inspectorTabCommands: [CommandPaletteItem] {

@@ -64,9 +64,9 @@ struct WorkspaceInspectorPresentation: ViewModifier {
               ToolbarSpacer(.flexible)
               ToolbarItem {
                 Button(action: toggleInspector) {
-                  Label(isVisible ? "Hide Inspector" : "Show Inspector", systemImage: "sidebar.trailing")
+                  Label(PanelToggleShortcut.inspector.title(isVisible: isVisible), systemImage: "sidebar.trailing")
                 }
-                .help(isVisible ? "Hide Inspector" : "Show Inspector")
+                .help(PanelToggleShortcut.inspector.help(isVisible: isVisible))
               }
             }
         }
