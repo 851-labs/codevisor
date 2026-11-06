@@ -251,6 +251,12 @@ public final class ScreenSharingV2Host: ScreenSharingFrameSink, @unchecked Senda
         release(tile)
         retryAfterFailure()
       }
+    case .keyframeNeeded(let tile):
+      metrics.increment("encoderKeyframeRequests")
+      queue.async { [self] in
+        recovery.retry(.keyframe, tile: tile)
+        pump()
+      }
     }
   }
 

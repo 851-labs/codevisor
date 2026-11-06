@@ -1,5 +1,6 @@
 import CoreGraphics
 import CodevisorTestSupport
+import Synchronization
 import Testing
 import VideoToolbox
 
@@ -143,6 +144,39 @@ extension HardwareCodecTests {
         ScreenSharingTileEncodeRequest(
           pixelBuffer: pixels, sourceTimestampNs: 3, capturedNs: 3, update: ScreenSharingTileUpdate(id: 3, tiles: [2])))
       #expect(encoder.sessions.map(\.bitrate) == [10_000_000, 10_000_000, 40_000_000, 10_000_000])
+    }
+
+    @Test(.enabled(if: VTIsHardwareDecodeSupported(kCMVideoCodecType_HEVC), "No hardware HEVC on this machine."))
+    func aSuspendedVideoToolboxEncoderOpensItsSessionAgainOnTheNextEncode() async throws {
+      try await HardwareEncoderBudget.require(videoToolboxTiles: 1)
+      let configuration = try ScreenSharingVideoConfiguration(width: 640, height: 360, bitrate: 10_000_000)
+      let metrics = ScreenSharingMetrics()
+      let encoder = try ScreenSharingVideoToolboxTileEncoder(
+        configuration: configuration, layout: ScreenSharingV2TileLayout(width: 640, height: 360, count: 1),
+        metrics: metrics)
+      defer { encoder.stop() }
+      let tiles = Mutex<[ScreenSharingEncodedTile]>([])
+      let answered = TestSignal()
+      encoder.onOutput { output in
+        if case .tile(let tile) = output { tiles.withLock { $0.append(tile) } }
+        answered.signal()
+      }
+      let pixels = try TestPixels.frame(shade: 80, timestampNs: 1).pixelBuffer
+      let request = { (id: UInt32) in
+        ScreenSharingTileEncodeRequest(
+          pixelBuffer: pixels, sourceTimestampNs: Int64(id), capturedNs: Int64(id),
+          update: ScreenSharingTileUpdate(id: id, tiles: [0]))
+      }
+
+      try encoder.encode(request(1))
+      await answered.cancellableWait(for: 1)
+      encoder.suspend()
+      try encoder.encode(request(2))
+      await answered.cancellableWait(for: 2)
+
+      #expect(metrics.counter("encoderSessionSuspends") == 1)
+      #expect(metrics.counter("encoderSessionReopens") == 0)
+      #expect(tiles.withLock { $0.map(\.update.id) } == [1, 2])
     }
 
     private static func host(

@@ -11,17 +11,10 @@ public final class ScreenSharingFallbackTileEncoder: ScreenSharingTileEncoder, @
     var fellBackNs: Int64?
     var recoveredFromFallback = false
     var bitrate: Int?
-    var fallbackTokens: [Int: [UInt64]] = [:]
+    var fallbackTokens = ScreenSharingIssuedTokens()
     var failedBuild: (atNs: Int64, message: String)?
     var stopped = false
-
-    mutating func remember(_ token: UInt64, tile: Int) {
-      let issued = fallbackTokens[tile, default: []] + [token]
-      fallbackTokens[tile] = Array(issued.suffix(ScreenSharingFallbackTileEncoder.rememberedTokens))
-    }
   }
-
-  private static let rememberedTokens = 64
 
   public let layout: ScreenSharingV2TileLayout
   public let sourcePixelFormat: OSType
@@ -73,8 +66,8 @@ public final class ScreenSharingFallbackTileEncoder: ScreenSharingTileEncoder, @
   public func acknowledge(_ tokens: [UInt64], tile: Int) {
     guard hasFallenBack else { return primary.acknowledge(tokens, tile: tile) }
 
-    let issued = state.withLock { Set($0.fallbackTokens[tile, default: []]) }
-    fallback.withLock { $0 }?.acknowledge(tokens.filter(issued.contains), tile: tile)
+    let issued = state.withLock { $0.fallbackTokens.issued(tokens, tile: tile) }
+    fallback.withLock { $0 }?.acknowledge(issued, tile: tile)
   }
 
   public func observeNetwork(_ feedback: ScreenSharingTileNetworkFeedback) {
@@ -122,6 +115,7 @@ public final class ScreenSharingFallbackTileEncoder: ScreenSharingTileEncoder, @
     case .dropped(let tile, let refresh), .failed(let tile, let refresh, _):
       .failed(tile: tile, refresh: refresh, message: "Encoded after the fallback")
     case .unchanged(let tile, _): .failed(tile: tile, refresh: nil, message: "Encoded after the fallback")
+    case .keyframeNeeded: output
     }
   }
 
@@ -131,7 +125,7 @@ public final class ScreenSharingFallbackTileEncoder: ScreenSharingTileEncoder, @
   }
 
   private func noteFallback(_ tile: ScreenSharingEncodedTile) {
-    if let token = tile.ltrToken { state.withLock { $0.remember(token, tile: tile.tile) } }
+    if let token = tile.ltrToken { state.withLock { $0.fallbackTokens.remember(token, tile: tile.tile) } }
     noteRecovery(tile)
   }
 

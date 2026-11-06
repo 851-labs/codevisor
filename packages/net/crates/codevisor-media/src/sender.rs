@@ -335,6 +335,7 @@ impl Sender {
         };
         let mut requested = 0;
         let mut first_losses = 0;
+        let mut lost_bytes = 0;
         let mut repeated = 0;
         for &(start, count) in &nack.ranges {
             let range = if count == wire::WHOLE_FRAME {
@@ -344,6 +345,9 @@ impl Sender {
                     ..(usize::from(start) + usize::from(count)).min(frame.data_count)
             };
             for index in range {
+                if index >= frame.originals_out {
+                    continue;
+                }
                 let recent = match frame.resends[index] {
                     Resend::Never => false,
                     Resend::Queued => true,
@@ -355,6 +359,7 @@ impl Sender {
                 }
                 if frame.resends[index] == Resend::Never {
                     first_losses += 1;
+                    lost_bytes += frame.packets[index].len();
                 }
                 frame.resends[index] = Resend::Queued;
                 let tag = PacketTag { stream: nack.stream, frame: nack.frame, index: index as u16, original: false };
@@ -366,6 +371,7 @@ impl Sender {
         if requested > 0 {
             stats.packets_retransmitted += requested;
             self.loss.nacked += first_losses;
+            self.estimator.on_lost(now, lost_bytes);
             self.last_loss = Some(now);
             self.update_pacing_rate(now);
         }
@@ -374,6 +380,7 @@ impl Sender {
     pub fn on_feedback(&mut self, now: Instant, feedback: &Feedback, events: &mut VecDeque<Event>, stats: &mut Stats) {
         self.note_rtt(now);
         self.ceiling_fec_ratio = self.fec_ratio(now);
+        self.estimator.set_admitting(self.admission().admit);
         let Some(stream) = self.streams.get_mut(&feedback.stream) else {
             return;
         };
