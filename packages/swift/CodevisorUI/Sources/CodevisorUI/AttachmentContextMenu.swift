@@ -89,18 +89,24 @@ private struct AttachmentContextMenu: ViewModifier {
     content
       .contextMenu {
         if let quoteActions, kind == .image, !file.isPendingCapture {
-          Button("Add to Chat", systemImage: "text.bubble") { quoteActions.addImage(file) }
+          Button {
+            quoteActions.addImage(file)
+          } label: {
+            label("Add to Chat", "text.bubble")
+          }
           Divider()
         }
         if chrome == .bubble, let quickLook, !file.isPendingCapture {
-          Button("Quick Look", systemImage: "eye", action: quickLook)
+          Button(action: quickLook) { label("Quick Look", "eye") }
         }
         if let openInNewTab, !file.isPendingCapture {
-          Button("Open in New Tab", systemImage: "plus.rectangle.on.rectangle", action: openInNewTab)
+          Button(action: openInNewTab) { label("Open in New Tab", "plus.rectangle.on.rectangle") }
         }
         if let attachmentImages, offersFileActions {
-          Button(chrome == .bubble ? "Copy" : kind.copyTitle, systemImage: "doc.on.doc") {
+          Button {
             copy(using: attachmentImages)
+          } label: {
+            label(copyTitle, "doc.on.doc")
           }
           .disabled(isCopying)
 
@@ -121,6 +127,14 @@ private struct AttachmentContextMenu: ViewModifier {
       } message: {
         Text("The file could not be copied. Please try again.")
       }
+  }
+
+  private var copyTitle: String {
+    chrome == .bubble ? "Copy" : kind.copyTitle
+  }
+
+  private func label(_ title: String, _ systemImage: String) -> some View {
+    Label(title, systemImage: systemImage).labelStyle(.titleAndIcon)
   }
 
   @ViewBuilder

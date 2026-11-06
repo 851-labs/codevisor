@@ -1,4 +1,5 @@
 import AppKit
+import CodevisorUI
 import SwiftUI
 
 struct PullDownMenuButton: NSViewRepresentable {
@@ -60,9 +61,7 @@ struct PullDownMenuButton: NSViewRepresentable {
     menuItem.target = target
     menuItem.tag = tag
     menuItem.image = item.image
-    if #available(macOS 27.0, *) {
-      menuItem.preferredImageVisibility = .visible
-    }
+    MenuItemImage.reveal(menuItem)
     return menuItem
   }
 

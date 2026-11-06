@@ -138,23 +138,37 @@ private struct PluginAppPiPMenu: View {
   let resetSize: () -> Void
 
   var body: some View {
-    Button("Show in Chat", systemImage: "rectangle.inset.filled.and.person.filled") { app.request(.inline) }
+    Button {
+      app.request(.inline)
+    } label: {
+      label("Show in Chat", "rectangle.inset.filled.and.person.filled")
+    }
     if app.canPresent(.fullscreen) {
-      Button(
-        app.fullscreen == .tab ? "Open in Tab" : "Open Full Screen", systemImage: "arrow.up.left.and.arrow.down.right"
-      ) {
+      Button {
         app.request(.fullscreen)
+      } label: {
+        label(fullscreenTitle, "arrow.up.left.and.arrow.down.right")
       }
     }
-    Button("Refresh", systemImage: "arrow.clockwise", action: app.retry)
+    Button(action: app.retry) { label("Refresh", "arrow.clockwise") }
     Divider()
-    Picker("Move to", systemImage: "arrow.up.and.down.and.arrow.left.and.right", selection: $corner) {
+    Picker(selection: $corner) {
       ForEach(ComputerUseLivePreviewCorner.allCases, id: \.self) { corner in
-        Text(corner.title).tag(corner)
+        label(corner.title, corner.systemImage).tag(corner)
       }
+    } label: {
+      label("Move to", "arrow.up.and.down.and.arrow.left.and.right")
     }
     .pickerStyle(.menu)
-    Button("Reset Size", systemImage: "arrow.down.right.and.arrow.up.left", action: resetSize)
+    Button(action: resetSize) { label("Reset Size", "arrow.down.right.and.arrow.up.left") }
       .disabled(!canResetSize)
+  }
+
+  private var fullscreenTitle: String {
+    app.fullscreen == .tab ? "Open in Tab" : "Open Full Screen"
+  }
+
+  private func label(_ title: String, _ systemImage: String) -> some View {
+    Label(title, systemImage: systemImage).labelStyle(.titleAndIcon)
   }
 }

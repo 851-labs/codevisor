@@ -257,7 +257,7 @@ extension ComputerUseLivePreviewCorner {
     }
   }
 
-  fileprivate var systemImage: String {
+  var systemImage: String {
     switch self {
     case .topLeading: "rectangle.inset.topleft.filled"
     case .topTrailing: "rectangle.inset.topright.filled"

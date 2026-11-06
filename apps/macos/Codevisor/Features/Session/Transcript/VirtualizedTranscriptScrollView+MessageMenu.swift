@@ -18,7 +18,7 @@ extension VirtualizedTranscriptScrollView {
   private func copyItem(_ title: String, copying text: String) -> NSMenuItem {
     let item = NSMenuItem(title: title, action: #selector(copyMessage(_:)), keyEquivalent: "")
     item.target = self
-    item.image = NSImage(systemSymbolName: "doc.on.doc", accessibilityDescription: nil)
+    MenuItemImage.show("doc.on.doc", on: item)
     item.representedObject = text
     return item
   }

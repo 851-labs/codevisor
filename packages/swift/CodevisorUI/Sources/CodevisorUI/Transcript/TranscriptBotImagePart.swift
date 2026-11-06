@@ -52,17 +52,37 @@ public struct TranscriptBotImagePart: View {
   @ViewBuilder private var menu: some View {
     if let url, let images = linkAction?.images {
       if let addToChat = images.addToChat {
-        Button("Add to Chat", systemImage: "text.bubble") { addToChat(url) }
+        Button {
+          addToChat(url)
+        } label: {
+          menuLabel("Add to Chat", "text.bubble")
+        }
         Divider()
       }
-      Button("Quick Look", systemImage: "eye") { _ = images.open(url) }
+      Button {
+        _ = images.open(url)
+      } label: {
+        menuLabel("Quick Look", "eye")
+      }
       if let openInNewTab = images.openInNewTab {
-        Button("Open in New Tab", systemImage: "plus.rectangle.on.rectangle") { openInNewTab(url) }
+        Button {
+          openInNewTab(url)
+        } label: {
+          menuLabel("Open in New Tab", "plus.rectangle.on.rectangle")
+        }
       }
       if let copy = images.copy {
-        Button("Copy", systemImage: "doc.on.doc") { copy(url) }
+        Button {
+          copy(url)
+        } label: {
+          menuLabel("Copy", "doc.on.doc")
+        }
       }
     }
+  }
+
+  private func menuLabel(_ title: String, _ systemImage: String) -> some View {
+    Label(title, systemImage: systemImage).labelStyle(.titleAndIcon)
   }
 
   private var url: URL? { URL(string: source) }

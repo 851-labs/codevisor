@@ -34,9 +34,9 @@ public enum SidebarRowDetail: String, CaseIterable, Codable, Identifiable, Senda
 
   public var icon: Image {
     switch self {
-    case .pullRequest: Image(systemName: "arrow.triangle.pull")
+    case .pullRequest: CodevisorSymbol.gitPullRequest.image
     case .machine: Image(systemName: "desktopcomputer")
-    case .project: Image(systemName: "folder")
+    case .project: Image(systemName: EntitySystemSymbol.projectList)
     case .branch: CodevisorSymbol.gitBranch.image
     case .worktree: Image(systemName: CodevisorSymbol.worktreeSystemName)
     }

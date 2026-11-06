@@ -32,15 +32,15 @@ public struct TranscriptDeliveryRow: View {
           TranscriptSendProgressBar()
         case .failed:
           TranscriptDeliveryMenu {
-            Button("Try Again", systemImage: "arrow.clockwise", action: retry)
-            Button("Delete", systemImage: "trash", role: .destructive, action: delete)
+            Button(action: retry) { menuLabel("Try Again", "arrow.clockwise") }
+            Button(role: .destructive, action: delete) { menuLabel("Delete", "trash") }
           } label: {
             notDeliveredLabel
           }
         case .awaitingStep:
           TranscriptDeliveryMenu {
-            Button("Send Now", systemImage: "arrow.turn.right.up", action: sendNow)
-            Button("Delete", systemImage: "trash", role: .destructive, action: delete)
+            Button(action: sendNow) { menuLabel("Send Now", "arrow.turn.right.up") }
+            Button(role: .destructive, action: delete) { menuLabel("Delete", "trash") }
           } label: {
             Label(Self.awaitingStepTitle, systemImage: Self.awaitingStepSymbol)
               .foregroundStyle(.secondary)
@@ -54,6 +54,10 @@ public struct TranscriptDeliveryRow: View {
   private var notDeliveredLabel: some View {
     Label("Not Delivered", systemImage: "exclamationmark.circle.fill")
       .foregroundStyle(.red)
+  }
+
+  private func menuLabel(_ title: String, _ systemImage: String) -> some View {
+    Label(title, systemImage: systemImage).labelStyle(.titleAndIcon)
   }
 }
 

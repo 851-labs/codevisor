@@ -21,7 +21,7 @@ extension VirtualizedTranscriptScrollView {
   var addToChatMenuItem: NSMenuItem {
     let item = NSMenuItem(title: "Add to Chat", action: #selector(addSelectionToChat), keyEquivalent: "")
     item.target = self
-    item.image = NSImage(systemSymbolName: "text.quote", accessibilityDescription: nil)
+    MenuItemImage.show("text.quote", on: item)
     return item
   }
 

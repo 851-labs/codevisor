@@ -78,36 +78,57 @@ import SwiftUI
 
     var body: some View {
       Menu {
-        Button("Open File", systemImage: "doc.text.magnifyingglass") { model.openExplorer() }
+        Button(action: model.openExplorer) { label("Open File", "doc.text.magnifyingglass") }
           .keyboardShortcut("o", modifiers: .command)
         if model.document.hasPreview {
-          Button(
-            model.editor.preview ? "Show Editor" : "Show Preview",
-            systemImage: model.editor.preview ? "pencil" : "eye"
-          ) {
+          Button {
             model.editor.preview.toggle()
+          } label: {
+            label(previewToggleTitle, previewToggleIcon)
           }
         }
         if model.document.snapshot?.content != nil {
           Divider()
-          Button("Find…", systemImage: "magnifyingglass") {
+          Button {
             model.showsFind.toggle()
             model.editor.preview = false
+          } label: {
+            label("Find…", "magnifyingglass")
           }
           .keyboardShortcut("f", modifiers: .command)
-          Button("Go to Line…", systemImage: "number") { model.showsGoToLine = true }
-            .keyboardShortcut("g", modifiers: .control)
+          Button {
+            model.showsGoToLine = true
+          } label: {
+            label("Go to Line…", "number")
+          }
+          .keyboardShortcut("g", modifiers: .control)
         }
         Divider()
-        Button("Reload from Machine", systemImage: "arrow.clockwise") { Task { await model.refreshDocument() } }
+        Button {
+          Task { await model.refreshDocument() }
+        } label: {
+          label("Reload from Machine", "arrow.clockwise")
+        }
         Divider()
-        Button("New Tab", systemImage: "plus.square.on.square") { onNewTab() }
+        Button(action: onNewTab) { label("New Tab", "plus.square.on.square") }
       } label: {
         Image(systemName: "ellipsis")
       }
       .menuIndicator(.hidden)
       .accessibilityLabel("File Actions")
       .help("File Actions")
+    }
+
+    private var previewToggleTitle: String {
+      model.editor.preview ? "Show Editor" : "Show Preview"
+    }
+
+    private var previewToggleIcon: String {
+      model.editor.preview ? "pencil" : "eye"
+    }
+
+    private func label(_ title: String, _ systemImage: String) -> some View {
+      Label(title, systemImage: systemImage).labelStyle(.titleAndIcon)
     }
   }
 #endif
