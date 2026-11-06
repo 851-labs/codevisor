@@ -7,6 +7,7 @@
 
   struct AppStoreScreenshotRoot: View {
     private let scene = ProcessInfo.processInfo.environment["CODEVISOR_SCREENSHOT_SCENE"] ?? "projects"
+    @Environment(\.horizontalSizeClass) private var horizontalSizeClass
     @StateObject private var fixture = AppStoreScreenshotFixture()
     @State private var path = ["detail"]
 
@@ -14,18 +15,9 @@
       Group {
         if !fixture.isReady {
           Color.clear
-        } else if scene == "projects" || scene == "new-chat" || scene == "bots" {
+        } else if scene == "projects" || scene == "new-chat" {
           HomeView()
-        } else if scene == "bot-conversation" {
-          HomeView(initialRoute: featuredBot)
-        } else if scene == "mascot-editor", let options = fixture.mascotOptions {
-          if UIDevice.current.userInterfaceIdiom == .pad {
-            HomeView(initialRoute: featuredBot)
-              .sheet(isPresented: .constant(true)) { mascotEditor(options) }
-          } else {
-            mascotEditor(options)
-          }
-        } else if scene == "conversation", UIDevice.current.userInterfaceIdiom == .pad {
+        } else if scene == "conversation", horizontalSizeClass == .regular {
           HomeView(initialRoute: featuredWorkspace)
         } else {
           NavigationStack(path: $path) {
@@ -65,17 +57,6 @@
       try? "ready".write(toFile: path, atomically: true, encoding: .utf8)
     }
 
-    private func mascotEditor(_ options: ServerBotMascotOptions) -> some View {
-      BotMascotEditorScreen(
-        mascot: DemoBots.featured.mascot, options: options,
-        serverId: DemoModels.machineId(DemoBots.featured.machine), category: .headwear, onSave: { _ in })
-    }
-
-    private var featuredBot: HomeRoute {
-      .bot(
-        serverId: DemoModels.machineId(DemoBots.featured.machine), botId: DemoBots.botId(DemoBots.featured))
-    }
-
     private var featuredWorkspace: HomeRoute {
       .workspace(
         serverId: AppStoreScreenshotData.machineID, workspaceId: DemoModels.featuredWorkspaceId,
@@ -89,7 +70,6 @@
     let controller: SessionController
     let browser: BrowserPaneModel
     @Published private(set) var isReady = false
-    private(set) var mascotOptions: ServerBotMascotOptions?
 
     init() {
       let data = AppStoreScreenshotData.self
@@ -124,38 +104,13 @@
       self.controller = controller
       self.browser = browser
       ClientPreferences.shared.set(SidebarGrouping.machine, forKey: SidebarGrouping.preferenceKey)
-      ClientPreferences.shared.set(sidebarMode, forKey: SidebarMode.preferenceKey)
       ClientPreferences.shared.set(AIDataSharingConsent.currentVersion, forKey: AIDataSharingConsent.preferenceKey)
       ClientPreferences.shared.set(true, forKey: "ios.onboarding.dismissed")
     }
 
-    private var sidebarMode: SidebarMode {
-      let scene = ProcessInfo.processInfo.environment["CODEVISOR_SCREENSHOT_SCENE"]
-      return ["bots", "bot-conversation", "mascot-editor"].contains(scene) ? .chat : .code
-    }
-
     func prepare() async {
       await DemoEnvironment.connect(environment)
-      registerFeaturedBot()
-      mascotOptions = try? await DemoServerClient(machine: DemoBots.featured.machine).botMascotOptions()
       isReady = true
-    }
-
-    private func registerFeaturedBot() {
-      let bot = DemoBots.featured
-      let serverId = DemoModels.machineId(bot.machine)
-      guard let session = environment.projectList.session(DemoBots.sessionId(bot), serverId: serverId),
-        let project = environment.projectList.projects.first(where: {
-          $0.serverId == serverId && $0.id == session.projectId
-        })
-      else { return }
-      let model = SessionModel(
-        serverTransport: ServerSessionTransport(client: DemoServerClient(machine: bot.machine), sessionId: session.id),
-        sessionId: session.agentSessionId ?? session.id.uuidString)
-      let controller = SessionController.preview(
-        project: project, model: model,
-        harnesses: SessionController.previewHarnesses.filter { $0.id == session.harnessId })
-      ChatControllerCache.shared.register(controller, for: session, environment: environment)
     }
   }
 #endif

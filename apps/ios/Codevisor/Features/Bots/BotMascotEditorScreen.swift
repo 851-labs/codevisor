@@ -11,7 +11,7 @@ struct BotMascotEditorScreen: View {
 
   @Environment(\.dismiss) private var dismiss
   @State private var mascot: ServerBotMascot
-  @State private var category: BotMascotCategory
+  @State private var category = BotMascotCategory.color
   @ScaledMetric(relativeTo: .largeTitle) private var previewSide: CGFloat = 200
   @ScaledMetric(relativeTo: .title) private var swatchSide: CGFloat = 28
 
@@ -19,14 +19,12 @@ struct BotMascotEditorScreen: View {
     mascot: ServerBotMascot,
     options: ServerBotMascotOptions,
     serverId: String,
-    category: BotMascotCategory = .color,
     onSave: @escaping (ServerBotMascot) -> Void
   ) {
     self.options = options
     self.serverId = serverId
     self.onSave = onSave
     _mascot = State(initialValue: mascot)
-    _category = State(initialValue: category)
   }
 
   var body: some View {

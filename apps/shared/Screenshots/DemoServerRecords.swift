@@ -205,89 +205,14 @@
 
     static func navigationSnapshot(on machine: DemoWorld.Machine) -> ServerNavigationSnapshot {
       let projects = DemoWorld.projects.filter { $0.machine.deviceId == machine.deviceId }
-      let bots = DemoBots.on(machine)
       return decode([
         "eventCursor": 1,
-        "projects": projects.map(navigationProject) + bots.map(botProject),
-        "sessions": DemoModels.sessions.filter { $0.serverId == DemoModels.machineId(machine) }.map(navigationSession)
-          + bots.map(botSession),
-        "workspaces": projects.flatMap(navigationWorkspaces) + bots.map(botWorkspace),
-        "panes": projects.flatMap(navigationPanes) + bots.map(botPane),
+        "projects": projects.map(navigationProject),
+        "sessions": DemoModels.sessions.filter { $0.serverId == DemoModels.machineId(machine) }.map(navigationSession),
+        "workspaces": projects.flatMap(navigationWorkspaces),
+        "panes": projects.flatMap(navigationPanes),
       ])
     }
-
-    static func bots(on machine: DemoWorld.Machine) -> [ServerBot] {
-      DemoBots.on(machine).map { bot in
-        ServerBot(
-          id: DemoBots.botId(bot).uuidString, serverId: machine.serverId, name: bot.name, symbolName: "sparkles",
-          mascot: bot.mascot, harnessId: "claude-code", projectId: DemoBots.projectId(bot).uuidString,
-          sessionId: DemoBots.sessionId(bot).uuidString, workspaceId: DemoBots.workspaceId(bot).uuidString,
-          rootPath: DemoBots.rootPath(bot), projects: [], conversational: true, mode: BotMode.conversation.rawValue,
-          isArchived: false, createdAt: fixtureDate, updatedAt: date(DemoBots.updatedAt(bot)))
-      }
-    }
-
-    static func botConversation(sessionId: UUID) -> ServerBotConversationPage {
-      guard let bot = DemoBots.bot(sessionId: sessionId) else {
-        return ServerBotConversationPage(messages: [], hasMore: false, working: false)
-      }
-      let lastSent = DemoBots.today(DemoBots.updatedAt(bot))
-      let messages = bot.messages.enumerated().map { index, message in
-        let sentAt = lastSent.addingTimeInterval(Double(index + 1 - bot.messages.count) * 60)
-        return ServerBotMessage(
-          id: DemoModels.id(5_000 + index).uuidString, sessionId: sessionId.uuidString, sequence: index + 1,
-          sender: message.sender, text: message.text, createdAt: date(sentAt))
-      }
-      return ServerBotConversationPage(messages: messages, hasMore: false, working: false)
-    }
-
-    private static func botProject(_ bot: DemoBots.Bot) -> [String: Any] {
-      let id = DemoBots.projectId(bot).uuidString
-      return [
-        "id": id, "name": bot.name, "origin": "codevisor", "createdAt": fixtureDate, "isBot": true,
-        "locations": [
-          [
-            "id": bot.name, "projectId": id, "serverId": DemoModels.machineId(bot.machine),
-            "folderPath": DemoBots.rootPath(bot), "createdAt": fixtureDate, "isGitRepository": false,
-          ] as [String: Any]
-        ],
-      ]
-    }
-
-    private static func botSession(_ bot: DemoBots.Bot) -> [String: Any] {
-      var session: [String: Any] = [
-        "id": DemoBots.sessionId(bot).uuidString, "projectId": DemoBots.projectId(bot).uuidString,
-        "serverId": DemoModels.machineId(bot.machine), "harnessId": "claude-code",
-        "agentSessionId": "demo-bot-\(bot.name.lowercased())", "title": bot.name, "origin": "codevisor",
-        "workspaceId": DemoBots.workspaceId(bot).uuidString, "createdAt": fixtureDate,
-        "updatedAt": date(DemoBots.updatedAt(bot)), "sidebarState": bot.isUnread ? "unread" : "idle",
-        "unreadCount": bot.isUnread ? 1 : 0, "actionRequired": bot.needsInput,
-      ]
-      if let message = bot.latestMessage {
-        session["latestBotMessage"] = ["text": message.text, "attachmentNames": []]
-      }
-      return session
-    }
-
-    private static func botWorkspace(_ bot: DemoBots.Bot) -> [String: Any] {
-      [
-        "id": DemoBots.workspaceId(bot).uuidString, "serverId": DemoModels.machineId(bot.machine),
-        "projectId": DemoBots.projectId(bot).uuidString, "name": bot.name, "hasCustomName": false,
-        "rootDirectory": DemoBots.rootPath(bot), "isArchived": false, "createdAt": fixtureDate,
-        "botId": DemoBots.botId(bot).uuidString, "mainSessionId": DemoBots.sessionId(bot).uuidString,
-      ]
-    }
-
-    private static func botPane(_ bot: DemoBots.Bot) -> [String: Any] {
-      let id = DemoBots.sessionId(bot).uuidString
-      return [
-        "id": id, "workspaceId": DemoBots.workspaceId(bot).uuidString, "providerId": "codevisor",
-        "createdAt": fixtureDate, "position": "0000", "paneType": "chat", "title": bot.name,
-        "resourceKind": "session", "resourceId": id,
-      ]
-    }
-
-    private static func date(_ date: Date) -> String { ISO8601DateFormatter().string(from: date) }
 
     private static func navigationProject(_ project: DemoWorld.Project) -> [String: Any] {
       let model = DemoModels.project(project)

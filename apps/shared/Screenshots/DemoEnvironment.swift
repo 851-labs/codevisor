@@ -26,7 +26,6 @@
       for machine in environment.machines.allMachines {
         await environment.navigationStore.refresh(
           machineId: machine.id, client: environment.machines.client(for: machine.id))
-        await environment.bots.refresh(serverId: machine.id)
       }
       environment.markNavigationCurrentForPreview(machineIds: environment.machines.allMachines.map(\.id))
     }
