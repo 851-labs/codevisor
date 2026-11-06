@@ -12,13 +12,10 @@ struct SplitLeafHeader: View {
   let dragCoordinator: WorkspaceSplitDragCoordinator?
   let onActivate: () -> Void
   let onSplit: (SplitEdge) -> Void
-  let onRename: (String) -> Void
   let onClose: (() -> Void)?
   let onFloat: (() -> Void)?
 
   @Environment(AppEnvironment.self) private var environment
-  @State private var renameText = ""
-  @State private var showingRename = false
 
   var body: some View {
     HStack(spacing: 4) {
@@ -44,7 +41,6 @@ struct SplitLeafHeader: View {
     .padding(.horizontal, 8)
     .frame(height: 28)
     .overlay(alignment: .bottom) { Divider() }
-    .modifier(PaneRenameAlert(kind: pane?.kind, isPresented: $showingRename, text: $renameText, onRename: onRename))
   }
 
   private var iconName: String {
@@ -144,10 +140,7 @@ struct SplitLeafHeader: View {
 
       Divider()
 
-      PaneMenuItems(pane: pane, sessionStore: sessionStore) {
-        renameText = pane.map(title) ?? "New Tab"
-        showingRename = true
-      }
+      PaneMenuItems(pane: pane, sessionStore: sessionStore)
 
       if let onClose {
         Button(role: .destructive, action: onClose) {

@@ -54,7 +54,6 @@ extension SidebarView {
   private func tabActions(_ tabId: UUID, in workspaceID: UUID) -> SidebarTabRow.Actions {
     SidebarTabRow.Actions(
       close: { closeTab(tabId, in: workspaceID) },
-      rename: { beginRenamingTab(tabId, in: workspaceID) },
       keep: { environment.workspaceSync.keepTab(workspaceId: workspaceID, tabId: tabId) }
     )
   }
@@ -64,15 +63,6 @@ extension SidebarView {
 
     store?.closeCenterTabRequest = CloseCenterTabRequest(workspaceId: workspaceID, tabId: tabId)
     if !routesSelectedSession(item.workspace) { activateWorkspace(item) }
-  }
-
-  private func beginRenamingTab(_ tabId: UUID, in workspaceID: UUID) {
-    guard let store, let workspace = storedWorkspace(workspaceID),
-      let tab = workspace.centerTabs.first(where: { $0.id == tabId })
-    else { return }
-
-    let title = WorkspaceTabLabel(tab, in: workspace, environment: environment, store: store).title
-    renamingTab = SidebarTabRename(workspaceId: workspaceID, tabId: tabId, title: title)
   }
 
   private func activeListItem(_ workspaceID: UUID) -> SidebarWorkspaceListItem? {

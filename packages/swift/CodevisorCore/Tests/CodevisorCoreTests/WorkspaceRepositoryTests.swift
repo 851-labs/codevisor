@@ -290,25 +290,15 @@ struct WorkspaceRepositoryTests {
     #expect(workspace.selectedPane(inLeaf: UUID()) == nil)
   }
 
-  @Test("Workspace tab custom titles persist and older tabs remain automatic")
-  func workspaceTabCustomTitlePersistence() throws {
-    let tab = WorkspaceTab(
-      customTitle: "Pinned Layout",
-      root: .leaf(.centerInitial(sessionId: UUID()))
-    )
-    let encoded = try JSONEncoder().encode(tab)
-    let decoded = try JSONDecoder().decode(WorkspaceTab.self, from: encoded)
-    #expect(decoded.customTitle == "Pinned Layout")
-    #expect(decoded.root == tab.root)
-    #expect(decoded.activeLeafId == tab.activeLeafId)
-
-    var legacyJSON = try JSONSerialization.jsonObject(with: encoded) as! [String: Any]
-    legacyJSON.removeValue(forKey: "customTitle")
-    let legacy = try JSONDecoder().decode(
-      WorkspaceTab.self,
-      from: JSONSerialization.data(withJSONObject: legacyJSON)
-    )
-    #expect(legacy.customTitle == nil)
+  @Test("A tab saved with a custom title still loads, and the title is dropped")
+  func workspaceTabDropsCustomTitle() throws {
+    let tab = WorkspaceTab(root: .leaf(.centerInitial(sessionId: UUID())))
+    var saved = try JSONSerialization.jsonObject(with: JSONEncoder().encode(tab)) as! [String: Any]
+    saved["customTitle"] = "Pinned Layout"
+    let decoded = try JSONDecoder().decode(WorkspaceTab.self, from: JSONSerialization.data(withJSONObject: saved))
+    #expect(decoded == tab)
+    let reencoded = try JSONSerialization.jsonObject(with: JSONEncoder().encode(decoded)) as! [String: Any]
+    #expect(reencoded["customTitle"] == nil)
   }
 
 }

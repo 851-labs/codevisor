@@ -49,7 +49,7 @@ public enum PaneLayoutProjection {
       }
       guard let pruned = root.prunedEmptyGroups else { continue }
       tabs.append(
-        WorkspaceTab(id: tab.id, customTitle: tab.customTitle, root: pruned, activeLeafId: tab.activeLeafId)
+        WorkspaceTab(id: tab.id, root: pruned, activeLeafId: tab.activeLeafId)
       )
     }
     for pane in state.panes where !placed.contains(pane.id) {

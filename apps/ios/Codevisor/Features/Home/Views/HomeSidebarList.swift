@@ -6,7 +6,6 @@ struct HomeSidebarActions {
   var open: (HomeSidebarTabRow, HomeSidebarWorkspaceRef) -> Void = { _, _ in }
   var openWorkspace: (HomeSidebarWorkspace) -> Void = { _ in }
   var close: (HomeSidebarTabRow, HomeSidebarWorkspaceRef) -> Void = { _, _ in }
-  var rename: (HomeSidebarTabRow, HomeSidebarWorkspaceRef) -> Void = { _, _ in }
   var newTab: (HomeSidebarWorkspaceRef) -> Void = { _ in }
   var newChat: (NewChatTarget) -> Void = { _ in }
   var togglePin: (HomeSidebarWorkspaceRef) -> Void = { _ in }

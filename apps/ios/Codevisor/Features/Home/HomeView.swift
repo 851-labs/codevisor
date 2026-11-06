@@ -47,8 +47,6 @@ struct HomeView: View {
   @State var deletingBot: Bot?
   @State var renamingWorkspace: Workspace?
   @State var workspaceRenameTitle = ""
-  @State var renamingTab: HomeTabRenameRequest?
-  @State var tabRenameTitle = ""
   @State var sectionPrompt: SectionPrompt?
   @State var botSectionPrompt: SectionPrompt?
   @State var sidebarActionHandler = HomeSidebarActionHandler(HomeSidebarActions())
@@ -90,7 +88,7 @@ struct HomeView: View {
     if showsOnboarding.wrappedValue { return "onboarding" }
     if pendingHarnessSignIn != nil { return "harness_sign_in" }
     if pendingDeviceApproval != nil { return "device_approval" }
-    if renamingWorkspace != nil || renamingTab != nil { return "rename" }
+    if renamingWorkspace != nil { return "rename" }
     if botEditor != nil { return "bot_editor" }
     return nil
   }

@@ -254,8 +254,7 @@
         title: title,
         icon: icon,
         status: status,
-        chatSessionId: nil,
-        renamableTabId: id(value)
+        chatSessionId: nil
       )
     }
 

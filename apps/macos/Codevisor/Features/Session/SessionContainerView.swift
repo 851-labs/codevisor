@@ -201,7 +201,6 @@ struct SessionContainerView: View {
         sessionStore: store,
         splitDragCoordinator: splitDragCoordinator,
         onSplitLeaf: splitLeaf,
-        onRenameLeaf: renameLeaf,
         onCloseLeaf: closeLeaf,
         onFloatLeaf: floatLeaf,
         openingSplit: openingSplit,

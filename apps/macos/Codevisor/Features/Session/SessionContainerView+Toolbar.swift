@@ -18,8 +18,9 @@ extension SessionContainerView {
   }
 
   private var sceneTitle: WorkspaceSceneTitle {
-    guard let model = activeFileModel else { return .editable(activePaneTitle) }
-    return .fixed(model.title)
+    if let model = activeFileModel { return .fixed(model.title) }
+    guard let chat = activeMainChat else { return .fixed(activePaneTitle) }
+    return .editable(title(renaming: chat))
   }
 
   @ToolbarContentBuilder
@@ -54,7 +55,7 @@ extension SessionContainerView {
   @ToolbarContentBuilder
   private var reviewOrSimulatorToolbar: some ToolbarContent {
     if let model = activeReviewModel {
-      ReviewPaneToolbar(model: model, title: activePaneTitle.wrappedValue)
+      ReviewPaneToolbar(model: model, title: activePaneTitle)
     } else if let model = activeSimulatorModel {
       SimulatorPaneToolbar(model: model) { data, name in
         AppleSimulatorPane.saveScreenshot(data, deviceName: name)
@@ -90,24 +91,26 @@ extension SessionContainerView {
       || activeSimulatorModel?.device != nil
   }
 
-  var activePaneTitle: Binding<String> {
+  var activePaneTitle: String {
+    if let pane = activeScreenSharingPane { return pane.connectionName }
+    if let device = activeSimulatorModel?.device { return device.name }
+    guard let descriptor = activePaneDescriptor else { return "New Tab" }
+    if descriptor.kind == .browser { return "" }
+    return paneTitle(descriptor)
+  }
+
+  private var activeMainChat: ChatSession? {
+    let workspace = selectedWorkspace
+    guard let descriptor = activePaneDescriptor, workspace.isMainChatPane(descriptor),
+      let id = descriptor.chatSessionId
+    else { return nil }
+    return environment.projectList.session(id, serverId: workspace.serverId)
+  }
+
+  private func title(renaming chat: ChatSession) -> Binding<String> {
     Binding(
-      get: {
-        if let pane = activeScreenSharingPane { return pane.connectionName }
-        if let device = activeSimulatorModel?.device { return device.name }
-        guard let descriptor = activePaneDescriptor else { return "New Tab" }
-        if descriptor.kind == .browser { return "" }
-        let workspace = selectedWorkspace
-        if descriptor.kind == .chat { return paneTitle(descriptor) }
-        return workspace.selectedCenterTab?.customTitle ?? paneTitle(descriptor)
-      },
-      set: { title in
-        guard !paneControlsReplaceTitle, activeScreenSharingPane == nil, activeFileModel == nil,
-          activeSimulatorModel?.device == nil
-        else { return }
-        let workspace = selectedWorkspace
-        renameCenterTab(workspace.selectedCenterTabId, to: title)
-      }
+      get: { activePaneTitle },
+      set: { environment.projectList.renameSession(chat, to: $0) }
     )
   }
 

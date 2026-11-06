@@ -42,12 +42,6 @@ extension SessionContainerView {
     focusSelectedCenterPane()
   }
 
-  func renameCenterTab(_ tabId: UUID, to customTitle: String?) {
-    environment.workspaceSync.renameTab(
-      workspaceId: selectedWorkspace.id, tabId: tabId, to: customTitle ?? ""
-    )
-  }
-
   func keepCenterTab(_ tabId: UUID) {
     environment.workspaceSync.keepTab(workspaceId: selectedWorkspace.id, tabId: tabId)
   }

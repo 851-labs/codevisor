@@ -6,42 +6,6 @@ import Testing
 
 @MainActor
 struct SessionRenameSyncTests {
-  @Test("Single-tab and split-chat rename commands update the shared title", arguments: [false, true])
-  func renamesSharedChat(explicitChat: Bool) async throws {
-    let fixture = await ChatRenameFixture.make()
-    let tab = fixture.workspace.centerTabs[0]
-    fixture.navigation.connect(fixture.fake)
-    fixture.sync.renameTab(
-      workspaceId: fixture.workspace.id, tabId: tab.id,
-      chatSessionId: explicitChat ? fixture.chat.id : nil, to: "  Shared title  "
-    )
-    #expect(fixture.title == "Shared title")
-    fixture.fake.emit(kind: "test.journal", subjectId: "")
-    await fixture.navigation.flush()
-    #expect(fixture.fake.sessionRenameNames == ["Shared title"])
-    #expect(fixture.fake.sessions.first?.title == "Shared title")
-    #expect(fixture.title == "Shared title")
-    #expect(!fixture.navigation.store.pendingIntents.isEmpty)
-    await fixture.navigation.refresh(from: fixture.fake)
-    #expect(fixture.title == "Shared title")
-    #expect(fixture.navigation.store.pendingIntents.isEmpty)
-    let updated = try #require(fixture.repository.workspace(id: fixture.workspace.id)?.centerTabs.first)
-    #expect(updated.customTitle == nil)
-    #expect(updated.root == tab.root)
-
-    let reader = NavigationFixture()
-    await reader.install(projects: [fixture.project], sessions: [fixture.chat], workspaces: [fixture.workspace])
-    var renamed = fixture.chat
-    renamed.title = "Shared title"
-    await reader.applyEvent(sessions: [renamed])
-    let readerTab = try #require(reader.workspaces.workspace(id: fixture.workspace.id)?.centerTabs.first)
-    #expect(readerTab.customTitle == "Old local alias")
-    #expect(
-      readerTab.displayTitle(
-        for: readerTab.root.allGroups[0].state.selectedPane, chatTitle: reader.session(fixture.chat.id)?.title)
-        == "Shared title")
-  }
-
   @Test("A chat rename the server refuses drops, and the server's title shows")
   func refusedRename() async {
     let fixture = await ChatRenameFixture.make()
@@ -118,24 +82,6 @@ struct SessionRenameSyncTests {
     #expect(fixture.fake.sessionRenameNames == ["Offline"])
   }
 
-  @Test("Empty chat names are ignored and non-chat layout labels still work")
-  func nearbyTabBehavior() async {
-    let fixture = await ChatRenameFixture.make()
-    let id = fixture.workspace.id
-    let tabId = fixture.workspace.centerTabs[0].id
-    fixture.sync.renameTab(workspaceId: id, tabId: tabId, to: "  ")
-    #expect(fixture.navigation.store.pendingIntents.isEmpty)
-    #expect(fixture.repository.workspace(id: id)?.centerTabs.first?.customTitle == "Old local alias")
-    var terminal = fixture.workspace
-    let pane = PaneDescriptorState(id: UUID(), kind: .terminal, name: "Terminal", terminalKey: "test")
-    terminal.centerTabs[0].root = .leaf(PaneGroupState(panes: [pane], selectedPaneId: pane.id))
-    terminal.centerTabs[0].activeLeafId = terminal.centerTabs[0].root.allGroups[0].id
-    fixture.repository.save(terminal)
-    fixture.sync.renameTab(workspaceId: id, tabId: tabId, to: "Logs")
-    #expect(fixture.repository.workspace(id: id)?.centerTabs.first?.customTitle == "Logs")
-    #expect(fixture.navigation.store.pendingIntents.isEmpty)
-  }
-
   @Test("Keeping a preview tab clears its preview flag and leaves other tabs alone")
   func keepsPreviewTab() async {
     let fixture = await ChatRenameFixture.make()
@@ -156,7 +102,6 @@ struct SessionRenameSyncTests {
 
 @MainActor
 private struct ChatRenameFixture {
-  let project: Project
   let chat: ChatSession
   let workspace: Workspace
   let fake: SyncFakeServerClient
@@ -173,7 +118,7 @@ private struct ChatRenameFixture {
     let chat = ChatSession(projectId: project.id, harnessId: "codex", title: "Original", createdAt: date)
     let workspace = Workspace(
       name: "Workspace", rootDirectory: nil, serverId: chat.serverId, projectId: project.id,
-      centerTabs: [WorkspaceTab(customTitle: "Old local alias", root: .leaf(.centerInitial(sessionId: chat.id)))],
+      centerTabs: [WorkspaceTab(root: .leaf(.centerInitial(sessionId: chat.id)))],
       createdAt: date, isServerSynced: true
     )
     let server = ServerNavigationSnapshot.fixture(projects: [project], sessions: [chat], workspaces: [workspace])
@@ -181,6 +126,6 @@ private struct ChatRenameFixture {
       projects: server.projects, sessions: server.sessions, workspaces: server.workspaces, panes: server.panes)
     let navigation = NavigationFixture()
     await navigation.install(projects: [project], sessions: [chat], workspaces: [workspace], cursor: 0)
-    return ChatRenameFixture(project: project, chat: chat, workspace: workspace, fake: fake, navigation: navigation)
+    return ChatRenameFixture(chat: chat, workspace: workspace, fake: fake, navigation: navigation)
   }
 }

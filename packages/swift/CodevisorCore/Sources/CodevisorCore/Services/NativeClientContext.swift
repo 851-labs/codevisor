@@ -55,7 +55,6 @@ public struct NativeClientContext: Codable, Sendable {
   public struct Tab: Codable, Sendable {
     public var id: UUID
     public var panes: [Pane]
-    public var title: String?
     public var activeLeafId: UUID?
     public var splits: [Split]?
   }
@@ -102,7 +101,7 @@ public struct NativeClientContext: Codable, Sendable {
             Tab(
               id: tab.id,
               panes: tab.root.allGroups.flatMap { group in group.state.panes.map { Pane($0, leafId: group.id) } },
-              title: tab.customTitle, activeLeafId: tab.activeLeafId, splits: splits(in: tab.root)
+              activeLeafId: tab.activeLeafId, splits: splits(in: tab.root)
             )
           }
         )

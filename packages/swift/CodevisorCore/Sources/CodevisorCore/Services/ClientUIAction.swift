@@ -60,7 +60,7 @@ public struct ClientCapabilities: Codable, Sendable {
     pages = ["home", "new_chat", "settings", "dismiss"]
     self.settingsSections = settingsSections
     layoutActions =
-      ["new_tab", "reorder_tabs", "rename_tab"]
+      ["new_tab", "reorder_tabs"]
       + (compact ? [] : ["split", "move", "detach", "resize"])
     windowActions = compact ? [] : ["focus", "minimize", "restore", "fullscreen", "frame", "sidebar"]
   }

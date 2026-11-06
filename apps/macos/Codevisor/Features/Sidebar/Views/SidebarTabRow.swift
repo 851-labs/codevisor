@@ -4,7 +4,6 @@ import SwiftUI
 struct SidebarTabRow: View {
   struct Actions {
     let close: () -> Void
-    let rename: () -> Void
     let keep: () -> Void
   }
 
@@ -63,22 +62,17 @@ struct SidebarTabRow: View {
   @ViewBuilder
   private var contextMenu: some View {
     if let actions {
-      Button(action: actions.rename) {
-        Label("Rename…", systemImage: "pencil")
-          .labelStyle(.titleAndIcon)
-      }
-      Divider()
       Button(action: actions.close) {
         Label("Close Tab", systemImage: "xmark")
           .labelStyle(.titleAndIcon)
       }
+      .shortcut(.closeSplit)
     }
   }
 
   @ViewBuilder
   private var accessibilityActions: some View {
     if let actions {
-      Button("Rename", action: actions.rename)
       Button("Close", action: actions.close)
     }
   }

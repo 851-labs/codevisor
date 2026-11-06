@@ -11,7 +11,6 @@ struct WorkspaceSplitView: View {
   let sessionStore: SessionStore?
   let dragCoordinator: WorkspaceSplitDragCoordinator?
   let onSplitLeaf: (UUID, SplitEdge) -> Void
-  let onRenameLeaf: (UUID, String) -> Void
   let onCloseLeaf: (UUID) -> Void
   var onFloatLeaf: ((UUID) -> Void)? = nil
   var openingSplit: WorkspaceSplitOpening? = nil
@@ -46,7 +45,6 @@ struct WorkspaceSplitView: View {
             sessionStore: sessionStore,
             dragCoordinator: dragCoordinator,
             onSplit: { edge in onSplitLeaf(leaf.id, edge) },
-            onRename: { name in onRenameLeaf(leaf.id, name) },
             onClose: { onCloseLeaf(leaf.id) },
             onFloat: onFloatLeaf.map { float in { float(leaf.id) } }
           )
@@ -219,7 +217,6 @@ private struct SplitLeafView: View {
   let sessionStore: SessionStore?
   let dragCoordinator: WorkspaceSplitDragCoordinator?
   let onSplit: (SplitEdge) -> Void
-  let onRename: (String) -> Void
   let onClose: () -> Void
   let onFloat: (() -> Void)?
 
@@ -260,7 +257,6 @@ private struct SplitLeafView: View {
           dragCoordinator: dragCoordinator,
           onActivate: { model.onActivated?() },
           onSplit: onSplit,
-          onRename: onRename,
           onClose: holdsMainChat(model) ? nil : onClose,
           onFloat: holdsMainChat(model) ? nil : onFloat
         )

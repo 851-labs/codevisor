@@ -20,7 +20,6 @@ struct SidebarView: View {
   @State var drag: SidebarDrag?
   @State var groupDrag: SidebarGroupDrag?
   @State var tabDrag: SidebarTabDrag?
-  @State var renamingTab: SidebarTabRename?
   @State var holdsGroupToggles = false
   @State var revealRequest = SidebarRevealRequest()
   @ClientPreference(SidebarGrouping.preferenceKey, default: SidebarGrouping.flat) var grouping
@@ -176,12 +175,6 @@ struct SidebarView: View {
         )
       )
       .modifier(SectionPromptModifier(prompt: $sectionPrompt, store: environment.workspaceSections))
-      .modifier(
-        SidebarTabRenameAlert(renaming: $renamingTab) { rename in
-          environment.workspaceSync.renameTab(
-            workspaceId: rename.workspaceId, tabId: rename.tabId,
-            to: rename.title.trimmingCharacters(in: .whitespacesAndNewlines))
-        })
   }
 
   private var sidebarConfiguredView: some View {

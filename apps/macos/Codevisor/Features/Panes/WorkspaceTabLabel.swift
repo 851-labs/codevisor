@@ -9,7 +9,7 @@ struct WorkspaceTabLabel {
 
   init(_ tab: WorkspaceTab, in workspace: Workspace, environment: AppEnvironment, store: SessionStore) {
     let descriptor = Self.descriptor(of: tab, in: workspace, store: store)
-    let title = Self.title(of: tab, showing: descriptor, in: workspace, environment: environment, store: store)
+    let title = Self.title(showing: descriptor, in: workspace, environment: environment, store: store)
     self.title = title
     icon = .workspaceTab(descriptor, title: title, serverId: workspace.serverId, environment: environment, store: store)
     isPreview = tab.isPreview
@@ -32,19 +32,9 @@ struct WorkspaceTabLabel {
   }
 
   private static func title(
-    of tab: WorkspaceTab, showing descriptor: PaneDescriptorState?, in workspace: Workspace,
-    environment: AppEnvironment, store: SessionStore
+    showing descriptor: PaneDescriptorState?, in workspace: Workspace, environment: AppEnvironment, store: SessionStore
   ) -> String {
-    guard let descriptor else { return tab.customTitle ?? "New Tab" }
-
-    let paneTitle = paneTitle(descriptor, in: workspace, environment: environment, store: store)
-    if descriptor.kind == .chat { return paneTitle }
-    return tab.customTitle ?? paneTitle
-  }
-
-  private static func paneTitle(
-    _ descriptor: PaneDescriptorState, in workspace: Workspace, environment: AppEnvironment, store: SessionStore
-  ) -> String {
+    guard let descriptor else { return "New Tab" }
     if descriptor.kind == .browser, let title = store.localBrowserTitle(paneId: descriptor.id) { return title }
     guard descriptor.kind == .chat else { return descriptor.displayName }
     guard let id = descriptor.chatSessionId,

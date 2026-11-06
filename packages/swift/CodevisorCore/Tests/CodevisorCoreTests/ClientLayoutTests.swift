@@ -80,7 +80,7 @@ struct ClientLayoutTests {
     }
   }
 
-  @Test("Compact clients create, reorder and rename tabs without changing content")
+  @Test("Compact clients create and reorder tabs without changing content")
   func compactTabs() throws {
     let original = workspace()
     var value = try apply(["kind": "new_tab"], to: original, compact: true)
@@ -89,16 +89,10 @@ struct ClientLayoutTests {
     value = try apply(["kind": "reorder_tabs", "tabIds": ids], to: value, compact: true)
     #expect(value.centerTabs.map { $0.id.uuidString } == ids)
     #expect(value.selectedCenterTabId == selected)
-    value = try apply(
-      ["kind": "rename_tab", "tabId": selected.uuidString, "title": "  Notes  "], to: value, compact: true)
-    #expect(value.selectedCenterTab?.customTitle == "Notes")
-    value = try apply(["kind": "rename_tab", "tabId": selected.uuidString, "title": " "], to: value, compact: true)
-    #expect(value.selectedCenterTab?.customTitle == nil)
     for action: [String: Any] in [
       ["kind": "reorder_tabs", "tabIds": [ids[0], ids[0]]],
       ["kind": "reorder_tabs", "tabIds": [ids[0]]],
       ["kind": "split", "leafId": value.centerTabs[0].activeLeafId.uuidString, "edge": "trailing"],
-      ["kind": "rename_tab", "tabId": UUID().uuidString, "title": "Wrong"],
     ] {
       #expect(throws: ClientControlError.self) { try apply(action, to: value, compact: true) }
     }

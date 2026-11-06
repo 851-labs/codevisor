@@ -15,7 +15,6 @@ struct SessionScreen: View {
   var sessionStore: SessionStore? = nil
   var splitDragCoordinator: WorkspaceSplitDragCoordinator? = nil
   var onSplitLeaf: ((UUID, SplitEdge) -> Void)? = nil
-  var onRenameLeaf: ((UUID, String) -> Void)? = nil
   var onCloseLeaf: ((UUID) -> Void)? = nil
   var onFloatLeaf: ((UUID) -> Void)? = nil
   var openingSplit: WorkspaceSplitOpening? = nil
@@ -56,7 +55,6 @@ struct SessionScreen: View {
           sessionStore: sessionStore,
           dragCoordinator: splitDragCoordinator,
           onSplitLeaf: { leafId, edge in onSplitLeaf?(leafId, edge) },
-          onRenameLeaf: { leafId, name in onRenameLeaf?(leafId, name) },
           onCloseLeaf: { leafId in onCloseLeaf?(leafId) },
           onFloatLeaf: onFloatLeaf,
           openingSplit: openingSplit,

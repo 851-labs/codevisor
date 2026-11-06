@@ -30,30 +30,29 @@ struct TerminalLiveTitleTests {
     return try JSONDecoder().decode(ServerWorkspacePane.self, from: Data(json.utf8))
   }
 
-  func shownTerminal(_ fixture: NavigationFixture, _ workspace: Workspace) throws -> (WorkspaceTab, PaneDescriptorState)
-  {
+  func shownTerminal(_ fixture: NavigationFixture, _ workspace: Workspace) throws -> PaneDescriptorState {
     let shown = try #require(fixture.workspaces.workspace(id: workspace.id))
     let tab = try #require(shown.centerTabs.first { $0.root.allGroups.first?.state.selectedPane?.id == terminal.id })
-    return (tab, try #require(tab.root.allGroups.first?.state.selectedPane))
+    return try #require(tab.root.allGroups.first?.state.selectedPane)
   }
 
-  @Test("A title-only event renames the terminal's tab, and its absence restores the pane's name")
+  @Test("A title-only event retitles the terminal, and its absence restores the pane's name")
   func liveTitleEvents() async throws {
     let (fixture, workspace) = await installed()
 
     #expect(
       await fixture.store.apply(
         .fixture(cursor: 5, panes: [try record(in: workspace, liveTitle: "  ✳ Claude Code\n")]), machineId: "m"))
-    var (tab, pane) = try shownTerminal(fixture, workspace)
+    var pane = try shownTerminal(fixture, workspace)
     #expect(pane.name == "Terminal 1")
-    #expect(tab.displayTitle(for: pane, chatTitle: nil) == "✳ Claude Code")
+    #expect(pane.displayName == "✳ Claude Code")
 
     #expect(
       await fixture.store.apply(
         .fixture(cursor: 6, panes: [try record(in: workspace, liveTitle: nil)]), machineId: "m"))
-    (tab, pane) = try shownTerminal(fixture, workspace)
+    pane = try shownTerminal(fixture, workspace)
     #expect(pane.liveTitle == nil)
-    #expect(tab.displayTitle(for: pane, chatTitle: nil) == "Terminal")
+    #expect(pane.displayName == "Terminal")
   }
 
   @Test("Publishing the pane sends its name, and a waiting publish keeps showing the live title")
@@ -62,7 +61,7 @@ struct TerminalLiveTitleTests {
     #expect(
       await fixture.store.apply(
         .fixture(cursor: 5, panes: [try record(in: workspace, liveTitle: "vim")]), machineId: "m"))
-    let (_, pane) = try shownTerminal(fixture, workspace)
+    let pane = try shownTerminal(fixture, workspace)
 
     let published = ServerPaneMapping.record(from: pane, workspaceId: workspace.id, createdAt: Date())
     #expect(published.title == "Terminal 1")
@@ -70,23 +69,7 @@ struct TerminalLiveTitleTests {
 
     fixture.workspaceSync.publishPane(pane, workspaceId: workspace.id)
     #expect(fixture.store.pendingIntents.count == 1)
-    #expect(try shownTerminal(fixture, workspace).1.displayName == "vim")
-  }
-
-  @Test("Confirming the shown live title is not a rename; a real rename wins over it")
-  func renamePrecedence() async throws {
-    let (fixture, workspace) = await installed()
-    #expect(
-      await fixture.store.apply(
-        .fixture(cursor: 5, panes: [try record(in: workspace, liveTitle: "npm test")]), machineId: "m"))
-    let tabId = try shownTerminal(fixture, workspace).0.id
-
-    fixture.workspaceSync.renameTab(workspaceId: workspace.id, tabId: tabId, to: "npm test")
-    #expect(try shownTerminal(fixture, workspace).0.customTitle == nil)
-
-    fixture.workspaceSync.renameTab(workspaceId: workspace.id, tabId: tabId, to: "Tests")
-    let (tab, pane) = try shownTerminal(fixture, workspace)
-    #expect(tab.displayTitle(for: pane, chatTitle: nil) == "Tests")
+    #expect(try shownTerminal(fixture, workspace).displayName == "vim")
   }
 
   @Test(

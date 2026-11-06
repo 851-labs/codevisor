@@ -18,10 +18,7 @@ extension HomeView {
         HomeSidebarAlerts(
           renamingWorkspace: $renamingWorkspace,
           workspaceRenameTitle: $workspaceRenameTitle,
-          renamingTab: $renamingTab,
-          tabRenameTitle: $tabRenameTitle,
-          onRenameWorkspace: { renameWorkspace($0) },
-          onRenameTab: { renameSidebarTab($0, to: $1) }
+          onRenameWorkspace: { renameWorkspace($0) }
         )
       )
       .botManagement(

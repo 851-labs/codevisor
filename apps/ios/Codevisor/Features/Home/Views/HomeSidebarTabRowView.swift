@@ -18,11 +18,6 @@ struct HomeSidebarTabRowView: View, Equatable {
   private func onOpen() { actions.actions.open(row, workspace) }
   private func onClose() { actions.actions.close(row, workspace) }
 
-  private var onRename: (() -> Void)? {
-    guard row.renamableTabId != nil else { return nil }
-    return { [actions, row, workspace] in actions.actions.rename(row, workspace) }
-  }
-
   private var onOpenInNewWindow: (() -> Void)? {
     guard let open = actions.actions.openInNewWindow else { return nil }
     return { [row, workspace] in open(row, workspace) }
@@ -44,13 +39,6 @@ struct HomeSidebarTabRowView: View, Equatable {
         }
         .accessibilityLabel("Close")
       }
-      if let onRename {
-        Button(action: onRename) {
-          Image(systemName: "pencil")
-        }
-        .tint(.indigo)
-        .accessibilityLabel("Rename")
-      }
     }
     .contextMenu {
       if let onOpenInNewWindow {
@@ -58,11 +46,6 @@ struct HomeSidebarTabRowView: View, Equatable {
           Label("Open in New Window", systemImage: "macwindow.badge.plus")
         }
         Divider()
-      }
-      if let onRename {
-        Button(action: onRename) {
-          Label("Rename Tab", systemImage: "pencil")
-        }
       }
       if !row.isMainChat {
         Button(role: .destructive, action: onClose) {

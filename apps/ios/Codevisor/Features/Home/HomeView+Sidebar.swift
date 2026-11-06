@@ -9,11 +9,6 @@ extension HomeView {
       open: { row, workspace in openSidebarRow(row, in: workspace) },
       openWorkspace: { workspace in openSidebarWorkspace(workspace) },
       close: { row, workspace in closeSidebarRow(row, in: workspace) },
-      rename: { row, workspace in
-        guard let tabId = row.renamableTabId else { return }
-        tabRenameTitle = row.title
-        renamingTab = HomeTabRenameRequest(workspaceId: workspace.id, tabId: tabId, chatSessionId: row.chatSessionId)
-      },
       newTab: { workspace in addSidebarTab(in: workspace) },
       newChat: { target in presentNewChat(serverId: target.serverId) },
       togglePin: { ref in withSidebarReflow { togglePin(ref.id) } },
@@ -188,12 +183,6 @@ extension HomeView {
         preferredChatSessionId: nil,
         preferredPaneId: pane.id
       )
-    )
-  }
-
-  func renameSidebarTab(_ request: HomeTabRenameRequest, to title: String) {
-    environment.workspaceSync.renameTab(
-      workspaceId: request.workspaceId, tabId: request.tabId, chatSessionId: request.chatSessionId, to: title
     )
   }
 
