@@ -33,21 +33,38 @@ struct VCPLevelsCommand: BenchCommand {
     for (name, picture) in inputs {
       variants.append(try await variant(name, picture: picture, renderer: renderer))
     }
-    let (captured, presented) = try await displayed(bgra)
+    let shown = try await displayed(bgra)
     try BenchOutput.print(
       VCPLevelsReport(
-        machine: BenchHostName.current, captures: captured, presentations: presented,
+        machine: BenchHostName.current, displayBefore: shown.before, displayAfter: shown.after,
+        captures: shown.captured, presentations: shown.presented,
         conversions: try pixelTransfers(bgra), variants: variants))
   }
 
-  private func displayed(_ bgra: CVPixelBuffer) async throws -> ([VCPLevelsStage], [VCPLevelsStage]) {
-    guard captures else { return ([], []) }
+  private struct Shown {
+    var before: String?
+    var after: String?
+    var captured: [VCPLevelsStage] = []
+    var presented: [VCPLevelsStage] = []
+  }
+
+  private func displayed(_ bgra: CVPixelBuffer) async throws -> Shown {
+    guard captures else { return Shown() }
 
     let display = try await SharedDisplay.make(virtualDisplay)
     let screen = try display.screen()
-    let captured = await VCPLevelsCapture.stages(showing: bgra, on: screen)
-    let presented = try await presentations(bgra, on: screen)
-    return withExtendedLifetime(display) { (captured, presented) }
+    var shown = Shown(before: Self.describe(screen))
+    shown.captured = await VCPLevelsCapture.stages(showing: bgra, on: screen)
+    shown.presented = try await presentations(bgra, on: screen)
+    shown.after = Self.describe(screen)
+    return withExtendedLifetime(display) { shown }
+  }
+
+  private static func describe(_ screen: NSScreen) -> String {
+    let space = screen.colorSpace
+    let name = space?.cgColorSpace?.name as String? ?? "unnamed"
+    let bytes = space?.cgColorSpace?.copyICCData().map { CFDataGetLength($0) } ?? 0
+    return "\(space?.localizedName ?? "?") (\(name), ICC \(bytes) bytes)"
   }
 
   private func presentations(_ bgra: CVPixelBuffer, on screen: NSScreen) async throws -> [VCPLevelsStage] {

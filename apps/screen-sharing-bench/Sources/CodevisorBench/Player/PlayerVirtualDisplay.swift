@@ -10,6 +10,10 @@ final class PlayerVirtualDisplay {
   private static let pollInterval = Duration.milliseconds(50)
   private static let pollAttempts = 100
   private static let millimetersPerPoint = 25.4 / 110.0
+  private static let sRGB = (
+    red: CGPoint(x: 0.64, y: 0.33), green: CGPoint(x: 0.30, y: 0.60), blue: CGPoint(x: 0.15, y: 0.06),
+    white: CGPoint(x: 0.3127, y: 0.3290)
+  )
 
   private let display: CGVirtualDisplay
   private let resolution: BenchSceneResolution
@@ -99,6 +103,10 @@ final class PlayerVirtualDisplay {
     descriptor.sizeInMillimeters = CGSize(
       width: Double(resolution.pointWidth) * millimetersPerPoint,
       height: Double(resolution.pointHeight) * millimetersPerPoint)
+    descriptor.redPrimary = sRGB.red
+    descriptor.greenPrimary = sRGB.green
+    descriptor.bluePrimary = sRGB.blue
+    descriptor.whitePoint = sRGB.white
     descriptor.terminationHandler = { _, _ in }
     return descriptor
   }
