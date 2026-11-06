@@ -19,6 +19,10 @@ final class BotMascotStage {
   private(set) var isReady = false
 
   @ObservationIgnored private var motion: BotMascotMotion?
+  @ObservationIgnored private var pacer = BotMascotMotionPacer()
+  @ObservationIgnored private var queued: BotMascotMotion?
+  @ObservationIgnored private var queuedPlay: Task<Void, Never>?
+  @ObservationIgnored private let clock = ContinuousClock()
   @ObservationIgnored private var rig: BotMascotRig?
   @ObservationIgnored private var wanted: ServerBotMascot?
   @ObservationIgnored private var dressedAs: ServerBotMascot?
@@ -32,14 +36,16 @@ final class BotMascotStage {
   @ObservationIgnored private lazy var ticker = BotMascotTicker { [weak self] in self?.tick(at: $0) }
 
   func show(_ motion: BotMascotMotion) {
-    guard motion != self.motion else { return }
+    let wait = pacer.wait(before: motion, at: clock.now)
+    guard wait > .zero else { return playNow(motion) }
 
-    self.motion = motion
-    rig?.show(motion)
-    guard !motion.followsPointer else { return }
+    queued = motion
+    guard queuedPlay == nil else { return }
 
-    follower = BotMascotGazeFollower()
-    rig?.look(.none)
+    queuedPlay = Task { [weak self] in
+      guard (try? await Task.sleep(for: wait)) != nil else { return }
+      self?.playQueued()
+    }
   }
 
   func dress(as mascot: ServerBotMascot, retrying retry: MachineRetry) {
@@ -60,6 +66,33 @@ final class BotMascotStage {
     view.onWindowChange = nil
     viewers.removeAll { $0.view === view || $0.view == nil }
     restartTicker()
+  }
+
+  private func playNow(_ motion: BotMascotMotion) {
+    queuedPlay?.cancel()
+    queuedPlay = nil
+    queued = nil
+    play(motion)
+  }
+
+  private func playQueued() {
+    queuedPlay = nil
+    guard let queued else { return }
+
+    self.queued = nil
+    play(queued)
+  }
+
+  private func play(_ motion: BotMascotMotion) {
+    pacer.shown(motion, at: clock.now)
+    guard motion != self.motion else { return }
+
+    self.motion = motion
+    rig?.show(motion)
+    guard !motion.followsPointer else { return }
+
+    follower = BotMascotGazeFollower()
+    rig?.look(.none)
   }
 
   private func dressRig(as mascot: ServerBotMascot, retrying retry: MachineRetry) async {
