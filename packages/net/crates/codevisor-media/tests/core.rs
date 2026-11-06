@@ -972,3 +972,31 @@ fn a_nack_for_packets_still_waiting_to_leave_resends_only_those_already_sent() {
     assert!(sent < 40, "{sent} of 42 packets left at once");
     assert_eq!(sim.host.stats(sim.now).packets_retransmitted, sent);
 }
+
+#[test]
+fn an_app_limited_tiled_stream_on_a_fast_link_comes_back_after_a_squeeze() {
+    let mut sim = Sim::new(NetworkConditions::N3, config(FecMode::Adaptive), 5);
+    let start = sim.now;
+    let squeeze = start + Duration::from_secs(12)..start + Duration::from_secs(13);
+    let mut index = 0u64;
+    let mut lowest = f64::MAX;
+    while sim.now < start + Duration::from_secs(25) {
+        let squeezed = squeeze.contains(&sim.now);
+        sim.links[0].conditions.capacity_kbps = Some(if squeezed { 2_000 } else { 1_000_000 });
+        if sim.host.admission().admit {
+            for tile in 0..16u8 {
+                let len = if index == 0 { 12_000 } else { 400 };
+                sim.send(frame(tile, &payload(index * 16 + u64::from(tile), len)));
+            }
+            index += 1;
+        }
+        sim.run_for(INTERVAL);
+        if sim.now >= squeeze.end {
+            lowest = lowest.min(sim.host.admission().estimate_bps);
+        }
+    }
+
+    assert!(lowest < 10e6, "the squeeze cut the estimate: {:.1} Mbit/s", lowest / 1e6);
+    let estimate = sim.host.admission().estimate_bps;
+    assert!(estimate >= 100e6, "{:.1} Mbit/s 12 s after the squeeze", estimate / 1e6);
+}

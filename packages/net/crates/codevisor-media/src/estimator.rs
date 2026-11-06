@@ -47,6 +47,7 @@ pub struct Estimator {
     initial_bps: f64,
     max_bps: f64,
     bursts: Windowed<f64>,
+    measured_bps: f64,
     acked: Throughput,
     sent: Throughput,
     lost: Throughput,
@@ -74,6 +75,7 @@ impl Estimator {
             initial_bps: initial_bps.clamp(MIN_RATE_BPS, max_bps),
             max_bps,
             bursts: Windowed::new(BURST_WINDOW, Keep::Largest),
+            measured_bps: 0.0,
             acked: Throughput::default(),
             sent: Throughput::default(),
             lost: Throughput::default(),
@@ -164,6 +166,7 @@ impl Estimator {
         if delivery.receive_span >= trusted && delivery.bytes >= MIN_SAMPLE_BYTES {
             let span = delivery.receive_span.max(delivery.send_span);
             self.bursts.push(now, delivery.bytes as f64 * 8.0 / span.as_secs_f64());
+            self.measured_bps = self.bursts.best().unwrap_or(self.measured_bps);
         }
         self.grow_cap(now);
     }
@@ -265,6 +268,7 @@ impl Estimator {
         let sent = self.sent.bps_until(now);
         let admitting = self.admitting;
         let burst = self.bursts.best();
+        let measured = self.measured_bps;
         let Some(cap) = self.cap.as_mut() else {
             return;
         };
@@ -275,10 +279,19 @@ impl Estimator {
         let since_growth = now.saturating_duration_since(cap.grown_at);
         let measured_faster = burst.is_some_and(|burst| burst > cap.bps);
         let app_limited = admitting && !measured_faster && sent.is_some_and(|sent| sent < cap.bps * FILLING_SHARE);
-        cap.since += if app_limited { since_growth } else { since_growth.saturating_sub(CAP_IDLE) };
+        let ceiling = if app_limited { measured.max(cap.from_bps) } else { f64::INFINITY };
         cap.grown_at = now;
-        let elapsed = now.saturating_duration_since(cap.since).as_secs_f64();
-        cap.bps = cap.from_bps * 2f64.powf(elapsed / CAP_DOUBLING.as_secs_f64());
+        if cap.bps >= ceiling {
+            cap.since += since_growth;
+        } else {
+            cap.since += since_growth.saturating_sub(CAP_IDLE);
+            let elapsed = now.saturating_duration_since(cap.since).as_secs_f64();
+            cap.bps = cap.from_bps * 2f64.powf(elapsed / CAP_DOUBLING.as_secs_f64());
+            if cap.bps > ceiling {
+                cap.since = now - CAP_DOUBLING.mul_f64((ceiling / cap.from_bps).log2());
+                cap.bps = ceiling;
+            }
+        }
         if self.bursts.best().is_some_and(|burst| cap.bps >= burst) || cap.bps >= self.max_bps {
             self.cap = None;
         }
@@ -516,6 +529,27 @@ mod tests {
         assert!(held[30] < 50e6 * 1.2, "grows only until a send rate is measured: {}", held[30]);
         assert!(held[30..].iter().all(|estimate| *estimate == held[30]), "{:?}", held.last());
         assert_eq!(measured.last(), Some(&1e9), "a 1 Gbit/s burst lets the cap grow and go");
+    }
+
+    #[test]
+    fn an_app_limited_cap_regrows_to_the_last_measured_link_but_not_past_it() {
+        let start = Instant::now();
+        let mut estimator = Estimator::new(100e6, 1e9, FRAME);
+        estimator.set_admitting(true);
+        estimator.on_delivery(start, burst(125_000, 5 * MS));
+        let mut at = start + BURST_WINDOW + 100 * MS;
+        estimator.on_heavy_loss(at, 0.5);
+        let mut estimates = Vec::new();
+        for _ in 0..600 {
+            at += FRAME;
+            estimator.on_sent(at, 3_000);
+            estimator.on_acked(at, 3_000);
+            estimator.on_delay(at, OFFSET, 20 * MS);
+            estimates.push(estimator.estimate_bps());
+        }
+
+        assert!(estimates[0] < 200e6 * 0.8, "the cut: {}", estimates[0]);
+        assert_eq!(estimates.last(), Some(&200e6), "back to the 200 Mbit/s measured 10 s before, not past it");
     }
 
     #[test]
