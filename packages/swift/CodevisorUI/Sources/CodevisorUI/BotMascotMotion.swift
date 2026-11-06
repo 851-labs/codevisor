@@ -1,18 +1,28 @@
-enum BotMascotMotion: String, Equatable, Sendable {
+enum BotMascotMotion: Equatable, Sendable {
+  case watching
   case idle
   case working
   case calling
   case sleeping
 
   init(_ activity: BotMascotActivity, isOpen: Bool) {
-    if activity.isWaitingOnAgents {
-      self = .calling
-    } else if activity.isWorking {
-      self = .working
+    if activity.isInTurn {
+      self = activity.isTalkingToAgent ? .calling : .working
+    } else if isOpen {
+      self = .watching
     } else {
-      self = isOpen ? .idle : .sleeping
+      self = activity.hasActiveAgents ? .idle : .sleeping
     }
   }
 
-  var followsPointer: Bool { self == .idle }
+  var riveMode: String {
+    switch self {
+    case .watching, .idle: "idle"
+    case .working: "working"
+    case .calling: "calling"
+    case .sleeping: "sleeping"
+    }
+  }
+
+  var followsPointer: Bool { self == .watching }
 }

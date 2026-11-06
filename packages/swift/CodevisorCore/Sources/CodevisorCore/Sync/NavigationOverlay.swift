@@ -118,6 +118,7 @@ enum NavigationOverlay {
     merged.actionRequired = current.actionRequired
     merged.actionRequiredKind = current.actionRequiredKind
     merged.pendingPlanApproval = current.pendingPlanApproval
+    merged.talkingToAgent = current.talkingToAgent
     merged.latestBotMessage = current.latestBotMessage
     records.sessions[index] = merged
   }

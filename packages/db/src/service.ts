@@ -204,6 +204,7 @@ export interface CodevisorDatabaseService
     ReadonlyArray<{ readonly sessionId: string; readonly dueAt: string | null }>,
     DatabaseError
   >
+  readonly retireSessionTurn: (id: string) => Effect.Effect<void, DatabaseError>
   readonly getAttentionSettleDeadline: (
     id: string
   ) => Effect.Effect<string | undefined, DatabaseError>

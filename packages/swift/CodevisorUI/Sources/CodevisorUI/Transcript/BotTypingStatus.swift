@@ -36,7 +36,10 @@ enum BotTypingStatus: Equatable {
 }
 
 extension ToolCall {
-  fileprivate static let agentPaths = ["agents.start", "agents.message", "agents.answer"]
+  fileprivate static let agentPaths = [
+    "agents.start", "agents.message", "agents.answer", "agents.status", "agents.wait",
+    "agents.debug.search", "agents.debug.item", "agents.debug.queue", "agents.debug.state", "agents.debug.update",
+  ]
 
   fileprivate var sendsBotMessage: Bool {
     calls(["messages.send"])

@@ -33,7 +33,7 @@ final class BotMascotRig {
     guard motion != self.motion else { return }
 
     self.motion = motion
-    instance.setValue(of: EnumProperty(path: "mode"), to: motion.rawValue)
+    instance.setValue(of: EnumProperty(path: "mode"), to: motion.riveMode)
   }
 
   func look(_ gaze: BotMascotGaze) {

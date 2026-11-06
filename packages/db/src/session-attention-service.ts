@@ -12,6 +12,7 @@ import {
   projectSessionSidebarState,
   settleSessionAttention
 } from "./session-attention.js"
+import { retireSessionTurn } from "./session-turn-retire.js"
 import { finishedTurn, listFinishedTurns, markTurnAnnounced } from "./turn-finish.js"
 
 export const makeSessionAttentionService = (
@@ -25,6 +26,7 @@ export const makeSessionAttentionService = (
   | "settleSessionAttention"
   | "listPendingAttentionSettles"
   | "getAttentionSettleDeadline"
+  | "retireSessionTurn"
   | "getFinishedTurn"
   | "listFinishedTurns"
   | "markTurnAnnounced"
@@ -78,6 +80,11 @@ export const makeSessionAttentionService = (
     attempt("getAttentionSettleDeadline", () =>
       attentionSettleDeadline(sqlite, canonicalUuid(rawId))
     ),
+  retireSessionTurn: (rawId) =>
+    attempt("retireSessionTurn", () => {
+      const id = canonicalUuid(rawId)
+      sqlite.transaction(() => retireSessionTurn(sqlite, id, isoTimestamp()))()
+    }),
   getFinishedTurn: (rawId) =>
     attempt("getFinishedTurn", () => finishedTurn(sqlite, canonicalUuid(rawId))),
   listFinishedTurns: attempt("listFinishedTurns", () => listFinishedTurns(sqlite)),

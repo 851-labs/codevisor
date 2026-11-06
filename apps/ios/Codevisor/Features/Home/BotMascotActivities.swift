@@ -11,8 +11,11 @@ struct BotMascotActivities {
 
     let cache = ChatControllerCache.shared
     return BotMascotActivity(
-      isWorking: cache.isInProgress(session),
-      isWaitingOnAgents: environment.projectList.runningAgents(startedBy: session, isRunning: cache.isInProgress)
+      isInTurn: cache.isInProgress(session),
+      isTalkingToAgent: session.talkingToAgent,
+      hasActiveAgents: environment.projectList.hasAgents(startedBy: session) { agent in
+        cache.isInProgress(agent) || agent.sidebarState == .waitingForUser
+      }
     )
   }
 

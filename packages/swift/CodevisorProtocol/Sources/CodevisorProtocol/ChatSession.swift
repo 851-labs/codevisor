@@ -59,6 +59,7 @@ public struct ChatSession: Identifiable, Sendable, Codable, Equatable {
   public var actionRequired: Bool
   public var actionRequiredKind: String?
   public var pendingPlanApproval: Bool
+  public var talkingToAgent: Bool
   public var latestBotMessage: BotMessagePreview?
   public var parentSessionId: String?
   public var createdBy: SessionCreator?
@@ -91,6 +92,7 @@ public struct ChatSession: Identifiable, Sendable, Codable, Equatable {
     actionRequired: Bool = false,
     actionRequiredKind: String? = nil,
     pendingPlanApproval: Bool = false,
+    talkingToAgent: Bool = false,
     latestBotMessage: BotMessagePreview? = nil,
     parentSessionId: String? = nil,
     createdBy: SessionCreator? = nil
@@ -118,6 +120,7 @@ public struct ChatSession: Identifiable, Sendable, Codable, Equatable {
     self.actionRequired = actionRequired
     self.actionRequiredKind = actionRequiredKind
     self.pendingPlanApproval = pendingPlanApproval
+    self.talkingToAgent = talkingToAgent
     self.latestBotMessage = latestBotMessage
     self.parentSessionId = parentSessionId
     self.createdBy = createdBy
@@ -129,6 +132,7 @@ public struct ChatSession: Identifiable, Sendable, Codable, Equatable {
     case sidebarState, sidebarStateChangedAt
     case latestAttentionSequence, lastSeenAttentionSequence, unreadCount, hasUnreadError
     case actionRequired, actionRequiredKind, pendingPlanApproval, latestBotMessage, parentSessionId, createdBy
+    case talkingToAgent
     case workspaceId
   }
 
@@ -167,6 +171,7 @@ public struct ChatSession: Identifiable, Sendable, Codable, Equatable {
     actionRequired = try container.decodeIfPresent(Bool.self, forKey: .actionRequired) ?? false
     actionRequiredKind = try container.decodeIfPresent(String.self, forKey: .actionRequiredKind)
     pendingPlanApproval = try container.decodeIfPresent(Bool.self, forKey: .pendingPlanApproval) ?? false
+    talkingToAgent = try container.decodeIfPresent(Bool.self, forKey: .talkingToAgent) ?? false
     latestBotMessage = try container.decodeIfPresent(BotMessagePreview.self, forKey: .latestBotMessage)
     parentSessionId = try container.decodeIfPresent(String.self, forKey: .parentSessionId)
     createdBy = try container.decodeIfPresent(SessionCreator.self, forKey: .createdBy)
@@ -197,6 +202,7 @@ public struct ChatSession: Identifiable, Sendable, Codable, Equatable {
     try container.encode(actionRequired, forKey: .actionRequired)
     try container.encodeIfPresent(actionRequiredKind, forKey: .actionRequiredKind)
     try container.encode(pendingPlanApproval, forKey: .pendingPlanApproval)
+    try container.encode(talkingToAgent, forKey: .talkingToAgent)
     try container.encodeIfPresent(latestBotMessage, forKey: .latestBotMessage)
     try container.encodeIfPresent(parentSessionId, forKey: .parentSessionId)
     try container.encodeIfPresent(createdBy, forKey: .createdBy)

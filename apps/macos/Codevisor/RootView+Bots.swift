@@ -44,7 +44,6 @@ extension RootView {
         onDisposition: { _ in }
       )
       .modifier(BotConversationChrome(bot: bot, showsHeader: showsBotConversationHeader))
-      .botMascotOpen(bot)
     } else {
       ContentUnavailableView(
         "Bot Unavailable",

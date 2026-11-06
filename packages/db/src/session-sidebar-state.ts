@@ -16,7 +16,8 @@ const sidebarInputRows = rowReader({
   errored: integer,
   pending_finish: integer,
   last_seen_sequence: integer,
-  manually_unread: integer
+  manually_unread: integer,
+  archived: integer
 })
 
 const sidebarStateRows = rowReader({ sidebar_state: Schema.is(SessionSidebarState) })
@@ -27,25 +28,33 @@ const readSidebarState = (sqlite: Database.Database, sessionId: string) => {
   return sidebarInputRows.one(sqlite.prepare(sidebarSql.inputs).get(sessionId))
 }
 
-const sidebarStateFromRow = (state: ReturnType<typeof readSidebarState>): SessionSidebarState => {
+type SidebarInputs = ReturnType<typeof readSidebarState>
+
+const sidebarStateFromRow = (state: SidebarInputs): SessionSidebarState => {
   if (state.errored === 1) return "errored"
-  if (state.pending_question !== null || state.pending_plan_approval === 1) {
-    return "waitingForUser"
-  }
-  const held = backgroundTasksFromRaw(state.background_tasks).some(holdsInProgress)
-  if (
-    state.turn_active === 1 ||
-    state.pending_finish === 1 ||
-    held ||
-    (state.has_runtime_state === 1 && state.runtime_state === "running")
-  ) {
-    return "inProgress"
-  }
+  if (isActive(state) && needsUser(state)) return "waitingForUser"
+  if (isActive(state) && isWorking(state)) return "inProgress"
   if (state.manually_unread === 1 || state.attention_revision > state.last_seen_sequence) {
     return "unread"
   }
   return "idle"
 }
+
+const isActive = (state: SidebarInputs): boolean => state.archived === 0
+
+const needsUser = (state: SidebarInputs): boolean =>
+  state.pending_question !== null || state.pending_plan_approval === 1
+
+const isWorking = (state: SidebarInputs): boolean =>
+  hasTurnInFlight(state) || isHeldBySubagent(state)
+
+const hasTurnInFlight = (state: SidebarInputs): boolean =>
+  state.turn_active === 1 ||
+  state.pending_finish === 1 ||
+  (state.has_runtime_state === 1 && state.runtime_state === "running")
+
+const isHeldBySubagent = (state: SidebarInputs): boolean =>
+  backgroundTasksFromRaw(state.background_tasks).some(holdsInProgress)
 
 export const projectSessionSidebarState = (
   sqlite: Database.Database,
@@ -71,7 +80,9 @@ const sidebarSql = {
          coalesce(sa.errored, 0) as errored,
          coalesce(sa.pending_finish, 0) as pending_finish,
          coalesce(rs.last_seen_sequence, 0) as last_seen_sequence,
-         coalesce(rs.manually_unread, 0) as manually_unread
+         coalesce(rs.manually_unread, 0) as manually_unread,
+         exists (select 1 from workspaces w where w.id = s.workspace_id and w.is_archived = 1)
+           as archived
        from sessions s
        left join session_attention sa on sa.session_id = s.id
        left join session_read_state rs

@@ -17,6 +17,7 @@ import { rowReader, text } from "./row-reader.js"
 import { workspacePaneRows, workspaceRows, type WorkspaceRow } from "./rows.js"
 import { archivedStamp, type ServiceContext } from "./service-context.js"
 import type { CodevisorDatabaseService } from "./service.js"
+import { retireWorkspaceTurns } from "./session-turn-retire.js"
 import { makeSessionWorkspacesService } from "./session-workspaces-service.js"
 import * as panes from "./workspace-pane-operations.js"
 import type { UpsertWorkspaceRecord, WorkspaceBotFields } from "./workspace-service-types.js"
@@ -46,11 +47,14 @@ export const upsertWorkspaceRow = (
     existing?.is_archived === 1,
     existing?.archived_at ?? undefined
   )
-  writeWorkspace(
-    sqlite,
-    { id, serverId: config.serverId, projectId, position, stamp, now },
-    request
-  )
+  sqlite.transaction(() => {
+    writeWorkspace(
+      sqlite,
+      { id, serverId: config.serverId, projectId, position, stamp, now },
+      request
+    )
+    if (archiveFlipped(existing, stamp)) retireWorkspaceTurns(sqlite, id, now)
+  })()
   return readWorkspace(sqlite, id)
 }
 
@@ -90,9 +94,12 @@ export const makeWorkspacesService = (
           existing.is_archived === 1,
           existing.archived_at ?? undefined
         )
-        sqlite
-          .prepare(workspaceSql.update)
-          .run(...workspaceUpdateParams(id, existing, request, stamp))
+        sqlite.transaction(() => {
+          sqlite
+            .prepare(workspaceSql.update)
+            .run(...workspaceUpdateParams(id, existing, request, stamp))
+          if (archiveFlipped(existing, stamp)) retireWorkspaceTurns(sqlite, id, isoTimestamp())
+        })()
         return readWorkspace(sqlite, id)
       }),
     deleteWorkspace: (id) =>
@@ -145,6 +152,9 @@ interface WorkspaceWrite {
 
 export const readWorkspace = (sqlite: ServiceContext["sqlite"], id: string): Workspace =>
   workspaceFromRow(workspaceRows.one(sqlite.prepare(workspaceSql.byId).get(id)))
+
+const archiveFlipped = (existing: WorkspaceRow | undefined, stamp: string | null): boolean =>
+  (existing?.is_archived === 1) !== (stamp !== null)
 
 const headSidebarPosition = (sqlite: ServiceContext["sqlite"]): string | undefined =>
   sidebarPositionRows.maybe(sqlite.prepare(workspaceSql.headPosition).get())?.sidebar_position

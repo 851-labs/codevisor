@@ -203,6 +203,7 @@ public struct ServerSession: Codable, Equatable, Sendable {
   public var actionRequired: Bool? = nil
   public var actionRequiredKind: String? = nil
   public var pendingPlanApproval: Bool? = nil
+  public var talkingToAgent: Bool? = nil
   public var latestBotMessage: BotMessagePreview? = nil
   public var parentSessionId: String? = nil
   public var createdBy: SessionCreator? = nil
@@ -243,6 +244,7 @@ public struct ServerSession: Codable, Equatable, Sendable {
       actionRequired: actionRequired ?? false,
       actionRequiredKind: actionRequiredKind,
       pendingPlanApproval: pendingPlanApproval ?? false,
+      talkingToAgent: talkingToAgent ?? false,
       latestBotMessage: latestBotMessage,
       parentSessionId: parentSessionId,
       createdBy: createdBy
@@ -275,6 +277,7 @@ public struct ServerSession: Codable, Equatable, Sendable {
     actionRequired: Bool? = nil,
     actionRequiredKind: String? = nil,
     pendingPlanApproval: Bool? = nil,
+    talkingToAgent: Bool? = nil,
     latestBotMessage: BotMessagePreview? = nil,
     parentSessionId: String? = nil,
     createdBy: SessionCreator? = nil
@@ -304,6 +307,7 @@ public struct ServerSession: Codable, Equatable, Sendable {
     self.actionRequired = actionRequired
     self.actionRequiredKind = actionRequiredKind
     self.pendingPlanApproval = pendingPlanApproval
+    self.talkingToAgent = talkingToAgent
     self.latestBotMessage = latestBotMessage
     self.parentSessionId = parentSessionId
     self.createdBy = createdBy

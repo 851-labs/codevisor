@@ -45,6 +45,7 @@ export interface SessionRow {
   readonly attention_has_unread_error: number
   readonly attention_manually_unread: number
   readonly pending_plan_approval: number
+  readonly talking_to_agent: number
   readonly latest_bot_message_text?: string | null
   readonly latest_bot_message_attachments?: string | null
   readonly parent_session_id?: string | null
@@ -112,6 +113,7 @@ export const sessionRows = rowReader<SessionRow>({
   attention_has_unread_error: integer,
   attention_manually_unread: integer,
   pending_plan_approval: integer,
+  talking_to_agent: integer,
   latest_bot_message_text: optional(nullable(text)),
   latest_bot_message_attachments: optional(nullable(text)),
   parent_session_id: optional(nullable(text)),

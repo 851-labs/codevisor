@@ -114,5 +114,9 @@ const sessionSummarySql = `
       coalesce((
         select pending_plan_approval from session_attention sa
         where sa.session_id = sessions.id
-      ), 0) as pending_plan_approval,${latestBotMessageColumns}
+      ), 0) as pending_plan_approval,
+      coalesce((
+        select agent_calls <> '[]' from session_attention sa
+        where sa.session_id = sessions.id
+      ), 0) as talking_to_agent,${latestBotMessageColumns}
     from sessions`

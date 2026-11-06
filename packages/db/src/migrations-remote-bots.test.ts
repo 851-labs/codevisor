@@ -30,6 +30,8 @@ const v73Schema = `
   alter table session_attention drop column turn_end_stop_reason;
   alter table session_attention drop column turn_end_item_id;
   alter table session_attention drop column turn_end_at;
+  drop trigger navigation_session_attention_update;
+  alter table session_attention drop column agent_calls;
   drop table session_files;
   alter table files drop column purge_with_chats;
   drop table browser_favicons;

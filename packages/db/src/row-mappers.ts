@@ -239,6 +239,7 @@ export const sessionFromRow = (row: SessionRow, folderPath: string | undefined):
     actionRequired: row.pending_question !== null || row.pending_plan_approval === 1,
     ...actionRequiredKind(row),
     pendingPlanApproval: row.pending_plan_approval === 1,
+    ...(row.talking_to_agent === 1 ? { talkingToAgent: true } : {}),
     ...(latestBotMessage === undefined ? {} : { latestBotMessage }),
     ...(row.parent_session_id == null ? {} : { parentSessionId: row.parent_session_id }),
     ...(row.created_by == null ? {} : { createdBy: row.created_by }),

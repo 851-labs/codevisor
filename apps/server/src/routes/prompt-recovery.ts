@@ -43,6 +43,7 @@ const reconcileSession = async (
   if (await sessionIsArchived(services, session)) {
     await run(services.db.closeStaleAssistantChatItems(session.id))
     await clearStoppedTasks(services, fanout, serverId, session.id)
+    await run(services.db.retireSessionTurn(session.id))
     return
   }
   await run(services.db.releaseSteeredPromptQueueItems(session.id))

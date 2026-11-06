@@ -140,6 +140,7 @@ export const SessionSummary = Schema.Struct({
   actionRequired: Schema.optional(Schema.Boolean),
   actionRequiredKind: Schema.optional(Schema.Literals(["question", "planApproval"])),
   pendingPlanApproval: Schema.optional(Schema.Boolean),
+  talkingToAgent: Schema.optional(Schema.Boolean),
   latestBotMessage: Schema.optional(BotMessagePreview),
   parentSessionId: Schema.optional(Schema.String),
   createdBy: Schema.optional(SessionCreator),

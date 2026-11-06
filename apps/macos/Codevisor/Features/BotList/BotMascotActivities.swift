@@ -11,8 +11,11 @@ struct BotMascotActivities {
     }
 
     return BotMascotActivity(
-      isWorking: store.isInProgress(session),
-      isWaitingOnAgents: environment.projectList.runningAgents(startedBy: session, isRunning: store.isInProgress)
+      isInTurn: store.isInProgress(session),
+      isTalkingToAgent: session.talkingToAgent,
+      hasActiveAgents: environment.projectList.hasAgents(startedBy: session) { agent in
+        store.isInProgress(agent) || agent.sidebarState == .waitingForUser
+      }
     )
   }
 }

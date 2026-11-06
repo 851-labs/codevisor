@@ -10,6 +10,7 @@ import type { JsonRecord } from "./event-payloads.js"
 import { backgroundTasksFromRaw, conversationEventPayload, jsonRecord } from "./event-payloads.js"
 import { integer, nullable, rowReader, text } from "./row-reader.js"
 import type { SessionEventRow } from "./rows.js"
+import { projectAgentCalls } from "./session-agent-calls.js"
 import { holdsInProgress, projectSessionSidebarState } from "./session-sidebar-state.js"
 import {
   announceFinishedTurn,
@@ -173,6 +174,7 @@ export const projectSessionAttention = (
   projectAttentionMode(sqlite, event, payload)
   projectAttentionRuntime(sqlite, event, payload)
   projectAttentionTurnStart(sqlite, event, payload)
+  projectAgentCalls(sqlite, event, payload)
   projectUserConversationAttention(sqlite, event, payload)
   const announced = endsAnnouncedTurn(event, payload) && turnWasRunning(sqlite, event.session_id)
   if (announced) recordTurnEnd(sqlite, event, payload)
