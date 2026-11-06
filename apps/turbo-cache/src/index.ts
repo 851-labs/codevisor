@@ -19,9 +19,18 @@ async function handle(request: Request, env: Env): Promise<Response> {
   if (route === undefined) return problem(404, "not found")
 
   const access = await accessOf(request, env)
+  if (isReadOnlyUpload(access, route)) return ignoredUpload()
   if (!grants(access, route.needs)) return problem(401, "unauthorized")
 
   return route.respond(request, env)
+}
+
+function isReadOnlyUpload(access: Access, route: Route): boolean {
+  return access === "read" && route.needs === "write"
+}
+
+function ignoredUpload(): Response {
+  return json({ urls: [], stored: false }, 202)
 }
 
 function routeFor(request: Request): Route | undefined {

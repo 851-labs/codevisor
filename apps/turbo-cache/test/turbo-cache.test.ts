@@ -32,9 +32,11 @@ describe("turbo remote cache", () => {
     expect(missing.status).toBe(404)
   })
 
-  it("lets only the write token upload and requires a token to read", async () => {
-    expect((await upload("abc123", "poisoned", read)).status).toBe(401)
+  it("ignores uploads from the read-only token and requires a token to read", async () => {
+    expect((await upload("readonly", "poisoned", read)).status).toBe(202)
+    expect((await SELF.fetch(artifactUrl("readonly"), { headers: read })).status).toBe(404)
     expect((await SELF.fetch(artifactUrl("abc123"))).status).toBe(401)
+    expect((await upload("anonymous", "poisoned", {})).status).toBe(401)
     expect(
       (await SELF.fetch("https://turbo-cache.test/v8/artifacts/status", { headers: read })).status
     ).toBe(200)
