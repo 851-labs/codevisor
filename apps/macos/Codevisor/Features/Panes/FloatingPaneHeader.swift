@@ -11,8 +11,7 @@ struct FloatingPaneHeader: View {
   let actions: FloatingPaneActions
   let drag: FloatingPaneDrag
 
-  @State private var renameText = ""
-  @State private var showingRename = false
+  @Environment(AppEnvironment.self) private var environment
 
   private static let minimumDragWidth: CGFloat = 28
 
@@ -38,8 +37,6 @@ struct FloatingPaneHeader: View {
     .frame(height: 40)
     .background(.bar)
     .overlay(alignment: .bottom) { Divider() }
-    .modifier(
-      PaneRenameAlert(kind: pane?.kind, isPresented: $showingRename, text: $renameText, onRename: actions.rename))
   }
 
   @ViewBuilder
@@ -83,10 +80,8 @@ struct FloatingPaneHeader: View {
         Label("Return to Workspace", systemImage: "pip.exit")
           .labelStyle(.titleAndIcon)
       }
-      Divider()
-      PaneMenuItems(pane: pane, sessionStore: sessionStore) {
-        renameText = title
-        showingRename = true
+      if let session = PaneMenuItems.chatSession(of: pane, in: environment.projectList) {
+        ChatSessionUnreadMenuItem(session: session, store: sessionStore)
       }
       Divider()
       Button(role: .destructive, action: actions.close) {
