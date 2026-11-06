@@ -15,7 +15,7 @@
       Group {
         if !fixture.isReady {
           Color.clear
-        } else if scene == "projects" || scene == "new-chat" {
+        } else if ["projects", "new-chat", "harnesses", "updates"].contains(scene) {
           HomeView()
         } else if scene == "conversation", horizontalSizeClass == .regular {
           HomeView(initialRoute: featuredWorkspace)
@@ -74,6 +74,7 @@
     init() {
       let data = AppStoreScreenshotData.self
       let environment = data.makeEnvironment()
+      if data.settingsSection != nil { DemoEnvironment.seedHarnessesEverywhere(environment) }
       let controller = data.makeController()
       let panes = PaneGroupState(
         panes: [
@@ -110,6 +111,7 @@
 
     func prepare() async {
       await DemoEnvironment.connect(environment)
+      if AppStoreScreenshotData.settingsSection != nil { await environment.updateCenter.refresh() }
       isReady = true
     }
   }

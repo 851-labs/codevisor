@@ -223,6 +223,12 @@
       InstalledAgent(machine: vps, harnessId: "opencode", name: "OpenCode", version: "2.0.23", latestVersion: "2.0.24"),
     ]
 
+    static var harnesses: [InstalledAgent] {
+      Dictionary(grouping: installedAgents, by: \.harnessId).values
+        .compactMap(\.first)
+        .sorted { $0.name < $1.name }
+    }
+
     static var harnessesOnEveryMachine: [InstalledAgent] {
       Dictionary(grouping: installedAgents, by: \.harnessId).values
         .filter { $0.count == machines.count }

@@ -40,8 +40,23 @@
     }
 
     static func harnessReadiness(on machine: DemoWorld.Machine) -> JSONValue {
-      let installed = DemoWorld.installedAgents.filter { $0.machine.deviceId == machine.deviceId }
-      return decode([
+      readiness(DemoWorld.installedAgents.filter { $0.machine.deviceId == machine.deviceId })
+    }
+
+    static func harnessReadiness(
+      on machine: DemoWorld.Machine, installing harnesses: [DemoWorld.InstalledAgent]
+    ) -> JSONValue {
+      readiness(
+        harnesses.map { harness in
+          DemoWorld.installedAgents.first {
+            $0.harnessId == harness.harnessId && $0.machine.deviceId == machine.deviceId
+          }
+            ?? harness
+        })
+    }
+
+    private static func readiness(_ installed: [DemoWorld.InstalledAgent]) -> JSONValue {
+      decode([
         "harnesses": installed.map { agent in
           [
             "id": agent.harnessId, "state": "ready", "installed": true, "version": agent.version, "name": agent.name,

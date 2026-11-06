@@ -175,7 +175,10 @@ struct HomeView: View {
     .focusedSceneValue(\.homeCommandActions, homeCommandActions)
     .background(HostWindowReader { hostWindow.window = $0 })
     #if DEBUG
-      .task { if AppStoreScreenshotData.opensNewChat { presentNewChat() } }
+      .task {
+        if AppStoreScreenshotData.opensNewChat { presentNewChat() }
+        if let section = AppStoreScreenshotData.settingsSection { presentedSettingsDestination = .section(section) }
+      }
     #endif
     .modifier(
       ClientControlModifier(

@@ -25,6 +25,12 @@ const settleSeconds = 4
 const readyTimeoutSeconds = 90
 const unfoldTimeoutSeconds = 30
 const openHingeDegrees = 180
+const settingsSections = { harnesses: "agents", updates: "updates" }
+const landscapeMarkers = {
+  conversation: "Skin tones are in the picker.",
+  harnesses: "Accounts",
+  updates: "Update All"
+}
 const pngWidthOffset = 16
 const pngHeightOffset = 20
 
@@ -66,7 +72,7 @@ try {
     await mkdir(directory, { recursive: true })
     for (const scene of selectedDevice.scenes ?? iosScenes) {
       const file = join(directory, `${scene}-${options.device}-${appearance}.png`)
-      if (isLandscape) await captureLandscape(simulatorId, appearance, file)
+      if (isLandscape) await captureLandscape(simulatorId, scene, appearance, file)
       else await capture(simulatorId, scene, appearance, file)
       console.log(file)
     }
@@ -138,10 +144,10 @@ async function waitForFile(path) {
   throw new Error(`The app did not report ready within ${readyTimeoutSeconds} seconds`)
 }
 
-async function captureLandscape(udid, appearance, file) {
+async function captureLandscape(udid, scene, appearance, file) {
   const scratch = await mkdtemp(join(tmpdir(), "codevisor-landscape-"))
   const result = join(scratch, "capture.xcresult")
-  await runLandscapeTest(udid, appearance, result, join(scratch, "test.log"))
+  await runLandscapeTest(udid, scene, appearance, result, join(scratch, "test.log"))
   const attachments = join(scratch, "attachments")
   await execute("xcrun", [
     "xcresulttool",
@@ -155,9 +161,7 @@ async function captureLandscape(udid, appearance, file) {
   const manifest = JSON.parse(await readFile(join(attachments, "manifest.json"), "utf8"))
   const screenshot = manifest
     .flatMap((test) => test.attachments)
-    .find((attachment) =>
-      attachment.suggestedHumanReadableName.startsWith("landscape-conversation")
-    )
+    .find((attachment) => attachment.suggestedHumanReadableName.startsWith("landscape"))
   if (screenshot === undefined) throw new Error(`No landscape screenshot in ${result}`)
   await copyFile(join(attachments, screenshot.exportedFileName), file)
   await turnUpright(file)
@@ -181,7 +185,8 @@ async function turnUpright(file) {
   if (isPortrait) await execute("sips", ["--rotate", "270", file])
 }
 
-async function runLandscapeTest(udid, appearance, result, logFile) {
+async function runLandscapeTest(udid, scene, appearance, result, logFile) {
+  const name = sceneName(scene)
   const log = await open(logFile, "w")
   try {
     await runXcodebuild(root, "ios", landscapeTestArguments(udid, result), {
@@ -189,7 +194,12 @@ async function runLandscapeTest(udid, appearance, result, logFile) {
       environment: {
         ...process.env,
         TEST_RUNNER_CODEVISOR_CAPTURE_LANDSCAPE: "1",
-        TEST_RUNNER_CODEVISOR_SCREENSHOT_APPEARANCE: appearance
+        TEST_RUNNER_CODEVISOR_SCREENSHOT_APPEARANCE: appearance,
+        TEST_RUNNER_CODEVISOR_SCREENSHOT_SCENE: name,
+        TEST_RUNNER_CODEVISOR_SCREENSHOT_MARKER: landscapeMarkers[name],
+        ...(name in settingsSections
+          ? { TEST_RUNNER_CODEVISOR_SCREENSHOT_SETTINGS_SECTION: settingsSections[name] }
+          : {})
       },
       stdio: ["ignore", log.fd, log.fd]
     })
@@ -213,7 +223,7 @@ function landscapeTestArguments(udid, result) {
     `ARCHS=${process.arch === "arm64" ? "arm64" : "x86_64"}`,
     "-destination",
     `platform=iOS Simulator,id=${udid}`,
-    "-only-testing:NavigationTests/AppStoreScreenshotTests/testCaptureLandscapeConversation",
+    "-only-testing:NavigationTests/AppStoreScreenshotTests/testCaptureLandscape",
     "-resultBundlePath",
     result,
     "test"
@@ -234,14 +244,20 @@ function launchArguments(udid) {
   ]
 }
 
+function sceneName(scene) {
+  return scene.replace(/^\d+-/, "")
+}
+
 function sceneEnvironment(scene, appearance) {
-  const name = scene.replace(/^\d+-/, "")
+  const name = sceneName(scene)
   return {
     ...process.env,
     SIMCTL_CHILD_CODEVISOR_APP_STORE_SCREENSHOTS: "1",
     SIMCTL_CHILD_CODEVISOR_SCREENSHOT_SCENE: name,
     SIMCTL_CHILD_CODEVISOR_SCREENSHOT_APPEARANCE: appearance,
-    SIMCTL_CHILD_CODEVISOR_SCREENSHOT_OPENS_NEW_CHAT: name === "new-chat" ? "1" : "0"
+    ...(name in settingsSections
+      ? { SIMCTL_CHILD_CODEVISOR_SCREENSHOT_SETTINGS_SECTION: settingsSections[name] }
+      : {})
   }
 }
 
