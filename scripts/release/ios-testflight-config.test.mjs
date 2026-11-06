@@ -72,10 +72,10 @@ test("publishing rejects a substituted artifact or a different Alpha source", ()
     )
 })
 
-test("uploads come only from Publish Alpha on main, scheduled or manual, for an earlier build", () => {
+test("uploads come only from Release alpha on main, scheduled or manual, for an earlier build", () => {
   const trusted = {
     GITHUB_ACTIONS: "true",
-    GITHUB_WORKFLOW: "Publish Alpha",
+    GITHUB_WORKFLOW: "Release alpha",
     GITHUB_REF: "refs/heads/main",
     GITHUB_EVENT_NAME: "schedule",
     GITHUB_SHA: "b".repeat(40),
@@ -92,7 +92,7 @@ test("uploads come only from Publish Alpha on main, scheduled or manual, for an 
     { GITHUB_EVENT_NAME: "push" },
     { GITHUB_EVENT_NAME: "pull_request" }
   ])
-    assert.throws(() => assertAlphaUpload({ ...trusted, ...override }), /Publish Alpha workflow/)
+    assert.throws(() => assertAlphaUpload({ ...trusted, ...override }), /Release alpha workflow/)
 })
 
 test("temporary API key is private and removed even when signing fails", async () => {
@@ -112,7 +112,7 @@ test("temporary API key is private and removed even when signing fails", async (
 test("public TestFlight requires its own manual workflow and permits an older selected Alpha", () => {
   const trusted = {
     GITHUB_ACTIONS: "true",
-    GITHUB_WORKFLOW: "Publish Beta",
+    GITHUB_WORKFLOW: "Release beta",
     GITHUB_REF: "refs/heads/main",
     GITHUB_EVENT_NAME: "workflow_dispatch",
     GITHUB_SHA: "b".repeat(40),
@@ -122,13 +122,13 @@ test("public TestFlight requires its own manual workflow and permits an older se
   for (const override of [
     { GITHUB_ACTIONS: "false" },
     { GITHUB_WORKFLOW: "Build" },
-    { GITHUB_WORKFLOW: "Publish Stable" },
+    { GITHUB_WORKFLOW: "Release stable" },
     { GITHUB_WORKFLOW: "Publish iOS TestFlight" },
     { GITHUB_EVENT_NAME: "push" },
     { GITHUB_EVENT_NAME: "workflow_run" },
     { GITHUB_REF: "refs/heads/feature" }
   ])
-    assert.throws(() => assertManualPromotion({ ...trusted, ...override }), /manual Publish Beta/)
+    assert.throws(() => assertManualPromotion({ ...trusted, ...override }), /manual Release beta/)
 })
 
 test("Apple's daily upload limit is recognized, other upload failures are not", () => {

@@ -1,4 +1,4 @@
-name: Publish Alpha
+name: Release alpha
 
 on:
   schedule:

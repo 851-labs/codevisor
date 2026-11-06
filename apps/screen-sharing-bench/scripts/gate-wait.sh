@@ -2,7 +2,7 @@
 set -euo pipefail
 source "$(dirname "${BASH_SOURCE[0]}")/github-api.sh"
 
-bench_workflows='^Screen Sharing Bench'
+bench_workflows='^Bench screen sharing'
 briefest_bench_s=180
 job="$(github_api "repos/$GITHUB_REPOSITORY/actions/runs/$GITHUB_RUN_ID/attempts/$GITHUB_RUN_ATTEMPT/jobs" |
   jq -c '.jobs[] | select(.name == "gate") | {created_at, started_at}')"

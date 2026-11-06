@@ -1,4 +1,4 @@
-name: Screen Sharing Bench
+name: Bench screen sharing
 
 on:
   schedule:
@@ -72,7 +72,7 @@ on:
       - packages/net/crates/codevisor-media/**
       - packages/net/crates/codevisor-net/**
       - packages/net/crates/codevisor-net-ffi/**
-      - .github/workflows/screen-sharing-bench.yml
+      - .github/workflows/bench-screen-sharing.yml
 
 permissions:
   contents: read
@@ -264,13 +264,13 @@ jobs:
   calibration:
     needs: [plan, tier1]
     if: ${{ !cancelled() && needs.plan.outputs.run == 'true' && needs.plan.outputs.calibration == 'true' }}
-    uses: ./.github/workflows/screen-sharing-bench-calibration.yml
+    uses: ./.github/workflows/bench-screen-sharing-calibration.yml
     secrets: inherit
 
   tier2:
     needs: [plan, tier1, calibration]
     if: ${{ !cancelled() && needs.plan.outputs.run == 'true' && needs.plan.outputs.tier2 == 'true' }}
-    uses: ./.github/workflows/screen-sharing-bench-tier2.yml
+    uses: ./.github/workflows/bench-screen-sharing-tier2.yml
     permissions:
       actions: read
       contents: read

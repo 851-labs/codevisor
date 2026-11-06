@@ -1,4 +1,4 @@
-name: Screen Sharing Bench Calibration
+name: Bench screen sharing calibration
 
 on:
   workflow_dispatch:

@@ -133,7 +133,7 @@ test target over another bespoke implementation.
   wall-clock performance comparisons in benchmarks, outside correctness tests.
 
 - Real Chrome runs only in `packages/automation/src/*.chrome.test.ts`
-  (`bun run test:chrome`, the Browser Chrome workflow), never in
+  (`bun run test:chrome`; CI runs it when `packages/automation` changes, and Nightly runs it daily), never in
   `bun run check`. Put a test there only when it needs a real rendering engine
   (accessibility tree, document order, trusted input, frames, real CDP
   events); prove tab and session bookkeeping with the CDP fakes in

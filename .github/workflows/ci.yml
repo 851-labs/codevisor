@@ -1,0 +1,167 @@
+name: CI
+
+on:
+  pull_request:
+  merge_group:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.event_name }}-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+defaults:
+  run:
+    shell: bash
+
+jobs:
+  plan:
+    if: github.event_name != 'pull_request'
+    runs-on: ubuntu-24.04
+    outputs:
+      range: ${{ steps.range.outputs.range }}
+      swift: ${{ steps.plan.outputs.swift }}
+      net: ${{ steps.plan.outputs.net }}
+      chrome: ${{ steps.plan.outputs.chrome }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          fetch-depth: 0
+      - uses: ./.github/actions/setup-node
+      - name: Resolve the changes to check
+        id: range
+        env:
+          MERGE_GROUP_BASE: ${{ github.event.merge_group.base_sha }}
+          PUSH_BEFORE: ${{ github.event.before }}
+        run: |
+          base="${MERGE_GROUP_BASE:-$PUSH_BEFORE}"
+          if [[ -z "$base" || "$base" =~ ^0+$ ]] || ! git cat-file -e "$base^{commit}" 2>/dev/null; then
+            echo "range=--all" >> "$GITHUB_OUTPUT"
+            echo "Checking everything"
+          else
+            echo "range=--base=$base" >> "$GITHUB_OUTPUT"
+            echo "Checking changes since $base"
+          fi
+      - name: Plan the jobs
+        id: plan
+        env:
+          RANGE: ${{ steps.range.outputs.range }}
+        run: |
+          swift="$(node scripts/check.mjs "$RANGE" --lanes=swift-style,swift --list)"
+          echo "swift=$([[ -n "$swift" ]] && echo true || echo false)" >> "$GITHUB_OUTPUT"
+          if [[ "$RANGE" == --all ]]; then
+            changed="$(git ls-files)"
+          else
+            changed="$(git diff --name-only "${RANGE#--base=}" HEAD)"
+          fi
+          touches() { grep -qE "$1" <<<"$changed" && echo true || echo false; }
+          echo "net=$(touches '^(packages/net/|scripts/net-|scripts/build-net-swift\.sh|scripts/artifact-lock\.mjs|\.github/workflows/ci\.yml|\.github/actions/setup-rust/)')" >> "$GITHUB_OUTPUT"
+          echo "chrome=$(touches '^(packages/automation/|\.github/workflows/(ci|_test-chrome)\.yml)')" >> "$GITHUB_OUTPUT"
+          {
+            echo "### Planned checks"
+            echo
+            echo "- JavaScript checks: always"
+            echo "- Swift checks: $([[ -n "$swift" ]] && tr '\n' ' ' <<<"$swift" || echo none)"
+          } >> "$GITHUB_STEP_SUMMARY"
+
+  checks:
+    needs: plan
+    if: github.event_name != 'pull_request'
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          fetch-depth: 0
+      - uses: ./.github/actions/setup-node
+      - uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6
+        with:
+          bun-version-file: package.json
+      - uses: ./.github/actions/setup-rust
+      - uses: Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0
+        with:
+          workspaces: packages/net
+          save-if: ${{ github.event_name != 'merge_group' }}
+      - run: bun install --frozen-lockfile
+      - run: node scripts/check.mjs "${{ needs.plan.outputs.range }}" --lanes=javascript
+
+  checks-swift:
+    needs: plan
+    if: contains(fromJSON('["merge_group", "workflow_dispatch"]'), github.event_name) && needs.plan.outputs.swift == 'true'
+    runs-on: [self-hosted, macOS, ARM64, codevisor-macos-arm64]
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          fetch-depth: 0
+          clean: true
+          set-safe-directory: false
+      - name: Select full Xcode
+        run: echo "DEVELOPER_DIR=$(scripts/release/resolve-xcode.sh)" >> "$GITHUB_ENV"
+      - uses: ./.github/actions/setup-node
+      - uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6
+        with:
+          bun-version-file: package.json
+      - uses: ./.github/actions/setup-rust
+      - run: bun install --frozen-lockfile
+      - run: node scripts/check.mjs "${{ needs.plan.outputs.range }}" --lanes=swift-style,swift
+
+  test-net:
+    needs: plan
+    if: github.event_name != 'pull_request' && needs.plan.outputs.net == 'true'
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+      - uses: ./.github/actions/setup-node
+      - uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6
+        with:
+          bun-version-file: package.json
+      - uses: ./.github/actions/setup-rust
+      - uses: Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0
+        with:
+          workspaces: packages/net
+          save-if: ${{ github.event_name != 'merge_group' }}
+      - run: bun install --frozen-lockfile
+      - run: bun run net:test
+
+  e2e-net:
+    needs: plan
+    if: github.event_name != 'pull_request' && needs.plan.outputs.net == 'true'
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+      - uses: ./.github/actions/setup-node
+      - uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6
+        with:
+          bun-version-file: package.json
+      - uses: ./.github/actions/setup-rust
+      - run: bun install --frozen-lockfile
+      - name: Reserve tunnel fixture listener ports
+        run: |
+          tunnel_reserved_ports="$(sysctl -n net.ipv4.ip_local_reserved_ports)"
+          sudo sysctl -w "net.ipv4.ip_local_reserved_ports=${tunnel_reserved_ports:+${tunnel_reserved_ports},}30000-34999,47000-48999"
+      - run: bun run net:e2e
+
+  test-chrome:
+    needs: plan
+    if: github.event_name != 'pull_request' && needs.plan.outputs.chrome == 'true'
+    uses: ./.github/workflows/_test-chrome.yml
+
+  ci:
+    needs: [plan, checks, checks-swift, test-net, e2e-net, test-chrome]
+    if: always() && github.event_name != 'pull_request'
+    runs-on: ubuntu-24.04
+    steps:
+      - name: Require every job to pass or be skipped
+        env:
+          RESULTS: ${{ toJSON(needs) }}
+        run: |
+          failed="$(jq -r 'to_entries[] | select(.value.result != "success" and .value.result != "skipped") | "\(.key): \(.value.result)"' <<<"$RESULTS")"
+          if [[ -n "$failed" ]]; then
+            echo "::error title=CI failed::$(paste -sd, - <<<"$failed")"
+            exit 1
+          fi
+          echo "All CI jobs passed or were skipped."

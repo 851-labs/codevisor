@@ -12,7 +12,7 @@ runtime into Contents/Resources/server, optionally signs, and writes:
   Codevisor-arm64.dmg         disk image (website)
 
 Both artifacts are signed but not notarized. Run notarize-macos-app.sh on the
-output directory before distributing them; CI does that in Publish Alpha so
+output directory before distributing them; CI does that in Release alpha so
 Apple's notary quota is spent only on builds that actually ship.
 
 The app does not support Intel Macs; they run the standalone

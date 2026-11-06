@@ -24,18 +24,26 @@ const git = (...args) =>
   execFileSync("git", args, { cwd: repoRoot, encoding: "utf8", maxBuffer: 64 * 1024 * 1024 })
 
 function parseCheckArguments(argv) {
-  const options = { all: false, base: "HEAD", dryRun: false }
+  const options = { all: false, base: "HEAD", dryRun: false, list: false, lanes: undefined }
   for (const argument of argv) {
     if (argument === "--all") options.all = true
     else if (argument === "--dry-run") options.dryRun = true
+    else if (argument === "--list") options.list = true
     else if (argument.startsWith("--base=")) options.base = argument.slice("--base=".length)
+    else if (argument.startsWith("--lanes="))
+      options.lanes = argument.slice("--lanes=".length).split(",")
     else {
       throw new Error(
-        `usage: check.mjs [--all] [--base=<ref>] [--dry-run] (unknown argument ${argument})`
+        `usage: check.mjs [--all] [--base=<ref>] [--lanes=<lane,…>] [--dry-run | --list] (unknown argument ${argument})`
       )
     }
   }
   return options
+}
+
+function inSelectedLanes(entry, lanes) {
+  if (lanes === undefined || lanes.includes(entry.step.lane)) return entry
+  return { ...entry, run: false, reason: "other lane" }
 }
 
 const splitPaths = (output) => output.split("\0").filter(Boolean)
@@ -224,7 +232,9 @@ async function main() {
   const options = parseCheckArguments(process.argv.slice(2))
   const baseCommit = git("merge-base", options.base, "HEAD").trim()
   const files = changedFiles(baseCommit)
-  const plan = planChecks({ files, all: options.all, context: gatherContext() })
+  const plan = planChecks({ files, all: options.all, context: gatherContext() }).map((entry) =>
+    inSelectedLanes(entry, options.lanes)
+  )
   await mkdir(logDirectory, { recursive: true })
   const passed = await readPassedState()
   const results = []
@@ -239,6 +249,11 @@ async function main() {
       results.push({ ...entry, status: "skipped", reason: "passed on these inputs before" })
     } else pending.push({ ...entry, key })
   }
+  if (options.list) {
+    for (const entry of pending) console.log(entry.step.name)
+    return
+  }
+
   const base = options.base === "HEAD" ? "HEAD" : `${options.base} (${baseCommit.slice(0, 9)})`
   console.log(`${files.length} changed file(s) against ${base}`)
   if (options.dryRun) {

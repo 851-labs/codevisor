@@ -24,7 +24,7 @@ library in `packages/swift/ScreenSharing/Sources/ScreenSharingBench`.
 - `scripts/run-installed.sh <command> [--option value …]` does the same on this Mac (`run.sh` runs it over ssh). It
   opens `CODEVISOR_BENCH_APP` when that is set, and `~/Applications/CodevisorBench.app` otherwise.
 - `scripts/calibrate-observer.sh` and `scripts/calibrate-clock.sh` are the steps of the
-  `Screen Sharing Bench Calibration` workflow (`.github/workflows/screen-sharing-bench-calibration.yml`).
+  `Bench screen sharing calibration` workflow (`.github/workflows/bench-screen-sharing-calibration.yml`).
 
 ## Adding a subcommand
 
@@ -193,7 +193,7 @@ CodevisorBench loopback --source own-window --scenes scroll --networks N0
   `BenchSystem` so older reports and the results branch's index still decode, and `tier2-report` still reads an
   older Tier 2 run directory whose `meta.json` says `"system": "codevisor"` (with `"engine": "v2"` it counts as
   `codevisor-v2`, as it did).
-- **Results come from the workflow.** `Screen Sharing Bench` (below) runs Tier 1 on tamale. Runs over SSH are for
+- **Results come from the workflow.** `Bench screen sharing` (below) runs Tier 1 on tamale. Runs over SSH are for
   development only.
 - **Clocks.** The timeline stamps with mach absolute time (what ScreenCaptureKit, Core Animation and Metal use);
   the report and `frames.jsonl` use mach continuous time like the rest of the bench. Each scene reads
@@ -201,15 +201,15 @@ CodevisorBench loopback --source own-window --scenes scroll --networks N0
 
 ## Tier 2: Codevisor vs Apple High Performance (851-3595)
 
-Numbers come only from the `Screen Sharing Bench Tier 2` workflow
-(`.github/workflows/screen-sharing-bench-tier2.yml`, `workflow_dispatch`). A runner takes one job at a time,
+Numbers come only from the `Bench screen sharing tier 2` workflow
+(`.github/workflows/bench-screen-sharing-tier2.yml`, `workflow_dispatch`). A runner takes one job at a time,
 so no CI job overlaps a run. Each job builds and signs CodevisorBench at the run's commit
 (`build-screen-sharing-bench`, as Tier 1 does), and the measuring jobs then install that build at
 `~/Applications/CodevisorBench.app` (`scripts/install-granted.sh`) and run it from there: the minis refused Screen
 Recording and Accessibility to the same build run from elsewhere, and the grants are for the CI signing team's app
 (see Signing and permissions). The build stays
 installed after the run, so the installed app is that of the last Tier 2 (or own-window Tier 1) dispatch. So `gh workflow run
-screen-sharing-bench-tier2.yml --ref <branch>` needs no deploy. Keep a dispatch under about 30 minutes, since the
+bench-screen-sharing-tier2.yml --ref <branch>` needs no deploy. Keep a dispatch under about 30 minutes, since the
 minis are the only ARM64 CI runners for this repository and lil.tech: run one scene per dispatch (`scenes` defaults to `scroll`; about 18 minutes with the floor
 and 3 repetitions of the two default systems, after the build and the C5 wait for a quiet machine, up to 10 minutes). C4 runs only when
 video is among the scenes. A plan longer than 45 minutes of runs fails at once. `network` picks N0 (no shaping), N3 or N6: the viewer job
@@ -437,13 +437,13 @@ absent for Apple HP, whose encoded size isn't visible), and the table marks a st
 "(scaled)".
 
 ```sh
-gh workflow run screen-sharing-bench-tier2.yml --ref <branch> -f scenes=test-cards -f duration=45 \
+gh workflow run bench-screen-sharing-tier2.yml --ref <branch> -f scenes=test-cards -f duration=45 \
   -f floor-repetitions=0 -f c4=false -f viewer-display=R1x2 -f systems=apple-hp,codevisor-v2,codevisor-v2-vcp
 ```
 
 ## Benchmark workflow, results and gate (851-3594)
 
-`Screen Sharing Bench` (`.github/workflows/screen-sharing-bench.yml`) is the one workflow for numbers. Every job
+`Bench screen sharing` (`.github/workflows/bench-screen-sharing.yml`) is the one workflow for numbers. Every job
 that measures builds CodevisorBench at its own commit and signs it with the Developer ID in the repository secrets
 (`APPLE_CODESIGN_IDENTITY`, team `C4M7D4G7LG`; `.github/actions/build-screen-sharing-bench`,
 `scripts/signing-keychain.sh`), into `$RUNNER_TEMP`, and runs it through `CODEVISOR_BENCH_APP`. Synthetic Tier 1
@@ -502,10 +502,10 @@ limit (`reached_settle_limit`). `loopback` records Spotlight indexing in `enviro
 `scenes` or `networks` set runs one custom report and warns if `plans` was given.
 
 ```sh
-gh workflow run screen-sharing-bench.yml -f kind=nightly                    # the nightly plan, recorded as a baseline
-gh workflow run screen-sharing-bench.yml -f kind=nightly -f plans=gate-v2   # only the gate's baseline (about 12 min)
-gh workflow run screen-sharing-bench.yml -f scenes=scroll -f networks=N0,N3 # an ad hoc codevisor-v2 run
-gh workflow run screen-sharing-bench.yml -f scenes=scroll -f networks=N0 -f encoder=vcp   # an ad hoc codevisor-v2-vcp run
+gh workflow run bench-screen-sharing.yml -f kind=nightly                    # the nightly plan, recorded as a baseline
+gh workflow run bench-screen-sharing.yml -f kind=nightly -f plans=gate-v2   # only the gate's baseline (about 12 min)
+gh workflow run bench-screen-sharing.yml -f scenes=scroll -f networks=N0,N3 # an ad hoc codevisor-v2 run
+gh workflow run bench-screen-sharing.yml -f scenes=scroll -f networks=N0 -f encoder=vcp   # an ad hoc codevisor-v2-vcp run
 CodevisorBench gate --index index.jsonl --first first.json --second second.json
 CodevisorBench record --report report.json --results <benchmark-results checkout>
 ```
@@ -559,12 +559,12 @@ CodevisorBench encode-lab --scenes scroll,typing --duration 8 --warm-up 2 \
   which is what T8 measures on test cards (851-3975). The reference shares no code with the encoder's input
   conversion (`VTPixelTransferSession`): when it did, the input conversion's errors cancelled out, and the lab never
   showed the white at 254 that VCP's input had on the minis' M6 (851-4049).
-- **CI.** Dispatch `Screen Sharing Bench` with `encode_lab` set to the configs (and `encode_lab_options` for the
+- **CI.** Dispatch `Bench screen sharing` with `encode_lab` set to the configs (and `encode_lab_options` for the
   rest); that runs only the `encode-lab` job on tamale and puts the table in the job summary.
 
 ## Lab job
 
-`gh workflow run screen-sharing-bench.yml --ref <branch> -f lab='croissant player --display virtual --resolution R1x2'`
+`gh workflow run bench-screen-sharing.yml --ref <branch> -f lab='croissant player --display virtual --resolution R1x2'`
 runs only the `lab` job. It builds and installs the bench on the named mini (`tamale` or `croissant`), then runs
 `scripts/lab.sh`: one subcommand, with a preflight 8 s in so its display list shows what the command created. The
 command's output goes to the job summary and the `lab` artifact. The job has its own concurrency group

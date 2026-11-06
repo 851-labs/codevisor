@@ -1,25 +1,10 @@
-name: Browser Chrome
+name: Test Chrome
 
 on:
-  push:
-    branches: [main]
-    paths:
-      - "packages/automation/**"
-      - ".github/workflows/browser-chrome.yml"
-  pull_request:
-    paths:
-      - "packages/automation/**"
-      - ".github/workflows/browser-chrome.yml"
-  schedule:
-    - cron: "17 9 * * *"
-  workflow_dispatch:
+  workflow_call:
 
 permissions:
   contents: read
-
-concurrency:
-  group: browser-chrome-${{ github.ref }}
-  cancel-in-progress: true
 
 jobs:
   chrome:

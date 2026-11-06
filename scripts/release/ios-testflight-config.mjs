@@ -102,11 +102,11 @@ export function verifyBuildRecord(record, configuration, ipaSHA256) {
 export function assertAlphaUpload(environment) {
   if (
     environment.GITHUB_ACTIONS !== "true" ||
-    environment.GITHUB_WORKFLOW !== "Publish Alpha" ||
+    environment.GITHUB_WORKFLOW !== "Release alpha" ||
     environment.GITHUB_REF !== "refs/heads/main" ||
     !["schedule", "workflow_dispatch"].includes(environment.GITHUB_EVENT_NAME)
   ) {
-    throw new Error("TestFlight uploads require the Publish Alpha workflow on main.")
+    throw new Error("TestFlight uploads require the Release alpha workflow on main.")
   }
 }
 
@@ -117,12 +117,12 @@ export function isUploadLimitError(output) {
 export function assertManualPromotion(environment) {
   if (
     environment.GITHUB_ACTIONS !== "true" ||
-    environment.GITHUB_WORKFLOW !== "Publish Beta" ||
+    environment.GITHUB_WORKFLOW !== "Release beta" ||
     environment.GITHUB_REF !== "refs/heads/main" ||
     environment.GITHUB_EVENT_NAME !== "workflow_dispatch"
   ) {
     throw new Error(
-      "Public TestFlight promotion requires the manual Publish Beta workflow on main."
+      "Public TestFlight promotion requires the manual Release beta workflow on main."
     )
   }
 }

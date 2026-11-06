@@ -1,4 +1,4 @@
-name: Maintain macOS Build Caches
+name: Warm caches
 
 on:
   schedule:
