@@ -8,7 +8,7 @@ const statusBarTime = new Date(2001, 7, 8, 14, 5).toISOString()
 
 export const iosScenes = ["01-projects", "02-conversation", "03-harnesses", "04-updates"]
 
-const ipadScenes = ["01-conversation", "02-harnesses", "03-updates"]
+const regularWidthScenes = ["01-conversation", "02-harnesses", "03-updates"]
 
 export const devices = {
   iphone: {
@@ -29,8 +29,7 @@ export const devices = {
     width: 1398,
     height: 2034,
     display: "1",
-    minimumSdk: "27.1",
-    scenes: ["01-projects", "02-conversation", "03-harnesses"]
+    minimumSdk: "27.1"
   },
   "iphone-duo-unfolded": {
     name: "iPhone Duo",
@@ -40,7 +39,7 @@ export const devices = {
     display: "3",
     minimumSdk: "27.1",
     unfolded: true,
-    scenes: ["01-conversation", "02-harnesses"]
+    scenes: regularWidthScenes
   },
   "ipad-pro-11": {
     name: "iPad Pro 11-inch (M5)",
@@ -48,7 +47,7 @@ export const devices = {
     width: 1668,
     height: 2420,
     orientation: "landscape",
-    scenes: ipadScenes
+    scenes: regularWidthScenes
   },
   "ipad-pro-13": {
     name: "iPad Pro 13-inch (M5)",
@@ -56,7 +55,7 @@ export const devices = {
     width: 2064,
     height: 2752,
     orientation: "landscape",
-    scenes: ipadScenes
+    scenes: regularWidthScenes
   }
 }
 
