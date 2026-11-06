@@ -7,6 +7,7 @@ use crate::windowed::{Keep, Windowed};
 
 const BURST_WINDOW: Duration = Duration::from_secs(10);
 const RECEIVE_WINDOW: Duration = Duration::from_millis(500);
+const RECEIVE_IDLE: Duration = Duration::from_millis(125);
 const DELAY_WINDOW: Duration = Duration::from_secs(10);
 const QUEUE_THRESHOLD: Duration = Duration::from_millis(2);
 const JITTER_THRESHOLD_GAIN: f64 = 4.0;
@@ -18,6 +19,7 @@ const FILLING_SHARE: f64 = 0.5;
 const CAP_IDLE: Duration = Duration::from_millis(250);
 const CAP_DOUBLING: Duration = Duration::from_secs(1);
 const LINK_LIMITED: f64 = 0.75;
+const LINK_SPREAD: f64 = 1.1;
 const LOSS_LIMITED: f64 = 0.1;
 const LARGE_QUEUE_THRESHOLDS: f64 = 4.0;
 const QUEUE_MOVE_SHARE: i64 = 8;
@@ -47,6 +49,7 @@ pub struct Estimator {
     initial_bps: f64,
     max_bps: f64,
     bursts: Windowed<f64>,
+    link_bursts: Windowed<f64>,
     measured_bps: f64,
     acked: Throughput,
     sent: Throughput,
@@ -75,8 +78,9 @@ impl Estimator {
             initial_bps: initial_bps.clamp(MIN_RATE_BPS, max_bps),
             max_bps,
             bursts: Windowed::new(BURST_WINDOW, Keep::Largest),
+            link_bursts: Windowed::new(BURST_WINDOW, Keep::Largest),
             measured_bps: 0.0,
-            acked: Throughput::default(),
+            acked: Throughput::restarting_after_idle(),
             sent: Throughput::default(),
             lost: Throughput::default(),
             cap: None,
@@ -167,6 +171,9 @@ impl Estimator {
             let span = delivery.receive_span.max(delivery.send_span);
             let sample = delivery.bytes as f64 * 8.0 / span.as_secs_f64();
             self.bursts.push(now, sample);
+            if delivery.receive_span >= delivery.send_span.mul_f64(LINK_SPREAD) {
+                self.link_bursts.push(now, sample);
+            }
             self.measured_bps = self.bursts.best().unwrap_or(sample);
         }
         self.grow_cap(now);
@@ -229,6 +236,7 @@ impl Estimator {
         let target = self.heavy_loss_target(now, estimate, loss).max(MIN_RATE_BPS);
         self.cap = Some(Cap { from_bps: target, since: now, grown_at: now, bps: target });
         self.bursts.clear();
+        self.link_bursts.clear();
         self.measured_bps = 0.0;
         self.last_backoff = Some(now);
     }
@@ -261,6 +269,7 @@ impl Estimator {
         self.cap = Some(Cap { from_bps: target, since: now, grown_at: now, bps: target });
         self.standing_us = self.queue_delay_us;
         self.bursts.clear();
+        self.link_bursts.clear();
         self.overuse = 0;
         self.last_backoff = Some(now);
     }
@@ -271,6 +280,12 @@ impl Estimator {
         let admitting = self.admitting;
         let burst = self.bursts.best();
         let measured = self.measured_bps;
+        if self.cap.is_none() && !queued && self.link_bursts.is_empty() && burst.is_some() {
+            let estimate = self.estimate_bps();
+            if sent.is_some_and(|sent| sent >= estimate * FILLING_SHARE) {
+                self.cap = Some(Cap { from_bps: estimate, since: now, grown_at: now, bps: estimate });
+            }
+        }
         let Some(cap) = self.cap.as_mut() else {
             return;
         };
@@ -295,7 +310,7 @@ impl Estimator {
                 cap.bps = ceiling;
             }
         }
-        if self.bursts.best().is_some_and(|burst| cap.bps >= burst) || cap.bps >= self.max_bps {
+        if self.link_bursts.best().is_some_and(|burst| cap.bps >= burst) || cap.bps >= self.max_bps {
             self.cap = None;
         }
     }
@@ -305,9 +320,14 @@ impl Estimator {
 struct Throughput {
     entries: VecDeque<(Instant, usize)>,
     bytes: usize,
+    restarts_after_idle: bool,
 }
 
 impl Throughput {
+    fn restarting_after_idle() -> Self {
+        Self { restarts_after_idle: true, ..Self::default() }
+    }
+
     fn push(&mut self, now: Instant, bytes: usize) {
         while self.entries.front().is_some_and(|(at, _)| now.saturating_duration_since(*at) > RECEIVE_WINDOW) {
             let (_, old) = self.entries.pop_front().expect("checked above");
@@ -318,8 +338,12 @@ impl Throughput {
     }
 
     fn bps(&self) -> Option<f64> {
+        let latest = self.latest()?;
+        if self.restarts_after_idle {
+            return self.rate(self.entries.iter().copied(), latest);
+        }
         let (oldest, oldest_bytes) = *self.entries.front()?;
-        let span = self.entries.back()?.0.saturating_duration_since(oldest);
+        let span = latest.saturating_duration_since(oldest);
         (span >= RECEIVE_WINDOW / 4).then(|| (self.bytes - oldest_bytes) as f64 * 8.0 / span.as_secs_f64())
     }
 
@@ -338,14 +362,30 @@ impl Throughput {
     }
 
     fn bps_until(&self, now: Instant) -> Option<f64> {
-        let mut recent = self
+        let recent = self
             .entries
             .iter()
-            .filter(|(at, _)| *at <= now && now.saturating_duration_since(*at) <= RECEIVE_WINDOW)
-            .peekable();
-        let oldest = recent.peek()?.0;
-        let bytes: usize = recent.skip(1).map(|(_, bytes)| bytes).sum();
-        let span = now.saturating_duration_since(oldest);
+            .copied()
+            .filter(|(at, _)| *at <= now && now.saturating_duration_since(*at) <= RECEIVE_WINDOW);
+        self.rate(recent, now)
+    }
+
+    fn rate(&self, entries: impl Iterator<Item = (Instant, usize)>, end: Instant) -> Option<f64> {
+        let mut start: Option<Instant> = None;
+        let mut previous: Option<Instant> = None;
+        let mut bytes = 0;
+        for (at, size) in entries {
+            let idle = self.restarts_after_idle
+                && previous.is_some_and(|previous| at.saturating_duration_since(previous) > RECEIVE_IDLE);
+            if start.is_none() || idle {
+                start = Some(at);
+                bytes = 0;
+            } else {
+                bytes += size;
+            }
+            previous = Some(at);
+        }
+        let span = end.saturating_duration_since(start?);
         (span >= RECEIVE_WINDOW / 4).then(|| bytes as f64 * 8.0 / span.as_secs_f64())
     }
 }

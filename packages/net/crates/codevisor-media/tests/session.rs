@@ -14,6 +14,8 @@ use codevisor_media::{
 use codevisor_net::{NetConfig, NetEndpoint, PathPolicy, generate_secret_key};
 use tokio::sync::mpsc;
 
+const ONE_WAY: Duration = Duration::from_micros(500);
+
 type Rule = Box<dyn FnMut(&Bytes) -> bool + Send>;
 
 struct MemoryTransport {
@@ -48,9 +50,12 @@ impl DatagramTransport for MemoryTransport {
         }
         self.room.fetch_sub(1, Ordering::SeqCst);
         if !(self.drop.lock().unwrap())(&datagram)
-            && let Some(out) = &*self.out.lock().unwrap()
+            && let Some(out) = self.out.lock().unwrap().clone()
         {
-            let _ = out.send(datagram);
+            tokio::spawn(async move {
+                tokio::time::sleep(ONE_WAY).await;
+                let _ = out.send(datagram);
+            });
         }
         SendOutcome::Sent
     }

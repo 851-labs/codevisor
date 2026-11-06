@@ -36,6 +36,8 @@ struct Sim {
     host_events: Vec<Event>,
     viewer_events: Vec<Event>,
     sent_to_viewer: Vec<(Instant, Bytes)>,
+    arrivals_at_viewer: Vec<(Bytes, Option<Instant>)>,
+    nacks_to_host: Vec<(Instant, wire::Nack)>,
 }
 
 impl Sim {
@@ -61,6 +63,8 @@ impl Sim {
             host_events: Vec::new(),
             viewer_events: Vec::new(),
             sent_to_viewer: Vec::new(),
+            arrivals_at_viewer: Vec::new(),
+            nacks_to_host: Vec::new(),
         }
     }
 
@@ -87,8 +91,18 @@ impl Sim {
                 if self.drop_rule.as_mut().is_some_and(|rule| rule(direction, &datagram)) {
                     continue;
                 }
+                if direction == Direction::ToHost
+                    && let Some(nack) = wire::Nack::decode(&datagram)
+                {
+                    self.nacks_to_host.push((self.now, nack));
+                }
                 let link = &mut self.links[direction as usize];
-                if let Fate::Delivered(at) = link.send(datagram.len(), self.now - self.epoch) {
+                let fate = link.send(datagram.len(), self.now - self.epoch);
+                if direction == Direction::ToViewer {
+                    let arrival = if let Fate::Delivered(at) = fate { Some(self.epoch + at) } else { None };
+                    self.arrivals_at_viewer.push((datagram.clone(), arrival));
+                }
+                if let Fate::Delivered(at) = fate {
                     let delay = &mut self.delays[direction as usize];
                     *delay = delay.mul_f64(7.0 / 8.0) + (self.epoch + at - self.now).mul_f64(1.0 / 8.0);
                     self.sequence += 1;
@@ -150,6 +164,28 @@ impl Sim {
             .iter()
             .filter_map(|event| if let Event::FrameAcked(ack) = event { Some(ack) } else { None })
             .collect()
+    }
+
+    fn nacked_before_arriving(&self) -> usize {
+        let mut originals = std::collections::HashMap::new();
+        for (datagram, arrival) in &self.arrivals_at_viewer {
+            if let Some((header, _)) = PacketHeader::decode(datagram.clone())
+                && header.kind == Kind::Data
+            {
+                originals.entry((header.stream, header.frame, header.index)).or_insert(*arrival);
+            }
+        }
+        self.nacks_to_host
+            .iter()
+            .flat_map(|(at, nack)| {
+                let originals = &originals;
+                nack.ranges.iter().filter(|(_, count)| *count != wire::WHOLE_FRAME).flat_map(move |&(start, count)| {
+                    (start..start + count).filter(move |index| {
+                        originals.get(&(nack.stream, nack.frame, *index)).is_some_and(|arrival| arrival.is_some_and(|arrival| arrival > *at))
+                    })
+                })
+            })
+            .count()
     }
 
     fn sent_packets(&self) -> Vec<(Instant, PacketHeader)> {
@@ -1000,4 +1036,106 @@ fn an_app_limited_tiled_stream_on_a_fast_link_comes_back_after_a_squeeze() {
     assert!(lowest < 10e6, "the squeeze cut the estimate: {:.1} Mbit/s", lowest / 1e6);
     let estimate = sim.host.admission().estimate_bps;
     assert!(estimate >= 100e6, "{:.1} Mbit/s 12 s after the squeeze", estimate / 1e6);
+}
+
+fn estimates_while_sending(
+    sim: &mut Sim,
+    duration: Duration,
+    mut frame_len: impl FnMut(&mut Sim, u64) -> Option<usize>,
+) -> Vec<(Duration, f64)> {
+    let end = sim.now + duration;
+    let mut index = 0u64;
+    let mut estimates = Vec::new();
+    while sim.now < end {
+        if sim.host.admission().admit
+            && let Some(len) = frame_len(sim, index)
+        {
+            sim.send(frame(0, &payload(index, len)));
+            index += 1;
+        }
+        estimates.push((sim.now - sim.epoch, sim.host.admission().estimate_bps));
+        sim.run_until(sim.now + MS);
+    }
+    estimates
+}
+
+fn range_from(estimates: &[(Duration, f64)], from: Duration) -> (f64, f64) {
+    let after = estimates.iter().filter(|(at, _)| *at >= from).map(|(_, estimate)| *estimate);
+    (after.clone().fold(f64::MAX, f64::min), after.fold(0.0, f64::max))
+}
+
+#[test]
+fn a_slow_link_doesnt_ask_again_for_packets_still_on_their_way() {
+    for seed in 1..=3 {
+        let mut sim = Sim::new(NetworkConditions::N7, config(FecMode::Adaptive), seed);
+        let mut encoder = EncoderModel::new(2.0, seed);
+        let mut next = sim.now;
+        let estimates = estimates_while_sending(&mut sim, Duration::from_secs(20), |sim, index| {
+            if sim.now < next {
+                return None;
+            }
+            next = (next + INTERVAL).max(sim.now);
+            Some(if index == 0 { 250_000 } else { encoder.frame_len(sim.now, sim.host.admission().encoder_ceiling_bps) })
+        });
+
+        let (lowest, _) = range_from(&estimates, Duration::ZERO);
+        assert!(lowest >= 500e3, "seed {seed}: the estimate fell to {:.2} Mbit/s", lowest / 1e6);
+        let retransmitted = sim.host.stats(sim.now).packets_retransmitted;
+        let early = sim.nacked_before_arriving();
+        assert!(early * 20 <= retransmitted as usize, "seed {seed}: {early} of {retransmitted} were still on the link");
+    }
+}
+
+fn typing(start: Instant, keyframe: usize) -> impl FnMut(&mut Sim, u64) -> Option<usize> {
+    let mut next = start;
+    move |sim, index| {
+        if sim.now < next {
+            return None;
+        }
+        next = (next + 4 * INTERVAL).max(sim.now);
+        Some(if index == 0 { keyframe } else { 400 })
+    }
+}
+
+#[test]
+fn typing_measures_a_slow_lossy_link_and_leaves_a_fast_one_fast() {
+    for seed in 1..=3 {
+        let mut slow = Sim::new(NetworkConditions::N7, config(FecMode::Adaptive), seed);
+        let keys = typing(slow.now, 100_000);
+        let (_, highest) = range_from(&estimates_while_sending(&mut slow, Duration::from_secs(20), keys), 2_000 * MS);
+        assert!(highest < 3e6, "N7, seed {seed}: {:.1} Mbit/s after 2 s", highest / 1e6);
+
+        let mut fast = Sim::new(NetworkConditions::N0, config(FecMode::Adaptive), seed);
+        let keys = typing(fast.now, 100_000);
+        let (lowest, _) = range_from(&estimates_while_sending(&mut fast, Duration::from_secs(20), keys), 2_000 * MS);
+        assert!(lowest >= 60e6, "N0, seed {seed}: {:.1} Mbit/s after 2 s", lowest / 1e6);
+    }
+}
+
+#[test]
+fn a_big_frame_repaired_by_nacks_still_measures_the_link() {
+    let link = NetworkConditions { id: "20 Mbit/s", delay_ms: 25.0, capacity_kbps: Some(20_000), ..NetworkConditions::N0 };
+    let mut sim = Sim::new(link, config(FecMode::Off), 1);
+    sim.drop_when(first_time(|direction, datagram| {
+        direction == Direction::ToViewer && [10, 40, 70].into_iter().any(|index| is_packet(datagram, 0, index))
+    }));
+    let keys = typing(sim.now, 100_000);
+    let estimates = estimates_while_sending(&mut sim, Duration::from_secs(20), keys);
+
+    assert_eq!(sim.frames()[0].recovery, Recovery::Nack);
+    let (lowest, highest) = range_from(&estimates, 2_000 * MS);
+    assert!((15e6..30e6).contains(&lowest) && highest < 30e6, "{:.1}..{:.1} Mbit/s after 2 s", lowest / 1e6, highest / 1e6);
+}
+
+#[test]
+fn frames_bigger_than_the_pacing_spread_still_find_the_link() {
+    for seed in 1..=3 {
+        let config = MediaConfig { initial_rate_bps: 10e6, ..config(FecMode::Adaptive) };
+        let mut sim = Sim::new(NetworkConditions::N5, config, seed);
+        let estimates = estimates_while_sending(&mut sim, Duration::from_secs(10), |_, _| Some(200_000));
+
+        let (lowest, highest) = range_from(&estimates, Duration::from_secs(5));
+        assert!(lowest >= 20e6, "seed {seed}: {:.1} Mbit/s on a 30 Mbit/s link", lowest / 1e6);
+        assert!(highest <= 60e6, "seed {seed}: {:.1} Mbit/s on a 30 Mbit/s link", highest / 1e6);
+    }
 }
