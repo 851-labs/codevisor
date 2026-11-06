@@ -18,11 +18,11 @@ struct ChildAgentsSummaryTests {
   }
 
   @Test func oneWorkingChildIsSingular() {
-    #expect(summary([idle, working])?.title == "1 agent")
+    #expect(summary([idle, working])?.title == "1 Agent")
   }
 
   @Test func severalWorkingChildrenArePlural() {
-    #expect(summary([working, working, working])?.title == "3 agents")
+    #expect(summary([working, working, working])?.title == "3 Agents")
   }
 
   @Test func isHiddenWhenNoChildIsWorking() {

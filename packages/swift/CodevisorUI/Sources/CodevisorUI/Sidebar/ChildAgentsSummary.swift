@@ -9,6 +9,6 @@ public struct ChildAgentsSummary: Equatable, Sendable {
   }
 
   public var title: String {
-    workingCount == 1 ? "1 agent" : "\(workingCount) agents"
+    workingCount == 1 ? "1 Agent" : "\(workingCount) Agents"
   }
 }
