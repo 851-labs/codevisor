@@ -21,11 +21,9 @@ struct EncodeLabDecodedScreen {
   var singleImage: CVPixelBuffer? { config.tiles == 1 ? latest[0] : nil }
 
   func compare(
-    with original: CVPixelBuffer, event: EncodeLabFrameEvent, native: EncodeLabNativeQuality?, strided: Bool,
+    with reference: EncodeLabPicture, event: EncodeLabFrameEvent, native: EncodeLabNativeQuality?, strided: Bool,
     settled: Bool
   ) throws -> EncodeLabQualitySample {
-    var reference = EncodeLabPicture(width: config.width, height: config.height)
-    reference.paste(original, atRow: 0)
     var shown = EncodeLabPicture(width: config.width, height: config.height)
     for (tile, image) in latest { shown.paste(image, atRow: tile * CVPixelBufferGetHeight(image)) }
     return EncodeLabQualitySample(

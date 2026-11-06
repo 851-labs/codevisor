@@ -24,7 +24,7 @@ final class ScreenSharingVCPPixelConverter: @unchecked Sendable {
   }
 
   private let kernel: ScreenSharingVCPConversionKernel
-  private let cache: CVMetalTextureCache
+  private let textures: ScreenSharingV2MetalTextures
   private let pool: CVPixelBufferPool
   private let layout: ScreenSharingV2TileLayout
   private let scalerLock = NSLock()
@@ -36,12 +36,7 @@ final class ScreenSharingVCPPixelConverter: @unchecked Sendable {
 
   init(layout: ScreenSharingV2TileLayout) throws {
     kernel = try ScreenSharingVCPConversionKernel.shared()
-    var cache: CVMetalTextureCache?
-    guard CVMetalTextureCacheCreate(nil, nil, kernel.device, nil, &cache) == kCVReturnSuccess, let cache else {
-      throw ScreenSharingError.unavailable("No Metal texture cache for the VCP converter.")
-    }
-
-    self.cache = cache
+    textures = try ScreenSharingV2MetalTextures(device: kernel.device)
     self.layout = layout
     pool = try ScreenSharingV2PixelPool.make(
       width: layout.width, height: layout.height, pixelFormat: Self.encodedPixelFormat)
@@ -79,21 +74,25 @@ final class ScreenSharingVCPPixelConverter: @unchecked Sendable {
 
   private func convert(_ source: CVPixelBuffer, tiles: [Int], into converted: inout [Int: CVPixelBuffer]) throws {
     var retained: [CVMetalTexture] = []
-    let source = try texture(source, plane: 0, format: .bgra8Unorm, retaining: &retained)
+    let source = try textures.planes(of: source, retaining: &retained)[0]
     var regions: [ScreenSharingVCPConversionKernel.Region] = []
     for tile in tiles {
       let rows = layout.rows(of: tile)
       let target = try tileBuffer(height: rows.count)
       for (key, value) in Self.colorTags { CVBufferSetAttachment(target, key, value, .shouldPropagate) }
-      regions.append(
-        .init(
-          sourceRow: rows.lowerBound, luma: try texture(target, plane: 0, format: .r8Unorm, retaining: &retained),
-          chroma: try texture(target, plane: 1, format: .rg8Unorm, retaining: &retained)))
+      regions.append(try region(writing: target, from: rows.lowerBound, retaining: &retained))
       converted[tile] = target
     }
     try kernel.run(source: source, regions: regions)
     withExtendedLifetime(retained) {}
-    CVMetalTextureCacheFlush(cache, 0)
+    textures.flush()
+  }
+
+  private func region(
+    writing target: CVPixelBuffer, from sourceRow: Int, retaining retained: inout [CVMetalTexture]
+  ) throws -> ScreenSharingVCPConversionKernel.Region {
+    let planes = try textures.planes(of: target, usage: [.shaderRead, .shaderWrite], retaining: &retained)
+    return ScreenSharingVCPConversionKernel.Region(sourceRow: sourceRow, luma: planes[0], chroma: planes[1])
   }
 
   private func tileBuffer(height: Int) throws -> CVPixelBuffer {
@@ -125,11 +124,10 @@ final class ScreenSharingVCPPixelConverter: @unchecked Sendable {
   private func convertExactly(_ source: CVPixelBuffer, into target: CVPixelBuffer) throws {
     var retained: [CVMetalTexture] = []
     try kernel.run(
-      source: try texture(source, plane: 0, format: .bgra8Unorm, retaining: &retained),
-      luma: try texture(target, plane: 0, format: .r8Unorm, retaining: &retained),
-      chroma: try texture(target, plane: 1, format: .rg8Unorm, retaining: &retained))
+      source: try textures.planes(of: source, retaining: &retained)[0],
+      regions: [try region(writing: target, from: 0, retaining: &retained)])
     withExtendedLifetime(retained) {}
-    CVMetalTextureCacheFlush(cache, 0)
+    textures.flush()
   }
 
   private func scale(_ source: CVPixelBuffer, into target: CVPixelBuffer) throws {
@@ -149,23 +147,5 @@ final class ScreenSharingVCPPixelConverter: @unchecked Sendable {
     VTSessionSetProperty(
       session, key: kVTPixelTransferPropertyKey_DestinationYCbCrMatrix, value: kCVImageBufferYCbCrMatrix_ITU_R_709_2)
     return session
-  }
-
-  private func texture(
-    _ pixels: CVPixelBuffer, plane: Int, format: MTLPixelFormat, retaining retained: inout [CVMetalTexture]
-  ) throws -> any MTLTexture {
-    let planar = CVPixelBufferIsPlanar(pixels)
-    let width = planar ? CVPixelBufferGetWidthOfPlane(pixels, plane) : CVPixelBufferGetWidth(pixels)
-    let height = planar ? CVPixelBufferGetHeightOfPlane(pixels, plane) : CVPixelBufferGetHeight(pixels)
-    let attributes = [kCVMetalTextureUsage: MTLTextureUsage([.shaderRead, .shaderWrite]).rawValue] as CFDictionary
-    var created: CVMetalTexture?
-    let status = CVMetalTextureCacheCreateTextureFromImage(
-      nil, cache, pixels, attributes, format, width, height, plane, &created)
-    guard status == kCVReturnSuccess, let created, let texture = CVMetalTextureGetTexture(created) else {
-      throw ScreenSharingError.codec("Map a VCP converter texture", status)
-    }
-
-    retained.append(created)
-    return texture
   }
 }

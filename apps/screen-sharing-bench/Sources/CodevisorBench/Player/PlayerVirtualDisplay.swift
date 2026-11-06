@@ -9,23 +9,36 @@ final class PlayerVirtualDisplay {
   private static let refreshRate = 60.0
   private static let pollInterval = Duration.milliseconds(50)
   private static let pollAttempts = 100
+  private static let profileAttempts = 20
   private static let millimetersPerPoint = 25.4 / 110.0
 
   private let display: CGVirtualDisplay
+  private nonisolated let id: CGDirectDisplayID
   private let resolution: BenchSceneResolution
   private let queue = DispatchQueue(label: "codevisor.bench.virtual-display")
 
   init(_ resolution: BenchSceneResolution) throws {
     self.resolution = resolution
     display = CGVirtualDisplay(descriptor: Self.descriptor(resolution, queue: queue))
+    id = display.displayID
     guard display.apply(Self.settings(resolution)) else {
       throw PlayerError.virtualDisplayUnavailable("The virtual display refused \(resolution.rawValue).")
     }
   }
 
+  deinit {
+    PlayerDisplayProfile.clear(id)
+  }
+
   var displayID: CGDirectDisplayID { display.displayID }
 
   func screen() async throws -> NSScreen {
+    let screen = try await onlineScreen()
+    try await assignSRGB()
+    return screen
+  }
+
+  private func onlineScreen() async throws -> NSScreen {
     for _ in 0..<Self.pollAttempts {
       try selectMode()
       if let screen = matchingScreen() { return screen }
@@ -34,6 +47,15 @@ final class PlayerVirtualDisplay {
     }
     throw PlayerError.virtualDisplayUnavailable(
       "The \(resolution.rawValue) virtual display didn't come online. Its modes: \(availableModes())")
+  }
+
+  private func assignSRGB() async throws {
+    for _ in 0..<Self.profileAttempts {
+      if PlayerDisplayProfile.assignSRGB(to: id) { return }
+
+      try await Task.sleep(for: Self.pollInterval)
+    }
+    BenchConsole.error("ColorSync refused an sRGB profile for the virtual display; its levels may not match sRGB.")
   }
 
   private func matchingScreen() -> NSScreen? {

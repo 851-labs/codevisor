@@ -427,7 +427,11 @@ Apple HP always gives tamale a 1920×1080 pt @2x display (3840×2160 px), so on 
 shown at half size and is never 1:1. The Tier 2 input `viewer-display: R1x2` makes `view` and `apple-hp`
 (`--virtual-display R1x2`) create a 1920×1080 @2x virtual display on croissant for each run, show their window
 full screen on it, and name it in their ready file, so the viewer observer captures it (barcode blocks scale with
-it: 16 px for a 3840 px host). Engine v2 streams R1x2 natively at 3840×2160 in four tiles (E5), so its rows
+it: 16 px for a 3840 px host). The bench's virtual display gets the system sRGB profile through ColorSync for as
+long as it exists (`PlayerDisplayProfile`; if ColorSync refuses, the command warns on stderr and carries on). Left to macOS, it got a generated profile whose tone curve isn't sRGB's,
+and sRGB content shown on it came back from the observer's sRGB capture with levels 1–44 one or two lower (851-3989:
+grey 40 as 39, which held VCP's dark text card at 48.3 dB `psnr_y`; `vcp-levels` lab runs 42146297995 before,
+42147875743 after). Engine v2 streams R1x2 natively at 3840×2160 in four tiles (E5), so its rows
 measure the codec alone. `text.stream_size` records the Codevisor stream's encoded size (`capture_size` from `share.json`;
 absent for Apple HP, whose encoded size isn't visible), and the table marks a stream smaller than the host's display
 "(scaled)".
@@ -547,12 +551,14 @@ CodevisorBench encode-lab --scenes scroll,typing --duration 8 --warm-up 2 \
   `ForceLTRRefresh` with tokens acknowledged after a simulated 33 ms round trip, on the middle tile only.
 - **Quality.** A second pass decodes every frame in order with the hardware decoder and, on `--quality-samples`
   evenly spaced frames, compares the picture a viewer would show (skipped tiles keep their last image) with the
-  source converted to 4:4:4 (BT.709, video range): PSNR of Y and of Cb/Cr (4:2:0 chroma upsampled by nearest
-  neighbour) and SSIM of Y (Wang 2004, 11×11 Gaussian, σ 1.5). A single-tile config smaller than the canvas is also
+  source converted to 4:4:4 (BT.709, video range) on the CPU, rounded to 8 bits: PSNR of Y and of Cb/Cr (4:2:0
+  chroma upsampled by nearest neighbour) and SSIM of Y (Wang 2004, 11×11 Gaussian, σ 1.5). A single-tile config smaller than the canvas is also
   upscaled back and compared with the native frame (`native`), so downscaling counts against it; tiled configs get
   no native score. `engine=vcp` with `444f` input is compared in full range, the range it encodes. **Settled** scores
   the last pass of every version held for at least 0.5 s, after its refinements: the still a viewer keeps looking at,
-  which is what T8 measures on test cards (851-3975).
+  which is what T8 measures on test cards (851-3975). The reference shares no code with the encoder's input
+  conversion (`VTPixelTransferSession`): when it did, the input conversion's errors cancelled out, and the lab never
+  showed the white at 254 that VCP's input had on the minis' M6 (851-4049).
 - **CI.** Dispatch `Screen Sharing Bench` with `encode_lab` set to the configs (and `encode_lab_options` for the
   rest); that runs only the `encode-lab` job on tamale and puts the table in the job summary.
 
@@ -596,6 +602,27 @@ VideoToolbox HEVC sessions (1920×544, one frame each) until one fails, and repo
 stopped it. A leak shows as a count that stays below `before` after a round. On an M1 Pro (macOS 27.2) the count is 32
 before, 24 while a 4-tile VCP encoder is open and 32 after every round. In CI:
 `-f lab='tamale encoder-release --rounds 3'`.
+
+## VCP levels (851-3989)
+
+`vcp-levels` pushes grey and colour patches (one flat 32×32 px patch for each grey level, then a row of colours,
+1024×288) through each stage of engine v2's VCP path on this Mac, and reports every patch that changes (`mismatches`,
+as `expected→shown`, Y,Cb,Cr or R,G,B). Each of three inputs (BGRA through the engine's converter, and `444f`
+converted on the CPU, with and without the session's colour tags) is encoded by a 1-tile `ScreenSharingVCPTileEncoder`
+at 60 Mbit/s, a change and then `--passes` − 1 refinements (5 in all by default), and decoded as the viewer does. Its
+stages are the `444f` decode, the viewer shader (`ScreenSharingMetalView.shader`) drawing that decode 1:1 into a BGRA
+texture, and a decode to BGRA. The shader and BGRA stages expect the exact 8-bit full-range round trip, so saturated
+colours that 4:4:4 can't hold exactly (red 255 comes back as 254) don't count. `conversions` gives
+`VTPixelTransferSession`'s BGRA → `444f` and `444v`. Unless `--no-capture` is given, it also shows the picture on the
+main display (or on a `--virtual-display`, as Tier 2's viewer does) and captures it with ScreenCaptureKit (`captures`:
+the window as BGRA, `444f` and `420v`, and the display as BGRA), and shows a VCP decode, a `420v` picture and BGRA
+through both engine v2 viewer surfaces and captures them from the display as T8's observer does (`presentations`).
+`display_before` and `display_after` name the display's colour space. In CI:
+`-f lab='tamale vcp-levels'` or `-f lab='croissant vcp-levels --virtual-display R1x2'`.
+
+Findings (macOS 27.2): on the minis' M6, the converter, VCP, the decoder and the shader are exact for every patch.
+ScreenCaptureKit's `444f` is up to 32 levels off on colours, with or without a BT.709 `colorMatrix`, so engine v2
+keeps capturing BGRA and converting it itself (851-4049).
 
 ## Signing and permissions
 

@@ -3,17 +3,17 @@ import ScreenSharingBenchScenes
 
 struct EncodeLabNativeComparer {
   let canvas: BenchSceneCanvas
-  private let reference: EncodeLabPixelTransfer
+  private let fullRange: Bool
   private let upscaler: EncodeLabPixelTransfer
 
   init(canvas: BenchSceneCanvas, format: OSType) throws {
     self.canvas = canvas
-    reference = try EncodeLabPixelTransfer(width: canvas.pixelWidth, height: canvas.pixelHeight, format: format)
+    fullRange = format == kCVPixelFormatType_444YpCbCr8BiPlanarFullRange
     upscaler = try EncodeLabPixelTransfer(width: canvas.pixelWidth, height: canvas.pixelHeight, format: format)
   }
 
   func compare(native: CVPixelBuffer, shown: CVPixelBuffer) throws -> EncodeLabNativeQuality {
-    let original = picture(try reference.transfer(native))
+    let original = EncodeLabReferencePicture.make(from: native, fullRange: fullRange)
     let upscaled = picture(try upscaler.transfer(shown))
     return EncodeLabNativeQuality(
       psnrY: EncodeLabSimilarity.psnr(original.luma, upscaled.luma),
