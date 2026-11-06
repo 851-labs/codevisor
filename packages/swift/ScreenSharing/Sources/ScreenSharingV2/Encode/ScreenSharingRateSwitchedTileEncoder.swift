@@ -11,6 +11,7 @@ public final class ScreenSharingRateSwitchedTileEncoder: ScreenSharingTileEncode
     var owners: ScreenSharingV2TileOwners
     var output: (@Sendable (ScreenSharingTileEncoderOutput) -> Void)?
     var wakeNs: Int64?
+    var slowSuspended = false
     var stopped = false
   }
 
@@ -72,6 +73,7 @@ public final class ScreenSharingRateSwitchedTileEncoder: ScreenSharingTileEncode
       state.withLock { $0.owners.release(claimed, from: choice) }
       throw error
     }
+    suspendSlowOnceFastOwnsEveryTile()
   }
 
   public func acknowledge(_ tokens: [UInt64], tile: Int) {
@@ -104,6 +106,18 @@ public final class ScreenSharingRateSwitchedTileEncoder: ScreenSharingTileEncode
     slow.stop()
   }
 
+  private func suspendSlowOnceFastOwnsEveryTile() {
+    let suspend = state.withLock { state in
+      guard state.route.choice == .fast, !state.slowSuspended,
+        layout.tiles.allSatisfy({ state.owners.owns($0, .fast) })
+      else { return false }
+
+      state.slowSuspended = true
+      return true
+    }
+    if suspend { slow.suspend() }
+  }
+
   private func encoder(_ choice: Choice) -> any ScreenSharingTileEncoder {
     switch choice {
     case .fast: fast
@@ -122,6 +136,7 @@ public final class ScreenSharingRateSwitchedTileEncoder: ScreenSharingTileEncode
     let switched = state.withLock { state -> Choice? in
       guard !state.stopped, state.route.update(atNs: scheduler.nowNs) else { return nil }
 
+      if state.route.choice == .slow { state.slowSuspended = false }
       return state.route.choice
     }
     scheduleSwitch()

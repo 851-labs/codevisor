@@ -97,6 +97,16 @@ final class ScreenSharingVideoToolboxTileSession: @unchecked Sendable {
     close(currentSession)
   }
 
+  func suspend() {
+    let suspended = state.withLock { state in
+      defer { state.sessionFailed = true }
+      return !state.closed && !state.sessionFailed
+    }
+    guard suspended else { return }
+
+    close(currentSession)
+  }
+
   private var currentSession: VTCompressionSession { sessionLock.withLock { session } }
 
   private func target(sharing bitsPerSecond: Int) -> Int? {

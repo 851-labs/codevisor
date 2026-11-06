@@ -113,6 +113,10 @@ public final class ScreenSharingVideoToolboxTileEncoder: ScreenSharingTileEncode
     metrics.label("encoderBitrate", String(bitsPerSecond))
   }
 
+  public func suspend() {
+    for session in sessions { session.suspend() }
+  }
+
   public func stop() {
     guard !stopped.exchange(true, ordering: .relaxed) else { return }
 

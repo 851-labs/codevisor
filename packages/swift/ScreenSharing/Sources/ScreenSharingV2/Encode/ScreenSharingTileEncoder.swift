@@ -9,11 +9,14 @@ public protocol ScreenSharingTileEncoder: AnyObject, Sendable {
   func acknowledge(_ tokens: [UInt64], tile: Int)
   func observeNetwork(_ feedback: ScreenSharingTileNetworkFeedback)
   func setBitrate(_ bitsPerSecond: Int) throws
+  func suspend()
   func stop()
 }
 
 extension ScreenSharingTileEncoder {
   public func observeNetwork(_ feedback: ScreenSharingTileNetworkFeedback) {}
+
+  public func suspend() {}
 }
 
 extension ScreenSharingTileEncoder {

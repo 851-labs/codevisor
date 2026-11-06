@@ -13,6 +13,7 @@ final class RecordingTileEncoder: ScreenSharingTileEncoder, @unchecked Sendable 
   private let recorded = Mutex<[ScreenSharingTileEncodeRequest]>([])
   private let acknowledged = Mutex<[UInt64]>([])
   private let network = Mutex<[ScreenSharingTileNetworkFeedback]>([])
+  private let suspended = Mutex(0)
   private let output = Mutex<(@Sendable (ScreenSharingTileEncoderOutput) -> Void)?>(nil)
 
   init(
@@ -26,6 +27,11 @@ final class RecordingTileEncoder: ScreenSharingTileEncoder, @unchecked Sendable 
   var requests: [ScreenSharingTileEncodeRequest] { recorded.withLock { $0 } }
   var acknowledgedTokens: [UInt64] { acknowledged.withLock { $0 } }
   var networkFeedback: [ScreenSharingTileNetworkFeedback] { network.withLock { $0 } }
+  var suspends: Int { suspended.withLock { $0 } }
+
+  func suspend() {
+    suspended.withLock { $0 += 1 }
+  }
 
   func onOutput(_ handler: @escaping @Sendable (ScreenSharingTileEncoderOutput) -> Void) {
     output.withLock { $0 = handler }

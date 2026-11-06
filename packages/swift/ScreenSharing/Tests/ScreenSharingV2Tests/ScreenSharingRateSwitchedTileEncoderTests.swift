@@ -94,6 +94,20 @@ struct ScreenSharingRateSwitchedTileEncoderTests {
     #expect(tileOutputs == ["dropped 0", "dropped 1", "unchanged 2"])
   }
 
+  @Test func theSlowEncoderIsSuspendedOnceTheFastEncoderOwnsEveryTile() throws {
+    let encoder = try switched(bitrate: Self.fastBitrate)
+    try encoder.encode(try Self.request(id: 1, tiles: [0, 1, 2, 3]))
+    switchToFast(encoder)
+
+    try encoder.encode(try Self.request(id: 2, tiles: [0, 1]))
+    let partly = slow.suspends
+    try encoder.encode(try Self.request(id: 3, tiles: [2, 3]))
+    try encoder.encode(try Self.request(id: 4, tiles: [0]))
+
+    #expect(partly == 0)
+    #expect(slow.suspends == 1)
+  }
+
   @Test func referenceAcknowledgementsGoToTheEncoderThatIssuedTheToken() throws {
     let encoder = try switched(bitrate: Self.fastBitrate)
     let first = try Self.request(id: 1, tiles: [0])
