@@ -62,7 +62,13 @@ struct RootView: View {
         )
       )
       .background(ClientWindowReader(control: clientWindow).frame(width: 0, height: 0))
-      .background(TransparentTitlebar(isTransparent: showsBotConversation).frame(width: 0, height: 0))
+      .background(
+        TransparentTitlebar(
+          isTransparent: showsBotConversation,
+          hoverBandHeight: BotConversationTopBar.height(showsHeader: showsBotConversationHeader)
+        )
+        .frame(width: 0, height: 0)
+      )
       .background(
         SidebarToggleHelp(help: PanelToggleShortcut.sidebar.help(isVisible: clientSidebarVisible))
           .frame(width: 0, height: 0)
@@ -317,7 +323,7 @@ struct RootView: View {
   }
 
   private func newChat(_ store: SessionStore, target: NewChatTarget?) -> some View {
-    SidebarModeBlankPage { newChatView(store, target: target) }
+    SidebarModeBlankPage(onNewBot: openNewBot) { newChatView(store, target: target) }
   }
 
   private func newChatView(_ store: SessionStore, target: NewChatTarget?) -> some View {

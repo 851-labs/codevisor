@@ -11,12 +11,16 @@ extension RootView {
   var rootActions: RootSidebarActions? {
     guard store != nil else { return nil }
     return RootSidebarActions(
-      newChat: openNewChat, newBot: botsEnabled ? openNewBot : nil, editBot: { botEditor = .edit($0) })
+      newChat: openNewChat, newBot: botsEnabled ? openNewBot : nil, editBot: editBot)
   }
 
   func openNewChat() {
     selection = .newChat(nil)
     sidebarMode = .code
+  }
+
+  func editBot(_ bot: Bot) {
+    botEditor = .edit(bot)
   }
 
   func openNewBot() {
@@ -43,7 +47,7 @@ extension RootView {
         onFocusedChatChanged: { _ in },
         onDisposition: { _ in }
       )
-      .modifier(BotConversationChrome(bot: bot, showsHeader: showsBotConversationHeader))
+      .modifier(BotConversationChrome(bot: bot, showsHeader: showsBotConversationHeader, onEditBot: editBot))
     } else {
       ContentUnavailableView(
         "Bot Unavailable",

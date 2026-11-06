@@ -20,10 +20,14 @@ struct BotConversationHeader: View {
       }
     }
     .buttonStyle(.plain)
-    .disabled(onOpenDetails == nil)
+    .allowsHitTesting(opensDetails)
     .accessibilityLabel(bot.name)
-    .accessibilityHint("Edit bot")
+    .accessibilityHint(opensDetails ? "Edit bot" : "")
     .padding(.top, 6)
     .frame(height: Self.height, alignment: .top)
+  }
+
+  private var opensDetails: Bool {
+    onOpenDetails != nil
   }
 }

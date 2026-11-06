@@ -1,7 +1,7 @@
 import SwiftUI
 
 struct BotListEmptyDetail: View {
-  @FocusedValue(\.rootSidebarActions) private var actions
+  let onNewBot: () -> Void
 
   var body: some View {
     ContentUnavailableView {
@@ -9,9 +9,7 @@ struct BotListEmptyDetail: View {
     } description: {
       Text("Choose a bot from the sidebar to continue the conversation.")
     } actions: {
-      if let newBot = actions?.newBot {
-        Button("New Bot", action: newBot)
-      }
+      Button("New Bot", action: onNewBot)
     }
   }
 }

@@ -5,7 +5,7 @@ import SwiftUI
 struct BotConversationChrome: ViewModifier {
   let bot: Bot
   let showsHeader: Bool
-  @FocusedValue(\.rootSidebarActions) private var actions
+  let onEditBot: (Bot) -> Void
   @Environment(WorkspaceActivity.self) private var workspaceActivity: WorkspaceActivity?
 
   func body(content: Content) -> some View {
@@ -23,7 +23,7 @@ struct BotConversationChrome: ViewModifier {
   }
 
   private var openDetails: (() -> Void)? {
-    guard !bot.isArchived, let actions else { return nil }
-    return { actions.editBot(bot) }
+    guard !bot.isArchived else { return nil }
+    return { onEditBot(bot) }
   }
 }

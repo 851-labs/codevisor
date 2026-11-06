@@ -3,14 +3,23 @@ import SwiftUI
 
 struct TransparentTitlebar: NSViewRepresentable {
   let isTransparent: Bool
+  let hoverBandHeight: CGFloat
 
   final class Probe: NSView {
     var isTransparent = false {
-      didSet { apply() }
+      didSet { update() }
     }
 
     private var isFullScreen = false {
+      didSet { update() }
+    }
+
+    private var isPointerInTopBar = false {
       didSet { apply() }
+    }
+
+    private(set) lazy var hover = TopBandPointerWatcher(bandHeight: 0) { [weak self] in
+      self?.isPointerInTopBar = $0
     }
 
     private var observers: [NSObjectProtocol] = []
@@ -23,7 +32,7 @@ struct TransparentTitlebar: NSViewRepresentable {
       super.viewDidMoveToWindow()
       isFullScreen = window?.styleMask.contains(.fullScreen) ?? false
       observeFullScreen()
-      apply()
+      update()
     }
 
     private func observeFullScreen() {
@@ -42,8 +51,24 @@ struct TransparentTitlebar: NSViewRepresentable {
       }
     }
 
+    private var wantsTransparency: Bool {
+      isTransparent && !isFullScreen
+    }
+
+    private func update() {
+      watchHover()
+      apply()
+    }
+
+    private func watchHover() {
+      guard wantsTransparency else { return hover.stop() }
+      guard !hover.isWatching(window) else { return }
+
+      hover.watch(window)
+    }
+
     private func apply() {
-      let transparent = isTransparent && !isFullScreen
+      let transparent = wantsTransparency && !isPointerInTopBar
       guard let window, window.titlebarAppearsTransparent != transparent else { return }
       window.titlebarAppearsTransparent = transparent
     }
@@ -51,11 +76,13 @@ struct TransparentTitlebar: NSViewRepresentable {
 
   func makeNSView(context: Context) -> Probe {
     let probe = Probe()
+    probe.hover.bandHeight = hoverBandHeight
     probe.isTransparent = isTransparent
     return probe
   }
 
   func updateNSView(_ probe: Probe, context: Context) {
+    probe.hover.bandHeight = hoverBandHeight
     probe.isTransparent = isTransparent
   }
 }
