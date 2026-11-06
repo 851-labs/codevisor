@@ -7,7 +7,7 @@ import Testing
 @Suite(.timeLimit(.minutes(1)))
 struct ScreenSharingRateSwitchedTileEncoderTests {
   private static let tiled = ScreenSharingV2TileLayout(width: 640, height: 360, count: 4)
-  private static let fastBitrate = 30_000_000
+  private static let fastBitrate = 40_000_000
   private static let slowBitrate = 1_000_000
 
   private let fast = RecordingTileEncoder(layout: Self.tiled)

@@ -5,7 +5,7 @@ import Testing
 struct ScreenSharingV2EncoderRouteTests {
   private static let fastAfterNs = ScreenSharingV2EncoderRoute.fastAfterNs
   private static let slowAfterNs = ScreenSharingV2EncoderRoute.slowAfterNs
-  private static let fast = 30_000_000
+  private static let fast = 40_000_000
   private static let slow = 1_000_000
 
   @Test func aFastLinkMovesToTheFastEncoderOnlyOnceItHeldForTheHoldWithFreshFeedback() {

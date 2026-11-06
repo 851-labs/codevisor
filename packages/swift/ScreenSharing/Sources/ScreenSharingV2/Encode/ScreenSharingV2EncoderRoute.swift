@@ -4,7 +4,7 @@ struct ScreenSharingV2EncoderRoute: Sendable, Equatable {
     case slow
   }
 
-  static let fastFromBitrate = ScreenSharingVCPRate.nearLosslessFromBitsPerSecond
+  static let fastFromBitrate = 30_000_000
   static let slowBelowBitrate = 8_000_000
   static let fastAfterNs: Int64 = 5_000_000_000
   static let fastAgainAfterNs: Int64 = 30_000_000_000
