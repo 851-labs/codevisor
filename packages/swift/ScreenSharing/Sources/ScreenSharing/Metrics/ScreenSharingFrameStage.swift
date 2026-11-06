@@ -2,7 +2,9 @@ public enum ScreenSharingFrameStage: String, CaseIterable, Codable, Sendable {
   case capture
   case hostQueue
   case encode
+  case handOff
   case network
+  case assemble
   case jitterBuffer
   case decode
   case delivery

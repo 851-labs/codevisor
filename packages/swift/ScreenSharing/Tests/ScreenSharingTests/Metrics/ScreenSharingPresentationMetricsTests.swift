@@ -95,7 +95,7 @@ struct ScreenSharingPresentationMetricsTests {
     let metrics = ScreenSharingMetrics()
     metrics.timeline.decoded(
       ScreenSharingDecodedFrameTiming(
-        sourceTimestampNs: 42, host: nil, decodeInputNs: 1_000_000_000, decodeSubmitNs: 1_000_500_000,
+        sourceTimestampNs: 42, host: nil, assembleUs: nil, decodeInputNs: 1_000_000_000, decodeSubmitNs: 1_000_500_000,
         decodedNs: 1_002_000_000, isKeyFrame: true))
     metrics.recordPresentation(isNewFrame: true, presentedAt: 1.02, submittedAt: 1.01, receivedAt: 1.003)
     metrics.recordPresentation(

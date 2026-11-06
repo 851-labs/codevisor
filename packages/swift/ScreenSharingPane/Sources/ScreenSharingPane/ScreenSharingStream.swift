@@ -215,7 +215,8 @@ final class ScreenSharingStream {
         let statistics = await session.statistics()
         guard !Task.isCancelled else { return }
         self.diagnostics.update(
-          metrics: session.metrics.snapshot(), statistics: statistics, now: ProcessInfo.processInfo.systemUptime)
+          metrics: session.metrics.snapshot(), timeline: session.metrics.timeline, statistics: statistics,
+          now: ProcessInfo.processInfo.systemUptime)
       }
     }
     return lost.stream

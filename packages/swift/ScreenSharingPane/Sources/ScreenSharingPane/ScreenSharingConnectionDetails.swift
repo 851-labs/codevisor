@@ -48,6 +48,7 @@
       } footer: {
         Text(diagnostics.decoder)
       }
+      if let timeline = diagnostics.timeline { ScreenSharingTimelineSection(timeline: timeline) }
     }
   }
 #endif

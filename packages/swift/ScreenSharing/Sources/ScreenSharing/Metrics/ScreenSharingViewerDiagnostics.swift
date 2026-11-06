@@ -4,6 +4,8 @@ import Observation
 @MainActor
 @Observable
 public final class ScreenSharingViewerDiagnostics {
+  static let timelineWindow = 600
+
   public private(set) var framesPerSecond: Double?
   public private(set) var megabitsPerSecond: Double?
   public private(set) var roundTripMilliseconds: Double?
@@ -18,6 +20,8 @@ public final class ScreenSharingViewerDiagnostics {
   public private(set) var updateLatencyMilliseconds: Double?
   public private(set) var engine: String?
   public private(set) var recovery: String?
+  public private(set) var timeline: ScreenSharingTimelineBreakdown?
+  @ObservationIgnored private var recentFrames: [ScreenSharingFrameRecord] = []
   @ObservationIgnored private var previous: (time: TimeInterval, frames: Int, bytes: Double, updates: Int)?
 
   public init() {}
@@ -48,7 +52,21 @@ public final class ScreenSharingViewerDiagnostics {
     recovery = Self.v2Recovery(statistics)
   }
 
-  public func update(metrics: ScreenSharingMetrics.Snapshot, statistics: [String: String], now: TimeInterval) {
+  private func updateTimeline(_ frameTimeline: ScreenSharingFrameTimeline) {
+    let fresh = frameTimeline.records(after: recentFrames.last?.sequence ?? 0)
+    guard !fresh.isEmpty else { return }
+
+    recentFrames.append(contentsOf: fresh)
+    recentFrames.removeFirst(max(0, recentFrames.count - Self.timelineWindow))
+    let summary = ScreenSharingFrameTimelineSummary(records: recentFrames, unpresentedFrames: 0)
+    timeline = summary.flatMap(ScreenSharingTimelineBreakdown.init)
+  }
+
+  public func update(
+    metrics: ScreenSharingMetrics.Snapshot, timeline frameTimeline: ScreenSharingFrameTimeline,
+    statistics: [String: String],
+    now: TimeInterval
+  ) {
     let vncTransport = statistics["vnc.transport"]
     let v2 = statistics["v2.engine"] != nil
     let frames = metrics.counters["presentedFrames", default: 0]
@@ -72,6 +90,7 @@ public final class ScreenSharingViewerDiagnostics {
     decoder = metrics.labels["decoder"] ?? decoder
     droppedFrames = metrics.counters["renderDrops", default: 0]
     streams = Self.streams(metrics.labels)
+    updateTimeline(frameTimeline)
     if v2 { return updateV2(metrics: metrics, statistics: statistics) }
     guard let vncTransport else { return }
 
