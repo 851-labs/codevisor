@@ -18,32 +18,7 @@ extension SessionContainerView {
   }
 
   private func wire(_ model: PaneGroupModel, leafId: UUID) {
-    model.onActivated = { [weak model] in
-      let workspace = selectedWorkspace
-      guard isVisible,
-        store.navigationWorkspaceId == workspace.id,
-        workspace.centerTree.group(id: leafId) != nil
-      else { return }
-      activateLeaf(leafId)
-      if let model {
-        sessionFocus.centerGroup = model
-      }
-    }
-    model.isFocusCurrent = {
-      isVisible && store.navigationWorkspaceId == selectedWorkspace.id && activeLeafId == leafId
-    }
-    model.workspaceCommandHandler = { command in
-      handleWorkspaceCommand(command)
-    }
-    model.requestComposerFocus = { [weak model] in
-      guard let selected = model?.state.selectedPane, selected.kind == .chat else { return }
-      if let chatId = selected.chatSessionId {
-        sessionFocus.requestComposerFocus(forChat: chatId)
-      } else {
-        sessionFocus.focusComposer()
-      }
-    }
-    model.requestBackgroundFocus = { sessionFocus.focusPaneBackground() }
+    wireFocus(model, leafId: leafId)
     model.onPaneEdited = { _ in
       guard let tab = selectedWorkspace.centerTabs.first(where: { $0.isPreview && $0.root.group(id: leafId) != nil })
       else { return }
@@ -73,7 +48,7 @@ extension SessionContainerView {
         return AnyView(
           SubagentPaneContentView(
             descriptor: descriptor,
-            focus: sessionFocus,
+            focus: paneFocus(forLeaf: leafId),
             hostWorkspace: workspace,
             store: store,
             environment: environment
@@ -96,7 +71,7 @@ extension SessionContainerView {
         ChatPaneContentView(
           descriptor: descriptor,
           group: model,
-          focus: sessionFocus,
+          focus: paneFocus(forLeaf: leafId),
           session: session,
           hostWorkspace: workspace,
           project: project,
@@ -105,6 +80,38 @@ extension SessionContainerView {
           role: chatPaneRole(for: descriptor)
         ))
     }
+  }
+
+  private func wireFocus(_ model: PaneGroupModel, leafId: UUID) {
+    model.onActivated = { [weak model] in
+      let workspace = selectedWorkspace
+      guard !isFloating(leafId), isVisible,
+        store.navigationWorkspaceId == workspace.id,
+        workspace.centerTree.group(id: leafId) != nil
+      else { return }
+      activateLeaf(leafId)
+      if let model {
+        sessionFocus.centerGroup = model
+      }
+    }
+    model.isFocusCurrent = {
+      if isFloating(leafId) { return isFloatingPaneFocused(leafId) }
+      return isVisible && store.navigationWorkspaceId == selectedWorkspace.id && activeLeafId == leafId
+    }
+    model.workspaceCommandHandler = { command in
+      if isFloating(leafId) { return floatingPaneCommand(command, leafId: leafId) }
+      return handleWorkspaceCommand(command)
+    }
+    model.requestComposerFocus = { [weak model] in
+      guard let selected = model?.state.selectedPane, selected.kind == .chat else { return }
+      let focus = paneFocus(forLeaf: leafId)
+      if let chatId = selected.chatSessionId {
+        focus.requestComposerFocus(forChat: chatId)
+      } else {
+        focus.focusComposer()
+      }
+    }
+    model.requestBackgroundFocus = { paneFocus(forLeaf: leafId).focusPaneBackground() }
   }
 
   var focusedChatCandidate: UUID? {
