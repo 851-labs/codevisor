@@ -132,6 +132,8 @@ struct SplitLeafHeader: View {
       splitMenuItem("Split Down", icon: "rectangle.bottomhalf.inset.filled", edge: .bottom)
       splitMenuItem("Split Up", icon: "rectangle.tophalf.inset.filled", edge: .top)
 
+      Divider()
+
       Button {
         onFloat?()
       } label: {
