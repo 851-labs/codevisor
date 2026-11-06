@@ -18,6 +18,7 @@ excluded:
   - "**/Generated"
   - "**/.build"
   - "**/DerivedData"
+  - packages/net/native
   - tmp
   - .repos
   - node_modules

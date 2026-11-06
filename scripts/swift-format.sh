@@ -5,7 +5,7 @@ cd "$(dirname "$0")/.."
 mode="${1:-check}"
 
 in_scope() {
-  grep -E '^(apps|packages)/.+\.swift$' | grep -vE '/(Vendor|Generated|\.build|tmp)/|DerivedData'
+  grep -E '^(apps|packages)/.+\.swift$' | grep -vE '/(Vendor|Generated|\.build|tmp)/|DerivedData|^packages/net/native/'
 }
 
 files() {
