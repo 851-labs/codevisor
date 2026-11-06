@@ -4,42 +4,46 @@ import SwiftUI
 
 extension SidebarView {
   enum SidebarStop {
-    case newChat
     case workspace(SidebarWorkspaceListItem)
     case tab(UUID, workspaceID: UUID)
     case archived(Workspace)
   }
 
   func sidebarStops(in rows: [SidebarRow]) -> [SidebarStop] {
-    [.newChat]
-      + rows.compactMap { row in
-        switch row.kind {
-        case let .tab(id, workspaceID, _):
-          SidebarStop.tab(id, workspaceID: workspaceID)
-        case let .workspace(item, .archived):
-          environment.navigationStore.workspaceEntries.entry(item.id).workspace.map(SidebarStop.archived)
-        case let .workspace(item, _):
-          listItem(for: item).map(SidebarStop.workspace)
-        case .section, .group, .showMoreArchived:
-          nil
-        }
+    rows.compactMap { row in
+      switch row.kind {
+      case let .tab(id, workspaceID, _):
+        SidebarStop.tab(id, workspaceID: workspaceID)
+      case let .workspace(item, .archived):
+        environment.navigationStore.workspaceEntries.entry(item.id).workspace.map(SidebarStop.archived)
+      case let .workspace(item, _):
+        listItem(for: item).map(SidebarStop.workspace)
+      case .section, .group, .showMoreArchived:
+        nil
       }
+    }
   }
 
   func stepWorkspace(_ offset: Int) {
     let rows = sidebarRows
-    let stops = sidebarStops(in: rows)
-    let selected = selectedRowID(in: rows)
-    guard let current = stops.firstIndex(where: { isSelected($0, selected: selected) }) else { return }
+    guard let target = stepTarget(in: sidebarStops(in: rows), selected: selectedRowID(in: rows), by: offset)
+    else { return }
+
+    activate(target)
+  }
+
+  private func stepTarget(in stops: [SidebarStop], selected: SidebarRowID?, by offset: Int) -> SidebarStop? {
+    guard let current = stops.firstIndex(where: { isSelected($0, selected: selected) }) else {
+      return isShowingNewChat ? stops.first : nil
+    }
+
     let target = current + offset
-    guard target != current, stops.indices.contains(target) else { return }
-    activate(stops[target])
+    guard target != current, stops.indices.contains(target) else { return nil }
+    return stops[target]
   }
 
   private func isSelected(_ stop: SidebarStop, selected: SidebarRowID?) -> Bool {
     switch stop {
-    case .newChat:
-      isNewChatSelected
     case let .workspace(item):
       selected == .workspace(item.workspace.id)
     case let .tab(id, _):
@@ -51,8 +55,6 @@ extension SidebarView {
 
   private func activate(_ stop: SidebarStop) {
     switch stop {
-    case .newChat:
-      selection = .newChat(nil)
     case let .workspace(item):
       revealRequest.rowID = item.workspace.id
       activateWorkspace(item, tabId: item.workspace.mainTab.id)

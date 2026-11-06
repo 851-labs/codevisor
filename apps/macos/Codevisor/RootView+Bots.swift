@@ -14,6 +14,13 @@ extension RootView {
       newChat: openNewChat, newBot: botsEnabled ? openNewBot : nil, editBot: { botEditor = .edit($0) })
   }
 
+  var isShowingNewChat: Bool {
+    switch selection {
+    case .newChat, .none: true
+    case .session, .workspace, .archivedWorkspace, .bot: false
+    }
+  }
+
   func openNewChat() {
     selection = .newChat(nil)
     sidebarMode = .code
