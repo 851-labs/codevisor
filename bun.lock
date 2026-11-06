@@ -375,6 +375,13 @@
         "vitest": "4.1.6",
       },
     },
+    "packages/devtools": {
+      "name": "@codevisor/devtools",
+      "devDependencies": {
+        "@codevisor/vitest-config": "workspace:*",
+        "vitest": "4.1.6",
+      },
+    },
     "packages/git-hosts": {
       "name": "@codevisor/git-hosts",
       "dependencies": {
@@ -806,6 +813,8 @@
     "@codevisor/cloud-crypto": ["@codevisor/cloud-crypto@workspace:packages/cloud-crypto"],
 
     "@codevisor/db": ["@codevisor/db@workspace:packages/db"],
+
+    "@codevisor/devtools": ["@codevisor/devtools@workspace:packages/devtools"],
 
     "@codevisor/git-hosts": ["@codevisor/git-hosts@workspace:packages/git-hosts"],
 

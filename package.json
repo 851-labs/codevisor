@@ -38,7 +38,7 @@
     "check:js": "bun run format:check && bun run lint && bun run comments:check && bun run ratchet:check && bun run boundaries && bun run typecheck && bun run typecheck:configs && bun run test:coverage && bun run dev:scripts:test && bun run release:scripts:test",
     "check": "node scripts/check.mjs",
     "check:all": "node scripts/check.mjs --all",
-    "ship": "node scripts/ship.mjs",
+    "ship": "node packages/devtools/src/ship.ts",
     "dev:web": "bun run --cwd apps/www dev",
     "dev:mascot-playground": "bun run --cwd apps/mascot-playground dev",
     "release:server": "scripts/release/build-server-archive.sh",
