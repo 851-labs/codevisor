@@ -3,11 +3,29 @@ name: Nightly
 on:
   schedule:
     - cron: "17 9 * * *"
+    - cron: "41 6 * * 1"
   workflow_dispatch:
+    inputs:
+      hosted-macos:
+        description: Build the macOS app on a GitHub-hosted runner
+        type: boolean
+        default: false
 
 permissions:
+  actions: read
   contents: read
 
 jobs:
   test-chrome:
+    if: github.event.schedule != '41 6 * * 1' && !inputs.hosted-macos
     uses: ./.github/workflows/_test-chrome.yml
+
+  build-macos-hosted:
+    if: github.event.schedule == '41 6 * * 1' || inputs.hosted-macos
+    uses: ./.github/workflows/_build-macos.yml
+    with:
+      runner: '["macos-27"]'
+      version: 0.0.0
+      build-number: "1"
+      publish: false
+    secrets: inherit
