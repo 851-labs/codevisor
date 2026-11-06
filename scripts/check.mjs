@@ -14,6 +14,7 @@ import { dirname, join, relative, resolve } from "node:path"
 import { fileURLToPath } from "node:url"
 
 import { byCodeUnit, planChecks, relativeImports } from "./check-plan.mjs"
+import { checkReporter } from "./check-report.mjs"
 import { developmentLayout } from "./dev-layout.mjs"
 
 const repoRoot = fileURLToPath(new URL("..", import.meta.url))
@@ -148,12 +149,12 @@ function stepStatus(code, signal) {
   return signal === "SIGTERM" ? "cancelled" : "failed"
 }
 
-function runStep(entry) {
+function runStep(entry, reporter) {
   const [command, ...args] = entry.step.command(entry.args)
   const log = join(logDirectory, `${entry.step.name.replaceAll(/[^\w.-]+/g, "_")}.log`)
   const output = createWriteStream(log)
   const startedAt = performance.now()
-  console.log(`→ ${entry.step.name} (${entry.reason})`)
+  reporter.started(entry)
   return new Promise((resolveStep) => {
     const child = spawn(command, args, {
       cwd: repoRoot,
@@ -161,8 +162,10 @@ function runStep(entry) {
       stdio: ["ignore", "pipe", "pipe"]
     })
     running.add(child)
-    child.stdout.pipe(output, { end: false })
-    child.stderr.pipe(output, { end: false })
+    for (const stream of [child.stdout, child.stderr]) {
+      stream.pipe(output, { end: false })
+      if (reporter.streamsOutput) stream.pipe(process.stdout, { end: false })
+    }
     child.once("error", (error) => output.write(`${error.message}\n`))
     child.once("close", (code, signal) => {
       running.delete(child)
@@ -186,40 +189,38 @@ function stopRunning() {
   }
 }
 
-async function runLane(entries, results, state) {
+async function runLane(entries, results, state, reporter) {
   for (const entry of entries) {
     if (state.failed) {
       results.push({ ...entry, status: "cancelled" })
       continue
     }
-    const finished = await runStep(entry)
+    const finished = await runStep(entry, reporter)
     const result =
       finished.status !== "passed" && state.failed ? { ...finished, status: "cancelled" } : finished
     results.push(result)
-    if (result.status === "passed") {
-      console.log(`✓ ${entry.step.name} ${result.seconds.toFixed(1)}s`)
-    } else if (result.status === "failed") {
+    if (result.status === "passed") reporter.passed(result)
+    else if (result.status === "failed") {
       state.failed = true
       stopRunning()
-      const lines = (await readFile(result.log, "utf8")).trimEnd().split("\n")
-      console.log(`\n✗ ${entry.step.name} failed after ${result.seconds.toFixed(1)}s`)
-      if (lines.length > 200) console.log(`… ${lines.length - 200} earlier lines in ${result.log}`)
-      console.log(lines.slice(-200).join("\n"))
+      reporter.failed(result)
     }
   }
 }
 
-function printSummary(results, plan, startedAt) {
-  console.log("\nChecks")
-  for (const { step } of plan) {
-    const result = results.find((candidate) => candidate.step === step)
-    const label = step.name.padEnd(34)
-    if (result.status === "passed") console.log(`  ✓ ${label}${result.seconds.toFixed(1)}s`)
-    else if (result.status === "failed") console.log(`  ✗ ${label}failed (${result.log})`)
-    else if (result.status === "cancelled") console.log(`  - ${label}cancelled`)
-    else console.log(`  - ${label}skipped: ${result.reason}`)
+function laneGroups(pending) {
+  return [...new Set(pending.map((entry) => entry.step.lane))].map((lane) =>
+    pending.filter((entry) => entry.step.lane === lane)
+  )
+}
+
+async function runLanes(lanes, results, state, reporter) {
+  if (reporter.runsLanesInParallel) {
+    await Promise.all(lanes.map((lane) => runLane(lane, results, state, reporter)))
+    return
   }
-  console.log(`Total ${((performance.now() - startedAt) / 1000).toFixed(1)}s`)
+
+  for (const lane of lanes) await runLane(lane, results, state, reporter)
 }
 
 async function readPassedState() {
@@ -273,15 +274,8 @@ async function main() {
       process.exit(code)
     })
   }
-  await Promise.all(
-    [...new Set(pending.map((entry) => entry.step.lane))].map((lane) =>
-      runLane(
-        pending.filter((entry) => entry.step.lane === lane),
-        results,
-        state
-      )
-    )
-  )
+  const reporter = checkReporter()
+  await runLanes(laneGroups(pending), results, state, reporter)
   for (const result of results) {
     if (
       result.status === "passed" &&
@@ -292,7 +286,7 @@ async function main() {
     }
   }
   await writeFile(statePath, `${JSON.stringify(passed, null, 2)}\n`)
-  printSummary(results, plan, startedAt)
+  reporter.finished(results, plan, (performance.now() - startedAt) / 1000)
   process.exitCode = state.failed ? 1 : 0
 }
 
