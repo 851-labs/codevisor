@@ -2,7 +2,6 @@ import AppKit
 import Combine
 import GhosttyKit
 import CodevisorCore
-import CodevisorUI
 import os
 
 @MainActor
@@ -132,8 +131,7 @@ private final class CodevisorGhosttySurfaceView: Ghostty.SurfaceView {
       keyEquivalent: ""
     )
     item.target = self
-    item.image = NSImage(systemSymbolName: "arrow.trianglehead.counterclockwise", accessibilityDescription: nil)
-    menu.items.filter { $0.image != nil }.forEach(MenuItemImage.reveal)
+    item.setImageIfDesired(systemSymbolName: "arrow.trianglehead.counterclockwise")
     return menu
   }
 

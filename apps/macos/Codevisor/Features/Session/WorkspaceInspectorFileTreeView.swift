@@ -282,12 +282,9 @@ private struct WorkspaceInspectorFileTreeRow: View {
     }
     .help(entry.path)
     .contextMenu {
-      Button {
+      Button("Copy Path") {
         NSPasteboard.general.clearContents()
         NSPasteboard.general.setString(entry.path, forType: .string)
-      } label: {
-        Label("Copy Path", systemImage: "doc.on.doc")
-          .labelStyle(.titleAndIcon)
       }
     }
     .accessibilityElement(children: .ignore)

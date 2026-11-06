@@ -109,22 +109,15 @@ private struct ScreenSharingClipboardMenu: View {
     if store.endpoint?.supportsClipboard != false {
       let clipboard = store.endpoint?.clipboard
       Menu {
-        Toggle(isOn: Binding(get: { clipboard?.sharing == true }, set: { clipboard?.sharing = $0 })) {
-          label("Use Shared Clipboard", "arrow.left.arrow.right")
-        }
+        Toggle(
+          "Use Shared Clipboard",
+          isOn: Binding(get: { clipboard?.sharing == true }, set: { clipboard?.sharing = $0 })
+        )
         .disabled(clipboard == nil)
         Divider()
         Group {
-          Button {
-            clipboard?.sendLocalClipboard()
-          } label: {
-            label("Send Clipboard", "arrow.up.doc.on.clipboard")
-          }
-          Button {
-            clipboard?.getRemoteClipboard()
-          } label: {
-            label("Get Clipboard", "arrow.down.doc")
-          }
+          Button("Send Clipboard") { clipboard?.sendLocalClipboard() }
+          Button("Get Clipboard") { clipboard?.getRemoteClipboard() }
         }
         .disabled(clipboard?.available != true || clipboard?.busy == true || clipboard?.sharing == true)
       } label: {
@@ -133,10 +126,6 @@ private struct ScreenSharingClipboardMenu: View {
       .accessibilityLabel("Clipboard")
       .help("Share the clipboard with this machine")
     }
-  }
-
-  private func label(_ title: String, _ systemImage: String) -> some View {
-    Label(title, systemImage: systemImage).labelStyle(.titleAndIcon)
   }
 }
 

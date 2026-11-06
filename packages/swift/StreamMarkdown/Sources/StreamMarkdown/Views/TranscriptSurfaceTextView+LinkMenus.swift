@@ -93,8 +93,6 @@
       super.init(title: title, action: #selector(runHandler), keyEquivalent: "")
       target = self
       image = NSImage(systemSymbolName: systemImage, accessibilityDescription: nil)
-      guard #available(macOS 27.0, *) else { return }
-      preferredImageVisibility = .visible
     }
 
     @available(*, unavailable)

@@ -90,16 +90,8 @@ public struct SubagentRow: View {
       .buttonStyle(SubagentChipButtonStyle())
       #if os(macOS)
         .contextMenu {
-          Button {
-            open(.split)
-          } label: {
-            menuLabel("Open in Split View", "rectangle.righthalf.inset.filled")
-          }
-          Button {
-            open(.newTab)
-          } label: {
-            menuLabel("Open in New Tab", "plus.square.on.square")
-          }
+          Button("Open in Split View", systemImage: "rectangle.righthalf.inset.filled") { open(.split) }
+          Button("Open in New Tab", systemImage: "plus.square.on.square") { open(.newTab) }
         }
       #endif
       .accessibilityValue(statusDescription)
@@ -109,10 +101,6 @@ public struct SubagentRow: View {
         .accessibilityElement(children: .combine)
         .accessibilityValue(statusDescription)
     }
-  }
-
-  private func menuLabel(_ title: String, _ systemImage: String) -> some View {
-    Label(title, systemImage: systemImage).labelStyle(.titleAndIcon)
   }
 
   private var label: some View {

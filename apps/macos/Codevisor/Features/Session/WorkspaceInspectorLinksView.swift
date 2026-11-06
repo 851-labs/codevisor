@@ -125,18 +125,12 @@ private struct WorkspaceInspectorLinkRow: View {
     .accessibilityLabel(title)
     .accessibilityValue(WorkspaceInspectorLinksView.host(link.url))
     .contextMenu {
-      Button {
+      Button("Copy Link") {
         NSPasteboard.general.clearContents()
         NSPasteboard.general.setString(link.url.absoluteString, forType: .string)
-      } label: {
-        Label("Copy Link", systemImage: "link")
-          .labelStyle(.titleAndIcon)
       }
-      Button {
+      Button("Open in Default Browser") {
         DefaultBrowser.open(link.url)
-      } label: {
-        Label("Open in Default Browser", systemImage: "safari")
-          .labelStyle(.titleAndIcon)
       }
     }
     .task(id: link.url) {

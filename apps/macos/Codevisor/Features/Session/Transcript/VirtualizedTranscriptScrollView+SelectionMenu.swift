@@ -20,7 +20,6 @@ extension VirtualizedTranscriptScrollView {
     if sessionController != nil { menu.addItem(addToChatMenuItem) }
     let copyItem = NSMenuItem(title: "Copy", action: #selector(copy(_:)), keyEquivalent: "")
     copyItem.target = self
-    MenuItemImage.show("doc.on.doc", on: copyItem)
     menu.addItem(copyItem)
     return menu
   }
