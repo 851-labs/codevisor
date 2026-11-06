@@ -190,6 +190,23 @@ struct AppEnvironmentTests {
       })
   }
 
+  @Test("Archiving a chat whose setup never reached the machine keeps it gone")
+  func archivingUnstartedChatStaysArchived() {
+    let project = Project.fromFolder(URL(fileURLWithPath: "/tmp/unstarted-chat"))
+    let environment = AppEnvironment.preview(seedProjects: [project], seedSessions: [])
+    let session = environment.projectList.newSession(in: project, title: "Stuck", syncToServer: false)
+    let seed = WorkspaceSessionSeed(
+      sessionId: session.id, initialName: project.name, serverId: session.serverId,
+      projectId: session.projectId, rootDirectory: project.folderURL.path)
+    let draft = environment.workspaces.ensureWorkspace(for: seed, legacyGroups: nil)
+
+    environment.archiveWorkspace(draft)
+
+    #expect(environment.projectList.session(session.id, serverId: session.serverId) == nil)
+    #expect(!environment.navigationStore.pendingIntents.contains { $0.intent.expectedSessionId == session.id })
+    #expect(environment.workspaces.workspaceId(forSession: session.id) == nil)
+  }
+
   @Test("A server's update request installs the app update without waiting for a window")
   func updateRequestInstallsAppUpdate() async throws {
     let localServer = StubLocalServer()

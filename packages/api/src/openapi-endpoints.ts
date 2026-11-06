@@ -82,6 +82,8 @@ export const endpoints = [
   "GET /v1/projects/:id/git/branches",
   "GET /v1/projects/:id/worktrees",
   "POST /v1/projects/:id/worktrees",
+  "POST /v1/projects/:id/worktree-setups",
+  "GET /v1/projects/:id/worktree-setups/:worktreeId",
   "GET /v1/workspaces",
   "GET /v1/workspace-snapshot",
   "GET /v1/workspace-panes",
@@ -360,6 +362,7 @@ export const created = new Set<Endpoint>([
 ])
 
 export const accepted = new Set<Endpoint>([
+  "POST /v1/projects/:id/worktree-setups",
   "POST /v1/sandboxes",
   "POST /v1/sandboxes/:id/retry",
   "POST /v1/sandboxes/:id/wake",

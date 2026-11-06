@@ -230,11 +230,9 @@ extension SessionController {
     }
     defer { follow.cancel() }
     do {
-      let worktree = try await serverClient.createWorktree(
-        projectId: project.id,
-        id: worktreeId,
-        name: nil
-      )
+      let worktree = try await WorktreeSetupFollower(
+        client: serverClient, projectId: project.id, worktreeId: worktreeId, clock: sendClock
+      ).run()
       sessionCwdOverride = worktree.path
       worktreeName = worktree.name
       if var session = serverSession {

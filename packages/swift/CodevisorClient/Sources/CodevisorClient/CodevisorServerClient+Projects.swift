@@ -429,6 +429,20 @@ extension CodevisorServerClient {
     )
   }
 
+  public func startWorktreeSetup(
+    projectId: UUID, id: String, name: String?
+  ) async throws -> ServerWorktreeSetupStatus {
+    try await send(
+      "/v1/projects/\(projectId.uuidString)/worktree-setups",
+      method: "POST",
+      body: CreateWorktreeBody(id: id, name: name)
+    )
+  }
+
+  public func worktreeSetupStatus(projectId: UUID, worktreeId: String) async throws -> ServerWorktreeSetupStatus {
+    try await get("/v1/projects/\(projectId.uuidString)/worktree-setups/\(pathComponent(worktreeId))")
+  }
+
   private struct CreatedDirectory: Decodable {
     let path: String
   }

@@ -64,7 +64,7 @@ final public class SessionController {
     }
   )
   public let attachmentFiles: ComposerAttachmentFileStore
-  @ObservationIgnored private let sendClock: any Clock<Duration>
+  @ObservationIgnored let sendClock: any Clock<Duration>
   public internal(set) var harnesses: [ServerHarness] = []
   public internal(set) var preparationState: PreparationState = .loading
   public internal(set) var isRefreshingHarnessCapabilities = false

@@ -39,6 +39,7 @@ import { reconcileProjectRepoUrls } from "./project-repo-identity.js"
 import { createScratchProject } from "./project-scratch.js"
 import { routeProjectSetupSource, routeReadProjectEnvFiles } from "./project-setup-source.js"
 import { createProjectWorktree } from "./project-worktree-create.js"
+import { routeWorktreeSetups } from "./project-worktree-setups.js"
 
 export { probeProject } from "./project-probe.js"
 
@@ -92,6 +93,16 @@ export const routeProjects = async (
   }
   if (request.method === "POST" && url.pathname === "/v1/projects/scratch")
     return createScratchProject(services, config, fanout, serverId, request, response)
+  const worktreeSetup = routeWorktreeSetups({
+    services,
+    config,
+    fanout,
+    serverId,
+    request,
+    response,
+    url
+  })
+  if (worktreeSetup !== undefined) return worktreeSetup
 
   const projectId = matchRoute(url.pathname, "/v1/projects/:id")
   if (projectId !== undefined && request.method === "PATCH")

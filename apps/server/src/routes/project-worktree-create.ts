@@ -71,11 +71,38 @@ export interface AllocatedWorktree {
   readonly rollBack: () => Promise<void>
 }
 
+export interface WorktreePlan {
+  readonly services: CodevisorServerServices
+  readonly config: CodevisorServerConfig
+  readonly fanout: EventFanout
+  readonly payload: CreateWorktreeRequest
+  readonly project: Project
+  readonly location: ProjectLocation
+  readonly existing: Set<string>
+  readonly requested: string | undefined
+  readonly environment: NodeJS.ProcessEnv
+  readonly startPoint: string | undefined
+}
+
 export const allocateProjectWorktree = async (
-  { services, config, fanout, serverId }: WorktreeServices,
+  worktreeServices: WorktreeServices,
   worktreeProjectId: string,
   payload: CreateWorktreeRequest
 ): Promise<AllocatedWorktree> => {
+  const plan = await planProjectWorktree(worktreeServices, worktreeProjectId, payload)
+  const worktree = await addPlannedWorktree(plan)
+  return {
+    worktree,
+    rollBack: () =>
+      rollBackNewWorktree(plan.services, plan.location.folderPath, worktree, plan.environment)
+  }
+}
+
+export const planProjectWorktree = async (
+  { services, config, fanout, serverId }: WorktreeServices,
+  worktreeProjectId: string,
+  payload: CreateWorktreeRequest
+): Promise<WorktreePlan> => {
   const project = await getProjectOrFail(services.db, worktreeProjectId)
   const location = worktreeableLocation(serverId, project)
   if (!(await isGitWorkTree(location.folderPath))) throw notAGitRepository(location.folderPath)
@@ -91,7 +118,7 @@ export const allocateProjectWorktree = async (
     project.worktreeBase,
     environment
   )
-  const worktree = await addUnusedWorktree({
+  return {
     services,
     config,
     fanout,
@@ -102,10 +129,6 @@ export const allocateProjectWorktree = async (
     requested,
     environment,
     startPoint
-  })
-  return {
-    worktree,
-    rollBack: () => rollBackNewWorktree(services, location.folderPath, worktree, environment)
   }
 }
 
@@ -150,19 +173,6 @@ export const availableWorktreeName = (base: string, existing: ReadonlySet<string
   throw new Error("Unable to allocate a unique worktree name")
 }
 
-interface WorktreeAllocation {
-  readonly services: CodevisorServerServices
-  readonly config: CodevisorServerConfig
-  readonly fanout: EventFanout
-  readonly payload: CreateWorktreeRequest
-  readonly project: Project
-  readonly location: ProjectLocation
-  readonly existing: Set<string>
-  readonly requested: string | undefined
-  readonly environment: NodeJS.ProcessEnv
-  readonly startPoint: string | undefined
-}
-
 interface WorktreeSetup {
   readonly worktree: Worktree
   readonly branch: string
@@ -200,9 +210,9 @@ const locationGitEnvironment = (
 ): Promise<NodeJS.ProcessEnv> =>
   services.resolveGitEnvironment?.(location.folderPath) ?? Promise.resolve(process.env)
 
-const addUnusedWorktree = async (allocation: WorktreeAllocation): Promise<Worktree> => {
-  const { services, config, fanout, payload, project, location, existing } = allocation
-  const { requested, environment, startPoint } = allocation
+export const addPlannedWorktree = async (plan: WorktreePlan): Promise<Worktree> => {
+  const { services, config, fanout, payload, project, location, existing } = plan
+  const { requested, environment, startPoint } = plan
   for (let attempt = 0; attempt < maxWorktreeAttempts; attempt += 1) {
     const name = nextWorktreeName(config, requested, existing)
     const branch = `codevisor/${name}`
@@ -218,7 +228,7 @@ const addUnusedWorktree = async (allocation: WorktreeAllocation): Promise<Worktr
       throw cause
       /* v8 ignore stop */
     }
-    const setup = beginWorktreeSetup(allocation, worktree, branch)
+    const setup = beginWorktreeSetup(plan, worktree, branch)
     await setup.publish({ state: "started" })
     try {
       mkdirSync(dirname(worktree.path), { recursive: true })
@@ -243,7 +253,7 @@ const addUnusedWorktree = async (allocation: WorktreeAllocation): Promise<Worktr
         })
         continue
       }
-      return abandonWorktree(allocation, setup, cause)
+      return abandonWorktree(plan, setup, cause)
       /* v8 ignore stop */
     }
     await appendAndPublish(services.db, fanout, "worktree.created", worktree.id, worktree)
@@ -264,16 +274,16 @@ const nextWorktreeName = (
 }
 
 const beginWorktreeSetup = (
-  allocation: WorktreeAllocation,
+  plan: WorktreePlan,
   worktree: Worktree,
   branch: string
 ): WorktreeSetup => {
   const startedAt = Date.now()
   const publish = makeWorktreeSetupPublisher(
-    allocation.services.db,
-    allocation.fanout,
+    plan.services.db,
+    plan.fanout,
     worktree,
-    allocation.payload.sessionId
+    plan.payload.sessionId
   )
   return { worktree, branch, startedAt, publish }
 }
@@ -286,16 +296,16 @@ const worktreeLogPublisher =
 
 /* v8 ignore start */
 const abandonWorktree = async (
-  allocation: WorktreeAllocation,
+  plan: WorktreePlan,
   setup: WorktreeSetup,
   cause: unknown
 ): Promise<never> => {
   try {
     const removed = await rollbackFailedWorktree(
-      allocation.location.folderPath,
+      plan.location.folderPath,
       setup.worktree.path,
       setup.branch,
-      allocation.environment
+      plan.environment
     )
     if (removed) {
       await setup.publish({

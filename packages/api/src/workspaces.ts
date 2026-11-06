@@ -206,3 +206,21 @@ export const WorktreeSetupUpdate = Schema.Struct({
   durationMs: Schema.optional(Schema.Number)
 })
 export type WorktreeSetupUpdate = typeof WorktreeSetupUpdate.Type
+
+export const StartWorktreeSetupRequest = Schema.Struct({
+  id: Schema.String,
+  sessionId: Schema.optional(Schema.String),
+  name: Schema.optional(Schema.String)
+})
+export type StartWorktreeSetupRequest = typeof StartWorktreeSetupRequest.Type
+
+export const WorktreeSetupProgress = Schema.Literals(["running", "completed", "failed"])
+export type WorktreeSetupProgress = typeof WorktreeSetupProgress.Type
+
+export const WorktreeSetupStatus = Schema.Struct({
+  worktreeId: Schema.String,
+  state: WorktreeSetupProgress,
+  worktree: Schema.optional(Worktree),
+  message: Schema.optional(Schema.String)
+})
+export type WorktreeSetupStatus = typeof WorktreeSetupStatus.Type

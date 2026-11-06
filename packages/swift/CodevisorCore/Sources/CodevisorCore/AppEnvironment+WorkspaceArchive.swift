@@ -32,10 +32,17 @@ extension AppEnvironment {
 
   private func setWorkspaceArchived(_ workspace: Workspace, _ isArchived: Bool) {
     guard workspace.isServerSynced else {
-      if isArchived { workspaces.delete(id: workspace.id) }
+      if isArchived { discardDraft(workspace) }
       return
     }
     navigationStore.enqueue(
       .setWorkspaceArchived(workspaceId: workspace.id, isArchived: isArchived), machineId: workspace.serverId)
+  }
+
+  private func discardDraft(_ workspace: Workspace) {
+    for sessionId in workspace.chatSessionIds {
+      navigationStore.withdrawExpectedSession(sessionId, machineId: workspace.serverId)
+    }
+    workspaces.delete(id: workspace.id)
   }
 }

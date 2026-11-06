@@ -545,6 +545,14 @@ public extension CodevisorServerClienting {
     try await createWorktree(projectId: projectId, name: name)
   }
 
+  func startWorktreeSetup(projectId: UUID, id: String, name: String?) async throws -> ServerWorktreeSetupStatus {
+    .completed(try await createWorktree(projectId: projectId, id: id, name: name))
+  }
+
+  func worktreeSetupStatus(projectId: UUID, worktreeId: String) async throws -> ServerWorktreeSetupStatus {
+    throw CodevisorServerClientError.httpStatus(404, "")
+  }
+
   func listDirectory(path: String?, showHidden: Bool) async throws -> ServerFsListing {
     throw CodevisorServerClientError.invalidResponse
   }

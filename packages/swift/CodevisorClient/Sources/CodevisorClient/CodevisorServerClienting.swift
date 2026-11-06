@@ -174,6 +174,8 @@ public protocol CodevisorServerClienting: BrowserStateClienting, BrowserFaviconC
   func renameWorkspace(id: UUID, name: String, hasCustomName: Bool) async throws
   func createWorktree(projectId: UUID, name: String?) async throws -> ServerWorktree
   func createWorktree(projectId: UUID, id: String?, name: String?) async throws -> ServerWorktree
+  func startWorktreeSetup(projectId: UUID, id: String, name: String?) async throws -> ServerWorktreeSetupStatus
+  func worktreeSetupStatus(projectId: UUID, worktreeId: String) async throws -> ServerWorktreeSetupStatus
   func listDirectory(path: String?, showHidden: Bool) async throws -> ServerFsListing
   func projectRecommendations(limit: Int) async throws -> [ServerProjectRecommendation]
   func firstRunStatus() async throws -> ServerFirstRunStatus
