@@ -2,7 +2,6 @@ import CoreMedia
 import Foundation
 import ScreenSharingBench
 import ScreenSharingV2
-import VideoToolbox
 
 struct VCPLevelsDecoder {
   struct Decoded {
@@ -10,44 +9,51 @@ struct VCPLevelsDecoder {
     let format: CMVideoFormatDescription
   }
 
+  private struct AccessUnit {
+    let parameterSets: [Data]
+    let slices: Data
+  }
+
+  private static let lengthSize = 4
   private static let parameterSetTypes: ClosedRange<UInt8> = 32...34
 
   static func decode(_ units: [ScreenSharingAccessUnit], to pixelFormat: OSType) throws -> Decoded {
-    var session: VTDecompressionSession?
+    var decoder: EncodeLabDecoder?
     var format: CMVideoFormatDescription?
     var last: CVPixelBuffer?
-    defer { if let session { VTDecompressionSessionInvalidate(session) } }
     for unit in units {
-      let (parameterSets, slices) = unit.withUnsafeBytes(split)
-      if !parameterSets.isEmpty {
-        let description = try formatDescription(parameterSets)
-        if let session { VTDecompressionSessionInvalidate(session) }
-        session = try makeSession(description, pixelFormat: pixelFormat)
+      let split = try unit.withUnsafeBytes(Self.split)
+      if !split.parameterSets.isEmpty {
+        let description = try formatDescription(split.parameterSets)
+        decoder = try EncodeLabDecoder(format: description, output: pixelFormat)
         format = description
       }
-      guard let session, let format else {
+      guard let decoder, let format else {
         throw BenchUsageError(message: "the first access unit has no parameter sets")
       }
 
-      last = try decode(slices, format: format, session: session) ?? last
+      last = try decoder.decode(try sample(split.slices, format: format))
     }
     guard let last, let format else { throw BenchUsageError(message: "nothing decoded") }
 
     return Decoded(image: last, format: format)
   }
 
-  private static func split(_ bytes: UnsafeRawBufferPointer) -> ([Data], Data) {
+  private static func split(_ bytes: UnsafeRawBufferPointer) throws -> AccessUnit {
     var parameterSets: [Data] = []
     var offset = 0
-    while offset + 4 < bytes.count {
-      let length = bytes[offset..<offset + 4].reduce(0) { $0 << 8 | Int($1) }
-      let unit = bytes[(offset + 4)..<min(bytes.count, offset + 4 + length)]
-      guard parameterSetTypes.contains((unit.first ?? 0) >> 1 & 0x3f) else { break }
+    while offset + lengthSize < bytes.count {
+      let length = bytes[offset..<offset + lengthSize].reduce(0) { $0 << 8 | Int($1) }
+      let start = offset + lengthSize
+      guard length > 0, start + length <= bytes.count else { throw BenchUsageError(message: "malformed NAL unit") }
+      guard parameterSetTypes.contains(bytes[start] >> 1 & 0x3f) else { break }
 
-      parameterSets.append(Data(unit))
-      offset += 4 + length
+      parameterSets.append(Data(bytes[start..<start + length]))
+      offset = start + length
     }
-    return (parameterSets, Data(bytes[offset...]))
+    guard offset < bytes.count else { throw BenchUsageError(message: "an access unit has no slices") }
+
+    return AccessUnit(parameterSets: parameterSets, slices: Data(bytes[offset...]))
   }
 
   private static func formatDescription(_ parameterSets: [Data]) throws -> CMVideoFormatDescription {
@@ -57,7 +63,7 @@ struct VCPLevelsDecoder {
     let status = withExtendedLifetime(retained) {
       CMVideoFormatDescriptionCreateFromHEVCParameterSets(
         allocator: kCFAllocatorDefault, parameterSetCount: retained.count, parameterSetPointers: pointers,
-        parameterSetSizes: retained.map(\.length), nalUnitHeaderLength: 4, extensions: nil,
+        parameterSetSizes: retained.map(\.length), nalUnitHeaderLength: Int32(lengthSize), extensions: nil,
         formatDescriptionOut: &description)
     }
     guard status == noErr, let description else { throw BenchUsageError(message: "HEVC format (\(status))") }
@@ -65,26 +71,7 @@ struct VCPLevelsDecoder {
     return description
   }
 
-  private static func makeSession(
-    _ format: CMVideoFormatDescription, pixelFormat: OSType
-  ) throws -> VTDecompressionSession {
-    let attributes: [CFString: Any] = [
-      kCVPixelBufferPixelFormatTypeKey: pixelFormat, kCVPixelBufferMetalCompatibilityKey: true,
-      kCVPixelBufferIOSurfacePropertiesKey: [CFString: Any](),
-    ]
-    let specification = [kVTVideoDecoderSpecification_RequireHardwareAcceleratedVideoDecoder: true] as CFDictionary
-    var session: VTDecompressionSession?
-    let status = VTDecompressionSessionCreate(
-      allocator: nil, formatDescription: format, decoderSpecification: specification,
-      imageBufferAttributes: attributes as CFDictionary, outputCallback: nil, decompressionSessionOut: &session)
-    guard status == noErr, let session else { throw BenchUsageError(message: "decoder (\(status))") }
-
-    return session
-  }
-
-  private static func decode(
-    _ slices: Data, format: CMVideoFormatDescription, session: VTDecompressionSession
-  ) throws -> CVPixelBuffer? {
+  private static func sample(_ slices: Data, format: CMVideoFormatDescription) throws -> CMSampleBuffer {
     var block: CMBlockBuffer?
     var sample: CMSampleBuffer?
     var size = slices.count
@@ -92,8 +79,10 @@ struct VCPLevelsDecoder {
       CMBlockBufferCreateWithMemoryBlock(
         allocator: nil, memoryBlock: nil, blockLength: bytes.count, blockAllocator: nil, customBlockSource: nil,
         offsetToData: 0, dataLength: bytes.count, flags: 0, blockBufferOut: &block) == noErr
-        && CMBlockBufferReplaceDataBytes(
-          with: bytes.baseAddress!, blockBuffer: block!, offsetIntoDestination: 0, dataLength: bytes.count) == noErr
+        && block.map {
+          CMBlockBufferReplaceDataBytes(
+            with: bytes.baseAddress!, blockBuffer: $0, offsetIntoDestination: 0, dataLength: bytes.count) == noErr
+        } == true
     }
     guard copied, let block,
       CMSampleBufferCreateReady(
@@ -102,13 +91,6 @@ struct VCPLevelsDecoder {
       let sample
     else { throw BenchUsageError(message: "decode sample") }
 
-    nonisolated(unsafe) var image: CVPixelBuffer?
-    let status = VTDecompressionSessionDecodeFrame(session, sampleBuffer: sample, flags: [], infoFlagsOut: nil) {
-      _, _, decoded, _, _ in image = decoded
-    }
-    VTDecompressionSessionWaitForAsynchronousFrames(session)
-    guard status == noErr else { throw BenchUsageError(message: "decode (\(status))") }
-
-    return image
+    return sample
   }
 }

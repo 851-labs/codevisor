@@ -30,10 +30,13 @@ struct VCPLevelsCommand: BenchCommand {
     ]
     let renderer = try VCPLevelsRenderer()
     var variants: [VCPLevelsVariant] = []
+    var decodes: [CVPixelBuffer] = []
     for (name, picture) in inputs {
-      variants.append(try await variant(name, picture: picture, renderer: renderer))
+      let measured = try await variant(name, picture: picture, renderer: renderer)
+      variants.append(measured.report)
+      decodes.append(measured.decoded)
     }
-    let shown = try await displayed(bgra)
+    let shown = try await displayed(bgra, decoded: decodes[0])
     try BenchOutput.print(
       VCPLevelsReport(
         machine: BenchHostName.current, displayBefore: shown.before, displayAfter: shown.after,
@@ -48,14 +51,14 @@ struct VCPLevelsCommand: BenchCommand {
     var presented: [VCPLevelsStage] = []
   }
 
-  private func displayed(_ bgra: CVPixelBuffer) async throws -> Shown {
+  private func displayed(_ bgra: CVPixelBuffer, decoded: CVPixelBuffer) async throws -> Shown {
     guard captures else { return Shown() }
 
     let display = try await SharedDisplay.make(virtualDisplay)
     let screen = try display.screen()
     var shown = Shown(before: Self.describe(screen))
     shown.captured = await VCPLevelsCapture.stages(showing: bgra, on: screen)
-    shown.presented = try await presentations(bgra, on: screen)
+    shown.presented = try await presentations(bgra, decoded: decoded, on: screen)
     shown.after = Self.describe(screen)
     return withExtendedLifetime(display) { shown }
   }
@@ -67,12 +70,12 @@ struct VCPLevelsCommand: BenchCommand {
     return "\(space?.localizedName ?? "?") (\(name), ICC \(bytes) bytes)"
   }
 
-  private func presentations(_ bgra: CVPixelBuffer, on screen: NSScreen) async throws -> [VCPLevelsStage] {
-    let units = try await VCPLevelsEncoding.accessUnits(of: bgra, passes: passes)
-    let decoded = try VCPLevelsDecoder.decode(units, to: kCVPixelFormatType_444YpCbCr8BiPlanarFullRange)
-    return await VCPLevelsPresentation.stages(
+  private func presentations(
+    _ bgra: CVPixelBuffer, decoded: CVPixelBuffer, on screen: NSScreen
+  ) async throws -> [VCPLevelsStage] {
+    await VCPLevelsPresentation.stages(
       [
-        .init(name: "VCP 444f decode", pixels: decoded.image, expectation: .fullRangeRoundTrip),
+        .init(name: "VCP 444f decode", pixels: decoded, expectation: .fullRangeRoundTrip),
         .init(
           name: "420v converted on the CPU", pixels: try VCPLevelsRamp.videoRange420(),
           expectation: .videoRangeRoundTrip),
@@ -82,11 +85,11 @@ struct VCPLevelsCommand: BenchCommand {
 
   private func variant(
     _ name: String, picture: CVPixelBuffer, renderer: VCPLevelsRenderer
-  ) async throws -> VCPLevelsVariant {
+  ) async throws -> (report: VCPLevelsVariant, decoded: CVPixelBuffer) {
     let units = try await VCPLevelsEncoding.accessUnits(of: picture, passes: passes)
     let decoded = try VCPLevelsDecoder.decode(units, to: kCVPixelFormatType_444YpCbCr8BiPlanarFullRange)
     let decodedBGRA = try VCPLevelsDecoder.decode(units, to: kCVPixelFormatType_32BGRA)
-    return VCPLevelsVariant(
+    let report = VCPLevelsVariant(
       input: name, accessUnits: units.count, stream: Self.extensions(of: decoded.format),
       stages: [
         VCPLevelsStage(
@@ -100,6 +103,7 @@ struct VCPLevelsCommand: BenchCommand {
           expecting: .fullRangeRoundTrip,
           tags: VCPLevelsTags.of(decodedBGRA.image)),
       ])
+    return (report, decoded.image)
   }
 
   private func pixelTransfers(_ bgra: CVPixelBuffer) throws -> [VCPLevelsStage] {

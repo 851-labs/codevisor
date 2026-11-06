@@ -9,6 +9,7 @@ final class PlayerVirtualDisplay {
   private static let refreshRate = 60.0
   private static let pollInterval = Duration.milliseconds(50)
   private static let pollAttempts = 100
+  private static let profileAttempts = 20
   private static let millimetersPerPoint = 25.4 / 110.0
 
   private let display: CGVirtualDisplay
@@ -32,21 +33,29 @@ final class PlayerVirtualDisplay {
   var displayID: CGDirectDisplayID { display.displayID }
 
   func screen() async throws -> NSScreen {
-    var online = false
+    let screen = try await onlineScreen()
+    try await assignSRGB()
+    return screen
+  }
+
+  private func onlineScreen() async throws -> NSScreen {
     for _ in 0..<Self.pollAttempts {
       try selectMode()
-      if let screen = matchingScreen() {
-        online = true
-        if PlayerDisplayProfile.assignSRGB(to: id) { return screen }
-      }
+      if let screen = matchingScreen() { return screen }
 
       try await Task.sleep(for: Self.pollInterval)
     }
-    guard online else {
-      throw PlayerError.virtualDisplayUnavailable(
-        "The \(resolution.rawValue) virtual display didn't come online. Its modes: \(availableModes())")
+    throw PlayerError.virtualDisplayUnavailable(
+      "The \(resolution.rawValue) virtual display didn't come online. Its modes: \(availableModes())")
+  }
+
+  private func assignSRGB() async throws {
+    for _ in 0..<Self.profileAttempts {
+      if PlayerDisplayProfile.assignSRGB(to: id) { return }
+
+      try await Task.sleep(for: Self.pollInterval)
     }
-    throw PlayerError.virtualDisplayUnavailable("ColorSync refused an sRGB profile for the virtual display.")
+    BenchConsole.error("ColorSync refused an sRGB profile for the virtual display; its levels may not match sRGB.")
   }
 
   private func matchingScreen() -> NSScreen? {

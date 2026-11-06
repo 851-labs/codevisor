@@ -89,11 +89,13 @@ enum VCPLevelsCapture {
   private static func imageView(_ picture: CVPixelBuffer) throws -> NSView {
     guard let image = cgImage(picture) else { throw BenchUsageError(message: "the picture can't be shown") }
 
+    let layer = CALayer()
+    layer.contents = image
+    layer.magnificationFilter = .nearest
+    layer.minificationFilter = .nearest
     let view = NSView()
+    view.layer = layer
     view.wantsLayer = true
-    view.layer?.contents = image
-    view.layer?.magnificationFilter = .nearest
-    view.layer?.minificationFilter = .nearest
     return view
   }
 

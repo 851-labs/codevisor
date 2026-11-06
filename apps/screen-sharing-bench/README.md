@@ -428,7 +428,7 @@ shown at half size and is never 1:1. The Tier 2 input `viewer-display: R1x2` mak
 (`--virtual-display R1x2`) create a 1920×1080 @2x virtual display on croissant for each run, show their window
 full screen on it, and name it in their ready file, so the viewer observer captures it (barcode blocks scale with
 it: 16 px for a 3840 px host). The bench's virtual display gets the system sRGB profile through ColorSync for as
-long as it exists (`PlayerDisplayProfile`). Left to macOS, it got a generated profile whose tone curve isn't sRGB's,
+long as it exists (`PlayerDisplayProfile`; if ColorSync refuses, the command warns on stderr and carries on). Left to macOS, it got a generated profile whose tone curve isn't sRGB's,
 and sRGB content shown on it came back from the observer's sRGB capture with levels 1–44 one or two lower (851-3989:
 grey 40 as 39, which held VCP's dark text card at 48.3 dB `psnr_y`; `vcp-levels` lab runs 42146297995 before,
 42147875743 after). Engine v2 streams R1x2 natively at 3840×2160 in four tiles (E5), so its rows
