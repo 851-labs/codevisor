@@ -339,19 +339,9 @@ struct WorkspaceScreen: View {
     if let promotionNavigationTitle { return promotionNavigationTitle.title }
     if isDraft { return "New Chat" }
     guard let pane = activePane else { return "" }
-    if pane.kind != .chat, let custom = singlePaneTab(showing: pane.id)?.customTitle {
-      return custom
-    }
     if let simulatorTitle { return simulatorTitle }
     if let screenSharingTitle { return screenSharingTitle }
     return title(for: pane)
-  }
-
-  private func singlePaneTab(showing paneId: UUID) -> WorkspaceTab? {
-    resolvedWorkspace?.centerTabs.first { tab in
-      let groups = tab.root.allGroups
-      return groups.count == 1 && groups[0].state.panes.map(\.id) == [paneId]
-    }
   }
 
   private var subtitle: String {

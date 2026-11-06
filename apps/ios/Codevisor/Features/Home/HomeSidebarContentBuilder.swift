@@ -177,7 +177,7 @@ struct HomeSidebarContentBuilder {
   private func rows(for workspace: Workspace) -> [HomeSidebarTabRow] {
     var seen: Set<UUID> = []
     var rows: [HomeSidebarTabRow] = []
-    func append(_ pane: PaneDescriptorState, in tab: WorkspaceTab?, owner: WorkspaceTab) {
+    func append(_ pane: PaneDescriptorState, owner: WorkspaceTab) {
       guard seen.insert(pane.id).inserted else { return }
       let chat =
         pane.kind == .chat
@@ -186,23 +186,19 @@ struct HomeSidebarContentBuilder {
       rows.append(
         HomeSidebarTabRow(
           id: pane.id,
-          title: tab?.displayTitle(for: pane, chatTitle: chat.map(workspace.title(ofChat:)))
-            ?? paneTitle(pane, chat: chat, in: workspace),
+          title: paneTitle(pane, chat: chat, in: workspace),
           icon: paneIcon(pane, chat: chat),
           status: chat.map(status(for:)) ?? status(forTerminal: pane),
           chatSessionId: chat?.id,
-          renamableTabId: tab?.id,
           tabId: owner.id,
           isMainChat: workspace.isMainChatPane(pane)
         )
       )
     }
     for tab in workspace.centerTabs {
-      let groups = tab.root.allGroups
-      let isSinglePane = groups.count == 1 && groups[0].state.panes.count == 1
-      for group in groups {
+      for group in tab.root.allGroups {
         for pane in group.state.panes {
-          append(pane, in: isSinglePane ? tab : nil, owner: tab)
+          append(pane, owner: tab)
         }
       }
     }

@@ -231,21 +231,6 @@ extension SessionContainerView {
     }
   }
 
-  func renameLeaf(_ leafId: UUID, to name: String) {
-    let trimmed = name.trimmingCharacters(in: .whitespacesAndNewlines)
-    guard !trimmed.isEmpty else { return }
-    let model = configuredCenterModel(leafId: leafId)
-    guard let descriptor = model.state.selectedPane else { return }
-    if descriptor.kind == .chat,
-      let chatId = descriptor.chatSessionId,
-      let chat = environment.projectList.session(chatId, serverId: selectedWorkspace.serverId)
-    {
-      environment.projectList.renameSession(chat, to: trimmed)
-    } else {
-      model.renamePane(id: descriptor.id, to: trimmed)
-    }
-  }
-
   func focusAdjacentLeaf(edge: SplitEdge) {
     let workspace = navigationWorkspace
     guard let tab = workspace.selectedCenterTab else { return }

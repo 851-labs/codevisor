@@ -33,7 +33,6 @@ export const ClientPaneContext = Schema.Struct({
 export const ClientTabContext = Schema.Struct({
   id: Schema.String,
   panes: Schema.Array(ClientPaneContext),
-  title: Schema.optional(Schema.String),
   activeLeafId: Schema.optional(Schema.String),
   splits: Schema.optional(Schema.Array(ClientSplitContext))
 })

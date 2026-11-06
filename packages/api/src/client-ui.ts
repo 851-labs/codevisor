@@ -28,8 +28,7 @@ export const ClientLayoutAction = Schema.Union([
     fractions: Schema.Array(positive),
     expectedChildren: Schema.Array(Schema.Array(Schema.String))
   }),
-  Schema.Struct({ kind: Schema.Literal("reorder_tabs"), tabIds: Schema.Array(Schema.String) }),
-  Schema.Struct({ kind: Schema.Literal("rename_tab"), tabId: Schema.String, title: Schema.String })
+  Schema.Struct({ kind: Schema.Literal("reorder_tabs"), tabIds: Schema.Array(Schema.String) })
 ])
 export const ClientLayoutRequest = Schema.Struct({
   workspaceId: Schema.String,

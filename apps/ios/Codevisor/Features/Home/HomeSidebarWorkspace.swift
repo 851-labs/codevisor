@@ -71,7 +71,6 @@ struct HomeSidebarTabRow: Identifiable, Equatable {
   let icon: Icon
   let status: HomeSessionStatus
   let chatSessionId: UUID?
-  let renamableTabId: UUID?
   var tabId: UUID? = nil
   var isMainChat = false
 }

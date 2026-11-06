@@ -11,7 +11,6 @@ public struct ClientLayoutRequest: Codable, Sendable {
     public var fractions: [Double]?
     public var expectedChildren: [[UUID]]?
     public var tabIds: [UUID]?
-    public var title: String?
   }
   public var workspaceId: UUID
   public var action: Action
@@ -40,8 +39,6 @@ public struct ClientLayoutRequest: Codable, Sendable {
       try resize(in: &workspace)
     case "reorder_tabs":
       try reorderTabs(in: &workspace)
-    case "rename_tab":
-      try renameTab(in: &workspace)
     default: throw ClientControlError("Unknown layout action")
     }
     if focus != true { preserveSelection(from: original, in: &workspace) }
@@ -82,13 +79,6 @@ public struct ClientLayoutRequest: Codable, Sendable {
     else { throw ClientControlError("Supply every current tab id exactly once") }
     let tabs = Dictionary(uniqueKeysWithValues: workspace.centerTabs.map { ($0.id, $0) })
     workspace.centerTabs = ids.compactMap { tabs[$0] }
-  }
-
-  private func renameTab(in workspace: inout Workspace) throws {
-    let index = try tabIndex(in: workspace)
-    guard let title = action.title else { throw ClientControlError("Missing tab title") }
-    let trimmed = title.trimmingCharacters(in: .whitespacesAndNewlines)
-    workspace.centerTabs[index].customTitle = trimmed.isEmpty ? nil : trimmed
   }
 
   private func preserveSelection(from original: Workspace, in workspace: inout Workspace) {

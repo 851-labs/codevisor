@@ -40,7 +40,7 @@ Usually the right client is the origin, or the most recently active window on th
 - `c.context()`: full layout, ids, and supported actions. Read it before calling `layout`.
 - `c.navigate({ workspaceId, destination?: { kind: "chat" | "tab" | "pane" | "leaf", id } })`: open or select.
 - `c.openPage({ page, … })`: home, a new chat, or settings.
-- `c.layout({ action, … })`: new_tab, split, move, detach, resize, reorder_tabs, rename_tab. Panes are created in the background unless you pass `focus: true`.
+- `c.layout({ action, … })`: new_tab, split, move, detach, resize, reorder_tabs. Panes are created in the background unless you pass `focus: true`.
 - `c.window({ action, … })`: focus, minimize, fullscreen, frame, sidebar.
 
 These wrap `machine.tools.codevisor.clients.*`; use `machine.tools.describe.tool` for full schemas. Clients on another machine: `(await machines.get("macbook")).clients.list()`.
