@@ -122,9 +122,6 @@ impl Estimator {
         self.acked.bps()
     }
 
-    fn receive_bps_until(&self, now: Instant) -> Option<f64> {
-        self.acked.active_bps_until(now).or_else(|| self.acked.bps_until(now))
-    }
 
     fn link_limited(&self, receive_bps: f64) -> bool {
         let Some(sent) = self.sent.bps() else {
@@ -213,7 +210,8 @@ impl Estimator {
         let rested = self.last_backoff.is_none_or(|at| now.saturating_duration_since(at) >= hold_off);
         let threshold = self.queue_threshold_us();
         let grown = self.overuse >= OVERUSE_SAMPLES && ((queue - self.standing_us) as f64) >= threshold;
-        let standing_too_long = (queue as f64) >= self.max_standing_us + threshold;
+        let draining = (queue as f64) < self.standing_us as f64 - threshold;
+        let standing_too_long = (queue as f64) >= self.max_standing_us + threshold && !draining;
         if rested && (grown || standing_too_long) {
             self.back_off(now);
         }
@@ -249,7 +247,7 @@ impl Estimator {
         if let Some(delivered) = self.delivered_before_any_measurement(now, loss) {
             return (delivered * BACKOFF).min(estimate);
         }
-        let carried = self.receive_bps_until(now).map_or(0.0, |receive| receive * BACKOFF);
+        let carried = self.acked.active_bps_until(now).map_or(0.0, |receive| receive * BACKOFF);
         let guessed = self.cap.is_none() && self.bursts.is_empty();
         let kept = if guessed { 1.0 - loss } else { 1.0 - loss / 2.0 };
         (estimate * kept).max(carried).min(estimate)
@@ -265,7 +263,7 @@ impl Estimator {
 
     fn back_off(&mut self, now: Instant) {
         let estimate = self.estimate_bps();
-        let receive = self.receive_bps_until(now).or_else(|| self.acked.bps()).unwrap_or(estimate);
+        let receive = self.acked.active_bps_until(now).unwrap_or(estimate);
         let filling = receive >= estimate * FILLING_SHARE;
         let link_limited = self.link_limited(receive);
         let from = if filling || link_limited { receive.min(estimate) } else { estimate };
@@ -384,6 +382,9 @@ impl Throughput {
             .rposition(|pair| pair[1].0.saturating_duration_since(pair[0].0) > RECEIVE_IDLE)
             .map_or(0, |gap| gap + 1);
         let (start, _) = *recent.get(restart)?;
+        if restart + 1 == recent.len() {
+            return None;
+        }
         let bytes: usize = recent[restart + 1..].iter().map(|(_, bytes)| bytes).sum();
         let span = now.saturating_duration_since(start);
         (span >= RECEIVE_WINDOW / 4).then(|| bytes as f64 * 8.0 / span.as_secs_f64())

@@ -1139,3 +1139,29 @@ fn frames_bigger_than_the_pacing_spread_still_find_the_link() {
         assert!(highest <= 60e6, "seed {seed}: {:.1} Mbit/s on a 30 Mbit/s link", highest / 1e6);
     }
 }
+
+#[test]
+fn a_tiled_keyframe_draining_on_a_slow_lossy_link_doesnt_drive_the_estimate_to_the_floor() {
+    for seed in 1..=3 {
+        let mut sim = Sim::new(NetworkConditions::N7, config(FecMode::Adaptive), seed);
+        let mut encoder = EncoderModel::new(2.0, seed);
+        let end = sim.now + Duration::from_secs(40);
+        let mut next = sim.now;
+        let mut index = 0u64;
+        let mut lowest = f64::MAX;
+        while sim.now < end {
+            let admission = sim.host.admission();
+            if sim.now >= next && admission.admit {
+                let len = if index == 0 { 750_000 } else { encoder.frame_len(sim.now, admission.encoder_ceiling_bps) };
+                for tile in 0..16u8 {
+                    sim.send(frame(tile, &payload(index * 16 + u64::from(tile), (len / 16).max(60))));
+                }
+                index += 1;
+                next = (next + INTERVAL).max(sim.now);
+            }
+            lowest = lowest.min(admission.estimate_bps);
+            sim.run_until(sim.now + MS);
+        }
+        assert!(lowest >= 500e3, "seed {seed}: the estimate fell to {:.2} Mbit/s", lowest / 1e6);
+    }
+}
