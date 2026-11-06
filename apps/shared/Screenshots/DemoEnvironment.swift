@@ -65,7 +65,22 @@
         environment.configSync.set(
           namespace: "harness-readiness", key: machine.serverId, value: DemoServerRecords.harnessReadiness(on: machine))
       }
-      for agent in DemoWorld.harnessesOnEveryMachine {
+      seedHarnessSettings(environment, harnesses: DemoWorld.harnessesOnEveryMachine)
+    }
+
+    @MainActor
+    static func seedHarnessesEverywhere(_ environment: AppEnvironment) {
+      for machine in DemoWorld.machines {
+        environment.configSync.set(
+          namespace: "harness-readiness", key: machine.serverId,
+          value: DemoServerRecords.harnessReadiness(on: machine, installing: DemoWorld.harnesses))
+      }
+      seedHarnessSettings(environment, harnesses: DemoWorld.harnesses)
+    }
+
+    @MainActor
+    private static func seedHarnessSettings(_ environment: AppEnvironment, harnesses: [DemoWorld.InstalledAgent]) {
+      for agent in harnesses {
         environment.configSync.set(
           namespace: "harnesses", key: agent.harnessId, value: DemoServerRecords.harnessSetting(agent))
       }

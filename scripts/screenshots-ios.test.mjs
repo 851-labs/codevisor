@@ -1,7 +1,7 @@
 import assert from "node:assert/strict"
 import { test } from "node:test"
 
-import { devices, parseOptions, selectRuntime } from "./screenshots-ios-lib.mjs"
+import { devices, isDarkBitmap, parseOptions, selectRuntime } from "./screenshots-ios-lib.mjs"
 import { pngDimensions, scenes, screenshotAttachments } from "./screenshots-lib.mjs"
 
 test("options stay rooted in this checkout and reject missing or unknown arguments", () => {
@@ -111,4 +111,15 @@ test("export requires the exact dimensions for each App Store screenshot slot", 
     assert.throws(() => pngDimensions(bytes, devices.iphone))
   }
   assert.throws(() => pngDimensions(Buffer.from("not a screenshot"), devices.iphone))
+})
+
+test("an unfolded iPhone Duo is detected from any lit pixel on its inner display", () => {
+  const headerSize = 54
+  const bitmap = Buffer.alloc(headerSize + 4 * 4)
+  bitmap.writeUInt32LE(headerSize, 10)
+  bitmap.writeUInt16LE(32, 28)
+  for (let pixel = 0; pixel < 4; pixel++) bitmap[headerSize + pixel * 4 + 3] = 255
+  assert.equal(isDarkBitmap(bitmap), true)
+  bitmap[headerSize + 2 * 4 + 1] = 12
+  assert.equal(isDarkBitmap(bitmap), false)
 })

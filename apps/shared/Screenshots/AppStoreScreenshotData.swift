@@ -13,6 +13,11 @@
       isEnabled && ProcessInfo.processInfo.environment["CODEVISOR_SCREENSHOT_OPENS_NEW_CHAT"] == "1"
     }
 
+    static var settingsSection: String? {
+      guard isEnabled else { return nil }
+      return ProcessInfo.processInfo.environment["CODEVISOR_SCREENSHOT_SETTINGS_SECTION"]
+    }
+
     static var opensRunLocationMenu: Bool {
       isEnabled && ProcessInfo.processInfo.environment["CODEVISOR_SCREENSHOT_OPENS_RUN_LOCATION_MENU"] == "1"
     }
