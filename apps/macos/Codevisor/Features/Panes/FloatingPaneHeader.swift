@@ -17,26 +17,36 @@ struct FloatingPaneHeader: View {
   private static let minimumDragWidth: CGFloat = 28
 
   var body: some View {
-    HStack(spacing: 6) {
-      toolbar(.leading)
-      if source?.replacesTitle == true {
-        toolbar(.principal)
-          .layoutPriority(1)
-        dragArea { Color.clear.frame(minWidth: Self.minimumDragWidth, maxWidth: .infinity) }
-      } else {
-        dragArea { titleText }
+    GlassEffectContainer(spacing: 6) {
+      HStack(spacing: 6) {
+        leadingToolbar
+        if source?.replacesTitle == true {
+          toolbar(.principal)
+            .layoutPriority(1)
+          dragArea { Color.clear.frame(minWidth: Self.minimumDragWidth, maxWidth: .infinity) }
+        } else {
+          dragArea { titleText }
+        }
+        if source?.hasTrailingControls == true {
+          FloatingPaneTrailingToolbar { toolbar(.trailing) }
+        }
+        FloatingPaneGlassGroup { actionsMenu }
+        FloatingPaneGlassGroup { closeButton }
       }
-      FloatingPaneTrailingToolbar { toolbar(.trailing) }
-      actionsMenu
-      closeButton
     }
-    .padding(.leading, 10)
-    .padding(.trailing, 6)
-    .frame(height: 36)
+    .padding(.horizontal, 6)
+    .frame(height: 40)
     .background(.bar)
     .overlay(alignment: .bottom) { Divider() }
     .modifier(
       PaneRenameAlert(kind: pane?.kind, isPresented: $showingRename, text: $renameText, onRename: actions.rename))
+  }
+
+  @ViewBuilder
+  private var leadingToolbar: some View {
+    if source?.hasLeadingControls == true {
+      FloatingPaneGlassGroup { toolbar(.leading) }
+    }
   }
 
   @ViewBuilder
@@ -51,6 +61,7 @@ struct FloatingPaneHeader: View {
       .font(.tabLabel(weight: .medium))
       .lineLimit(1)
       .truncationMode(.tail)
+      .padding(.leading, source?.hasLeadingControls == true ? 0 : 6)
       .frame(minWidth: Self.minimumDragWidth, maxWidth: .infinity, alignment: .leading)
   }
 
@@ -86,11 +97,7 @@ struct FloatingPaneHeader: View {
     } label: {
       Image(systemName: "ellipsis")
         .font(.system(size: 13, weight: .semibold))
-        .foregroundStyle(.secondary)
-        .frame(width: 24, height: 22)
-        .contentShape(Rectangle())
     }
-    .menuStyle(.borderlessButton)
     .menuIndicator(.hidden)
     .fixedSize()
     .help("Floating pane actions")
@@ -100,12 +107,8 @@ struct FloatingPaneHeader: View {
   private var closeButton: some View {
     Button(action: actions.close) {
       Image(systemName: "xmark")
-        .font(.system(size: 11, weight: .semibold))
-        .foregroundStyle(.secondary)
-        .frame(width: 22, height: 22)
-        .contentShape(Rectangle())
+        .font(.system(size: 12, weight: .semibold))
     }
-    .buttonStyle(.plain)
     .help("Close")
     .accessibilityLabel("Close \(title)")
   }

@@ -51,6 +51,20 @@ enum PaneToolbarSource {
     return model
   }
 
+  var hasLeadingControls: Bool {
+    switch self {
+    case .browser, .screenSharing, .simulator: true
+    case .file, .review: false
+    }
+  }
+
+  var hasTrailingControls: Bool {
+    switch self {
+    case .screenSharing, .file, .review, .simulator: true
+    case .browser: false
+    }
+  }
+
   var replacesTitle: Bool {
     switch self {
     case .browser: true

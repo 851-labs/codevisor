@@ -13,24 +13,23 @@ struct FloatingPaneTrailingToolbar<Content: View>: View {
   }
 
   private var controls: some View {
-    HStack(spacing: 4) { content() }
+    FloatingPaneGlassGroup { content() }
   }
 
   private var overflowButton: some View {
-    Button {
-      showingOverflow.toggle()
-    } label: {
-      Image(systemName: "chevron.right.2")
-        .font(.system(size: 11, weight: .semibold))
-        .foregroundStyle(.secondary)
-        .frame(width: 22, height: 22)
-        .contentShape(Rectangle())
+    FloatingPaneGlassGroup {
+      Button {
+        showingOverflow.toggle()
+      } label: {
+        Image(systemName: "chevron.right.2")
+          .font(.system(size: 11, weight: .semibold))
+      }
+      .help("More Controls")
+      .accessibilityLabel("More Controls")
     }
-    .buttonStyle(.plain)
-    .help("More Controls")
-    .accessibilityLabel("More Controls")
     .popover(isPresented: $showingOverflow, arrowEdge: .bottom) {
-      controls.padding(8)
+      GlassEffectContainer { controls }
+        .padding(8)
     }
   }
 }
