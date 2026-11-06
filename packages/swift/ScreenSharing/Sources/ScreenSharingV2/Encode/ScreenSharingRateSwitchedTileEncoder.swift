@@ -169,18 +169,29 @@ public final class ScreenSharingRateSwitchedTileEncoder: ScreenSharingTileEncode
     let (handler, forwarded) = state.withLock { state in
       (state.output, Self.forwarded(output, from: source, owners: &state.owners))
     }
-    if case .dropped = forwarded, case .tile = output { metrics.increment("encoderSwitchAbandonedTiles") }
+    if case .dropped = forwarded, !Self.isDropped(output) { metrics.increment("encoderSwitchAbandonedTiles") }
     handler?(forwarded)
   }
 
   private static func forwarded(
     _ output: ScreenSharingTileEncoderOutput, from source: Choice, owners: inout ScreenSharingV2TileOwners
   ) -> ScreenSharingTileEncoderOutput {
-    guard case .tile(let tile) = output else { return output }
-    guard owners.owns(tile.tile, source) else { return .dropped(tile: tile.tile, refresh: nil) }
+    switch output {
+    case .tile(let tile):
+      guard owners.owns(tile.tile, source) else { return .dropped(tile: tile.tile, refresh: nil) }
 
-    if let token = tile.ltrToken { owners.remember(token, tile: tile.tile, issuedBy: source) }
-    return output
+      if let token = tile.ltrToken { owners.remember(token, tile: tile.tile, issuedBy: source) }
+      return output
+    case .unchanged(let tile, _), .failed(let tile, _, _):
+      return owners.owns(tile, source) ? output : .dropped(tile: tile, refresh: nil)
+    case .dropped, .keyframeNeeded:
+      return output
+    }
+  }
+
+  private static func isDropped(_ output: ScreenSharingTileEncoderOutput) -> Bool {
+    if case .dropped = output { return true }
+    return false
   }
 
   private static func forcingKeyframes(

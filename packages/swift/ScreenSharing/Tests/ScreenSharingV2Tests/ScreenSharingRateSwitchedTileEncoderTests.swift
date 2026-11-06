@@ -81,6 +81,19 @@ struct ScreenSharingRateSwitchedTileEncoderTests {
     #expect(tileOutputs == ["dropped 0", "tile 1"])
   }
 
+  @Test func aLateUnchangedOrFailedTileFromTheEncoderThatLostItIsDroppedToo() throws {
+    let encoder = try switched(bitrate: Self.fastBitrate)
+    try encoder.encode(try Self.request(id: 1, tiles: [0, 1, 2, 3]))
+    switchToFast(encoder)
+    try encoder.encode(try Self.request(id: 2, tiles: [0, 1]))
+
+    slow.emit(.unchanged(tile: 0, update: 1))
+    slow.emit(.failed(tile: 1, refresh: nil, message: "late"))
+    slow.emit(.unchanged(tile: 2, update: 1))
+
+    #expect(tileOutputs == ["dropped 0", "dropped 1", "unchanged 2"])
+  }
+
   @Test func referenceAcknowledgementsGoToTheEncoderThatIssuedTheToken() throws {
     let encoder = try switched(bitrate: Self.fastBitrate)
     let first = try Self.request(id: 1, tiles: [0])
@@ -155,6 +168,7 @@ struct ScreenSharingRateSwitchedTileEncoderTests {
       switch output {
       case .tile(let tile): "tile \(tile.tile)"
       case .dropped(let tile, _): "dropped \(tile)"
+      case .unchanged(let tile, _): "unchanged \(tile)"
       default: nil
       }
     }

@@ -21,6 +21,7 @@ const LINK_LIMITED: f64 = 0.75;
 const LOSS_LIMITED: f64 = 0.1;
 const LARGE_QUEUE_THRESHOLDS: f64 = 4.0;
 const QUEUE_MOVE_SHARE: i64 = 8;
+const MAX_BASE_HOLD: Duration = Duration::from_secs(30);
 const MIN_SPAN: Duration = Duration::from_micros(100);
 const MIN_SAMPLE_BYTES: usize = 2400;
 const MIN_RATE_BPS: f64 = 300e3;
@@ -54,7 +55,7 @@ pub struct Estimator {
     recent_delays: VecDeque<i64>,
     last_delay: Option<i64>,
     delay_before: Option<i64>,
-    queue_mark: Option<i64>,
+    queue_mark: Option<(i64, Instant)>,
     jitter_us: f64,
     queue_delay_us: i64,
     standing_us: i64,
@@ -120,10 +121,14 @@ impl Estimator {
             return false;
         };
         let queue = (self.queue_delay_us as f64) >= self.queue_threshold_us();
-        let dropping = self.sent.latest().is_some_and(|latest| {
-            self.lost.bytes_within(latest) as f64 >= self.sent.bytes_within(latest) as f64 * LOSS_LIMITED
-        });
-        (queue || dropping) && receive_bps < sent * LINK_LIMITED
+        receive_bps < sent * LINK_LIMITED && (queue || self.dropping())
+    }
+
+    fn dropping(&self) -> bool {
+        let Some(latest) = self.sent.latest() else {
+            return false;
+        };
+        self.lost.bytes_within(latest) as f64 >= self.sent.bytes_within(latest) as f64 * LOSS_LIMITED
     }
 
     fn queue_threshold_us(&self) -> f64 {
@@ -176,7 +181,7 @@ impl Estimator {
         self.recent_delays.push_back(one_way_us);
         let recent = self.recent_delays.iter().min().copied().unwrap_or(one_way_us);
         if let Some(base) = self.base_delay.best()
-            && self.queue_moved(recent - base, recent)
+            && self.queue_moved(now, recent - base, recent)
         {
             self.base_delay.push(now, base);
         }
@@ -200,17 +205,18 @@ impl Estimator {
         self.grow_cap(now);
     }
 
-    fn queue_moved(&mut self, queue: i64, delay: i64) -> bool {
+    fn queue_moved(&mut self, now: Instant, queue: i64, delay: i64) -> bool {
         let threshold = self.queue_threshold_us();
         if (queue as f64) < LARGE_QUEUE_THRESHOLDS * threshold {
             self.queue_mark = None;
             return false;
         }
-        let mark = *self.queue_mark.get_or_insert(delay);
-        if (delay - mark).abs() < (queue / QUEUE_MOVE_SHARE).max(threshold as i64) {
+        let (mark, since) = *self.queue_mark.get_or_insert((delay, now));
+        let moved = (delay - mark).abs() >= (queue / QUEUE_MOVE_SHARE).max(threshold as i64);
+        if !moved || now.saturating_duration_since(since) > MAX_BASE_HOLD {
             return false;
         }
-        self.queue_mark = Some(delay);
+        self.queue_mark = Some((delay, since));
         true
     }
 
@@ -258,6 +264,7 @@ impl Estimator {
         let queued = self.queued();
         let sent = self.sent.bps_until(now);
         let admitting = self.admitting;
+        let burst = self.bursts.best();
         let Some(cap) = self.cap.as_mut() else {
             return;
         };
@@ -266,7 +273,8 @@ impl Estimator {
             return;
         }
         let since_growth = now.saturating_duration_since(cap.grown_at);
-        let app_limited = admitting && sent.is_some_and(|sent| sent < cap.bps * FILLING_SHARE);
+        let measured_faster = burst.is_some_and(|burst| burst > cap.bps);
+        let app_limited = admitting && !measured_faster && sent.is_some_and(|sent| sent < cap.bps * FILLING_SHARE);
         cap.since += if app_limited { since_growth } else { since_growth.saturating_sub(CAP_IDLE) };
         cap.grown_at = now;
         let elapsed = now.saturating_duration_since(cap.since).as_secs_f64();
@@ -482,6 +490,32 @@ mod tests {
         feed_delays(&mut estimator, start, (0..16).map(|_| 0).chain(settled));
 
         assert_eq!(estimator.queue_delay_us(), 0, "a 100 ms step that never moves again isn't a queue after 10 s");
+    }
+
+    #[test]
+    fn an_app_limited_cap_holds_until_a_burst_measures_the_link_faster() {
+        let start = Instant::now();
+        let mut estimator = Estimator::new(100e6, 1e9, FRAME);
+        estimator.set_admitting(true);
+        estimator.on_heavy_loss(start, 0.5);
+        let mut at = start;
+        let mut step = |estimator: &mut Estimator, burst: Option<Delivery>| {
+            at += FRAME;
+            estimator.on_sent(at, 3_000);
+            estimator.on_acked(at, 3_000);
+            estimator.on_delay(at, OFFSET, 20 * MS);
+            if let Some(burst) = burst {
+                estimator.on_delivery(at, burst);
+            }
+            estimator.estimate_bps()
+        };
+
+        let held: Vec<f64> = (0..180).map(|_| step(&mut estimator, None)).collect();
+        let measured: Vec<f64> = (0..300).map(|_| step(&mut estimator, Some(burst(125_000, MS)))).collect();
+
+        assert!(held[30] < 50e6 * 1.2, "grows only until a send rate is measured: {}", held[30]);
+        assert!(held[30..].iter().all(|estimate| *estimate == held[30]), "{:?}", held.last());
+        assert_eq!(measured.last(), Some(&1e9), "a 1 Gbit/s burst lets the cap grow and go");
     }
 
     #[test]
