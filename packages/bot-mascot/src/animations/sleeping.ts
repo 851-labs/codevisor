@@ -9,9 +9,9 @@ export const SLEEP_Z_COUNT = 3
 
 const BREATH = SLEEP_LOOP / 2
 const Z_LIFE = SLEEP_LOOP / 2
-const Z_START: Point = [372, 156]
-const Z_RISE: Point = [34, -80]
-const Z_SIZE = [9, 22] as const
+const Z_START: Point = [388, 166]
+const Z_RISE: Point = [62, -150]
+const Z_SIZE = [18, 46] as const
 const CLOSED = 0.08
 const DROWSY = 0.45
 export const Z_FADE_IN = 0.6

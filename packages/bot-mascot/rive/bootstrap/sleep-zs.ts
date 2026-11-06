@@ -7,7 +7,7 @@ import {
   Z_FADE_IN,
   Z_FADE_OUT
 } from "../../src/animations/sleeping.js"
-import { SLEEP_Z_WIDTH } from "../../src/effects/effects.js"
+import { SLEEP_Z_CORE_WIDTH, SLEEP_Z_INK_WIDTH } from "../../src/effects/effects.js"
 import { f, newId } from "./emit.js"
 import { after, go, modeIs, type StateRefs } from "./moves.js"
 import { add, tracksXml, type Tracks } from "./tracks.js"
@@ -15,6 +15,8 @@ import { add, tracksXml, type Tracks } from "./tracks.js"
 export interface ZInk {
   readonly outline: string
   readonly outlineBind: string
+  readonly core: string
+  readonly coreBind: string
 }
 
 interface ZIds {
@@ -40,8 +42,10 @@ export function sleepZsXml(ink: ZInk): string {
     const corners = zStroke(rest[i])
       .map(([x, y], k) => `<StraightVertex x="${f(x)}" y="${f(y)}" id="${ids.vertices[k]}"/>`)
       .join("")
-    const stroke = `<Stroke thickness="${SLEEP_Z_WIDTH}" cap="round" join="round" name="Ink"><SolidColor colorValue="${ink.outline}" name="C">${ink.outlineBind}</SolidColor></Stroke>`
-    return `<Shape opacity="0" name="Z ${i + 1}" id="${ids.shape}"><PointsPath isClosed="false" name="Path">${corners}</PointsPath>${stroke}</Shape>`
+    const strokes =
+      zStrokeXml("Ink", SLEEP_Z_INK_WIDTH, ink.outline, ink.outlineBind) +
+      zStrokeXml("Core", SLEEP_Z_CORE_WIDTH, ink.core, ink.coreBind)
+    return `<Shape opacity="0" name="Z ${i + 1}" id="${ids.shape}"><PointsPath isClosed="false" name="Path">${corners}</PointsPath>${strokes}</Shape>`
   })
   return `<Node name="Sleep Zs" id="${newId()}">${shapes.join("")}</Node>`
 }
@@ -72,6 +76,9 @@ export function sleepZsLayer(r: StateRefs): string {
 <AnimationState animationId="${zzzAnimation}" x="700" y="0" id="${asleepState}">${fadeOut}</AnimationState>
 </StateMachineLayer>`
 }
+
+const zStrokeXml = (name: string, width: number, color: string, bind: string): string =>
+  `<Stroke thickness="${width}" cap="round" join="round" name="${name}"><SolidColor colorValue="${color}" name="C">${bind}</SolidColor></Stroke>`
 
 function keyZs(tracks: Tracks, asleep: number, frame: number) {
   sleepZs(asleep, 1).forEach((z, i) => {

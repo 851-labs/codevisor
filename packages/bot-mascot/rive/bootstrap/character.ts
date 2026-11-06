@@ -181,6 +181,13 @@ const armPaints = {
   shade: shadeItem[0].fill?.kind === "solid" ? shadeItem[0].fill.color : "40C46A00",
   shadeBind: bodyBind(paintsOf([...shadowItems, ...bodyItem]).length)
 }
+const topOfBody =
+  armPaints.fill.kind === "solid" ? armPaints.fill.color : armPaints.fill.stops[0].color
+const zInk = {
+  ...armPaints,
+  core: topOfBody,
+  coreBind: armPaints.fillBinds[0] ?? ""
+}
 const joins = joinRig(armPaints)
 const arms = armRig(
   armPaints,
@@ -260,7 +267,7 @@ ${props.xml}
 </StateMachineLayer>
 ${sleepZsLayer(stateRefs)}
 </StateMachine>
-${sleepZsXml(armPaints)}
+${sleepZsXml(zInk)}
 <Node x="${f(FEET[0])}" y="${f(FEET[1])}" name="Character" id="${character}">
 <Node x="${f(-FEET[0])}" y="${f(-FEET[1])}" name="Arms" id="${newId()}">
 ${arms.hand}

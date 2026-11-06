@@ -1,5 +1,5 @@
 import { zStroke } from "../animations/sleeping.js"
-import type { Palette } from "../color/palette.js"
+import { bodyTop, type Palette } from "../color/palette.js"
 import { f2 } from "../geometry/math.js"
 import type { BotMascotPose, Effect, SleepZEffect } from "../pose.js"
 import type { RenderContext } from "../render/context.js"
@@ -44,11 +44,14 @@ function effectSvg(
   }
 }
 
-export const SLEEP_Z_WIDTH = 4.5
+export const SLEEP_Z_INK_WIDTH = 15
+export const SLEEP_Z_CORE_WIDTH = 7.5
 
 function sleepZSvg(P: Palette, z: SleepZEffect): string {
   const d = zStroke(z)
     .map(([x, y], i) => `${i ? "L" : "M"}${f2(x)} ${f2(y)}`)
     .join("")
-  return `<path d="${d}" fill="none" stroke="${P.outline}" stroke-width="${SLEEP_Z_WIDTH}" stroke-linecap="round" stroke-linejoin="round" opacity="${f2(z.op)}"/>`
+  const stroke = (color: string, width: number) =>
+    `<path d="${d}" fill="none" stroke="${color}" stroke-width="${width}" stroke-linecap="round" stroke-linejoin="round"/>`
+  return `<g data-r="z" opacity="${f2(z.op)}">${stroke(P.outline, SLEEP_Z_INK_WIDTH)}${stroke(bodyTop(P), SLEEP_Z_CORE_WIDTH)}</g>`
 }
