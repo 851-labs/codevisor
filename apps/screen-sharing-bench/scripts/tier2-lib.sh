@@ -17,10 +17,10 @@
 : "${TIER2_VCP_FAIL_AFTER:=0}"
 
 tier2_scripts="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-tier2_run_overhead_s=100
+tier2_run_overhead_s=30
 tier2_settle_limit_s=600
 tier2_abort_wait_s=120
-tier2_plan_budget_s=2700
+tier2_plan_budget_s=1800
 tier2_first_still_version=4
 tier2_last_still_version=11
 : "${TIER2_FLOOR_PORT:=47594}"
@@ -46,30 +46,47 @@ say() {
 }
 
 tier2_plan() {
-  local index=0 scene rep scenes warm_up=0
-  IFS=, read -r -a scenes <<<"$TIER2_SCENES"
+  local index=0 token scene network rep tokens warm_up=0
+  IFS=, read -r -a tokens <<<"$TIER2_SCENES"
   ((TIER2_WARM_UP_S > 0)) && tier2_runs_system apple-hp && warm_up=1
-  for scene in "${scenes[@]}"; do
+  for token in "${tokens[@]}"; do
+    scene=$(tier2_token_scene "$token") network=$(tier2_token_network "$token")
     for ((rep = 1; rep <= TIER2_FLOOR_REPS; rep++)); do
-      index=$((index + 1)); echo "$index $scene floor $rep 1"
+      index=$((index + 1)); echo "$index $scene floor $rep 1 $network"
     done
     if ((warm_up)); then
-      index=$((index + 1)); echo "$index $scene apple-hp 0 0"
+      index=$((index + 1)); echo "$index $scene apple-hp 0 0 $network"
       warm_up=0
     fi
     for ((rep = 1; rep <= TIER2_REPS; rep++)); do
       for system in apple-hp codevisor-v2 codevisor-v2-vcp; do
         tier2_runs_system "$system" || continue
-        index=$((index + 1)); echo "$index $scene $system $rep 1"
+        index=$((index + 1)); echo "$index $scene $system $rep 1 $network"
       done
     done
   done
   if ((TIER2_C4)) && [[ ",$TIER2_SCENES," == *,video,* ]]; then
     for system in apple-hp codevisor-v2 codevisor-v2-vcp; do
       tier2_runs_system "$system" || continue
-      index=$((index + 1)); echo "$index video $system 1 0"
+      index=$((index + 1)); echo "$index video $system 1 0 $TIER2_NETWORK"
     done
   fi
+}
+
+tier2_token_scene() {
+  echo "${1%@*}"
+}
+
+tier2_token_network() {
+  if [[ "$1" == *@* ]]; then echo "${1#*@}"; else echo "$TIER2_NETWORK"; fi
+}
+
+tier2_scene_names() {
+  local token tokens names=()
+  IFS=, read -r -a tokens <<<"$TIER2_SCENES"
+  for token in "${tokens[@]}"; do names+=("$(tier2_token_scene "$token")"); done
+  local IFS=,
+  echo "${names[*]}"
 }
 
 tier2_runs_system() {
@@ -99,8 +116,9 @@ tier2_warm_up_input_events() {
 }
 
 tier2_name() {
-  local index=$1 scene=$2 system=$3 rep=$4 observed=$5
+  local index=$1 scene=$2 system=$3 rep=$4 observed=$5 network=${6:-$TIER2_NETWORK}
   local name
+  [[ "$network" == N0 ]] || scene="$scene-$network"
   if tier2_is_warm_up "$rep"; then
     printf '%02d-%s-%s-warm-up\n' "$index" "$scene" "$system"
     return
@@ -185,8 +203,11 @@ meet_on_build() {
 }
 
 tier2_check_inputs() {
-  local scene_pattern="(idle-cursor|typing|scroll|window-drag|video|test-cards|input)"
-  [[ "$TIER2_SCENES" =~ ^$scene_pattern(,$scene_pattern)*$ ]] || { echo "unknown scene in $TIER2_SCENES" >&2; return 1; }
+  local scene_pattern="(idle-cursor|typing|scroll|window-drag|video|test-cards|input)(@N[036])?"
+  [[ "$TIER2_SCENES" =~ ^$scene_pattern(,$scene_pattern)*$ ]] || {
+    echo "unknown scene or network in $TIER2_SCENES (scenes are like scroll or scroll@N3)" >&2
+    return 1
+  }
   [[ "$TIER2_REPS" =~ ^[1-4]$ && "$TIER2_FLOOR_REPS" =~ ^[0-3]$ && "$TIER2_DURATION" =~ ^[0-9]+$ ]] || return 1
   ((TIER2_DURATION >= 15 && TIER2_DURATION <= 120)) || return 1
   [[ "$TIER2_NETWORK" =~ ^N[036]$ ]] || { echo "network must be N0, N3 or N6, not $TIER2_NETWORK" >&2; return 1; }
@@ -215,7 +236,7 @@ tier2_check_inputs() {
 }
 
 tier2_runs_input() {
-  [[ ",$TIER2_SCENES," == *,input,* ]]
+  [[ ",$(tier2_scene_names)," == *,input,* ]]
 }
 
 tier2_input_window_s() {

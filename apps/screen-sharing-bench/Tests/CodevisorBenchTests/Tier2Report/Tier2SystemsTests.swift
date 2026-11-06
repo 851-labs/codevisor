@@ -39,6 +39,21 @@ struct Tier2SystemsTests {
     #expect(comparisons.map(\.verdict) == [.appleFaster, .codevisorFaster, .noDifference])
   }
 
+  @Test func cpuGapsUnderOnePercentagePointAreNoDifference() throws {
+    let results = [(BenchSystem.appleHP, [0.3, 0.3, 0.3]), (.codevisorV2, [0.9, 0.9, 0.9])].flatMap { system, cpu in
+      cpu.enumerated().map { index, cpu in
+        var result = Self.result(system, repetition: index + 1, imageAgeP50: 30)
+        result.cpuPct = BenchResult.PerMachine(host: BenchResult.ProcessUsage(p50: cpu, p95: cpu))
+        return result
+      }
+    }
+
+    let comparison = try #require(Tier2Comparisons.make(results).first { $0.metric == "cpu_pct.host.p50" })
+
+    #expect(comparison.verdict == .noDifference)
+    #expect(Tier2Comparisons.basis(of: comparison) == "gap under the minimum effect")
+  }
+
   static func result(_ system: BenchSystem, repetition: Int, imageAgeP50: Double) -> BenchResult {
     var result = BenchResult(
       system: system, scene: "scroll", resolution: "R1x2", network: "N0", repetition: repetition, seed: 1)

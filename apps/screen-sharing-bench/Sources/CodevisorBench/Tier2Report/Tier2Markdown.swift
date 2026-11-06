@@ -8,12 +8,13 @@ struct Tier2Markdown {
   let measurements: [Tier2Measurement]
 
   var text: String {
-    [
-      targetTable, verdictTable, Tier2InputTable(measurements, floors: inputFloors).text,
+    let parity = Tier2PhaseParity(results: report.results)
+    return [
+      parity.headline, targetTable, verdictTable, Tier2InputTable(measurements, floors: inputFloors).text,
       Tier2Milestone(report: report, floors: floors).text, Tier2BottomTable(measurements).text,
-      Tier2V2Table(report.results).text,
+      parity.text, Tier2V2Table(report.results).text,
       Tier2TextTable(measurements).text,
-      floorTable, interferenceTable, Tier2RunTable(measurements).text,
+      floorTable, interferenceTable, Tier2NetworkCheck.table(measurements), Tier2RunTable(measurements).text,
     ]
     .compactMap(\.self)
     .joined(separator: "\n\n") + "\n"
@@ -22,15 +23,17 @@ struct Tier2Markdown {
   private var targetTable: String {
     let header = [
       "| Scene | Resolution | Network | System | Encoded px | Image age p50 ms | p95 | p50 above floor | Updates/s | "
-        + "Shown | Gap p95 ms | Freezes | Host CPU % | Viewer CPU % | Mbit/s p50 | Valid reps |",
-      "| --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |",
+        + "Shown | Gap p95 ms | Freezes | Host CPU % | Viewer CPU % | Host system CPU % | Viewer system CPU % | "
+        + "Mbit/s p50 | Valid reps |",
+      "| --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |",
     ]
     let rows = Tier2Group.all(report.results).flatMap { group in
       BenchSystem.allCases.compactMap { system in
         Tier2SystemRow(group: group, system: system, results: report.results, encoded: encoded(group, system))?.text
       }
     }
-    return "### Target table (median of valid repetitions)\n\n" + (header + rows).joined(separator: "\n")
+    return "### Target table (median of valid repetitions)\n\n\(Self.cpuNote)\n\n"
+      + (header + rows).joined(separator: "\n")
   }
 
   private func encoded(_ group: Tier2Group, _ system: BenchSystem) -> String? {
@@ -42,13 +45,19 @@ struct Tier2Markdown {
     }?.encodedPixels
   }
 
+  private static let cpuNote =
+    "Host and viewer CPU count the system's own processes (p50 of the run's seconds); system CPU is every process "
+    + "on that Mac from the first to the last second of the run (`all_processes`), bench observers and sampler "
+    + "included, so work in a process the lists don't name still shows."
+
   private static let verdictRule =
     "Each metric compares the medians of the valid repetitions. It is a difference when the medians differ by more "
     + "than the noise band, the wider of the two systems' min–max spreads (rule: noise band), or when each system has "
     + "at least \(BenchSystemComparison.minimumSeparatedRepetitions) valid repetitions and the gap between their "
     + "ranges is wider than the tighter system's spread (rule: no overlap), and in either case only when the medians "
-    + "differ by at least \(Int(BenchSystemComparison.minimumRelativeEffect * 100))% of the larger one (otherwise: "
-    + "gap under the minimum effect). Otherwise it is no difference."
+    + "differ by at least \(Int(BenchSystemComparison.minimumRelativeEffect * 100))% of the larger one, and CPU ones by "
+    + "at least \(Tier2Format.number(Tier2Comparisons.minimumCpuEffectPct)) percentage points (otherwise: gap under "
+    + "the minimum effect). Otherwise it is no difference."
 
   private var verdictTable: String {
     let header = [

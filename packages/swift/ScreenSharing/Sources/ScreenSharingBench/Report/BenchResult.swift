@@ -39,6 +39,22 @@ public struct BenchResult: Codable, Sendable, Equatable {
     }
   }
 
+  public struct NetworkCheck: Codable, Sendable, Equatable {
+    public var probes: Int
+    public var replies: Int
+    public var roundTripMs: Double?
+
+    public init(probes: Int, replies: Int, roundTripMs: Double?) {
+      self.probes = probes
+      self.replies = replies
+      self.roundTripMs = roundTripMs
+    }
+
+    public var lossFraction: Double {
+      probes > 0 ? 1 - Double(replies) / Double(probes) : 0
+    }
+  }
+
   public struct Drops: Codable, Sendable, Equatable {
     public var network: Int
     public var jitter: Int
@@ -73,6 +89,7 @@ public struct BenchResult: Codable, Sendable, Equatable {
   public var freezes: BenchFreezes?
   public var bitrateMbps: Bitrate?
   public var cpuPct: PerMachine<ProcessUsage>?
+  public var systemCpuPct: PerMachine<Double>?
   public var energyMw: PerMachine<Double>?
   public var text: BenchTextFidelity?
   public var stagesMs: BenchStageTimings?
@@ -80,6 +97,8 @@ public struct BenchResult: Codable, Sendable, Equatable {
   public var codecErrors: Int?
   public var relay: BenchRelayReport?
   public var media: BenchMediaCounters?
+  public var displayPhaseMs: Double?
+  public var networkCheck: NetworkCheck?
   public var unreadableFraction: Double = 0
   public var valid = true
   public var invalidReason: String?

@@ -1,0 +1,16 @@
+name: Keep CodevisorBench
+description: >-
+  Zips the CodevisorBench.app that CODEVISOR_BENCH_APP names (ditto keeps its signature) and uploads it as the
+  bench-app artifact, so the run's later jobs run that one build through fetch-screen-sharing-bench.
+runs:
+  using: composite
+  steps:
+    - shell: bash
+      run: |
+        mkdir -p "$RUNNER_TEMP/bench-app"
+        ditto -c -k --keepParent "$CODEVISOR_BENCH_APP" "$RUNNER_TEMP/bench-app/CodevisorBench.zip"
+    - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
+      with:
+        name: bench-app
+        path: ${{ runner.temp }}/bench-app
+        retention-days: 3

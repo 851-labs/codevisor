@@ -83,20 +83,28 @@ measure() {
 }
 
 write_meta() {
-  local dir=$1 index=$2 scene=$3 system=$4 rep=$5 observed=$6 started_at=$7
+  local dir=$1 index=$2 scene=$3 system=$4 rep=$5 observed=$6 network=$7 started_at=$8
   local observed_json=false
   ((observed)) && observed_json=true
   cat >"$dir/meta.json" <<JSON
 {"index": $index, "scene": "$scene", "system": "$system", "resolution": "$(tier2_resolution "$system")",
- "network": "$TIER2_NETWORK", "viewer_display": "$TIER2_VIEWER_DISPLAY", "presentation": "$TIER2_PRESENT",
+ "network": "$network", "viewer_display": "$TIER2_VIEWER_DISPLAY", "presentation": "$TIER2_PRESENT",
  "repetition": $rep, "seed": $TIER2_SEED,
  "duration_s": $TIER2_DURATION, "host_observer": $observed_json, "git_sha": "$commit", "started_at": "$started_at",
  "github_run_id": "${GITHUB_RUN_ID:-}"}
 JSON
 }
 
+shape() {
+  local network=$1
+  [[ "$network" == "$shaped_network" ]] && return 0
+  shaped_network=""
+  network_apply "$network" || return 1
+  shaped_network=$network
+}
+
 run_one() {
-  local index=$1 scene=$2 system=$3 rep=$4 observed=$5
+  local index=$1 scene=$2 system=$3 rep=$4 observed=$5 network=$6
   local name dir started_at status=ok
   if tier2_is_warm_up "$rep"; then
     local TIER2_DURATION=$TIER2_WARM_UP_S
@@ -108,12 +116,13 @@ run_one() {
   mkdir -p "$dir"
   rm -f "$work/ready" "$work/stop"
   started_at=$(date -u '+%Y-%m-%dT%H:%M:%SZ')
-  preflight "$dir/viewer-before-preflight.json" || status="viewer preflight failed"
+  shape "$network" || status="$network shaping didn't load"
+  [[ "$status" != ok ]] || preflight "$dir/viewer-before-preflight.json" || status="viewer preflight failed"
   meet viewer "$name-start" "$status" || { say "skipping $name: not ready at start"; return 0; }
   meet viewer "$name-system" || { say "skipping $name: the host could not start"; return 0; }
   start_system "$system" "$dir" "$scene" || status="$system did not become ready"
   meet viewer "$name-ready" "$status" || { say "skipping $name: $status"; stop_system; return 0; }
-  [[ "$TIER2_NETWORK" == N0 ]] || network_check "$dir"
+  [[ "$network" == N0 ]] || network_check "$dir"
   meet viewer "$name-measure" || { say "skipping $name: host preflight failed"; stop_system; return 0; }
   say "measuring $name"
   measure "$dir" "$system" "$scene" || say "a viewer measurement process failed in $name"
@@ -121,14 +130,15 @@ run_one() {
   stop_system
   preflight "$dir/viewer-after-preflight.json" || true
   tier2_is_warm_up "$rep" && return 0
-  write_meta "$dir" "$index" "$scene" "$system" "$rep" "$observed" "$started_at"
+  write_meta "$dir" "$index" "$scene" "$system" "$rep" "$observed" "$network" "$started_at"
 }
 
 tier2_check_inputs
 "$tier2_scripts/record-installed-commit.sh" "$results"
 commit=$(cat "$results/installed-commit.txt")
-network_apply "$TIER2_NETWORK" || exit 1
+shaped_network=""
+network_reset
 meet_on_build viewer "$(tier2_ready_status "$results" viewer "$commit")"
-while read -r index scene system rep observed; do
-  run_one "$index" "$scene" "$system" "$rep" "$observed"
+while read -r index scene system rep observed network; do
+  run_one "$index" "$scene" "$system" "$rep" "$observed" "$network"
 done < <(tier2_plan)

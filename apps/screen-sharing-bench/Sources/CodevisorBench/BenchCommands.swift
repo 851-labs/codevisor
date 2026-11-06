@@ -12,6 +12,7 @@ enum BenchCommands {
     ViewCommand.self,
     AppleHPCommand.self,
     Tier2ReportCommand.self,
+    Tier2DispatchesCommand.self,
     RendezvousCommand.self,
     RecordCommand.self,
     SummarizeCommand.self,

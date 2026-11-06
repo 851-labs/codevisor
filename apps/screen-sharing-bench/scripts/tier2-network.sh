@@ -60,6 +60,6 @@ network_loaded() {
 
 network_check() {
   local dir=$1
-  bench calibrate --check c2 --responder "$TIER2_HOST_IP" --port "$TIER2_NETWORK_CHECK_PORT" --duration 5 \
+  bench calibrate --check c2 --responder "$TIER2_HOST_IP" --port "$TIER2_NETWORK_CHECK_PORT" --duration 10 \
     --interval 1 >"$dir/network-check.json" 2>/dev/null || true
 }

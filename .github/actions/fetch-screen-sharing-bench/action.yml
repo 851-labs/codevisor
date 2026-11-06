@@ -1,0 +1,28 @@
+name: Fetch CodevisorBench
+description: >-
+  Downloads the CodevisorBench.app an earlier job of this workflow run built and signed (a ditto zip,
+  CodevisorBench.zip, in the named artifact), unpacks it into $RUNNER_TEMP/bench.noindex and points
+  CODEVISOR_BENCH_APP at it, so every Tier 2 dispatch of a night runs the same build. Like build-screen-sharing-bench,
+  it doesn't touch the installed app.
+inputs:
+  name:
+    description: The artifact that holds CodevisorBench.zip
+    required: true
+runs:
+  using: composite
+  steps:
+    - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c
+      with:
+        name: ${{ inputs.name }}
+        path: ${{ runner.temp }}/bench-artifact
+    - shell: bash
+      run: |
+        destination="$RUNNER_TEMP/bench.noindex"
+        rm -rf "$destination"
+        mkdir -p "$destination"
+        ditto -x -k "$RUNNER_TEMP/bench-artifact/CodevisorBench.zip" "$destination"
+        rm -rf "$RUNNER_TEMP/bench-artifact"
+        app="$destination/CodevisorBench.app"
+        codesign --verify --strict "$app"
+        echo "Fetched $(plutil -extract CodevisorBenchCommit raw "$app/Contents/Info.plist")"
+        echo "CODEVISOR_BENCH_APP=$app" >> "$GITHUB_ENV"

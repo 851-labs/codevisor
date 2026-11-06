@@ -20,7 +20,7 @@ public enum BenchSystemComparison {
   }
 
   public static func verdict(
-    appleHp: [Double], codevisor: [Double], better: Better
+    appleHp: [Double], codevisor: [Double], better: Better, minimumAbsoluteEffect: Double = 0
   ) -> Outcome? {
     guard let apple = median(appleHp), let ours = median(codevisor), let appleRange = range(appleHp),
       let ourRange = range(codevisor)
@@ -31,7 +31,7 @@ public enum BenchSystemComparison {
     guard let basis = basis(difference, noiseBand: noiseBand, appleHp, appleRange, codevisor, ourRange) else {
       return Outcome(noiseBand: noiseBand, verdict: .noDifference, basis: nil)
     }
-    guard abs(difference) >= minimumRelativeEffect * max(abs(apple), abs(ours)) else {
+    guard abs(difference) >= max(minimumRelativeEffect * max(abs(apple), abs(ours)), minimumAbsoluteEffect) else {
       return Outcome(noiseBand: noiseBand, verdict: .noDifference, basis: .belowMinimumEffect)
     }
 
