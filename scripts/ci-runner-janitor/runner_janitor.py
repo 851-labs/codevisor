@@ -6,6 +6,7 @@ import stat
 import sys
 import time
 
+MB = 1000**2
 GB = 1000**3
 DAY_SECONDS = 24 * 60 * 60
 TARGET_FREE_BYTES = 40 * GB
@@ -14,13 +15,15 @@ STALE_AFTER_SECONDS = 14 * DAY_SECONDS
 DIAG_RETENTION_SECONDS = 7 * DAY_SECONDS
 SCAN_DEPTH = 3
 SCAN_LIMIT = 2000
+MINIMUM_UNIT_BYTES = 100 * MB
 
 
 class Layout:
-    def __init__(self, home, runner, protected):
+    def __init__(self, home, runner, protected, minimum_unit_bytes=MINIMUM_UNIT_BYTES):
         self.home = home
         self.runner = runner
         self.protected = [os.path.realpath(path) for path in protected]
+        self.minimum_unit_bytes = minimum_unit_bytes
 
     @property
     def diag(self):
@@ -87,9 +90,35 @@ def collect_units(layout):
     units = []
     for parent in layout.unit_parents():
         for path in child_paths(parent):
-            if is_disposable(path, layout.protected):
+            if is_worth_removing(path, layout):
                 units.append(Unit(path, last_used(path)))
     return units
+
+
+def is_worth_removing(path, layout):
+    return is_disposable(path, layout.protected) and holds_at_least(
+        path, layout.minimum_unit_bytes
+    )
+
+
+def holds_at_least(path, byte_count):
+    total = 0
+    for file in files_under(path):
+        info = lstat_or_none(file)
+        total += 0 if info is None else info.st_size
+        if total >= byte_count:
+            return True
+    return total >= byte_count
+
+
+def files_under(path):
+    if not is_real_directory(path):
+        yield path
+        return
+
+    for directory, _names, files in os.walk(path):
+        for name in files:
+            yield os.path.join(directory, name)
 
 
 def is_disposable(path, protected):

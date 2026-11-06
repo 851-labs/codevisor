@@ -30,11 +30,11 @@ class RunnerFixture:
     def path(self, relative):
         return os.path.join(self.home, relative)
 
-    def file(self, relative, days_ago, read_days_ago=None):
+    def file(self, relative, days_ago, read_days_ago=None, size=1):
         path = self.path(relative)
         os.makedirs(os.path.dirname(path), exist_ok=True)
         with open(path, "w") as handle:
-            handle.write("x")
+            handle.write("x" * size)
         self.age(relative, days_ago, read_days_ago)
         return path
 
@@ -48,8 +48,8 @@ class RunnerFixture:
             modified = NOW - days_ago * DAY
             os.utime(directory, (modified, modified))
 
-    def clean(self, disk):
-        layout = janitor.Layout(self.home, self.runner, [self.workspace])
+    def clean(self, disk, minimum_unit_bytes=0):
+        layout = janitor.Layout(self.home, self.runner, [self.workspace], minimum_unit_bytes)
         return janitor.clean(layout, NOW, disk.free, self.log.append)
 
 
@@ -106,6 +106,17 @@ class CleanTests(unittest.TestCase):
 
         self.assertFalse(os.path.lexists(runner.path("Library/Caches/old-tool")))
         self.assertIn("Removed", runner.log[1])
+
+    def test_caches_too_small_to_matter_are_left_alone(self):
+        runner = self.runner
+        small = runner.file("Library/Caches/daemon/state.db", 15, size=4)
+        large = runner.file("Library/Caches/tool/blob", 15, size=8)
+        runner.age_tree("Library/Caches", 15)
+
+        runner.clean(FakeDisk(100, {}), minimum_unit_bytes=8)
+
+        self.assertTrue(os.path.exists(small))
+        self.assertFalse(os.path.exists(large))
 
     def test_job_fails_when_nothing_left_to_remove_frees_enough(self):
         status = self.runner.clean(FakeDisk(10, {}))
