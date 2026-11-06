@@ -119,12 +119,14 @@ docs/            the arm rig, its rules and the shading
 
 `rive/mascot/` is the Rive project the apps are moving to (851-3991), and its RML is the source of truth:
 edit `1-character.rml`, `2-face.rml` and `3-data.rml` directly, then build with the Rive CLI
-(`brew install --cask rive-app/tap/rive-cli`). The build needs no Rive login and is byte-for-byte
-reproducible. It writes `resources/mascot.riv`, which is checked in and which the server serves to the apps:
+1.8.0. The build needs no Rive login and is byte-for-byte reproducible. It writes `resources/mascot.riv`,
+which is checked in and which the server serves to the apps. Use 1.8.0: from 1.9.0 the CLI drops `--once`,
+and its `--publish` watermarks a project that isn't bound to a file in a Rive account.
 
 ```bash
-rive packages/bot-mascot/rive/mascot --verify
-rive packages/bot-mascot/rive/mascot --once
+mkdir -p /tmp/rive-cli-1.8.0
+curl -fsSL https://releases.rive.app/cli/v1.8.0/rive-macos-arm64.tar.gz | tar xz -C /tmp/rive-cli-1.8.0
+/tmp/rive-cli-1.8.0/rive packages/bot-mascot/rive/mascot --once
 ```
 
 The artboard `Bot Mascot` and state machine `Bot Mascot` use the view model `BotMascot`:

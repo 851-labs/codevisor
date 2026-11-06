@@ -28,8 +28,7 @@ const at = (segment: BotMascotSegment, t: number, clock = t): SegmentFrame => ({
 const justBefore = (segment: BotMascotSegment): number => botMascotSegments[segment].seconds - 1e-9
 const holdsPhone = (svg: string): boolean => svg.includes('data-r="hand"')
 const zsWhileWaking = (t: number): number => sleepZs(draw({ ...at("wakeUp", t), since: 3 }))
-const sleepZs = (svg: string): number =>
-  svg.match(/stroke-width="4\.5" stroke-linecap="round"/g)?.length ?? 0
+const sleepZs = (svg: string): number => svg.match(/data-r="z"/g)?.length ?? 0
 const flyingPhone = (svg: string): boolean =>
   /<\/g><g transform="matrix\([^)]+\)">[^]*<\/g><\/svg>$/.test(svg)
 
