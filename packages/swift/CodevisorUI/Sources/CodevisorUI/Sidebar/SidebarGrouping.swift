@@ -1,5 +1,6 @@
 import CodevisorCore
 import Foundation
+import SwiftUI
 
 public enum SidebarGrouping: String, CaseIterable, Codable, Sendable {
   case flat
@@ -14,6 +15,14 @@ public enum SidebarGrouping: String, CaseIterable, Codable, Sendable {
     case .flat: "None"
     case .project: "Project"
     case .machine: "Machine"
+    }
+  }
+
+  public var icon: Image {
+    switch self {
+    case .flat: Image(systemName: "rectangle.slash")
+    case .project: SidebarRowDetail.project.icon
+    case .machine: SidebarRowDetail.machine.icon
     }
   }
 

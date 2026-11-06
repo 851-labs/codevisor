@@ -18,7 +18,12 @@ struct HomeSidebarOptionsMenu: View {
       if showsGrouping {
         Picker(selection: $grouping) {
           ForEach(SidebarGrouping.allCases, id: \.self) { option in
-            Text(option.title).tag(option)
+            Label {
+              Text(option.title)
+            } icon: {
+              option.icon
+            }
+            .tag(option)
           }
         } label: {
           Label("Grouping", systemImage: "rectangle.3.group")
