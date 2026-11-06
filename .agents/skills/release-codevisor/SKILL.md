@@ -7,10 +7,10 @@ description: Promote the successful Alpha artifact set at current Codevisor main
 
 Stable is a promotion, never a rebuild. Three workflows produce every release:
 
-- `Build` (`build.yml`) builds, tests, and signs the app, server,
-  and iOS artifacts on every push to main. It never contacts Apple's
-  distribution services.
-- `Publish Alpha` (`publish-alpha.yml`) runs every 30 minutes or on dispatch
+- `Build` (`build.yml`) builds and signs the app, server, and iOS artifacts
+  on every push to main. `CI` (`ci.yml`) already tested each commit before it
+  landed. Build never contacts Apple's distribution services.
+- `Release alpha` (`release-alpha.yml`) runs every 30 minutes or on dispatch
   and ships the newest successful build: it notarizes the app, publishes the
   Alpha Sparkle and server feeds, then creates the `vVERSION-alpha.BUILD`
   prerelease with every artifact plus `release-provenance.json`. That
@@ -18,19 +18,19 @@ Stable is a promotion, never a rebuild. Three workflows produce every release:
   internal group and attaches `ios-testflight-build.json`; a missing marker is
   retried on the next run. Builds superseded between runs are never published
   and cannot be promoted.
-- `Publish Stable` (`publish-stable.yml`) takes a published Alpha tag, verifies
+- `Release stable` (`release-stable.yml`) takes a published Alpha tag, verifies
   it, and ships the same bytes as Stable: tag, Stable Sparkle and server feeds,
   Homebrew, and a versioned Chrome extension package. After that it calls
-  `Publish Chrome Extension` with `only_if_changed`, which submits the
+  `Release browser extension` with `only_if_changed`, which submits the
   extension to the Chrome Web Store only when
   `packages/automation/resources/browser-extension` changed since the newest
   `browser-extension-v<version>` tag, then tags the submitted version.
 
-After publication verification passes, `Publish Stable` marks the release as
+After publication verification passes, `Release stable` marks the release as
 GitHub `latest`. Alpha releases remain prereleases and never advance `latest`.
 
 Public iOS TestFlight publication uses the separate, manually triggered
-`Publish Beta` workflow. Do not dispatch it as part of a normal
+`Release beta` workflow. Do not dispatch it as part of a normal
 macOS/server release; submit an iOS beta only when requested.
 
 Do not create, move, or push a version tag manually. The workflow owns the tag.
@@ -45,7 +45,7 @@ git fetch origin main --tags
 git tag --points-at origin/main --list 'v*-alpha.*'
 ```
 
-If main HEAD has no published Alpha yet, dispatch `publish-alpha.yml` (it
+If main HEAD has no published Alpha yet, dispatch `release-alpha.yml` (it
 publishes the newest successful Build run) and monitor it, or promote an older
 published Alpha instead: `gh release list --limit 10` lists them. Record the
 Alpha's commit as `source_sha`:
@@ -74,7 +74,7 @@ Confirm the numeric version and ensure its immutable tag is unused:
 
 ```sh
 git ls-remote --tags origin refs/tags/vVERSION refs/tags/vVERSION^{}
-gh workflow run publish-stable.yml --ref main -f version=VERSION
+gh workflow run release-stable.yml --ref main -f version=VERSION
 ```
 
 Without `alpha_tag`, the workflow promotes the Alpha published for current main
@@ -82,10 +82,10 @@ HEAD. To promote an older published Alpha, pass its tag; the workflow tags that
 Alpha's commit, not HEAD:
 
 ```sh
-gh workflow run publish-stable.yml --ref main -f version=VERSION -f alpha_tag=vVERSION-alpha.BUILD
+gh workflow run release-stable.yml --ref main -f version=VERSION -f alpha_tag=vVERSION-alpha.BUILD
 ```
 
-Monitor the resulting `Publish Stable` workflow through completion.
+Monitor the resulting `Release stable` workflow through completion.
 
 ## Verify
 

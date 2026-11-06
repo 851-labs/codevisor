@@ -1,0 +1,13 @@
+name: Nightly
+
+on:
+  schedule:
+    - cron: "17 9 * * *"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  test-chrome:
+    uses: ./.github/workflows/_test-chrome.yml

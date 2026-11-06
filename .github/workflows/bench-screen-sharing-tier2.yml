@@ -1,4 +1,4 @@
-name: Screen Sharing Bench Tier 2
+name: Bench screen sharing tier 2
 
 on:
   workflow_dispatch:

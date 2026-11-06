@@ -1,4 +1,4 @@
-name: Publish Stable
+name: Release stable
 
 on:
   workflow_dispatch:
@@ -139,7 +139,7 @@ jobs:
             gh release create "$TAG" "${artifacts[@]}" \
               --verify-tag --title "$TAG" --notes-file dist/release/RELEASE_NOTES.md --latest=false
           fi
-      - name: Publish Stable Sparkle and Linux feeds
+      - name: Release stable Sparkle and Linux feeds
         env:
           AWS_ACCESS_KEY_ID: ${{ secrets.CLOUDFLARE_R2_ACCESS_KEY_ID }}
           AWS_SECRET_ACCESS_KEY: ${{ secrets.CLOUDFLARE_R2_SECRET_ACCESS_KEY }}
@@ -195,7 +195,7 @@ jobs:
     permissions:
       contents: write
       id-token: write
-    uses: ./.github/workflows/publish-browser-extension.yml
+    uses: ./.github/workflows/release-browser-extension.yml
     with:
       version: ${{ needs.metadata.outputs.version }}
       only_if_changed: true
