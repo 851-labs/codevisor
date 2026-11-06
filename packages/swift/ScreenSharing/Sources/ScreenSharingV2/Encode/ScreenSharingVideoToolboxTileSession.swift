@@ -10,7 +10,8 @@ final class ScreenSharingVideoToolboxTileSession: @unchecked Sendable {
     var acknowledged: [UInt64] = []
     var clock: ScreenSharingEncoderPresentationClock
     var sessionFailed = false
-    var delivered = false
+    var opened = false
+    var openingAttempts = 0
     var closed = false
     var bitrate: Int
   }
@@ -23,6 +24,8 @@ final class ScreenSharingVideoToolboxTileSession: @unchecked Sendable {
     let refresh: ScreenSharingTileRefresh?
     let submittedNs: Int64
   }
+
+  private static let openingAttempts = 3
 
   private static let sessionFailures: Set<OSStatus> = [
     kVTVideoEncoderMalfunctionErr, kVTVideoEncoderNotAvailableNowErr, kVTInvalidSessionErr,
@@ -53,7 +56,7 @@ final class ScreenSharingVideoToolboxTileSession: @unchecked Sendable {
 
   func encode(_ pixels: CVPixelBuffer, request: ScreenSharingTileEncodeRequest, sharing bitsPerSecond: Int) throws {
     try reopenFailedSession()
-    share(openingCapped(bitsPerSecond))
+    if let target = target(sharing: bitsPerSecond) { apply(target) }
     let (submission, acknowledged, presentationNs) = try begin(request)
     defer {
       metrics.observe("encodeCall", milliseconds: Double(ScreenSharingMetrics.nowNs - submission.submittedNs) / 1e6)
@@ -76,7 +79,7 @@ final class ScreenSharingVideoToolboxTileSession: @unchecked Sendable {
     state.withLock { $0.acknowledged += tokens }
   }
 
-  func setBitrate(_ bitsPerSecond: Int) throws {
+  private func setBitrate(_ bitsPerSecond: Int) throws {
     let status = VTSessionSetProperty(
       currentSession, key: kVTCompressionPropertyKey_AverageBitRate, value: bitsPerSecond as CFNumber)
     guard status == noErr else { throw ScreenSharingError.codec("Set encoder bitrate", status) }
@@ -96,14 +99,18 @@ final class ScreenSharingVideoToolboxTileSession: @unchecked Sendable {
 
   private var currentSession: VTCompressionSession { sessionLock.withLock { session } }
 
-  private func openingCapped(_ bitsPerSecond: Int) -> Int {
-    state.withLock { $0.delivered } ? bitsPerSecond : min(bitsPerSecond, factory.openingBitrate)
+  private func target(sharing bitsPerSecond: Int) -> Int? {
+    state.withLock { state in
+      let target = state.opened ? bitsPerSecond : min(bitsPerSecond, factory.openingBitrate)
+      if !state.opened {
+        state.openingAttempts += 1
+        state.opened = state.openingAttempts >= Self.openingAttempts
+      }
+      return abs(Double(target - state.bitrate)) > Double(state.bitrate) * 0.1 ? target : nil
+    }
   }
 
-  private func share(_ bitsPerSecond: Int) {
-    let applied = bitrate
-    guard abs(Double(bitsPerSecond - applied)) > Double(applied) * 0.1 else { return }
-
+  private func apply(_ bitsPerSecond: Int) {
     do { try setBitrate(bitsPerSecond) } catch { metrics.label("lastBitrateError", error.localizedDescription) }
   }
 
@@ -116,7 +123,7 @@ final class ScreenSharingVideoToolboxTileSession: @unchecked Sendable {
     }
     close(failed)
     state.withLock {
-      $0.sessionFailed = false; $0.delivered = false; $0.acknowledged = []; $0.bitrate = factory.startingBitrate
+      $0.sessionFailed = false; $0.acknowledged = []; $0.bitrate = factory.startingBitrate
     }
     metrics.increment("encoderSessionReopens")
   }
@@ -171,7 +178,7 @@ final class ScreenSharingVideoToolboxTileSession: @unchecked Sendable {
   }
 
   private func deliver(_ encoded: ScreenSharingEncodedTile) {
-    state.withLock { $0.delivered = true }
+    state.withLock { $0.opened = true }
     ScreenSharingTileMetrics(metrics).record(encoded)
     relay.emit(.tile(encoded))
   }
