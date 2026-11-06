@@ -94,6 +94,19 @@ class CleanTests(unittest.TestCase):
         self.assertEqual([os.path.exists(path) for path in (stale, old_log)], [False, False])
         self.assertEqual([os.path.exists(path) for path in (recent, new_log)], [True, True])
 
+    def test_caches_with_unreadable_or_read_only_directories_are_still_removed(self):
+        runner = self.runner
+        unreadable = runner.file("Library/Caches/old-tool/unreadable/blob", 15)
+        read_only = runner.file("Library/Caches/old-tool/read-only/blob", 15)
+        runner.age_tree("Library/Caches/old-tool", 15)
+        os.chmod(os.path.dirname(unreadable), 0)
+        os.chmod(os.path.dirname(read_only), 0o555)
+
+        runner.clean(FakeDisk(100, {}))
+
+        self.assertFalse(os.path.lexists(runner.path("Library/Caches/old-tool")))
+        self.assertIn("Removed", runner.log[1])
+
     def test_job_fails_when_nothing_left_to_remove_frees_enough(self):
         status = self.runner.clean(FakeDisk(10, {}))
 

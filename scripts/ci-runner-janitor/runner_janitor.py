@@ -137,15 +137,33 @@ def remove_unit(unit, reason, log):
 
 
 def remove_path(path):
-    if is_real_directory(path):
-        shutil.rmtree(path, onerror=retry_writable)
-    else:
+    if not is_real_directory(path):
         os.unlink(path)
+        return
+
+    try:
+        shutil.rmtree(path)
+    except OSError:
+        make_owner_accessible(path)
+        shutil.rmtree(path)
 
 
-def retry_writable(function, path, _error):
-    os.chmod(os.path.dirname(path), stat.S_IRWXU)
-    function(path)
+def make_owner_accessible(path):
+    grant_owner_access(path)
+    for directory, names, _files in os.walk(path):
+        for name in names:
+            grant_owner_access(os.path.join(directory, name))
+
+
+def grant_owner_access(path):
+    info = lstat_or_none(path)
+    if info is None or not stat.S_ISDIR(info.st_mode):
+        return
+
+    try:
+        os.chmod(path, stat.S_IMODE(info.st_mode) | stat.S_IRWXU)
+    except OSError:
+        pass
 
 
 def remove_expired_logs(directory, now):
