@@ -23,9 +23,6 @@ final class PlayerVirtualDisplay {
     guard display.apply(Self.settings(resolution)) else {
       throw PlayerError.virtualDisplayUnavailable("The virtual display refused \(resolution.rawValue).")
     }
-    guard PlayerDisplayProfile.assignSRGB(to: id) else {
-      throw PlayerError.virtualDisplayUnavailable("ColorSync refused an sRGB profile for the virtual display.")
-    }
   }
 
   deinit {
@@ -35,14 +32,21 @@ final class PlayerVirtualDisplay {
   var displayID: CGDirectDisplayID { display.displayID }
 
   func screen() async throws -> NSScreen {
+    var online = false
     for _ in 0..<Self.pollAttempts {
       try selectMode()
-      if let screen = matchingScreen() { return screen }
+      if let screen = matchingScreen() {
+        online = true
+        if PlayerDisplayProfile.assignSRGB(to: id) { return screen }
+      }
 
       try await Task.sleep(for: Self.pollInterval)
     }
-    throw PlayerError.virtualDisplayUnavailable(
-      "The \(resolution.rawValue) virtual display didn't come online. Its modes: \(availableModes())")
+    guard online else {
+      throw PlayerError.virtualDisplayUnavailable(
+        "The \(resolution.rawValue) virtual display didn't come online. Its modes: \(availableModes())")
+    }
+    throw PlayerError.virtualDisplayUnavailable("ColorSync refused an sRGB profile for the virtual display.")
   }
 
   private func matchingScreen() -> NSScreen? {
