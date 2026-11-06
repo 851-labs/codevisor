@@ -19,16 +19,7 @@ public struct ReviewPaneToolbar: ToolbarContent {
       .sharedBackgroundVisibility(.hidden)
       ToolbarSpacer(.flexible)
       ToolbarItemGroup(placement: .primaryAction) {
-        Menu {
-          ReviewModePicker(model: model)
-        } label: {
-          Text(model.mode.title)
-        }
-        .accessibilityLabel("Compare, \(model.mode.title)")
-        .help("Choose Which Changes to Review")
-        if model.mode == .branch {
-          ReviewBaseAutocomplete(model: model)
-        }
+        ReviewPaneToolbarActions(model: model)
       }
     #else
       ToolbarItem(id: "review.title", placement: .principal) {
@@ -41,6 +32,29 @@ public struct ReviewPaneToolbar: ToolbarContent {
     #endif
   }
 }
+
+#if canImport(AppKit)
+  public struct ReviewPaneToolbarActions: View {
+    private let model: ReviewPaneModel
+
+    public init(model: ReviewPaneModel) {
+      self.model = model
+    }
+
+    public var body: some View {
+      Menu {
+        ReviewModePicker(model: model)
+      } label: {
+        Text(model.mode.title)
+      }
+      .accessibilityLabel("Compare, \(model.mode.title)")
+      .help("Choose Which Changes to Review")
+      if model.mode == .branch {
+        ReviewBaseAutocomplete(model: model)
+      }
+    }
+  }
+#endif
 
 struct ReviewToolbarTitle: View {
   let model: ReviewPaneModel

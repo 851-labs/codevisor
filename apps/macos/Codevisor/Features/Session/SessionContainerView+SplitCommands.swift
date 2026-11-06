@@ -80,7 +80,9 @@ extension SessionContainerView {
   func splitActiveLeaf(edge: SplitEdge) {
     let workspace = selectedWorkspace
     guard let tab = workspace.selectedCenterTab else { return }
-    splitLeaf(activeLeafId ?? tab.activeLeafId, edge: edge)
+    let leafId = activeLeafId ?? tab.activeLeafId
+    guard !isFloating(leafId) else { return }
+    splitLeaf(leafId, edge: edge)
   }
 
   func layoutActions(in workspace: Workspace) -> WorkspaceLayoutActions? {
@@ -248,7 +250,7 @@ extension SessionContainerView {
     let workspace = navigationWorkspace
     guard let tab = workspace.selectedCenterTab else { return }
     let current = tab.activeLeafId
-    let frames = normalizedLeafFrames(tab.root)
+    let frames = normalizedLeafFrames(floatingLayout.visibleTree(tab.root))
     guard let source = frames[current] else { return }
     let sourceCenter = CGPoint(x: source.midX, y: source.midY)
     let candidates = frames.filter { id, frame in
@@ -272,7 +274,7 @@ extension SessionContainerView {
   func focusRelativeSplit(offset: Int) {
     let workspace = navigationWorkspace
     guard let tab = workspace.selectedCenterTab else { return }
-    let leaves = tab.root.allGroups.map(\.id)
+    let leaves = floatingLayout.visibleTree(tab.root).allGroups.map(\.id)
     guard leaves.count > 1 else { return }
     let current = tab.activeLeafId
     let index = leaves.firstIndex(of: current) ?? 0

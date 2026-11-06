@@ -17,6 +17,7 @@ struct SessionScreen: View {
   var onSplitLeaf: ((UUID, SplitEdge) -> Void)? = nil
   var onRenameLeaf: ((UUID, String) -> Void)? = nil
   var onCloseLeaf: ((UUID) -> Void)? = nil
+  var onFloatLeaf: ((UUID) -> Void)? = nil
   var openingSplit: WorkspaceSplitOpening? = nil
   var onSplitOpeningFinished: ((WorkspaceSplitOpening) -> Void)? = nil
   var onCenterTreeChanged: ((SplitNode) -> Void)? = nil
@@ -57,6 +58,7 @@ struct SessionScreen: View {
           onSplitLeaf: { leafId, edge in onSplitLeaf?(leafId, edge) },
           onRenameLeaf: { leafId, name in onRenameLeaf?(leafId, name) },
           onCloseLeaf: { leafId in onCloseLeaf?(leafId) },
+          onFloatLeaf: onFloatLeaf,
           openingSplit: openingSplit,
           onOpeningFinished: { onSplitOpeningFinished?($0) },
           onTreeChanged: { onCenterTreeChanged?($0) },

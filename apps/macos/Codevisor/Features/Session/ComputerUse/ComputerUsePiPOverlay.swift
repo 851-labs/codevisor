@@ -97,32 +97,21 @@ struct ComputerUsePiPOverlay<Model: LivePreviewPiPModel>: View {
     aspect: CGFloat,
     viewer: ComputerUseLivePreviewViewer
   ) -> some View {
-    ZStack(alignment: .topLeading) {
-      ForEach(ComputerUseLivePreviewResizeHandle.allCases, id: \.self) { handle in
-        let zone = handle.zone(in: size)
-        Color.clear
-          .contentShape(Rectangle())
-          .frame(width: zone.width, height: zone.height)
-          .offset(x: zone.minX, y: zone.minY)
-          .pointerStyle(.frameResize(position: handle.framePosition))
-          .gesture(
-            DragGesture(minimumDistance: 1, coordinateSpace: .named(Self.coordinateSpace))
-              .onChanged { value in
-                let start = resizeStartSize ?? size
-                resizeStartSize = start
-                liveArea = ComputerUseLivePreviewLayout.resizedArea(
-                  handle: handle, startSize: start, translation: value.translation, aspect: aspect)
-              }
-              .onEnded { _ in
-                if let liveArea { model.area = liveArea }
-                liveArea = nil
-                resizeStartSize = nil
-              }
-          )
-          .accessibilityHidden(true)
+    PiPResizeHandles(
+      size: size,
+      coordinateSpace: Self.coordinateSpace,
+      onChanged: { handle, translation in
+        let start = resizeStartSize ?? size
+        resizeStartSize = start
+        liveArea = ComputerUseLivePreviewLayout.resizedArea(
+          handle: handle, startSize: start, translation: translation, aspect: aspect)
+      },
+      onEnded: {
+        if let liveArea { model.area = liveArea }
+        liveArea = nil
+        resizeStartSize = nil
       }
-    }
-    .frame(width: size.width, height: size.height, alignment: .topLeading)
+    )
     .onChange(of: resizeStartSize == nil ? size : nil) { _, settled in
       if let settled { viewer.setDisplaySize(settled, backingScale: displayScale) }
     }
@@ -279,42 +268,6 @@ extension ComputerUseLivePreviewCorner {
 
   fileprivate var unitPoint: UnitPoint {
     switch self {
-    case .topLeading: .topLeading
-    case .topTrailing: .topTrailing
-    case .bottomLeading: .bottomLeading
-    case .bottomTrailing: .bottomTrailing
-    }
-  }
-}
-
-extension ComputerUseLivePreviewResizeHandle {
-  private static let edgeThickness: CGFloat = 6
-  private static let cornerLength: CGFloat = 14
-
-  fileprivate func zone(in size: CGSize) -> CGRect {
-    let edge = Self.edgeThickness
-    let corner = Self.cornerLength
-    let horizontalEdge = max(0, size.width - corner * 2)
-    let verticalEdge = max(0, size.height - corner * 2)
-    switch self {
-    case .top: return CGRect(x: corner, y: 0, width: horizontalEdge, height: edge)
-    case .bottom: return CGRect(x: corner, y: size.height - edge, width: horizontalEdge, height: edge)
-    case .leading: return CGRect(x: 0, y: corner, width: edge, height: verticalEdge)
-    case .trailing: return CGRect(x: size.width - edge, y: corner, width: edge, height: verticalEdge)
-    case .topLeading: return CGRect(x: 0, y: 0, width: corner, height: corner)
-    case .topTrailing: return CGRect(x: size.width - corner, y: 0, width: corner, height: corner)
-    case .bottomLeading: return CGRect(x: 0, y: size.height - corner, width: corner, height: corner)
-    case .bottomTrailing:
-      return CGRect(x: size.width - corner, y: size.height - corner, width: corner, height: corner)
-    }
-  }
-
-  fileprivate var framePosition: FrameResizePosition {
-    switch self {
-    case .top: .top
-    case .bottom: .bottom
-    case .leading: .leading
-    case .trailing: .trailing
     case .topLeading: .topLeading
     case .topTrailing: .topTrailing
     case .bottomLeading: .bottomLeading

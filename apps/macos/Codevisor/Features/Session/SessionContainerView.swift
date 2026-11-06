@@ -24,6 +24,7 @@ struct SessionContainerView: View {
   @ClientPreference(FeatureFlag.bots.preferenceKey, default: false) var botsEnabled
   @State var splitDragCoordinator = WorkspaceSplitDragCoordinator()
   @State var sessionFocus = TerminalFocusController()
+  @State var floatingFocusHandoff = PaneFocusHandoff()
 
   @State private var centerTreePreview: WorkspaceTreePreview?
 
@@ -85,6 +86,9 @@ struct SessionContainerView: View {
       .onChange(of: workspaceEntry.generation, initial: true) { _, _ in
         synchronizeMountedPaneGroups()
       }
+      .onChange(of: floatingLayout, initial: true) { _, _ in
+        dockStaleFloatingPanes()
+      }
       .modifier(
         CenterTabRequests(store: store, workspaceId: workspace.id, onClose: closeCenterTab)
       )
@@ -102,6 +106,7 @@ struct SessionContainerView: View {
       }
       .onChange(of: activeLeafId) { _, leafId in
         if let openingSplit, openingSplit.leafId != leafId { self.openingSplit = nil }
+        bringFloatingPaneToFront(leafId)
       }
       .onChange(of: focusedChatCandidate, initial: true) { _, candidate in
         publishFocusedChat(candidate)
@@ -187,7 +192,8 @@ struct SessionContainerView: View {
         centerGroup: chatLeaf.map { configuredCenterModel(leafId: $0.id) } ?? activeCenterModel(in: workspace),
         focus: sessionFocus,
         onWorkspaceCommand: handleWorkspaceCommand,
-        centerTree: chatLeaf.map { .group(id: $0.id, state: $0.state) } ?? liveCenterTree ?? workspace.centerTree,
+        centerTree: chatLeaf.map { .group(id: $0.id, state: $0.state) }
+          ?? floatingLayout.visibleTree(liveCenterTree ?? workspace.centerTree),
         primaryLeafId: session.flatMap { workspace.centerTree.groupId(containingChat: $0.id) },
         activeLeafId: chatLeaf?.id ?? activeLeafId,
         centerLeafModel: { leafId in configuredCenterModel(leafId: leafId) },
@@ -197,14 +203,17 @@ struct SessionContainerView: View {
         onSplitLeaf: splitLeaf,
         onRenameLeaf: renameLeaf,
         onCloseLeaf: closeLeaf,
+        onFloatLeaf: floatLeaf,
         openingSplit: openingSplit,
         onSplitOpeningFinished: finishSplitOpening,
-        onCenterTreeChanged: { tree in
+        onCenterTreeChanged: { visible in
+          let tree = restoringFloatingLeaves(visible)
           liveCenterTree = tree
           saveSelectedTree(tree, workspaceId: workspace.id)
         },
-        onCenterTreeLiveChanged: { tree in liveCenterTree = tree }
+        onCenterTreeLiveChanged: { visible in liveCenterTree = restoringFloatingLeaves(visible) }
       )
+      .overlay { floatingPaneOverlay(chatLeaf: chatLeaf) }
       .environment(\.usesSlimComposer, isSinglePane)
     }
     .overlay(alignment: .top) {

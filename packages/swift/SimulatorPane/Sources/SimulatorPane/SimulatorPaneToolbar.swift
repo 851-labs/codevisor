@@ -13,15 +13,14 @@ public struct SimulatorPaneToolbar: ToolbarContent {
 
   public var body: some ToolbarContent {
     #if os(macOS)
-      if let device = model.device {
+      if model.device != nil {
         ToolbarItem(id: "simulator.device", placement: .navigation) {
-          SimulatorDevicePicker(model: model, device: device)
+          SimulatorPaneDeviceControl(model: model)
         }
         .sharedBackgroundVisibility(.hidden)
         ToolbarSpacer(.flexible)
         ToolbarItemGroup(placement: .primaryAction) {
-          if device.isBooted { SimulatorSettingsButton(model: model) }
-          SimulatorActionsMenu(model: model, device: device)
+          SimulatorPaneActions(model: model)
         }
       }
     #else
@@ -52,6 +51,37 @@ public struct SimulatorPaneToolbar: ToolbarContent {
     #endif
   }
 }
+
+#if os(macOS)
+  public struct SimulatorPaneDeviceControl: View {
+    let model: SimulatorPaneModel
+
+    public init(model: SimulatorPaneModel) {
+      self.model = model
+    }
+
+    public var body: some View {
+      if let device = model.device {
+        SimulatorDevicePicker(model: model, device: device)
+      }
+    }
+  }
+
+  public struct SimulatorPaneActions: View {
+    let model: SimulatorPaneModel
+
+    public init(model: SimulatorPaneModel) {
+      self.model = model
+    }
+
+    public var body: some View {
+      if let device = model.device {
+        if device.isBooted { SimulatorSettingsButton(model: model) }
+        SimulatorActionsMenu(model: model, device: device)
+      }
+    }
+  }
+#endif
 
 public struct SimulatorDeviceMenuItems: View {
   let model: SimulatorPaneModel
