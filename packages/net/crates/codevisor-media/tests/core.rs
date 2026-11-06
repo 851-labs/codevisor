@@ -869,3 +869,106 @@ fn a_one_megabit_lossy_link_keeps_the_age_flat() {
     let median = carrying.median();
     assert!(median < 160 * MS, "p50 {median:?} with frames that carry the time since the last encode");
 }
+
+fn app_limited_estimates(
+    conditions: NetworkConditions,
+    seed: u64,
+    duration: Duration,
+    mut frame_len: impl FnMut(u64, Duration) -> usize,
+) -> Vec<(Duration, f64)> {
+    let mut sim = Sim::new(conditions, config(FecMode::Adaptive), seed);
+    let end = sim.now + duration;
+    let mut next = sim.now;
+    let mut index = 0u64;
+    let mut estimates = Vec::new();
+    while sim.now < end {
+        if sim.now >= next && sim.host.admission().admit {
+            sim.send(frame(0, &payload(index, frame_len(index, sim.now - sim.epoch))));
+            index += 1;
+            next = (next + INTERVAL).max(sim.now);
+        }
+        estimates.push((sim.now - sim.epoch, sim.host.admission().estimate_bps));
+        sim.run_until(sim.now + MS);
+    }
+    estimates
+}
+
+#[test]
+fn a_big_frame_on_an_app_limited_stream_doesnt_pull_the_estimate_down_to_the_stream() {
+    let big_at = 300 * INTERVAL;
+    for capacity_kbps in [1_000_000, 200_000, 50_000] {
+        for seed in 1..=3 {
+            let conditions = NetworkConditions { capacity_kbps: Some(capacity_kbps), ..NetworkConditions::N3 };
+            let estimates = app_limited_estimates(conditions, seed, Duration::from_secs(7), |index, _| {
+                if index == 300 { 470_000 } else { 3_000 }
+            });
+            let lowest = estimates
+                .iter()
+                .filter(|(at, _)| *at >= big_at)
+                .map(|(_, estimate)| *estimate)
+                .fold(f64::MAX, f64::min);
+            let link = capacity_kbps as f64 * 1e3;
+            assert!(
+                lowest >= link.min(100e6) / 2.0,
+                "{capacity_kbps} kbit/s, seed {seed}: {:.1} Mbit/s after the big frame",
+                lowest / 1e6
+            );
+        }
+    }
+}
+
+#[test]
+fn an_app_limited_stream_doesnt_let_the_estimate_grow_past_the_link() {
+    for seed in 1..=3 {
+        let estimates = app_limited_estimates(NetworkConditions::N5, seed, Duration::from_secs(10), |index, _| {
+            if index == 0 { 470_000 } else { 3_000 }
+        });
+        let settled = estimates.iter().filter(|(at, _)| *at >= Duration::from_millis(1_500));
+        let highest = settled.map(|(_, estimate)| *estimate).fold(0.0, f64::max);
+        assert!(highest <= 60e6, "seed {seed}: {:.1} Mbit/s on a 30 Mbit/s link", highest / 1e6);
+    }
+}
+
+#[test]
+fn a_queue_that_outlasts_the_base_delay_window_stays_seen_while_it_drains() {
+    let link = NetworkConditions { id: "1 Mbit/s", delay_ms: 50.0, capacity_kbps: Some(1_000), ..NetworkConditions::N0 };
+    let mut sim = Sim::new(link, config(FecMode::Adaptive), 1);
+    let mut captured_at = std::collections::HashMap::new();
+    for index in 0..50 {
+        captured_at.insert(sim.send(frame(0, &payload(index, 30_000))), sim.now);
+    }
+    let mut index = 50;
+    let mut next = sim.now;
+    let mut checked = 0;
+    while sim.now < sim.epoch + Duration::from_secs(30) {
+        let admission = sim.host.admission();
+        if sim.now >= next && admission.admit {
+            let len = (admission.encoder_ceiling_bps / 8.0 * INTERVAL.as_secs_f64()) as usize;
+            captured_at.insert(sim.send(frame(0, &payload(index, len.max(300)))), sim.now);
+            index += 1;
+            next = sim.now + INTERVAL;
+        }
+        sim.run_until(sim.now + 10 * MS);
+        let Some(latest) = sim.frames().last().copied() else {
+            continue;
+        };
+        let waited = latest.completed_at - captured_at[&latest.frame];
+        if sim.now - latest.completed_at <= 10 * MS && waited > Duration::from_secs(6) {
+            let seen = Duration::from_micros(sim.host.stats(sim.now).queue_delay_us.max(0) as u64);
+            assert!(seen >= waited / 2, "a frame waited {waited:?} but the queue reads {seen:?}");
+            checked += 1;
+        }
+    }
+    assert!(checked > 0);
+}
+
+#[test]
+fn a_nack_for_packets_still_waiting_to_leave_resends_only_those_already_sent() {
+    let mut sim = Sim::new(NetworkConditions::N1, MediaConfig { initial_rate_bps: 1e6, ..config(FecMode::Off) }, 27);
+    sim.send(frame(0, &payload(1, 50 * 1000)));
+    let sent = sim.host.stats(sim.now).packets_sent;
+    sim.host.handle_datagram(sim.now, wire::Nack::whole_frame(0, 0).encode());
+
+    assert!(sent < 40, "{sent} of 42 packets left at once");
+    assert_eq!(sim.host.stats(sim.now).packets_retransmitted, sent);
+}
