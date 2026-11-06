@@ -8,9 +8,9 @@ import { fileURLToPath } from "node:url"
 
 const script = fileURLToPath(new URL("./tier2-pair.sh", import.meta.url))
 
-const fakeGh = `#!/usr/bin/env node
+const fakeCurl = `#!/usr/bin/env node
 const fs = require("node:fs")
-fs.appendFileSync(process.env.FAKE_CALLS, process.argv[3] + "\\n")
+fs.appendFileSync(process.env.FAKE_CALLS, process.argv.at(-1) + "\\n")
 const responses = JSON.parse(fs.readFileSync(process.env.FAKE_RESPONSES, "utf8"))
 const index = Number(fs.existsSync(process.env.FAKE_COUNT) ? fs.readFileSync(process.env.FAKE_COUNT, "utf8") : 0)
 fs.writeFileSync(process.env.FAKE_COUNT, String(index + 1))
@@ -23,7 +23,7 @@ function runPair(t, args, responses) {
   const dir = mkdtempSync(join(tmpdir(), "tier2-pair-"))
   t.after(() => rmSync(dir, { recursive: true, force: true }))
   for (const [name, body] of [
-    ["gh", fakeGh],
+    ["curl", fakeCurl],
     ["sleep", '#!/bin/sh\necho "$1" >> "$FAKE_SLEEPS"\n']
   ]) {
     writeFileSync(join(dir, name), body)
@@ -36,6 +36,7 @@ function runPair(t, args, responses) {
     env: {
       PATH: `${dir}:${process.env.PATH}`,
       GITHUB_REPOSITORY: "851-labs/codevisor",
+      GH_TOKEN: "token",
       GITHUB_RUN_ID: "500",
       GITHUB_RUN_ATTEMPT: "1",
       GITHUB_JOB: "host",

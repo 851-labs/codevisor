@@ -1,5 +1,6 @@
 #!/usr/bin/env bash
 set -euo pipefail
+source "$(dirname "${BASH_SOURCE[0]}")/github-api.sh"
 
 : "${TIER2_PAIR_POLL_S:=30}"
 : "${TIER2_PAIR_CONFIRM_S:=60}"
@@ -14,7 +15,7 @@ polls() {
 }
 
 peer_state() {
-  gh api "repos/$GITHUB_REPOSITORY/actions/runs/$GITHUB_RUN_ID/attempts/$GITHUB_RUN_ATTEMPT/jobs?per_page=100" |
+  github_api "repos/$GITHUB_REPOSITORY/actions/runs/$GITHUB_RUN_ID/attempts/$GITHUB_RUN_ATTEMPT/jobs?per_page=100" |
     jq -r --arg peer "$1" --arg runner "$RUNNER_NAME" --arg own "$GITHUB_JOB" '
       ([.jobs[] | select(.status == "in_progress" and .runner_name == $runner)][0].name // null) as $own_name
       | if $own_name == null or ($own_name | endswith($own) | not) then "none unknown"
