@@ -5,6 +5,7 @@ import { fileURLToPath } from "node:url"
 
 const repoRoot = fileURLToPath(new URL("..", import.meta.url))
 const pollMilliseconds = 20_000
+const unreachablePollsAllowed = 15
 const usage =
   "usage: bun run ship [--review] [--wait] [--title <title>] [--body <body> | --body-file <path>]"
 
@@ -88,10 +89,13 @@ function queuePullRequest(pullRequest) {
 
 async function waitUntilLanded(pullRequest) {
   step("Waiting for the merge queue")
+  let unreachablePolls = 0
   for (;;) {
     const state = pullRequestState(pullRequest)
-    if (state.merged) return report(`Landed ${pullRequest}`)
-    if (state.leftQueue)
+    unreachablePolls = state === undefined ? unreachablePolls + 1 : 0
+    if (unreachablePolls > unreachablePollsAllowed) fail("Lost contact with GitHub while waiting")
+    if (state?.merged) return report(`Landed ${pullRequest}`)
+    if (state?.leftQueue)
       fail(`${pullRequest} left the merge queue; see its checks, fix, and ship again`)
 
     await sleep(pollMilliseconds)
@@ -105,14 +109,12 @@ const pullRequestStateQuery = `query($url: URI!) {
 }`
 
 function pullRequestState(pullRequest) {
-  const response = gh([
-    "api",
-    "graphql",
-    "-f",
-    `query=${pullRequestStateQuery}`,
-    "-F",
-    `url=${pullRequest}`
-  ])
+  const response = gh(
+    ["api", "graphql", "-f", `query=${pullRequestStateQuery}`, "-F", `url=${pullRequest}`],
+    { allowFailure: true }
+  )
+  if (response === undefined) return undefined
+
   const fields = JSON.parse(response).data.resource
   return {
     merged: fields.state === "MERGED",
