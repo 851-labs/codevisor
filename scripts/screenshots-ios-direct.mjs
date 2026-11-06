@@ -9,26 +9,35 @@ import { developmentLayout, IOS_DEVELOPMENT_BUNDLE_IDENTIFIER } from "./dev-layo
 import { delay } from "./dev-shared.mjs"
 import {
   devices,
+  iosScenes,
   parseOptions,
   prepareThrowawaySimulator,
+  requireSimulatorSdk,
   selectRuntime,
-  simctl
+  simctl,
+  startMascotServer
 } from "./screenshots-ios-lib.mjs"
-import { pngDimensions, run, scenes, selectedAppearances } from "./screenshots-lib.mjs"
+import { pngDimensions, run, selectedAppearances } from "./screenshots-lib.mjs"
 import { runXcodebuild } from "./xcodebuild.mjs"
 
 const execute = promisify(execFile)
-const settleSeconds = { "04-browser": 8 }
+const settleSeconds = { browser: 8, bots: 6, "bot-conversation": 6, "mascot-editor": 6 }
 const defaultSettleSeconds = 4
 const readyTimeoutSeconds = 90
 const pngWidthOffset = 16
 const pngHeightOffset = 20
-const warmUpScene = "04-browser"
+const warmUpScene = "07-browser"
+const landscapeMarkers = {
+  "bot-conversation": "TestFlight build 318",
+  conversation: "Skin tones are in the picker.",
+  "mascot-editor": "Headwear",
+  browser: "Copy emoji"
+}
 
 const root = await realpath(fileURLToPath(new URL("..", import.meta.url)))
 const options = parseOptions(process.argv.slice(2), root)
 if (options.help) {
-  console.log(`Usage: bun run screenshots:ios:direct [--device iphone|iphone-18-pro|ipad-pro-11|ipad-pro-13] [--output directory] [--runtime 'iOS 27.0'] [--appearance all|light|dark]
+  console.log(`Usage: bun run screenshots:ios:direct [--device iphone|iphone-18-pro|iphone-duo|ipad-pro-11|ipad-pro-13] [--output directory] [--runtime 'iOS 27.0'] [--appearance all|light|dark]
 
 Captures the App Store scenes on a throwaway, headless simulator without the worktree simulator
 owner. The device is created for this run and deleted afterwards; the app runs on offline demo
@@ -38,6 +47,7 @@ data only. Landscape devices (the iPad) rotate through a UI test, since simctl c
 
 const selectedDevice = devices[options.device]
 if (selectedDevice === undefined) throw new Error("Pick one device with --device")
+await requireSimulatorSdk(selectedDevice)
 const displayName = "INFOPLIST_KEY_CFBundleDisplayName=Codevisor"
 const isLandscape = selectedDevice.orientation === "landscape"
 const buildSettings = [displayName]
@@ -45,29 +55,38 @@ await run("bun", ["scripts/build-native.mjs", "ios", ...buildSettings], {
   cwd: root
 })
 const runtime = await compatibleRuntime(selectedDevice)
-const simulatorId = await simctl(
-  "create",
-  `Codevisor Screenshots ${selectedDevice.name}`,
-  selectedDevice.type,
-  runtime.identifier
-)
+const mascotServer = await startMascotServer(root)
 try {
-  await prepareDevice(simulatorId)
-  if (!isLandscape) await warmUp(simulatorId)
-  for (const appearance of selectedAppearances(options)) {
-    await simctl("ui", simulatorId, "appearance", appearance)
-    const directory = join(options.output, options.device, appearance)
-    await mkdir(directory, { recursive: true })
-    for (const scene of selectedDevice.scenes ?? scenes) {
-      const file = join(directory, `${scene}-${options.device}-${appearance}.png`)
-      if (isLandscape) await captureLandscape(simulatorId, appearance, file)
-      else await capture(simulatorId, scene, appearance, file)
-      console.log(file)
-    }
-  }
+  await captureAll()
 } finally {
-  await simctl("shutdown", simulatorId).catch(() => {})
-  await simctl("delete", simulatorId)
+  await mascotServer.stop()
+}
+
+async function captureAll() {
+  const simulatorId = await simctl(
+    "create",
+    `Codevisor Screenshots ${selectedDevice.name}`,
+    selectedDevice.type,
+    runtime.identifier
+  )
+  try {
+    await prepareDevice(simulatorId)
+    if (!isLandscape) await warmUp(simulatorId)
+    for (const appearance of selectedAppearances(options)) {
+      await simctl("ui", simulatorId, "appearance", appearance)
+      const directory = join(options.output, options.device, appearance)
+      await mkdir(directory, { recursive: true })
+      for (const scene of selectedDevice.scenes ?? iosScenes) {
+        const file = join(directory, `${scene}-${options.device}-${appearance}.png`)
+        if (isLandscape) await captureLandscape(simulatorId, scene, appearance, file)
+        else await capture(simulatorId, scene, appearance, file)
+        console.log(file)
+      }
+    }
+  } finally {
+    await simctl("shutdown", simulatorId).catch(() => {})
+    await simctl("delete", simulatorId)
+  }
 }
 
 async function prepareDevice(udid) {
@@ -89,7 +108,7 @@ async function warmUp(udid) {
   await execute("xcrun", launchArguments(udid), {
     env: sceneEnvironment(warmUpScene, "light")
   })
-  await delay(settleSeconds[warmUpScene] * 1000)
+  await delay(settleSeconds[sceneName(warmUpScene)] * 1000)
   await simctl("terminate", udid, IOS_DEVELOPMENT_BUNDLE_IDENTIFIER).catch(() => {})
 }
 
@@ -101,8 +120,9 @@ async function capture(udid, scene, appearance, file) {
   }
   await execute("xcrun", launchArguments(udid), { env: environment })
   await waitForFile(readyFile)
-  await delay((settleSeconds[scene] ?? defaultSettleSeconds) * 1000)
-  await simctl("io", udid, "screenshot", file)
+  await delay((settleSeconds[sceneName(scene)] ?? defaultSettleSeconds) * 1000)
+  const display = selectedDevice.display === undefined ? [] : ["--display", selectedDevice.display]
+  await simctl("io", udid, "screenshot", ...display, file)
   await simctl("terminate", udid, IOS_DEVELOPMENT_BUNDLE_IDENTIFIER).catch(() => {})
   pngDimensions(await readFile(file), selectedDevice)
 }
@@ -121,10 +141,10 @@ async function waitForFile(path) {
   throw new Error(`The app did not report ready within ${readyTimeoutSeconds} seconds`)
 }
 
-async function captureLandscape(udid, appearance, file) {
+async function captureLandscape(udid, scene, appearance, file) {
   const scratch = await mkdtemp(join(tmpdir(), "codevisor-landscape-"))
   const result = join(scratch, "capture.xcresult")
-  await runLandscapeTest(udid, appearance, result, join(scratch, "test.log"))
+  await runLandscapeTest(udid, scene, appearance, result, join(scratch, "test.log"))
   const attachments = join(scratch, "attachments")
   await execute("xcrun", [
     "xcresulttool",
@@ -164,7 +184,7 @@ async function turnUpright(file) {
   if (isPortrait) await execute("sips", ["--rotate", "270", file])
 }
 
-async function runLandscapeTest(udid, appearance, result, logFile) {
+async function runLandscapeTest(udid, scene, appearance, result, logFile) {
   const log = await open(logFile, "w")
   try {
     await runXcodebuild(root, "ios", landscapeTestArguments(udid, result), {
@@ -172,7 +192,10 @@ async function runLandscapeTest(udid, appearance, result, logFile) {
       environment: {
         ...process.env,
         TEST_RUNNER_CODEVISOR_CAPTURE_LANDSCAPE: "1",
-        TEST_RUNNER_CODEVISOR_SCREENSHOT_APPEARANCE: appearance
+        TEST_RUNNER_CODEVISOR_SCREENSHOT_APPEARANCE: appearance,
+        TEST_RUNNER_CODEVISOR_SCREENSHOT_SCENE: sceneName(scene),
+        TEST_RUNNER_CODEVISOR_SCREENSHOT_MARKER: landscapeMarkers[sceneName(scene)],
+        TEST_RUNNER_CODEVISOR_DEMO_MASCOT_URL: mascotServer.url
       },
       stdio: ["ignore", log.fd, log.fd]
     })
@@ -217,10 +240,15 @@ function launchArguments(udid) {
   ]
 }
 
+function sceneName(scene) {
+  return scene.replace(/^\d+-/, "")
+}
+
 function sceneEnvironment(scene, appearance) {
-  const name = scene.replace(/^\d+-/, "")
+  const name = sceneName(scene)
   return {
     ...process.env,
+    SIMCTL_CHILD_CODEVISOR_DEMO_MASCOT_URL: mascotServer.url,
     SIMCTL_CHILD_CODEVISOR_APP_STORE_SCREENSHOTS: "1",
     SIMCTL_CHILD_CODEVISOR_SCREENSHOT_SCENE: name,
     SIMCTL_CHILD_CODEVISOR_SCREENSHOT_APPEARANCE: appearance,

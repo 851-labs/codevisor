@@ -8,7 +8,28 @@
     func info() async throws -> ServerInfo {
       ServerInfo(
         id: machine.serverId, name: machine.name, kind: "codevisor", version: DemoWorld.appVersion,
-        platform: machine.os, bindHost: "127.0.0.1", cloudDeviceId: machine.deviceId)
+        platform: machine.os, bindHost: "127.0.0.1",
+        features: DemoBots.isAvailable ? ["bots-v1", "bot-archive-v1", "bot-projectless-v1"] : nil,
+        cloudDeviceId: machine.deviceId)
+    }
+
+    func listBots() async throws -> [ServerBot] { DemoServerRecords.bots(on: machine) }
+
+    func botConversation(sessionId: UUID, before: Int?, limit: Int) async throws -> ServerBotConversationPage {
+      DemoServerRecords.botConversation(sessionId: sessionId)
+    }
+
+    func botMascotArt(_ art: ServerBotMascotArt) async throws -> Data {
+      try await mascotServer().botMascotArt(art)
+    }
+
+    func botMascotOptions() async throws -> ServerBotMascotOptions {
+      try await mascotServer().botMascotOptions()
+    }
+
+    private func mascotServer() throws -> CodevisorServerClient {
+      guard let url = DemoBots.mascotURL else { throw unavailable }
+      return CodevisorServerClient(config: CodevisorServerConfig(baseURL: url))
     }
 
     func updateInfo(refresh: Bool, channel: ServerUpdateChannel) async throws -> ServerUpdateInfo {

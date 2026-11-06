@@ -79,19 +79,22 @@ final class AppStoreScreenshotTests: XCTestCase {
     func testCaptureLandscapeConversation() throws {
       try XCTSkipUnless(ProcessInfo.processInfo.environment["CODEVISOR_CAPTURE_LANDSCAPE"] == "1")
       XCUIDevice.shared.orientation = .landscapeLeft
+      let environment = ProcessInfo.processInfo.environment
       let app = XCUIApplication()
       app.launchEnvironment["CODEVISOR_APP_STORE_SCREENSHOTS"] = "1"
-      app.launchEnvironment["CODEVISOR_SCREENSHOT_SCENE"] = "conversation"
+      app.launchEnvironment["CODEVISOR_SCREENSHOT_SCENE"] = environment["CODEVISOR_SCREENSHOT_SCENE"] ?? "conversation"
       app.launchEnvironment["CODEVISOR_SCREENSHOT_APPEARANCE"] =
-        ProcessInfo.processInfo.environment["CODEVISOR_SCREENSHOT_APPEARANCE"] ?? "light"
+        environment["CODEVISOR_SCREENSHOT_APPEARANCE"] ?? "light"
+      app.launchEnvironment["CODEVISOR_DEMO_MASCOT_URL"] = environment["CODEVISOR_DEMO_MASCOT_URL"]
       app.launchArguments = [
         "-AppleLanguages", "(en)", "-AppleLocale", "en_US",
       ]
       app.launch()
       defer { app.terminate() }
-      let reply = app.descendants(matching: .any)
-        .matching(NSPredicate(format: "label CONTAINS %@", "Skin tones are in the picker.")).firstMatch
-      XCTAssertTrue(reply.waitForExistence(timeout: 30), "Missing the featured conversation")
+      let marker = environment["CODEVISOR_SCREENSHOT_MARKER"] ?? "Skin tones are in the picker."
+      let content = app.descendants(matching: .any).matching(NSPredicate(format: "label CONTAINS %@", marker))
+        .firstMatch
+      XCTAssertTrue(content.waitForExistence(timeout: 30), "Missing the screenshot content: \(marker)")
       let screenshot = XCTAttachment(screenshot: XCUIScreen.main.screenshot())
       screenshot.name = "landscape-conversation"
       screenshot.lifetime = .keepAlways
