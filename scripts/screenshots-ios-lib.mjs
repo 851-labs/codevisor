@@ -147,26 +147,37 @@ const captions = {
 
 const wideCaptions = { ...captions, harnesses: "Claude Code, Codex, and 30+ more" }
 
-export const framedSets = {
+export const appStoreSets = {
   iphone: { device: "iphone-18-pro", frame: "iphone", captions },
   ipad: { device: "ipad-pro-13", frame: "ipad", captions: wideCaptions },
   "iphone-duo": { device: "iphone-duo-unfolded", frame: "duo-unfolded", captions: wideCaptions }
 }
 
-export function frameJobs(input, output, appearance) {
-  return Object.entries(framedSets).flatMap(([set, source]) => {
+export function appStoreJobs(captures, output) {
+  return Object.entries(appStoreSets).flatMap(([set, source]) => {
     const device = devices[source.device]
     const landscape = device.orientation === "landscape"
-    return (device.scenes ?? iosScenes).map((scene) => {
-      const name = scene.replace(/^\d+-/, "")
-      return {
-        input: `${input}/${source.device}/${appearance}/${scene}-${source.device}-${appearance}.png`,
-        output: `${output}/${set}/${scene}.png`,
-        width: landscape ? device.height : device.width,
-        height: landscape ? device.width : device.height,
-        device: source.frame,
-        caption: source.captions[name]
-      }
+    const size = {
+      width: landscape ? device.height : device.width,
+      height: landscape ? device.width : device.height
+    }
+    return (device.scenes ?? iosScenes).flatMap((scene) => {
+      const capture = (appearance) =>
+        `${captures}/${source.device}/${appearance}/${scene}-${source.device}-${appearance}.png`
+      return [
+        {
+          input: capture("light"),
+          output: `${output}/app-store-screenshots/${set}/${scene}.png`,
+          ...size
+        },
+        {
+          input: capture("dark"),
+          output: `${output}/app-store-screenshots-framed/${set}/${scene}.png`,
+          ...size,
+          device: source.frame,
+          caption: source.captions[scene.replace(/^\d+-/, "")]
+        }
+      ]
     })
   })
 }

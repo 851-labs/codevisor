@@ -9,8 +9,8 @@ struct Job: Decodable {
   let output: String
   let width: Int
   let height: Int
-  let device: Device
-  let caption: String
+  let device: Device?
+  let caption: String?
 }
 
 enum Device: String, Decodable {
@@ -83,14 +83,17 @@ func render(_ job: Job) throws {
       space: CGColorSpace(name: CGColorSpace.sRGB)!, bitmapInfo: CGImageAlphaInfo.noneSkipLast.rawValue)
   else { throw CocoaError(.fileWriteUnknown) }
   context.interpolationQuality = .high
-  context.setFillColor(background)
-  context.fill(CGRect(origin: .zero, size: canvas))
-
-  let portrait = canvas.height > canvas.width
-  let margin = canvas.height * (portrait ? 0.035 : 0.045)
-  let captionBottom = drawCaption(job.caption, in: context, canvas: canvas, portrait: portrait)
-  let area = CGRect(x: 0, y: margin, width: canvas.width, height: captionBottom - margin * 2)
-  drawDevice(job.device, screenshot: screenshot, in: context, area: area, maxWidth: canvas.width * 0.84)
+  if let device = job.device, let caption = job.caption {
+    context.setFillColor(background)
+    context.fill(CGRect(origin: .zero, size: canvas))
+    let portrait = canvas.height > canvas.width
+    let margin = canvas.height * (portrait ? 0.035 : 0.045)
+    let captionBottom = drawCaption(caption, in: context, canvas: canvas, portrait: portrait)
+    let area = CGRect(x: 0, y: margin, width: canvas.width, height: captionBottom - margin * 2)
+    drawDevice(device, screenshot: screenshot, in: context, area: area, maxWidth: canvas.width * 0.84)
+  } else {
+    context.draw(screenshot, in: CGRect(origin: .zero, size: canvas))
+  }
 
   guard let image = context.makeImage(),
     let destination = CGImageDestinationCreateWithURL(
