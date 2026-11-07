@@ -9,7 +9,7 @@ final class HostLabNullTransport: ScreenSharingMediaTransport, @unchecked Sendab
   private static let ackDelay = DispatchTimeInterval.milliseconds(1)
   private let admitted = ScreenSharingMediaAdmission(
     admit: true, backlogBytes: 0, estimateKbps: UInt64(ScreenSharingV2Profile.bitrateCeiling / 1000),
-    encoderCeilingKbps: UInt64(ScreenSharingV2Profile.bitrateCeiling / 1000))
+    encoderCeilingKbps: UInt64(ScreenSharingV2Profile.bitrateCeiling / 1000), sampled: true)
 
   init() {
     let (stream, continuation) = AsyncStream.makeStream(of: ScreenSharingMediaEvent.self)

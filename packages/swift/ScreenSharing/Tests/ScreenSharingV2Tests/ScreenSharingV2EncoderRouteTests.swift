@@ -219,7 +219,8 @@ struct ScreenSharingV2EncoderRouteTests {
     _ roundTripMs: Double, estimate: Int = fastLink, loss: Double = 0
   ) -> ScreenSharingTileNetworkFeedback {
     ScreenSharingTileNetworkFeedback(
-      packetErrorRate: loss, roundTripDelayMs: roundTripMs, transmissionBitsPerSecond: estimate)
+      packetErrorRate: loss, roundTripDelayMs: roundTripMs, transmissionBitsPerSecond: estimate,
+      transmissionMeasured: true)
   }
 
   private static func lossyFeedback() -> ScreenSharingTileNetworkFeedback {

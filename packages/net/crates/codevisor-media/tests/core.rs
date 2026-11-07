@@ -1172,9 +1172,9 @@ fn a_stream_too_small_to_time_leaves_the_estimate_unmeasured_until_a_frame_is() 
 
     sim.send(frame(0, &payload(30, 100_000)));
     sim.run_for(Duration::from_secs(1));
-    let measured = sim.host.admission();
+    let sampled = sim.host.admission();
 
-    assert!(!guessed.measured, "{:.1} Mbit/s from 400-byte frames", guessed.estimate_bps / 1e6);
-    assert!(measured.measured);
-    assert!(measured.estimate_bps < 45e6, "{:.1} Mbit/s on a 30 Mbit/s link", measured.estimate_bps / 1e6);
+    assert!(!guessed.sampled, "{:.1} Mbit/s from 400-byte frames", guessed.estimate_bps / 1e6);
+    assert!(sampled.sampled);
+    assert!(sampled.estimate_bps < 45e6, "{:.1} Mbit/s on a 30 Mbit/s link", sampled.estimate_bps / 1e6);
 }

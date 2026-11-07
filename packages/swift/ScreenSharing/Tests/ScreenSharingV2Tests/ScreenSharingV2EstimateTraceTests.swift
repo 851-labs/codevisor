@@ -13,4 +13,14 @@ struct ScreenSharingV2EstimateTraceTests {
 
     #expect(labels == [nil, nil, "45.5", "45.5,70.0"])
   }
+
+  @Test func secondsWithoutAnEstimateAreMarkedAsGaps() {
+    var trace = ScreenSharingV2EstimateTrace()
+    let second: Int64 = 1_000_000_000
+
+    _ = trace.observe(estimateKbps: 50_000, atNs: 0)
+    let label = trace.observe(estimateKbps: 40_000, atNs: 3 * second)
+
+    #expect(label == "50.0,-,-")
+  }
 }

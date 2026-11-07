@@ -218,13 +218,13 @@ public final class ScreenSharingV2Host: ScreenSharingFrameSink, @unchecked Senda
 
     networkFeedbackNs = nowNs
     if let trace = estimateTrace.observe(estimateKbps: admission.estimateKbps, atNs: nowNs) {
-      metrics.label(ScreenSharingV2EstimateTrace.label, trace)
+      metrics.label(ScreenSharingV2EstimateTraceLabel.name, trace)
     }
     encoder.observeNetwork(
       ScreenSharingTileNetworkFeedback(
         packetErrorRate: transport.lossRate, roundTripDelayMs: Double(transport.roundTripUs) / 1000,
         transmissionBitsPerSecond: Int(clamping: admission.estimateKbps * 1000),
-        transmissionMeasured: admission.measured))
+        transmissionMeasured: admission.sampled))
   }
 
   private func encoderOutput(_ output: ScreenSharingTileEncoderOutput) {

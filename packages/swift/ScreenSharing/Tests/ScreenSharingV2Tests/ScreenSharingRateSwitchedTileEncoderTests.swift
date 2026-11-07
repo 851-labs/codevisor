@@ -198,7 +198,8 @@ struct ScreenSharingRateSwitchedTileEncoderTests {
   ) {
     encoder.observeNetwork(
       ScreenSharingTileNetworkFeedback(
-        packetErrorRate: loss, roundTripDelayMs: roundTripMs, transmissionBitsPerSecond: estimate))
+        packetErrorRate: loss, roundTripDelayMs: roundTripMs, transmissionBitsPerSecond: estimate,
+        transmissionMeasured: true))
   }
 
   private func clearOutputs() {

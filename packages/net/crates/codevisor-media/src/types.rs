@@ -110,7 +110,7 @@ pub struct Admission {
     pub budget_bytes: usize,
     pub estimate_bps: f64,
     pub encoder_ceiling_bps: f64,
-    pub measured: bool,
+    pub sampled: bool,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Default)]
