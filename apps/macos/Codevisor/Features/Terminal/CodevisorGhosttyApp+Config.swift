@@ -59,12 +59,7 @@ extension CodevisorGhosttyApp {
 
     do {
       try fm.createDirectory(at: base, withIntermediateDirectories: true)
-      let tar = Process()
-      tar.executableURL = URL(fileURLWithPath: "/usr/bin/tar")
-      tar.arguments = ["-xzf", tarball.path, "-C", base.path]
-      try tar.run()
-      tar.waitUntilExit()
-      guard tar.terminationStatus == 0, fm.fileExists(atPath: ghosttyDir.path) else {
+      guard extract(tarball, into: base), fm.fileExists(atPath: ghosttyDir.path) else {
         fatalError("Failed to extract Ghostty resources from \(tarball.path).")
       }
       do {
@@ -77,6 +72,21 @@ extension CodevisorGhosttyApp {
     } catch {
       fatalError("Failed to prepare Ghostty resources: \(error).")
     }
+  }
+
+  private static func extract(_ tarball: URL, into directory: URL) -> Bool {
+    let arguments = ["/usr/bin/tar", "-xzf", tarball.path, "-C", directory.path]
+    var argv = arguments.map { strdup($0) } + [nil]
+    defer { argv.forEach { free($0) } }
+
+    var pid: pid_t = 0
+    guard posix_spawn(&pid, arguments[0], nil, nil, &argv, environ) == 0 else { return false }
+
+    var status: Int32 = 0
+    while waitpid(pid, &status, 0) == -1 {
+      guard errno == EINTR else { return false }
+    }
+    return status == 0
   }
 
   private static func writeOverrideConfig(systemIsDark: Bool?) -> String? {

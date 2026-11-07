@@ -3,7 +3,6 @@ import AppKit
 import CodevisorCore
 import CodevisorUI
 import StreamMarkdown
-import UniformTypeIdentifiers
 
 extension PreviewFile {
   var isPDF: Bool {
@@ -241,101 +240,6 @@ struct AttachmentFileChip: View {
 
   private var shape: RoundedRectangle {
     isBubble ? UserBubbleBackground.shape(for: dynamicTypeSize) : RoundedRectangle(cornerRadius: 8)
-  }
-}
-
-struct AttachmentDropModifier: ViewModifier {
-  let controller: SessionController?
-  @State private var isTargeted = false
-
-  func body(content: Content) -> some View {
-    content
-      .onDrop(of: [.fileURL, .image], isTargeted: $isTargeted) { providers in
-        handleDrop(providers)
-      }
-      .overlay {
-        if isTargeted && controller != nil {
-          DropToAttachOverlay()
-        }
-      }
-  }
-
-  private func handleDrop(_ providers: [NSItemProvider]) -> Bool {
-    guard let controller else { return false }
-    var handled = false
-    for provider in providers {
-      if provider.hasItemConformingToTypeIdentifier(UTType.fileURL.identifier) {
-        handled = true
-        let id = UUID()
-        let name = provider.suggestedName ?? "Dropped file"
-        let type = UTType(filenameExtension: (name as NSString).pathExtension)
-        let mimeType = type?.preferredMIMEType ?? "application/octet-stream"
-        let kind: Attachment.Kind =
-          (type?.conforms(to: .image) ?? false) || mimeType.hasPrefix("image/")
-          ? .image
-          : .file
-        guard
-          controller.attachments.beginLoadingAttachment(
-            id: id,
-            name: name,
-            mimeType: mimeType,
-            kind: kind
-          )
-        else { continue }
-        provider.loadItem(forTypeIdentifier: UTType.fileURL.identifier, options: nil) { item, _ in
-          let url =
-            (item as? URL)
-            ?? (item as? Data).flatMap { URL(dataRepresentation: $0, relativeTo: nil) }
-          Task { @MainActor in
-            guard let url, url.isFileURL else {
-              controller.attachments.discardLoadingAttachment(id: id)
-              return
-            }
-            controller.attachments.resolveLoadingAttachment(id: id, fromFileURL: url)
-          }
-        }
-      } else if provider.hasItemConformingToTypeIdentifier(UTType.image.identifier) {
-        handled = true
-        let id = UUID()
-        let suggestedName = provider.suggestedName
-        let name =
-          suggestedName.map { name in
-            (name as NSString).pathExtension.isEmpty ? "\(name).png" : name
-          } ?? "Dropped image.png"
-        guard
-          controller.attachments.beginLoadingAttachment(
-            id: id,
-            name: name,
-            mimeType: "image/png",
-            kind: .image
-          )
-        else { continue }
-        provider.loadDataRepresentation(forTypeIdentifier: UTType.image.identifier) { data, _ in
-          guard let data, let png = pngData(from: data) else {
-            Task { @MainActor in
-              controller.attachments.discardLoadingAttachment(id: id)
-            }
-            return
-          }
-          Task { @MainActor in
-            controller.attachments.resolveLoadingAttachmentReportingFailure(
-              id: id,
-              name: name,
-              mimeType: "image/png",
-              kind: .image,
-              data: png
-            )
-          }
-        }
-      }
-    }
-    return handled
-  }
-}
-
-extension View {
-  func attachmentDropTarget(_ controller: SessionController?) -> some View {
-    modifier(AttachmentDropModifier(controller: controller))
   }
 }
 

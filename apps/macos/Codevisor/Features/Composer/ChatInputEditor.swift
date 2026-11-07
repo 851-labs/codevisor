@@ -38,6 +38,7 @@ struct ChatInputEditor: NSViewRepresentable {
   var onPasteAttachments: (([PastedAttachment]) -> Bool)? = nil
   var onTextViewReady: ((SubmittingTextView) -> Void)? = nil
   @Environment(\.isEnabled) private var isEnabled
+  @Environment(WorkspaceActivity.self) private var workspaceActivity: WorkspaceActivity?
 
   func makeNSView(context: Context) -> NSScrollView {
     let textView = SubmittingTextView()
@@ -101,6 +102,7 @@ struct ChatInputEditor: NSViewRepresentable {
     textView.onKeyCommand = onKeyCommand
     textView.onPasteAttachments = onPasteAttachments
     textView.isEditable = isEnabled
+    textView.acceptsDrops = workspaceActivity?.isActive ?? true
     if let clipView = scrollView.contentView as? GrowingTextClipView {
       clipView.maximumGrowingHeight = maxHeight
     }
@@ -322,7 +324,23 @@ final class SubmittingTextView: NSTextView {
   var onKeyCommand: ((ComposerKeyCommand) -> Bool)?
   var onPasteAttachments: (([PastedAttachment]) -> Bool)?
 
-  override var acceptableDragTypes: [NSPasteboard.PasteboardType] { [.string] }
+  private static let plainTextDragTypes: [NSPasteboard.PasteboardType] = [
+    .string, NSPasteboard.PasteboardType("NSStringPboardType"),
+  ]
+
+  var acceptsDrops = true {
+    didSet {
+      guard acceptsDrops != oldValue else { return }
+      updateDragTypeRegistration()
+    }
+  }
+
+  override var acceptableDragTypes: [NSPasteboard.PasteboardType] { Self.plainTextDragTypes }
+
+  override func updateDragTypeRegistration() {
+    guard acceptsDrops else { return unregisterDraggedTypes() }
+    super.updateDragTypeRegistration()
+  }
 
   private static let blockedFormatActions: Set<Selector> = [
     #selector(NSText.alignLeft(_:)),

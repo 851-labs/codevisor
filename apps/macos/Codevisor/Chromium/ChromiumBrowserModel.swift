@@ -44,6 +44,7 @@ final class ChromiumBrowserModel {
   @ObservationIgnored private var isVisible = false
   @ObservationIgnored private var retentionRevision = 0
   @ObservationIgnored private let freezer = ChromiumPageFreezer()
+  @ObservationIgnored private let drops = ChromiumDropSuspension()
   @ObservationIgnored var onClose: (() -> Void)?
   @ObservationIgnored var onSelect: (() -> Void)?
 
@@ -353,6 +354,7 @@ final class ChromiumBrowserModel {
     if isVisible != visible { retentionRevision += 1; BrowserPageRetention.shared.touch(self) }
     isVisible = visible
     updateFreezing()
+    updateDropAcceptance()
     ChromiumProfiles.shared.setVisible(visible, paneId: paneId, machineId: machineId)
     guard paneSync.setVisible(visible) else { return }
     if webView == nil { start(); return }
@@ -364,6 +366,10 @@ final class ChromiumBrowserModel {
         if reload { self?.reload() } else { self?.webView?.navigate(address) }
       }
     }
+  }
+  private func updateDropAcceptance() {
+    guard let webView, !isVisible, browserWindow == nil else { return drops.resume() }
+    drops.suspend(in: webView)
   }
   private func updateFreezing() {
     guard let webView else { return }
