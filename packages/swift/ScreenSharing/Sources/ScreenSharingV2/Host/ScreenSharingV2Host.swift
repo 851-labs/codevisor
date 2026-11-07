@@ -20,6 +20,7 @@ public final class ScreenSharingV2Host: ScreenSharingFrameSink, @unchecked Senda
   private let policyOverride: ScreenSharingV2RefinementPolicy?
   private var bitrate: ScreenSharingV2BitrateGovernor
   private var networkFeedbackNs: Int64?
+  private var estimateTrace = ScreenSharingV2EstimateTrace()
   private var nextUpdate: UInt32 = 0
   private var retryScheduled = false
   private var failureRetryScheduled = false
@@ -216,6 +217,9 @@ public final class ScreenSharingV2Host: ScreenSharingFrameSink, @unchecked Senda
     if let networkFeedbackNs, nowNs - networkFeedbackNs < Self.networkFeedbackIntervalNs { return }
 
     networkFeedbackNs = nowNs
+    if let trace = estimateTrace.observe(estimateKbps: admission.estimateKbps, atNs: nowNs) {
+      metrics.label(ScreenSharingV2EstimateTrace.label, trace)
+    }
     encoder.observeNetwork(
       ScreenSharingTileNetworkFeedback(
         packetErrorRate: transport.lossRate, roundTripDelayMs: Double(transport.roundTripUs) / 1000,

@@ -65,7 +65,9 @@ struct LoopbackV2Recording {
   }
 
   var media: BenchMediaCounters? {
-    V2MediaCounters.make(host: hostCounters, viewer: viewerCounters, hostMedia: hostMedia, viewerMedia: viewerMedia)
+    V2MediaCounters.make(
+      host: hostCounters, viewer: viewerCounters, hostMedia: hostMedia, viewerMedia: viewerMedia,
+      hostLabels: hostLabels)
   }
 
   func bypassedTheRelay(_ relay: BenchRelayReport) -> Bool {

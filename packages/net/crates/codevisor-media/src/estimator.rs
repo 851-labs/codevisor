@@ -51,6 +51,7 @@ pub struct Estimator {
     max_bps: f64,
     bursts: Windowed<f64>,
     link_bursts: Windowed<f64>,
+    sampled: bool,
     measured_bps: f64,
     acked: Throughput,
     sent: Throughput,
@@ -82,6 +83,7 @@ impl Estimator {
             max_bps,
             bursts: Windowed::new(BURST_WINDOW, Keep::Largest),
             link_bursts: Windowed::new(BURST_WINDOW, Keep::Largest),
+            sampled: false,
             measured_bps: 0.0,
             acked: Throughput::default(),
             sent: Throughput::default(),
@@ -176,12 +178,19 @@ impl Estimator {
             let span = delivery.receive_span.max(delivery.send_span);
             let sample = delivery.bytes as f64 * 8.0 / span.as_secs_f64();
             self.bursts.push(now, sample);
+            self.sampled = true;
             if delivery.receive_span >= delivery.send_span.mul_f64(LINK_SPREAD) {
                 self.link_bursts.push(now, sample);
             }
             self.measured_bps = self.bursts.best().unwrap_or(sample);
         }
         self.grow_cap(now);
+    }
+
+    pub fn on_flight(&mut self, now: Instant, delivery: Delivery) {
+        if !self.sampled {
+            self.on_delivery(now, delivery);
+        }
     }
 
     pub fn on_delay(&mut self, now: Instant, one_way_us: i64, hold_off: Duration) {

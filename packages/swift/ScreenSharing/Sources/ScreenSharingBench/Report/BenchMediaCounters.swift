@@ -21,13 +21,15 @@ public struct BenchMediaCounters: Codable, Sendable, Equatable {
   public var encodedKeyFrameBytes: Int?
   public var encoderSwitches: Int?
   public var ltrRefreshKeyframes: Int?
+  public var estimateMinMbpsPerSecond: [Double]?
 
   public init(
     framesSent: Int, framesLost: Int, tilesSkipped: Int, droppedBeforeEncode: Int, admissionDeferrals: Int,
     nacksSent: Int, packetsRetransmitted: Int, parityPackets: Int, fecRepairs: Int, nackRepairs: Int,
     ltrRefreshes: Int, keyframes: Int, capacityKbps: Int?, roundTripMs: Double?, requestedRefreshes: Int? = nil,
     requestedKeyframes: Int? = nil, stalledTiles: Int? = nil, encodedFrames: Int? = nil, encodedBytes: Int? = nil,
-    encodedKeyFrameBytes: Int? = nil, encoderSwitches: Int? = nil, ltrRefreshKeyframes: Int? = nil
+    encodedKeyFrameBytes: Int? = nil, encoderSwitches: Int? = nil, ltrRefreshKeyframes: Int? = nil,
+    estimateMinMbpsPerSecond: [Double]? = nil
   ) {
     self.framesSent = framesSent
     self.framesLost = framesLost
@@ -51,5 +53,6 @@ public struct BenchMediaCounters: Codable, Sendable, Equatable {
     self.encodedKeyFrameBytes = encodedKeyFrameBytes
     self.encoderSwitches = encoderSwitches
     self.ltrRefreshKeyframes = ltrRefreshKeyframes
+    self.estimateMinMbpsPerSecond = estimateMinMbpsPerSecond
   }
 }

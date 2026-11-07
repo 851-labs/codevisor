@@ -2,7 +2,8 @@ import ScreenSharingBench
 
 enum V2MediaCounters {
   static func make(
-    host: [String: Int], viewer: [String: Int], hostMedia: [String: Double], viewerMedia: [String: Double]
+    host: [String: Int], viewer: [String: Int], hostMedia: [String: Double], viewerMedia: [String: Double],
+    hostLabels: [String: String] = [:]
   ) -> BenchMediaCounters {
     BenchMediaCounters(
       framesSent: count(hostMedia["frames_sent"]), framesLost: count(hostMedia["frames_lost"]),
@@ -19,7 +20,14 @@ enum V2MediaCounters {
       requestedKeyframes: host["requestedKeyframes", default: 0], stalledTiles: viewer["stalledTiles", default: 0],
       encodedFrames: host["encodedFrames"], encodedBytes: host["encodedBytes"],
       encodedKeyFrameBytes: host["encodedKeyFrameBytes"], encoderSwitches: host["encoderSwitches"],
-      ltrRefreshKeyframes: host["encodedLTRRefreshKeyFrames", default: 0])
+      ltrRefreshKeyframes: host["encodedLTRRefreshKeyFrames", default: 0],
+      estimateMinMbpsPerSecond: estimateTrace(hostLabels["estimateMinMbpsPerSecond"]))
+  }
+
+  private static func estimateTrace(_ label: String?) -> [Double]? {
+    guard let label, !label.isEmpty else { return nil }
+
+    return label.split(separator: ",").compactMap { Double($0) }
   }
 
   private static func count(_ value: Double?) -> Int {
