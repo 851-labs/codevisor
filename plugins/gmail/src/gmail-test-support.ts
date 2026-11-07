@@ -10,7 +10,10 @@ import { onTestFinished } from "vitest"
 import { z } from "zod"
 
 import type { Fetch } from "./gmail-api.js"
+import { type FakeLabel, fakeLabels, labelResponse } from "./gmail-fake-labels.js"
 import { createGmailServer } from "./gmail-server.js"
+
+export { fakeLabels } from "./gmail-fake-labels.js"
 
 export interface FakeMessageInput {
   id: string
@@ -76,13 +79,6 @@ const primarySendAs: FakeSendAs = {
   isPrimary: true,
   isDefault: true
 }
-
-export const fakeLabels = [
-  { id: "INBOX", name: "INBOX", type: "system" },
-  { id: "UNREAD", name: "UNREAD", type: "system" },
-  { id: "STARRED", name: "STARRED", type: "system" },
-  { id: "Label_1", name: "Receipts", type: "user" }
-]
 
 export const accountFor = (accessToken = gmailAccessToken, identity = gmailIdentity) => ({
   [accountMeta]: {
@@ -162,6 +158,7 @@ export const fakeGmail = (): FakeGmail => {
   const state: FakeState = {
     messages: new Map(),
     drafts: new Map(),
+    labels: fakeLabels.map((label) => ({ ...label })),
     sendAs: [primarySendAs],
     history: [],
     historyId: 1000,
@@ -212,6 +209,7 @@ interface FakeMessage {
 interface FakeState {
   messages: Map<string, FakeMessage>
   drafts: Map<string, FakeMessage>
+  labels: Array<FakeLabel>
   sendAs: Array<FakeSendAs>
   history: Array<{ id: string; messageId: string }>
   historyId: number
@@ -257,7 +255,7 @@ const routes: Readonly<Record<string, Route>> = {
   profile: ({ state }) =>
     json(200, { emailAddress: gmailIdentity, historyId: String(state.historyId) }),
   history: ({ state }, request) => historyPage(state, request.url.searchParams),
-  labels: () => json(200, { labels: fakeLabels }),
+  labels: ({ state }, request, [, id]) => labelResponse(state.labels, request, id),
   settings: ({ state }, _request, [, setting]) => {
     if (setting === "sendAs") return json(200, { sendAs: state.sendAs })
     return json(404, {})

@@ -52,6 +52,31 @@ const targets = {
   threadIds: stringList("Gmail thread ids; changes every message in each thread.")
 }
 
+const labelSettings = {
+  color: {
+    type: "object",
+    description:
+      "Hex colors from Gmail's label palette, such as #fb4c2f on #ffffff. Gmail rejects colors outside it.",
+    properties: {
+      backgroundColor: text("Background hex color, such as #fb4c2f."),
+      textColor: text("Text hex color, such as #ffffff.")
+    },
+    required: ["backgroundColor", "textColor"]
+  },
+  labelListVisibility: {
+    type: "string",
+    enum: ["labelShow", "labelShowIfUnread", "labelHide"],
+    description: "Whether the label shows in Gmail's label list. Gmail's default is labelShow."
+  },
+  messageListVisibility: {
+    type: "string",
+    enum: ["show", "hide"],
+    description: "Whether the label shows on messages in the message list. Gmail's default is show."
+  }
+}
+
+const labelName = text("Label name or id, as in list_labels.")
+
 const labelTargets = (name: string, description: string): Tool => ({
   name,
   description,
@@ -182,6 +207,35 @@ export const gmailTools: ReadonlyArray<Tool> = [
       }
     },
     annotations: relabels
+  },
+  {
+    name: "create_label",
+    description:
+      "Create a label. Use / in the name to nest it under an existing label, such as Clients/Acme.",
+    inputSchema: {
+      type: "object",
+      properties: { name: text("Label name."), ...labelSettings },
+      required: ["name"]
+    },
+    annotations: writes
+  },
+  {
+    name: "update_label",
+    description:
+      "Rename a label, or change its color or visibility. Settings you leave out keep their current values. System labels such as INBOX can't change.",
+    inputSchema: {
+      type: "object",
+      properties: { label: labelName, name: text("New label name."), ...labelSettings },
+      required: ["label"]
+    },
+    annotations: relabels
+  },
+  {
+    name: "delete_label",
+    description:
+      "Delete a label. Its messages stay in the mailbox and lose only that label. System labels can't be deleted.",
+    inputSchema: { type: "object", properties: { label: labelName }, required: ["label"] },
+    annotations: { ...relabels, destructiveHint: true }
   },
   labelTargets("mark_read", "Mark messages or threads as read."),
   labelTargets("mark_unread", "Mark messages or threads as unread.")

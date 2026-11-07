@@ -3,9 +3,9 @@ import type { CallToolResult } from "@modelcontextprotocol/server"
 import { z } from "zod"
 
 import { GmailApiError } from "./gmail-api.js"
+import { createLabel, deleteLabel, listLabels, updateLabel } from "./gmail-label-tools.js"
 import { GmailToolError } from "./gmail-labels.js"
 import {
-  listLabels,
   listSendAs,
   readMessage,
   readThread,
@@ -52,6 +52,9 @@ const toolRunners: Readonly<Record<string, ToolRunner>> = {
   reply,
   archive,
   modify_labels: modifyLabels,
+  create_label: createLabel,
+  update_label: updateLabel,
+  delete_label: deleteLabel,
   mark_read: markRead,
   mark_unread: markUnread
 }

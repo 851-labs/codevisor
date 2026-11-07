@@ -101,6 +101,21 @@
             "effects": "write"
           },
           {
+            "name": "create_label",
+            "description": "Create a label",
+            "effects": "write"
+          },
+          {
+            "name": "update_label",
+            "description": "Rename or recolor a label",
+            "effects": "write"
+          },
+          {
+            "name": "delete_label",
+            "description": "Delete a label",
+            "effects": "write"
+          },
+          {
             "name": "mark_read",
             "description": "Mark as read",
             "effects": "write"

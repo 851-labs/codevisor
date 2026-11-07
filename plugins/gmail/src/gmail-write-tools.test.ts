@@ -433,7 +433,7 @@ describe("gmail organizing", () => {
     const noTargets = await callTool(connected, "archive", {})
 
     expect(toolText(unknownLabel)).toBe(
-      'Unknown label "Taxes". Call list_labels to see the label names.'
+      'Unknown label "Taxes". Call list_labels to see the label names, or create_label to add it.'
     )
     expect(toolText(noLabels)).toContain("Give at least one label to add or remove.")
     expect(toolText(noTargets)).toContain("Give at least one message id or thread id.")
