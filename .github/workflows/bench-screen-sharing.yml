@@ -88,6 +88,7 @@ on:
       - packages/net/crates/codevisor-net/**
       - packages/net/crates/codevisor-net-ffi/**
       - .github/workflows/bench-screen-sharing.yml
+      - .github/actions/build-screen-sharing-bench/**
 
 permissions:
   contents: read
