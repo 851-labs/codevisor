@@ -1,7 +1,13 @@
 import assert from "node:assert/strict"
 import { test } from "node:test"
 
-import { devices, isDarkBitmap, parseOptions, selectRuntime } from "./screenshots-ios-lib.mjs"
+import {
+  devices,
+  frameJobs,
+  isDarkBitmap,
+  parseOptions,
+  selectRuntime
+} from "./screenshots-ios-lib.mjs"
 import { pngDimensions, scenes, screenshotAttachments } from "./screenshots-lib.mjs"
 
 test("options stay rooted in this checkout and reject missing or unknown arguments", () => {
@@ -122,4 +128,28 @@ test("an unfolded iPhone Duo is detected from any lit pixel on its inner display
   assert.equal(isDarkBitmap(bitmap), true)
   bitmap[headerSize + 2 * 4 + 1] = 12
   assert.equal(isDarkBitmap(bitmap), false)
+})
+
+test("every framed screenshot has a caption and a size App Store Connect accepts for its slot", () => {
+  const accepted = {
+    iphone: ["1206x2622"],
+    ipad: ["2752x2064"],
+    "iphone-duo": ["2853x2007"]
+  }
+  const jobs = frameJobs("/captures", "/framed", "dark")
+  for (const job of jobs) {
+    const set = job.output.split("/")[2]
+    assert.ok(
+      accepted[set].includes(`${job.width}x${job.height}`),
+      `${job.output} is ${job.width}x${job.height}`
+    )
+    assert.ok(job.caption, `${job.output} has no caption`)
+  }
+  assert.equal(new Set(jobs.map((job) => job.output)).size, jobs.length)
+  assert.deepEqual(
+    jobs
+      .filter((job) => job.output.startsWith("/framed/iphone-duo/"))
+      .map((job) => job.output.split("/").at(-1)),
+    ["01-conversation.png", "02-harnesses.png", "03-updates.png"]
+  )
 })

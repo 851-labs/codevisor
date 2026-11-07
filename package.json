@@ -21,6 +21,7 @@
     "bento:linux-install": "bun scripts/bento-linux-install.mjs",
     "screenshots:ios": "bun scripts/screenshots-ios.mjs",
     "screenshots:ios:direct": "bun scripts/screenshots-ios-direct.mjs",
+    "screenshots:ios:frame": "bun scripts/screenshots-frame.mjs",
     "build:pixelbook": "bun scripts/build-native.mjs pixelbook",
     "ghostty:build": "bun scripts/ghostty-artifact.mjs build",
     "dev:scripts:test": "node --test scripts/*.test.mjs scripts/lint/*.test.mjs apps/screen-sharing-bench/scripts/*.test.mjs && bun test ./scripts/dev-net.test.mjs && python3 -B -m unittest discover -s scripts/ci-runner-janitor -p 'test_*.py'",
