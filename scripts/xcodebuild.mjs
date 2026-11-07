@@ -3,7 +3,7 @@ import { mkdir } from "node:fs/promises"
 import { join, resolve as resolvePath } from "node:path"
 import process from "node:process"
 
-import { developmentLayout } from "./dev-layout.mjs"
+import { developmentLayout } from "../packages/devtools/src/dev-layout.ts"
 import { waitForExit } from "./dev-shared.mjs"
 import { prepareSwiftArtifacts } from "./swift-artifacts.mjs"
 

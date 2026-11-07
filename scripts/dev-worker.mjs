@@ -4,6 +4,11 @@ import { join } from "node:path"
 import process from "node:process"
 import { fileURLToPath } from "node:url"
 
+import {
+  ensureDevelopmentDirectories,
+  localDevelopmentEnvironment,
+  remoteDevelopmentEnvironment
+} from "../packages/devtools/src/dev-layout.ts"
 import { parseDevelopmentRunnerArguments } from "./dev-arguments.mjs"
 import { bootstrapDevelopment, ensureNativeFrameworks } from "./dev-bootstrap.mjs"
 import {
@@ -40,11 +45,6 @@ import {
   launchIOSDevelopmentApp,
   terminateIOSDevelopmentApp
 } from "./dev-ios-target.mjs"
-import {
-  ensureDevelopmentDirectories,
-  localDevelopmentEnvironment,
-  remoteDevelopmentEnvironment
-} from "./dev-layout.mjs"
 import { requestsMacOSBuildReuse, verifyReusableMacOSApp } from "./dev-macos-reuse.mjs"
 import {
   devNetCaPem,

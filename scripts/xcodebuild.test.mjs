@@ -1,7 +1,7 @@
 import assert from "node:assert/strict"
 import test from "node:test"
 
-import { developmentLayout } from "./dev-layout.mjs"
+import { developmentLayout } from "../packages/devtools/src/dev-layout.ts"
 import { packageResolutionArguments, xcodebuildArguments } from "./xcodebuild.mjs"
 
 test("xcodebuild builds pin worktree-local caches", () => {

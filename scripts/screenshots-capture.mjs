@@ -5,7 +5,7 @@ import { createServer } from "node:http"
 import { join } from "node:path"
 import { promisify } from "node:util"
 
-import { developmentLayout } from "./dev-layout.mjs"
+import { developmentLayout } from "../packages/devtools/src/dev-layout.ts"
 import { gallery, pngDimensions, screenshotAttachments } from "./screenshots-lib.mjs"
 import { runXcodebuild } from "./xcodebuild.mjs"
 

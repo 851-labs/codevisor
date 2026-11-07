@@ -3,13 +3,13 @@ import { join } from "node:path"
 import process from "node:process"
 import { fileURLToPath } from "node:url"
 
-import { bootstrapDevelopment } from "./dev-bootstrap.mjs"
 import {
   developmentLayout,
   ensureBuildDirectories,
   IOS_DEVELOPMENT_BUNDLE_IDENTIFIER,
   localDevelopmentEnvironment
-} from "./dev-layout.mjs"
+} from "../packages/devtools/src/dev-layout.ts"
+import { bootstrapDevelopment } from "./dev-bootstrap.mjs"
 import { runXcodebuild } from "./xcodebuild.mjs"
 
 const repoRoot = await realpath(fileURLToPath(new URL("..", import.meta.url)))
