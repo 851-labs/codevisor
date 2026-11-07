@@ -1,6 +1,7 @@
 #!/usr/bin/env bash
 
 tier2_network_anchor="com.apple/codevisor-bench"
+tier2_network_table="codevisor-bench-host"
 tier2_network_pf_token=""
 
 network_reset() {
@@ -21,27 +22,45 @@ network_apply() {
   esac
 }
 
+network_rules() {
+  local table="<$tier2_network_table>"
+  printf '%s\n' \
+    "table $table const { $TIER2_HOST_IP $TIER2_APPLE_HOST }" \
+    "dummynet in quick on en0 proto { tcp udp } from $table port != $TIER2_CLOCK_PORT to any pipe 1" \
+    "dummynet out quick on en0 proto { tcp udp } from any to $table port != $TIER2_CLOCK_PORT pipe 2" \
+    "dummynet in quick on en0 proto icmp from $table to any pipe 1" \
+    "dummynet out quick on en0 proto icmp from any to $table pipe 2"
+}
+
 network_shape() {
+  local delay_ms=$1 loss=$2
+  shift 2
+  network_pipes "$delay_ms" "$loss" "$@" || return 1
+  network_load_rules < <(network_rules)
+}
+
+network_pipes() {
   local delay_ms=$1 loss=$2
   shift 2
   sudo -n dnctl pipe 1 config delay "$delay_ms" plr "$loss" "$@" >/dev/null || return 1
   sudo -n dnctl pipe 2 config delay "$delay_ms" plr "$loss" "$@" >/dev/null || return 1
-  printf '%s\n' \
-    "dummynet in quick on en0 proto { tcp udp } from { $TIER2_HOST_IP $TIER2_APPLE_HOST } port != $TIER2_CLOCK_PORT to any pipe 1" \
-    "dummynet out quick on en0 proto { tcp udp } from any to { $TIER2_HOST_IP $TIER2_APPLE_HOST } port != $TIER2_CLOCK_PORT pipe 2" |
-    sudo -n pfctl -q -a "$tier2_network_anchor" -f - 2>/dev/null || return 1
-  tier2_network_pf_token=$(sudo -n pfctl -E 2>&1 | awk '/Token/ { print $NF }')
+}
+
+network_load_rules() {
+  sudo -n pfctl -q -a "$tier2_network_anchor" -f - 2>/dev/null || return 1
+  [[ -n "$tier2_network_pf_token" ]] || tier2_network_pf_token=$(sudo -n pfctl -E 2>&1 | awk '/Token/ { print $NF }')
   network_loaded || { say "dummynet rules or pipes didn't load"; return 1; }
 }
 
 network_loaded() {
-  [[ -n "$tier2_network_pf_token" ]] &&
-    sudo -n pfctl -a "$tier2_network_anchor" -s dummynet 2>/dev/null | grep -q "pipe 1" &&
-    sudo -n dnctl list 2>/dev/null | grep -q "^00002:"
+  local rules pipes
+  rules=$(sudo -n pfctl -a "$tier2_network_anchor" -s dummynet 2>/dev/null) || return 1
+  pipes=$(sudo -n dnctl list 2>/dev/null) || return 1
+  [[ -n "$tier2_network_pf_token" && "$rules" == *"pipe 1"* && $'\n'"$pipes" == *$'\n00002:'* ]]
 }
 
 network_check() {
   local dir=$1
-  bench calibrate --check c2 --responder "$TIER2_HOST_IP" --port "$TIER2_NETWORK_CHECK_PORT" --duration 5 \
+  bench calibrate --check c2 --responder "$TIER2_HOST_IP" --port "$TIER2_NETWORK_CHECK_PORT" --duration 10 \
     --interval 1 >"$dir/network-check.json" 2>/dev/null || true
 }

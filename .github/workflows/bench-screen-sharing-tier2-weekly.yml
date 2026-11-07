@@ -1,0 +1,86 @@
+name: Bench screen sharing tier 2 weekly
+
+on:
+  schedule:
+    - cron: "0 20 * * 6"
+  workflow_dispatch:
+
+permissions:
+  actions: read
+  contents: read
+
+jobs:
+  build:
+    runs-on: [self-hosted, macOS, ARM64, tamale]
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          set-safe-directory: false
+      - uses: ./.github/actions/build-screen-sharing-bench
+        with:
+          certificate: ${{ secrets.APPLE_CERTIFICATE_BASE64 }}
+          certificate-password: ${{ secrets.APPLE_CERTIFICATE_PASSWORD }}
+          identity: ${{ secrets.APPLE_CODESIGN_IDENTITY }}
+      - uses: ./.github/actions/keep-screen-sharing-bench
+
+  tier2-a:
+    needs: build
+    uses: ./.github/workflows/bench-screen-sharing-tier2.yml
+    permissions:
+      actions: read
+      contents: read
+    secrets: inherit
+    with:
+      label: a
+      bench-artifact: bench-app
+      scenes: typing,scroll,window-drag
+      systems: apple-hp,codevisor-v2
+      repetitions: "2"
+      duration: "30"
+
+  tier2-b:
+    needs: [build, tier2-a]
+    if: ${{ !cancelled() && needs.build.result == 'success' }}
+    uses: ./.github/workflows/bench-screen-sharing-tier2.yml
+    permissions:
+      actions: read
+      contents: read
+    secrets: inherit
+    with:
+      label: b
+      bench-artifact: bench-app
+      scenes: typing,scroll,window-drag
+      systems: apple-hp,codevisor-v2
+      repetitions: "2"
+      duration: "30"
+
+  tier2-c:
+    needs: [build, tier2-b]
+    if: ${{ !cancelled() && needs.build.result == 'success' }}
+    uses: ./.github/workflows/bench-screen-sharing-tier2.yml
+    permissions:
+      actions: read
+      contents: read
+    secrets: inherit
+    with:
+      label: c
+      bench-artifact: bench-app
+      scenes: typing,scroll,window-drag
+      systems: apple-hp,codevisor-v2
+      repetitions: "2"
+      duration: "30"
+
+  summary:
+    needs: [build, tier2-a, tier2-b, tier2-c]
+    if: ${{ !cancelled() && needs.build.result == 'success' }}
+    runs-on: [self-hosted, macOS, ARM64, croissant]
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          set-safe-directory: false
+      - uses: ./.github/actions/fetch-screen-sharing-bench
+        with:
+          name: bench-app
+      - uses: ./.github/actions/tier2-dispatches-summary

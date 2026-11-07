@@ -21,7 +21,7 @@ struct Tier2V2ReadingsTests {
     """
   private static let host = """
     {"counters": {"captureReplacedBeforeEncode": 5, "admissionDeferrals": 2, "encodedLTRRefreshes": 3,
-      "encodedKeyFrames": 1},
+      "encodedLTRRefreshKeyFrames": 1, "encodedKeyFrames": 1},
      "media": {"frames_sent": 547, "frames_lost": 1, "packets_retransmitted": 6, "parity_packets_sent": 7,
       "estimate_kbps": 352000, "rtt_ms": 0.79},
      "timings": {"sendQueue": {"count": 547, "p50_ms": 0.2, "p95_ms": 0.4, "maximum_ms": 1},
@@ -46,7 +46,8 @@ struct Tier2V2ReadingsTests {
         == BenchMediaCounters(
           framesSent: 547, framesLost: 1, tilesSkipped: 2, droppedBeforeEncode: 5, admissionDeferrals: 2, nacksSent: 4,
           packetsRetransmitted: 6, parityPackets: 7, fecRepairs: 1, nackRepairs: 3, ltrRefreshes: 3, keyframes: 1,
-          capacityKbps: 352_000, roundTripMs: 0.79, requestedRefreshes: 0, requestedKeyframes: 0, stalledTiles: 0))
+          capacityKbps: 352_000, roundTripMs: 0.79, requestedRefreshes: 0, requestedKeyframes: 0, stalledTiles: 0,
+          ltrRefreshKeyframes: 1))
   }
 
   private static func object(_ json: String) throws -> [String: JSONValue] {

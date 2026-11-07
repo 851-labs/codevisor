@@ -14,6 +14,7 @@ struct Tier2Measurement {
   let inputToPhoton: BenchInputToPhoton?
   let invalidReason: String?
   let textFidelity: BenchTextFidelityAnalysis?
+  let displayPhaseMs: Double?
 
   init(_ files: Tier2RunFiles) {
     let clock = BenchClockTrack(bursts: files.clockBursts.filter { !$0.isEmpty })
@@ -36,6 +37,7 @@ struct Tier2Measurement {
       Self.invalidReason(files, clock: clock, analysis: analysis)
       ?? Tier2InputRun.invalidReason(files, inputToPhoton)
     textFidelity = Self.textFidelity(files)
+    displayPhaseMs = Tier2DisplayPhase.ms(host: files.host, viewer: files.viewer, clock: clock)
   }
 
   var result: BenchResult? {

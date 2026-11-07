@@ -182,8 +182,9 @@ CodevisorBench loopback --source own-window --scenes scroll --networks N0
   complete), `assemble` (first packet in → frame complete, overlapping `send`) and `recover` (the `assemble` of
   frames that NACK or FEC completed). The result's `media` holds the session's counters for the whole scene: frames
   sent and given up, tiles skipped, captures replaced before encode (dropped by admission) and admission deferrals,
-  NACKs, retransmissions, parity packets, FEC and NACK repairs, LTR refreshes, keyframes, and the capacity estimate
-  and round trip at the end. Drops are whole-scene counters.
+  NACKs, retransmissions, parity packets, FEC and NACK repairs, LTR refreshes, LTR refreshes the encoder answered with
+  a keyframe instead (`ltr_refresh_keyframes`, the host's `encodedLTRRefreshKeyFrames`; the Tier 2 v2 table's "LTR
+  refreshes as keyframes"), keyframes, and the capacity estimate and round trip at the end. Drops are whole-scene counters.
 - **Output.** stdout is the report JSON (`--output` also writes it); stderr has one progress line per scene and a
   Markdown summary with per-stage p50/p95. `--frames` writes one line per measured frame (version and every
   timestamp). A scene that fails (for example the connection never opens) is reported as invalid with the error, and
@@ -210,19 +211,31 @@ Recording and Accessibility to the same build run from elsewhere, and the grants
 (see Signing and permissions). The build stays
 installed after the run, so the installed app is that of the last Tier 2 (or own-window Tier 1) dispatch. So `gh workflow run
 bench-screen-sharing-tier2.yml --ref <branch>` needs no deploy. Keep a dispatch under about 30 minutes, since the
-minis are the only ARM64 CI runners for this repository and lil.tech: run one scene per dispatch (`scenes` defaults to `scroll`; about 18 minutes with the floor
-and 3 repetitions of the two default systems, after the build and the C5 wait for a quiet machine, up to 10 minutes). C4 runs only when
-video is among the scenes. A plan longer than 45 minutes of runs fails at once. `network` picks N0 (no shaping), N3 or N6: the viewer job
-loads dummynet rules into the `com.apple/codevisor-bench` pf anchor (croissant's sudoers allows `dnctl` and `pfctl`).
+minis are the only ARM64 CI runners for this repository and lil.tech: a plan whose runs take longer than 30 minutes
+(each run's duration plus 30 s; runs of 30 to 50 s took 21 to 24 s more in November 2026) fails at once. `scenes`
+defaults to `scroll`: about 18 minutes with the floor and 3 repetitions of the two default systems, after the build and
+the C5 wait for a quiet machine, up to 10 minutes. C4 runs only when video is among the scenes. `network` picks N0 (no
+shaping), N3 or N6 for the whole dispatch, and a scene can name its own (`scenes: input,scroll@N3,typing@N3`): the
+viewer job loads dummynet rules into the `com.apple/codevisor-bench` pf anchor before the first run on a network and
+reloads them when the network changes (croissant's sudoers allows `dnctl` and `pfctl`), and its runs are named
+`NN-scroll-N3-<system>-<rep>`.
 N3 is 1 ms of delay and 1% random loss each way (no rate limit: the wired link is already 1 Gbit/s, and a dummynet
-rate limit runs on croissant's 10 ms kernel tick, which added 6–7 ms each way). N6 (851-3822) is 25 ms of delay, 0.1%
+rate limit runs on croissant's 10 ms kernel tick, which added 6–7 ms each way). tamale's addresses are a pf table
+(`<codevisor-bench-host>`), not an address list in each rule: pf expands a list into one rule per address without
+removing duplicates (tamale's IPv4 address and the same address resolved from its Bonjour name), and dummynet
+re-injects a packet at the rule after the one that matched, so before 851-3749 every packet went through the pipe once
+per copy. N3 then realized a 6.7–7.5 ms round trip with about 6% of probes lost (Tier 2 runs 41595120437,
+41640331873 and 41683010503). Through the table, croissant's network lab (lab run 42279069653, below) measured N3 at a
+3.16 ms p50 round trip against 0.64 ms unshaped (dummynet's 1 ms delay holds a packet about 1.25 ms), and N6 at 53.4 ms. N6 (851-3822) is 25 ms of delay, 0.1%
 loss and 50 Mbit/s each way, with a 500 KB queue (about 80 ms at 50 Mbit/s, so the link queues rather than drops like
 N6's unlimited queue); dummynet has no jitter, so it lacks Tier 1 N6's 5 ms, and the rate limit's 10 ms tick makes
 the link release in bursts. The rules cover all of tamale's addresses (its IPv4 address and every
 address its Bonjour name resolves to, so Apple HP and Codevisor are shaped whichever path they pick), except the clock
 probes (UDP 47592), which keep C2 a clean clock reference. Before each run it probes tamale's second responder (UDP
-47596, shaped) for 5 s and records the round trip and loss that took effect (`network-check.json`, the runs table's
-"Network check"). The anchor and pipes are flushed at the start and on exit. Runs over ssh are for
+47596, shaped) for 10 s (160 probes) and records the round trip and loss that took effect (`network-check.json`, the
+runs table's "Network check", and each result's `network_check`). The summary's "Network as realized" table pools
+them per network against the spec: the unshaped round trip from the same runs' clock probes plus twice the delay, and
+a round-trip loss of 1 − (1 − loss each way)² (1.99% for N3). The anchor and pipes are flushed at the start and on exit. Runs over ssh are for
 development only.
 
 The minis are organization runners shared by this repository's CI and 851-labs/lil.tech's (`check` jobs),
@@ -255,7 +268,10 @@ The `host` job (tamale, `scripts/tier2-host.sh`) and the `viewer` job (croissant
 walk the same plan (`scripts/tier2-lib.sh`): for each scene the null-sharing floor, then per repetition
 (`repetitions`, default 3, `duration` seconds each) each system in `systems` (Apple HP and `codevisor-v2-vcp` by
 default), and with `c4` S5 once per system with the host observer off. The nightly bench
-workflow calls this one through `workflow_call` with the same defaults, so its Tier 2 runs include C4.
+workflow calls this one twice through `workflow_call` (see Benchmark workflow), with a `label` that names each call's
+artifacts (`tier2-<label>-tamale`, `tier2-<label>-croissant`, `tier2-<label>-report`) and a `bench-artifact` that
+makes every job run the night's one build instead of building its own (`.github/actions/fetch-screen-sharing-bench`).
+`input-events` (200 by default) sets the input scene's presses and clicks of each kind, which must fit the run.
 
 Apple HP has no mode that shares the host's physical display: its Display Type offers only "1 Virtual Display"
 and "2 Virtual Displays", and with one virtual display the host's main display becomes "Screen Sharing Virtual
@@ -368,6 +384,21 @@ against 25), so when Apple HP is among the systems each dispatch first runs one 
 (`NN-<scene>-apple-hp-warm-up`) after the first scene's floor: `TIER2_WARM_UP_S` seconds (30 by default; 0 turns it
 off), with as many input events as fit. The viewer writes no `meta.json` for it, so the report leaves it out.
 
+The target table's host and viewer CPU count the system's own processes (below); its "system CPU" columns are each
+Mac's `all_processes` total (the sample's `all_processes.cpu_pct`, each result's `system_cpu_pct`), observers and
+sampler included, so a system's work in a process the lists miss still shows.
+
+**Display phase (851-4092).** Each run's display phase (`display_phase_ms`, the runs table's "Display phase ms") is the
+time from a host refresh to the next viewer refresh: the circular mean of each observer's frame timestamps modulo
+1/60 s, the host's mapped to the viewer's clock by the run's clock track, viewer minus host. Both minis' frame
+timestamps sit on a 1/60 s grid of their own clock, so the phase is fixed within a dispatch (it moved about 0.02 ms a
+run in run 42020214479) and drifts between dispatches; the host can't choose it. A run whose timestamps don't hold a
+steady 60 Hz phase (mean resultant length under 0.9) has none. The summary opens with the dispatch's phase and has a
+"Display phase and image-age parity" table: window-drag, scroll and typing at N0, each v2 system against Apple HP in
+the same dispatch against M3 (p50 at most HP + 8 ms, p95 at most HP + 17 ms, medians of valid repetitions). Before
+#1022 v2 lost at phases of 9.3–10.1 ms and every dispatch since landed at 12.2–14.6 ms, so when the phase is below
+12 ms a miss is flagged as a regression in the summary's first line.
+
 Image age is `BenchSharingAnalysis`: the viewer observer's first PTS of each version minus the host
 observer's first PTS mapped to the viewer's clock by `BenchClockTrack` (±30 s windows). Apple HP runs count only when `apple-hp` selected High Performance in Screen Sharing's
 "Select Screen Sharing Type:" sheet, read the selection back and clicked Continue (`chose_high_performance`). The window starts
@@ -381,7 +412,8 @@ from the workflow (no `github_run_id`), C2 fails (ε over 0.5 ms or residual ove
 a preflight found a problem, or over 1% of the viewer's frames were unreadable (except video). `BenchSystemComparison` compares the medians of the valid repetitions. It is a difference when the medians differ by
 more than the noise band, the wider of the two systems' min–max spreads, or when each system has at least 3 valid
 repetitions and the gap between their ranges is wider than the tighter system's spread, and in either case only when
-the medians differ by at least 2% of the larger one; the verdict table names the rule that fired. Each Codevisor system
+the medians differ by at least 2% of the larger one, and for CPU by at least 1 percentage point, so near-zero CPU
+figures (idle cursor) don't turn a few tenths of a point into a verdict; the verdict table names the rule that fired. Each Codevisor system
 (`codevisor-v2`, `codevisor-v2-vcp`) is compared with Apple HP on its own repetitions; the comparison's `system`
 names it (absent in reports from before engine v2, meaning engine v1's `codevisor`). With `codevisor-v2` runs the
 summary adds the M2
@@ -488,9 +520,28 @@ Tier 2): the minis refused those to a build run from elsewhere, and the grants m
   cells of its own system.
   Closing or merging the pull request starts a `stop-gate` job on a GitHub-hosted runner in that group, which
   cancels a gate still queued or running for it.
+- **One build a night.** The `build` job builds and signs CodevisorBench once on tamale and uploads it as the
+  `bench-app` artifact (`.github/actions/keep-screen-sharing-bench`, a ditto zip); Tier 1 and both Tier 2 dispatches
+  fetch that build (`fetch-screen-sharing-bench`), so the night measures one binary. `tier1: false` skips Tier 1 in a
+  dispatch, to try calibration or Tier 2 on their own.
 - **Calibration and Tier 2** run after Tier 1 through `workflow_call` when the dispatch inputs ask for them, or every
   night once the repository variable `SCREEN_SHARING_BENCH_NIGHTLY_TIER2` is `true`. Calibration still uses the installed
-  app; Tier 2 builds its own.
+  app. The nightly Tier 2 covers every scene in two dispatches of under 30 minutes, `apple-hp` and `codevisor-v2`
+  side by side, 2 repetitions of 30 s and a floor per scene (input with 40 presses and 40 clicks, which fit 30 s):
+  `tier2-a` runs idle-cursor, typing, scroll and window-drag at N0 (21 runs with the Apple HP warm-up, about 21
+  minutes of runs), then `tier2-b` runs video (with C4), test-cards and input at N0 (18 runs), except on odd days since
+  the Unix epoch (UTC), when it runs input at N0 and scroll and typing at N3 instead (`input,scroll@N3,typing@N3`, 16
+  runs). The `tier2_a_scenes` and `tier2_b_scenes` dispatch inputs override either dispatch's scenes (to try the
+  nightly's jobs in a short dispatch: `-f tier1=false -f tier2=true -f tier2_a_scenes=idle-cursor -f
+tier2_b_scenes=typing`). `tier2-summary` then runs `tier2-dispatches` on
+  both reports (`.github/actions/tier2-dispatches-summary`): each dispatch's display phase and 851-4092 status, image age
+  by dispatch, and v2's verdicts within each dispatch.
+- **Weekly Apple HP.** Apple HP's image age swings between dispatches (typing 22.0 / 37.8 / 22.5 / 30.9 / 82.3 ms in
+  five, 851-3975) while its repetitions within one agree, so one dispatch can't settle a verdict against HP.
+  `Bench screen sharing tier 2 weekly` (`.github/workflows/bench-screen-sharing-tier2-weekly.yml`, Saturdays 20:00 UTC
+  and `workflow_dispatch`) builds once and runs three dispatches in a row of typing, scroll and window-drag at N0
+  (`apple-hp,codevisor-v2`, 2 repetitions of 30 s, about 17 minutes each). Its summary gives HP's image age as the
+  median across the dispatches of each dispatch's median, and judges v2 against HP only within each dispatch.
 
 `preflight --quiet` is C5. It waits at least `--settle` seconds (60) and up to `--settle-limit` (300) for the
 1-minute load to drop to 2.0 and Spotlight to stop indexing (a fresh build sets it off), then fails on a thermal state other than nominal, Spotlight indexing (`mds_stores` or
@@ -565,7 +616,11 @@ CodevisorBench encode-lab --scenes scroll,typing --duration 8 --warm-up 2 \
 ## Lab job
 
 `gh workflow run bench-screen-sharing.yml --ref <branch> -f lab='croissant player --display virtual --resolution R1x2'`
-runs only the `lab` job. It builds and installs the bench on the named mini (`tamale` or `croissant`), then runs
+runs only the `lab` job. `-f lab='croissant network-lab'` instead measures each Tier 2 network on croissant alone
+(`scripts/tier2-network-lab.sh`): it loads each network's shaping (ICMP is shaped like the sessions' TCP and UDP),
+pings tamale 600 times 0.1 s apart and prints the loss, the round trip's min, p50, p95 and max, and the loaded pf rules
+and table It first releases any pf enable reference a `pfctl` left on croissant (only the bench enables pf there;
+before the fix below, a shaped dispatch lost its token and left pf enabled). It builds and installs the bench on the named mini (`tamale` or `croissant`), then runs
 `scripts/lab.sh`: one subcommand, with a preflight 8 s in so its display list shows what the command created. The
 command's output goes to the job summary and the `lab` artifact. The job has its own concurrency group
 (`screen-sharing-lab-*`), so check `gh run list` and agree on the mini first. The first lab run (41267527233) showed

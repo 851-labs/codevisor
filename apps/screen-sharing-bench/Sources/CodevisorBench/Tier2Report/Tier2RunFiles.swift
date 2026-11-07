@@ -15,6 +15,8 @@ struct Tier2RunFiles {
   let system: [String: JSONValue]?
   let share: [String: JSONValue]?
   let networkCheck: [String: JSONValue]?
+  let hostSample: [String: JSONValue]?
+  let viewerSample: [String: JSONValue]?
   let inputEvents: [BenchInputEvent]?
   let inject: [String: JSONValue]?
 
@@ -34,6 +36,12 @@ struct Tier2RunFiles {
     viewerUsage = try Self.lines(BenchUsageSecond.self, Self.optional(directory, "viewer-usage.jsonl"), Self.plain)
     preflights = try Self.preflights(directory)
     networkCheck = Self.optional(directory, "network-check.json").flatMap {
+      try? Self.plain.decode([String: JSONValue].self, from: $0)
+    }
+    hostSample = Self.optional(directory, "host-sample.json").flatMap {
+      try? Self.plain.decode([String: JSONValue].self, from: $0)
+    }
+    viewerSample = Self.optional(directory, "viewer-sample.json").flatMap {
       try? Self.plain.decode([String: JSONValue].self, from: $0)
     }
     share = Self.optional(directory, "share.json").flatMap {
@@ -80,7 +88,7 @@ struct Tier2RunFiles {
     }
   }
 
-  private static let shapedRoundTripS = 0.002
+  private static let shapedRoundTripS = 0.0015
 
   private var candidateRoundTripS: Double? {
     guard case .object(let candidates)? = system?["selected_candidates"] else { return nil }
@@ -90,6 +98,23 @@ struct Tier2RunFiles {
 
   private static func allIPv4(_ peers: [String]) -> Bool {
     !peers.isEmpty && peers.allSatisfy { !$0.contains(":") }
+  }
+
+  var systemCpuPct: BenchResult.PerMachine<Double>? {
+    let host = hostSample?["all_processes"]?["cpu_pct"]?.number
+    let viewer = viewerSample?["all_processes"]?["cpu_pct"]?.number
+    guard host != nil || viewer != nil else { return nil }
+
+    return BenchResult.PerMachine(host: host, viewer: viewer)
+  }
+
+  var realizedNetwork: BenchResult.NetworkCheck? {
+    guard let probes = networkCheck?["probes"]?.number, probes > 0, let replies = networkCheck?["replies"]?.number
+    else { return nil }
+
+    return BenchResult.NetworkCheck(
+      probes: Int(probes), replies: Int(replies),
+      roundTripMs: networkCheck?["burst_minimum_round_trip_ms"]?["p50"]?.number)
   }
 
   var hostDisplayDuringRun: String? {

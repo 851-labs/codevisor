@@ -4,7 +4,7 @@ on:
   workflow_dispatch:
     inputs:
       scenes:
-        description: Comma-separated scenes (one per dispatch keeps it under 30 minutes)
+        description: Comma-separated scenes, each optionally on its own network (scroll@N3); the plan must fit 30 minutes
         required: false
         default: scroll
         type: string
@@ -57,11 +57,16 @@ on:
         description: Seconds into each codevisor-v2-vcp run to force a VCP failure (0 never), to test the VideoToolbox fallback
         required: false
         default: "0"
+        type: string
+      input-events:
+        description: Space presses and clicks of each kind per input-scene run, 1 to 400 (they must fit the run's duration)
+        required: false
+        default: "200"
         type: string
   workflow_call:
     inputs:
       scenes:
-        description: Comma-separated scenes (one per dispatch keeps it under 30 minutes)
+        description: Comma-separated scenes, each optionally on its own network (scroll@N3); the plan must fit 30 minutes
         required: false
         default: scroll
         type: string
@@ -114,6 +119,21 @@ on:
         description: Seconds into each codevisor-v2-vcp run to force a VCP failure (0 never), to test the VideoToolbox fallback
         required: false
         default: "0"
+        type: string
+      input-events:
+        description: Space presses and clicks of each kind per input-scene run, 1 to 400 (they must fit the run's duration)
+        required: false
+        default: "200"
+        type: string
+      label:
+        description: Names this dispatch's artifacts (tier2-<label>-*) when one workflow run calls Tier 2 more than once
+        required: false
+        default: ""
+        type: string
+      bench-artifact:
+        description: Run the CodevisorBench.app an earlier job of this run built (a ditto zip in this artifact) instead of building it
+        required: false
+        default: ""
         type: string
 
 permissions:
@@ -138,6 +158,8 @@ env:
   TIER2_VIEWER_DISPLAY: ${{ inputs.viewer-display }}
   TIER2_PROFILE: ${{ inputs.profile && '1' || '0' }}
   TIER2_VCP_FAIL_AFTER: ${{ inputs.vcp-fail-after }}
+  TIER2_INPUT_EVENTS: ${{ inputs.input-events || '200' }}
+  TIER2_ARTIFACTS: tier2${{ inputs.label && format('-{0}', inputs.label) || '' }}
   TIER2_RENDEZVOUS_S: 1800
 
 jobs:
@@ -160,12 +182,16 @@ jobs:
           GH_TOKEN: ${{ github.token }}
         run: |
           apps/screen-sharing-bench/scripts/tier2-pair.sh viewer "$TIER2_PAIR_HOLD_S" "$TIER2_UNPAIRED"
-      - if: steps.pair.outputs.paired == 'true'
+      - if: steps.pair.outputs.paired == 'true' && !inputs.bench-artifact
         uses: ./.github/actions/build-screen-sharing-bench
         with:
           certificate: ${{ secrets.APPLE_CERTIFICATE_BASE64 }}
           certificate-password: ${{ secrets.APPLE_CERTIFICATE_PASSWORD }}
           identity: ${{ secrets.APPLE_CODESIGN_IDENTITY }}
+      - if: steps.pair.outputs.paired == 'true' && inputs.bench-artifact
+        uses: ./.github/actions/fetch-screen-sharing-bench
+        with:
+          name: ${{ inputs.bench-artifact }}
       - name: Install the build where the permission grants are
         if: steps.pair.outputs.paired == 'true'
         run: apps/screen-sharing-bench/scripts/install-granted.sh
@@ -175,7 +201,7 @@ jobs:
       - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
         if: always() && steps.pair.outputs.paired == 'true'
         with:
-          name: tier2-tamale${{ env.TIER2_ARTIFACT_SUFFIX }}
+          name: ${{ env.TIER2_ARTIFACTS }}-tamale${{ env.TIER2_ARTIFACT_SUFFIX }}
           path: ${{ runner.temp }}/results
 
   viewer:
@@ -194,12 +220,16 @@ jobs:
           GH_TOKEN: ${{ github.token }}
         run: |
           apps/screen-sharing-bench/scripts/tier2-pair.sh host "$TIER2_PAIR_HOLD_S" "$TIER2_UNPAIRED"
-      - if: steps.pair.outputs.paired == 'true'
+      - if: steps.pair.outputs.paired == 'true' && !inputs.bench-artifact
         uses: ./.github/actions/build-screen-sharing-bench
         with:
           certificate: ${{ secrets.APPLE_CERTIFICATE_BASE64 }}
           certificate-password: ${{ secrets.APPLE_CERTIFICATE_PASSWORD }}
           identity: ${{ secrets.APPLE_CODESIGN_IDENTITY }}
+      - if: steps.pair.outputs.paired == 'true' && inputs.bench-artifact
+        uses: ./.github/actions/fetch-screen-sharing-bench
+        with:
+          name: ${{ inputs.bench-artifact }}
       - name: Install the build where the permission grants are
         if: steps.pair.outputs.paired == 'true'
         run: apps/screen-sharing-bench/scripts/install-granted.sh
@@ -212,7 +242,7 @@ jobs:
       - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
         if: always() && steps.pair.outputs.paired == 'true'
         with:
-          name: tier2-croissant${{ env.TIER2_ARTIFACT_SUFFIX }}
+          name: ${{ env.TIER2_ARTIFACTS }}-croissant${{ env.TIER2_ARTIFACT_SUFFIX }}
           path: ${{ runner.temp }}/results
 
   host-retry:
@@ -250,14 +280,19 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
         with:
           set-safe-directory: false
-      - uses: ./.github/actions/build-screen-sharing-bench
+      - if: ${{ !inputs.bench-artifact }}
+        uses: ./.github/actions/build-screen-sharing-bench
         with:
           certificate: ${{ secrets.APPLE_CERTIFICATE_BASE64 }}
           certificate-password: ${{ secrets.APPLE_CERTIFICATE_PASSWORD }}
           identity: ${{ secrets.APPLE_CODESIGN_IDENTITY }}
+      - if: inputs.bench-artifact
+        uses: ./.github/actions/fetch-screen-sharing-bench
+        with:
+          name: ${{ inputs.bench-artifact }}
       - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c
         with:
-          pattern: tier2-*
+          pattern: ${{ env.TIER2_ARTIFACTS }}-*
           merge-multiple: true
           path: ${{ runner.temp }}/runs
       - name: Build the report and the target table
@@ -270,5 +305,5 @@ jobs:
       - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
         if: always()
         with:
-          name: tier2-report
+          name: ${{ env.TIER2_ARTIFACTS }}-report
           path: ${{ runner.temp }}/report

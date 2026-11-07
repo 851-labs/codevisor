@@ -45,10 +45,25 @@ on:
         default: false
         type: boolean
       tier2:
-        description: Also run Tier 2 (Codevisor vs Apple HP) with its default inputs
+        description: Also run the nightly Tier 2 (Codevisor vs Apple HP, every scene in two dispatches)
         required: false
         default: false
         type: boolean
+      tier1:
+        description: Run Tier 1 (off only to try the calibration or Tier 2 jobs on their own)
+        required: false
+        default: true
+        type: boolean
+      tier2_a_scenes:
+        description: Scenes of the nightly Tier 2's first dispatch; empty runs idle-cursor, typing, scroll and window-drag
+        required: false
+        default: ""
+        type: string
+      tier2_b_scenes:
+        description: Scenes of the nightly Tier 2's second dispatch; empty picks the night's (alternating N0 and N3)
+        required: false
+        default: ""
+        type: string
       encode_lab:
         description: Run only the encoder lab with these semicolon-separated configs (see encode-lab --help)
         required: false
@@ -73,6 +88,7 @@ on:
       - packages/net/crates/codevisor-net/**
       - packages/net/crates/codevisor-net-ffi/**
       - .github/workflows/bench-screen-sharing.yml
+      - .github/actions/build-screen-sharing-bench/**
 
 permissions:
   contents: read
@@ -94,6 +110,9 @@ jobs:
       own_window: ${{ steps.plan.outputs.own_window }}
       publish: ${{ steps.plan.outputs.publish }}
       tier2: ${{ steps.plan.outputs.tier2 }}
+      tier2_a_scenes: ${{ steps.plan.outputs.tier2_a_scenes }}
+      tier2_b_scenes: ${{ steps.plan.outputs.tier2_b_scenes }}
+      tier1: ${{ steps.plan.outputs.tier1 }}
       calibration: ${{ steps.plan.outputs.calibration }}
       encode_lab: ${{ steps.plan.outputs.encode_lab }}
       lab: ${{ steps.plan.outputs.lab }}
@@ -112,6 +131,9 @@ jobs:
           ENCODE_LAB: ${{ inputs.encode_lab }}
           LAB: ${{ inputs.lab }}
           NIGHTLY_TIER2: ${{ vars.SCREEN_SHARING_BENCH_NIGHTLY_TIER2 }}
+          TIER2_A_SCENES: ${{ inputs.tier2_a_scenes }}
+          TIER2_B_SCENES: ${{ inputs.tier2_b_scenes }}
+          TIER1_INPUT: ${{ inputs.tier1 }}
         run: |
           run=true mode=nightly trigger=$EVENT publish=false tier2=false calibration=false own_window=false encode_lab=false lab=false
           preflight="--quiet --allow-locked"
@@ -134,15 +156,39 @@ jobs:
           esac
           [[ "$GITHUB_REF" == refs/heads/main && "$EVENT" != pull_request ]] && publish=true
           [[ "$trigger" == nightly && "$publish" != true ]] && trigger=adhoc
+          tier2_a_scenes=${TIER2_A_SCENES:-idle-cursor,typing,scroll,window-drag}
+          tier2_b_scenes=video,test-cards,input
+          (($(date -u +%s) / 86400 % 2)) && tier2_b_scenes=input,scroll@N3,typing@N3
+          [[ -n "$TIER2_B_SCENES" ]] && tier2_b_scenes=$TIER2_B_SCENES
+          tier1=true
+          [[ "$EVENT" == workflow_dispatch && "$TIER1_INPUT" == false ]] && tier1=false
           {
             echo "run=$run"; echo "mode=$mode"; echo "trigger=$trigger"; echo "preflight=$preflight"
             echo "publish=$publish"; echo "tier2=$tier2"; echo "calibration=$calibration"; echo "own_window=$own_window"
-            echo "encode_lab=$encode_lab"; echo "lab=$lab"
+            echo "encode_lab=$encode_lab"; echo "lab=$lab"; echo "tier2_a_scenes=$tier2_a_scenes"; echo "tier2_b_scenes=$tier2_b_scenes"; echo "tier1=$tier1"
           } | tee -a "$GITHUB_OUTPUT"
 
-  tier1:
+  build:
     needs: plan
-    if: ${{ needs.plan.outputs.run == 'true' && github.event_name != 'pull_request' }}
+    if: >-
+      ${{ needs.plan.outputs.run == 'true' && github.event_name != 'pull_request'
+      && (needs.plan.outputs.tier1 == 'true' || needs.plan.outputs.tier2 == 'true') }}
+    runs-on: [self-hosted, macOS, ARM64, tamale]
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          set-safe-directory: false
+      - uses: ./.github/actions/build-screen-sharing-bench
+        with:
+          certificate: ${{ secrets.APPLE_CERTIFICATE_BASE64 }}
+          certificate-password: ${{ secrets.APPLE_CERTIFICATE_PASSWORD }}
+          identity: ${{ secrets.APPLE_CODESIGN_IDENTITY }}
+      - uses: ./.github/actions/keep-screen-sharing-bench
+
+  tier1:
+    needs: [plan, build]
+    if: ${{ needs.plan.outputs.run == 'true' && needs.plan.outputs.tier1 == 'true' && github.event_name != 'pull_request' }}
     runs-on: [self-hosted, macOS, ARM64, tamale]
     timeout-minutes: 150
     concurrency:
@@ -172,11 +218,9 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
         with:
           set-safe-directory: false
-      - uses: ./.github/actions/build-screen-sharing-bench
+      - uses: ./.github/actions/fetch-screen-sharing-bench
         with:
-          certificate: ${{ secrets.APPLE_CERTIFICATE_BASE64 }}
-          certificate-password: ${{ secrets.APPLE_CERTIFICATE_PASSWORD }}
-          identity: ${{ secrets.APPLE_CODESIGN_IDENTITY }}
+          name: bench-app
       - name: Install it where the permission grants are (own-window only)
         if: ${{ needs.plan.outputs.own_window == 'true' }}
         run: apps/screen-sharing-bench/scripts/install-granted.sh
@@ -262,19 +306,64 @@ jobs:
           retention-days: 30
 
   calibration:
-    needs: [plan, tier1]
+    needs: [plan, build, tier1]
     if: ${{ !cancelled() && needs.plan.outputs.run == 'true' && needs.plan.outputs.calibration == 'true' }}
     uses: ./.github/workflows/bench-screen-sharing-calibration.yml
     secrets: inherit
 
-  tier2:
-    needs: [plan, tier1, calibration]
-    if: ${{ !cancelled() && needs.plan.outputs.run == 'true' && needs.plan.outputs.tier2 == 'true' }}
+  tier2-a:
+    needs: [plan, build, tier1, calibration]
+    if: >-
+      ${{ !cancelled() && needs.build.result == 'success' && needs.plan.outputs.run == 'true'
+      && needs.plan.outputs.tier2 == 'true' }}
     uses: ./.github/workflows/bench-screen-sharing-tier2.yml
     permissions:
       actions: read
       contents: read
     secrets: inherit
+    with:
+      label: a
+      bench-artifact: bench-app
+      scenes: ${{ needs.plan.outputs.tier2_a_scenes }}
+      systems: apple-hp,codevisor-v2
+      repetitions: "2"
+      duration: "30"
+      input-events: "40"
+
+  tier2-b:
+    needs: [plan, build, tier2-a]
+    if: >-
+      ${{ !cancelled() && needs.build.result == 'success' && needs.plan.outputs.run == 'true'
+      && needs.plan.outputs.tier2 == 'true' }}
+    uses: ./.github/workflows/bench-screen-sharing-tier2.yml
+    permissions:
+      actions: read
+      contents: read
+    secrets: inherit
+    with:
+      label: b
+      bench-artifact: bench-app
+      scenes: ${{ needs.plan.outputs.tier2_b_scenes }}
+      systems: apple-hp,codevisor-v2
+      repetitions: "2"
+      duration: "30"
+      input-events: "40"
+
+  tier2-summary:
+    needs: [plan, build, tier2-a, tier2-b]
+    if: >-
+      ${{ !cancelled() && needs.build.result == 'success' && needs.plan.outputs.run == 'true'
+      && needs.plan.outputs.tier2 == 'true' }}
+    runs-on: [self-hosted, macOS, ARM64, croissant]
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          set-safe-directory: false
+      - uses: ./.github/actions/fetch-screen-sharing-bench
+        with:
+          name: bench-app
+      - uses: ./.github/actions/tier2-dispatches-summary
 
   encode-lab:
     needs: plan

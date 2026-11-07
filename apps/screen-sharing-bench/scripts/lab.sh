@@ -12,6 +12,12 @@ scripts="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 mkdir -p "$results"
 summary=${GITHUB_STEP_SUMMARY:-/dev/null}
 
+if [[ "$1" == network-lab ]]; then
+  [[ "$machine" == croissant ]] || { echo "network-lab shapes croissant's link; run it on croissant" >&2; exit 2; }
+  "$scripts/tier2-network-lab.sh" "$results" | tee -a "$summary"
+  exit "${PIPESTATUS[0]}"
+fi
+
 "$scripts/run-installed.sh" preflight >"$results/before-preflight.json" || true
 "$scripts/run-installed.sh" "$@" >"$results/command.json" 2>"$results/command.err" &
 command_job=$!

@@ -1,7 +1,7 @@
 name: Build CodevisorBench
 description: >-
   Builds CodevisorBench.app at the checked-out commit, signs it with the repository's Developer ID identity (team
-  C4M7D4G7LG; permission grants on the minis must be for that team's app) into $RUNNER_TEMP/bench.noindex; it builds in _work/codevisor-bench-build.noindex (Spotlight skips both), and points CODEVISOR_BENCH_APP at it. It doesn't touch the installed app; jobs that need its permission grants then run scripts/install-granted.sh.
+  C4M7D4G7LG; permission grants on the minis must be for that team's app) into $RUNNER_TEMP/bench.noindex; it builds in _work/codevisor-bench-build.noindex (Spotlight skips both), and points CODEVISOR_BENCH_APP at it. It doesn't touch the installed app; jobs that need its permission grants then run scripts/install-granted.sh. It also sets up Node, bun and Rust on the runner (the minis have no Homebrew since 6 November 2026), which later steps of the job may rely on.
 inputs:
   certificate:
     description: The Developer ID Application certificate, base64-encoded PKCS#12

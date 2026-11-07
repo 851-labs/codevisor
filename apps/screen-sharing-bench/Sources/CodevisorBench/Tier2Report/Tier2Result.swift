@@ -21,6 +21,9 @@ enum Tier2Result {
     result.freezes = analysis.freezes
     result.bitrateMbps = measurement.viewerUsage?.receivedMbps
     result.cpuPct = BenchResult.PerMachine(host: measurement.hostUsage?.cpuPct, viewer: measurement.viewerUsage?.cpuPct)
+    result.systemCpuPct = measurement.files.systemCpuPct
+    result.displayPhaseMs = measurement.displayPhaseMs
+    result.networkCheck = measurement.files.realizedNetwork
     result.energyMw = BenchResult.PerMachine(
       host: measurement.hostUsage?.powerMw, viewer: measurement.viewerUsage?.powerMw)
     result.unreadableFraction = analysis.viewerUnreadableFraction

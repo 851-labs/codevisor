@@ -129,7 +129,7 @@ stop_share() {
 }
 
 run_one() {
-  local index=$1 scene=$2 system=$3 rep=$4 observed=$5
+  local index=$1 scene=$2 system=$3 rep=$4 observed=$5 network=$6
   local name dir status=ok
   tier2_is_warm_up "$rep" && local TIER2_DURATION=$TIER2_WARM_UP_S
   name=$(tier2_name "$@")
@@ -166,6 +166,6 @@ bench calibrate --check c2 --serve --port "$TIER2_NETWORK_CHECK_PORT" --duration
 background+=($!)
 await_servers || { say "the clock responder or rendezvous server didn't start"; exit 1; }
 meet_on_build host "$ready"
-while read -r index scene system rep observed; do
-  run_one "$index" "$scene" "$system" "$rep" "$observed"
+while read -r index scene system rep observed network; do
+  run_one "$index" "$scene" "$system" "$rep" "$observed" "$network"
 done < <(tier2_plan)

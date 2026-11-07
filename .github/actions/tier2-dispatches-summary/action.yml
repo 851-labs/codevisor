@@ -1,0 +1,32 @@
+name: Summarize Tier 2 dispatches
+description: >-
+  Downloads every tier2-<label>-report artifact of this workflow run, runs `tier2-dispatches` on them with the
+  CodevisorBench.app that CODEVISOR_BENCH_APP names (each dispatch's display phase and 851-4092 parity, Apple HP's
+  image age as the median across dispatches, and v2's verdicts within each dispatch), appends that to the job summary
+  and uploads it as tier2-dispatches.
+runs:
+  using: composite
+  steps:
+    - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c
+      with:
+        pattern: tier2-*-report
+        path: ${{ runner.temp }}/reports
+    - shell: bash
+      run: |
+        reports="$RUNNER_TEMP/reports" summary="$RUNNER_TEMP/dispatches"
+        shopt -s nullglob
+        directories=("$reports"/tier2-*-report)
+        ((${#directories[@]} > 0)) || { echo "::warning::no Tier 2 dispatch produced a report"; exit 0; }
+        for directory in "${directories[@]}"; do
+          label=${directory##*/tier2-}
+          mv "$directory" "$reports/${label%-report}"
+        done
+        mkdir -p "$summary"
+        apps/screen-sharing-bench/scripts/run-installed.sh tier2-dispatches --reports "$reports" \
+          --markdown "$summary/summary.md" > /dev/null
+        cat "$summary/summary.md" >> "$GITHUB_STEP_SUMMARY"
+    - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
+      if: always()
+      with:
+        name: tier2-dispatches
+        path: ${{ runner.temp }}/dispatches

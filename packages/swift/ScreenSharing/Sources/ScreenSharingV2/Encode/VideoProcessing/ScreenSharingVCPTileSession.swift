@@ -119,7 +119,7 @@ final class ScreenSharingVCPTileSession: @unchecked Sendable {
     }
 
     do {
-      deliver(try encodedTile(submission, sample: sample))
+      deliver(try encodedTile(submission, sample: sample), requested: submission.refresh)
     } catch {
       failed(submission.refresh, error.localizedDescription)
     }
@@ -144,8 +144,8 @@ final class ScreenSharingVCPTileSession: @unchecked Sendable {
       ltrToken: encoded.ltrToken, accessUnit: encoded.accessUnit)
   }
 
-  private func deliver(_ tile: ScreenSharingEncodedTile) {
-    ScreenSharingTileMetrics(metrics).record(tile)
+  private func deliver(_ tile: ScreenSharingEncodedTile, requested: ScreenSharingTileRefresh?) {
+    ScreenSharingTileMetrics(metrics).record(tile, requested: requested)
     relay.emit(.tile(tile))
   }
 
