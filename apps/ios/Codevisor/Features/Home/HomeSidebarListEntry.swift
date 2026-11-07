@@ -48,8 +48,7 @@ struct HomeSidebarListEntry: Identifiable {
   }
 
   private static func tabs(of workspace: HomeSidebarWorkspace, depth: Int) -> [Self] {
-    guard workspace.listsTabs else { return [] }
-    return workspace.rows.map { Self(row: .tab($0, owner: workspace), depth: depth, parentID: workspace.id) }
+    workspace.nestedRows.map { Self(row: .tab($0, owner: workspace), depth: depth, parentID: workspace.id) }
   }
 
   private var isTab: Bool {

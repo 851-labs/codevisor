@@ -367,8 +367,8 @@ struct HomeSidebarList: View {
     case let .bot(botId):
       return botId
     case let .workspace(workspaceId, paneId):
-      if let paneId, let workspace = content.workspace(workspaceId), workspace.listsTabs,
-        content.row(paneId) != nil
+      if let paneId, let workspace = content.workspace(workspaceId),
+        workspace.nestedRows.contains(where: { $0.id == paneId })
       {
         return paneId
       }
