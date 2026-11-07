@@ -52,7 +52,6 @@ struct SentFrame {
     data_count: usize,
     submitted: Instant,
     first_tx: Option<Instant>,
-    data_tx: Option<Instant>,
     latest_tx: Option<Instant>,
     last_tx: Option<Instant>,
     originals_out: usize,
@@ -74,7 +73,6 @@ struct StreamTx {
 #[derive(Debug, Clone, Copy)]
 struct SendTimes {
     first: Instant,
-    data: Option<Instant>,
     latest: Option<Instant>,
 }
 
@@ -83,13 +81,8 @@ impl SendTimes {
         Delivery {
             bytes: receipt.original_bytes as usize,
             receive_span: Duration::from_micros(receipt.last_rx_offset_us.into()),
-            send_span: self.span_to(self.data),
-            sent_so_far_span: self.span_to(self.latest),
+            send_span: self.latest.map_or(Duration::ZERO, |latest| latest.saturating_duration_since(self.first)),
         }
-    }
-
-    fn span_to(self, until: Option<Instant>) -> Duration {
-        until.map_or(Duration::ZERO, |until| until.saturating_duration_since(self.first))
     }
 }
 
@@ -257,7 +250,6 @@ impl Sender {
                 data_count: layout.data_count,
                 submitted: now,
                 first_tx: None,
-                data_tx: None,
                 latest_tx: None,
                 last_tx: None,
                 originals_out: 0,
@@ -347,9 +339,6 @@ impl Sender {
                 self.streams.get_mut(&tag.stream).and_then(|stream| stream.unresolved.get_mut(&tag.frame))
         {
             frame.first_tx.get_or_insert(now);
-            if frame.data_tx.is_none() || usize::from(tag.index) < frame.data_count {
-                frame.data_tx = Some(now);
-            }
             frame.latest_tx = Some(now);
             frame.originals_out += 1;
             frame.bytes_out += packet.len();
@@ -461,7 +450,7 @@ impl Sender {
                 }
                 if !feedback.lost {
                     self.estimator.on_acked(now, frame.bytes_out);
-                    let sent = SendTimes { first: first_tx, data: frame.data_tx, latest: frame.latest_tx };
+                    let sent = SendTimes { first: first_tx, latest: frame.latest_tx };
                     self.estimator.on_delivery(now, sent.delivery(receipt));
                 }
             }
@@ -488,7 +477,7 @@ impl Sender {
                 self.estimator.on_acked(now, frame.bytes_out);
                 events.push_back(Event::FrameAcked(acknowledge(feedback.stream, number, &frame, now, None)));
                 if let Some(first) = frame.first_tx {
-                    let sent = SendTimes { first, data: frame.data_tx, latest: frame.latest_tx };
+                    let sent = SendTimes { first, latest: frame.latest_tx };
                     stream.unreported.insert(number, Unreported { sent, resolved: now });
                     if stream.unreported.len() > MAX_UNREPORTED {
                         stream.unreported.pop_first();

@@ -35,7 +35,6 @@ pub struct Delivery {
     pub bytes: usize,
     pub receive_span: Duration,
     pub send_span: Duration,
-    pub sent_so_far_span: Duration,
 }
 
 #[derive(Debug, Clone, Copy)]
@@ -177,7 +176,7 @@ impl Estimator {
             let span = delivery.receive_span.max(delivery.send_span);
             let sample = delivery.bytes as f64 * 8.0 / span.as_secs_f64();
             self.bursts.push(now, sample);
-            if delivery.receive_span >= delivery.sent_so_far_span.mul_f64(LINK_SPREAD) {
+            if delivery.receive_span >= delivery.send_span.mul_f64(LINK_SPREAD) {
                 self.link_bursts.push(now, sample);
             }
             self.measured_bps = self.bursts.best().unwrap_or(sample);
@@ -415,7 +414,7 @@ mod tests {
     const OFFSET: i64 = 5_000_000;
 
     fn burst(bytes: usize, span: Duration) -> Delivery {
-        Delivery { bytes, receive_span: span, send_span: Duration::ZERO, sent_so_far_span: Duration::ZERO }
+        Delivery { bytes, receive_span: span, send_span: Duration::ZERO }
     }
 
     fn feed_traffic(
@@ -467,10 +466,7 @@ mod tests {
     fn a_burst_counts_no_faster_than_it_was_sent() {
         let start = Instant::now();
         let mut estimator = Estimator::new(10e6, 1e9, FRAME);
-        estimator.on_delivery(
-            start,
-            Delivery { bytes: 125_000, receive_span: MS, send_span: 10 * MS, sent_so_far_span: 10 * MS },
-        );
+        estimator.on_delivery(start, Delivery { bytes: 125_000, receive_span: MS, send_span: 10 * MS });
         assert_eq!(estimator.estimate_bps(), 100e6);
     }
 
