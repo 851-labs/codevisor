@@ -223,7 +223,8 @@ public final class ScreenSharingV2Host: ScreenSharingFrameSink, @unchecked Senda
     encoder.observeNetwork(
       ScreenSharingTileNetworkFeedback(
         packetErrorRate: transport.lossRate, roundTripDelayMs: Double(transport.roundTripUs) / 1000,
-        transmissionBitsPerSecond: Int(clamping: admission.estimateKbps * 1000)))
+        transmissionBitsPerSecond: Int(clamping: admission.estimateKbps * 1000),
+        transmissionMeasured: admission.measured))
   }
 
   private func encoderOutput(_ output: ScreenSharingTileEncoderOutput) {

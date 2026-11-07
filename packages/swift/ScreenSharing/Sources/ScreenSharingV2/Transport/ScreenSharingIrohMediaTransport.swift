@@ -27,7 +27,7 @@ public final class ScreenSharingIrohMediaTransport: ScreenSharingMediaTransport,
     let admission = session.admission()
     return ScreenSharingMediaAdmission(
       admit: admission.admit, backlogBytes: admission.backlogBytes, estimateKbps: admission.estimateKbps,
-      encoderCeilingKbps: admission.encoderCeilingKbps)
+      encoderCeilingKbps: admission.encoderCeilingKbps, measured: admission.measured)
   }
 
   public func nextEvent() async -> ScreenSharingMediaEvent? {

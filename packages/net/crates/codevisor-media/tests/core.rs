@@ -1161,41 +1161,20 @@ fn a_tiled_keyframe_draining_on_a_slow_lossy_link_doesnt_drive_the_estimate_to_t
     }
 }
 
-fn tiled_typing_estimates(conditions: NetworkConditions, seed: u64) -> (f64, f64) {
-    let mut sim = Sim::new(conditions, config(FecMode::Adaptive), seed);
-    let end = sim.now + Duration::from_secs(20);
-    let mut next = sim.now;
-    let mut index = 0u64;
-    let (mut lowest, mut highest) = (f64::MAX, 0.0f64);
-    while sim.now < end {
-        if sim.now >= next && sim.host.admission().admit {
-            if index == 0 {
-                for tile in 0..16u8 {
-                    sim.send(frame(tile, &payload(u64::from(tile), 275)));
-                }
-            } else {
-                sim.send(frame((index % 16) as u8, &payload(100 + index, 400)));
-            }
-            index += 1;
-            next = (next + 4 * INTERVAL).max(sim.now);
-        }
-        if sim.now >= sim.epoch + Duration::from_secs(2) {
-            let estimate = sim.host.admission().estimate_bps;
-            (lowest, highest) = (lowest.min(estimate), highest.max(estimate));
-        }
-        sim.run_until(sim.now + MS);
-    }
-    (lowest, highest)
-}
-
 #[test]
-fn tiled_typing_measures_the_link_from_its_first_tiles() {
-    for seed in 1..=3 {
-        let (_, n5) = tiled_typing_estimates(NetworkConditions::N5, seed);
-        assert!(n5 < 45e6, "N5, seed {seed}: {:.1} Mbit/s on a 30 Mbit/s link", n5 / 1e6);
-        let (_, n7) = tiled_typing_estimates(NetworkConditions::N7, seed);
-        assert!(n7 < 3e6, "N7, seed {seed}: {:.1} Mbit/s on a 1 Mbit/s link", n7 / 1e6);
-        let (n0, _) = tiled_typing_estimates(NetworkConditions::N0, seed);
-        assert!(n0 >= 60e6, "N0, seed {seed}: {:.1} Mbit/s", n0 / 1e6);
+fn a_stream_too_small_to_time_leaves_the_estimate_unmeasured_until_a_frame_is() {
+    let mut sim = Sim::new(NetworkConditions::N5, config(FecMode::Adaptive), 1);
+    for index in 0..30 {
+        sim.send(frame(0, &payload(index, 400)));
+        sim.run_for(4 * INTERVAL);
     }
+    let guessed = sim.host.admission();
+
+    sim.send(frame(0, &payload(30, 100_000)));
+    sim.run_for(Duration::from_secs(1));
+    let measured = sim.host.admission();
+
+    assert!(!guessed.measured, "{:.1} Mbit/s from 400-byte frames", guessed.estimate_bps / 1e6);
+    assert!(measured.measured);
+    assert!(measured.estimate_bps < 45e6, "{:.1} Mbit/s on a 30 Mbit/s link", measured.estimate_bps / 1e6);
 }

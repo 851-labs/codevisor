@@ -134,6 +134,18 @@ struct ScreenSharingV2EncoderRouteTests {
     #expect(route.switchDueNs == 5 * Self.fastAfterNs)
   }
 
+  @Test func anEstimateTheTransportNeverMeasuredDoesNotProveALinkFast() {
+    var route = ScreenSharingV2EncoderRoute(bitrate: Self.fast, atNs: 0)
+    let guessed = ScreenSharingTileNetworkFeedback(
+      packetErrorRate: 0, roundTripDelayMs: 20, transmissionBitsPerSecond: Self.fastLink, transmissionMeasured: false)
+
+    for index in 0...4 { route.observe(guessed, atNs: Int64(index) * Self.fastAfterNs) }
+    let switched = route.update(atNs: 4 * Self.fastAfterNs)
+
+    #expect(!switched)
+    #expect(route.choice == .slow)
+  }
+
   @Test func aLowEstimateWithoutAQueueOrHeavyLossKeepsTheFastEncoder() {
     var route = fastRoute()
     let lowAt = 2 * Self.fastAfterNs

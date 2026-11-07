@@ -401,6 +401,7 @@ pub struct MediaAdmission {
     pub budget_bytes: u64,
     pub estimate_kbps: u64,
     pub encoder_ceiling_kbps: u64,
+    pub measured: bool,
 }
 
 #[derive(uniffi::Record)]
@@ -455,6 +456,7 @@ impl MediaSessionHandle {
             budget_bytes: admission.budget_bytes as u64,
             estimate_kbps: (admission.estimate_bps / 1000.0) as u64,
             encoder_ceiling_kbps: (admission.encoder_ceiling_bps / 1000.0) as u64,
+            measured: admission.measured,
         }
     }
 

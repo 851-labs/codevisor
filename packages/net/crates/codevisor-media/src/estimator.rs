@@ -187,10 +187,8 @@ impl Estimator {
         self.grow_cap(now);
     }
 
-    pub fn on_flight(&mut self, now: Instant, delivery: Delivery) {
-        if !self.sampled {
-            self.on_delivery(now, delivery);
-        }
+    pub fn sampled(&self) -> bool {
+        self.sampled
     }
 
     pub fn on_delay(&mut self, now: Instant, one_way_us: i64, hold_off: Duration) {

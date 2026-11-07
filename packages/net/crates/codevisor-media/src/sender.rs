@@ -8,7 +8,6 @@ use reed_solomon_simd::ReedSolomonEncoder;
 
 use crate::{
     estimator::{Delivery, Estimator},
-    flight::{Arrival, Flights},
     fec::{self, Layout},
     pacer::{Pacer, PacketTag},
     types::{
@@ -58,7 +57,6 @@ struct SentFrame {
     originals_out: usize,
     bytes_out: usize,
     probes: u32,
-    flight: u64,
 }
 
 #[derive(Debug, Default)]
@@ -153,7 +151,6 @@ pub struct Sender {
     in_flight_bytes: usize,
     min_rtt: Windowed<Duration>,
     ceiling_fec_ratio: f64,
-    flights: Flights,
 }
 
 impl Sender {
@@ -172,7 +169,6 @@ impl Sender {
             in_flight_bytes: 0,
             min_rtt: Windowed::new(MIN_RTT_WINDOW, Keep::Smallest),
             ceiling_fec_ratio: 0.0,
-            flights: Flights::default(),
         }
     }
 
@@ -246,7 +242,6 @@ impl Sender {
         stats.frames_sent += 1;
         stats.parity_packets_sent += parity_count as u64;
         self.loss.sent += layout.data_count as u64;
-        let flight = self.flights.join(now, self.config.frame_interval / 4);
         stream.unresolved.insert(
             number,
             SentFrame {
@@ -260,13 +255,11 @@ impl Sender {
                 originals_out: 0,
                 bytes_out: 0,
                 probes: 0,
-                flight,
             },
         );
         if stream.unresolved.len() > MAX_UNRESOLVED {
             let (oldest, dropped) = stream.unresolved.pop_first().expect("over the limit");
             self.in_flight_bytes -= dropped.bytes_out;
-            self.flights.report(dropped.flight, None);
             stats.frames_lost += 1;
             events.push_back(Event::FrameLost { stream: frame.stream, frame: oldest });
         }
@@ -426,19 +419,6 @@ impl Sender {
         }
         if let Some(frame) = stream.unresolved.remove(&feedback.frame) {
             self.in_flight_bytes -= frame.bytes_out;
-            let arrival = feedback.receipt.zip(frame.first_tx).filter(|_| !feedback.lost).map(|(receipt, first_tx)| {
-                Arrival {
-                    first_tx,
-                    latest_tx: frame.latest_tx,
-                    first_rx_us: receipt.first_rx_us,
-                    last_rx_us: receipt.first_rx_us + u64::from(receipt.last_rx_offset_us),
-                    original_bytes: receipt.original_bytes as usize,
-                    first_packet_bytes: frame.packets[0].len(),
-                }
-            });
-            if let Some(delivery) = self.flights.report(frame.flight, arrival) {
-                self.estimator.on_flight(now, delivery);
-            }
             if feedback.lost {
                 self.last_loss = Some(now);
                 stats.frames_lost += 1;
@@ -488,7 +468,6 @@ impl Sender {
             }
             let frame = entry.remove();
             self.in_flight_bytes -= frame.bytes_out;
-            self.flights.report(frame.flight, None);
             let age = feedback.resolved_below - 1 - number;
             if age >= 32 || feedback.lost_bitmap & (1 << age) != 0 {
                 stats.frames_lost += 1;
@@ -562,7 +541,6 @@ impl Sender {
             for number in expired {
                 if let Some(frame) = stream.unresolved.remove(&number) {
                     self.in_flight_bytes -= frame.bytes_out;
-                    self.flights.report(frame.flight, None);
                 }
                 stats.frames_lost += 1;
                 events.push_back(Event::FrameLost { stream: stream_id, frame: number });
@@ -614,6 +592,7 @@ impl Sender {
             budget_bytes,
             estimate_bps,
             encoder_ceiling_bps: estimate_bps * ENCODER_SHARE / (1.0 + self.ceiling_fec_ratio),
+            measured: self.estimator.sampled(),
         }
     }
 
