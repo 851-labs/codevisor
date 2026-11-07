@@ -1,7 +1,13 @@
 import assert from "node:assert/strict"
 import { test } from "node:test"
 
-import { devices, isDarkBitmap, parseOptions, selectRuntime } from "./screenshots-ios-lib.mjs"
+import {
+  devices,
+  appStoreJobs,
+  isDarkBitmap,
+  parseOptions,
+  selectRuntime
+} from "./screenshots-ios-lib.mjs"
 import { pngDimensions, scenes, screenshotAttachments } from "./screenshots-lib.mjs"
 
 test("options stay rooted in this checkout and reject missing or unknown arguments", () => {
@@ -122,4 +128,50 @@ test("an unfolded iPhone Duo is detected from any lit pixel on its inner display
   assert.equal(isDarkBitmap(bitmap), true)
   bitmap[headerSize + 2 * 4 + 1] = 12
   assert.equal(isDarkBitmap(bitmap), false)
+})
+
+test("each App Store scene yields a plain and a framed screenshot at a size App Store Connect accepts", () => {
+  const accepted = {
+    iphone: ["1206x2622"],
+    ipad: ["2752x2064"],
+    "iphone-duo": ["2853x2007"]
+  }
+  const jobs = appStoreJobs("/captures", "/out")
+  for (const job of jobs) {
+    const [, , set, slot] = job.output.split("/")
+    assert.ok(
+      accepted[slot].includes(`${job.width}x${job.height}`),
+      `${job.output} is ${job.width}x${job.height}`
+    )
+    if (set === "app-store-screenshots-framed") {
+      assert.ok(job.caption && job.device, `${job.output} has no frame or caption`)
+      assert.match(job.input, /-dark\.png$/)
+    } else {
+      assert.equal(job.caption, undefined)
+      assert.match(job.input, /-light\.png$/)
+    }
+  }
+  assert.equal(new Set(jobs.map((job) => job.output)).size, jobs.length)
+  const names = (set, slot) =>
+    jobs
+      .filter((job) => job.output.startsWith(`/out/${set}/${slot}/`))
+      .map((job) => job.output.split("/").at(-1))
+  for (const set of ["app-store-screenshots", "app-store-screenshots-framed"]) {
+    assert.deepEqual(names(set, "iphone"), [
+      "01-projects.png",
+      "02-conversation.png",
+      "03-harnesses.png",
+      "04-updates.png"
+    ])
+    assert.deepEqual(names(set, "ipad"), [
+      "01-conversation.png",
+      "02-harnesses.png",
+      "03-updates.png"
+    ])
+    assert.deepEqual(names(set, "iphone-duo"), [
+      "01-conversation.png",
+      "02-harnesses.png",
+      "03-updates.png"
+    ])
+  }
 })

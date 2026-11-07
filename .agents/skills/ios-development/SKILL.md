@@ -17,7 +17,7 @@ Use `bun run ios-simulator --device="iPhone 17" --runtime=27.0` to select an ins
 
 Read `tmp/runtime/ios-simulator.json` for the owned device UUID. Keep the simulator task running across dev-server restarts. Stopping the simulator task shuts down and deletes that device; its data lives in CoreSimulator's default location so DeviceHub can discover it. The owner also watches launcher death and worktree deletion. A later launch recovers marked orphan devices after an owner crash.
 
-Tests never need a simulator: `bun run check`, the pre-push hook, and CI run only host unit tests and don't build iOS; Build archives the iOS app on every push to main, and `bun run build:ios` builds it locally. Only `bun run screenshots:ios`, which captures App Store screenshots through UI automation, drives a simulator.
+Tests never need a simulator: `bun run check`, the pre-push hook, and CI run only host unit tests and don't build iOS; Build archives the iOS app on every push to main, and `bun run build:ios` builds it locally. Only the App Store screenshot scripts drive a simulator: `bun run screenshots:ios:app-store` captures every App Store device and writes the plain and framed upload sets, on top of `screenshots:ios:direct` (one device) and `screenshots:ios` (UI automation).
 
 Once the scripts finish startup, prefer Xcode MCP for inspecting and driving the app. Check that its project and destination match this worktree and the printed UUID. Use the dev runner to rebuild and reinstall so its worktree configuration is preserved.
 
