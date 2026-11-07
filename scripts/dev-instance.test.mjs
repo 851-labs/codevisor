@@ -1,9 +1,12 @@
 import assert from "node:assert/strict"
 import test from "node:test"
 
+import {
+  developmentLayout,
+  localDevelopmentEnvironment
+} from "../packages/devtools/src/dev-layout.ts"
 import { wantsContainerDesktop } from "./dev-containers.mjs"
 import { sanitizeAmbientEnvironment } from "./dev-instance.mjs"
-import { developmentLayout, localDevelopmentEnvironment } from "./dev-layout.mjs"
 
 test("dev sanitization keeps dev settings without inheriting app-hosted state", () => {
   const supplied = {

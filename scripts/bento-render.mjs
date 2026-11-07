@@ -6,8 +6,8 @@ import process from "node:process"
 import { fileURLToPath } from "node:url"
 import { parseArgs, promisify } from "node:util"
 
+import { developmentLayout } from "../packages/devtools/src/dev-layout.ts"
 import { prepareSimulator } from "./bento-simulator.mjs"
-import { developmentLayout } from "./dev-layout.mjs"
 import { isPortAvailable } from "./dev-shared.mjs"
 import { run } from "./screenshots-lib.mjs"
 

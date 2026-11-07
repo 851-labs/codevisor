@@ -13,9 +13,9 @@ import { mkdir, readFile, writeFile } from "node:fs/promises"
 import { dirname, join, relative, resolve } from "node:path"
 import { fileURLToPath } from "node:url"
 
+import { developmentLayout } from "../packages/devtools/src/dev-layout.ts"
 import { byCodeUnit, planChecks, relativeImports } from "./check-plan.mjs"
 import { checkReporter } from "./check-report.mjs"
-import { developmentLayout } from "./dev-layout.mjs"
 
 const repoRoot = fileURLToPath(new URL("..", import.meta.url))
 const logDirectory = join(developmentLayout(repoRoot).build.root, "check")

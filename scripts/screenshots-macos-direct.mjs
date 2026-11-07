@@ -5,7 +5,7 @@ import { join } from "node:path"
 import { fileURLToPath } from "node:url"
 import { promisify } from "node:util"
 
-import { developmentLayout } from "./dev-layout.mjs"
+import { developmentLayout } from "../packages/devtools/src/dev-layout.ts"
 import { delay, waitForExit } from "./dev-shared.mjs"
 import {
   parseCaptureOptions,

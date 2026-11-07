@@ -4,7 +4,7 @@ import { availableParallelism } from "node:os"
 import { dirname, join, resolve } from "node:path"
 import { fileURLToPath } from "node:url"
 
-import { developmentLayout } from "./dev-layout.mjs"
+import { developmentLayout } from "../packages/devtools/src/dev-layout.ts"
 import { prepareSwiftPackage } from "./swift-artifacts.mjs"
 
 export const mainSerialExecutorSuites = JSON.parse(

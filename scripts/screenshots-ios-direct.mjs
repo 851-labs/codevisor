@@ -5,7 +5,10 @@ import { join } from "node:path"
 import { fileURLToPath } from "node:url"
 import { promisify } from "node:util"
 
-import { developmentLayout, IOS_DEVELOPMENT_BUNDLE_IDENTIFIER } from "./dev-layout.mjs"
+import {
+  developmentLayout,
+  IOS_DEVELOPMENT_BUNDLE_IDENTIFIER
+} from "../packages/devtools/src/dev-layout.ts"
 import { delay } from "./dev-shared.mjs"
 import {
   devices,

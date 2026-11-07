@@ -5,6 +5,10 @@ import { basename, dirname, join } from "node:path"
 import { fileURLToPath } from "node:url"
 
 import {
+  developmentLayout,
+  iosDevelopmentBundleIdentifier
+} from "../packages/devtools/src/dev-layout.ts"
+import {
   readProcessTable,
   processIdentity,
   stopProcesses,
@@ -12,7 +16,6 @@ import {
 } from "../packages/processes/src/index.mjs"
 import { parseDevelopmentRunnerArguments } from "./dev-arguments.mjs"
 import { sweepStaleContainers } from "./dev-containers.mjs"
-import { developmentLayout, iosDevelopmentBundleIdentifier } from "./dev-layout.mjs"
 import { claimDevelopmentRunner, releaseDevelopmentRunner } from "./dev-runtime.mjs"
 import { requireIOSSimulator, simctl, readJSON } from "./ios-simulator-state.mjs"
 

@@ -3,7 +3,10 @@ import { cp, mkdir, rm } from "node:fs/promises"
 import { homedir } from "node:os"
 import { basename, join } from "node:path"
 
-import { developmentLayout, iosDevelopmentBundleIdentifier } from "./dev-layout.mjs"
+import {
+  developmentLayout,
+  iosDevelopmentBundleIdentifier
+} from "../packages/devtools/src/dev-layout.ts"
 import {
   colorFromHash,
   directoryIsEmpty,
