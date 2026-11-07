@@ -24,7 +24,7 @@ jobs:
     if: github.event.schedule == '41 6 * * 1' || inputs.hosted-macos
     uses: ./.github/workflows/_build-macos.yml
     with:
-      runner: '["macos-27"]'
+      runner: '["xcode-27"]'
       version: 0.0.0
       build-number: "1"
       publish: false

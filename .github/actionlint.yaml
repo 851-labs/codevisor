@@ -4,4 +4,4 @@ self-hosted-runner:
     - codevisor-macos-x64
     - tamale
     - croissant
-    - macos-27
+    - xcode-27
