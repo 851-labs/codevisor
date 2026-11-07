@@ -1,5 +1,5 @@
 use std::{
-    collections::{BTreeMap, HashMap, VecDeque},
+    collections::{BTreeMap, VecDeque},
     time::{Duration, Instant},
 };
 
@@ -26,6 +26,7 @@ struct Assembly {
     parity: Vec<Option<Bytes>>,
     received: usize,
     requested: Vec<Option<Instant>>,
+    first_requested: Vec<Option<Instant>>,
     first_rx: Option<Instant>,
     last_original_rx: Option<Instant>,
     original_bytes: usize,
@@ -36,6 +37,8 @@ struct Assembly {
     tail_limit: Option<usize>,
     next_nack: Option<Instant>,
     give_up_at: Option<Instant>,
+    whole_nacked_at: Option<Instant>,
+    repaired: bool,
     used_fec: bool,
     state: State,
 }
@@ -61,6 +64,7 @@ impl Assembly {
             parity: Vec::new(),
             received: 0,
             requested: Vec::new(),
+            first_requested: Vec::new(),
             first_rx: None,
             last_original_rx: None,
             original_bytes: 0,
@@ -71,13 +75,15 @@ impl Assembly {
             tail_limit: None,
             next_nack: None,
             give_up_at: None,
+            whole_nacked_at: None,
+            repaired: false,
             used_fec: false,
             state: State::Assembling,
         }
     }
 
     fn recovery(&self) -> Recovery {
-        if self.requested.iter().any(Option::is_some) || (self.shape.is_none() && self.give_up_at.is_some()) {
+        if self.repaired || (self.shape.is_none() && self.give_up_at.is_some()) {
             Recovery::Nack
         } else if self.used_fec {
             Recovery::Fec
@@ -167,7 +173,7 @@ pub struct Receiver {
     epoch: Instant,
     frame_interval: Duration,
     rtt: Duration,
-    streams: HashMap<u8, StreamRx>,
+    streams: BTreeMap<u8, StreamRx>,
     gap_peak: Duration,
     outbox: VecDeque<Bytes>,
 }
@@ -178,7 +184,7 @@ impl Receiver {
             epoch,
             frame_interval,
             rtt: Duration::ZERO,
-            streams: HashMap::new(),
+            streams: BTreeMap::new(),
             gap_peak: Duration::ZERO,
             outbox: VecDeque::new(),
         }
@@ -201,7 +207,7 @@ impl Receiver {
     }
 
     fn tail_wait(&self) -> Duration {
-        self.gap_peak.mul_f64(TAIL_GAPS).max(MIN_TAIL_WAIT).min(self.give_up_after())
+        tail_wait(self.gap_peak, self.give_up_after())
     }
 
     pub fn on_packet(
@@ -214,7 +220,6 @@ impl Receiver {
     ) {
         stats.packets_received += 1;
         stats.bytes_received += shard.len() as u64 + crate::wire::HEADER_BYTES as u64;
-        let tail_wait = self.tail_wait();
         let give_up = self.give_up_after();
         let stream = self.streams.entry(header.stream).or_default();
         if header.frame < stream.next_due {
@@ -256,8 +261,10 @@ impl Receiver {
                     data: vec![None; shape.layout.data_count],
                     parity: vec![None; shape.parity_count],
                     requested: vec![requested; shape.layout.data_count],
+                    first_requested: vec![assembly.whole_nacked_at; shape.layout.data_count],
                     end_seen: placeholder,
                     give_up_at: assembly.give_up_at,
+                    whole_nacked_at: assembly.whole_nacked_at,
                     next_nack: assembly.next_nack,
                     ..Assembly::unknown()
                 };
@@ -285,7 +292,9 @@ impl Receiver {
         let datagram_len = shard.len() + wire::HEADER_BYTES;
         *slot = Some(shard);
         assembly.received += 1;
-        let retransmission = header.kind == Kind::Data && assembly.requested[index].is_some();
+        let retransmission = header.kind == Kind::Data
+            && assembly.first_requested[index].is_some_and(|asked| now >= asked + self.rtt / 2);
+        assembly.repaired |= retransmission;
         if !retransmission {
             if assembly.first_rx.is_some() {
                 assembly.original_bytes += datagram_len;
@@ -307,7 +316,7 @@ impl Receiver {
         let gap_seen = assembly.highest_index.is_some_and(|highest| header.index > highest + 1)
             || assembly.highest_index.is_none() && header.index > 0;
         assembly.highest_index = Some(assembly.highest_index.map_or(header.index, |highest| highest.max(header.index)));
-        assembly.tail_at = Some(now + tail_wait);
+        assembly.tail_at = Some(now + tail_wait(self.gap_peak, give_up));
 
         if try_complete(assembly, now, stats) {
             self.on_resolved(&[(header.stream, header.frame)], events, stats);
@@ -392,11 +401,15 @@ impl Receiver {
                 }
                 if assembly.next_nack.is_some_and(|at| now >= at) {
                     let nack = match assembly.shape {
-                        None => Some(Nack::whole_frame(stream_id, number)),
+                        None => {
+                            assembly.whole_nacked_at.get_or_insert(now);
+                            Some(Nack::whole_frame(stream_id, number))
+                        }
                         Some(_) => {
                             let due = assembly.due(now, retry);
                             for index in &due {
                                 assembly.requested[usize::from(*index)] = Some(now);
+                                assembly.first_requested[usize::from(*index)].get_or_insert(now);
                             }
                             (!due.is_empty()).then(|| Nack::from_indices(stream_id, number, due))
                         }
@@ -509,6 +522,10 @@ impl Receiver {
         stream.answered = Some((number, now));
         self.outbox.push_back(feedback(stream_id, stream, number, outcome).encode());
     }
+}
+
+fn tail_wait(gap_peak: Duration, give_up: Duration) -> Duration {
+    gap_peak.mul_f64(TAIL_GAPS).max(MIN_TAIL_WAIT).min(give_up)
 }
 
 fn micros(duration: Duration) -> u32 {

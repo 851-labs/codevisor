@@ -1,5 +1,5 @@
 use std::{
-    collections::{BTreeMap, HashMap, VecDeque},
+    collections::{BTreeMap, VecDeque},
     time::{Duration, Instant},
 };
 
@@ -19,6 +19,7 @@ use crate::{
 
 const MAX_PROBES: u32 = 6;
 const MAX_UNRESOLVED: usize = 512;
+const MAX_UNREPORTED: usize = 32;
 const FEC_MEMORY: Duration = Duration::from_secs(10);
 const LOSS_WINDOW: Duration = Duration::from_secs(1);
 const MIN_FEC: f64 = 0.05;
@@ -51,6 +52,7 @@ struct SentFrame {
     data_count: usize,
     submitted: Instant,
     first_tx: Option<Instant>,
+    latest_tx: Option<Instant>,
     last_tx: Option<Instant>,
     originals_out: usize,
     bytes_out: usize,
@@ -61,10 +63,33 @@ struct SentFrame {
 struct StreamTx {
     next_frame: u32,
     unresolved: BTreeMap<u32, SentFrame>,
+    unreported: BTreeMap<u32, Unreported>,
     ltr_token: Option<u64>,
     last_recovery: Option<u32>,
     last_keyframe: Option<u32>,
     refresh: Option<AnsweredRequest>,
+}
+
+#[derive(Debug, Clone, Copy)]
+struct SendTimes {
+    first: Instant,
+    latest: Option<Instant>,
+}
+
+impl SendTimes {
+    fn delivery(self, receipt: wire::FrameReceipt) -> Delivery {
+        Delivery {
+            bytes: receipt.original_bytes as usize,
+            receive_span: Duration::from_micros(receipt.last_rx_offset_us.into()),
+            send_span: self.latest.map_or(Duration::ZERO, |latest| latest.saturating_duration_since(self.first)),
+        }
+    }
+}
+
+#[derive(Debug, Clone, Copy)]
+struct Unreported {
+    sent: SendTimes,
+    resolved: Instant,
 }
 
 #[derive(Debug, Clone, Copy)]
@@ -115,7 +140,7 @@ struct LossWindow {
 pub struct Sender {
     config: MediaConfig,
     epoch: Instant,
-    streams: HashMap<u8, StreamTx>,
+    streams: BTreeMap<u8, StreamTx>,
     pacer: Pacer,
     estimator: Estimator,
     loss: LossWindow,
@@ -133,7 +158,7 @@ impl Sender {
         Self {
             config,
             epoch,
-            streams: HashMap::new(),
+            streams: BTreeMap::new(),
             pacer: Pacer::new(config.initial_rate_bps * 2.0),
             estimator: Estimator::new(config.initial_rate_bps, config.max_rate_bps, config.frame_interval),
             loss: LossWindow::default(),
@@ -225,6 +250,7 @@ impl Sender {
                 data_count: layout.data_count,
                 submitted: now,
                 first_tx: None,
+                latest_tx: None,
                 last_tx: None,
                 originals_out: 0,
                 bytes_out: 0,
@@ -313,6 +339,7 @@ impl Sender {
                 self.streams.get_mut(&tag.stream).and_then(|stream| stream.unresolved.get_mut(&tag.frame))
         {
             frame.first_tx.get_or_insert(now);
+            frame.latest_tx = Some(now);
             frame.originals_out += 1;
             frame.bytes_out += packet.len();
             self.in_flight_bytes += packet.len();
@@ -423,20 +450,15 @@ impl Sender {
                 }
                 if !feedback.lost {
                     self.estimator.on_acked(now, frame.bytes_out);
-                }
-                if receipt.recovery != crate::Recovery::Nack {
-                    let send_span =
-                        frame.last_tx.map_or(Duration::ZERO, |last_tx| last_tx.saturating_duration_since(first_tx));
-                    self.estimator.on_delivery(
-                        now,
-                        Delivery {
-                            bytes: receipt.original_bytes as usize,
-                            receive_span: Duration::from_micros(receipt.last_rx_offset_us.into()),
-                            send_span,
-                        },
-                    );
+                    let sent = SendTimes { first: first_tx, latest: frame.latest_tx };
+                    self.estimator.on_delivery(now, sent.delivery(receipt));
                 }
             }
+        } else if let Some(receipt) = feedback.receipt.filter(|_| !feedback.lost)
+            && let Some(unreported) = stream.unreported.remove(&feedback.frame)
+            && now.saturating_duration_since(unreported.resolved) <= self.rtt * 2 + self.config.frame_interval
+        {
+            self.estimator.on_delivery(now, unreported.sent.delivery(receipt));
         }
         let stream = self.streams.get_mut(&feedback.stream).expect("looked up above");
         while let Some(entry) = stream.unresolved.first_entry() {
@@ -454,6 +476,13 @@ impl Sender {
                 stats.frames_acked += 1;
                 self.estimator.on_acked(now, frame.bytes_out);
                 events.push_back(Event::FrameAcked(acknowledge(feedback.stream, number, &frame, now, None)));
+                if let Some(first) = frame.first_tx {
+                    let sent = SendTimes { first, latest: frame.latest_tx };
+                    stream.unreported.insert(number, Unreported { sent, resolved: now });
+                    if stream.unreported.len() > MAX_UNREPORTED {
+                        stream.unreported.pop_first();
+                    }
+                }
             }
         }
     }
