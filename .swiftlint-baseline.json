@@ -285,21 +285,6 @@
     }
   },
   {
-    "text": "  private func handleDrop(_ providers: [NSItemProvider]) -> Bool {",
-    "violation": {
-      "location": {
-        "character": 11,
-        "file": "apps/macos/Codevisor/Features/Session/AttachmentThumbnailView.swift",
-        "line": 263
-      },
-      "reason": "Function body should span 50 lines or less excluding comments and whitespace: currently spans 69 lines",
-      "ruleDescription": "Function bodies should not span too many lines",
-      "ruleIdentifier": "function_body_length",
-      "ruleName": "Function Body Length",
-      "severity": "error"
-    }
-  },
-  {
     "text": "  func projectPicker(_ controller: SessionController) -> some View {",
     "violation": {
       "location": {

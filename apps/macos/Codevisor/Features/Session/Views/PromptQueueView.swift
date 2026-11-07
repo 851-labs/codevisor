@@ -52,10 +52,12 @@ struct PromptQueueView: View {
           draggingID = item.id
           return NSItemProvider(object: item.id as NSString)
         }
-        .onDrop(
-          of: [.plainText],
-          delegate: PromptQueueDropDelegate(targetID: item.id, draggingID: $draggingID, move: move)
-        )
+        .activeWorkspaceDropDestination {
+          Color.clear.onDrop(
+            of: [.plainText],
+            delegate: PromptQueueDropDelegate(targetID: item.id, draggingID: $draggingID, move: move)
+          )
+        }
       }
       ForEach(controller.unsentQueuedMessages) { message in
         PromptQueueUnsentRow(

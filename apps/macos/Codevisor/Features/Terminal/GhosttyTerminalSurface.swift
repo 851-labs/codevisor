@@ -223,6 +223,13 @@ final class GhosttyTerminalSurface: TerminalSurface {
 
   func setVisible(_ visible: Bool) {
     controller.setVisible(visible)
+    setAcceptsDrops(visible)
+  }
+
+  private func setAcceptsDrops(_ accepts: Bool) {
+    guard let surfaceView else { return }
+    guard accepts else { return surfaceView.unregisterDraggedTypes() }
+    surfaceView.registerForDraggedTypes(Array(Ghostty.SurfaceView.dropTypes))
   }
 
   func terminate() {
