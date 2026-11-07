@@ -43,6 +43,12 @@ impl<T: PartialOrd + Copy> Windowed<T> {
         self.entries.is_empty()
     }
 
+    pub fn expire(&mut self, now: Instant) {
+        while self.entries.front().is_some_and(|(at, _)| now.saturating_duration_since(*at) > self.window) {
+            self.entries.pop_front();
+        }
+    }
+
     pub fn clear(&mut self) {
         self.entries.clear();
     }

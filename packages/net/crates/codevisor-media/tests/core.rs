@@ -36,7 +36,7 @@ struct Sim {
     host_events: Vec<Event>,
     viewer_events: Vec<Event>,
     sent_to_viewer: Vec<(Instant, Bytes)>,
-    arrivals_at_viewer: Vec<(Bytes, Option<Instant>)>,
+    original_arrivals: std::collections::HashMap<(u8, u32, u16), Option<Instant>>,
     nacks_to_host: Vec<(Instant, wire::Nack)>,
 }
 
@@ -63,7 +63,7 @@ impl Sim {
             host_events: Vec::new(),
             viewer_events: Vec::new(),
             sent_to_viewer: Vec::new(),
-            arrivals_at_viewer: Vec::new(),
+            original_arrivals: std::collections::HashMap::new(),
             nacks_to_host: Vec::new(),
         }
     }
@@ -98,9 +98,12 @@ impl Sim {
                 }
                 let link = &mut self.links[direction as usize];
                 let fate = link.send(datagram.len(), self.now - self.epoch);
-                if direction == Direction::ToViewer {
+                if direction == Direction::ToViewer
+                    && let Some((header, _)) = PacketHeader::decode(datagram.clone())
+                    && header.kind == Kind::Data
+                {
                     let arrival = if let Fate::Delivered(at) = fate { Some(self.epoch + at) } else { None };
-                    self.arrivals_at_viewer.push((datagram.clone(), arrival));
+                    self.original_arrivals.entry((header.stream, header.frame, header.index)).or_insert(arrival);
                 }
                 if let Fate::Delivered(at) = fate {
                     let delay = &mut self.delays[direction as usize];
@@ -167,18 +170,10 @@ impl Sim {
     }
 
     fn nacked_before_arriving(&self) -> usize {
-        let mut originals = std::collections::HashMap::new();
-        for (datagram, arrival) in &self.arrivals_at_viewer {
-            if let Some((header, _)) = PacketHeader::decode(datagram.clone())
-                && header.kind == Kind::Data
-            {
-                originals.entry((header.stream, header.frame, header.index)).or_insert(*arrival);
-            }
-        }
+        let originals = &self.original_arrivals;
         self.nacks_to_host
             .iter()
             .flat_map(|(at, nack)| {
-                let originals = &originals;
                 nack.ranges.iter().filter(|(_, count)| *count != wire::WHOLE_FRAME).flat_map(move |&(start, count)| {
                     (start..start + count).filter(move |index| {
                         originals.get(&(nack.stream, nack.frame, *index)).is_some_and(|arrival| arrival.is_some_and(|arrival| arrival > *at))

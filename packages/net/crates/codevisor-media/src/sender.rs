@@ -1,5 +1,5 @@
 use std::{
-    collections::{BTreeMap, HashMap, VecDeque},
+    collections::{BTreeMap, VecDeque},
     time::{Duration, Instant},
 };
 
@@ -53,6 +53,7 @@ struct SentFrame {
     submitted: Instant,
     first_tx: Option<Instant>,
     data_tx: Option<Instant>,
+    latest_tx: Option<Instant>,
     last_tx: Option<Instant>,
     originals_out: usize,
     bytes_out: usize,
@@ -74,6 +75,7 @@ struct StreamTx {
 struct SendTimes {
     first: Instant,
     data: Option<Instant>,
+    latest: Option<Instant>,
 }
 
 impl SendTimes {
@@ -81,8 +83,13 @@ impl SendTimes {
         Delivery {
             bytes: receipt.original_bytes as usize,
             receive_span: Duration::from_micros(receipt.last_rx_offset_us.into()),
-            send_span: self.data.map_or(Duration::ZERO, |data| data.saturating_duration_since(self.first)),
+            send_span: self.span_to(self.data),
+            sent_so_far_span: self.span_to(self.latest),
         }
+    }
+
+    fn span_to(self, until: Option<Instant>) -> Duration {
+        until.map_or(Duration::ZERO, |until| until.saturating_duration_since(self.first))
     }
 }
 
@@ -140,7 +147,7 @@ struct LossWindow {
 pub struct Sender {
     config: MediaConfig,
     epoch: Instant,
-    streams: HashMap<u8, StreamTx>,
+    streams: BTreeMap<u8, StreamTx>,
     pacer: Pacer,
     estimator: Estimator,
     loss: LossWindow,
@@ -158,7 +165,7 @@ impl Sender {
         Self {
             config,
             epoch,
-            streams: HashMap::new(),
+            streams: BTreeMap::new(),
             pacer: Pacer::new(config.initial_rate_bps * 2.0),
             estimator: Estimator::new(config.initial_rate_bps, config.max_rate_bps, config.frame_interval),
             loss: LossWindow::default(),
@@ -251,6 +258,7 @@ impl Sender {
                 submitted: now,
                 first_tx: None,
                 data_tx: None,
+                latest_tx: None,
                 last_tx: None,
                 originals_out: 0,
                 bytes_out: 0,
@@ -342,6 +350,7 @@ impl Sender {
             if frame.data_tx.is_none() || usize::from(tag.index) < frame.data_count {
                 frame.data_tx = Some(now);
             }
+            frame.latest_tx = Some(now);
             frame.originals_out += 1;
             frame.bytes_out += packet.len();
             self.in_flight_bytes += packet.len();
@@ -452,7 +461,7 @@ impl Sender {
                 }
                 if !feedback.lost {
                     self.estimator.on_acked(now, frame.bytes_out);
-                    let sent = SendTimes { first: first_tx, data: frame.data_tx };
+                    let sent = SendTimes { first: first_tx, data: frame.data_tx, latest: frame.latest_tx };
                     self.estimator.on_delivery(now, sent.delivery(receipt));
                 }
             }
@@ -479,7 +488,7 @@ impl Sender {
                 self.estimator.on_acked(now, frame.bytes_out);
                 events.push_back(Event::FrameAcked(acknowledge(feedback.stream, number, &frame, now, None)));
                 if let Some(first) = frame.first_tx {
-                    let sent = SendTimes { first, data: frame.data_tx };
+                    let sent = SendTimes { first, data: frame.data_tx, latest: frame.latest_tx };
                     stream.unreported.insert(number, Unreported { sent, resolved: now });
                     if stream.unreported.len() > MAX_UNREPORTED {
                         stream.unreported.pop_first();

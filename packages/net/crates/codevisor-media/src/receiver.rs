@@ -1,5 +1,5 @@
 use std::{
-    collections::{BTreeMap, HashMap, VecDeque},
+    collections::{BTreeMap, VecDeque},
     time::{Duration, Instant},
 };
 
@@ -173,7 +173,7 @@ pub struct Receiver {
     epoch: Instant,
     frame_interval: Duration,
     rtt: Duration,
-    streams: HashMap<u8, StreamRx>,
+    streams: BTreeMap<u8, StreamRx>,
     gap_peak: Duration,
     outbox: VecDeque<Bytes>,
 }
@@ -184,7 +184,7 @@ impl Receiver {
             epoch,
             frame_interval,
             rtt: Duration::ZERO,
-            streams: HashMap::new(),
+            streams: BTreeMap::new(),
             gap_peak: Duration::ZERO,
             outbox: VecDeque::new(),
         }
@@ -255,13 +255,13 @@ impl Receiver {
         };
         match assembly.shape {
             None => {
-                let requested = assembly.whole_nacked_at;
+                let requested = assembly.give_up_at.map(|_| now);
                 *assembly = Assembly {
                     shape: Some(shape),
                     data: vec![None; shape.layout.data_count],
                     parity: vec![None; shape.parity_count],
                     requested: vec![requested; shape.layout.data_count],
-                    first_requested: vec![requested; shape.layout.data_count],
+                    first_requested: vec![assembly.whole_nacked_at; shape.layout.data_count],
                     end_seen: placeholder,
                     give_up_at: assembly.give_up_at,
                     whole_nacked_at: assembly.whole_nacked_at,

@@ -28,12 +28,14 @@ const MIN_SPAN: Duration = Duration::from_micros(100);
 const MIN_SAMPLE_BYTES: usize = 2400;
 const MIN_RATE_BPS: f64 = 300e3;
 const RECENT_DELAYS: usize = 8;
+const DRAIN_PATIENCE_HOLD_OFFS: u32 = 2;
 
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub struct Delivery {
     pub bytes: usize,
     pub receive_span: Duration,
     pub send_span: Duration,
+    pub sent_so_far_span: Duration,
 }
 
 #[derive(Debug, Clone, Copy)]
@@ -63,6 +65,8 @@ pub struct Estimator {
     jitter_us: f64,
     queue_delay_us: i64,
     standing_us: i64,
+    drain_floor_us: i64,
+    drained_at: Option<Instant>,
     max_standing_us: f64,
     overuse: u32,
     last_backoff: Option<Instant>,
@@ -92,6 +96,8 @@ impl Estimator {
             jitter_us: 0.0,
             queue_delay_us: 0,
             standing_us: 0,
+            drain_floor_us: i64::MAX,
+            drained_at: None,
             overuse: 0,
             last_backoff: None,
             first_sent: None,
@@ -121,7 +127,6 @@ impl Estimator {
     pub fn receive_bps(&self) -> Option<f64> {
         self.acked.bps()
     }
-
 
     fn link_limited(&self, receive_bps: f64) -> bool {
         let Some(sent) = self.sent.bps() else {
@@ -172,7 +177,7 @@ impl Estimator {
             let span = delivery.receive_span.max(delivery.send_span);
             let sample = delivery.bytes as f64 * 8.0 / span.as_secs_f64();
             self.bursts.push(now, sample);
-            if delivery.receive_span >= delivery.send_span.mul_f64(LINK_SPREAD) {
+            if delivery.receive_span >= delivery.sent_so_far_span.mul_f64(LINK_SPREAD) {
                 self.link_bursts.push(now, sample);
             }
             self.measured_bps = self.bursts.best().unwrap_or(sample);
@@ -204,13 +209,19 @@ impl Estimator {
         if (queue as f64) < self.queue_threshold_us() {
             self.overuse = 0;
             self.standing_us = 0;
+            self.drain_floor_us = i64::MAX;
+            self.drained_at = None;
         } else if growing {
             self.overuse += 1;
         }
         let rested = self.last_backoff.is_none_or(|at| now.saturating_duration_since(at) >= hold_off);
         let threshold = self.queue_threshold_us();
         let grown = self.overuse >= OVERUSE_SAMPLES && ((queue - self.standing_us) as f64) >= threshold;
-        let draining = (queue as f64) < self.standing_us as f64 - threshold;
+        if self.drain_floor_us != i64::MAX && ((queue - self.drain_floor_us) as f64) <= -threshold {
+            self.drain_floor_us = queue;
+            self.drained_at = Some(now);
+        }
+        let draining = self.drained_at.is_some_and(|at| now.saturating_duration_since(at) < hold_off * DRAIN_PATIENCE_HOLD_OFFS);
         let standing_too_long = (queue as f64) >= self.max_standing_us + threshold && !draining;
         if rested && (grown || standing_too_long) {
             self.back_off(now);
@@ -270,6 +281,8 @@ impl Estimator {
         let target = (from * BACKOFF).max(MIN_RATE_BPS);
         self.cap = Some(Cap { from_bps: target, since: now, grown_at: now, bps: target });
         self.standing_us = self.queue_delay_us;
+        self.drain_floor_us = self.queue_delay_us;
+        self.drained_at = None;
         self.bursts.clear();
         self.link_bursts.clear();
         self.overuse = 0;
@@ -277,6 +290,7 @@ impl Estimator {
     }
 
     fn grow_cap(&mut self, now: Instant) {
+        self.link_bursts.expire(now);
         let queued = self.queued();
         let sent = self.sent.bps_until(now);
         let admitting = self.admitting;
@@ -367,27 +381,28 @@ impl Throughput {
     }
 
     fn active_bps_until(&self, now: Instant) -> Option<f64> {
-        let latest = self.entries.iter().rev().find(|(at, _)| *at <= now)?.0;
-        if now.saturating_duration_since(latest) > RECEIVE_IDLE {
-            return None;
-        }
-        let recent: Vec<(Instant, usize)> = self
+        let mut recent = self
             .entries
             .iter()
-            .copied()
-            .filter(|(at, _)| *at <= now && now.saturating_duration_since(*at) <= RECEIVE_WINDOW)
-            .collect();
-        let restart = recent
-            .windows(2)
-            .rposition(|pair| pair[1].0.saturating_duration_since(pair[0].0) > RECEIVE_IDLE)
-            .map_or(0, |gap| gap + 1);
-        let (start, _) = *recent.get(restart)?;
-        if restart + 1 == recent.len() {
+            .rev()
+            .filter(|(at, _)| *at <= now)
+            .take_while(|(at, _)| now.saturating_duration_since(*at) <= RECEIVE_WINDOW);
+        let (mut start, mut start_bytes) = *recent.next()?;
+        if now.saturating_duration_since(start) > RECEIVE_IDLE {
             return None;
         }
-        let bytes: usize = recent[restart + 1..].iter().map(|(_, bytes)| bytes).sum();
+        let mut bytes = 0;
+        let mut acks = 1;
+        for &(at, size) in recent {
+            if start.saturating_duration_since(at) > RECEIVE_IDLE {
+                break;
+            }
+            bytes += start_bytes;
+            (start, start_bytes) = (at, size);
+            acks += 1;
+        }
         let span = now.saturating_duration_since(start);
-        (span >= RECEIVE_WINDOW / 4).then(|| bytes as f64 * 8.0 / span.as_secs_f64())
+        (acks >= 2 && span >= RECEIVE_WINDOW / 4).then(|| bytes as f64 * 8.0 / span.as_secs_f64())
     }
 }
 
@@ -400,7 +415,7 @@ mod tests {
     const OFFSET: i64 = 5_000_000;
 
     fn burst(bytes: usize, span: Duration) -> Delivery {
-        Delivery { bytes, receive_span: span, send_span: Duration::ZERO }
+        Delivery { bytes, receive_span: span, send_span: Duration::ZERO, sent_so_far_span: Duration::ZERO }
     }
 
     fn feed_traffic(
@@ -452,7 +467,10 @@ mod tests {
     fn a_burst_counts_no_faster_than_it_was_sent() {
         let start = Instant::now();
         let mut estimator = Estimator::new(10e6, 1e9, FRAME);
-        estimator.on_delivery(start, Delivery { bytes: 125_000, receive_span: MS, send_span: 10 * MS });
+        estimator.on_delivery(
+            start,
+            Delivery { bytes: 125_000, receive_span: MS, send_span: 10 * MS, sent_so_far_span: 10 * MS },
+        );
         assert_eq!(estimator.estimate_bps(), 100e6);
     }
 
