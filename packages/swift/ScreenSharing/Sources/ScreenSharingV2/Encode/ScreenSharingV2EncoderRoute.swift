@@ -5,7 +5,7 @@ struct ScreenSharingV2EncoderRoute: Sendable, Equatable {
   }
 
   static let fastFromBitrate = 30_000_000
-  static let fastFromEstimate = 60_000_000
+  static let fastFromEstimate = 48_000_000
   static let slowBelowBitrate = 8_000_000
   static let fastAfterNs: Int64 = 5_000_000_000
   static let fastAgainAfterNs: Int64 = 30_000_000_000
@@ -57,7 +57,7 @@ struct ScreenSharingV2EncoderRoute: Sendable, Equatable {
     lastRoundTripMs = roundTripMs
     let struggling = queued || feedback.packetErrorRate >= Self.heavyLoss
     feedbackConfirmsSlow = feedbackEstimate < Self.slowBelowEstimate && struggling
-    let provenFast = feedbackEstimate >= Self.fastFromEstimate
+    let provenFast = feedback.transmissionMeasured && feedbackEstimate >= Self.fastFromEstimate
     if wanted == .fast, queued || !settled || !provenFast { wantedSinceNs = nowNs }
   }
 

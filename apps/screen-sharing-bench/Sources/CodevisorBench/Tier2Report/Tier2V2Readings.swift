@@ -27,7 +27,7 @@ enum Tier2V2Readings {
 
     return V2MediaCounters.make(
       host: integers(host["counters"]), viewer: integers(viewer["counters"]), hostMedia: numbers(host["media"]),
-      viewerMedia: numbers(viewer["media"]))
+      viewerMedia: numbers(viewer["media"]), hostLabels: strings(host["labels"]))
   }
 
   private static func distribution(_ timing: JSONValue?) -> BenchDistribution? {
@@ -42,6 +42,12 @@ enum Tier2V2Readings {
     guard case .object(let object)? = value else { return [:] }
 
     return object.compactMapValues(\.number)
+  }
+
+  private static func strings(_ value: JSONValue?) -> [String: String] {
+    guard case .object(let object)? = value else { return [:] }
+
+    return object.compactMapValues(\.string)
   }
 
   private static func integers(_ value: JSONValue?) -> [String: Int] {

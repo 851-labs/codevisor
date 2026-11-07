@@ -592,6 +592,7 @@ impl Sender {
             budget_bytes,
             estimate_bps,
             encoder_ceiling_bps: estimate_bps * ENCODER_SHARE / (1.0 + self.ceiling_fec_ratio),
+            sampled: self.estimator.sampled(),
         }
     }
 

@@ -242,7 +242,7 @@ final class ScreenSharingV2LocalMediaTransport: ScreenSharingMediaTransport, Sen
     let ceilingKbps = UInt64(ScreenSharingV2Profile.bitrateCeiling / 1000)
     return ScreenSharingMediaAdmission(
       admit: backlog < Self.backlogLimit, backlogBytes: UInt64(backlog), estimateKbps: ceilingKbps * 4,
-      encoderCeilingKbps: ceilingKbps)
+      encoderCeilingKbps: ceilingKbps, sampled: true)
   }
 
   func nextEvent() async -> ScreenSharingMediaEvent? {

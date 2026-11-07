@@ -81,7 +81,7 @@ final class LoopbackMediaTransport: ScreenSharingMediaTransport, @unchecked Send
     defer { admissionChecks.signal() }
     let admits = state.withLock { $0.admits }
     return ScreenSharingMediaAdmission(
-      admit: admits, backlogBytes: 0, estimateKbps: 100_000, encoderCeilingKbps: 85_000)
+      admit: admits, backlogBytes: 0, estimateKbps: 100_000, encoderCeilingKbps: 85_000, sampled: true)
   }
 
   func nextEvent() async -> ScreenSharingMediaEvent? {

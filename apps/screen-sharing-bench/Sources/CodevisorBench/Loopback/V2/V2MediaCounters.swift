@@ -1,8 +1,10 @@
 import ScreenSharingBench
+import ScreenSharingV2
 
 enum V2MediaCounters {
   static func make(
-    host: [String: Int], viewer: [String: Int], hostMedia: [String: Double], viewerMedia: [String: Double]
+    host: [String: Int], viewer: [String: Int], hostMedia: [String: Double], viewerMedia: [String: Double],
+    hostLabels: [String: String]
   ) -> BenchMediaCounters {
     BenchMediaCounters(
       framesSent: count(hostMedia["frames_sent"]), framesLost: count(hostMedia["frames_lost"]),
@@ -19,7 +21,15 @@ enum V2MediaCounters {
       requestedKeyframes: host["requestedKeyframes", default: 0], stalledTiles: viewer["stalledTiles", default: 0],
       encodedFrames: host["encodedFrames"], encodedBytes: host["encodedBytes"],
       encodedKeyFrameBytes: host["encodedKeyFrameBytes"], encoderSwitches: host["encoderSwitches"],
-      ltrRefreshKeyframes: host["encodedLTRRefreshKeyFrames", default: 0])
+      ltrRefreshKeyframes: host["encodedLTRRefreshKeyFrames", default: 0],
+      estimateMinMbpsPerSecond: estimateTrace(hostLabels[ScreenSharingV2EstimateTraceLabel.name]))
+  }
+
+  private static func estimateTrace(_ label: String?) -> [Double]? {
+    guard let label, !label.isEmpty else { return nil }
+
+    let values = label.split(separator: ",").map { $0 == ScreenSharingV2EstimateTraceLabel.gap ? -1 : Double($0) }
+    return values.contains(nil) ? nil : values.compactMap(\.self)
   }
 
   private static func count(_ value: Double?) -> Int {

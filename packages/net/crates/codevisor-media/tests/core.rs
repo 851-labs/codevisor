@@ -1160,3 +1160,21 @@ fn a_tiled_keyframe_draining_on_a_slow_lossy_link_doesnt_drive_the_estimate_to_t
         assert!(lowest >= 500e3, "seed {seed}: the estimate fell to {:.2} Mbit/s", lowest / 1e6);
     }
 }
+
+#[test]
+fn a_stream_too_small_to_time_leaves_the_estimate_unmeasured_until_a_frame_is() {
+    let mut sim = Sim::new(NetworkConditions::N5, config(FecMode::Adaptive), 1);
+    for index in 0..30 {
+        sim.send(frame(0, &payload(index, 400)));
+        sim.run_for(4 * INTERVAL);
+    }
+    let guessed = sim.host.admission();
+
+    sim.send(frame(0, &payload(30, 100_000)));
+    sim.run_for(Duration::from_secs(1));
+    let sampled = sim.host.admission();
+
+    assert!(!guessed.sampled, "{:.1} Mbit/s from 400-byte frames", guessed.estimate_bps / 1e6);
+    assert!(sampled.sampled);
+    assert!(sampled.estimate_bps < 45e6, "{:.1} Mbit/s on a 30 Mbit/s link", sampled.estimate_bps / 1e6);
+}
