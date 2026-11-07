@@ -1,13 +1,10 @@
 import type { PluginCatalogEntry } from "@codevisor/api"
-import type { CodevisorDatabaseService } from "@codevisor/db"
 import type { McpCatalogResolver } from "@codevisor/mcp"
 import {
   makeCatalog,
   registryServersOf,
   type PluginCatalog as CatalogSource
 } from "@codevisor/plugins"
-import type { SyncEntryRecord } from "@codevisor/sync"
-import { Effect } from "effect"
 
 export interface PluginCatalog {
   readonly entries: () => ReadonlyArray<PluginCatalogEntry>
@@ -56,13 +53,6 @@ export const makePluginCatalog = (options: PluginCatalogOptions): PluginCatalog 
   }
 }
 
-export const enabledFeatureFlags = async (
-  db: Pick<CodevisorDatabaseService, "getSyncEntries">
-): Promise<ReadonlySet<string>> => {
-  const entries = await Effect.runPromise(db.getSyncEntries(clientPreferencesNamespace))
-  return new Set(entries.filter(isEnabledFlag).map((entry) => entry.key.slice(flagPrefix.length)))
-}
-
 export const isDevInstance = (env: NodeJS.ProcessEnv): boolean =>
   env.CODEVISOR_DEV_INSTANCE_ID !== undefined
 
@@ -90,13 +80,7 @@ export const startCatalogRefresh = (
   return () => clearInterval(timer)
 }
 
-const clientPreferencesNamespace = "client-preferences"
-const flagPrefix = "featureFlags."
-
 const noFlags = async (): Promise<ReadonlySet<string>> => new Set()
 
 const flagAllows = (entry: PluginCatalogEntry, enabled: ReadonlySet<string>): boolean =>
   entry.featureFlag === undefined || enabled.has(entry.featureFlag)
-
-const isEnabledFlag = (entry: SyncEntryRecord): boolean =>
-  entry.key.startsWith(flagPrefix) && entry.value === true && entry.deleted !== true

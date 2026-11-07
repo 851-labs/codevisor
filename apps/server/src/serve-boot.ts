@@ -17,6 +17,7 @@ import {
 
 import { makeCloudServerControl, startCloudBridge } from "./infra/cloud-bridge.js"
 import { makeCloudInbox } from "./infra/cloud-inbox.js"
+import { enabledFeatureFlags } from "./infra/feature-flags.js"
 import { makeFleetTickets } from "./infra/fleet-tickets.js"
 import { makeMachineEnrollment } from "./infra/machine-enrollment.js"
 import { makeMachineLink } from "./infra/machine-link.js"
@@ -28,7 +29,6 @@ import {
   type InstalledOAuthClients
 } from "./plugins/accounts/installed-oauth-clients.js"
 import {
-  enabledFeatureFlags,
   isDevInstance,
   makePluginCatalog,
   startCatalogRefresh,

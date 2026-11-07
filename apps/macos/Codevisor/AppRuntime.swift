@@ -35,6 +35,7 @@ final class AppRuntime {
   ) -> (environment: AppEnvironment, updater: SparkleUpdateController?, isFirstLaunch: Bool) {
     let environment = AppEnvironment.live(storage: storage)
     environment.syncClientPreferences(SyncedPreferences.keys)
+    environment.syncFeatureFlags()
     if !CodevisorAppVariant.isDevelopment && !StandaloneServerPreference.isEnabled {
       environment.localServer?.configureManagedService(serverAgent.managedService)
     }

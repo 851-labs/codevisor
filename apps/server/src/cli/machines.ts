@@ -6,22 +6,10 @@ import {
 } from "@codevisor/api"
 import { Schema } from "effect"
 
-import { field } from "../unknown-values.js"
-import { resolvePort, type CliDeps, type CommandOptions } from "./support.js"
+import { resolvePort, routeFailure, type CliDeps, type CommandOptions } from "./support.js"
 
 const machinesUrl = (port: number, path = ""): string =>
   `http://127.0.0.1:${port}/v1/machines${path}`
-
-const failure = (
-  response: { readonly status: number; readonly body: unknown } | undefined,
-  port: number
-): string => {
-  if (response === undefined) {
-    return `Codevisor server is not running on port ${port}; start it with: codevisor start`
-  }
-  const error = field(response.body, "error")
-  return typeof error === "string" ? error : `the server answered HTTP ${response.status}`
-}
 
 const machinePresence = (machine: MachineSummary): string => {
   if (machine.isCurrent) return "(this machine)"
@@ -45,7 +33,7 @@ export const machinesListCommand = async (
   const port = await resolvePort(deps, options.port)
   const response = await deps.fetchJson(machinesUrl(port))
   if (response?.status !== 200) {
-    deps.error(`Couldn't list machines: ${failure(response, port)}`)
+    deps.error(`Couldn't list machines: ${routeFailure(response, port)}`)
     return 1
   }
   for (const machine of Schema.decodeUnknownSync(MachinesResponse)(response.body).machines) {
@@ -64,7 +52,7 @@ export const machinesInviteCommand = async (
     timeoutMs: 30_000
   })
   if (response?.status !== 201) {
-    deps.error(`Couldn't create an invite: ${failure(response, port)}`)
+    deps.error(`Couldn't create an invite: ${routeFailure(response, port)}`)
     return 1
   }
   const invite = Schema.decodeUnknownSync(MachineInviteResponse)(response.body)
@@ -96,7 +84,7 @@ export const machinesAddCommand = async (
     }
   })
   if (response?.status !== 201) {
-    deps.error(`Couldn't add ${options.ssh}: ${failure(response, port)}`)
+    deps.error(`Couldn't add ${options.ssh}: ${routeFailure(response, port)}`)
     return 1
   }
   const { machine } = Schema.decodeUnknownSync(AddMachineResponse)(response.body)
@@ -114,7 +102,7 @@ export const machinesRemoveCommand = async (
     { method: "DELETE", timeoutMs: 30_000 }
   )
   if (response?.status !== 200) {
-    deps.error(`Couldn't remove ${options.machine}: ${failure(response, port)}`)
+    deps.error(`Couldn't remove ${options.machine}: ${routeFailure(response, port)}`)
     return 1
   }
   deps.log(`✓ Removed ${options.machine} from your account.`)

@@ -17,7 +17,8 @@ export const ONE_WAY_SYNC_NAMESPACES = [
   "harness-shared-accounts",
   "harness-readiness",
   "plugin-readiness",
-  "client-preferences"
+  "client-preferences",
+  "feature-flags"
 ] as const
 
 const applyPaths = [

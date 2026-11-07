@@ -41,6 +41,7 @@ export * from "./client-ui.js"
 export * from "./codevisor-execution.js"
 export * from "./records.js"
 export * from "./machines.js"
+export * from "./feature-flags.js"
 export * from "./sandboxes.js"
 
 export * from "./workspace-position.js"

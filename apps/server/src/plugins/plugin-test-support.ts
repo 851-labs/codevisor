@@ -6,16 +6,13 @@ import { onTestFinished } from "vitest"
 
 import { fixtureChanged } from "../changes-test-support.js"
 import type { CloudInbox } from "../infra/cloud-inbox.js"
+import { enabledFeatureFlags } from "../infra/feature-flags.js"
 import { manualOAuthClock, sharedCoordinator } from "../infra/mcp-oauth-test-support.js"
 import { mcpCredentialVault } from "../infra/shared-account-storage.js"
 import { setUpWith } from "../routes/bot-test-support.js"
 import type { CloudServerControl, CodevisorServerServices } from "../server-context-types.js"
 import { jsonRequest, makeServices, startWithApp, waitFor } from "../test-support.js"
-import {
-  enabledFeatureFlags,
-  makePluginCatalog,
-  type PluginCatalogOptions
-} from "./plugin-catalog.js"
+import { makePluginCatalog, type PluginCatalogOptions } from "./plugin-catalog.js"
 import { fixtureCatalogOptions } from "./plugin-fixture-catalog.js"
 import { makePluginPlatform } from "./plugin-platform.js"
 

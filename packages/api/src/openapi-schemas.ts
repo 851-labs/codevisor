@@ -17,6 +17,7 @@ import { AddBotProjectRequest, Bot, CreateBotRequest, UpdateBotRequest } from ".
 import { ClientContext, ClientNavigationRequest, ClientSummary } from "./client-control.js"
 import { ClientPageRequest, ClientLayoutRequest, ClientWindowRequest } from "./client-ui.js"
 import { MachineRolesResponse } from "./cloud-role-protocol.js"
+import { FeatureFlagsResponse, FeatureFlagState, SetFeatureFlagRequest } from "./feature-flags.js"
 import {
   AgentSessionSummary,
   AnswerOpenCodeAuthRequest,
@@ -233,6 +234,7 @@ export const requestSchemas = (): Partial<Record<Endpoint, Schema.Constraint>> =
     StartOpenCodeAuthRequest,
   "POST /v1/harnesses/opencode/auth-flows/:flowId/answer": AnswerOpenCodeAuthRequest,
   "PUT /v1/sync/:namespace": PutSyncRequest,
+  "PUT /v1/feature-flags/:id": SetFeatureFlagRequest,
   "POST /v1/clients/:clientId/navigate": ClientNavigationRequest,
   "POST /v1/clients/:clientId/page": ClientPageRequest,
   "POST /v1/clients/:clientId/layout": ClientLayoutRequest,
@@ -437,6 +439,8 @@ export const responseSchemas = (): Partial<Record<Endpoint, Schema.Constraint>> 
   "POST /v1/machines/invite": MachineInviteResponse,
   "POST /v1/machines/add": AddMachineResponse,
   "DELETE /v1/machines/:machineId": MachinesResponse,
+  "GET /v1/feature-flags": FeatureFlagsResponse,
+  "PUT /v1/feature-flags/:id": FeatureFlagState,
   "GET /v1/sandbox-providers": SandboxProvidersResponse,
   "GET /v1/sandbox-accounts": SandboxAccountsResponse,
   "POST /v1/sandbox-accounts": SandboxAccount,
