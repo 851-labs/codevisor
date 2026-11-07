@@ -165,7 +165,10 @@ jobs:
           fi
       - name: Record the submitted version
         if: ${{ !inputs.dry_run }}
+        env:
+          GH_TOKEN: ${{ github.token }}
         shell: bash
         run: |
           source_sha="$(git rev-parse "v$version^{commit}")"
-          git push origin "$source_sha:refs/tags/browser-extension-v$version"
+          gh api "repos/$GITHUB_REPOSITORY/git/refs" \
+            -f ref="refs/tags/browser-extension-v$version" -f sha="$source_sha" >/dev/null

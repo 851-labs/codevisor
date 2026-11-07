@@ -124,12 +124,11 @@ jobs:
           if gh release view "$TAG" >/dev/null 2>&1; then
             gh release delete "$TAG" --yes
           fi
-          if ! git ls-remote --exit-code origin "refs/tags/$TAG" >/dev/null; then
-            git push origin "$SOURCE_SHA:refs/tags/$TAG"
-          fi
-          gh release create "$TAG" dist/release/* --draft --verify-tag --prerelease \
+          gh release create "$TAG" dist/release/* --draft --target "$SOURCE_SHA" --prerelease \
             --latest=false --title "$TAG" --notes-file dist/RELEASE_NOTES.md
           gh release edit "$TAG" --draft=false
+          tagged="$(git ls-remote origin "refs/tags/$TAG" | cut -f1)"
+          [[ "$tagged" == "$SOURCE_SHA" ]] || { echo "$TAG points at ${tagged:-nothing}, not $SOURCE_SHA" >&2; exit 1; }
       - name: Verify the publication
         run: |
           git fetch --tags --force origin

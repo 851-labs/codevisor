@@ -126,9 +126,6 @@ jobs:
             --output dist/release/RELEASE_NOTES.md
       - name: Publish exact Alpha bytes as Stable
         run: |
-          if ! git ls-remote --exit-code origin "refs/tags/$TAG" >/dev/null 2>&1; then
-            git push origin "$SOURCE_SHA:refs/tags/$TAG"
-          fi
           shopt -s nullglob
           artifacts=(dist/release/*.zip dist/release/*.tar.gz dist/release/*.dmg dist/release/*.sha256)
           if gh release view "$TAG" >/dev/null 2>&1; then
@@ -136,9 +133,11 @@ jobs:
             gh release edit "$TAG" --title "$TAG" \
               --notes-file dist/release/RELEASE_NOTES.md
           else
-            gh release create "$TAG" "${artifacts[@]}" \
-              --verify-tag --title "$TAG" --notes-file dist/release/RELEASE_NOTES.md --latest=false
+            gh release create "$TAG" "${artifacts[@]}" --target "$SOURCE_SHA" \
+              --title "$TAG" --notes-file dist/release/RELEASE_NOTES.md --latest=false
           fi
+          tagged="$(git ls-remote origin "refs/tags/$TAG" | cut -f1)"
+          [[ "$tagged" == "$SOURCE_SHA" ]] || { echo "$TAG points at ${tagged:-nothing}, not $SOURCE_SHA" >&2; exit 1; }
       - name: Release stable Sparkle and Linux feeds
         env:
           AWS_ACCESS_KEY_ID: ${{ secrets.CLOUDFLARE_R2_ACCESS_KEY_ID }}
