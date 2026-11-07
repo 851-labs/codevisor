@@ -3,6 +3,7 @@ import { z } from "zod"
 import {
   gmailDraft,
   gmailHistoryPage,
+  gmailLabel,
   gmailLabelList,
   gmailMessage,
   gmailMessageList,
@@ -18,6 +19,7 @@ export type {
   GmailDraft,
   GmailHistoryPage,
   GmailLabel,
+  GmailLabelColor,
   GmailMessage,
   GmailMessageList,
   GmailPart,
@@ -35,6 +37,13 @@ export type MessageFormat = "metadata" | "full"
 export interface LabelChange {
   add: ReadonlyArray<string>
   remove: ReadonlyArray<string>
+}
+
+export interface LabelFields {
+  name?: string | undefined
+  color?: { backgroundColor: string; textColor: string } | undefined
+  labelListVisibility?: string | undefined
+  messageListVisibility?: string | undefined
 }
 
 export interface Outgoing {
@@ -89,6 +98,12 @@ export const gmailApi = (fetcher: Fetch, accessToken: string) => {
     history: (startHistoryId: string, maxResults: number) =>
       call(gmailHistoryPage, `/history?${historyQuery(startHistoryId, maxResults)}`),
     labels: async () => (await call(gmailLabelList, "/labels")).labels,
+    createLabel: (fields: LabelFields) =>
+      call(gmailLabel, "/labels", { method: "POST", body: fields }),
+    updateLabel: (id: string, fields: LabelFields) =>
+      call(gmailLabel, `/labels/${encodeURIComponent(id)}`, { method: "PATCH", body: fields }),
+    deleteLabel: (id: string) =>
+      call(noContent, `/labels/${encodeURIComponent(id)}`, { method: "DELETE" }),
     sendAs: async () => (await call(gmailSendAsList, "/settings/sendAs")).sendAs,
     draft: (id: string) => call(gmailDraft, `/drafts/${encodeURIComponent(id)}?format=full`),
     createDraft: (outgoing: Outgoing) =>
@@ -123,8 +138,8 @@ export const gmailApi = (fetcher: Fetch, accessToken: string) => {
 export type GmailApi = ReturnType<typeof gmailApi>
 
 interface Send {
-  method: "POST" | "PUT"
-  body: unknown
+  method: "POST" | "PUT" | "PATCH" | "DELETE"
+  body?: unknown
 }
 
 type GmailCaller = <T>(schema: z.ZodType<T>, path: string, send?: Send) => Promise<T>
@@ -144,6 +159,7 @@ const requestInit = (accessToken: string, send: Send | undefined): RequestInit =
   const headers = { Authorization: `Bearer ${accessToken}`, Accept: "application/json" }
   const signal = AbortSignal.timeout(gmailRequestTimeoutMs)
   if (send === undefined) return { method: "GET", headers, signal }
+  if (send.body === undefined) return { method: send.method, headers, signal }
 
   return {
     method: send.method,

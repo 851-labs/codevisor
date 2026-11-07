@@ -31,14 +31,6 @@ export const readThread: ToolRunner = async (args, { api }) => {
   }
 }
 
-export const listLabels: ToolRunner = async (_args, { api }) => ({
-  labels: (await api.labels()).map((label) => ({
-    id: label.id,
-    name: label.name,
-    type: label.type
-  }))
-})
-
 export const listSendAs: ToolRunner = async (_args, { api }) => ({
   addresses: (await sendAsAddresses(api)).map(sendAsSummary)
 })

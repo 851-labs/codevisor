@@ -59,10 +59,15 @@ export const gmailHistoryPage = z.object({
   nextPageToken: z.string().optional()
 })
 
+export const gmailLabelColor = z.object({ backgroundColor: z.string(), textColor: z.string() })
+
 export const gmailLabel = z.object({
   id: z.string(),
   name: z.string(),
-  type: z.string().default("user")
+  type: z.string().default("user"),
+  color: gmailLabelColor.optional(),
+  labelListVisibility: z.string().optional(),
+  messageListVisibility: z.string().optional()
 })
 
 export const gmailLabelList = z.object({ labels: z.array(gmailLabel).default([]) })
@@ -93,6 +98,7 @@ export type GmailThreadList = z.infer<typeof gmailThreadList>
 export type GmailProfile = z.infer<typeof gmailProfile>
 export type GmailHistoryPage = z.infer<typeof gmailHistoryPage>
 export type GmailLabel = z.infer<typeof gmailLabel>
+export type GmailLabelColor = z.infer<typeof gmailLabelColor>
 export type GmailDraft = z.infer<typeof gmailDraft>
 export type GmailWatch = z.infer<typeof gmailWatch>
 export type GmailSendAs = z.infer<typeof gmailSendAs>

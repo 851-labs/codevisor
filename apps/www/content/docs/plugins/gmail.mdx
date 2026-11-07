@@ -26,6 +26,8 @@ inbox organized. An agent can also wait for new mail and act when it arrives.
 | `archive`                      | Move messages or conversations out of the inbox                        |
 | `mark_read`, `mark_unread`     | Change read state                                                      |
 | `modify_labels`                | Add or remove labels                                                   |
+| `create_label`, `update_label` | Create a label, or rename it and change its color or visibility        |
+| `delete_label`                 | Delete a label; the mail under it stays                                |
 
 The **message.received** event fires when a new message arrives in the inbox. An agent subscribed
 to it, optionally with a filter such as `from` or `subject`, wakes up with the new message's
@@ -49,8 +51,8 @@ message from the account's default address unless you ask for another one.
      and route its new-mail notifications.
 
 `gmail.modify` is the narrowest single Google scope that covers search, reading full messages,
-drafts, sending, and label changes such as archiving and marking read. It can't delete mail
-permanently, and the plugin has no delete tool.
+drafts, sending, managing labels, and label changes such as archiving and marking read. It can't
+delete mail permanently, and the plugin has no tool that deletes mail.
 
 One sign-in works on every Mac signed in to your Codevisor account. You can connect more than one
 Google account; agents choose one per tool call.

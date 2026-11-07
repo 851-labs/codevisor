@@ -69,3 +69,20 @@ export const labelArguments = z
     (value) => value.add.length + value.remove.length > 0,
     "Give at least one label to add or remove."
   )
+
+const labelFields = {
+  color: z.object({ backgroundColor: z.string().min(1), textColor: z.string().min(1) }).optional(),
+  labelListVisibility: z.enum(["labelShow", "labelShowIfUnread", "labelHide"]).optional(),
+  messageListVisibility: z.enum(["show", "hide"]).optional()
+}
+
+const hasLabelChange = (value: Record<string, unknown>): boolean =>
+  Object.entries(value).some(([key, field]) => key !== "label" && field !== undefined)
+
+export const createLabelArguments = z.object({ name: z.string().trim().min(1), ...labelFields })
+
+export const updateLabelArguments = z
+  .object({ label: id, name: z.string().trim().min(1).optional(), ...labelFields })
+  .refine(hasLabelChange, "Give a new name, color or visibility.")
+
+export const deleteLabelArguments = z.object({ label: id })

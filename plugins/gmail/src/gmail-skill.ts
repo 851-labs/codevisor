@@ -28,6 +28,9 @@ export const gmailSkill: SkillDefinition = {
     "",
     "- `archive`, `mark_read`, `mark_unread` and `modify_labels` take `messageIds` and/or `threadIds`. Thread ids change every message in the conversation.",
     "- `modify_labels` accepts label names or ids; call `list_labels` when unsure. Change labels only when the user asked.",
+    "- When a label the user wants doesn't exist yet, create it with `create_label`, then apply it. `/` in a name nests it, such as `Clients/Acme`; create the parent first.",
+    "- `update_label` renames a label or changes its color or visibility. Colors must come from Gmail's label palette.",
+    "- `delete_label` takes the label off every message and can't be undone, though the mail itself stays. Confirm with the user before deleting a label.",
     ""
   ].join("\n"),
   files: []
