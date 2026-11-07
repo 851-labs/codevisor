@@ -23,12 +23,15 @@ struct HomeSidebarWorkspace: Identifiable, Equatable {
 
   var status: HomeSessionStatus { rows.map(\.status).min() ?? .idle }
 
-  var listsTabs: Bool { rows.count > 1 }
+  var nestedRows: [HomeSidebarTabRow] {
+    guard rows.contains(where: \.isMainChat) else { return rows.count > 1 ? rows : [] }
+    return rows.filter { !$0.isMainChat }
+  }
 
   var subtree: [HomeSidebarWorkspace] { [self] + children.flatMap(\.subtree) }
 
   var primaryRow: HomeSidebarTabRow? {
-    rows.first { $0.id == primaryRowId } ?? rows.first
+    rows.first(where: \.isMainChat) ?? rows.first { $0.id == primaryRowId } ?? rows.first
   }
 
   var workspace: HomeSidebarWorkspaceRef {
