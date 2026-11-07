@@ -14,6 +14,7 @@ export const defineTestConfig = (config: ViteUserConfig): ViteUserConfig => {
     {
       test: {
         ...testStateResets,
+        ...ciReporters(),
         sequence: { shuffle: true },
         projects: [sharedModuleTests(include), isolatedModuleTests(include)]
       }
@@ -22,6 +23,13 @@ export const defineTestConfig = (config: ViteUserConfig): ViteUserConfig => {
 }
 
 const defaultInclude = ["**/*.test.ts"]
+const junitReport = "tmp/junit.xml"
+
+const ciReporters = (): Pick<NonNullable<ViteUserConfig["test"]>, "reporters"> => {
+  if (process.env.GITHUB_ACTIONS !== "true") return {}
+
+  return { reporters: ["default", "github-actions", ["junit", { outputFile: junitReport }]] }
+}
 const testStateResets = { restoreMocks: true, unstubEnvs: true, unstubGlobals: true }
 
 const sharedModuleTests = (include: Array<string>): TestProjectInlineConfiguration => ({

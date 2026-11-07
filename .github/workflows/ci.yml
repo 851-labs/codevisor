@@ -75,6 +75,9 @@ jobs:
     needs: plan
     if: github.event_name != 'pull_request'
     runs-on: ubuntu-24.04
+    permissions:
+      checks: write
+      contents: read
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
         with:
@@ -90,6 +93,14 @@ jobs:
           save-if: ${{ github.event_name != 'merge_group' }}
       - run: bun install --frozen-lockfile
       - run: node scripts/check.mjs "${{ needs.plan.outputs.range }}" --lanes=javascript
+      - uses: mikepenz/action-junit-report@a16be3a69023e9bd7e748ede768b3282ea7b30ce
+        if: always() && !cancelled()
+        with:
+          report_paths: "**/tmp/junit.xml"
+          check_name: Test results
+          require_tests: false
+          detailed_summary: true
+          include_passed: false
       - name: Show the check logs
         if: failure() || cancelled()
         run: |
