@@ -114,9 +114,7 @@ private struct QuestionCardTitle: View {
   let question: QuestionSpec
 
   var body: some View {
-    Text(question.question)
-      .font(.headline)
-      .fixedSize(horizontal: false, vertical: true)
+    QuestionCardText(text: question.question, style: .headline)
       .frame(maxWidth: .infinity, alignment: .leading)
       .accessibilityAddTraits(.isHeader)
   }
@@ -133,9 +131,7 @@ private struct QuestionCardOptions: View {
   var body: some View {
     VStack(alignment: .leading, spacing: 14) {
       if let message = draft.request.message, !message.isEmpty, draft.page == 0 {
-        Text(message)
-          .font(.subheadline)
-          .foregroundStyle(.secondary)
+        QuestionCardText(text: message, style: .subheadline, color: .secondaryLabel)
       }
       VStack(spacing: 8) {
         ForEach(question.options) { option in

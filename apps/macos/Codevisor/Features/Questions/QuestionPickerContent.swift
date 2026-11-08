@@ -120,6 +120,7 @@ private struct QuestionPickerMessage: View {
         .font(.callout)
         .foregroundStyle(.secondary)
         .fixedSize(horizontal: false, vertical: true)
+        .textSelection(.enabled)
     }
   }
 }

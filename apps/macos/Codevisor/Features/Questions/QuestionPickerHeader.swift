@@ -34,6 +34,7 @@ private struct QuestionTitle: View {
     Text(text)
       .font(.callout.weight(weight))
       .fixedSize(horizontal: false, vertical: true)
+      .textSelection(.enabled)
       .accessibilityAddTraits(.isHeader)
   }
 }
