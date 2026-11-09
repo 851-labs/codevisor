@@ -3,8 +3,8 @@ import { mkdir } from "node:fs/promises"
 import { join, resolve as resolvePath } from "node:path"
 import process from "node:process"
 
+import { waitForExit } from "../packages/devtools/src/child-processes.ts"
 import { developmentLayout } from "../packages/devtools/src/dev-layout.ts"
-import { waitForExit } from "./dev-shared.mjs"
 import { prepareSwiftArtifacts } from "./swift-artifacts.mjs"
 
 const nonBuildingOperations = new Set([

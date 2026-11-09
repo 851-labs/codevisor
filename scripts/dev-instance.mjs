@@ -3,17 +3,13 @@ import { cp, mkdir, rm } from "node:fs/promises"
 import { homedir } from "node:os"
 import { basename, join } from "node:path"
 
+import { colorFromHash } from "../packages/devtools/src/color.ts"
 import {
   developmentLayout,
   iosDevelopmentBundleIdentifier
 } from "../packages/devtools/src/dev-layout.ts"
-import {
-  colorFromHash,
-  directoryIsEmpty,
-  findAvailablePort,
-  parsePort,
-  pathExists
-} from "./dev-shared.mjs"
+import { directoryIsEmpty, pathExists } from "../packages/devtools/src/files.ts"
+import { findAvailablePort, parsePort } from "../packages/devtools/src/ports.ts"
 
 const ambientAllowlist = new Set([
   "CODEVISOR_DEV_PORT",

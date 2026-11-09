@@ -8,9 +8,9 @@ import { connect } from "node:tls"
 import { fileURLToPath } from "node:url"
 import { promisify } from "node:util"
 
+import { delay } from "../../packages/devtools/src/child-processes.ts"
 import { containerHostAddress } from "../../scripts/dev-containers.mjs"
 import { ensureDevCertificates } from "../../scripts/dev-net.mjs"
-import { delay } from "../../scripts/dev-shared.mjs"
 import { readRelays } from "./gen-fly.mjs"
 
 const exec = promisify(execFile)

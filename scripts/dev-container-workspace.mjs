@@ -2,7 +2,7 @@ import { createHash } from "node:crypto"
 import { cp, mkdir, readdir, readFile, rm, stat, writeFile } from "node:fs/promises"
 import { join } from "node:path"
 
-import { pathExists } from "./dev-shared.mjs"
+import { pathExists } from "../packages/devtools/src/files.ts"
 
 const WORKSPACE_ROOTS = ["packages", "apps", "plugins"]
 const PACKAGE_RUNTIME = ["dist", "native", "resources", "server.json"]

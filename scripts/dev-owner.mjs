@@ -4,19 +4,22 @@ import { mkdir, realpath, rm } from "node:fs/promises"
 import { basename, dirname, join } from "node:path"
 import { fileURLToPath } from "node:url"
 
+import { parseDevelopmentRunnerArguments } from "../packages/devtools/src/dev-arguments.ts"
 import {
   developmentLayout,
   iosDevelopmentBundleIdentifier
 } from "../packages/devtools/src/dev-layout.ts"
+import {
+  claimDevelopmentRunner,
+  releaseDevelopmentRunner
+} from "../packages/devtools/src/dev-runtime.ts"
 import {
   readProcessTable,
   processIdentity,
   stopProcesses,
   trackProcessTree
 } from "../packages/processes/src/index.mjs"
-import { parseDevelopmentRunnerArguments } from "./dev-arguments.mjs"
 import { sweepStaleContainers } from "./dev-containers.mjs"
-import { claimDevelopmentRunner, releaseDevelopmentRunner } from "./dev-runtime.mjs"
 import { requireIOSSimulator, simctl, readJSON } from "./ios-simulator-state.mjs"
 
 const repoRoot = await realpath(fileURLToPath(new URL("..", import.meta.url)))
@@ -64,7 +67,7 @@ let tree
 let monitor
 try {
   await mkdir(dirname(claimPath), { recursive: true })
-  await claimDevelopmentRunner(claimPath, claim)
+  await claimDevelopmentRunner(claimPath, claim, processIdentity)
   claimed = true
   await cleanupExternalResources()
   if (!stopRequested) {

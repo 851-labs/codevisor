@@ -4,7 +4,7 @@ import { basename, isAbsolute, join, resolve } from "node:path"
 import process from "node:process"
 import { fileURLToPath } from "node:url"
 
-import { describeExit, waitForExit } from "./dev-shared.mjs"
+import { describeExit, waitForExit } from "../packages/devtools/src/child-processes.ts"
 
 const unhideScript = fileURLToPath(new URL("screenshots-unhide-apps.swift", import.meta.url))
 const exitCodes = { SIGINT: 130, SIGTERM: 143 }

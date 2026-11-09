@@ -4,7 +4,11 @@ import { cp, mkdir, readFile, rm, writeFile } from "node:fs/promises"
 import { join, resolve } from "node:path"
 import process from "node:process"
 
-import { describeExit, waitForClose, waitForExit } from "./dev-shared.mjs"
+import {
+  describeExit,
+  waitForClose,
+  waitForExit
+} from "../packages/devtools/src/child-processes.ts"
 
 export function makeCommandRunner(repoRoot) {
   function run(command, arguments_, cwd = repoRoot) {

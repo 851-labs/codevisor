@@ -7,8 +7,8 @@ import { fileURLToPath } from "node:url"
 import { parseArgs, promisify } from "node:util"
 
 import { developmentLayout } from "../packages/devtools/src/dev-layout.ts"
+import { isPortAvailable } from "../packages/devtools/src/ports.ts"
 import { prepareSimulator } from "./bento-simulator.mjs"
-import { isPortAvailable } from "./dev-shared.mjs"
 import { run } from "./screenshots-lib.mjs"
 
 const usage = `Usage: bun run bento:render [--output directory] [--cards mcp-machines,accounts,…] [--skip-build]

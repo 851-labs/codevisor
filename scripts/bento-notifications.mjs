@@ -6,8 +6,8 @@ import process from "node:process"
 import { fileURLToPath } from "node:url"
 import { parseArgs, promisify } from "node:util"
 
+import { delay, describeExit, waitForExit } from "../packages/devtools/src/child-processes.ts"
 import { developmentLayout } from "../packages/devtools/src/dev-layout.ts"
-import { delay, describeExit, waitForExit } from "./dev-shared.mjs"
 import { restoresHiddenApps, run } from "./screenshots-lib.mjs"
 
 const execute = promisify(execFile)

@@ -4,7 +4,7 @@ import { tmpdir } from "node:os"
 import { join } from "node:path"
 import { promisify } from "node:util"
 
-import { delay, describeExit, waitForExit } from "./dev-shared.mjs"
+import { delay, describeExit, waitForExit } from "../packages/devtools/src/child-processes.ts"
 import {
   devices,
   prepareThrowawaySimulator,
