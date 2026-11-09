@@ -1,7 +1,7 @@
 import { fileURLToPath } from "node:url"
 
 import { parseSimulatorArguments } from "../packages/devtools/src/ios-simulator-state.ts"
-import { runOwnedTask } from "./owned-task.mjs"
+import { runOwnedTask } from "../packages/devtools/src/owned-task.ts"
 
 const options = parseSimulatorArguments(process.argv.slice(2))
 if (options.help) {
@@ -9,7 +9,7 @@ if (options.help) {
     'Usage: bun run ios-simulator [--device="iPhone 17 Pro"] [--runtime=27.0]\n\nStarts only this worktree\'s simulator and opens its Xcode project. Leave this task running while using dev:ios or dev. Stopping it deletes its simulator and closes the Xcode window it opened; an already-open window is left alone. Requires macOS Accessibility access.'
   )
 } else {
-  runOwnedTask(
+  await runOwnedTask(
     fileURLToPath(new URL("./ios-simulator-owner.mjs", import.meta.url)),
     process.argv.slice(2)
   )

@@ -1,8 +1,8 @@
 import { fileURLToPath } from "node:url"
 
-import { runOwnedTask } from "./owned-task.mjs"
+import { runOwnedTask } from "../packages/devtools/src/owned-task.ts"
 
-runOwnedTask(fileURLToPath(new URL("./dev-owner.mjs", import.meta.url)), [
+await runOwnedTask(fileURLToPath(new URL("./dev-owner.mjs", import.meta.url)), [
   "all",
   ...process.argv.slice(2)
 ])
