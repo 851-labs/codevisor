@@ -1,5 +1,6 @@
 import SwiftUI
 
+CVRegisterChromiumMallocZone()
 #if DEBUG
   if let directory = BentoRender.outputDirectory {
     BentoRender.run(into: directory)
