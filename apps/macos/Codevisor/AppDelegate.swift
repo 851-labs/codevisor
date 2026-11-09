@@ -90,7 +90,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
       sender.perform(#selector(NSApplication.terminate(_:)), with: nil, afterDelay: 0)
       return .terminateCancel
     }
-    let skip = skipsNextConfirmation || Self.isQuitAppleEvent
+    let skip = skipsNextConfirmation || Self.isQuitAppleEvent || CodevisorAppVariant.isDevelopment
     skipsNextConfirmation = false
     guard !skip, let settings, settings.shouldConfirmBeforeQuitting else { return terminateAfterBrowsers() }
     if appUpdate?.isUpdating == true { return terminateAfterBrowsers() }
