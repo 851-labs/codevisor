@@ -1,20 +1,86 @@
 import assert from "node:assert/strict"
 import { readFileSync } from "node:fs"
-import test from "node:test"
 import vm from "node:vm"
 
-const context = vm.createContext({})
-vm.runInContext(readFileSync(new URL("./xcode-window-owner.jxa", import.meta.url), "utf8"), context)
+import { test } from "vitest"
+
+interface App {
+  readonly pid: number
+  readonly launch: string
+}
+
+interface XcodeWindow {
+  title?: string
+  path?: string | undefined
+  modal?: boolean
+  taskStopButton?: object
+}
+
+interface Snapshot {
+  readonly app: App | null
+  readonly windows: Array<XcodeWindow>
+}
+
+interface WindowSystem {
+  snapshot: () => Snapshot
+  sameApp: (left: App | null, right: App | null) => boolean
+  sameWindow: (left: XcodeWindow, right: XcodeWindow) => boolean
+  matchesProject: (window: XcodeWindow) => boolean
+  open: () => unknown
+  ready: (owned: boolean) => unknown
+  waitForShutdown: () => unknown
+  close: (window: XcodeWindow) => unknown
+  now: () => number
+  pause: () => unknown
+  mainWindow?: () => XcodeWindow | null
+  isModal?: (window: XcodeWindow) => boolean
+  taskStopButton?: (window: XcodeWindow) => object | null
+}
+
+interface ReadSystem {
+  now: () => number
+  pause?: () => unknown
+  read: (timeout: number) => { status: number; value?: unknown }
+}
+
+interface WindowOwner {
+  ownXcodeWindow: (system: WindowSystem) => void
+  taskStopConfirmation: (
+    system: WindowSystem,
+    before: Snapshot,
+    current: Snapshot,
+    owned: XcodeWindow
+  ) => object | null
+  readXcodeAttribute: (system: ReadSystem, name: string) => unknown
+}
+
+const sandbox = vm.createContext({})
+vm.runInContext(readFileSync(new URL("./xcode-window-owner.jxa", import.meta.url), "utf8"), sandbox)
+const context: unknown = sandbox
+if (!isWindowOwner(context)) throw new Error("xcode-window-owner.jxa is missing its functions")
 const { ownXcodeWindow, taskStopConfirmation, readXcodeAttribute } = context
 
+function isWindowOwner(value: unknown): value is WindowOwner {
+  return (
+    value !== null &&
+    typeof value === "object" &&
+    "ownXcodeWindow" in value &&
+    typeof value.ownXcodeWindow === "function" &&
+    "taskStopConfirmation" in value &&
+    typeof value.taskStopConfirmation === "function" &&
+    "readXcodeAttribute" in value &&
+    typeof value.readXcodeAttribute === "function"
+  )
+}
+
 function fixture() {
-  const app = { pid: 42, launch: "original" }
-  const other = { title: "Codevisor", path: "/other/Codevisor.xcodeproj" }
-  const opened = { title: "Codevisor", path: "/owned/Codevisor.xcodeproj" }
-  const state = { app, windows: [other] }
-  const closed = []
-  const ready = []
-  const system = {
+  const app: App = { pid: 42, launch: "original" }
+  const other: XcodeWindow = { title: "Codevisor", path: "/other/Codevisor.xcodeproj" }
+  const opened: XcodeWindow = { title: "Codevisor", path: "/owned/Codevisor.xcodeproj" }
+  const state: { app: App | null; windows: Array<XcodeWindow> } = { app, windows: [other] }
+  const closed: Array<XcodeWindow> = []
+  const ready: Array<boolean> = []
+  const system: WindowSystem = {
     snapshot: () => ({ app: state.app, windows: [...state.windows] }),
     sameApp: (left, right) => left === right,
     sameWindow: (left, right) => left === right,
@@ -92,8 +158,8 @@ test("failure after acquisition still releases the owned window", () => {
 
 test("ambiguous windows and an Xcode restart during opening fail without closing anything", () => {
   for (const mutate of [
-    (f) => f.state.windows.push({ ...f.opened }),
-    (f) => {
+    (f: ReturnType<typeof fixture>) => f.state.windows.push({ ...f.opened }),
+    (f: ReturnType<typeof fixture>) => {
       f.state.app = { ...f.app }
     }
   ]) {
@@ -134,14 +200,14 @@ test("only a new task-stop dialog for the still-owned main window may be confirm
   const dialog = { modal: true, taskStopButton: button }
   const before = { app: f.app, windows: [f.other, f.opened] }
   const current = { ...before, windows: [...before.windows, dialog] }
-  const system = {
+  const system: WindowSystem = {
     ...f.system,
     mainWindow: () => f.opened,
     isModal: (window) => window.modal === true,
     taskStopButton: (window) => window.taskStopButton ?? null
   }
   assert.equal(taskStopConfirmation(system, before, current, f.opened), button)
-  for (const [sys, initial, live] of [
+  const cases: Array<[WindowSystem, Snapshot, Snapshot]> = [
     [{ ...system, mainWindow: () => f.other }, before, current],
     [{ ...system, mainWindow: () => null }, before, current],
     [{ ...system, matchesProject: () => false }, before, current],
@@ -149,15 +215,16 @@ test("only a new task-stop dialog for the still-owned main window may be confirm
     [system, before, { ...current, app: { ...f.app } }],
     [system, before, { ...current, windows: [...current.windows, { ...dialog }] }],
     [system, before, { ...current, windows: [...before.windows, { modal: true }] }]
-  ])
+  ]
+  for (const [sys, initial, live] of cases)
     assert.equal(taskStopConfirmation(sys, initial, live, f.opened), null)
 })
 
 test("transient AX read failures wait for a real snapshot without extending the deadline", () => {
   let time = 0
   const windows = [{}]
-  const timeouts = []
-  const system = {
+  const timeouts: Array<number> = []
+  const system: ReadSystem = {
     now: () => time,
     pause: () => {
       time = 4999
@@ -190,11 +257,12 @@ test("AX read errors never masquerade as a missing window", () => {
     }
     assert.throws(() => readXcodeAttribute(system, "AXWindows"), /Cannot read AXWindows/)
   }
-  for (const [status, name] of [
+  const missing: Array<[number, string]> = [
     [-25202, "AXWindows"],
     [-25212, "AXWindows"],
     [-25205, "AXDocument"]
-  ]) {
+  ]
+  for (const [status, name] of missing) {
     assert.equal(readXcodeAttribute({ now: () => 0, read: () => ({ status }) }, name), null)
   }
 })

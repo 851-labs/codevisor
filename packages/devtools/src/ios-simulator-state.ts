@@ -92,7 +92,7 @@ export async function writeJSON(path: string, value: unknown): Promise<void> {
 
 export async function simctl(
   args: ReadonlyArray<string>,
-  options: { timeout?: number } = {}
+  options: { timeout?: number; signal?: AbortSignal } = {}
 ): Promise<string> {
   const { stdout } = await exec("xcrun", ["simctl", ...args], {
     maxBuffer: 8 * 1024 * 1024,

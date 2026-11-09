@@ -13,6 +13,8 @@ export default defineTestConfig({
         "src/dev-net.ts",
         "src/dev-relays.ts",
         "src/dev-relay-certificates.ts",
+        "src/ios-simulator-owner.ts",
+        "src/xcode-window.ts",
         ...macOSOnly
       ],
       provider: "v8",
