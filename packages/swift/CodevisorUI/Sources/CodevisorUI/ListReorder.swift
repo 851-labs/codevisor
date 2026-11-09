@@ -31,4 +31,22 @@ public enum ListReorder {
     var regrouped = moving(id, to: index, in: order.filter(members.contains)).makeIterator()
     return order.map { members.contains($0) ? regrouped.next() ?? $0 : $0 }
   }
+
+  public static func placing<ID: Hashable>(_ id: ID, at index: Int, among siblings: [ID], in order: [ID]) -> [ID] {
+    guard order.contains(id), siblings.firstIndex(of: id) != index else { return order }
+
+    var result = order.filter { $0 != id }
+    let others = siblings.filter { $0 != id }
+    guard let slot = slot(at: index, among: others, in: result) else { return order }
+
+    result.insert(id, at: slot)
+    return result
+  }
+
+  private static func slot<ID: Hashable>(at index: Int, among others: [ID], in order: [ID]) -> Int? {
+    if others.indices.contains(index) { return order.firstIndex(of: others[index]) }
+    guard index == others.count, let last = others.last else { return nil }
+
+    return order.firstIndex(of: last).map { $0 + 1 }
+  }
 }

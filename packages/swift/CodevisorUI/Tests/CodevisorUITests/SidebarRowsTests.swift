@@ -403,9 +403,9 @@ struct SidebarRowsTests {
     #expect(SidebarRows.subtree(of: first.id, in: rows) == [first.id, nephew.id])
     #expect(SidebarRows.subtree(of: parent.id, in: rows) == [parent.id, first.id, nephew.id, second.id])
 
-    let moved = ListReorder.moving(
-      second.id, to: 0, within: SidebarRows.siblings(of: second.id, in: rows), in: all.map(\.id))
-    #expect(moved == [parent.id, second.id, nephew.id, first.id, root.id])
+    let moved = ListReorder.placing(
+      second.id, at: 0, among: SidebarRows.siblings(of: second.id, in: rows), in: all.map(\.id))
+    #expect(moved == [parent.id, second.id, first.id, nephew.id, root.id])
   }
 
   @Test("A workspace's tabs nest above its children; in a collapsed group only the selected tab stays")

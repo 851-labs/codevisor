@@ -84,7 +84,7 @@
             entries.insert(archivedEntries.remove(at: index), at: 0)
           },
           reorder: { id, index, group in
-            let order = ListReorder.moving(id, to: index, within: group, in: entries.map(\.workspace.id))
+            let order = ListReorder.placing(id, at: index, among: group, in: entries.map(\.workspace.id))
             let byID = Dictionary(uniqueKeysWithValues: entries.map { ($0.workspace.id, $0) })
             entries = order.compactMap { byID[$0] }
           }

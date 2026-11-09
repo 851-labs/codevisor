@@ -200,7 +200,7 @@ extension HomeView {
 
   func commitWorkspaceMove(_ id: UUID, toIndex index: Int, within group: [UUID]) {
     let ids = HomeSidebarContentBuilder(environment: environment, gitLookups: sidebarGitLookups).listedItems.map(\.id)
-    let reordered = ListReorder.moving(id, to: index, within: group, in: ids)
+    let reordered = ListReorder.placing(id, at: index, among: group, in: ids)
     guard reordered != ids, let workspace = environment.workspaces.workspace(id: id) else { return }
     withSidebarReflow {
       _ = environment.workspaceSync.reorderWorkspace(
