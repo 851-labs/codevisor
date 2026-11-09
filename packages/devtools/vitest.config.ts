@@ -14,6 +14,9 @@ export default defineTestConfig({
         "src/dev-relays.ts",
         "src/dev-relay-certificates.ts",
         "src/ios-simulator-owner.ts",
+        "src/dev-owner.ts",
+        "src/dev-worker.ts",
+        "src/dev-ios-worker.ts",
         "src/xcode-window.ts",
         ...macOSOnly
       ],
