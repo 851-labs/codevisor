@@ -17,7 +17,7 @@ struct MachineRouteDescription {
     switch route {
     case .localNetwork: "Local network"
     case .tailscale: "Tailscale"
-    case .internet: "Internet"
+    case .internet: "Public IP"
     case .relay: "Codevisor relay"
     }
   }
