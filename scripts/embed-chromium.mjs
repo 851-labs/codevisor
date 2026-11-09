@@ -12,8 +12,8 @@ import {
   chromiumArtifactsRoot,
   chromiumHelperName,
   chromiumHelperSuffixes,
-  run
-} from "./chromium-artifact.mjs"
+  runTool as run
+} from "../packages/devtools/src/chromium-artifact.ts"
 
 const root = resolve(fileURLToPath(new URL("..", import.meta.url)))
 const env = process.env

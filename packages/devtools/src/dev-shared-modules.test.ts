@@ -8,6 +8,7 @@ import { afterEach, describe, expect, it } from "vitest"
 
 import { delay, describeExit, waitForClose, waitForExit } from "./child-processes.ts"
 import { colorFromHash } from "./color.ts"
+import { captureCommand, runCommand } from "./commands.ts"
 import { claimedServerPort, shutdownDevServers, waitForHealth } from "./dev-servers.ts"
 import { directoryIsEmpty, pathExists } from "./files.ts"
 import { findAvailablePort, isPortAvailable, parsePort } from "./ports.ts"
@@ -103,6 +104,11 @@ describe("child processes", () => {
     expect(await waitForExit(child)).toEqual({ code: 3, signal: null })
     expect(await closed).toEqual({ code: 3, signal: null })
     expect(await waitForExit(child)).toEqual({ code: 3, signal: null })
+  })
+
+  it("rejects instead of crashing or hanging when the command cannot start", async () => {
+    await expect(runCommand("codevisor-missing-tool", [])).rejects.toThrow(/ENOENT|not found/)
+    await expect(captureCommand("codevisor-missing-tool", [])).rejects.toThrow(/ENOENT|not found/)
   })
 
   it("describes exits and waits", async () => {

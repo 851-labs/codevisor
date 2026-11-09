@@ -14,7 +14,7 @@ const context = {
       "scripts/test-swift.mjs",
       "packages/devtools/src/swift-artifacts.ts"
     ],
-    "scripts/release": ["scripts/chromium-artifact.mjs"]
+    "scripts/release": ["packages/devtools/src/chromium-artifact.ts"]
   },
   swiftLinks: [{ link: "packages/swift/Transcript/Sources", target: "apps/macos/Transcript" }]
 }
@@ -66,7 +66,7 @@ test("release tests follow the release scripts, the installer, and the modules t
   for (const file of [
     "scripts/release/install.test.mjs",
     "apps/www/public/install.sh",
-    "scripts/chromium-artifact.mjs"
+    "packages/devtools/src/chromium-artifact.ts"
   ]) {
     assert.deepEqual(planned([file]), { "release:scripts:test": [] }, file)
   }
