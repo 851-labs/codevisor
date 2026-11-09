@@ -3,7 +3,7 @@ import { mkdir, rm, writeFile } from "node:fs/promises"
 import { resolve, join } from "node:path"
 import { fileURLToPath } from "node:url"
 
-import { runXcodebuild } from "../xcodebuild.mjs"
+import { runXcodebuild } from "../../packages/devtools/src/xcodebuild.ts"
 import { appStoreClient, findApp } from "./app-store-connect.mjs"
 import { prepareEmbeddedCode, verifyDistributionSignatures } from "./ios-code-signing.mjs"
 import {

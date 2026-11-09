@@ -30,6 +30,11 @@ import {
   sanitizeAmbientEnvironment
 } from "../packages/devtools/src/dev-instance.ts"
 import {
+  buildIOSDevelopmentApp,
+  launchIOSDevelopmentApp,
+  terminateIOSDevelopmentApp
+} from "../packages/devtools/src/dev-ios-target.ts"
+import {
   ensureDevelopmentDirectories,
   localDevelopmentEnvironment,
   remoteDevelopmentEnvironment
@@ -54,16 +59,13 @@ import {
 } from "../packages/devtools/src/dev-servers.ts"
 import { resolveDevelopmentSigningArguments } from "../packages/devtools/src/dev-signing.ts"
 import { resolveDevVmHost } from "../packages/devtools/src/dev-vm-host.ts"
+import { requireIOSSimulator } from "../packages/devtools/src/ios-simulator-state.ts"
+import { runXcodebuild } from "../packages/devtools/src/xcodebuild.ts"
+import { processIdentity } from "../packages/processes/src/index.mjs"
 import { bootstrapDevelopment, ensureNativeFrameworks } from "./dev-bootstrap.mjs"
-import {
-  buildIOSDevelopmentApp,
-  launchIOSDevelopmentApp,
-  terminateIOSDevelopmentApp
-} from "./dev-ios-target.mjs"
-import { requireIOSSimulator } from "./ios-simulator-state.mjs"
 import { ensureLinuxNodeAddon, ensureNodeAddon, ensureRelayBinary } from "./net-artifact.mjs"
-import { runXcodebuild } from "./xcodebuild.mjs"
 
+const simulatorDependencies = { identity: processIdentity }
 const repoRoot = await realpath(fileURLToPath(new URL("..", import.meta.url)))
 const cliArguments = process.argv.slice(2)
 const { wantsContainers, containerEnginePreference } = parseDevelopmentRunnerArguments(
@@ -75,7 +77,7 @@ const { wantsContainers, containerEnginePreference } = parseDevelopmentRunnerArg
 const reuseMacOSBuild = requestsMacOSBuildReuse(cliArguments)
 const includesIOS = !cliArguments.includes("--no-ios")
 let simulator
-if (includesIOS) simulator = await requireIOSSimulator(repoRoot)
+if (includesIOS) simulator = await requireIOSSimulator(repoRoot, simulatorDependencies)
 sanitizeAmbientEnvironment(process.env)
 const instance = await resolveDevelopmentInstance(repoRoot, process.env)
 const {
@@ -224,6 +226,7 @@ let iosTarget
 if (includesIOS) {
   iosTarget = await buildIOSDevelopmentApp({
     repoRoot,
+    simulatorDependencies,
     layout,
     appDisplayName: appName,
     bundleIdentifier: iOSBundleIdentifier,
@@ -414,6 +417,7 @@ try {
   if (iosTarget !== undefined) {
     await launchIOSDevelopmentApp({
       repoRoot,
+      simulatorDependencies,
       target: iosTarget,
       environment: process.env,
       worktreeName,

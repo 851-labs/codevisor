@@ -10,6 +10,7 @@ import {
   developmentLayout,
   IOS_DEVELOPMENT_BUNDLE_IDENTIFIER
 } from "../packages/devtools/src/dev-layout.ts"
+import { runXcodebuild } from "../packages/devtools/src/xcodebuild.ts"
 import {
   devices,
   iosScenes,
@@ -21,7 +22,6 @@ import {
   simctl
 } from "./screenshots-ios-lib.mjs"
 import { pngDimensions, run, selectedAppearances } from "./screenshots-lib.mjs"
-import { runXcodebuild } from "./xcodebuild.mjs"
 
 const execute = promisify(execFile)
 const settleSeconds = 4

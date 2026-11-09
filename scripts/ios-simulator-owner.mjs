@@ -9,7 +9,6 @@ import {
   claimDevelopmentRunner,
   releaseDevelopmentRunner
 } from "../packages/devtools/src/dev-runtime.ts"
-import { processIdentity } from "../packages/processes/src/index.mjs"
 import {
   parseSimulatorArguments,
   selectSimulatorConfiguration,
@@ -21,7 +20,8 @@ import {
   simctl,
   deleteOwnedSimulator,
   reapOrphanedSimulators
-} from "./ios-simulator-state.mjs"
+} from "../packages/devtools/src/ios-simulator-state.ts"
+import { processIdentity } from "../packages/processes/src/index.mjs"
 import { ensureXcodeDerivedDataSettings } from "./xcode-derived-data.mjs"
 import { openOwnedXcodeWindow } from "./xcode-window.mjs"
 
@@ -64,7 +64,7 @@ try {
   await mkdir(dirname(manifestPath), { recursive: true })
   await claimDevelopmentRunner(claimPath, claim, processIdentity)
   claimed = true
-  await reapOrphanedSimulators()
+  await reapOrphanedSimulators({ identity: processIdentity })
   check()
   const options = parseSimulatorArguments(process.argv.slice(2))
   const [types, runtimes] = await Promise.all([

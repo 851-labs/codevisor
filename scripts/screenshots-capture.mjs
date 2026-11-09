@@ -6,8 +6,8 @@ import { join } from "node:path"
 import { promisify } from "node:util"
 
 import { developmentLayout } from "../packages/devtools/src/dev-layout.ts"
+import { runXcodebuild } from "../packages/devtools/src/xcodebuild.ts"
 import { gallery, pngDimensions, screenshotAttachments } from "./screenshots-lib.mjs"
-import { runXcodebuild } from "./xcodebuild.mjs"
 
 const execute = promisify(execFile)
 
