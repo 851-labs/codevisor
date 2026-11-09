@@ -6,7 +6,7 @@ import { homedir } from "node:os"
 import { join, resolve as resolvePath } from "node:path"
 import { fileURLToPath } from "node:url"
 
-import { withArtifactLock } from "./artifact-lock.mjs"
+import { withArtifactLock } from "../packages/devtools/src/artifact-lock.ts"
 
 export const chromiumVersion = "152.0.5+gb129680+chromium-152.0.7977.54"
 export const chromiumHelperName = (productName) =>

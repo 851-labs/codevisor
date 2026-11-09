@@ -2,31 +2,26 @@ import assert from "node:assert/strict"
 import { mkdir, mkdtemp, readFile, readdir, rm, rmdir, stat, writeFile } from "node:fs/promises"
 import { tmpdir } from "node:os"
 import { join } from "node:path"
-import test from "node:test"
 
-import { withArtifactLock } from "./artifact-lock.mjs"
+import { onTestFinished, test } from "vitest"
 
-const lockFixture = async (t) => {
+import { withArtifactLock } from "./artifact-lock.ts"
+
+const lockFixture = async () => {
   const root = await mkdtemp(join(tmpdir(), "artifact-lock-"))
-  t.after(() => rm(root, { recursive: true, force: true }))
+  onTestFinished(() => rm(root, { recursive: true, force: true }))
   return join(root, "nested", ".lock")
 }
 
-const deferred = () => {
-  let resolve
-  const promise = new Promise((r) => {
-    resolve = r
-  })
-  return { promise, resolve }
-}
+const deferred = () => Promise.withResolvers<string | void>()
 
-test("runs the action holding the lock and releases it afterwards", async (t) => {
-  const lockPath = await lockFixture(t)
+test("runs the action holding the lock and releases it afterwards", async () => {
+  const lockPath = await lockFixture()
   const result = await withArtifactLock(
     lockPath,
     async () => {
       const [owner] = await readdir(lockPath)
-      assert.equal(await readFile(join(lockPath, owner), "utf8"), String(process.pid))
+      assert.equal(await readFile(join(lockPath, owner ?? ""), "utf8"), String(process.pid))
       return "done"
     },
     { retryDelay: () => assert.fail("no contention expected") }
@@ -35,8 +30,8 @@ test("runs the action holding the lock and releases it afterwards", async (t) =>
   await assert.rejects(stat(lockPath))
 })
 
-test("releases the lock when the action throws", async (t) => {
-  const lockPath = await lockFixture(t)
+test("releases the lock when the action throws", async () => {
+  const lockPath = await lockFixture()
   await assert.rejects(
     withArtifactLock(lockPath, async () => {
       throw new Error("boom")
@@ -46,8 +41,8 @@ test("releases the lock when the action throws", async (t) => {
   await assert.rejects(stat(lockPath))
 })
 
-test("a second acquirer waits for the holder to release, then proceeds", async (t) => {
-  const lockPath = await lockFixture(t)
+test("a second acquirer waits for the holder to release, then proceeds", async () => {
+  const lockPath = await lockFixture()
   const holderMayFinish = deferred()
   const holderEntered = deferred()
   const holder = withArtifactLock(
@@ -94,8 +89,8 @@ test("a second acquirer waits for the holder to release, then proceeds", async (
   }
 })
 
-test("a lock left by a dead process is taken over without waiting", async (t) => {
-  const lockPath = await lockFixture(t)
+test("a lock left by a dead process is taken over without waiting", async () => {
+  const lockPath = await lockFixture()
   await rm(join(lockPath, ".."), { recursive: true, force: true })
   await withArtifactLock(lockPath, () => undefined, { retryDelay: () => assert.fail("unused") })
   await writeFile(lockPath, "999999")
@@ -110,8 +105,8 @@ test("a lock left by a dead process is taken over without waiting", async (t) =>
   assert.equal(entered, true)
 })
 
-test("a lock held by a live process is respected", async (t) => {
-  const lockPath = await lockFixture(t)
+test("a lock held by a live process is respected", async () => {
+  const lockPath = await lockFixture()
   await withArtifactLock(lockPath, () => undefined)
   await writeFile(lockPath, "4242")
   let retries = 0
@@ -125,8 +120,8 @@ test("a lock held by a live process is respected", async (t) => {
   assert.equal(retries, 1)
 })
 
-test("stale cleanup cannot remove a replacement owner", async (t) => {
-  const lockPath = await lockFixture(t)
+test("stale cleanup cannot remove a replacement owner", async () => {
+  const lockPath = await lockFixture()
   await mkdir(lockPath, { recursive: true })
   await writeFile(join(lockPath, "owner-100-stale"), "100")
   const checked = deferred()
@@ -184,8 +179,8 @@ test("stale cleanup cannot remove a replacement owner", async (t) => {
   }
 })
 
-test("an empty abandoned directory does not block acquisition", async (t) => {
-  const path = await lockFixture(t)
+test("an empty abandoned directory does not block acquisition", async () => {
+  const path = await lockFixture()
   await mkdir(path, { recursive: true })
   let entered = false
   await withArtifactLock(

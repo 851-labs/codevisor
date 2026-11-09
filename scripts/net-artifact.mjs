@@ -18,7 +18,7 @@ import { dirname, join, relative } from "node:path"
 import process from "node:process"
 import { fileURLToPath } from "node:url"
 
-import { withArtifactLock } from "./artifact-lock.mjs"
+import { withArtifactLock } from "../packages/devtools/src/artifact-lock.ts"
 
 export const repoRoot = join(dirname(fileURLToPath(import.meta.url)), "..")
 export const netRoot = join(repoRoot, "packages", "net")
