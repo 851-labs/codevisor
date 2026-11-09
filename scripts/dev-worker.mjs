@@ -38,6 +38,13 @@ import {
   requestsMacOSBuildReuse,
   verifyReusableMacOSApp
 } from "../packages/devtools/src/dev-macos-reuse.ts"
+import {
+  devNetCaPem,
+  devNetCloudVariables,
+  devNetEnvironment,
+  launchDevNet,
+  prepareDevNet
+} from "../packages/devtools/src/dev-net.ts"
 import { launchDevRemoteServer } from "../packages/devtools/src/dev-remote-server.ts"
 import { ensureDevServerArchive } from "../packages/devtools/src/dev-server-archive.ts"
 import {
@@ -53,14 +60,8 @@ import {
   launchIOSDevelopmentApp,
   terminateIOSDevelopmentApp
 } from "./dev-ios-target.mjs"
-import {
-  devNetCaPem,
-  devNetCloudVariables,
-  devNetEnvironment,
-  launchDevNet,
-  prepareDevNet
-} from "./dev-net.mjs"
 import { requireIOSSimulator } from "./ios-simulator-state.mjs"
+import { ensureLinuxNodeAddon, ensureNodeAddon, ensureRelayBinary } from "./net-artifact.mjs"
 import { runXcodebuild } from "./xcodebuild.mjs"
 
 const repoRoot = await realpath(fileURLToPath(new URL("..", import.meta.url)))
@@ -164,8 +165,10 @@ const vmHost = await resolveDevVmHost()
 const net = await prepareDevNet({
   instanceHash,
   netRoot: join(layout.tmpRoot, "net"),
+  repoRoot,
   containerContext,
-  vmHost
+  vmHost,
+  artifacts: { ensureLinuxNodeAddon, ensureNodeAddon, ensureRelayBinary }
 })
 const ephemeralArchiveRoot = join(layout.tmpRoot, "ephemeral")
 const ephemeralArchive =

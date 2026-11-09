@@ -8,14 +8,13 @@ import { join } from "node:path"
 import test from "node:test"
 import { rootCertificates } from "node:tls"
 
+import { devRelayMap, resolveDevNet } from "../packages/devtools/src/dev-net.ts"
+import { ensureDevCertificates } from "../packages/devtools/src/dev-relay-certificates.ts"
 import {
-  devRelayMap,
-  ensureDevCertificates,
   relayHealthUrl,
   relayHealthy,
-  resolveDevNet,
   waitForDevRelays
-} from "./dev-net.mjs"
+} from "../packages/devtools/src/dev-relays.ts"
 
 const silentServer = async () => {
   const sockets = new Set()

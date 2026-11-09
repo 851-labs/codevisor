@@ -8,15 +8,14 @@ import { fileURLToPath } from "node:url"
 
 import { delay } from "../packages/devtools/src/child-processes.ts"
 import { cloudWranglerEnvironment } from "../packages/devtools/src/dev-cloud.ts"
-import { findAvailablePort } from "../packages/devtools/src/ports.ts"
 import {
   devNetCloudVariables,
   devNetEnvironment,
-  ensureDevCertificates,
-  resolveDevNet,
-  startDevRelays,
-  waitForDevRelays
-} from "./dev-net.mjs"
+  resolveDevNet
+} from "../packages/devtools/src/dev-net.ts"
+import { ensureDevCertificates } from "../packages/devtools/src/dev-relay-certificates.ts"
+import { startDevRelays, waitForDevRelays } from "../packages/devtools/src/dev-relays.ts"
+import { findAvailablePort } from "../packages/devtools/src/ports.ts"
 import { ensureNodeAddon, ensureRelayBinary } from "./net-artifact.mjs"
 
 const repoRoot = join(fileURLToPath(import.meta.url), "..", "..")
