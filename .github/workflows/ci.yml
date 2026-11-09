@@ -62,7 +62,7 @@ jobs:
             changed="$(git diff --name-only "${RANGE#--base=}" HEAD)"
           fi
           touches() { grep -qE "$1" <<<"$changed" && echo true || echo false; }
-          echo "net=$(touches '^(packages/net/|rust-toolchain\.toml|scripts/net-scripts/build-net-swift\.sh|scripts/artifact-lock\.mjs|\.github/workflows/ci\.yml|\.github/actions/setup-rust/)')" >> "$GITHUB_OUTPUT"
+          echo "net=$(touches '^(packages/net/|rust-toolchain\.toml|scripts/net-|scripts/build-net-swift\.sh|packages/devtools/src/artifact-lock\.ts|\.github/workflows/ci\.yml|\.github/actions/setup-rust/)')" >> "$GITHUB_OUTPUT"
           echo "chrome=$(touches '^(packages/automation/|\.github/workflows/(ci|_test-chrome)\.yml)')" >> "$GITHUB_OUTPUT"
           {
             echo "### Planned checks"
