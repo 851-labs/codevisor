@@ -1,7 +1,7 @@
 import { execFile } from "node:child_process"
 import { existsSync, mkdirSync, mkdtempSync, readdirSync, rmSync, writeFileSync } from "node:fs"
 import { tmpdir } from "node:os"
-import { join } from "node:path"
+import { basename, dirname, join } from "node:path"
 import { promisify } from "node:util"
 
 import { decode, Worktree } from "@codevisor/api"
@@ -319,6 +319,60 @@ describe("project worktree archive routes", () => {
       )
       const chat = decodeChatCwd((await jsonRequest(server, `/v1/sessions/${chatId}`)).body)
       expect(chat.session.cwd).toBe(legacyPath)
+    })
+  })
+
+  it("keeps a workspace archived until its worktree can be restored", async () => {
+    await withWorktreesRoot(async () => {
+      const { server, services, worktreeNames } = await setUpGitProjects()
+      const worktree = decodeWorktree(
+        (
+          await jsonRequest(server, "/v1/projects/git-project/worktrees", {
+            body: JSON.stringify({ name: "mochi" }),
+            method: "POST"
+          })
+        ).body
+      )
+      await jsonRequest(server, "/v1/workspaces/mochi-ws", {
+        body: JSON.stringify({
+          projectId: "git-project",
+          name: "mochi",
+          hasCustomName: false,
+          rootDirectory: worktree.path
+        }),
+        method: "PUT"
+      })
+      const setArchived = async (isArchived: boolean) => {
+        const response = await jsonRequest(server, "/v1/workspaces/mochi-ws", {
+          body: JSON.stringify({ isArchived }),
+          method: "PATCH"
+        })
+        await archiveJobs(services).idle()
+        return response
+      }
+      await setArchived(true)
+      const worktreesFolder = dirname(worktree.path)
+      rmSync(worktreesFolder, { recursive: true })
+      writeFileSync(worktreesFolder, "")
+
+      const refused = await setArchived(false)
+
+      expect(refused.status).toBe(422)
+      expect(field(refused.body, "error")).toContain("could not create")
+      const workspaces = await run(services.db.listWorkspaces)
+      expect(workspaces.find((workspace) => workspace.id === "mochi-ws")?.isArchived).toBe(true)
+      expect(
+        listSubjectEvents(services, "mochi-ws")
+          .map((event) => field(event.payload, "isArchived"))
+          .at(-1)
+      ).toBe(true)
+      expect(await worktreeNames()).toEqual([])
+
+      rmSync(worktreesFolder)
+      const restored = decodeRooted((await setArchived(false)).body)
+      expect(restored).toEqual(expect.objectContaining({ isArchived: false }))
+      expect(existsSync(restored.rootDirectory)).toBe(true)
+      expect(await worktreeNames()).toEqual([basename(restored.rootDirectory)])
     })
   })
 

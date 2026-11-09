@@ -1,10 +1,11 @@
 import { execFile } from "node:child_process"
-import { existsSync, mkdirSync, mkdtempSync } from "node:fs"
+import { existsSync, mkdirSync, mkdtempSync, writeFileSync } from "node:fs"
 import { tmpdir } from "node:os"
 import { join } from "node:path"
 import { promisify } from "node:util"
 
 import { decode, SessionSummary, Worktree, WorktreeSetupUpdate } from "@codevisor/api"
+import { worktreePath } from "@codevisor/db"
 import { productionFoodWorktreeNames } from "@codevisor/worktrees"
 import { Schema } from "effect"
 import { describe, expect, it } from "vitest"
@@ -86,6 +87,24 @@ describe("project worktree routes", () => {
       })
 
       expect(created.body).toMatchObject({ name: "pushed-2", branch: "codevisor/pushed-2" })
+    })
+  })
+
+  it("skips names whose folder another tool left behind", async () => {
+    await withWorktreesRoot(async () => {
+      const { repoFolder, server } = await setUpGitProjects()
+      const leftover = worktreePath("git-project", "leftover")
+      mkdirSync(join(leftover, "tmp"), { recursive: true })
+      writeFileSync(join(leftover, "tmp", "cache.bin"), "derived data\n")
+
+      const created = await jsonRequest(server, "/v1/projects/git-project/worktrees", {
+        body: JSON.stringify({ name: "leftover" }),
+        method: "POST"
+      })
+
+      expect(created.body).toMatchObject({ name: "leftover-2", branch: "codevisor/leftover-2" })
+      const branches = await git(["branch", "--list", "codevisor/*"], repoFolder)
+      expect(branches.stdout).not.toMatch(/codevisor\/leftover$/m)
     })
   })
 

@@ -1,4 +1,4 @@
-import { runGit } from "./git.js"
+import { releaseBranch, runGit } from "./git.js"
 import {
   copyRealIndex,
   heavyGit as heavy,
@@ -130,19 +130,6 @@ export const pruneWorktreeRegistrations = async (
   try {
     await runGit("worktree-prune", ["worktree", "prune"], repoDir, env, { priority: "utility" })
   } catch {}
-}
-
-export const releaseBranch = async (
-  repoDir: string,
-  branch: string,
-  env?: NodeJS.ProcessEnv
-): Promise<boolean> => {
-  try {
-    await runGit("branch-delete", ["branch", "-D", branch], repoDir, env, { priority: "utility" })
-    return true
-  } catch {
-    return false
-  }
 }
 
 export const deleteSnapshot = async (

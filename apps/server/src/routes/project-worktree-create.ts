@@ -1,4 +1,4 @@
-import { mkdirSync } from "node:fs"
+import { existsSync, mkdirSync } from "node:fs"
 import type { IncomingMessage, ServerResponse } from "node:http"
 import { dirname } from "node:path"
 
@@ -10,7 +10,7 @@ import type {
   WorktreeSetupUpdate
 } from "@codevisor/api"
 import { CreateWorktreeRequest as CreateWorktreeRequestSchema } from "@codevisor/api"
-import { DatabaseError, type CodevisorDatabaseService } from "@codevisor/db"
+import { DatabaseError, type CodevisorDatabaseService, worktreePath } from "@codevisor/db"
 import {
   addWorktree,
   isGitWorkTree,
@@ -215,6 +215,10 @@ export const addPlannedWorktree = async (plan: WorktreePlan): Promise<Worktree> 
   const { requested, environment, startPoint } = plan
   for (let attempt = 0; attempt < maxWorktreeAttempts; attempt += 1) {
     const name = nextWorktreeName(config, requested, existing)
+    if (existsSync(worktreePath(project.id, name))) {
+      existing.add(name)
+      continue
+    }
     const branch = `codevisor/${name}`
     let worktree: Worktree
     try {
