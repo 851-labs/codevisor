@@ -14,6 +14,11 @@ import { cloudWranglerEnvironment } from "../packages/devtools/src/dev-cloud.ts"
 import { readCloudDevVariables } from "../packages/devtools/src/dev-cloud.ts"
 import { prepareDevContainers } from "../packages/devtools/src/dev-containers.ts"
 import {
+  buildIOSDevelopmentApp,
+  launchIOSDevelopmentApp,
+  terminateIOSDevelopmentApp
+} from "../packages/devtools/src/dev-ios-target.ts"
+import {
   developmentLayout,
   ensureDevelopmentDirectories,
   iosDevelopmentBundleIdentifier,
@@ -22,18 +27,15 @@ import {
 } from "../packages/devtools/src/dev-layout.ts"
 import { launchDevRemoteServer } from "../packages/devtools/src/dev-remote-server.ts"
 import { waitForHealth } from "../packages/devtools/src/dev-servers.ts"
+import { requireIOSSimulator } from "../packages/devtools/src/ios-simulator-state.ts"
 import { findAvailablePort, isPortAvailable, parsePort } from "../packages/devtools/src/ports.ts"
+import { processIdentity } from "../packages/processes/src/index.mjs"
 import { bootstrapDevelopment } from "./dev-bootstrap.mjs"
-import {
-  buildIOSDevelopmentApp,
-  launchIOSDevelopmentApp,
-  terminateIOSDevelopmentApp
-} from "./dev-ios-target.mjs"
-import { requireIOSSimulator } from "./ios-simulator-state.mjs"
 
+const simulatorDependencies = { identity: processIdentity }
 const repoRoot = await realpath(fileURLToPath(new URL("..", import.meta.url)))
 const { capture } = makeCommandRunner(repoRoot)
-const simulator = await requireIOSSimulator(repoRoot)
+const simulator = await requireIOSSimulator(repoRoot, simulatorDependencies)
 const { wantsContainers, containerEnginePreference } = parseDevelopmentRunnerArguments(
   process.argv.slice(2)
 )
@@ -220,6 +222,7 @@ const serverExit = watchServerExit(cloudRemoteServer, "Codevisor dev cloud serve
 try {
   iosTarget = await buildIOSDevelopmentApp({
     repoRoot,
+    simulatorDependencies,
     layout,
     appDisplayName,
     bundleIdentifier,
@@ -233,6 +236,7 @@ try {
 
   await launchIOSDevelopmentApp({
     repoRoot,
+    simulatorDependencies,
     target: iosTarget,
     environment: process.env,
     worktreeName,

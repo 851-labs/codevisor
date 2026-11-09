@@ -3,8 +3,9 @@ import { join } from "node:path"
 import { fileURLToPath } from "node:url"
 
 import { iosDevelopmentBundleIdentifier } from "../packages/devtools/src/dev-layout.ts"
+import { requireIOSSimulator } from "../packages/devtools/src/ios-simulator-state.ts"
+import { processIdentity } from "../packages/processes/src/index.mjs"
 import { bootstrapDevelopment } from "./dev-bootstrap.mjs"
-import { requireIOSSimulator } from "./ios-simulator-state.mjs"
 import { createCapture } from "./screenshots-capture.mjs"
 import { devices, parseOptions, selectRuntime } from "./screenshots-ios-lib.mjs"
 import { selectedAppearances } from "./screenshots-lib.mjs"
@@ -20,7 +21,7 @@ if (options.help) {
 if (process.platform !== "darwin")
   throw new Error("iOS screenshots require macOS and Xcode with an iOS Simulator runtime.")
 
-const simulator = await requireIOSSimulator(root)
+const simulator = await requireIOSSimulator(root, { identity: processIdentity })
 const { output, command, build, exportImages, finish } = await createCapture(root, "ios", options)
 const simctl = (...args) => command("xcrun", ["simctl", ...args])
 const device = devices[options.device]

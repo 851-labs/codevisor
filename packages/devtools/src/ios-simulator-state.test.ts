@@ -1,5 +1,6 @@
 import assert from "node:assert/strict"
-import test from "node:test"
+
+import { test } from "vitest"
 
 import {
   deleteOwnedSimulator,
@@ -8,7 +9,7 @@ import {
   requireIOSSimulator,
   selectSimulatorConfiguration,
   simulatorName
-} from "./ios-simulator-state.mjs"
+} from "./ios-simulator-state.ts"
 
 const owner = { pid: 42, startedAt: "first", state: "S" }
 const manifest = {
@@ -21,7 +22,8 @@ const manifest = {
   ready: true
 }
 const device = { udid: manifest.udid, name: manifest.name, state: "Booted" }
-const listing = (devices) => JSON.stringify({ devices: { runtime: devices } })
+const listing = (devices: Array<{ udid: string; name: string; state: string }>) =>
+  JSON.stringify({ devices: { runtime: devices } })
 
 test("device/runtime options select a supported installed runtime", () => {
   assert.deepEqual(parseSimulatorArguments(["--device=iPhone 17", "--runtime", "27.0"]), {
@@ -36,38 +38,58 @@ test("device/runtime options select a supported installed runtime", () => {
   const runtimes = [26, 27].map((version) => ({
     identifier: `runtime.iOS-${version}`,
     version: `${version}.0`,
+    name: `iOS ${version}.0`,
     isAvailable: true,
     supportedDeviceTypes: [{ identifier: "phone" }]
   }))
   assert.equal(
-    selectSimulatorConfiguration({ device: "phone" }, types, runtimes).runtime,
+    selectSimulatorConfiguration(
+      { device: "phone", runtime: undefined, help: false },
+      types,
+      runtimes
+    ).runtime,
     "iOS 27.0"
   )
   assert.equal(
-    selectSimulatorConfiguration({ device: "iPhone 17", runtime: "26.0" }, types, runtimes).runtime,
+    selectSimulatorConfiguration(
+      { device: "iPhone 17", runtime: "26.0", help: false },
+      types,
+      runtimes
+    ).runtime,
     "iOS 26.0"
   )
   assert.throws(
-    () => selectSimulatorConfiguration({ device: "missing" }, types, runtimes),
+    () =>
+      selectSimulatorConfiguration(
+        { device: "missing", runtime: undefined, help: false },
+        types,
+        runtimes
+      ),
     /Unknown simulator device/
   )
   assert.throws(
-    () => selectSimulatorConfiguration({ device: "phone", runtime: "25" }, types, runtimes),
+    () =>
+      selectSimulatorConfiguration(
+        { device: "phone", runtime: "25", help: false },
+        types,
+        runtimes
+      ),
     /No installed iOS runtime/
   )
   assert.notEqual(simulatorName("/repo/a"), simulatorName("/another/a"))
 })
 
-const runtime = (platform, version, deviceType) => ({
+const runtime = (platform: string, version: string, deviceType: string) => ({
   identifier: `com.apple.CoreSimulator.SimRuntime.${platform}-${version.replaceAll(".", "-")}`,
   version,
+  name: `${platform} ${version}`,
   isAvailable: true,
   supportedDeviceTypes: [{ identifier: deviceType }]
 })
 
 test("selects an older compatible iOS runtime when the latest cannot run the device", () => {
   const result = selectSimulatorConfiguration(
-    { device: "iPhone 17 Pro" },
+    { device: "iPhone 17 Pro", runtime: undefined, help: false },
     [{ name: "iPhone 17 Pro", identifier: "phone" }],
     [
       runtime("iOS", "26.4", "phone"),
@@ -102,15 +124,16 @@ test("dev startup requires the live owner and the exact booted device", async ()
 })
 
 test("cleanup verifies ownership, targets only its UUID, and preserves a newer lease", async () => {
-  const calls = []
+  const calls: Array<ReadonlyArray<string>> = []
   let removed = false
   const deps = {
-    read: async (path) => (path === "marker" ? manifest : { ...manifest, lease: "replacement" }),
+    read: async (path: string) =>
+      path === "marker" ? manifest : { ...manifest, lease: "replacement" },
     ownerPath: () => "marker",
     remove: async () => {
       removed = true
     },
-    simctl: async (args) => {
+    simctl: async (args: ReadonlyArray<string>) => {
       calls.push(args)
       return listing([device, { ...device, udid: "another" }])
     }
@@ -130,13 +153,13 @@ test("cleanup verifies ownership, targets only its UUID, and preserves a newer l
 })
 
 test("orphan recovery skips live owners and unmarked user devices", async () => {
-  const calls = []
+  const calls: Array<ReadonlyArray<string>> = []
   const deps = {
-    read: async (path) => (path === "owned" ? manifest : undefined),
-    ownerPath: (id) => id,
+    read: async (path: string) => (path === "owned" ? manifest : undefined),
+    ownerPath: (id: string) => id,
     remove: async () => {},
     identity: async () => owner,
-    simctl: async (args) => {
+    simctl: async (args: ReadonlyArray<string>) => {
       calls.push(args)
       return listing([
         device,

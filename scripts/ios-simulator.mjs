@@ -1,6 +1,6 @@
 import { fileURLToPath } from "node:url"
 
-import { parseSimulatorArguments } from "./ios-simulator-state.mjs"
+import { parseSimulatorArguments } from "../packages/devtools/src/ios-simulator-state.ts"
 import { runOwnedTask } from "./owned-task.mjs"
 
 const options = parseSimulatorArguments(process.argv.slice(2))

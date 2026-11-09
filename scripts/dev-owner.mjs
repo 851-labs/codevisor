@@ -15,12 +15,16 @@ import {
   releaseDevelopmentRunner
 } from "../packages/devtools/src/dev-runtime.ts"
 import {
+  requireIOSSimulator,
+  simctl,
+  readJSON
+} from "../packages/devtools/src/ios-simulator-state.ts"
+import {
   readProcessTable,
   processIdentity,
   stopProcesses,
   trackProcessTree
 } from "../packages/processes/src/index.mjs"
-import { requireIOSSimulator, simctl, readJSON } from "./ios-simulator-state.mjs"
 
 const repoRoot = await realpath(fileURLToPath(new URL("..", import.meta.url)))
 const [kind, ...args] = process.argv.slice(2)
@@ -28,7 +32,8 @@ parseDevelopmentRunnerArguments(args, {
   allowedArguments: kind === "ios" ? [] : ["--no-ios", "--reuse-macos-build"]
 })
 let simulator
-if (kind === "ios" || !args.includes("--no-ios")) simulator = await requireIOSSimulator(repoRoot)
+if (kind === "ios" || !args.includes("--no-ios"))
+  simulator = await requireIOSSimulator(repoRoot, { identity: processIdentity })
 const layout = developmentLayout(repoRoot)
 const claimPath = layout.runtime.manifest
 const claim = {

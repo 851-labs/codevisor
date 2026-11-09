@@ -1,8 +1,13 @@
 import assert from "node:assert/strict"
-import test from "node:test"
 
-import { developmentLayout } from "../packages/devtools/src/dev-layout.ts"
-import { packageResolutionArguments, xcodebuildArguments } from "./xcodebuild.mjs"
+import { test } from "vitest"
+
+import { developmentLayout } from "./dev-layout.ts"
+import {
+  packageResolutionArguments,
+  packageResolutionInputs,
+  xcodebuildArguments
+} from "./xcodebuild.ts"
 
 test("xcodebuild builds pin worktree-local caches", () => {
   const layout = developmentLayout("/repo/codevisor", {})
@@ -35,6 +40,8 @@ test("standalone Xcode operations omit incompatible build flags", () => {
 
   assert.deepEqual(xcodebuildArguments(layout, "ios", exportArguments), exportArguments)
   assert.equal(packageResolutionArguments(exportArguments), undefined)
+  const list = ["-list", "-project", "apps/macos/Codevisor.xcodeproj"]
+  assert.deepEqual(xcodebuildArguments(layout, "macos", list), list)
   assert.deepEqual(xcodebuildArguments(layout, "ios", ["-downloadPlatform", "iOS"]), [
     "-downloadPlatform",
     "iOS"
@@ -55,4 +62,17 @@ test("builds resolve the packages of the project and scheme they build", () => {
   )
   assert.deepEqual(packageResolutionArguments([...project, "-resolvePackageDependencies"]), project)
   assert.equal(packageResolutionArguments([...project, "-showBuildSettings"]), undefined)
+  assert.equal(packageResolutionArguments(["-scheme", "Codevisor", "build"]), undefined)
+})
+
+test("package resolution fingerprints the project's or workspace's pins", () => {
+  assert.equal(
+    packageResolutionInputs("/repo", ["-project", "apps/ios/Codevisor.xcodeproj"])[0],
+    "/repo/apps/ios/Codevisor.xcodeproj/project.xcworkspace/xcshareddata/swiftpm/Package.resolved"
+  )
+  assert.deepEqual(packageResolutionInputs("/repo", ["-workspace", "Codevisor.xcworkspace"]), [
+    "/repo/Codevisor.xcworkspace/xcshareddata/swiftpm/Package.resolved",
+    "/repo/packages/swift/Package.swift",
+    "/repo/packages/swift/Package.resolved"
+  ])
 })
