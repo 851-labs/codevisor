@@ -85,6 +85,32 @@ describe("Chromium artifacts", () => {
     )
   })
 
+  it("installs cmake and refuses a CEF archive that fails its checksum", async () => {
+    const root = await mkdtemp(join(tmpdir(), "codevisor-chromium-test-"))
+    cleanups.push(() => rm(root, { recursive: true, force: true }))
+    const bin = join(root, "bin")
+    const cache = join(root, "cache")
+    await mkdir(bin)
+    await writeFile(
+      join(bin, "python3"),
+      '#!/bin/sh\nmkdir -p "$3/bin" && printf \'#!/bin/sh\\ntouch "$(dirname "$0")/cmake"\\n\' > "$3/bin/pip" && chmod +x "$3/bin/pip"\n'
+    )
+    await writeFile(
+      join(bin, "curl"),
+      '#!/bin/sh\nfor last; do :; done\nwhile [ "$1" != "--output" ]; do shift; done\necho tampered > "$2"\n'
+    )
+    await chmod(join(bin, "python3"), 0o755)
+    await chmod(join(bin, "curl"), 0o755)
+
+    await expect(
+      ensureChromium(join(root, "repo"), {
+        CODEVISOR_CHROMIUM_ARTIFACTS_ROOT: cache,
+        PATH: `${bin}:${process.env.PATH ?? ""}`
+      })
+    ).rejects.toThrow("CEF archive checksum mismatch")
+    expect(await readFile(join(cache, "build-tools/bin/cmake"), "utf8")).toBe("")
+  })
+
   it("links the shared SDK and rebuilds the helper only when its sources change", async () => {
     const { repoRoot, environment, sdk, outputs, output } = await fixture()
 

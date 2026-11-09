@@ -8,6 +8,8 @@
         "!native/**",
         "$TURBO_ROOT$/scripts/net-artifact.mjs",
         "$TURBO_ROOT$/scripts/net-build.mjs",
+        "$TURBO_ROOT$/packages/devtools/src/net-artifact.ts",
+        "$TURBO_ROOT$/packages/devtools/src/net-build.ts",
         "$TURBO_ROOT$/scripts/build-net-swift.sh",
         "$TURBO_ROOT$/scripts/net-build.lock.json",
         "$TURBO_ROOT$/rust-toolchain.toml"
@@ -27,6 +29,8 @@
         "!native/**",
         "$TURBO_ROOT$/scripts/net-artifact.mjs",
         "$TURBO_ROOT$/scripts/net-build.mjs",
+        "$TURBO_ROOT$/packages/devtools/src/net-artifact.ts",
+        "$TURBO_ROOT$/packages/devtools/src/net-build.ts",
         "$TURBO_ROOT$/scripts/build-net-swift.sh",
         "$TURBO_ROOT$/scripts/net-build.lock.json",
         "$TURBO_ROOT$/rust-toolchain.toml"
@@ -46,6 +50,8 @@
         "!native/**",
         "$TURBO_ROOT$/scripts/net-artifact.mjs",
         "$TURBO_ROOT$/scripts/net-build.mjs",
+        "$TURBO_ROOT$/packages/devtools/src/net-artifact.ts",
+        "$TURBO_ROOT$/packages/devtools/src/net-build.ts",
         "$TURBO_ROOT$/scripts/build-net-swift.sh",
         "$TURBO_ROOT$/scripts/net-build.lock.json",
         "$TURBO_ROOT$/rust-toolchain.toml"
@@ -65,6 +71,8 @@
         "!native/**",
         "$TURBO_ROOT$/scripts/net-artifact.mjs",
         "$TURBO_ROOT$/scripts/net-build.mjs",
+        "$TURBO_ROOT$/packages/devtools/src/net-artifact.ts",
+        "$TURBO_ROOT$/packages/devtools/src/net-build.ts",
         "$TURBO_ROOT$/scripts/build-net-swift.sh",
         "$TURBO_ROOT$/scripts/net-build.lock.json",
         "$TURBO_ROOT$/rust-toolchain.toml"
@@ -84,6 +92,8 @@
         "!native/**",
         "$TURBO_ROOT$/scripts/net-artifact.mjs",
         "$TURBO_ROOT$/scripts/net-build.mjs",
+        "$TURBO_ROOT$/packages/devtools/src/net-artifact.ts",
+        "$TURBO_ROOT$/packages/devtools/src/net-build.ts",
         "$TURBO_ROOT$/scripts/build-net-swift.sh",
         "$TURBO_ROOT$/scripts/net-build.lock.json",
         "$TURBO_ROOT$/rust-toolchain.toml"

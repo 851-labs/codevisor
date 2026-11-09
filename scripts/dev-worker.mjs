@@ -10,6 +10,10 @@ import { resolveContainerEngine } from "../packages/devtools/src/container-engin
 import { terminateExactDevelopmentApp } from "../packages/devtools/src/dev-app.ts"
 import { parseDevelopmentRunnerArguments } from "../packages/devtools/src/dev-arguments.ts"
 import {
+  bootstrapDevelopment,
+  ensureNativeFrameworks
+} from "../packages/devtools/src/dev-bootstrap.ts"
+import {
   applyCloudDevMigrations,
   prepareCloudSession,
   resolveCloudDevInstance,
@@ -60,10 +64,9 @@ import {
 import { resolveDevelopmentSigningArguments } from "../packages/devtools/src/dev-signing.ts"
 import { resolveDevVmHost } from "../packages/devtools/src/dev-vm-host.ts"
 import { requireIOSSimulator } from "../packages/devtools/src/ios-simulator-state.ts"
+import { netArtifacts } from "../packages/devtools/src/net-artifact.ts"
 import { runXcodebuild } from "../packages/devtools/src/xcodebuild.ts"
 import { processIdentity } from "../packages/processes/src/index.mjs"
-import { bootstrapDevelopment, ensureNativeFrameworks } from "./dev-bootstrap.mjs"
-import { ensureLinuxNodeAddon, ensureNodeAddon, ensureRelayBinary } from "./net-artifact.mjs"
 
 const simulatorDependencies = { identity: processIdentity }
 const repoRoot = await realpath(fileURLToPath(new URL("..", import.meta.url)))
@@ -170,7 +173,7 @@ const net = await prepareDevNet({
   repoRoot,
   containerContext,
   vmHost,
-  artifacts: { ensureLinuxNodeAddon, ensureNodeAddon, ensureRelayBinary }
+  artifacts: netArtifacts(repoRoot)
 })
 const ephemeralArchiveRoot = join(layout.tmpRoot, "ephemeral")
 const ephemeralArchive =
