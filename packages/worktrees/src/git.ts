@@ -307,6 +307,19 @@ export const cloneRepository = (
     })
   })
 
+export const releaseBranch = async (
+  repoDir: string,
+  branch: string,
+  env?: NodeJS.ProcessEnv
+): Promise<boolean> => {
+  try {
+    await runGit("branch-delete", ["branch", "-D", branch], repoDir, env, { priority: "utility" })
+    return true
+  } catch {
+    return false
+  }
+}
+
 export const removeWorktree = (
   repoDir: string,
   path: string,

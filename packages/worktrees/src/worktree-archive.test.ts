@@ -5,11 +5,10 @@ import { dirname, join } from "node:path"
 import { describe, expect, it, vi } from "vitest"
 
 import { makeGitRepo } from "./git-test-support.js"
-import { addWorktree, listCodevisorWorktreeBranchNames, runGit } from "./git.js"
+import { addWorktree, listCodevisorWorktreeBranchNames, releaseBranch, runGit } from "./git.js"
 import {
   chooseRestoreName,
   deleteSnapshot,
-  releaseBranch,
   removeArchivedWorktreeFiles,
   restoreWorktree,
   snapshotExists,
@@ -34,6 +33,8 @@ const git = (repo: string, ...args: ReadonlyArray<string>): string =>
   }).trim()
 
 const makeRepo = () => makeGitRepo(true)
+
+const takenAmong = (names: ReadonlyArray<string>) => (name: string) => names.includes(name)
 
 const makeDirtyWorktree = async (repo: string, root: string, name: string): Promise<string> => {
   const path = join(root, name)
@@ -134,6 +135,51 @@ describe("worktree archive snapshots", () => {
     expect(restorePath).not.toBe(squatter)
     expect(existsSync(join(restorePath, "stranger.txt"))).toBe(false)
     expect(readFileSync(join(squatter, "stranger.txt"), "utf8")).toBe("not ours\n")
+  })
+
+  it("restores beside a folder another tool recreated at the original path", async () => {
+    const { repo, root } = makeRepo()
+    const path = await makeDirtyWorktree(repo, root, "churros")
+    const snapshot = await archive(repo, path, "wt-4", "churros")
+    const leftover = join(path, "tmp", "build", "cache.bin")
+    mkdirSync(dirname(leftover), { recursive: true })
+    writeFileSync(leftover, "derived data\n")
+
+    const result = await restoreWorktree({
+      repoDir: repo,
+      worktreePathFor: (name) => join(root, name),
+      originalName: "churros",
+      parentSha: snapshot.parentSha,
+      snapshotRef: snapshot.snapshotRef,
+      takenNames: new Set()
+    })
+
+    expect(result).toMatchObject({ name: "churros-2", restoredFromSnapshot: true })
+    expect(readFileSync(join(root, "churros-2", "untracked.txt"), "utf8")).toBe("new file\n")
+    expect(readFileSync(leftover, "utf8")).toBe("derived data\n")
+    expect(await listCodevisorWorktreeBranchNames(repo)).toEqual(["churros-2"])
+  })
+
+  it("deletes the branch it created when git cannot add the worktree", async () => {
+    const { repo, root } = makeRepo()
+    const path = await makeDirtyWorktree(repo, root, "mochi")
+    const snapshot = await archive(repo, path, "wt-5", "mochi")
+    const notAFolder = join(root, "not-a-folder")
+    writeFileSync(notAFolder, "")
+
+    await expect(
+      restoreWorktree({
+        repoDir: repo,
+        worktreePathFor: (name) => join(notAFolder, name),
+        originalName: "mochi",
+        parentSha: snapshot.parentSha,
+        snapshotRef: snapshot.snapshotRef,
+        takenNames: new Set()
+      })
+    ).rejects.toThrow(/could not create/)
+
+    expect(await listCodevisorWorktreeBranchNames(repo)).toEqual([])
+    expect(await snapshotExists(repo, snapshot.snapshotRef)).toBe(true)
   })
 
   it("degrades to a fresh checkout when the snapshot ref is gone", async () => {
@@ -265,9 +311,9 @@ describe("worktree archive snapshots", () => {
 
 describe("chooseRestoreName", () => {
   it("prefers the original name and falls back to readable suffixes", () => {
-    expect(chooseRestoreName("sushi", new Set())).toBe("sushi")
-    expect(chooseRestoreName("sushi", new Set(["sushi"]))).toBe("sushi-2")
-    expect(chooseRestoreName("sushi", new Set(["sushi", "sushi-2"]))).toBe("sushi-3")
+    expect(chooseRestoreName("sushi", takenAmong([]))).toBe("sushi")
+    expect(chooseRestoreName("sushi", takenAmong(["sushi"]))).toBe("sushi-2")
+    expect(chooseRestoreName("sushi", takenAmong(["sushi", "sushi-2"]))).toBe("sushi-3")
   })
 })
 

@@ -10,6 +10,7 @@ import {
   archiveWorkspaceWorktree,
   captureWorkspaceRuntime,
   restoreWorkspaceWorktree,
+  type RestoredWorkspace,
   retireWorkspaceRuntime,
   type RetiredTurnState,
   type WorkspaceRuntime
@@ -126,7 +127,7 @@ export const applyWorkspaceArchiveEffects = async (
     return workspace
   }
 
-  const restored = await restoreWorkspaceWorktree(services, config.id, workspace)
+  const restored = await restoreOrStayArchived(services, fanout, config.id, workspace)
   if (!restored.restoredFiles) {
     await appendAndPublish(services.db, fanout, "workspace.updated", workspace.id, {
       ...restored.workspace,
@@ -144,4 +145,19 @@ export const applyWorkspaceArchiveEffects = async (
     )
   }
   return restored.workspace
+}
+
+const restoreOrStayArchived = async (
+  services: CodevisorServerServices,
+  fanout: EventFanout,
+  serverId: string,
+  workspace: Workspace
+): Promise<RestoredWorkspace> => {
+  try {
+    return await restoreWorkspaceWorktree(services, serverId, workspace)
+  } catch (cause) {
+    const archived = await run(services.db.updateWorkspace(workspace.id, { isArchived: true }))
+    await appendAndPublish(services.db, fanout, "workspace.updated", archived.id, archived)
+    throw cause
+  }
 }

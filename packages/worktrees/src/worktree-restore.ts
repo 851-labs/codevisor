@@ -1,9 +1,12 @@
+import { existsSync } from "node:fs"
+
 import {
   addWorktree,
   type GitOutputListener,
   GitError,
   isWorktreeBranchCollision,
   listCodevisorWorktreeBranchNames,
+  releaseBranch,
   runGit
 } from "./git.js"
 import { worktreeStartPoint } from "./project-branches.js"
@@ -22,12 +25,12 @@ export const snapshotExists = async (
 
 export const chooseRestoreName = (
   originalName: string,
-  taken: ReadonlySet<string>
+  isTaken: (name: string) => boolean
 ): string | undefined => {
-  if (!taken.has(originalName)) return originalName
+  if (!isTaken(originalName)) return originalName
   for (let suffix = 2; suffix <= 99; suffix += 1) {
     const candidate = `${originalName}-${String(suffix)}`
-    if (!taken.has(candidate)) return candidate
+    if (!isTaken(candidate)) return candidate
   }
   return undefined
 }
@@ -50,50 +53,69 @@ export interface RestoreResult {
 }
 
 export const restoreWorktree = async (request: RestoreRequest): Promise<RestoreResult> => {
-  const { repoDir, worktreePathFor, originalName, parentSha, snapshotRef, env } = request
-
-  const branchNames = await listCodevisorWorktreeBranchNames(repoDir, env).catch(
-    /* v8 ignore next */
-    () => [] as ReadonlyArray<string>
-  )
-  const taken = new Set([...request.takenNames, ...branchNames])
-  let name = chooseRestoreName(originalName, taken)
-  if (name === undefined) {
-    throw new GitError("restore-worktree", `No available worktree name near ${originalName}`)
-  }
-  let branch = `codevisor/${name}`
-  let path = worktreePathFor(name)
+  const { repoDir, worktreePathFor, parentSha, snapshotRef, env } = request
+  const isTaken = await takenNamesFor(request)
 
   const hasSnapshot = await snapshotExists(repoDir, snapshotRef, env)
   let startPoint = parentSha
   if (!hasSnapshot) startPoint = (await worktreeStartPoint(repoDir, undefined, env)) ?? parentSha
 
-  try {
-    await addWorktree(repoDir, path, branch, request.onOutput, startPoint, env)
-    /* v8 ignore start */
-  } catch (cause) {
-    if (!isWorktreeBranchCollision(cause)) throw cause
-    const retryName = chooseRestoreName(originalName, new Set([...taken, name]))
-    if (retryName === undefined) throw cause
-    const retryPath = worktreePathFor(retryName)
-    await addWorktree(
-      repoDir,
-      retryPath,
-      `codevisor/${retryName}`,
-      request.onOutput,
-      startPoint,
-      env
-    )
-    name = retryName
-    branch = `codevisor/${retryName}`
-    path = retryPath
-  }
-  /* v8 ignore stop */
-
+  const name = await addRestoredWorktree(request, isTaken, startPoint)
   return {
     name,
-    branch,
-    restoredFromSnapshot: hasSnapshot && (await applySnapshot(path, snapshotRef, parentSha, env))
+    branch: restoredBranch(name),
+    restoredFromSnapshot:
+      hasSnapshot && (await applySnapshot(worktreePathFor(name), snapshotRef, parentSha, env))
+  }
+}
+
+const restoredBranch = (name: string): string => `codevisor/${name}`
+
+const takenNamesFor = async (request: RestoreRequest): Promise<(name: string) => boolean> => {
+  const branchNames = await listCodevisorWorktreeBranchNames(request.repoDir, request.env).catch(
+    /* v8 ignore next */
+    () => [] as ReadonlyArray<string>
+  )
+  const taken = new Set([...request.takenNames, ...branchNames])
+  return (name) => taken.has(name) || existsSync(request.worktreePathFor(name))
+}
+
+const addRestoredWorktree = async (
+  request: RestoreRequest,
+  isTaken: (name: string) => boolean,
+  startPoint: string
+): Promise<string> => {
+  const collided = new Set<string>()
+  for (;;) {
+    const name = chooseRestoreName(
+      request.originalName,
+      (candidate) => collided.has(candidate) || isTaken(candidate)
+    )
+    if (name === undefined) {
+      throw new GitError(
+        "restore-worktree",
+        `No available worktree name near ${request.originalName}`
+      )
+    }
+    if (await addUnlessBranchCollides(request, name, startPoint)) return name
+    collided.add(name)
+  }
+}
+
+const addUnlessBranchCollides = async (
+  request: RestoreRequest,
+  name: string,
+  startPoint: string
+): Promise<boolean> => {
+  const { repoDir, worktreePathFor, onOutput, env } = request
+  const branch = restoredBranch(name)
+  try {
+    await addWorktree(repoDir, worktreePathFor(name), branch, onOutput, startPoint, env)
+    return true
+  } catch (cause) {
+    if (isWorktreeBranchCollision(cause)) return false
+    await releaseBranch(repoDir, branch, env)
+    throw cause
   }
 }
 

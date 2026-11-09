@@ -1,5 +1,5 @@
 import { execFile } from "node:child_process"
-import { existsSync, mkdirSync, mkdtempSync, writeFileSync } from "node:fs"
+import { chmodSync, existsSync, mkdirSync, mkdtempSync, writeFileSync } from "node:fs"
 import { tmpdir } from "node:os"
 import { join } from "node:path"
 import { promisify } from "node:util"
@@ -42,7 +42,7 @@ const startWithProjects = async () => {
   )
   await addProject(started.server, "git-project", repoFolder)
   await addProject(started.server, "plain-project", plainFolder)
-  return started
+  return { ...started, repoFolder }
 }
 
 const addProject = async (
@@ -126,10 +126,10 @@ describe("worktree setup jobs", () => {
   })
 
   it("reports a failed checkout with git's reason", async () => {
-    const { server, services } = await startWithProjects()
-    const blocked = join(worktreesRoot, "worktrees.noindex", "git-project", "blocked")
-    mkdirSync(blocked, { recursive: true })
-    writeFileSync(join(blocked, "keep.txt"), "in the way")
+    const { repoFolder, server, services } = await startWithProjects()
+    const hook = join(repoFolder, ".git", "hooks", "post-checkout")
+    writeFileSync(hook, "#!/bin/sh\necho checkout hook failed >&2\nexit 2\n")
+    chmodSync(hook, 0o755)
 
     const started = await startSetup(server, { id: "wt-blocked", name: "blocked" })
     expect(started.status).toBe(202)
@@ -137,7 +137,7 @@ describe("worktree setup jobs", () => {
 
     const status = decodeStatus((await setupStatus(server, "wt-blocked")).body)
     expect(status.state).toBe("failed")
-    expect(status.message).toContain("already exists")
+    expect(status.message).toContain("checkout hook failed")
     const worktrees = itemsOf(
       (await jsonRequest(server, "/v1/projects/git-project/worktrees")).body
     )
