@@ -1,19 +1,19 @@
-import assert from "node:assert/strict"
 import { fork } from "node:child_process"
 import { once } from "node:events"
 import { mkdtemp, mkdir, rm, writeFile } from "node:fs/promises"
 import { createServer } from "node:net"
 import { tmpdir } from "node:os"
 import { join } from "node:path"
-import { test } from "node:test"
+
+import { expect, it } from "vitest"
 
 for (const asynchronous of [false, true]) {
-  test(`cloud variables retain ${asynchronous ? "asynchronous capture" : "synchronous discovery"}`, async () => {
+  it(`cloud variables retain ${asynchronous ? "asynchronous capture" : "synchronous discovery"}`, async () => {
     const fixture = await mkdtemp(join(tmpdir(), "codevisor-cloud-variables-"))
-    let connection
-    let child
-    let closed
-    let watchdog
+    let connection: import("node:net").Socket | undefined
+    let child: import("node:child_process").ChildProcess | undefined
+    let closed: Promise<unknown> | undefined
+    let watchdog: ReturnType<typeof setTimeout> | undefined
     let cleaning = false
     const server = createServer()
     try {
@@ -41,7 +41,8 @@ socket.on("close", () => process.exit())
       await writeFile(
         probe,
         `import { existsSync } from "node:fs"
-import { makeCommandRunner, readCloudDevVariables } from ${JSON.stringify(new URL("./dev-host-tools.mjs", import.meta.url).href)}
+import { makeCommandRunner } from ${JSON.stringify(new URL("./commands.ts", import.meta.url).href)}
+import { readCloudDevVariables } from ${JSON.stringify(new URL("./dev-cloud.ts", import.meta.url).href)}
 queueMicrotask(() => process.send({ finished: existsSync("finished") }))
 const variables = await readCloudDevVariables(process.cwd(), ${asynchronous ? "makeCommandRunner(process.cwd()).capture" : "undefined"})
 process.send({ variables })
@@ -49,10 +50,10 @@ process.disconnect()
 `
       )
       let ready = false
-      let pulse
-      let variables
+      let pulse: { finished: boolean } | undefined
+      let variables: unknown
       const release = () => {
-        if (ready && (!asynchronous || pulse !== undefined)) connection.end("release")
+        if (ready && (!asynchronous || pulse !== undefined)) connection?.end("release")
       }
       server.on("connection", (socket) => {
         if (cleaning) {
@@ -69,27 +70,32 @@ process.disconnect()
       await once(server, "listening")
       child = fork(probe, [], {
         cwd: fixture,
-        env: { ...process.env, PATH: fixture, CLOUD_TEST_GATE: String(server.address().port) },
+        env: {
+          ...process.env,
+          PATH: fixture,
+          CLOUD_TEST_GATE: String(gatePort(server))
+        },
         stdio: ["ignore", "ignore", "pipe", "ipc"]
       })
-      closed = new Promise((done) => child.once("close", (code, signal) => done([code, signal])))
+      const spawned = child
+      closed = new Promise((done) => spawned.once("close", (code, signal) => done([code, signal])))
       const completed = once(child, "close")
       let stderr = ""
-      child.stderr.on("data", (chunk) => (stderr += chunk))
-      child.on("message", (message) => {
+      child.stderr?.on("data", (chunk) => (stderr += chunk))
+      child.on("message", (message: { finished: boolean } | { variables: unknown }) => {
         if ("finished" in message) {
-          pulse = message
+          pulse = { finished: message.finished }
           if (asynchronous) release()
         } else variables = message.variables
       })
       watchdog = setTimeout(() => {
         connection?.destroy()
-        child.kill("SIGKILL")
+        child?.kill("SIGKILL")
       }, 15_000)
-      assert.deepEqual(await completed, [0, null], stderr)
-      assert.equal(ready, true)
-      assert.equal(pulse?.finished, !asynchronous)
-      assert.deepEqual(variables, { VALUE: "local=content" })
+      expect(await completed, stderr).toEqual([0, null])
+      expect(ready).toBe(true)
+      expect(pulse?.finished).toBe(!asynchronous)
+      expect(variables).toEqual({ VALUE: "local=content" })
     } finally {
       clearTimeout(watchdog)
       cleaning = true
@@ -100,11 +106,17 @@ process.disconnect()
         if (closed) await closed
       } finally {
         try {
-          await new Promise((done) => server.close(done))
+          await new Promise((done) => server.close(() => done(undefined)))
         } finally {
           await rm(fixture, { recursive: true, force: true })
         }
       }
     }
   })
+}
+
+function gatePort(server: import("node:net").Server): number {
+  const address = server.address()
+  if (address === null || typeof address === "string") throw new Error("expected a TCP address")
+  return address.port
 }

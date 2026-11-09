@@ -9,7 +9,8 @@ import {
   alignDevCloudCredentialUrl,
   devContainerName,
   sweepStaleContainers,
-  devRemoteHomeMounts
+  devRemoteHomeMounts,
+  wantsContainerDesktop
 } from "./dev-containers.mjs"
 
 for (const engine of ["apple", "docker"]) {
@@ -232,4 +233,9 @@ test("alignDevCloudCredentialUrl rebinds shared accounts to the dev cloud's curr
   } finally {
     await rm(root, { recursive: true, force: true })
   }
+})
+
+test("the dev container desktop is opt-in", () => {
+  assert.equal(wantsContainerDesktop({ CODEVISOR_DEV_CONTAINER_DESKTOP: "1" }), true)
+  assert.equal(wantsContainerDesktop({ PATH: "/usr/bin" }), false)
 })
