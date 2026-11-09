@@ -2,18 +2,19 @@ import assert from "node:assert/strict"
 import { mkdir, mkdtemp, readdir, rm, utimes, writeFile } from "node:fs/promises"
 import { tmpdir } from "node:os"
 import { join } from "node:path"
-import test from "node:test"
 
-import { ensureStoreEntry, pruneStore, STORE_RETENTION_MS } from "./apfs-clone.mjs"
+import { onTestFinished, test } from "vitest"
 
-async function temporaryStore(t) {
+import { ensureStoreEntry, pruneStore, STORE_RETENTION_MS } from "./apfs-clone.ts"
+
+async function temporaryStore() {
   const root = await mkdtemp(join(tmpdir(), "codevisor-apfs-clone-"))
-  t.after(() => rm(root, { recursive: true, force: true }))
+  onTestFinished(() => rm(root, { recursive: true, force: true }))
   return join(root, "store")
 }
 
-test("concurrent populations publish one store entry", async (t) => {
-  const store = await temporaryStore(t)
+test("concurrent populations publish one store entry", async () => {
+  const store = await temporaryStore()
 
   const entries = await Promise.all(
     ["first", "second", "third"].map((writer) =>
@@ -26,10 +27,10 @@ test("concurrent populations publish one store entry", async (t) => {
   assert.deepEqual(await readdir(store), ["entry"])
 })
 
-test("pruning removes long-unused entries and abandoned staging only", async (t) => {
-  const store = await temporaryStore(t)
+test("pruning removes long-unused entries and abandoned staging only", async () => {
+  const store = await temporaryStore()
   const now = Date.parse("2026-10-01T00:00:00Z")
-  const age = async (name, milliseconds) => {
+  const age = async (name: string, milliseconds: number) => {
     await mkdir(join(store, name), { recursive: true })
     const at = new Date(now - milliseconds)
     await utimes(join(store, name), at, at)

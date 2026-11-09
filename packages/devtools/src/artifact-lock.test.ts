@@ -1,4 +1,5 @@
 import assert from "node:assert/strict"
+import { spawnSync } from "node:child_process"
 import { mkdir, mkdtemp, readFile, readdir, rm, rmdir, stat, writeFile } from "node:fs/promises"
 import { tmpdir } from "node:os"
 import { join } from "node:path"
@@ -192,3 +193,57 @@ test("an empty abandoned directory does not block acquisition", async () => {
   )
   assert.equal(entered, true)
 })
+
+test("a legacy lock file is replaced once its owner is gone", async () => {
+  const lockPath = await lockFixture()
+  await mkdir(join(lockPath, ".."), { recursive: true })
+  await writeFile(lockPath, "4242")
+  const waits: Array<string> = []
+
+  const result = await withArtifactLock(lockPath, () => "acquired", {
+    isProcessAlive: (pid) => pid === 4242 && waits.length === 0,
+    retryDelay: async () => {
+      waits.push("waited")
+    }
+  })
+
+  assert.equal(result, "acquired")
+  assert.deepEqual(waits, ["waited"])
+})
+
+test("an unexpected entry in the lock directory is reported instead of removed", async () => {
+  const lockPath = await lockFixture()
+  await mkdir(lockPath, { recursive: true })
+  await writeFile(join(lockPath, "notes.txt"), "")
+
+  await assert.rejects(
+    withArtifactLock(lockPath, () => assert.fail("must not run")),
+    /Invalid artifact lock entry: .*notes\.txt/
+  )
+  assert.deepEqual(await readdir(lockPath), ["notes.txt"])
+})
+
+test("the default liveness probe respects running processes and reclaims exited ones", async () => {
+  const lockPath = await lockFixture()
+  await mkdir(lockPath, { recursive: true })
+  await writeFile(join(lockPath, "owner-1-init"), "1")
+  let waits = 0
+
+  const result = await withArtifactLock(lockPath, () => "acquired", {
+    retryDelay: async () => {
+      waits += 1
+      await rm(join(lockPath, "owner-1-init"))
+      await writeFile(join(lockPath, `owner-${exitedProcess()}-gone`), "")
+    }
+  })
+
+  assert.equal(result, "acquired")
+  assert.equal(waits, 1)
+})
+
+function exitedProcess(): number {
+  const child = spawnSync(process.execPath, ["-e", "process.stdout.write(String(process.pid))"], {
+    encoding: "utf8"
+  })
+  return Number(child.stdout)
+}

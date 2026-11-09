@@ -1,10 +1,10 @@
-import { type ChildProcess, spawn } from "node:child_process"
+import { type ChildProcess, execFileSync, spawn } from "node:child_process"
 import { mkdir, mkdtemp, readFile, rm, symlink, writeFile } from "node:fs/promises"
 import { createServer, type RequestListener } from "node:http"
 import { tmpdir } from "node:os"
 import { join } from "node:path"
 
-import { afterEach, describe, expect, it } from "vitest"
+import { afterEach, describe, expect, it, vi } from "vitest"
 
 import { waitForExit } from "./child-processes.ts"
 import { colorFromHash } from "./color.ts"
@@ -102,11 +102,61 @@ describe("development icons", () => {
   })
 })
 
+const identities =
+  '  1) 0123456789ABCDEF0123456789ABCDEF01234567 "Apple Development: Test Person (ABCDE12345)"\n     1 valid identities found'
+const certificate = (subject: string) =>
+  execFileSync(
+    "openssl",
+    [
+      "req",
+      "-x509",
+      "-newkey",
+      "ec",
+      "-pkeyopt",
+      "ec_paramgen_curve:P-256",
+      "-nodes",
+      "-keyout",
+      "/dev/null",
+      "-days",
+      "1",
+      "-subj",
+      subject
+    ],
+    {
+      encoding: "utf8",
+      stdio: ["ignore", "pipe", "ignore"]
+    }
+  )
+
+const signing = (pem: string) =>
+  resolveDevelopmentSigningArguments(async (_command, args) =>
+    args[0] === "find-identity" ? identities : pem
+  )
+
 describe("resolveDevelopmentSigningArguments", () => {
   it("falls back to ad-hoc signing without an Apple Development identity", async () => {
+    vi.spyOn(console, "warn").mockImplementation(() => {})
     expect(
       await resolveDevelopmentSigningArguments(async () => "0 valid identities found")
     ).toEqual([])
+  })
+
+  it("signs with the identity's team, or ad hoc when the certificate has none", async () => {
+    vi.spyOn(console, "log").mockImplementation(() => {})
+    const warn = vi.spyOn(console, "warn").mockImplementation(() => {})
+
+    expect(
+      await signing(certificate("/CN=Apple Development: Test Person (ABCDE12345)/OU=TEAM123456"))
+    ).toEqual([
+      "CODE_SIGN_IDENTITY=0123456789ABCDEF0123456789ABCDEF01234567",
+      "DEVELOPMENT_TEAM=TEAM123456",
+      "CODE_SIGN_STYLE=Manual",
+      "PROVISIONING_PROFILE_SPECIFIER="
+    ])
+    expect(await signing(certificate("/CN=Apple Development: Test Person (ABCDE12345)"))).toEqual(
+      []
+    )
+    expect(warn).toHaveBeenCalledWith(expect.stringContaining("no signing team identifier"))
   })
 })
 
