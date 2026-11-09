@@ -10,7 +10,7 @@ import { promisify } from "node:util"
 
 import { delay } from "../../packages/devtools/src/child-processes.ts"
 import { containerHostAddress } from "../../packages/devtools/src/dev-containers.ts"
-import { ensureDevCertificates } from "../../scripts/dev-net.mjs"
+import { ensureDevCertificates } from "../../packages/devtools/src/dev-relay-certificates.ts"
 import { readRelays } from "./gen-fly.mjs"
 
 const exec = promisify(execFile)

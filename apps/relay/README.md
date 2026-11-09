@@ -70,5 +70,5 @@ stall and no reconnect, and `scripts/net-e2e.mjs` checks this on every CI run.
 
 `bun run dev` runs two relays from the same pinned binary, configured by the
 same `render-config.sh` and fronted by the same router, with a per-worktree dev
-CA instead of Let's Encrypt (`scripts/dev-net.mjs`). `scripts/net-e2e.mjs` runs
+CA instead of Let's Encrypt (`packages/devtools/src/dev-relay-certificates.ts`). `scripts/net-e2e.mjs` runs
 the whole stack (wrangler, relays, servers, a headless app) the same way.
