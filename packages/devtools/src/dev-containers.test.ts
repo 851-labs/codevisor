@@ -2,20 +2,21 @@ import assert from "node:assert/strict"
 import { mkdir, mkdtemp, readdir, readFile, rm, utimes, writeFile } from "node:fs/promises"
 import { tmpdir } from "node:os"
 import { join } from "node:path"
-import test from "node:test"
 
-import { syncLinuxWorkspace } from "./dev-container-workspace.mjs"
+import { onTestFinished, test } from "vitest"
+
+import { syncLinuxWorkspace } from "./dev-container-workspace.ts"
 import {
-  alignDevCloudCredentialUrl,
   devContainerName,
-  sweepStaleContainers,
   devRemoteHomeMounts,
+  sweepStaleContainers,
   wantsContainerDesktop
-} from "./dev-containers.mjs"
+} from "./dev-containers.ts"
+import { alignDevCloudCredentialUrl } from "./dev-remote-server.ts"
 
-for (const engine of ["apple", "docker"]) {
+for (const engine of ["apple", "docker"] as const) {
   test(`${engine} cleanup matches the exact worktree label`, async () => {
-    const calls = []
+    const calls: Array<[string, ReadonlyArray<string>]> = []
     const entries =
       engine === "apple"
         ? [
@@ -39,7 +40,7 @@ for (const engine of ["apple", "docker"]) {
     ])
     assert.equal(calls.length, 2)
     if (engine === "docker")
-      assert.deepEqual(calls[0][1], ["ps", "--all", "--format", "{{json .}}"])
+      assert.deepEqual(calls[0]?.[1], ["ps", "--all", "--format", "{{json .}}"])
   })
 }
 
@@ -50,7 +51,7 @@ test("dev remotes persist root state and user workspaces independently", () => {
   ])
 })
 
-const makeFakeRepo = async (root) => {
+const makeFakeRepo = async (root: string) => {
   await mkdir(join(root, "apps/server/dist"), { recursive: true })
   await mkdir(join(root, "packages/sync/dist"), { recursive: true })
   await mkdir(join(root, "packages/sync/src"), { recursive: true })
@@ -159,9 +160,9 @@ test("syncLinuxWorkspace copies dists and manifests, never sources", async () =>
   }
 })
 
-test("syncLinuxWorkspace mirrors dependency patches and resyncs when one changes", async (t) => {
+test("syncLinuxWorkspace mirrors dependency patches and resyncs when one changes", async () => {
   const root = await mkdtemp(join(tmpdir(), "codevisor-devc-patches-"))
-  t.after(() => rm(root, { recursive: true, force: true }))
+  onTestFinished(() => rm(root, { recursive: true, force: true }))
   await makeFakeRepo(root)
   await mkdir(join(root, "patches"))
   await writeFile(join(root, "patches/dep@1.0.0.patch"), "patch-v1")
@@ -226,7 +227,7 @@ test("alignDevCloudCredentialUrl rebinds shared accounts to the dev cloud's curr
 
     await alignDevCloudCredentialUrl(credentialsPath, "http://192.168.64.1:4000/")
 
-    const read = async (name) => JSON.parse(await readFile(join(shared, name), "utf8"))
+    const read = async (name: string) => JSON.parse(await readFile(join(shared, name), "utf8"))
     assert.deepEqual(await read("a.json"), { ...sameCloud, cloud: "http://192.168.64.1:4000" })
     assert.deepEqual(await read("b.json"), otherCloud)
     assert.deepEqual(await read("c.json"), { account: "local-only" })

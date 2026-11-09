@@ -9,7 +9,7 @@ import { fileURLToPath } from "node:url"
 import { promisify } from "node:util"
 
 import { delay } from "../../packages/devtools/src/child-processes.ts"
-import { containerHostAddress } from "../../scripts/dev-containers.mjs"
+import { containerHostAddress } from "../../packages/devtools/src/dev-containers.ts"
 import { ensureDevCertificates } from "../../scripts/dev-net.mjs"
 import { readRelays } from "./gen-fly.mjs"
 
