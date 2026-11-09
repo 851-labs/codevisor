@@ -10,7 +10,10 @@ const context = {
     { directory: "packages/vitest-config", name: "@codevisor/vitest-config" }
   ],
   scriptInputs: {
-    "scripts/test-swift.mjs": ["scripts/test-swift.mjs", "scripts/swift-artifacts.mjs"],
+    "scripts/test-swift.mjs": [
+      "scripts/test-swift.mjs",
+      "packages/devtools/src/swift-artifacts.ts"
+    ],
     "scripts/release": ["scripts/chromium-artifact.mjs"]
   },
   swiftLinks: [{ link: "packages/swift/Transcript/Sources", target: "apps/macos/Transcript" }]
@@ -81,7 +84,7 @@ test("Swift changes run the Swift style checks and tests, and never build iOS", 
     "scripts/xcodebuild.mjs": [],
     "apps/macos/Transcript/Row.swift": swiftChecks,
     "apps/macos/Settings/Pane.swift": ["swift:format:check", "swift:lint"],
-    "scripts/swift-artifacts.mjs": ["swift:test"],
+    "packages/devtools/src/swift-artifacts.ts": ["swift:test"],
     "packages/net/src/lib.rs": ["swift:test"]
   }
   for (const [file, checks] of Object.entries(changes)) {
@@ -97,7 +100,7 @@ test("Swift tests skip the hardware codec suites unless screen sharing or what i
     "packages/swift/main-serial-executor-suites.json",
     "packages/swift/ScreenSharingPane/Sources/Pane.swift",
     "apps/macos/Transcript/Row.swift",
-    "scripts/swift-artifacts.mjs",
+    "packages/devtools/src/swift-artifacts.ts",
     "scripts/test-swift.mjs",
     "scripts/check-plan.mjs",
     "lefthook.yml"

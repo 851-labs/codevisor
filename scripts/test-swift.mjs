@@ -5,7 +5,7 @@ import { dirname, join, resolve } from "node:path"
 import { fileURLToPath } from "node:url"
 
 import { developmentLayout } from "../packages/devtools/src/dev-layout.ts"
-import { prepareSwiftPackage } from "./swift-artifacts.mjs"
+import { prepareSwiftPackage } from "../packages/devtools/src/swift-artifacts.ts"
 
 export const mainSerialExecutorSuites = JSON.parse(
   readFileSync(

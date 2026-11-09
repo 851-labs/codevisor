@@ -12,22 +12,23 @@ import {
 } from "node:fs/promises"
 import { tmpdir } from "node:os"
 import { dirname, join } from "node:path"
-import test from "node:test"
 
-import { prepareSwiftArtifacts } from "./swift-artifacts.mjs"
+import { onTestFinished, test } from "vitest"
 
-const darwinOnly = { skip: process.platform !== "darwin" && "APFS clones are macOS-only" }
+import { prepareSwiftArtifacts } from "./swift-artifacts.ts"
+
+const darwinOnly = { skip: process.platform !== "darwin" }
 const checksum = "85cfef48d8a6508af9c645a6887a13ec0ba38a71316195a1d0d9c9c3f051f013"
 
-async function fixture(t) {
+async function fixture() {
   const root = await mkdtemp(join(tmpdir(), "codevisor-swift-artifacts-"))
-  t.after(() => rm(root, { recursive: true, force: true }))
+  onTestFinished(() => rm(root, { recursive: true, force: true }))
   return root
 }
 
 async function worktree(
-  root,
-  name,
+  root: string,
+  name: string,
   { binary = "sentry-binary", unpackedAt = new Date("2026-01-02T03:04:05Z") } = {}
 ) {
   const stateDirectory = join(root, name, "SourcePackages")
@@ -70,12 +71,14 @@ async function worktree(
     stateDirectory,
     extract,
     resolutions: () => resolutions,
-    prepare: (store, log = () => assert.fail("unexpected warning")) =>
-      prepareSwiftArtifacts({ stateDirectory, store, inputs: [pins], resolve, log })
+    prepare: (
+      store: string,
+      log: (message: string) => void = () => assert.fail("unexpected warning")
+    ) => prepareSwiftArtifacts({ stateDirectory, store, inputs: [pins], resolve, log })
   }
 }
 
-async function exists(path) {
+async function exists(path: string) {
   return lstat(path).then(
     () => true,
     () => false
@@ -85,8 +88,8 @@ async function exists(path) {
 test(
   "resolution shares downloaded artifacts through the machine-wide store",
   darwinOnly,
-  async (t) => {
-    const root = await fixture(t)
+  async () => {
+    const root = await fixture()
     const store = join(root, "store")
     const first = await worktree(root, "biscotti")
     const second = await worktree(root, "grouper", { unpackedAt: new Date("2026-03-04T05:06:07Z") })
@@ -110,8 +113,8 @@ test(
   }
 )
 
-test("unchanged pins skip resolution until they or the unpacked files change", async (t) => {
-  const root = await fixture(t)
+test("unchanged pins skip resolution until they or the unpacked files change", async () => {
+  const root = await fixture()
   const store = join(root, "store")
   const checkout = await worktree(root, "biscotti")
 
@@ -129,17 +132,17 @@ test("unchanged pins skip resolution until they or the unpacked files change", a
   assert.equal(checkout.resolutions(), 3)
 })
 
-test("an artifact that differs from the stored copy keeps its own files", darwinOnly, async (t) => {
-  const root = await fixture(t)
+test("an artifact that differs from the stored copy keeps its own files", darwinOnly, async () => {
+  const root = await fixture()
   const store = join(root, "store")
   await (await worktree(root, "biscotti")).prepare(store)
   const corrupt = await worktree(root, "grouper", { binary: "truncated" })
-  const warnings = []
+  const warnings: Array<string> = []
 
   const result = await corrupt.prepare(store, (message) => warnings.push(message))
 
   assert.deepEqual(result.shared, [])
   assert.equal(await readFile(corrupt.binaryPath, "utf8"), "truncated")
   assert.equal(warnings.length, 1)
-  assert.match(warnings[0], /could not share Swift artifact .*Sentry\.xcframework.*changed/)
+  assert.match(warnings[0] ?? "", /could not share Swift artifact .*Sentry\.xcframework.*changed/)
 })

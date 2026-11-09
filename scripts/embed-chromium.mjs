@@ -3,7 +3,11 @@ import { cp, mkdir, readFile, readdir, realpath, rm, symlink, writeFile } from "
 import { join, resolve } from "node:path"
 import { fileURLToPath } from "node:url"
 
-import { cloneTree, ensureStoreEntry, touchStoreEntry } from "./apfs-clone.mjs"
+import {
+  cloneTree,
+  ensureStoreEntry,
+  touchStoreEntry
+} from "../packages/devtools/src/apfs-clone.ts"
 import {
   chromiumArtifactsRoot,
   chromiumHelperName,

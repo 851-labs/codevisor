@@ -5,7 +5,7 @@ import process from "node:process"
 
 import { waitForExit } from "../packages/devtools/src/child-processes.ts"
 import { developmentLayout } from "../packages/devtools/src/dev-layout.ts"
-import { prepareSwiftArtifacts } from "./swift-artifacts.mjs"
+import { prepareSwiftArtifacts } from "../packages/devtools/src/swift-artifacts.ts"
 
 const nonBuildingOperations = new Set([
   "-exportArchive",
