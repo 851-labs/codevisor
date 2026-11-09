@@ -8,6 +8,8 @@ import type { CodevisorDatabaseService } from "@codevisor/db"
 import { installRuntime, planRestart, resolveInstallRoot } from "@codevisor/updater"
 import {
   channelFromSyncedValue,
+  explainDiskFull,
+  serverUpdateCache,
   DEFAULT_GITHUB_REPOSITORY,
   DEFAULT_LEGACY_RELEASE_BASE_URL,
   DEFAULT_SPARKLE_FEED_URL,
@@ -20,7 +22,7 @@ import {
   readMachineUpdateFeedURL,
   sha256File
 } from "@codevisor/updater"
-import type { ServerRelease, ServerUpdateChannel } from "@codevisor/updater"
+import type { ServerRelease, ServerUpdateChannel, ServerUpdatePrune } from "@codevisor/updater"
 import { Effect } from "effect"
 
 import { failedApply, handOffToHostApp, latestApplyState } from "./serve-app-handoff.js"
@@ -91,6 +93,11 @@ export const makeSelfUpdater = (options: {
   >()
 
   const download = options.fetch ?? globalThis.fetch
+  const updates = serverUpdateCache({
+    dataDir: options.dataDir,
+    runningEntrypoint: process.argv[1]
+  })
+  void reportPrune(updates.prune([]))
 
   const syncedChannel = async (): Promise<ServerUpdateChannel | undefined> => {
     const entries = await Effect.runPromise(options.db.getSyncEntries("settings")).catch(
@@ -180,13 +187,22 @@ export const makeSelfUpdater = (options: {
     return withApplyState(info)
   }
 
-  const apply = async (applyOptions?: {
+  let applying: Promise<void> | undefined
+
+  const apply = (applyOptions?: { readonly channel?: ServerUpdateChannel }): Promise<void> => {
+    applying ??= applyOnce(applyOptions)
+    return applying
+  }
+
+  const applyOnce = async (applyOptions?: {
     readonly channel?: ServerUpdateChannel
   }): Promise<void> => {
     lastFailure = undefined
     try {
-      await applyRelease(applyOptions)
+      const restarting = await applyRelease(applyOptions)
+      if (!restarting) applying = undefined
     } catch (cause) {
+      applying = undefined
       lastFailure = failedApply(cause)
       throw cause
     }
@@ -194,92 +210,130 @@ export const makeSelfUpdater = (options: {
 
   const applyRelease = async (applyOptions?: {
     readonly channel?: ServerUpdateChannel
-  }): Promise<void> => {
+  }): Promise<boolean> => {
     const channel = await resolveChannel(applyOptions?.channel ?? "stable")
     const info = await check({ channel })
-    if (!info.updateAvailable) {
-      return
-    }
+    if (!info.updateAvailable) return false
+
     if (appHosted()) {
-      console.log("Handing update off to the host macOS app")
-      const requestPath = process.env.CODEVISOR_APP_UPDATE_REQUEST_PATH
-      if (requestPath !== undefined && requestPath.length > 0) {
-        await handOffToHostApp({
-          requestPath,
-          dataDir: options.dataDir,
-          version: info.latestVersion
-        })
-        return
-      }
-      setTimeout(() => process.exit(APP_UPDATE_HANDOFF_EXIT_CODE), 300)
+      await handOffToApp(info.latestVersion)
+      return false
+    }
+
+    const target = requireReleaseTarget()
+    const release = await releaseFor(channel, target, info.latestVersion)
+    const installRoot = resolveInstallRoot(process.argv[1])
+    const runtimeRoot = await stageRelease(release, target, installRoot)
+    await restartInto(release.version, runtimeRoot, installRoot)
+    return true
+  }
+
+  const handOffToApp = async (version: string): Promise<void> => {
+    console.log("Handing update off to the host macOS app")
+    const requestPath = process.env.CODEVISOR_APP_UPDATE_REQUEST_PATH
+    if (requestPath !== undefined && requestPath.length > 0) {
+      await handOffToHostApp({ requestPath, dataDir: options.dataDir, version })
       return
     }
-    const target = releaseTarget()
-    if (target === undefined) {
-      throw new Error(`Self-update is not supported on ${process.platform}/${process.arch}`)
-    }
+    setTimeout(() => process.exit(APP_UPDATE_HANDOFF_EXIT_CODE), 300)
+  }
 
-    const updateDir = join(options.dataDir, "server-updates", info.latestVersion)
-    const archivePath = join(updateDir, `codevisor-server-${target}.tar.gz`)
-    const runtimeDir = join(updateDir, "runtime")
-    mkdirSync(runtimeDir, { recursive: true })
-
+  const releaseFor = async (
+    channel: ServerUpdateChannel,
+    target: string,
+    version: string
+  ): Promise<ServerRelease> => {
     let release = cached.get(channel)?.release
-    if (release === undefined || release.version !== info.latestVersion) {
+    if (release === undefined || release.version !== version) {
       release = await fetchManifestRelease(channel, target)
     }
-    if (release === undefined || release.version !== info.latestVersion) {
-      throw new Error(`Release assets for Codevisor server ${info.latestVersion} are unavailable`)
+    if (release === undefined || release.version !== version) {
+      throw new Error(`Release assets for Codevisor server ${version} are unavailable`)
     }
+    return release
+  }
 
+  const stageRelease = async (
+    release: ServerRelease,
+    target: string,
+    installRoot: string | undefined
+  ): Promise<string> => {
+    await reportPrune(updates.prune([release.version]))
+    try {
+      return await installRelease(release, target, installRoot)
+    } catch (cause) {
+      await reportPrune(updates.discard(release.version))
+      throw explainDiskFull(cause, updates.directory)
+    }
+  }
+
+  const installRelease = async (
+    release: ServerRelease,
+    target: string,
+    installRoot: string | undefined
+  ): Promise<string> => {
+    const updateDir = updates.versionDirectory(release.version)
+    const archivePath = join(updateDir, `codevisor-server-${target}.tar.gz`)
+    mkdirSync(updateDir, { recursive: true })
+    await downloadArchive(release, archivePath)
+    await verifyChecksum(release, archivePath)
+    if (installRoot === undefined) return extractRuntime(archivePath, join(updateDir, "runtime"))
+
+    await installRuntime({
+      installRoot,
+      extract: (destination) => extractArchive(archivePath, destination)
+    })
+    await reportPrune(updates.discard(release.version))
+    return installRoot
+  }
+
+  const downloadArchive = async (release: ServerRelease, archivePath: string): Promise<void> => {
     const url = release.archiveURL
-    console.log(`Downloading Codevisor server ${info.latestVersion} from ${url}`)
+    console.log(`Downloading Codevisor server ${release.version} from ${url}`)
     const response = await download(url, { signal: AbortSignal.timeout(300_000) })
     if (!response.ok || response.body === null) {
       throw new Error(`Failed to download ${url}: HTTP ${response.status}`)
     }
+    await ensureRoomFor(response, response.body)
     await pipeline(response.body, createWriteStream(archivePath))
+  }
 
-    if (release.checksumURL !== undefined) {
-      const checksumResponse = await download(release.checksumURL, {
-        signal: AbortSignal.timeout(30_000)
-      })
-      if (!checksumResponse.ok) {
-        throw new Error(
-          `Failed to download ${release.checksumURL}: HTTP ${checksumResponse.status}`
-        )
-      }
-      const expected = parseSha256(await checksumResponse.text())
-      if (expected === undefined) {
-        throw new Error(`Invalid SHA-256 sidecar at ${release.checksumURL}`)
-      }
-      const actual = await sha256File(archivePath)
-      if (actual !== expected) {
-        throw new Error(`Checksum mismatch for ${url}: expected ${expected}, got ${actual}`)
-      }
+  const ensureRoomFor = async (response: Response, body: ReadableStream): Promise<void> => {
+    try {
+      await updates.ensureRoomFor(contentLength(response))
+    } catch (cause) {
+      await body.cancel().catch(() => undefined)
+      throw cause
     }
+  }
 
-    const extractArchive = (destination: string): Promise<void> =>
-      new Promise<void>((resolve, reject) => {
-        const untar = spawn("tar", ["-xzf", archivePath, "-C", destination], { stdio: "ignore" })
-        untar.once("error", reject)
-        untar.once("exit", (code) => {
-          if (code === 0) resolve()
-          else reject(new Error(`tar exited with ${code}`))
-        })
-      })
-    await extractArchive(runtimeDir)
+  const verifyChecksum = async (release: ServerRelease, archivePath: string): Promise<void> => {
+    if (release.checksumURL === undefined) return
 
-    if (!existsSync(join(runtimeDir, "main.js")) || !existsSync(join(runtimeDir, "bin", "node"))) {
-      throw new Error(`Downloaded runtime at ${runtimeDir} is incomplete`)
+    const checksumResponse = await download(release.checksumURL, {
+      signal: AbortSignal.timeout(30_000)
+    })
+    if (!checksumResponse.ok) {
+      throw new Error(`Failed to download ${release.checksumURL}: HTTP ${checksumResponse.status}`)
     }
-
-    const installRoot = resolveInstallRoot(process.argv[1])
-    if (installRoot !== undefined) {
-      await installRuntime({ installRoot, extract: extractArchive })
+    const expected = parseSha256(await checksumResponse.text())
+    if (expected === undefined) {
+      throw new Error(`Invalid SHA-256 sidecar at ${release.checksumURL}`)
     }
+    const actual = await sha256File(archivePath)
+    if (actual !== expected) {
+      throw new Error(
+        `Checksum mismatch for ${release.archiveURL}: expected ${expected}, got ${actual}`
+      )
+    }
+  }
 
-    console.log(`Restarting into Codevisor server ${info.latestVersion}`)
+  const restartInto = async (
+    version: string,
+    runtimeRoot: string,
+    installRoot: string | undefined
+  ): Promise<void> => {
+    console.log(`Restarting into Codevisor server ${version}`)
     const plan = planRestart(process.env, process.geteuid?.() ?? 0)
     if (plan.kind === "systemd" && installRoot !== undefined) {
       const managerArgs = plan.userManager ? ["--user"] : []
@@ -292,15 +346,14 @@ export const makeSelfUpdater = (options: {
       return
     }
 
-    const handoffRoot = installRoot ?? runtimeDir
     await startDetachedHandoff(
       "/bin/bash",
       [
         "-c",
         `sleep 1; exec -a ${SERVER_PROCESS_TITLE} "$@"`,
         "bash",
-        join(handoffRoot, "bin", "node"),
-        join(handoffRoot, "main.js"),
+        join(runtimeRoot, "bin", "node"),
+        join(runtimeRoot, "main.js"),
         "serve",
         ...options.serveArgs
       ],
@@ -310,4 +363,50 @@ export const makeSelfUpdater = (options: {
   }
 
   return { check, apply }
+}
+
+const requireReleaseTarget = (): string => {
+  const target = releaseTarget()
+  if (target === undefined) {
+    throw new Error(`Self-update is not supported on ${process.platform}/${process.arch}`)
+  }
+  return target
+}
+
+const extractRuntime = async (archivePath: string, runtimeDir: string): Promise<string> => {
+  mkdirSync(runtimeDir, { recursive: true })
+  await extractArchive(archivePath, runtimeDir)
+  if (!existsSync(join(runtimeDir, "main.js")) || !existsSync(join(runtimeDir, "bin", "node"))) {
+    throw new Error(`Downloaded runtime at ${runtimeDir} is incomplete`)
+  }
+  return runtimeDir
+}
+
+const extractArchive = (archivePath: string, destination: string): Promise<void> =>
+  new Promise<void>((resolve, reject) => {
+    const untar = spawn("tar", ["-xzf", archivePath, "-C", destination], { stdio: "ignore" })
+    untar.once("error", reject)
+    untar.once("exit", (code) => {
+      if (code === 0) resolve()
+      else reject(new Error(`tar exited with ${code}`))
+    })
+  })
+
+const contentLength = (response: Response): number | undefined => {
+  const bytes = Number(response.headers.get("content-length"))
+  return Number.isFinite(bytes) && bytes > 0 ? bytes : undefined
+}
+
+const reportPrune = async (pruning: Promise<ServerUpdatePrune>): Promise<void> => {
+  try {
+    const prune = await pruning
+    if (prune.removed.length > 0) {
+      console.log(`Removed old Codevisor server updates: ${prune.removed.join(", ")}`)
+    }
+    for (const failure of prune.failures) {
+      console.error(`Could not remove the server update ${failure.entry}: ${failure.message}`)
+    }
+  } catch (cause) {
+    console.error(`Could not clean up Codevisor server updates: ${String(cause)}`)
+  }
 }
