@@ -2,14 +2,13 @@ import CodevisorUI
 import SwiftUI
 
 extension View {
-  func pluginErrorsAlert(_ model: McpGlobalModel, includesActionErrors: Bool = true) -> some View {
-    modifier(PluginErrorsAlert(model: model, includesActionErrors: includesActionErrors))
+  func pluginErrorsAlert(_ model: McpGlobalModel) -> some View {
+    modifier(PluginErrorsAlert(model: model))
   }
 }
 
 private struct PluginErrorsAlert: ViewModifier {
   let model: McpGlobalModel
-  let includesActionErrors: Bool
 
   func body(content: Content) -> some View {
     content.alert(
@@ -23,12 +22,11 @@ private struct PluginErrorsAlert: ViewModifier {
   }
 
   private var message: String? {
-    let actionError = includesActionErrors ? model.actionError : nil
-    return actionError ?? model.connectError
+    model.actionError ?? model.connectError
   }
 
   private func dismiss() {
-    if includesActionErrors { model.actionError = nil }
+    model.actionError = nil
     model.connectError = nil
   }
 }
