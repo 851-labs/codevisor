@@ -1,0 +1,24 @@
+name: Set up xcbeautify
+description: >-
+  Puts the pinned xcbeautify on PATH so xcodebuild output in CI becomes short
+  logs plus GitHub annotations for compiler errors and failing tests.
+runs:
+  using: composite
+  steps:
+    - shell: bash
+      env:
+        VERSION: 3.2.1
+        SHA256: 87fdbe786f71d7b2ee28c5c1ca97087587292f2c5c6f9e721cf02db8b2a3c241
+      run: |
+        dir="$RUNNER_TOOL_CACHE/xcbeautify/$VERSION"
+        if [[ ! -x "$dir/xcbeautify" ]]; then
+          download="$(mktemp -d)"
+          curl --fail --silent --show-error --location -o "$download/xcbeautify.zip" \
+            "https://github.com/cpisciotta/xcbeautify/releases/download/$VERSION/xcbeautify-$VERSION-universal-apple-macosx.zip"
+          echo "$SHA256  $download/xcbeautify.zip" | shasum -a 256 -c -
+          unzip -q "$download/xcbeautify.zip" -d "$download"
+          mkdir -p "$dir"
+          mv "$download/release/xcbeautify" "$dir/xcbeautify"
+          rm -rf "$download"
+        fi
+        echo "$dir" >> "$GITHUB_PATH"

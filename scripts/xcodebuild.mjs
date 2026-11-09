@@ -1,4 +1,4 @@
-import { spawn } from "node:child_process"
+import { spawn, spawnSync } from "node:child_process"
 import { mkdir } from "node:fs/promises"
 import { join, resolve as resolvePath } from "node:path"
 import process from "node:process"
@@ -96,15 +96,42 @@ export async function runXcodebuild(repoRoot, platform, arguments_, options = {}
 
 async function spawnXcodebuild(repoRoot, xcodeArguments, options) {
   console.log(`\n$ xcodebuild ${xcodeArguments.join(" ")}`)
+  const environment = options.environment ?? process.env
+  const formatted = options.stdio === undefined && formatsForGitHub(environment)
   const child = spawn("xcodebuild", xcodeArguments, {
     cwd: repoRoot,
-    env: options.environment ?? process.env,
-    stdio: options.stdio ?? "inherit"
+    env: environment,
+    stdio: formatted ? ["inherit", "pipe", "pipe"] : (options.stdio ?? "inherit")
   })
+  const formatter = formatted ? pipeThroughXcbeautify(child, environment) : undefined
   const result = await waitForExit(child)
+  if (formatter !== undefined) await waitForExit(formatter)
   if (result.code !== 0) {
     throw new Error(
       `xcodebuild failed (${result.signal === null ? `code ${result.code ?? 1}` : `signal ${result.signal}`})`
     )
   }
+}
+
+function formatsForGitHub(environment) {
+  return (
+    environment.GITHUB_ACTIONS === "true" &&
+    environment.CODEVISOR_XCBEAUTIFY !== "0" &&
+    hasXcbeautify(environment)
+  )
+}
+
+function hasXcbeautify(environment) {
+  return spawnSync("xcbeautify", ["--version"], { env: environment, stdio: "ignore" }).status === 0
+}
+
+function pipeThroughXcbeautify(child, environment) {
+  const formatter = spawn("xcbeautify", ["--renderer", "github-actions"], {
+    env: environment,
+    stdio: ["pipe", "inherit", "inherit"]
+  })
+  child.stdout.pipe(formatter.stdin, { end: false })
+  child.stderr.pipe(formatter.stdin, { end: false })
+  child.once("close", () => formatter.stdin.end())
+  return formatter
 }
