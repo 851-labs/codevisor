@@ -2,15 +2,12 @@ import assert from "node:assert/strict"
 import { chmod, mkdir, mkdtemp, rm, writeFile } from "node:fs/promises"
 import { tmpdir } from "node:os"
 import { join } from "node:path"
-import test from "node:test"
 
-import {
-  ensureDevServerArchive,
-  parseDefaultRouteInterface,
-  resolveDevVmHost,
-  serveDevEphemeralArtifacts,
-  serverInputsKey
-} from "./dev-ephemeral.mjs"
+import { onTestFinished, test } from "vitest"
+
+import { serveDevEphemeralArtifacts } from "./dev-ephemeral.ts"
+import { ensureDevServerArchive, serverInputsKey } from "./dev-server-archive.ts"
+import { parseDefaultRouteInterface, resolveDevVmHost } from "./dev-vm-host.ts"
 
 const interfaces = () => ({
   lo0: [{ family: "IPv4", address: "127.0.0.1", internal: true }],
@@ -21,9 +18,9 @@ const interfaces = () => ({
   bridge100: [{ family: "IPv4", address: "192.168.64.1", internal: false }]
 })
 
-const fakeRepo = async (t) => {
+const fakeRepo = async () => {
   const root = await mkdtemp(join(tmpdir(), "codevisor-dev-ephemeral-"))
-  t.after(() => rm(root, { recursive: true, force: true }))
+  onTestFinished(() => rm(root, { recursive: true, force: true }))
   await mkdir(join(root, "apps/server/dist"), { recursive: true })
   await mkdir(join(root, "apps/www/public"), { recursive: true })
   await mkdir(join(root, "packages/api/dist"), { recursive: true })
@@ -76,8 +73,8 @@ test("the default route's interface is read from route's output", () => {
   )
 })
 
-test("the artifacts server hands out the working tree's installer and the built archives only", async (t) => {
-  const repoRoot = await fakeRepo(t)
+test("the artifacts server hands out the working tree's installer and the built archives only", async () => {
+  const repoRoot = await fakeRepo()
   const archiveRoot = join(repoRoot, "archives")
   await mkdir(archiveRoot)
   await writeFile(join(archiveRoot, "codevisor-server-darwin-arm64.tar.gz"), "archive")
@@ -88,9 +85,9 @@ test("the artifacts server hands out the working tree's installer and the built 
     archiveRoot,
     host: "127.0.0.1"
   })
-  t.after(() => new Promise((resolve) => server.close(resolve)))
+  onTestFinished(() => new Promise((resolve) => server.close(() => resolve(undefined))))
 
-  const body = async (path) => {
+  const body = async (path: string) => {
     const response = await fetch(`${url}${path}`)
     return [response.status, await response.text()]
   }
@@ -102,8 +99,8 @@ test("the artifacts server hands out the working tree's installer and the built 
   assert.equal((await body("/../bun.lock"))[0], 404)
 })
 
-test("the server inputs key follows the compiled server, not unrelated files", async (t) => {
-  const repoRoot = await fakeRepo(t)
+test("the server inputs key follows the compiled server, not unrelated files", async () => {
+  const repoRoot = await fakeRepo()
   const before = await serverInputsKey(repoRoot, "darwin-arm64")
 
   await writeFile(join(repoRoot, "apps/www/public/index.html"), "<p>unrelated</p>\n")
@@ -115,8 +112,8 @@ test("the server inputs key follows the compiled server, not unrelated files", a
   assert.notEqual(changed, before)
 })
 
-test("an archive built from the same server inputs is reused without rebuilding", async (t) => {
-  const repoRoot = await fakeRepo(t)
+test("an archive built from the same server inputs is reused without rebuilding", async () => {
+  const repoRoot = await fakeRepo()
   const archiveRoot = join(repoRoot, "archives")
   await mkdir(archiveRoot)
   const archive = join(archiveRoot, "codevisor-server-darwin-arm64.tar.gz")

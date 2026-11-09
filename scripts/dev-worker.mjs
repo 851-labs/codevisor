@@ -17,6 +17,10 @@ import {
 } from "../packages/devtools/src/dev-cloud.ts"
 import { prepareDevContainers } from "../packages/devtools/src/dev-containers.ts"
 import {
+  devEphemeralEnvironment,
+  serveDevEphemeralArtifacts
+} from "../packages/devtools/src/dev-ephemeral.ts"
+import {
   createDevelopmentAppIcon,
   createDevelopmentBrowserExtensionIcons
 } from "../packages/devtools/src/dev-icons.ts"
@@ -35,19 +39,15 @@ import {
   verifyReusableMacOSApp
 } from "../packages/devtools/src/dev-macos-reuse.ts"
 import { launchDevRemoteServer } from "../packages/devtools/src/dev-remote-server.ts"
+import { ensureDevServerArchive } from "../packages/devtools/src/dev-server-archive.ts"
 import {
   claimedServerPort,
   shutdownDevServers,
   waitForHealth
 } from "../packages/devtools/src/dev-servers.ts"
 import { resolveDevelopmentSigningArguments } from "../packages/devtools/src/dev-signing.ts"
+import { resolveDevVmHost } from "../packages/devtools/src/dev-vm-host.ts"
 import { bootstrapDevelopment, ensureNativeFrameworks } from "./dev-bootstrap.mjs"
-import {
-  devEphemeralEnvironment,
-  ensureDevServerArchive,
-  resolveDevVmHost,
-  serveDevEphemeralArtifacts
-} from "./dev-ephemeral.mjs"
 import {
   buildIOSDevelopmentApp,
   launchIOSDevelopmentApp,
