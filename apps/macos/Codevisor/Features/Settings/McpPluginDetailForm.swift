@@ -24,7 +24,7 @@ struct McpPluginDetailForm: View {
 
   var body: some View {
     Form {
-      infoSection
+      if showsInfoSection { infoSection }
       if let accounts { PluginAccountsSection(model: accounts) }
       McpMachinesSection(entry: entry, model: model, disabledReason: toggleDisabledReason)
       if isComputerUse {
@@ -54,7 +54,6 @@ struct McpPluginDetailForm: View {
 
   private var infoSection: some View {
     Section {
-      McpStatusRow(entry: entry, model: model)
       if isEditable {
         McpServerInlineEditor(server: server, callbackNote: callbackNote, save: save) { entries, isHTTP, onCommit in
           McpKeyValueEditor(
@@ -70,9 +69,11 @@ struct McpPluginDetailForm: View {
         McpServerConnectionRows(server: server)
       }
     } footer: {
-      if McpAccountButton.isShown(for: entry, model: model, in: environment) {
-        SettingsListActions {
-          McpAccountButton(entry: entry, model: model, onSignIn: signIn)
+      if showsAccountButton || model.actionError != nil {
+        SettingsListActions(message: model.actionError) {
+          if showsAccountButton {
+            McpAccountButton(entry: entry, model: model, onSignIn: signIn)
+          }
         }
       }
     }
@@ -87,6 +88,14 @@ struct McpPluginDetailForm: View {
           .help("Remove this plugin from every machine")
       }
     }
+  }
+
+  private var showsInfoSection: Bool {
+    isEditable || showsConnectionRows || showsAccountButton || model.actionError != nil
+  }
+
+  private var showsAccountButton: Bool {
+    McpAccountButton.isShown(for: entry, model: model, in: environment)
   }
 
   private var isComputerUse: Bool { entry.kind == "computerUse" }

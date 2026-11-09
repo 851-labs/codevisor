@@ -22,12 +22,13 @@ struct McpPluginDetailList: View {
 
   var body: some View {
     List {
-      Section {
-        McpStatusRow(entry: entry, model: model)
-        if isEditable {
-          McpServerInlineEditor(server: server, callbackNote: callbackNote, save: save)
+      if isEditable || !server.isBuiltIn {
+        Section {
+          if isEditable {
+            McpServerInlineEditor(server: server, callbackNote: callbackNote, save: save)
+          }
+          if !server.isBuiltIn { PluginAgeRatingRow(subject: subject) }
         }
-        if !server.isBuiltIn { PluginAgeRatingRow(subject: subject) }
       }
       if let accounts {
         PluginAccountsSection(model: accounts)

@@ -23,6 +23,6 @@ struct McpPluginDetailScreen: View {
     .navigationTitle(entryName)
     .navigationBarTitleDisplayMode(.inline)
     .mcpFleetLiveUpdates(model)
-    .pluginErrorsAlert(model, includesActionErrors: false)
+    .pluginErrorsAlert(model)
   }
 }
