@@ -108,15 +108,6 @@ struct ChromiumBrowserToolbarContent: View {
           ChromiumBrowserZoomPopover(
             model: model, request: model.pageZoom.presentationRequest, editing: editing, loading: model.isLoading)
         }
-        browserButton("Responsive viewport", symbol: "ipad.and.iphone") {
-          Task {
-            if model.viewport == nil {
-              try? await model.setViewport(ChromiumViewport().parameters)
-            } else {
-              try? await model.resetViewport()
-            }
-          }
-        }
         ChromiumDownloadsButton(downloads: model.downloads)
       }
       .frame(maxWidth: .infinity)
