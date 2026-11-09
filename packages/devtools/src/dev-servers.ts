@@ -1,18 +1,21 @@
-import type { ChildProcess } from "node:child_process"
 import { readFileSync } from "node:fs"
 import { join } from "node:path"
 
-import { delay, waitForExit } from "./child-processes.ts"
+import { delay, type ExitingProcess, waitForExit } from "./child-processes.ts"
 
 const healthPollMilliseconds = 250
 const shutdownRequestMilliseconds = 1_000
 const shutdownGraceMilliseconds = 2_000
 
-export type DevServer = readonly [port: number, child: ChildProcess]
+export type DevServer = readonly [port: number, child: StoppableProcess]
+
+export interface StoppableProcess extends ExitingProcess {
+  readonly kill: (signal?: NodeJS.Signals) => boolean
+}
 
 export async function waitForHealth(
   port: number | (() => number),
-  child: ChildProcess,
+  child: ExitingProcess,
   attempts = 120
 ): Promise<void> {
   const currentPort = typeof port === "function" ? port : () => port
@@ -54,7 +57,7 @@ async function isHealthy(port: number): Promise<boolean> {
   }
 }
 
-async function requestShutdown(port: number, child: ChildProcess): Promise<void> {
+async function requestShutdown(port: number, child: StoppableProcess): Promise<void> {
   try {
     await fetch(`http://127.0.0.1:${port}/v1/shutdown`, {
       method: "POST",
