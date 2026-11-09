@@ -15,8 +15,8 @@ import {
 } from "../packages/devtools/src/dev-net.ts"
 import { ensureDevCertificates } from "../packages/devtools/src/dev-relay-certificates.ts"
 import { startDevRelays, waitForDevRelays } from "../packages/devtools/src/dev-relays.ts"
+import { ensureNodeAddon, ensureRelayBinary } from "../packages/devtools/src/net-artifact.ts"
 import { findAvailablePort } from "../packages/devtools/src/ports.ts"
-import { ensureNodeAddon, ensureRelayBinary } from "./net-artifact.mjs"
 
 const repoRoot = join(fileURLToPath(import.meta.url), "..", "..")
 const root = join(repoRoot, "tmp", "net-e2e")
@@ -53,8 +53,8 @@ async function main() {
   await mkdir(root, { recursive: true })
   log("building server and packages")
   await run("npx", ["turbo", "run", "build", "--filter=@codevisor/server"])
-  await ensureNodeAddon()
-  const relayBinary = await ensureRelayBinary()
+  await ensureNodeAddon(repoRoot)
+  const relayBinary = await ensureRelayBinary(repoRoot)
 
   const api = await import("../packages/api/dist/index.js")
   const crypto = await import("../packages/cloud-crypto/dist/index.js")

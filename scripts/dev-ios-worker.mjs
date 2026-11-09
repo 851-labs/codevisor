@@ -10,6 +10,7 @@ import { colorFromHash } from "../packages/devtools/src/color.ts"
 import { makeCommandRunner } from "../packages/devtools/src/commands.ts"
 import { resolveContainerEngine } from "../packages/devtools/src/container-engine.ts"
 import { parseDevelopmentRunnerArguments } from "../packages/devtools/src/dev-arguments.ts"
+import { bootstrapDevelopment } from "../packages/devtools/src/dev-bootstrap.ts"
 import { cloudWranglerEnvironment } from "../packages/devtools/src/dev-cloud.ts"
 import { readCloudDevVariables } from "../packages/devtools/src/dev-cloud.ts"
 import { prepareDevContainers } from "../packages/devtools/src/dev-containers.ts"
@@ -30,7 +31,6 @@ import { waitForHealth } from "../packages/devtools/src/dev-servers.ts"
 import { requireIOSSimulator } from "../packages/devtools/src/ios-simulator-state.ts"
 import { findAvailablePort, isPortAvailable, parsePort } from "../packages/devtools/src/ports.ts"
 import { processIdentity } from "../packages/processes/src/index.mjs"
-import { bootstrapDevelopment } from "./dev-bootstrap.mjs"
 
 const simulatorDependencies = { identity: processIdentity }
 const repoRoot = await realpath(fileURLToPath(new URL("..", import.meta.url)))

@@ -14,7 +14,9 @@ const nativeInputs = [
   "rust-toolchain.toml",
   "scripts/build-net-swift.sh",
   "scripts/net-build.mjs",
-  "scripts/net-artifact.mjs"
+  "scripts/net-artifact.mjs",
+  "packages/devtools/src/net-artifact.ts",
+  "packages/devtools/src/net-build.ts"
 ]
 
 const hardwareCodecInputs = [

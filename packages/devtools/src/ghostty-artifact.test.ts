@@ -1,7 +1,17 @@
 import assert from "node:assert/strict"
 import { execFile } from "node:child_process"
 import { createHash } from "node:crypto"
-import { chmod, cp, mkdir, mkdtemp, readFile, readlink, rm, writeFile } from "node:fs/promises"
+import {
+  chmod,
+  cp,
+  lstat,
+  mkdir,
+  mkdtemp,
+  readFile,
+  readlink,
+  rm,
+  writeFile
+} from "node:fs/promises"
 import { createServer } from "node:http"
 import { tmpdir } from "node:os"
 import { join } from "node:path"
@@ -10,6 +20,7 @@ import { promisify } from "node:util"
 import { onTestFinished, test } from "vitest"
 
 import {
+  buildGhosttyFramework,
   ensureGhosttyFramework,
   GHOSTTY_SLICES,
   ghosttyArtifactsRoot,
@@ -117,6 +128,22 @@ test("an unpublished stamp falls back to building locally", async () => {
 
   assert.equal(await validFramework(result.cachedFramework, "stamp-b"), true)
   assert.equal(await validFramework(local, "stamp-b"), true)
+})
+
+test("an intentional rebuild replaces the shared framework with the local build", async () => {
+  const root = await scratch()
+  const local = join(root, "repo/apps/macos/Frameworks/GhosttyKit.xcframework")
+  const build = `rm -rf "${local}" && mkdir -p "${local}" && for slice in ${GHOSTTY_SLICES.join(" ")}; do mkdir -p "${local}/$slice/Headers/GhosttyKit" && touch "${local}/$slice/Headers/GhosttyKit/ghostty.h" "${local}/$slice/Headers/GhosttyKit/module.modulemap" "${local}/$slice/ghostty-internal.a"; done && touch "${local}/Info.plist" && echo stamp-d > "${local}/.codevisor-stamp"`
+  const repoRoot = await fakeCheckout(root, "stamp-d", build)
+  const environment = { CODEVISOR_GHOSTTY_ARTIFACTS_ROOT: join(root, "artifacts") }
+
+  const result = await buildGhosttyFramework(repoRoot, environment)
+
+  assert.equal(await validFramework(result.cachedFramework, "stamp-d"), true)
+  assert.equal((await lstat(local)).isSymbolicLink(), true)
+  await rm(local)
+  await fakeCheckout(root, "stamp-d")
+  await assert.rejects(buildGhosttyFramework(repoRoot, environment), /build-ghostty\.sh failed/)
 })
 
 test("a published stamp is downloaded, verified, and installed", async () => {

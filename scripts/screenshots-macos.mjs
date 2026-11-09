@@ -2,8 +2,8 @@ import { realpath } from "node:fs/promises"
 import { join } from "node:path"
 import { fileURLToPath } from "node:url"
 
+import { bootstrapDevelopment } from "../packages/devtools/src/dev-bootstrap.ts"
 import { iosDevelopmentBundleIdentifier } from "../packages/devtools/src/dev-layout.ts"
-import { bootstrapDevelopment } from "./dev-bootstrap.mjs"
 import { createCapture } from "./screenshots-capture.mjs"
 import { parseCaptureOptions, selectedAppearances } from "./screenshots-lib.mjs"
 
