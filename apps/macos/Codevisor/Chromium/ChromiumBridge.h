@@ -2,6 +2,7 @@
 
 NS_ASSUME_NONNULL_BEGIN
 
+FOUNDATION_EXPORT void CVRegisterChromiumMallocZone(void);
 FOUNDATION_EXPORT void CVPrepareChromiumApplication(void);
 FOUNDATION_EXPORT void CVShutdownChromium(void (^completion)(void));
 FOUNDATION_EXPORT BOOL CVChromiumIsPumping(void);
