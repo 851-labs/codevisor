@@ -119,7 +119,7 @@ struct CloudAccountAuthenticationSections: View {
         CloudEmailSignInButton(action: signInWithEmail)
       }
       if !link && cloud.developmentAccountAvailable {
-        CloudSignInProviderButton(title: "Use Development Account", icon: .system("hammer")) {
+        CloudSignInProviderButton(title: "Use Development Account", icon: .system("hammer.fill")) {
           Task { await cloud.signInWithDevelopmentAccount() }
         }
       }

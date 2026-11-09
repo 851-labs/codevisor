@@ -11,6 +11,7 @@ struct OnboardingView: View {
   var start: Step = .welcome
 
   static let readableWidth: CGFloat = 560
+  static let dismissedPreferenceKey = "ios.onboarding.dismissed"
 
   var body: some View {
     NavigationStack {
@@ -100,6 +101,8 @@ private struct ConsentAndConnectStep: View {
 
 private struct ConnectMachineStep: View {
   @Environment(AppEnvironment.self) private var environment
+  @ClientPreference(OnboardingView.dismissedPreferenceKey, default: false)
+  private var onboardingDismissed
 
   @State private var cloudSignIn = CloudAuthenticationCoordinator()
   @State private var isSigningInToCloud = false
@@ -194,11 +197,14 @@ private struct ConnectMachineStep: View {
         if cloud.developmentAccountAvailable {
           CloudSignInProviderButton(
             title: "Use Development Account",
-            icon: .system("hammer")
+            icon: .system("hammer.fill")
           ) {
             Task { await cloud.signInWithDevelopmentAccount() }
           }
         }
+
+        skipButton
+          .padding(.top, 4)
       }
       .padding(.horizontal, 20)
       .padding(.top, 12)
@@ -250,6 +256,11 @@ private struct ConnectMachineStep: View {
       .padding(.horizontal, 20)
       .padding(.bottom, 24)
     }
+    .safeAreaInset(edge: .bottom) {
+      skipButton
+        .frame(maxWidth: .infinity)
+        .padding(.vertical, 12)
+    }
     .task {
       while !Task.isCancelled {
         try? await Task.sleep(for: .seconds(5))
@@ -257,6 +268,15 @@ private struct ConnectMachineStep: View {
         await cloud.refreshMachines()
       }
     }
+  }
+
+  private var skipButton: some View {
+    Button("Set Up Later") { onboardingDismissed = true }
+      .font(.subheadline.weight(.semibold))
+      .foregroundStyle(.tint)
+      .frame(minHeight: 44)
+      .buttonStyle(.plain)
+      .accessibilityIdentifier("onboarding.skip")
   }
 
   private func instructionStep(_ number: Int, text: String, command: String) -> some View {
