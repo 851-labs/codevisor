@@ -6,6 +6,7 @@ import { fileURLToPath } from "node:url"
 
 import { describeExit, waitForExit } from "../packages/devtools/src/child-processes.ts"
 import { makeCommandRunner } from "../packages/devtools/src/commands.ts"
+import { resolveContainerEngine } from "../packages/devtools/src/container-engine.ts"
 import { terminateExactDevelopmentApp } from "../packages/devtools/src/dev-app.ts"
 import { parseDevelopmentRunnerArguments } from "../packages/devtools/src/dev-arguments.ts"
 import {
@@ -14,6 +15,7 @@ import {
   resolveCloudDevInstance,
   spawnCloudDev
 } from "../packages/devtools/src/dev-cloud.ts"
+import { prepareDevContainers } from "../packages/devtools/src/dev-containers.ts"
 import {
   createDevelopmentAppIcon,
   createDevelopmentBrowserExtensionIcons
@@ -32,6 +34,7 @@ import {
   requestsMacOSBuildReuse,
   verifyReusableMacOSApp
 } from "../packages/devtools/src/dev-macos-reuse.ts"
+import { launchDevRemoteServer } from "../packages/devtools/src/dev-remote-server.ts"
 import {
   claimedServerPort,
   shutdownDevServers,
@@ -39,11 +42,6 @@ import {
 } from "../packages/devtools/src/dev-servers.ts"
 import { resolveDevelopmentSigningArguments } from "../packages/devtools/src/dev-signing.ts"
 import { bootstrapDevelopment, ensureNativeFrameworks } from "./dev-bootstrap.mjs"
-import {
-  launchDevRemoteServer,
-  prepareDevContainers,
-  resolveContainerEngine
-} from "./dev-containers.mjs"
 import {
   devEphemeralEnvironment,
   ensureDevServerArchive,

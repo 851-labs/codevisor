@@ -5,6 +5,7 @@ import { basename, dirname, join } from "node:path"
 import { fileURLToPath } from "node:url"
 
 import { parseDevelopmentRunnerArguments } from "../packages/devtools/src/dev-arguments.ts"
+import { sweepStaleContainers } from "../packages/devtools/src/dev-containers.ts"
 import {
   developmentLayout,
   iosDevelopmentBundleIdentifier
@@ -19,7 +20,6 @@ import {
   stopProcesses,
   trackProcessTree
 } from "../packages/processes/src/index.mjs"
-import { sweepStaleContainers } from "./dev-containers.mjs"
 import { requireIOSSimulator, simctl, readJSON } from "./ios-simulator-state.mjs"
 
 const repoRoot = await realpath(fileURLToPath(new URL("..", import.meta.url)))
