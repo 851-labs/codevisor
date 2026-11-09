@@ -41,7 +41,7 @@ struct MachineConnectionPresentationTests {
     #expect(tailscale.help == "100.101.102.103")
 
     let internet = presentation(cloud: Self.reach(.internet(address: "203.0.113.9"), milliseconds: 70))
-    #expect(internet.label() == "Internet · 70 ms")
+    #expect(internet.label() == "Public IP · 70 ms")
 
     let relayed = presentation(cloud: Self.reach(.relay(url: "https://relay-sjc-1.codevisor.dev/"), milliseconds: 48))
     #expect(relayed.label() == "Codevisor relay · 48 ms")
