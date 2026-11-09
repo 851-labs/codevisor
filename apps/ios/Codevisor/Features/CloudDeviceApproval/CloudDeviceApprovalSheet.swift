@@ -169,7 +169,7 @@ struct CloudDeviceApprovalSheet: View {
           CloudEmailSignInButton { showsEmailSignIn = true }
         }
         if cloud.developmentAccountAvailable {
-          CloudSignInProviderButton(title: "Use Development Account", icon: .system("hammer")) {
+          CloudSignInProviderButton(title: "Use Development Account", icon: .system("hammer.fill")) {
             Task { await cloud.signInWithDevelopmentAccount() }
           }
         }

@@ -13,7 +13,7 @@ struct HomeView: View {
   @Environment(\.horizontalSizeClass) var horizontalSizeClass
   @Environment(\.openWindow) var openWindow
 
-  @ClientPreference("ios.onboarding.dismissed", default: false)
+  @ClientPreference(OnboardingView.dismissedPreferenceKey, default: false)
   var onboardingDismissed
   @ClientPreference(AIDataSharingConsent.preferenceKey, default: 0)
   private var aiDataSharingConsentVersion

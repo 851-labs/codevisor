@@ -7,6 +7,6 @@ public struct CloudEmailSignInButton: View {
   public init(action: @escaping () -> Void) { self.action = action }
 
   public var body: some View {
-    CloudSignInProviderButton(title: "Sign in with email", icon: .system("envelope"), action: action)
+    CloudSignInProviderButton(title: "Sign in with email", icon: .system("envelope.fill"), action: action)
   }
 }

@@ -24,9 +24,8 @@ public struct CloudSignInProviderButton: View {
 
   public var body: some View {
     Button(action: action) {
-      HStack(spacing: 6) {
+      HStack(spacing: 4) {
         iconView
-          .frame(width: CloudSignInButtonMetrics.fontSize, height: CloudSignInButtonMetrics.fontSize)
           .accessibilityHidden(true)
         Text(title)
           .lineLimit(1)
