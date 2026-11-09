@@ -345,7 +345,7 @@ struct NewChatView: View {
     }
     let heldSend = sendLanding
     let heldSession = ObjectIdentifier(controller)
-    heldSend.hold(heldSession)
+    heldSend.hold(controller)
     controller.onFirstSend = { [weak controller] submittedText in
       defer { heldSend.release(heldSession) }
       guard let controller else { return }

@@ -1,3 +1,4 @@
+import CodevisorCore
 import CodevisorUI
 import Foundation
 import Observation
@@ -8,17 +9,19 @@ final class NewChatSendLanding {
   private(set) var isDeparting = false
   @ObservationIgnored private var heldSession: ObjectIdentifier?
 
-  func hold(_ session: ObjectIdentifier) {
+  func hold(_ controller: SessionController) {
+    let session = ObjectIdentifier(controller)
     if let heldSession, heldSession != session {
       TranscriptSendStaging.shared.removeLandingProvider(for: heldSession, owner: self)
     }
     heldSession = session
     isDeparting = false
+    let awaitsFirstSend = { [weak controller] in controller?.hasAcceptedFirstSend == false }
     TranscriptSendStaging.shared.setLandingProvider(
       for: session,
       owner: self,
-      holds: { [weak self] in self?.heldSession == session },
-      landing: { [weak self] in self?.landing },
+      holds: { [weak self] in self?.heldSession == session && awaitsFirstSend() },
+      landing: { [weak self] in awaitsFirstSend() ? self?.landing : nil },
       depart: { [weak self] in self?.isDeparting = true }
     )
   }
