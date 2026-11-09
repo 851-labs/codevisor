@@ -3,6 +3,7 @@ import { EventEmitter } from "node:events"
 import { mkdir, readdir, readFile, writeFile } from "node:fs/promises"
 import { dirname, join } from "node:path"
 
+import type { ExitingProcess } from "./child-processes.ts"
 import { engineBinary, execEngine, tryEngine } from "./container-engine.ts"
 import {
   type DevContainerContext,
@@ -13,13 +14,9 @@ import {
 } from "./dev-containers.ts"
 import type { ServiceRoots } from "./dev-layout.ts"
 
-export interface RemoteServerHandle {
+export interface RemoteServerHandle extends ExitingProcess {
   exitCode: number | null
   signalCode: NodeJS.Signals | null
-  readonly once: (
-    event: "exit",
-    listener: (code: number | null, signal: NodeJS.Signals | null) => void
-  ) => unknown
   readonly kill: () => boolean
 }
 

@@ -1,4 +1,5 @@
 import { spawn } from "node:child_process"
+import { EventEmitter } from "node:events"
 import { mkdtemp, rm, writeFile } from "node:fs/promises"
 import { createServer, type RequestListener, type Server } from "node:http"
 import { tmpdir } from "node:os"
@@ -6,7 +7,13 @@ import { join } from "node:path"
 
 import { afterEach, describe, expect, it } from "vitest"
 
-import { delay, describeExit, waitForClose, waitForExit } from "./child-processes.ts"
+import {
+  delay,
+  describeExit,
+  type ExitingProcess,
+  waitForClose,
+  waitForExit
+} from "./child-processes.ts"
 import { colorFromHash } from "./color.ts"
 import { captureCommand, runCommand } from "./commands.ts"
 import { claimedServerPort, shutdownDevServers, waitForHealth } from "./dev-servers.ts"
@@ -109,6 +116,19 @@ describe("child processes", () => {
   it("rejects instead of crashing or hanging when the command cannot start", async () => {
     await expect(runCommand("codevisor-missing-tool", [])).rejects.toThrow(/ENOENT|not found/)
     await expect(captureCommand("codevisor-missing-tool", [])).rejects.toThrow(/ENOENT|not found/)
+  })
+
+  it("waits on process-like handles that only support once, like a dev container", async () => {
+    const emitter = new EventEmitter()
+    const handle: ExitingProcess = {
+      exitCode: null,
+      signalCode: null,
+      once: (event, listener) => emitter.once(event, listener)
+    }
+    const exited = waitForExit(handle)
+
+    expect(() => emitter.emit("exit", 0, null)).not.toThrow()
+    expect(await exited).toEqual({ code: 0, signal: null })
   })
 
   it("describes exits and waits", async () => {

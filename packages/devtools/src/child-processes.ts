@@ -5,26 +5,30 @@ export interface ExitStatus {
   readonly signal: NodeJS.Signals | null
 }
 
-export function waitForExit(child: ChildProcess): Promise<ExitStatus> {
+export interface ExitingProcess {
+  readonly exitCode: number | null
+  readonly signalCode: NodeJS.Signals | null
+  once(
+    event: "exit",
+    listener: (code: number | null, signal: NodeJS.Signals | null) => void
+  ): unknown
+  once(event: "error", listener: (error: Error) => void): unknown
+}
+
+export function waitForExit(child: ExitingProcess): Promise<ExitStatus> {
   if (child.exitCode !== null || child.signalCode !== null) {
     return Promise.resolve({ code: child.exitCode, signal: child.signalCode })
   }
   return new Promise((resolve, reject) => {
     child.once("error", reject)
-    child.once("exit", (code, signal) => {
-      child.off("error", reject)
-      resolve({ code, signal })
-    })
+    child.once("exit", (code, signal) => resolve({ code, signal }))
   })
 }
 
 export function waitForClose(child: ChildProcess): Promise<ExitStatus> {
   return new Promise((resolve, reject) => {
     child.once("error", reject)
-    child.once("close", (code, signal) => {
-      child.off("error", reject)
-      resolve({ code, signal })
-    })
+    child.once("close", (code, signal) => resolve({ code, signal }))
   })
 }
 
