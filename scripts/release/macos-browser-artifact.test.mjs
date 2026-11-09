@@ -5,7 +5,7 @@ import { tmpdir } from "node:os"
 import { join } from "node:path"
 import test from "node:test"
 
-import { chromiumHelperSuffixes } from "../chromium-artifact.mjs"
+import { chromiumHelperSuffixes } from "../../packages/devtools/src/chromium-artifact.ts"
 import {
   codesignWithTimestampRetry,
   embeddedLibraries,

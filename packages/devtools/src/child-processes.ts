@@ -9,14 +9,22 @@ export function waitForExit(child: ChildProcess): Promise<ExitStatus> {
   if (child.exitCode !== null || child.signalCode !== null) {
     return Promise.resolve({ code: child.exitCode, signal: child.signalCode })
   }
-  return new Promise((resolve) => {
-    child.once("exit", (code, signal) => resolve({ code, signal }))
+  return new Promise((resolve, reject) => {
+    child.once("error", reject)
+    child.once("exit", (code, signal) => {
+      child.off("error", reject)
+      resolve({ code, signal })
+    })
   })
 }
 
 export function waitForClose(child: ChildProcess): Promise<ExitStatus> {
-  return new Promise((resolve) => {
-    child.once("close", (code, signal) => resolve({ code, signal }))
+  return new Promise((resolve, reject) => {
+    child.once("error", reject)
+    child.once("close", (code, signal) => {
+      child.off("error", reject)
+      resolve({ code, signal })
+    })
   })
 }
 

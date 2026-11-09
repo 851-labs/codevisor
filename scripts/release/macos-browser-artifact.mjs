@@ -3,7 +3,7 @@ import { readdir } from "node:fs/promises"
 import { join, resolve } from "node:path"
 import { fileURLToPath } from "node:url"
 
-import { chromiumHelperSuffixes } from "../chromium-artifact.mjs"
+import { chromiumHelperSuffixes } from "../../packages/devtools/src/chromium-artifact.ts"
 
 const storageName = "CodevisorBrowserStorage.dylib"
 const storageLoadPath = `@rpath/${storageName}`

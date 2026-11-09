@@ -2,7 +2,11 @@ import { cp, mkdir } from "node:fs/promises"
 import { join } from "node:path"
 import { fileURLToPath } from "node:url"
 
-import { chromiumHelperName, chromiumHelperSuffixes, run } from "./chromium-artifact.mjs"
+import {
+  chromiumHelperName,
+  chromiumHelperSuffixes,
+  runTool as run
+} from "../packages/devtools/src/chromium-artifact.ts"
 
 const root = fileURLToPath(new URL("..", import.meta.url))
 const env = process.env
