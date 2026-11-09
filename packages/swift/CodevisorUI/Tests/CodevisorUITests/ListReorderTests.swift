@@ -64,4 +64,15 @@ struct ListReorderTests {
     #expect(ListReorder.moving("b", to: 1, within: lower, in: order) == order)
     #expect(ListReorder.moving("C", to: 0, within: ["B", "C"], in: order) == ["a", "C", "b", "B", "c"])
   }
+
+  @Test func placingLandsBetweenTheSiblingsItWasDroppedBetween() {
+    let order = ["a", "B", "b", "C", "c", "D"]
+    let lower = ["a", "b", "c"]
+    #expect(ListReorder.placing("c", at: 0, among: lower, in: order) == ["c", "a", "B", "b", "C", "D"])
+    #expect(ListReorder.placing("a", at: 1, among: lower, in: order) == ["B", "b", "C", "a", "c", "D"])
+    #expect(ListReorder.placing("a", at: 2, among: lower, in: order) == ["B", "b", "C", "c", "a", "D"])
+    #expect(ListReorder.placing("b", at: 1, among: lower, in: order) == order)
+    #expect(ListReorder.placing("b", at: 3, among: lower, in: order) == order)
+    #expect(ListReorder.placing("x", at: 0, among: lower, in: order) == order)
+  }
 }
