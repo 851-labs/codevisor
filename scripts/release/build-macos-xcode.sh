@@ -74,7 +74,15 @@ echo "Building with GhosttyKit from $ghostty_library"
 
 node "$repo_root/scripts/chromium-artifact.mjs" arm64
 
-xcodebuild "${xcode_args[@]}" \
+run_xcodebuild() {
+  if [[ "${GITHUB_ACTIONS:-}" == true ]] && command -v xcbeautify >/dev/null; then
+    xcodebuild "$@" 2>&1 | xcbeautify --renderer github-actions
+  else
+    xcodebuild "$@"
+  fi
+}
+
+run_xcodebuild "${xcode_args[@]}" \
   CODEVISOR_GHOSTTY_LIBRARY="$ghostty_library" \
   SWIFT_INCLUDE_PATHS="$ghostty_slice_dir/Headers" \
   build
