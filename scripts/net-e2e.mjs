@@ -6,6 +6,8 @@ import { join } from "node:path"
 import process from "node:process"
 import { fileURLToPath } from "node:url"
 
+import { delay } from "../packages/devtools/src/child-processes.ts"
+import { findAvailablePort } from "../packages/devtools/src/ports.ts"
 import { cloudWranglerEnvironment } from "./dev-cloud.mjs"
 import {
   devNetCloudVariables,
@@ -15,7 +17,6 @@ import {
   startDevRelays,
   waitForDevRelays
 } from "./dev-net.mjs"
-import { delay, findAvailablePort } from "./dev-shared.mjs"
 import { ensureNodeAddon, ensureRelayBinary } from "./net-artifact.mjs"
 
 const repoRoot = join(fileURLToPath(import.meta.url), "..", "..")

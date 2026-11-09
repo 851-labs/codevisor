@@ -4,8 +4,8 @@ import { mkdir, readdir, readFile, writeFile } from "node:fs/promises"
 import { homedir } from "node:os"
 import { dirname, join } from "node:path"
 
+import { pathExists } from "../packages/devtools/src/files.ts"
 import { syncLinuxWorkspace } from "./dev-container-workspace.mjs"
-import { pathExists } from "./dev-shared.mjs"
 
 export function devRemoteHomeMounts(remoteRootHost) {
   return [

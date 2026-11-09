@@ -5,8 +5,11 @@ import { dirname, join } from "node:path"
 import { fileURLToPath } from "node:url"
 import { promisify } from "node:util"
 
+import {
+  claimDevelopmentRunner,
+  releaseDevelopmentRunner
+} from "../packages/devtools/src/dev-runtime.ts"
 import { processIdentity } from "../packages/processes/src/index.mjs"
-import { claimDevelopmentRunner, releaseDevelopmentRunner } from "./dev-runtime.mjs"
 import {
   parseSimulatorArguments,
   selectSimulatorConfiguration,
@@ -59,7 +62,7 @@ const check = () => {
 let claimed = false
 try {
   await mkdir(dirname(manifestPath), { recursive: true })
-  await claimDevelopmentRunner(claimPath, claim)
+  await claimDevelopmentRunner(claimPath, claim, processIdentity)
   claimed = true
   await reapOrphanedSimulators()
   check()

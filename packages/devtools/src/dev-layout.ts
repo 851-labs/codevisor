@@ -4,6 +4,8 @@ import { mkdir, rename } from "node:fs/promises"
 import { homedir } from "node:os"
 import { join } from "node:path"
 
+import { isMissing } from "./files.ts"
+
 export const IOS_DEVELOPMENT_BUNDLE_IDENTIFIER = "com.851labs.Codevisor.Development.iOS"
 
 export interface ServiceRoots {
@@ -211,8 +213,4 @@ function developmentEnvironment(
 
 function removeInBackground(path: string): void {
   spawn("/bin/rm", ["-rf", "--", path], { detached: true, stdio: "ignore" }).unref()
-}
-
-function isMissing(error: unknown): boolean {
-  return error instanceof Error && "code" in error && error.code === "ENOENT"
 }

@@ -2,8 +2,9 @@ import { spawn } from "node:child_process"
 import { join } from "node:path"
 import process from "node:process"
 
+import { delay } from "../packages/devtools/src/child-processes.ts"
+import { findAvailablePort, isPortAvailable, parsePort } from "../packages/devtools/src/ports.ts"
 import { readCloudDevVariables } from "./dev-host-tools.mjs"
-import { delay, findAvailablePort, isPortAvailable, parsePort } from "./dev-shared.mjs"
 
 export const CLOUD_WRANGLER_BUILD_CONDITIONS = "@codevisor/source,workerd,worker,browser"
 

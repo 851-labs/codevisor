@@ -5,6 +5,9 @@ import { basename, join } from "node:path"
 import process from "node:process"
 import { fileURLToPath } from "node:url"
 
+import { delay, describeExit, waitForExit } from "../packages/devtools/src/child-processes.ts"
+import { colorFromHash } from "../packages/devtools/src/color.ts"
+import { parseDevelopmentRunnerArguments } from "../packages/devtools/src/dev-arguments.ts"
 import {
   developmentLayout,
   ensureDevelopmentDirectories,
@@ -12,7 +15,8 @@ import {
   localDevelopmentEnvironment,
   remoteDevelopmentEnvironment
 } from "../packages/devtools/src/dev-layout.ts"
-import { parseDevelopmentRunnerArguments } from "./dev-arguments.mjs"
+import { waitForHealth } from "../packages/devtools/src/dev-servers.ts"
+import { findAvailablePort, isPortAvailable, parsePort } from "../packages/devtools/src/ports.ts"
 import { bootstrapDevelopment } from "./dev-bootstrap.mjs"
 import { cloudWranglerEnvironment } from "./dev-cloud.mjs"
 import {
@@ -26,16 +30,6 @@ import {
   launchIOSDevelopmentApp,
   terminateIOSDevelopmentApp
 } from "./dev-ios-target.mjs"
-import {
-  colorFromHash,
-  delay,
-  describeExit,
-  findAvailablePort,
-  isPortAvailable,
-  parsePort,
-  waitForExit,
-  waitForHealth
-} from "./dev-shared.mjs"
 import { requireIOSSimulator } from "./ios-simulator-state.mjs"
 
 const repoRoot = await realpath(fileURLToPath(new URL("..", import.meta.url)))

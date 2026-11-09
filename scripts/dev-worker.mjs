@@ -4,12 +4,22 @@ import { join } from "node:path"
 import process from "node:process"
 import { fileURLToPath } from "node:url"
 
+import { describeExit, waitForExit } from "../packages/devtools/src/child-processes.ts"
+import { parseDevelopmentRunnerArguments } from "../packages/devtools/src/dev-arguments.ts"
 import {
   ensureDevelopmentDirectories,
   localDevelopmentEnvironment,
   remoteDevelopmentEnvironment
 } from "../packages/devtools/src/dev-layout.ts"
-import { parseDevelopmentRunnerArguments } from "./dev-arguments.mjs"
+import {
+  requestsMacOSBuildReuse,
+  verifyReusableMacOSApp
+} from "../packages/devtools/src/dev-macos-reuse.ts"
+import {
+  claimedServerPort,
+  shutdownDevServers,
+  waitForHealth
+} from "../packages/devtools/src/dev-servers.ts"
 import { bootstrapDevelopment, ensureNativeFrameworks } from "./dev-bootstrap.mjs"
 import {
   applyCloudDevMigrations,
@@ -45,7 +55,6 @@ import {
   launchIOSDevelopmentApp,
   terminateIOSDevelopmentApp
 } from "./dev-ios-target.mjs"
-import { requestsMacOSBuildReuse, verifyReusableMacOSApp } from "./dev-macos-reuse.mjs"
 import {
   devNetCaPem,
   devNetCloudVariables,
@@ -53,13 +62,6 @@ import {
   launchDevNet,
   prepareDevNet
 } from "./dev-net.mjs"
-import {
-  claimedServerPort,
-  describeExit,
-  shutdownDevServers,
-  waitForExit,
-  waitForHealth
-} from "./dev-shared.mjs"
 import { requireIOSSimulator } from "./ios-simulator-state.mjs"
 import { runXcodebuild } from "./xcodebuild.mjs"
 

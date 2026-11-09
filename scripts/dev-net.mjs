@@ -6,7 +6,8 @@ import { networkInterfaces } from "node:os"
 import { dirname, join, relative } from "node:path"
 import { fileURLToPath } from "node:url"
 
-import { delay, isPortAvailable } from "./dev-shared.mjs"
+import { delay } from "../packages/devtools/src/child-processes.ts"
+import { isPortAvailable } from "../packages/devtools/src/ports.ts"
 
 const repoRootOf = () => join(dirname(fileURLToPath(import.meta.url)), "..")
 

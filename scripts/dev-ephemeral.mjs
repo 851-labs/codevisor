@@ -6,8 +6,13 @@ import { createServer } from "node:http"
 import { homedir, networkInterfaces } from "node:os"
 import { join, relative } from "node:path"
 
+import {
+  describeExit,
+  waitForClose,
+  waitForExit
+} from "../packages/devtools/src/child-processes.ts"
+import { pathExists } from "../packages/devtools/src/files.ts"
 import { withArtifactLock } from "./artifact-lock.mjs"
-import { describeExit, pathExists, waitForClose, waitForExit } from "./dev-shared.mjs"
 
 const archivePattern = /^codevisor-server-[a-z0-9-]+\.tar\.gz(\.sha256)?$/
 const inputsKeyFile = "inputs.sha256"

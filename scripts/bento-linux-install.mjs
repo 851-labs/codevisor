@@ -5,7 +5,7 @@ import { join, resolve } from "node:path"
 import process from "node:process"
 import { parseArgs, promisify } from "node:util"
 
-import { delay } from "./dev-shared.mjs"
+import { delay } from "../packages/devtools/src/child-processes.ts"
 
 const execute = promisify(execFile)
 const image = "codevisor-bento-linux"

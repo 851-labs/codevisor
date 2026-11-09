@@ -20,7 +20,7 @@ import { Readable } from "node:stream"
 import { pipeline } from "node:stream/promises"
 import { fileURLToPath } from "node:url"
 
-import { delay, waitForClose, waitForExit } from "./dev-shared.mjs"
+import { delay, waitForClose, waitForExit } from "../packages/devtools/src/child-processes.ts"
 
 const defaultOrigin = "https://updates.codevisor.dev/dev-artifacts/ghostty"
 const frameworkRelativePath = join("apps", "macos", "Frameworks", "GhosttyKit.xcframework")

@@ -3,8 +3,8 @@ import { rm } from "node:fs/promises"
 import { join } from "node:path"
 import process from "node:process"
 
+import { describeExit, waitForExit } from "../packages/devtools/src/child-processes.ts"
 import { createDevelopmentAppIcon } from "./dev-host-tools.mjs"
-import { describeExit, waitForExit } from "./dev-shared.mjs"
 import { requireIOSSimulator } from "./ios-simulator-state.mjs"
 import { runXcodebuild } from "./xcodebuild.mjs"
 
