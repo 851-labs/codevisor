@@ -1,4 +1,4 @@
-import { spawn } from "node:child_process"
+import { spawn, type SpawnOptions } from "node:child_process"
 
 import { describeExit, waitForClose, waitForExit } from "./child-processes.ts"
 
@@ -31,4 +31,29 @@ export function makeCommandRunner(repoRoot: string): CommandRunner {
       return output
     }
   }
+}
+
+export async function runCommand(
+  command: string,
+  args: ReadonlyArray<string>,
+  options: SpawnOptions = {}
+): Promise<void> {
+  const child = spawn(command, args, { ...options, stdio: "inherit" })
+  const result = await waitForExit(child)
+  if (result.code !== 0) throw new Error(`${command} failed (${describeExit(result)})`)
+}
+
+export async function captureCommand(
+  command: string,
+  args: ReadonlyArray<string>
+): Promise<string> {
+  const child = spawn(command, args, { stdio: ["ignore", "pipe", "ignore"] })
+  let output = ""
+  child.stdout.setEncoding("utf8")
+  child.stdout.on("data", (chunk: string) => {
+    output += chunk
+  })
+  const result = await waitForClose(child)
+  if (result.code !== 0) throw new Error(`${command} failed (${describeExit(result)})`)
+  return output
 }
