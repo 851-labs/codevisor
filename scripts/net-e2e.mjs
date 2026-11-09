@@ -7,8 +7,8 @@ import process from "node:process"
 import { fileURLToPath } from "node:url"
 
 import { delay } from "../packages/devtools/src/child-processes.ts"
+import { cloudWranglerEnvironment } from "../packages/devtools/src/dev-cloud.ts"
 import { findAvailablePort } from "../packages/devtools/src/ports.ts"
-import { cloudWranglerEnvironment } from "./dev-cloud.mjs"
 import {
   devNetCloudVariables,
   devNetEnvironment,

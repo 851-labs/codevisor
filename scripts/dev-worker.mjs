@@ -5,7 +5,24 @@ import process from "node:process"
 import { fileURLToPath } from "node:url"
 
 import { describeExit, waitForExit } from "../packages/devtools/src/child-processes.ts"
+import { makeCommandRunner } from "../packages/devtools/src/commands.ts"
+import { terminateExactDevelopmentApp } from "../packages/devtools/src/dev-app.ts"
 import { parseDevelopmentRunnerArguments } from "../packages/devtools/src/dev-arguments.ts"
+import {
+  applyCloudDevMigrations,
+  prepareCloudSession,
+  resolveCloudDevInstance,
+  spawnCloudDev
+} from "../packages/devtools/src/dev-cloud.ts"
+import {
+  createDevelopmentAppIcon,
+  createDevelopmentBrowserExtensionIcons
+} from "../packages/devtools/src/dev-icons.ts"
+import {
+  migrateLegacyDevelopmentState,
+  resolveDevelopmentInstance,
+  sanitizeAmbientEnvironment
+} from "../packages/devtools/src/dev-instance.ts"
 import {
   ensureDevelopmentDirectories,
   localDevelopmentEnvironment,
@@ -20,13 +37,8 @@ import {
   shutdownDevServers,
   waitForHealth
 } from "../packages/devtools/src/dev-servers.ts"
+import { resolveDevelopmentSigningArguments } from "../packages/devtools/src/dev-signing.ts"
 import { bootstrapDevelopment, ensureNativeFrameworks } from "./dev-bootstrap.mjs"
-import {
-  applyCloudDevMigrations,
-  prepareCloudSession,
-  resolveCloudDevInstance,
-  spawnCloudDev
-} from "./dev-cloud.mjs"
 import {
   launchDevRemoteServer,
   prepareDevContainers,
@@ -38,18 +50,6 @@ import {
   resolveDevVmHost,
   serveDevEphemeralArtifacts
 } from "./dev-ephemeral.mjs"
-import {
-  createDevelopmentAppIcon,
-  createDevelopmentBrowserExtensionIcons,
-  makeCommandRunner,
-  resolveDevelopmentSigningArguments,
-  terminateExactDevelopmentApp
-} from "./dev-host-tools.mjs"
-import {
-  migrateLegacyDevelopmentState,
-  resolveDevelopmentInstance,
-  sanitizeAmbientEnvironment
-} from "./dev-instance.mjs"
 import {
   buildIOSDevelopmentApp,
   launchIOSDevelopmentApp,
