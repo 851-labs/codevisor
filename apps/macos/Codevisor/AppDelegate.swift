@@ -26,6 +26,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
   }
 
   func applicationWillFinishLaunching(_ notification: Notification) {
+    NSWindow.allowsAutomaticWindowTabbing = false
     guard !AppPreview.rendersFixtures else { return }
     if SandboxMode.isEnabled { NSApp.setActivationPolicy(.accessory) }
     let bundleURL = Bundle.main.bundleURL
