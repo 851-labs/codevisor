@@ -1,5 +1,6 @@
 import AppKit
 import CodevisorCore
+import StreamMarkdown
 import SwiftUI
 
 enum ComposerKeyCommand {
@@ -21,9 +22,7 @@ struct ChatInputEditor: NSViewRepresentable {
   private static let verticalTextInset: CGFloat = 6
 
   static var singleLineHeight: CGFloat {
-    NSLayoutManager().defaultLineHeight(
-      for: NSFont.preferredFont(forTextStyle: .body)
-    ) + verticalTextInset * 2
+    BodyTextMetrics.lineHeight + verticalTextInset * 2
   }
 
   @Binding var text: String

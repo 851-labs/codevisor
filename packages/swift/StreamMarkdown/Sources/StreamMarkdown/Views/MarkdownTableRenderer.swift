@@ -209,7 +209,7 @@
     private static func inlineAttributed(
       _ markdown: MarkdownText, isHeader: Bool, theme: MarkdownTheme, images: [String: MarkdownImageResource]
     ) -> NSAttributedString {
-      let bodySize = NSFont.preferredFont(forTextStyle: .body).pointSize
+      let bodySize = BodyTextMetrics.font.pointSize
       let baseFont = NSFont.systemFont(ofSize: bodySize, weight: isHeader ? .semibold : .regular)
       let codeFont = NSFont.monospacedSystemFont(
         ofSize: NSFont.preferredFont(forTextStyle: .callout).pointSize, weight: .regular

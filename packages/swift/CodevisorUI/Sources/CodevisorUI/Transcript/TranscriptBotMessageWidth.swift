@@ -24,7 +24,7 @@ public enum TranscriptBotMessageWidth {
   private static let cacheLimit = 1_024
 
   public static func natural(of content: TranscriptBotMessageContent, theme: MarkdownTheme) -> CGFloat {
-    let body = MessageFont.preferredFont(forTextStyle: .body)
+    let body = BodyTextMetrics.font
     let key = Key(markdown: content.markdown, pointSize: body.pointSize, theme: theme.renderFingerprint)
     if let cached = cache[key] { return cached }
     if cache.count >= cacheLimit { cache.removeAll(keepingCapacity: true) }

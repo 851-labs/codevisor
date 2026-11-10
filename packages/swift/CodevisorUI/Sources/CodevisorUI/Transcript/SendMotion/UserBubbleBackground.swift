@@ -1,3 +1,4 @@
+import StreamMarkdown
 import SwiftUI
 
 #if canImport(UIKit)
@@ -35,12 +36,11 @@ public struct UserBubbleBackground: View {
 
   #if canImport(UIKit)
     private static func bodyLineHeight(for dynamicTypeSize: DynamicTypeSize) -> CGFloat {
-      let traits = UITraitCollection(preferredContentSizeCategory: UIContentSizeCategory(dynamicTypeSize))
-      return UIFont.preferredFont(forTextStyle: .body, compatibleWith: traits).lineHeight
+      BodyTextMetrics.lineHeight(for: UIContentSizeCategory(dynamicTypeSize))
     }
   #else
     private static func bodyLineHeight(for _: DynamicTypeSize) -> CGFloat {
-      NSLayoutManager().defaultLineHeight(for: .preferredFont(forTextStyle: .body))
+      BodyTextMetrics.lineHeight
     }
   #endif
 

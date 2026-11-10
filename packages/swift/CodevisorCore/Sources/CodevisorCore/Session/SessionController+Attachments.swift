@@ -52,7 +52,7 @@ extension SessionController {
   }
 
   public var previewCacheNamespace: String {
-    "\(project.serverId):\(sessionCwdURL.standardizedFileURL.path)"
+    "\(project.serverId):\(previewNamespacePaths.standardized(sessionCwdPath))"
   }
 
   public func fileVersion(for source: PreviewFile.Source) async throws -> String? {

@@ -207,7 +207,7 @@
     }
 
     static var bodyFont: MarkdownNativeFont {
-      .preferredFont(forTextStyle: .body)
+      BodyTextMetrics.font
     }
 
     static func listMarkerFont(for marker: String) -> MarkdownNativeFont {

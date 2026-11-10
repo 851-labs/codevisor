@@ -165,6 +165,7 @@ final public class SessionController {
   }
   public internal(set) var worktreeName: String?
   public internal(set) var sessionCwdOverride: String?
+  @ObservationIgnored let previewNamespacePaths = StandardizedPathMemo()
   public var onWorktreeCreated: ((ServerWorktree) -> Void)?
   public var sandboxTarget: SandboxTarget? {
     didSet {
