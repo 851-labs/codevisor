@@ -193,22 +193,19 @@ extension VirtualizedTranscriptScrollView {
       )
       return true
     }
-    let rootView = measuredRootView(for: row)
-    let knownHeight: CGFloat? =
-      if row.id.isCacheableSettledRow,
-        let measuredHeight = measurements[key],
-        !measurements.isStale(key)
-      {
-        measuredHeight
-      } else {
-        nil
-      }
-    host.installRootView(rootView, knownHeight: knownHeight)
+    host.installRootView(measuredRootView(for: row), knownHeight: settledMeasuredHeight(of: row))
     if requiresImmediatePresentation {
       host.prepareForImmediatePresentation()
     }
     sendTransitions.hostDidMount(host, key: key)
     return true
+  }
+
+  func settledMeasuredHeight(of row: TranscriptVirtualRow) -> CGFloat? {
+    let key = row.layoutKey
+    guard row.id.isCacheableSettledRow, !measurements.isStale(key) else { return nil }
+
+    return measurements[key]
   }
 
   func remountParkedHost(for row: TranscriptVirtualRow, at index: Int) -> Bool {
