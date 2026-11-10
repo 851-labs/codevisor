@@ -1,3 +1,4 @@
+import { execFileSync } from "node:child_process"
 import {
   existsSync,
   mkdirSync,
@@ -27,7 +28,7 @@ const tempDir = (prefix: string): string => {
 const localTransport = (mirrors: MirrorStore): MirrorTransport => ({
   prepare: (_machine, mirrorId, name) => mirrors.prepare(mirrorId, name, "server-a"),
   write: (_machine, mirrorId, offset, data) => mirrors.write(mirrorId, offset, data),
-  apply: (_machine, mirrorId, commit) => mirrors.apply(mirrorId, commit),
+  apply: (_machine, mirrorId, commit, head) => mirrors.apply(mirrorId, commit, head),
   remove: (_machine, mirrorId) => mirrors.remove(mirrorId)
 })
 
@@ -60,6 +61,31 @@ const syncsWith = (transport: MirrorTransport, directory = tempDir("codevisor-sy
 }
 
 const macbook = { id: "machine-mbp", name: "MacBook" }
+
+const gitIn = (cwd: string, ...args: string[]): string =>
+  execFileSync("git", args, {
+    cwd,
+    encoding: "utf8",
+    env: {
+      ...process.env,
+      GIT_AUTHOR_NAME: "Dev",
+      GIT_AUTHOR_EMAIL: "dev@example.com",
+      GIT_COMMITTER_NAME: "Dev",
+      GIT_COMMITTER_EMAIL: "dev@example.com"
+    }
+  }).trim()
+
+const gitProject = (): string => {
+  const root = project()
+  gitIn(root, "init", "--quiet", "--initial-branch", "main")
+  gitIn(root, "add", "--all")
+  gitIn(root, "commit", "--quiet", "-m", "First")
+  writeFileSync(join(root, "src", "app.ts"), "export const answer = 42\n")
+  gitIn(root, "commit", "--quiet", "-am", "Second")
+  gitIn(root, "switch", "--quiet", "-c", "feature")
+  writeFileSync(join(root, "src", "app.ts"), "uncommitted\n")
+  return root
+}
 
 describe("workspace syncs", () => {
   it("copies the workspace, then sends only what changed", async () => {
@@ -136,5 +162,25 @@ describe("workspace syncs", () => {
     const online = syncsWith(back, unreachable.directory)
     await online.syncs.list("ws-1")
     expect(removed).toHaveLength(1)
+  })
+  it("makes the copy a git checkout at the same commit and branch, without history", async () => {
+    const root = gitProject()
+    const mirrors = makeMirrorStore(tempDir("codevisor-mirrors-"))
+    const { syncs } = syncsWith(localTransport(mirrors))
+    await syncs.start({ id: "ws-1", name: "site", root }, macbook)
+
+    const path = (await syncs.wait("ws-1", macbook.id, HOUR_MS))?.path ?? ""
+    expect(gitIn(path, "rev-parse", "HEAD")).toBe(gitIn(root, "rev-parse", "HEAD"))
+    expect(gitIn(path, "branch", "--show-current")).toBe("feature")
+    expect(gitIn(path, "log", "--format=%s")).toBe("Second")
+    expect(gitIn(path, "diff", "--cached", "--name-only")).toBe("src/app.ts")
+    expect(gitIn(path, "hash-object", "src/app.ts")).toBe(gitIn(root, "hash-object", "src/app.ts"))
+
+    gitIn(root, "commit", "--quiet", "-am", "Third")
+    const moved = await syncs.wait("ws-1", macbook.id, HOUR_MS)
+    expect(moved?.lastSync?.files).toBe(0)
+    expect(gitIn(path, "rev-parse", "HEAD")).toBe(gitIn(root, "rev-parse", "HEAD"))
+    expect(gitIn(path, "status", "--porcelain")).toBe("")
+    expect(gitIn(path, "fsck", "--no-progress")).toBe("")
   })
 })

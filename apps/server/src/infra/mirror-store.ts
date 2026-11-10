@@ -1,11 +1,15 @@
 import { appendFile, mkdir, readdir, readFile, rm, stat, writeFile } from "node:fs/promises"
 import { join } from "node:path"
 
+import type { MirrorSourceHead } from "@codevisor/api"
+
+import { linkCheckout, pointHead, SYNC_REF, sourceHeadOf, syncHeadOf } from "./mirror-checkout.js"
 import { git, gitWithInput } from "./sync-git.js"
 
 export interface PreparedMirror {
   readonly path: string
   readonly head?: string | undefined
+  readonly sourceHead?: string | undefined
 }
 
 export interface OwnedMirror {
@@ -16,7 +20,11 @@ export interface OwnedMirror {
 export interface MirrorStore {
   readonly prepare: (mirrorId: string, name: string, owner: string) => Promise<PreparedMirror>
   readonly write: (mirrorId: string, offset: number, data: Buffer) => Promise<void>
-  readonly apply: (mirrorId: string, commit: string) => Promise<PreparedMirror>
+  readonly apply: (
+    mirrorId: string,
+    commit: string,
+    head?: MirrorSourceHead
+  ) => Promise<PreparedMirror>
   readonly remove: (mirrorId: string) => Promise<void>
   readonly owned: () => Promise<ReadonlyArray<OwnedMirror>>
 }
@@ -31,19 +39,22 @@ export const makeMirrorStore = (root: string): MirrorStore => {
       const meta = existing ?? (await createMirror(root, paths, name))
       if (meta.owner !== owner) await writeMeta(paths.meta, { ...meta, mirrorId, owner })
       await rm(paths.pendingPack, { force: true })
-      return { path: meta.path, head: await headOf(paths.gitDir) }
+      await linkCheckout(paths.gitDir, meta.path)
+      return preparedAt(paths.gitDir, meta.path)
     },
     write: async (mirrorId, offset, data) => {
       const paths = layout(mirrorId)
       await requireOffset(paths.pendingPack, offset)
       await appendFile(paths.pendingPack, data)
     },
-    apply: async (mirrorId, commit) => {
+    apply: async (mirrorId, commit, head) => {
       const paths = layout(mirrorId)
       const meta = await requireMeta(paths.meta, mirrorId)
       await indexPendingPack(paths)
       await checkOut(paths.gitDir, meta.path, commit)
-      return { path: meta.path, head: commit }
+      await linkCheckout(paths.gitDir, meta.path)
+      await pointHead(paths.gitDir, head)
+      return preparedAt(paths.gitDir, meta.path)
     },
     remove: async (mirrorId) => {
       const paths = layout(mirrorId)
@@ -121,11 +132,13 @@ const requireMeta = async (path: string, mirrorId: string): Promise<MirrorMeta> 
   return meta
 }
 
-const headOf = async (gitDir: string): Promise<string | undefined> => {
-  const head = await git(["--git-dir", gitDir, "rev-parse", "--verify", "--quiet", SYNC_REF]).catch(
-    () => ""
-  )
-  return head.trim() === "" ? undefined : head.trim()
+const preparedAt = async (gitDir: string, path: string): Promise<PreparedMirror> => {
+  const [head, sourceHead] = await Promise.all([syncHeadOf(gitDir), sourceHeadOf(gitDir)])
+  return {
+    path,
+    ...(head === undefined ? {} : { head }),
+    ...(sourceHead === undefined ? {} : { sourceHead })
+  }
 }
 
 const requireOffset = async (path: string, offset: number): Promise<void> => {
@@ -144,8 +157,6 @@ const checkOut = async (gitDir: string, workTree: string, commit: string): Promi
   await git(["--git-dir", gitDir, "--work-tree", workTree, "read-tree", "-u", "--reset", commit])
   await git(["--git-dir", gitDir, "update-ref", SYNC_REF, commit])
 }
-
-const SYNC_REF = "refs/heads/sync"
 
 const safeSegment = (value: string): string =>
   value.replace(/[^A-Za-z0-9._-]+/g, "-").replace(/^-+|-+$/g, "") || "workspace"

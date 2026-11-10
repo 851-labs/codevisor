@@ -80,6 +80,12 @@ export const WorkspaceSyncStatus = Schema.Struct({
 })
 export type WorkspaceSyncStatus = typeof WorkspaceSyncStatus.Type
 
+export const MirrorSourceHead = Schema.Struct({
+  commit: Schema.String,
+  branch: Schema.optional(Schema.String)
+})
+export type MirrorSourceHead = typeof MirrorSourceHead.Type
+
 export const FleetMirrorAction = Schema.Union([
   Schema.Struct({
     action: Schema.Literal("prepare"),
@@ -95,7 +101,8 @@ export const FleetMirrorAction = Schema.Union([
   Schema.Struct({
     action: Schema.Literal("apply"),
     mirrorId: Schema.String,
-    commit: Schema.String
+    commit: Schema.String,
+    head: Schema.optional(MirrorSourceHead)
   }),
   Schema.Struct({ action: Schema.Literal("remove"), mirrorId: Schema.String })
 ])

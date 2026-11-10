@@ -1,4 +1,4 @@
-import type { WorkspaceSyncState, WorkspaceSyncStatus } from "@codevisor/api"
+import type { MirrorSourceHead, WorkspaceSyncState, WorkspaceSyncStatus } from "@codevisor/api"
 
 import type { PreparedMirror } from "./mirror-store.js"
 import {
@@ -10,6 +10,7 @@ import {
   takeSnapshot,
   type SnapshotRepo
 } from "./workspace-snapshot.js"
+import { shareSourceObjects, sourceCheckout } from "./workspace-source-head.js"
 
 export interface MirrorTransport {
   readonly prepare: (machineId: string, mirrorId: string, name: string) => Promise<PreparedMirror>
@@ -19,7 +20,12 @@ export interface MirrorTransport {
     offset: number,
     data: Buffer
   ) => Promise<void>
-  readonly apply: (machineId: string, mirrorId: string, commit: string) => Promise<PreparedMirror>
+  readonly apply: (
+    machineId: string,
+    mirrorId: string,
+    commit: string,
+    head: MirrorSourceHead | undefined
+  ) => Promise<PreparedMirror>
   readonly remove: (machineId: string, mirrorId: string) => Promise<void>
 }
 
@@ -58,7 +64,9 @@ export class SyncRunner {
   private state: WorkspaceSyncState = "syncing"
   private path: string | undefined
   private targetHead: string | undefined
+  private targetSourceHead: string | undefined
   private lastTree: string | undefined
+  private lastHead: string | undefined
   private lastSyncedAt: string | undefined
   private lastSync: LastSync | undefined
   private error: string | undefined
@@ -165,19 +173,23 @@ export class SyncRunner {
       this.state = "failed"
       this.error = cause instanceof Error ? cause.message : String(cause)
       this.targetHead = undefined
+      this.targetSourceHead = undefined
     }
   }
 
   private async syncOnce(): Promise<void> {
     const { repo } = this.options
     await ensureSnapshotRepo(repo)
+    const checkout = await sourceCheckout(this.options.record.root)
+    if (checkout !== undefined) await shareSourceObjects(repo, checkout.objects)
     const snapshot = await takeSnapshot(repo)
     this.skipped = snapshot.skipped
     if (this.targetHead === undefined) await this.prepareTarget()
-    if (snapshot.tree === this.lastTree && this.targetHead !== undefined) return
+    const unchanged = snapshot.tree === this.lastTree && headKey(checkout?.head) === this.lastHead
+    if (unchanged && this.targetHead !== undefined) return
 
     this.state = "syncing"
-    await this.push(snapshot.tree)
+    await this.push(snapshot.tree, checkout?.head)
   }
 
   private async prepareTarget(): Promise<void> {
@@ -189,20 +201,24 @@ export class SyncRunner {
     )
     this.path = prepared.path
     this.targetHead = prepared.head
+    this.targetSourceHead = prepared.sourceHead
     this.lastTree = undefined
   }
 
-  private async push(tree: string): Promise<void> {
+  private async push(tree: string, head: MirrorSourceHead | undefined): Promise<void> {
     const { record, repo, transport } = this.options
     const started = this.options.now().getTime()
-    const base = await this.usableBase()
+    const base = await this.usable(this.targetHead)
     const commit = await commitSnapshot(repo, tree, base)
-    const pack = await packSince(repo, commit, base)
+    const baseHead = await this.usable(this.targetSourceHead)
+    const pack = await packSince(repo, { commit, base, head: head?.commit, baseHead })
     await this.upload(pack)
-    const applied = await transport.apply(record.machineId, record.mirrorId, commit)
+    const applied = await transport.apply(record.machineId, record.mirrorId, commit, head)
     this.path = applied.path
     this.targetHead = commit
+    this.targetSourceHead = head?.commit
     this.lastTree = tree
+    this.lastHead = headKey(head)
     this.lastSyncedAt = this.options.now().toISOString()
     this.lastSync = {
       files: await changedFileCount(repo, base, commit),
@@ -211,10 +227,9 @@ export class SyncRunner {
     }
   }
 
-  private async usableBase(): Promise<string | undefined> {
-    const head = this.targetHead
-    if (head === undefined) return undefined
-    return (await hasCommit(this.options.repo, head)) ? head : undefined
+  private async usable(commit: string | undefined): Promise<string | undefined> {
+    if (commit === undefined) return undefined
+    return (await hasCommit(this.options.repo, commit)) ? commit : undefined
   }
 
   private async upload(pack: Buffer): Promise<void> {
@@ -225,3 +240,6 @@ export class SyncRunner {
     }
   }
 }
+
+const headKey = (head: MirrorSourceHead | undefined): string | undefined =>
+  head === undefined ? undefined : `${head.commit} ${head.branch ?? ""}`

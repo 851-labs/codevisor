@@ -66,7 +66,7 @@ const runMirrorAction = async (
   owner: string
 ): Promise<unknown> => {
   if (action.action === "prepare") return mirrors.prepare(action.mirrorId, action.name, owner)
-  if (action.action === "apply") return mirrors.apply(action.mirrorId, action.commit)
+  if (action.action === "apply") return mirrors.apply(action.mirrorId, action.commit, action.head)
   if (action.action === "write") {
     await mirrors.write(action.mirrorId, action.offset, Buffer.from(action.data, "base64"))
     return { written: true }
