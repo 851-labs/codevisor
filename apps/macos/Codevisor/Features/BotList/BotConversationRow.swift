@@ -8,7 +8,6 @@ struct BotConversationRow: View {
   let conversation: BotConversation
   let isSelected: Bool
   var isDropTarget = false
-  let now: Date
 
   var body: some View {
     HoverableRow(isSelected: isSelected, isHoverForced: isDropTarget) { _ in
@@ -16,7 +15,7 @@ struct BotConversationRow: View {
         BotUnreadDot(isVisible: conversation.isUnread && !isSelected)
         avatar
         VStack(alignment: .leading, spacing: 2) {
-          BotConversationTitleLine(name: conversation.bot.name, timestamp: timestamp)
+          BotConversationTitleLine(name: conversation.bot.name)
           BotConversationPreview(conversation: conversation)
         }
       }
@@ -37,9 +36,5 @@ struct BotConversationRow: View {
     } else {
       BotSymbolAvatar(symbolName: bot.symbolName, size: Self.avatarSize)
     }
-  }
-
-  private var timestamp: String? {
-    conversation.lastActivityAt.map { BotConversationTimestamp.text(for: $0, now: now) }
   }
 }

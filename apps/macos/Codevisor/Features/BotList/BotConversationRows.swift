@@ -13,24 +13,22 @@ struct BotConversationRows: View {
   @State private var dropTarget: BotSidebarRowID?
 
   var body: some View {
-    TimelineView(.everyMinute) { context in
-      SidebarRowList(rows: rows, id: \.placedID, spacing: 2, animation: Motion.listReflow(reduceMotion: reduceMotion)) {
-        row($0, now: context.date)
-          .onDrop(
-            of: [.plainText],
-            delegate: BotSidebarDropDelegate(
-              target: $0.id, drag: $drag, dropTarget: $dropTarget, perform: dropAction(onto: $0)))
-      }
-      .padding(.horizontal, 8)
-      .padding(.bottom, 8)
+    SidebarRowList(rows: rows, id: \.placedID, spacing: 2, animation: Motion.listReflow(reduceMotion: reduceMotion)) {
+      row($0)
+        .onDrop(
+          of: [.plainText],
+          delegate: BotSidebarDropDelegate(
+            target: $0.id, drag: $drag, dropTarget: $dropTarget, perform: dropAction(onto: $0)))
     }
+    .padding(.horizontal, 8)
+    .padding(.bottom, 8)
   }
 
   @ViewBuilder
-  private func row(_ row: BotSidebarRow, now: Date) -> some View {
+  private func row(_ row: BotSidebarRow) -> some View {
     switch row.kind {
     case let .bot(conversation, section):
-      botRow(conversation, section: section, now: now)
+      botRow(conversation, section: section)
     case let .section(section, isExpanded):
       CustomSectionHeader(
         section: section, isExpanded: isExpanded, isDropTarget: dropTarget == row.id,
@@ -41,15 +39,15 @@ struct BotConversationRows: View {
     case let .archivedSection(isExpanded):
       SidebarSectionHeader(title: "Archived", isExpanded: isExpanded, onToggle: actions.toggleArchived)
     case let .archivedBot(conversation):
-      archivedBotRow(conversation, now: now)
+      archivedBotRow(conversation)
     }
   }
 
-  private func botRow(_ conversation: BotConversation, section: UUID?, now: Date) -> some View {
+  private func botRow(_ conversation: BotConversation, section: UUID?) -> some View {
     let bot = conversation.bot
     return BotConversationRow(
       conversation: conversation, isSelected: bot.id == selectedBotID,
-      isDropTarget: dropTarget == .bot(bot.id), now: now
+      isDropTarget: dropTarget == .bot(bot.id)
     )
     .onSidebarRowPress { actions.select(bot) }
     .accessibilityAction(.default) { actions.select(bot) }
@@ -81,9 +79,9 @@ struct BotConversationRows: View {
     .id(bot.id)
   }
 
-  private func archivedBotRow(_ conversation: BotConversation, now: Date) -> some View {
+  private func archivedBotRow(_ conversation: BotConversation) -> some View {
     let bot = conversation.bot
-    return BotConversationRow(conversation: conversation, isSelected: bot.id == selectedBotID, now: now)
+    return BotConversationRow(conversation: conversation, isSelected: bot.id == selectedBotID)
       .opacity(0.6)
       .onSidebarRowPress { actions.select(bot) }
       .accessibilityAction(.default) { actions.select(bot) }
