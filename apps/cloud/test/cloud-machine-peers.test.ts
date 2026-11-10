@@ -1,9 +1,12 @@
 import { MACHINE_PEERS_FEATURE, type HubToMachine } from "@codevisor/api"
 import { acceptChannel, openChannel, openJson, sealJson } from "@codevisor/cloud-crypto"
+import { SELF } from "cloudflare:test"
 import { describe, expect, it } from "vitest"
 
 import {
   appRelayHeader,
+  authed,
+  BASE,
   connectMachine,
   devLogin,
   disconnect,
@@ -46,6 +49,22 @@ describe("machine peers", () => {
     expect(await nextOfKind(observer.reader, "presence")).toMatchObject({
       t: "presence",
       machine: { deviceId: existing.deviceId, online: false }
+    })
+  })
+
+  it("tells peers when a machine is removed from the account", async () => {
+    const token = await devLogin()
+    const sandbox = await connectMachine(token, "sandbox", undefined, peerAware)
+    const observer = await connectMachine(token, "laptop", undefined, peerAware)
+
+    const removed = await SELF.fetch(`${BASE}/api/machines/${sandbox.deviceId}`, {
+      method: "DELETE",
+      headers: authed(token)
+    })
+    expect(removed.status).toBe(200)
+    expect(await nextOfKind(observer.reader, "presence")).toMatchObject({
+      machine: { deviceId: sandbox.deviceId, online: false },
+      removed: true
     })
   })
 

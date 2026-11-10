@@ -113,7 +113,8 @@ const machineFor = async (
       resolve: () => undefined,
       invoke: () => Promise.reject(new Error("unused")),
       machineIdOf: (caller) =>
-        [laptop, studio].find((m) => m.deviceId === caller.deviceId)?.serverId
+        [laptop, studio].find((m) => m.deviceId === caller.deviceId)?.serverId,
+      isGone: () => false
     },
     sandboxes: { sandboxes: harness.machines, catalog: harness.catalog }
   })

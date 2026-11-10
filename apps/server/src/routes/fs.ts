@@ -18,6 +18,7 @@ import { deleteFilesystemItems, moveFilesystemItem } from "./fs-edit.js"
 import { serveFilesystemFile } from "./fs-file.js"
 import { claimKeptBothPath } from "./fs-kept-both.js"
 import { expandFsPath } from "./fs-paths.js"
+import { readTextFile } from "./fs-read.js"
 import { receiveFilesystemFile } from "./fs-upload.js"
 import { routeGitReview } from "./git-review.js"
 
@@ -37,6 +38,7 @@ export const routeFs = async (
     return receiveFilesystemFile(request, response, url)
   if (url.pathname === "/v1/fs/archive" && request.method === "GET")
     return sendFilesystemArchive(request, response, url)
+  if (url.pathname === "/v1/fs/read" && request.method === "GET") return readTextFile(response, url)
   if (url.pathname === "/v1/fs/move" && request.method === "POST")
     return moveFilesystemItem(request, response)
   if (url.pathname === "/v1/fs/delete" && request.method === "POST")

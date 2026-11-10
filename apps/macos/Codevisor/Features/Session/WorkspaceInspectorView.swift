@@ -254,15 +254,16 @@ struct WorkspaceInspectorView: View {
           }
         }
 
+        WorkspaceInspectorSyncsSection(workspaceId: workspace.id, client: client, isExpanded: expansion("Synced To"))
+
         if !subscriptions.events.isEmpty {
           WorkspaceInspectorSubscriptionsSection(
             events: subscriptions.events, serverId: workspace.serverId, client: client,
             isExpanded: expansion("Subscriptions"))
         }
 
-        if !tasks.isEmpty {
-          WorkspaceInspectorTasksSection(tasks: tasks, isExpanded: expansion("Tasks"))
-        }
+        WorkspaceInspectorTasksSection(
+          tasks: tasks, workspace: workspace, client: client, isExpanded: expansion("Tasks"))
 
         if let parent {
           WorkspaceInspectorAgentsSection(

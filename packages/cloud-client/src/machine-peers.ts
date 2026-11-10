@@ -81,9 +81,10 @@ export class MachinePeers {
         : new Map(machines.map((machine) => [machine.deviceId, machine]))
   }
 
-  presence(machine: CloudMachinePresence): void {
+  presence(machine: CloudMachinePresence, removed: boolean): void {
     const machines = new Map(this.#machines)
-    machines.set(machine.deviceId, machine)
+    if (removed) machines.delete(machine.deviceId)
+    else machines.set(machine.deviceId, machine)
     this.#machines = machines
     if (!machine.online) this.#opener.dropMachine(machine.deviceId)
   }

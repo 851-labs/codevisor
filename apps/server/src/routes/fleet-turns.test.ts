@@ -15,6 +15,7 @@ const fleetLink = (current: ReadonlyArray<string>) => {
         current.map((name) => ({ id: "machine-laptop", name, online: true, isCurrent: true })),
       resolve: () => undefined,
       machineIdOf: () => undefined,
+      isGone: () => false,
       invoke: async () => null
     },
     outbox: {

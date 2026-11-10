@@ -13,6 +13,22 @@ public extension CodevisorServerClienting {
     throw CodevisorServerClientError.invalidResponse
   }
 
+  func workspaceSyncs(workspaceId: UUID) async throws -> [ServerWorkspaceSync] { [] }
+
+  func stopWorkspaceSync(workspaceId: UUID, machineId: String) async throws {
+    throw CodevisorServerClientError.invalidResponse
+  }
+
+  func remoteExecTasks(workspaceId: UUID) async throws -> [ServerRemoteExecTask] { [] }
+
+  func stopRemoteExecTask(workspaceId: UUID, taskId: String) async throws {
+    throw CodevisorServerClientError.invalidResponse
+  }
+
+  func remoteExecTaskOutput(workspaceId: UUID, taskId: String) async throws -> [String] {
+    throw CodevisorServerClientError.invalidResponse
+  }
+
   func deleteFiles(paths: [String]) async throws {
     throw CodevisorServerClientError.invalidResponse
   }

@@ -114,6 +114,34 @@ describe("machine list without hub presence", () => {
   })
 })
 
+describe("sandboxes", () => {
+  it("resolve as sandboxes", () => {
+    const sandbox = presence({
+      deviceId: "device-e2b",
+      serverId: "machine-e2b",
+      name: "E2B box",
+      ephemeral: { provider: "e2b", ownerDeviceId: "device-self" }
+    })
+    expect(link({ machines: [presence(), sandbox] }).machineLink.resolve("E2B box")).toMatchObject({
+      id: "machine-e2b",
+      isSandbox: true
+    })
+    expect(link().machineLink.resolve("Laptop")).not.toHaveProperty("isSandbox")
+  })
+})
+
+describe("machines that left the account", () => {
+  it("are gone only once the hub has reported the account's machines", () => {
+    expect(link().machineLink.isGone("machine-laptop")).toBe(false)
+    expect(
+      link({ machines: [presence({ online: false })] }).machineLink.isGone("machine-laptop")
+    ).toBe(false)
+    expect(link({ machines: [] }).machineLink.isGone("machine-laptop")).toBe(true)
+    expect(link({ machines: [] }).machineLink.isGone("machine-self")).toBe(false)
+    expect(link({ machines: undefined }).machineLink.isGone("machine-laptop")).toBe(false)
+  })
+})
+
 describe("machine calls", () => {
   it("sends the call with its origin over the relay", async () => {
     const { machineLink, sent } = link()

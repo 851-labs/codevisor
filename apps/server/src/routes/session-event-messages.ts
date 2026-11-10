@@ -1,4 +1,4 @@
-import type { ExecutionJob, QuestionPayload, SessionSummary } from "@codevisor/api"
+import type { ExecTaskEvent, ExecutionJob, QuestionPayload, SessionSummary } from "@codevisor/api"
 
 export interface SessionEventMessage {
   readonly text: string
@@ -61,6 +61,23 @@ export const jobFinishedMessage = (
   )
 })
 
+export const execTaskFinishedMessage = (
+  finished: ExecTaskEvent,
+  subscriptionId?: string
+): SessionEventMessage => {
+  const { task } = finished
+  const exitCode =
+    task.exitCode === undefined || task.exitCode === null ? "" : ` exitCode="${task.exitCode}"`
+  return {
+    text: eventBlock(
+      `type="exec.task_finished" taskId="${attribute(task.taskId)}" agentId="${attribute(finished.sessionId)}" state="${task.state}"${exitCode} description="${attribute(task.description)}"${subscriptionAttribute(subscriptionId)}`,
+      [boundedTail(finished.outputTail, "(no output)"), `Full output: ${task.outputPath}`].join(
+        "\n"
+      )
+    )
+  }
+}
+
 export const fromMachine = (
   message: SessionEventMessage,
   machine: { readonly id: string; readonly name: string }
@@ -93,6 +110,11 @@ const turnEndBody = (end: TurnEnd): string => {
 const resumesOnItsOwn = "It continues on its own once usage is available."
 
 const orPlaceholder = (text: string, empty: string): string => (text.length === 0 ? empty : text)
+
+const boundedTail = (text: string, empty: string): string => {
+  if (text.length <= REPORT_LIMIT) return orPlaceholder(text, empty)
+  return `…(earlier output cut)\n${text.slice(-REPORT_LIMIT)}`
+}
 
 const bounded = (text: string, empty: string): string => {
   if (text.length <= REPORT_LIMIT) return orPlaceholder(text, empty)

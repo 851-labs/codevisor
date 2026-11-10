@@ -157,6 +157,11 @@ export interface CodevisorServerServices {
   readonly fleetTickets?: import("./infra/fleet-tickets.js").FleetTickets
   readonly sandboxes?: import("./routes/sandboxes.js").SandboxesService
   readonly usageLimits?: UsageLimitsCache
+  readonly execTasks?: import("./infra/exec-tasks.js").ExecTasks
+  readonly remoteExecTasks?: import("./infra/remote-exec-tasks.js").RemoteExecTasks
+  readonly mirrors?: import("./infra/mirror-store.js").MirrorStore
+  readonly workspaceSyncs?: import("./infra/workspace-syncs.js").WorkspaceSyncs
+  readonly orphanSweep?: import("./infra/orphan-sweep.js").OrphanSweep
 }
 
 export interface RunningCodevisorServer {
@@ -193,6 +198,10 @@ export interface RouteState {
   pluginEvents?: PluginEvents | undefined
   pluginDiscovery?: PluginDiscovery | undefined
   drainSessionQueue?: (sessionId: string) => Promise<void>
+  announceExecTask?: (
+    finished: import("@codevisor/api").ExecTaskEvent,
+    machine: { readonly id: string; readonly name: string }
+  ) => void
 }
 
 export class EventFanout {

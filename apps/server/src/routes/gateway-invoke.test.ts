@@ -89,7 +89,8 @@ describe("machines routes", () => {
       list: async () => machines,
       resolve: () => undefined,
       invoke: async () => undefined,
-      machineIdOf: () => undefined
+      machineIdOf: () => undefined,
+      isGone: () => false
     }
     const server = await serve({ machines: link })
     expect(await jsonRequest(server, "/v1/machines")).toEqual({ status: 200, body: { machines } })

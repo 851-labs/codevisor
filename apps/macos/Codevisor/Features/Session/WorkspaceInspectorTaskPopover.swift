@@ -14,6 +14,9 @@ struct WorkspaceInspectorTaskPopover: View {
   var body: some View {
     VStack(alignment: .leading, spacing: 10) {
       WorkspaceInspectorTaskHeader(task: task)
+      if let machine = task.machine {
+        WorkspaceInspectorTaskMachine(machine: machine)
+      }
       if let command = task.command {
         WorkspaceInspectorTaskCommand(command: command)
       }

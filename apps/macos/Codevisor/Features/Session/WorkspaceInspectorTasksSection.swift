@@ -1,3 +1,4 @@
+import CodevisorClient
 import CodevisorCore
 import CodevisorUI
 import SwiftUI
@@ -9,12 +10,18 @@ struct WorkspaceInspectorTask: Identifiable {
     var stop: (() async throws -> Void)?
   }
 
+  struct Machine: Equatable {
+    let id: String
+    let name: String
+  }
+
   let id: String
   let description: String
   let symbol: String
   let command: String?
   let status: String
   let startDate: Date?
+  var machine: Machine?
   let actions: Actions
 
   init(_ task: BackgroundTaskInfo, actions: Actions) {
@@ -26,17 +33,41 @@ struct WorkspaceInspectorTask: Identifiable {
     startDate = task.startDate
     self.actions = actions
   }
+
+  init(_ task: ServerRemoteExecTask, machine: Machine?, actions: Actions) {
+    id = task.taskId
+    description = task.description
+    symbol = BackgroundTaskPresentation.symbol(forTaskType: "shell")
+    command = task.command
+    status = "running"
+    startDate = task.startDate
+    self.machine = machine
+    self.actions = actions
+  }
 }
 
 struct WorkspaceInspectorTasksSection: View {
   let tasks: [WorkspaceInspectorTask]
+  let workspace: Workspace
+  let client: any CodevisorServerClienting
   @Binding var isExpanded: Bool
+  @Environment(AppEnvironment.self) private var environment
+  @State private var remote = WorkspaceInspectorRemoteTasks()
+
+  private var shown: [WorkspaceInspectorTask] { tasks + remote.tasks }
 
   var body: some View {
-    WorkspaceInspectorCard(title: "Tasks", isExpanded: $isExpanded) {
-      ForEach(tasks) { task in
-        WorkspaceInspectorTaskRow(task: task)
+    VStack(spacing: 0) {
+      if !shown.isEmpty {
+        WorkspaceInspectorCard(title: "Tasks", isExpanded: $isExpanded) {
+          ForEach(shown) { task in
+            WorkspaceInspectorTaskRow(task: task)
+          }
+        }
       }
+    }
+    .task(id: workspace.id) {
+      await remote.keepLoading(workspace: workspace, client: client, machines: environment.machines)
     }
   }
 }
@@ -77,9 +108,15 @@ private struct WorkspaceInspectorTaskLabel: View {
         }
       }
     } icon: {
-      Image(systemName: task.symbol)
-        .foregroundStyle(.secondary)
-        .frame(width: 20)
+      if let machine = task.machine {
+        MachineIconView(machineId: machine.id)
+          .foregroundStyle(.secondary)
+          .help("Running on \(machine.name)")
+      } else {
+        Image(systemName: task.symbol)
+          .foregroundStyle(.secondary)
+          .frame(width: 20)
+      }
     }
   }
 }
@@ -92,5 +129,20 @@ struct WorkspaceInspectorTaskElapsed: View {
       Text(BackgroundTaskPresentation.elapsed(from: startDate, to: context.date))
         .monospacedDigit()
     }
+  }
+}
+
+struct WorkspaceInspectorTaskMachine: View {
+  let machine: WorkspaceInspectorTask.Machine
+
+  var body: some View {
+    HStack(spacing: 2) {
+      MachineIconView(machineId: machine.id)
+        .imageScale(.small)
+      Text(machine.name)
+        .lineLimit(1)
+    }
+    .font(.caption)
+    .foregroundStyle(.secondary)
   }
 }

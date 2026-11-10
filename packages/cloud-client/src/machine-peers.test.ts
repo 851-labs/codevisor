@@ -52,6 +52,8 @@ describe("machine peers", () => {
     expect(h.connection.machines()).toEqual([studio])
     socket.receive({ t: "presence", machine: { ...studio, online: false } })
     expect(h.connection.machines()).toEqual([{ ...studio, online: false }])
+    socket.receive({ t: "presence", machine: { ...studio, online: false }, removed: true })
+    expect(h.connection.machines()).toEqual([])
     h.connection.stop()
     expect(h.connection.machines()).toBeUndefined()
   })

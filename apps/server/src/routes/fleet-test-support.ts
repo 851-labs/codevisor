@@ -135,6 +135,7 @@ const startMachine = async (self: Member, fleet: Fleet): Promise<FleetMachine> =
   const machines: MachineLink = {
     list: async () => [{ id: self.id, name: self.name, online: true, isCurrent: true }],
     resolve: () => undefined,
+    isGone: () => false,
     machineIdOf: (caller) =>
       [studio, laptop].find(
         (member) =>

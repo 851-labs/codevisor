@@ -1,6 +1,12 @@
 import type { IncomingMessage, ServerResponse } from "node:http"
 
-import { FLEET_SANDBOX_ACTION_PATH, FLEET_SESSION_EVENT_PATH } from "@codevisor/api"
+import {
+  FLEET_EXEC_CONTROL_PATH,
+  FLEET_EXEC_TASK_PATH,
+  FLEET_MIRROR_PATH,
+  FLEET_SANDBOX_ACTION_PATH,
+  FLEET_SESSION_EVENT_PATH
+} from "@codevisor/api"
 import type { GatewayOrigin } from "@codevisor/mcp"
 
 import {
@@ -12,6 +18,7 @@ import {
   type RouteState
 } from "../server-context.js"
 import { fleetCall, invokeForFleet } from "./fleet-calls.js"
+import { receiveExecControl, receiveExecTask, receiveMirrorAction } from "./fleet-machine-files.js"
 import { receiveSandboxAction } from "./fleet-sandbox-actions.js"
 import { receiveSessionEvent } from "./fleet-session-events.js"
 import { routeMachineEnrollment } from "./machines.js"
@@ -106,6 +113,18 @@ export const routeGatewayInvoke = async (
   }
   if (path === FLEET_SANDBOX_ACTION_PATH) {
     await answerSandboxAction(response, () => receiveSandboxAction(services, call, body.args))
+    return true
+  }
+  if (path === FLEET_MIRROR_PATH) {
+    await answerSandboxAction(response, () => receiveMirrorAction(services, call, body.args))
+    return true
+  }
+  if (path === FLEET_EXEC_CONTROL_PATH) {
+    await answerSandboxAction(response, () => receiveExecControl(services, call, body.args))
+    return true
+  }
+  if (path === FLEET_EXEC_TASK_PATH) {
+    await answerSandboxAction(response, async () => receiveExecTask(routeState, call, body.args))
     return true
   }
   const controller = new AbortController()

@@ -9,6 +9,7 @@ import { routeBrowserState } from "./routes/browser-state.js"
 import { routeBrowserUse } from "./routes/browser-use.js"
 import { routeClientControl } from "./routes/client-control.js"
 import { routeCloud } from "./routes/cloud.js"
+import { routeExec } from "./routes/exec.js"
 import { routeFeatureFlags } from "./routes/feature-flags.js"
 import { routeFiles } from "./routes/files.js"
 import { routeFirstRun } from "./routes/first-run.js"
@@ -42,6 +43,8 @@ import { routeSync } from "./routes/sync.js"
 import { routeTerminals } from "./routes/terminals.js"
 import { routeToolIcons } from "./routes/tool-icons.js"
 import { routeTranscriptStress } from "./routes/transcript-stress.js"
+import { routeWorkspaceExecTasks } from "./routes/workspace-exec-tasks.js"
+import { routeWorkspaceSyncs } from "./routes/workspace-syncs.js"
 import { routeWorkspaces } from "./routes/workspaces.js"
 import { authorize, HttpFailure, parseRequestUrl, writeFailure } from "./server-context.js"
 import type {
@@ -115,6 +118,9 @@ const resourceRouteFamilies: ReadonlyArray<RouteFamily> = [
   ({ services, routeState, request, response, url }) =>
     routeGatewayInvoke(services, routeState, request, response, url),
   routeSandboxes,
+  routeExec,
+  routeWorkspaceSyncs,
+  routeWorkspaceExecTasks,
   ({ services, config, fanout, request, response, url }) =>
     routeProjects(services, config, fanout, request, response, url),
   ({ services, request, response, url }) => routeGitAuth(services, request, response, url),
