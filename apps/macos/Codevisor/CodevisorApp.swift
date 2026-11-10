@@ -124,6 +124,7 @@ struct RootView: View {
       .modifier(ChromiumBrowserHostSync())
       .modifier(ServerDataUpgradePresentation())
       .modifier(CloudAuthDeeplinkHandling())
+      .modifier(KeyboardNavigationPrompt())
   }
 
   private func openNotificationSession(_ sessionId: UUID, serverId: String) {
