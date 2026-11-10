@@ -122,11 +122,12 @@
   @MainActor
   final class VirtualizedTableView: UIView, UIScrollViewDelegate, UITextViewDelegate {
     private let horizontalScrollView = UIScrollView()
-    private let document = UIView()
+    private let document = MarkdownTableDocumentView()
     private let headerFill = CALayer()
     private let border = CAShapeLayer()
-    private var cells: [Int: SelectableTextKitView] = [:]
-    private var reusableCells: [SelectableTextKitView] = []
+    private let tiles = MarkdownTableTiles()
+    private let interactiveCells = MarkdownTableInteractiveCells()
+    private var accessibilityCells: [Int: UIAccessibilityElement] = [:]
     private var rules: [Int: CALayer] = [:]
     private var borderColor = UIColor.separator
     private var linkAction: MarkdownLinkAction?
@@ -154,6 +155,8 @@
       border.lineWidth = 1
       document.layer.addSublayer(border)
       document.clipsToBounds = true
+      document.interactiveCell = { [weak self] point in self?.promoteCell(at: point) }
+      interactiveCells.delegate = self
       horizontalScrollView.addSubview(document)
     }
 
@@ -259,55 +262,74 @@
 
     private func updateVisibleCells() {
       guard let tableLayout else { return }
+
       let geometry = tableLayout.geometry
-      let visible = CGRect(
+      let visible = visibleTableRect
+      if visibleLayout !== tableLayout {
+        interactiveCells.refresh(for: tableLayout)
+        accessibilityCells.removeAll()
+      }
+      visibleLayout = tableLayout
+      let rowRange = geometry.rows(intersecting: visible)
+      let visibleIDs = cellIDs(rows: rowRange, columns: geometry.columns(intersecting: visible), geometry: geometry)
+      interactiveCells.retainVisible(visibleIDs)
+      interactiveCells.position(tableLayout, originY: visibleOriginY)
+      tiles.update(
+        tableLayout, visible: visible, originY: visibleOriginY, in: document, skipping: interactiveCells.ids)
+      updateAccessibility(visibleIDs, layout: tableLayout)
+      updateRules(rows: rowRange, geometry: geometry)
+    }
+
+    private var visibleTableRect: CGRect {
+      CGRect(
         x: horizontalScrollView.contentOffset.x - 40, y: visibleOriginY,
         width: horizontalScrollView.bounds.width + 80, height: horizontalScrollView.bounds.height
       )
-      let rowRange = geometry.rows(intersecting: visible)
-      let columns = geometry.columns(intersecting: visible)
-      let contentChanged = visibleLayout !== tableLayout
-      visibleLayout = tableLayout
+    }
+
+    private func cellIDs(rows: Range<Int>, columns: Range<Int>, geometry: MarkdownTableGeometry) -> Set<Int> {
       let columnCount = geometry.columnOffsets.count - 1
-      var required: Set<Int> = []
-      for row in rowRange {
-        for column in columns {
-          let id = row * columnCount + column
-          required.insert(id)
-          let cell: SelectableTextKitView
-          if let existing = cells[id] {
-            cell = existing
-          } else {
-            cell = reusableCells.popLast() ?? SelectableTextKitView()
-            cell.delegate = self
-            cells[id] = cell
-            document.addSubview(cell)
-          }
-          let frame = geometry.frame(row: row, column: column).insetBy(
-            dx: MarkdownTableMetrics.horizontalPadding, dy: MarkdownTableMetrics.verticalPadding
-          )
-          cell.frame = frame.offsetBy(dx: 0, dy: -visibleOriginY)
-          if contentChanged || cell.textStorage.length == 0 {
-            cell.setContent(tableLayout.cells[row][column])
-            cell.accessibilityLabel = MarkdownImageAttachment.plainText(tableLayout.cells[row][column])
-            _ = cell.contentHeight(forWidth: frame.width)
-          }
-        }
+      return Set(rows.flatMap { row in columns.map { row * columnCount + $0 } })
+    }
+
+    private func promoteCell(at point: CGPoint) -> UIView? {
+      guard let tableLayout else { return nil }
+
+      let geometry = tableLayout.geometry
+      let probe = CGRect(x: point.x, y: point.y + visibleOriginY, width: 1, height: 1)
+      guard let row = geometry.rows(intersecting: probe).first,
+        let column = geometry.columns(intersecting: probe).first
+      else { return nil }
+
+      let id = row * (geometry.columnOffsets.count - 1) + column
+      let view = interactiveCells.promote(id, text: tableLayout.cells[row][column], in: document)
+      updateVisibleCells()
+      return view
+    }
+
+    private func updateAccessibility(_ visibleIDs: Set<Int>, layout: UIKitMarkdownTableLayout) {
+      let columnCount = layout.geometry.columnOffsets.count - 1
+      accessibilityCells = accessibilityCells.filter { visibleIDs.contains($0.key) }
+      document.accessibilityElements = visibleIDs.sorted().map { id -> Any in
+        if let view = interactiveCells.view(for: id) { return view }
+
+        return accessibilityElement(id, row: id / columnCount, column: id % columnCount, layout: layout)
       }
-      for (id, cell) in cells
-      where !required.contains(id)
-        && (!cell.isFirstResponder || cell.selectedRange.length == 0 || id >= tableLayout.cells.count * columnCount)
-      {
-        cell.removeFromSuperview()
-        cells[id] = nil
-        cell.selectedRange = NSRange(location: 0, length: 0)
-        if reusableCells.count < 96 {
-          cell.setContent(NSAttributedString())
-          reusableCells.append(cell)
-        }
+    }
+
+    private func accessibilityElement(
+      _ id: Int, row: Int, column: Int, layout: UIKitMarkdownTableLayout
+    ) -> UIAccessibilityElement {
+      let element = accessibilityCells[id] ?? UIAccessibilityElement(accessibilityContainer: document)
+      if accessibilityCells[id] == nil {
+        element.accessibilityLabel = MarkdownImageAttachment.plainText(layout.cells[row][column])
+        element.accessibilityTraits = .staticText
+        accessibilityCells[id] = element
       }
-      document.accessibilityElements = cells.keys.sorted().compactMap { cells[$0] }
-      updateRules(rows: rowRange, geometry: geometry)
+      element.accessibilityFrameInContainerSpace = MarkdownTableCellPainter.textFrame(
+        geometry: layout.geometry, row: row, column: column
+      ).offsetBy(dx: 0, dy: -visibleOriginY)
+      return element
     }
 
     private func updateRules(rows: Range<Int>, geometry: MarkdownTableGeometry) {
