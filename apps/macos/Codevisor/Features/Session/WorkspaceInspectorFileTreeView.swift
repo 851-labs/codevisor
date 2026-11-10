@@ -4,26 +4,29 @@ import CodevisorUI
 import SwiftUI
 
 struct WorkspaceInspectorFileTreeView: View {
+  typealias Row = WorkspaceInspectorFileTreeModel.Row
+
   let model: WorkspaceInspectorFileTreeModel
   let activeFilePath: String?
   let onOpen: (WorkspaceInspectorView.Destination) -> Void
 
-  private struct Fold {
-    var progress: CGFloat
-    let generation: Int
-  }
-
-  private struct FoldPlacement {
-    let progress: CGFloat
-    let index: Int
-    let count: Int
-  }
-
   @Environment(\.accessibilityReduceMotion) private var reduceMotion
-  @State private var selection: String?
-  @State private var folding: [String: Fold] = [:]
-  @State private var revealing: Set<String> = []
-  @State private var foldGeneration = 0
+  @State private var selection = FileTreeSelection()
+  @State private var folding = WorkspaceInspectorFileTreeFolding()
+  @State private var typeSelect = TypeSelectBuffer()
+  @State private var renaming: String?
+  @State private var pendingDeletion: [ServerFileEntry] = []
+  @State private var dropHoverRow: String?
+  @State private var isRootDropTarget = false
+  @State private var viewportHeight: CGFloat = 0
+  @FocusState private var isTreeFocused: Bool
+
+  private static let springLoadDelay = Duration.milliseconds(700)
+
+  private var dropDirectory: String? {
+    if let dropHoverRow { return Self.dropDirectory(for: dropHoverRow, in: model) }
+    return isRootDropTarget ? model.root : nil
+  }
 
   private var rootPhase: WorkspaceInspectorMediaModel.Phase? {
     guard let root = model.root else { return .loaded }
@@ -32,7 +35,36 @@ struct WorkspaceInspectorFileTreeView: View {
     return model.slow.contains(root) ? .loading : nil
   }
 
+  private var isConfirmingDeletion: Binding<Bool> {
+    Binding(get: { !pendingDeletion.isEmpty }, set: { if !$0 { pendingDeletion = [] } })
+  }
+
   var body: some View {
+    content
+      .overlay {
+        if dropDirectory == model.root, dropDirectory != nil {
+          RoundedRectangle(cornerRadius: 8).strokeBorder(Color.accentColor, lineWidth: 2).padding(4)
+        }
+      }
+      .dropDestination(for: URL.self) { urls, _ in
+        drop(urls, into: model.root)
+      } isTargeted: { targeted in
+        isRootDropTarget = targeted
+      }
+      .safeAreaInset(edge: .bottom, spacing: 0) {
+        WorkspaceInspectorFileTransferStatus(transfers: model.transfers)
+      }
+      .task(id: dropHoverRow) { await springLoad(dropHoverRow) }
+      .alert(Self.deletionTitle(pendingDeletion), isPresented: isConfirmingDeletion) {
+        Button("Delete", role: .destructive, action: confirmDeletion)
+        Button("Cancel", role: .cancel) { pendingDeletion = [] }
+      } message: {
+        Text("It's deleted right away on the remote machine. You can't undo this.")
+      }
+  }
+
+  @ViewBuilder
+  private var content: some View {
     let rows = model.rows
     if !rows.isEmpty {
       tree(rows)
@@ -49,58 +81,242 @@ struct WorkspaceInspectorFileTreeView: View {
     }
   }
 
-  private func tree(_ rows: [WorkspaceInspectorFileTreeModel.Row]) -> some View {
-    let shown = folding.isEmpty ? rows : model.rows(showing: folding.keys)
-    let placements = foldPlacements(shown)
+  private func tree(_ rows: [Row]) -> some View {
+    let shown = folding.isIdle ? rows : model.rows(showing: folding.foldingPaths)
+    let placements = folding.placements(shown)
+    let looks = selectionLooks(shown)
     return ScrollViewReader { proxy in
       ScrollView {
         LazyVStack(spacing: 0) {
           ForEach(shown) { row in
             let placement = placements[row.id]
-            WorkspaceInspectorFileTreeRow(
-              row: row,
-              isExpanded: model.expanded.contains(row.id),
-              isLoading: model.slow.contains(row.id),
-              isSelected: selection == row.id,
-              onActivate: {
-                selection = row.id
-                activate(row)
-              },
-              onKeep: { onOpen(.file(row.entry.path)) }
-            )
-            .padding(.bottom, WorkspaceInspectorFileTreeRow.spacing)
-            .modifier(
-              WorkspaceInspectorFileTreeFold(
-                progress: placement?.progress ?? 1, index: placement?.index ?? 0, count: placement?.count ?? 1
+            rowView(row, in: rows, selection: looks[row.id])
+              .padding(.bottom, WorkspaceInspectorFileTreeRow.spacing)
+              .modifier(
+                WorkspaceInspectorFileTreeFold(
+                  progress: placement?.progress ?? 1, index: placement?.index ?? 0, count: placement?.count ?? 1
+                )
               )
-            )
-            .allowsHitTesting(placement == nil)
-            .id(row.id)
+              .allowsHitTesting(placement == nil)
+              .id(row.id)
           }
         }
         .padding(.horizontal, 10)
         .padding(.vertical, 6)
+        .frame(maxWidth: .infinity, minHeight: viewportHeight, alignment: .top)
+        .contentShape(Rectangle())
+        .onTapGesture(perform: clickEmptySpace)
       }
-      .onChange(of: shown.map(\.id)) { _, _ in reveal() }
-      .onChange(of: revealing) { _, _ in reveal() }
+      .onGeometryChange(for: CGFloat.self) { proxy in
+        proxy.size.height
+      } action: { height in
+        viewportHeight = height
+      }
+      .onChange(of: shown.map(\.id)) { _, _ in folding.reveal(model: model, reduceMotion: reduceMotion) }
+      .onChange(of: folding.revealing) { _, _ in folding.reveal(model: model, reduceMotion: reduceMotion) }
+      .onChange(of: rows.map(\.id)) { _, ids in selection.retain(ids) }
       .focusable()
+      .focused($isTreeFocused)
       .focusEffectDisabled()
+      .background(ClickOutsideMonitor(isActive: isTreeFocused, onClickOutside: releaseFocusAfterClick))
       .onChange(of: activeFilePath, initial: true) { _, path in
-        selection = path
+        if let path { selection.select(path) }
       }
-      .onKeyPress(.upArrow) { move(by: -1, in: rows, proxy: proxy) }
-      .onKeyPress(.downArrow) { move(by: 1, in: rows, proxy: proxy) }
-      .onKeyPress(.rightArrow) { stepIn(rows, proxy: proxy) }
-      .onKeyPress(.leftArrow) { stepOut(rows, proxy: proxy) }
-      .onKeyPress(.return) {
-        guard let row = rows.first(where: { $0.id == selection }) else { return .ignored }
-        activate(row)
-        return .handled
-      }
+      .onKeyPress(phases: .down) { press in handle(press, rows: rows, proxy: proxy) }
+      .onCopyCommand { copySelection(in: rows) }
     }
   }
 
-  private func activate(_ row: WorkspaceInspectorFileTreeModel.Row) {
+  private func rowView(
+    _ row: Row, in rows: [Row], selection look: WorkspaceInspectorFileSelectionBackground.Look?
+  ) -> some View {
+    WorkspaceInspectorFileTreeRow(
+      row: row,
+      isExpanded: model.expanded.contains(row.id),
+      isLoading: model.slow.contains(row.id),
+      selection: look,
+      isDropTarget: dropDirectory == row.id,
+      isRenaming: renaming == row.id,
+      actions: actions(for: row, in: rows)
+    )
+    .onDrag { model.dragItem(for: row.entry) }
+    .dropDestination(for: URL.self) { urls, _ in
+      drop(urls, into: Self.dropDirectory(for: row.id, in: model))
+    } isTargeted: { targeted in
+      hoverDrop(row.id, targeted)
+    }
+  }
+
+  private func actions(for row: Row, in rows: [Row]) -> WorkspaceInspectorFileTreeRow.Actions {
+    let targets = { targets(for: row, in: rows) }
+    let isOneOfMany = selection.contains(row.id) && selection.single == nil
+    return WorkspaceInspectorFileTreeRow.Actions(
+      click: { click(row, in: rows) },
+      doubleClick: { onOpen(.file(row.entry.path)) },
+      download: { downloadTargets(targets()) },
+      copy: { copyTargets(targets()) },
+      copyPath: { FileClipboard.writePaths(targets().map(\.path)) },
+      rename: isOneOfMany ? nil : { beginRename(row) },
+      delete: { requestDelete(targets()) },
+      deleteTitle: model.deletesToTrash ? "Move to Trash" : "Delete…",
+      commitRename: { name, viaKeyboard in commitRename(row, to: name, viaKeyboard: viaKeyboard) },
+      cancelRename: { endRename(refocus: true) }
+    )
+  }
+
+  private func selectionLooks(_ shown: [Row]) -> [String: WorkspaceInspectorFileSelectionBackground.Look] {
+    let isEmphasized = isTreeFocused || renaming != nil
+    var looks: [String: WorkspaceInspectorFileSelectionBackground.Look] = [:]
+    for (index, row) in shown.enumerated() where selection.contains(row.id) {
+      looks[row.id] = WorkspaceInspectorFileSelectionBackground.Look(
+        isEmphasized: isEmphasized,
+        joinsPrevious: index > 0 && selection.contains(shown[index - 1].id),
+        joinsNext: index + 1 < shown.count && selection.contains(shown[index + 1].id)
+      )
+    }
+    return looks
+  }
+
+  private func clickEmptySpace() {
+    isTreeFocused = true
+    selection.clear()
+  }
+
+  private func click(_ row: Row, in rows: [Row]) {
+    isTreeFocused = true
+    let flags = NSApp.currentEvent?.modifierFlags ?? []
+    if flags.contains(.command) {
+      selection.toggle(row.id)
+    } else if flags.contains(.shift) {
+      selection.extend(to: row.id, in: rows.map(\.id))
+    } else {
+      selection.select(row.id)
+      activate(row)
+    }
+  }
+
+  private func targets(for row: Row, in rows: [Row]) -> [ServerFileEntry] {
+    guard selection.contains(row.id) else {
+      selection.select(row.id)
+      return [row.entry]
+    }
+    return selectedEntries(in: rows)
+  }
+
+  private func selectedEntries(in rows: [Row]) -> [ServerFileEntry] {
+    rows.filter { selection.contains($0.id) }.map(\.entry)
+  }
+
+  private func downloadTargets(_ entries: [ServerFileEntry]) {
+    Task { await model.download(entries) }
+  }
+
+  private func copyTargets(_ entries: [ServerFileEntry]) {
+    Task { await model.copy(entries) }
+  }
+
+  private func copySelection(in rows: [Row]) -> [NSItemProvider] {
+    copyTargets(selectedEntries(in: rows))
+    return []
+  }
+
+  private func releaseFocusAfterClick() {
+    Task {
+      if isTreeFocused { isTreeFocused = false }
+    }
+  }
+
+  private func handle(_ press: KeyPress, rows: [Row], proxy: ScrollViewProxy) -> KeyPress.Result {
+    guard renaming == nil,
+      let command = FileTreeKeyCommand.command(
+        key: press.key, modifiers: press.modifiers, characters: press.characters)
+    else { return .ignored }
+    return perform(command, rows: rows, proxy: proxy)
+  }
+
+  private func perform(_ command: FileTreeKeyCommand, rows: [Row], proxy: ScrollViewProxy) -> KeyPress.Result {
+    switch command {
+    case let .move(offset, extending): return move(by: offset, extending: extending, in: rows, proxy: proxy)
+    case .expand: return stepIn(rows, proxy: proxy)
+    case .collapse: return stepOut(rows, proxy: proxy)
+    case .selectParent: return selectParent(rows, proxy: proxy)
+    case .open: return withCursorRow(rows, perform: open)
+    case .preview: return withCursorRow(rows, perform: activate)
+    case .rename: return withSingleRow(rows, perform: beginRename)
+    case .delete:
+      requestDelete(selectedEntries(in: rows))
+      return .handled
+    case .selectAll:
+      selection.selectAll(rows.map(\.id))
+      return .handled
+    case .copy:
+      copyTargets(selectedEntries(in: rows))
+      return .handled
+    case let .typeSelect(characters): return typeToSelect(characters, in: rows, proxy: proxy)
+    }
+  }
+
+  private func withCursorRow(_ rows: [Row], perform action: (Row) -> Void) -> KeyPress.Result {
+    guard let row = rows.first(where: { $0.id == selection.cursor }) else { return .ignored }
+    action(row)
+    return .handled
+  }
+
+  private func withSingleRow(_ rows: [Row], perform action: (Row) -> Void) -> KeyPress.Result {
+    guard let row = rows.first(where: { $0.id == selection.single }) else { return .ignored }
+    action(row)
+    return .handled
+  }
+
+  private func reveal(_ id: String, proxy: ScrollViewProxy) -> KeyPress.Result {
+    proxy.scrollTo(id)
+    return .handled
+  }
+
+  private func move(by offset: Int, extending: Bool, in rows: [Row], proxy: ScrollViewProxy) -> KeyPress.Result {
+    guard let id = selection.move(by: offset, in: rows.map(\.id), extending: extending) else { return .handled }
+    return reveal(id, proxy: proxy)
+  }
+
+  private func stepIn(_ rows: [Row], proxy: ScrollViewProxy) -> KeyPress.Result {
+    guard let index = rows.firstIndex(where: { $0.id == selection.cursor }), rows[index].entry.isDirectory else {
+      return .ignored
+    }
+    guard model.expanded.contains(rows[index].id) else {
+      setExpanded(rows[index].id, true)
+      return .handled
+    }
+    let next = index + 1
+    guard rows.indices.contains(next), rows[next].depth > rows[index].depth else { return .handled }
+    selection.select(rows[next].id)
+    return reveal(rows[next].id, proxy: proxy)
+  }
+
+  private func stepOut(_ rows: [Row], proxy: ScrollViewProxy) -> KeyPress.Result {
+    guard let row = rows.first(where: { $0.id == selection.cursor }) else { return .ignored }
+    guard row.entry.isDirectory, model.expanded.contains(row.id) else { return selectParent(rows, proxy: proxy) }
+    setExpanded(row.id, false)
+    return .handled
+  }
+
+  private func selectParent(_ rows: [Row], proxy: ScrollViewProxy) -> KeyPress.Result {
+    guard let index = rows.firstIndex(where: { $0.id == selection.cursor }),
+      let parent = rows[..<index].last(where: { $0.depth < rows[index].depth })
+    else { return .ignored }
+    selection.select(parent.id)
+    return reveal(parent.id, proxy: proxy)
+  }
+
+  private func typeToSelect(_ characters: String, in rows: [Row], proxy: ScrollViewProxy) -> KeyPress.Result {
+    let typed = typeSelect.type(characters, at: .now)
+    guard let id = TypeSelectBuffer.match(typed, in: rows.map { (id: $0.id, name: $0.entry.name) }) else {
+      return .handled
+    }
+    selection.select(id)
+    return reveal(id, proxy: proxy)
+  }
+
+  private func activate(_ row: Row) {
     if row.entry.isDirectory {
       setExpanded(row.id, !model.expanded.contains(row.id))
     } else {
@@ -108,190 +324,98 @@ struct WorkspaceInspectorFileTreeView: View {
     }
   }
 
-  private func setExpanded(_ path: String, _ isExpanded: Bool) {
-    foldGeneration += 1
-    let generation = foldGeneration
-    if isExpanded {
-      folding[path] = Fold(progress: 0, generation: generation)
-      revealing.insert(path)
-      model.setExpanded(path, true)
+  private func open(_ row: Row) {
+    if row.entry.isDirectory {
+      setExpanded(row.id, !model.expanded.contains(row.id))
     } else {
-      revealing.remove(path)
-      folding[path] = Fold(progress: folding[path]?.progress ?? 1, generation: generation)
-      model.setExpanded(path, false)
-      withAnimation(Motion.listReflow(reduceMotion: reduceMotion)) { folding[path]?.progress = 0 }
-      endFold(path, generation: generation)
+      onOpen(.file(row.entry.path))
     }
   }
 
-  private func reveal() {
-    for path in revealing where model.listings[path] != nil || !model.expanded.contains(path) {
-      revealing.remove(path)
-      guard model.expanded.contains(path), let generation = folding[path]?.generation else {
-        folding[path] = nil
-        continue
-      }
-      withAnimation(Motion.listReflow(reduceMotion: reduceMotion)) { folding[path]?.progress = 1 }
-      endFold(path, generation: generation)
-    }
+  private func setExpanded(_ path: String, _ isExpanded: Bool) {
+    folding.setExpanded(path, isExpanded, model: model, reduceMotion: reduceMotion)
   }
 
-  private func endFold(_ path: String, generation: Int) {
+  private func beginRename(_ row: Row) {
+    selection.select(row.id)
+    renaming = row.id
+  }
+
+  private func commitRename(_ row: Row, to name: String, viaKeyboard: Bool) {
+    endRename(refocus: viaKeyboard)
+    let trimmed = name.trimmingCharacters(in: .whitespacesAndNewlines)
+    guard trimmed != row.entry.name else { return }
+    guard Self.isUsableName(trimmed) else {
+      model.transfers.report("“\(trimmed)” can't be used as a name.")
+      return
+    }
     Task {
-      try? await Task.sleep(for: .seconds(Motion.listReflowDuration * 2))
-      if folding[path]?.generation == generation { folding[path] = nil }
+      guard let moved = await model.rename(row.entry, to: trimmed) else { return }
+      selection.select(moved)
+      onOpen(.fileRenamed(from: row.entry.path, to: moved))
     }
   }
 
-  private func foldPlacements(
-    _ rows: [WorkspaceInspectorFileTreeModel.Row]
-  ) -> [String: FoldPlacement] {
-    var placements: [String: FoldPlacement] = [:]
-    guard !folding.isEmpty else { return placements }
-    var index = 0
-    while index < rows.count {
-      let row = rows[index]
-      index += 1
-      guard let fold = folding[row.id] else { continue }
-      let block = rows[index...].prefix { $0.depth > row.depth }
-      for (offset, child) in block.enumerated() {
-        placements[child.id] = FoldPlacement(progress: fold.progress, index: offset, count: block.count)
-      }
-      index += block.count
+  private func endRename(refocus: Bool) {
+    renaming = nil
+    guard refocus else { return }
+
+    isTreeFocused = false
+    Task { isTreeFocused = true }
+  }
+
+  private func requestDelete(_ entries: [ServerFileEntry]) {
+    guard !entries.isEmpty else { return }
+    guard model.deletesToTrash else {
+      pendingDeletion = entries
+      return
     }
-    return placements
+    Task { await model.delete(entries) }
   }
 
-  private func select(_ id: String, proxy: ScrollViewProxy) -> KeyPress.Result {
-    selection = id
-    proxy.scrollTo(id)
-    return .handled
+  private func confirmDeletion() {
+    let entries = pendingDeletion
+    pendingDeletion = []
+    Task { await model.delete(entries) }
   }
 
-  private func move(
-    by offset: Int, in rows: [WorkspaceInspectorFileTreeModel.Row], proxy: ScrollViewProxy
-  )
-    -> KeyPress.Result
-  {
-    let current = rows.firstIndex { $0.id == selection }
-    let next = current.map { $0 + offset } ?? (offset > 0 ? 0 : rows.count - 1)
-    guard rows.indices.contains(next) else { return .ignored }
-    return select(rows[next].id, proxy: proxy)
+  private func drop(_ urls: [URL], into directory: String?) -> Bool {
+    let files = urls.filter(\.isFileURL)
+    guard let directory, !files.isEmpty else { return false }
+
+    Task { await model.drop(files, into: directory) }
+    return true
   }
 
-  private func stepIn(_ rows: [WorkspaceInspectorFileTreeModel.Row], proxy: ScrollViewProxy) -> KeyPress.Result {
-    guard let index = rows.firstIndex(where: { $0.id == selection }), rows[index].entry.isDirectory else {
-      return .ignored
+  private func hoverDrop(_ rowId: String, _ targeted: Bool) {
+    if targeted {
+      dropHoverRow = rowId
+    } else if dropHoverRow == rowId {
+      dropHoverRow = nil
     }
-    if !model.expanded.contains(rows[index].id) {
-      setExpanded(rows[index].id, true)
-      return .handled
-    }
-    let next = index + 1
-    guard rows.indices.contains(next), rows[next].depth > rows[index].depth else { return .handled }
-    return select(rows[next].id, proxy: proxy)
   }
 
-  private func stepOut(_ rows: [WorkspaceInspectorFileTreeModel.Row], proxy: ScrollViewProxy) -> KeyPress.Result {
-    guard let index = rows.firstIndex(where: { $0.id == selection }) else { return .ignored }
-    let row = rows[index]
-    if row.entry.isDirectory, model.expanded.contains(row.id) {
-      setExpanded(row.id, false)
-      return .handled
-    }
-    guard let parent = rows[..<index].last(where: { $0.depth < row.depth }) else { return .ignored }
-    return select(parent.id, proxy: proxy)
-  }
-}
+  private func springLoad(_ rowId: String?) async {
+    guard let rowId, model.rows.contains(where: { $0.id == rowId && $0.entry.isDirectory }) else { return }
+    guard !model.expanded.contains(rowId) else { return }
 
-private struct WorkspaceInspectorFileTreeFold: ViewModifier, Animatable {
-  var progress: CGFloat
-  let index: Int
-  let count: Int
-
-  var animatableData: CGFloat {
-    get { progress }
-    set { progress = newValue }
+    try? await Task.sleep(for: Self.springLoadDelay)
+    guard !Task.isCancelled, dropHoverRow == rowId else { return }
+    setExpanded(rowId, true)
   }
 
-  func body(content: Content) -> some View {
-    let height = WorkspaceInspectorFileTreeRow.height + WorkspaceInspectorFileTreeRow.spacing
-    let visible = min(height, max(0, progress * CGFloat(count) * height - CGFloat(index) * height))
-    content
-      .frame(height: visible, alignment: .top)
-      .clipped()
-      .opacity(progress)
-  }
-}
-
-private struct WorkspaceInspectorFileTreeRow: View {
-  let row: WorkspaceInspectorFileTreeModel.Row
-  let isExpanded: Bool
-  let isLoading: Bool
-  let isSelected: Bool
-  let onActivate: () -> Void
-  let onKeep: () -> Void
-
-  @Environment(\.accessibilityReduceMotion) private var reduceMotion
-
-  static let height: CGFloat = 22
-  static let spacing: CGFloat = 1
-  private static let indent: CGFloat = 14
-
-  private var entry: ServerFileEntry { row.entry }
-
-  private var expansionValue: LocalizedStringKey {
-    guard entry.isDirectory else { return "" }
-    return isExpanded ? "Expanded" : "Collapsed"
+  private static func dropDirectory(for rowId: String, in model: WorkspaceInspectorFileTreeModel) -> String? {
+    guard let row = model.rows.first(where: { $0.id == rowId }) else { return nil }
+    if row.entry.isDirectory { return row.id }
+    return (row.id as NSString).deletingLastPathComponent
   }
 
-  var body: some View {
-    HStack(spacing: 0) {
-      ZStack {
-        if isLoading {
-          ProgressView().controlSize(.mini)
-        } else if entry.isDirectory {
-          Image(systemName: "chevron.right")
-            .font(.caption2.weight(.semibold))
-            .scaleEffect(0.95)
-            .foregroundStyle(.secondary)
-            .rotationEffect(.degrees(isExpanded ? 90 : 0))
-            .animation(Motion.listReflow(reduceMotion: reduceMotion), value: isExpanded)
-        }
-      }
-      .frame(width: 10, height: 10)
-      .padding(.trailing, 3.5)
-      FileIcon(path: entry.path, isDirectory: entry.isDirectory, size: 15)
-      Text(entry.name)
-        .lineLimit(1)
-        .truncationMode(.middle)
-        .padding(.leading, 6)
-      Spacer(minLength: 0)
-    }
-    .padding(.leading, CGFloat(row.depth) * Self.indent + 4)
-    .padding(.trailing, 6)
-    .frame(height: Self.height)
-    .contentShape(Rectangle())
-    .sidebarRowHover(isSelected: isSelected)
-    .onTapGesture {
-      if !entry.isDirectory, let event = NSApp.currentEvent, event.type == .leftMouseUp, event.clickCount > 1 {
-        onKeep()
-      } else {
-        onActivate()
-      }
-    }
-    .help(entry.path)
-    .contextMenu {
-      Button("Copy Path") {
-        NSPasteboard.general.clearContents()
-        NSPasteboard.general.setString(entry.path, forType: .string)
-      }
-    }
-    .accessibilityElement(children: .ignore)
-    .accessibilityLabel(entry.name)
-    .accessibilityValue(expansionValue)
-    .accessibilityAddTraits(isSelected ? [.isButton, .isSelected] : .isButton)
-    .accessibilityHint(entry.isDirectory ? "" : "Opens the file")
-    .accessibilityAction { onActivate() }
+  private static func isUsableName(_ name: String) -> Bool {
+    !name.isEmpty && !name.contains("/") && name != "." && name != ".."
+  }
+
+  private static func deletionTitle(_ entries: [ServerFileEntry]) -> String {
+    guard entries.count == 1, let only = entries.first else { return "Delete \(entries.count) items?" }
+    return "Delete “\(only.name)”?"
   }
 }

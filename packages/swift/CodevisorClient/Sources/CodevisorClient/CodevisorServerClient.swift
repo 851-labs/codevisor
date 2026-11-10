@@ -255,11 +255,12 @@ public final class CodevisorServerClient: CodevisorServerClienting, @unchecked S
 
   func performUpload(
     _ path: String,
+    method: String = "POST",
     fileURL: URL,
     contentType: String
   ) async throws -> Data {
     try await waitForServerIfNeeded(path: path)
-    let request = try makeUploadRequest(path, contentType: contentType)
+    let request = try makeUploadRequest(path, method: method, contentType: contentType)
 
     let (data, httpResponse) = try await reportingConnectionLoss {
       try await requestTransport.upload(for: request, fromFile: fileURL)
@@ -300,9 +301,23 @@ public final class CodevisorServerClient: CodevisorServerClienting, @unchecked S
     return request
   }
 
-  private func makeUploadRequest(_ path: String, contentType: String) throws -> URLRequest {
+  func performDownload(_ path: String, to destination: URL) async throws {
+    try await waitForServerIfNeeded(path: path)
+    let request = try makeRawRequest(path, method: "GET", body: nil, contentType: nil)
+
+    let httpResponse = try await reportingConnectionLoss {
+      try await requestTransport.download(for: request, to: destination)
+    }
+    guard !(200..<300).contains(httpResponse.statusCode) else { return }
+
+    let body = (try? Data(contentsOf: destination)) ?? Data()
+    try? FileManager.default.removeItem(at: destination)
+    try validateResponse(body, httpResponse)
+  }
+
+  private func makeUploadRequest(_ path: String, method: String, contentType: String) throws -> URLRequest {
     var request = URLRequest(url: try url(for: path))
-    request.httpMethod = "POST"
+    request.httpMethod = method
     applyAuthorization(to: &request)
     request.setValue(contentType, forHTTPHeaderField: "Content-Type")
     return request

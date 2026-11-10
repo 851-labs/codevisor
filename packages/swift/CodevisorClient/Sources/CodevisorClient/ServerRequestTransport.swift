@@ -8,6 +8,8 @@ public protocol ServerRequestTransport: Sendable {
   ) async throws -> (HTTPURLResponse, AsyncThrowingStream<Data, any Error>)
 
   func upload(for request: URLRequest, fromFile fileURL: URL) async throws -> (Data, HTTPURLResponse)
+
+  func download(for request: URLRequest, to destination: URL) async throws -> HTTPURLResponse
 }
 
 extension ServerRequestTransport {
@@ -18,6 +20,19 @@ extension ServerRequestTransport {
     var request = request
     request.httpBody = try Data(contentsOf: fileURL)
     return try await data(for: request)
+  }
+
+  public func download(for request: URLRequest, to destination: URL) async throws -> HTTPURLResponse {
+    let (response, body) = try await stream(for: request)
+    guard FileManager.default.createFile(atPath: destination.path, contents: nil) else {
+      throw CocoaError(.fileWriteUnknown, userInfo: [NSFilePathErrorKey: destination.path])
+    }
+    let handle = try FileHandle(forWritingTo: destination)
+    defer { try? handle.close() }
+    for try await chunk in body {
+      try handle.write(contentsOf: chunk)
+    }
+    return response
   }
 
   public func stream(
@@ -57,6 +72,16 @@ public struct URLSessionRequestTransport: ServerRequestTransport {
       throw CodevisorServerClientError.invalidResponse
     }
     return (data, httpResponse)
+  }
+
+  public func download(for request: URLRequest, to destination: URL) async throws -> HTTPURLResponse {
+    let (temporary, response) = try await session.download(for: request)
+    guard let httpResponse = response as? HTTPURLResponse else {
+      throw CodevisorServerClientError.invalidResponse
+    }
+    try? FileManager.default.removeItem(at: destination)
+    try FileManager.default.moveItem(at: temporary, to: destination)
+    return httpResponse
   }
 }
 

@@ -23,6 +23,8 @@ extension SessionContainerView {
       openBotTranscript(bot)
     case let .toolCall(sessionId, toolCallId):
       revealToolCall(toolCallId, inChat: sessionId)
+    case let .fileRenamed(source, destination):
+      followFileRename(from: source, to: destination)
     }
   }
 

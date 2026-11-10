@@ -165,6 +165,20 @@ public final class FileDocumentModel {
     }
   }
 
+  public func adopt(_ previous: FileDocumentModel) {
+    guard snapshot == nil, let base = previous.snapshot else { return }
+
+    snapshot = ServerFileDocument(
+      path: path, content: base.content, version: base.version, size: base.size, writable: base.writable,
+      reason: base.reason)
+    setText(previous.text)
+  }
+
+  public func cancelAutosave() {
+    autosaveTask?.cancel()
+    autosaveTask = nil
+  }
+
   public func flushAutosave() {
     persistDraft()
     autosaveTask?.cancel()

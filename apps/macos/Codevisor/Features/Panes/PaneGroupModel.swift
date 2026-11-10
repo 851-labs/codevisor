@@ -51,6 +51,7 @@ final class PaneGroupModel: Identifiable {
   @ObservationIgnored var isFocusCurrent: (() -> Bool)?
   @ObservationIgnored let deferredFocus = DeferredPaneFocus()
   @ObservationIgnored var presentedPaneIDs: Set<UUID> = []
+  @ObservationIgnored var backgroundOpen: (paneId: UUID, until: ContinuousClock.Instant)?
   @ObservationIgnored var workspaceCommandHandler: ((PaneGroupCommand) -> Bool)?
 
   init(
@@ -383,7 +384,7 @@ final class PaneGroupModel: Identifiable {
   }
 
   func requestSelectedPaneFocus() {
-    guard let id = state.selectedPaneId else { return }
+    guard let id = state.selectedPaneId, !isOpeningInBackground(id) else { return }
     deferredFocus.request(
       isCurrent: { [weak self] in
         self?.state.selectedPaneId == id && self?.canFocusSelectedPane == true
@@ -394,11 +395,6 @@ final class PaneGroupModel: Identifiable {
         return true
       }
     )
-  }
-
-  func paneContentDidMount(id: UUID) {
-    presentedPaneIDs.insert(id)
-    if state.selectedPaneId == id, canFocusSelectedPane { requestSelectedPaneFocus() }
   }
 
   func detachAll() {

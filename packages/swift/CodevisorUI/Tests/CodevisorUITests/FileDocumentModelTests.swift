@@ -99,6 +99,22 @@ struct FileDocumentModelTests {
     #expect(session.document === document)
   }
 
+  @Test func renamedDocumentShowsTheOpenContentBeforeItLoads() async {
+    let fixture = DocumentFixture()
+    let original = FileDocumentModel(
+      path: "/project/file.md", read: { await fixture.read() }, write: { try await fixture.write($0, version: $1) })
+    await original.refresh()
+    original.edit("unsaved")
+    let renamed = FileDocumentModel(
+      path: "/project/renamed.md", read: { await fixture.read() }, write: { try await fixture.write($0, version: $1) })
+
+    renamed.adopt(original)
+
+    #expect(renamed.snapshot?.path == "/project/renamed.md")
+    #expect(renamed.text == "unsaved")
+    #expect(renamed.isDirty)
+  }
+
   @Test func staleRefreshCannotUndoACompletedSave() async {
     let clock = TestClock()
     let fixture = DocumentFixture()
