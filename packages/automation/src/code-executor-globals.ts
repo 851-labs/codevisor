@@ -35,24 +35,24 @@ export const machinesAndClientsSource: ReadonlyArray<string> = [
   "  });",
   "};",
   "const __makeClients = (target, machineInfo) => ({ list: async () => ({ items: __itemsOf(await __callTool('codevisor.clients.list', {}, target)).filter((raw) => raw && typeof raw === 'object').map((raw) => __makeClient(raw, target, machineInfo)) }) });",
-  "const __syncMachine = (args) => {",
+  "const __mirrorMachine = (args) => {",
   "  const value = typeof args === 'string' || (args && typeof args.machineId === 'string') ? args : args?.machine;",
   "  const machine = value && typeof value === 'object' ? value.machineId : value;",
   "  if (typeof machine !== 'string' || machine === '') throw new Error('Pass a machine: a Machine, its machineId, or its name');",
   "  return machine;",
   "};",
-  "const __pendingSyncNote = async (args, info) => {",
+  "const __pendingMirrorNote = async (args, info) => {",
   "  if (!args || typeof args.cwd !== 'string') return undefined;",
-  "  let syncs;",
-  "  try { syncs = __itemsOf(await __callTool('codevisor.workspaces.syncs', {})); } catch { return undefined; }",
-  "  const sync = syncs.find((item) => item?.machine?.machineId === info.machineId && typeof item.path === 'string' && (args.cwd === item.path || args.cwd.startsWith(item.path + '/')));",
-  "  if (!sync || sync.pendingChanges !== true) return undefined;",
-  "  return 'Some of your edits had not reached ' + (info.name ?? info.machineId) + ' when this ran; call workspace.waitForSync first next time';",
+  "  let mirrors;",
+  "  try { mirrors = __itemsOf(await __callTool('codevisor.workspaces.mirrors', {})); } catch { return undefined; }",
+  "  const mirror = mirrors.find((item) => item?.machine?.machineId === info.machineId && typeof item.path === 'string' && (args.cwd === item.path || args.cwd.startsWith(item.path + '/')));",
+  "  if (!mirror || mirror.pendingChanges !== true) return undefined;",
+  "  return 'Some of your edits had not reached ' + (info.name ?? info.machineId) + ' when this ran; call workspace.waitForMirror first next time';",
   "};",
   "const __machineExec = async (args, target, info) => {",
-  "  const note = await __pendingSyncNote(args, info);",
+  "  const note = await __pendingMirrorNote(args, info);",
   "  const result = await __callTool('codevisor.shell.exec', args, target);",
-  "  return note === undefined || !result || typeof result !== 'object' ? result : { ...result, syncPending: note };",
+  "  return note === undefined || !result || typeof result !== 'object' ? result : { ...result, mirrorBehind: note };",
   "};",
   "const __makeMachine = (info) => {",
   "  const isCurrent = info.isCurrent === true || info.machineId === __currentMachineInfo.machineId;",
@@ -85,11 +85,11 @@ export const machinesAndClientsSource: ReadonlyArray<string> = [
   "  }",
   "};",
   "const workspace = {",
-  "  syncs: async () => ({ items: __itemsOf(await __callTool('codevisor.workspaces.syncs', {})) }),",
-  "  startSync: (args) => __callTool('codevisor.workspaces.sync_start', { machine: __syncMachine(args) }),",
-  "  syncStatus: (args) => __callTool('codevisor.workspaces.sync_status', { machine: __syncMachine(args) }),",
-  "  waitForSync: (args) => __callTool('codevisor.workspaces.sync_wait', { machine: __syncMachine(args), ...(typeof args?.timeoutMs === 'number' ? { timeoutMs: args.timeoutMs } : {}) }),",
-  "  stopSync: (args) => __callTool('codevisor.workspaces.sync_stop', { machine: __syncMachine(args) })",
+  "  mirrors: async () => ({ items: __itemsOf(await __callTool('codevisor.workspaces.mirrors', {})) }),",
+  "  startMirror: (args) => __callTool('codevisor.workspaces.mirror_start', { machine: __mirrorMachine(args) }),",
+  "  mirrorStatus: (args) => __callTool('codevisor.workspaces.mirror_status', { machine: __mirrorMachine(args) }),",
+  "  waitForMirror: (args) => __callTool('codevisor.workspaces.mirror_wait', { machine: __mirrorMachine(args), ...(typeof args?.timeoutMs === 'number' ? { timeoutMs: args.timeoutMs } : {}) }),",
+  "  stopMirror: (args) => __callTool('codevisor.workspaces.mirror_stop', { machine: __mirrorMachine(args) })",
   "};",
   "const __searchTools = async (args = {}) => {",
   "  const { machines: scope, ...query } = args && typeof args === 'object' ? args : {};",
@@ -127,18 +127,18 @@ interface Machine {
   }
   agents: { [tool: string]: (args?: object) => Promise<any>; debug: { [tool: string]: (args?: object) => Promise<any> } } // machine.agents.start(args) is machine.tools.codevisor.agents.start(args)
   clients: { list(): Promise<{ items: Client[] }> } // Codevisor app windows attached to that machine
-  exec(args: { command: string; description?: string; timeout?: number; run_in_background?: boolean; cwd?: string }): Promise<{ exitCode: number | null; output: string; timedOut: boolean; durationMs: number; outputPath: string; syncPending?: string } | { taskId: string; outputPath: string }> // a shell command on that machine; timeout ms (default 120000, max 600000); background tasks send an exec.task_finished event
+  exec(args: { command: string; description?: string; timeout?: number; run_in_background?: boolean; cwd?: string }): Promise<{ exitCode: number | null; output: string; timedOut: boolean; durationMs: number; outputPath: string; mirrorBehind?: string } | { taskId: string; outputPath: string }> // a shell command on that machine; timeout ms (default 120000, max 600000); background tasks send an exec.task_finished event
   readFile(args: string | { path: string; offset?: number; limit?: number }): Promise<{ content: string; startLine: number; endLine: number; totalLines: number }>
   taskStop(args: string | { taskId: string }): Promise<object>
 }
-declare const workspace: { // this chat's workspace, synced one way to other machines
-  startSync(machine: Machine | string): Promise<WorkspaceSync> // keeps syncing in the background until stopSync or archive
-  syncStatus(machine: Machine | string): Promise<WorkspaceSync>
-  waitForSync(machine: Machine | string | { machine: Machine | string; timeoutMs?: number }): Promise<WorkspaceSync & { timedOut: boolean }>
-  stopSync(machine: Machine | string): Promise<{ stopped: true }> // also deletes the copy on that machine
-  syncs(): Promise<{ items: WorkspaceSync[] }>
+declare const workspace: { // this chat's workspace; a mirror is a one-way, kept-current copy of it on another machine
+  startMirror(machine: Machine | string): Promise<WorkspaceMirror> // keeps syncing in the background until stopMirror or archive
+  mirrorStatus(machine: Machine | string): Promise<WorkspaceMirror>
+  waitForMirror(machine: Machine | string | { machine: Machine | string; timeoutMs?: number }): Promise<WorkspaceMirror & { timedOut: boolean }>
+  stopMirror(machine: Machine | string): Promise<{ stopped: true }> // also deletes the mirror on that machine
+  mirrors(): Promise<{ items: WorkspaceMirror[] }>
 }
-interface WorkspaceSync {
+interface WorkspaceMirror {
   machine: { machineId: string; name: string }; path?: string; state: "syncing" | "synced" | "failed"; pendingChanges: boolean
   lastSyncedAt?: string; lastSync?: { files: number; bytes: number; ms: number }; skipped: string[]; error?: string
 }
@@ -201,15 +201,15 @@ export const SANDBOX_GLOBALS: ReadonlyArray<SandboxGlobal> = [
     signature:
       "machine.exec({ command, description?, timeout?, run_in_background?, cwd? }), machine.readFile(path), machine.taskStop(taskId)",
     description:
-      "Run shell commands on any of the user's machines, read files there, and stop background tasks. Pass a workspace sync's path as cwd to run against your workspace.",
+      "Run shell commands on any of the user's machines, read files there, and stop background tasks. Pass a workspace mirror's path as cwd to run against your workspace.",
     gate: "codevisor"
   },
   {
-    name: "workspace.startSync",
+    name: "workspace.startMirror",
     signature:
-      "workspace.startSync(machine), workspace.syncStatus(machine), workspace.waitForSync(machine), workspace.stopSync(machine), workspace.syncs()",
+      "workspace.startMirror(machine), workspace.mirrorStatus(machine), workspace.waitForMirror(machine), workspace.stopMirror(machine), workspace.mirrors()",
     description:
-      "Sync this chat's workspace one way to another machine in the background so commands there see your edits; stopSync deletes the copy.",
+      "Mirror this chat's workspace one way to another machine, kept current in the background so commands there see your edits; stopMirror deletes the mirror.",
     gate: "codevisor"
   },
   {

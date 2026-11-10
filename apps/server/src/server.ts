@@ -329,7 +329,7 @@ export const makeCodevisorServerApp = (
       webSocketServer.close()
       void services.mcp?.close().catch(swallowError)
       services.execTasks?.closeAll()
-      services.workspaceSyncs?.close()
+      services.workspaceMirrors?.close()
       services.orphanSweep?.close()
       await sharedAccountReconcile
       await closeTerminalTitles()

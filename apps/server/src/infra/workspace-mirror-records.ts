@@ -1,26 +1,26 @@
 import { readJsonStateFile, writeJsonStateFile } from "../json-state-file.js"
-import type { WorkspaceSyncRecord } from "./workspace-sync-runner.js"
+import type { WorkspaceMirrorRecord } from "./workspace-mirror-runner.js"
 
 export interface PendingRemoval {
   readonly machineId: string
   readonly mirrorId: string
 }
 
-export interface WorkspaceSyncStore {
-  readonly records: () => ReadonlyArray<WorkspaceSyncRecord>
-  readonly add: (record: WorkspaceSyncRecord) => void
-  readonly remove: (record: WorkspaceSyncRecord) => void
+export interface WorkspaceMirrorRecords {
+  readonly records: () => ReadonlyArray<WorkspaceMirrorRecord>
+  readonly add: (record: WorkspaceMirrorRecord) => void
+  readonly remove: (record: WorkspaceMirrorRecord) => void
   readonly removals: () => ReadonlyArray<PendingRemoval>
   readonly queueRemoval: (removal: PendingRemoval) => void
   readonly forgetRemoval: (removal: PendingRemoval) => void
 }
 
 interface StoredSyncs {
-  readonly syncs: ReadonlyArray<WorkspaceSyncRecord>
+  readonly syncs: ReadonlyArray<WorkspaceMirrorRecord>
   readonly removals: ReadonlyArray<PendingRemoval>
 }
 
-export const makeWorkspaceSyncStore = (path: string): WorkspaceSyncStore => {
+export const makeWorkspaceMirrorRecords = (path: string): WorkspaceMirrorRecords => {
   let stored = readStoredSyncs(path)
   const save = (next: StoredSyncs) => {
     stored = next
@@ -65,7 +65,7 @@ const arrayOf = (value: unknown): ReadonlyArray<unknown> => (Array.isArray(value
 const hasStrings = (value: unknown, keys: ReadonlyArray<string>): boolean =>
   isRecord(value) && keys.every((key) => typeof value[key] === "string")
 
-const isSyncRecord = (value: unknown): value is WorkspaceSyncRecord =>
+const isSyncRecord = (value: unknown): value is WorkspaceMirrorRecord =>
   hasStrings(value, [
     "workspaceId",
     "workspaceName",

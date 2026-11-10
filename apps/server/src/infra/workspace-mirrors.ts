@@ -2,44 +2,44 @@ import { randomUUID } from "node:crypto"
 import { rm } from "node:fs/promises"
 import { join } from "node:path"
 
-import type { WorkspaceSyncStatus } from "@codevisor/api"
+import type { WorkspaceMirrorStatus } from "@codevisor/api"
 
+import { makeWorkspaceMirrorRecords, type PendingRemoval } from "./workspace-mirror-records.js"
 import {
-  SyncRunner,
+  MirrorRunner,
   type MirrorTransport,
-  type WorkspaceSyncRecord
-} from "./workspace-sync-runner.js"
-import { makeWorkspaceSyncStore, type PendingRemoval } from "./workspace-sync-store.js"
+  type WorkspaceMirrorRecord
+} from "./workspace-mirror-runner.js"
 
-export type { MirrorTransport, WorkspaceSyncRecord } from "./workspace-sync-runner.js"
+export type { MirrorTransport, WorkspaceMirrorRecord } from "./workspace-mirror-runner.js"
 
-export interface SyncSource {
+export interface MirrorSource {
   readonly id: string
   readonly name: string
   readonly root: string
 }
 
-export interface SyncTarget {
+export interface MirrorTarget {
   readonly id: string
   readonly name: string
 }
 
-export interface WaitedSyncStatus extends WorkspaceSyncStatus {
+export interface WaitedMirrorStatus extends WorkspaceMirrorStatus {
   readonly timedOut: boolean
 }
 
-export interface WorkspaceSyncs {
-  readonly start: (source: SyncSource, target: SyncTarget) => Promise<WorkspaceSyncStatus>
-  readonly list: (workspaceId: string) => Promise<ReadonlyArray<WorkspaceSyncStatus>>
+export interface WorkspaceMirrors {
+  readonly start: (source: MirrorSource, target: MirrorTarget) => Promise<WorkspaceMirrorStatus>
+  readonly list: (workspaceId: string) => Promise<ReadonlyArray<WorkspaceMirrorStatus>>
   readonly status: (
     workspaceId: string,
     machineId: string
-  ) => Promise<WorkspaceSyncStatus | undefined>
+  ) => Promise<WorkspaceMirrorStatus | undefined>
   readonly wait: (
     workspaceId: string,
     machineId: string,
     timeoutMs: number
-  ) => Promise<WaitedSyncStatus | undefined>
+  ) => Promise<WaitedMirrorStatus | undefined>
   readonly stop: (workspaceId: string, machineId: string) => Promise<boolean>
   readonly stopAll: (workspaceId: string) => Promise<void>
   readonly forgetMachine: (machineId: string) => Promise<void>
@@ -47,7 +47,7 @@ export interface WorkspaceSyncs {
   readonly close: () => void
 }
 
-export interface WorkspaceSyncsOptions {
+export interface WorkspaceMirrorsOptions {
   readonly directory: string
   readonly transport: MirrorTransport
   readonly intervalMs?: number
@@ -56,13 +56,13 @@ export interface WorkspaceSyncsOptions {
   readonly now?: () => Date
 }
 
-export const makeWorkspaceSyncs = (options: WorkspaceSyncsOptions): WorkspaceSyncs => {
-  const store = makeWorkspaceSyncStore(join(options.directory, "workspace-syncs.json"))
-  const runners = new Map<string, SyncRunner>()
+export const makeWorkspaceMirrors = (options: WorkspaceMirrorsOptions): WorkspaceMirrors => {
+  const store = makeWorkspaceMirrorRecords(join(options.directory, "workspace-mirrors.json"))
+  const runners = new Map<string, MirrorRunner>()
   const now = options.now ?? (() => new Date())
 
-  const launch = (record: WorkspaceSyncRecord): SyncRunner => {
-    const runner = new SyncRunner({
+  const launch = (record: WorkspaceMirrorRecord): MirrorRunner => {
+    const runner = new MirrorRunner({
       record,
       repo: { gitDir: snapshotDir(options.directory, record.mirrorId), workTree: record.root },
       transport: options.transport,
@@ -93,7 +93,7 @@ export const makeWorkspaceSyncs = (options: WorkspaceSyncsOptions): WorkspaceSyn
   const removalTimer = setInterval(retryRemovals, options.removalRetryMs ?? REMOVAL_RETRY_MS)
   removalTimer.unref()
 
-  const retire = async (runner: SyncRunner): Promise<void> => {
+  const retire = async (runner: MirrorRunner): Promise<void> => {
     runners.delete(syncKey(runner.record.workspaceId, runner.record.machineId))
     await runner.stop()
     store.remove(runner.record)
@@ -172,9 +172,9 @@ const syncKey = (workspaceId: string, machineId: string): string =>
   `${workspaceId.toLowerCase()}|${machineId}`
 
 const snapshotDir = (directory: string, mirrorId: string): string =>
-  join(directory, "workspace-syncs", mirrorId)
+  join(directory, "workspace-mirrors", mirrorId)
 
-const newRecord = (source: SyncSource, target: SyncTarget): WorkspaceSyncRecord => ({
+const newRecord = (source: MirrorSource, target: MirrorTarget): WorkspaceMirrorRecord => ({
   workspaceId: source.id,
   workspaceName: source.name,
   root: source.root,
@@ -183,7 +183,7 @@ const newRecord = (source: SyncSource, target: SyncTarget): WorkspaceSyncRecord 
   mirrorId: randomUUID()
 })
 
-const passOrTimeout = async (runner: SyncRunner, timeoutMs: number): Promise<boolean> => {
+const passOrTimeout = async (runner: MirrorRunner, timeoutMs: number): Promise<boolean> => {
   let timer: ReturnType<typeof setTimeout> | undefined
   const timeout = new Promise<boolean>((resolve) => {
     timer = setTimeout(() => resolve(true), timeoutMs)

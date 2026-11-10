@@ -1,4 +1,4 @@
-import type { MirrorSourceHead, WorkspaceSyncState, WorkspaceSyncStatus } from "@codevisor/api"
+import type { MirrorSourceHead, WorkspaceMirrorState, WorkspaceMirrorStatus } from "@codevisor/api"
 
 import type { PreparedMirror } from "./mirror-store.js"
 import {
@@ -29,7 +29,7 @@ export interface MirrorTransport {
   readonly remove: (machineId: string, mirrorId: string) => Promise<void>
 }
 
-export interface WorkspaceSyncRecord {
+export interface WorkspaceMirrorRecord {
   readonly workspaceId: string
   readonly workspaceName: string
   readonly root: string
@@ -38,8 +38,8 @@ export interface WorkspaceSyncRecord {
   readonly mirrorId: string
 }
 
-export interface SyncRunnerOptions {
-  readonly record: WorkspaceSyncRecord
+export interface MirrorRunnerOptions {
+  readonly record: WorkspaceMirrorRecord
   readonly repo: SnapshotRepo
   readonly transport: MirrorTransport
   readonly intervalMs: number
@@ -60,8 +60,8 @@ interface PassWaiter {
 
 export const MIRROR_CHUNK_BYTES = 4 * 1024 * 1024
 
-export class SyncRunner {
-  private state: WorkspaceSyncState = "syncing"
+export class MirrorRunner {
+  private state: WorkspaceMirrorState = "syncing"
   private path: string | undefined
   private targetHead: string | undefined
   private targetSourceHead: string | undefined
@@ -78,9 +78,9 @@ export class SyncRunner {
   private stopped = false
   private repoLock: Promise<unknown> = Promise.resolve()
 
-  constructor(private readonly options: SyncRunnerOptions) {}
+  constructor(private readonly options: MirrorRunnerOptions) {}
 
-  get record(): WorkspaceSyncRecord {
+  get record(): WorkspaceMirrorRecord {
     return this.options.record
   }
 
@@ -105,7 +105,7 @@ export class SyncRunner {
     return waiting
   }
 
-  async status(): Promise<WorkspaceSyncStatus> {
+  async status(): Promise<WorkspaceMirrorStatus> {
     const { record } = this.options
     return {
       workspaceId: record.workspaceId,

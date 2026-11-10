@@ -93,7 +93,7 @@ export const archiveWorkspaceAndWait = (
   return queue.enqueue(() =>
     withWorktreeLifecycle(services, workspace.rootDirectory ?? workspace.id, async () => {
       if ((await findWorkspace(services, workspace.id))?.isArchived === false) return
-      await services.workspaceSyncs?.stopAll(workspace.id)
+      await services.workspaceMirrors?.stopAll(workspace.id)
       await stopWorkspaceExecTasks(services, workspace.id)
       if (runtime !== undefined) await retireRuntime(services, fanout, config.id, runtime)
       const archived = await archiveWorkspaceWorktree(services, config.id, workspace)

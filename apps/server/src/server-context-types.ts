@@ -160,7 +160,7 @@ export interface CodevisorServerServices {
   readonly execTasks?: import("./infra/exec-tasks.js").ExecTasks
   readonly remoteExecTasks?: import("./infra/remote-exec-tasks.js").RemoteExecTasks
   readonly mirrors?: import("./infra/mirror-store.js").MirrorStore
-  readonly workspaceSyncs?: import("./infra/workspace-syncs.js").WorkspaceSyncs
+  readonly workspaceMirrors?: import("./infra/workspace-mirrors.js").WorkspaceMirrors
   readonly orphanSweep?: import("./infra/orphan-sweep.js").OrphanSweep
 }
 

@@ -13,9 +13,9 @@ public extension CodevisorServerClienting {
     throw CodevisorServerClientError.invalidResponse
   }
 
-  func workspaceSyncs(workspaceId: UUID) async throws -> [ServerWorkspaceSync] { [] }
+  func workspaceMirrors(workspaceId: UUID) async throws -> [ServerWorkspaceMirror] { [] }
 
-  func stopWorkspaceSync(workspaceId: UUID, machineId: String) async throws {
+  func stopWorkspaceMirror(workspaceId: UUID, machineId: String) async throws {
     throw CodevisorServerClientError.invalidResponse
   }
 
