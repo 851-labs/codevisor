@@ -10,7 +10,7 @@ import { makeExecTasks } from "../infra/exec-tasks.js"
 import type { MachineLink } from "../infra/machine-link.js"
 import { makeMirrorStore } from "../infra/mirror-store.js"
 import { makeRemoteExecTasks } from "../infra/remote-exec-tasks.js"
-import { makeWorkspaceSyncs } from "../infra/workspace-syncs.js"
+import { makeWorkspaceMirrors } from "../infra/workspace-mirrors.js"
 import { jsonRequest, makeServices, startWithApp, tempDirs } from "../test-support.js"
 import { field } from "./response-test-support.js"
 
@@ -45,7 +45,7 @@ const execServer = async () => {
     env: process.env
   })
   const mirrors = makeMirrorStore(tempDir("codevisor-mirrors-"))
-  const workspaceSyncs = makeWorkspaceSyncs({
+  const workspaceMirrors = makeWorkspaceMirrors({
     directory: tempDir("codevisor-sync-state-"),
     intervalMs: 3_600_000,
     transport: {
@@ -57,7 +57,7 @@ const execServer = async () => {
   })
   onTestFinished(() => {
     execTasks.closeAll()
-    workspaceSyncs.close()
+    workspaceMirrors.close()
   })
   const machines = fakeMachines()
   const remoteExecTasks = makeRemoteExecTasks({
@@ -65,7 +65,7 @@ const execServer = async () => {
     link: machines,
     local: execTasks
   })
-  const running = { ...services, execTasks, remoteExecTasks, workspaceSyncs, mirrors, machines }
+  const running = { ...services, execTasks, remoteExecTasks, workspaceMirrors, mirrors, machines }
   const server = await startWithApp(running, undefined, { id: "server-a" })
   const call = (method: string, path: string, body?: unknown) =>
     jsonRequest(server, path, {
@@ -136,7 +136,7 @@ describe("remote exec routes", () => {
     expect((await call("GET", "/v1/fs/read?path=%2Fnope%2Ffile")).status).toBe(404)
   })
 
-  it("starts, reports, and stops a workspace sync", async () => {
+  it("starts, reports, and stops a workspace mirror", async () => {
     const { call } = await execServer()
     const root = tempDir("codevisor-sync-root-")
     writeFileSync(join(root, "index.html"), "<h1>hi</h1>")
@@ -149,23 +149,23 @@ describe("remote exec routes", () => {
       rootDirectory: root,
       isArchived: false
     })
-    const syncs = `/v1/workspaces/${workspaceId}/syncs`
+    const mirrorsPath = `/v1/workspaces/${workspaceId}/mirrors`
 
-    expect((await call("POST", syncs, { machine: "server-a" })).status).toBe(400)
-    expect((await call("POST", syncs, { machine: "Nowhere" })).status).toBe(404)
-    expect((await call("POST", syncs, { machine: "E2B box" })).body).toMatchObject({
+    expect((await call("POST", mirrorsPath, { machine: "server-a" })).status).toBe(400)
+    expect((await call("POST", mirrorsPath, { machine: "Nowhere" })).status).toBe(404)
+    expect((await call("POST", mirrorsPath, { machine: "E2B box" })).body).toMatchObject({
       code: "sandbox_target"
     })
-    expect((await call("POST", syncs, { machine: "MacBook" })).body).toMatchObject({
+    expect((await call("POST", mirrorsPath, { machine: "MacBook" })).body).toMatchObject({
       machine: { machineId: "machine-mbp", name: "MacBook" }
     })
-    const status = await call("GET", `${syncs}/machine-mbp`)
+    const status = await call("GET", `${mirrorsPath}/machine-mbp`)
     expect(status.status).toBe(200)
-    expect((await call("GET", syncs)).body).toMatchObject({ items: [{ workspaceId }] })
+    expect((await call("GET", mirrorsPath)).body).toMatchObject({ items: [{ workspaceId }] })
 
-    expect((await call("DELETE", `${syncs}/machine-mbp`)).body).toEqual({ stopped: true })
-    expect((await call("GET", `${syncs}/machine-mbp`)).status).toBe(404)
-    expect((await call("GET", "/v1/sessions/missing/syncs")).status).toBe(409)
+    expect((await call("DELETE", `${mirrorsPath}/machine-mbp`)).body).toEqual({ stopped: true })
+    expect((await call("GET", `${mirrorsPath}/machine-mbp`)).status).toBe(404)
+    expect((await call("GET", "/v1/sessions/missing/mirrors")).status).toBe(409)
   })
 
   it("lists a workspace's background commands, reads their output, and stops them", async () => {

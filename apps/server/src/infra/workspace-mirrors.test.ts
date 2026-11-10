@@ -15,7 +15,7 @@ import { describe, expect, it, onTestFinished } from "vitest"
 
 import { tempDirs } from "../test-support.js"
 import { makeMirrorStore, type MirrorStore } from "./mirror-store.js"
-import { makeWorkspaceSyncs, type MirrorTransport } from "./workspace-syncs.js"
+import { makeWorkspaceMirrors, type MirrorTransport } from "./workspace-mirrors.js"
 
 const HOUR_MS = 60 * 60 * 1000
 
@@ -54,10 +54,15 @@ const project = (): string => {
   return root
 }
 
-const syncsWith = (transport: MirrorTransport, directory = tempDir("codevisor-sync-state-")) => {
-  const syncs = makeWorkspaceSyncs({ directory, transport, intervalMs: HOUR_MS, retryMs: HOUR_MS })
-  onTestFinished(() => syncs.close())
-  return { syncs, directory }
+const mirrorsWith = (transport: MirrorTransport, directory = tempDir("codevisor-sync-state-")) => {
+  const workspaceMirrors = makeWorkspaceMirrors({
+    directory,
+    transport,
+    intervalMs: HOUR_MS,
+    retryMs: HOUR_MS
+  })
+  onTestFinished(() => workspaceMirrors.close())
+  return { workspaceMirrors, directory }
 }
 
 const macbook = { id: "machine-mbp", name: "MacBook" }
@@ -87,14 +92,14 @@ const gitProject = (): string => {
   return root
 }
 
-describe("workspace syncs", () => {
+describe("workspace workspaceMirrors", () => {
   it("copies the workspace, then sends only what changed", async () => {
     const root = project()
     const mirrors = makeMirrorStore(tempDir("codevisor-mirrors-"))
-    const { syncs } = syncsWith(localTransport(mirrors))
-    await syncs.start({ id: "ws-1", name: "My Site", root }, macbook)
+    const { workspaceMirrors } = mirrorsWith(localTransport(mirrors))
+    await workspaceMirrors.start({ id: "ws-1", name: "My Site", root }, macbook)
 
-    const first = await syncs.wait("ws-1", macbook.id, HOUR_MS)
+    const first = await workspaceMirrors.wait("ws-1", macbook.id, HOUR_MS)
     const path = first?.path ?? ""
     expect(first).toMatchObject({ state: "synced", pendingChanges: false, timedOut: false })
     expect(path).toMatch(/My-Site-/)
@@ -105,9 +110,9 @@ describe("workspace syncs", () => {
     writeFileSync(join(path, "build.log"), "made on the mac")
     writeFileSync(join(root, "src", "app.ts"), "export const answer = 42\n")
     writeFileSync(join(root, "src", "new.ts"), "export {}\n")
-    expect((await syncs.status("ws-1", macbook.id))?.pendingChanges).toBe(true)
+    expect((await workspaceMirrors.status("ws-1", macbook.id))?.pendingChanges).toBe(true)
 
-    const second = await syncs.wait("ws-1", macbook.id, HOUR_MS)
+    const second = await workspaceMirrors.wait("ws-1", macbook.id, HOUR_MS)
     expect(second?.lastSync?.files).toBe(2)
     expect(readFileSync(join(path, "src", "app.ts"), "utf8")).toBe("export const answer = 42\n")
     expect(existsSync(join(path, "src", "new.ts"))).toBe(true)
@@ -115,41 +120,41 @@ describe("workspace syncs", () => {
     expect(readFileSync(join(path, "build.log"), "utf8")).toBe("made on the mac")
 
     rmSync(join(root, "src", "new.ts"))
-    await syncs.wait("ws-1", macbook.id, HOUR_MS)
+    await workspaceMirrors.wait("ws-1", macbook.id, HOUR_MS)
     expect(existsSync(join(path, "src", "new.ts"))).toBe(false)
   })
 
   it("keeps syncing after a restart and deletes the copy when stopped", async () => {
     const root = project()
     const mirrors = makeMirrorStore(tempDir("codevisor-mirrors-"))
-    const first = syncsWith(localTransport(mirrors))
-    const started = await first.syncs.start({ id: "ws-1", name: "site", root }, macbook)
+    const first = mirrorsWith(localTransport(mirrors))
+    const started = await first.workspaceMirrors.start({ id: "ws-1", name: "site", root }, macbook)
     expect(started.state).toBe("syncing")
-    const path = (await first.syncs.wait("ws-1", macbook.id, HOUR_MS))?.path ?? ""
-    first.syncs.close()
+    const path = (await first.workspaceMirrors.wait("ws-1", macbook.id, HOUR_MS))?.path ?? ""
+    first.workspaceMirrors.close()
 
     writeFileSync(join(root, "src", "app.ts"), "after restart\n")
-    const second = syncsWith(localTransport(mirrors), first.directory)
-    expect(await second.syncs.list("ws-1")).toHaveLength(1)
-    const resumed = await second.syncs.wait("ws-1", macbook.id, HOUR_MS)
+    const second = mirrorsWith(localTransport(mirrors), first.directory)
+    expect(await second.workspaceMirrors.list("ws-1")).toHaveLength(1)
+    const resumed = await second.workspaceMirrors.wait("ws-1", macbook.id, HOUR_MS)
     expect(resumed?.lastSync?.files).toBe(1)
     expect(readFileSync(join(path, "src", "app.ts"), "utf8")).toBe("after restart\n")
 
-    await second.syncs.stopAll("ws-1")
+    await second.workspaceMirrors.stopAll("ws-1")
     expect(existsSync(path)).toBe(false)
-    expect(await second.syncs.list("ws-1")).toEqual([])
-    expect(await second.syncs.stop("ws-1", macbook.id)).toBe(false)
+    expect(await second.workspaceMirrors.list("ws-1")).toEqual([])
+    expect(await second.workspaceMirrors.stop("ws-1", macbook.id)).toBe(false)
   })
 
   it("reports a failing machine and deletes the copy once it is back", async () => {
     const root = project()
-    const unreachable = syncsWith(offlineTransport())
-    await unreachable.syncs.start({ id: "ws-1", name: "site", root }, macbook)
+    const unreachable = mirrorsWith(offlineTransport())
+    await unreachable.workspaceMirrors.start({ id: "ws-1", name: "site", root }, macbook)
 
-    const failed = await unreachable.syncs.wait("ws-1", macbook.id, HOUR_MS)
+    const failed = await unreachable.workspaceMirrors.wait("ws-1", macbook.id, HOUR_MS)
     expect(failed).toMatchObject({ state: "failed", error: "MacBook is offline" })
-    await unreachable.syncs.stop("ws-1", macbook.id)
-    unreachable.syncs.close()
+    await unreachable.workspaceMirrors.stop("ws-1", macbook.id)
+    unreachable.workspaceMirrors.close()
 
     const removed: string[] = []
     const mirrors = makeMirrorStore(tempDir("codevisor-mirrors-"))
@@ -159,17 +164,17 @@ describe("workspace syncs", () => {
         removed.push(mirrorId)
       }
     }
-    const online = syncsWith(back, unreachable.directory)
-    await online.syncs.list("ws-1")
+    const online = mirrorsWith(back, unreachable.directory)
+    await online.workspaceMirrors.list("ws-1")
     expect(removed).toHaveLength(1)
   })
   it("makes the copy a git checkout at the same commit and branch, without history", async () => {
     const root = gitProject()
     const mirrors = makeMirrorStore(tempDir("codevisor-mirrors-"))
-    const { syncs } = syncsWith(localTransport(mirrors))
-    await syncs.start({ id: "ws-1", name: "site", root }, macbook)
+    const { workspaceMirrors } = mirrorsWith(localTransport(mirrors))
+    await workspaceMirrors.start({ id: "ws-1", name: "site", root }, macbook)
 
-    const path = (await syncs.wait("ws-1", macbook.id, HOUR_MS))?.path ?? ""
+    const path = (await workspaceMirrors.wait("ws-1", macbook.id, HOUR_MS))?.path ?? ""
     expect(gitIn(path, "rev-parse", "HEAD")).toBe(gitIn(root, "rev-parse", "HEAD"))
     expect(gitIn(path, "branch", "--show-current")).toBe("feature")
     expect(gitIn(path, "log", "--format=%s")).toBe("Second")
@@ -177,7 +182,7 @@ describe("workspace syncs", () => {
     expect(gitIn(path, "hash-object", "src/app.ts")).toBe(gitIn(root, "hash-object", "src/app.ts"))
 
     gitIn(root, "commit", "--quiet", "-am", "Third")
-    const moved = await syncs.wait("ws-1", macbook.id, HOUR_MS)
+    const moved = await workspaceMirrors.wait("ws-1", macbook.id, HOUR_MS)
     expect(moved?.lastSync?.files).toBe(0)
     expect(gitIn(path, "rev-parse", "HEAD")).toBe(gitIn(root, "rev-parse", "HEAD"))
     expect(gitIn(path, "status", "--porcelain")).toBe("")

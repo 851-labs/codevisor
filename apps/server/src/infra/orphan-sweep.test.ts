@@ -9,7 +9,7 @@ import { makeExecTasks } from "./exec-tasks.js"
 import { makeMirrorStore } from "./mirror-store.js"
 import { makeOrphanSweep } from "./orphan-sweep.js"
 import { makeRemoteExecTasks } from "./remote-exec-tasks.js"
-import { makeWorkspaceSyncs, type MirrorTransport } from "./workspace-syncs.js"
+import { makeWorkspaceMirrors, type MirrorTransport } from "./workspace-mirrors.js"
 
 const HOUR_MS = 60 * 60 * 1000
 const GONE = "sandbox-gone"
@@ -47,7 +47,7 @@ const sweepRig = () => {
     local: execTasks
   })
   const removed: string[] = []
-  const workspaceSyncs = makeWorkspaceSyncs({
+  const workspaceMirrors = makeWorkspaceMirrors({
     directory: tempDir("codevisor-sync-state-"),
     transport: recordingTransport(removed),
     intervalMs: HOUR_MS,
@@ -59,15 +59,15 @@ const sweepRig = () => {
     mirrors,
     execTasks,
     remoteExecTasks,
-    workspaceSyncs,
+    workspaceMirrors,
     intervalMs: HOUR_MS
   })
   onTestFinished(() => {
     sweep.close()
-    workspaceSyncs.close()
+    workspaceMirrors.close()
     execTasks.closeAll()
   })
-  return { mirrors, execTasks, remoteExecTasks, workspaceSyncs, removed, sweep }
+  return { mirrors, execTasks, remoteExecTasks, workspaceMirrors, removed, sweep }
 }
 
 const background = (owner: string) => ({
@@ -90,7 +90,7 @@ describe("orphan sweep", () => {
     )
     const root = tempDir("codevisor-sync-source-")
     writeFileSync(join(root, "index.html"), "<h1>hi</h1>")
-    await rig.workspaceSyncs.start(
+    await rig.workspaceMirrors.start(
       { id: "ws-1", name: "site", root },
       { id: GONE, name: "Sandbox" }
     )
@@ -102,8 +102,8 @@ describe("orphan sweep", () => {
     expect(rig.execTasks.get(orphanedTask.taskId)?.state).toBe("stopped")
     expect(rig.execTasks.get(keptTask.taskId)?.state).toBe("running")
     expect(rig.remoteExecTasks.list()).toEqual([])
-    expect(await rig.workspaceSyncs.list("ws-1")).toEqual([])
-    expect(rig.workspaceSyncs.machines()).toEqual([])
+    expect(await rig.workspaceMirrors.list("ws-1")).toEqual([])
+    expect(rig.workspaceMirrors.machines()).toEqual([])
     expect(rig.removed).toEqual([])
   })
 })

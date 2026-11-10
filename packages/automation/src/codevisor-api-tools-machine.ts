@@ -1,4 +1,4 @@
-import { WorkspaceSyncStartRequest, WorkspaceSyncWaitRequest } from "@codevisor/api"
+import { WorkspaceMirrorStartRequest, WorkspaceMirrorWaitRequest } from "@codevisor/api"
 import { Schema } from "effect"
 
 import {
@@ -8,7 +8,7 @@ import {
   type CodevisorApiToolSpec
 } from "./codevisor-api-tool-spec.js"
 
-export const SYNC_WAIT_DEFAULT_MS = 60_000
+export const MIRROR_WAIT_DEFAULT_MS = 60_000
 
 export const ExecToolRequest = Schema.Struct({
   command: Schema.String,
@@ -21,7 +21,7 @@ export const ExecToolRequest = Schema.Struct({
 export const codevisorMachineApiTools: ReadonlyArray<CodevisorApiToolSpec> = [
   apiTool(
     "shell.exec",
-    "Run a shell command on this machine, like a terminal: `command`, a short `description`, `timeout` in ms (default 120000, max 600000), `run_in_background`, and `cwd` (default the home folder; pass a synced copy's path to run against your workspace). Foreground returns { exitCode, output, timedOut, durationMs, outputPath }, with stdout and stderr combined and only the last 30000 characters kept. run_in_background returns { taskId, outputPath } at once; when it exits you get an exec.task_finished event. Read outputPath with files.read, and stop it with shell.task_stop.",
+    "Run a shell command on this machine, like a terminal: `command`, a short `description`, `timeout` in ms (default 120000, max 600000), `run_in_background`, and `cwd` (default the home folder; pass a workspace mirror's path to run against your workspace). Foreground returns { exitCode, output, timedOut, durationMs, outputPath }, with stdout and stderr combined and only the last 30000 characters kept. run_in_background returns { taskId, outputPath } at once; when it exits you get an exec.task_finished event. Read outputPath with files.read, and stop it with shell.task_stop.",
     "POST",
     "/v1/exec",
     { body: ExecToolRequest }
@@ -58,38 +58,38 @@ export const codevisorMachineApiTools: ReadonlyArray<CodevisorApiToolSpec> = [
     }
   ),
   apiTool(
-    "workspaces.syncs",
-    "List the machines your workspace is syncing to, with each copy's path and state.",
+    "workspaces.mirrors",
+    "List your workspace's mirrors: the machines it is mirrored to, with each mirror's path and state.",
     "GET",
-    "/v1/sessions/:id/syncs"
+    "/v1/sessions/:id/mirrors"
   ),
   apiTool(
-    "workspaces.sync_start",
-    "Start syncing your workspace to another machine (machineId or name). It keeps running in the background until stopped or the workspace is archived, pushing your edits within about a second. One-way: files the other machine creates stay there. Returns { path, state }: run commands in path with that machine's shell.exec.",
+    "workspaces.mirror_start",
+    "Mirror your workspace to another machine (machineId or name): a one-way copy kept current in the background. It keeps running in the background until stopped or the workspace is archived, pushing your edits within about a second. One-way: files the other machine creates stay there. Returns { path, state }: run commands in path with that machine's shell.exec.",
     "POST",
-    "/v1/sessions/:id/syncs",
-    { body: WorkspaceSyncStartRequest }
+    "/v1/sessions/:id/mirrors",
+    { body: WorkspaceMirrorStartRequest }
   ),
   apiTool(
-    "workspaces.sync_status",
-    "Check a workspace sync: state (syncing, synced, failed), pendingChanges (edits that haven't reached that machine yet), lastSyncedAt, lastSync stats, skipped files over 50 MB, and error.",
+    "workspaces.mirror_status",
+    "Check a workspace mirror: state (syncing, synced, failed), pendingChanges (edits that haven't reached that machine yet), lastSyncedAt, lastSync stats, skipped files over 50 MB, and error.",
     "GET",
-    "/v1/sessions/:id/syncs/:machine"
+    "/v1/sessions/:id/mirrors/:machine"
   ),
   apiTool(
-    "workspaces.sync_wait",
-    "Wait until your latest edits have reached the other machine. Returns the sync status, with timedOut when it is still syncing. Cheap when already up to date.",
+    "workspaces.mirror_wait",
+    "Wait until your latest edits have reached the other machine. Returns the mirror's status, with timedOut when it is still syncing. Cheap when already up to date.",
     "POST",
-    "/v1/sessions/:id/syncs/:machine/wait",
+    "/v1/sessions/:id/mirrors/:machine/wait",
     {
-      body: WorkspaceSyncWaitRequest,
-      budgetedWait: { field: "timeoutMs", defaultMs: SYNC_WAIT_DEFAULT_MS }
+      body: WorkspaceMirrorWaitRequest,
+      budgetedWait: { field: "timeoutMs", defaultMs: MIRROR_WAIT_DEFAULT_MS }
     }
   ),
   apiTool(
-    "workspaces.sync_stop",
-    "Stop syncing your workspace to a machine and delete the copy there. If that machine is offline, the copy is deleted when it comes back.",
+    "workspaces.mirror_stop",
+    "Stop a workspace mirror and delete it from that machine. If that machine is offline, it is deleted when the machine comes back.",
     "DELETE",
-    "/v1/sessions/:id/syncs/:machine"
+    "/v1/sessions/:id/mirrors/:machine"
   )
 ]

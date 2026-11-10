@@ -18,7 +18,7 @@ export const receiveMirrorAction = async (
 ): Promise<unknown> => {
   if (!call.verified) throw new HttpFailure(403, "Only machines on this account can sync here")
   const mirrors = services.mirrors
-  if (mirrors === undefined) throw new HttpFailure(501, "Synced copies aren't available here")
+  if (mirrors === undefined) throw new HttpFailure(501, "Workspace mirrors aren't available here")
   return runMirrorAction(mirrors, decodeMirrorAction(args), call.origin.machineId)
 }
 

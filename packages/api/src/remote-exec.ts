@@ -56,20 +56,22 @@ export const RemoteExecTask = Schema.Struct({
 })
 export type RemoteExecTask = typeof RemoteExecTask.Type
 
-export const WorkspaceSyncStartRequest = Schema.Struct({ machine: Schema.String })
-export type WorkspaceSyncStartRequest = typeof WorkspaceSyncStartRequest.Type
+export const WorkspaceMirrorStartRequest = Schema.Struct({ machine: Schema.String })
+export type WorkspaceMirrorStartRequest = typeof WorkspaceMirrorStartRequest.Type
 
-export const WorkspaceSyncWaitRequest = Schema.Struct({ timeoutMs: Schema.optional(Schema.Number) })
-export type WorkspaceSyncWaitRequest = typeof WorkspaceSyncWaitRequest.Type
+export const WorkspaceMirrorWaitRequest = Schema.Struct({
+  timeoutMs: Schema.optional(Schema.Number)
+})
+export type WorkspaceMirrorWaitRequest = typeof WorkspaceMirrorWaitRequest.Type
 
-export const WorkspaceSyncState = Schema.Literals(["syncing", "synced", "failed"])
-export type WorkspaceSyncState = typeof WorkspaceSyncState.Type
+export const WorkspaceMirrorState = Schema.Literals(["syncing", "synced", "failed"])
+export type WorkspaceMirrorState = typeof WorkspaceMirrorState.Type
 
-export const WorkspaceSyncStatus = Schema.Struct({
+export const WorkspaceMirrorStatus = Schema.Struct({
   workspaceId: Schema.String,
   machine: Schema.Struct({ machineId: Schema.String, name: Schema.String }),
   path: Schema.optional(Schema.String),
-  state: WorkspaceSyncState,
+  state: WorkspaceMirrorState,
   pendingChanges: Schema.Boolean,
   lastSyncedAt: Schema.optional(Schema.String),
   lastSync: Schema.optional(
@@ -78,7 +80,7 @@ export const WorkspaceSyncStatus = Schema.Struct({
   skipped: Schema.Array(Schema.String),
   error: Schema.optional(Schema.String)
 })
-export type WorkspaceSyncStatus = typeof WorkspaceSyncStatus.Type
+export type WorkspaceMirrorStatus = typeof WorkspaceMirrorStatus.Type
 
 export const MirrorSourceHead = Schema.Struct({
   commit: Schema.String,

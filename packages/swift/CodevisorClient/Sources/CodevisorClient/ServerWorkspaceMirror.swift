@@ -1,6 +1,6 @@
 import Foundation
 
-public struct ServerWorkspaceSync: Decodable, Equatable, Sendable, Identifiable {
+public struct ServerWorkspaceMirror: Decodable, Equatable, Sendable, Identifiable {
   public struct Machine: Decodable, Equatable, Sendable {
     public let machineId: String
     public let name: String

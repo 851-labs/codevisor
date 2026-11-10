@@ -284,8 +284,8 @@ public protocol CodevisorServerClienting: BrowserStateClienting, BrowserFaviconC
   func putFile(from fileURL: URL, toPath path: String, conflict: ServerFileConflict) async throws -> String
   func createFolder(path: String, conflict: ServerFileConflict) async throws -> String
   func moveFile(from source: String, to destination: String) async throws -> String
-  func workspaceSyncs(workspaceId: UUID) async throws -> [ServerWorkspaceSync]
-  func stopWorkspaceSync(workspaceId: UUID, machineId: String) async throws
+  func workspaceMirrors(workspaceId: UUID) async throws -> [ServerWorkspaceMirror]
+  func stopWorkspaceMirror(workspaceId: UUID, machineId: String) async throws
   func remoteExecTasks(workspaceId: UUID) async throws -> [ServerRemoteExecTask]
   func stopRemoteExecTask(workspaceId: UUID, taskId: String) async throws
   func remoteExecTaskOutput(workspaceId: UUID, taskId: String) async throws -> [String]

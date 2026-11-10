@@ -4,21 +4,21 @@ import CodevisorCore
 import CodevisorUI
 import SwiftUI
 
-struct WorkspaceInspectorSyncsSection: View {
+struct WorkspaceInspectorMirrorsSection: View {
   let workspaceId: UUID
   let client: any CodevisorServerClienting
   @Binding var isExpanded: Bool
 
-  @State private var syncs: [ServerWorkspaceSync] = []
+  @State private var mirrors: [ServerWorkspaceMirror] = []
 
   private static let refreshInterval = Duration.seconds(5)
 
   var body: some View {
     VStack(spacing: 0) {
-      if !syncs.isEmpty {
-        WorkspaceInspectorCard(title: "Synced To", isExpanded: $isExpanded) {
-          ForEach(syncs) { sync in
-            WorkspaceInspectorSyncRow(sync: sync, onRemove: { remove(sync) })
+      if !mirrors.isEmpty {
+        WorkspaceInspectorCard(title: "Mirrors", isExpanded: $isExpanded) {
+          ForEach(mirrors) { mirror in
+            WorkspaceInspectorMirrorRow(mirror: mirror, onRemove: { remove(mirror) })
           }
         }
       }
@@ -34,47 +34,47 @@ struct WorkspaceInspectorSyncsSection: View {
   }
 
   private func load() async {
-    guard let loaded = try? await client.workspaceSyncs(workspaceId: workspaceId) else { return }
-    syncs = loaded
+    guard let loaded = try? await client.workspaceMirrors(workspaceId: workspaceId) else { return }
+    mirrors = loaded
   }
 
-  private func remove(_ sync: ServerWorkspaceSync) {
-    syncs.removeAll { $0.id == sync.id }
+  private func remove(_ mirror: ServerWorkspaceMirror) {
+    mirrors.removeAll { $0.id == mirror.id }
     Task {
-      try? await client.stopWorkspaceSync(workspaceId: workspaceId, machineId: sync.machine.machineId)
+      try? await client.stopWorkspaceMirror(workspaceId: workspaceId, machineId: mirror.machine.machineId)
       await load()
     }
   }
 }
 
-private struct WorkspaceInspectorSyncRow: View {
-  let sync: ServerWorkspaceSync
+private struct WorkspaceInspectorMirrorRow: View {
+  let mirror: ServerWorkspaceMirror
   let onRemove: () -> Void
   @Environment(AppEnvironment.self) private var environment
 
   private var machineId: String {
-    environment.machines.machineId(forSyncKey: sync.machine.machineId) ?? sync.machine.machineId
+    environment.machines.machineId(forSyncKey: mirror.machine.machineId) ?? mirror.machine.machineId
   }
 
   private var status: FleetRowStatus {
-    switch sync.state {
+    switch mirror.state {
     case .synced: .ready("Up to date")
     case .syncing: .syncing
-    case .failed: .attention("Sync failed", reason: sync.error ?? "")
+    case .failed: .attention("Sync failed", reason: mirror.error ?? "")
     }
   }
 
   var body: some View {
     HStack(spacing: 8) {
       Menu {
-        if let path = sync.path {
+        if let path = mirror.path {
           Button("Copy Path") { copy(path) }
           Divider()
         }
         Button("Remove Files", role: .destructive, action: onRemove)
       } label: {
         Label {
-          Text(sync.machine.name)
+          Text(mirror.machine.name)
             .lineLimit(1)
             .frame(maxWidth: .infinity, alignment: .leading)
         } icon: {
@@ -86,11 +86,11 @@ private struct WorkspaceInspectorSyncRow: View {
       .menuStyle(.button)
       .buttonStyle(.plain)
       .menuIndicator(.hidden)
-      .help(sync.path ?? sync.machine.name)
+      .help(mirror.path ?? mirror.machine.name)
       FleetStatusMark(status: status)
     }
     .accessibilityElement(children: .contain)
-    .accessibilityLabel("\(sync.machine.name), \(status.label)")
+    .accessibilityLabel("\(mirror.machine.name), \(status.label)")
     .accessibilityAction(named: "Remove Files", onRemove)
   }
 

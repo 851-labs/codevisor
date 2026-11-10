@@ -30,14 +30,14 @@ extension CodevisorServerClient {
     try await sendNoResponse("/v1/fs/delete", method: "POST", body: DeleteRequest(paths: paths))
   }
 
-  public func workspaceSyncs(workspaceId: UUID) async throws -> [ServerWorkspaceSync] {
-    let listed: SyncList = try await get("/v1/workspaces/\(workspaceId.uuidString)/syncs")
+  public func workspaceMirrors(workspaceId: UUID) async throws -> [ServerWorkspaceMirror] {
+    let listed: MirrorList = try await get("/v1/workspaces/\(workspaceId.uuidString)/mirrors")
     return listed.items
   }
 
-  public func stopWorkspaceSync(workspaceId: UUID, machineId: String) async throws {
+  public func stopWorkspaceMirror(workspaceId: UUID, machineId: String) async throws {
     try await sendNoResponse(
-      "/v1/workspaces/\(workspaceId.uuidString)/syncs/\(pathComponent(machineId))", method: "DELETE")
+      "/v1/workspaces/\(workspaceId.uuidString)/mirrors/\(pathComponent(machineId))", method: "DELETE")
   }
 
   public func remoteExecTasks(workspaceId: UUID) async throws -> [ServerRemoteExecTask] {
@@ -72,8 +72,8 @@ extension CodevisorServerClient {
     let items: [ServerRemoteExecTask]
   }
 
-  private struct SyncList: Decodable {
-    let items: [ServerWorkspaceSync]
+  private struct MirrorList: Decodable {
+    let items: [ServerWorkspaceMirror]
   }
 
   private struct MoveRequest: Encodable {

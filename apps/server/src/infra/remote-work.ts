@@ -6,13 +6,13 @@ import type { MachineLink } from "./machine-link.js"
 import { makeMirrorStore, type MirrorStore } from "./mirror-store.js"
 import { makeOrphanSweep, type OrphanSweep } from "./orphan-sweep.js"
 import { makeRemoteExecTasks, type RemoteExecTasks } from "./remote-exec-tasks.js"
-import { makeWorkspaceSyncs, type WorkspaceSyncs } from "./workspace-syncs.js"
+import { makeWorkspaceMirrors, type WorkspaceMirrors } from "./workspace-mirrors.js"
 
 export interface RemoteWorkServices {
   readonly execTasks: ExecTasks
   readonly remoteExecTasks: RemoteExecTasks
   readonly mirrors: MirrorStore
-  readonly workspaceSyncs: WorkspaceSyncs
+  readonly workspaceMirrors: WorkspaceMirrors
   readonly orphanSweep: OrphanSweep
 }
 
@@ -28,7 +28,7 @@ export const makeRemoteWorkServices = (
   })
   const remoteExecTasks = makeRemoteExecTasks({ self, link, local: execTasks })
   const mirrors = makeMirrorStore(join(dataDir, "mirrors"))
-  const workspaceSyncs = makeWorkspaceSyncs({
+  const workspaceMirrors = makeWorkspaceMirrors({
     directory: dataDir,
     transport: fleetMirrorTransport(link, self)
   })
@@ -37,7 +37,7 @@ export const makeRemoteWorkServices = (
     mirrors,
     execTasks,
     remoteExecTasks,
-    workspaceSyncs
+    workspaceMirrors
   })
-  return { execTasks, remoteExecTasks, mirrors, workspaceSyncs, orphanSweep }
+  return { execTasks, remoteExecTasks, mirrors, workspaceMirrors, orphanSweep }
 }

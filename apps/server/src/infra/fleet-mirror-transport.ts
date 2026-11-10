@@ -2,7 +2,7 @@ import { FLEET_MIRROR_PATH, type FleetMirrorAction } from "@codevisor/api"
 
 import type { MachineLink } from "./machine-link.js"
 import type { PreparedMirror } from "./mirror-store.js"
-import type { MirrorTransport } from "./workspace-sync-runner.js"
+import type { MirrorTransport } from "./workspace-mirror-runner.js"
 
 export interface MirrorTransportSelf {
   readonly id: string

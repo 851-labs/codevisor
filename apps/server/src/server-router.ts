@@ -44,7 +44,7 @@ import { routeTerminals } from "./routes/terminals.js"
 import { routeToolIcons } from "./routes/tool-icons.js"
 import { routeTranscriptStress } from "./routes/transcript-stress.js"
 import { routeWorkspaceExecTasks } from "./routes/workspace-exec-tasks.js"
-import { routeWorkspaceSyncs } from "./routes/workspace-syncs.js"
+import { routeWorkspaceMirrors } from "./routes/workspace-mirrors.js"
 import { routeWorkspaces } from "./routes/workspaces.js"
 import { authorize, HttpFailure, parseRequestUrl, writeFailure } from "./server-context.js"
 import type {
@@ -119,7 +119,7 @@ const resourceRouteFamilies: ReadonlyArray<RouteFamily> = [
     routeGatewayInvoke(services, routeState, request, response, url),
   routeSandboxes,
   routeExec,
-  routeWorkspaceSyncs,
+  routeWorkspaceMirrors,
   routeWorkspaceExecTasks,
   ({ services, config, fanout, request, response, url }) =>
     routeProjects(services, config, fanout, request, response, url),

@@ -1,14 +1,14 @@
 import type { ExecTasks } from "./exec-tasks.js"
 import type { MirrorStore } from "./mirror-store.js"
 import type { RemoteExecTasks } from "./remote-exec-tasks.js"
-import type { WorkspaceSyncs } from "./workspace-syncs.js"
+import type { WorkspaceMirrors } from "./workspace-mirrors.js"
 
 export interface OrphanSweepOptions {
   readonly isGone: (machineId: string) => boolean
   readonly mirrors: MirrorStore
   readonly execTasks: ExecTasks
   readonly remoteExecTasks: RemoteExecTasks
-  readonly workspaceSyncs: WorkspaceSyncs
+  readonly workspaceMirrors: WorkspaceMirrors
   readonly intervalMs?: number
 }
 
@@ -45,7 +45,7 @@ const sweepOnce = async (options: OrphanSweepOptions): Promise<void> => {
   for (const task of options.remoteExecTasks.list()) {
     if (isGone(task.machine.machineId)) options.remoteExecTasks.forget(task.taskId)
   }
-  for (const machineId of options.workspaceSyncs.machines()) {
-    if (isGone(machineId)) await options.workspaceSyncs.forgetMachine(machineId)
+  for (const machineId of options.workspaceMirrors.machines()) {
+    if (isGone(machineId)) await options.workspaceMirrors.forgetMachine(machineId)
   }
 }

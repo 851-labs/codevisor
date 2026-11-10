@@ -254,7 +254,7 @@ struct WorkspaceInspectorView: View {
           }
         }
 
-        WorkspaceInspectorSyncsSection(workspaceId: workspace.id, client: client, isExpanded: expansion("Synced To"))
+        WorkspaceInspectorMirrorsSection(workspaceId: workspace.id, client: client, isExpanded: expansion("Mirrors"))
 
         if !subscriptions.events.isEmpty {
           WorkspaceInspectorSubscriptionsSection(
