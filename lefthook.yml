@@ -1,4 +1,4 @@
-lefthook: bun x lefthook
+lefthook: $(test -x scripts/git-hooks/run-lefthook.sh && echo scripts/git-hooks/run-lefthook.sh || echo true)
 
 pre-commit:
   parallel: true
