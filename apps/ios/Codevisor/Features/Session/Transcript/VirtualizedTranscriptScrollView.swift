@@ -94,6 +94,7 @@ final class VirtualizedTranscriptScrollView: UIScrollView, UIScrollViewDelegate 
   var reduceMotion = false
 
   var positionApplicationDepth = 0
+  var mountsAfterPositionChange = false
   var isApplyingPosition: Bool {
     positionApplicationDepth > 0
   }

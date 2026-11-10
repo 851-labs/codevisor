@@ -79,8 +79,11 @@ extension VirtualizedTranscriptScrollView {
 
   func applyPositionMutation(_ body: () -> Void) {
     positionApplicationDepth += 1
-    defer { positionApplicationDepth -= 1 }
     body()
+    positionApplicationDepth -= 1
+    guard !isApplyingPosition, mountsAfterPositionChange else { return }
+
+    updateMountedRows()
   }
 
   func applyPositionTransaction(_ body: () -> Void) {
