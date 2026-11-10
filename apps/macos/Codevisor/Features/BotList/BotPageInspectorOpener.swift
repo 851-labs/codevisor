@@ -20,6 +20,8 @@ struct BotPageInspectorOpener {
     case let .toolCall(sessionId, toolCallId):
       store.controllers[SessionStore.SessionKey(serverId: workspace.serverId, sessionId: sessionId)]?
         .revealToolCall(toolCallId)
+    case .fileRenamed:
+      break
     }
   }
 

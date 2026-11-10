@@ -4,6 +4,22 @@ import SwiftUI
 import CodevisorCore
 
 extension PaneGroupModel {
+  func paneContentDidMount(id: UUID) {
+    presentedPaneIDs.insert(id)
+    if state.selectedPaneId == id, canFocusSelectedPane { requestSelectedPaneFocus() }
+  }
+
+  func openInBackground(_ id: UUID) {
+    backgroundOpen = (id, .now + Self.backgroundOpenFocusHold)
+  }
+
+  func isOpeningInBackground(_ id: UUID) -> Bool {
+    guard let backgroundOpen, backgroundOpen.paneId == id else { return false }
+    return ContinuousClock.now < backgroundOpen.until
+  }
+
+  private static let backgroundOpenFocusHold = Duration.seconds(1)
+
   func assignChatSession(paneId: UUID, sessionId: UUID, name: String) {
     state.assignChatSession(paneId: paneId, sessionId: sessionId, name: name)
     persist()

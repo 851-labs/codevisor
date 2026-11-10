@@ -83,6 +83,23 @@ public final class FilePaneModel {
     explorerFocusRequests += 1
   }
 
+  public func followRename(from source: String, to destination: String) async {
+    guard let renamed = Self.renamedPath(path, from: source, to: destination) else { return }
+
+    let previous = document
+    previous.cancelAutosave()
+    path = renamed
+    onNavigate?(renamed)
+    document.adopt(previous)
+    await refreshDocument()
+  }
+
+  public nonisolated static func renamedPath(_ path: String, from source: String, to destination: String) -> String? {
+    if path == source { return destination }
+    guard path.hasPrefix(source + "/") else { return nil }
+    return destination + path.dropFirst(source.count)
+  }
+
   public func navigate(to target: String, notify: Bool = true) {
     if path != target {
       document.flushAutosave()

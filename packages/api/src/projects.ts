@@ -198,7 +198,8 @@ export const FsListResponse = Schema.Struct({
 export type FsListResponse = typeof FsListResponse.Type
 
 export const FsMkdirRequest = Schema.Struct({
-  path: Schema.String
+  path: Schema.String,
+  conflict: Schema.optional(Schema.Literal("keepBoth"))
 })
 export type FsMkdirRequest = typeof FsMkdirRequest.Type
 
@@ -206,6 +207,17 @@ export const FsMkdirResponse = Schema.Struct({
   path: Schema.String
 })
 export type FsMkdirResponse = typeof FsMkdirResponse.Type
+
+export const FsMoveRequest = Schema.Struct({
+  from: Schema.String,
+  to: Schema.String
+})
+export type FsMoveRequest = typeof FsMoveRequest.Type
+
+export const FsDeleteRequest = Schema.Struct({
+  paths: Schema.Array(Schema.String)
+})
+export type FsDeleteRequest = typeof FsDeleteRequest.Type
 
 export const UpdateProjectRequest = Schema.Struct({
   name: Schema.optional(Schema.String),

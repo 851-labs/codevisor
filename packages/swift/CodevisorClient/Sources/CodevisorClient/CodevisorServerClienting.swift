@@ -281,6 +281,12 @@ public protocol CodevisorServerClienting: BrowserStateClienting, BrowserFaviconC
   func saveDocument(path: String, content: String, version: String) async throws -> ServerFileDocument
   func createDocument(path: String, content: String) async throws -> ServerFileDocument
   func fileEntries(path: String, showHidden: Bool) async throws -> ServerFileListing
+  func putFile(from fileURL: URL, toPath path: String, conflict: ServerFileConflict) async throws -> String
+  func createFolder(path: String, conflict: ServerFileConflict) async throws -> String
+  func moveFile(from source: String, to destination: String) async throws -> String
+  func deleteFiles(paths: [String]) async throws
+  func downloadFile(path: String, to destination: URL) async throws
+  func downloadArchive(path: String, to destination: URL) async throws
   func searchFileEntries(path: String, query: String) async throws -> ServerFileSearch
   func documentData(path: String) async throws -> Data
   func documentContents(path: String) async throws -> ServerFileContents

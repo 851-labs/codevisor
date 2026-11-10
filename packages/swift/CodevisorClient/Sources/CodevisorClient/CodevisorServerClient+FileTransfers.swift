@@ -1,0 +1,67 @@
+import Foundation
+
+public enum ServerFileConflict: String, Sendable {
+  case keepBoth
+  case replace
+}
+
+extension CodevisorServerClient {
+  public func putFile(from fileURL: URL, toPath path: String, conflict: ServerFileConflict) async throws -> String {
+    let endpoint = try transferPath(
+      "/v1/fs/file", path: path, extra: [URLQueryItem(name: "conflict", value: conflict.rawValue)])
+    let response = try await performUpload(
+      endpoint, method: "PUT", fileURL: fileURL, contentType: "application/octet-stream")
+    return try decoder.decode(PlacedPath.self, from: response).path
+  }
+
+  public func createFolder(path: String, conflict: ServerFileConflict) async throws -> String {
+    let body = FolderRequest(path: path, conflict: conflict == .keepBoth ? "keepBoth" : nil)
+    let placed: PlacedPath = try await send("/v1/fs/mkdir", method: "POST", body: body)
+    return placed.path
+  }
+
+  public func moveFile(from source: String, to destination: String) async throws -> String {
+    let body = MoveRequest(from: source, to: destination)
+    let placed: PlacedPath = try await send("/v1/fs/move", method: "POST", body: body)
+    return placed.path
+  }
+
+  public func deleteFiles(paths: [String]) async throws {
+    try await sendNoResponse("/v1/fs/delete", method: "POST", body: DeleteRequest(paths: paths))
+  }
+
+  public func downloadFile(path: String, to destination: URL) async throws {
+    try await performDownload(try transferPath("/v1/fs/file", path: path), to: destination)
+  }
+
+  public func downloadArchive(path: String, to destination: URL) async throws {
+    try await performDownload(try transferPath("/v1/fs/archive", path: path), to: destination)
+  }
+
+  private struct PlacedPath: Decodable {
+    let path: String
+  }
+
+  private struct MoveRequest: Encodable {
+    let from: String
+    let to: String
+  }
+
+  private struct DeleteRequest: Encodable {
+    let paths: [String]
+  }
+
+  private struct FolderRequest: Encodable {
+    let path: String
+    let conflict: String?
+  }
+
+  private func transferPath(_ endpoint: String, path: String, extra: [URLQueryItem] = []) throws -> String {
+    var components = URLComponents()
+    components.path = endpoint
+    components.queryItems = [URLQueryItem(name: "path", value: path)] + extra
+    components.percentEncodedQuery = components.percentEncodedQuery?.replacingOccurrences(of: "+", with: "%2B")
+    guard let value = components.string else { throw CodevisorServerClientError.invalidURL(endpoint) }
+    return value
+  }
+}

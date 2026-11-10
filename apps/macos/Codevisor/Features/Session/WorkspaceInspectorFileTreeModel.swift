@@ -20,9 +20,11 @@ final class WorkspaceInspectorFileTreeModel {
   private(set) var errors: [String: String] = [:]
   private(set) var expanded: Set<String> = []
   private(set) var slow: Set<String> = []
+  let transfers = WorkspaceFileTransfers()
   @ObservationIgnored private var loading: Set<String> = []
   @ObservationIgnored private var stale: Set<String> = []
   @ObservationIgnored private var client: (any CodevisorServerClienting)?
+  @ObservationIgnored private var isLocal = false
 
   var rows: [Row] { rows(showing: []) }
 
@@ -42,7 +44,7 @@ final class WorkspaceInspectorFileTreeModel {
     return rows
   }
 
-  func show(root: String?, client: any CodevisorServerClienting) async {
+  func show(root: String?, client: any CodevisorServerClienting, isLocal: Bool) async {
     if root != self.root {
       self.root = root
       listings = [:]
@@ -53,7 +55,67 @@ final class WorkspaceInspectorFileTreeModel {
       stale = []
     }
     self.client = client
+    self.isLocal = isLocal
     await refresh()
+  }
+
+  func drop(_ urls: [URL], into directory: String) async {
+    guard let client, !urls.isEmpty else { return }
+
+    _ = await transfers.upload(urls, into: directory, client: client)
+    if directory != root { expanded.insert(directory) }
+    await load(directory)
+  }
+
+  func download(_ entries: [ServerFileEntry]) async {
+    guard let client, !entries.isEmpty else { return }
+
+    await transfers.download(entries, client: client)
+  }
+
+  func copy(_ entries: [ServerFileEntry]) async {
+    guard let client, !entries.isEmpty else { return }
+
+    await transfers.copy(entries, isLocal: isLocal, client: client)
+  }
+
+  func rename(_ entry: ServerFileEntry, to name: String) async -> String? {
+    guard let client else { return nil }
+
+    let parent = Self.parent(of: entry.path)
+    let target = (parent as NSString).appendingPathComponent(name)
+    let moved = await transfers.perform("Renaming \(entry.name)") {
+      try await client.moveFile(from: entry.path, to: target)
+    }
+    guard let moved else { return nil }
+
+    let wasExpanded = expanded.contains(entry.path)
+    forget(entry.path)
+    await load(parent)
+    if wasExpanded { setExpanded(moved, true) }
+    return moved
+  }
+
+  func delete(_ entries: [ServerFileEntry]) async {
+    guard let client, !entries.isEmpty else { return }
+
+    let removed: Void? = await transfers.perform(WorkspaceFileTransfers.label("Deleting", entries.map(\.name))) {
+      [isLocal] in try await WorkspaceFileRemoval.remove(entries, isLocal: isLocal, client: client)
+    }
+    guard removed != nil else { return }
+
+    entries.forEach { forget($0.path) }
+    for parent in Set(entries.map { Self.parent(of: $0.path) }) {
+      await load(parent)
+    }
+  }
+
+  var deletesToTrash: Bool { isLocal }
+
+  func dragItem(for entry: ServerFileEntry) -> NSItemProvider {
+    guard let client else { return NSItemProvider() }
+
+    return WorkspaceFileDragItem.provider(for: entry, isLocal: isLocal, client: client)
   }
 
   func refresh() async {
@@ -74,6 +136,17 @@ final class WorkspaceInspectorFileTreeModel {
     if listings[directory] == nil || stale.contains(directory) {
       Task { await load(directory) }
     }
+  }
+
+  private func forget(_ path: String) {
+    let isInside = { (key: String) in key == path || key.hasPrefix(path + "/") }
+    listings = listings.filter { !isInside($0.key) }
+    errors = errors.filter { !isInside($0.key) }
+    expanded = expanded.filter { !isInside($0) }
+  }
+
+  private static func parent(of path: String) -> String {
+    (path as NSString).deletingLastPathComponent
   }
 
   private func load(_ directory: String) async {

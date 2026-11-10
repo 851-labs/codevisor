@@ -195,7 +195,9 @@ struct WorkspaceInspectorPresentation: ViewModifier {
     let tab = shownTab(for: inspected)
     switch tab {
     case .files:
-      await fileTree.show(root: workspace.rootDirectory, client: client)
+      await fileTree.show(
+        root: workspace.rootDirectory, client: client,
+        isLocal: environment.machines.machine(for: workspace.serverId)?.isLocal == true)
     case .info, .media, .links:
       await media.reload(tab, workspaceId: workspace.id, client: client)
     case .harness:

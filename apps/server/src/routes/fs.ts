@@ -12,9 +12,13 @@ import {
 } from "../server-context.js"
 import { stringField } from "../unknown-values.js"
 import { routeFileDocuments } from "./file-documents.js"
+import { sendFilesystemArchive } from "./fs-archive.js"
 import { directoryEntries } from "./fs-directory-entries.js"
+import { deleteFilesystemItems, moveFilesystemItem } from "./fs-edit.js"
 import { serveFilesystemFile } from "./fs-file.js"
+import { claimKeptBothPath } from "./fs-kept-both.js"
 import { expandFsPath } from "./fs-paths.js"
+import { receiveFilesystemFile } from "./fs-upload.js"
 import { routeGitReview } from "./git-review.js"
 
 export { filesystemMimeType } from "./fs-file.js"
@@ -29,6 +33,14 @@ export const routeFs = async (
   if (await routeGitReview(services, request, response, url)) return true
   if (url.pathname === "/v1/fs/file" && (request.method === "GET" || request.method === "HEAD"))
     return serveFilesystemFile(services, request, response, url)
+  if (url.pathname === "/v1/fs/file" && request.method === "PUT")
+    return receiveFilesystemFile(request, response, url)
+  if (url.pathname === "/v1/fs/archive" && request.method === "GET")
+    return sendFilesystemArchive(request, response, url)
+  if (url.pathname === "/v1/fs/move" && request.method === "POST")
+    return moveFilesystemItem(request, response)
+  if (url.pathname === "/v1/fs/delete" && request.method === "POST")
+    return deleteFilesystemItems(request, response)
   if (url.pathname === "/v1/fs/mkdir" && request.method === "POST")
     return createFilesystemDirectory(request, response)
   if (request.method !== "GET" || url.pathname !== "/v1/fs/list") return false
@@ -36,6 +48,7 @@ export const routeFs = async (
 }
 
 const throwFilesystemMkdirFailure = (path: string, cause: unknown): never => {
+  if (cause instanceof HttpFailure) throw cause
   /* v8 ignore next */
   const code = stringField(cause, "code") ?? ""
   if (["EACCES", "EPERM"].includes(code)) {
@@ -54,14 +67,31 @@ const createFilesystemDirectory = async (
   response: ServerResponse
 ): Promise<boolean> => {
   const body = await readSchema(request, FsMkdirRequest)
-  const path = expandFsPath(body.path)
+  const requested = expandFsPath(body.path)
+  let path: string
   try {
-    await mkdir(path, { recursive: true })
+    path = await makeDirectory(requested, body.conflict)
   } catch (cause) {
-    return throwFilesystemMkdirFailure(path, cause)
+    return throwFilesystemMkdirFailure(requested, cause)
   }
   writeJson(response, 201, { path })
   return true
+}
+
+const makeDirectory = async (
+  path: string,
+  conflict: FsMkdirRequest["conflict"]
+): Promise<string> => {
+  if (conflict === undefined) {
+    await mkdir(path, { recursive: true })
+    return path
+  }
+  await mkdir(dirname(path), { recursive: true })
+  return claimKeptBothPath(path, "folder", createSingleDirectory)
+}
+
+const createSingleDirectory = async (path: string): Promise<void> => {
+  await mkdir(path)
 }
 
 const throwFilesystemListFailure = (path: string, cause: unknown): never => {

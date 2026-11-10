@@ -8,6 +8,7 @@ struct WorkspaceInspectorView: View {
   enum Destination: Equatable {
     case pullRequest(URL), link(URL), file(String), previewFile(String), botTranscript
     case toolCall(sessionId: UUID, toolCallId: String)
+    case fileRenamed(from: String, to: String)
   }
 
   let workspace: Workspace

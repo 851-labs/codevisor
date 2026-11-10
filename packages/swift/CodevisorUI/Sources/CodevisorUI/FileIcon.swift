@@ -1,5 +1,10 @@
 import Foundation
 import SwiftUI
+import UniformTypeIdentifiers
+
+#if os(macOS)
+  import AppKit
+#endif
 
 public struct FileIcon: View {
   private let path: String
@@ -15,8 +20,7 @@ public struct FileIcon: View {
   public var body: some View {
     Group {
       if isDirectory {
-        Image(systemName: "folder.fill")
-          .resizable().scaledToFit().foregroundStyle(.tint)
+        folder
       } else if let name = FileIconCatalog.assetName(for: path) {
         Image(name, bundle: .module)
           .resizable().scaledToFit().foregroundStyle(.secondary)
@@ -28,7 +32,22 @@ public struct FileIcon: View {
     .frame(width: size, height: size)
     .accessibilityHidden(true)
   }
+
+  private var folder: some View {
+    #if os(macOS)
+      Image(nsImage: SystemFolderIcon.image).resizable().scaledToFit()
+    #else
+      Image(systemName: "folder.fill").resizable().scaledToFit().foregroundStyle(.tint)
+    #endif
+  }
 }
+
+#if os(macOS)
+  @MainActor
+  private enum SystemFolderIcon {
+    static let image = NSWorkspace.shared.icon(for: .folder)
+  }
+#endif
 
 enum FileIconCatalog {
   private struct Associations: Decodable, Sendable {
