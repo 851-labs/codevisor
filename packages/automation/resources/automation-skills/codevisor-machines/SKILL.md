@@ -64,6 +64,7 @@ Every call goes through a machine handle. `machines.current` is the machine this
 
 - Sync is one way and follows `.gitignore`: edits here reach the copy within about a second, and files over 50 MB are skipped (listed in `skipped`). Files the other machine creates, like build output or `node_modules`, stay there and are never sent back. Bring results back with `mac.readFile`.
 - The copy starts with source files only, like a fresh clone: run the project's setup there once (`bun install`, resolving packages).
+- The copy is a git checkout at the same commit and branch, with your uncommitted edits as changes and no older history, so git-aware tools and build caches (turbo) work there. Don't commit in it: the next sync resets it, and nothing comes back.
 - After editing, call `workspace.waitForSync(machine)` before a command that must see the edit. `exec` adds a `syncPending` note when it ran in a copy that was behind.
 - `workspace.syncStatus(machine)` gives `state` (`syncing`, `synced`, `failed`), `pendingChanges`, `lastSyncedAt`, `lastSync`, `skipped` and `error`. `workspace.syncs()` lists every machine the workspace syncs to.
 - Syncing to a sandbox doesn't work: `workspace.startSync(sandbox)` fails with code `sandbox_target`. To run something on a sandbox, use `exec` there without a synced copy.

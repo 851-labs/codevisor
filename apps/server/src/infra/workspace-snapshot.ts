@@ -50,16 +50,29 @@ export const hasCommit = async (repo: SnapshotRepo, commit: string): Promise<boo
     () => false
   )
 
-export const packSince = (
-  repo: SnapshotRepo,
-  commit: string,
-  base: string | undefined
-): Promise<Buffer> => {
-  const revisions = base === undefined ? `${commit}\n` : `${commit}\n^${base}\n`
-  return gitWithInput(
+export interface PackRange {
+  readonly commit: string
+  readonly base?: string | undefined
+  readonly head?: string | undefined
+  readonly baseHead?: string | undefined
+}
+
+export const packSince = (repo: SnapshotRepo, range: PackRange): Promise<Buffer> =>
+  gitWithInput(
     ["--git-dir", repo.gitDir, "pack-objects", "--revs", "--thin", "--stdout", "--quiet"],
-    revisions
+    packRevisions(range)
   )
+
+const packRevisions = (range: PackRange): string => {
+  const heads = [range.head, range.baseHead].filter((head) => head !== undefined)
+  const wanted = [range.commit, range.head].filter((commit) => commit !== undefined)
+  const known = [range.base, range.baseHead].filter((commit) => commit !== undefined)
+  const lines = [
+    ...heads.map((head) => `--shallow ${head}`),
+    ...wanted,
+    ...(known.length === 0 ? [] : ["--not", ...known])
+  ]
+  return `${lines.join("\n")}\n`
 }
 
 export const changedFileCount = async (

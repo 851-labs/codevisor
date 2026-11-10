@@ -25,8 +25,15 @@ export const fleetMirrorTransport = (
     write: async (machineId, mirrorId, offset, data) => {
       await send(machineId, { action: "write", mirrorId, offset, data: data.toString("base64") })
     },
-    apply: async (machineId, mirrorId, commit) =>
-      preparedMirror(await send(machineId, { action: "apply", mirrorId, commit })),
+    apply: async (machineId, mirrorId, commit, head) =>
+      preparedMirror(
+        await send(machineId, {
+          action: "apply",
+          mirrorId,
+          commit,
+          ...(head === undefined ? {} : { head })
+        })
+      ),
     remove: async (machineId, mirrorId) => {
       await send(machineId, { action: "remove", mirrorId })
     }
@@ -38,6 +45,12 @@ const preparedMirror = (value: unknown): PreparedMirror => {
     throw new Error("The other machine answered without a mirror path")
   }
   const head = "head" in value && typeof value.head === "string" ? value.head : undefined
+  const sourceHead =
+    "sourceHead" in value && typeof value.sourceHead === "string" ? value.sourceHead : undefined
   if (typeof value.path !== "string") throw new Error("The other machine sent a bad mirror path")
-  return { path: value.path, ...(head === undefined ? {} : { head }) }
+  return {
+    path: value.path,
+    ...(head === undefined ? {} : { head }),
+    ...(sourceHead === undefined ? {} : { sourceHead })
+  }
 }

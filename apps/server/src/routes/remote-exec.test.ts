@@ -51,7 +51,7 @@ const execServer = async () => {
     transport: {
       prepare: (_machine, mirrorId, name) => mirrors.prepare(mirrorId, name, "server-a"),
       write: (_machine, mirrorId, offset, data) => mirrors.write(mirrorId, offset, data),
-      apply: (_machine, mirrorId, commit) => mirrors.apply(mirrorId, commit),
+      apply: (_machine, mirrorId, commit, head) => mirrors.apply(mirrorId, commit, head),
       remove: (_machine, mirrorId) => mirrors.remove(mirrorId)
     }
   })
