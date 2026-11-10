@@ -116,6 +116,26 @@ describe("installRuntime", () => {
     expect(defaultInstallFsOperations.exists(`${install}.next`)).toBe(false)
   })
 
+  it("removes a partly extracted runtime when extraction fails", async () => {
+    const root = makeTemporaryRoot()
+    const install = join(root, "codevisor")
+    mkdirSync(install)
+    writeRuntime(install, "1.0.0")
+
+    await expect(
+      installRuntime({
+        installRoot: install,
+        extract: (destination) => {
+          writeFileSync(join(destination, "main.js"), "// partial")
+          return Promise.reject(new Error("ENOSPC: no space left on device"))
+        }
+      })
+    ).rejects.toThrow("ENOSPC")
+
+    expect(readFileSync(join(install, "VERSION"), "utf8")).toBe("1.0.0\n")
+    expect(defaultInstallFsOperations.exists(`${install}.next`)).toBe(false)
+  })
+
   it("restores the old install when the final rename fails", async () => {
     const root = makeTemporaryRoot()
     const install = join(root, "codevisor")

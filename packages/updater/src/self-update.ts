@@ -51,10 +51,11 @@ export const installRuntime = async (options: {
 
   fs.removeRecursive(next)
   fs.makeDirectory(next)
-  await options.extract(next)
-  if (!fs.exists(join(next, "main.js")) || !fs.exists(join(next, "bin", "node"))) {
+  try {
+    await extractComplete(fs, next, options.extract)
+  } catch (error) {
     fs.removeRecursive(next)
-    throw new Error(`Extracted runtime at ${next} is incomplete`)
+    throw error
   }
 
   fs.removeRecursive(previous)
@@ -66,4 +67,15 @@ export const installRuntime = async (options: {
     throw error
   }
   fs.removeRecursive(previous)
+}
+
+const extractComplete = async (
+  fs: InstallFsOperations,
+  destination: string,
+  extract: (destination: string) => Promise<void>
+): Promise<void> => {
+  await extract(destination)
+  if (!fs.exists(join(destination, "main.js")) || !fs.exists(join(destination, "bin", "node"))) {
+    throw new Error(`Extracted runtime at ${destination} is incomplete`)
+  }
 }
