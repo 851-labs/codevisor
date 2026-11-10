@@ -7,7 +7,7 @@
     let foregroundColor: Color
     let animationContext: StreamingTextAnimationContext?
     @Environment(\.markdownTheme) private var theme
-    @State private var memo = TextRunMemo()
+    @State private var memo = MarkdownTextRunMemo()
     @Environment(\.dynamicTypeSize) private var dynamicTypeSize
     @State private var usesPreparedLayout: Bool
 
@@ -38,38 +38,10 @@
       theme: MarkdownTheme,
       foregroundColor: Color
     ) -> NSAttributedString {
-      let result = NSMutableAttributedString()
-      let foreground = MarkdownNativeColor(foregroundColor)
-      let chipBackground = MarkdownNativeChipBackground(
-        color: MarkdownNativeColor(theme.inlineCodeBackground),
-        cornerRadius: theme.inlineCodeCornerRadius
-      )
-
-      var previous: MarkdownBlock?
-      for block in blocks {
-        let piece = attributedString(
-          for: block,
-          theme: theme,
-          foreground: foreground,
-          chipBackground: chipBackground
-        )
-        guard piece.length > 0 else { continue }
-        if let previous {
-          result.append(
-            blockSeparator(
-              height: theme.blockSeparatorHeight(after: previous.role, before: block.role),
-              ending: result,
-              foreground: foreground
-            )
-          )
-        }
-        result.append(piece)
-        previous = block
-      }
-      return result.copy() as! NSAttributedString
+      MarkdownTextRunAssembly(blocks, theme: theme, foregroundColor: foregroundColor).snapshot
     }
 
-    private static func attributedString(
+    static func attributedString(
       for block: MarkdownBlock,
       theme: MarkdownTheme,
       foreground: MarkdownNativeColor,
@@ -228,52 +200,6 @@
 
     private static func styled(_ font: MarkdownNativeFont, bold: Bool, italic: Bool) -> MarkdownNativeFont {
       MarkdownNativeTypography.styled(font, bold: bold, italic: italic)
-    }
-  }
-
-  @MainActor
-  private final class TextRunMemo {
-    private var blocks: [MarkdownBlock]?
-    private var themeFingerprint: Int?
-    private var foregroundColor: Color?
-    private var cached: NSAttributedString?
-
-    func rendered(
-      for blocks: [MarkdownBlock],
-      theme: MarkdownTheme,
-      foregroundColor: Color
-    ) -> NSAttributedString {
-      let fingerprint = theme.renderFingerprint ^ MarkdownTextRunRenderer.bodyFont.pointSize.hashValue
-      if let cached,
-        blocks == self.blocks,
-        fingerprint == themeFingerprint,
-        foregroundColor == self.foregroundColor
-      {
-        return cached
-      }
-      let cacheKey = MarkdownTextRunCache.Key(
-        blocks: blocks,
-        themeFingerprint: fingerprint,
-        foregroundColor: .init(foregroundColor)
-      )
-      if let rendered = MarkdownTextRunCache.shared.value(for: cacheKey) {
-        self.blocks = blocks
-        themeFingerprint = fingerprint
-        self.foregroundColor = foregroundColor
-        cached = rendered
-        return rendered
-      }
-      let rendered = MarkdownTextRunRenderer.attributedString(
-        for: blocks,
-        theme: theme,
-        foregroundColor: foregroundColor
-      )
-      MarkdownTextRunCache.shared.store(rendered, for: cacheKey)
-      self.blocks = blocks
-      themeFingerprint = fingerprint
-      self.foregroundColor = foregroundColor
-      cached = rendered
-      return rendered
     }
   }
 

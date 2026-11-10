@@ -14,15 +14,24 @@ struct StreamingWordSegment: Equatable {
     self.text = text
     self.revealStyle = revealStyle
   }
+
+  func offset(by delta: Int) -> StreamingWordSegment {
+    StreamingWordSegment(
+      range: NSRange(location: range.location + delta, length: range.length), text: text, revealStyle: revealStyle)
+  }
 }
 
 enum StreamingWordSegmenter {
   static func segments(in text: String) -> [StreamingWordSegment] {
     guard !text.isEmpty else { return [] }
-    if text.unicodeScalars.allSatisfy({ $0.value <= 0x7f }) {
+    if isASCII(text) {
       return asciiSegments(in: text)
     }
     return splitEmojiClusters(in: text, segments: unicodeSegments(in: text))
+  }
+
+  static func isASCII(_ text: String) -> Bool {
+    text.utf8.allSatisfy { $0 <= 0x7f }
   }
 
   private static func asciiSegments(in text: String) -> [StreamingWordSegment] {
