@@ -31,28 +31,41 @@ struct TransparentTitlebar: NSViewRepresentable {
     override func viewDidMoveToWindow() {
       super.viewDidMoveToWindow()
       isFullScreen = window?.styleMask.contains(.fullScreen) ?? false
-      observeFullScreen()
+      observeWindow()
       update()
     }
 
-    private func observeFullScreen() {
+    private func observeWindow() {
       observers.forEach(NotificationCenter.default.removeObserver)
       observers = []
       guard let window else { return }
       observers = [
-        observe(NSWindow.willEnterFullScreenNotification, of: window, isFullScreen: true),
-        observe(NSWindow.didExitFullScreenNotification, of: window, isFullScreen: false),
+        observe(NSWindow.willEnterFullScreenNotification, of: window) { $0.isFullScreen = true },
+        observe(NSWindow.didExitFullScreenNotification, of: window) { $0.isFullScreen = false },
+        observe(NSWindow.didBecomeMainNotification, of: window) { $0.apply() },
+        observe(NSWindow.didResignMainNotification, of: window) { $0.apply() },
+        observe(NSApplication.didBecomeActiveNotification, of: NSApp) { $0.apply() },
+        observe(NSApplication.didResignActiveNotification, of: NSApp) { $0.apply() },
       ]
     }
 
-    private func observe(_ name: NSNotification.Name, of window: NSWindow, isFullScreen: Bool) -> NSObjectProtocol {
-      NotificationCenter.default.addObserver(forName: name, object: window, queue: .main) { [weak self] _ in
-        MainActor.assumeIsolated { self?.isFullScreen = isFullScreen }
+    private func observe(
+      _ name: NSNotification.Name, of object: AnyObject?, apply change: @escaping @MainActor (Probe) -> Void
+    ) -> NSObjectProtocol {
+      NotificationCenter.default.addObserver(forName: name, object: object, queue: .main) { [weak self] _ in
+        MainActor.assumeIsolated {
+          guard let self else { return }
+          change(self)
+        }
       }
     }
 
     private var wantsTransparency: Bool {
       isTransparent && !isFullScreen
+    }
+
+    private var appearsActive: Bool {
+      NSApp.isActive && window?.isMainWindow == true
     }
 
     private func update() {
@@ -68,7 +81,7 @@ struct TransparentTitlebar: NSViewRepresentable {
     }
 
     private func apply() {
-      let transparent = wantsTransparency && !isPointerInTopBar
+      let transparent = wantsTransparency && appearsActive && !isPointerInTopBar
       guard let window, window.titlebarAppearsTransparent != transparent else { return }
       window.titlebarAppearsTransparent = transparent
     }
