@@ -28,6 +28,5 @@ struct SidebarDevelopmentWorktreeRow: View {
     )
     .background(RoundedRectangle.sidebarRow.fill(developmentWorktreeColor))
     .accessibilityLabel("Development worktree: \(worktreeName)")
-    .help("Development worktree: \(worktreeName)")
   }
 }

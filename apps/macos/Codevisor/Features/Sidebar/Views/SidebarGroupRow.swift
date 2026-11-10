@@ -36,20 +36,12 @@ struct SidebarGroupRow: View {
           .contentShape(Rectangle())
         }
         .buttonStyle(.plain)
-        .help(isExpanded ? "Collapse \(title)" : "Expand \(title)")
+        .accessibilityHint(isExpanded ? "Collapse \(title)" : "Expand \(title)")
         .accessibilityLabel(title)
         .accessibilityValue(isExpanded ? "Expanded" : "Collapsed")
 
         if isHovered, let onNewChat {
-          Button(action: onNewChat) {
-            Image(systemName: "square.and.pencil")
-              .font(.callout.weight(.semibold))
-          }
-          .buttonStyle(.plain)
-          .foregroundStyle(.secondary)
-          .help("New chat in \(title)")
-          .accessibilityLabel("New chat in \(title)")
-          .accessibilityHidden(true)
+          SidebarGroupNewChatButton(title: title, action: onNewChat)
         }
       }
       .padding(.horizontal, 10)

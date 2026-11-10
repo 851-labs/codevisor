@@ -75,7 +75,6 @@ struct WorkspaceInspectorFileTreeRow: View {
       }
     }
     .onTapGesture(perform: tap)
-    .help(entry.path)
     .contextMenu { menu }
     .accessibilityElement(children: isRenaming ? .contain : .ignore)
     .accessibilityLabel(entry.name)
