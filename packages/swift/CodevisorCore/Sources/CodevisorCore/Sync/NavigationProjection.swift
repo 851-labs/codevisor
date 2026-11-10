@@ -6,6 +6,7 @@ public struct NavigationProjection: Sendable {
   public var workspaces: [Workspace] = []
   public var workspacesById: [UUID: Workspace] = [:]
   public var sessionIndex: [UUID: UUID] = [:]
+  var reportedServerIds: [UUID: String] = [:]
 
   public static let empty = NavigationProjection()
 }

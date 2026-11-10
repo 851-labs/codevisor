@@ -151,11 +151,12 @@ public final class NavigationWorkspaces {
   static func parentLinks(in projection: NavigationProjection) -> [UUID: WorkspaceParentLink] {
     var parents: [UUID: WorkspaceParentLink] = [:]
     for session in projection.sessions {
-      guard let parentSessionId = session.parentSessionId.flatMap(UUID.init(uuidString:)),
+      guard let reference = ParentSessionReference(session.parentSessionId),
         let workspaceId = projection.sessionIndex[session.id],
-        let parentId = projection.sessionIndex[parentSessionId], parentId != workspaceId,
+        let parentId = projection.sessionIndex[reference.sessionId], parentId != workspaceId,
         let workspace = projection.workspacesById[workspaceId],
-        projection.workspacesById[parentId]?.serverId == workspace.serverId,
+        let parent = projection.workspacesById[parentId],
+        reference.isHosted(by: parent, of: workspace, reportedServerIds: projection.reportedServerIds),
         parents[workspaceId].map({ session.createdAt < $0.linkedAt }) ?? true
       else { continue }
       parents[workspaceId] = WorkspaceParentLink(

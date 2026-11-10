@@ -19,6 +19,7 @@ final class NavigationProjector {
     var sessions: [ChatSession] = []
     var workspaces: [Workspace] = []
     var sessionIndex: [UUID: UUID] = [:]
+    var reportedServerIds: [UUID: String] = [:]
   }
 
   private struct WorkspaceKey: Equatable {
@@ -66,6 +67,7 @@ final class NavigationProjector {
       projection.sessions += machine.sessions
       projection.workspaces += machine.workspaces
       projection.sessionIndex.merge(machine.sessionIndex) { _, new in new }
+      projection.reportedServerIds.merge(machine.reportedServerIds) { _, new in new }
     }
     machines = current
     var changed = Set<UUID>()
@@ -88,7 +90,9 @@ final class NavigationProjector {
   ) -> MachineProjection {
     var records = NavigationRecords(cache)
     NavigationOverlay.apply(entries, to: &records)
-    var machine = MachineProjection(projects: records.projects, sessions: records.sessions)
+    var machine = MachineProjection(
+      projects: records.projects, sessions: records.sessions,
+      reportedServerIds: Self.reportedServerIds(of: records.workspaces))
     let panesByWorkspace = Dictionary(grouping: records.panes) { $0.workspaceId.lowercased() }
     var worktreeNames: [UUID: String] = [:]
     for session in records.sessions {
@@ -130,6 +134,12 @@ final class NavigationProjector {
       }
     }
     return machine
+  }
+
+  private static func reportedServerIds(of records: [ServerWorkspace]) -> [UUID: String] {
+    Dictionary(
+      records.compactMap { record in UUID(uuidString: record.id).map { ($0, record.serverId) } },
+      uniquingKeysWith: { first, _ in first })
   }
 
   private func fit(

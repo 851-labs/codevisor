@@ -9,9 +9,9 @@ import Testing
 struct SubagentWorkspaceNavigationTests {
   let project = Project.fromFolder(URL(fileURLWithPath: "/src/app"), serverId: "m")
 
-  private func workspace(_ chats: ChatSession...) -> Workspace {
+  private func workspace(_ chats: ChatSession..., reportedBy serverId: String = "m") -> Workspace {
     Workspace(
-      name: "W", rootDirectory: "/src/app", serverId: "m", projectId: project.id,
+      name: "W", rootDirectory: "/src/app", serverId: serverId, projectId: project.id,
       centerTabs: chats.map { WorkspaceTab(root: .leaf(.centerInitial(sessionId: $0.id))) },
       createdAt: Date(timeIntervalSince1970: 0), isServerSynced: true)
   }
@@ -36,6 +36,43 @@ struct SubagentWorkspaceNavigationTests {
     let parents = Dictionary(
       uniqueKeysWithValues: fixture.store.workspaceEntries.sidebar.map { ($0.id, $0.parentWorkspaceId) })
     #expect(parents == [parent.id: nil, child.id: parent.id, fromRemote.id: nil, fromGone.id: nil])
+  }
+
+  @Test("A parent on another machine links when that machine reports the parent's workspace")
+  func parentWorkspaceOnAnotherMachine() async {
+    let lead = ChatSession(projectId: project.id, serverId: "studio", title: "Lead")
+    func child(_ title: String, parent key: String) -> ChatSession {
+      ChatSession(projectId: project.id, serverId: "m", title: title, parentSessionId: key, createdBy: .agent)
+    }
+    let encoded = child("Encoded", parent: "remote2:machine-studio:\(lead.id.uuidString)")
+    let legacy = child("Legacy", parent: "remote:machine-studio:\(lead.id.uuidString)")
+    let elsewhere = child("Elsewhere", parent: "remote2:machine-other:\(lead.id.uuidString)")
+    let bareId = child("Bare", parent: lead.id.uuidString)
+    let malformed = child("Malformed", parent: "remote2:machine-studio:\(lead.id.uuidString):extra")
+    let children = [encoded, legacy, elsewhere, bareId, malformed]
+    let parent = workspace(lead, reportedBy: "machine-studio")
+    let childWorkspaces = children.map { workspace($0) }
+    let fixture = NavigationFixture()
+
+    await fixture.install(machineId: "studio", projects: [project], sessions: [lead], workspaces: [parent])
+    await fixture.install(machineId: "m", projects: [project], sessions: children, workspaces: childWorkspaces)
+
+    let links = Dictionary(
+      uniqueKeysWithValues: fixture.store.workspaceEntries.sidebar.map { ($0.id, $0.parent) })
+    #expect(childWorkspaces.map { links[$0.id]??.workspaceId } == [parent.id, parent.id, nil, nil, nil])
+    #expect(links[childWorkspaces[0].id]??.isAgentMade == true)
+  }
+
+  @Test("Percent-encoded machine ids in a remote parent key decode before matching")
+  func encodedRemoteParentKey() {
+    let sessionId = UUID()
+
+    #expect(
+      ParentSessionReference("remote2:machine%3Astudio:\(sessionId.uuidString)")
+        == .otherMachine(serverId: "machine:studio", sessionId: sessionId))
+    #expect(ParentSessionReference("remote2::\(sessionId.uuidString)") == nil)
+    #expect(ParentSessionReference("remote:machine-studio:none") == nil)
+    #expect(ParentSessionReference("studio:\(sessionId.uuidString)") == nil)
   }
 
   @Test("A child's link records whether an agent made it; forks and records without a creator count as the user's")
