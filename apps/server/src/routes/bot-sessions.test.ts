@@ -1,4 +1,6 @@
-import { decode, Workspace } from "@codevisor/api"
+import { randomUUID } from "node:crypto"
+
+import { decode, Workspace, WorkspacePane } from "@codevisor/api"
 import { Effect, Schema } from "effect"
 import { describe, expect, it, vi } from "vitest"
 
@@ -124,5 +126,56 @@ describe("bot chats", () => {
     expect(await workspace("direct-ws")).toMatchObject({ isArchived: true })
     expect(await workspace("grandchild-ws")).toMatchObject({ isArchived: true })
     expect(await workspace("plain-child-ws")).toMatchObject({ isArchived: false })
+  })
+
+  it("refuses new tabs in a bot's own workspace but not in its sub-agents' workspaces", async () => {
+    const running = await setUp()
+    await running.addProject("api-project", "api")
+    const bot = decodeBot((await createBot(running, { projectIds: ["api-project"] })).body)
+    const panesIn = async (workspaceId: string) =>
+      decode(Schema.Array(WorkspacePane))(
+        (await jsonRequest(running.server, "/v1/workspace-panes")).body
+      ).filter((pane) => pane.workspaceId === workspaceId)
+    const putPane = (workspaceId: string, paneId: string, body: Record<string, unknown>) =>
+      jsonRequest(running.server, `/v1/workspaces/${workspaceId}/panes/${paneId}`, {
+        body: JSON.stringify(body),
+        method: "PUT"
+      })
+    const terminal = { providerId: "codevisor", paneType: "terminal", title: "Terminal" }
+    const [chatPane] = await panesIn(bot.workspaceId)
+    if (chatPane === undefined) throw new Error("missing the bot's chat pane")
+
+    const refused = await putPane(bot.workspaceId, randomUUID(), terminal)
+
+    expect(refused.status).toBe(409)
+    expect(refused.body).toMatchObject({
+      error: "Cannot open a new tab in this workspace: it belongs to the bot Release Helper"
+    })
+    expect(await panesIn(bot.workspaceId)).toEqual([chatPane])
+    expect(
+      (
+        await putPane(bot.workspaceId, chatPane.id, {
+          providerId: chatPane.providerId,
+          paneType: chatPane.paneType,
+          resourceKind: "session",
+          resourceId: bot.sessionId,
+          title: "Renamed"
+        })
+      ).status
+    ).toBe(200)
+
+    await jsonRequest(running.server, "/v1/sessions", {
+      body: JSON.stringify({
+        id: "child-chat",
+        projectId: "api-project",
+        harnessId: "codex",
+        parentSessionId: bot.sessionId,
+        workspaceId: "child-ws"
+      }),
+      method: "POST"
+    })
+
+    expect((await putPane("child-ws", randomUUID(), terminal)).status).toBe(200)
+    expect(await panesIn("child-ws")).toHaveLength(2)
   })
 })
