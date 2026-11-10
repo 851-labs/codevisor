@@ -51,6 +51,10 @@ struct SidebarTabRow: View {
   @ViewBuilder
   private var contextMenu: some View {
     if let actions {
+      if let chat = label.unreadChat {
+        ChatSessionUnreadMenuItem(session: chat)
+        Divider()
+      }
       Button(action: actions.close) {
         Label("Close Tab", systemImage: "xmark")
           .labelStyle(.titleAndIcon)

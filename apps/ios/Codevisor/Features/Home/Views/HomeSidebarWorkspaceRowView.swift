@@ -105,6 +105,10 @@ struct HomeSidebarWorkspaceRowView: View, Equatable {
         Label("Restore", systemImage: "arrow.uturn.backward")
       }
     } else {
+      if let chat = workspace.mainChatRow, let chatId = chat.chatSessionId {
+        UnreadMenuItem(isUnread: chat.isUnread) { actions.actions.setUnread(chatId, workspace.serverId, $0) }
+        Divider()
+      }
       if let open = actions.actions.openWorkspaceInNewWindow {
         Button {
           open(workspace)

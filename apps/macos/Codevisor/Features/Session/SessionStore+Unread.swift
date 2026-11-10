@@ -12,14 +12,6 @@ extension SessionStore {
     session.hasUnreadError
   }
 
-  func markUnread(_ session: ChatSession) {
-    environment.projectList.markSessionUnread(session.id, serverId: session.serverId)
-  }
-
-  func markRead(_ session: ChatSession) {
-    environment.projectList.markSessionRead(session.id, serverId: session.serverId)
-  }
-
   func markOpened(_ sessionId: UUID, serverId: String) {
     let key = SessionKey(serverId: serverId, sessionId: sessionId)
     openSessionKey = key

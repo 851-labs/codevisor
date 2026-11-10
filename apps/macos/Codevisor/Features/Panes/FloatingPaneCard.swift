@@ -9,7 +9,6 @@ struct FloatingPaneCard: View {
   let frame: CGRect
   let container: CGSize
   let coordinateSpace: String
-  let sessionStore: SessionStore?
   let actions: FloatingPaneActions
 
   @State private var liveFrame: CGRect?
@@ -26,7 +25,6 @@ struct FloatingPaneCard: View {
         pane: group.state.selectedPane,
         title: title,
         source: PaneToolbarSource(group: group),
-        sessionStore: sessionStore,
         coordinateSpace: coordinateSpace,
         actions: actions,
         drag: drag

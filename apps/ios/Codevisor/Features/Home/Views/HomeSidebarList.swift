@@ -24,6 +24,7 @@ struct HomeSidebarActions {
   var archiveBot: (Bot) -> Void = { _ in }
   var unarchiveBot: (Bot) -> Void = { _ in }
   var deleteBot: (Bot) -> Void = { _ in }
+  var setUnread: (_ chatSessionId: UUID, _ serverId: String, _ isUnread: Bool) -> Void = { _, _, _ in }
   var didSelectInSplit: () -> Void = {}
   var refresh: () async -> Void = {}
 }

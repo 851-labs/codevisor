@@ -140,7 +140,7 @@ struct SplitLeafHeader: View {
 
       Divider()
 
-      PaneMenuItems(pane: pane, sessionStore: sessionStore)
+      PaneMenuItems(pane: pane)
 
       if let onClose {
         Button(role: .destructive, action: onClose) {

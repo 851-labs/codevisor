@@ -30,8 +30,12 @@ struct HomeSidebarWorkspace: Identifiable, Equatable {
 
   var subtree: [HomeSidebarWorkspace] { [self] + children.flatMap(\.subtree) }
 
+  var mainChatRow: HomeSidebarTabRow? {
+    rows.first(where: \.isMainChat)
+  }
+
   var primaryRow: HomeSidebarTabRow? {
-    rows.first(where: \.isMainChat) ?? rows.first { $0.id == primaryRowId } ?? rows.first
+    mainChatRow ?? rows.first { $0.id == primaryRowId } ?? rows.first
   }
 
   var workspace: HomeSidebarWorkspaceRef {
@@ -76,6 +80,7 @@ struct HomeSidebarTabRow: Identifiable, Equatable {
   let chatSessionId: UUID?
   var tabId: UUID? = nil
   var isMainChat = false
+  var isUnread = false
 }
 
 struct HomeSidebarPreferences: Equatable {

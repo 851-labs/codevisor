@@ -8,6 +8,7 @@ struct BotConversationRows: View {
   let sections: [CustomSection]
   let selectedBotID: UUID?
   let actions: BotSidebarRowActions
+  @Environment(AppEnvironment.self) private var environment
   @Environment(\.accessibilityReduceMotion) private var reduceMotion
   @State private var drag: BotSidebarDrag?
   @State private var dropTarget: BotSidebarRowID?
@@ -53,6 +54,10 @@ struct BotConversationRows: View {
     .accessibilityAction(.default) { actions.select(bot) }
     .onDrag { start(.bot(bot.id)) }
     .contextMenu {
+      if let chat = chat(of: bot) {
+        ChatSessionUnreadMenuItem(session: chat)
+        Divider()
+      }
       Button {
         actions.edit(bot)
       } label: {
@@ -97,6 +102,10 @@ struct BotConversationRows: View {
         deleteButton(bot)
       }
       .id(bot.id)
+  }
+
+  private func chat(of bot: Bot) -> ChatSession? {
+    environment.projectList.session(bot.sessionId, serverId: bot.serverId)
   }
 
   private func deleteButton(_ bot: Bot) -> some View {

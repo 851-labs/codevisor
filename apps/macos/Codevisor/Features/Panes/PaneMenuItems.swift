@@ -3,13 +3,12 @@ import SwiftUI
 
 struct PaneMenuItems: View {
   let pane: PaneDescriptorState?
-  let sessionStore: SessionStore?
 
   @Environment(AppEnvironment.self) private var environment
 
   var body: some View {
     if let session = Self.chatSession(of: pane, in: environment.projectList) {
-      ChatSessionUnreadMenuItem(session: session, store: sessionStore)
+      ChatSessionUnreadMenuItem(session: session)
     }
   }
 
