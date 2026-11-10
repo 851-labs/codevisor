@@ -180,8 +180,8 @@ public struct TranscriptVirtualWindowHandoff: Sendable, Equatable {
   }
 
   public mutating func retainOnlyValidKeys(_ isValid: (String) -> Bool) {
-    targetKeys = Set(targetKeys.filter(isValid))
-    presentedKeys = Set(presentedKeys.filter(isValid))
+    if !targetKeys.allSatisfy(isValid) { targetKeys = targetKeys.filter(isValid) }
+    if !presentedKeys.allSatisfy(isValid) { presentedKeys = presentedKeys.filter(isValid) }
   }
 
   @discardableResult

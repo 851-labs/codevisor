@@ -29,7 +29,6 @@ extension VirtualizedTranscriptScrollView {
     guard initialPositionApplied || viewportHeight > 0,
       let hostingParent
     else { return }
-    virtualWindowHandoff.retainOnlyValidKeys { rowByKey[$0] != nil }
     let scrollDelta = rangeOverride == nil ? pendingWindowScrollDelta : 0
     pendingWindowScrollDelta = 0
     let targetRange: Range<Int>

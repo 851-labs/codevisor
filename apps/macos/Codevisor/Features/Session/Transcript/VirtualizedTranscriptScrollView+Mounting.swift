@@ -76,7 +76,6 @@ extension VirtualizedTranscriptScrollView {
   func reconcileVirtualWindow(
     rangeOverride: Range<Int>?
   ) -> (mountPlan: TranscriptVirtualWindowMountPlan, targetChanged: Bool) {
-    virtualWindowHandoff.retainOnlyValidKeys { rowByKey[$0] != nil }
     let observedScrollDelta = rangeOverride == nil ? pendingWindowScrollDelta : 0
     pendingWindowScrollDelta = 0
     let projectedScrollDelta =
