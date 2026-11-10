@@ -33,7 +33,7 @@ extension SessionController {
     userSendSignal &+= 1
     requestUserSendAnimation(for: message.id)
     sends.enqueue(
-      message, attachmentIDs: sent.map(\.id), route: .bot(afterSequence: model?.botMessages.last?.sequence))
+      message, attachmentIDs: sent.map(\.id), route: .bot(afterSequence: model?.botLog.lastSequence))
     composerText = ""
   }
 
@@ -134,7 +134,7 @@ extension SessionController {
   func deliverSend(_ message: UserMessage, route: SendQueue.Route, to model: SessionModel) async {
     switch route {
     case let .bot(afterSequence):
-      await model.sendBotMessage(message, afterSequence: afterSequence ?? model.botMessages.last?.sequence)
+      await model.sendBotMessage(message, afterSequence: afterSequence ?? model.botLog.lastSequence)
     case let .agent(delivery, landsInQueue):
       await model.send(message, startedAt: turnStartedAt, delivery: delivery, landsInQueue: landsInQueue)
     }

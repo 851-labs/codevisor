@@ -10,11 +10,11 @@ extension SessionModel {
 
   func transcriptBotConversation(adding queued: [UnsentBotMessage]) -> TranscriptBotConversation? {
     guard presentsBotConversation else { return nil }
-    let deliveredIDs = Set(botMessages.map { $0.id.lowercased() })
+    let deliveredIDs = botLog.normalizedIDs
     let unsent = BotConversationTimeline.merging(
       queued, into: unsentBotMessages(excluding: deliveredIDs), deliveredIDs: deliveredIDs)
     return TranscriptBotConversation(
-      messages: BotConversationTimeline.messages(delivered: deliveredBotMessages, unsent: unsent),
+      messages: BotConversationTimeline.messages(delivered: botLog, unsent: unsent),
       isWorking: isSending
     )
   }
@@ -23,10 +23,6 @@ extension SessionModel {
     errorMessage = nil
     harnessAuthenticationErrorMessage = nil
     await sendOutgoing(message, delivery: nil, afterBotSequence: afterSequence)
-  }
-
-  private var deliveredBotMessages: [DeliveredBotMessage] {
-    botMessages.map { DeliveredBotMessage(sequence: $0.sequence, message: Self.transcriptBotMessage($0)) }
   }
 
   private func unsentBotMessages(excluding deliveredIDs: Set<String>) -> [UnsentBotMessage] {
@@ -54,11 +50,11 @@ extension SessionModel {
     guard presentsBotConversation,
       let page = try? await transport.botConversation(before: nil, limit: Self.botConversationPageSize)
     else { return }
-    let newestKnown = botMessages.last?.sequence
-    let oldestFetched = page.messages.first?.sequence
+    let newestKnown = botLog.lastSequence
+    let oldestFetched = page.messages.map(\.sequence).min()
     let leavesGap = newestKnown.flatMap { known in oldestFetched.map { $0 > known + 1 } } ?? false
-    if botMessages.isEmpty || leavesGap {
-      botMessages = page.messages.sorted { $0.sequence < $1.sequence }
+    if botLog.isEmpty || leavesGap {
+      botLog.replace(with: page.messages)
       hasOlderBotMessages = page.hasMore
     } else {
       for message in page.messages { upsertBotMessage(message) }
@@ -67,52 +63,24 @@ extension SessionModel {
 
   @discardableResult
   public func loadOlderBotMessages() async -> Int {
-    guard hasOlderBotMessages, !isLoadingOlderBotMessages, let oldest = botMessages.first else { return 0 }
+    guard hasOlderBotMessages, !isLoadingOlderBotMessages, let oldest = botLog.firstSequence else { return 0 }
     isLoadingOlderBotMessages = true
     defer { isLoadingOlderBotMessages = false }
     guard
       let page = try? await transport.botConversation(
-        before: oldest.sequence, limit: Self.botConversationPageSize)
+        before: oldest, limit: Self.botConversationPageSize)
     else { return 0 }
-    botMessages = (page.messages + botMessages).sorted { $0.sequence < $1.sequence }
+    botLog.prepend(page.messages)
     hasOlderBotMessages = page.hasMore
     return page.messages.count
   }
 
   func upsertBotMessage(_ message: ServerBotMessage) {
     if let id = UUID(uuidString: message.id) { confirmOutgoing(id) }
-    if let index = botMessages.firstIndex(where: { $0.id == message.id }) {
-      botMessages[index] = message
-      return
-    }
-    let index = botMessages.firstIndex { $0.sequence > message.sequence } ?? botMessages.endIndex
-    botMessages.insert(message, at: index)
+    botLog.upsert(message)
   }
-
-  private static func transcriptBotMessage(_ message: ServerBotMessage) -> TranscriptBotMessage {
-    let sender: TranscriptBotMessage.Sender =
-      switch message.sender {
-      case .user: .user
-      case .bot: .bot
-      case .notice: .notice
-      }
-    return TranscriptBotMessage(
-      id: message.id,
-      sender: sender,
-      text: message.text,
-      attachments: (message.attachments ?? []).map(\.attachment),
-      sentAt: sentAt(message.createdAt)
-    )
-  }
-
-  private static let fractionalSentAtFormatter: ISO8601DateFormatter = {
-    let formatter = ISO8601DateFormatter()
-    formatter.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
-    return formatter
-  }()
-  private static let wholeSecondSentAtFormatter = ISO8601DateFormatter()
 
   static func sentAt(_ value: String) -> Date? {
-    fractionalSentAtFormatter.date(from: value) ?? wholeSecondSentAtFormatter.date(from: value)
+    ServerTimestamp.date(from: value)
   }
 }

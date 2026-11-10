@@ -22,7 +22,7 @@ extension SessionModelTests {
     )
     model.presentBotConversation()
     await model.loadHistoryForInitialDisplay()
-    await settleUntil { model.botMessages.count == 1 && !client.sessionEventSinceValues.isEmpty }
+    await settleUntil { model.botLog.count == 1 && !client.sessionEventSinceValues.isEmpty }
 
     client.emit(
       botEnvelope(
@@ -44,7 +44,7 @@ extension SessionModelTests {
 
     let echo = botFeedMessage(followUpID, .user, "and add a test", sequence: 2, sessionId: sessionId)
     client.emit(botEnvelope(2, sessionId, "bot.message", ["message": botJSON(echo)]))
-    await settleUntil { model.botMessages.count == 2 }
+    await settleUntil { model.botLog.count == 2 }
 
     #expect(model.transcriptBotConversation?.messages.map(\.id) == ["b1", followUpID])
   }
@@ -68,7 +68,7 @@ extension SessionModelTests {
     #expect(deliveries(model) == ["b1": nil, id: nil])
     let echo = botFeedMessage(id, .user, "are you there?", sequence: 2, sessionId: client.sessionId)
     client.emit(botEnvelope(1, client.sessionId, "bot.message", ["message": botJSON(echo)]))
-    await settleUntil { model.botMessages.count == 2 }
+    await settleUntil { model.botLog.count == 2 }
     #expect(model.outgoingMessages.isEmpty)
     model.shutdown()
   }
@@ -82,7 +82,7 @@ extension SessionModelTests {
 
     let reply = botFeedMessage("b2", .bot, "Anyone there?", sequence: 2, sessionId: client.sessionId)
     client.emit(botEnvelope(1, client.sessionId, "bot.message", ["message": botJSON(reply)]))
-    await settleUntil { model.botMessages.count == 2 }
+    await settleUntil { model.botLog.count == 2 }
 
     #expect(model.transcriptBotConversation?.messages.map(\.id) == ["b1", message.id.uuidString.lowercased(), "b2"])
     model.shutdown()
@@ -155,7 +155,7 @@ extension SessionModelTests {
     controller.model = model
     controller.presentBotConversation(true)
     await model.loadHistoryForInitialDisplay()
-    await settleUntil { model.botMessages.count == 1 }
+    await settleUntil { model.botLog.count == 1 }
 
     #expect(!controller.hasOlderHistory(presentingBotConversation: true))
     #expect(controller.hasOlderHistory(presentingBotConversation: false))
@@ -181,7 +181,7 @@ extension SessionModelTests {
     model.sendingNoticeDelay = .seconds(3600)
     model.presentBotConversation()
     await model.loadHistoryForInitialDisplay()
-    await settleUntil { model.botMessages.count == 1 && !client.sessionEventSinceValues.isEmpty }
+    await settleUntil { model.botLog.count == 1 && !client.sessionEventSinceValues.isEmpty }
     return (client, model)
   }
 

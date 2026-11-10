@@ -80,12 +80,16 @@ extension SessionController {
   }
 
   private var presentedBotConversation: TranscriptBotConversation? {
-    botConversationWithUnsent.map { conversation in
-      let pending = pendingMessageIDs
-      return conversation.mappingDeliveries { message in
-        guard let id = UUID(uuidString: message.id), pending.contains(id) else { return message.delivery }
-        return sendingWhileReconnecting(message.delivery)
-      }
+    guard let conversation = botConversationWithUnsent else { return nil }
+
+    guard isWaitingForConnection else { return conversation }
+
+    let pending = pendingMessageIDs
+    guard !pending.isEmpty else { return conversation }
+
+    return conversation.mappingDeliveries { message in
+      guard let id = UUID(uuidString: message.id), pending.contains(id) else { return message.delivery }
+      return sendingWhileReconnecting(message.delivery)
     }
   }
 

@@ -48,9 +48,9 @@ public final class SessionModel {
       if presentsBotConversation != oldValue { transcriptProjectionRevision &+= 1 }
     }
   }
-  public internal(set) var botMessages: [ServerBotMessage] = [] {
+  var botLog = BotMessageLog() {
     didSet {
-      if botMessages != oldValue { transcriptProjectionRevision &+= 1 }
+      if botLog.revision != oldValue.revision { transcriptProjectionRevision &+= 1 }
     }
   }
   var outgoingMessages: [OutgoingMessage] = [] {
