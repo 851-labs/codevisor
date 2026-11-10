@@ -75,6 +75,27 @@ describe("pausing an idle sandbox", () => {
     expect(await harness.record()).toMatchObject({ power: "paused" })
   })
 
+  it("stays awake while a background command runs on it, then counts from its last activity", async () => {
+    const harness = await readySandbox("in-place", "15")
+    const commands = (activity: unknown) => {
+      harness.controls.answer = (tool) =>
+        tool === "codevisor.shell.activity" ? activity : undefined
+    }
+
+    commands({ running: 1 })
+    await harness.tick(40)
+    const whileRunning = await harness.record()
+    commands({ running: 0, lastActiveAt: "2026-10-23T00:45:00.000Z" })
+    await harness.tick(19)
+    const afterwards = await harness.record()
+    await harness.tick(1)
+
+    expect(whileRunning?.power).toBeUndefined()
+    expect(afterwards).toMatchObject({ lastActiveAt: "2026-10-23T00:45:00.000Z" })
+    expect(afterwards?.power).toBeUndefined()
+    expect(await harness.record()).toMatchObject({ power: "paused" })
+  })
+
   it("never pauses with Never, and keeps extending the provider's timeout an hour ahead", async () => {
     const harness = await readySandbox("in-place", "never")
 

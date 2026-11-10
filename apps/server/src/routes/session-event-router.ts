@@ -1,6 +1,7 @@
 import {
   parseRemoteSessionKey,
   type EventEnvelope,
+  type ExecTaskEvent,
   type SessionEventType,
   type SessionSubscription,
   type SessionSummary,
@@ -14,6 +15,8 @@ import { isRecord } from "../unknown-values.js"
 import { conversationalBotForSession } from "./bot-turns.js"
 import {
   erroredMessage,
+  execTaskFinishedMessage,
+  fromMachine,
   jobFinishedMessage,
   turnEndedMessage,
   waitingForUserMessage,
@@ -25,6 +28,10 @@ import type { SessionEventOutbox } from "./session-event-outbox.js"
 export interface SessionEventRouter {
   readonly listener: (event: EventEnvelope) => void
   readonly onJobFinished: (finished: ExecutionJobFinished) => void
+  readonly onExecTaskFinished: (
+    finished: ExecTaskEvent,
+    machine: { readonly id: string; readonly name: string }
+  ) => void
   readonly recover: () => Promise<void>
 }
 
@@ -115,6 +122,22 @@ export const makeSessionEventRouter = (
     )
   }
 
+  const onExecTaskFinished = async (
+    finished: ExecTaskEvent,
+    machine: { readonly id: string; readonly name: string }
+  ) => {
+    const owner = await run(services.db.getSessionSummary(finished.sessionId)).catch(
+      () => undefined
+    )
+    if (owner === undefined) return
+    await publish(
+      owner,
+      "job_finished",
+      (subscriptionId) => fromMachine(execTaskFinishedMessage(finished, subscriptionId), machine),
+      [{ subscriberId: owner.id }]
+    )
+  }
+
   const routeEvent = async (event: EventEnvelope, payload: Record<string, unknown>) => {
     if (event.kind === "session.error") {
       await onError(event.subjectId, String(payload.message))
@@ -135,6 +158,9 @@ export const makeSessionEventRouter = (
     },
     onJobFinished: (finished) => {
       void onJobFinished(finished).catch(swallowError)
+    },
+    onExecTaskFinished: (finished, machine) => {
+      void onExecTaskFinished(finished, machine).catch(swallowError)
     },
     recover: async () => {
       const finished = await run(services.db.listFinishedTurns)

@@ -30,6 +30,32 @@ extension CodevisorServerClient {
     try await sendNoResponse("/v1/fs/delete", method: "POST", body: DeleteRequest(paths: paths))
   }
 
+  public func workspaceSyncs(workspaceId: UUID) async throws -> [ServerWorkspaceSync] {
+    let listed: SyncList = try await get("/v1/workspaces/\(workspaceId.uuidString)/syncs")
+    return listed.items
+  }
+
+  public func stopWorkspaceSync(workspaceId: UUID, machineId: String) async throws {
+    try await sendNoResponse(
+      "/v1/workspaces/\(workspaceId.uuidString)/syncs/\(pathComponent(machineId))", method: "DELETE")
+  }
+
+  public func remoteExecTasks(workspaceId: UUID) async throws -> [ServerRemoteExecTask] {
+    let listed: RemoteTaskList = try await get("/v1/workspaces/\(workspaceId.uuidString)/exec-tasks")
+    return listed.items
+  }
+
+  public func stopRemoteExecTask(workspaceId: UUID, taskId: String) async throws {
+    try await sendNoResponse(
+      "/v1/workspaces/\(workspaceId.uuidString)/exec-tasks/\(pathComponent(taskId))/stop", method: "POST")
+  }
+
+  public func remoteExecTaskOutput(workspaceId: UUID, taskId: String) async throws -> [String] {
+    let output: ServerBackgroundTaskOutput = try await get(
+      "/v1/workspaces/\(workspaceId.uuidString)/exec-tasks/\(pathComponent(taskId))/output")
+    return output.lines
+  }
+
   public func downloadFile(path: String, to destination: URL) async throws {
     try await performDownload(try transferPath("/v1/fs/file", path: path), to: destination)
   }
@@ -40,6 +66,14 @@ extension CodevisorServerClient {
 
   private struct PlacedPath: Decodable {
     let path: String
+  }
+
+  private struct RemoteTaskList: Decodable {
+    let items: [ServerRemoteExecTask]
+  }
+
+  private struct SyncList: Decodable {
+    let items: [ServerWorkspaceSync]
   }
 
   private struct MoveRequest: Encodable {

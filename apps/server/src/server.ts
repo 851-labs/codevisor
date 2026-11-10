@@ -178,6 +178,10 @@ export const makeCodevisorServerApp = (
   fleetRetry.unref()
   const unsubscribeSessionEvents = fanout.subscribe(sessionEvents.listener)
   const unsubscribeJobEvents = services.mcp?.jobs.subscribe(sessionEvents.onJobFinished)
+  routeState.announceExecTask = (event, machine) => {
+    services.remoteExecTasks?.record(event, machine)
+    if (event.task.state !== "running") sessionEvents.onExecTaskFinished(event, machine)
+  }
   void updateAllBotInstructions(services, fanout, routeState, config.id).catch(swallowError)
   /* v8 ignore next 3 */
   const staleTurnSweep = setInterval(() => {
@@ -324,6 +328,9 @@ export const makeCodevisorServerApp = (
       unsubscribeMcpChanges?.()
       webSocketServer.close()
       void services.mcp?.close().catch(swallowError)
+      services.execTasks?.closeAll()
+      services.workspaceSyncs?.close()
+      services.orphanSweep?.close()
       await sharedAccountReconcile
       await closeTerminalTitles()
       await workspaceGit?.close()

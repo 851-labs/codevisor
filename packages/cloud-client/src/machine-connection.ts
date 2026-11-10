@@ -220,7 +220,7 @@ export class CloudMachineConnection {
         this.#receiver.dropPeer(frame.peerId)
         return
       case "presence":
-        this.#peers.presence(frame.machine)
+        this.#peers.presence(frame.machine, frame.removed === true)
         return
       case "machine-reset":
         this.#peers.reset(frame.machineId)

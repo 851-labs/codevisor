@@ -80,7 +80,7 @@ public struct FleetStatusMark: View {
         .accessibilityLabel("\(status.label). Show details")
         .fleetBlockedDetails(item: $presented)
       } else {
-        mark("exclamationmark.circle.fill", .orange)
+        FleetStatusReasonButton(label: status.label, reason: helpText)
       }
     case .quiet:
       mark("circle.fill", Color.tertiaryLabelColor.opacity(0.5))
@@ -97,5 +97,42 @@ public struct FleetStatusMark: View {
   private var helpText: String {
     guard let reason = status.reason, !reason.isEmpty else { return status.label }
     return reason
+  }
+}
+
+private struct FleetStatusReasonButton: View {
+  let label: String
+  let reason: String
+  @State private var isPresented = false
+
+  var body: some View {
+    Button {
+      isPresented = true
+    } label: {
+      Image(systemName: "exclamationmark.circle.fill")
+        .foregroundStyle(.orange)
+    }
+    .buttonStyle(.plain)
+    .help(reason)
+    .accessibilityLabel("\(label). Show details")
+    .popover(isPresented: $isPresented, arrowEdge: .bottom) {
+      VStack(alignment: .leading, spacing: 10) {
+        Text(label).font(.headline)
+        ScrollView {
+          Text(reason)
+            .font(.system(.callout, design: .monospaced))
+            .textSelection(.enabled)
+            .frame(maxWidth: .infinity, alignment: .leading)
+        }
+        .frame(maxHeight: 160)
+        HStack {
+          Spacer()
+          Button("Copy") { PlatformPasteboard.copy(reason) }
+        }
+      }
+      .padding(16)
+      .frame(width: 320)
+      .presentationCompactAdaptation(.popover)
+    }
   }
 }

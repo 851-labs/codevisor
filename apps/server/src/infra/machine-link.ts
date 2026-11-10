@@ -24,12 +24,7 @@ export interface MachineLinkOptions {
 
 export interface MachineLink {
   readonly list: () => Promise<ReadonlyArray<MachineSummary>>
-  readonly resolve: (
-    machine: string
-  ) =>
-    | "self"
-    | { readonly id: string; readonly name: string; readonly deviceId: string }
-    | undefined
+  readonly resolve: (machine: string) => "self" | ResolvedMachine | undefined
   readonly invoke: (
     machine: string,
     path: string,
@@ -38,6 +33,14 @@ export interface MachineLink {
     signal?: AbortSignal
   ) => Promise<unknown>
   readonly machineIdOf: (caller: ChannelPeer) => string | undefined
+  readonly isGone: (machineId: string) => boolean
+}
+
+export interface ResolvedMachine {
+  readonly id: string
+  readonly name: string
+  readonly deviceId: string
+  readonly isSandbox?: boolean
 }
 
 interface Peer {
@@ -190,6 +193,10 @@ export const makeMachineLink = (options: MachineLinkOptions): MachineLink => {
 
   return {
     machineIdOf,
+    isGone: (machineId) =>
+      cloud.machines() !== undefined &&
+      machineId !== self.id &&
+      !peers().some((peer) => peer.id === machineId),
     list: () =>
       Promise.resolve([
         { id: self.id, name: self.name(), os: self.os, online: true, isCurrent: true },
@@ -198,7 +205,12 @@ export const makeMachineLink = (options: MachineLinkOptions): MachineLink => {
     resolve: (machine) => {
       const found = find(machine)
       if (found === undefined || found === "self") return found
-      return { id: found.id, name: found.name, deviceId: found.presence.deviceId }
+      return {
+        id: found.id,
+        name: found.name,
+        deviceId: found.presence.deviceId,
+        ...(found.presence.ephemeral === undefined ? {} : { isSandbox: true })
+      }
     },
     invoke: async (machine, path, args, origin, signal) => {
       const peer = find(machine)

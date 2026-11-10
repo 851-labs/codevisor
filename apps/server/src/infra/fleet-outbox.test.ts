@@ -30,6 +30,7 @@ const recordingLink = (answer: (attempt: Attempt) => Promise<unknown>) => {
     list: async () => [],
     resolve: () => undefined,
     machineIdOf: () => undefined,
+    isGone: () => false,
     invoke: (machine, _path, args, _origin, signal) => {
       const attempt = { machine, args, signal }
       attempts.push(attempt)

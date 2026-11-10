@@ -16,6 +16,7 @@ import {
   type WorkspaceRuntime
 } from "./server-workspace-effects.js"
 import { clearStoppedTasks } from "./stopped-tasks.js"
+import { stopWorkspaceExecTasks } from "./workspace-exec-tasks.js"
 import { withWorktreeLifecycle } from "./worktree-lifecycle.js"
 
 export interface ArchiveJobs {
@@ -92,6 +93,8 @@ export const archiveWorkspaceAndWait = (
   return queue.enqueue(() =>
     withWorktreeLifecycle(services, workspace.rootDirectory ?? workspace.id, async () => {
       if ((await findWorkspace(services, workspace.id))?.isArchived === false) return
+      await services.workspaceSyncs?.stopAll(workspace.id)
+      await stopWorkspaceExecTasks(services, workspace.id)
       if (runtime !== undefined) await retireRuntime(services, fanout, config.id, runtime)
       const archived = await archiveWorkspaceWorktree(services, config.id, workspace)
       queue.track(archived.purged)

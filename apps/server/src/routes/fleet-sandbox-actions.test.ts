@@ -20,7 +20,8 @@ const startReceiver = async (sandboxes: CodevisorServerServices["sandboxes"]) =>
       list: () => Promise.resolve([]),
       resolve: () => undefined,
       invoke: () => Promise.reject(new Error("unused")),
-      machineIdOf: (peer) => (peer.deviceId === caller.deviceId ? origin.machineId : undefined)
+      machineIdOf: (peer) => (peer.deviceId === caller.deviceId ? origin.machineId : undefined),
+      isGone: () => false
     },
     ...(sandboxes === undefined ? {} : { sandboxes })
   })

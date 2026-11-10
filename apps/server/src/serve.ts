@@ -41,6 +41,7 @@ import { listenPortArgs } from "./infra/listen-port.js"
 import { guessMachineIcon } from "./infra/machine-icon.js"
 import { makeMachineStatsSampler } from "./infra/machine-stats.js"
 import { makeOpenCodeSetup, openCodeAccountContexts } from "./infra/opencode-setup.js"
+import { makeRemoteWorkServices } from "./infra/remote-work.js"
 import { acquireServerLease, type ServerLease } from "./infra/server-lease.js"
 import { mcpCredentialVault } from "./infra/shared-account-storage.js"
 import { makeSharedAccounts, type SharedAccounts } from "./infra/shared-accounts.js"
@@ -424,6 +425,10 @@ export const runServe = (
         linkPreviews: makeLinkPreviewStore({ dir: join(dirname(databasePath), "link-previews") }),
         machineStats: makeMachineStatsSampler(),
         machines: machineLink,
+        ...makeRemoteWorkServices(dirname(databasePath), machineLink, {
+          id: serverId,
+          name: () => machine.name
+        }),
         machineRoles,
         machineEnrollment,
         fleetTickets,

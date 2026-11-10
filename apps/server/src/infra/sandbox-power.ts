@@ -209,7 +209,7 @@ const noteActivity = async (
   machine: PlacedMachine,
   power: SandboxPowerState
 ): Promise<NotedActivity> => {
-  const seen = await chatActivity(deps, machine)
+  const seen = await machineActivity(deps, machine)
   if (seen > (power.activity.get(machine.id) ?? 0)) power.activity.set(machine.id, seen)
   const lastActive = lastActiveOf(machine, power)
   if (!activityIsStale(machine, lastActive)) return { machine, lastActive }
@@ -219,13 +219,30 @@ const noteActivity = async (
   return { machine: noted, lastActive }
 }
 
-const chatActivity = async (deps: SandboxDeps, machine: PlacedMachine): Promise<number> => {
+const machineActivity = async (deps: SandboxDeps, machine: PlacedMachine): Promise<number> => {
   const listed = await deps.remoteTools
     .call(machine.machineId, "codevisor.agents.list", {})
     .catch(() => undefined)
   const agents = agentsIn(listed)
   if (agents.some((agent) => RUNNING_TURN_STATES.has(agent.state))) return deps.clock.now()
-  return Math.max(0, ...agents.map((agent) => timeOf(agent.updatedAt)))
+  const commands = await commandActivity(deps, machine)
+  if (commands.running) return deps.clock.now()
+  return Math.max(commands.lastActive, ...agents.map((agent) => timeOf(agent.updatedAt)))
+}
+
+const commandActivity = async (
+  deps: SandboxDeps,
+  machine: PlacedMachine
+): Promise<{ readonly running: boolean; readonly lastActive: number }> => {
+  const answer = await deps.remoteTools
+    .call(machine.machineId, "codevisor.shell.activity", {})
+    .catch(() => undefined)
+  if (!isRecord(answer)) return { running: false, lastActive: 0 }
+  const lastActiveAt = answer["lastActiveAt"]
+  return {
+    running: typeof answer["running"] === "number" && answer["running"] > 0,
+    lastActive: timeOf(typeof lastActiveAt === "string" ? lastActiveAt : undefined)
+  }
 }
 
 const lastActiveOf = (machine: Sandbox, power: SandboxPowerState): number =>

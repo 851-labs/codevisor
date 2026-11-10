@@ -93,7 +93,8 @@ export const removeHubMachine = (
   }
   hub.net.broadcastMachineNotice({
     t: "presence",
-    machine: machinePresence({ ...existing, last_seen_at: isoTimestamp() }, false)
+    machine: machinePresence({ ...existing, last_seen_at: isoTimestamp() }, false),
+    removed: true
   })
   return true
 }

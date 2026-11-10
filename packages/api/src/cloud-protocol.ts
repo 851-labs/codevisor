@@ -259,7 +259,8 @@ export const HubWelcome = Schema.Struct({
 
 export const HubPresence = Schema.Struct({
   t: Schema.Literal("presence"),
-  machine: CloudMachinePresence
+  machine: CloudMachinePresence,
+  removed: Schema.optional(Schema.Boolean)
 })
 
 export const HubErrorCode = Schema.Literals([

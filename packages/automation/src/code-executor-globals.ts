@@ -35,10 +35,36 @@ export const machinesAndClientsSource: ReadonlyArray<string> = [
   "  });",
   "};",
   "const __makeClients = (target, machineInfo) => ({ list: async () => ({ items: __itemsOf(await __callTool('codevisor.clients.list', {}, target)).filter((raw) => raw && typeof raw === 'object').map((raw) => __makeClient(raw, target, machineInfo)) }) });",
+  "const __syncMachine = (args) => {",
+  "  const value = typeof args === 'string' || (args && typeof args.machineId === 'string') ? args : args?.machine;",
+  "  const machine = value && typeof value === 'object' ? value.machineId : value;",
+  "  if (typeof machine !== 'string' || machine === '') throw new Error('Pass a machine: a Machine, its machineId, or its name');",
+  "  return machine;",
+  "};",
+  "const __pendingSyncNote = async (args, info) => {",
+  "  if (!args || typeof args.cwd !== 'string') return undefined;",
+  "  let syncs;",
+  "  try { syncs = __itemsOf(await __callTool('codevisor.workspaces.syncs', {})); } catch { return undefined; }",
+  "  const sync = syncs.find((item) => item?.machine?.machineId === info.machineId && typeof item.path === 'string' && (args.cwd === item.path || args.cwd.startsWith(item.path + '/')));",
+  "  if (!sync || sync.pendingChanges !== true) return undefined;",
+  "  return 'Some of your edits had not reached ' + (info.name ?? info.machineId) + ' when this ran; call workspace.waitForSync first next time';",
+  "};",
+  "const __machineExec = async (args, target, info) => {",
+  "  const note = await __pendingSyncNote(args, info);",
+  "  const result = await __callTool('codevisor.shell.exec', args, target);",
+  "  return note === undefined || !result || typeof result !== 'object' ? result : { ...result, syncPending: note };",
+  "};",
   "const __makeMachine = (info) => {",
   "  const isCurrent = info.isCurrent === true || info.machineId === __currentMachineInfo.machineId;",
   "  const target = isCurrent ? undefined : { machine: info.machineId, ...(typeof info.name === 'string' ? { machineName: info.name } : {}) };",
-  "  return __hidden({ ...info, isCurrent }, { tools: __makeToolsProxy([], target), clients: __makeClients(target, { machineId: info.machineId, name: info.name }), agents: __makeToolsProxy(['codevisor', 'agents'], target) });",
+  "  return __hidden({ ...info, isCurrent }, {",
+  "    tools: __makeToolsProxy([], target),",
+  "    clients: __makeClients(target, { machineId: info.machineId, name: info.name }),",
+  "    agents: __makeToolsProxy(['codevisor', 'agents'], target),",
+  "    exec: (args = {}) => __machineExec(args, target, info),",
+  "    readFile: (args = {}) => __callTool('codevisor.files.read', typeof args === 'string' ? { path: args } : args, target),",
+  "    taskStop: (args = {}) => __callTool('codevisor.shell.task_stop', typeof args === 'string' ? { taskId: args } : args, target)",
+  "  });",
   "};",
   "const __machineLabel = (machine) => (machine.name ?? machine.machineId) + ' (' + machine.machineId + ')';",
   "const __listMachines = async (internal) => __itemsOf(await __callTool('codevisor.machines.list', {}, internal ? { internal: true } : undefined)).filter((raw) => raw && typeof raw === 'object' && typeof raw.machineId === 'string').map(__makeMachine);",
@@ -57,6 +83,13 @@ export const machinesAndClientsSource: ReadonlyArray<string> = [
   "    if (matches.length === 0) throw new Error('No machine matches \"' + wanted + '\". Machines: ' + (all.map(__machineLabel).join(', ') || 'none'));",
   "    throw new Error('\"' + wanted + '\" matches several machines: ' + matches.map(__machineLabel).join(', ') + '. Pass a machine id.');",
   "  }",
+  "};",
+  "const workspace = {",
+  "  syncs: async () => ({ items: __itemsOf(await __callTool('codevisor.workspaces.syncs', {})) }),",
+  "  startSync: (args) => __callTool('codevisor.workspaces.sync_start', { machine: __syncMachine(args) }),",
+  "  syncStatus: (args) => __callTool('codevisor.workspaces.sync_status', { machine: __syncMachine(args) }),",
+  "  waitForSync: (args) => __callTool('codevisor.workspaces.sync_wait', { machine: __syncMachine(args), ...(typeof args?.timeoutMs === 'number' ? { timeoutMs: args.timeoutMs } : {}) }),",
+  "  stopSync: (args) => __callTool('codevisor.workspaces.sync_stop', { machine: __syncMachine(args) })",
   "};",
   "const __searchTools = async (args = {}) => {",
   "  const { machines: scope, ...query } = args && typeof args === 'object' ? args : {};",
@@ -94,6 +127,20 @@ interface Machine {
   }
   agents: { [tool: string]: (args?: object) => Promise<any>; debug: { [tool: string]: (args?: object) => Promise<any> } } // machine.agents.start(args) is machine.tools.codevisor.agents.start(args)
   clients: { list(): Promise<{ items: Client[] }> } // Codevisor app windows attached to that machine
+  exec(args: { command: string; description?: string; timeout?: number; run_in_background?: boolean; cwd?: string }): Promise<{ exitCode: number | null; output: string; timedOut: boolean; durationMs: number; outputPath: string; syncPending?: string } | { taskId: string; outputPath: string }> // a shell command on that machine; timeout ms (default 120000, max 600000); background tasks send an exec.task_finished event
+  readFile(args: string | { path: string; offset?: number; limit?: number }): Promise<{ content: string; startLine: number; endLine: number; totalLines: number }>
+  taskStop(args: string | { taskId: string }): Promise<object>
+}
+declare const workspace: { // this chat's workspace, synced one way to other machines
+  startSync(machine: Machine | string): Promise<WorkspaceSync> // keeps syncing in the background until stopSync or archive
+  syncStatus(machine: Machine | string): Promise<WorkspaceSync>
+  waitForSync(machine: Machine | string | { machine: Machine | string; timeoutMs?: number }): Promise<WorkspaceSync & { timedOut: boolean }>
+  stopSync(machine: Machine | string): Promise<{ stopped: true }> // also deletes the copy on that machine
+  syncs(): Promise<{ items: WorkspaceSync[] }>
+}
+interface WorkspaceSync {
+  machine: { machineId: string; name: string }; path?: string; state: "syncing" | "synced" | "failed"; pendingChanges: boolean
+  lastSyncedAt?: string; lastSync?: { files: number; bytes: number; ms: number }; skipped: string[]; error?: string
 }
 type SearchItem =
   | { kind: "tool"; path: string; name: string; description?: string; machine?: { machineId: string; name: string } }
@@ -147,6 +194,22 @@ export const SANDBOX_GLOBALS: ReadonlyArray<SandboxGlobal> = [
     signature: "machine.clients.list(): Promise<{ items: Client[] }>",
     description:
       "The Codevisor app windows attached to that machine, to see what they show or open a chat, page, or layout.",
+    gate: "codevisor"
+  },
+  {
+    name: "machine.exec",
+    signature:
+      "machine.exec({ command, description?, timeout?, run_in_background?, cwd? }), machine.readFile(path), machine.taskStop(taskId)",
+    description:
+      "Run shell commands on any of the user's machines, read files there, and stop background tasks. Pass a workspace sync's path as cwd to run against your workspace.",
+    gate: "codevisor"
+  },
+  {
+    name: "workspace.startSync",
+    signature:
+      "workspace.startSync(machine), workspace.syncStatus(machine), workspace.waitForSync(machine), workspace.stopSync(machine), workspace.syncs()",
+    description:
+      "Sync this chat's workspace one way to another machine in the background so commands there see your edits; stopSync deletes the copy.",
     gate: "codevisor"
   },
   {

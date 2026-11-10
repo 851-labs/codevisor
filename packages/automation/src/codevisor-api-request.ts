@@ -168,6 +168,7 @@ const bodyPayload = (
   const payload = definedArguments(args, bodyPropertyNames(spec.body!))
   if (spec.name === "agents.message") return { ...payload, fromSessionId: context.sessionId }
   if (spec.name === "agents.start") return startPayload(payload, context)
+  if (spec.name === "shell.exec") return { ...payload, callerAgentId: context.sessionId }
   if (spec.name === "bots.create") return { ...BOT_TOOL_DEFAULTS, ...payload }
   return payload
 }

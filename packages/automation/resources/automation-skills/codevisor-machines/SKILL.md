@@ -1,6 +1,6 @@
 ---
 name: codevisor-machines
-description: Use when the user mentions another computer or machine by name, when a needed tool exists only on another machine (e.g. the MacBook's simulator or Xcode from a chat on the Mac Studio), when work should run on a different machine or a throwaway sandbox (E2B, Modal, Vercel, Daytona, Tart, Apple Containers), or when a server or computer should become, or stop being, a Codevisor machine.
+description: Use when the user mentions another computer or machine by name, when a needed tool exists only on another machine (e.g. the MacBook's simulator or Xcode from a chat on the Mac Studio), when a command must run on another machine against your workspace (Swift tests on a Mac from a Linux chat), when work should run on a different machine or a throwaway sandbox (E2B, Modal, Vercel, Daytona, Tart, Apple Containers), or when a server or computer should become, or stop being, a Codevisor machine.
 ---
 
 # Codevisor machines
@@ -21,7 +21,54 @@ Every call goes through a machine handle. `machines.current` is the machine this
 - `m.agents.*` starts and coordinates agents on that machine (see `codevisor-agents`). `m.tools.codevisor.*` controls the rest of Codevisor there.
 - `m.agents.start({ noProject: true, isolation: "project", title, prompt })` starts a throwaway chat on `m` in a fresh empty folder, without adding a project there. Use it when you just need that machine's tools, or it has no projects.
 - `m.clients.list()` lists apps connected to that machine (see `codevisor-clients`).
+- `m.exec(…)`, `m.readFile(…)` and `m.taskStop(…)` run shell commands and read files on `m` (see below).
 - `machines.current.tools.search({ query, machines: "all" })` searches every online machine. Each result has `machine: { machineId, name }`.
+
+## Running commands on a machine
+
+`m.exec` works like a terminal on that machine, with the same options as a local shell tool:
+
+```js
+;async () => {
+  const mac = await machines.get("macbook")
+  const result = await mac.exec({
+    command: "xcrun simctl list devices booted",
+    description: "List booted simulators"
+  })
+  return result // { exitCode, output, timedOut, durationMs, outputPath }
+}
+```
+
+- `command` and a short `description`; `timeout` in ms (default 120000, max 600000); `cwd` (default the home folder there).
+- `output` combines stdout and stderr and keeps only the last 30000 characters. The full log is at `outputPath`: read it with `mac.readFile({ path, offset?, limit? })`, which returns numbered lines (2000 by default).
+- `run_in_background: true` returns `{ taskId, outputPath }` at once. When the task exits you get an `exec.task_finished` event with the end of its output. Stop it with `mac.taskStop(taskId)`; `mac.tools.codevisor.shell.task_get({ taskId })` reads its state. It keeps running across turns, shows in the user's inspector (where they can stop it), and is stopped when the workspace is archived.
+- Commands run as the user in a login shell, with nothing synced. To run against your own files, sync the workspace first.
+
+## Syncing your workspace to another machine
+
+`workspace.startSync(machine)` copies this chat's workspace to another machine and keeps it up to date in the background, through later turns and restarts, until you call `workspace.stopSync(machine)` or the workspace is archived. Run commands there with `cwd` set to the copy's `path`:
+
+```js
+;async () => {
+  const mac = await machines.get("macbook")
+  const sync = await workspace.startSync(mac) // { path, state: "syncing" }
+  await workspace.waitForSync(mac) // returns once your latest edits are there
+  return mac.exec({
+    command: "swift test",
+    cwd: sync.path,
+    description: "Run Swift tests",
+    timeout: 600000
+  })
+}
+```
+
+- Sync is one way and follows `.gitignore`: edits here reach the copy within about a second, and files over 50 MB are skipped (listed in `skipped`). Files the other machine creates, like build output or `node_modules`, stay there and are never sent back. Bring results back with `mac.readFile`.
+- The copy starts with source files only, like a fresh clone: run the project's setup there once (`bun install`, resolving packages).
+- After editing, call `workspace.waitForSync(machine)` before a command that must see the edit. `exec` adds a `syncPending` note when it ran in a copy that was behind.
+- `workspace.syncStatus(machine)` gives `state` (`syncing`, `synced`, `failed`), `pendingChanges`, `lastSyncedAt`, `lastSync`, `skipped` and `error`. `workspace.syncs()` lists every machine the workspace syncs to.
+- Syncing to a sandbox doesn't work: `workspace.startSync(sandbox)` fails with code `sandbox_target`. To run something on a sandbox, use `exec` there without a synced copy.
+- Syncing from a sandbox does work: when your chat runs on a sandbox, `workspace.startSync(machine)` copies its workspace to any of the user's own (non-sandbox) machines, like their Mac.
+- `workspace.stopSync(machine)` stops syncing and deletes the copy on that machine (later, if it's offline). Stop it when the work there is done; the user can also remove it from the inspector.
 
 ## Disconnects
 
@@ -107,5 +154,7 @@ The CLI does the same things through the same routes: `codevisor machines add|in
 
 - Repeating a side-effecting call after an `"in-flight"` disconnect without checking whether it already ran.
 - Starting long work on a machine without checking `online` first.
+- Running a command in a synced copy right after an edit without `workspace.waitForSync(machine)`, then debugging old code.
+- Expecting files built on the other machine to appear in your workspace; read them with `m.readFile` instead.
 - Passing `confirm: true` to `machines.remove`, `sandboxes.destroy`, or a `*_delete` tool before the user has approved it.
 - Leaving a sandbox running after its work is pushed. It costs the user money until it is archived or destroyed.
