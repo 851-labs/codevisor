@@ -7,6 +7,17 @@ class TranscriptMountedRowHost: NSView {
   var onHeightChange: ((CGFloat) -> Void)?
   var onPresentationReady: (() -> Void)?
 
+  override init(frame frameRect: NSRect) {
+    super.init(frame: frameRect)
+    postsFrameChangedNotifications = false
+    postsBoundsChangedNotifications = false
+  }
+
+  @available(*, unavailable)
+  required init?(coder _: NSCoder) {
+    fatalError("init(coder:) has not been implemented")
+  }
+
   var isPresentationReady: Bool { false }
   var isAttachmentGeometryReady: Bool { true }
   var needsRunwayPreparation: Bool { !isPresentationReady }

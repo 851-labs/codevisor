@@ -116,7 +116,7 @@ extension VirtualizedTranscriptScrollView {
     }
     guard let row = rowByKey[key] else { return false }
 
-    let host = parkedHosts.take(for: key) ?? TranscriptRowHost(parent: parent)
+    let host = parkedHosts.take(for: key) ?? parkedHosts.takeSpare() ?? TranscriptRowHost(parent: parent)
     host.prepareForMountedRow()
     host.onMeasuredHeight = { [weak self] measurement in
       self?.recordMeasuredHeight(measurement)
@@ -203,7 +203,7 @@ extension VirtualizedTranscriptScrollView {
 
   func park(_ host: TranscriptRowHost, for key: String) {
     guard rowByKey[key] != nil else {
-      host.detachFromParent()
+      parkedHosts.recycle(host)
       return
     }
     parkedHosts.insert(host, for: key)

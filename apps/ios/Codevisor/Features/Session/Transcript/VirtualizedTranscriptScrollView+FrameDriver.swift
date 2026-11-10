@@ -171,5 +171,9 @@ extension VirtualizedTranscriptScrollView: TranscriptFrameAdapter {
   }
 
   func finishPresentationFrame() {
+    if !isNativeScrollInteractionActive {
+      parkedHosts.drainRetiringHosts(limit: 1)
+    }
+    if parkedHosts.hasRetiringHosts { requestDisplayFrame() }
   }
 }

@@ -35,6 +35,18 @@ extension VirtualizedTranscriptScrollView {
     )
   }
 
+  func resizeDocumentView() {
+    let frame = CGRect(
+      x: 0,
+      y: 0,
+      width: max(1, contentView.bounds.width),
+      height: documentHeight(rowsHeight: virtualLayout.totalHeight)
+    )
+    guard transcriptDocumentView.frame != frame else { return }
+
+    transcriptDocumentView.frame = frame
+  }
+
   func documentHeight(rowsHeight: CGFloat) -> CGFloat {
     paginationHeaderLayout.documentHeight(topPadding: transcriptTopPadding, rowsHeight: rowsHeight)
   }
