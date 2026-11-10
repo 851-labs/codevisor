@@ -175,7 +175,10 @@ extension VirtualizedTranscriptScrollView {
       )
     }
 
+    if remountParkedHost(for: row, at: index) { return true }
+
     let host = hostPool.takeHostedRow() ?? TranscriptRowHost(frame: .zero)
+    host.representedRow = row
     host.prepareForMountedRow()
     observeRowPresentation(host, for: key)
     transcriptDocumentView.addSubview(host)
@@ -204,6 +207,25 @@ extension VirtualizedTranscriptScrollView {
     if requiresImmediatePresentation {
       host.prepareForImmediatePresentation()
     }
+    sendTransitions.hostDidMount(host, key: key)
+    return true
+  }
+
+  func remountParkedHost(for row: TranscriptVirtualRow, at index: Int) -> Bool {
+    let key = row.layoutKey
+    guard let host = hostPool.takeParked(for: key) else { return false }
+    guard host.representedRow?.content == row.content,
+      host.representedRow?.measurementRevision == row.measurementRevision
+    else {
+      hostPool.retire(host)
+      return false
+    }
+
+    observeRowPresentation(host, for: key)
+    transcriptDocumentView.addSubview(host)
+    mountedHosts[key] = host
+    position(host: host, at: index)
+    host.syncContentWidth()
     sendTransitions.hostDidMount(host, key: key)
     return true
   }
@@ -381,8 +403,17 @@ extension VirtualizedTranscriptScrollView {
       )
       hostPool.recycle(evicted)
     } else if let hosted = host as? TranscriptRowHost {
-      hostPool.retire(hosted)
+      parkOrRetire(hosted, for: key)
     }
+  }
+
+  func parkOrRetire(_ host: TranscriptRowHost, for key: String) {
+    guard host.isPresentationReady, rowByKey[key]?.id.isCacheableSettledRow == true else {
+      hostPool.retire(host)
+      return
+    }
+
+    hostPool.park(host, for: key)
   }
 
   func refreshMountedRootViews() {
@@ -440,6 +471,7 @@ extension VirtualizedTranscriptScrollView {
           knownHeight: knownHeight
         )
       } else if let hosted = host as? TranscriptRowHost {
+        hosted.representedRow = row
         hosted.rootView = measuredRootView(for: row)
       }
     }

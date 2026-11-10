@@ -10,6 +10,7 @@ final class TranscriptRowHost: TranscriptMountedRowHost {
   private var contentHost: NSView { contentController.view }
   private lazy var contentWidthConstraint = contentHost.widthAnchor.constraint(equalToConstant: 1)
   private lazy var contentHeightConstraint = contentHost.heightAnchor.constraint(equalToConstant: 1)
+  var representedRow: TranscriptVirtualRow?
   private var presentationReady = false
   private var attachmentGeometryReady = true
   private(set) var hasAttemptedPresentation = false

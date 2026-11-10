@@ -28,6 +28,7 @@ extension VirtualizedTranscriptScrollView: TranscriptSurfaceOwner, TranscriptSur
     previousRowsByKey: [String: TranscriptVirtualRow], layoutChanged: Bool
   ) {
     retireRemovedMountedHosts(previousRowsByKey: previousRowsByKey)
+    if layoutChanged { hostPool.retireParkedHosts() }
   }
 
   func reconcileChangedActiveHosts(previousRows: [TranscriptVirtualRow]) {
