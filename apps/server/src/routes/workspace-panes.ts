@@ -24,6 +24,7 @@ import {
   run,
   writeJson
 } from "../server-context.js"
+import { assertNotOwnedByBot } from "./bot-guards.js"
 import type { RouteContext } from "./route-context.js"
 import { routeParam } from "./route-params.js"
 import { createSessionIfMissing } from "./session-workspace.js"
@@ -132,12 +133,15 @@ const closePane = async (route: RouteContext, params: RouteParams): Promise<bool
 const upsertPane = async (route: RouteContext, params: RouteParams): Promise<boolean> => {
   const { services, request, response } = route
   const payload = await readSchema(request, UpsertWorkspacePaneRequestSchema)
-  const { workspaceId, paneId } = paneIds(params)
-  refuseNonUuidPaneId(paneId)
-  refuseMismatchedBodyId("Pane", payload, paneId)
-  requireWorkspace(await findWorkspace(services, workspaceId), workspaceId)
+  const ids = paneIds(params)
+  refuseNonUuidPaneId(ids.paneId)
+  refuseMismatchedBodyId("Pane", payload, ids.paneId)
+  requireWorkspace(await findWorkspace(services, ids.workspaceId), ids.workspaceId)
+  await refuseNewPaneInBotWorkspace(services, ids)
 
-  const pane = await run(services.db.upsertWorkspacePane(workspaceId, { ...payload, id: paneId }))
+  const pane = await run(
+    services.db.upsertWorkspacePane(ids.workspaceId, { ...payload, id: ids.paneId })
+  )
   await publishPaneUpdated(route, pane)
   writeJson(response, 200, pane)
   return true
@@ -173,6 +177,19 @@ const paneIds = (params: RouteParams): PaneIds => ({
 
 const refuseNonUuidPaneId = (paneId: string): void => {
   if (!isUuid(paneId)) throw new HttpFailure(400, `Pane id must be a UUID: ${paneId}`)
+}
+
+const refuseNewPaneInBotWorkspace = async (
+  services: RouteContext["services"],
+  ids: PaneIds
+): Promise<void> => {
+  if (hasPane(await run(services.db.listWorkspacePanes), ids)) return
+
+  await assertNotOwnedByBot(
+    services,
+    { workspaceId: ids.workspaceId },
+    "open a new tab in this workspace"
+  )
 }
 
 const promotedWorkspace = (workspaces: ReadonlyArray<Workspace>, ids: PaneIds): Workspace => {

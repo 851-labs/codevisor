@@ -244,7 +244,7 @@ export const codevisorServerApiTools: ReadonlyArray<CodevisorApiToolSpec> = [
   ),
   apiTool(
     "workspaces.pane_upsert",
-    "Create or replace a shared pane identity. Built-ins use providerId codevisor and paneType chat, terminal, browser, or markdown. A chat references resourceKind session and its session id; markdown references resourceKind file and its path. Plugins use providerId plugin:<plugin id from plugins.list> and a paneType from that plugin's capabilities.panes. Use clients.navigate to select the synchronized pane in a particular client.",
+    "Create or replace a shared pane identity. Built-ins use providerId codevisor and paneType chat, terminal, browser, or markdown. A chat references resourceKind session and its session id; markdown references resourceKind file and its path. Plugins use providerId plugin:<plugin id from plugins.list> and a paneType from that plugin's capabilities.panes. Use clients.navigate to select the synchronized pane in a particular client. A bot's own chat workspace refuses new panes; the workspaces of agents it starts take them.",
     "PUT",
     "/v1/workspaces/:workspaceId/panes/:paneId",
     { body: UpsertWorkspacePaneRequest }
@@ -355,7 +355,7 @@ export const codevisorServerApiTools: ReadonlyArray<CodevisorApiToolSpec> = [
       "Set providerId to `plugin:<id>` with the plugin's id from plugins.list, and paneType to " +
       "one of that plugin's capabilities.panes types. Omit metadata. paneId is " +
       "the stable pane identity: pass a new lowercase UUID to open a " +
-      "new pane, or an existing pane's id to replace it.",
+      "new pane, or an existing pane's id to replace it. A bot's own chat workspace refuses new panes; the workspaces of agents it starts take them.",
     "PUT",
     "/v1/workspaces/:workspaceId/panes/:paneId",
     {
