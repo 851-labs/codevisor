@@ -11,20 +11,17 @@ extension SessionContainerView {
     floatingLayout.floating.contains(leafId)
   }
 
-  @ViewBuilder
-  func floatingPaneOverlay(chatLeaf: (id: UUID, state: PaneGroupState)?) -> some View {
-    if chatLeaf == nil {
-      FloatingPaneOverlay(
-        panes: floatingPanesInSelectedTab,
-        group: { configuredCenterModel(leafId: $0) },
-        title: paneTitle,
-        actions: floatingPaneActions
-      )
-    }
+  var floatingPaneOverlay: some View {
+    FloatingPaneOverlay(
+      panes: floatingPanesInSelectedTab,
+      group: { configuredCenterModel(leafId: $0) },
+      title: paneTitle,
+      actions: floatingPaneActions
+    )
   }
 
   func floatLeaf(_ leafId: UUID) {
-    guard !isSinglePane, let tab = selectedWorkspace.selectedCenterTab,
+    guard let tab = selectedWorkspace.selectedCenterTab,
       floatingLayout.canFloat(leafId, in: tab.root)
     else { return }
 

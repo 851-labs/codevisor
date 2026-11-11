@@ -80,17 +80,7 @@ extension SessionContainerView {
           ))
       }
       if descriptor.kind == .newTab {
-        return AnyView(
-          NewTabPageView(
-            paneId: descriptor.id,
-            group: model,
-            onNewChat: { [weak model] in
-              createChat(convertingPlaceholder: descriptor.id, in: model)
-            },
-            client: environment.machines.client(for: workspace.serverId),
-            iconCacheNamespace: workspace.serverId,
-            machineId: workspace.serverId
-          ))
+        return AnyView(newPanePage(for: descriptor, in: model))
       }
       return AnyView(
         ChatPaneContentView(
@@ -105,6 +95,21 @@ extension SessionContainerView {
           role: chatPaneRole(for: descriptor)
         ))
     }
+  }
+
+  private func newPanePage(for descriptor: PaneDescriptorState, in model: PaneGroupModel?) -> NewTabPageView {
+    let workspace = selectedWorkspace
+    return NewTabPageView(
+      paneId: descriptor.id,
+      group: model,
+      onNewChat: { [weak model] in
+        createChat(convertingPlaceholder: descriptor.id, in: model)
+      },
+      agentChats: botAgentChats(replacing: descriptor.id),
+      client: environment.machines.client(for: workspace.serverId),
+      iconCacheNamespace: workspace.serverId,
+      machineId: workspace.serverId
+    )
   }
 
   var focusedChatCandidate: UUID? {

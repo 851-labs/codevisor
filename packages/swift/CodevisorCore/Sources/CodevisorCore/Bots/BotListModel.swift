@@ -4,12 +4,16 @@ import Observation
 @MainActor
 @Observable
 public final class BotListModel {
-  public private(set) var recordsByServer: [String: [ServerBot]] = [:]
+  public private(set) var recordsByServer: [String: [ServerBot]] = [:] {
+    didSet { navigationStore?.keepPanesOnDevice(in: Set(bots.map(\.workspaceId))) }
+  }
   @ObservationIgnored private let machines: MachineController
+  @ObservationIgnored private weak var navigationStore: NavigationStore?
   @ObservationIgnored private var refreshGenerations: [String: UInt64] = [:]
 
-  public init(machines: MachineController) {
+  public init(machines: MachineController, navigationStore: NavigationStore? = nil) {
     self.machines = machines
+    self.navigationStore = navigationStore
   }
 
   public var bots: [Bot] {

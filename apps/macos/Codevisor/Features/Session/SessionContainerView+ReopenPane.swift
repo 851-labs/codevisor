@@ -21,7 +21,7 @@ extension SessionContainerView {
 
   func reopenClosedPane() {
     var workspace = selectedWorkspace
-    while !isSinglePane, let record = store.popClosedPane(workspaceId: workspace.id) {
+    while !isTabless, let record = store.popClosedPane(workspaceId: workspace.id) {
       if record.descriptor.kind == .chat,
         let chatId = record.descriptor.chatSessionId,
         workspace.tabId(containingChat: chatId) != nil

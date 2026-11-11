@@ -3,7 +3,7 @@ import SwiftUI
 
 extension SessionContainerView {
   func openInspectorDestination(_ destination: WorkspaceInspectorView.Destination) {
-    guard !isSinglePane else { return botPageInspectorOpener.open(destination) }
+    guard !isTabless else { return botPageInspectorOpener.open(destination) }
     switch destination {
     case let .pullRequest(url), let .link(url):
       let id = UUID()

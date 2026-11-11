@@ -73,7 +73,7 @@ struct WorkspaceChildAgents {
   }
 
   private func canSplit(_ host: Workspace) -> Bool {
-    store.navigationWorkspaceId == host.id && !WorkspaceLayoutPolicy.isSinglePane(host, environment: environment)
+    store.navigationWorkspaceId == host.id
   }
 
   private func parentItems(of workspace: Workspace) -> [WorkspaceSidebarItem] {

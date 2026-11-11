@@ -5,7 +5,7 @@ import SwiftUI
 extension SessionContainerView {
   func openFileDocument(_ target: String, preview: Bool = false, rendered: Bool = false) -> Bool {
     var workspace = selectedWorkspace
-    guard !isSinglePane,
+    guard !isTabless,
       let path = FileDocumentLocation.resolve(
         target, relativeTo: workspace.rootDirectory ?? session?.cwd ?? project.folderURL.path)
     else { return false }

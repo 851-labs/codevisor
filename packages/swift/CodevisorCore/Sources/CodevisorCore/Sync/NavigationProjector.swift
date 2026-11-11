@@ -144,10 +144,16 @@ final class NavigationProjector {
       workspace.centerTabs = stored.tabs.isEmpty ? [WorkspaceTab.placeholder()] : stored.tabs
       workspace.selectedCenterTabId = stored.selectedTabId
     }
-    WorkspacePaneReconciler(records: key.panes, protectedLocalPaneIds: []).reconcile(&workspace)
+    WorkspacePaneReconciler(records: key.panes, protectedLocalPaneIds: localPaneIds(of: workspace, layouts: layouts))
+      .reconcile(&workspace)
     let layout = DeviceLayout(workspace)
     if layout != stored { layouts.setLayout(layout, for: workspace.id) }
     return workspace
+  }
+
+  private func localPaneIds(of workspace: Workspace, layouts: DeviceLayoutStore) -> Set<UUID> {
+    guard layouts.localPaneWorkspaceIds.contains(workspace.id) else { return [] }
+    return Set(workspace.allPanes.map(\.id))
   }
 }
 

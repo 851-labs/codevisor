@@ -4,7 +4,7 @@ import Foundation
 
 extension SessionContainerView {
   var pluginAppPresenter: PluginAppPresenter? {
-    guard !isSinglePane else { return nil }
+    guard !isTabless else { return nil }
 
     return PluginAppPresenter(opensInSplit: true) { resource, chatSessionId, placement in
       openPluginApp(resource, chatSessionId: chatSessionId, placement: placement)

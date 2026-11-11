@@ -44,6 +44,14 @@ public final class NavigationStore {
     rebuild()
   }
 
+  public var deviceLocalWorkspaceIds: Set<UUID> { layouts.localPaneWorkspaceIds }
+
+  public func keepPanesOnDevice(in workspaceIds: Set<UUID>) {
+    guard layouts.keepPanesOnDevice(in: workspaceIds) else { return }
+    projector.reset()
+    rebuild()
+  }
+
   public func hasCache(for machineId: String) -> Bool { cacheSummary[machineId] != nil }
 
   public func isCacheEmpty(for machineId: String) -> Bool { cacheSummary[machineId] ?? true }

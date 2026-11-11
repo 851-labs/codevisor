@@ -24,6 +24,36 @@ extension SessionContainerView {
     focusSelectedCenterPane()
   }
 
+  func botAgentChats(replacing placeholderId: UUID) -> NewPaneAgentChats? {
+    let workspace = selectedWorkspace
+    guard isTabless, let bot = environment.bots.bot(forWorkspace: workspace.id, serverId: workspace.serverId)
+    else { return nil }
+
+    let agents = environment.navigationStore.workspaceEntries.botChildren[bot.id] ?? []
+    return NewPaneAgentChats(chats: agents.compactMap(agentChat)) { chat in
+      openAgentChat(chat, replacing: placeholderId)
+    }
+  }
+
+  private func agentChat(_ agent: WorkspaceSidebarItem) -> NewPaneAgentChats.Chat? {
+    guard let sessionId = agent.routingChatIds.first, let workspace = environment.workspaces.workspace(id: agent.id)
+    else { return nil }
+    return NewPaneAgentChats.Chat(id: sessionId, name: workspace.name)
+  }
+
+  private func openAgentChat(_ chat: NewPaneAgentChats.Chat, replacing placeholderId: UUID) {
+    var workspace = selectedWorkspace
+    let id = UUID()
+    let pane = PaneDescriptorState(
+      id: id, kind: .childAgent, name: chat.name, terminalKey: id.uuidString, chatSessionId: chat.id)
+    guard let replaced = workspace.replacePane(id: placeholderId, with: pane) else { return }
+
+    environment.workspaces.save(workspace)
+    store.reconcileMountedPaneGroups(in: workspace)
+    store.selectDestination(.leaf(replaced.leafId), in: workspace.id)
+    focusSelectedCenterPane()
+  }
+
   private func childAgentAnchor(in workspace: Workspace) -> UUID? {
     guard let tab = workspace.selectedCenterTab, let leafId = tab.resolvedActiveLeafId(preferred: activeLeafId)
     else { return workspace.allPanes.first?.id }
