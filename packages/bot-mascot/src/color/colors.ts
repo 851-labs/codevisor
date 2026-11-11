@@ -57,7 +57,17 @@ const autoColor: Readonly<Record<BotMascotColor, NamedColor>> = {
   sky: "orange",
   tomato: "blue",
   electric: "yellow",
-  dream: "teal"
+  dream: "teal",
+  ruby: "teal",
+  tangerine: "blue",
+  lime: "purple",
+  clover: "pink",
+  aqua: "orange",
+  grape: "yellow",
+  orchid: "green",
+  cocoa: "teal",
+  slate: "orange",
+  classic: "red"
 }
 
 const denim: Readonly<Record<BotMascotColor, string>> = {
@@ -68,7 +78,17 @@ const denim: Readonly<Record<BotMascotColor, string>> = {
   sky: "#3D4152",
   tomato: "#3F5E92",
   electric: "#3D4152",
-  dream: "#4A6FA8"
+  dream: "#4A6FA8",
+  ruby: "#4A6FA8",
+  tangerine: "#4A6FA8",
+  lime: "#4A6FA8",
+  clover: "#4A6FA8",
+  aqua: "#3D4152",
+  grape: "#4A6FA8",
+  orchid: "#4A6FA8",
+  cocoa: "#4A6FA8",
+  slate: "#3D4152",
+  classic: "#4A6FA8"
 }
 
 export interface WearTint {

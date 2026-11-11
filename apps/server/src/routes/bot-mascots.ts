@@ -8,10 +8,12 @@ import type {
   BotMascotSwatch
 } from "@codevisor/api"
 import {
+  botMascotColorRotation,
   botMascotColors,
   botMascotEyewear,
   botMascotHats,
   botMascotSwatches,
+  defaultBotMascotConfig,
   type BotMascotConfig,
   type ColorOption,
   type ItemOption,
@@ -65,7 +67,7 @@ export const routeBotMascots = async (
 }
 
 const requiredConfig = (query: URLSearchParams): BotMascotConfig => {
-  const mascot = mascotFromQuery(query)
+  const mascot = withKnownColor(mascotFromQuery(query))
   const config = mascotConfig(mascot)
   if (config === undefined) throw unknownMascot(400, mascot)
   return config
@@ -87,9 +89,8 @@ export const newBotMascot = async (
 
 const nextBotMascot = async (services: CodevisorServerServices): Promise<BotMascot> => {
   const botCount = (await run(services.db.listBots)).length
-  const color = botMascotColors[botCount % botMascotColors.length]!
   return {
-    color: color.id,
+    color: botMascotColorRotation[botCount % botMascotColorRotation.length]!,
     hat: none.id,
     hatColor: autoColor,
     eyewear: none.id,
@@ -127,6 +128,14 @@ const swatchChoice = (id: string): BotMascotSwatch => ({
   title: id.charAt(0).toUpperCase() + id.slice(1),
   hex: botMascotSwatches.find((swatch) => swatch.id === id)!.hex
 })
+
+const withKnownColor = (mascot: BotMascot): BotMascot => {
+  if (isKnownColor(mascot.color)) return mascot
+  return { ...mascot, color: defaultBotMascotConfig.color }
+}
+
+const isKnownColor = (color: string): boolean =>
+  botMascotColors.some((option) => option.id === color)
 
 const mascotConfig = (mascot: BotMascot): BotMascotConfig | undefined => {
   const color = botMascotColors.find((option) => option.id === mascot.color)?.id

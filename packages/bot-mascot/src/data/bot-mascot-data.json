@@ -151,6 +151,141 @@
       "shade": "38803A9E",
       "shadow": "40502A70",
       "fx": "FFFFF4FA"
+    },
+    "ruby": {
+      "title": "Ruby",
+      "note": "Rose to deep crimson; wine outline and eye, a pale pink cheek.",
+      "body": [
+        [0, "FFF7909F"],
+        [1, "FFD42A4F"]
+      ],
+      "outline": "FF3A0711",
+      "eye": "FF3A0711",
+      "glint": "FFFFF2F4",
+      "cheek": "CCFFC9D2",
+      "shade": "4D8A0F28",
+      "shadow": "40700A1E",
+      "fx": "FFFFF0F3"
+    },
+    "tangerine": {
+      "title": "Tangerine",
+      "note": "Apricot to bright tangerine; outline and eye in burnt umber.",
+      "body": [
+        [0, "FFFFCB8F"],
+        [1, "FFFF8F33"]
+      ],
+      "outline": "FF3D1D06",
+      "eye": "FF3D1D06",
+      "glint": "FFFFF8EE",
+      "cheek": "B3FF6F5C",
+      "shade": "40B85500",
+      "shadow": "40803A00",
+      "fx": "FFFFF4E8"
+    },
+    "lime": {
+      "title": "Lime",
+      "note": "Pale citrus to zesty lime; outline and eye in deep olive.",
+      "body": [
+        [0, "FFEEF9A8"],
+        [1, "FFB4DC3C"]
+      ],
+      "outline": "FF1F2A06",
+      "eye": "FF1F2A06",
+      "glint": "FFFFFFFF",
+      "cheek": "B3FF8FA8",
+      "shade": "40708A10",
+      "shadow": "404C600A",
+      "fx": "FFFBFFE6"
+    },
+    "clover": {
+      "title": "Clover",
+      "note": "Spring leaf to clover green; outline and eye in deep pine.",
+      "body": [
+        [0, "FFC4F2B4"],
+        [1, "FF5DC46A"]
+      ],
+      "outline": "FF0E2E15",
+      "eye": "FF0E2E15",
+      "glint": "FFFFFFFF",
+      "cheek": "B3FF8FA8",
+      "shade": "40237A35",
+      "shadow": "40155523",
+      "fx": "FFF1FFEE"
+    },
+    "aqua": {
+      "title": "Aqua",
+      "note": "Pale lagoon to bright aqua; outline and eye in deep sea.",
+      "body": [
+        [0, "FFBDF4F7"],
+        [1, "FF2EC4D4"]
+      ],
+      "outline": "FF08303A",
+      "eye": "FF08303A",
+      "glint": "FFFFFFFF",
+      "cheek": "B3FF9AAE",
+      "shade": "40108494",
+      "shadow": "40085560",
+      "fx": "FFEEFDFF"
+    },
+    "grape": {
+      "title": "Grape",
+      "note": "Soft orchid to grape purple; outline and eye in deep plum.",
+      "body": [
+        [0, "FFE8CCFF"],
+        [1, "FFB054E8"]
+      ],
+      "outline": "FF2C0B4A",
+      "eye": "FF2C0B4A",
+      "glint": "FFFFFFFF",
+      "cheek": "B3FF7FC4",
+      "shade": "40651CA8",
+      "shadow": "40441270",
+      "fx": "FFF8F0FF"
+    },
+    "orchid": {
+      "title": "Orchid",
+      "note": "Blush to vivid magenta; outline and eye in deep berry.",
+      "body": [
+        [0, "FFFFC8F2"],
+        [1, "FFE059D0"]
+      ],
+      "outline": "FF3A0A33",
+      "eye": "FF3A0A33",
+      "glint": "FFFFFFFF",
+      "cheek": "B3FF5C9A",
+      "shade": "40A0208E",
+      "shadow": "406E1462",
+      "fx": "FFFFF0FC"
+    },
+    "cocoa": {
+      "title": "Cocoa",
+      "note": "Latte to cocoa brown; outline and eye in dark chocolate.",
+      "body": [
+        [0, "FFE3BB98"],
+        [1, "FFA0663F"]
+      ],
+      "outline": "FF2A1406",
+      "eye": "FF2A1406",
+      "glint": "FFFFF6EC",
+      "cheek": "B3FF8A7A",
+      "shade": "4D5E2C0C",
+      "shadow": "40402008",
+      "fx": "FFFFF3E8"
+    },
+    "slate": {
+      "title": "Slate",
+      "note": "Cloud to cool slate grey; outline and eye in deep ink blue.",
+      "body": [
+        [0, "FFE1E6EE"],
+        [1, "FF8E9AAF"]
+      ],
+      "outline": "FF1A2233",
+      "eye": "FF1A2233",
+      "glint": "FFFFFFFF",
+      "cheek": "B3FF8FA8",
+      "shade": "40475468",
+      "shadow": "402E3646",
+      "fx": "FFF6F8FB"
     }
   },
   "cyclops": {

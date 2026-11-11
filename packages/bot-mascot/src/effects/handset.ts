@@ -26,7 +26,17 @@ const phoneColor: Readonly<Record<BotMascotColor, NamedColor>> = {
   sky: "red",
   tomato: "blue",
   electric: "yellow",
-  dream: "green"
+  dream: "green",
+  ruby: "teal",
+  tangerine: "blue",
+  lime: "purple",
+  clover: "red",
+  aqua: "red",
+  grape: "green",
+  orchid: "teal",
+  cocoa: "blue",
+  slate: "yellow",
+  classic: "blue"
 }
 
 const handsets = new Map<string, string>()

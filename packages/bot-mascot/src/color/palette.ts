@@ -1,6 +1,31 @@
 import { data, type RawPalette } from "../data.js"
 
 export const botMascotColorIds = [
+  "ruby",
+  "tomato",
+  "tangerine",
+  "sunny",
+  "lime",
+  "clover",
+  "mint",
+  "aqua",
+  "sky",
+  "electric",
+  "lilac",
+  "grape",
+  "orchid",
+  "bubblegum",
+  "dream",
+  "cocoa",
+  "slate",
+  "classic"
+] as const
+
+export type BotMascotColor = (typeof botMascotColorIds)[number]
+
+export const defaultBotMascotColor: BotMascotColor = "sunny"
+
+export const botMascotColorRotation: ReadonlyArray<BotMascotColor> = [
   "sunny",
   "mint",
   "lilac",
@@ -8,12 +33,18 @@ export const botMascotColorIds = [
   "sky",
   "tomato",
   "electric",
-  "dream"
-] as const
-
-export type BotMascotColor = (typeof botMascotColorIds)[number]
-
-export const defaultBotMascotColor: BotMascotColor = "sunny"
+  "dream",
+  "tangerine",
+  "aqua",
+  "orchid",
+  "lime",
+  "ruby",
+  "grape",
+  "clover",
+  "slate",
+  "cocoa",
+  "classic"
+]
 
 export interface Palette {
   readonly key: BotMascotColor

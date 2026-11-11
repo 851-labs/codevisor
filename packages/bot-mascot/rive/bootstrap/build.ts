@@ -1,7 +1,7 @@
-import { execFileSync } from "node:child_process"
 import { mkdirSync, writeFileSync } from "node:fs"
 
 import { mainArtboard } from "./character.js"
+import { writeColorTable } from "./colors-file.js"
 import { colorTable, slotCounts } from "./colors.js"
 import {
   convertersXml,
@@ -15,8 +15,6 @@ import {
 import { faceArtboard } from "./face.js"
 import { OUT_DIR } from "./parts.js"
 
-const REPO_ROOT = new URL("../../../../", import.meta.url).pathname
-
 mkdirSync(OUT_DIR + "build", { recursive: true })
 writeFileSync(
   OUT_DIR + "rive.yaml",
@@ -29,11 +27,7 @@ writeFileSync(
   OUT_DIR + "3-data.rml",
   doc([modeEnum.xml, hatEnum.xml, outfitEnum.xml, eyewearEnum.xml, convertersXml, vmXml].join("\n"))
 )
-const colorsPath = new URL("../../src/data/rive-colors.json", import.meta.url).pathname
-writeFileSync(colorsPath, `${JSON.stringify(colorTable, null, 2)}\n`)
-execFileSync("bun", ["x", "oxfmt", "-c", REPO_ROOT + ".oxfmtrc.json", colorsPath], {
-  cwd: REPO_ROOT
-})
+writeColorTable()
 console.log(
   "slots:",
   [...slotCounts].map(([c, n]) => `${c}=${n}`).join(" "),
