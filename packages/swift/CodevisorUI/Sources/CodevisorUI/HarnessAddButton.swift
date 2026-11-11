@@ -18,16 +18,10 @@ public struct HarnessAddButton: View {
           add: { model.add($0, in: environment) }
         )
       #else
-        Button {
-          model.showsPicker = true
-        } label: {
-          Label("Add Harness…", systemImage: "plus")
-        }
-        .sheet(isPresented: $model.showsPicker) { picker }
+        SettingsAddButton("Add Harness") { model.showsPicker = true }
+          .sheet(isPresented: $model.showsPicker) { picker }
       #endif
     }
-    .font(.body)
-    .accessibilityLabel("Add Harness")
     .confirmationDialog(
       "Uninstall \(model.uninstall?.name ?? "harness")?",
       isPresented: confirmsUninstall,

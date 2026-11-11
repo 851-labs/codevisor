@@ -27,13 +27,8 @@ struct SandboxesSettingsView: View {
       }
     }
     .settingsAddToolbarItem {
-      Button {
-        adding = true
-      } label: {
-        Label("Add Profile", systemImage: "plus")
-      }
-      .help("Add Profile")
-      .disabled(!model.hasLoaded)
+      SettingsAddButton("Add Profile") { adding = true }
+        .disabled(!model.hasLoaded)
     }
     .sheet(isPresented: $adding) {
       SandboxNewProfileSheet(model: model, client: client)

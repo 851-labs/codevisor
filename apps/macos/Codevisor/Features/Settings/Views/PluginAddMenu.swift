@@ -6,14 +6,11 @@ struct PluginAddMenu: View {
   let onAddCustom: () -> Void
 
   var body: some View {
-    Menu {
+    SettingsAddMenu("Add Plugin") {
       if canBrowse {
         Button("Browse Plugins…", action: onBrowse)
       }
       Button("Add MCP…", action: onAddCustom)
-    } label: {
-      Label("Add Plugin", systemImage: "plus")
     }
-    .help("Add Plugin")
   }
 }

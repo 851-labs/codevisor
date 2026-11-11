@@ -75,12 +75,7 @@ struct ProjectsSettingsView: View {
     }
     .formStyle(.grouped)
     .settingsAddToolbarItem {
-      Button {
-        showingAdd = true
-      } label: {
-        Label("Add Project", systemImage: "plus")
-      }
-      .help("Add Project")
+      SettingsAddButton("Add Project") { showingAdd = true }
     }
     .sheet(isPresented: $showingAdd) {
       NewProjectSheet(serverId: initialMachineId) { project in
