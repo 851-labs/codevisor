@@ -175,6 +175,10 @@ extension VirtualizedTranscriptScrollView {
       )
     }
 
+    if let bubble = nativeBotBubble(for: row) {
+      return mountBotBubbleRow(
+        row, bubble: bubble, at: index, requiresImmediatePresentation: requiresImmediatePresentation)
+    }
     if remountParkedHost(for: row, at: index) { return true }
 
     let host = hostPool.takeHostedRow() ?? TranscriptRowHost(frame: .zero)
@@ -401,6 +405,8 @@ extension VirtualizedTranscriptScrollView {
       hostPool.recycle(evicted)
     } else if let hosted = host as? TranscriptRowHost {
       parkOrRetire(hosted, for: key)
+    } else if let bubble = host as? TranscriptBotBubbleRowHost {
+      storeDetachedBubble(bubble, for: key)
     }
   }
 
@@ -437,14 +443,13 @@ extension VirtualizedTranscriptScrollView {
         else { continue }
       }
 
-      let wantsNativeMarkdown = usesNativeMarkdownHost(for: row)
-      let isNativeMarkdown = host is TranscriptMarkdownRowHost
+      let rendererMatches = renderer(for: row) == renderer(of: host)
       let preservesLiveMarkdownHost = preservesLiveMarkdownHost(
         host: host,
         previous: previousRowsByKey?[key],
         current: row
       )
-      guard wantsNativeMarkdown == isNativeMarkdown || preservesLiveMarkdownHost else {
+      guard rendererMatches || preservesLiveMarkdownHost else {
         invalidateMeasurementForRendererTransition(key)
         replacementKeys.append(key)
         continue
@@ -470,6 +475,8 @@ extension VirtualizedTranscriptScrollView {
       } else if let hosted = host as? TranscriptRowHost {
         hosted.representedRow = row
         hosted.rootView = measuredRootView(for: row)
+      } else if let bubbleHost = host as? TranscriptBotBubbleRowHost {
+        refreshBotBubble(bubbleHost, for: row)
       }
     }
 
