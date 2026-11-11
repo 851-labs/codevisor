@@ -113,7 +113,7 @@ extension VirtualizedTranscriptScrollView {
         virtualLayout.renderedRange(anchorKey: $0.anchorKey, count: $0.count)
       }
 
-      resizeDocumentView(absorbingChangeFrom: previousLayout, previousDistance: previousDistance)
+      resizeDocumentView()
       positionPaginationLoadingIndicator()
       let firstChangedIndex = changedHeights?.keys.compactMap {
         virtualLayout.indexByKey[$0]
