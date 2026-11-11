@@ -21,7 +21,6 @@ struct HarnessesSettingsView: View {
     .formStyle(.grouped)
     .settingsAddToolbarItem {
       HarnessAddButton(model: globalModel)
-        .help("Add Harness")
     }
     .harnessFleetSheets(presenter) { settingsRouter.pendingHarnessAccountRequest = nil }
     .onChange(of: settingsRouter.pendingHarnessAccountRequest, initial: true) { _, request in

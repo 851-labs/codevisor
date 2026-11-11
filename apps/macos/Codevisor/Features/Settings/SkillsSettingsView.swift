@@ -31,13 +31,10 @@ struct SkillsSettingsView: View {
     }
     .formStyle(.grouped)
     .settingsAddToolbarItem {
-      Menu {
+      SettingsAddMenu("Add Skill") {
         Button("Add from URL…") { showingRemoteImport = true }
         Button("Add Manually…") { showingCreate = true }
-      } label: {
-        Label("Add Skill", systemImage: "plus")
       }
-      .help("Add Skill")
     }
     .task(id: environment.configSync.revisionsByNamespace[ConfigSync.skillsNamespace]) {
       await model.load(client: localClient)

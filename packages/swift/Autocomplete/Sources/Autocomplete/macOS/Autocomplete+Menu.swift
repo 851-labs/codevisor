@@ -7,7 +7,6 @@
       let label: Label
       let presentation: Binding<Bool>?
       @State private var isPresented = false
-      @Environment(\.isEnabled) private var isEnabled
 
       public init(
         isPresented: Binding<Bool>? = nil,
@@ -25,13 +24,7 @@
         } label: {
           label
         }
-        .popover(isPresented: presented, attachmentAnchor: .rect(.bounds), arrowEdge: .bottom) {
-          Surface(entries: content(), mode: .menu, onDismiss: { presented.wrappedValue = false })
-            .disabled(!isEnabled)
-        }
-        .onChange(of: isEnabled) { _, enabled in
-          if !enabled { presented.wrappedValue = false }
-        }
+        .autocompleteMenu(isPresented: presented, content: content)
       }
     }
 
