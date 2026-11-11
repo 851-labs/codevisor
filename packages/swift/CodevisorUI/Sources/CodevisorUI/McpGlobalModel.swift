@@ -72,6 +72,10 @@ public final class McpGlobalModel {
     await loadBrowserConfigurations(in: environment)
   }
 
+  public func load(_ machineId: String, in environment: AppEnvironment) async {
+    await fetch(machineId, from: environment.machines.client(for: machineId))
+  }
+
   public func setAvailability(
     _ isOn: Bool, of entry: McpFleetEntry, on machineId: String, in environment: AppEnvironment
   ) async {
