@@ -29,6 +29,7 @@ enum NavigationProjectionBuilder {
     workspace.archivedAt = record.archivedAt.flatMap { try? ServerDateCoding.date(from: $0) }
     workspace.sidebarOrderRevision = record.sidebarOrderRevision ?? 0
     workspace.git = record.git
+    workspace.hostServerId = record.serverId
     workspace.mainSessionId = record.mainSessionId.flatMap(UUID.init(uuidString:))
     return workspace
   }

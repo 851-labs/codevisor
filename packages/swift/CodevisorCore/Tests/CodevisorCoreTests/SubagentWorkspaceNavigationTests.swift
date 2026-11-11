@@ -27,7 +27,7 @@ struct SubagentWorkspaceNavigationTests {
       createdByAgent: creator.map { AgentReference(agentId: $0.id, machineId: creatorMachine) })
   }
 
-  @Test("A workspace's parent is the workspace of the agent that created it, on whichever machine that agent runs")
+  @Test("A workspace's parent is the workspace of the agent that created it, on whichever server that agent runs")
   func parentWorkspaceFromCreators() async {
     let lead = chat("Lead")
     let helper = chat("Helper", createdBy: lead)
@@ -42,10 +42,10 @@ struct SubagentWorkspaceNavigationTests {
     let fixture = NavigationFixture()
 
     await fixture.install(
-      machineId: "m", projects: [project], sessions: [lead, helper, worker, orphan],
+      machineId: "studio-in-app", projects: [project], sessions: [lead, helper, worker, orphan],
       workspaces: [parent, child, fromGone])
     await fixture.install(
-      machineId: "laptop", projects: [laptopProject], sessions: [onLaptop, wrongMachine],
+      machineId: "laptop-in-app", projects: [laptopProject], sessions: [onLaptop, wrongMachine],
       workspaces: [laptopChild, misattributed])
 
     let parents = Dictionary(

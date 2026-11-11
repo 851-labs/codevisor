@@ -135,7 +135,7 @@ public final class NavigationWorkspaces {
         let workspaceId = projection.sessionIndex[session.id],
         let parentId = projection.sessionIndex[source.agentId], parentId != workspaceId,
         projection.workspacesById[workspaceId] != nil,
-        projection.workspacesById[parentId]?.serverId == source.machineId,
+        projection.workspacesById[parentId]?.hostServerId == source.machineId,
         parents[workspaceId].map({ session.createdAt < $0.linkedAt }) ?? true
       else { continue }
       parents[workspaceId] = WorkspaceParentLink(

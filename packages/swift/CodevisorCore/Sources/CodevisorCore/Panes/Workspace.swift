@@ -9,6 +9,7 @@ public struct Workspace: Sendable, Equatable, Identifiable {
   public var rootDirectory: String?
   public var worktreeName: String?
   public let serverId: String
+  public var hostServerId: String?
   public let projectId: UUID
   public var centerTabs: [WorkspaceTab]
   public var selectedCenterTabId: UUID
