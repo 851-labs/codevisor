@@ -52,7 +52,6 @@ const fieldName = (key: string, idName: string | undefined): string => {
 
 const agentFieldNames: Readonly<Record<string, string>> = {
   sessionId: "agentId",
-  parentSessionId: "parentAgentId",
   targetSessionId: "agentId"
 }
 

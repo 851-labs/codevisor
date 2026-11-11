@@ -55,7 +55,8 @@ export const AgentSummary = Schema.Struct({
   workspaceId: Schema.optional(Schema.String),
   worktreeName: Schema.optional(Schema.String),
   labels: Schema.optional(Labels),
-  parentAgentId: Schema.optional(Schema.String),
+  createdByAgentId: Schema.optional(Schema.String),
+  createdByAgentMachineId: Schema.optional(Schema.String),
   updatedAt: Schema.optional(Schema.String)
 })
 export type AgentSummary = typeof AgentSummary.Type
@@ -119,7 +120,7 @@ export const StartAgentRequest = Schema.Struct({
   noProject: Schema.optional(Schema.Boolean),
   labels: Schema.optional(Labels),
   callerAgentId: Schema.optional(Schema.String),
-  remoteParentAgentId: Schema.optional(Schema.String),
+  callerAgentMachineId: Schema.optional(Schema.String),
   callerDefaults: Schema.optional(AgentCallerDefaults),
   sandboxProfile: Schema.optional(Schema.String)
 })

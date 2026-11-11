@@ -237,7 +237,7 @@ describe("bot conversations", () => {
         projectId: "api-project",
         harnessId: "codex",
         title: "Fix login",
-        parentSessionId: bot.sessionId
+        createdByAgentId: bot.sessionId
       }),
       method: "POST"
     })

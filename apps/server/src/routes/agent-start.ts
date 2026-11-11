@@ -4,6 +4,7 @@ import { withRunningThoughtLevel } from "@codevisor/agent-runtime"
 import {
   DEFAULT_SUBSCRIPTION_EVENTS,
   StartAgentRequest,
+  type AgentRef,
   type SessionSummary,
   type StartedAgent
 } from "@codevisor/api"
@@ -11,7 +12,7 @@ import {
 import { HttpFailure, readSchema, run, writeJson } from "../server-context.js"
 import { agentProjectId } from "./agent-start-project.js"
 import { startAgentOnSandbox } from "./agent-start-sandbox.js"
-import { verifiedRemoteParent } from "./fleet-calls.js"
+import { assertCreatorVerified, remoteCallerAgent } from "./fleet-calls.js"
 import { allocateProjectWorktree } from "./project-worktree-create.js"
 import {
   defaultPromptDelivery,
@@ -56,7 +57,7 @@ export const startAgent = async (route: RouteContext): Promise<boolean> => {
 
 interface AgentCaller {
   readonly sessionId: string | undefined
-  readonly parentKey: string | undefined
+  readonly creator: AgentRef | undefined
   readonly projectId: string | undefined
   readonly workspaceId: string | undefined
   readonly worktreeName: string | undefined
@@ -82,7 +83,6 @@ const startPlanned = async (
   created: Array<() => Promise<unknown>>
 ): Promise<StartedAgent> => {
   const { services, fanout, routeState, config } = route
-  const remoteParent = verifiedRemoteParent(services, route.request, plan.caller.parentKey)
   const placement = await placementFor(route, request, plan, created)
   const { session } = await createSessionIfMissing(
     services,
@@ -98,7 +98,7 @@ const startPlanned = async (
       ...optionalFields(request, plan)
     },
     true,
-    remoteParent
+    plan.caller.creator
   )
   created.push(() => deleteServerSession(services, fanout, session.id))
 
@@ -108,16 +108,32 @@ const startPlanned = async (
 }
 
 const callerOf = async (route: RouteContext, request: StartAgentRequest): Promise<AgentCaller> => {
-  if (request.callerAgentId === undefined) return remoteCaller(request)
+  if (request.callerAgentId === undefined) return remoteCaller(request, undefined)
+  if (isRemoteCaller(request, route.config.id)) {
+    return remoteCaller(request, verifiedRemoteCaller(route, request))
+  }
   const session = await findSession(route.services.db, request.callerAgentId)
   if (session === undefined) throw new HttpFailure(422, `Unknown caller: ${request.callerAgentId}`)
   const runtime = await run(route.services.db.getSessionRuntimeState(session.id))
-  return localCaller(session, runtime)
+  return localCaller(session, runtime, route.config.id)
 }
 
-const remoteCaller = ({ callerDefaults, remoteParentAgentId }: StartAgentRequest): AgentCaller => ({
+const isRemoteCaller = (request: StartAgentRequest, serverId: string): boolean =>
+  request.callerAgentMachineId !== undefined && request.callerAgentMachineId !== serverId
+
+const verifiedRemoteCaller = (route: RouteContext, request: StartAgentRequest): AgentRef => {
+  const claimed = { agentId: request.callerAgentId!, machineId: request.callerAgentMachineId! }
+  const verified = remoteCallerAgent(route.services, route.request)
+  assertCreatorVerified(route.config.id, claimed, verified)
+  return claimed
+}
+
+const remoteCaller = (
+  { callerDefaults }: StartAgentRequest,
+  creator: AgentRef | undefined
+): AgentCaller => ({
   sessionId: undefined,
-  parentKey: remoteParentAgentId,
+  creator,
   projectId: undefined,
   workspaceId: undefined,
   worktreeName: undefined,
@@ -125,9 +141,13 @@ const remoteCaller = ({ callerDefaults, remoteParentAgentId }: StartAgentRequest
   configSelections: callerDefaults?.configSelections
 })
 
-const localCaller = (session: SessionSummary, runtime: unknown): AgentCaller => ({
+const localCaller = (
+  session: SessionSummary,
+  runtime: unknown,
+  machineId: string
+): AgentCaller => ({
   sessionId: session.id,
-  parentKey: session.id,
+  creator: { agentId: session.id, machineId },
   projectId: session.projectId,
   workspaceId: session.workspaceId,
   worktreeName: session.worktreeName,
@@ -180,10 +200,15 @@ const sharedPlacement = ({ caller, projectId }: AgentPlan): Placement => {
 const optionalFields = (request: StartAgentRequest, plan: AgentPlan) => {
   const configSelections = configSelectionsFor(request.model, plan.harnessId, plan.caller)
   return {
-    ...(plan.caller.parentKey === undefined ? {} : { parentSessionId: plan.caller.parentKey }),
+    ...createdByFields(plan.caller.creator),
     ...(request.labels === undefined ? {} : { labels: request.labels }),
     ...(configSelections === undefined ? {} : { configSelections })
   }
+}
+
+const createdByFields = (creator: AgentRef | undefined) => {
+  if (creator === undefined) return {}
+  return { createdByAgentId: creator.agentId, createdByAgentMachineId: creator.machineId }
 }
 
 const configSelectionsFor = (
@@ -205,7 +230,7 @@ const subscribeCaller = async (
   caller: AgentCaller,
   agentId: string
 ): Promise<boolean> => {
-  if (caller.sessionId === undefined) return false
+  if (caller.sessionId === undefined) return caller.creator !== undefined
   await run(
     services.db.createSessionSubscription({
       subscriberSessionId: caller.sessionId,

@@ -5,7 +5,6 @@ import { trashDirectory } from "@codevisor/worktrees"
 
 import {
   appendAndPublish,
-  applyWorkspaceArchiveEffects,
   archiveJobs,
   captureWorkspaceRuntime,
   HttpFailure,
@@ -127,10 +126,6 @@ const deleteBot = async (
   if (bot === undefined) {
     writeJson(response, 204, undefined)
     return true
-  }
-  for (const child of await run(services.db.listBotWorkspaces(bot.id))) {
-    const archived = await run(services.db.updateWorkspace(child.id, { isArchived: true }))
-    await applyWorkspaceArchiveEffects(services, fanout, config, routeState, archived, false)
   }
   await retireBotRuntime(services, routeState, bot)
   await removeBotCheckouts(services, config.id, bot)

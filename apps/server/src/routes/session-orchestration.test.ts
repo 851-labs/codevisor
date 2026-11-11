@@ -166,16 +166,16 @@ describe("finding an orchestrator's work", () => {
         ).body
       )
     const worker = await create({
-      parentSessionId: parent.id,
+      createdByAgentId: parent.id,
       labels: { role: "worker", issue: "851-1" }
     })
-    const reviewer = await create({ parentSessionId: parent.id, labels: { role: "reviewer" } })
+    const reviewer = await create({ createdByAgentId: parent.id, labels: { role: "reviewer" } })
     const ids = async (query: string) =>
       itemsOf((await jsonRequest(server, `/v1/sessions${query}`)).body)
         .map(idOf)
         .toSorted()
 
-    expect(await ids(`?parentSessionId=${parent.id.toUpperCase()}`)).toEqual(
+    expect(await ids(`?createdByAgentId=${parent.id.toUpperCase()}`)).toEqual(
       [worker, reviewer].toSorted()
     )
     expect(await ids("?label=role=worker")).toEqual([worker])

@@ -16,7 +16,7 @@ const agent = {
   harness: "codex",
   model: "gpt-6",
   labels: { issue: "851-1" },
-  parentSessionId: "caller-session"
+  createdByAgentId: "caller-session"
 }
 
 describe("starting an agent on a new sandbox", () => {

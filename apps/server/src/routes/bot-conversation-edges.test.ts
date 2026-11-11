@@ -318,7 +318,7 @@ describe("bot conversation edges", () => {
 
   it("reports a child that ended without a reason or reply", async () => {
     const { running, bot } = await startBot()
-    const quiet = await createChat(running, { parentSessionId: bot.sessionId })
+    const quiet = await createChat(running, { createdByAgentId: bot.sessionId })
     const quietAgent = await holdTurn(running, quiet)
 
     await cancel(running, quiet)

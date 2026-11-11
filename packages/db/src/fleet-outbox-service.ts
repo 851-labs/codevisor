@@ -4,7 +4,7 @@ import type { Effect } from "effect"
 import { attempt, type DatabaseError } from "./errors.js"
 import { parseJsonColumn, parseJsonObject } from "./json-column.js"
 import { insertPromptQueueItem } from "./prompt-queue-service.js"
-import { integer, nullable, rowReader, text } from "./row-reader.js"
+import { rowReader, text } from "./row-reader.js"
 import type { ServiceContext } from "./service-context.js"
 
 export interface FleetMessage {
@@ -23,14 +23,6 @@ export interface FleetPrompt {
   readonly text: string
 }
 
-export interface FleetPendingTurn {
-  readonly sessionId: string
-  readonly revision: number
-  readonly stopReason?: string
-  readonly endedAt: string
-  readonly finalText: string
-}
-
 export interface FleetOutboxService {
   readonly listFleetMessages: Effect.Effect<ReadonlyArray<FleetMessage>, DatabaseError>
   readonly nextFleetMessageFor: (
@@ -40,11 +32,7 @@ export interface FleetOutboxService {
   readonly deleteFleetMessage: (id: string) => Effect.Effect<void, DatabaseError>
   readonly expireFleetBefore: (createdAt: string) => Effect.Effect<void, DatabaseError>
   readonly acceptFleetPrompt: (prompt: FleetPrompt) => Effect.Effect<boolean, DatabaseError>
-  readonly listFleetPendingTurns: Effect.Effect<ReadonlyArray<FleetPendingTurn>, DatabaseError>
-  readonly promoteFleetTurn: (
-    turn: FleetPendingTurn,
-    message: FleetMessage | undefined
-  ) => Effect.Effect<void, DatabaseError>
+  readonly enqueueFleetMessage: (message: FleetMessage) => Effect.Effect<void, DatabaseError>
   readonly pruneFleetDeliveries: (before: string) => Effect.Effect<void, DatabaseError>
 }
 
@@ -64,28 +52,16 @@ export const makeFleetOutboxService = (context: ServiceContext): FleetOutboxServ
       }),
     expireFleetBefore: (createdAt) =>
       attempt("expireFleetBefore", () => {
-        sqlite.transaction(() => {
-          sqlite.prepare(fleetSql.deleteBefore).run(createdAt)
-          sqlite.prepare(fleetSql.deletePendingTurnsBefore).run(createdAt)
-        })()
+        sqlite.prepare(fleetSql.deleteBefore).run(createdAt)
       }),
     deleteFleetMessage: (id) =>
       attempt("deleteFleetMessage", () => {
         sqlite.prepare(fleetSql.delete).run(id)
       }),
     acceptFleetPrompt: (prompt) => attempt("acceptFleetPrompt", () => acceptOnce(context, prompt)),
-    listFleetPendingTurns: attempt("listFleetPendingTurns", () =>
-      pendingTurnRows.all(sqlite.prepare(fleetSql.pendingTurns).all()).map(pendingTurnFromRow)
-    ),
-    promoteFleetTurn: (turn, message) =>
-      attempt("promoteFleetTurn", () => {
-        sqlite.transaction(() => {
-          const consumed = sqlite
-            .prepare(fleetSql.deletePendingTurn)
-            .run(turn.sessionId, turn.revision)
-          if (consumed.changes === 0 || message === undefined) return
-          sqlite.prepare(fleetSql.enqueue).run(...messageValues(message))
-        })()
+    enqueueFleetMessage: (message) =>
+      attempt("enqueueFleetMessage", () => {
+        sqlite.prepare(fleetSql.enqueue).run(...messageValues(message))
       }),
     pruneFleetDeliveries: (before) =>
       attempt("pruneFleetDeliveries", () => {
@@ -136,30 +112,6 @@ interface FleetMessageRow {
   readonly created_at: string
 }
 
-const pendingTurnRows = rowReader({
-  session_id: text,
-  revision: integer,
-  stop_reason: nullable(text),
-  ended_at: text,
-  turn_item_id: nullable(text),
-  final_text: text
-})
-
-const pendingTurnFromRow = (row: {
-  readonly session_id: string
-  readonly revision: number
-  readonly stop_reason: string | null
-  readonly ended_at: string
-  readonly turn_item_id: string | null
-  readonly final_text: string
-}): FleetPendingTurn => ({
-  sessionId: row.session_id,
-  revision: row.revision,
-  ...(row.stop_reason === null ? {} : { stopReason: row.stop_reason }),
-  endedAt: row.ended_at,
-  finalText: row.final_text
-})
-
 const fleetMessageRows = rowReader<FleetMessageRow>({
   id: text,
   machine_id: text,
@@ -173,18 +125,10 @@ const fleetSql = {
   enqueue: `insert into fleet_outbox (id, machine_id, path, args, origin, created_at)
             values (?, ?, ?, ?, ?, ?)
             on conflict(id) do nothing`,
-  pendingTurns: `select fleet_pending_turns.*, coalesce((
-                   select substr(text, 1, 24000) from chat_parts
-                   where item_id = fleet_pending_turns.turn_item_id and kind = 'text'
-                   order by position limit 1
-                 ), '') as final_text
-                 from fleet_pending_turns order by session_id, revision`,
-  deletePendingTurn: "delete from fleet_pending_turns where session_id = ? and revision = ?",
   list: "select * from fleet_outbox order by rowid",
   nextFor: `select * from fleet_outbox where machine_id = ? and created_at >= ?
             order by rowid limit 1`,
   deleteBefore: "delete from fleet_outbox where created_at < ?",
-  deletePendingTurnsBefore: "delete from fleet_pending_turns where ended_at < ?",
   delete: "delete from fleet_outbox where id = ?",
   recordDelivery: `insert into fleet_deliveries (delivery_id, received_at) values (?, ?)
                    on conflict(delivery_id) do nothing`,

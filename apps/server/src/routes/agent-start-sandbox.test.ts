@@ -61,7 +61,7 @@ describe("POST /v1/agents with a sandbox profile", () => {
       name: "Fix flake",
       state: "ready",
       agentId: "remote-agent",
-      agent: { harness: "codex", labels: { k: "v" }, parentSessionId: caller }
+      agent: { harness: "codex", labels: { k: "v" }, createdByAgentId: caller }
     })
     expect(harness.toolCalls.at(-1)).toMatchObject({
       tool: "codevisor.agents.start",
@@ -96,7 +96,7 @@ describe("POST /v1/agents with a sandbox profile", () => {
     await harness.machines.settled()
 
     expect(response.status).toBe(202)
-    expect((await harness.machines.get("id-1")).agent?.parentSessionId).toBeUndefined()
+    expect((await harness.machines.get("id-1")).agent?.createdByAgentId).toBeUndefined()
   })
 
   it("names the profiles there are when none matches", async () => {

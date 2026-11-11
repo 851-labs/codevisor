@@ -1,14 +1,9 @@
 import type { IncomingMessage } from "node:http"
 
-import {
-  FLEET_CALLER_HEADER,
-  parseRemoteSessionKey,
-  REMOTE_PARENT_HEADER,
-  remoteSessionKey
-} from "@codevisor/api"
+import { CALLER_AGENT_TICKET_HEADER, FLEET_CALLER_HEADER, type AgentRef } from "@codevisor/api"
 import type { GatewayOrigin } from "@codevisor/mcp"
 
-import { withTicket, type VerifiedRemoteParent } from "../infra/fleet-tickets.js"
+import { withTicket } from "../infra/fleet-tickets.js"
 import { HttpFailure, type CodevisorServerServices } from "../server-context.js"
 
 export interface FleetCall {
@@ -20,48 +15,43 @@ export const fleetCall = (
   services: CodevisorServerServices,
   request: IncomingMessage,
   claimed: GatewayOrigin
-): FleetCall => {
-  const verified = callerMachineId(services, request) === claimed.machineId
-  if (verified) return { origin: claimed, verified }
-
-  const { botId: _botId, botMachineId: _botMachineId, ...origin } = claimed
-  return { origin, verified }
-}
+): FleetCall => ({
+  origin: claimed,
+  verified: callerMachineId(services, request) === claimed.machineId
+})
 
 export const invokeForFleet = (
   services: CodevisorServerServices,
   call: FleetCall,
-  invoke: (remoteParent: string | undefined) => Promise<unknown>
+  invoke: (callerAgentTicket: string | undefined) => Promise<unknown>
 ): Promise<unknown> => {
-  const parent = verifiedParentOf(call)
-  const remoteParents = services.fleetTickets?.remoteParents
-  if (parent === undefined || remoteParents === undefined) return invoke(undefined)
-  return withTicket(remoteParents, parent, invoke)
+  const caller = verifiedCallerAgent(call)
+  const callerAgents = services.fleetTickets?.callerAgents
+  if (caller === undefined || callerAgents === undefined) return invoke(undefined)
+  return withTicket(callerAgents, caller, invoke)
 }
 
-export const verifiedRemoteParent = (
+export const remoteCallerAgent = (
   services: CodevisorServerServices,
-  request: IncomingMessage,
-  parentSessionId: string | undefined
-): VerifiedRemoteParent | undefined => {
-  const parent = services.fleetTickets?.remoteParents.take(
-    headerValue(request, REMOTE_PARENT_HEADER)
-  )
-  if (parent === undefined || parent.parentSessionId !== parentSessionId) return undefined
-  return parent
+  request: IncomingMessage
+): AgentRef | undefined =>
+  services.fleetTickets?.callerAgents.take(headerValue(request, CALLER_AGENT_TICKET_HEADER))
+
+export const assertCreatorVerified = (
+  serverId: string,
+  creator: Partial<AgentRef>,
+  verified: AgentRef | undefined
+): void => {
+  if (creator.agentId === undefined) return
+  if (creator.machineId === undefined || creator.machineId === serverId) return
+  if (sameAgent(verified, creator)) return
+  throw new HttpFailure(403, "Only the machine an agent runs on can start chats on its behalf")
 }
 
-export const assertRemoteParentVerified = (
-  parentSessionId: string | undefined,
-  verified: VerifiedRemoteParent | undefined
-): void => {
-  if (parentSessionId === undefined || parseRemoteSessionKey(parentSessionId) === undefined) return
-  if (verified?.parentSessionId === parentSessionId) return
-  throw new HttpFailure(
-    403,
-    "Only the machine that owns a remote parent session can start chats under it"
-  )
-}
+const sameAgent = (verified: AgentRef | undefined, creator: Partial<AgentRef>): boolean =>
+  verified !== undefined &&
+  verified.agentId === creator.agentId &&
+  verified.machineId === creator.machineId
 
 const callerMachineId = (
   services: CodevisorServerServices,
@@ -72,18 +62,10 @@ const callerMachineId = (
   return services.machines?.machineIdOf(caller)
 }
 
-const verifiedParentOf = (call: FleetCall): VerifiedRemoteParent | undefined => {
+const verifiedCallerAgent = (call: FleetCall): AgentRef | undefined => {
   const { origin } = call
   if (!call.verified || origin.sessionId === undefined) return undefined
-  return {
-    parentSessionId: remoteSessionKey(origin.machineId, origin.sessionId),
-    ...botOf(origin)
-  }
-}
-
-const botOf = (origin: GatewayOrigin): Pick<VerifiedRemoteParent, "bot"> => {
-  if (origin.botId === undefined) return {}
-  return { bot: { botId: origin.botId, botMachineId: origin.botMachineId ?? origin.machineId } }
+  return { agentId: origin.sessionId, machineId: origin.machineId }
 }
 
 const headerValue = (request: IncomingMessage, name: string): string | undefined => {

@@ -19,7 +19,7 @@ import {
 import type { CodevisorServerServices, EventFanout } from "../server-context.js"
 import { withAutoResume } from "./auto-resume-routes.js"
 import { assertNotOwnedByBot } from "./bot-guards.js"
-import { verifiedRemoteParent } from "./fleet-calls.js"
+import { remoteCallerAgent } from "./fleet-calls.js"
 import { matchesLabelFilters } from "./label-filters.js"
 import { rejectSyncThrows } from "./route-context.js"
 import type { RouteContext } from "./route-context.js"
@@ -91,12 +91,12 @@ const dispatchSessionRoute = (route: RouteContext): Promise<boolean> => {
 }
 
 const listSessions = async ({ services, response, url }: RouteContext): Promise<boolean> => {
-  const parentSessionId = url.searchParams.get("parentSessionId")?.toLowerCase()
+  const createdByAgentId = url.searchParams.get("createdByAgentId")?.toLowerCase()
   const sessions = await allSessions(services)
   writeJson(
     response,
     200,
-    sessions.filter((session) => isListed(session, parentSessionId, url))
+    sessions.filter((session) => isListed(session, createdByAgentId, url))
   )
   return true
 }
@@ -123,7 +123,6 @@ const createSession = async ({
   config
 }: RouteContext): Promise<boolean> => {
   const payload = await readSchema(request, CreateSessionRequestSchema)
-  const remoteParent = verifiedRemoteParent(services, request, payload.parentSessionId)
   const { session, created } = await createSessionIfMissing(
     services,
     fanout,
@@ -131,7 +130,7 @@ const createSession = async ({
     config,
     payload,
     true,
-    remoteParent
+    remoteCallerAgent(services, request)
   )
   writeJson(response, created ? 201 : 200, session)
   return true
@@ -297,10 +296,10 @@ const allSessions = (services: CodevisorServerServices): Promise<ReadonlyArray<S
 
 const isListed = (
   session: SessionSummary,
-  parentSessionId: string | undefined,
+  createdByAgentId: string | undefined,
   url: URL
 ): boolean =>
-  (parentSessionId === undefined || session.parentSessionId === parentSessionId) &&
+  (createdByAgentId === undefined || session.createdByAgentId === createdByAgentId) &&
   matchesLabelFilters(session.labels, url)
 
 const foundSession = (session: SessionSummary | undefined): SessionSummary => {

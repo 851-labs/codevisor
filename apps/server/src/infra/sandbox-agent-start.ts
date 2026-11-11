@@ -30,7 +30,7 @@ export const startRequestedAgent = async (
     host.machineId,
     "codevisor.agents.start",
     startArguments(agent, placed.remoteProjectId),
-    agent.parentSessionId
+    agent.createdByAgentId
   )
   setup.log(`Started ${agent.title} on ${host.name}`)
   return { ...startedIds(started), workspaceOpenedAt: isoNow(deps) }

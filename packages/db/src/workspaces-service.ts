@@ -20,7 +20,7 @@ import type { CodevisorDatabaseService } from "./service.js"
 import { retireWorkspaceTurns } from "./session-turn-retire.js"
 import { makeSessionWorkspacesService } from "./session-workspaces-service.js"
 import * as panes from "./workspace-pane-operations.js"
-import type { UpsertWorkspaceRecord, WorkspaceBotFields } from "./workspace-service-types.js"
+import type { UpsertWorkspaceRecord } from "./workspace-service-types.js"
 
 export const readWorkspaceRow = (sqlite: ServiceContext["sqlite"], id: string) =>
   workspaceRows.maybe(sqlite.prepare(workspaceSql.byId).get(id))
@@ -185,17 +185,9 @@ const writeWorkspace = (
       request.createdAt ?? write.now,
       write.position,
       serializeLabels(request.labels),
-      ...botColumns(request),
       request.labels === undefined ? 0 : 1,
       write.now
     )
-}
-
-const botColumns = (request: WorkspaceBotFields): ReadonlyArray<string | null> => {
-  if (request.botId === undefined) return [null, null, null, null]
-  const botId = canonicalUuid(request.botId)
-  if (request.botMachineId === undefined) return [botId, null, null, null]
-  return [null, botId, request.botMachineId, request.botParentSessionId ?? null]
 }
 
 const workspaceUpdateParams = (
@@ -229,8 +221,8 @@ const workspaceSql = {
   upsert: `insert into workspaces (
                  id, server_id, project_id, name, has_custom_name,
                  root_directory, is_archived, archived_at, created_at, updated_at, sidebar_position,
-                 labels, bot_id, remote_bot_id, remote_bot_machine_id, remote_bot_parent_session_id
-               ) values (?, ?, ?, ?, ?, ?, ?, ?, ?, null, ?, ?, ?, ?, ?, ?)
+                 labels
+               ) values (?, ?, ?, ?, ?, ?, ?, ?, ?, null, ?, ?)
                on conflict(id) do update set
                  project_id = excluded.project_id,
                  name = excluded.name,
@@ -239,7 +231,6 @@ const workspaceSql = {
                  is_archived = excluded.is_archived,
                  archived_at = excluded.archived_at,
                  labels = case when ? then excluded.labels else workspaces.labels end,
-                 bot_id = coalesce(workspaces.bot_id, excluded.bot_id),
                  updated_at = ?`,
   update: `update workspaces set
                name = ?, has_custom_name = ?, root_directory = ?,

@@ -12,6 +12,18 @@ export type SessionOrigin = typeof SessionOrigin.Type
 export const SessionCreator = Schema.Literals(["agent", "user"])
 export type SessionCreator = typeof SessionCreator.Type
 
+export const AgentReferenceFields = {
+  createdByAgentId: Schema.optional(Schema.String),
+  createdByAgentMachineId: Schema.optional(Schema.String),
+  forkedFromAgentId: Schema.optional(Schema.String),
+  forkedFromAgentMachineId: Schema.optional(Schema.String)
+}
+
+export interface AgentRef {
+  readonly agentId: string
+  readonly machineId: string
+}
+
 export const AgentSessionSummary = Schema.Struct({
   sessionId: Schema.String,
   cwd: Schema.String,

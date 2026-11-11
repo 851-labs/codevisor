@@ -40,11 +40,11 @@ describe("a new chat's starting picks", () => {
       ).configSelections
 
     const inherited = { model: "model-saved", reasoning: "high" }
-    expect(await create({ parentSessionId: parent.id })).toEqual(inherited)
+    expect(await create({ createdByAgentId: parent.id })).toEqual(inherited)
     expect(
-      await create({ parentSessionId: parent.id, configSelections: { model: "model-picked" } })
+      await create({ createdByAgentId: parent.id, configSelections: { model: "model-picked" } })
     ).toEqual({ model: "model-picked" })
-    expect(await create({ parentSessionId: otherHarness.id })).toBeUndefined()
+    expect(await create({ createdByAgentId: otherHarness.id })).toBeUndefined()
     const workspace = decode(Schema.Struct({ session: SessionSummary }))(
       (
         await jsonRequest(server, "/v1/workspaces", {
@@ -55,7 +55,7 @@ describe("a new chat's starting picks", () => {
               name: "Child",
               hasCustomName: false
             },
-            session: { projectId: project.id, harnessId: "codex", parentSessionId: parent.id }
+            session: { projectId: project.id, harnessId: "codex", createdByAgentId: parent.id }
           }),
           method: "POST"
         })
@@ -102,7 +102,7 @@ describe("a new chat's starting picks", () => {
           body: JSON.stringify({
             projectId: project.id,
             harnessId: "codex",
-            parentSessionId: parent.id
+            createdByAgentId: parent.id
           }),
           method: "POST"
         })

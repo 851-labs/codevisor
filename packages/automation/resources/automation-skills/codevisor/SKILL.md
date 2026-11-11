@@ -26,7 +26,7 @@ Read each skill named below by calling the `skills` tool with its name. `machine
 | See which Codevisor apps are open and what they show; open a chat, a page, a file, or a layout for the user  | `codevisor-clients`  | `machine.clients.list()`, `client.navigate()`, `machine.tools.codevisor.workspaces.pane_upsert()`                                                                                  |
 | Know where you are                                                                                           | —                    | `machine.tools.codevisor.context.current()`                                                                                                                                        |
 
-`context.current()` returns `agentId`, `projectId`, `workspaceId`, `worktreeName` (absent in the project folder), `parentAgentId` (the agent that started you, if any), `machine`, and `clientId` (the window that sent the current message, absent for automations and agent-sent messages).
+`context.current()` returns `agentId`, `projectId`, `workspaceId`, `worktreeName` (absent in the project folder), `createdByAgentId` and `createdByAgentMachineId` (the agent that started you and its machine, if an agent did), `machine`, and `clientId` (the window that sent the current message, absent for automations and agent-sent messages).
 
 ## Composing these
 

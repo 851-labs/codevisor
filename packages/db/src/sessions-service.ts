@@ -4,6 +4,7 @@ import type { CreateSessionRequest, SessionSummary, UpdateSessionRequest } from 
 import { isoTimestamp } from "@codevisor/api"
 import { Effect } from "effect"
 
+import { agentReferenceValues } from "./agent-references.js"
 import { pendingQuestionRows } from "./common-rows.js"
 import { attempt } from "./errors.js"
 import { pendingQuestionFromRaw } from "./event-payloads.js"
@@ -39,8 +40,8 @@ export const insertSessionRow = (
       request.createdAt ?? now,
       request.updatedAt ?? null,
       request.updatedAt ?? request.createdAt ?? now,
-      request.parentSessionId == null ? null : canonicalUuid(request.parentSessionId),
       request.createdBy ?? null,
+      ...agentReferenceValues(request, config.serverId),
       serializeLabels(request.labels),
       JSON.stringify(request.configSelections ?? {})
     )
@@ -176,9 +177,10 @@ const sessionSql = {
   insert: `insert into sessions (
             id, project_id, server_id, harness_id, harness_account_id, agent_session_id,
             title, origin, worktree_name, workspace_id, created_at, updated_at,
-            sidebar_state, sidebar_state_changed_at, parent_session_id, created_by, labels,
-            config_selections
-          ) values (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'idle', ?, ?, ?, ?, ?)`,
+            sidebar_state, sidebar_state_changed_at, created_by, created_by_agent_id,
+            created_by_agent_machine_id, forked_from_agent_id, forked_from_agent_machine_id,
+            labels, config_selections
+          ) values (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'idle', ?, ?, ?, ?, ?, ?, ?, ?)`,
   pendingQuestion: "select pending_question from sessions where id = ?",
   update: `update sessions set
               title = case

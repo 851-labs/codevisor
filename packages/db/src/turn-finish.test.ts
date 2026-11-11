@@ -61,7 +61,12 @@ const botWithChild = async (db: CodevisorDatabaseService) => {
     })
   )
   const child = await run(
-    db.createSession({ projectId: home.id, harnessId: "codex", parentSessionId: "chat-helper" })
+    db.createSession({
+      projectId: home.id,
+      harnessId: "codex",
+      createdBy: "agent",
+      createdByAgentId: "chat-helper"
+    })
   )
   return { botSessionId: "chat-helper", child }
 }
@@ -127,7 +132,7 @@ describe("turn finish", () => {
     expect(await run(db.getFinishedTurn(chat.id))).toBeDefined()
   })
 
-  it("finishes a bot's sub-agent for the bot without marking it unread for the human", async () => {
+  it("finishes an agent a bot started for the bot and marks it unread, like any chat", async () => {
     const db = await openDatabase()
     const { child } = await botWithChild(db)
 
@@ -135,26 +140,8 @@ describe("turn finish", () => {
     await endTurn(db, child.id, "t-1")
 
     expect(await run(db.getSessionSummary(child.id))).toMatchObject({
-      latestAttentionSequence: 0,
-      sidebarState: "idle"
-    })
-    expect(await run(db.getFinishedTurn(child.id))).toBeDefined()
-  })
-
-  it("settles a held bot sub-agent quietly", async () => {
-    const db = await openDatabase()
-    const { child } = await botWithChild(db)
-
-    await startTurn(db, child.id, "t-1")
-    await event(db, child.id, subagent)
-    await endTurn(db, child.id, "t-1")
-    await event(db, child.id, { backgroundTasks: [] })
-    vi.setSystemTime(new Date(Date.now() + ATTENTION_SETTLE_GRACE_MS))
-    await run(db.settleSessionAttention(child.id))
-
-    expect(await run(db.getSessionSummary(child.id))).toMatchObject({
-      latestAttentionSequence: 0,
-      sidebarState: "idle"
+      latestAttentionSequence: 1,
+      sidebarState: "unread"
     })
     expect(await run(db.getFinishedTurn(child.id))).toBeDefined()
   })

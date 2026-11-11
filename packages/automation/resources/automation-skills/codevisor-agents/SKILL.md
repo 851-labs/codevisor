@@ -22,7 +22,7 @@ Everything goes through a machine handle. `machine.agents.<tool>(args)` is the s
 | Follow up                                    | `agents.message({ agentId, text, delivery? })`                                                                 |
 | Answer its question                          | `agents.answer({ agentId, questionId, outcome, answers })`                                                     |
 | Stop its turn                                | `agents.cancel({ agentId })`                                                                                   |
-| Find your agents                             | `agents.list({ state?, project?, label?, parentAgentId?, next? })`                                             |
+| Find your agents                             | `agents.list({ state?, project?, label?, createdByAgentId?, next? })`                                          |
 | Finish with a `"shared"` helper              | `agents.close({ agentId })`                                                                                    |
 | Finish with a `"worktree"`/`"project"` agent | `machine.tools.codevisor.workspaces.archive({ workspaceId })`                                                  |
 
@@ -177,12 +177,12 @@ Examples:
 ```js
 ;async () => {
   const me = await machines.current.tools.codevisor.context.current()
-  return machines.current.agents.list({ parentAgentId: me.agentId })
-  // { items: [{ agentId, title, state, projectId, workspaceId, harness, labels, parentAgentId }], next? }
+  return machines.current.agents.list({ createdByAgentId: me.agentId })
+  // { items: [{ agentId, title, state, projectId, workspaceId, harness, labels, createdByAgentId }], next? }
 }
 ```
 
-- Filter by `state`, `project`, `label` (`"linear=ABC-123"`, or just a key), or `parentAgentId`.
+- Filter by `state`, `project`, `label` (`"linear=ABC-123"`, or just a key), or `createdByAgentId`.
 - Pass `next` back for the next page.
 - Keep durable state in labels and parent links, not only in your context, so you can find your agents again after compaction or a restart.
 
@@ -229,14 +229,14 @@ Talk to the agent first: ask it what happened, and read its reply. Only when tha
 
 ## If you are the child
 
-If `context.current()` has a `parentAgentId` and you are blocked, ask your parent directly:
+If `context.current()` has a `createdByAgentId` and you are blocked, ask the agent that started you directly, on its machine:
 
 ```js
 ;async () => {
-  const machine = machines.current
-  const me = await machine.tools.codevisor.context.current()
-  await machine.agents.message({
-    agentId: me.parentAgentId,
+  const me = await machines.current.tools.codevisor.context.current()
+  const creatorMachine = await machines.get(me.createdByAgentMachineId)
+  await creatorMachine.agents.message({
+    agentId: me.createdByAgentId,
     text: `Question from ${me.agentId}: …`
   })
 }

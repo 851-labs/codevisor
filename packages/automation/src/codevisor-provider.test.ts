@@ -1,4 +1,4 @@
-import { REMOTE_PARENT_HEADER, remoteSessionKey } from "@codevisor/api"
+import { CALLER_AGENT_TICKET_HEADER, remoteSessionKey } from "@codevisor/api"
 import type { CallToolResult } from "@modelcontextprotocol/server"
 import { afterEach, describe, expect, it, vi } from "vitest"
 
@@ -167,13 +167,19 @@ describe("Codevisor MCP provider", () => {
     expect(requests[7]!.url.searchParams.get("showHidden")).toBe("true")
     expect(requests[0]!.init.headers).toBeInstanceOf(Headers)
     expect(requestHeaders(requests[0]!.init).get("authorization")).toBe("Bearer stable-token")
-    expect(requestHeaders(requests[0]!.init).has(REMOTE_PARENT_HEADER)).toBe(false)
-    await provider.invoke({ ...callingContext, remoteParent: "verified-link" }, "agents.start", {
-      prompt: "Go",
-      title: "Fix",
-      isolation: "project"
-    })
-    expect(requestHeaders(requests.at(-1)!.init).get(REMOTE_PARENT_HEADER)).toBe("verified-link")
+    expect(requestHeaders(requests[0]!.init).has(CALLER_AGENT_TICKET_HEADER)).toBe(false)
+    await provider.invoke(
+      { ...callingContext, callerAgentTicket: "verified-link" },
+      "agents.start",
+      {
+        prompt: "Go",
+        title: "Fix",
+        isolation: "project"
+      }
+    )
+    expect(requestHeaders(requests.at(-1)!.init).get(CALLER_AGENT_TICKET_HEADER)).toBe(
+      "verified-link"
+    )
     await expect(provider.invoke(callingContext, "workspaces.delete", {})).rejects.toThrow(
       "workspaces.delete requires workspaceId"
     )
@@ -274,7 +280,8 @@ describe("Codevisor MCP provider", () => {
       prompt: "Go",
       title: "Fix",
       isolation: "worktree",
-      remoteParentAgentId: remoteSessionKey("mbp", "agent")
+      callerAgentId: "agent",
+      callerAgentMachineId: "mbp"
     })
   })
 
@@ -462,7 +469,8 @@ describe("Codevisor MCP provider", () => {
           return {
             workspaceId: "workspace-1",
             worktreeName: "retry-fix",
-            parentSessionId: "parent-session",
+            createdByAgentId: "parent-session",
+            createdByAgentMachineId: "mbp",
             machine: { id: "studio", name: "Mac Studio" },
             clientId: "window-2"
           }
@@ -477,7 +485,8 @@ describe("Codevisor MCP provider", () => {
       projectId: "calling project/id",
       workspaceId: "workspace-1",
       worktreeName: "retry-fix",
-      parentAgentId: "parent-session",
+      createdByAgentId: "parent-session",
+      createdByAgentMachineId: "mbp",
       machine: { machineId: "studio", name: "Mac Studio" },
       clientId: "window-2"
     })

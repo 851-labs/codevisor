@@ -5,7 +5,7 @@ import { makeDatabase } from "./index.js"
 import { run, tempDatabase } from "./test-support.js"
 
 describe("orchestration links and labels", () => {
-  it("persists a child session's parent and labels, and replaces labels only when asked", async () => {
+  it("persists which agent created or forked a chat on which machine, and replaces labels only when asked", async () => {
     const db = await run(makeDatabase({ filename: tempDatabase(), serverId: "local" }))
     try {
       const project = await run(db.createProject({ folderPath: "/tmp/orchestration-sessions" }))
@@ -14,15 +14,41 @@ describe("orchestration links and labels", () => {
         db.createSession({
           projectId: project.id,
           harnessId: "codex",
-          parentSessionId: parent.id.toUpperCase(),
+          createdByAgentId: parent.id.toUpperCase(),
           labels: { issue: "851-12", role: "worker" }
         })
       )
+      const remoteChild = await run(
+        db.createSession({
+          projectId: project.id,
+          harnessId: "codex",
+          createdByAgentId: "remote-parent",
+          createdByAgentMachineId: "machine-b"
+        })
+      )
+      const fork = await run(
+        db.createSession({
+          projectId: project.id,
+          harnessId: "codex",
+          forkedFromAgentId: parent.id
+        })
+      )
       expect(child).toMatchObject({
-        parentSessionId: parent.id,
+        createdByAgentId: parent.id,
+        createdByAgentMachineId: "local",
         labels: { issue: "851-12", role: "worker" }
       })
-      expect(parent.parentSessionId).toBeUndefined()
+      expect(child.forkedFromAgentId).toBeUndefined()
+      expect(remoteChild).toMatchObject({
+        createdByAgentId: "remote-parent",
+        createdByAgentMachineId: "machine-b"
+      })
+      expect(fork).toMatchObject({
+        forkedFromAgentId: parent.id,
+        forkedFromAgentMachineId: "local"
+      })
+      expect(fork.createdByAgentId).toBeUndefined()
+      expect(parent.createdByAgentId).toBeUndefined()
       expect(parent.labels).toBeUndefined()
 
       expect((await run(db.updateSession(child.id, { title: "Renamed" }))).labels).toEqual({

@@ -23,7 +23,7 @@ const tools: ReadonlyArray<Tool> = [
   {
     name: "context.current",
     description:
-      "Return where you are: agentId, projectId, workspaceId, worktreeName (your git worktree, absent for the project folder), parentAgentId (the agent that started you, if any), the machine you run on, and clientId (the app window that sent the current message, absent for automations and agent-sent messages).",
+      "Return where you are: agentId, projectId, workspaceId, worktreeName (your git worktree, absent for the project folder), createdByAgentId and createdByAgentMachineId (the agent that started you and the machine it runs on, if an agent started you), the machine you run on, and clientId (the app window that sent the current message, absent for automations and agent-sent messages).",
     inputSchema: { type: "object", properties: {}, additionalProperties: false }
   },
   ...agentTools.map((tool) => tool.definition),
@@ -89,7 +89,8 @@ const confirmationRequired = (spec: CodevisorApiToolSpec): Error =>
 export interface CodevisorCurrentContext {
   readonly workspaceId?: string
   readonly worktreeName?: string
-  readonly parentSessionId?: string
+  readonly createdByAgentId?: string
+  readonly createdByAgentMachineId?: string
   readonly machine?: { readonly id: string; readonly name: string }
   readonly clientId?: string
 }
@@ -115,7 +116,7 @@ export const makeCodevisorProvider = (
           ...(context.projectId === undefined ? {} : { projectId: context.projectId }),
           ...(extra.workspaceId === undefined ? {} : { workspaceId: extra.workspaceId }),
           ...(extra.worktreeName === undefined ? {} : { worktreeName: extra.worktreeName }),
-          ...(extra.parentSessionId === undefined ? {} : { parentAgentId: extra.parentSessionId }),
+          ...createdByFields(extra),
           ...(extra.machine === undefined
             ? {}
             : { machine: { machineId: extra.machine.id, name: extra.machine.name } }),
@@ -137,3 +138,13 @@ export const makeCodevisorProvider = (
   closeSession: async () => undefined,
   close: async () => undefined
 })
+
+const createdByFields = (extra: CodevisorCurrentContext) => {
+  if (extra.createdByAgentId === undefined) return {}
+  return {
+    createdByAgentId: extra.createdByAgentId,
+    ...(extra.createdByAgentMachineId === undefined
+      ? {}
+      : { createdByAgentMachineId: extra.createdByAgentMachineId })
+  }
+}

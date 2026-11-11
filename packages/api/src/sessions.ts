@@ -4,6 +4,7 @@ import { SessionAutoResume } from "./auto-resume.js"
 import { Labels } from "./labels.js"
 import { CreateProjectRequest } from "./projects.js"
 import {
+  AgentReferenceFields,
   GoalStatus,
   SessionCreator,
   SessionGoal,
@@ -142,8 +143,8 @@ export const SessionSummary = Schema.Struct({
   pendingPlanApproval: Schema.optional(Schema.Boolean),
   talkingToAgent: Schema.optional(Schema.Boolean),
   latestBotMessage: Schema.optional(BotMessagePreview),
-  parentSessionId: Schema.optional(Schema.String),
   createdBy: Schema.optional(SessionCreator),
+  ...AgentReferenceFields,
   labels: Schema.optional(Labels)
 })
 export type SessionSummary = typeof SessionSummary.Type
@@ -390,8 +391,8 @@ export const CreateSessionRequest = Schema.Struct({
   origin: Schema.optional(SessionOrigin),
   worktreeName: Schema.optional(Schema.String),
   workspaceId: Schema.optional(Schema.String),
-  parentSessionId: Schema.optional(Schema.String),
   createdBy: Schema.optional(SessionCreator),
+  ...AgentReferenceFields,
   labels: Schema.optional(Labels),
   configSelections: Schema.optional(Schema.Record(Schema.String, Schema.String)),
   createdAt: Schema.optional(Schema.String),

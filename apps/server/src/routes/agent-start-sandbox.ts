@@ -73,6 +73,6 @@ const sandboxAgent = (request: StartAgentRequest, plan: SandboxAgentPlan): Sandb
     harness: plan.harnessId,
     ...(model === undefined ? {} : { model }),
     ...(request.labels === undefined ? {} : { labels: request.labels }),
-    ...(plan.callerSessionId === undefined ? {} : { parentSessionId: plan.callerSessionId })
+    ...(plan.callerSessionId === undefined ? {} : { createdByAgentId: plan.callerSessionId })
   }
 }

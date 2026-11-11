@@ -166,7 +166,7 @@ describe("agent lifecycle routes", () => {
         )
       const parent = await create({})
       const child = await create({
-        parentSessionId: parent,
+        createdByAgentId: parent,
         labels: { role: "worker" },
         worktreeName: tree.name,
         workspaceId: randomUUID(),
@@ -174,7 +174,7 @@ describe("agent lifecycle routes", () => {
       })
       const list = async (query: string) => (await jsonRequest(server, `/v1/agents?${query}`)).body
 
-      expect(await list(`parentAgentId=${parent.toUpperCase()}`)).toEqual({
+      expect(await list(`createdByAgentId=${parent.toUpperCase()}`)).toEqual({
         items: [
           {
             agentId: child,
@@ -185,7 +185,8 @@ describe("agent lifecycle routes", () => {
             workspaceId: expect.any(String),
             worktreeName: tree.name,
             labels: { role: "worker" },
-            parentAgentId: parent,
+            createdByAgentId: parent,
+            createdByAgentMachineId: "server-a",
             updatedAt: expect.any(String)
           }
         ]

@@ -17,7 +17,6 @@ import {
   endsAnnouncedTurn,
   isUpdatePause,
   recordTurnEnd,
-  sessionIsBotOwned,
   turnWasRunning
 } from "./turn-finish.js"
 
@@ -79,9 +78,7 @@ const bumpAttentionRevision = (sqlite: Database.Database, sessionId: string): vo
 }
 
 const finishTurn = (sqlite: Database.Database, sessionId: string): void => {
-  if (sessionIsBotOwned(sqlite, sessionId))
-    sqlite.prepare(attentionSql.settleQuietly).run(sessionId)
-  else bumpAttentionRevision(sqlite, sessionId)
+  bumpAttentionRevision(sqlite, sessionId)
   announceFinishedTurn(sqlite, sessionId)
 }
 
@@ -314,8 +311,6 @@ const attentionSql = {
   bySession: "select * from session_attention where session_id = ?",
   bumpRevision: `update session_attention set attention_revision = attention_revision + 1,
          pending_finish = 0, settle_due_at = null where session_id = ?`,
-  settleQuietly:
-    "update session_attention set pending_finish = 0, settle_due_at = null where session_id = ?",
   clearSettleDue: "update session_attention set settle_due_at = null where session_id = ?",
   scheduleSettle: "update session_attention set settle_due_at = ? where session_id = ?",
   pendingSettles:

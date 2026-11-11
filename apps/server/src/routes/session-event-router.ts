@@ -1,5 +1,6 @@
+import { randomUUID } from "node:crypto"
+
 import {
-  parseRemoteSessionKey,
   type EventEnvelope,
   type ExecTaskEvent,
   type SessionEventType,
@@ -13,6 +14,7 @@ import type { ExecutionJobFinished } from "@codevisor/mcp"
 import { run, swallowError, type CodevisorServerServices } from "../server-context.js"
 import { isRecord } from "../unknown-values.js"
 import { botForChat } from "./bot-turns.js"
+import type { RemoteCreatorEvents } from "./remote-creator-events.js"
 import {
   erroredMessage,
   execTaskFinishedMessage,
@@ -58,10 +60,10 @@ const usageLimitDetailOf = (item: TranscriptItem): string | undefined =>
 export const makeSessionEventRouter = (
   services: CodevisorServerServices,
   outbox: SessionEventOutbox,
-  afterTurnFinished: () => Promise<void>
+  remoteCreators: RemoteCreatorEvents
 ): SessionEventRouter => {
   const actionKinds = new Map<string, string | undefined>()
-  const publish = makePublisher(services, outbox)
+  const publish = makePublisher(services, outbox, remoteCreators)
   const announcements = new Map<string, Promise<void>>()
 
   const announceFinishedTurn = async (sessionId: string) => {
@@ -70,12 +72,14 @@ export const makeSessionEventRouter = (
 
     const target = await run(services.db.getSessionSummary(sessionId))
     const end = await latestTurnEnd(services, sessionId, finished.stopReason)
-    await publish(target, "turn_ended", (subscriptionId) =>
-      turnEndedMessage(target, end, subscriptionId)
+    await publish(
+      target,
+      "turn_ended",
+      (subscriptionId) => turnEndedMessage(target, end, subscriptionId),
+      { occurrence: `${finished.revision}` }
     )
     await run(services.db.markTurnAnnounced(sessionId, finished.revision))
     outbox.forgetWake(sessionId)
-    void afterTurnFinished().catch(swallowError)
   }
 
   const announceInOrder = (sessionId: string): Promise<void> => {
@@ -118,7 +122,9 @@ export const makeSessionEventRouter = (
       owner,
       "job_finished",
       (subscriptionId) => jobFinishedMessage(job, subscriptionId),
-      caller
+      {
+        extra: caller
+      }
     )
   }
 
@@ -134,7 +140,7 @@ export const makeSessionEventRouter = (
       owner,
       "job_finished",
       (subscriptionId) => fromMachine(execTaskFinishedMessage(finished, subscriptionId), machine),
-      [{ subscriberId: owner.id }]
+      { extra: [{ subscriberId: owner.id }] }
     )
   }
 
@@ -178,15 +184,33 @@ interface Recipient {
 
 type BuildMessage = (subscriptionId?: string) => SessionEventMessage
 
+interface PublishOptions {
+  readonly extra?: ReadonlyArray<Recipient>
+  readonly occurrence?: string
+}
+
+const CREATOR_EVENTS: ReadonlySet<SessionEventType> = new Set([
+  "turn_ended",
+  "waiting_for_user",
+  "errored"
+])
+
 const makePublisher =
-  (services: CodevisorServerServices, outbox: SessionEventOutbox) =>
+  (
+    services: CodevisorServerServices,
+    outbox: SessionEventOutbox,
+    remoteCreators: RemoteCreatorEvents
+  ) =>
   async (
     target: SessionSummary,
     type: SessionEventType,
     build: BuildMessage,
-    extra: ReadonlyArray<Recipient> = []
+    options: PublishOptions = {}
   ): Promise<void> => {
-    const recipients = await recipientsFor(services, target, type, extra)
+    if (CREATOR_EVENTS.has(type)) {
+      await remoteCreators.notify(target, type, build(), options.occurrence ?? randomUUID())
+    }
+    const recipients = await recipientsFor(services, target, type, options.extra ?? [])
     for (const recipient of recipients) {
       if (pingPong(outbox, target, type, recipient)) continue
       if (recipient.subscription?.once === true) {
@@ -208,21 +232,21 @@ const recipientsFor = async (
   const explicit = (await run(services.db.listSubscriptionsTargeting(target.id)))
     .filter((subscription) => subscription.events.includes(type))
     .map((subscription) => ({ subscriberId: subscription.subscriberSessionId, subscription }))
-  const implicit = [...extra, ...(await botParentRecipients(services, target, type))]
+  const implicit = [...extra, ...(await botCreatorRecipients(services, target, type))]
   const named = new Set(explicit.map((recipient) => recipient.subscriberId))
   return [...explicit, ...implicit.filter((recipient) => !named.has(recipient.subscriberId))]
 }
 
-const botParentRecipients = async (
+const botCreatorRecipients = async (
   services: CodevisorServerServices,
   target: SessionSummary,
   type: SessionEventType
 ): Promise<ReadonlyArray<Recipient>> => {
-  const parentSessionId = target.parentSessionId
-  if (type !== "turn_ended" || parentSessionId === undefined) return []
-  if (parseRemoteSessionKey(parentSessionId) !== undefined) return []
-  const parentIsBot = (await botForChat(services, parentSessionId)) !== undefined
-  return parentIsBot ? [{ subscriberId: parentSessionId }] : []
+  const creatorId = target.createdByAgentId
+  if (type !== "turn_ended" || creatorId === undefined) return []
+  if (target.createdByAgentMachineId !== target.serverId) return []
+  const creatorIsBot = (await botForChat(services, creatorId)) !== undefined
+  return creatorIsBot ? [{ subscriberId: creatorId }] : []
 }
 
 const pingPong = (

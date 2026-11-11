@@ -21,7 +21,7 @@ const ListAgentsArgs = Schema.Struct({
   state: Schema.optional(AgentState),
   project: Schema.optional(Schema.String),
   label: Schema.optional(Schema.String),
-  parentAgentId: Schema.optional(Schema.String),
+  createdByAgentId: Schema.optional(Schema.String),
   next: Schema.optional(Schema.String)
 })
 const AgentIdArgs = Schema.Struct({ agentId: Schema.String })
@@ -52,7 +52,7 @@ const waitBudget = apiTool("agents.wait", "", "POST", "/v1/agents/wait", {
 export const codevisorAgentTools: ReadonlyArray<AgentTool> = [
   agentTool(
     "agents.list",
-    "List agents on this machine, newest activity first, as slim summaries: agentId, title, state (working, waitingForUser, idle, errored), projectId, workspaceId, harness, labels, parentAgentId. Filter by state, project (id or name), label (key=value, or key for any value), or parentAgentId (the agents a given agent started). Pass next back for the next page.",
+    "List agents on this machine, newest activity first, as slim summaries: agentId, title, state (working, waitingForUser, idle, errored), projectId, workspaceId, harness, labels, createdByAgentId and createdByAgentMachineId. Filter by state, project (id or name), label (key=value, or key for any value), or createdByAgentId (the agents a given agent started). Pass next back for the next page.",
     ListAgentsArgs,
     (tool, args) => listAgents(tool, Schema.decodeUnknownSync(ListAgentsArgs)(args))
   ),
@@ -112,7 +112,7 @@ const listAgents = async (
         state: args.state,
         project: args.project,
         label: args.label,
-        parentAgentId: args.parentAgentId
+        createdByAgentId: args.createdByAgentId
       }
     })
   )

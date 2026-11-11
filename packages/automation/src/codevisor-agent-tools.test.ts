@@ -31,7 +31,7 @@ describe("agents.list", () => {
     const listed = await call(local, "agents.list", {
       state: "working",
       project: "Codevisor",
-      parentAgentId: "caller",
+      createdByAgentId: "caller",
       label: "role=worker"
     })
 
@@ -39,7 +39,7 @@ describe("agents.list", () => {
     expect(requests.find((request) => request.path === "/v1/agents")?.query).toEqual({
       state: "working",
       project: "Codevisor",
-      parentAgentId: "caller",
+      createdByAgentId: "caller",
       label: "role=worker"
     })
   })

@@ -42,13 +42,7 @@ const parseOrigin = (value: unknown): GatewayOrigin | undefined => {
   return { machineId, machineName, ...Object.fromEntries(optional) }
 }
 
-const OPTIONAL_ORIGIN_FIELDS = [
-  "sessionId",
-  "sessionTitle",
-  "clientId",
-  "botId",
-  "botMachineId"
-] as const
+const OPTIONAL_ORIGIN_FIELDS = ["sessionId", "sessionTitle", "clientId"] as const
 
 const writeError = (
   response: ServerResponse,
@@ -132,10 +126,10 @@ export const routeGatewayInvoke = async (
     if (!response.writableFinished) controller.abort(new Error("the calling machine cancelled"))
   })
   try {
-    const result = await invokeForFleet(services, call, (remoteParent) =>
+    const result = await invokeForFleet(services, call, (callerAgentTicket) =>
       mcp.invokeRemoteGatewayCall(call.origin, path, body.args, {
         signal: controller.signal,
-        ...(remoteParent === undefined ? {} : { remoteParent })
+        ...(callerAgentTicket === undefined ? {} : { callerAgentTicket })
       })
     )
     writeJson(response, 200, { result: result ?? null })

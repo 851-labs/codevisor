@@ -78,7 +78,7 @@ describe("POST /v1/agents", () => {
     expect(subscriptions).toEqual([expect.objectContaining({ targetSessionId: started.agentId })])
     const child = await run(services.db.getSessionSummary(started.agentId))
     expect(child).toMatchObject({
-      parentSessionId: caller,
+      createdByAgentId: caller,
       createdBy: "agent",
       labels: { role: "worker" }
     })

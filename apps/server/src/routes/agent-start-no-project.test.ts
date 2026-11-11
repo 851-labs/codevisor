@@ -67,7 +67,7 @@ describe("POST /v1/agents with noProject", () => {
     const folder = scratch!.locations[0]!.folderPath
     expect(readdirSync(folder)).toEqual([])
     expect(await run(services.db.getSessionSummary(started.agentId))).toMatchObject({
-      parentSessionId: caller,
+      createdByAgentId: caller,
       cwd: folder
     })
     await waitFor(() => agents.prompts.some(([, text]) => text === "Try it"))

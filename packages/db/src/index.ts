@@ -44,7 +44,7 @@ export * from "./service.js"
 export { isAgentQuestion, setupQuestionPresentation } from "./setup-questions.js"
 
 export type { AutoResumeRecord, AutoResumeState } from "./auto-resume-service.js"
-export type { FleetMessage, FleetPendingTurn, FleetPrompt } from "./fleet-outbox-service.js"
+export type { FleetMessage, FleetPrompt } from "./fleet-outbox-service.js"
 export type { FinishedTurn } from "./turn-finish.js"
 
 export type {
@@ -54,11 +54,8 @@ export type {
   WorkspaceMessageText
 } from "./workspace-media.js"
 export type {
-  BotLink,
   CreateWorkspaceWithSessionRecord,
-  RemoteBotLink,
-  UpsertWorkspaceRecord,
-  WorkspaceBotFields
+  UpsertWorkspaceRecord
 } from "./workspace-service-types.js"
 export type {
   DeliveredPluginAppContext,
