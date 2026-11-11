@@ -11,6 +11,7 @@ extension ChatScreen {
     return VStack(spacing: ComposerGlassStyle.clusterSpacing) {
       if let childAgents {
         ChildAgentsPill(content: childAgents, glassNamespace: composerGlassNamespace)
+          .padding(.leading, composerFieldLeadingInset)
           .frame(maxWidth: .infinity, alignment: .leading)
       }
       if let todos = controller.visibleTodos {
@@ -86,6 +87,10 @@ extension ChatScreen {
   private var visibleChildAgents: ChildAgentsPillContent? {
     guard !isSlashPalettePresented, let workspaceChildAgents, let workspace = hostWorkspace else { return nil }
     return workspaceChildAgents.pill(for: workspace)
+  }
+
+  private var composerFieldLeadingInset: CGFloat {
+    ComposerSlimLayout.isActive(usesSlimComposer, for: controller) ? ComposerSlimLayout.fieldLeadingInset : 0
   }
 
   private var hostWorkspace: Workspace? {

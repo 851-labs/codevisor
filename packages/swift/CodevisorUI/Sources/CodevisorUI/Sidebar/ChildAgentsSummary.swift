@@ -1,14 +1,28 @@
 public struct ChildAgentsSummary: Equatable, Sendable {
+  public let count: Int
   public let workingCount: Int
+  public let sharedHarnessId: String?
 
-  public init?<Agent>(_ agents: [Agent], isWorking: (Agent) -> Bool) {
-    let workingCount = agents.count(where: isWorking)
-    guard workingCount > 0 else { return nil }
+  public init?<Agent>(
+    _ agents: [Agent], isWorking: (Agent) -> Bool, harnessId: (Agent) -> String?
+  ) {
+    guard !agents.isEmpty else { return nil }
 
-    self.workingCount = workingCount
+    count = agents.count
+    workingCount = agents.count(where: isWorking)
+    sharedHarnessId = Self.sharedHarnessId(Set(agents.map(harnessId)))
+  }
+
+  public var isWorking: Bool {
+    workingCount > 0
   }
 
   public var title: String {
-    workingCount == 1 ? "1 Agent" : "\(workingCount) Agents"
+    count == 1 ? "1 Agent" : "\(count) Agents"
+  }
+
+  private static func sharedHarnessId(_ harnessIds: Set<String?>) -> String? {
+    guard harnessIds.count == 1 else { return nil }
+    return harnessIds.first ?? nil
   }
 }
