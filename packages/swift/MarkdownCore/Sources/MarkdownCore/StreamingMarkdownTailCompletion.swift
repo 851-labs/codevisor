@@ -26,6 +26,8 @@ enum StreamingMarkdownTailCompletion {
   private static let openParen = UInt8(ascii: "(")
   private static let closeParen = UInt8(ascii: ")")
   private static let newline = UInt8(ascii: "\n")
+  private static let space = UInt8(ascii: " ")
+  private static let tab = UInt8(ascii: "\t")
 
   static func completed(_ markdown: String) -> String {
     let bytes = Array(markdown.utf8)
@@ -35,17 +37,34 @@ enum StreamingMarkdownTailCompletion {
     let openers = unclosedOpeners(in: bytes, from: start)
     guard !openers.isEmpty else { return markdown }
 
-    let ending = ending(closing: openers, byteCount: bytes.count)
-    let kept = String(decoding: bytes.prefix(ending.keptByteCount), as: UTF8.self)
+    let ending = ending(closing: openers, in: bytes)
+    let keptCount = trimmedLength(bytes, upTo: ending.keptByteCount, before: ending.closers.first)
+    let kept = String(decoding: bytes.prefix(keptCount), as: UTF8.self)
     return kept + ending.closers.joined()
   }
 
-  private static func ending(closing openers: [Opener], byteCount: Int) -> Ending {
-    var ending = Ending(keptByteCount: byteCount)
+  private static func trimmedLength(_ bytes: [UInt8], upTo count: Int, before closer: String?) -> Int {
+    guard closer == "**" || closer == "~~" else { return count }
+
+    var length = count
+    while length > 0, bytes[length - 1] == space || bytes[length - 1] == tab { length -= 1 }
+    return length
+  }
+
+  private static func ending(closing openers: [Opener], in bytes: [UInt8]) -> Ending {
+    var ending = Ending(keptByteCount: bytes.count)
     for opener in openers.reversed() {
       if let start = droppedStart(of: opener, byteCount: ending.keptByteCount) {
         ending = Ending(keptByteCount: start)
         continue
+      }
+      if case let .linkText(start, _) = opener {
+        let label = bytes[(start + 1)..<ending.keptByteCount]
+        if label.isEmpty {
+          ending = Ending(keptByteCount: start)
+          continue
+        }
+        if !looksLikeLinkLabel(label) { continue }
       }
       ending.closers.append(closer(for: opener))
     }
@@ -79,12 +98,12 @@ enum StreamingMarkdownTailCompletion {
     var index = start
     while index < bytes.count {
       let byte = bytes[index]
-      if byte == backslash {
-        index += 2
-        continue
-      }
       if case let .code(_, length)? = openers.last {
         index = scanInsideCode(bytes, at: index, length: length, openers: &openers)
+        continue
+      }
+      if byte == backslash {
+        index += 2
         continue
       }
       if case .linkDestination? = openers.last {
@@ -144,10 +163,16 @@ enum StreamingMarkdownTailCompletion {
       openers.append(.linkDestination(start: start, isImage: isImage))
       return index + 2
     }
-    if index + 1 == bytes.count {
+    if index + 1 == bytes.count, isImage || looksLikeLinkLabel(bytes[(start + 1)..<index]) {
       openers.append(.linkLabel(start: start, isImage: isImage))
     }
     return index + 1
+  }
+
+  private static func looksLikeLinkLabel(_ label: ArraySlice<UInt8>) -> Bool {
+    let letters = label.filter { (65...90).contains($0) || (97...122).contains($0) || $0 >= 0x80 }
+    return !letters.isEmpty
+      && !(label.count == 1 && (label.first == UInt8(ascii: "x") || label.first == UInt8(ascii: "X")))
   }
 
   private static func toggle(_ marker: Opener, in openers: inout [Opener]) {

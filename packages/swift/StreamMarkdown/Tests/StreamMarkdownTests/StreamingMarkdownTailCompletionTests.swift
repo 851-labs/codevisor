@@ -1,7 +1,11 @@
 import Foundation
 import MarkdownCore
+import SwiftUI
 import Testing
 
+@testable import StreamMarkdown
+
+@MainActor
 struct StreamingMarkdownTailCompletionTests {
   private static let sentence =
     "Turn 4 sentence 2: the layout pass touches **runway** state, calls `reconcile()`, and links to "
@@ -51,10 +55,29 @@ struct StreamingMarkdownTailCompletionTests {
     #expect(parser.parse(source, completingOpenTail: true) == MarkdownParser().parse(source))
   }
 
+  @Test(
+    "Unfinished markup in tricky spots never shows stray markers",
+    arguments: [
+      "Use `C:\\` then **bold text** and more.",
+      "This is **really important** stuff.",
+      "Check [ ] boxes and [1] footnotes and [docs](https://example.com) links.",
+    ])
+  func trickyPrefixesRenderPrefixesOfTheFinalText(_ document: String) {
+    var parser = IncrementalMarkdownParser()
+    let final = Self.plainText(MarkdownParser().parse(document))
+    var source = ""
+    for character in document {
+      source.append(character)
+      let shown = Self.plainText(parser.parse(source, completingOpenTail: true))
+      #expect(final.hasPrefix(shown) || shown.isEmpty, "Source: \(source) shown: \(shown)")
+    }
+  }
+
+  @MainActor
   private static func plainText(_ blocks: [MarkdownBlock]) -> String {
-    blocks.compactMap { block in
-      if case let .paragraph(text) = block { return text.plainText }
-      return nil
-    }.joined(separator: "\n").trimmingCharacters(in: .whitespaces)
+    guard !blocks.isEmpty else { return "" }
+
+    return MarkdownTextRunRenderer.attributedString(for: blocks, theme: .default, foregroundColor: .primary).string
+      .trimmingCharacters(in: .whitespaces)
   }
 }
