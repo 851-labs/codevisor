@@ -217,7 +217,6 @@ extension VirtualizedTranscriptScrollView: TranscriptFrameAdapter {
 
   @objc func presentationDisplayLinkDidFire(_ displayLink: CADisplayLink) {
     surfaceController.presentFrame(at: displayLink.timestamp, adapter: self)
-    decayBottomSlack(at: CACurrentMediaTime())
     displayLink.isPaused = !displayFrameRequested
   }
 
