@@ -41,8 +41,6 @@
       return copy
     }
 
-    var snapshot: NSAttributedString {
-      text.copy() as! NSAttributedString
-    }
+    var snapshot: NSAttributedString { text }
   }
 #endif
