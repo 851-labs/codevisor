@@ -297,6 +297,7 @@ extension VirtualizedTranscriptScrollView {
     }
     pendingMeasurements[measurement.key] = measurement
     guard !isDetaching else { return }
+    setNeedsLayout()
     if presentationDisplayLink != nil {
       requestDisplayFrame()
       return
@@ -307,6 +308,12 @@ extension VirtualizedTranscriptScrollView {
       guard !Task.isCancelled else { return }
       self?.commitPendingMeasurements()
     }
+  }
+
+  func commitMeasurementsInLayoutPass() {
+    guard !pendingMeasurements.isEmpty, !isDetaching, !isPreparingInitialProjection else { return }
+
+    commitPendingMeasurements()
   }
 
   func commitPendingMeasurements() {

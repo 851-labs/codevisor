@@ -263,6 +263,11 @@ final class VirtualizedTranscriptScrollView: UIScrollView, UIScrollViewDelegate 
     }
   }
 
+  override func layoutSublayers(of layer: CALayer) {
+    super.layoutSublayers(of: layer)
+    commitMeasurementsInLayoutPass()
+  }
+
   override func layoutSubviews() {
     let previousViewportSize = lastViewportSize
     let previousDistanceFromBottom = lastDistanceFromBottom
