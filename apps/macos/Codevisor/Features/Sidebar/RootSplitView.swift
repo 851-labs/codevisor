@@ -6,6 +6,7 @@ struct RootSplitView<Sidebar: View, Detail: View>: View {
   let sidebar: Sidebar
   let detail: Detail
   @Environment(AdaptivePanelLayout.self) private var panelLayout
+  @Environment(\.firstLaunchCoversApp) private var firstLaunchCoversApp
 
   init(
     store: SessionStore?, windowControl: ClientWindowControl, @ViewBuilder sidebar: () -> Sidebar,
@@ -20,6 +21,7 @@ struct RootSplitView<Sidebar: View, Detail: View>: View {
   var body: some View {
     NavigationSplitView(columnVisibility: visibility.columnVisibility) {
       sidebar
+        .toolbar(removing: firstLaunchCoversApp ? .sidebarToggle : nil)
     } detail: {
       detail
     }

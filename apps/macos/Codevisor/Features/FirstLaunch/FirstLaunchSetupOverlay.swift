@@ -21,8 +21,9 @@ struct FirstLaunchSetupOverlay<Content: View>: View {
     ZStack {
       content
         .opacity(phase.coversApp ? 0 : 1)
-        .allowsHitTesting(!phase.coversApp)
         .accessibilityHidden(phase.coversApp)
+        .toolbar(removing: phase.coversApp ? .title : nil)
+        .environment(\.firstLaunchCoversApp, phase.coversApp)
       if phase != .gone, let setup {
         FirstLaunchSetupView(
           setup: setup,
@@ -33,7 +34,8 @@ struct FirstLaunchSetupOverlay<Content: View>: View {
           FirstLaunchGetStartedButton(isReady: setup.canGetStarted) { setup.getStarted() }
         }
         .background(FirstLaunchKeyboard(isCovering: phase == .covering) { setup.getStarted() })
-        .allowsHitTesting(phase == .covering)
+        .contentShape(Rectangle())
+        .allowsHitTesting(phase.coversApp)
       }
     }
     .onChange(of: setup?.presentation) { _, presentation in leave(after: presentation) }
