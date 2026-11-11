@@ -23,6 +23,9 @@ struct HomeSidebarBotRowView: View, Equatable {
   private func onArchive() { actions.actions.archiveBot(bot.bot) }
   private func onUnarchive() { actions.actions.unarchiveBot(bot.bot) }
   private func onDelete() { actions.actions.deleteBot(bot.bot) }
+  private func onSetUnread(_ isUnread: Bool) {
+    actions.actions.setUnread(bot.bot.sessionId, bot.bot.serverId, isUnread)
+  }
 
   private var isArchived: Bool { bot.bot.isArchived }
 
@@ -110,6 +113,8 @@ struct HomeSidebarBotRowView: View, Equatable {
         Label("Unarchive", systemImage: "arrow.uturn.backward")
       }
     } else {
+      UnreadMenuItem(isUnread: bot.conversation.isUnread, setUnread: onSetUnread)
+      Divider()
       Button(action: onEdit) {
         Label("Edit", systemImage: "pencil")
       }

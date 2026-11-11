@@ -41,6 +41,10 @@ struct HomeSidebarTabRowView: View, Equatable {
       }
     }
     .contextMenu {
+      if let chatId = row.chatSessionId {
+        UnreadMenuItem(isUnread: row.isUnread) { actions.actions.setUnread(chatId, workspace.serverId, $0) }
+        Divider()
+      }
       if let onOpenInNewWindow {
         Button(action: onOpenInNewWindow) {
           Label("Open in New Window", systemImage: "macwindow.badge.plus")

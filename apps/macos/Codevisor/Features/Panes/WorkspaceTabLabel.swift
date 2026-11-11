@@ -16,6 +16,10 @@ struct WorkspaceTabLabel {
     isSplit = tab.root.allGroups.count > 1
   }
 
+  var unreadChat: ChatSession? {
+    icon.isQuietChat ? nil : icon.chatSession
+  }
+
   private static func descriptor(
     of tab: WorkspaceTab, in workspace: Workspace, store: SessionStore
   ) -> PaneDescriptorState? {

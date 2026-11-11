@@ -68,6 +68,10 @@ public struct ChatSession: Identifiable, Sendable, Codable, Equatable {
     agentSessionId?.isEmpty == false
   }
 
+  public var isUnread: Bool {
+    unreadCount > 0 || hasUnreadError
+  }
+
   public init(
     id: UUID = UUID(),
     projectId: UUID,

@@ -18,7 +18,6 @@ extension SessionContainerView {
         panes: floatingPanesInSelectedTab,
         group: { configuredCenterModel(leafId: $0) },
         title: paneTitle,
-        sessionStore: store,
         actions: floatingPaneActions
       )
     }

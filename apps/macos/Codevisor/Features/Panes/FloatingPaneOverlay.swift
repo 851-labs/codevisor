@@ -6,7 +6,6 @@ struct FloatingPaneOverlay: View {
   let panes: [FloatingPane]
   let group: (UUID) -> PaneGroupModel
   let title: (PaneDescriptorState) -> String
-  let sessionStore: SessionStore?
   let actions: (UUID) -> FloatingPaneActions
 
   private static let coordinateSpace = "floating-panes"
@@ -33,7 +32,6 @@ struct FloatingPaneOverlay: View {
       frame: FloatingPaneGeometry.clamped(placed, container: container),
       container: container,
       coordinateSpace: Self.coordinateSpace,
-      sessionStore: sessionStore,
       actions: actions
     )
     .onChange(of: container, initial: true) {

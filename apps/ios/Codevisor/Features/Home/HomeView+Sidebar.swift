@@ -57,6 +57,7 @@ extension HomeView {
       archiveBot: { bot in setBotArchived(bot, true) },
       unarchiveBot: { bot in setBotArchived(bot, false) },
       deleteBot: { bot in deletingBot = bot },
+      setUnread: { id, serverId, isUnread in setChatUnread(id, serverId: serverId, isUnread) },
       didSelectInSplit: { dismissOverlaySidebarAfterSelection() },
       refresh: { await refreshNavigation() }
     )
@@ -113,6 +114,14 @@ extension HomeView {
   private func deleteSection(_ section: CustomSection, from store: CustomSectionStore) {
     store.delete(section.id)
     collapsedGroupIDs.removeAll { $0 == SidebarWorkspaceGroup.customSectionID(section.id) }
+  }
+
+  private func setChatUnread(_ id: UUID, serverId: String, _ isUnread: Bool) {
+    if isUnread {
+      projectList.markSessionUnread(id, serverId: serverId)
+    } else {
+      projectList.markSessionRead(id, serverId: serverId)
+    }
   }
 
   private func togglePin(_ id: UUID) {

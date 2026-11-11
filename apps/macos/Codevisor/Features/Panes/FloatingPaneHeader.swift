@@ -6,7 +6,6 @@ struct FloatingPaneHeader: View {
   let pane: PaneDescriptorState?
   let title: String
   let source: PaneToolbarSource?
-  let sessionStore: SessionStore?
   let coordinateSpace: String
   let actions: FloatingPaneActions
   let drag: FloatingPaneDrag
@@ -81,7 +80,7 @@ struct FloatingPaneHeader: View {
           .labelStyle(.titleAndIcon)
       }
       if let session = PaneMenuItems.chatSession(of: pane, in: environment.projectList) {
-        ChatSessionUnreadMenuItem(session: session, store: sessionStore)
+        ChatSessionUnreadMenuItem(session: session)
       }
       Divider()
       Button(role: .destructive, action: actions.close) {

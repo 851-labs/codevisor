@@ -91,7 +91,7 @@ struct HomeSidebarContentBuilder {
   }
 
   private func conversation(_ bot: Bot, session: ChatSession?) -> BotConversation {
-    let isUnread = session.map { $0.unreadCount > 0 || $0.hasUnreadError } ?? false
+    let isUnread = session?.isUnread ?? false
     return BotConversation(
       bot: bot, session: session, activity: session.map(activity(of:)) ?? .idle, isUnread: isUnread)
   }
@@ -193,7 +193,8 @@ struct HomeSidebarContentBuilder {
           status: chat.map(status(for:)) ?? status(forTerminal: pane),
           chatSessionId: chat?.id,
           tabId: owner.id,
-          isMainChat: workspace.isMainChatPane(pane)
+          isMainChat: workspace.isMainChatPane(pane),
+          isUnread: chat?.isUnread ?? false
         )
       )
     }

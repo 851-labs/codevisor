@@ -1,28 +1,22 @@
 import CodevisorCore
+import CodevisorUI
 import SwiftUI
 
 struct ChatSessionUnreadMenuItem: View {
   let session: ChatSession
-  let store: SessionStore?
+
+  @Environment(AppEnvironment.self) private var environment
 
   var body: some View {
-    Button {
-      if isUnread {
-        store?.markRead(session)
-      } else {
-        store?.markUnread(session)
-      }
-    } label: {
-      Label(
-        isUnread ? "Mark as read" : "Mark as unread",
-        systemImage: isUnread ? "message" : "message.badge"
-      )
-      .labelStyle(.titleAndIcon)
-    }
+    UnreadMenuItem(isUnread: session.isUnread, setUnread: setUnread)
   }
 
-  private var isUnread: Bool {
-    guard let store else { return false }
-    return store.unreadCount(session) > 0 || store.hasUnreadError(session)
+  private func setUnread(_ isUnread: Bool) {
+    let projectList = environment.projectList
+    if isUnread {
+      projectList.markSessionUnread(session.id, serverId: session.serverId)
+    } else {
+      projectList.markSessionRead(session.id, serverId: session.serverId)
+    }
   }
 }

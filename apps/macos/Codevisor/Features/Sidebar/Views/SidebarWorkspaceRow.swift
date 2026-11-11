@@ -32,6 +32,11 @@ struct SidebarWorkspaceRow: View {
 
   private var archivedOpacity: Double { isArchived ? 0.6 : 1 }
 
+  private var unreadChat: ChatSession? {
+    guard case let .chat(session, isQuiet: false) = icon else { return nil }
+    return session
+  }
+
   var body: some View {
     HoverableRow(
       isSelected: isSelected,
@@ -72,6 +77,10 @@ struct SidebarWorkspaceRow: View {
     .contextMenu {
       switch lifecycle {
       case let .active(isPinned, onTogglePin, onRename, onArchive):
+        if let unreadChat {
+          ChatSessionUnreadMenuItem(session: unreadChat)
+          Divider()
+        }
         Button(action: onTogglePin) {
           Label(isPinned ? "Unpin" : "Pin", systemImage: isPinned ? "pin.slash" : "pin")
             .labelStyle(.titleAndIcon)
