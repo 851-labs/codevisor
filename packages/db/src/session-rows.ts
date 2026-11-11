@@ -48,8 +48,11 @@ export interface SessionRow {
   readonly talking_to_agent: number
   readonly latest_bot_message_text?: string | null
   readonly latest_bot_message_attachments?: string | null
-  readonly parent_session_id?: string | null
   readonly created_by?: SessionCreator | null
+  readonly created_by_agent_id?: string | null
+  readonly created_by_agent_machine_id?: string | null
+  readonly forked_from_agent_id?: string | null
+  readonly forked_from_agent_machine_id?: string | null
   readonly labels?: string | null
 }
 
@@ -74,6 +77,8 @@ export interface PromptQueueRow {
   readonly client_id?: string | null
   readonly origin?: string | null
   readonly attribution?: string | null
+  readonly sent_by_agent_id?: string | null
+  readonly sent_by_agent_machine_id?: string | null
 }
 
 export const sessionRows = rowReader<SessionRow>({
@@ -116,8 +121,11 @@ export const sessionRows = rowReader<SessionRow>({
   talking_to_agent: integer,
   latest_bot_message_text: optional(nullable(text)),
   latest_bot_message_attachments: optional(nullable(text)),
-  parent_session_id: optional(nullable(text)),
   created_by: optional(nullable(Schema.is(SessionCreator))),
+  created_by_agent_id: optional(nullable(text)),
+  created_by_agent_machine_id: optional(nullable(text)),
+  forked_from_agent_id: optional(nullable(text)),
+  forked_from_agent_machine_id: optional(nullable(text)),
   labels: optional(nullable(text))
 })
 
@@ -141,5 +149,7 @@ export const promptQueueRows = rowReader<PromptQueueRow>({
   position: integer,
   client_id: optional(nullable(text)),
   origin: optional(nullable(text)),
-  attribution: optional(nullable(text))
+  attribution: optional(nullable(text)),
+  sent_by_agent_id: optional(nullable(text)),
+  sent_by_agent_machine_id: optional(nullable(text))
 })

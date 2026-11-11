@@ -1,6 +1,6 @@
 import {
   AgentCallerDefaults,
-  AgentIsolation,
+  AgentCheckout,
   Labels,
   PromptDelivery,
   ReorderQueuedPromptsRequest,
@@ -23,14 +23,13 @@ import {
 const StartAgentBody = Schema.Struct({
   prompt: Schema.String,
   title: Schema.String,
-  isolation: AgentIsolation,
+  checkout: Schema.optional(AgentCheckout),
+  sandbox: Schema.optional(Schema.String),
   harness: Schema.optional(Schema.String),
   model: Schema.optional(Schema.String),
   project: Schema.optional(Schema.String),
-  noProject: Schema.optional(Schema.Boolean),
   labels: Schema.optional(Labels),
-  callerDefaults: Schema.optional(AgentCallerDefaults),
-  sandboxProfile: Schema.optional(Schema.String)
+  callerDefaults: Schema.optional(AgentCallerDefaults)
 })
 
 const MessageAgentBody = Schema.Struct({
@@ -46,7 +45,7 @@ const AgentLabelsBody = Schema.Struct({
 export const codevisorAgentApiTools: ReadonlyArray<CodevisorApiToolSpec> = [
   apiTool(
     "agents.start",
-    'Start another agent as a visible Codevisor chat and give it its first message, in one call. isolation picks its checkout: worktree (a new git worktree and workspace, for separate work that ends in its own branch or PR), shared (your own workspace and checkout, for a second opinion or a piece of your change), or project (the project folder in a new workspace). harness, model, reasoning, and project default to yours. On a machine that lacks the project, Codevisor clones it there first (from its git remote, into the projects folder there), so the call can take as long as the clone. noProject: true starts it with no project instead, in a fresh empty folder on that machine, like a No project chat in the app: it adds no project to the sidebar, and isolation is ignored. You are subscribed to its events: its final reply arrives as a hidden <codevisor-event type="session.turn_ended"> message, so end your turn instead of waiting. labels (string key/value pairs) let you find it again with agents.list. If any step fails, Codevisor removes what this call created and returns the error. sandboxProfile (a sandbox profile id or name, from sandboxes.profiles_list()) runs the agent on a new sandbox instead: the call returns at once with sandboxId and state creating, isolation is ignored (the agent works in a fresh clone of the project on the sandbox), and the agent starts once the sandbox is ready, a few minutes later. sandboxes.wait({ sandboxId }) returns once it is ready, with agentId and machineId: talk to it with (await machines.get(machineId)).agents.*; its final reply still reaches you as a session.turn_ended event. If setup fails, the sandbox shows state failed with error; read sandboxes.log() and use sandboxes.retry().',
+    'Start another agent as a visible Codevisor chat and give it its first message, in one call. It runs on machine (a machine id or name, default: the machine you run on) and returns the agent with machine, the machine it runs on. checkout says which files it works in: "worktree" (a new git worktree and workspace: separate work that ends in its own branch or PR), "shared" (your own workspace and checkout, so it edits the same files you do: a second opinion or a piece of your change; your machine only), "project" (the project folder itself, in a new workspace, without a new branch), or "none" (a fresh empty folder with no project, like a No project chat). harness, model, reasoning, and project default to yours. On a machine that lacks the project, Codevisor clones it there first, so the call can take as long as the clone. It is linked to you as the agent that created it: it shows under you in the sidebar and in your agents pill, and its turn ends, questions, and errors reach you as hidden <codevisor-event> messages on any machine, so end your turn instead of waiting. labels (string key/value pairs) let you find it again with agents.list. If any step fails, Codevisor removes what this call created and returns the error. sandbox (a sandbox profile id or name, from sandboxes.profiles_list()) runs it on a new sandbox instead of a machine: leave out checkout and machine, since it works in a fresh clone of the project there. The call returns at once with sandboxId and state creating, and the agent starts once the sandbox is ready, a few minutes later; sandboxes.wait({ sandboxId }) returns its agentId and machineId. If setup fails, the sandbox shows state failed with error; read sandboxes.log() and use sandboxes.retry().',
     "POST",
     "/v1/agents",
     { body: StartAgentBody }

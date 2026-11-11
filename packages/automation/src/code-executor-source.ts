@@ -2,6 +2,7 @@ import { parse } from "@babel/parser"
 import { transform } from "sucrase"
 
 import { browserDocumentation } from "./browser-documentation.js"
+import { codevisorToolsSource } from "./code-executor-codevisor.js"
 import { machinesAndClientsSource, sandboxErrorSource } from "./code-executor-globals.js"
 import { computerUseCellBody } from "./computer-use-repl-source.js"
 import { isRecord } from "./unknown-values.js"
@@ -391,10 +392,12 @@ export const buildExecutionSource = (code: string, persistent = false): string =
     "  apply(_target, _thisArg, args) {",
     "    const toolPath = path.join('.');",
     "    if (!toolPath) throw new Error('Tool path missing in invocation');",
+    "    if (toolPath.startsWith('codevisor.')) throw new Error('Codevisor tools are globals: call ' + toolPath.slice('codevisor.'.length) + '(args), and pass machine to run it on another machine');",
     "    return __callTool(toolPath, args[0], target);",
     "  }",
     "});",
     ...machinesAndClientsSource,
+    ...codevisorToolsSource(),
     "const console = {",
     "  log: (...args) => __log('log', args.map(__format).join(' ')),",
     "  warn: (...args) => __log('warn', args.map(__format).join(' ')),",

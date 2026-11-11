@@ -35,9 +35,9 @@ import { makeBotConversationListener } from "./routes/bot-conversation.js"
 import { updateAllBotInstructions } from "./routes/bot-instructions-updates.js"
 import { makeUsageHoldReleaseListener } from "./routes/bot-usage-release.js"
 import { handleUpgrade } from "./routes/events.js"
-import { fleetTurnSender } from "./routes/fleet-turns.js"
 import { makeOAuthReturns } from "./routes/oauth-returns.js"
 import { backfillProjectRepoUrls } from "./routes/project-repo-identity.js"
+import { makeRemoteCreatorEvents } from "./routes/remote-creator-events.js"
 import { makeSessionEventOutbox } from "./routes/session-event-outbox.js"
 import { makeSessionEventRouter } from "./routes/session-event-router.js"
 import {
@@ -162,17 +162,16 @@ export const makeCodevisorServerApp = (
   const unsubscribeUsageHoldRelease = fanout.subscribe(
     makeUsageHoldReleaseListener(services, fanout, routeState, config.id)
   )
-  const fleet = fleetLinkFor(services)
-  const sendFleetTurns = fleetTurnSender(services, config.id, fleet)
+  const remoteCreators = makeRemoteCreatorEvents(services, config.id, fleetLinkFor(services))
   const outbox = makeSessionEventOutbox(services, fanout, routeState, config.id)
-  const sessionEvents = makeSessionEventRouter(services, outbox, sendFleetTurns)
+  const sessionEvents = makeSessionEventRouter(services, outbox, remoteCreators)
   const stopPlugins = startPlugins(services, fanout, routeState, outbox, config)
   routeState.drainSessionQueue = (sessionId) =>
     drainPromptQueue(services, fanout, routeState, config.id, sessionId).catch(swallowError)
-  void sendFleetTurns().catch(swallowError)
+  void remoteCreators.flush().catch(swallowError)
   /* v8 ignore next 4 */
   const fleetRetry = setInterval(() => {
-    void sendFleetTurns().catch(swallowError)
+    void remoteCreators.flush().catch(swallowError)
     void forgetOldFleetDeliveries(services).catch(swallowError)
   }, FLEET_OUTBOX_RETRY_MS)
   fleetRetry.unref()

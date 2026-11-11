@@ -47,8 +47,8 @@ describe("bot routes", () => {
     expect(instructions).toContain(`\`api/\`: api (from \`${apiFolder}\``)
     expect(instructions).toContain("projectId `api-project`")
     expect(instructions).toContain("## Delegating work")
-    expect(instructions).toContain("`machines.current.tools.codevisor.messages.send`")
-    expect(instructions).toContain("`machines.current.agents.start({ project: projectId")
+    expect(instructions).toContain("`messages.send`")
+    expect(instructions).toContain('`agents.start({ project: projectId, checkout: "worktree"')
     expect(existsSync(join(root, "CLAUDE.md"))).toBe(false)
 
     const home = (await listProjects(running)).find((project) => project.id === bot.projectId)
@@ -96,9 +96,7 @@ describe("bot routes", () => {
     const bot = decodeBot(response.body)
     expect(bot.projects).toEqual([])
     const instructions = readFileSync(join(bot.rootPath, "AGENTS.md"), "utf8")
-    expect(instructions).toContain(
-      "`machines.current.tools.codevisor.bot.projects_add({ projectId })`"
-    )
+    expect(instructions).toContain("`bot.projects_add({ projectId })`")
     expect(running.agents.creations).toContainEqual(["codex", bot.rootPath])
     expect(await listBots(running)).toEqual([bot])
   })

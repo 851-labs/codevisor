@@ -49,13 +49,11 @@ export interface GatewayOrigin {
   readonly sessionId?: string
   readonly sessionTitle?: string
   readonly clientId?: string
-  readonly botId?: string
-  readonly botMachineId?: string
 }
 
 export interface RemoteGatewayCallOptions {
   readonly signal?: AbortSignal
-  readonly remoteParent?: string
+  readonly callerAgentTicket?: string
 }
 
 export interface GatewayCallContext {

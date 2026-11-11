@@ -51,13 +51,8 @@ export const recordTurnEnd = (
     )
 }
 
-export const sessionIsBotOwned = (sqlite: Database.Database, sessionId: string): boolean =>
-  sqlite.prepare(turnFinishSql.botOwned).get(sessionId) !== undefined
-
 export const announceFinishedTurn = (sqlite: Database.Database, sessionId: string): void => {
-  const marked = sqlite.prepare(turnFinishSql.markFinished).run(sessionId)
-  if (marked.changes === 0) return
-  sqlite.prepare(turnFinishSql.journalFleetTurn).run(sessionId)
+  sqlite.prepare(turnFinishSql.markFinished).run(sessionId)
 }
 
 export const finishedTurn = (
@@ -101,25 +96,8 @@ const turnFinishSql = {
          ),
          turn_end_at = ?
        where session_id = ?`,
-  botOwned: `select 1 from sessions s
-       left join workspaces w on w.id = s.workspace_id
-       where s.id = ? and s.parent_session_id is not null and (
-         w.remote_bot_parent_session_id = s.parent_session_id
-         or exists (
-           select 1 from bots b
-           where b.session_id = s.parent_session_id collate nocase
-         )
-       )`,
   markFinished: `update session_attention set turn_end_state = 'finished'
        where session_id = ? and turn_end_state = 'ended'`,
-  journalFleetTurn: `insert or ignore into fleet_pending_turns
-         (session_id, revision, stop_reason, ended_at, turn_item_id)
-       select sa.session_id, sa.turn_end_revision, sa.turn_end_stop_reason, sa.turn_end_at,
-         sa.turn_end_item_id
-       from session_attention sa
-       join sessions s on s.id = sa.session_id
-       join workspaces w on w.id = s.workspace_id
-       where sa.session_id = ? and w.remote_bot_parent_session_id = s.parent_session_id`,
   finished: `select session_id, turn_end_revision, turn_end_stop_reason from session_attention
        where session_id = ? and turn_end_state = 'finished'`,
   allFinished: `select session_id, turn_end_revision, turn_end_stop_reason from session_attention

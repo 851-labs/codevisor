@@ -48,9 +48,7 @@ const startBot = async () => {
 describe("bot conversations", () => {
   it("records the user's message at once and posts none of the bot's own replies", async () => {
     const { running, bot } = await startBot()
-    expect(readFileSync(join(bot.rootPath, "AGENTS.md"), "utf8")).toContain(
-      "`machines.current.tools.codevisor.messages.send`"
-    )
+    expect(readFileSync(join(bot.rootPath, "AGENTS.md"), "utf8")).toContain("`messages.send`")
 
     await prompt(running, bot.sessionId, "hello", "client-1")
 
@@ -211,7 +209,7 @@ describe("bot conversations", () => {
     )
 
     await jsonRequest(running.server, `/v1/sessions/${bot.sessionId}/prompt`, {
-      body: JSON.stringify({ text: "login is fixed", fromSessionId: agent.id }),
+      body: JSON.stringify({ text: "login is fixed", sentByAgentId: agent.id }),
       method: "POST"
     })
 
@@ -224,7 +222,7 @@ describe("bot conversations", () => {
       ([, input]) => typeof input === "string" && input.includes("login is fixed")
     )?.[1]
     expect(delivered).toBe(
-      `<codevisor-event type="session.message" from="${agent.id}" title="Fix login">\nlogin is fixed\n</codevisor-event>`
+      `<codevisor-event type="session.message" from="${agent.id}" fromMachineId="server-a" title="Fix login">\nlogin is fixed\n</codevisor-event>`
     )
     await waitFor(async () => !(await conversation(running, bot.sessionId)).working)
     expect(await transcript(running, bot.sessionId)).toEqual([])
@@ -237,7 +235,7 @@ describe("bot conversations", () => {
         projectId: "api-project",
         harnessId: "codex",
         title: "Fix login",
-        parentSessionId: bot.sessionId
+        createdByAgentId: bot.sessionId
       }),
       method: "POST"
     })

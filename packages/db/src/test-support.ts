@@ -268,7 +268,25 @@ export const rewindBotModesSql = `
   delete from schema_migrations where id in (87, 96);
 `
 
+export const rewindAgentReferencesSql = `
+  drop index sessions_created_by_agent_idx;
+  alter table sessions drop column created_by_agent_id;
+  alter table sessions drop column created_by_agent_machine_id;
+  alter table sessions drop column forked_from_agent_id;
+  alter table sessions drop column forked_from_agent_machine_id;
+  alter table sessions add column parent_session_id text;
+  create index sessions_parent_session_idx on sessions(parent_session_id);
+  alter table workspaces add column bot_id text;
+  alter table workspaces add column remote_bot_id text;
+  alter table workspaces add column remote_bot_machine_id text;
+  alter table workspaces add column remote_bot_parent_session_id text;
+  create index workspaces_bot_idx on workspaces(bot_id);
+  create table fleet_pending_turns (session_id text not null, revision integer not null);
+  delete from schema_migrations where id = 97;
+`
+
 export const rewindOneNameSql = `
+  ${rewindAgentReferencesSql}
   drop trigger workspace_name_follows_main_chat;
   drop trigger main_chat_follows_workspace_rename;
   drop trigger workspace_name_stays_with_main_chat;

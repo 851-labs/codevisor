@@ -67,16 +67,16 @@ describe("mcp routes", () => {
       name: "execute",
       arguments: {
         description: "Test workflow",
-        code: 'async () => await machines.current.tools.search({ query: "Codevisor agents list" })'
+        code: 'async () => (await machines.current.tools.search({ query: "Codevisor agents list" })).items.map((item) => item.path ?? item.name)'
       }
     })
     expect(codevisorSearch.isError).not.toBe(true)
-    expect(JSON.stringify(codevisorSearch.content)).toContain("codevisor.agents.list")
+    expect(JSON.stringify(codevisorSearch.content)).toContain('\\"agents.list\\"')
     const codevisorProjects = await client.callTool({
       name: "execute",
       arguments: {
         description: "Test workflow",
-        code: 'async () => await machines.current.tools["codevisor.projects.list"]({})'
+        code: "async () => await projects.list({})"
       }
     })
     expect(codevisorProjects.isError).not.toBe(true)
@@ -88,19 +88,18 @@ describe("mcp routes", () => {
       arguments: {
         description: "Test workflow",
         code: `async () => {
-          const codevisor = machines.current.tools.codevisor;
-          const project = await codevisor.projects.create({
+          const project = await projects.create({
             id: "controlled-project",
             folderPath: ${JSON.stringify(controlledFolder)},
             name: "Controlled"
           });
-          const workspace = await codevisor.workspaces.upsert({
+          const workspace = await workspaces.upsert({
             workspaceId: "controlled-workspace",
             projectId: project.projectId,
             name: "Controlled workspace",
             hasCustomName: true
           });
-          const listed = await codevisor.projects.list({});
+          const listed = await projects.list({});
           return { projectId: project.projectId, workspaceId: workspace.workspaceId, listed: listed.items.map((item) => item.projectId) };
         }`
       }
@@ -142,7 +141,7 @@ describe("mcp routes", () => {
       name: "execute",
       arguments: {
         description: "Test workflow",
-        code: 'async () => await machines.current.tools["codevisor.projects.list"]({})'
+        code: "async () => await projects.list({})"
       }
     })
     expect(result.isError).not.toBe(true)

@@ -9,7 +9,7 @@ struct QuietChildrenTests {
   private func item(parent: WorkspaceSidebarItem? = nil, agentMade: Bool = false) -> WorkspaceSidebarItem {
     WorkspaceSidebarItem(
       id: UUID(), serverId: project.serverId, projectId: project.id, routingChatIds: [],
-      parent: parent.map { WorkspaceParentLink(workspaceId: $0.id, linkedAt: .distantPast, isAgentMade: agentMade) })
+      parent: parent.map { WorkspaceParentLink(workspaceId: $0.id, linkedAt: .distantPast, isQuiet: agentMade) })
   }
 
   @Test("Only agent-made children are quiet; forks, legacy children and top-level workspaces never are")

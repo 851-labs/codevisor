@@ -31,7 +31,7 @@ describe("agents.list", () => {
     const listed = await call(local, "agents.list", {
       state: "working",
       project: "Codevisor",
-      parentAgentId: "caller",
+      createdByAgentId: "caller",
       label: "role=worker"
     })
 
@@ -39,7 +39,7 @@ describe("agents.list", () => {
     expect(requests.find((request) => request.path === "/v1/agents")?.query).toEqual({
       state: "working",
       project: "Codevisor",
-      parentAgentId: "caller",
+      createdByAgentId: "caller",
       label: "role=worker"
     })
   })
@@ -81,7 +81,7 @@ describe("agents.close and workspaces.archive", () => {
     fakeServer([], { failing: ["POST /v1/workspaces/worker-workspace/archive"] })
 
     await expect(call(remote, "agents.close", { agentId: "helper" })).rejects.toThrow(
-      "agents.close works on your own machine only"
+      "agents.close only works for agents on your own machine"
     )
     await expect(
       call(local, "workspaces.archive", { workspaceId: "worker-workspace" })
@@ -124,7 +124,7 @@ describe("agent subscriptions", () => {
       ["DELETE", "/v1/sessions/caller/subscriptions/sub-1", undefined]
     ])
     await expect(call(remote, "agents.subscribe", { agentId: "other" })).rejects.toThrow(
-      "agents.subscribe works on your own machine only"
+      "agents.subscribe only works for agents on your own machine"
     )
   })
 })

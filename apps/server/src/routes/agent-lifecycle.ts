@@ -54,7 +54,7 @@ const defaultWaitUntil: ReadonlyArray<AgentState> = ["idle", "waitingForUser", "
 interface ListFilters {
   readonly state: AgentState | undefined
   readonly projectId: string | undefined
-  readonly parentAgentId: string | undefined
+  readonly createdByAgentId: string | undefined
 }
 
 const isAgentState = Schema.is(AgentStateSchema)
@@ -66,7 +66,7 @@ const listFilters = (url: URL, projects: ReadonlyArray<Project>): ListFilters =>
   return {
     state,
     projectId: projectIdNamed(url.searchParams.get("project") ?? undefined, projects),
-    parentAgentId: url.searchParams.get("parentAgentId")?.toLowerCase()
+    createdByAgentId: url.searchParams.get("createdByAgentId")?.toLowerCase()
   }
 }
 
@@ -84,7 +84,7 @@ const projectIdNamed = (
 
 const listedSession = (session: SessionSummary, filters: ListFilters, url: URL): boolean =>
   matchesOptional(session.projectId, filters.projectId) &&
-  matchesOptional(session.parentSessionId, filters.parentAgentId) &&
+  matchesOptional(session.createdByAgentId, filters.createdByAgentId) &&
   matchesLabelFilters(session.labels, url)
 
 const matchesOptional = (value: string | undefined, wanted: string | undefined): boolean =>
@@ -102,7 +102,10 @@ const agentSummary = async (
   ...(session.workspaceId === undefined ? {} : { workspaceId: session.workspaceId }),
   ...(session.worktreeName === undefined ? {} : { worktreeName: session.worktreeName }),
   ...(session.labels === undefined ? {} : { labels: session.labels }),
-  ...(session.parentSessionId === undefined ? {} : { parentAgentId: session.parentSessionId }),
+  ...(session.createdByAgentId === undefined ? {} : { createdByAgentId: session.createdByAgentId }),
+  ...(session.createdByAgentMachineId === undefined
+    ? {}
+    : { createdByAgentMachineId: session.createdByAgentMachineId }),
   ...(session.updatedAt === undefined ? {} : { updatedAt: session.updatedAt })
 })
 

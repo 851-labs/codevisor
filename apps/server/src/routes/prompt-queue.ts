@@ -1,10 +1,11 @@
 import { AgentRuntimeError, harnessFailureKind, plainFailureText } from "@codevisor/agent-runtime"
-import type {
-  AttachmentRef,
-  ConnectedClient,
-  EventEnvelope,
-  PromptAttribution,
-  PromptOrigin
+import {
+  sentByAgentOf,
+  type AttachmentRef,
+  type ConnectedClient,
+  type EventEnvelope,
+  type PromptOrigin,
+  type PromptSource
 } from "@codevisor/api"
 import { Effect } from "effect"
 
@@ -232,7 +233,7 @@ export const drainPromptQueue = async (
           ? undefined
           : { clientId: item.clientId, platform: clientPlatform(routeState, item.clientId) },
         item.origin,
-        item.attribution
+        { attribution: item.attribution, sentByAgent: sentByAgentOf(item) }
       )
       await run(services.db.completePromptQueueItem(sessionId, item.id))
     }
@@ -338,7 +339,7 @@ const runPromptInBackground = async (
     readonly platform: ConnectedClient["platform"] | undefined
   },
   origin?: PromptOrigin,
-  attribution?: PromptAttribution
+  source: PromptSource = {}
 ): Promise<void> => {
   try {
     await recordUserPrompt(services, fanout, serverId, sessionId, {
@@ -346,7 +347,8 @@ const runPromptInBackground = async (
       text,
       attachments,
       origin,
-      attribution,
+      attribution: source.attribution,
+      sentByAgent: source.sentByAgent,
       startsTurn: true
     })
     if (client === undefined) {

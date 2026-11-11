@@ -146,8 +146,6 @@ export const makeMcpManagerCore = (config: McpManagerConfig) => {
     {
       currentContext: async ({ sessionId }) => {
         const session = await run(config.db.getSessionSummary(sessionId)).catch(() => undefined)
-        const parentSessionId = (session as { readonly parentSessionId?: unknown } | undefined)
-          ?.parentSessionId
         const workspaceId = session?.workspaceId
         const worktreeName = session?.worktreeName
         const clientId = turnClientIds.get(sessionId)
@@ -155,7 +153,12 @@ export const makeMcpManagerCore = (config: McpManagerConfig) => {
           machine: selfMachine,
           ...(workspaceId === undefined ? {} : { workspaceId }),
           ...(worktreeName === undefined ? {} : { worktreeName }),
-          ...(typeof parentSessionId === "string" ? { parentSessionId } : {}),
+          ...(session?.createdByAgentId === undefined
+            ? {}
+            : { createdByAgentId: session.createdByAgentId }),
+          ...(session?.createdByAgentMachineId === undefined
+            ? {}
+            : { createdByAgentMachineId: session.createdByAgentMachineId }),
           ...(clientId === undefined ? {} : { clientId })
         }
       }

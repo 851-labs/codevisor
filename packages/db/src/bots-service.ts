@@ -1,4 +1,4 @@
-import type { Bot, BotMascot, Workspace } from "@codevisor/api"
+import type { Bot, BotMascot } from "@codevisor/api"
 import { isoTimestamp } from "@codevisor/api"
 
 import {
@@ -12,11 +12,7 @@ import { attempt } from "./errors.js"
 import { sessionConfigSelectionsFromRaw } from "./event-payloads.js"
 import { canonicalUuid } from "./ids.js"
 import { botPath } from "./paths.js"
-import { workspaceFromRow } from "./row-mappers.js"
-import { workspaceRows } from "./rows.js"
 import type { ServiceContext } from "./service-context.js"
-import type { WorkspaceRow } from "./workspace-rows.js"
-import type { BotLink, RemoteBotLink } from "./workspace-service-types.js"
 
 const botSelect = `
   select bots.*, sessions.harness_id as harness_id,
@@ -161,29 +157,7 @@ export const makeBotsService = (
         const row = owningBotRow(sqlite, projectId, query)
         if (row === undefined) return undefined
         return botFromRow(row)
-      }),
-    findBotLinkForSession: (sessionId) =>
-      attempt("findBotLinkForSession", () => {
-        const workspace = sessionWorkspace(sqlite, sessionId)
-        if (workspace === undefined) return undefined
-        const home = owningBotRow(sqlite, null, { workspaceId: workspace.id })
-        if (home !== undefined) return { botId: home.id }
-        return workspaceBotLink(workspaceFromRow(workspace))
-      }),
-    findFleetBotLink: (sessionId) =>
-      attempt("findFleetBotLink", () => {
-        const workspace = sessionWorkspace(sqlite, sessionId)
-        if (workspace === undefined) return undefined
-        return fleetBotLink(workspace)
-      }),
-    findWorkspaceFleetBotLink: (workspaceId) =>
-      attempt("findWorkspaceFleetBotLink", () => {
-        const workspace = workspaceById(sqlite, workspaceId)
-        if (workspace === undefined) return undefined
-        return fleetBotLink(workspace)
-      }),
-    listBotWorkspaces: (botId) =>
-      attempt("listBotWorkspaces", () => botWorkspaces(sqlite, botId).map(workspaceFromRow))
+      })
   }
 }
 
@@ -208,28 +182,6 @@ const botsOldestFirst = (sqlite: ServiceContext["sqlite"]) =>
 
 const botProjects = (sqlite: ServiceContext["sqlite"], botId: string) =>
   botProjectRows.all(sqlite.prepare(botProjectSql.byBot).all(botId))
-
-const botWorkspaces = (sqlite: ServiceContext["sqlite"], botId: string) =>
-  workspaceRows.all(sqlite.prepare(botSql.workspaces).all(canonicalUuid(botId)))
-
-const sessionWorkspace = (sqlite: ServiceContext["sqlite"], sessionId: string) =>
-  workspaceRows.maybe(sqlite.prepare(botSql.sessionWorkspace).get(canonicalUuid(sessionId)))
-
-const workspaceBotLink = (workspace: Workspace): BotLink | undefined => {
-  if (workspace.botId === undefined) return undefined
-  if (workspace.botMachineId === undefined) return { botId: workspace.botId }
-  return { botId: workspace.botId, botMachineId: workspace.botMachineId }
-}
-
-const workspaceById = (sqlite: ServiceContext["sqlite"], workspaceId: string) =>
-  workspaceRows.maybe(sqlite.prepare(botSql.workspaceById).get(canonicalUuid(workspaceId)))
-
-const fleetBotLink = (workspace: WorkspaceRow): RemoteBotLink | undefined => {
-  const { remote_bot_id: botId, remote_bot_machine_id: botMachineId } = workspace
-  const parentSessionId = workspace.remote_bot_parent_session_id
-  if (botId == null || botMachineId == null || parentSessionId == null) return undefined
-  return { parentSessionId, bot: { botId, botMachineId } }
-}
 
 interface StoredMascot extends BotMascot {
   readonly hatColor: string
@@ -292,13 +244,7 @@ const botSql = {
                    select 1 from bot_projects
                    where bot_projects.bot_id = bots.id and bot_projects.project_id = @projectId collate nocase
                  )
-               order by bots.created_at asc limit 1`,
-  workspaceById: "select * from workspaces where id = ?",
-  sessionWorkspace: `select workspaces.* from workspaces
-                       join sessions on sessions.workspace_id = workspaces.id
-                       where sessions.id = ?`,
-  workspaces: `select * from workspaces where bot_id = ? and is_archived = 0
-                 order by sidebar_position, id`
+               order by bots.created_at asc limit 1`
 }
 
 const botProjectSql = {

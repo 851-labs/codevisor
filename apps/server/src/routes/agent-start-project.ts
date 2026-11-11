@@ -12,7 +12,7 @@ export const agentProjectId = async (
   callerProjectId: string | undefined,
   created: Array<() => Promise<unknown>>
 ): Promise<string> => {
-  if (request.noProject === true) return scratchProjectId(route, request, created)
+  if (request.checkout === "none") return scratchProjectId(route, request, created)
   if (request.project === undefined && callerProjectId !== undefined) return callerProjectId
   const projects = await run(route.services.db.listProjects)
   const found = projects.find((candidate) => matchesProject(candidate, request.project))
@@ -28,19 +28,12 @@ const scratchProjectId = async (
   request: StartAgentRequest,
   created: Array<() => Promise<unknown>>
 ): Promise<string> => {
-  assertNoProjectFits(request)
+  if (request.project !== undefined) {
+    throw new HttpFailure(422, 'Pass either project or checkout: "none", not both')
+  }
   const scratch = await newScratchProject(route)
   created.push(scratch.rollBack)
   return scratch.project.id
-}
-
-const assertNoProjectFits = (request: StartAgentRequest): void => {
-  if (request.project !== undefined) {
-    throw new HttpFailure(422, "Pass either project or noProject: true, not both")
-  }
-  if (request.sandboxProfile !== undefined) {
-    throw new HttpFailure(422, "noProject: true starts the agent on a machine, not on a sandbox")
-  }
 }
 
 const matchesProject = (project: Project, wanted: string | undefined): boolean => {
@@ -60,7 +53,7 @@ const clonedProjectId = async (
   return setUp.project.id
 }
 
-const noProjectOption = "or noProject: true for a chat in a fresh empty folder with no project"
+const noProjectOption = 'or checkout: "none" for a chat in a fresh empty folder with no project'
 
 const projectHint = (project: string | undefined, projects: ReadonlyArray<Project>): string => {
   const known = `Projects on this machine: ${projectNames(projects)}`

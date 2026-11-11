@@ -112,7 +112,7 @@ describe("session event subscriptions", () => {
   it("wakes an idle subscriber with a hidden one-shot event and then forgets the subscription", async () => {
     const running = await startServer()
     const watcher = await createChat(running, "Watcher")
-    const worker = await createChat(running, "Fix login", { parentSessionId: watcher })
+    const worker = await createChat(running, "Fix login", { createdByAgentId: watcher })
     const subscription = await subscribe(running, watcher, { targetSessionId: worker, once: true })
 
     await finishTurn(running, worker)
@@ -211,7 +211,7 @@ describe("session event subscriptions", () => {
       `<codevisor-event type="session.waiting_for_user" agentId="${worker}" title="Fix login" kind="question"`
     )
     expect(event).toContain('"questionId":"q1"')
-    expect(event).toContain("Answer it with machines.current.agents.answer({ agentId, questionId,")
+    expect(event).toContain("Answer it with agents.answer({ agentId, machine, questionId,")
     await post(running, `/v1/sessions/${worker}/cancel`, {})
   })
 
@@ -334,7 +334,7 @@ describe("session event subscriptions", () => {
     const paths = restartStatePaths()
     const running = await startServer(paths)
     const watcher = await createChat(running, "Watcher")
-    const worker = await createChat(running, "Fix login", { parentSessionId: watcher })
+    const worker = await createChat(running, "Fix login", { createdByAgentId: watcher })
     await subscribe(running, watcher, { targetSessionId: worker, once: true })
     await holdTurn(running, worker)
 

@@ -1,6 +1,7 @@
-import type { IncomingMessage, ServerResponse } from "node:http"
+import type { ServerResponse } from "node:http"
 
 import {
+  FLEET_AGENTS_ARCHIVED_PATH,
   FLEET_EXEC_CONTROL_PATH,
   FLEET_EXEC_TASK_PATH,
   FLEET_MIRROR_PATH,
@@ -9,19 +10,14 @@ import {
 } from "@codevisor/api"
 import type { GatewayOrigin } from "@codevisor/mcp"
 
-import {
-  failureMessage,
-  HttpFailure,
-  readJson,
-  writeJson,
-  type CodevisorServerServices,
-  type RouteState
-} from "../server-context.js"
+import { failureMessage, HttpFailure, readJson, writeJson } from "../server-context.js"
+import { receiveAgentsArchived } from "./fleet-agents-archived.js"
 import { fleetCall, invokeForFleet } from "./fleet-calls.js"
 import { receiveExecControl, receiveExecTask, receiveMirrorAction } from "./fleet-machine-files.js"
 import { receiveSandboxAction } from "./fleet-sandbox-actions.js"
 import { receiveSessionEvent } from "./fleet-session-events.js"
 import { routeMachineEnrollment } from "./machines.js"
+import type { RouteContext } from "./route-context.js"
 
 const isRecord = (value: unknown): value is Record<string, unknown> =>
   typeof value === "object" && value !== null && !Array.isArray(value)
@@ -42,13 +38,7 @@ const parseOrigin = (value: unknown): GatewayOrigin | undefined => {
   return { machineId, machineName, ...Object.fromEntries(optional) }
 }
 
-const OPTIONAL_ORIGIN_FIELDS = [
-  "sessionId",
-  "sessionTitle",
-  "clientId",
-  "botId",
-  "botMachineId"
-] as const
+const OPTIONAL_ORIGIN_FIELDS = ["sessionId", "sessionTitle", "clientId"] as const
 
 const writeError = (
   response: ServerResponse,
@@ -77,13 +67,8 @@ const answerSandboxAction = async (
   }
 }
 
-export const routeGatewayInvoke = async (
-  services: CodevisorServerServices,
-  routeState: RouteState,
-  request: IncomingMessage,
-  response: ServerResponse,
-  url: URL
-): Promise<boolean> => {
+export const routeGatewayInvoke = async (route: RouteContext): Promise<boolean> => {
+  const { services, routeState, request, response, url } = route
   if (request.method === "GET" && url.pathname === "/v1/machines") {
     if (services.machines === undefined) throw new HttpFailure(501, "Machines unavailable")
     writeJson(response, 200, { machines: await services.machines.list() })
@@ -111,6 +96,10 @@ export const routeGatewayInvoke = async (
     writeJson(response, 200, { result: { delivered } })
     return true
   }
+  if (path === FLEET_AGENTS_ARCHIVED_PATH) {
+    await answerSandboxAction(response, () => receiveAgentsArchived(route, call, body.args))
+    return true
+  }
   if (path === FLEET_SANDBOX_ACTION_PATH) {
     await answerSandboxAction(response, () => receiveSandboxAction(services, call, body.args))
     return true
@@ -132,10 +121,10 @@ export const routeGatewayInvoke = async (
     if (!response.writableFinished) controller.abort(new Error("the calling machine cancelled"))
   })
   try {
-    const result = await invokeForFleet(services, call, (remoteParent) =>
+    const result = await invokeForFleet(services, call, (callerAgentTicket) =>
       mcp.invokeRemoteGatewayCall(call.origin, path, body.args, {
         signal: controller.signal,
-        ...(remoteParent === undefined ? {} : { remoteParent })
+        ...(callerAgentTicket === undefined ? {} : { callerAgentTicket })
       })
     )
     writeJson(response, 200, { result: result ?? null })

@@ -2,7 +2,7 @@ import { mkdtempSync } from "node:fs"
 import { tmpdir } from "node:os"
 import { join } from "node:path"
 
-import type { EventEnvelope, ExecutionJob } from "@codevisor/api"
+import type { EventEnvelope, ExecutionJob, SessionSummary } from "@codevisor/api"
 import { describe, expect, it, onTestFinished, vi } from "vitest"
 
 import { appendAndPublish, makeEventFanout } from "../server-context.js"
@@ -16,7 +16,20 @@ const setUpRouter = async () => {
   const fanout = await run(makeEventFanout)
   const routeState = idleRouteState()
   const outbox = makeSessionEventOutbox(services, fanout, routeState, "server-a")
-  const router = makeSessionEventRouter(services, outbox, async () => {})
+  const creatorNotices: Array<{ agentId: string; type: string; occurrence: string; text: string }> =
+    []
+  const remoteCreators = {
+    notify: async (
+      target: SessionSummary,
+      type: string,
+      message: { readonly text: string },
+      occurrence: string
+    ) => {
+      creatorNotices.push({ agentId: target.id, type, occurrence, text: message.text })
+    },
+    flush: async () => undefined
+  }
+  const router = makeSessionEventRouter(services, outbox, remoteCreators)
   onTestFinished(fanout.subscribe(router.listener))
   onTestFinished(
     fanout.subscribe(makeTurnDispatchListener(services, fanout, routeState, "server-a"))
@@ -48,7 +61,18 @@ const setUpRouter = async () => {
     )
   const queuedFor = async (sessionId: string) =>
     (await run(services.db.listPromptQueue(sessionId))).map((item) => item.text)
-  return { services, routeState, router, chat, emit, say, eventPrompts, watch, queuedFor }
+  return {
+    services,
+    routeState,
+    router,
+    chat,
+    emit,
+    say,
+    eventPrompts,
+    watch,
+    queuedFor,
+    creatorNotices
+  }
 }
 
 type Router = Awaited<ReturnType<typeof setUpRouter>>
@@ -115,6 +139,28 @@ describe("turn ends", () => {
       expect.stringContaining("\nFinished before the restart\n")
     ])
     expect(await run(router.services.db.listFinishedTurns)).toEqual([])
+  })
+})
+
+describe("creators on other machines", () => {
+  it("hear about a child's turn end, question, and error, the turn end keyed by its revision", async () => {
+    const router = await setUpRouter()
+    const child = await router.chat()
+
+    await turn(router, child, "turn-1", "Done")
+    await waitFor(() => router.creatorNotices.length > 0)
+    await router.emit(child, { actionRequiredKind: "question" }, "session.attention.updated")
+    await router.emit(child, { message: "Harness crashed" }, "session.error")
+    await waitFor(() => router.creatorNotices.length === 3)
+
+    expect(router.creatorNotices.map(({ agentId, type }) => [agentId, type])).toEqual([
+      [child, "turn_ended"],
+      [child, "waiting_for_user"],
+      [child, "errored"]
+    ])
+    expect(router.creatorNotices[0]!.text).toContain("\nDone\n")
+    expect(router.creatorNotices[0]!.occurrence).toMatch(/^\d+$/)
+    expect(router.creatorNotices[2]!.text).toContain("Harness crashed")
   })
 })
 

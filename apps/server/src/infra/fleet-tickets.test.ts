@@ -20,19 +20,15 @@ describe("fleet tickets", () => {
   })
 
   it("revokes an unused ticket when the work fails", async () => {
-    const { remoteParents } = makeFleetTickets()
+    const { callerAgents } = makeFleetTickets()
     let issued = ""
 
-    const failed = withTicket(
-      remoteParents,
-      { parentSessionId: "remote:a:s", bot: { botId: "b" } },
-      async (ticket) => {
-        issued = ticket
-        throw new Error("boom")
-      }
-    )
+    const failed = withTicket(callerAgents, { agentId: "s", machineId: "a" }, async (ticket) => {
+      issued = ticket
+      throw new Error("boom")
+    })
 
     await expect(failed).rejects.toThrow("boom")
-    expect(remoteParents.take(issued)).toBeUndefined()
+    expect(callerAgents.take(issued)).toBeUndefined()
   })
 })

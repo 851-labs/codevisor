@@ -207,11 +207,7 @@ describe("Codevisor built-in tools", () => {
 
       const found = executeResultValue(searched)
       expect(found).toEqual(
-        expect.arrayContaining([
-          "tool:codevisor.agents.start",
-          "skill:codevisor-agents",
-          "global:machine.agents"
-        ])
+        expect.arrayContaining(["tool:agents.start", "skill:codevisor-agents", "global:agents"])
       )
     } finally {
       await client.close()
@@ -236,14 +232,15 @@ describe("Codevisor built-in tools", () => {
         )
         const execute = (code: string) =>
           client.callTool({ name: "execute", arguments: { description: "Run test code", code } })
-        const search = () =>
-          execute('async () => machines.current.tools.search({ query: "agents.start" })')
-        const describeTool = () =>
-          execute(
-            'async () => machines.current.tools.describe.tool({ path: "codevisor.agents.start" })'
+        const search = async () =>
+          executeResultValue(
+            await execute(
+              'async () => (await machines.current.tools.search({ query: "agents.start" })).items.map((item) => item.path ?? item.name)'
+            )
           )
-        const call = () =>
-          execute('async () => machines.current.tools["codevisor.context.current"]({})')
+        const describeTool = () =>
+          execute('async () => machines.current.tools.describe.tool({ path: "agents.start" })')
+        const call = () => execute("async () => context.current()")
         const inventory = async () => (await client.listTools()).tools[0]?.description
         const attemptDisable = async () => {
           switch (scope) {
@@ -262,7 +259,7 @@ describe("Codevisor built-in tools", () => {
         else await expect(attemptDisable()).rejects.toThrow("Codevisor can’t be turned off")
 
         expect(await inventory()).toContain("\n- Codevisor")
-        expect(JSON.stringify((await search()).content)).toContain("codevisor.agents.start")
+        expect(await search()).toContain("agents.start")
         expect((await describeTool()).isError).not.toBe(true)
         expect((await call()).isError).not.toBe(true)
       } finally {

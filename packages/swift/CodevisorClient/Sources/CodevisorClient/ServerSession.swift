@@ -62,9 +62,14 @@ public struct ServerPromptQueueItem: Codable, Identifiable, Equatable, Sendable 
   public var attachments: [ServerAttachmentRef]?
   public var origin: String?
   public var attribution: UserMessageAttribution? = nil
+  public var sentByAgentId: String? = nil
+  public var sentByAgentMachineId: String? = nil
   public var steered: Bool? = nil
 
   public var isSystem: Bool { origin == "system" }
+  public var sentByAgent: AgentReference? {
+    AgentReference(agentId: sentByAgentId, machineId: sentByAgentMachineId)
+  }
   public var isNextStep: Bool { steered == true }
 
   public init(
@@ -205,8 +210,11 @@ public struct ServerSession: Codable, Equatable, Sendable {
   public var pendingPlanApproval: Bool? = nil
   public var talkingToAgent: Bool? = nil
   public var latestBotMessage: BotMessagePreview? = nil
-  public var parentSessionId: String? = nil
   public var createdBy: SessionCreator? = nil
+  public var createdByAgentId: String? = nil
+  public var createdByAgentMachineId: String? = nil
+  public var forkedFromAgentId: String? = nil
+  public var forkedFromAgentMachineId: String? = nil
 
   public func chatSession(serverId scopedServerId: String) throws -> ChatSession {
     guard let uuid = UUID(uuidString: id) else {
@@ -246,8 +254,9 @@ public struct ServerSession: Codable, Equatable, Sendable {
       pendingPlanApproval: pendingPlanApproval ?? false,
       talkingToAgent: talkingToAgent ?? false,
       latestBotMessage: latestBotMessage,
-      parentSessionId: parentSessionId,
-      createdBy: createdBy
+      createdBy: createdBy,
+      createdByAgent: AgentReference(agentId: createdByAgentId, machineId: createdByAgentMachineId),
+      forkedFromAgent: AgentReference(agentId: forkedFromAgentId, machineId: forkedFromAgentMachineId)
     )
   }
 
@@ -279,8 +288,11 @@ public struct ServerSession: Codable, Equatable, Sendable {
     pendingPlanApproval: Bool? = nil,
     talkingToAgent: Bool? = nil,
     latestBotMessage: BotMessagePreview? = nil,
-    parentSessionId: String? = nil,
-    createdBy: SessionCreator? = nil
+    createdBy: SessionCreator? = nil,
+    createdByAgentId: String? = nil,
+    createdByAgentMachineId: String? = nil,
+    forkedFromAgentId: String? = nil,
+    forkedFromAgentMachineId: String? = nil
   ) {
     self.id = id
     self.projectId = projectId
@@ -309,8 +321,11 @@ public struct ServerSession: Codable, Equatable, Sendable {
     self.pendingPlanApproval = pendingPlanApproval
     self.talkingToAgent = talkingToAgent
     self.latestBotMessage = latestBotMessage
-    self.parentSessionId = parentSessionId
     self.createdBy = createdBy
+    self.createdByAgentId = createdByAgentId
+    self.createdByAgentMachineId = createdByAgentMachineId
+    self.forkedFromAgentId = forkedFromAgentId
+    self.forkedFromAgentMachineId = forkedFromAgentMachineId
   }
 }
 
@@ -363,9 +378,14 @@ public struct ServerTranscriptItem: Decodable, Equatable, Sendable {
   public var planResource: ToolDetailResource?
   public var origin: String? = nil
   public var attribution: UserMessageAttribution? = nil
+  public var sentByAgentId: String? = nil
+  public var sentByAgentMachineId: String? = nil
   public var revision: Int
 
   public var isEvent: Bool { origin == "event" }
+  public var sentByAgent: AgentReference? {
+    AgentReference(agentId: sentByAgentId, machineId: sentByAgentMachineId)
+  }
 
   public init(
     id: String,

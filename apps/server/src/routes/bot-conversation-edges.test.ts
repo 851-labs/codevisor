@@ -308,17 +308,17 @@ describe("bot conversation edges", () => {
   it("names an agent the bot can't look up only by its id", async () => {
     const { running, bot } = await startBot()
 
-    await prompt(running, bot.sessionId, { text: "done", fromSessionId: "gone-agent" })
+    await prompt(running, bot.sessionId, { text: "done", sentByAgentId: "gone-agent" })
 
     await waitFor(() => running.agents.prompts.length === 1)
     expect(running.agents.prompts[0]![1]).toBe(
-      '<codevisor-event type="session.message" from="gone-agent">\ndone\n</codevisor-event>'
+      '<codevisor-event type="session.message" from="gone-agent" fromMachineId="server-a">\ndone\n</codevisor-event>'
     )
   })
 
   it("reports a child that ended without a reason or reply", async () => {
     const { running, bot } = await startBot()
-    const quiet = await createChat(running, { parentSessionId: bot.sessionId })
+    const quiet = await createChat(running, { createdByAgentId: bot.sessionId })
     const quietAgent = await holdTurn(running, quiet)
 
     await cancel(running, quiet)

@@ -57,13 +57,11 @@ describe("Codevisor tool result shapes", () => {
     expect(
       shaped("/v1/sessions/:id", {
         id: "s1",
-        parentSessionId: "parent",
         viewing: { sessionId: "s2", page: "home" },
         subscriptions: [{ targetSessionId: "s3" }]
       })
     ).toEqual({
       agentId: "s1",
-      parentAgentId: "parent",
       viewing: { agentId: "s2", page: "home" },
       subscriptions: [{ agentId: "s3" }]
     })

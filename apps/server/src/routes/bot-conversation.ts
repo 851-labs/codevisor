@@ -1,7 +1,7 @@
 import type { IncomingMessage, ServerResponse } from "node:http"
 import { isAbsolute } from "node:path"
 
-import type { AttachmentRef, BotConversationPage, EventEnvelope } from "@codevisor/api"
+import type { AgentRef, AttachmentRef, BotConversationPage, EventEnvelope } from "@codevisor/api"
 import { SendBotMessageRequest } from "@codevisor/api"
 
 import {
@@ -116,13 +116,14 @@ export const routeBotConversation = async (
 
 export const agentMessageEvent = async (
   services: CodevisorServerServices,
-  fromSessionId: string,
+  from: AgentRef,
   text: string
 ): Promise<string> => {
-  const sender = await run(services.db.getSessionSummary(fromSessionId)).catch(() => undefined)
+  const sender = await run(services.db.getSessionSummary(from.agentId)).catch(() => undefined)
   const title = sender === undefined ? "" : ` title="${attribute(sender.title)}"`
+  const machine = ` fromMachineId="${attribute(from.machineId)}"`
   return [
-    `<codevisor-event type="session.message" from="${attribute(fromSessionId)}"${title}>`,
+    `<codevisor-event type="session.message" from="${attribute(from.agentId)}"${machine}${title}>`,
     text,
     "</codevisor-event>"
   ].join("\n")

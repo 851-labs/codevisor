@@ -1,7 +1,7 @@
 import { randomBytes } from "node:crypto"
 
+import type { AgentRef } from "@codevisor/api"
 import type { ChannelPeer } from "@codevisor/cloud-client"
-import type { BotLink } from "@codevisor/db"
 
 export interface TicketBook<T> {
   readonly issue: (value: T) => string
@@ -9,19 +9,14 @@ export interface TicketBook<T> {
   readonly revoke: (ticket: string) => void
 }
 
-export interface VerifiedRemoteParent {
-  readonly parentSessionId: string
-  readonly bot?: BotLink
-}
-
 export interface FleetTickets {
   readonly callers: TicketBook<ChannelPeer>
-  readonly remoteParents: TicketBook<VerifiedRemoteParent>
+  readonly callerAgents: TicketBook<AgentRef>
 }
 
 export const makeFleetTickets = (): FleetTickets => ({
   callers: makeTicketBook(),
-  remoteParents: makeTicketBook()
+  callerAgents: makeTicketBook()
 })
 
 export const withTicket = async <T, R>(

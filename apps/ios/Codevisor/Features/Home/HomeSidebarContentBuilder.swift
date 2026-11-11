@@ -19,10 +19,10 @@ struct HomeSidebarContentBuilder {
   }
 
   var listedItems: [WorkspaceSidebarItem] {
-    let nested = Set(botEntries.flatMap(\.workspaceIDs))
+    let homes = Set(botEntries.map(\.bot.workspaceId))
     let botProjects = Set(environment.projectList.projects.filter(\.isBot).map(\.id))
     return known(environment.navigationStore.workspaceEntries.sidebar).filter {
-      !$0.belongsToSameMachineBot && !botProjects.contains($0.projectId) && !nested.contains($0.id)
+      !botProjects.contains($0.projectId) && !homes.contains($0.id)
     }
   }
 
@@ -33,13 +33,13 @@ struct HomeSidebarContentBuilder {
 
   func content(_ preferences: HomeSidebarPreferences) -> HomeSidebarContent {
     let projectGroups = ProjectGroup.grouping(environment.projectList.projects)
-    let listed = listedItems
-    let botChildren = Set(botEntries.flatMap(\.children).map(\.id))
-    let tree = SidebarWorkspaceTree(listed + botEntries.flatMap(\.children), pinnedIDs: preferences.pinnedIDs)
-    let children = tree.children.mapValues { $0.filter { !botChildren.contains($0.id) } }
+    let homes = Set(botEntries.map(\.bot.workspaceId))
+    let archivedIDs = Set(environment.navigationStore.workspaceEntries.archived.map(\.id))
+    let tree = SidebarWorkspaceTree(
+      listedItems, pinnedIDs: preferences.pinnedIDs, hiddenParentIDs: homes.union(archivedIDs))
     var content = HomeSidebarContent.make(
-      listed: tree.roots.filter { !botChildren.contains($0.id) },
-      children: children,
+      listed: tree.roots,
+      children: tree.children,
       archived: archivedItems,
       preferences: preferences,
       projects: environment.projectList.projects,
@@ -60,7 +60,7 @@ struct HomeSidebarContentBuilder {
     content.canCreateBots = FeatureFlag.bots.isEnabled && !environment.bots.botMachines.isEmpty
     let bots =
       botEntries
-      .map { sidebarBot($0, children: children, preferences: preferences, projectGroups: projectGroups) }
+      .map { sidebarBot($0, preferences: preferences, projectGroups: projectGroups) }
       .sorted(by: HomeSidebarBot.byRecency)
     content.bots = bots.filter { !$0.bot.isArchived }
     content.archivedBots = bots.filter(\.bot.isArchived)
@@ -69,8 +69,7 @@ struct HomeSidebarContentBuilder {
   }
 
   private func sidebarBot(
-    _ entry: BotSidebarEntry, children: [UUID: [WorkspaceSidebarItem]], preferences: HomeSidebarPreferences,
-    projectGroups: [ProjectGroup]
+    _ entry: BotSidebarEntry, preferences: HomeSidebarPreferences, projectGroups: [ProjectGroup]
   ) -> HomeSidebarBot {
     let bot = entry.bot
     let session = environment.projectList.session(bot.sessionId, serverId: bot.serverId)
@@ -80,11 +79,6 @@ struct HomeSidebarContentBuilder {
       machine: preferences.rowDetails.contains(.machine) ? rowMachine(serverId: bot.serverId) : nil,
       home: environment.navigationStore.workspaceEntries.sidebar.first { $0.id == bot.workspaceId }
         .flatMap { botSidebarWorkspace($0, preferences: preferences, projectGroups: projectGroups) },
-      children: entry.children.compactMap { child in
-        HomeSidebarContent.nesting(child, children: children) {
-          botSidebarWorkspace($0, preferences: preferences, projectGroups: projectGroups)
-        }
-      },
       canArchive: environment.bots.supportsArchive(on: bot.serverId),
       sectionID: environment.botSections.membership[bot.id]
     )

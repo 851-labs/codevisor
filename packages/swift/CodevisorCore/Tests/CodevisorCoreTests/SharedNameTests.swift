@@ -12,13 +12,12 @@ struct SharedNameTests {
     return chat
   }
 
-  private func workspace(_ name: String, main: ChatSession, botId: UUID? = nil) -> Workspace {
+  private func workspace(_ name: String, main: ChatSession) -> Workspace {
     var workspace = Workspace(
       name: name, rootDirectory: nil, serverId: "local", projectId: projectId,
       centerTree: .leaf(PaneGroupState()), createdAt: Date(timeIntervalSince1970: 0),
       isServerSynced: true, sidebarOrderHead: nil)
     workspace.mainSessionId = main.id
-    workspace.botId = botId
     return workspace
   }
 
@@ -41,27 +40,22 @@ struct SharedNameTests {
     #expect(records.sessions.map(\.title) == ["macro", "Side question"])
   }
 
-  @Test("A main chat rename renames its workspace right away; side chats and bots keep theirs")
+  @Test("A main chat rename renames its workspace right away; side chats keep theirs")
   func mainChatRenameRenamesWorkspace() {
     let main = chat("Fix the login bug")
     let side = chat("Side question")
-    let botChat = chat("Helper")
-    var records = records(
-      [workspace("Fix the login bug", main: main), workspace("Helper", main: botChat, botId: UUID())],
-      [main, side, botChat])
+    var records = records([workspace("Fix the login bug", main: main)], [main, side])
     var renamedMain = main
     renamedMain.title = "Lunch log"
     var renamedSide = side
     renamedSide.title = "Another side question"
-    var renamedBot = botChat
-    renamedBot.title = "Helper chat"
 
-    for renamed in [renamedMain, renamedSide, renamedBot] {
+    for renamed in [renamedMain, renamedSide] {
       NavigationOverlay.apply(.renameSession(renamed), to: &records)
     }
 
-    #expect(records.workspaces.map(\.name) == ["Lunch log", "Helper"])
-    #expect(records.workspaces.map(\.hasCustomName) == [true, false])
+    #expect(records.workspaces.map(\.name) == ["Lunch log"])
+    #expect(records.workspaces.map(\.hasCustomName) == [true])
   }
 
   @Test("The main chat shows its workspace's name, even before it has a title of its own")

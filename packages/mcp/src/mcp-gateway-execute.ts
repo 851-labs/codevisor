@@ -61,9 +61,9 @@ export const stillRunningText = (job: ExecutionJob): string =>
       `This call is still running in the background as job ${job.jobId}; nothing was cancelled. ` +
       `When it finishes, Codevisor sends you a hidden <codevisor-event type="execution.job_finished"> ` +
       "message with its result, so you can end your turn instead of waiting. To check sooner, run " +
-      `execute with machines.current.tools.codevisor.jobs.wait({ jobId: "${job.jobId}" }) (it waits ` +
-      `within that call's budget) or machines.current.tools.codevisor.jobs.get({ jobId: "${job.jobId}" }); ` +
-      `machines.current.tools.codevisor.jobs.cancel({ jobId: "${job.jobId}" }) stops it. Live output is appended to outputPath.`
+      `execute with jobs.wait({ jobId: "${job.jobId}" }) (it waits ` +
+      `within that call's budget) or jobs.get({ jobId: "${job.jobId}" }); ` +
+      `jobs.cancel({ jobId: "${job.jobId}" }) stops it. Live output is appended to outputPath.`
   })
 
 export const makeExecuteHandler =
@@ -249,12 +249,7 @@ const describedOrigin = async (
 ): Promise<GatewayOrigin> => {
   const sessionId = origin.sessionId!
   const session = await run(deps.config.db.getSessionSummary(sessionId)).catch(() => undefined)
-  const bot = await run(deps.config.db.findBotLinkForSession(sessionId)).catch(() => undefined)
-  return {
-    ...origin,
-    ...(session === undefined ? {} : { sessionTitle: session.title }),
-    ...bot
-  }
+  return { ...origin, ...(session === undefined ? {} : { sessionTitle: session.title }) }
 }
 
 const remoteTarget = (

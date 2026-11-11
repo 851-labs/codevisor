@@ -12,6 +12,7 @@ import type {
   Worktree
 } from "@codevisor/api"
 
+import { agentReferencesFromRow } from "./agent-references.js"
 import { botMessagePreview } from "./bot-conversation-attention.js"
 import { sessionConfigSelectionsFromRaw } from "./event-payloads.js"
 import { StringArray, parseJsonColumn } from "./json-column.js"
@@ -167,15 +168,8 @@ export const workspaceFromRow = (row: WorkspaceRow): Workspace => {
     ...(row.updated_at === null ? {} : { updatedAt: row.updated_at }),
     ...(labels === undefined ? {} : { labels }),
     ...(git === undefined ? {} : { git }),
-    ...(row.main_session_id == null ? {} : { mainSessionId: row.main_session_id }),
-    ...workspaceBotFromRow(row)
+    ...(row.main_session_id == null ? {} : { mainSessionId: row.main_session_id })
   }
-}
-
-const workspaceBotFromRow = (row: WorkspaceRow): Pick<Workspace, "botId" | "botMachineId"> => {
-  if (row.bot_id != null) return { botId: row.bot_id }
-  if (row.remote_bot_id == null || row.remote_bot_machine_id == null) return {}
-  return { botId: row.remote_bot_id, botMachineId: row.remote_bot_machine_id }
 }
 
 export const workspacePaneFromRow = (row: WorkspacePaneRow): WorkspacePane => ({
@@ -241,8 +235,8 @@ export const sessionFromRow = (row: SessionRow, folderPath: string | undefined):
     pendingPlanApproval: row.pending_plan_approval === 1,
     ...(row.talking_to_agent === 1 ? { talkingToAgent: true } : {}),
     ...(latestBotMessage === undefined ? {} : { latestBotMessage }),
-    ...(row.parent_session_id == null ? {} : { parentSessionId: row.parent_session_id }),
     ...(row.created_by == null ? {} : { createdBy: row.created_by }),
+    ...agentReferencesFromRow(row),
     ...(labels === undefined ? {} : { labels }),
     usage: {
       ...(row.usage_used === null ? {} : { used: row.usage_used }),

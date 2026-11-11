@@ -24,7 +24,7 @@ const machine = async () => {
       body: JSON.stringify({
         prompt: "Try it",
         title: "Scratch",
-        isolation: "worktree",
+        checkout: "worktree",
         ...fields
       }),
       method: "POST"
@@ -49,12 +49,12 @@ const callerIn = async (server: Awaited<ReturnType<typeof machine>>["server"]) =
   return idOf(created.body)
 }
 
-describe("POST /v1/agents with noProject", () => {
+describe("POST /v1/agents with checkout none", () => {
   it("starts in a fresh empty folder, in a new workspace under its caller", async () => {
     const { agents, server, services, startAgent } = await machine()
     const caller = await callerIn(server)
 
-    const response = await startAgent({ callerAgentId: caller, noProject: true })
+    const response = await startAgent({ callerAgentId: caller, checkout: "none" })
 
     expect(response.status).toBe(201)
     const started = decode(StartedAgent)(response.body)
@@ -67,7 +67,7 @@ describe("POST /v1/agents with noProject", () => {
     const folder = scratch!.locations[0]!.folderPath
     expect(readdirSync(folder)).toEqual([])
     expect(await run(services.db.getSessionSummary(started.agentId))).toMatchObject({
-      parentSessionId: caller,
+      createdByAgentId: caller,
       cwd: folder
     })
     await waitFor(() => agents.prompts.some(([, text]) => text === "Try it"))
@@ -76,7 +76,7 @@ describe("POST /v1/agents with noProject", () => {
   it("gives each start its own folder and doesn't clone the caller's project from another machine", async () => {
     const { services, startAgent } = await machine()
     const remote = {
-      noProject: true,
+      checkout: "none",
       callerDefaults: {
         harness: "codex",
         project: { name: "widget", repoUrl: "file:///nowhere/widget.git" }
@@ -99,18 +99,18 @@ describe("POST /v1/agents with noProject", () => {
       )
     )
 
-    const response = await startAgent({ harness: "codex", noProject: true })
+    const response = await startAgent({ harness: "codex", checkout: "none" })
 
     expect(JSON.stringify(response.body)).toContain("database locked")
     expect(await run(services.db.listProjects)).toEqual([])
     expect(scratchFolders()).toEqual([])
   })
 
-  it("refuses a project or sandbox profile alongside noProject before making a folder", async () => {
+  it("refuses a project or sandbox alongside checkout none before making a folder", async () => {
     const { startAgent } = await machine()
 
-    const withProject = await startAgent({ harness: "codex", noProject: true, project: "x" })
-    const withSandbox = await startAgent({ harness: "codex", noProject: true, sandboxProfile: "x" })
+    const withProject = await startAgent({ harness: "codex", checkout: "none", project: "x" })
+    const withSandbox = await startAgent({ harness: "codex", checkout: "none", sandbox: "x" })
 
     expect(withProject).toMatchObject({
       status: 422,
@@ -123,14 +123,14 @@ describe("POST /v1/agents with noProject", () => {
     expect(scratchFolders()).toEqual([])
   })
 
-  it("offers noProject when the project is missing, listing only sidebar projects", async () => {
+  it("offers checkout none when the project is missing, listing only sidebar projects", async () => {
     const { startAgent } = await machine()
-    await startAgent({ harness: "codex", noProject: true })
+    await startAgent({ harness: "codex", checkout: "none" })
 
     const response = await startAgent({ harness: "codex" })
 
     expect(response.body).toMatchObject({
-      error: expect.stringMatching(/noProject: true.*Projects on this machine: none$/)
+      error: expect.stringMatching(/checkout: "none".*Projects on this machine: none$/)
     })
   })
 })

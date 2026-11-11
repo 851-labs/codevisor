@@ -17,14 +17,9 @@ import {
   type CodevisorServerServices,
   type EventFanout
 } from "../server-context.js"
-import {
-  assertMayJoinWorkspace,
-  assertNotMovingIntoRemoteBot,
-  botForParentSession
-} from "./bot-guards.js"
-import { assertRemoteParentVerified } from "./fleet-calls.js"
+import { assertAgentVerified } from "./fleet-calls.js"
 import { resolveSessionAccount, startSessionAgent, withStartPicks } from "./session-creation.js"
-import { findSession, resolveSessionCwdOrFail } from "./session-workspace.js"
+import { creatorOf, findSession, resolveSessionCwdOrFail } from "./session-workspace.js"
 
 export const routeWorkspaceCreate = async (
   services: CodevisorServerServices,
@@ -44,13 +39,9 @@ export const routeWorkspaceCreate = async (
     throw new HttpFailure(409, "Chat and workspace must belong to the same project")
   }
   const workspaceId = payload.workspace.id.toLowerCase()
-  assertRemoteParentVerified(payload.session.parentSessionId, undefined)
-  await assertMayJoinWorkspace(services, workspaceId, payload.session.parentSessionId, undefined)
+  assertAgentVerified(config.id, creatorOf(payload.session), undefined)
   const sessionId = (payload.session.id ?? randomUUID()).toLowerCase()
   const existing = await findSession(services.db, sessionId)
-  if (existing !== undefined && existing.workspaceId !== workspaceId) {
-    await assertNotMovingIntoRemoteBot(services, workspaceId)
-  }
   let sessionPayload: CreateSessionRequest = {
     ...payload.session,
     id: sessionId,
@@ -89,7 +80,6 @@ export const routeWorkspaceCreate = async (
     services.db.createWorkspaceWithSession({
       workspace: {
         ...payload.workspace,
-        ...(await botForParentSession(services, config.id, payload.session.parentSessionId)),
         id: workspaceId,
         projectId: project.id
       },

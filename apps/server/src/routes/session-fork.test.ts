@@ -125,7 +125,7 @@ describe("POST /v1/sessions/:id/fork", () => {
     const forked = decode(SessionSummary)(response.body)
     const original = await run(running.services.db.getSessionSummary(chat.sessionId))
     expect(forked).toMatchObject({
-      parentSessionId: chat.sessionId,
+      forkedFromAgentId: chat.sessionId,
       createdBy: "user",
       projectId: original.projectId,
       harnessAccountId: account.id,
@@ -154,7 +154,7 @@ describe("POST /v1/sessions/:id/fork", () => {
     })
 
     expect(decode(SessionSummary)(response.body)).toMatchObject({
-      parentSessionId: first.id,
+      forkedFromAgentId: first.id,
       title: "First chat (fork)"
     })
   })

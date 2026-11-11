@@ -1,4 +1,5 @@
 import ACPKit
+import CodevisorProtocol
 import Foundation
 import Testing
 import TranscriptKit
@@ -54,6 +55,25 @@ struct ServerMessageAttributionTests {
     let item = try JSONDecoder().decode(ServerPromptQueueItem.self, from: Data(json.utf8))
 
     #expect(item.attribution == attribution)
+  }
+
+  @Test("Stored and queued messages name the agent that sent them only when its machine is known too")
+  func agentSender() throws {
+    let sender = UUID()
+    let named = try storedItem(
+      attribution: #""sentByAgentId": "\#(sender)", "sentByAgentMachineId": "studio","#)
+    let machineless = try storedItem(attribution: #""sentByAgentId": "\#(sender)","#)
+    let queued = try JSONDecoder().decode(
+      ServerPromptQueueItem.self,
+      from: Data(
+        #"""
+        {"id": "q1", "sessionId": "s1", "text": "Fix it", "createdAt": "2026-10-27T00:00:00.000Z",
+         "updatedAt": "2026-10-27T00:00:00.000Z", "sentByAgentId": "\#(sender)", "sentByAgentMachineId": "studio"}
+        """#.utf8))
+
+    #expect(named.sentByAgent == AgentReference(agentId: sender, machineId: "studio"))
+    #expect(machineless.sentByAgent == nil)
+    #expect(queued.sentByAgent == AgentReference(agentId: sender, machineId: "studio"))
   }
 
   private func output(attribution: JSONValue?) -> ServerEventEnvelope {

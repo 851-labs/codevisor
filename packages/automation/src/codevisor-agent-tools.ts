@@ -21,7 +21,7 @@ const ListAgentsArgs = Schema.Struct({
   state: Schema.optional(AgentState),
   project: Schema.optional(Schema.String),
   label: Schema.optional(Schema.String),
-  parentAgentId: Schema.optional(Schema.String),
+  createdByAgentId: Schema.optional(Schema.String),
   next: Schema.optional(Schema.String)
 })
 const AgentIdArgs = Schema.Struct({ agentId: Schema.String })
@@ -52,19 +52,19 @@ const waitBudget = apiTool("agents.wait", "", "POST", "/v1/agents/wait", {
 export const codevisorAgentTools: ReadonlyArray<AgentTool> = [
   agentTool(
     "agents.list",
-    "List agents on this machine, newest activity first, as slim summaries: agentId, title, state (working, waitingForUser, idle, errored), projectId, workspaceId, harness, labels, parentAgentId. Filter by state, project (id or name), label (key=value, or key for any value), or parentAgentId (the agents a given agent started). Pass next back for the next page.",
+    "List agents on this machine, newest activity first, as slim summaries: agentId, title, state (working, waitingForUser, idle, errored), projectId, workspaceId, harness, labels, createdByAgentId and createdByAgentMachineId. Filter by state, project (id or name), label (key=value, or key for any value), or createdByAgentId (the agents a given agent started). Pass next back for the next page.",
     ListAgentsArgs,
     (tool, args) => listAgents(tool, Schema.decodeUnknownSync(ListAgentsArgs)(args))
   ),
   agentTool(
     "agents.close",
-    'Close an agent in your own workspace (one you started with isolation: "shared") once you have what you need from it. It stops if still running, you stop getting its events, and its tab leaves your workspace; its chat stays in history and agents.list, and your checkout is untouched. Fails for yourself, and for an agent outside your workspace: archive that one\'s workspace with workspaces.archive instead.',
+    'Close an agent in your own workspace (one you started with checkout: "shared") once you have what you need from it. It stops if still running, you stop getting its events, and its tab leaves your workspace; its chat stays in history and agents.list, and your checkout is untouched. Fails for yourself, and for an agent outside your workspace: archive that one\'s workspace with workspaces.archive instead.',
     AgentIdArgs,
     (tool, args) => closeAgent(tool, Schema.decodeUnknownSync(AgentIdArgs)(args).agentId)
   ),
   agentTool(
     "workspaces.archive",
-    'Archive a workspace you started (for an agent with isolation: "worktree" or "project", its workspaceId) once its work is merged or no longer needed, and wait until it is done. Its chats stop, its branch name is released, and its tracked and untracked files are kept as a restorable snapshot. Everything else in its checkout folder, ignored files included, is deleted; files already sent in a chat stay with that chat. If the archive fails, this call fails and the checkout stays in place. Push or open the PR first if the branch should stay. Refuses your own workspace: close a helper there with agents.close.',
+    'Archive a workspace you started (for an agent with checkout: "worktree", "project", or "none", its workspaceId) once its work is merged or no longer needed, and wait until it is done. Its chats stop, its branch name is released, and its tracked and untracked files are kept as a restorable snapshot. Everything else in its checkout folder, ignored files included, is deleted; files already sent in a chat stay with that chat. If the archive fails, this call fails and the checkout stays in place. Push or open the PR first if the branch should stay. Refuses your own workspace: close a helper there with agents.close.',
     WorkspaceIdArgs,
     (tool, args) =>
       archiveWorkspace(tool, Schema.decodeUnknownSync(WorkspaceIdArgs)(args).workspaceId)
@@ -112,7 +112,7 @@ const listAgents = async (
         state: args.state,
         project: args.project,
         label: args.label,
-        parentAgentId: args.parentAgentId
+        createdByAgentId: args.createdByAgentId
       }
     })
   )

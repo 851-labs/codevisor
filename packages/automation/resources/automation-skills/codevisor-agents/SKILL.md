@@ -11,69 +11,68 @@ How much to hand off depends on what you are. A bot is an orchestrator: it hands
 
 Never use your harness's built-in subagents (a Task or Agent tool, spawn_agent, and the like), even if your harness still offers them. The user can't see or steer them, they edit your checkout unnoticed, and they die on updates. Start a Codevisor agent instead, even for a quick question.
 
-Everything goes through a machine handle. `machine.agents.<tool>(args)` is the same as `machine.tools.codevisor.agents.<tool>(args)`. Ids are passed and returned under the same name: `agentId`, `projectId`, `workspaceId`. Every list is `{ items, next? }`. Check exact inputs with `machine.tools.describe.tool({ path: "codevisor.agents.start" })`.
+Agent tools are the `agents` global: `agents.start(args)`, `agents.list(args)`, `agents.get(agentId)`. They run on the machine you run on unless you pass `machine` (a machine id, a machine name, or a `Machine`). `agents.start`, `agents.get`, and `agents.list` return **agent objects**: the agent's fields plus `machine`, the machine it runs on, and methods that already know both, so `agent.message("…")` reaches it on any machine. Ids are passed and returned under the same name: `agentId`, `projectId`, `workspaceId`. Every list is `{ items, next? }`. Check exact inputs with `machines.current.tools.describe.tool({ path: "agents.start" })`.
 
 ## Quick reference
 
-| To                                           | Call                                                                                                           |
-| -------------------------------------------- | -------------------------------------------------------------------------------------------------------------- |
-| Start an agent                               | `agents.start({ title, prompt, isolation, harness?, model?, project?, noProject?, labels?, sandboxProfile? })` |
-| Get its final reply                          | End your turn; `session.turn_ended` brings it. Later: `agents.status({ agentId })`                             |
-| Follow up                                    | `agents.message({ agentId, text, delivery? })`                                                                 |
-| Answer its question                          | `agents.answer({ agentId, questionId, outcome, answers })`                                                     |
-| Stop its turn                                | `agents.cancel({ agentId })`                                                                                   |
-| Find your agents                             | `agents.list({ state?, project?, label?, parentAgentId?, next? })`                                             |
-| Finish with a `"shared"` helper              | `agents.close({ agentId })`                                                                                    |
-| Finish with a `"worktree"`/`"project"` agent | `machine.tools.codevisor.workspaces.archive({ workspaceId })`                                                  |
+| To                                           | Call                                                                                                         |
+| -------------------------------------------- | ------------------------------------------------------------------------------------------------------------ |
+| Start an agent                               | `agents.start({ title, prompt, checkout, machine?, harness?, model?, project?, labels? })`, or `{ sandbox }` |
+| Get one back from its id                     | `agents.get(agentId)` finds it on any of your machines                                                       |
+| Get its final reply                          | End your turn; `session.turn_ended` brings it. Later: `agent.status()`                                       |
+| Follow up                                    | `agent.message({ text, delivery? })`, or `agent.message("…")`                                                |
+| Answer its question                          | `agent.answer({ questionId, outcome, answers })`                                                             |
+| Stop its turn                                | `agent.cancel()`                                                                                             |
+| Find your agents                             | `agents.list({ state?, project?, label?, createdByAgentId?, machine?, next? })`                              |
+| Finish with a `"shared"` helper              | `agent.close()`                                                                                              |
+| Finish with a `"worktree"`/`"project"` agent | `workspaces.archive({ workspaceId, machine })`                                                               |
 
 ## Start an agent
 
 ```js
 ;async () => {
-  const machine = machines.current
-  const agent = await machine.agents.start({
+  const agent = await agents.start({
     title: "Fix ABC-123: login redirect loop",
     prompt: "Fix ABC-123 … then open a PR.",
-    isolation: "worktree",
+    checkout: "worktree",
     labels: { linear: "ABC-123", role: "worker" }
   })
   return agent
-  // { agentId, title, projectId, workspaceId, worktreeName?, delivered, subscribed }
+  // { agentId, title, projectId, workspaceId, worktreeName?, delivered, subscribed, machine: { machineId, name } }
 }
 ```
 
-One call creates the checkout, the chat, and its first message, and subscribes you to its events.
+One call creates the checkout, the chat, and its first message. The new agent is linked to you as the agent that created it, on any machine: it shows under your workspace in the sidebar and in your agents pill, and its events reach you.
 
-`isolation` picks where it works:
+`checkout` says which files it works in:
 
-- `"shared"`: your own workspace and checkout, as a tab beside you. Use it for quick, scoped help with your current task: research, reading code or docs, a review, a small piece of the same change, or a second opinion from another harness or model. Keep its task scoped so the two of you don't edit the same files at once, and close it with `agents.close` once you have its reply.
+- `"shared"`: your own workspace and checkout, as a tab beside you, so it edits the same files you do. Use it for quick, scoped help with your current task: research, reading code or docs, a review, a small piece of the same change, or a second opinion from another harness or model. Keep its task scoped so the two of you don't edit the same files at once, and close it with `agent.close()` once you have its reply. It only works on your own machine.
 - `"worktree"`: a new git worktree in a new workspace, for separate work that ends in its own branch or PR.
 - `"project"`: the project folder itself, in a new workspace, for separate work that needs no branch of its own, or a project that isn't a git repository.
+- `"none"`: a fresh empty folder with no project, like a chat started with "No project" in the app. Nothing is added to the sidebar's projects, and it works on any machine, even one with no projects. Leave out `project`.
 
 ```js
 ;async () =>
-  machines.current.agents.start({
+  agents.start({
     title: "Find where sessions are archived",
     prompt: "List every code path that archives a session as file:line. Don't edit files.",
-    isolation: "shared"
+    checkout: "shared"
   })
 ```
 
-Harness, model, reasoning, and project default to yours. Pass `harness` (an id from `machine.tools.codevisor.harnesses.list()`), `model`, or `project` (an id or name) to pick others. `labels` are free-form key/value pairs that help you find your agents again later.
-
-For a throwaway chat that needs no project, pass `noProject: true` instead of `project`. The agent works in a fresh empty folder on that machine, like a chat started with "No project" in the app: nothing is added to the sidebar's projects, and `isolation` is ignored. It works on any machine, even one with no projects. Archive its workspace when you're done, as for `"project"`.
+Harness, model, reasoning, and project default to yours. Pass `harness` (an id from `harnesses.list()`), `model`, or `project` (an id or name) to pick others. `labels` are free-form key/value pairs that help you find your agents again later. Pass `machine` to run it on another of the user's machines; see "Agents on other machines" below.
 
 ```js
 ;async () =>
-  (await machines.get("macbook")).agents.start({
+  agents.start({
     title: "Check the Xcode version",
     prompt: "Run xcodebuild -version and reply with its output.",
-    isolation: "project",
-    noProject: true
+    checkout: "none",
+    machine: "macbook"
   })
 ```
 
-To run it on a new sandbox, pass `sandboxProfile` (a profile id or name from `machine.tools.codevisor.sandboxes.profiles_list()`). The call returns at once with `{ sandboxId, state: "creating" }`; `isolation` is ignored because the agent works in a fresh clone of the project on the sandbox. A few minutes later the agent starts and you're subscribed to it as usual. `machine.tools.codevisor.sandboxes.wait({ sandboxId })` returns once the sandbox is ready, with `agentId` and `machineId`, so `(await machines.get(machineId)).agents.status({ agentId })` reaches it. If setup fails the sandbox shows `state: "failed"` with `error`: read `sandboxes.log({ sandboxId })` and call `sandboxes.retry({ sandboxId })`. See `codevisor-machines` for sandboxes.
+To run it on a new sandbox, pass `sandbox` (a profile id or name from `sandboxes.profiles_list()`) and leave out `checkout` and `machine`: the agent works in a fresh clone of the project on the sandbox. The call returns at once with `{ sandboxId, state: "creating" }`. A few minutes later the agent starts and you get its events as usual. `sandboxes.wait({ sandboxId })` returns once the sandbox is ready, with `agentId` and `machineId`, so `agents.get({ agentId, machine: machineId })` reaches it. If setup fails the sandbox shows `state: "failed"` with `error`: read `sandboxes.log({ sandboxId })` and call `sandboxes.retry({ sandboxId })`. See `codevisor-machines` for sandboxes.
 
 ## Write its prompt
 
@@ -91,7 +90,7 @@ Your own coordination concerns, such as machine load, disk space, scheduling, or
 
 ## Get its final reply
 
-Starting an agent subscribes you, so end your turn instead of waiting. When the agent finishes, its complete final reply arrives as a hidden message:
+Starting an agent links it to you, so end your turn instead of waiting. When the agent finishes, its complete final reply arrives as a hidden message:
 
 ```
 <codevisor-event type="session.turn_ended" agentId="…" title="Fix ABC-123: login redirect loop" stopReason="end_turn">
@@ -108,7 +107,7 @@ Starting an agent subscribes you, so end your turn instead of waiting. When the 
 To check on an agent yourself:
 
 ```js
-;async () => machines.current.agents.status({ agentId })
+;async () => (await agents.get(agentId)).status()
 // { agentId, title, state: "working" | "waitingForUser" | "idle" | "errored", lastReply?, pendingQuestion? }
 ```
 
@@ -117,15 +116,14 @@ To check on an agent yourself:
 ## Follow up
 
 ```js
-;async () =>
-  machines.current.agents.message({ agentId, text: "Then add tests.", delivery: "queue" })
+;async () => (await agents.get(agentId)).message({ text: "Then add tests.", delivery: "queue" })
 // { agentId, queueItemId?, delivered: "sent" | "steered" | "queued", steerDeclined? }
 ```
 
 Pick how to follow up by how the new request relates to the work under way:
 
 - **It changes the work** ("also cover the error path", "do it this way instead"): steer, the default. The agent folds it in now instead of finishing the old version first.
-- **It replaces the work** ("never mind, do x instead") and x doesn't build on what the agent has done: stop the agent with `agents.cancel`, archive its workspace or close it, and start a new agent with a fresh brief. Archiving deletes uncommitted work, so ask first if it's unclear whether the work so far is still wanted.
+- **It replaces the work** ("never mind, do x instead") and x doesn't build on what the agent has done: stop the agent with `agent.cancel()`, archive its workspace or close it, and start a new agent with a fresh brief. Archiving deletes uncommitted work, so ask first if it's unclear whether the work so far is still wanted.
 - **It builds on the result** ("then add tests for it"): queue it, so it starts once the current turn ends.
 
 How delivery works:
@@ -134,12 +132,12 @@ How delivery works:
 - While it is working, `delivery: "steer"` (the default) adds it to the running turn, so the agent reads it at its next step.
 - `delivery: "queue"` waits until the turn finishes. Queued messages go in the order you sent them, each once.
 - A steer never overtakes messages you queued earlier: they go into the running turn first, in order, then the steer.
-- `steerDeclined: true` with `delivered: "queued"` means the turn couldn't take it, because its harness can't steer or is updating. If it can't wait, `agents.cancel({ agentId })` stops the turn.
+- `steerDeclined: true` with `delivered: "queued"` means the turn couldn't take it, because its harness can't steer or is updating. If it can't wait, `agent.cancel()` stops the turn.
 - While Codevisor itself is updating, messages fail with an `updating` error. Chats the update paused continue on their own; send yours again once the update finishes.
 
 ## Answer its questions
 
-A `session.waiting_for_user` event brings an agent's question. `agents.status` shows it too, as `pendingQuestion` while `state` is `waitingForUser`. The agent stays paused until the question is answered. First decide who answers it:
+A `session.waiting_for_user` event brings an agent's question. `agent.status()` shows it too, as `pendingQuestion` while `state` is `waitingForUser`. The agent stays paused until the question is answered. First decide who answers it:
 
 - **Answer it yourself** when the answer is already settled: the user stated it, it was decided earlier in your conversation, it follows from the task's requirements, or it's a low-stakes implementation detail within the task.
 - **Ask the user** when the answer depends on the user's preferences or intent and nothing has settled it yet. The agent's recommendation helps the user choose. It doesn't settle the question.
@@ -149,10 +147,9 @@ To answer it yourself:
 
 ```js
 ;async () => {
-  const machine = machines.current
-  const { pendingQuestion } = await machine.agents.status({ agentId })
-  return machine.agents.answer({
-    agentId,
+  const agent = await agents.get(agentId)
+  const { pendingQuestion } = await agent.status()
+  return agent.answer({
     questionId: pendingQuestion.questionId,
     outcome: "answered",
     answers: { [pendingQuestion.questions[0].id]: { answers: ["Yes"] } }
@@ -160,11 +157,11 @@ To answer it yourself:
 }
 ```
 
-To give guidance instead of picking an answer, send it with `agents.message`.
+To give guidance instead of picking an answer, send it with `agent.message`.
 
-To ask the user, use your harness's own tool for asking the user questions. Ask the same question, reworded for the user if needed, with the same options, and mark which one the agent recommends. Then relay their choice with `agents.answer`, using the agent's option label. If you are a bot, ask in a message with `messages.send` instead, and relay their reply the same way.
+To ask the user, use your harness's own tool for asking the user questions. Ask the same question, reworded for the user if needed, with the same options, and mark which one the agent recommends. Then relay their choice with `agent.answer`, using the agent's option label. If you are a bot, ask in a message with `messages.send` instead, and relay their reply the same way.
 
-One `agents.answer` call answers every question in the prompt, so it can't answer some now and the rest later. When a prompt mixes settled questions with open ones, ask the user all the open ones together, then send every answer in one call. The agent stays paused while the user decides. Carry on with your other work in the meantime.
+One `agent.answer` call answers every question in the prompt, so it can't answer some now and the rest later. When a prompt mixes settled questions with open ones, ask the user all the open ones together, then send every answer in one call. The agent stays paused while the user decides. Carry on with your other work in the meantime.
 
 Examples:
 
@@ -176,28 +173,29 @@ Examples:
 
 ```js
 ;async () => {
-  const me = await machines.current.tools.codevisor.context.current()
-  return machines.current.agents.list({ parentAgentId: me.agentId })
-  // { items: [{ agentId, title, state, projectId, workspaceId, harness, labels, parentAgentId }], next? }
+  const me = await context.current()
+  return agents.list({ createdByAgentId: me.agentId })
+  // { items: [agent, …], next? }, each an agent object with createdByAgentId and createdByAgentMachineId
 }
 ```
 
-- Filter by `state`, `project`, `label` (`"linear=ABC-123"`, or just a key), or `parentAgentId`.
+- Filter by `state`, `project`, `label` (`"linear=ABC-123"`, or just a key), or `createdByAgentId`.
+- `agents.list` lists one machine: yours, or the one you pass as `machine`. To gather agents you started everywhere, list each of `(await machines.list()).items` with `machine`.
 - Pass `next` back for the next page.
-- Keep durable state in labels and parent links, not only in your context, so you can find your agents again after compaction or a restart.
+- Keep durable state in labels and the creator link, not only in your context, so you can find your agents again after compaction or a restart.
 
 ## Other events and waiting
 
-- `agents.subscribe({ agentId, events?, once? })` subscribes you to an agent you didn't start. `events` picks from `turn_ended`, `waiting_for_user`, `errored`, and `job_finished`.
+- `agents.subscribe({ agentId, events?, once? })` subscribes you to an agent on your machine that you didn't start. `events` picks from `turn_ended`, `waiting_for_user`, `errored`, and `job_finished`.
 - `agents.subscriptions()` and `agents.unsubscribe({ subscriptionId })` manage what you hold.
-- `agents.wait({ agentIds, until?, timeoutMs? })` waits inside one execute call. It returns as soon as one of them reaches an `until` state (default `idle`, `waitingForUser`, `errored`). `timeoutMs` shrinks to fit the execute call's budget, and `timedOut: true` is normal. Use it only for waits of a minute or two; for anything longer, end your turn and let the event arrive.
+- `agent.wait({ until?, timeoutMs? })`, or `agents.wait({ agentIds, until?, timeoutMs?, machine? })` for several on one machine, waits inside one execute call. It returns as soon as one of them reaches an `until` state (default `idle`, `waitingForUser`, `errored`). `timeoutMs` shrinks to fit the execute call's budget, and `timedOut: true` is normal. Use it only for waits of a minute or two; for anything longer, end your turn and let the event arrive.
 
 ## Review and clean up
 
 - To review work, start another agent on the same project with `labels: { role: "reviewer", for: agentId }` and point it at the PR or branch.
-- `agents.debug.branch_diff({ agentId })` gives a quick size of an agent's changes.
-- When you're done with a shared helper (`"shared"`, in your own workspace), call `agents.close({ agentId })`. It stops if still running and you stop getting its events. Its tab leaves your workspace, its chat stays in history and `agents.list`, and your checkout is untouched.
-- When you're done with a separate workspace (`"worktree"` or `"project"`), call `machine.tools.codevisor.workspaces.archive({ workspaceId })` with the `workspaceId` from `agents.start` or `agents.list`, once its work is merged or no longer needed.
+- `agent.debug.branch_diff()` gives a quick size of an agent's changes.
+- When you're done with a shared helper (`"shared"`, in your own workspace), call `agent.close()`. It stops if still running and you stop getting its events. Its tab leaves your workspace, its chat stays in history and `agents.list`, and your checkout is untouched.
+- When you're done with a separate workspace (`"worktree"`, `"project"`, or `"none"`), call `workspaces.archive({ workspaceId: agent.workspaceId, machine: agent.machine })` once its work is merged or no longer needed.
   - It waits until the archive is done, and its chats stop. It keeps a restorable snapshot of tracked and untracked files and deletes everything else in the checkout folder, ignored files included. Files already sent in a chat stay with that chat.
   - It releases the branch name, so push or open the PR first if the branch should stay.
 - You can't close yourself or archive your own workspace.
@@ -208,35 +206,30 @@ Talk to the agent first: ask it what happened, and read its reply. Only when tha
 
 ```js
 ;async () => {
-  const machine = machines.current
-  const hits = await machine.agents.debug.search({
-    agentId,
-    query: "error",
-    kinds: "tool",
-    last: 5
-  })
+  const agent = await agents.get(agentId)
+  const hits = await agent.debug.search({ query: "error", kinds: "tool", last: 5 })
   // { items: [{ itemId, kind, tool?, at, snippet }], next? }
-  return machine.agents.debug.item({ agentId, itemId: hits.items[0].itemId })
+  return agent.debug.item({ itemId: hits.items[0].itemId })
   // the whole item: a message's text, or a tool call's title, status, input, and output
 }
 ```
 
 - `search` filters by `query`, `kinds` (comma-separated `user`, `assistant`, `tool`, `event`), `tool` (part of a tool's title), and `last` (the number of hits). It returns the newest hits first.
-- `agents.debug.transcript({ agentId, next? })` pages through the raw transcript.
-- `agents.debug.queue({ agentId })` lists its queued messages. `queue_update`, `queue_reorder`, `queue_delete`, and `queue_send_now` manage them.
-- `agents.debug.state({ agentId })` returns its full state, and `agents.debug.update({ agentId, title?, labels? })` renames or relabels it.
+- `agent.debug.transcript({ next? })` pages through the raw transcript.
+- `agent.debug.queue()` lists its queued messages. `queue_update`, `queue_reorder`, `queue_delete`, and `queue_send_now` manage them.
+- `agent.debug.state()` returns its full state, and `agent.debug.update({ title?, labels? })` renames or relabels it.
 - `config_set`, `mode_set`, `goal_set`, `goal_clear`, and `usage_limits` cover the rest.
 
 ## If you are the child
 
-If `context.current()` has a `parentAgentId` and you are blocked, ask your parent directly:
+If `context.current()` has a `createdByAgentId` and you are blocked, ask the agent that started you directly, on its machine:
 
 ```js
 ;async () => {
-  const machine = machines.current
-  const me = await machine.tools.codevisor.context.current()
-  await machine.agents.message({
-    agentId: me.parentAgentId,
+  const me = await context.current()
+  await agents.message({
+    agentId: me.createdByAgentId,
+    machine: me.createdByAgentMachineId,
     text: `Question from ${me.agentId}: …`
   })
 }
@@ -244,7 +237,7 @@ If `context.current()` has a `parentAgentId` and you are blocked, ask your paren
 
 ## Agents on other machines
 
-`(await machines.get("macbook")).agents.start({ …, project: "codevisor" })` starts an agent on that machine. Pass `project`, since that machine has its own projects, or `noProject: true` for a throwaway chat in a fresh empty folder there; harness and model still default to yours. You aren't subscribed across machines, so check with that machine's `agents.status`. See `codevisor-machines`.
+`agents.start({ …, checkout: "worktree", machine: "macbook", project: "codevisor" })` starts an agent on that machine. Pass `project` when you aren't in a project with a git remote, since that machine has its own projects, or `checkout: "none"` for a throwaway chat in a fresh empty folder there; harness and model still default to yours. Nothing else changes: it is linked to you, it shows under you in the sidebar, its events reach you on your machine, and its agent object reaches it there. `checkout: "shared"` only works on your own machine. See `codevisor-machines`.
 
 ## Bots
 
@@ -262,10 +255,9 @@ A **bot** is a Codevisor chat with its own folder and read-only checkouts of one
 
 ```js
 ;async () => {
-  const codevisor = machines.current.tools.codevisor
-  const { items } = await codevisor.projects.list()
+  const { items } = await projects.list()
   const project = items.find((p) => p.name === "web")
-  return codevisor.bots.create({
+  return bots.create({
     name: "Release Notes",
     harnessId: "codex",
     projectIds: [project.projectId],
@@ -274,14 +266,14 @@ A **bot** is a Codevisor chat with its own folder and read-only checkouts of one
 }
 ```
 
-- A bot runs on one machine. Create it with that machine's handle and that machine's `projectIds`: `(await machines.get("studio")).tools.codevisor.bots.create(…)`.
+- A bot runs on one machine. Create it there with that machine's `projectIds`: `bots.create({ …, machine: "studio" })`, after `projects.list({ machine: "studio" })`.
 - `harnessId` is an id from `harnesses.list()` and can't change later.
 - `configSelections` sets the bot chat's options, such as `{ model }`. `server.capabilities({ harnessId })` lists each option's `id` and values. Leave it out for the harness defaults. `bots.get` and `bots.list` return the bot's current `configSelections`.
 - `mascot` is the bot's avatar: `{ color, hat, hatColor?, eyewear, eyewearColor? }`, with the choices listed in the tool's input schema. `hatColor` and `eyewearColor` only apply to items that offer colors and default to `auto`. A new bot gets the next color in turn and no hat or eyewear.
 
 ## Common mistakes
 
-- Blocking on `agents.wait` or polling `agents.status` for a long task. End your turn; the event carries the final reply.
+- Blocking on `agent.wait()` or polling `agent.status()` for a long task. End your turn; the event carries the final reply.
 - Answering a question the user hasn't settled with your own guess or the agent's recommendation. Ask the user.
 - Answering a discovery without telling the user what the agent found.
 - Breaking a request into step-by-step instructions, or passing on what to do without why.

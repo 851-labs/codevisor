@@ -55,31 +55,8 @@ const untilAborted = (attempt: Attempt): Promise<never> =>
     signal.addEventListener("abort", () => reject(new Error("deadline")))
   })
 
-const queueThroughRemoteBotChild = async (db: CodevisorDatabaseService) => {
-  const project = await run(db.createProject({ folderPath: "/tmp/fleet-outbox" }))
-  const parentSessionId = "remote2:machine-remote:bot-chat"
-  const { session: child } = await run(
-    db.createWorkspaceWithSession({
-      workspace: {
-        id: "ws-fleet-outbox",
-        projectId: project.id,
-        name: "Child",
-        hasCustomName: false,
-        botId: "6d1f0c35-2a64-4f3e-9d0a-3b7f3c1c9a10",
-        botMachineId: "machine-remote",
-        botParentSessionId: parentSessionId
-      },
-      session: { projectId: project.id, harnessId: "codex", parentSessionId }
-    })
-  )
-  return async (message: FleetMessage) => {
-    const turnId = message.id
-    await run(db.appendEvent("session.updated", child.id, { turnState: "started", turnId }))
-    await run(db.appendEvent("session.updated", child.id, { turnState: "ended", turnId }))
-    const [turn] = await run(db.listFleetPendingTurns)
-    await run(db.promoteFleetTurn(turn!, message))
-  }
-}
+const queueThrough = (db: CodevisorDatabaseService) => async (message: FleetMessage) =>
+  run(db.enqueueFleetMessage(message))
 
 const outboxFor = async (
   answer: (attempt: Attempt) => Promise<unknown>,
@@ -107,7 +84,7 @@ const outboxFor = async (
   }
   const queued = async () =>
     (await run(services.db.listFleetMessages)).map((message) => message.args.n)
-  const queue = await queueThroughRemoteBotChild(services.db)
+  const queue = queueThrough(services.db)
   const enqueue = (machineId: string, args: Readonly<Record<string, unknown>>) =>
     queue({
       id: `m-${String(args.n)}-${machineId}`,
@@ -251,7 +228,7 @@ describe("fleet outbox", () => {
         )
     }
     const outbox = makeFleetOutbox({ db, machines, now: () => NOW })
-    const queue = await queueThroughRemoteBotChild(services.db)
+    const queue = queueThrough(services.db)
 
     await queue({
       id: "m",

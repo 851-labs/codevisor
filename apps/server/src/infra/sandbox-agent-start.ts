@@ -30,7 +30,7 @@ export const startRequestedAgent = async (
     host.machineId,
     "codevisor.agents.start",
     startArguments(agent, placed.remoteProjectId),
-    agent.parentSessionId
+    agent.createdByAgentId
   )
   setup.log(`Started ${agent.title} on ${host.name}`)
   return { ...startedIds(started), workspaceOpenedAt: isoNow(deps) }
@@ -39,7 +39,7 @@ export const startRequestedAgent = async (
 const startArguments = (agent: SandboxAgentStart, project: string) => ({
   prompt: agent.prompt,
   title: agent.title,
-  isolation: "project",
+  checkout: "project",
   harness: agent.harness,
   project,
   ...(agent.model === undefined ? {} : { model: agent.model }),

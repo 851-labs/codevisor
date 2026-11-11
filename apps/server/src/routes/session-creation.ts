@@ -38,12 +38,10 @@ export const withStartPicks = async (
   services: CodevisorServerServices,
   payload: CreateSessionRequest
 ): Promise<CreateSessionRequest> => {
-  if (payload.configSelections !== undefined || payload.parentSessionId === undefined) {
-    return payload
-  }
-  const parent = await run(services.db.getSessionSummary(payload.parentSessionId)).catch(
-    () => undefined
-  )
+  const sourceAgentId = payload.createdByAgentId ?? payload.forkedFromAgentId
+  if (payload.configSelections !== undefined || sourceAgentId === undefined) return payload
+
+  const parent = await run(services.db.getSessionSummary(sourceAgentId)).catch(() => undefined)
   if (parent === undefined || parent.harnessId !== payload.harnessId) return payload
   const unavailable = parent.unavailableConfigSelections ?? {}
   const inherited = Object.entries(parent.configSelections ?? {}).filter(

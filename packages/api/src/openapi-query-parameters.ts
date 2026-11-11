@@ -16,7 +16,7 @@ const queryParameterBuilders: Partial<Record<Endpoint, QueryParameterBuilder>> =
     stringQuery("state"),
     stringQuery("project"),
     stringQuery("label"),
-    stringQuery("parentAgentId")
+    stringQuery("createdByAgentId")
   ],
   "GET /v1/agents/:id/search": () => [
     stringQuery("query"),

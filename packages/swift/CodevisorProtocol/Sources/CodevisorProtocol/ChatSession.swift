@@ -61,8 +61,9 @@ public struct ChatSession: Identifiable, Sendable, Codable, Equatable {
   public var pendingPlanApproval: Bool
   public var talkingToAgent: Bool
   public var latestBotMessage: BotMessagePreview?
-  public var parentSessionId: String?
   public var createdBy: SessionCreator?
+  public var createdByAgent: AgentReference?
+  public var forkedFromAgent: AgentReference?
 
   public var hasAgentSession: Bool {
     agentSessionId?.isEmpty == false
@@ -98,8 +99,9 @@ public struct ChatSession: Identifiable, Sendable, Codable, Equatable {
     pendingPlanApproval: Bool = false,
     talkingToAgent: Bool = false,
     latestBotMessage: BotMessagePreview? = nil,
-    parentSessionId: String? = nil,
-    createdBy: SessionCreator? = nil
+    createdBy: SessionCreator? = nil,
+    createdByAgent: AgentReference? = nil,
+    forkedFromAgent: AgentReference? = nil
   ) {
     self.id = id
     self.projectId = projectId
@@ -126,8 +128,9 @@ public struct ChatSession: Identifiable, Sendable, Codable, Equatable {
     self.pendingPlanApproval = pendingPlanApproval
     self.talkingToAgent = talkingToAgent
     self.latestBotMessage = latestBotMessage
-    self.parentSessionId = parentSessionId
     self.createdBy = createdBy
+    self.createdByAgent = createdByAgent
+    self.forkedFromAgent = forkedFromAgent
   }
 
   private enum Keys: String, CodingKey {
@@ -135,7 +138,8 @@ public struct ChatSession: Identifiable, Sendable, Codable, Equatable {
     case worktreeName, cwd, configSelections, unavailableConfigSelections, createdAt, updatedAt
     case sidebarState, sidebarStateChangedAt
     case latestAttentionSequence, lastSeenAttentionSequence, unreadCount, hasUnreadError
-    case actionRequired, actionRequiredKind, pendingPlanApproval, latestBotMessage, parentSessionId, createdBy
+    case actionRequired, actionRequiredKind, pendingPlanApproval, latestBotMessage, createdBy
+    case createdByAgentId, createdByAgentMachineId, forkedFromAgentId, forkedFromAgentMachineId
     case talkingToAgent
     case workspaceId
   }
@@ -177,8 +181,13 @@ public struct ChatSession: Identifiable, Sendable, Codable, Equatable {
     pendingPlanApproval = try container.decodeIfPresent(Bool.self, forKey: .pendingPlanApproval) ?? false
     talkingToAgent = try container.decodeIfPresent(Bool.self, forKey: .talkingToAgent) ?? false
     latestBotMessage = try container.decodeIfPresent(BotMessagePreview.self, forKey: .latestBotMessage)
-    parentSessionId = try container.decodeIfPresent(String.self, forKey: .parentSessionId)
     createdBy = try container.decodeIfPresent(SessionCreator.self, forKey: .createdBy)
+    createdByAgent = AgentReference(
+      agentId: try container.decodeIfPresent(String.self, forKey: .createdByAgentId),
+      machineId: try container.decodeIfPresent(String.self, forKey: .createdByAgentMachineId))
+    forkedFromAgent = AgentReference(
+      agentId: try container.decodeIfPresent(String.self, forKey: .forkedFromAgentId),
+      machineId: try container.decodeIfPresent(String.self, forKey: .forkedFromAgentMachineId))
   }
 
   public func encode(to encoder: any Encoder) throws {
@@ -208,7 +217,10 @@ public struct ChatSession: Identifiable, Sendable, Codable, Equatable {
     try container.encode(pendingPlanApproval, forKey: .pendingPlanApproval)
     try container.encode(talkingToAgent, forKey: .talkingToAgent)
     try container.encodeIfPresent(latestBotMessage, forKey: .latestBotMessage)
-    try container.encodeIfPresent(parentSessionId, forKey: .parentSessionId)
     try container.encodeIfPresent(createdBy, forKey: .createdBy)
+    try container.encodeIfPresent(createdByAgent?.agentId.uuidString.lowercased(), forKey: .createdByAgentId)
+    try container.encodeIfPresent(createdByAgent?.machineId, forKey: .createdByAgentMachineId)
+    try container.encodeIfPresent(forkedFromAgent?.agentId.uuidString.lowercased(), forKey: .forkedFromAgentId)
+    try container.encodeIfPresent(forkedFromAgent?.machineId, forKey: .forkedFromAgentMachineId)
   }
 }

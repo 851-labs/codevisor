@@ -37,14 +37,14 @@ describe("agents.start on another machine", () => {
       const start = {
         title: "Build it",
         prompt: "Build the app",
-        isolation: "worktree",
+        checkout: "worktree",
         project: "app"
       }
       await client.callTool({
         name: "execute",
         arguments: {
           description: "Start an agent on the MacBook",
-          code: `async () => (await machines.get("macbook")).agents.start(${JSON.stringify(start)})`
+          code: `async () => agents.start({ ...${JSON.stringify(start)}, machine: "macbook" })`
         }
       })
 
@@ -78,12 +78,12 @@ describe("agents.start on another machine", () => {
     const issued = await manager.issueGateway(session.id, project.id)
     const client = await connectClient(issued)
     try {
-      const start = { title: "Build it", prompt: "Build the app", isolation: "worktree" }
+      const start = { title: "Build it", prompt: "Build the app", checkout: "worktree" }
       await client.callTool({
         name: "execute",
         arguments: {
           description: "Start an agent on the MacBook",
-          code: `async () => (await machines.get("macbook")).agents.start(${JSON.stringify(start)})`
+          code: `async () => agents.start({ ...${JSON.stringify(start)}, machine: "macbook" })`
         }
       })
 
@@ -101,7 +101,7 @@ describe("agents.start on another machine", () => {
 
   it("forwards the arguments untouched when the calling chat no longer exists", async () => {
     const { db } = await studioGateway()
-    const args = { title: "Build it", prompt: "Build the app", isolation: "worktree" }
+    const args = { title: "Build it", prompt: "Build the app", checkout: "worktree" }
 
     expect(await withCallerDefaults(db, "gone", "codevisor.agents.start", args)).toBe(args)
   })

@@ -19,7 +19,7 @@ import {
 } from "../server.js"
 import { jsonRequest, makeServices, run, runningServers } from "../test-support.js"
 import { isRecord } from "../unknown-values.js"
-import { createBot, decodeBot, setUpWith } from "./bot-test-support.js"
+import { setUpWith } from "./bot-test-support.js"
 
 export interface Member {
   readonly id: string
@@ -63,21 +63,28 @@ export const createArgs = {
 export const startFleet = async () => {
   const fleet: Fleet = { machines: new Map(), offline: new Set() }
   const home = await setUpWith(() => startMachine(studio, fleet))
-  await home.addProject("bot-project", "bot-repo")
+  await home.addProject("home-project", "home-repo")
   const remote = await setUpWith(() => startMachine(laptop, fleet))
   await remote.addProject("laptop-project", "laptop-repo")
-  const bot = decodeBot((await createBot(home, { projectIds: ["bot-project"] })).body)
-  const botOrigin: MachineCallOrigin = {
+  const parent = decode(SessionSummary)(
+    (
+      await post(home, "/v1/sessions", {
+        projectId: "home-project",
+        harnessId: "codex",
+        workspaceId: "0d7c8f1e-3b2a-4c5d-9e6f-7a8b9c0d1e2f"
+      })
+    ).body
+  )
+  const parentOrigin: MachineCallOrigin = {
     machineId: studio.id,
     machineName: studio.name,
-    sessionId: bot.sessionId,
-    botId: bot.id
+    sessionId: parent.id
   }
   const setOffline = (machineId: string, offline: boolean) => {
     if (offline) fleet.offline.add(machineId)
     else fleet.offline.delete(machineId)
   }
-  return { home, remote, bot, botOrigin, setOffline }
+  return { home, remote, parent, parentOrigin, setOffline }
 }
 
 export const postInvoke = async (
@@ -106,7 +113,7 @@ export const startArgs = (prompt: string) => ({
   project: "laptop-project",
   harness: "codex",
   title: "Fix the laptop",
-  isolation: "project",
+  checkout: "project",
   prompt
 })
 
@@ -131,7 +138,13 @@ const startMachine = async (self: Member, fleet: Fleet): Promise<FleetMachine> =
   const made = await makeServices(self.id)
   const fleetTickets = makeFleetTickets()
   const machines: MachineLink = {
-    list: async () => [{ id: self.id, name: self.name, online: true, isCurrent: true }],
+    list: async () =>
+      [studio, laptop].map((member) => ({
+        id: member.id,
+        name: member.name,
+        online: !fleet.offline.has(member.id),
+        isCurrent: member.id === self.id
+      })),
     resolve: () => undefined,
     isGone: () => false,
     machineIdOf: (caller) =>

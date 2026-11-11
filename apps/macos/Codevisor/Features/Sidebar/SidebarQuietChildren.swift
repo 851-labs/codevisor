@@ -4,7 +4,7 @@ import CodevisorUI
 enum SidebarQuietChildren {
   static func current(in environment: AppEnvironment) -> QuietChildren {
     let entries = environment.navigationStore.workspaceEntries
-    return QuietChildren(entries.sidebar + entries.archived + entries.botChildren.values.flatMap(\.self))
+    return QuietChildren(entries.sidebar + entries.archived)
   }
 
   static func muteAnnouncements(on environment: AppEnvironment) {

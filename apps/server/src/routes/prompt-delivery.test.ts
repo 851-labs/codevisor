@@ -159,7 +159,7 @@ describe("prompt delivery", () => {
 
   it("steers an agent's message in only after the messages it queued earlier, in order", async () => {
     const { server, sessionId, queue, steered } = await sessionRunning("prompt until cancelled")
-    const fromAgent = { fromSessionId: "parent-agent" }
+    const fromAgent = { sentByAgentId: "parent-agent" }
     for (const text of ["progress bar", "disk is full", "image sizes"]) {
       await prompt(server, sessionId, { text, delivery: "queue", ...fromAgent })
     }
@@ -191,7 +191,7 @@ describe("prompt delivery", () => {
 
   it("keeps an agent's declined steer behind its earlier queued messages", async () => {
     const { agents, server, sessionId, prompted } = await sessionRunning("slow prompt")
-    const fromAgent = { fromSessionId: "parent-agent" }
+    const fromAgent = { sentByAgentId: "parent-agent" }
     await prompt(server, sessionId, { text: "earlier", delivery: "queue", ...fromAgent })
 
     const declined = await prompt(server, sessionId, { text: "urgent", ...fromAgent })
@@ -207,7 +207,7 @@ describe("prompt delivery", () => {
       await sessionRunning("prompt until cancelled")
     const messages = ["one", "two", "three", "four"]
     for (const text of messages) {
-      await prompt(server, sessionId, { text, delivery: "queue", fromSessionId: "parent-agent" })
+      await prompt(server, sessionId, { text, delivery: "queue", sentByAgentId: "parent-agent" })
     }
 
     await jsonRequest(server, `/v1/sessions/${sessionId}/cancel`, { method: "POST" })

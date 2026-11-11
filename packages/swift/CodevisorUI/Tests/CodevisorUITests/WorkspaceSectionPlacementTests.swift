@@ -8,8 +8,8 @@ struct WorkspaceSectionPlacementTests {
 
   private func item(id: UUID = UUID(), parent: UUID? = nil, agentMade: Bool = false) -> WorkspaceSidebarItem {
     WorkspaceSidebarItem(
-      id: id, serverId: project.serverId, projectId: project.id, routingChatIds: [], botId: nil,
-      parent: parent.map { WorkspaceParentLink(workspaceId: $0, linkedAt: .distantPast, isAgentMade: agentMade) })
+      id: id, serverId: project.serverId, projectId: project.id, routingChatIds: [],
+      parent: parent.map { WorkspaceParentLink(workspaceId: $0, linkedAt: .distantPast, isQuiet: agentMade) })
   }
 
   @Test("Only workspaces shown at the sidebar's top level can move between sections")

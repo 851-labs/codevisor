@@ -19,7 +19,9 @@ describe("prompt attribution", () => {
     const { db, session } = await fixture()
 
     const queued = await run(
-      db.createPromptQueueItem(session.id, "Tour it", [], undefined, undefined, "user", viaZillow)
+      db.createPromptQueueItem(session.id, "Tour it", [], undefined, undefined, "user", {
+        attribution: viaZillow
+      })
     )
     await run(db.createPromptQueueItem(session.id, "Typed"))
 
@@ -62,5 +64,45 @@ describe("prompt attribution", () => {
     expect(parseAttribution(undefined)).toBeUndefined()
     expect(parseAttribution("{")).toBeUndefined()
     expect(parseAttribution(JSON.stringify(viaZillow))).toEqual(viaZillow)
+  })
+})
+
+describe("agent senders", () => {
+  it("keep the agent and machine that sent a queued prompt, through to its transcript item", async () => {
+    const { db, session } = await fixture()
+    const sender = { agentId: "sender-agent", machineId: "machine-b" }
+
+    const queued = await run(
+      db.createPromptQueueItem(session.id, "Review this", [], undefined, undefined, "user", {
+        sentByAgent: sender
+      })
+    )
+    const claimed = await run(db.claimPromptQueueItem(session.id))
+    for (const [messageId, text, fields] of [
+      ["m-1", "Review this", { sentByAgentId: "sender-agent", sentByAgentMachineId: "machine-b" }],
+      ["m-2", "Typed", {}],
+      ["m-3", "Half", { sentByAgentId: "sender-agent" }]
+    ] as const) {
+      await run(
+        db.appendEvent("session.output", session.id, { role: "user", messageId, text, ...fields })
+      )
+    }
+
+    const transcript = await run(db.getTranscriptPage(session.id, undefined, 32))
+    expect(
+      [queued, claimed].map((item) => [item?.sentByAgentId, item?.sentByAgentMachineId])
+    ).toEqual([
+      ["sender-agent", "machine-b"],
+      ["sender-agent", "machine-b"]
+    ])
+    expect(
+      transcript.items
+        .filter((item) => item.role === "user")
+        .map((item) => [item.sentByAgentId, item.sentByAgentMachineId])
+    ).toEqual([
+      ["sender-agent", "machine-b"],
+      [undefined, undefined],
+      [undefined, undefined]
+    ])
   })
 })

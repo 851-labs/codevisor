@@ -91,7 +91,7 @@ const stopAtLimit = (running: Running, agentSessionId: string, stopDetail: strin
   })
 
 const wakeUp = async (running: Running, sessionId: string, from: string, queued: number) => {
-  await post(running, `/v1/sessions/${sessionId}/prompt`, { text: from, fromSessionId: from })
+  await post(running, `/v1/sessions/${sessionId}/prompt`, { text: from, sentByAgentId: from })
   await waitFor(() => heldQueueLengths(running, sessionId).includes(queued))
 }
 
@@ -102,7 +102,7 @@ const heldQueueLengths = (running: Running, sessionId: string) =>
   })
 
 const wakeUpEvent = (from: string) =>
-  `<codevisor-event type="session.message" from="${from}">\n${from}\n</codevisor-event>`
+  `<codevisor-event type="session.message" from="${from}" fromMachineId="server-a">\n${from}\n</codevisor-event>`
 
 const promptTexts = (running: Running) =>
   running.agents.prompts.map(([, input]) => (typeof input === "string" ? input : input.text))

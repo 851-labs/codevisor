@@ -1,8 +1,7 @@
-import { REMOTE_PARENT_HEADER, jsonSchema } from "@codevisor/api"
+import { CALLER_AGENT_TICKET_HEADER, jsonSchema, parseRemoteSessionKey } from "@codevisor/api"
 import { Schema } from "effect"
 
 import type { AutomationProviderContext } from "./automation-provider.js"
-import { isRemoteScope } from "./codevisor-agent-caller.js"
 import type { QueryParameter } from "./codevisor-api-tool-spec.js"
 import { BOT_TOOL_DEFAULTS } from "./codevisor-api-tools-bots.js"
 import type { CodevisorApiToolSpec } from "./codevisor-api-tools.js"
@@ -30,7 +29,8 @@ export const requestUrl = (
 export const bearerHeaders = (token: string, context: AutomationProviderContext): Headers => {
   const headers = new Headers()
   headers.set("authorization", `Bearer ${token}`)
-  if (context.remoteParent !== undefined) headers.set(REMOTE_PARENT_HEADER, context.remoteParent)
+  if (context.callerAgentTicket !== undefined)
+    headers.set(CALLER_AGENT_TICKET_HEADER, context.callerAgentTicket)
   return headers
 }
 
@@ -166,20 +166,26 @@ const bodyPayload = (
 ): unknown => {
   if (spec.wrappedBody === true) return args.body
   const payload = definedArguments(args, bodyPropertyNames(spec.body!))
-  if (spec.name === "agents.message") return { ...payload, fromSessionId: context.sessionId }
+  if (spec.name === "agents.message") return { ...payload, ...senderFields(context.sessionId) }
   if (spec.name === "agents.start") return startPayload(payload, context)
   if (spec.name === "shell.exec") return { ...payload, callerAgentId: context.sessionId }
   if (spec.name === "bots.create") return { ...BOT_TOOL_DEFAULTS, ...payload }
   return payload
 }
 
+const senderFields = (sessionId: string): UnknownRecord => {
+  const remote = parseRemoteSessionKey(sessionId)
+  if (remote === undefined) return { sentByAgentId: sessionId }
+  return { sentByAgentId: remote.sessionId, sentByAgentMachineId: remote.machineId }
+}
+
 const startPayload = (
   payload: UnknownRecord,
   context: AutomationProviderContext
 ): UnknownRecord => {
-  if (isRemoteScope(context.sessionId))
-    return { ...payload, remoteParentAgentId: context.sessionId }
-  return { ...payload, callerAgentId: context.sessionId }
+  const remote = parseRemoteSessionKey(context.sessionId)
+  if (remote === undefined) return { ...payload, callerAgentId: context.sessionId }
+  return { ...payload, callerAgentId: remote.sessionId, callerAgentMachineId: remote.machineId }
 }
 
 const definedArguments = (args: UnknownRecord, names: ReadonlyArray<string>): UnknownRecord =>

@@ -128,9 +128,7 @@ struct HomeSidebarList: View {
   }
 
   private func detailedWorkspaceIDs(_ content: HomeSidebarContent) -> [UUID] {
-    var shown = shownBots(content).flatMap(\.children)
-    if showsCode { shown += codeWorkspaces(content) }
-    shown = shown.flatMap(\.subtree)
+    var shown = showsCode ? codeWorkspaces(content).flatMap(\.subtree) : []
     if archivedExpanded { shown += archivedWorkspaces(content) }
     return shown.map(\.id)
   }
@@ -159,8 +157,7 @@ struct HomeSidebarList: View {
   }
 
   private func archivedWorkspaces(_ content: HomeSidebarContent) -> [HomeSidebarWorkspace] {
-    let bots = showsChat ? content.archivedBots.flatMap(\.children).flatMap(\.subtree) : []
-    return bots + (showsCode ? content.archived : [])
+    showsCode ? content.archived : []
   }
 
   @ViewBuilder
@@ -326,8 +323,6 @@ struct HomeSidebarList: View {
               .tag(tab.id)
           }
         }
-        HomeSidebarWorkspaceRows(
-          workspaces: bot.children, actions: actions, isSelectable: isSelectable, reorders: false)
       } label: {
         row
       }

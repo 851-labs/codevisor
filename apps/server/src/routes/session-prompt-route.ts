@@ -1,11 +1,12 @@
 import type { ServerResponse } from "node:http"
 
 import type {
+  AgentRef,
   AttachmentRef,
-  PromptAttribution,
   PromptOrigin,
   PromptQueueItem,
-  PromptRequest as PromptRequestBody
+  PromptRequest as PromptRequestBody,
+  PromptSource
 } from "@codevisor/api"
 import { PromptRequest } from "@codevisor/api"
 
@@ -13,6 +14,7 @@ import { HttpFailure, readSchema, run, sessionIsArchived, writeJson } from "../s
 import type { CodevisorServerServices, RouteState } from "../server-context.js"
 import { agentMessageEvent } from "./bot-conversation.js"
 import { botForChat, postBotMessage } from "./bot-turns.js"
+import { assertAgentVerified, remoteCallerAgent } from "./fleet-calls.js"
 import { verifiedAttribution } from "./prompt-attribution.js"
 import type { PromptDeliveryOutcome } from "./prompt-delivery.js"
 import {
@@ -51,20 +53,27 @@ export const sendPrompt = async (route: RouteContext, sessionId: string): Promis
   const attachments = payload.attachments ?? []
   await requireKnownAttachments(services, attachments)
   const attribution = await verifiedAttribution(services, sessionId, payload.attribution)
+  const sentByAgent = verifiedSender(route, payload)
   markPromptActionPending(routeState, actionKey)
 
   const toBot = (await botForChat(services, sessionId)) !== undefined
-  const agentSessionId = relayedAgentSessionId(toBot, payload, sessionId)
-  const enqueue = promptEnqueuer(services, sessionId, payload, attachments, attribution)
+  const relayedFrom = relayedSender(toBot, sentByAgent, sessionId)
+  const enqueue = promptEnqueuer(services, sessionId, payload, attachments, {
+    attribution,
+    sentByAgent
+  })
   let queueItem: PromptQueueItem
-  if (agentSessionId === undefined) {
+  if (relayedFrom === undefined) {
     queueItem = await enqueue(payload.text, "user")
     if (toBot) await mirrorToBot(route, sessionId, queueItem, payload, attachments)
   } else {
-    queueItem = await enqueue(await relayedMessage(services, agentSessionId, payload), "system")
+    queueItem = await enqueue(
+      await agentMessageEvent(services, relayedFrom, payload.text),
+      "system"
+    )
   }
 
-  const outcome = await deliverPrompt(route, sessionId, queueItem, payload)
+  const outcome = await deliverPrompt(route, sessionId, queueItem, payload, sentByAgent)
   const result = acceptedPrompt(sessionId, queueItem.id, outcome)
   if (payload.clientActionId !== undefined) {
     await saveActionResult(services, sessionId, payload.clientActionId, "prompt", result)
@@ -104,37 +113,35 @@ const clearPromptActionPending = (routeState: RouteState, actionKey: string | un
   }
 }
 
-const relayedAgentSessionId = (
-  toBot: boolean,
-  payload: PromptRequestBody,
-  sessionId: string
-): string | undefined =>
-  isRelayFromAnotherSession(toBot, payload, sessionId) ? payload.fromSessionId : undefined
+const verifiedSender = (route: RouteContext, payload: PromptRequestBody): AgentRef | undefined => {
+  if (payload.sentByAgentId === undefined) return undefined
+  const machineId = payload.sentByAgentMachineId ?? route.config.id
+  const claimed = { agentId: payload.sentByAgentId, machineId }
+  assertAgentVerified(route.config.id, claimed, remoteCallerAgent(route.services, route.request))
+  return claimed
+}
 
-const isRelayFromAnotherSession = (
+const relayedSender = (
   toBot: boolean,
-  payload: PromptRequestBody,
+  sender: AgentRef | undefined,
   sessionId: string
-): boolean => toBot && payload.fromSessionId?.toLowerCase() !== sessionId.toLowerCase()
+): AgentRef | undefined => (toBot && !isSelf(sender, sessionId) ? sender : undefined)
+
+const isSelf = (sender: AgentRef | undefined, sessionId: string): boolean =>
+  sender?.agentId.toLowerCase() === sessionId.toLowerCase()
 
 const promptEnqueuer = (
   services: CodevisorServerServices,
   sessionId: string,
   payload: PromptRequestBody,
   attachments: ReadonlyArray<AttachmentRef>,
-  attribution: PromptAttribution | undefined
+  source: PromptSource
 ): EnqueuePrompt => {
   const createQueueItem = services.db.createPromptQueueItem
   const { messageId, clientId } = payload
   return (text, origin) =>
-    run(createQueueItem(sessionId, text, attachments, messageId, clientId, origin, attribution))
+    run(createQueueItem(sessionId, text, attachments, messageId, clientId, origin, source))
 }
-
-const relayedMessage = (
-  services: CodevisorServerServices,
-  agentSessionId: string,
-  payload: PromptRequestBody
-): Promise<string> => agentMessageEvent(services, agentSessionId, payload.text)
 
 const mirrorToBot = (
   { services, fanout }: RouteContext,
@@ -154,7 +161,8 @@ const deliverPrompt = (
   { services, fanout, routeState, config }: RouteContext,
   sessionId: string,
   queueItem: PromptQueueItem,
-  payload: PromptRequestBody
+  payload: PromptRequestBody,
+  sentByAgent: AgentRef | undefined
 ): Promise<PromptDeliveryOutcome> =>
   deliverQueuedPrompt(
     services,
@@ -164,5 +172,5 @@ const deliverPrompt = (
     sessionId,
     queueItem.id,
     payload.delivery ?? defaultPromptDelivery,
-    payload.fromSessionId !== undefined
+    sentByAgent !== undefined
   )

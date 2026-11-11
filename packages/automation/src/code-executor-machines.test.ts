@@ -15,6 +15,11 @@ const roster = {
   ]
 }
 
+const agentIdOf = (call: { readonly args: unknown }): unknown =>
+  typeof call.args === "object" && call.args !== null && "agentId" in call.args
+    ? call.args.agentId
+    : undefined
+
 const context: ExecuteCodeOptions["context"] = {
   machine: { id: "studio", name: "Mac Studio" },
   originClientId: "window-2"
@@ -308,29 +313,74 @@ describe.sequential("sandboxes, clients, status, and typed errors", () => {
     expect(result.result).toEqual({ tools: "undefined", clients: "undefined", machines: "object" })
   })
 
-  it("routes machine.agents calls to that machine's codevisor agent tools", async () => {
+  it("runs Codevisor tools as globals on the machine passed, and agent objects on their own machine", async () => {
     const { calls, result } = await execute(
       `async () => {
-        const remote = await machines.get("mbp-1");
-        await machines.current.agents.start({ title: "t", prompt: "p", isolation: "worktree" });
-        await remote.agents.status({ agentId: "a" });
-        await remote.agents.debug.search({ agentId: "a", query: "error" });
-        return "ok";
+        const child = await agents.start({ title: "t", prompt: "p", checkout: "worktree", machine: "MacBook Pro" });
+        await child.message("also the tests");
+        await child.debug.search({ query: "error" });
+        await agents.status({ agentId: "a" });
+        await plugins.list();
+        const refused = await plugins.list({ machine: "mbp-1" }).catch((error) => error.message);
+        const blocked = await Promise.resolve()
+          .then(() => machines.current.tools.codevisor.agents.start({}))
+          .catch((error) => error.message);
+        return { machine: child.machine, refused, blocked, hasAgents: "agents" in machines.current };
       }`,
-      (call) => (call.path === "codevisor.machines.list" ? roster : {})
+      (call) => {
+        if (call.path === "codevisor.machines.list") return roster
+        if (call.path === "codevisor.agents.start") return { agentId: "child", title: "t" }
+        return {}
+      }
     )
 
-    expect(result.result).toBe("ok")
+    expect(result.result).toEqual({
+      machine: { machineId: "mbp-1", name: "MacBook Pro" },
+      refused: "plugins.list is shared by all your machines, so it takes no machine",
+      blocked:
+        "Codevisor tools are globals: call agents.start(args), and pass machine to run it on another machine",
+      hasAgents: false
+    })
     const remoteTarget = { machine: "mbp-1", machineName: "MacBook Pro" }
     expect(
       calls
         .filter((call) => call.path !== "codevisor.machines.list")
         .map(({ path, args, target }) => [path, args, target])
     ).toEqual([
-      ["codevisor.agents.start", { title: "t", prompt: "p", isolation: "worktree" }, undefined],
-      ["codevisor.agents.status", { agentId: "a" }, remoteTarget],
-      ["codevisor.agents.debug.search", { agentId: "a", query: "error" }, remoteTarget]
+      ["codevisor.agents.start", { title: "t", prompt: "p", checkout: "worktree" }, remoteTarget],
+      ["codevisor.agents.message", { text: "also the tests", agentId: "child" }, remoteTarget],
+      ["codevisor.agents.debug.search", { query: "error", agentId: "child" }, remoteTarget],
+      ["codevisor.agents.status", { agentId: "a" }, undefined],
+      ["codevisor.plugins.list", {}, undefined]
     ])
+  })
+
+  it("finds an agent by id on whichever online machine has it", async () => {
+    const { calls, result } = await execute(
+      `async () => {
+        const found = await agents.get("child");
+        const missing = await agents.get("nobody").catch((error) => error.message);
+        return { agentId: found.agentId, state: found.state, machine: found.machine, missing };
+      }`,
+      (call) => {
+        if (call.path === "codevisor.machines.list") return roster
+        if (call.target?.machine === "mbp-1" && agentIdOf(call) === "child")
+          return { state: "idle" }
+        throw new Error("Agent not found")
+      }
+    )
+
+    expect(result.result).toEqual({
+      agentId: "child",
+      state: "idle",
+      machine: { machineId: "mbp-1", name: "MacBook Pro" },
+      missing: "No machine has agent nobody"
+    })
+    expect(
+      calls
+        .filter((call) => call.path === "codevisor.agents.status" && agentIdOf(call) === "child")
+        .map((call) => call.target?.machine)
+    ).toEqual([undefined, "mbp-1"])
   })
 
   it("forwards status() text to the host as the script runs", async () => {

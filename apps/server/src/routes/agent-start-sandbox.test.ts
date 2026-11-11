@@ -23,7 +23,6 @@ const sandboxServer = async (callerSelections?: Record<string, string>) => {
     post("/v1/agents", {
       prompt: "Fix the flaky test",
       title: "Fix flake",
-      isolation: "worktree",
       callerAgentId: caller,
       project: harness.storedProjectId,
       ...fields
@@ -46,7 +45,7 @@ describe("POST /v1/agents with a sandbox profile", () => {
   it("answers at once with the new sandbox, then starts the agent on it for the caller", async () => {
     const { harness, caller, startAgent } = await sandboxServer()
 
-    const response = await startAgent({ sandboxProfile: "ubuntu sandbox", labels: { k: "v" } })
+    const response = await startAgent({ sandbox: "ubuntu sandbox", labels: { k: "v" } })
     await harness.machines.settled()
 
     expect(response.status).toBe(202)
@@ -61,7 +60,7 @@ describe("POST /v1/agents with a sandbox profile", () => {
       name: "Fix flake",
       state: "ready",
       agentId: "remote-agent",
-      agent: { harness: "codex", labels: { k: "v" }, parentSessionId: caller }
+      agent: { harness: "codex", labels: { k: "v" }, createdByAgentId: caller }
     })
     expect(harness.toolCalls.at(-1)).toMatchObject({
       tool: "codevisor.agents.start",
@@ -72,9 +71,9 @@ describe("POST /v1/agents with a sandbox profile", () => {
   it("passes the caller's model along for the same harness, and a chosen model as is", async () => {
     const { harness, startAgent } = await sandboxServer({ model: "gpt-6" })
 
-    await startAgent({ sandboxProfile: "profile-1" })
-    await startAgent({ sandboxProfile: "profile-1", harness: "claude-code" })
-    await startAgent({ sandboxProfile: "profile-1", model: "gpt-6-mini" })
+    await startAgent({ sandbox: "profile-1" })
+    await startAgent({ sandbox: "profile-1", harness: "claude-code" })
+    await startAgent({ sandbox: "profile-1", model: "gpt-6-mini" })
     await harness.machines.settled()
 
     const agents = (await harness.machines.list()).map((machine) => machine.agent)
@@ -89,22 +88,22 @@ describe("POST /v1/agents with a sandbox profile", () => {
     const { harness, startAgent } = await sandboxServer()
 
     const response = await startAgent({
-      sandboxProfile: "profile-1",
+      sandbox: "profile-1",
       callerAgentId: undefined,
       harness: "codex"
     })
     await harness.machines.settled()
 
     expect(response.status).toBe(202)
-    expect((await harness.machines.get("id-1")).agent?.parentSessionId).toBeUndefined()
+    expect((await harness.machines.get("id-1")).agent?.createdByAgentId).toBeUndefined()
   })
 
   it("names the profiles there are when none matches", async () => {
     const { harness, startAgent } = await sandboxServer()
 
-    const unknown = await startAgent({ sandboxProfile: "gpu box" })
+    const unknown = await startAgent({ sandbox: "gpu box" })
     await harness.settings.removeProfile("profile-1")
-    const none = await startAgent({ sandboxProfile: "gpu box" })
+    const none = await startAgent({ sandbox: "gpu box" })
 
     expect(unknown).toMatchObject({
       status: 422,
@@ -130,10 +129,9 @@ describe("POST /v1/agents with a sandbox profile", () => {
       body: JSON.stringify({
         prompt: "Fix it",
         title: "Fix",
-        isolation: "project",
         callerAgentId: caller,
         project: harness.storedProjectId,
-        sandboxProfile: "profile-1"
+        sandbox: "profile-1"
       })
     })
 

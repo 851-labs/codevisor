@@ -6,7 +6,6 @@ struct HomeSidebarBot: Identifiable, Equatable {
   let status: HomeSessionStatus
   let machine: HomeSidebarRowMachine?
   let home: HomeSidebarWorkspace?
-  let children: [HomeSidebarWorkspace]
   var canArchive = false
   var sectionID: UUID?
 
@@ -18,7 +17,7 @@ struct HomeSidebarBot: Identifiable, Equatable {
     home?.rows.filter { $0.chatSessionId != bot.sessionId } ?? []
   }
 
-  var hasNestedRows: Bool { !tabs.isEmpty || !children.isEmpty }
+  var hasNestedRows: Bool { !tabs.isEmpty }
 
   static func byRecency(_ lhs: Self, _ rhs: Self) -> Bool {
     BotConversation.byRecency(lhs.conversation, rhs.conversation)
