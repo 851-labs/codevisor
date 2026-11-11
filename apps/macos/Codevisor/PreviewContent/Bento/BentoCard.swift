@@ -87,7 +87,8 @@
       BentoCard(name: "inspector-machine", width: inspectorWidth) {
         AnyView(
           WorkspaceInspectorMachineSection(
-            stats: DemoServerRecords.machineStats(on: DemoWorld.thisMac), isExpanded: .constant(true)
+            stats: DemoServerRecords.machineStats(on: DemoWorld.thisMac), latencyMilliseconds: 2.4,
+            isExpanded: .constant(true)
           ).padding(.vertical, 10))
       },
       BentoCard(name: "inspector-usage", width: inspectorWidth) {
