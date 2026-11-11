@@ -8,6 +8,7 @@ struct McpSettingsScreen: View {
   @State private var addingCustom = false
   @State private var showingCatalog = false
   @State private var openedPlugin: String?
+  @State private var installed: ServerMcpServer?
 
   private var authoringMachineId: String {
     let selected = environment.machines.selectedMachineId
@@ -45,15 +46,15 @@ struct McpSettingsScreen: View {
     .navigationDestination(item: $openedPlugin) { name in
       McpPluginDetailScreen(entryName: name, model: model)
     }
-    .sheet(isPresented: $addingCustom) {
+    .sheet(isPresented: $addingCustom, onDismiss: openInstalled) {
       McpServerEditor(machineId: authoringMachineId) { try await add($0) }
         .environment(environment)
     }
-    .sheet(isPresented: $showingCatalog) {
+    .sheet(isPresented: $showingCatalog, onDismiss: openInstalled) {
       PluginCatalogScreen(
         client: environment.machines.client(for: authoringMachineId),
         fleet: model,
-        onInstalled: { didAdd($0, on: authoringMachineId) })
+        onInstalled: { installed = $0 })
     }
     .pluginErrorsAlert(model)
   }
@@ -76,21 +77,25 @@ struct McpSettingsScreen: View {
     environment.machines.statusByMachineId[machineId]?.supportsPlugins == true
   }
 
-  private func didAdd(_ created: ServerMcpServer, on machineId: String) {
-    Task {
-      await model.load(in: environment)
-      openedPlugin = created.name
-      guard created.awaitsAuthorization else { return }
+  private func openInstalled() {
+    guard let installed else { return }
 
-      await model.connect(serverId: created.id, on: machineId, in: environment)
+    self.installed = nil
+    let machineId = authoringMachineId
+    Task {
+      await model.load(machineId, in: environment)
+      openedPlugin = installed.name
+      Task { await model.load(in: environment) }
+      guard installed.awaitsAuthorization else { return }
+
+      await model.connect(serverId: installed.id, on: machineId, in: environment)
     }
   }
 
   private func add(_ values: McpFormValues) async throws {
     try await recordConsent(for: values)
-    let created = try await environment.machines.client(for: authoringMachineId)
+    installed = try await environment.machines.client(for: authoringMachineId)
       .createMcpServer(values.createBody)
-    didAdd(created, on: authoringMachineId)
   }
 
   private func recordConsent(for values: McpFormValues) async throws {
