@@ -24,15 +24,18 @@ struct McpSettingsView: View {
       } header: {
         Text("Plugins")
       } footer: {
-        SettingsListActions(message: model.actionError) {
-          PluginAddMenu(
-            canBrowse: supportsCatalog,
-            onBrowse: { SettingsRouter.shared.panePath.append(.pluginCatalog) },
-            onAddCustom: { showingCustom = true })
+        if let actionError = model.actionError {
+          SettingsListActions(message: actionError) {}
         }
       }
     }
     .formStyle(.grouped)
+    .settingsAddToolbarItem {
+      PluginAddMenu(
+        canBrowse: supportsCatalog,
+        onBrowse: { SettingsRouter.shared.panePath.append(.pluginCatalog) },
+        onAddCustom: { showingCustom = true })
+    }
     .pluginConnectErrorAlert(model)
     .mcpFleetLiveUpdates(model)
     .sheet(isPresented: $showingCustom) {

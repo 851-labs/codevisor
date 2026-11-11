@@ -21,21 +21,24 @@ struct SkillsSettingsView: View {
         model: model,
         onEdit: { editing = $0 },
         onRemove: { pendingRemoval = $0 })
-      Section {
-        EmptyView()
-      } footer: {
-        SettingsListActions(message: actionError) {
-          Menu {
-            Button("Add from URL…") { showingRemoteImport = true }
-            Button("Add Manually…") { showingCreate = true }
-          } label: {
-            Label("New Skill", systemImage: "plus")
-          }
-          .fixedSize()
+      if let actionError {
+        Section {
+          EmptyView()
+        } footer: {
+          SettingsListActions(message: actionError) {}
         }
       }
     }
     .formStyle(.grouped)
+    .settingsAddToolbarItem {
+      Menu {
+        Button("Add from URL…") { showingRemoteImport = true }
+        Button("Add Manually…") { showingCreate = true }
+      } label: {
+        Label("Add Skill", systemImage: "plus")
+      }
+      .help("Add Skill")
+    }
     .task(id: environment.configSync.revisionsByNamespace[ConfigSync.skillsNamespace]) {
       await model.load(client: localClient)
     }

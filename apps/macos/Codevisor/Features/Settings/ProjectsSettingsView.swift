@@ -53,14 +53,6 @@ struct ProjectsSettingsView: View {
             }
           }
         }
-      } footer: {
-        SettingsListActions {
-          Button {
-            showingAdd = true
-          } label: {
-            Label("Add Project…", systemImage: "plus")
-          }
-        }
       }
       if !readyMachineIds.isEmpty {
         Section {
@@ -82,6 +74,14 @@ struct ProjectsSettingsView: View {
       }
     }
     .formStyle(.grouped)
+    .settingsAddToolbarItem {
+      Button {
+        showingAdd = true
+      } label: {
+        Label("Add Project", systemImage: "plus")
+      }
+      .help("Add Project")
+    }
     .sheet(isPresented: $showingAdd) {
       NewProjectSheet(serverId: initialMachineId) { project in
         SettingsRouter.shared.projectCreationMachineId = project.serverId

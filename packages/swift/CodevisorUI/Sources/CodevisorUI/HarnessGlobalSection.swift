@@ -33,10 +33,6 @@ public struct HarnessGlobalSection<Icon: View>: View {
           icon(setting.id, setting.symbolName)
         }
       }
-    } footer: {
-      #if os(macOS)
-        HarnessAddButton(model: model)
-      #endif
     }
   }
 }

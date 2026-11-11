@@ -12,8 +12,8 @@ struct PluginAddMenu: View {
       }
       Button("Add MCP…", action: onAddCustom)
     } label: {
-      Label("Add", systemImage: "plus")
+      Label("Add Plugin", systemImage: "plus")
     }
-    .fixedSize()
+    .help("Add Plugin")
   }
 }
