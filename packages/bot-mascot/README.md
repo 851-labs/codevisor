@@ -1,7 +1,7 @@
 # @codevisor/bot-mascot
 
 The Codevisor bot mascot: a single-shape character built from the Codevisor logo, drawn as SVG. It has
-eight body colors, hats, eyewear, outfits, makeup, a cyclops eye that looks round his face, arms on a rig,
+eighteen body colors, hats, eyewear, outfits, makeup, a cyclops eye that looks round his face, arms on a rig,
 and animated moods. This package holds all of it: the geometry and palettes, the drawing, the animation
 logic, the arm rig, a Rive version of the character and the scripts that generate it.
 
@@ -161,6 +161,13 @@ between its pages, and outfits with sleeves get clipped sleeves.
 `rive/bootstrap/` generated the first version of these files once, from the TypeScript renderer
 (`bun packages/bot-mascot/rive/bootstrap/build.ts`). It's kept as a record until the TypeScript renderer is
 retired. Rerunning it overwrites any hand edits.
+
+A body color is data, not art: `mascot.riv` reads every color from its view model, so adding one needs no
+Rive build. Add its palette to `rive/tools/palettes.py` and run `export_data.py` (below), add its id to
+`botMascotColorIds` (picker order) and `botMascotColorRotation` (the order new bots get), give it a hat, denim
+and phone color in `color/colors.ts` and `effects/handset.ts`, then regenerate the color table with
+`bun packages/bot-mascot/rive/bootstrap/colors-file.ts`. Keep its outline and eye the same color, as every
+palette does, so it fills the Rive file's existing color slots.
 
 The editor round trip is optional and needs a Rive account. Run `rive login` once, then `rive pull` or
 `rive push` from `rive/mascot/`. A pull may renumber ids.

@@ -80,7 +80,7 @@ describe("bot mascot routes", () => {
     const image = await fetch(
       `${running.server.url}/v1/bot-mascots/image?color=mint&hat=beanie&eyewear=specs`
     )
-    const missing = await fetch(`${running.server.url}/v1/bot-mascots/image?color=plaid`)
+    const missing = await fetch(`${running.server.url}/v1/bot-mascots/image?color=mint&hat=fez`)
 
     expect(image.headers.get("content-type")).toBe("image/png")
     expect(await sharp(Buffer.from(await image.arrayBuffer())).metadata()).toMatchObject({
@@ -123,7 +123,9 @@ describe("bot mascot routes", () => {
       running.server,
       `/v1/bot-mascots/rive-values?${query}&hatColor=teal`
     )
-    const missing = await fetch(`${running.server.url}/v1/bot-mascots/rive-values?color=plaid`)
+    const missing = await fetch(
+      `${running.server.url}/v1/bot-mascots/rive-values?color=mint&hat=fez`
+    )
 
     expect(file.headers.get("content-type")).toBe("application/octet-stream")
     expect(file.headers.get("cache-control")).toBe("private, no-cache")
@@ -142,5 +144,14 @@ describe("bot mascot routes", () => {
     expect(teal.body).toMatchObject({ hat: "wizard" })
     expect(teal.body).not.toEqual(values.body)
     expect(missing.status).toBe(400)
+  })
+
+  it("draws a color it doesn't know as the default color", async () => {
+    const running = await setUp()
+    const valuesFor = async (color: string) =>
+      (await jsonRequest(running.server, `/v1/bot-mascots/rive-values?color=${color}`)).body
+
+    expect(await valuesFor("plaid")).toEqual(await valuesFor("sunny"))
+    expect(await valuesFor("grape")).not.toEqual(await valuesFor("sunny"))
   })
 })

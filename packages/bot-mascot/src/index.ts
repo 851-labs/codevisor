@@ -77,7 +77,7 @@ export {
 export { GAZE_EASING, gazeFollower, GazeFollower, type GazeEasing } from "./gaze/gaze-follower.js"
 
 export type * from "./pose.js"
-export { palette, type Palette } from "./color/palette.js"
+export { botMascotColorRotation, palette, type Palette } from "./color/palette.js"
 export {
   colorOf,
   hatTint,

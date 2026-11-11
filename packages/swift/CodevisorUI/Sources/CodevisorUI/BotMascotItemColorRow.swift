@@ -12,7 +12,7 @@ struct BotMascotItemColorRow: View {
   @Binding var selection: String
 
   var body: some View {
-    BotMascotSwatchStrip(spacing: side / 4) {
+    BotMascotSwatchRows(spacing: side / 4) {
       if item.hasAuto { autoSwatch }
       ForEach(item.swatches) { swatch in
         BotMascotColorSwatch(title: swatch.title, hexes: [swatch.hex], side: side, isSelected: shown == swatch.id) {

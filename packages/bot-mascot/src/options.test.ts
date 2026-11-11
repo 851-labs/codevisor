@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest"
 
 import {
+  botMascotColorRotation,
   botMascotColors,
   botMascotEyewear,
   botMascotHats,
@@ -10,7 +11,8 @@ import {
   botMascotSwatches,
   randomBotMascotConfig,
   renderBotMascotSvg,
-  resolveConfig
+  resolveConfig,
+  riveValues
 } from "./index.js"
 
 const ids = (list: ReadonlyArray<{ readonly id: string }>): ReadonlyArray<string> =>
@@ -27,14 +29,24 @@ const seeded = (seed: number): (() => number) => {
 describe("bot mascot options", () => {
   it("lists the colors, hats, eyewear, outfits, makeup and moods it can draw", () => {
     expect(ids(botMascotColors)).toEqual([
-      "sunny",
-      "mint",
-      "lilac",
-      "bubblegum",
-      "sky",
+      "ruby",
       "tomato",
+      "tangerine",
+      "sunny",
+      "lime",
+      "clover",
+      "mint",
+      "aqua",
+      "sky",
       "electric",
-      "dream"
+      "lilac",
+      "grape",
+      "orchid",
+      "bubblegum",
+      "dream",
+      "cocoa",
+      "slate",
+      "classic"
     ])
     expect(ids(botMascotHats)).toEqual([
       "beanie",
@@ -69,6 +81,27 @@ describe("bot mascot options", () => {
     expect(ids(botMascotOutfits)).toEqual(["tie", "tutu", "dress", "robe", "suit", "overalls"])
     expect(ids(botMascotMakeup)).toEqual(["blush", "freckles", "lashes"])
     expect(ids(botMascotMoodOptions)).toEqual(["idle", "working", "calling"])
+  })
+
+  it("hands new bots every color once, starting with the first eight in their old order", () => {
+    expect(botMascotColorRotation.toSorted()).toEqual(ids(botMascotColors).toSorted())
+    expect(botMascotColorRotation.slice(0, 8)).toEqual([
+      "sunny",
+      "mint",
+      "lilac",
+      "bubblegum",
+      "sky",
+      "tomato",
+      "electric",
+      "dream"
+    ])
+  })
+
+  it("gives every color its own Rive body", () => {
+    const bodies = botMascotColors.map(({ id }) => riveValues({ color: id }).body0)
+
+    expect(bodies.every((body) => typeof body === "string")).toBe(true)
+    expect(new Set(bodies).size).toBe(botMascotColors.length)
   })
 
   it("titles every choice for a picker", () => {
