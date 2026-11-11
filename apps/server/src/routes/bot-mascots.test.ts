@@ -151,7 +151,10 @@ describe("bot mascot routes", () => {
     const valuesFor = async (color: string) =>
       (await jsonRequest(running.server, `/v1/bot-mascots/rive-values?color=${color}`)).body
 
+    const uncolored = await jsonRequest(running.server, "/v1/bot-mascots/rive-values")
+
     expect(await valuesFor("plaid")).toEqual(await valuesFor("sunny"))
+    expect(uncolored.body).toEqual(await valuesFor("sunny"))
     expect(await valuesFor("grape")).not.toEqual(await valuesFor("sunny"))
   })
 })
