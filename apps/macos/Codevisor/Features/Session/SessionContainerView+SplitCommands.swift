@@ -26,7 +26,7 @@ extension SessionContainerView {
   }
 
   func handleWorkspaceCommand(_ command: PaneGroupCommand) -> Bool {
-    if isSinglePane, !Self.isWorkspaceStep(command) { return true }
+    if isTabless, Self.isTabCommand(command) { return true }
     switch command {
     case .newTab:
       addCenterTab()
@@ -60,7 +60,7 @@ extension SessionContainerView {
   }
 
   func stepTab(offset: Int) {
-    if store.isSidebarVisible || isSinglePane, let stepWorkspace = store.workspaceStepHandler {
+    if store.isSidebarVisible || isTabless, let stepWorkspace = store.workspaceStepHandler {
       stepWorkspace(offset)
       return
     }
@@ -85,10 +85,8 @@ extension SessionContainerView {
     splitLeaf(leafId, edge: edge)
   }
 
-  func layoutActions(in workspace: Workspace) -> WorkspaceLayoutActions? {
-    guard !isSinglePane else { return nil }
-
-    return WorkspaceLayoutActions(
+  func layoutActions(in workspace: Workspace) -> WorkspaceLayoutActions {
+    WorkspaceLayoutActions(
       workspaceId: workspace.id,
       newTab: addCenterTab,
       closeSplit: closeActiveLeaf,
@@ -105,15 +103,15 @@ extension SessionContainerView {
     )
   }
 
-  private static func isWorkspaceStep(_ command: PaneGroupCommand) -> Bool {
+  private static func isTabCommand(_ command: PaneGroupCommand) -> Bool {
     switch command {
-    case .previousWorkspace, .nextWorkspace, .previousTab, .nextTab: true
+    case .newTab, .selectTab, .reopenClosedPane: true
     default: false
     }
   }
 
   func splitLeaf(_ leafId: UUID, edge: SplitEdge) {
-    guard openingSplit == nil, !isSinglePane else { return }
+    guard openingSplit == nil else { return }
     var workspace = selectedWorkspace
     guard
       let tabIndex = workspace.centerTabs.firstIndex(where: {
@@ -181,7 +179,7 @@ extension SessionContainerView {
     canvasSize: CGSize
   ) -> Bool {
     let workspace = selectedWorkspace
-    guard !isSinglePane, let current = workspace.selectedCenterTab?.root,
+    guard let current = workspace.selectedCenterTab?.root,
       canvasSize.width > 0,
       canvasSize.height > 0
     else { return false }

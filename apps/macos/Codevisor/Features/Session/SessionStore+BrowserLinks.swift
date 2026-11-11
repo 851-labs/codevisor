@@ -10,7 +10,7 @@ extension SessionStore {
   ) -> Bool {
     guard popup != nil || BrowserLocation.navigationURL(url) != nil else { return false }
     var workspace = workspace(for: session, project: project)
-    if WorkspaceLayoutPolicy.isSinglePane(workspace, environment: environment) {
+    if WorkspaceLayoutPolicy.isTabless(workspace, environment: environment) {
       return openExternally(url)
     }
     let paneId = UUID()

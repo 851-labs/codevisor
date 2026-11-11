@@ -105,6 +105,6 @@ struct SidebarNestedTabs {
   }
 
   private func nestsTabs(_ workspace: Workspace) -> Bool {
-    workspace.centerTabs.count > 1 && !WorkspaceLayoutPolicy.isSinglePane(workspace, environment: environment)
+    workspace.centerTabs.count > 1 && !WorkspaceLayoutPolicy.isTabless(workspace, environment: environment)
   }
 }

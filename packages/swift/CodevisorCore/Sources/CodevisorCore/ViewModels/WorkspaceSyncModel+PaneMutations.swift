@@ -6,7 +6,9 @@ extension WorkspaceSyncModel {
     workspaceId: UUID,
     client: (any CodevisorServerClienting)? = nil
   ) {
-    guard !pane.kind.isDeviceLocal, let workspace = repository.workspace(id: workspaceId) else { return }
+    guard !pane.kind.isDeviceLocal, !keepsPanesOnDevice(workspaceId),
+      let workspace = repository.workspace(id: workspaceId)
+    else { return }
     enqueue(.upsertPane(pane, workspaceId: workspaceId), serverId: workspace.serverId)
   }
 
@@ -26,7 +28,13 @@ extension WorkspaceSyncModel {
     optimisticReplacement: PaneDescriptorState? = nil,
     client: (any CodevisorServerClienting)? = nil
   ) {
-    guard let workspace = repository.workspace(id: workspaceId), workspace.isServerSynced else { return }
+    guard !keepsPanesOnDevice(workspaceId), let workspace = repository.workspace(id: workspaceId),
+      workspace.isServerSynced
+    else { return }
     enqueue(.closePane(paneId: id, workspaceId: workspaceId), serverId: workspace.serverId)
+  }
+
+  private func keepsPanesOnDevice(_ workspaceId: UUID) -> Bool {
+    navigationStore?.deviceLocalWorkspaceIds.contains(workspaceId) == true
   }
 }

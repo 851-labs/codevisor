@@ -47,6 +47,7 @@ public final class DeviceLayoutStore: @unchecked Sendable {
   private struct Payload: Codable {
     var layouts: [UUID: DeviceLayout] = [:]
     var drafts: [UUID: WorkspaceDraft] = [:]
+    var localPaneWorkspaceIds: Set<UUID>?
   }
 
   private let store: any PersistenceStore
@@ -73,6 +74,10 @@ public final class DeviceLayoutStore: @unchecked Sendable {
 
   public func layout(for workspaceId: UUID) -> DeviceLayout? {
     lock.withLock { payload.layouts[workspaceId] }
+  }
+
+  public var localPaneWorkspaceIds: Set<UUID> {
+    lock.withLock { payload.localPaneWorkspaceIds ?? [] }
   }
 
   public var drafts: [WorkspaceDraft] {
@@ -123,6 +128,17 @@ public final class DeviceLayoutStore: @unchecked Sendable {
       return true
     }
     if changed { persist() }
+  }
+
+  func keepPanesOnDevice(in workspaceIds: Set<UUID>) -> Bool {
+    let changed = lock.withLock {
+      let current = payload.localPaneWorkspaceIds ?? []
+      guard !workspaceIds.isSubset(of: current) else { return false }
+      payload.localPaneWorkspaceIds = current.union(workspaceIds)
+      return true
+    }
+    if changed { persist() }
+    return changed
   }
 
   public func remove(workspaceId: UUID) {

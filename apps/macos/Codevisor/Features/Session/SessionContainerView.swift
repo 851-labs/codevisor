@@ -186,16 +186,14 @@ struct SessionContainerView: View {
 
   var contentColumn: some View {
     let workspace = selectedWorkspace
-    let chatLeaf = singlePaneChatLeaf(in: workspace)
     return VStack(spacing: 0) {
       SessionScreen(
-        centerGroup: chatLeaf.map { configuredCenterModel(leafId: $0.id) } ?? activeCenterModel(in: workspace),
+        centerGroup: activeCenterModel(in: workspace),
         focus: sessionFocus,
         onWorkspaceCommand: handleWorkspaceCommand,
-        centerTree: chatLeaf.map { .group(id: $0.id, state: $0.state) }
-          ?? floatingLayout.visibleTree(liveCenterTree ?? workspace.centerTree),
+        centerTree: floatingLayout.visibleTree(liveCenterTree ?? workspace.centerTree),
         primaryLeafId: session.flatMap { workspace.centerTree.groupId(containingChat: $0.id) },
-        activeLeafId: chatLeaf?.id ?? activeLeafId,
+        activeLeafId: activeLeafId,
         centerLeafModel: { leafId in configuredCenterModel(leafId: leafId) },
         centerPaneTitle: paneTitle,
         sessionStore: store,
@@ -212,11 +210,11 @@ struct SessionContainerView: View {
         },
         onCenterTreeLiveChanged: { visible in liveCenterTree = restoringFloatingLeaves(visible) }
       )
-      .overlay { floatingPaneOverlay(chatLeaf: chatLeaf) }
-      .environment(\.usesSlimComposer, isSinglePane)
+      .overlay { floatingPaneOverlay }
+      .environment(\.usesSlimComposer, isTabless)
     }
     .overlay(alignment: .top) {
-      if !isSinglePane {
+      if !isTabless {
         Color.separatorColor
           .frame(height: 1)
           .frame(maxWidth: .infinity)
