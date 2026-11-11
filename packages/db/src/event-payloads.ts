@@ -1,6 +1,8 @@
 import {
   AttachmentRef,
   BackgroundTask,
+  sentByAgentOf,
+  type AgentRef,
   QuestionPayload,
   SessionPlan as SessionPlanSchema,
   type EventKind,
@@ -131,10 +133,12 @@ export const conversationEventPayload = (
       readonly attachments?: ReadonlyArray<AttachmentRef>
       readonly origin?: "event"
       readonly attribution?: PromptAttribution
+      readonly sentByAgent?: AgentRef
     }
   | undefined => {
   const { role, text: directText, messageId, attachments, origin } = payload
   const attribution = attributionFrom(payload.attribution)
+  const sentByAgent = sentByAgentOf(payload)
   if (
     (role === "user" || role === "assistant" || role === "system") &&
     typeof directText === "string" &&
@@ -147,7 +151,8 @@ export const conversationEventPayload = (
       ...(messageId === undefined ? {} : { messageId }),
       ...(attachments === undefined ? {} : { attachments }),
       ...(origin === "event" ? { origin } : {}),
-      ...(attribution === undefined ? {} : { attribution })
+      ...(attribution === undefined ? {} : { attribution }),
+      ...(sentByAgent === undefined ? {} : { sentByAgent })
     }
   }
   if (

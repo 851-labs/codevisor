@@ -244,14 +244,18 @@ describe("Codevisor MCP provider", () => {
       async () => "stable-token"
     )
 
-    await provider.invoke({ sessionId: "agent" }, "agents.message", {
-      agentId: "bot",
-      text: "done",
-      fromSessionId: "someone-else"
-    })
+    const forged = { agentId: "bot", text: "done", sentByAgentId: "someone-else" }
+    await provider.invoke({ sessionId: "agent" }, "agents.message", forged)
+    await provider.invoke({ sessionId: remoteSessionKey("mbp", "agent") }, "agents.message", forged)
 
-    expect(requests[0]!.url.pathname).toBe("/v1/sessions/bot/prompt")
-    expect(requestJson(requests[0]!.init)).toEqual({ text: "done", fromSessionId: "agent" })
+    expect(requests.map((request) => request.url.pathname)).toEqual([
+      "/v1/sessions/bot/prompt",
+      "/v1/sessions/bot/prompt"
+    ])
+    expect(requests.map((request) => requestJson(request.init))).toEqual([
+      { text: "done", sentByAgentId: "agent" },
+      { text: "done", sentByAgentId: "agent", sentByAgentMachineId: "mbp" }
+    ])
   })
 
   it("starts agents as the calling agent, or under another machine's caller key", async () => {

@@ -166,11 +166,17 @@ const bodyPayload = (
 ): unknown => {
   if (spec.wrappedBody === true) return args.body
   const payload = definedArguments(args, bodyPropertyNames(spec.body!))
-  if (spec.name === "agents.message") return { ...payload, fromSessionId: context.sessionId }
+  if (spec.name === "agents.message") return { ...payload, ...senderFields(context.sessionId) }
   if (spec.name === "agents.start") return startPayload(payload, context)
   if (spec.name === "shell.exec") return { ...payload, callerAgentId: context.sessionId }
   if (spec.name === "bots.create") return { ...BOT_TOOL_DEFAULTS, ...payload }
   return payload
+}
+
+const senderFields = (sessionId: string): UnknownRecord => {
+  const remote = parseRemoteSessionKey(sessionId)
+  if (remote === undefined) return { sentByAgentId: sessionId }
+  return { sentByAgentId: remote.sessionId, sentByAgentMachineId: remote.machineId }
 }
 
 const startPayload = (

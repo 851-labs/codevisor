@@ -37,21 +37,21 @@ export const remoteCallerAgent = (
 ): AgentRef | undefined =>
   services.fleetTickets?.callerAgents.take(headerValue(request, CALLER_AGENT_TICKET_HEADER))
 
-export const assertCreatorVerified = (
+export const assertAgentVerified = (
   serverId: string,
-  creator: Partial<AgentRef>,
+  claimed: Partial<AgentRef>,
   verified: AgentRef | undefined
 ): void => {
-  if (creator.agentId === undefined) return
-  if (creator.machineId === undefined || creator.machineId === serverId) return
-  if (sameAgent(verified, creator)) return
-  throw new HttpFailure(403, "Only the machine an agent runs on can start chats on its behalf")
+  if (claimed.agentId === undefined) return
+  if (claimed.machineId === undefined || claimed.machineId === serverId) return
+  if (sameAgent(verified, claimed)) return
+  throw new HttpFailure(403, "Only the machine an agent runs on can act on its behalf")
 }
 
-const sameAgent = (verified: AgentRef | undefined, creator: Partial<AgentRef>): boolean =>
+const sameAgent = (verified: AgentRef | undefined, claimed: Partial<AgentRef>): boolean =>
   verified !== undefined &&
-  verified.agentId === creator.agentId &&
-  verified.machineId === creator.machineId
+  verified.agentId === claimed.agentId &&
+  verified.machineId === claimed.machineId
 
 const callerMachineId = (
   services: CodevisorServerServices,

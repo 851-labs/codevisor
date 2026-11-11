@@ -17,7 +17,7 @@ import {
   type CodevisorServerServices,
   type EventFanout
 } from "../server-context.js"
-import { assertCreatorVerified } from "./fleet-calls.js"
+import { assertAgentVerified } from "./fleet-calls.js"
 import { resolveSessionAccount, startSessionAgent, withStartPicks } from "./session-creation.js"
 import { creatorOf, findSession, resolveSessionCwdOrFail } from "./session-workspace.js"
 
@@ -39,7 +39,7 @@ export const routeWorkspaceCreate = async (
     throw new HttpFailure(409, "Chat and workspace must belong to the same project")
   }
   const workspaceId = payload.workspace.id.toLowerCase()
-  assertCreatorVerified(config.id, creatorOf(payload.session), undefined)
+  assertAgentVerified(config.id, creatorOf(payload.session), undefined)
   const sessionId = (payload.session.id ?? randomUUID()).toLowerCase()
   const existing = await findSession(services.db, sessionId)
   let sessionPayload: CreateSessionRequest = {

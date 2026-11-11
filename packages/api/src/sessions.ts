@@ -1,10 +1,11 @@
 import { Schema } from "effect"
 
+import { AgentReferenceFields } from "./agent-references.js"
 import { SessionAutoResume } from "./auto-resume.js"
 import { Labels } from "./labels.js"
 import { CreateProjectRequest } from "./projects.js"
+import { PromptAttribution } from "./prompt-source.js"
 import {
-  AgentReferenceFields,
   GoalStatus,
   SessionCreator,
   SessionGoal,
@@ -236,13 +237,6 @@ export type TranscriptQuestionInteraction = typeof TranscriptQuestionInteraction
 export const TranscriptInteraction = Schema.Union([TranscriptQuestionInteraction])
 export type TranscriptInteraction = typeof TranscriptInteraction.Type
 
-export const PromptAttribution = Schema.Struct({
-  kind: Schema.Literal("app"),
-  viewId: Schema.String,
-  plugin: Schema.String
-})
-export type PromptAttribution = typeof PromptAttribution.Type
-
 export const TranscriptPluginApp = Schema.Struct({
   viewId: Schema.String,
   machineId: Schema.String,
@@ -278,6 +272,8 @@ export const TranscriptItem = Schema.Struct({
   phase: Schema.optional(MessagePhase),
   origin: Schema.optional(Schema.Literals(["event", "fork"])),
   attribution: Schema.optional(PromptAttribution),
+  sentByAgentId: Schema.optional(Schema.String),
+  sentByAgentMachineId: Schema.optional(Schema.String),
   textResource: Schema.optional(TranscriptBodyResource),
   planResource: Schema.optional(TranscriptBodyResource),
   textGeneration: Schema.optional(Schema.Number),
@@ -357,6 +353,8 @@ export const PromptQueueItem = Schema.Struct({
   clientId: Schema.optional(Schema.String),
   origin: Schema.optional(PromptOrigin),
   attribution: Schema.optional(PromptAttribution),
+  sentByAgentId: Schema.optional(Schema.String),
+  sentByAgentMachineId: Schema.optional(Schema.String),
   steered: Schema.optional(Schema.Boolean)
 })
 export type PromptQueueItem = typeof PromptQueueItem.Type
@@ -449,7 +447,8 @@ export const PromptRequest = Schema.Struct({
   attachments: Schema.optional(Schema.Array(AttachmentRef)),
   messageId: Schema.optional(Schema.String),
   clientId: Schema.optional(Schema.String),
-  fromSessionId: Schema.optional(Schema.String),
+  sentByAgentId: Schema.optional(Schema.String),
+  sentByAgentMachineId: Schema.optional(Schema.String),
   attribution: Schema.optional(PromptAttribution)
 })
 export type PromptRequest = typeof PromptRequest.Type

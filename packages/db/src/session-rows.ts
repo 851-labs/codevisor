@@ -77,6 +77,8 @@ export interface PromptQueueRow {
   readonly client_id?: string | null
   readonly origin?: string | null
   readonly attribution?: string | null
+  readonly sent_by_agent_id?: string | null
+  readonly sent_by_agent_machine_id?: string | null
 }
 
 export const sessionRows = rowReader<SessionRow>({
@@ -147,5 +149,7 @@ export const promptQueueRows = rowReader<PromptQueueRow>({
   position: integer,
   client_id: optional(nullable(text)),
   origin: optional(nullable(text)),
-  attribution: optional(nullable(text))
+  attribution: optional(nullable(text)),
+  sent_by_agent_id: optional(nullable(text)),
+  sent_by_agent_machine_id: optional(nullable(text))
 })

@@ -54,6 +54,8 @@ export interface ChatItemRow {
   readonly revision: number
   readonly origin: string | null
   readonly attribution?: string | null
+  readonly sent_by_agent_id?: string | null
+  readonly sent_by_agent_machine_id?: string | null
   readonly text: string
   readonly plan_document: string | null
 }
@@ -112,6 +114,8 @@ export const chatItemRows = rowReader<ChatItemRow>({
   revision: integer,
   origin: nullable(text),
   attribution: optional(nullable(text)),
+  sent_by_agent_id: optional(nullable(text)),
+  sent_by_agent_machine_id: optional(nullable(text)),
   text,
   plan_document: nullable(text)
 })

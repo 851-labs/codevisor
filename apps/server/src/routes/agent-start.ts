@@ -12,7 +12,7 @@ import {
 import { HttpFailure, readSchema, run, writeJson } from "../server-context.js"
 import { agentProjectId } from "./agent-start-project.js"
 import { startAgentOnSandbox } from "./agent-start-sandbox.js"
-import { assertCreatorVerified, remoteCallerAgent } from "./fleet-calls.js"
+import { assertAgentVerified, remoteCallerAgent } from "./fleet-calls.js"
 import { allocateProjectWorktree } from "./project-worktree-create.js"
 import {
   defaultPromptDelivery,
@@ -103,7 +103,7 @@ const startPlanned = async (
   created.push(() => deleteServerSession(services, fanout, session.id))
 
   const subscribed = await subscribeCaller(route, plan.caller, session.id)
-  const delivered = await sendFirstPrompt(route, session.id, request.prompt)
+  const delivered = await sendFirstPrompt(route, session.id, request.prompt, plan.caller.creator)
   return { ...startedAgent(session, placement), delivered, subscribed }
 }
 
@@ -124,7 +124,7 @@ const isRemoteCaller = (request: StartAgentRequest, serverId: string): boolean =
 const verifiedRemoteCaller = (route: RouteContext, request: StartAgentRequest): AgentRef => {
   const claimed = { agentId: request.callerAgentId!, machineId: request.callerAgentMachineId! }
   const verified = remoteCallerAgent(route.services, route.request)
-  assertCreatorVerified(route.config.id, claimed, verified)
+  assertAgentVerified(route.config.id, claimed, verified)
   return claimed
 }
 
@@ -242,10 +242,19 @@ const subscribeCaller = async (
   return true
 }
 
-const sendFirstPrompt = async (route: RouteContext, agentId: string, prompt: string) => {
+const sendFirstPrompt = async (
+  route: RouteContext,
+  agentId: string,
+  prompt: string,
+  sentByAgent: AgentRef | undefined
+) => {
   const { services, fanout, routeState, config } = route
   await refuseWhileUpdating(services, routeState, agentId)
-  const queued = await run(services.db.createPromptQueueItem(agentId, prompt))
+  const queued = await run(
+    services.db.createPromptQueueItem(agentId, prompt, [], undefined, undefined, "user", {
+      sentByAgent
+    })
+  )
   const outcome = await deliverQueuedPrompt(
     services,
     fanout,

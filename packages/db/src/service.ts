@@ -16,7 +16,7 @@ import type {
   GitPullRequest,
   Harness,
   Project,
-  PromptAttribution,
+  PromptSource,
   PromptOrigin,
   PromptQueueItem,
   QuestionPayload,
@@ -277,7 +277,7 @@ export interface CodevisorDatabaseService
     id?: string,
     clientId?: string,
     origin?: PromptOrigin,
-    attribution?: PromptAttribution
+    source?: PromptSource
   ) => Effect.Effect<PromptQueueItem, DatabaseError>
   readonly createFile: (
     name: string,

@@ -1,6 +1,7 @@
 import { randomUUID } from "node:crypto"
 
 import type {
+  AgentRef,
   AttachmentRef,
   MessagePhase,
   PromptAttribution,
@@ -73,6 +74,7 @@ export const createChatItem = (
     readonly revision?: number
     readonly origin?: "event"
     readonly attribution?: PromptAttribution
+    readonly sentByAgent?: AgentRef
   }
 ): string => {
   const state = chatState(sqlite, sessionId)
@@ -117,7 +119,9 @@ const insertChatItemRow = (
       options.hasDetails === true ? 1 : 0,
       options.revision ?? 1,
       options.origin ?? null,
-      serializeAttribution(options.attribution)
+      serializeAttribution(options.attribution),
+      options.sentByAgent?.agentId ?? null,
+      options.sentByAgent?.machineId ?? null
     )
 }
 
@@ -390,8 +394,8 @@ const chatItemSql = {
   insert: `insert into chat_items (
         id, session_id, position, role, message_id, status, created_at, updated_at, turn_id,
         started_at, completed_at, stop_reason, stop_detail, retryable, attachments, has_details, revision,
-        origin, attribution
-      ) values (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        origin, attribution, sent_by_agent_id, sent_by_agent_machine_id
+      ) values (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
       on conflict(id) do nothing`,
   bindTurn: "update chat_items set turn_id = ? where id = ? and turn_id is null",
   finish: `update chat_items set status = ?,

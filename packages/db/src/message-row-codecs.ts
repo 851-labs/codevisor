@@ -1,5 +1,8 @@
 import {
+  sentByAgentFields,
+  sentByAgentOf,
   TurnStopKind,
+  type AgentRef,
   type AttachmentRef,
   type EventEnvelope,
   type PromptAttribution,
@@ -65,6 +68,7 @@ export const transcriptFromChatRow = (row: ChatItemRow): TranscriptItem => {
     ...(attachments === undefined ? {} : { attachments }),
     ...transcriptOrigin(row.origin),
     ...attributionField(parseAttribution(row.attribution)),
+    ...sentByAgentFields(sentByAgentFromRow(row)),
     revision: row.revision
   }
 }
@@ -86,6 +90,7 @@ export const promptQueueFromRow = (row: PromptQueueRow): PromptQueueItem => {
     ...(row.client_id == null ? {} : { clientId: row.client_id }),
     ...(row.origin === "system" ? { origin: "system" as const } : {}),
     ...attributionField(parseAttribution(row.attribution)),
+    ...sentByAgentFields(sentByAgentFromRow(row)),
     ...(row.steered === 1 ? { steered: true } : {})
   }
 }
@@ -129,3 +134,12 @@ const attributionField = (
   attribution: PromptAttribution | undefined
 ): { readonly attribution?: PromptAttribution } =>
   attribution === undefined ? {} : { attribution }
+
+const sentByAgentFromRow = (row: {
+  readonly sent_by_agent_id?: string | null
+  readonly sent_by_agent_machine_id?: string | null
+}): AgentRef | undefined =>
+  sentByAgentOf({
+    sentByAgentId: row.sent_by_agent_id,
+    sentByAgentMachineId: row.sent_by_agent_machine_id
+  })

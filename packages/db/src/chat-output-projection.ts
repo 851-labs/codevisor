@@ -110,7 +110,8 @@ const projectUserOrSystemConversation = (
       status: "complete",
       ...(conversation.attachments === undefined ? {} : { attachments: conversation.attachments }),
       ...(conversation.origin === undefined ? {} : { origin: conversation.origin }),
-      ...(conversation.attribution === undefined ? {} : { attribution: conversation.attribution })
+      ...(conversation.attribution === undefined ? {} : { attribution: conversation.attribution }),
+      ...(conversation.sentByAgent === undefined ? {} : { sentByAgent: conversation.sentByAgent })
     })
   if (steeredItem !== undefined) {
     continueTurnInNewSection(sqlite, event, sessionId, steeredItem)

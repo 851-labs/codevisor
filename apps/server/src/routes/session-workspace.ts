@@ -30,7 +30,7 @@ import {
 } from "../server-context.js"
 import { withBotSessionOption } from "./bot-session-modes.js"
 import { isConversationMissing, rememberConversationRecap } from "./conversation-recap.js"
-import { assertCreatorVerified } from "./fleet-calls.js"
+import { assertAgentVerified } from "./fleet-calls.js"
 import { restoreSessionConfigSelections } from "./session-config-restore.js"
 import { resolveSessionAccount, startSessionAgent, withStartPicks } from "./session-creation.js"
 import { sessionEventSink } from "./session-events.js"
@@ -45,7 +45,7 @@ const createServerSession = async (
   project: Project,
   verifiedCaller: AgentRef | undefined
 ): Promise<SessionSummary> => {
-  assertCreatorVerified(serverId, creatorOf(request), verifiedCaller)
+  assertAgentVerified(serverId, creatorOf(request), verifiedCaller)
 
   const payload = await withStartPicks(services, request)
   const cwd = await resolveSessionCwdOrFail(services, serverId, project, payload.worktreeName)

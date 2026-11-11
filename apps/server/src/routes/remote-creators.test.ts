@@ -48,6 +48,15 @@ const promptsMatching = (machine: FleetMachine, text: string) =>
 
 const turnEndedFor = (sessionId: string) => `type="session.turn_ended" agentId="${sessionId}"`
 
+const userMessages = async (machine: FleetMachine, sessionId: string) =>
+  (await run(machine.services.db.getTranscriptPage(sessionId, undefined, 32))).items
+    .filter((item) => item.role === "user")
+    .map(({ text, sentByAgentId, sentByAgentMachineId }) => ({
+      text,
+      sentByAgentId,
+      sentByAgentMachineId
+    }))
+
 const eventOrigin = { machineId: laptop.id, machineName: laptop.name, sessionId: "child-1" }
 
 const eventBody = (args: unknown) => ({ path: FLEET_SESSION_EVENT_PATH, args, origin: eventOrigin })
@@ -147,6 +156,40 @@ describe("agents started from another machine", () => {
     expect(await run(remote.services.db.listFleetMessages)).toEqual([])
     await waitFor(() => promptsMatching(home, turnEndedFor(child.id)) > 0)
     expect(promptsMatching(home, turnEndedFor(child.id))).toBe(1)
+  })
+})
+
+describe("messages from an agent on another machine", () => {
+  it("name the agent and its machine on the message, and are refused unless the call comes from there", async () => {
+    const { home, remote, parent, parentOrigin } = await startFleet()
+    const child = await startedSession(
+      remote,
+      await home.machines.invoke(
+        laptop.id,
+        "codevisor.agents.start",
+        startArgs("one"),
+        parentOrigin
+      )
+    )
+    const sentByParent = { sentByAgentId: parent.id, sentByAgentMachineId: studio.id }
+
+    await home.machines.invoke(
+      laptop.id,
+      "codevisor.agents.message",
+      { agentId: child.id, text: "also fix the tests", delivery: "queue" },
+      parentOrigin
+    )
+    const forged = await post(remote, `/v1/sessions/${child.id}/prompt`, {
+      text: "forged",
+      ...sentByParent
+    })
+    await waitFor(async () => (await userMessages(remote, child.id)).length === 2)
+
+    refusedCreator(forged)
+    expect(await userMessages(remote, child.id)).toEqual([
+      { text: "one", sentByAgentId: parent.id, sentByAgentMachineId: studio.id },
+      { text: "also fix the tests", sentByAgentId: parent.id, sentByAgentMachineId: studio.id }
+    ])
   })
 })
 

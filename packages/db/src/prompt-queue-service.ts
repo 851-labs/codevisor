@@ -1,12 +1,13 @@
 import { randomUUID } from "node:crypto"
 
 import type {
+  AgentRef,
   AttachmentRef,
   PromptAttribution,
   PromptOrigin,
   PromptQueueItem
 } from "@codevisor/api"
-import { isoTimestamp } from "@codevisor/api"
+import { isoTimestamp, sentByAgentFields } from "@codevisor/api"
 
 import { attempt } from "./errors.js"
 import { canonicalUuid } from "./ids.js"
@@ -24,13 +25,14 @@ export interface NewPromptQueueItem {
   readonly clientId?: string | undefined
   readonly origin?: PromptOrigin | undefined
   readonly attribution?: PromptAttribution | undefined
+  readonly sentByAgent?: AgentRef | undefined
 }
 
 export const insertPromptQueueItem = (
   context: ServiceContext,
   request: NewPromptQueueItem
 ): PromptQueueItem => {
-  const { attachments, attribution, clientId, origin, text } = request
+  const { attachments, attribution, clientId, origin, sentByAgent, text } = request
   const sessionId = canonicalUuid(request.rawSessionId)
   context.getSession(sessionId)
   const now = isoTimestamp()
@@ -43,7 +45,8 @@ export const insertPromptQueueItem = (
     ...(attachments === undefined || attachments.length === 0 ? {} : { attachments }),
     ...(clientId === undefined ? {} : { clientId }),
     ...(origin === "system" ? { origin } : {}),
-    ...(attribution === undefined ? {} : { attribution })
+    ...(attribution === undefined ? {} : { attribution }),
+    ...sentByAgentFields(sentByAgent)
   }
   context.sqlite
     .prepare(queueSql.insert)
@@ -57,6 +60,8 @@ export const insertPromptQueueItem = (
       clientId ?? null,
       origin ?? "user",
       serializeAttribution(attribution),
+      sentByAgent?.agentId ?? null,
+      sentByAgent?.machineId ?? null,
       sessionId
     )
   return item
@@ -79,7 +84,7 @@ export const makePromptQueueService = (
   const { sqlite, getSession } = context
 
   return {
-    createPromptQueueItem: (rawSessionId, text, attachments, id, clientId, origin, attribution) =>
+    createPromptQueueItem: (rawSessionId, text, attachments, id, clientId, origin, source) =>
       attempt("createPromptQueueItem", () =>
         insertPromptQueueItem(context, {
           rawSessionId,
@@ -88,7 +93,7 @@ export const makePromptQueueService = (
           id,
           clientId,
           origin,
-          attribution
+          ...source
         })
       ),
     listPromptQueue: (rawSessionId) =>
@@ -193,8 +198,8 @@ const queueRow = (sqlite: ServiceContext["sqlite"], sessionId: string, queueItem
 const queueSql = {
   insert: `insert into prompt_queue_items (
               id, session_id, text, created_at, updated_at, attachments, client_id, origin,
-              attribution, position
-            ) values (?, ?, ?, ?, ?, ?, ?, ?, ?, (
+              attribution, sent_by_agent_id, sent_by_agent_machine_id, position
+            ) values (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, (
               select coalesce(max(position), -1) + 1
               from prompt_queue_items
               where session_id = ? and state = 'pending'

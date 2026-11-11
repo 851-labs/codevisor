@@ -1,8 +1,11 @@
-import type {
-  AttachmentRef,
-  PromptAttribution,
-  PromptOrigin,
-  PromptQueueItem
+import {
+  sentByAgentFields,
+  sentByAgentOf,
+  type AgentRef,
+  type AttachmentRef,
+  type PromptAttribution,
+  type PromptOrigin,
+  type PromptQueueItem
 } from "@codevisor/api"
 
 import type { CodevisorServerServices, EventFanout } from "../server-context.js"
@@ -15,6 +18,7 @@ export interface RecordedPrompt {
   readonly attachments: ReadonlyArray<AttachmentRef> | undefined
   readonly origin: PromptOrigin | undefined
   readonly attribution?: PromptAttribution | undefined
+  readonly sentByAgent?: AgentRef | undefined
   readonly startsTurn: boolean
 }
 
@@ -41,7 +45,8 @@ export const recordUserPrompt = (
         text,
         ...(refs.length === 0 ? {} : { attachments: refs }),
         ...transcriptOrigin(prompt.origin),
-        ...(prompt.attribution === undefined ? {} : { attribution: prompt.attribution })
+        ...(prompt.attribution === undefined ? {} : { attribution: prompt.attribution }),
+        ...sentByAgentFields(prompt.sentByAgent)
       }
     },
     sessionId
@@ -54,5 +59,6 @@ export const steeredPrompt = (item: PromptQueueItem): RecordedPrompt => ({
   attachments: item.attachments,
   origin: item.origin,
   attribution: item.attribution,
+  sentByAgent: sentByAgentOf(item),
   startsTurn: false
 })

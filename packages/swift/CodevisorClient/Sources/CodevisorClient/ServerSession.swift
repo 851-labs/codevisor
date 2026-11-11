@@ -62,9 +62,14 @@ public struct ServerPromptQueueItem: Codable, Identifiable, Equatable, Sendable 
   public var attachments: [ServerAttachmentRef]?
   public var origin: String?
   public var attribution: UserMessageAttribution? = nil
+  public var sentByAgentId: String? = nil
+  public var sentByAgentMachineId: String? = nil
   public var steered: Bool? = nil
 
   public var isSystem: Bool { origin == "system" }
+  public var sentByAgent: AgentReference? {
+    AgentReference(agentId: sentByAgentId, machineId: sentByAgentMachineId)
+  }
   public var isNextStep: Bool { steered == true }
 
   public init(
@@ -373,9 +378,14 @@ public struct ServerTranscriptItem: Decodable, Equatable, Sendable {
   public var planResource: ToolDetailResource?
   public var origin: String? = nil
   public var attribution: UserMessageAttribution? = nil
+  public var sentByAgentId: String? = nil
+  public var sentByAgentMachineId: String? = nil
   public var revision: Int
 
   public var isEvent: Bool { origin == "event" }
+  public var sentByAgent: AgentReference? {
+    AgentReference(agentId: sentByAgentId, machineId: sentByAgentMachineId)
+  }
 
   public init(
     id: String,

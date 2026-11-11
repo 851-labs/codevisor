@@ -27,7 +27,7 @@ const publishedAttention = (running: Running, sessionId: string) =>
 const finishSilentTurn = async (running: Running, sessionId: string) => {
   await post(running, `/v1/sessions/${sessionId}/prompt`, {
     text: "release finished",
-    fromSessionId: "release-agent"
+    sentByAgentId: "release-agent"
   })
   await waitFor(() => running.agents.prompts.length === 1)
   await waitFor(async () => (await summary(running, sessionId)).sidebarState === "idle")
