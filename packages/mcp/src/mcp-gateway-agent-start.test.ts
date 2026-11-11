@@ -99,10 +99,51 @@ describe("agents.start on another machine", () => {
     }
   })
 
+  it("sends an MCP client's project from outside Codevisor, with no harness of its own", async () => {
+    const { db, manager, remoteCalls } = await studioGateway()
+    const project = await run(
+      db.createProject({
+        folderPath: "/tmp/mcp-gateway-external-start",
+        name: "widget",
+        repoUrl: "https://github.com/acme/widget.git"
+      })
+    )
+    const issued = await manager.issueExternalGateway({
+      client: { name: "Grok" },
+      projectId: project.id
+    })
+    const client = await connectClient(issued)
+    try {
+      const start = { title: "Build it", prompt: "Build the app", checkout: "worktree" }
+      await client.callTool({
+        name: "execute",
+        arguments: {
+          description: "Start an agent on the MacBook",
+          code: `async () => agents.start({ ...${JSON.stringify({ ...start, harness: "codex" })}, machine: "macbook" })`
+        }
+      })
+
+      expect(remoteCalls.at(-1)).toMatchObject({
+        origin: { sessionTitle: "Grok" },
+        args: {
+          ...start,
+          harness: "codex",
+          callerDefaults: {
+            project: { name: "widget", repoUrl: "https://github.com/acme/widget.git" }
+          }
+        }
+      })
+    } finally {
+      await client.close()
+    }
+  })
+
   it("forwards the arguments untouched when the calling chat no longer exists", async () => {
     const { db } = await studioGateway()
     const args = { title: "Build it", prompt: "Build the app", checkout: "worktree" }
 
-    expect(await withCallerDefaults(db, "gone", "codevisor.agents.start", args)).toBe(args)
+    expect(
+      await withCallerDefaults(db, { sessionId: "gone" }, "codevisor.agents.start", args)
+    ).toBe(args)
   })
 })

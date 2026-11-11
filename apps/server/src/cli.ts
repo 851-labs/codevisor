@@ -10,6 +10,7 @@ import { Effect, Option } from "effect"
 import { Command, Flag } from "effect/unstable/cli"
 
 import { authLoginCommand } from "./cli/cloud-auth.js"
+import { mcpCommand, type McpSession } from "./cli/mcp.js"
 import { setupCommand, type SetupDeps } from "./cli/setup.js"
 import {
   logsCommand,
@@ -238,6 +239,41 @@ const logs = Command.make(
   ({ follow }) => runCli((deps) => logsCommand(deps, { follow }))
 ).pipe(Command.withDescription("Show server logs (journalctl or the log file)"))
 
+const stdioSession = (): McpSession => ({
+  input: process.stdin,
+  output: process.stdout,
+  disconnected: new Promise((resolve) => {
+    const finish = () => {
+      process.stdin.destroy()
+      resolve()
+    }
+    process.stdin.once("end", finish)
+    for (const signal of ["SIGINT", "SIGTERM", "SIGHUP"] as const) process.once(signal, finish)
+  })
+})
+
+const mcp = Command.make(
+  "mcp",
+  {
+    port: portFlag,
+    project: optionalString(
+      "project",
+      "A project name or id: its plugins and skills join the tools, and agents.start defaults to it"
+    )
+  },
+  ({ port, project }) =>
+    runCli((deps) =>
+      mcpCommand(deps, stdioSession(), {
+        port: Option.getOrUndefined(port),
+        project: Option.getOrUndefined(project)
+      })
+    )
+).pipe(
+  Command.withDescription(
+    "Serve this machine's Codevisor tools (agents, bots, browser, plugins, skills) to an MCP client over stdio"
+  )
+)
+
 const makeSetupDeps = (): SetupDeps => {
   const deps = makeDeps()
   return {
@@ -272,6 +308,7 @@ const root = Command.make("codevisor").pipe(
     restart,
     status,
     token,
+    mcp,
     update,
     logs
   ])

@@ -140,6 +140,10 @@ export const makeMcpManagerCore = (config: McpManagerConfig) => {
   )
   const selfMachine = config.machine ?? { id: selfServerId, name: hostname() }
   const turnClientIds = new Map<string, string>()
+  const externalClientOf = (sessionId: string) => {
+    const gatewayId = sessionGatewayIds.get(sessionId)
+    return gatewayId === undefined ? undefined : gateways.get(gatewayId)?.client
+  }
   const codevisorProvider = makeCodevisorProvider(
     () => state.gatewayBaseUrl,
     () => run(config.db.getOrCreateConnectionToken),
@@ -149,8 +153,10 @@ export const makeMcpManagerCore = (config: McpManagerConfig) => {
         const workspaceId = session?.workspaceId
         const worktreeName = session?.worktreeName
         const clientId = turnClientIds.get(sessionId)
+        const externalClient = externalClientOf(sessionId)
         return {
           machine: selfMachine,
+          ...(externalClient === undefined ? {} : { externalClient }),
           ...(workspaceId === undefined ? {} : { workspaceId }),
           ...(worktreeName === undefined ? {} : { worktreeName }),
           ...(session?.createdByAgentId === undefined

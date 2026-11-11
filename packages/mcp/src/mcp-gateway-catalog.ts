@@ -42,11 +42,21 @@ const BUILTIN_CAPABILITIES: Record<string, string> = {
 
 const INTEGRATION_LIMIT = 40
 
-export const executeToolDescription = (inventory: string): string =>
+export interface ExternalClient {
+  readonly name: string
+}
+
+export const executeToolDescription = (inventory: string, client?: ExternalClient): string =>
   [
     `Sandboxed TypeScript runtime for using tools like:\n${inventory}`,
-    'Before writing code, call the `skills` tool with name "execute" for how to use this tool.'
+    'Before writing code, call the `skills` tool with name "execute" for how to use this tool.',
+    ...(client === undefined ? [] : [externalClientGuidance(client)])
   ].join("\n\n")
+
+const externalClientGuidance = (client: ExternalClient): string =>
+  `You reach Codevisor from ${client.name}, outside Codevisor, so you have no Codevisor chat and nothing reaches you as a hidden <codevisor-event> message. ` +
+  "Where a skill or tool says to end your turn and wait for one, poll instead: agents.wait or agents.status for agents you start, jobs.wait for a job handle. " +
+  'agents.start needs harness (from harnesses.list), and project or checkout: "none" unless codevisor mcp was started with --project.'
 
 interface SearchQuery {
   readonly normalized: string

@@ -1,3 +1,4 @@
+import { isExternalClientKey } from "@codevisor/api"
 import type { CallToolResult, Tool } from "@modelcontextprotocol/server"
 
 import type { AutomationProviderContext, AutomationToolProvider } from "./automation-provider.js"
@@ -23,7 +24,7 @@ const tools: ReadonlyArray<Tool> = [
   {
     name: "context.current",
     description:
-      "Return where you are: agentId, projectId, workspaceId, worktreeName (your git worktree, absent for the project folder), createdByAgentId and createdByAgentMachineId (the agent that started you and the machine it runs on, if an agent started you), the machine you run on, and clientId (the app window that sent the current message, absent for automations and agent-sent messages).",
+      "Return where you are: agentId, projectId, workspaceId, worktreeName (your git worktree, absent for the project folder), createdByAgentId and createdByAgentMachineId (the agent that started you and the machine it runs on, if an agent started you), the machine you run on, and clientId (the app window that sent the current message, absent for automations and agent-sent messages). An MCP client outside Codevisor gets externalClient (its name) and no agentId, because it has no Codevisor chat.",
     inputSchema: { type: "object", properties: {}, additionalProperties: false }
   },
   ...agentTools.map((tool) => tool.definition),
@@ -95,6 +96,7 @@ export interface CodevisorCurrentContext {
   readonly createdByAgentMachineId?: string
   readonly machine?: { readonly id: string; readonly name: string }
   readonly clientId?: string
+  readonly externalClient?: { readonly name: string }
 }
 
 export interface CodevisorProviderOptions {
@@ -114,7 +116,8 @@ export const makeCodevisorProvider = (
       const extra = (await options.currentContext?.(context)) ?? {}
       return textToolResult(
         JSON.stringify({
-          agentId: context.sessionId,
+          ...(isExternalClientKey(context.sessionId) ? {} : { agentId: context.sessionId }),
+          ...(extra.externalClient === undefined ? {} : { externalClient: extra.externalClient }),
           ...(context.projectId === undefined ? {} : { projectId: context.projectId }),
           ...(extra.workspaceId === undefined ? {} : { workspaceId: extra.workspaceId }),
           ...(extra.worktreeName === undefined ? {} : { worktreeName: extra.worktreeName }),

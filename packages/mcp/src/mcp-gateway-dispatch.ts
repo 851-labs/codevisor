@@ -2,7 +2,12 @@ import { randomUUID } from "node:crypto"
 import { realpathSync, statSync } from "node:fs"
 import { isAbsolute, relative, resolve } from "node:path"
 
-import { isFleetPath, remoteSessionKey, type CodevisorExecutionApp } from "@codevisor/api"
+import {
+  isExternalClientKey,
+  isFleetPath,
+  remoteSessionKey,
+  type CodevisorExecutionApp
+} from "@codevisor/api"
 import type {
   AutomationProviderContext,
   AutomationToolProvider,
@@ -81,6 +86,7 @@ interface AutomationCallContext {
   readonly signal?: AbortSignal | undefined
   readonly deadline?: number | undefined
   readonly callerAgentTicket?: string | undefined
+  readonly callerTitle?: string | undefined
 }
 
 interface BrowserCaller {
@@ -164,7 +170,7 @@ export const makeGatewayDispatch = (deps: GatewayDispatchDeps) => {
     },
     remote: GatewayOrigin | undefined
   ): { readonly requestPermissions?: () => Promise<boolean> } => {
-    if (remote !== undefined) return {}
+    if (remote !== undefined || isExternalClientKey(context.sessionId)) return {}
 
     return {
       requestPermissions: () =>
@@ -221,12 +227,13 @@ export const makeGatewayDispatch = (deps: GatewayDispatchDeps) => {
     onApp?: (app: ComputerUseApp) => void
   ): Promise<CallToolResult> => {
     assertAutomationToolArguments(provider, toolName, args)
-    let providerContext: AutomationProviderContext = context
+    const { callerTitle, ...callContext } = context
+    let providerContext: AutomationProviderContext = callContext
     if (provider.id === "computer") {
-      const callContext = { ...context }
       let agentLabel: string
       if (remote === undefined) {
-        agentLabel = (await run(config.db.getSessionSummary(context.sessionId))).title
+        agentLabel =
+          callerTitle ?? (await run(config.db.getSessionSummary(context.sessionId))).title
       } else {
         agentLabel = `${remote.sessionTitle ?? "Agent"} (from ${remote.machineName})`
       }
@@ -238,7 +245,13 @@ export const makeGatewayDispatch = (deps: GatewayDispatchDeps) => {
         ...(onApp === undefined ? {} : { onApp })
       }
     } else if (provider.id === "browser") {
-      providerContext = browserProviderContext({ provider, context, collector, remote, onPage })
+      providerContext = browserProviderContext({
+        provider,
+        context: callContext,
+        collector,
+        remote,
+        onPage
+      })
     }
     let safeArgs = args
     if (
@@ -248,6 +261,11 @@ export const makeGatewayDispatch = (deps: GatewayDispatchDeps) => {
       if (remote !== undefined) {
         throw new Error(
           `Browser Use uploads files from a workspace folder on this machine; a call from ${remote.machineName} has none`
+        )
+      }
+      if (isExternalClientKey(context.sessionId)) {
+        throw new Error(
+          "Browser Use uploads files from a Codevisor chat's workspace folder; an MCP client outside Codevisor has none"
         )
       }
       const session = await run(config.db.getSessionSummary(context.sessionId))
@@ -327,7 +345,8 @@ export const makeGatewayDispatch = (deps: GatewayDispatchDeps) => {
           ...(options.deadline === undefined ? {} : { deadline: options.deadline }),
           ...(options.callerAgentTicket === undefined
             ? {}
-            : { callerAgentTicket: options.callerAgentTicket })
+            : { callerAgentTicket: options.callerAgentTicket }),
+          ...localCallerTitle(ctx, remote)
         },
         toolName,
         input,
@@ -427,4 +446,13 @@ export const makeGatewayDispatch = (deps: GatewayDispatchDeps) => {
     invokeRemoteGatewayCall,
     newArtifactCollector
   }
+}
+
+const localCallerTitle = (
+  ctx: GatewayCallContext,
+  remote: GatewayOrigin | undefined
+): { readonly callerTitle?: string } => {
+  const title = ctx.origin?.sessionTitle
+  if (remote !== undefined || title === undefined) return {}
+  return { callerTitle: title }
 }

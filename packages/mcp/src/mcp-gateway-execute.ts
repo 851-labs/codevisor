@@ -48,7 +48,7 @@ export interface ExecuteToolDeps {
   readonly turnClientId: (sessionId: string) => string | undefined
 }
 
-export const stillRunningText = (job: ExecutionJob): string =>
+export const stillRunningText = (job: ExecutionJob, runtime: GatewayRuntime): string =>
   JSON.stringify({
     status: "running",
     jobId: job.jobId,
@@ -57,14 +57,24 @@ export const stillRunningText = (job: ExecutionJob): string =>
     ...(job.progress === undefined ? {} : { progress: job.progress }),
     logs: job.logs,
     outputPath: job.outputPath,
-    next:
-      `This call is still running in the background as job ${job.jobId}; nothing was cancelled. ` +
-      `When it finishes, Codevisor sends you a hidden <codevisor-event type="execution.job_finished"> ` +
-      "message with its result, so you can end your turn instead of waiting. To check sooner, run " +
-      `execute with jobs.wait({ jobId: "${job.jobId}" }) (it waits ` +
-      `within that call's budget) or jobs.get({ jobId: "${job.jobId}" }); ` +
-      `jobs.cancel({ jobId: "${job.jobId}" }) stops it. Live output is appended to outputPath.`
+    next: `This call is still running in the background as job ${job.jobId}; nothing was cancelled. ${whenJobFinishes(job, runtime)} Live output is appended to outputPath.`
   })
+
+const whenJobFinishes = (job: ExecutionJob, runtime: GatewayRuntime): string => {
+  const jobTool = (action: string) => `jobs.${action}({ jobId: "${job.jobId}" })`
+  if (runtime.client !== undefined) {
+    return (
+      `Run execute with ${jobTool("wait")} to wait for its result (it waits within that call's budget; call it again to keep waiting) ` +
+      `or ${jobTool("get")} to check it; ${jobTool("cancel")} stops it.`
+    )
+  }
+  return (
+    `When it finishes, Codevisor sends you a hidden <codevisor-event type="execution.job_finished"> ` +
+    "message with its result, so you can end your turn instead of waiting. To check sooner, run " +
+    `execute with ${jobTool("wait")} (it waits within that call's budget) or ${jobTool("get")}; ` +
+    `${jobTool("cancel")} stops it.`
+  )
+}
 
 export const makeExecuteHandler =
   (deps: ExecuteToolDeps) =>
@@ -82,7 +92,7 @@ export const makeExecuteHandler =
     })
     const call = makeExecuteCall(deps, runtime, recorder, execution)
     const outcome = await execution.outcome(call.start(args.code))
-    if (outcome.kind === "detached") return detachedResult(recorder, outcome.job)
+    if (outcome.kind === "detached") return detachedResult(recorder, outcome.job, runtime)
 
     return call.finish(outcome)
   }
@@ -101,11 +111,12 @@ const executionRecorder = (runtime: GatewayRuntime, args: ExecuteArgs): Executio
 
 const detachedResult = async (
   recorder: ExecutionRecorder,
-  job: ExecutionJob
+  job: ExecutionJob,
+  runtime: GatewayRuntime
 ): Promise<CallToolResult> => {
   recorder.status(`Still running in the background as job ${job.jobId}`)
   await recorder.finish()
-  return { content: [{ type: "text", text: stillRunningText(job) }] }
+  return { content: [{ type: "text", text: stillRunningText(job, runtime) }] }
 }
 
 const makeExecuteCall = (
@@ -123,7 +134,7 @@ const makeExecuteCall = (
     connectUpstream: deps.connectUpstream
   })
   const clientId = deps.turnClientId(sessionId)
-  const origin = callOrigin(deps, sessionId, clientId)
+  const origin = callOrigin(deps, runtime, clientId)
   const callContext: GatewayCallContext = {
     sessionId,
     ...(projectId === undefined ? {} : { projectId }),
@@ -161,7 +172,7 @@ const makeExecuteCall = (
         value = await deps.dispatch.invokeOnMachine(
           machine,
           path,
-          await withCallerDefaults(deps.config.db, sessionId, path, args),
+          await withCallerDefaults(deps.config.db, runtime, path, args),
           await remoteOrigin(),
           execution.signal
         )
@@ -226,12 +237,13 @@ const makeExecuteCall = (
 
 const callOrigin = (
   deps: ExecuteToolDeps,
-  sessionId: string,
+  runtime: GatewayRuntime,
   clientId: string | undefined
 ): GatewayOrigin => ({
   machineId: deps.selfMachine.id,
   machineName: deps.selfMachine.name,
-  sessionId,
+  sessionId: runtime.sessionId,
+  ...(runtime.client === undefined ? {} : { sessionTitle: runtime.client.name }),
   ...(clientId === undefined ? {} : { clientId })
 })
 

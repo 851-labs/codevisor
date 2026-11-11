@@ -105,6 +105,35 @@ The session setting is the narrowest scope. Effective availability is the machin
 project setting AND the session setting; a narrower scope cannot enable a machine-disabled server.
 Both scope mutations return the resolved MCP list for that context.
 
+## Connect an MCP client from outside Codevisor
+
+Any MCP client on the machine, such as Grok Build, Claude Desktop, or Cursor, can use the same
+gateway the agents in Codevisor get: the `execute` and `skills` tools, with Codevisor's agents,
+bots, machines, Browser Use, Computer Use, plugins, and skills behind them. Add Codevisor as a
+local stdio MCP server that runs:
+
+```bash
+codevisor mcp
+```
+
+For example, with Grok Build:
+
+```bash
+grok mcp add codevisor -- codevisor mcp
+```
+
+The Mac app installs the command at `~/.local/bin/codevisor`; give a client that full path when it
+doesn't search that folder. Pass `--project <name or id>` to include that project's plugins and skills and to make
+`agents.start` default to it. Pass `--port` when the server doesn't use its usual port.
+
+An outside client has no Codevisor chat, so it doesn't receive hidden event messages. It follows
+the agents it starts with `agents.wait` and `agents.status`, and background jobs with `jobs.wait`.
+`agents.start` needs `harness` (from `harnesses.list`) and, without `--project`, a `project` or
+`checkout: "none"`. The connection reconnects by itself when the Codevisor server restarts.
+
+`codevisor mcp` opens its gateway with `POST /v1/mcp-gateways`. Any process that can run it has
+the same access as the [connection token](/docs/authentication) that `codevisor token` prints.
+
 ## Import harness-native MCPs
 
 1. Call `GET /v1/native-mcps` and present its `candidates` and per-harness scan results.

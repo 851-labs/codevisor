@@ -19,6 +19,7 @@ import { routeGitAuth } from "./routes/git-auth.js"
 import { routeHarnesses } from "./routes/harnesses.js"
 import { routeLinkPreviews } from "./routes/link-previews.js"
 import { routeMachineStats } from "./routes/machine-stats.js"
+import { routeMcpGateways } from "./routes/mcp-gateways.js"
 import { routeMachineMcps } from "./routes/mcp-machine.js"
 import { routeMcps, routeMcpScopes, routeNativeMcps } from "./routes/mcps.js"
 import { routeNetDirect } from "./routes/net-direct.js"
@@ -139,6 +140,7 @@ const resourceRouteFamilies: ReadonlyArray<RouteFamily> = [
   ({ services, config, request, response, url }) =>
     routeRoles(services, config, request, response, url),
   ({ services, request, response, url }) => routeFirstRun(services, request, response, url),
+  routeMcpGateways,
   ({ services, routeState, request, response, url }) =>
     routeMcps(services, request, response, url, routeState.oauthReturns),
   ({ services, request, response, url }) => routePluginCatalog(services, request, response, url),
