@@ -48,26 +48,13 @@ struct WorkspaceInspectorTask: Identifiable {
 
 struct WorkspaceInspectorTasksSection: View {
   let tasks: [WorkspaceInspectorTask]
-  let workspace: Workspace
-  let client: any CodevisorServerClienting
   @Binding var isExpanded: Bool
-  @Environment(AppEnvironment.self) private var environment
-  @State private var remote = WorkspaceInspectorRemoteTasks()
-
-  private var shown: [WorkspaceInspectorTask] { tasks + remote.tasks }
 
   var body: some View {
-    VStack(spacing: 0) {
-      if !shown.isEmpty {
-        WorkspaceInspectorCard(title: "Tasks", isExpanded: $isExpanded) {
-          ForEach(shown) { task in
-            WorkspaceInspectorTaskRow(task: task)
-          }
-        }
+    WorkspaceInspectorCard(title: "Tasks", isExpanded: $isExpanded) {
+      ForEach(tasks) { task in
+        WorkspaceInspectorTaskRow(task: task)
       }
-    }
-    .task(id: workspace.id) {
-      await remote.keepLoading(workspace: workspace, client: client, machines: environment.machines)
     }
   }
 }

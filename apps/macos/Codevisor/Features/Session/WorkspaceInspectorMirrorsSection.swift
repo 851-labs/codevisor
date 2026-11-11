@@ -5,44 +5,15 @@ import CodevisorUI
 import SwiftUI
 
 struct WorkspaceInspectorMirrorsSection: View {
-  let workspaceId: UUID
-  let client: any CodevisorServerClienting
+  let mirrors: [ServerWorkspaceMirror]
   @Binding var isExpanded: Bool
-
-  @State private var mirrors: [ServerWorkspaceMirror] = []
-
-  private static let refreshInterval = Duration.seconds(5)
+  let onRemove: (ServerWorkspaceMirror) -> Void
 
   var body: some View {
-    VStack(spacing: 0) {
-      if !mirrors.isEmpty {
-        WorkspaceInspectorCard(title: "Mirrors", isExpanded: $isExpanded) {
-          ForEach(mirrors) { mirror in
-            WorkspaceInspectorMirrorRow(mirror: mirror, onRemove: { remove(mirror) })
-          }
-        }
+    WorkspaceInspectorCard(title: "Mirrors", isExpanded: $isExpanded) {
+      ForEach(mirrors) { mirror in
+        WorkspaceInspectorMirrorRow(mirror: mirror, onRemove: { onRemove(mirror) })
       }
-    }
-    .task(id: workspaceId) { await keepLoading() }
-  }
-
-  private func keepLoading() async {
-    while !Task.isCancelled {
-      await load()
-      try? await Task.sleep(for: Self.refreshInterval)
-    }
-  }
-
-  private func load() async {
-    guard let loaded = try? await client.workspaceMirrors(workspaceId: workspaceId) else { return }
-    mirrors = loaded
-  }
-
-  private func remove(_ mirror: ServerWorkspaceMirror) {
-    mirrors.removeAll { $0.id == mirror.id }
-    Task {
-      try? await client.stopWorkspaceMirror(workspaceId: workspaceId, machineId: mirror.machine.machineId)
-      await load()
     }
   }
 }
