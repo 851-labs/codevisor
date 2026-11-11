@@ -316,7 +316,7 @@ nonisolated enum SidebarSelection: Hashable, Codable, Sendable {
 
   var owningMode: SidebarMode? {
     switch self {
-    case .bot: .chat
+    case .bot: .bots
     case .session, .workspace, .archivedWorkspace: .code
     case .newChat: nil
     }

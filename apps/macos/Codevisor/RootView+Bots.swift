@@ -24,7 +24,7 @@ extension RootView {
   }
 
   func openNewBot() {
-    sidebarMode = .chat
+    sidebarMode = .bots
     botEditor = .create
   }
 

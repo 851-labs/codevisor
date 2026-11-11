@@ -28,7 +28,7 @@ enum ShortcutID: String, CaseIterable, Identifiable, Sendable {
   case focusSplitAbove
   case focusSplitBelow
 
-  case switchToChat
+  case switchToBots
   case switchToCode
   case toggleSidebar
   case toggleInspector
@@ -114,7 +114,7 @@ enum ShortcutCatalog {
     case .previousSplit, .nextSplit, .splitLeft, .splitRight, .splitUp, .splitDown, .focusSplitLeft, .focusSplitRight,
       .focusSplitAbove, .focusSplitBelow:
       splitDefinition(for: id)
-    case .switchToChat, .switchToCode, .toggleSidebar, .toggleInspector, .commandPalette, .toggleDebugOverlay:
+    case .switchToBots, .switchToCode, .toggleSidebar, .toggleInspector, .commandPalette, .toggleDebugOverlay:
       viewDefinition(for: id)
     case .browserZoomIn, .browserZoomOut, .browserResetZoom:
       browserDefinition(for: id)
@@ -169,7 +169,7 @@ enum ShortcutCatalog {
     case .archiveWorkspace:
       ShortcutDefinition(
         .archiveWorkspace, "Archive Workspace", ShortcutCombo("a", [.command, .shift]), category: .chats,
-        context: "Archives the workspace on screen, or the selected bot in Chat mode")
+        context: "Archives the workspace on screen, or the selected bot in Bots")
     default:
       preconditionFailure("\(id) is not a chat shortcut")
     }
@@ -253,9 +253,9 @@ enum ShortcutCatalog {
 
   private static func viewDefinition(for id: ShortcutID) -> ShortcutDefinition {
     switch id {
-    case .switchToChat:
+    case .switchToBots:
       ShortcutDefinition(
-        .switchToChat, "Switch to Chat", ShortcutCombo(.leftArrow, [.command, .option]), category: .view,
+        .switchToBots, "Switch to Bots", ShortcutCombo(.leftArrow, [.command, .option]), category: .view,
         context: "While Bots is on")
     case .switchToCode:
       ShortcutDefinition(
@@ -264,7 +264,7 @@ enum ShortcutCatalog {
     case .toggleSidebar:
       ShortcutDefinition(
         .toggleSidebar, "Show/Hide Sidebar", ShortcutCombo("b", .command), category: .view,
-        context: "In Chat and Code")
+        context: "In Bots and Code")
     case .toggleInspector:
       ShortcutDefinition(
         .toggleInspector, "Show/Hide Inspector", ShortcutCombo("b", [.command, .option]), category: .view,

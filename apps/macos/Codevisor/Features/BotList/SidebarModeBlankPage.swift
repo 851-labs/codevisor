@@ -9,7 +9,7 @@ struct SidebarModeBlankPage<CodePage: View>: View {
   @ViewBuilder let codePage: () -> CodePage
 
   var body: some View {
-    if SidebarMode.active(storedMode, botsEnabled: botsEnabled) == .chat {
+    if SidebarMode.active(storedMode, botsEnabled: botsEnabled) == .bots {
       BotListEmptyDetail(onNewBot: onNewBot)
     } else {
       codePage()

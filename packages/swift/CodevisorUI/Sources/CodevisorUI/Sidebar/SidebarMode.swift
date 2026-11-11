@@ -1,5 +1,5 @@
 public enum SidebarMode: String, CaseIterable, Codable, Sendable {
-  case chat
+  case bots = "chat"
   case code
 
   public static let preferenceKey = "sidebar.mode"
@@ -10,7 +10,7 @@ public enum SidebarMode: String, CaseIterable, Codable, Sendable {
 
   public var title: String {
     switch self {
-    case .chat: "Chat"
+    case .bots: "Bots"
     case .code: "Code"
     }
   }

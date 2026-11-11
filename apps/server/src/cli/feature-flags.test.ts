@@ -24,7 +24,7 @@ const world = (routes: Record<string, Answer>) => {
   return { deps, logs, errors, requests }
 }
 
-const bots = { id: "bots", title: "Bots", description: "Adds a Chat mode.", enabled: true }
+const bots = { id: "bots", title: "Bots", description: "Adds a Bots mode.", enabled: true }
 const gmail = {
   id: "gmailPlugin",
   title: "Gmail Plugin",
@@ -38,7 +38,7 @@ describe("codevisor flags", () => {
       "GET /v1/feature-flags": { status: 200, body: { flags: [bots, gmail] } }
     })
     expect(await flagsListCommand(deps)).toBe(0)
-    expect(logs).toEqual(["bots         on   Adds a Chat mode.", "gmailPlugin  off  Shows Gmail."])
+    expect(logs).toEqual(["bots         on   Adds a Bots mode.", "gmailPlugin  off  Shows Gmail."])
   })
 
   it("turns a flag off through the server", async () => {

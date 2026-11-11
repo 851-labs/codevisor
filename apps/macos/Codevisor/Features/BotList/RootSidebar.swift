@@ -68,7 +68,7 @@ struct RootSidebar: View {
   @ViewBuilder
   private func modeList(_ mode: SidebarMode) -> some View {
     switch mode {
-    case .chat:
+    case .bots:
       BotListSidebar(
         selection: listSelection(for: mode), botEditor: $botEditor, store: store,
         publishesSceneActions: publishesSceneActions

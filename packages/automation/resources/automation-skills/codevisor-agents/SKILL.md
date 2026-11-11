@@ -248,7 +248,7 @@ If `context.current()` has a `parentAgentId` and you are blocked, ask your paren
 
 ## Bots
 
-A **bot** is a Codevisor chat with its own folder and read-only checkouts of one or more projects. It shows in the sidebar's Chat mode.
+A **bot** is a Codevisor chat with its own folder and read-only checkouts of one or more projects. It shows in the sidebar's Bots mode.
 
 | To                                   | Call                                                                                    |
 | ------------------------------------ | --------------------------------------------------------------------------------------- |
