@@ -5,7 +5,7 @@ public enum Motion {
 
   public static let listReflowDuration = 0.2
 
-  public static let meterDuration = 0.4
+  private static let meterDuration = 0.4
 
   public static func entrance(reduceMotion: Bool = false) -> Animation? {
     reduceMotion ? nil : .smooth(duration: 0.2)

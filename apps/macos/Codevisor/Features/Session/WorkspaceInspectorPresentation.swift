@@ -17,9 +17,13 @@ struct WorkspaceInspectorPresentation: ViewModifier {
   }
 
   private struct RefreshKey: Equatable {
+    let shown: ShownView
+    let activity: Date?
+  }
+
+  private struct ShownView: Equatable {
     let workspaceId: UUID
     let tab: WorkspaceInspectorTab
-    let activity: Date?
     let usageChatId: UUID?
     let usageAccount: WorkspaceInspectorUsageModel.Account?
   }
@@ -39,6 +43,7 @@ struct WorkspaceInspectorPresentation: ViewModifier {
   @State private var fileTree = WorkspaceInspectorFileTreeModel()
   @State private var imageStores = WorkspaceInspectorImageStores()
   @State private var usage = WorkspaceInspectorUsageModel()
+  @State private var lastRefresh: RefreshKey?
   let store: SessionStore?
   @Binding var selection: SidebarSelection?
   var idealInspectorWidth: CGFloat = 260
@@ -48,6 +53,7 @@ struct WorkspaceInspectorPresentation: ViewModifier {
     let showsDrawer = inspected != nil && !panelLayout.docksInspector && panelLayout.activeDrawer == .trailing
     let isVisible = panelLayout.docksInspector ? isPresented : showsDrawer
     let visibleTab = inspected.map { shownTab(for: $0) } ?? tab
+    let refresh = inspected.flatMap { isVisible ? refreshKey(for: $0) : nil }
     content
       .inspector(
         isPresented: Binding(
@@ -56,7 +62,7 @@ struct WorkspaceInspectorPresentation: ViewModifier {
         )
       ) {
         if let store, let inspected {
-          inspectorView(store, inspected, isVisible: panelLayout.docksInspector && isVisible)
+          inspectorView(store, inspected)
             .inspectorColumnWidth(min: 220, ideal: idealInspectorWidth, max: 400)
             .toolbar {
               ToolbarSpacer(.flexible)
@@ -72,17 +78,19 @@ struct WorkspaceInspectorPresentation: ViewModifier {
       .overlay {
         AdaptiveDrawerLayer(isPresented: showsDrawer, edge: .trailing, width: min(300, panelLayout.windowWidth - 16)) {
           if let store, let inspected {
-            inspectorView(store, inspected, isVisible: showsDrawer)
+            inspectorView(store, inspected)
           }
         }
       }
-      .task(id: inspected.flatMap { isVisible ? refreshKey(for: $0) : nil }) {
+      .task(id: refresh) {
+        let isSameView = lastRefresh?.shown == refresh?.shown
+        lastRefresh = refresh
         guard let inspected, isVisible else { return }
-        await reload(inspected)
+        await reload(inspected, animatesUsage: isSameView)
         guard visibleTab == .harness, harnessChat(for: inspected) != nil else { return }
         while true {
           do { try await Task.sleep(for: Self.usageRefreshInterval) } catch { return }
-          await reloadUsage(inspected)
+          await reloadUsage(inspected, animated: true)
         }
       }
       .task(id: isVisible && visibleTab == .harness ? usageAccounts : nil) {
@@ -115,7 +123,7 @@ struct WorkspaceInspectorPresentation: ViewModifier {
     }
   }
 
-  private func inspectorView(_ store: SessionStore, _ inspected: Inspected, isVisible: Bool) -> some View {
+  private func inspectorView(_ store: SessionStore, _ inspected: Inspected) -> some View {
     let workspace = inspected.workspace
     let chat = harnessChat(for: inspected)
     let bot = botsEnabled ? environment.bots.bot(forWorkspace: workspace.id, serverId: workspace.serverId) : nil
@@ -155,14 +163,13 @@ struct WorkspaceInspectorPresentation: ViewModifier {
           MachineDesktopWindows.shared.present(desktop, machineId: workspace.serverId, environment: environment)
         }
       },
-      onReload: { Task { await reload(inspected) } },
+      onReload: { Task { await reload(inspected, animatesUsage: true) } },
       onOpen: { destination in
         store.inspectorOpenRequest = WorkspaceInspectorOpenRequest(
           workspaceId: workspace.id, destination: destination)
       }
     )
     .environment(\.attachmentImages, imageStores.store(for: workspace.serverId, environment: environment))
-    .environment(\.isWorkspaceInspectorVisible, isVisible)
   }
 
   private func mainChatTasks(of workspace: Workspace, store: SessionStore) -> [WorkspaceInspectorTask] {
@@ -176,12 +183,13 @@ struct WorkspaceInspectorPresentation: ViewModifier {
   private func refreshKey(for inspected: Inspected) -> RefreshKey {
     let tab = shownTab(for: inspected)
     let usageChat = tab == .harness ? harnessChat(for: inspected) : nil
-    return RefreshKey(
-      workspaceId: inspected.workspace.id, tab: tab, activity: activity(in: inspected.workspace),
-      usageChatId: usageChat?.id, usageAccount: usageChat.map(WorkspaceInspectorUsageModel.Account.init))
+    let shown = ShownView(
+      workspaceId: inspected.workspace.id, tab: tab, usageChatId: usageChat?.id,
+      usageAccount: usageChat.map(WorkspaceInspectorUsageModel.Account.init))
+    return RefreshKey(shown: shown, activity: activity(in: inspected.workspace))
   }
 
-  private func reload(_ inspected: Inspected) async {
+  private func reload(_ inspected: Inspected, animatesUsage: Bool) async {
     let workspace = inspected.workspace
     let client = environment.machines.client(for: workspace.serverId)
     let tab = shownTab(for: inspected)
@@ -193,7 +201,7 @@ struct WorkspaceInspectorPresentation: ViewModifier {
     case .info, .media, .links:
       await media.reload(tab, workspaceId: workspace.id, client: client)
     case .harness:
-      await reloadUsage(inspected)
+      await reloadUsage(inspected, animated: animatesUsage)
     case .machine:
       break
     }
@@ -220,9 +228,9 @@ struct WorkspaceInspectorPresentation: ViewModifier {
     } ?? inspected.chat
   }
 
-  private func reloadUsage(_ inspected: Inspected) async {
+  private func reloadUsage(_ inspected: Inspected, animated: Bool) async {
     guard let chat = harnessChat(for: inspected) else { return }
-    await usage.reload(chat, client: environment.machines.client(for: chat.serverId))
+    await usage.reload(chat, client: environment.machines.client(for: chat.serverId), animated: animated)
   }
 
   private var usageCandidates: [ChatSession] {

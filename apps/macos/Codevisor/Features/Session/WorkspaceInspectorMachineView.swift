@@ -40,16 +40,26 @@ struct WorkspaceInspectorMachineView: View {
 
   private func pollStats() async {
     guard isActive else { return }
-    let serverId = serverId
-    while !Task.isCancelled {
-      if let milliseconds = await Self.measureLatency(client), !Task.isCancelled {
-        latency = (serverId, milliseconds)
-      }
-      if let latest = try? await client.machineStats(), !Task.isCancelled {
-        stats = (serverId, latest)
-      }
-      try? await Task.sleep(for: WorkspaceInspectorMachineSection.refreshInterval)
+    await refreshStats(animated: false)
+    while await waitForNextRefresh() {
+      await refreshStats(animated: true)
     }
+  }
+
+  private func refreshStats(animated: Bool) async {
+    let serverId = serverId
+    let milliseconds = await Self.measureLatency(client)
+    let latest = try? await client.machineStats()
+    guard !Task.isCancelled else { return }
+
+    withTransaction(\.disablesAnimations, !animated) {
+      if let milliseconds { latency = (serverId, milliseconds) }
+      if let latest { stats = (serverId, latest) }
+    }
+  }
+
+  private func waitForNextRefresh() async -> Bool {
+    (try? await Task.sleep(for: WorkspaceInspectorMachineSection.refreshInterval)) != nil
   }
 
   @concurrent

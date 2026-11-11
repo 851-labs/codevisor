@@ -44,8 +44,15 @@ struct WorkspaceInspectorView: View {
     var width: CGFloat = 0
     var contentWidth: CGFloat = 0
 
+    var isMeasured: Bool { width > 0 }
     var overflowsLeading: Bool { offset > 1 }
     var overflowsTrailing: Bool { offset + width < contentWidth - 1 }
+  }
+
+  private struct Subject: Equatable {
+    let workspaceId: UUID
+    let harnessChatId: UUID?
+    let tab: WorkspaceInspectorTab
   }
 
   private struct SubscriptionsKey: Equatable {
@@ -80,6 +87,7 @@ struct WorkspaceInspectorView: View {
       }
     }
     .frame(maxWidth: .infinity, maxHeight: .infinity)
+    .withoutAnimation(onChangeOf: Subject(workspaceId: workspace.id, harnessChatId: harnessChat?.id, tab: tab))
     .scrollEdgeEffectStyle(.soft, for: .top)
     .onChange(of: tab, initial: true) { _, selected in visited.insert(selected) }
     .safeAreaBar(edge: .top, spacing: 0) {
@@ -119,6 +127,7 @@ struct WorkspaceInspectorView: View {
         tabOverflowChevron(.trailing, isActive: tabViewport.overflowsTrailing)
       }
       .animation(.easeOut(duration: 0.2), value: [tabViewport.overflowsLeading, tabViewport.overflowsTrailing])
+      .withoutAnimation(onChangeOf: tabViewport.isMeasured)
     }
   }
 
@@ -308,10 +317,9 @@ struct WorkspaceInspectorView: View {
           WorkspaceInspectorUsageSection(limits: limits, isExpanded: expansion("Usage"))
         }
 
-        if let harnessChat {
+        if harnessChat != nil {
           WorkspaceInspectorContextSection(
-            context: chatContexts[harnessChat.id] ?? lastLoadedChatId.flatMap { chatContexts[$0] }, usage: chatUsage,
-            isExpanded: expansion("Context"))
+            context: harnessContext, usage: chatUsage, isExpanded: expansion("Context"))
         }
       }
       .padding(.vertical, 10)
@@ -323,10 +331,17 @@ struct WorkspaceInspectorView: View {
     ) {
       guard let harnessChat else { return }
       let context = try? await client.sessionContext(id: harnessChat.id)
-      guard !Task.isCancelled else { return }
-      if let context { chatContexts[harnessChat.id] = context }
+      guard !Task.isCancelled, let context else { return }
+
+      withTransaction(\.disablesAnimations, lastLoadedChatId != harnessChat.id) {
+        chatContexts[harnessChat.id] = context
+      }
       lastLoadedChatId = harnessChat.id
     }
+  }
+
+  private var harnessContext: ServerSessionContext? {
+    harnessChat.flatMap { chatContexts[$0.id] }
   }
 
   private func detail(_ title: String, icon: Image, value: String) -> some View {
