@@ -16,7 +16,7 @@ struct UserBubbleRow: View {
         attributedText: NSAttributedString(
           string: message.text,
           attributes: [
-            .font: UIFont.preferredFont(forTextStyle: .body),
+            .font: BodyTextMetrics.font,
             .foregroundColor: UIColor(style.text),
           ]
         ),

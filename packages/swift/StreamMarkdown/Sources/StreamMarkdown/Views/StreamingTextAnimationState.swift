@@ -102,6 +102,7 @@ final class StreamingTextAnimationState {
 
   private var sourceID: String?
   private var documentSource = ""
+  private var segmentation = StreamingWordSegmentation()
   private var words: [Word] = []
   private weak var timeline: StreamingTextAnimationTimeline?
 
@@ -127,7 +128,7 @@ final class StreamingTextAnimationState {
     }
     timeline = context.timeline
 
-    let ranges = StreamingWordSegmenter.segments(in: base.string)
+    let ranges = segmentation.segments(for: base.string)
     let sourceIsAppendOnly = context.documentSource.utf8.starts(with: documentSource.utf8)
     let oldWords = words
     var nextWords: [Word] = []
@@ -266,6 +267,7 @@ final class StreamingTextAnimationState {
     timeline?.discard(words.map(\.fade), at: now)
     sourceID = nil
     documentSource = ""
+    segmentation.reset()
     words = []
     timeline = nil
   }

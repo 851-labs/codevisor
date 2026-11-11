@@ -129,6 +129,14 @@ final class TranscriptRowHost: UIView {
     TranscriptSendLayerAnimations.removeAll(from: layer)
   }
 
+  func prepareForReuse() {
+    representedRow = nil
+    onMeasuredHeight = nil
+    contentController.installRootView(AnyView(EmptyView()))
+    resetReportedContentHeight()
+    TranscriptSendLayerAnimations.removeAll(from: layer)
+  }
+
   func requestContentMeasurement(forceReport: Bool = true) {
     contentController.invalidateContentSize(forceReport: forceReport)
   }

@@ -5,17 +5,14 @@ struct UnsentBotMessage: Equatable {
   let afterSequence: Int?
 }
 
-struct DeliveredBotMessage: Equatable {
-  let sequence: Int
-  let message: TranscriptBotMessage
-}
-
 enum BotConversationTimeline {
-  static func messages(delivered: [DeliveredBotMessage], unsent: [UnsentBotMessage]) -> [TranscriptBotMessage] {
-    let slots = Dictionary(grouping: unsent) { slot(of: $0, among: delivered) }
+  static func messages(delivered log: BotMessageLog, unsent: [UnsentBotMessage]) -> [TranscriptBotMessage] {
+    guard !unsent.isEmpty else { return log.messages }
+
+    let slots = Dictionary(grouping: unsent) { slot(of: $0, among: log.sequences) }
     var messages = (slots[0] ?? []).map(\.message)
-    for (index, entry) in delivered.enumerated() {
-      messages.append(entry.message)
+    for (index, message) in log.messages.enumerated() {
+      messages.append(message)
       messages += (slots[index + 1] ?? []).map(\.message)
     }
     return messages
@@ -36,9 +33,16 @@ enum BotConversationTimeline {
     return merged
   }
 
-  private static func slot(of entry: UnsentBotMessage, among delivered: [DeliveredBotMessage]) -> Int {
-    guard let anchor = entry.afterSequence else { return delivered.count }
-    return delivered.prefix { $0.sequence <= anchor }.count
+  private static func slot(of entry: UnsentBotMessage, among sequences: [Int]) -> Int {
+    guard let anchor = entry.afterSequence else { return sequences.count }
+
+    var low = 0
+    var high = sequences.count
+    while low < high {
+      let middle = (low + high) / 2
+      if sequences[middle] <= anchor { low = middle + 1 } else { high = middle }
+    }
+    return low
   }
 
   private static func delivering(

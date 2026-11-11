@@ -118,7 +118,7 @@ enum TranscriptWorkedSectionProjection {
   ) {
     let sourceID = "worked:\(kind.layoutComponent):\(entryID)"
     let blocks = TranscriptMarkdownParseCache.shared.parse(
-      markdown, messageID: message.id, sourceID: sourceID
+      markdown, messageID: message.id, sourceID: sourceID, isReceiving: lifecycle == .receiving
     )
     let chunks = TranscriptMarkdownChunkProjection.chunks(from: blocks)
     for (chunkIndex, chunk) in chunks.enumerated() {

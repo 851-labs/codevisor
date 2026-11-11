@@ -11,6 +11,7 @@
     private let renderMemo = MarkdownTableRenderMemo()
     private var measuredWidth: CGFloat = -1
     private var measuredHeight: CGFloat = 1
+    private let chrome: MarkdownBlockChrome
 
     init(
       headers: [MarkdownText],
@@ -18,8 +19,10 @@
       rows: [[MarkdownText]],
       theme: MarkdownTheme,
       linkAction: MarkdownLinkAction?,
-      imageLoader: MarkdownImageLoader = .remote
+      imageLoader: MarkdownImageLoader = .remote,
+      chrome: MarkdownBlockChrome = .standard
     ) {
+      self.chrome = chrome
       model = TableModel(
         headers: headers,
         alignments: alignments,
@@ -55,6 +58,7 @@
       ]
       tableView.update(model: model, renderMemo: renderMemo)
       bleedContainer.scrollView.setBorderColor(NSColor(theme.tableBorderColor))
+      bleedContainer.scrollView.setShowsBorder(chrome.drawsFrame)
       addSubview(bleedContainer)
       images.onChange = { [weak self] in self?.updateImages() }
       let sources = Set((headers + rows.flatMap { $0 }).flatMap(\.imageSources))
@@ -94,7 +98,8 @@
       if abs(measuredWidth - width) <= 0.25 { return measuredHeight }
       measuredWidth = width
       let layoutWidth = max(width, renderMemo.minimumWidth(for: model))
-      measuredHeight = max(1, renderMemo.size(for: model, width: layoutWidth).height)
+      let trailing = chrome.drawsFrame ? 0 : renderMemo.trailingBlank(for: model, width: layoutWidth)
+      measuredHeight = max(1, renderMemo.size(for: model, width: layoutWidth).height - trailing)
       return measuredHeight
     }
 

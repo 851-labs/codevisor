@@ -64,7 +64,7 @@
       ).map { $0 + padding }
       var heightsByWidth: [CGFloat: [CellKey: CGFloat]] = [:]
       var heights: [CGFloat] = []
-      let minimumHeight = UIFont.preferredFont(forTextStyle: .body).lineHeight
+      let minimumHeight = BodyTextMetrics.font.lineHeight
       for (row, rowKeys) in keys.enumerated() {
         try Task.checkCancellation()
         var height: CGFloat = 1

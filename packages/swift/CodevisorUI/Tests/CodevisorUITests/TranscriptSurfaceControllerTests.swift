@@ -107,4 +107,19 @@ struct TranscriptSurfaceControllerTests {
     #expect(adapter.events == ["retain", "refresh-changed"])
     #expect(controller.rowSet.rowByKey[first.layoutKey]?.content == .error("next"))
   }
+
+  @Test func removedRowsLeaveTheVirtualWindowWhenRowsChange() {
+    let controller = TranscriptSurfaceController()
+    let adapter = Adapter()
+    let kept = TranscriptVirtualRow(id: .message(UUID()), content: .error("kept"), estimatedHeight: 40)
+    let removed = TranscriptVirtualRow(id: .message(UUID()), content: .error("removed"), estimatedHeight: 40)
+    controller.applyRows([kept, removed], layoutChanged: false, adapter: adapter)
+    controller.virtualWindowHandoff.setTarget([kept.layoutKey, removed.layoutKey])
+    controller.virtualWindowHandoff.promoteIfReady { _ in true }
+
+    controller.applyRows([kept], layoutChanged: false, adapter: adapter)
+
+    #expect(controller.virtualWindowHandoff.targetKeys == [kept.layoutKey])
+    #expect(controller.virtualWindowHandoff.presentedKeys == [kept.layoutKey])
+  }
 }

@@ -76,7 +76,6 @@ extension VirtualizedTranscriptScrollView {
   func reconcileVirtualWindow(
     rangeOverride: Range<Int>?
   ) -> (mountPlan: TranscriptVirtualWindowMountPlan, targetChanged: Bool) {
-    virtualWindowHandoff.retainOnlyValidKeys { rowByKey[$0] != nil }
     let observedScrollDelta = rangeOverride == nil ? pendingWindowScrollDelta : 0
     pendingWindowScrollDelta = 0
     let projectedScrollDelta =
@@ -176,7 +175,14 @@ extension VirtualizedTranscriptScrollView {
       )
     }
 
+    if let part = nativeBotPart(for: row) {
+      return mountNativeBotPart(
+        part, row: row, at: index, requiresImmediatePresentation: requiresImmediatePresentation)
+    }
+    if remountParkedHost(for: row, at: index) { return true }
+
     let host = hostPool.takeHostedRow() ?? TranscriptRowHost(frame: .zero)
+    host.representedRow = row
     host.prepareForMountedRow()
     observeRowPresentation(host, for: key)
     transcriptDocumentView.addSubview(host)
@@ -191,20 +197,37 @@ extension VirtualizedTranscriptScrollView {
       )
       return true
     }
-    let rootView = measuredRootView(for: row)
-    let knownHeight: CGFloat? =
-      if row.id.isCacheableSettledRow,
-        let measuredHeight = measurements[key],
-        !measurements.isStale(key)
-      {
-        measuredHeight
-      } else {
-        nil
-      }
-    host.installRootView(rootView, knownHeight: knownHeight)
+    host.installRootView(measuredRootView(for: row), knownHeight: settledMeasuredHeight(of: row))
     if requiresImmediatePresentation {
       host.prepareForImmediatePresentation()
     }
+    sendTransitions.hostDidMount(host, key: key)
+    return true
+  }
+
+  func settledMeasuredHeight(of row: TranscriptVirtualRow) -> CGFloat? {
+    let key = row.layoutKey
+    guard row.id.isCacheableSettledRow, !measurements.isStale(key) else { return nil }
+
+    return measurements[key]
+  }
+
+  func remountParkedHost(for row: TranscriptVirtualRow, at index: Int) -> Bool {
+    let key = row.layoutKey
+    guard let host = hostPool.takeParked(for: key) else { return false }
+    guard host.representedRow?.content == row.content,
+      host.representedRow?.measurementRevision == row.measurementRevision,
+      abs(host.parkedLayoutWidth - effectiveRowWidth) <= 0.5
+    else {
+      hostPool.retire(host)
+      return false
+    }
+
+    observeRowPresentation(host, for: key)
+    transcriptDocumentView.addSubview(host)
+    mountedHosts[key] = host
+    position(host: host, at: index)
+    host.syncContentWidth()
     sendTransitions.hostDidMount(host, key: key)
     return true
   }
@@ -382,8 +405,20 @@ extension VirtualizedTranscriptScrollView {
       )
       hostPool.recycle(evicted)
     } else if let hosted = host as? TranscriptRowHost {
-      hostPool.retire(hosted)
+      parkOrRetire(hosted, for: key)
+    } else {
+      storeDetachedBotPart(host, for: key)
     }
+  }
+
+  func parkOrRetire(_ host: TranscriptRowHost, for key: String) {
+    guard host.isPresentationReady, rowByKey[key]?.id.isCacheableSettledRow == true else {
+      hostPool.retire(host)
+      return
+    }
+
+    host.parkedLayoutWidth = effectiveRowWidth
+    hostPool.park(host, for: key)
   }
 
   func refreshMountedRootViews() {
@@ -410,14 +445,13 @@ extension VirtualizedTranscriptScrollView {
         else { continue }
       }
 
-      let wantsNativeMarkdown = usesNativeMarkdownHost(for: row)
-      let isNativeMarkdown = host is TranscriptMarkdownRowHost
+      let rendererMatches = renderer(for: row) == renderer(of: host)
       let preservesLiveMarkdownHost = preservesLiveMarkdownHost(
         host: host,
         previous: previousRowsByKey?[key],
         current: row
       )
-      guard wantsNativeMarkdown == isNativeMarkdown || preservesLiveMarkdownHost else {
+      guard rendererMatches || preservesLiveMarkdownHost else {
         invalidateMeasurementForRendererTransition(key)
         replacementKeys.append(key)
         continue
@@ -441,7 +475,10 @@ extension VirtualizedTranscriptScrollView {
           knownHeight: knownHeight
         )
       } else if let hosted = host as? TranscriptRowHost {
+        hosted.representedRow = row
         hosted.rootView = measuredRootView(for: row)
+      } else {
+        refreshNativeBotPart(host, for: row)
       }
     }
 

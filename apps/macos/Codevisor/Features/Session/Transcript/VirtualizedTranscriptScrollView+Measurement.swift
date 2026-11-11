@@ -113,13 +113,7 @@ extension VirtualizedTranscriptScrollView {
         virtualLayout.renderedRange(anchorKey: $0.anchorKey, count: $0.count)
       }
 
-      let width = max(1, contentView.bounds.width)
-      transcriptDocumentView.frame = CGRect(
-        x: 0,
-        y: 0,
-        width: width,
-        height: documentHeight(rowsHeight: virtualLayout.totalHeight)
-      )
+      resizeDocumentView(absorbingChangeFrom: previousLayout, previousDistance: previousDistance)
       positionPaginationLoadingIndicator()
       let firstChangedIndex = changedHeights?.keys.compactMap {
         virtualLayout.indexByKey[$0]
@@ -264,6 +258,7 @@ extension VirtualizedTranscriptScrollView {
       return
     }
     pendingMeasuredHeights[key] = height
+    transcriptDocumentView.needsLayout = true
 
     if presentationDisplayLink != nil, !inLiveResize {
       requestDisplayFrame()
@@ -275,6 +270,13 @@ extension VirtualizedTranscriptScrollView {
       guard !Task.isCancelled else { return }
       self?.commitPendingMeasurements()
     }
+  }
+
+  func commitMeasurementsInLayoutPass() {
+    guard !pendingMeasuredHeights.isEmpty, !inLiveResize else { return }
+
+    measurementCommitTask?.cancel()
+    commitPendingMeasurements()
   }
 
   func settleMountedRowHeights() {

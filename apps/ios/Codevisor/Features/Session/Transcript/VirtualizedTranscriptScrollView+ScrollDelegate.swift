@@ -52,6 +52,8 @@ extension VirtualizedTranscriptScrollView {
     if initialPositionApplied {
       if isUserMovement {
         requestMountedRowsUpdate()
+      } else if isApplyingPosition {
+        mountsAfterPositionChange = true
       } else {
         updateMountedRows()
       }

@@ -115,6 +115,8 @@ public final class TranscriptSurfaceController {
       adapter.invalidateChangedMeasurements(previousRowsByKey: rowSet.rowByKey, newRows: rows)
     }
     let previous = rowSet.replaceRows(rows)
+    let rowByKey = rowSet.rowByKey
+    virtualWindowHandoff.retainOnlyValidKeys { rowByKey.index(forKey: $0) != nil }
     adapter.reconcileRetainedHosts(previousRowsByKey: previous, layoutChanged: layoutChanged)
     if geometryChanged {
       adapter.activateMeasurementCacheIfNeeded()

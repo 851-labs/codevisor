@@ -29,7 +29,7 @@ extension SessionModel {
     harnessAuthenticationErrorMessage = nil
 
     if presentsBotConversation {
-      await sendOutgoing(message, delivery: nil, afterBotSequence: botMessages.last?.sequence)
+      await sendOutgoing(message, delivery: nil, afterBotSequence: botLog.lastSequence)
       return
     }
 

@@ -37,6 +37,10 @@ extension SessionController {
     return project.folderURL
   }
 
+  var sessionCwdPath: String {
+    serverSession?.cwd ?? sessionCwdOverride ?? project.folderURL.path
+  }
+
   public func retrySessionFailure() async {
     if case .failed = status, hasExistingAgentSession {
       if let failedModel = model, failedModel !== cachedTranscriptModel {

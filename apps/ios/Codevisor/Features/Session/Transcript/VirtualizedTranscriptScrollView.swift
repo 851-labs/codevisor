@@ -94,6 +94,7 @@ final class VirtualizedTranscriptScrollView: UIScrollView, UIScrollViewDelegate 
   var reduceMotion = false
 
   var positionApplicationDepth = 0
+  var mountsAfterPositionChange = false
   var isApplyingPosition: Bool {
     positionApplicationDepth > 0
   }
@@ -260,6 +261,11 @@ final class VirtualizedTranscriptScrollView: UIScrollView, UIScrollViewDelegate 
     didSet {
       pinBottomThroughResize(from: oldValue)
     }
+  }
+
+  override func layoutSublayers(of layer: CALayer) {
+    super.layoutSublayers(of: layer)
+    commitMeasurementsInLayoutPass()
   }
 
   override func layoutSubviews() {

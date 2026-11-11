@@ -156,7 +156,7 @@ final class TranscriptMarkdownRowDecoration: NSView {
       }
     }
 
-    let bodyFont = NSFont.preferredFont(forTextStyle: .body)
+    let bodyFont = BodyTextMetrics.font
     for marker in fragment.listMarkers {
       let markerAttributes: [NSAttributedString.Key: Any] = [
         .font: MarkdownList.isBullet(marker.text) ? NSFont.boldSystemFont(ofSize: bodyFont.pointSize) : bodyFont,

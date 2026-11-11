@@ -137,6 +137,7 @@ final class VirtualizedTranscriptScrollView: NSScrollView {
   }
   var userInputDeadline: TimeInterval = 0
   var lastDistanceFromBottom: CGFloat = 0
+  var bottomSlack = TranscriptBottomSlack()
   var lastBottomState: Bool?
   var lastViewportSize: CGSize = .zero
   var lastViewportDistanceFromBottom: CGFloat = 0

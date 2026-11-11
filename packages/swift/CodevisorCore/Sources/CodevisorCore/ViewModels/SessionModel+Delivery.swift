@@ -170,7 +170,7 @@ extension SessionModel {
 
   private func serverShows(_ id: UUID) -> Bool {
     let key = id.uuidString.lowercased()
-    if presentsBotConversation { return botMessages.contains { $0.id.lowercased() == key } }
+    if presentsBotConversation { return botLog.contains(normalizedID: key) }
     return queuedPrompts.contains { $0.id.lowercased() == key }
       || settledConversation.contains { item in
         if case let .user(message) = item { return message.id == id }

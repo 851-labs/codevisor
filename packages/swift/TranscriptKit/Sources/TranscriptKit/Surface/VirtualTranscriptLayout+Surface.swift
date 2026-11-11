@@ -8,13 +8,17 @@ extension VirtualTranscriptLayout {
 
   public func contiguousRange(of keys: Set<String>) -> Range<Int>? {
     guard !keys.isEmpty else { return nil }
-    let indices = keys.compactMap { indexByKey[$0] }.sorted()
-    guard indices.count == keys.count,
-      let first = indices.first,
-      let last = indices.last,
-      last - first + 1 == indices.count
-    else { return nil }
-    return first..<(last + 1)
+
+    var lower = Int.max
+    var upper = Int.min
+    for key in keys {
+      guard let index = indexByKey[key] else { return nil }
+      lower = min(lower, index)
+      upper = max(upper, index)
+    }
+    guard upper - lower + 1 == keys.count else { return nil }
+
+    return lower..<(upper + 1)
   }
 
   public func renderedWindow(covering keys: Set<String>) -> (anchorKey: String, count: Int)? {

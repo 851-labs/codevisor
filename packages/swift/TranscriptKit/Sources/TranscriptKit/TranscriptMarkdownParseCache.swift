@@ -21,7 +21,7 @@ final class TranscriptMarkdownParseCache: @unchecked Sendable {
     self.entryLimit = max(0, entryLimit)
   }
 
-  func parse(_ source: String, messageID: UUID, sourceID: String) -> [MarkdownBlock] {
+  func parse(_ source: String, messageID: UUID, sourceID: String, isReceiving: Bool = false) -> [MarkdownBlock] {
     let key = Key(messageID: messageID, sourceID: sourceID)
     var parser = lock.withLock {
       let parser = entries.removeValue(forKey: key) ?? IncrementalMarkdownParser()
@@ -29,7 +29,7 @@ final class TranscriptMarkdownParseCache: @unchecked Sendable {
       order.removeAll { $0 == key }
       return parser
     }
-    let result = parser.parse(source)
+    let result = parser.parse(source, completingOpenTail: isReceiving)
     let cost = source.utf8.count * 4
     guard cost <= byteLimit, entryLimit > 0 else { return result }
     lock.withLock {
