@@ -9,7 +9,7 @@ import {
   type RouteState
 } from "../server-context.js"
 import { stringField } from "../unknown-values.js"
-import { conversationalBotForSession } from "./bot-turns.js"
+import { botForChat } from "./bot-turns.js"
 import type { FleetCall } from "./fleet-calls.js"
 
 export interface FleetSessionEvent {
@@ -68,7 +68,7 @@ const isBotHome = async (
   services: CodevisorServerServices,
   event: FleetSessionEvent
 ): Promise<boolean> => {
-  const bot = await conversationalBotForSession(services, event.sessionId)
+  const bot = await botForChat(services, event.sessionId)
   return bot?.id.toLowerCase() === event.botId.toLowerCase()
 }
 

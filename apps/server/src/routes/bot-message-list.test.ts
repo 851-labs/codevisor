@@ -1,4 +1,4 @@
-import { decode } from "@codevisor/api"
+import { decode, SessionSummary } from "@codevisor/api"
 import { Schema } from "effect"
 import { describe, expect, it } from "vitest"
 
@@ -8,9 +8,7 @@ import { createBot, decodeBot, endedTurns, setUp, type Running } from "./bot-tes
 const startBot = async () => {
   const running = await setUp()
   await running.addProject("api-project", "api")
-  const bot = decodeBot(
-    (await createBot(running, { projectIds: ["api-project"], conversational: true })).body
-  )
+  const bot = decodeBot((await createBot(running, { projectIds: ["api-project"] })).body)
   return { running, bot }
 }
 
@@ -59,14 +57,21 @@ describe("listing a bot's messages", () => {
     })
   })
 
-  it("refuses an unknown sender and a chat that isn't a conversational bot", async () => {
+  it("refuses an unknown sender and a chat that isn't a bot's", async () => {
     const { running, bot } = await startBot()
-    const plain = decodeBot((await createBot(running, { projectIds: ["api-project"] })).body)
+    const plain = decode(SessionSummary)(
+      (
+        await jsonRequest(running.server, "/v1/sessions", {
+          body: JSON.stringify({ projectId: "api-project", harnessId: "codex", title: "Plain" }),
+          method: "POST"
+        })
+      ).body
+    )
 
     const unknownSender = await list(running, bot.sessionId, "?sender=someone")
-    const notConversational = await list(running, plain.sessionId)
+    const notBot = await list(running, plain.id)
 
     expect(unknownSender.status).toBe(422)
-    expect(notConversational.status).toBe(403)
+    expect(notBot.status).toBe(403)
   })
 })

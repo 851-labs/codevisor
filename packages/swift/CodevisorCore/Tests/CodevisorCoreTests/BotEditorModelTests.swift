@@ -16,7 +16,7 @@ struct BotEditorModelTests {
     nextBotMascot: ServerBotMascot(color: "lilac", hat: "none", eyewear: "none")
   )
 
-  @Test("Editing a bot starts from its name, mascot, and conversation mode and only needs a name to save")
+  @Test("Editing a bot starts from its name and mascot and only needs a name to save")
   func editingNeedsOnlyAName() throws {
     let environment = AppEnvironment.preview(seedProjects: [], seedSessions: [])
     let bot = try #require(
@@ -25,7 +25,6 @@ struct BotEditorModelTests {
 
     #expect(editor.name == "Helper")
     #expect(editor.mascot == Self.crowned)
-    #expect(editor.mode == .transcript)
     #expect(editor.canSave)
     editor.name = "   "
     #expect(!editor.canSave)

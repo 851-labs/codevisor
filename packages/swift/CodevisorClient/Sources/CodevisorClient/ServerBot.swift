@@ -26,8 +26,6 @@ public struct ServerBot: Codable, Equatable, Hashable, Identifiable, Sendable {
   public var workspaceId: String
   public var rootPath: String
   public var projects: [ServerBotProject]
-  public var conversational: Bool?
-  public var mode: String?
   public var isArchived: Bool?
   public var createdAt: String
   public var updatedAt: String?
@@ -44,8 +42,6 @@ public struct ServerBot: Codable, Equatable, Hashable, Identifiable, Sendable {
     workspaceId: String,
     rootPath: String,
     projects: [ServerBotProject],
-    conversational: Bool? = nil,
-    mode: String? = nil,
     isArchived: Bool? = nil,
     createdAt: String,
     updatedAt: String? = nil
@@ -61,8 +57,6 @@ public struct ServerBot: Codable, Equatable, Hashable, Identifiable, Sendable {
     self.workspaceId = workspaceId
     self.rootPath = rootPath
     self.projects = projects
-    self.conversational = conversational
-    self.mode = mode
     self.isArchived = isArchived
     self.createdAt = createdAt
     self.updatedAt = updatedAt
@@ -77,8 +71,6 @@ public struct ServerCreateBotRequest: Encodable, Equatable, Sendable {
   public var harnessId: String
   public var configSelections: [String: String]?
   public var projectIds: [String]
-  public var conversational: Bool?
-  public var mode: String?
 
   public init(
     id: String? = nil,
@@ -87,9 +79,7 @@ public struct ServerCreateBotRequest: Encodable, Equatable, Sendable {
     mascot: ServerBotMascot? = nil,
     harnessId: String,
     configSelections: [String: String]? = nil,
-    projectIds: [String],
-    conversational: Bool? = nil,
-    mode: String? = nil
+    projectIds: [String]
   ) {
     self.id = id
     self.name = name
@@ -98,8 +88,6 @@ public struct ServerCreateBotRequest: Encodable, Equatable, Sendable {
     self.harnessId = harnessId
     self.configSelections = configSelections
     self.projectIds = projectIds
-    self.conversational = conversational
-    self.mode = mode
   }
 }
 
@@ -115,19 +103,14 @@ public struct ServerUpdateBotRequest: Encodable, Equatable, Sendable {
   public var name: String?
   public var symbolName: String?
   public var mascot: ServerBotMascot?
-  public var conversational: Bool?
-  public var mode: String?
   public var isArchived: Bool?
 
   public init(
-    name: String? = nil, symbolName: String? = nil, mascot: ServerBotMascot? = nil, conversational: Bool? = nil,
-    mode: String? = nil, isArchived: Bool? = nil
+    name: String? = nil, symbolName: String? = nil, mascot: ServerBotMascot? = nil, isArchived: Bool? = nil
   ) {
     self.name = name
     self.symbolName = symbolName
     self.mascot = mascot
-    self.conversational = conversational
-    self.mode = mode
     self.isArchived = isArchived
   }
 }

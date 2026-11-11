@@ -10,7 +10,7 @@ const openDatabase = async (): Promise<CodevisorDatabaseService> => {
   return db
 }
 
-const seedChat = async (db: CodevisorDatabaseService, conversational: boolean) => {
+const seedChat = async (db: CodevisorDatabaseService) => {
   const home = await run(db.createProject({ folderPath: botPath("helper"), name: "Helper" }))
   await run(
     db.createWorkspaceWithSession({
@@ -28,7 +28,6 @@ const seedChat = async (db: CodevisorDatabaseService, conversational: boolean) =
       projectId: home.id,
       sessionId: "chat-helper",
       workspaceId: "ws-helper",
-      mode: conversational ? "conversation" : "transcript",
       projects: []
     })
   )
@@ -87,7 +86,7 @@ const attention = async (db: CodevisorDatabaseService, sessionId: string) => {
 describe("bot conversation attention", () => {
   it("keeps a silent bot turn read and idle", async () => {
     const db = await openDatabase()
-    const chat = await seedChat(db, true)
+    const chat = await seedChat(db)
 
     await runTurn(db, chat)
 
@@ -103,7 +102,7 @@ describe("bot conversation attention", () => {
 
   it("makes each message the bot sends unread, with a preview of the latest, and clears it once read", async () => {
     const db = await openDatabase()
-    const chat = await seedChat(db, true)
+    const chat = await seedChat(db)
     const file: AttachmentRef = {
       fileId: "file-1",
       name: "notes.txt",
@@ -132,7 +131,7 @@ describe("bot conversation attention", () => {
 
   it("surfaces a failed turn only through the notice it posts", async () => {
     const db = await openDatabase()
-    const chat = await seedChat(db, true)
+    const chat = await seedChat(db)
 
     await runTurn(db, chat, { stopReason: "refusal", stopDetail: "Usage limit reached" })
     await run(db.appendEvent("session.error", chat, { message: "harness crashed" }))
@@ -149,14 +148,5 @@ describe("bot conversation attention", () => {
       hasUnreadError: false,
       latestBotMessage: { text: "Couldn't reply: harness crashed", attachmentNames: [] }
     })
-  })
-
-  it("leaves a bot chat outside conversation mode on turn attention", async () => {
-    const db = await openDatabase()
-    const chat = await seedChat(db, false)
-
-    await runTurn(db, chat)
-
-    expect(await attention(db, chat)).toMatchObject({ sidebarState: "unread", unreadCount: 1 })
   })
 })

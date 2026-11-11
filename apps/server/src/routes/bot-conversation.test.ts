@@ -41,16 +41,13 @@ const readsSteersAtNextStep = ({ agents }: Running): ReadonlyArray<string> => {
 const startBot = async () => {
   const running = await setUp()
   await running.addProject("api-project", "api")
-  const bot = decodeBot(
-    (await createBot(running, { projectIds: ["api-project"], conversational: true })).body
-  )
+  const bot = decodeBot((await createBot(running, { projectIds: ["api-project"] })).body)
   return { running, bot }
 }
 
 describe("bot conversations", () => {
   it("records the user's message at once and posts none of the bot's own replies", async () => {
     const { running, bot } = await startBot()
-    expect(bot.conversational).toBe(true)
     expect(readFileSync(join(bot.rootPath, "AGENTS.md"), "utf8")).toContain(
       "`machines.current.tools.codevisor.messages.send`"
     )
@@ -196,30 +193,6 @@ describe("bot conversations", () => {
       ["user", "prompt until cancelled"],
       ["user", "also do this"]
     ])
-  })
-
-  it("leaves a bot without conversation mode on the transcript and queue", async () => {
-    const running = await setUp()
-    await running.addProject("api-project", "api")
-    const bot = decodeBot((await createBot(running, { projectIds: ["api-project"] })).body)
-
-    await prompt(running, bot.sessionId, "prompt until cancelled")
-    await waitFor(() => running.agents.prompts.length === 1)
-    await jsonRequest(running.server, `/v1/sessions/${bot.sessionId}/prompt`, {
-      body: JSON.stringify({ text: "also do this", delivery: "queue" }),
-      method: "POST"
-    })
-    const sent = await jsonRequest(running.server, `/v1/sessions/${bot.sessionId}/messages`, {
-      body: JSON.stringify({ text: "hi" }),
-      method: "POST"
-    })
-
-    expect(bot.conversational).toBe(false)
-    expect(sent.status).toBe(403)
-    await waitFor(
-      async () => (await run(running.services.db.listPromptQueue(bot.sessionId))).length === 1
-    )
-    expect(await transcript(running, bot.sessionId)).toEqual([])
   })
 
   it("hands the bot a message from another agent without showing it in the conversation", async () => {

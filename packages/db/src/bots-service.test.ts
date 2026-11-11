@@ -45,7 +45,6 @@ const seedBot = async (db: CodevisorDatabaseService) => {
       projectId: home.id,
       sessionId: "chat-helper",
       workspaceId: "ws-helper",
-      mode: "conversation",
       projects: [
         { projectId: web.id, folderName: "web", branch: "codevisor/bot-helper" },
         { projectId: api.id, folderName: "api", branch: "codevisor/bot-helper" }
@@ -67,8 +66,6 @@ describe("bots service", () => {
       name: "Helper",
       symbolName: "sparkles",
       harnessId: "codex",
-      conversational: true,
-      mode: "conversation",
       projectId: home.id,
       sessionId: "chat-helper",
       workspaceId: "ws-helper",
@@ -426,33 +423,5 @@ describe("bot workspaces", () => {
     expect((await run(db.listBotMessages("chat-helper", undefined, 10))).messages).toEqual([
       message
     ])
-  })
-
-  it("leaves conversation mode off unless the bot asks for it", async () => {
-    useWorktreesRoot()
-    const db = await openDatabase()
-    const home = await run(db.createProject({ folderPath: botPath("quiet"), name: "Quiet" }))
-    await run(
-      db.createWorkspaceWithSession({
-        workspace: { id: "ws-quiet", projectId: home.id, name: "Quiet", hasCustomName: false },
-        session: { id: "chat-quiet", projectId: home.id, harnessId: "codex", title: "Quiet" }
-      })
-    )
-
-    const bot = await run(
-      db.createBot({
-        id: "bot-quiet",
-        name: "Quiet",
-        symbolName: "sparkles",
-        mascot: { color: "mint", hat: "none", eyewear: "none" },
-        slug: "quiet",
-        projectId: home.id,
-        sessionId: "chat-quiet",
-        workspaceId: "ws-quiet",
-        projects: []
-      })
-    )
-
-    expect(bot).toMatchObject({ conversational: false, mode: "transcript" })
   })
 })

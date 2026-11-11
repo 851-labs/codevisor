@@ -107,7 +107,7 @@ const turnFinishSql = {
          w.remote_bot_parent_session_id = s.parent_session_id
          or exists (
            select 1 from bots b
-           where b.session_id = s.parent_session_id collate nocase and b.conversational = 1
+           where b.session_id = s.parent_session_id collate nocase
          )
        )`,
   markFinished: `update session_attention set turn_end_state = 'finished'

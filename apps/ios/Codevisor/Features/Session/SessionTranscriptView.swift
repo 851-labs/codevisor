@@ -97,7 +97,7 @@ struct SessionTranscriptView: View {
   var userBubbleStyle: UserBubbleStyle { Self.bubbleStyle(for: controller) }
 
   private static func bubbleStyle(for controller: SessionController) -> UserBubbleStyle {
-    controller.presentsBotConversation || controller.presentsBubbleTranscript ? .accent : .standard
+    controller.presentsBotConversation ? .accent : .standard
   }
 
   var composerHeight: CGFloat {

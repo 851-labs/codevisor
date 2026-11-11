@@ -7,7 +7,6 @@ export interface BotRepository {
 
 export interface BotInstructionsSubject {
   readonly name: string
-  readonly conversational: boolean
   readonly repositories: ReadonlyArray<BotRepository>
 }
 
@@ -20,9 +19,9 @@ export const codevisorBlock = (subject: BotInstructionsSubject): string =>
     BLOCK_BEGIN,
     `# ${subject.name}`,
     ...roleSection,
-    ...(subject.conversational ? talkingSection : []),
+    ...talkingSection,
     ...repositoriesSection(subject.repositories),
-    ...delegatingSection(subject.conversational),
+    ...delegatingSection,
     BLOCK_END
   ].join("\n\n")
 
@@ -94,14 +93,20 @@ const repositoryLine = (repository: BotRepository): string =>
   `- \`${repository.folderName}/\`: ${repository.name} ` +
   `(from \`${repository.repoDir}\`, projectId \`${repository.projectId}\`)`
 
-const delegatingSection = (conversational: boolean): ReadonlyArray<string> => [
+const START_STEP =
+  '1. `machines.current.agents.start({ project: projectId, isolation: "worktree", title, prompt })`'
+
+const FOLLOW_UP_STEP =
+  "2. End your turn. When the agent finishes, Codevisor sends you a `<codevisor-event>` with its complete final reply"
+
+const delegatingSection: ReadonlyArray<string> = [
   "## Delegating work",
   paragraph(
     "Hand each task to a sub-agent with the Codevisor MCP's execute tool, on an isolated worktree of",
     "the repository it changes. Use the projectId above; this folder is not a project you can branch",
     "from. Read the `codevisor-agents` skill before you start your first agent."
   ),
-  [START_STEP, conversational ? EVENT_FOLLOW_UP_STEP : WAIT_FOLLOW_UP_STEP].join("\n"),
+  [START_STEP, FOLLOW_UP_STEP].join("\n"),
   bullets(
     paragraph(
       "Treat sub-agents as capable coworkers. Pass the user's request on nearly word for word,",
@@ -125,12 +130,3 @@ const delegatingSection = (conversational: boolean): ReadonlyArray<string> => [
     "Codevisor sidebar."
   )
 ]
-
-const START_STEP =
-  '1. `machines.current.agents.start({ project: projectId, isolation: "worktree", title, prompt })`'
-
-const WAIT_FOLLOW_UP_STEP =
-  "2. `machines.current.agents.status({ agentId })` or `machines.current.agents.wait({ agentIds })` to follow up"
-
-const EVENT_FOLLOW_UP_STEP =
-  "2. End your turn. When the agent finishes, Codevisor sends you a `<codevisor-event>` with its complete final reply"

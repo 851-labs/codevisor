@@ -31,18 +31,15 @@ public struct TranscriptProjectionOptions: Hashable, Sendable {
   public let includesConnectingRow: Bool
   public let bottomSpacerHeight: CGFloat?
   public let presentsBotConversation: Bool
-  public let presentsBubbleTranscript: Bool
 
   public init(
     includesConnectingRow: Bool,
     bottomSpacerHeight: CGFloat? = nil,
-    presentsBotConversation: Bool = false,
-    presentsBubbleTranscript: Bool = false
+    presentsBotConversation: Bool = false
   ) {
     self.includesConnectingRow = includesConnectingRow
     self.bottomSpacerHeight = bottomSpacerHeight
     self.presentsBotConversation = presentsBotConversation
-    self.presentsBubbleTranscript = presentsBubbleTranscript
   }
 }
 

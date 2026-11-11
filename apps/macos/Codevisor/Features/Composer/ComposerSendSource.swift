@@ -11,8 +11,7 @@ final class ComposerSendSource {
     SentAttachmentThumbnails.prepare(controller.composerAttachments)
     guard let textView, textView.window != nil else { return }
     let session = ObjectIdentifier(controller)
-    let style: UserBubbleStyle =
-      controller.presentsBotConversation || controller.presentsBubbleTranscript ? .accent : .standard
+    let style: UserBubbleStyle = controller.presentsBotConversation ? .accent : .standard
     TranscriptSendStaging.shared.stage(
       session: session,
       textView: textView,

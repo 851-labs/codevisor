@@ -50,8 +50,6 @@ export const makeBotsService = (
         branch: project.branch,
         path: `${rootPath}/${project.folder_name}`
       })),
-      conversational: row.conversational === 1,
-      mode: row.mode,
       isArchived: row.archived_at !== null,
       createdAt: row.created_at,
       ...(row.updated_at === null ? {} : { updatedAt: row.updated_at })
@@ -93,8 +91,6 @@ export const makeBotsService = (
               canonicalUuid(record.projectId),
               canonicalUuid(record.sessionId),
               canonicalUuid(record.workspaceId),
-              record.mode === "conversation" ? 1 : 0,
-              record.mode ?? "transcript",
               isoTimestamp()
             )
           const insertProject = sqlite.prepare(botProjectSql.insert)
@@ -127,8 +123,6 @@ export const makeBotsService = (
             mascot.hatColor,
             mascot.eyewear,
             mascot.eyewearColor,
-            (record.mode ?? current.mode) === "conversation" ? 1 : 0,
-            record.mode ?? current.mode,
             nextArchivedAt(record.isArchived, row),
             isoTimestamp(),
             current.id
@@ -283,11 +277,11 @@ const botSql = {
   insert: `insert into bots (
                 id, server_id, name, symbol_name, mascot_color, mascot_hat, mascot_hat_color,
                 mascot_eyewear, mascot_eyewear_color, slug, project_id, session_id, workspace_id,
-                conversational, mode, created_at
-              ) values (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+                created_at
+              ) values (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
   update: `update bots set name = ?, symbol_name = ?, mascot_color = ?, mascot_hat = ?,
-       mascot_hat_color = ?, mascot_eyewear = ?, mascot_eyewear_color = ?, conversational = ?,
-       mode = ?, archived_at = ?, updated_at = ? where id = ?`,
+       mascot_hat_color = ?, mascot_eyewear = ?, mascot_eyewear_color = ?,
+       archived_at = ?, updated_at = ? where id = ?`,
   touch: "update bots set updated_at = ? where id = ?",
   delete: "delete from bots where id = ?",
   owning: `${botSelect}

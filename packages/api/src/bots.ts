@@ -10,9 +10,6 @@ export const BotProject = Schema.Struct({
 })
 export type BotProject = typeof BotProject.Type
 
-export const BotMode = Schema.Literals(["transcript", "bubbles", "conversation"])
-export type BotMode = typeof BotMode.Type
-
 export const BotMascot = Schema.Struct({
   color: Schema.String,
   hat: Schema.String,
@@ -66,8 +63,6 @@ export const Bot = Schema.Struct({
   workspaceId: Schema.String,
   rootPath: Schema.String,
   projects: Schema.Array(BotProject),
-  conversational: Schema.Boolean,
-  mode: BotMode,
   isArchived: Schema.Boolean,
   createdAt: Schema.String,
   updatedAt: Schema.optional(Schema.String)
@@ -81,9 +76,7 @@ export const CreateBotRequest = Schema.Struct({
   mascot: Schema.optional(BotMascot),
   harnessId: Schema.String,
   configSelections: Schema.optional(Schema.Record(Schema.String, Schema.String)),
-  projectIds: Schema.Array(Schema.String),
-  conversational: Schema.optional(Schema.Boolean),
-  mode: Schema.optional(BotMode)
+  projectIds: Schema.Array(Schema.String)
 })
 export type CreateBotRequest = typeof CreateBotRequest.Type
 
@@ -91,8 +84,6 @@ export const UpdateBotRequest = Schema.Struct({
   name: Schema.optional(Schema.String),
   symbolName: Schema.optional(Schema.String),
   mascot: Schema.optional(BotMascot),
-  conversational: Schema.optional(Schema.Boolean),
-  mode: Schema.optional(BotMode),
   isArchived: Schema.optional(Schema.Boolean),
   configSelections: Schema.optional(Schema.Record(Schema.String, Schema.String))
 })

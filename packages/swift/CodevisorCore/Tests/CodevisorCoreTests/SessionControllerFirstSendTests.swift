@@ -130,7 +130,7 @@ struct SessionControllerFirstSendTests {
     .timeLimit(.minutes(1)), arguments: [true, false])
   func sendDoesNotHoldTheComposer(bot: Bool) async throws {
     let fixture = try Fixture()
-    if bot { fixture.controller.presentBot(as: .conversation) }
+    if bot { fixture.controller.presentBotConversation(true) }
     let (gate, release) = AsyncStream.makeStream(of: Void.self)
     fixture.client.holdPrompts(until: gate)
     defer { release.finish() }
@@ -150,7 +150,7 @@ struct SessionControllerFirstSendTests {
     let fixture = try Fixture()
     let controller = fixture.controller
     controller.onFirstSend = nil
-    controller.presentBot(as: .conversation)
+    controller.presentBotConversation(true)
     controller.serverSession = ChatSession(
       id: fixture.sessionID, projectId: controller.project.id, serverId: controller.project.serverId,
       harnessId: "codex", agentSessionId: "agent-1", title: "New bot", createdAt: Date(timeIntervalSince1970: 0)

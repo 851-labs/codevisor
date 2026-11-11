@@ -9,14 +9,10 @@ enum TranscriptRowAssembly {
     if options.presentsBotConversation {
       let conversation = input.botConversation ?? TranscriptBotConversation(messages: [], isWorking: false)
       return try TranscriptBotRowAssembly.assemble(
-        conversation.merging(TranscriptBubbleConversation.appMessages(in: input)),
+        conversation.merging(TranscriptBotAppMessages.messages(in: input)),
         input: input,
         options: options
       )
-    }
-    if options.presentsBubbleTranscript {
-      return try TranscriptBotRowAssembly.assemble(
-        TranscriptBubbleConversation.make(input), input: input, options: options)
     }
     var rows: [TranscriptPresentationRow] = []
     let settled = input.settledConversation.filter { $0.isVisibleInTranscript && $0.id != input.activeItem?.id }

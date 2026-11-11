@@ -12,9 +12,7 @@ const post = (running: Running, path: string, body: Record<string, unknown>) =>
 const startBot = async () => {
   const running = await setUp()
   await running.addProject("api-project", "api")
-  const bot = decodeBot(
-    (await createBot(running, { projectIds: ["api-project"], conversational: true })).body
-  )
+  const bot = decodeBot((await createBot(running, { projectIds: ["api-project"] })).body)
   return { running, bot }
 }
 

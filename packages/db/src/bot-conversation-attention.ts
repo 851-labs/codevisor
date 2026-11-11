@@ -56,8 +56,7 @@ const recordDeliveredBotMessage = (sqlite: Database.Database, sessionId: string)
   sqlite.prepare(botAttentionSql.deliverMessage).run(sessionId)
 }
 
-const botConversationSql =
-  "select 1 from bots where session_id = ? collate nocase and conversational = 1"
+const botConversationSql = "select 1 from bots where session_id = ? collate nocase"
 
 const botAttentionSql = {
   endTurn: `update session_attention set turn_active = 0, pending_finish = 0, settle_due_at = null

@@ -41,7 +41,6 @@ struct BotEditorSheet: View {
       } else {
         modelSection
       }
-      displaySection
       if let errorMessage = editor.errorMessage {
         Section {
           Text(errorMessage)
@@ -204,19 +203,6 @@ struct BotEditorSheet: View {
         )
         .accessibilityLabel("Remove \(project.name)")
       }
-    }
-  }
-
-  private var displaySection: some View {
-    Section {
-      Picker("Display", selection: $editor.mode) {
-        ForEach(BotMode.allCases) { mode in
-          Text(mode.title).tag(mode)
-        }
-      }
-      .pickerStyle(.menu)
-    } footer: {
-      Text(editor.mode.summary)
     }
   }
 

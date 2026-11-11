@@ -26,35 +26,29 @@ const providers = {
 }
 
 describe("Codevisor built-in tools", () => {
-  it("offers bot tools only to a bot's own session, and messages tools only when it converses", async () => {
+  it("offers bot tools and the messages skill only to a bot's own session", async () => {
     const { db, manager } = await testManager(providers)
     manager.setBaseUrl(await listen(createServer(manager.handleGatewayRequest)))
     const project = await run(db.createProject({ folderPath: "/tmp/mcp-bot-home" }))
-    for (const [id, conversational] of [
-      ["chatty", true],
-      ["plain", false]
-    ] as const) {
-      await run(
-        db.createWorkspaceWithSession({
-          workspace: { id: `ws-${id}`, projectId: project.id, name: id, hasCustomName: false },
-          session: { id: `chat-${id}`, projectId: project.id, harnessId: "codex", title: id }
-        })
-      )
-      await run(
-        db.createBot({
-          id: `bot-${id}`,
-          name: id,
-          symbolName: "sparkles",
-          mascot: { color: "mint", hat: "none", eyewear: "none" },
-          slug: id,
-          projectId: project.id,
-          sessionId: `chat-${id}`,
-          workspaceId: `ws-${id}`,
-          mode: conversational ? "conversation" : "transcript",
-          projects: []
-        })
-      )
-    }
+    await run(
+      db.createWorkspaceWithSession({
+        workspace: { id: "ws-bot", projectId: project.id, name: "bot", hasCustomName: false },
+        session: { id: "chat-bot", projectId: project.id, harnessId: "codex", title: "bot" }
+      })
+    )
+    await run(
+      db.createBot({
+        id: "bot-1",
+        name: "bot",
+        symbolName: "sparkles",
+        mascot: { color: "mint", hat: "none", eyewear: "none" },
+        slug: "bot",
+        projectId: project.id,
+        sessionId: "chat-bot",
+        workspaceId: "ws-bot",
+        projects: []
+      })
+    )
     const agent = await run(
       db.createSession({ harnessId: "codex", projectId: project.id, title: "Agent" })
     )
@@ -90,17 +84,10 @@ describe("Codevisor built-in tools", () => {
       }
     }
 
-    expect(await view("chat-chatty")).toEqual({
+    expect(await view("chat-bot")).toEqual({
       skill: true,
       send: true,
       list: true,
-      add: true,
-      remove: true
-    })
-    expect(await view("chat-plain")).toEqual({
-      skill: false,
-      send: false,
-      list: false,
       add: true,
       remove: true
     })

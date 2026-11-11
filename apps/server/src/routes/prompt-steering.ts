@@ -6,7 +6,7 @@ import {
 import type { PromptQueueItem } from "@codevisor/api"
 
 import { run, type CodevisorServerServices, type EventFanout } from "../server-context.js"
-import { conversationalBotForSession } from "./bot-turns.js"
+import { botForChat } from "./bot-turns.js"
 import { markAppContextsDelivered } from "./prompt-app-context.js"
 import { promptInput } from "./prompt-input.js"
 import { publishPromptQueue } from "./prompt-queue-publish.js"
@@ -99,7 +99,7 @@ const steerTiming = async (
   agentSession: AgentSessionMetadata
 ): Promise<SteerTiming> => {
   if (agentSession.steersAtNextStep !== true) return "immediate"
-  if ((await conversationalBotForSession(services, sessionId)) === undefined) return "nextStep"
+  if ((await botForChat(services, sessionId)) === undefined) return "nextStep"
   return "interruptsStep"
 }
 

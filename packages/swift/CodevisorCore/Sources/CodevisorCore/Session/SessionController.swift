@@ -118,7 +118,6 @@ final public class SessionController {
       if presentsBotConversation != oldValue { transcriptProjectionRevision &+= 1 }
     }
   }
-  public internal(set) var presentsBubbleTranscript = false
   @ObservationIgnored public var scrollState: SessionScrollState? {
     didSet { onScrollStateChange?(scrollState) }
   }

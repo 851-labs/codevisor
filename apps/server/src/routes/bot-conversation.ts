@@ -20,7 +20,7 @@ import { isRecord } from "../unknown-values.js"
 import { captureMarkdownFiles } from "./assistant-artifacts.js"
 import { captureAssistantFile } from "./assistant-files.js"
 import { listedBotMessages } from "./bot-message-list.js"
-import { conversationalBotForSession, postBotMessage } from "./bot-turns.js"
+import { botForChat, postBotMessage } from "./bot-turns.js"
 import { hasLiveTurn } from "./prompt-queue.js"
 import { attribute } from "./session-event-messages.js"
 
@@ -31,8 +31,8 @@ const requireBotSession = async (
   services: CodevisorServerServices,
   sessionId: string
 ): Promise<void> => {
-  if ((await conversationalBotForSession(services, sessionId)) === undefined) {
-    throw new HttpFailure(403, "Only a conversational bot's own chat has messages with the user")
+  if ((await botForChat(services, sessionId)) === undefined) {
+    throw new HttpFailure(403, "Only a bot's own chat has messages with the user")
   }
 }
 
@@ -161,7 +161,7 @@ const postBotNotice = async (
   sessionId: string,
   text: string
 ): Promise<void> => {
-  if ((await conversationalBotForSession(services, sessionId)) === undefined) return
+  if ((await botForChat(services, sessionId)) === undefined) return
   if (await repeatsLatestMessage(services, sessionId, text)) return
 
   await postBotMessage(services, fanout, sessionId, { sender: "notice", text })

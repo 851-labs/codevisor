@@ -4,13 +4,12 @@ import type {
   BotMascot,
   BotMessage,
   BotMessageSender,
-  BotMode,
   Workspace
 } from "@codevisor/api"
 import type { Effect } from "effect"
 
 import type { DatabaseError } from "./errors.js"
-import { integer, literal, nullable, rowReader, text } from "./row-reader.js"
+import { integer, nullable, rowReader, text } from "./row-reader.js"
 import type { BotLink, RemoteBotLink } from "./workspace-service-types.js"
 
 export interface BotRow {
@@ -29,8 +28,6 @@ export interface BotRow {
   readonly workspace_id: string
   readonly harness_id: string
   readonly config_selections: string
-  readonly conversational: number
-  readonly mode: BotMode
   readonly archived_at: string | null
   readonly created_at: string
   readonly updated_at: string | null
@@ -60,8 +57,6 @@ export const botRows = rowReader<BotRow>({
   workspace_id: text,
   harness_id: text,
   config_selections: text,
-  conversational: integer,
-  mode: literal("transcript", "bubbles", "conversation"),
   archived_at: nullable(text),
   created_at: text,
   updated_at: nullable(text)
@@ -122,7 +117,6 @@ export interface CreateBotRecord {
   readonly projectId: string
   readonly sessionId: string
   readonly workspaceId: string
-  readonly mode?: BotMode
   readonly projects: ReadonlyArray<BotProjectRecord>
 }
 
@@ -130,7 +124,6 @@ export interface UpdateBotRecord {
   readonly name?: string | undefined
   readonly symbolName?: string | undefined
   readonly mascot?: BotMascot | undefined
-  readonly mode?: BotMode | undefined
   readonly isArchived?: boolean | undefined
 }
 

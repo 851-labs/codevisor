@@ -58,10 +58,10 @@ enum TranscriptBotMessageParts {
   }
 
   private static func markdownParts(in markdown: String) -> [Part] {
-    let source = TranscriptBubbleSplitter.normalized(markdown)
+    let source = TranscriptMarkdownBlocks.normalized(markdown)
     var parts: [Part] = []
     var text: Range<String.Index>?
-    for block in TranscriptBubbleSplitter.blocks(in: source) {
+    for block in TranscriptMarkdownBlocks.blocks(in: source) {
       let standalone = standalonePart(block, in: source)
       guard standalone != nil || block.kind.splitsParts else {
         text = text.map { $0.lowerBound..<block.source.upperBound } ?? block.source
@@ -75,7 +75,7 @@ enum TranscriptBotMessageParts {
     return parts.filter(\.hasContent)
   }
 
-  private static func standalonePart(_ block: TranscriptBubbleSplitter.Block, in source: String) -> Part? {
+  private static func standalonePart(_ block: TranscriptMarkdownBlocks.Block, in source: String) -> Part? {
     guard block.kind.canStandAlone else { return nil }
 
     let text = String(source[block.source])

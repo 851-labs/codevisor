@@ -79,7 +79,6 @@ const seedV73 = async (filename: string) => {
       projectId: home.id,
       sessionId: "chat-home",
       workspaceId: "ws-home",
-      mode: "conversation",
       projects: []
     })
   )
