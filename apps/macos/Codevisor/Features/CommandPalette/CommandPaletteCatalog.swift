@@ -72,13 +72,18 @@ struct CommandPaletteCatalog {
   }
 
   private func activeWorkspaceCommands(_ workspace: ActiveWorkspaceActions) -> [CommandPaletteItem] {
-    let pinTitle = workspace.isPinned ? "Unpin Workspace" : "Pin Workspace"
-    return [
-      CommandPaletteItem(
-        id: "togglePin", title: pinTitle, icon: .symbol(workspace.isPinned ? "pin.slash" : "pin"),
-        perform: workspace.togglePin),
+    pinCommands(workspace.pin) + [
       CommandPaletteItem("Rename Workspace…", systemImage: "pencil", perform: workspace.rename),
       CommandPaletteItem(.archiveWorkspace, systemImage: "archivebox", perform: workspace.archive),
+    ]
+  }
+
+  private func pinCommands(_ pin: WorkspacePin?) -> [CommandPaletteItem] {
+    guard let pin else { return [] }
+
+    return [
+      CommandPaletteItem(
+        id: "togglePin", title: "\(pin.title) Workspace", icon: .symbol(pin.systemImage), perform: pin.toggle)
     ]
   }
 

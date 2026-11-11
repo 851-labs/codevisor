@@ -11,15 +11,21 @@ struct WorkspaceRowCommands {
   var willArchive: @MainActor (Workspace) -> Void = { _ in }
 
   func actions(
-    for workspace: Workspace, isPinned: Bool, sectionPlacement: WorkspaceSectionPlacement?
+    for item: WorkspaceSidebarItem, workspace: Workspace, isPinned: Bool,
+    sectionPlacement: WorkspaceSectionPlacement?
   ) -> WorkspaceRowActions {
     WorkspaceRowActions(
-      isPinned: isPinned,
-      togglePin: { togglePin(workspace) },
+      pin: pin(for: item, workspace: workspace, isPinned: isPinned),
       rename: { rename(workspace) },
       archive: { archive(workspace) },
       sectionMenu: sectionPlacement.map { sectionMenu(for: workspace, in: $0) }
     )
+  }
+
+  func pin(for item: WorkspaceSidebarItem, workspace: Workspace, isPinned: Bool) -> WorkspacePin? {
+    guard SidebarPins.canPin(item) else { return nil }
+
+    return WorkspacePin(isPinned: isPinned) { togglePin(workspace) }
   }
 
   func isPinned(_ workspace: Workspace) -> Bool {

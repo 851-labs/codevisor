@@ -1,7 +1,6 @@
 struct ActiveWorkspaceActions {
   let name: String
-  let isPinned: Bool
+  let pin: WorkspacePin?
   let rename: @MainActor () -> Void
-  let togglePin: @MainActor () -> Void
   let archive: @MainActor () -> Void
 }

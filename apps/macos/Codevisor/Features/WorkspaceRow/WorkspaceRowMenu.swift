@@ -27,9 +27,11 @@ private struct WorkspaceRowActiveMenu: View {
       ChatSessionUnreadMenuItem(session: unreadChat)
       Divider()
     }
-    Button(action: actions.togglePin) {
-      Label(actions.isPinned ? "Unpin" : "Pin", systemImage: actions.isPinned ? "pin.slash" : "pin")
-        .labelStyle(.titleAndIcon)
+    if let pin = actions.pin {
+      Button(action: pin.toggle) {
+        Label(pin.title, systemImage: pin.systemImage)
+          .labelStyle(.titleAndIcon)
+      }
     }
     Button(action: actions.rename) {
       Label("Rename", systemImage: "pencil")

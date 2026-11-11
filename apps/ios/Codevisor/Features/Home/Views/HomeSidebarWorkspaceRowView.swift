@@ -20,6 +20,8 @@ struct HomeSidebarWorkspaceRowView: View, Equatable {
 
   private var ref: HomeSidebarWorkspaceRef { workspace.workspace }
 
+  private var offersPin: Bool { workspace.canPin && !workspace.isArchived }
+
   private func onOpen() {
     if workspace.isArchived {
       confirmsRestore = true
@@ -44,7 +46,7 @@ struct HomeSidebarWorkspaceRowView: View, Equatable {
     }
     .opacity(workspace.isArchived ? 0.6 : 1)
     .swipeActions(edge: .leading, allowsFullSwipe: true) {
-      if !workspace.isArchived {
+      if offersPin {
         Button(action: onTogglePin) {
           Image(systemName: workspace.isPinned ? "pin.slash" : "pin")
         }
@@ -87,7 +89,9 @@ struct HomeSidebarWorkspaceRowView: View, Equatable {
       if workspace.isArchived {
         Button("Restore", action: onRestore)
       } else {
-        Button(workspace.isPinned ? "Unpin" : "Pin", action: onTogglePin)
+        if workspace.canPin {
+          Button(workspace.isPinned ? "Unpin" : "Pin", action: onTogglePin)
+        }
         Button("New Tab", action: onNewTab)
         Button("Rename", action: onRename)
         Button("Archive", action: onArchive)
@@ -117,8 +121,10 @@ struct HomeSidebarWorkspaceRowView: View, Equatable {
         }
         Divider()
       }
-      Button(action: onTogglePin) {
-        Label(workspace.isPinned ? "Unpin" : "Pin", systemImage: workspace.isPinned ? "pin.slash" : "pin")
+      if workspace.canPin {
+        Button(action: onTogglePin) {
+          Label(workspace.isPinned ? "Unpin" : "Pin", systemImage: workspace.isPinned ? "pin.slash" : "pin")
+        }
       }
       Button(action: onNewTab) {
         Label("New Tab", systemImage: "plus.square.on.square")
