@@ -3,6 +3,7 @@ import type { IncomingMessage, ServerResponse } from "node:http"
 import { UpdateBotRequest, type Bot } from "@codevisor/api"
 import { trashDirectory } from "@codevisor/worktrees"
 
+import { archiveAgentsOf } from "../archive-jobs.js"
 import {
   appendAndPublish,
   archiveJobs,
@@ -57,7 +58,10 @@ const updateBot = async (
       isArchived: payload.isArchived
     })
   )
-  if (bot.isArchived && !current.isArchived) await retireBotRuntime(services, routeState, bot)
+  if (bot.isArchived && !current.isArchived) {
+    await retireBotRuntime(services, routeState, bot)
+    await archiveAgentsOf({ services, fanout, config, turns: routeState }, [bot.sessionId])
+  }
   if (name !== undefined && name !== current.name) {
     await applySessionUpdate(services, fanout, bot.sessionId, {
       title: name,

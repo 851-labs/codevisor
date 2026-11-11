@@ -1,5 +1,12 @@
 import type { Workspace } from "@codevisor/api"
 
+import {
+  archiveAgentsCreatedBy,
+  archiveAgentsCreatedIn,
+  archiveLocalChildren,
+  type ArchiveChild,
+  type Creators
+} from "./created-agents-archive.js"
 import type {
   CodevisorServerConfig,
   CodevisorServerServices,
@@ -113,6 +120,30 @@ const retireRuntime = async (
     await clearStoppedTasks(services, fanout, serverId, session.id)
 }
 
+export interface ArchiveContext {
+  readonly services: CodevisorServerServices
+  readonly fanout: EventFanout
+  readonly config: CodevisorServerConfig
+  readonly turns: RetiredTurnState
+}
+
+export const archiveAgentsOf = (context: ArchiveContext, agentIds: ReadonlyArray<string>) =>
+  archiveAgentsCreatedBy(context.services, context.config.id, agentIds, archiveChild(context))
+
+export const archiveAgentsOfWorkspace = (context: ArchiveContext, workspace: Workspace) =>
+  archiveAgentsCreatedIn(context.services, context.config.id, workspace, archiveChild(context))
+
+export const archiveAgentsOfRemote = (context: ArchiveContext, creators: Creators) =>
+  archiveLocalChildren(context.services, creators, archiveChild(context))
+
+const archiveChild =
+  (context: ArchiveContext): ArchiveChild =>
+  async (child) => {
+    const { services, fanout, config, turns } = context
+    const archived = await run(services.db.updateWorkspace(child.id, { isArchived: true }))
+    await applyWorkspaceArchiveEffects(services, fanout, config, turns, archived, false)
+  }
+
 export const applyWorkspaceArchiveEffects = async (
   services: CodevisorServerServices,
   fanout: EventFanout,
@@ -121,12 +152,14 @@ export const applyWorkspaceArchiveEffects = async (
   workspace: Workspace,
   wasArchived: boolean
 ): Promise<Workspace> => {
+  const context = { services, fanout, config, turns }
   await appendAndPublish(services.db, fanout, "workspace.updated", workspace.id, workspace)
   if (workspace.isArchived === wasArchived) return workspace
 
   if (workspace.isArchived) {
     const runtime = await captureWorkspaceRuntime(services, turns, workspace)
     void enqueueWorkspaceArchive(services, fanout, config, workspace, runtime)
+    await archiveAgentsCreatedIn(services, config.id, workspace, archiveChild(context))
     return workspace
   }
 

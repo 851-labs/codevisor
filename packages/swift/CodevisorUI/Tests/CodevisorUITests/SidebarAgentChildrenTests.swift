@@ -16,9 +16,9 @@ struct SidebarAgentChildrenTests {
 
   private func rows(
     _ items: [WorkspaceSidebarItem], archived: [WorkspaceSidebarItem] = [], archivedVisibleCount: Int = 25,
-    tabs: [UUID: [UUID]] = [:], selecting selected: UUID? = nil, botHomeIDs: Set<UUID> = []
+    tabs: [UUID: [UUID]] = [:], selecting selected: UUID? = nil, hiddenParentIDs: Set<UUID> = []
   ) -> [SidebarRow] {
-    let tree = SidebarWorkspaceTree(items, pinnedIDs: [], botHomeIDs: botHomeIDs)
+    let tree = SidebarWorkspaceTree(items, pinnedIDs: [], hiddenParentIDs: hiddenParentIDs)
     let groups = SidebarWorkspaceGroup.groups(
       tree.roots, grouping: .flat, pinnedIDs: [], projects: [project], defaultServerId: project.serverId,
       sections: [], membership: [:]
@@ -63,6 +63,18 @@ struct SidebarAgentChildrenTests {
     #expect(tree.root(of: forkOfSpawned.id) == parent.id)
   }
 
+  @Test("An agent-made child of an archived workspace stays hidden, even before its own archive arrives")
+  func agentMadeChildOfArchivedParentStaysHidden() {
+    let archivedParent = UUID()
+    let spawned = item(parent: archivedParent, agentMade: true)
+    let forked = item(parent: archivedParent)
+
+    let tree = SidebarWorkspaceTree([spawned, forked], pinnedIDs: [], hiddenParentIDs: [archivedParent])
+
+    #expect(tree.roots.map(\.id) == [forked.id])
+    #expect(tree.children.isEmpty)
+  }
+
   @Test("An agent-made child whose parent isn't listed stays at the top level instead of disappearing")
   func orphanedAgentMadeChildStaysTopLevel() {
     let orphan = item(parent: UUID(), agentMade: true)
@@ -82,7 +94,7 @@ struct SidebarAgentChildrenTests {
     let orphan = item(parent: UUID(), agentMade: true)
     let all = [botChild, botGrandchild, forkOfHome, forkOfBotChild, orphan]
 
-    let shown = rows(all, botHomeIDs: [home])
+    let shown = rows(all, hiddenParentIDs: [home])
     #expect(workspaceIDs(shown) == [forkOfHome.id, forkOfBotChild.id, orphan.id])
     #expect(shown.allSatisfy { $0.parentID == nil })
   }

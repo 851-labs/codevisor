@@ -34,7 +34,9 @@ struct HomeSidebarContentBuilder {
   func content(_ preferences: HomeSidebarPreferences) -> HomeSidebarContent {
     let projectGroups = ProjectGroup.grouping(environment.projectList.projects)
     let homes = Set(botEntries.map(\.bot.workspaceId))
-    let tree = SidebarWorkspaceTree(listedItems, pinnedIDs: preferences.pinnedIDs, botHomeIDs: homes)
+    let archivedIDs = Set(environment.navigationStore.workspaceEntries.archived.map(\.id))
+    let tree = SidebarWorkspaceTree(
+      listedItems, pinnedIDs: preferences.pinnedIDs, hiddenParentIDs: homes.union(archivedIDs))
     var content = HomeSidebarContent.make(
       listed: tree.roots,
       children: tree.children,

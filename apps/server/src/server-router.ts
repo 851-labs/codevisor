@@ -115,8 +115,7 @@ const featureRouteFamilies: ReadonlyArray<RouteFamily> = [
 ]
 
 const resourceRouteFamilies: ReadonlyArray<RouteFamily> = [
-  ({ services, routeState, request, response, url }) =>
-    routeGatewayInvoke(services, routeState, request, response, url),
+  routeGatewayInvoke,
   routeSandboxes,
   routeExec,
   routeWorkspaceMirrors,

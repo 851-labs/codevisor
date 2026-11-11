@@ -1,5 +1,6 @@
 import {
   CALLER_AGENT_TICKET_HEADER,
+  FLEET_AGENTS_ARCHIVED_PATH,
   FLEET_CALLER_HEADER,
   FLEET_SESSION_EVENT_PATH,
   StartedAgent,
@@ -190,6 +191,63 @@ describe("messages from an agent on another machine", () => {
       { text: "one", sentByAgentId: parent.id, sentByAgentMachineId: studio.id },
       { text: "also fix the tests", sentByAgentId: parent.id, sentByAgentMachineId: studio.id }
     ])
+  })
+})
+
+describe("archiving an agent whose agents run on another machine", () => {
+  it("archives them there too, and only those its own machine says that agent started", async () => {
+    const { home, remote, parent, parentOrigin } = await startFleet()
+    const child = await startedSession(
+      remote,
+      await home.machines.invoke(
+        laptop.id,
+        "codevisor.agents.start",
+        startArgs("one"),
+        parentOrigin
+      )
+    )
+    const fromCreatorMachine = await invokeAs(studio, remote, {
+      path: FLEET_AGENTS_ARCHIVED_PATH,
+      args: { agentIds: [child.createdByAgentId] },
+      origin: { ...eventOrigin, machineId: studio.id, machineName: studio.name }
+    })
+    const fromLaptop = await invokeAs(laptop, home, {
+      path: FLEET_AGENTS_ARCHIVED_PATH,
+      args: { agentIds: [parent.id] },
+      origin: eventOrigin
+    })
+    const unverified = await postInvoke(remote.server.url, {
+      path: FLEET_AGENTS_ARCHIVED_PATH,
+      args: { agentIds: [parent.id] },
+      origin: { ...eventOrigin, machineId: studio.id }
+    })
+    const malformed = await invokeAs(studio, remote, {
+      path: FLEET_AGENTS_ARCHIVED_PATH,
+      args: { agentIds: "all" },
+      origin: { ...eventOrigin, machineId: studio.id, machineName: studio.name }
+    })
+
+    expect(resultOf(fromLaptop.body)).toEqual({ archived: 0 })
+    expect([unverified.status, malformed.status]).toEqual([403, 400])
+    expect(resultOf(fromCreatorMachine.body)).toEqual({ archived: 1 })
+    expect((await workspaceOf(remote, child))?.isArchived).toBe(true)
+  })
+
+  it("sends the archive to the other machine when its workspace is archived", async () => {
+    const { home, remote, parent, parentOrigin } = await startFleet()
+    const child = await startedSession(
+      remote,
+      await home.machines.invoke(
+        laptop.id,
+        "codevisor.agents.start",
+        startArgs("one"),
+        parentOrigin
+      )
+    )
+
+    await post(home, `/v1/workspaces/${parent.workspaceId}`, { isArchived: true }, "PATCH")
+
+    await waitFor(async () => (await workspaceOf(remote, child))?.isArchived === true)
   })
 })
 

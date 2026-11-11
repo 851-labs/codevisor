@@ -138,7 +138,13 @@ const startMachine = async (self: Member, fleet: Fleet): Promise<FleetMachine> =
   const made = await makeServices(self.id)
   const fleetTickets = makeFleetTickets()
   const machines: MachineLink = {
-    list: async () => [{ id: self.id, name: self.name, online: true, isCurrent: true }],
+    list: async () =>
+      [studio, laptop].map((member) => ({
+        id: member.id,
+        name: member.name,
+        online: !fleet.offline.has(member.id),
+        isCurrent: member.id === self.id
+      })),
     resolve: () => undefined,
     isGone: () => false,
     machineIdOf: (caller) =>

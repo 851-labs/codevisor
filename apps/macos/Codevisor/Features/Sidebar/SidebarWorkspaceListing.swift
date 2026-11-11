@@ -24,7 +24,8 @@ struct SidebarWorkspaceListing {
   }
 
   var tree: SidebarWorkspaceTree {
-    SidebarWorkspaceTree(listedItems, pinnedIDs: pinnedIDs, botHomeIDs: botHomeWorkspaceIDs)
+    SidebarWorkspaceTree(
+      listedItems, pinnedIDs: pinnedIDs, hiddenParentIDs: botHomeWorkspaceIDs.union(archivedWorkspaceIDs))
   }
 
   func groups(of items: [WorkspaceSidebarItem]) -> [SidebarWorkspaceGroup] {
@@ -47,6 +48,10 @@ struct SidebarWorkspaceListing {
     SidebarMachineGroups(
       machines: environment.machines, navigationStore: environment.navigationStore,
       machineName: SidebarRowContent.machineName)
+  }
+
+  private var archivedWorkspaceIDs: Set<UUID> {
+    Set(environment.navigationStore.workspaceEntries.archived.map(\.id))
   }
 
   private var botHomeWorkspaceIDs: Set<UUID> {

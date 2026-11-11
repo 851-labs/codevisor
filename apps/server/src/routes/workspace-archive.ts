@@ -1,6 +1,6 @@
 import { ArchiveWorkspaceRequest, type ArchivedWorkspace, type Workspace } from "@codevisor/api"
 
-import { archiveWorkspaceAndWait } from "../archive-jobs.js"
+import { archiveAgentsOfWorkspace, archiveWorkspaceAndWait } from "../archive-jobs.js"
 import {
   appendAndPublish,
   HttpFailure,
@@ -56,5 +56,6 @@ const archiveAndWait = async (
   const archived = await run(services.db.updateWorkspace(workspace.id, { isArchived: true }))
   await appendAndPublish(services.db, fanout, "workspace.updated", archived.id, archived)
   const runtime = await captureWorkspaceRuntime(services, routeState, archived)
+  await archiveAgentsOfWorkspace({ services, fanout, config, turns: routeState }, archived)
   await archiveWorkspaceAndWait(services, fanout, config, archived, runtime)
 }
