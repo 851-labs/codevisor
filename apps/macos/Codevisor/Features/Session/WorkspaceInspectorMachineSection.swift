@@ -7,6 +7,7 @@ struct WorkspaceInspectorMachineSection: View {
   static let historySlots = 100
 
   let stats: ServerMachineStats
+  let latencyMilliseconds: Double?
   @Binding var isExpanded: Bool
   @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
@@ -24,6 +25,14 @@ struct WorkspaceInspectorMachineSection: View {
       if let disk = stats.disk {
         WorkspaceInspectorMachineUsageRow(title: "Disk", usage: disk, style: .file)
       }
+      if let latencyMilliseconds {
+        LabeledContent("Latency") {
+          Text(Self.latencyText(latencyMilliseconds))
+            .monospacedDigit()
+            .contentTransition(.numericText(value: latencyMilliseconds))
+        }
+        .animation(Motion.meter(reduceMotion: reduceMotion), value: latencyMilliseconds)
+      }
       let uptime = Self.uptimeText(stats.uptimeSeconds)
       LabeledContent("Uptime") {
         Text(uptime)
@@ -36,6 +45,11 @@ struct WorkspaceInspectorMachineSection: View {
 
   private static func detail(model: String?, cores: Int?) -> String {
     [model, cores.map { "\($0) cores" }].compactMap { $0 }.joined(separator: " · ")
+  }
+
+  static func latencyText(_ milliseconds: Double) -> String {
+    let fractionDigits = milliseconds < 10 ? 1 : 0
+    return "\(milliseconds.formatted(.number.precision(.fractionLength(fractionDigits)))) ms"
   }
 
   static func uptimeText(_ seconds: Double) -> String {
