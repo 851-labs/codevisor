@@ -74,7 +74,7 @@ extension ChatScreen {
     .padding(.horizontal, Self.composerHorizontalPadding)
     .frame(maxWidth: Self.composerMaxWidth)
     .padding(.bottom, Self.composerBottomMargin)
-    .padding(.top, 24)
+    .padding(.top, Self.composerTopPadding)
     .frame(maxWidth: .infinity)
     .onGeometryChange(for: CGFloat.self) {
       $0.size.height

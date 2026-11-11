@@ -7,6 +7,7 @@ import TranscriptKit
 
 struct ChatScreen: View {
   static let composerBottomMargin: CGFloat = 16
+  static let composerTopPadding: CGFloat = 24
   static let composerHorizontalPadding: CGFloat = 24
   static let composerMaxWidth: CGFloat = 880
 

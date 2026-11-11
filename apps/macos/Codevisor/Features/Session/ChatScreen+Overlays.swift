@@ -91,7 +91,8 @@ extension ChatScreen {
       ZStack(alignment: .bottom) {
         if showsTranscriptScrollControls, !showsChildAgentsRow {
           transcriptScrollControls
-            .padding(.bottom, isReadOnly ? Self.composerBottomMargin : composerHeight - 10)
+            .frame(height: ChildAgentsPill.height)
+            .padding(.bottom, transcriptScrollControlsBottomInset)
         }
         if !isReadOnly {
           composerOverlay
@@ -101,7 +102,13 @@ extension ChatScreen {
   }
 
   var showsTranscriptScrollControls: Bool {
-    !isAtBottom || earlierHistoryCollapse != nil
+    guard !isSlashPalettePresented else { return false }
+    return !isAtBottom || earlierHistoryCollapse != nil
+  }
+
+  private var transcriptScrollControlsBottomInset: CGFloat {
+    guard !isReadOnly else { return Self.composerBottomMargin }
+    return composerHeight - Self.composerTopPadding + ComposerGlassStyle.clusterSpacing
   }
 
   var transcriptScrollControls: some View {
