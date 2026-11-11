@@ -13,13 +13,17 @@ final class ScreenSharingHostSession {
   let capture: ScreenSharingCapture
   let metrics: ScreenSharingMetrics
   let display: ServerScreenSharingDisplay
-  var displayID: UInt32
+  var displayID: UInt32 {
+    get { sharedDisplay.displayID }
+    set { sharedDisplay.displayID = newValue }
+  }
   let displayIdentity: ScreenSharingDisplayIdentity
   var configuration: ScreenSharingVideoConfiguration
   let physicalConfiguration: ScreenSharingVideoConfiguration
   var virtualDisplay: ScreenSharingHostVirtualDisplay?
   var captureDisplayID: UInt32 { virtualDisplay?.displayID ?? displayID }
-  var injector: ScreenSharingInputInjector?
+  let sharedDisplay: ScreenSharingSharedDisplay
+  let injector: ScreenSharingInputInjector
   var pendingResize: Task<Void, Never>?
   var capturing: (display: CGDirectDisplayID, configuration: ScreenSharingVideoConfiguration)?
   var resizing: Task<Void, Never>?
@@ -45,10 +49,14 @@ final class ScreenSharingHostSession {
 
   init(
     request: ServerScreenSharingRequest, display: ServerScreenSharingDisplay, displayID: UInt32,
-    viewerEndpointId: String, encoder: ScreenSharingV2EncoderKind
+    viewerEndpointId: String, encoder: ScreenSharingV2EncoderKind,
+    displayBounds: @escaping @Sendable (CGDirectDisplayID) -> CGRect = { CGDisplayBounds($0) }
   ) throws {
     owner = .init(request)
-    self.display = display; self.displayID = displayID
+    self.display = display
+    let sharedDisplay = ScreenSharingSharedDisplay(displayID, bounds: displayBounds)
+    self.sharedDisplay = sharedDisplay
+    injector = ScreenSharingInputInjector(displayBounds: { sharedDisplay.bounds })
     displayIdentity = ScreenSharingDisplayIdentity(display: displayID)
     capture = ScreenSharingCapture()
     metrics = ScreenSharingMetrics()
@@ -68,7 +76,7 @@ final class ScreenSharingHostSession {
 
   func configureMediaSubscriptions() {
     self.cursorStream = ScreenSharingHostCursorStream(
-      channel: self.peer.channels.cursor, displayID: self.displayID, metrics: self.metrics,
+      channel: self.peer.channels.cursor, display: self.sharedDisplay, metrics: self.metrics,
       isStopping: { [weak self] in self?.stopping ?? true },
       setShowsCursor: { [weak self] showsCursor in
         guard let self else { return }

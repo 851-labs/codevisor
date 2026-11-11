@@ -50,7 +50,7 @@ struct ScreenSharingHostStreamTests {
       var stopping = false
       var cursorChanges: [Bool] = []
       let stream = ScreenSharingHostCursorStream(
-        channel: channel, displayID: 0, metrics: metrics,
+        channel: channel, display: ScreenSharingSharedDisplay(0, bounds: { _ in .zero }), metrics: metrics,
         isStopping: { stopping }, setShowsCursor: { cursorChanges.append($0) })
       channel.onMessage?(.subscribe)
       channel.onMessage?(.subscribe)

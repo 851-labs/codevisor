@@ -198,9 +198,6 @@
       return Pointer(location: location, image: cursor.image, hotSpot: cursor.hotSpot)
     }
 
-    public nonisolated static func displayArea(_ displayID: CGDirectDisplayID) -> CGRect {
-      CGDisplayBounds(displayID)
-    }
     public nonisolated static func displayScale(_ displayID: CGDirectDisplayID) -> CGFloat {
       guard let mode = CGDisplayCopyDisplayMode(displayID), mode.width > 0 else { return 2 }
       return CGFloat(mode.pixelWidth) / CGFloat(mode.width)

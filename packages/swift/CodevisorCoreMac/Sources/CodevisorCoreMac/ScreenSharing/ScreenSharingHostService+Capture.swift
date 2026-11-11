@@ -72,7 +72,6 @@ extension ScreenSharingHostService {
     guard current != session.displayID else { return true }
     Self.logger.notice("Shared display \(session.displayID) is now display \(current)")
     session.displayID = current
-    session.injector = ScreenSharingInputInjector(displayBounds: CGDisplayBounds(current))
     return true
   }
 

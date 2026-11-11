@@ -93,7 +93,7 @@ struct ScreenSharingControlTests {
 
   @Test func quartzMappingUsesGlobalPointsAndProducesNativeDragAndReleaseEvents() throws {
     var events: [CGEvent] = []
-    let injector = ScreenSharingInputInjector(displayBounds: CGRect(x: -1440, y: -900, width: 1440, height: 900)) {
+    let injector = ScreenSharingInputInjector(displayBounds: { CGRect(x: -1440, y: -900, width: 1440, height: 900) }) {
       events.append($0)
     }
     let point = ScreenSharingPointer(x: 0.25, y: 0.75)

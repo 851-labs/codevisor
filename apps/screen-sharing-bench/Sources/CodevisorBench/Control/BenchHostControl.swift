@@ -12,7 +12,7 @@ final class BenchHostControl {
   private var watchdog: Task<Void, Never>?
 
   init(channel: any ScreenSharingMessageChannel<ScreenSharingControlMessage>, displayID: CGDirectDisplayID) {
-    let injector = ScreenSharingInputInjector(displayBounds: CGDisplayBounds(displayID))
+    let injector = ScreenSharingInputInjector(displayBounds: { CGDisplayBounds(displayID) })
     control = ScreenSharingHostControl(
       availability: { Self.unavailableReason(injector) },
       inject: { [log] event in
