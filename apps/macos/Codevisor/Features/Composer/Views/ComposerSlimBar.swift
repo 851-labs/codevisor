@@ -16,7 +16,7 @@ struct ComposerSlimBar<Field: View>: View {
   let onAttachFiles: () -> Void
 
   var body: some View {
-    HStack(alignment: .bottom, spacing: 10) {
+    HStack(alignment: .bottom, spacing: ComposerSlimLayout.fieldSpacing) {
       ComposerSlimAttachMenu(onPhotos: onAttachPhotos, onFiles: onAttachFiles)
       field
         .padding(.horizontal, Self.horizontalPadding)

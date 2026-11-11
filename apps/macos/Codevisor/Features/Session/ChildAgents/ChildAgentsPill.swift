@@ -18,7 +18,13 @@ struct ChildAgentsPill: View {
       ChildAgentsPopover(agents: content.agents, store: content.store) { isShowingChildren = false }
     }
     .help("Show child agents")
-    .accessibilityLabel("\(content.summary.title) working")
+    .accessibilityLabel(accessibilityLabel)
+  }
+
+  private var accessibilityLabel: String {
+    let summary = content.summary
+    guard summary.isWorking else { return summary.title }
+    return "\(summary.title), \(summary.workingCount) working"
   }
 }
 
@@ -27,13 +33,29 @@ private struct ChildAgentsPillLabel: View {
 
   var body: some View {
     HStack(spacing: 4) {
-      AgentActivityIndicator(color: .secondary)
+      glyph
         .frame(width: 18)
       Text(summary.title)
         .monospacedDigit()
     }
     .fixedSize()
   }
+
+  @ViewBuilder
+  private var glyph: some View {
+    if summary.isWorking {
+      AgentActivityIndicator(color: .secondary)
+    } else if let harnessId = summary.sharedHarnessId {
+      HarnessIcon(harnessId: harnessId, fallbackSymbolName: "bubble.and.pencil", size: SidebarRowIcon.size)
+        .foregroundStyle(.secondary)
+    } else {
+      Circle()
+        .fill(.secondary)
+        .frame(width: Self.dotDiameter, height: Self.dotDiameter)
+    }
+  }
+
+  private static let dotDiameter: CGFloat = 6
 }
 
 private struct ChildAgentsPillButtonStyle: ButtonStyle {

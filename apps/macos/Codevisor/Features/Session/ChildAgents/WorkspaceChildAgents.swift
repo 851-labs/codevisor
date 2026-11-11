@@ -22,7 +22,7 @@ struct WorkspaceChildAgents {
 
   func pill(for workspace: Workspace) -> ChildAgentsPillContent? {
     let children = agents(childItems(of: workspace), openingIn: workspace)
-    guard let summary = ChildAgentsSummary(children, isWorking: isWorking) else { return nil }
+    guard let summary = ChildAgentsSummary(children, isWorking: isWorking, harnessId: harnessId) else { return nil }
 
     return ChildAgentsPillContent(summary: summary, agents: children, store: store)
   }
@@ -33,6 +33,11 @@ struct WorkspaceChildAgents {
     case .workingTerminal: true
     case .workspace: false
     }
+  }
+
+  private func harnessId(_ agent: WorkspaceInspectorAgent) -> String? {
+    guard case let .chat(session, _) = agent.icon else { return nil }
+    return session.harnessId
   }
 
   private func agents(_ items: [WorkspaceSidebarItem], openingIn host: Workspace?) -> [WorkspaceInspectorAgent] {

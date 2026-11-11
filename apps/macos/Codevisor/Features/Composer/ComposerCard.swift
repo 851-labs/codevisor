@@ -141,8 +141,7 @@ struct ComposerCard: View {
 
 private extension ComposerCard {
   private var isSlimLayout: Bool {
-    usesSlimComposer && controller.composerQuestion == nil && !controller.isEditingQueuedPrompt
-      && !controller.isGoalEditing
+    ComposerSlimLayout.isActive(usesSlimComposer, for: controller)
   }
 
   private var slimContent: some View {
