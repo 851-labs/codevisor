@@ -216,7 +216,8 @@ extension VirtualizedTranscriptScrollView {
     let key = row.layoutKey
     guard let host = hostPool.takeParked(for: key) else { return false }
     guard host.representedRow?.content == row.content,
-      host.representedRow?.measurementRevision == row.measurementRevision
+      host.representedRow?.measurementRevision == row.measurementRevision,
+      abs(host.parkedLayoutWidth - effectiveRowWidth) <= 0.5
     else {
       hostPool.retire(host)
       return false
@@ -416,6 +417,7 @@ extension VirtualizedTranscriptScrollView {
       return
     }
 
+    host.parkedLayoutWidth = effectiveRowWidth
     hostPool.park(host, for: key)
   }
 

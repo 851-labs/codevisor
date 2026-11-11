@@ -20,9 +20,14 @@ extension VirtualizedTranscriptScrollView {
 
   func decayBottomSlack(at time: TimeInterval) {
     guard bottomSlack.isActive else { return }
+    guard followsLatest else {
+      bottomSlack.reset()
+      resizeDocumentView()
+      return
+    }
 
     requestDisplayFrame()
-    guard followsLatest, bottomSlack.decay(at: time) else { return }
+    guard bottomSlack.decay(at: time) else { return }
 
     applyPositionTransaction {
       resizeDocumentView()

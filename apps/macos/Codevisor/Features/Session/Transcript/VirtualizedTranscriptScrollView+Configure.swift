@@ -51,14 +51,7 @@ extension VirtualizedTranscriptScrollView {
     let onBottomStateChange = callbacks.onBottomStateChange
     let onFollowStateChange = callbacks.onFollowStateChange
     let onNearTop = callbacks.onNearTop
-    if sessionController !== newSessionController {
-      uninstallPresentationFrameDriver()
-      sessionController = newSessionController
-      collapsibleEarlierHistorySection = nil
-      historyPrefetchPolicy = TranscriptHistoryPrefetchPolicy()
-      deferredActivePlaceholderKey = nil
-      installPresentationFrameDriver()
-    }
+    if sessionController !== newSessionController { adoptSessionController(newSessionController) }
     self.rowContent = newRowContent
     markdownImageLoader = callbacks.markdownImageLoader ?? .remote
     openMarkdownLink = callbacks.openMarkdownLink
@@ -166,5 +159,15 @@ extension VirtualizedTranscriptScrollView {
     updateInitialPresentationReadiness()
     resolveBottomJumpIfPossible()
     checkForHistoryPrefetch()
+  }
+
+  private func adoptSessionController(_ controller: SessionController?) {
+    uninstallPresentationFrameDriver()
+    hostPool.retireParkedHosts()
+    sessionController = controller
+    collapsibleEarlierHistorySection = nil
+    historyPrefetchPolicy = TranscriptHistoryPrefetchPolicy()
+    deferredActivePlaceholderKey = nil
+    installPresentationFrameDriver()
   }
 }

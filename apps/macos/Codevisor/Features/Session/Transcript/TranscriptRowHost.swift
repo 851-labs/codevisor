@@ -11,6 +11,7 @@ final class TranscriptRowHost: TranscriptMountedRowHost {
   private lazy var contentWidthConstraint = contentHost.widthAnchor.constraint(equalToConstant: 1)
   private lazy var contentHeightConstraint = contentHost.heightAnchor.constraint(equalToConstant: 1)
   var representedRow: TranscriptVirtualRow?
+  var parkedLayoutWidth: CGFloat = 0
   private var presentationReady = false
   private var attachmentGeometryReady = true
   private(set) var hasAttemptedPresentation = false
