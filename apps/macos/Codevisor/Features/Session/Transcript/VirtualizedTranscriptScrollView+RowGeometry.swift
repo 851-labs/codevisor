@@ -48,7 +48,8 @@ extension VirtualizedTranscriptScrollView {
   }
 
   func documentHeight(rowsHeight: CGFloat) -> CGFloat {
-    paginationHeaderLayout.documentHeight(topPadding: transcriptTopPadding, rowsHeight: rowsHeight)
+    paginationHeaderLayout.documentHeight(
+      topPadding: transcriptTopPadding, rowsHeight: rowsHeight + bottomSlack.height)
   }
 
   func position(host: TranscriptMountedRowHost, frame: CGRect) {

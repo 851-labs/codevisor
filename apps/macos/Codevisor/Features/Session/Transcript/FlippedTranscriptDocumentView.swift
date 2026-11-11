@@ -3,6 +3,11 @@ import AppKit
 final class FlippedTranscriptDocumentView: NSView {
   override var isFlipped: Bool { true }
 
+  override func layout() {
+    super.layout()
+    transcript?.commitMeasurementsInLayoutPass()
+  }
+
   private var transcript: VirtualizedTranscriptScrollView? {
     enclosingScrollView as? VirtualizedTranscriptScrollView
   }
