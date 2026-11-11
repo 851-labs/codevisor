@@ -2,6 +2,7 @@
 final class TranscriptParkedHosts {
   private static let maximumCount = 16
   private static let maximumSpareCount = 12
+  private static let maximumRetiringCount = 32
   private var hosts: [String: TranscriptRowHost] = [:]
   private var leastRecentlyUsedKeys: [String] = []
   private var spares: [TranscriptRowHost] = []
@@ -35,8 +36,10 @@ final class TranscriptParkedHosts {
     host.prepareForReuse()
     if spares.count < Self.maximumSpareCount {
       spares.append(host)
-    } else {
+    } else if retiring.count < Self.maximumRetiringCount {
       retiring.append(host)
+    } else {
+      host.detachFromParent()
     }
   }
 

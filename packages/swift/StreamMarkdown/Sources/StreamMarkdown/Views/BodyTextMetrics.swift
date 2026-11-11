@@ -10,9 +10,22 @@ import Synchronization
     }
 
     private static let fonts = Mutex<[UIContentSizeCategory: Resolved]>([:])
+    private static let appFont = Mutex<Resolved?>(nil)
+    nonisolated(unsafe) private static let sizeChangeObserver = NotificationCenter.default.addObserver(
+      forName: UIContentSizeCategory.didChangeNotification, object: nil, queue: nil
+    ) { _ in
+      appFont.withLock { $0 = nil }
+    }
 
     public static var font: UIFont {
-      font(for: UITraitCollection.current.preferredContentSizeCategory)
+      _ = sizeChangeObserver
+      return appFont.withLock { cached in
+        if let cached { return cached.font }
+
+        let font = UIFont.preferredFont(forTextStyle: .body)
+        cached = Resolved(font: font)
+        return font
+      }
     }
 
     public static func font(for category: UIContentSizeCategory) -> UIFont {
