@@ -31,15 +31,6 @@ extension SidebarView {
     pinnedWorkspaceIDs.contains(workspace.id.uuidString)
   }
 
-  func togglePin(_ workspace: Workspace) {
-    let id = workspace.id.uuidString
-    if pinnedWorkspaceIDs.contains(id) {
-      pinnedWorkspaceIDs.removeAll { $0 == id }
-    } else {
-      pinnedWorkspaceIDs.append(id)
-    }
-  }
-
   func toggleGroup(_ id: String) {
     if collapsedGroupIDs.contains(id) {
       collapsedGroupIDs.removeAll { $0 == id }

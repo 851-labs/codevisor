@@ -1,21 +1,15 @@
-import CodevisorClient
 import SwiftUI
 
 struct WorkspaceInspectorAgent: Identifiable {
   let id: UUID
-  let name: String
-  let subtitle: String?
-  let icon: SidebarWorkspaceIcon
-  let pullRequest: ServerGitPullRequest?
-  let machine: SidebarRowMachine?
+  let details: WorkspaceRowDetails
+  let actions: WorkspaceRowActions
   let open: () -> Void
 
-  func opening(then action: @escaping () -> Void) -> WorkspaceInspectorAgent {
-    WorkspaceInspectorAgent(
-      id: id, name: name, subtitle: subtitle, icon: icon, pullRequest: pullRequest, machine: machine
-    ) {
+  func closing(with dismiss: @escaping () -> Void) -> WorkspaceInspectorAgent {
+    WorkspaceInspectorAgent(id: id, details: details, actions: actions.renaming(after: dismiss)) {
       open()
-      action()
+      dismiss()
     }
   }
 }

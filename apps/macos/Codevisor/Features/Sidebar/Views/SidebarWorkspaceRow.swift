@@ -4,135 +4,19 @@ import CodevisorUI
 import SwiftUI
 
 struct SidebarWorkspaceRow: View {
-  enum Lifecycle {
-    case active(
-      isPinned: Bool, onTogglePin: () -> Void, onRename: () -> Void, onArchive: () -> Void
-    )
-    case archived(onRestore: () -> Void)
-  }
-
-  let name: String
-  var subtitle: String? = nil
-  let icon: SidebarWorkspaceIcon
+  let details: WorkspaceRowDetails
   let store: SessionStore?
-  var pullRequest: ServerGitPullRequest? = nil
-  var machine: SidebarRowMachine? = nil
   let isSelected: Bool
   let isReordering: Bool
   let onActivate: () -> Void
-  let lifecycle: Lifecycle
-  var sectionMenu: MoveToSectionMenu? = nil
-
-  static let trailingSpacing: CGFloat = 7
-
-  private var isArchived: Bool {
-    if case .archived = lifecycle { return true }
-    return false
-  }
-
-  private var archivedOpacity: Double { isArchived ? 0.6 : 1 }
-
-  private var unreadChat: ChatSession? {
-    guard case let .chat(session, isQuiet: false) = icon else { return nil }
-    return session
-  }
+  let lifecycle: WorkspaceRowLifecycle
 
   var body: some View {
-    HoverableRow(
-      isSelected: isSelected,
-      isHoverEnabled: !isReordering,
-      isHoverForced: false
-    ) { isHovered in
-      HStack(spacing: 7) {
-        SidebarWorkspaceRowLabel(name: name, subtitle: subtitle, icon: icon, store: store)
-          .opacity(archivedOpacity)
-          .padding(.vertical, 5)
-          .contentShape(Rectangle())
-          .onSidebarRowPress(perform: onActivate)
-          .accessibilityElement(children: .combine)
-          .accessibilityAddTraits(isSelected ? [.isButton, .isSelected] : .isButton)
-          .accessibilityValue(isArchived ? "Archived" : "")
-          .accessibilityAction(.default, onActivate)
-          .accessibilityActions {
-            switch lifecycle {
-            case let .active(isPinned, onTogglePin, onRename, onArchive):
-              Button(isPinned ? "Unpin" : "Pin", action: onTogglePin)
-              Button("Rename", action: onRename)
-              Button("Archive", action: onArchive)
-            case let .archived(onRestore):
-              Button("Restore", action: onRestore)
-            }
-          }
-        if isHovered {
-          hoverActions
-        } else {
-          SidebarWorkspaceRowProperties(pullRequest: pullRequest, machine: machine)
-            .opacity(archivedOpacity)
-        }
-      }
-      .padding(.horizontal, 10)
-      .frame(maxWidth: .infinity, alignment: .leading)
-      .contentShape(Rectangle())
+    HoverableRow(isSelected: isSelected, isHoverEnabled: !isReordering) { isHovered in
+      WorkspaceRow(
+        details: details, store: store, lifecycle: lifecycle, style: .sidebar(isSelected: isSelected),
+        isHovered: isHovered, onActivate: onActivate)
     }
-    .contextMenu {
-      switch lifecycle {
-      case let .active(isPinned, onTogglePin, onRename, onArchive):
-        if let unreadChat {
-          ChatSessionUnreadMenuItem(session: unreadChat)
-          Divider()
-        }
-        Button(action: onTogglePin) {
-          Label(isPinned ? "Unpin" : "Pin", systemImage: isPinned ? "pin.slash" : "pin")
-            .labelStyle(.titleAndIcon)
-        }
-        Button(action: onRename) {
-          Label("Rename", systemImage: "pencil")
-            .labelStyle(.titleAndIcon)
-        }
-        if let sectionMenu {
-          Divider()
-          sectionMenu
-        }
-        Divider()
-        Button(action: onArchive) {
-          Label("Archive", systemImage: "archivebox")
-            .labelStyle(.titleAndIcon)
-        }
-        .shortcut(.archiveWorkspace)
-      case let .archived(onRestore):
-        Button(action: onRestore) {
-          Label("Restore", systemImage: "arrow.uturn.backward")
-            .labelStyle(.titleAndIcon)
-        }
-      }
-    }
-  }
-
-  private var hoverActions: some View {
-    HStack(spacing: Self.trailingSpacing) {
-      switch lifecycle {
-      case let .active(isPinned, onTogglePin, _, onArchive):
-        hoverButton(
-          systemImage: isPinned ? "pin.slash" : "pin",
-          help: isPinned ? "Unpin workspace" : "Pin workspace",
-          label: isPinned ? "Unpin" : "Pin",
-          action: onTogglePin
-        )
-        hoverButton(systemImage: "archivebox", help: "Archive workspace", label: "Archive", action: onArchive)
-      case let .archived(onRestore):
-        hoverButton(
-          systemImage: "arrow.uturn.backward", help: "Restore workspace", label: "Restore", action: onRestore
-        )
-      }
-    }
-  }
-
-  private func hoverButton(
-    systemImage: String, help: String, label: String, action: @escaping () -> Void
-  ) -> some View {
-    SidebarRowHoverButton(
-      systemImage: systemImage, help: help,
-      accessibilityLabel: "\(label) \(SidebarWorkspaceRowLabel.title(for: name))", action: action)
   }
 }
 

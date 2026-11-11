@@ -6,11 +6,7 @@ import SwiftUI
 struct SidebarWorkspaceSection: View, Equatable {
   struct Actions {
     let activate: @MainActor (SidebarWorkspaceListItem) -> Void
-    let togglePin: @MainActor (Workspace) -> Void
-    let rename: @MainActor (Workspace) -> Void
-    let archive: @MainActor (Workspace) -> Void
-    let moveToSection: @MainActor (Workspace, UUID?) -> Void
-    let newSection: @MainActor (Workspace) -> Void
+    let commands: WorkspaceRowCommands
   }
 
   let item: WorkspaceSidebarItem
@@ -39,32 +35,16 @@ struct SidebarWorkspaceSection: View, Equatable {
     if let listItem = content.listItem(for: item, includingArchived: true) {
       let workspace = listItem.workspace
       SidebarWorkspaceRow(
-        name: workspace.name,
-        subtitle: content.subtitle(for: workspace, isPinned: isPinned),
-        icon: content.icon(for: listItem),
+        details: content.details(
+          for: listItem, isPinned: isPinned, headingNamesMachine: headingNamesMachine),
         store: store,
-        pullRequest: content.pullRequest(for: workspace),
-        machine: content.machine(for: workspace, headingNamesMachine: headingNamesMachine),
         isSelected: isSelected,
         isReordering: isReordering,
         onActivate: { actions.activate(listItem) },
         lifecycle: .active(
-          isPinned: isPinned,
-          onTogglePin: { actions.togglePin(workspace) },
-          onRename: { actions.rename(workspace) },
-          onArchive: { actions.archive(workspace) }
-        ),
-        sectionMenu: sectionMenu(for: workspace)
+          actions.commands.actions(for: workspace, isPinned: isPinned, sectionPlacement: sectionPlacement))
       )
     }
-  }
-
-  private func sectionMenu(for workspace: Workspace) -> MoveToSectionMenu? {
-    guard let sectionPlacement else { return nil }
-
-    return MoveToSectionMenu(
-      currentSectionID: sectionPlacement.sectionID, sections: sections,
-      move: { actions.moveToSection(workspace, $0) }, newSection: { actions.newSection(workspace) })
   }
 }
 
@@ -91,6 +71,19 @@ struct SidebarRowContent {
   func icon(for item: SidebarWorkspaceListItem, isQuiet: Bool = false) -> SidebarWorkspaceIcon {
     if let chat = item.routingSession { return .chat(chat, isQuiet: isQuiet) }
     return item.workspace.allPanes.contains { $0.terminalAgentStatus == .working } ? .workingTerminal : .workspace
+  }
+
+  func details(
+    for item: SidebarWorkspaceListItem, isPinned: Bool, headingNamesMachine: Bool, isQuiet: Bool = false
+  ) -> WorkspaceRowDetails {
+    let workspace = item.workspace
+    return WorkspaceRowDetails(
+      name: workspace.name,
+      subtitle: subtitle(for: workspace, isPinned: isPinned),
+      icon: icon(for: item, isQuiet: isQuiet),
+      pullRequest: pullRequest(for: workspace),
+      machine: machine(for: workspace, headingNamesMachine: headingNamesMachine)
+    )
   }
 
   func subtitle(for workspace: Workspace, isPinned: Bool) -> String? {

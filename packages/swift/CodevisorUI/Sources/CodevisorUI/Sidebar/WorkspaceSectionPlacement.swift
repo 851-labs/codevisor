@@ -26,6 +26,12 @@ public enum WorkspaceSectionPlacement: Hashable, Sendable {
     self = membership[item.id].map(Self.section) ?? .unsectioned
   }
 
+  public init?(_ workspaceId: UUID, in tree: SidebarWorkspaceTree, membership: [UUID: UUID]) {
+    guard tree.roots.contains(where: { $0.id == workspaceId }) else { return nil }
+
+    self = membership[workspaceId].map(Self.section) ?? .unsectioned
+  }
+
   public var sectionID: UUID? {
     switch self {
     case let .section(id): id
