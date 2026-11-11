@@ -57,13 +57,14 @@ describe("POST /v1/agents on a machine without the project", () => {
   })
 
   it("reuses the clone on the next start", async () => {
-    const { services, startRemoteAgent } = await machineWithoutProject()
+    const { agents, services, startRemoteAgent } = await machineWithoutProject()
 
     const first = decode(StartedAgent)((await startRemoteAgent({})).body)
     const second = decode(StartedAgent)((await startRemoteAgent({ checkout: "project" })).body)
 
     expect(second.projectId).toBe(first.projectId)
     expect(await run(services.db.listProjects)).toHaveLength(1)
+    await waitFor(() => agents.prompts.filter(([, text]) => text === "Fix it").length === 2)
   })
 
   it("reports the clone failure when the repository can't be reached", async () => {
