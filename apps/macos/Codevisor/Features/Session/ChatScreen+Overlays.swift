@@ -89,30 +89,38 @@ extension ChatScreen {
   var bottomChromeOverlay: some View {
     GlassEffectContainer(spacing: ComposerGlassStyle.clusterSpacing) {
       ZStack(alignment: .bottom) {
-        if !isAtBottom || earlierHistoryCollapse != nil {
-          HStack(spacing: ComposerGlassStyle.clusterSpacing) {
-            if let earlierHistoryCollapse {
-              collapseStepsButton(earlierHistoryCollapse)
-                .glassEffectID(
-                  ComposerGlassElement.collapseSteps.rawValue,
-                  in: composerGlassNamespace
-                )
-                .glassEffectTransition(.matchedGeometry)
-            }
-            if !isAtBottom {
-              scrollToBottomButton
-                .glassEffectID(
-                  ComposerGlassElement.scrollToBottom.rawValue,
-                  in: composerGlassNamespace
-                )
-                .glassEffectTransition(.matchedGeometry)
-            }
-          }
-          .padding(.bottom, isReadOnly ? Self.composerBottomMargin : composerHeight - 10)
+        if showsTranscriptScrollControls, !showsChildAgentsRow {
+          transcriptScrollControls
+            .padding(.bottom, isReadOnly ? Self.composerBottomMargin : composerHeight - 10)
         }
         if !isReadOnly {
           composerOverlay
         }
+      }
+    }
+  }
+
+  var showsTranscriptScrollControls: Bool {
+    !isAtBottom || earlierHistoryCollapse != nil
+  }
+
+  var transcriptScrollControls: some View {
+    HStack(spacing: ComposerGlassStyle.clusterSpacing) {
+      if let earlierHistoryCollapse {
+        collapseStepsButton(earlierHistoryCollapse)
+          .glassEffectID(
+            ComposerGlassElement.collapseSteps.rawValue,
+            in: composerGlassNamespace
+          )
+          .glassEffectTransition(.matchedGeometry)
+      }
+      if !isAtBottom {
+        scrollToBottomButton
+          .glassEffectID(
+            ComposerGlassElement.scrollToBottom.rawValue,
+            in: composerGlassNamespace
+          )
+          .glassEffectTransition(.matchedGeometry)
       }
     }
   }

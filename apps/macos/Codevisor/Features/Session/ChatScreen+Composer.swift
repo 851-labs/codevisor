@@ -10,9 +10,13 @@ extension ChatScreen {
     let childAgents = visibleChildAgents
     return VStack(spacing: ComposerGlassStyle.clusterSpacing) {
       if let childAgents {
-        ChildAgentsPill(content: childAgents, glassNamespace: composerGlassNamespace)
-          .padding(.leading, composerFieldLeadingInset)
-          .frame(maxWidth: .infinity, alignment: .leading)
+        ChildAgentsRowLayout {
+          ChildAgentsPill(content: childAgents, glassNamespace: composerGlassNamespace)
+            .padding(.leading, composerFieldLeadingInset)
+          if showsTranscriptScrollControls {
+            transcriptScrollControls
+          }
+        }
       }
       if let todos = controller.visibleTodos {
         TodoPanelView(
@@ -82,6 +86,10 @@ extension ChatScreen {
       Motion.quick(reduceMotion: reduceMotion),
       value: visibleComposerGlassElements(showsChildAgents: childAgents != nil)
     )
+  }
+
+  var showsChildAgentsRow: Bool {
+    !isReadOnly && visibleChildAgents != nil
   }
 
   private var visibleChildAgents: ChildAgentsPillContent? {
