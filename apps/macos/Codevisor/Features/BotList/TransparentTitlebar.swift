@@ -23,6 +23,7 @@ struct TransparentTitlebar: NSViewRepresentable {
     }
 
     private var observers: [NSObjectProtocol] = []
+    private var ownsTitlebar = false
 
     isolated deinit {
       observers.forEach(NotificationCenter.default.removeObserver)
@@ -81,8 +82,10 @@ struct TransparentTitlebar: NSViewRepresentable {
     }
 
     private func apply() {
+      guard let window, wantsTransparency || ownsTitlebar else { return }
+      ownsTitlebar = wantsTransparency
       let transparent = wantsTransparency && appearsActive && !isPointerInTopBar
-      guard let window, window.titlebarAppearsTransparent != transparent else { return }
+      guard window.titlebarAppearsTransparent != transparent else { return }
       window.titlebarAppearsTransparent = transparent
     }
   }
