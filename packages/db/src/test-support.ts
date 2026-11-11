@@ -264,8 +264,8 @@ export const rewindArchivedBotsSql = `
 `
 
 export const rewindBotModesSql = `
-  alter table bots drop column mode;
-  delete from schema_migrations where id = 87;
+  alter table bots add column conversational integer not null default 0;
+  delete from schema_migrations where id in (87, 96);
 `
 
 export const rewindOneNameSql = `

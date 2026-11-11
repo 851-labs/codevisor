@@ -31,9 +31,7 @@ const prompt = (running: Running, sessionId: string, body: Record<string, unknow
 const startBot = async () => {
   const running = await setUp()
   await running.addProject("api-project", "api")
-  const bot = decodeBot(
-    (await createBot(running, { projectIds: ["api-project"], conversational: true })).body
-  )
+  const bot = decodeBot((await createBot(running, { projectIds: ["api-project"] })).body)
   return { running, bot }
 }
 

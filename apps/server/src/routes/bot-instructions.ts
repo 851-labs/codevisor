@@ -5,7 +5,7 @@ import type { Bot } from "@codevisor/api"
 import { botPath } from "@codevisor/db"
 
 import { run, type CodevisorServerServices } from "../server-context.js"
-import { notesOutsideBlocks } from "./bot-instructions-notes.js"
+import { notesOutsideBlock } from "./bot-instructions-notes.js"
 import {
   BLOCK_BEGIN,
   BLOCK_END,
@@ -53,7 +53,7 @@ export const instructionsWithBlock = (text: string, subject: BotInstructionsSubj
   const span = blockSpan(text)
   if (span !== undefined) return text.slice(0, span.start) + block + text.slice(span.end)
 
-  return withNotes(block, notesOutsideBlocks(text, [block, otherModeBlock(subject)]))
+  return withNotes(block, notesOutsideBlock(text, block))
 }
 
 interface BlockSpan {
@@ -71,15 +71,11 @@ const blockSpan = (text: string): BlockSpan | undefined => {
 const withNotes = (block: string, notes: ReadonlyArray<string>): string =>
   [block, NOTES_HEADING, ...notes].join("\n\n") + "\n"
 
-const otherModeBlock = (subject: BotInstructionsSubject): string =>
-  codevisorBlock({ ...subject, conversational: !subject.conversational })
-
 const instructionsSubject = async (
   services: CodevisorServerServices,
   bot: Bot
 ): Promise<BotInstructionsSubject> => ({
   name: bot.name,
-  conversational: bot.conversational,
   repositories: await botRepositories(services, bot)
 })
 

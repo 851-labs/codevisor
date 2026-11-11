@@ -35,7 +35,6 @@ struct BotConversationScreen: View {
         }
       }
       .task(id: session?.id) { await connect() }
-      .onChange(of: bot?.mode) { _, mode in controller?.presentBot(as: mode) }
   }
 
   @ViewBuilder
@@ -73,7 +72,7 @@ struct BotConversationScreen: View {
     else { return }
     let controller = ChatControllerCache.shared.controller(
       for: session, project: project, workspaceId: bot.workspaceId, environment: environment)
-    controller.presentBot(as: bot.mode)
+    controller.presentBotConversation(true)
     self.controller = controller
     guard controller.model == nil, !controller.isConnecting else { return }
     if session.agentSessionId?.isEmpty != false {

@@ -7,7 +7,7 @@ import {
   type EventFanout,
   type RouteState
 } from "../server-context.js"
-import { conversationalBotForSession } from "./bot-turns.js"
+import { botForChat } from "./bot-turns.js"
 import { hasLiveTurn, steerQueuedPrompt, steerQueuedPromptsThrough } from "./prompt-queue.js"
 import { pausedForUpdate } from "./update-pause-gate.js"
 
@@ -83,8 +83,7 @@ const steersRunningTurn = async (
   services: CodevisorServerServices,
   sessionId: string,
   delivery: PromptDelivery
-): Promise<boolean> =>
-  delivery === "steer" || (await conversationalBotForSession(services, sessionId)) !== undefined
+): Promise<boolean> => delivery === "steer" || (await botForChat(services, sessionId)) !== undefined
 
 const idleOutcome = async (
   services: CodevisorServerServices,

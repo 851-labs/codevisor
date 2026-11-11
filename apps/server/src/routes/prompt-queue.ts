@@ -20,7 +20,7 @@ import {
   type RouteState
 } from "../server-context.js"
 import { isRecord } from "../unknown-values.js"
-import { conversationalBotForSession } from "./bot-turns.js"
+import { botForChat } from "./bot-turns.js"
 import { coalesceWakeUps, heldForUsageLimit } from "./bot-usage-hold.js"
 import { heldByParkedQuestion } from "./parked-questions.js"
 import { markAppContextsDelivered } from "./prompt-app-context.js"
@@ -304,7 +304,7 @@ const steerPendingPrompts = async (
   serverId: string,
   sessionId: string
 ): Promise<void> => {
-  if ((await conversationalBotForSession(services, sessionId)) === undefined) return
+  if ((await botForChat(services, sessionId)) === undefined) return
   while (true) {
     const item = await run(services.db.claimPromptQueueItem(sessionId))
     if (item === undefined) return

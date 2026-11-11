@@ -1,10 +1,7 @@
 import { BLOCK_BEGIN, BLOCK_END, NOTES_HEADING } from "./bot-instructions-text.js"
 
-export const notesOutsideBlocks = (
-  text: string,
-  generatedBlocks: ReadonlyArray<string>
-): ReadonlyArray<string> => {
-  const generated = generatedText(generatedBlocks)
+export const notesOutsideBlock = (text: string, generatedBlock: string): ReadonlyArray<string> => {
+  const generated = generatedText(generatedBlock)
   return paragraphs(text).flatMap((part, index) => keptPart(part, index, generated))
 }
 
@@ -13,8 +10,8 @@ interface GeneratedText {
   readonly lines: ReadonlySet<string>
 }
 
-const generatedText = (blocks: ReadonlyArray<string>): GeneratedText => {
-  const parts = [...legacyParagraphs, ...blocks.flatMap(paragraphs)].map(normalized)
+const generatedText = (block: string): GeneratedText => {
+  const parts = [...legacyParagraphs, ...paragraphs(block)].map(normalized)
   const lines = parts.flatMap((part) => part.split("\n")).map(normalized)
   return { paragraphs: new Set(parts), lines: new Set([...lines, BLOCK_BEGIN, BLOCK_END]) }
 }

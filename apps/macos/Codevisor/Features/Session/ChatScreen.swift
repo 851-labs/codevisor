@@ -28,7 +28,7 @@ struct ChatScreen: View {
   let focus: TerminalFocusController
   let presentationSurface: TranscriptPresentationSurface
   let isReadOnly: Bool
-  let botMode: BotMode?
+  let presentsBotConversation: Bool
   @State var isAtBottom: Bool
   @State var earlierHistoryCollapse: TranscriptEarlierHistoryCollapse?
   @State var autoFollow: Bool
@@ -61,8 +61,6 @@ struct ChatScreen: View {
     .init(controller: ObjectIdentifier(controller), isMounted: isTranscriptMounted)
   }
 
-  var presentsBotConversation: Bool { botMode == .conversation }
-
   var mountedProjectionRequest: TranscriptProjectionRequest? {
     isTranscriptMounted ? transcriptProjectionRequest : nil
   }
@@ -72,13 +70,13 @@ struct ChatScreen: View {
     focus: TerminalFocusController,
     presentationSurface: TranscriptPresentationSurface,
     isReadOnly: Bool = false,
-    botMode: BotMode? = nil
+    presentsBotConversation: Bool = false
   ) {
     self.controller = controller
     self.focus = focus
     self.presentationSurface = presentationSurface
     self.isReadOnly = isReadOnly
-    self.botMode = botMode
+    self.presentsBotConversation = presentsBotConversation
     let isWarm = presentationSurface.isWarm
     _isAtBottom = State(initialValue: controller.scrollState?.isAtBottom ?? true)
     _autoFollow = State(
@@ -141,7 +139,9 @@ struct ChatScreen: View {
         guard !Task.isCancelled else { return }
         isTranscriptMounted = true
       }
-      .onChange(of: botMode, initial: true) { controller.presentBot(as: botMode) }
+      .onChange(of: presentsBotConversation, initial: true) {
+        controller.presentBotConversation(presentsBotConversation)
+      }
       .onChange(of: ObjectIdentifier(controller), initial: true) { QueuedPromptFlight.install(on: controller) }
       .onChange(of: hasPromptQueue, initial: true) { _, hasQueue in
         updatePromptQueueVisibility(hasQueue)

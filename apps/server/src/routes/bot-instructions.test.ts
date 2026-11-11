@@ -10,7 +10,6 @@ import { createBot, decodeBot, setUp } from "./bot-test-support.js"
 
 const workBot: BotInstructionsSubject = {
   name: "Work Bot",
-  conversational: true,
   repositories: [{ folderName: "api", name: "api", repoDir: "/src/api", projectId: "api-project" }]
 }
 
@@ -87,7 +86,7 @@ describe("bot instructions", () => {
   })
 
   it("replace only the marked block, keeping everything around it", () => {
-    const renamed = { ...workBot, name: "Release Bot", conversational: false }
+    const renamed = { ...workBot, name: "Release Bot" }
     const text = `Pinned above.\n\n${codevisorBlock(workBot)}\n\n## Notes\n\nShip on Fridays.\n`
 
     const updated = instructionsWithBlock(text, renamed)
@@ -95,7 +94,6 @@ describe("bot instructions", () => {
     expect(updated).toBe(
       `Pinned above.\n\n${codevisorBlock(renamed)}\n\n## Notes\n\nShip on Fridays.\n`
     )
-    expect(updated).not.toContain("## Talking to the user")
   })
 
   it("rebuild a block whose markers were deleted without duplicating it into Notes", () => {

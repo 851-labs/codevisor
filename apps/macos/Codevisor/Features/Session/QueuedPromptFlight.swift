@@ -7,8 +7,7 @@ enum QueuedPromptFlight {
   static func install(on controller: SessionController) {
     controller.onQueuedPromptWillFly = { [weak controller] messageID in
       guard let controller, !NSWorkspace.shared.accessibilityDisplayShouldReduceMotion else { return }
-      let style: UserBubbleStyle =
-        controller.presentsBotConversation || controller.presentsBubbleTranscript ? .accent : .standard
+      let style: UserBubbleStyle = controller.presentsBotConversation ? .accent : .standard
       TranscriptQueueSendSources.shared.stageFlight(
         for: messageID,
         session: ObjectIdentifier(controller),

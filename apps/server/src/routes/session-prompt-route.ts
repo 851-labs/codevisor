@@ -12,7 +12,7 @@ import { PromptRequest } from "@codevisor/api"
 import { HttpFailure, readSchema, run, sessionIsArchived, writeJson } from "../server-context.js"
 import type { CodevisorServerServices, RouteState } from "../server-context.js"
 import { agentMessageEvent } from "./bot-conversation.js"
-import { conversationalBotForSession, postBotMessage } from "./bot-turns.js"
+import { botForChat, postBotMessage } from "./bot-turns.js"
 import { verifiedAttribution } from "./prompt-attribution.js"
 import type { PromptDeliveryOutcome } from "./prompt-delivery.js"
 import {
@@ -53,7 +53,7 @@ export const sendPrompt = async (route: RouteContext, sessionId: string): Promis
   const attribution = await verifiedAttribution(services, sessionId, payload.attribution)
   markPromptActionPending(routeState, actionKey)
 
-  const toBot = (await conversationalBotForSession(services, sessionId)) !== undefined
+  const toBot = (await botForChat(services, sessionId)) !== undefined
   const agentSessionId = relayedAgentSessionId(toBot, payload, sessionId)
   const enqueue = promptEnqueuer(services, sessionId, payload, attachments, attribution)
   let queueItem: PromptQueueItem

@@ -57,8 +57,7 @@ describe("bot tools", () => {
       name: "Notes",
       harnessId: "codex",
       projectIds: ["p1"],
-      mascot: { color: "sky", hat: "beanie", hatColor: "red", eyewear: "none" },
-      mode: "transcript"
+      mascot: { color: "sky", hat: "beanie", hatColor: "red", eyewear: "none" }
     })
 
     expect(create.inputSchema.required).toEqual(["name", "harnessId", "projectIds"])
@@ -68,16 +67,14 @@ describe("bot tools", () => {
         name: "Triage",
         harnessId: "codex",
         projectIds: ["p1"],
-        symbolName: "sparkles",
-        mode: "conversation"
+        symbolName: "sparkles"
       },
       {
         name: "Notes",
         harnessId: "codex",
         projectIds: ["p1"],
         symbolName: "sparkles",
-        mascot: { color: "sky", hat: "beanie", hatColor: "red", eyewear: "none" },
-        mode: "transcript"
+        mascot: { color: "sky", hat: "beanie", hatColor: "red", eyewear: "none" }
       }
     ])
     expect(created).toEqual({

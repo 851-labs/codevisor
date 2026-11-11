@@ -15,10 +15,7 @@ import { shapedToolResult } from "./codevisor-tool-shapes.js"
 import type { UnknownRecord } from "./unknown-values.js"
 
 export { CODEVISOR_TOOL_ALIASES, codevisorToolName } from "./codevisor-tool-aliases.js"
-export {
-  CODEVISOR_BOT_TOOL_NAMES,
-  CODEVISOR_CONVERSATIONAL_BOT_TOOL_NAMES
-} from "./codevisor-api-tools.js"
+export { CODEVISOR_BOT_TOOL_NAMES } from "./codevisor-api-tools.js"
 
 const agentTools = [...codevisorAgentTools, ...codevisorEventTools, ...codevisorPluginTools]
 

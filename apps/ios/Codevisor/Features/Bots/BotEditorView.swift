@@ -48,7 +48,6 @@ struct BotEditorView: View {
         }
         if let bot = editor.editedBot {
           editedBotModelSection(bot)
-          displaySection
           if environment.bots.supportsArchive(on: bot.serverId) {
             archiveSection(bot)
           } else {
@@ -56,7 +55,6 @@ struct BotEditorView: View {
           }
         } else {
           modelSection
-          displaySection
         }
         if let errorMessage = editor.errorMessage {
           Section {
@@ -292,19 +290,6 @@ struct BotEditorView: View {
     else { return nil }
     return ChatControllerCache.shared.controller(
       for: session, project: project, workspaceId: bot.workspaceId, environment: environment)
-  }
-
-  private var displaySection: some View {
-    Section {
-      Picker("Display", selection: $editor.mode) {
-        ForEach(BotMode.allCases) { mode in
-          Text(mode.title).tag(mode)
-        }
-      }
-      .pickerStyle(.menu)
-    } footer: {
-      Text(editor.mode.summary)
-    }
   }
 
   private func modelBinding(_ models: BotModelSelection) -> Binding<ModelChoice> {

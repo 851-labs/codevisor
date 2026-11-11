@@ -10,7 +10,6 @@ public final class BotEditorModel {
   public var serverId: String {
     didSet { if serverId != oldValue { draftProjectIds = [] } }
   }
-  public var mode = BotMode.conversation
   public private(set) var models: BotModelSelection?
   public private(set) var mascotOptions: ServerBotMascotOptions?
   public private(set) var isSaving = false
@@ -38,7 +37,6 @@ public final class BotEditorModel {
       name = bot.name
       mascot = bot.mascot
       serverId = bot.serverId
-      mode = bot.mode
     }
   }
 
@@ -237,8 +235,7 @@ public final class BotEditorModel {
       if let bot = editedBot {
         try await environment.bots.update(
           bot,
-          ServerUpdateBotRequest(
-            name: trimmedName, mascot: mascot, conversational: mode == .conversation, mode: mode.rawValue)
+          ServerUpdateBotRequest(name: trimmedName, mascot: mascot)
         )
       } else {
         guard let models, let harnessId = models.harnessId else { return false }
@@ -250,9 +247,7 @@ public final class BotEditorModel {
             mascot: mascot,
             harnessId: harnessId,
             configSelections: models.configSelections,
-            projectIds: selectedProjects.map { $0.id.uuidString.lowercased() },
-            conversational: mode == .conversation,
-            mode: mode.rawValue
+            projectIds: selectedProjects.map { $0.id.uuidString.lowercased() }
           ),
           on: serverId
         )

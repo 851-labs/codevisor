@@ -306,9 +306,8 @@ extension SessionController {
 }
 
 extension SessionController {
-  public func presentBot(as mode: BotMode?) {
-    presentsBubbleTranscript = mode == .bubbles
-    guard mode == .conversation else {
+  public func presentBotConversation(_ presents: Bool) {
+    guard presents else {
       presentsBotConversation = false
       model?.presentsBotConversation = false
       return

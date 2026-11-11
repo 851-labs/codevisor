@@ -12,7 +12,7 @@ import type { ExecutionJobFinished } from "@codevisor/mcp"
 
 import { run, swallowError, type CodevisorServerServices } from "../server-context.js"
 import { isRecord } from "../unknown-values.js"
-import { conversationalBotForSession } from "./bot-turns.js"
+import { botForChat } from "./bot-turns.js"
 import {
   erroredMessage,
   execTaskFinishedMessage,
@@ -221,7 +221,7 @@ const botParentRecipients = async (
   const parentSessionId = target.parentSessionId
   if (type !== "turn_ended" || parentSessionId === undefined) return []
   if (parseRemoteSessionKey(parentSessionId) !== undefined) return []
-  const parentIsBot = (await conversationalBotForSession(services, parentSessionId)) !== undefined
+  const parentIsBot = (await botForChat(services, parentSessionId)) !== undefined
   return parentIsBot ? [{ subscriberId: parentSessionId }] : []
 }
 

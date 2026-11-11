@@ -106,8 +106,7 @@ extension SessionTranscriptView {
                 \.pluginAppHost,
                 PluginAppHost(
                   environment: environment, session: controller,
-                  presenter: controller.presentsBotConversation || controller.presentsBubbleTranscript
-                    ? nil : pluginAppPresenter)
+                  presenter: controller.presentsBotConversation ? nil : pluginAppPresenter)
               )
               .environment(\.userBubbleStyle, userBubbleStyle)
               .environment(
@@ -183,8 +182,7 @@ extension SessionTranscriptView {
       options: .init(
         includesConnectingRow: true,
         bottomSpacerHeight: transcriptBottomObstruction + Self.transcriptBottomBreathingRoom,
-        presentsBotConversation: controller.presentsBotConversation,
-        presentsBubbleTranscript: controller.presentsBubbleTranscript
+        presentsBotConversation: controller.presentsBotConversation
       )
     )
   }

@@ -16,14 +16,6 @@ export const botForChat = async (
   return bot?.sessionId.toLowerCase() === sessionId.toLowerCase() ? bot : undefined
 }
 
-export const conversationalBotForSession = async (
-  services: CodevisorServerServices,
-  sessionId: string
-): Promise<Bot | undefined> => {
-  const bot = await botForChat(services, sessionId)
-  return bot?.conversational === true ? bot : undefined
-}
-
 export const postBotMessage = async (
   services: CodevisorServerServices,
   fanout: EventFanout,

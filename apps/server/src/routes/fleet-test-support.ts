@@ -66,9 +66,7 @@ export const startFleet = async () => {
   await home.addProject("bot-project", "bot-repo")
   const remote = await setUpWith(() => startMachine(laptop, fleet))
   await remote.addProject("laptop-project", "laptop-repo")
-  const bot = decodeBot(
-    (await createBot(home, { projectIds: ["bot-project"], conversational: true })).body
-  )
+  const bot = decodeBot((await createBot(home, { projectIds: ["bot-project"] })).body)
   const botOrigin: MachineCallOrigin = {
     machineId: studio.id,
     machineName: studio.name,

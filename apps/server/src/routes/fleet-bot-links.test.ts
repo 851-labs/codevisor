@@ -217,9 +217,7 @@ describe("bot sub-agents on another machine", () => {
 
   it("links back to a bot on this machine when a remote sub-agent of that bot starts more work here", async () => {
     const { home, remote } = await startFleet()
-    const localBot = decodeBot(
-      (await createBot(remote, { projectIds: ["laptop-project"], conversational: true })).body
-    )
+    const localBot = decodeBot((await createBot(remote, { projectIds: ["laptop-project"] })).body)
     const fromSubAgent = (botId: string) =>
       home.machines.invoke(laptop.id, "codevisor.agents.start", startArgs("go"), {
         machineId: studio.id,

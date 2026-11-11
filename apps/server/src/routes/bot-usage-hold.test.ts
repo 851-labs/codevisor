@@ -64,9 +64,7 @@ const post = (running: Running, path: string, body: Record<string, unknown>) =>
 const startLimitedBot = async () => {
   const running = await setUpWith(startServerWithAccounts)
   await running.addProject("api-project", "api")
-  const bot = decodeBot(
-    (await createBot(running, { projectIds: ["api-project"], conversational: true })).body
-  )
+  const bot = decodeBot((await createBot(running, { projectIds: ["api-project"] })).body)
   await post(running, `/v1/sessions/${bot.sessionId}/prompt`, { text: "Check the release" })
   await waitFor(() => endedTurns(running, bot.sessionId) === 1)
   const agentSessionId = running.agents.prompts[0]![0]
@@ -159,24 +157,6 @@ describe("bots stopped at a usage limit", () => {
         `^${[wakeUpEvent("agent-a"), wakeUpEvent("agent-b"), wakeUpEvent("agent-c"), ""].join("\n\n")}<codevisor-event type="session.usage_limit_reset"`
       )
     )
-  })
-
-  it("keeps wake-ups held when the bot leaves conversation mode, until the limit resets", async () => {
-    const { running, botId, sessionId } = await startLimitedBot()
-    await wakeUp(running, sessionId, "agent-a", 1)
-
-    await jsonRequest(running.server, `/v1/bots/${botId}`, {
-      body: JSON.stringify({ mode: "transcript" }),
-      method: "PATCH"
-    })
-    await waitFor(() => heldQueueLengths(running, sessionId).includes(2))
-    expect(promptTexts(running)).toHaveLength(1)
-    await running.switchAccount("work")
-
-    await waitFor(() => queueDrained(running, sessionId))
-    expect(promptTexts(running)).toHaveLength(2)
-    expect(promptTexts(running)[1]).toContain(wakeUpEvent("agent-a"))
-    expect(promptTexts(running)[1]).toContain("turned off conversation mode")
   })
 
   it("delivers held wake-ups when the user declines the auto-resume", async () => {

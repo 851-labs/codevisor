@@ -1,6 +1,5 @@
 import {
   CODEVISOR_BOT_TOOL_NAMES,
-  CODEVISOR_CONVERSATIONAL_BOT_TOOL_NAMES,
   codevisorToolName,
   SANDBOX_GLOBALS,
   type AutomationToolProvider
@@ -169,21 +168,15 @@ export const makeGatewayCatalog = (deps: GatewayCatalogDeps) => {
     )
   ]
 
-  const botChatKind = async (
-    sessionId: string | undefined
-  ): Promise<"conversational" | "plain" | undefined> => {
-    if (sessionId === undefined) return undefined
+  const isBotChat = async (sessionId: string | undefined): Promise<boolean> => {
+    if (sessionId === undefined) return false
     const bot = await run(config.db.findBotOwning({ sessionId })).catch(() => undefined)
-    if (bot === undefined || bot.sessionId.toLowerCase() !== sessionId.toLowerCase()) {
-      return undefined
-    }
-    return bot.conversational ? "conversational" : "plain"
+    return bot?.sessionId.toLowerCase() === sessionId.toLowerCase()
   }
 
   const hiddenCodevisorTools = async (sessionId: string): Promise<ReadonlySet<string>> => {
-    const kind = await botChatKind(sessionId)
-    if (kind === "conversational") return new Set()
-    return kind === "plain" ? CODEVISOR_CONVERSATIONAL_BOT_TOOL_NAMES : CODEVISOR_BOT_TOOL_NAMES
+    if (await isBotChat(sessionId)) return new Set()
+    return CODEVISOR_BOT_TOOL_NAMES
   }
 
   const providerTools = async (
@@ -203,7 +196,7 @@ export const makeGatewayCatalog = (deps: GatewayCatalogDeps) => {
   ): Promise<ReadonlyArray<SkillEntry>> => {
     const enabled = await enabledServers(projectId, sessionId)
     const enabledIds = new Set(enabled.map((server) => server.id))
-    if (enabledIds.has("codevisor") && (await botChatKind(sessionId)) === "conversational") {
+    if (enabledIds.has("codevisor") && (await isBotChat(sessionId))) {
       enabledIds.add("bot")
     }
     const saved = await skillEntries(builtinSkills, { enabledIds }, config.skillSource)

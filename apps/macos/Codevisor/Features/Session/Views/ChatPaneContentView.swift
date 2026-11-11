@@ -56,7 +56,7 @@ struct ChatPaneContentView: View {
               controller: controller
             ),
             isReadOnly: isReadOnly,
-            botMode: role.botMode
+            presentsBotConversation: role == .botConversation
           )
           .environment(
             \.computerUsePiPPane,
