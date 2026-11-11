@@ -95,6 +95,30 @@
       chipBackground: MarkdownNativeChipBackground,
       images: [String: MarkdownImageResource]? = nil
     ) -> NSAttributedString {
+      guard images == nil else {
+        return renderInline(
+          markdown, baseFont: baseFont, theme: theme, foreground: foreground, chipBackground: chipBackground,
+          images: images)
+      }
+
+      let key = MarkdownInlineRenderCache.Key(
+        markdown: markdown, font: baseFont, foreground: foreground, chipColor: chipBackground.color,
+        chipCornerRadius: chipBackground.cornerRadius, themeFingerprint: theme.renderFingerprint)
+      return MarkdownInlineRenderCache.shared.text(for: key) {
+        renderInline(
+          markdown, baseFont: baseFont, theme: theme, foreground: foreground, chipBackground: chipBackground,
+          images: nil)
+      }
+    }
+
+    private static func renderInline(
+      _ markdown: MarkdownText,
+      baseFont: MarkdownNativeFont,
+      theme: MarkdownTheme,
+      foreground: MarkdownNativeColor,
+      chipBackground: MarkdownNativeChipBackground,
+      images: [String: MarkdownImageResource]?
+    ) -> NSAttributedString {
       let parsed =
         images == nil
         ? InlineMarkdown.attributedString(from: markdown, theme: theme)
@@ -138,7 +162,7 @@
           output.append(NSAttributedString(string: substring, attributes: attributes))
         }
       }
-      return output
+      return output.copy() as! NSAttributedString
     }
 
     static func blockSeparator(
