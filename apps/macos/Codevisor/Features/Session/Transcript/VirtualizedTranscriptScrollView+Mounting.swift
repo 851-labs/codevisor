@@ -175,9 +175,9 @@ extension VirtualizedTranscriptScrollView {
       )
     }
 
-    if let bubble = nativeBotBubble(for: row) {
-      return mountBotBubbleRow(
-        row, bubble: bubble, at: index, requiresImmediatePresentation: requiresImmediatePresentation)
+    if let part = nativeBotPart(for: row) {
+      return mountNativeBotPart(
+        part, row: row, at: index, requiresImmediatePresentation: requiresImmediatePresentation)
     }
     if remountParkedHost(for: row, at: index) { return true }
 
@@ -405,8 +405,8 @@ extension VirtualizedTranscriptScrollView {
       hostPool.recycle(evicted)
     } else if let hosted = host as? TranscriptRowHost {
       parkOrRetire(hosted, for: key)
-    } else if let bubble = host as? TranscriptBotBubbleRowHost {
-      storeDetachedBubble(bubble, for: key)
+    } else {
+      storeDetachedBotPart(host, for: key)
     }
   }
 
@@ -475,8 +475,8 @@ extension VirtualizedTranscriptScrollView {
       } else if let hosted = host as? TranscriptRowHost {
         hosted.representedRow = row
         hosted.rootView = measuredRootView(for: row)
-      } else if let bubbleHost = host as? TranscriptBotBubbleRowHost {
-        refreshBotBubble(bubbleHost, for: row)
+      } else {
+        refreshNativeBotPart(host, for: row)
       }
     }
 

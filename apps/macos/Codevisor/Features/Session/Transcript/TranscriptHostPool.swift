@@ -8,10 +8,8 @@ final class TranscriptHostPool {
   private var recycledMarkdownHosts: [TranscriptMarkdownRowHost] = []
   private var parkedHosts: [String: TranscriptRowHost] = [:]
   private var parkedOrder: [String] = []
-  private var parkedBubbles: [String: TranscriptBotBubbleRowHost] = [:]
-  private var parkedBubbleOrder: [String] = []
-  private var recycledBubbles: [TranscriptBotBubbleRowHost] = []
-  private static let parkedBubbleLimit = 48
+  var bubbles = TranscriptKeyedHostShelf<TranscriptBotBubbleRowHost>(limit: 48)
+  var images = TranscriptKeyedHostShelf<TranscriptBotImageRowHost>(limit: 32)
 
   var hasRetiringHosts: Bool { !retiringHosts.isEmpty }
 
@@ -40,36 +38,14 @@ final class TranscriptHostPool {
     return host
   }
 
-  func takeBubble(for key: String) -> TranscriptBotBubbleRowHost {
-    if let parked = parkedBubbles.removeValue(forKey: key) {
-      parkedBubbleOrder.removeAll { $0 == key }
-      return parked
-    }
-    return recycledBubbles.popLast() ?? TranscriptBotBubbleRowHost(frame: .zero)
-  }
-
-  func parkBubble(_ host: TranscriptBotBubbleRowHost, for key: String) {
-    if let replaced = parkedBubbles.updateValue(host, forKey: key), replaced !== host { recycleBubble(replaced) }
-    parkedBubbleOrder.removeAll { $0 == key }
-    parkedBubbleOrder.append(key)
-    while parkedBubbleOrder.count > Self.parkedBubbleLimit {
-      let evicted = parkedBubbleOrder.removeFirst()
-      if let host = parkedBubbles.removeValue(forKey: evicted) { recycleBubble(host) }
-    }
-  }
-
-  func recycleBubble(_ host: TranscriptBotBubbleRowHost) {
-    if recycledBubbles.count < 8 { recycledBubbles.append(host) }
-  }
-
   func retireParkedHosts() {
     for host in parkedHosts.values {
       retire(host)
     }
     parkedHosts.removeAll()
     parkedOrder.removeAll()
-    parkedBubbles.removeAll()
-    parkedBubbleOrder.removeAll()
+    bubbles.removeAll()
+    images.removeAll()
   }
 
   func drainRetiringHosts(limit: Int) {

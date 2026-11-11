@@ -8,41 +8,49 @@ extension VirtualizedTranscriptScrollView {
   enum RowRenderer {
     case markdown
     case botBubble
+    case botImage
     case hosted
   }
 
-  struct NativeBotBubble {
-    let messageID: String
-    let content: TranscriptBotMessageContent
+  enum NativeBotPart {
+    case bubble(messageID: String, content: TranscriptBotMessageContent, layout: TranscriptBotBubbleLayout)
+    case image(source: String, alt: String)
   }
 
   func renderer(for row: TranscriptVirtualRow) -> RowRenderer {
     if usesNativeMarkdownHost(for: row) { return .markdown }
-    if nativeBotBubble(for: row) != nil { return .botBubble }
-    return .hosted
+    switch nativeBotPart(for: row) {
+    case .bubble: return .botBubble
+    case .image: return .botImage
+    case nil: return .hosted
+    }
   }
 
   func renderer(of host: TranscriptMountedRowHost) -> RowRenderer {
     if host is TranscriptMarkdownRowHost { return .markdown }
     if host is TranscriptBotBubbleRowHost { return .botBubble }
+    if host is TranscriptBotImageRowHost { return .botImage }
     return .hosted
   }
 
-  func nativeBotBubble(for row: TranscriptVirtualRow) -> NativeBotBubble? {
+  func nativeBotPart(for row: TranscriptVirtualRow) -> NativeBotPart? {
     guard case let .botMessage(message, content, _) = row.content,
-      message.sender == .bot, message.app == nil, content.files.isEmpty, content.partStyle == .text,
-      !content.text.isEmpty, !content.blocks.isEmpty,
-      !MarkdownLayoutPolicy.requiresBackgroundTextLayout(content.blocks)
+      message.sender == .bot, message.app == nil, content.files.isEmpty
     else { return nil }
 
-    return NativeBotBubble(messageID: message.id, content: content)
+    if case let .image(source, alt) = content.partStyle { return .image(source: source, alt: alt) }
+    guard let layout = TranscriptBotBubbleLayout.forPart(content.partStyle), rendersNatively(content) else {
+      return nil
+    }
+
+    return .bubble(messageID: message.id, content: content, layout: layout)
   }
 
-  func mountBotBubbleRow(
-    _ row: TranscriptVirtualRow, bubble: NativeBotBubble, at index: Int, requiresImmediatePresentation: Bool
+  func mountNativeBotPart(
+    _ part: NativeBotPart, row: TranscriptVirtualRow, at index: Int, requiresImmediatePresentation: Bool
   ) -> Bool {
     let key = row.layoutKey
-    let host = hostPool.takeBubble(for: key)
+    let host = takeHost(for: part, key: key)
     host.prepareForMountedRow()
     host.onHeightChange = { [weak self] height in
       self?.recordMeasuredHeight(height, for: key)
@@ -50,7 +58,7 @@ extension VirtualizedTranscriptScrollView {
     transcriptDocumentView.addSubview(host)
     mountedHosts[key] = host
     position(host: host, at: index)
-    show(bubble, in: host, knownHeight: settledMeasuredHeight(of: row))
+    show(part, in: host, knownHeight: settledMeasuredHeight(of: row))
     if requiresImmediatePresentation, !host.isPresentationReady {
       host.prepareForImmediatePresentation()
     }
@@ -58,24 +66,54 @@ extension VirtualizedTranscriptScrollView {
     return true
   }
 
-  func refreshBotBubble(_ host: TranscriptBotBubbleRowHost, for row: TranscriptVirtualRow) {
-    guard let bubble = nativeBotBubble(for: row) else { return }
+  func refreshNativeBotPart(_ host: TranscriptMountedRowHost, for row: TranscriptVirtualRow) {
+    guard let part = nativeBotPart(for: row) else { return }
 
-    show(bubble, in: host, knownHeight: settledMeasuredHeight(of: row))
+    show(part, in: host, knownHeight: settledMeasuredHeight(of: row))
   }
 
-  func storeDetachedBubble(_ host: TranscriptBotBubbleRowHost, for key: String) {
-    guard host.isPresentationReady, rowByKey[key] != nil else {
-      hostPool.recycleBubble(host)
+  func storeDetachedBotPart(_ host: TranscriptMountedRowHost, for key: String) {
+    let keepsHost = host.isPresentationReady && rowByKey[key] != nil
+    if let bubble = host as? TranscriptBotBubbleRowHost {
+      store(bubble, for: key, keepsHost: keepsHost, in: &hostPool.bubbles)
+    } else if let image = host as? TranscriptBotImageRowHost {
+      store(image, for: key, keepsHost: keepsHost, in: &hostPool.images)
+    }
+  }
+
+  private func store<Host: TranscriptMountedRowHost>(
+    _ host: Host, for key: String, keepsHost: Bool, in shelf: inout TranscriptKeyedHostShelf<Host>
+  ) {
+    guard keepsHost else {
+      shelf.recycle(host)
       return
     }
 
-    hostPool.parkBubble(host, for: key)
+    shelf.park(host, for: key)
   }
 
-  private func show(_ bubble: NativeBotBubble, in host: TranscriptBotBubbleRowHost, knownHeight: CGFloat?) {
-    host.setContent(
-      bubble.content, messageID: bubble.messageID, style: markdownRowStyle, linkAction: markdownLinkAction,
-      imageLoader: markdownImageLoader, knownHeight: knownHeight)
+  private func rendersNatively(_ content: TranscriptBotMessageContent) -> Bool {
+    !content.text.isEmpty && !content.blocks.isEmpty
+      && !MarkdownLayoutPolicy.requiresBackgroundTextLayout(content.blocks)
+  }
+
+  private func takeHost(for part: NativeBotPart, key: String) -> TranscriptMountedRowHost {
+    switch part {
+    case .bubble: hostPool.bubbles.take(for: key) { TranscriptBotBubbleRowHost(frame: .zero) }
+    case .image: hostPool.images.take(for: key) { TranscriptBotImageRowHost(frame: .zero) }
+    }
+  }
+
+  private func show(_ part: NativeBotPart, in host: TranscriptMountedRowHost, knownHeight: CGFloat?) {
+    switch part {
+    case let .bubble(messageID, content, layout):
+      (host as? TranscriptBotBubbleRowHost)?.setContent(
+        content, messageID: messageID, layout: layout, style: markdownRowStyle, linkAction: markdownLinkAction,
+        imageLoader: markdownImageLoader, knownHeight: knownHeight)
+    case let .image(source, alt):
+      (host as? TranscriptBotImageRowHost)?.setContent(
+        source: source, alt: alt, linkAction: markdownLinkAction, imageLoader: markdownImageLoader,
+        knownHeight: knownHeight)
+    }
   }
 }

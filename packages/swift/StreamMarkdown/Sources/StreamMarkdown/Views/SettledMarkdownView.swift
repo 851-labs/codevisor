@@ -9,6 +9,7 @@
       let themeFingerprint: Int
       let streamID: String
       let imageLoaderID: String
+      let chrome: MarkdownBlockChrome
     }
 
     public var onContentHeightChange: (() -> Void)?
@@ -40,14 +41,16 @@
       theme: MarkdownTheme,
       streamID: String,
       linkAction: MarkdownLinkAction?,
-      imageLoader: MarkdownImageLoader = .remote
+      imageLoader: MarkdownImageLoader = .remote,
+      chrome: MarkdownBlockChrome = .standard
     ) {
       precondition(!blocks.isEmpty, "Settled Markdown requires at least one block")
       let key = ContentKey(
         blocks: blocks,
         themeFingerprint: theme.renderFingerprint,
         streamID: streamID,
-        imageLoaderID: imageLoader.id
+        imageLoaderID: imageLoader.id,
+        chrome: chrome
       )
       guard key != contentKey else {
         contentViews.forEach { $0.linkAction = linkAction }
@@ -60,7 +63,8 @@
         theme: theme,
         streamID: streamID,
         linkAction: linkAction,
-        imageLoader: imageLoader
+        imageLoader: imageLoader,
+        chrome: chrome
       )
       contentViews.forEach { view in
         view.tableBleedLimit = tableBleedLimit
@@ -183,7 +187,8 @@
       theme: MarkdownTheme,
       streamID: String,
       linkAction: MarkdownLinkAction?,
-      imageLoader: MarkdownImageLoader
+      imageLoader: MarkdownImageLoader,
+      chrome: MarkdownBlockChrome
     ) -> [NativeMarkdownContentView] {
       if MarkdownTextRunRenderer.canRenderAsTextRun(blocks) {
         return [textContentView(blocks: blocks, theme: theme, streamID: streamID, linkAction: linkAction)]
@@ -205,7 +210,8 @@
             id: blockID,
             language: language,
             code: code,
-            theme: theme
+            theme: theme,
+            chrome: chrome
           )
         case let .table(headers, alignments, rows):
           return NativeMarkdownTableBlockView(
@@ -214,7 +220,8 @@
             rows: rows,
             theme: theme,
             linkAction: linkAction,
-            imageLoader: imageLoader
+            imageLoader: imageLoader,
+            chrome: chrome
           )
         case .thematicBreak:
           return NativeMarkdownSeparatorView(color: NSColor(theme.tableBorderColor))

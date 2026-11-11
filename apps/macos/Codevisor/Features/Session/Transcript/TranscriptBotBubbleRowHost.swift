@@ -13,6 +13,7 @@ final class TranscriptBotBubbleRowHost: TranscriptMountedRowHost {
   private let markdownView = SettledMarkdownView()
   private var content: TranscriptBotMessageContent?
   private var style: TranscriptMarkdownRowStyle?
+  private var bubbleLayout = TranscriptBotBubbleLayout.plainText
   private var measuredWidth: CGFloat = -1
   private var reportedHeight: CGFloat?
   private var presentationReady = false
@@ -30,6 +31,7 @@ final class TranscriptBotBubbleRowHost: TranscriptMountedRowHost {
     addSubview(bubble)
     bubble.addSubview(anchor)
     addSubview(markdownView)
+    markdownView.tableBleedLimit = 0
     markdownView.onContentHeightChange = { [weak self] in
       self?.requestContentMeasurement()
     }
@@ -49,6 +51,7 @@ final class TranscriptBotBubbleRowHost: TranscriptMountedRowHost {
   func setContent(
     _ content: TranscriptBotMessageContent,
     messageID: String,
+    layout: TranscriptBotBubbleLayout,
     style: TranscriptMarkdownRowStyle,
     linkAction: MarkdownLinkAction?,
     imageLoader: MarkdownImageLoader,
@@ -57,9 +60,10 @@ final class TranscriptBotBubbleRowHost: TranscriptMountedRowHost {
     self.content = content
     self.messageID = messageID
     self.style = style
+    bubbleLayout = layout
     markdownView.setContent(
       blocks: content.blocks, theme: style.markdown, streamID: messageID, linkAction: linkAction,
-      imageLoader: imageLoader)
+      imageLoader: imageLoader, chrome: layout.chrome)
     bubble.isHighlighted = TranscriptMessageMenuHighlight.shared.messageID == messageID
     measuredWidth = max(1, bounds.width)
     reportedHeight = knownHeight
@@ -103,15 +107,16 @@ final class TranscriptBotBubbleRowHost: TranscriptMountedRowHost {
   private func measureAndLayout() {
     guard let content, let style else { return }
 
-    let insets = TranscriptSendFlightGeometry.bubbleTextInsets
+    let horizontal = bubbleLayout.horizontalInset
+    let vertical = bubbleLayout.verticalInset
     let natural = TranscriptBotMessageWidth.natural(of: content, theme: style.markdown)
     let textWidth = max(1, min(natural, bounds.width - Self.trailingClearance))
     let textHeight = markdownView.contentHeight(forWidth: textWidth)
-    let height = ceil(textHeight + insets.vertical * 2)
-    bubble.frame = NSRect(x: 0, y: 0, width: ceil(textWidth + insets.horizontal * 2), height: height)
+    let height = ceil(textHeight + vertical * 2)
+    bubble.frame = NSRect(x: 0, y: 0, width: ceil(textWidth + horizontal * 2), height: height)
     bubble.cornerRadius = UserBubbleBackground.cornerRadius(for: .large)
     anchor.frame = bubble.bounds
-    markdownView.frame = NSRect(x: insets.horizontal, y: insets.vertical, width: textWidth, height: textHeight)
+    markdownView.frame = NSRect(x: horizontal, y: vertical, width: textWidth, height: textHeight)
     report(height)
   }
 

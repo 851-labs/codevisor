@@ -14,6 +14,7 @@
     private let language: String?
     private let code: String
     private let theme: MarkdownTheme
+    private let chrome: MarkdownBlockChrome
     private let languageLabel = NSTextField(labelWithString: "")
     private let copyButton = NSButton()
     private let divider = NSBox()
@@ -27,12 +28,13 @@
     private var contentSize = CGSize(width: 1, height: 1)
     private(set) var measurementCount = 0
 
-    init(id: String, language: String?, code: String, theme: MarkdownTheme) {
+    init(id: String, language: String?, code: String, theme: MarkdownTheme, chrome: MarkdownBlockChrome = .standard) {
       self.id = id
       self.language = language
       self.code = code
       self.theme = theme
-      fillColor = NSColor(theme.codeBackground)
+      self.chrome = chrome
+      fillColor = chrome.drawsFrame ? NSColor(theme.codeBackground) : .clear
       super.init(frame: .zero)
       configureChrome()
       installInitialText()
@@ -56,7 +58,11 @@
       if staticSurface.prepared == nil, let staticText {
         install(staticText.text, isHighlighted: staticText.isHighlighted)
       }
-      return Self.headerHeight + Self.dividerHeight + contentSize.height
+      return chromeHeight + contentSize.height
+    }
+
+    private var chromeHeight: CGFloat {
+      chrome.drawsFrame ? Self.headerHeight + Self.dividerHeight : 0
     }
 
     override func layout() {
@@ -80,7 +86,7 @@
       )
       scrollView.frame = NSRect(
         x: 0,
-        y: divider.frame.maxY,
+        y: chromeHeight,
         width: bounds.width,
         height: contentSize.height
       )
@@ -101,8 +107,13 @@
 
     private func configureChrome() {
       wantsLayer = true
-      layer?.cornerRadius = 8
+      layer?.cornerRadius = chrome.drawsFrame ? 8 : 0
       layer?.masksToBounds = true
+      configureScrollView()
+      guard chrome.drawsFrame else {
+        addSubview(scrollView)
+        return
+      }
 
       languageLabel.stringValue = language?.uppercased() ?? "CODE"
       languageLabel.font = .systemFont(
@@ -122,18 +133,28 @@
       copyButton.toolTip = "Copy code"
 
       divider.boxType = .separator
+      addSubview(languageLabel)
+      addSubview(copyButton)
+      addSubview(divider)
+      addSubview(scrollView)
+    }
+
+    private func configureScrollView() {
+      let textInset = staticTextInset(for: chrome)
       scrollView.drawsBackground = false
       scrollView.borderType = .noBorder
       scrollView.hasHorizontalScroller = false
       scrollView.hasVerticalScroller = false
       scrollView.horizontalScrollElasticity = .automatic
       scrollView.verticalScrollElasticity = .none
+      scrollView.automaticallyAdjustsContentInsets = false
+      let sideInset = chrome.codeInsets.horizontal - textInset
+      scrollView.contentInsets = NSEdgeInsets(top: 0, left: sideInset, bottom: 0, right: sideInset)
       scrollView.documentView = staticSurface
+    }
 
-      addSubview(languageLabel)
-      addSubview(copyButton)
-      addSubview(divider)
-      addSubview(scrollView)
+    private func staticTextInset(for chrome: MarkdownBlockChrome) -> CGFloat {
+      chrome.drawsFrame ? Self.contentInset : chrome.codeInsets.vertical
     }
 
     private func installInitialText() {
@@ -206,6 +227,7 @@
     private func staticRequest(for text: AttributedString, isHighlighted: Bool) -> StaticTextRequest {
       Self.staticRequest(
         id: id, code: code, text: text, isHighlighted: isHighlighted, theme: theme,
+        inset: staticTextInset(for: chrome),
         scale: window?.backingScaleFactor ?? NSScreen.main?.backingScaleFactor ?? 2,
         appearance: effectiveAppearance.name)
     }
@@ -217,7 +239,7 @@
       let highlighted = CodeHighlightResultCache.shared.value(for: key)
       let request = staticRequest(
         id: id, code: code, text: highlighted ?? AttributedString(code), isHighlighted: highlighted != nil,
-        theme: theme, scale: scale, appearance: appearance)
+        theme: theme, inset: contentInset, scale: scale, appearance: appearance)
       guard StaticTextCache.shared.cached(request.key) == nil else { return }
       StaticTextCache.shared.startPreparing(request)
     }
@@ -228,6 +250,7 @@
       text: AttributedString,
       isHighlighted: Bool,
       theme: MarkdownTheme,
+      inset: CGFloat,
       scale: CGFloat,
       appearance: NSAppearance.Name
     ) -> StaticTextRequest {
@@ -239,7 +262,7 @@
       let foreground = theme.codeForeground
       return StaticTextRequest(
         identity: hasher.finalize(),
-        layout: .natural(inset: contentInset),
+        layout: .natural(inset: inset),
         scale: scale,
         appearance: appearance
       ) {
