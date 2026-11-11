@@ -10,7 +10,7 @@ final class ScreenSharingHostCursorStream {
 
   init(
     channel: any ScreenSharingMessageChannel<ScreenSharingCursorMessage>,
-    displayID: UInt32, metrics: ScreenSharingMetrics,
+    display: ScreenSharingSharedDisplay, metrics: ScreenSharingMetrics,
     isStopping: @escaping () -> Bool, setShowsCursor: @escaping (Bool) -> Void
   ) {
     self.metrics = metrics
@@ -20,8 +20,7 @@ final class ScreenSharingHostCursorStream {
         return
       }
       let publisher = ScreenSharingCursorPublisher(
-        bounds: { ScreenSharingCursorPublisher.displayArea(displayID) },
-        scale: { ScreenSharingCursorPublisher.displayScale(displayID) }, metrics: metrics,
+        bounds: { display.bounds }, scale: { display.scale }, metrics: metrics,
         send: { [weak channel] in channel?.send($0) ?? false })
       self.publisher = publisher
       metrics.label("cursorStream", "on")

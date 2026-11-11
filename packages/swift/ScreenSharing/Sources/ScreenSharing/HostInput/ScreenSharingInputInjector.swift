@@ -6,12 +6,14 @@
     public nonisolated static let eventTag: Int64 = 0x435653435245454E
     private let source = CGEventSource(stateID: .privateState)
     private let systemKeySource = CGEventSource(stateID: .hidSystemState)
-    private let displayBounds: CGRect
+    private let displayBounds: () -> CGRect
     private var buttons = Set<UInt8>()
     private let deliver: (CGEvent) -> Void
     public var isAvailable: Bool { source != nil }
 
-    public init(displayBounds: CGRect, deliver: @escaping (CGEvent) -> Void = { $0.post(tap: .cghidEventTap) }) {
+    public init(
+      displayBounds: @escaping () -> CGRect, deliver: @escaping (CGEvent) -> Void = { $0.post(tap: .cghidEventTap) }
+    ) {
       self.deliver = deliver
       self.displayBounds = displayBounds
       source?.userData = Self.eventTag
@@ -67,7 +69,8 @@
     }
 
     public func location(_ pointer: ScreenSharingPointer) -> CGPoint {
-      CGPoint(
+      let displayBounds = displayBounds()
+      return CGPoint(
         x: displayBounds.minX + min(displayBounds.width - 0.001, pointer.x * displayBounds.width),
         y: displayBounds.minY + min(displayBounds.height - 0.001, pointer.y * displayBounds.height))
     }

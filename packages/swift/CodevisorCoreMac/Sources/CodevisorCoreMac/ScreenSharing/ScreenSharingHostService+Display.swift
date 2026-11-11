@@ -82,7 +82,6 @@ extension ScreenSharingHostService {
         try await Self.waitForMirrorToEnd(session.displayID)
       }
       guard !session.stopping else { return }
-      session.injector = ScreenSharingInputInjector(displayBounds: CGDisplayBounds(session.displayID))
       session.peer.updateVideoConfiguration(session.configuration)
       if session.state == "viewing" {
         if movesDisplay {

@@ -209,13 +209,12 @@ final class ScreenSharingHostService {
       guard let reply = clipboard?.receive(message) else { return }
       session?.peer.channels.clipboardSharing.send(reply)
     }
-    session.injector = ScreenSharingInputInjector(displayBounds: CGDisplayBounds(session.displayID))
     let control = ScreenSharingHostControl(
       availability: { [weak session] in
         guard let session, !session.stopping, session.state == "viewing" || session.hasSentVideo else {
           return "Wait for live video before requesting control."
         }
-        guard session.injector?.isAvailable == true else { return "Native input is unavailable on this Mac." }
+        guard session.injector.isAvailable else { return "Native input is unavailable on this Mac." }
         guard AXIsProcessTrusted() else {
           return
             "Allow Codevisor in System Settings → Privacy & Security → Accessibility on the host Mac, then request control again."
@@ -223,7 +222,7 @@ final class ScreenSharingHostService {
         return nil
       },
       inject: { [weak session] in
-        session?.metrics.increment("controlInputEvents"); session?.injector?.post($0)
+        session?.metrics.increment("controlInputEvents"); session?.injector.post($0)
       }, send: { [weak session] in session?.peer.channels.control.send($0) ?? false })
     session.control = control
     session.peer.channels.control.onMessage = { [weak control] in control?.receive($0) }

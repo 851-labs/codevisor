@@ -8,7 +8,7 @@ struct ScreenSharingInputInjectorTests {
   private static let display = CGRect(x: 0, y: 0, width: 1920, height: 1080)
 
   @Test func aPointerMapsOntoTheDisplayAndStaysInsideItsLastPixel() {
-    let injector = ScreenSharingInputInjector(displayBounds: Self.display, deliver: { _ in })
+    let injector = ScreenSharingInputInjector(displayBounds: { Self.display }, deliver: { _ in })
     #expect(injector.location(.init(x: 0, y: 0)) == CGPoint(x: 0, y: 0))
     #expect(injector.location(.init(x: 0.5, y: 0.5)) == CGPoint(x: 960, y: 540))
     #expect(injector.location(.init(x: 1, y: 1)) == CGPoint(x: 1919.999, y: 1079.999))
@@ -16,14 +16,14 @@ struct ScreenSharingInputInjectorTests {
 
   @Test func aDisplayLeftOfTheMainOneKeepsItsNegativeOrigin() {
     let bounds = CGRect(x: -1920, y: -100, width: 1920, height: 1080)
-    let injector = ScreenSharingInputInjector(displayBounds: bounds, deliver: { _ in })
+    let injector = ScreenSharingInputInjector(displayBounds: { bounds }, deliver: { _ in })
     #expect(injector.location(.init(x: 0, y: 0)) == CGPoint(x: -1920, y: -100))
     #expect(injector.location(.init(x: 0.5, y: 0.5)) == CGPoint(x: -960, y: 440))
   }
 
   @Test func systemKeysComeFromTheHIDStateAndOtherKeysFromThePrivateState() throws {
     let recorder = InjectionRecorder()
-    let injector = ScreenSharingInputInjector(displayBounds: Self.display, deliver: recorder.deliver)
+    let injector = ScreenSharingInputInjector(displayBounds: { Self.display }, deliver: recorder.deliver)
     for key in ScreenSharingSystemKey.allCases {
       injector.post(.key(code: key.rawValue, down: true, repeatKey: false, modifiers: 0))
     }
@@ -38,7 +38,7 @@ struct ScreenSharingInputInjectorTests {
 
   @Test func aClickCarriesItsButtonLocationAndClickCount() throws {
     let recorder = InjectionRecorder()
-    let injector = ScreenSharingInputInjector(displayBounds: Self.display, deliver: recorder.deliver)
+    let injector = ScreenSharingInputInjector(displayBounds: { Self.display }, deliver: recorder.deliver)
     try #require(injector.isAvailable)
     injector.post(.button(.init(x: 0.5, y: 0.25), button: 0, down: true, clicks: 2, modifiers: 0))
     injector.post(.button(.init(x: 0.5, y: 0.25), button: 0, down: false, clicks: 2, modifiers: 0))
@@ -57,7 +57,7 @@ struct ScreenSharingInputInjectorTests {
 
   @Test func motionBecomesADragForTheLowestHeldButtonAndAPlainMoveOnceTheyAreReleased() throws {
     let recorder = InjectionRecorder()
-    let injector = ScreenSharingInputInjector(displayBounds: Self.display, deliver: recorder.deliver)
+    let injector = ScreenSharingInputInjector(displayBounds: { Self.display }, deliver: recorder.deliver)
     let point = ScreenSharingPointer(x: 0.5, y: 0.5)
     injector.post(.move(point, modifiers: 0))
     injector.post(.button(point, button: 2, down: true, clicks: 1, modifiers: 0))
@@ -77,7 +77,7 @@ struct ScreenSharingInputInjectorTests {
 
   @Test func scrollingCarriesPixelDeltasOnBothAxesAtThePointer() throws {
     let recorder = InjectionRecorder()
-    let injector = ScreenSharingInputInjector(displayBounds: Self.display, deliver: recorder.deliver)
+    let injector = ScreenSharingInputInjector(displayBounds: { Self.display }, deliver: recorder.deliver)
     injector.post(.scroll(.init(x: 0.25, y: 0.75), x: -7, y: 13, modifiers: 0))
     let event = try #require(recorder.events.first)
     #expect(event.type == .scrollWheel)
@@ -88,7 +88,7 @@ struct ScreenSharingInputInjectorTests {
 
   @Test func keysCarryTheirCodeAndWhetherTheyAreAutorepeats() throws {
     let recorder = InjectionRecorder()
-    let injector = ScreenSharingInputInjector(displayBounds: Self.display, deliver: recorder.deliver)
+    let injector = ScreenSharingInputInjector(displayBounds: { Self.display }, deliver: recorder.deliver)
     injector.post(.key(code: 12, down: true, repeatKey: false, modifiers: 0))
     injector.post(.key(code: 12, down: true, repeatKey: true, modifiers: 0))
     injector.post(.key(code: 12, down: false, repeatKey: false, modifiers: 0))
@@ -99,7 +99,7 @@ struct ScreenSharingInputInjectorTests {
 
   @Test func pastedTextIsOneKeystrokePairCarryingTheWholeString() throws {
     let recorder = InjectionRecorder()
-    let injector = ScreenSharingInputInjector(displayBounds: Self.display, deliver: recorder.deliver)
+    let injector = ScreenSharingInputInjector(displayBounds: { Self.display }, deliver: recorder.deliver)
     injector.post(.text("héllo 👋"))
     #expect(recorder.types == [.keyDown, .keyUp])
     for event in recorder.events {
@@ -114,7 +114,7 @@ struct ScreenSharingInputInjectorTests {
   @Test(arguments: modifierBits)
   func everyModifierBitMapsOntoItsQuartzFlag(modifiers: UInt8, expected: CGEventFlags) throws {
     let recorder = InjectionRecorder()
-    let injector = ScreenSharingInputInjector(displayBounds: Self.display, deliver: recorder.deliver)
+    let injector = ScreenSharingInputInjector(displayBounds: { Self.display }, deliver: recorder.deliver)
     injector.post(.key(code: 12, down: true, repeatKey: false, modifiers: modifiers))
     let known: CGEventFlags = [
       .maskShift, .maskControl, .maskAlternate, .maskCommand, .maskAlphaShift, .maskSecondaryFn,
@@ -124,7 +124,7 @@ struct ScreenSharingInputInjectorTests {
 
   @Test func everyInjectedEventIsTaggedSoTheViewerIgnoresItsOwnEcho() {
     let recorder = InjectionRecorder()
-    let injector = ScreenSharingInputInjector(displayBounds: Self.display, deliver: recorder.deliver)
+    let injector = ScreenSharingInputInjector(displayBounds: { Self.display }, deliver: recorder.deliver)
     let point = ScreenSharingPointer(x: 0.5, y: 0.5)
     injector.post(.move(point, modifiers: 0))
     injector.post(.button(point, button: 0, down: true, clicks: 1, modifiers: 0))
