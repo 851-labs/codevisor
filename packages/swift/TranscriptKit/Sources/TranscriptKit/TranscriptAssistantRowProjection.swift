@@ -199,7 +199,7 @@ enum TranscriptAssistantRowProjection {
       switch segment {
       case let .markdown(source):
         let blocks = TranscriptMarkdownParseCache.shared.parse(
-          source, messageID: message.id, sourceID: sourceID
+          source, messageID: message.id, sourceID: sourceID, isReceiving: lifecycle == .receiving
         )
         let sourceOrdinal = ordinal
         let chunks = TranscriptMarkdownChunkProjection.chunks(from: blocks)
