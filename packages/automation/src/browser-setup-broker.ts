@@ -126,13 +126,16 @@ const answerWithin = async <Answer>(
   }
 }
 
+const noChatToAsk =
+  "Chrome isn't connected to Codevisor, and this caller has no Codevisor chat to ask the user in. Ask the user to connect the Codevisor extension in Chrome, then try again."
+
 export const makeBrowserSetupBroker = (provider: BrowserUseProvider): BrowserSetupBroker => {
   const sinks = new Map<string, RuntimeEventSink>()
   const pending = new Map<string, PendingQuestion>()
 
   const emit = async (sessionId: string, payload: unknown): Promise<void> => {
     const sink = sinks.get(sessionId)
-    if (sink === undefined) throw new Error("Browser setup requires an active Codevisor session")
+    if (sink === undefined) throw new Error(noChatToAsk)
     await sink({ kind: "session.output", subjectId: sessionId, payload })
   }
 

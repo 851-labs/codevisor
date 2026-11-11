@@ -159,6 +159,7 @@ export const endpoints = [
   "POST /v1/mcps/:id/oauth-disconnect",
   "PATCH /v1/mcps/:id",
   "DELETE /v1/mcps/:id",
+  "POST /v1/mcp-gateways",
   "PATCH /v1/projects/:id/mcps/:mcpId",
   "PATCH /v1/sessions/:id/mcps/:mcpId",
   "GET /v1/native-mcps",
@@ -294,6 +295,8 @@ export const summaries: Partial<Record<Endpoint, string>> = {
   "POST /v1/sandboxes/:id/wake":
     "Wake a paused sandbox; it shows waking until its Codevisor is back, then running",
   "POST /v1/gateway/invoke": "Run a gateway tool call from another machine's sandbox",
+  "POST /v1/mcp-gateways":
+    "Open a tool gateway for an MCP client outside Codevisor, such as `codevisor mcp`",
   "GET /v1/openapi.json": "Get the OpenAPI document",
   "POST /v1/bots/:id/projects": "Add a project to a bot and check its repository out for the bot",
   "DELETE /v1/bots/:id/projects/:projectId": "Remove a project and its checkout from a bot",
@@ -355,6 +358,7 @@ export const created = new Set<Endpoint>([
   "POST /v1/harnesses/:id/accounts",
   "POST /v1/harnesses/:id/accounts/:accountId/login",
   "POST /v1/mcps",
+  "POST /v1/mcp-gateways",
   "POST /v1/mcps/:id/oauth-start",
   "POST /v1/skills",
   "POST /v1/skills/import-remote",

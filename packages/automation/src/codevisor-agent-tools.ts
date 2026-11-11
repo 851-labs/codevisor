@@ -11,7 +11,7 @@ import {
 } from "@codevisor/api"
 import { Schema } from "effect"
 
-import { isRemoteScope, localCallerId } from "./codevisor-agent-caller.js"
+import { hasNoLocalChat, localCallerId } from "./codevisor-agent-caller.js"
 import { agentTool, type AgentTool, type AgentToolContext } from "./codevisor-agent-tool.js"
 import { apiTool } from "./codevisor-api-tool-spec.js"
 import { namedRecord } from "./codevisor-tool-shapes.js"
@@ -146,7 +146,7 @@ const archiveWorkspace = async (tool: AgentToolContext, workspaceId: string): Pr
   )
 
 const archiveCaller = (tool: AgentToolContext) => {
-  if (isRemoteScope(tool.context.sessionId)) return {}
+  if (hasNoLocalChat(tool.context.sessionId)) return {}
   return { callerAgentId: tool.context.sessionId }
 }
 

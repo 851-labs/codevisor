@@ -14,7 +14,11 @@ import { McpServer as McpSdkServer } from "@modelcontextprotocol/server"
 import type { RegisteredTool } from "@modelcontextprotocol/server"
 import { z } from "zod"
 
-import { executeToolDescription, makeGatewayCatalog } from "./mcp-gateway-catalog.js"
+import {
+  executeToolDescription,
+  type ExternalClient,
+  makeGatewayCatalog
+} from "./mcp-gateway-catalog.js"
 import { makeGatewayDispatch } from "./mcp-gateway-dispatch.js"
 import { makeExecuteHandler } from "./mcp-gateway-execute.js"
 import {
@@ -45,13 +49,15 @@ export interface GatewayConnection {
 export interface GatewayRuntime {
   readonly sessionId: string
   readonly projectId?: string | undefined
+  readonly client?: ExternalClient | undefined
   readonly connections: Map<string, GatewayConnection>
   inventory: string
   skillsDescription: string
   sink?: RuntimeEventSink | undefined
+  onDisconnected?: (() => void) | undefined
 }
 
-export type { CatalogServer } from "./mcp-gateway-catalog.js"
+export type { CatalogServer, ExternalClient } from "./mcp-gateway-catalog.js"
 
 export interface ToolGatewayConfig {
   readonly name: string
@@ -171,7 +177,9 @@ export const makeMcpGateway = (deps: McpGatewayDeps) => {
         gateway.skillsDescription = skillsDescription
         for (const connection of gateway.connections.values()) {
           if (inventoryChanged) {
-            connection.executeTool.update({ description: executeToolDescription(inventory) })
+            connection.executeTool.update({
+              description: executeToolDescription(inventory, gateway.client)
+            })
           }
           if (skillsChanged) connection.skillsTool.update({ description: skillsDescription })
         }
@@ -258,12 +266,17 @@ export const makeMcpGateway = (deps: McpGatewayDeps) => {
     turnClientId
   })
 
-  const gatewayRuntime = async (sessionId: string, projectId?: string): Promise<GatewayRuntime> => {
+  const gatewayRuntime = async (
+    sessionId: string,
+    projectId?: string,
+    client?: ExternalClient
+  ): Promise<GatewayRuntime> => {
     const inventory = await integrationInventory(projectId, sessionId)
     const skillsDescription = skillsToolDescription(await sessionSkills(projectId, sessionId))
     return {
       sessionId,
       ...(projectId === undefined ? {} : { projectId }),
+      ...(client === undefined ? {} : { client }),
       connections: new Map(),
       inventory,
       skillsDescription
@@ -276,7 +289,7 @@ export const makeMcpGateway = (deps: McpGatewayDeps) => {
     const executeTool = sdkServer.registerTool(
       "execute",
       {
-        description: executeToolDescription(inventory),
+        description: executeToolDescription(inventory, runtime.client),
         inputSchema: z.object({
           description: z.string().min(1).describe(DESCRIPTION_GUIDANCE),
           code: z.string().min(1),
@@ -335,6 +348,7 @@ export const makeMcpGateway = (deps: McpGatewayDeps) => {
     transport.onclose = () => {
       /* v8 ignore next */
       if (transport.sessionId !== undefined) runtime.connections.delete(transport.sessionId)
+      if (runtime.connections.size === 0) runtime.onDisconnected?.()
     }
     const connection: GatewayConnection = {
       server: sdkServer,

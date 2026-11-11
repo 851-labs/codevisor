@@ -1,9 +1,10 @@
 import { randomBytes, timingSafeEqual } from "node:crypto"
 
+import { externalClientSessionKey } from "@codevisor/api"
 import { isInitializeRequest } from "@modelcontextprotocol/server"
 
 import type { ExecutionJobs } from "./mcp-gateway-jobs.js"
-import type { makeMcpGateway } from "./mcp-gateway.js"
+import type { GatewayRuntime, makeMcpGateway, ToolGatewayConfig } from "./mcp-gateway.js"
 import type { McpManagerCore } from "./mcp-manager-core.js"
 import type { McpManager } from "./mcp-manager-types.js"
 import { readJsonBody } from "./mcp-support.js"
@@ -28,6 +29,7 @@ export type McpGatewayOperations = Pick<
   | "handleGatewayRequest"
   | "invokeRemoteGatewayCall"
   | "issueGateway"
+  | "issueExternalGateway"
 >
 
 export const makeMcpGatewayOperations = (
@@ -56,6 +58,19 @@ export const makeMcpGatewayOperations = (
     unsubscribeSkills
   } = deps
 
+  const gatewayConfig = (gatewayId: string): ToolGatewayConfig => {
+    const url = new URL("/mcp/gateway", state.gatewayBaseUrl)
+    url.searchParams.set("gateway", gatewayId)
+    return { name: "codevisor", url: url.toString(), bearerToken: gatewayBearerToken }
+  }
+
+  const registerGateway = (sessionId: string, runtime: GatewayRuntime): ToolGatewayConfig => {
+    const gatewayId = randomBytes(24).toString("base64url")
+    gateways.set(gatewayId, runtime)
+    sessionGatewayIds.set(sessionId, gatewayId)
+    return gatewayConfig(gatewayId)
+  }
+
   const issueGateway: McpManager["issueGateway"] = async (sessionId, projectId, sink) => {
     await builtinsReady
     if (sink !== undefined) {
@@ -65,26 +80,24 @@ export const makeMcpGatewayOperations = (
     const existing = existingId === undefined ? undefined : gateways.get(existingId)
     if (existingId !== undefined && existing !== undefined) {
       if (sink !== undefined) existing.sink = sink
-      const existingUrl = new URL("/mcp/gateway", state.gatewayBaseUrl)
-      existingUrl.searchParams.set("gateway", existingId)
-      return {
-        name: "codevisor",
-        url: existingUrl.toString(),
-        bearerToken: gatewayBearerToken
-      }
+      return gatewayConfig(existingId)
     }
-    const gatewayId = randomBytes(24).toString("base64url")
     const runtime = await gatewayRuntime(sessionId, projectId)
     runtime.sink = sink
-    gateways.set(gatewayId, runtime)
-    sessionGatewayIds.set(sessionId, gatewayId)
-    const url = new URL("/mcp/gateway", state.gatewayBaseUrl)
-    url.searchParams.set("gateway", gatewayId)
-    return {
-      name: "codevisor",
-      url: url.toString(),
-      bearerToken: gatewayBearerToken
+    return registerGateway(sessionId, runtime)
+  }
+
+  const issueExternalGateway: McpManager["issueExternalGateway"] = async ({
+    client,
+    projectId
+  }) => {
+    await builtinsReady
+    const sessionId = externalClientSessionKey(randomBytes(24).toString("base64url"))
+    const runtime = await gatewayRuntime(sessionId, projectId, client)
+    runtime.onDisconnected = () => {
+      if (sessionGatewayIds.has(sessionId)) void closeSession(sessionId).catch(() => undefined)
     }
+    return registerGateway(sessionId, runtime)
   }
 
   const closeSession: McpManager["closeSession"] = async (sessionId) => {
@@ -211,6 +224,7 @@ export const makeMcpGatewayOperations = (
     finishTurn,
     handleGatewayRequest,
     invokeRemoteGatewayCall,
-    issueGateway
+    issueGateway,
+    issueExternalGateway
   }
 }

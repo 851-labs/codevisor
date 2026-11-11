@@ -17,6 +17,7 @@ import { AddBotProjectRequest, Bot, CreateBotRequest, UpdateBotRequest } from ".
 import { ClientContext, ClientNavigationRequest, ClientSummary } from "./client-control.js"
 import { ClientPageRequest, ClientLayoutRequest, ClientWindowRequest } from "./client-ui.js"
 import { MachineRolesResponse } from "./cloud-role-protocol.js"
+import { CreateExternalGatewayRequest, ExternalGateway } from "./external-clients.js"
 import { FeatureFlagsResponse, FeatureFlagState, SetFeatureFlagRequest } from "./feature-flags.js"
 import {
   AgentSessionSummary,
@@ -241,6 +242,7 @@ export const requestSchemas = (): Partial<Record<Endpoint, Schema.Constraint>> =
   "POST /v1/clients/:clientId/window": ClientWindowRequest,
   "PUT /v1/mcps/:id/machine-state": SetMachineMcpEnabledRequest,
   "POST /v1/mcps": CreateMcpServerRequest,
+  "POST /v1/mcp-gateways": CreateExternalGatewayRequest,
   "POST /v1/plugins/events/subscriptions": CreatePluginEventSubscriptionRequest,
   "POST /v1/plugins/:serverId/accounts": SavePluginAccountRequest,
   "PUT /v1/plugins/:serverId/accounts/:accountId": SavePluginAccountRequest,
@@ -379,6 +381,7 @@ export const responseSchemas = (): Partial<Record<Endpoint, Schema.Constraint>> 
   "PUT /v1/mcps/:id/machine-state": MachineMcpState,
   "GET /v1/mcps": arrayOf(McpServer),
   "POST /v1/mcps": McpServer,
+  "POST /v1/mcp-gateways": ExternalGateway,
   "GET /v1/plugins/catalog": PluginCatalogResponse,
   "GET /v1/plugins/catalog/:id": PluginCatalogEntry,
   "POST /v1/plugins/catalog/:id/install": McpServer,

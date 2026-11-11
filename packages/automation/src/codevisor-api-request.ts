@@ -1,4 +1,10 @@
-import { CALLER_AGENT_TICKET_HEADER, jsonSchema, parseRemoteSessionKey } from "@codevisor/api"
+import {
+  CALLER_AGENT_TICKET_HEADER,
+  isExternalClientKey,
+  isFromExternalClient,
+  jsonSchema,
+  parseRemoteSessionKey
+} from "@codevisor/api"
 import { Schema } from "effect"
 
 import type { AutomationProviderContext } from "./automation-provider.js"
@@ -168,25 +174,43 @@ const bodyPayload = (
   const payload = definedArguments(args, bodyPropertyNames(spec.body!))
   if (spec.name === "agents.message") return { ...payload, ...senderFields(context.sessionId) }
   if (spec.name === "agents.start") return startPayload(payload, context)
-  if (spec.name === "shell.exec") return { ...payload, callerAgentId: context.sessionId }
+  if (spec.name === "shell.exec") return execPayload(payload, context)
   if (spec.name === "bots.create") return { ...BOT_TOOL_DEFAULTS, ...payload }
   return payload
 }
 
 const senderFields = (sessionId: string): UnknownRecord => {
+  if (isFromExternalClient(sessionId)) return {}
   const remote = parseRemoteSessionKey(sessionId)
   if (remote === undefined) return { sentByAgentId: sessionId }
   return { sentByAgentId: remote.sessionId, sentByAgentMachineId: remote.machineId }
+}
+
+const execPayload = (payload: UnknownRecord, context: AutomationProviderContext): UnknownRecord => {
+  if (isExternalClientKey(context.sessionId)) return payload
+  return { ...payload, callerAgentId: context.sessionId }
 }
 
 const startPayload = (
   payload: UnknownRecord,
   context: AutomationProviderContext
 ): UnknownRecord => {
+  if (isFromExternalClient(context.sessionId)) return externalStartPayload(payload, context)
   const remote = parseRemoteSessionKey(context.sessionId)
   if (remote === undefined) return { ...payload, callerAgentId: context.sessionId }
   return { ...payload, callerAgentId: remote.sessionId, callerAgentMachineId: remote.machineId }
 }
+
+const externalStartPayload = (
+  payload: UnknownRecord,
+  context: AutomationProviderContext
+): UnknownRecord => {
+  if (!takesConnectionProject(payload, context)) return payload
+  return { ...payload, project: context.projectId }
+}
+
+const takesConnectionProject = (payload: UnknownRecord, context: AutomationProviderContext) =>
+  context.projectId !== undefined && payload.project === undefined && payload.checkout !== "none"
 
 const definedArguments = (args: UnknownRecord, names: ReadonlyArray<string>): UnknownRecord =>
   Object.fromEntries(

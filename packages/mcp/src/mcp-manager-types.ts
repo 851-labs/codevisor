@@ -25,7 +25,7 @@ import type { AutomationTool } from "./mcp-automation-use.js"
 import type { ExecutionTimers } from "./mcp-gateway-execution.js"
 import type { ExecutionJobs } from "./mcp-gateway-jobs.js"
 import type { PackagedSkill, SkillSource } from "./mcp-gateway-skills.js"
-import type { ToolGatewayConfig } from "./mcp-gateway.js"
+import type { ExternalClient, ToolGatewayConfig } from "./mcp-gateway.js"
 import type { ManagedOAuthClients } from "./mcp-managed-oauth.js"
 import type { McpOAuthClock } from "./mcp-oauth-clock.js"
 import type { McpCredentialReference, McpOAuthVault } from "./mcp-oauth-grant.js"
@@ -137,6 +137,10 @@ export interface McpManager {
     projectId?: string,
     sink?: RuntimeEventSink
   ) => Promise<ToolGatewayConfig>
+  readonly issueExternalGateway: (options: {
+    readonly client?: ExternalClient | undefined
+    readonly projectId?: string | undefined
+  }) => Promise<ToolGatewayConfig>
   readonly answerQuestion: (
     sessionId: string,
     questionId: string,
