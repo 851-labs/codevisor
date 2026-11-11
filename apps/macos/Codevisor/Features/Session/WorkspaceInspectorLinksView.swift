@@ -121,7 +121,6 @@ private struct WorkspaceInspectorLinkRow: View {
       .contentShape(Rectangle())
     }
     .buttonStyle(.plain)
-    .help(link.url.absoluteString)
     .accessibilityLabel(title)
     .accessibilityValue(WorkspaceInspectorLinksView.host(link.url))
     .contextMenu {

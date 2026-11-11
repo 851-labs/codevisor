@@ -44,7 +44,6 @@ struct SidebarTabRow: View {
         .font(.system(size: SidebarRowIcon.trailingSize, weight: SidebarRowIcon.weight))
         .foregroundStyle(.secondary)
         .frame(width: SidebarRowIcon.trailingSlot, height: SidebarRowIcon.trailingSlot)
-        .help("Split")
         .accessibilityHidden(true)
     }
   }
@@ -77,7 +76,7 @@ struct SidebarTabRowLabel: View {
         .font(.system(size: SidebarRowIcon.size, weight: SidebarRowIcon.weight))
         .foregroundStyle(.secondary)
         .frame(width: 18, height: 18)
-        .help(label.icon.help)
+        .accessibilityHint(label.icon.help)
       Text(label.title)
         .italic(label.isPreview)
         .lineLimit(1)

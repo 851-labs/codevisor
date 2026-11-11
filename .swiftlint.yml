@@ -67,3 +67,15 @@ custom_rules:
     excluded:
       - Command(s|Items)\.swift$
       - Sheet\.swift$
+  sidebar_row_tooltip:
+    name: Sidebar row tooltip
+    message: >-
+      Sidebar-style rows never show a tooltip. Give VoiceOver extra text with .accessibilityHint,
+      and put an icon-only button's tooltip on its own button type.
+    regex: '(^|[\s)}\]])\.help\('
+    excluded_match_kinds: [comment, doccomment, string]
+    severity: error
+    included:
+      - apps/macos/Codevisor/Features/(Sidebar|BotList)/.*Rows?\.swift$
+      - apps/macos/Codevisor/Features/Session/WorkspaceInspector\w*Rows?\.swift$
+      - apps/macos/Codevisor/Features/Session/WorkspaceInspectorLinksView\.swift$

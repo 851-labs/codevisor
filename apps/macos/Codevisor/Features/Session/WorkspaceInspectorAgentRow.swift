@@ -20,6 +20,6 @@ struct WorkspaceInspectorAgentRow: View {
     }
     .buttonStyle(.plain)
     .containerValue(\.fillsWorkspaceInspectorCardRow, true)
-    .help("Open \(title)")
+    .accessibilityHint("Open \(title)")
   }
 }
