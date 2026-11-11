@@ -1,6 +1,6 @@
 import type { IncomingMessage, ServerResponse } from "node:http"
 
-import { BrowserCookieExchange, BrowserNavigation } from "@codevisor/api"
+import { BrowserCookieExchange, BrowserCookieImport, BrowserNavigation } from "@codevisor/api"
 
 import {
   HttpFailure,
@@ -24,6 +24,11 @@ export const routeBrowserState = async (
   if (url.pathname === "/v1/browser/state/cookies" && request.method === "POST") {
     const { mutations } = await readSchema(request, BrowserCookieExchange)
     writeJson(response, 200, await run(services.db.exchangeBrowserCookies(mutations)))
+    return true
+  }
+  if (url.pathname === "/v1/browser/state/cookies/import" && request.method === "POST") {
+    const { cookies } = await readSchema(request, BrowserCookieImport)
+    writeJson(response, 200, await run(services.db.importBrowserCookies(cookies)))
     return true
   }
   const favicon = /^\/v1\/browser\/state\/favicons\/([0-9a-f]{64})$/.exec(url.pathname)

@@ -12,6 +12,7 @@ public protocol CodevisorServerClienting: BrowserStateClienting, BrowserFaviconC
   func screenSharingVNCSocket(displayId: String) throws -> any ServerWebSocketConnecting
   func livePreviewSocket(sessionId: UUID) throws -> any ServerWebSocketConnecting
   func exchangeBrowserCookies(_ mutations: [BrowserCookieMutation]) async throws -> BrowserCookieSnapshot
+  func importBrowserCookies(_ cookies: [BrowserCookie]) async throws -> BrowserCookieImportResult
   func browserNavigation(paneId: UUID) async throws -> BrowserNavigation?
   func publishBrowserNavigation(paneId: UUID, navigation: BrowserNavigation) async throws
   func browserFavicon(sha256: String) async throws -> Data?

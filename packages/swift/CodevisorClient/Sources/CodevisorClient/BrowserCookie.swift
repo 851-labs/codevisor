@@ -44,6 +44,11 @@ public struct BrowserCookieEntry: Codable, Sendable {
     self.key = key; self.revision = revision; self.cookie = cookie
   }
 }
+public struct BrowserCookieImportResult: Codable, Sendable, Equatable {
+  public var imported: Int
+  public var replaced: Int
+  public init(imported: Int, replaced: Int) { self.imported = imported; self.replaced = replaced }
+}
 public struct BrowserCookieSnapshot: Codable, Sendable {
   public var revision: Int
   public var entries: [BrowserCookieEntry]

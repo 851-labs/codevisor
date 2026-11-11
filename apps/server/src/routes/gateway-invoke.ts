@@ -1,6 +1,7 @@
 import type { IncomingMessage, ServerResponse } from "node:http"
 
 import {
+  FLEET_BROWSER_COOKIES_PATH,
   FLEET_EXEC_CONTROL_PATH,
   FLEET_EXEC_TASK_PATH,
   FLEET_MIRROR_PATH,
@@ -17,6 +18,7 @@ import {
   type CodevisorServerServices,
   type RouteState
 } from "../server-context.js"
+import { receiveBrowserCookies } from "./fleet-browser-cookies.js"
 import { fleetCall, invokeForFleet } from "./fleet-calls.js"
 import { receiveExecControl, receiveExecTask, receiveMirrorAction } from "./fleet-machine-files.js"
 import { receiveSandboxAction } from "./fleet-sandbox-actions.js"
@@ -121,6 +123,10 @@ export const routeGatewayInvoke = async (
   }
   if (path === FLEET_EXEC_CONTROL_PATH) {
     await answerSandboxAction(response, () => receiveExecControl(services, call, body.args))
+    return true
+  }
+  if (path === FLEET_BROWSER_COOKIES_PATH) {
+    await answerSandboxAction(response, () => receiveBrowserCookies(services, call, body.args))
     return true
   }
   if (path === FLEET_EXEC_TASK_PATH) {

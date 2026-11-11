@@ -108,9 +108,11 @@ struct ChromiumBrowserToolbarContent: View {
           ChromiumBrowserZoomPopover(
             model: model, request: model.pageZoom.presentationRequest, editing: editing, loading: model.isLoading)
         }
+        ChromeImportButton(browser: model, signIns: ChromeSignInImport.shared)
         ChromiumDownloadsButton(downloads: model.downloads)
       }
       .frame(maxWidth: .infinity)
+      .task { await ChromeSignInImport.shared.loadProfiles() }
     }
     .frame(minWidth: minimumWidth, idealWidth: 600, maxWidth: 850)
     .onAppear {

@@ -155,6 +155,7 @@ export interface CodevisorServerServices {
   readonly machineRoles?: import("@codevisor/cloud-client").MachineRoles
   readonly machineEnrollment?: import("./infra/machine-enrollment.js").MachineEnrollment
   readonly fleetTickets?: import("./infra/fleet-tickets.js").FleetTickets
+  readonly browserCookieShare?: import("./infra/browser-cookie-share.js").BrowserCookieShare
   readonly sandboxes?: import("./routes/sandboxes.js").SandboxesService
   readonly usageLimits?: UsageLimitsCache
   readonly execTasks?: import("./infra/exec-tasks.js").ExecTasks

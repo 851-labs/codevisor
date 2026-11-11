@@ -4,7 +4,11 @@ import { dirname, join } from "node:path"
 import { performance } from "node:perf_hooks"
 import { fileURLToPath } from "node:url"
 
-import type { DataUpgradeProgress, ScreenSharingRequest } from "@codevisor/api"
+import type {
+  CloudMachinePresence,
+  DataUpgradeProgress,
+  ScreenSharingRequest
+} from "@codevisor/api"
 import { macNativeHostAvailable, requestMacScreenSharing } from "@codevisor/automation"
 import { MachineRoles } from "@codevisor/cloud-client"
 import type { CodevisorDatabaseService } from "@codevisor/db"
@@ -15,6 +19,7 @@ import {
   type NativeMcpManagerConfig
 } from "@codevisor/mcp"
 
+import { makeBrowserCookieShare } from "./infra/browser-cookie-share.js"
 import { makeCloudServerControl, startCloudBridge } from "./infra/cloud-bridge.js"
 import { makeCloudInbox } from "./infra/cloud-inbox.js"
 import { enabledFeatureFlags } from "./infra/feature-flags.js"
@@ -367,7 +372,16 @@ export const startMachineNetwork = async (options: {
       ? {}
       : { installUrl: process.env["CODEVISOR_INSTALL_URL"] })
   })
+  const browserCookieShare = makeBrowserCookieShare({
+    db: options.db,
+    link: machineLink,
+    self: { id: options.serverId, name: machineName },
+    isSandbox: () => isSandboxMachine(cloudControl),
+    now: Date.now,
+    log: (line) => console.error(line)
+  })
   return {
+    browserCookieShare,
     cloudControl,
     cloudInbox,
     machine,
@@ -376,6 +390,15 @@ export const startMachineNetwork = async (options: {
     machineRoles,
     fleetTickets
   }
+}
+
+const isSandboxMachine = (cloud: {
+  readonly deviceId: () => string | undefined
+  readonly machines: () => ReadonlyArray<CloudMachinePresence> | undefined
+}): boolean => {
+  const deviceId = cloud.deviceId()
+  const self = cloud.machines()?.find((presence) => presence.deviceId === deviceId)
+  return self?.ephemeral !== undefined
 }
 
 const systemMachineRoles = (): MachineRoles =>

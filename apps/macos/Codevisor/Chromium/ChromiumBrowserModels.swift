@@ -24,6 +24,12 @@ final class ChromiumBrowserModels {
     return created
   }
 
+  func reload(machineId: String) {
+    for model in models.values where model.machineId == machineId && model.hasLoadedPage {
+      model.reload()
+    }
+  }
+
   func expectNewTab(_ paneId: UUID, focusingAddress: Bool = false) {
     newTabs[paneId] = focusingAddress
   }

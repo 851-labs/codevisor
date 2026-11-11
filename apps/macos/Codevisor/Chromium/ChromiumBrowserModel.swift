@@ -32,7 +32,7 @@ final class ChromiumBrowserModel {
   @ObservationIgnored private let firstPage = ChromiumFirstPage()
   @ObservationIgnored var onNavigate: ((String, String) -> Void)?
   @ObservationIgnored let favicons: BrowserFaviconSharing
-  @ObservationIgnored private let client: any CodevisorServerClienting
+  @ObservationIgnored let client: any CodevisorServerClienting
   @ObservationIgnored private let resolveBaseURL: @MainActor () async -> URL?
   @ObservationIgnored private var loadTask: Task<Void, Never>?
   @ObservationIgnored private var generation = UUID()

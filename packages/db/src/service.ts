@@ -1,8 +1,5 @@
 import type {
   NavigationSnapshot,
-  BrowserCookieMutation,
-  BrowserCookieSnapshot,
-  BrowserNavigation,
   ArchivedWorktree,
   AttachmentKind,
   AttachmentRef,
@@ -44,6 +41,7 @@ import { Effect } from "effect"
 import type { OpenAssistantText } from "./assistant-texts.js"
 import type { AutoResumeService } from "./auto-resume-service.js"
 import type { BotsService } from "./bot-rows.js"
+import type { BrowserStateService } from "./browser-state-service.js"
 import { createService } from "./create-service.js"
 import { DatabaseError, attempt } from "./errors.js"
 import type { FileStorageService } from "./file-storage-service.js"
@@ -95,7 +93,8 @@ export interface CodevisorDatabaseService
     AutoResumeService,
     FileStorageService,
     FleetOutboxService,
-    SteeredPromptQueueService {
+    SteeredPromptQueueService,
+    BrowserStateService {
   readonly getNavigationSnapshot: Effect.Effect<NavigationSnapshot, DatabaseError>
   readonly migrate: Effect.Effect<ReadonlyArray<string>, DatabaseError>
   readonly close: Effect.Effect<void>
@@ -441,16 +440,6 @@ export interface CodevisorDatabaseService
   readonly getOrCreateInstanceId: Effect.Effect<string, DatabaseError>
   readonly getOrCreateConnectionToken: Effect.Effect<string, DatabaseError>
   readonly rotateConnectionToken: Effect.Effect<string, DatabaseError>
-  readonly exchangeBrowserCookies: (
-    mutations: ReadonlyArray<BrowserCookieMutation>
-  ) => Effect.Effect<BrowserCookieSnapshot, DatabaseError>
-  readonly getBrowserNavigation: (
-    paneId: string
-  ) => Effect.Effect<BrowserNavigation | undefined, DatabaseError>
-  readonly setBrowserNavigation: (
-    paneId: string,
-    navigation: BrowserNavigation
-  ) => Effect.Effect<void, DatabaseError>
   readonly getBrowserFavicon: (sha256: string) => Effect.Effect<Buffer | undefined, DatabaseError>
   readonly putBrowserFavicon: (sha256: string, data: Buffer) => Effect.Effect<void, DatabaseError>
   readonly getMachineSetting: (key: string) => Effect.Effect<string | undefined, DatabaseError>

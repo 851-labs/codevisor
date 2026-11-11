@@ -1,89 +1,121 @@
 import {
-  BrowserCookieSnapshot,
+  BrowserCookiePeerCursor,
   BrowserNavigation,
-  browserCookieKey,
+  maxImportedBrowserCookies,
   shareableBrowserURL,
-  type BrowserCookieEntry,
-  type BrowserCookieMutation
+  type BrowserCookie,
+  type BrowserCookieImportResult,
+  type BrowserCookieMutation,
+  type BrowserCookieSnapshot,
+  type SharedBrowserCookie,
+  type SharedBrowserCookieBatch
 } from "@codevisor/api"
-import { Schema } from "effect"
+import { Schema, type Effect } from "effect"
 
+import {
+  applyBrowserCookieMutation,
+  browserCookieShareRevision,
+  browserCookieSnapshot,
+  expireBrowserCookies,
+  openBrowserCookieJar,
+  saveBrowserCookieJar,
+  type BrowserCookieJar
+} from "./browser-cookie-jar.js"
+import {
+  importBrowserCookies,
+  mergeSharedBrowserCookies,
+  sharedBrowserCookiesAfter
+} from "./browser-cookie-sharing.js"
 import { instanceMetaSql, readInstanceMeta } from "./common-rows.js"
-import { attempt } from "./errors.js"
+import { attempt, type DatabaseError } from "./errors.js"
 import { parseJsonColumn } from "./json-column.js"
 import type { ServiceContext } from "./service-context.js"
-import type { CodevisorDatabaseService } from "./service.js"
 
-const expireBrowserCookieEntries = (
-  entries: Map<string, BrowserCookieEntry>,
-  revision: number,
-  now: number
-): number => {
-  for (const entry of entries.values()) {
-    if (entry.cookie?.expires !== undefined && entry.cookie.expires <= now) {
-      entries.set(entry.key, { key: entry.key, revision: ++revision, cookie: null })
-    }
-  }
-  return revision
+export interface BrowserStateService {
+  readonly exchangeBrowserCookies: (
+    mutations: ReadonlyArray<BrowserCookieMutation>
+  ) => Effect.Effect<BrowserCookieSnapshot, DatabaseError>
+  readonly importBrowserCookies: (
+    cookies: ReadonlyArray<BrowserCookie>
+  ) => Effect.Effect<BrowserCookieImportResult, DatabaseError>
+  readonly browserCookieShareRevision: Effect.Effect<number, DatabaseError>
+  readonly sharedBrowserCookiesAfter: (
+    revision: number
+  ) => Effect.Effect<SharedBrowserCookieBatch, DatabaseError>
+  readonly mergeSharedBrowserCookies: (
+    entries: ReadonlyArray<SharedBrowserCookie>
+  ) => Effect.Effect<number, DatabaseError>
+  readonly getBrowserCookiePeerCursor: (
+    machineId: string
+  ) => Effect.Effect<BrowserCookiePeerCursor, DatabaseError>
+  readonly setBrowserCookiePeerCursor: (
+    machineId: string,
+    cursor: BrowserCookiePeerCursor
+  ) => Effect.Effect<void, DatabaseError>
+  readonly getBrowserNavigation: (
+    paneId: string
+  ) => Effect.Effect<BrowserNavigation | undefined, DatabaseError>
+  readonly setBrowserNavigation: (
+    paneId: string,
+    navigation: BrowserNavigation
+  ) => Effect.Effect<void, DatabaseError>
 }
 
-const mergeBrowserCookieMutation = (
-  entries: Map<string, BrowserCookieEntry>,
-  mutation: BrowserCookieMutation,
-  revision: number
-): number => {
-  const { cookie, key, expectedRevision } = mutation
-  if (key.length > 8192 || !Number.isSafeInteger(expectedRevision) || expectedRevision < 0)
-    throw new Error("Invalid cookie revision or key")
-  if (
-    cookie &&
-    (browserCookieKey(cookie) !== key ||
-      !cookie.domain ||
-      !cookie.path.startsWith("/") ||
-      cookie.name.length + cookie.value.length > 16_384 ||
-      /[\r\n\0]/.test(cookie.domain))
-  )
-    throw new Error("Invalid cookie")
-  const previous = entries.get(key)
-  if ((previous?.revision ?? 0) !== expectedRevision) return revision
-  if (previous && JSON.stringify(previous.cookie) === JSON.stringify(cookie)) return revision
-  entries.set(key, { key, revision: ++revision, cookie })
-  return revision
-}
+const maxCookieMutations = 20_000
 
 export const makeBrowserStateService = ({
-  sqlite
-}: ServiceContext): Pick<
-  CodevisorDatabaseService,
-  "exchangeBrowserCookies" | "getBrowserNavigation" | "setBrowserNavigation"
-> => {
+  sqlite,
+  config
+}: ServiceContext): BrowserStateService => {
   const read = <S extends Schema.Constraint>(key: string, schema: S): S["Type"] | undefined => {
     const value = readInstanceMeta(sqlite, key)
     return value === undefined ? undefined : parseJsonColumn(schema, value)
   }
   const write = (key: string, value: unknown) =>
     sqlite.prepare(instanceMetaSql.upsert).run(key, JSON.stringify(value))
+  const withJar = <A>(change: (jar: BrowserCookieJar, nowMs: number) => A): A =>
+    sqlite.transaction(() => {
+      const nowMs = Date.now()
+      const jar = openBrowserCookieJar(sqlite, config.serverId)
+      expireBrowserCookies(jar, nowMs / 1000)
+      const result = change(jar, nowMs)
+      saveBrowserCookieJar(sqlite, jar)
+      return result
+    })()
   return {
     exchangeBrowserCookies: (mutations) =>
-      attempt("exchangeBrowserCookies", () =>
-        sqlite.transaction(() => {
-          if (mutations.length > 20_000) throw new Error("Too many cookie changes")
-          const current = read("browser-cookies-v1", BrowserCookieSnapshot) ?? {
-            revision: 0,
-            entries: []
-          }
-          const entries = new Map(current.entries.map((entry) => [entry.key, entry]))
-          let revision = current.revision
-          const now = Date.now() / 1000
-          revision = expireBrowserCookieEntries(entries, revision, now)
-          for (const mutation of mutations) {
-            revision = mergeBrowserCookieMutation(entries, mutation, revision)
-          }
-          const snapshot = { revision, entries: [...entries.values()] }
-          if (revision !== current.revision) write("browser-cookies-v1", snapshot)
-          return snapshot
-        })()
+      attempt("exchangeBrowserCookies", () => {
+        if (mutations.length > maxCookieMutations) throw new Error("Too many cookie changes")
+        return withJar((jar, nowMs) => {
+          for (const mutation of mutations) applyBrowserCookieMutation(jar, mutation, nowMs)
+          return browserCookieSnapshot(jar)
+        })
+      }),
+    importBrowserCookies: (cookies) =>
+      attempt("importBrowserCookies", () => {
+        if (cookies.length > maxImportedBrowserCookies) throw new Error("Too many cookies")
+        return withJar((jar, nowMs) => importBrowserCookies(jar, cookies, nowMs))
+      }),
+    browserCookieShareRevision: attempt("browserCookieShareRevision", () =>
+      browserCookieShareRevision(sqlite)
+    ),
+    sharedBrowserCookiesAfter: (revision) =>
+      attempt("sharedBrowserCookiesAfter", () =>
+        withJar((jar) => sharedBrowserCookiesAfter(jar, revision))
       ),
+    mergeSharedBrowserCookies: (entries) =>
+      attempt("mergeSharedBrowserCookies", () =>
+        withJar((jar) => mergeSharedBrowserCookies(jar, entries))
+      ),
+    getBrowserCookiePeerCursor: (machineId) =>
+      attempt(
+        "getBrowserCookiePeerCursor",
+        () => read(peerCursorKey(machineId), BrowserCookiePeerCursor) ?? { sent: 0, seen: 0 }
+      ),
+    setBrowserCookiePeerCursor: (machineId, cursor) =>
+      attempt("setBrowserCookiePeerCursor", () => {
+        write(peerCursorKey(machineId), cursor)
+      }),
     getBrowserNavigation: (paneId) =>
       attempt("getBrowserNavigation", () =>
         read(`browser-navigation:${paneId}`, BrowserNavigation)
@@ -98,3 +130,5 @@ export const makeBrowserStateService = ({
       })
   }
 }
+
+const peerCursorKey = (machineId: string): string => `browser-cookies-peer:${machineId}`

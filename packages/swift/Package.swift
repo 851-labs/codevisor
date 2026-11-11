@@ -351,7 +351,7 @@ let package = Package(
     .target(
       name: "CodevisorCoreMac",
       dependencies: [
-        "CodevisorCore", "ScreenSharing", "ScreenSharingV2", "CodevisorNet",
+        "CodevisorCore", "CodevisorClient", "ScreenSharing", "ScreenSharingV2", "CodevisorNet",
         "CGVirtualDisplayPrivate", .product(name: "ComposableArchitecture", package: "swift-composable-architecture"),
         .product(name: "PostHog", package: "posthog-ios"), "Sentry",
       ],

@@ -8,6 +8,8 @@ struct SetupSheet<Steps: View>: View {
   let primaryTitle: String
   var cancelTitle = "Not Now"
   let canContinue: Bool
+  var working = false
+  var message: String?
   let onCancel: () -> Void
   let onContinue: () -> Void
   @ViewBuilder var steps: Steps
@@ -24,13 +26,21 @@ struct SetupSheet<Steps: View>: View {
           .font(.title3.weight(.semibold))
       }
 
-      PermissionCard { steps }
+      VStack(spacing: 10) {
+        PermissionCard { steps }
+        if let message {
+          Text(message)
+            .font(.callout)
+            .foregroundStyle(.secondary)
+            .multilineTextAlignment(.center)
+        }
+      }
 
       HStack {
         Button(cancelTitle, action: onCancel)
           .keyboardShortcut(.cancelAction)
         Spacer()
-        Button(primaryTitle, action: onContinue)
+        Button(action: onContinue) { SetupSheetPrimaryLabel(title: primaryTitle, working: working) }
           .buttonStyle(.borderedProminent)
           .keyboardShortcut(.defaultAction)
           .disabled(!canContinue)
@@ -40,5 +50,17 @@ struct SetupSheet<Steps: View>: View {
     }
     .padding(24)
     .frame(width: 460)
+  }
+}
+
+private struct SetupSheetPrimaryLabel: View {
+  let title: String
+  let working: Bool
+
+  var body: some View {
+    ZStack {
+      Text(title).opacity(working ? 0 : 1)
+      if working { ProgressView().controlSize(.small) }
+    }
   }
 }

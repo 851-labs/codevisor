@@ -242,6 +242,7 @@ export const runServe = (
     const machineName = args.name ?? hostname()
     const iconGuess = guessMachineIcon()
     const {
+      browserCookieShare,
       cloudControl,
       cloudInbox,
       machine,
@@ -425,6 +426,7 @@ export const runServe = (
         linkPreviews: makeLinkPreviewStore({ dir: join(dirname(databasePath), "link-previews") }),
         machineStats: makeMachineStatsSampler(),
         machines: machineLink,
+        browserCookieShare,
         ...makeRemoteWorkServices(dirname(databasePath), machineLink, {
           id: serverId,
           name: () => machine.name
@@ -480,6 +482,7 @@ export const runServe = (
     startup.checkpoint("ready")
     console.log(`Codevisor server listening at ${server.url}`)
     sandboxes?.start()
+    browserCookieShare.start()
   })
 
   return Effect.runPromise(program).catch(async (cause: unknown) => {
