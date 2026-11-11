@@ -26,6 +26,15 @@ struct SandboxesSettingsView: View {
           .formStyle(.grouped)
       }
     }
+    .settingsAddToolbarItem {
+      Button {
+        adding = true
+      } label: {
+        Label("Add Profile", systemImage: "plus")
+      }
+      .help("Add Profile")
+      .disabled(!model.hasLoaded)
+    }
     .sheet(isPresented: $adding) {
       SandboxNewProfileSheet(model: model, client: client)
     }
@@ -48,15 +57,6 @@ struct SandboxesSettingsView: View {
       }
     } header: {
       Text("Profiles")
-    } footer: {
-      SettingsListActions {
-        Button {
-          adding = true
-        } label: {
-          Label("Add Profile…", systemImage: "plus")
-        }
-        .disabled(!model.hasLoaded)
-      }
     }
   }
 
