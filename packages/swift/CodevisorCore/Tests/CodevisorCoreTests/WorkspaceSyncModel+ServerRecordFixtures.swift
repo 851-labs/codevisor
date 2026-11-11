@@ -16,8 +16,6 @@ extension WorkspaceSyncModel {
       sidebarPosition: workspace.sidebarPosition,
       sidebarOrderRevision: workspace.sidebarOrderRevision > 0 ? workspace.sidebarOrderRevision : nil,
       git: workspace.git,
-      botId: workspace.botId?.uuidString,
-      botMachineId: workspace.botMachineId,
       mainSessionId: workspace.mainSessionId?.uuidString
     )
   }

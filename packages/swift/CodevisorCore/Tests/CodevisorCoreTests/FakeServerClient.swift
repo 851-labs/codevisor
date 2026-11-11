@@ -288,8 +288,11 @@ func serverSession(from session: ChatSession) -> ServerSession {
     lastSeenAttentionSequence: session.lastSeenAttentionSequence,
     unreadCount: session.unreadCount,
     hasUnreadError: session.hasUnreadError,
-    parentSessionId: session.parentSessionId,
-    createdBy: session.createdBy
+    createdBy: session.createdBy,
+    createdByAgentId: session.createdByAgent?.agentId.uuidString.lowercased(),
+    createdByAgentMachineId: session.createdByAgent?.machineId,
+    forkedFromAgentId: session.forkedFromAgent?.agentId.uuidString.lowercased(),
+    forkedFromAgentMachineId: session.forkedFromAgent?.machineId
   )
 }
 

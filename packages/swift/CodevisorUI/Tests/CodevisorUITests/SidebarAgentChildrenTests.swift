@@ -7,11 +7,11 @@ struct SidebarAgentChildrenTests {
   private let project = Project(id: UUID(), serverId: "studio", name: "codevisor")
 
   private func item(
-    id: UUID = UUID(), parent: UUID? = nil, agentMade: Bool = false, botId: UUID? = nil
+    id: UUID = UUID(), parent: UUID? = nil, agentMade: Bool = false
   ) -> WorkspaceSidebarItem {
     WorkspaceSidebarItem(
-      id: id, serverId: project.serverId, projectId: project.id, routingChatIds: [], botId: botId,
-      parent: parent.map { WorkspaceParentLink(workspaceId: $0, linkedAt: .distantPast, isAgentMade: agentMade) })
+      id: id, serverId: project.serverId, projectId: project.id, routingChatIds: [],
+      parent: parent.map { WorkspaceParentLink(workspaceId: $0, linkedAt: .distantPast, isQuiet: agentMade) })
   }
 
   private func rows(
@@ -74,15 +74,13 @@ struct SidebarAgentChildrenTests {
     "Agent-made workspaces in a bot's tree never show, while user forks of them and non-bot orphans stay top level"
   )
   func botAgentChildrenAreHidden() {
-    let bot = UUID()
     let home = UUID()
-    let botChild = item(parent: home, agentMade: true, botId: bot)
-    let botGrandchild = item(parent: botChild.id, agentMade: true, botId: bot)
-    let homeChildWithoutBotId = item(parent: home, agentMade: true)
-    let forkOfHome = item(parent: home, botId: bot)
-    let forkOfBotChild = item(parent: botChild.id, botId: bot)
+    let botChild = item(parent: home, agentMade: true)
+    let botGrandchild = item(parent: botChild.id, agentMade: true)
+    let forkOfHome = item(parent: home)
+    let forkOfBotChild = item(parent: botChild.id)
     let orphan = item(parent: UUID(), agentMade: true)
-    let all = [botChild, botGrandchild, homeChildWithoutBotId, forkOfHome, forkOfBotChild, orphan]
+    let all = [botChild, botGrandchild, forkOfHome, forkOfBotChild, orphan]
 
     let shown = rows(all, botHomeIDs: [home])
     #expect(workspaceIDs(shown) == [forkOfHome.id, forkOfBotChild.id, orphan.id])

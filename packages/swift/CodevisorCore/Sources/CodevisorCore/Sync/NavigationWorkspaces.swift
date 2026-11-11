@@ -25,26 +25,19 @@ public struct WorkspaceSidebarItem: Equatable, Identifiable, Sendable {
   public let serverId: String
   public let projectId: UUID
   public let routingChatIds: [UUID]
-  public let botId: UUID?
-  public let botMachineId: String?
   public let parent: WorkspaceParentLink?
 
   public init(
-    id: UUID, serverId: String, projectId: UUID, routingChatIds: [UUID], botId: UUID? = nil,
-    botMachineId: String? = nil, parent: WorkspaceParentLink? = nil
+    id: UUID, serverId: String, projectId: UUID, routingChatIds: [UUID], parent: WorkspaceParentLink? = nil
   ) {
     self.id = id
     self.serverId = serverId
     self.projectId = projectId
     self.routingChatIds = routingChatIds
-    self.botId = botId
-    self.botMachineId = botMachineId
     self.parent = parent
   }
 
   public var parentWorkspaceId: UUID? { parent?.workspaceId }
-
-  public var belongsToSameMachineBot: Bool { botId != nil && botMachineId == nil }
 }
 
 @MainActor
@@ -53,7 +46,6 @@ public final class NavigationWorkspaces {
   @ObservationIgnored private var entries: [UUID: WorkspaceEntry] = [:]
   public private(set) var sidebar: [WorkspaceSidebarItem] = []
   public private(set) var archived: [WorkspaceSidebarItem] = []
-  public private(set) var botChildren: [UUID: [WorkspaceSidebarItem]] = [:]
   @ObservationIgnored private var sidebarIndex: [UUID: UUID] = [:]
   @ObservationIgnored private var parentIndex: [UUID: WorkspaceParentLink] = [:]
   @ObservationIgnored var lookup: (UUID) -> Workspace? = { _ in nil }
@@ -77,8 +69,6 @@ public final class NavigationWorkspaces {
     parentIndex = parents
     let live = Self.live(from: projection, parents: parents)
     if live != sidebar { sidebar = live }
-    let nextChildren = Dictionary(grouping: live.filter { $0.botId != nil }) { $0.botId! }
-    if nextChildren != botChildren { botChildren = nextChildren }
     let nextArchived = Self.archived(from: projection)
     if nextArchived != archived { archived = nextArchived }
   }
@@ -94,8 +84,7 @@ public final class NavigationWorkspaces {
       .map { workspace in
         WorkspaceSidebarItem(
           id: workspace.id, serverId: workspace.serverId, projectId: workspace.projectId,
-          routingChatIds: workspace.mainFirstChatSessionIds, botId: workspace.botId,
-          botMachineId: workspace.botMachineId)
+          routingChatIds: workspace.mainFirstChatSessionIds)
       }
   }
 
@@ -105,19 +94,11 @@ public final class NavigationWorkspaces {
     func refreshed(_ current: WorkspaceSidebarItem) -> WorkspaceSidebarItem {
       WorkspaceSidebarItem(
         id: workspace.id, serverId: workspace.serverId, projectId: workspace.projectId,
-        routingChatIds: routed.isEmpty ? current.routingChatIds : routed, botId: current.botId,
-        botMachineId: current.botMachineId, parent: current.parent)
+        routingChatIds: routed.isEmpty ? current.routingChatIds : routed, parent: current.parent)
     }
     if let index = sidebar.firstIndex(where: { $0.id == workspace.id }) {
       let item = refreshed(sidebar[index])
       if sidebar[index] != item { sidebar[index] = item }
-    }
-    if let botId = workspace.botId,
-      let index = botChildren[botId]?.firstIndex(where: { $0.id == workspace.id }),
-      let current = botChildren[botId]?[index]
-    {
-      let item = refreshed(current)
-      if current != item { botChildren[botId]?[index] = item }
     }
   }
 
@@ -143,23 +124,23 @@ public final class NavigationWorkspaces {
       let fallback = indexedChats[workspace.id].map { [$0] } ?? []
       return WorkspaceSidebarItem(
         id: workspace.id, serverId: workspace.serverId, projectId: workspace.projectId,
-        routingChatIds: routed.isEmpty ? fallback : routed, botId: workspace.botId,
-        botMachineId: workspace.botMachineId, parent: parents[workspace.id])
+        routingChatIds: routed.isEmpty ? fallback : routed, parent: parents[workspace.id])
     }
   }
 
   static func parentLinks(in projection: NavigationProjection) -> [UUID: WorkspaceParentLink] {
     var parents: [UUID: WorkspaceParentLink] = [:]
     for session in projection.sessions {
-      guard let parentSessionId = session.parentSessionId.flatMap(UUID.init(uuidString:)),
+      guard let source = session.createdByAgent ?? session.forkedFromAgent,
         let workspaceId = projection.sessionIndex[session.id],
-        let parentId = projection.sessionIndex[parentSessionId], parentId != workspaceId,
-        let workspace = projection.workspacesById[workspaceId],
-        projection.workspacesById[parentId]?.serverId == workspace.serverId,
+        let parentId = projection.sessionIndex[source.agentId], parentId != workspaceId,
+        projection.workspacesById[workspaceId] != nil,
+        projection.workspacesById[parentId]?.serverId == source.machineId,
         parents[workspaceId].map({ session.createdAt < $0.linkedAt }) ?? true
       else { continue }
       parents[workspaceId] = WorkspaceParentLink(
-        workspaceId: parentId, linkedAt: session.createdAt, isAgentMade: session.createdBy == .agent)
+        workspaceId: parentId, linkedAt: session.createdAt,
+        isQuiet: session.createdByAgent != nil)
     }
     return parents
   }

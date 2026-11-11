@@ -28,7 +28,6 @@ enum SharedName {
   }
 
   private static func sharedMainSessionId(of workspace: ServerWorkspace) -> UUID? {
-    guard workspace.botId == nil else { return nil }
-    return workspace.mainSessionId.flatMap(UUID.init(uuidString:))
+    workspace.mainSessionId.flatMap(UUID.init(uuidString:))
   }
 }

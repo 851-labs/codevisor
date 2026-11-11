@@ -9,7 +9,7 @@ public struct QuietChildren {
   }
 
   public static func isQuiet(_ item: WorkspaceSidebarItem) -> Bool {
-    item.parent?.isAgentMade == true
+    item.parent?.isQuiet == true
   }
 
   public func contains(_ workspaceId: UUID) -> Bool {

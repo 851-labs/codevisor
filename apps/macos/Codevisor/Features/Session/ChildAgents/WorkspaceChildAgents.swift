@@ -92,16 +92,6 @@ struct WorkspaceChildAgents {
   }
 
   private func childItems(of workspace: Workspace) -> [WorkspaceSidebarItem] {
-    let children = environment.navigationStore.workspaceEntries.sidebar.filter { $0.parentWorkspaceId == workspace.id }
-    guard let bot = bot(of: workspace) else { return children }
-
-    let botChildren = environment.botSidebarEntries.first { $0.bot.id == bot.id }?.children ?? []
-    let listed = Set(botChildren.map(\.id))
-    return botChildren + children.filter { !listed.contains($0.id) }
-  }
-
-  private func bot(of workspace: Workspace) -> Bot? {
-    guard botsEnabled else { return nil }
-    return environment.bots.bot(forWorkspace: workspace.id, serverId: workspace.serverId)
+    environment.navigationStore.workspaceEntries.sidebar.filter { $0.parentWorkspaceId == workspace.id }
   }
 }

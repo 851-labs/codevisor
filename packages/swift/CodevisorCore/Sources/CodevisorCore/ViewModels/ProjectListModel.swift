@@ -38,10 +38,8 @@ public final class ProjectListModel {
   }
 
   public func hasAgents(startedBy session: ChatSession, where isActive: (ChatSession) -> Bool) -> Bool {
-    let parent = session.id.uuidString.lowercased()
-    return sessions.contains {
-      $0.serverId == session.serverId && $0.parentSessionId?.lowercased() == parent && isActive($0)
-    }
+    let creator = AgentReference(agentId: session.id, machineId: session.serverId)
+    return sessions.contains { $0.createdByAgent == creator && isActive($0) }
   }
 
   public func session(_ id: UUID, serverId: String) -> ChatSession? {

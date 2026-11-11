@@ -33,6 +33,6 @@ extension Workspace {
   }
 
   private func sharesName(with session: ChatSession) -> Bool {
-    botId == nil && session.id == mainSessionId
+    session.id == mainSessionId
   }
 }

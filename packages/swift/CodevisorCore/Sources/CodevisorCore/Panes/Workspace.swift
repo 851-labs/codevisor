@@ -17,8 +17,6 @@ public struct Workspace: Sendable, Equatable, Identifiable {
   public var archivedAt: Date?
   public var isServerSynced: Bool
   public var git: ServerWorkspaceGit?
-  public var botId: UUID?
-  public var botMachineId: String?
   public var mainSessionId: UUID?
 
   public var isDraft: Bool { !isServerSynced }

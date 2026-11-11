@@ -49,7 +49,7 @@ public struct SidebarWorkspaceTree: Equatable {
   }
 
   private static func isBotChild(_ item: WorkspaceSidebarItem, botHomeIDs: Set<UUID>) -> Bool {
-    item.botId != nil || item.parentWorkspaceId.map(botHomeIDs.contains) == true
+    item.parentWorkspaceId.map(botHomeIDs.contains) == true
   }
 
   private static func parentLinks(_ items: [WorkspaceSidebarItem], pinnedIDs: Set<String>) -> [UUID: UUID] {

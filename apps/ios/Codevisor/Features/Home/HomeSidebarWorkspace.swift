@@ -152,13 +152,13 @@ struct HomeSidebarContent: Equatable {
   }
 
   var layout: [UUID] {
-    (unsectionedBots + botSectionGroups.flatMap(\.bots)).flatMap { [$0.id] + $0.children.flatMap(\.subtree).map(\.id) }
+    (unsectionedBots + botSectionGroups.flatMap(\.bots)).map(\.id)
       + listedWorkspaces.flatMap(\.subtree).map(\.id)
-      + archivedBots.flatMap { [$0.id] + $0.children.flatMap(\.subtree).map(\.id) } + archived.map(\.id)
+      + archivedBots.map(\.id) + archived.map(\.id)
   }
 
   private var openWorkspaces: [HomeSidebarWorkspace] {
-    bots.compactMap(\.home) + (bots.flatMap(\.children) + listedWorkspaces).flatMap(\.subtree)
+    bots.compactMap(\.home) + listedWorkspaces.flatMap(\.subtree)
   }
 
   func mode(owning selection: HomeSidebarSelection) -> SidebarMode? {
@@ -173,7 +173,7 @@ struct HomeSidebarContent: Equatable {
 
   private var botWorkspaceIDs: Set<UUID> {
     let bots = bots + archivedBots
-    return Set(bots.compactMap(\.home?.id) + bots.flatMap(\.children).flatMap(\.subtree).map(\.id))
+    return Set(bots.compactMap(\.home?.id))
   }
 
   func bot(_ id: UUID) -> HomeSidebarBot? {
