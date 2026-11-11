@@ -2,6 +2,8 @@ import CodevisorUI
 import SwiftUI
 
 struct ChildAgentsPill: View {
+  static let height: CGFloat = 28
+
   let content: ChildAgentsPillContent
   let glassNamespace: Namespace.ID
   @State private var isShowingChildren = false
@@ -76,7 +78,7 @@ private struct ChildAgentsPillButtonBody: View {
       .font(.system(size: 12))
       .padding(.leading, 6)
       .padding(.trailing, 10)
-      .frame(height: 28)
+      .frame(height: ChildAgentsPill.height)
       .background(Capsule().fill(isHovered ? Color.primary.opacity(0.06) : .clear))
       .contentShape(Capsule())
       .contentShape(.focusEffect, Capsule())
