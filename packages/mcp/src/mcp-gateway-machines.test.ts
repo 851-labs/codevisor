@@ -55,8 +55,8 @@ describe("gateway machines and execution annotations", () => {
             phase: error.phase,
             machineName: error.machineName
           }));
-          const context = await machines.current.tools.codevisor.context.current({});
-          return { built, lost, context, bareTools: typeof tools };
+          const here = await context.current();
+          return { built, lost, context: here, bareTools: typeof tools };
         }`
       }
       const executed = await client.callTool({ name: "execute", arguments: args })
@@ -193,7 +193,7 @@ describe("gateway machines and execution annotations", () => {
         name: "execute",
         arguments: {
           description: "Start a helper on the MacBook",
-          code: `async () => (await machines.get("mbp")).tools.codevisor.sessions.create({})`
+          code: `async () => projects.list({ machine: "mbp" })`
         }
       })
 

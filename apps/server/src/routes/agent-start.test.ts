@@ -50,7 +50,7 @@ const startable = async () => {
       body: JSON.stringify({
         prompt: "Fix it",
         title: "Fix login",
-        isolation: "worktree",
+        checkout: "worktree",
         callerAgentId: caller,
         ...fields
       }),
@@ -146,7 +146,7 @@ describe("POST /v1/agents", () => {
       callerDefaults: { harness: "codex", configSelections: { reasoning: "high" } },
       project: "start",
       model: "gpt-6",
-      isolation: "project"
+      checkout: "project"
     })
 
     const started = decode(StartedAgent)(response.body)
@@ -160,7 +160,7 @@ describe("POST /v1/agents", () => {
           callerAgentId: undefined,
           callerDefaults: { harness: "codex", configSelections: { reasoning: "low" } },
           project: "start-project",
-          isolation: "project"
+          checkout: "project"
         })
       ).body
     )
@@ -168,10 +168,10 @@ describe("POST /v1/agents", () => {
       configSelections: { reasoning: "low" }
     })
     expect(
-      (await startAgent({ callerAgentId: undefined, project: "start", isolation: "project" })).body
+      (await startAgent({ callerAgentId: undefined, project: "start", checkout: "project" })).body
     ).toMatchObject({ error: expect.stringContaining("Pass harness") })
     expect(
-      (await startAgent({ callerAgentId: undefined, harness: "codex", isolation: "project" })).body
+      (await startAgent({ callerAgentId: undefined, harness: "codex", checkout: "project" })).body
     ).toMatchObject({ error: expect.stringContaining("Pass project") })
   })
 
@@ -195,9 +195,9 @@ describe("POST /v1/agents", () => {
     )
 
     const withModel = decode(StartedAgent)(
-      (await startAgent({ model: "gpt-6", isolation: "project" })).body
+      (await startAgent({ model: "gpt-6", checkout: "project" })).body
     )
-    const withoutModel = decode(StartedAgent)((await startAgent({ isolation: "project" })).body)
+    const withoutModel = decode(StartedAgent)((await startAgent({ checkout: "project" })).body)
 
     expect(await run(services.db.getSessionSummary(withModel.agentId))).toMatchObject({
       configSelections: { reasoning: "medium", model: "gpt-6" }
@@ -211,7 +211,7 @@ describe("POST /v1/agents", () => {
     const { services, startAgent } = await startable()
 
     const started = decode(StartedAgent)(
-      (await startAgent({ harness: "claude-code", model: "opus", isolation: "project" })).body
+      (await startAgent({ harness: "claude-code", model: "opus", checkout: "project" })).body
     )
 
     expect(await run(services.db.getSessionSummary(started.agentId))).toMatchObject({
@@ -225,7 +225,7 @@ describe("POST /v1/agents", () => {
     const worker = decode(StartedAgent)((await startAgent({})).body)
 
     const helper = decode(StartedAgent)(
-      (await startAgent({ callerAgentId: worker.agentId, isolation: "shared" })).body
+      (await startAgent({ callerAgentId: worker.agentId, checkout: "shared" })).body
     )
 
     expect(helper).toMatchObject({
@@ -234,7 +234,7 @@ describe("POST /v1/agents", () => {
     })
   })
 
-  it("joins the caller's workspace and checkout for shared isolation", async () => {
+  it("joins the caller's workspace and checkout for a shared checkout", async () => {
     const { server, startAgent } = await startable()
     const joined = idOf(
       (
@@ -249,7 +249,7 @@ describe("POST /v1/agents", () => {
       ).body
     )
 
-    const response = await startAgent({ callerAgentId: joined, isolation: "shared" })
+    const response = await startAgent({ callerAgentId: joined, checkout: "shared" })
 
     expect(decode(StartedAgent)(response.body)).toMatchObject({
       workspaceId: "11111111-1111-4111-8111-111111111111",
@@ -260,11 +260,26 @@ describe("POST /v1/agents", () => {
   it("refuses a start without a project or caller workspace to place it in", async () => {
     const { startAgent } = await startable()
 
-    expect((await startAgent({ isolation: "shared" })).status).toBe(422)
+    expect((await startAgent({ checkout: "shared" })).status).toBe(422)
     expect((await startAgent({ project: "missing" })).status).toBe(422)
     expect(
       (await startAgent({ callerAgentId: "00000000-0000-4000-8000-000000000000" })).status
     ).toBe(422)
+  })
+
+  it("asks for a checkout, and refuses one alongside a sandbox, before creating anything", async () => {
+    const { startAgent, state } = await startable()
+    const before = await state()
+
+    const missing = await startAgent({ checkout: undefined })
+    const both = await startAgent({ sandbox: "small" })
+
+    expect(missing).toMatchObject({
+      status: 422,
+      body: { error: 'Pass checkout: "worktree", "shared", "project", or "none"' }
+    })
+    expect(both).toMatchObject({ status: 422, body: { error: expect.stringContaining("sandbox") } })
+    expect(await state()).toEqual(before)
   })
 })
 

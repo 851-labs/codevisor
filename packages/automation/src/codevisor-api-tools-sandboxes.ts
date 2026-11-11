@@ -68,7 +68,7 @@ export const codevisorSandboxApiTools: ReadonlyArray<CodevisorApiToolSpec> = [
     "sandboxes.profiles_list",
     "List the user's sandbox profiles: id, name, vendor (provider), the provider account " +
       "(accountId) and values such as the image, CPUs (cpu) and memory (memoryGiB). Start one " +
-      "with sandboxes.create() or agents.start({ sandboxProfile }).",
+      "with sandboxes.create() or agents.start({ sandbox }).",
     "GET",
     "/v1/sandbox-profiles"
   ),
@@ -153,7 +153,7 @@ export const codevisorSandboxApiTools: ReadonlyArray<CodevisorApiToolSpec> = [
       "first. Returns at once with state creating; follow it with sandboxes.wait() (a few minutes; " +
       "ready has machineId, remoteProjectId and workspaceId) and sandboxes.log(). Archiving its " +
       "workspace or sandboxes.destroy() deletes it. It costs the user money while it runs. To run " +
-      "an agent on a new sandbox in one call, use agents.start({ sandboxProfile }).",
+      "an agent on a new sandbox in one call, use agents.start({ sandbox }).",
     "POST",
     "/v1/sandboxes",
     { body: CreateSandboxBody }

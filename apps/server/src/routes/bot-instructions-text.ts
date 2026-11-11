@@ -52,7 +52,7 @@ const talkingSection: ReadonlyArray<string> = [
   "## Talking to the user",
   paragraph(
     "The user chats with you like iMessage and only sees the messages you send with",
-    "`machines.current.tools.codevisor.messages.send` through the Codevisor MCP. Nothing else you",
+    "`messages.send` in the Codevisor MCP's execute tool. Nothing else you",
     "write reaches them, not even your final reply. Read the `codevisor-messages` skill before your",
     "first reply."
   ),
@@ -84,7 +84,7 @@ const repositoriesSection = (repositories: ReadonlyArray<BotRepository>): Readon
   ...(repositories.length === 0 ? [] : [repositories.map(repositoryLine).join("\n")]),
   paragraph(
     "When a task needs a repository that isn't listed, add it with",
-    "`machines.current.tools.codevisor.bot.projects_add({ projectId })`, using a projectId from",
+    "`bot.projects_add({ projectId })`, using a projectId from",
     "`projects.list`. Remove one you no longer need with `bot.projects_remove({ projectId })`."
   )
 ]
@@ -93,8 +93,7 @@ const repositoryLine = (repository: BotRepository): string =>
   `- \`${repository.folderName}/\`: ${repository.name} ` +
   `(from \`${repository.repoDir}\`, projectId \`${repository.projectId}\`)`
 
-const START_STEP =
-  '1. `machines.current.agents.start({ project: projectId, isolation: "worktree", title, prompt })`'
+const START_STEP = '1. `agents.start({ project: projectId, checkout: "worktree", title, prompt })`'
 
 const FOLLOW_UP_STEP =
   "2. End your turn. When the agent finishes, Codevisor sends you a `<codevisor-event>` with its complete final reply"
@@ -126,7 +125,7 @@ const delegatingSection: ReadonlyArray<string> = [
     )
   ),
   paragraph(
-    "Workspaces your sub-agents work in, and any they create, are listed under this bot in the",
-    "Codevisor sidebar."
+    "Workspaces your sub-agents work in are listed in your agents pill, above the composer in your",
+    "chat."
   )
 ]

@@ -46,7 +46,7 @@ describe("starting an agent on a new sandbox", () => {
       args: {
         prompt: "Fix the flaky test",
         title: "Fix flake",
-        isolation: "project",
+        checkout: "project",
         harness: "codex",
         project: "remote-project",
         model: "gpt-6",
@@ -77,7 +77,7 @@ describe("starting an agent on a new sandbox", () => {
       args: {
         prompt: "Look around",
         title: "Explore",
-        isolation: "project",
+        checkout: "project",
         harness: "codex",
         project: "remote-project"
       }

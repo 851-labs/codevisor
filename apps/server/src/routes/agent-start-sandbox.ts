@@ -19,13 +19,13 @@ export interface SandboxAgentPlan {
 
 export const startAgentOnSandbox = async (
   route: RouteContext,
-  request: StartAgentRequest & { readonly sandboxProfile: string },
+  request: StartAgentRequest & { readonly sandbox: string },
   plan: SandboxAgentPlan
 ): Promise<boolean> => {
   const service = route.services.sandboxes
   if (service === undefined) throw new HttpFailure(501, "Sandboxes are unavailable here")
 
-  const profile = await profileNamed(service.catalog.settings, request.sandboxProfile)
+  const profile = await profileNamed(service.catalog.settings, request.sandbox)
   const sandbox = await service.sandboxes.create(
     {
       profileId: profile.id,

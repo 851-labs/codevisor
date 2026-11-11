@@ -86,7 +86,7 @@ const waitOnChild = ({ client }: { readonly client: McpClient }, childId: string
     name: "execute",
     arguments: {
       description: "Wait for the helper",
-      code: `async () => machines.current.agents.wait({ agentIds: ["${childId}"], until: ["idle"], timeoutMs: 300000 })`,
+      code: `async () => agents.wait({ agentIds: ["${childId}"], until: ["idle"], timeoutMs: 300000 })`,
       timeout_ms: BUDGET_MS
     }
   })

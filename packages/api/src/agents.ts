@@ -94,8 +94,8 @@ export const ClosedAgent = Schema.Struct({
 })
 export type ClosedAgent = typeof ClosedAgent.Type
 
-export const AgentIsolation = Schema.Literals(["worktree", "shared", "project"])
-export type AgentIsolation = typeof AgentIsolation.Type
+export const AgentCheckout = Schema.Literals(["worktree", "shared", "project", "none"])
+export type AgentCheckout = typeof AgentCheckout.Type
 
 export const AgentProjectSource = Schema.Struct({
   name: Schema.String,
@@ -113,16 +113,15 @@ export type AgentCallerDefaults = typeof AgentCallerDefaults.Type
 export const StartAgentRequest = Schema.Struct({
   prompt: Schema.String,
   title: Schema.String,
-  isolation: AgentIsolation,
+  checkout: Schema.optional(AgentCheckout),
   harness: Schema.optional(Schema.String),
   model: Schema.optional(Schema.String),
   project: Schema.optional(Schema.String),
-  noProject: Schema.optional(Schema.Boolean),
   labels: Schema.optional(Labels),
   callerAgentId: Schema.optional(Schema.String),
   callerAgentMachineId: Schema.optional(Schema.String),
   callerDefaults: Schema.optional(AgentCallerDefaults),
-  sandboxProfile: Schema.optional(Schema.String)
+  sandbox: Schema.optional(Schema.String)
 })
 export type StartAgentRequest = typeof StartAgentRequest.Type
 

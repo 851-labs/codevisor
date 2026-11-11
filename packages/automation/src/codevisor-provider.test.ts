@@ -174,7 +174,7 @@ describe("Codevisor MCP provider", () => {
       {
         prompt: "Go",
         title: "Fix",
-        isolation: "project"
+        checkout: "project"
       }
     )
     expect(requestHeaders(requests.at(-1)!.init).get(CALLER_AGENT_TICKET_HEADER)).toBe(
@@ -268,7 +268,7 @@ describe("Codevisor MCP provider", () => {
       () => "http://localhost:43210",
       async () => "stable-token"
     )
-    const start = { prompt: "Go", title: "Fix", isolation: "worktree", callerAgentId: "forged" }
+    const start = { prompt: "Go", title: "Fix", checkout: "worktree", callerAgentId: "forged" }
 
     await provider.invoke({ sessionId: "agent" }, "agents.start", start)
     await provider.invoke({ sessionId: remoteSessionKey("mbp", "agent") }, "agents.start", start)
@@ -277,13 +277,13 @@ describe("Codevisor MCP provider", () => {
     expect(requestJson(requests[0]!.init)).toEqual({
       prompt: "Go",
       title: "Fix",
-      isolation: "worktree",
+      checkout: "worktree",
       callerAgentId: "agent"
     })
     expect(requestJson(requests[1]!.init)).toEqual({
       prompt: "Go",
       title: "Fix",
-      isolation: "worktree",
+      checkout: "worktree",
       callerAgentId: "agent",
       callerAgentMachineId: "mbp"
     })

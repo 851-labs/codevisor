@@ -7,6 +7,6 @@ export const isRemoteScope = (sessionId: string): boolean =>
 
 export const localCallerId = (tool: AgentToolContext, action: string): string => {
   if (isRemoteScope(tool.context.sessionId))
-    throw new Error(`${action} works on your own machine only: call it on machines.current`)
+    throw new Error(`${action} only works for agents on your own machine`)
   return tool.context.sessionId
 }

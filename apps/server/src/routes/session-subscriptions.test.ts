@@ -211,7 +211,7 @@ describe("session event subscriptions", () => {
       `<codevisor-event type="session.waiting_for_user" agentId="${worker}" title="Fix login" kind="question"`
     )
     expect(event).toContain('"questionId":"q1"')
-    expect(event).toContain("Answer it with machines.current.agents.answer({ agentId, questionId,")
+    expect(event).toContain("Answer it with agents.answer({ agentId, machine, questionId,")
     await post(running, `/v1/sessions/${worker}/cancel`, {})
   })
 

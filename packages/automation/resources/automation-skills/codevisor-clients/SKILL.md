@@ -35,7 +35,7 @@ Usually the right client is the origin, or the most recently active window on th
 }
 ```
 
-`workspaceId` and `agentId` come from `machines.current.tools.codevisor.context.current()` (your own) or from `agents.start` and `agents.list` (other agents).
+`workspaceId` and `agentId` come from `context.current()` (your own) or from `agents.start` and `agents.list` (other agents).
 
 - `c.context()`: full layout, ids, and supported actions. Read it before calling `layout`.
 - `c.navigate({ workspaceId, destination?: { kind: "chat" | "tab" | "pane" | "leaf", id } })`: open or select.
@@ -43,7 +43,7 @@ Usually the right client is the origin, or the most recently active window on th
 - `c.layout({ action, … })`: new_tab, split, move, detach, resize, reorder_tabs. Panes are created in the background unless you pass `focus: true`.
 - `c.window({ action, … })`: focus, minimize, fullscreen, frame, sidebar.
 
-These wrap `machine.tools.codevisor.clients.*`; use `machine.tools.describe.tool` for full schemas. Clients on another machine: `(await machines.get("macbook")).clients.list()`.
+These are methods of the machine the app is attached to. Clients on another machine: `(await machines.get("macbook")).clients.list()`.
 
 ## Opening a file, chat, or terminal as a pane
 
@@ -53,7 +53,7 @@ Panes are shared workspace content: a pane you add opens as its own tab on every
 ;async () => {
   const hex = () => Math.floor(Math.random() * 16).toString(16)
   const paneId = "xxxxxxxx-xxxx-4xxx-8xxx-xxxxxxxxxxxx".replace(/x/g, hex)
-  return machines.current.tools.codevisor.workspaces.pane_upsert({
+  return workspaces.pane_upsert({
     workspaceId,
     paneId,
     providerId: "codevisor",

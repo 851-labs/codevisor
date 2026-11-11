@@ -113,7 +113,7 @@ export const startArgs = (prompt: string) => ({
   project: "laptop-project",
   harness: "codex",
   title: "Fix the laptop",
-  isolation: "project",
+  checkout: "project",
   prompt
 })
 

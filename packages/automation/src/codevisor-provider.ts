@@ -34,6 +34,8 @@ const tools: ReadonlyArray<Tool> = [
   }))
 ]
 
+export const codevisorToolNames = (): ReadonlyArray<string> => tools.map((tool) => tool.name)
+
 const invokeApiTool = async (
   getBaseUrl: () => string,
   getBearerToken: () => Promise<string>,

@@ -5,7 +5,7 @@ description: Use when the user mentions another computer or machine by name, whe
 
 # Codevisor machines
 
-Every call goes through a machine handle. `machines.current` is the machine this chat runs on, and other machines on the user's account expose the same kind of object. Your script still runs here; only the tool calls travel, so one script can combine machines, for example building on one and reading the result on another.
+There are two ways to work on another of the user's machines. Codevisor's own tools are globals that take a `machine`: `agents.start({ …, machine: "macbook" })`, `projects.list({ machine: "macbook" })`. Everything else that belongs to a machine hangs off its machine object: `machines.current` for the machine this chat runs on, and `await machines.get("macbook")` for another. Your script still runs here; only the tool calls travel, so one script can combine machines, for example building on one and reading the result on another.
 
 ```js
 ;async () => {
@@ -17,9 +17,9 @@ Every call goes through a machine handle. `machines.current` is the machine this
 }
 ```
 
-- `m.tools.<server>.<tool>(args)`, `m.tools.search(…)`, and `m.tools.describe.tool(…)` run on machine `m`, with that machine's MCPs and credentials.
-- `m.agents.*` starts and coordinates agents on that machine (see `codevisor-agents`). `m.tools.codevisor.*` controls the rest of Codevisor there.
-- `m.agents.start({ noProject: true, isolation: "project", title, prompt })` starts a throwaway chat on `m` in a fresh empty folder, without adding a project there. Use it when you just need that machine's tools, or it has no projects.
+- `m.tools.<server>.<tool>(args)`, `m.tools.search(…)`, and `m.tools.describe.tool(…)` run plugin and MCP tools on machine `m`, with that machine's MCPs and credentials.
+- `agents.start({ …, machine: m })` starts an agent on that machine, linked to you (see `codevisor-agents`). Every other Codevisor tool that acts on one machine takes `machine` the same way. A machine is a `Machine`, its `machineId`, or its name.
+- `agents.start({ checkout: "none", machine: m, title, prompt })` starts a throwaway chat on `m` in a fresh empty folder, without adding a project there. Use it when you just need that machine's tools, or it has no projects.
 - `m.clients.list()` lists apps connected to that machine (see `codevisor-clients`).
 - `m.exec(…)`, `m.readFile(…)` and `m.taskStop(…)` run shell commands and read files on `m` (see below).
 - `machines.current.tools.search({ query, machines: "all" })` searches every online machine. Each result has `machine: { machineId, name }`.
@@ -41,7 +41,7 @@ Every call goes through a machine handle. `machines.current` is the machine this
 
 - `command` and a short `description`; `timeout` in ms (default 120000, max 600000); `cwd` (default the home folder there).
 - `output` combines stdout and stderr and keeps only the last 30000 characters. The full log is at `outputPath`: read it with `mac.readFile({ path, offset?, limit? })`, which returns numbered lines (2000 by default).
-- `run_in_background: true` returns `{ taskId, outputPath }` at once. When the task exits you get an `exec.task_finished` event with the end of its output. Stop it with `mac.taskStop(taskId)`; `mac.tools.codevisor.shell.task_get({ taskId })` reads its state. It keeps running across turns, shows in the user's inspector (where they can stop it), and is stopped when the workspace is archived.
+- `run_in_background: true` returns `{ taskId, outputPath }` at once. When the task exits you get an `exec.task_finished` event with the end of its output. Stop it with `mac.taskStop(taskId)`. It keeps running across turns, shows in the user's inspector (where they can stop it), and is stopped when the workspace is archived.
 - Commands run as the user in a login shell, outside your workspace. To run against your own files, mirror the workspace first.
 
 ## Mirroring your workspace to another machine
@@ -92,12 +92,12 @@ A workspace mirror is a one-way copy of this chat's workspace on another machine
 
 ## Adding a machine
 
-`machines.current.tools.codevisor.machines.add` sets a host up end to end, with no approval step: from this machine (with its SSH keys and `~/.ssh/config`) it installs Codevisor on the host, joins it to the account with a one-time invite, and waits until it's online.
+`machines.add` sets a host up end to end, with no approval step: from this machine (with its SSH keys and `~/.ssh/config`) it installs Codevisor on the host, joins it to the account with a one-time invite, and waits until it's online.
 
 ```js
 ;async () => {
   status("Installing Codevisor on the new server")
-  const { machine } = await machines.current.tools.codevisor.machines.add({
+  const { machine } = await machines.add({
     ssh: "root@203.0.113.7",
     name: "hetzner-1"
   })
@@ -108,14 +108,14 @@ A workspace mirror is a one-way copy of this chat's workspace on another machine
 - The host needs key-based SSH from this machine and `curl`. Provision the server (or add your key to it) first; it never prompts for a password.
 - Codevisor never runs as root. Over `root@` SSH it runs as a `codevisor` account it creates, with passwordless `sudo`; over another account, as that account.
 - It takes a few minutes. Failures come back with the host's output: fix the cause (SSH access, firewall, a missing `curl`) and call it again.
-- When SSH isn't the way in (cloud-init user data, a web console, a container), use `machines.current.tools.codevisor.machines.invite` for a one-time code (about 10 minutes, one use). Install with `CODEVISOR_INVITE=<code>` set (`curl -fsSL https://www.codevisor.dev/install.sh | CODEVISOR_INVITE=… sh`), or run `codevisor auth login --invite -` with the code on stdin. The code is a secret: don't show it to the user or leave it in files.
-- `machines.current.tools.codevisor.machines.remove({ machineId, confirm })` removes another machine; pass `confirm: true` only after the user approves. A machine removes itself with `codevisor auth logout`.
+- When SSH isn't the way in (cloud-init user data, a web console, a container), use `machines.invite()` for a one-time code (about 10 minutes, one use). Install with `CODEVISOR_INVITE=<code>` set (`curl -fsSL https://www.codevisor.dev/install.sh | CODEVISOR_INVITE=… sh`), or run `codevisor auth login --invite -` with the code on stdin. The code is a secret: don't show it to the user or leave it in files.
+- `machines.remove({ machineId, confirm })` removes another machine; pass `confirm: true` only after the user approves. A machine removes itself with `codevisor auth logout`.
 
 The CLI does the same things through the same routes: `codevisor machines add|invite|list|remove`.
 
 ## Sandboxes
 
-`machines.current.tools.codevisor.sandboxes.*` manages throwaway machines from a vendor (Tart VMs or Apple Linux containers on a Mac, E2B, Modal, Vercel, Daytona, Tart Orchard). Each sandbox installs Codevisor, joins the account, gets this machine's harnesses, skills, MCPs and sign-ins copied over one way, and clones one project into its own workspace. Sandboxes cost the user money while they run, and carry `ephemeral: { provider, ownerDeviceId }` on their `machines.list()` items.
+`sandboxes.*` manages throwaway machines from a vendor (Tart VMs or Apple Linux containers on a Mac, E2B, Modal, Vercel, Daytona, Tart Orchard). Each sandbox installs Codevisor, joins the account, gets this machine's harnesses, skills, MCPs and sign-ins copied over one way, and clones one project into its own workspace. Sandboxes cost the user money while they run, and carry `ephemeral: { provider, ownerDeviceId }` on their `machines.list()` items.
 
 - **Vendors:** `sandboxes.vendors()` lists each vendor's `accountFields` (credentials, or the Mac that runs Tart) and `profileFields` (image, `cpu`, `memoryGiB`, lifetime…) with defaults and limits, plus this machine's `capabilities` and CPU/memory `maximums`.
 - **Providers** (a vendor plus its credentials or Mac): `sandboxes.providers_list()`, `providers_create({ provider, label?, values })`, `providers_update({ accountId, provider, values })`, `providers_delete({ accountId, confirm })`.
@@ -128,25 +128,25 @@ The CLI does the same things through the same routes: `codevisor machines add|in
   - A ready sandbox has `machineId` (use it with `machines.get(machineId)`), `remoteProjectId` and `workspaceId`; a failed one has `error`.
   - `sandboxes.get({ sandboxId })` reads it without waiting, `sandboxes.log({ sandboxId, last? })` reads its start log, `sandboxes.retry({ sandboxId })` starts a failed one again, and `sandboxes.list()` lists them all.
   - Archiving its workspace, or `sandboxes.destroy({ sandboxId, confirm })`, deletes the vendor's machine. Unpushed work is lost, so confirm with the user first.
-- **An agent on a new sandbox:** `machines.current.agents.start({ sandboxProfile, project, harness?, title, prompt, isolation: "project" })` creates the sandbox and starts the agent there once it's ready (see `codevisor-agents`).
+- **An agent on a new sandbox:** `agents.start({ sandbox, project, harness?, title, prompt })` creates the sandbox and starts the agent there once it's ready (see `codevisor-agents`).
+- Sandboxes and `machines.*` are shared by all your machines, so they take no `machine`.
 
 ```js
 ;async () => {
-  const tools = machines.current.tools.codevisor
-  const { projectId } = await tools.context.current()
-  const { items: providers } = await tools.sandboxes.providers_list()
+  const { projectId } = await context.current()
+  const { items: providers } = await sandboxes.providers_list()
   const e2b = providers.find((provider) => provider.provider === "e2b")
-  const profile = await tools.sandboxes.profiles_create({
+  const profile = await sandboxes.profiles_create({
     name: "E2B small",
     provider: "e2b",
     accountId: e2b.accountId,
     values: { timeoutMinutes: 60 }
   })
-  const { sandboxId } = await tools.sandboxes.create({ profileId: profile.profileId, projectId })
+  const { sandboxId } = await sandboxes.create({ profileId: profile.profileId, projectId })
   status("Starting the sandbox")
-  const sandbox = await tools.sandboxes.wait({ sandboxId, timeoutMs: 300000 })
+  const sandbox = await sandboxes.wait({ sandboxId, timeoutMs: 300000 })
   if (sandbox.state === "failed")
-    return { error: sandbox.error, log: await tools.sandboxes.log({ sandboxId, last: 20 }) }
+    return { error: sandbox.error, log: await sandboxes.log({ sandboxId, last: 20 }) }
   return sandbox // timedOut: true means it is still starting; wait again
 }
 ```

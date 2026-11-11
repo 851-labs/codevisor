@@ -48,9 +48,7 @@ const startBot = async () => {
 describe("bot conversations", () => {
   it("records the user's message at once and posts none of the bot's own replies", async () => {
     const { running, bot } = await startBot()
-    expect(readFileSync(join(bot.rootPath, "AGENTS.md"), "utf8")).toContain(
-      "`machines.current.tools.codevisor.messages.send`"
-    )
+    expect(readFileSync(join(bot.rootPath, "AGENTS.md"), "utf8")).toContain("`messages.send`")
 
     await prompt(running, bot.sessionId, "hello", "client-1")
 

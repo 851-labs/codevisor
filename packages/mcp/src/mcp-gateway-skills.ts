@@ -103,7 +103,7 @@ export const executeSkill: BuiltinSkill = {
   load: async ({ enabledIds }) => {
     const sections = [
       "# execute",
-      "Each call runs one async arrow function of sandboxed JavaScript or TypeScript. The isolate has no filesystem, network, process environment, or credentials: every capability is a tool on a machine.",
+      "Each call runs one async arrow function of sandboxed JavaScript or TypeScript. The isolate has no filesystem, network, process environment, or credentials: every capability is a tool.",
       [
         "## Calling a tool",
         [
@@ -121,15 +121,16 @@ export const executeSkill: BuiltinSkill = {
           "}",
           "```"
         ].join("\n"),
-        'Call `status("…")` before slow steps so the user sees progress. Other agents go through `machine.agents` (read `codevisor-agents`).'
+        'Codevisor\'s own tools are globals instead, such as `agents.start(args)` and `plugins.list()`. Those that act on one machine take an optional `machine` (an id or name; default: this one); the rest take none. Search finds them too, with `path` like `"agents.start"`.',
+        'Call `status("…")` before slow steps so the user sees progress. Other agents go through `agents` (read `codevisor-agents`).'
       ].join("\n\n"),
       ["## The `description` argument", DESCRIPTION_GUIDANCE].join("\n\n"),
       [
         "## The `timeout_ms` argument and background jobs",
-        '`timeout_ms` (default 120000, maximum 600000) is how long the call waits for your code. Nothing is cancelled when it passes: the code keeps running as a background job, and the call returns `{ status: "running", jobId, running, progress, logs, outputPath, next }` instead of a result. Waits such as `machine.agents.wait`, `machine.tools.codevisor.jobs.wait`, and Computer Use `waitFor` shorten themselves to fit the budget that is left and return `timedOut`, so your code can still return what it has.',
+        '`timeout_ms` (default 120000, maximum 600000) is how long the call waits for your code. Nothing is cancelled when it passes: the code keeps running as a background job, and the call returns `{ status: "running", jobId, running, progress, logs, outputPath, next }` instead of a result. Waits such as `agents.wait`, `jobs.wait`, and Computer Use `waitFor` shorten themselves to fit the budget that is left and return `timedOut`, so your code can still return what it has.',
         'When you get a job handle, prefer ending your turn: Codevisor sends you a hidden `<codevisor-event type="execution.job_finished">` message with the job\'s result when it finishes, even if your harness would not otherwise wake up.',
         [
-          "- `machines.current.tools.codevisor.jobs.wait({ jobId })` waits within that call's budget, and `jobs.get({ jobId })` reads the job now. Reading a finished result either way means no event is sent.",
+          "- `jobs.wait({ jobId })` waits within that call's budget, and `jobs.get({ jobId })` reads the job now. Reading a finished result either way means no event is sent.",
           "- `jobs.cancel({ jobId })` stops a job, and `jobs.list()` shows your jobs.",
           "- `outputPath` is a log file on this machine with live `status()` text, console output, tool calls, and the final result.",
           "- Jobs stop after 30 minutes and don't survive a server restart."
@@ -152,15 +153,15 @@ export const executeSkill: BuiltinSkill = {
           "## Other agents",
           "Never use your harness's built-in subagents (a Task or Agent tool, spawn_agent, and the like), even if your harness still offers them. Read `codevisor-agents` before starting a Codevisor agent.",
           [
-            '- A Codevisor agent in the current workspace (`isolation: "shared"`) fits quick, scoped help with your current task: research, reading code, a review, a small piece of the same change. Close it with `machine.agents.close` once you have its reply.',
-            "- A new Codevisor workspace with its own worktree fits separate work that ends in its own branch or PR. Archive it with `machine.tools.codevisor.workspaces.archive` when its work is done."
+            '- A Codevisor agent in your own workspace (`agents.start({ checkout: "shared", … })`) fits quick, scoped help with your current task: research, reading code, a review, a small piece of the same change. Close it with `agent.close()` once you have its reply.',
+            '- An agent in a new worktree (`checkout: "worktree"`), on this machine or any other (`machine`), fits separate work that ends in its own branch or PR. Archive its workspace with `workspaces.archive` when its work is done.'
           ].join("\n")
         ].join("\n\n"),
         [
           "## Plugins",
-          "Plugin and event tools are under `machine.tools.codevisor`.",
+          "Plugin and event tools are the `plugins` and `events` globals.",
           [
-            "- When the user asks for something a service or app could do, call `machine.tools.codevisor.plugins.search`, then `plugins.describe` to confirm its exact tools and events, then `plugins.request_setup` if it isn't ready.",
+            "- When the user asks for something a service or app could do, call `plugins.search`, then `plugins.describe` to confirm its exact tools and events, then `plugins.request_setup` if it isn't ready.",
             "- Never claim a capability that `plugins.describe` doesn't list.",
             "- To react to outside events (a new email, an alert), call `events.topics`, check a CEL filter with `events.preview`, then `events.subscribe`, and read its `explained` back to the user."
           ].join("\n")

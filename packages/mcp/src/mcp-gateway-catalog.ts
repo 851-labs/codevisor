@@ -72,9 +72,17 @@ const scoreText = (text: ScoredText, query: SearchQuery): number => {
   return score
 }
 
+const withServer = (path: string, servers: ReadonlyArray<{ readonly id: string }>): string => {
+  const first = path.split(".")[0]
+  return servers.some((server) => server.id === first) ? path : `codevisor.${path}`
+}
+
+const toolPath = (server: CatalogServer, tool: Tool): string =>
+  server.id === "codevisor" ? tool.name : `${server.id}.${tool.name}`
+
 const toolSearchItem = (server: CatalogServer, tool: Tool, query: SearchQuery) => ({
   kind: "tool" as const,
-  path: `${server.id}.${tool.name}`,
+  path: toolPath(server, tool),
   server: server.id,
   serverName: server.name,
   name: tool.name,
@@ -267,7 +275,7 @@ export const makeGatewayCatalog = (deps: GatewayCatalogDeps) => {
       items: ranked.slice(0, Math.max(1, Math.min(limit, 50))),
       total: ranked.length,
       workflow:
-        "Choose a match. A tool: inspect it with machine.tools.describe.tool({ path }), then call machine.tools[path](args). A skill: read it with the skills tool. A global: use it as its signature shows. Do not stop after discovery when the user asked for an action or answer."
+        "Choose a match. A tool: inspect it with machine.tools.describe.tool({ path }), then call machine.tools[path](args); a Codevisor tool (server codevisor) is a global instead: call it as its path reads, like agents.start(args), adding machine to run it on another machine. A skill: read it with the skills tool. A global: use it as its signature shows. Do not stop after discovery when the user asked for an action or answer."
     }
   }
 
@@ -276,15 +284,15 @@ export const makeGatewayCatalog = (deps: GatewayCatalogDeps) => {
     sessionId: string | undefined,
     path: string
   ): Promise<Tool> => {
-    const separator = path.indexOf(".")
-    if (separator <= 0 || separator === path.length - 1)
+    const servers = await enabledServers(projectId, sessionId)
+    const qualified = withServer(path, servers)
+    const separator = qualified.indexOf(".")
+    if (separator <= 0 || separator === qualified.length - 1)
       throw new Error(`Invalid tool path: ${path}`)
-    const serverId = path.slice(0, separator)
-    const requested = path.slice(separator + 1)
+    const serverId = qualified.slice(0, separator)
+    const requested = qualified.slice(separator + 1)
     const toolName = serverId === "codevisor" ? codevisorToolName(requested) : requested
-    const server = (await enabledServers(projectId, sessionId)).find(
-      (candidate) => candidate.id === serverId
-    )
+    const server = servers.find((candidate) => candidate.id === serverId)
     if (server === undefined) throw new Error("Tool server is disabled for this session")
     const provider = automationProviders.get(serverId)
     let serverTools: ReadonlyArray<Tool>

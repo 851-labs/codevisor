@@ -178,7 +178,7 @@ describe("events tools", () => {
     fakeApi()
     await expect(
       call(remote, "events.subscribe", { plugin: "Grafana", event: "alert.firing", note: "x" })
-    ).rejects.toThrow("machines.current")
+    ).rejects.toThrow("your own machine")
   })
 })
 

@@ -39,7 +39,7 @@ const workspaceWithHelper = async (helperPrompt: string) => {
         body: JSON.stringify({
           prompt: helperPrompt,
           title: "Read the docs",
-          isolation: "shared",
+          checkout: "shared",
           callerAgentId: parent
         }),
         method: "POST"

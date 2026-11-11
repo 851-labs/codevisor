@@ -11,7 +11,7 @@ const codevisorSkills = readdirSync(skillsRoot)
   .filter((name) => name.startsWith("codevisor"))
   .map((name) => ({ name, text: readFileSync(join(skillsRoot, name, "SKILL.md"), "utf8") }))
 
-const sandboxGlobals = ["machines.list", "machines.get", "clients.list"]
+const sandboxGlobals = ["machines.list", "machines.get", "clients.list", "agents.get"]
 const toolName = "[a-z_]+(?:\\.[a-z_]+)+"
 const providerTools = makeCodevisorProvider(
   () => "http://unused",
@@ -20,20 +20,12 @@ const providerTools = makeCodevisorProvider(
 const toolNames = new Set([...providerTools.map((tool) => tool.name), ...sandboxGlobals])
 const namespaces = new Set([...toolNames].map((name) => name.split(".")[0]))
 
-const referencedTools = (text: string): string[] => {
-  const viaTools = [...text.matchAll(new RegExp(`\\.tools\\.codevisor\\.(${toolName})`, "g"))].map(
-    (m) => m[1]!
-  )
-  const viaAgents = [...text.matchAll(/\.agents\.((?:debug\.)?[a-z_]+)\(/g)].map(
-    (m) => `agents.${m[1]!}`
-  )
-  const bare = [...text.matchAll(new RegExp(`\`(${toolName})\\(`, "g"))]
+const globalCall = new RegExp(`(?<![\\w.])(${toolName})\\(`, "g")
+
+const referencedTools = (text: string): string[] =>
+  [...text.matchAll(globalCall)]
     .map((m) => m[1]!)
-    .filter(
-      (name) => namespaces.has(name.split(".")[0]) && !/\.(tools|agents|clients)\./.test(name)
-    )
-  return [...viaTools, ...viaAgents, ...bare]
-}
+    .filter((name) => namespaces.has(name.split(".")[0]) && !/\.(tools|clients)\./.test(name))
 
 const argumentNames = new Map(
   providerTools.map((tool) => [tool.name, new Set(Object.keys(tool.inputSchema.properties ?? {}))])
@@ -64,15 +56,14 @@ const objectKeys = (text: string, start: number): string[] => {
 }
 
 const toolArguments = (text: string) =>
-  [
-    ...text.matchAll(
-      new RegExp(`(\\.agents\\.|\\.tools\\.codevisor\\.|\`)(${toolName}|[a-z_]+)\\(\\{`, "g")
-    )
-  ].flatMap((match) => {
-    const tool = match[1] === ".agents." ? `agents.${match[2]!}` : match[2]!
+  [...text.matchAll(new RegExp(`(?<![\\w.])(${toolName})\\(\\{`, "g"))].flatMap((match) => {
+    const tool = match[1]!
     if (!argumentNames.has(tool)) return []
     return [{ tool, keys: objectKeys(text, match.index + match[0].length - 1) }]
   })
+
+const acceptsArgument = (tool: string, key: string): boolean =>
+  key === "machine" || argumentNames.get(tool)!.has(key)
 
 describe("managed Codevisor skills", () => {
   it("ship with frontmatter naming their own directory", () => {
@@ -93,15 +84,10 @@ describe("managed Codevisor skills", () => {
   it("only reference Codevisor tools that exist", () => {
     const agents = codevisorSkills.find((skill) => skill.name === "codevisor-agents")!
     expect(referencedTools(agents.text)).toEqual(
-      expect.arrayContaining([
-        "agents.start",
-        "agents.message",
-        "agents.debug.search",
-        "context.current"
-      ])
+      expect.arrayContaining(["agents.start", "agents.get", "agents.list", "context.current"])
     )
     expect(toolArguments(agents.text).map(({ tool }) => tool)).toEqual(
-      expect.arrayContaining(["agents.start", "agents.status", "agents.answer"])
+      expect.arrayContaining(["agents.start", "agents.list", "agents.message"])
     )
     for (const skill of codevisorSkills) {
       const missing = referencedTools(skill.text).filter((name) => !toolNames.has(name))
@@ -112,7 +98,7 @@ describe("managed Codevisor skills", () => {
   it("only pass argument names the tools accept", () => {
     for (const skill of codevisorSkills) {
       const unknown = toolArguments(skill.text).flatMap(({ tool, keys }) =>
-        keys.filter((key) => !argumentNames.get(tool)!.has(key)).map((key) => `${tool}: ${key}`)
+        keys.filter((key) => !acceptsArgument(tool, key)).map((key) => `${tool}: ${key}`)
       )
       expect({ skill: skill.name, unknown }).toEqual({ skill: skill.name, unknown: [] })
     }
@@ -123,7 +109,7 @@ describe("managed Codevisor skills", () => {
       "declare const machines",
       "get(idOrName: string)",
       "list(): Promise<{ items: Machine[] }>",
-      "agents: {",
+      "declare const agents: {",
       "clients: { list(): Promise<{ items: Client[] }> }",
       "declare function status(",
       "declare class MachineUnavailableError",

@@ -39,7 +39,7 @@ export const startRequestedAgent = async (
 const startArguments = (agent: SandboxAgentStart, project: string) => ({
   prompt: agent.prompt,
   title: agent.title,
-  isolation: "project",
+  checkout: "project",
   harness: agent.harness,
   project,
   ...(agent.model === undefined ? {} : { model: agent.model }),

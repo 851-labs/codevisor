@@ -132,7 +132,7 @@ const waitingBody = (kind: string, question: QuestionPayload | undefined): strin
 }
 
 const answerHint =
-  'Answer it with machines.current.agents.answer({ agentId, questionId, outcome: "answered", answers }), where answers maps each question\'s id to { answers: ["<chosen option>"] }, or send guidance with machines.current.agents.message({ agentId, text }).'
+  'Answer it with agents.answer({ agentId, machine, questionId, outcome: "answered", answers }), where machine is this event\'s machineId when it has one and answers maps each question\'s id to { answers: ["<chosen option>"] }, or send guidance with agents.message({ agentId, machine, text }).'
 
 const kindLabel = (kind: string): string =>
   kind === "planApproval" ? "plan approval" : "an answer"

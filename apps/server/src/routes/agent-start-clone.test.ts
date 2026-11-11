@@ -20,7 +20,7 @@ const machineWithoutProject = async () => {
       body: JSON.stringify({
         prompt: "Fix it",
         title: "Fix login",
-        isolation: "worktree",
+        checkout: "worktree",
         project: "id-on-the-caller-machine",
         callerDefaults: {
           harness: "codex",
@@ -60,7 +60,7 @@ describe("POST /v1/agents on a machine without the project", () => {
     const { services, startRemoteAgent } = await machineWithoutProject()
 
     const first = decode(StartedAgent)((await startRemoteAgent({})).body)
-    const second = decode(StartedAgent)((await startRemoteAgent({ isolation: "project" })).body)
+    const second = decode(StartedAgent)((await startRemoteAgent({ checkout: "project" })).body)
 
     expect(second.projectId).toBe(first.projectId)
     expect(await run(services.db.listProjects)).toHaveLength(1)

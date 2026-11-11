@@ -195,18 +195,12 @@ describe("sandbox tools", () => {
   it("pass a sandbox profile through agents.start", async () => {
     const sent = fakeServer({ "POST /v1/agents": { sandboxId: "box", state: "creating" } })
 
-    await resultOf("agents.start", {
-      title: "Fix it",
-      prompt: "Fix the bug",
-      isolation: "project",
-      sandboxProfile: "Small"
-    })
+    await resultOf("agents.start", { title: "Fix it", prompt: "Fix the bug", sandbox: "Small" })
 
     expect(sent[0]?.body).toEqual({
       title: "Fix it",
       prompt: "Fix the bug",
-      isolation: "project",
-      sandboxProfile: "Small",
+      sandbox: "Small",
       callerAgentId: "caller"
     })
   })
