@@ -7,7 +7,7 @@ pre-commit:
       run: scripts/check-typography.sh
     format:
       glob: "*.{js,mjs,cjs,ts,tsx,jsx,json,jsonc,md,yml,yaml,css,html}"
-      run: bun x oxfmt -c .oxfmtrc.json --disable-nested-config --check {staged_files}
+      run: bun x oxfmt -c .oxfmtrc.json --disable-nested-config --no-error-on-unmatched-pattern --check {staged_files}
     lint:
       glob: "*.{js,mjs,cjs,ts,tsx,jsx}"
       run: bun x oxlint -c .oxlintrc.json --disable-nested-config --deny-warnings {staged_files}
