@@ -24,6 +24,7 @@ public struct McpFleetEntry: Identifiable, Equatable, Sendable {
   public var canRemove: Bool { representative.canRemove != false }
   public var isBuiltIn: Bool { representative.isBuiltIn }
   public var isMachineScoped: Bool { isBuiltIn }
+  public var isAlwaysOn: Bool { kind == "codevisor" }
   public var idByMachine: [String: String] { serverByMachine.mapValues(\.id) }
 
   public func server(on machineId: String) -> ServerMcpServer? {

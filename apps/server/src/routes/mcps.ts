@@ -9,7 +9,7 @@ import {
   SetNativeMcpEnabledRequest as SetNativeMcpEnabledRequestSchema,
   UpdateMcpServerRequest as UpdateMcpServerRequestSchema
 } from "@codevisor/api"
-import type { McpManager } from "@codevisor/mcp"
+import { isAlwaysOnMcp, type McpManager } from "@codevisor/mcp"
 
 import type { PluginCatalog } from "../plugins/plugin-catalog.js"
 import {
@@ -196,7 +196,14 @@ function isOAuthCompletePage(target: URL, request: URL): boolean {
   return target.origin === request.origin && target.pathname === "/v1/mcps/oauth/complete"
 }
 
+export function refuseAlwaysOnDisable(id: string, enabled: boolean | undefined): void {
+  if (enabled === false && isAlwaysOnMcp(id)) {
+    throw new HttpFailure(409, "Codevisor can’t be turned off")
+  }
+}
+
 function validateMcpEdit(id: string, update: UpdateMcpServerRequest): void {
+  refuseAlwaysOnDisable(id, update.enabled)
   if (["browser", "computer"].includes(id)) {
     const unsupported = Object.keys(update).filter((key) => key !== "enabled")
     if (unsupported.length > 0) {
@@ -242,6 +249,7 @@ export const routeMcpScopes = async (
     if (manager === undefined) throw new HttpFailure(501, "MCP gateway unavailable")
     const payload = await readSchema(request, UpdateMcpServerRequestSchema)
     if (payload.enabled === undefined) throw new HttpFailure(400, "enabled is required")
+    refuseAlwaysOnDisable(projectRoute.mcpId!, payload.enabled)
     writeJson(
       response,
       200,
@@ -254,6 +262,7 @@ export const routeMcpScopes = async (
     if (manager === undefined) throw new HttpFailure(501, "MCP gateway unavailable")
     const payload = await readSchema(request, UpdateMcpServerRequestSchema)
     if (payload.enabled === undefined) throw new HttpFailure(400, "enabled is required")
+    refuseAlwaysOnDisable(sessionRoute.mcpId!, payload.enabled)
     const session = await run(services.db.getSessionSummary(sessionRoute.id!))
     writeJson(
       response,

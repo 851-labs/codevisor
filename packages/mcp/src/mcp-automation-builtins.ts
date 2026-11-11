@@ -19,6 +19,19 @@ export type BuiltinMcpId = (typeof BUILTIN_MCP_SERVERS)[number]["id"]
 export const isBuiltinMcpId = (id: string): id is BuiltinMcpId =>
   BUILTIN_MCP_SERVERS.some((builtin) => builtin.id === id)
 
+const ALWAYS_ON_MCPS = BUILTIN_MCP_SERVERS.filter((builtin) => builtin.id === "codevisor")
+
+export const isAlwaysOnMcp = (id: string): boolean =>
+  ALWAYS_ON_MCPS.some((builtin) => builtin.id === id)
+
+export const withoutAlwaysOnMcps = (names: ReadonlySet<string>): ReadonlySet<string> =>
+  new Set([...names].filter((name) => !ALWAYS_ON_MCPS.some((builtin) => builtin.name === name)))
+
+export const assertCanDisableMcp = (id: string, enabled: boolean): void => {
+  const alwaysOn = ALWAYS_ON_MCPS.find((builtin) => builtin.id === id)
+  if (!enabled && alwaysOn !== undefined) throw new Error(`${alwaysOn.name} can’t be turned off`)
+}
+
 const AUTOMATION_SKILLS = [
   {
     gate: "browser",

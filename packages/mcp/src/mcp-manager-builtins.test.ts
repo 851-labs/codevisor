@@ -23,8 +23,7 @@ afterEach(cleanupMcpManagerTests)
 describe("MCP manager built-in providers and suppression", () => {
   it.each([
     ["browser", "browserUse"],
-    ["computer", "computerUse"],
-    ["codevisor", "codevisor"]
+    ["computer", "computerUse"]
   ])("keeps %s immutable but disableable", async (id, kind) => {
     const { manager } = await testManager()
     await expect(manager.remove(id)).rejects.toThrow("cannot be removed")

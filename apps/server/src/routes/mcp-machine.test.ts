@@ -5,7 +5,7 @@ import { jsonRequest, makeServices, run, start, startWithApp } from "../test-sup
 describe("machine-specific MCP availability", () => {
   it("uses the same overlay as Settings while preserving the fleet definition", async () => {
     const { server, services } = await start()
-    const path = "/v1/mcps/codevisor/machine-state"
+    const path = "/v1/mcps/browser/machine-state"
     expect(await jsonRequest(server, path)).toMatchObject({
       status: 200,
       body: { enabled: true, disabledHere: false }
@@ -17,8 +17,10 @@ describe("machine-specific MCP availability", () => {
       body: { machineId: "server-a", disabledHere: true, enabled: false, server: { enabled: true } }
     })
     const entries = await run(services.db.getSyncEntries("mcp-overlays"))
-    expect(entries).toMatchObject([{ key: "enable|server-a|Codevisor", value: { enabled: false } }])
-    await services.mcp.update("codevisor", { enabled: false })
+    expect(entries).toMatchObject([
+      { key: "enable|server-a|Browser Use", value: { enabled: false } }
+    ])
+    await services.mcp.update("browser", { enabled: false })
     expect(
       await jsonRequest(server, path, { method: "PUT", body: JSON.stringify({ enabled: true }) })
     ).toMatchObject({
@@ -36,6 +38,17 @@ describe("machine-specific MCP availability", () => {
     expect(await jsonRequest(server, "/v1/mcps/missing/machine-state")).toMatchObject({
       status: 404
     })
+  })
+
+  it("refuses to turn the Codevisor tools off on a machine", async () => {
+    const { server, services } = await start()
+    expect(
+      await jsonRequest(server, "/v1/mcps/codevisor/machine-state", {
+        method: "PUT",
+        body: JSON.stringify({ enabled: false })
+      })
+    ).toMatchObject({ status: 409, body: { error: "Codevisor can’t be turned off" } })
+    expect(await run(services.db.getSyncEntries("mcp-overlays"))).toEqual([])
   })
 
   it("reports unavailable MCP infrastructure", async () => {

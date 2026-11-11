@@ -19,13 +19,17 @@ public struct McpMachinesSection: View {
   public var body: some View {
     Section("Machines") {
       ForEach(model.rows(for: entry, in: environment)) { row in
-        FleetMachineRow(
-          machineId: row.machineId, name: row.name, status: row.status.rowStatus, details: details(for: row),
-          leadingInset: 0
-        ) {
-          McpMachineTrailing(
-            entry: entry, row: row, model: model, disabledReason: disabledReason(row.machineId))
-        }
+        #if os(iOS)
+          McpMachineToggleRow(entry: entry, row: row, model: model, details: details(for: row))
+        #else
+          FleetMachineRow(
+            machineId: row.machineId, name: row.name, status: row.status.rowStatus, details: details(for: row),
+            leadingInset: 0
+          ) {
+            McpMachineTrailing(
+              entry: entry, row: row, model: model, disabledReason: disabledReason(row.machineId))
+          }
+        #endif
       }
     }
   }

@@ -16,6 +16,7 @@ import {
   BUILTIN_MCP_SERVERS,
   type BuiltinMcpId,
   initializeAutomationProvider,
+  isAlwaysOnMcp,
   unavailableBrowserProvider,
   unavailableComputerProvider
 } from "./mcp-automation-builtins.js"
@@ -197,7 +198,8 @@ export const makeMcpManagerCore = (config: McpManagerConfig) => {
         if (existing.kind !== builtin.kind) {
           throw new Error(`Reserved built-in MCP id is already in use: ${builtin.id}`)
         }
-        const providerState = builtinProviderState(builtin.id, existing.enabled)
+        const enabled = existing.enabled || isAlwaysOnMcp(builtin.id)
+        const providerState = builtinProviderState(builtin.id, enabled)
         return run(
           config.db.saveMcpServer({
             id: existing.id,
@@ -207,7 +209,7 @@ export const makeMcpManagerCore = (config: McpManagerConfig) => {
             ...(existing.url === undefined ? {} : { url: existing.url }),
             ...(existing.command === undefined ? {} : { command: existing.command }),
             args: existing.args,
-            enabled: existing.enabled,
+            enabled,
             authType: existing.authType,
             ...(existing.oauthScope === undefined ? {} : { oauthScope: existing.oauthScope }),
             connectionState: providerState.connectionState,
