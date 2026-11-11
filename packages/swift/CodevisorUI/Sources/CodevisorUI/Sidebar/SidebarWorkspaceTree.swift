@@ -6,18 +6,19 @@ public struct SidebarWorkspaceTree: Equatable {
   public let children: [UUID: [WorkspaceSidebarItem]]
   private let parents: [UUID: UUID]
 
-  public init(_ items: [WorkspaceSidebarItem], pinnedIDs: [String]) {
-    let links = Self.parentLinks(items, pinnedIDs: Set(pinnedIDs))
-    let hidden = Set(items.filter(QuietChildren.isQuiet).map(\.id)).intersection(links.keys)
-    func shownAncestor(of id: UUID) -> UUID {
-      guard hidden.contains(id), let parent = links[id] else { return id }
-      return shownAncestor(of: parent)
+  public init(_ items: [WorkspaceSidebarItem], pinnedIDs: [String], botHomeIDs: Set<UUID> = []) {
+    let pinned = Set(pinnedIDs)
+    let links = Self.parentLinks(items, pinnedIDs: pinned)
+    let hidden = Self.hiddenIDs(items, links: links, pinnedIDs: pinned, botHomeIDs: botHomeIDs)
+    func shownAncestor(of id: UUID) -> UUID? {
+      guard hidden.contains(id) else { return id }
+      return links[id].flatMap(shownAncestor)
     }
     var roots: [WorkspaceSidebarItem] = []
     var children: [UUID: [WorkspaceSidebarItem]] = [:]
-    for item in items {
-      if let parent = links[item.id] {
-        if !hidden.contains(item.id) { children[shownAncestor(of: parent), default: []].append(item) }
+    for item in items where !hidden.contains(item.id) {
+      if let parent = links[item.id].flatMap(shownAncestor) {
+        children[parent, default: []].append(item)
       } else {
         roots.append(item)
       }
@@ -34,6 +35,21 @@ public struct SidebarWorkspaceTree: Equatable {
 
   public func parent(of id: UUID) -> UUID? {
     parents[id]
+  }
+
+  private static func hiddenIDs(
+    _ items: [WorkspaceSidebarItem], links: [UUID: UUID], pinnedIDs: Set<String>, botHomeIDs: Set<UUID>
+  ) -> Set<UUID> {
+    func isHidden(_ item: WorkspaceSidebarItem) -> Bool {
+      guard QuietChildren.isQuiet(item) else { return false }
+      let isUnpinnedBotChild = isBotChild(item, botHomeIDs: botHomeIDs) && !pinnedIDs.contains(item.id.uuidString)
+      return links[item.id] != nil || isUnpinnedBotChild
+    }
+    return Set(items.filter(isHidden).map(\.id))
+  }
+
+  private static func isBotChild(_ item: WorkspaceSidebarItem, botHomeIDs: Set<UUID>) -> Bool {
+    item.botId != nil || item.parentWorkspaceId.map(botHomeIDs.contains) == true
   }
 
   private static func parentLinks(_ items: [WorkspaceSidebarItem], pinnedIDs: Set<String>) -> [UUID: UUID] {

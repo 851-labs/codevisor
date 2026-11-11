@@ -7,18 +7,18 @@ struct SidebarAgentChildrenTests {
   private let project = Project(id: UUID(), serverId: "studio", name: "codevisor")
 
   private func item(
-    id: UUID = UUID(), parent: UUID? = nil, agentMade: Bool = false
+    id: UUID = UUID(), parent: UUID? = nil, agentMade: Bool = false, botId: UUID? = nil
   ) -> WorkspaceSidebarItem {
     WorkspaceSidebarItem(
-      id: id, serverId: project.serverId, projectId: project.id, routingChatIds: [],
+      id: id, serverId: project.serverId, projectId: project.id, routingChatIds: [], botId: botId,
       parent: parent.map { WorkspaceParentLink(workspaceId: $0, linkedAt: .distantPast, isAgentMade: agentMade) })
   }
 
   private func rows(
     _ items: [WorkspaceSidebarItem], archived: [WorkspaceSidebarItem] = [], archivedVisibleCount: Int = 25,
-    tabs: [UUID: [UUID]] = [:], selecting selected: UUID? = nil
+    tabs: [UUID: [UUID]] = [:], selecting selected: UUID? = nil, botHomeIDs: Set<UUID> = []
   ) -> [SidebarRow] {
-    let tree = SidebarWorkspaceTree(items, pinnedIDs: [])
+    let tree = SidebarWorkspaceTree(items, pinnedIDs: [], botHomeIDs: botHomeIDs)
     let groups = SidebarWorkspaceGroup.groups(
       tree.roots, grouping: .flat, pinnedIDs: [], projects: [project], defaultServerId: project.serverId,
       sections: [], membership: [:]
@@ -68,6 +68,25 @@ struct SidebarAgentChildrenTests {
     let orphan = item(parent: UUID(), agentMade: true)
 
     #expect(workspaceIDs(rows([orphan])) == [orphan.id])
+  }
+
+  @Test(
+    "Agent-made workspaces in a bot's tree never show, while user forks of them and non-bot orphans stay top level"
+  )
+  func botAgentChildrenAreHidden() {
+    let bot = UUID()
+    let home = UUID()
+    let botChild = item(parent: home, agentMade: true, botId: bot)
+    let botGrandchild = item(parent: botChild.id, agentMade: true, botId: bot)
+    let homeChildWithoutBotId = item(parent: home, agentMade: true)
+    let forkOfHome = item(parent: home, botId: bot)
+    let forkOfBotChild = item(parent: botChild.id, botId: bot)
+    let orphan = item(parent: UUID(), agentMade: true)
+    let all = [botChild, botGrandchild, homeChildWithoutBotId, forkOfHome, forkOfBotChild, orphan]
+
+    let shown = rows(all, botHomeIDs: [home])
+    #expect(workspaceIDs(shown) == [forkOfHome.id, forkOfBotChild.id, orphan.id])
+    #expect(shown.allSatisfy { $0.parentID == nil })
   }
 
   @Test("Archived agent-made children don't show in Archived, and don't count toward Show More")

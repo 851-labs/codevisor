@@ -24,7 +24,7 @@ struct SidebarWorkspaceListing {
   }
 
   var tree: SidebarWorkspaceTree {
-    SidebarWorkspaceTree(listedItems, pinnedIDs: pinnedIDs)
+    SidebarWorkspaceTree(listedItems, pinnedIDs: pinnedIDs, botHomeIDs: botHomeWorkspaceIDs)
   }
 
   func groups(of items: [WorkspaceSidebarItem]) -> [SidebarWorkspaceGroup] {
