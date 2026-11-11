@@ -19,6 +19,7 @@ import {
   type CodevisorServerServices,
   type EventFanout
 } from "../server-context.js"
+import { refuseAlwaysOnDisable } from "./mcps.js"
 import { refreshMcpReadiness } from "./sync-readiness.js"
 
 export const routeMachineMcps = async (
@@ -37,6 +38,7 @@ export const routeMachineMcps = async (
   if (server === undefined) throw new HttpFailure(404, "MCP server not found")
   if (request.method === "PUT") {
     const { enabled } = await readSchema(request, SetMachineMcpEnabledRequest)
+    refuseAlwaysOnDisable(id, enabled)
     if (enabled && !server.enabled) server = await manager.update(id, { enabled: true })
     const entries = await run(services.db.getSyncEntries(MCP_OVERLAYS_NAMESPACE))
     const result = await run(

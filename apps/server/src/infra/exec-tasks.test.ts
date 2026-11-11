@@ -11,7 +11,9 @@ import { makeExecTasks, type FinishedExecTask } from "./exec-tasks.js"
 const tasksIn = () => {
   const directory = mkdtempSync(join(tmpdir(), "codevisor-exec-"))
   tempDirs.push(directory)
-  const tasks = makeExecTasks({ directory, shell: "/bin/sh", env: process.env })
+  const home = mkdtempSync(join(tmpdir(), "codevisor-exec-home-"))
+  tempDirs.push(home)
+  const tasks = makeExecTasks({ directory, shell: "/bin/sh", env: { ...process.env, HOME: home } })
   onTestFinished(() => tasks.closeAll())
   return { tasks, directory }
 }

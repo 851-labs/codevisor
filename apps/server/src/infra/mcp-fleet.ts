@@ -1,5 +1,5 @@
 import type { CodevisorDatabaseService } from "@codevisor/db"
-import type { McpManager } from "@codevisor/mcp"
+import { type McpManager, withoutAlwaysOnMcps } from "@codevisor/mcp"
 import type { SyncEntryRecord } from "@codevisor/sync"
 import { Effect } from "effect"
 
@@ -38,7 +38,7 @@ export const readMcpOverlays = async (
       disabledHere.add(name)
     }
   }
-  return { disabledHere }
+  return { disabledHere: withoutAlwaysOnMcps(disabledHere) }
 }
 
 export type McpReadinessState = "ready" | "connecting" | "idle" | "blocked" | "disabled"

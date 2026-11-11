@@ -17,7 +17,7 @@ const at = (wallMs: number) => ({ wallMs, counter: 0, deviceId: "elsewhere" })
 const none: McpOverlays = { disabledHere: new Set() }
 
 describe("mcp overlays", () => {
-  it("reads only this machine's disables, ignoring noise", async () => {
+  it("reads only this machine's disables, ignoring noise and always-on tools", async () => {
     const { services } = await makeServices("overlay-host")
     await run(
       services.db.mergeSyncEntries(MCP_OVERLAYS_NAMESPACE, [
@@ -46,6 +46,11 @@ describe("mcp overlays", () => {
           key: mcpOverlayDisableKey("overlay-host", "Kept"),
           value: { enabled: true },
           timestamp: at(5)
+        },
+        {
+          key: mcpOverlayDisableKey("overlay-host", "Codevisor"),
+          value: { enabled: false },
+          timestamp: at(6)
         },
         { key: "enable|", value: { enabled: false }, timestamp: at(9) },
         { key: "enable|overlay-host", value: { enabled: false }, timestamp: at(10) },

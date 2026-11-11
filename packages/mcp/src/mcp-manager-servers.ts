@@ -3,7 +3,11 @@ import { randomUUID } from "node:crypto"
 import type { McpAuthType, McpConnectionState } from "@codevisor/api"
 
 import { detectMcpAuth } from "./mcp-auth-detection.js"
-import { isBuiltinMcpId } from "./mcp-automation-builtins.js"
+import {
+  assertCanDisableMcp,
+  isBuiltinMcpId,
+  withoutAlwaysOnMcps
+} from "./mcp-automation-builtins.js"
 import type { CatalogServer, makeMcpGateway } from "./mcp-gateway.js"
 import type { McpManagerCore } from "./mcp-manager-core.js"
 import type { McpManager } from "./mcp-manager-types.js"
@@ -156,6 +160,7 @@ export const makeMcpServerOperations = (
         throw new Error(`${current.name} is managed by Codevisor`)
       }
       const enabled = request.enabled ?? current.enabled
+      assertCanDisableMcp(current.id, enabled)
       const providerState = builtinProviderState(current.id, enabled)
       const saved = await saveRecord(current, {
         enabled,
@@ -254,10 +259,11 @@ export const makeMcpServerOperations = (
 
   const setLocalSuppression: McpManager["setLocalSuppression"] = async (names) => {
     await builtinsReady
-    state.locallySuppressed = new Set(names)
-    if (names.size > 0) {
+    const suppressed = withoutAlwaysOnMcps(names)
+    state.locallySuppressed = suppressed
+    if (suppressed.size > 0) {
       for (const server of await run(config.db.listMcpServers)) {
-        if (!names.has(server.name)) continue
+        if (!suppressed.has(server.name)) continue
         if (connections.has(server.id)) {
           await closeConnection(server.id)
           await saveRecord(server, { connectionState: "disconnected", detail: undefined })
@@ -318,6 +324,7 @@ export const makeMcpServerOperations = (
     serverId,
     enabled
   ) => {
+    assertCanDisableMcp(serverId, enabled)
     await run(config.db.setProjectMcpEnabled(projectId, serverId, enabled))
     await refreshGatewayInventories()
     return resolved(projectId)
@@ -329,6 +336,7 @@ export const makeMcpServerOperations = (
     enabled,
     projectId
   ) => {
+    assertCanDisableMcp(serverId, enabled)
     await run(config.db.setSessionMcpEnabled(sessionId, serverId, enabled))
     await refreshGatewayInventories()
     return resolved(projectId, sessionId)

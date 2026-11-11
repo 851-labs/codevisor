@@ -133,7 +133,7 @@ describe("Codevisor built-in tools", () => {
     }
   })
 
-  it("lists its tools in settings and preserves a disabled provider across restarts", async () => {
+  it("lists its tools in settings and turns back on when an older version left it off", async () => {
     const { db, manager, directory } = await testManager(providers)
     const tools = await manager.tools("codevisor")
     expect(tools).toEqual(
@@ -154,8 +154,19 @@ describe("Codevisor built-in tools", () => {
     expect(catalog).toHaveLength(tools.length)
     expect(new Set(catalog.map((tool) => tool.name)).size).toBe(tools.length)
 
-    await manager.update("codevisor", { enabled: false })
     await manager.close()
+    await run(
+      db.saveMcpServer({
+        id: "codevisor",
+        name: "Codevisor",
+        kind: "codevisor",
+        transport: "stdio",
+        enabled: false,
+        authType: "none",
+        connectionState: "disconnected",
+        toolCount: tools.length
+      })
+    )
     const restarted = makeMcpManager({
       db,
       dataDir: directory,
@@ -164,18 +175,13 @@ describe("Codevisor built-in tools", () => {
     })
     managers.push(restarted)
     expect((await restarted.list()).find((server) => server.id === "codevisor")).toMatchObject({
-      enabled: false,
-      connectionState: "disconnected",
+      enabled: true,
+      connectionState: "connected",
       toolCount: tools.length
     })
-    expect((await restarted.tools(undefined)).some((tool) => tool.serverId === "codevisor")).toBe(
-      false
-    )
-    expect(await restarted.tools("codevisor")).toEqual(tools)
-    expect(await restarted.update("codevisor", { enabled: true })).toMatchObject({
-      enabled: true,
-      connectionState: "connected"
-    })
+    expect(
+      (await restarted.tools(undefined)).filter((tool) => tool.serverId === "codevisor")
+    ).toHaveLength(tools.length)
   })
 
   it("finds skills and sandbox globals next to tools in search", async () => {
@@ -213,7 +219,7 @@ describe("Codevisor built-in tools", () => {
   })
 
   it.each(["global", "machine", "project", "session"] as const)(
-    "enforces a %s disable in discovery, descriptions, and direct calls on a live gateway",
+    "keeps its tools on a live gateway when a %s disable is attempted",
     async (scope) => {
       const { db, manager } = await testManager(providers)
       const base = await listen(createServer(manager.handleGatewayRequest))
@@ -239,43 +245,22 @@ describe("Codevisor built-in tools", () => {
         const call = () =>
           execute('async () => machines.current.tools["codevisor.context.current"]({})')
         const inventory = async () => (await client.listTools()).tools[0]?.description
-        const setEnabled = async (enabled: boolean) => {
-          const changed = Promise.withResolvers<void>()
-          client.setNotificationHandler("notifications/tools/list_changed", () => changed.resolve())
+        const attemptDisable = async () => {
           switch (scope) {
             case "global":
-              await manager.update("codevisor", { enabled })
-              break
+              return manager.update("codevisor", { enabled: false })
             case "machine":
-              await manager.setLocalSuppression(new Set(enabled ? [] : ["Codevisor"]))
-              break
+              return manager.setLocalSuppression(new Set(["Codevisor"]))
             case "project":
-              await manager.setProjectEnabled(project.id, "codevisor", enabled)
-              break
+              return manager.setProjectEnabled(project.id, "codevisor", false)
             case "session":
-              await manager.setSessionEnabled(session.id, "codevisor", enabled, project.id)
-              break
+              return manager.setSessionEnabled(session.id, "codevisor", false, project.id)
           }
-          await changed.promise
         }
 
-        expect(await inventory()).toContain("\n- Codevisor")
-        expect(JSON.stringify((await search()).content)).toContain("codevisor.agents.start")
-        expect((await describeTool()).isError).not.toBe(true)
-        expect((await call()).isError).not.toBe(true)
+        if (scope === "machine") await attemptDisable()
+        else await expect(attemptDisable()).rejects.toThrow("Codevisor can’t be turned off")
 
-        await setEnabled(false)
-        expect(await inventory()).not.toContain("\n- Codevisor")
-        expect(JSON.stringify((await search()).content)).not.toContain("codevisor.agents.start")
-        expect((await describeTool()).isError).toBe(true)
-        expect(await call()).toMatchObject({
-          isError: true,
-          content: [
-            expect.objectContaining({ text: expect.stringContaining("disabled for this session") })
-          ]
-        })
-
-        await setEnabled(true)
         expect(await inventory()).toContain("\n- Codevisor")
         expect(JSON.stringify((await search()).content)).toContain("codevisor.agents.start")
         expect((await describeTool()).isError).not.toBe(true)

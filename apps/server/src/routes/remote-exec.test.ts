@@ -42,7 +42,7 @@ const execServer = async () => {
   const execTasks = makeExecTasks({
     directory: tempDir("codevisor-exec-"),
     shell: "/bin/sh",
-    env: process.env
+    env: { ...process.env, HOME: tempDir("codevisor-exec-home-") }
   })
   const mirrors = makeMirrorStore(tempDir("codevisor-mirrors-"))
   const workspaceMirrors = makeWorkspaceMirrors({
