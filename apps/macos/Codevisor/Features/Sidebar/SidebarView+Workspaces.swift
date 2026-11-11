@@ -98,10 +98,19 @@ extension SidebarView {
 
     let id = workspace.id
     return ActiveWorkspaceActions(
-      name: SidebarWorkspaceRowLabel.title(for: workspace.name), isPinned: isPinned(workspace),
+      name: SidebarWorkspaceRowLabel.title(for: workspace.name), pin: activePin(for: workspace),
       rename: { if let current = currentActiveWorkspace(id) { rowCommands.rename(current) } },
-      togglePin: { if let current = currentActiveWorkspace(id) { rowCommands.togglePin(current) } },
       archive: { if let current = currentActiveWorkspace(id) { rowCommands.archive(current) } })
+  }
+
+  private func activePin(for workspace: Workspace) -> WorkspacePin? {
+    let item = environment.navigationStore.workspaceEntries.sidebar.first { $0.id == workspace.id }
+    guard item.map(SidebarPins.canPin) ?? true else { return nil }
+
+    let id = workspace.id
+    return WorkspacePin(isPinned: isPinned(workspace)) {
+      if let current = currentActiveWorkspace(id) { rowCommands.togglePin(current) }
+    }
   }
 
   private func currentActiveWorkspace(_ id: UUID) -> Workspace? {

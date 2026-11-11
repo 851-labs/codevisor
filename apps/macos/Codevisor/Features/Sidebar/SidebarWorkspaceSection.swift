@@ -42,7 +42,8 @@ struct SidebarWorkspaceSection: View, Equatable {
         isReordering: isReordering,
         onActivate: { actions.activate(listItem) },
         lifecycle: .active(
-          actions.commands.actions(for: workspace, isPinned: isPinned, sectionPlacement: sectionPlacement))
+          actions.commands.actions(
+            for: item, workspace: workspace, isPinned: isPinned, sectionPlacement: sectionPlacement))
       )
     }
   }

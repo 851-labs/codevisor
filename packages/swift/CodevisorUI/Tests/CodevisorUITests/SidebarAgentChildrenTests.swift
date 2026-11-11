@@ -16,11 +16,13 @@ struct SidebarAgentChildrenTests {
 
   private func rows(
     _ items: [WorkspaceSidebarItem], archived: [WorkspaceSidebarItem] = [], archivedVisibleCount: Int = 25,
-    tabs: [UUID: [UUID]] = [:], selecting selected: UUID? = nil, hiddenParentIDs: Set<UUID> = []
+    tabs: [UUID: [UUID]] = [:], selecting selected: UUID? = nil, hiddenParentIDs: Set<UUID> = [],
+    pinning pinned: [WorkspaceSidebarItem] = []
   ) -> [SidebarRow] {
-    let tree = SidebarWorkspaceTree(items, pinnedIDs: [], hiddenParentIDs: hiddenParentIDs)
+    let pinnedIDs = pinned.map(\.id.uuidString)
+    let tree = SidebarWorkspaceTree(items, pinnedIDs: pinnedIDs, hiddenParentIDs: hiddenParentIDs)
     let groups = SidebarWorkspaceGroup.groups(
-      tree.roots, grouping: .flat, pinnedIDs: [], projects: [project], defaultServerId: project.serverId,
+      tree.roots, grouping: .flat, pinnedIDs: pinnedIDs, projects: [project], defaultServerId: project.serverId,
       sections: [], membership: [:]
     ) { serverId in
       SidebarMachineGroup(
@@ -97,6 +99,35 @@ struct SidebarAgentChildrenTests {
     let shown = rows(all, hiddenParentIDs: [home])
     #expect(workspaceIDs(shown) == [forkOfHome.id, forkOfBotChild.id, orphan.id])
     #expect(shown.allSatisfy { $0.parentID == nil })
+  }
+
+  @Test("Agent-made workspaces can't be pinned, while top-level workspaces, forks and legacy children can")
+  func agentMadeWorkspacesCannotBePinned() {
+    let parent = item()
+    let fork = item(parent: parent.id)
+    let spawned = item(parent: parent.id, agentMade: true)
+    let orphan = item(parent: UUID(), agentMade: true)
+
+    #expect([parent, fork, spawned, orphan].map(SidebarPins.canPin) == [true, true, false, false])
+  }
+
+  @Test(
+    "Stored pins on agent-made workspaces are ignored, so they stay hidden or in the list, while a pinned fork still shows in Pinned"
+  )
+  func storedAgentMadePinsAreIgnored() {
+    let home = UUID()
+    let parent = item()
+    let fork = item(parent: parent.id)
+    let spawned = item(parent: parent.id, agentMade: true)
+    let botChild = item(parent: home, agentMade: true)
+    let orphan = item(parent: UUID(), agentMade: true)
+    let all = [parent, fork, spawned, botChild, orphan]
+
+    let shown = rows(all, hiddenParentIDs: [home], pinning: [fork, spawned, botChild, orphan])
+    #expect(
+      shown.map(\.id) == [
+        .section(.pinned), .workspace(fork.id), .section(.list), .workspace(parent.id), .workspace(orphan.id),
+      ])
   }
 
   @Test("Archived agent-made children don't show in Archived, and don't count toward Show More")

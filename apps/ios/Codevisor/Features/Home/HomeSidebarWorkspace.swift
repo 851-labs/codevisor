@@ -14,6 +14,7 @@ struct HomeSidebarWorkspace: Identifiable, Equatable {
   var leadingRow: HomeSidebarTabRow? = nil
   var primaryRowId: UUID? = nil
   var isPinned = false
+  var canPin = true
   var isArchived = false
   var sectionSlot: WorkspaceSectionPlacement? = nil
   let rows: [HomeSidebarTabRow]

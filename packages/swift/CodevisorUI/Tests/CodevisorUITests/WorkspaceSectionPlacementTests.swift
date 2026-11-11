@@ -19,12 +19,12 @@ struct WorkspaceSectionPlacementTests {
     let unsectioned = item()
     let fork = item(parent: sectioned.id)
     let spawned = item(parent: sectioned.id, agentMade: true)
-    let pinnedSpawned = item(parent: sectioned.id, agentMade: true)
-    let membership = [sectioned.id: section, pinnedSpawned.id: section]
+    let pinnedFork = item(parent: sectioned.id)
+    let membership = [sectioned.id: section, pinnedFork.id: section]
     let tree = SidebarWorkspaceTree(
-      [sectioned, unsectioned, fork, spawned, pinnedSpawned], pinnedIDs: [pinnedSpawned.id.uuidString])
+      [sectioned, unsectioned, fork, spawned, pinnedFork], pinnedIDs: [pinnedFork.id.uuidString])
 
-    let placements = [sectioned, unsectioned, fork, spawned, pinnedSpawned].map {
+    let placements = [sectioned, unsectioned, fork, spawned, pinnedFork].map {
       WorkspaceSectionPlacement($0.id, in: tree, membership: membership)
     }
 

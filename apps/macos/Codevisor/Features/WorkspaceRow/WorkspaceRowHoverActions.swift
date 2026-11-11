@@ -8,12 +8,9 @@ struct WorkspaceRowHoverActions: View {
     HStack(spacing: WorkspaceRow.trailingSpacing) {
       switch lifecycle {
       case let .active(actions):
-        button(
-          systemImage: actions.isPinned ? "pin.slash" : "pin",
-          help: actions.isPinned ? "Unpin workspace" : "Pin workspace",
-          label: actions.isPinned ? "Unpin" : "Pin",
-          action: actions.togglePin
-        )
+        if let pin = actions.pin {
+          button(systemImage: pin.systemImage, help: "\(pin.title) workspace", label: pin.title, action: pin.toggle)
+        }
         button(systemImage: "archivebox", help: "Archive workspace", label: "Archive", action: actions.archive)
       case let .archived(onRestore):
         button(systemImage: "arrow.uturn.backward", help: "Restore workspace", label: "Restore", action: onRestore)

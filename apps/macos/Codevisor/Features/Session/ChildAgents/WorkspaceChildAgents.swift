@@ -59,7 +59,7 @@ struct WorkspaceChildAgents {
           for: listItem, isPinned: false, headingNamesMachine: listing.headingNamesMachine(workspace.id),
           isQuiet: isQuiet),
         actions: commands.actions(
-          for: workspace, isPinned: commands.isPinned(workspace),
+          for: item, workspace: workspace, isPinned: commands.isPinned(workspace),
           sectionPlacement: WorkspaceSectionPlacement(workspace.id, in: tree, membership: membership))
       ) {
         open(listItem, splittingInto: isQuiet ? host : nil)

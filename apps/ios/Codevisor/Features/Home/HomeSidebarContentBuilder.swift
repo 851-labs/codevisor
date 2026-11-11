@@ -141,6 +141,7 @@ struct HomeSidebarContentBuilder {
       leadingRow: leadingRow(rows, workspace: workspace, mainChatId: mainChatId),
       primaryRowId: selectedPaneId(in: workspace),
       isPinned: preferences.pinnedIDs.contains(workspace.id.uuidString),
+      canPin: SidebarPins.canPin(item),
       isArchived: workspace.isArchived,
       rows: rows
     )

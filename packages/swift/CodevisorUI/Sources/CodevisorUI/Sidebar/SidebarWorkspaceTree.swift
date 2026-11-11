@@ -7,9 +7,8 @@ public struct SidebarWorkspaceTree: Equatable {
   private let parents: [UUID: UUID]
 
   public init(_ items: [WorkspaceSidebarItem], pinnedIDs: [String], hiddenParentIDs: Set<UUID> = []) {
-    let pinned = Set(pinnedIDs)
-    let links = Self.parentLinks(items, pinnedIDs: pinned)
-    let hidden = Self.hiddenIDs(items, links: links, pinnedIDs: pinned, hiddenParentIDs: hiddenParentIDs)
+    let links = Self.parentLinks(items, pinnedIDs: SidebarPins.pinnedIDs(pinnedIDs, in: items))
+    let hidden = Self.hiddenIDs(items, links: links, hiddenParentIDs: hiddenParentIDs)
     func shownAncestor(of id: UUID) -> UUID? {
       guard hidden.contains(id) else { return id }
       return links[id].flatMap(shownAncestor)
@@ -38,12 +37,11 @@ public struct SidebarWorkspaceTree: Equatable {
   }
 
   private static func hiddenIDs(
-    _ items: [WorkspaceSidebarItem], links: [UUID: UUID], pinnedIDs: Set<String>, hiddenParentIDs: Set<UUID>
+    _ items: [WorkspaceSidebarItem], links: [UUID: UUID], hiddenParentIDs: Set<UUID>
   ) -> Set<UUID> {
     func isHidden(_ item: WorkspaceSidebarItem) -> Bool {
       guard QuietChildren.isQuiet(item) else { return false }
-      let isUnderHiddenParent = item.parentWorkspaceId.map(hiddenParentIDs.contains) == true
-      return links[item.id] != nil || (isUnderHiddenParent && !pinnedIDs.contains(item.id.uuidString))
+      return links[item.id] != nil || item.parentWorkspaceId.map(hiddenParentIDs.contains) == true
     }
     return Set(items.filter(isHidden).map(\.id))
   }

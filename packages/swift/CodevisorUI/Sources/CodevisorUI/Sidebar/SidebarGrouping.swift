@@ -120,7 +120,7 @@ public struct SidebarWorkspaceGroup: Identifiable, Equatable {
     membership: [UUID: UUID] = [:],
     machineGroup: (String) -> SidebarMachineGroup
   ) -> [SidebarWorkspaceGroup] {
-    let pinned = Set(pinnedIDs)
+    let pinned = SidebarPins.pinnedIDs(pinnedIDs, in: items)
     let pinnedItems = items.filter { pinned.contains($0.id.uuidString) }
     let unpinned = items.filter { !pinned.contains($0.id.uuidString) }
     let custom = customSectionGroups(unpinned, sections: sections, membership: membership)
