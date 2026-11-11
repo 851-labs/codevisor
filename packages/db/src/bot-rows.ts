@@ -1,10 +1,4 @@
-import type {
-  AttachmentRef,
-  Bot,
-  BotMascot,
-  BotMessage,
-  BotMessageSender
-} from "@codevisor/api"
+import type { AttachmentRef, Bot, BotMascot, BotMessage, BotMessageSender } from "@codevisor/api"
 import type { Effect } from "effect"
 
 import type { DatabaseError } from "./errors.js"

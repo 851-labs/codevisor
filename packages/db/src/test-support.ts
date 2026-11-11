@@ -282,7 +282,7 @@ export const rewindAgentReferencesSql = `
   alter table workspaces add column remote_bot_parent_session_id text;
   create index workspaces_bot_idx on workspaces(bot_id);
   create table fleet_pending_turns (session_id text not null, revision integer not null);
-  delete from schema_migrations where id = 96;
+  delete from schema_migrations where id = 97;
 `
 
 export const rewindOneNameSql = `
