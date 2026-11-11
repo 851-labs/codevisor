@@ -26,10 +26,10 @@ extension SessionContainerView {
 
   func botAgentChats(replacing placeholderId: UUID) -> NewPaneAgentChats? {
     let workspace = selectedWorkspace
-    guard isTabless, let bot = environment.bots.bot(forWorkspace: workspace.id, serverId: workspace.serverId)
+    guard isTabless, environment.bots.bot(forWorkspace: workspace.id, serverId: workspace.serverId) != nil
     else { return nil }
 
-    let agents = environment.navigationStore.workspaceEntries.botChildren[bot.id] ?? []
+    let agents = environment.navigationStore.workspaceEntries.sidebar.filter { $0.parentWorkspaceId == workspace.id }
     return NewPaneAgentChats(chats: agents.compactMap(agentChat)) { chat in
       openAgentChat(chat, replacing: placeholderId)
     }
