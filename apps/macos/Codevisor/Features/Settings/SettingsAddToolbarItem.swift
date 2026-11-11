@@ -9,6 +9,7 @@ private struct SettingsAddToolbarItem<Action: View>: ViewModifier {
         action
           .labelStyle(.iconOnly)
           .menuIndicator(.hidden)
+          .fontWeight(.medium)
       }
     }
   }
