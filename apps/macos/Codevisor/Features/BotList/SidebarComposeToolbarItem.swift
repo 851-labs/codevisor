@@ -12,7 +12,7 @@ struct SidebarComposeToolbarItem: ToolbarContent {
   var body: some ToolbarContent {
     ToolbarItem(placement: .navigation) {
       switch SidebarMode.active(storedMode, botsEnabled: botsEnabled) {
-      case .chat: BotComposeButton(onNewBot: newBot)
+      case .bots: BotComposeButton(onNewBot: newBot)
       case .code: NewChatComposeButton(onNewChat: newChat)
       }
     }

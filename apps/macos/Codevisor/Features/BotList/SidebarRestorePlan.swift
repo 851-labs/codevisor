@@ -7,7 +7,7 @@ struct SidebarRestorePlan {
 
   func restore(_ remembered: RememberedSidebarSelection?, in mode: SidebarMode) -> SidebarRestore<SidebarSelection> {
     switch mode {
-    case .chat:
+    case .bots:
       SidebarRestore.first(of: chatCandidates(remembered), orElse: nil, availability: availability)
     case .code:
       SidebarRestore.first(of: codeCandidates(remembered), orElse: .newChat(nil), availability: availability)

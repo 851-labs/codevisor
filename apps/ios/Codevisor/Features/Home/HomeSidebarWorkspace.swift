@@ -164,9 +164,9 @@ struct HomeSidebarContent: Equatable {
   func mode(owning selection: HomeSidebarSelection) -> SidebarMode? {
     switch selection {
     case .bot:
-      return .chat
+      return .bots
     case let .workspace(id, _):
-      if botWorkspaceIDs.contains(id) { return .chat }
+      if botWorkspaceIDs.contains(id) { return .bots }
       return workspace(id) != nil || archived.contains { $0.id == id } ? .code : nil
     }
   }

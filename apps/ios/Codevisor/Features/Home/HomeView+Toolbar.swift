@@ -34,7 +34,7 @@ extension HomeView {
 
   @ViewBuilder
   private var sidebarOptionsMenu: some View {
-    if sidebarMode.wrappedValue == .chat {
+    if sidebarMode.wrappedValue == .bots {
       HomeSidebarOptionsMenu(
         sections: environment.botSections.sections, actions: sidebarActions.botSections,
         managesSections: !showsSampleSidebar, showsGrouping: false)

@@ -19,7 +19,7 @@ public enum FeatureFlag: String, CaseIterable, Identifiable, Sendable {
 
   public var detail: String {
     switch self {
-    case .bots: "Adds a Chat mode to the sidebar for long-lived bots that work across several projects."
+    case .bots: "Adds a Bots mode to the sidebar for long-lived bots that work across several projects."
     case .developerMode: "Adds a Developer section to the command palette with tools such as the debug overlay."
     case .gmailPlugin:
       "Shows Gmail in Browse Plugins on all your devices. In testing: only @851.sh Google accounts can sign in."

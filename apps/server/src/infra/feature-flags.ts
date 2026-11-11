@@ -16,7 +16,7 @@ export const featureFlagCatalog: ReadonlyArray<FeatureFlagDefinition> = [
     id: "bots",
     title: "Bots",
     description:
-      "Adds a Chat mode to the sidebar for long-lived bots that work across several projects."
+      "Adds a Bots mode to the sidebar for long-lived bots that work across several projects."
   },
   {
     id: "developerMode",

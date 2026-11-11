@@ -7,7 +7,7 @@ struct SidebarRouteChangeTests {
   }
 
   private func owner(of selection: String) -> SidebarMode? {
-    if selection.hasPrefix("bot") { return .chat }
+    if selection.hasPrefix("bot") { return .bots }
     if selection.hasPrefix("tab") { return .code }
     return nil
   }
@@ -17,33 +17,33 @@ struct SidebarRouteChangeTests {
   }
 
   @Test func launchRestoresTheOpeningMode() {
-    let launch = change(from: route(.chat, nil), to: route(.chat, nil))
+    let launch = change(from: route(.bots, nil), to: route(.bots, nil))
 
     #expect(launch.remembers == nil)
-    #expect(launch.restores == .chat)
+    #expect(launch.restores == .bots)
   }
 
   @Test func selectingARowRemembersItForTheModeThatOwnsIt() {
     #expect(change(from: route(.code, "tab a"), to: route(.code, "tab b")).remembers == .code)
-    #expect(change(from: route(.code, "tab a"), to: route(.code, "bot a")).remembers == .chat)
+    #expect(change(from: route(.code, "tab a"), to: route(.code, "bot a")).remembers == .bots)
     #expect(change(from: route(.code, "tab a"), to: route(.code, "tab b")).restores == nil)
   }
 
   @Test func newChatIsRememberedOnlyAsACodeSelection() {
     #expect(change(from: route(.code, "tab a"), to: route(.code, "new chat")).remembers == .code)
-    #expect(change(from: route(.chat, "bot a"), to: route(.chat, "new chat")).remembers == nil)
-    #expect(change(from: route(.chat, "bot a"), to: route(.chat, nil)).remembers == nil)
+    #expect(change(from: route(.bots, "bot a"), to: route(.bots, "new chat")).remembers == nil)
+    #expect(change(from: route(.bots, "bot a"), to: route(.bots, nil)).remembers == nil)
   }
 
   @Test func flippingModesRestoresWithoutRememberingTheOtherModesPage() {
-    let flip = change(from: route(.chat, "bot a"), to: route(.code, "bot a"))
+    let flip = change(from: route(.bots, "bot a"), to: route(.code, "bot a"))
 
     #expect(flip.remembers == nil)
     #expect(flip.restores == .code)
   }
 
   @Test func newChatFromChatModeIsRememberedBeforeCodeRestores() {
-    let newChat = change(from: route(.chat, "bot a"), to: route(.code, "new chat"))
+    let newChat = change(from: route(.bots, "bot a"), to: route(.code, "new chat"))
 
     #expect(newChat.remembers == .code)
     #expect(newChat.restores == .code)

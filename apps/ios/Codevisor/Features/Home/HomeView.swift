@@ -136,7 +136,7 @@ struct HomeView: View {
   }
 
   var showsNewBotToolbarButton: Bool {
-    showsNewChatButton && sidebarMode.wrappedValue == .chat && !environment.bots.botMachines.isEmpty
+    showsNewChatButton && sidebarMode.wrappedValue == .bots && !environment.bots.botMachines.isEmpty
   }
 
   var body: some View {

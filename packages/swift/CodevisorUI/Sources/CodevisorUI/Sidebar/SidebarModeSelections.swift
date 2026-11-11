@@ -1,22 +1,27 @@
 public struct SidebarModeSelections<Item: Hashable & Codable & Sendable>: Hashable, Codable, Sendable {
-  public var chat: Item?
+  public var bots: Item?
   public var code: Item?
 
-  public init(chat: Item? = nil, code: Item? = nil) {
-    self.chat = chat
+  private enum CodingKeys: String, CodingKey {
+    case bots = "chat"
+    case code
+  }
+
+  public init(bots: Item? = nil, code: Item? = nil) {
+    self.bots = bots
     self.code = code
   }
 
   public subscript(mode: SidebarMode) -> Item? {
     get {
       switch mode {
-      case .chat: chat
+      case .bots: bots
       case .code: code
       }
     }
     set {
       switch mode {
-      case .chat: chat = newValue
+      case .bots: bots = newValue
       case .code: code = newValue
       }
     }

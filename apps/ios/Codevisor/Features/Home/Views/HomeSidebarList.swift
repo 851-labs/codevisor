@@ -113,9 +113,9 @@ struct HomeSidebarList: View {
 
   private var showsChat: Bool { mode?.wrappedValue != .code }
 
-  private var isConversation: Bool { mode?.wrappedValue == .chat }
+  private var isConversation: Bool { mode?.wrappedValue == .bots }
 
-  private var showsCode: Bool { mode?.wrappedValue != .chat }
+  private var showsCode: Bool { mode?.wrappedValue != .bots }
 
   private func followSelection(
     from previous: HomeSidebarSelection?, to next: HomeSidebarSelection?, in content: HomeSidebarContent
@@ -137,7 +137,7 @@ struct HomeSidebarList: View {
 
   private func shownBots(_ content: HomeSidebarContent) -> [HomeSidebarBot] {
     switch mode?.wrappedValue {
-    case .chat:
+    case .bots:
       let expanded = content.botSectionGroups.filter { !collapsedGroupIDs.contains($0.collapseID) }
       return content.unsectionedBots + expanded.flatMap(\.bots)
     case .code: return []
@@ -179,7 +179,7 @@ struct HomeSidebarList: View {
   @ViewBuilder
   private func sections(_ content: HomeSidebarContent) -> some View {
     switch mode?.wrappedValue {
-    case .chat:
+    case .bots:
       chatSections(content)
       archivedSection(content)
     case .code:

@@ -3,7 +3,7 @@ import CodevisorUI
 enum SidebarModeShortcut {
   static func id(for mode: SidebarMode) -> ShortcutID {
     switch mode {
-    case .chat: .switchToChat
+    case .bots: .switchToBots
     case .code: .switchToCode
     }
   }
