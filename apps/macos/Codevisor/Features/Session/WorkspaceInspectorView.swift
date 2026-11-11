@@ -56,6 +56,7 @@ struct WorkspaceInspectorView: View {
   private static let tabOverflowInset: CGFloat = 40
 
   @Environment(\.accessibilityReduceMotion) private var reduceMotion
+  @Environment(AppEnvironment.self) private var environment
   @State private var tabBarWidth: CGFloat = 0
   @State private var tabScroll = ScrollPosition(edge: .leading)
   @State private var tabViewport = TabViewport()
@@ -64,6 +65,8 @@ struct WorkspaceInspectorView: View {
   @State private var chatContexts: [UUID: ServerSessionContext] = [:]
   @State private var lastLoadedChatId: UUID?
   @State private var subscriptions = ChatPluginSubscriptionsModel()
+  @State private var workspaceMirrors = WorkspaceInspectorMirrors()
+  @State private var remoteTasks = WorkspaceInspectorRemoteTasks()
   @ClientPreference("workspace.inspectorCollapsedSections", default: []) private var collapsedSections: [String]
 
   var body: some View {
@@ -254,7 +257,10 @@ struct WorkspaceInspectorView: View {
           }
         }
 
-        WorkspaceInspectorMirrorsSection(workspaceId: workspace.id, client: client, isExpanded: expansion("Mirrors"))
+        if !workspaceMirrors.mirrors.isEmpty {
+          WorkspaceInspectorMirrorsSection(
+            mirrors: workspaceMirrors.mirrors, isExpanded: expansion("Mirrors"), onRemove: removeMirror)
+        }
 
         if !subscriptions.events.isEmpty {
           WorkspaceInspectorSubscriptionsSection(
@@ -262,8 +268,9 @@ struct WorkspaceInspectorView: View {
             isExpanded: expansion("Subscriptions"))
         }
 
-        WorkspaceInspectorTasksSection(
-          tasks: tasks, workspace: workspace, client: client, isExpanded: expansion("Tasks"))
+        if !shownTasks.isEmpty {
+          WorkspaceInspectorTasksSection(tasks: shownTasks, isExpanded: expansion("Tasks"))
+        }
 
         if let parent {
           WorkspaceInspectorAgentsSection(
@@ -280,6 +287,18 @@ struct WorkspaceInspectorView: View {
     .task(id: SubscriptionsKey(sessionId: harnessChat?.id, revision: subscriptionsRevision)) {
       await subscriptions.load(sessionId: harnessChat?.id, client: client)
     }
+    .task(id: workspace.id) {
+      await workspaceMirrors.keepLoading(workspaceId: workspace.id, client: client)
+    }
+    .task(id: workspace.id) {
+      await remoteTasks.keepLoading(workspace: workspace, client: client, machines: environment.machines)
+    }
+  }
+
+  private var shownTasks: [WorkspaceInspectorTask] { tasks + remoteTasks.tasks }
+
+  private func removeMirror(_ mirror: ServerWorkspaceMirror) {
+    Task { await workspaceMirrors.remove(mirror, workspaceId: workspace.id, client: client) }
   }
 
   private var harness: some View {
