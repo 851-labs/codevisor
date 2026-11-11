@@ -34,15 +34,13 @@ struct WorkspaceInspectorPresentation: ViewModifier {
   @ClientPreference("workspace.inspectorTab", default: WorkspaceInspectorTab.info) private var tab
   @ClientPreference(FeatureFlag.bots.preferenceKey, default: false) private var botsEnabled
   @ClientPreference(FeatureFlag.developerMode.preferenceKey, default: false) private var developerMode
-  @ClientPreference(SidebarGrouping.preferenceKey, default: SidebarGrouping.flat) private var sidebarGrouping
-  @ClientPreference(SidebarPreferenceKey.pinnedWorkspaces, default: []) private var pinnedWorkspaceIDs: [String]
+  @Environment(\.workspaceChildAgents) private var childAgents
   @State private var media = WorkspaceInspectorMediaModel()
   @State private var fileTree = WorkspaceInspectorFileTreeModel()
   @State private var imageStores = WorkspaceInspectorImageStores()
   @State private var usage = WorkspaceInspectorUsageModel()
   let store: SessionStore?
   @Binding var selection: SidebarSelection?
-  var revealRequest: SidebarRevealRequest?
   var idealInspectorWidth: CGFloat = 260
 
   func body(content: Content) -> some View {
@@ -134,8 +132,8 @@ struct WorkspaceInspectorPresentation: ViewModifier {
       showsBotTranscript: bot != nil,
       harnessChat: chat,
       tasks: shownTab(for: inspected) == .info ? mainChatTasks(of: workspace, store: store) : [],
-      parent: shownTab(for: inspected) == .info ? childAgents(store).parent(of: workspace) : nil,
-      agents: shownTab(for: inspected) == .info ? childAgents(store).children(of: workspace) : [],
+      parent: shownTab(for: inspected) == .info ? childAgents?.parent(of: workspace) : nil,
+      agents: shownTab(for: inspected) == .info ? childAgents?.children(of: workspace) ?? [] : [],
       store: store,
       usage: usage,
       tabs: tabs(for: inspected),
@@ -173,12 +171,6 @@ struct WorkspaceInspectorPresentation: ViewModifier {
     return WorkspaceInspectorMainChatTasks(
       workspace: workspace, chat: chat, store: store, client: environment.machines.client(for: chat.serverId)
     ).tasks
-  }
-
-  private func childAgents(_ store: SessionStore) -> WorkspaceChildAgents {
-    WorkspaceChildAgents(
-      environment: environment, store: store, botsEnabled: botsEnabled, grouping: sidebarGrouping,
-      pinnedIDs: pinnedWorkspaceIDs, selection: $selection, revealRequest: revealRequest)
   }
 
   private func refreshKey(for inspected: Inspected) -> RefreshKey {

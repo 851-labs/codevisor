@@ -23,7 +23,7 @@ struct ChildAgentsPopover: View {
     WorkspaceInspectorCardRows {
       ForEach(agents) { agent in
         WorkspaceInspectorAgentRow(
-          agent: agent.opening(then: dismiss),
+          agent: agent.closing(with: dismiss),
           store: store,
           focusShape: WorkspaceInspectorCardShape.row(for: agent, in: agents)
         )

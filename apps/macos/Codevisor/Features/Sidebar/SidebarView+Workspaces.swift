@@ -7,40 +7,20 @@ extension SidebarView {
     SidebarRowContent(environment: environment, store: store, grouping: grouping, rowDetails: rowDetails)
   }
 
-  var rowActions: SidebarWorkspaceSection.Actions {
-    SidebarWorkspaceSection.Actions(
-      activate: { activateWorkspace($0, tabId: $0.workspace.mainTab.id) },
-      togglePin: { togglePin($0) },
-      rename: { workspace in
-        workspaceRenameTitle = workspace.name
-        renamingWorkspace = workspace
-      },
-      archive: { archiveWorkspace($0) },
-      moveToSection: { environment.workspaceSections.move($0.id, to: $1) },
-      newSection: { sectionPrompt = .create(moving: $0.id) }
+  var rowCommands: WorkspaceRowCommands {
+    WorkspaceRowCommands(
+      environment: environment,
+      pinnedIDs: $pinnedWorkspaceIDs,
+      rename: { renamingWorkspace = $0 },
+      newSection: { sectionPrompt = .create(moving: $0.id) },
+      willArchive: { moveSelection(awayFrom: $0) }
     )
   }
 
-  func row(
-    for workspace: Workspace,
-    icon: SidebarWorkspaceIcon,
-    isSelected: Bool,
-    onActivate: @escaping () -> Void,
-    lifecycle: SidebarWorkspaceRow.Lifecycle
-  ) -> SidebarWorkspaceRow {
-    let content = rowContent
-    let isPinned = isPinned(workspace)
-    return SidebarWorkspaceRow(
-      name: workspace.name,
-      subtitle: content.subtitle(for: workspace, isPinned: isPinned),
-      icon: icon,
-      store: store,
-      pullRequest: content.pullRequest(for: workspace),
-      machine: content.machine(for: workspace, headingNamesMachine: false),
-      isSelected: isSelected,
-      isReordering: isReordering,
-      onActivate: onActivate,
-      lifecycle: lifecycle
+  var rowActions: SidebarWorkspaceSection.Actions {
+    SidebarWorkspaceSection.Actions(
+      activate: { activateWorkspace($0, tabId: $0.workspace.mainTab.id) },
+      commands: rowCommands
     )
   }
 
@@ -110,7 +90,7 @@ extension SidebarView {
 
   func archiveSelectedWorkspace() {
     guard let workspace = selectedActiveWorkspace else { return }
-    archiveWorkspace(workspace)
+    rowCommands.archive(workspace)
   }
 
   var activeWorkspaceActions: ActiveWorkspaceActions? {
@@ -119,22 +99,14 @@ extension SidebarView {
     let id = workspace.id
     return ActiveWorkspaceActions(
       name: SidebarWorkspaceRowLabel.title(for: workspace.name), isPinned: isPinned(workspace),
-      rename: { if let current = currentActiveWorkspace(id) { rowActions.rename(current) } },
-      togglePin: { if let current = currentActiveWorkspace(id) { togglePin(current) } },
-      archive: { if let current = currentActiveWorkspace(id) { archiveWorkspace(current) } })
+      rename: { if let current = currentActiveWorkspace(id) { rowCommands.rename(current) } },
+      togglePin: { if let current = currentActiveWorkspace(id) { rowCommands.togglePin(current) } },
+      archive: { if let current = currentActiveWorkspace(id) { rowCommands.archive(current) } })
   }
 
   private func currentActiveWorkspace(_ id: UUID) -> Workspace? {
     environment.workspaces.workspace(id: id).flatMap { $0.isArchived ? nil : $0 }
   }
-
-  private func archiveWorkspace(_ workspace: Workspace) {
-    moveSelection(awayFrom: workspace)
-    environment.archiveWorkspace(workspace)
-    pinnedWorkspaceIDs.removeAll { $0 == workspace.id.uuidString }
-    environment.workspaceSections.forget(workspace.id)
-  }
-
 }
 
 extension ProjectListModel {

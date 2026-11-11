@@ -4,10 +4,7 @@ import SwiftUI
 
 struct SidebarAlertsModifier: ViewModifier {
   @Binding var pendingImport: PendingSessionImport?
-  @Binding var renamingWorkspace: Workspace?
-  @Binding var workspaceRenameTitle: String
   let onImport: (PendingSessionImport) -> Void
-  let onRenameWorkspace: (Workspace) -> Void
 
   func body(content: Content) -> some View {
     content
@@ -26,26 +23,6 @@ struct SidebarAlertsModifier: ViewModifier {
       } message: { pending in
         Text(importPromptMessage(for: pending))
       }
-      .alert(
-        "Rename Workspace",
-        isPresented: Binding(
-          get: { renamingWorkspace != nil },
-          set: { if !$0 { renamingWorkspace = nil } }
-        ),
-        presenting: renamingWorkspace
-      ) { workspace in
-        TextField("Name", text: $workspaceRenameTitle)
-        Button("Rename") {
-          let trimmed = workspaceRenameTitle.trimmingCharacters(in: .whitespacesAndNewlines)
-          guard !trimmed.isEmpty else { return }
-          var renamed = workspace
-          renamed.name = trimmed
-          renamed.hasCustomName = true
-          onRenameWorkspace(renamed)
-        }
-        Button("Cancel", role: .cancel) {}
-      }
-      .focusesAlertTextField(when: renamingWorkspace != nil)
   }
 
   private func importPromptMessage(for pending: PendingSessionImport) -> String {

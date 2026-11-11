@@ -15,7 +15,7 @@ struct SidebarTabRow: View {
 
   var body: some View {
     HoverableRow(isSelected: isSelected, isHoverEnabled: !isReordering) { isHovered in
-      HStack(spacing: SidebarWorkspaceRow.trailingSpacing) {
+      HStack(spacing: WorkspaceRow.trailingSpacing) {
         SidebarTabRowLabel(label: label)
           .padding(.vertical, 5)
           .contentShape(Rectangle())

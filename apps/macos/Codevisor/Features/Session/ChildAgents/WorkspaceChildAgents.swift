@@ -8,7 +8,7 @@ struct WorkspaceChildAgents {
   let store: SessionStore
   let botsEnabled: Bool
   let grouping: SidebarGrouping
-  let pinnedIDs: [String]
+  let commands: WorkspaceRowCommands
   @Binding var selection: SidebarSelection?
   var revealRequest: SidebarRevealRequest?
 
@@ -28,7 +28,7 @@ struct WorkspaceChildAgents {
   }
 
   private func isWorking(_ agent: WorkspaceInspectorAgent) -> Bool {
-    switch agent.icon {
+    switch agent.details.icon {
     case let .chat(session, _): store.isInProgress(session)
     case .workingTerminal: true
     case .workspace: false
@@ -36,7 +36,7 @@ struct WorkspaceChildAgents {
   }
 
   private func harnessId(_ agent: WorkspaceInspectorAgent) -> String? {
-    guard case let .chat(session, _) = agent.icon else { return nil }
+    guard case let .chat(session, _) = agent.details.icon else { return nil }
     return session.harnessId
   }
 
@@ -45,18 +45,22 @@ struct WorkspaceChildAgents {
       environment: environment, store: store, grouping: grouping,
       rowDetails: ClientPreferences.shared.sidebarRowDetails)
     let listing = SidebarWorkspaceListing(
-      environment: environment, botsEnabled: botsEnabled, grouping: grouping, pinnedIDs: pinnedIDs,
+      environment: environment, botsEnabled: botsEnabled, grouping: grouping, pinnedIDs: commands.pinnedIDs,
       machineOrder: [], projectOrder: [])
+    let tree = listing.tree
+    let membership = environment.workspaceSections.membership
     return items.compactMap { item in
       guard let listItem = content.listItem(for: item) else { return nil }
       let workspace = listItem.workspace
       let isQuiet = QuietChildren.isQuiet(item)
       return WorkspaceInspectorAgent(
-        id: workspace.id, name: workspace.name,
-        subtitle: content.subtitle(for: workspace, isPinned: false),
-        icon: content.icon(for: listItem, isQuiet: isQuiet),
-        pullRequest: content.pullRequest(for: workspace),
-        machine: content.machine(for: workspace, headingNamesMachine: listing.headingNamesMachine(workspace.id))
+        id: workspace.id,
+        details: content.details(
+          for: listItem, isPinned: false, headingNamesMachine: listing.headingNamesMachine(workspace.id),
+          isQuiet: isQuiet),
+        actions: commands.actions(
+          for: workspace, isPinned: commands.isPinned(workspace),
+          sectionPlacement: WorkspaceSectionPlacement(workspace.id, in: tree, membership: membership))
       ) {
         open(listItem, splittingInto: isQuiet ? host : nil)
       }

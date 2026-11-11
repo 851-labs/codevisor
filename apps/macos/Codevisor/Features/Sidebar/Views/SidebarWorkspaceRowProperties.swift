@@ -7,7 +7,7 @@ struct SidebarWorkspaceRowProperties: View {
   let machine: SidebarRowMachine?
 
   var body: some View {
-    HStack(spacing: SidebarWorkspaceRow.trailingSpacing) {
+    HStack(spacing: WorkspaceRow.trailingSpacing) {
       if let pullRequest {
         PullRequestBadge(
           pullRequest: pullRequest, size: SidebarRowIcon.trailingSize, slot: SidebarRowIcon.trailingSlot)

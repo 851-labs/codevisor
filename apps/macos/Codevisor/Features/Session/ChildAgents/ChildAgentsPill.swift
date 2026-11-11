@@ -17,6 +17,9 @@ struct ChildAgentsPill: View {
     .popover(isPresented: $isShowingChildren, arrowEdge: .top) {
       ChildAgentsPopover(agents: content.agents, store: content.store) { isShowingChildren = false }
     }
+    .onChange(of: content.agents.isEmpty) { _, isEmpty in
+      if isEmpty { isShowingChildren = false }
+    }
     .help("Show child agents")
     .accessibilityLabel(accessibilityLabel)
   }

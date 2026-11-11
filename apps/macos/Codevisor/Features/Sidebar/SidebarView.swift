@@ -15,7 +15,6 @@ struct SidebarView: View {
   @State private var stepHandlerOwner = UUID()
   @State private var pendingImport: PendingSessionImport?
   @State var renamingWorkspace: Workspace?
-  @State var workspaceRenameTitle = ""
   @State var sectionPrompt: SectionPrompt?
   @State var drag: SidebarDrag?
   @State var groupDrag: SidebarGroupDrag?
@@ -164,16 +163,10 @@ struct SidebarView: View {
       .modifier(
         SidebarAlertsModifier(
           pendingImport: $pendingImport,
-          renamingWorkspace: $renamingWorkspace,
-          workspaceRenameTitle: $workspaceRenameTitle,
-          onImport: { environment.importSessions($0.sessions, into: $0.project) },
-          onRenameWorkspace: { renamed in
-            environment.workspaceSync.renameWorkspace(
-              renamed, client: environment.machines.client(for: renamed.serverId)
-            )
-          },
+          onImport: { environment.importSessions($0.sessions, into: $0.project) }
         )
       )
+      .modifier(WorkspaceRenamePrompt(request: $renamingWorkspace))
       .modifier(SectionPromptModifier(prompt: $sectionPrompt, store: environment.workspaceSections))
   }
 

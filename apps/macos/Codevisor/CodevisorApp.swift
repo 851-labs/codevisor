@@ -167,7 +167,7 @@ struct RootView: View {
       }
       .toolbar { SidebarComposeToolbarItem(newChat: openNewChat, newBot: openNewBot) }
     }
-    .modifier(WorkspaceInspectorPresentation(store: store, selection: $selection, revealRequest: sidebarRevealRequest))
+    .modifier(WorkspaceInspectorPresentation(store: store, selection: $selection))
     .modifier(WorkspaceChildAgentsEnvironment(store: store, selection: $selection, revealRequest: sidebarRevealRequest))
     .overlay {
       AdaptiveDrawerLayer(
