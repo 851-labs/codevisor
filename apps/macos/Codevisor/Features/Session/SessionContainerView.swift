@@ -214,7 +214,7 @@ struct SessionContainerView: View {
       .environment(\.usesSlimComposer, isTabless)
     }
     .overlay(alignment: .top) {
-      if !isTabless {
+      if WorkspaceLayoutPolicy.showsTitlebarDivider(workspace, environment: environment) {
         Color.separatorColor
           .frame(height: 1)
           .frame(maxWidth: .infinity)

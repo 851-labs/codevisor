@@ -30,8 +30,10 @@ struct BotConversationChrome: ViewModifier {
   }
 
   private var isSplit: Bool {
-    let workspace = environment.navigationStore.workspaceEntries.entry(bot.workspaceId).workspace
-    return (workspace?.centerTree.allGroups.count ?? 1) > 1
+    guard let workspace = environment.navigationStore.workspaceEntries.entry(bot.workspaceId).workspace else {
+      return false
+    }
+    return WorkspaceLayoutPolicy.isSplit(workspace)
   }
 
   private var isActive: Bool {
