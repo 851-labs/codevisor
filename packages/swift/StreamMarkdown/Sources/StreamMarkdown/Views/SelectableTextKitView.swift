@@ -346,29 +346,17 @@
       at time: TimeInterval,
       includesCompletedRanges: Bool = false
     ) {
-      guard let textStorage, let layoutManager, let textContainer else { return }
-      for range in activeAnimationRanges where NSMaxRange(range) <= textStorage.length {
-        guard
-          let fade = textStorage.attribute(
-            .streamMarkdownFade,
-            at: range.location,
-            effectiveRange: nil
-          ) as? StreamingTextFadeMetadata
-        else { continue }
-        guard
-          includesCompletedRanges
-            || fade.animationEndTime > time
-        else { continue }
-        layoutManager.invalidateDisplay(forCharacterRange: range)
-        let glyphs = layoutManager.glyphRange(
-          forCharacterRange: range,
-          actualCharacterRange: nil
-        )
-        var rect = layoutManager.boundingRect(forGlyphRange: glyphs, in: textContainer)
-        rect.origin.x += textContainerOrigin.x
-        rect.origin.y += textContainerOrigin.y
-        setNeedsDisplay(rect.insetBy(dx: -2, dy: -2))
-      }
+      guard let textStorage, let layoutManager, let textContainer,
+        let range = StreamingFadeRedrawRange.union(
+          of: activeAnimationRanges, in: textStorage, at: time, includesCompletedRanges: includesCompletedRanges)
+      else { return }
+
+      layoutManager.invalidateDisplay(forCharacterRange: range)
+      let glyphs = layoutManager.glyphRange(forCharacterRange: range, actualCharacterRange: nil)
+      var rect = layoutManager.boundingRect(forGlyphRange: glyphs, in: textContainer)
+      rect.origin.x += textContainerOrigin.x
+      rect.origin.y += textContainerOrigin.y
+      setNeedsDisplay(rect.insetBy(dx: -2, dy: -2))
     }
 
     func contentHeight(forWidth width: CGFloat) -> CGFloat {

@@ -10,6 +10,8 @@ struct StreamingWordSegmentationTests {
       "The layout pass runs twice, then settles. Done!",
       "Emoji 👩🏽‍💻 and 日本語テキスト mixed with ASCII words, then more text 🚀 here.",
       "  leading spaces and trailing punctuation...",
+      "First paragraph — with a dash.\nSecond 日本語テキスト line\n🚀 emoji opens this one\r\nand don't split it.",
+      "Plain ASCII don't first\nthen naïve café text\n\nand a third paragraph's words.",
     ])
   func growingTextMatchesFullSegmentation(_ document: String) {
     var segmentation = StreamingWordSegmentation()

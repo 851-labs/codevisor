@@ -22,12 +22,24 @@ struct StreamingWordSegment: Equatable {
 }
 
 enum StreamingWordSegmenter {
+  private static let paragraphBreaks: Set<unichar> = [0x0A, 0x0B, 0x0C, 0x0D, 0x85, 0x2028, 0x2029]
+
   static func segments(in text: String) -> [StreamingWordSegment] {
+    segments(in: text, isASCII: isASCII(text))
+  }
+
+  static func segments(in text: String, isASCII: Bool) -> [StreamingWordSegment] {
     guard !text.isEmpty else { return [] }
-    if isASCII(text) {
+    if isASCII {
       return asciiSegments(in: text)
     }
-    return splitEmojiClusters(in: text, segments: unicodeSegments(in: text))
+    return paragraphSegments(in: text as NSString)
+  }
+
+  static func isParagraphStart(_ location: Int, in string: NSString) -> Bool {
+    location > 0 && location < string.length
+      && paragraphBreaks.contains(string.character(at: location - 1))
+      && !paragraphBreaks.contains(string.character(at: location))
   }
 
   static func isASCII(_ text: String) -> Bool {
@@ -56,6 +68,15 @@ enum StreamingWordSegmenter {
 
     let string = text as NSString
     return ranges.map { StreamingWordSegment(range: $0, text: string.substring(with: $0)) }
+  }
+
+  private static func paragraphSegments(in string: NSString) -> [StreamingWordSegment] {
+    let starts = [0] + (1..<string.length).filter { isParagraphStart($0, in: string) }
+    let ends = starts.dropFirst() + [string.length]
+    return zip(starts, ends).flatMap { start, end in
+      let paragraph = string.substring(with: NSRange(location: start, length: end - start))
+      return splitEmojiClusters(in: paragraph, segments: unicodeSegments(in: paragraph)).map { $0.offset(by: start) }
+    }
   }
 
   private static func unicodeSegments(in text: String) -> [StreamingWordSegment] {

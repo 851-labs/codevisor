@@ -29,14 +29,23 @@ struct StreamingTextEdit: Equatable {
   ) -> Int {
     var index = 0
     while index < limit {
-      var oldRun = NSRange()
-      var newRun = NSRange()
-      let oldAttributes = old.attributes(at: index, effectiveRange: &oldRun)
-      let newAttributes = new.attributes(at: index, effectiveRange: &newRun)
-      guard layoutAttributes(oldAttributes) == layoutAttributes(newAttributes) else { return index }
-      index = min(NSMaxRange(oldRun), NSMaxRange(newRun), limit)
+      var oldRun = CFRange()
+      var newRun = CFRange()
+      let oldAttributes = CFAttributedStringGetAttributes(old, index, &oldRun)
+      let newAttributes = CFAttributedStringGetAttributes(new, index, &newRun)
+      guard sameLayout(oldAttributes, newAttributes) else { return index }
+      index = min(oldRun.location + oldRun.length, newRun.location + newRun.length, limit)
     }
     return limit
+  }
+
+  private static func sameLayout(_ old: CFDictionary?, _ new: CFDictionary?) -> Bool {
+    if CFEqual(old, new) { return true }
+    guard let old = old as? [NSAttributedString.Key: Any], let new = new as? [NSAttributedString.Key: Any] else {
+      return false
+    }
+
+    return layoutAttributes(old) == layoutAttributes(new)
   }
 
   private static func layoutAttributes(_ attributes: [NSAttributedString.Key: Any]) -> NSDictionary {
