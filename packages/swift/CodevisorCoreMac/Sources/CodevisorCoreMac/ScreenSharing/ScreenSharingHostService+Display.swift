@@ -89,6 +89,10 @@ extension ScreenSharingHostService {
       channel.send(.resized(width: size?.width ?? 0, height: size?.height ?? 0))
     } catch is CancellationError {
       return
+    } catch let kept as ScreenSharingHostVirtualDisplay.KeptSize {
+      Self.logger.error(
+        "Display resize failed; kept \(kept.size.width)×\(kept.size.height) pt: \(kept.reason, privacy: .public)")
+      channel.send(.resized(width: kept.size.width, height: kept.size.height))
     } catch {
       Self.logger.error("Display change failed: \(error.localizedDescription, privacy: .public)")
       session.metrics.label("displaySize", error.localizedDescription)
@@ -106,8 +110,7 @@ extension ScreenSharingHostService {
     }
     let configuration = try session.peer.captureConfiguration(width: points.width * 2, height: points.height * 2)
     if let current = session.virtualDisplay, standsInForShared {
-      try current.resize(width: points.width, height: points.height)
-      try await current.selectHiDPIMode()
+      try await current.resize(width: points.width, height: points.height)
       session.configuration = configuration
       return false
     }
