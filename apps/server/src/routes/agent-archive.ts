@@ -5,6 +5,7 @@ import {
   type Workspace
 } from "@codevisor/api"
 
+import { reclaimArchivedChat } from "../archive-jobs.js"
 import { appendAndPublish, HttpFailure, readSchema, run, writeJson } from "../server-context.js"
 import { currentState } from "./agent-lifecycle.js"
 import { assertNotOwnedByBot } from "./bot-guards.js"
@@ -80,6 +81,7 @@ const archiveChat = async (
   await stopAgent(route, agent)
   await run(route.services.db.archiveSession(agent.id))
   await deleteChatPanes(route, agent.id)
+  await reclaimArchivedChat(route.services, route.fanout, route.config, agent)
 }
 
 const unsubscribeCaller = async ({ services }: RouteContext, callerId: string, agentId: string) => {

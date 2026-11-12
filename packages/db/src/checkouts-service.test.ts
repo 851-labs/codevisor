@@ -140,6 +140,38 @@ describe("checkouts", () => {
     expect(placed.resourceServerId).toBe("remote-box")
   })
 
+  it("counts a checkout as in use while a live chat, tab, or workspace points at it", async () => {
+    useWorktreesRoot()
+    const { db } = await openDatabase()
+    const { project, worktree } = await projectWithWorktree(db, "used")
+    const parent = await workspaceWithChat(db, project.id, "/tmp/checkouts-used")
+    const wrapper = await run(
+      db.createWorkspaceWithSession({
+        workspace: {
+          projectId: project.id,
+          name: "wrapper",
+          hasCustomName: false,
+          rootDirectory: worktreePath(project.id, worktree.name)
+        },
+        session: { projectId: project.id, harnessId: "codex", worktreeName: worktree.name }
+      })
+    )
+    const checkoutId = wrapper.session.checkoutId!
+    await run(db.setSessionWorkspace(wrapper.session.id, parent.workspace.id))
+
+    await run(db.updateWorkspace(wrapper.workspace.id, { isArchived: true }))
+    expect(await run(db.isCheckoutInUse(checkoutId))).toBe(true)
+
+    await run(db.archiveSession(wrapper.session.id))
+    expect(await run(db.isCheckoutInUse(checkoutId))).toBe(true)
+
+    await run(db.deleteWorkspacePane(parent.workspace.id, wrapper.pane.id))
+    expect(await run(db.isCheckoutInUse(checkoutId))).toBe(false)
+
+    await run(db.updateWorkspace(wrapper.workspace.id, { isArchived: false }))
+    expect(await run(db.isCheckoutInUse(checkoutId))).toBe(true)
+  })
+
   it("finds the workspace showing a session through its pane, then its parent", async () => {
     const { db } = await openDatabase()
     const project = await run(db.createProject({ folderPath: "/tmp/checkouts-showing" }))

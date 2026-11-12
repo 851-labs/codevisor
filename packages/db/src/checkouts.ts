@@ -6,7 +6,7 @@ import type Database from "better-sqlite3"
 import { checkoutRows, type CheckoutRow } from "./checkout-rows.js"
 import { canonicalUuid } from "./ids.js"
 import { resolveSessionCwd, worktreeNameAt } from "./paths.js"
-import { rowReader, text } from "./row-reader.js"
+import { integer, rowReader, text } from "./row-reader.js"
 
 export interface CheckoutPlace {
   readonly serverId: string
@@ -106,11 +106,27 @@ const worktreeId = (
   )
 }
 
+export const checkoutInUse = (sqlite: Database.Database, checkoutId: string): boolean =>
+  inUseRows.one(sqlite.prepare(checkoutSql.inUse).get({ id: checkoutId })).in_use === 1
+
+const inUseRows = rowReader({ in_use: integer })
+
 const idRows = rowReader({ id: text })
 
 const checkoutIdRows = rowReader({ checkout_id: text })
 
 const checkoutSql = {
+  inUse: `select (
+      exists (select 1 from sessions where checkout_id = @id and is_archived = 0)
+      or exists (
+        select 1 from workspace_panes
+          join workspaces on workspaces.id = workspace_panes.workspace_id
+          where workspace_panes.checkout_id = @id and workspaces.is_archived = 0
+      )
+      or exists (
+        select 1 from workspaces where default_checkout_id = @id and is_archived = 0
+      )
+    ) as in_use`,
   byId: "select * from checkouts where id = ?",
   byPlace: "select * from checkouts where server_id = ? and path = ?",
   list: "select * from checkouts order by created_at, id",
