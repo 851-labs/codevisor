@@ -10,8 +10,7 @@ struct WorkspaceRowTrailing: View {
       WorkspaceRowHoverActions(lifecycle: lifecycle, title: details.title)
         .hidden()
     } else {
-      SidebarWorkspaceRowProperties(pullRequest: details.pullRequest, machine: details.machine)
-        .opacity(lifecycle.isArchived ? WorkspaceRow.archivedOpacity : 1)
+      WorkspaceRowProperties(details: details, isArchived: lifecycle.isArchived)
     }
   }
 }
