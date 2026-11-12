@@ -54,6 +54,7 @@ struct ModelPickerSheet: View {
   var body: some View {
     NavigationStack(path: $path) {
       modelStep
+        .task { await controller.revalidateHarnessCapabilitiesIfStale() }
         .navigationDestination(for: Destination.self) { destination in
           switch destination {
           case .manageHarnesses: HarnessesSettingsScreen()

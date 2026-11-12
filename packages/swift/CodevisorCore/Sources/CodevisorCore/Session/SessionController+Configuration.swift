@@ -88,7 +88,7 @@ extension SessionController {
       let resolved = draftModelSettings[
         Self.draftModelSettingsKey(harnessId: harnessId, model: staged)]
     {
-      options = resolved
+      options = resolved.map { $0.id == catalogModel.id ? catalogModel : $0 }
     }
     if let index = options.firstIndex(where: Self.isModelOption),
       pendingConfig[options[index].id]?.isEmpty != false
