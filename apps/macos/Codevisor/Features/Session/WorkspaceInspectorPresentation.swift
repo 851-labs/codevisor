@@ -161,7 +161,7 @@ struct WorkspaceInspectorPresentation: ViewModifier {
       onOpenDesktop: {
         guard let desktop else { return }
         Task {
-          guard await desktop.register() else { return }
+          guard (try? await desktop.register()) != nil else { return }
           MachineDesktopWindows.shared.present(desktop, machineId: workspace.serverId, environment: environment)
         }
       },

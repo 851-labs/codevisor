@@ -5,10 +5,11 @@ import SwiftUI
 
 struct ScreenSharingMirrorHost: NSViewRepresentable {
   let endpoint: ScreenSharingViewerEndpoint
+  var letterbox: NSColor = .windowBackgroundColor
 
   func makeNSView(context: Context) -> NSView {
     guard let mirror = endpoint.makeMirror() else { return NSView() }
-    mirror.setLetterboxColor(.windowBackgroundColor)
+    mirror.setLetterboxColor(letterbox)
     return mirror
   }
 
