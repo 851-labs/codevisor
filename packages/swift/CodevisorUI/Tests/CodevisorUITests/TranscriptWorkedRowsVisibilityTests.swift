@@ -14,9 +14,10 @@ struct TranscriptWorkedRowsVisibilityTests {
       id: messageID,
       turn: AssistantTurn(
         entries: [
-          .text(id: "commentary", markdown: "One\n\nTwo\n\nThree")
+          .text(id: "commentary", markdown: "One\n\nTwo\n\nThree"),
+          .text(id: "answer", markdown: "Done."),
         ],
-        textPhases: ["commentary": .commentary]
+        textPhases: ["commentary": .commentary, "answer": .final]
       )
     )
     let rows = TranscriptActiveRowProjection.rows(for: .assistant(message))
