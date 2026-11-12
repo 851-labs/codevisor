@@ -324,11 +324,6 @@ export const finishAssistantChatItem = (
   retryable = false,
   failed = false
 ): void => {
-  const summary = chatAssistantSummary(sqlite, sessionId, itemId)
-  upsertChatPart(sqlite, itemId, "text", summary.text)
-  if (summary.planDocument !== undefined) {
-    upsertChatPart(sqlite, itemId, "plan", summary.planDocument)
-  }
   sqlite
     .prepare(chatItemSql.finish)
     .run(
@@ -341,6 +336,11 @@ export const finishAssistantChatItem = (
       retryable ? 1 : 0,
       itemId
     )
+  const summary = chatAssistantSummary(sqlite, sessionId, itemId)
+  upsertChatPart(sqlite, itemId, "text", summary.text)
+  if (summary.planDocument !== undefined) {
+    upsertChatPart(sqlite, itemId, "plan", summary.planDocument)
+  }
 }
 
 export const seedStandaloneText = (
@@ -426,8 +426,9 @@ const transcriptEntrySql = {
   plan: "select 1 from transcript_entries where item_id = ? and entry_key = 'plan'",
   latestAnswer: `select entry_key, payload, phase, revision, position from transcript_entries
     where item_id = ? and parent_id = '' and category = 'text' and text_length > 0
-      and coalesce(phase, '') != 'commentary'
-    order by position desc limit 1`
+      and (coalesce(phase, '') != 'commentary'
+        or exists (select 1 from chat_items where chat_items.id = transcript_entries.item_id and chat_items.status != 'streaming'))
+    order by coalesce(phase, '') = 'commentary', position desc limit 1`
 }
 
 const transcriptStateMigratedSql =
