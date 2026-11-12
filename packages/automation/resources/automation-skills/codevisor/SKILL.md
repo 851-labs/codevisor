@@ -15,7 +15,7 @@ Codevisor's own tools are globals in the `execute` tool, grouped by what they ac
 ## Choosing where work goes
 
 - **Never your harness's built-in subagents** (a Task or Agent tool, spawn_agent, and the like), even if your harness still offers them. Start a Codevisor agent instead.
-- **`checkout: "shared"`** starts an agent in your own workspace and checkout, on your machine: quick, scoped help with your current task, like research, reading code, a review, a small piece of the same change, or a second opinion from another harness or model. It edits the same files you do and shows up as a tab beside you; close it with `agent.close()` once you have its reply.
+- **`checkout: "shared"`** starts an agent in your own workspace and checkout, on your machine: quick, scoped help with your current task, like research, reading code, a review, a small piece of the same change, or a second opinion from another harness or model. It edits the same files you do and shows up as a tab beside you (as a split beside a bot's conversation, which has no tabs); close it with `agent.close()` once you have its reply.
 - **`checkout: "worktree"`** starts an agent in a new git worktree and workspace, on any machine: separate work that ends in its own branch or PR, like one agent per issue. It shows under your workspace in the user's sidebar and in your agents pill. Archive its workspace with `workspaces.archive` when the work is merged.
 - **`checkout: "project"`** works in the project folder itself, in a new workspace, without a new branch. **`checkout: "none"`** works in a fresh empty folder with no project.
 

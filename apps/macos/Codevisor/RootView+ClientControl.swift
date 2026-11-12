@@ -18,7 +18,8 @@ extension RootView {
     }
     var context = NativeClientContext.capture(
       repository: environment.workspaces, serverId: serverId,
-      workspaceId: workspaceId, isActive: clientWindow.window?.isKeyWindow == true
+      workspaceId: workspaceId, isActive: clientWindow.window?.isKeyWindow == true,
+      layoutMode: clientLayoutMode
     )
     context.capabilities = ClientCapabilities(settingsSections: SettingsTab.allCases.map(\.rawValue), compact: false)
     context.window = clientWindow.context(sidebarVisible: sidebarVisibility.isVisible)
@@ -74,6 +75,10 @@ extension RootView {
 
   var sidebarVisibility: RootSidebarVisibility {
     RootSidebarVisibility(panelLayout: panelLayout, windowControl: clientWindow)
+  }
+
+  func clientLayoutMode(_ workspace: Workspace) -> ClientLayoutMode {
+    WorkspaceLayoutPolicy.isTabless(workspace, environment: environment) ? .splits : .tabsAndSplits
   }
 
   func requireClientReady() throws {
@@ -149,7 +154,7 @@ extension RootView {
     guard let store, let workspace = environment.workspaces.workspace(id: request.workspaceId),
       workspace.serverId == serverId
     else { throw ClientControlError("Workspace is unavailable on this machine") }
-    let updated = try request.applying(to: workspace, compact: false)
+    let updated = try request.applying(to: workspace, mode: clientLayoutMode(workspace))
     environment.workspaces.save(updated)
     store.reconcileMountedPaneGroups(in: updated)
     if request.focus == true { store.navigationRevision &+= 1 }

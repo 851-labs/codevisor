@@ -4,6 +4,7 @@ import { describe, expect, it } from "vitest"
 import { WebSocket } from "ws"
 
 import { jsonRequest, start } from "../test-support.js"
+import { createBot, decodeBot, setUp } from "./bot-test-support.js"
 
 const workspaceId = "3e6c0a52-5b1f-4d4e-9a0c-2f7d8e1b4c11"
 
@@ -135,6 +136,39 @@ describe("client control routes", () => {
       socket.close()
       await closed
     }
+  })
+
+  it("refuses tab actions in a bot's workspace and passes splits and other workspaces through", async () => {
+    const running = await setUp()
+    await running.addProject("api-project", "api")
+    const bot = decodeBot((await createBot(running, { projectIds: ["api-project"] })).body)
+    const layout = (targetWorkspaceId: string, action: Record<string, unknown>) =>
+      jsonRequest(running.server, "/v1/clients/window/layout", {
+        method: "POST",
+        body: JSON.stringify({ workspaceId: targetWorkspaceId, action })
+      })
+    const leafId = "leaf"
+
+    expect(await layout(bot.workspaceId, { kind: "new_tab" })).toEqual({
+      status: 409,
+      body: { error: "Bot conversations show splits only; use split instead of new_tab." }
+    })
+    expect(await layout(bot.workspaceId, { kind: "detach", leafId })).toEqual({
+      status: 409,
+      body: {
+        error:
+          "Bot conversations show splits only; use move to rearrange the pane instead of detach."
+      }
+    })
+    expect(await layout(bot.workspaceId, { kind: "reorder_tabs", tabIds: [] })).toEqual({
+      status: 409,
+      body: { error: "Bot conversations show splits only, so there are no tabs to reorder." }
+    })
+    const forwarded = { status: 404, body: { code: "client_unavailable" } }
+    expect(
+      await layout(bot.workspaceId, { kind: "split", leafId, edge: "trailing" })
+    ).toMatchObject(forwarded)
+    expect(await layout(workspaceId, { kind: "new_tab" })).toMatchObject(forwarded)
   })
 
   it("requires the same authorization as other server APIs", async () => {

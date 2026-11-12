@@ -69,6 +69,10 @@ public final class BotListModel {
     bots.first { $0.serverId == serverId && $0.workspaceId == workspaceId }
   }
 
+  public func ownsWorkspace(_ workspace: Workspace) -> Bool {
+    bot(forWorkspace: workspace.id, serverId: workspace.serverId) != nil
+  }
+
   public func refresh(serverId: String) async {
     let generation = (refreshGenerations[serverId] ?? 0) + 1
     refreshGenerations[serverId] = generation

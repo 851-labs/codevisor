@@ -119,7 +119,8 @@ describe("bot chats", () => {
 
     expect(refused.status).toBe(409)
     expect(refused.body).toMatchObject({
-      error: "Cannot open a new tab in this workspace: it belongs to the bot Release Helper"
+      error:
+        "Cannot add a pane to this workspace: it belongs to the bot Release Helper. A bot conversation shows splits only, and each device keeps its own. Attach the file to a message, or open the pane in the workspace of an agent you started."
     })
     expect(await panesIn(bot.workspaceId)).toEqual([chatPane])
     expect(

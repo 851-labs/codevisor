@@ -8,10 +8,18 @@ import {
 } from "@codevisor/api"
 
 import type { ClientControlBroker } from "../infra/client-control.js"
-import { matchRouteParams, readSchema, writeJson } from "../server-context.js"
+import {
+  HttpFailure,
+  matchRouteParams,
+  readSchema,
+  run,
+  writeJson,
+  type CodevisorServerServices
+} from "../server-context.js"
 
 export const routeClientControl = async (
   broker: ClientControlBroker,
+  services: CodevisorServerServices,
   machine: { readonly id: string; readonly name: string },
   request: IncomingMessage,
   response: ServerResponse,
@@ -44,6 +52,7 @@ export const routeClientControl = async (
   }
   if (route.action === "layout" && request.method === "POST") {
     const layout = await readSchema(request, ClientLayoutRequest)
+    await refuseTabsInBotConversation(services, layout)
     writeJson(response, 200, await broker.request(route.clientId!, { method: "layout", layout }))
     return true
   }
@@ -53,4 +62,21 @@ export const routeClientControl = async (
     return true
   }
   return false
+}
+
+const splitsOnlyRefusals: Readonly<Record<string, string>> = {
+  new_tab: "Bot conversations show splits only; use split instead of new_tab.",
+  detach: "Bot conversations show splits only; use move to rearrange the pane instead of detach.",
+  reorder_tabs: "Bot conversations show splits only, so there are no tabs to reorder."
+}
+
+const refuseTabsInBotConversation = async (
+  services: CodevisorServerServices,
+  layout: ClientLayoutRequest
+): Promise<void> => {
+  const refusal = splitsOnlyRefusals[layout.action.kind]
+  if (refusal === undefined) return
+
+  const bot = await run(services.db.findBotOwning({ workspaceId: layout.workspaceId }))
+  if (bot !== undefined) throw new HttpFailure(409, refusal)
 }

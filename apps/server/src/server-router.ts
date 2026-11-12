@@ -124,8 +124,8 @@ const resourceRouteFamilies: ReadonlyArray<RouteFamily> = [
   ({ services, config, fanout, request, response, url }) =>
     routeProjects(services, config, fanout, request, response, url),
   ({ services, request, response, url }) => routeGitAuth(services, request, response, url),
-  ({ routeState, config, request, response, url }) =>
-    routeClientControl(routeState.clientControl, config, request, response, url),
+  ({ services, routeState, config, request, response, url }) =>
+    routeClientControl(routeState.clientControl, services, config, request, response, url),
   routeWorkspaces,
   ({ services, config, fanout, routeState, request, response, url }) =>
     routeBots(services, config, fanout, routeState, request, response, url),

@@ -202,7 +202,8 @@ const viewingOf = (context: ClientContext): NonNullable<ClientSummary["viewing"]
     ...(context.workspaceId === undefined ? {} : { workspaceId: context.workspaceId }),
     ...(workspace?.sessionId === undefined ? {} : { sessionId: workspace.sessionId }),
     ...(context.page === undefined ? {} : { page: context.page.page }),
-    ...(tab === undefined ? {} : { panes: tab.panes })
+    ...(tab === undefined ? {} : { panes: tab.panes }),
+    ...(workspace?.layoutActions === undefined ? {} : { layoutActions: workspace.layoutActions })
   }
 }
 

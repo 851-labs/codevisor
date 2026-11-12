@@ -59,9 +59,7 @@ public struct ClientCapabilities: Codable, Sendable {
   public init(settingsSections: [String], compact: Bool) {
     pages = ["home", "new_chat", "settings", "dismiss"]
     self.settingsSections = settingsSections
-    layoutActions =
-      ["new_tab", "reorder_tabs"]
-      + (compact ? [] : ["split", "move", "detach", "resize"])
+    layoutActions = ClientLayoutMode(compact: compact).actions
     windowActions = compact ? [] : ["focus", "minimize", "restore", "fullscreen", "frame", "sidebar"]
   }
 }

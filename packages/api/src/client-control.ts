@@ -43,7 +43,11 @@ export const ClientWorkspaceContext = Schema.Struct({
   tabId: Schema.String,
   paneId: Schema.optional(Schema.String),
   sessionId: Schema.optional(Schema.String),
-  tabs: Schema.Array(ClientTabContext)
+  tabs: Schema.Array(ClientTabContext),
+  layoutActions: Schema.optional(Schema.Array(Schema.String)).annotate({
+    description:
+      "clients.layout actions this workspace takes here. A bot conversation shows splits only: split, move and resize on macOS, none on iOS."
+  })
 })
 export const ClientContext = Schema.Struct({
   isActive: Schema.Boolean,
@@ -66,7 +70,8 @@ export const ClientViewing = Schema.Struct({
   workspaceId: Schema.optional(Schema.String),
   sessionId: Schema.optional(Schema.String),
   page: Schema.optional(Schema.String),
-  panes: Schema.optional(Schema.Array(ClientPaneContext))
+  panes: Schema.optional(Schema.Array(ClientPaneContext)),
+  layoutActions: ClientWorkspaceContext.fields.layoutActions
 })
 export type ClientViewing = typeof ClientViewing.Type
 
