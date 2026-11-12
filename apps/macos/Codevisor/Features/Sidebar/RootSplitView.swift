@@ -22,6 +22,7 @@ struct RootSplitView<Sidebar: View, Detail: View>: View {
     NavigationSplitView(columnVisibility: visibility.columnVisibility) {
       sidebar
         .toolbar(removing: firstLaunchCoversApp ? .sidebarToggle : nil)
+        .navigationSplitViewColumnWidth(min: 260, ideal: 270, max: 360)
     } detail: {
       detail
     }

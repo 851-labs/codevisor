@@ -24,7 +24,6 @@ struct RootSidebar: View {
           selection: $selection, store: store, revealRequest: revealRequest, isEnabled: publishesSceneActions)
       )
       .modifier(SidebarModeToolbar(isDrawer: isDrawer))
-      .navigationSplitViewColumnWidth(min: SidebarModeToolbar.minimumColumnWidth, ideal: 270, max: 360)
   }
 
   @ViewBuilder
