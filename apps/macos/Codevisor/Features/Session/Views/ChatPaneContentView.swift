@@ -17,74 +17,27 @@ struct ChatPaneContentView: View {
 
   private var isArchivedBot: Bool {
     guard let sessionId = descriptor.chatSessionId else { return false }
-    return environment.bots.bot(forSession: sessionId, serverId: hostWorkspace.serverId)?.isArchived == true
+    let machineId = descriptor.chatMachineId(hostedOn: hostWorkspace.serverId)
+    return environment.bots.bot(forSession: sessionId, serverId: machineId)?.isArchived == true
   }
 
   var body: some View {
     if let chatSessionId = role.sessionId(of: descriptor) {
-      if let chatSession = environment.projectList.session(chatSessionId, serverId: hostWorkspace.serverId),
-        let chatProject = environment.projectList.projects.first(where: {
-          $0.serverId == hostWorkspace.serverId && $0.id == chatSession.projectId
-        })
-      {
+      switch resolver.chat(chatSessionId, in: descriptor, hostedOn: hostWorkspace.serverId) {
+      case let .ready(chatSession, chatProject):
         if role.offersNewChat, isUnstarted(chatSession) {
-          NewChatView(
-            store: store,
-            selection: .constant(nil),
-            initialProjectTarget: NewChatTarget(chatProject),
-            paneDraftId: descriptor.id,
-            onCreatedInPane: { created in
-              (group ?? session.map { store.centerPaneGroup(for: $0, project: project) })?
-                .assignChatSession(
-                  paneId: descriptor.id,
-                  sessionId: created.id,
-                  name: created.title
-                )
-            },
-            preCreatedSession: chatSession,
-            paneFocus: focus,
-            hostWorkspaceId: hostWorkspace.id
-          )
+          unstartedChat(chatSession, in: chatProject)
         } else {
-          let controller = sessionController(for: chatSession, project: chatProject)
-          ChatScreen(
-            controller: controller,
-            focus: focus,
-            presentationSurface: store.transcriptSurface(
-              for: chatSession,
-              paneID: descriptor.id,
-              controller: controller
-            ),
-            isReadOnly: isReadOnly,
-            presentsBotConversation: role == .botConversation
-          )
-          .environment(
-            \.computerUsePiPPane,
-            ComputerUsePiPPane(workspaceId: hostWorkspace.id, paneId: descriptor.id)
-          )
-          .id(chatSession.id)
-          .task(id: SessionStore.SessionKey(chatSession)) {
-            store.noteAccess(SessionStore.SessionKey(chatSession))
-          }
-          .onChange(of: chatSession, initial: true) { _, updatedSession in
-            store.reconcile(controller, for: updatedSession, project: chatProject)
-          }
-          .onChange(of: chatProject) { _, updatedProject in
-            store.reconcile(controller, for: chatSession, project: updatedProject)
-          }
-          .attachmentDropTarget(isReadOnly ? nil : controller)
+          chatScreen(chatSession, in: chatProject)
         }
-      } else {
-        VStack(spacing: 12) {
-          Text("This chat no longer exists")
-            .foregroundStyle(.secondary)
-          if let group {
-            Button("Reset Tab") {
-              group.resetChatPaneToPlaceholder(id: descriptor.id)
-            }
-          }
+      case let .connecting(machine):
+        PaneChatUnavailableView(reason: .connecting(machine))
+      case let .offline(machine):
+        PaneChatUnavailableView(reason: .offline(machine)) {
+          Task { await environment.machines.retryMachine(machine.id) }
         }
-        .frame(maxWidth: .infinity, maxHeight: .infinity)
+      case .missing:
+        PaneChatUnavailableView(reason: .missing, action: resetToPlaceholder)
       }
     } else {
       NewChatView(
@@ -92,17 +45,71 @@ struct ChatPaneContentView: View {
         selection: .constant(nil),
         initialProjectTarget: NewChatTarget(project),
         paneDraftId: descriptor.id,
-        onCreatedInPane: { created in
-          (group ?? session.map { store.centerPaneGroup(for: $0, project: project) })?
-            .assignChatSession(
-              paneId: descriptor.id,
-              sessionId: created.id,
-              name: created.title
-            )
-        },
+        onCreatedInPane: assignCreatedChat,
         hostWorkspaceId: hostWorkspace.id
       )
     }
+  }
+
+  private var resetToPlaceholder: (() -> Void)? {
+    guard let group else { return nil }
+    return { [descriptor] in group.resetChatPaneToPlaceholder(id: descriptor.id) }
+  }
+
+  private var resolver: PaneChatResolver {
+    PaneChatResolver(projectList: environment.projectList, machines: environment.machines)
+  }
+
+  private func unstartedChat(_ chatSession: ChatSession, in chatProject: Project) -> some View {
+    NewChatView(
+      store: store,
+      selection: .constant(nil),
+      initialProjectTarget: NewChatTarget(chatProject),
+      paneDraftId: descriptor.id,
+      onCreatedInPane: assignCreatedChat,
+      preCreatedSession: chatSession,
+      paneFocus: focus,
+      hostWorkspaceId: hostWorkspace.id
+    )
+  }
+
+  private func chatScreen(_ chatSession: ChatSession, in chatProject: Project) -> some View {
+    let controller = sessionController(for: chatSession, project: chatProject)
+    return ChatScreen(
+      controller: controller,
+      focus: focus,
+      presentationSurface: store.transcriptSurface(
+        for: chatSession,
+        paneID: descriptor.id,
+        controller: controller
+      ),
+      isReadOnly: isReadOnly,
+      presentsBotConversation: role == .botConversation
+    )
+    .environment(
+      \.computerUsePiPPane,
+      ComputerUsePiPPane(workspaceId: hostWorkspace.id, paneId: descriptor.id)
+    )
+    .id(chatSession.id)
+    .task(id: SessionStore.SessionKey(chatSession)) {
+      store.noteAccess(SessionStore.SessionKey(chatSession))
+    }
+    .onChange(of: chatSession, initial: true) { _, updatedSession in
+      store.reconcile(controller, for: updatedSession, project: chatProject)
+    }
+    .onChange(of: chatProject) { _, updatedProject in
+      store.reconcile(controller, for: chatSession, project: updatedProject)
+    }
+    .attachmentDropTarget(isReadOnly ? nil : controller)
+  }
+
+  private func assignCreatedChat(_ created: ChatSession) {
+    (group ?? session.map { store.centerPaneGroup(for: $0, project: project) })?
+      .assignChatSession(
+        paneId: descriptor.id,
+        sessionId: created.id,
+        name: created.title
+      )
   }
 
   private func sessionController(for chatSession: ChatSession, project chatProject: Project) -> SessionController {
