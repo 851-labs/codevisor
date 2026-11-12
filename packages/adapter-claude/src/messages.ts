@@ -97,6 +97,10 @@ const handleToolResult = (
   if (accumulator !== undefined && HIDDEN_TOOLS.has(accumulator.toolName)) return
   emitSubagentReport(session, toolUseId, message.tool_use_result)
   const doneTitle = finishedTitle(session, toolUseId, accumulator)
+  if (stoppedByInterrupt(session, block)) {
+    emitCancelledTool(session, toolUseId, doneTitle)
+    return
+  }
   const sources = block.is_error === true ? [] : webSearchSources(block.content)
   const skill = skillResultMeta(session, toolUseId, block.is_error === true)
   void session.emit({
@@ -109,6 +113,26 @@ const handleToolResult = (
       ...(doneTitle === undefined ? {} : { title: doneTitle }),
       ...(sources.length === 0 ? {} : { content: sourcesContent(sources) }),
       ...skill
+    },
+    subjectId: session.key
+  })
+}
+
+const stoppedByInterrupt = (session: ClaudeSession, block: ToolResult): boolean =>
+  block.is_error === true && (session.interruptRequested || session.stepInterrupted)
+
+const emitCancelledTool = (
+  session: ClaudeSession,
+  toolUseId: string,
+  title: string | undefined
+): void => {
+  void session.emit({
+    kind: "session.output",
+    payload: {
+      sessionUpdate: "tool_call_update",
+      status: "cancelled",
+      toolCallId: toolUseId,
+      ...(title === undefined ? {} : { title })
     },
     subjectId: session.key
   })
