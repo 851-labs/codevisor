@@ -16,9 +16,14 @@ struct TranscriptEventSummary {
 
   private static let terminalSymbol = "terminal"
 
+  let agentName: String?
   let title: String
   let icon: TranscriptEventIconKind
   var tone = Tone.standard
+
+  var sentence: String {
+    [agentName, title].compactMap(\.self).joined(separator: " ")
+  }
 
   @MainActor
   init(marker: TranscriptEventMarker, agents: TranscriptEventAgents) {
@@ -35,24 +40,24 @@ struct TranscriptEventSummary {
       self = Self.systemSummary(event)
       return
     }
-    let noun = agents.bot(for: event) == nil ? "Agent" : "Bot"
-    self = Self.agentSummary(event, noun: noun, icon: agents.icon(for: event))
+    self = Self.agentSummary(event, name: agents.name(for: event), icon: agents.icon(for: event))
   }
 
-  init(title: String, icon: TranscriptEventIconKind, tone: Tone = .standard) {
+  init(agentName: String? = nil, title: String, icon: TranscriptEventIconKind, tone: Tone = .standard) {
+    self.agentName = agentName
     self.title = title
     self.icon = icon
     self.tone = tone
   }
 
   private static func agentSummary(
-    _ event: TranscriptEvent, noun: String, icon: TranscriptEventIconKind
+    _ event: TranscriptEvent, name: String, icon: TranscriptEventIconKind
   ) -> TranscriptEventSummary {
     switch event.type {
-    case "session.turn_ended": .init(title: turnEndedTitle(event, noun: noun), icon: icon)
-    case "session.waiting_for_user": .init(title: waitingTitle(event, noun: noun), icon: icon)
-    case "session.errored": .init(title: "\(noun) hit an error", icon: icon, tone: .error)
-    default: .init(title: "Message from \(noun.lowercased())", icon: icon)
+    case "session.turn_ended": .init(agentName: name, title: turnEndedTitle(event), icon: icon)
+    case "session.waiting_for_user": .init(agentName: name, title: waitingTitle(event), icon: icon)
+    case "session.errored": .init(agentName: name, title: "hit an error", icon: icon, tone: .error)
+    default: .init(agentName: name, title: "sent a message", icon: icon)
     }
   }
 
@@ -69,12 +74,12 @@ struct TranscriptEventSummary {
     }
   }
 
-  private static func turnEndedTitle(_ event: TranscriptEvent, noun: String) -> String {
-    event[attribute: "stopKind"] == "usageLimit" ? "\(noun) paused at its usage limit" : "\(noun) finished"
+  private static func turnEndedTitle(_ event: TranscriptEvent) -> String {
+    event[attribute: "stopKind"] == "usageLimit" ? "paused at its usage limit" : "finished"
   }
 
-  private static func waitingTitle(_ event: TranscriptEvent, noun: String) -> String {
-    event[attribute: "kind"] == "planApproval" ? "\(noun) wants a plan approved" : "\(noun) needs input"
+  private static func waitingTitle(_ event: TranscriptEvent) -> String {
+    event[attribute: "kind"] == "planApproval" ? "proposed a plan" : "asked a question"
   }
 
   private static func taskSummary(_ event: TranscriptEvent, finished: String, failed: String) -> TranscriptEventSummary

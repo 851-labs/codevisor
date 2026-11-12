@@ -24,6 +24,12 @@ struct TranscriptEventAgents {
     return bots?.bot(forSession: session.id, serverId: session.serverId)
   }
 
+  func name(for event: TranscriptEvent) -> String {
+    if let bot = bot(for: event) { return bot.name }
+    guard let title = session(for: event)?.title, !title.isEmpty else { return "Agent" }
+    return title
+  }
+
   func icon(for event: TranscriptEvent) -> TranscriptEventIconKind {
     if let bot = bot(for: event) { return .bot(bot) }
     guard let session = session(for: event), !session.harnessId.isEmpty else { return .symbol("person.crop.circle") }
