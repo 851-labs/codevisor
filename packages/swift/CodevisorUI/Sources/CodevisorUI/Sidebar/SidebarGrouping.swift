@@ -234,6 +234,12 @@ public struct SidebarWorkspaceGroup: Identifiable, Equatable {
 }
 
 public enum SidebarRowSubtitle {
+  public static let separator = " · "
+
+  public static func text(_ subtitle: String, followingStatus: Bool) -> String {
+    followingStatus ? separator + subtitle : subtitle
+  }
+
   public static func make(
     details: [SidebarRowDetail], title: String, projectName: String?, branch: String?, worktreeName: String?,
     groupNamesProject: Bool
@@ -250,6 +256,6 @@ public enum SidebarRowSubtitle {
       guard let part, !part.isEmpty, !parts.contains(part) else { continue }
       parts.append(part)
     }
-    return parts.isEmpty ? nil : parts.joined(separator: " · ")
+    return parts.isEmpty ? nil : parts.joined(separator: separator)
   }
 }

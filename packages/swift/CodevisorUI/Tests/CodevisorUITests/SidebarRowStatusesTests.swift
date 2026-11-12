@@ -117,6 +117,31 @@ struct SidebarRowStatusesTests {
     #expect(activity.failure == .usageLimit)
   }
 
+  @Test func subtitleAfterStatusStartsWithTheSharedSeparator() {
+    #expect(SidebarRowSubtitle.text("bacon-biscuits · main", followingStatus: true) == " · bacon-biscuits · main")
+  }
+
+  @Test func subtitleWithoutStatusHasNoLeadingSeparator() {
+    #expect(SidebarRowSubtitle.text("bacon-biscuits · main", followingStatus: false) == "bacon-biscuits · main")
+  }
+
+  @Test func attentionAndFailureSymbolsReplaceTheLeadingIconEvenWhenUnread() {
+    let id = UUID()
+    for status in [SidebarRowStatus.input(askingWorkspaceID: id), .approval(askingWorkspaceID: id), .failed, .limited] {
+      #expect(status.replacesLeadingIcon(isUnread: true))
+    }
+  }
+
+  @Test func waitingYieldsTheLeadingSlotToTheUnreadDot() {
+    #expect(SidebarRowStatus.waiting.replacesLeadingIcon(isUnread: false))
+    #expect(!SidebarRowStatus.waiting.replacesLeadingIcon(isUnread: true))
+  }
+
+  @Test func workingAndSetupKeepTheAnimatedLeadingIndicator() {
+    #expect(!SidebarRowStatus.working(since: start).replacesLeadingIcon(isUnread: false))
+    #expect(!SidebarRowStatus.settingUp.replacesLeadingIcon(isUnread: false))
+  }
+
   @Test func elapsedTimeIsCompact() {
     #expect(SidebarRowStatus.elapsed(from: start, to: start.addingTimeInterval(42)) == "42s")
     #expect(SidebarRowStatus.elapsed(from: start, to: start.addingTimeInterval(185)) == "3m")

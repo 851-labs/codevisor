@@ -162,13 +162,8 @@ struct HomeSidebarWorkspaceRowView: View, Equatable {
         HomeSidebarRowTitle(title: workspace.displayName)
           .lineLimit(dynamicTypeSize.isAccessibilitySize ? 2 : 1)
         if workspace.subtitle != nil || workspace.rowStatus != nil {
-          HStack(spacing: 6) {
-            if let status = workspace.rowStatus {
-              SidebarRowStatusLabel(status: status)
-            }
-            if let subtitle = workspace.subtitle {
-              HomeSidebarRowSubtitle(text: subtitle)
-            }
+          SidebarRowStatusSubtitle(status: workspace.rowStatus, subtitle: workspace.subtitle) { text in
+            HomeSidebarRowSubtitle(text: text)
           }
         }
       }
@@ -178,9 +173,18 @@ struct HomeSidebarWorkspaceRowView: View, Equatable {
     }
   }
 
+  private var leadingStatus: SidebarRowStatus? {
+    guard let status = workspace.rowStatus,
+      status.replacesLeadingIcon(isUnread: workspace.leadingRow?.status == .unread)
+    else { return nil }
+    return status
+  }
+
   @ViewBuilder
   private var leadingIcon: some View {
-    if let row = workspace.leadingRow {
+    if let status = leadingStatus {
+      HomeSidebarStatusSymbol(status: status)
+    } else if let row = workspace.leadingRow {
       HomeSidebarTabIcon(row: row, serverId: workspace.serverId)
     } else {
       HomeSidebarSymbol(name: EntitySystemSymbol.workspace)

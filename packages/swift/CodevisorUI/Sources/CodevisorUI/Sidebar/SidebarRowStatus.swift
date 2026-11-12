@@ -1,4 +1,5 @@
 import Foundation
+import SwiftUI
 
 public enum SidebarRowStatus: Equatable, Sendable {
   case input(askingWorkspaceID: UUID)
@@ -51,6 +52,23 @@ public enum SidebarRowStatus: Equatable, Sendable {
     case .working: .active
     case .settingUp, .waiting: .quiet
     case .failed: .failure
+    }
+  }
+
+  public var color: Color {
+    switch tone {
+    case .attention: .orange
+    case .active: .blue
+    case .quiet: .secondary
+    case .failure: .red
+    }
+  }
+
+  public func replacesLeadingIcon(isUnread: Bool) -> Bool {
+    switch self {
+    case .input, .approval, .failed, .limited: true
+    case .waiting: !isUnread
+    case .working, .settingUp: false
     }
   }
 

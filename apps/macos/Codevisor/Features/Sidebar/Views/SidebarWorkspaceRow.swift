@@ -33,7 +33,7 @@ struct SidebarWorkspaceRowLabel: View {
 
   var body: some View {
     HStack(spacing: 7) {
-      SidebarWorkspaceLeadingIcon(icon: icon, store: store)
+      SidebarWorkspaceLeadingIcon(icon: icon, store: store, status: status)
         .frame(width: 18)
       VStack(alignment: .leading, spacing: 2) {
         Text(Self.title(for: name))

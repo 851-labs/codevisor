@@ -2,33 +2,28 @@ import SwiftUI
 
 public struct SidebarRowStatusLabel: View {
   let status: SidebarRowStatus
+  let showsIcon: Bool
 
-  public init(status: SidebarRowStatus) {
+  public init(status: SidebarRowStatus, showsIcon: Bool = true) {
     self.status = status
+    self.showsIcon = showsIcon
   }
 
   public var body: some View {
     HStack(spacing: 3) {
-      Image(systemName: status.systemImage)
-        .imageScale(.small)
+      if showsIcon {
+        Image(systemName: status.systemImage)
+          .imageScale(.small)
+      }
       Text(status.title)
       if let since = status.workingSince {
         SidebarElapsedText(since: since)
       }
     }
     .font(.caption2.weight(.medium))
-    .foregroundStyle(color)
+    .foregroundStyle(status.color)
     .lineLimit(1)
     .fixedSize()
-  }
-
-  private var color: Color {
-    switch status.tone {
-    case .attention: .orange
-    case .active: .blue
-    case .quiet: .secondary
-    case .failure: .red
-    }
   }
 }
 
