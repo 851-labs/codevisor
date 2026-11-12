@@ -36,7 +36,6 @@ struct WorkspaceInspectorPresentation: ViewModifier {
   @Environment(AdaptivePanelLayout.self) private var panelLayout
   @ClientPreference(Self.presentedKey, default: false) private var isPresented
   @ClientPreference("workspace.inspectorTab", default: WorkspaceInspectorTab.info) private var tab
-  @ClientPreference(FeatureFlag.bots.preferenceKey, default: false) private var botsEnabled
   @ClientPreference(FeatureFlag.developerMode.preferenceKey, default: false) private var developerMode
   @Environment(\.workspaceChildAgents) private var childAgents
   @State private var media = WorkspaceInspectorMediaModel()
@@ -128,7 +127,7 @@ struct WorkspaceInspectorPresentation: ViewModifier {
   private func inspectorView(_ store: SessionStore, _ inspected: Inspected) -> some View {
     let workspace = inspected.workspace
     let chat = harnessChat(for: inspected)
-    let bot = botsEnabled ? environment.bots.bot(forWorkspace: workspace.id, serverId: workspace.serverId) : nil
+    let bot = environment.bots.bot(forWorkspace: workspace.id, serverId: workspace.serverId)
     let desktop = MachineDesktopRegistry.shared.session(
       for: workspace, project: inspected.project, environment: environment)
     return WorkspaceInspectorView(

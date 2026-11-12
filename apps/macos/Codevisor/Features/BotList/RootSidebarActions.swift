@@ -3,12 +3,10 @@ import SwiftUI
 
 struct RootSidebarActions: Equatable {
   let newChat: @MainActor () -> Void
-  let newBot: (@MainActor () -> Void)?
+  let newBot: @MainActor () -> Void
   let editBot: @MainActor (Bot) -> Void
 
-  static func == (lhs: RootSidebarActions, rhs: RootSidebarActions) -> Bool {
-    (lhs.newBot == nil) == (rhs.newBot == nil)
-  }
+  static func == (lhs: RootSidebarActions, rhs: RootSidebarActions) -> Bool { true }
 }
 
 private struct RootSidebarActionsKey: FocusedValueKey {

@@ -8,7 +8,6 @@ struct PaletteDestinationsPublisher: ViewModifier {
   let store: SessionStore?
   let revealRequest: SidebarRevealRequest
   let isEnabled: Bool
-  @ClientPreference(FeatureFlag.bots.preferenceKey, default: false) private var botsEnabled
   @ClientPreference(SidebarGrouping.preferenceKey, default: SidebarGrouping.flat) private var grouping
   @ClientPreference(SidebarPreferenceKey.pinnedWorkspaces, default: []) private var pinnedWorkspaceIDs: [String]
   @ClientPreference(SidebarPreferenceKey.machineOrder, default: []) private var machineOrder: [String]
@@ -23,8 +22,6 @@ struct PaletteDestinationsPublisher: ViewModifier {
   }
 
   private var botItems: [CommandPaletteItem] {
-    guard botsEnabled else { return [] }
-
     let conversations = BotConversationList(environment: environment, store: store).conversations()
     return conversations.filter { !$0.bot.isArchived }.map { conversation in
       let bot = conversation.bot
@@ -47,7 +44,7 @@ struct PaletteDestinationsPublisher: ViewModifier {
 
   private var listing: SidebarWorkspaceListing {
     SidebarWorkspaceListing(
-      environment: environment, botsEnabled: botsEnabled, grouping: grouping, pinnedIDs: pinnedWorkspaceIDs,
+      environment: environment, grouping: grouping, pinnedIDs: pinnedWorkspaceIDs,
       machineOrder: machineOrder, projectOrder: projectOrder)
   }
 

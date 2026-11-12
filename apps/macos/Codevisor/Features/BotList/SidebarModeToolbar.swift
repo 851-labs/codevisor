@@ -5,7 +5,6 @@ import SwiftUI
 struct SidebarModeToolbar: ViewModifier {
   let isDrawer: Bool
   @Environment(AdaptivePanelLayout.self) private var panelLayout
-  @ClientPreference(FeatureFlag.bots.preferenceKey, default: false) private var botsEnabled
   @ClientPreference(SidebarMode.preferenceKey, default: SidebarMode.code) private var storedMode
   @ClientPreference(RootSidebarVisibility.collapsedKey, default: false) private var sidebarCollapsed
 
@@ -21,6 +20,6 @@ struct SidebarModeToolbar: ViewModifier {
   }
 
   private var showsModePicker: Bool {
-    botsEnabled && !isDrawer && panelLayout.docksSidebar && !sidebarCollapsed
+    !isDrawer && panelLayout.docksSidebar && !sidebarCollapsed
   }
 }

@@ -3,8 +3,7 @@ import SwiftUI
 
 extension SessionContainerView {
   func botChat(_ sessionId: UUID) -> Bot? {
-    guard botsEnabled else { return nil }
-    return environment.bots.bot(forSession: sessionId, serverId: selectedWorkspace.serverId)
+    environment.bots.bot(forSession: sessionId, serverId: selectedWorkspace.serverId)
   }
 
   func chatPaneRole(for descriptor: PaneDescriptorState) -> ChatPaneRole {

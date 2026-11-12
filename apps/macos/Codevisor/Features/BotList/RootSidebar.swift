@@ -9,13 +9,10 @@ struct RootSidebar: View {
   let revealRequest: SidebarRevealRequest
   var publishesSceneActions = true
   var isDrawer = false
-  @ClientPreference(FeatureFlag.bots.preferenceKey, default: false) private var botsEnabled
   @ClientPreference(SidebarMode.preferenceKey, default: SidebarMode.code) private var storedMode
   @State private var visitedModes: Set<SidebarMode> = []
   @State private var parkedMode: SidebarMode?
   @State private var parkedSelection: SidebarSelection?
-
-  private var activeMode: SidebarMode { SidebarMode.active(storedMode, botsEnabled: botsEnabled) }
 
   var body: some View {
     layout
@@ -28,7 +25,7 @@ struct RootSidebar: View {
 
   @ViewBuilder
   private var layout: some View {
-    if isDrawer && botsEnabled {
+    if isDrawer {
       VStack(spacing: 0) {
         DrawerModePicker(mode: $storedMode)
           .padding(.top, 10)
@@ -44,12 +41,12 @@ struct RootSidebar: View {
       ForEach(SidebarMode.allCases, id: \.self) { mode in
         if isMounted(mode) {
           modeList(mode)
-            .allowsHitTesting(mode == activeMode)
-            .environment(\.isActiveSidebarMode, mode == activeMode)
+            .allowsHitTesting(mode == storedMode)
+            .environment(\.isActiveSidebarMode, mode == storedMode)
         }
       }
     }
-    .onChange(of: activeMode, initial: true) { _, mode in
+    .onChange(of: storedMode, initial: true) { _, mode in
       visitedModes.insert(mode)
       parkedSelection = selection
       parkedMode = SidebarMode.allCases.first { $0 != mode }
@@ -57,11 +54,11 @@ struct RootSidebar: View {
   }
 
   private func isMounted(_ mode: SidebarMode) -> Bool {
-    mode == activeMode || (botsEnabled && visitedModes.contains(mode))
+    mode == storedMode || visitedModes.contains(mode)
   }
 
   private func listSelection(for mode: SidebarMode) -> Binding<SidebarSelection?> {
-    mode != activeMode && mode == parkedMode ? $parkedSelection : $selection
+    mode != storedMode && mode == parkedMode ? $parkedSelection : $selection
   }
 
   @ViewBuilder
@@ -72,7 +69,7 @@ struct RootSidebar: View {
         selection: listSelection(for: mode), botEditor: $botEditor, store: store,
         publishesSceneActions: publishesSceneActions
       )
-      .modifier(SidebarModeLayer(isActive: mode == activeMode))
+      .modifier(SidebarModeLayer(isActive: mode == storedMode))
     case .code:
       SidebarView(
         selection: listSelection(for: mode), store: store, publishesSceneActions: publishesSceneActions,

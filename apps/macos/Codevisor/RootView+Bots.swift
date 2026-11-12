@@ -4,14 +4,14 @@ import SwiftUI
 
 extension RootView {
   var showsBotConversation: Bool {
-    guard botsEnabled, case .bot = selection else { return false }
+    guard case .bot = selection else { return false }
     return true
   }
 
   var rootActions: RootSidebarActions? {
     guard store != nil else { return nil }
     return RootSidebarActions(
-      newChat: openNewChat, newBot: botsEnabled ? openNewBot : nil, editBot: editBot)
+      newChat: openNewChat, newBot: openNewBot, editBot: editBot)
   }
 
   func openNewChat() {
@@ -35,7 +35,7 @@ extension RootView {
 
   @ViewBuilder
   func botDetail(_ store: SessionStore, serverId: String, botId: UUID) -> some View {
-    if botsEnabled, let bot = environment.bots.bot(serverId: serverId, id: botId) {
+    if let bot = environment.bots.bot(serverId: serverId, id: botId) {
       SessionRouteView(
         store: store,
         serverId: serverId,

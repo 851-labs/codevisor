@@ -41,7 +41,6 @@ struct RootView: View {
   @State var clientWindow = ClientWindowControl()
   @State var selection: SidebarSelection?
   @State private var sidebarRevealRequest = SidebarRevealRequest()
-  @ClientPreference(FeatureFlag.bots.preferenceKey, default: false) var botsEnabled
   @ClientPreference(SidebarMode.preferenceKey, default: SidebarMode.code) var sidebarMode
   @State var botEditor: BotEditorTarget?
   @State var store: SessionStore?
@@ -97,9 +96,6 @@ struct RootView: View {
       .task(id: environment.machines.sandboxMachineProfilesLoadKey) {
         await environment.machines.loadSandboxMachineProfiles()
       }
-      .onChange(of: botsEnabled) { _, enabled in
-        if !enabled, case .bot = selection { selection = .newChat(nil) }
-      }
       .onReceive(NotificationCenter.default.publisher(for: .codevisorOpenChatNotification)) { note in
         guard let sessionIdString = note.userInfo?["sessionId"] as? String,
           let sessionId = UUID(uuidString: sessionIdString),
@@ -130,7 +126,7 @@ struct RootView: View {
 
   private func openNotificationSession(_ sessionId: UUID, serverId: String) {
     guard let session = environment.projectList.session(sessionId, serverId: serverId) else { return }
-    let bot = botsEnabled ? environment.bots.bot(forSession: sessionId, serverId: serverId) : nil
+    let bot = environment.bots.bot(forSession: sessionId, serverId: serverId)
     store?.selectChat(session)
     if let bot {
       selection = .bot(serverId: serverId, id: bot.id)
