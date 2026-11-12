@@ -14,6 +14,7 @@ public final class ScreenSharingV2ViewingSession: ScreenSharingSimulatorSession 
   public var failure: String? { nil }
   public private(set) var videoShowsPointer = true
   public var resizesDesktop: Bool { true }
+  public var resizeMirrorsHostDisplay: Bool { true }
   public var supportsAudio: Bool { true }
   public var presentsTiles = false
 

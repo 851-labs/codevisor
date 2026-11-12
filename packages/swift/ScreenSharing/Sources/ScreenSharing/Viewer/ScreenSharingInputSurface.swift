@@ -29,6 +29,10 @@
     private var keys = Set<UInt16>()
     private var textKeys = Set<UInt16>()
     private let layout: VNCKeyTranslator.Layout
+    private let symbolicHotKeys: () -> [String: Any]?
+    var localShortcuts: Set<ScreenSharingLocalShortcutGroup> = [] {
+      didSet { if localShortcuts != oldValue { refreshLocalShortcuts() } }
+    }
     private var scroll = ScreenSharingScrollAccumulator()
     private var lastPointer: ScreenSharingPointer?
     private var inputFocused = false { didSet { updateKeyClaim() } }
@@ -53,9 +57,11 @@
       mouseCapture: any ScreenSharingMouseCapture = ScreenSharingSystemMouseCapture(),
       applicationIsActive: @escaping () -> Bool = { NSApp.isActive },
       clock: any Clock<Duration> = ContinuousClock(),
-      layout: @escaping VNCKeyTranslator.Layout = VNCKeyTranslator.currentLayout
+      layout: @escaping VNCKeyTranslator.Layout = VNCKeyTranslator.currentLayout,
+      symbolicHotKeys: @escaping () -> [String: Any]? = ScreenSharingSymbolicHotKeys.current
     ) {
       self.layout = layout
+      self.symbolicHotKeys = symbolicHotKeys
       self.view = view
       self.notificationCenter = notificationCenter
       self.keyboardCapture = keyboardCapture
@@ -71,6 +77,7 @@
         failureMessage = "Focus this window and request control again."
         return false
       }
+      refreshLocalShortcuts()
       capturesSystemShortcuts = keyboardCapture.start(
         handle: { [weak self] type, event in self?.routeSystemKey(type, event: event) ?? false },
         interrupted: { [weak self] in
@@ -155,6 +162,11 @@
       mouseTapRunning = false
     }
 
+    private func refreshLocalShortcuts() {
+      keyboardCapture.setLocalShortcuts(
+        ScreenSharingSymbolicHotKeys.shortcuts(for: localShortcuts, in: symbolicHotKeys()))
+    }
+
     private func returnKeyboard() {
       suspend()
       if let view, let window = view.window, window.firstResponder === view { window.makeFirstResponder(nil) }
@@ -202,13 +214,14 @@
         if let window = view.window, window.isKeyWindow, event.window === window,
           view.bounds.contains(view.convert(event.locationInWindow, from: nil))
         {
-          if window.makeFirstResponder(view) { resume() }
+          if window.makeFirstResponder(view) { keyboardCapture.reclaimKeys(); resume() }
         } else {
           suspend()
         }
         return event
       }
       guard view.window?.isKeyWindow == true, event.window === view.window else { suspend(); return event }
+      if event.type == .keyDown { keyboardCapture.reclaimKeys() }
       return routeFocusedKey(event) ? nil : event
     }
 

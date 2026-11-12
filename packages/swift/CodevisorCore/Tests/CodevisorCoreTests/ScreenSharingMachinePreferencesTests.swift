@@ -53,6 +53,17 @@ struct ScreenSharingMachinePreferencesTests {
     #expect(preferences.sharedClipboard(machineId: "remote-vps"))
   }
 
+  @Test func screenshotsStayLocalPerMachineAndByDefault() throws {
+    let suite = "ScreenSharingMachinePreferencesTests.\(UUID().uuidString)"
+    let defaults = try #require(UserDefaults(suiteName: suite))
+    defer { defaults.removePersistentDomain(forName: suite) }
+    let preferences = ScreenSharingMachinePreferences(defaults: defaults)
+    #expect(preferences.screenshotsStayLocal(machineId: "local"))
+    preferences.setScreenshotsStayLocal(false, machineId: "local")
+    #expect(!ScreenSharingMachinePreferences(defaults: defaults).screenshotsStayLocal(machineId: "local"))
+    #expect(preferences.screenshotsStayLocal(machineId: "remote-vps"))
+  }
+
   @Test func lastConnectedIsPerMachineAndAbsentUntilSet() throws {
     let suite = "ScreenSharingMachinePreferencesTests.\(UUID().uuidString)"
     let defaults = try #require(UserDefaults(suiteName: suite))

@@ -12,6 +12,7 @@
     var inputFailureMessage: String? { get }
     var capturesSystemShortcuts: Bool { get }
     var dropsInjectedInput: Bool { get set }
+    var localShortcuts: Set<ScreenSharingLocalShortcutGroup> { get set }
     func beginInput() -> Bool
     func endInput()
     func stop()
@@ -29,6 +30,10 @@
     }
     public var onScreenHighDynamicRangeChanged: ((Bool) -> Void)? {
       get { nil }
+      set {}
+    }
+    public var localShortcuts: Set<ScreenSharingLocalShortcutGroup> {
+      get { [] }
       set {}
     }
     public func showRemoteCursor(_ update: ScreenSharingCursorUpdate) {}

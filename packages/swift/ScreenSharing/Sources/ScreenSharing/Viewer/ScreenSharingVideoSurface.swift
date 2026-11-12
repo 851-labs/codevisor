@@ -30,6 +30,10 @@
       get { input.dropsInjectedInput }
       set { input.dropsInjectedInput = newValue }
     }
+    public var localShortcuts: Set<ScreenSharingLocalShortcutGroup> {
+      get { input.localShortcuts }
+      set { input.localShortcuts = newValue }
+    }
     public func setLetterboxColor(_ color: NSColor) { letterboxColor = color }
     public func beginInput() -> Bool { input.begin() }
     public func endInput() { input.end() }

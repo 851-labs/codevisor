@@ -9,12 +9,16 @@
     ) -> Bool
     func setClaimsKeys(_ claims: Bool)
     func setClaimsInjectedKeys(_ claims: Bool)
+    func setLocalShortcuts(_ shortcuts: Set<ScreenSharingShortcut>)
+    func reclaimKeys()
     func stop()
   }
 
   extension ScreenSharingKeyboardCapture {
     func setClaimsKeys(_ claims: Bool) {}
     func setClaimsInjectedKeys(_ claims: Bool) {}
+    func setLocalShortcuts(_ shortcuts: Set<ScreenSharingShortcut>) {}
+    func reclaimKeys() {}
   }
 
   @MainActor
@@ -103,6 +107,7 @@
     private let lock = NSLock()
     private var claims = false
     private var claimsInjected = false
+    private var localKeys = ScreenSharingLocalKeys()
     private var reenable: (@Sendable () -> Void)?
     private let deliver: @Sendable (ScreenSharingKeyboardTapContext, Key) -> Void
     private let interrupt: @Sendable (ScreenSharingKeyboardTapContext) -> Void
@@ -116,6 +121,10 @@
 
     func setClaims(_ claims: Bool) { lock.withLock { self.claims = claims } }
     func setClaimsInjected(_ claims: Bool) { lock.withLock { claimsInjected = claims } }
+    func setLocalShortcuts(_ shortcuts: Set<ScreenSharingShortcut>) {
+      lock.withLock { localKeys.shortcuts = shortcuts }
+    }
+    func reclaim() { lock.withLock { localKeys.reset() } }
     func setReenable(_ reenable: @escaping @Sendable () -> Void) { lock.withLock { self.reenable = reenable } }
 
     func decide(_ type: CGEventType, _ event: CGEvent) -> Unmanaged<CGEvent>? {
@@ -127,13 +136,26 @@
         interrupt(self)
         return Unmanaged.passUnretained(event)
       case .keyDown, .keyUp, .flagsChanged:
-        let injected = event.getIntegerValueField(.eventSourceUserData) == ScreenSharingInputInjector.eventTag
-        guard lock.withLock({ claims && (claimsInjected || !injected) }), let copy = event.copy()
-        else { return Unmanaged.passUnretained(event) }
+        let route = route(type, event)
+        guard route != .thisMac, let copy = event.copy() else { return Unmanaged.passUnretained(event) }
         deliver(self, Key(type: type, event: copy))
-        return nil
+        return route == .both ? Unmanaged.passUnretained(event) : nil
       default:
         return Unmanaged.passUnretained(event)
+      }
+    }
+
+    private enum Route { case thisMac, host, both }
+
+    private func route(_ type: CGEventType, _ event: CGEvent) -> Route {
+      let injected = event.getIntegerValueField(.eventSourceUserData) == ScreenSharingInputInjector.eventTag
+      let keyCode = UInt16(truncatingIfNeeded: event.getIntegerValueField(.keyboardEventKeycode))
+      return lock.withLock {
+        guard claims, claimsInjected || !injected else { return .thisMac }
+        guard type != .flagsChanged else { return localKeys.localShortcutActive ? .both : .host }
+
+        let local = localKeys.keepsLocal(keyCode: keyCode, down: type == .keyDown, modifiers: event.flags.rawValue)
+        return local ? .thisMac : .host
       }
     }
   }
@@ -144,6 +166,7 @@
     private var teardown: (() -> Void)?
     private var context: ScreenSharingKeyboardTapContext?
     private var claimsInjectedKeys = false
+    private var localShortcuts: Set<ScreenSharingShortcut> = []
     private var handle: ((CGEventType, CGEvent) -> Bool)?
     private var interrupted: (() -> Void)?
 
@@ -175,6 +198,7 @@
           }
         })
       context.setClaimsInjected(claimsInjectedKeys)
+      context.setLocalShortcuts(localShortcuts)
       self.handle = handle
       self.interrupted = interrupted
       guard
@@ -201,6 +225,13 @@
       claimsInjectedKeys = claims
       context?.setClaimsInjected(claims)
     }
+
+    func setLocalShortcuts(_ shortcuts: Set<ScreenSharingShortcut>) {
+      localShortcuts = shortcuts
+      context?.setLocalShortcuts(shortcuts)
+    }
+
+    func reclaimKeys() { context?.reclaim() }
 
     func stop() {
       context?.setClaims(false)

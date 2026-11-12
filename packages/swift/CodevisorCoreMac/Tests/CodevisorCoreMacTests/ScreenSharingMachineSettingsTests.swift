@@ -50,4 +50,24 @@ struct ScreenSharingMachineSettingsTests {
     #expect(draft.changes(from: withSound).isEmpty)
     #expect(ScreenSharingMachineSettingsDraft(Self.original).changes(from: Self.original).sound == nil)
   }
+
+  @Test func dynamicResolutionMentionsMirroringOnlyForHostsThatMirrorTheirDisplay() {
+    var settings = Self.original
+    #expect(!settings.dynamicResolutionExplanation.contains("mirrors"), "a VNC desktop has no display of its own")
+    settings.dynamicResolutionMirrorsDisplay = true
+    #expect(
+      settings.dynamicResolutionExplanation.hasSuffix("While you're connected, its own display mirrors the new size."))
+  }
+
+  @Test func turningOffLocalScreenshotsAppliesWithoutReconnectingAndSendsThemToTheHost() {
+    var withKeyboard = Self.original
+    withKeyboard.keyboard = .init()
+    #expect(withKeyboard.keyboard?.localShortcuts == [.screenshots], "screenshots stay on this Mac by default")
+    var draft = ScreenSharingMachineSettingsDraft(withKeyboard)
+    draft.settings.keyboard?.screenshotsStayLocal = false
+    let changes = draft.changes(from: withKeyboard)
+    #expect(changes == .init(keyboard: .init(screenshotsStayLocal: false)))
+    #expect(changes.keyboard?.localShortcuts == [])
+    #expect(!changes.reconnects)
+  }
 }

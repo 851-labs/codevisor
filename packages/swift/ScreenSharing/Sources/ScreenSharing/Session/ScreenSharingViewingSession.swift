@@ -32,6 +32,7 @@ public protocol ScreenSharingViewingSession: AnyObject {
   func requestDesktopSize(width: Int, height: Int)
   func resetDesktopSize()
   var resizesDesktop: Bool { get }
+  var resizeMirrorsHostDisplay: Bool { get }
   var onResizeSupportChanged: ((Bool) -> Void)? { get set }
   var initialDesktopSize: (width: Int, height: Int)? { get }
   var linkBitsPerSecond: Double? { get }
@@ -50,6 +51,7 @@ extension ScreenSharingViewingSession {
   public func requestDesktopSize(width: Int, height: Int) {}
   public func resetDesktopSize() {}
   public var resizesDesktop: Bool { false }
+  public var resizeMirrorsHostDisplay: Bool { false }
   public var initialDesktopSize: (width: Int, height: Int)? { nil }
   public var linkBitsPerSecond: Double? { nil }
   public var videoShowsPointer: Bool { true }
