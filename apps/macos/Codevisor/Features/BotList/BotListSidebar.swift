@@ -4,6 +4,7 @@ import SwiftUI
 
 struct BotListSidebar: View {
   @Environment(AppEnvironment.self) private var environment
+  @Environment(\.isActiveSidebarMode) private var isActiveSidebarMode
   @Binding var selection: SidebarSelection?
   @Binding var botEditor: BotEditorTarget?
   var store: SessionStore? = nil
@@ -12,7 +13,6 @@ struct BotListSidebar: View {
   @State private var deletingBot: Bot?
   @State private var stepHandlerOwner = UUID()
   @State private var sectionPrompt: SectionPrompt?
-  @FocusState private var isListFocused: Bool
   @ClientPreference(SidebarPreferenceKey.collapsedBotSections, default: []) private var collapsedSectionIDs: [String]
   @ClientPreference(SidebarPreferenceKey.botArchivedExpanded, default: false) private var archivedExpanded
 
@@ -41,13 +41,7 @@ struct BotListSidebar: View {
   }
 
   var body: some View {
-    scrollingContent
-      .safeAreaInset(edge: .bottom, spacing: 0) {
-        VStack(spacing: 0) {
-          SidebarSyncFooter(indicator: environment.navigationSyncIndicator)
-          SidebarUpdateFooter(center: environment.updateCenter)
-        }
-      }
+    vibrantList
       .modifier(
         SidebarBotsModifier(deletingBot: $deletingBot, selection: $selection)
       )
@@ -65,27 +59,27 @@ struct BotListSidebar: View {
       }
   }
 
-  private var scrollingContent: some View {
-    ScrollViewReader { proxy in
-      ScrollView {
-        content
-      }
-      .scrollContentBackground(.hidden)
-      .focusable()
-      .focusEffectDisabled()
-      .focused($isListFocused)
-      .contextMenu {
-        Button {
-          sectionPrompt = .create(moving: nil)
-        } label: {
-          Label("New Section…", systemImage: "folder.badge.plus")
-            .labelStyle(.titleAndIcon)
+  private var vibrantList: some View {
+    SidebarVibrancyHost {
+      scrollingContent
+        .safeAreaInset(edge: .bottom, spacing: 0) {
+          VStack(spacing: 0) {
+            SidebarSyncFooter(indicator: environment.navigationSyncIndicator)
+            SidebarUpdateFooter(center: environment.updateCenter)
+          }
         }
-      }
-      .onChange(of: selectedBotID) { _, id in
-        if let id { proxy.scrollTo(id) }
-        if selectedBot?.isArchived == true { isListFocused = true }
-      }
+        .environment(environment)
+        .environment(\.isActiveSidebarMode, isActiveSidebarMode)
+    }
+    .ignoresSafeArea(.container, edges: .top)
+  }
+
+  private var scrollingContent: some View {
+    BotListScrollView(
+      selectedBotID: selectedBotID, isSelectedBotArchived: selectedBot?.isArchived == true,
+      newSection: { sectionPrompt = .create(moving: nil) }
+    ) {
+      content
     }
   }
 
