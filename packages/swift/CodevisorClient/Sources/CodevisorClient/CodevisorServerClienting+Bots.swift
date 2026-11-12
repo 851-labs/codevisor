@@ -13,6 +13,10 @@ public extension CodevisorServerClienting {
     throw CodevisorServerClientError.invalidResponse
   }
 
+  func forkBot(id: String, _ request: ServerForkBotRequest) async throws -> ServerBot {
+    throw CodevisorServerClientError.invalidResponse
+  }
+
   func botMascotOptions() async throws -> ServerBotMascotOptions {
     throw CodevisorServerClientError.invalidResponse
   }

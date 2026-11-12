@@ -22,7 +22,7 @@ const botSelect = `
 
 export const makeBotsService = (
   context: ServiceContext
-): Omit<BotsService, "appendBotMessage" | "listBotMessages"> => {
+): Omit<BotsService, "appendBotMessage" | "listBotMessages" | "copyBotMessages"> => {
   const { sqlite, config } = context
 
   const botFromRow = (row: BotRow): Bot => {

@@ -180,6 +180,7 @@ export const endpoints = [
   "DELETE /v1/bots/:id",
   "POST /v1/bots/:id/projects",
   "DELETE /v1/bots/:id/projects/:projectId",
+  "POST /v1/bots/:id/fork",
   "GET /v1/navigation",
   "GET /v1/agents",
   "POST /v1/agents",
@@ -300,6 +301,8 @@ export const summaries: Partial<Record<Endpoint, string>> = {
   "GET /v1/openapi.json": "Get the OpenAPI document",
   "POST /v1/bots/:id/projects": "Add a project to a bot and check its repository out for the bot",
   "DELETE /v1/bots/:id/projects/:projectId": "Remove a project and its checkout from a bot",
+  "POST /v1/bots/:id/fork":
+    "Fork a bot onto another harness with its notes and messages, optionally moving its agents",
   "GET /v1/restart/drain": "Get the restart drain state (live turns being paused for a restart)",
   "POST /v1/restart/drain":
     "Pause live turns for a restart; they continue automatically once the server is back",
@@ -363,6 +366,7 @@ export const created = new Set<Endpoint>([
   "POST /v1/skills",
   "POST /v1/skills/import-remote",
   "POST /v1/bots",
+  "POST /v1/bots/:id/fork",
   "POST /v1/sessions",
   "POST /v1/sessions/:id/fork",
   "POST /v1/sessions/:id/subscriptions",

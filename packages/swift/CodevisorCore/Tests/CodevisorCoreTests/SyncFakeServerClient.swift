@@ -20,6 +20,7 @@ final class SyncFakeServerClient: CodevisorServerClienting, @unchecked Sendable 
   var skillsList = ServerSkillsList()
   var _bots: [ServerBot] = []
   var botCreateHandler: (@Sendable (ServerCreateBotRequest) async throws -> ServerBot)?
+  var botForkHandler: (@Sendable (String, ServerForkBotRequest) async throws -> ServerBot)?
   var botProjectError: (any Error)?
   var listedProjects: [ServerProject]?
   var botMascotOptionsResult: ServerBotMascotOptions?

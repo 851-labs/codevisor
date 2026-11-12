@@ -37,6 +37,18 @@ export const syncBotInstructions = async (
   return true
 }
 
+export const copyBotNotes = async (
+  services: CodevisorServerServices,
+  source: Bot,
+  target: Bot
+): Promise<void> => {
+  const sourceText = readIfPresent(instructionsPath(source.rootPath))
+  if (sourceText === undefined) return
+
+  const subject = await instructionsSubject(services, target)
+  writeFileSync(instructionsPath(target.rootPath), instructionsWithBlock(sourceText, subject))
+}
+
 export const syncAllBotInstructions = async (
   services: CodevisorServerServices
 ): Promise<ReadonlyArray<Bot>> => {

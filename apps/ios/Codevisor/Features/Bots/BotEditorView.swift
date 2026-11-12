@@ -40,7 +40,7 @@ struct BotEditorView: View {
     NavigationStack {
       Form {
         identitySection
-        if isCreating {
+        if editor.canChangeMachine {
           machineSection
         }
         if editor.showsProjects {
@@ -56,6 +56,9 @@ struct BotEditorView: View {
         } else {
           modelSection
         }
+        if editor.forkedBot != nil {
+          agentsSection
+        }
         if let errorMessage = editor.errorMessage {
           Section {
             Text(errorMessage)
@@ -64,7 +67,7 @@ struct BotEditorView: View {
           }
         }
       }
-      .navigationTitle(isCreating ? "New Bot" : "Edit Bot")
+      .navigationTitle(navigationTitle)
       .navigationBarTitleDisplayMode(.inline)
       .toolbar {
         ToolbarItem(placement: .cancellationAction) {
@@ -75,7 +78,7 @@ struct BotEditorView: View {
           if editor.isSaving {
             ProgressView()
           } else {
-            Button(isCreating ? "Create" : "Done", role: .confirm) { Task { await save() } }
+            Button(confirmTitle, role: .confirm) { Task { await save() } }
               .disabled(!editor.canSave)
               .accessibilityIdentifier("botEditor.save")
           }
@@ -151,6 +154,26 @@ struct BotEditorView: View {
       }
       .frame(maxWidth: .infinity)
       .padding(.vertical, 8)
+    }
+  }
+
+  private var navigationTitle: String {
+    if editor.forkedBot != nil { return "Fork Bot" }
+    return isCreating ? "New Bot" : "Edit Bot"
+  }
+
+  private var confirmTitle: String {
+    if editor.forkedBot != nil { return "Fork" }
+    return isCreating ? "Create" : "Done"
+  }
+
+  private var agentsSection: some View {
+    Section {
+      Toggle("Transfer All Agents", isOn: $editor.movesAgents)
+    } header: {
+      Text("Agents")
+    } footer: {
+      Text(editor.transferAgentsDetail)
     }
   }
 

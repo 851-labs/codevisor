@@ -12,6 +12,7 @@ import {
 import { attempt } from "./errors.js"
 import { canonicalUuid } from "./ids.js"
 import { parseAttachments, serializeAttachments } from "./message-row-codecs.js"
+import { journaledNavigationChanges } from "./navigation-changes.js"
 import type { ServiceContext } from "./service-context.js"
 
 const botMessageFromRow = (row: BotMessageRow): BotMessage => {
@@ -29,8 +30,9 @@ const botMessageFromRow = (row: BotMessageRow): BotMessage => {
 
 export const makeBotMessagesService = (
   context: ServiceContext
-): Pick<BotsService, "appendBotMessage" | "listBotMessages"> => {
+): Pick<BotsService, "appendBotMessage" | "listBotMessages" | "copyBotMessages"> => {
   const { sqlite } = context
+  const journaled = journaledNavigationChanges(context)
 
   return {
     appendBotMessage: (rawSessionId, record) =>
@@ -70,9 +72,33 @@ export const makeBotMessagesService = (
           messages: rows.slice(0, limit).toReversed().map(botMessageFromRow),
           hasMore: rows.length > limit
         }
+      }),
+    copyBotMessages: (rawSourceId, rawTargetId) =>
+      attempt("copyBotMessages", () => {
+        const sourceId = canonicalUuid(rawSourceId)
+        const targetId = canonicalUuid(rawTargetId)
+        return journaled((now) => {
+          const rows = botMessageRows.all(sqlite.prepare(botMessageSql.all).all(sourceId))
+          for (const row of rows) insertCopy(sqlite, row, targetId)
+          sqlite.prepare(botMessageSql.copyFiles).run(targetId, sourceId)
+          sqlite.prepare(botMessageSql.announceSession).run(targetId, now)
+        })
       })
   }
 }
+
+const insertCopy = (sqlite: ServiceContext["sqlite"], row: BotMessageRow, targetId: string) =>
+  sqlite
+    .prepare(botMessageSql.copy)
+    .run(
+      randomUUID(),
+      targetId,
+      row.sequence,
+      row.sender,
+      row.text,
+      row.attachments,
+      row.created_at
+    )
 
 const sessionBotMessage = (
   sqlite: ServiceContext["sqlite"],
@@ -108,6 +134,14 @@ const botMessageSql = {
                values (?, ?, (
                  select coalesce(max(sequence), 0) + 1 from bot_messages where session_id = ?
                ), ?, ?, ?, ?)`,
+  all: "select * from bot_messages where session_id = ? order by sequence asc",
+  copy: `insert into bot_messages (id, session_id, sequence, sender, text, attachments, created_at)
+               values (?, ?, ?, ?, ?, ?, ?)`,
+  copyFiles: `insert or ignore into session_files (session_id, file_id)
+               select ?, file_id from session_files where session_id = ?`,
+  announceSession: `insert into events (server_id, kind, subject_id, created_at, payload)
+               values (coalesce((select value from instance_meta where key = 'adopted-server-id'), 'local'),
+                 'navigation.changed', ?, ?, json_object('table', 'sessions'))`,
   before: `select * from bot_messages
                where session_id = ? and sequence < ? and (? is null or sender = ?)
                order by sequence desc limit ?`

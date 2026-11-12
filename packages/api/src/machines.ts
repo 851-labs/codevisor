@@ -45,6 +45,7 @@ export type MachineCallOrigin = typeof MachineCallOrigin.Type
 export const FLEET_CALLER_HEADER = "x-codevisor-fleet-caller"
 export const FLEET_SESSION_EVENT_PATH = "fleet.session_event"
 export const FLEET_AGENTS_ARCHIVED_PATH = "fleet.agents_archived"
+export const FLEET_AGENTS_MOVED_PATH = "fleet.agents_moved"
 
 export const isFleetPath = (path: string): boolean => path.startsWith("fleet.")
 export const CALLER_AGENT_TICKET_HEADER = "x-codevisor-caller-agent-ticket"

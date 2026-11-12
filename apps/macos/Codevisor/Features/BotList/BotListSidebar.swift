@@ -116,6 +116,8 @@ struct BotListSidebar: View {
     BotSidebarRowActions(
       select: select,
       edit: { botEditor = .edit($0) },
+      canFork: { environment.bots.supportsFork(on: $0.serverId) },
+      fork: { botEditor = .fork($0) },
       canArchive: { environment.bots.supportsArchive(on: $0.serverId) },
       archive: archive,
       unarchive: { setArchived($0, false) },

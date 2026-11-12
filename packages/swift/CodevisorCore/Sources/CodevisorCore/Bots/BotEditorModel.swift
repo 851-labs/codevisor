@@ -7,6 +7,7 @@ public final class BotEditorModel {
   public let target: BotEditorTarget
   public var name: String
   public var mascot: ServerBotMascot?
+  public var movesAgents = true
   public var serverId: String {
     didSet { if serverId != oldValue { draftProjectIds = [] } }
   }
@@ -37,12 +38,34 @@ public final class BotEditorModel {
       name = bot.name
       mascot = bot.mascot
       serverId = bot.serverId
+    case let .fork(bot):
+      name = "\(bot.name)\(Self.forkSuffix)"
+      mascot = bot.mascot
+      serverId = bot.serverId
     }
   }
+
+  private static let forkSuffix = " (fork)"
 
   public var editedBot: Bot? {
     if case let .edit(bot) = target { return bot }
     return nil
+  }
+
+  public var forkedBot: Bot? {
+    if case let .fork(bot) = target { return bot }
+    return nil
+  }
+
+  public var transferAgentsDetail: String {
+    let source = forkedBot?.name ?? "this bot"
+    let fork = trimmedName.isEmpty ? "the new bot" : trimmedName
+    return "All agents belonging to \(source) will be transferred to \(fork)."
+  }
+
+  public var canChangeMachine: Bool {
+    if case .create = target { return true }
+    return false
   }
 
   public var symbolName: String {
@@ -78,7 +101,8 @@ public final class BotEditorModel {
   }
 
   public var showsProjects: Bool {
-    editedBot != nil || needsProject
+    guard forkedBot == nil else { return false }
+    return editedBot != nil || needsProject
   }
 
   private var needsProject: Bool {
@@ -123,7 +147,7 @@ public final class BotEditorModel {
   }
 
   private var hasRequiredProject: Bool {
-    !needsProject || !selectedProjects.isEmpty
+    forkedBot != nil || !needsProject || !selectedProjects.isEmpty
   }
 
   public func addProject(_ id: UUID) async {
@@ -232,31 +256,56 @@ public final class BotEditorModel {
     errorMessage = nil
     defer { isSaving = false }
     do {
-      if let bot = editedBot {
-        try await environment.bots.update(
-          bot,
-          ServerUpdateBotRequest(name: trimmedName, mascot: mascot)
-        )
-      } else {
-        guard let models, let harnessId = models.harnessId else { return false }
-        createdBot = try await environment.bots.create(
-          ServerCreateBotRequest(
-            id: botId.uuidString.lowercased(),
-            name: trimmedName,
-            symbolName: symbolName,
-            mascot: mascot,
-            harnessId: harnessId,
-            configSelections: models.configSelections,
-            projectIds: selectedProjects.map { $0.id.uuidString.lowercased() }
-          ),
-          on: serverId
-        )
-      }
+      guard try await saveTarget() else { return false }
       didSave = true
       return true
     } catch {
       errorMessage = ErrorReporter.userFacingMessage(for: error)
       return false
     }
+  }
+
+  private func saveTarget() async throws -> Bool {
+    switch target {
+    case let .edit(bot):
+      try await environment.bots.update(bot, ServerUpdateBotRequest(name: trimmedName, mascot: mascot))
+      return true
+    case .create:
+      createdBot = try await create()
+    case let .fork(bot):
+      createdBot = try await fork(bot)
+    }
+    return createdBot != nil
+  }
+
+  private func create() async throws -> Bot? {
+    guard let models, let harnessId = models.harnessId else { return nil }
+    return try await environment.bots.create(
+      ServerCreateBotRequest(
+        id: botId.uuidString.lowercased(),
+        name: trimmedName,
+        symbolName: symbolName,
+        mascot: mascot,
+        harnessId: harnessId,
+        configSelections: models.configSelections,
+        projectIds: selectedProjects.map { $0.id.uuidString.lowercased() }
+      ),
+      on: serverId
+    )
+  }
+
+  private func fork(_ bot: Bot) async throws -> Bot? {
+    guard let models, let harnessId = models.harnessId else { return nil }
+    return try await environment.bots.fork(
+      bot,
+      ServerForkBotRequest(
+        id: botId.uuidString.lowercased(),
+        name: trimmedName,
+        mascot: mascot,
+        harnessId: harnessId,
+        configSelections: models.configSelections,
+        moveAgents: movesAgents
+      )
+    )
   }
 }

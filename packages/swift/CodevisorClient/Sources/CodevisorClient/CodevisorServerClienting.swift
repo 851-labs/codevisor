@@ -116,6 +116,7 @@ public protocol CodevisorServerClienting: BrowserStateClienting, BrowserFaviconC
   func listBots() async throws -> [ServerBot]
   func createBot(_ request: ServerCreateBotRequest) async throws -> ServerBot
   func updateBot(id: String, _ request: ServerUpdateBotRequest) async throws -> ServerBot
+  func forkBot(id: String, _ request: ServerForkBotRequest) async throws -> ServerBot
   func botMascotOptions() async throws -> ServerBotMascotOptions
   func botMascotArt(_ art: ServerBotMascotArt) async throws -> Data
   func addBotProject(botId: String, projectId: String) async throws -> ServerBot

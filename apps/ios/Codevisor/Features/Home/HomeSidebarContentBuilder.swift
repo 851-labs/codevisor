@@ -80,6 +80,7 @@ struct HomeSidebarContentBuilder {
       home: environment.navigationStore.workspaceEntries.sidebar.first { $0.id == bot.workspaceId }
         .flatMap { botSidebarWorkspace($0, preferences: preferences, projectGroups: projectGroups) },
       canArchive: environment.bots.supportsArchive(on: bot.serverId),
+      canFork: environment.bots.supportsFork(on: bot.serverId),
       sectionID: environment.botSections.membership[bot.id]
     )
   }

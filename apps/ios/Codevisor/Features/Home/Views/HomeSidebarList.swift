@@ -21,6 +21,7 @@ struct HomeSidebarActions {
   var openBot: (Bot) -> Void = { _ in }
   var newBot: () -> Void = {}
   var editBot: (Bot) -> Void = { _ in }
+  var forkBot: (Bot) -> Void = { _ in }
   var archiveBot: (Bot) -> Void = { _ in }
   var unarchiveBot: (Bot) -> Void = { _ in }
   var deleteBot: (Bot) -> Void = { _ in }

@@ -46,6 +46,10 @@ public final class BotListModel {
     machines.statusByMachineId[serverId]?.supportsBotArchive == true
   }
 
+  public func supportsFork(on serverId: String) -> Bool {
+    machines.statusByMachineId[serverId]?.supportsBotFork == true
+  }
+
   private var machineIdsByServer: [String] {
     var seen = Set<String>()
     return machines.allMachines.map(\.id).filter { machineId in
@@ -87,6 +91,17 @@ public final class BotListModel {
       throw CodevisorServerClientError.invalidResponse
     }
     return bot
+  }
+
+  @discardableResult
+  public func fork(_ bot: Bot, _ request: ServerForkBotRequest) async throws -> Bot {
+    let record = try await machines.client(for: bot.serverId).forkBot(id: bot.record.id, request)
+    await machines.refreshNavigationState(for: bot.serverId)
+    store(record, on: bot.serverId)
+    guard let forked = Bot(serverId: bot.serverId, record: record) else {
+      throw CodevisorServerClientError.invalidResponse
+    }
+    return forked
   }
 
   public func update(_ bot: Bot, _ request: ServerUpdateBotRequest) async throws {

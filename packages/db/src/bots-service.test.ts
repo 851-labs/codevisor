@@ -294,4 +294,29 @@ describe("bot workspaces", () => {
       message
     ])
   })
+
+  it("copies a conversation to another bot's chat and tells clients to refresh it", async () => {
+    useWorktreesRoot()
+    const db = await openDatabase()
+    const { home } = await seedBot(db)
+    await run(
+      db.createWorkspaceWithSession({
+        workspace: { id: "ws-fork", projectId: home.id, name: "Fork", hasCustomName: false },
+        session: { id: "chat-fork", projectId: home.id, harnessId: "codex", title: "Fork" }
+      })
+    )
+    await run(db.appendBotMessage("chat-helper", { sender: "user", text: "ship it" }))
+    await run(db.appendBotMessage("chat-helper", { sender: "bot", text: "shipping" }))
+
+    const changes = await run(db.copyBotMessages("chat-helper", "chat-fork"))
+
+    const copied = await run(db.listBotMessages("chat-fork", undefined, 10))
+    expect(copied.messages.map((message) => [message.sender, message.text])).toEqual([
+      ["user", "ship it"],
+      ["bot", "shipping"]
+    ])
+    expect(changes.map((change) => [change.kind, change.subjectId, change.payload])).toEqual([
+      ["navigation.changed", "chat-fork", { table: "sessions" }]
+    ])
+  })
 })
