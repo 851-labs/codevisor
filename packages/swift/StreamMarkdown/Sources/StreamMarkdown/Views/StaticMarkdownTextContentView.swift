@@ -104,13 +104,13 @@
         beginPreparing(request)
         return
       }
+      let becameReady = !isContentReady
+      let heightChanged = reportedHeight.map { $0 != prepared.size.height } ?? false
       requestedKey = request.key
       preparedKey = request.key
       surface.show(prepared)
-      if let reportedHeight, reportedHeight != prepared.size.height {
-        lastHeight = prepared.size.height
-        onContentChange?()
-      }
+      if heightChanged { lastHeight = prepared.size.height }
+      if becameReady || heightChanged { onContentChange?() }
     }
 
     private func beginPreparing(_ request: StaticTextRequest) {
