@@ -40,7 +40,7 @@ struct CommandPaletteCatalog {
   private var generalCommands: [CommandPaletteItem] {
     guard let root else { return [] }
 
-    return [newChatCommand(root)] + newBotCommands(root) + newProjectCommands
+    return [newChatCommand(root), newBotCommand(root)] + newProjectCommands
   }
 
   private func newChatCommand(_ root: RootSidebarActions) -> CommandPaletteItem {
@@ -50,10 +50,8 @@ struct CommandPaletteCatalog {
     }
   }
 
-  private func newBotCommands(_ root: RootSidebarActions) -> [CommandPaletteItem] {
-    guard let newBot = root.newBot else { return [] }
-
-    return [CommandPaletteItem(.newBot, icon: .codevisorSymbol(.mascotBadgePlus), perform: newBot)]
+  private func newBotCommand(_ root: RootSidebarActions) -> CommandPaletteItem {
+    CommandPaletteItem(.newBot, icon: .codevisorSymbol(.mascotBadgePlus), perform: root.newBot)
   }
 
   private var newProjectCommands: [CommandPaletteItem] {

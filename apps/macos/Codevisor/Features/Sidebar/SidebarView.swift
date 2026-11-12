@@ -24,7 +24,6 @@ struct SidebarView: View {
   @ClientPreference(SidebarGrouping.preferenceKey, default: SidebarGrouping.flat) var grouping
   @ClientPreference(SidebarGrouping.collapsedPreferenceKey, default: []) var collapsedGroupIDs: [String]
   @ClientPreference(SidebarPreferenceKey.archivedExpanded, default: false) var archivedExpanded
-  @ClientPreference(FeatureFlag.bots.preferenceKey, default: false) var botsEnabled
   @ClientPreference(SidebarPreferenceKey.pinnedExpanded, default: true) var pinnedExpanded
   @ClientPreference(SidebarPreferenceKey.listExpanded, default: true) var listExpanded
   @State var archivedVisibleCount = sidebarArchivedPageSize

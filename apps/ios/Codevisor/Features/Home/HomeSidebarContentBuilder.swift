@@ -8,13 +8,11 @@ struct HomeSidebarContentBuilder {
   let gitLookups: SidebarGitLookups
 
   var botEntries: [BotSidebarEntry] {
-    guard FeatureFlag.bots.isEnabled else { return [] }
-    return environment.botSidebarEntries.filter { environment.machines.machine(for: $0.bot.serverId) != nil }
+    environment.botSidebarEntries.filter { environment.machines.machine(for: $0.bot.serverId) != nil }
   }
 
   var showsChatMode: Bool {
-    guard FeatureFlag.bots.isEnabled else { return false }
-    return !environment.bots.botMachines.isEmpty
+    !environment.bots.botMachines.isEmpty
       || environment.bots.bots.contains { environment.machines.machine(for: $0.serverId) != nil }
   }
 
@@ -57,7 +55,7 @@ struct HomeSidebarContentBuilder {
         workspace, item: item, preferences: preferences, projectGroups: projectGroups,
         heading: placement.heading)
     }
-    content.canCreateBots = FeatureFlag.bots.isEnabled && !environment.bots.botMachines.isEmpty
+    content.canCreateBots = !environment.bots.botMachines.isEmpty
     let bots =
       botEntries
       .map { sidebarBot($0, preferences: preferences, projectGroups: projectGroups) }

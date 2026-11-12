@@ -35,7 +35,7 @@ extension HomeView {
 
   var sidebarMode: Binding<SidebarMode> {
     Binding(
-      get: { SidebarMode.active(storedSidebarMode, botsEnabled: showsSidebarModes) },
+      get: { showsSidebarModes ? storedSidebarMode : .code },
       set: { storedSidebarMode = $0 }
     )
   }

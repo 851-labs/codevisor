@@ -6,7 +6,6 @@ struct SidebarModeSelectionMemory: ViewModifier {
   @Binding var selection: SidebarSelection?
   let onNavigate: () -> Void
   @Environment(AppEnvironment.self) private var environment
-  @ClientPreference(FeatureFlag.bots.preferenceKey, default: false) private var botsEnabled
   @ClientPreference(SidebarMode.preferenceKey, default: SidebarMode.code) private var storedMode
   @ClientPreference(RememberedSidebarSelection.preferenceKey, default: RememberedSidebarSelections())
   private var saved
@@ -14,9 +13,7 @@ struct SidebarModeSelectionMemory: ViewModifier {
   @State private var pendingMode: SidebarMode?
   @State private var isRestoring = false
 
-  private var activeMode: SidebarMode { SidebarMode.active(storedMode, botsEnabled: botsEnabled) }
-
-  private var route: SidebarRoute<SidebarSelection> { SidebarRoute(mode: activeMode, selection: selection) }
+  private var route: SidebarRoute<SidebarSelection> { SidebarRoute(mode: storedMode, selection: selection) }
 
   private var plan: SidebarRestorePlan { SidebarRestorePlan(environment: environment) }
 
@@ -53,7 +50,7 @@ struct SidebarModeSelectionMemory: ViewModifier {
   }
 
   private func switchMode(toOwnerOf next: SidebarSelection?) {
-    guard botsEnabled, let owner = next?.owningMode, owner != activeMode else { return }
+    guard let owner = next?.owningMode, owner != storedMode else { return }
 
     storedMode = owner
   }

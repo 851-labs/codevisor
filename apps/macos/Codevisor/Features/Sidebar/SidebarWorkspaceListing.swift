@@ -5,7 +5,6 @@ import Foundation
 @MainActor
 struct SidebarWorkspaceListing {
   let environment: AppEnvironment
-  let botsEnabled: Bool
   let grouping: SidebarGrouping
   let pinnedIDs: [String]
   let machineOrder: [String]
@@ -57,6 +56,6 @@ struct SidebarWorkspaceListing {
   }
 
   private var botHomeWorkspaceIDs: Set<UUID> {
-    botsEnabled ? Set(environment.bots.bots.map(\.workspaceId)) : []
+    Set(environment.bots.bots.map(\.workspaceId))
   }
 }

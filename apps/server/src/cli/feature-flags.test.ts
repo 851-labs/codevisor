@@ -24,7 +24,12 @@ const world = (routes: Record<string, Answer>) => {
   return { deps, logs, errors, requests }
 }
 
-const bots = { id: "bots", title: "Bots", description: "Adds a Bots mode.", enabled: true }
+const developerMode = {
+  id: "developerMode",
+  title: "Developer Mode",
+  description: "Adds a Developer section.",
+  enabled: true
+}
 const gmail = {
   id: "gmailPlugin",
   title: "Gmail Plugin",
@@ -35,31 +40,39 @@ const gmail = {
 describe("codevisor flags", () => {
   it("lists each flag with whether it is on, in aligned columns", async () => {
     const { deps, logs } = world({
-      "GET /v1/feature-flags": { status: 200, body: { flags: [bots, gmail] } }
+      "GET /v1/feature-flags": { status: 200, body: { flags: [developerMode, gmail] } }
     })
     expect(await flagsListCommand(deps)).toBe(0)
-    expect(logs).toEqual(["bots         on   Adds a Bots mode.", "gmailPlugin  off  Shows Gmail."])
+    expect(logs).toEqual([
+      "developerMode  on   Adds a Developer section.",
+      "gmailPlugin    off  Shows Gmail."
+    ])
   })
 
   it("turns a flag off through the server", async () => {
     const { deps, logs, requests } = world({
-      "PUT /v1/feature-flags/bots": { status: 200, body: { ...bots, enabled: false } }
+      "PUT /v1/feature-flags/developerMode": {
+        status: 200,
+        body: { ...developerMode, enabled: false }
+      }
     })
-    expect(await flagsSetCommand(deps, { flag: "bots", enabled: false })).toBe(0)
+    expect(await flagsSetCommand(deps, { flag: "developerMode", enabled: false })).toBe(0)
     expect(requests.at(-1)?.body).toEqual({ enabled: false })
-    expect(logs).toEqual(["✓ Bots is off. Your Codevisor apps sync it to your other machines."])
+    expect(logs).toEqual([
+      "✓ Developer Mode is off. Your Codevisor apps sync it to your other machines."
+    ])
   })
 
   it("passes the server's error through for an unknown flag", async () => {
     const { deps, errors } = world({
       "PUT /v1/feature-flags/robots": {
         status: 404,
-        body: { error: "Unknown feature flag: robots. Known flags: bots" }
+        body: { error: "Unknown feature flag: robots. Known flags: gmailPlugin" }
       }
     })
     expect(await flagsSetCommand(deps, { flag: "robots", enabled: true })).toBe(1)
     expect(errors).toEqual([
-      "Couldn't turn robots on: Unknown feature flag: robots. Known flags: bots"
+      "Couldn't turn robots on: Unknown feature flag: robots. Known flags: gmailPlugin"
     ])
   })
 })

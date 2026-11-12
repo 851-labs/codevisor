@@ -6,7 +6,6 @@ import SwiftUI
 struct WorkspaceChildAgents {
   let environment: AppEnvironment
   let store: SessionStore
-  let botsEnabled: Bool
   let grouping: SidebarGrouping
   let commands: WorkspaceRowCommands
   @Binding var selection: SidebarSelection?
@@ -45,7 +44,7 @@ struct WorkspaceChildAgents {
       environment: environment, store: store, grouping: grouping,
       rowDetails: ClientPreferences.shared.sidebarRowDetails)
     let listing = SidebarWorkspaceListing(
-      environment: environment, botsEnabled: botsEnabled, grouping: grouping, pinnedIDs: commands.pinnedIDs,
+      environment: environment, grouping: grouping, pinnedIDs: commands.pinnedIDs,
       machineOrder: [], projectOrder: [])
     let tree = listing.tree
     let membership = environment.workspaceSections.membership
@@ -68,7 +67,7 @@ struct WorkspaceChildAgents {
 
   private func open(_ item: SidebarWorkspaceListItem) {
     let workspace = item.workspace
-    if botsEnabled, let bot = environment.bots.bot(forWorkspace: workspace.id, serverId: workspace.serverId) {
+    if let bot = environment.bots.bot(forWorkspace: workspace.id, serverId: workspace.serverId) {
       selection = .bot(serverId: bot.serverId, id: bot.id)
       return
     }

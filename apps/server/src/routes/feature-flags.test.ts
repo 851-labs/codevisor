@@ -19,15 +19,19 @@ describe("/v1/feature-flags", () => {
     const server = await startWithApp((await makeServices("server-flags")).services)
     expect(await enabledIds(server)).toEqual([])
 
-    const turnedOn = await jsonRequest(server, "/v1/feature-flags/bots", put(true))
-    expect(turnedOn.body).toMatchObject({ id: "bots", title: "Bots", enabled: true })
-    expect(await enabledIds(server)).toEqual(["bots"])
+    const turnedOn = await jsonRequest(server, "/v1/feature-flags/developerMode", put(true))
+    expect(turnedOn.body).toMatchObject({
+      id: "developerMode",
+      title: "Developer Mode",
+      enabled: true
+    })
+    expect(await enabledIds(server)).toEqual(["developerMode"])
 
     const [event] = await readWebSocketEvents(server, 1, 0)
     expect(field(event, "kind")).toBe("sync.changed")
     expect(field(event, "payload")).toMatchObject({
       namespace: "feature-flags",
-      entries: [{ key: "bots", value: true }]
+      entries: [{ key: "developerMode", value: true }]
     })
   })
 
@@ -44,12 +48,22 @@ describe("/v1/feature-flags", () => {
     expect(await enabledIds(server)).toEqual([])
   })
 
+  it("ignores a stored flag that has since shipped", async () => {
+    const server = await startWithApp((await makeServices("server-flags-shipped")).services)
+    const stamp = { wallMs: Date.now(), counter: 0, deviceId: "old-mac" }
+    await jsonRequest(server, "/v1/sync/feature-flags", {
+      method: "PUT",
+      body: JSON.stringify({ entries: [{ key: "bots", value: true, timestamp: stamp }] })
+    })
+    expect(await enabledIds(server)).toEqual([])
+  })
+
   it("rejects flags it doesn't know, naming the ones it does", async () => {
     const server = await startWithApp((await makeServices("server-flags-unknown")).services)
     const response = await jsonRequest(server, "/v1/feature-flags/robots", put(true))
     expect(response.status).toBe(404)
     expect(field(response.body, "error")).toBe(
-      "Unknown feature flag: robots. Known flags: bots, developerMode, gmailPlugin"
+      "Unknown feature flag: robots. Known flags: developerMode, gmailPlugin"
     )
   })
 })

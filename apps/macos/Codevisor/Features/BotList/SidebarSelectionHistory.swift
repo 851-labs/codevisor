@@ -6,7 +6,6 @@ struct SidebarSelectionHistory: ViewModifier {
   @Binding var selection: SidebarSelection?
   let revealRequest: SidebarRevealRequest
   @Environment(AppEnvironment.self) private var environment
-  @ClientPreference(FeatureFlag.bots.preferenceKey, default: false) private var botsEnabled
   @State private var history = SidebarHistory<RememberedSidebarSelection>()
 
   private var plan: SidebarRestorePlan { SidebarRestorePlan(environment: environment) }
@@ -47,8 +46,6 @@ struct SidebarSelectionHistory: ViewModifier {
   }
 
   private func target(of entry: RememberedSidebarSelection) -> SidebarSelection? {
-    guard botsEnabled || entry.selection.owningMode != .bots else { return nil }
-
-    return plan.reopening(entry)
+    plan.reopening(entry)
   }
 }
