@@ -42,6 +42,6 @@ work on a ticket just because you created it.
    `create_attachment_from_upload`.
 6. **Move the ticket to In Review** once the PR is open and ready for
    review (not while it's a draft or still missing its tophat).
-7. **Merge only after the user approves:** `gh pr merge --auto --squash`
-   queues it, and the merge queue lands it once CI passes. The ticket closes
+7. **Merge only after the user approves:** `gh pr merge --squash`
+   merges it. The checks run on main afterwards. The ticket closes
    through `Fixes`.

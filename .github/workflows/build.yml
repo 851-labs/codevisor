@@ -27,6 +27,7 @@ jobs:
     outputs:
       version: ${{ steps.version.outputs.version }}
       build: ${{ steps.build.outputs.build }}
+      last-passed: ${{ steps.last-passed.outputs.sha }}
     steps:
       - name: Require main
         run: '[[ "$GITHUB_REF" == refs/heads/main ]] || { echo "Build runs only on main." >&2; exit 1; }'
@@ -52,9 +53,27 @@ jobs:
           version="${BASH_REMATCH[1]}.${BASH_REMATCH[2]}.$((BASH_REMATCH[3] + 1))"
           echo "version=$version" >> "$GITHUB_OUTPUT"
           echo "Building Alpha $version for $GITHUB_SHA"
+      - name: Find the last commit that passed
+        id: last-passed
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          sha="$(gh api "repos/$GITHUB_REPOSITORY/actions/workflows/build.yml/runs?branch=main&status=success&per_page=1" --jq '.workflow_runs[0].head_sha // empty')"
+          echo "sha=$sha" >> "$GITHUB_OUTPUT"
+          echo "Checking changes since ${sha:-the beginning}"
+
+  ci:
+    needs: metadata
+    permissions:
+      checks: write
+      contents: read
+    uses: ./.github/workflows/ci.yml
+    with:
+      base: ${{ needs.metadata.outputs.last-passed }}
+    secrets: inherit
 
   build-server-linux-x64:
-    needs: metadata
+    needs: [metadata, ci]
     runs-on: ubuntu-24.04
     env:
       VERSION: ${{ needs.metadata.outputs.version }}
@@ -88,7 +107,7 @@ jobs:
           retention-days: 14
 
   build-server-linux-arm64:
-    needs: metadata
+    needs: [metadata, ci]
     runs-on: ubuntu-24.04-arm
     env:
       VERSION: ${{ needs.metadata.outputs.version }}
@@ -157,7 +176,7 @@ jobs:
           retention-days: 14
 
   build-macos:
-    needs: metadata
+    needs: [metadata, ci]
     uses: ./.github/workflows/_build-macos.yml
     with:
       runner: ${{ vars.MACOS_RUNNER || '["self-hosted", "macOS", "ARM64", "codevisor-macos-arm64"]' }}
@@ -166,7 +185,7 @@ jobs:
     secrets: inherit
 
   build-ios:
-    needs: metadata
+    needs: [metadata, ci]
     uses: ./.github/workflows/_build-ios.yml
     with:
       runner: ${{ vars.MACOS_RUNNER || '["self-hosted", "macOS", "ARM64", "codevisor-macos-arm64"]' }}

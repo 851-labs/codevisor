@@ -196,7 +196,7 @@ first.
 `bun run check` runs every check your changes can affect against `HEAD`
 (`bun run check -- --dry-run` lists them), including the Swift suites when
 Swift changed. The pre-push hook runs the same plan against `origin/main`
-without the Swift suites, and the merge queue runs all of it in CI; allow
+without the Swift suites, and Build runs all of it on main after the merge; allow
 them time rather than bypassing them. `bun run check:all` runs everything.
 
 ## Landing and continuation
