@@ -3,21 +3,15 @@ import { setTimeout as sleep } from "node:timers/promises"
 import { fileURLToPath } from "node:url"
 
 import { isTransientGitHubError } from "./github-errors.ts"
-import { nextWaitStep, type PullRequestFields, startOfWait } from "./merge-queue.ts"
 import { createReporter } from "./reporter.ts"
 import { parseShipArguments, type ShipOptions } from "./ship-arguments.ts"
 
 const repoRoot = fileURLToPath(new URL("../../..", import.meta.url))
 const reporter = createReporter()
-const pollMilliseconds = 20_000
+const mergeabilityPollMilliseconds = 2_000
+const mergeabilityPolls = 30
 const ghAttempts = 4
 const ghRetryMilliseconds = 5_000
-
-const pullRequestStateQuery = `query($url: URI!) {
-  resource(url: $url) {
-    ... on PullRequest { state autoMergeRequest { enabledAt } mergeQueueEntry { state } }
-  }
-}`
 
 class ShipError extends Error {}
 
@@ -30,17 +24,12 @@ async function main(): Promise<void> {
   pushBranch()
   const pullRequest = openPullRequest(options)
   if (options.review) {
-    reporter.done(`Opened ${pullRequest} for review; queue it with: gh pr merge --auto --squash`)
+    reporter.done(`Opened ${pullRequest} for review; merge it with: gh pr merge --squash`)
     return
   }
 
-  queuePullRequest(pullRequest)
-  if (!options.wait) {
-    reporter.done(`Queued ${pullRequest}; it merges once CI passes in the merge queue`)
-    return
-  }
-
-  await waitUntilLanded(pullRequest)
+  await mergePullRequest(pullRequest)
+  reporter.done(`Merged ${pullRequest}; Build checks it on main before the next Alpha`)
 }
 
 function requireShippableBranch(branch: string): void {
@@ -87,42 +76,22 @@ function openPullRequest(options: ShipOptions): string {
   )
 }
 
-function queuePullRequest(pullRequest: string): void {
-  reporter.step("Queueing for merge")
-  requiredGh(["pr", "merge", pullRequest, "--auto", "--squash"])
+async function mergePullRequest(pullRequest: string): Promise<void> {
+  reporter.step("Merging")
+  await waitUntilMergeable(pullRequest)
+  requiredGh(["pr", "merge", pullRequest, "--squash"])
 }
 
-async function waitUntilLanded(pullRequest: string): Promise<void> {
-  reporter.step("Waiting for the merge queue")
-  let progress = startOfWait
-  for (;;) {
-    const step = nextWaitStep(progress, pullRequestFields(pullRequest))
-    progress = step.progress
-    if (step.verdict === "landed") return reporter.done(`Landed ${pullRequest}`)
-    if (step.verdict === "left-queue") {
-      throw new ShipError(
-        `${pullRequest} left the merge queue; see its checks, fix, and ship again`
-      )
-    }
-    if (step.verdict === "lost-contact")
-      throw new ShipError("Lost contact with GitHub while waiting")
+async function waitUntilMergeable(pullRequest: string): Promise<void> {
+  for (let poll = 0; poll < mergeabilityPolls; poll += 1) {
+    const mergeable = gh(["pr", "view", pullRequest, "--json", "mergeable", "--jq", ".mergeable"])
+    if (mergeable === "MERGEABLE") return
+    if (mergeable === "CONFLICTING")
+      throw new ShipError(`${pullRequest} conflicts with main; ship again to rebase onto it`)
 
-    await sleep(pollMilliseconds)
+    await sleep(mergeabilityPollMilliseconds)
   }
-}
-
-function pullRequestFields(pullRequest: string): PullRequestFields | undefined {
-  const response = gh([
-    "api",
-    "graphql",
-    "-f",
-    `query=${pullRequestStateQuery}`,
-    "-F",
-    `url=${pullRequest}`
-  ])
-  if (response === undefined) return undefined
-
-  return JSON.parse(response).data.resource
+  throw new ShipError(`GitHub never said whether ${pullRequest} can merge; ship again`)
 }
 
 function git(...args: Array<string>): string {

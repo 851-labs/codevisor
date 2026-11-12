@@ -18,4 +18,4 @@ Never give timelines for changes or estimates of how long a change will take.
 
 Your answers should never be guesses; they should be grounded in the code itself.
 
-When the user is ready to ship their changes, ship them with `bun run ship`. Open a PR for all changes and merge them via the merge queue. When you ship a change, watch it through the entire merge queue until it lands, checking in regularly to make sure it is not stuck or wedged.
+When the user is ready to ship their changes, ship them with `bun run ship`. It opens a PR for the change and merges it; every change goes through a PR, never a direct push to main. The checks run on main after the merge, and the build waits for them.

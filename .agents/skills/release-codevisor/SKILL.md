@@ -7,9 +7,11 @@ description: Promote the successful Alpha artifact set at current Codevisor main
 
 Stable is a promotion, never a rebuild. Three workflows produce every release:
 
-- `Build` (`build.yml`) builds and signs the app, server, and iOS artifacts
-  on every push to main. `CI` (`ci.yml`) already tested each commit before it
-  landed. Build never contacts Apple's distribution services.
+- `Build` (`build.yml`) runs on pushes to main. It runs the checks in `CI`
+  (`ci.yml`) first, then builds and signs the app, server, and iOS artifacts
+  only if they pass. While one Build runs, later pushes wait and only the
+  newest one runs next, covering every commit since the last Build that
+  passed. Build never contacts Apple's distribution services.
 - `Release alpha` (`release-alpha.yml`) runs every 30 minutes or on dispatch
   and ships the newest successful build: it notarizes the app, publishes the
   Alpha Sparkle and server feeds, then creates the `vVERSION-alpha.BUILD`

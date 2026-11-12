@@ -5,11 +5,12 @@ import { parseShipArguments } from "./ship-arguments.ts"
 
 describe("parseShipArguments", () => {
   it("collects flags and pull request details", () => {
-    expect(parseShipArguments(["--wait", "--title", "Fix it", "--body-file", "body.md"])).toEqual({
-      review: false,
-      wait: true,
-      pullRequestDetails: ["--title", "Fix it", "--body-file", "body.md"]
-    })
+    expect(parseShipArguments(["--review", "--title", "Fix it", "--body-file", "body.md"])).toEqual(
+      {
+        review: true,
+        pullRequestDetails: ["--title", "Fix it", "--body-file", "body.md"]
+      }
+    )
   })
 
   it("rejects unknown arguments and details without a value", () => {

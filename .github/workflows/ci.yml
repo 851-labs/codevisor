@@ -1,18 +1,21 @@
 name: CI
 
 on:
-  pull_request:
-  merge_group:
-  push:
-    branches: [main]
+  workflow_call:
+    inputs:
+      base:
+        description: Check the changes since this commit. Leave empty to check everything.
+        type: string
+        default: ""
   workflow_dispatch:
+    inputs:
+      base:
+        description: Check the changes since this commit. Leave empty to check everything.
+        type: string
+        default: ""
 
 permissions:
   contents: read
-
-concurrency:
-  group: ci-${{ github.event_name }}-${{ github.event.pull_request.number || github.ref }}
-  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 env:
   TURBO_TOKEN: ${{ secrets.TURBO_TOKEN }}
@@ -23,7 +26,6 @@ defaults:
 
 jobs:
   plan:
-    if: github.event_name != 'pull_request'
     runs-on: ubuntu-24.04
     outputs:
       range: ${{ steps.range.outputs.range }}
@@ -38,16 +40,14 @@ jobs:
       - name: Resolve the changes to check
         id: range
         env:
-          MERGE_GROUP_BASE: ${{ github.event.merge_group.base_sha }}
-          PUSH_BEFORE: ${{ github.event.before }}
+          BASE: ${{ inputs.base }}
         run: |
-          base="${MERGE_GROUP_BASE:-$PUSH_BEFORE}"
-          if [[ -z "$base" || "$base" =~ ^0+$ ]] || ! git cat-file -e "$base^{commit}" 2>/dev/null; then
+          if [[ -z "$BASE" ]] || ! git cat-file -e "$BASE^{commit}" 2>/dev/null; then
             echo "range=--all" >> "$GITHUB_OUTPUT"
             echo "Checking everything"
           else
-            echo "range=--base=$base" >> "$GITHUB_OUTPUT"
-            echo "Checking changes since $base"
+            echo "range=--base=$BASE" >> "$GITHUB_OUTPUT"
+            echo "Checking changes since $BASE"
           fi
       - name: Plan the jobs
         id: plan
@@ -73,7 +73,6 @@ jobs:
 
   checks:
     needs: plan
-    if: github.event_name != 'pull_request'
     runs-on: ubuntu-24.04
     permissions:
       checks: write
@@ -90,7 +89,6 @@ jobs:
       - uses: Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0
         with:
           workspaces: packages/net
-          save-if: ${{ github.event_name != 'merge_group' }}
       - run: bun install --frozen-lockfile
       - run: node scripts/check.mjs "${{ needs.plan.outputs.range }}" --lanes=javascript
       - uses: mikepenz/action-junit-report@a16be3a69023e9bd7e748ede768b3282ea7b30ce
@@ -120,7 +118,7 @@ jobs:
 
   checks-swift:
     needs: plan
-    if: contains(fromJSON('["merge_group", "workflow_dispatch"]'), github.event_name) && needs.plan.outputs.swift == 'true'
+    if: needs.plan.outputs.swift == 'true'
     runs-on: [self-hosted, macOS, ARM64, codevisor-macos-arm64]
     timeout-minutes: 45
     steps:
@@ -157,7 +155,7 @@ jobs:
 
   test-net:
     needs: plan
-    if: github.event_name != 'pull_request' && needs.plan.outputs.net == 'true'
+    if: needs.plan.outputs.net == 'true'
     runs-on: ubuntu-24.04
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
@@ -169,13 +167,12 @@ jobs:
       - uses: Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0
         with:
           workspaces: packages/net
-          save-if: ${{ github.event_name != 'merge_group' }}
       - run: bun install --frozen-lockfile
       - run: bun run net:test
 
   e2e-net:
     needs: plan
-    if: github.event_name != 'pull_request' && needs.plan.outputs.net == 'true'
+    if: needs.plan.outputs.net == 'true'
     runs-on: ubuntu-24.04
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
@@ -193,21 +190,5 @@ jobs:
 
   test-chrome:
     needs: plan
-    if: github.event_name != 'pull_request' && needs.plan.outputs.chrome == 'true'
+    if: needs.plan.outputs.chrome == 'true'
     uses: ./.github/workflows/_test-chrome.yml
-
-  ci:
-    needs: [plan, checks, checks-swift, test-net, e2e-net, test-chrome]
-    if: always() && github.event_name != 'pull_request'
-    runs-on: ubuntu-24.04
-    steps:
-      - name: Require every job to pass or be skipped
-        env:
-          RESULTS: ${{ toJSON(needs) }}
-        run: |
-          failed="$(jq -r 'to_entries[] | select(.value.result != "success" and .value.result != "skipped") | "\(.key): \(.value.result)"' <<<"$RESULTS")"
-          if [[ -n "$failed" ]]; then
-            echo "::error title=CI failed::$(paste -sd, - <<<"$failed")"
-            exit 1
-          fi
-          echo "All CI jobs passed or were skipped."
