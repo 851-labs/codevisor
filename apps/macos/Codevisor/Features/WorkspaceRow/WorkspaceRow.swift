@@ -99,7 +99,8 @@ private struct WorkspaceRowLabel: View {
 
   var body: some View {
     SidebarWorkspaceRowLabel(
-      name: details.name, subtitle: details.subtitle, status: details.status, icon: details.icon, store: store
+      name: details.name, subtitle: details.subtitle, status: details.status,
+      showsStatusLabel: details.showsStatusLabel, icon: details.icon, store: store
     )
     .opacity(isArchived ? WorkspaceRow.archivedOpacity : 1)
   }

@@ -8,6 +8,7 @@ struct BotConversationRows: View {
   let sections: [CustomSection]
   let selectedBotID: UUID?
   var statuses: SidebarRowStatuses? = nil
+  var showsStatusLabel = false
   let actions: BotSidebarRowActions
   @Environment(AppEnvironment.self) private var environment
   @Environment(\.accessibilityReduceMotion) private var reduceMotion
@@ -47,48 +48,51 @@ struct BotConversationRows: View {
   private func botRow(_ conversation: BotConversation, section: UUID?) -> some View {
     let bot = conversation.bot
     let status = statuses?.status(of: bot.workspaceId)
-    return BotConversationRow(conversation: conversation, isSelected: bot.id == selectedBotID, status: status)
-      .opacity(reorder.isDragging(bot.id) ? 0.4 : 1)
-      .onSidebarRowPress { open(bot, status: status) }
-      .accessibilityAction(.default) { open(bot, status: status) }
-      .simultaneousGesture(reorderGesture(for: bot))
-      .contextMenu {
-        if let chat = chat(of: bot) {
-          ChatSessionUnreadMenuItem(session: chat)
-          Divider()
-        }
+    return BotConversationRow(
+      conversation: conversation, isSelected: bot.id == selectedBotID, status: status,
+      showsStatusLabel: showsStatusLabel
+    )
+    .opacity(reorder.isDragging(bot.id) ? 0.4 : 1)
+    .onSidebarRowPress { open(bot, status: status) }
+    .accessibilityAction(.default) { open(bot, status: status) }
+    .simultaneousGesture(reorderGesture(for: bot))
+    .contextMenu {
+      if let chat = chat(of: bot) {
+        ChatSessionUnreadMenuItem(session: chat)
+        Divider()
+      }
+      Button {
+        actions.edit(bot)
+      } label: {
+        Label("Edit", systemImage: "pencil")
+          .labelStyle(.titleAndIcon)
+      }
+      if actions.canFork(bot) {
         Button {
-          actions.edit(bot)
+          actions.fork(bot)
         } label: {
-          Label("Edit", systemImage: "pencil")
+          Label("Fork…", systemImage: "arrow.triangle.branch")
             .labelStyle(.titleAndIcon)
         }
-        if actions.canFork(bot) {
-          Button {
-            actions.fork(bot)
-          } label: {
-            Label("Fork…", systemImage: "arrow.triangle.branch")
-              .labelStyle(.titleAndIcon)
-          }
-        }
-        Divider()
-        MoveToSectionMenu(
-          currentSectionID: section, sections: sections, move: { actions.moveBot(bot.id, $0) },
-          newSection: { actions.newSection(bot) })
-        Divider()
-        if actions.canArchive(bot) {
-          Button {
-            actions.archive(bot)
-          } label: {
-            Label("Archive", systemImage: "archivebox")
-              .labelStyle(.titleAndIcon)
-          }
-          .shortcut(.archiveWorkspace)
-        } else {
-          deleteButton(bot)
-        }
       }
-      .id(bot.id)
+      Divider()
+      MoveToSectionMenu(
+        currentSectionID: section, sections: sections, move: { actions.moveBot(bot.id, $0) },
+        newSection: { actions.newSection(bot) })
+      Divider()
+      if actions.canArchive(bot) {
+        Button {
+          actions.archive(bot)
+        } label: {
+          Label("Archive", systemImage: "archivebox")
+            .labelStyle(.titleAndIcon)
+        }
+        .shortcut(.archiveWorkspace)
+      } else {
+        deleteButton(bot)
+      }
+    }
+    .id(bot.id)
   }
 
   private func archivedBotRow(_ conversation: BotConversation) -> some View {

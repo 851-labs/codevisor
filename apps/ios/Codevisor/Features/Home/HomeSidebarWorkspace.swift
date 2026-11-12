@@ -11,6 +11,7 @@ struct HomeSidebarWorkspace: Identifiable, Equatable {
   var subtitle: String? = nil
   var rowStatus: SidebarRowStatus? = nil
   var asking: HomeSidebarWorkspaceRef? = nil
+  var showsStatusLabel = false
   var machine: HomeSidebarRowMachine? = nil
   var pullRequest: ServerGitPullRequest? = nil
   var leadingRow: HomeSidebarTabRow? = nil
@@ -23,6 +24,8 @@ struct HomeSidebarWorkspace: Identifiable, Equatable {
   var children: [HomeSidebarWorkspace] = []
 
   var displayName: String { name.isEmpty ? "Workspace" : name }
+
+  var statusLabel: SidebarRowStatus? { showsStatusLabel ? rowStatus : nil }
 
   var status: HomeSessionStatus { rows.map(\.status).min() ?? .idle }
 

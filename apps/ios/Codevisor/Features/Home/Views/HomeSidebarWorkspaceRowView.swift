@@ -161,8 +161,8 @@ struct HomeSidebarWorkspaceRowView: View, Equatable {
       VStack(alignment: .leading, spacing: 2) {
         HomeSidebarRowTitle(title: workspace.displayName)
           .lineLimit(dynamicTypeSize.isAccessibilitySize ? 2 : 1)
-        if workspace.subtitle != nil || workspace.rowStatus != nil {
-          SidebarRowStatusSubtitle(status: workspace.rowStatus, subtitle: workspace.subtitle) { text in
+        if workspace.subtitle != nil || workspace.statusLabel != nil {
+          SidebarRowStatusSubtitle(status: workspace.statusLabel, subtitle: workspace.subtitle) { text in
             HomeSidebarRowSubtitle(text: text)
           }
         }

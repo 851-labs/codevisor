@@ -58,8 +58,8 @@ struct HomeSidebarBotRowView: View, Equatable {
   private var compactRow: some View {
     HStack(spacing: 10) {
       label
-      if let status = bot.rowStatus {
-        SidebarRowStatusLabel(status: status)
+      if let status = bot.rowStatus, SidebarBotStatusBadge.isVisible(status, showsLabel: bot.showsStatusLabel) {
+        SidebarBotStatusBadge(status: status, showsLabel: bot.showsStatusLabel)
       }
       if let machine = bot.machine {
         HomeSidebarSymbol(name: machine.systemImage)

@@ -64,11 +64,17 @@ public enum SidebarRowStatus: Equatable, Sendable {
     }
   }
 
+  public var isAnimated: Bool {
+    switch self {
+    case .working, .settingUp: true
+    case .input, .approval, .waiting, .failed, .limited: false
+    }
+  }
+
   public func replacesLeadingIcon(isUnread: Bool) -> Bool {
     switch self {
-    case .input, .approval, .failed, .limited: true
     case .waiting: !isUnread
-    case .working, .settingUp: false
+    default: !isAnimated
     }
   }
 

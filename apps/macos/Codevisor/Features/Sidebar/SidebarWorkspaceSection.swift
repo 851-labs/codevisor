@@ -97,6 +97,7 @@ struct SidebarRowContent {
       name: workspace.name,
       subtitle: subtitle(for: workspace, isPinned: isPinned),
       status: status,
+      showsStatusLabel: rowDetails.contains(.status),
       icon: icon(for: item, isQuiet: isQuiet),
       pullRequest: pullRequest(for: workspace),
       machine: machine(for: workspace, headingNamesMachine: headingNamesMachine)

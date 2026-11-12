@@ -4,6 +4,7 @@ import SwiftUI
 struct BotConversationTitleLine: View {
   let name: String
   var status: SidebarRowStatus? = nil
+  var showsStatusLabel = false
 
   var body: some View {
     HStack(spacing: 6) {
@@ -12,9 +13,9 @@ struct BotConversationTitleLine: View {
         .foregroundStyle(.primary)
         .lineLimit(1)
         .truncationMode(.tail)
-      if let status {
+      if let status, SidebarBotStatusBadge.isVisible(status, showsLabel: showsStatusLabel) {
         Spacer(minLength: 0)
-        SidebarRowStatusLabel(status: status)
+        SidebarBotStatusBadge(status: status, showsLabel: showsStatusLabel)
       }
     }
   }

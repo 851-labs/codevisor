@@ -39,7 +39,7 @@ struct HomeSidebarContentBuilder {
     let archivedIDs = Set(environment.navigationStore.workspaceEntries.archived.map(\.id))
     let tree = SidebarWorkspaceTree(
       listedItems, pinnedIDs: preferences.pinnedIDs, hiddenParentIDs: homes.union(archivedIDs))
-    let statuses = preferences.rowDetails.contains(.status) ? HomeSidebarStatusSource(environment: environment) : nil
+    let statuses = HomeSidebarStatusSource(environment: environment)
     var content = HomeSidebarContent.make(
       listed: tree.roots,
       children: tree.children,
@@ -87,7 +87,8 @@ struct HomeSidebarContentBuilder {
       canFork: environment.bots.supportsFork(on: bot.serverId),
       sectionID: environment.botSections.membership[bot.id],
       rowStatus: rowStatus?.status,
-      asking: rowStatus?.asking
+      asking: rowStatus?.asking,
+      showsStatusLabel: preferences.rowDetails.contains(.status)
     )
   }
 
@@ -147,6 +148,7 @@ struct HomeSidebarContentBuilder {
       ),
       rowStatus: rowStatus?.status,
       asking: rowStatus?.asking,
+      showsStatusLabel: details.contains(.status),
       machine: details.contains(.machine) && heading?.namesMachine != true
         ? rowMachine(serverId: workspace.serverId) : nil,
       pullRequest: details.contains(.pullRequest) ? gitLookups.pullRequest(for: workspace) : nil,

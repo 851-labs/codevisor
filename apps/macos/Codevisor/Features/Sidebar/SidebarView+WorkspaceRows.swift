@@ -17,9 +17,8 @@ extension SidebarView {
     }
   }
 
-  private var rowStatuses: SidebarRowStatuses? {
-    guard rowDetails.contains(.status) else { return nil }
-    return SidebarRowStatusSource(environment: environment, store: store).statuses
+  private var rowStatuses: SidebarRowStatuses {
+    SidebarRowStatusSource(environment: environment, store: store).statuses
   }
 
   private static func placementsNamingMachine(in rows: [SidebarRow]) -> Set<SidebarRow.Placement> {
@@ -34,7 +33,7 @@ extension SidebarView {
   private func workspaceRegionRow(
     _ row: SidebarRow, selected: SidebarRowID?,
     actions: SidebarWorkspaceSection.Actions, namingMachine: Set<SidebarRow.Placement>, sections: [CustomSection],
-    membership: [UUID: UUID], statuses: SidebarRowStatuses?
+    membership: [UUID: UUID], statuses: SidebarRowStatuses
   ) -> some View {
     switch row.kind {
     case let .section(.pinned, isExpanded):
@@ -65,7 +64,7 @@ extension SidebarView {
     case let .workspace(item, placement):
       SidebarWorkspaceSection(
         item: item, store: store, grouping: grouping, rowDetails: rowDetails,
-        status: statuses?.status(of: item.id),
+        status: statuses.status(of: item.id),
         isSelected: selected == row.id,
         isPinned: placement == .pinned, headingNamesMachine: namingMachine.contains(placement),
         isReordering: isReordering,

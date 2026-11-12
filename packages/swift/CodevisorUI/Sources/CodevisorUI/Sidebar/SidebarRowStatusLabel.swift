@@ -3,10 +3,12 @@ import SwiftUI
 public struct SidebarRowStatusLabel: View {
   let status: SidebarRowStatus
   let showsIcon: Bool
+  let showsText: Bool
 
-  public init(status: SidebarRowStatus, showsIcon: Bool = true) {
+  public init(status: SidebarRowStatus, showsIcon: Bool = true, showsText: Bool = true) {
     self.status = status
     self.showsIcon = showsIcon
+    self.showsText = showsText
   }
 
   public var body: some View {
@@ -15,9 +17,11 @@ public struct SidebarRowStatusLabel: View {
         Image(systemName: status.systemImage)
           .imageScale(.small)
       }
-      Text(status.title)
-      if let since = status.workingSince {
-        SidebarElapsedText(since: since)
+      if showsText {
+        Text(status.title)
+        if let since = status.workingSince {
+          SidebarElapsedText(since: since)
+        }
       }
     }
     .font(.caption2.weight(.medium))

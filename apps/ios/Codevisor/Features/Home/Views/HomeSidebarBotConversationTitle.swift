@@ -4,6 +4,7 @@ import SwiftUI
 struct HomeSidebarBotConversationTitle: View {
   let name: String
   var status: SidebarRowStatus? = nil
+  var showsStatusLabel = false
   let showsChevron: Bool
 
   var body: some View {
@@ -12,8 +13,8 @@ struct HomeSidebarBotConversationTitle: View {
         .fontWeight(.semibold)
         .lineLimit(1)
       Spacer(minLength: 0)
-      if let status {
-        SidebarRowStatusLabel(status: status)
+      if let status, SidebarBotStatusBadge.isVisible(status, showsLabel: showsStatusLabel) {
+        SidebarBotStatusBadge(status: status, showsLabel: showsStatusLabel)
       }
       if showsChevron {
         Image(systemName: "chevron.forward")

@@ -12,6 +12,7 @@ struct HomeSidebarBot: Identifiable, Equatable {
   var sectionID: UUID?
   var rowStatus: SidebarRowStatus? = nil
   var asking: HomeSidebarWorkspaceRef? = nil
+  var showsStatusLabel = false
 
   var id: UUID { bot.id }
 

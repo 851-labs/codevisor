@@ -22,9 +22,8 @@ struct BotListSidebar: View {
 
   private var sections: CustomSectionStore { environment.botSections }
 
-  private var statuses: SidebarRowStatuses? {
-    guard ClientPreferences.shared.isSidebarRowDetailShown(.status) else { return nil }
-    return SidebarRowStatusSource(environment: environment, store: store).statuses
+  private var statuses: SidebarRowStatuses {
+    SidebarRowStatusSource(environment: environment, store: store).statuses
   }
 
   private func rows(_ conversations: [BotConversation]) -> [BotSidebarRow] {
@@ -108,6 +107,7 @@ struct BotListSidebar: View {
     } else {
       BotConversationRows(
         rows: rows(conversations), sections: sections.sections, selectedBotID: selectedBotID, statuses: statuses,
+        showsStatusLabel: ClientPreferences.shared.isSidebarRowDetailShown(.status),
         actions: rowActions)
     }
   }
