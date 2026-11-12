@@ -319,6 +319,7 @@ describe.sequential("sandboxes, clients, status, and typed errors", () => {
         const child = await agents.start({ title: "t", prompt: "p", checkout: "worktree", machine: "MacBook Pro" });
         await child.message("also the tests");
         await child.debug.search({ query: "error" });
+        await child.archive();
         await agents.status({ agentId: "a" });
         await plugins.list();
         const refused = await plugins.list({ machine: "mbp-1" }).catch((error) => error.message);
@@ -350,6 +351,7 @@ describe.sequential("sandboxes, clients, status, and typed errors", () => {
       ["codevisor.agents.start", { title: "t", prompt: "p", checkout: "worktree" }, remoteTarget],
       ["codevisor.agents.message", { text: "also the tests", agentId: "child" }, remoteTarget],
       ["codevisor.agents.debug.search", { query: "error", agentId: "child" }, remoteTarget],
+      ["codevisor.agents.archive", { agentId: "child" }, remoteTarget],
       ["codevisor.agents.status", { agentId: "a" }, undefined],
       ["codevisor.plugins.list", {}, undefined]
     ])
