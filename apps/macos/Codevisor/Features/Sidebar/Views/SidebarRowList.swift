@@ -19,7 +19,7 @@ struct SidebarRowList<Row: Equatable, ID: Hashable, Content: View>: View {
   }
 
   var body: some View {
-    let displayed = isPrimed ? shown : rows.map { Shown(id: id($0), row: $0, visibility: .shown) }
+    let displayed = displayed
     SidebarRowStack(spacing: spacing, progress: progress, batch: batch) {
       ForEach(displayed) { item in
         content(item.row)
@@ -37,9 +37,19 @@ struct SidebarRowList<Row: Equatable, ID: Hashable, Content: View>: View {
     }
   }
 
+  private var displayed: [Shown] {
+    guard isPrimed else { return rows.map { Shown(id: id($0), row: $0, visibility: .shown) } }
+
+    return holdingCurrentRows(shown)
+  }
+
   private func refresh() {
+    shown = holdingCurrentRows(shown)
+  }
+
+  private func holdingCurrentRows(_ kept: [Shown]) -> [Shown] {
     let current = Dictionary(rows.map { (id($0), $0) }, uniquingKeysWith: { first, _ in first })
-    shown = shown.map { Shown(id: $0.id, row: current[$0.id] ?? $0.row, visibility: $0.visibility) }
+    return kept.map { Shown(id: $0.id, row: current[$0.id] ?? $0.row, visibility: $0.visibility) }
   }
 
   private func reconcile() {
