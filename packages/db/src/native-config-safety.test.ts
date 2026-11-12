@@ -167,14 +167,12 @@ describe("native config safety", () => {
       insertChatText.run("part-b-original", "item-b-original", "original prompt B")
       insertChatText.run("part-b-fork", "item-b-fork", "fork prompt B")
       sqlite.exec(`
-      alter table sessions add column is_archived integer not null default 0;
-      alter table sessions add column archived_at text;
       alter table sessions add column archive_cascade_from text;
       alter table projects add column is_archived integer not null default 0;
       alter table projects add column archived_at text;
       alter table workspaces add column archive_cascade_from text;
       alter table archived_worktrees drop column state;
-      delete from schema_migrations where id in (30, 50);
+      delete from schema_migrations where id in (30, 50, 100);
     `)
     } finally {
       sqlite.close()

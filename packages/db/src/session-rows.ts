@@ -21,6 +21,8 @@ export interface SessionRow {
   readonly worktree_name: string | null
   readonly workspace_id: string | null
   readonly checkout_id?: string | null
+  readonly is_archived?: number
+  readonly archived_at?: string | null
   readonly created_at: string
   readonly updated_at: string | null
   readonly sidebar_state: SessionSidebarState
@@ -95,6 +97,8 @@ export const sessionRows = rowReader<SessionRow>({
   worktree_name: nullable(text),
   workspace_id: nullable(text),
   checkout_id: optional(nullable(text)),
+  is_archived: optional(integer),
+  archived_at: optional(nullable(text)),
   created_at: text,
   updated_at: nullable(text),
   sidebar_state: Schema.is(SessionSidebarState),
