@@ -27,8 +27,7 @@ struct TranscriptEarlierHistoryCollapseTargetTests {
     func target(rowsMatching role: TranscriptWorkedSectionRowRole) -> TranscriptWorkedSectionIdentity? {
       let rows = TranscriptWorkedRowsVisibility.present(
         TranscriptActiveRowProjection.rows(for: .assistant(message)),
-        disclosure: store,
-        activeItem: .assistant(message)
+        disclosure: store
       ).rows
       let layout = VirtualTranscriptLayout(
         items: rows.map { .init(key: $0.layoutKey, estimatedHeight: 20) },

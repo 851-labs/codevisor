@@ -50,11 +50,7 @@ public final class TranscriptWorkedRowsVisibilityCache {
       disclosureRevision: disclosure.workedSectionRevision
     )
     if key == currentKey, let presentation { return presentation }
-    let presentation = TranscriptWorkedRowsVisibility.present(
-      rows,
-      disclosure: disclosure,
-      activeItem: nil
-    )
+    let presentation = TranscriptWorkedRowsVisibility.present(rows, disclosure: disclosure)
     key = currentKey
     self.presentation = presentation
     return presentation
@@ -63,26 +59,9 @@ public final class TranscriptWorkedRowsVisibilityCache {
 
 @MainActor
 public enum TranscriptWorkedRowsVisibility {
-  public static func presentActive(
-    _ rows: [TranscriptPresentationRow],
-    disclosure: TranscriptDisclosureStore,
-    controller: SessionController
-  ) -> TranscriptWorkedRowsPresentation {
-    present(rows, disclosure: disclosure, ticking: controller.activeWorkedTicking)
-  }
-
   public static func present(
     _ rows: [TranscriptPresentationRow],
-    disclosure: TranscriptDisclosureStore,
-    activeItem: ConversationItem?
-  ) -> TranscriptWorkedRowsPresentation {
-    present(rows, disclosure: disclosure, ticking: TranscriptActiveWorkedTicking(activeItem))
-  }
-
-  public static func present(
-    _ rows: [TranscriptPresentationRow],
-    disclosure: TranscriptDisclosureStore,
-    ticking: TranscriptActiveWorkedTicking?
+    disclosure: TranscriptDisclosureStore
   ) -> TranscriptWorkedRowsPresentation {
     var result: [TranscriptPresentationRow] = []
     result.reserveCapacity(rows.count)
@@ -97,34 +76,13 @@ public enum TranscriptWorkedRowsVisibility {
       }
       switch membership.role {
       case let .header(defaultExpanded, isFixedExpanded):
-        let isLive = ticks(row, kind: membership.identity.kind, ticking: ticking) ?? isFixedExpanded
-        let expanded =
-          isLive
-          || disclosure.isExpanded(
-            membership.identity.kind.disclosureKey(
-              messageID: membership.identity.messageID
-            ),
-            default: defaultExpanded
-          )
-        expansion[membership.identity] = expanded
-        if disclosure.isExpanded(
-          membership.identity.kind.earlierHistoryDisclosureKey(
-            messageID: membership.identity.messageID
-          ),
-          default: false
-        ) {
-          revealedEarlierHistory.insert(membership.identity)
-        }
+        let section = membership.identity
+        expansion[section] = isFixedExpanded || isExpanded(section, default: defaultExpanded, in: disclosure)
+        if revealsEarlierHistory(of: section, in: disclosure) { revealedEarlierHistory.insert(section) }
         result.append(row)
       case .earlierHistoryToggle, .earlierHistory, .content:
         let revealsEarlier = revealedEarlierHistory.contains(membership.identity)
-        let visibleInSection: Bool =
-          switch membership.role {
-          case .earlierHistoryToggle: !revealsEarlier
-          case .earlierHistory: revealsEarlier
-          default: true
-          }
-        if visibleInSection, expansion[membership.identity] ?? true {
+        if isVisible(membership.role, revealsEarlier: revealsEarlier), expansion[membership.identity] ?? true {
           result.append(row)
         } else if case let .markdownChunk(chunk) = row.content, chunk.lifecycle == .receiving {
           hiddenStreamIDs.append(chunk.animationStreamID)
@@ -146,18 +104,26 @@ public enum TranscriptWorkedRowsVisibility {
     )
   }
 
-  private static func ticks(
-    _ row: TranscriptPresentationRow,
-    kind: TranscriptWorkedSectionKind,
-    ticking: TranscriptActiveWorkedTicking?
-  ) -> Bool? {
-    switch row.content {
-    case let .assistantWorkedHeader(header):
-      header.message.turn.workedSectionTicks(kind)
-    case let .activeWorkedHeader(header):
-      ticking?.ticks(kind, messageID: header.messageID)
-    default:
-      nil
+  private static func isExpanded(
+    _ section: TranscriptWorkedSectionIdentity,
+    default defaultExpanded: Bool,
+    in disclosure: TranscriptDisclosureStore
+  ) -> Bool {
+    disclosure.isExpanded(section.kind.disclosureKey(messageID: section.messageID), default: defaultExpanded)
+  }
+
+  private static func revealsEarlierHistory(
+    of section: TranscriptWorkedSectionIdentity,
+    in disclosure: TranscriptDisclosureStore
+  ) -> Bool {
+    disclosure.isExpanded(section.kind.earlierHistoryDisclosureKey(messageID: section.messageID), default: false)
+  }
+
+  private static func isVisible(_ role: TranscriptWorkedSectionRowRole, revealsEarlier: Bool) -> Bool {
+    switch role {
+    case .earlierHistoryToggle: !revealsEarlier
+    case .earlierHistory: revealsEarlier
+    case .header, .content: true
     }
   }
 }
@@ -165,9 +131,7 @@ public enum TranscriptWorkedRowsVisibility {
 public struct TranscriptWorkedSectionHeaderView: View {
   static let lineHeight: CGFloat = 18
 
-  public let turn: AssistantTurn
-  public let messageID: UUID
-  public let kind: TranscriptWorkedSectionKind
+  public let header: TranscriptWorkedSectionHeader
 
   @Environment(\.transcriptDisclosure) private var disclosureStore
   @Environment(\.transcriptPerformAnchoredDisclosureChange)
@@ -175,57 +139,40 @@ public struct TranscriptWorkedSectionHeaderView: View {
   @Environment(\.transcriptInvalidateRowMeasurement) private var invalidateRowMeasurement
   @State private var smoother = WorkedActivityLabelSmoother()
 
-  public init(
-    turn: AssistantTurn,
-    messageID: UUID,
-    kind: TranscriptWorkedSectionKind
-  ) {
-    self.turn = turn
-    self.messageID = messageID
-    self.kind = kind
+  public init(header: TranscriptWorkedSectionHeader) {
+    self.header = header
   }
 
   public var body: some View {
-    if hasContent, !turn.workedSectionTicks(kind) {
+    if header.hasContent, !header.isWorking {
       Button(action: toggle) {
-        header(showsChevron: true)
+        row(showsChevron: true)
           .contentShape(Rectangle())
       }
       .buttonStyle(TranscriptWorkedSectionButtonStyle())
     } else {
-      header(showsChevron: false)
-    }
-  }
-
-  private var hasContent: Bool {
-    if turn.defersWorkedSection(kind) { return true }
-    switch kind {
-    case .planning: return !turn.workedItemsBeforePlan.isEmpty
-    case .implementation: return !turn.workedItemsAfterPlan.isEmpty
+      row(showsChevron: false)
     }
   }
 
   private var store: TranscriptDisclosureStore { disclosureStore ?? .previews }
 
   private var disclosureKey: TranscriptDisclosureStore.Key {
-    kind.disclosureKey(messageID: messageID)
+    header.kind.disclosureKey(messageID: header.messageID)
   }
 
   private var isExpanded: Bool {
-    turn.workedSectionTicks(kind)
-      || store.isExpanded(disclosureKey, default: false)
+    header.isWorking || store.isExpanded(disclosureKey, default: false)
   }
 
   @ViewBuilder
-  private func header(showsChevron: Bool) -> some View {
+  private func row(showsChevron: Bool) -> some View {
     HStack(spacing: 6) {
       label
       if showsChevron {
         TranscriptWorkedDisclosureIndicator(
           expanded: isExpanded,
-          deferredDetailItemID: turn.hasDeferredWorkedDetails
-            ? turn.deferredDetailItemId
-            : nil
+          deferredDetailItemID: header.deferredDetailItemID
         )
       }
       Spacer(minLength: 0)
@@ -240,16 +187,16 @@ public struct TranscriptWorkedSectionHeaderView: View {
 
   @ViewBuilder
   private var label: some View {
-    if turn.workedSectionTicks(kind) {
-      liveLabel
-    } else {
-      Text(turn.workedSectionTitle(kind, now: Date()))
+    switch header.progress {
+    case let .working(start, activity):
+      liveLabel(start: start, activity: activity)
+    case let .worked(title):
+      Text(title)
     }
   }
 
   @ViewBuilder
-  private var liveLabel: some View {
-    let activity = turn.workedSectionActivity
+  private func liveLabel(start: Date?, activity: WorkedSectionActivity) -> some View {
     let shown = smoother.shown ?? WorkedActivityLabelSmoother.initial(activity)
     Group {
       switch shown {
@@ -259,12 +206,12 @@ public struct TranscriptWorkedSectionHeaderView: View {
           .truncationMode(.tail)
           .shimmering()
           .accessibilityLabel(step)
-        TranscriptWorkingDurationLabel(turn: turn, kind: kind)
+        TranscriptWorkingDurationLabel(start: start)
           .fixedSize()
       case .step, .writing, .pending, .starting:
-        TranscriptWorkingDurationLabel(turn: turn, kind: kind, prefix: .working)
+        TranscriptWorkingDurationLabel(start: start, prefix: .working)
       case .answering:
-        TranscriptWorkingDurationLabel(turn: turn, kind: kind, prefix: .worked)
+        TranscriptWorkingDurationLabel(start: start, prefix: .worked)
       }
     }
     .modifier(WorkedActivitySmoothing(activity: activity, smoother: $smoother))
@@ -338,14 +285,13 @@ private struct TranscriptWorkingDurationLabel: View {
     case worked
   }
 
-  let turn: AssistantTurn
-  let kind: TranscriptWorkedSectionKind
+  let start: Date?
   var prefix = Prefix.none
   @State private var now = Date()
 
   var body: some View {
-    label(turn.workedSectionElapsed(kind, now: now))
-      .task(id: turn.workedSectionStart(kind)) {
+    label(AssistantTurn.formatWorkedDuration(now.timeIntervalSince(start ?? now)))
+      .task(id: start) {
         now = Date()
         while !Task.isCancelled {
           try? await Task.sleep(for: .seconds(1))

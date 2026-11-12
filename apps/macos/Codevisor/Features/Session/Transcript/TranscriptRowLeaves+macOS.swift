@@ -46,16 +46,6 @@ extension TranscriptRowLeaves {
       botMessage: { message, content in
         AnyView(BotMessageView(message: message, content: content))
       },
-      workedItem: { item, _, turnID, isTurnActive, animationPresentation, animationEnabled in
-        AnyView(
-          TranscriptItemsView(
-            items: [item],
-            turnID: turnID,
-            isTurnActive: isTurnActive,
-            animationPresentation: animationPresentation,
-            animationEnabled: animationEnabled
-          ))
-      },
       attachmentThumbnail: { file in
         AnyView(AttachmentThumbnailView(file: file))
       },

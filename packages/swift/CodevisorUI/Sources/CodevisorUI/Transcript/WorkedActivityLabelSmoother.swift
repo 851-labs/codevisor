@@ -2,41 +2,6 @@ import ACPKit
 import Foundation
 import TranscriptKit
 
-enum WorkedSectionActivity: Equatable {
-  case step(String)
-  case answering
-  case writing
-  case pending
-  case starting
-}
-
-extension AssistantTurn {
-  var workedSectionActivity: WorkedSectionActivity {
-    var label: String
-    if let activity = AssistantTurnActivity.resolve(
-      turn: self, isWaitingOnUser: false, sessionActivity: nil, backgroundTask: nil,
-      goalActivity: nil),
-      !activity.followsResponse
-    {
-      label = activity.message
-    } else if case let awaited = awaitedAgentCalls, !awaited.isEmpty {
-      label = WorkedTimelineText.waiting(for: awaited)
-    } else if let running = toolCalls.last(where: { !$0.isSettled && !isUnstartedSubagent($0) }) {
-      label = running.displayTitle
-      guard running.rawInput != nil || label.contains(" ") else { return .pending }
-    } else if finalText == nil {
-      guard hasProviderContent else { return .starting }
-      label = "Thinking"
-    } else {
-      return finalTextIsAsserted ? .answering : .writing
-    }
-    while let last = label.last, last == "…" || last == "." {
-      label.removeLast()
-    }
-    return .step(label)
-  }
-}
-
 struct WorkedActivityLabelSmoother: Equatable {
   static let settleInterval: TimeInterval = 0.3
   static let refreshInterval: TimeInterval = 1.2

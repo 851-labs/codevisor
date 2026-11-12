@@ -252,10 +252,8 @@ public struct TranscriptPresentationRow: Identifiable, Equatable, Sendable {
     case planDocument(String)
     case planHeader(lifecycle: TranscriptBlockLifecycle)
     case assistantResult(AssistantMessage, waitingOnBackgroundTask: String?)
-    case assistantWorkedHeader(TranscriptWorkedSectionHeader)
-    case activeWorkedHeader(TranscriptActiveWorkedSectionHeader)
-    case assistantWorkedItem(TranscriptSettledWorkedItem)
-    case activeWorkedItem(TranscriptWorkedItemReference)
+    case workedHeader(TranscriptWorkedSectionHeader)
+    case workedLine(TranscriptWorkedLine)
     case assistantChrome(
       AssistantMessage,
       slice: TranscriptAssistantChromeSlice,

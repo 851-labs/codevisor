@@ -258,6 +258,10 @@ public struct AssistantTurn: Sendable, Equatable {
       let start = workedSectionStart(kind) ?? now
       return "Working for \(Self.formatWorkedDuration(now.timeIntervalSince(start)))"
     }
+    return workedSectionSettledTitle(kind)
+  }
+
+  public func workedSectionSettledTitle(_ kind: TranscriptWorkedSectionKind) -> String {
     guard let duration = workedSectionDuration(kind) else {
       return isSplitByPlan ? "Worked" : "Worked for a moment"
     }

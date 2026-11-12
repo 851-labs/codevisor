@@ -23,7 +23,9 @@
       working.entries = [.tool(ToolCall(toolCallId: "ls", title: "Ran ls", kind: .execute, status: .completed))]
 
       let headers = [answering, working].map {
-        height(TranscriptWorkedSectionHeaderView(turn: $0, messageID: UUID(), kind: .planning))
+        height(
+          TranscriptWorkedSectionHeaderView(
+            header: .init(message: AssistantMessage(turn: $0), kind: .planning, items: $0.workedItemsBeforePlan)))
       }
       let openingLines = [fresh, retrying, compacting].map { turn in
         height(

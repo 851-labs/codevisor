@@ -139,18 +139,9 @@ enum WorkedTimelineText {
   static func title(calls: [ToolCall], agents: [ToolCall], awaited: [ToolCall]) -> String {
     guard calls.isEmpty else { return ToolCallSummary.describe(calls) }
     let waitedOn = agents.filter { agent in awaited.contains { $0.toolCallId == agent.toolCallId } }
-    if !waitedOn.isEmpty { return waiting(for: waitedOn) }
+    if !waitedOn.isEmpty { return WorkedSectionActivity.waitingLabel(for: waitedOn) }
     let verb = agents.allSatisfy { $0.runsInBackground || !$0.isSettled } ? "Started" : "Ran"
     return agents.count == 1 ? "\(verb) an agent" : "\(verb) \(agents.count) agents"
-  }
-
-  static func waiting(for agents: [ToolCall]) -> String {
-    let names = agents.map(\.agentName)
-    switch names.count {
-    case 1: return "Waiting for \(names[0])"
-    case 2: return "Waiting for \(names[0]) and \(names[1])"
-    default: return "Waiting for \(names.count) agents"
-    }
   }
 }
 
