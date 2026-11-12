@@ -51,7 +51,11 @@ final class ScreenSharingHostService {
     let attempt = [.start, .restart].contains(request.operation) ? registerStart(request) : nil
     defer { if let attempt { pendingStarts.removeValue(forKey: attempt) } }
     installObservers()
-    if lease.isExpired(now: ProcessInfo.processInfo.systemUptime), let current { await end(current) }
+    if lease.isExpired(now: ProcessInfo.processInfo.systemUptime), let current {
+      Self.logger.notice(
+        "Lease expired: no heartbeat or media connection from the viewer for \(Int(ScreenSharingHostLease.lifetime)) s")
+      await end(current)
+    }
     guard !isShutdown else { return .init(status: "stopped") }
     if let attempt, Task.isCancelled || pendingStarts[attempt] == nil { return .init(status: "stopped") }
     switch request.operation {
@@ -262,12 +266,26 @@ final class ScreenSharingHostService {
       while !Task.isCancelled {
         do { try await Task.sleep(for: .milliseconds(250)) } catch { return }
         guard let self, let session, self.current === session else { return }
-        session.control?.checkDeadline()
-        session.clipboard?.tick()
-        if session.state == "viewing", session.control?.lease != nil { session.clipboard?.poll() }
-        if self.lease.isExpired(now: ProcessInfo.processInfo.systemUptime) { await self.end(session); return }
+        guard await self.watch(session) else { return }
       }
     }
+  }
+
+  func renewLease(for session: ScreenSharingHostSession) {
+    guard current === session else { return }
+    _ = lease.renew(session.owner, now: ProcessInfo.processInfo.systemUptime)
+  }
+
+  private func watch(_ session: ScreenSharingHostSession) async -> Bool {
+    let now = ProcessInfo.processInfo.systemUptime
+    session.control?.checkDeadline()
+    session.clipboard?.tick()
+    if session.state == "viewing", session.control?.lease != nil { session.clipboard?.poll() }
+    guard lease.isExpired(now: now) else { return true }
+    Self.logger.notice(
+      "Lease expired: no heartbeat or media connection from the viewer for \(Int(ScreenSharingHostLease.lifetime)) s")
+    await end(session)
+    return false
   }
 
   private func startViewing(_ session: ScreenSharingHostSession) async {
@@ -310,8 +328,8 @@ final class ScreenSharingHostService {
     session.control?.revoke("Screen sharing ended.")
     session.clipboard?.cancel(reason: "Screen sharing ended.")
     let metrics = session.metrics.snapshot()
-    Self.logger.info(
-      "Host ended: \(session.state, privacy: .public), \(String(describing: metrics.counters), privacy: .public), \(String(describing: metrics.labels), privacy: .public)"
+    Self.logger.notice(
+      "Host ended (\(reason ?? "stopped", privacy: .public)): \(session.state, privacy: .public), \(String(describing: metrics.counters), privacy: .public), \(String(describing: metrics.labels), privacy: .public)"
     )
     session.watchdog?.cancel()
     session.mediaAccept?.cancel()

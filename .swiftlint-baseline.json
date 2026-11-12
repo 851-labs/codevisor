@@ -1220,9 +1220,9 @@
       "location": {
         "character": 11,
         "file": "packages/swift/CodevisorCoreMac/Sources/CodevisorCoreMac/ScreenSharing/ScreenSharingHostService.swift",
-        "line": 204
+        "line": 208
       },
-      "reason": "Function body should span 50 lines or less excluding comments and whitespace: currently spans 65 lines",
+      "reason": "Function body should span 50 lines or less excluding comments and whitespace: currently spans 62 lines",
       "ruleDescription": "Function bodies should not span too many lines",
       "ruleIdentifier": "function_body_length",
       "ruleName": "Function Body Length",

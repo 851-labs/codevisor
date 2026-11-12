@@ -4,6 +4,7 @@ import CodevisorTestSupport
 import CustomDump
 import Foundation
 import ScreenSharingTesting
+import ScreenSharingV2
 import Testing
 @testable import CodevisorCoreMac
 
@@ -31,6 +32,7 @@ struct NativeScreenSharingViewerBackendTests {
     harness.surfaces[0].present()
     await awaitObserved { harness.log.events.count >= 2 }
     expectNoDifference(harness.log.events, [.opened(endpoint), .ready])
+    #expect(harness.sessions[0].metrics.snapshot().labels["connectTime"]?.hasPrefix("0.0 s (reach 0.0") == true)
     await harness.cancelConsumers()
     await harness.transport.stopped.wait()
     #expect(harness.sessions[0].closed && harness.surfaces[0].stopped)
@@ -52,7 +54,8 @@ struct NativeScreenSharingViewerBackendTests {
     await harness.transport.stopped.wait()
     let requests = await harness.transport.requests
     expectNoDifference(
-      requests.map(\.operation), [.capabilities, .capabilities, .start, .heartbeat, .stop])
+      requests.map(\.operation), [.capabilities, .start, .heartbeat, .stop],
+      "the connect reuses the capabilities discovery just fetched")
     #expect(requests.allSatisfy { $0.displayId == target })
   }
 
@@ -173,50 +176,111 @@ struct NativeScreenSharingViewerBackendTests {
     #expect(harness.clock.pendingCount == 0)
   }
 
-  @Test func missingVideoTimesOutAndALateFirstFrameCannotReviveTheConnection() async throws {
+  @Test func aConnectWithoutVideoSaysWhatItWaitsForThenFailsAtTheDeadline() async throws {
     let harness = NativeBackendHarness()
     harness.configureSession = { $0.deliversVideo = false }
     harness.connect()
-    for heartbeat in 1...2 {
-      await harness.clock.waitForSleep(.seconds(8), count: heartbeat)
-      harness.clock.advance(by: .seconds(8))
-    }
-    await harness.clock.waitForSleep(.seconds(8), count: 3)
-    #expect(harness.log.finished == 0)
-    harness.clock.advance(by: .seconds(7))
+    await harness.clock.waitForSleep(.seconds(8))
+    harness.clock.advance(by: ScreenSharingConnectStage.stillConnectingAfter)
+    await awaitObserved { harness.log.events.contains(.progress(.waitingForVideo)) }
+    await harness.clock.waitForSleep(.seconds(6))
+    harness.clock.advance(by: .seconds(5))
     #expect(harness.log.finished == 0)
     harness.clock.advance(by: .seconds(1))
     await awaitObserved { harness.log.finished == 1 }
-    #expect(
-      harness.log.events.last
-        == .ended("No video arrived. Check the connection between these Macs or the configured relay, then retry."))
+    let endpoint = try #require(harness.log.endpoints.first)
+    expectNoDifference(
+      harness.log.events,
+      [.opened(endpoint), .progress(.waitingForVideo), .ended(ScreenSharingConnectStage.waitingForVideo.failure)])
     harness.surfaces[0].present()
-    #expect(!harness.log.events.contains(.ready))
+    #expect(!harness.log.events.contains(.ready), "a late first frame can't revive the connection")
     #expect(harness.sessions[0].closed)
     #expect(harness.clock.pendingCount == 0)
   }
 
-  @Test func aHostRecoveringItsCaptureHoldsOffTheMissingVideoTimeout() async throws {
-    let stalled = ServerScreenSharingReply(status: "connecting", message: "Capture stalled, restarting…")
+  @Test func aHandshakeTheHostNeverAnswersFailsAtTheDeadlineAndReleasesTheConnection() async throws {
+    let harness = NativeBackendHarness()
+    harness.configureSession = { $0.startHangs = true }
+    harness.connect()
+    await awaitObserved { !harness.log.endpoints.isEmpty }
+    #expect(harness.sessions[0].tokens == ["fixture token"], "the handshake is under way")
+    await harness.clock.waitForSleep(.seconds(4))
+    harness.clock.advance(by: .seconds(4))
+    await awaitObserved { harness.log.events.contains(.progress(.handshake)) }
+    await harness.clock.waitForSleep(.seconds(6))
+    harness.clock.advance(by: .seconds(6))
+    await awaitObserved { harness.log.finished == 1 }
+    #expect(harness.log.events.last == .ended(ScreenSharingConnectStage.handshake.failure))
+    #expect(harness.sessions[0].closed, "closing the session is what releases a handshake stuck in the network")
+    #expect(await harness.transport.requests.map(\.operation) == [.capabilities, .start, .stop])
+    #expect(harness.clock.pendingCount == 0)
+  }
+
+  @Test func aStartTheHostNeverAnswersFailsAtTheDeadlineWithoutWaitingForIt() async throws {
+    let harness = NativeBackendHarness(transport: SharingTransport(blockFirstStart: true))
+    harness.connect()
+    await harness.transport.started.wait()
+    await harness.clock.waitForSleep(.seconds(4))
+    harness.clock.advance(by: .seconds(4))
+    await awaitObserved { harness.log.events == [.progress(.startingHost)] }
+    await harness.clock.waitForSleep(.seconds(6))
+    harness.clock.advance(by: .seconds(6))
+    await awaitObserved { harness.log.finished == 1 }
+    #expect(harness.log.events.last == .ended(ScreenSharingConnectStage.startingHost.failure))
+    #expect(harness.sessions.isEmpty)
+    #expect(await harness.transport.requests.map(\.operation) == [.capabilities, .start, .stop])
+    harness.transport.releaseFirstStart.signal()
+  }
+
+  @Test func aReconnectingTunnelGetsAShortGraceBeforeTheHostCountsAsUnreachable() async throws {
+    let tunnel = ServerRequestGate()
+    tunnel.beginWaiting(for: NativeBackendHarness.host)
+    let harness = NativeBackendHarness(tunnel: tunnel)
+    harness.connect()
+    await harness.clock.waitForSleep(.seconds(4))
+    harness.clock.advance(by: .seconds(4))
+    await awaitObserved { harness.log.events == [.progress(.reachingHost)] }
+    await harness.clock.waitForSleep(.seconds(6))
+    harness.clock.advance(by: .seconds(6))
+    await harness.clock.waitForSleep(ScreenSharingConnectStage.reconnectingTunnelGrace)
+    #expect(harness.log.finished == 0)
+    harness.clock.advance(by: .seconds(5))
+    await awaitObserved { harness.log.finished == 1 }
+    #expect(harness.log.events.last == .ended(ScreenSharingConnectStage.reachingHost.failure))
+    #expect(await harness.transport.requests.isEmpty, "nothing got past the reconnecting tunnel")
+  }
+
+  @Test func aHostRecoveringItsCaptureHoldsOffTheDeadlineUntilItStopsReporting() async throws {
+    let stalled = "Capture stalled, restarting…"
     let harness = NativeBackendHarness(
-      transport: SharingTransport(heartbeatReplies: [stalled, stalled, stalled, .init(status: "viewing")]))
+      transport: SharingTransport(
+        heartbeatReplies: [.init(status: "connecting", message: stalled), .init(status: "connecting")],
+        startNotice: stalled))
     harness.configureSession = { $0.deliversVideo = false }
     harness.connect()
-    for heartbeat in 1...5 {
-      await harness.clock.waitForSleep(.seconds(8), count: heartbeat)
-      harness.clock.advance(by: .seconds(8))
-    }
-    await harness.clock.waitForSleep(.seconds(8), count: 6)
-    await awaitObserved { harness.log.events.count >= 3 }
-    #expect(harness.log.finished == 0)
+    await harness.clock.waitForSleep(.seconds(8))
+    harness.clock.advance(by: .seconds(4))
+    await harness.clock.waitForSleep(.seconds(6))
+    harness.clock.advance(by: .seconds(4))
+    await harness.clock.waitForSleep(.seconds(8), count: 2)
+    harness.clock.advance(by: .seconds(2))
+    await harness.clock.waitForSleep(.seconds(8), count: 3)
+    #expect(harness.log.finished == 0, "the host is still reporting a recovery at the deadline")
+    harness.clock.advance(by: .seconds(6))
+    await harness.clock.waitForSleep(.seconds(8), count: 4)
+    harness.clock.advance(by: .seconds(2))
+    await harness.clock.waitForSleep(ScreenSharingConnectStage.deadline)
+    harness.clock.advance(by: .seconds(9))
+    #expect(harness.log.finished == 0, "the first frame gets a full deadline once the host stops reporting")
+    harness.clock.advance(by: .seconds(1))
+    await awaitObserved { harness.log.finished == 1 }
     let endpoint = try #require(harness.log.endpoints.first)
     expectNoDifference(
-      harness.log.events, [.opened(endpoint), .hostNotice("Capture stalled, restarting…"), .hostNotice(nil)])
-    harness.clock.advance(by: .seconds(8))
-    await awaitObserved { harness.log.finished == 1 }
-    #expect(
-      harness.log.events.last
-        == .ended("No video arrived. Check the connection between these Macs or the configured relay, then retry."))
+      harness.log.events,
+      [
+        .opened(endpoint), .hostNotice(stalled), .progress(.waitingForVideo), .hostNotice(nil),
+        .ended(ScreenSharingConnectStage.waitingForVideo.failure),
+      ])
   }
 
   @Test func aNoticeInTheStartReplyShowsWithoutWaitingForAHeartbeat() async throws {
@@ -229,23 +293,6 @@ struct NativeScreenSharingViewerBackendTests {
     #expect(await harness.transport.requests.map(\.operation) == [.capabilities, .start])
     await harness.cancelConsumers()
     await harness.transport.stopped.wait()
-  }
-
-  @Test func aFasterHeartbeatStillWaitsTheFullTimeForTheFirstFrame() async throws {
-    let harness = NativeBackendHarness(heartbeatInterval: .seconds(2))
-    harness.configureSession = { $0.deliversVideo = false }
-    harness.connect()
-    for heartbeat in 1...11 {
-      await harness.clock.waitForSleep(.seconds(2), count: heartbeat)
-      harness.clock.advance(by: .seconds(2))
-    }
-    await harness.clock.waitForSleep(.seconds(2), count: 12)
-    #expect(harness.log.finished == 0)
-    harness.clock.advance(by: .seconds(2))
-    await awaitObserved { harness.log.finished == 1 }
-    #expect(
-      harness.log.events.last
-        == .ended("No video arrived. Check the connection between these Macs or the configured relay, then retry."))
   }
 
   @Test func decoderFailureEndsViewingAtTheNextHeartbeat() async throws {

@@ -64,6 +64,13 @@ public final class ServerRequestGate: @unchecked Sendable {
     handler?(machineId)
   }
 
+  public func isWaiting(for machineId: String) -> Bool {
+    lock.withLock {
+      guard case .waiting = states[machineId] else { return false }
+      return true
+    }
+  }
+
   public func beginWaiting(for machineId: String) {
     lock.withLock {
       states[machineId] = .waiting

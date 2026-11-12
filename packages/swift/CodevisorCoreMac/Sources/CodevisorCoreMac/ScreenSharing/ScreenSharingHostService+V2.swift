@@ -16,6 +16,9 @@ extension ScreenSharingHostService {
 
     acceptV2(session, on: endpoint)
     let address = ScreenSharingMediaEndpoint.address(of: endpoint)
+    Self.logger.notice(
+      "Start granted to viewer \(String(session.owner.viewerId.uuidString.prefix(8)), privacy: .public) (relay \(address.relayUrl ?? "none", privacy: .public), \(address.directAddrs.count) direct)"
+    )
     return .connecting(
       .init(
         endpointId: address.endpointId, relayUrl: address.relayUrl, directAddrs: address.directAddrs,
@@ -26,13 +29,20 @@ extension ScreenSharingHostService {
     let v2 = session.v2
     let link = session.peer
     let ticket = ScreenSharingV2Acceptor.shared.expect(v2.viewerEndpointId, token: v2.token, on: endpoint)
+    let began = ContinuousClock.now
     session.mediaAccept = Task { [weak self, weak session] in
       do {
         let connection = try await ScreenSharingV2Acceptor.shared.connection(ticket, timeout: Self.v2AcceptTimeout)
+        if let self, let session { self.renewLease(for: session) }
+        Self.logger.notice(
+          "Viewer media connected in \(Self.milliseconds(since: began)) ms over \(connection.route.map { $0.isRelay ? "relay" : "direct" } ?? "an unknown route", privacy: .public)"
+        )
         try await link.accept(connection) { [weak session] token in
           guard let session, !session.stopping, token == v2.token else { return "This screen-sharing session ended." }
           return nil
         }
+        Self.logger.notice("Viewer media ready in \(Self.milliseconds(since: began)) ms")
+        if let self, let session { self.renewLease(for: session) }
       } catch {
         guard !Task.isCancelled, let self, let session else { return }
 

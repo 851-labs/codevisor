@@ -26,6 +26,7 @@ public final class ScreenSharingPaneModel {
 
   private(set) var stream: ScreenSharingStream?
   private var discoveryFailure: String?
+  private var discoveryStep: ScreenSharingConnectStage?
 
   static let hiddenGrace: Duration = .seconds(60)
 
@@ -36,6 +37,8 @@ public final class ScreenSharingPaneModel {
   @ObservationIgnored private var visible = false
   @ObservationIgnored private var lingering: Task<Void, Never>?
   @ObservationIgnored private var discovery: Task<Void, Never>?
+  @ObservationIgnored private var discoveryId: UUID?
+  @ObservationIgnored private var discovered: (began: ContinuousClock.Instant, reply: ServerScreenSharingReply)?
 
   public convenience init(
     client: any CodevisorServerClienting, preferences: ScreenSharingPanePreferences?, workspaceId: UUID,
@@ -76,6 +79,11 @@ public final class ScreenSharingPaneModel {
     case .reconnecting: return .reconnecting
     case .failed(let message): return .failed(message)
     }
+  }
+
+  public var stillConnectingStep: String? {
+    guard [.loading, .connecting].contains(phase) else { return nil }
+    return (stream?.connectStep ?? discoveryStep)?.step(on: "the Mac")
   }
 
   public var selectedDisplay: ServerScreenSharingDisplay? {
@@ -199,14 +207,16 @@ public final class ScreenSharingPaneModel {
   }
 
   private func discover() {
+    discovery?.cancel()
+    let began = sponsor.now()
+    let id = UUID()
+    discoveryId = id
+    discoveryStep = nil
     discovery = Task { [weak self] in
       guard let self else { return }
-      defer { self.discovery = nil }
+      defer { self.endDiscovery(id) }
       do {
-        let reply = try await self.client.screenSharing(
-          ServerScreenSharingRequest(
-            operation: .capabilities, workspaceId: self.sponsor.workspaceId, paneId: self.sponsor.paneId,
-            viewerId: UUID()))
+        let reply = try await self.capabilities(since: began, discovery: id)
         try Task.checkCancellation()
         if reply.provider == "vnc" {
           self.discoveryFailure = "Screen Sharing to this machine is only available on a Mac."
@@ -217,6 +227,7 @@ public final class ScreenSharingPaneModel {
           return
         }
         self.displays = reply.displays
+        self.discovered = (began, reply)
         let chosen = reply.displays.first { $0.id == self.preferredDisplayId } ?? reply.displays[0]
         if self.visible || self.stream == nil { self.connect(to: chosen.id) }
       } catch is CancellationError {
@@ -226,12 +237,47 @@ public final class ScreenSharingPaneModel {
     }
   }
 
+  private func endDiscovery(_ id: UUID) {
+    guard discoveryId == id else { return }
+    discovery = nil
+    discoveryStep = nil
+  }
+
+  private func capabilities(
+    since began: ContinuousClock.Instant, discovery id: UUID
+  ) async throws
+    -> ServerScreenSharingReply
+  {
+    let request = ServerScreenSharingRequest(
+      operation: .capabilities, workspaceId: sponsor.workspaceId, paneId: sponsor.paneId, viewerId: UUID())
+    let client = client
+    let clock = sponsor.clock
+    let now = sponsor.now
+    let deadline: @Sendable () async throws -> Void = { [weak self] in
+      try await clock.sleep(for: max(.zero, ScreenSharingConnectStage.stillConnectingAfter - (now() - began)))
+      await self?.discoveryIsSlow(id)
+      try await clock.sleep(for: max(.zero, ScreenSharingConnectStage.deadline - (now() - began)))
+      if client.isReconnecting { try await clock.sleep(for: ScreenSharingConnectStage.reconnectingTunnelGrace) }
+    }
+    guard
+      let reply = try await ScreenSharingRace.value(of: { try await client.screenSharing(request) }, before: deadline)
+    else { throw ScreenSharingError.unavailable(ScreenSharingConnectStage.reachingHost.failure) }
+    return reply
+  }
+
+  private func discoveryIsSlow(_ id: UUID) {
+    guard discoveryId == id else { return }
+    discoveryStep = .reachingHost
+  }
+
   private func connect(to id: String) {
     stopStream()
     displayId = id
     let stream = ScreenSharingStream(displayId: id, sponsor: sponsor)
     self.stream = stream
-    stream.start()
+    let fresh = discovered.flatMap { sponsor.now() - $0.began < ScreenSharingConnectStage.deadline ? $0 : nil }
+    discovered = nil
+    stream.start(since: fresh?.began, capabilities: fresh?.reply)
   }
 
   private func stopStream() {

@@ -1,4 +1,5 @@
 import Foundation
+import ScreenSharingV2
 
 @MainActor
 protocol ScreenSharingViewerConnecting: AnyObject {
@@ -77,6 +78,7 @@ final class ScreenSharingViewerRegistry {
     var endpoint: ScreenSharingViewerEndpoint?
     var ready = false
     var notice: String?
+    var progress: ScreenSharingConnectStage?
     var generation = 0
     var task: Task<Void, Never>?
 
@@ -204,6 +206,7 @@ final class ScreenSharingViewerRegistry {
       entry.endpoint = nil
       entry.ready = false
       entry.notice = nil
+      entry.progress = nil
       for subscriber in entry.subscribers { subscriber.emit(.reconnecting) }
       run(
         entry, key: key,
@@ -236,6 +239,7 @@ final class ScreenSharingViewerRegistry {
     share.emit(.opened(endpoint))
     if entry.ready { share.emit(.ready) }
     if let notice = entry.notice { share.emit(.hostNotice(notice)) }
+    if let progress = entry.progress, !entry.ready { share.emit(.progress(progress)) }
   }
 
   private func updateAudio(_ entry: Entry) {
@@ -272,6 +276,10 @@ final class ScreenSharingViewerRegistry {
       announceLive(entry.sponsor.machineId)
     case .ready:
       entry.ready = true
+      entry.progress = nil
+      entry.active?.emit(event)
+    case .progress(let stage):
+      entry.progress = stage
       entry.active?.emit(event)
     case .hostNotice(let notice):
       entry.notice = notice
@@ -280,6 +288,7 @@ final class ScreenSharingViewerRegistry {
       entry.endpoint = nil
       entry.ready = false
       entry.notice = nil
+      entry.progress = nil
       for subscriber in entry.subscribers { subscriber.emit(event) }
     case .elsewhere:
       break

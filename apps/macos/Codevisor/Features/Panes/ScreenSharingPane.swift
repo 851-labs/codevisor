@@ -227,6 +227,12 @@ private struct ScreenSharingPaneView: View {
     )
   }
 
+  private func connectingTitle(_ store: StoreOf<ScreenSharingViewer>) -> String {
+    if store.phase == .reconnecting { return "Reconnecting to \(pane.connectionName)…" }
+    if store.state.stillConnectingStep(on: pane.connectionName) != nil { return "Still connecting…" }
+    return "Connecting to \(pane.connectionName)…"
+  }
+
   private func elsewhere(_ store: StoreOf<ScreenSharingViewer>) -> some View {
     ScreenSharingMirrorPane(
       endpoint: store.mirror, connectionName: pane.connectionName,
@@ -262,9 +268,10 @@ private struct ScreenSharingPaneView: View {
         if store.phase != .viewing {
           VStack(spacing: 12) {
             ProgressView().controlSize(.small)
-            Text(
-              store.phase == .reconnecting
-                ? "Reconnecting to \(pane.connectionName)…" : "Connecting to \(pane.connectionName)…")
+            Text(connectingTitle(store))
+            if let step = store.state.stillConnectingStep(on: pane.connectionName) {
+              Text(step).font(.callout).foregroundStyle(.secondary)
+            }
             if let notice = store.hostNotice { Text(notice).font(.callout).foregroundStyle(.secondary) }
           }
           .padding(24)

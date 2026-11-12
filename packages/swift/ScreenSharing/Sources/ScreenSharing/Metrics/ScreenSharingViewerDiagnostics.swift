@@ -19,6 +19,7 @@ public final class ScreenSharingViewerDiagnostics {
   public private(set) var bytesPerUpdate: Double?
   public private(set) var updateLatencyMilliseconds: Double?
   public private(set) var engine: String?
+  public private(set) var connectTime: String?
   public private(set) var recovery: String?
   public private(set) var timeline: ScreenSharingTimelineBreakdown?
   @ObservationIgnored private var recentFrames: [ScreenSharingFrameRecord] = []
@@ -90,6 +91,7 @@ public final class ScreenSharingViewerDiagnostics {
     decoder = metrics.labels["decoder"] ?? decoder
     droppedFrames = metrics.counters["renderDrops", default: 0]
     streams = Self.streams(metrics.labels)
+    connectTime = metrics.labels["connectTime"] ?? connectTime
     updateTimeline(frameTimeline)
     if v2 { return updateV2(metrics: metrics, statistics: statistics) }
     guard let vncTransport else { return }

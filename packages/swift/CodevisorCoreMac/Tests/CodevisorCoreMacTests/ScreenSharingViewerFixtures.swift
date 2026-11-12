@@ -69,6 +69,8 @@ final class FakeMediaSession: ScreenSharingV2StartableSession {
   func setDisplayHighDynamicRange(_ supported: Bool) { highDynamicRangeReports.append(supported) }
   var onVideoFormatChanged: ((ScreenSharingDynamicRange, String?) -> Void)?
   weak var surface: FakeSurface?
+  var startHangs = false
+  private var hungStart: CheckedContinuation<Void, any Error>?
   private(set) var tokens: [String] = []
   private(set) var closed = false
 
@@ -76,12 +78,17 @@ final class FakeMediaSession: ScreenSharingV2StartableSession {
 
   func start(token: String) async throws {
     tokens.append(token)
+    if startHangs {
+      try await withCheckedThrowingContinuation { hungStart = $0 }
+    }
     controlChannel.isAvailable = true
     if deliversVideo { surface?.present() }
   }
   func statistics() async -> [String: String] { [:] }
   func close() {
     closed = true
+    hungStart?.resume(throwing: RFBError.transport("The connection closed in this test."))
+    hungStart = nil
     controlChannel.close()
     frames.clear()
   }
@@ -216,10 +223,12 @@ final class NativeBackendHarness {
     },
     target: String? = nil,
     heartbeatInterval: Duration = .seconds(8),
-    v2: V2 = V2()
+    v2: V2 = V2(),
+    tunnel: ServerRequestGate? = nil
   ) {
     self.transport = transport
-    let client = CodevisorServerClient(config: .init(requestTransport: transport))
+    let client = CodevisorServerClient(
+      config: .init(requestTransport: transport), requestGate: tunnel, machineId: tunnel == nil ? nil : Self.host)
     let clock = clock
     let connector = ScreenSharingV2Connector(
       address: { v2.hasAddress ? ScreenSharingViewerFixtures.viewerMedia : nil },
@@ -233,6 +242,7 @@ final class NativeBackendHarness {
       })
     backend = .native(
       client: client, workspaceId: UUID(), paneId: UUID(), v2: connector, sleep: { try await clock.sleep(for: $0) },
+      now: { clock.now },
       makeSurface: { [unowned self] session in
         let surface = FakeSurface()
         (session as? FakeMediaSession)?.surface = surface
@@ -248,6 +258,8 @@ final class NativeBackendHarness {
     sessions.append(session)
     return session
   }
+
+  static let host = "host"
 
   @MainActor
   final class V2 {

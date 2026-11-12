@@ -32,6 +32,7 @@ struct ScreenSharingDiagnosticsCards: View {
         LabeledContent("Receiving", value: String(format: "%.2f Mbps", rate))
       }
       if let recovery = diagnostics.recovery { LabeledContent("Recovery", value: recovery) }
+      if let connectTime = diagnostics.connectTime { LabeledContent("Connected in", value: connectTime) }
       if let streams = diagnostics.streams { LabeledContent("Streams", value: streams) }
     }
   }

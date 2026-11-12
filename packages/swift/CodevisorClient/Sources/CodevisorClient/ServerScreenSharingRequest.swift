@@ -106,6 +106,8 @@ extension CodevisorServerClient {
 }
 
 public extension CodevisorServerClienting {
+  var isReconnecting: Bool { false }
+
   func screenSharing(_ request: ServerScreenSharingRequest) async throws -> ServerScreenSharingReply {
     throw CodevisorServerClientError.httpStatus(
       501, "Screen Sharing requires an updated Codevisor app on the host Mac.")
