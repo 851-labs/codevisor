@@ -2,22 +2,14 @@ import SwiftUI
 
 struct WorkspaceRow: View {
   enum Style {
-    case sidebar(isSelected: Bool)
+    case sidebar(isSelected: Bool, isHovered: Bool)
     case card(focusShape: UnevenRoundedRectangle)
-
-    var trailingInset: CGFloat {
-      switch self {
-      case .sidebar: WorkspaceRow.horizontalInset
-      case .card: WorkspaceInspectorCardShape.rowPadding
-      }
-    }
   }
 
   let details: WorkspaceRowDetails
   let store: SessionStore?
   let lifecycle: WorkspaceRowLifecycle
   let style: Style
-  let isHovered: Bool
   let onActivate: () -> Void
 
   static let trailingSpacing: CGFloat = 7
@@ -28,26 +20,19 @@ struct WorkspaceRow: View {
     activationTarget
       .frame(maxWidth: .infinity, alignment: .leading)
       .contentShape(Rectangle())
-      .overlay(alignment: .trailing) {
-        if isHovered {
-          WorkspaceRowHoverActions(lifecycle: lifecycle, title: details.title)
-            .padding(.trailing, style.trailingInset)
-        }
-      }
       .contextMenu { WorkspaceRowMenu(lifecycle: lifecycle, unreadChat: details.unreadChat) }
   }
 
   @ViewBuilder
   private var activationTarget: some View {
     switch style {
-    case let .sidebar(isSelected):
+    case let .sidebar(isSelected, isHovered):
       WorkspaceRowPressTarget(
         details: details, store: store, lifecycle: lifecycle, isSelected: isSelected, isHovered: isHovered,
         onActivate: onActivate)
     case let .card(focusShape):
       WorkspaceRowButtonTarget(
-        details: details, store: store, lifecycle: lifecycle, focusShape: focusShape, isHovered: isHovered,
-        onActivate: onActivate)
+        details: details, store: store, lifecycle: lifecycle, focusShape: focusShape, onActivate: onActivate)
     }
   }
 }
@@ -74,6 +59,12 @@ private struct WorkspaceRowPressTarget: View {
       WorkspaceRowTrailing(details: details, lifecycle: lifecycle, isHovered: isHovered)
     }
     .padding(.horizontal, WorkspaceRow.horizontalInset)
+    .overlay(alignment: .trailing) {
+      if isHovered {
+        WorkspaceRowHoverActions(lifecycle: lifecycle, title: details.title)
+          .padding(.trailing, WorkspaceRow.horizontalInset)
+      }
+    }
   }
 }
 
@@ -82,14 +73,13 @@ private struct WorkspaceRowButtonTarget: View {
   let store: SessionStore?
   let lifecycle: WorkspaceRowLifecycle
   let focusShape: UnevenRoundedRectangle
-  let isHovered: Bool
   let onActivate: () -> Void
 
   var body: some View {
     Button(action: onActivate) {
       HStack(spacing: WorkspaceRow.trailingSpacing) {
         WorkspaceRowLabel(details: details, store: store, isArchived: lifecycle.isArchived)
-        WorkspaceRowTrailing(details: details, lifecycle: lifecycle, isHovered: isHovered)
+        WorkspaceRowProperties(details: details, isArchived: lifecycle.isArchived)
       }
       .frame(maxWidth: .infinity, alignment: .leading)
       .padding(WorkspaceInspectorCardShape.rowPadding)

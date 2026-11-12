@@ -14,8 +14,8 @@ struct SidebarWorkspaceRow: View {
   var body: some View {
     HoverableRow(isSelected: isSelected, isHoverEnabled: !isReordering) { isHovered in
       WorkspaceRow(
-        details: details, store: store, lifecycle: lifecycle, style: .sidebar(isSelected: isSelected),
-        isHovered: isHovered, onActivate: onActivate)
+        details: details, store: store, lifecycle: lifecycle,
+        style: .sidebar(isSelected: isSelected, isHovered: isHovered), onActivate: onActivate)
     }
   }
 }
