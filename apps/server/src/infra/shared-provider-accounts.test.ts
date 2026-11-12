@@ -94,7 +94,7 @@ describe("provider accounts across machines", () => {
     expect((await b.shared.providers.store.get(slot))?.credential).toEqual(
       (await a.shared.providers.store.get(slot))?.credential
     )
-    await a.shared.providers.remove("pi", "default", "anthropic", true)
+    await a.shared.providers.remove("pi", "default", "anthropic")
     await sync(a, c)
     await atomicWriteJson(join(c.dataDir, ".pi", "agent", "auth.json"), {
       anthropic: { ...credential(), accountId: "org" }
@@ -113,12 +113,10 @@ describe("provider accounts across machines", () => {
       theme: "custom"
     })
     await host.shared.providers.capture("pi", "default", "anthropic", credential())
-    expect(await host.shared.providers.staticOverrides("pi")).toEqual([])
     expect(await host.shared.providers.disabled("pi", "default")).toEqual([])
     await host.shared.providers.remove("pi", "default", "anthropic")
     expect(await host.shared.providers.remove("pi", "default", "openai")).toBe(false)
-    expect(await host.shared.providers.staticOverrides("pi")).toEqual(["anthropic", "openai"])
-    expect(await host.shared.providers.disabled("pi", "default")).toEqual(["anthropic", "openai"])
+    expect(await host.shared.providers.disabled("pi", "default")).toEqual(["anthropic"])
     await atomicWriteJson(join(source, "auth.json"), {
       anthropic: { type: "api_key", key: "local-key" }
     })
@@ -228,7 +226,7 @@ describe("provider accounts across machines", () => {
     const path = join(host.dataDir, ".pi", "agent", "auth.json")
     await atomicWriteJson(path, { anthropic: credential("terminal") })
     await host.shared.providers.reconcile()
-    await host.shared.providers.capture("pi", "default", "anthropic", credential("shared"), true)
+    await host.shared.providers.capture("pi", "default", "anthropic", credential("shared"))
     await host.shared.providers.reconcile()
     const slot = providerSlot("pi", "default", "anthropic")
     expect((await host.shared.providers.store.get(slot))?.subject).toBe("shared")
@@ -276,12 +274,12 @@ describe("provider accounts across machines", () => {
         }
       ])
     )
-    await host.shared.providers.capture("pi", "default", "anthropic", credential(), true)
+    await host.shared.providers.capture("pi", "default", "anthropic", credential())
     const entries = await run(host.db.getSyncEntries("harness-credentials"))
     expect(storedJson(entries[0]?.value)).toEqual({
       openai: { type: "api_key", key: "keep" }
     })
-    await host.shared.providers.capture("pi", "default", "anthropic", credential(), true)
+    await host.shared.providers.capture("pi", "default", "anthropic", credential())
     expect(
       storedJson((await run(host.db.getSyncEntries("harness-credentials")))[0]?.value)
     ).toEqual({ openai: { type: "api_key", key: "keep" } })
@@ -341,22 +339,17 @@ describe("provider accounts across machines", () => {
     expect(rotate).toHaveBeenCalledOnce()
     expect(await b.restart().providers.configured("pi", "default")).toEqual(["anthropic"])
   })
-  it("keeps a different machine account as an override and resumes the shared identity when selected again", async () => {
+  it("replaces the shared account on every machine when any machine signs in to another", async () => {
     const { machine, sync } = fleet()
     const a = await machine("shared-a"),
-      b = await machine("override-b")
-    await a.shared.providers.capture("pi", "default", "anthropic", credential("alice"), true)
+      b = await machine("other-b")
+    await a.shared.providers.capture("pi", "default", "anthropic", credential("alice"))
     await sync(a, b)
     await b.shared.providers.capture("pi", "default", "anthropic", credential("bob"))
     const slot = providerSlot("pi", "default", "anthropic")
     expect((await b.shared.providers.store.get(slot))?.subject).toBe("bob")
-    expect((await b.shared.providers.store.get(slot, true))?.subject).toBe("alice")
-    await b.shared.providers.capture("pi", "default", "anthropic", credential("alice"))
-    expect(await b.shared.providers.store.local(slot)).toBeNull()
-    expect((await b.shared.providers.store.get(slot))?.subject).toBe("alice")
-    await b.shared.providers.capture("pi", "default", "anthropic", credential("carol"), true)
     await sync(b, a)
-    expect((await a.shared.providers.store.get(slot))?.subject).toBe("carol")
+    expect((await a.shared.providers.store.get(slot))?.subject).toBe("bob")
   })
   it("mirrors existing native access without adopting its rotating grant or overwriting a different shared identity", async () => {
     const { machine, sync } = fleet()
@@ -384,20 +377,19 @@ describe("provider accounts across machines", () => {
       anthropic: credential("bob")
     })
     await b.shared.providers.reconcile()
-    expect((await b.shared.providers.store.get(slot))?.subject).toBe("bob")
-    expect((await b.shared.providers.store.get(slot, true))?.subject).toBe("alice")
+    expect((await b.shared.providers.store.get(slot))?.subject).toBe("alice")
   })
-  it("keeps local and global sign-out from rediscovering the terminal credential or falling back to it", async () => {
+  it("signs every machine out without rediscovering the terminal credential or falling back to it", async () => {
     const { machine, sync } = fleet()
     const a = await machine("remove-a"),
       b = await machine("remove-b")
     await atomicWriteJson(join(a.dataDir, ".pi", "agent", "auth.json"), { anthropic: credential() })
     await a.shared.providers.reconcile()
     await sync(a, b)
-    expect(await a.shared.providers.remove("pi", "default", "anthropic")).toBe(true)
+    expect(await b.shared.providers.remove("pi", "default", "anthropic")).toBe(true)
+    await sync(b, a)
     await a.shared.providers.reconcile()
     expect(await a.shared.providers.configured("pi", "default")).toEqual([])
-    expect(await a.shared.providers.configured("pi", "default", true)).toEqual(["anthropic"])
     const runtime = await a.shared.providers.context(account("pi"), {
       id: "pi-default",
       profileKind: "default"
@@ -405,10 +397,7 @@ describe("provider accounts across machines", () => {
     expect(await json(join(runtime.env!.PI_CODING_AGENT_DIR!, "auth.json"))).not.toHaveProperty(
       "anthropic"
     )
-    expect(await b.shared.providers.remove("pi", "default", "anthropic", true)).toBe(true)
-    await sync(b, a)
-    expect(await a.shared.providers.configured("pi", "default", true)).toEqual([])
-    expect(await a.shared.providers.remove("pi", "default", "anthropic", true)).toBe(false)
+    expect(await a.shared.providers.remove("pi", "default", "anthropic")).toBe(false)
   })
   it("isolates OpenCode provider state per shared profile without handing it a refresh grant", async () => {
     const { machine, sync } = fleet()
@@ -426,7 +415,7 @@ describe("provider accounts across machines", () => {
       )
     }
     await a.shared.providers.capture("opencode", "opencode-default", "openai", credential())
-    await a.shared.providers.capture("opencode", "shared-work", "xai", credential("bob"), true)
+    await a.shared.providers.capture("opencode", "shared-work", "xai", credential("bob"))
     await sync(a, b)
     expect(await b.shared.providers.configured("opencode", "opencode-default")).toEqual(["openai"])
     expect(await b.shared.providers.configured("opencode", "shared-work")).toEqual(["xai"])

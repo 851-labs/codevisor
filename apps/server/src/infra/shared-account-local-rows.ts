@@ -33,7 +33,7 @@ export const makeLocalAccountRows = ({ db, store, localState }: LocalAccountRows
   }
 
   const applySelection = async (harnessId: string) => {
-    const selected = await store.selected(harnessId, true)
+    const selected = await store.selected(harnessId)
     if (!selected) return
 
     const rows = await run(db.listHarnessAccounts(harnessId))

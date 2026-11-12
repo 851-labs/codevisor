@@ -201,7 +201,7 @@ private actor SharedAccountTestTransport: ServerRequestTransport {
     let account: [String: Any] = [
       "id": "shared-test", "harnessId": path.split(separator: "/")[2].description,
       "label": label, "profileKind": "managed", "authState": authenticated ? "authenticated" : "unauthenticated",
-      "isActive": true, "canLogin": true, "canLogout": authenticated, "selectionScope": "shared",
+      "isActive": true, "canLogin": true, "canLogout": authenticated,
     ]
     let response: [String: Any] = [
       "account": account, "accounts": [account],

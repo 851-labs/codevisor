@@ -29,7 +29,6 @@ const SharedAccountActionSchema = Schema.Struct({
     "answer",
     "cancel",
     "logout",
-    "inherit",
     "providers"
   ]),
   accountId: Schema.optional(Schema.String),

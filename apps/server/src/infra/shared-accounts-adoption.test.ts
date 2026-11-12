@@ -112,8 +112,8 @@ describe("preferring this machine's Codex login over a dead Codevisor credential
   })
 })
 
-describe("signing out on one machine", () => {
-  it("keeps the catalog quiet: reconcile must not flip sign-out availability back", async () => {
+describe("signing out", () => {
+  it("keeps the catalog quiet: reconcile must not bring a signed-out account back", async () => {
     vi.useFakeTimers({ toFake: ["Date"] })
     vi.setSystemTime(100_000)
     const a = await fleet().machine("a", native("alice"))
@@ -139,14 +139,15 @@ describe("signing out on one machine", () => {
     await manager.decorateHarnesses([harness], "force")
     const events: string[] = []
     manager.subscribe((event) => events.push(event.kind))
-    expect(await manager.logout(id)).toMatchObject({ authState: "expired", canLogout: false })
+    expect(await manager.logout(id)).toMatchObject({
+      authState: "unauthenticated",
+      canLogout: false
+    })
     expect(events).toEqual(["harness.account.updated", "harness.auth.updated"])
 
     for (let i = 0; i < 3; i += 1) {
       const [codex] = await manager.decorateHarnesses([harness], "force")
-      expect(codex?.auth?.accounts).toEqual([
-        expect.objectContaining({ id, authState: "expired", canLogout: false })
-      ])
+      expect(codex?.auth?.accounts?.map((account) => account.id)).not.toContain(id)
     }
     expect(events).toHaveLength(2)
   })

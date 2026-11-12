@@ -35,14 +35,6 @@ export class SharedAccountLocalState {
     return this.write(`alias:${id}`, target)
   }
 
-  async isDisabled(id: string): Promise<boolean> {
-    return (await this.read(`disabled:${id}`)) === true
-  }
-
-  setDisabled(id: string, disabled: boolean): Promise<void> {
-    return this.write(`disabled:${id}`, disabled)
-  }
-
   async loginTarget(id: string): Promise<string | undefined> {
     const target = await this.read(`login:${id}`)
     return typeof target === "string" ? target : undefined

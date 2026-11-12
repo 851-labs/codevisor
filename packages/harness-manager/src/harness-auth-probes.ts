@@ -244,13 +244,9 @@ export const makeHarnessAuthProbes = (core: HarnessAuthCore, grok: GrokAuth) => 
     })
   }
 
-  const probeAccount = async (
-    accountId: string,
-    force = false,
-    sharedScope = false
-  ): Promise<HarnessAccount> => {
+  const probeAccount = async (accountId: string, force = false): Promise<HarnessAccount> => {
     const previous = await run(config.db.getHarnessAccount(accountId))
-    if (previous?.harnessId === "grok-build") return grok.account(previous, sharedScope)
+    if (previous?.harnessId === "grok-build") return grok.account(previous)
     const shared = await config.sharedAccounts?.()?.probe(accountId)
     if (shared !== undefined) return core.announce(previous, shared)
     const current = probes.get(accountId)

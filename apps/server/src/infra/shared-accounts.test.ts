@@ -40,7 +40,7 @@ describe("automatic shared accounts", () => {
       a = await f.machine("a", native("alice"))
     await a.shared.reconcile()
     const id = sharedOAuthIdentity(native("alice"))
-    await a.shared.logout(id, true)
+    await a.shared.logout(id)
     await Effect.runPromise(
       a.db.saveHarnessAccount({
         id: "native-default",
@@ -123,46 +123,31 @@ describe("automatic shared accounts", () => {
     expect(await a.shared.accounts("codex", true)).toHaveLength(2)
   })
 
-  it.each([false, true])(
-    "resumes following shared changes after selecting the shared account (explicit default: %s)",
-    async (explicit) => {
-      vi.useFakeTimers({ toFake: ["Date"] })
-      vi.setSystemTime(100_000)
-      const f = fleet(),
-        a = await f.machine("a", native("alice"))
-      await a.shared.reconcile()
-      vi.setSystemTime(101_000)
-      const b = await f.machine("b", native("bob"))
-      await f.sync(a, b)
-      await f.sync(b, a)
-      const alice = sharedOAuthIdentity(native("alice")),
-        bob = sharedOAuthIdentity(native("bob"))
-      if (explicit) {
-        await a.shared.activate("codex", alice, true)
-        await f.sync(a, b)
-      }
-      await b.shared.activate("codex", bob)
-      await f.sync(b, a)
-      expect((await b.shared.accounts("codex"))?.find((row) => row.isActive)?.id).toBe(bob)
-      expect((await b.shared.accounts("codex", true))?.find((row) => row.isActive)?.id).toBe(alice)
-      expect((await a.shared.accounts("codex"))?.find((row) => row.isActive)?.id).toBe(alice)
-      expect(await b.shared.store.overridden("codex")).toBe(true)
-      await b.shared.activate("codex", alice)
-      expect((await b.shared.accounts("codex"))?.find((row) => row.isActive)).toMatchObject({
-        id: alice,
-        selectionScope: "shared"
-      })
-      expect(await b.shared.store.overridden("codex")).toBe(false)
-      await a.shared.activate("codex", bob, true)
-      await f.sync(a, b)
-      expect((await b.shared.accounts("codex"))?.find((row) => row.isActive)).toMatchObject({
-        id: bob,
-        selectionScope: "shared"
-      })
-    }
-  )
+  it("switches every machine when any machine picks an account", async () => {
+    vi.useFakeTimers({ toFake: ["Date"] })
+    vi.setSystemTime(100_000)
+    const f = fleet(),
+      a = await f.machine("a", native("alice"))
+    await a.shared.reconcile()
+    vi.setSystemTime(101_000)
+    const b = await f.machine("b", native("bob"))
+    await f.sync(a, b)
+    await f.sync(b, a)
+    const alice = sharedOAuthIdentity(native("alice")),
+      bob = sharedOAuthIdentity(native("bob"))
+    const active = async (machine: typeof a) =>
+      (await machine.shared.accounts("codex"))?.find((row) => row.isActive)?.id
+    await b.shared.activate("codex", bob)
+    await f.sync(b, a)
+    expect(await active(a)).toBe(bob)
+    expect(await active(b)).toBe(bob)
+    await a.shared.activate("codex", alice)
+    await f.sync(a, b)
+    expect(await active(a)).toBe(alice)
+    expect(await active(b)).toBe(alice)
+  })
 
-  it("signs out one machine without revoking the grant and prevents resurrection after global sign-out", async () => {
+  it("signs out every machine from any machine and prevents resurrection", async () => {
     vi.useFakeTimers({ toFake: ["Date"] })
     vi.setSystemTime(100_000)
     const f = fleet(),
@@ -172,15 +157,11 @@ describe("automatic shared accounts", () => {
     await f.sync(a, b)
     const id = sharedOAuthIdentity(native("alice"))
     await b.shared.logout(id)
+    await f.sync(b, a)
+    await a.shared.reconcile()
+    await expect(a.shared.context(id)).rejects.toThrow("signed out")
+    expect(await a.shared.accounts("codex", true)).toEqual([])
     await expect(b.shared.context(id)).rejects.toThrow("signed out")
-    expect((await a.shared.probe(id))?.authState).toBe("authenticated")
-    expect((await b.shared.accounts("codex", true))?.[0]?.authState).toBe("authenticated")
-    await b.shared.inherit("codex")
-    expect((await b.shared.probe(id))?.authState).toBe("authenticated")
-    await a.shared.logout(id, true)
-    await f.sync(a, b)
-    await expect(b.shared.context(id)).rejects.toThrow("signed out")
-    expect(await b.shared.accounts("codex", true)).toEqual([])
   })
 
   it("drops locally held credentials when a change arrives from another machine", async () => {
@@ -301,7 +282,7 @@ it("replaces an existing managed login without leaving its previous grant active
   await expect(m.shared.saveApiKey("missing", "key")).rejects.toThrow("Enter an API key")
   await expect(m.shared.saveApiKey(id, " ")).rejects.toThrow("Enter an API key")
 })
-it("builds isolated Claude contexts and keeps machine sign-out separate from the shared editor", async () => {
+it("builds isolated Claude contexts and signs the account out everywhere", async () => {
   vi.useFakeTimers({ toFake: ["Date"] })
   vi.setSystemTime(100_000)
   const m = await fleet().machine("a")
@@ -324,14 +305,8 @@ it("builds isolated Claude contexts and keeps machine sign-out separate from the
   })
   expect(JSON.stringify(context)).not.toContain("refreshToken")
   await m.shared.logout(id)
-  expect((await m.shared.accounts("claude-code"))?.[0]).toMatchObject({
-    authState: "expired",
-    selectionScope: "machine"
-  })
-  expect((await m.shared.accounts("claude-code", true))?.[0]?.authState).toBe("authenticated")
-  expect((await m.shared.probe(id))?.authState).toBe("expired")
-  await m.shared.inherit("claude-code")
-  expect((await m.shared.probe(id))?.authState).toBe("authenticated")
+  expect(await m.shared.accounts("claude-code", true)).toEqual([])
+  await expect(m.shared.context(id)).rejects.toThrow("signed out")
 })
 
 it("adopts legacy isolated profiles independently of default credentials and recovers a cancelled login", async () => {
@@ -364,7 +339,6 @@ it("keeps errors private, handles incomplete synced records, and supports both A
   const id = (await m.shared.accounts("codex", true))![0]!.id
   expect((await m.shared.context(id))?.env?.OPENAI_API_KEY).toBe("codex-key")
   await m.shared.saveApiKey(id, "codex-key")
-  await m.shared.inherit("codex")
   const key = (await m.shared.store.get(id))!.credential!
   const original = m.vault.token
   m.vault.token = async () => {

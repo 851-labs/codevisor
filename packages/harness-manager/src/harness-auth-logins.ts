@@ -297,8 +297,7 @@ export const makeHarnessLoginOperations = (
   const beginLogin = async (
     accountId: string,
     methodId?: string,
-    apiKey?: string,
-    shared = false
+    apiKey?: string
   ): Promise<HarnessAuthFlow> => {
     accountId = (await config.sharedAccounts?.()?.prepareLogin(accountId, methodId)) ?? accountId
     const found = await run(config.db.getHarnessAccount(accountId))
@@ -309,7 +308,7 @@ export const makeHarnessLoginOperations = (
     } else {
       account = found
     }
-    if (account.harnessId === "grok-build") return grok.begin(account, methodId, apiKey, shared)
+    if (account.harnessId === "grok-build") return grok.begin(account, methodId, apiKey)
     if (account.harnessId === MUSE_HARNESS_ID) return muse.begin(account, methodId, apiKey)
     if (methodId === "apiKey") return beginApiKeyLogin(account, apiKey)
     if (account.harnessId === ANTIGRAVITY_HARNESS_ID) return antigravity.begin(account)
@@ -385,12 +384,12 @@ export const makeHarnessLoginOperations = (
     }
   }
 
-  const logout = async (accountId: string, sharedScope = false): Promise<HarnessAccount> => {
+  const logout = async (accountId: string): Promise<HarnessAccount> => {
     const account = await run(config.db.getHarnessAccount(accountId))
     const shared = await config.sharedAccounts?.()?.logout(accountId)
     if (shared !== undefined) return announce(account, shared)
     if (account === undefined) throw new Error(`Harness account not found: ${accountId}`)
-    if (account.harnessId === "grok-build") return grok.logout(account, sharedScope)
+    if (account.harnessId === "grok-build") return grok.logout(account)
     await rm(apiKeyPath(account), { force: true })
     if (account.harnessId === "codex") {
       const client = await initializeCodexClient(account)

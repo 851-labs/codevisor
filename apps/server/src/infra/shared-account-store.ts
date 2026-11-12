@@ -12,7 +12,6 @@ import { field, isRecord, stringField } from "../unknown-values.js"
 import { CLAUDE_AGENT_LINK_PREFIX } from "./shared-claude-agent-links.js"
 
 export const SHARED_ACCOUNTS_NAMESPACE = "harness-shared-accounts"
-export const SHARED_ACCOUNT_OVERRIDES = "local.harness-account-overrides"
 
 export interface SharedHarnessAccount {
   readonly id: string
@@ -122,8 +121,8 @@ export const harnessesSignedInBy = (
 export const makeSharedAccountStore = (db: CodevisorDatabaseService, serverId: string) => {
   const listeners = new Set<(entries: ReadonlyArray<SyncEntryRecord>) => void>()
   const entries = () => Effect.runPromise(db.getSyncEntries(SHARED_ACCOUNTS_NAMESPACE))
-  const write = async (namespace: string, key: string, value: unknown, deleted = false) => {
-    const previous = await Effect.runPromise(db.getSyncEntries(namespace))
+  const write = async (key: string, value: unknown, deleted = false) => {
+    const previous = await entries()
     const current = previous.find((entry) => entry.key === key)
     if (
       current &&
@@ -137,8 +136,8 @@ export const makeSharedAccountStore = (db: CodevisorDatabaseService, serverId: s
       deleted,
       timestamp: nextSyncTimestamp(serverId, latestSyncTimestamp(previous), Date.now())
     }
-    await Effect.runPromise(db.mergeSyncEntries(namespace, [entry]))
-    if (namespace === SHARED_ACCOUNTS_NAMESPACE) for (const listener of listeners) listener([entry])
+    await Effect.runPromise(db.mergeSyncEntries(SHARED_ACCOUNTS_NAMESPACE, [entry]))
+    for (const listener of listeners) listener([entry])
   }
   const accounts = async (): Promise<SharedHarnessAccount[]> =>
     (await entries()).flatMap((entry) => {
@@ -149,34 +148,14 @@ export const makeSharedAccountStore = (db: CodevisorDatabaseService, serverId: s
   return {
     accounts,
     entries,
-    writeProvider: (key: string, value: unknown, deleted = false) =>
-      write(SHARED_ACCOUNTS_NAMESPACE, key, value, deleted),
-    overridden: async (harnessId: string) => {
-      const available = await accounts()
-      return (await Effect.runPromise(db.getSyncEntries(SHARED_ACCOUNT_OVERRIDES))).some(
-        (entry) =>
-          entry.key === harnessId &&
-          entry.deleted !== true &&
-          available.some((account) => account.id === entry.value && account.credential)
-      )
-    },
+    writeProvider: write,
     get: async (id: string) => (await accounts()).find((account) => account.id === id),
-    save: (account: SharedHarnessAccount) => write(SHARED_ACCOUNTS_NAMESPACE, account.id, account),
-    remove: (id: string) => write(SHARED_ACCOUNTS_NAMESPACE, id, null, true),
-    selected: async (harnessId: string, machine: boolean): Promise<string | undefined> => {
+    save: (account: SharedHarnessAccount) => write(account.id, account),
+    remove: (id: string) => write(id, null, true),
+    selected: async (harnessId: string): Promise<string | undefined> => {
       const available = (await accounts())
         .filter((account) => account.harnessId === harnessId && account.credential !== undefined)
         .toSorted((a, b) => a.createdAt - b.createdAt || a.id.localeCompare(b.id))
-      if (machine) {
-        const overrides = await Effect.runPromise(db.getSyncEntries(SHARED_ACCOUNT_OVERRIDES))
-        const override = overrides.find((entry) => entry.key === harnessId)
-        if (
-          override?.deleted !== true &&
-          typeof override?.value === "string" &&
-          available.some((account) => account.id === override.value)
-        )
-          return override.value
-      }
       const selected = (await entries()).find((entry) => entry.key === `selected:${harnessId}`)
       const selectedId = stringField(selected?.value, "id")
       if (
@@ -187,13 +166,8 @@ export const makeSharedAccountStore = (db: CodevisorDatabaseService, serverId: s
         return selectedId
       return available[0]?.id
     },
-    select: (harnessId: string, id: string, machine: boolean) =>
-      write(
-        machine ? SHARED_ACCOUNT_OVERRIDES : SHARED_ACCOUNTS_NAMESPACE,
-        machine ? harnessId : `selected:${harnessId}`,
-        machine ? id : { id, automatic: false }
-      ),
-    inherit: (harnessId: string) => write(SHARED_ACCOUNT_OVERRIDES, harnessId, null, true),
+    select: (harnessId: string, id: string) =>
+      write(`selected:${harnessId}`, { id, automatic: false }),
     subscribe: (listener: (entries: ReadonlyArray<SyncEntryRecord>) => void) => {
       listeners.add(listener)
       return () => {

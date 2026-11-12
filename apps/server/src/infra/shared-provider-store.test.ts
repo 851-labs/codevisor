@@ -53,7 +53,7 @@ describe("provider account replica validation", () => {
     expect(await host.shared.providers.store.knownProviders("pi", "default")).toEqual(["anthropic"])
   })
 
-  it("keeps durable Copilot discovery idempotent and revokes only a removed local override", async () => {
+  it("keeps durable Copilot discovery idempotent and lets only an explicit sign-in replace the shared grant", async () => {
     const host = await fleet().machine("durable")
     const bundle = parseProviderOAuth(
       "opencode",
@@ -69,31 +69,26 @@ describe("provider account replica validation", () => {
     )!
     const value = { ...bundle, harnessId: "opencode" as const }
     const store = host.shared.providers.store
-    await store.save(value, "default", false, false)
+    await store.save(value, "default", false)
     const slot = providerSlot("opencode", "default", "github-copilot")
     const original = (await store.get(slot))!
-    await store.save(value, "default", false, false)
+    await store.save(value, "default", false)
     expect((await store.get(slot))?.credential.id).toBe(original.credential.id)
     expect((await host.vault.token(original.credential)).accessToken).toBe("github-token")
     await store.save(
-      { ...value, subject: "different", accessToken: "local" },
+      { ...value, subject: "machine-only", accessToken: "machine" },
       "default",
-      true,
       false
     )
-    const local = (await store.get(slot))!
-    await store.remove("opencode", "default", "github-copilot")
-    await expect(host.vault.token(local.credential)).rejects.toThrow("signed out")
-    expect((await host.vault.token(original.credential)).accessToken).toBe("github-token")
-    await store.save(
-      { ...value, subject: "local-only", accessToken: "local-only" },
-      "default",
-      true,
-      false
-    )
-    const localOnly = (await store.get(slot))!
-    await host.shared.store.writeProvider(slot, null, true)
+    expect((await store.get(slot))?.credential.id).toBe(original.credential.id)
+    await store.save({ ...value, subject: "chosen", accessToken: "chosen" }, "default", true)
+    const chosen = (await store.get(slot))!
+    expect(chosen.subject).toBe("chosen")
+    await expect(host.vault.token(original.credential)).rejects.toThrow("signed out")
     expect(await store.remove("opencode", "default", "github-copilot")).toBe(true)
-    await expect(host.vault.token(localOnly.credential)).rejects.toThrow("signed out")
+    await expect(host.vault.token(chosen.credential)).rejects.toThrow("signed out")
+    await store.save(value, "default", false)
+    expect(await store.get(slot)).toBeUndefined()
+    expect(await store.remove("opencode", "default", "github-copilot")).toBe(false)
   })
 })

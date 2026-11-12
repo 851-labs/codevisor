@@ -43,7 +43,7 @@ it("manages shared accounts through authenticated HTTP without exposing credenti
   const id = first.id
   expect(first.label).toBe("Work")
 
-  for (const action of ["probe", "activate", "inherit"])
+  for (const action of ["probe", "activate"])
     expect((await send({ action, accountId: id })).status).toBe(200)
   expect((await send({ action: "rename", accountId: id, label: "Personal" })).status).toBe(200)
   expect((await send({ action: "rename", accountId: id, label: " " })).status).toBe(400)
@@ -199,7 +199,7 @@ it("scopes provider OAuth to shared settings and filters uninspected plugins at 
   expect(
     (await send("pi", { action: "login", providerId: "anthropic", methodId: "oauth" })).status
   ).toBe(201)
-  expect(auth.beginPiLogin).toHaveBeenCalledWith("anthropic", "oauth", true)
+  expect(auth.beginPiLogin).toHaveBeenCalledWith("anthropic", "oauth")
   for (const input of [
     { action: "login" },
     { action: "login", providerId: "unknown" },
@@ -209,7 +209,7 @@ it("scopes provider OAuth to shared settings and filters uninspected plugins at 
   ])
     expect((await send("pi", input)).status).toBe(400)
   expect((await send("pi", { action: "logout", providerId: "anthropic" })).status).toBe(200)
-  expect(await host.shared.providers.configured("pi", "default", true)).toEqual([])
+  expect(await host.shared.providers.configured("pi", "default")).toEqual([])
   delete auth.piProviders
   expect((await send("pi", { action: "providers" })).status).toBe(501)
   delete auth.beginPiLogin
@@ -303,14 +303,9 @@ it("scopes provider OAuth to shared settings and filters uninspected plugins at 
       })
     ).status
   ).toBe(201)
-  expect(auth.beginOpenCodeLogin).toHaveBeenCalledWith(
-    "oc-default",
-    "openai",
-    "0",
-    { plan: "plus" },
-    undefined,
-    true
-  )
+  expect(auth.beginOpenCodeLogin).toHaveBeenCalledWith("oc-default", "openai", "0", {
+    plan: "plus"
+  })
   expect((await send("opencode", { action: "login", providerId: "openai" })).status).toBe(400)
   delete auth.beginOpenCodeLogin
   expect(
@@ -366,7 +361,7 @@ it("tells connected apps and auto-resume when this machine switches shared accou
   })
   await startWithApp(m.services, fanout)
 
-  await m.shared.activate("claude-code", next.id, true)
+  await m.shared.activate("claude-code", next.id)
 
   expect(await published.promise).toMatchObject({
     subjectId: "claude-code",

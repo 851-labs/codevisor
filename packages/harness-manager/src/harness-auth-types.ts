@@ -84,49 +84,36 @@ export interface HarnessAuthManager {
     harnesses: ReadonlyArray<Harness>
   ) => Promise<ReadonlyArray<Harness>>
   readonly refresh: (harnessId?: string) => Promise<void>
-  readonly accounts: (harnessId: string, shared?: boolean) => Promise<ReadonlyArray<HarnessAccount>>
+  readonly accounts: (harnessId: string) => Promise<ReadonlyArray<HarnessAccount>>
   readonly createAccount: (harnessId: string, label?: string) => Promise<HarnessAccount>
   readonly renameAccount: (accountId: string, label: string) => Promise<HarnessAccount>
   readonly removeAccount: (accountId: string) => Promise<void>
   readonly activateAccount: (harnessId: string, accountId: string) => Promise<void>
-  readonly probeAccount: (
-    accountId: string,
-    force?: boolean,
-    shared?: boolean
-  ) => Promise<HarnessAccount>
+  readonly probeAccount: (accountId: string, force?: boolean) => Promise<HarnessAccount>
   readonly beginLogin: (
     accountId: string,
     methodId?: string,
-    apiKey?: string,
-    shared?: boolean
+    apiKey?: string
   ) => Promise<HarnessAuthFlow>
   readonly cancelLogin: (flowId: string) => Promise<void>
   readonly answerLogin: (flowId: string, code: string) => Promise<HarnessAuthFlow>
-  readonly logout: (accountId: string, shared?: boolean) => Promise<HarnessAccount>
+  readonly logout: (accountId: string) => Promise<HarnessAccount>
   readonly accountContext: (accountId: string) => Promise<HarnessAccountContext>
   readonly activeAccountContext: (harnessId: string) => Promise<HarnessAccountContext | undefined>
   readonly markAccountExpired: (accountId: string, detail?: string) => Promise<void>
   readonly piProviders?: () => Promise<ReadonlyArray<PiAuthProvider>>
-  readonly beginPiLogin?: (
-    providerId: string,
-    method: PiAuthMethod,
-    shared?: boolean
-  ) => Promise<PiAuthProviderFlow>
+  readonly beginPiLogin?: (providerId: string, method: PiAuthMethod) => Promise<PiAuthProviderFlow>
   readonly piLoginFlow?: (flowId: string) => PiAuthProviderFlow
   readonly answerPiLogin?: (flowId: string, value: string) => Promise<PiAuthProviderFlow>
   readonly cancelPiLogin?: (flowId: string) => void
   readonly logoutPiProvider?: (providerId: string) => Promise<void>
-  readonly openCodeProviders?: (
-    accountId: string,
-    shared?: boolean
-  ) => Promise<ReadonlyArray<OpenCodeAuthProvider>>
+  readonly openCodeProviders?: (accountId: string) => Promise<ReadonlyArray<OpenCodeAuthProvider>>
   readonly beginOpenCodeLogin?: (
     accountId: string,
     providerId: string,
     methodId: string,
     inputs?: Readonly<Record<string, string>>,
-    apiKey?: string,
-    shared?: boolean
+    apiKey?: string
   ) => Promise<OpenCodeAuthFlow>
   readonly openCodeLoginFlow?: (flowId: string) => OpenCodeAuthFlow
   readonly answerOpenCodeLogin?: (flowId: string, code: string) => Promise<OpenCodeAuthFlow>

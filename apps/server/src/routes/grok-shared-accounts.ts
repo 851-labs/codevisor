@@ -14,7 +14,7 @@ import type {
   SharedAccountsRoute
 } from "./shared-account-actions.js"
 
-type UnsupportedGrokAction = "create" | "rename" | "inherit" | "answer" | "providers"
+type UnsupportedGrokAction = "create" | "rename" | "answer" | "providers"
 
 type GrokActionName = Exclude<SharedAccountActionName, UnsupportedGrokAction | "list">
 
@@ -23,7 +23,6 @@ type GrokActionHandler = (request: AccountActionRequest<GrokActionName>) => Prom
 const unsupportedGrokActions: ReadonlySet<SharedAccountActionName> = new Set([
   "create",
   "rename",
-  "inherit",
   "answer",
   "providers"
 ])
@@ -56,24 +55,24 @@ const listAccounts = async ({
   harnessId,
   response
 }: SharedAccountsRoute): Promise<boolean> => {
-  writeJson(response, 200, { accounts: await auth.accounts(harnessId, true) })
+  writeJson(response, 200, { accounts: await auth.accounts(harnessId) })
   return true
 }
 
 const probeAccount: GrokActionHandler = async ({ auth, response, account }) => {
-  writeJson(response, 200, { account: await auth.probeAccount(account.id, true, true) })
+  writeJson(response, 200, { account: await auth.probeAccount(account.id, true) })
   return true
 }
 
 const beginLogin: GrokActionHandler = async ({ auth, response, input, account }) => {
   writeJson(response, 201, {
-    flow: await auth.beginLogin(account.id, input.methodId, input.apiKey, true)
+    flow: await auth.beginLogin(account.id, input.methodId, input.apiKey)
   })
   return true
 }
 
 const logoutAccount: GrokActionHandler = async ({ auth, response, account }) => {
-  writeJson(response, 200, { account: await auth.logout(account.id, true) })
+  writeJson(response, 200, { account: await auth.logout(account.id) })
   return true
 }
 

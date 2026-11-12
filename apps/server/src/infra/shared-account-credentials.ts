@@ -34,7 +34,6 @@ export const makeSharedAccountCredentials = ({
   const token = async (id: string, rejected?: string) => {
     const account = await resolve(id)
     if (!account?.credential) throw new SharedCredentialError("revoked")
-    if (await localState.isDisabled(account.id)) throw new SharedCredentialError("revoked")
 
     return vault.token(account.credential, rejected)
   }
@@ -51,10 +50,7 @@ export const makeSharedAccountCredentials = ({
 
     let status: ProbeStatus
     try {
-      let bundle: SharedTokenBundle
-      if (shared && account?.credential) bundle = await vault.token(account.credential)
-      else bundle = await token(id)
-      status = authenticated(bundle)
+      status = authenticated(await token(id))
     } catch (cause) {
       status = probeFailure(account, cause)
     }

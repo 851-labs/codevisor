@@ -42,8 +42,7 @@ export const makeSharedClaudeAgent = (deps: SharedClaudeAgentDeps): SharedClaude
   const { links, signIns, auth } = deps
   const locate = deps.locate ?? locateExecutableOnPath
 
-  const signedIn = async (shared = false) =>
-    (await auth.accounts(CLAUDE_HARNESS, shared)).filter(isSignedIn)
+  const signedIn = async () => (await auth.accounts(CLAUDE_HARNESS)).filter(isSignedIn)
 
   const requireSignedIn = async (claudeAccountId: string) => {
     if ((await signedIn()).some((account) => account.id === claudeAccountId)) return
@@ -56,9 +55,9 @@ export const makeSharedClaudeAgent = (deps: SharedClaudeAgentDeps): SharedClaude
   }
 
   return {
-    provider: async (openCodeAccountId, listed, shared = false) => {
+    provider: async (openCodeAccountId, listed) => {
       const profile = await deps.profile(openCodeAccountId)
-      const accounts = await signedIn(shared)
+      const accounts = await signedIn()
       const linkedId = await links.get(profile)
       return describe(listed, accounts, linkedId)
     },

@@ -89,7 +89,7 @@ export const makeSharedProviderAccounts = (options: {
         (previous.subject === bundle.subject ||
           (previous.subject.startsWith("grant:") && bundle.subject.startsWith("grant:")))
       if (!sameSource || !previous.credential) {
-        await store.save({ ...bundle, harnessId: harness }, profile, false, false)
+        await store.save({ ...bundle, harnessId: harness }, profile, false)
         const record = await store.get(slot)
         await store.setLocal(sourceKey, {
           fingerprint,
@@ -99,13 +99,7 @@ export const makeSharedProviderAccounts = (options: {
         })
         continue
       }
-      let active = false
-      for (const record of [await store.get(slot), await store.get(slot, true)]) {
-        if (record?.credential.id === previous.credential.id) {
-          active = true
-          break
-        }
-      }
+      const active = (await store.get(slot))?.credential.id === previous.credential.id
       if (active && bundle.ownership === "external")
         await options.vault.publishExternal(previous.credential, {
           ...bundle,
@@ -141,27 +135,17 @@ export const makeSharedProviderAccounts = (options: {
     runtime,
     reconcile,
     ...(claudeAgent === undefined ? {} : { claudeAgent }),
-    account: async (account: HarnessAccount, shared = false): Promise<HarnessAccount> => {
+    account: async (account: HarnessAccount): Promise<HarnessAccount> => {
       await reconcile()
-      const slot = providerSlot("grok-build", "default", "xai")
-      const row = await store.get(slot, shared)
-      const global = await store.get(slot, true)
+      const row = await store.get(providerSlot("grok-build", "default", "xai"))
       const { email: _email, detail: _detail, authMethod: _method, ...base } = account
-      let selectionScope: HarnessAccount["selectionScope"] = "machine"
-      if (
-        shared ||
-        (row?.credential.id === global?.credential.id && (await store.local(slot)) !== false)
-      ) {
-        selectionScope = "shared"
-      }
       const unsigned: HarnessAccount = {
         ...base,
         label: "Grok",
         authState: "unauthenticated",
         isActive: true,
         canLogin: true,
-        canLogout: false,
-        selectionScope
+        canLogout: false
       }
       if (!row) return unsigned
       try {
@@ -189,28 +173,18 @@ export const makeSharedProviderAccounts = (options: {
         }
       }
     },
-    staticOverrides: async (harness: "pi" | "opencode") => {
-      const providers = await store.knownProviders(harness, "default")
-      const local = await Promise.all(
-        providers.map(async (id) =>
-          (await store.local(providerSlot(harness, "default", id))) === false ? id : undefined
-        )
-      )
-      return local.filter((id): id is string => id !== undefined)
-    },
     capture: async (
       harness: ProviderOAuthHarness,
       id: string,
       provider: string,
-      credential: unknown,
-      shared = false
+      credential: unknown
     ) => {
       const bundle = parseProviderOAuth(harness, provider, credential, "managed")
       if (!bundle) return false
       await reconcile()
       const profile = await profileId(harness, id)
-      await store.save({ ...bundle, harnessId: harness }, profile, true, shared)
-      const global = await store.get(providerSlot(harness, profile, provider), true)
+      await store.save({ ...bundle, harnessId: harness }, profile, true)
+      const global = await store.get(providerSlot(harness, profile, provider))
       if (
         !(
           global?.subject === bundle.subject &&
@@ -245,10 +219,10 @@ export const makeSharedProviderAccounts = (options: {
       )
       return true
     },
-    configured: async (harness: ProviderOAuthHarness, id: string, shared = false) => {
+    configured: async (harness: ProviderOAuthHarness, id: string) => {
       await reconcile()
       const profile = await profileId(harness, id)
-      const providers = (await store.records(harness, profile, shared)).map((row) => row.providerId)
+      const providers = (await store.records(harness, profile)).map((row) => row.providerId)
       if (await claudeAgentFor(harness)?.linked(profile)) providers.push(CLAUDE_AGENT_PROVIDER)
       return providers
     },
@@ -261,11 +235,11 @@ export const makeSharedProviderAccounts = (options: {
         (providerId) => !configured.has(providerId)
       )
     },
-    remove: async (harness: ProviderOAuthHarness, id: string, provider: string, shared = false) => {
+    remove: async (harness: ProviderOAuthHarness, id: string, provider: string) => {
       const profile = await profileId(harness, id)
       const agent = claudeAgentFor(harness, provider)
       if (agent !== undefined) return agent.unlink(profile)
-      return store.remove(harness, profile, provider, shared)
+      return store.remove(harness, profile, provider)
     },
     context: async (
       account: HarnessAccount,

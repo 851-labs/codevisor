@@ -30,7 +30,7 @@ it("manages Grok's shared account through HTTP while preserving local overrides 
       method: "POST",
       body: JSON.stringify(body)
     })
-  const initial = await auth.accounts("grok-build", true)
+  const initial = await auth.accounts("grok-build")
   const account = initial[0]!,
     accountId = account.id
   expect((await send({ action: "list" })).body).toMatchObject({
@@ -47,7 +47,7 @@ it("manages Grok's shared account through HTTP while preserving local overrides 
   expect(JSON.stringify(listed.body)).not.toContain(key)
   expect(JSON.stringify(await a.shared.store.entries())).not.toContain(key)
   await f.sync(a, b)
-  expect(await b.shared.providers.account(account, true)).toMatchObject({
+  expect(await b.shared.providers.account(account)).toMatchObject({
     authState: "authenticated",
     authMethod: "apiKey"
   })
@@ -65,23 +65,12 @@ it("manages Grok's shared account through HTTP while preserving local overrides 
     account: { authState: "authenticated" }
   })
   expect((await send({ action: "activate", accountId })).status).toBe(200)
-  await auth.beginLogin(accountId, "apiKey", "local-private-key-5678")
-  expect((await auth.accounts("grok-build"))[0]).toMatchObject({
-    label: "API key ••••5678",
-    selectionScope: "machine"
-  })
+  await auth.beginLogin(accountId, "apiKey", "machine-private-key-5678")
   expect((await send({ action: "list" })).body).toMatchObject({
-    accounts: [{ label: "API key ••••1234", selectionScope: "shared" }]
+    accounts: [{ label: "API key ••••5678" }]
   })
-  await send({ action: "login", accountId, methodId: "apiKey", apiKey: "new-fleet-key-9999" })
-  expect((await auth.accounts("grok-build"))[0]?.label).toBe("API key ••••5678")
-  await auth.beginLogin(accountId, "apiKey", "new-fleet-key-9999")
-  expect((await auth.accounts("grok-build"))[0]?.selectionScope).toBe("shared")
-  await auth.logout(accountId)
-  expect((await auth.accounts("grok-build"))[0]?.authState).toBe("unauthenticated")
-  expect((await send({ action: "probe", accountId })).body).toMatchObject({
-    account: { authState: "authenticated" }
-  })
+  await f.sync(a, b)
+  expect((await b.shared.providers.account(account)).label).toBe("API key ••••5678")
   expect((await send({ action: "cancel", accountId, flowId: "already-complete" })).status).toBe(200)
   expect((await send({ action: "cancel", accountId })).status).toBe(400)
   expect((await send({ action: "rename", accountId, label: "unused" })).status).toBe(400)
@@ -108,20 +97,14 @@ it("reports Grok OAuth identity and refresh failures without hiding the account 
     canLogout: false
   }
   const capture = async (claims: object) =>
-    host.shared.providers.capture(
-      "grok-build",
-      "default",
-      "xai",
-      {
-        auth_mode: "oidc",
-        key: `h.${Buffer.from(JSON.stringify(claims)).toString("base64url")}.s`,
-        refresh_token: "private-refresh",
-        expires_at: new Date(3_600_000).toISOString(),
-        oidc_issuer: "https://auth.x.ai",
-        oidc_client_id: "b1a00492-073a-47ea-816f-4c329264a828"
-      },
-      true
-    )
+    host.shared.providers.capture("grok-build", "default", "xai", {
+      auth_mode: "oidc",
+      key: `h.${Buffer.from(JSON.stringify(claims)).toString("base64url")}.s`,
+      refresh_token: "private-refresh",
+      expires_at: new Date(3_600_000).toISOString(),
+      oidc_issuer: "https://auth.x.ai",
+      oidc_client_id: "b1a00492-073a-47ea-816f-4c329264a828"
+    })
   await capture({ sub: "person", email: "person@example.test" })
   expect(await host.shared.providers.account(account)).toMatchObject({
     authMethod: "oauth",

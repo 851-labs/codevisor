@@ -185,8 +185,7 @@ const signedOutByUser = async (
   login: SharedTokenBundle
 ): Promise<boolean> => {
   const id = sharedOAuthIdentity(login)
-  const tombstone = (await deps.store.entries()).some((entry) => entry.key === id && entry.deleted)
-  return tombstone || (await deps.localState.isDisabled(id))
+  return (await deps.store.entries()).some((entry) => entry.key === id && entry.deleted)
 }
 
 const codevisorLogins = async (deps: ClaudeLoginTakeoverDeps): Promise<CodevisorLogins> => {
