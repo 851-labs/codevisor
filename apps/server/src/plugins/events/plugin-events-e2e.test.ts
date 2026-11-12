@@ -44,7 +44,7 @@ it("wakes an idle chat exactly once when the test-events plugin emits a matching
   expect(stored.map((event) => stringField(event.data, "level"))).toEqual(["error", "info"])
   expect(pluginEventPrompts(running)).toEqual([
     expect.stringContaining(
-      `<codevisor-event type="plugin.event" plugin="Test Events" event="test.ping" subscriptionId="${subscription.id}" note="Plugin errors" eventId="${stored[0]!.id}"`
+      `<codevisor-event type="plugin.event" plugin="Test Events" pluginId="${plugin.id}" event="test.ping" subscriptionId="${subscription.id}" note="Plugin errors" eventId="${stored[0]!.id}"`
     )
   ])
   expect(pluginEventPrompts(running)[0]).toContain('"message":"disk full"')

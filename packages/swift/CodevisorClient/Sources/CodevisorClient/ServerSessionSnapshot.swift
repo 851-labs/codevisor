@@ -44,7 +44,7 @@ public enum ServerSessionStreamEvent: Equatable, Sendable {
   case update(SessionUpdate)
   case userMessage(
     id: String?, text: String, attachments: [Attachment], isEvent: Bool = false, assistantItemId: UUID? = nil,
-    attribution: UserMessageAttribution? = nil)
+    attribution: UserMessageAttribution? = nil, sentByAgent: UserMessageSender? = nil)
   case assistantItemStarted(UUID)
   case assistantFinalized(markdown: String, messageId: String?, attachments: [Attachment])
   case queueUpdated([ServerPromptQueueItem])

@@ -3,6 +3,7 @@ import type { SDKMessage } from "@anthropic-ai/claude-agent-sdk"
 import { finishForkedCommand, forkedCommandRowId } from "./forked-commands.js"
 import { isRecord } from "./internal.js"
 import type { BackgroundTaskEntry, ClaudeSession } from "./session.js"
+import { rememberFinishedTask, rememberNotifiedTask } from "./task-wakes.js"
 import { toolKind } from "./tool-presentation.js"
 
 type SystemMessage = Extract<SDKMessage, { type: "system" }>
@@ -71,6 +72,7 @@ export const handleTaskUpdated = (session: ClaudeSession, message: TaskUpdatedMe
   if (entry === undefined) return
 
   if (isFinishedStatus(status)) {
+    rememberFinishedTask(session, entry, status)
     removeBackgroundTask(session, message.task_id)
   } else {
     patchBackgroundTask(entry, message, status)
@@ -83,6 +85,7 @@ export const handleTaskNotification = (
   message: TaskNotificationMessage
 ): void => {
   finishForkedCommand(session, message.task_id, message.status)
+  rememberNotifiedTask(session, message)
   session.hiddenBackgroundTaskIds.delete(message.task_id)
   if (removeBackgroundTask(session, message.task_id)) void emitBackgroundTasks(session)
 }

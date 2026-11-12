@@ -29,6 +29,8 @@ public struct UserMessage: Identifiable, Sendable, Equatable {
   public var isEvent: Bool
   public var isForkMarker: Bool
   public var attribution: UserMessageAttribution?
+  public var sentByAgentId: String?
+  public var sentByAgentMachineId: String?
 
   public init(
     id: UUID = UUID(),
@@ -38,7 +40,9 @@ public struct UserMessage: Identifiable, Sendable, Equatable {
     textResource: ToolDetailResource? = nil,
     isEvent: Bool = false,
     isForkMarker: Bool = false,
-    attribution: UserMessageAttribution? = nil
+    attribution: UserMessageAttribution? = nil,
+    sentByAgentId: String? = nil,
+    sentByAgentMachineId: String? = nil
   ) {
     self.id = id
     self.text = text
@@ -48,6 +52,8 @@ public struct UserMessage: Identifiable, Sendable, Equatable {
     self.isEvent = isEvent
     self.isForkMarker = isForkMarker
     self.attribution = attribution
+    self.sentByAgentId = sentByAgentId
+    self.sentByAgentMachineId = sentByAgentMachineId
   }
 }
 
@@ -70,11 +76,6 @@ public enum ConversationItem: Identifiable, Sendable, Equatable {
     case let .user(message): return message.id
     case let .assistant(message): return message.id
     }
-  }
-
-  public var isVisibleInTranscript: Bool {
-    guard case let .user(message) = self else { return true }
-    return !message.isEvent
   }
 
   public var userPrompt: UserMessage? {

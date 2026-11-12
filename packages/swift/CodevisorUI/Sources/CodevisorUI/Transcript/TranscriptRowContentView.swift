@@ -143,6 +143,8 @@ public struct TranscriptRowContentView: View {
       TranscriptCompactionMarker()
     case let .forkMarker(text):
       TranscriptForkMarker(text: text)
+    case let .eventMarker(marker, inBotConversation):
+      TranscriptEventRow(marker: marker, inBotConversation: inBotConversation)
     case let .active(item):
       TranscriptActiveItemRow(controller: controller, projectedItem: item, leaves: leaves)
     case let .botMessage(message, content, _):

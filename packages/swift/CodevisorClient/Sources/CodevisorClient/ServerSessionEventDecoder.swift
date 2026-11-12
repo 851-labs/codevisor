@@ -190,12 +190,18 @@ enum ServerSessionEventDecoder {
           attachments: attachments,
           isEvent: payload["origin"]?.stringValue == "event",
           assistantItemId: payload["assistantItemId"]?.stringValue.flatMap(UUID.init(uuidString:)),
-          attribution: attribution(from: payload)
+          attribution: attribution(from: payload),
+          sentByAgent: sender(from: payload)
         )
       ]
     default:
       return []
     }
+  }
+
+  private static func sender(from payload: JSONValue) -> UserMessageSender? {
+    guard let agentId = payload["sentByAgentId"]?.stringValue else { return nil }
+    return UserMessageSender(agentId: agentId, machineId: payload["sentByAgentMachineId"]?.stringValue)
   }
 
   private static func attribution(from payload: JSONValue) -> UserMessageAttribution? {

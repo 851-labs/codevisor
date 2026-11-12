@@ -33,6 +33,7 @@ const headerAttributes = ({
 }: PluginEventEnvelope): string =>
   [
     ["plugin", pluginName],
+    ["pluginId", subscription.serverId],
     ["event", event.eventName],
     ["account", accountLabel],
     ["subscriptionId", subscription.id],

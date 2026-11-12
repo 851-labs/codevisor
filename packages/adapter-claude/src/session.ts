@@ -20,6 +20,7 @@ import type { Deferred } from "./internal.js"
 import type { ClaudeSkillCall } from "./skill-tool.js"
 import type { ClaudeSkills, ClaudeSlashCommand } from "./skills.js"
 import type { SubagentTranscripts } from "./subagent-transcripts.js"
+import type { TaskWake } from "./task-wakes.js"
 
 export interface SteerMessage extends SDKUserMessage {
   readonly message: { readonly content: Array<ClaudeContentBlock>; readonly role: "user" }
@@ -244,6 +245,7 @@ export interface ClaudeSession {
   readonly subagentTranscripts: SubagentTranscripts
   readonly backgroundTasks: Map<string, BackgroundTaskEntry>
   readonly hiddenBackgroundTaskIds: Set<string>
+  readonly pendingTaskWakes: Array<TaskWake>
   readonly backgroundTaskOutputFiles: Map<string, string>
   readonly pendingQuestions: Map<string, PendingClaudeQuestion>
   currentGoal: SessionGoal | undefined
