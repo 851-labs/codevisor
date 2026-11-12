@@ -3,7 +3,6 @@ import SwiftUI
 
 struct ComputerUsePermissionRowsView: View {
   let model: ComputerUsePermissionsModel
-  @Environment(\.controlActiveState) private var controlActiveState
 
   var body: some View {
     PermissionRow(
@@ -15,15 +14,7 @@ struct ComputerUsePermissionRowsView: View {
     ) {
       PermissionActionButton("Allow…") { model.requestAccessibility() }
     }
-    .task {
-      while !Task.isCancelled {
-        model.refresh()
-        try? await Task.sleep(for: .seconds(1))
-      }
-    }
-    .onChange(of: controlActiveState) { _, _ in
-      model.refresh()
-    }
+    .modifier(PermissionPolling { model.refresh() })
 
     PermissionRow(
       symbol: "rectangle.dashed.badge.record",
