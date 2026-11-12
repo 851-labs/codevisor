@@ -322,6 +322,7 @@ describe("CodexProvider", () => {
         allowsOther: false,
         header: "Command",
         id: "approval",
+        isApproval: true,
         options: [{ label: "Allow" }, { label: "Allow for session" }, { label: "Deny" }],
         question: "Allow this command to run?"
       }

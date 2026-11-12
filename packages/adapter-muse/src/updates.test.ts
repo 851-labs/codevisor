@@ -228,6 +228,7 @@ describe("questions", () => {
       {
         id: "permission",
         header: "Permission",
+        isApproval: true,
         question: "Allow bash: rm -rf build?",
         options: [{ label: "Allow once" }, { label: "Allow for session" }, { label: "Deny" }],
         allowsOther: false

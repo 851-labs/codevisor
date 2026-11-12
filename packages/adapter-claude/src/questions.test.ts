@@ -41,6 +41,7 @@ describe("ClaudeProvider", () => {
         allowsOther: false,
         header: "Permission",
         id: "approval",
+        isApproval: true,
         options: [{ label: "Allow" }, { label: "Deny" }],
         question: "Allow Bash?"
       }
@@ -136,6 +137,7 @@ describe("ClaudeProvider", () => {
         allowsOther: false,
         header: "Plan",
         id: "exit_plan_mode",
+        isApproval: true,
         options: [
           { description: "Start building", label: "Implement plan" },
           { description: "Keep refining in plan mode", label: "Keep planning" }

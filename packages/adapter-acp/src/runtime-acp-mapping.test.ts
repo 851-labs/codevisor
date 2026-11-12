@@ -225,6 +225,7 @@ describe("ACP mapping", () => {
     expect(question?.spec).toEqual({
       allowsOther: false,
       id: "permission",
+      isApproval: true,
       options: [{ label: "Yes, and manually approve edits" }, { label: "No, keep planning" }],
       question: "Ready to code?"
     })

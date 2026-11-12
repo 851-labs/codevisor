@@ -42,6 +42,7 @@ describe("OpenCode server session controls", () => {
       {
         allowsOther: false,
         id: "permission",
+        isApproval: true,
         options: [{ label: "Allow once" }, { label: "Always allow" }, { label: "Reject" }],
         question: "Allow the agent to proceed?"
       }
