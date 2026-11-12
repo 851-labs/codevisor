@@ -9,6 +9,7 @@ import {
   payloadOf,
   resultMessage,
   run,
+  sdkMessage,
   streamEvent,
   systemMessage
 } from "./test-support.js"
@@ -59,6 +60,63 @@ describe("ClaudeProvider", () => {
       })
     )
     expect(events.every((event) => event.kind !== "session.error")).toBe(true)
+  })
+
+  it("cancels: the CLI's rejected tool_result for the stopped tool reads as cancelled, not failed", async () => {
+    const fake = new FakeQuery()
+    const provider = makeProvider(fake)
+    const events: Array<RuntimeEvent> = []
+    const emit = async (event: RuntimeEvent): Promise<void> => {
+      events.push(event)
+    }
+    const createPromise = run(provider.createSession(definition, "/tmp", emit))
+    fake.push(initMessage())
+    const created = await createPromise
+
+    const promptPromise = run(created.handle.prompt("do work"))
+    await fake.nextPrompt()
+    fake.push(
+      streamEvent({
+        content_block: { id: "tool-9", name: "Bash", type: "tool_use" },
+        index: 0,
+        type: "content_block_start"
+      })
+    )
+    await fake.drain()
+    const cancellation = run(created.handle.cancel)
+    await fake.waitFor(() => fake.interrupts.length === 1)
+    fake.push(
+      sdkMessage({
+        message: {
+          content: [
+            {
+              content:
+                "The user doesn't want to proceed with this tool use. STOP what you are doing.",
+              is_error: true,
+              tool_use_id: "tool-9",
+              type: "tool_result"
+            }
+          ],
+          role: "user"
+        },
+        parent_tool_use_id: null,
+        session_id: "sdk-session-1",
+        type: "user"
+      })
+    )
+    fake.push(resultMessage("error_during_execution"))
+    await cancellation
+    await promptPromise
+
+    const settled = events
+      .map(payloadOf)
+      .filter(
+        (payload) => payload.sessionUpdate === "tool_call_update" && payload.toolCallId === "tool-9"
+      )
+    expect(settled).toEqual([
+      expect.objectContaining({ sessionUpdate: "tool_call_update", status: "cancelled" })
+    ])
+    expect(settled[0]).not.toHaveProperty("rawOutput")
   })
 
   it("steers a running turn at the next opportunity and declines when no turn is running", async () => {
