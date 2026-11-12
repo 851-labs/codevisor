@@ -17,6 +17,10 @@ public final class ScreenSharingViewerEndpoint: Equatable, Identifiable {
     get { surface.dropsInjectedInput }
     set { surface.dropsInjectedInput = newValue }
   }
+  public var localShortcuts: Set<ScreenSharingLocalShortcutGroup> {
+    get { surface.localShortcuts }
+    set { surface.localShortcuts = newValue }
+  }
   public var videoHasKeyboardFocus: Bool { view.window?.firstResponder === view }
   public let clipboard: ScreenSharingViewerClipboard?
   public let diagnostics = ScreenSharingViewerDiagnostics()
@@ -42,6 +46,7 @@ public final class ScreenSharingViewerEndpoint: Equatable, Identifiable {
   }
 
   public var supportsDynamicResolution: Bool { session.resizesDesktop }
+  public var resizeMirrorsHostDisplay: Bool { session.resizeMirrorsHostDisplay }
   public let resolutionAvailability = ScreenSharingResolutionAvailability()
   public private(set) var audio: ScreenSharingAudioControl?
   private var desktopResizes: Bool? {

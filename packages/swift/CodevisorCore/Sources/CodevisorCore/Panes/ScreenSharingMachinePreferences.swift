@@ -55,6 +55,14 @@ public struct ScreenSharingMachinePreferences {
     defaults.set(enabled, forKey: "screenSharing.sharedClipboard.\(machineId)")
   }
 
+  public func screenshotsStayLocal(machineId: String) -> Bool {
+    defaults.object(forKey: "screenSharing.screenshotsStayLocal.\(machineId)") as? Bool ?? true
+  }
+
+  public func setScreenshotsStayLocal(_ enabled: Bool, machineId: String) {
+    defaults.set(enabled, forKey: "screenSharing.screenshotsStayLocal.\(machineId)")
+  }
+
   public func lastConnected(machineId: String) -> Date? {
     defaults.object(forKey: "screenSharing.lastConnected.\(machineId)") as? Date
   }

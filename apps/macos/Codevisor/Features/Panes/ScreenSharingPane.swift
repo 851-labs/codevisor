@@ -23,7 +23,7 @@ final class ScreenSharingPane: Pane {
   private var persistedResolutionRevision = 0
   private var recordedViewing = false
   private var soundAppliedTo: ObjectIdentifier?
-  private var hdrAppliedTo: ObjectIdentifier?
+  private var savedSettingsAppliedTo: ObjectIdentifier?
   private var clipboardAppliedTo: ObjectIdentifier?
   private let machineId: String
   private let connection: (kind: String, address: String?)
@@ -49,9 +49,10 @@ final class ScreenSharingPane: Pane {
         let saved = ScreenSharingMachinePreferences().sound(machineId: self.machineId)
         audio.apply(.init(enabled: saved.enabled, volume: saved.volume))
       }
-      if let endpoint = store.endpoint, self.hdrAppliedTo != ObjectIdentifier(endpoint) {
-        self.hdrAppliedTo = ObjectIdentifier(endpoint)
+      if let endpoint = store.endpoint, self.savedSettingsAppliedTo != ObjectIdentifier(endpoint) {
+        self.savedSettingsAppliedTo = ObjectIdentifier(endpoint)
         endpoint.highDynamicRange = ScreenSharingMachinePreferences().highDynamicRange(machineId: self.machineId)
+        endpoint.localShortcuts = self.savedKeyboard.localShortcuts
       }
       if let endpoint = store.endpoint, let clipboard = endpoint.clipboard {
         let sharing = clipboard.sharing
@@ -108,6 +109,8 @@ final class ScreenSharingPane: Pane {
       lastConnected: ScreenSharingMachinePreferences().lastConnected(machineId: machineId),
       sound: store?.endpoint?.audio.map { .init(enabled: $0.enabled, volume: $0.volume) })
     settings.dynamicResolutionNote = Self.dynamicResolutionNote(store?.endpoint)
+    settings.dynamicResolutionMirrorsDisplay = store?.endpoint?.resizeMirrorsHostDisplay ?? false
+    if store?.endpoint?.supportsControl != false { settings.keyboard = savedKeyboard }
     if store?.endpoint?.supportsHighDynamicRange != false {
       settings.highDynamicRange = ScreenSharingMachinePreferences().highDynamicRange(machineId: machineId)
       settings.highDynamicRangeNote = store?.endpoint?.highDynamicRangeNote
@@ -136,7 +139,15 @@ final class ScreenSharingPane: Pane {
       ScreenSharingMachinePreferences().setSound(enabled: sound.enabled, volume: sound.volume, machineId: machineId)
       store.endpoint?.audio?.apply(sound)
     }
+    if let keyboard = changes.keyboard {
+      ScreenSharingMachinePreferences().setScreenshotsStayLocal(keyboard.screenshotsStayLocal, machineId: machineId)
+      store.endpoint?.localShortcuts = keyboard.localShortcuts
+    }
     if let display = changes.preferredDisplayId { store.send(.displaySelected(display)) }
+  }
+
+  private var savedKeyboard: ScreenSharingMachineSettings.Keyboard {
+    .init(screenshotsStayLocal: ScreenSharingMachinePreferences().screenshotsStayLocal(machineId: machineId))
   }
 
   private static func connection(of machine: CodevisorMachine) -> (kind: String, address: String?) {

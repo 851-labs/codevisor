@@ -1,4 +1,5 @@
 import CodevisorCore
+import ScreenSharing
 import SwiftUI
 
 public struct ScreenSharingMachineSettings: Equatable, Sendable {
@@ -14,26 +15,45 @@ public struct ScreenSharingMachineSettings: Equatable, Sendable {
     public init(enabled: Bool = true, volume: Double = 1) { self.enabled = enabled; self.volume = volume }
   }
 
+  public struct Keyboard: Equatable, Sendable {
+    public var screenshotsStayLocal: Bool
+    public init(screenshotsStayLocal: Bool = true) { self.screenshotsStayLocal = screenshotsStayLocal }
+
+    public static let screenshotsExplanation =
+      "Screenshot shortcuts like ⇧⌘4 work on this Mac instead of the shared screen."
+
+    public var localShortcuts: Set<ScreenSharingLocalShortcutGroup> { screenshotsStayLocal ? [.screenshots] : [] }
+  }
+
   public var name: String
   public var connection: String
   public var address: String?
   public var dynamicResolution: Bool?
   public var dynamicResolutionNote: String?
+  public var dynamicResolutionMirrorsDisplay = false
   public var highDynamicRange: Bool?
   public var highDynamicRangeNote: String?
   public var displays: [Display]
   public var preferredDisplayId: String?
   public var lastConnected: Date?
   public var sound: Sound?
+  public var keyboard: Keyboard?
 
   public init(
     name: String, connection: String, address: String? = nil, dynamicResolution: Bool? = nil,
-    displays: [Display] = [], preferredDisplayId: String? = nil, lastConnected: Date? = nil, sound: Sound? = nil
+    displays: [Display] = [], preferredDisplayId: String? = nil, lastConnected: Date? = nil, sound: Sound? = nil,
+    keyboard: Keyboard? = nil
   ) {
-    self.sound = sound
+    self.sound = sound; self.keyboard = keyboard
     self.name = name; self.connection = connection; self.address = address
     self.dynamicResolution = dynamicResolution; self.displays = displays
     self.preferredDisplayId = preferredDisplayId; self.lastConnected = lastConnected
+  }
+
+  public var dynamicResolutionExplanation: String {
+    let resizes = "Dynamic Resolution resizes this machine's screen to fit your window as you resize it."
+    guard dynamicResolutionMirrorsDisplay else { return resizes }
+    return "\(resizes) While you're connected, its own display mirrors the new size."
   }
 }
 
@@ -42,12 +62,13 @@ public struct ScreenSharingMachineSettingsChanges: Equatable, Sendable {
   public var highDynamicRange: Bool?
   public var preferredDisplayId: String?
   public var sound: ScreenSharingMachineSettings.Sound?
+  public var keyboard: ScreenSharingMachineSettings.Keyboard?
 
   public init(
     dynamicResolution: Bool? = nil, highDynamicRange: Bool? = nil, preferredDisplayId: String? = nil,
-    sound: ScreenSharingMachineSettings.Sound? = nil
+    sound: ScreenSharingMachineSettings.Sound? = nil, keyboard: ScreenSharingMachineSettings.Keyboard? = nil
   ) {
-    self.sound = sound
+    self.sound = sound; self.keyboard = keyboard
     self.highDynamicRange = highDynamicRange
     self.dynamicResolution = dynamicResolution; self.preferredDisplayId = preferredDisplayId
   }
@@ -75,6 +96,7 @@ public struct ScreenSharingMachineSettingsDraft: Equatable, Sendable {
       changes.preferredDisplayId = display
     }
     if let sound = settings.sound, sound != original.sound { changes.sound = sound }
+    if let keyboard = settings.keyboard, keyboard != original.keyboard { changes.keyboard = keyboard }
     return changes
   }
 }
@@ -105,6 +127,9 @@ public struct ScreenSharingMachineSettingsSheet: View {
         }
         display
         if draft.settings.sound != nil { sound }
+        if let keyboard = Binding($draft.settings.keyboard) {
+          ScreenSharingMachineKeyboardSection(keyboard: keyboard)
+        }
       }
       .formStyle(.grouped)
       footer
@@ -139,7 +164,7 @@ public struct ScreenSharingMachineSettingsSheet: View {
     if draft.settings.dynamicResolution != nil || draft.settings.highDynamicRange != nil
       || draft.settings.displays.count > 1
     {
-      Section("Display") {
+      Section {
         if draft.settings.dynamicResolution != nil {
           Toggle(
             "Dynamic Resolution",
@@ -165,6 +190,10 @@ public struct ScreenSharingMachineSettingsSheet: View {
             ForEach(draft.settings.displays) { Text($0.name).tag(Optional($0.id)) }
           }
         }
+      } header: {
+        Text("Display")
+      } footer: {
+        if draft.settings.dynamicResolution != nil { Text(draft.settings.dynamicResolutionExplanation) }
       }
     }
   }

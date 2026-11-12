@@ -396,7 +396,7 @@ struct ScreenSharingInputSurfaceTests {
 }
 
 @MainActor
-private final class InputSurfaceFixture {
+final class InputSurfaceFixture {
   let window: InputTestWindow
   let view = InputTestView(frame: .init(x: 0, y: 0, width: 640, height: 480))
   let input: ScreenSharingInputSurface
@@ -425,7 +425,7 @@ private final class InputSurfaceFixture {
 
   init(
     keyboardStarts: Bool = true, mouseTap: Bool = false, windowIsKey: Bool = true, videoFocused: Bool = true,
-    inWindow: Bool = true
+    inWindow: Bool = true, symbolicHotKeys: [String: Any]? = nil
   ) throws {
     _ = NSApplication.shared
     window = InputTestWindow(
@@ -440,7 +440,8 @@ private final class InputSurfaceFixture {
     input = ScreenSharingInputSurface(
       view: view, notificationCenter: notifications, keyboardCapture: keyboard, mouseCapture: mouse,
       applicationIsActive: { [application] in application.active },
-      layout: { code, carbon in code == 0 ? (carbon & UInt32(Carbon.shiftKey >> 8) != 0 ? "A" : "a") : "x" })
+      layout: { code, carbon in code == 0 ? (carbon & UInt32(Carbon.shiftKey >> 8) != 0 ? "A" : "a") : "x" },
+      symbolicHotKeys: { symbolicHotKeys })
     input.onInput = { [unowned self] in
       events.append($0); forwarder.forward($0)
     }
@@ -495,12 +496,12 @@ private final class InputSurfaceFixture {
 }
 
 @MainActor
-private final class InputTestApplication {
+final class InputTestApplication {
   var active = true
 }
 
 @MainActor
-private final class InputTestKeyboardCapture: ScreenSharingKeyboardCapture {
+final class InputTestKeyboardCapture: ScreenSharingKeyboardCapture {
   var starts = true
   var stops = 0
   private(set) var claims = false
@@ -508,6 +509,10 @@ private final class InputTestKeyboardCapture: ScreenSharingKeyboardCapture {
   var handle: ((CGEventType, CGEvent) -> Bool)?
   func setClaimsKeys(_ claims: Bool) { self.claims = claims }
   func setClaimsInjectedKeys(_ claims: Bool) { claimsInjected = claims }
+  private(set) var localShortcuts: Set<ScreenSharingShortcut> = []
+  func setLocalShortcuts(_ shortcuts: Set<ScreenSharingShortcut>) { localShortcuts = shortcuts }
+  private(set) var reclaims = 0
+  func reclaimKeys() { reclaims += 1 }
   var interrupted: (() -> Void)?
   func start(handle: @escaping (CGEventType, CGEvent) -> Bool, interrupted: @escaping () -> Void) -> Bool {
     guard starts else { return false }
@@ -522,13 +527,13 @@ private final class InputTestKeyboardCapture: ScreenSharingKeyboardCapture {
 }
 
 @MainActor
-private final class InputTestWindow: NSWindow {
+final class InputTestWindow: NSWindow {
   var key = true
   override var isKeyWindow: Bool { key }
 }
 
 @MainActor
-private final class InputTestView: NSView, ScreenSharingInputTarget {
+final class InputTestView: NSView, ScreenSharingInputTarget {
   override var acceptsFirstResponder: Bool { true }
   private(set) var cursorChanges = 0
   func pointer(_ event: NSEvent, clamp: Bool) -> ScreenSharingPointer? { .init(x: 0.5, y: 0.5) }

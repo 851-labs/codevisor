@@ -49,6 +49,75 @@ struct ScreenSharingKeyboardCaptureTests {
     #expect(recorder.events.map(\.code) == [13])
   }
 
+  @Test func screenshotChordsPassToThisMacWhileTheirModifiersStillReachTheHost() async throws {
+    let installer = RecordingTapInstaller()
+    let capture = ScreenSharingSystemKeyboardCapture(installer: installer)
+    defer { capture.stop() }
+    let recorder = CaptureRecorder()
+    capture.setLocalShortcuts([.init(keyCode: 21, [.maskShift, .maskCommand])])
+    #expect(capture.start(handle: recorder.handle, interrupted: recorder.interrupt))
+    capture.setClaimsKeys(true)
+    let tap = try #require(installer.tap)
+    let chord: CGEventFlags = [.maskShift, .maskCommand]
+
+    #expect(await tap.deliver(.flagsChanged, code: 55, flags: .maskCommand) == .consumed)
+    #expect(await tap.deliver(.flagsChanged, code: 56, flags: chord) == .consumed)
+    #expect(await tap.deliver(.keyDown, code: 21, flags: chord) == .passed, "macOS takes the screenshot")
+    #expect(await tap.deliver(.keyDown, code: 21, flags: chord) == .passed, "a repeat stays local")
+    #expect(await tap.deliver(.flagsChanged, code: 55, flags: .maskShift) == .passed, "the crosshair sees modifiers")
+    #expect(await tap.deliver(.keyUp, code: 21, flags: .maskShift) == .passed, "its release follows the press")
+    #expect(await tap.deliver(.flagsChanged, code: 56) == .passed)
+    await recorder.delivered.wait(for: 4)
+    await drainMainQueue()
+    #expect(recorder.events.map(\.code) == [55, 56, 55, 56], "the host sees every modifier go down and up")
+  }
+
+  @Test func whileALocalShortcutIsActiveOnlyItsUIKeysStayOnThisMac() async throws {
+    let installer = RecordingTapInstaller()
+    let capture = ScreenSharingSystemKeyboardCapture(installer: installer)
+    defer { capture.stop() }
+    let recorder = CaptureRecorder()
+    capture.setLocalShortcuts([.init(keyCode: 21, [.maskShift, .maskCommand])])
+    #expect(capture.start(handle: recorder.handle, interrupted: recorder.interrupt))
+    capture.setClaimsKeys(true)
+    let tap = try #require(installer.tap)
+
+    #expect(await tap.deliver(.keyDown, code: 53) == .consumed, "Escape goes to the host until a shortcut is local")
+    #expect(await tap.deliver(.keyDown, code: 21, flags: [.maskShift, .maskCommand]) == .passed)
+    #expect(await tap.deliver(.keyDown, code: 53) == .passed, "Escape cancels the crosshair")
+    #expect(await tap.deliver(.keyUp, code: 53) == .passed)
+    #expect(await tap.deliver(.keyDown, code: 49) == .passed, "Space switches to window capture")
+    #expect(await tap.deliver(.keyUp, code: 49) == .passed)
+    #expect(await tap.deliver(.keyDown, code: 49, flags: .maskCommand) == .consumed, "⌘Space still goes to the host")
+    #expect(await tap.deliver(.keyDown, code: 0) == .consumed, "typing still goes to the host")
+    #expect(await tap.deliver(.keyDown, code: 49) == .passed)
+    capture.reclaimKeys()
+    #expect(await tap.deliver(.keyUp, code: 49) == .consumed, "taking the keyboard back forgets local keys")
+    #expect(await tap.deliver(.keyDown, code: 53) == .consumed)
+    #expect(await tap.deliver(.keyDown, code: 21) == .consumed, "4 alone goes to the host")
+    #expect(await tap.deliver(.keyDown, code: 36) == .consumed)
+
+    await recorder.delivered.wait(for: 7)
+    await drainMainQueue()
+    #expect(recorder.events.map(\.code) == [53, 49, 0, 49, 53, 21, 36])
+  }
+
+  @Test func withoutLocalShortcutsScreenshotChordsGoToTheHost() async throws {
+    let installer = RecordingTapInstaller()
+    let capture = ScreenSharingSystemKeyboardCapture(installer: installer)
+    defer { capture.stop() }
+    let recorder = CaptureRecorder()
+    capture.setLocalShortcuts([.init(keyCode: 21, [.maskShift, .maskCommand])])
+    #expect(capture.start(handle: recorder.handle, interrupted: recorder.interrupt))
+    capture.setClaimsKeys(true)
+    capture.setLocalShortcuts([])
+    let tap = try #require(installer.tap)
+    #expect(await tap.deliver(.keyDown, code: 21, flags: [.maskShift, .maskCommand]) == .consumed)
+    #expect(await tap.deliver(.keyUp, code: 21, flags: [.maskShift, .maskCommand]) == .consumed)
+    await recorder.delivered.wait(for: 2)
+    #expect(recorder.events.map(\.code) == [21, 21])
+  }
+
   @Test func aTimedOutTapIsReenabledWhileAUserInputDisableInterrupts() async throws {
     let installer = RecordingTapInstaller()
     let capture = ScreenSharingSystemKeyboardCapture(installer: installer)
@@ -187,20 +256,24 @@ private final class RecordedTap: Sendable {
     self.callback = callback; self.context = context
   }
 
-  func deliver(_ type: CGEventType, code: UInt16, injected: Bool = false, withContext: Bool = true) async -> Outcome {
+  func deliver(
+    _ type: CGEventType, code: UInt16, flags: CGEventFlags = [], injected: Bool = false, withContext: Bool = true
+  ) async -> Outcome {
     await withCheckedContinuation { continuation in
       DispatchQueue.global(qos: .userInteractive).async {
         continuation.resume(
-          returning: self.deliverBlocking(type, code: code, injected: injected, withContext: withContext))
+          returning: self.deliverBlocking(type, code: code, flags: flags, injected: injected, withContext: withContext))
       }
     }
   }
 
-  func deliverBlocking(_ type: CGEventType, code: UInt16, injected: Bool = false, withContext: Bool = true) -> Outcome {
+  func deliverBlocking(
+    _ type: CGEventType, code: UInt16, flags: CGEventFlags = [], injected: Bool = false, withContext: Bool = true
+  ) -> Outcome {
     guard let event = CGEvent(keyboardEventSource: nil, virtualKey: code, keyDown: type != .keyUp),
       let proxy = CGEventTapProxy(bitPattern: 1)
     else { return .passed }
-    event.flags = []
+    event.flags = flags
     if injected { event.setIntegerValueField(.eventSourceUserData, value: ScreenSharingInputInjector.eventTag) }
     let context = withContext ? Unmanaged.passUnretained(context).toOpaque() : nil
     let result = withExtendedLifetime(self.context) { callback(proxy, type, event, context) }
