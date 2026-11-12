@@ -159,9 +159,9 @@ struct TranscriptWorkedRowProjectionTests {
       AssistantMessage(
         id: messageID,
         turn: AssistantTurn(
-          entries: [.text(id: "commentary", markdown: markdown)],
+          entries: [.text(id: "commentary", markdown: markdown), .text(id: "answer", markdown: "Done.")],
           isGenerating: true,
-          textPhases: ["commentary": .commentary]
+          textPhases: ["commentary": .commentary, "answer": .final]
         )
       )
     )
@@ -169,8 +169,8 @@ struct TranscriptWorkedRowProjectionTests {
       AssistantMessage(
         id: messageID,
         turn: AssistantTurn(
-          entries: [.text(id: "commentary", markdown: markdown)],
-          textPhases: ["commentary": .commentary]
+          entries: [.text(id: "commentary", markdown: markdown), .text(id: "answer", markdown: "Done.")],
+          textPhases: ["commentary": .commentary, "answer": .final]
         )
       )
     )

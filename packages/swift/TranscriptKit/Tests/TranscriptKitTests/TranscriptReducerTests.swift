@@ -85,6 +85,21 @@ struct TranscriptReducerTests {
     #expect(turn.workedEntries.map(\.id) == ["tool:a", "text:acp:m1"])
   }
 
+  @Test("A turn that ends on a tool call answers with its latest commentary once settled")
+  func commentaryAnswersTurnEndingOnTool() {
+    let events: [SessionUpdate] = [
+      .agentMessageChunk(.text("Looking."), messageId: "m1", parentToolCallId: nil, phase: .commentary),
+      .toolCall(ToolCall(toolCallId: "a", title: "Read", kind: .read, status: .completed)),
+      .agentMessageChunk(.text("Setting that up now."), messageId: "m2", parentToolCallId: nil, phase: .commentary),
+      .toolCall(ToolCall(toolCallId: "b", title: "Schedule", kind: .other, status: .completed)),
+    ]
+    #expect(reduce(events).finalText == nil)
+
+    let turn = settled(events)
+    #expect(turn.finalText == .text(id: "acp:m2", markdown: "Setting that up now."))
+    #expect(turn.workedEntries.map(\.id) == ["text:acp:m1", "tool:a", "tool:b"])
+  }
+
   @Test("Live unlabeled text is the answer only until something follows it")
   func liveTailIsTheAnswer() {
     var turn = AssistantTurn(isGenerating: true)

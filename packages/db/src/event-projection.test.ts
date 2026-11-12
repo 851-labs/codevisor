@@ -300,7 +300,7 @@ describe("@codevisor/db", () => {
         stopDetail: "provider failed",
         stopReason: "error"
       })
-      expect(page.items[3]?.text).toBe("")
+      expect(page.items[3]).toMatchObject({ text: "commentary only", phase: "commentary" })
       expect(page.items[3]?.stopReason).toBeUndefined()
       expect(page.items[2]?.stopKind).toBeUndefined()
       expect(page.items[4]).toMatchObject({

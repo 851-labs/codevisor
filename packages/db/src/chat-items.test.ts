@@ -309,6 +309,51 @@ describe("@codevisor/db", () => {
     }
   })
 
+  it("answers a turn that ended on a tool call with its latest commentary once settled", async () => {
+    const db = await run(makeDatabase({ filename: tempDatabase(), serverId: "local" }))
+    try {
+      const project = await run(db.createProject({ folderPath: "/tmp/commentary-answer" }))
+      const session = await run(
+        db.createSession({ projectId: project.id, harnessId: "claude-code" })
+      )
+
+      await run(
+        db.appendEvent("session.updated", session.id, { turnId: "turn-1", turnState: "started" })
+      )
+      await run(
+        db.appendEvent("session.output", session.id, {
+          sessionUpdate: "agent_message_chunk",
+          content: { type: "text", text: "Setting that up now." },
+          messageId: "msg-preamble",
+          phase: "commentary"
+        })
+      )
+      await run(
+        db.appendEvent("session.output", session.id, {
+          sessionUpdate: "tool_call",
+          toolCallId: "tool-1",
+          title: "ScheduleWakeup",
+          kind: "other",
+          status: "completed"
+        })
+      )
+      const live = (await run(db.getTranscriptPage(session.id, undefined, 8))).items.at(-1)
+      expect(live).toMatchObject({ isGenerating: true, text: "" })
+
+      await run(db.appendEvent("session.updated", session.id, { turnState: "ended" }))
+      expect(
+        (await run(db.getTranscriptPage(session.id, undefined, 8))).items.at(-1)
+      ).toMatchObject({
+        isGenerating: false,
+        text: "Setting that up now.",
+        messageId: "msg-preamble",
+        phase: "commentary"
+      })
+    } finally {
+      await run(db.close)
+    }
+  })
+
   it("lists sessions with streaming items only once their event log is quiet", async () => {
     const db = await run(makeDatabase({ filename: tempDatabase(), serverId: "local" }))
     try {
