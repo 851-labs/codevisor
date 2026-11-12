@@ -45,6 +45,32 @@ struct BotListModelTests {
     #expect(model.bots.map(\.name) == ["First", "Second"])
   }
 
+  @Test("The bots seen last launch are listed before any machine has answered")
+  func savedBotsShowAtLaunch() async throws {
+    let saved = InMemoryStore()
+    let fake = SyncFakeServerClient(projects: [], sessions: [])
+    fake.configureInfoFeatures(["bots-v1"])
+    fake.setBots([.fixture(name: "Remembered")])
+    let lastLaunch = MachineController(
+      store: InMemoryStore(), projectList: ProjectListModel.fixture(), clientFactory: { _ in fake })
+    await lastLaunch.refreshStatus(for: CodevisorMachine.local.id)
+    await BotListModel(machines: lastLaunch, store: saved).refresh(serverId: CodevisorMachine.local.id)
+    PersistenceEncoding.drain()
+
+    let thisLaunch = MachineController(
+      store: InMemoryStore(), projectList: ProjectListModel.fixture(), clientFactory: { _ in fake })
+    let model = BotListModel(machines: thisLaunch, store: saved)
+    #expect(model.bots.map(\.name) == ["Remembered"])
+
+    await model.refresh(serverId: CodevisorMachine.local.id)
+    #expect(model.bots.map(\.name) == ["Remembered"])
+
+    fake.setBots([])
+    await thisLaunch.refreshStatus(for: CodevisorMachine.local.id)
+    await model.refresh(serverId: CodevisorMachine.local.id)
+    #expect(model.bots.isEmpty)
+  }
+
   @Test("A bot reachable through two machine entries for the same server is listed once")
   func sameServerListsOnce() async throws {
     let fake = SyncFakeServerClient(projects: [], sessions: [])

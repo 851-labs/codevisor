@@ -4,16 +4,44 @@ import Observation
 @MainActor
 @Observable
 public final class BotListModel {
+  nonisolated static let savedKey = "bot-lists-v1"
+
   public private(set) var recordsByServer: [String: [ServerBot]] = [:] {
-    didSet { navigationStore?.keepPanesOnDevice(in: Set(bots.map(\.workspaceId))) }
+    didSet {
+      navigationStore?.keepPanesOnDevice(in: Set(bots.map(\.workspaceId)))
+      save()
+    }
   }
   @ObservationIgnored private let machines: MachineController
   @ObservationIgnored private weak var navigationStore: NavigationStore?
+  @ObservationIgnored private let store: (any PersistenceStore)?
+  @ObservationIgnored private let persistenceOwner = UUID()
   @ObservationIgnored private var refreshGenerations: [String: UInt64] = [:]
 
-  public init(machines: MachineController, navigationStore: NavigationStore? = nil) {
+  public init(
+    machines: MachineController, navigationStore: NavigationStore? = nil, store: (any PersistenceStore)? = nil
+  ) {
     self.machines = machines
     self.navigationStore = navigationStore
+    self.store = store
+    recordsByServer = Self.saved(in: store)
+  }
+
+  private static func saved(in store: (any PersistenceStore)?) -> [String: [ServerBot]] {
+    guard let data = store?.loadData(forKey: savedKey) else { return [:] }
+    return (try? JSONDecoder().decode([String: [ServerBot]].self, from: data)) ?? [:]
+  }
+
+  private func save() {
+    guard let store else { return }
+    let records = recordsByServer
+    PersistenceEncoding.enqueueLatest(owner: persistenceOwner, key: Self.savedKey) {
+      do {
+        try store.saveData(PersistenceEncoding.encoder.encode(records), forKey: Self.savedKey)
+      } catch {
+        Log.persistence.error("Failed to save the bot list: \(String(describing: error), privacy: .public)")
+      }
+    }
   }
 
   public var bots: [Bot] {
@@ -76,6 +104,7 @@ public final class BotListModel {
   public func refresh(serverId: String) async {
     let generation = (refreshGenerations[serverId] ?? 0) + 1
     refreshGenerations[serverId] = generation
+    guard machines.statusByMachineId[serverId] != nil else { return }
     guard supportsBots(on: serverId) else {
       recordsByServer[serverId] = nil
       return

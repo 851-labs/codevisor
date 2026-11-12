@@ -103,7 +103,7 @@ public final class AppEnvironment {
     )
     updateCenter = UpdateCenter(machines: machines, appUpdate: self.appUpdate, now: now)
     configSync = ConfigSync(machines: machines)
-    bots = BotListModel(machines: machines, navigationStore: navigationStore)
+    bots = BotListModel(machines: machines, navigationStore: navigationStore, store: navigationPersistence)
     botSections = CustomSectionStore(configSync: configSync, namespace: CustomSectionStore.botNamespace)
     workspaceSections = CustomSectionStore(configSync: configSync, namespace: CustomSectionStore.workspaceNamespace)
     self.cloud = CloudAccountController(
