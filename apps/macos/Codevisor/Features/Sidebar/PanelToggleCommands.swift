@@ -4,6 +4,7 @@ struct PanelToggleCommands: Commands {
   var body: some Commands {
     CommandGroup(replacing: .sidebar) {
       SidebarModeMenuItems()
+      SidebarHistoryMenuItems()
       PanelToggleMenuItems()
     }
   }

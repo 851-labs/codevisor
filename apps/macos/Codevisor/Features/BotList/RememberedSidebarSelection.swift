@@ -14,4 +14,8 @@ nonisolated struct RememberedSidebarSelection: Hashable, Codable, Sendable {
   }
 }
 
+extension RememberedSidebarSelection: Identifiable {
+  var id: SidebarSelection { parentWorkspace ?? selection }
+}
+
 typealias RememberedSidebarSelections = SidebarModeSelections<RememberedSidebarSelection>
