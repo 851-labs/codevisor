@@ -55,9 +55,9 @@ describe("Pi provider authentication", () => {
         if (flow.state === "complete") completed.resolve()
       }
     })
-    const pending = manager.beginLogin("test", "oauth", true)
+    const pending = manager.beginLogin("test", "oauth")
     await called.promise
-    expect(saveCredential).toHaveBeenCalledWith("test", credential, true)
+    expect(saveCredential).toHaveBeenCalledWith("test", credential)
     expect(states).not.toContain("complete")
     expect(existsSync(piAuthPath({ HOME: home }))).toBe(false)
     saved.resolve(true)

@@ -60,14 +60,13 @@ export const makeHarnessAuthManager = (config: HarnessAuthManagerConfig): Harnes
     core
   const piAuth = makePiAuthManager({
     resolveEnv: environment,
-    saveCredential: async (providerId, credential, shared) => {
+    saveCredential: async (providerId, credential) => {
       if (credential.type === "oauth")
         return (
-          (await config
-            .sharedProviders?.()
-            ?.capture("pi", "default", providerId, credential, shared)) ?? false
+          (await config.sharedProviders?.()?.capture("pi", "default", providerId, credential)) ??
+          false
         )
-      await config.sharedProviders?.()?.remove("pi", "default", providerId, shared)
+      await config.sharedProviders?.()?.remove("pi", "default", providerId)
       return false
     }
   })
@@ -120,8 +119,8 @@ export const makeHarnessAuthManager = (config: HarnessAuthManagerConfig): Harnes
   }
   const openCodeAuth = makeOpenCodeAuthManager({
     profile: openCodeProfile,
-    savedApiKey: async (accountId, providerId, shared) => {
-      await config.sharedProviders?.()?.remove("opencode", accountId, providerId, shared)
+    savedApiKey: async (accountId, providerId) => {
+      await config.sharedProviders?.()?.remove("opencode", accountId, providerId)
     },
     loginProfile: async (accountId, providerId) => {
       if (!config.sharedProviders?.() || !providerOAuthSupported("opencode", providerId))
@@ -132,12 +131,12 @@ export const makeHarnessAuthManager = (config: HarnessAuthManagerConfig): Harnes
       const env = { ...profile.env, XDG_DATA_HOME: data, OPENCODE_AUTH_CONTENT: "" }
       return { ...profile, env, authPath: openCodeAuthPath(env) }
     },
-    captureOAuth: async (accountId, providerId, path, shared) => {
+    captureOAuth: async (accountId, providerId, path) => {
       const document = parseJsonRecord(await readFile(path, "utf8"))
       if (
         !(await config
           .sharedProviders?.()
-          ?.capture("opencode", accountId, providerId, document[providerId], shared))
+          ?.capture("opencode", accountId, providerId, document[providerId]))
       )
         throw new Error("This provider cannot share its sign-in. Update Codevisor and try again.")
       await rm(path, { force: true })
@@ -146,15 +145,14 @@ export const makeHarnessAuthManager = (config: HarnessAuthManagerConfig): Harnes
   const claudeAgent = () => config.sharedProviders?.()?.claudeAgent
   const withClaudeAgent = (
     providers: ReadonlyArray<OpenCodeAuthProvider>,
-    accountId: string,
-    shared: boolean
+    accountId: string
   ): Promise<ReadonlyArray<OpenCodeAuthProvider>> => {
     const agent = claudeAgent()
     if (agent === undefined) return Promise.resolve(providers.map(withoutClaudeAgentLogin))
     return Promise.all(
       providers.map(async (provider) => {
         if (provider.id !== CLAUDE_AGENT_PROVIDER) return provider
-        return agent.provider(accountId, provider, shared)
+        return agent.provider(accountId, provider)
       })
     )
   }
@@ -189,7 +187,7 @@ export const makeHarnessAuthManager = (config: HarnessAuthManagerConfig): Harnes
       if (await config.sharedAccounts?.()?.logout(accountId)) return
       return accounts.removeAccount(accountId)
     },
-    accounts: async (harnessId, shared = false) => {
+    accounts: async (harnessId) => {
       if (harnessId === "grok-build") {
         let rows = await run(config.db.listHarnessAccounts(harnessId))
         if (!rows.length)
@@ -205,7 +203,7 @@ export const makeHarnessAuthManager = (config: HarnessAuthManagerConfig): Harnes
               })
             )
           ]
-        return Promise.all(rows.map((row) => grok.account(row, shared)))
+        return Promise.all(rows.map((row) => grok.account(row)))
       }
       return (
         (await config.sharedAccounts?.()?.accounts(harnessId)) ??
@@ -264,7 +262,7 @@ export const makeHarnessAuthManager = (config: HarnessAuthManagerConfig): Harnes
     logoutPiProvider: async (id) => {
       if (!(await config.sharedProviders?.()?.remove("pi", "default", id))) await piAuth.logout(id)
     },
-    openCodeProviders: async (accountId, shared = false) => {
+    openCodeProviders: async (accountId) => {
       const profile = await openCodeProfile(accountId)
       let providers: ReadonlyArray<OpenCodeAuthProvider>
       if (((await openCodeMajorVersion(profile.command)) ?? 1) >= 2) {
@@ -276,11 +274,10 @@ export const makeHarnessAuthManager = (config: HarnessAuthManagerConfig): Harnes
       const disabled = (await config.sharedProviders?.()?.disabled?.("opencode", accountId)) ?? []
       return withClaudeAgent(
         withSharedProviderCredentials(providers, configured, disabled),
-        accountId,
-        shared
+        accountId
       )
     },
-    beginOpenCodeLogin: async (accountId, providerId, methodId, inputs, apiKey, shared = false) => {
+    beginOpenCodeLogin: async (accountId, providerId, methodId, inputs, apiKey) => {
       if (providerId === CLAUDE_AGENT_PROVIDER) {
         const agent = claudeAgent()
         if (agent === undefined)
@@ -289,7 +286,7 @@ export const makeHarnessAuthManager = (config: HarnessAuthManagerConfig): Harnes
       }
       const profile = await openCodeProfile(accountId)
       if (!(await isOpenCode2(profile.command)))
-        return openCodeAuth.beginLogin(accountId, providerId, methodId, inputs, apiKey, shared)
+        return openCodeAuth.beginLogin(accountId, providerId, methodId, inputs, apiKey)
       const providers = config.sharedProviders?.()
       const captured =
         apiKey === undefined &&
@@ -308,9 +305,7 @@ export const makeHarnessAuthManager = (config: HarnessAuthManagerConfig): Harnes
           ? {
               capture: async (credential) => {
                 assertTrustedOpenCodeConsole(providerId, credential)
-                if (
-                  !(await providers.capture("opencode", accountId, providerId, credential, shared))
-                )
+                if (!(await providers.capture("opencode", accountId, providerId, credential)))
                   throw new Error(
                     "This provider cannot share its sign-in. Update Codevisor and try again."
                   )
@@ -318,7 +313,7 @@ export const makeHarnessAuthManager = (config: HarnessAuthManagerConfig): Harnes
             }
           : {})
       })
-      if (apiKey !== undefined) await providers?.remove("opencode", accountId, providerId, shared)
+      if (apiKey !== undefined) await providers?.remove("opencode", accountId, providerId)
       return flow
     },
     openCodeLoginFlow: (flowId) =>

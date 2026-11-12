@@ -141,7 +141,7 @@ const removeProvider = async (
 ): Promise<boolean> => {
   if (!input.providerId) throw new HttpFailure(400, "Choose a provider")
 
-  await shared.providers.remove(provider.harnessId, accountId, input.providerId, true)
+  await shared.providers.remove(provider.harnessId, accountId, input.providerId)
   writeJson(response, 200, {})
   return true
 }
@@ -150,7 +150,7 @@ const listPiProviders = async (
   { shared, auth, response }: SharedAccountsRoute,
   accountId: string
 ): Promise<boolean> => {
-  const configured = await shared.providers.configured("pi", accountId, true)
+  const configured = await shared.providers.configured("pi", accountId)
   if (!auth.piProviders) throw new HttpFailure(501, "Pi authentication unavailable")
 
   const providers = (await auth.piProviders()).map((piProvider) =>
@@ -164,10 +164,10 @@ const listOpenCodeProviders = async (
   { shared, auth, response }: SharedAccountsRoute,
   accountId: string
 ): Promise<boolean> => {
-  const configured = await shared.providers.configured("opencode", accountId, true)
+  const configured = await shared.providers.configured("opencode", accountId)
   if (!auth.openCodeProviders) throw new HttpFailure(501, "OpenCode authentication unavailable")
 
-  const providers = (await auth.openCodeProviders(accountId, true)).map((openCodeProvider) =>
+  const providers = (await auth.openCodeProviders(accountId)).map((openCodeProvider) =>
     withSharedOAuthMethods(openCodeProvider, configured)
   )
   writeJson(response, 200, { openCodeProviders: providers })
@@ -207,7 +207,7 @@ const beginPiLogin = async (
   if (input.methodId !== "oauth") throw oauthMethodRequired()
 
   writeJson(response, 201, {
-    piFlow: await auth.beginPiLogin(input.providerId, "oauth", true)
+    piFlow: await auth.beginPiLogin(input.providerId, "oauth")
   })
   return true
 }
@@ -225,9 +225,7 @@ const beginOpenCodeLogin = async (
       accountId,
       input.providerId,
       input.methodId,
-      input.inputs,
-      undefined,
-      true
+      input.inputs
     )
   })
   return true

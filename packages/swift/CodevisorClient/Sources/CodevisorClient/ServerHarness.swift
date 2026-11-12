@@ -270,7 +270,6 @@ public struct ServerHarnessAccount: Codable, Equatable, Identifiable, Sendable {
   public var authMethod: String?
   public var authState: String
   public var isActive: Bool
-  public var selectionScope: String?
   public var canLogin: Bool
   public var canLogout: Bool
   public var lastCheckedAt: String?

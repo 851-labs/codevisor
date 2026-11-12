@@ -368,7 +368,7 @@ describe("taking over this machine's Claude Code login", () => {
     const m = await fleet().machine("a")
     m.claude.signIn(machineLogin("first-refresh"))
     await m.shared.reconcile()
-    await m.shared.logout(accountId, true)
+    await m.shared.logout(accountId)
     m.claude.signIn(machineLogin("signed-in-again"))
 
     await m.shared.reconcile()

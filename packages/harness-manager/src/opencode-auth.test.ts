@@ -216,14 +216,9 @@ describe("OpenCode provider authentication", () => {
       captureOAuth,
       savedApiKey
     })
-    const first = await manager.beginLogin("account", "openai", "0", undefined, undefined, true)
+    const first = await manager.beginLogin("account", "openai", "0")
     expect((await manager.answer(first.id, "right-code")).state).toBe("complete")
-    expect(captureOAuth).toHaveBeenCalledWith(
-      "account",
-      "openai",
-      profile("isolated").authPath,
-      true
-    )
+    expect(captureOAuth).toHaveBeenCalledWith("account", "openai", profile("isolated").authPath)
     expect(existsSync(profile("native").authPath)).toBe(false)
     captureOAuth.mockRejectedValueOnce(new Error("Unable to save account"))
     const failed = await manager.beginLogin("account", "openai", "0")
@@ -233,7 +228,7 @@ describe("OpenCode provider authentication", () => {
     })
     const api = await manager.beginLogin("account", "openai", "1", undefined, "fixture-key")
     expect(api.state).toBe("complete")
-    expect(savedApiKey).toHaveBeenCalledWith("account", "openai", false)
+    expect(savedApiKey).toHaveBeenCalledWith("account", "openai")
     expect(captureOAuth).toHaveBeenCalledTimes(2)
     expect((await manager.providers("account"))[0]?.credentialType).toBe("api")
   })

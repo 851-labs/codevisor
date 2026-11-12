@@ -85,14 +85,7 @@ export const makeSharedProviderStore = (options: {
       ])
     )
   }
-  const get = async (slot: string, shared = false) => {
-    if (!shared) {
-      const override = await local(slot)
-      if (override === false) return undefined
-      const record = providerRecord(override)
-      if (record && providerSlot(record.harnessId, record.profileId, record.providerId) === slot)
-        return record
-    }
+  const get = async (slot: string) => {
     const entry = (await store.entries()).find(
       (candidate) => candidate.key === slot && !candidate.deleted
     )
@@ -101,64 +94,44 @@ export const makeSharedProviderStore = (options: {
       ? record
       : undefined
   }
-  const records = async (harness: ProviderOAuthHarness, profile: string, shared = false) => {
-    let entries = [...(await store.entries())]
-    if (!shared) entries = [...entries, ...(await localEntries())]
-    const keys = new Set(
-      entries.filter((entry) => entry.key.startsWith("provider:")).map((entry) => entry.key)
-    )
+  const records = async (harness: ProviderOAuthHarness, profile: string) => {
     const rows: SharedProviderRecord[] = []
-    for (const key of keys) {
-      const row = await get(key, shared)
+    for (const entry of await store.entries()) {
+      if (!entry.key.startsWith("provider:")) continue
+      const row = await get(entry.key)
       if (row?.harnessId === harness && row.profileId === profile) rows.push(row)
     }
     return rows
   }
-  const save = async (
-    bundle: SharedTokenBundle & { harnessId: ProviderOAuthHarness },
-    profile: string,
-    explicit: boolean,
-    shared: boolean
+  const signedOut = async (slot: string) =>
+    (await store.entries()).some((entry) => entry.key === slot && entry.deleted)
+  const replace = async (
+    slot: string,
+    current: SharedProviderRecord | undefined,
+    bundle: ProviderBundle,
+    profile: string
   ) => {
-    const provider = bundle.providerId!
-    const slot = providerSlot(bundle.harnessId, profile, provider)
-    const global = await get(slot, true)
-    const current = await get(slot)
-    const same = (row: SharedProviderRecord | undefined) =>
-      row?.subject === bundle.subject && row.organizationId === bundle.organizationId
-    const destination = shared || !global || same(global) ? global : current
-    if (
-      !explicit &&
-      ((await store.entries()).some((entry) => entry.key === slot && entry.deleted) ||
-        (await local(slot)) === false)
-    )
-      return
-    if (!explicit && same(destination)) {
-      if (bundle.ownership === "external")
-        await vault.publishExternal(destination!.credential, bundle)
-      return
-    }
-    if (explicit && !shared && same(global)) {
-      await setLocal(slot, null)
-    }
     const credential = await vault.create(bundle)
-    const record: SharedProviderRecord = {
-      harnessId: bundle.harnessId,
-      profileId: profile,
-      providerId: provider,
-      subject: bundle.subject,
-      credential,
-      ...(bundle.organizationId ? { organizationId: bundle.organizationId } : {})
-    }
-    if (shared || !global || same(global)) {
-      await store.writeProvider(slot, record)
-      if (!shared) await setLocal(slot, null)
-    } else await setLocal(slot, record)
-    if (
-      destination &&
-      (shared || !global || same(global) || destination.credential.id !== global.credential.id)
-    )
-      await vault.revoke(destination.credential)
+    await store.writeProvider(slot, providerRecordFor(bundle, profile, credential))
+    if (current) await vault.revoke(current.credential)
+  }
+  const adoptMachineLogin = async (
+    slot: string,
+    current: SharedProviderRecord | undefined,
+    bundle: ProviderBundle,
+    profile: string
+  ) => {
+    if (await signedOut(slot)) return
+    if (current === undefined) return replace(slot, current, bundle, profile)
+    if (sameSubject(current, bundle) && bundle.ownership === "external")
+      await vault.publishExternal(current.credential, bundle)
+  }
+  const save = async (bundle: ProviderBundle, profile: string, explicit: boolean) => {
+    const slot = providerSlot(bundle.harnessId, profile, bundle.providerId!)
+    const current = await get(slot)
+    if (!explicit) return adoptMachineLogin(slot, current, bundle, profile)
+
+    await replace(slot, current, bundle, profile)
   }
   return {
     local,
@@ -169,45 +142,57 @@ export const makeSharedProviderStore = (options: {
     save,
     knownProviders: async (harness: ProviderOAuthHarness, profile: string): Promise<string[]> => {
       const ids = new Set<string>()
-      for (const entry of [...(await store.entries()), ...(await localEntries())]) {
-        if (!entry.key.startsWith("provider:")) continue
-        try {
-          const parts: unknown = JSON.parse(entry.key.slice("provider:".length))
-          if (
-            Array.isArray(parts) &&
-            parts.length === 3 &&
-            parts[0] === harness &&
-            parts[1] === profile &&
-            typeof parts[2] === "string"
-          )
-            ids.add(parts[2])
-        } catch {}
+      for (const entry of await store.entries()) {
+        const provider = slotProvider(entry.key, harness, profile)
+        if (provider !== undefined) ids.add(provider)
       }
       return [...ids]
     },
-    remove: async (
-      harness: ProviderOAuthHarness,
-      profile: string,
-      provider: string,
-      shared = false
-    ) => {
+    remove: async (harness: ProviderOAuthHarness, profile: string, provider: string) => {
       const slot = providerSlot(harness, profile, provider)
-      const row = await get(slot, shared)
-      if (!row) {
-        if (!shared) await setLocal(slot, false)
-        return false
-      }
-      if (shared) {
-        await vault.revoke(row.credential)
-        await store.writeProvider(slot, null, true)
-      } else {
-        const global = await get(slot, true)
-        if (global?.credential.id !== row.credential.id) await vault.revoke(row.credential)
-        await setLocal(slot, false)
-      }
+      const row = await get(slot)
+      if (!row) return false
+
+      await vault.revoke(row.credential)
+      await store.writeProvider(slot, null, true)
       return true
     }
   }
 }
 
 export type SharedProviderStore = ReturnType<typeof makeSharedProviderStore>
+
+type ProviderBundle = SharedTokenBundle & { harnessId: ProviderOAuthHarness }
+
+const sameSubject = (row: SharedProviderRecord, bundle: SharedTokenBundle): boolean =>
+  row.subject === bundle.subject && row.organizationId === bundle.organizationId
+
+const providerRecordFor = (
+  bundle: ProviderBundle,
+  profile: string,
+  credential: SharedCredentialReference
+): SharedProviderRecord => ({
+  harnessId: bundle.harnessId,
+  profileId: profile,
+  providerId: bundle.providerId!,
+  subject: bundle.subject,
+  credential,
+  ...(bundle.organizationId ? { organizationId: bundle.organizationId } : {})
+})
+
+const slotProvider = (
+  key: string,
+  harness: ProviderOAuthHarness,
+  profile: string
+): string | undefined => {
+  if (!key.startsWith("provider:")) return undefined
+  try {
+    const parts: unknown = JSON.parse(key.slice("provider:".length))
+    if (!Array.isArray(parts) || parts.length !== 3) return undefined
+    if (parts[0] !== harness || parts[1] !== profile || typeof parts[2] !== "string")
+      return undefined
+    return parts[2]
+  } catch {
+    return undefined
+  }
+}

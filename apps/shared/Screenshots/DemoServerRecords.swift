@@ -146,7 +146,7 @@
       [
         "id": account.email, "harnessId": harnessId, "profileKind": "default", "label": account.email,
         "email": account.email, "authState": "authenticated", "isActive": account.isActive,
-        "selectionScope": account.isActive ? "shared" : "machine", "canLogin": true, "canLogout": false,
+        "canLogin": true, "canLogout": false,
       ]
     }
 

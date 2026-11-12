@@ -6,8 +6,7 @@ import type { ProviderOAuthHarness } from "./shared-provider-oauth.js"
 export interface ClaudeAgentIntegration {
   readonly provider: (
     profile: string,
-    listed: OpenCodeAuthProvider,
-    shared?: boolean
+    listed: OpenCodeAuthProvider
   ) => Promise<OpenCodeAuthProvider>
   readonly begin: (
     profile: string,
@@ -20,18 +19,16 @@ export interface ClaudeAgentIntegration {
 
 export interface SharedProviderIntegration {
   readonly claudeAgent?: ClaudeAgentIntegration
-  readonly account?: (account: HarnessAccount, shared?: boolean) => Promise<HarnessAccount>
+  readonly account?: (account: HarnessAccount) => Promise<HarnessAccount>
   readonly capture: (
     harness: ProviderOAuthHarness,
     profile: string,
     provider: string,
-    credential: unknown,
-    shared?: boolean
+    credential: unknown
   ) => Promise<boolean>
   readonly configured: (
     harness: ProviderOAuthHarness,
-    profile: string,
-    shared?: boolean
+    profile: string
   ) => Promise<ReadonlyArray<string>>
   readonly disabled?: (
     harness: ProviderOAuthHarness,
@@ -40,8 +37,7 @@ export interface SharedProviderIntegration {
   readonly remove: (
     harness: ProviderOAuthHarness,
     profile: string,
-    provider: string,
-    shared?: boolean
+    provider: string
   ) => Promise<boolean>
   readonly context: (
     account: HarnessAccount,

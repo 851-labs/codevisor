@@ -44,18 +44,14 @@ export const makeSharedAccountRoster = (deps: SharedAccountRosterDeps) => {
     if (!sharedHarness(harnessId)) return undefined
 
     await deps.reconcile()
-    const selected = await store.selected(harnessId, !shared)
-    let machineScoped = false
-    if (!shared) machineScoped = await store.overridden(harnessId)
-    if (!shared && !machineScoped && selected) machineScoped = await localState.isDisabled(selected)
-    const selectionScope = machineScoped ? "machine" : "shared"
+    const selected = await store.selected(harnessId)
 
     const rows: HarnessAccount[] = []
     for (const account of await store.accounts()) {
       if (account.harnessId !== harnessId) continue
 
       const value = await credentials.probe(account.id, shared)
-      if (value) rows.push({ ...value, isActive: account.id === selected, selectionScope })
+      if (value) rows.push({ ...value, isActive: account.id === selected })
     }
     if (shared) return rows
 
@@ -64,27 +60,17 @@ export const makeSharedAccountRoster = (deps: SharedAccountRosterDeps) => {
     return rows
   }
 
-  const activate = async (harnessId: string, id: string, shared = false): Promise<boolean> => {
+  const activate = async (harnessId: string, id: string): Promise<boolean> => {
     const account = await credentials.resolve(id)
     if (!account) return false
     if (account.harnessId !== harnessId) throw new Error("Account belongs to another harness")
     if (!account.credential) throw new Error("Sign in to this account first")
 
     await deps.vault.token(account.credential)
-    await localState.setDisabled(account.id, false)
-    if (!shared && account.id === (await store.selected(harnessId, false)))
-      await store.inherit(harnessId)
-    else await store.select(harnessId, account.id, !shared)
+    await store.select(harnessId, account.id)
     await localRows.applySelection(harnessId)
     await credentials.probe(account.id)
     return true
-  }
-
-  const inherit = async (harnessId: string) => {
-    await store.inherit(harnessId)
-    for (const account of await store.accounts())
-      if (account.harnessId === harnessId) await localState.setDisabled(account.id, false)
-    await localRows.applySelection(harnessId)
   }
 
   return {
@@ -93,8 +79,7 @@ export const makeSharedAccountRoster = (deps: SharedAccountRosterDeps) => {
       if (!sharedHarness(harnessId)) return undefined
       return storedAccounts(harnessId)
     },
-    activate,
-    inherit
+    activate
   }
 }
 

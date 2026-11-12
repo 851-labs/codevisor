@@ -20,7 +20,7 @@ import type {
   SharedAccountsRoute
 } from "./shared-account-actions.js"
 
-type SyncedActionName = Exclude<SharedAccountActionName, "list" | "create" | "inherit">
+type SyncedActionName = Exclude<SharedAccountActionName, "list" | "create">
 
 type SyncedActionHandler = (request: AccountActionRequest<SyncedActionName>) => Promise<boolean>
 
@@ -61,7 +61,6 @@ const routeSyncedAccounts = async (accounts: SharedAccountsRoute): Promise<boole
   }
   if (input.action === "list") return listAccounts(accounts)
   if (input.action === "create") return createAccount(accounts, accounts.harnessId, input)
-  if (input.action === "inherit") return inheritAccounts(accounts)
 
   const id = input.accountId
   let account: HarnessAccountRecord | undefined
@@ -94,18 +93,8 @@ const createAccount = async (
   return true
 }
 
-const inheritAccounts = async ({
-  shared,
-  harnessId,
-  response
-}: SharedAccountsRoute): Promise<boolean> => {
-  await shared.inherit(harnessId)
-  writeJson(response, 200, { accounts: await shared.accounts(harnessId) })
-  return true
-}
-
 const activateAccount: SyncedActionHandler = async ({ shared, harnessId, response, account }) => {
-  if (!(await shared.activate(harnessId, account.id, true))) {
+  if (!(await shared.activate(harnessId, account.id))) {
     throw new HttpFailure(404, "Shared account not found")
   }
 
@@ -121,7 +110,7 @@ const renameAccount: SyncedActionHandler = async ({ shared, response, input, acc
 }
 
 const logoutAccount: SyncedActionHandler = async ({ shared, response, account }) => {
-  writeJson(response, 200, { account: await shared.logout(account.id, true) })
+  writeJson(response, 200, { account: await shared.logout(account.id) })
   return true
 }
 

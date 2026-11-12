@@ -24,34 +24,6 @@ const makeSources = async () => {
 }
 
 describe("pi source", () => {
-  it("keeps machine API-key overrides out of shared state and preserves them when shared keys change", async () => {
-    const { home } = await makeSources()
-    const sources = credentialFerrySources({
-      resolveEnv: async () => ({ HOME: home }),
-      localProviders: async () => ["openai"]
-    })
-    for (const [id, path, type] of [
-      ["pi-auth", join(home, ".pi", "agent", "auth.json"), "api_key"],
-      ["opencode-auth", join(home, ".local", "share", "opencode", "auth.json"), "api"]
-    ]) {
-      const source = sources.find((candidate) => candidate.id === id)!
-      await mkdir(join(path!, ".."), { recursive: true })
-      await writeFile(path!, JSON.stringify({ openai: { type, key: "machine-key" } }))
-      const shared = JSON.stringify({ openai: { type, key: "shared-key" } })
-      expect(await source.localOverrides!()).toContain("openai")
-      expect(await source.read()).toBe("{}")
-      expect(JSON.parse((await source.read(shared))!)).toEqual(JSON.parse(shared))
-      await source.apply(
-        JSON.stringify({ openai: { type, key: "changed-shared" }, google: { type, key: "other" } })
-      )
-      expect(JSON.parse(await readFile(path!, "utf8"))).toEqual({
-        openai: { type, key: "machine-key" },
-        google: { type, key: "other" }
-      })
-      await writeFile(path!, "{}")
-      expect(JSON.parse((await source.read(shared))!)).toEqual(JSON.parse(shared))
-    }
-  })
   it("publishes only api_key entries and grafts them without touching oauth", async () => {
     const { home, byId } = await makeSources()
     const path = join(home, ".pi", "agent", "auth.json")

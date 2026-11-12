@@ -65,7 +65,7 @@ describe("Antigravity account sync", () => {
     expect(f.rotate).not.toHaveBeenCalled()
 
     await a.shared.context(id)
-    await a.shared.logout(id, true)
+    await a.shared.logout(id)
     await expect(
       stat(antigravityAuthPath(join(a.dataDir, "harness-profiles", "antigravity", id)))
     ).rejects.toMatchObject({ code: "ENOENT" })

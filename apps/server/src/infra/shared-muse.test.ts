@@ -51,7 +51,7 @@ describe("Muse Code account sync", () => {
     expect(f.rotate).not.toHaveBeenCalled()
 
     await a.shared.context(id)
-    await a.shared.logout(id, true)
+    await a.shared.logout(id)
     await expect(
       stat(join(a.dataDir, "harness-profiles", "muse-code", id, "config", "muse", "auth.json"))
     ).rejects.toMatchObject({ code: "ENOENT" })

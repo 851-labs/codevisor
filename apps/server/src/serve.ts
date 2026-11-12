@@ -298,11 +298,7 @@ export const runServe = (
         environment: shellEnv.current
       })
     const credentialFerry = initializeOptionalServerFeature("Credential ferry", () =>
-      credentialFerrySources({
-        resolveEnv: () => Promise.resolve(process.env),
-        localProviders: async (harness) =>
-          (await sharedAccounts?.providers.staticOverrides(harness)) ?? []
-      })
+      credentialFerrySources({ resolveEnv: () => Promise.resolve(process.env) })
     )
     const skillsDir = join(dirname(databasePath), "skills")
     const skillsEnv = { agents, env: process.env, homedir: homedir() }

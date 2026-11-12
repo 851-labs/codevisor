@@ -111,16 +111,15 @@ it("returns Grok's device code before approval, shares the grant, and never laun
       })
     )
   )
-  const row = (await f.manager.accounts("grok-build", true))[0]!
-  const flow = await f.manager.beginLogin(row.id, undefined, undefined, true)
+  const row = (await f.manager.accounts("grok-build"))[0]!
+  const flow = await f.manager.beginLogin(row.id)
   expect(flow).toMatchObject({
     kind: "deviceCode",
     userCode: device.userCode,
     verificationUrl: device.verificationUri
   })
   expect(JSON.stringify(flow)).not.toContain("private-code")
-  expect((await f.manager.probeAccount(row.id, true, true)).authState).toBe("checking")
-  expect((await f.manager.probeAccount(row.id)).authState).toBe("unauthenticated")
+  expect((await f.manager.probeAccount(row.id, true)).authState).toBe("checking")
   expect(f.shared.capture).not.toHaveBeenCalled()
   poll.resolve()
   await f.finish
@@ -133,14 +132,13 @@ it("returns Grok's device code before approval, shares the grant, and never laun
       key: "access",
       refresh_token: "refresh",
       oidc_issuer: "https://auth.x.ai"
-    }),
-    true
+    })
   )
-  expect((await f.manager.accounts("grok-build", true))[0]?.authState).toBe("authenticated")
+  expect((await f.manager.accounts("grok-build"))[0]?.authState).toBe("authenticated")
   expect(f.authenticateHarness).not.toHaveBeenCalled()
-  await f.manager.logout(row.id, true)
-  expect(f.shared.remove).toHaveBeenCalledWith("grok-build", "default", "xai", true)
-  expect((await f.manager.accounts("grok-build", true))[0]?.authState).toBe("unauthenticated")
+  await f.manager.logout(row.id)
+  expect(f.shared.remove).toHaveBeenCalledWith("grok-build", "default", "xai")
+  expect((await f.manager.accounts("grok-build"))[0]?.authState).toBe("unauthenticated")
 })
 
 it("cancels the old attempt before another starts and prevents a late grant from being saved", async () => {
@@ -165,16 +163,13 @@ it("cancels the old attempt before another starts and prevents a late grant from
   const row = (await f.manager.accounts("grok-build"))[0]!
   const first = await f.manager.beginLogin(row.id)
   expect((await f.manager.probeAccount(row.id)).authState).toBe("checking")
-  const shared = await f.manager.beginLogin(row.id, "grok.com", undefined, true)
   const second = await f.manager.beginLogin(row.id)
   expect(interactions[0]!.signal!.aborted).toBe(true)
   expect(interactions[1]!.signal!.aborted).toBe(false)
   expect(first.id).not.toBe(second.id)
   await f.manager.cancelLogin(first.id)
   await f.manager.logout(row.id)
-  expect(interactions[1]!.signal!.aborted).toBe(false)
-  expect(interactions[2]!.signal!.aborted).toBe(true)
-  await f.manager.cancelLogin(shared.id)
+  expect(interactions[1]!.signal!.aborted).toBe(true)
   expect(f.shared.capture).not.toHaveBeenCalled()
   expect((await f.manager.probeAccount(row.id)).authState).toBe("unauthenticated")
 })
@@ -214,30 +209,17 @@ it("propagates setup and storage errors instead of leaving the sheet waiting", a
   await expect(g.manager.beginLogin(other.id)).rejects.toThrow("Couldn't sign in")
 })
 
-it("supports API keys in the requested scope and rejects missing keys and unknown methods", async () => {
+it("saves API keys and rejects missing keys and unknown methods", async () => {
   const f = await fixture()
   const row = (await f.manager.accounts("grok-build"))[0]!
   for (const key of [undefined, " "])
     await expect(f.manager.beginLogin(row.id, "apiKey", key)).rejects.toThrow("Enter an API key")
   await expect(f.manager.beginLogin(row.id, "unknown")).rejects.toThrow("Choose a Grok")
-  expect((await f.manager.beginLogin(row.id, "apiKey", " xai-fixture-key ", true)).kind).toBe(
-    "complete"
-  )
-  expect(f.shared.capture).toHaveBeenCalledWith(
-    "grok-build",
-    "default",
-    "xai",
-    { auth_mode: "api_key", key: "xai-fixture-key" },
-    true
-  )
-  expect((await f.manager.beginLogin(row.id, "apiKey", "local-key")).kind).toBe("complete")
-  expect(f.shared.capture).toHaveBeenLastCalledWith(
-    "grok-build",
-    "default",
-    "xai",
-    { auth_mode: "api_key", key: "local-key" },
-    false
-  )
+  expect((await f.manager.beginLogin(row.id, "apiKey", " xai-fixture-key ")).kind).toBe("complete")
+  expect(f.shared.capture).toHaveBeenCalledWith("grok-build", "default", "xai", {
+    auth_mode: "api_key",
+    key: "xai-fixture-key"
+  })
   vi.mocked(f.shared.capture).mockResolvedValueOnce(false)
   await expect(f.manager.beginLogin(row.id, "apiKey", "key")).rejects.toThrow("could not be saved")
 })

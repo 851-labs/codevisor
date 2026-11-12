@@ -37,7 +37,6 @@ export const HarnessAccount = Schema.Struct({
   authMethod: Schema.optional(Schema.String),
   authState: HarnessAuthState,
   isActive: Schema.Boolean,
-  selectionScope: Schema.optional(Schema.Literals(["shared", "machine"])),
   canLogin: Schema.Boolean,
   canLogout: Schema.Boolean,
   lastCheckedAt: Schema.optional(Schema.String),

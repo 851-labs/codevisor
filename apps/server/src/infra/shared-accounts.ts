@@ -56,7 +56,7 @@ export const makeSharedAccounts = (options: SharedAccountsOptions) => {
       auth,
       placeholders: {
         create: async () => (await lifecycle.create(CLAUDE_HARNESS)).id,
-        discard: (id) => lifecycle.logout(id, true)
+        discard: (id) => lifecycle.logout(id)
       },
       resolve: async (id) => (await credentials.resolve(id))?.id ?? id
     }),
@@ -156,8 +156,7 @@ export const makeSharedAccounts = (options: SharedAccountsOptions) => {
     captureLogin: imports.captureLogin,
     context: lifecycle.context,
     logout: lifecycle.logout,
-    rename: lifecycle.rename,
-    inherit: roster.inherit
+    rename: lifecycle.rename
   }
 }
 

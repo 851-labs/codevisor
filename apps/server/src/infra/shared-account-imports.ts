@@ -113,7 +113,6 @@ export const makeSharedAccountImports = (deps: SharedAccountImportsDeps) => {
       await store.remove(target)
 
     await localState.setAlias(target, account.id)
-    await localState.setDisabled(account.id, false)
     await localState.completeLogin(id, target)
     await localRows.applySelection(bundle.harnessId)
   }

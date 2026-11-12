@@ -8,12 +8,9 @@ import type { HarnessAuthCore } from "./harness-auth-core.js"
 
 interface Login {
   accountId: string
-  shared: boolean
   abort: AbortController
   done: Promise<void>
 }
-
-const scope = (accountId: string, shared: boolean) => JSON.stringify([accountId, shared])
 
 export const makeGrokAuth = (core: HarnessAuthCore) => {
   const logins = new Map<string, Login>()
@@ -28,14 +25,12 @@ export const makeGrokAuth = (core: HarnessAuthCore) => {
     if (!login) return
     login.abort.abort()
     await login.done
-    failures.delete(scope(login.accountId, login.shared))
+    failures.delete(login.accountId)
   }
-  const account = async (row: HarnessAccountRecord, shared = false): Promise<HarnessAccount> => {
-    const value = await integration().account!(core.publicAccount(row), shared)
-    const pending = [...logins.values()].some(
-      (login) => login.accountId === row.id && login.shared === shared
-    )
-    const error = failures.get(scope(row.id, shared))
+  const account = async (row: HarnessAccountRecord): Promise<HarnessAccount> => {
+    const value = await integration().account!(core.publicAccount(row))
+    const pending = [...logins.values()].some((login) => login.accountId === row.id)
+    const error = failures.get(row.id)
     const result =
       pending || error
         ? {
@@ -44,48 +39,42 @@ export const makeGrokAuth = (core: HarnessAuthCore) => {
             ...(error ? { detail: error } : {})
           }
         : value
-    if (!shared) {
-      await core.persistProbe(row, {
-        authState: result.authState,
-        authMethod: result.authMethod ?? null,
-        label: result.label,
-        email: result.email ?? null,
-        canLogin: result.canLogin,
-        canLogout: result.canLogout,
-        detail: result.detail ?? null
-      })
-    }
+    await core.persistProbe(row, {
+      authState: result.authState,
+      authMethod: result.authMethod ?? null,
+      label: result.label,
+      email: result.email ?? null,
+      canLogin: result.canLogin,
+      canLogout: result.canLogout,
+      detail: result.detail ?? null
+    })
     return result
   }
   const begin = async (
     row: HarnessAccountRecord,
     method = "grok.com",
-    apiKey?: string,
-    shared = false
+    apiKey?: string
   ): Promise<HarnessAuthFlow> => {
     const providers = integration()
     for (const [id, login] of logins) {
-      if (login.accountId === row.id && login.shared === shared) await cancel(id)
+      if (login.accountId === row.id) await cancel(id)
     }
-    failures.delete(scope(row.id, shared))
+    failures.delete(row.id)
     const id = randomUUID()
     if (method === "apiKey") {
       if (!apiKey?.trim()) throw new Error("Enter an API key")
-      const saved = await providers.capture(
-        "grok-build",
-        "default",
-        "xai",
-        { auth_mode: "api_key", key: apiKey.trim() },
-        shared
-      )
+      const saved = await providers.capture("grok-build", "default", "xai", {
+        auth_mode: "api_key",
+        key: apiKey.trim()
+      })
       if (!saved) throw new Error("API key could not be saved. Try again.")
-      await account(row, shared)
+      await account(row)
       return { id, accountId: row.id, kind: "complete" }
     }
     if (method !== "grok.com") throw new Error("Choose a Grok sign-in method")
     const grokOAuth = core.config.grokOAuth ?? { login: loginGrok }
     const abort = new AbortController()
-    const login: Login = { accountId: row.id, shared, abort, done: Promise.resolve() }
+    const login: Login = { accountId: row.id, abort, done: Promise.resolve() }
     logins.set(id, login)
     const ready = Promise.withResolvers<HarnessAuthFlow>()
     login.done = (async () => {
@@ -110,21 +99,15 @@ export const makeGrokAuth = (core: HarnessAuthCore) => {
         })
         if (abort.signal.aborted) throw new Error("Sign-in canceled")
         if (
-          !(await providers.capture(
-            "grok-build",
-            "default",
-            "xai",
-            {
-              auth_mode: "oidc",
-              key: credential.access,
-              refresh_token: credential.refresh,
-              expires_at: new Date(credential.expires).toISOString(),
-              id_token: credential.idToken,
-              oidc_issuer: GROK_ISSUER,
-              oidc_client_id: GROK_CLIENT_ID
-            },
-            shared
-          ))
+          !(await providers.capture("grok-build", "default", "xai", {
+            auth_mode: "oidc",
+            key: credential.access,
+            refresh_token: credential.refresh,
+            expires_at: new Date(credential.expires).toISOString(),
+            id_token: credential.idToken,
+            oidc_issuer: GROK_ISSUER,
+            oidc_client_id: GROK_CLIENT_ID
+          }))
         )
           throw new Error("Sign-in could not be saved")
         const flow: HarnessAuthFlow = { id, accountId: row.id, kind: "complete" }
@@ -134,7 +117,7 @@ export const makeGrokAuth = (core: HarnessAuthCore) => {
         const message = abort.signal.aborted
           ? "Sign-in canceled"
           : "Couldn't sign in to Grok. Try again."
-        if (!abort.signal.aborted) failures.set(scope(row.id, shared), message)
+        if (!abort.signal.aborted) failures.set(row.id, message)
         ready.reject(new Error(message))
       } finally {
         logins.delete(id)
@@ -151,13 +134,13 @@ export const makeGrokAuth = (core: HarnessAuthCore) => {
     account,
     begin,
     cancel,
-    logout: async (row: HarnessAccountRecord, shared = false) => {
+    logout: async (row: HarnessAccountRecord) => {
       for (const [id, login] of logins) {
-        if (login.accountId === row.id && login.shared === shared) await cancel(id)
+        if (login.accountId === row.id) await cancel(id)
       }
-      failures.delete(scope(row.id, shared))
-      await integration().remove("grok-build", "default", "xai", shared)
-      return account(row, shared)
+      failures.delete(row.id)
+      await integration().remove("grok-build", "default", "xai")
+      return account(row)
     }
   }
 }

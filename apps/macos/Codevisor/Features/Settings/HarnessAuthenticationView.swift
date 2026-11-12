@@ -138,12 +138,7 @@ struct HarnessAuthenticationView: View {
         .foregroundStyle(account.isActive ? Color.primary : Color.secondary)
         .accessibilityLabel(account.isActive ? "Selected" : "Not selected")
       VStack(alignment: .leading, spacing: 2) {
-        HStack {
-          Text(account.label)
-          if !isShared, account.isActive, let scope = account.selectionScope {
-            Text(scope == "machine" ? "Override" : "Shared").font(.callout).foregroundStyle(.secondary)
-          }
-        }
+        Text(account.label)
         if let status = accountStatus(account) {
           Text(status)
             .font(.callout)

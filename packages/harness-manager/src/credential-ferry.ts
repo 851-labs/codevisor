@@ -18,7 +18,6 @@ export interface CredentialSource {
 
 export interface CredentialFerryConfig {
   readonly resolveEnv: () => Promise<NodeJS.ProcessEnv>
-  readonly localProviders?: (harness: "pi" | "opencode") => Promise<ReadonlyArray<string>>
 }
 
 const canonicalCredentialJson = (value: Record<string, unknown>): string =>
@@ -71,46 +70,34 @@ const credentialType = (value: unknown): string | undefined =>
 const mergeClassSource = (
   id: string,
   pathFor: () => Promise<string>,
-  travels: (type: string | undefined) => boolean,
-  localProviders: () => Promise<ReadonlyArray<string>> = async () => []
+  travels: (type: string | undefined) => boolean
 ): CredentialSource => ({
   id,
   tombstoneOnAbsence: false,
-  localOverrides: async () => [
-    ...(await localProviders()),
-    ...Object.entries((await readJsonFile(await pathFor())) ?? {})
+  localOverrides: async () =>
+    Object.entries((await readJsonFile(await pathFor())) ?? {})
       .filter(([, value]) => !travels(credentialType(value)))
-      .map(([provider]) => provider)
-  ],
+      .map(([provider]) => provider),
   read: async (sharedContent) => {
     const current = await readJsonFile(await pathFor())
     if (current === undefined) return undefined
-    const local = new Set(await localProviders())
     const subset = Object.fromEntries(
-      Object.entries(current).filter(
-        ([provider, value]) => !local.has(provider) && travels(credentialType(value))
-      )
+      Object.entries(current).filter(([, value]) => travels(credentialType(value)))
     )
     const shared = sharedContent === undefined ? {} : parseJsonRecord(sharedContent)
     for (const [provider, value] of Object.entries(current)) {
-      if ((local.has(provider) || !travels(credentialType(value))) && provider in shared)
-        subset[provider] = shared[provider]
+      if (!travels(credentialType(value)) && provider in shared) subset[provider] = shared[provider]
     }
-    for (const provider of local) if (provider in shared) subset[provider] = shared[provider]
     return canonicalCredentialJson(subset)
   },
   apply: async (content) => {
     const incoming = parseJsonRecord(content)
-    const local = new Set(await localProviders())
-    for (const provider of local) delete incoming[provider]
     const path = await pathFor()
     await withFileLock(path, async () => {
       /* v8 ignore next */
       const current = (await readJsonFile(path)) ?? {}
       const preserved = Object.fromEntries(
-        Object.entries(current).filter(
-          ([provider, value]) => local.has(provider) || !travels(credentialType(value))
-        )
+        Object.entries(current).filter(([, value]) => !travels(credentialType(value)))
       )
       await atomicWriteJson(path, { ...incoming, ...preserved })
     })
@@ -193,18 +180,8 @@ export const credentialFerrySources = (
   }
 
   return [
-    mergeClassSource(
-      "pi-auth",
-      piPath,
-      (type) => type === "api_key",
-      config.localProviders && (() => config.localProviders!("pi"))
-    ),
-    mergeClassSource(
-      "opencode-auth",
-      openCodePath,
-      (type) => type !== "oauth",
-      config.localProviders && (() => config.localProviders!("opencode"))
-    ),
+    mergeClassSource("pi-auth", piPath, (type) => type === "api_key"),
+    mergeClassSource("opencode-auth", openCodePath, (type) => type !== "oauth"),
     codex,
     devin
   ]

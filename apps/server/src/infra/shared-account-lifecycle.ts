@@ -91,14 +91,12 @@ export const makeSharedAccountLifecycle = (deps: SharedAccountLifecycleDeps) => 
     )
   }
 
-  const logout = async (id: string, shared = false): Promise<HarnessAccount | undefined> => {
+  const logout = async (id: string): Promise<HarnessAccount | undefined> => {
     const account = await credentials.resolve(id)
     if (!account) return undefined
 
-    if (shared) {
-      if (account.credential) await deps.vault.revoke(account.credential)
-      await store.remove(account.id)
-    } else await localState.setDisabled(account.id, true)
+    if (account.credential) await deps.vault.revoke(account.credential)
+    await store.remove(account.id)
     gateway.forget(account.id)
 
     const removeFileGrant = fileGrantRemovers.get(account.harnessId)

@@ -152,8 +152,7 @@ describe("OpenCode 2 accounts", () => {
       "openai",
       "chatgpt-headless",
       undefined,
-      undefined,
-      true
+      undefined
     )
     expect(flow).toMatchObject({
       state: "running",
@@ -164,13 +163,12 @@ describe("OpenCode 2 accounts", () => {
     expect(env.OPENCODE_CONFIG_CONTENT).toBe("{}")
     await isolated.stopped
     expect(manager.openCodeLoginFlow!(flow.id).state).toBe("complete")
-    expect(shared.capture).toHaveBeenCalledWith(
-      "opencode",
-      "opencode-default",
-      "openai",
-      { type: "oauth", refresh: "r", access: "a", expires: 9 },
-      true
-    )
+    expect(shared.capture).toHaveBeenCalledWith("opencode", "opencode-default", "openai", {
+      type: "oauth",
+      refresh: "r",
+      access: "a",
+      expires: 9
+    })
   })
 
   it("refuses to share an OpenCode Console sign-in that names another server", async () => {
@@ -192,8 +190,7 @@ describe("OpenCode 2 accounts", () => {
       "opencode",
       "device",
       undefined,
-      undefined,
-      true
+      undefined
     )
     await isolated.stopped
     expect(manager.openCodeLoginFlow!(flow.id)).toMatchObject({
@@ -216,7 +213,7 @@ describe("OpenCode 2 accounts", () => {
     expect(flow.state).toBe("complete")
     expect(control.calls).toEqual(["/api/integration", "/api/integration/openai/connect/key"])
     expect(start).not.toHaveBeenCalled()
-    expect(shared.remove).toHaveBeenCalledWith("opencode", "opencode-default", "openai", false)
+    expect(shared.remove).toHaveBeenCalledWith("opencode", "opencode-default", "openai")
   })
 
   it("signs a profile out of a provider it signed in to itself", async () => {
@@ -247,7 +244,7 @@ describe("OpenCode 2 accounts", () => {
     } satisfies ClaudeAgentIntegration
     const { manager, start } = await setup({ claudeAgent })
 
-    expect((await manager.openCodeProviders!("opencode-default", true))[2]).toEqual({
+    expect((await manager.openCodeProviders!("opencode-default"))[2]).toEqual({
       id: "claude-agent",
       name: "Claude Agent",
       methods: [claudeAgentLogin],
@@ -255,8 +252,7 @@ describe("OpenCode 2 accounts", () => {
     })
     expect(claudeAgent.provider).toHaveBeenCalledWith(
       "opencode-default",
-      expect.objectContaining({ id: "claude-agent" }),
-      true
+      expect.objectContaining({ id: "claude-agent" })
     )
     const inputs = { account: "new" }
     expect(
