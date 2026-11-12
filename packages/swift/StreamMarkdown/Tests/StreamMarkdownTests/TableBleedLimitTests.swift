@@ -52,5 +52,38 @@
       layout()
       #expect(container.bleed == 40)
     }
+
+    @Test("Moving a table sideways remeasures its bleed against the nearer transcript edge")
+    func bleedFollowsHorizontalMove() throws {
+      let transcript = NSScrollView(frame: NSRect(x: 0, y: 0, width: 600, height: 400))
+      transcript.hasVerticalScroller = true
+      let document = NSView(frame: NSRect(x: 0, y: 0, width: 600, height: 400))
+      transcript.documentView = document
+      let markdown = SettledMarkdownView(frame: NSRect(x: 40, y: 0, width: 520, height: 200))
+      document.addSubview(markdown)
+      markdown.setContent(
+        blocks: [
+          .table(
+            headers: [MarkdownText("Column"), MarkdownText("Column")],
+            alignments: [],
+            rows: [[MarkdownText(String(repeating: "unbreakable", count: 20)), MarkdownText("x")]]
+          )
+        ],
+        theme: .default,
+        streamID: "bleed-move",
+        linkAction: nil
+      )
+      let table = try #require(markdown.subviews.first as? NativeMarkdownTableBlockView)
+      let container = try #require(table.subviews.first as? TableBleedContainer)
+      markdown.frame.size.height = markdown.contentHeight(forWidth: 520)
+      markdown.layoutSubtreeIfNeeded()
+      #expect(container.bleed == 40)
+
+      markdown.setFrameOrigin(NSPoint(x: 20, y: 0))
+      markdown.remeasureTableBleed()
+      markdown.layoutSubtreeIfNeeded()
+      #expect(container.bleed == 20)
+      #expect(container.scrollView.frame.width == 560)
+    }
   }
 #endif

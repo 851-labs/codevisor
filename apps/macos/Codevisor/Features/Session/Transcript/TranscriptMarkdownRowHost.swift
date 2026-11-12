@@ -69,6 +69,10 @@ final class TranscriptMarkdownRowHost: TranscriptMountedRowHost {
     presentationReady = false
   }
 
+  override func viewportDidMoveHorizontally() {
+    markdownView.remeasureTableBleed()
+  }
+
   @discardableResult
   override func syncContentWidth() -> Bool {
     let width = max(1, bounds.width)

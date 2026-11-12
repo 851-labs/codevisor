@@ -60,6 +60,22 @@ struct TranscriptAutoscrollTests {
     #expect(view.lastBottomState == true)
   }
 
+  @Test("Resizing while rows sit at their maximum width recenters them and keeps the bottom pinned")
+  func cappedRowWidthResize() {
+    let view = makeView()
+    defer { view.prepareForDismantle() }
+    let documentHeight = view.transcriptDocumentView.frame.height
+    resize(view, width: 1_200, height: 500)
+    #expect(!view.mountedHosts.isEmpty)
+    for host in view.mountedHosts.values {
+      #expect(host.frame.width == VirtualizedTranscriptScrollView.maxRowWidth)
+      #expect(abs(host.frame.midX - view.contentView.bounds.midX) <= 0.5)
+    }
+    #expect(view.transcriptDocumentView.frame.width == view.contentView.bounds.width)
+    #expect(view.transcriptDocumentView.frame.height == documentHeight)
+    #expect(view.currentDistanceFromBottom() <= 0.5)
+  }
+
   @Test("A vertical split preserves the bottom through each height change")
   func heightOnlyResize() {
     let view = makeView()

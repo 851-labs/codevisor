@@ -19,10 +19,21 @@ extension VirtualizedTranscriptScrollView {
     position(host: host, frame: rowFrame(at: index))
   }
 
+  static func rowWidth(forViewportWidth viewportWidth: CGFloat) -> CGFloat {
+    let availableWidth = max(1, viewportWidth - horizontalPadding * 2)
+    return min(maxRowWidth, availableWidth)
+  }
+
+  func recenterMountedRows() {
+    resizeDocumentView()
+    positionPaginationLoadingIndicator()
+    positionMountedRows()
+    mountedHosts.values.forEach { $0.viewportDidMoveHorizontally() }
+  }
+
   func rowFrame(at index: Int) -> CGRect {
     let viewportWidth = max(1, contentView.bounds.width)
-    let availableWidth = max(1, viewportWidth - Self.horizontalPadding * 2)
-    let rowWidth = min(Self.maxRowWidth, availableWidth)
+    let rowWidth = Self.rowWidth(forViewportWidth: viewportWidth)
     let rowX = max(Self.horizontalPadding, (viewportWidth - rowWidth) / 2)
     return CGRect(
       x: rowX,

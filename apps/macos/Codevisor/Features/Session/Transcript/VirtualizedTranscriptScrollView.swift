@@ -389,8 +389,7 @@ final class VirtualizedTranscriptScrollView: NSScrollView {
   }
 
   var effectiveRowWidth: CGFloat {
-    let availableWidth = max(1, contentView.bounds.width - Self.horizontalPadding * 2)
-    return min(Self.maxRowWidth, availableWidth)
+    Self.rowWidth(forViewportWidth: contentView.bounds.width)
   }
 
   var transcriptTopPadding: CGFloat {

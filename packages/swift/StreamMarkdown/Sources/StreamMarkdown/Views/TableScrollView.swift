@@ -26,9 +26,13 @@
 
     override func layout() {
       super.layout()
-      bleed = max(0, min(measuredBleed(), bleedLimit.rounded(.down)))
+      let bleed = max(0, min(measuredBleed(), bleedLimit.rounded(.down)))
+      let frame = bounds.insetBy(dx: -bleed, dy: 0)
+      guard bleed != self.bleed || frame != scrollView.frame else { return }
+
+      self.bleed = bleed
       scrollView.contentInsets = NSEdgeInsets(top: 0, left: bleed, bottom: 0, right: bleed)
-      scrollView.frame = bounds.insetBy(dx: -bleed, dy: 0)
+      scrollView.frame = frame
       scrollView.needsLayout = true
       scrollView.layoutSubtreeIfNeeded()
     }

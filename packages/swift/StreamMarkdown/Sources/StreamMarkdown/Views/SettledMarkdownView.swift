@@ -27,6 +27,10 @@
 
     public override var isFlipped: Bool { true }
 
+    public func remeasureTableBleed() {
+      contentViews.forEach { $0.remeasureTableBleed() }
+    }
+
     public override init(frame frameRect: NSRect) {
       super.init(frame: frameRect)
     }
@@ -251,6 +255,7 @@
       didSet { tableBleedLimitDidChange() }
     }
     func tableBleedLimitDidChange() {}
+    func remeasureTableBleed() {}
     func contentHeight(forWidth _: CGFloat) -> CGFloat { 1 }
     var isContentReady: Bool { true }
   }
