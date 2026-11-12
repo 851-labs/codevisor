@@ -85,7 +85,7 @@ const fixture = async () => {
 }
 
 it("records each workspace's branch and pull request at boot and publishes only changes", async () => {
-  const { published, branches, pullRequests, workspace, start, git } = await fixture()
+  const { db, published, branches, pullRequests, workspace, start, git } = await fixture()
   const feature = await workspace("feature", "/repo/feature")
   const main = await workspace("main", "/repo/main")
   branches.set("/repo/feature", "codevisor/feature").set("/repo/main", "main")
@@ -100,13 +100,18 @@ it("records each workspace's branch and pull request at boot and publishes only 
     pullRequest: pullRequest(7)
   })
   expect(await git(main.id)).toEqual({ branch: "main", pullRequest: null })
+  const checkouts = await run(db.listCheckouts)
+  const checkoutOf = (path: string) => checkouts.find((c) => c.path === path)
   expect(published.map((event) => [event.kind, event.subjectId])).toEqual(
     expect.arrayContaining([
       ["navigation.changed", feature.id],
-      ["navigation.changed", main.id]
+      ["navigation.changed", main.id],
+      ["navigation.changed", checkoutOf("/repo/feature")?.id],
+      ["navigation.changed", checkoutOf("/repo/main")?.id]
     ])
   )
-  expect(published).toHaveLength(2)
+  expect(published).toHaveLength(4)
+  expect(checkoutOf("/repo/feature")?.git).toEqual(await git(feature.id))
 })
 
 it("checks pull requests on a branch-only sweep when the branch changed", async () => {

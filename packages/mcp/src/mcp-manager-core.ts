@@ -144,13 +144,18 @@ export const makeMcpManagerCore = (config: McpManagerConfig) => {
     const gatewayId = sessionGatewayIds.get(sessionId)
     return gatewayId === undefined ? undefined : gateways.get(gatewayId)?.client
   }
+  const workspaceShowing = (sessionId: string, home: string | undefined) =>
+    run(config.db.findWorkspaceShowingSession(sessionId)).then(
+      (shown) => shown ?? home,
+      () => home
+    )
   const codevisorProvider = makeCodevisorProvider(
     () => state.gatewayBaseUrl,
     () => run(config.db.getOrCreateConnectionToken),
     {
       currentContext: async ({ sessionId }) => {
         const session = await run(config.db.getSessionSummary(sessionId)).catch(() => undefined)
-        const workspaceId = session?.workspaceId
+        const workspaceId = await workspaceShowing(sessionId, session?.workspaceId)
         const worktreeName = session?.worktreeName
         const clientId = turnClientIds.get(sessionId)
         const externalClient = externalClientOf(sessionId)

@@ -1,3 +1,5 @@
+import { writeCheckoutGit } from "./checkouts-service.js"
+import { workspaceDefaultCheckoutId } from "./checkouts.js"
 import { attempt } from "./errors.js"
 import { canonicalUuid } from "./ids.js"
 import { journaledNavigationChanges } from "./navigation-changes.js"
@@ -9,18 +11,21 @@ export const makeWorkspaceGitService = (
 ): Pick<CodevisorDatabaseService, "setWorkspaceGit"> => {
   const journaled = journaledNavigationChanges(context)
   return {
-    setWorkspaceGit: (workspaceId, head, pullRequest) =>
+    setWorkspaceGit: (rawWorkspaceId, head, pullRequest) =>
       attempt("setWorkspaceGit", () =>
         journaled(() => {
+          const workspaceId = canonicalUuid(rawWorkspaceId)
           const keepsPullRequest = pullRequest === undefined ? 1 : 0
           const serialized = pullRequest == null ? null : JSON.stringify(pullRequest)
           context.sqlite.prepare(workspaceGitSql).run({
-            id: canonicalUuid(workspaceId),
+            id: workspaceId,
             branch: head.branch,
             detachedHead: head.detachedHead ?? null,
             keeps: keepsPullRequest,
             pullRequest: serialized
           })
+          const checkoutId = workspaceDefaultCheckoutId(context.sqlite, workspaceId)
+          if (checkoutId !== null) writeCheckoutGit(context.sqlite, checkoutId, head, pullRequest)
         })
       )
   }

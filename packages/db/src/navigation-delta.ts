@@ -1,7 +1,9 @@
 import type { EventEnvelope, NavigationSnapshot } from "@codevisor/api"
 
+import { checkoutRow } from "./checkouts.js"
 import { jsonRecord } from "./event-payloads.js"
 import {
+  checkoutFromRow,
   projectFromRow,
   sessionFromRow,
   workspaceFromRow,
@@ -37,6 +39,7 @@ export const materializeNavigationDelta = (
   const sessions: NavigationSnapshot["sessions"][number][] = []
   const workspaces: NavigationSnapshot["workspaces"][number][] = []
   const panes: NavigationSnapshot["panes"][number][] = []
+  const checkouts: NavigationSnapshot["checkouts"][number][] = []
   const deleted: Array<{ table: string; id: string }> = []
   for (const id of ids.get("projects") ?? []) {
     const row = projectRow(sqlite, id)
@@ -58,9 +61,14 @@ export const materializeNavigationDelta = (
     if (row === undefined) deleted.push({ table: "workspace_panes", id })
     else panes.push(workspacePaneFromRow(row))
   }
+  for (const id of ids.get("checkouts") ?? []) {
+    const row = checkoutRow(sqlite, id)
+    if (row === undefined) deleted.push({ table: "checkouts", id })
+    else checkouts.push(checkoutFromRow(row))
+  }
   const delta: EventEnvelope = {
     ...last,
-    payload: { eventCursor: last.id, projects, sessions, workspaces, panes, deleted }
+    payload: { eventCursor: last.id, projects, sessions, workspaces, panes, checkouts, deleted }
   }
   const events = [
     ...batch.events.filter((event) => event.kind !== "navigation.changed"),

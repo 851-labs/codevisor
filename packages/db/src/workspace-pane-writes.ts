@@ -2,6 +2,7 @@ import { isoTimestamp } from "@codevisor/api"
 import type { UpdateWorkspacePaneRequest, UpsertWorkspacePaneRequest } from "@codevisor/api"
 import type Database from "better-sqlite3"
 
+import { adoptDefaultCheckout, paneCheckoutId } from "./checkouts.js"
 import { nextPanePositionIn, panePositionRows } from "./pane-position.js"
 import type { WorkspacePaneRow } from "./rows.js"
 
@@ -34,14 +35,17 @@ const contentChanged = (request: UpdateWorkspacePaneRequest): boolean =>
 
 const paneUpsertSql = `insert into workspace_panes (
                  id, workspace_id, provider_id, pane_type, title, resource_kind,
-                 resource_id, metadata, revision, created_at, updated_at, position
-               ) values (?, ?, ?, ?, ?, ?, ?, ?, 1, ?, null, ?)
+                 resource_id, resource_server_id, checkout_id, metadata, revision, created_at,
+                 updated_at, position
+               ) values (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 1, ?, null, ?)
                on conflict(id) do update set
                  provider_id = excluded.provider_id,
                  pane_type = excluded.pane_type,
                  title = excluded.title,
                  resource_kind = excluded.resource_kind,
                  resource_id = excluded.resource_id,
+                 resource_server_id = excluded.resource_server_id,
+                 checkout_id = excluded.checkout_id,
                  metadata = excluded.metadata,
                  -- A live title and activity belong to the terminal the pane
                  -- showed.
@@ -56,6 +60,8 @@ const paneUpsertSql = `insert into workspace_panes (
                   or workspace_panes.title is not excluded.title
                   or workspace_panes.resource_kind is not excluded.resource_kind
                   or workspace_panes.resource_id is not excluded.resource_id
+                  or workspace_panes.resource_server_id is not excluded.resource_server_id
+                  or workspace_panes.checkout_id is not excluded.checkout_id
                   or workspace_panes.metadata is not excluded.metadata`
 
 export const writePaneUpsert = (
@@ -77,6 +83,8 @@ export const writePaneUpsert = (
       request.title,
       request.resourceKind ?? null,
       resourceId,
+      request.resourceServerId ?? null,
+      paneCheckoutId(sqlite, workspaceId, request.resourceKind, resourceId, request.checkoutId),
       request.metadata ?? null,
       request.createdAt ?? now,
       replacedPosition ?? nextPanePositionIn(sqlite, workspaceId, id),
@@ -86,7 +94,7 @@ export const writePaneUpsert = (
 
 const paneUpdateSql = `update workspace_panes set
                  provider_id = ?, pane_type = ?, title = ?, resource_kind = ?,
-                 resource_id = ?, metadata = ?, position = ?,
+                 resource_id = ?, checkout_id = ?, metadata = ?, position = ?,
                  revision = revision + case when ? then 1 else 0 end, updated_at = ?,
                  live_title = case when ? then live_title end,
                  terminal_activity = case when ? then terminal_activity end
@@ -110,6 +118,7 @@ export const writePaneUpdate = (
       request.title ?? existing.title,
       resourceKind,
       resourceId,
+      paneCheckoutId(sqlite, workspaceId, resourceKind, resourceId, existing.checkout_id),
       request.metadata === undefined ? existing.metadata : request.metadata,
       request.position ?? existing.position,
       contentChanged(request) ? 1 : 0,
@@ -123,7 +132,7 @@ export const writePaneUpdate = (
 
 const panePromotionSql = `update workspace_panes set
                  provider_id = 'codevisor', pane_type = 'chat', title = ?,
-                 resource_kind = 'session', resource_id = ?, metadata = null, live_title = null,
+                 resource_kind = 'session', resource_id = ?, checkout_id = ?, metadata = null, live_title = null,
                  terminal_activity = null,
                  revision = revision + 1, updated_at = ?
                where id = ? and workspace_id = ?`
@@ -135,7 +144,16 @@ export const writePanePromotion = (
   sessionId: string,
   title: string
 ): void => {
-  sqlite.prepare(panePromotionSql).run(title, sessionId, isoTimestamp(), paneId, workspaceId)
+  sqlite
+    .prepare(panePromotionSql)
+    .run(
+      title,
+      sessionId,
+      paneCheckoutId(sqlite, workspaceId, "session", sessionId, null),
+      isoTimestamp(),
+      paneId,
+      workspaceId
+    )
 }
 
 export const assignPaneSession = (
@@ -146,6 +164,7 @@ export const assignPaneSession = (
 ): void => {
   if (resourceKind === "session" && resourceId !== null) {
     sqlite.prepare(sessionWorkspaceSql).run(workspaceId, resourceId)
+    adoptDefaultCheckout(sqlite, workspaceId, resourceId)
   }
 }
 

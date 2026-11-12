@@ -22,6 +22,7 @@ export interface WorkspaceRow {
   readonly git_pull_request?: string | null
   readonly git_known?: number
   readonly main_session_id?: string | null
+  readonly default_checkout_id?: string | null
 }
 
 export interface WorkspacePaneRow {
@@ -32,6 +33,8 @@ export interface WorkspacePaneRow {
   readonly title: string
   readonly resource_kind: string | null
   readonly resource_id: string | null
+  readonly resource_server_id?: string | null
+  readonly checkout_id?: string | null
   readonly metadata: string | null
   readonly live_title: string | null
   readonly terminal_activity: TerminalActivity | null
@@ -59,7 +62,8 @@ export const workspaceRows = rowReader<WorkspaceRow>({
   git_detached_head: optional(nullable(text)),
   git_pull_request: optional(nullable(text)),
   git_known: optional(integer),
-  main_session_id: optional(nullable(text))
+  main_session_id: optional(nullable(text)),
+  default_checkout_id: optional(nullable(text))
 })
 
 export const workspacePaneRows = rowReader<WorkspacePaneRow>({
@@ -70,6 +74,8 @@ export const workspacePaneRows = rowReader<WorkspacePaneRow>({
   title: text,
   resource_kind: nullable(text),
   resource_id: nullable(text),
+  resource_server_id: optional(nullable(text)),
+  checkout_id: optional(nullable(text)),
   metadata: nullable(text),
   live_title: nullable(text),
   terminal_activity: nullable(Schema.is(TerminalActivity)),

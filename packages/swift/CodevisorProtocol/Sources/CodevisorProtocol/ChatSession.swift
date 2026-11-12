@@ -46,6 +46,7 @@ public struct ChatSession: Identifiable, Sendable, Codable, Equatable {
   public var origin: SessionOrigin
   public var worktreeName: String?
   public var cwd: String?
+  public var checkoutId: String?
   public var configSelections: [String: String]?
   public var unavailableConfigSelections: [String: String]?
   public var createdAt: Date
@@ -84,6 +85,7 @@ public struct ChatSession: Identifiable, Sendable, Codable, Equatable {
     origin: SessionOrigin = .codevisor,
     worktreeName: String? = nil,
     cwd: String? = nil,
+    checkoutId: String? = nil,
     configSelections: [String: String]? = nil,
     unavailableConfigSelections: [String: String]? = nil,
     createdAt: Date = Date(),
@@ -113,6 +115,7 @@ public struct ChatSession: Identifiable, Sendable, Codable, Equatable {
     self.origin = origin
     self.worktreeName = worktreeName
     self.cwd = cwd
+    self.checkoutId = checkoutId
     self.configSelections = configSelections
     self.unavailableConfigSelections = unavailableConfigSelections
     self.createdAt = createdAt
@@ -135,7 +138,7 @@ public struct ChatSession: Identifiable, Sendable, Codable, Equatable {
 
   private enum Keys: String, CodingKey {
     case id, projectId, serverId, harnessId, harnessAccountId, agentSessionId, title, origin
-    case worktreeName, cwd, configSelections, unavailableConfigSelections, createdAt, updatedAt
+    case worktreeName, cwd, checkoutId, configSelections, unavailableConfigSelections, createdAt, updatedAt
     case sidebarState, sidebarStateChangedAt
     case latestAttentionSequence, lastSeenAttentionSequence, unreadCount, hasUnreadError
     case actionRequired, actionRequiredKind, pendingPlanApproval, latestBotMessage, createdBy
@@ -160,6 +163,7 @@ public struct ChatSession: Identifiable, Sendable, Codable, Equatable {
     origin = try container.decodeIfPresent(SessionOrigin.self, forKey: .origin) ?? .codevisor
     worktreeName = try container.decodeIfPresent(String.self, forKey: .worktreeName)
     cwd = try container.decodeIfPresent(String.self, forKey: .cwd)
+    checkoutId = try container.decodeIfPresent(String.self, forKey: .checkoutId)
     configSelections = try container.decodeIfPresent([String: String].self, forKey: .configSelections)
     unavailableConfigSelections = try container.decodeIfPresent(
       [String: String].self,
@@ -202,6 +206,7 @@ public struct ChatSession: Identifiable, Sendable, Codable, Equatable {
     try container.encode(origin, forKey: .origin)
     try container.encodeIfPresent(worktreeName, forKey: .worktreeName)
     try container.encodeIfPresent(cwd, forKey: .cwd)
+    try container.encodeIfPresent(checkoutId, forKey: .checkoutId)
     try container.encodeIfPresent(configSelections, forKey: .configSelections)
     try container.encodeIfPresent(unavailableConfigSelections, forKey: .unavailableConfigSelections)
     try container.encode(createdAt, forKey: .createdAt)

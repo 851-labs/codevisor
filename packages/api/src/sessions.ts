@@ -128,6 +128,7 @@ export const SessionSummary = Schema.Struct({
   worktreeName: Schema.optional(Schema.String),
   workspaceId: Schema.optional(Schema.String),
   cwd: Schema.optional(Schema.String),
+  checkoutId: Schema.optional(Schema.String),
   configSelections: Schema.optional(Schema.Record(Schema.String, Schema.String)),
   unavailableConfigSelections: Schema.optional(Schema.Record(Schema.String, Schema.String)),
   createdAt: Schema.String,

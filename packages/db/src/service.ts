@@ -44,6 +44,7 @@ import { Effect } from "effect"
 import type { OpenAssistantText } from "./assistant-texts.js"
 import type { AutoResumeService } from "./auto-resume-service.js"
 import type { BotsService } from "./bot-rows.js"
+import type { CheckoutsService } from "./checkouts-service.js"
 import { createService } from "./create-service.js"
 import type { CreatedAgentsService } from "./created-agents-service.js"
 import { DatabaseError, attempt } from "./errors.js"
@@ -91,6 +92,7 @@ export interface CodevisorDatabaseService
     SessionStateService,
     SessionForkService,
     CreatedAgentsService,
+    CheckoutsService,
     BotsService,
     SessionSubscriptionsService,
     PluginDatabaseService,

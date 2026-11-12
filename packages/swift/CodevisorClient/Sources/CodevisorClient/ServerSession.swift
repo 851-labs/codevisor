@@ -194,6 +194,7 @@ public struct ServerSession: Codable, Equatable, Sendable {
   public var worktreeName: String?
   public var workspaceId: String? = nil
   public var cwd: String?
+  public var checkoutId: String? = nil
   public var configSelections: [String: String]? = nil
   public var unavailableConfigSelections: [String: String]? = nil
   public var createdAt: String
@@ -234,6 +235,7 @@ public struct ServerSession: Codable, Equatable, Sendable {
       origin: origin,
       worktreeName: worktreeName,
       cwd: cwd,
+      checkoutId: checkoutId,
       configSelections: configSelections,
       unavailableConfigSelections: unavailableConfigSelections,
       createdAt: try ServerDateCoding.date(from: createdAt),

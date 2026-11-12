@@ -266,7 +266,8 @@ describe("workspace routes", () => {
       status: 200,
       body: {
         workspaces: [expect.objectContaining({ id: "workspace-panes" })],
-        panes: [expect.objectContaining({ id: firstPane, paneType: "terminal" })]
+        panes: [expect.objectContaining({ id: firstPane, paneType: "terminal" })],
+        checkouts: expect.any(Array)
       }
     })
 

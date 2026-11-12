@@ -64,7 +64,8 @@ describe("workspace create route", () => {
       status: 200,
       body: {
         workspaces: [expect.objectContaining({ id: "ws-atomic" })],
-        panes: [expect.objectContaining({ id: "chat-atomic" })]
+        panes: [expect.objectContaining({ id: "chat-atomic" })],
+        checkouts: expect.any(Array)
       }
     })
     const batch = await run(services.db.readSyncBatch(before))

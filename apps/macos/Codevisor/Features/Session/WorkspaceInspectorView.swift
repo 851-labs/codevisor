@@ -14,6 +14,7 @@ struct WorkspaceInspectorView: View {
   let workspace: Workspace
   let project: Project
   let branch: String?
+  let worktreeName: String?
   let pullRequest: ServerGitPullRequest?
   let machineName: String?
   let machineSymbol: String?
@@ -257,7 +258,7 @@ struct WorkspaceInspectorView: View {
           if let branch {
             detail("Branch", icon: CodevisorSymbol.gitBranch.image, value: branch)
           }
-          if let worktree = workspace.worktreeName {
+          if let worktree = worktreeName {
             detail("Worktree", icon: Image(systemName: CodevisorSymbol.worktreeSystemName), value: worktree)
           }
           if let machineName {

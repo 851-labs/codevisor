@@ -122,7 +122,7 @@ public final class SidebarGitLookups {
     return branches.byWorkspace[workspace.id]
   }
 
-  static func head(of git: ServerWorkspaceGit) -> String? {
+  public static func head(of git: ServerWorkspaceGit) -> String? {
     if let branch = git.branch { return branch }
     return git.detachedHead.map { "\($0) (detached)" }
   }

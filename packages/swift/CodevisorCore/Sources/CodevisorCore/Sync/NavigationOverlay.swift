@@ -6,6 +6,7 @@ struct NavigationRecords: Sendable {
   var assignments: [UUID: UUID]
   var workspaces: [ServerWorkspace]
   var panes: [ServerWorkspacePane]
+  var checkouts: [ServerCheckout]
 
   init(_ cache: MachineNavigationCache?) {
     projects = cache?.projects ?? []
@@ -13,6 +14,7 @@ struct NavigationRecords: Sendable {
     assignments = cache?.assignments ?? [:]
     workspaces = cache?.snapshot.workspaces ?? []
     panes = cache?.snapshot.panes ?? []
+    checkouts = cache?.snapshot.checkouts ?? []
   }
 }
 

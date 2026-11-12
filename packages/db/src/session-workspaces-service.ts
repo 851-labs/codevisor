@@ -1,5 +1,6 @@
 import { isoTimestamp } from "@codevisor/api"
 
+import { adoptDefaultCheckout, sessionCheckoutId } from "./checkouts.js"
 import { attempt } from "./errors.js"
 import { canonicalUuid } from "./ids.js"
 import { nextPanePositionIn } from "./pane-position.js"
@@ -55,6 +56,7 @@ function createSessionPane(
       targetWorkspaceId,
       session.title || "Chat",
       id,
+      sessionCheckoutId(sqlite, id),
       session.created_at,
       nextPanePositionIn(sqlite, targetWorkspaceId, id)
     )
@@ -76,6 +78,7 @@ export const makeSessionWorkspacesService = (
             removeSessionPane(sqlite, id)
             return
           }
+          adoptDefaultCheckout(sqlite, targetWorkspaceId, id)
           const existing = existingSessionPane(sqlite, id)
           if (existing?.workspace_id === targetWorkspaceId) return
           if (existing !== undefined) {
@@ -101,8 +104,8 @@ const sessionPaneSql = {
   sessionTitle: "select title, created_at from sessions where id = ?",
   insert: `insert into workspace_panes (
                  id, workspace_id, provider_id, pane_type, title,
-                 resource_kind, resource_id, created_at, position
-               ) values (?, ?, 'codevisor', 'chat', ?, 'session', ?, ?, ?)`,
+                 resource_kind, resource_id, checkout_id, created_at, position
+               ) values (?, ?, 'codevisor', 'chat', ?, 'session', ?, ?, ?, ?)`,
   bySession:
     "select id, workspace_id from workspace_panes where resource_kind = 'session' and resource_id = ?"
 }

@@ -11,6 +11,9 @@ export {
   worktreeRows
 } from "./project-rows.js"
 
+export type { CheckoutRow } from "./checkout-rows.js"
+export { checkoutRows } from "./checkout-rows.js"
+
 export type { WorkspaceRow, WorkspacePaneRow } from "./workspace-rows.js"
 export { workspaceRows, workspacePaneRows } from "./workspace-rows.js"
 
