@@ -4,7 +4,6 @@ import CodevisorCoreMac
 
 struct GeneralSettingsView: View {
   @Environment(AppEnvironment.self) private var environment
-  @Environment(\.controlActiveState) private var controlActiveState
   @State private var permissions = ComputerUsePermissionsModel(
     probes: AppPreview.isRunning ? .granted : .live
   )
@@ -19,16 +18,16 @@ struct GeneralSettingsView: View {
     .sheet(isPresented: $showsFullDiskAccessSetup, onDismiss: permissions.refresh) {
       FullDiskAccessSetupSheet(model: permissions)
     }
-    .onAppear(perform: permissions.refresh)
-    .onChange(of: controlActiveState) { _, _ in permissions.refresh() }
-    .onReceive(NotificationCenter.default.publisher(for: NSApplication.didBecomeActiveNotification)) { _ in
-      permissions.refresh()
-    }
+    .modifier(PermissionPolling { permissions.refresh() })
   }
 
   private var permissionsSection: some View {
     Section("Permissions") {
       FullDiskAccessSettingsRow(model: permissions) { showsFullDiskAccessSetup = true }
+      ScreenRecordingSettingsRow(model: permissions)
+      AccessibilitySettingsRow(model: permissions)
+      NotificationsSettingsRow()
+      LocalNetworkSettingsRow(model: permissions)
     }
   }
 

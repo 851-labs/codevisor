@@ -8,6 +8,7 @@ public enum SystemSettingsPane: String, Sendable {
   case accessibility = "x-apple.systempreferences:com.apple.preference.security?Privacy_Accessibility"
   case screenRecording = "x-apple.systempreferences:com.apple.preference.security?Privacy_ScreenCapture"
   case fullDiskAccess = "x-apple.systempreferences:com.apple.preference.security?Privacy_AllFiles"
+  case privacyAndSecurity = "x-apple.systempreferences:com.apple.preference.security"
 
   public var url: URL? { URL(string: rawValue) }
 }
@@ -164,6 +165,10 @@ public final class ComputerUsePermissionsModel {
   public func requestFullDiskAccess() {
     guard !isFullDiskAccessAllowed else { return }
     probes.openSettingsPane(.fullDiskAccess)
+  }
+
+  public func openSettings(_ pane: SystemSettingsPane) {
+    probes.openSettingsPane(pane)
   }
 
   private func openPaneUnlessGranted(

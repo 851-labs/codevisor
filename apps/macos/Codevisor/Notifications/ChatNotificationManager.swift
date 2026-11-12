@@ -180,9 +180,10 @@ final class ChatNotificationManager: NSObject, ChatNotificationDelivering, UNUse
   }
 
   func openSystemNotificationSettings() {
+    let appID = Bundle.main.bundleIdentifier ?? ""
     guard
       let url = URL(
-        string: "x-apple.systempreferences:com.apple.Notifications-Settings.extension"
+        string: "x-apple.systempreferences:com.apple.Notifications-Settings.extension?id=\(appID)"
       )
     else { return }
     NSWorkspace.shared.open(url)
