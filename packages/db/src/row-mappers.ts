@@ -12,6 +12,7 @@ import type {
   WorkspacePane,
   Worktree
 } from "@codevisor/api"
+import { Schema } from "effect"
 
 import { agentReferencesFromRow } from "./agent-references.js"
 import { botMessagePreview } from "./bot-conversation-attention.js"
@@ -210,9 +211,27 @@ export const workspacePaneFromRow = (row: WorkspacePaneRow): WorkspacePane => ({
 })
 
 const actionRequiredKind = (row: SessionRow) => {
-  if (row.pending_question !== null) return { actionRequiredKind: "question" as const }
+  if (row.pending_question !== null) {
+    return {
+      actionRequiredKind: asksForApproval(row.pending_question)
+        ? ("approval" as const)
+        : ("question" as const)
+    }
+  }
   if (row.pending_plan_approval === 1) return { actionRequiredKind: "planApproval" as const }
   return {}
+}
+
+const PendingQuestionSpecs = Schema.Struct({
+  questions: Schema.Array(Schema.Struct({ isApproval: Schema.optional(Schema.Boolean) }))
+})
+
+const isPendingQuestionSpecs = Schema.is(PendingQuestionSpecs)
+
+const asksForApproval = (pendingQuestion: string): boolean => {
+  const parsed: unknown = JSON.parse(pendingQuestion)
+  if (!isPendingQuestionSpecs(parsed)) return false
+  return parsed.questions.length > 0 && parsed.questions.every((spec) => spec.isApproval === true)
 }
 
 export const sessionFromRow = (row: SessionRow, folderPath: string | undefined): SessionSummary => {
@@ -257,6 +276,7 @@ export const sessionFromRow = (row: SessionRow, folderPath: string | undefined):
     actionRequired: row.pending_question !== null || row.pending_plan_approval === 1,
     ...actionRequiredKind(row),
     pendingPlanApproval: row.pending_plan_approval === 1,
+    ...(row.last_turn_failure === null ? {} : { lastTurnFailure: row.last_turn_failure }),
     ...(row.talking_to_agent === 1 ? { talkingToAgent: true } : {}),
     ...(latestBotMessage === undefined ? {} : { latestBotMessage }),
     ...(row.created_by == null ? {} : { createdBy: row.created_by }),

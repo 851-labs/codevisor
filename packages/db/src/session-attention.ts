@@ -1,3 +1,4 @@
+import type { TurnFailure } from "@codevisor/api"
 import type Database from "better-sqlite3"
 
 import {
@@ -171,6 +172,7 @@ export const projectSessionAttention = (
   projectAttentionMode(sqlite, event, payload)
   projectAttentionRuntime(sqlite, event, payload)
   projectAttentionTurnStart(sqlite, event, payload)
+  projectLastTurnFailure(sqlite, event, payload)
   projectAgentCalls(sqlite, event, payload)
   projectUserConversationAttention(sqlite, event, payload)
   const announced = endsAnnouncedTurn(event, payload) && turnWasRunning(sqlite, event.session_id)
@@ -221,6 +223,25 @@ const projectAttentionTurnStart = (
       .prepare(attentionSql.startTurn)
       .run(payload.initiatedBy === "agent" ? "agent" : "user", event.session_id)
   }
+}
+
+const projectLastTurnFailure = (
+  sqlite: Database.Database,
+  event: SessionEventRow,
+  payload: JsonRecord
+): void => {
+  if (event.kind === "session.updated" && payload.turnState === "started") {
+    sqlite.prepare(attentionSql.setLastTurnFailure).run(null, event.session_id)
+  } else if (isTurnEnd(event, payload) && !isUpdatePause(payload)) {
+    sqlite
+      .prepare(attentionSql.setLastTurnFailure)
+      .run(turnFailure(event, payload) ?? null, event.session_id)
+  }
+}
+
+const turnFailure = (event: SessionEventRow, payload: JsonRecord): TurnFailure | undefined => {
+  if (!terminalAttentionError(event, payload)) return undefined
+  return payload.stopKind === "usageLimit" ? "usageLimit" : "error"
 }
 
 const projectUserConversationAttention = (
@@ -331,6 +352,7 @@ const attentionSql = {
          where session_id = ?`,
   endTurn: "update session_attention set turn_active = 0 where session_id = ?",
   markErrored: "update session_attention set errored = 1 where session_id = ?",
+  setLastTurnFailure: "update session_attention set last_turn_failure = ? where session_id = ?",
   awaitPlanApproval: `update session_attention set pending_plan_approval = 1,
              pending_finish = 0, settle_due_at = null where session_id = ?`,
   holdFinish:

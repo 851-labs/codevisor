@@ -157,6 +157,7 @@ export const holdClaudeApproval = (
     allowsOther: false,
     header: "Permission",
     id: "approval",
+    isApproval: true,
     options: [{ label: "Allow" }, { label: "Deny" }],
     question: `Allow ${toolName}?`
   }
@@ -196,6 +197,7 @@ export const holdClaudePlanApproval = (
     allowsOther: false,
     header: "Plan",
     id: EXIT_PLAN_MODE_QUESTION_ID,
+    isApproval: true,
     options: [
       { description: "Start building", label: IMPLEMENT_PLAN_LABEL },
       { description: "Keep refining in plan mode", label: KEEP_PLANNING_LABEL }

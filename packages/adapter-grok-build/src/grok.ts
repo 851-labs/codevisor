@@ -141,6 +141,7 @@ export const grokPlanApprovalQuestion = (
     {
       id: GROK_PLAN_QUESTION_ID,
       header: "Plan",
+      isApproval: true,
       question: "Ready to implement this plan?",
       options: [
         { label: GROK_IMPLEMENT_PLAN_LABEL, description: "Start building" },

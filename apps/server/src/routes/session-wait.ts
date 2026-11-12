@@ -44,7 +44,7 @@ const waitedSession = async (
   session: SessionSummary
 ): Promise<WaitedSession> => {
   let pendingQuestion: QuestionPayload | undefined
-  if (session.actionRequiredKind === "question") {
+  if (session.actionRequiredKind === "question" || session.actionRequiredKind === "approval") {
     pendingQuestion = await run(db.getSessionPendingQuestion(session.id))
   }
   return {

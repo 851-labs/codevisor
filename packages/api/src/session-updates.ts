@@ -165,6 +165,7 @@ export const QuestionSpec = Schema.Struct({
   multiSelect: Schema.optional(Schema.Boolean),
   allowsOther: Schema.Boolean,
   isSecret: Schema.optional(Schema.Boolean),
+  isApproval: Schema.optional(Schema.Boolean),
   backOptionLabel: Schema.optional(Schema.String),
   presentation: Schema.optional(QuestionPresentation),
   pluginSetup: Schema.optional(PluginSetupRequest)

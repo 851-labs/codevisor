@@ -14,6 +14,7 @@ export const installNavigationJournal = (db: Database.Database): void => {
       "current_mode_id",
       "pending_plan_approval",
       "errored",
+      "last_turn_failure",
       "agent_calls"
     ],
     session_read_state: ["last_seen_sequence", "manually_unread"],
@@ -27,6 +28,7 @@ export const installNavigationJournal = (db: Database.Database): void => {
       "is_archived",
       "is_detached",
       "sidebar_state",
+      "pending_question",
       "config_selections",
       "unavailable_config_selections"
     ]

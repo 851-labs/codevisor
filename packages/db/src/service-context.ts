@@ -115,6 +115,10 @@ const sessionSummarySql = `
         select pending_plan_approval from session_attention sa
         where sa.session_id = sessions.id
       ), 0) as pending_plan_approval,
+      (
+        select last_turn_failure from session_attention sa
+        where sa.session_id = sessions.id
+      ) as last_turn_failure,
       coalesce((
         select agent_calls <> '[]' from session_attention sa
         where sa.session_id = sessions.id

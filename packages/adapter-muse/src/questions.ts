@@ -37,6 +37,7 @@ export const approvalQuestion = (request: ApprovalRequest): MuseQuestion => {
       {
         id: PERMISSION_ID,
         header: "Permission",
+        isApproval: true,
         question: `Allow ${request.toolName}${subject === undefined ? "" : `: ${subject}`}?`,
         options: request.availableChoices.map((choice) => ({ label: choice.label })),
         allowsOther: false

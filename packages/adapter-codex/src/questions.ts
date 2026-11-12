@@ -80,6 +80,7 @@ const holdApprovalRequest = (
   const spec: QuestionSpec = {
     allowsOther: false,
     id: "approval",
+    isApproval: true,
     options: [
       { label: "Allow" },
       ...(isCommand ? [{ label: "Allow for session" }] : []),

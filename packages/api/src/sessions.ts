@@ -5,6 +5,7 @@ import { SessionAutoResume } from "./auto-resume.js"
 import { Labels } from "./labels.js"
 import { CreateProjectRequest } from "./projects.js"
 import { PromptAttribution } from "./prompt-source.js"
+import { ActionRequiredKind, TurnFailure } from "./session-attention.js"
 import {
   GoalStatus,
   SessionCreator,
@@ -144,8 +145,9 @@ export const SessionSummary = Schema.Struct({
   unreadCount: Schema.optional(Schema.Number),
   hasUnreadError: Schema.optional(Schema.Boolean),
   actionRequired: Schema.optional(Schema.Boolean),
-  actionRequiredKind: Schema.optional(Schema.Literals(["question", "planApproval"])),
+  actionRequiredKind: Schema.optional(ActionRequiredKind),
   pendingPlanApproval: Schema.optional(Schema.Boolean),
+  lastTurnFailure: Schema.optional(TurnFailure),
   talkingToAgent: Schema.optional(Schema.Boolean),
   latestBotMessage: Schema.optional(BotMessagePreview),
   createdBy: Schema.optional(SessionCreator),
