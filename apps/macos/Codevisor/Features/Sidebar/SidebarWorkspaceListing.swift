@@ -56,6 +56,6 @@ struct SidebarWorkspaceListing {
   }
 
   private var botHomeWorkspaceIDs: Set<UUID> {
-    Set(environment.bots.bots.map(\.workspaceId))
+    environment.navigationStore.workspaceEntries.botHomeIds.union(environment.bots.bots.map(\.workspaceId))
   }
 }

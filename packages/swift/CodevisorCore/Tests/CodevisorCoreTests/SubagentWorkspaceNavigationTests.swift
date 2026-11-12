@@ -75,6 +75,37 @@ struct SubagentWorkspaceNavigationTests {
     #expect(fixture.store.projection.sessions.first { $0.id == standalone.id }?.createdByAgent?.agentId == lead.id)
   }
 
+  @Test("A bot's workspace is known from its project, before any bot list has loaded")
+  func botHomeKnownFromProject() async {
+    let botHome = Project.fromFolder(URL(fileURLWithPath: "/tmp/codevisor/bots/helper"), serverId: "m")
+    let lead = chat("Lead")
+    let bot = ChatSession(projectId: botHome.id, serverId: "m", title: "Helper")
+    let home = Workspace(
+      name: "Helper", rootDirectory: nil, serverId: "m", projectId: botHome.id,
+      centerTabs: [WorkspaceTab(root: .leaf(.centerInitial(sessionId: bot.id)))],
+      createdAt: Date(timeIntervalSince1970: 0), isServerSynced: true)
+    let ordinary = workspace(lead)
+    let fixture = NavigationFixture()
+    for workspace in [ordinary, home] {
+      fixture.store.layouts.setLayout(DeviceLayout(workspace), for: workspace.id)
+    }
+    var snapshot = ServerNavigationSnapshot.fixture(
+      projects: [project, botHome], sessions: [lead, bot], workspaces: [ordinary, home])
+
+    await fixture.store.replace(snapshot, machineId: "m", requestedAt: Date())
+    #expect(fixture.store.workspaceEntries.botHomeIds.isEmpty)
+
+    snapshot.projects = snapshot.projects.map { record in
+      var record = record
+      record.isBot = record.id == botHome.id.uuidString
+      return record
+    }
+    await fixture.store.replace(snapshot, machineId: "m", requestedAt: Date())
+
+    #expect(fixture.store.workspaceEntries.botHomeIds == [home.id])
+    #expect(fixture.store.workspaceEntries.sidebar.filter { !$0.isBotHome }.map(\.id) == [ordinary.id])
+  }
+
   @Test("Agent-made children are quiet, a bot's included; forks are not")
   func quietChildren() async {
     let botHome = Project.fromFolder(URL(fileURLWithPath: "/tmp/codevisor/bots/helper"), serverId: "m")

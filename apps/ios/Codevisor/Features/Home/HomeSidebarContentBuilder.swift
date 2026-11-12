@@ -17,16 +17,17 @@ struct HomeSidebarContentBuilder {
   }
 
   var listedItems: [WorkspaceSidebarItem] {
-    let homes = Set(botEntries.map(\.bot.workspaceId))
-    let botProjects = Set(environment.projectList.projects.filter(\.isBot).map(\.id))
-    return known(environment.navigationStore.workspaceEntries.sidebar).filter {
-      !botProjects.contains($0.projectId) && !homes.contains($0.id)
-    }
+    let homes = botHomes
+    return known(environment.navigationStore.workspaceEntries.sidebar).filter { !homes.contains($0.id) }
   }
 
   var archivedItems: [WorkspaceSidebarItem] {
-    let homes = Set(botEntries.map(\.bot.workspaceId))
+    let homes = botHomes
     return known(environment.navigationStore.workspaceEntries.archived).filter { !homes.contains($0.id) }
+  }
+
+  private var botHomes: Set<UUID> {
+    environment.navigationStore.workspaceEntries.botHomeIds.union(botEntries.map(\.bot.workspaceId))
   }
 
   var botConversations: [BotConversation] {
@@ -35,7 +36,7 @@ struct HomeSidebarContentBuilder {
 
   func content(_ preferences: HomeSidebarPreferences) -> HomeSidebarContent {
     let projectGroups = ProjectGroup.grouping(environment.projectList.projects)
-    let homes = Set(botEntries.map(\.bot.workspaceId))
+    let homes = botHomes
     let archivedIDs = Set(environment.navigationStore.workspaceEntries.archived.map(\.id))
     let tree = SidebarWorkspaceTree(
       listedItems, pinnedIDs: preferences.pinnedIDs, hiddenParentIDs: homes.union(archivedIDs))
