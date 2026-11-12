@@ -2,6 +2,7 @@ import {
   SessionCreator,
   SessionOrigin,
   SessionSidebarState,
+  TurnFailure,
   type SessionSummary
 } from "@codevisor/api"
 import { Schema } from "effect"
@@ -49,6 +50,7 @@ export interface SessionRow {
   readonly attention_has_unread_error: number
   readonly attention_manually_unread: number
   readonly pending_plan_approval: number
+  readonly last_turn_failure: TurnFailure | null
   readonly talking_to_agent: number
   readonly latest_bot_message_text?: string | null
   readonly latest_bot_message_attachments?: string | null
@@ -126,6 +128,7 @@ export const sessionRows = rowReader<SessionRow>({
   attention_has_unread_error: integer,
   attention_manually_unread: integer,
   pending_plan_approval: integer,
+  last_turn_failure: nullable(Schema.is(TurnFailure)),
   talking_to_agent: integer,
   latest_bot_message_text: optional(nullable(text)),
   latest_bot_message_attachments: optional(nullable(text)),

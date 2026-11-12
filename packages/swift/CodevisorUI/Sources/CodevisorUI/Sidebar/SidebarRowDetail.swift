@@ -5,6 +5,7 @@ import SwiftUI
 public enum SidebarRowDetail: String, CaseIterable, Codable, Identifiable, Sendable {
   case pullRequest
   case machine
+  case status
   case project
   case branch
   case worktree
@@ -14,18 +15,19 @@ public enum SidebarRowDetail: String, CaseIterable, Codable, Identifiable, Senda
   public static let defaults = allCases.filter(\.isShownByDefault)
 
   public static let trailingDetails: [SidebarRowDetail] = [.pullRequest, .machine]
-  public static let subtitleDetails: [SidebarRowDetail] = [.project, .branch, .worktree]
+  public static let subtitleDetails: [SidebarRowDetail] = [.status, .project, .branch, .worktree]
 
   public var id: String { rawValue }
 
   public var preferenceKey: String { "sidebar.rowDetail.\(rawValue)" }
 
-  public var isShownByDefault: Bool { self != .worktree }
+  public var isShownByDefault: Bool { self != .status && self != .worktree }
 
   public var title: String {
     switch self {
     case .pullRequest: "PR"
     case .machine: "Machine"
+    case .status: "Status"
     case .project: "Project"
     case .branch: "Branch"
     case .worktree: "Worktree"
@@ -36,6 +38,7 @@ public enum SidebarRowDetail: String, CaseIterable, Codable, Identifiable, Senda
     switch self {
     case .pullRequest: CodevisorSymbol.gitPullRequest.image
     case .machine: Image(systemName: "desktopcomputer")
+    case .status: Image(systemName: "bolt.circle")
     case .project: Image(systemName: EntitySystemSymbol.projectList)
     case .branch: CodevisorSymbol.gitBranch.image
     case .worktree: Image(systemName: CodevisorSymbol.worktreeSystemName)

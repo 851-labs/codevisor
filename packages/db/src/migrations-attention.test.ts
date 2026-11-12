@@ -21,7 +21,7 @@ describe("@codevisor/db attention and checklist upgrades", () => {
       legacy.exec(`
       drop table session_read_state;
       drop table session_attention;
-      delete from schema_migrations where id in (31, 37, 42, 80, 95);
+      delete from schema_migrations where id in (31, 37, 42, 80, 95, 102);
     `)
     } finally {
       legacy.close()
@@ -93,7 +93,7 @@ describe("@codevisor/db attention and checklist upgrades", () => {
       legacy.pragma("foreign_keys = OFF")
       legacy.exec(`
       drop table session_attention;
-      delete from schema_migrations where id in (42, 80, 95);
+      delete from schema_migrations where id in (42, 80, 95, 102);
       create table session_attention_state (
         session_id text primary key references sessions(id) on delete cascade,
         pending_epoch integer not null default 0,

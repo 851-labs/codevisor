@@ -62,6 +62,7 @@ export const acpPermissionQuestion = (
     spec: {
       allowsOther: false,
       id: "permission",
+      isApproval: true,
       options: options.map((option) => ({ label: option.name })),
       question: title !== undefined && title.length > 0 ? title : "Allow the agent to proceed?"
     }

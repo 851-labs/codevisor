@@ -180,7 +180,8 @@ export const cursorCreatePlanQuestion = (
             ? request.overview
             : "Ready to implement this plan?",
         options: [{ label: ACCEPT_PLAN }, { label: REJECT_PLAN }],
-        allowsOther: true
+        allowsOther: true,
+        isApproval: true
       }
     ],
     ...(request.plan.length === 0 ? {} : { planDocument: request.plan }),

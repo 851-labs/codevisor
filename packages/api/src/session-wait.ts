@@ -1,5 +1,6 @@
 import { Schema } from "effect"
 
+import { ActionRequiredKind } from "./session-attention.js"
 import { QuestionPayload } from "./session-updates.js"
 import { SessionSidebarState } from "./sessions.js"
 
@@ -21,7 +22,7 @@ export type WaitForSessionsRequest = typeof WaitForSessionsRequest.Type
 export const WaitedSession = Schema.Struct({
   id: Schema.String,
   sidebarState: SessionSidebarState,
-  actionRequiredKind: Schema.optional(Schema.Literals(["question", "planApproval"])),
+  actionRequiredKind: Schema.optional(ActionRequiredKind),
   pendingQuestion: Schema.optional(QuestionPayload)
 })
 export type WaitedSession = typeof WaitedSession.Type

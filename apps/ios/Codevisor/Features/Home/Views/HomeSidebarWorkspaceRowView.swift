@@ -25,6 +25,8 @@ struct HomeSidebarWorkspaceRowView: View, Equatable {
   private func onOpen() {
     if workspace.isArchived {
       confirmsRestore = true
+    } else if let asking = workspace.asking {
+      actions.actions.openAsking(asking)
     } else {
       actions.actions.openWorkspace(workspace)
     }
@@ -159,8 +161,10 @@ struct HomeSidebarWorkspaceRowView: View, Equatable {
       VStack(alignment: .leading, spacing: 2) {
         HomeSidebarRowTitle(title: workspace.displayName)
           .lineLimit(dynamicTypeSize.isAccessibilitySize ? 2 : 1)
-        if let subtitle = workspace.subtitle {
-          HomeSidebarRowSubtitle(text: subtitle)
+        if workspace.subtitle != nil || workspace.statusLabel != nil {
+          SidebarRowStatusSubtitle(status: workspace.statusLabel, subtitle: workspace.subtitle) { text in
+            HomeSidebarRowSubtitle(text: text)
+          }
         }
       }
       .frame(maxWidth: .infinity, alignment: .leading)
@@ -169,9 +173,18 @@ struct HomeSidebarWorkspaceRowView: View, Equatable {
     }
   }
 
+  private var leadingStatus: SidebarRowStatus? {
+    guard let status = workspace.rowStatus,
+      status.replacesLeadingIcon(isUnread: workspace.leadingRow?.status == .unread)
+    else { return nil }
+    return status
+  }
+
   @ViewBuilder
   private var leadingIcon: some View {
-    if let row = workspace.leadingRow {
+    if let status = leadingStatus {
+      HomeSidebarStatusSymbol(status: status)
+    } else if let row = workspace.leadingRow {
       HomeSidebarTabIcon(row: row, serverId: workspace.serverId)
     } else {
       HomeSidebarSymbol(name: EntitySystemSymbol.workspace)
@@ -205,7 +218,7 @@ struct HomeSidebarWorkspaceRowView: View, Equatable {
       case .idle: nil
       }
     return [
-      workspace.displayName, status, workspace.subtitle,
+      workspace.displayName, status, workspace.rowStatus?.title, workspace.subtitle,
       workspace.pullRequest.map { "pull request \($0.number)" },
       workspace.machine.map { "on \($0.name)" },
     ].compactMap { $0 }.joined(separator: ", ")

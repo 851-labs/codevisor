@@ -5,6 +5,11 @@ import { makeDatabase } from "./index.js"
 import { ATTENTION_SETTLE_GRACE_MS } from "./session-attention.js"
 import { run, tempDatabase } from "./test-support.js"
 
+const turn = (turnId: string, ended: Record<string, unknown>) => [
+  { initiatedBy: "user", turnId, turnState: "started" },
+  { initiatedBy: "user", turnId, turnState: "ended", ...ended }
+]
+
 describe("@codevisor/db", () => {
   it("tracks unread as a revision cursor with intrinsic action-required state", async () => {
     const db = await run(makeDatabase({ filename: tempDatabase(), serverId: "local" }))
@@ -368,6 +373,62 @@ describe("@codevisor/db", () => {
       })
     )
     expect((await run(db.getSessionSummary(session.id))).hasUnreadError).toBe(false)
+    await Effect.runPromise(db.close)
+  })
+
+  it("keeps how the last turn failed until the next turn starts, even after reading", async () => {
+    const db = await run(makeDatabase({ filename: tempDatabase(), serverId: "local" }))
+    const project = await run(db.createProject({ folderPath: "/tmp/last-turn-failure" }))
+    const session = await run(db.createSession({ projectId: project.id, harnessId: "claude-code" }))
+    const play = async (events: ReadonlyArray<Record<string, unknown>>) => {
+      for (const payload of events)
+        await run(db.appendEvent("session.updated", session.id, payload))
+    }
+    const failure = async () => (await run(db.getSessionSummary(session.id))).lastTurnFailure
+
+    await play(turn("turn-1", { stopReason: "failed", stopDetail: "The provider crashed" }))
+    expect(await failure()).toBe("error")
+    await run(db.markSessionRead(session.id, 1))
+    expect(await failure()).toBe("error")
+
+    await play(
+      turn("turn-2", { stopReason: "failed", stopDetail: "Limit hit", stopKind: "usageLimit" })
+    )
+    expect(await failure()).toBe("usageLimit")
+
+    await play(turn("turn-3", { stopReason: "end_turn" }).slice(0, 1))
+    expect(await failure()).toBeUndefined()
+    await Effect.runPromise(db.close)
+  })
+
+  it("reports a pending permission or plan prompt as approval, not a question", async () => {
+    const db = await run(makeDatabase({ filename: tempDatabase(), serverId: "local" }))
+    const project = await run(db.createProject({ folderPath: "/tmp/approval-attention" }))
+    const session = await run(db.createSession({ projectId: project.id, harnessId: "claude-code" }))
+    const ask = (questionId: string, isApproval: boolean | undefined) =>
+      run(
+        db.appendEvent("session.output", session.id, {
+          questionId,
+          questions: [
+            {
+              id: "approval",
+              question: "Allow Bash?",
+              options: [{ label: "Allow" }, { label: "Deny" }],
+              allowsOther: false,
+              ...(isApproval === undefined ? {} : { isApproval })
+            }
+          ],
+          sessionUpdate: "question"
+        })
+      )
+
+    await ask("permission-1", true)
+    expect(await run(db.getSessionSummary(session.id))).toMatchObject({
+      actionRequired: true,
+      actionRequiredKind: "approval"
+    })
+    await ask("question-1", undefined)
+    expect((await run(db.getSessionSummary(session.id))).actionRequiredKind).toBe("question")
     await Effect.runPromise(db.close)
   })
 

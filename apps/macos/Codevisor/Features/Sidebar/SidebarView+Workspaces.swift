@@ -20,6 +20,10 @@ extension SidebarView {
   var rowActions: SidebarWorkspaceSection.Actions {
     SidebarWorkspaceSection.Actions(
       activate: { activateWorkspace($0, tabId: $0.workspace.mainTab.id) },
+      openAsking: { item in
+        revealRequest.rowID = item.workspace.id
+        activateWorkspace(item, tabId: item.workspace.mainTab.id)
+      },
       commands: rowCommands
     )
   }

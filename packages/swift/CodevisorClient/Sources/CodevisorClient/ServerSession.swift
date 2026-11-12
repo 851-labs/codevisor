@@ -209,6 +209,7 @@ public struct ServerSession: Codable, Equatable, Sendable {
   public var actionRequired: Bool? = nil
   public var actionRequiredKind: String? = nil
   public var pendingPlanApproval: Bool? = nil
+  public var lastTurnFailure: String? = nil
   public var talkingToAgent: Bool? = nil
   public var latestBotMessage: BotMessagePreview? = nil
   public var createdBy: SessionCreator? = nil
@@ -255,6 +256,7 @@ public struct ServerSession: Codable, Equatable, Sendable {
       actionRequired: actionRequired ?? false,
       actionRequiredKind: actionRequiredKind,
       pendingPlanApproval: pendingPlanApproval ?? false,
+      lastTurnFailure: lastTurnFailure.flatMap(SessionTurnFailure.init(rawValue:)),
       talkingToAgent: talkingToAgent ?? false,
       latestBotMessage: latestBotMessage,
       createdBy: createdBy,
@@ -290,6 +292,7 @@ public struct ServerSession: Codable, Equatable, Sendable {
     actionRequired: Bool? = nil,
     actionRequiredKind: String? = nil,
     pendingPlanApproval: Bool? = nil,
+    lastTurnFailure: String? = nil,
     talkingToAgent: Bool? = nil,
     latestBotMessage: BotMessagePreview? = nil,
     createdBy: SessionCreator? = nil,
@@ -324,6 +327,7 @@ public struct ServerSession: Codable, Equatable, Sendable {
     self.actionRequired = actionRequired
     self.actionRequiredKind = actionRequiredKind
     self.pendingPlanApproval = pendingPlanApproval
+    self.lastTurnFailure = lastTurnFailure
     self.talkingToAgent = talkingToAgent
     self.latestBotMessage = latestBotMessage
     self.createdBy = createdBy

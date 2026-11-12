@@ -78,6 +78,7 @@ export const permissionQuestion = (
   return {
     allowsOther: false,
     id: "permission",
+    isApproval: true,
     options: DECISIONS.map(([label]) => ({ label })),
     question
   }

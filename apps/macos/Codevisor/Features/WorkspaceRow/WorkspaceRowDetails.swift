@@ -1,9 +1,12 @@
 import CodevisorClient
 import CodevisorCore
+import CodevisorUI
 
 struct WorkspaceRowDetails {
   let name: String
   var subtitle: String? = nil
+  var status: SidebarRowStatus? = nil
+  var showsStatusLabel = false
   let icon: SidebarWorkspaceIcon
   var pullRequest: ServerGitPullRequest? = nil
   var machine: SidebarRowMachine? = nil

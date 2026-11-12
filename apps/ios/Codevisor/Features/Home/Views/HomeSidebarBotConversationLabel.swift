@@ -16,7 +16,8 @@ struct HomeSidebarBotConversationLabel: View {
         avatar
       }
       VStack(alignment: .leading, spacing: 2) {
-        HomeSidebarBotConversationTitle(name: bot.bot.name, showsChevron: showsChevron)
+        HomeSidebarBotConversationTitle(
+          name: bot.bot.name, status: bot.rowStatus, showsStatusLabel: bot.showsStatusLabel, showsChevron: showsChevron)
         HomeSidebarBotConversationPreview(conversation: bot.conversation)
       }
       .alignmentGuide(.listRowSeparatorLeading) { $0[.leading] }

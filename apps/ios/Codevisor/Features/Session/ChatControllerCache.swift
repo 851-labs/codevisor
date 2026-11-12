@@ -175,8 +175,12 @@ final class ChatControllerCache {
     }
     return controller.pendingUserMessage != nil
       || controller.isSending
-      || controller.setupPhases.contains(where: \.isRunning)
+      || controller.isSettingUp
       || controller.isWaitingOnBackgroundTasks
+  }
+
+  func isSettingUp(_ session: ChatSession) -> Bool {
+    slot(Key(serverId: session.serverId, id: session.id)).controller?.isSettingUp == true
   }
 
   func reconcileInFlightControllers() async {

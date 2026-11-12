@@ -35,6 +35,11 @@ public enum SessionSidebarState: String, Sendable, Codable, Equatable {
   }
 }
 
+public enum SessionTurnFailure: String, Sendable, Codable, Equatable {
+  case error
+  case usageLimit
+}
+
 public struct ChatSession: Identifiable, Sendable, Codable, Equatable {
   public var id: UUID
   public var projectId: UUID
@@ -60,6 +65,7 @@ public struct ChatSession: Identifiable, Sendable, Codable, Equatable {
   public var actionRequired: Bool
   public var actionRequiredKind: String?
   public var pendingPlanApproval: Bool
+  public var lastTurnFailure: SessionTurnFailure?
   public var talkingToAgent: Bool
   public var latestBotMessage: BotMessagePreview?
   public var createdBy: SessionCreator?
@@ -104,6 +110,7 @@ public struct ChatSession: Identifiable, Sendable, Codable, Equatable {
     actionRequired: Bool = false,
     actionRequiredKind: String? = nil,
     pendingPlanApproval: Bool = false,
+    lastTurnFailure: SessionTurnFailure? = nil,
     talkingToAgent: Bool = false,
     latestBotMessage: BotMessagePreview? = nil,
     createdBy: SessionCreator? = nil,
@@ -135,6 +142,7 @@ public struct ChatSession: Identifiable, Sendable, Codable, Equatable {
     self.actionRequired = actionRequired
     self.actionRequiredKind = actionRequiredKind
     self.pendingPlanApproval = pendingPlanApproval
+    self.lastTurnFailure = lastTurnFailure
     self.talkingToAgent = talkingToAgent
     self.latestBotMessage = latestBotMessage
     self.createdBy = createdBy
@@ -148,7 +156,7 @@ public struct ChatSession: Identifiable, Sendable, Codable, Equatable {
     case worktreeName, cwd, checkoutId, configSelections, unavailableConfigSelections, createdAt, updatedAt
     case sidebarState, sidebarStateChangedAt
     case latestAttentionSequence, lastSeenAttentionSequence, unreadCount, hasUnreadError
-    case actionRequired, actionRequiredKind, pendingPlanApproval, latestBotMessage, createdBy
+    case actionRequired, actionRequiredKind, pendingPlanApproval, lastTurnFailure, latestBotMessage, createdBy
     case createdByAgentId, createdByAgentMachineId, forkedFromAgentId, forkedFromAgentMachineId
     case talkingToAgent, isDetached
     case workspaceId
@@ -190,6 +198,7 @@ public struct ChatSession: Identifiable, Sendable, Codable, Equatable {
     actionRequired = try container.decodeIfPresent(Bool.self, forKey: .actionRequired) ?? false
     actionRequiredKind = try container.decodeIfPresent(String.self, forKey: .actionRequiredKind)
     pendingPlanApproval = try container.decodeIfPresent(Bool.self, forKey: .pendingPlanApproval) ?? false
+    lastTurnFailure = try? container.decodeIfPresent(SessionTurnFailure.self, forKey: .lastTurnFailure)
     talkingToAgent = try container.decodeIfPresent(Bool.self, forKey: .talkingToAgent) ?? false
     latestBotMessage = try container.decodeIfPresent(BotMessagePreview.self, forKey: .latestBotMessage)
     createdBy = try container.decodeIfPresent(SessionCreator.self, forKey: .createdBy)
@@ -228,6 +237,7 @@ public struct ChatSession: Identifiable, Sendable, Codable, Equatable {
     try container.encode(actionRequired, forKey: .actionRequired)
     try container.encodeIfPresent(actionRequiredKind, forKey: .actionRequiredKind)
     try container.encode(pendingPlanApproval, forKey: .pendingPlanApproval)
+    try container.encodeIfPresent(lastTurnFailure, forKey: .lastTurnFailure)
     try container.encode(talkingToAgent, forKey: .talkingToAgent)
     try container.encodeIfPresent(latestBotMessage, forKey: .latestBotMessage)
     try container.encodeIfPresent(createdBy, forKey: .createdBy)

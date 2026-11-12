@@ -114,6 +114,7 @@ const sessionAttentionSignature = (session: SessionSummary): string =>
     session.actionRequired,
     session.actionRequiredKind,
     session.pendingPlanApproval,
+    session.lastTurnFailure,
     session.latestBotMessage,
     session.sidebarState,
     session.sidebarStateChangedAt
