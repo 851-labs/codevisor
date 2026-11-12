@@ -1,10 +1,10 @@
 {
-  "git-branch": { "height": 1.34, "outset": 0.01 },
-  "git-branch-check": { "height": 1.34, "outset": 0.01 },
-  "git-branch-dot": { "height": 1.34, "outset": 0.01 },
-  "git-branch-x": { "height": 1.34, "outset": 0.01 },
-  "git-merge": { "height": 1.34, "outset": 0.01 },
-  "git-pull-request": { "height": 1.34, "outset": 0.01 },
-  "git-pull-request-closed": { "height": 1.34, "outset": 0.01 },
-  "git-pull-request-draft": { "height": 1.34, "outset": 0.01 }
+  "git-branch": { "height": 1.34, "lineArt": true },
+  "git-branch-check": { "height": 1.34, "lineArt": true },
+  "git-branch-dot": { "height": 1.34, "lineArt": true },
+  "git-branch-x": { "height": 1.34, "lineArt": true },
+  "git-merge": { "height": 1.34, "lineArt": true },
+  "git-pull-request": { "height": 1.34, "lineArt": true },
+  "git-pull-request-closed": { "height": 1.34, "lineArt": true },
+  "git-pull-request-draft": { "height": 1.34, "lineArt": true }
 }
