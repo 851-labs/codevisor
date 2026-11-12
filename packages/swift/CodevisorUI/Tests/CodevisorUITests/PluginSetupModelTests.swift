@@ -184,6 +184,57 @@ struct PluginSetupModelTests {
     #expect(accounts.accounts.map(\.id) == ["acc-1"])
   }
 
+  @Test("A guided plugin opens its setup guide and saves the account under the guide's id")
+  func guidedSetup() async throws {
+    let transport = SetupTransport()
+    transport.respond("GET /v1/plugins/catalog/grafana", with: Self.guidedEntry)
+    transport.respond("GET /v1/mcps", with: "[\(Self.server(authType: "none", state: "connected"))]")
+    transport.respond("GET /v1/plugins/mcp-1/accounts", with: #"{"accounts":[]}"#)
+    transport.respond("GET /v1/plugins/mcp-1/accounts/acct-new/guide", with: Self.resolvedGuide)
+    transport.respond("POST /v1/plugins/mcp-1/accounts", with: Self.account)
+    let model = PluginSetupModel(request: try Self.request(auth: "fields"), client: Self.client(transport))
+    await model.refresh()
+    #expect(model.actionTitle == "Connect Grafana…")
+
+    await model.performPrimaryAction()
+    let guide = try #require(model.guiding)
+
+    let setup = PluginAccountGuideModel(
+      spec: guide.spec, serverId: "mcp-1", client: Self.client(transport), accountId: "acct-new")
+    #expect(setup.steps.map(\.title) == ["Create the app", "Paste the token"] && !setup.canContinue)
+    await setup.load()
+    #expect(setup.steps.map(\.title) == ["Create the app", "Paste the token"])
+    #expect(setup.isFirstStep && setup.canContinue)
+    #expect(await setup.save() == nil)
+
+    setup.goForward()
+    let last = try #require(setup.currentStep)
+    #expect(setup.isLastStep && setup.fields(in: last).map(\.key) == ["token"] && !setup.canContinue)
+
+    setup.draft.values["token"] = .string("glsa_1")
+    #expect(setup.canContinue)
+    #expect(await setup.save()?.id == "acc-1")
+    let saved = try #require(transport.bodies(sentTo: "POST /v1/plugins/mcp-1/accounts").first)
+    #expect(saved.contains(#""id":"acct-new""#) && saved.contains(#""token":"glsa_1""#))
+  }
+
+  @Test("A plugin page offers its setup guide by itself only once per plugin")
+  func firstRunGuideOffer() async throws {
+    let transport = SetupTransport()
+    transport.respond("GET /v1/plugins/guided-once/accounts", with: #"{"accounts":[]}"#)
+    let spec = try JSONDecoder().decode(ServerPluginAccountSpec.self, from: Data(Self.guidedSpec.utf8))
+    let server = try JSONDecoder().decode(
+      ServerMcpServer.self, from: Data(Self.server(id: "guided-once", authType: "none", state: "connected").utf8))
+    let accounts = PluginAccountsModel(server: server, client: Self.client(transport), spec: spec)
+    #expect(accounts.takeFirstRunGuide() == nil)
+
+    await accounts.load()
+
+    #expect(accounts.takeFirstRunGuide()?.title == "Connect Grafana")
+    #expect(accounts.takeFirstRunGuide() == nil)
+    #expect(accounts.makeGuide() != nil)
+  }
+
   @Test("Answering Not Now or cancelling declines; any other outcome counts as set up")
   func resolution() {
     let declined = TranscriptQuestion.Answer(
@@ -227,6 +278,24 @@ struct PluginSetupModelTests {
   private static let remoteEntry = """
     {"id":"grafana","name":"Grafana","description":"","publisher":"Codevisor","version":"1","transport":"http",\
     "install":{"kind":"remote","url":"https://mcp.example","fields":[]},"capabilities":{}}
+    """
+
+  private static let guidedSpec = """
+    {"label":"Grafana instance","fields":[{"key":"token","label":"Token","type":"secret","required":true}],\
+    "guide":{"title":"Connect Grafana","summary":"Make a token.","steps":[{"title":"Create the app","detail":"d",\
+    "link":{"title":"Open","url":"https://g.example/new","query":{"manifest_json":{"url":"{{ingress.hooks}}"}}}},\
+    {"title":"Paste the token","detail":"d","fields":["token"]}]}}
+    """
+
+  private static let guidedEntry = """
+    {"id":"grafana","name":"Grafana","description":"","publisher":"Codevisor","version":"1","transport":"stdio",\
+    "install":{"kind":"bundled"},"capabilities":{},"accounts":\(guidedSpec)}
+    """
+
+  private static let resolvedGuide = """
+    {"accountId":"acct-new","title":"Connect Grafana","summary":"Make a token.","steps":[\
+    {"title":"Create the app","detail":"d","link":{"title":"Open","url":"https://g.example/new?x=1"},"fields":[]},\
+    {"title":"Paste the token","detail":"d","fields":["token"]}]}
     """
 
   private static let account = """

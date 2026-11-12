@@ -1,0 +1,95 @@
+---
+title: Slack
+description: Let agents search, read, and post in Slack as you, and wake up when someone mentions you, DMs you, or replies in your threads.
+icon: MessagesSquare
+---
+
+The Slack plugin connects your Slack account to Codevisor, so your agents can work in your
+workspace: find and read conversations, post or reply when you approve it, react to messages, and
+share files. An agent can also wait for something to happen in Slack and act on it.
+
+<Callout title="Preview">
+  The Slack plugin is in preview and isn't in the plugin catalog for everyone yet.
+</Callout>
+
+## What agents can do
+
+| Tool                               | What it does                                                                   |
+| ---------------------------------- | ------------------------------------------------------------------------------ |
+| `search_messages`                  | Search messages with Slack search syntax, such as `in:#eng from:@ana has:link` |
+| `search_files`                     | Search files shared in your conversations                                      |
+| `list_channels`                    | List the channels, private channels, DMs, and group DMs you're in              |
+| `find_users`, `get_user`           | Find people by name, handle, or email, and read a profile                      |
+| `read_channel`, `read_thread`      | Read a conversation's recent messages, or a whole thread                       |
+| `list_channel_members`             | List the people in a conversation                                              |
+| `download_file`                    | Save a shared file on your computer                                            |
+| `add_reaction`, `remove_reaction`  | React to a message with an emoji                                               |
+| `post_message`, `schedule_message` | Post or schedule a message or a thread reply, only after you approve it        |
+| `upload_file`                      | Share a file from your computer, only after you approve it                     |
+
+Everything an agent posts appears under your name. Before it posts, schedules, or shares a file, an
+agent shows you the exact text and where it goes and waits for your approval; the tools refuse to
+post without it.
+
+## Events
+
+Agents can subscribe to these events, usually with a filter, and wake up when they fire. See
+[plugin events](/docs/plugins#events).
+
+| Event             | Fires when                                                |
+| ----------------- | --------------------------------------------------------- |
+| `mention.created` | Someone @-mentions you                                    |
+| `dm.received`     | Someone sends you a DM, or writes in a group DM you're in |
+| `thread.replied`  | Someone replies in a thread you started                   |
+| `message.posted`  | Someone posts in any conversation you're in               |
+| `reaction.added`  | Someone reacts to one of your messages                    |
+
+Message events carry the text, the channel's name and type, the author, and a link to the message,
+so filters such as `channel.name == "incidents" && !bot` work. Your own messages never trigger
+events.
+
+## Connect your workspace
+
+Codevisor reaches Slack through a small app that you create in your own workspace, so no one else's
+app gets access to your messages. Codevisor walks you through it when you install the plugin:
+
+1. In Codevisor, open **Settings › Plugins**, choose **Browse Plugins…**, and install **Slack**.
+   The **Connect Slack** setup opens.
+2. Choose **Create Slack App**. Slack opens with the app's settings filled in. Pick your workspace,
+   choose **Next**, then **Create and Install**, and **Allow** the install.
+3. When Slack says **Codevisor is ready!**, choose **Go to App Settings**. Under **App Credentials**,
+   choose **Show** next to **Signing Secret**, copy it, and paste it into Codevisor.
+4. Open **OAuth & Permissions** in the sidebar, copy the **User OAuth Token** (it starts with
+   `xoxp-`), and paste it into Codevisor.
+5. Choose **Connect**. Codevisor checks the token with Slack and names the account after your
+   workspace.
+
+If your workspace only allows approved apps, Slack sends the install to an admin first; finish
+setup after they approve it. You can connect more than one workspace; agents choose one per tool call.
+
+The app asks Slack for these permissions, all on your behalf: reading the channels, private
+channels, DMs, and group DMs you're in (`channels:history`, `groups:history`, `im:history`,
+`mpim:history` and their `:read` scopes), opening DMs (`im:write`), posting (`chat:write`),
+reading and adding reactions (`reactions:read`, `reactions:write`), reading and sharing files
+(`files:read`, `files:write`), searching (`search:read`), and looking people up (`users:read`,
+`users:read.email`). It also subscribes to message and reaction events in your conversations.
+
+## Where your messages go
+
+The plugin runs on your own computer and talks to Slack directly over Slack's API.
+
+- **Your AI provider.** Messages an agent reads become part of that chat. Your computer sends them
+  to the AI provider you chose for the agent so it can do what you asked. That provider's terms
+  govern it.
+- **Events.** Slack sends each event, including the message text, to your account's Codevisor Cloud
+  inbox. Cloud encrypts it for your devices as it arrives and holds only that encrypted copy until
+  they take it, so a sleeping Mac catches up when it wakes. Your computer checks Slack's signature
+  before using an event.
+- **Your token and signing secret** are stored in Codevisor's credential vault, encrypted on your
+  computer with a key only your devices hold.
+
+## Disconnect
+
+Remove the account in Slack's plugin settings, or uninstall the plugin. Codevisor deletes the token
+and signing secret and removes the account's inbox. To revoke access in Slack too, delete the app
+from your workspace at [api.slack.com/apps](https://api.slack.com/apps).

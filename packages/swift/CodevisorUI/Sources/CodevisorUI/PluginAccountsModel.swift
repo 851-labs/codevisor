@@ -50,6 +50,21 @@ public final class PluginAccountsModel {
     hasLoaded = true
   }
 
+  public func makeGuide() -> PluginAccountGuideModel? {
+    guard let spec, spec.guide != nil else { return nil }
+    return PluginAccountGuideModel(spec: spec, serverId: serverId, catalogId: catalogId, client: client)
+  }
+
+  public func takeFirstRunGuide() -> PluginAccountGuideModel? {
+    guard hasLoaded, accounts.isEmpty, !Self.offeredGuides.contains(serverId) else { return nil }
+    guard let guide = makeGuide() else { return nil }
+
+    Self.offeredGuides.insert(serverId)
+    return guide
+  }
+
+  private static var offeredGuides: Set<String> = []
+
   public func submit(_ editing: PluginAccountEditing) async -> Bool {
     if editing.oauthProvider != nil {
       await signIn(values: editing.draft.submittedValues, label: editing.trimmedLabel, accountId: editing.accountId)

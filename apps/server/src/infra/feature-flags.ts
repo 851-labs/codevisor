@@ -23,6 +23,12 @@ export const featureFlagCatalog: ReadonlyArray<FeatureFlagDefinition> = [
     title: "Gmail Plugin",
     description:
       "Shows Gmail in Browse Plugins on all your devices. In testing: only @851.sh Google accounts can sign in."
+  },
+  {
+    id: "slackPlugin",
+    title: "Slack Plugin",
+    description:
+      "Shows Slack in Browse Plugins on all your devices. You connect it through a Slack app you create in your workspace."
   }
 ]
 

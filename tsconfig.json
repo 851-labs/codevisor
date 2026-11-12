@@ -80,6 +80,9 @@
       "path": "./plugins/linear"
     },
     {
+      "path": "./plugins/slack"
+    },
+    {
       "path": "./plugins/test-events"
     }
   ]

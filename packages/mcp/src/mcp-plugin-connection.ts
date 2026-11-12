@@ -14,6 +14,7 @@ export interface PluginRequestOptions {
   readonly signal?: AbortSignal
   readonly timeoutMs?: number
   readonly accountId?: string
+  readonly meta?: Record<string, unknown>
 }
 
 export interface PluginStreamOptions {
@@ -51,12 +52,17 @@ export const makePluginConnection = (
   const accountParams = async (params: Record<string, unknown>, accountId?: string) =>
     withMeta(params, await accountMeta(accounts, server.id, accountId))
 
+  const requestParams = async (params: Record<string, unknown>, options: PluginRequestOptions) => {
+    if (options.meta !== undefined) return withMeta(params, options.meta)
+    return accountParams(params, options.accountId)
+  }
+
   return {
     serverId: server.id,
     name: server.name,
     extensions: declaredExtensions(connection),
     request: async (method, params, options = {}) => {
-      const sent = await accountParams(params, options.accountId)
+      const sent = await requestParams(params, options)
       return client.request({ method, params: sent }, ResultSchema, requestOptions(options))
     },
     openStream: async (method, params, options) => {

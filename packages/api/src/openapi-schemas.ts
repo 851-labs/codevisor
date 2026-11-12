@@ -172,6 +172,7 @@ import {
   PluginEventRecord,
   PluginEventSubscription,
   PluginEventSubscriptionsResponse,
+  ResolvedPluginAccountGuide,
   SavePluginAccountRequest,
   StartPluginAccountOAuthRequest
 } from "./plugins.js"
@@ -390,6 +391,7 @@ export const responseSchemas = (): Partial<Record<Endpoint, Schema.Constraint>> 
   "POST /v1/plugins/:serverId/accounts": PluginAccount,
   "PUT /v1/plugins/:serverId/accounts/:accountId": PluginAccount,
   "POST /v1/plugins/:serverId/accounts/oauth/start": PluginAccountOAuthStart,
+  "GET /v1/plugins/:serverId/accounts/:accountId/guide": ResolvedPluginAccountGuide,
   "POST /v1/plugins/oauth/complete": CompletePluginAccountOAuthResponse,
   "POST /v1/mcps/detect-auth": McpAuthDetection,
   "GET /v1/mcps/:id/tools": arrayOf(McpTool),

@@ -1,5 +1,5 @@
 {
   "title": "Plugins",
   "icon": "PanelsTopLeft",
-  "pages": ["gmail"]
+  "pages": ["gmail", "slack"]
 }

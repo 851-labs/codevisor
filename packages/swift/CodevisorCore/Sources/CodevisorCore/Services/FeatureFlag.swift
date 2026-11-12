@@ -3,6 +3,7 @@ import Foundation
 public enum FeatureFlag: String, CaseIterable, Identifiable, Sendable {
   case developerMode
   case gmailPlugin
+  case slackPlugin
 
   public var id: String { rawValue }
 
@@ -12,6 +13,7 @@ public enum FeatureFlag: String, CaseIterable, Identifiable, Sendable {
     switch self {
     case .developerMode: "Developer Mode"
     case .gmailPlugin: "Gmail Plugin"
+    case .slackPlugin: "Slack Plugin"
     }
   }
 
@@ -20,6 +22,8 @@ public enum FeatureFlag: String, CaseIterable, Identifiable, Sendable {
     case .developerMode: "Adds a Developer section to the command palette with tools such as the debug overlay."
     case .gmailPlugin:
       "Shows Gmail in Browse Plugins on all your devices. In testing: only @851.sh Google accounts can sign in."
+    case .slackPlugin:
+      "Shows Slack in Browse Plugins on all your devices. You connect it through a Slack app you create in your workspace."
     }
   }
 

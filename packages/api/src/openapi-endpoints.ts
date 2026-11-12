@@ -148,6 +148,7 @@ export const endpoints = [
   "POST /v1/plugins/:serverId/accounts/oauth/start",
   "POST /v1/plugins/oauth/complete",
   "GET /v1/plugins/:serverId/accounts/:accountId/ingress",
+  "GET /v1/plugins/:serverId/accounts/:accountId/guide",
   "POST /v1/plugins/apps/:viewId/token",
   "POST /v1/plugins/:serverId/panes/:paneType/token",
   "GET /v1/mcps",

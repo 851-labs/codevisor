@@ -177,6 +177,10 @@ public extension CodevisorServerClienting {
 
   func pluginAccountIngress(serverId: String, accountId: String) async throws -> [ServerPluginIngressURL] { [] }
 
+  func pluginAccountGuide(serverId: String, accountId: String) async throws -> ServerPluginAccountGuide {
+    throw CodevisorServerClientError.invalidResponse
+  }
+
   func listPluginEventSubscriptions() async throws -> [ServerPluginEventSubscription] { [] }
 
   func listPluginEventSubscriptions(sessionId: UUID) async throws -> [ServerPluginEventSubscription] { [] }

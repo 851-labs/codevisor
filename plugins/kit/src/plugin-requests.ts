@@ -48,6 +48,11 @@ export const accountRemoveRequest = {
   params: z.object({}).loose()
 }
 
+export const accountCheckRequest = {
+  method: "codevisor/account/check",
+  params: z.object({}).loose()
+}
+
 export const skillsListRequest = {
   method: "skills/list",
   params: z.object({ cursor: z.string().optional() })

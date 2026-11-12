@@ -8,6 +8,7 @@ import type { CloudServerControl } from "../server-context-types.js"
 import { HttpFailure } from "../server-context.js"
 import { field } from "../unknown-values.js"
 import type { InstalledOAuthClients } from "./accounts/installed-oauth-clients.js"
+import { checkPluginAccount } from "./accounts/plugin-account-check.js"
 import type { OAuthRedirects } from "./accounts/plugin-account-flows.js"
 import { makePluginAccountStore } from "./accounts/plugin-account-store.js"
 import {
@@ -69,6 +70,8 @@ export const makePluginPlatform = (deps: PluginPlatformDeps): PluginPlatform => 
       found.catalogId === undefined ? undefined : deps.catalog.entry(found.catalogId)?.accounts,
     redirects: oauthRedirects(deps),
     installedClients: deps.installedClients,
+    check: (found, account) =>
+      checkPluginAccount((id) => requireMcp(mcp).pluginConnection(id), found.id, account),
     beforeRemove: async (serverId, accountId) => {
       await Promise.allSettled([...removing].map((listener) => listener(serverId, accountId)))
     },

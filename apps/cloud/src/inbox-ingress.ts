@@ -23,7 +23,11 @@ inboxIngress.on(
     const userId = await inboxOwner(c.env.DB, inboxId)
     if (userId === undefined) return c.json({ error: "not found" }, 404)
 
-    const request = await inboxRequest(c.req.raw)
+    const bytes = await c.req.raw.arrayBuffer()
+    const challenge = urlVerificationChallenge(bytes)
+    if (challenge !== undefined) return c.json({ challenge })
+
+    const request = inboxRequest(c.req.raw, bytes)
     const outcome = await userHub(c.env, userId, c.req.raw.cf).ingestInbox(inboxId, request)
     return ingestResponses[outcome]()
   }
@@ -48,12 +52,33 @@ const droppedHeaders = new Set([
   "cookie"
 ])
 
-const inboxRequest = async (request: Request): Promise<InboxRequest> => ({
+const inboxRequest = (request: Request, bytes: ArrayBuffer): InboxRequest => ({
   method: request.method,
   headers: forwardedHeaders(request.headers),
-  body: Buffer.from(await request.arrayBuffer()).toString("base64"),
+  body: Buffer.from(bytes).toString("base64"),
   receivedAt: new Date().toISOString()
 })
+
+const urlVerificationChallenge = (bytes: ArrayBuffer): string | undefined => {
+  if (bytes.byteLength > maxChallengeBytes) return undefined
+
+  const body = parsedJson(new TextDecoder().decode(bytes))
+  if (!isRecord(body) || body.type !== "url_verification") return undefined
+  return typeof body.challenge === "string" ? body.challenge : undefined
+}
+
+const maxChallengeBytes = 1024
+
+const parsedJson = (text: string): unknown => {
+  try {
+    return JSON.parse(text)
+  } catch {
+    return undefined
+  }
+}
+
+const isRecord = (value: unknown): value is Record<string, unknown> =>
+  typeof value === "object" && value !== null && !Array.isArray(value)
 
 const forwardedHeaders = (headers: Headers): Record<string, string> =>
   Object.fromEntries([...headers].filter(([name]) => !droppedHeaders.has(name)))

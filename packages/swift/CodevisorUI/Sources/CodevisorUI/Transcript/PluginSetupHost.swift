@@ -1,7 +1,7 @@
 import CodevisorCore
 import SwiftUI
 
-public struct PluginSetupHost<AccountSheet: View>: View {
+public struct PluginSetupHost<AccountSheet: View, GuideSheet: View>: View {
   @Environment(AppEnvironment.self) private var environment: AppEnvironment?
   @State private var model: PluginSetupModel
   let resolution: PluginSetupResolution?
@@ -10,6 +10,7 @@ public struct PluginSetupHost<AccountSheet: View>: View {
   let inBotConversation: Bool
   let onDecline: () -> Void
   let accountSheet: (PluginAccountEditing, PluginAccountsModel) -> AccountSheet
+  let guideSheet: (PluginAccountGuideModel, @escaping () async -> Void) -> GuideSheet
 
   public init(
     request: ServerPluginSetupRequest,
@@ -19,7 +20,8 @@ public struct PluginSetupHost<AccountSheet: View>: View {
     signInRoute: PluginSignInRoute,
     inBotConversation: Bool,
     onDecline: @escaping () -> Void,
-    @ViewBuilder accountSheet: @escaping (PluginAccountEditing, PluginAccountsModel) -> AccountSheet
+    @ViewBuilder accountSheet: @escaping (PluginAccountEditing, PluginAccountsModel) -> AccountSheet,
+    @ViewBuilder guideSheet: @escaping (PluginAccountGuideModel, @escaping () async -> Void) -> GuideSheet
   ) {
     _model = State(initialValue: PluginSetupModel(request: request, client: client, signInRoute: signInRoute))
     self.resolution = resolution
@@ -28,6 +30,7 @@ public struct PluginSetupHost<AccountSheet: View>: View {
     self.inBotConversation = inBotConversation
     self.onDecline = onDecline
     self.accountSheet = accountSheet
+    self.guideSheet = guideSheet
   }
 
   public var body: some View {
@@ -41,6 +44,9 @@ public struct PluginSetupHost<AccountSheet: View>: View {
     }
     .sheet(item: $model.addingAccount, onDismiss: refresh) { editing in
       if let accounts = model.accounts { accountSheet(editing, accounts) }
+    }
+    .sheet(item: $model.guiding, onDismiss: refresh) { guide in
+      guideSheet(guide) { await model.refresh() }
     }
   }
 
