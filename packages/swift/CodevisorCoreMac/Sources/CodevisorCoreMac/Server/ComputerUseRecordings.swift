@@ -71,7 +71,7 @@ final class ComputerUseRecordings: @unchecked Sendable {
     let content = try content()
     let filter: SCContentFilter
     let target: [String: Any]
-    let sourceSize: CGSize
+    let sourcePoints: CGSize
     let title: String
     if let id = options.windowID {
       guard let window = content.windows.first(where: { $0.windowID == id }), !isProtected(window.owningApplication)
@@ -82,9 +82,7 @@ final class ComputerUseRecordings: @unchecked Sendable {
         try ComputerUsePresentation.requireControlAllowed(sessionID: sessionID, pid: app.processID)
       }
       filter = SCContentFilter(desktopIndependentWindow: window)
-      sourceSize = CGSize(
-        width: window.frame.width * CGFloat(filter.pointPixelScale),
-        height: window.frame.height * CGFloat(filter.pointPixelScale))
+      sourcePoints = window.frame.size
       title = window.title.flatMap { $0.isEmpty ? nil : $0 } ?? window.owningApplication?.applicationName ?? "Window"
       target = ["kind": "window", "windowId": id, "title": title]
     } else {
@@ -93,11 +91,13 @@ final class ComputerUseRecordings: @unchecked Sendable {
       }
       filter = SCContentFilter(
         display: display, excludingApplications: content.applications.filter(isProtected), exceptingWindows: [])
-      sourceSize = CGSize(width: display.width, height: display.height)
+      sourcePoints = CGSize(width: display.width, height: display.height)
       title = "Display \(display.displayID)"
       target = ["kind": "display", "displayId": display.displayID, "title": title]
     }
-    let size = try computerUseRecordingSize(sourceSize, maximumDimension: options.maximumDimension)
+    let size = try computerUseRecordingSize(
+      points: sourcePoints, pointPixelScale: CGFloat(filter.pointPixelScale), maximumDimension: options.maximumDimension
+    )
     try FileManager.default.createDirectory(
       at: directory, withIntermediateDirectories: true, attributes: [.posixPermissions: 0o700])
     let recording = ComputerUseRecording(

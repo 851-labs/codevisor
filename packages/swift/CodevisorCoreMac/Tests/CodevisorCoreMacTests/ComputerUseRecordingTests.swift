@@ -28,12 +28,22 @@ struct ComputerUseRecordingTests {
   @Test("Video dimensions preserve aspect ratio, stay even and never upscale")
   func dimensions() throws {
     #expect(
-      try computerUseRecordingSize(CGSize(width: 3840, height: 2160), maximumDimension: 1920)
+      try computerUseRecordingSize(
+        points: CGSize(width: 3840, height: 2160), pointPixelScale: 1, maximumDimension: 1920)
         == CGSize(width: 1920, height: 1080))
     #expect(
-      try computerUseRecordingSize(CGSize(width: 801, height: 601), maximumDimension: 1920)
+      try computerUseRecordingSize(points: CGSize(width: 801, height: 601), pointPixelScale: 1, maximumDimension: 1920)
         == CGSize(width: 800, height: 600))
-    #expect(throws: BridgeError.self) { try computerUseRecordingSize(.zero, maximumDimension: 1920) }
+    #expect(throws: BridgeError.self) {
+      try computerUseRecordingSize(points: .zero, pointPixelScale: 2, maximumDimension: 1920)
+    }
+  }
+
+  @Test("A Retina target records at its pixel size, not its point size")
+  func retinaDimensions() throws {
+    #expect(
+      try computerUseRecordingSize(points: CGSize(width: 1512, height: 982), pointPixelScale: 2, maximumDimension: 3840)
+        == CGSize(width: 3024, height: 1964))
   }
 
   @Test("A video is returned only after the native output finishes; repeated stop is harmless")

@@ -33,7 +33,8 @@ struct ComputerUseRecordingOptions {
   }
 }
 
-func computerUseRecordingSize(_ size: CGSize, maximumDimension: Int) throws -> CGSize {
+func computerUseRecordingSize(points: CGSize, pointPixelScale: CGFloat, maximumDimension: Int) throws -> CGSize {
+  let size = CGSize(width: points.width * pointPixelScale, height: points.height * pointPixelScale)
   guard size.width.isFinite, size.height.isFinite, size.width > 0, size.height > 0 else {
     throw BridgeError("The recording target has no usable dimensions.")
   }

@@ -8,7 +8,7 @@ import SwiftUI
 extension SessionContainerView {
   var sceneChrome: some View {
     WorkspaceSceneChrome(
-      title: sceneTitle, subtitle: activePaneSubtitle, removesTitle: paneControlsReplaceTitle,
+      title: sceneTitle, removesTitle: paneControlsReplaceTitle,
       values: WorkspaceSceneValues(
         browser: activeBrowserModel, file: activeFileModel, simulator: activeSimulatorModel,
         layoutActions: layoutActions(in: selectedWorkspace))
@@ -112,13 +112,5 @@ extension SessionContainerView {
       get: { activePaneTitle },
       set: { environment.projectList.renameSession(chat, to: $0) }
     )
-  }
-
-  var activePaneSubtitle: String {
-    guard let store = activeScreenSharingPane?.store,
-      let display = store.displays.first(where: { $0.id == store.selectedDisplayId }),
-      display.width > 0
-    else { return "" }
-    return "\(display.width) × \(display.height)"
   }
 }
