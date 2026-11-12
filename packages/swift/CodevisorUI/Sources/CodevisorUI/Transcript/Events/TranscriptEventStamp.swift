@@ -21,13 +21,13 @@ private struct TranscriptEventStampLabel: View {
   var body: some View {
     HStack(spacing: 4) {
       TranscriptEventIcon(icon: summary.icon, size: 12)
-      Text(summary.title)
-        .lineLimit(1)
+      TranscriptEventTitle(summary: summary, nameStyle: .secondary, titleStyle: .tertiary)
     }
     .font(.caption2.weight(.medium))
     .foregroundStyle(summary.tone.style(standard: .tertiary))
     .opacity(isActive ? 0.7 : 1)
     .contentShape(Rectangle())
-    .accessibilityElement(children: .combine)
+    .accessibilityElement(children: .ignore)
+    .accessibilityLabel(summary.sentence)
   }
 }

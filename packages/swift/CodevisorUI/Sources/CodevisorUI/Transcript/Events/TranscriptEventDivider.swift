@@ -25,8 +25,7 @@ private struct TranscriptEventDividerLabel: View {
   var body: some View {
     HStack(spacing: 6) {
       TranscriptEventIcon(icon: summary.icon, size: 14)
-      Text(summary.title)
-        .lineLimit(1)
+      TranscriptEventTitle(summary: summary, nameStyle: .primary, titleStyle: .secondary)
     }
     .font(.caption)
     .foregroundStyle(summary.tone.style(standard: .secondary))
@@ -34,7 +33,8 @@ private struct TranscriptEventDividerLabel: View {
     .padding(.vertical, 3)
     .background(Capsule().fill(Color.primary.opacity(isActive ? 0.1 : 0)))
     .contentShape(Capsule())
-    .accessibilityElement(children: .combine)
+    .accessibilityElement(children: .ignore)
+    .accessibilityLabel(summary.sentence)
   }
 }
 
