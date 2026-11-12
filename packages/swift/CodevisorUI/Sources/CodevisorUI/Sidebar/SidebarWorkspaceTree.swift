@@ -6,9 +6,13 @@ public struct SidebarWorkspaceTree: Equatable {
   public let children: [UUID: [WorkspaceSidebarItem]]
   private let parents: [UUID: UUID]
 
-  public init(_ items: [WorkspaceSidebarItem], pinnedIDs: [String], hiddenParentIDs: Set<UUID> = []) {
+  public init(
+    _ items: [WorkspaceSidebarItem], pinnedIDs: [String], hiddenParentIDs: Set<UUID> = [],
+    revealing revealedID: UUID? = nil
+  ) {
     let links = Self.parentLinks(items, pinnedIDs: SidebarPins.pinnedIDs(pinnedIDs, in: items))
-    let hidden = Self.hiddenIDs(items, links: links, hiddenParentIDs: hiddenParentIDs)
+    var hidden = Self.hiddenIDs(items, links: links, hiddenParentIDs: hiddenParentIDs)
+    if let revealedID { hidden.remove(revealedID) }
     func shownAncestor(of id: UUID) -> UUID? {
       guard hidden.contains(id) else { return id }
       return links[id].flatMap(shownAncestor)

@@ -9,7 +9,6 @@ extension SessionContainerView {
 
   func chatPaneRole(for descriptor: PaneDescriptorState) -> ChatPaneRole {
     if descriptor.kind == .transcript { return .fullTranscript }
-    if descriptor.kind == .childAgent { return .childAgent }
     if descriptor.chatSessionId.flatMap(botChat) != nil { return .botConversation }
     return .chat
   }

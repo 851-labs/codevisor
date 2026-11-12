@@ -13,7 +13,7 @@ struct PaneMenuItems: View {
   }
 
   static func chatSession(of pane: PaneDescriptorState?, in projectList: ProjectListModel) -> ChatSession? {
-    guard pane?.kind == .chat || pane?.kind == .childAgent, let sessionId = pane?.chatSessionId else { return nil }
+    guard pane?.kind == .chat, let sessionId = pane?.chatSessionId else { return nil }
     return projectList.sessions.first(where: { $0.id == sessionId })
   }
 }

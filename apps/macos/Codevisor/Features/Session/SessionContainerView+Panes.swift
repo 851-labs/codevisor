@@ -105,7 +105,7 @@ extension SessionContainerView {
       onNewChat: { [weak model] in
         createChat(convertingPlaceholder: descriptor.id, in: model)
       },
-      agentChats: botAgentChats(replacing: descriptor.id),
+      offersSideChat: !isTabless,
       client: environment.machines.client(for: workspace.serverId),
       iconCacheNamespace: workspace.serverId,
       machineId: workspace.serverId

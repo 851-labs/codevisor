@@ -17,13 +17,12 @@ struct ChatPaneContentView: View {
 
   private var isArchivedBot: Bool {
     guard let sessionId = descriptor.chatSessionId else { return false }
-    let machineId = descriptor.chatMachineId(hostedOn: hostWorkspace.serverId)
-    return environment.bots.bot(forSession: sessionId, serverId: machineId)?.isArchived == true
+    return environment.bots.bot(forSession: sessionId, serverId: hostWorkspace.serverId)?.isArchived == true
   }
 
   var body: some View {
     if let chatSessionId = role.sessionId(of: descriptor) {
-      switch resolver.chat(chatSessionId, in: descriptor, hostedOn: hostWorkspace.serverId) {
+      switch resolver.chat(chatSessionId, on: hostWorkspace.serverId) {
       case let .ready(chatSession, chatProject):
         if role.offersNewChat, isUnstarted(chatSession) {
           unstartedChat(chatSession, in: chatProject)

@@ -53,7 +53,6 @@ private nonisolated struct PaneFormat: Sendable {
     case .newTab: deviceLocal("new-tab")
     case .subagent: deviceLocal("subagent")
     case .transcript: deviceLocal("transcript")
-    case .childAgent: deviceLocal("child-agent")
     case .browser: browser
     case .screenSharing: screenSharing
     case .review: review
