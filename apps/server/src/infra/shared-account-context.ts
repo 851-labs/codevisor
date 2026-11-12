@@ -78,7 +78,8 @@ export const sharedAccountContext = async (
     env: {
       CLAUDE_CONFIG_DIR: path,
       CLAUDE_CODE_OAUTH_TOKEN: bundle.accessToken,
-      ANTHROPIC_BASE_URL: `${deps.baseUrl}/harness/claude`
+      ANTHROPIC_BASE_URL: `${deps.baseUrl}/harness/claude`,
+      _CLAUDE_CODE_ASSUME_FIRST_PARTY_BASE_URL: "true"
     }
   }
 }

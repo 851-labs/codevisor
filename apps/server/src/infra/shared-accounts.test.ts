@@ -319,7 +319,8 @@ it("builds isolated Claude contexts and keeps machine sign-out separate from the
   const context = await m.shared.context(id)
   expect(context?.env).toMatchObject({
     CLAUDE_CODE_OAUTH_TOKEN: "access-alice",
-    ANTHROPIC_BASE_URL: "http://127.0.0.1:1/harness/claude"
+    ANTHROPIC_BASE_URL: "http://127.0.0.1:1/harness/claude",
+    _CLAUDE_CODE_ASSUME_FIRST_PARTY_BASE_URL: "true"
   })
   expect(JSON.stringify(context)).not.toContain("refreshToken")
   await m.shared.logout(id)
