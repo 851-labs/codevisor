@@ -82,7 +82,7 @@ interface ResponseWatcher {
 
 const unsupportedReason = "This browser doesn't support WebMCP."
 const disabledReason =
-  "WebMCP is turned off for this page. Chrome exposes it only with the WebMCPTesting flag or a site origin trial."
+  "WebMCP is turned off for this page. Chrome exposes it only with the WebMCP feature flag or a site origin trial."
 const noToolsReason = "This page registers no WebMCP tools."
 const formSubmitGraceMs = 1_000
 const missingDomainPattern = /WebMCP\.enable' wasn't found/
