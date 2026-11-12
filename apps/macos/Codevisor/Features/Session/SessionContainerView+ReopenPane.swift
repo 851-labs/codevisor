@@ -113,11 +113,12 @@ extension SessionContainerView {
         id: paneId, kind: .transcript, name: closed.name, terminalKey: paneId.uuidString,
         ownerChatSessionId: owner)
     case .childAgent:
-      guard let chatId = closed.chatSessionId,
-        environment.projectList.session(chatId, serverId: selectedWorkspace.serverId) != nil
+      let machineId = closed.chatMachineId(hostedOn: selectedWorkspace.serverId)
+      guard let chatId = closed.chatSessionId, environment.projectList.session(chatId, serverId: machineId) != nil
       else { return nil }
       return PaneDescriptorState(
-        id: paneId, kind: .childAgent, name: closed.name, terminalKey: paneId.uuidString, chatSessionId: chatId)
+        id: paneId, kind: .childAgent, name: closed.name, terminalKey: paneId.uuidString, chatSessionId: chatId,
+        chatMachineId: machineId)
     case .chat, .terminal, .plugin, .browser, .screenSharing, .review, .simulator, .document, .newTab:
       return nil
     }

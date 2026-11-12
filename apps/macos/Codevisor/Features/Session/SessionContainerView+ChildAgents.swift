@@ -6,6 +6,7 @@ extension SessionContainerView {
     var workspace = selectedWorkspace
     if let existing = workspace.allPanes.first(where: {
       $0.kind == .childAgent && $0.chatSessionId == request.chatSessionId
+        && $0.chatMachineId(hostedOn: workspace.serverId) == request.chatMachineId
     }) {
       store.selectDestination(.pane(existing.id), in: workspace.id)
       focusSelectedCenterPane()
@@ -15,7 +16,8 @@ extension SessionContainerView {
 
     let id = UUID()
     let pane = PaneDescriptorState(
-      id: id, kind: .childAgent, name: request.name, terminalKey: id.uuidString, chatSessionId: request.chatSessionId)
+      id: id, kind: .childAgent, name: request.name, terminalKey: id.uuidString, chatSessionId: request.chatSessionId,
+      chatMachineId: request.chatMachineId)
     guard let inserted = workspace.insertPane(pane, besidePane: besidePane, destination: .split(.trailing))
     else { return }
     environment.workspaces.save(workspace)
@@ -38,14 +40,15 @@ extension SessionContainerView {
   private func agentChat(_ agent: WorkspaceSidebarItem) -> NewPaneAgentChats.Chat? {
     guard let sessionId = agent.routingChatIds.first, let workspace = environment.workspaces.workspace(id: agent.id)
     else { return nil }
-    return NewPaneAgentChats.Chat(id: sessionId, name: workspace.name)
+    return NewPaneAgentChats.Chat(id: sessionId, machineId: agent.serverId, name: workspace.name)
   }
 
   private func openAgentChat(_ chat: NewPaneAgentChats.Chat, replacing placeholderId: UUID) {
     var workspace = selectedWorkspace
     let id = UUID()
     let pane = PaneDescriptorState(
-      id: id, kind: .childAgent, name: chat.name, terminalKey: id.uuidString, chatSessionId: chat.id)
+      id: id, kind: .childAgent, name: chat.name, terminalKey: id.uuidString, chatSessionId: chat.id,
+      chatMachineId: chat.machineId)
     guard let replaced = workspace.replacePane(id: placeholderId, with: pane) else { return }
 
     environment.workspaces.save(workspace)

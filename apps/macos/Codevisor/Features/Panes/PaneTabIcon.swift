@@ -104,7 +104,7 @@ extension PaneTabIcon {
   ) -> PaneTabIcon {
     let chatSession = descriptor.flatMap { pane -> ChatSession? in
       guard pane.kind == .chat || pane.kind == .childAgent, let id = pane.chatSessionId else { return nil }
-      return environment.projectList.session(id, serverId: serverId)
+      return environment.projectList.session(id, serverId: pane.chatMachineId(hostedOn: serverId))
     }
     let subagentHarnessId = descriptor.flatMap { pane -> String? in
       guard pane.kind == .subagent, let ownerId = pane.ownerChatSessionId else { return nil }

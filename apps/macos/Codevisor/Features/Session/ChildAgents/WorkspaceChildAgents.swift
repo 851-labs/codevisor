@@ -78,7 +78,8 @@ struct WorkspaceChildAgents {
 
   private func splitRequest(for item: SidebarWorkspaceListItem, in host: Workspace) -> ChildAgentSplitRequest? {
     guard let chat = item.routingSession, canSplit(host) else { return nil }
-    return ChildAgentSplitRequest(workspaceId: host.id, chatSessionId: chat.id, name: item.workspace.name)
+    return ChildAgentSplitRequest(
+      workspaceId: host.id, chatSessionId: chat.id, chatMachineId: chat.serverId, name: item.workspace.name)
   }
 
   private func canSplit(_ host: Workspace) -> Bool {
