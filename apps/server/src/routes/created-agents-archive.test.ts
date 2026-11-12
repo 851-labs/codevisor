@@ -1,4 +1,4 @@
-import { decode, DetachedAgent, Workspace } from "@codevisor/api"
+import { decode, DetachedAgent, SessionSummary, Workspace } from "@codevisor/api"
 import { Schema } from "effect"
 import { describe, expect, it } from "vitest"
 
@@ -27,6 +27,29 @@ const archivedIds = async (running: Running): Promise<ReadonlyArray<string>> => 
   return workspaces.filter((workspace) => workspace.isArchived).map((workspace) => workspace.id)
 }
 
+const looseChat = (running: Running, id: string, ownerId: string) =>
+  jsonRequest(running.server, "/v1/sessions", {
+    body: JSON.stringify({
+      id,
+      projectId: "api-project",
+      harnessId: "codex",
+      createdBy: "agent",
+      createdByAgentId: ownerId
+    }),
+    method: "POST"
+  })
+
+const archivedChats = async (running: Running): Promise<ReadonlyArray<string>> => {
+  await archiveJobs(running.services).idle()
+  const chats = decode(Schema.Array(SessionSummary))(
+    (await jsonRequest(running.server, "/v1/sessions")).body
+  )
+  return chats
+    .filter((chat) => chat.isArchived === true)
+    .map((chat) => chat.id)
+    .toSorted()
+}
+
 const startedFamily = async () => {
   const running = await setUp()
   await running.addProject("api-project", "api")
@@ -53,6 +76,42 @@ describe("archiving an agent's workspace", () => {
       "ws-grandchild",
       "ws-lead"
     ])
+  })
+
+  it("archives the agents it owns that have no workspace, and what they own in turn", async () => {
+    const running = await startedFamily()
+    await looseChat(running, "loose", "lead")
+    await looseChat(running, "loose-child", "loose")
+    await chatIn(running, "loose-grandchild", { createdByAgentId: "loose-child" })
+    await looseChat(running, "elsewhere", "unrelated")
+
+    await jsonRequest(running.server, "/v1/workspaces/ws-lead", {
+      body: JSON.stringify({ isArchived: true }),
+      method: "PATCH"
+    })
+
+    expect(await archivedChats(running)).toEqual([
+      "child",
+      "grandchild",
+      "lead",
+      "loose",
+      "loose-child",
+      "loose-grandchild"
+    ])
+  })
+
+  it("archives what a chat owns when an agent archives that chat", async () => {
+    const running = await startedFamily()
+    await looseChat(running, "loose", "lead")
+    await looseChat(running, "loose-child", "loose")
+
+    const archived = await jsonRequest(running.server, "/v1/agents/loose/archive", {
+      body: JSON.stringify({ callerAgentId: "lead" }),
+      method: "POST"
+    })
+
+    expect(archived.body).toEqual({ agentId: "loose", archived: true })
+    expect(await archivedChats(running)).toEqual(["loose", "loose-child"])
   })
 
   it("leaves an agent that stands alone, and the agents it started", async () => {

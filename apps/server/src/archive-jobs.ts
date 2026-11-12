@@ -4,9 +4,10 @@ import {
   archiveAgentsCreatedBy,
   archiveAgentsCreatedIn,
   archiveLocalChildren,
-  type ArchiveChild,
+  type ArchiveOwned,
   type Creators
 } from "./created-agents-archive.js"
+import { publishPromptQueue } from "./routes/prompt-queue-publish.js"
 import type {
   CodevisorServerConfig,
   CodevisorServerServices,
@@ -18,6 +19,7 @@ import {
   archiveWorkspaceWorktree,
   captureWorkspaceRuntime,
   chatCheckoutsBeside,
+  forgetRetiredSessionTurn,
   restoreWorkspaceWorktree,
   type RestoredWorkspace,
   retireWorkspaceRuntime,
@@ -180,13 +182,55 @@ export const archiveAgentsOfWorkspace = (context: ArchiveContext, workspace: Wor
 export const archiveAgentsOfRemote = (context: ArchiveContext, creators: Creators) =>
   archiveLocalChildren(context.services, creators, archiveChild(context))
 
-const archiveChild =
-  (context: ArchiveContext): ArchiveChild =>
-  async (child) => {
+const archiveChild = (context: ArchiveContext): ArchiveOwned => ({
+  workspace: async (child) => {
     const { services, fanout, config, turns } = context
     const archived = await run(services.db.updateWorkspace(child.id, { isArchived: true }))
     await applyWorkspaceArchiveEffects(services, fanout, config, turns, archived, false)
+  },
+  chat: (chat) => archiveChatAndOwned(context, chat)
+})
+
+export const archiveChatAndOwned = async (
+  context: ArchiveContext,
+  chat: SessionSummary
+): Promise<void> => {
+  const { services, fanout, config, turns } = context
+  await clearPromptQueue(services, fanout, chat.id)
+  forgetRetiredSessionTurn(turns, chat.id)
+  await run(services.db.archiveSession(chat.id))
+  await closeChatTabs(services, fanout, chat.id)
+  await reclaimArchivedChat(services, fanout, config, chat)
+  await archiveAgentsOf(context, [chat.id])
+}
+
+const clearPromptQueue = async (
+  services: CodevisorServerServices,
+  fanout: EventFanout,
+  chatId: string
+): Promise<void> => {
+  const queue = await run(services.db.listPromptQueue(chatId))
+  if (queue.length === 0) return
+  for (const item of queue) await run(services.db.deletePromptQueueItem(chatId, item.id))
+  await publishPromptQueue(services.db, fanout, chatId)
+}
+
+const closeChatTabs = async (
+  services: CodevisorServerServices,
+  fanout: EventFanout,
+  chatId: string
+): Promise<void> => {
+  const tabs = (await run(services.db.listWorkspacePanes)).filter(
+    (pane) => pane.resourceKind === "session" && pane.resourceId === chatId
+  )
+  for (const tab of tabs) {
+    await run(services.db.deleteWorkspacePane(tab.workspaceId, tab.id))
+    await appendAndPublish(services.db, fanout, "workspace.pane.deleted", tab.id, {
+      id: tab.id,
+      workspaceId: tab.workspaceId
+    })
   }
+}
 
 export const applyWorkspaceArchiveEffects = async (
   services: CodevisorServerServices,
