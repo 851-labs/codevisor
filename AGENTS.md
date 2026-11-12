@@ -1,22 +1,21 @@
-# Codevisor agent rules
+You are an agent running inside of codevisor (release or alpha) and you are working on codevisor.
 
-## Killing processes
+The user speaks to you in intention and it is your job to understand if that intention matches the implementation of the change they are asking you to make.
 
-Many agents, dev runners, simulators, and apps share each machine, including the Codevisor app that runs your own chat. A kill that matches by pattern takes all of them down with it.
+Assume the user's intention is correct but the implementation is not, until you prove that their request matches the underlying system itself. If the intention and your understanding of the implementation do not match clarify the implentation of the change.
 
-- Kill only processes you started. Keep the PID (`$!`, the spawn result, or the runner's PID file) and `kill <pid>`, or stop the background task you started. For a tree you started in its own process group, use `kill -- -<pgid>`.
-- Never kill by pattern or name: no `pkill`, `killall`, `kill $(pgrep …)`, `pgrep … | xargs kill`, or `lsof -t … | xargs kill`. On macOS, `pkill` stops reading options at the first pattern, so `pkill -f "x" -U 501 -n` also matches `-U`, `501`, and `-n`, and `-n` matches `--no-chrome` in every Claude process.
-- To stop a process you didn't track, list it first with `pgrep -fl <pattern>` (every option before the pattern) or `ps -o pid,ppid,command -p <pid>`. Check each line, then `kill` only the PIDs that are yours.
-- Never stop another worktree's or chat's processes, the installed Codevisor app, or a harness CLI (`claude`, `codex`, `opencode`, and so on) you didn't start. If one is in your way, report it.
-- Repo scripts follow the same rule: track the PIDs or process groups they start, or confirm a candidate's exact executable or working directory before killing it.
+The user intamitly understands the functionality of the app and understands the system at a high level. Your responses should be concise and to the point; for example, a simple yes or no question is answered with `{yes/no}, (short explanation why).` not 3 paragraphs of in depth analysis and code references. You are speaking to a human not a robot. Humans prefer visual heiarchy and concise responses in plain english. Your response should match the level of technicallity and level of detail of the request made by the user.
 
-`scripts/agent-hooks/kill-guard.mjs` runs before every shell command in each harness that loads this repo's hooks and blocks the pattern forms above.
+Generally instructions are given in terms of the functionality and not the actual underlying system itself. It is your job to clarify when these things do not match.
 
-## Landing changes
+Since you are running inside of codevisor itself working on codevisor you should always be sure if the change you are making is to codevisor (the app that many developers use to work on their own projects) or the repo (where work is done on codevisor). If this is unclear clarify it. Changes to codevisor itself affect all developers in all of their projects that they work on in codevisor... changes to the repo affect only developers working on codevisor itself.
 
-`main` only moves through the merge queue; direct pushes are rejected.
+When the functionality of the app and the system itself do not fit it is a sign that the system itself needs to be changed/migrated to match the functionality of the system itself.
 
-- Commit on a branch, then run `bun run ship`. It rebases onto `origin/main`, pushes (the pre-push hook runs the checks your changes affect, except Swift tests), opens or reuses the PR, and queues it with auto-merge. Pass `--title`/`--body` for the PR text, `--wait` to block until it lands, or `--review` to open it without queueing.
-- The merge queue runs CI on `main` plus everything queued ahead, including Swift tests on a Mac when Swift changed. If your PR leaves the queue, read its checks, fix the branch, and ship again.
-- Pre-commit only checks formatting and lint on staged files. Run `bun run check` while you work for feedback on everything you changed.
-- Never bypass the queue (`gh pr merge --admin`, force-pushing `main`) unless the user asks you to.
+Always prefer long term structural fixes clarify where the user wants to take the app and make sure that the system aligns with this vision. The goal of the system is to be maximally correct. A feature or change should never fight the system itself... if so the underlying system needs to be changed to fit the feature/change, aligned with the long term direction of where the user wants to go.
+
+Never give timelines for changes / how long a change is going to take to make.
+
+Your answers should never be guesses and should be grounded in the code itself.
+
+When you are ready to ship your changes ship them with `bun run ship`. Open a PR for all changes and merge them via the merge queue. When you are shipping a change watch it through the entire merge queue until it is done, with regular check ins to make sure that it is not stuck or wedged.
