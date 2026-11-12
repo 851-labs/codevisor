@@ -64,6 +64,14 @@ struct BotConversationRows: View {
         Label("Edit", systemImage: "pencil")
           .labelStyle(.titleAndIcon)
       }
+      if actions.canFork(bot) {
+        Button {
+          actions.fork(bot)
+        } label: {
+          Label("Fork…", systemImage: "arrow.triangle.branch")
+            .labelStyle(.titleAndIcon)
+        }
+      }
       Divider()
       MoveToSectionMenu(
         currentSectionID: section, sections: sections, move: { actions.moveBot(bot.id, $0) },

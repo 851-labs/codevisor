@@ -20,6 +20,7 @@ struct HomeSidebarBotRowView: View, Equatable {
 
   private func onOpen() { actions.actions.openBot(bot.bot) }
   private func onEdit() { actions.actions.editBot(bot.bot) }
+  private func onFork() { actions.actions.forkBot(bot.bot) }
   private func onArchive() { actions.actions.archiveBot(bot.bot) }
   private func onUnarchive() { actions.actions.unarchiveBot(bot.bot) }
   private func onDelete() { actions.actions.deleteBot(bot.bot) }
@@ -118,6 +119,11 @@ struct HomeSidebarBotRowView: View, Equatable {
       Button(action: onEdit) {
         Label("Edit", systemImage: "pencil")
       }
+      if bot.canFork {
+        Button(action: onFork) {
+          Label("Fork…", systemImage: "arrow.triangle.branch")
+        }
+      }
       if let sections {
         Divider()
         MoveToSectionMenu(
@@ -144,6 +150,9 @@ struct HomeSidebarBotRowView: View, Equatable {
       Button("Unarchive", action: onUnarchive)
     } else {
       Button("Edit", action: onEdit)
+      if bot.canFork {
+        Button("Fork", action: onFork)
+      }
     }
     if offersArchive {
       Button("Archive", action: onArchive)

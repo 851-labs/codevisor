@@ -1,11 +1,8 @@
-import { randomUUID } from "node:crypto"
-
 import { FLEET_AGENTS_ARCHIVED_PATH, type SessionSummary, type Workspace } from "@codevisor/api"
-import type { FleetMessage } from "@codevisor/db"
 
-import { fleetLinkFor, type FleetLink } from "./infra/fleet-outbox.js"
+import { broadcastToOtherMachines } from "./fleet-broadcast.js"
 import type { CodevisorServerServices } from "./server-context-types.js"
-import { run, swallowError } from "./server-http.js"
+import { run } from "./server-http.js"
 
 export type ArchiveChild = (workspace: Workspace) => Promise<void>
 
@@ -54,38 +51,16 @@ export interface Creators {
   readonly creatorMachineId: string
 }
 
-const tellOtherMachines = async (
+const tellOtherMachines = (
   services: CodevisorServerServices,
   serverId: string,
   creatorIds: ReadonlyArray<string>
-): Promise<void> => {
-  const fleet = fleetLinkFor(services)
-  if (fleet === undefined) return
-
-  const machines = await fleet.machines.list()
-  const self = { id: serverId, name: machines.find((machine) => machine.isCurrent)?.name }
-  const batch = randomUUID()
-  for (const machine of machines.filter((candidate) => !candidate.isCurrent)) {
-    await run(services.db.enqueueFleetMessage(archivedMessage(self, machine.id, batch, creatorIds)))
-  }
-  void flush(fleet)
-}
-
-const archivedMessage = (
-  self: { readonly id: string; readonly name: string | undefined },
-  machineId: string,
-  batch: string,
-  agentIds: ReadonlyArray<string>
-): FleetMessage => ({
-  id: `${self.id}:agents_archived:${batch}:${machineId}`,
-  machineId,
-  path: FLEET_AGENTS_ARCHIVED_PATH,
-  args: { agentIds },
-  origin: { machineId: self.id, machineName: self.name ?? self.id },
-  createdAt: new Date().toISOString()
-})
-
-const flush = (fleet: FleetLink): Promise<void> => fleet.outbox.flush().catch(swallowError)
+): Promise<void> =>
+  broadcastToOtherMachines(services, serverId, {
+    kind: "agents_archived",
+    path: FLEET_AGENTS_ARCHIVED_PATH,
+    args: { agentIds: creatorIds }
+  })
 
 const isIn = (session: SessionSummary, workspaceId: string): boolean =>
   session.workspaceId?.toLowerCase() === workspaceId.toLowerCase()

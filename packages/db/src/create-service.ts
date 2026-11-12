@@ -8,6 +8,7 @@ import { makeBotMessagesService } from "./bot-messages-service.js"
 import { makeBotsService } from "./bots-service.js"
 import { makeBrowserFaviconService } from "./browser-favicon-service.js"
 import { makeBrowserStateService } from "./browser-state-service.js"
+import { makeCreatedAgentsService } from "./created-agents-service.js"
 import { runDatabaseMigrations } from "./database-migrations.js"
 import { attempt } from "./errors.js"
 import { makeEventsService } from "./events-service.js"
@@ -63,6 +64,7 @@ export const createService = (
     ...makeSessionsService(context),
     ...makeTranscriptService(context),
     ...makeSessionForkService(context),
+    ...makeCreatedAgentsService(context),
     ...makeAssistantTextsService(context),
     ...makeStreamingReconciliationService(context),
     ...makeEventsService(context),

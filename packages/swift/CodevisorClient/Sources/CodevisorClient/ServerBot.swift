@@ -91,6 +91,31 @@ public struct ServerCreateBotRequest: Encodable, Equatable, Sendable {
   }
 }
 
+public struct ServerForkBotRequest: Encodable, Equatable, Sendable {
+  public var id: String?
+  public var name: String
+  public var mascot: ServerBotMascot?
+  public var harnessId: String
+  public var configSelections: [String: String]?
+  public var moveAgents: Bool
+
+  public init(
+    id: String? = nil,
+    name: String,
+    mascot: ServerBotMascot? = nil,
+    harnessId: String,
+    configSelections: [String: String]? = nil,
+    moveAgents: Bool
+  ) {
+    self.id = id
+    self.name = name
+    self.mascot = mascot
+    self.harnessId = harnessId
+    self.configSelections = configSelections
+    self.moveAgents = moveAgents
+  }
+}
+
 public struct ServerAddBotProjectRequest: Encodable, Equatable, Sendable {
   public var projectId: String
 

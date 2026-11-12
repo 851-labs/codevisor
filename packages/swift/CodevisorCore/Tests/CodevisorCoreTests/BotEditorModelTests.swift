@@ -1,5 +1,6 @@
 import ACPKit
 import CodevisorTestSupport
+import ConcurrencyExtras
 import Foundation
 import Testing
 
@@ -253,6 +254,38 @@ struct BotEditorModelTests {
         options: [SessionConfigSelectOption(value: "gpt-5", name: "GPT-5")])
     ]
   )
+
+  @Test("Forking a bot starts from its mascot, keeps its machine and projects, and sends the model and agent move")
+  func forkingSendsModelAndAgentMove() async throws {
+    let fake = SyncFakeServerClient(projects: [], sessions: [])
+    fake.configureInfoFeatures(["bots-v1", "bot-fork-v1"])
+    fake.capabilitiesHandler = { _ in ServerCapabilities(harnesses: [Self.readyHarness]) }
+    fake.setBots([.fixture(name: "Helper", projectIds: [UUID()], mascot: Self.crowned)])
+    let sent = LockIsolated<(String, ServerForkBotRequest)?>(nil)
+    fake.botForkHandler = { id, request in
+      sent.setValue((id, request))
+      return .fixture(name: request.name)
+    }
+    let environment = makeEnvironment(fake)
+    await environment.machines.refreshStatus(for: CodevisorMachine.local.id)
+    await environment.bots.refresh(serverId: CodevisorMachine.local.id)
+    let bot = try #require(environment.bots.bots.first)
+    let editor = BotEditorModel(target: .fork(bot), environment: environment)
+
+    await editor.loadModels()
+    editor.movesAgents = false
+
+    #expect(editor.name == "Helper (fork)")
+    #expect(editor.mascot == Self.crowned)
+    #expect(!editor.showsProjects)
+    #expect(!editor.canChangeMachine)
+    #expect(await editor.save())
+    #expect(sent.value?.0 == bot.record.id)
+    #expect(sent.value?.1.harnessId == "codex")
+    #expect(sent.value?.1.moveAgents == false)
+    #expect(sent.value?.1.mascot == Self.crowned)
+    #expect(editor.createdBot?.name == "Helper (fork)")
+  }
 
   @Test("A machine without project changes keeps an existing bot's projects as they are")
   func olderMachinesKeepProjects() async throws {

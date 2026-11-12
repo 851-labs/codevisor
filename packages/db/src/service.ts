@@ -45,6 +45,7 @@ import type { OpenAssistantText } from "./assistant-texts.js"
 import type { AutoResumeService } from "./auto-resume-service.js"
 import type { BotsService } from "./bot-rows.js"
 import { createService } from "./create-service.js"
+import type { CreatedAgentsService } from "./created-agents-service.js"
 import { DatabaseError, attempt } from "./errors.js"
 import type { FileStorageService } from "./file-storage-service.js"
 import type { FleetOutboxService } from "./fleet-outbox-service.js"
@@ -89,6 +90,7 @@ export interface CodevisorDatabaseService
   extends
     SessionStateService,
     SessionForkService,
+    CreatedAgentsService,
     BotsService,
     SessionSubscriptionsService,
     PluginDatabaseService,

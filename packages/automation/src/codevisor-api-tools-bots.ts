@@ -1,4 +1,9 @@
-import { AddBotProjectRequest, CreateBotRequest, UpdateBotRequest } from "@codevisor/api"
+import {
+  AddBotProjectRequest,
+  CreateBotRequest,
+  ForkBotRequest,
+  UpdateBotRequest
+} from "@codevisor/api"
 import {
   botMascotColors,
   botMascotEyewear,
@@ -53,6 +58,28 @@ const CreateBotBody = Schema.Struct({
   mascot: Schema.optional(BotMascot)
 })
 
+const ForkBotBody = Schema.Struct({
+  harnessId: ForkBotRequest.fields.harnessId.annotate({
+    description:
+      "The fork's harness, an id from harnesses.list(). It can differ from the bot's own; that's the point of a fork."
+  }),
+  name: Schema.optional(
+    Schema.String.annotate({
+      description: "The fork's name. Defaults to the bot's name plus (fork)."
+    })
+  ),
+  configSelections: Schema.optional(ConfigSelections),
+  mascot: Schema.optional(
+    BotMascot.annotate({ description: "The fork's avatar. Defaults to the bot's own mascot." })
+  ),
+  moveAgents: Schema.optional(
+    Schema.Boolean.annotate({
+      description:
+        "true (the default) transfers every agent the bot started to the fork, so their results go to it. false leaves them with the bot."
+    })
+  )
+})
+
 const UpdateBotBody = Schema.Struct({
   name: UpdateBotRequest.fields.name,
   configSelections: Schema.optional(ConfigSelections),
@@ -85,6 +112,13 @@ export const codevisorBotApiTools: ReadonlyArray<CodevisorApiToolSpec> = [
     "PATCH",
     "/v1/bots/:id",
     { body: UpdateBotBody }
+  ),
+  apiTool(
+    "bots.fork",
+    "Fork a bot onto another harness or model, the same as Fork… in the app. The fork gets the bot's projects, mascot, notes and conversation, and on its first turn a summary of where things stand. Returns the new bot.",
+    "POST",
+    "/v1/bots/:id/fork",
+    { body: ForkBotBody }
   ),
   apiTool(
     "bots.projects_add",

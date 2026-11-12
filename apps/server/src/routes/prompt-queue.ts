@@ -21,6 +21,7 @@ import {
   type RouteState
 } from "../server-context.js"
 import { isRecord } from "../unknown-values.js"
+import { attachHandoff, heldForHandoff } from "./bot-handoff-queue.js"
 import { botForChat } from "./bot-turns.js"
 import { coalesceWakeUps, heldForUsageLimit } from "./bot-usage-hold.js"
 import { heldByParkedQuestion } from "./parked-questions.js"
@@ -207,12 +208,14 @@ export const drainPromptQueue = async (
       }
       if (
         (await heldForUsageLimit(services, sessionId)) ||
+        (await heldForHandoff(services, sessionId)) ||
         (await heldByParkedQuestion(services, fanout, serverId, sessionId))
       ) {
         await publishPromptQueue(services.db, fanout, sessionId)
         return
       }
       const item = await onSteerChain(sessionId, async () => {
+        await attachHandoff(services, sessionId)
         await coalesceWakeUps(services, sessionId)
         return run(services.db.claimPromptQueueItem(sessionId))
       })

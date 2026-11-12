@@ -54,6 +54,7 @@ extension HomeView {
       openBot: { bot in openBot(bot) },
       newBot: { botEditor = .create },
       editBot: { bot in botEditor = .edit(bot) },
+      forkBot: { bot in botEditor = .fork(bot) },
       archiveBot: { bot in setBotArchived(bot, true) },
       unarchiveBot: { bot in setBotArchived(bot, false) },
       deleteBot: { bot in deletingBot = bot },

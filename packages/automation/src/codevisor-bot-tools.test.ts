@@ -90,6 +90,7 @@ describe("bot tools", () => {
 
     await resultOf("bots.get", { botId: "b1" })
     await resultOf("bots.update", { botId: "b1", isArchived: true })
+    await resultOf("bots.fork", { botId: "b1", harnessId: "claude-code", moveAgents: false })
     await resultOf("bots.projects_add", { botId: "b1", projectId: "p2" })
     await resultOf("bots.projects_remove", { botId: "b1", projectId: "p1" })
     await expect(provider().invoke(context, "bots.delete", { botId: "b1" })).rejects.toThrow(
@@ -100,6 +101,11 @@ describe("bot tools", () => {
     expect(sent).toEqual([
       { method: "GET", path: "/v1/bots/b1" },
       { method: "PATCH", path: "/v1/bots/b1", body: { isArchived: true } },
+      {
+        method: "POST",
+        path: "/v1/bots/b1/fork",
+        body: { harnessId: "claude-code", moveAgents: false }
+      },
       { method: "POST", path: "/v1/bots/b1/projects", body: { projectId: "p2" } },
       { method: "DELETE", path: "/v1/bots/b1/projects/p1" },
       { method: "DELETE", path: "/v1/bots/b1" }

@@ -80,6 +80,16 @@ export const CreateBotRequest = Schema.Struct({
 })
 export type CreateBotRequest = typeof CreateBotRequest.Type
 
+export const ForkBotRequest = Schema.Struct({
+  id: Schema.optional(Schema.String),
+  name: Schema.optional(Schema.String),
+  mascot: Schema.optional(BotMascot),
+  harnessId: Schema.String,
+  configSelections: Schema.optional(Schema.Record(Schema.String, Schema.String)),
+  moveAgents: Schema.optional(Schema.Boolean)
+})
+export type ForkBotRequest = typeof ForkBotRequest.Type
+
 export const UpdateBotRequest = Schema.Struct({
   name: Schema.optional(Schema.String),
   symbolName: Schema.optional(Schema.String),

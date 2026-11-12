@@ -18,6 +18,13 @@ extension SyncFakeServerClient {
     return bot
   }
 
+  func forkBot(id: String, _ request: ServerForkBotRequest) async throws -> ServerBot {
+    guard let botForkHandler else { throw CodevisorServerClientError.invalidResponse }
+    let bot = try await botForkHandler(id, request)
+    lock.withLock { _bots.append(bot) }
+    return bot
+  }
+
   func updateBot(id: String, _ request: ServerUpdateBotRequest) async throws -> ServerBot {
     try changeBot(id) { bot in
       bot.name = request.name ?? bot.name

@@ -2,6 +2,7 @@ import type { ServerResponse } from "node:http"
 
 import {
   FLEET_AGENTS_ARCHIVED_PATH,
+  FLEET_AGENTS_MOVED_PATH,
   FLEET_EXEC_CONTROL_PATH,
   FLEET_EXEC_TASK_PATH,
   FLEET_MIRROR_PATH,
@@ -12,6 +13,7 @@ import type { GatewayOrigin } from "@codevisor/mcp"
 
 import { failureMessage, HttpFailure, readJson, writeJson } from "../server-context.js"
 import { receiveAgentsArchived } from "./fleet-agents-archived.js"
+import { receiveAgentsMoved } from "./fleet-agents-moved.js"
 import { fleetCall, invokeForFleet } from "./fleet-calls.js"
 import { receiveExecControl, receiveExecTask, receiveMirrorAction } from "./fleet-machine-files.js"
 import { receiveSandboxAction } from "./fleet-sandbox-actions.js"
@@ -98,6 +100,10 @@ export const routeGatewayInvoke = async (route: RouteContext): Promise<boolean> 
   }
   if (path === FLEET_AGENTS_ARCHIVED_PATH) {
     await answerSandboxAction(response, () => receiveAgentsArchived(route, call, body.args))
+    return true
+  }
+  if (path === FLEET_AGENTS_MOVED_PATH) {
+    await answerSandboxAction(response, () => receiveAgentsMoved(route, call, body.args))
     return true
   }
   if (path === FLEET_SANDBOX_ACTION_PATH) {

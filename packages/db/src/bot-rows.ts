@@ -1,4 +1,11 @@
-import type { AttachmentRef, Bot, BotMascot, BotMessage, BotMessageSender } from "@codevisor/api"
+import type {
+  AttachmentRef,
+  Bot,
+  BotMascot,
+  BotMessage,
+  BotMessageSender,
+  EventEnvelope
+} from "@codevisor/api"
 import type { Effect } from "effect"
 
 import type { DatabaseError } from "./errors.js"
@@ -147,4 +154,8 @@ export interface BotsService {
     limit: number,
     sender?: BotMessageSender
   ) => Effect.Effect<BotMessagePage, DatabaseError>
+  readonly copyBotMessages: (
+    sourceSessionId: string,
+    targetSessionId: string
+  ) => Effect.Effect<ReadonlyArray<EventEnvelope>, DatabaseError>
 }

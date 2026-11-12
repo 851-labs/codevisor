@@ -1,20 +1,15 @@
 import type { IncomingMessage, ServerResponse } from "node:http"
 
 import { UpdateBotRequest, type Bot } from "@codevisor/api"
-import { trashDirectory } from "@codevisor/worktrees"
 
 import { archiveAgentsOf } from "../archive-jobs.js"
 import {
   appendAndPublish,
-  archiveJobs,
-  captureWorkspaceRuntime,
   HttpFailure,
   matchRoute,
   readSchema,
-  retireWorkspaceRuntime,
   run,
   swallowError,
-  worktreeTrashRoot,
   writeJson,
   type CodevisorServerConfig,
   type CodevisorServerServices,
@@ -22,9 +17,11 @@ import {
   type RouteState
 } from "../server-context.js"
 import { createBot } from "./bot-create.js"
+import { forkBot } from "./bot-fork.js"
 import { syncBotInstructions } from "./bot-instructions.js"
 import { assertBotMascot } from "./bot-mascots.js"
-import { removeBotCheckout, routeBotProjects } from "./bot-projects.js"
+import { routeBotProjects } from "./bot-projects.js"
+import { removeBot, retireBotRuntime } from "./bot-remove.js"
 import { refusePlanConfigForBot } from "./bot-session-modes.js"
 import { applySessionConfigPick } from "./session-config.js"
 import { applySessionUpdate } from "./session-workspace.js"
@@ -92,32 +89,6 @@ const applyConfigSelections = async (
   }
 }
 
-const retireBotRuntime = async (
-  services: CodevisorServerServices,
-  routeState: RouteState,
-  bot: Bot
-): Promise<void> => {
-  const workspaces = (await run(services.db.listWorkspaces)).filter(
-    (workspace) => workspace.id === bot.workspaceId
-  )
-  for (const workspace of workspaces) {
-    await retireWorkspaceRuntime(
-      services,
-      await captureWorkspaceRuntime(services, routeState, workspace)
-    )
-  }
-}
-
-const removeBotCheckouts = async (
-  services: CodevisorServerServices,
-  serverId: string,
-  bot: Bot
-): Promise<void> => {
-  for (const checkout of bot.projects) {
-    await removeBotCheckout(services, serverId, bot, checkout).catch(swallowError)
-  }
-}
-
 const deleteBot = async (
   services: CodevisorServerServices,
   config: CodevisorServerConfig,
@@ -127,23 +98,7 @@ const deleteBot = async (
   response: ServerResponse
 ): Promise<boolean> => {
   const bot = await run(services.db.getBot(id))
-  if (bot === undefined) {
-    writeJson(response, 204, undefined)
-    return true
-  }
-  await retireBotRuntime(services, routeState, bot)
-  await removeBotCheckouts(services, config.id, bot)
-  await run(services.db.deleteBot(bot.id))
-  await run(services.db.deleteProject(bot.projectId))
-  await appendAndPublish(services.db, fanout, "project.deleted", bot.projectId, {
-    id: bot.projectId
-  })
-  await appendAndPublish(services.db, fanout, "bot.updated", bot.id, { id: bot.id })
-  const trashed = await trashDirectory(bot.rootPath, {
-    trashRoot: worktreeTrashRoot(),
-    id: `bot-${bot.id}`
-  })
-  archiveJobs(services).track(trashed.purged)
+  if (bot !== undefined) await removeBot(services, config, fanout, routeState, bot)
   writeJson(response, 204, undefined)
   return true
 }
@@ -169,6 +124,10 @@ export const routeBots = async (
       return createBot(services, config, fanout, routeState, request, response)
     }
     return false
+  }
+  const forkedId = matchRoute(url.pathname, "/v1/bots/:id/fork")
+  if (forkedId !== undefined && request.method === "POST") {
+    return forkBot(services, config, fanout, routeState, forkedId, request, response)
   }
   const botId = matchRoute(url.pathname, "/v1/bots/:id")
   if (botId === undefined) return false

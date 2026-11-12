@@ -41,6 +41,9 @@ struct BotEditorSheet: View {
       } else {
         modelSection
       }
+      if editor.forkedBot != nil {
+        agentsSection
+      }
       if let errorMessage = editor.errorMessage {
         Section {
           Text(errorMessage)
@@ -59,7 +62,7 @@ struct BotEditorSheet: View {
         if isCreating, editor.isSaving {
           ProgressView().controlSize(.small)
         } else {
-          Button(isCreating ? "Create" : "Save") { Task { await save() } }
+          Button(confirmTitle) { Task { await save() } }
             .disabled(!editor.canSave)
         }
       }
@@ -89,7 +92,7 @@ struct BotEditorSheet: View {
       Section {
         identityFields
       } header: {
-        BotCreateHeader(editor: editor) { editsMascot = true }
+        BotCreateHeader(title: createTitle, editor: editor) { editsMascot = true }
       }
     } else {
       Section { header }
@@ -107,7 +110,28 @@ struct BotEditorSheet: View {
       }
     }
     .pickerStyle(.menu)
-    .disabled(!isCreating)
+    .disabled(!editor.canChangeMachine)
+  }
+
+  private var createTitle: String {
+    editor.forkedBot == nil ? "New Bot" : "Fork Bot"
+  }
+
+  private var confirmTitle: String {
+    if editor.forkedBot != nil { return "Fork" }
+    return isCreating ? "Create" : "Save"
+  }
+
+  private var agentsSection: some View {
+    @Bindable var editor = editor
+    return Section {
+      Toggle("Transfer All Agents", isOn: $editor.movesAgents)
+    } header: {
+      Text("Agents")
+    } footer: {
+      Text(editor.transferAgentsDetail)
+        .foregroundStyle(.secondary)
+    }
   }
 
   private var header: some View {

@@ -3,7 +3,7 @@ import { mkdirSync, readdirSync } from "node:fs"
 import type { IncomingMessage, ServerResponse } from "node:http"
 import { basename, join } from "node:path"
 
-import type { Bot, Project, SessionSummary } from "@codevisor/api"
+import type { Bot, BotMascot, Project, SessionSummary } from "@codevisor/api"
 import { CreateBotRequest as CreateBotRequestSchema } from "@codevisor/api"
 import { botPath, botsRoot, legacyBotsRoot } from "@codevisor/db"
 import {
@@ -192,6 +192,16 @@ const rollBack = async (
     .catch(swallowError)
 }
 
+export interface BotSpec {
+  readonly id: string
+  readonly name: string
+  readonly symbolName: string
+  readonly mascot: BotMascot | undefined
+  readonly harnessId: string
+  readonly configSelections: Readonly<Record<string, string>> | undefined
+  readonly projectIds: ReadonlyArray<string>
+}
+
 export const createBot = async (
   services: CodevisorServerServices,
   config: CodevisorServerConfig,
@@ -201,16 +211,44 @@ export const createBot = async (
   response: ServerResponse
 ): Promise<boolean> => {
   const payload = await readSchema(request, CreateBotRequestSchema)
-  let existing: Bot | undefined
-  if (payload.id !== undefined) existing = await run(services.db.getBot(payload.id))
+  const existing = await existingBot(services, payload.id)
   if (existing !== undefined) {
     writeJson(response, 200, existing)
     return true
   }
-  const name = payload.name.trim()
+
+  const bot = await buildBot(services, config, fanout, routeState, {
+    id: (payload.id ?? randomUUID()).toLowerCase(),
+    name: payload.name,
+    symbolName: payload.symbolName,
+    mascot: payload.mascot,
+    harnessId: payload.harnessId,
+    configSelections: payload.configSelections,
+    projectIds: payload.projectIds
+  })
+  writeJson(response, 201, bot)
+  return true
+}
+
+export const existingBot = async (
+  services: CodevisorServerServices,
+  id: string | undefined
+): Promise<Bot | undefined> => {
+  if (id === undefined) return undefined
+  return run(services.db.getBot(id))
+}
+
+export const buildBot = async (
+  services: CodevisorServerServices,
+  config: CodevisorServerConfig,
+  fanout: EventFanout,
+  routeState: RouteState,
+  spec: BotSpec
+): Promise<Bot> => {
+  const name = spec.name.trim()
   if (name.length === 0) throw new HttpFailure(422, "A bot needs a name")
-  const mascot = await newBotMascot(services, payload.mascot)
-  const sources = await resolveSources(services, config.id, payload.projectIds)
+  const mascot = await newBotMascot(services, spec.mascot)
+  const sources = await resolveSources(services, config.id, spec.projectIds)
   const slug = await allocateBotFolder(services, name)
   const created: CreatedBotResources = { slug, checkouts: [] }
   try {
@@ -234,10 +272,8 @@ export const createBot = async (
     const workspaceId = randomUUID()
     const { session } = await createSessionIfMissing(services, fanout, routeState, config, {
       projectId: home.id,
-      harnessId: payload.harnessId,
-      ...(payload.configSelections === undefined
-        ? {}
-        : { configSelections: payload.configSelections }),
+      harnessId: spec.harnessId,
+      ...(spec.configSelections === undefined ? {} : { configSelections: spec.configSelections }),
       workspaceId,
       title: name
     })
@@ -245,9 +281,9 @@ export const createBot = async (
     created.session = session
     const bot = await run(
       services.db.createBot({
-        id: (payload.id ?? randomUUID()).toLowerCase(),
+        id: spec.id,
         name,
-        symbolName: payload.symbolName,
+        symbolName: spec.symbolName,
         mascot,
         slug,
         projectId: home.id,
@@ -261,8 +297,7 @@ export const createBot = async (
       })
     )
     await appendAndPublish(services.db, fanout, "bot.updated", bot.id, { id: bot.id })
-    writeJson(response, 201, bot)
-    return true
+    return bot
   } catch (cause) {
     await rollBack(services, fanout, created)
     throw cause
