@@ -13,7 +13,7 @@ const exec = promisify(execFile)
 const printedEnv = [
   "#!/bin/sh",
   'echo "args=$*"',
-  "env | grep -E '^(CLAUDE|ANTHROPIC|CODEVISOR)' | sort",
+  "env | grep -E '^_?(CLAUDE|ANTHROPIC|CODEVISOR)' | sort",
   ""
 ].join("\n")
 
@@ -43,6 +43,7 @@ it("runs claude with only the chosen account's credentials", async () => {
         CLAUDE_CONFIG_DIR: "/profiles/alice",
         CLAUDE_CODE_OAUTH_TOKEN: "alice-token",
         ANTHROPIC_BASE_URL: "http://127.0.0.1:1/harness/claude",
+        _CLAUDE_CODE_ASSUME_FIRST_PARTY_BASE_URL: "true",
         OTHER: "ignored"
       }
     })
@@ -50,7 +51,8 @@ it("runs claude with only the chosen account's credentials", async () => {
     "args=--print two words",
     "ANTHROPIC_BASE_URL=http://127.0.0.1:1/harness/claude",
     "CLAUDE_CODE_OAUTH_TOKEN=alice-token",
-    "CLAUDE_CONFIG_DIR=/profiles/alice"
+    "CLAUDE_CONFIG_DIR=/profiles/alice",
+    "_CLAUDE_CODE_ASSUME_FIRST_PARTY_BASE_URL=true"
   ])
 })
 
