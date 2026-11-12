@@ -66,6 +66,10 @@ struct ModelConfigMenu: View {
     } label: {
       modelChipLabel(presentation)
     }
+    .onChange(of: isPresented) { _, presented in
+      guard presented else { return }
+      Task { await controller.revalidateHarnessCapabilitiesIfStale() }
+    }
     .autocompleteSearchLabel("Search models")
     .autocompleteEmptyMessage("No matching models", noItems: "No models available")
     .buttonStyle(HoverIconButtonStyle(shape: .chip))

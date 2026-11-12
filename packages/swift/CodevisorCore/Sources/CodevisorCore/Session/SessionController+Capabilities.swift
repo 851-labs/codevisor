@@ -115,6 +115,22 @@ extension SessionController {
     await resolveDraftModelSettingsIfNeeded()
   }
 
+  public func revalidateHarnessCapabilitiesIfStale() async {
+    guard acceptsNewChatDefaults, let serverClient else { return }
+    let target = CapabilityFetchTarget(serverId: project.serverId, cwd: capabilityCwd)
+    guard configCache.needsCapabilityRevalidation(forServer: target.serverId, cwd: target.cwd)
+    else { return }
+    let requestRevision = beginHarnessCapabilityRefresh()
+    _ = await prepareFromServerCapabilities(
+      serverClient,
+      target: target,
+      requestRevision: requestRevision
+    )
+    await resolveAutomaticSelectionIfNeeded()
+    await resolveDraftModelAvailabilityIfNeeded()
+    await resolveDraftModelSettingsIfNeeded()
+  }
+
   public func invalidateHarnessCapabilities() {
     harnessCapabilityRequestRevision &+= 1
     guard model == nil else { return }
@@ -231,6 +247,9 @@ extension SessionController {
         model != nil
         && connectedHarnessId == capability.harness.id
       if !isConnectedHarness {
+        if configOptionsByHarness[capability.harness.id] != capability.configOptions {
+          forgetDraftModelSettings(forHarness: capability.harness.id)
+        }
         configOptionsByHarness[capability.harness.id] = capability.configOptions
       }
       if let modes = capability.modes {
@@ -246,5 +265,10 @@ extension SessionController {
     } else if selectedHarnessId == nil {
       selectedHarnessId = harnesses.first?.id
     }
+  }
+
+  private func forgetDraftModelSettings(forHarness harnessId: String) {
+    let prefix = Self.draftModelSettingsKey(harnessId: harnessId, model: "")
+    draftModelSettings = draftModelSettings.filter { !$0.key.hasPrefix(prefix) }
   }
 }

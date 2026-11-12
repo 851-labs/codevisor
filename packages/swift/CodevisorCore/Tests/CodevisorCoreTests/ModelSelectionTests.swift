@@ -325,13 +325,62 @@ struct ModelSelectionTests {
     return controller
   }
 
+  @Test("A draft's picker shows the machine's current models after a refresh")
+  func draftPickerFollowsRefreshedCatalog() async {
+    let defaults = rememberedDefaults(model: "gpt-5.5")
+    let client = SyncFakeServerClient(projects: [], sessions: [])
+    let offered = OfferedModels(["gpt-5.5", "gpt-5.6", "gpt-5.7"])
+    client.capabilitiesHandler = { _ in
+      ServerCapabilities(harnesses: [offered.catalog(currentModel: "")])
+    }
+    client.resolvedCapabilitiesHandler = { _, _, selections in
+      ServerCapabilities(harnesses: [offered.catalog(currentModel: selections["model"] ?? "")])
+    }
+    let controller = draft(defaults: defaults, client: client)
+    await controller.prepare()
+    #expect(controller.modelOption?.options.map(\.value) == ["gpt-5.5", "gpt-5.6", "gpt-5.7"])
+
+    offered.values = ["gpt-5.5", "gpt-6"]
+    await controller.refreshHarnessCapabilities()
+
+    #expect(controller.modelOption?.options.map(\.value) == ["gpt-5.5", "gpt-6"])
+    #expect(controller.modelPickerPresentation.modelChip == .model(name: "GPT-5.5"))
+  }
+
+  @Test("Opening the picker refetches a stale catalog and keeps the cached one meanwhile")
+  func pickerOpenRevalidatesStaleCatalog() async {
+    let defaults = rememberedDefaults(model: "gpt-5.5")
+    let client = SyncFakeServerClient(projects: [], sessions: [])
+    let offered = OfferedModels(["gpt-5.5", "gpt-5.6", "gpt-5.7"])
+    let fetches = OfferedModels([])
+    client.capabilitiesHandler = { _ in
+      fetches.values.append("fetch")
+      return ServerCapabilities(harnesses: [offered.catalog(currentModel: "")])
+    }
+    client.resolvedCapabilitiesHandler = { _, _, selections in
+      ServerCapabilities(harnesses: [offered.catalog(currentModel: selections["model"] ?? "")])
+    }
+    let cache = ConfigOptionCache(store: InMemoryStore())
+    cache.store([offered.catalog(currentModel: "")], forServer: "machine-a")
+    let controller = draft(defaults: defaults, client: client, cache: cache)
+    offered.values = ["gpt-5.5", "gpt-6"]
+
+    await controller.revalidateHarnessCapabilitiesIfStale()
+    #expect(fetches.values.count == 1)
+    #expect(controller.modelOption?.options.map(\.value) == ["gpt-5.5", "gpt-6"])
+
+    await controller.revalidateHarnessCapabilitiesIfStale()
+    #expect(fetches.values.count == 1)
+  }
+
   private func draft(
     defaults: ComposerDefaultsStore,
-    client: SyncFakeServerClient
+    client: SyncFakeServerClient,
+    cache: ConfigOptionCache = ConfigOptionCache(store: InMemoryStore())
   ) -> SessionController {
     let controller = SessionController(
       project: Project.fromFolder(URL(fileURLWithPath: "/tmp/machine-a"), serverId: "machine-a"),
-      configCache: ConfigOptionCache(store: InMemoryStore()),
+      configCache: cache,
       composerDefaults: defaults,
       serverClient: client
     )
@@ -397,4 +446,18 @@ private func catalog(currentModel: String) -> ServerHarnessCapability {
     ],
     supportsGoals: false
   )
+}
+
+private final class OfferedModels: @unchecked Sendable {
+  var values: [String]
+
+  init(_ values: [String]) { self.values = values }
+
+  func catalog(currentModel: String) -> ServerHarnessCapability {
+    var capability = CodevisorCoreTests.catalog(currentModel: currentModel)
+    capability.configOptions[0].options = values.map {
+      SessionConfigSelectOption(value: $0, name: $0.uppercased())
+    }
+    return capability
+  }
 }
