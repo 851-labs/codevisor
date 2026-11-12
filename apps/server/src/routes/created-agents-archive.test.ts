@@ -1,4 +1,4 @@
-import { decode, Workspace } from "@codevisor/api"
+import { decode, DetachedAgent, Workspace } from "@codevisor/api"
 import { Schema } from "effect"
 import { describe, expect, it } from "vitest"
 
@@ -53,6 +53,70 @@ describe("archiving an agent's workspace", () => {
       "ws-grandchild",
       "ws-lead"
     ])
+  })
+
+  it("leaves an agent that stands alone, and the agents it started", async () => {
+    const running = await startedFamily()
+    const detached = await jsonRequest(running.server, "/v1/agents/child/detach", {
+      body: JSON.stringify({}),
+      method: "POST"
+    })
+
+    await jsonRequest(running.server, "/v1/workspaces/ws-lead", {
+      body: JSON.stringify({ isArchived: true }),
+      method: "PATCH"
+    })
+
+    expect(detached.body).toEqual({ agentId: "child", workspaceId: "ws-child", detached: true })
+    expect(await archivedIds(running)).toEqual(["ws-lead"])
+  })
+
+  it("moves a helper that shares its starter's workspace into one of its own when it is detached", async () => {
+    const running = await startedFamily()
+    await jsonRequest(running.server, "/v1/sessions", {
+      body: JSON.stringify({
+        id: "helper",
+        projectId: "api-project",
+        harnessId: "codex",
+        workspaceId: "ws-lead",
+        createdBy: "agent",
+        createdByAgentId: "lead"
+      }),
+      method: "POST"
+    })
+
+    const detached = await jsonRequest(running.server, "/v1/agents/helper/detach", {
+      body: JSON.stringify({}),
+      method: "POST"
+    })
+    const listed = await jsonRequest(running.server, "/v1/agents?createdByAgentId=lead")
+    await jsonRequest(running.server, "/v1/workspaces/ws-lead", {
+      body: JSON.stringify({ isArchived: true }),
+      method: "PATCH"
+    })
+
+    const own = decode(DetachedAgent)(detached.body).workspaceId
+    expect(own).not.toBe("ws-lead")
+    expect(listed.body).toEqual({
+      items: expect.arrayContaining([
+        expect.objectContaining({ agentId: "helper", workspaceId: own, standalone: true })
+      ])
+    })
+    expect(await archivedIds(running)).not.toContain(own)
+  })
+
+  it("refuses to detach a chat no agent started", async () => {
+    const running = await startedFamily()
+
+    const refused = await jsonRequest(running.server, "/v1/agents/lead/detach", {
+      body: JSON.stringify({}),
+      method: "POST"
+    })
+
+    expect(refused).toMatchObject({
+      status: 422,
+      body: { error: expect.stringContaining("already stands alone") }
+    })
   })
 
   it("does the same when an agent archives the workspace with workspaces.archive", async () => {

@@ -241,6 +241,7 @@ export const sessionFromRow = (row: SessionRow, folderPath: string | undefined):
     ...(row.checkout_id == null ? {} : { checkoutId: row.checkout_id }),
     ...(row.is_archived === 1 ? { isArchived: true } : {}),
     ...(row.archived_at == null ? {} : { archivedAt: row.archived_at }),
+    ...(row.is_detached === 1 ? { isDetached: true } : {}),
     ...(Object.keys(configSelections).length === 0 ? {} : { configSelections }),
     ...(Object.keys(unavailableConfigSelections).length === 0
       ? {}

@@ -214,6 +214,7 @@ public struct ServerSession: Codable, Equatable, Sendable {
   public var createdBy: SessionCreator? = nil
   public var createdByAgentId: String? = nil
   public var createdByAgentMachineId: String? = nil
+  public var isDetached: Bool? = nil
   public var forkedFromAgentId: String? = nil
   public var forkedFromAgentMachineId: String? = nil
 
@@ -258,6 +259,7 @@ public struct ServerSession: Codable, Equatable, Sendable {
       latestBotMessage: latestBotMessage,
       createdBy: createdBy,
       createdByAgent: AgentReference(agentId: createdByAgentId, machineId: createdByAgentMachineId),
+      isDetached: isDetached ?? false,
       forkedFromAgent: AgentReference(agentId: forkedFromAgentId, machineId: forkedFromAgentMachineId)
     )
   }
@@ -293,6 +295,7 @@ public struct ServerSession: Codable, Equatable, Sendable {
     createdBy: SessionCreator? = nil,
     createdByAgentId: String? = nil,
     createdByAgentMachineId: String? = nil,
+    isDetached: Bool? = nil,
     forkedFromAgentId: String? = nil,
     forkedFromAgentMachineId: String? = nil
   ) {
@@ -326,6 +329,7 @@ public struct ServerSession: Codable, Equatable, Sendable {
     self.createdBy = createdBy
     self.createdByAgentId = createdByAgentId
     self.createdByAgentMachineId = createdByAgentMachineId
+    self.isDetached = isDetached
     self.forkedFromAgentId = forkedFromAgentId
     self.forkedFromAgentMachineId = forkedFromAgentMachineId
   }

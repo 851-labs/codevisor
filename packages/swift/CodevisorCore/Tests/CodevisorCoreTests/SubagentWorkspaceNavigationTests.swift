@@ -56,6 +56,25 @@ struct SubagentWorkspaceNavigationTests {
       ])
   }
 
+  @Test("An agent that stands alone has no parent, though the agent that started it is known")
+  func standaloneAgentHasNoParent() async {
+    let lead = chat("Lead")
+    let worker = chat("Worker", createdBy: lead)
+    var standalone = chat("Standalone", createdBy: lead)
+    standalone.isDetached = true
+    let (parent, child, own) = (workspace(lead), workspace(worker), workspace(standalone))
+    let fixture = NavigationFixture()
+
+    await fixture.install(
+      machineId: "m", projects: [project], sessions: [lead, worker, standalone],
+      workspaces: [parent, child, own])
+
+    let parents = Dictionary(
+      uniqueKeysWithValues: fixture.store.workspaceEntries.sidebar.map { ($0.id, $0.parentWorkspaceId) })
+    #expect(parents == [parent.id: nil, child.id: parent.id, own.id: nil])
+    #expect(fixture.store.projection.sessions.first { $0.id == standalone.id }?.createdByAgent?.agentId == lead.id)
+  }
+
   @Test("Agent-made children are quiet, a bot's included; forks are not")
   func quietChildren() async {
     let botHome = Project.fromFolder(URL(fileURLWithPath: "/tmp/codevisor/bots/helper"), serverId: "m")

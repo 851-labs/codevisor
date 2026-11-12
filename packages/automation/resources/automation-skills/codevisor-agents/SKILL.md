@@ -25,6 +25,7 @@ Agent tools are the `agents` global: `agents.start(args)`, `agents.list(args)`, 
 | Stop its turn                     | `agent.cancel()`                                                                                             |
 | Find your agents                  | `agents.list({ state?, project?, label?, createdByAgentId?, machine?, next? })`                              |
 | Finish with any agent you started | `agent.archive()`                                                                                            |
+| Hand one over to the user         | `agents.start({ …, standalone: true })`, or `agent.detach()` later                                           |
 
 ## Start an agent
 
@@ -197,6 +198,18 @@ Examples:
   - Cleanup depends on where it ran. A `"shared"` helper ran in your checkout, so nothing on disk changes. A `"worktree"` agent's worktree is reclaimed when nothing else uses it: tracked and untracked files are kept as a restorable snapshot and everything else in the folder, ignored files included, is deleted. The project folder itself is never touched. Files already sent in a chat stay with that chat.
   - It releases the branch name, so push or open the PR first if the branch should stay.
 - You can't archive yourself.
+
+## Agents that stand alone
+
+By default an agent you start is yours: it sits in your agents pill, and it is archived when you are. That fits work that is a step in your own task.
+
+Some work is the user's to follow on its own, like one agent per ticket started by a bot. Start it with `standalone: true`, or call `agent.detach()` on an agent you already started.
+
+- It gets its own item in the user's sidebar and stays out of your pill.
+- It is not archived when you are.
+- You can still message it, get its events, and archive it.
+- `standalone` needs a workspace of its own, so it does not go with `checkout: "shared"`. Detaching a shared helper moves it into its own workspace on the same checkout.
+- Detaching can't be undone.
 
 ## Debugging an agent
 

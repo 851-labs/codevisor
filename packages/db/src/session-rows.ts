@@ -23,6 +23,7 @@ export interface SessionRow {
   readonly checkout_id?: string | null
   readonly is_archived?: number
   readonly archived_at?: string | null
+  readonly is_detached?: number
   readonly created_at: string
   readonly updated_at: string | null
   readonly sidebar_state: SessionSidebarState
@@ -99,6 +100,7 @@ export const sessionRows = rowReader<SessionRow>({
   checkout_id: optional(nullable(text)),
   is_archived: optional(integer),
   archived_at: optional(nullable(text)),
+  is_detached: optional(integer),
   created_at: text,
   updated_at: nullable(text),
   sidebar_state: Schema.is(SessionSidebarState),

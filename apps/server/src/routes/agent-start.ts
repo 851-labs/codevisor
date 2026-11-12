@@ -66,6 +66,12 @@ const assertPlacementChosen = (request: StartAgentRequest): void => {
   if (request.sandbox === undefined && request.checkout === undefined) {
     throw new HttpFailure(422, 'Pass checkout: "worktree", "shared", "project", or "none"')
   }
+  if (request.standalone === true && request.checkout === "shared") {
+    throw new HttpFailure(
+      422,
+      'A standalone agent needs its own workspace: pass checkout: "worktree", "project", or "none"'
+    )
+  }
 }
 
 interface AgentCaller {
@@ -114,6 +120,7 @@ const startPlanned = async (
     plan.caller.creator
   )
   created.push(() => deleteServerSession(services, fanout, session.id))
+  if (request.standalone === true) await run(services.db.detachSession(session.id))
 
   const subscribed = await subscribeCaller(route, plan.caller, session.id)
   const delivered = await sendFirstPrompt(route, session.id, request.prompt, plan.caller.creator)

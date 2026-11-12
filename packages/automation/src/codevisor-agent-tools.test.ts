@@ -59,6 +59,19 @@ describe("agents.list", () => {
   })
 })
 
+describe("agents.detach", () => {
+  it("asks the agent's machine to let it stand alone", async () => {
+    const requests = fakeServer()
+
+    const detached = await call(local, "agents.detach", { agentId: "worker" })
+
+    expect(detached).toEqual({ agentId: "worker", workspaceId: "own", detached: true })
+    expect(requests.map(({ method, path }) => [method, path])).toEqual([
+      ["POST", "/v1/agents/worker/detach"]
+    ])
+  })
+})
+
 describe("agents.archive", () => {
   it("names the local caller so the server can tell a shared helper from an agent of its own", async () => {
     const requests = fakeServer()

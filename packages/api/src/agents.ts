@@ -58,6 +58,7 @@ export const AgentSummary = Schema.Struct({
   createdByAgentId: Schema.optional(Schema.String),
   createdByAgentMachineId: Schema.optional(Schema.String),
   archived: Schema.optional(Schema.Literal(true)),
+  standalone: Schema.optional(Schema.Literal(true)),
   updatedAt: Schema.optional(Schema.String)
 })
 export type AgentSummary = typeof AgentSummary.Type
@@ -94,6 +95,13 @@ export const ArchivedAgent = Schema.Struct({
 })
 export type ArchivedAgent = typeof ArchivedAgent.Type
 
+export const DetachedAgent = Schema.Struct({
+  agentId: Schema.String,
+  workspaceId: Schema.optional(Schema.String),
+  detached: Schema.Literal(true)
+})
+export type DetachedAgent = typeof DetachedAgent.Type
+
 export const AgentCheckout = Schema.Literals(["worktree", "shared", "project", "none"])
 export type AgentCheckout = typeof AgentCheckout.Type
 
@@ -114,6 +122,7 @@ export const StartAgentRequest = Schema.Struct({
   prompt: Schema.String,
   title: Schema.String,
   checkout: Schema.optional(AgentCheckout),
+  standalone: Schema.optional(Schema.Boolean),
   harness: Schema.optional(Schema.String),
   model: Schema.optional(Schema.String),
   project: Schema.optional(Schema.String),

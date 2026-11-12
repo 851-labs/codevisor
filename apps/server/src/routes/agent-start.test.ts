@@ -279,6 +279,24 @@ describe("POST /v1/agents", () => {
     ).toBe(422)
   })
 
+  it("starts an agent that stands alone when asked, but not as a shared helper", async () => {
+    const { services, caller, startAgent, state } = await startable()
+
+    const shared = await startAgent({ checkout: "shared", standalone: true })
+    const before = await state()
+    const standing = decode(StartedAgent)((await startAgent({ standalone: true })).body)
+
+    expect(shared).toMatchObject({
+      status: 422,
+      body: { error: expect.stringContaining("needs its own workspace") }
+    })
+    expect(before.sessions).toEqual([caller])
+    expect(await run(services.db.getSessionSummary(standing.agentId))).toMatchObject({
+      createdByAgentId: caller,
+      isDetached: true
+    })
+  })
+
   it("asks for a checkout, and refuses one alongside a sandbox, before creating anything", async () => {
     const { startAgent, state } = await startable()
     const before = await state()

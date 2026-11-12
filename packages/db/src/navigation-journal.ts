@@ -25,6 +25,7 @@ export const installNavigationJournal = (db: Database.Database): void => {
       "workspace_id",
       "worktree_name",
       "is_archived",
+      "is_detached",
       "sidebar_state",
       "config_selections",
       "unavailable_config_selections"

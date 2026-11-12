@@ -37,7 +37,7 @@ export const archiveLocalChildren = async (
 ): Promise<number> => {
   const sessions = await run(services.db.listSessions)
   const childWorkspaceIds = new Set(
-    sessions.filter((session) => isCreatedBy(session, creators)).flatMap(workspaceIdOf)
+    sessions.filter((session) => isOwnedBy(session, creators)).flatMap(workspaceIdOf)
   )
   const children = (await run(services.db.listWorkspaces)).filter(
     (workspace) => childWorkspaceIds.has(workspace.id.toLowerCase()) && !workspace.isArchived
@@ -65,7 +65,8 @@ const tellOtherMachines = (
 const isIn = (session: SessionSummary, workspaceId: string): boolean =>
   session.workspaceId?.toLowerCase() === workspaceId.toLowerCase()
 
-const isCreatedBy = (session: SessionSummary, creators: Creators): boolean =>
+const isOwnedBy = (session: SessionSummary, creators: Creators): boolean =>
+  session.isDetached !== true &&
   session.createdByAgentMachineId === creators.creatorMachineId &&
   creators.creatorIds.some((id) => id.toLowerCase() === session.createdByAgentId?.toLowerCase())
 
