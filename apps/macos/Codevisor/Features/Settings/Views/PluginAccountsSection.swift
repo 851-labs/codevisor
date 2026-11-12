@@ -11,10 +11,9 @@ struct PluginAccountsSection: View {
   var body: some View {
     if let spec = model.spec {
       let actions = PluginAccountActions(spec: spec, accounts: model.accounts)
-      Section {
-        if actions.needsFirstAccount {
-          Text("Not signed in").foregroundStyle(.secondary)
-        }
+      SettingsAccountsSection(
+        isSignedOut: actions.needsFirstAccount, message: editing == nil ? model.errorMessage : nil
+      ) {
         ForEach(model.accounts) { account in
           PluginAccountRow(
             account: account,
@@ -25,18 +24,14 @@ struct PluginAccountsSection: View {
             onRemove: { removalCandidates = [account] }
           )
         }
-      } header: {
-        Text("Accounts")
-      } footer: {
-        SettingsListActions(message: editing == nil ? model.errorMessage : nil) {
-          PluginAccountFooterButtons(
-            actions: actions,
-            isWorking: model.isWorking,
-            onAdd: { add(spec) },
-            onEdit: { edit($0, spec: spec) },
-            onRemove: { removalCandidates = model.accounts }
-          )
-        }
+      } buttons: {
+        PluginAccountFooterButtons(
+          actions: actions,
+          isWorking: model.isWorking,
+          onAdd: { add(spec) },
+          onEdit: { edit($0, spec: spec) },
+          onRemove: { removalCandidates = model.accounts }
+        )
       }
       .onChange(of: environment.pluginAccountsRevision) { Task { await model.reload() } }
       .sheet(item: $editing) { PluginAccountEditorSheet(editing: $0, model: model) }

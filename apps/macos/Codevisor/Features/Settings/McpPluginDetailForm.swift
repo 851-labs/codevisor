@@ -26,6 +26,7 @@ struct McpPluginDetailForm: View {
     Form {
       if showsInfoSection { infoSection }
       if let accounts { PluginAccountsSection(model: accounts) }
+      McpAccountsSection(entry: entry, model: model)
       McpMachinesSection(entry: entry, model: model, disabledReason: toggleDisabledReason)
       if isComputerUse {
         Section("Permissions") {
@@ -69,12 +70,8 @@ struct McpPluginDetailForm: View {
         McpServerConnectionRows(server: server)
       }
     } footer: {
-      if showsAccountButton || model.actionError != nil {
-        SettingsListActions(message: model.actionError) {
-          if showsAccountButton {
-            McpAccountButton(entry: entry, model: model, onSignIn: signIn)
-          }
-        }
+      if let actionError = model.actionError {
+        SettingsListActions(message: actionError) {}
       }
     }
   }
@@ -91,11 +88,7 @@ struct McpPluginDetailForm: View {
   }
 
   private var showsInfoSection: Bool {
-    isEditable || showsConnectionRows || showsAccountButton || model.actionError != nil
-  }
-
-  private var showsAccountButton: Bool {
-    McpAccountButton.isShown(for: entry, model: model, in: environment)
+    isEditable || showsConnectionRows || model.actionError != nil
   }
 
   private var isComputerUse: Bool { entry.kind == "computerUse" }
@@ -130,11 +123,6 @@ struct McpPluginDetailForm: View {
       return
     }
     Task { await model.setAvailability(false, of: entry, on: localId, in: environment) }
-  }
-
-  private func signIn(on signInMachineId: String) {
-    guard let serverId = entry.idByMachine[signInMachineId] else { return }
-    Task { await plugins.beginOAuth(serverId: serverId, machineId: signInMachineId, in: environment) }
   }
 
   private func loadPluginDetails() async {

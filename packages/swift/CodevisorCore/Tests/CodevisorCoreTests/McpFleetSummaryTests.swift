@@ -46,6 +46,15 @@ struct McpFleetSummaryTests {
     #expect(try summary(authType: "none", [.off, .off], isOn: [false, false]).label == "Off")
   }
 
+  @Test("Only OAuth servers have an account, which settles from the machines' status")
+  func account() throws {
+    #expect(try summary(authType: "none", [.ready(toolCount: 1)]).account == nil)
+    #expect(try summary(authType: "oauth", [.ready(toolCount: 1)]).account == .signedIn)
+    #expect(
+      try summary(authType: "oauth", [.ready(toolCount: 1), .needsAuthorization(reason: "x")]).account == .signedOut)
+    #expect(try summary(authType: "oauth", [.connecting]).account == .settling(status: "Connecting…"))
+  }
+
   @Test("A built-in tool that's on everywhere reads On")
   func builtInOn() throws {
     #expect(try summary(kind: "browserUse", authType: "none", [.idle]).label == "On")
