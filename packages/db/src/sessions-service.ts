@@ -5,6 +5,7 @@ import { isoTimestamp } from "@codevisor/api"
 import { Effect } from "effect"
 
 import { agentReferenceValues } from "./agent-references.js"
+import { ensureCheckout, sessionCheckoutPlace } from "./checkouts.js"
 import { pendingQuestionRows } from "./common-rows.js"
 import { attempt } from "./errors.js"
 import { pendingQuestionFromRaw } from "./event-payloads.js"
@@ -24,11 +25,12 @@ export const insertSessionRow = (
 
   const now = isoTimestamp()
   const id = (request.id ?? randomUUID()).toLowerCase()
+  const projectId = canonicalUuid(request.projectId)
   sqlite
     .prepare(sessionSql.insert)
     .run(
       id,
-      canonicalUuid(request.projectId),
+      projectId,
       config.serverId,
       request.harnessId,
       request.harnessAccountId ?? null,
@@ -37,6 +39,7 @@ export const insertSessionRow = (
       request.origin ?? "codevisor",
       request.worktreeName ?? null,
       request.workspaceId == null ? null : canonicalUuid(request.workspaceId),
+      checkoutIdFor(context, projectId, request.worktreeName),
       request.createdAt ?? now,
       request.updatedAt ?? null,
       request.updatedAt ?? request.createdAt ?? now,
@@ -92,7 +95,7 @@ export const makeSessionsService = (
       attempt("updateSession", () => {
         const id = canonicalUuid(rawId)
         const current = getSession(id)
-        sqlite.prepare(sessionSql.update).run(...sessionUpdateParams(id, request, current))
+        sqlite.prepare(sessionSql.update).run(...sessionUpdateParams(context, id, request, current))
         return getSession(id)
       }),
     replaceSessionConfigSelections: (rawId, selections, unavailable) =>
@@ -140,31 +143,60 @@ const sessionsByRecency = (context: ServiceContext): ReadonlyArray<SessionSummar
     })
 }
 
+const checkoutIdFor = (
+  context: ServiceContext,
+  projectId: string,
+  worktreeName: string | undefined
+): string | null => {
+  const { sqlite, config, localLocationFor } = context
+  const place = sessionCheckoutPlace(
+    config.serverId,
+    projectId,
+    localLocationFor(projectId)?.folder_path,
+    worktreeName
+  )
+  if (place === undefined) return null
+  return ensureCheckout(sqlite, place)
+}
+
+const updatedWorktreeName = (
+  request: UpdateSessionRequest,
+  current: SessionSummary
+): string | undefined => {
+  if (request.projectId === undefined) return request.worktreeName ?? current.worktreeName
+  return request.worktreeName
+}
+
 const sessionUpdateParams = (
+  context: ServiceContext,
   id: string,
   request: UpdateSessionRequest,
   current: SessionSummary
-): ReadonlyArray<string | number | null> => [
-  request.titleIntent ?? null,
-  request.title ?? current.title,
-  request.title ?? current.title,
-  request.titleIntent ?? null,
-  request.titleIntent ?? null,
-  request.title ?? null,
-  request.title ?? null,
-  request.title ?? null,
-  request.agentSessionId ?? current.agentSessionId ?? null,
-  request.projectId === undefined
-    ? (request.worktreeName ?? current.worktreeName ?? null)
-    : (request.worktreeName ?? null),
-  request.projectId === undefined ? current.projectId : canonicalUuid(request.projectId),
-  request.harnessId ?? current.harnessId,
-  request.harnessAccountId ?? current.harnessAccountId ?? null,
-  request.updatedAt ?? current.updatedAt ?? null,
-  request.labels === undefined ? 0 : 1,
-  serializeLabels(request.labels),
-  id
-]
+): ReadonlyArray<string | number | null> => {
+  const projectId =
+    request.projectId === undefined ? current.projectId : canonicalUuid(request.projectId)
+  const worktreeName = updatedWorktreeName(request, current)
+  return [
+    request.titleIntent ?? null,
+    request.title ?? current.title,
+    request.title ?? current.title,
+    request.titleIntent ?? null,
+    request.titleIntent ?? null,
+    request.title ?? null,
+    request.title ?? null,
+    request.title ?? null,
+    request.agentSessionId ?? current.agentSessionId ?? null,
+    worktreeName ?? null,
+    projectId,
+    checkoutIdFor(context, projectId, worktreeName),
+    request.harnessId ?? current.harnessId,
+    request.harnessAccountId ?? current.harnessAccountId ?? null,
+    request.updatedAt ?? current.updatedAt ?? null,
+    request.labels === undefined ? 0 : 1,
+    serializeLabels(request.labels),
+    id
+  ]
+}
 
 const pendingQuestionJson = (sqlite: ServiceContext["sqlite"], rawId: string): string | null =>
   pendingQuestionRows.maybe(sqlite.prepare(sessionSql.pendingQuestion).get(canonicalUuid(rawId)))
@@ -176,11 +208,11 @@ export const sessionListSql = (summarySelect: string): string =>
 const sessionSql = {
   insert: `insert into sessions (
             id, project_id, server_id, harness_id, harness_account_id, agent_session_id,
-            title, origin, worktree_name, workspace_id, created_at, updated_at,
+            title, origin, worktree_name, workspace_id, checkout_id, created_at, updated_at,
             sidebar_state, sidebar_state_changed_at, created_by, created_by_agent_id,
             created_by_agent_machine_id, forked_from_agent_id, forked_from_agent_machine_id,
             labels, config_selections
-          ) values (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'idle', ?, ?, ?, ?, ?, ?, ?, ?)`,
+          ) values (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'idle', ?, ?, ?, ?, ?, ?, ?, ?)`,
   pendingQuestion: "select pending_question from sessions where id = ?",
   update: `update sessions set
               title = case
@@ -196,7 +228,7 @@ const sessionSql = {
                 when ? is not null and ? <> title then 1
                 else title_is_user_set
               end,
-              agent_session_id = ?, worktree_name = ?, project_id = ?,
+              agent_session_id = ?, worktree_name = ?, project_id = ?, checkout_id = ?,
               harness_id = ?, harness_account_id = ?, updated_at = ?,
               labels = case when ? then ? else labels end
              where id = ?`,

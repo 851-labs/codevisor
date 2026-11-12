@@ -1,6 +1,7 @@
 import { GitPullRequest, PluginCapabilities, repoIdentityKey } from "@codevisor/api"
 import type {
   ArchivedWorktree,
+  Checkout,
   FileMetadata,
   Project,
   ProjectLocation,
@@ -19,6 +20,7 @@ import { StringArray, parseJsonColumn } from "./json-column.js"
 import { isBotFolder, isScratchFolder, resolveSessionCwd, worktreePath } from "./paths.js"
 import type {
   ArchivedWorktreeRow,
+  CheckoutRow,
   FileMetadataRow,
   FileStorageRow,
   FileStorageRecord,
@@ -138,7 +140,7 @@ const parsePullRequest = (raw: string | null | undefined): GitPullRequest | null
   }
 }
 
-const workspaceGitFromRow = (row: WorkspaceRow): WorkspaceGit | undefined => {
+const workspaceGitFromRow = (row: GitColumns): WorkspaceGit | undefined => {
   if (row.git_known !== 1) return undefined
 
   const git = {
@@ -168,7 +170,23 @@ export const workspaceFromRow = (row: WorkspaceRow): Workspace => {
     ...(row.updated_at === null ? {} : { updatedAt: row.updated_at }),
     ...(labels === undefined ? {} : { labels }),
     ...(git === undefined ? {} : { git }),
-    ...(row.main_session_id == null ? {} : { mainSessionId: row.main_session_id })
+    ...(row.main_session_id == null ? {} : { mainSessionId: row.main_session_id }),
+    ...(row.default_checkout_id == null ? {} : { defaultCheckoutId: row.default_checkout_id })
+  }
+}
+
+export const checkoutFromRow = (row: CheckoutRow): Checkout => {
+  const git = workspaceGitFromRow(row)
+  return {
+    id: row.id,
+    serverId: row.server_id,
+    projectId: row.project_id,
+    path: row.path,
+    ...(row.worktree_id === null ? {} : { worktreeId: row.worktree_id }),
+    ...(row.worktree_name === null ? {} : { worktreeName: row.worktree_name }),
+    ...(git === undefined ? {} : { git }),
+    createdAt: row.created_at,
+    ...(row.updated_at === null ? {} : { updatedAt: row.updated_at })
   }
 }
 
@@ -180,6 +198,8 @@ export const workspacePaneFromRow = (row: WorkspacePaneRow): WorkspacePane => ({
   title: row.title,
   ...(row.resource_kind === null ? {} : { resourceKind: row.resource_kind }),
   ...(row.resource_id === null ? {} : { resourceId: row.resource_id }),
+  ...(row.resource_server_id == null ? {} : { resourceServerId: row.resource_server_id }),
+  ...(row.checkout_id == null ? {} : { checkoutId: row.checkout_id }),
   ...(row.metadata === null ? {} : { metadata: row.metadata }),
   ...(row.live_title === null ? {} : { liveTitle: row.live_title }),
   ...(row.terminal_activity === null ? {} : { terminalActivity: row.terminal_activity }),
@@ -218,6 +238,7 @@ export const sessionFromRow = (row: SessionRow, folderPath: string | undefined):
     ...(row.worktree_name === null ? {} : { worktreeName: row.worktree_name }),
     ...(row.workspace_id === null ? {} : { workspaceId: row.workspace_id }),
     ...(cwd === undefined ? {} : { cwd }),
+    ...(row.checkout_id == null ? {} : { checkoutId: row.checkout_id }),
     ...(Object.keys(configSelections).length === 0 ? {} : { configSelections }),
     ...(Object.keys(unavailableConfigSelections).length === 0
       ? {}
@@ -357,3 +378,10 @@ export const nativeMcpRemovalFromRow = (row: NativeMcpRemovalRow): NativeMcpRemo
   removedAt: row.removed_at,
   serverName: row.server_name
 })
+
+interface GitColumns {
+  readonly git_branch?: string | null
+  readonly git_detached_head?: string | null
+  readonly git_pull_request?: string | null
+  readonly git_known?: number
+}

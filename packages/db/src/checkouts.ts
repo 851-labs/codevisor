@@ -1,0 +1,130 @@
+import { randomUUID } from "node:crypto"
+
+import { isoTimestamp } from "@codevisor/api"
+import type Database from "better-sqlite3"
+
+import { checkoutRows, type CheckoutRow } from "./checkout-rows.js"
+import { canonicalUuid } from "./ids.js"
+import { resolveSessionCwd, worktreeNameAt } from "./paths.js"
+import { rowReader, text } from "./row-reader.js"
+
+export interface CheckoutPlace {
+  readonly serverId: string
+  readonly projectId: string
+  readonly path: string
+  readonly worktreeName?: string | undefined
+}
+
+export const ensureCheckout = (sqlite: Database.Database, place: CheckoutPlace): string => {
+  const existing = checkoutAt(sqlite, place.serverId, place.path)
+  if (existing !== undefined) return existing.id
+
+  const id = randomUUID()
+  const worktreeName = place.worktreeName ?? worktreeNameAt(place.projectId, place.path)
+  sqlite
+    .prepare(checkoutSql.insert)
+    .run(
+      id,
+      place.serverId,
+      canonicalUuid(place.projectId),
+      worktreeId(sqlite, place, worktreeName),
+      worktreeName ?? null,
+      place.path,
+      isoTimestamp()
+    )
+  return id
+}
+
+export const sessionCheckoutPlace = (
+  serverId: string,
+  projectId: string,
+  folderPath: string | undefined,
+  worktreeName: string | undefined
+): CheckoutPlace | undefined => {
+  const path = resolveSessionCwd(folderPath, projectId, worktreeName)
+  if (path === undefined) return undefined
+  return { serverId, projectId, path, worktreeName }
+}
+
+export const checkoutAt = (
+  sqlite: Database.Database,
+  serverId: string,
+  path: string
+): CheckoutRow | undefined =>
+  checkoutRows.maybe(sqlite.prepare(checkoutSql.byPlace).get(serverId, path))
+
+export const checkoutRow = (sqlite: Database.Database, id: string): CheckoutRow | undefined =>
+  checkoutRows.maybe(sqlite.prepare(checkoutSql.byId).get(id))
+
+export const listCheckoutRows = (sqlite: Database.Database): ReadonlyArray<CheckoutRow> =>
+  checkoutRows.all(sqlite.prepare(checkoutSql.list).all())
+
+export const sessionCheckoutId = (sqlite: Database.Database, sessionId: string): string | null =>
+  checkoutIdRows.maybe(sqlite.prepare(checkoutSql.sessionCheckout).get(sessionId))?.checkout_id ??
+  null
+
+export const workspaceDefaultCheckoutId = (
+  sqlite: Database.Database,
+  workspaceId: string
+): string | null =>
+  checkoutIdRows.maybe(sqlite.prepare(checkoutSql.workspaceDefault).get(workspaceId))
+    ?.checkout_id ?? null
+
+export const paneCheckoutId = (
+  sqlite: Database.Database,
+  workspaceId: string,
+  resourceKind: string | null | undefined,
+  resourceId: string | null,
+  requested: string | null | undefined
+): string | null => {
+  if (resourceKind === "session" && resourceId !== null)
+    return sessionCheckoutId(sqlite, resourceId)
+  if (requested != null) return canonicalUuid(requested)
+  return workspaceDefaultCheckoutId(sqlite, workspaceId)
+}
+
+export const adoptDefaultCheckout = (
+  sqlite: Database.Database,
+  workspaceId: string,
+  sessionId: string
+): void => {
+  sqlite.prepare(checkoutSql.adoptDefault).run(sessionId, workspaceId)
+}
+
+const worktreeId = (
+  sqlite: Database.Database,
+  place: CheckoutPlace,
+  worktreeName: string | undefined
+): string | null => {
+  if (worktreeName === undefined) return null
+  return (
+    idRows.maybe(
+      sqlite
+        .prepare(checkoutSql.worktreeId)
+        .get(canonicalUuid(place.projectId), place.serverId, worktreeName)
+    )?.id ?? null
+  )
+}
+
+const idRows = rowReader({ id: text })
+
+const checkoutIdRows = rowReader({ checkout_id: text })
+
+const checkoutSql = {
+  byId: "select * from checkouts where id = ?",
+  byPlace: "select * from checkouts where server_id = ? and path = ?",
+  list: "select * from checkouts order by created_at, id",
+  insert: `insert into checkouts (
+             id, server_id, project_id, worktree_id, worktree_name, path, created_at
+           ) values (?, ?, ?, ?, ?, ?, ?)`,
+  worktreeId: "select id from worktrees where project_id = ? and server_id = ? and name = ?",
+  sessionCheckout: "select checkout_id from sessions where id = ? and checkout_id is not null",
+  workspaceDefault:
+    "select default_checkout_id as checkout_id from workspaces where id = ? and default_checkout_id is not null",
+  adoptDefault: `update workspaces
+      set default_checkout_id = coalesce(
+        (select checkout_id from sessions where sessions.id = workspaces.main_session_id),
+        (select checkout_id from sessions where sessions.id = ?)
+      )
+      where id = ? and default_checkout_id is null`
+}

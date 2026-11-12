@@ -16,6 +16,14 @@ struct WorkspaceInspectorPresentation: ViewModifier {
     let chat: ChatSession?
   }
 
+  private struct InspectedPlace {
+    let serverId: String
+    let rootDirectory: String?
+    let branch: String?
+    let worktreeName: String?
+    let pullRequest: ServerGitPullRequest?
+  }
+
   private struct RefreshKey: Equatable {
     let shown: ShownView
     let activity: Date?
@@ -127,16 +135,18 @@ struct WorkspaceInspectorPresentation: ViewModifier {
   private func inspectorView(_ store: SessionStore, _ inspected: Inspected) -> some View {
     let workspace = inspected.workspace
     let chat = harnessChat(for: inspected)
+    let place = place(of: inspected, chat: chat, store: store)
     let bot = environment.bots.bot(forWorkspace: workspace.id, serverId: workspace.serverId)
     let desktop = MachineDesktopRegistry.shared.session(
       for: workspace, project: inspected.project, environment: environment)
     return WorkspaceInspectorView(
       workspace: workspace,
       project: inspected.project,
-      branch: store.gitLookups.branch(for: workspace),
-      pullRequest: store.gitLookups.pullRequest(for: workspace),
-      machineName: environment.machines.fleetMachineName(for: workspace.serverId),
-      machineSymbol: environment.machines.machine(for: workspace.serverId)?.icon.systemImage,
+      branch: place.branch,
+      worktreeName: place.worktreeName,
+      pullRequest: place.pullRequest,
+      machineName: environment.machines.fleetMachineName(for: place.serverId),
+      machineSymbol: environment.machines.machine(for: place.serverId)?.icon.systemImage,
       showsDebugSection: developerMode,
       showsBotTranscript: bot != nil,
       harnessChat: chat,
@@ -196,9 +206,10 @@ struct WorkspaceInspectorPresentation: ViewModifier {
     let tab = shownTab(for: inspected)
     switch tab {
     case .files:
+      let place = place(of: inspected, chat: harnessChat(for: inspected), store: store)
       await fileTree.show(
-        root: workspace.rootDirectory, client: client,
-        isLocal: environment.machines.machine(for: workspace.serverId)?.isLocal == true)
+        root: place.rootDirectory, client: environment.machines.client(for: place.serverId),
+        isLocal: environment.machines.machine(for: place.serverId)?.isLocal == true)
     case .info, .media, .links:
       await media.reload(tab, workspaceId: workspace.id, client: client)
     case .harness:
@@ -220,6 +231,23 @@ struct WorkspaceInspectorPresentation: ViewModifier {
 
   private func shownTab(for inspected: Inspected) -> WorkspaceInspectorTab {
     tab == .harness && !showsHarness(inspected) ? .info : tab
+  }
+
+  private func place(of inspected: Inspected, chat: ChatSession?, store: SessionStore?) -> InspectedPlace {
+    let workspace = inspected.workspace
+    let fallback = InspectedPlace(
+      serverId: workspace.serverId, rootDirectory: workspace.rootDirectory,
+      branch: store?.gitLookups.branch(for: workspace), worktreeName: workspace.worktreeName,
+      pullRequest: store?.gitLookups.pullRequest(for: workspace))
+    guard let chat, let checkout = environment.navigationStore.projection.checkout(for: chat) else { return fallback }
+    guard let git = checkout.git else {
+      return InspectedPlace(
+        serverId: checkout.serverId, rootDirectory: checkout.path,
+        branch: fallback.branch, worktreeName: checkout.worktreeName, pullRequest: fallback.pullRequest)
+    }
+    return InspectedPlace(
+      serverId: checkout.serverId, rootDirectory: checkout.path,
+      branch: SidebarGitLookups.head(of: git), worktreeName: checkout.worktreeName, pullRequest: git.pullRequest)
   }
 
   private func harnessChat(for inspected: Inspected) -> ChatSession? {

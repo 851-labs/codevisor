@@ -6,6 +6,7 @@ export const installNavigationJournal = (db: Database.Database): void => {
     project_locations: undefined,
     workspaces: undefined,
     workspace_panes: undefined,
+    checkouts: undefined,
     session_attention: [
       "attention_revision",
       "turn_active",

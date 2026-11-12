@@ -20,6 +20,7 @@ export interface SessionRow {
   readonly origin: SessionSummary["origin"]
   readonly worktree_name: string | null
   readonly workspace_id: string | null
+  readonly checkout_id?: string | null
   readonly created_at: string
   readonly updated_at: string | null
   readonly sidebar_state: SessionSidebarState
@@ -93,6 +94,7 @@ export const sessionRows = rowReader<SessionRow>({
   origin: Schema.is(SessionOrigin),
   worktree_name: nullable(text),
   workspace_id: nullable(text),
+  checkout_id: optional(nullable(text)),
   created_at: text,
   updated_at: nullable(text),
   sidebar_state: Schema.is(SessionSidebarState),

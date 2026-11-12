@@ -134,6 +134,7 @@ public struct ServerWorkspace: Codable, Equatable, Sendable {
   public var updatedAt: String?
   public var git: ServerWorkspaceGit?
   public var mainSessionId: String?
+  public var defaultCheckoutId: String?
 
   public init(
     id: String,
@@ -149,9 +150,11 @@ public struct ServerWorkspace: Codable, Equatable, Sendable {
     sidebarPosition: String? = nil,
     sidebarOrderRevision: Int? = nil,
     git: ServerWorkspaceGit? = nil,
-    mainSessionId: String? = nil
+    mainSessionId: String? = nil,
+    defaultCheckoutId: String? = nil
   ) {
     self.mainSessionId = mainSessionId
+    self.defaultCheckoutId = defaultCheckoutId
     self.sidebarPosition = sidebarPosition
     self.sidebarOrderRevision = sidebarOrderRevision
     self.id = id
@@ -176,6 +179,8 @@ public struct ServerWorkspacePane: Codable, Equatable, Sendable {
   public var title: String
   public var resourceKind: String?
   public var resourceId: String?
+  public var resourceServerId: String?
+  public var checkoutId: String?
   public var metadata: String?
   public var revision: Int?
   public var position: String?
@@ -192,6 +197,8 @@ public struct ServerWorkspacePane: Codable, Equatable, Sendable {
     title: String,
     resourceKind: String? = nil,
     resourceId: String? = nil,
+    resourceServerId: String? = nil,
+    checkoutId: String? = nil,
     metadata: String? = nil,
     revision: Int? = nil,
     position: String? = nil,
@@ -208,6 +215,8 @@ public struct ServerWorkspacePane: Codable, Equatable, Sendable {
     self.title = title
     self.resourceKind = resourceKind
     self.resourceId = resourceId
+    self.resourceServerId = resourceServerId
+    self.checkoutId = checkoutId
     self.metadata = metadata
     self.revision = revision
     self.createdAt = createdAt

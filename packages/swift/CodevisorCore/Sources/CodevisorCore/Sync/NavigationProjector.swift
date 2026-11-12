@@ -19,6 +19,7 @@ final class NavigationProjector {
     var sessions: [ChatSession] = []
     var workspaces: [Workspace] = []
     var sessionIndex: [UUID: UUID] = [:]
+    var checkouts: [String: ServerCheckout] = [:]
   }
 
   private struct WorkspaceKey: Equatable {
@@ -66,6 +67,7 @@ final class NavigationProjector {
       projection.sessions += machine.sessions
       projection.workspaces += machine.workspaces
       projection.sessionIndex.merge(machine.sessionIndex) { _, new in new }
+      projection.checkouts.merge(machine.checkouts) { _, new in new }
     }
     machines = current
     var changed = Set<UUID>()
@@ -89,14 +91,10 @@ final class NavigationProjector {
     var records = NavigationRecords(cache)
     NavigationOverlay.apply(entries, to: &records)
     var machine = MachineProjection(projects: records.projects, sessions: records.sessions)
+    machine.checkouts = Dictionary(
+      records.checkouts.map { ($0.id.lowercased(), $0) }, uniquingKeysWith: { _, new in new })
     let panesByWorkspace = Dictionary(grouping: records.panes) { $0.workspaceId.lowercased() }
-    var worktreeNames: [UUID: String] = [:]
-    for session in records.sessions {
-      guard let name = session.worktreeName, let workspaceId = records.assignments[session.id],
-        worktreeNames[workspaceId] == nil
-      else { continue }
-      worktreeNames[workspaceId] = name
-    }
+    let worktreeNames = Self.worktreeNames(in: records)
     var serverWorkspaceIds = Set<UUID>()
     for record in records.workspaces {
       guard let id = UUID(uuidString: record.id) else { continue }
@@ -130,6 +128,22 @@ final class NavigationProjector {
       }
     }
     return machine
+  }
+
+  private static func worktreeNames(in records: NavigationRecords) -> [UUID: String] {
+    let mainSessionIds = Set(records.workspaces.compactMap { $0.mainSessionId.flatMap(UUID.init(uuidString:)) })
+    var names: [UUID: String] = [:]
+    var fromMain = Set<UUID>()
+    for session in records.sessions {
+      guard let workspaceId = records.assignments[session.id] else { continue }
+      if mainSessionIds.contains(session.id) {
+        names[workspaceId] = session.worktreeName
+        fromMain.insert(workspaceId)
+      } else if !fromMain.contains(workspaceId), names[workspaceId] == nil, let name = session.worktreeName {
+        names[workspaceId] = name
+      }
+    }
+    return names
   }
 
   private func fit(

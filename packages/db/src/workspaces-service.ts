@@ -9,10 +9,16 @@ import {
 } from "@codevisor/api"
 import type Database from "better-sqlite3"
 
+import { ensureCheckout, listCheckoutRows } from "./checkouts.js"
 import { attempt } from "./errors.js"
 import { canonicalUuid } from "./ids.js"
 import { reorderPanePositions } from "./pane-position.js"
-import { serializeLabels, workspaceFromRow, workspacePaneFromRow } from "./row-mappers.js"
+import {
+  checkoutFromRow,
+  serializeLabels,
+  workspaceFromRow,
+  workspacePaneFromRow
+} from "./row-mappers.js"
 import { rowReader, text } from "./row-reader.js"
 import { workspacePaneRows, workspaceRows, type WorkspaceRow } from "./rows.js"
 import { archivedStamp, type ServiceContext } from "./service-context.js"
@@ -53,6 +59,7 @@ export const upsertWorkspaceRow = (
       { id, serverId: config.serverId, projectId, position, stamp, now },
       request
     )
+    assignDefaultCheckout(sqlite, id, config.serverId, projectId, request.rootDirectory)
     if (archiveFlipped(existing, stamp)) retireWorkspaceTurns(sqlite, id, now)
   })()
   return readWorkspace(sqlite, id)
@@ -98,6 +105,13 @@ export const makeWorkspacesService = (
           sqlite
             .prepare(workspaceSql.update)
             .run(...workspaceUpdateParams(id, existing, request, stamp))
+          assignDefaultCheckout(
+            sqlite,
+            id,
+            existing.server_id,
+            existing.project_id,
+            request.rootDirectory
+          )
           if (archiveFlipped(existing, stamp)) retireWorkspaceTurns(sqlite, id, isoTimestamp())
         })()
         return readWorkspace(sqlite, id)
@@ -112,7 +126,8 @@ export const makeWorkspacesService = (
     getWorkspaceSnapshot: attempt("getWorkspaceSnapshot", () =>
       sqlite.transaction(() => ({
         workspaces: listWorkspaceRows(sqlite),
-        panes: panes.listWorkspacePanes(sqlite)
+        panes: panes.listWorkspacePanes(sqlite),
+        checkouts: listCheckoutRows(sqlite).map(checkoutFromRow)
       }))()
     ),
     listWorkspacePanes: attempt("listWorkspacePanes", () => panes.listWorkspacePanes(sqlite)),
@@ -152,6 +167,18 @@ interface WorkspaceWrite {
 
 export const readWorkspace = (sqlite: ServiceContext["sqlite"], id: string): Workspace =>
   workspaceFromRow(workspaceRows.one(sqlite.prepare(workspaceSql.byId).get(id)))
+
+const assignDefaultCheckout = (
+  sqlite: ServiceContext["sqlite"],
+  workspaceId: string,
+  serverId: string,
+  projectId: string,
+  rootDirectory: string | undefined
+): void => {
+  if (rootDirectory === undefined) return
+  const checkoutId = ensureCheckout(sqlite, { serverId, projectId, path: rootDirectory })
+  sqlite.prepare(workspaceSql.setDefaultCheckout).run(checkoutId, workspaceId)
+}
 
 const archiveFlipped = (existing: WorkspaceRow | undefined, stamp: string | null): boolean =>
   (existing?.is_archived === 1) !== (stamp !== null)
@@ -238,7 +265,8 @@ const workspaceSql = {
                sidebar_position = ?, sidebar_order_revision = ?,
                labels = case when ? then ? else labels end
              where id = ?`,
-  delete: "delete from workspaces where id = ?"
+  delete: "delete from workspaces where id = ?",
+  setDefaultCheckout: "update workspaces set default_checkout_id = ? where id = ?"
 }
 
 const orderedPanesSql =

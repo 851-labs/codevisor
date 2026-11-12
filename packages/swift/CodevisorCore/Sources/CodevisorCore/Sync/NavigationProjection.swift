@@ -6,6 +6,11 @@ public struct NavigationProjection: Sendable {
   public var workspaces: [Workspace] = []
   public var workspacesById: [UUID: Workspace] = [:]
   public var sessionIndex: [UUID: UUID] = [:]
+  public var checkouts: [String: ServerCheckout] = [:]
+
+  public func checkout(for session: ChatSession) -> ServerCheckout? {
+    session.checkoutId.flatMap { checkouts[$0.lowercased()] }
+  }
 
   public static let empty = NavigationProjection()
 }

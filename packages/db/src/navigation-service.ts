@@ -1,10 +1,11 @@
 import type { NavigationSnapshot } from "@codevisor/api"
 
+import { listCheckoutRows } from "./checkouts.js"
 import { cursorRows, idRows } from "./common-rows.js"
 import { attempt } from "./errors.js"
 import { jsonRecord, parseJsonRecord } from "./event-payloads.js"
 import { canonicalUuid } from "./ids.js"
-import { projectFromRow, sessionFromRow } from "./row-mappers.js"
+import { checkoutFromRow, projectFromRow, sessionFromRow } from "./row-mappers.js"
 import { rowReader, text } from "./row-reader.js"
 import { projectLocationRows, projectRows, sessionRows, type ProjectLocationRow } from "./rows.js"
 import type { ServiceContext } from "./service-context.js"
@@ -73,7 +74,8 @@ export const makeNavigationService = (context: ServiceContext) => ({
           )
         ),
         workspaces: listWorkspaceRows(sqlite),
-        panes: listWorkspacePanes(sqlite)
+        panes: listWorkspacePanes(sqlite),
+        checkouts: listCheckoutRows(sqlite).map(checkoutFromRow)
       }
     })()
   })

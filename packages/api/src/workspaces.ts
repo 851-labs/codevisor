@@ -1,5 +1,6 @@
 import { Schema } from "effect"
 
+import { Checkout } from "./checkouts.js"
 import { WorkspaceGit } from "./git-review.js"
 import { Labels } from "./labels.js"
 import { CreateSessionRequest, SessionSummary } from "./sessions.js"
@@ -20,7 +21,8 @@ export const Workspace = Schema.Struct({
   sidebarOrderRevision: Schema.optional(Schema.Number),
   labels: Schema.optional(Labels),
   git: Schema.optional(WorkspaceGit),
-  mainSessionId: Schema.optional(Schema.String)
+  mainSessionId: Schema.optional(Schema.String),
+  defaultCheckoutId: Schema.optional(Schema.String)
 })
 export type Workspace = typeof Workspace.Type
 
@@ -75,6 +77,8 @@ export const WorkspacePane = Schema.Struct({
   title: Schema.String,
   resourceKind: Schema.optional(Schema.String),
   resourceId: Schema.optional(Schema.String),
+  resourceServerId: Schema.optional(Schema.String),
+  checkoutId: Schema.optional(Schema.String),
   metadata: Schema.optional(Schema.String),
   liveTitle: Schema.optional(Schema.String),
   terminalActivity: Schema.optional(TerminalActivity),
@@ -87,7 +91,8 @@ export type WorkspacePane = typeof WorkspacePane.Type
 
 export const WorkspaceSnapshot = Schema.Struct({
   workspaces: Schema.Array(Workspace),
-  panes: Schema.Array(WorkspacePane)
+  panes: Schema.Array(WorkspacePane),
+  checkouts: Schema.Array(Checkout)
 })
 export type WorkspaceSnapshot = typeof WorkspaceSnapshot.Type
 
@@ -103,6 +108,8 @@ export const UpsertWorkspacePaneRequest = Schema.Struct({
   title: Schema.String,
   resourceKind: Schema.optional(Schema.String),
   resourceId: Schema.optional(Schema.String),
+  resourceServerId: Schema.optional(Schema.String),
+  checkoutId: Schema.optional(Schema.String),
   metadata: Schema.optional(Schema.String),
   createdAt: Schema.optional(Schema.String)
 })
