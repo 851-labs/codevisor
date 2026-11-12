@@ -175,7 +175,7 @@ final class ChatControllerCache {
     }
     return controller.pendingUserMessage != nil
       || controller.isSending
-      || controller.setupPhases.contains(where: \.isRunning)
+      || controller.isSettingUp
       || controller.isWaitingOnBackgroundTasks
   }
 

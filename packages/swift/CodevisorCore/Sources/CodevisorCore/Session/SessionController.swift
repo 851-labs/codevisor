@@ -178,8 +178,11 @@ final public class SessionController {
   public internal(set) var setupPhases: [SessionSetupPhase] = [] {
     didSet {
       if setupPhases != oldValue { transcriptProjectionRevision &+= 1 }
+      let running = setupPhases.contains(where: \.isRunning)
+      if running != isSettingUp { isSettingUp = running }
     }
   }
+  public private(set) var isSettingUp = false
   public internal(set) var showsNewChatAfterSetupFailure = false
   public var shouldShowNewChatComposer: Bool {
     showsNewChatAfterSetupFailure || (!hasSentFirst && onFirstSend != nil)

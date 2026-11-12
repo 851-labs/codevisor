@@ -23,6 +23,7 @@ struct SidebarWorkspaceRow: View {
 struct SidebarWorkspaceRowLabel: View {
   let name: String
   var subtitle: String? = nil
+  var status: SidebarRowStatus? = nil
   let icon: SidebarWorkspaceIcon
   let store: SessionStore?
 
@@ -37,11 +38,8 @@ struct SidebarWorkspaceRowLabel: View {
       VStack(alignment: .leading, spacing: 2) {
         Text(Self.title(for: name))
           .lineLimit(1)
-        if let subtitle {
-          Text(subtitle)
-            .font(.caption2)
-            .foregroundStyle(.secondary)
-            .lineLimit(1)
+        if subtitle != nil || status != nil {
+          SidebarWorkspaceRowSubtitle(subtitle: subtitle, status: status)
         }
       }
       .frame(maxWidth: .infinity, alignment: .leading)

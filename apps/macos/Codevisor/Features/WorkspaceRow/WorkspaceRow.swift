@@ -98,7 +98,9 @@ private struct WorkspaceRowLabel: View {
   let isArchived: Bool
 
   var body: some View {
-    SidebarWorkspaceRowLabel(name: details.name, subtitle: details.subtitle, icon: details.icon, store: store)
-      .opacity(isArchived ? WorkspaceRow.archivedOpacity : 1)
+    SidebarWorkspaceRowLabel(
+      name: details.name, subtitle: details.subtitle, status: details.status, icon: details.icon, store: store
+    )
+    .opacity(isArchived ? WorkspaceRow.archivedOpacity : 1)
   }
 }

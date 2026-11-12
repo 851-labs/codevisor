@@ -6,6 +6,7 @@ import SwiftUI
 struct SidebarWorkspaceSection: View, Equatable {
   struct Actions {
     let activate: @MainActor (SidebarWorkspaceListItem) -> Void
+    let openAsking: @MainActor (SidebarWorkspaceListItem) -> Void
     let commands: WorkspaceRowCommands
   }
 
@@ -13,6 +14,7 @@ struct SidebarWorkspaceSection: View, Equatable {
   let store: SessionStore?
   let grouping: SidebarGrouping
   let rowDetails: [SidebarRowDetail]
+  var status: SidebarRowStatus? = nil
   let isSelected: Bool
   let isPinned: Bool
   let headingNamesMachine: Bool
@@ -24,7 +26,8 @@ struct SidebarWorkspaceSection: View, Equatable {
 
   static func == (lhs: Self, rhs: Self) -> Bool {
     lhs.item == rhs.item && lhs.store === rhs.store && lhs.grouping == rhs.grouping
-      && lhs.rowDetails == rhs.rowDetails && lhs.isSelected == rhs.isSelected && lhs.isPinned == rhs.isPinned
+      && lhs.rowDetails == rhs.rowDetails && lhs.status == rhs.status && lhs.isSelected == rhs.isSelected
+      && lhs.isPinned == rhs.isPinned
       && lhs.headingNamesMachine == rhs.headingNamesMachine && lhs.isReordering == rhs.isReordering
       && lhs.sectionPlacement == rhs.sectionPlacement
       && lhs.sections == rhs.sections
@@ -36,16 +39,27 @@ struct SidebarWorkspaceSection: View, Equatable {
       let workspace = listItem.workspace
       SidebarWorkspaceRow(
         details: content.details(
-          for: listItem, isPinned: isPinned, headingNamesMachine: headingNamesMachine),
+          for: listItem, isPinned: isPinned, headingNamesMachine: headingNamesMachine, status: status),
         store: store,
         isSelected: isSelected,
         isReordering: isReordering,
-        onActivate: { actions.activate(listItem) },
+        onActivate: { activate(listItem, content: content) },
         lifecycle: .active(
           actions.commands.actions(
             for: item, workspace: workspace, isPinned: isPinned, sectionPlacement: sectionPlacement))
       )
     }
+  }
+
+  private func activate(_ listItem: SidebarWorkspaceListItem, content: SidebarRowContent) {
+    guard let asker = askingItem(content: content) else { return actions.activate(listItem) }
+    actions.openAsking(asker)
+  }
+
+  private func askingItem(content: SidebarRowContent) -> SidebarWorkspaceListItem? {
+    guard let askingID = status?.askingWorkspaceID, askingID != item.id else { return nil }
+    let source = SidebarRowStatusSource(environment: environment, store: store)
+    return source.item(askingID).flatMap { content.listItem(for: $0) }
   }
 }
 
@@ -75,12 +89,14 @@ struct SidebarRowContent {
   }
 
   func details(
-    for item: SidebarWorkspaceListItem, isPinned: Bool, headingNamesMachine: Bool, isQuiet: Bool = false
+    for item: SidebarWorkspaceListItem, isPinned: Bool, headingNamesMachine: Bool, isQuiet: Bool = false,
+    status: SidebarRowStatus? = nil
   ) -> WorkspaceRowDetails {
     let workspace = item.workspace
     return WorkspaceRowDetails(
       name: workspace.name,
       subtitle: subtitle(for: workspace, isPinned: isPinned),
+      status: status,
       icon: icon(for: item, isQuiet: isQuiet),
       pullRequest: pullRequest(for: workspace),
       machine: machine(for: workspace, headingNamesMachine: headingNamesMachine)

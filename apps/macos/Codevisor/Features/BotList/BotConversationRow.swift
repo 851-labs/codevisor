@@ -7,6 +7,7 @@ struct BotConversationRow: View {
 
   let conversation: BotConversation
   let isSelected: Bool
+  var status: SidebarRowStatus? = nil
 
   var body: some View {
     HoverableRow(isSelected: isSelected) { _ in
@@ -14,7 +15,7 @@ struct BotConversationRow: View {
         BotUnreadDot(isVisible: conversation.isUnread && !isSelected)
         avatar
         VStack(alignment: .leading, spacing: 2) {
-          BotConversationTitleLine(name: conversation.bot.name)
+          BotConversationTitleLine(name: conversation.bot.name, status: status)
           BotConversationPreview(conversation: conversation)
         }
       }

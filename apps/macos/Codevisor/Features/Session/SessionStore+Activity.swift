@@ -13,13 +13,17 @@ extension SessionStore {
 
   static func isActivelyWorking(_ controller: SessionController) -> Bool {
     (controller.isSending && !controller.isAwaitingAnswer)
-      || controller.setupPhases.contains(where: \.isRunning)
+      || controller.isSettingUp
   }
 
   static func isInProgress(_ controller: SessionController) -> Bool {
     controller.pendingUserMessage != nil
       || isActivelyWorking(controller)
       || controller.isWaitingOnBackgroundTasks
+  }
+
+  func isSettingUp(_ session: ChatSession) -> Bool {
+    controllers[SessionKey(session)]?.isSettingUp == true
   }
 
   func isWaitingOnUser(_ session: ChatSession) -> Bool {

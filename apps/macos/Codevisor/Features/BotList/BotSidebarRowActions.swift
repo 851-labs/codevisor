@@ -3,6 +3,7 @@ import Foundation
 
 struct BotSidebarRowActions {
   let select: (Bot) -> Void
+  let openAgent: (UUID) -> Void
   let edit: (Bot) -> Void
   let canFork: (Bot) -> Bool
   let fork: (Bot) -> Void
