@@ -3,13 +3,12 @@ import CodevisorCore
 import SwiftUI
 import TranscriptKit
 
-struct WorkedTimelineLine<Detail: View>: View {
+struct WorkedTimelineLine: View {
   let item: WorkedItem
   let isFirst: Bool
   let isLast: Bool
   let isTurnActive: Bool
   var awaitedAgents: [ToolCall] = []
-  let detail: (WorkedItem) -> Detail
 
   @State private var isHovering = false
   @State private var totalsCache = DiffTotalsCache()
@@ -92,8 +91,8 @@ struct WorkedTimelineLine<Detail: View>: View {
           ToolCallRow(call: call, isTurnActive: isTurnActive)
         }
       }
-    } else {
-      detail(item)
+    } else if case let .subagents(_, calls) = item {
+      TranscriptWorkedSubagents(calls: calls, isTurnActive: isTurnActive)
     }
   }
 }

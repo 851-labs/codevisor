@@ -33,7 +33,7 @@ struct WorkedSectionActivityTests {
       WorkedTimelineText.title(calls: [], agents: [map, audit], awaited: turn.awaitedAgentCalls)
         == "Waiting for Map the UI and Audit tests")
     #expect(
-      WorkedTimelineText.waiting(for: [map, audit, agent("Third", .inProgress)]) == "Waiting for 3 agents")
+      WorkedSectionActivity.waitingLabel(for: [map, audit, agent("Third", .inProgress)]) == "Waiting for 3 agents")
 
     let ran = agent("Map the UI", .completed)
     let launched = agent("Map the UI", .completed, background: true)

@@ -4,6 +4,7 @@ import MarkdownCore
 
 enum TranscriptWorkedSectionProjection {
   static let headerSpacingAfter: CGFloat = 12
+  static let lastLineSpacingAfter: CGFloat = 12
 
   @discardableResult
   static func append(
@@ -23,7 +24,7 @@ enum TranscriptWorkedSectionProjection {
     else { return false }
 
     let identity = TranscriptWorkedSectionIdentity(messageID: message.id, kind: kind)
-    appendHeader(message, kind: kind, lifecycle: lifecycle, identity: identity, to: &rows)
+    appendHeader(message, kind: kind, items: items, lifecycle: lifecycle, identity: identity, to: &rows)
 
     if deferredDetailID != nil {
       return true
@@ -36,10 +37,12 @@ enum TranscriptWorkedSectionProjection {
   private static func appendHeader(
     _ message: AssistantMessage,
     kind: TranscriptWorkedSectionKind,
+    items: [WorkedItem],
     lifecycle: TranscriptBlockLifecycle,
     identity: TranscriptWorkedSectionIdentity,
     to rows: inout [TranscriptPresentationRow]
   ) {
+    let header = TranscriptWorkedSectionHeader(message: message, kind: kind, items: items)
     rows.append(
       .init(
         id: workedHeaderID(
@@ -47,22 +50,24 @@ enum TranscriptWorkedSectionProjection {
           section: kind,
           lifecycle: lifecycle
         ),
-        content: workedHeaderContent(
-          message: message,
-          kind: kind,
-          lifecycle: lifecycle
-        ),
+        content: .workedHeader(header),
         estimatedHeight: 18,
-        measurementRevision: TranscriptMessageRowMetrics.measurementRevision(
-          for: .assistant(message),
-          waitingOnBackgroundTask: nil
-        ),
+        measurementRevision: settledMeasurementRevision(of: message, lifecycle: lifecycle) ?? 0,
         spacingAfter: headerSpacingAfter,
         workedSection: .init(
           identity: identity,
-          role: .header(defaultExpanded: false, isFixedExpanded: message.turn.workedSectionTicks(kind))
+          role: .header(defaultExpanded: false, isFixedExpanded: header.isWorking)
         )
       ))
+  }
+
+  static func settledMeasurementRevision(
+    of message: AssistantMessage,
+    lifecycle: TranscriptBlockLifecycle
+  ) -> Int? {
+    guard lifecycle == .settled else { return nil }
+
+    return TranscriptMessageRowMetrics.measurementRevision(for: .assistant(message), waitingOnBackgroundTask: nil)
   }
 
   private static func appendItems(
@@ -75,11 +80,9 @@ enum TranscriptWorkedSectionProjection {
   ) {
     let hasThinking = lifecycle == .receiving && message.turn.showsWorkedThinkingLine(kind)
     let earlierCount = items.earlierHistoryCount
+    let lines = TranscriptWorkedLineRowBuilder(message: message, kind: kind, lifecycle: lifecycle, identity: identity)
     if earlierCount > 0 {
-      appendWorkedItemRow(
-        message, kind: kind, itemID: WorkedItem.earlierHistoryLineID, estimatedHeight: 26,
-        lifecycle: lifecycle, identity: identity, role: .earlierHistoryToggle,
-        spacingAfter: 0, to: &rows)
+      rows.append(lines.earlierHistoryToggle(count: earlierCount))
     }
     for (index, item) in items.enumerated() {
       let isFirst = index == 0
@@ -91,16 +94,11 @@ enum TranscriptWorkedSectionProjection {
           isFirst: isFirst, isLast: isLast,
           lifecycle: lifecycle, identity: identity, role: role, to: &rows)
       } else {
-        appendWorkedItemRow(
-          message, kind: kind, itemID: item.id, estimatedHeight: 26,
-          lifecycle: lifecycle, identity: identity, role: role,
-          spacingAfter: isLast ? 12 : 0, to: &rows)
+        rows.append(lines.item(item, isFirst: isFirst, isLast: isLast, role: role))
       }
     }
     if hasThinking {
-      appendWorkedItemRow(
-        message, kind: kind, itemID: WorkedItem.thinkingLineID, estimatedHeight: 30,
-        lifecycle: lifecycle, identity: identity, role: .content, spacingAfter: 12, to: &rows)
+      rows.append(lines.thinking(isFirst: items.isEmpty))
     }
   }
 
@@ -154,49 +152,10 @@ enum TranscriptWorkedSectionProjection {
           content: .markdownChunk(projected),
           estimatedHeight: projected.estimatedHeight,
           measurementRevision: projected.measurementRevision,
-          spacingAfter: isLast && endsLine ? 12 : 0,
+          spacingAfter: isLast && endsLine ? lastLineSpacingAfter : 0,
           workedSection: .init(identity: identity, role: role)
         ))
     }
-  }
-
-  private static func appendWorkedItemRow(
-    _ message: AssistantMessage,
-    kind: TranscriptWorkedSectionKind,
-    itemID: String,
-    estimatedHeight: CGFloat,
-    lifecycle: TranscriptBlockLifecycle,
-    identity: TranscriptWorkedSectionIdentity,
-    role: TranscriptWorkedSectionRowRole,
-    spacingAfter: CGFloat,
-    to rows: inout [TranscriptPresentationRow]
-  ) {
-    let reference = TranscriptWorkedItemReference(
-      messageID: message.id,
-      section: kind,
-      itemID: itemID
-    )
-    rows.append(
-      .init(
-        id: workedItemID(
-          messageID: message.id,
-          section: kind,
-          itemID: itemID,
-          lifecycle: lifecycle
-        ),
-        content: workedItemContent(
-          message: message,
-          reference: reference,
-          lifecycle: lifecycle
-        ),
-        estimatedHeight: estimatedHeight,
-        measurementRevision: TranscriptMessageRowMetrics.measurementRevision(
-          for: .assistant(message),
-          waitingOnBackgroundTask: nil
-        ),
-        spacingAfter: spacingAfter,
-        workedSection: .init(identity: identity, role: role)
-      ))
   }
 
   private static func workedHeaderID(
@@ -207,42 +166,6 @@ enum TranscriptWorkedSectionProjection {
     switch lifecycle {
     case .receiving: .activeWorkedHeader(messageID, section)
     case .settled: .assistantWorkedHeader(messageID, section)
-    }
-  }
-
-  private static func workedItemID(
-    messageID: UUID,
-    section: TranscriptWorkedSectionKind,
-    itemID: String,
-    lifecycle: TranscriptBlockLifecycle
-  ) -> TranscriptPresentationRow.ID {
-    switch lifecycle {
-    case .receiving: .activeWorkedItem(messageID, section, itemID: itemID)
-    case .settled: .assistantWorkedItem(messageID, section, itemID: itemID)
-    }
-  }
-
-  private static func workedHeaderContent(
-    message: AssistantMessage,
-    kind: TranscriptWorkedSectionKind,
-    lifecycle: TranscriptBlockLifecycle
-  ) -> TranscriptPresentationRow.Content {
-    switch lifecycle {
-    case .receiving:
-      .activeWorkedHeader(.init(messageID: message.id, kind: kind))
-    case .settled:
-      .assistantWorkedHeader(.init(message: message, kind: kind))
-    }
-  }
-
-  private static func workedItemContent(
-    message: AssistantMessage,
-    reference: TranscriptWorkedItemReference,
-    lifecycle: TranscriptBlockLifecycle
-  ) -> TranscriptPresentationRow.Content {
-    switch lifecycle {
-    case .receiving: .activeWorkedItem(reference)
-    case .settled: .assistantWorkedItem(.init(message: message, reference: reference))
     }
   }
 }

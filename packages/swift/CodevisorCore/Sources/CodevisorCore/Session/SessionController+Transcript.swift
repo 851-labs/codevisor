@@ -13,7 +13,6 @@ extension SessionController {
     return TranscriptAutoResumeStamp.stamping(model?.autoResume, onto: model?.activeItem)
   }
   public var activeItemRevision: UInt64 { model?.activeItemRevision ?? 0 }
-  public var activeWorkedTicking: TranscriptActiveWorkedTicking? { model?.activeWorkedTicking }
   public var hasActiveItem: Bool { (model?.hasActiveItem ?? false) && !holdsTurnForConnection }
   public var transcriptProjectionKey: TranscriptProjectionKey {
     TranscriptProjectionKey(

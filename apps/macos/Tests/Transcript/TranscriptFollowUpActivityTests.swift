@@ -346,12 +346,10 @@ private final class ActivityFixture {
     rows: [TranscriptVirtualRow], activeRows: [TranscriptVirtualRow], rowsRevision: UInt64, activeRevision: UInt64,
     sendRequest: UserSendAnimationRequest? = nil
   ) {
-    let settledVisibility = TranscriptWorkedRowsVisibility.present(
-      rows, disclosure: controller.disclosure, activeItem: controller.activeItem
-    ).visibilityRevision
-    let activeVisibility = TranscriptWorkedRowsVisibility.present(
-      activeRows, disclosure: controller.disclosure, activeItem: controller.activeItem
-    ).visibilityRevision
+    let settledVisibility = TranscriptWorkedRowsVisibility.present(rows, disclosure: controller.disclosure)
+      .visibilityRevision
+    let activeVisibility = TranscriptWorkedRowsVisibility.present(activeRows, disclosure: controller.disclosure)
+      .visibilityRevision
     view.configure(
       TranscriptSurfaceInput(
         sessionController: controller, rows: rows, activeRows: activeRows,
@@ -453,7 +451,6 @@ private final class ActivityFixture {
       assistantTurn: { message, _, _, _ in AnyView(ActivityLeaf(turn: message.turn)) },
       userMessage: { AnyView(Text($0.text)) },
       botMessage: { message, _ in AnyView(Text(message.text)) },
-      workedItem: { _, _, _, _, _, _ in AnyView(EmptyView()) },
       attachmentThumbnail: { _ in AnyView(EmptyView()) },
       setup: { _ in AnyView(EmptyView()) },
       setupRequest: { _, _, _ in AnyView(EmptyView()) },

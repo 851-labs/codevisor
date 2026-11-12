@@ -44,26 +44,6 @@ public struct TranscriptWorkedSectionMembership: Sendable, Equatable {
   }
 }
 
-public struct TranscriptWorkedSectionHeader: Sendable, Equatable {
-  public let message: AssistantMessage
-  public let kind: TranscriptWorkedSectionKind
-
-  public init(message: AssistantMessage, kind: TranscriptWorkedSectionKind) {
-    self.message = message
-    self.kind = kind
-  }
-}
-
-public struct TranscriptActiveWorkedSectionHeader: Sendable, Equatable {
-  public let messageID: UUID
-  public let kind: TranscriptWorkedSectionKind
-
-  public init(messageID: UUID, kind: TranscriptWorkedSectionKind) {
-    self.messageID = messageID
-    self.kind = kind
-  }
-}
-
 public struct TranscriptWorkedItemReference: Sendable, Equatable {
   public let messageID: UUID
   public let section: TranscriptWorkedSectionKind
@@ -77,15 +57,5 @@ public struct TranscriptWorkedItemReference: Sendable, Equatable {
     self.messageID = messageID
     self.section = section
     self.itemID = itemID
-  }
-}
-
-public struct TranscriptSettledWorkedItem: Sendable, Equatable {
-  public let message: AssistantMessage
-  public let reference: TranscriptWorkedItemReference
-
-  public init(message: AssistantMessage, reference: TranscriptWorkedItemReference) {
-    self.message = message
-    self.reference = reference
   }
 }

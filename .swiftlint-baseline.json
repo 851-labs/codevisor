@@ -90,21 +90,6 @@
     }
   },
   {
-    "text": "  static func iOS(controller: SessionController) -> TranscriptRowLeaves {",
-    "violation": {
-      "location": {
-        "character": 10,
-        "file": "apps/ios/Codevisor/Features/Session/Transcript/TranscriptRowLeaves+iOS.swift",
-        "line": 9
-      },
-      "reason": "Function body should span 50 lines or less excluding comments and whitespace: currently spans 57 lines",
-      "ruleDescription": "Function bodies should not span too many lines",
-      "ruleIdentifier": "function_body_length",
-      "ruleName": "Function Body Length",
-      "severity": "error"
-    }
-  },
-  {
     "text": "  private func workedSection(",
     "violation": {
       "location": {
@@ -368,21 +353,6 @@
         "line": 283
       },
       "reason": "Function body should span 50 lines or less excluding comments and whitespace: currently spans 51 lines",
-      "ruleDescription": "Function bodies should not span too many lines",
-      "ruleIdentifier": "function_body_length",
-      "ruleName": "Function Body Length",
-      "severity": "error"
-    }
-  },
-  {
-    "text": "  static func macOS(",
-    "violation": {
-      "location": {
-        "character": 10,
-        "file": "apps/macos/Codevisor/Features/Session/Transcript/TranscriptRowLeaves+macOS.swift",
-        "line": 9
-      },
-      "reason": "Function body should span 50 lines or less excluding comments and whitespace: currently spans 58 lines",
       "ruleDescription": "Function bodies should not span too many lines",
       "ruleIdentifier": "function_body_length",
       "ruleName": "Function Body Length",
@@ -1718,21 +1688,6 @@
         "line": 215
       },
       "reason": "Function body should span 50 lines or less excluding comments and whitespace: currently spans 63 lines",
-      "ruleDescription": "Function bodies should not span too many lines",
-      "ruleIdentifier": "function_body_length",
-      "ruleName": "Function Body Length",
-      "severity": "error"
-    }
-  },
-  {
-    "text": "  public static func present(",
-    "violation": {
-      "location": {
-        "character": 17,
-        "file": "packages/swift/CodevisorUI/Sources/CodevisorUI/Transcript/TranscriptWorkedSectionHeaderView.swift",
-        "line": 82
-      },
-      "reason": "Function body should span 50 lines or less excluding comments and whitespace: currently spans 58 lines",
       "ruleDescription": "Function bodies should not span too many lines",
       "ruleIdentifier": "function_body_length",
       "ruleName": "Function Body Length",

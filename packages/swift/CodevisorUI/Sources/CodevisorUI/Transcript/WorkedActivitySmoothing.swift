@@ -1,5 +1,6 @@
 import Foundation
 import SwiftUI
+import TranscriptKit
 
 struct WorkedActivitySmoothing: ViewModifier {
   let activity: WorkedSectionActivity

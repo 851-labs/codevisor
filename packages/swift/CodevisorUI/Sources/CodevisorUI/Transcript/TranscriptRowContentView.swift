@@ -31,15 +31,6 @@ public struct TranscriptRowLeaves {
     ) -> AnyView
   public var userMessage: (_ message: UserMessage) -> AnyView
   public var botMessage: (_ message: TranscriptBotMessage, _ content: TranscriptBotMessageContent) -> AnyView
-  public var workedItem:
-    (
-      _ item: WorkedItem,
-      _ turn: AssistantTurn,
-      _ turnID: UUID,
-      _ isTurnActive: Bool,
-      _ animationPresentation: StreamingTextAnimationPresentation,
-      _ animationEnabled: Bool
-    ) -> AnyView
   public var attachmentThumbnail: (_ file: PreviewFile) -> AnyView
   public var setup: (_ phases: [SessionSetupPhase]) -> AnyView
   public var setupRequest:
@@ -55,8 +46,6 @@ public struct TranscriptRowLeaves {
     assistantTurn: @escaping (AssistantMessage, Bool, String?, AssistantTurnPresentation) -> AnyView,
     userMessage: @escaping (UserMessage) -> AnyView,
     botMessage: @escaping (TranscriptBotMessage, TranscriptBotMessageContent) -> AnyView,
-    workedItem:
-      @escaping (WorkedItem, AssistantTurn, UUID, Bool, StreamingTextAnimationPresentation, Bool) -> AnyView,
     attachmentThumbnail: @escaping (PreviewFile) -> AnyView,
     setup: @escaping ([SessionSetupPhase]) -> AnyView,
     setupRequest: @escaping (TranscriptSetupRequest, Bool, SessionController) -> AnyView,
@@ -68,7 +57,6 @@ public struct TranscriptRowLeaves {
     self.assistantTurn = assistantTurn
     self.userMessage = userMessage
     self.botMessage = botMessage
-    self.workedItem = workedItem
     self.attachmentThumbnail = attachmentThumbnail
     self.setup = setup
     self.setupRequest = setupRequest
@@ -113,20 +101,10 @@ public struct TranscriptRowContentView: View {
       PlanDocumentHeaderView()
     case let .assistantResult(message, waitingOnBackgroundTask):
       leaves.assistantTurn(message, isWaitingOnUser, waitingOnBackgroundTask, .response)
-    case let .assistantWorkedHeader(header):
-      TranscriptSettledWorkedHeaderRow(header: header)
-    case let .activeWorkedHeader(header):
-      TranscriptActiveWorkedHeaderRow(controller: controller, header: header)
-    case let .assistantWorkedItem(item):
-      TranscriptSettledWorkedItemPresentation(item: item) {
-        item, turn, turnID, isTurnActive, animationPresentation, animationEnabled in
-        leaves.workedItem(item, turn, turnID, isTurnActive, animationPresentation, animationEnabled)
-      }
-    case let .activeWorkedItem(reference):
-      TranscriptActiveWorkedItemPresentation(controller: controller, reference: reference) {
-        item, turn, turnID, isTurnActive, animationPresentation, animationEnabled in
-        leaves.workedItem(item, turn, turnID, isTurnActive, animationPresentation, animationEnabled)
-      }
+    case let .workedHeader(header):
+      TranscriptWorkedSectionHeaderView(header: header)
+    case let .workedLine(line):
+      TranscriptWorkedLineRow(line: line)
     case let .assistantChrome(message, slice, waitingOnBackgroundTask):
       leaves.assistantTurn(
         message, isWaitingOnUser, waitingOnBackgroundTask, AssistantTurnPresentation(chromeSlice: slice)

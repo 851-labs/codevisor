@@ -26,16 +26,14 @@ struct TranscriptWorkedRowsVisibilityTests {
 
     let initiallyExpanded = TranscriptWorkedRowsVisibility.present(
       rows,
-      disclosure: store,
-      activeItem: .assistant(message)
+      disclosure: store
     )
     #expect(initiallyExpanded.rows.contains(where: isWorkedContent))
 
     store.setExpanded(.turn(messageID), false)
     let collapsed = TranscriptWorkedRowsVisibility.present(
       rows,
-      disclosure: store,
-      activeItem: .assistant(message)
+      disclosure: store
     )
 
     #expect(collapsed.rows.contains { $0.id == .assistantWorkedHeader(messageID, .planning) })
@@ -65,8 +63,7 @@ struct TranscriptWorkedRowsVisibilityTests {
     #expect(!liveStreams.isEmpty)
     let store = TranscriptDisclosureStore()
     func present() -> TranscriptWorkedRowsPresentation {
-      TranscriptWorkedRowsVisibility.present(
-        rows, disclosure: store, activeItem: .assistant(message))
+      TranscriptWorkedRowsVisibility.present(rows, disclosure: store)
     }
 
     store.setExpanded(.turn(messageID), false)
@@ -93,12 +90,11 @@ struct TranscriptWorkedRowsVisibilityTests {
     func visibleWorkedIDs() -> [String] {
       TranscriptWorkedRowsVisibility.present(
         TranscriptActiveRowProjection.rows(for: .assistant(message)),
-        disclosure: store,
-        activeItem: .assistant(message)
+        disclosure: store
       ).rows.compactMap { row in
         guard row.workedSection?.role.isContent == true else { return nil }
         if case let .markdownChunk(chunk) = row.content { return chunk.animationSourceID }
-        if case let .activeWorkedItem(reference) = row.content { return reference.itemID }
+        if case let .workedLine(line) = row.content { return line.reference.itemID }
         return nil
       }
     }
