@@ -188,7 +188,8 @@ const refuseNewPaneInBotWorkspace = async (
   await assertNotOwnedByBot(
     services,
     { workspaceId: ids.workspaceId },
-    "open a new tab in this workspace"
+    "add a pane to this workspace",
+    "A bot conversation shows splits only, and each device keeps its own. Attach the file to a message, or open the pane in the workspace of an agent you started."
   )
 }
 

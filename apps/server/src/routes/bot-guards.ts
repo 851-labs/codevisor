@@ -5,10 +5,12 @@ import { HttpFailure, run, type CodevisorServerServices } from "../server-contex
 export const assertNotOwnedByBot = async (
   services: CodevisorServerServices,
   query: BotOwnerQuery,
-  action: string
+  action: string,
+  remedy?: string
 ): Promise<void> => {
   const bot = await run(services.db.findBotOwning(query))
-  if (bot !== undefined) {
-    throw new HttpFailure(409, `Cannot ${action}: it belongs to the bot ${bot.name}`)
-  }
+  if (bot === undefined) return
+
+  const refusal = `Cannot ${action}: it belongs to the bot ${bot.name}`
+  throw new HttpFailure(409, remedy === undefined ? refusal : `${refusal}. ${remedy}`)
 }

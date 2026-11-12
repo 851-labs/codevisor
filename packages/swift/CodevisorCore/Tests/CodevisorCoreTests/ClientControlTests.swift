@@ -29,7 +29,11 @@ struct ClientControlTests {
     )
     let response = await ClientControlConnection.handle(
       .init(requestId: "request", method: "navigate", navigation: request),
-      context: { .capture(repository: repository, serverId: "machine", workspaceId: workspace.id, isActive: true) },
+      context: {
+        .capture(
+          repository: repository, serverId: "machine", workspaceId: workspace.id, isActive: true,
+          layoutMode: { _ in .tabsAndSplits })
+      },
       navigate: { repository.save(try $0.applying(to: workspace)) }
     )
     #expect(response.error == nil)
@@ -46,7 +50,8 @@ struct ClientControlTests {
   func machineScope() {
     let (repository, workspace, _) = fixture()
     let other = NativeClientContext.capture(
-      repository: repository, serverId: "other", workspaceId: workspace.id, isActive: false
+      repository: repository, serverId: "other", workspaceId: workspace.id, isActive: false,
+      layoutMode: { _ in .tabsAndSplits }
     )
     #expect(other.workspaceId == nil)
     #expect(other.workspaces.isEmpty)
@@ -62,7 +67,11 @@ struct ClientControlTests {
     ] {
       let response = await ClientControlConnection.handle(
         .init(requestId: "request", method: "navigate", navigation: request),
-        context: { .capture(repository: repository, serverId: "machine", workspaceId: nil, isActive: true) },
+        context: {
+          .capture(
+            repository: repository, serverId: "machine", workspaceId: nil, isActive: true,
+            layoutMode: { _ in .tabsAndSplits })
+        },
         navigate: { repository.save(try $0.applying(to: workspace)) }
       )
       #expect(response.context == nil)
@@ -85,7 +94,9 @@ struct ClientControlTests {
         command,
         context: {
           #expect(handled.last == command.method)
-          return .capture(repository: repository, serverId: "machine", workspaceId: workspace.id, isActive: true)
+          return .capture(
+            repository: repository, serverId: "machine", workspaceId: workspace.id, isActive: true,
+            layoutMode: { _ in .tabsAndSplits })
         },
         navigate: { _ in Issue.record("UI control must not implicitly navigate") },
         control: { action in
@@ -93,7 +104,7 @@ struct ClientControlTests {
           case .page(let request): #expect(request.section == "mcps"); handled.append("page")
           case .window(let request): #expect(request.action == "minimize"); handled.append("window")
           case .layout(let request):
-            repository.save(try request.applying(to: workspace, compact: false)); handled.append("layout")
+            repository.save(try request.applying(to: workspace, mode: .tabsAndSplits)); handled.append("layout")
           }
         }
       )

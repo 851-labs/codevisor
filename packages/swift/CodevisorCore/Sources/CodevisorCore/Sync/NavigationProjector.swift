@@ -146,13 +146,14 @@ final class NavigationProjector {
     }
     WorkspacePaneReconciler(records: key.panes, protectedLocalPaneIds: localPaneIds(of: workspace, layouts: layouts))
       .reconcile(&workspace)
+    if layouts.isBotWorkspace(workspace.id) { workspace.foldTabsIntoSplits() }
     let layout = DeviceLayout(workspace)
     if layout != stored { layouts.setLayout(layout, for: workspace.id) }
     return workspace
   }
 
   private func localPaneIds(of workspace: Workspace, layouts: DeviceLayoutStore) -> Set<UUID> {
-    guard layouts.localPaneWorkspaceIds.contains(workspace.id) else { return [] }
+    guard layouts.isBotWorkspace(workspace.id) else { return [] }
     return Set(workspace.allPanes.map(\.id))
   }
 }

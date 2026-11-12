@@ -13,12 +13,12 @@ struct ClientLayoutTests {
   }
 
   private func apply(
-    _ action: [String: Any], to workspace: Workspace, compact: Bool = false, focus: Bool? = nil
+    _ action: [String: Any], to workspace: Workspace, mode: ClientLayoutMode = .tabsAndSplits, focus: Bool? = nil
   ) throws -> Workspace {
     var body: [String: Any] = ["workspaceId": workspace.id.uuidString, "action": action]
     if let focus { body["focus"] = focus }
     let data = try JSONSerialization.data(withJSONObject: body)
-    return try JSONDecoder().decode(ClientLayoutRequest.self, from: data).applying(to: workspace, compact: compact)
+    return try JSONDecoder().decode(ClientLayoutRequest.self, from: data).applying(to: workspace, mode: mode)
   }
 
   @Test("Split, resize, move and detach preserve existing pane and leaf identities")
@@ -83,10 +83,10 @@ struct ClientLayoutTests {
   @Test("Compact clients create and reorder tabs without changing content")
   func compactTabs() throws {
     let original = workspace()
-    var value = try apply(["kind": "new_tab"], to: original, compact: true)
+    var value = try apply(["kind": "new_tab"], to: original, mode: .tabs)
     let selected = value.selectedCenterTabId
     let ids = value.centerTabs.reversed().map { $0.id.uuidString }
-    value = try apply(["kind": "reorder_tabs", "tabIds": ids], to: value, compact: true)
+    value = try apply(["kind": "reorder_tabs", "tabIds": ids], to: value, mode: .tabs)
     #expect(value.centerTabs.map { $0.id.uuidString } == ids)
     #expect(value.selectedCenterTabId == selected)
     for action: [String: Any] in [
@@ -94,8 +94,71 @@ struct ClientLayoutTests {
       ["kind": "reorder_tabs", "tabIds": [ids[0]]],
       ["kind": "split", "leafId": value.centerTabs[0].activeLeafId.uuidString, "edge": "trailing"],
     ] {
-      #expect(throws: ClientControlError.self) { try apply(action, to: value, compact: true) }
+      #expect(throws: ClientControlError.self) { try apply(action, to: value, mode: .tabs) }
     }
+  }
+
+  @Test("A bot conversation on a Mac splits, moves and resizes, and refuses every action that would add a tab")
+  func botSplitsOnly() throws {
+    let original = workspace()
+    let first = original.centerTabs[0].activeLeafId
+    var value = try apply(
+      ["kind": "split", "leafId": first.uuidString, "edge": "trailing"], to: original, mode: .splits)
+    let second = try #require(value.centerTree.allGroups.last?.id)
+    value = try apply(
+      ["kind": "move", "leafId": second.uuidString, "targetLeafId": first.uuidString, "edge": "bottom"], to: value,
+      mode: .splits)
+    value = try apply(
+      [
+        "kind": "resize", "tabId": value.centerTabs[0].id.uuidString, "branchPath": [], "fractions": [0.3, 0.7],
+        "expectedChildren": [[first.uuidString], [second.uuidString]],
+      ], to: value, mode: .splits)
+    #expect(value.centerTabs.count == 1)
+    #expect(value.centerTree.clientSplit(at: [])?.children.map(\.fraction) == [0.3, 0.7])
+
+    let refusals: [(action: [String: Any], message: String)] = [
+      (["kind": "new_tab"], "Bot conversations show splits only; use split instead of new_tab."),
+      (
+        ["kind": "detach", "leafId": second.uuidString],
+        "Bot conversations show splits only; use move to rearrange the pane instead of detach."
+      ),
+      (
+        ["kind": "reorder_tabs", "tabIds": [value.centerTabs[0].id.uuidString]],
+        "Bot conversations show splits only, so there are no tabs to reorder."
+      ),
+    ]
+    for refusal in refusals {
+      let error = #expect(throws: ClientControlError.self) { try apply(refusal.action, to: value, mode: .splits) }
+      #expect(error?.message == refusal.message)
+    }
+  }
+
+  @Test("A bot conversation on iOS, shown on its own, refuses every layout action")
+  func botConversationOnly() {
+    let original = workspace()
+    let split: [String: Any] = [
+      "kind": "split", "leafId": original.centerTabs[0].activeLeafId.uuidString, "edge": "top",
+    ]
+    for action in [["kind": "new_tab"], split] {
+      #expect(throws: ClientControlError.self) { try apply(action, to: original, mode: .conversation) }
+    }
+  }
+
+  @Test("Context lists each workspace's own layout actions: splits only for a bot's")
+  func botContext() {
+    let ordinary = workspace()
+    let bot = workspace()
+    let repository = NavigationFixture().workspaces
+    repository.save(ordinary)
+    repository.save(bot)
+
+    let context = NativeClientContext.capture(
+      repository: repository, serverId: "machine", workspaceId: bot.id, isActive: true,
+      layoutMode: { $0.id == bot.id ? .splits : .tabsAndSplits })
+
+    let actions = Dictionary(uniqueKeysWithValues: context.workspaces.map { ($0.id, $0.layoutActions) })
+    #expect(actions[bot.id] == ["split", "move", "resize"])
+    #expect(actions[ordinary.id] == ["new_tab", "reorder_tabs", "split", "move", "detach", "resize"])
   }
 
   @Test("Rejects invalid changes and changes to archived workspaces")
@@ -124,7 +187,8 @@ struct ClientLayoutTests {
     let repository = NavigationFixture().workspaces
     repository.save(value)
     let context = NativeClientContext.capture(
-      repository: repository, serverId: "machine", workspaceId: value.id, isActive: true)
+      repository: repository, serverId: "machine", workspaceId: value.id, isActive: true,
+      layoutMode: { _ in .tabsAndSplits })
     let tab = try #require(context.workspaces.first?.tabs.first)
     #expect(tab.panes.map(\.leafId) == value.centerTree.allGroups.map { Optional($0.id) })
     #expect(tab.splits?.first?.children == value.centerTree.allGroups.map { [$0.id] })

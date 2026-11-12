@@ -80,6 +80,10 @@ public final class DeviceLayoutStore: @unchecked Sendable {
     lock.withLock { payload.localPaneWorkspaceIds ?? [] }
   }
 
+  func isBotWorkspace(_ workspaceId: UUID) -> Bool {
+    localPaneWorkspaceIds.contains(workspaceId)
+  }
+
   public var drafts: [WorkspaceDraft] {
     lock.withLock { Array(payload.drafts.values) }
   }

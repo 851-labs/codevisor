@@ -10,12 +10,13 @@ A **client** is one open Codevisor window: a macOS window or the iOS app. The us
 ```js
 ;async () => machines.current.clients.list()
 // { items: [{ clientId, name, platform: "macos" | "ios", machine, online, isOrigin, lastActiveAt?,
-//    viewing: { workspaceId?, agentId?, page?, panes? }, capabilities? }] }
+//    viewing: { workspaceId?, agentId?, page?, panes?, layoutActions? }, capabilities? }] }
 ```
 
 - `isOrigin` marks the window that sent the message you're handling now. Automations and agents started by other agents have **no** origin, so don't assume one exists.
 - `viewing` is what the window currently shows. It is absent when the window didn't answer in time; the window can still be addressed.
 - `capabilities` says what the window supports. iOS has no free window geometry, for example.
+- `viewing.layoutActions` (and each workspace's `layoutActions` in `c.context()`) says which `layout` actions that workspace takes. It overrides `capabilities.layoutActions`.
 
 Usually the right client is the origin, or the most recently active window on the device the user is using. Avoid acting on every client at once: panes appearing on the user's phone are rarely wanted.
 
@@ -41,6 +42,11 @@ Usually the right client is the origin, or the most recently active window on th
 - `c.navigate({ workspaceId, destination?: { kind: "chat" | "tab" | "pane" | "leaf", id } })`: open or select.
 - `c.openPage({ page, … })`: home, a new chat, or settings.
 - `c.layout({ action, … })`: new_tab, split, move, detach, resize, reorder_tabs. Panes are created in the background unless you pass `focus: true`.
+
+### Bot conversations show splits only
+
+A bot's conversation has no tabs. On a Mac its workspace has one tab: the conversation, with splits beside it. Only `split`, `move`, and `resize` work there; `new_tab`, `detach`, and `reorder_tabs` are refused with an error naming the action to use instead. On iOS a bot shows its conversation alone, so its workspace takes no `layout` actions. Never tell the user about a tab in a bot's conversation.
+
 - `c.window({ action, … })`: focus, minimize, fullscreen, frame, sidebar.
 
 These are methods of the machine the app is attached to. Clients on another machine: `(await machines.get("macbook")).clients.list()`.
@@ -67,7 +73,7 @@ Panes are shared workspace content: a pane you add opens as its own tab on every
 
 - `paneId` must be a new UUID. The call accepts any string, but the apps skip a pane whose id isn't a UUID. The sandbox has no `crypto`, so build the UUID yourself as above.
 - Built-in panes use `providerId: "codevisor"` and `paneType` `chat`, `terminal`, `browser`, or `markdown`. A chat references `resourceKind: "session"` and its agent id; markdown references `resourceKind: "file"` and an absolute path.
-- If you are a bot, your own workspace shows only your chat, so `pane_upsert` refuses a new pane there with a 409. Attach the file to a `messages.send` message instead, or open the pane in the workspace of an agent you started. Every other workspace, including those of agents a bot started, takes new panes as usual.
+- If you are a bot, your own workspace keeps its splits on each device, so `pane_upsert` refuses a new pane there with a 409. Attach the file to a `messages.send` message instead, or open the pane in the workspace of an agent you started. Every other workspace, including those of agents a bot started, takes new panes as usual.
 - `workspaces.pane_close({ workspaceId, paneId })` removes it everywhere. To select it in one window, call `c.navigate` with `destination: { kind: "pane", id: paneId }`.
 
 ## Disconnects

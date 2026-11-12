@@ -2,7 +2,7 @@ import CodevisorCore
 
 enum WorkspaceLayoutPolicy {
   static func isTabless(_ workspace: Workspace, environment: AppEnvironment) -> Bool {
-    environment.bots.bot(forWorkspace: workspace.id, serverId: workspace.serverId) != nil
+    environment.bots.ownsWorkspace(workspace)
   }
 
   static func isSplit(_ workspace: Workspace) -> Bool {

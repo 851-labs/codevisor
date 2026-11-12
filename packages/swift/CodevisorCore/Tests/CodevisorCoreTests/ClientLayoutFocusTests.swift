@@ -25,12 +25,12 @@ struct ClientLayoutFocusTests {
   }
 
   private func apply(
-    _ action: [String: Any], to workspace: Workspace, compact: Bool = false, focus: Bool?
+    _ action: [String: Any], to workspace: Workspace, mode: ClientLayoutMode = .tabsAndSplits, focus: Bool?
   ) throws -> Workspace {
     var body: [String: Any] = ["workspaceId": workspace.id.uuidString, "action": action]
     if let focus { body["focus"] = focus }
     let data = try JSONSerialization.data(withJSONObject: body)
-    return try JSONDecoder().decode(ClientLayoutRequest.self, from: data).applying(to: workspace, compact: compact)
+    return try JSONDecoder().decode(ClientLayoutRequest.self, from: data).applying(to: workspace, mode: mode)
   }
 
   @Test(
@@ -47,10 +47,11 @@ struct ClientLayoutFocusTests {
     let repository = NavigationFixture().workspaces
     var updated = original
     for _ in 0..<3 {
-      updated = try apply(["kind": "new_tab"], to: updated, compact: compact, focus: focus)
+      updated = try apply(["kind": "new_tab"], to: updated, mode: ClientLayoutMode(compact: compact), focus: focus)
       repository.save(updated)
       let context = NativeClientContext.capture(
-        repository: repository, serverId: "machine", workspaceId: updated.id, isActive: true)
+        repository: repository, serverId: "machine", workspaceId: updated.id, isActive: true,
+        layoutMode: { _ in .tabsAndSplits })
       let surface = try #require(context.workspaces.first)
       if focus == true {
         #expect(surface.tabId == updated.centerTabs.last?.id)

@@ -163,7 +163,7 @@ declare function status(text: string): void // live progress label shown to the 
 interface Client {
   clientId: string; name: string; platform: "macos" | "ios"; machine: { machineId: string; name: string }
   online?: boolean; isActive?: boolean; lastActiveAt?: string; isOrigin: boolean // isOrigin: the window that sent this prompt; false for every client when an automation or another agent sent it
-  viewing?: { workspaceId?: string; agentId?: string; page?: string; panes?: object[] } // panes: the selected tab's panes
+  viewing?: { workspaceId?: string; agentId?: string; page?: string; panes?: object[]; layoutActions?: string[] } // panes: the selected tab's panes; layoutActions: what layout() takes there (a bot conversation: splits only)
   context(): Promise<object>; navigate(args: object): Promise<object>; openPage(args: object): Promise<object>; layout(args: object): Promise<object>; window(args: object): Promise<object>
 }
 declare class MachineUnavailableError extends Error { machineId: string; machineName?: string; lastSeen?: string; phase: "before-send" | "in-flight" } // in-flight: the call may or may not have completed; never retried automatically

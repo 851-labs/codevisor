@@ -10,6 +10,10 @@ extension HomeView {
     layoutMode == .stack || !Self.rendersSplitLayouts
   }
 
+  func clientLayoutMode(_ workspace: Workspace) -> ClientLayoutMode {
+    environment.bots.ownsWorkspace(workspace) ? .conversation : ClientLayoutMode(compact: clientLayoutIsCompact)
+  }
+
   func clientControlContext(serverId: String) -> NativeClientContext {
     let workspaceId: UUID?
     if let presented = navigation.presentedWorkspace, presented.serverId == serverId {
@@ -19,7 +23,8 @@ extension HomeView {
     }
     var context = NativeClientContext.capture(
       repository: environment.workspaces, serverId: serverId,
-      workspaceId: workspaceId, isActive: scenePhase == .active
+      workspaceId: workspaceId, isActive: scenePhase == .active,
+      layoutMode: clientLayoutMode
     )
     context.capabilities = ClientCapabilities(
       settingsSections: SettingsSheet.clientSections, compact: clientLayoutIsCompact)
@@ -76,7 +81,7 @@ extension HomeView {
       else {
         throw ClientControlError("Workspace is unavailable on this machine")
       }
-      let updated = try request.applying(to: workspace, compact: clientLayoutIsCompact)
+      let updated = try request.applying(to: workspace, mode: clientLayoutMode(workspace))
       environment.workspaces.save(updated)
       let oldIds = Set(workspace.centerTabs.flatMap { $0.root.allGroups.flatMap { $0.state.panes.map(\.id) } })
       for pane in updated.centerTabs.flatMap({ $0.root.allGroups.flatMap(\.state.panes) })

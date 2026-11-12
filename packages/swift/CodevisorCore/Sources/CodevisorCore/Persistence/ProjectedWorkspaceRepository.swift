@@ -50,6 +50,7 @@ public final class ProjectedWorkspaceRepository: WorkspaceRepository, @unchecked
     var updated = current
     updated.centerTabs = workspace.centerTabs
     updated.selectedCenterTabId = workspace.selectedCenterTabId
+    if layouts.isBotWorkspace(updated.id) { updated.foldTabsIntoSplits() }
     lock.withLock {
       workspacesById[updated.id] = updated
       if let index = ordered.firstIndex(where: { $0.id == updated.id }) { ordered[index] = updated }

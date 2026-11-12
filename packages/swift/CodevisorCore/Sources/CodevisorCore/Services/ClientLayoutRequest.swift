@@ -16,13 +16,11 @@ public struct ClientLayoutRequest: Codable, Sendable {
   public var action: Action
   public var focus: Bool?
 
-  public func applying(to original: Workspace, compact: Bool) throws -> Workspace {
+  public func applying(to original: Workspace, mode: ClientLayoutMode) throws -> Workspace {
     guard original.id == workspaceId, !original.isArchived else {
       throw ClientControlError("Workspace is unavailable")
     }
-    guard ClientCapabilities(settingsSections: [], compact: compact).layoutActions.contains(action.kind) else {
-      throw ClientControlError("Layout action is unsupported on this client")
-    }
+    guard mode.actions.contains(action.kind) else { throw mode.rejection(of: action.kind) }
     var workspace = original
     switch action.kind {
     case "new_tab":

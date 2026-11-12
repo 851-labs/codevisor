@@ -72,6 +72,7 @@ public struct NativeClientContext: Codable, Sendable {
     public var paneId: UUID?
     public var sessionId: UUID?
     public var tabs: [Tab]
+    public var layoutActions: [String]
   }
   public var isActive: Bool
   public var workspaceId: UUID?
@@ -84,7 +85,8 @@ public struct NativeClientContext: Codable, Sendable {
     repository: any WorkspaceRepository,
     serverId: String,
     workspaceId: UUID?,
-    isActive: Bool
+    isActive: Bool,
+    layoutMode: (Workspace) -> ClientLayoutMode
   ) -> Self {
     let surfaces = repository.loadAll().filter { $0.serverId == serverId && !$0.isArchived }
     return Self(
@@ -103,7 +105,8 @@ public struct NativeClientContext: Codable, Sendable {
               panes: tab.root.allGroups.flatMap { group in group.state.panes.map { Pane($0, leafId: group.id) } },
               activeLeafId: tab.activeLeafId, splits: splits(in: tab.root)
             )
-          }
+          },
+          layoutActions: layoutMode(workspace).actions
         )
       }
     )
