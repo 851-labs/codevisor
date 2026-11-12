@@ -13,12 +13,10 @@ private struct NewTabOption: Identifiable, Equatable {
     case screenSharing
     case simulator
     case plugin(pluginId: String, paneType: String)
-    case agentChat(NewPaneAgentChats.Chat)
 
     var systemImage: String {
       switch self {
       case .chat: "text.bubble"
-      case .agentChat: "bubble.left.and.bubble.right"
       case .browser: "globe"
       case .screenSharing: "display"
       case .simulator: "iphone"
@@ -41,7 +39,7 @@ struct NewTabPageView: View {
   let paneId: UUID
   let group: PaneGroupModel?
   var onNewChat: (() -> Void)? = nil
-  var agentChats: NewPaneAgentChats? = nil
+  var offersSideChat = true
   var client: (any CodevisorServerClienting)? = nil
   var iconCacheNamespace = "preview"
   var machineId: String? = nil
@@ -72,18 +70,11 @@ struct NewTabPageView: View {
       + (supportsScreenSharing ? [screenSharingOption] : [])
       + (supportsSimulator ? [simulatorOption] : [])
       + pluginOptions
-      + agentChatOptions
   }
 
   private var sideChatOptions: [NewTabOption] {
-    guard agentChats == nil else { return [] }
+    guard offersSideChat else { return [] }
     return [NewTabOption(id: "chat", title: "Side Chat", kind: .chat, searchTerms: ["New Chat"])]
-  }
-
-  private var agentChatOptions: [NewTabOption] {
-    (agentChats?.chats ?? []).map { chat in
-      NewTabOption(id: "agent:\(chat.id)", title: chat.name, kind: .agentChat(chat), searchTerms: ["Agent Chat"])
-    }
   }
 
   private let screenSharingOption = NewTabOption(
@@ -167,8 +158,6 @@ struct NewTabPageView: View {
       group?.convertNewTabPane(id: paneId, to: .review)
     case .terminal:
       group?.convertNewTabPane(id: paneId, to: .terminal)
-    case let .agentChat(chat):
-      agentChats?.open(chat)
     case let .plugin(pluginId, paneType):
       group?.convertNewTabPane(
         id: paneId,

@@ -213,7 +213,7 @@ struct HomeSidebarContentBuilder {
       return "New Tab"
     case .browser:
       return BrowserPaneCache.shared.localTitle(paneId: pane.id) ?? pane.name
-    case .terminal, .plugin, .document, .screenSharing, .subagent, .review, .simulator, .transcript, .childAgent:
+    case .terminal, .plugin, .document, .screenSharing, .subagent, .review, .simulator, .transcript:
       return pane.displayName
     }
   }
@@ -241,7 +241,7 @@ struct HomeSidebarContentBuilder {
       .review
     case .newTab:
       .newTab
-    case .subagent, .transcript, .childAgent:
+    case .subagent, .transcript:
       .newTab
     }
   }

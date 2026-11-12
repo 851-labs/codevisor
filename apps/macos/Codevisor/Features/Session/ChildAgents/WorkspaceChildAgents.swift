@@ -13,15 +13,15 @@ struct WorkspaceChildAgents {
   var revealRequest: SidebarRevealRequest?
 
   func parent(of workspace: Workspace) -> WorkspaceInspectorAgent? {
-    agents(parentItems(of: workspace), openingIn: nil).first
+    agents(parentItems(of: workspace)).first
   }
 
   func children(of workspace: Workspace) -> [WorkspaceInspectorAgent] {
-    agents(childItems(of: workspace), openingIn: workspace)
+    agents(childItems(of: workspace))
   }
 
   func pill(for workspace: Workspace) -> ChildAgentsPillContent? {
-    let children = agents(childItems(of: workspace), openingIn: workspace)
+    let children = agents(childItems(of: workspace))
     guard let summary = ChildAgentsSummary(children, isWorking: isWorking, harnessId: harnessId) else { return nil }
 
     return ChildAgentsPillContent(summary: summary, agents: children, store: store)
@@ -40,7 +40,7 @@ struct WorkspaceChildAgents {
     return session.harnessId
   }
 
-  private func agents(_ items: [WorkspaceSidebarItem], openingIn host: Workspace?) -> [WorkspaceInspectorAgent] {
+  private func agents(_ items: [WorkspaceSidebarItem]) -> [WorkspaceInspectorAgent] {
     let content = SidebarRowContent(
       environment: environment, store: store, grouping: grouping,
       rowDetails: ClientPreferences.shared.sidebarRowDetails)
@@ -52,38 +52,28 @@ struct WorkspaceChildAgents {
     return items.compactMap { item in
       guard let listItem = content.listItem(for: item) else { return nil }
       let workspace = listItem.workspace
-      let isQuiet = QuietChildren.isQuiet(item)
       return WorkspaceInspectorAgent(
         id: workspace.id,
         details: content.details(
           for: listItem, isPinned: false, headingNamesMachine: listing.headingNamesMachine(workspace.id),
-          isQuiet: isQuiet),
+          isQuiet: QuietChildren.isQuiet(item)),
         actions: commands.actions(
           for: item, workspace: workspace, isPinned: commands.isPinned(workspace),
           sectionPlacement: WorkspaceSectionPlacement(workspace.id, in: tree, membership: membership))
       ) {
-        open(listItem, splittingInto: isQuiet ? host : nil)
+        open(listItem)
       }
     }
   }
 
-  private func open(_ item: SidebarWorkspaceListItem, splittingInto host: Workspace?) {
-    if let host, let request = splitRequest(for: item, in: host) {
-      store.childAgentSplitRequest = request
+  private func open(_ item: SidebarWorkspaceListItem) {
+    let workspace = item.workspace
+    if botsEnabled, let bot = environment.bots.bot(forWorkspace: workspace.id, serverId: workspace.serverId) {
+      selection = .bot(serverId: bot.serverId, id: bot.id)
       return
     }
-    revealRequest?.rowID = item.workspace.id
+    revealRequest?.rowID = workspace.id
     SidebarWorkspaceNavigator(environment: environment, store: store, selection: $selection).activate(item)
-  }
-
-  private func splitRequest(for item: SidebarWorkspaceListItem, in host: Workspace) -> ChildAgentSplitRequest? {
-    guard let chat = item.routingSession, canSplit(host) else { return nil }
-    return ChildAgentSplitRequest(
-      workspaceId: host.id, chatSessionId: chat.id, chatMachineId: chat.serverId, name: item.workspace.name)
-  }
-
-  private func canSplit(_ host: Workspace) -> Bool {
-    store.navigationWorkspaceId == host.id
   }
 
   private func parentItems(of workspace: Workspace) -> [WorkspaceSidebarItem] {

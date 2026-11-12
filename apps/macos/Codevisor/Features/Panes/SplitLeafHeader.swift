@@ -55,7 +55,6 @@ struct SplitLeafHeader: View {
     case .subagent: "wand.and.sparkles"
     case .review: "plusminus"
     case .transcript: "text.page"
-    case .childAgent: "text.bubble"
     case .newTab, .none: "square.dashed"
     }
   }
@@ -83,8 +82,6 @@ struct SplitLeafHeader: View {
     PaneMenuItems.chatSession(of: pane, in: environment.projectList)
   }
 
-  private var isChildAgent: Bool { pane?.kind == .childAgent }
-
   private var subagentHarnessId: String? {
     guard pane?.kind == .subagent, let ownerId = pane?.ownerChatSessionId else { return nil }
     return environment.projectList.sessions.first(where: { $0.id == ownerId })?.harnessId
@@ -97,7 +94,7 @@ struct SplitLeafHeader: View {
         .foregroundStyle(.secondary)
         .frame(width: 18)
     } else if let session = chatSession {
-      ChatSessionLeadingIcon(session: session, store: sessionStore, isQuiet: isChildAgent)
+      ChatSessionLeadingIcon(session: session, store: sessionStore)
     } else if let status = pane?.terminalAgentStatus {
       AgentStatusIndicator(status: status)
         .frame(width: 18)

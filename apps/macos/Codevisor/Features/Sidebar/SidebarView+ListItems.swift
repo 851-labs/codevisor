@@ -7,7 +7,7 @@ extension SidebarView {
   var workspaceListing: SidebarWorkspaceListing {
     SidebarWorkspaceListing(
       environment: environment, botsEnabled: botsEnabled, grouping: grouping, pinnedIDs: pinnedWorkspaceIDs,
-      machineOrder: machineOrder, projectOrder: projectOrder)
+      machineOrder: machineOrder, projectOrder: projectOrder, revealedWorkspaceID: selectedWorkspaceID)
   }
 
   var listedSidebarItems: [WorkspaceSidebarItem] {

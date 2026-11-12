@@ -17,7 +17,7 @@ struct WorkspaceTabLabel {
   }
 
   var unreadChat: ChatSession? {
-    icon.isQuietChat ? nil : icon.chatSession
+    icon.chatSession
   }
 
   private static func descriptor(

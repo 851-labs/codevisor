@@ -10,6 +10,7 @@ struct SidebarWorkspaceListing {
   let pinnedIDs: [String]
   let machineOrder: [String]
   let projectOrder: [String]
+  var revealedWorkspaceID: UUID?
 
   var listedItems: [WorkspaceSidebarItem] {
     let botHomes = botHomeWorkspaceIDs
@@ -25,7 +26,8 @@ struct SidebarWorkspaceListing {
 
   var tree: SidebarWorkspaceTree {
     SidebarWorkspaceTree(
-      listedItems, pinnedIDs: pinnedIDs, hiddenParentIDs: botHomeWorkspaceIDs.union(archivedWorkspaceIDs))
+      listedItems, pinnedIDs: pinnedIDs, hiddenParentIDs: botHomeWorkspaceIDs.union(archivedWorkspaceIDs),
+      revealing: revealedWorkspaceID)
   }
 
   func groups(of items: [WorkspaceSidebarItem]) -> [SidebarWorkspaceGroup] {

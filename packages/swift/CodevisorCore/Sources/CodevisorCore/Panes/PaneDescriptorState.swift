@@ -12,9 +12,8 @@ public enum PaneKind: String, Codable, Sendable, CaseIterable {
   case review
   case simulator
   case transcript
-  case childAgent
 
-  public var isDeviceLocal: Bool { [.newTab, .subagent, .transcript, .childAgent].contains(self) }
+  public var isDeviceLocal: Bool { [.newTab, .subagent, .transcript].contains(self) }
 }
 
 public struct PaneDescriptorState: Identifiable, Codable, Sendable, Equatable {
@@ -23,7 +22,6 @@ public struct PaneDescriptorState: Identifiable, Codable, Sendable, Equatable {
   public var name: String
   public let terminalKey: String
   public var chatSessionId: UUID?
-  public var chatMachineId: String?
   public var ownerChatSessionId: UUID?
   public var pluginId: String?
   public var pluginPaneType: String?
@@ -43,7 +41,6 @@ public struct PaneDescriptorState: Identifiable, Codable, Sendable, Equatable {
     name: String,
     terminalKey: String,
     chatSessionId: UUID? = nil,
-    chatMachineId: String? = nil,
     ownerChatSessionId: UUID? = nil,
     pluginId: String? = nil,
     pluginPaneType: String? = nil,
@@ -63,7 +60,6 @@ public struct PaneDescriptorState: Identifiable, Codable, Sendable, Equatable {
     self.name = name
     self.terminalKey = terminalKey
     self.chatSessionId = chatSessionId
-    self.chatMachineId = chatMachineId
     self.ownerChatSessionId = ownerChatSessionId
     self.pluginId = pluginId
     self.pluginPaneType = pluginPaneType
@@ -87,7 +83,6 @@ public struct PaneDescriptorState: Identifiable, Codable, Sendable, Equatable {
       name: try container.decode(String.self, forKey: .name),
       terminalKey: try container.decode(String.self, forKey: .terminalKey),
       chatSessionId: try container.decodeIfPresent(UUID.self, forKey: .chatSessionId),
-      chatMachineId: try container.decodeIfPresent(String.self, forKey: .chatMachineId),
       ownerChatSessionId: try container.decodeIfPresent(UUID.self, forKey: .ownerChatSessionId),
       pluginId: try container.decodeIfPresent(String.self, forKey: .pluginId),
       pluginPaneType: try container.decodeIfPresent(String.self, forKey: .pluginPaneType),
@@ -102,10 +97,6 @@ public struct PaneDescriptorState: Identifiable, Codable, Sendable, Equatable {
       terminalActivity: try container.decodeIfPresent(TerminalActivity.self, forKey: .terminalActivity),
       subagentToolCallId: try container.decodeIfPresent(String.self, forKey: .subagentToolCallId)
     )
-  }
-
-  public func chatMachineId(hostedOn hostMachineId: String) -> String {
-    chatMachineId ?? hostMachineId
   }
 
   public var displayName: String {

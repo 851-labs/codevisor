@@ -248,7 +248,6 @@ struct WorkspaceSplitDragGhost: View {
     case .subagent: "wand.and.sparkles"
     case .review: "plusminus"
     case .transcript: "text.page"
-    case .childAgent: "text.bubble"
     }
   }
 

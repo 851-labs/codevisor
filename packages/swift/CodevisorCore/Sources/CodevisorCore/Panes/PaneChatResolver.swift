@@ -22,9 +22,7 @@ public struct PaneChatResolver {
     self.machines = machines
   }
 
-  public func chat(_ sessionId: UUID, in pane: PaneDescriptorState, hostedOn hostMachineId: String) -> PaneChat {
-    let machineId = pane.chatMachineId(hostedOn: hostMachineId)
-    if machineId != hostMachineId, isOffline(machineId) { return .offline(machine(machineId)) }
+  public func chat(_ sessionId: UUID, on machineId: String) -> PaneChat {
     if let listed = listedChat(sessionId, on: machineId) { return listed }
     guard machines.availability(for: machineId) != .ready else { return .missing }
 
