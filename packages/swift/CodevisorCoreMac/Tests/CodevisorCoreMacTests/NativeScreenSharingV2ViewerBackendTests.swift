@@ -3,6 +3,7 @@ import CodevisorTestSupport
 import CustomDump
 import Foundation
 import ScreenSharing
+import ScreenSharingV2
 import Testing
 
 @testable import CodevisorCoreMac
@@ -57,10 +58,11 @@ struct NativeScreenSharingV2ViewerBackendTests {
     await harness.connect().value
     let requests = await harness.transport.requests
 
-    #expect(
-      harness.log.events.last
-        == .ended(
-          "This Mac couldn't connect to the host Mac over engine v2. Check the connection, then retry."))
+    let expectedMessage =
+      failure == .hostRefused
+      ? "The host Mac couldn't start sharing its screen. Retry. If it keeps happening, quit and reopen Codevisor on the host Mac."
+      : ScreenSharingConnectStage.connectingMedia.failure
+    #expect(harness.log.events.last == .ended(expectedMessage))
     let expected: [ServerScreenSharingRequest.Operation] =
       failure == .address ? [.capabilities] : [.capabilities, .start, .stop]
     expectNoDifference(requests.map(\.operation), expected)

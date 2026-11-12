@@ -45,6 +45,7 @@
           LabeledContent("Decode p95", value: String(format: "%.2f ms", decode))
         }
         if let recovery = diagnostics.recovery { LabeledContent("Recovery", value: recovery) }
+        if let connectTime = diagnostics.connectTime { LabeledContent("Connected in", value: connectTime) }
       } footer: {
         Text(diagnostics.decoder)
       }

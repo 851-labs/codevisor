@@ -348,6 +348,12 @@ public final class CodevisorServerClient: CodevisorServerClienting, @unchecked S
     #endif
   }
 
+  public var isReconnecting: Bool {
+    guard let requestGate, let machineId else { return false }
+
+    return requestGate.isWaiting(for: machineId)
+  }
+
   public func waitUntilConnected() async -> Bool {
     guard let requestGate, let machineId else { return false }
 

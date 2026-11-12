@@ -5,6 +5,7 @@ import TranscriptKit
 
 public protocol CodevisorServerClienting: BrowserStateClienting, BrowserFaviconClienting, SimulatorClienting {
   func waitUntilConnected() async -> Bool
+  var isReconnecting: Bool { get }
   func sharedHarnessAccount(
     harnessId: String, request: ServerSharedHarnessAccountRequest
   ) async throws -> ServerSharedHarnessAccountResponse

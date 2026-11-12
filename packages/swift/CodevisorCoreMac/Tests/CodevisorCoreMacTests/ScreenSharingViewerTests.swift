@@ -410,6 +410,7 @@ struct ScreenSharingViewerTests {
 final class FakeBackend {
   var displays: [ServerScreenSharingDisplay]
   var discoveryFailure: String?
+  var discoveryGate: TestSignal?
   private(set) var connections: [String] = []
   let terminations = LockIsolated(0)
   let shareCalls = LockIsolated<[String]>([])
@@ -433,7 +434,8 @@ final class FakeBackend {
         }
       },
       discover: { [self] in
-        try await MainActor.run {
+        if let gate = await MainActor.run(body: { discoveryGate }) { await gate.cancellableWait() }
+        return try await MainActor.run {
           if let failure = discoveryFailure { throw Failure(failure) }
           return displays
         }

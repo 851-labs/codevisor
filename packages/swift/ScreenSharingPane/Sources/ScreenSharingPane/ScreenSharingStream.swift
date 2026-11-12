@@ -12,6 +12,7 @@ struct ScreenSharingStreamSponsor {
   let client: any CodevisorServerClienting
   var v2: ScreenSharingV2Connector
   var clock: any Clock<Duration> = ContinuousClock()
+  var now: @Sendable () -> ContinuousClock.Instant = { .now }
 }
 
 @MainActor
@@ -28,6 +29,7 @@ final class ScreenSharingStream {
   private(set) var session: (any ScreenSharingViewingSession)?
   private(set) var control: ScreenSharingControlSession?
   private(set) var diagnostics = ScreenSharingViewerDiagnostics()
+  private(set) var connectStep: ScreenSharingConnectStage?
 
   @ObservationIgnored let displayId: String
   @ObservationIgnored private let sponsor: ScreenSharingStreamSponsor
@@ -36,23 +38,25 @@ final class ScreenSharingStream {
   @ObservationIgnored private var statistics: Task<Void, Never>?
   @ObservationIgnored private var started = false
   @ObservationIgnored private var presented = false
+  @ObservationIgnored private var times = ScreenSharingConnectTimes(at: .now)
+  @ObservationIgnored private var reportsProgress = false
+  @ObservationIgnored private var hostNotice: String?
+  @ObservationIgnored private var settle: (id: UUID, resume: (Outcome) -> Void)?
   private static let log = Logger(subsystem: "com.codevisor.ScreenSharingPane", category: "Stream")
   static let heartbeatInterval: Duration = .seconds(8)
-  static let missingVideoTimeout: Duration = .seconds(24)
   static let v2Unavailable =
     "This Mac needs a newer version of Codevisor to share its screen. Update Codevisor on it, then retry."
-  static let v2Failed = "Couldn't connect to the Mac. Check the connection, then retry."
-  static let missingVideo = "No video arrived from the Mac. Check the connection, then retry."
 
   init(displayId: String, sponsor: ScreenSharingStreamSponsor) {
     self.displayId = displayId
     self.sponsor = sponsor
   }
 
-  func start() {
+  func start(since began: ContinuousClock.Instant? = nil, capabilities: ServerScreenSharingReply? = nil) {
     guard runner == nil else { return }
     phase = .connecting
-    runner = Task { [weak self] in await self?.run() }
+    let began = began ?? sponsor.now()
+    runner = Task { [weak self] in await self?.run(since: began, capabilities: capabilities) }
   }
 
   func stop() {
@@ -68,15 +72,21 @@ final class ScreenSharingStream {
 
   func presentedFirstFrame() {
     presented = true
+    connectStep = nil
     guard phase != .streaming else { return }
-    Self.log.info("first frame")
+    let summary = times.summary(at: sponsor.now())
+    session?.metrics.label("connectTime", summary)
+    Self.log.notice("first frame in \(summary, privacy: .public)")
     phase = .streaming
   }
 
-  private func run() async {
+  private func run(since began: ContinuousClock.Instant, capabilities: ServerScreenSharingReply?) async {
     var restarts = 0
+    var began = began
+    var capabilities = capabilities
     while !Task.isCancelled {
-      let outcome = await attempt(restart: restarts > 0)
+      let outcome = await attempt(restart: restarts > 0, since: began, capabilities: capabilities)
+      capabilities = nil
       closeSession()
       switch outcome {
       case .cancelled:
@@ -94,16 +104,93 @@ final class ScreenSharingStream {
         restarts += 1
         phase = .reconnecting
         try? await sponsor.clock.sleep(for: .seconds(min(6, restarts)))
+        began = sponsor.now()
       }
     }
   }
 
   private enum Outcome { case cancelled, lost, ended(String) }
 
-  private func attempt(restart: Bool) async -> Outcome {
+  private func attempt(
+    restart: Bool, since began: ContinuousClock.Instant, capabilities: ServerScreenSharingReply?
+  ) async -> Outcome {
     presented = false
+    hostNotice = nil
+    reportsProgress = false
+    connectStep = nil
+    times = ScreenSharingConnectTimes(at: began)
+    let id = UUID()
+    let body = Task { @MainActor [weak self] () -> Outcome in
+      await self?.attemptBody(restart: restart, capabilities: capabilities, attempt: id) ?? .cancelled
+    }
+    let deadline = Task { @MainActor [weak self] in
+      await self?.expire(since: began, restart: restart, attempt: id, body: body)
+    }
+    defer { deadline.cancel() }
+    return await withTaskCancellationHandler {
+      await withCheckedContinuation { continuation in
+        settle = (id, { continuation.resume(returning: $0) })
+        Task { @MainActor [weak self] in self?.finish(await body.value, attempt: id) }
+      }
+    } onCancel: {
+      body.cancel()
+      Task { @MainActor [weak self] in self?.finish(.cancelled, attempt: id) }
+    }
+  }
+
+  private func finish(_ outcome: Outcome, attempt id: UUID) {
+    guard let settle, settle.id == id else { return }
+    self.settle = nil
+    settle.resume(outcome)
+  }
+
+  private func enter(_ stage: ScreenSharingConnectStage) {
+    guard stage != times.stage else { return }
+    times.enter(stage, at: sponsor.now())
+    if reportsProgress, !presented { connectStep = stage }
+  }
+
+  private func expire(
+    since began: ContinuousClock.Instant, restart: Bool, attempt id: UUID, body: Task<Outcome, Never>
+  ) async {
+    let clock = sponsor.clock
     do {
-      let capabilities = try await send(request(.capabilities))
+      try await clock.sleep(for: max(.zero, ScreenSharingConnectStage.stillConnectingAfter - (sponsor.now() - began)))
+      guard !presented, settle?.id == id else { return }
+      reportsProgress = true
+      connectStep = times.stage
+      try await sleepUntilDeadline(since: began)
+      while hostNotice != nil, !presented {
+        while hostNotice != nil, !presented { try await clock.sleep(for: Self.heartbeatInterval) }
+        try await sleepUntilDeadline(since: sponsor.now())
+      }
+    } catch { return }
+    guard !presented, settle?.id == id else { return }
+    let stage = times.stage
+    Self.log.error(
+      "gave up at \(stage.rawValue, privacy: .public) after \(self.times.summary(at: self.sponsor.now()), privacy: .public)"
+    )
+    body.cancel()
+    closeSession()
+    finish(restart ? .lost : .ended(stage.failure), attempt: id)
+  }
+
+  private func sleepUntilDeadline(since began: ContinuousClock.Instant) async throws {
+    try await sponsor.clock.sleep(for: max(.zero, ScreenSharingConnectStage.deadline - (sponsor.now() - began)))
+    guard sponsor.client.isReconnecting else { return }
+    try await sponsor.clock.sleep(for: ScreenSharingConnectStage.reconnectingTunnelGrace)
+  }
+
+  private func attemptBody(
+    restart: Bool, capabilities discovered: ServerScreenSharingReply?, attempt id: UUID
+  ) async -> Outcome {
+    do {
+      let capabilities: ServerScreenSharingReply
+      if let discovered {
+        capabilities = discovered
+      } else {
+        capabilities = try await send(request(.capabilities))
+      }
       try Task.checkCancellation()
       guard capabilities.version == 1, ["available", "busy"].contains(capabilities.status) else {
         return .ended(capabilities.message ?? "This Mac can't share its screen right now.")
@@ -111,8 +198,8 @@ final class ScreenSharingStream {
       guard capabilities.engines?.contains(ScreenSharingEngine.v2.rawValue) == true else {
         return .ended(Self.v2Unavailable)
       }
-      let outcome = try await attemptV2(sponsor.v2, restart: restart)
-      if case .lost = outcome, !presented, !restart { return .ended(Self.v2Failed) }
+      let outcome = try await attemptV2(sponsor.v2, restart: restart, attempt: id)
+      if case .lost = outcome, !presented, !restart { return .ended(times.stage.failure) }
       return outcome
     } catch {
       return Self.outcome(of: error)
@@ -125,7 +212,8 @@ final class ScreenSharingStream {
     return .ended(message(for: error))
   }
 
-  private func attemptV2(_ v2: ScreenSharingV2Connector, restart: Bool) async throws -> Outcome {
+  private func attemptV2(_ v2: ScreenSharingV2Connector, restart: Bool, attempt id: UUID) async throws -> Outcome {
+    enter(.connectingMedia)
     guard let address = await v2.address() else { return .lost }
     try Task.checkCancellation()
     var start = request(restart ? .restart : .start)
@@ -133,24 +221,35 @@ final class ScreenSharingStream {
     start.media = address
     start.chroma = await v2.chroma().rawValue
     started = true
+    enter(.startingHost)
+    Self.log.notice("starting: \(self.times.summary(at: self.sponsor.now()), privacy: .public)")
     let reply = try await send(start)
     try Task.checkCancellation()
     guard reply.version == 1, reply.status == "connecting", let grant = reply.media else {
       return .ended(reply.message ?? "This Mac can't share its screen right now.")
     }
+    enter(.connectingMedia)
     let session: any ScreenSharingV2StartableSession
     do {
       session = try await v2.connect(grant)
     } catch {
       return Task.isCancelled ? .cancelled : .lost
     }
+    guard !Task.isCancelled, settle?.id == id else {
+      session.close()
+      return .cancelled
+    }
+    enter(.handshake)
     let lost = install(session)
     do {
       try await session.start(token: grant.token)
     } catch {
       return Task.isCancelled ? .cancelled : .lost
     }
-    return await heartbeat(until: lost, missingVideo: Self.missingVideoTimeout)
+    if !presented { enter(.waitingForVideo) }
+    Self.log.notice("media session up: \(self.times.summary(at: self.sponsor.now()), privacy: .public)")
+    hostNotice = reply.message
+    return await heartbeat(until: lost)
   }
 
   private func send(_ request: ServerScreenSharingRequest) async throws -> ServerScreenSharingReply {
@@ -160,11 +259,10 @@ final class ScreenSharingStream {
     }
   }
 
-  private func heartbeat(until lost: AsyncStream<Void>, missingVideo: Duration) async -> Outcome {
+  private func heartbeat(until lost: AsyncStream<Void>) async -> Outcome {
     let outcomes = AsyncStream<Outcome>.makeStream()
     let clock = sponsor.clock
     let beats = Task { @MainActor [weak self] in
-      var waited = Duration.zero
       while !Task.isCancelled {
         try? await clock.sleep(for: Self.heartbeatInterval)
         guard let self, !Task.isCancelled else { return }
@@ -179,12 +277,7 @@ final class ScreenSharingStream {
           outcomes.continuation.yield(.ended(reply.message ?? "The Mac stopped sharing its screen."))
           return
         }
-        guard !self.presented, reply.message == nil else { continue }
-        waited += Self.heartbeatInterval
-        if waited >= missingVideo {
-          outcomes.continuation.yield(.ended(Self.missingVideo))
-          return
-        }
+        self.hostNotice = reply.message
       }
     }
     let watcher = Task {

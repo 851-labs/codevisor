@@ -125,7 +125,7 @@ final class ComputerUseRemotePreviewConnection {
         viewer.update(phase: .reconnecting)
       case .hostNotice(let notice):
         viewer.update(notice: notice)
-      case .elsewhere:
+      case .elsewhere, .progress:
         break
       case .ended(let message):
         ended = message

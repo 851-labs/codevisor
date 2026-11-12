@@ -1,6 +1,7 @@
 import CodevisorClient
 import CodevisorCore
 import ScreenSharing
+import ScreenSharingV2
 import ComposableArchitecture
 import Foundation
 
@@ -20,6 +21,7 @@ public struct ScreenSharingViewer {
     public var lease: ControlLease.State?
     public var message: String?
     public var hostNotice: String?
+    public var connectStep: ScreenSharingConnectStage?
     public var phase: Phase = .idle
     public var preferences: ScreenSharingPanePreferences
     public var preferencesRevision = 0
@@ -42,12 +44,15 @@ public struct ScreenSharingViewer {
       case .failed: .failed(message ?? "This Mac can't share its screen right now.")
       }
     }
+
+    public func stillConnectingStep(on machine: String) -> String? { connectStep?.step(on: machine) }
   }
 
   public enum Action {
     case connectionEvent(ScreenSharingViewerEvent)
     case connectionFinished
     case discoveryResponse(Result<[ServerScreenSharingDisplay], any Error>)
+    case discoveryTakingLong
     case displaySelected(String)
     case dynamicResolutionToggled
     case hiddenGraceExpired
@@ -63,7 +68,7 @@ public struct ScreenSharingViewer {
     case systemKeyTapped(ScreenSharingSystemKey)
   }
 
-  enum CancelID { case connection, controlEvents, hiddenGrace, rejoin }
+  enum CancelID { case connection, controlEvents, hiddenGrace, rejoin, slowDiscovery }
 
   static let hiddenGrace: Duration = .seconds(300)
 
@@ -100,11 +105,13 @@ public struct ScreenSharingViewer {
         state.phase = .viewing
         state.message = nil
         state.hostNotice = nil
+        state.connectStep = nil
         return state.visible && state.interactionMode == .control ? .send(.lease(.controlRequested)) : .none
 
       case .connectionEvent(.reconnecting):
         dropEndpoint(&state)
         state.phase = .reconnecting
+        state.connectStep = nil
         state.message = "Reconnecting to this Mac…"
         return .cancel(id: CancelID.controlEvents)
 
@@ -113,9 +120,15 @@ public struct ScreenSharingViewer {
         state.hostNotice = notice
         return .none
 
+      case .connectionEvent(.progress(let stage)):
+        guard [.connecting, .reconnecting].contains(state.phase) else { return .none }
+        state.connectStep = stage
+        return .none
+
       case .connectionEvent(.elsewhere(let mirror)):
         dropEndpoint(&state)
         state.phase = .elsewhere
+        state.connectStep = nil
         state.mirror = mirror
         state.message = nil
         return .cancel(id: CancelID.controlEvents)
@@ -133,13 +146,18 @@ public struct ScreenSharingViewer {
         state.displays = displays
         let preferred = state.preferences.preferredDisplayId
         guard let chosen = state.displays.first(where: { $0.id == preferred }) ?? state.displays.first else {
-          return fail(&state, "No displays are available on this Mac.")
+          return .merge(.cancel(id: CancelID.slowDiscovery), fail(&state, "No displays are available on this Mac."))
         }
-        return select(chosen.id, &state)
+        return .merge(.cancel(id: CancelID.slowDiscovery), select(chosen.id, &state))
 
       case .discoveryResponse(.failure(let error)):
         guard state.phase == .loading, !isTaskCancellation(error) else { return .none }
-        return fail(&state, serverErrorMessage(error))
+        return .merge(.cancel(id: CancelID.slowDiscovery), fail(&state, serverErrorMessage(error)))
+
+      case .discoveryTakingLong:
+        guard state.phase == .loading else { return .none }
+        state.connectStep = .reachingHost
+        return .none
 
       case .displaySelected(let id):
         guard state.displays.contains(where: { $0.id == id }) else { return .none }
@@ -227,9 +245,15 @@ public struct ScreenSharingViewer {
     dropEndpoint(&state)
     state.phase = .loading
     state.message = nil
+    state.connectStep = nil
     return .merge(
       .cancel(id: CancelID.controlEvents),
       .cancel(id: CancelID.rejoin),
+      .run { [clock] send in
+        try await clock.sleep(for: ScreenSharingConnectStage.stillConnectingAfter)
+        await send(.discoveryTakingLong)
+      }
+      .cancellable(id: CancelID.slowDiscovery, cancelInFlight: true),
       .run { [backend] send in
         await send(.discoveryResponse(Result { try await backend.discover() }))
       }
@@ -248,9 +272,10 @@ public struct ScreenSharingViewer {
   private func disconnect(_ state: inout State) -> Effect<Action> {
     dropEndpoint(&state)
     state.phase = .suspended
+    state.connectStep = nil
     return .merge(
       .cancel(id: CancelID.connection), .cancel(id: CancelID.controlEvents), .cancel(id: CancelID.hiddenGrace),
-      .cancel(id: CancelID.rejoin))
+      .cancel(id: CancelID.rejoin), .cancel(id: CancelID.slowDiscovery))
   }
 
   static func keepsConnection(_ phase: Phase) -> Bool {
@@ -282,6 +307,7 @@ public struct ScreenSharingViewer {
   private func fail(_ state: inout State, _ message: String) -> Effect<Action> {
     state.phase = .failed
     state.message = message
+    state.connectStep = nil
     return rejoinWhenLive()
   }
 

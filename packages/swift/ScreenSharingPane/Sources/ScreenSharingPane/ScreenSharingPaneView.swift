@@ -45,7 +45,15 @@
     @ViewBuilder private var status: some View {
       switch model.phase {
       case .loading, .connecting:
-        ProgressView("Connecting to Mac…")
+        if let step = model.stillConnectingStep {
+          VStack(spacing: 8) {
+            ProgressView()
+            Text("Still connecting…").foregroundStyle(.secondary)
+            Text(step).font(.footnote).foregroundStyle(.tertiary)
+          }
+        } else {
+          ProgressView("Connecting to Mac…")
+        }
       case .reconnecting:
         ProgressView("Reconnecting…")
       case .viewing:
