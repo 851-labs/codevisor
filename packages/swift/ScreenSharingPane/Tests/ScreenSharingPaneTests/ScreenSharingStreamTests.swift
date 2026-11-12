@@ -1,4 +1,5 @@
 import CodevisorClient
+import CodevisorCloud
 import CodevisorTestSupport
 import Foundation
 import Observation
@@ -84,6 +85,33 @@ struct ScreenSharingStreamTests {
     stream.stop()
   }
 
+  @Test("A start whose relay channel closes with no reason is sent again on a fresh channel, without an error")
+  func retriesARelayInterruptedStart() async {
+    let harness = StreamHarness(engines: ["v2"])
+    await harness.transport.failNextStart(with: CloudRelayTransportError.channelClosed(nil))
+    let stream = harness.start()
+    await harness.clock.waitForSleep(.milliseconds(500))
+    #expect(stream.phase == .connecting)
+    harness.clock.advance(by: .milliseconds(500))
+    await harness.presentVideo(on: stream)
+
+    #expect(stream.phase == .streaming)
+    #expect(await harness.transport.starts.map(\.operation) == [.start, .start])
+    stream.stop()
+  }
+
+  @Test("A start the Mac rejects over the relay ends the stream at once")
+  func endsWhenTheRelayRejectsTheStart() async {
+    let harness = StreamHarness(engines: ["v2"])
+    await harness.transport.failNextStart(with: CloudRelayTransportError.channelClosed(.rejected))
+    let stream = harness.start()
+    await awaitObserved { stream.phase != .connecting }
+
+    #expect(stream.phase == .failed(CloudRelayTransportError.channelClosed(.rejected).localizedDescription))
+    #expect(await harness.transport.starts.count == 1)
+    #expect(harness.clock.pendingCount == 0)
+  }
+
   @Test("A v2 stream lost after video reconnects over v2")
   func reconnectsOverV2() async {
     let harness = StreamHarness(engines: ["v2"])
@@ -163,6 +191,7 @@ actor StreamTransport: ServerRequestTransport {
   private let v2StartStatus: String
   private let heartbeatNotice: String?
   private(set) var requests: [ServerScreenSharingRequest] = []
+  private var startFailure: (any Error)?
 
   init(engines: [String]?, v2StartStatus: String, heartbeatNotice: String? = nil) {
     self.engines = engines
@@ -171,6 +200,8 @@ actor StreamTransport: ServerRequestTransport {
   }
 
   var starts: [ServerScreenSharingRequest] { requests.filter { [.start, .restart].contains($0.operation) } }
+
+  func failNextStart(with error: any Error) { startFailure = error }
 
   func data(for request: URLRequest) async throws -> (Data, HTTPURLResponse) {
     let payload = try JSONDecoder().decode(ServerScreenSharingRequest.self, from: request.httpBody ?? Data())
@@ -181,6 +212,10 @@ actor StreamTransport: ServerRequestTransport {
       reply = .init(status: "available", displays: [.init(id: "display", name: "Display", width: 1920, height: 1080)])
       reply.engines = engines
     case .start, .restart:
+      if let failure = startFailure {
+        startFailure = nil
+        throw failure
+      }
       reply = .init(status: v2StartStatus)
       if v2StartStatus == "connecting" { reply.media = StreamHarness.grant }
     case .heartbeat:

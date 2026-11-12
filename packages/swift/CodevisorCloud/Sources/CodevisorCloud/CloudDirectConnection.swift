@@ -19,6 +19,7 @@ public actor CloudDirectConnection: CloudChannelHosting {
   private let heartbeatInterval: Duration
   private let heartbeatTimeout: Duration
   private var onDown: (@Sendable () -> Void)?
+  private let describePath: @Sendable () -> String?
 
   private let decoder = JSONDecoder()
   private let encoder = JSONEncoder()
@@ -30,6 +31,7 @@ public actor CloudDirectConnection: CloudChannelHosting {
   private var readyWaiters: [Int: CheckedContinuation<Void, any Error>] = [:]
   private var heartbeatTask: Task<Void, Never>?
   private var pongDeadlineTask: Task<Void, Never>?
+  private var pongWatch = CloudDirectPongWatch()
   private var sendChain: Task<Void, Never> = Task {}
   private var channels: [String: CloudDirectChannelState] = [:]
 
@@ -46,9 +48,11 @@ public actor CloudDirectConnection: CloudChannelHosting {
     heartbeatInterval: Duration = .seconds(10),
     heartbeatTimeout: Duration = .seconds(5),
     onDown: (@Sendable () -> Void)? = nil,
+    describePath: @escaping @Sendable () -> String? = { nil },
     sleep: @escaping @Sendable (Duration) async throws -> Void = { try await Task.sleep(for: $0) }
   ) {
     self.sleep = sleep
+    self.describePath = describePath
     self.directURL = directURL
     self.machineDeviceId = machineDeviceId
     self.machinePublicKey = machinePublicKey
@@ -145,6 +149,10 @@ public actor CloudDirectConnection: CloudChannelHosting {
     isWelcomed = false
     let open = channels.values
     channels.removeAll()
+    if !open.isEmpty {
+      Log.cloud.notice(
+        "Direct pipe to \(self.machineDeviceId, privacy: .public) closed \(open.count) open channels")
+    }
     for channel in open {
       channel.onClosed(nil)
     }
@@ -170,6 +178,7 @@ public actor CloudDirectConnection: CloudChannelHosting {
   }
 
   private func handle(_ message: ServerWebSocketMessage) {
+    defer { pongWatch.received() }
     switch message {
     case let .data(payload):
       guard let envelopes = try? CloudRelayWire.decode(payload) else { return }
@@ -195,45 +204,11 @@ public actor CloudDirectConnection: CloudChannelHosting {
       case "pong":
         pongDeadlineTask?.cancel()
         pongDeadlineTask = nil
+        logSlowPong()
       default:
         break
       }
     }
-  }
-
-  private func startHeartbeat() {
-    heartbeatTask?.cancel()
-    heartbeatTask = Task { [weak self, heartbeatInterval] in
-      while !Task.isCancelled {
-        try? await self?.sleep(heartbeatInterval)
-        guard !Task.isCancelled, let self else { return }
-        await self.sendKeepalivePing()
-      }
-    }
-  }
-
-  private func sendKeepalivePing() {
-    guard isWelcomed, !isDown, pongDeadlineTask == nil else { return }
-    struct Ping: Encodable {
-      var t = "ping"
-    }
-    pongDeadlineTask = Task { [weak self, heartbeatTimeout] in
-      try? await self?.sleep(heartbeatTimeout)
-      guard !Task.isCancelled else { return }
-      await self?.expireHeartbeat()
-    }
-    do {
-      try enqueueSend(.string(String(decoding: try encoder.encode(Ping()), as: UTF8.self)))
-    } catch {
-      goDown()
-    }
-  }
-
-  private func expireHeartbeat() {
-    guard !isDown, pongDeadlineTask != nil else { return }
-    Log.cloud.notice(
-      "Direct pipe to \(self.machineDeviceId, privacy: .public) missed its pong deadline")
-    goDown()
   }
 
   func sendRelay(frame: CloudRelayFrame, payload: Data = Data()) throws {
@@ -425,5 +400,64 @@ public actor CloudDirectConnection: CloudChannelHosting {
     state.nextOutboundSeq += 1
     try? sendRelay(frame: .close(channelId: channelId, seq: seq, reason: reason))
     state.onClosed(reason)
+  }
+}
+
+extension CloudDirectConnection {
+  private func startHeartbeat() {
+    heartbeatTask?.cancel()
+    heartbeatTask = Task { [weak self, heartbeatInterval] in
+      while !Task.isCancelled {
+        try? await self?.sleep(heartbeatInterval)
+        guard !Task.isCancelled, let self else { return }
+        await self.sendKeepalivePing()
+      }
+    }
+  }
+
+  private func sendKeepalivePing() {
+    guard isWelcomed, !isDown, pongDeadlineTask == nil else { return }
+    struct Ping: Encodable {
+      var t = "ping"
+    }
+    pongWatch.pingSent()
+    armPongDeadline()
+    do {
+      try enqueueSend(.string(String(decoding: try encoder.encode(Ping()), as: UTF8.self)))
+    } catch {
+      goDown()
+    }
+  }
+
+  private func armPongDeadline() {
+    pongDeadlineTask = Task { [weak self, heartbeatTimeout] in
+      try? await self?.sleep(heartbeatTimeout)
+      guard !Task.isCancelled else { return }
+      await self?.expireHeartbeat()
+    }
+  }
+
+  private func expireHeartbeat() {
+    guard !isDown, pongDeadlineTask != nil else { return }
+    if pongWatch.extendsExpiredDeadline() {
+      armPongDeadline()
+      return
+    }
+    Log.cloud.notice(
+      "Direct pipe to \(self.machineDeviceId, privacy: .public) missed its pong deadline (\(self.heartbeatDiagnostics, privacy: .public))"
+    )
+    goDown()
+  }
+
+  private func logSlowPong() {
+    defer { pongWatch.ponged() }
+    guard let roundTrip = pongWatch.pingRoundTrip, roundTrip > heartbeatTimeout / 2 else { return }
+    Log.cloud.notice(
+      "Direct pipe to \(self.machineDeviceId, privacy: .public) answered a ping after \(CloudDirectPongWatch.seconds(roundTrip), privacy: .public) (\(self.heartbeatDiagnostics, privacy: .public))"
+    )
+  }
+
+  private var heartbeatDiagnostics: String {
+    pongWatch.diagnostics(openChannels: channels.count, path: describePath())
   }
 }

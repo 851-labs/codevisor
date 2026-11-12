@@ -115,6 +115,47 @@ struct CloudDirectConnectionTests {
     }
   }
 
+  @Test("Traffic that keeps arriving while a pong is due holds the pipe up, for a bounded time")
+  func trafficExtendsThePongDeadline() async throws {
+    let scripted = ScriptedDirectMachine()
+    scripted.respondsToPing = false
+    let downs = Recorder()
+    let clock = TestClock()
+    let connection = makeDirectConnection(
+      to: scripted,
+      heartbeatInterval: .seconds(10),
+      heartbeatTimeout: .seconds(5),
+      clock: clock
+    ) { downs.record(Data()) }
+
+    do {
+      try await connection.waitUntilReady()
+      await clock.waitForSleep(.seconds(10))
+      clock.advance(by: .seconds(10))
+      #expect(await waitUntil { scripted.pings == 1 })
+      let extensions = CloudDirectPongWatch.maximumExtensions
+      for window in 1...extensions {
+        await clock.waitForSleep(.seconds(5), count: window)
+        scripted.socket.pushJSON(#"{"t":"notice"}"#)
+        await scripted.socket.drain()
+        clock.advance(by: .seconds(5))
+      }
+      await clock.waitForSleep(.seconds(5), count: extensions + 1)
+      #expect(downs.messages.isEmpty)
+      #expect(await connection.isReady)
+
+      scripted.socket.pushJSON(#"{"t":"notice"}"#)
+      await scripted.socket.drain()
+      clock.advance(by: .seconds(5))
+      #expect(await waitUntil { downs.messages.count == 1 })
+      #expect(scripted.pings == 1)
+      await connection.shutdown()
+    } catch {
+      await connection.shutdown()
+      throw error
+    }
+  }
+
   @Test("An unanswered open demotes the pipe even while pings succeed")
   func unansweredOpenDemotesPipe() async throws {
     let scripted = ScriptedDirectMachine()
