@@ -2,6 +2,7 @@ import CodevisorClient
 import CodevisorCore
 import Foundation
 import Observation
+import SwiftUI
 
 @MainActor
 @Observable
@@ -26,9 +27,9 @@ final class WorkspaceInspectorUsageModel {
     return limits
   }
 
-  func reload(_ chat: ChatSession, client: any CodevisorServerClienting) async {
+  func reload(_ chat: ChatSession, client: any CodevisorServerClienting, animated: Bool) async {
     guard let limits = try? await client.sessionUsageLimits(id: chat.id) else { return }
-    snapshots[Account(chat)] = limits
+    withTransaction(\.disablesAnimations, !animated) { snapshots[Account(chat)] = limits }
   }
 
   func prefetch(_ chats: [ChatSession], client: (String) -> any CodevisorServerClienting) async {
@@ -36,7 +37,7 @@ final class WorkspaceInspectorUsageModel {
     let pending = chats.filter { accounts.insert(Account($0)).inserted }.map { ($0, client($0.serverId)) }
     await withTaskGroup(of: Void.self) { group in
       for (chat, client) in pending {
-        group.addTask { await self.reload(chat, client: client) }
+        group.addTask { await self.reload(chat, client: client, animated: false) }
       }
     }
   }

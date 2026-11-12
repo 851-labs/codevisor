@@ -89,6 +89,7 @@ private struct WorkspaceInspectorMachineLoad: View {
         .foregroundStyle(.secondary)
       }
       .animation(Motion.meter(reduceMotion: reduceMotion), value: usedPercent)
+      .withoutAnimation(onChangeOf: usedPercent == nil)
       WorkspaceInspectorSparkline(
         values: history.map(\.usedPercent),
         slots: WorkspaceInspectorMachineSection.historySlots,
