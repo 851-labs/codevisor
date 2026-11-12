@@ -117,6 +117,7 @@ struct BotListSidebar: View {
       unarchive: { setArchived($0, false) },
       delete: { deletingBot = $0 },
       moveBot: { sections.move($0, to: $1) },
+      placeBot: { environment.moveBot($0, to: $1, among: conversations) },
       newSection: { sectionPrompt = .create(moving: $0?.id) },
       toggleSection: toggleSection,
       toggleArchived: { archivedExpanded.toggle() },

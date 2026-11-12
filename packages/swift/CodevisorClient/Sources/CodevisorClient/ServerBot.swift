@@ -27,6 +27,7 @@ public struct ServerBot: Codable, Equatable, Hashable, Identifiable, Sendable {
   public var rootPath: String
   public var projects: [ServerBotProject]
   public var isArchived: Bool?
+  public var archivedAt: String?
   public var createdAt: String
   public var updatedAt: String?
 
@@ -43,6 +44,7 @@ public struct ServerBot: Codable, Equatable, Hashable, Identifiable, Sendable {
     rootPath: String,
     projects: [ServerBotProject],
     isArchived: Bool? = nil,
+    archivedAt: String? = nil,
     createdAt: String,
     updatedAt: String? = nil
   ) {
@@ -58,6 +60,7 @@ public struct ServerBot: Codable, Equatable, Hashable, Identifiable, Sendable {
     self.rootPath = rootPath
     self.projects = projects
     self.isArchived = isArchived
+    self.archivedAt = archivedAt
     self.createdAt = createdAt
     self.updatedAt = updatedAt
   }

@@ -1,25 +1,14 @@
 import CodevisorUI
 import SwiftUI
 
-enum BotSidebarDrag: Equatable {
-  case bot(UUID)
-  case section(UUID)
-
-  var itemProvider: NSItemProvider {
-    switch self {
-    case let .bot(id), let .section(id): NSItemProvider(object: id.uuidString as NSString)
-    }
-  }
-}
-
-struct BotSidebarDropDelegate: DropDelegate {
-  let target: BotSidebarRowID
-  @Binding var drag: BotSidebarDrag?
-  @Binding var dropTarget: BotSidebarRowID?
+struct BotSectionDropDelegate: DropDelegate {
+  let target: UUID
+  @Binding var dragging: UUID?
+  @Binding var dropTarget: UUID?
   let perform: (() -> Void)?
 
   func validateDrop(info: DropInfo) -> Bool {
-    drag != nil && perform != nil
+    dragging != nil && perform != nil
   }
 
   func dropEntered(info: DropInfo) {
@@ -36,7 +25,7 @@ struct BotSidebarDropDelegate: DropDelegate {
 
   func performDrop(info: DropInfo) -> Bool {
     perform?()
-    drag = nil
+    dragging = nil
     dropTarget = nil
     return true
   }

@@ -47,6 +47,7 @@ export const makeBotsService = (
         path: `${rootPath}/${project.folder_name}`
       })),
       isArchived: row.archived_at !== null,
+      ...(row.archived_at === null ? {} : { archivedAt: row.archived_at }),
       createdAt: row.created_at,
       ...(row.updated_at === null ? {} : { updatedAt: row.updated_at })
     }

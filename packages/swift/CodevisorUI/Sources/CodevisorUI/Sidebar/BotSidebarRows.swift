@@ -34,6 +34,13 @@ public struct BotSidebarRow: Identifiable, Equatable {
     return conversation.bot
   }
 
+  public var isDropSlot: Bool {
+    switch kind {
+    case .bot, .section: true
+    case .archivedSection, .archivedBot: false
+    }
+  }
+
   public var bot: Bot? {
     switch kind {
     case let .bot(conversation, _), let .archivedBot(conversation): conversation.bot
@@ -91,6 +98,33 @@ public enum BotSidebarRows {
 
     if active.indices.contains(index + 1) { return active[index + 1] }
     return active.indices.contains(index - 1) ? active[index - 1] : nil
+  }
+
+  public static func dropSlots(in rows: [BotSidebarRow]) -> [BotSidebarRowID] {
+    rows.filter(\.isDropSlot).map(\.id)
+  }
+
+  public static func placement(
+    insertingAt index: Int, excluding botID: UUID, in rows: [BotSidebarRow]
+  ) -> BotSidebarPlacement {
+    let others = rows.filter { $0.isDropSlot && $0.id != .bot(botID) }
+    guard others.indices.contains(index - 1) else { return BotSidebarPlacement(section: nil, after: nil) }
+
+    switch others[index - 1].kind {
+    case let .section(section, _): return BotSidebarPlacement(section: section.id, after: nil)
+    case let .bot(conversation, section): return BotSidebarPlacement(section: section, after: conversation.id)
+    case .archivedSection, .archivedBot: return BotSidebarPlacement(section: nil, after: nil)
+    }
+  }
+
+  public static func placement(
+    moving index: Int, to destination: Int, among ids: [UUID], section: UUID?
+  ) -> BotSidebarPlacement {
+    let others = ids.enumerated().filter { $0.offset != index }.map(\.element)
+    let slot = destination > index ? destination - 1 : destination
+    guard others.indices.contains(slot - 1) else { return BotSidebarPlacement(section: section, after: nil) }
+
+    return BotSidebarPlacement(section: section, after: others[slot - 1])
   }
 
   public static func step(from selectedID: UUID?, by offset: Int, in rows: [BotSidebarRow]) -> Bot? {

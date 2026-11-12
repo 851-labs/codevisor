@@ -185,16 +185,15 @@ describe("bots service", () => {
     const archived = await run(db.updateBot("bot-helper", { isArchived: true }))
 
     expect(archived).toMatchObject({ isArchived: true, name: "Helper", symbolName: "sparkles" })
+    expect(archived.archivedAt).toEqual(expect.any(String))
     expect(await run(db.getBot("bot-helper"))).toEqual(archived)
     expect(
       await run(db.updateBot("bot-helper", { isArchived: true, name: "Reviewer" }))
-    ).toMatchObject({ isArchived: true, name: "Reviewer" })
+    ).toMatchObject({ isArchived: true, archivedAt: archived.archivedAt, name: "Reviewer" })
     expect((await run(db.updateBot("bot-helper", { symbolName: "ant" }))).isArchived).toBe(true)
-    expect(await run(db.updateBot("bot-helper", { isArchived: false }))).toMatchObject({
-      isArchived: false,
-      name: "Reviewer",
-      symbolName: "ant"
-    })
+    const unarchived = await run(db.updateBot("bot-helper", { isArchived: false }))
+    expect(unarchived).toMatchObject({ isArchived: false, name: "Reviewer", symbolName: "ant" })
+    expect(unarchived).not.toHaveProperty("archivedAt")
   })
 
   it("appends a project after the bot's others and frees one it removes", async () => {

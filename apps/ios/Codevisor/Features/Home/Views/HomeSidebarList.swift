@@ -15,6 +15,7 @@ struct HomeSidebarActions {
   var workspaceSections = HomeSidebarSectionActions()
   var botSections = HomeSidebarSectionActions()
   var reorder: (UUID, Int, [UUID]) -> Void = { _, _, _ in }
+  var placeBot: (Bot, BotSidebarPlacement) -> Void = { _, _ in }
   var moveTab: (UUID, UUID?, HomeSidebarWorkspaceRef) -> Void = { _, _, _ in }
   var openInNewWindow: ((HomeSidebarTabRow, HomeSidebarWorkspaceRef) -> Void)?
   var openWorkspaceInNewWindow: ((HomeSidebarWorkspace) -> Void)?
@@ -233,6 +234,7 @@ struct HomeSidebarList: View {
         ForEach(content.unsectionedBots) { bot in
           botRow(bot, sections: content.botSections)
         }
+        .onMove { moveBot($0, to: $1, among: content.unsectionedBots, section: nil) }
       }
       .listSectionSeparator(.hidden, edges: .top)
     }
@@ -243,8 +245,17 @@ struct HomeSidebarList: View {
         ForEach(group.bots) { bot in
           botRow(bot, sections: content.botSections)
         }
+        .onMove { moveBot($0, to: $1, among: group.bots, section: group.section.id) }
       }
     }
+  }
+
+  private func moveBot(_ source: IndexSet, to destination: Int, among bots: [HomeSidebarBot], section: UUID?) {
+    guard let index = source.first else { return }
+
+    let placement = BotSidebarRows.placement(
+      moving: index, to: destination, among: bots.map(\.id), section: section)
+    actions.actions.placeBot(bots[index].bot, placement)
   }
 
   private func botsSection(_ content: HomeSidebarContent) -> some View {
