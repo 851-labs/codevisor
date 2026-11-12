@@ -3,37 +3,17 @@ import SwiftUI
 
 struct ComputerUsePermissionRowsView: View {
   let model: ComputerUsePermissionsModel
-  var embedded = false
   @Environment(\.controlActiveState) private var controlActiveState
 
   var body: some View {
-    VStack(alignment: .leading, spacing: embedded ? 0 : 12) {
-      PermissionCard(embedded: embedded) {
-        PermissionRow(
-          symbol: "accessibility",
-          title: "Accessibility",
-          subtitle: "Reads on-screen text and controls",
-          grantedLabel: model.isAccessibilityGranted ? "Granted" : nil,
-          embedded: embedded
-        ) {
-          PermissionActionButton("Allow…") { model.requestAccessibility() }
-        }
-        Divider()
-        PermissionRow(
-          symbol: "rectangle.dashed.badge.record",
-          title: "Screen Recording",
-          subtitle: "Sees app windows",
-          grantedLabel: model.isScreenRecordingGranted ? "Granted" : nil,
-          embedded: embedded
-        ) {
-          PermissionActionButton("Allow…") { model.requestScreenRecording() }
-        }
-      }
-
-      if model.screenRecordingGrantedThisRun {
-        relaunchNudge
-          .padding(.top, embedded ? 8 : 0)
-      }
+    PermissionRow(
+      symbol: "accessibility",
+      title: "Accessibility",
+      subtitle: "Reads on-screen text and controls",
+      grantedLabel: model.isAccessibilityGranted ? "Granted" : nil,
+      embedded: true
+    ) {
+      PermissionActionButton("Allow…") { model.requestAccessibility() }
     }
     .task {
       while !Task.isCancelled {
@@ -43,6 +23,20 @@ struct ComputerUsePermissionRowsView: View {
     }
     .onChange(of: controlActiveState) { _, _ in
       model.refresh()
+    }
+
+    PermissionRow(
+      symbol: "rectangle.dashed.badge.record",
+      title: "Screen Recording",
+      subtitle: "Sees app windows",
+      grantedLabel: model.isScreenRecordingGranted ? "Granted" : nil,
+      embedded: true
+    ) {
+      PermissionActionButton("Allow…") { model.requestScreenRecording() }
+    }
+
+    if model.screenRecordingGrantedThisRun {
+      relaunchNudge
     }
   }
 

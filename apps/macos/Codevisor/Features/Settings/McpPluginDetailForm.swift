@@ -29,7 +29,7 @@ struct McpPluginDetailForm: View {
       McpMachinesSection(entry: entry, model: model, disabledReason: toggleDisabledReason)
       if isComputerUse {
         Section("Permissions") {
-          ComputerUsePermissionRowsView(model: permissions, embedded: true)
+          ComputerUsePermissionRowsView(model: permissions)
         }
       }
       if let subscriptions { PluginSubscriptionsSection(model: subscriptions, chatTitle: chatTitle) }

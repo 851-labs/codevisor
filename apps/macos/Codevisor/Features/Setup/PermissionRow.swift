@@ -3,18 +3,13 @@ import CodevisorUI
 import SwiftUI
 
 struct PermissionCard<Content: View>: View {
-  var embedded = false
   @ViewBuilder var content: Content
 
   var body: some View {
-    if embedded {
-      VStack(spacing: 0) { content }
-    } else {
-      VStack(spacing: 0) { content }
-        .padding(.horizontal, 14)
-        .padding(.vertical, 4)
-        .background(RoundedRectangle(cornerRadius: 12).fill(Color.cardBackgroundColor))
-    }
+    VStack(spacing: 0) { content }
+      .padding(.horizontal, 14)
+      .padding(.vertical, 4)
+      .background(RoundedRectangle(cornerRadius: 12).fill(Color.cardBackgroundColor))
   }
 }
 
@@ -54,8 +49,8 @@ struct PermissionRow<Action: View>: View {
           .controlSize(embedded ? .small : .regular)
       }
     }
-    .frame(minHeight: embedded ? 26 : 34)
-    .padding(.vertical, embedded ? 7 : 10)
+    .frame(minHeight: embedded ? nil : 34)
+    .padding(.vertical, embedded ? 0 : 10)
     .animation(.smooth(duration: 0.25), value: grantedLabel)
   }
 }
