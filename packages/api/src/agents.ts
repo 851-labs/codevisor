@@ -57,6 +57,7 @@ export const AgentSummary = Schema.Struct({
   labels: Schema.optional(Labels),
   createdByAgentId: Schema.optional(Schema.String),
   createdByAgentMachineId: Schema.optional(Schema.String),
+  archived: Schema.optional(Schema.Literal(true)),
   updatedAt: Schema.optional(Schema.String)
 })
 export type AgentSummary = typeof AgentSummary.Type
@@ -84,15 +85,14 @@ export const WaitForAgentsResponse = Schema.Struct({
 })
 export type WaitForAgentsResponse = typeof WaitForAgentsResponse.Type
 
-export const CloseAgentRequest = Schema.Struct({ callerAgentId: Schema.String })
-export type CloseAgentRequest = typeof CloseAgentRequest.Type
+export const ArchiveAgentRequest = Schema.Struct({ callerAgentId: Schema.optional(Schema.String) })
+export type ArchiveAgentRequest = typeof ArchiveAgentRequest.Type
 
-export const ClosedAgent = Schema.Struct({
+export const ArchivedAgent = Schema.Struct({
   agentId: Schema.String,
-  workspaceId: Schema.String,
-  closed: Schema.Literal(true)
+  archived: Schema.Literal(true)
 })
-export type ClosedAgent = typeof ClosedAgent.Type
+export type ArchivedAgent = typeof ArchivedAgent.Type
 
 export const AgentCheckout = Schema.Literals(["worktree", "shared", "project", "none"])
 export type AgentCheckout = typeof AgentCheckout.Type

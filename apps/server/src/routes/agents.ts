@@ -7,7 +7,7 @@ import {
 import { Schema } from "effect"
 
 import { HttpFailure, matchRoute, matchRouteParams, run, writeJson } from "../server-context.js"
-import { closeAgent } from "./agent-close.js"
+import { archiveAgent } from "./agent-archive.js"
 import {
   defaultSearchLast,
   maxSearchLast,
@@ -31,8 +31,8 @@ const dispatchAgentRoute = (route: RouteContext): Promise<boolean> => {
   if (request.method === "POST" && url.pathname === "/v1/agents") return startAgent(route)
   if (request.method === "POST" && url.pathname === "/v1/agents/wait") return waitForAgents(route)
 
-  const closeId = matchRoute(url.pathname, "/v1/agents/:id/close")
-  if (closeId !== undefined && request.method === "POST") return closeAgent(route, closeId)
+  const archiveId = matchRoute(url.pathname, "/v1/agents/:id/archive")
+  if (archiveId !== undefined && request.method === "POST") return archiveAgent(route, archiveId)
   if (request.method !== "GET") return Promise.resolve(false)
 
   const statusId = matchRoute(url.pathname, "/v1/agents/:id")

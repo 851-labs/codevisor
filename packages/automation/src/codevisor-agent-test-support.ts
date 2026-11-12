@@ -54,13 +54,9 @@ const respond = (
       timedOut: false
     })
   }
-  const closed = /^\/v1\/agents\/([^/]+)\/close$/.exec(path)
-  if (method === "POST" && closed !== null) {
-    return jsonResponse({ agentId: closed[1], workspaceId: "caller-workspace", closed: true })
-  }
-  const archived = /^\/v1\/workspaces\/([^/]+)\/archive$/.exec(path)
+  const archived = /^\/v1\/agents\/([^/]+)\/archive$/.exec(path)
   if (method === "POST" && archived !== null) {
-    return jsonResponse({ workspaceId: archived[1], archived: true })
+    return jsonResponse({ agentId: archived[1], archived: true })
   }
   if (path.includes("/subscriptions")) return subscriptionsResponse(method)
   return jsonResponse({

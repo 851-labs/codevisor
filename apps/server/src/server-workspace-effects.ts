@@ -47,6 +47,19 @@ export const sessionIsArchived = async (
   return (await run(services.db.findBotOwning({ workspaceId })))?.isArchived === true
 }
 
+export const archivedChatRefusal = async (
+  services: CodevisorServerServices,
+  session: Pick<SessionSummary, "workspaceId" | "isArchived">,
+  action: string
+): Promise<string | undefined> => {
+  if (!(await sessionIsArchived(services, session))) return undefined
+  const shownArchived = (await run(services.db.listWorkspaces)).some(
+    (workspace) =>
+      workspace.isArchived && workspace.id.toLowerCase() === session.workspaceId?.toLowerCase()
+  )
+  return shownArchived ? `Restore the workspace before ${action}` : "This chat is archived"
+}
+
 const startAgentSessionCloses = (
   services: CodevisorServerServices,
   agentSessionId: string

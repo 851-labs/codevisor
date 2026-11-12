@@ -59,33 +59,27 @@ describe("agents.list", () => {
   })
 })
 
-describe("agents.close and workspaces.archive", () => {
-  it("names the local caller so the server can check whose workspace it is", async () => {
+describe("agents.archive", () => {
+  it("names the local caller so the server can tell a shared helper from an agent of its own", async () => {
     const requests = fakeServer()
 
-    const closed = await call(local, "agents.close", { agentId: "helper" })
-    const archived = await call(local, "workspaces.archive", { workspaceId: "worker-workspace" })
-    const fromRemote = await call(remote, "workspaces.archive", { workspaceId: "far-workspace" })
+    const archived = await call(local, "agents.archive", { agentId: "worker" })
+    const fromRemote = await call(remote, "agents.archive", { agentId: "far-worker" })
 
-    expect(closed).toEqual({ agentId: "helper", workspaceId: "caller-workspace", closed: true })
-    expect(archived).toEqual({ workspaceId: "worker-workspace", archived: true })
-    expect(fromRemote).toEqual({ workspaceId: "far-workspace", archived: true })
+    expect(archived).toEqual({ agentId: "worker", archived: true })
+    expect(fromRemote).toEqual({ agentId: "far-worker", archived: true })
     expect(requests.map(({ method, path, body }) => [method, path, body])).toEqual([
-      ["POST", "/v1/agents/helper/close", { callerAgentId: "caller" }],
-      ["POST", "/v1/workspaces/worker-workspace/archive", { callerAgentId: "caller" }],
-      ["POST", "/v1/workspaces/far-workspace/archive", {}]
+      ["POST", "/v1/agents/worker/archive", { callerAgentId: "caller" }],
+      ["POST", "/v1/agents/far-worker/archive", {}]
     ])
   })
 
-  it("closes agents on its own machine only and passes on failures with the tool name", async () => {
-    fakeServer([], { failing: ["POST /v1/workspaces/worker-workspace/archive"] })
+  it("passes on failures with the route that broke", async () => {
+    fakeServer([], { failing: ["POST /v1/agents/worker/archive"] })
 
-    await expect(call(remote, "agents.close", { agentId: "helper" })).rejects.toThrow(
-      "agents.close only works for agents on your own machine"
+    await expect(call(local, "agents.archive", { agentId: "worker" })).rejects.toThrow(
+      "POST /v1/agents/worker/archive broke"
     )
-    await expect(
-      call(local, "workspaces.archive", { workspaceId: "worker-workspace" })
-    ).rejects.toThrow("POST /v1/workspaces/worker-workspace/archive broke")
   })
 })
 

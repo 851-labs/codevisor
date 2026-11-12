@@ -5,6 +5,7 @@ import { attempt } from "./errors.js"
 import { canonicalUuid } from "./ids.js"
 import type { ServiceContext } from "./service-context.js"
 import type { CodevisorDatabaseService } from "./service.js"
+import { archiveSession } from "./session-archive.js"
 import {
   attentionSettleDeadline,
   ensureSessionAttentionState,
@@ -27,6 +28,7 @@ export const makeSessionAttentionService = (
   | "listPendingAttentionSettles"
   | "getAttentionSettleDeadline"
   | "retireSessionTurn"
+  | "archiveSession"
   | "getFinishedTurn"
   | "listFinishedTurns"
   | "markTurnAnnounced"
@@ -84,6 +86,11 @@ export const makeSessionAttentionService = (
     attempt("retireSessionTurn", () => {
       const id = canonicalUuid(rawId)
       sqlite.transaction(() => retireSessionTurn(sqlite, id, isoTimestamp()))()
+    }),
+  archiveSession: (rawId) =>
+    attempt("archiveSession", () => {
+      const id = canonicalUuid(rawId)
+      sqlite.transaction(() => archiveSession(sqlite, id, isoTimestamp()))()
     }),
   getFinishedTurn: (rawId) =>
     attempt("getFinishedTurn", () => finishedTurn(sqlite, canonicalUuid(rawId))),

@@ -66,6 +66,7 @@ export const makeSessionsService = (
   | "listPendingAttentionSettles"
   | "getAttentionSettleDeadline"
   | "retireSessionTurn"
+  | "archiveSession"
   | "getFinishedTurn"
   | "listFinishedTurns"
   | "markTurnAnnounced"

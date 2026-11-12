@@ -186,7 +186,7 @@ export const endpoints = [
   "POST /v1/agents",
   "POST /v1/agents/wait",
   "GET /v1/agents/:id",
-  "POST /v1/agents/:id/close",
+  "POST /v1/agents/:id/archive",
   "GET /v1/agents/:id/search",
   "GET /v1/agents/:id/items/:itemId",
   "GET /v1/sessions",

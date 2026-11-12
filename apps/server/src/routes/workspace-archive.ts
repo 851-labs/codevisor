@@ -44,12 +44,12 @@ const refuseCallerWorkspace = async (
   if (caller.workspaceId !== undefined && sameId(caller.workspaceId, workspace.id)) {
     throw new HttpFailure(
       422,
-      `Workspace ${workspace.id} is your own: you can't archive it. To remove a helper's tab from it, call agents.close({ agentId })`
+      `Workspace ${workspace.id} is your own: you can't archive it. To finish with a helper in it, call agents.archive({ agentId })`
     )
   }
 }
 
-const archiveAndWait = async (
+export const archiveAndWait = async (
   { services, fanout, config, routeState }: RouteContext,
   workspace: Workspace
 ): Promise<void> => {

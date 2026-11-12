@@ -16,6 +16,7 @@ import type { CodevisorDatabaseService } from "@codevisor/db"
 
 import {
   appendAndPublish,
+  archivedChatRefusal,
   assertLocationFolderExists,
   existingDirectory,
   getProjectOrFail,
@@ -290,8 +291,8 @@ export const loadAgentSessionFor = async (
   start: AgentSessionStart = {}
 ): Promise<AgentSessionMetadata> => {
   let session = await run(services.db.getSessionSummary(sessionId))
-  if (await sessionIsArchived(services, session))
-    throw new HttpFailure(409, "Restore the workspace before starting its agent")
+  const refusal = await archivedChatRefusal(services, session, "starting its agent")
+  if (refusal !== undefined) throw new HttpFailure(409, refusal)
   const project = await getProjectOrFail(services.db, session.projectId)
   const cwd = await resolveSessionCwdOrFail(services, serverId, project, session.worktreeName)
   let accountContext: HarnessAccountContext | undefined

@@ -15,17 +15,16 @@ Agent tools are the `agents` global: `agents.start(args)`, `agents.list(args)`, 
 
 ## Quick reference
 
-| To                                           | Call                                                                                                         |
-| -------------------------------------------- | ------------------------------------------------------------------------------------------------------------ |
-| Start an agent                               | `agents.start({ title, prompt, checkout, machine?, harness?, model?, project?, labels? })`, or `{ sandbox }` |
-| Get one back from its id                     | `agents.get(agentId)` finds it on any of your machines                                                       |
-| Get its final reply                          | End your turn; `session.turn_ended` brings it. Later: `agent.status()`                                       |
-| Follow up                                    | `agent.message({ text, delivery? })`, or `agent.message("…")`                                                |
-| Answer its question                          | `agent.answer({ questionId, outcome, answers })`                                                             |
-| Stop its turn                                | `agent.cancel()`                                                                                             |
-| Find your agents                             | `agents.list({ state?, project?, label?, createdByAgentId?, machine?, next? })`                              |
-| Finish with a `"shared"` helper              | `agent.close()`                                                                                              |
-| Finish with a `"worktree"`/`"project"` agent | `workspaces.archive({ workspaceId, machine })`                                                               |
+| To                                | Call                                                                                                         |
+| --------------------------------- | ------------------------------------------------------------------------------------------------------------ |
+| Start an agent                    | `agents.start({ title, prompt, checkout, machine?, harness?, model?, project?, labels? })`, or `{ sandbox }` |
+| Get one back from its id          | `agents.get(agentId)` finds it on any of your machines                                                       |
+| Get its final reply               | End your turn; `session.turn_ended` brings it. Later: `agent.status()`                                       |
+| Follow up                         | `agent.message({ text, delivery? })`, or `agent.message("…")`                                                |
+| Answer its question               | `agent.answer({ questionId, outcome, answers })`                                                             |
+| Stop its turn                     | `agent.cancel()`                                                                                             |
+| Find your agents                  | `agents.list({ state?, project?, label?, createdByAgentId?, machine?, next? })`                              |
+| Finish with any agent you started | `agent.archive()`                                                                                            |
 
 ## Start an agent
 
@@ -46,7 +45,7 @@ One call creates the checkout, the chat, and its first message. The new agent is
 
 `checkout` says which files it works in:
 
-- `"shared"`: your own workspace and checkout, as a tab beside you (a split beside a bot's conversation, which has no tabs), so it edits the same files you do. Use it for quick, scoped help with your current task: research, reading code or docs, a review, a small piece of the same change, or a second opinion from another harness or model. Keep its task scoped so the two of you don't edit the same files at once, and close it with `agent.close()` once you have its reply. It only works on your own machine.
+- `"shared"`: your own workspace and checkout, as a tab beside you (a split beside a bot's conversation, which has no tabs), so it edits the same files you do. Use it for quick, scoped help with your current task: research, reading code or docs, a review, a small piece of the same change, or a second opinion from another harness or model. Keep its task scoped so the two of you don't edit the same files at once, and archive it with `agent.archive()` once you have its reply. It only works on your own machine.
 - `"worktree"`: a new git worktree in a new workspace, for separate work that ends in its own branch or PR.
 - `"project"`: the project folder itself, in a new workspace, for separate work that needs no branch of its own, or a project that isn't a git repository.
 - `"none"`: a fresh empty folder with no project, like a chat started with "No project" in the app. Nothing is added to the sidebar's projects, and it works on any machine, even one with no projects. Leave out `project`.
@@ -123,7 +122,7 @@ To check on an agent yourself:
 Pick how to follow up by how the new request relates to the work under way:
 
 - **It changes the work** ("also cover the error path", "do it this way instead"): steer, the default. The agent folds it in now instead of finishing the old version first.
-- **It replaces the work** ("never mind, do x instead") and x doesn't build on what the agent has done: stop the agent with `agent.cancel()`, archive its workspace or close it, and start a new agent with a fresh brief. Archiving deletes uncommitted work, so ask first if it's unclear whether the work so far is still wanted.
+- **It replaces the work** ("never mind, do x instead") and x doesn't build on what the agent has done: stop the agent with `agent.cancel()`, archive it, and start a new agent with a fresh brief. Archiving deletes uncommitted work, so ask first if it's unclear whether the work so far is still wanted.
 - **It builds on the result** ("then add tests for it"): queue it, so it starts once the current turn ends.
 
 How delivery works:
@@ -194,11 +193,10 @@ Examples:
 
 - To review work, start another agent on the same project with `labels: { role: "reviewer", for: agentId }` and point it at the PR or branch.
 - `agent.debug.branch_diff()` gives a quick size of an agent's changes.
-- When you're done with a shared helper (`"shared"`, in your own workspace), call `agent.close()`. It stops if still running and you stop getting its events. Its tab leaves your workspace, its chat stays in history and `agents.list`, and your checkout is untouched.
-- When you're done with a separate workspace (`"worktree"`, `"project"`, or `"none"`), call `workspaces.archive({ workspaceId: agent.workspaceId, machine: agent.machine })` once its work is merged or no longer needed.
-  - It waits until the archive is done, and its chats stop. It keeps a restorable snapshot of tracked and untracked files and deletes everything else in the checkout folder, ignored files included. Files already sent in a chat stay with that chat.
+- When you're done with an agent you started, call `agent.archive()`: once you have a shared helper's reply, or once a separate agent's work is merged or no longer needed. It stops if still running, you stop getting its events, and its chat is archived: it takes no more messages and its tab closes.
+  - Cleanup depends on where it ran. A `"shared"` helper ran in your checkout, so nothing on disk changes. A `"worktree"` agent's worktree is reclaimed when nothing else uses it: tracked and untracked files are kept as a restorable snapshot and everything else in the folder, ignored files included, is deleted. The project folder itself is never touched. Files already sent in a chat stay with that chat.
   - It releases the branch name, so push or open the PR first if the branch should stay.
-- You can't close yourself or archive your own workspace.
+- You can't archive yourself.
 
 ## Debugging an agent
 
@@ -282,5 +280,5 @@ A **bot** is a Codevisor chat with its own folder and read-only checkouts of one
 - Naming the user in a prompt ("the user wants", "they said"). Write it as your own request.
 - Pasting your whole conversation into a prompt instead of the request and the context it needs.
 - Queueing a change to work that's under way. Steer it, or replace the agent if the work is no longer wanted.
-- Leaving shared helpers open or worktree workspaces unarchived after their work is done.
+- Leaving agents you started unarchived after their work is done.
 - Archiving before the branch is pushed. Archiving releases the branch name.
