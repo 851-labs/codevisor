@@ -244,22 +244,7 @@ final class ScreenSharingHostService {
       if state == "connected", session.captureTask == nil {
         session.captureTask = Task { [weak self, weak session] in
           guard let self, let session else { return }
-          do {
-            let baseline = ScreenSharingCaptureStallRecovery.activity(session.metrics.counters())
-            try await self.startWatchedCapture(session, reason: "viewer connected")
-            guard self.current === session, !session.stopping else { try? await session.capture.stop(); return }
-            try await self.reconcileCapture(session)
-            session.state = "viewing"
-            session.notice = nil
-            session.displaySleepAssertion = ScreenSharingDisplaySleepAssertion(reason: "Codevisor Screen Sharing")
-            self.indicator.show(display: session.display.name) { [weak self, weak session] in
-              guard let self, let session else { return }
-              self.scheduleEnd(session)
-            }
-            await self.recoverStalledCapture(session, baseline: baseline)
-          } catch {
-            await self.end(session, reason: (error as? ScreenSharingError)?.localizedDescription ?? Self.captureFailed)
-          }
+          await self.startViewing(session)
         }
       } else if ["disconnected", "failed", "closed"].contains(state) {
         session.state = "reconnecting"
@@ -282,6 +267,27 @@ final class ScreenSharingHostService {
         if session.state == "viewing", session.control?.lease != nil { session.clipboard?.poll() }
         if self.lease.isExpired(now: ProcessInfo.processInfo.systemUptime) { await self.end(session); return }
       }
+    }
+  }
+
+  private func startViewing(_ session: ScreenSharingHostSession) async {
+    do {
+      let baseline = ScreenSharingCaptureStallRecovery.activity(session.metrics.counters())
+      await updateDisplay(session)
+      guard current === session, !session.stopping else { return }
+      try await startWatchedCapture(session, reason: "viewer connected")
+      guard current === session, !session.stopping else { try? await session.capture.stop(); return }
+      try await reconcileCapture(session)
+      session.state = "viewing"
+      session.notice = nil
+      session.displaySleepAssertion = ScreenSharingDisplaySleepAssertion(reason: "Codevisor Screen Sharing")
+      indicator.show(display: session.display.name) { [weak self, weak session] in
+        guard let self, let session else { return }
+        self.scheduleEnd(session)
+      }
+      await recoverStalledCapture(session, baseline: baseline)
+    } catch {
+      await end(session, reason: (error as? ScreenSharingError)?.localizedDescription ?? Self.captureFailed)
     }
   }
 

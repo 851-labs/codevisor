@@ -34,6 +34,17 @@ struct ScreenSharingHostSessionInputTests {
     #expect(session.injector.location(Self.center) == CGPoint(x: -720, y: -450))
   }
 
+  @Test func viewerInputLandsOnTheVirtualDisplayStandingInForTheSharedOne() throws {
+    let displays = FakeDisplays([1: CGRect(x: 0, y: 0, width: 1920, height: 1080)])
+    let session = try Self.session(sharing: 1, on: displays)
+
+    session.sharedDisplay.virtualDisplayID = 9
+    displays.set(1, .null)
+    displays.set(9, CGRect(x: 0, y: 0, width: 1920, height: 1080))
+
+    #expect(session.injector.location(Self.center) == CGPoint(x: 960, y: 540))
+  }
+
   private static func session(
     sharing displayID: CGDirectDisplayID, on displays: FakeDisplays
   ) throws -> ScreenSharingHostSession {

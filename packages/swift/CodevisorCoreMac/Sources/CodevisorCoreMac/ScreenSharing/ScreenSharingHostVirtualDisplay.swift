@@ -6,15 +6,15 @@ import ScreenSharing
 final class ScreenSharingHostVirtualDisplay {
   nonisolated static let vendorID: UInt32 = 0xC0DF
   static let name = "Codevisor Screen Sharing"
-  static let maximum = (width: 1920, height: 1080)
-  static let minimum = (width: 640, height: 400)
+  nonisolated static let maximum = (width: 1920, height: 1080)
+  nonisolated static let minimum = (width: 640, height: 400)
 
   static var isAvailable: Bool {
     ["CGVirtualDisplay", "CGVirtualDisplayDescriptor", "CGVirtualDisplaySettings", "CGVirtualDisplayMode"]
       .allSatisfy { NSClassFromString($0) != nil }
   }
 
-  static func clamp(width: Int, height: Int) -> (width: Int, height: Int) {
+  nonisolated static func clamp(width: Int, height: Int) -> (width: Int, height: Int) {
     let width = Double(max(minimum.width, width)), height = Double(max(minimum.height, height))
     let scale = min(1, Double(maximum.width) / width, Double(maximum.height) / height)
     return (
@@ -26,10 +26,11 @@ final class ScreenSharingHostVirtualDisplay {
   private let display: CGVirtualDisplay
   let displayID: CGDirectDisplayID
   private(set) var size: (width: Int, height: Int)
-  private let mirrored: CGDirectDisplayID
+  let shared: CGDirectDisplayID
+  let mirrors: Bool
   private let queue = DispatchQueue(label: "codevisor.screen-sharing.virtual-display")
 
-  init(width: Int, height: Int, mirroring physical: CGDirectDisplayID) throws {
+  init(width: Int, height: Int, standingInFor shared: CGDirectDisplayID, mirrors: Bool) throws {
     guard Self.isAvailable else { throw ScreenSharingError.unavailable("This Mac can't create a virtual display.") }
     let descriptor = CGVirtualDisplayDescriptor()
     descriptor.queue = queue
@@ -46,13 +47,14 @@ final class ScreenSharingHostVirtualDisplay {
     descriptor.terminationHandler = { _, _ in }
     display = CGVirtualDisplay(descriptor: descriptor)
     displayID = display.displayID
-    mirrored = physical
+    self.shared = shared
+    self.mirrors = mirrors
     let size = Self.clamp(width: width, height: height)
     self.size = size
     try apply(size)
   }
 
-  func mirror() async throws {
+  func show() async throws {
     for _ in 0..<60 where CGDisplayIsOnline(displayID) == 0 || CGDisplayPixelsWide(displayID) == 0 {
       try await Task.sleep(for: .milliseconds(50))
     }
@@ -60,7 +62,15 @@ final class ScreenSharingHostVirtualDisplay {
       throw ScreenSharingError.unavailable("The virtual display didn't come online.")
     }
     try await selectHiDPIMode()
-    try Self.configure { CGConfigureDisplayMirrorOfDisplay($0, mirrored, displayID) }
+    if !mirrors, try await replacedShared() { return }
+    try Self.configure { CGConfigureDisplayMirrorOfDisplay($0, shared, displayID) }
+  }
+
+  private func replacedShared() async throws -> Bool {
+    for _ in 0..<60 where ScreenSharingDisplayIdentity.isOnline(shared) {
+      try await Task.sleep(for: .milliseconds(50))
+    }
+    return !ScreenSharingDisplayIdentity.isOnline(shared)
   }
 
   func selectHiDPIMode() async throws {
@@ -90,7 +100,8 @@ final class ScreenSharingHostVirtualDisplay {
   }
 
   func release() {
-    try? Self.configure { CGConfigureDisplayMirrorOfDisplay($0, self.mirrored, kCGNullDirectDisplay) }
+    guard ScreenSharingDisplayIdentity.isOnline(shared), CGDisplayIsInMirrorSet(shared) != 0 else { return }
+    try? Self.configure { CGConfigureDisplayMirrorOfDisplay($0, self.shared, kCGNullDirectDisplay) }
   }
 
   private func apply(_ size: (width: Int, height: Int)) throws {

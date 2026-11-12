@@ -69,4 +69,15 @@ struct ScreenSharingDisplayIdentityTests {
       !ScreenSharingDisplayIdentity.sessionSurvives(
         shared: 1, identity: Self.studioDisplay, virtual: 129, online: noVirtual))
   }
+
+  @Test("A virtual display that replaced a headless Mac's framebuffer keeps the session while it's online")
+  func survivesWhileStandingIn() {
+    let onlyVirtual = [Self.online(129, Self.virtual, virtual: true)]
+    #expect(
+      ScreenSharingDisplayIdentity.sessionSurvives(
+        shared: 1, identity: Self.studioDisplay, virtual: 129, replacesShared: true, online: onlyVirtual))
+    #expect(
+      !ScreenSharingDisplayIdentity.sessionSurvives(
+        shared: 1, identity: Self.studioDisplay, virtual: 129, replacesShared: true, online: []))
+  }
 }
