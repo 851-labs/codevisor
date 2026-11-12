@@ -109,6 +109,14 @@ public final class McpGlobalModel {
     await load(in: environment)
   }
 
+  public func signIn(_ entry: McpFleetEntry, in environment: AppEnvironment) async {
+    guard let machineId = entry.machineId(preferring: CodevisorMachine.local.id),
+      let serverId = entry.idByMachine[machineId]
+    else { return }
+
+    await connect(serverId: serverId, on: machineId, in: environment)
+  }
+
   public func disconnect(_ entry: McpFleetEntry, in environment: AppEnvironment) async {
     guard let machineId = entry.machineId(preferring: CodevisorMachine.local.id),
       let serverId = entry.idByMachine[machineId]

@@ -34,16 +34,11 @@ struct McpPluginDetailList: View {
         PluginAccountsSection(model: accounts)
         PluginAccountSignOutSection(model: accounts)
       }
+      McpAccountsSection(entry: entry, model: model)
       McpMachinesSection(entry: entry, model: model)
       if let subscriptions { PluginSubscriptionsSection(model: subscriptions, chatTitle: chatTitle) }
       McpServerToolSections(server: server, client: client, isConnected: isConnected)
-      if summary.isSignedIn { signOutSection }
       if showsModeration || entry.canRemove { manageSection }
-    }
-    .toolbar {
-      if summary.needsSignIn, let signInMachineId {
-        SheetConfirmToolbarItem("Sign In") { signIn(on: signInMachineId) }
-      }
     }
     .task(id: server.id) { await loadPluginDetails() }
     .sheet(isPresented: $reporting) {
@@ -55,12 +50,6 @@ struct McpPluginDetailList: View {
       Button("Cancel", role: .cancel) {}
     } message: {
       Text("It will be removed from every machine.")
-    }
-  }
-
-  private var signOutSection: some View {
-    Section {
-      Button("Sign Out") { Task { await model.disconnect(entry, in: environment) } }
     }
   }
 
@@ -77,14 +66,6 @@ struct McpPluginDetailList: View {
     } footer: {
       if let removalError { Text(removalError).foregroundStyle(.red) }
     }
-  }
-
-  private var summary: McpFleetSummary {
-    McpFleetSummary(entry: entry, rows: model.rows(for: entry, in: environment))
-  }
-
-  private var signInMachineId: String? {
-    entry.machineId(preferring: CodevisorMachine.local.id)
   }
 
   private var isEditable: Bool {
@@ -104,11 +85,6 @@ struct McpPluginDetailList: View {
 
   private var isConnected: Bool {
     if case .ready = model.row(for: entry, on: machineId, in: environment)?.status { true } else { false }
-  }
-
-  private func signIn(on signInMachineId: String) {
-    guard let serverId = entry.idByMachine[signInMachineId] else { return }
-    Task { await model.connect(serverId: serverId, on: signInMachineId, in: environment) }
   }
 
   private func loadPluginDetails() async {

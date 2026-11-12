@@ -17,6 +17,13 @@ public struct McpFleetSummary: Equatable, Sendable {
     usesOAuth && !needsSignIn && liveRows.contains(where: \.isReady)
   }
 
+  public var account: McpAccountState? {
+    guard usesOAuth else { return nil }
+    if isSignedIn { return .signedIn }
+    if needsSignIn { return .signedOut }
+    return .settling(status: label)
+  }
+
   public var label: String {
     if needsSignIn { return "Needs sign-in" }
     if let attention = liveRows.first(where: \.status.rowStatus.needsAttention) {
