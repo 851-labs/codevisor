@@ -25,6 +25,8 @@ struct HomeSidebarWorkspaceRowView: View, Equatable {
   private func onOpen() {
     if workspace.isArchived {
       confirmsRestore = true
+    } else if let asking = workspace.asking {
+      actions.actions.openAsking(asking)
     } else {
       actions.actions.openWorkspace(workspace)
     }
@@ -159,8 +161,15 @@ struct HomeSidebarWorkspaceRowView: View, Equatable {
       VStack(alignment: .leading, spacing: 2) {
         HomeSidebarRowTitle(title: workspace.displayName)
           .lineLimit(dynamicTypeSize.isAccessibilitySize ? 2 : 1)
-        if let subtitle = workspace.subtitle {
-          HomeSidebarRowSubtitle(text: subtitle)
+        if workspace.subtitle != nil || workspace.rowStatus != nil {
+          HStack(spacing: 6) {
+            if let status = workspace.rowStatus {
+              SidebarRowStatusLabel(status: status)
+            }
+            if let subtitle = workspace.subtitle {
+              HomeSidebarRowSubtitle(text: subtitle)
+            }
+          }
         }
       }
       .frame(maxWidth: .infinity, alignment: .leading)
@@ -205,7 +214,7 @@ struct HomeSidebarWorkspaceRowView: View, Equatable {
       case .idle: nil
       }
     return [
-      workspace.displayName, status, workspace.subtitle,
+      workspace.displayName, status, workspace.rowStatus?.title, workspace.subtitle,
       workspace.pullRequest.map { "pull request \($0.number)" },
       workspace.machine.map { "on \($0.name)" },
     ].compactMap { $0 }.joined(separator: ", ")

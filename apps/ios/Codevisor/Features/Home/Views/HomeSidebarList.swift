@@ -20,6 +20,7 @@ struct HomeSidebarActions {
   var openInNewWindow: ((HomeSidebarTabRow, HomeSidebarWorkspaceRef) -> Void)?
   var openWorkspaceInNewWindow: ((HomeSidebarWorkspace) -> Void)?
   var openBot: (Bot) -> Void = { _ in }
+  var openAsking: (HomeSidebarWorkspaceRef) -> Void = { _ in }
   var newBot: () -> Void = {}
   var editBot: (Bot) -> Void = { _ in }
   var forkBot: (Bot) -> Void = { _ in }
@@ -389,7 +390,9 @@ struct HomeSidebarList: View {
       get: { pendingSelection ?? selectedRowID(content) },
       set: { id in
         guard let id else { return }
-        if let bot = content.bot(id) {
+        if let asking = content.bot(id)?.asking ?? content.workspace(id)?.asking {
+          actions.actions.openAsking(asking)
+        } else if let bot = content.bot(id) {
           pendingSelection = id
           actions.actions.openBot(bot.bot)
         } else if let (row, workspace) = content.row(id) {

@@ -1,7 +1,9 @@
+import CodevisorUI
 import SwiftUI
 
 struct HomeSidebarBotConversationTitle: View {
   let name: String
+  var status: SidebarRowStatus? = nil
   let showsChevron: Bool
 
   var body: some View {
@@ -10,6 +12,9 @@ struct HomeSidebarBotConversationTitle: View {
         .fontWeight(.semibold)
         .lineLimit(1)
       Spacer(minLength: 0)
+      if let status {
+        SidebarRowStatusLabel(status: status)
+      }
       if showsChevron {
         Image(systemName: "chevron.forward")
           .font(.footnote.weight(.semibold))

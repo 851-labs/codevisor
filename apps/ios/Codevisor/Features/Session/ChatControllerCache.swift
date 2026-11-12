@@ -179,6 +179,10 @@ final class ChatControllerCache {
       || controller.isWaitingOnBackgroundTasks
   }
 
+  func isSettingUp(_ session: ChatSession) -> Bool {
+    slot(Key(serverId: session.serverId, id: session.id)).controller?.isSettingUp == true
+  }
+
   func reconcileInFlightControllers() async {
     await withTaskGroup(of: Void.self) { group in
       for controller in controllers.values where controller.isSending || controller.hasVisibleTranscript {

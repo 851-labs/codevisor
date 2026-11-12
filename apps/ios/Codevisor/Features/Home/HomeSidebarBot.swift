@@ -1,4 +1,5 @@
 import CodevisorCore
+import CodevisorUI
 import Foundation
 
 struct HomeSidebarBot: Identifiable, Equatable {
@@ -9,6 +10,8 @@ struct HomeSidebarBot: Identifiable, Equatable {
   var canArchive = false
   var canFork = false
   var sectionID: UUID?
+  var rowStatus: SidebarRowStatus? = nil
+  var asking: HomeSidebarWorkspaceRef? = nil
 
   var id: UUID { bot.id }
 

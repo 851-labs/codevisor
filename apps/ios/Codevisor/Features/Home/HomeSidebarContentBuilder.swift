@@ -39,6 +39,7 @@ struct HomeSidebarContentBuilder {
     let archivedIDs = Set(environment.navigationStore.workspaceEntries.archived.map(\.id))
     let tree = SidebarWorkspaceTree(
       listedItems, pinnedIDs: preferences.pinnedIDs, hiddenParentIDs: homes.union(archivedIDs))
+    let statuses = preferences.rowDetails.contains(.status) ? HomeSidebarStatusSource(environment: environment) : nil
     var content = HomeSidebarContent.make(
       listed: tree.roots,
       children: tree.children,
@@ -57,10 +58,12 @@ struct HomeSidebarContentBuilder {
       else { return nil }
       return sidebarWorkspace(
         workspace, item: item, preferences: preferences, projectGroups: projectGroups,
-        heading: placement.heading)
+        heading: placement.heading, statuses: statuses)
     }
     content.canCreateBots = !environment.bots.botMachines.isEmpty
-    let bots = botConversations.map { sidebarBot($0, preferences: preferences, projectGroups: projectGroups) }
+    let bots = botConversations.map {
+      sidebarBot($0, preferences: preferences, projectGroups: projectGroups, statuses: statuses)
+    }
     content.bots = bots.filter { !$0.bot.isArchived }
     content.archivedBots = bots.filter(\.bot.isArchived)
     content.botSections = environment.botSections.sections
@@ -68,10 +71,12 @@ struct HomeSidebarContentBuilder {
   }
 
   private func sidebarBot(
-    _ conversation: BotConversation, preferences: HomeSidebarPreferences, projectGroups: [ProjectGroup]
+    _ conversation: BotConversation, preferences: HomeSidebarPreferences, projectGroups: [ProjectGroup],
+    statuses: HomeSidebarStatusSource?
   ) -> HomeSidebarBot {
     let bot = conversation.bot
     let session = environment.projectList.session(bot.sessionId, serverId: bot.serverId)
+    let rowStatus = bot.isArchived ? nil : statuses?.status(of: bot.workspaceId)
     return HomeSidebarBot(
       conversation: conversation,
       status: session.map(status(for:)) ?? .idle,
@@ -80,7 +85,9 @@ struct HomeSidebarContentBuilder {
         .flatMap { botSidebarWorkspace($0, preferences: preferences, projectGroups: projectGroups) },
       canArchive: environment.bots.supportsArchive(on: bot.serverId),
       canFork: environment.bots.supportsFork(on: bot.serverId),
-      sectionID: environment.botSections.membership[bot.id]
+      sectionID: environment.botSections.membership[bot.id],
+      rowStatus: rowStatus?.status,
+      asking: rowStatus?.asking
     )
   }
 
@@ -115,9 +122,11 @@ struct HomeSidebarContentBuilder {
     item: WorkspaceSidebarItem,
     preferences: HomeSidebarPreferences,
     projectGroups: [ProjectGroup],
-    heading: SidebarWorkspaceGroup.Heading?
+    heading: SidebarWorkspaceGroup.Heading?,
+    statuses: HomeSidebarStatusSource? = nil
   ) -> HomeSidebarWorkspace {
     let details = preferences.rowDetails
+    let rowStatus = workspace.isArchived ? nil : statuses?.status(of: workspace.id)
     let rows = workspace.isArchived ? [] : rows(for: workspace)
     let projectName = projectGroups.first {
       $0.contains(serverId: workspace.serverId, projectId: workspace.projectId)
@@ -136,6 +145,8 @@ struct HomeSidebarContentBuilder {
         worktreeName: workspace.worktreeName,
         groupNamesProject: preferences.grouping == .project && heading != nil
       ),
+      rowStatus: rowStatus?.status,
+      asking: rowStatus?.asking,
       machine: details.contains(.machine) && heading?.namesMachine != true
         ? rowMachine(serverId: workspace.serverId) : nil,
       pullRequest: details.contains(.pullRequest) ? gitLookups.pullRequest(for: workspace) : nil,
