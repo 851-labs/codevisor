@@ -35,7 +35,6 @@ public enum SessionSidebarState: String, Sendable, Codable, Equatable {
   }
 }
 
-/// How a chat's last turn ended when it didn't finish cleanly. Clears when the next turn starts.
 public enum SessionTurnFailure: String, Sendable, Codable, Equatable {
   case error
   case usageLimit
