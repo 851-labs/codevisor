@@ -29,6 +29,10 @@ struct HomeSidebarContentBuilder {
     return known(environment.navigationStore.workspaceEntries.archived).filter { !homes.contains($0.id) }
   }
 
+  var botConversations: [BotConversation] {
+    BotSidebarOrder.sorted(botEntries.map { conversation($0.bot) })
+  }
+
   func content(_ preferences: HomeSidebarPreferences) -> HomeSidebarContent {
     let projectGroups = ProjectGroup.grouping(environment.projectList.projects)
     let homes = Set(botEntries.map(\.bot.workspaceId))
@@ -56,10 +60,7 @@ struct HomeSidebarContentBuilder {
         heading: placement.heading)
     }
     content.canCreateBots = !environment.bots.botMachines.isEmpty
-    let bots =
-      botEntries
-      .map { sidebarBot($0, preferences: preferences, projectGroups: projectGroups) }
-      .sorted(by: HomeSidebarBot.byRecency)
+    let bots = botConversations.map { sidebarBot($0, preferences: preferences, projectGroups: projectGroups) }
     content.bots = bots.filter { !$0.bot.isArchived }
     content.archivedBots = bots.filter(\.bot.isArchived)
     content.botSections = environment.botSections.sections
@@ -67,12 +68,12 @@ struct HomeSidebarContentBuilder {
   }
 
   private func sidebarBot(
-    _ entry: BotSidebarEntry, preferences: HomeSidebarPreferences, projectGroups: [ProjectGroup]
+    _ conversation: BotConversation, preferences: HomeSidebarPreferences, projectGroups: [ProjectGroup]
   ) -> HomeSidebarBot {
-    let bot = entry.bot
+    let bot = conversation.bot
     let session = environment.projectList.session(bot.sessionId, serverId: bot.serverId)
     return HomeSidebarBot(
-      conversation: conversation(bot, session: session),
+      conversation: conversation,
       status: session.map(status(for:)) ?? .idle,
       machine: preferences.rowDetails.contains(.machine) ? rowMachine(serverId: bot.serverId) : nil,
       home: environment.navigationStore.workspaceEntries.sidebar.first { $0.id == bot.workspaceId }
@@ -83,10 +84,11 @@ struct HomeSidebarContentBuilder {
     )
   }
 
-  private func conversation(_ bot: Bot, session: ChatSession?) -> BotConversation {
-    let isUnread = session?.isUnread ?? false
+  private func conversation(_ bot: Bot) -> BotConversation {
+    let session = environment.projectList.session(bot.sessionId, serverId: bot.serverId)
     return BotConversation(
-      bot: bot, session: session, activity: session.map(activity(of:)) ?? .idle, isUnread: isUnread)
+      bot: bot, session: session, home: environment.home(of: bot), activity: session.map(activity(of:)) ?? .idle,
+      isUnread: session?.isUnread ?? false)
   }
 
   private func activity(of session: ChatSession) -> BotConversation.Activity {

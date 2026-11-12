@@ -64,6 +64,7 @@ export const Bot = Schema.Struct({
   rootPath: Schema.String,
   projects: Schema.Array(BotProject),
   isArchived: Schema.Boolean,
+  archivedAt: Schema.optional(Schema.String),
   createdAt: Schema.String,
   updatedAt: Schema.optional(Schema.String)
 })

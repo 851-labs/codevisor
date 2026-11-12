@@ -7,10 +7,9 @@ struct BotConversationRow: View {
 
   let conversation: BotConversation
   let isSelected: Bool
-  var isDropTarget = false
 
   var body: some View {
-    HoverableRow(isSelected: isSelected, isHoverForced: isDropTarget) { _ in
+    HoverableRow(isSelected: isSelected) { _ in
       HStack(spacing: 6) {
         BotUnreadDot(isVisible: conversation.isUnread && !isSelected)
         avatar

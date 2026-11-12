@@ -18,29 +18,10 @@ struct BotConversationTests {
     #expect(silent.preview == nil)
   }
 
-  @Test("Conversations sort by latest activity, then by name, with never-active bots last")
-  func sortsByRecency() throws {
-    let older = try conversation(name: "Zed", updatedAt: Self.reference)
-    let newer = try conversation(name: "Mia", updatedAt: Self.reference.addingTimeInterval(60))
-    let tiedFirst = try conversation(name: "Ada", updatedAt: Self.reference)
-    let unsynced = try conversation(name: "Bea", session: false)
-
-    let sorted = [unsynced, older, tiedFirst, newer].sorted(by: BotConversation.byRecency)
-
-    #expect(sorted.map(\.bot.name) == ["Mia", "Ada", "Zed", "Bea"])
-  }
-
-  private func conversation(
-    name: String = "Helper",
-    message: BotMessagePreview? = nil,
-    updatedAt: Date? = nil,
-    session hasSession: Bool = true
-  ) throws -> BotConversation {
-    let record = ServerBot.fixture(name: name)
-    let bot = try #require(Bot(serverId: "local", record: record))
+  private func conversation(message: BotMessagePreview?) throws -> BotConversation {
+    let bot = try #require(Bot(serverId: "local", record: ServerBot.fixture()))
     let session = ChatSession(
-      id: bot.sessionId, projectId: bot.projectId, createdAt: Self.reference.addingTimeInterval(-3_600),
-      updatedAt: updatedAt, latestBotMessage: message)
-    return BotConversation(bot: bot, session: hasSession ? session : nil, activity: .idle, isUnread: false)
+      id: bot.sessionId, projectId: bot.projectId, createdAt: Self.reference, latestBotMessage: message)
+    return BotConversation(bot: bot, session: session, home: nil, activity: .idle, isUnread: false)
   }
 }

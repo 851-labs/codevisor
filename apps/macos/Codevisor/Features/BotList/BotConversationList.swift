@@ -5,15 +5,14 @@ struct BotConversationList {
   let store: SessionStore?
 
   func conversations() -> [BotConversation] {
-    environment.bots.bots
-      .map(conversation(for:))
-      .sorted(by: BotConversation.byRecency)
+    BotSidebarOrder.sorted(environment.bots.bots.map(conversation(for:)))
   }
 
   private func conversation(for bot: Bot) -> BotConversation {
     let session = environment.projectList.session(bot.sessionId, serverId: bot.serverId)
     return BotConversation(
-      bot: bot, session: session, activity: activity(of: session), isUnread: isUnread(session))
+      bot: bot, session: session, home: environment.home(of: bot), activity: activity(of: session),
+      isUnread: isUnread(session))
   }
 
   private func activity(of session: ChatSession?) -> BotConversation.Activity {

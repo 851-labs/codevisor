@@ -11,7 +11,7 @@ struct BotSidebarRowsTests {
       projectId: UUID().uuidString, sessionId: UUID().uuidString, workspaceId: UUID().uuidString,
       rootPath: "/bots/\(name)", projects: [], isArchived: isArchived, createdAt: "2026-10-27T00:00:00Z")
     return BotConversation(
-      bot: Bot(serverId: "studio", record: record)!, session: nil, activity: .idle, isUnread: false)
+      bot: Bot(serverId: "studio", record: record)!, session: nil, home: nil, activity: .idle, isUnread: false)
   }
 
   @Test("Stepping walks the derived rows: no selection enters at the end it moves from, and the ends don't wrap")
@@ -113,5 +113,46 @@ struct BotSidebarRowsTests {
     #expect(BotSidebarRows.replacement(forArchiving: scout.id, in: rows)?.id == atlas.id)
     #expect(BotSidebarRows.replacement(forArchiving: ledger.id, in: rows) == nil)
     #expect(BotSidebarRows.replacement(forArchiving: atlas.id, in: Array(rows.prefix(1))) == nil)
+  }
+
+  @Test(
+    "A drop line names its section and the bot above it: the top of the list, right under a header, or under any bot"
+  )
+  func dropPlacement() {
+    let (atlas, scout, ledger, patch) = (
+      conversation("Atlas"), conversation("Scout"), conversation("Ledger"), conversation("Patch", isArchived: true)
+    )
+    let (work, home) = (section("Work", at: "4000000000008"), section("Home", at: "8000000000008"))
+    let rows = BotSidebarRows.derive(
+      BotSidebarRows.State(
+        conversations: [atlas, scout, ledger, patch], sections: [work, home],
+        membership: [scout.id: work.id, ledger.id: work.id], isArchivedExpanded: true))
+    func placement(_ index: Int) -> BotSidebarPlacement {
+      BotSidebarRows.placement(insertingAt: index, excluding: scout.id, in: rows)
+    }
+
+    #expect(
+      BotSidebarRows.dropSlots(in: rows) == [
+        .bot(atlas.id), .section(work.id), .bot(scout.id), .bot(ledger.id), .section(home.id),
+      ])
+    #expect(placement(0) == BotSidebarPlacement(section: nil, after: nil))
+    #expect(placement(1) == BotSidebarPlacement(section: nil, after: atlas.id))
+    #expect(placement(2) == BotSidebarPlacement(section: work.id, after: nil))
+    #expect(placement(3) == BotSidebarPlacement(section: work.id, after: ledger.id))
+    #expect(placement(4) == BotSidebarPlacement(section: home.id, after: nil))
+  }
+
+  @Test("A list move (destination counted before removal) lands after the bot that ends up above it")
+  func listMovePlacement() {
+    let (atlas, scout, ledger) = (UUID(), UUID(), UUID())
+    let section = UUID()
+    func placement(_ index: Int, to destination: Int) -> BotSidebarPlacement {
+      BotSidebarRows.placement(moving: index, to: destination, among: [atlas, scout, ledger], section: section)
+    }
+
+    #expect(placement(2, to: 0) == BotSidebarPlacement(section: section, after: nil))
+    #expect(placement(2, to: 1) == BotSidebarPlacement(section: section, after: atlas))
+    #expect(placement(0, to: 3) == BotSidebarPlacement(section: section, after: ledger))
+    #expect(placement(0, to: 2) == BotSidebarPlacement(section: section, after: scout))
   }
 }

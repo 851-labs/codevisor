@@ -30,5 +30,7 @@ public struct Bot: Identifiable, Hashable, Sendable {
   public var harnessId: String { record.harnessId }
   public var rootPath: String { record.rootPath }
   public var isArchived: Bool { record.isArchived == true }
+  public var createdAt: Date? { try? ServerDateCoding.date(from: record.createdAt) }
+  public var archivedAt: Date? { record.archivedAt.flatMap { try? ServerDateCoding.date(from: $0) } }
   public var sourceProjectIds: [String] { record.projects.map(\.projectId) }
 }

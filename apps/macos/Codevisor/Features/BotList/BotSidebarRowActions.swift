@@ -11,6 +11,7 @@ struct BotSidebarRowActions {
   let unarchive: (Bot) -> Void
   let delete: (Bot) -> Void
   let moveBot: (_ botID: UUID, _ sectionID: UUID?) -> Void
+  let placeBot: (Bot, BotSidebarPlacement) -> Void
   let newSection: (_ moving: Bot?) -> Void
   let toggleSection: (UUID) -> Void
   let toggleArchived: () -> Void

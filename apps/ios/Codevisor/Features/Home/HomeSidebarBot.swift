@@ -19,8 +19,4 @@ struct HomeSidebarBot: Identifiable, Equatable {
   }
 
   var hasNestedRows: Bool { !tabs.isEmpty }
-
-  static func byRecency(_ lhs: Self, _ rhs: Self) -> Bool {
-    BotConversation.byRecency(lhs.conversation, rhs.conversation)
-  }
 }
