@@ -19,6 +19,9 @@ public struct ScreenSharingMachineSettings: Equatable, Sendable {
     public var screenshotsStayLocal: Bool
     public init(screenshotsStayLocal: Bool = true) { self.screenshotsStayLocal = screenshotsStayLocal }
 
+    public static let screenshotsExplanation =
+      "Screenshot shortcuts like ⇧⌘4 work on this Mac instead of the shared screen."
+
     public var localShortcuts: Set<ScreenSharingLocalShortcutGroup> { screenshotsStayLocal ? [.screenshots] : [] }
   }
 
@@ -125,7 +128,7 @@ public struct ScreenSharingMachineSettingsSheet: View {
         display
         if draft.settings.sound != nil { sound }
         if let keyboard = Binding($draft.settings.keyboard) {
-          ScreenSharingMachineKeyboardSection(keyboard: keyboard, machineName: draft.settings.name)
+          ScreenSharingMachineKeyboardSection(keyboard: keyboard)
         }
       }
       .formStyle(.grouped)

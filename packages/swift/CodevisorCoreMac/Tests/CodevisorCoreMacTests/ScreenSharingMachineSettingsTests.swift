@@ -63,6 +63,7 @@ struct ScreenSharingMachineSettingsTests {
     var withKeyboard = Self.original
     withKeyboard.keyboard = .init()
     #expect(withKeyboard.keyboard?.localShortcuts == [.screenshots], "screenshots stay on this Mac by default")
+    #expect(!ScreenSharingMachineSettings.Keyboard.screenshotsExplanation.contains(withKeyboard.name))
     var draft = ScreenSharingMachineSettingsDraft(withKeyboard)
     draft.settings.keyboard?.screenshotsStayLocal = false
     let changes = draft.changes(from: withKeyboard)
