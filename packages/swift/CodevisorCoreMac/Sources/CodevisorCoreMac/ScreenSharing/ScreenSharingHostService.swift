@@ -48,14 +48,7 @@ final class ScreenSharingHostService {
     guard request.version == 1 else {
       return .init(status: "unavailable", message: "Update Codevisor to use Screen Sharing.")
     }
-    let attempt: UUID?
-    if request.operation == .start || request.operation == .restart {
-      let id = UUID()
-      pendingStarts[id] = .init(request)
-      attempt = id
-    } else {
-      attempt = nil
-    }
+    let attempt = [.start, .restart].contains(request.operation) ? registerStart(request) : nil
     defer { if let attempt { pendingStarts.removeValue(forKey: attempt) } }
     installObservers()
     if lease.isExpired(now: ProcessInfo.processInfo.systemUptime), let current { await end(current) }
@@ -94,6 +87,14 @@ final class ScreenSharingHostService {
       guard let attempt else { return .init(status: "stopped") }
       return await start(request, attempt: attempt)
     }
+  }
+
+  private func registerStart(_ request: ServerScreenSharingRequest) -> UUID {
+    let owner = ScreenSharingHostLease.Owner(request)
+    pendingStarts = pendingStarts.filter { !$0.value.isSamePane(as: owner) }
+    let attempt = UUID()
+    pendingStarts[attempt] = owner
+    return attempt
   }
 
   private func start(_ request: ServerScreenSharingRequest, attempt: UUID) async -> ServerScreenSharingReply {

@@ -51,6 +51,12 @@ extension CloudRelayTransportError: ServerTransportFailure {
   }
 }
 
+extension CloudHubConnectionError: ServerTransportFailure {
+  public var isConnectionLoss: Bool { false }
+
+  public var isInterruption: Bool { self == .disconnected || self == .channelClosed }
+}
+
 enum CloudRelayProxy {
   static let initialCreditBytes = 1024 * 1024
 }

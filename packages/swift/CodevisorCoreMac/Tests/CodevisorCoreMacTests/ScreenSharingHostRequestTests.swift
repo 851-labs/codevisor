@@ -50,6 +50,25 @@ struct ScreenSharingHostRequestTests {
     await host.shutdown()
   }
 
+  @Test func aRepeatedStartFromTheSamePaneSupersedesTheOneStillPending() async {
+    let entered = TestSignal()
+    let release = TestSignal()
+    let host = makeHost {
+      entered.signal()
+      await release.wait()
+      return []
+    }
+    let start = request()
+    let first = Task { await host.handle(start) }
+    await entered.wait()
+    let retried = Task { await host.handle(start) }
+    await entered.wait(for: 2)
+    release.signal()
+    #expect(await first.value.status == "stopped")
+    #expect(await retried.value.status == "unavailable")
+    await host.shutdown()
+  }
+
   enum ForeignIdentity: CaseIterable, Sendable { case workspace, pane, viewer }
 
   @Test(arguments: ForeignIdentity.allCases)

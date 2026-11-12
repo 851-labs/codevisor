@@ -1,7 +1,7 @@
 import Foundation
 
 struct CloudDirectPongWatch {
-  static let maximumExtensions = 3
+  static let maximumExtensions = 1
 
   private var pingSentAt: ContinuousClock.Instant?
   private var lastInboundAt: ContinuousClock.Instant?
@@ -26,10 +26,9 @@ struct CloudDirectPongWatch {
     return true
   }
 
-  mutating func ponged() -> Duration? {
-    defer { pingSentAt = nil }
-    return pingSentAt?.duration(to: .now)
-  }
+  var pingRoundTrip: Duration? { pingSentAt?.duration(to: .now) }
+
+  mutating func ponged() { pingSentAt = nil }
 
   func diagnostics(openChannels: Int, path: String?) -> String {
     let now = ContinuousClock.now

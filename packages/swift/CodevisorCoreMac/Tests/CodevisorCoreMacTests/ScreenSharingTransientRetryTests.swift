@@ -94,6 +94,29 @@ struct ScreenSharingTransientRetryTests {
     #expect(script.requests == 3)
   }
 
+  @Test func aRequestThatReachesAPipeAlreadyDownIsRetriedToo() async throws {
+    let clock = TestClock()
+    let script = Script([.failure(CloudHubConnectionError.disconnected), .success(Self.available)])
+    let task = run(script, clock: clock)
+    await clock.waitForSleep(.milliseconds(500))
+    clock.advance(by: .milliseconds(500))
+    #expect(try await task.value.status == "available")
+  }
+
+  @Test func dropsAndATimedOutHostShareOneBudgetOfFourRequests() async throws {
+    let clock = TestClock()
+    let script = Script([
+      .failure(Self.interrupted), .failure(Self.timedOut), .failure(Self.interrupted), .failure(Self.interrupted),
+    ])
+    let task = run(script, clock: clock)
+    for delay: Duration in [.milliseconds(500), .seconds(2), .seconds(1)] {
+      await clock.waitForSleep(delay)
+      clock.advance(by: delay)
+    }
+    await #expect(throws: CloudRelayTransportError.channelClosed(nil)) { try await task.value }
+    #expect(script.requests == 4)
+  }
+
   @Test func permanentFailuresAndAnswersAreNotRetried() async throws {
     let clock = TestClock()
     for outcome: Result<ServerScreenSharingReply, any Error> in [

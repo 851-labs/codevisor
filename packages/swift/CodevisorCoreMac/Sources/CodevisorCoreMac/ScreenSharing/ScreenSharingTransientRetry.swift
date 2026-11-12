@@ -20,12 +20,20 @@ public enum ScreenSharingTransientRetry {
     sleep: @Sendable (Duration) async throws -> Void,
     _ request: @MainActor () async throws -> ServerScreenSharingReply
   ) async throws -> ServerScreenSharingReply {
-    do {
-      let reply = try await ServerConnectionLoss.retryingInterruptions(sleep: sleep, request)
-      guard isTransient(reply) else { return reply }
-    } catch  where isTransient(error) {
+    var interruptionDelays = ServerConnectionLoss.interruptionRetryDelays[...]
+    var retriedTransient = false
+    while true {
+      do {
+        let reply = try await request()
+        guard isTransient(reply), !retriedTransient else { return reply }
+        retriedTransient = true
+        try await sleep(delay)
+      } catch  where ServerConnectionLoss.isInterruption(error) && !interruptionDelays.isEmpty {
+        try await sleep(interruptionDelays.removeFirst())
+      } catch  where isTransient(error) && !retriedTransient {
+        retriedTransient = true
+        try await sleep(delay)
+      }
     }
-    try await sleep(delay)
-    return try await ServerConnectionLoss.retryingInterruptions(sleep: sleep, request)
   }
 }

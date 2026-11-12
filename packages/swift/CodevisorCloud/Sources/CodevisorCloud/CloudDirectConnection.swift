@@ -178,7 +178,7 @@ public actor CloudDirectConnection: CloudChannelHosting {
   }
 
   private func handle(_ message: ServerWebSocketMessage) {
-    pongWatch.received()
+    defer { pongWatch.received() }
     switch message {
     case let .data(payload):
       guard let envelopes = try? CloudRelayWire.decode(payload) else { return }
@@ -450,10 +450,10 @@ extension CloudDirectConnection {
   }
 
   private func logSlowPong() {
-    let diagnostics = heartbeatDiagnostics
-    guard let roundTrip = pongWatch.ponged(), roundTrip > heartbeatTimeout / 2 else { return }
+    defer { pongWatch.ponged() }
+    guard let roundTrip = pongWatch.pingRoundTrip, roundTrip > heartbeatTimeout / 2 else { return }
     Log.cloud.notice(
-      "Direct pipe to \(self.machineDeviceId, privacy: .public) answered a ping after \(CloudDirectPongWatch.seconds(roundTrip), privacy: .public) (\(diagnostics, privacy: .public))"
+      "Direct pipe to \(self.machineDeviceId, privacy: .public) answered a ping after \(CloudDirectPongWatch.seconds(roundTrip), privacy: .public) (\(self.heartbeatDiagnostics, privacy: .public))"
     )
   }
 
