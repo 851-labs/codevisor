@@ -39,14 +39,11 @@ export const sweepTrashedWorktrees = async (): Promise<void> => {
 
 export const sessionIsArchived = async (
   services: CodevisorServerServices,
-  session: Pick<SessionSummary, "workspaceId">
+  session: Pick<SessionSummary, "workspaceId" | "isArchived">
 ): Promise<boolean> => {
+  if (session.isArchived === true) return true
   const workspaceId = session.workspaceId
   if (workspaceId === undefined) return false
-  const archivedWorkspace = (await run(services.db.listWorkspaces)).some(
-    (workspace) => workspace.id.toLowerCase() === workspaceId.toLowerCase() && workspace.isArchived
-  )
-  if (archivedWorkspace) return true
   return (await run(services.db.findBotOwning({ workspaceId })))?.isArchived === true
 }
 

@@ -239,6 +239,8 @@ export const sessionFromRow = (row: SessionRow, folderPath: string | undefined):
     ...(row.workspace_id === null ? {} : { workspaceId: row.workspace_id }),
     ...(cwd === undefined ? {} : { cwd }),
     ...(row.checkout_id == null ? {} : { checkoutId: row.checkout_id }),
+    ...(row.is_archived === 1 ? { isArchived: true } : {}),
+    ...(row.archived_at == null ? {} : { archivedAt: row.archived_at }),
     ...(Object.keys(configSelections).length === 0 ? {} : { configSelections }),
     ...(Object.keys(unavailableConfigSelections).length === 0
       ? {}

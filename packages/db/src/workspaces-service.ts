@@ -23,7 +23,7 @@ import { rowReader, text } from "./row-reader.js"
 import { workspacePaneRows, workspaceRows, type WorkspaceRow } from "./rows.js"
 import { archivedStamp, type ServiceContext } from "./service-context.js"
 import type { CodevisorDatabaseService } from "./service.js"
-import { retireWorkspaceTurns } from "./session-turn-retire.js"
+import { followWorkspaceArchive } from "./session-archive.js"
 import { makeSessionWorkspacesService } from "./session-workspaces-service.js"
 import * as panes from "./workspace-pane-operations.js"
 import type { UpsertWorkspaceRecord } from "./workspace-service-types.js"
@@ -60,7 +60,9 @@ export const upsertWorkspaceRow = (
       request
     )
     assignDefaultCheckout(sqlite, id, config.serverId, projectId, request.rootDirectory)
-    if (archiveFlipped(existing, stamp)) retireWorkspaceTurns(sqlite, id, now)
+    if (archiveFlipped(existing, stamp)) {
+      followWorkspaceArchive(sqlite, id, { from: existing?.archived_at ?? null, to: stamp }, now)
+    }
   })()
   return readWorkspace(sqlite, id)
 }
@@ -112,7 +114,14 @@ export const makeWorkspacesService = (
             existing.project_id,
             request.rootDirectory
           )
-          if (archiveFlipped(existing, stamp)) retireWorkspaceTurns(sqlite, id, isoTimestamp())
+          if (archiveFlipped(existing, stamp)) {
+            followWorkspaceArchive(
+              sqlite,
+              id,
+              { from: existing.archived_at, to: stamp },
+              isoTimestamp()
+            )
+          }
         })()
         return readWorkspace(sqlite, id)
       }),

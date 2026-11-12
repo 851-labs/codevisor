@@ -81,8 +81,7 @@ const sidebarSql = {
          coalesce(sa.pending_finish, 0) as pending_finish,
          coalesce(rs.last_seen_sequence, 0) as last_seen_sequence,
          coalesce(rs.manually_unread, 0) as manually_unread,
-         exists (select 1 from workspaces w where w.id = s.workspace_id and w.is_archived = 1)
-           as archived
+         s.is_archived as archived
        from sessions s
        left join session_attention sa on sa.session_id = s.id
        left join session_read_state rs

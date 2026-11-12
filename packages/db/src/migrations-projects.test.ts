@@ -53,14 +53,12 @@ describe("@codevisor/db project and archive upgrades", () => {
     const sqlite = new Database(filename)
     try {
       sqlite.exec(`
-      alter table sessions add column is_archived integer not null default 0;
-      alter table sessions add column archived_at text;
       alter table sessions add column archive_cascade_from text;
       alter table projects add column is_archived integer not null default 0;
       alter table projects add column archived_at text;
       alter table workspaces add column archive_cascade_from text;
       alter table archived_worktrees drop column state;
-      delete from schema_migrations where id = 50;
+      delete from schema_migrations where id in (50, 100);
     `)
       const archiveSession = sqlite.prepare(
         "update sessions set is_archived = 1, archived_at = '2026-06-01T00:00:00.000Z' where id = ?"
@@ -91,7 +89,10 @@ describe("@codevisor/db project and archive upgrades", () => {
     expect(workspaces.find((w) => w.id === archivedWorkspace.id)?.isArchived).toBe(true)
 
     const columns = (name: string) => sqliteColumns(filename, name).join(",")
-    expect(columns("sessions")).not.toContain("is_archived")
+    const chats = await run(db.listSessions)
+    expect(chats.find((chat) => chat.id === wentWithWorkspace.id)?.isArchived).toBe(true)
+    expect(chats.find((chat) => chat.id === closedByHand.id)?.isArchived).toBeUndefined()
+    expect(columns("sessions")).not.toContain("archive_cascade_from")
     expect(columns("projects")).not.toContain("is_archived")
     expect(columns("workspaces")).not.toContain("archive_cascade_from")
     await run(db.close)
