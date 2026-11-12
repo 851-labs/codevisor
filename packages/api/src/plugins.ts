@@ -19,12 +19,51 @@ export const PluginOAuthSpec = Schema.Struct({
 })
 export type PluginOAuthSpec = typeof PluginOAuthSpec.Type
 
+export const PluginAccountGuideLink = Schema.Struct({
+  title: Schema.String,
+  url: Schema.String,
+  query: Schema.optional(Schema.Record(Schema.String, Schema.Unknown))
+})
+export type PluginAccountGuideLink = typeof PluginAccountGuideLink.Type
+
+export const PluginAccountGuideStep = Schema.Struct({
+  title: Schema.String,
+  detail: Schema.String,
+  link: Schema.optional(PluginAccountGuideLink),
+  fields: Schema.optional(Schema.Array(Schema.String))
+})
+export type PluginAccountGuideStep = typeof PluginAccountGuideStep.Type
+
+export const PluginAccountGuide = Schema.Struct({
+  title: Schema.String,
+  summary: Schema.String,
+  steps: Schema.Array(PluginAccountGuideStep)
+})
+export type PluginAccountGuide = typeof PluginAccountGuide.Type
+
 export const PluginAccountSpec = Schema.Struct({
   label: Schema.String,
   oauth: Schema.optional(PluginOAuthSpec),
-  fields: Schema.Array(ConfigField)
+  fields: Schema.Array(ConfigField),
+  guide: Schema.optional(PluginAccountGuide)
 })
 export type PluginAccountSpec = typeof PluginAccountSpec.Type
+
+export const ResolvedPluginAccountGuideStep = Schema.Struct({
+  title: Schema.String,
+  detail: Schema.String,
+  link: Schema.optional(Schema.Struct({ title: Schema.String, url: Schema.String })),
+  fields: Schema.Array(Schema.String)
+})
+export type ResolvedPluginAccountGuideStep = typeof ResolvedPluginAccountGuideStep.Type
+
+export const ResolvedPluginAccountGuide = Schema.Struct({
+  accountId: Schema.String,
+  title: Schema.String,
+  summary: Schema.String,
+  steps: Schema.Array(ResolvedPluginAccountGuideStep)
+})
+export type ResolvedPluginAccountGuide = typeof ResolvedPluginAccountGuide.Type
 
 export const PluginToolEffects = Schema.Literals(["read", "write", "external-write"])
 export type PluginToolEffects = typeof PluginToolEffects.Type
@@ -148,6 +187,7 @@ export const PluginAccountsResponse = Schema.Struct({ accounts: Schema.Array(Plu
 export type PluginAccountsResponse = typeof PluginAccountsResponse.Type
 
 export const SavePluginAccountRequest = Schema.Struct({
+  id: Schema.optional(Schema.String),
   label: Schema.optional(Schema.String),
   values: Schema.Record(Schema.String, Schema.Unknown)
 })

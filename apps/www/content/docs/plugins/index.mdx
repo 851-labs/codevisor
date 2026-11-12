@@ -41,7 +41,8 @@ A plugin that talks to another service signs in once, and the account works on e
   provider and scopes, and Codevisor runs the sign-in. Codevisor's own [Gmail](/docs/plugins/gmail) plugin
   signs in with Codevisor's Google client. Other Google plugins require your own OAuth client:
   create one in the Google Cloud console and enter its client ID and secret when you add the account.
-- **Fields.** Plugins can ask for values such as a URL or an API key.
+- **Fields.** Plugins can ask for values such as a URL or an API key, and can walk you through
+  getting them with a setup guide, as [Slack](/docs/plugins/slack) does.
 
 Tokens and secret fields are stored in the shared credential vault and synced to every Mac. Codevisor
 refreshes OAuth tokens itself; a plugin receives only the current access token and field values, on

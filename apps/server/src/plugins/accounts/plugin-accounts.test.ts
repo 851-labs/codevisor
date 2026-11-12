@@ -8,7 +8,7 @@ import { mcpCredentialVault } from "../../infra/shared-account-storage.js"
 import { makeServices } from "../../test-support.js"
 import { savePluginRow } from "../events/plugin-events-test-support.js"
 import { makePluginAccountStore, type PluginAccountRecord } from "./plugin-account-store.js"
-import { makePluginAccounts, type PluginVault } from "./plugin-accounts.js"
+import { type AccountChecker, makePluginAccounts, type PluginVault } from "./plugin-accounts.js"
 
 const tokenSpec: PluginAccountSpec = {
   label: "API token",
@@ -18,7 +18,13 @@ const tokenSpec: PluginAccountSpec = {
   ]
 }
 
-const accountsFixture = async (options: { readonly revokeFails?: boolean } = {}) => {
+interface FixtureOptions {
+  readonly revokeFails?: boolean
+  readonly spec?: PluginAccountSpec
+  readonly check?: AccountChecker
+}
+
+const accountsFixture = async (options: FixtureOptions = {}) => {
   const { services } = await makeServices("server-a")
   const clock = manualOAuthClock(Date.UTC(2026, 9, 27, 9))
   const realVault = mcpCredentialVault(
@@ -44,7 +50,8 @@ const accountsFixture = async (options: { readonly revokeFails?: boolean } = {})
     store,
     vault,
     server: async () => server,
-    spec: () => tokenSpec,
+    spec: () => options.spec ?? tokenSpec,
+    ...(options.check === undefined ? {} : { check: options.check }),
     redirects: {
       prepare: async () => ({ redirectUri: "http://127.0.0.1/callback", returnTo: "local" })
     },
@@ -142,6 +149,126 @@ describe("plugin accounts", () => {
 
     expect(updated.label).toBe("Acme")
     expect(revoked).toHaveLength(2)
+    expect(await accounts.list(server.id)).toEqual([])
+  })
+})
+
+const guidedSpec: PluginAccountSpec = {
+  ...tokenSpec,
+  guide: {
+    title: "Connect Tokens",
+    summary: "Create an app, then paste its token.",
+    steps: [
+      {
+        title: "Create the app",
+        detail: "Opens the provider.",
+        link: {
+          title: "Create App",
+          url: "https://tokens.example/apps?new_app=1",
+          query: { manifest_json: { name: "Codevisor", events: { url: "{{ingress.hooks}}" } } }
+        }
+      },
+      { title: "Paste the token", detail: "From the app page.", fields: ["workspace", "token"] }
+    ]
+  }
+}
+
+const guidedAccountId = "6f1c2a8e-4b7d-4c2e-9a1f-3d5e7b9c0a12"
+
+describe("guided account setup", () => {
+  it("fills the account's webhook URL into the guide's links", async () => {
+    const { accounts, server } = await accountsFixture({ spec: guidedSpec })
+
+    const guide = await accounts.guide(server.id, guidedAccountId, async () => [
+      { name: "hooks", url: "https://hooks.example/i/abc" }
+    ])
+
+    expect(guide).toEqual({
+      accountId: guidedAccountId,
+      title: "Connect Tokens",
+      summary: "Create an app, then paste its token.",
+      steps: [
+        {
+          title: "Create the app",
+          detail: "Opens the provider.",
+          link: {
+            title: "Create App",
+            url: `https://tokens.example/apps?new_app=1&manifest_json=${encodeURIComponent(
+              JSON.stringify({ name: "Codevisor", events: { url: "https://hooks.example/i/abc" } })
+            )}`
+          },
+          fields: []
+        },
+        { title: "Paste the token", detail: "From the app page.", fields: ["workspace", "token"] }
+      ]
+    })
+  })
+
+  it("asks for Codevisor Cloud when the guide needs a webhook URL it can't get", async () => {
+    const { accounts, server } = await accountsFixture({ spec: guidedSpec })
+
+    await expect(accounts.guide(server.id, guidedAccountId, async () => [])).rejects.toThrow(
+      "Sign in to Codevisor Cloud to set up this account."
+    )
+  })
+
+  it("only provisions webhook URLs for UUID account ids of plugins with a guide", async () => {
+    const guided = await accountsFixture({ spec: guidedSpec })
+    const plain = await accountsFixture()
+    const provisioned: Array<string> = []
+    const ingress = async () => {
+      provisioned.push("inbox")
+      return []
+    }
+
+    await expect(guided.accounts.guide(guided.server.id, "../x", ingress)).rejects.toThrow(
+      "must be UUIDs"
+    )
+    await expect(plain.accounts.guide(plain.server.id, guidedAccountId, ingress)).rejects.toThrow(
+      "has no setup guide"
+    )
+    expect(provisioned).toEqual([])
+  })
+
+  it("creates the account under the id its guide used, once", async () => {
+    const { accounts, server } = await accountsFixture({ spec: guidedSpec })
+    const request = { id: guidedAccountId, values: { workspace: "acme", token: "t" } }
+
+    const saved = await accounts.saveFields(server.id, request)
+
+    expect(saved.id).toBe(guidedAccountId)
+    await expect(accounts.saveFields(server.id, request)).rejects.toThrow(
+      "That account already exists"
+    )
+  })
+
+  it("lets the plugin check an account before saving it and name it", async () => {
+    const checked: Array<unknown> = []
+    const { accounts, server } = await accountsFixture({
+      check: async (_server, account) => {
+        checked.push(account)
+        return { identity: "@dana · acme.example", label: "Acme" }
+      }
+    })
+
+    const saved = await accounts.saveFields(server.id, {
+      values: { workspace: "acme", token: "t" }
+    })
+
+    expect(checked).toEqual([{ id: saved.id, fields: { workspace: "acme", token: "t" } }])
+    expect(saved).toMatchObject({ label: "Acme", identity: "@dana · acme.example" })
+  })
+
+  it("saves nothing when the plugin rejects the account", async () => {
+    const { accounts, server } = await accountsFixture({
+      check: async () => {
+        throw new Error("That's the bot token")
+      }
+    })
+
+    await expect(
+      accounts.saveFields(server.id, { values: { workspace: "acme", token: "t" } })
+    ).rejects.toThrow("That's the bot token")
     expect(await accounts.list(server.id)).toEqual([])
   })
 })

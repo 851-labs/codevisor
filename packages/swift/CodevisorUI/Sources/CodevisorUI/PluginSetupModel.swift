@@ -15,6 +15,7 @@ public final class PluginSetupModel {
   public var errorMessage: String?
   public var installing: ServerPluginCatalogEntry?
   public var addingAccount: PluginAccountEditing?
+  public var guiding: PluginAccountGuideModel?
 
   @ObservationIgnored private let client: any CodevisorServerClienting
   @ObservationIgnored private let signInRoute: PluginSignInRoute
@@ -93,7 +94,7 @@ public final class PluginSetupModel {
   private var signInTitle: String {
     switch auth {
     case .oauth2: entry?.accounts?.addTitle ?? "Sign In"
-    case .fields: "Add Account"
+    case .fields: entry?.accounts?.addTitle ?? "Add Account"
     case .mcpOAuth, .none: "Sign In"
     }
   }
@@ -126,6 +127,10 @@ public final class PluginSetupModel {
       return
     }
     guard let accounts, let spec = accounts.spec else { return }
+    if let guide = accounts.makeGuide() {
+      guiding = guide
+      return
+    }
     guard spec.signsInDirectly else {
       addingAccount = PluginAccountEditing(newAccountFor: spec)
       return

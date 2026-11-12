@@ -230,6 +230,30 @@ describe("inbox ingress", () => {
     expect(await queuedCount(token, machine.deviceId)).toBe(0)
   })
 
+  it("answers Slack's URL verification itself without queueing it", async () => {
+    const token = await devLogin()
+    const machine = await newInboxMachine(token)
+    const inbox = await provisionTestInbox(machine.apiKey)
+    await subscribe(machine, inbox.id)
+    await disconnect(token, machine.socket, "offline")
+
+    const verification = JSON.stringify({
+      token: "t",
+      challenge: "c-123",
+      type: "url_verification"
+    })
+    const response = await postWebhook(inbox.url, verification, {
+      "content-type": "application/json"
+    })
+
+    expect([response.status, await response.json()]).toEqual([200, { challenge: "c-123" }])
+    expect(await queuedCount(token, machine.deviceId)).toBe(0)
+    expect((await postWebhook(inbox.url, JSON.stringify({ type: "event_callback" }))).status).toBe(
+      202
+    )
+    expect(await queuedCount(token, machine.deviceId)).toBe(1)
+  })
+
   it("rejects bodies over 256 KiB", async () => {
     const machine = await machineIdentity(await devLogin())
     const inbox = await provisionTestInbox(machine.apiKey)

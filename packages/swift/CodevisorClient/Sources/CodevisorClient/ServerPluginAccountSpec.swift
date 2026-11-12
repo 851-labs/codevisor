@@ -4,11 +4,18 @@ public struct ServerPluginAccountSpec: Codable, Equatable, Sendable {
   public var label: String
   public var oauth: ServerPluginOAuthSpec?
   public var fields: [ServerConfigField]
+  public var guide: ServerPluginAccountGuideSummary?
 
-  public init(label: String, oauth: ServerPluginOAuthSpec? = nil, fields: [ServerConfigField] = []) {
+  public init(
+    label: String,
+    oauth: ServerPluginOAuthSpec? = nil,
+    fields: [ServerConfigField] = [],
+    guide: ServerPluginAccountGuideSummary? = nil
+  ) {
     self.label = label
     self.oauth = oauth
     self.fields = fields
+    self.guide = guide
   }
 
   public var providerName: String? {
@@ -17,7 +24,8 @@ public struct ServerPluginAccountSpec: Codable, Equatable, Sendable {
   }
 
   public var addTitle: String {
-    providerName.map { "Sign in with \($0)" } ?? "Add Account"
+    if let guide { return "\(guide.title)…" }
+    return providerName.map { "Sign in with \($0)" } ?? "Add Account"
   }
 
   public var signsInDirectly: Bool {

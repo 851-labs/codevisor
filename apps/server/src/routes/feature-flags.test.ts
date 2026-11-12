@@ -63,7 +63,7 @@ describe("/v1/feature-flags", () => {
     const response = await jsonRequest(server, "/v1/feature-flags/robots", put(true))
     expect(response.status).toBe(404)
     expect(field(response.body, "error")).toBe(
-      "Unknown feature flag: robots. Known flags: developerMode, gmailPlugin"
+      "Unknown feature flag: robots. Known flags: developerMode, gmailPlugin, slackPlugin"
     )
   })
 })

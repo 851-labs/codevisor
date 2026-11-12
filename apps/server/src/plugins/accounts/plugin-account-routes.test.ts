@@ -152,6 +152,17 @@ describe("plugin account routes", () => {
 
     expect(ingress.body).toEqual({ ingress: [] })
   })
+
+  it("serves a setup guide only for plugins that have one", async () => {
+    const running = await grafanaApp()
+
+    const guide = await jsonRequest(
+      running.server,
+      `${running.accountsPath}/6f1c2a8e-4b7d-4c2e-9a1f-3d5e7b9c0a12/guide`
+    )
+
+    expect([guide.status, guide.body]).toEqual([404, { error: "Grafana has no setup guide" }])
+  })
 })
 
 const gmailApp = async (options: PluginServicesOptions = {}) => {

@@ -63,7 +63,7 @@ plugins/
   bundled plugins are not installed from npm.
 - `_meta["dev.codevisor/plugin"]` describes the plugin to Codevisor:
   `{ bundled: "<plugin>", entry: "dist/main.js", accounts?, capabilities, devOnly? }`.
-  - `accounts` is a `PluginAccountSpec`: `{ label, oauth?, fields }`. OAuth
+  - `accounts` is a `PluginAccountSpec`: `{ label, oauth?, fields, guide? }`. OAuth
     returns to the machine's loopback callback by default. A provider that
     needs one fixed redirect URI (Linear) sets
     `oauth.redirectUrl: "https://cloud.codevisor.dev/oauth/plugins/callback"`:
@@ -259,6 +259,15 @@ In the SDK it is `ctx.mcpReq._meta`.
 - Codevisor refreshes OAuth tokens. Plugins only ever see access tokens, never refresh tokens.
 - Scope stream state by `account.id` so one account's events never reach another's subscribers.
 - Missing or invalid account: return a tool error, or `-32024` from `events/*`.
+- To check field values before an account is saved, handle `codevisor/account/check`. It
+  carries the unsaved account's `_meta`. Return `{ identity?, label? }` to name the account, or
+  throw `-32602` (InvalidParams) with a message for the user to refuse it. Plugins without the
+  method are saved unchecked.
+- A `guide` (`{ title, summary, steps: [{ title, detail, link?, fields? }] }`) replaces the
+  account form with numbered setup steps. Each field appears in the step that lists it. A link's
+  `query` values are added to its URL, objects as JSON, and `{{ingress.<name>}}` anywhere in it
+  becomes the new account's webhook URL, so a provider's app can be created with its events URL
+  already set (Slack does this).
 - Before an account is removed, Codevisor sends `codevisor/account/remove` with
   that account's `_meta` while its token still works. Undo upstream setup there
   (for example, stop a push watch) and return `{}`.

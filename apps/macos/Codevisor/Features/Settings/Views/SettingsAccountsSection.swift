@@ -3,6 +3,7 @@ import SwiftUI
 
 struct SettingsAccountsSection<Rows: View, Buttons: View>: View {
   let isSignedOut: Bool
+  var signedOutText = "Not signed in"
   let message: String?
   @ViewBuilder let rows: () -> Rows
   @ViewBuilder let buttons: () -> Buttons
@@ -10,7 +11,7 @@ struct SettingsAccountsSection<Rows: View, Buttons: View>: View {
   var body: some View {
     Section {
       if isSignedOut {
-        Text("Not signed in").foregroundStyle(.secondary)
+        Text(signedOutText).foregroundStyle(.secondary)
       }
       rows()
     } header: {

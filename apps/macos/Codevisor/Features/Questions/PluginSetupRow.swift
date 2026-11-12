@@ -22,6 +22,8 @@ struct PluginSetupRow: View {
       onDecline: decline
     ) { editing, accounts in
       PluginAccountEditorSheet(editing: editing, model: accounts)
+    } guideSheet: { guide, onSaved in
+      PluginAccountGuideSetupSheet(model: guide, onSaved: onSaved)
     }
   }
 

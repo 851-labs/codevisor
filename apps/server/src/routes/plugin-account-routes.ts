@@ -22,6 +22,8 @@ export const routePluginAccounts = async (route: RouteContext): Promise<boolean>
     "/v1/plugins/:serverId/accounts/:accountId/ingress"
   )
   if (ingress !== undefined && request.method === "GET") return routeIngress(route, ingress)
+  const guide = matchRouteParams(url.pathname, "/v1/plugins/:serverId/accounts/:accountId/guide")
+  if (guide !== undefined && request.method === "GET") return routeGuide(route, guide)
   if (oauth !== undefined) return routeOAuthStart(route, oauth.serverId!)
   if (collection === undefined && member === undefined) return false
   const accounts = requireAccounts(route)
@@ -87,6 +89,18 @@ const routeIngress = async (
   const events = route.routeState.pluginEvents
   if (events === undefined) throw new HttpFailure(501, "Plugin events unavailable")
   return respond(route, { ingress: await events.ingressUrls(params.serverId!, params.accountId!) })
+}
+
+const routeGuide = async (
+  route: RouteContext,
+  params: Record<string, string>
+): Promise<boolean> => {
+  const accounts = requireAccounts(route)
+  const serverId = params.serverId!
+  const accountId = params.accountId!
+  const events = route.routeState.pluginEvents
+  const ingress = async () => (await events?.ingressUrls(serverId, accountId)) ?? []
+  return respond(route, await accounts.guide(serverId, accountId, ingress))
 }
 
 const OAuthStartBody = Schema.Struct({

@@ -580,6 +580,19 @@
         "vitest": "4.1.6",
       },
     },
+    "plugins/slack": {
+      "name": "@codevisor/plugin-slack",
+      "dependencies": {
+        "@codevisor/plugin-kit": "workspace:*",
+        "@modelcontextprotocol/server": "2.4.0",
+        "zod": "4.4.3",
+      },
+      "devDependencies": {
+        "@codevisor/vitest-config": "workspace:*",
+        "@modelcontextprotocol/client": "2.4.0",
+        "vitest": "4.1.6",
+      },
+    },
     "plugins/test-events": {
       "name": "@codevisor/plugin-test-events",
       "dependencies": {
@@ -831,6 +844,8 @@
     "@codevisor/plugin-kit": ["@codevisor/plugin-kit@workspace:plugins/kit"],
 
     "@codevisor/plugin-linear": ["@codevisor/plugin-linear@workspace:plugins/linear"],
+
+    "@codevisor/plugin-slack": ["@codevisor/plugin-slack@workspace:plugins/slack"],
 
     "@codevisor/plugin-test-events": ["@codevisor/plugin-test-events@workspace:plugins/test-events"],
 

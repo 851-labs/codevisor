@@ -6,6 +6,7 @@ struct PluginAccountsSection: View {
   @Environment(AppEnvironment.self) private var environment: AppEnvironment?
   let model: PluginAccountsModel
   @State private var editing: PluginAccountEditing?
+  @State private var guiding: PluginAccountGuideModel?
   @State private var removalCandidates: [ServerPluginAccount] = []
 
   var body: some View {
@@ -28,10 +29,14 @@ struct PluginAccountsSection: View {
       } footer: {
         if let errorMessage = model.errorMessage, editing == nil {
           Text(errorMessage).foregroundStyle(.red)
+        } else if actions.needsFirstAccount, let guide = spec.guide {
+          Text(guide.summary)
         }
       }
       .onChange(of: environment?.pluginAccountsRevision) { Task { await model.reload() } }
       .sheet(item: $editing) { PluginAccountEditorScreen(editing: $0, model: model) }
+      .sheet(item: $guiding) { PluginAccountGuideScreen(model: $0) { await model.reload() } }
+      .task(id: model.hasLoaded) { offerFirstRunGuide() }
       .pluginAccountRemovalDialog(actions: actions, candidates: $removalCandidates) { remove($0) }
     }
   }
@@ -60,7 +65,16 @@ struct PluginAccountsSection: View {
     Task { await model.signIn(accountId: account.id) }
   }
 
+  private func offerFirstRunGuide() {
+    guard guiding == nil else { return }
+    guiding = model.takeFirstRunGuide()
+  }
+
   private func add(_ spec: ServerPluginAccountSpec) {
+    if let guide = model.makeGuide() {
+      guiding = guide
+      return
+    }
     guard spec.signsInDirectly else {
       editing = PluginAccountEditing(newAccountFor: spec)
       return

@@ -60,6 +60,10 @@ extension CodevisorServerClient {
     return response.ingress
   }
 
+  public func pluginAccountGuide(serverId: String, accountId: String) async throws -> ServerPluginAccountGuide {
+    try await get("\(pluginAccountPath(serverId, accountId))/guide")
+  }
+
   public func listPluginEventSubscriptions() async throws -> [ServerPluginEventSubscription] {
     let response: SubscriptionsResponse = try await get("/v1/plugins/events/subscriptions")
     return response.subscriptions

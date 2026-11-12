@@ -6,6 +6,7 @@ import {
   type PluginAccount,
   type PluginAccountOAuthStart,
   type PluginAccountSpec,
+  type ResolvedPluginAccountGuide,
   type SavePluginAccountRequest
 } from "@codevisor/api"
 import type { SharedTokenBundle } from "@codevisor/harness-manager"
@@ -15,6 +16,11 @@ import { HttpFailure } from "../../server-context.js"
 import type { InstalledOAuthClients } from "./installed-oauth-clients.js"
 import { splitFieldValues } from "./plugin-account-fields.js"
 import { makePluginOAuthFlows, type OAuthRedirects } from "./plugin-account-flows.js"
+import {
+  type GuideIngressUrl,
+  requireGuideAccountId,
+  resolveAccountGuide
+} from "./plugin-account-guide.js"
 import {
   publicAccount,
   type CredentialReference,
@@ -37,6 +43,16 @@ export interface AccountContext {
   readonly fields: Readonly<Record<string, string | number | boolean>>
 }
 
+export interface AccountCheck {
+  readonly identity?: string
+  readonly label?: string
+}
+
+export type AccountChecker = (
+  server: McpServer,
+  account: AccountContext
+) => Promise<AccountCheck | undefined>
+
 export interface PluginAccountsDeps {
   readonly store: PluginAccountStore
   readonly vault: PluginVault
@@ -45,6 +61,7 @@ export interface PluginAccountsDeps {
   readonly redirects: OAuthRedirects
   readonly installedClients?: InstalledOAuthClients | undefined
   readonly beforeRemove?: (serverId: string, accountId: string) => Promise<void>
+  readonly check?: AccountChecker
   readonly onChanged: (entries: ReadonlyArray<SyncEntryRecord>) => void
   readonly now?: () => number
   readonly fetch?: typeof fetch
@@ -66,6 +83,11 @@ export interface PluginAccounts {
   ) => Promise<PluginAccountOAuthStart>
   readonly completeOAuth: (state: string, code: string | undefined, error?: string) => Promise<void>
   readonly remove: (serverId: string, accountId: string) => Promise<void>
+  readonly guide: (
+    serverId: string,
+    accountId: string,
+    ingress: () => Promise<ReadonlyArray<GuideIngressUrl>>
+  ) => Promise<ResolvedPluginAccountGuide>
   readonly context: (serverId: string, accountId?: string) => Promise<AccountContext | undefined>
   readonly choices: (serverId: string) => Promise<ReadonlyArray<{ id: string; label: string }>>
 }
@@ -115,17 +137,35 @@ export const makePluginAccounts = (deps: PluginAccountsDeps): PluginAccounts => 
     return ownedAccount(serverId, accountId)
   }
 
+  const newAccountId = async (requested: string | undefined): Promise<string> => {
+    if (requested === undefined) return randomUUID()
+
+    const id = requireGuideAccountId(requested)
+    if ((await deps.store.get(id)) !== undefined)
+      throw new HttpFailure(409, "That account already exists")
+    return id
+  }
+
+  const checkAccount = async (
+    server: McpServer,
+    id: string,
+    split: ReturnType<typeof splitFieldValues>
+  ): Promise<AccountCheck> =>
+    (await deps.check?.(server, { id, fields: { ...split.values, ...split.secrets } })) ?? {}
+
   return {
     list: async (serverId) => (await accountsOf(serverId)).map(publicAccount),
     saveFields: async (serverId, request, accountId) => {
       const server = await deps.server(serverId)
       const spec = requireSpec(deps.spec(server), server)
       const previous = await previousAccount(serverId, accountId)
+      const id = previous?.id ?? (await newAccountId(request.id))
       const split = splitFieldValues(spec.fields, request.values, await existingSecrets(previous))
+      const checked = await checkAccount(server, id, split)
       const credential = await deps.vault.create(fieldsBundle(split.secrets))
       if (previous?.credential !== undefined)
         await deps.vault.revoke(previous.credential).catch(() => undefined)
-      return save(fieldsRecord(server, request, split, credential, previous))
+      return save(fieldsRecord({ server, request, split, credential, previous, id, checked }))
     },
     startOAuth: async (serverId, request) => {
       const server = await deps.server(serverId)
@@ -140,6 +180,14 @@ export const makePluginAccounts = (deps: PluginAccountsDeps): PluginAccounts => 
       })
     },
     completeOAuth: flows.complete,
+    guide: async (serverId, accountId, ingress) => {
+      const server = await deps.server(serverId)
+      const guide = requireSpec(deps.spec(server), server).guide
+      if (guide === undefined) throw new HttpFailure(404, `${server.name} has no setup guide`)
+
+      const id = requireGuideAccountId(accountId)
+      return resolveAccountGuide(guide, id, await ingress())
+    },
     remove: async (serverId, accountId) => {
       const account = await ownedAccount(serverId, accountId)
       await deps.beforeRemove?.(serverId, account.id)
@@ -194,16 +242,29 @@ const fieldsBundle = (secrets: Readonly<Record<string, string>>): SharedTokenBun
   credential: { secrets }
 })
 
-const fieldsRecord = (
-  server: McpServer,
-  request: SavePluginAccountRequest,
-  split: ReturnType<typeof splitFieldValues>,
-  credential: CredentialReference,
-  previous: PluginAccountRecord | undefined
-): PluginAccountRecord => ({
-  id: previous?.id ?? randomUUID(),
+interface FieldsAccount {
+  readonly server: McpServer
+  readonly request: SavePluginAccountRequest
+  readonly split: ReturnType<typeof splitFieldValues>
+  readonly credential: CredentialReference
+  readonly previous: PluginAccountRecord | undefined
+  readonly id: string
+  readonly checked: AccountCheck
+}
+
+const fieldsRecord = ({
+  server,
+  request,
+  split,
+  credential,
+  previous,
+  id,
+  checked
+}: FieldsAccount): PluginAccountRecord => ({
+  id,
   plugin: pluginKeyOf(server),
-  ...labelOf(request.label, previous?.label, split.values),
+  ...labelOf(request.label, previous?.label ?? checked.label, split.values),
+  ...identityOf(checked.identity ?? previous?.identity),
   method: "fields",
   values: split.values,
   secretsSet: Object.keys(split.secrets).toSorted(),
@@ -220,6 +281,9 @@ const labelOf = (
   const label = requested?.trim() || previous || defaultLabel(values)
   return label === undefined ? {} : { label }
 }
+
+const identityOf = (identity: string | undefined): { readonly identity?: string } =>
+  identity === undefined ? {} : { identity }
 
 const defaultLabel = (values: Readonly<Record<string, string | number | boolean>>) => {
   const url = values.url
