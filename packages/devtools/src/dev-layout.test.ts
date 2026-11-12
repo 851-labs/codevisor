@@ -4,6 +4,7 @@ import { join } from "node:path"
 
 import { afterEach, describe, expect, it } from "vitest"
 
+import { instanceWorktreesRoot } from "./dev-instance-roots.ts"
 import {
   developmentLayout,
   discardLegacyBunCache,
@@ -26,11 +27,12 @@ afterEach(async () => {
 })
 
 describe("developmentLayout", () => {
-  it("mirrors production roots inside tmp", () => {
+  it("mirrors production roots inside tmp, and keeps agent folders outside the repo", () => {
     const root = "/repo/codevisor"
     const layout = developmentLayout(root, {})
 
-    expect(layout.local.worktrees).toBe(join(root, "tmp/codevisor"))
+    expect(layout.local.worktrees).toBe(instanceWorktreesRoot(root))
+    expect(layout.local.worktrees.startsWith(root)).toBe(false)
     expect(layout.local.data).toBe(join(root, "tmp/.codevisor/data"))
     expect(layout.local.logs).toBe(join(root, "tmp/.codevisor/logs"))
     expect(layout.local.cache).toBe(join(root, "tmp/.codevisor/cache"))
@@ -80,7 +82,10 @@ describe("directory setup", () => {
 
   it("creates every service root for a full development setup", async () => {
     const root = await scratch()
-    const layout = developmentLayout(root, { CODEVISOR_BUN_CACHE: join(root, "bun-cache") })
+    const layout = developmentLayout(root, {
+      CODEVISOR_BUN_CACHE: join(root, "bun-cache"),
+      CODEVISOR_WORKTREES_ROOT: join(root, "agent-folders")
+    })
     await ensureDevelopmentDirectories(layout)
 
     await access(layout.local.data)
