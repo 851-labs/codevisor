@@ -10,6 +10,7 @@
     public var onStop: (() -> Void)?
     private let metal: ScreenSharingMetalView
     private var stopped = false
+    private var letterboxColor = NSColor.windowBackgroundColor
 
     public init(mailbox: ScreenSharingFrameMailbox) throws {
       metal = try ScreenSharingMetalView(mailbox: mailbox, metrics: ScreenSharingMetrics(), renderOnArrival: true)
@@ -20,9 +21,24 @@
     public required init?(coder: NSCoder) { nil }
 
     public func setLetterboxColor(_ color: NSColor) {
-      guard let resolved = color.usingColorSpace(.sRGB) else { return }
+      letterboxColor = color
+      applyLetterboxColor()
+    }
+
+    public override func viewDidChangeEffectiveAppearance() {
+      super.viewDidChangeEffectiveAppearance()
+      applyLetterboxColor()
+    }
+
+    private func applyLetterboxColor() {
+      var resolved: NSColor?
+      effectiveAppearance.performAsCurrentDrawingAppearance { resolved = letterboxColor.usingColorSpace(.sRGB) }
+      guard let color = resolved else { return }
+      let alpha = Double(color.alphaComponent)
+      metal.layer?.isOpaque = alpha >= 1
       metal.clearColor = MTLClearColorMake(
-        Double(resolved.redComponent), Double(resolved.greenComponent), Double(resolved.blueComponent), 1)
+        Double(color.redComponent) * alpha, Double(color.greenComponent) * alpha, Double(color.blueComponent) * alpha,
+        alpha)
       metal.needsDisplay = true
     }
 

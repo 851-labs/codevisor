@@ -16,12 +16,20 @@ public enum CloudRelayTransportError: Error, Equatable, Sendable, LocalizedError
       "The machine sent an unexpected relay frame."
     case let .channelClosed(reason):
       switch reason {
-      case .rejected:
-        "The machine rejected the request."
       case .none:
         "The cloud relay connection was interrupted."
-      default:
-        "The relay channel closed (\(reason?.rawValue ?? "unknown"))."
+      case .done:
+        "The machine closed the connection."
+      case .rejected:
+        "The machine rejected the request."
+      case .unsupported:
+        "The machine doesn't support this request. Updating Codevisor on it may fix this."
+      case .peerDisconnected:
+        "The machine disconnected from Codevisor Cloud."
+      case .protocolError:
+        "The machine sent data this version of Codevisor couldn't read. Updating Codevisor may fix this."
+      case .cryptoError:
+        "The connection to the machine couldn't be secured."
       }
     case .timedOut:
       "The request to the machine timed out."

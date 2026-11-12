@@ -32,6 +32,16 @@ public struct ScreenSharingViewer {
       self.preferences = preferences
       self.dynamicResolution = dynamicResolution
     }
+
+    public var preview: ScreenSharingPreview {
+      switch phase {
+      case .idle, .loading, .connecting, .suspended: .connecting
+      case .elsewhere: mirror.map(ScreenSharingPreview.live) ?? .connecting
+      case .viewing: endpoint.map(ScreenSharingPreview.live) ?? .connecting
+      case .reconnecting: .reconnecting
+      case .failed: .failed(message ?? "This Mac can't share its screen right now.")
+      }
+    }
   }
 
   public enum Action {

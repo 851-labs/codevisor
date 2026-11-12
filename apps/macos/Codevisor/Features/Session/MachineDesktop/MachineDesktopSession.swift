@@ -11,7 +11,7 @@ final class MachineDesktopSession {
   let window: ScreenSharingPane
   private let records: [ServerWorkspacePane]
   private let client: any CodevisorServerClienting
-  private var registration: Task<Bool, Never>?
+  private var registration: Task<Void, any Error>?
 
   init(
     preview: ScreenSharingPane, window: ScreenSharingPane, workspaceId: UUID, client: any CodevisorServerClienting
@@ -27,17 +27,18 @@ final class MachineDesktopSession {
     }
   }
 
-  func register() async -> Bool {
-    if let registration { return await registration.value }
+  func register() async throws {
+    if let registration { return try await registration.value }
     let task = Task { [client, records] in
-      var registered = true
-      for record in records where (try? await client.upsertWorkspacePane(record)) == nil { registered = false }
-      return registered
+      for record in records { _ = try await client.upsertWorkspacePane(record) }
     }
     registration = task
-    let registered = await task.value
-    if !registered { registration = nil }
-    return registered
+    do {
+      try await task.value
+    } catch {
+      registration = nil
+      throw error
+    }
   }
 
   static func paneId(forWorkspace workspaceId: UUID, role: ScreenSharingViewerRole) -> UUID {
