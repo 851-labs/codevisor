@@ -30,6 +30,8 @@ enum ShortcutID: String, CaseIterable, Identifiable, Sendable {
 
   case switchToBots
   case switchToCode
+  case goBack
+  case goForward
   case toggleSidebar
   case toggleInspector
   case commandPalette
@@ -114,7 +116,8 @@ enum ShortcutCatalog {
     case .previousSplit, .nextSplit, .splitLeft, .splitRight, .splitUp, .splitDown, .focusSplitLeft, .focusSplitRight,
       .focusSplitAbove, .focusSplitBelow:
       splitDefinition(for: id)
-    case .switchToBots, .switchToCode, .toggleSidebar, .toggleInspector, .commandPalette, .toggleDebugOverlay:
+    case .switchToBots, .switchToCode, .goBack, .goForward, .toggleSidebar, .toggleInspector, .commandPalette,
+      .toggleDebugOverlay:
       viewDefinition(for: id)
     case .browserZoomIn, .browserZoomOut, .browserResetZoom:
       browserDefinition(for: id)
@@ -226,9 +229,10 @@ enum ShortcutCatalog {
   private static func splitDefinition(for id: ShortcutID) -> ShortcutDefinition {
     switch id {
     case .previousSplit:
-      ShortcutDefinition(.previousSplit, "Previous Split", ShortcutCombo("[", .command), category: .tabsAndSplits)
+      ShortcutDefinition(
+        .previousSplit, "Previous Split", ShortcutCombo("[", [.command, .option]), category: .tabsAndSplits)
     case .nextSplit:
-      ShortcutDefinition(.nextSplit, "Next Split", ShortcutCombo("]", .command), category: .tabsAndSplits)
+      ShortcutDefinition(.nextSplit, "Next Split", ShortcutCombo("]", [.command, .option]), category: .tabsAndSplits)
     case .splitLeft:
       ShortcutDefinition(.splitLeft, "Split Left", nil, category: .tabsAndSplits)
     case .splitRight:
@@ -261,6 +265,14 @@ enum ShortcutCatalog {
       ShortcutDefinition(
         .switchToCode, "Switch to Code", ShortcutCombo(.rightArrow, [.command, .option]), category: .view,
         context: "While Bots is on")
+    case .goBack:
+      ShortcutDefinition(
+        .goBack, "Back", ShortcutCombo("[", .command), category: .view,
+        context: "Returns to the previous sidebar selection, in Bots and Code")
+    case .goForward:
+      ShortcutDefinition(
+        .goForward, "Forward", ShortcutCombo("]", .command), category: .view,
+        context: "Undoes Back")
     case .toggleSidebar:
       ShortcutDefinition(
         .toggleSidebar, "Show/Hide Sidebar", ShortcutCombo("b", .command), category: .view,

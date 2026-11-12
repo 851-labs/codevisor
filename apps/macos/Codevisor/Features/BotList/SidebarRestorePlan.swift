@@ -18,6 +18,13 @@ struct SidebarRestorePlan {
     RememberedSidebarSelection(selection: selection, workspaceId: workspaceId(of: selection))
   }
 
+  func reopening(_ remembered: RememberedSidebarSelection) -> SidebarSelection? {
+    let restore = SidebarRestore.first(of: codeCandidates(remembered), orElse: nil, availability: availability)
+    guard case let .select(target) = restore else { return nil }
+
+    return target
+  }
+
   private func chatCandidates(_ remembered: RememberedSidebarSelection?) -> [SidebarSelection] {
     [remembered?.selection].compactMap { $0 } + recentBots
   }

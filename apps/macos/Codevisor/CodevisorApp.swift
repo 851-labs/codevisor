@@ -119,6 +119,7 @@ struct RootView: View {
         }
       }
       .modifier(SidebarModeSelectionMemory(selection: $selection) { panelLayout.dismissDrawer() })
+      .modifier(SidebarSelectionHistory(selection: $selection, revealRequest: sidebarRevealRequest))
       .modifier(UpdateCenterUpkeep())
       .modifier(ConnectionRecoveryUpkeep())
       .modifier(ChromiumBrowserHostSync())

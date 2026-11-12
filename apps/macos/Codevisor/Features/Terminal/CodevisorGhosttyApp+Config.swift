@@ -95,6 +95,8 @@ extension CodevisorGhosttyApp {
       font-size = \(terminalFontSize)
       crash-report = false
       keybind = super+k=unbind
+      keybind = super+[=unbind
+      keybind = super+]=unbind
 
       """
     let isDark =
