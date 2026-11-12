@@ -184,6 +184,21 @@ describe("POST /v1/agents/:id/archive", () => {
     expect(await workspace()).toMatchObject({ isArchived: false })
   })
 
+  it("archives an agent's own workspace for a caller on another machine, who is not named", async () => {
+    const { server, services, createChat, workspace } = await workspaceWithHelper("Read the docs")
+    const ownWorkspaceId = randomUUID()
+    const worker = await createChat({ workspaceId: ownWorkspaceId })
+
+    const archived = await jsonRequest(server, `/v1/agents/${worker}/archive`, {
+      body: JSON.stringify({}),
+      method: "POST"
+    })
+
+    expect(archived.body).toEqual({ agentId: worker, archived: true })
+    expect(await run(services.db.getSessionSummary(worker))).toMatchObject({ isArchived: true })
+    expect(await workspace()).toMatchObject({ isArchived: false })
+  })
+
   it("archives only the chat of another workspace's side chat instead of archiving that workspace", async () => {
     const { helper, createChat, archiveAgent, chatPanes, workspace } =
       await workspaceWithHelper("Read the docs")

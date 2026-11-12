@@ -11,7 +11,6 @@ const onWorkspaceGlobal = /^workspaces\.mirror/
 
 const chatGroups = new Set(["context", "events", "jobs", "messages", "bot"])
 const chatTools = new Set([
-  "agents.archive",
   "agents.subscribe",
   "agents.subscriptions",
   "agents.unsubscribe",
