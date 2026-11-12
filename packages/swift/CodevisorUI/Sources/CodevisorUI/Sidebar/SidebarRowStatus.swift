@@ -24,13 +24,13 @@ public enum SidebarRowStatus: Equatable, Sendable {
 
   public var title: String {
     switch self {
-    case .input: "Input"
-    case .approval: "Approval"
+    case .input: "Needs Input"
+    case .approval: "Needs Approval"
     case .settingUp: "Setting up"
     case .working: "Working"
     case .waiting: "Waiting"
     case .failed: "Failed"
-    case .limited: "Limited"
+    case .limited: "Usage Limit"
     }
   }
 
@@ -49,8 +49,7 @@ public enum SidebarRowStatus: Equatable, Sendable {
   public var tone: Tone {
     switch self {
     case .input, .approval, .limited: .attention
-    case .working: .active
-    case .settingUp, .waiting: .quiet
+    case .working, .settingUp, .waiting: .quiet
     case .failed: .failure
     }
   }
@@ -58,7 +57,6 @@ public enum SidebarRowStatus: Equatable, Sendable {
   public var color: Color {
     switch tone {
     case .attention: .orange
-    case .active: .blue
     case .quiet: .secondary
     case .failure: .red
     }
@@ -80,7 +78,6 @@ public enum SidebarRowStatus: Equatable, Sendable {
 
   public enum Tone: Sendable {
     case attention
-    case active
     case quiet
     case failure
   }

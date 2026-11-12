@@ -153,6 +153,26 @@ struct SidebarRowStatusesTests {
     #expect(SidebarBotStatusBadge.isVisible(.working(since: start), showsLabel: true))
   }
 
+  @Test func labelsNameEachState() {
+    let id = UUID()
+    let titles = [
+      SidebarRowStatus.working(since: nil), .settingUp, .waiting, .input(askingWorkspaceID: id),
+      .approval(askingWorkspaceID: id), .failed, .limited,
+    ].map(\.title)
+    #expect(titles == ["Working", "Setting up", "Waiting", "Needs Input", "Needs Approval", "Failed", "Usage Limit"])
+  }
+
+  @Test func onlyAttentionAndFailureStatesAreColoured() {
+    let id = UUID()
+    for status in [SidebarRowStatus.working(since: nil), .settingUp, .waiting] {
+      #expect(status.tone == .quiet)
+    }
+    for status in [SidebarRowStatus.input(askingWorkspaceID: id), .approval(askingWorkspaceID: id), .limited] {
+      #expect(status.tone == .attention)
+    }
+    #expect(SidebarRowStatus.failed.tone == .failure)
+  }
+
   @Test func elapsedTimeIsCompact() {
     #expect(SidebarRowStatus.elapsed(from: start, to: start.addingTimeInterval(42)) == "42s")
     #expect(SidebarRowStatus.elapsed(from: start, to: start.addingTimeInterval(185)) == "3m")
