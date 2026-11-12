@@ -26,6 +26,10 @@ final class ScreenSharingHostSession {
   var sharedMode: ScreenSharingHostRetina.SharedDisplay
   var dynamicDesktop: (width: Int, height: Int)?
   var captureDisplayID: UInt32 { virtualDisplay?.displayID ?? displayID }
+  var virtualDisplayStandsInForShared: Bool {
+    guard let virtualDisplay else { return false }
+    return (virtualDisplay.replacesShared ? virtualDisplay.displayID : virtualDisplay.shared) == displayID
+  }
   let sharedDisplay: ScreenSharingSharedDisplay
   let injector: ScreenSharingInputInjector
   var pendingResize: Task<Void, Never>?

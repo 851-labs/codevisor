@@ -27,7 +27,8 @@ final class ScreenSharingHostVirtualDisplay {
   let displayID: CGDirectDisplayID
   private(set) var size: (width: Int, height: Int)
   let shared: CGDirectDisplayID
-  let mirrors: Bool
+  private let mirrors: Bool
+  private(set) var replacesShared = false
   private let queue = DispatchQueue(label: "codevisor.screen-sharing.virtual-display")
 
   init(width: Int, height: Int, standingInFor shared: CGDirectDisplayID, mirrors: Bool) throws {
@@ -62,7 +63,10 @@ final class ScreenSharingHostVirtualDisplay {
       throw ScreenSharingError.unavailable("The virtual display didn't come online.")
     }
     try await selectHiDPIMode()
-    if !mirrors, try await replacedShared() { return }
+    if !mirrors, try await replacedShared() {
+      replacesShared = true
+      return
+    }
     try Self.configure { CGConfigureDisplayMirrorOfDisplay($0, shared, displayID) }
   }
 

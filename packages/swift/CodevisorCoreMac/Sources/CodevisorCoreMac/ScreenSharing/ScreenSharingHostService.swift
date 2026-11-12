@@ -274,7 +274,7 @@ final class ScreenSharingHostService {
     do {
       let baseline = ScreenSharingCaptureStallRecovery.activity(session.metrics.counters())
       await updateDisplay(session)
-      guard current === session, !session.stopping else { return }
+      guard current === session, !session.stopping, !Task.isCancelled else { return }
       try await startWatchedCapture(session, reason: "viewer connected")
       guard current === session, !session.stopping else { try? await session.capture.stop(); return }
       try await reconcileCapture(session)

@@ -26,9 +26,13 @@ extension ScreenSharingHostRetina.SharedDisplay {
     let mode = CGDisplayCopyDisplayMode(id)
     width = mode?.width ?? 0
     height = mode?.height ?? 0
-    pixelScale = mode.map { Double($0.pixelWidth) / Double(max(1, $0.width)) } ?? 1
+    pixelScale = mode?.pixelScale ?? 1
     isHeadless = ScreenSharingDisplayIdentity(display: id).isHeadlessFramebuffer
   }
+}
+
+extension CGDisplayMode {
+  var pixelScale: Double { Double(pixelWidth) / Double(max(1, width)) }
 }
 
 extension ScreenSharingDisplayIdentity {

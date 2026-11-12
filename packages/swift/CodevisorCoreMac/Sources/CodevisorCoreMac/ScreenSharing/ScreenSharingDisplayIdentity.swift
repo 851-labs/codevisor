@@ -29,12 +29,11 @@ struct ScreenSharingDisplayIdentity: Equatable, Sendable {
 extension ScreenSharingDisplayIdentity {
   static func sessionSurvives(
     shared: CGDirectDisplayID, identity: ScreenSharingDisplayIdentity, virtual: CGDirectDisplayID?,
-    replacesShared: Bool = false, online: [Online]
+    online: [Online]
   ) -> Bool {
-    let virtualOnline = virtual.map { id in online.contains { $0.id == id } }
-    if replacesShared, virtualOnline == true { return true }
     guard follow(shared, identity: identity, online: online) != nil else { return false }
-    return virtualOnline ?? true
+    guard let virtual else { return true }
+    return online.contains { $0.id == virtual }
   }
 
   init(display id: CGDirectDisplayID) {
@@ -50,7 +49,10 @@ extension ScreenSharingDisplayIdentity {
   }
 
   static func isOnline(_ id: CGDirectDisplayID) -> Bool {
-    online().contains { $0.id == id }
+    var ids = [CGDirectDisplayID](repeating: 0, count: 32)
+    var count: UInt32 = 0
+    guard CGGetOnlineDisplayList(UInt32(ids.count), &ids, &count) == .success else { return false }
+    return ids.prefix(Int(count)).contains(id)
   }
 
   static func online() -> [Online] {

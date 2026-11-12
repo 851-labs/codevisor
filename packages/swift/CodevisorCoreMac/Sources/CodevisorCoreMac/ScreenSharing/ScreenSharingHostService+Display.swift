@@ -42,29 +42,31 @@ extension ScreenSharingHostService {
     session.pendingResize = Task { [weak self, weak session] in
       do { try await Task.sleep(for: .milliseconds(300)) } catch { return }
       guard let self, let session, !session.stopping else { return }
+      await session.resizing?.value
+      guard !Task.isCancelled, !session.stopping else { return }
       session.dynamicDesktop = size
-      await self.updateDisplay(session)
+      await self.updateDisplay(session, reportsFailure: true)
     }
   }
 
-  func updateDisplay(_ session: ScreenSharingHostSession) async {
+  func updateDisplay(_ session: ScreenSharingHostSession, reportsFailure: Bool = false) async {
     let previous = session.resizing
     let update = Task { [weak self, weak session] in
       await previous?.value
       guard let self, let session, !session.stopping, !Task.isCancelled else { return }
-      await self.applyDisplay(session)
+      await self.applyDisplay(session, reportsFailure: reportsFailure)
     }
     session.resizing = update
     await update.value
   }
 
-  private func applyDisplay(_ session: ScreenSharingHostSession) async {
+  private func applyDisplay(_ session: ScreenSharingHostSession, reportsFailure: Bool) async {
     let channel = session.peer.channels.display
     followDisplay(session)
     let points = ScreenSharingHostRetina.virtualDisplaySize(
       dynamic: session.dynamicDesktop, shared: session.sharedMode,
       virtualDisplaysAvailable: ScreenSharingHostVirtualDisplay.isAvailable)
-    let standsInForShared = session.virtualDisplay?.shared == session.displayID
+    let standsInForShared = session.virtualDisplayStandsInForShared
     switch (session.virtualDisplay?.size, points) {
     case (nil, nil): return
     case (let size?, let points?) where size == points && standsInForShared:
@@ -72,7 +74,8 @@ extension ScreenSharingHostService {
       return
     default: break
     }
-    session.ownDisplayChangeUntil = ProcessInfo.processInfo.systemUptime + 5
+    session.ownDisplayChangeUntil = ProcessInfo.processInfo.systemUptime + 10
+    defer { session.ownDisplayChangeUntil = ProcessInfo.processInfo.systemUptime + 5 }
     do {
       guard
         let movesDisplay = try await showVirtualDisplay(session, points: points, standsInForShared: standsInForShared)
@@ -89,7 +92,8 @@ extension ScreenSharingHostService {
     } catch {
       Self.logger.error("Display change failed: \(error.localizedDescription, privacy: .public)")
       session.metrics.label("displaySize", error.localizedDescription)
-      if session.dynamicDesktop != nil { channel.send(.unavailable(error.localizedDescription)) }
+      if session.virtualDisplay == nil { try? await waitForSharedDisplay(session) }
+      if reportsFailure { channel.send(.unavailable(error.localizedDescription)) }
     }
   }
 
@@ -117,6 +121,7 @@ extension ScreenSharingHostService {
       return nil
     }
     session.virtualDisplay = display
+    if display.replacesShared { session.displayID = display.displayID }
     session.configuration = configuration
     return true
   }
@@ -160,8 +165,8 @@ extension ScreenSharingHostService {
     let online = ScreenSharingDisplayIdentity.online()
     guard
       ScreenSharingDisplayIdentity.sessionSurvives(
-        shared: current.displayID, identity: current.displayIdentity, virtual: current.virtualDisplay?.displayID,
-        replacesShared: current.virtualDisplay?.mirrors == false, online: online)
+        shared: current.displayID, identity: current.displayIdentity,
+        virtual: current.virtualDisplay?.displayID, online: online)
     else {
       Self.logger.notice("The shared display went away; ending the session")
       return systemStopped()
