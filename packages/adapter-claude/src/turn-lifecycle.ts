@@ -8,6 +8,7 @@ import { deferred } from "./internal.js"
 import { claudeSessionTitle } from "./session-titles.js"
 import type { ClaudeSession } from "./session.js"
 import { retiredError, startupError } from "./startup-failure.js"
+import { recordTaskWakes } from "./task-wakes.js"
 
 export interface TurnEnding {
   readonly stopDetail?: string | undefined
@@ -143,6 +144,7 @@ export const ensureTurnStarted = (
   session.turnCompletion = deferred<void>()
   session.turnId = randomUUID()
   session.initiatedBy = initiatedBy
+  session.pendingTaskWakes.length = 0
   session.truncationCount = 0
   session.transientRetries = 0
   session.streamRecoveries = 0
@@ -160,8 +162,7 @@ export const ensureObservedTurnStarted = (session: ClaudeSession): Promise<void>
   if (session.turnActive) return Promise.resolve()
   const hasQueuedUserCommand = session.pendingUserCommands > 0
   if (hasQueuedUserCommand) session.pendingUserCommands -= 1
-  return ensureTurnStarted(
-    session,
-    session.pendingPrompt !== undefined || hasQueuedUserCommand ? "user" : "agent"
-  )
+  const initiatedBy = session.pendingPrompt !== undefined || hasQueuedUserCommand ? "user" : "agent"
+  if (initiatedBy === "agent") recordTaskWakes(session)
+  return ensureTurnStarted(session, initiatedBy)
 }

@@ -58,7 +58,7 @@ export const sessionEventSink =
     sessionId: string
   ): RuntimeEventSink =>
   (event) => {
-    if (isUserRuntimeEvent(event)) {
+    if (isEchoedUserPrompt(event)) {
       return undefined
     }
     const observation =
@@ -219,8 +219,9 @@ const conversationPayload = (
   }
 }
 
-const isUserRuntimeEvent = (event: RuntimeEvent): boolean =>
-  conversationPayload(event.payload)?.role === "user"
+const isEchoedUserPrompt = (event: RuntimeEvent): boolean =>
+  conversationPayload(event.payload)?.role === "user" &&
+  objectPayload(event.payload).origin !== "event"
 
 const textFromRawContent = (content: unknown): string | undefined =>
   isRecord(content) && content.type === "text" && typeof content.text === "string"

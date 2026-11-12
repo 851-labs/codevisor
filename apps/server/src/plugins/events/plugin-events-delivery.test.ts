@@ -50,7 +50,7 @@ describe("delivering plugin events", () => {
         event: {
           message: {
             text: [
-              `<codevisor-event type="plugin.event" plugin="Pinger" event="ping" subscriptionId="${subscription.id}" note="Warn pings" eventId="${eventId}" occurredAt="2026-10-27T09:00:00.000Z">`,
+              `<codevisor-event type="plugin.event" plugin="Pinger" pluginId="${pinger.id}" event="ping" subscriptionId="${subscription.id}" note="Warn pings" eventId="${eventId}" occurredAt="2026-10-27T09:00:00.000Z">`,
               'Pinger ping matched "Warn pings".',
               '{"message":"hello","level":"warn","count":1}',
               `Full payload: events.get({ eventId: "${eventId}" }).`,

@@ -13,6 +13,7 @@ struct RemoteUserMessage {
   let isEvent: Bool
   let assistantItemId: UUID?
   let attribution: UserMessageAttribution?
+  let sentByAgent: UserMessageSender?
   private let trimmedText: String
 
   init(
@@ -21,7 +22,8 @@ struct RemoteUserMessage {
     attachments: [Attachment] = [],
     isEvent: Bool = false,
     assistantItemId: UUID? = nil,
-    attribution: UserMessageAttribution? = nil
+    attribution: UserMessageAttribution? = nil,
+    sentByAgent: UserMessageSender? = nil
   ) {
     self.id = id
     self.text = text
@@ -29,6 +31,7 @@ struct RemoteUserMessage {
     self.isEvent = isEvent
     self.assistantItemId = assistantItemId
     self.attribution = attribution
+    self.sentByAgent = sentByAgent
     self.trimmedText = text.trimmingCharacters(in: .whitespacesAndNewlines)
   }
 
@@ -41,7 +44,9 @@ struct RemoteUserMessage {
   }
 
   var userMessage: UserMessage {
-    UserMessage(id: echoId ?? UUID(), text: text, attachments: attachments, isEvent: isEvent, attribution: attribution)
+    UserMessage(
+      id: echoId ?? UUID(), text: text, attachments: attachments, isEvent: isEvent, attribution: attribution,
+      sentByAgentId: sentByAgent?.agentId, sentByAgentMachineId: sentByAgent?.machineId)
   }
 
   func match(in settled: [ConversationItem], pendingOptimisticIds: Set<UUID>) -> Match? {
@@ -56,6 +61,8 @@ struct RemoteUserMessage {
     if user.attachments.isEmpty { user.attachments = attachments }
     user.isEvent = user.isEvent || isEvent
     user.attribution = user.attribution ?? attribution
+    user.sentByAgentId = user.sentByAgentId ?? sentByAgent?.agentId
+    user.sentByAgentMachineId = user.sentByAgentMachineId ?? sentByAgent?.machineId
     return user
   }
 

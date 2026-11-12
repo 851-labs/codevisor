@@ -15,7 +15,7 @@ enum TranscriptRowAssembly {
       )
     }
     var rows: [TranscriptPresentationRow] = []
-    let settled = input.settledConversation.filter { $0.isVisibleInTranscript && $0.id != input.activeItem?.id }
+    let settled = input.settledConversation.filter { $0.id != input.activeItem?.id }
     rows.reserveCapacity(settled.count + 6)
     let hasSetup = !input.setupPhases.isEmpty && input.activityMessage == nil
     let pendingMessage = pendingMessageNotInHistory(input, settled: settled)

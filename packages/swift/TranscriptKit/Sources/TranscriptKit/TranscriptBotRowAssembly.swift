@@ -17,12 +17,12 @@ enum TranscriptBotRowAssembly {
     var rows: [TranscriptPresentationRow] = []
     rows.reserveCapacity(messages.count + 4)
     var previous: TranscriptBotMessage?
-    var turnBubbles = turnBubbles(in: input)[...]
+    var timedRows = TranscriptBotTimedRows.entries(in: input, spacingAfter: groupTailSpacing)[...]
     for (index, message) in messages.enumerated() {
       if index.isMultiple(of: 32), Task.isCancelled { throw CancellationError() }
-      while let next = turnBubbles.first, wasAsked(next.askedAt, before: message) {
+      while let next = timedRows.first, wasAsked(next.askedAt, before: message) {
         rows.append(next.row)
-        turnBubbles.removeFirst()
+        timedRows.removeFirst()
       }
       if let sentAt = message.sentAt, startsNewMoment(sentAt, after: previous) {
         rows.append(
@@ -46,7 +46,7 @@ enum TranscriptBotRowAssembly {
       previous = message
     }
     appendPendingMessage(input, conversation: conversation, to: &rows)
-    rows += turnBubbles.map(\.row)
+    rows += timedRows.map(\.row)
     if let stoppedTurn {
       TranscriptAssistantRowProjection.appendStopDetail(stoppedTurn, to: &rows)
     }
@@ -78,23 +78,6 @@ enum TranscriptBotRowAssembly {
   private static func wasAsked(_ askedAt: Date?, before message: TranscriptBotMessage) -> Bool {
     guard let askedAt, let sentAt = message.sentAt else { return false }
     return askedAt < sentAt
-  }
-
-  private static func turnBubbles(
-    in input: TranscriptProjectionInput
-  ) -> [(askedAt: Date?, row: TranscriptPresentationRow)] {
-    (input.settledConversation + [input.activeItem].compactMap(\.self)).flatMap {
-      item -> [(askedAt: Date?, row: TranscriptPresentationRow)] in
-      guard case let .assistant(message) = item else { return [] }
-      return bubbleRows(message.turn).map { (askedAt: message.turn.endedAt, row: $0) }
-    }
-  }
-
-  private static func bubbleRows(_ turn: AssistantTurn) -> [TranscriptPresentationRow] {
-    turn.setupRequests.map { .setupRequest($0, inBotConversation: true, spacingAfter: groupTailSpacing) }
-      + turn.interactions.shownInTranscript.map {
-        .interaction($0, inBotConversation: true, spacingAfter: groupTailSpacing)
-      }
   }
 
   private static func row(

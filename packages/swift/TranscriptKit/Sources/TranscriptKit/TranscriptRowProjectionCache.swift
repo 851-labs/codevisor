@@ -121,6 +121,7 @@ public struct TranscriptPresentationRow: Identifiable, Equatable, Sendable {
     case activePluginApps(UUID)
     case compactionMarker(UUID)
     case forkMarker(UUID)
+    case eventMarker(UUID)
     case active(UUID)
     case botMessage(String)
     case botTimestamp(String)
@@ -170,6 +171,7 @@ public struct TranscriptPresentationRow: Identifiable, Equatable, Sendable {
         "message:\(id.uuidString):apps"
       case let .compactionMarker(id): "message:\(id.uuidString):compaction"
       case let .forkMarker(id): "message:\(id.uuidString):fork"
+      case let .eventMarker(id): "message:\(id.uuidString):event"
       case let .active(id): "message:\(id.uuidString)"
       case let .botMessage(id): "bot:\(id)"
       case let .botTimestamp(id): "bot:\(id):timestamp"
@@ -199,7 +201,7 @@ public struct TranscriptPresentationRow: Identifiable, Equatable, Sendable {
       case .message, .assistantPlanning, .plan, .planHeader, .planMarkdown,
         .assistantResult, .assistantWorkedHeader, .assistantWorkedItem,
         .assistantChrome, .assistantMarkdown, .assistantAttachment, .assistantPluginApps, .compactionMarker,
-        .forkMarker, .botMessage, .botTimestamp:
+        .forkMarker, .eventMarker, .botMessage, .botTimestamp:
         true
       case .delivery, .botTyping, .active, .activePlanning, .activePlanHeader, .activePlanMarkdown,
         .activeResult, .activeWorkedHeader, .activeWorkedItem, .activeChrome,
@@ -234,7 +236,7 @@ public struct TranscriptPresentationRow: Identifiable, Equatable, Sendable {
         let .assistantMarkdown(id, _, _, _), let .activeMarkdown(id, _, _, _),
         let .assistantAttachment(id, _, _), let .activeAttachment(id, _, _),
         let .assistantPluginApps(id), let .activePluginApps(id), let .compactionMarker(id),
-        let .forkMarker(id):
+        let .forkMarker(id), let .eventMarker(id):
         id
       case .botMessage, .botTimestamp, .delivery, .botTyping, .setupRequest, .interaction, .setup, .startingAgent,
         .backgroundTask,
@@ -264,6 +266,7 @@ public struct TranscriptPresentationRow: Identifiable, Equatable, Sendable {
     case pluginApps([CodevisorExecutionApp])
     case compactionMarker
     case forkMarker(String)
+    case eventMarker(TranscriptEventMarker, inBotConversation: Bool)
     case active(ConversationItem)
     case botMessage(TranscriptBotMessage, TranscriptBotMessageContent, isGroupTail: Bool)
     case botTimestamp(Date)

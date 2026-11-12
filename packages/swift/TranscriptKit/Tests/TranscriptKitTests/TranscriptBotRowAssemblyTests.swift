@@ -66,6 +66,29 @@ struct TranscriptBotRowAssemblyTests {
       ])
   }
 
+  @Test func showsTheEventThatWokeTheBotRightBeforeTheReplyItStarted() throws {
+    let event = UserMessage(
+      text: "<codevisor-event type=\"session.turn_ended\" agentId=\"a1\">\npong\n</codevisor-event>", isEvent: true)
+    var wake = AssistantTurn(entries: [.text(id: "work", markdown: "Reading the result")])
+    wake.startedAt = start.addingTimeInterval(30)
+    let conversation = TranscriptBotConversation(
+      messages: [message("b1", .bot, "Started a helper.", at: 5), message("b2", .bot, "It said pong.", at: 32)],
+      isWorking: false
+    )
+
+    let rows = try TranscriptRowProjectionCache.project(
+      input(settled: [.user(event), .assistant(AssistantMessage(turn: wake))], conversation),
+      options: .init(includesConnectingRow: false, presentsBotConversation: true)
+    )
+
+    #expect(rows.map(\.id).filter(isFeedRow) == [.botMessage("b1"), .eventMarker(event.id), .botMessage("b2")])
+    #expect(
+      rows.contains { row in
+        if case .eventMarker(_, inBotConversation: true) = row.content { return true }
+        return false
+      })
+  }
+
   @Test func showsTheLatestTurnsSetupRequestAsItsOwnBubbleBeforeTyping() throws {
     var turn = AssistantTurn()
     turn.setupRequests = [TranscriptSetupRequest(id: "cu", kind: .computerUse, state: .pending)]
@@ -361,6 +384,13 @@ struct TranscriptBotRowAssemblyTests {
     )
 
     #expect(rows.map(\.id) == [.message(userID)])
+  }
+
+  private func isFeedRow(_ id: TranscriptPresentationRow.ID) -> Bool {
+    switch id {
+    case .botMessage, .eventMarker: true
+    default: false
+    }
   }
 
   private func message(

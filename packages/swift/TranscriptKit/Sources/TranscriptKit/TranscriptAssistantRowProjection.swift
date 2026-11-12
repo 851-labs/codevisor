@@ -55,6 +55,7 @@ enum TranscriptAssistantRowProjection {
   ) {
     guard case let .assistant(original) = item else {
       if TranscriptForkRowProjection.append(item, to: &rows) { return }
+      if TranscriptEventRowProjection.append(item, to: &rows) { return }
       appendMessage(
         messageID: item.id, item: item.presentingQuotes, waitingOnBackgroundTask: waitingOnBackgroundTask, to: &rows
       )

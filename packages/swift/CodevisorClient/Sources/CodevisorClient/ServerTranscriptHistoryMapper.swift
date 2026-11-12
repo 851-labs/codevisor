@@ -55,7 +55,9 @@ nonisolated enum ServerTranscriptHistoryMapper {
       textResource: resource(item.textResource, largerThan: item.text),
       isEvent: item.isEvent,
       isForkMarker: item.origin == "fork",
-      attribution: item.attribution
+      attribution: item.attribution,
+      sentByAgentId: item.sentByAgentId,
+      sentByAgentMachineId: item.sentByAgentMachineId
     )
   }
 
