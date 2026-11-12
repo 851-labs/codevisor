@@ -6,6 +6,7 @@ import { promisify } from "node:util"
 
 import { decode, StartedAgent } from "@codevisor/api"
 import { DatabaseError } from "@codevisor/db"
+import { productionFoodWorktreeNames } from "@codevisor/worktrees"
 import { Effect } from "effect"
 import { afterEach, describe, expect, it, vi } from "vitest"
 
@@ -66,14 +67,25 @@ const startable = async () => {
 
 describe("POST /v1/agents", () => {
   it("creates the worktree and chat, subscribes the caller, then sends the first prompt", async () => {
-    const { agents, services, caller, startAgent } = await startable()
+    const { agents, services, caller, startAgent, state } = await startable()
 
     const response = await startAgent({ labels: { role: "worker" } })
 
     expect(response.status).toBe(201)
     const started = decode(StartedAgent)(response.body)
     expect(started).toMatchObject({ projectId: "start-project", subscribed: true })
-    expect(started.worktreeName).toEqual(expect.any(String))
+    expect(productionFoodWorktreeNames).toContain(started.worktreeName)
+    const { worktrees } = await state()
+    expect(worktrees).toEqual([
+      expect.objectContaining({
+        name: started.worktreeName,
+        branch: `codevisor/${started.worktreeName}`
+      })
+    ])
+    const workspaces = await run(services.db.listWorkspaces)
+    expect(workspaces).toContainEqual(
+      expect.objectContaining({ id: started.workspaceId, name: "Fix login" })
+    )
     const subscriptions = await run(services.db.listSessionSubscriptions(caller))
     expect(subscriptions).toEqual([expect.objectContaining({ targetSessionId: started.agentId })])
     const child = await run(services.db.getSessionSummary(started.agentId))

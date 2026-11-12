@@ -188,7 +188,7 @@ const placementFor = async (
   const allocated = await allocateProjectWorktree(
     { services, config, fanout, serverId: config.id },
     plan.projectId,
-    { name: request.title }
+    {}
   )
   created.push(allocated.rollBack)
   return { workspaceId: randomUUID(), worktreeName: allocated.worktree.name }
