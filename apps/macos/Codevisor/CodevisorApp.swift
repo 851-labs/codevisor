@@ -173,7 +173,7 @@ struct RootView: View {
       AdaptiveDrawerLayer(
         isPresented: !panelLayout.docksSidebar && panelLayout.activeDrawer == .leading,
         edge: .leading,
-        width: min(270, panelLayout.windowWidth - 16)
+        width: AdaptivePanelLayout.sidebarDrawerWidth
       ) {
         RootSidebar(
           selection: $selection, botEditor: $botEditor, store: store, revealRequest: sidebarRevealRequest,

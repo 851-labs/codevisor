@@ -26,6 +26,7 @@ class TranscriptMountedRowHost: NSView {
   func syncContentWidth() -> Bool { false }
   func prepareForImmediatePresentation() {}
   func requestContentMeasurement(forceReport _: Bool = true) {}
+  func viewportDidMoveHorizontally() {}
 
   @discardableResult
   func setAttachmentGeometryReady(_: Bool) -> Bool { false }

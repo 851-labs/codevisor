@@ -75,13 +75,7 @@ struct WorkspaceInspectorPresentation: ViewModifier {
             }
         }
       }
-      .overlay {
-        AdaptiveDrawerLayer(isPresented: showsDrawer, edge: .trailing, width: min(300, panelLayout.windowWidth - 16)) {
-          if let store, let inspected {
-            inspectorView(store, inspected)
-          }
-        }
-      }
+      .overlay { inspectorDrawer(inspected, isPresented: showsDrawer) }
       .task(id: refresh) {
         let isSameView = lastRefresh?.shown == refresh?.shown
         lastRefresh = refresh
@@ -120,6 +114,14 @@ struct WorkspaceInspectorPresentation: ViewModifier {
       isPresented = true
     } else if panelLayout.activeDrawer != .trailing {
       panelLayout.toggleDrawer(.trailing)
+    }
+  }
+
+  private func inspectorDrawer(_ inspected: Inspected?, isPresented: Bool) -> some View {
+    AdaptiveDrawerLayer(isPresented: isPresented, edge: .trailing, width: AdaptivePanelLayout.inspectorDrawerWidth) {
+      if let store, let inspected {
+        inspectorView(store, inspected)
+      }
     }
   }
 

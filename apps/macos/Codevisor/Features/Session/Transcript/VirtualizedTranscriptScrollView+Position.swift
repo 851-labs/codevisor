@@ -136,6 +136,8 @@ extension VirtualizedTranscriptScrollView {
     guard size.width > 0, size.height > 0 else { return }
     guard !isPreparingInitialProjection else { return }
     let widthChanged = abs(size.width - previousSize.width) > 0.5
+    let rowWidthChanged =
+      abs(Self.rowWidth(forViewportWidth: size.width) - Self.rowWidth(forViewportWidth: previousSize.width)) > 0.5
     let sizeChanged = widthChanged || abs(size.height - previousSize.height) > 0.5
     let shouldPinResize =
       sizeChanged && initialPositionApplied
@@ -150,11 +152,13 @@ extension VirtualizedTranscriptScrollView {
     if shouldPinResize, !followsLatest {
       bottomJumpGate.begin()
     }
-    if widthChanged {
+    if rowWidthChanged {
       _ = activateMeasurementCacheIfNeeded()
       refreshMountedRootViews()
       rebuildDocumentGeometry()
       if inLiveResize { settleMountedRowHeights() }
+    } else if widthChanged {
+      recenterMountedRows()
     } else if needsTopInsetGeometry {
       rebuildKeepingVisibleTop()
     } else {

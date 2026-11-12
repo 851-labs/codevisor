@@ -440,7 +440,7 @@
       "location": {
         "character": 3,
         "file": "apps/macos/Codevisor/Features/Session/Transcript/VirtualizedTranscriptScrollView+Position.swift",
-        "line": 201
+        "line": 205
       },
       "reason": "Function body should span 50 lines or less excluding comments and whitespace: currently spans 54 lines",
       "ruleDescription": "Function bodies should not span too many lines",

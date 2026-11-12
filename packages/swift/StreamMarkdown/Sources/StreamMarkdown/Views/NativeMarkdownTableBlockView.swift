@@ -93,6 +93,10 @@
       bleedContainer.bleedLimit = tableBleedLimit
     }
 
+    override func remeasureTableBleed() {
+      bleedContainer.needsLayout = true
+    }
+
     override func contentHeight(forWidth proposedWidth: CGFloat) -> CGFloat {
       let width = max(1, proposedWidth)
       if abs(measuredWidth - width) <= 0.25 { return measuredHeight }

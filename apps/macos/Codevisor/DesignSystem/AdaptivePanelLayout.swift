@@ -14,8 +14,10 @@ final class AdaptivePanelLayout {
   private static let inspectorRestoreWidth: CGFloat = 1_000
   private static let sidebarCollapseWidth: CGFloat = 720
   private static let sidebarRestoreWidth: CGFloat = 760
+  static let sidebarDrawerWidth: CGFloat = 270
+  static let inspectorDrawerWidth: CGFloat = 300
 
-  private(set) var windowWidth: CGFloat = 1_280
+  @ObservationIgnored private var windowWidth: CGFloat = 1_280
   private(set) var isFullScreen = false
   private(set) var docksSidebar = true
   private(set) var docksInspector = true
