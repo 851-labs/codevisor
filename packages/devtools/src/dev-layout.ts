@@ -4,6 +4,7 @@ import { mkdir, rename } from "node:fs/promises"
 import { homedir } from "node:os"
 import { join } from "node:path"
 
+import { instanceWorktreesRoot } from "./dev-instance-roots.ts"
 import { isMissing } from "./files.ts"
 
 export const IOS_DEVELOPMENT_BUNDLE_IDENTIFIER = "com.851labs.Codevisor.Development.iOS"
@@ -59,7 +60,7 @@ export function developmentLayout(
   const buildRoot = join(tmpRoot, "build")
   return {
     tmpRoot,
-    local: localRoots(tmpRoot, environment),
+    local: localRoots(repoRoot, tmpRoot, environment),
     remoteCloud: remoteCloudRoots(tmpRoot),
     build: {
       root: buildRoot,
@@ -139,7 +140,7 @@ export function remoteDevelopmentEnvironment(
   return developmentEnvironment(layout, layout.remoteCloud, environment)
 }
 
-function localRoots(tmpRoot: string, environment: Environment): ServiceRoots {
+function localRoots(repoRoot: string, tmpRoot: string, environment: Environment): ServiceRoots {
   const root = join(tmpRoot, ".codevisor")
   return {
     root,
@@ -152,7 +153,7 @@ function localRoots(tmpRoot: string, environment: Environment): ServiceRoots {
     worktrees:
       environment.CODEVISOR_WORKTREES_ROOT ??
       environment.HERDMAN_WORKTREES_ROOT ??
-      join(tmpRoot, "codevisor")
+      instanceWorktreesRoot(repoRoot)
   }
 }
 
