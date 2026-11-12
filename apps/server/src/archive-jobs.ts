@@ -1,4 +1,4 @@
-import type { Workspace } from "@codevisor/api"
+import type { SessionSummary, Workspace } from "@codevisor/api"
 
 import {
   archiveAgentsCreatedBy,
@@ -14,8 +14,10 @@ import type {
 } from "./server-context-types.js"
 import { appendAndPublish, run, swallowError } from "./server-http.js"
 import {
+  archiveUnusedWorktree,
   archiveWorkspaceWorktree,
   captureWorkspaceRuntime,
+  chatCheckoutsBeside,
   restoreWorkspaceWorktree,
   type RestoredWorkspace,
   retireWorkspaceRuntime,
@@ -97,16 +99,58 @@ export const archiveWorkspaceAndWait = (
   runtime?: WorkspaceRuntime
 ): Promise<void> => {
   const queue = queueFor(services)
-  return queue.enqueue(() =>
-    withWorktreeLifecycle(services, workspace.rootDirectory ?? workspace.id, async () => {
-      if ((await findWorkspace(services, workspace.id))?.isArchived === false) return
-      await services.workspaceMirrors?.stopAll(workspace.id)
-      await stopWorkspaceExecTasks(services, workspace.id)
-      if (runtime !== undefined) await retireRuntime(services, fanout, config.id, runtime)
-      const archived = await archiveWorkspaceWorktree(services, config.id, workspace)
-      queue.track(archived.purged)
-    })
-  )
+  return queue.enqueue(async () => {
+    const archived = await withWorktreeLifecycle(
+      services,
+      workspace.rootDirectory ?? workspace.id,
+      async () => {
+        if ((await findWorkspace(services, workspace.id))?.isArchived === false) return false
+        await services.workspaceMirrors?.stopAll(workspace.id)
+        await stopWorkspaceExecTasks(services, workspace.id)
+        if (runtime !== undefined) await retireRuntime(services, fanout, config.id, runtime)
+        queue.track((await archiveWorkspaceWorktree(services, config.id, workspace)).purged)
+        return true
+      }
+    )
+    if (archived) await reclaimChatWorktrees(services, config.id, workspace, runtime, queue)
+  })
+}
+
+const reclaimChatWorktrees = async (
+  services: CodevisorServerServices,
+  serverId: string,
+  workspace: Workspace,
+  runtime: WorkspaceRuntime | undefined,
+  queue: ArchiveJobQueue
+): Promise<void> => {
+  const checkouts = await chatCheckoutsBeside(services, serverId, workspace, runtime?.sessions)
+  for (const checkout of checkouts) {
+    const archived = await withWorktreeLifecycle(services, checkout.path, () =>
+      archiveUnusedWorktree(services, serverId, checkout.projectId, checkout.path)
+    )
+    queue.track(archived.purged)
+  }
+}
+
+export const reclaimArchivedChat = (
+  services: CodevisorServerServices,
+  fanout: EventFanout,
+  config: CodevisorServerConfig,
+  chat: SessionSummary
+): Promise<void> => {
+  const queue = queueFor(services)
+  return queue.enqueue(async () => {
+    await retireRuntime(services, fanout, config.id, { sessions: [chat], terminalKeys: [] })
+    const checkout = (await run(services.db.listCheckouts)).find(
+      (candidate) => candidate.id === chat.checkoutId
+    )
+    if (checkout === undefined || checkout.worktreeName === undefined) return
+    if (checkout.serverId !== config.id) return
+    const archived = await withWorktreeLifecycle(services, checkout.path, () =>
+      archiveUnusedWorktree(services, config.id, checkout.projectId, checkout.path)
+    )
+    queue.track(archived.purged)
+  })
 }
 
 const retireRuntime = async (

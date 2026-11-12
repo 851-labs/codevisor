@@ -1,7 +1,7 @@
 import type { Checkout, GitHead, GitPullRequest } from "@codevisor/api"
 import type { Effect } from "effect"
 
-import { listCheckoutRows } from "./checkouts.js"
+import { checkoutInUse, listCheckoutRows } from "./checkouts.js"
 import { attempt, type DatabaseError } from "./errors.js"
 import { canonicalUuid } from "./ids.js"
 import { checkoutFromRow } from "./row-mappers.js"
@@ -10,6 +10,7 @@ import type { ServiceContext } from "./service-context.js"
 
 export interface CheckoutsService {
   readonly listCheckouts: Effect.Effect<ReadonlyArray<Checkout>, DatabaseError>
+  readonly isCheckoutInUse: (checkoutId: string) => Effect.Effect<boolean, DatabaseError>
   readonly findWorkspaceShowingSession: (
     sessionId: string
   ) => Effect.Effect<string | undefined, DatabaseError>
@@ -21,6 +22,8 @@ export const makeCheckoutsService = (context: ServiceContext): CheckoutsService 
   const { sqlite, config } = context
   return {
     listCheckouts: attempt("listCheckouts", () => listCheckoutRows(sqlite).map(checkoutFromRow)),
+    isCheckoutInUse: (checkoutId) =>
+      attempt("isCheckoutInUse", () => checkoutInUse(sqlite, canonicalUuid(checkoutId))),
     findWorkspaceShowingSession: (sessionId) =>
       attempt("findWorkspaceShowingSession", () =>
         workspaceShowingSession(sqlite, config.serverId, canonicalUuid(sessionId))

@@ -1,4 +1,4 @@
-import type { ArchivedWorktree, SessionSummary, Workspace } from "@codevisor/api"
+import type { ArchivedWorktree, Checkout, SessionSummary, Workspace } from "@codevisor/api"
 import { isoTimestamp } from "@codevisor/api"
 import {
   legacyWorktreeTrashRoot,
@@ -141,18 +141,6 @@ export const retireWorkspaceRuntime = async (
   ])
 }
 
-const directoryStillInUse = async (
-  services: CodevisorServerServices,
-  workspace: Workspace
-): Promise<boolean> =>
-  (await run(services.db.listWorkspaces)).some(
-    (candidate) =>
-      candidate.id.toLowerCase() !== workspace.id.toLowerCase() &&
-      candidate.rootDirectory !== undefined &&
-      candidate.rootDirectory === workspace.rootDirectory &&
-      !candidate.isArchived
-  )
-
 export interface ArchivedWorkspaceWorktree {
   readonly purged: Promise<void>
 }
@@ -166,13 +154,22 @@ export const archiveWorkspaceWorktree = async (
 ): Promise<ArchivedWorkspaceWorktree> => {
   const rootDirectory = workspace.rootDirectory
   if (rootDirectory === undefined) return nothingArchived
-  if (await directoryStillInUse(services, workspace)) return nothingArchived
-  const worktree = (await run(services.db.listWorktrees(workspace.projectId))).find(
-    (candidate) => candidate.serverId === serverId && candidate.path === rootDirectory
+  return archiveUnusedWorktree(services, serverId, workspace.projectId, rootDirectory)
+}
+
+export const archiveUnusedWorktree = async (
+  services: CodevisorServerServices,
+  serverId: string,
+  projectId: string,
+  path: string
+): Promise<ArchivedWorkspaceWorktree> => {
+  if (await checkoutStillInUse(services, serverId, path)) return nothingArchived
+  const worktree = (await run(services.db.listWorktrees(projectId))).find(
+    (candidate) => candidate.serverId === serverId && candidate.path === path
   )
   if (worktree === undefined) return nothingArchived
 
-  const project = await getProjectOrFail(services.db, workspace.projectId)
+  const project = await getProjectOrFail(services.db, projectId)
   const location = localLocationOrFail(serverId, project)
   const environment = await (services.resolveGitEnvironment?.() ?? Promise.resolve(process.env))
 
@@ -219,6 +216,17 @@ export const archiveWorkspaceWorktree = async (
   return { purged: trashed.purged }
 }
 
+const checkoutStillInUse = async (
+  services: CodevisorServerServices,
+  serverId: string,
+  path: string
+): Promise<boolean> => {
+  const checkout = (await run(services.db.listCheckouts)).find(
+    (candidate) => candidate.serverId === serverId && candidate.path === path
+  )
+  return checkout !== undefined && (await run(services.db.isCheckoutInUse(checkout.id)))
+}
+
 export interface RestoredWorkspace {
   readonly workspace: Workspace
   readonly restoredFiles: boolean
@@ -228,57 +236,126 @@ export const restoreWorkspaceWorktree = async (
   services: CodevisorServerServices,
   serverId: string,
   workspace: Workspace
-): Promise<RestoredWorkspace> =>
-  withWorktreeLifecycle(services, workspace.rootDirectory ?? workspace.id, async () => {
-    const found = await findArchivedWorktreeFor(services, serverId, workspace)
-    if (found === undefined) return { workspace, restoredFiles: true }
-    const { rootDirectory, worktreeName, archived } = found
-    if (archived === undefined) {
-      const existing = (await run(services.db.listWorktrees(workspace.projectId))).find(
-        (candidate) => candidate.serverId === serverId && candidate.name === worktreeName
-      )
-      return { workspace, restoredFiles: existing !== undefined }
-    }
+): Promise<RestoredWorkspace> => {
+  const root = await withWorktreeLifecycle(
+    services,
+    workspace.rootDirectory ?? workspace.id,
+    async () => restoreRootWorktree(services, serverId, workspace)
+  )
+  const others = await restoreChatWorktrees(services, serverId, root.workspace)
+  return { workspace: root.workspace, restoredFiles: root.restoredFiles && others }
+}
 
-    const project = await getProjectOrFail(services.db, workspace.projectId)
-    const location = localLocationOrFail(serverId, project)
-    const environment = await (services.resolveGitEnvironment?.(location.folderPath) ??
-      Promise.resolve(process.env))
-    const taken = new Set(
-      (await run(services.db.listWorktrees(workspace.projectId)))
-        .filter((candidate) => candidate.serverId === serverId)
-        .map((candidate) => candidate.name)
-    )
-    const restored = await restoreWorktree({
-      repoDir: location.folderPath,
-      worktreePathFor: (name) => worktreePathBeside(workspace.projectId, rootDirectory, name),
-      originalName: archived.originalName,
-      parentSha: archived.parentSha,
-      snapshotRef: archived.snapshotRef,
-      takenNames: taken,
-      env: environment
-    })
-    await run(
-      services.db.createWorktree(workspace.projectId, restored.name, restored.branch, archived.id)
-    )
-    await run(services.db.deleteArchivedWorktree(archived.id))
-    if (restored.restoredFromSnapshot) {
-      await deleteSnapshot(location.folderPath, archived.id, environment)
-    }
+const restoreRootWorktree = async (
+  services: CodevisorServerServices,
+  serverId: string,
+  workspace: Workspace
+): Promise<RestoredWorkspace> => {
+  const rootDirectory = workspace.rootDirectory
+  if (rootDirectory === undefined) return { workspace, restoredFiles: true }
+  const restored = await restoreArchivedWorktree(
+    services,
+    serverId,
+    workspace.projectId,
+    rootDirectory
+  )
+  if (restored.renamedTo === undefined) return { workspace, restoredFiles: restored.restoredFiles }
+  const path = worktreePath(workspace.projectId, restored.renamedTo)
+  const updated = await run(services.db.updateWorkspace(workspace.id, { rootDirectory: path }))
+  return { workspace: updated, restoredFiles: restored.restoredFiles }
+}
 
-    let updated = workspace
-    if (restored.name !== worktreeName) {
-      const path = worktreePath(workspace.projectId, restored.name)
-      updated = await run(services.db.updateWorkspace(workspace.id, { rootDirectory: path }))
-      for (const session of await run(services.db.listSessions)) {
-        if (session.projectId !== workspace.projectId || session.worktreeName !== worktreeName) {
-          continue
-        }
-        await run(services.db.updateSession(session.id, { worktreeName: restored.name }))
-      }
-    }
-    return { workspace: updated, restoredFiles: restored.restoredFromSnapshot }
+const restoreChatWorktrees = async (
+  services: CodevisorServerServices,
+  serverId: string,
+  workspace: Workspace
+): Promise<boolean> => {
+  let restoredFiles = true
+  for (const checkout of await chatCheckoutsBeside(services, serverId, workspace)) {
+    const restored = await withWorktreeLifecycle(services, checkout.path, () =>
+      restoreArchivedWorktree(services, serverId, checkout.projectId, checkout.path)
+    )
+    restoredFiles = restoredFiles && restored.restoredFiles
+  }
+  return restoredFiles
+}
+
+export const chatCheckoutsBeside = async (
+  services: CodevisorServerServices,
+  serverId: string,
+  workspace: Workspace,
+  chats?: ReadonlyArray<SessionSummary>
+): Promise<ReadonlyArray<Checkout>> => {
+  const held = chats ?? (await run(services.db.listSessions)).filter(isIn(workspace))
+  const ids = new Set(
+    held.flatMap((chat) => (chat.checkoutId === undefined ? [] : [chat.checkoutId]))
+  )
+  return (await run(services.db.listCheckouts)).filter(
+    (checkout) =>
+      ids.has(checkout.id) &&
+      checkout.serverId === serverId &&
+      checkout.worktreeName !== undefined &&
+      checkout.path !== workspace.rootDirectory
+  )
+}
+
+const isIn =
+  (workspace: Workspace) =>
+  (chat: SessionSummary): boolean =>
+    chat.workspaceId?.toLowerCase() === workspace.id.toLowerCase()
+
+interface RestoredWorktree {
+  readonly restoredFiles: boolean
+  readonly renamedTo?: string
+}
+
+const restoreArchivedWorktree = async (
+  services: CodevisorServerServices,
+  serverId: string,
+  projectId: string,
+  path: string
+): Promise<RestoredWorktree> => {
+  const worktreeName = worktreeNameAt(projectId, path)
+  if (worktreeName === undefined) return { restoredFiles: true }
+  const archived = await run(services.db.findArchivedWorktree(projectId, serverId, worktreeName))
+  if (archived === undefined) {
+    const existing = (await run(services.db.listWorktrees(projectId))).find(
+      (candidate) => candidate.serverId === serverId && candidate.name === worktreeName
+    )
+    return { restoredFiles: existing !== undefined }
+  }
+
+  const project = await getProjectOrFail(services.db, projectId)
+  const location = localLocationOrFail(serverId, project)
+  const environment = await (services.resolveGitEnvironment?.(location.folderPath) ??
+    Promise.resolve(process.env))
+  const taken = new Set(
+    (await run(services.db.listWorktrees(projectId)))
+      .filter((candidate) => candidate.serverId === serverId)
+      .map((candidate) => candidate.name)
+  )
+  const restored = await restoreWorktree({
+    repoDir: location.folderPath,
+    worktreePathFor: (name) => worktreePathBeside(projectId, path, name),
+    originalName: archived.originalName,
+    parentSha: archived.parentSha,
+    snapshotRef: archived.snapshotRef,
+    takenNames: taken,
+    env: environment
   })
+  await run(services.db.createWorktree(projectId, restored.name, restored.branch, archived.id))
+  await run(services.db.deleteArchivedWorktree(archived.id))
+  if (restored.restoredFromSnapshot) {
+    await deleteSnapshot(location.folderPath, archived.id, environment)
+  }
+  if (restored.name === worktreeName) return { restoredFiles: restored.restoredFromSnapshot }
+
+  for (const session of await run(services.db.listSessions)) {
+    if (session.projectId !== projectId || session.worktreeName !== worktreeName) continue
+    await run(services.db.updateSession(session.id, { worktreeName: restored.name }))
+  }
+  return { restoredFiles: restored.restoredFromSnapshot, renamedTo: restored.name }
+}
 
 export interface WorkspaceGitCheckout {
   readonly directory: string

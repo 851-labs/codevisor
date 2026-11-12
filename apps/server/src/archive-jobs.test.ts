@@ -10,6 +10,7 @@ import { Schema } from "effect"
 import { describe, expect, it, vi } from "vitest"
 
 import { archiveJobs } from "./archive-jobs.js"
+import { idOf } from "./routes/response-test-support.js"
 import { jsonRequest, run, start, tempDirs, listSubjectEvents } from "./test-support.js"
 import { withWorktreeLifecycle } from "./worktree-lifecycle.js"
 
@@ -54,6 +55,41 @@ const setUp = async () => {
 
 const terminalPane = "7e3a0000-0000-4000-8000-000000000001"
 
+type Setup = Awaited<ReturnType<typeof setUp>>
+
+const setArchived = ({ server }: Setup, workspaceId: string, isArchived: boolean) =>
+  jsonRequest(server, `/v1/workspaces/${workspaceId}`, {
+    body: JSON.stringify({ isArchived }),
+    method: "PATCH"
+  })
+
+const createChat = async ({ server }: Setup, body: Record<string, unknown>) =>
+  idOf(
+    (
+      await jsonRequest(server, "/v1/sessions", {
+        body: JSON.stringify({ projectId: "git-project", harnessId: "codex", ...body }),
+        method: "POST"
+      })
+    ).body
+  )
+
+const worktreeChatMovedToParent = async (setup: Setup) => {
+  const { server, services, repoFolder, worktree } = setup
+  await jsonRequest(server, "/v1/workspaces/parent", {
+    body: JSON.stringify({
+      projectId: "git-project",
+      name: "Parent",
+      hasCustomName: false,
+      rootDirectory: repoFolder
+    }),
+    method: "PUT"
+  })
+  const caller = await createChat(setup, { workspaceId: "parent" })
+  const moved = await createChat(setup, { workspaceId: "work", worktreeName: worktree.name })
+  await run(services.db.setSessionWorkspace(moved, "parent"))
+  return { caller, moved }
+}
+
 describe("archive jobs", () => {
   it("does nothing when the workspace is unarchived before its job runs", async () => {
     const { server, services, repoFolder, worktree } = await setUp()
@@ -97,6 +133,69 @@ describe("archive jobs", () => {
     ).toEqual(["complete"])
     const kinds = listSubjectEvents(services, "work").map((event) => event.kind)
     expect(kinds.at(-1)).toBe("workspace.deleted")
+  })
+
+  it("keeps a worktree while a chat in another workspace uses it, then reclaims and restores it with that chat", async () => {
+    const setup = await setUp()
+    const { services, worktree } = setup
+    await worktreeChatMovedToParent(setup)
+
+    await setArchived(setup, "work", true)
+    await archiveJobs(services).idle()
+
+    expect(existsSync(worktree.path)).toBe(true)
+    expect(await run(services.db.listArchivedWorktrees("git-project"))).toEqual([])
+
+    await setArchived(setup, "parent", true)
+    await archiveJobs(services).idle()
+
+    expect(existsSync(worktree.path)).toBe(false)
+    expect(
+      (await run(services.db.listArchivedWorktrees("git-project"))).map(
+        (archived) => archived.state
+      )
+    ).toEqual(["complete"])
+
+    expect((await setArchived(setup, "parent", false)).status).toBe(200)
+
+    expect(existsSync(worktree.path)).toBe(true)
+    expect(await run(services.db.listArchivedWorktrees("git-project"))).toEqual([])
+  })
+
+  it("reclaims an archived chat's worktree once no workspace shows it either", async () => {
+    const setup = await setUp()
+    const { server, services, worktree } = setup
+    const { caller, moved } = await worktreeChatMovedToParent(setup)
+
+    const archived = await jsonRequest(server, `/v1/agents/${moved}/archive`, {
+      body: JSON.stringify({ callerAgentId: caller }),
+      method: "POST"
+    })
+    await archiveJobs(services).idle()
+
+    expect(archived.status).toBe(200)
+    expect(existsSync(worktree.path)).toBe(true)
+
+    await setArchived(setup, "work", true)
+    await archiveJobs(services).idle()
+
+    expect(existsSync(worktree.path)).toBe(false)
+  })
+
+  it("reclaims an archived chat's worktree right away when its old workspace is already archived", async () => {
+    const setup = await setUp()
+    const { server, services, worktree } = setup
+    const { caller, moved } = await worktreeChatMovedToParent(setup)
+    await setArchived(setup, "work", true)
+    await archiveJobs(services).idle()
+
+    await jsonRequest(server, `/v1/agents/${moved}/archive`, {
+      body: JSON.stringify({ callerAgentId: caller }),
+      method: "POST"
+    })
+
+    expect(existsSync(worktree.path)).toBe(false)
+    expect((await run(services.db.getSessionSummary(caller))).isArchived).toBeUndefined()
   })
 
   it("keeps the files when a process cannot be stopped, and keeps serving later jobs", async () => {
