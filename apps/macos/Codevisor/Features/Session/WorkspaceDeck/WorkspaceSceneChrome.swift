@@ -16,14 +16,12 @@ struct WorkspaceSceneValues {
 
 struct WorkspaceSceneChrome<PaneToolbar: ToolbarContent>: View {
   let title: WorkspaceSceneTitle
-  let subtitle: String
   let removesTitle: Bool
   let values: WorkspaceSceneValues
   @ToolbarContentBuilder let toolbar: () -> PaneToolbar
 
   var body: some View {
     titled
-      .navigationSubtitle(subtitle)
       .toolbar(removing: removesTitle ? .title : nil)
       .toolbar(content: toolbar)
       .focusedSceneValue(\.browserPage, values.browser)
