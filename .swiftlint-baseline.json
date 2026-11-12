@@ -1200,21 +1200,6 @@
     }
   },
   {
-    "text": "  private func resize(_ session: ScreenSharingHostSession, to size: (width: Int, height: Int)?) async {",
-    "violation": {
-      "location": {
-        "character": 11,
-        "file": "packages/swift/CodevisorCoreMac/Sources/CodevisorCoreMac/ScreenSharing/ScreenSharingHostService+Display.swift",
-        "line": 51
-      },
-      "reason": "Function body should span 50 lines or less excluding comments and whitespace: currently spans 60 lines",
-      "ruleDescription": "Function bodies should not span too many lines",
-      "ruleIdentifier": "function_body_length",
-      "ruleName": "Function Body Length",
-      "severity": "error"
-    }
-  },
-  {
     "text": "  func handle(_ request: ServerScreenSharingRequest) async -> ServerScreenSharingReply {",
     "violation": {
       "location": {
@@ -1235,9 +1220,9 @@
       "location": {
         "character": 11,
         "file": "packages/swift/CodevisorCoreMac/Sources/CodevisorCoreMac/ScreenSharing/ScreenSharingHostService.swift",
-        "line": 249
+        "line": 204
       },
-      "reason": "Function body should span 50 lines or less excluding comments and whitespace: currently spans 80 lines",
+      "reason": "Function body should span 50 lines or less excluding comments and whitespace: currently spans 65 lines",
       "ruleDescription": "Function bodies should not span too many lines",
       "ruleIdentifier": "function_body_length",
       "ruleName": "Function Body Length",

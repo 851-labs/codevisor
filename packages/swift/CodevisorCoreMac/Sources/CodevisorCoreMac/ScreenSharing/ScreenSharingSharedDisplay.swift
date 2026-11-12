@@ -3,19 +3,24 @@ import ScreenSharing
 import Synchronization
 
 final class ScreenSharingSharedDisplay: Sendable {
-  private let id: Mutex<CGDirectDisplayID>
+  private let ids: Mutex<(shared: CGDirectDisplayID, virtual: CGDirectDisplayID?)>
   private let boundsOf: @Sendable (CGDirectDisplayID) -> CGRect
 
   init(_ id: CGDirectDisplayID, bounds: @escaping @Sendable (CGDirectDisplayID) -> CGRect) {
-    self.id = Mutex(id)
+    ids = Mutex((id, nil))
     boundsOf = bounds
   }
 
   var displayID: CGDirectDisplayID {
-    get { id.withLock { $0 } }
-    set { id.withLock { $0 = newValue } }
+    get { ids.withLock { $0.shared } }
+    set { ids.withLock { $0.shared = newValue } }
   }
 
-  var bounds: CGRect { boundsOf(displayID) }
-  var scale: CGFloat { ScreenSharingCursorPublisher.displayScale(displayID) }
+  var virtualDisplayID: CGDirectDisplayID? {
+    get { ids.withLock { $0.virtual } }
+    set { ids.withLock { $0.virtual = newValue } }
+  }
+
+  var bounds: CGRect { boundsOf(virtualDisplayID ?? displayID) }
+  var scale: CGFloat { ScreenSharingCursorPublisher.displayScale(virtualDisplayID ?? displayID) }
 }

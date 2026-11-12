@@ -48,6 +48,13 @@ extension ScreenSharingDisplayIdentity {
     }
   }
 
+  static func isOnline(_ id: CGDirectDisplayID) -> Bool {
+    var ids = [CGDirectDisplayID](repeating: 0, count: 32)
+    var count: UInt32 = 0
+    guard CGGetOnlineDisplayList(UInt32(ids.count), &ids, &count) == .success else { return false }
+    return ids.prefix(Int(count)).contains(id)
+  }
+
   static func online() -> [Online] {
     var ids = [CGDirectDisplayID](repeating: 0, count: 32)
     var count: UInt32 = 0

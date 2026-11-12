@@ -20,8 +20,16 @@ final class ScreenSharingHostSession {
   let displayIdentity: ScreenSharingDisplayIdentity
   var configuration: ScreenSharingVideoConfiguration
   let physicalConfiguration: ScreenSharingVideoConfiguration
-  var virtualDisplay: ScreenSharingHostVirtualDisplay?
+  var virtualDisplay: ScreenSharingHostVirtualDisplay? {
+    didSet { sharedDisplay.virtualDisplayID = virtualDisplay?.displayID }
+  }
+  var sharedMode: ScreenSharingHostRetina.SharedDisplay
+  var dynamicDesktop: (width: Int, height: Int)?
   var captureDisplayID: UInt32 { virtualDisplay?.displayID ?? displayID }
+  var virtualDisplayStandsInForShared: Bool {
+    guard let virtualDisplay else { return false }
+    return (virtualDisplay.replacesShared ? virtualDisplay.displayID : virtualDisplay.shared) == displayID
+  }
   let sharedDisplay: ScreenSharingSharedDisplay
   let injector: ScreenSharingInputInjector
   var pendingResize: Task<Void, Never>?
@@ -58,6 +66,7 @@ final class ScreenSharingHostSession {
     self.sharedDisplay = sharedDisplay
     injector = ScreenSharingInputInjector(displayBounds: { sharedDisplay.bounds })
     displayIdentity = ScreenSharingDisplayIdentity(display: displayID)
+    sharedMode = .init(display: displayID)
     capture = ScreenSharingCapture()
     metrics = ScreenSharingMetrics()
     configuration = try ScreenSharingV2Profile.captureConfiguration(width: display.width, height: display.height)

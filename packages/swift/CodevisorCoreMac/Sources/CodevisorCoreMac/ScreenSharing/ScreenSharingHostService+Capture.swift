@@ -72,6 +72,7 @@ extension ScreenSharingHostService {
     guard current != session.displayID else { return true }
     Self.logger.notice("Shared display \(session.displayID) is now display \(current)")
     session.displayID = current
+    session.sharedMode = .init(display: current)
     return true
   }
 
