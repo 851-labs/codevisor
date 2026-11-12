@@ -7,7 +7,7 @@ final class ScreenSharingHostVirtualDisplay {
   nonisolated static let vendorID: UInt32 = 0xC0DF
   static let name = "Codevisor Screen Sharing"
   nonisolated static let maximum = (width: 1920, height: 1080)
-  nonisolated static let minimum = (width: 640, height: 400)
+  nonisolated static let minimum = (width: 800, height: 600)
 
   static var isAvailable: Bool {
     ["CGVirtualDisplay", "CGVirtualDisplayDescriptor", "CGVirtualDisplaySettings", "CGVirtualDisplayMode"]
@@ -15,12 +15,13 @@ final class ScreenSharingHostVirtualDisplay {
   }
 
   nonisolated static func clamp(width: Int, height: Int) -> (width: Int, height: Int) {
-    let width = Double(max(minimum.width, width)), height = Double(max(minimum.height, height))
-    let scale = min(1, Double(maximum.width) / width, Double(maximum.height) / height)
-    return (
-      max(minimum.width, Int(width * scale)) / 2 * 2,
-      max(minimum.height, Int(height * scale)) / 2 * 2
-    )
+    let width = Double(max(1, width)), height = Double(max(1, height))
+    let grown = max(1, Double(minimum.width) / width, Double(minimum.height) / height)
+    let scale = grown * min(1, Double(maximum.width) / (width * grown), Double(maximum.height) / (height * grown))
+    func fit(_ value: Double, _ lower: Int, _ upper: Int) -> Int {
+      min(upper, max(lower, Int((value * scale).rounded()))) / 2 * 2
+    }
+    return (fit(width, minimum.width, maximum.width), fit(height, minimum.height, maximum.height))
   }
 
   private let display: CGVirtualDisplay
@@ -67,7 +68,7 @@ final class ScreenSharingHostVirtualDisplay {
       replacesShared = true
       return
     }
-    try Self.configure { CGConfigureDisplayMirrorOfDisplay($0, shared, displayID) }
+    try Self.configure("Mirroring the display") { CGConfigureDisplayMirrorOfDisplay($0, shared, displayID) }
   }
 
   private func replacedShared() async throws -> Bool {
@@ -84,28 +85,49 @@ final class ScreenSharingHostVirtualDisplay {
       if let mode = modes.first(where: {
         $0.width == size.width && $0.height == size.height && $0.pixelWidth == size.width * 2
       }) {
-        if let current = CGDisplayCopyDisplayMode(displayID), current.width == mode.width,
-          current.pixelWidth == mode.pixelWidth
-        {
-          return
+        if showsHiDPIMode { return }
+        try Self.configure("Switching the virtual display to \(size.width)×\(size.height) pt") {
+          CGConfigureDisplayWithDisplayMode($0, displayID, mode, nil)
         }
-        try Self.configure { CGConfigureDisplayWithDisplayMode($0, displayID, mode, nil) }
         return
       }
       try await Task.sleep(for: .milliseconds(10))
     }
+    throw ScreenSharingError.unavailable("The virtual display has no \(size.width)×\(size.height) pt HiDPI mode.")
   }
 
-  func resize(width: Int, height: Int) throws {
+  var showsHiDPIMode: Bool {
+    guard let current = CGDisplayCopyDisplayMode(displayID) else { return false }
+    return current.width == size.width && current.height == size.height && current.pixelWidth == size.width * 2
+  }
+
+  func resize(width: Int, height: Int) async throws {
     let size = Self.clamp(width: width, height: height)
     guard size != self.size else { return }
-    try apply(size)
-    self.size = size
+    let previous = self.size
+    do {
+      try apply(size)
+      self.size = size
+      try await selectHiDPIMode()
+    } catch {
+      self.size = previous
+      try? apply(previous)
+      try? await selectHiDPIMode()
+      guard showsHiDPIMode else { throw error }
+      throw KeptSize(size: previous, reason: error.localizedDescription)
+    }
+  }
+
+  struct KeptSize: Error {
+    let size: (width: Int, height: Int)
+    let reason: String
   }
 
   func release() {
     guard ScreenSharingDisplayIdentity.isOnline(shared), CGDisplayIsInMirrorSet(shared) != 0 else { return }
-    try? Self.configure { CGConfigureDisplayMirrorOfDisplay($0, self.shared, kCGNullDirectDisplay) }
+    try? Self.configure("Unmirroring the display") {
+      CGConfigureDisplayMirrorOfDisplay($0, self.shared, kCGNullDirectDisplay)
+    }
   }
 
   private func apply(_ size: (width: Int, height: Int)) throws {
@@ -117,7 +139,7 @@ final class ScreenSharingHostVirtualDisplay {
     }
   }
 
-  private static func configure(_ change: (CGDisplayConfigRef?) -> CGError) throws {
+  private static func configure(_ what: String, _ change: (CGDisplayConfigRef?) -> CGError) throws {
     var config: CGDisplayConfigRef?
     guard CGBeginDisplayConfiguration(&config) == .success else {
       throw ScreenSharingError.unavailable("This Mac's displays can't be configured now.")
@@ -125,10 +147,11 @@ final class ScreenSharingHostVirtualDisplay {
     let result = change(config)
     guard result == .success else {
       CGCancelDisplayConfiguration(config)
-      throw ScreenSharingError.unavailable("Mirroring the display failed (\(result.rawValue)).")
+      throw ScreenSharingError.unavailable("\(what) failed (\(result.rawValue)).")
     }
-    guard CGCompleteDisplayConfiguration(config, .forSession) == .success else {
-      throw ScreenSharingError.unavailable("Mirroring the display failed.")
+    let completed = CGCompleteDisplayConfiguration(config, .forSession)
+    guard completed == .success else {
+      throw ScreenSharingError.unavailable("\(what) failed (\(completed.rawValue)).")
     }
   }
 }
