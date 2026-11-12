@@ -103,7 +103,7 @@ final class ScreenSharingStream {
   private func attempt(restart: Bool) async -> Outcome {
     presented = false
     do {
-      let capabilities = try await sponsor.client.screenSharing(request(.capabilities))
+      let capabilities = try await send(request(.capabilities))
       try Task.checkCancellation()
       guard capabilities.version == 1, ["available", "busy"].contains(capabilities.status) else {
         return .ended(capabilities.message ?? "This Mac can't share its screen right now.")
@@ -133,7 +133,7 @@ final class ScreenSharingStream {
     start.media = address
     start.chroma = await v2.chroma().rawValue
     started = true
-    let reply = try await sponsor.client.screenSharing(start)
+    let reply = try await send(start)
     try Task.checkCancellation()
     guard reply.version == 1, reply.status == "connecting", let grant = reply.media else {
       return .ended(reply.message ?? "This Mac can't share its screen right now.")
@@ -151,6 +151,13 @@ final class ScreenSharingStream {
       return Task.isCancelled ? .cancelled : .lost
     }
     return await heartbeat(until: lost, missingVideo: Self.missingVideoTimeout)
+  }
+
+  private func send(_ request: ServerScreenSharingRequest) async throws -> ServerScreenSharingReply {
+    let clock = sponsor.clock
+    return try await ServerConnectionLoss.retryingInterruptions(sleep: { try await clock.sleep(for: $0) }) {
+      try await sponsor.client.screenSharing(request)
+    }
   }
 
   private func heartbeat(until lost: AsyncStream<Void>, missingVideo: Duration) async -> Outcome {

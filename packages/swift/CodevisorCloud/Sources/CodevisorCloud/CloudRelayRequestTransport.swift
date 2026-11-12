@@ -38,6 +38,11 @@ extension CloudRelayTransportError: ServerTransportFailure {
     }
   }
 
+  public var isInterruption: Bool {
+    guard case let .channelClosed(reason) = self else { return false }
+    return reason == nil || reason == .peerDisconnected
+  }
+
   private static func closeMeansConnectionLoss(_ reason: CloudChannelCloseReason?) -> Bool {
     switch reason {
     case nil, .done, .peerDisconnected: true

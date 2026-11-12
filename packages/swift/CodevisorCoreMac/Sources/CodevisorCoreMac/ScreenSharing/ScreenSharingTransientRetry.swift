@@ -21,11 +21,11 @@ public enum ScreenSharingTransientRetry {
     _ request: @MainActor () async throws -> ServerScreenSharingReply
   ) async throws -> ServerScreenSharingReply {
     do {
-      let reply = try await request()
+      let reply = try await ServerConnectionLoss.retryingInterruptions(sleep: sleep, request)
       guard isTransient(reply) else { return reply }
     } catch  where isTransient(error) {
     }
     try await sleep(delay)
-    return try await request()
+    return try await ServerConnectionLoss.retryingInterruptions(sleep: sleep, request)
   }
 }

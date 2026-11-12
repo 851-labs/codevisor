@@ -337,6 +337,7 @@ extension CloudDirectPathController {
     { machine, onDown in
       guard let address = machine.tunnel else { return nil }
       let transport = CloudTunnelWebSocketTransport(endpoint: tunnel, address: address)
+      let paths = transport.paths
       let connection = CloudDirectConnection(
         directURL: URL(string: "tunnel://\(machine.deviceId)")!,
         machineDeviceId: machine.deviceId,
@@ -344,9 +345,9 @@ extension CloudDirectPathController {
         credentialStore: credentialStore,
         webSocketTransport: transport,
         readyTimeout: .seconds(15),
-        onDown: onDown
+        onDown: onDown,
+        describePath: { paths.current().map { "\($0.route) \($0.roundTripMilliseconds) ms" } }
       )
-      let paths = transport.paths
       if await Self.verifySealedRoundTrip(connection) { return Pipe(connection: connection) { paths.current() } }
       Log.cloud.notice("Tunnel to machine \(machine.deviceId, privacy: .public) did not verify")
       await connection.shutdown()
