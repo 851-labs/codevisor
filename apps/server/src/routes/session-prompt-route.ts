@@ -10,7 +10,7 @@ import type {
 } from "@codevisor/api"
 import { PromptRequest } from "@codevisor/api"
 
-import { HttpFailure, readSchema, run, sessionIsArchived, writeJson } from "../server-context.js"
+import { archivedChatRefusal, HttpFailure, readSchema, run, writeJson } from "../server-context.js"
 import type { CodevisorServerServices, RouteState } from "../server-context.js"
 import { agentMessageEvent } from "./bot-conversation.js"
 import { botForChat, postBotMessage } from "./bot-turns.js"
@@ -35,7 +35,7 @@ type EnqueuePrompt = (text: string, origin: PromptOrigin) => Promise<PromptQueue
 export const sendPrompt = async (route: RouteContext, sessionId: string): Promise<boolean> => {
   const { services, routeState, request, response } = route
   const summary = await run(services.db.getSessionSummary(sessionId))
-  refuseArchivedSession(await sessionIsArchived(services, summary))
+  refuseArchivedSession(await archivedChatRefusal(services, summary, "sending a prompt"))
 
   const payload = await readSchema(request, PromptRequest)
   const actionKey = actionIdKey(sessionId, payload.clientActionId)
@@ -86,8 +86,8 @@ export const sendPrompt = async (route: RouteContext, sessionId: string): Promis
   return true
 }
 
-const refuseArchivedSession = (archived: boolean): void => {
-  if (archived) throw new HttpFailure(409, "Restore the workspace before sending a prompt")
+const refuseArchivedSession = (refusal: string | undefined): void => {
+  if (refusal !== undefined) throw new HttpFailure(409, refusal)
 }
 
 const writeAccepted = (response: ServerResponse, body: unknown): boolean => {

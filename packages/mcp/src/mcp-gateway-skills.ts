@@ -153,8 +153,8 @@ export const executeSkill: BuiltinSkill = {
           "## Other agents",
           "Never use your harness's built-in subagents (a Task or Agent tool, spawn_agent, and the like), even if your harness still offers them. Read `codevisor-agents` before starting a Codevisor agent.",
           [
-            '- A Codevisor agent in your own workspace (`agents.start({ checkout: "shared", … })`) fits quick, scoped help with your current task: research, reading code, a review, a small piece of the same change. Close it with `agent.close()` once you have its reply.',
-            '- An agent in a new worktree (`checkout: "worktree"`), on this machine or any other (`machine`), fits separate work that ends in its own branch or PR. Archive its workspace with `workspaces.archive` when its work is done.'
+            '- A Codevisor agent in your own workspace (`agents.start({ checkout: "shared", … })`) fits quick, scoped help with your current task: research, reading code, a review, a small piece of the same change. Archive it with `agent.archive()` once you have its reply.',
+            '- An agent in a new worktree (`checkout: "worktree"`), on this machine or any other (`machine`), fits separate work that ends in its own branch or PR. Archive it with `agent.archive()` when its work is done.'
           ].join("\n")
         ].join("\n\n"),
         [

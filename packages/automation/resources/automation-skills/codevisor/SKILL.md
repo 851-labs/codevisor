@@ -5,7 +5,7 @@ description: Use when work needs Codevisor's own tooling and you haven't yet pic
 
 # Codevisor tooling
 
-Codevisor's own tools are globals in the `execute` tool, grouped by what they act on: `agents.start(args)`, `bots.list()`, `plugins.list()`, `sandboxes.list()`, `workspaces.archive(args)`, and so on. The `execute` skill covers how calls, `description`, and `status()` work.
+Codevisor's own tools are globals in the `execute` tool, grouped by what they act on: `agents.start(args)`, `bots.list()`, `plugins.list()`, `sandboxes.list()`, `agents.archive(args)`, and so on. The `execute` skill covers how calls, `description`, and `status()` work.
 
 - **Tools that act on one machine** (agents, workspaces, projects, bots, harnesses, terminals) take an optional `machine`: a machine id, a machine name, or a `Machine`. Leave it out to use the machine you run on. Results that name an agent include `machine`, the machine it runs on.
 - **Tools shared by all your machines** (plugins, sandboxes, `machines.*`) take no `machine`.
@@ -15,22 +15,22 @@ Codevisor's own tools are globals in the `execute` tool, grouped by what they ac
 ## Choosing where work goes
 
 - **Never your harness's built-in subagents** (a Task or Agent tool, spawn_agent, and the like), even if your harness still offers them. Start a Codevisor agent instead.
-- **`checkout: "shared"`** starts an agent in your own workspace and checkout, on your machine: quick, scoped help with your current task, like research, reading code, a review, a small piece of the same change, or a second opinion from another harness or model. It edits the same files you do and shows up as a tab beside you (as a split beside a bot's conversation, which has no tabs); close it with `agent.close()` once you have its reply.
-- **`checkout: "worktree"`** starts an agent in a new git worktree and workspace, on any machine: separate work that ends in its own branch or PR, like one agent per issue. It shows under your workspace in the user's sidebar and in your agents pill. Archive its workspace with `workspaces.archive` when the work is merged.
+- **`checkout: "shared"`** starts an agent in your own workspace and checkout, on your machine: quick, scoped help with your current task, like research, reading code, a review, a small piece of the same change, or a second opinion from another harness or model. It edits the same files you do and shows up as a tab beside you (as a split beside a bot's conversation, which has no tabs); archive it with `agent.archive()` once you have its reply.
+- **`checkout: "worktree"`** starts an agent in a new git worktree and workspace, on any machine: separate work that ends in its own branch or PR, like one agent per issue. It shows under your workspace in the user's sidebar and in your agents pill. Archive it with `agent.archive()` when the work is merged; that reclaims its worktree.
 - **`checkout: "project"`** works in the project folder itself, in a new workspace, without a new branch. **`checkout: "none"`** works in a fresh empty folder with no project.
 
 ## What you can do
 
 Read each skill named below by calling the `skills` tool with its name.
 
-| Goal                                                                                                         | Skill                | Entry points                                                                                            |
-| ------------------------------------------------------------------------------------------------------------ | -------------------- | ------------------------------------------------------------------------------------------------------- |
-| Start other coding agents, follow up, get their final replies, answer their questions, close or archive them | `codevisor-agents`   | `agents.start()`, `agents.get()`, `agents.list()`, `agent.message()`, `agent.status()`, `agent.close()` |
-| List, create, change, archive, or delete bots                                                                | `codevisor-agents`   | `bots.*`                                                                                                |
-| Run commands, tools, or agents on another of the user's machines                                             | `codevisor-machines` | `machines.list()`, `machine.exec()`, `machine.tools.*`, `agents.start({ machine })`                     |
-| Manage sandboxes: providers, profiles, and throwaway sandbox machines (start, follow, retry, destroy)        | `codevisor-machines` | `sandboxes.*`, `agents.start({ sandbox })`                                                              |
-| See which Codevisor apps are open and what they show; open a chat, a page, a file, or a layout for the user  | `codevisor-clients`  | `machine.clients.list()`, `client.navigate()`, `workspaces.pane_upsert()`                               |
-| Know where you are                                                                                           | —                    | `context.current()`                                                                                     |
+| Goal                                                                                                        | Skill                | Entry points                                                                                              |
+| ----------------------------------------------------------------------------------------------------------- | -------------------- | --------------------------------------------------------------------------------------------------------- |
+| Start other coding agents, follow up, get their final replies, answer their questions, archive them         | `codevisor-agents`   | `agents.start()`, `agents.get()`, `agents.list()`, `agent.message()`, `agent.status()`, `agent.archive()` |
+| List, create, change, archive, or delete bots                                                               | `codevisor-agents`   | `bots.*`                                                                                                  |
+| Run commands, tools, or agents on another of the user's machines                                            | `codevisor-machines` | `machines.list()`, `machine.exec()`, `machine.tools.*`, `agents.start({ machine })`                       |
+| Manage sandboxes: providers, profiles, and throwaway sandbox machines (start, follow, retry, destroy)       | `codevisor-machines` | `sandboxes.*`, `agents.start({ sandbox })`                                                                |
+| See which Codevisor apps are open and what they show; open a chat, a page, a file, or a layout for the user | `codevisor-clients`  | `machine.clients.list()`, `client.navigate()`, `workspaces.pane_upsert()`                                 |
+| Know where you are                                                                                          | —                    | `context.current()`                                                                                       |
 
 `context.current()` returns `agentId`, `projectId`, `workspaceId`, `worktreeName` (absent in the project folder), `createdByAgentId` and `createdByAgentMachineId` (the agent that started you and its machine, if an agent did), `machine`, and `clientId` (the window that sent the current message, absent for automations and agent-sent messages).
 

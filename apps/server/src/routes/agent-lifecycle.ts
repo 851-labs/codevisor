@@ -106,6 +106,7 @@ const agentSummary = async (
   ...(session.createdByAgentMachineId === undefined
     ? {}
     : { createdByAgentMachineId: session.createdByAgentMachineId }),
+  ...(session.isArchived === true ? { archived: true as const } : {}),
   ...(session.updatedAt === undefined ? {} : { updatedAt: session.updatedAt })
 })
 

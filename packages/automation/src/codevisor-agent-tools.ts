@@ -1,8 +1,7 @@
 import {
   AgentList,
-  ArchivedWorkspace,
+  ArchivedAgent,
   AgentState,
-  ClosedAgent,
   DEFAULT_SESSION_WAIT_TIMEOUT_MS,
   SessionEventType,
   SessionSubscription,
@@ -25,7 +24,6 @@ const ListAgentsArgs = Schema.Struct({
   next: Schema.optional(Schema.String)
 })
 const AgentIdArgs = Schema.Struct({ agentId: Schema.String })
-const WorkspaceIdArgs = Schema.Struct({ workspaceId: Schema.String })
 const SubscribeArgs = Schema.Struct({
   agentId: Schema.String,
   events: Schema.optional(Schema.Array(SessionEventType)),
@@ -52,22 +50,15 @@ const waitBudget = apiTool("agents.wait", "", "POST", "/v1/agents/wait", {
 export const codevisorAgentTools: ReadonlyArray<AgentTool> = [
   agentTool(
     "agents.list",
-    "List agents on this machine, newest activity first, as slim summaries: agentId, title, state (working, waitingForUser, idle, errored), projectId, workspaceId, harness, labels, createdByAgentId and createdByAgentMachineId. Filter by state, project (id or name), label (key=value, or key for any value), or createdByAgentId (the agents a given agent started). Pass next back for the next page.",
+    "List agents on this machine, newest activity first, as slim summaries: agentId, title, state (working, waitingForUser, idle, errored), projectId, workspaceId, harness, labels, createdByAgentId and createdByAgentMachineId, plus archived: true on one that was archived. Filter by state, project (id or name), label (key=value, or key for any value), or createdByAgentId (the agents a given agent started). Pass next back for the next page.",
     ListAgentsArgs,
     (tool, args) => listAgents(tool, Schema.decodeUnknownSync(ListAgentsArgs)(args))
   ),
   agentTool(
-    "agents.close",
-    'Close an agent in your own workspace (one you started with checkout: "shared") once you have what you need from it. It stops if still running, you stop getting its events, and its tab leaves your workspace; its chat stays in history and agents.list, and your checkout is untouched. Fails for yourself, and for an agent outside your workspace: archive that one\'s workspace with workspaces.archive instead.',
+    "agents.archive",
+    'Archive an agent you started once you have what you need from it or its work is merged, and wait until it is done. It stops if still running, you stop getting its events, and its chat is archived: it takes no more messages and its tab closes. Cleanup depends on where it ran. A shared helper (checkout: "shared") ran in your checkout, so nothing on disk changes. A worktree agent\'s worktree is reclaimed when nothing else uses it: the branch name is released, tracked and untracked files are kept as a restorable snapshot, and everything else in the folder, ignored files included, is deleted, so push or open the PR first if the branch should stay. The project folder itself is never touched. If the archive fails, this call fails and nothing is removed. Refuses yourself.',
     AgentIdArgs,
-    (tool, args) => closeAgent(tool, Schema.decodeUnknownSync(AgentIdArgs)(args).agentId)
-  ),
-  agentTool(
-    "workspaces.archive",
-    'Archive a workspace you started (for an agent with checkout: "worktree", "project", or "none", its workspaceId) once its work is merged or no longer needed, and wait until it is done. Its chats stop, its branch name is released, and its tracked and untracked files are kept as a restorable snapshot. Everything else in its checkout folder, ignored files included, is deleted; files already sent in a chat stay with that chat. If the archive fails, this call fails and the checkout stays in place. Push or open the PR first if the branch should stay. Refuses your own workspace: close a helper there with agents.close.',
-    WorkspaceIdArgs,
-    (tool, args) =>
-      archiveWorkspace(tool, Schema.decodeUnknownSync(WorkspaceIdArgs)(args).workspaceId)
+    (tool, args) => archiveAgent(tool, Schema.decodeUnknownSync(AgentIdArgs)(args).agentId)
   ),
   agentTool(
     "agents.subscribe",
@@ -131,16 +122,9 @@ const pageOffset = (next: string | undefined): number => {
   return offset
 }
 
-const closeAgent = async (tool: AgentToolContext, agentId: string): Promise<unknown> =>
-  Schema.decodeUnknownSync(ClosedAgent)(
-    await tool.api("POST", `/v1/agents/${encodeURIComponent(agentId)}/close`, {
-      body: { callerAgentId: localCallerId(tool, "agents.close") }
-    })
-  )
-
-const archiveWorkspace = async (tool: AgentToolContext, workspaceId: string): Promise<unknown> =>
-  Schema.decodeUnknownSync(ArchivedWorkspace)(
-    await tool.api("POST", `/v1/workspaces/${encodeURIComponent(workspaceId)}/archive`, {
+const archiveAgent = async (tool: AgentToolContext, agentId: string): Promise<unknown> =>
+  Schema.decodeUnknownSync(ArchivedAgent)(
+    await tool.api("POST", `/v1/agents/${encodeURIComponent(agentId)}/archive`, {
       body: archiveCaller(tool)
     })
   )

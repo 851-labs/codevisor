@@ -1,6 +1,6 @@
 import type Database from "better-sqlite3"
 
-import { retireWorkspaceTurns } from "./session-turn-retire.js"
+import { retireSessionTurn, retireWorkspaceTurns } from "./session-turn-retire.js"
 
 export interface ArchiveChange {
   readonly from: string | null
@@ -18,7 +18,17 @@ export const followWorkspaceArchive = (
   retireWorkspaceTurns(sqlite, workspaceId, changedAt)
 }
 
+export const archiveSession = (
+  sqlite: Database.Database,
+  sessionId: string,
+  changedAt: string
+): void => {
+  sqlite.prepare(archiveSql.archive).run(changedAt, sessionId)
+  retireSessionTurn(sqlite, sessionId, changedAt)
+}
+
 const archiveSql = {
+  archive: "update sessions set is_archived = 1, archived_at = ? where id = ? and is_archived = 0",
   archiveWith: `update sessions set is_archived = 1, archived_at = ?
       where workspace_id = ? and is_archived = 0`,
   restoreWith: `update sessions set is_archived = 0, archived_at = null

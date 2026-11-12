@@ -209,6 +209,7 @@ export interface CodevisorDatabaseService
     DatabaseError
   >
   readonly retireSessionTurn: (id: string) => Effect.Effect<void, DatabaseError>
+  readonly archiveSession: (id: string) => Effect.Effect<void, DatabaseError>
   readonly getAttentionSettleDeadline: (
     id: string
   ) => Effect.Effect<string | undefined, DatabaseError>
