@@ -35,7 +35,7 @@ class Application final : public CefApp, public CefBrowserProcessHandler {
     command->AppendSwitch("disable-background-timer-throttling");
     command->AppendSwitch("disable-renderer-backgrounding");
     command->AppendSwitch("disable-backgrounding-occluded-windows");
-    command->AppendSwitchWithValue("enable-features", "WebMCPTesting");
+    command->AppendSwitchWithValue("enable-features", "WebMCP,WebMCPTesting");
   }
   void OnScheduleMessagePumpWork(int64_t delay) override {
     dispatch_async(dispatch_get_main_queue(), ^{ ChromiumRuntime::Shared().SchedulePump(delay); });
