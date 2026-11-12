@@ -4,13 +4,16 @@ import { broadcastToOtherMachines } from "./fleet-broadcast.js"
 import type { CodevisorServerServices } from "./server-context-types.js"
 import { run } from "./server-http.js"
 
-export type ArchiveChild = (workspace: Workspace) => Promise<void>
+export interface ArchiveOwned {
+  readonly workspace: (workspace: Workspace) => Promise<void>
+  readonly chat: (chat: SessionSummary) => Promise<void>
+}
 
 export const archiveAgentsCreatedIn = async (
   services: CodevisorServerServices,
   serverId: string,
   workspace: Workspace,
-  archive: ArchiveChild
+  archive: ArchiveOwned
 ): Promise<void> => {
   const creators = (await run(services.db.listSessions))
     .filter((session) => isIn(session, workspace.id))
@@ -22,7 +25,7 @@ export const archiveAgentsCreatedBy = async (
   services: CodevisorServerServices,
   serverId: string,
   creatorIds: ReadonlyArray<string>,
-  archive: ArchiveChild
+  archive: ArchiveOwned
 ): Promise<void> => {
   if (creatorIds.length === 0) return
 
@@ -33,17 +36,17 @@ export const archiveAgentsCreatedBy = async (
 export const archiveLocalChildren = async (
   services: CodevisorServerServices,
   creators: Creators,
-  archive: ArchiveChild
+  archive: ArchiveOwned
 ): Promise<number> => {
-  const sessions = await run(services.db.listSessions)
-  const childWorkspaceIds = new Set(
-    sessions.filter((session) => isOwnedBy(session, creators)).flatMap(workspaceIdOf)
-  )
+  const owned = (await run(services.db.listSessions)).filter((chat) => isOwnedBy(chat, creators))
+  const childWorkspaceIds = new Set(owned.flatMap(workspaceIdOf))
   const children = (await run(services.db.listWorkspaces)).filter(
     (workspace) => childWorkspaceIds.has(workspace.id.toLowerCase()) && !workspace.isArchived
   )
-  for (const child of children) await archive(child)
-  return children.length
+  for (const child of children) await archive.workspace(child)
+  const loose = owned.filter((chat) => chat.workspaceId === undefined && chat.isArchived !== true)
+  for (const chat of loose) await archive.chat(chat)
+  return children.length + loose.length
 }
 
 export interface Creators {

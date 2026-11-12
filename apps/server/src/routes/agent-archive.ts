@@ -5,11 +5,10 @@ import {
   type Workspace
 } from "@codevisor/api"
 
-import { reclaimArchivedChat } from "../archive-jobs.js"
-import { appendAndPublish, HttpFailure, readSchema, run, writeJson } from "../server-context.js"
+import { archiveChatAndOwned } from "../archive-jobs.js"
+import { HttpFailure, readSchema, run, writeJson } from "../server-context.js"
 import { currentState } from "./agent-lifecycle.js"
 import { assertNotOwnedByBot } from "./bot-guards.js"
-import { publishPromptQueue } from "./prompt-queue.js"
 import type { RouteContext } from "./route-context.js"
 import { cancelTurn } from "./session-actions.js"
 import { findSession } from "./session-workspace.js"
@@ -78,10 +77,9 @@ const archiveChat = async (
   caller: SessionSummary | undefined
 ): Promise<void> => {
   if (caller !== undefined) await unsubscribeCaller(route, caller.id, agent.id)
-  await stopAgent(route, agent)
-  await run(route.services.db.archiveSession(agent.id))
-  await deleteChatPanes(route, agent.id)
-  await reclaimArchivedChat(route.services, route.fanout, route.config, agent)
+  if (await isRunning(route, agent)) await cancelTurn(route, agent.id)
+  const { services, fanout, config, routeState } = route
+  await archiveChatAndOwned({ services, fanout, config, turns: routeState }, agent)
 }
 
 const unsubscribeCaller = async ({ services }: RouteContext, callerId: string, agentId: string) => {
@@ -90,32 +88,7 @@ const unsubscribeCaller = async ({ services }: RouteContext, callerId: string, a
     await run(services.db.deleteSessionSubscription(subscription.id))
 }
 
-const stopAgent = async (route: RouteContext, agent: SessionSummary): Promise<void> => {
-  await clearPromptQueue(route, agent.id)
-  if (await isRunning(route, agent)) await cancelTurn(route, agent.id)
-}
-
-const clearPromptQueue = async ({ services, fanout }: RouteContext, agentId: string) => {
-  const queue = await run(services.db.listPromptQueue(agentId))
-  if (queue.length === 0) return
-  for (const item of queue) await run(services.db.deletePromptQueueItem(agentId, item.id))
-  await publishPromptQueue(services.db, fanout, agentId)
-}
-
 const isRunning = async ({ services }: RouteContext, agent: SessionSummary) => {
   const state = await currentState(services, agent)
   return state === "working" || state === "waitingForUser"
-}
-
-const deleteChatPanes = async ({ services, fanout }: RouteContext, agentId: string) => {
-  const panes = (await run(services.db.listWorkspacePanes)).filter(
-    (pane) => pane.resourceKind === "session" && pane.resourceId === agentId
-  )
-  for (const pane of panes) {
-    await run(services.db.deleteWorkspacePane(pane.workspaceId, pane.id))
-    await appendAndPublish(services.db, fanout, "workspace.pane.deleted", pane.id, {
-      id: pane.id,
-      workspaceId: pane.workspaceId
-    })
-  }
 }
