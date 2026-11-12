@@ -1,3 +1,4 @@
+import CodevisorCore
 import CodevisorUI
 import Foundation
 import Observation
