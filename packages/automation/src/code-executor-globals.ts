@@ -113,7 +113,7 @@ export const machinesAndClientsSource: ReadonlyArray<string> = [
 ]
 
 export const codevisorSandboxSignatures = `declare const agents: {
-  start(args: { title: string; prompt: string; checkout?: "worktree" | "shared" | "project" | "none"; sandbox?: string; machine?: MachineRef; harness?: string; model?: string; project?: string; labels?: Record<string, string> }): Promise<Agent> // checkout: worktree = new git worktree + workspace, shared = your own workspace and files (your machine only), project = the project folder in a new workspace, none = an empty folder with no project; sandbox (a profile) instead of checkout and machine runs it on a new sandbox
+  start(args: { title: string; prompt: string; checkout?: "worktree" | "shared" | "project" | "none"; standalone?: boolean; sandbox?: string; machine?: MachineRef; harness?: string; model?: string; project?: string; labels?: Record<string, string> }): Promise<Agent> // checkout: worktree = new git worktree + workspace, shared = your own workspace and files (your machine only), project = the project folder in a new workspace, none = an empty folder with no project; sandbox (a profile) instead of checkout and machine runs it on a new sandbox
   get(agentIdOrArgs: string | { agentId: string; machine?: MachineRef }): Promise<Agent> // finds it on any of your online machines when machine is left out
   list(args?: { state?: string; project?: string; label?: string; createdByAgentId?: string; machine?: MachineRef; next?: string }): Promise<{ items: Agent[]; next?: string }>
   [tool: string]: (args?: { machine?: MachineRef; [key: string]: any }) => Promise<any> // message, status, answer, cancel, wait, archive, subscribe, debug.*: the same tools by agentId
@@ -121,7 +121,7 @@ export const codevisorSandboxSignatures = `declare const agents: {
 interface Agent {
   agentId: string; title: string; machine: { machineId: string; name: string }; workspaceId?: string; [field: string]: any
   message(args: string | { text: string; delivery?: "steer" | "queue" }): Promise<object>; status(): Promise<object>; answer(args: object): Promise<object>; cancel(): Promise<object>
-  wait(args?: { until?: string[]; timeoutMs?: number }): Promise<object>; archive(): Promise<object>; debug: { [tool: string]: (args?: object) => Promise<any> }
+  wait(args?: { until?: string[]; timeoutMs?: number }): Promise<object>; archive(): Promise<object>; detach(): Promise<object>; debug: { [tool: string]: (args?: object) => Promise<any> }
 }
 type MachineRef = string | Machine // a machineId or name; default: the machine this chat runs on
 // Every other Codevisor tool group is a global too, like plugins, bots, sandboxes, projects, workspaces, harnesses, skills, terminals, events, jobs, messages, context.

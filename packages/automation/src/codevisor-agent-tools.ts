@@ -1,6 +1,7 @@
 import {
   AgentList,
   ArchivedAgent,
+  DetachedAgent,
   AgentState,
   DEFAULT_SESSION_WAIT_TIMEOUT_MS,
   SessionEventType,
@@ -50,7 +51,7 @@ const waitBudget = apiTool("agents.wait", "", "POST", "/v1/agents/wait", {
 export const codevisorAgentTools: ReadonlyArray<AgentTool> = [
   agentTool(
     "agents.list",
-    "List agents on this machine, newest activity first, as slim summaries: agentId, title, state (working, waitingForUser, idle, errored), projectId, workspaceId, harness, labels, createdByAgentId and createdByAgentMachineId, plus archived: true on one that was archived. Filter by state, project (id or name), label (key=value, or key for any value), or createdByAgentId (the agents a given agent started). Pass next back for the next page.",
+    "List agents on this machine, newest activity first, as slim summaries: agentId, title, state (working, waitingForUser, idle, errored), projectId, workspaceId, harness, labels, createdByAgentId and createdByAgentMachineId, plus archived: true on one that was archived and standalone: true on one that stands alone. Filter by state, project (id or name), label (key=value, or key for any value), or createdByAgentId (the agents a given agent started). Pass next back for the next page.",
     ListAgentsArgs,
     (tool, args) => listAgents(tool, Schema.decodeUnknownSync(ListAgentsArgs)(args))
   ),
@@ -59,6 +60,12 @@ export const codevisorAgentTools: ReadonlyArray<AgentTool> = [
     'Archive an agent you started once you have what you need from it or its work is merged, and wait until it is done. It stops if still running, you stop getting its events, and its chat is archived: it takes no more messages and its tab closes. Cleanup depends on where it ran. A shared helper (checkout: "shared") ran in your checkout, so nothing on disk changes. A worktree agent\'s worktree is reclaimed when nothing else uses it: the branch name is released, tracked and untracked files are kept as a restorable snapshot, and everything else in the folder, ignored files included, is deleted, so push or open the PR first if the branch should stay. The project folder itself is never touched. If the archive fails, this call fails and nothing is removed. Refuses yourself.',
     AgentIdArgs,
     (tool, args) => archiveAgent(tool, Schema.decodeUnknownSync(AgentIdArgs)(args).agentId)
+  ),
+  agentTool(
+    "agents.detach",
+    "Let go of an agent you started, so it stands alone as its own item in the user's sidebar: use it when its work has become the user's to follow, not a step in yours. It leaves your agents pill and is no longer archived when you are. A helper sharing your workspace moves into a workspace of its own, on the same checkout. You can still message it, subscribe to it, and archive it. This can't be undone. Returns agentId, workspaceId and detached: true.",
+    AgentIdArgs,
+    (tool, args) => detachAgent(tool, Schema.decodeUnknownSync(AgentIdArgs)(args).agentId)
   ),
   agentTool(
     "agents.subscribe",
@@ -127,6 +134,11 @@ const archiveAgent = async (tool: AgentToolContext, agentId: string): Promise<un
     await tool.api("POST", `/v1/agents/${encodeURIComponent(agentId)}/archive`, {
       body: archiveCaller(tool)
     })
+  )
+
+const detachAgent = async (tool: AgentToolContext, agentId: string): Promise<unknown> =>
+  Schema.decodeUnknownSync(DetachedAgent)(
+    await tool.api("POST", `/v1/agents/${encodeURIComponent(agentId)}/detach`, { body: {} })
   )
 
 const archiveCaller = (tool: AgentToolContext) => {

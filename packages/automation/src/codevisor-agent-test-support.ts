@@ -58,6 +58,10 @@ const respond = (
   if (method === "POST" && archived !== null) {
     return jsonResponse({ agentId: archived[1], archived: true })
   }
+  const detached = /^\/v1\/agents\/([^/]+)\/detach$/.exec(path)
+  if (method === "POST" && detached !== null) {
+    return jsonResponse({ agentId: detached[1], workspaceId: "own", detached: true })
+  }
   if (path.includes("/subscriptions")) return subscriptionsResponse(method)
   return jsonResponse({
     items: [{ id: "item-1", ...transcriptItem }],

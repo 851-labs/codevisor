@@ -64,7 +64,12 @@ public struct ChatSession: Identifiable, Sendable, Codable, Equatable {
   public var latestBotMessage: BotMessagePreview?
   public var createdBy: SessionCreator?
   public var createdByAgent: AgentReference?
+  public var isDetached: Bool
   public var forkedFromAgent: AgentReference?
+
+  public var ownerAgent: AgentReference? {
+    isDetached ? nil : createdByAgent
+  }
 
   public var hasAgentSession: Bool {
     agentSessionId?.isEmpty == false
@@ -103,6 +108,7 @@ public struct ChatSession: Identifiable, Sendable, Codable, Equatable {
     latestBotMessage: BotMessagePreview? = nil,
     createdBy: SessionCreator? = nil,
     createdByAgent: AgentReference? = nil,
+    isDetached: Bool = false,
     forkedFromAgent: AgentReference? = nil
   ) {
     self.id = id
@@ -133,6 +139,7 @@ public struct ChatSession: Identifiable, Sendable, Codable, Equatable {
     self.latestBotMessage = latestBotMessage
     self.createdBy = createdBy
     self.createdByAgent = createdByAgent
+    self.isDetached = isDetached
     self.forkedFromAgent = forkedFromAgent
   }
 
@@ -143,7 +150,7 @@ public struct ChatSession: Identifiable, Sendable, Codable, Equatable {
     case latestAttentionSequence, lastSeenAttentionSequence, unreadCount, hasUnreadError
     case actionRequired, actionRequiredKind, pendingPlanApproval, latestBotMessage, createdBy
     case createdByAgentId, createdByAgentMachineId, forkedFromAgentId, forkedFromAgentMachineId
-    case talkingToAgent
+    case talkingToAgent, isDetached
     case workspaceId
   }
 
@@ -189,6 +196,7 @@ public struct ChatSession: Identifiable, Sendable, Codable, Equatable {
     createdByAgent = AgentReference(
       agentId: try container.decodeIfPresent(String.self, forKey: .createdByAgentId),
       machineId: try container.decodeIfPresent(String.self, forKey: .createdByAgentMachineId))
+    isDetached = try container.decodeIfPresent(Bool.self, forKey: .isDetached) ?? false
     forkedFromAgent = AgentReference(
       agentId: try container.decodeIfPresent(String.self, forKey: .forkedFromAgentId),
       machineId: try container.decodeIfPresent(String.self, forKey: .forkedFromAgentMachineId))
@@ -225,6 +233,7 @@ public struct ChatSession: Identifiable, Sendable, Codable, Equatable {
     try container.encodeIfPresent(createdBy, forKey: .createdBy)
     try container.encodeIfPresent(createdByAgent?.agentId.uuidString.lowercased(), forKey: .createdByAgentId)
     try container.encodeIfPresent(createdByAgent?.machineId, forKey: .createdByAgentMachineId)
+    if isDetached { try container.encode(true, forKey: .isDetached) }
     try container.encodeIfPresent(forkedFromAgent?.agentId.uuidString.lowercased(), forKey: .forkedFromAgentId)
     try container.encodeIfPresent(forkedFromAgent?.machineId, forKey: .forkedFromAgentMachineId)
   }

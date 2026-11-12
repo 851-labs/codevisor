@@ -14,6 +14,7 @@ import {
   readAgentItem,
   searchAgentTranscript
 } from "./agent-debug.js"
+import { detachAgent } from "./agent-detach.js"
 import { listAgents, waitForAgents } from "./agent-lifecycle.js"
 import { startAgent } from "./agent-start.js"
 import { agentState } from "./agent-state.js"
@@ -33,6 +34,8 @@ const dispatchAgentRoute = (route: RouteContext): Promise<boolean> => {
 
   const archiveId = matchRoute(url.pathname, "/v1/agents/:id/archive")
   if (archiveId !== undefined && request.method === "POST") return archiveAgent(route, archiveId)
+  const detachId = matchRoute(url.pathname, "/v1/agents/:id/detach")
+  if (detachId !== undefined && request.method === "POST") return detachAgent(route, detachId)
   if (request.method !== "GET") return Promise.resolve(false)
 
   const statusId = matchRoute(url.pathname, "/v1/agents/:id")

@@ -131,6 +131,7 @@ export const SessionSummary = Schema.Struct({
   checkoutId: Schema.optional(Schema.String),
   isArchived: Schema.optional(Schema.Boolean),
   archivedAt: Schema.optional(Schema.String),
+  isDetached: Schema.optional(Schema.Boolean),
   configSelections: Schema.optional(Schema.Record(Schema.String, Schema.String)),
   unavailableConfigSelections: Schema.optional(Schema.Record(Schema.String, Schema.String)),
   createdAt: Schema.String,

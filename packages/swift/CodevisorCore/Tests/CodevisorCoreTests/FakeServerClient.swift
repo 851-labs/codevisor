@@ -291,6 +291,7 @@ func serverSession(from session: ChatSession) -> ServerSession {
     createdBy: session.createdBy,
     createdByAgentId: session.createdByAgent?.agentId.uuidString.lowercased(),
     createdByAgentMachineId: session.createdByAgent?.machineId,
+    isDetached: session.isDetached ? true : nil,
     forkedFromAgentId: session.forkedFromAgent?.agentId.uuidString.lowercased(),
     forkedFromAgentMachineId: session.forkedFromAgent?.machineId
   )

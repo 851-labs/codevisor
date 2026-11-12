@@ -62,6 +62,7 @@ const agentSource: ReadonlyArray<string> = [
   "    cancel: () => agents.cancel(on()),",
   "    wait: (args = {}) => agents.wait({ ...args, agentIds: [agentId], machine: machine.machineId }),",
   "    archive: () => agents.archive(on()),",
+  "    detach: () => agents.detach(on()),",
   "    debug",
   "  });",
   "};",

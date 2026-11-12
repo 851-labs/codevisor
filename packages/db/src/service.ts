@@ -62,6 +62,7 @@ import type {
   SaveNativeMcpRemovalRequest,
   UpdateHarnessAccountAuthRequest
 } from "./rows.js"
+import type { SessionStandingService } from "./session-archive.js"
 import type { SessionForkService } from "./session-fork-service.js"
 import type { SessionStateService } from "./session-state-types.js"
 import type { SessionSubscriptionsService } from "./session-subscriptions-service.js"
@@ -99,7 +100,8 @@ export interface CodevisorDatabaseService
     AutoResumeService,
     FileStorageService,
     FleetOutboxService,
-    SteeredPromptQueueService {
+    SteeredPromptQueueService,
+    SessionStandingService {
   readonly getNavigationSnapshot: Effect.Effect<NavigationSnapshot, DatabaseError>
   readonly migrate: Effect.Effect<ReadonlyArray<string>, DatabaseError>
   readonly close: Effect.Effect<void>
@@ -208,8 +210,6 @@ export interface CodevisorDatabaseService
     ReadonlyArray<{ readonly sessionId: string; readonly dueAt: string | null }>,
     DatabaseError
   >
-  readonly retireSessionTurn: (id: string) => Effect.Effect<void, DatabaseError>
-  readonly archiveSession: (id: string) => Effect.Effect<void, DatabaseError>
   readonly getAttentionSettleDeadline: (
     id: string
   ) => Effect.Effect<string | undefined, DatabaseError>
