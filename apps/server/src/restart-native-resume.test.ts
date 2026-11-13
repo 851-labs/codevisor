@@ -54,7 +54,7 @@ const transcriptPage = async (server: RunningCodevisorServer, sessionId: string)
   )
 
 describe("native resume after an update restart", () => {
-  it("resumes a paused turn through the harness, with no new message, then sends work queued before the update", async () => {
+  it("resumes a paused turn through the harness, marks the restart in the chat, then sends work queued before the update", async () => {
     const { agents, services } = await makeServices("server-a")
     const native = withNativeTurnResume(agents)
     const paths = restartStatePaths()
@@ -73,10 +73,16 @@ describe("native resume after an update restart", () => {
     })
     await run(server.close)
 
-    await startWithApp(services, undefined, paths)
+    const restarted = await startWithApp(services, undefined, paths)
     await waitFor(() => !existsSync(paths.pausedTurnsPath))
     expect(native.resumes).toEqual([{ notice: updateResumeNotice([]), stoppedTasks: [] }])
     expect(agents.prompts).toHaveLength(1)
+    const resumed = await transcriptPage(restarted, sessionId)
+    expect(resumed.items.map((item) => [item.role, item.origin, item.text])).toEqual([
+      ["user", undefined, "prompt until cancelled"],
+      ["user", "event", updateResumeNotice([])],
+      ["assistant", undefined, ""]
+    ])
 
     await native.endResumedTurn("agent-codex-repo")
     await waitFor(() => agents.prompts.length === 2)

@@ -1,3 +1,5 @@
+import { randomUUID } from "node:crypto"
+
 import type { EventEnvelope } from "@codevisor/api"
 
 import type { PausedTurn, PausedTurnStore } from "./paused-turns.js"
@@ -5,6 +7,7 @@ import { queueRestartResumeOnce, updateResumeNotice } from "./restart-notice.js"
 import { pendingAgentQuestion } from "./routes/parked-questions.js"
 import { drainPromptQueue, hasLiveTurn } from "./routes/prompt-queue.js"
 import { ensureAgentSessionFor } from "./routes/session-workspace.js"
+import { recordUserPrompt } from "./routes/user-prompts.js"
 import {
   failureMessage,
   run,
@@ -121,12 +124,21 @@ const resumedNatively = async (
     return false
   }
 
+  const notice = updateResumeNotice(stoppedTasks)
   const started = watchTurnStart(fanout, sessionId)
   try {
     await ensureAgentSessionFor(services, fanout, serverId, sessionId, {
-      resumeInterruptedTurn: { notice: updateResumeNotice(stoppedTasks), stoppedTasks }
+      resumeInterruptedTurn: { notice, stoppedTasks }
     })
-    return await started.within(NATIVE_RESUME_START_MS)
+    if (!(await started.within(NATIVE_RESUME_START_MS))) return false
+    await recordUserPrompt(services, fanout, serverId, sessionId, {
+      messageId: randomUUID(),
+      text: notice,
+      attachments: undefined,
+      origin: "system",
+      startsTurn: false
+    })
+    return true
   } catch {
     return false
   } finally {
