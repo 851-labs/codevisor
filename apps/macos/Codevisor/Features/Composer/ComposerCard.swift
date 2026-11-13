@@ -325,12 +325,13 @@ private extension ComposerCard {
 
   @ViewBuilder
   private var sendButton: some View {
-    if isAcceptingSubmission || controller.isResolvingQuestion {
+    if isAcceptingSubmission || controller.isResolvingQuestion || controller.projectCloneAccess.isChecking {
       ProgressView()
         .controlSize(.small)
         .frame(width: 26, height: 26)
         .background(Circle().fill(Color.secondary.opacity(0.16)))
-        .help(controller.isResolvingQuestion ? "Submitting response…" : "Sending…")
+        .help(
+          controller.isResolvingQuestion ? "Submitting response…" : controller.projectCloneAccess.label ?? "Sending…")
     } else {
       ComposerSubmitButton(
         isEnabled: sendAvailability.isEnabled, help: sendAvailability.help, accessibilityLabel: "Send"

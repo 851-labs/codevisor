@@ -212,6 +212,7 @@ public protocol CodevisorServerClienting: BrowserStateClienting, BrowserFaviconC
   func cancelProjectSetup(id: UUID) async throws
   func projectCloneSettings() async throws -> ServerProjectCloneSettings
   func updateProjectCloneSettings(baseFolder: String?) async throws -> ServerProjectCloneSettings
+  func projectCloneAccess(url: String) async throws -> ServerProjectCloneAccess
   func gitAuthStatus(host: String) async throws -> ServerGitHostAuthStatus
   func startGitAuth(host: String) async throws -> ServerGitAuthFlow
   func gitAuthFlow(id: String) async throws -> ServerGitAuthFlow

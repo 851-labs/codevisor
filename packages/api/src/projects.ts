@@ -148,6 +148,17 @@ export const ProjectSetupErrorCode = Schema.Literals([
 ])
 export type ProjectSetupErrorCode = typeof ProjectSetupErrorCode.Type
 
+export const CheckProjectCloneAccessRequest = Schema.Struct({
+  url: Schema.String
+})
+export type CheckProjectCloneAccessRequest = typeof CheckProjectCloneAccessRequest.Type
+
+export const ProjectCloneAccess = Schema.Struct({
+  ok: Schema.Boolean,
+  code: Schema.optional(ProjectSetupErrorCode)
+})
+export type ProjectCloneAccess = typeof ProjectCloneAccess.Type
+
 export const ProjectCloneStage = Schema.Literals([
   "connecting",
   "counting",

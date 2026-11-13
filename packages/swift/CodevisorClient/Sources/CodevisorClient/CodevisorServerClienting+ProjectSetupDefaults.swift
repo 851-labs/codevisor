@@ -30,6 +30,10 @@ public extension CodevisorServerClienting {
     throw CodevisorServerClientError.invalidResponse
   }
 
+  func projectCloneAccess(url: String) async throws -> ServerProjectCloneAccess {
+    throw CodevisorServerClientError.invalidResponse
+  }
+
   func gitAuthStatus(host: String) async throws -> ServerGitHostAuthStatus {
     throw CodevisorServerClientError.invalidResponse
   }

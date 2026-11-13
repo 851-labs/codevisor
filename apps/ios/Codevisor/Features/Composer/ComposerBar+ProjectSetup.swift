@@ -32,40 +32,52 @@ extension ComposerBar {
     return environment.projectList.fleetActiveProjectGroups.first { $0.id == pendingSetupGroupID }
   }
 
-  private func projectSetupModel() -> ProjectMachineSetup {
-    if let projectSetup { return projectSetup }
-    let setup = makeProjectSetup()
-    projectSetupState.setup = setup
-    return setup
-  }
-
   private func makeProjectSetup() -> ProjectMachineSetup {
-    let machines = environment.machines
-    return ProjectMachineSetup(
-      clientFor: { machines.client(for: $0) },
-      machineName: { machines.machine(for: $0)?.name ?? "this machine" },
-      isReachable: { machines.availability(for: $0) == .ready },
-      adopt: { _ in }
-    )
+    ProjectMachineSetup(machines: environment.machines)
   }
 
   func beginProjectSetupIfNeeded() -> Bool {
     guard controller.project.isRunTargetPlaceholder else { return false }
     controller.projectClone = nil
     guard let group = pendingSetupGroup else { return false }
-    let targetServerId = controller.project.serverId
+    if projectSetup?.isPresented == true { return true }
+
+    let setup = makeProjectSetup()
     let preferredSource = environment.projectList.mostRecentlyUsedMember(of: group)
-    let cloneSetup = makeProjectSetup()
-    if let plan = cloneSetup.clonePlan(
-      group: group, targetServerId: targetServerId, preferredSource: preferredSource)
+    if let plan = setup.clonePlan(
+      group: group, targetServerId: controller.project.serverId, preferredSource: preferredSource)
     {
-      controller.projectClone = ProjectCloneRequest(
-        plan: plan, setup: cloneSetup, projectList: environment.projectList)
-      controller.onProjectCloned = { project in adoptClonedProject(project) }
-      return false
+      let request = ProjectCloneRequest(plan: plan, setup: setup, projectList: environment.projectList)
+      return holdsCloneSend(request)
     }
-    let setup = projectSetupModel()
-    guard !setup.isPresented else { return true }
+    beginProjectSetup(group, setup: setup)
+    return true
+  }
+
+  private func holdsCloneSend(_ request: ProjectCloneRequest) -> Bool {
+    let access = controller.projectCloneAccess
+    guard !access.isChecking else { return true }
+    guard access.isVerified(request.plan) else {
+      checkCloneAccess(request.plan)
+      return true
+    }
+
+    controller.projectClone = request
+    controller.onProjectCloned = { project in adoptClonedProject(project) }
+    return false
+  }
+
+  private func checkCloneAccess(_ plan: ProjectMachineSetup.Plan) {
+    let failures = makeProjectSetup()
+    projectSetupState.setup = failures
+    controller.projectCloneAccess.check(plan, failuresOn: failures) { [weak controller] in
+      controller?.requestSubmit()
+    }
+  }
+
+  private func beginProjectSetup(_ group: ProjectGroup, setup: ProjectMachineSetup) {
+    let targetServerId = controller.project.serverId
+    projectSetupState.setup = setup
     setup.onFinished = { project in adoptSetUpProject(project) }
     Task {
       await setup.prepare(
@@ -74,7 +86,6 @@ extension ComposerBar {
         preferredSource: environment.projectList.mostRecentlyUsedMember(of: group)
       )
     }
-    return true
   }
 
   private func adoptClonedProject(_ project: Project) {

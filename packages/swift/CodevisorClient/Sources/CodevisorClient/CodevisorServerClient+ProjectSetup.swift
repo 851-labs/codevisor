@@ -83,6 +83,16 @@ public struct ServerProjectCloneSettings: Decodable, Equatable, Sendable {
   }
 }
 
+public struct ServerProjectCloneAccess: Decodable, Equatable, Sendable {
+  public var ok: Bool
+  public var code: String?
+
+  public init(ok: Bool, code: String? = nil) {
+    self.ok = ok
+    self.code = code
+  }
+}
+
 public struct ServerGitHostAuthStatus: Decodable, Equatable, Sendable {
   public var host: String
   public var provider: String?
@@ -175,6 +185,10 @@ private struct UpdateProjectCloneSettingsBody: Encodable {
   }
 }
 
+private struct ProjectCloneAccessBody: Encodable {
+  var url: String
+}
+
 private struct StartGitAuthBody: Encodable {
   var host: String
 }
@@ -223,6 +237,10 @@ extension CodevisorServerClient {
       method: "PUT",
       body: UpdateProjectCloneSettingsBody(baseFolder: baseFolder)
     )
+  }
+
+  public func projectCloneAccess(url: String) async throws -> ServerProjectCloneAccess {
+    try await send("/v1/projects/clone-access", method: "POST", body: ProjectCloneAccessBody(url: url), timeout: 90)
   }
 
   public func gitAuthStatus(host: String) async throws -> ServerGitHostAuthStatus {

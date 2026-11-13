@@ -37,6 +37,7 @@ public struct MachineStatus: Sendable, Equatable {
   public var supportsBotFork: Bool { features.contains("bot-fork-v1") }
   public var supportsProjectlessBots: Bool { features.contains("bot-projectless-v1") }
   public var supportsBotPanes: Bool { features.contains("bot-panes-v1") }
+  public var supportsProjectCloneAccess: Bool { features.contains("project-clone-access-v1") }
   public var supportsPlugins: Bool { features.contains("plugins-v2") }
 }
 

@@ -125,13 +125,24 @@ public final class ProjectMachineSetup {
     clientFor: @escaping (String) -> any CodevisorServerClienting,
     machineName: @escaping (String) -> String,
     isReachable: @escaping (String) -> Bool,
+    checksCloneAccess: @escaping (String) -> Bool = { _ in false },
     adopt: @escaping (Project) -> Void
   ) {
     self.clientFor = clientFor
     self.machineName = machineName
     self.isReachable = isReachable
     self.adopt = adopt
-    cloner = ProjectCloner(clientFor: clientFor, machineName: machineName)
+    cloner = ProjectCloner(clientFor: clientFor, machineName: machineName, checksAccess: checksCloneAccess)
+  }
+
+  public convenience init(machines: MachineController) {
+    self.init(
+      clientFor: { machines.client(for: $0) },
+      machineName: { machines.machine(for: $0)?.name ?? "this machine" },
+      isReachable: { machines.availability(for: $0) == .ready },
+      checksCloneAccess: { machines.statusByMachineId[$0]?.supportsProjectCloneAccess == true },
+      adopt: { _ in }
+    )
   }
 
   public var isPresented: Bool {
@@ -199,6 +210,10 @@ public final class ProjectMachineSetup {
       !plan.needsRemote
     else { return nil }
     return plan
+  }
+
+  public func cloneAccessFailure(_ plan: Plan) async -> Failure? {
+    await cloner.accessFailure(plan)
   }
 
   public func present(_ plan: Plan, failure: Failure) {

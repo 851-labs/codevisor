@@ -18,7 +18,7 @@ public final class BotProjectSetup {
   func clone(_ group: ProjectGroup, to serverId: String, onCloned: @escaping (Project) -> Void) async {
     guard !isPresented else { return }
 
-    let setup = makeSetup()
+    let setup = ProjectMachineSetup(machines: environment.machines)
     setup.onFinished = { [weak setup] project in
       setup?.close()
       onCloned(project)
@@ -35,15 +35,5 @@ public final class BotProjectSetup {
     guard let setup, !setup.isRunning else { return }
 
     setup.cancel()
-  }
-
-  private func makeSetup() -> ProjectMachineSetup {
-    let machines = environment.machines
-    return ProjectMachineSetup(
-      clientFor: { machines.client(for: $0) },
-      machineName: { machines.machine(for: $0)?.name ?? "this machine" },
-      isReachable: { machines.availability(for: $0) == .ready },
-      adopt: { _ in }
-    )
   }
 }

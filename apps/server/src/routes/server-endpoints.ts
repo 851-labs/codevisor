@@ -147,6 +147,7 @@ const configuredFeatures = (
   "bot-projectless-v1",
   "bot-panes-v1",
   "project-machine-setup-v1",
+  "project-clone-access-v1",
   ...(services.mcp === undefined ? [] : ["plugins-v2"])
 ]
 
