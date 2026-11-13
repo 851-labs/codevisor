@@ -22,6 +22,9 @@ public struct ScreenSharingViewerBackend: Sendable {
   public var connect: @Sendable (_ displayId: String) async -> AsyncStream<ScreenSharingViewerEvent> = { _ in
     .finished
   }
+  public var switchDisplay: @Sendable (_ displayId: String) async -> AsyncStream<ScreenSharingViewerEvent> = { _ in
+    .finished
+  }
   public var discover: @Sendable () async throws -> [ServerScreenSharingDisplay]
   public var claim: @Sendable () async -> Void = {}
   public var setVisible: @Sendable (_ visible: Bool) async -> Void = { _ in }
@@ -73,13 +76,16 @@ extension ScreenSharingViewerBackend {
       heartbeatInterval: heartbeatInterval, sound: !sharesStream)
     guard let machineId else {
       return Self(
-        connect: { display in await runner.connect(display) }, discover: { try await runner.discover() }, claim: {},
-        setVisible: { _ in }, retire: {}, liveStreams: { .finished })
+        connect: { display in await runner.connect(display) },
+        switchDisplay: { display in await runner.connect(display) }, discover: { try await runner.discover() },
+        claim: {}, setVisible: { _ in }, retire: {}, liveStreams: { .finished })
     }
     let share = ScreenSharingViewerRegistry.shared.share(
       machineId: machineId, paneId: paneId, role: role, runner: runner)
     return Self(
-      connect: { display in await share.connect(display) }, discover: { try await runner.discover() },
+      connect: { display in await share.connect(display) },
+      switchDisplay: { display in await share.connect(display, switching: true) },
+      discover: { try await runner.discover() },
       claim: { await share.claim() }, setVisible: { visible in await share.setVisible(visible) },
       retire: { await share.retire() }, liveStreams: { await share.liveStreams() })
   }
@@ -332,7 +338,7 @@ private final class NativeScreenSharingViewerRunner: ScreenSharingViewerConnecti
       session.close()
       throw error
     }
-    let endpoint = ScreenSharingViewerEndpoint(session: session, surface: surface, sound: sound)
+    let endpoint = ScreenSharingViewerEndpoint(session: session, surface: surface, sound: sound, displayId: display)
     endpoint.dropsInjectedInput = ScreenSharingDisplayIdentity.isOnThisMac(display)
     attempt.endpoint = endpoint
     let now = now

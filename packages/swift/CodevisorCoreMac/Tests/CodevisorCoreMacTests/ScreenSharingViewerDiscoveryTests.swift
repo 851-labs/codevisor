@@ -114,4 +114,25 @@ struct ScreenSharingViewerDiscoveryTests {
       $0.uuid = .incrementing
     }
   }
+
+  @Test func aPaneShowsTheDisplayOfTheConnectionItJoined() async {
+    await withMainSerialExecutor {
+      let backend = FakeBackend(displays: [display, second])
+      let store = await ScreenSharingViewerTests().makeConnectingStore(backend, FakeEndpointClient())
+      let endpoint = backend.open(display: "second")
+      await store.receive(\.connectionEvent.opened) {
+        $0.endpoint = endpoint
+        $0.lease = ControlLease.State(endpoint: endpoint.id)
+        $0.selectedDisplayId = "second"
+      }
+      expectNoDifference(store.state.preferences.preferredDisplayId, "display")
+      await store.send(.paneClosed) {
+        $0.visible = false
+        $0.endpoint = nil
+        $0.lease = nil
+        $0.phase = .suspended
+      }
+      await store.finish()
+    }
+  }
 }
