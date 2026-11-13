@@ -2,6 +2,7 @@ import SwiftUI
 
 struct ScreenSharingMachineKeyboardSection: View {
   @Binding var keyboard: ScreenSharingMachineSettings.Keyboard
+  let explanation: String
 
   var body: some View {
     Section {
@@ -9,7 +10,7 @@ struct ScreenSharingMachineKeyboardSection: View {
     } header: {
       Text("Keyboard")
     } footer: {
-      Text(ScreenSharingMachineSettings.Keyboard.screenshotsExplanation)
+      Text(explanation)
     }
   }
 }

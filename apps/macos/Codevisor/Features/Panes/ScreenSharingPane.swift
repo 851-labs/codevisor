@@ -4,6 +4,7 @@ import CodevisorCore
 import CodevisorCoreMac
 import CodevisorUI
 import ComposableArchitecture
+import ScreenSharing
 import SwiftUI
 
 @MainActor
@@ -110,7 +111,10 @@ final class ScreenSharingPane: Pane {
       sound: store?.endpoint?.audio.map { .init(enabled: $0.enabled, volume: $0.volume) })
     settings.dynamicResolutionNote = Self.dynamicResolutionNote(store?.endpoint)
     settings.dynamicResolutionMirrorsDisplay = store?.endpoint?.resizeMirrorsHostDisplay ?? false
-    if store?.endpoint?.supportsControl != false { settings.keyboard = savedKeyboard }
+    if store?.endpoint?.supportsControl != false {
+      settings.keyboard = savedKeyboard
+      settings.screenshotShortcuts = ScreenSharingLocalShortcutGroup.screenshots.shortcutNames
+    }
     if store?.endpoint?.supportsHighDynamicRange != false {
       settings.highDynamicRange = ScreenSharingMachinePreferences().highDynamicRange(machineId: machineId)
       settings.highDynamicRangeNote = store?.endpoint?.highDynamicRangeNote
@@ -141,7 +145,7 @@ final class ScreenSharingPane: Pane {
     }
     if let keyboard = changes.keyboard {
       ScreenSharingMachinePreferences().setScreenshotsStayLocal(keyboard.screenshotsStayLocal, machineId: machineId)
-      store.endpoint?.localShortcuts = keyboard.localShortcuts
+      (store.endpoint ?? store.mirror)?.localShortcuts = keyboard.localShortcuts
     }
     if let display = changes.preferredDisplayId { store.send(.displaySelected(display)) }
   }
