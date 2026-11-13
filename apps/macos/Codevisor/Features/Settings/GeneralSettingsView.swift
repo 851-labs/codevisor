@@ -12,6 +12,7 @@ struct GeneralSettingsView: View {
   var body: some View {
     Form {
       generalSection
+      ArchivedChatRetentionSection()
       permissionsSection
     }
     .formStyle(.grouped)

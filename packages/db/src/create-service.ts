@@ -11,6 +11,7 @@ import { makeBrowserStateService } from "./browser-state-service.js"
 import { makeCheckoutsService } from "./checkouts-service.js"
 import { makeCreatedAgentsService } from "./created-agents-service.js"
 import { runDatabaseMigrations } from "./database-migrations.js"
+import { makeDatabaseSpaceService } from "./database-space.js"
 import { attempt } from "./errors.js"
 import { makeEventsService } from "./events-service.js"
 import { makeFilesService } from "./files-service.js"
@@ -81,6 +82,7 @@ export const createService = (
     ...makeAutoResumeService(context),
     ...makeFleetOutboxService(context),
     ...makeFilesService(context),
+    ...makeDatabaseSpaceService(context),
     ...makeWorkspaceMediaService(context),
     ...makeHarnessService(context),
     ...makeFreshAgentSessionsService(context),

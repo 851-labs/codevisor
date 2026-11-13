@@ -44,7 +44,7 @@ struct SettingsSheet: View {
   }
 
   static let clientSections = [
-    "root", "account", "machines", "projects", "sandboxes", "updates", "agents", "plugins", "skills",
+    "root", "account", "machines", "projects", "sandboxes", "general", "updates", "agents", "plugins", "skills",
   ]
 
   init(initialDestination: SettingsDestination = .root, onSectionChange: ((String) -> Void)? = nil) {
@@ -187,6 +187,9 @@ struct SettingsSheet: View {
       }
     }
     Section {
+      NavigationLink(value: SettingsDestination.section("general")) {
+        sectionLabel("General", icon: .general)
+      }
       NavigationLink(value: SettingsDestination.section("updates")) {
         sectionLabel("Updates", icon: .updates)
           .badge(environment.updateCenter.availableCount)
@@ -276,6 +279,7 @@ struct SettingsSheet: View {
     case "account": CloudAccountScreen(dismissSettings: { dismiss() })
     case "sandboxes": SandboxesSettingsScreen(model: environment.sandboxSettings, navigate: navigateSandboxes)
     case "projects": ProjectsSettingsScreen()
+    case "general": GeneralSettingsScreen()
     case "updates": UpdatesSettingsScreen()
     case "agents": HarnessesSettingsScreen()
     case "skills": SkillsSettingsScreen()

@@ -4,6 +4,7 @@ import type Database from "better-sqlite3"
 
 import { chatState, createChatItem, setChatRoute } from "./chat-items.js"
 import { backfillJobRows, countRows, idRows, readInstanceMeta } from "./common-rows.js"
+import { compactOnceForIncrementalVacuum } from "./database-space.js"
 import { insertSessionEvent, projectChatEvent } from "./event-projection.js"
 import { parseAttachments } from "./row-mappers.js"
 import { integer, rowReader } from "./row-reader.js"
@@ -315,7 +316,12 @@ const adoptServerIdentity = (sqlite: Database.Database, config: CodevisorDatabas
 
 const blockingDataUpgrades: ReadonlyArray<
   (sqlite: Database.Database, config: CodevisorDatabaseConfig) => void
-> = [adoptServerIdentity, runCanonicalChatBackfill, runTranscriptStateUpgrade]
+> = [
+  adoptServerIdentity,
+  runCanonicalChatBackfill,
+  runTranscriptStateUpgrade,
+  compactOnceForIncrementalVacuum
+]
 
 export const runBlockingDataUpgrades = (
   sqlite: Database.Database,

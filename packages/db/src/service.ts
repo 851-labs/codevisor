@@ -45,6 +45,7 @@ import type { OpenAssistantText } from "./assistant-texts.js"
 import type { AutoResumeService } from "./auto-resume-service.js"
 import type { BotsService } from "./bot-rows.js"
 import type { CheckoutsService } from "./checkouts-service.js"
+import { configureConnection } from "./connection-settings.js"
 import { createService } from "./create-service.js"
 import type { CreatedAgentsService } from "./created-agents-service.js"
 import { DatabaseError, attempt } from "./errors.js"
@@ -492,8 +493,7 @@ export const makeDatabase = (
 ): Effect.Effect<CodevisorDatabaseService, DatabaseError> =>
   Effect.gen(function* () {
     const sqlite = yield* attempt("open", () => new Database(config.filename))
-    sqlite.pragma("foreign_keys = ON")
-    sqlite.pragma("journal_mode = WAL")
+    configureConnection(sqlite)
     const service = createService(sqlite, config)
     yield* service.migrate
     return service
