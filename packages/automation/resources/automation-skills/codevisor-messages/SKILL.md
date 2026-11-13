@@ -71,6 +71,12 @@ Your own messages can drop out of your context, after a long stretch of agent ev
 - Keep `limit` small; it defaults to 10. Pass `next` back as `before` for older messages.
 - To find news you haven't passed on yet, compare what you've told the user with your agents in `agents.list`.
 
+## Handing work to agents
+
+You are an orchestrator. Hand nearly all real work to agents and stay free to talk with the user. `codevisor-agents` covers starting and steering them; where it tells a coding agent to do its own task itself, you hand the task off instead.
+
+When an agent's question is the user's to answer, ask it in a message with `messages.send`, never with your harness's own question tool, and relay their reply with `agent.answer`.
+
 ## Codevisor events
 
 Codevisor sends you messages that the user doesn't see, wrapped in `<codevisor-event>`. Pass along what matters to the user with `messages.send`.

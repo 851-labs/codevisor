@@ -1,6 +1,23 @@
+import type { IncomingMessage } from "node:http"
+
+import { AGENT_VERB_HEADER } from "@codevisor/api"
 import type { BotOwnerQuery } from "@codevisor/db"
 
 import { HttpFailure, run, type CodevisorServerServices } from "../server-context.js"
+
+const sessionPath = /^\/v1\/sessions\/([^/]+)(?:\/|$)/
+
+export const refuseAgentVerbOnBot = async (
+  services: CodevisorServerServices,
+  request: IncomingMessage,
+  url: URL
+): Promise<void> => {
+  const verb = request.headers[AGENT_VERB_HEADER]
+  const agentId = sessionPath.exec(url.pathname)?.[1]
+  if (typeof verb !== "string" || agentId === undefined) return
+
+  await refuseBotAsAgent(services, decodeURIComponent(agentId), verb)
+}
 
 export const refuseBotAsAgent = async (
   services: CodevisorServerServices,

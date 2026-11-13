@@ -1,4 +1,5 @@
 import {
+  AGENT_VERB_HEADER,
   CALLER_AGENT_TICKET_HEADER,
   isExternalClientKey,
   isFromExternalClient,
@@ -62,6 +63,7 @@ export const requestInit = (
   request: RequestBody
 ): RequestInit => {
   if (request.contentType !== undefined) headers.set("content-type", request.contentType)
+  if (spec.agentVerb !== undefined) headers.set(AGENT_VERB_HEADER, spec.agentVerb)
   return {
     method: spec.method,
     headers,

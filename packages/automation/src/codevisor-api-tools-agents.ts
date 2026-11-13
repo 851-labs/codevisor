@@ -69,9 +69,11 @@ export const codevisorAgentApiTools: ReadonlyArray<CodevisorApiToolSpec> = [
     "Answer (outcome: answered, with answers keyed by question id) or cancel (outcome: cancelled) the pendingQuestion an agent is waiting on. Get the questionId and questions from agents.status.",
     "POST",
     "/v1/sessions/:id/questions/:questionId/answer",
-    { body: SetQuestionAnswerRequest }
+    { body: SetQuestionAnswerRequest, agentVerb: "answer a question for" }
   ),
-  apiTool("agents.cancel", "Stop an agent's running turn.", "POST", "/v1/sessions/:id/cancel"),
+  apiTool("agents.cancel", "Stop an agent's running turn.", "POST", "/v1/sessions/:id/cancel", {
+    agentVerb: "cancel"
+  }),
   apiTool(
     "agents.debug.search",
     "Search an agent's transcript, newest first. Returns snippets with itemIds; read one in full with agents.debug.item. query matches text case-insensitively; kinds (comma-separated user, assistant, tool, event) and tool (part of a tool's title or kind) narrow it; last caps the hits (default 20, at most 200). Pass next back to continue to older hits. Talk to the agent first; use this only to debug it.",
@@ -104,26 +106,28 @@ export const codevisorAgentApiTools: ReadonlyArray<CodevisorApiToolSpec> = [
     "Edit a queued message before it starts.",
     "PATCH",
     "/v1/sessions/:id/queue/:queueId",
-    { body: UpdateQueuedPromptRequest }
+    { body: UpdateQueuedPromptRequest, agentVerb: "change the queue of" }
   ),
   apiTool(
     "agents.debug.queue_reorder",
     "Reorder an agent's queued messages by listing every queueItemId in the order you want.",
     "PATCH",
     "/v1/sessions/:id/queue",
-    { body: ReorderQueuedPromptsRequest }
+    { body: ReorderQueuedPromptsRequest, agentVerb: "change the queue of" }
   ),
   apiTool(
     "agents.debug.queue_delete",
     "Remove a queued message.",
     "DELETE",
-    "/v1/sessions/:id/queue/:queueId"
+    "/v1/sessions/:id/queue/:queueId",
+    { agentVerb: "change the queue of" }
   ),
   apiTool(
     "agents.debug.queue_send_now",
     "Send a queued message now: steered into the running turn when the harness allows it, otherwise moved to the front of the queue. Returns the same delivered and steerDeclined fields as agents.message.",
     "POST",
-    "/v1/sessions/:id/queue/:queueId/send-now"
+    "/v1/sessions/:id/queue/:queueId/send-now",
+    { agentVerb: "change the queue of" }
   ),
   apiTool(
     "agents.debug.state",
@@ -136,7 +140,7 @@ export const codevisorAgentApiTools: ReadonlyArray<CodevisorApiToolSpec> = [
     "Rename an agent or replace its labels (an empty object clears them).",
     "PATCH",
     "/v1/sessions/:id",
-    { body: AgentLabelsBody }
+    { body: AgentLabelsBody, agentVerb: "rename" }
   ),
   apiTool(
     "agents.debug.branch_diff",
@@ -150,33 +154,29 @@ export const codevisorAgentApiTools: ReadonlyArray<CodevisorApiToolSpec> = [
     "GET",
     "/v1/sessions/:id/usage-limits"
   ),
-  apiTool(
-    "agents.debug.mode_set",
-    "Set an agent's mode. Bots can't use plan mode.",
-    "POST",
-    "/v1/sessions/:id/mode",
-    {
-      body: SetModeRequest
-    }
-  ),
+  apiTool("agents.debug.mode_set", "Set an agent's mode.", "POST", "/v1/sessions/:id/mode", {
+    body: SetModeRequest,
+    agentVerb: "set the mode of"
+  }),
   apiTool(
     "agents.debug.config_set",
     "Set one of an agent's configuration options, such as its model.",
     "POST",
     "/v1/sessions/:id/config",
-    { body: SetConfigRequest }
+    { body: SetConfigRequest, agentVerb: "configure" }
   ),
   apiTool(
     "agents.debug.goal_set",
-    "Create or update an agent's persistent goal. Bots can't have goals.",
+    "Create or update an agent's persistent goal.",
     "POST",
     "/v1/sessions/:id/goal",
-    { body: SetGoalRequest }
+    { body: SetGoalRequest, agentVerb: "set a goal for" }
   ),
   apiTool(
     "agents.debug.goal_clear",
     "Clear an agent's persistent goal.",
     "DELETE",
-    "/v1/sessions/:id/goal"
+    "/v1/sessions/:id/goal",
+    { agentVerb: "set a goal for" }
   )
 ]

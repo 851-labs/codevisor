@@ -49,6 +49,7 @@ export const FLEET_AGENTS_MOVED_PATH = "fleet.agents_moved"
 
 export const isFleetPath = (path: string): boolean => path.startsWith("fleet.")
 export const CALLER_AGENT_TICKET_HEADER = "x-codevisor-caller-agent-ticket"
+export const AGENT_VERB_HEADER = "x-codevisor-agent-verb"
 
 export interface RemoteSessionRef {
   readonly machineId: string

@@ -22,6 +22,7 @@ export interface CodevisorApiToolSpec {
   readonly response?: "binary" | undefined
   readonly confirm?: boolean | undefined
   readonly budgetedWait?: BudgetedWait | undefined
+  readonly agentVerb?: string | undefined
 }
 
 export interface BudgetedWait {

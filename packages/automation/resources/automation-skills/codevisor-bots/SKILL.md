@@ -37,4 +37,4 @@ A **bot** is a Codevisor chat with its own folder and read-only checkouts of one
 - `bots.fork` makes a new bot on the same machine and projects, with the old bot's mascot, notes and conversation. It moves the old bot's agents to the fork unless you pass `moveAgents: false`. Use it when the user wants to keep working with a bot on a different harness or model.
 - `mascot` is the bot's avatar: `{ color, hat, hatColor?, eyewear, eyewearColor? }`, with the choices listed in the tool's input schema. `hatColor` and `eyewearColor` only apply to items that offer colors and default to `auto`. A new bot gets the next color in turn and no hat or eyewear.
 
-A bot is always the user's. No agent owns one, so the agent tools don't act on bots: `agent.archive()` and `agent.detach()` refuse a bot. Use `bots.update` and `bots.delete`, and only when the user asks.
+A bot is always the user's. No agent owns one, so the agent tools don't act on bots: archiving, detaching, cancelling, answering its questions, renaming, and changing its mode, goal, model or queue through `agents` are all refused. Use `bots.update` and `bots.delete`, and only when the user asks.
