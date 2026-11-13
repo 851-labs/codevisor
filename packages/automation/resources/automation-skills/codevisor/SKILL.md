@@ -1,6 +1,6 @@
 ---
 name: codevisor
-description: Use when work needs Codevisor's own tooling and you haven't yet picked the codevisor-* skill for it, such as a helper for research, reading code, or a review, another harness or model alongside you, an agent per issue or PR, supervising or cleaning up other agents, running tools on another of the user's machines, or changing what the Codevisor app shows.
+description: Use when work needs Codevisor's own tooling and you haven't yet picked the codevisor-* skill for it, such as a helper for research, reading code, or a review, another harness or model alongside you, an agent per issue or PR, supervising or cleaning up other agents, running tools on another of the user's machines, doing something later or on a schedule, using an outside service through a plugin, or changing what the Codevisor app shows.
 ---
 
 # Codevisor tooling
@@ -30,6 +30,8 @@ Read each skill named below by calling the `skills` tool with its name.
 | Run commands, tools, or agents on another of the user's machines                                            | `codevisor-machines` | `machines.list()`, `machine.exec()`, `machine.tools.*`, `agents.start({ machine })`                       |
 | Manage sandboxes: providers, profiles, and throwaway sandbox machines (start, follow, retry, destroy)       | `codevisor-machines` | `sandboxes.*`, `agents.start({ sandbox })`                                                                |
 | See which Codevisor apps are open and what they show; open a chat, a page, a file, or a layout for the user | `codevisor-clients`  | `machine.clients.list()`, `client.navigate()`, `workspaces.pane_upsert()`                                 |
+| Do something later, on a schedule or cron, or when a plugin event happens (a Slack message, a new issue)    | `codevisor-events`   | `events.subscribe()`, `events.topics()`, `events.subscriptions()`, `events.unsubscribe()`                 |
+| Find, install, or sign in to a plugin for an outside service, and use its tools                             | `codevisor-plugins`  | `plugins.search()`, `plugins.describe()`, `plugins.request_setup()`                                       |
 | Know where you are                                                                                          | —                    | `context.current()`                                                                                       |
 
 `context.current()` returns `agentId`, `projectId`, `workspaceId`, `worktreeName` (absent in the project folder), `createdByAgentId` and `createdByAgentMachineId` (the agent that started you and its machine, if an agent did), `machine`, and `clientId` (the window that sent the current message, absent for automations and agent-sent messages).

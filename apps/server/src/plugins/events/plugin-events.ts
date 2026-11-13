@@ -4,9 +4,18 @@ import type {
   PluginEventSubscription,
   PluginEventType
 } from "@codevisor/api"
-import type { CodevisorDatabaseService, PluginEventStored } from "@codevisor/db"
+import type {
+  CodevisorDatabaseService,
+  PluginEventStored,
+  PluginEventSubscriptionRecord
+} from "@codevisor/db"
 
 import { run } from "../../server-context.js"
+import {
+  builtinEventSources,
+  type BuiltinEventSource,
+  type BuiltinEventSources
+} from "./builtin-event-sources.js"
 import type { PluginEventConnections } from "./plugin-event-connections.js"
 import { makePluginEventDelivery, type PluginEventOutbox } from "./plugin-event-delivery.js"
 import {
@@ -15,6 +24,7 @@ import {
   type PluginEventIngest
 } from "./plugin-event-ingest.js"
 import type { IngressUrl, PluginEventIngress } from "./plugin-event-ingress.js"
+import type { EventMarker } from "./plugin-event-messages.js"
 import type { EventSource } from "./plugin-event-source-key.js"
 import {
   makePluginEventSources,
@@ -57,6 +67,7 @@ export interface PluginEventsDeps {
   readonly outbox: PluginEventOutbox
   readonly now: () => number
   readonly timers: EventTimers
+  readonly builtins?: ReadonlyArray<BuiltinEventSource>
   readonly accountLabel?: (serverId: string, accountId: string) => Promise<string | undefined>
   readonly webhooks?: (ingest: PluginEventIngest) => WebhookSources
   readonly ingress?: PluginEventIngress
@@ -65,8 +76,9 @@ export interface PluginEventsDeps {
 }
 
 export const makePluginEvents = (deps: PluginEventsDeps): PluginEvents => {
-  const types = makePluginEventTypes(deps.connections)
-  const pluginName = pluginNameLookup(deps.connections)
+  const builtins = builtinEventSources(deps.builtins ?? [])
+  const types = makePluginEventTypes(deps.connections, builtins)
+  const pluginName = pluginNameLookup(deps.connections, builtins)
   const refreshSources = (): void => {
     void sources.refresh().catch(() => undefined)
   }
@@ -81,6 +93,7 @@ export const makePluginEvents = (deps: PluginEventsDeps): PluginEvents => {
     pluginName,
     eventTitle: async (serverId, eventName) => (await types.find(serverId, eventName))?.title,
     accountLabel: deps.accountLabel ?? (async () => undefined),
+    marker: (subscription) => builtinMarker(builtins, subscription),
     onSubscriptionsChanged: subscriptionsChanged
   })
   const ingest = makePluginEventIngest({
@@ -92,12 +105,18 @@ export const makePluginEvents = (deps: PluginEventsDeps): PluginEvents => {
     db: deps.db,
     connections: deps.connections,
     types,
+    builtins,
     ingest,
     timers: deps.timers,
     ...(deps.webhooks === undefined ? {} : { webhooks: deps.webhooks(ingest) }),
     ...(deps.ingress === undefined ? {} : ingressHooks(deps.ingress))
   })
-  const subscriptionDeps: PluginEventSubscriptionsDeps = { db: deps.db, types, pluginName }
+  const subscriptionDeps: PluginEventSubscriptionsDeps = {
+    db: deps.db,
+    types,
+    builtins,
+    pluginName
+  }
   const unsubscribeConnections = deps.connections.subscribeConnections((serverId) => {
     types.forget(serverId)
     refreshSources()
@@ -152,15 +171,29 @@ const withAccount = async (
 ): Promise<CreatePluginEventSubscriptionRequest> => {
   if (deps.resolveAccount === undefined) return request
   const type = await types.find(request.plugin, request.event)
-  if (type === undefined) return request
+  if (type === undefined || builtinsOwn(deps, type.plugin)) return request
   const accountId = await deps.resolveAccount(type.plugin, request.accountId)
   return accountId === undefined ? request : { ...request, accountId }
 }
 
+const builtinMarker = (
+  builtins: BuiltinEventSources,
+  subscription: PluginEventSubscriptionRecord
+): EventMarker | undefined => {
+  const builtin = builtins.owner(subscription.serverId)
+  if (builtin === undefined) return undefined
+  return { label: builtin.display(subscription).label, symbolName: builtin.symbolName }
+}
+
+const builtinsOwn = (deps: PluginEventsDeps, plugin: string): boolean =>
+  (deps.builtins ?? []).some((builtin) => builtin.plugin === plugin)
+
 const pluginNameLookup =
-  (connections: PluginEventConnections) =>
+  (connections: PluginEventConnections, builtins: BuiltinEventSources) =>
   async (serverId: string): Promise<string> =>
-    (await connections.servers()).find((server) => server.id === serverId)?.name ?? serverId
+    builtins.owner(serverId)?.pluginName ??
+    (await connections.servers()).find((server) => server.id === serverId)?.name ??
+    serverId
 
 const publicEvent = (event: PluginEventStored | undefined): PluginEventRecord | undefined => {
   if (event === undefined) return undefined

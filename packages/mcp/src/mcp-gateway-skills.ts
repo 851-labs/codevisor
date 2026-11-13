@@ -88,7 +88,7 @@ const CAPABILITY_SKILLS: ReadonlyArray<{ readonly gate: string; readonly line: s
   { gate: "computer", line: "- Desktop apps and screen recording: read `computer-use`." },
   {
     gate: "codevisor",
-    line: "- Codevisor: read `codevisor`, then `codevisor-agents`, `codevisor-bots`, `codevisor-machines`, or `codevisor-clients`."
+    line: "- Codevisor: read `codevisor`, then `codevisor-agents`, `codevisor-bots`, `codevisor-machines`, `codevisor-clients`, `codevisor-events`, or `codevisor-plugins`."
   },
   {
     gate: "bot",
@@ -163,7 +163,8 @@ export const executeSkill: BuiltinSkill = {
           [
             "- When the user asks for something a service or app could do, call `plugins.search`, then `plugins.describe` to confirm its exact tools and events, then `plugins.request_setup` if it isn't ready.",
             "- Never claim a capability that `plugins.describe` doesn't list.",
-            "- To react to outside events (a new email, an alert), call `events.topics`, check a CEL filter with `events.preview`, then `events.subscribe`, and read its `explained` back to the user."
+            "- To react to outside events (a new email, an alert), call `events.topics`, check a CEL filter with `events.preview`, then `events.subscribe`, and read its `explained` back to the user.",
+            '- When the user wants something done later or on a schedule (a reminder, "check back in an hour", every weekday at 9), don\'t do it now: subscribe to the built-in Clock and end your turn. Read `codevisor-events`.'
           ].join("\n")
         ].join("\n\n")
       )

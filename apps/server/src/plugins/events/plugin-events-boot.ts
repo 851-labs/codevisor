@@ -10,6 +10,7 @@ import {
 } from "../../server-context.js"
 import { pluginKeyOf } from "../accounts/plugin-accounts.js"
 import type { PluginPlatform } from "../plugin-platform.js"
+import { makeClockEventSource } from "./clock-event-source.js"
 import { cloudInboxApi } from "./cloud-inbox-api.js"
 import type { PluginEventConnections } from "./plugin-event-connections.js"
 import type { PluginEventIngest } from "./plugin-event-ingest.js"
@@ -34,6 +35,7 @@ export const startPluginEvents = (
     outbox,
     now: Date.now,
     timers: systemEventTimers,
+    builtins: [makeClockEventSource({ now: Date.now, timeZone: localTimeZone() })],
     onSubscriptionsChanged: (sessionId) => publishSubscriptionsChanged(services, fanout, sessionId),
     ...(ingress === undefined ? {} : { ingress }),
     ...(webhooks === undefined ? {} : { webhooks }),
@@ -54,6 +56,8 @@ const publishSubscriptionsChanged = (
 }
 
 const subscriptionsSubject = "plugin-event-subscriptions"
+
+const localTimeZone = (): string => Intl.DateTimeFormat().resolvedOptions().timeZone
 
 export const mcpEventConnections = (mcp: McpManager): PluginEventConnections => ({
   servers: () => mcp.list(),

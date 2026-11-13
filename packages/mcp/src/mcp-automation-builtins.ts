@@ -72,6 +72,18 @@ const AUTOMATION_SKILLS = [
   },
   {
     gate: "codevisor",
+    name: "codevisor-events",
+    summary:
+      "Use when asked to do something later (a reminder, check back in N minutes), on a schedule or cron, or on a plugin event"
+  },
+  {
+    gate: "codevisor",
+    name: "codevisor-plugins",
+    summary:
+      "Use when a task needs an outside service (Slack, Linear, Gmail…) or the user asks to find or connect a plugin"
+  },
+  {
+    gate: "codevisor",
     name: "codevisor-clients",
     summary:
       "Use when the user wants something shown, opened, or laid out in their Codevisor window"

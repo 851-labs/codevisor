@@ -130,10 +130,11 @@ struct TranscriptEventSummary {
   }
 
   private static func pluginEventTitle(_ event: TranscriptEvent) -> String {
-    event[attribute: "eventTitle"] ?? "Plugin event"
+    event[attribute: "label"] ?? event[attribute: "eventTitle"] ?? "Plugin event"
   }
 
   private static func pluginIcon(_ event: TranscriptEvent) -> TranscriptEventIconKind {
-    event[attribute: "pluginId"].map(TranscriptEventIconKind.plugin) ?? .symbol("puzzlepiece.extension")
+    if let symbol = event[attribute: "symbol"] { return .symbol(symbol) }
+    return event[attribute: "pluginId"].map(TranscriptEventIconKind.plugin) ?? .symbol("puzzlepiece.extension")
   }
 }

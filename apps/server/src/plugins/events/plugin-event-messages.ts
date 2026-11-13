@@ -10,8 +10,14 @@ export interface PluginEventEnvelope {
   readonly pluginName: string
   readonly eventTitle?: string
   readonly accountLabel?: string
+  readonly marker?: EventMarker
   readonly subscription: PluginEventSubscriptionRecord
   readonly event: PluginEventStored
+}
+
+export interface EventMarker {
+  readonly label: string
+  readonly symbolName: string
 }
 
 export const pluginEventMessage = (envelope: PluginEventEnvelope): SessionEventMessage => ({
@@ -30,6 +36,7 @@ const headerAttributes = ({
   pluginName,
   eventTitle,
   accountLabel,
+  marker,
   subscription,
   event
 }: PluginEventEnvelope): string =>
@@ -39,6 +46,8 @@ const headerAttributes = ({
     ["event", event.eventName],
     ["eventTitle", eventTitle],
     ["account", accountLabel],
+    ["label", marker?.label],
+    ["symbol", marker?.symbolName],
     ["subscriptionId", subscription.id],
     ["note", subscription.note],
     ["eventId", event.id],

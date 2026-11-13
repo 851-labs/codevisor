@@ -6,7 +6,11 @@ import type {
 
 import type { PendingSessionEvent } from "../../routes/session-event-outbox.js"
 import { run } from "../../server-context.js"
-import { pluginEventMessage, sourceSessionIdFor } from "./plugin-event-messages.js"
+import {
+  pluginEventMessage,
+  sourceSessionIdFor,
+  type EventMarker
+} from "./plugin-event-messages.js"
 
 export interface PluginEventOutbox {
   readonly deliver: (subscriberId: string, event: PendingSessionEvent) => Promise<void>
@@ -19,6 +23,7 @@ export interface PluginEventDeliveryDeps {
   readonly pluginName: (serverId: string) => Promise<string>
   readonly eventTitle: (serverId: string, eventName: string) => Promise<string | undefined>
   readonly accountLabel: (serverId: string, accountId: string) => Promise<string | undefined>
+  readonly marker: (subscription: PluginEventSubscriptionRecord) => EventMarker | undefined
   readonly onSubscriptionsChanged: (sessionId: string) => void
 }
 
@@ -96,11 +101,13 @@ const sessionEvent = async (
 ): Promise<PendingSessionEvent> => {
   const accountLabel = await labelOf(deps, subscription.serverId, pending.event.accountId)
   const eventTitle = await deps.eventTitle(subscription.serverId, pending.event.eventName)
+  const marker = deps.marker(subscription)
   return {
     message: pluginEventMessage({
       pluginName: await deps.pluginName(subscription.serverId),
       ...(eventTitle === undefined ? {} : { eventTitle }),
       ...(accountLabel === undefined ? {} : { accountLabel }),
+      ...(marker === undefined ? {} : { marker }),
       subscription,
       event: pending.event
     }),

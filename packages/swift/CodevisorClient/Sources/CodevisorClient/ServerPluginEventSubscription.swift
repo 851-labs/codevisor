@@ -5,9 +5,12 @@ public struct ServerPluginEventSubscription: Codable, Equatable, Identifiable, S
   public var sessionId: String
   public var plugin: String
   public var pluginName: String
+  public var symbolName: String?
   public var accountId: String?
   public var event: String
   public var eventTitle: String?
+  public var label: String?
+  public var firesAt: String?
   public var filter: String?
   public var explained: String
   public var note: String?
@@ -21,8 +24,11 @@ public struct ServerPluginEventSubscription: Codable, Equatable, Identifiable, S
     sessionId: String,
     plugin: String,
     pluginName: String,
+    symbolName: String? = nil,
     event: String,
     eventTitle: String? = nil,
+    label: String? = nil,
+    firesAt: String? = nil,
     explained: String,
     note: String? = nil,
     once: Bool = false,
@@ -34,8 +40,11 @@ public struct ServerPluginEventSubscription: Codable, Equatable, Identifiable, S
     self.sessionId = sessionId
     self.plugin = plugin
     self.pluginName = pluginName
+    self.symbolName = symbolName
     self.event = event
     self.eventTitle = eventTitle
+    self.label = label
+    self.firesAt = firesAt
     self.explained = explained
     self.note = note
     self.once = once
