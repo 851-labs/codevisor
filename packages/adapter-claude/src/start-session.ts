@@ -11,6 +11,7 @@ import type {
 } from "@codevisor/agent-runtime"
 
 import { claudeAccountEnv } from "./account-env.js"
+import { claudeModelList } from "./api-models.js"
 import { emitBackgroundTasks } from "./background-tasks.js"
 import { alignStartModel, isSettableEffort } from "./models.js"
 import { claudeQueryOptions } from "./query-options.js"
@@ -32,6 +33,7 @@ import { claudeConfigDir, type SubagentTranscripts } from "./subagent-transcript
 
 export interface StartSessionDeps {
   readonly environment: ProviderEnvironment
+  readonly fetch: typeof fetch
   readonly getSessionInfo: typeof sdkGetSessionInfo
   readonly guardVersion: (claudePath: string) => Promise<string>
   readonly locateClaude: (definition: HarnessDefinition) => string
@@ -43,6 +45,7 @@ export interface StartSessionDeps {
 export const makeStartSession = (deps: StartSessionDeps) => {
   const {
     environment,
+    fetch: request,
     getSessionInfo,
     guardVersion,
     locateClaude,
@@ -119,7 +122,7 @@ export const makeStartSession = (deps: StartSessionDeps) => {
     trackClaudeSkills(created)
 
     try {
-      const modelList = q.supportedModels()
+      const modelList = claudeModelList(q.supportedModels(), env, request)
       const models = await modelsWithin(modelList, sessionOptions)
       if (models !== undefined) {
         adoptListedModels(created, models, knownModels)
