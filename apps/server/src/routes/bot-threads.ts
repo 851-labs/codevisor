@@ -15,13 +15,12 @@ import {
   readSchema,
   run,
   sessionIsArchived,
-  swallowError,
   writeJson
 } from "../server-context.js"
 import { botForChat } from "./bot-turns.js"
-import { drainPromptQueue } from "./prompt-queue.js"
 import type { RouteContext } from "./route-context.js"
-import { attribute } from "./session-event-messages.js"
+import { announceThreadMessage, isOnAnotherMachine } from "./thread-delivery.js"
+import { refuseOwnBot, requireSender } from "./thread-senders.js"
 
 const DEFAULT_LIMIT = 10
 const MAX_LIMIT = 50
@@ -80,14 +79,18 @@ const messageBot = async (route: RouteContext, botId: string): Promise<boolean> 
   const payload = await readSchema(request, MessageBotRequest)
   const bot = await requireBot(route, botId)
   const text = requireText(payload.text)
-  const sender = await requireSender(route, payload.sentByAgentId, payload.sentByAgentMachineId)
+  const sender = await requireSender(route, {
+    agentId: payload.sentByAgentId,
+    machineId: payload.sentByAgentMachineId,
+    botId: payload.sentByBotId,
+    name: payload.sentByName
+  })
   refuseOwnBot(sender, bot)
   if (bot.isArchived) throw new HttpFailure(409, `${bot.name} is archived`)
 
   const to: ThreadParty = { kind: "bot", botId: bot.id }
   const thread = await run(services.db.openThread(sender.party, to))
-  const message = await postThreadMessage(route, thread.threadId, sender.party, text)
-  await deliverToChat(route, bot.sessionId, threadEvent(message))
+  const message = await postThreadMessage(route, thread, sender.party, text)
   writeJson(response, 200, { sent: true, threadId: thread.threadId, messageId: message.id })
   return true
 }
@@ -95,11 +98,10 @@ const messageBot = async (route: RouteContext, botId: string): Promise<boolean> 
 const readThreadWithBot = async (route: RouteContext, botId: string): Promise<boolean> => {
   const { services, response, url } = route
   const bot = await requireBot(route, botId)
-  const sender = await requireSender(
-    route,
-    url.searchParams.get("sentByAgentId") ?? undefined,
-    url.searchParams.get("sentByAgentMachineId") ?? undefined
-  )
+  const sender = await requireSender(route, {
+    agentId: url.searchParams.get("sentByAgentId") ?? undefined,
+    machineId: url.searchParams.get("sentByAgentMachineId") ?? undefined
+  })
   const thread = await run(services.db.findThread(sender.party, { kind: "bot", botId: bot.id }))
   if (thread === undefined) {
     writeJson(response, 200, { messages: [] })
@@ -130,13 +132,10 @@ export const sendThreadMessage = async (
   const thread = await requireThreadOf(route, threadId, me)
   const text = requireText(rawText)
   const other = thread.participants.find((participant) => !isParty(participant, me))!
-  const chat = await liveChatOf(route, other)
-  if (chat === undefined)
+  if (!isOnAnotherMachine(route, other) && (await liveChatOf(route, other)) === undefined) {
     throw new HttpFailure(409, "The other side of this thread is archived or gone")
-
-  const message = await postThreadMessage(route, threadId, me, text)
-  await deliverToChat(route, chat.id, threadEvent(message))
-  return message
+  }
+  return postThreadMessage(route, thread, me, text)
 }
 
 export const listedThreadOfBot = async (
@@ -151,13 +150,15 @@ export const listedThreadOfBot = async (
 }
 
 const postThreadMessage = async (
-  { services, fanout }: RouteContext,
-  threadId: string,
+  route: RouteContext,
+  thread: Thread,
   from: ThreadParty,
   text: string
 ): Promise<ThreadMessage> => {
-  const message = await run(services.db.appendThreadMessage(threadId, from, text))
-  await appendAndPublish(services.db, fanout, "thread.message", threadId, { message })
+  const { services, fanout } = route
+  const { message } = await run(services.db.appendThreadMessage(thread.threadId, from, { text }))
+  await appendAndPublish(services.db, fanout, "thread.message", thread.threadId, { message })
+  await announceThreadMessage(route, thread, message)
   return message
 }
 
@@ -195,31 +196,9 @@ const listedThread = (thread: Thread, me: ThreadParty) => {
 }
 
 const isParty = (participant: ThreadParticipant, party: ThreadParty): boolean =>
-  party.kind === "bot"
-    ? participant.botId === party.botId
-    : participant.botId === undefined && participant.agentId === party.agentId
-
-const threadEvent = (message: ThreadMessage): string => {
-  const { from } = message
-  const who =
-    from.botId === undefined
-      ? `from="agent" agentId="${attribute(from.agentId)}"`
-      : `from="bot" botId="${attribute(from.botId)}"`
-  return [
-    `<codevisor-event type="thread.message" threadId="${attribute(message.threadId)}" ${who} name="${attribute(from.name)}">`,
-    message.text,
-    "</codevisor-event>"
-  ].join("\n")
-}
-
-const deliverToChat = async (
-  { services, fanout, routeState, config }: RouteContext,
-  sessionId: string,
-  text: string
-): Promise<void> => {
-  await run(services.db.createPromptQueueItem(sessionId, text, [], undefined, undefined, "system"))
-  void drainPromptQueue(services, fanout, routeState, config.id, sessionId).catch(swallowError)
-}
+  party.kind === "agent"
+    ? participant.botId === undefined && participant.agentId === party.agentId
+    : participant.botId === party.botId
 
 const liveChatOf = async (
   { services }: RouteContext,
@@ -228,51 +207,6 @@ const liveChatOf = async (
   const chat = await run(services.db.getSessionSummary(participant.agentId)).catch(() => undefined)
   if (chat === undefined || (await sessionIsArchived(services, chat))) return undefined
   return chat
-}
-
-interface Sender {
-  readonly party: ThreadParty
-  readonly chat: SessionSummary
-}
-
-const requireSender = async (
-  { services, config }: RouteContext,
-  agentId: string | undefined,
-  machineId: string | undefined
-): Promise<Sender> => {
-  if (agentId === undefined) {
-    throw new HttpFailure(
-      422,
-      "Only a bot or an agent can message a bot this way. The user writes to a bot in the app"
-    )
-  }
-  if (machineId !== undefined && machineId !== config.id) {
-    throw new HttpFailure(
-      409,
-      "Messaging a bot from another machine isn't supported yet. Use agents.message for now"
-    )
-  }
-  const chat = await run(services.db.getSessionSummary(agentId)).catch(() => undefined)
-  if (chat === undefined) throw new HttpFailure(404, `Agent not found: ${agentId}`)
-  const bot = await botForChat(services, chat.id)
-  const party: ThreadParty =
-    bot === undefined
-      ? { kind: "agent", agentId: chat.id, machineId: config.id }
-      : { kind: "bot", botId: bot.id }
-  return { party, chat }
-}
-
-const refuseOwnBot = (sender: Sender, bot: Bot): void => {
-  if (sender.party.kind === "bot" && sender.party.botId === bot.id) {
-    throw new HttpFailure(409, "A bot can't message itself")
-  }
-  const { createdByAgentId, isDetached } = sender.chat
-  if (createdByAgentId?.toLowerCase() === bot.sessionId.toLowerCase() && isDetached !== true) {
-    throw new HttpFailure(
-      409,
-      `${bot.name} started you and already gets your reply when your turn ends. Put what it needs in your final message`
-    )
-  }
 }
 
 const requireBot = async ({ services }: RouteContext, botId: string): Promise<Bot> => {

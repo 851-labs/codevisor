@@ -7,7 +7,8 @@ import {
   FLEET_EXEC_TASK_PATH,
   FLEET_MIRROR_PATH,
   FLEET_SANDBOX_ACTION_PATH,
-  FLEET_SESSION_EVENT_PATH
+  FLEET_SESSION_EVENT_PATH,
+  FLEET_THREAD_MESSAGE_PATH
 } from "@codevisor/api"
 import type { GatewayOrigin } from "@codevisor/mcp"
 
@@ -18,6 +19,7 @@ import { fleetCall, invokeForFleet } from "./fleet-calls.js"
 import { receiveExecControl, receiveExecTask, receiveMirrorAction } from "./fleet-machine-files.js"
 import { receiveSandboxAction } from "./fleet-sandbox-actions.js"
 import { receiveSessionEvent } from "./fleet-session-events.js"
+import { receiveThreadMessage } from "./fleet-thread-messages.js"
 import { routeMachineEnrollment } from "./machines.js"
 import type { RouteContext } from "./route-context.js"
 
@@ -40,7 +42,7 @@ const parseOrigin = (value: unknown): GatewayOrigin | undefined => {
   return { machineId, machineName, ...Object.fromEntries(optional) }
 }
 
-const OPTIONAL_ORIGIN_FIELDS = ["sessionId", "sessionTitle", "clientId"] as const
+const OPTIONAL_ORIGIN_FIELDS = ["sessionId", "sessionTitle", "botId", "clientId"] as const
 
 const writeError = (
   response: ServerResponse,
@@ -96,6 +98,12 @@ export const routeGatewayInvoke = async (route: RouteContext): Promise<boolean> 
   if (path === FLEET_SESSION_EVENT_PATH) {
     const delivered = await receiveSessionEvent(services, routeState, call, body.args)
     writeJson(response, 200, { result: { delivered } })
+    return true
+  }
+  if (path === FLEET_THREAD_MESSAGE_PATH) {
+    await answerSandboxAction(response, async () => ({
+      delivered: await receiveThreadMessage(route, call, body.args)
+    }))
     return true
   }
   if (path === FLEET_AGENTS_ARCHIVED_PATH) {

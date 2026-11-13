@@ -56,7 +56,8 @@ const startServerWithAccounts = async () => {
   return { agents, server, services, switchAccount }
 }
 
-type Running = Awaited<ReturnType<typeof startLimitedBot>>["running"]
+type Limited = Awaited<ReturnType<typeof startLimitedBot>>
+type Running = Limited["running"]
 
 const post = (running: Running, path: string, body: Record<string, unknown>) =>
   jsonRequest(running.server, path, { body: JSON.stringify(body), method: "POST" })
@@ -90,8 +91,15 @@ const stopAtLimit = (running: Running, agentSessionId: string, stopDetail: strin
     }
   })
 
-const wakeUp = async (running: Running, sessionId: string, from: string, queued: number) => {
-  await post(running, `/v1/sessions/${sessionId}/prompt`, { text: from, sentByAgentId: from })
+const wakeUp = async (limited: Limited, from: string, queued: number) => {
+  const { running, botId, sessionId } = limited
+  await post(running, "/v1/sessions", {
+    id: from,
+    projectId: "api-project",
+    harnessId: "codex",
+    title: from
+  })
+  await post(running, `/v1/bots/${botId}/messages`, { text: from, sentByAgentId: from })
   await waitFor(() => heldQueueLengths(running, sessionId).includes(queued))
 }
 
@@ -102,7 +110,9 @@ const heldQueueLengths = (running: Running, sessionId: string) =>
   })
 
 const wakeUpEvent = (from: string) =>
-  `<codevisor-event type="session.message" from="${from}" fromMachineId="server-a">\n${from}\n</codevisor-event>`
+  `<codevisor-event type="thread.message" threadId="[^"]+" from="agent" agentId="${from}" machineId="server-a" name="${from}">\n${from}\n</codevisor-event>`
+
+const isWakeUpFrom = (from: string) => expect.stringMatching(new RegExp(`^${wakeUpEvent(from)}$`))
 
 const promptTexts = (running: Running) =>
   running.agents.prompts.map(([, input]) => (typeof input === "string" ? input : input.text))
@@ -141,11 +151,13 @@ describe("bots stopped at a usage limit", () => {
   })
 
   it("holds wake-ups until the limit resets, then delivers them together in order", async () => {
-    const { running, sessionId } = await startLimitedBot()
+    const limited = await startLimitedBot()
 
-    await wakeUp(running, sessionId, "agent-a", 1)
-    await wakeUp(running, sessionId, "agent-b", 2)
-    await wakeUp(running, sessionId, "agent-c", 3)
+    const { running, sessionId } = limited
+
+    await wakeUp(limited, "agent-a", 1)
+    await wakeUp(limited, "agent-b", 2)
+    await wakeUp(limited, "agent-c", 3)
     expect(promptTexts(running)).toHaveLength(1)
     await running.switchAccount("work")
 
@@ -160,8 +172,9 @@ describe("bots stopped at a usage limit", () => {
   })
 
   it("delivers held wake-ups when the user declines the auto-resume", async () => {
-    const { running, sessionId } = await startLimitedBot()
-    await wakeUp(running, sessionId, "agent-a", 1)
+    const limited = await startLimitedBot()
+    const { running, sessionId } = limited
+    await wakeUp(limited, "agent-a", 1)
 
     const declined = await jsonRequest(running.server, `/v1/sessions/${sessionId}/auto-resume`, {
       method: "DELETE"
@@ -169,18 +182,19 @@ describe("bots stopped at a usage limit", () => {
 
     expect(declined.status).toBe(204)
     await waitFor(() => queueDrained(running, sessionId))
-    expect(promptTexts(running)).toEqual(["Check the release", wakeUpEvent("agent-a")])
+    expect(promptTexts(running)).toEqual(["Check the release", isWakeUpFrom("agent-a")])
   })
 
   it("lets the user's own message through, after the wake-ups held before it", async () => {
-    const { running, sessionId } = await startLimitedBot()
-    await wakeUp(running, sessionId, "agent-a", 1)
+    const limited = await startLimitedBot()
+    const { running, sessionId } = limited
+    await wakeUp(limited, "agent-a", 1)
 
     await post(running, `/v1/sessions/${sessionId}/prompt`, { text: "Are you there?" })
 
     await waitFor(() => queueDrained(running, sessionId))
     expect(promptTexts(running)).toHaveLength(3)
-    expect(promptTexts(running).slice(0, 2)).toEqual(["Check the release", wakeUpEvent("agent-a")])
+    expect(promptTexts(running).slice(0, 2)).toEqual(["Check the release", isWakeUpFrom("agent-a")])
     expect(promptTexts(running)[2]).toContain("Are you there?")
   })
 })

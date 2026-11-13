@@ -3,7 +3,6 @@ import SwiftUI
 
 struct ThreadParticipantAvatar: View {
   let participant: ServerThreadParticipant
-  let serverId: String
   let size: CGFloat
   @Environment(AppEnvironment.self) private var environment
 
@@ -21,7 +20,7 @@ struct ThreadParticipantAvatar: View {
 
   private var bot: Bot? {
     guard let id = participant.botId.flatMap(UUID.init(uuidString:)) else { return nil }
-    return environment.bots.bot(serverId: serverId, id: id)
+    return environment.bots.bots.first { $0.id == id }
   }
 }
 

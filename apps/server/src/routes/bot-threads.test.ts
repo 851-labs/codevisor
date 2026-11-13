@@ -52,7 +52,7 @@ describe("bot threads", () => {
 
     expect(sent.status).toBe(200)
     expect(await deliveredTo(running, "Is the build green?")).toBe(
-      `<codevisor-event type="thread.message" threadId="${threadId}" from="bot" botId="${release.id}" name="Release">\nIs the build green?\n</codevisor-event>`
+      `<codevisor-event type="thread.message" threadId="${threadId}" from="bot" botId="${release.id}" machineId="server-a" name="Release">\nIs the build green?\n</codevisor-event>`
     )
 
     const reply = await post(running, `/v1/sessions/${triage.sessionId}/messages`, {
@@ -62,7 +62,7 @@ describe("bot threads", () => {
 
     expect(reply.status).toBe(200)
     expect(await deliveredTo(running, "Yes, since noon.")).toBe(
-      `<codevisor-event type="thread.message" threadId="${threadId}" from="bot" botId="${triage.id}" name="Triage">\nYes, since noon.\n</codevisor-event>`
+      `<codevisor-event type="thread.message" threadId="${threadId}" from="bot" botId="${triage.id}" machineId="server-a" name="Triage">\nYes, since noon.\n</codevisor-event>`
     )
     const again = await post(running, `/v1/bots/${release.id}/messages`, {
       text: "Shipping then.",
@@ -121,7 +121,7 @@ describe("bot threads", () => {
     const threadId = String(field(sent.body, "threadId"))
 
     expect(await deliveredTo(running, "Login is fixed.")).toBe(
-      `<codevisor-event type="thread.message" threadId="${threadId}" from="agent" agentId="${agentId}" name="Fix login">\nLogin is fixed.\n</codevisor-event>`
+      `<codevisor-event type="thread.message" threadId="${threadId}" from="agent" agentId="${agentId}" machineId="server-a" name="Fix login">\nLogin is fixed.\n</codevisor-event>`
     )
     await post(running, `/v1/sessions/${release.sessionId}/messages`, { text: "Thanks.", threadId })
     expect(await deliveredTo(running, "Thanks.")).toContain(`botId="${release.id}"`)
@@ -211,10 +211,7 @@ describe("bot threads", () => {
     expect((await send(triage.id, { sentByAgentId: owned }))[0]).toBe(200)
     expect(
       await send(release.id, { sentByAgentId: "far", sentByAgentMachineId: "server-b" })
-    ).toEqual([
-      409,
-      "Messaging a bot from another machine isn't supported yet. Use agents.message for now"
-    ])
+    ).toEqual([403, "Only the machine an agent runs on can act on its behalf"])
     expect(
       (await send(release.id, { sentByAgentId: owned, sentByAgentMachineId: "server-a" }))[0]
     ).toBe(409)

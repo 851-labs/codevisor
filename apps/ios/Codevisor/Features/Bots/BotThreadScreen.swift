@@ -13,7 +13,7 @@ struct BotThreadScreen: View {
       hasOlder: environment.botThreads.threadsWithOlderMessages.contains(thread.threadId),
       loadOlder: loadOlder
     ) { participant in
-      ThreadParticipantAvatar(participant: participant, serverId: bot.serverId, size: 28)
+      ThreadParticipantAvatar(participant: participant, size: 28)
     }
     .safeAreaInset(edge: .bottom) {
       Text("Only \(bot.name) and \(otherName) write in this thread.")

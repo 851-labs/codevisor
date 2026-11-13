@@ -1,6 +1,6 @@
 import { isAbsolute } from "node:path"
 
-import type { AgentRef, AttachmentRef, BotConversationPage, EventEnvelope } from "@codevisor/api"
+import type { AttachmentRef, BotConversationPage, EventEnvelope } from "@codevisor/api"
 import { SendBotMessageRequest } from "@codevisor/api"
 
 import {
@@ -22,7 +22,6 @@ import { listedThreadOfBot, sendThreadMessage } from "./bot-threads.js"
 import { botForChat, postBotMessage } from "./bot-turns.js"
 import { hasLiveTurn } from "./prompt-queue.js"
 import type { RouteContext } from "./route-context.js"
-import { attribute } from "./session-event-messages.js"
 
 const PAGE_LIMIT = 50
 const MAX_PAGE_LIMIT = 200
@@ -120,21 +119,6 @@ export const routeBotConversation = async (route: RouteContext): Promise<boolean
   }
 
   return false
-}
-
-export const agentMessageEvent = async (
-  services: CodevisorServerServices,
-  from: AgentRef,
-  text: string
-): Promise<string> => {
-  const sender = await run(services.db.getSessionSummary(from.agentId)).catch(() => undefined)
-  const title = sender === undefined ? "" : ` title="${attribute(sender.title)}"`
-  const machine = ` fromMachineId="${attribute(from.machineId)}"`
-  return [
-    `<codevisor-event type="session.message" from="${attribute(from.agentId)}"${machine}${title}>`,
-    text,
-    "</codevisor-event>"
-  ].join("\n")
 }
 
 export const makeBotConversationListener = (

@@ -48,6 +48,7 @@ export interface GatewayOrigin {
   readonly machineName: string
   readonly sessionId?: string
   readonly sessionTitle?: string
+  readonly botId?: string
   readonly clientId?: string
 }
 

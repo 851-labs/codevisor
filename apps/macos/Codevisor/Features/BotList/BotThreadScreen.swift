@@ -17,7 +17,7 @@ struct BotThreadScreen: View {
         hasOlder: environment.botThreads.threadsWithOlderMessages.contains(thread.threadId),
         loadOlder: loadOlder
       ) { participant in
-        ThreadParticipantAvatar(participant: participant, serverId: bot.serverId, size: 28)
+        ThreadParticipantAvatar(participant: participant, size: 28)
       }
       Text("Only \(bot.name) and \(otherName) write in this thread.")
         .font(.footnote)
@@ -40,7 +40,7 @@ struct BotThreadScreen: View {
       .keyboardShortcut(.cancelAction)
       Spacer(minLength: 8)
       if let other {
-        ThreadParticipantAvatar(participant: other, serverId: bot.serverId, size: 22)
+        ThreadParticipantAvatar(participant: other, size: 22)
       }
       Text("\(bot.name) and \(otherName)")
         .font(.headline)

@@ -261,7 +261,10 @@ const describedOrigin = async (
 ): Promise<GatewayOrigin> => {
   const sessionId = origin.sessionId!
   const session = await run(deps.config.db.getSessionSummary(sessionId)).catch(() => undefined)
-  return { ...origin, ...(session === undefined ? {} : { sessionTitle: session.title }) }
+  if (session === undefined) return origin
+  const bot = await run(deps.config.db.findBotOwning({ sessionId: session.id }))
+  const isBotChat = bot?.sessionId.toLowerCase() === session.id.toLowerCase()
+  return { ...origin, sessionTitle: session.title, ...(isBotChat ? { botId: bot.id } : {}) }
 }
 
 const remoteTarget = (

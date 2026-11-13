@@ -17,8 +17,8 @@ A **bot** is a Codevisor chat with its own folder and read-only checkouts of one
 | Archive or restore it                 | `bots.update({ botId, isArchived: true })` or `isArchived: false`                       |
 | Add or remove a project               | `bots.projects_add({ botId, projectId })`, `bots.projects_remove({ botId, projectId })` |
 | Delete it                             | `bots.delete({ botId, confirm: true })`                                                 |
-| Message it                            | `bots.message({ botId, text })`                                                         |
-| Read your thread with it              | `bots.messages({ botId, limit?, before? })`                                             |
+| Message it                            | `bots.message({ botId, text, machine? })`                                               |
+| Read your thread with it              | `bots.messages({ botId, machine?, limit?, before? })`                                   |
 
 ```js
 ;async () => {
@@ -43,7 +43,8 @@ A **bot** is a Codevisor chat with its own folder and read-only checkouts of one
 
 `bots.message({ botId, text })` writes to a bot from you, whether you are another bot or an agent. You and that bot share one thread, which the user is not part of. The bot's reply reaches you as a `<codevisor-event type="thread.message" threadId="…">`, and `bots.messages({ botId })` reads the thread back.
 
-- It works for a bot on your own machine. For a bot on another machine, use `agents.message` with the bot's `agentId` for now.
+- It works across machines. For a bot on another machine pass `machine`, the same as for the other `bots` tools: `bots.message({ botId, text, machine })`. A reply's event carries the bot's `machineId`, which you can pass as `machine`.
+- `agents.message` refuses a bot. A bot is not an agent.
 - A bot refuses `bots.message` from an agent it started. It already gets that agent's final reply when the turn ends, so put what it needs there.
 - Write when you have something the bot needs or a question for it. Don't write only to acknowledge.
 

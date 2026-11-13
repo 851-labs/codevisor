@@ -66,7 +66,7 @@ private struct BotThreadsPopover: View {
     VStack(alignment: .leading, spacing: 2) {
       ForEach(content.threads) { thread in
         if let other = environment.botThreads.other(in: thread, than: content.bot) {
-          BotThreadRow(participant: other, preview: thread.lastMessage, serverId: content.bot.serverId) {
+          BotThreadRow(participant: other, preview: thread.lastMessage) {
             open(thread)
           }
         }
@@ -79,14 +79,13 @@ private struct BotThreadsPopover: View {
 private struct BotThreadRow: View {
   let participant: ServerThreadParticipant
   let preview: ServerThreadMessage?
-  let serverId: String
   let open: () -> Void
   @State private var isHovered = false
 
   var body: some View {
     Button(action: open) {
       HStack(spacing: 10) {
-        ThreadParticipantAvatar(participant: participant, serverId: serverId, size: 30)
+        ThreadParticipantAvatar(participant: participant, size: 30)
         VStack(alignment: .leading, spacing: 1) {
           Text(participant.threadDisplayName)
             .font(.system(size: 13, weight: .medium))
