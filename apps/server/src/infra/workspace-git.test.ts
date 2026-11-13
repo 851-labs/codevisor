@@ -84,6 +84,35 @@ const fixture = async () => {
   }
 }
 
+it("keeps the branch of a worktree a chat uses when no workspace is rooted in it", async () => {
+  const { db, fanout, branches, pullRequests, workspace, start } = await fixture()
+  const parent = await workspace("parent", "/repo/parent")
+  branches.set("/repo/parent", "main")
+  const monitor = start()
+  await monitor.settled()
+  await run(db.createWorktree(parent.projectId, "helper", "codevisor/helper"))
+  const chat = await run(
+    db.createSession({ projectId: parent.projectId, harnessId: "codex", worktreeName: "helper" })
+  )
+  const checkoutOf = async () =>
+    (await run(db.listCheckouts)).find((candidate) => candidate.id === chat.checkoutId)
+  const path = (await checkoutOf())!.path
+  branches.set(path, "codevisor/helper")
+  pullRequests.set(path, pullRequest(9))
+
+  await run(fanout.publish(await run(db.appendEvent("session.created", chat.id, {}))))
+  await monitor.settled()
+  expect((await checkoutOf())?.git).toEqual({
+    branch: "codevisor/helper",
+    pullRequest: pullRequest(9)
+  })
+
+  await run(db.archiveSession(chat.id))
+  branches.set(path, "moved-on")
+  await monitor.sweep(true)
+  expect((await checkoutOf())?.git?.branch).toBe("codevisor/helper")
+})
+
 it("records each workspace's branch and pull request at boot and publishes only changes", async () => {
   const { db, published, branches, pullRequests, workspace, start, git } = await fixture()
   const feature = await workspace("feature", "/repo/feature")

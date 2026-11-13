@@ -279,6 +279,44 @@ describe("POST /v1/agents", () => {
     ).toBe(422)
   })
 
+  it("gives an agent started from a workspace a chat and a worktree, but no workspace of its own", async () => {
+    const { server, services, startAgent, state } = await startable()
+    const callerInWorkspace = idOf(
+      (
+        await jsonRequest(server, "/v1/sessions", {
+          body: JSON.stringify({
+            projectId: "start-project",
+            harnessId: "codex",
+            workspaceId: "caller-workspace"
+          }),
+          method: "POST"
+        })
+      ).body
+    )
+    const workspacesBefore = (await run(services.db.listWorkspaces)).map(
+      (workspace) => workspace.id
+    )
+
+    const owned = decode(StartedAgent)(
+      (await startAgent({ callerAgentId: callerInWorkspace })).body
+    )
+    const standing = decode(StartedAgent)(
+      (await startAgent({ callerAgentId: callerInWorkspace, standalone: true })).body
+    )
+
+    expect(owned.workspaceId).toBeUndefined()
+    expect(await run(services.db.getSessionSummary(owned.agentId))).toMatchObject({
+      createdByAgentId: callerInWorkspace,
+      worktreeName: owned.worktreeName
+    })
+    expect((await run(services.db.getSessionSummary(owned.agentId))).workspaceId).toBeUndefined()
+    expect((await state()).worktrees.map((worktree) => worktree.name)).toContain(owned.worktreeName)
+    expect((await run(services.db.listWorkspaces)).map((workspace) => workspace.id)).toEqual(
+      expect.arrayContaining([...workspacesBefore, standing.workspaceId])
+    )
+    expect(await run(services.db.listWorkspaces)).toHaveLength(workspacesBefore.length + 1)
+  })
+
   it("starts an agent that stands alone when asked, but not as a shared helper", async () => {
     const { services, caller, startAgent, state } = await startable()
 
