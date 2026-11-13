@@ -7,7 +7,7 @@ description: Use when you want help with your task (research, reading code, a re
 
 Every Codevisor chat is an **agent**: a coding agent (Claude Code, Codex, …) running in a **workspace** of a **project**. Each one is visible to the user in the sidebar.
 
-How much to hand off depends on what you are. A bot is an orchestrator: it hands nearly all real work to agents and stays free to talk with the user. A coding agent does its own task itself, and starts other agents only for help on the side, such as research or a review, or for separate pieces of work that each need their own branch.
+Do your own task yourself. Start other agents only for help on the side, such as research or a review, or for separate pieces of work that each need their own branch.
 
 Never use your harness's built-in subagents (a Task or Agent tool, spawn_agent, and the like), even if your harness still offers them. The user can't see or steer them, they edit your checkout unnoticed, and they die on updates. Start a Codevisor agent instead, even for a quick question.
 
@@ -159,7 +159,7 @@ To answer it yourself:
 
 To give guidance instead of picking an answer, send it with `agent.message`.
 
-To ask the user, use your harness's own tool for asking the user questions. Ask the same question, reworded for the user if needed, with the same options, and mark which one the agent recommends. Then relay their choice with `agent.answer`, using the agent's option label. If you are a bot, ask in a message with `messages.send` instead, and relay their reply the same way.
+To ask the user, use your harness's own tool for asking the user questions. Ask the same question, reworded for the user if needed, with the same options, and mark which one the agent recommends. Then relay their choice with `agent.answer`, using the agent's option label.
 
 One `agent.answer` call answers every question in the prompt, so it can't answer some now and the rest later. When a prompt mixes settled questions with open ones, ask the user all the open ones together, then send every answer in one call. The agent stays paused while the user decides. Carry on with your other work in the meantime.
 

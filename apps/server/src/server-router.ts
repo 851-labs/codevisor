@@ -3,6 +3,7 @@ import type { IncomingMessage, ServerResponse } from "node:http"
 import { isBrowserProxyRequest } from "./infra/browser-forward-proxy.js"
 import { routeAgents } from "./routes/agents.js"
 import { routeAutoResume } from "./routes/auto-resume-routes.js"
+import { refuseAgentVerbOnBot } from "./routes/bot-guards.js"
 import { routeBotMascots } from "./routes/bot-mascots.js"
 import { routeBots } from "./routes/bots.js"
 import { routeBrowserState } from "./routes/browser-state.js"
@@ -85,6 +86,7 @@ export const handleRequest = async (
     const firstAuthorizedRoute = firstAuthorizedRouteFor(route)
     await authorize(services.db, config, request)
     if (firstAuthorizedRoute !== undefined) return firstAuthorizedRoute(route)
+    await refuseAgentVerbOnBot(services, request, url)
 
     for (const routeFamily of featureRouteFamilies) {
       if (await routeFamily(route)) return

@@ -1,3 +1,4 @@
+import { AGENT_VERB_HEADER } from "@codevisor/api"
 import { describe, expect, it, vi } from "vitest"
 
 import { jsonRequest, run } from "../test-support.js"
@@ -74,6 +75,31 @@ describe("bot plan and goal modes", () => {
     expect(running.agents.goals).toEqual([])
     expect(running.agents.prompts).toEqual([])
     expect(running.agents.modes).toEqual([[agentSessionId, "bypassPermissions"]])
+  })
+
+  it("refuses an agent's verbs on a bot's chat and takes the same requests from the app", async () => {
+    const running = await setUp()
+    await running.addProject("api-project", "api")
+    const bot = decodeBot((await createBot(running, { projectIds: ["api-project"] })).body)
+    await post(running, "/v1/sessions", {
+      id: "chat-1",
+      projectId: "api-project",
+      harnessId: "codex"
+    })
+    const asAgent = (sessionId: string, verb: string) =>
+      jsonRequest(running.server, `/v1/sessions/${sessionId}/cancel`, {
+        headers: { [AGENT_VERB_HEADER]: verb },
+        method: "POST"
+      })
+
+    const refused = await asAgent(bot.sessionId, "cancel")
+
+    expect([refused.status, field(refused.body, "error")]).toEqual([
+      409,
+      "Cannot cancel Release Helper: it is a bot, not an agent. Bots belong to the user"
+    ])
+    expect((await asAgent("chat-1", "cancel")).status).not.toBe(409)
+    expect((await post(running, `/v1/sessions/${bot.sessionId}/cancel`, {})).status).not.toBe(409)
   })
 
   it("leaves plan mode and goals alone for a regular chat", async () => {
