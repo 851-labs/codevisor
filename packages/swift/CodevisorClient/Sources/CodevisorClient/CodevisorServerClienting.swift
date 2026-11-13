@@ -125,6 +125,8 @@ public protocol CodevisorServerClienting: BrowserStateClienting, BrowserFaviconC
   func removeBotProject(botId: String, projectId: String) async throws -> ServerBot
   func deleteBot(id: String) async throws
   func botConversation(sessionId: UUID, before: Int?, limit: Int) async throws -> ServerBotConversationPage
+  func botThreads(botId: String) async throws -> [ServerThread]
+  func threadMessages(threadId: String, before: Int?, limit: Int) async throws -> ServerThreadMessagePage
   func listPluginCatalog(query: String?) async throws -> [ServerPluginCatalogEntry]
   func installCatalogPlugin(id: String, values: [String: ServerConfigFieldValue]) async throws -> ServerMcpServer
   func pluginCatalogEntry(id: String) async throws -> ServerPluginCatalogEntry

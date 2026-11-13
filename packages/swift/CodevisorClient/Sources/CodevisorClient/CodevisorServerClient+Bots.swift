@@ -55,4 +55,19 @@ extension CodevisorServerClient {
     guard let path = components.string else { throw CodevisorServerClientError.invalidURL("conversation") }
     return try await get(path)
   }
+
+  public func botThreads(botId: String) async throws -> [ServerThread] {
+    try await get("/v1/bots/\(pathComponent(botId))/threads")
+  }
+
+  public func threadMessages(threadId: String, before: Int?, limit: Int) async throws -> ServerThreadMessagePage {
+    var components = URLComponents()
+    components.path = "/v1/threads/\(pathComponent(threadId))/messages"
+    components.queryItems = [URLQueryItem(name: "limit", value: String(limit))]
+    if let before {
+      components.queryItems?.append(URLQueryItem(name: "before", value: String(before)))
+    }
+    guard let path = components.string else { throw CodevisorServerClientError.invalidURL("thread") }
+    return try await get(path)
+  }
 }

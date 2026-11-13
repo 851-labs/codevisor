@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest"
 
-import { jsonRequest, run, waitFor } from "../test-support.js"
+import { jsonRequest, listSubjectEvents, run, waitFor } from "../test-support.js"
 import { field } from "../unknown-values.js"
 import { createBot, decodeBot, setUp, type Running } from "./bot-test-support.js"
 
@@ -80,6 +80,29 @@ describe("bot threads", () => {
       ],
       next: 2
     })
+    const shown = await jsonRequest(running.server, `/v1/bots/${triage.id}/threads`)
+    expect(shown.body).toMatchObject([
+      {
+        threadId,
+        participants: [
+          { kind: "bot", name: "Release", botId: release.id },
+          { kind: "bot", name: "Triage", botId: triage.id }
+        ],
+        lastMessage: { sequence: 3, text: "Shipping then.", from: { botId: triage.id } }
+      }
+    ])
+    const page = await jsonRequest(running.server, `/v1/threads/${threadId}/messages?limit=1`)
+    expect(page.body).toMatchObject({ messages: [{ sequence: 3, threadId }], hasMore: true })
+    expect(
+      listSubjectEvents(running.services, threadId).map((event) => [
+        event.kind,
+        field(field(event.payload, "message"), "text")
+      ])
+    ).toEqual([
+      ["thread.message", "Is the build green?"],
+      ["thread.message", "Yes, since noon."],
+      ["thread.message", "Shipping then."]
+    ])
     const conversation = await jsonRequest(
       running.server,
       `/v1/sessions/${triage.sessionId}/conversation`
@@ -268,6 +291,14 @@ describe("bot threads", () => {
         )
       )
     ).toEqual([404, `Thread not found: ${threadId}`])
+    expect(await outcome(jsonRequest(running.server, "/v1/threads/missing/messages"))).toEqual([
+      404,
+      "Thread not found: missing"
+    ])
+    expect(await outcome(jsonRequest(running.server, "/v1/bots/missing/threads"))).toEqual([
+      404,
+      "Bot not found: missing"
+    ])
     expect(await outcome(jsonRequest(running.server, `/v1/sessions/${agentId}/threads`))).toEqual([
       403,
       "Only a bot has threads"

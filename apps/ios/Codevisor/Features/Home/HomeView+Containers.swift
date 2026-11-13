@@ -60,7 +60,8 @@ extension HomeView {
   private var stackBotHeader: some View {
     Group {
       if case let .bot(serverId, botId)? = path.last,
-        let bot = environment.bots.bot(serverId: serverId, id: botId)
+        let bot = environment.bots.bot(serverId: serverId, id: botId),
+        environment.botThreads.openThread(of: bot) == nil
       {
         BotConversationHeader(bot: bot) { botEditor = .edit(bot) }
           .background {

@@ -40,4 +40,12 @@ public extension CodevisorServerClienting {
   func botConversation(sessionId: UUID, before: Int?, limit: Int) async throws -> ServerBotConversationPage {
     throw CodevisorServerClientError.invalidResponse
   }
+
+  func botThreads(botId: String) async throws -> [ServerThread] {
+    []
+  }
+
+  func threadMessages(threadId: String, before: Int?, limit: Int) async throws -> ServerThreadMessagePage {
+    throw CodevisorServerClientError.invalidResponse
+  }
 }

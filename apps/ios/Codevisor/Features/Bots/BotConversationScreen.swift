@@ -33,8 +33,32 @@ struct BotConversationScreen: View {
               .frame(height: BotConversationHeader.barHeight, alignment: .top)
           }
         }
+        if let bot, !threads.isEmpty {
+          ToolbarItem(placement: .topBarTrailing) {
+            BotThreadsMenu(bot: bot, threads: threads) { presentedThread.wrappedValue = $0 }
+          }
+        }
+      }
+      .navigationDestination(item: presentedThread) { thread in
+        if let bot { BotThreadScreen(bot: bot, thread: thread) }
       }
       .task(id: session?.id) { await connect() }
+      .task(id: bot?.id) {
+        if let bot { await environment.botThreads.refreshThreads(of: bot) }
+      }
+  }
+
+  private var presentedThread: Binding<ServerThread?> {
+    Binding(
+      get: { bot.flatMap { environment.botThreads.openThread(of: $0) } },
+      set: { thread in
+        if let bot { environment.botThreads.openThreadByBot[bot.id] = thread?.threadId }
+      }
+    )
+  }
+
+  private var threads: [ServerThread] {
+    bot.map { environment.botThreads.threads(of: $0) } ?? []
   }
 
   @ViewBuilder
