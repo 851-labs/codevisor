@@ -1,9 +1,13 @@
 import SwiftUI
 
-struct ProgressStepTitle: View {
+public struct ProgressStepTitle: View {
   let title: String
 
-  var body: some View {
+  public init(title: String) {
+    self.title = title
+  }
+
+  public var body: some View {
     Text(title)
       .font(.title2.weight(.semibold))
       .multilineTextAlignment(.center)

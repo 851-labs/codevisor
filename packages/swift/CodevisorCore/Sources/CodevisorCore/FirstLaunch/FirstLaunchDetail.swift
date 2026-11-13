@@ -13,7 +13,7 @@ public enum FirstLaunchDetail {
     switch step {
     case .harnesses: count == 1 ? "1 harness" : "\(count) harnesses"
     case .projects: count == 1 ? "1 project" : "\(count) projects"
-    case .server, .models: nil
+    case .models: nil
     }
   }
 }

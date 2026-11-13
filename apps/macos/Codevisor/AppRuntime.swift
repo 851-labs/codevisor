@@ -70,7 +70,6 @@ final class AppRuntime {
 
   func retry() {
     startupError = nil
-    firstLaunchSetup?.retryLocalData()
     Task { await startIfNeeded() }
   }
 
@@ -106,7 +105,6 @@ final class AppRuntime {
       }
     } catch {
       startupError = error.localizedDescription
-      firstLaunchSetup?.localDataFailed()
     }
   }
 

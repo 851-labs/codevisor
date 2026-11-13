@@ -7,7 +7,7 @@ import { chatFileSourceCount, linkStoredChatFiles } from "./session-files.js"
 
 const linkingId = "chat-owned-files-v2"
 
-const linkingName = "Linking attachments to their chats"
+const linkingName = "Linking attachments"
 
 const reportLinking = (
   config: CodevisorDatabaseConfig,

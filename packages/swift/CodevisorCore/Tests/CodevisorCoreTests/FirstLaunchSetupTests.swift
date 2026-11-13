@@ -6,33 +6,20 @@ import Testing
 @MainActor
 @Suite("First-launch setup screen")
 struct FirstLaunchSetupTests {
-  @Test("Shows Starting Codevisor from the first frame, before the server answers")
+  @Test("Stays visible from the first frame until the server answers")
   func showsBeforeServerAnswers() async {
     let clock = TestClock()
     let work = FirstLaunchFakeWork()
     let setup = FirstLaunchSetup(clock: clock)
     #expect(setup.presentation == .visible)
-    #expect(FirstLaunchStep.allCases.map(setup.revealed) == [.running, .pending, .pending, .pending])
 
     let running = Task { await setup.run(work) }
     await clock.waitForSleep(.seconds(15))
     #expect(setup.presentation == .visible)
-    #expect(setup.revealed(.server) == .running)
+    #expect(setup.isNewInstall == nil)
 
     work.server.resolve(.failed)
     await running.value
-  }
-
-  @Test("Shows a local data failure on Starting Codevisor and spins again on retry")
-  func showsLocalDataFailure() {
-    let setup = FirstLaunchSetup(clock: TestClock())
-
-    setup.localDataFailed()
-    #expect(FirstLaunchStep.allCases.map(setup.revealed) == [.failed, .pending, .pending, .pending])
-    #expect(!setup.isComplete)
-
-    setup.retryLocalData()
-    #expect(setup.revealed(.server) == .running)
   }
 
   @Test("Carries on once the server confirms a new install")
@@ -46,10 +33,10 @@ struct FirstLaunchSetupTests {
     let setup = FirstLaunchSetup(clock: clock)
     let running = Task { await setup.run(work) }
     await clock.waitForSleep(.seconds(15))
-    #expect(setup.revealed(.server) == .running)
+    #expect(setup.isNewInstall == nil)
 
     work.newInstall.resolve(true)
-    await awaitObserved { setup.revealed(.server) == .done }
+    await awaitObserved { setup.isNewInstall == true }
     await clock.waitForSleep(.milliseconds(400))
     clock.advance(by: .milliseconds(400))
     await running.value
@@ -73,7 +60,7 @@ struct FirstLaunchSetupTests {
 
     #expect(setup.presentation == .notNeeded)
     #expect(!setup.canGetStarted)
-    #expect(FirstLaunchStep.allCases.map { setup.outcomes[$0] } == [.running, nil, nil, nil])
+    #expect(FirstLaunchStep.allCases.map { setup.outcomes[$0] } == [nil, nil, nil])
   }
 
   @Test("Hands off to the startup view when the server doesn't answer within fifteen seconds")
@@ -107,7 +94,7 @@ struct FirstLaunchSetupTests {
 
     work.server.resolve(.ready)
     work.newInstall.resolve(true)
-    await awaitObserved { setup.revealed(.server) == .done }
+    await awaitObserved { setup.isNewInstall == true }
     await clock.waitForSleep(.milliseconds(400))
     clock.advance(by: .milliseconds(400))
     await running.value
@@ -149,7 +136,7 @@ struct FirstLaunchSetupTests {
     clock.advance(by: .milliseconds(500))
     await clock.waitForSleep(.milliseconds(500), count: 2)
     #expect(setup.presentation == .visible)
-    #expect(setup.revealed(.server) == .running)
+    #expect(setup.isNewInstall == nil)
 
     await clock.waitForSleep(.seconds(15))
     clock.advance(by: .seconds(15))
@@ -234,11 +221,11 @@ struct FirstLaunchSetupTests {
       await clock.waitForSleep(limit)
     }
     await confirmed(setup)
-    #expect(FirstLaunchStep.allCases.map(setup.revealed) == [.done, .running, .pending, .pending])
+    #expect(FirstLaunchStep.allCases.map(setup.revealed) == [.running, .pending, .pending])
 
     clock.advance(by: .seconds(5))
     await awaitObserved { setup.revealed(.harnesses) == .skipped }
-    #expect(FirstLaunchStep.allCases.map(setup.revealed) == [.done, .skipped, .running, .pending])
+    #expect(FirstLaunchStep.allCases.map(setup.revealed) == [.skipped, .running, .pending])
 
     clock.advance(by: .seconds(5))
     await awaitObserved { setup.revealed(.projects) == .skipped }
@@ -246,7 +233,7 @@ struct FirstLaunchSetupTests {
 
     clock.advance(by: .seconds(2))
     await awaitObserved { setup.isComplete }
-    #expect(FirstLaunchStep.allCases.map(setup.revealed) == [.done, .skipped, .skipped, .skipped])
+    #expect(FirstLaunchStep.allCases.map(setup.revealed) == [.skipped, .skipped, .skipped])
     #expect(setup.detailCandidates(for: .harnesses).isEmpty)
 
     await clock.waitForSleep(.milliseconds(400))
@@ -264,7 +251,7 @@ struct FirstLaunchSetupTests {
 
     work.projects.resolve(["api", "web"])
     await awaitObserved { setup.outcomes[.projects] == .done && setup.outcomes[.models] == .done }
-    #expect(FirstLaunchStep.allCases.map(setup.revealed) == [.done, .running, .pending, .pending])
+    #expect(FirstLaunchStep.allCases.map(setup.revealed) == [.running, .pending, .pending])
     #expect(setup.detailCandidates(for: .projects).isEmpty)
 
     work.harnesses.resolve(["Claude Code", "Codex"])
@@ -344,7 +331,7 @@ struct FirstLaunchSetupTests {
   }
 
   private func confirmed(_ setup: FirstLaunchSetup) async {
-    await awaitObserved { setup.outcomes[.server] == .done }
+    await awaitObserved { setup.isNewInstall == true }
   }
 }
 

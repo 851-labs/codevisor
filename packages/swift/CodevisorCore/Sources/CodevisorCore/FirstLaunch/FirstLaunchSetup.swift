@@ -8,7 +8,7 @@ public final class FirstLaunchSetup {
   private(set) var outcomes: [FirstLaunchStep: FirstLaunchStepOutcome] = [:]
   private var foundNames: [FirstLaunchStep: [String]] = [:]
   private var visibleCounts: [FirstLaunchStep: Int] = [:]
-  private var isNewInstall: Bool?
+  private(set) var isNewInstall: Bool?
   private var isWaitingOnUser = false
   private var userWaits = 0
 
@@ -45,14 +45,6 @@ public final class FirstLaunchSetup {
     guard canGetStarted, presentation == .visible else { return }
     presentation = .dismissed
     changed()
-  }
-
-  public func localDataFailed() {
-    set(.server, .failed)
-  }
-
-  public func retryLocalData() {
-    set(.server, .running)
   }
 
   public func run(_ work: any FirstLaunchSetupWork) async {
@@ -147,11 +139,9 @@ public final class FirstLaunchSetup {
   }
 
   private func performSteps(_ work: any FirstLaunchSetupWork) async {
-    set(.server, .running)
     let start = await work.startServer { self.setWaitingOnUser($0) }
     setWaitingOnUser(false)
     guard start == .ready else {
-      set(.server, .skipped)
       handOff()
       return
     }
@@ -160,7 +150,6 @@ public final class FirstLaunchSetup {
     changed()
     guard isNewInstall == true, presentation == .visible else { return }
 
-    set(.server, .done)
     async let harnesses: Void = runStep(.harnesses, within: timing.harnessesTimeout) { [work] in
       try await work.findHarnesses()
     } record: {

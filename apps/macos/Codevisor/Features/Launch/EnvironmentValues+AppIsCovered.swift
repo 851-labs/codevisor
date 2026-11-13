@@ -1,5 +1,5 @@
 import SwiftUI
 
 extension EnvironmentValues {
-  @Entry var firstLaunchCoversApp = false
+  @Entry var appIsCovered = false
 }

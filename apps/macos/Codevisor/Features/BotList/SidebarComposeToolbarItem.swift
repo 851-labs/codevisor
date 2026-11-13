@@ -4,7 +4,7 @@ import SwiftUI
 
 struct SidebarComposeToolbarItem: ToolbarContent {
   @ClientPreference(SidebarMode.preferenceKey, default: SidebarMode.code) private var storedMode
-  @Environment(\.firstLaunchCoversApp) private var firstLaunchCoversApp
+  @Environment(\.appIsCovered) private var appIsCovered
 
   let newChat: () -> Void
   let newBot: () -> Void
@@ -22,6 +22,6 @@ struct SidebarComposeToolbarItem: ToolbarContent {
       case .code: NewChatComposeButton(onNewChat: newChat)
       }
     }
-    .hidden(firstLaunchCoversApp)
+    .hidden(appIsCovered)
   }
 }
