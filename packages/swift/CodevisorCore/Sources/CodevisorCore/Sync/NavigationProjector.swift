@@ -167,8 +167,7 @@ final class NavigationProjector {
   }
 
   private func localPaneIds(of workspace: Workspace, layouts: DeviceLayoutStore) -> Set<UUID> {
-    guard layouts.isBotWorkspace(workspace.id) else { return [] }
-    return Set(workspace.allPanes.map(\.id))
+    Set(workspace.allPanes.filter { layouts.keepsOnDevice($0, in: workspace.id) }.map(\.id))
   }
 }
 

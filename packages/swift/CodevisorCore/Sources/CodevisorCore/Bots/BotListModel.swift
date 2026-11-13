@@ -8,7 +8,7 @@ public final class BotListModel {
 
   public private(set) var recordsByServer: [String: [ServerBot]] = [:] {
     didSet {
-      navigationStore?.keepPanesOnDevice(in: Set(bots.map(\.workspaceId)))
+      placePanes()
       save()
     }
   }
@@ -25,6 +25,17 @@ public final class BotListModel {
     self.navigationStore = navigationStore
     self.store = store
     recordsByServer = Self.saved(in: store)
+  }
+
+  private func placePanes() {
+    var shared = Set<UUID>()
+    var onDevice = Set<UUID>()
+    for bot in bots {
+      guard let status = machines.statusByMachineId[bot.serverId] else { continue }
+      if status.supportsBotPanes { shared.insert(bot.workspaceId) } else { onDevice.insert(bot.workspaceId) }
+    }
+    navigationStore?.sharePanes(in: shared)
+    navigationStore?.keepPanesOnDevice(in: onDevice)
   }
 
   private static func saved(in store: (any PersistenceStore)?) -> [String: [ServerBot]] {

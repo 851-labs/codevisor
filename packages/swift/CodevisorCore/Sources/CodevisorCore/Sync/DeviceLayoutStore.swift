@@ -48,6 +48,7 @@ public final class DeviceLayoutStore: @unchecked Sendable {
     var layouts: [UUID: DeviceLayout] = [:]
     var drafts: [UUID: WorkspaceDraft] = [:]
     var localPaneWorkspaceIds: Set<UUID>?
+    var sharedPaneBotWorkspaceIds: Set<UUID>?
   }
 
   private let store: any PersistenceStore
@@ -81,7 +82,15 @@ public final class DeviceLayoutStore: @unchecked Sendable {
   }
 
   func isBotWorkspace(_ workspaceId: UUID) -> Bool {
-    localPaneWorkspaceIds.contains(workspaceId)
+    lock.withLock {
+      payload.localPaneWorkspaceIds?.contains(workspaceId) == true
+        || payload.sharedPaneBotWorkspaceIds?.contains(workspaceId) == true
+    }
+  }
+
+  func keepsOnDevice(_ pane: PaneDescriptorState, in workspaceId: UUID) -> Bool {
+    guard isBotWorkspace(workspaceId) else { return false }
+    return pane.kind == .chat || localPaneWorkspaceIds.contains(workspaceId)
   }
 
   public var drafts: [WorkspaceDraft] {
@@ -139,6 +148,19 @@ public final class DeviceLayoutStore: @unchecked Sendable {
       let current = payload.localPaneWorkspaceIds ?? []
       guard !workspaceIds.isSubset(of: current) else { return false }
       payload.localPaneWorkspaceIds = current.union(workspaceIds)
+      return true
+    }
+    if changed { persist() }
+    return changed
+  }
+
+  func sharePanes(in workspaceIds: Set<UUID>) -> Bool {
+    let changed = lock.withLock {
+      let shared = payload.sharedPaneBotWorkspaceIds ?? []
+      let local = payload.localPaneWorkspaceIds ?? []
+      guard !workspaceIds.isSubset(of: shared) || !workspaceIds.isDisjoint(with: local) else { return false }
+      payload.sharedPaneBotWorkspaceIds = shared.union(workspaceIds)
+      payload.localPaneWorkspaceIds = local.subtracting(workspaceIds)
       return true
     }
     if changed { persist() }

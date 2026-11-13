@@ -6,7 +6,7 @@ extension WorkspaceSyncModel {
     workspaceId: UUID,
     client: (any CodevisorServerClienting)? = nil
   ) {
-    guard !pane.kind.isDeviceLocal, !keepsPanesOnDevice(workspaceId),
+    guard !pane.kind.isDeviceLocal, navigationStore?.keepsOnDevice(pane, in: workspaceId) != true,
       let workspace = repository.workspace(id: workspaceId)
     else { return }
     enqueue(.upsertPane(pane, workspaceId: workspaceId), serverId: workspace.serverId)

@@ -145,6 +145,7 @@ const configuredFeatures = (
   "bot-archive-v1",
   "bot-fork-v1",
   "bot-projectless-v1",
+  "bot-panes-v1",
   "project-machine-setup-v1",
   ...(services.mcp === undefined ? [] : ["plugins-v2"])
 ]

@@ -51,10 +51,33 @@ public final class NavigationStore {
     return caches.caches[machineId]?.snapshot.panes.contains { $0.id.lowercased() == paneId } == true
   }
 
+  func keepsOnDevice(_ pane: PaneDescriptorState, in workspaceId: UUID) -> Bool {
+    layouts.keepsOnDevice(pane, in: workspaceId)
+  }
+
   public func keepPanesOnDevice(in workspaceIds: Set<UUID>) {
     guard layouts.keepPanesOnDevice(in: workspaceIds) else { return }
     projector.reset()
     rebuild()
+  }
+
+  public func sharePanes(in workspaceIds: Set<UUID>) {
+    let held = workspaceIds.intersection(layouts.localPaneWorkspaceIds)
+    let unsent = held.compactMap { repository?.workspace(id: $0) }
+    guard layouts.sharePanes(in: workspaceIds.subtracting(held).union(unsent.map(\.id))) else { return }
+    for workspace in unsent {
+      for pane in workspace.allPanes where isUnsent(pane, in: workspace) {
+        outbox.enqueue(.upsertPane(pane, workspaceId: workspace.id), machineId: workspace.serverId)
+      }
+    }
+    projector.reset()
+    rebuild()
+    for machineId in Set(unsent.map(\.serverId)) { executor.resume(machineId: machineId) }
+  }
+
+  private func isUnsent(_ pane: PaneDescriptorState, in workspace: Workspace) -> Bool {
+    !pane.kind.isDeviceLocal && !layouts.keepsOnDevice(pane, in: workspace.id)
+      && !serverHoldsPane(pane.id, machineId: workspace.serverId)
   }
 
   public func hasCache(for machineId: String) -> Bool { cacheSummary[machineId] != nil }
