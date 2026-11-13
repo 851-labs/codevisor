@@ -13,9 +13,11 @@ import {
 } from "@codevisor/bot-mascot"
 import { Schema } from "effect"
 
-import { apiTool, type CodevisorApiToolSpec } from "./codevisor-api-tool-spec.js"
+import { apiTool, integerQuery, type CodevisorApiToolSpec } from "./codevisor-api-tool-spec.js"
 
 export const BOT_TOOL_DEFAULTS = { symbolName: "sparkles" } as const
+
+const MessageBotBody = Schema.Struct({ text: Schema.String })
 
 const colorable = (items: ReadonlyArray<ItemOption<string>>): string =>
   items
@@ -132,6 +134,31 @@ export const codevisorBotApiTools: ReadonlyArray<CodevisorApiToolSpec> = [
     "Remove a project from a bot and delete its checkout. Returns the bot.",
     "DELETE",
     "/v1/bots/:id/projects/:projectId"
+  ),
+  apiTool(
+    "bots.message",
+    'Send a message to a bot on this machine, from you: another bot, or an agent. It lands in your thread with that bot, which the user is not part of, and the bot reads it at its next step. Its reply reaches you as a <codevisor-event type="thread.message">. A bot refuses this from an agent it started, whose final reply it already gets. Returns { sent, threadId, messageId }.',
+    "POST",
+    "/v1/bots/:id/messages",
+    { body: MessageBotBody }
+  ),
+  apiTool(
+    "bots.messages",
+    "Read your thread with a bot, oldest first: { threadId?, items: [{ from, mine, text, sentAt }], next? }. Pass next back as before for older ones.",
+    "GET",
+    "/v1/bots/:id/messages",
+    {
+      query: [
+        integerQuery(
+          "limit",
+          "How many messages to return, newest last. Defaults to 10, at most 50."
+        ),
+        integerQuery(
+          "before",
+          "The next value from the previous call, to page back to older messages."
+        )
+      ]
+    }
   ),
   apiTool(
     "bots.delete",

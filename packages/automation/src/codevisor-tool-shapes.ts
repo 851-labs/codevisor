@@ -94,8 +94,8 @@ const listKeys: Readonly<Record<string, string>> = {
 
 const listShape = (path: string, body: unknown): ListShape | undefined => {
   if (Array.isArray(body)) return { items: body }
-  if (!isPlainRecord(body) || isBotRoute(path)) return undefined
   const literal = lastLiteralSegment(path)
+  if (!isPlainRecord(body) || (isBotRoute(path) && literal !== "messages")) return undefined
   const key = literal === undefined ? undefined : (listKeys[literal] ?? literal)
   const items = key === undefined ? undefined : body[key]
   if (key === undefined || !Array.isArray(items)) return undefined

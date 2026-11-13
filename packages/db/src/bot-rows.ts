@@ -10,6 +10,7 @@ import type { Effect } from "effect"
 
 import type { DatabaseError } from "./errors.js"
 import { integer, nullable, rowReader, text } from "./row-reader.js"
+import type { ThreadsService } from "./threads.js"
 
 export interface BotRow {
   readonly id: string
@@ -130,7 +131,7 @@ export interface BotOwnerQuery {
   readonly sessionId?: string
 }
 
-export interface BotsService {
+export interface BotsService extends ThreadsService {
   readonly createBot: (record: CreateBotRecord) => Effect.Effect<Bot, DatabaseError>
   readonly listBots: Effect.Effect<ReadonlyArray<Bot>, DatabaseError>
   readonly getBot: (id: string) => Effect.Effect<Bot | undefined, DatabaseError>

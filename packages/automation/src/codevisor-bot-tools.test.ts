@@ -5,6 +5,7 @@ import { makeCodevisorProvider } from "./codevisor-provider.js"
 interface SentRequest {
   readonly method: string
   readonly path: string
+  readonly query?: string
   readonly body?: unknown
 }
 
@@ -12,7 +13,7 @@ const context = { sessionId: "caller", projectId: "project" }
 
 const bot = { id: "b1", projectId: "home", sessionId: "s1", projects: [{ projectId: "p1" }] }
 
-const fakeServer = (): SentRequest[] => {
+const fakeServer = (reply: unknown = bot): SentRequest[] => {
   const sent: SentRequest[] = []
   vi.stubGlobal(
     "fetch",
@@ -21,9 +22,12 @@ const fakeServer = (): SentRequest[] => {
       sent.push({
         method: init.method!,
         path: url.pathname,
+        ...(url.search === "" ? {} : { query: url.search }),
         ...(body === undefined ? {} : { body })
       })
-      return new Response(JSON.stringify(bot), { headers: { "content-type": "application/json" } })
+      return new Response(JSON.stringify(reply), {
+        headers: { "content-type": "application/json" }
+      })
     })
   )
   return sent
@@ -110,5 +114,23 @@ describe("bot tools", () => {
       { method: "DELETE", path: "/v1/bots/b1/projects/p1" },
       { method: "DELETE", path: "/v1/bots/b1" }
     ])
+  })
+
+  it("message a bot and read that thread as the calling bot or agent", async () => {
+    const message = { from: "Release", mine: false, text: "Yes.", sentAt: "2026-11-12T00:00:00Z" }
+    const sent = fakeServer({ threadId: "t1", messages: [message], next: 2 })
+
+    await resultOf("bots.message", { botId: "b1", text: "Is the build green?" })
+    const read = await resultOf("bots.messages", { botId: "b1", limit: 5 })
+
+    expect(sent).toEqual([
+      {
+        method: "POST",
+        path: "/v1/bots/b1/messages",
+        body: { text: "Is the build green?", sentByAgentId: "caller" }
+      },
+      { method: "GET", path: "/v1/bots/b1/messages", query: "?sentByAgentId=caller&limit=5" }
+    ])
+    expect(read).toEqual({ threadId: "t1", items: [message], next: 2 })
   })
 })

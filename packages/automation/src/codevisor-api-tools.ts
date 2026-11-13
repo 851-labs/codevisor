@@ -34,6 +34,7 @@ export const CODEVISOR_API_TOOLS: ReadonlyArray<CodevisorApiToolSpec> = [
 export const CODEVISOR_BOT_TOOL_NAMES: ReadonlySet<string> = new Set([
   "messages.send",
   "messages.list",
+  "messages.threads",
   "bot.projects_add",
   "bot.projects_remove"
 ])

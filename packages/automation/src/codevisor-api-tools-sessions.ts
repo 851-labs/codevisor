@@ -18,14 +18,14 @@ const senderQuery: QueryParameter = {
 export const codevisorSessionApiTools: ReadonlyArray<CodevisorApiToolSpec> = [
   apiTool(
     "messages.send",
-    "Send a chat message to the user. As a Codevisor bot this is the only way the user sees anything you write. text is markdown (bold, italics, inline code, links, lists, code blocks); attachments are absolute paths of files on this machine to send with it.",
+    "Send a chat message to the user. As a Codevisor bot this is the only way the user sees anything you write. text is markdown (bold, italics, inline code, links, lists, code blocks); attachments are absolute paths of files on this machine to send with it. Pass threadId to reply in a thread with another bot or an agent instead: the user is not in a thread, and a thread message takes no attachments.",
     "POST",
     "/v1/sessions/:id/messages",
     { body: SendBotMessageRequest }
   ),
   apiTool(
     "messages.list",
-    "Read the latest messages in your chat with the user, oldest first: what they wrote, what you sent, and Codevisor's notices. Use it when a reply such as \"go for it\" depends on something you said that you can't see. Returns { items: [{ sender, text, attachments?, sentAt }], next? }; pass next back as before for older ones.",
+    "Read the latest messages in your chat with the user, oldest first: what they wrote, what you sent, and Codevisor's notices. Use it when a reply such as \"go for it\" depends on something you said that you can't see. Returns { items: [{ sender, text, attachments?, sentAt }], next? }; pass next back as before for older ones. Pass threadId to read a thread with another bot or an agent instead: { items: [{ from, mine, text, sentAt }], next? }.",
     "GET",
     "/v1/sessions/:id/messages",
     {
@@ -38,9 +38,16 @@ export const codevisorSessionApiTools: ReadonlyArray<CodevisorApiToolSpec> = [
         integerQuery(
           "before",
           "The next value from the previous call, to page back to older messages."
-        )
+        ),
+        stringQuery("threadId", "Read this thread instead of your chat with the user.")
       ]
     }
+  ),
+  apiTool(
+    "messages.threads",
+    "List your threads with other bots and with agents, most recently active first: { items: [{ threadId, with: { kind, name, botId?, agentId }, lastMessage?: { from, mine, text, sentAt } }] }. The user is not in a thread.",
+    "GET",
+    "/v1/sessions/:id/threads"
   ),
   apiTool(
     "bot.projects_add",

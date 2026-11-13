@@ -14,6 +14,7 @@ import { sessionConfigSelectionsFromRaw } from "./event-payloads.js"
 import { canonicalUuid } from "./ids.js"
 import { botPath } from "./paths.js"
 import type { ServiceContext } from "./service-context.js"
+import type { ThreadsService } from "./threads.js"
 
 const botSelect = `
   select bots.*, sessions.harness_id as harness_id,
@@ -23,7 +24,10 @@ const botSelect = `
 
 export const makeBotsService = (
   context: ServiceContext
-): Omit<BotsService, "appendBotMessage" | "listBotMessages" | "copyBotMessages"> => {
+): Omit<
+  BotsService,
+  "appendBotMessage" | "listBotMessages" | "copyBotMessages" | keyof ThreadsService
+> => {
   const { sqlite, config } = context
 
   const botFromRow = (row: BotRow): Bot => {

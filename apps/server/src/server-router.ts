@@ -5,6 +5,7 @@ import { routeAgents } from "./routes/agents.js"
 import { routeAutoResume } from "./routes/auto-resume-routes.js"
 import { refuseAgentVerbOnBot } from "./routes/bot-guards.js"
 import { routeBotMascots } from "./routes/bot-mascots.js"
+import { routeBotThreads } from "./routes/bot-threads.js"
 import { routeBots } from "./routes/bots.js"
 import { routeBrowserState } from "./routes/browser-state.js"
 import { routeBrowserUse } from "./routes/browser-use.js"
@@ -129,6 +130,7 @@ const resourceRouteFamilies: ReadonlyArray<RouteFamily> = [
   ({ services, routeState, config, request, response, url }) =>
     routeClientControl(routeState.clientControl, services, config, request, response, url),
   routeWorkspaces,
+  routeBotThreads,
   ({ services, config, fanout, routeState, request, response, url }) =>
     routeBots(services, config, fanout, routeState, request, response, url),
   ({ services, request, response, url }) => routeBotMascots(services, request, response, url),
