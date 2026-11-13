@@ -7,7 +7,6 @@ public struct CloudAccountSections: View {
   private let configureServer: () -> Void
   private let signInWithEmail: () -> Void
   @State private var isSigningIn = false
-  @State private var isDeleting = false
 
   public init(
     cloud: CloudAccountController,
@@ -49,7 +48,7 @@ public struct CloudAccountSections: View {
             .foregroundStyle(.primary)
           }
           .buttonStyle(.plain)
-          .disabled(isDeleting)
+          .disabled(cloud.isDeletingAccount)
         }
         Button(action: configureServer) {
           HStack {
@@ -64,10 +63,10 @@ public struct CloudAccountSections: View {
           .foregroundStyle(.primary)
         }
         .buttonStyle(.plain)
-        .disabled(isSigningIn || isDeleting)
+        .disabled(isSigningIn || cloud.isDeletingAccount)
       }
       #if os(iOS)
-        CloudAccountDeletionSection(cloud: cloud, isDeleting: $isDeleting)
+        CloudAccountDeletionSection(cloud: cloud)
       #endif
     }
   }
@@ -75,14 +74,7 @@ public struct CloudAccountSections: View {
   private func accountSection(_ email: String?) -> some View {
     Section {
       #if os(macOS)
-        CloudAccountRow(subtitle: email ?? "Signed in") {
-          HStack(spacing: 8) {
-            signOutButton
-            CloudAccountDeletionButton(cloud: cloud, isDeleting: $isDeleting)
-          }
-          .buttonStyle(.bordered)
-          .controlSize(.large)
-        }
+        CloudAccountRow(subtitle: email ?? "Signed in") { signOutButton }
       #else
         CloudAccountRow(subtitle: email ?? "Signed in")
         signOutButton
@@ -92,6 +84,6 @@ public struct CloudAccountSections: View {
 
   private var signOutButton: some View {
     Button("Sign Out") { cloud.signOut() }
-      .disabled(isDeleting)
+      .disabled(cloud.isDeletingAccount)
   }
 }

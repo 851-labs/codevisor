@@ -10,20 +10,10 @@ public struct CloudAppleSignInButton: View {
   }
 
   public var body: some View {
-    AppleAuthorizationButton(style: style, action: action)
+    AppleAuthorizationButton(style: colorScheme == .dark ? .white : .black, action: action)
       .id(colorScheme)
-      #if os(iOS)
-        .frame(maxWidth: .infinity)
-      #endif
+      .frame(maxWidth: .infinity)
       .frame(height: CloudSignInButtonMetrics.height)
-  }
-
-  private var style: ASAuthorizationAppleIDButton.Style {
-    #if os(macOS)
-      colorScheme == .dark ? .white : .whiteOutline
-    #else
-      colorScheme == .dark ? .white : .black
-    #endif
   }
 }
 
@@ -76,7 +66,7 @@ private struct AppleAuthorizationButton {
     }
 
     func sizeThatFits(_ proposal: ProposedViewSize, nsView: ASAuthorizationAppleIDButton, context: Context) -> CGSize? {
-      CGSize(width: CloudSignInButtonMetrics.appleButtonWidth, height: CloudSignInButtonMetrics.height)
+      CGSize(width: proposal.width ?? 320, height: CloudSignInButtonMetrics.height)
     }
   }
 #endif

@@ -35,7 +35,9 @@ struct CloudAccountAuthenticationSections: View {
   private var signInSection: some View {
     #if os(macOS)
       Section {
-        CloudAccountRow(subtitle: Self.signInPurpose) { providerButtons }
+        CloudAccountRow(subtitle: Self.signInPurpose) {
+          CloudSignInMenu(cloud: cloud, signIn: start, signInWithEmail: signInWithEmail)
+        }
       }
     #else
       Section {
@@ -118,36 +120,25 @@ struct CloudAccountAuthenticationSections: View {
   }
 
   private var providerButtons: some View {
-    #if os(macOS)
-      ViewThatFits(in: .horizontal) {
-        HStack(spacing: 8) { providerButtonList }
-        VStack(alignment: .leading, spacing: 8) { providerButtonList }
+    VStack(spacing: 12) {
+      if cloud.supportsGitHubSignIn && (!link || cloud.linkedProviders?.contains(.github) == false) {
+        CloudSignInProviderButton(title: "Sign in with GitHub", icon: .symbol(.gitHubMark)) {
+          start(.github)
+        }
       }
-      .controlSize(.large)
-    #else
-      VStack(spacing: 12) { providerButtonList }
-        .padding(.vertical, 4)
-    #endif
-  }
-
-  @ViewBuilder
-  private var providerButtonList: some View {
-    if cloud.supportsGitHubSignIn && (!link || cloud.linkedProviders?.contains(.github) == false) {
-      CloudSignInProviderButton(title: "Sign in with GitHub", icon: .symbol(.gitHubMark)) {
-        start(.github)
+      if cloud.supportsAppleSignIn && (!link || cloud.linkedProviders?.contains(.apple) == false) {
+        CloudAppleSignInButton { start(.apple) }
       }
-    }
-    if cloud.supportsAppleSignIn && (!link || cloud.linkedProviders?.contains(.apple) == false) {
-      CloudAppleSignInButton { start(.apple) }
-    }
-    if !link && cloud.supportsEmailSignIn {
-      CloudEmailSignInButton(action: signInWithEmail)
-    }
-    if !link && cloud.developmentAccountAvailable {
-      CloudSignInProviderButton(title: "Use Development Account", icon: .system("hammer.fill")) {
-        Task { await cloud.signInWithDevelopmentAccount() }
+      if !link && cloud.supportsEmailSignIn {
+        CloudEmailSignInButton(action: signInWithEmail)
+      }
+      if !link && cloud.developmentAccountAvailable {
+        CloudSignInProviderButton(title: "Use Development Account", icon: .system("hammer.fill")) {
+          Task { await cloud.signInWithDevelopmentAccount() }
+        }
       }
     }
+    .padding(.vertical, 4)
   }
 
   private func start(_ provider: CloudSignInProvider) {

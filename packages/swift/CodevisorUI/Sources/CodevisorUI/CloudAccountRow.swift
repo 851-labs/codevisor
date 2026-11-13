@@ -1,18 +1,10 @@
 import SwiftUI
 
-struct CloudAccountRow<Actions: View>: View {
+struct CloudAccountRow<Trailing: View>: View {
   let subtitle: String
-  @ViewBuilder let actions: Actions
+  @ViewBuilder let trailing: Trailing
 
   var body: some View {
-    VStack(alignment: .leading, spacing: 12) {
-      header
-      actions
-    }
-    .padding(.vertical, 4)
-  }
-
-  private var header: some View {
     HStack(spacing: 12) {
       Image(systemName: "person.crop.circle.fill")
         .font(.system(size: 40))
@@ -26,11 +18,14 @@ struct CloudAccountRow<Actions: View>: View {
           .fixedSize(horizontal: false, vertical: true)
           .textSelection(.enabled)
       }
+      Spacer(minLength: 8)
+      trailing
     }
+    .padding(.vertical, 4)
   }
 }
 
-extension CloudAccountRow where Actions == EmptyView {
+extension CloudAccountRow where Trailing == EmptyView {
   init(subtitle: String) {
     self.init(subtitle: subtitle) { EmptyView() }
   }
