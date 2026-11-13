@@ -22,6 +22,8 @@ export interface SessionRow {
   readonly worktree_name: string | null
   readonly workspace_id: string | null
   readonly checkout_id?: string | null
+  readonly checkout_path?: string | null
+  readonly checkout_worktree_name?: string | null
   readonly is_archived?: number
   readonly archived_at?: string | null
   readonly is_detached?: number
@@ -100,6 +102,8 @@ export const sessionRows = rowReader<SessionRow>({
   worktree_name: nullable(text),
   workspace_id: nullable(text),
   checkout_id: optional(nullable(text)),
+  checkout_path: optional(nullable(text)),
+  checkout_worktree_name: optional(nullable(text)),
   is_archived: optional(integer),
   archived_at: optional(nullable(text)),
   is_detached: optional(integer),

@@ -79,6 +79,10 @@ const contextSql = {
 
 const sessionSummarySql = `
     select sessions.*,
+      (select path from checkouts where checkouts.id = sessions.checkout_id) as checkout_path,
+      (
+        select worktree_name from checkouts where checkouts.id = sessions.checkout_id
+      ) as checkout_worktree_name,
       coalesce((
         select attention_revision from session_attention sa
         where sa.session_id = sessions.id

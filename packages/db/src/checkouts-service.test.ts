@@ -41,6 +41,35 @@ const workspaceWithChat = async (db: CodevisorDatabaseService, projectId: string
   )
 
 describe("checkouts", () => {
+  it("reports a chat's worktree and folder from its checkout, and a project chat's from the project folder", async () => {
+    useWorktreesRoot()
+    const { db, filename } = await openDatabase()
+    const { project, worktree } = await projectWithWorktree(db, "from-checkout")
+    const inWorktree = await run(
+      db.createSession({ projectId: project.id, harnessId: "codex", worktreeName: worktree.name })
+    )
+    const inProject = await run(db.createSession({ projectId: project.id, harnessId: "codex" }))
+    const sqlite = new Database(filename)
+    onTestFinished(() => {
+      sqlite.close()
+    })
+    sqlite
+      .prepare("update checkouts set path = ?, worktree_name = ? where id = ?")
+      .run("/tmp/moved-worktree", "renamed", inWorktree.checkoutId)
+    sqlite
+      .prepare("update checkouts set path = ? where id = ?")
+      .run("/tmp/stale", inProject.checkoutId)
+
+    expect(await run(db.getSessionSummary(inWorktree.id))).toMatchObject({
+      worktreeName: "renamed",
+      cwd: "/tmp/moved-worktree"
+    })
+    expect(await run(db.getSessionSummary(inProject.id))).toMatchObject({
+      cwd: "/tmp/checkouts-from-checkout"
+    })
+    expect((await run(db.getSessionSummary(inProject.id))).worktreeName).toBeUndefined()
+  })
+
   it("gives a session a checkout for its project folder and the workspace that default", async () => {
     const { db } = await openDatabase()
     const project = await run(db.createProject({ folderPath: "/tmp/checkouts-main" }))

@@ -234,8 +234,21 @@ const asksForApproval = (pendingQuestion: string): boolean => {
   return parsed.questions.length > 0 && parsed.questions.every((spec) => spec.isApproval === true)
 }
 
+interface SessionPlace {
+  readonly cwd: string | undefined
+  readonly worktreeName: string | undefined
+}
+
+const sessionPlace = (row: SessionRow, folderPath: string | undefined): SessionPlace => {
+  if (row.checkout_path != null && row.checkout_worktree_name != null) {
+    return { cwd: row.checkout_path, worktreeName: row.checkout_worktree_name }
+  }
+  const worktreeName = row.checkout_path == null ? (row.worktree_name ?? undefined) : undefined
+  return { cwd: resolveSessionCwd(folderPath, row.project_id, worktreeName), worktreeName }
+}
+
 export const sessionFromRow = (row: SessionRow, folderPath: string | undefined): SessionSummary => {
-  const cwd = resolveSessionCwd(folderPath, row.project_id, row.worktree_name ?? undefined)
+  const { cwd, worktreeName } = sessionPlace(row, folderPath)
   const configSelections = sessionConfigSelectionsFromRaw(row.config_selections)
   const unavailableConfigSelections = sessionConfigSelectionsFromRaw(
     row.unavailable_config_selections
@@ -254,7 +267,7 @@ export const sessionFromRow = (row: SessionRow, folderPath: string | undefined):
     ...(row.agent_session_id === null ? {} : { agentSessionId: row.agent_session_id }),
     title: row.title,
     origin: row.origin,
-    ...(row.worktree_name === null ? {} : { worktreeName: row.worktree_name }),
+    ...(worktreeName === undefined ? {} : { worktreeName }),
     ...(row.workspace_id === null ? {} : { workspaceId: row.workspace_id }),
     ...(cwd === undefined ? {} : { cwd }),
     ...(row.checkout_id == null ? {} : { checkoutId: row.checkout_id }),
