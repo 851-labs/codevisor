@@ -98,8 +98,9 @@ private struct BotThreadHeader: View {
   @ScaledMetric(relativeTo: .headline) private var avatarSize: CGFloat = 56
 
   var body: some View {
-    VStack(spacing: -8) {
+    VStack(spacing: -BotHeaderAvatarMetrics.overlap) {
       ThreadGroupAvatar(bot: bot, participant: participant, size: avatarSize)
+        .botHeaderAvatarShadow()
         .zIndex(1)
       Text(title)
         .font(.headline)

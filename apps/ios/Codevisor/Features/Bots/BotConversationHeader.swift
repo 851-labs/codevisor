@@ -1,4 +1,5 @@
 import CodevisorCore
+import CodevisorUI
 import SwiftUI
 
 struct BotConversationHeader: View {
@@ -10,8 +11,9 @@ struct BotConversationHeader: View {
 
   var body: some View {
     Button(action: onOpenDetails) {
-      VStack(spacing: -8) {
+      VStack(spacing: -BotHeaderAvatarMetrics.overlap) {
         BotAvatar(bot: bot, size: avatarSize)
+          .botHeaderAvatarShadow()
           .zIndex(1)
         HStack(spacing: 3) {
           Text(bot.name)

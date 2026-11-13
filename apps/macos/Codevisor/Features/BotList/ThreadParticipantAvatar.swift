@@ -31,8 +31,7 @@ struct ThreadGroupAvatar: View {
 
   var body: some View {
     ZStack {
-      Circle().fill(.background)
-      Circle().fill(Color.gray.opacity(0.3))
+      Circle().fill(.ultraThinMaterial)
       BotAvatar(bot: bot, size: size * 0.56)
         .padding([.top, .leading], size * 0.11)
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)

@@ -69,6 +69,7 @@ private struct BotThreadHeader: View {
   var body: some View {
     VStack(spacing: -BotConversationHeader.overlap) {
       ThreadGroupAvatar(bot: bot, participant: participant, size: BotConversationHeader.avatarSize)
+        .botHeaderAvatarShadow()
       Text(title)
         .font(.headline)
         .lineLimit(1)
@@ -79,7 +80,7 @@ private struct BotThreadHeader: View {
           in: BotConversationHeaderNameShape(
             avatarSize: BotConversationHeader.avatarSize, overlap: BotConversationHeader.overlap))
     }
-    .padding(.top, 6)
+    .padding(.top, 4)
     .frame(height: BotConversationHeader.height, alignment: .top)
     .accessibilityElement(children: .ignore)
     .accessibilityLabel("Thread between \(title)")
