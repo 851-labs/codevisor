@@ -19,9 +19,6 @@ public struct ScreenSharingMachineSettings: Equatable, Sendable {
     public var screenshotsStayLocal: Bool
     public init(screenshotsStayLocal: Bool = true) { self.screenshotsStayLocal = screenshotsStayLocal }
 
-    public static let screenshotsExplanation =
-      "Screenshot shortcuts like ⇧⌘4 work on this Mac instead of the shared screen."
-
     public var localShortcuts: Set<ScreenSharingLocalShortcutGroup> { screenshotsStayLocal ? [.screenshots] : [] }
   }
 
@@ -38,6 +35,7 @@ public struct ScreenSharingMachineSettings: Equatable, Sendable {
   public var lastConnected: Date?
   public var sound: Sound?
   public var keyboard: Keyboard?
+  public var screenshotShortcuts: [String] = []
 
   public init(
     name: String, connection: String, address: String? = nil, dynamicResolution: Bool? = nil,
@@ -54,6 +52,16 @@ public struct ScreenSharingMachineSettings: Equatable, Sendable {
     let resizes = "Dynamic Resolution resizes this machine's screen to fit your window as you resize it."
     guard dynamicResolutionMirrorsDisplay else { return resizes }
     return "\(resizes) While you're connected, its own display mirrors the new size."
+  }
+
+  public var screenshotsExplanation: String {
+    switch screenshotShortcuts.count {
+    case 0: "Screenshot shortcuts aren't sent to the remote machine."
+    case 1: "\(screenshotShortcuts[0]) isn't sent to the remote machine."
+    default:
+      "\(screenshotShortcuts.dropLast().joined(separator: ", ")) and \(screenshotShortcuts.last ?? "") "
+        + "aren't sent to the remote machine."
+    }
   }
 }
 
@@ -128,7 +136,7 @@ public struct ScreenSharingMachineSettingsSheet: View {
         display
         if draft.settings.sound != nil { sound }
         if let keyboard = Binding($draft.settings.keyboard) {
-          ScreenSharingMachineKeyboardSection(keyboard: keyboard)
+          ScreenSharingMachineKeyboardSection(keyboard: keyboard, explanation: draft.settings.screenshotsExplanation)
         }
       }
       .formStyle(.grouped)

@@ -63,12 +63,22 @@ struct ScreenSharingMachineSettingsTests {
     var withKeyboard = Self.original
     withKeyboard.keyboard = .init()
     #expect(withKeyboard.keyboard?.localShortcuts == [.screenshots], "screenshots stay on this Mac by default")
-    #expect(!ScreenSharingMachineSettings.Keyboard.screenshotsExplanation.contains(withKeyboard.name))
     var draft = ScreenSharingMachineSettingsDraft(withKeyboard)
     draft.settings.keyboard?.screenshotsStayLocal = false
     let changes = draft.changes(from: withKeyboard)
     #expect(changes == .init(keyboard: .init(screenshotsStayLocal: false)))
     #expect(changes.keyboard?.localShortcuts == [])
     #expect(!changes.reconnects)
+  }
+
+  @Test func theKeyboardFooterListsTheShortcutsKeptOnThisMacAndNeverNamesTheMachine() {
+    var settings = Self.original
+    settings.screenshotShortcuts = ["⇧⌘3", "⇧⌘4", "⇧⌘5"]
+    #expect(settings.screenshotsExplanation == "⇧⌘3, ⇧⌘4 and ⇧⌘5 aren't sent to the remote machine.")
+    #expect(!settings.screenshotsExplanation.contains(settings.name))
+    settings.screenshotShortcuts = ["⇧⌘3", "⌥⌘S"]
+    #expect(settings.screenshotsExplanation == "⇧⌘3 and ⌥⌘S aren't sent to the remote machine.")
+    settings.screenshotShortcuts = ["⇧⌘5"]
+    #expect(settings.screenshotsExplanation == "⇧⌘5 isn't sent to the remote machine.")
   }
 }
