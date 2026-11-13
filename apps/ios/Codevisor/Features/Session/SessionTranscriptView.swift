@@ -429,6 +429,11 @@ extension SessionTranscriptView {
 }
 
 extension SessionTranscriptView {
+  var showsAgentsPill: Bool {
+    guard !composerExpanded, let chat = controller.serverSession else { return false }
+    return !environment.projectList.children(of: chat).isEmpty
+  }
+
   var composerChrome: some View {
     GlassEffectContainer(spacing: ComposerGlassStyle.clusterSpacing) {
       composerCluster
@@ -437,7 +442,7 @@ extension SessionTranscriptView {
           GlassEffectContainer(spacing: ComposerGlassStyle.clusterSpacing) {
             transcriptScrollControls
           }
-          .offset(y: -52)
+          .offset(y: showsAgentsPill ? 0 : -52)
         }
     }
     .animation(Motion.quick(reduceMotion: reduceMotion), value: showsScrollToBottom)

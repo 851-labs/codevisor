@@ -3,6 +3,9 @@ import CodevisorUI
 import SwiftUI
 
 struct IOSAgentsAccessory: View {
+  static let rowHeight = Typography.minimumInteractiveTargetSize
+  private static let dotDiameter: CGFloat = 6
+
   let agents: [ChatSession]
   let glassNamespace: Namespace.ID
   @Environment(AppEnvironment.self) private var environment
@@ -20,31 +23,58 @@ struct IOSAgentsAccessory: View {
             Button {
               Task { await openChat?(agent) }
             } label: {
-              Text(agent.title.isEmpty ? "Agent" : agent.title)
+              Label {
+                Text(agent.title.isEmpty ? "Agent" : agent.title)
+              } icon: {
+                HarnessGlyph(harnessId: agent.harnessId, fallbackSymbolName: "bubble.and.pencil")
+              }
               if let place = place(of: agent) { Text(place) }
             }
           }
         } label: {
-          HStack(spacing: 6) {
-            HarnessGlyph(
-              harnessId: summary.sharedHarnessId, fallbackSymbolName: "person.2", size: 13)
-            Text(summary.title)
-              .monospacedDigit()
-          }
-          .font(.subheadline.weight(.medium))
-          .padding(.horizontal, 12)
-          .padding(.vertical, 7)
-          .contentShape(.capsule)
+          label(summary)
         }
-        .buttonStyle(.plain)
-        .glassEffect(.regular.interactive(), in: .capsule)
+        .buttonStyle(.glass)
+        .buttonBorderShape(.capsule)
+        .controlSize(.large)
         .glassEffectID("agents", in: glassNamespace)
-        .accessibilityLabel(summary.title)
+        .accessibilityLabel(accessibilityLabel(summary))
         .accessibilityHint("Shows the agents this chat started")
         .accessibilityIdentifier("composer.agents")
         Spacer(minLength: 0)
       }
+      .frame(height: Self.rowHeight)
     }
+  }
+
+  private func label(_ summary: ChildAgentsSummary) -> some View {
+    HStack(spacing: 4) {
+      glyph(summary)
+        .frame(width: 18)
+      Text(summary.title)
+        .monospacedDigit()
+    }
+    .font(.system(size: 13, weight: .medium))
+    .foregroundStyle(.primary)
+  }
+
+  @ViewBuilder
+  private func glyph(_ summary: ChildAgentsSummary) -> some View {
+    if summary.isWorking {
+      AgentActivityIndicator(color: .secondary)
+    } else if let harnessId = summary.sharedHarnessId {
+      HarnessGlyph(harnessId: harnessId, fallbackSymbolName: "bubble.and.pencil", size: 13)
+        .foregroundStyle(.secondary)
+    } else {
+      Circle()
+        .fill(.secondary)
+        .frame(width: Self.dotDiameter, height: Self.dotDiameter)
+    }
+  }
+
+  private func accessibilityLabel(_ summary: ChildAgentsSummary) -> String {
+    guard summary.isWorking else { return summary.title }
+    return "\(summary.title), \(summary.workingCount) working"
   }
 
   private func place(of agent: ChatSession) -> String? {
