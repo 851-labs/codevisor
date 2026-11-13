@@ -127,11 +127,11 @@ struct RootView: View {
   private func openNotificationSession(_ sessionId: UUID, serverId: String) {
     guard let session = environment.projectList.session(sessionId, serverId: serverId) else { return }
     let bot = environment.bots.bot(forSession: sessionId, serverId: serverId)
-    store?.selectChat(session)
+    let shown = store?.selectChat(session)
     if let bot {
       selection = .bot(serverId: serverId, id: bot.id)
     } else {
-      selection = .session(serverId: serverId, id: sessionId)
+      selection = shown ?? .session(serverId: serverId, id: sessionId)
     }
   }
 
@@ -227,11 +227,19 @@ struct RootView: View {
       serverId: serverId,
       sessionId: sessionId,
       onFocusedChatChanged: { chatId in
-        self.selection = .session(serverId: serverId, id: chatId)
+        if environment.projectList.session(chatId, serverId: serverId) != nil {
+          self.selection = .session(serverId: serverId, id: chatId)
+        } else if let workspaceId = environment.workspaces.workspaceId(forSession: sessionId) {
+          self.selection = .workspace(serverId: serverId, id: workspaceId)
+        }
       },
       onDisposition: { disposition in
         guard selection == .session(serverId: serverId, id: sessionId) else { return }
         applySelectedSessionDisposition(disposition)
+      },
+      onShownElsewhere: { session in
+        guard selection == .session(serverId: serverId, id: sessionId) else { return }
+        selection = store.selectChat(session)
       }
     )
   }
@@ -246,6 +254,7 @@ struct RootView: View {
       serverId: serverId,
       workspaceId: workspaceId,
       onFocusedChatChanged: { chatId in
+        guard environment.projectList.session(chatId, serverId: serverId) != nil else { return }
         self.selection = .session(serverId: serverId, id: chatId)
       }
     )

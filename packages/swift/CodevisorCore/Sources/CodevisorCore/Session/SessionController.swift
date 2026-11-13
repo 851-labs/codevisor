@@ -209,6 +209,7 @@ final public class SessionController {
   let configCache: ConfigOptionCache
   let composerDefaults: ComposerDefaultsStore?
   public var hostWorkspaceId: UUID?
+  public var hostWorkspaceIsOnAnotherMachine = false
   var serverClient: (any CodevisorServerClienting)?
   @ObservationIgnored weak var machines: MachineController?
   @ObservationIgnored public internal(set) weak var fileSource: SessionController?

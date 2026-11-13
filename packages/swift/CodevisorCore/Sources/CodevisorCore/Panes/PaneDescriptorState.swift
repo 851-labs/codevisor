@@ -22,6 +22,7 @@ public struct PaneDescriptorState: Identifiable, Codable, Sendable, Equatable {
   public var name: String
   public let terminalKey: String
   public var chatSessionId: UUID?
+  public var chatMachineKey: String?
   public var ownerChatSessionId: UUID?
   public var pluginId: String?
   public var pluginPaneType: String?
@@ -53,13 +54,15 @@ public struct PaneDescriptorState: Identifiable, Codable, Sendable, Equatable {
     simulator: SimulatorPanePreferences? = nil,
     liveTitle: String? = nil,
     terminalActivity: TerminalActivity? = nil,
-    subagentToolCallId: String? = nil
+    subagentToolCallId: String? = nil,
+    chatMachineKey: String? = nil
   ) {
     self.id = id
     self.kind = kind
     self.name = name
     self.terminalKey = terminalKey
     self.chatSessionId = chatSessionId
+    self.chatMachineKey = chatMachineKey
     self.ownerChatSessionId = ownerChatSessionId
     self.pluginId = pluginId
     self.pluginPaneType = pluginPaneType
@@ -95,7 +98,8 @@ public struct PaneDescriptorState: Identifiable, Codable, Sendable, Equatable {
       simulator: try container.decodeIfPresent(SimulatorPanePreferences.self, forKey: .simulator),
       liveTitle: try container.decodeIfPresent(String.self, forKey: .liveTitle),
       terminalActivity: try container.decodeIfPresent(TerminalActivity.self, forKey: .terminalActivity),
-      subagentToolCallId: try container.decodeIfPresent(String.self, forKey: .subagentToolCallId)
+      subagentToolCallId: try container.decodeIfPresent(String.self, forKey: .subagentToolCallId),
+      chatMachineKey: try container.decodeIfPresent(String.self, forKey: .chatMachineKey)
     )
   }
 

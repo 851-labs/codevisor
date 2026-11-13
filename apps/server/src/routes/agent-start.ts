@@ -79,6 +79,7 @@ interface AgentCaller {
   readonly creator: AgentRef | undefined
   readonly projectId: string | undefined
   readonly workspaceId: string | undefined
+  readonly isOwned: boolean
   readonly worktreeName: string | undefined
   readonly harnessId: string | undefined
   readonly configSelections: Readonly<Record<string, string>> | undefined
@@ -156,6 +157,7 @@ const remoteCaller = (
   creator,
   projectId: undefined,
   workspaceId: undefined,
+  isOwned: false,
   worktreeName: undefined,
   harnessId: callerDefaults?.harness,
   configSelections: callerDefaults?.configSelections
@@ -170,6 +172,7 @@ const localCaller = (
   creator: { agentId: session.id, machineId },
   projectId: session.projectId,
   workspaceId: session.workspaceId,
+  isOwned: session.createdByAgentId !== undefined && session.isDetached !== true,
   worktreeName: session.worktreeName,
   harnessId: session.harnessId,
   configSelections: withRunningThoughtLevel(session.configSelections, runtime)
@@ -210,7 +213,9 @@ const belongsToItsStarter = async (
   { caller, projectId }: AgentPlan
 ): Promise<boolean> => {
   if (request.standalone === true || request.checkout === "none") return false
-  if (caller.sessionId === undefined || caller.workspaceId === undefined) return false
+  if (caller.creator === undefined) return false
+  if (caller.sessionId === undefined) return request.callerBotId === undefined
+  if (caller.workspaceId === undefined && !caller.isOwned) return false
   if (caller.projectId !== projectId) return false
   return (await run(services.db.findBotOwning({ sessionId: caller.sessionId }))) === undefined
 }

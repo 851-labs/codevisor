@@ -24,6 +24,21 @@ struct WorkspacePaneRequestTests {
     #expect(body["liveTitle"] == nil)
     #expect(body["terminalActivity"] == nil)
   }
+
+  @Test("A chat pane upsert names the machine its chat runs on, when that is another machine")
+  func upsertSendsTheChatsMachine() async throws {
+    let transport = PaneTransport()
+    let client = CodevisorServerClient(config: .init(requestTransport: transport))
+    let pane = ServerWorkspacePane(
+      id: Self.paneId.uuidString, workspaceId: Self.workspaceId.uuidString, providerId: "codevisor",
+      paneType: "chat", title: "Chat", resourceKind: "session", resourceId: "s1", resourceServerId: "machine-laptop",
+      createdAt: "2026-01-01T00:00:00.000Z")
+    _ = try await client.upsertWorkspacePane(pane)
+
+    let request = try #require(await transport.requests.first)
+    let body = try JSONDecoder().decode([String: JSONValue].self, from: #require(request.httpBody))
+    #expect(body["resourceServerId"] == .string("machine-laptop"))
+  }
 }
 
 private actor PaneTransport: ServerRequestTransport {

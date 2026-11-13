@@ -29,13 +29,16 @@ public struct PaneGroupState: Codable, Sendable, Equatable {
     return state
   }
 
-  public static func centerInitial(sessionId: UUID, paneId: UUID = UUID()) -> PaneGroupState {
+  public static func centerInitial(
+    sessionId: UUID, paneId: UUID = UUID(), machineKey: String? = nil
+  ) -> PaneGroupState {
     let chat = PaneDescriptorState(
       id: paneId,
       kind: .chat,
       name: "Chat",
       terminalKey: sessionId.uuidString,
-      chatSessionId: sessionId
+      chatSessionId: sessionId,
+      chatMachineKey: machineKey
     )
     return PaneGroupState(panes: [chat], selectedPaneId: chat.id)
   }

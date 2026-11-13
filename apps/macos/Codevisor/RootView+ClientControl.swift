@@ -69,8 +69,7 @@ extension RootView {
     await environment.workspaceSync.refreshFromServer(
       serverId: session.serverId, client: environment.machines.client(for: session.serverId)
     )
-    store?.selectChat(session)
-    selection = .session(serverId: session.serverId, id: session.id)
+    selection = store?.selectChat(session) ?? .session(serverId: session.serverId, id: session.id)
   }
 
   var sidebarVisibility: RootSidebarVisibility {

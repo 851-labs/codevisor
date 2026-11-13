@@ -42,7 +42,7 @@ struct WorkspaceTabLabel {
     if descriptor.kind == .browser, let title = store.localBrowserTitle(paneId: descriptor.id) { return title }
     guard descriptor.kind == .chat else { return descriptor.displayName }
     guard let id = descriptor.chatSessionId,
-      let chat = environment.projectList.session(id, serverId: workspace.serverId)
+      let chat = environment.projectList.chat(id, preferring: workspace.serverId)
     else { return descriptor.name }
     return workspace.title(ofChat: chat)
   }

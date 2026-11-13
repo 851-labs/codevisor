@@ -106,8 +106,7 @@ struct WorkspaceChildAgents {
       selection = .bot(serverId: bot.serverId, id: bot.id)
       return
     }
-    store.selectChat(chat)
-    selection = .session(serverId: chat.serverId, id: chat.id)
+    selection = store.selectChat(chat)
   }
 
   private func archive(_ chat: ChatSession) {

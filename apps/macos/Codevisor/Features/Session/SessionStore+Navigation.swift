@@ -36,18 +36,25 @@ extension SessionStore {
     return true
   }
 
-  func selectChat(_ session: ChatSession) {
+  @discardableResult
+  func selectChat(_ session: ChatSession) -> SidebarSelection {
+    let ownSelection = SidebarSelection.session(serverId: session.serverId, id: session.id)
     guard
       let project = environment.projectList.projects.first(where: {
         $0.serverId == session.serverId && $0.id == session.projectId
       })
-    else { return }
-    let hadChatPane =
-      environment.workspaces.workspaceId(forSession: session.id)
-      .flatMap { environment.workspaces.workspace(id: $0)?.tabId(containingChat: session.id) } != nil
+    else { return ownSelection }
     var workspace = workspace(for: session, project: project)
+    let runsElsewhere = workspace.serverId != session.serverId
+    let hadChatPane =
+      runsElsewhere
+      ? workspace.tabId(containingChat: session.id) != nil
+      : environment.workspaces.workspaceId(forSession: session.id)
+        .flatMap { environment.workspaces.workspace(id: $0)?.tabId(containingChat: session.id) } != nil
     if workspace.tabId(containingChat: session.id) == nil {
-      let group = PaneGroupState.centerInitial(sessionId: session.id)
+      let group = PaneGroupState.centerInitial(
+        sessionId: session.id,
+        machineKey: runsElsewhere ? environment.machines.syncKey(forMachineId: session.serverId) : nil)
       workspace.centerTabs.append(WorkspaceTab(root: .leaf(group)))
       environment.workspaces.save(workspace)
     }
@@ -56,9 +63,10 @@ extension SessionStore {
       where pane.chatSessionId == session.id {
         environment.workspaceSync.publishPane(
           pane, workspaceId: workspace.id,
-          client: environment.machines.client(for: session.serverId))
+          client: environment.machines.client(for: workspace.serverId))
       }
     }
     selectDestination(.chat(session.id), in: workspace.id)
+    return runsElsewhere ? .workspace(serverId: workspace.serverId, id: workspace.id) : ownSelection
   }
 }
