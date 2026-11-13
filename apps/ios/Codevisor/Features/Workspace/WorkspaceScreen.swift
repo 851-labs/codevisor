@@ -102,9 +102,13 @@ struct WorkspaceScreen: View {
     environment.projectList.session(id, serverId: resolvedServerId)
   }
 
-  func chatOnAnotherMachine(in pane: PaneDescriptorState) -> ChatSession? {
-    guard pane.kind == .chat, let id = pane.chatSessionId, session(for: id) == nil else { return nil }
-    return environment.projectList.chat(id, preferring: resolvedServerId)
+  func guestChat(in pane: PaneDescriptorState) -> ChatSession? {
+    guard pane.kind == .chat, let id = pane.chatSessionId,
+      let chat = environment.projectList.chat(id, preferring: resolvedServerId),
+      let workspace = resolvedWorkspace,
+      chat.serverId != workspace.serverId || chat.projectId != workspace.projectId
+    else { return nil }
+    return chat
   }
 
   var rootSession: ChatSession? { activeSessionId.flatMap(session(for:)) }
@@ -160,7 +164,7 @@ struct WorkspaceScreen: View {
   func title(for pane: PaneDescriptorState) -> String {
     switch pane.kind {
     case .chat:
-      if let remote = chatOnAnotherMachine(in: pane), !remote.title.isEmpty { return remote.title }
+      if let remote = guestChat(in: pane), !remote.title.isEmpty { return remote.title }
       let title = (pane.chatSessionId ?? activeSessionId).flatMap(chatTitle(for:)) ?? pane.name
       return title.isEmpty ? "New Chat" : title
     case .newTab:
@@ -206,7 +210,7 @@ struct WorkspaceScreen: View {
           isLocal: false,
           serverUpdate: machines.updateActivity(for: resolvedServerId)
         )
-      } else if let pane = activePane, let remote = chatOnAnotherMachine(in: pane) {
+      } else if let pane = activePane, let remote = guestChat(in: pane) {
         AgentChatScreen(serverId: remote.serverId, sessionId: remote.id, setsTitle: false)
           .id(remote.id)
       } else if missing {

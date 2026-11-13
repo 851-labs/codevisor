@@ -20,7 +20,7 @@ extension HomeView {
   #endif
 
   func openChat(_ session: ChatSession) {
-    if session.ownerAgent != nil, hostWorkspace(of: session)?.serverId != session.serverId {
+    if session.ownerAgent != nil, !isHome(hostWorkspace(of: session), for: session) {
       openRoute(.agent(serverId: session.serverId, sessionId: session.id))
       return
     }
@@ -39,6 +39,10 @@ extension HomeView {
         preferredChatSessionId: session.id
       )
     )
+  }
+
+  private func isHome(_ workspace: Workspace?, for session: ChatSession) -> Bool {
+    workspace?.serverId == session.serverId && workspace?.projectId == session.projectId
   }
 
   private func hostWorkspace(of session: ChatSession) -> Workspace? {

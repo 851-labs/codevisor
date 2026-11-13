@@ -64,7 +64,7 @@ struct AgentChatScreen: View {
     else { return }
     let controller = ChatControllerCache.shared.controller(
       for: session, project: project, workspaceId: nil, environment: environment)
-    controller.hostWorkspaceIsOnAnotherMachine = true
+    controller.isGuestInHostWorkspace = true
     self.controller = controller
     guard controller.model == nil, !controller.isConnecting else { return }
     await controller.connectIfNeeded()
