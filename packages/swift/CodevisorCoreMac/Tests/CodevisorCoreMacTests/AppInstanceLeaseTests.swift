@@ -7,24 +7,52 @@ import Testing
 struct AppInstanceLeaseTests {
   private let fileManager = FileManager.default
 
-  @Test("Scopes the stable lock name to the resolved bundle path")
+  private static let release = "com.851labs.HerdMan"
+  private static let applications = URL(fileURLWithPath: "/Applications/Codevisor.app", isDirectory: true)
+  private static let downloads = URL(fileURLWithPath: "/Users/someone/Downloads/Codevisor.app", isDirectory: true)
+
+  @Test("A release build shares one lock between its copies; a development build locks each copy")
   func lockURLScope() {
     let support = URL(fileURLWithPath: "/tmp/codevisor-lease-tests", isDirectory: true)
-    let first = AppInstanceLease.defaultLockURL(
-      for: URL(fileURLWithPath: "/Applications/Codevisor.app", isDirectory: true),
-      applicationSupportURL: support
-    )
-    let same = AppInstanceLease.defaultLockURL(
-      for: URL(fileURLWithPath: "/Applications/Codevisor.app/", isDirectory: true),
-      applicationSupportURL: support
-    )
-    let other = AppInstanceLease.defaultLockURL(
-      for: URL(fileURLWithPath: "/tmp/Codevisor.app", isDirectory: true),
-      applicationSupportURL: support
-    )
+    func lock(_ bundleURL: URL, isDevelopment: Bool, bundleIdentifier: String? = Self.release) -> URL {
+      AppInstanceLease.defaultLockURL(
+        for: .current(bundleIdentifier: bundleIdentifier, bundleURL: bundleURL, isDevelopment: isDevelopment),
+        applicationSupportURL: support
+      )
+    }
+    let trailingSlash = URL(fileURLWithPath: "/Applications/Codevisor.app/", isDirectory: true)
 
-    #expect(first == same)
-    #expect(first != other)
+    #expect(lock(Self.applications, isDevelopment: false) == lock(Self.downloads, isDevelopment: false))
+    #expect(lock(Self.applications, isDevelopment: true) == lock(trailingSlash, isDevelopment: true))
+    #expect(lock(Self.applications, isDevelopment: true) != lock(Self.downloads, isDevelopment: true))
+    #expect(lock(Self.applications, isDevelopment: true) != lock(Self.applications, isDevelopment: false))
+    #expect(
+      lock(Self.applications, isDevelopment: false, bundleIdentifier: nil)
+        == lock(Self.applications, isDevelopment: true))
+  }
+
+  @Test("A release build treats any running copy of the app as itself, but not its helpers")
+  func releaseScopeCoversEveryCopy() {
+    let scope = AppInstanceLease.Scope.current(
+      bundleIdentifier: Self.release, bundleURL: Self.applications, isDevelopment: false)
+    let helper = Self.applications.appendingPathComponent("Contents/Frameworks/Codevisor Browser Helper.app")
+
+    #expect(scope.coversEveryCopy)
+    #expect(scope.includes(bundleIdentifier: Self.release, bundleURL: Self.applications))
+    #expect(scope.includes(bundleIdentifier: Self.release, bundleURL: Self.downloads))
+    #expect(!scope.includes(bundleIdentifier: "\(Self.release).chromium.helper", bundleURL: helper))
+  }
+
+  @Test("A development build treats only its own copy as itself")
+  func developmentScopeCoversOneCopy() {
+    let identifier = "com.851labs.Codevisor.Development.abc123"
+    let scope = AppInstanceLease.Scope.current(
+      bundleIdentifier: identifier, bundleURL: Self.applications, isDevelopment: true)
+
+    #expect(!scope.coversEveryCopy)
+    #expect(scope.includes(bundleIdentifier: identifier, bundleURL: Self.applications))
+    #expect(!scope.includes(bundleIdentifier: identifier, bundleURL: Self.downloads))
+    #expect(!scope.includes(bundleIdentifier: identifier, bundleURL: nil))
   }
 
   @Test("Rejects a second owner and releases on deinit")
