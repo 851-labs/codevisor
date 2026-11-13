@@ -2,7 +2,6 @@ import CodevisorUI
 import SwiftUI
 
 struct HomeSidebarBotsEmptyState: View {
-  let canCreateBots: Bool
   let onNewBot: () -> Void
 
   var body: some View {
@@ -15,14 +14,10 @@ struct HomeSidebarBotsEmptyState: View {
           .foregroundStyle(.tertiary)
       }
     } description: {
-      Text(description)
+      Text(BotListEmptyCopy.message)
     } actions: {
-      if canCreateBots { newBotButton }
+      newBotButton
     }
-  }
-
-  private var description: String {
-    if canCreateBots { BotListEmptyCopy.message } else { "None of your connected machines can run bots right now." }
   }
 
   private var newBotButton: some View {

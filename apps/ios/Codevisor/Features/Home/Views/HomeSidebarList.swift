@@ -84,7 +84,7 @@ struct HomeSidebarList: View {
     list(content)
       .modifier(HomeSidebarListStyle(isConversation: isConversation))
       .overlay {
-        if showsBotsEmptyOverlay(content) { botsEmptyState(content) }
+        if showsBotsEmptyOverlay(content) { botsEmptyState }
       }
       .animation(Motion.listReflow(reduceMotion: reduceMotion), value: content.layout)
       .onAppear { followSelection(from: nil, to: selected, in: content) }
@@ -257,8 +257,8 @@ struct HomeSidebarList: View {
     isConversation && content.bots.isEmpty && content.archivedBots.isEmpty
   }
 
-  private func botsEmptyState(_ content: HomeSidebarContent) -> some View {
-    HomeSidebarBotsEmptyState(canCreateBots: content.canCreateBots, onNewBot: actions.actions.newBot)
+  private var botsEmptyState: some View {
+    HomeSidebarBotsEmptyState(onNewBot: actions.actions.newBot)
   }
 
   private func moveBot(_ source: IndexSet, to destination: Int, among bots: [HomeSidebarBot], section: UUID?) {
