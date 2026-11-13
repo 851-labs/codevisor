@@ -49,6 +49,7 @@ struct ScreenSharingConnectionTransitionTests {
       expected: .permissionMissing),
     Refusal(operation: .capabilities, status: "unavailable", reason: "update-needed", expected: .updateNeeded),
     Refusal(operation: .start, status: "unavailable", reason: "no-display", expected: .noDisplay),
+    Refusal(operation: .start, status: "failed", reason: "display-asleep", expected: .displayAsleep),
     Refusal(
       operation: .start, status: "busy", reason: "in-use", holderName: "Alexandru's iPhone",
       expected: .inUse(by: "Alexandru's iPhone")),
@@ -154,6 +155,28 @@ struct ScreenSharingConnectionTransitionTests {
     await harness.settle(.failed(.stoppedOnHost))
 
     #expect(harness.host.starts.count == 1)
+  }
+
+  @Test("After sharing was stopped on the host, coming back on screen is refused the same way and only Connect opens")
+  func staysStoppedUntilTheUserConnects() async {
+    let harness = ConnectionHarness()
+    let surface = harness.show()
+    await harness.goLive()
+    harness.host.answerEvery(.heartbeat, .reply(status: "failed", reason: "stopped-on-host"))
+    harness.clock.advance(by: Self.heartbeat)
+    await harness.settle(.failed(.stoppedOnHost))
+
+    harness.host.answerEvery(.heartbeat, nil)
+    harness.host.answerNext(.start, .reply(status: "failed", reason: "stopped-on-host"))
+    surface.setOnScreen(false)
+    await harness.elapse(ScreenSharingConnectionDeadlines.unseenDebounce)
+    await harness.settle(.off)
+    surface.setOnScreen(true)
+    await harness.settle(.failed(.stoppedOnHost))
+
+    surface.retry()
+    await harness.goLive()
+    #expect(harness.host.starts.map(\.intent) == [.attach, .attach, .open])
   }
 
   @Test("A reconnect refused because another device opened the desktop fails with that device's name")
