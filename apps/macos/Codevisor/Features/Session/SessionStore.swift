@@ -261,7 +261,7 @@ final class SessionStore {
     guard environment.workspaces.workspaceId(forSession: session.id) == nil,
       let ownerWorkspaceId = environment.projectList.owningWorkspaceId(of: session),
       let workspace = environment.workspaces.workspace(id: ownerWorkspaceId),
-      workspace.serverId == session.serverId
+      workspace.serverId == session.serverId, workspace.projectId == session.projectId
     else { return nil }
     return workspace
   }
