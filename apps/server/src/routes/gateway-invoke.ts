@@ -42,7 +42,14 @@ const parseOrigin = (value: unknown): GatewayOrigin | undefined => {
   return { machineId, machineName, ...Object.fromEntries(optional) }
 }
 
-const OPTIONAL_ORIGIN_FIELDS = ["sessionId", "sessionTitle", "botId", "clientId"] as const
+const OPTIONAL_ORIGIN_FIELDS = [
+  "sessionId",
+  "sessionTitle",
+  "botId",
+  "createdByAgentId",
+  "createdByAgentMachineId",
+  "clientId"
+] as const
 
 const writeError = (
   response: ServerResponse,

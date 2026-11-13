@@ -31,7 +31,9 @@ export const MessageBotRequest = Schema.Struct({
   sentByAgentId: Schema.optional(Schema.String),
   sentByAgentMachineId: Schema.optional(Schema.String),
   sentByBotId: Schema.optional(Schema.String),
-  sentByName: Schema.optional(Schema.String)
+  sentByName: Schema.optional(Schema.String),
+  senderCreatedByAgentId: Schema.optional(Schema.String),
+  senderCreatedByAgentMachineId: Schema.optional(Schema.String)
 })
 export type MessageBotRequest = typeof MessageBotRequest.Type
 

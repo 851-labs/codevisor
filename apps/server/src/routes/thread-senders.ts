@@ -1,4 +1,4 @@
-import type { Bot, SessionSummary } from "@codevisor/api"
+import type { AgentRef, Bot } from "@codevisor/api"
 import type { ThreadParty } from "@codevisor/db"
 
 import { HttpFailure, run } from "../server-context.js"
@@ -11,11 +11,13 @@ export interface SenderClaim {
   readonly machineId?: string | undefined
   readonly botId?: string | undefined
   readonly name?: string | undefined
+  readonly createdByAgentId?: string | undefined
+  readonly createdByAgentMachineId?: string | undefined
 }
 
 export interface Sender {
   readonly party: ThreadParty
-  readonly chat?: SessionSummary
+  readonly startedBy?: AgentRef
 }
 
 export const requireSender = async (route: RouteContext, claim: SenderClaim): Promise<Sender> => {
@@ -32,12 +34,15 @@ export const requireSender = async (route: RouteContext, claim: SenderClaim): Pr
   return senderHere(route, agentId)
 }
 
-export const refuseOwnBot = (sender: Sender, bot: Bot): void => {
+export const refuseOwnBot = ({ config }: RouteContext, sender: Sender, bot: Bot): void => {
   if (sender.party.kind === "bot" && sender.party.botId === bot.id) {
     throw new HttpFailure(409, "A bot can't message itself")
   }
-  const { createdByAgentId, isDetached } = sender.chat ?? {}
-  if (createdByAgentId?.toLowerCase() === bot.sessionId.toLowerCase() && isDetached !== true) {
+  const { startedBy } = sender
+  if (
+    startedBy?.machineId === config.id &&
+    startedBy.agentId.toLowerCase() === bot.sessionId.toLowerCase()
+  ) {
     throw new HttpFailure(
       409,
       `${bot.name} started you and already gets your reply when your turn ends. Put what it needs in your final message`
@@ -51,8 +56,11 @@ const senderElsewhere = (
 ): Sender => {
   const { agentId, machineId, botId, name } = claim
   assertAgentVerified(config.id, { agentId, machineId }, remoteCallerAgent(services, request))
-  if (botId === undefined) return { party: { kind: "agent", agentId, machineId, name } }
-  return { party: { kind: "remoteBot", botId, agentId, machineId, name: name ?? "Bot" } }
+  if (botId !== undefined) {
+    return { party: { kind: "remoteBot", botId, agentId, machineId, name: name ?? "Bot" } }
+  }
+  const startedBy = starter(claim.createdByAgentId, claim.createdByAgentMachineId ?? machineId)
+  return { party: { kind: "agent", agentId, machineId, name }, ...startedBy }
 }
 
 const senderHere = async ({ services, config }: RouteContext, agentId: string): Promise<Sender> => {
@@ -63,5 +71,9 @@ const senderHere = async ({ services, config }: RouteContext, agentId: string): 
     bot === undefined
       ? { kind: "agent", agentId: chat.id, machineId: config.id }
       : { kind: "bot", botId: bot.id }
-  return { party, chat }
+  if (chat.isDetached === true) return { party }
+  return { party, ...starter(chat.createdByAgentId, chat.createdByAgentMachineId ?? config.id) }
 }
+
+const starter = (agentId: string | undefined, machineId: string): Pick<Sender, "startedBy"> =>
+  agentId === undefined ? {} : { startedBy: { agentId, machineId } }

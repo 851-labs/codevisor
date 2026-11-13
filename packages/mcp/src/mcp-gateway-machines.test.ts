@@ -173,7 +173,7 @@ describe("gateway machines and execution annotations", () => {
     }
   })
 
-  it("tells the other machine which chat is calling, by machine, id, and title", async () => {
+  it("tells the other machine which chat is calling, by machine, id, title, and who started it", async () => {
     const { db, manager, remoteCalls } = await studioGateway()
     const project = await run(db.createProject({ folderPath: "/tmp/mcp-gateway-bot-origin" }))
     const { session } = await run(
@@ -184,7 +184,13 @@ describe("gateway machines and execution annotations", () => {
           name: "Sub-agent",
           hasCustomName: false
         },
-        session: { projectId: project.id, harnessId: "codex", title: "Sub-agent" }
+        session: {
+          projectId: project.id,
+          harnessId: "codex",
+          title: "Sub-agent",
+          createdByAgentId: "5f0c7a52-9b1e-4a53-8a41-0d6f3f1f2c11",
+          createdByAgentMachineId: "mbp"
+        }
       })
     )
     const client = await connectClient(await manager.issueGateway(session.id, project.id))
@@ -202,7 +208,9 @@ describe("gateway machines and execution annotations", () => {
           machineId: "studio",
           machineName: "Mac Studio",
           sessionId: session.id,
-          sessionTitle: "Sub-agent"
+          sessionTitle: "Sub-agent",
+          createdByAgentId: "5f0c7a52-9b1e-4a53-8a41-0d6f3f1f2c11",
+          createdByAgentMachineId: "mbp"
         }
       ])
     } finally {

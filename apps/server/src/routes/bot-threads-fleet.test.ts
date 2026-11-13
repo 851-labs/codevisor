@@ -151,6 +151,26 @@ describe("bot threads across machines", () => {
     expect(await threadsOf(home, triage.id).catch(() => [])).toEqual([])
   })
 
+  it("refuses a message to a bot from an agent that bot started on another machine", async () => {
+    const { home, remote, triage, parentOrigin } = await startBots()
+    const send = (startedOn: string) =>
+      home.machines.invoke(
+        laptop.id,
+        "codevisor.bots.message",
+        { botId: triage.id, text: "Done." },
+        { ...parentOrigin, createdByAgentId: triage.sessionId, createdByAgentMachineId: startedOn }
+      )
+
+    await expect(send(laptop.id)).rejects.toThrow(
+      "Triage started you and already gets your reply when your turn ends. Put what it needs in your final message"
+    )
+    expect(await threadsOf(remote, triage.id)).toEqual([])
+
+    await send(studio.id)
+
+    expect(await threadsOf(remote, triage.id)).toHaveLength(1)
+  })
+
   it("names a bot on another machine Bot when its machine sent no name, and queues a reply it cannot send yet", async () => {
     const { home, remote, release, triage, releaseOrigin, setOffline } = await startBots()
     const { sessionTitle: _, ...unnamed } = releaseOrigin
