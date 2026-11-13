@@ -56,8 +56,8 @@ struct SessionControllerConfigurationTests {
     #expect(!controller.isLoadingModelMenu)
   }
 
-  @Test("An existing chat shows its own saved model until its runtime reports options")
-  func existingChatUsesOwnValuesOverCatalogLists() {
+  @Test("An existing chat shows its own model, saved then running, in the machine's model list")
+  func existingChatUsesOwnValuesInMachineLists() {
     let cache = ConfigOptionCache(store: InMemoryStore())
     var catalog = capability(model: "sonnet")
     catalog.configOptions[0].options.append(SessionConfigSelectOption(value: "opus[1m]", name: "Opus"))
@@ -91,8 +91,9 @@ struct SessionControllerConfigurationTests {
     live[0].currentValue = "sonnet"
     live[0].options = [SessionConfigSelectOption(value: "sonnet", name: "Sonnet")]
     model.applyRuntimeMetadata(modeState: nil, configOptions: live)
-    #expect(controller.configOptions == live)
     #expect(controller.modelOption?.currentValue == "sonnet")
+    #expect(controller.modelOption?.options.map(\.value) == ["sonnet", "opus[1m]"])
+    #expect(controller.configOptions.dropFirst() == live.dropFirst())
   }
 
   @Test("An existing chat before its first turn resolves settings for its saved model")

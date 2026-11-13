@@ -76,6 +76,7 @@ extension SessionController {
       }
       configCache.storeSkills(from: [capability], forServer: target.serverId, cwd: target.cwd)
       applyHarnessCapabilities([capability])
+      Task { await revalidateMachineModelsIfStale(serverClient) }
       didLoadExistingHarnessCapabilities = true
       existingConfigurationError = nil
       updateConfigurationValidationState()
@@ -116,7 +117,11 @@ extension SessionController {
   }
 
   public func revalidateHarnessCapabilitiesIfStale() async {
-    guard acceptsNewChatDefaults, let serverClient else { return }
+    guard let serverClient else { return }
+    guard acceptsNewChatDefaults else {
+      await revalidateMachineModelsIfStale(serverClient)
+      return
+    }
     let target = CapabilityFetchTarget(serverId: project.serverId, cwd: capabilityCwd)
     guard configCache.needsCapabilityRevalidation(forServer: target.serverId, cwd: target.cwd)
     else { return }
@@ -129,6 +134,16 @@ extension SessionController {
     await resolveAutomaticSelectionIfNeeded()
     await resolveDraftModelAvailabilityIfNeeded()
     await resolveDraftModelSettingsIfNeeded()
+  }
+
+  private func revalidateMachineModelsIfStale(_ serverClient: any CodevisorServerClienting) async {
+    let serverId = project.serverId
+    guard configCache.needsCapabilityRevalidation(forServer: serverId) else { return }
+    do {
+      _ = try await configCache.warmCapabilities(forServer: serverId, client: serverClient)
+    } catch {
+      Log.session.error("model list refresh failed: \(String(describing: error), privacy: .public)")
+    }
   }
 
   public func invalidateHarnessCapabilities() {

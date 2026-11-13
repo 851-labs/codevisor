@@ -101,22 +101,36 @@ extension SessionController {
   private var existingChatConfigOptions: [SessionConfigOption] {
     guard let harnessId = activeHarnessId else { return [] }
     let pending = pendingConfiguration.values(for: harnessId) ?? [:]
-    var options: [SessionConfigOption]
-    if let model, !model.configOptions.isEmpty {
-      options = model.configOptions
-    } else {
-      let saved = existingChatSelections
-      let definitions =
-        configOptionsByHarness[harnessId].flatMap { $0.isEmpty ? nil : $0 }
-        ?? configCache.options(forHarness: harnessId, onServer: project.serverId)
-      options = SavedSessionConfigOptions.project(definitions: definitions, selections: saved)
-    }
+    var options = offeringMachineModels(in: existingChatReportedOptions, harnessId: harnessId)
     if unavailableExistingModelValue != nil,
       let index = options.firstIndex(where: Self.isModelOption)
     {
       options[index].currentValue = ""
     }
     return applying(pending, to: options)
+  }
+
+  var existingChatReportedOptions: [SessionConfigOption] {
+    guard let harnessId = activeHarnessId else { return [] }
+    if let model, !model.configOptions.isEmpty { return model.configOptions }
+    let definitions =
+      configOptionsByHarness[harnessId].flatMap { $0.isEmpty ? nil : $0 }
+      ?? configCache.options(forHarness: harnessId, onServer: project.serverId)
+    return SavedSessionConfigOptions.project(definitions: definitions, selections: existingChatSelections)
+  }
+
+  private func offeringMachineModels(
+    in options: [SessionConfigOption],
+    harnessId: String
+  ) -> [SessionConfigOption] {
+    let catalog = configCache.options(forHarness: harnessId, onServer: project.serverId)
+    guard let machineModels = Self.modelOption(in: catalog) else { return options }
+    return options.map { option in
+      guard Self.isModelOption(option) else { return option }
+      var offered = option
+      offered.options = machineModels.options
+      return offered
+    }
   }
 
   var existingChatSelections: [String: String] {

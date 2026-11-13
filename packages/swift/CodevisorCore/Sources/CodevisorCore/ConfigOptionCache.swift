@@ -135,6 +135,15 @@ public final class ConfigOptionCache {
     return Date().timeIntervalSince(validatedAt) >= Self.capabilityFreshnessInterval
   }
 
+  func needsCapabilityRevalidation(forServer serverId: String) -> Bool {
+    guard !capabilities(forServer: serverId).isEmpty else { return true }
+    let now = Date()
+    return !capabilityValidatedAt.contains { key, validatedAt in
+      key.serverId == serverId
+        && now.timeIntervalSince(validatedAt) < Self.capabilityFreshnessInterval
+    }
+  }
+
   public func warmCapabilities(
     forServer serverId: String,
     client: any CodevisorServerClienting

@@ -59,6 +59,13 @@ extension SessionController {
     }
     guard let option = modelOption, !option.currentValue.isEmpty else { return nil }
     return option.options.first { $0.value == option.currentValue }?.name
+      ?? nameOfModelMachineStoppedOffering(option.currentValue)
+  }
+
+  private func nameOfModelMachineStoppedOffering(_ value: String) -> String? {
+    guard !acceptsNewChatDefaults else { return nil }
+    return Self.modelOption(in: existingChatReportedOptions)?
+      .options.first { $0.value == value }?.name
   }
 
   public var requiresModelSelection: Bool {
