@@ -91,7 +91,7 @@ interface AgentPlan {
 }
 
 interface Placement {
-  readonly workspaceId: string
+  readonly workspaceId?: string
   readonly worktreeName?: string
 }
 
@@ -189,8 +189,11 @@ const placementFor = async (
   plan: AgentPlan,
   created: Array<() => Promise<unknown>>
 ): Promise<Placement> => {
-  if (startsInProjectFolder(request)) return { workspaceId: randomUUID() }
   if (request.checkout === "shared") return sharedPlacement(plan)
+  const shown = (await belongsToItsStarter(route, request, plan))
+    ? {}
+    : { workspaceId: randomUUID() }
+  if (startsInProjectFolder(request)) return shown
   const { services, config, fanout } = route
   const allocated = await allocateProjectWorktree(
     { services, config, fanout, serverId: config.id },
@@ -198,7 +201,18 @@ const placementFor = async (
     {}
   )
   created.push(allocated.rollBack)
-  return { workspaceId: randomUUID(), worktreeName: allocated.worktree.name }
+  return { ...shown, worktreeName: allocated.worktree.name }
+}
+
+const belongsToItsStarter = async (
+  { services }: RouteContext,
+  request: StartAgentRequest,
+  { caller, projectId }: AgentPlan
+): Promise<boolean> => {
+  if (request.standalone === true || request.checkout === "none") return false
+  if (caller.sessionId === undefined || caller.workspaceId === undefined) return false
+  if (caller.projectId !== projectId) return false
+  return (await run(services.db.findBotOwning({ sessionId: caller.sessionId }))) === undefined
 }
 
 const startsInProjectFolder = (request: StartAgentRequest): boolean =>

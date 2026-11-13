@@ -1,9 +1,10 @@
-import type { Checkout, GitHead, GitPullRequest } from "@codevisor/api"
+import type { Checkout, EventEnvelope, GitHead, GitPullRequest } from "@codevisor/api"
 import type { Effect } from "effect"
 
 import { checkoutInUse, listCheckoutRows } from "./checkouts.js"
 import { attempt, type DatabaseError } from "./errors.js"
 import { canonicalUuid } from "./ids.js"
+import { journaledNavigationChanges } from "./navigation-changes.js"
 import { checkoutFromRow } from "./row-mappers.js"
 import { rowReader, text } from "./row-reader.js"
 import type { ServiceContext } from "./service-context.js"
@@ -11,6 +12,11 @@ import type { ServiceContext } from "./service-context.js"
 export interface CheckoutsService {
   readonly listCheckouts: Effect.Effect<ReadonlyArray<Checkout>, DatabaseError>
   readonly isCheckoutInUse: (checkoutId: string) => Effect.Effect<boolean, DatabaseError>
+  readonly setCheckoutGit: (
+    checkoutId: string,
+    head: GitHead,
+    pullRequest: GitPullRequest | null | undefined
+  ) => Effect.Effect<ReadonlyArray<EventEnvelope>, DatabaseError>
   readonly findWorkspaceShowingSession: (
     sessionId: string
   ) => Effect.Effect<string | undefined, DatabaseError>
@@ -20,8 +26,13 @@ const parentChainLimit = 8
 
 export const makeCheckoutsService = (context: ServiceContext): CheckoutsService => {
   const { sqlite, config } = context
+  const journaled = journaledNavigationChanges(context)
   return {
     listCheckouts: attempt("listCheckouts", () => listCheckoutRows(sqlite).map(checkoutFromRow)),
+    setCheckoutGit: (checkoutId, head, pullRequest) =>
+      attempt("setCheckoutGit", () =>
+        journaled(() => writeCheckoutGit(sqlite, canonicalUuid(checkoutId), head, pullRequest))
+      ),
     isCheckoutInUse: (checkoutId) =>
       attempt("isCheckoutInUse", () => checkoutInUse(sqlite, canonicalUuid(checkoutId))),
     findWorkspaceShowingSession: (sessionId) =>

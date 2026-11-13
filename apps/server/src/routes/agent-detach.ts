@@ -17,7 +17,7 @@ export const detachAgent = async (route: RouteContext, agentId: string): Promise
     )
   }
 
-  if (await sharesAWorkspace(route, agent)) {
+  if (await lacksItsOwnWorkspace(route, agent)) {
     await applySessionUpdate(services, fanout, agent.id, { workspaceId: randomUUID() })
   }
   await run(services.db.detachSession(agent.id))
@@ -33,11 +33,11 @@ export const detachAgent = async (route: RouteContext, agentId: string): Promise
   return true
 }
 
-const sharesAWorkspace = async (
+const lacksItsOwnWorkspace = async (
   { services }: RouteContext,
   agent: SessionSummary
 ): Promise<boolean> => {
-  if (agent.workspaceId === undefined) return false
+  if (agent.workspaceId === undefined) return true
   const workspace = await findWorkspace(services, agent.workspaceId)
   return workspace?.mainSessionId !== undefined && !sameId(workspace.mainSessionId, agent.id)
 }

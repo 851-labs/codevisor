@@ -1,4 +1,4 @@
-import type { GitHead, GitPullRequest, Workspace } from "@codevisor/api"
+import type { Checkout, GitHead, GitPullRequest, Workspace } from "@codevisor/api"
 import type { CodevisorDatabaseService } from "@codevisor/db"
 import type { PullRequestHost } from "@codevisor/git-hosts"
 import { gitHead } from "@codevisor/worktrees"
@@ -32,6 +32,9 @@ const settledArchive = (workspace: Workspace): boolean =>
 const skips = (workspace: Workspace, pullRequests: boolean): boolean =>
   settledArchive(workspace) ||
   (workspace.isArchived && workspace.git !== undefined && !pullRequests)
+
+const rootsNoWorkspace = (checkout: Checkout, rooted: ReadonlySet<string | undefined>): boolean =>
+  checkout.worktreeName !== undefined && !rooted.has(checkout.id)
 
 /* v8 ignore next 3 */
 const swallow = (cause: unknown): void => {
@@ -131,7 +134,62 @@ export const startWorkspaceGitMonitor = ({
     void drain()
   }
 
+  const inspectUnrooted = async (unrooted: Checkout, wantsPullRequest: boolean): Promise<void> => {
+    const env = await environment(unrooted.path)
+    const head = await headOf(unrooted.path, env)
+    const branchChanged = unrooted.git?.branch !== head.branch
+    let pullRequest: GitPullRequest | null | undefined
+    if (head.branch === null) pullRequest = null
+    else if (wantsPullRequest || branchChanged) {
+      pullRequest = await pullRequestOf(unrooted.path, env, head.branch, undefined)
+      if (pullRequest === undefined && branchChanged) pullRequest = null
+    }
+    for (const event of await run(db.setCheckoutGit(unrooted.id, head, pullRequest))) {
+      await run(fanout.publish(event))
+    }
+  }
+
+  const unrootedCheckouts = async (): Promise<ReadonlyArray<Checkout>> => {
+    const workspaces = await run(db.listWorkspaces)
+    const rooted = new Set(
+      workspaces
+        .filter((workspace) => !workspace.isArchived)
+        .map((workspace) => workspace.defaultCheckoutId)
+    )
+    const inUse: Array<Checkout> = []
+    for (const unrooted of await run(db.listCheckouts)) {
+      if (!rootsNoWorkspace(unrooted, rooted)) continue
+      if (await run(db.isCheckoutInUse(unrooted.id))) inUse.push(unrooted)
+    }
+    return inUse
+  }
+
+  const inspectQuietly = (unrooted: Checkout, wantsPullRequest: boolean): Promise<void> =>
+    inspectUnrooted(unrooted, wantsPullRequest).catch((cause: unknown) => {
+      console.error(`Checkout git check failed for ${unrooted.id}: ${failureMessage(cause)}`)
+    })
+
+  const sweepCheckoutsWithoutWorkspace = async (pullRequests: boolean): Promise<void> => {
+    for (const unrooted of await unrootedCheckouts()) {
+      await inspectQuietly(unrooted, pullRequests || unrooted.git === undefined)
+    }
+  }
+
+  const inspectChatCheckout = async (chatId: string): Promise<void> => {
+    const chat = (await run(db.listSessions)).find((candidate) => candidate.id === chatId)
+    if (chat?.checkoutId === undefined) return
+    const unrooted = (await unrootedCheckouts()).find(
+      (candidate) => candidate.id === chat.checkoutId
+    )
+    if (unrooted !== undefined) await inspectQuietly(unrooted, true)
+  }
+
   const sweeps = new Set<Promise<void>>()
+  const checkChat = (chatId: string): void => {
+    const pass = inspectChatCheckout(chatId).catch(swallow)
+    sweeps.add(pass)
+    void pass.finally(() => sweeps.delete(pass))
+  }
   const sweep = (pullRequests: boolean): Promise<void> => {
     const pass = (async () => {
       for (const workspace of await run(db.listWorkspaces)) {
@@ -139,6 +197,7 @@ export const startWorkspaceGitMonitor = ({
         enqueue(workspace.id, pullRequests || workspace.git === undefined, workspace)
       }
       await drain()
+      await sweepCheckoutsWithoutWorkspace(pullRequests)
     })()
     sweeps.add(pass)
     return pass.finally(() => sweeps.delete(pass))
@@ -153,12 +212,17 @@ export const startWorkspaceGitMonitor = ({
       working.delete(event.subjectId)
       return
     }
+    if (event.kind === "session.created") {
+      checkChat(event.subjectId)
+      return
+    }
     if (event.kind !== "session.attention.updated") return
     if (stringField(event.payload, "sidebarState") === "inProgress") {
       working.add(event.subjectId)
       return
     }
     if (!working.delete(event.subjectId)) return
+    checkChat(event.subjectId)
     const workspaceId = stringField(event.payload, "workspaceId")
     if (workspaceId !== undefined) enqueue(workspaceId, true)
   })

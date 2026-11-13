@@ -164,6 +164,27 @@ describe("archiving an agent's workspace", () => {
     expect(await archivedIds(running)).not.toContain(own)
   })
 
+  it("gives a detached agent a workspace when it had none", async () => {
+    const running = await startedFamily()
+    await looseChat(running, "loose", "lead")
+
+    const detached = decode(DetachedAgent)(
+      (
+        await jsonRequest(running.server, "/v1/agents/loose/detach", {
+          body: JSON.stringify({}),
+          method: "POST"
+        })
+      ).body
+    )
+    await jsonRequest(running.server, "/v1/workspaces/ws-lead", {
+      body: JSON.stringify({ isArchived: true }),
+      method: "PATCH"
+    })
+
+    expect(detached.workspaceId).toBeDefined()
+    expect(await archivedChats(running)).not.toContain("loose")
+  })
+
   it("refuses to detach a chat no agent started", async () => {
     const running = await startedFamily()
 

@@ -42,13 +42,13 @@ Agent tools are the `agents` global: `agents.start(args)`, `agents.list(args)`, 
 }
 ```
 
-One call creates the checkout, the chat, and its first message. The new agent is linked to you as the agent that created it, on any machine: it shows under your workspace in the sidebar and in your agents pill, and its events reach you.
+One call creates the checkout, the chat, and its first message. The new agent is linked to you as the agent that created it, on any machine: it shows in your agents pill, where the user opens it as a tab beside you, and its events reach you. It is not a sidebar item of its own unless you start it with `standalone: true`.
 
 `checkout` says which files it works in:
 
 - `"shared"`: your own workspace and checkout, as a tab beside you (a split beside a bot's conversation, which has no tabs), so it edits the same files you do. Use it for quick, scoped help with your current task: research, reading code or docs, a review, a small piece of the same change, or a second opinion from another harness or model. Keep its task scoped so the two of you don't edit the same files at once, and archive it with `agent.archive()` once you have its reply. It only works on your own machine.
-- `"worktree"`: a new git worktree in a new workspace, for separate work that ends in its own branch or PR.
-- `"project"`: the project folder itself, in a new workspace, for separate work that needs no branch of its own, or a project that isn't a git repository.
+- `"worktree"`: a new git worktree, for separate work that ends in its own branch or PR.
+- `"project"`: the project folder itself, for separate work that needs no branch of its own, or a project that isn't a git repository.
 - `"none"`: a fresh empty folder with no project, like a chat started with "No project" in the app. Nothing is added to the sidebar's projects, and it works on any machine, even one with no projects. Leave out `project`.
 
 ```js
