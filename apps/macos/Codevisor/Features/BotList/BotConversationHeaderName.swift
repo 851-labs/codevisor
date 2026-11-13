@@ -16,5 +16,6 @@ struct BotConversationHeaderName: View {
     .padding(.horizontal, 12)
     .padding(.vertical, 5)
     .glassEffect(.regular.interactive(), in: shape)
+    .botHeaderNameContactShadow(shape)
   }
 }

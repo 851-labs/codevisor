@@ -6,6 +6,6 @@ public enum BotHeaderAvatarMetrics {
 
 extension View {
   public func botHeaderAvatarShadow() -> some View {
-    shadow(color: .black.opacity(0.28), radius: 5, y: 3)
+    shadow(color: .black.opacity(0.22), radius: 2, y: 1.5)
   }
 }

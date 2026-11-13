@@ -14,3 +14,17 @@ nonisolated struct BotConversationHeaderNameShape: Shape {
     return Capsule().path(in: rect).subtracting(Path(ellipseIn: avatar))
   }
 }
+
+extension View {
+  func botHeaderNameContactShadow(_ shape: BotConversationHeaderNameShape) -> some View {
+    overlay(alignment: .top) {
+      Circle()
+        .fill(.black.opacity(0.3))
+        .frame(width: shape.avatarSize, height: shape.avatarSize)
+        .blur(radius: 2)
+        .offset(y: shape.overlap - shape.avatarSize + 1.5)
+        .allowsHitTesting(false)
+    }
+    .clipShape(shape)
+  }
+}

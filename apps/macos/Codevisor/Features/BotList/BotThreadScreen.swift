@@ -75,15 +75,18 @@ private struct BotThreadHeader: View {
         .lineLimit(1)
         .padding(.horizontal, 12)
         .padding(.vertical, 5)
-        .glassEffect(
-          .regular,
-          in: BotConversationHeaderNameShape(
-            avatarSize: BotConversationHeader.avatarSize, overlap: BotConversationHeader.overlap))
+        .glassEffect(.regular, in: nameShape)
+        .botHeaderNameContactShadow(nameShape)
     }
     .padding(.top, 4)
     .frame(height: BotConversationHeader.height, alignment: .top)
     .accessibilityElement(children: .ignore)
     .accessibilityLabel("Thread between \(title)")
+  }
+
+  private var nameShape: BotConversationHeaderNameShape {
+    BotConversationHeaderNameShape(
+      avatarSize: BotConversationHeader.avatarSize, overlap: BotConversationHeader.overlap)
   }
 
   private var title: String {
