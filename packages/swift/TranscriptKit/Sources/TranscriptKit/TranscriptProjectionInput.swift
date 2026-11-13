@@ -62,3 +62,12 @@ public struct TranscriptProjectionInput: Sendable {
     self.awaitsConnection = awaitsConnection
   }
 }
+
+extension TranscriptProjectionInput {
+  public init(thread conversation: TranscriptBotConversation) {
+    self.init(
+      settledConversation: [], pendingUserMessage: nil, activeItem: nil, setupPhases: [],
+      waitingBackgroundTaskDescription: nil, waitingHarnessUpdateName: nil, isLoadingInitialHistory: false,
+      serverWaitMessage: nil, sessionErrorMessage: nil, status: .idle, botConversation: conversation)
+  }
+}

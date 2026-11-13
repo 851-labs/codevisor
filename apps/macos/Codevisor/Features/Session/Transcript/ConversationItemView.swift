@@ -57,12 +57,14 @@ struct BotMessageView: View {
   let content: TranscriptBotMessageContent
 
   var body: some View {
-    VStack(alignment: .leading, spacing: TranscriptSendFlightGeometry.attachmentSpacing) {
+    VStack(alignment: isTrailing ? .trailing : .leading, spacing: TranscriptSendFlightGeometry.attachmentSpacing) {
       part
       TranscriptInlineFileStack(files: content.files) { AttachmentThumbnailView(file: $0) }
         .environment(\.markdownBlockChrome, .bubble)
     }
   }
+
+  private var isTrailing: Bool { message.side == .trailing }
 
   @ViewBuilder private var part: some View {
     switch content.partStyle {
@@ -90,7 +92,8 @@ struct BotMessageView: View {
     insets: (horizontal: CGFloat, vertical: CGFloat), @ViewBuilder content body: @escaping () -> some View
   ) -> some View {
     MessageBubbleView(
-      messageID: message.id, side: .leading, text: content.copyText, attachments: [], insets: insets, content: body)
+      messageID: message.id, side: isTrailing ? .trailing : .leading, text: content.copyText, attachments: [],
+      insets: insets, content: body)
   }
 
   private var blockMarkdown: some View {

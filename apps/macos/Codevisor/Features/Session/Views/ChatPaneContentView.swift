@@ -25,7 +25,7 @@ struct ChatPaneContentView: View {
       switch resolver.chat(chatSessionId, on: hostWorkspace.serverId) {
       case let .ready(chatSession, chatProject):
         if let bot = conversationBot, let thread = environment.botThreads.openThread(of: bot) {
-          BotThreadScreen(bot: bot, thread: thread)
+          threadScreen(thread, of: bot, chat: chatSession, in: chatProject)
         } else if role.offersNewChat, isUnstarted(chatSession) {
           unstartedChat(chatSession, in: chatProject)
         } else {
@@ -77,6 +77,21 @@ struct ChatPaneContentView: View {
       paneFocus: focus,
       hostWorkspaceId: hostWorkspace.id
     )
+  }
+
+  private func threadScreen(
+    _ thread: ServerThread, of bot: Bot, chat chatSession: ChatSession, in chatProject: Project
+  ) -> some View {
+    let viewerId = UUID(uuidString: thread.threadId) ?? descriptor.id
+    let controller = store.transcriptViewer(for: chatSession, project: chatProject, paneID: viewerId, workspaceId: nil)
+    return BotThreadScreen(
+      bot: bot,
+      thread: thread,
+      controller: controller,
+      surface: store.transcriptSurface(for: chatSession, paneID: viewerId, controller: controller),
+      focus: focus
+    )
+    .onDisappear { store.releaseTranscriptViewer(paneID: viewerId, sessionID: chatSession.id) }
   }
 
   private func chatScreen(_ chatSession: ChatSession, in chatProject: Project) -> some View {

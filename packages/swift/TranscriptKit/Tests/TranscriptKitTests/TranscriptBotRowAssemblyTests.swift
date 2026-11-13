@@ -393,6 +393,31 @@ struct TranscriptBotRowAssemblyTests {
     }
   }
 
+  @Test("In a thread, each bot's run of bubbles is its own group, and a bubble's parts keep its side")
+  func threadSidesBreakGroups() throws {
+    let conversation = TranscriptBotConversation(
+      messages: [
+        TranscriptBotMessage(id: "a1", sender: .bot, text: "Is it green?", sentAt: start, side: .trailing),
+        TranscriptBotMessage(id: "a2", sender: .bot, text: "I want to ship.", sentAt: start, side: .trailing),
+        TranscriptBotMessage(
+          id: "b1", sender: .bot, text: "Yes:\n\n```\nok\n```", sentAt: start.addingTimeInterval(1)),
+      ],
+      isWorking: false)
+
+    let rows = try TranscriptRowProjectionCache.project(
+      TranscriptProjectionInput(thread: conversation),
+      options: .init(includesConnectingRow: false, presentsBotConversation: true))
+
+    #expect(groupTails(rows) == ["a1": false, "a2": true, "b1:0": false, "b1:1": true])
+    #expect(sides(rows) == ["a1": .trailing, "a2": .trailing, "b1:0": .leading, "b1:1": .leading])
+  }
+
+  private func sides(_ rows: [TranscriptPresentationRow]) -> [String: TranscriptBotMessage.Side] {
+    rows.reduce(into: [:]) { sides, row in
+      if case let .botMessage(message, _, _) = row.content { sides[message.id] = message.side }
+    }
+  }
+
   private func message(
     _ id: String, _ sender: TranscriptBotMessage.Sender, _ text: String, at seconds: TimeInterval
   ) -> TranscriptBotMessage {
