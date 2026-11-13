@@ -17,18 +17,21 @@ class ShipError extends Error {}
 
 async function main(): Promise<void> {
   const options = parseShipArguments(process.argv.slice(2))
-  requireShippableBranch(git("rev-parse", "--abbrev-ref", "HEAD"))
+  const branch = git("rev-parse", "--abbrev-ref", "HEAD")
+  requireShippableBranch(branch)
   requireCleanTree()
 
   rebaseOntoMain()
+  forgetDeletedBranches()
   pushBranch()
-  const pullRequest = openPullRequest(options)
+  const pullRequest = openPullRequest(branch, options)
   if (options.review) {
     reporter.done(`Opened ${pullRequest} for review; merge it with: gh pr merge --squash`)
     return
   }
 
   await mergePullRequest(pullRequest)
+  moveOntoMergedMain()
   reporter.done(`Merged ${pullRequest}; Build checks it on main before the next Alpha`)
 }
 
@@ -54,6 +57,10 @@ function rebaseOntoMain(): void {
   )
 }
 
+function forgetDeletedBranches(): void {
+  git("remote", "prune", "origin")
+}
+
 function pushBranch(): void {
   reporter.step("Pushing (the pre-push hook runs the planned checks)")
   runVisible(
@@ -63,8 +70,8 @@ function pushBranch(): void {
   )
 }
 
-function openPullRequest(options: ShipOptions): string {
-  const existing = gh(["pr", "view", "--json", "url", "--jq", ".url"])
+function openPullRequest(branch: string, options: ShipOptions): string {
+  const existing = openPullRequestFor(branch)
   if (existing !== undefined) return existing
 
   reporter.step("Opening a pull request")
@@ -76,10 +83,33 @@ function openPullRequest(options: ShipOptions): string {
   )
 }
 
+function openPullRequestFor(branch: string): string | undefined {
+  const url = requiredGh([
+    "pr",
+    "list",
+    "--head",
+    branch,
+    "--base",
+    "main",
+    "--state",
+    "open",
+    "--json",
+    "url",
+    "--jq",
+    ".[0].url // empty"
+  ])
+  return url === "" ? undefined : url
+}
+
 async function mergePullRequest(pullRequest: string): Promise<void> {
   reporter.step("Merging")
   await waitUntilMergeable(pullRequest)
   requiredGh(["pr", "merge", pullRequest, "--squash"])
+}
+
+function moveOntoMergedMain(): void {
+  git("fetch", "--quiet", "origin", "main")
+  git("reset", "--quiet", "--keep", "origin/main")
 }
 
 async function waitUntilMergeable(pullRequest: string): Promise<void> {
