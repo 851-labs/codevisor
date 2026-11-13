@@ -14,6 +14,7 @@ final class AppRuntime {
   private(set) var sparkleUpdater: SparkleUpdateController?
   private(set) var firstLaunchSetup: FirstLaunchSetup?
   private(set) var firstLaunchLanding: FirstLaunchLanding?
+  private(set) var firstRunFolders: FirstRunFolderAccess?
   var startupError: String?
   @ObservationIgnored private var startupInProgress = false
   @ObservationIgnored let serverAgent = MacServerAgentController()
@@ -90,8 +91,9 @@ final class AppRuntime {
       AppDelegate.current?.settings = runtime.environment.settings
       AppDelegate.current?.appUpdate = runtime.environment.appUpdate
       startupError = nil
+      let folders = followFolderQuestions(runtime.environment)
       if runtime.isFirstLaunch, !AppPreview.isRunning {
-        startFirstLaunchSetup(runtime.environment)
+        startFirstLaunchSetup(runtime.environment, folders: folders)
       } else {
         closeFirstLaunchSetup()
       }
@@ -108,11 +110,23 @@ final class AppRuntime {
     }
   }
 
-  private func startFirstLaunchSetup(_ environment: AppEnvironment) {
+  private func followFolderQuestions(_ environment: AppEnvironment) -> FirstRunFolderAccess {
+    let folders = FirstRunFolderAccess(
+      client: environment.machines.client(for: CodevisorMachine.local.id),
+      permission: ProtectedFolderPermission.check
+    )
+    firstRunFolders = folders
+    if !AppPreview.isRunning {
+      Task { await folders.follow() }
+    }
+    return folders
+  }
+
+  private func startFirstLaunchSetup(_ environment: AppEnvironment, folders: FirstRunFolderAccess) {
     ClientPreferences.shared.set(true, forKey: RootSidebarVisibility.collapsedKey)
     ClientPreferences.shared.set(false, forKey: WorkspaceInspectorPresentation.presentedKey)
     let setup = firstLaunchSetup ?? showFirstLaunchSetup()
-    Task { await setup.run(LiveFirstLaunchSetupWork(environment: environment)) }
+    Task { await setup.run(LiveFirstLaunchSetupWork(environment: environment, folders: folders)) }
   }
 
   @discardableResult

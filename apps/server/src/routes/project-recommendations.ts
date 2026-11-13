@@ -1,10 +1,13 @@
-import type { Harness, ProjectRecommendation } from "@codevisor/api"
+import { homedir } from "node:os"
+
+import type { AgentSessionSummary, Harness, ProjectRecommendation } from "@codevisor/api"
 
 import { recommendProjectsFromSessions } from "../project-recommendations.js"
+import { folderAccess, readFolderDecisions, type FolderMachine } from "../protected-folders.js"
 import { run, type CodevisorServerServices } from "../server-context.js"
 import { discoverHarnesses } from "./harnesses.js"
 
-const maxLimit = 50
+export const sessionScanLimit = 50
 
 const freshForMs = 15_000
 
@@ -23,6 +26,15 @@ export const recommendFromHarnesses = async (
   services: CodevisorServerServices,
   harnesses: ReadonlyArray<Harness>
 ): Promise<ReadonlyArray<ProjectRecommendation>> => {
+  const sessions = await listHarnessSessions(services, harnesses)
+  const access = folderAccess(await readFolderDecisions(services), systemFolderMachine())
+  return recommendProjectsFromSessions(sessions, { limit: sessionScanLimit, access })
+}
+
+export const listHarnessSessions = async (
+  services: CodevisorServerServices,
+  harnesses: ReadonlyArray<Harness>
+): Promise<ReadonlyArray<AgentSessionSummary>> => {
   const sessionGroups = await Promise.all(
     harnesses.map(async (harness) => {
       try {
@@ -33,8 +45,13 @@ export const recommendFromHarnesses = async (
       }
     })
   )
-  return recommendProjectsFromSessions(sessionGroups.flat(), { limit: maxLimit })
+  return sessionGroups.flat()
 }
+
+const systemFolderMachine = (): FolderMachine => ({
+  platform: process.platform,
+  homeDirectory: homedir()
+})
 
 const isUsableHarness = (harness: Harness): boolean =>
   harness.enabled && harness.readiness.state === "ready"
@@ -75,7 +92,7 @@ export const projectRecommendationsForRequest = async (
   const requestedLimit = Number.parseInt(url.searchParams.get("limit") ?? "12", 10)
   const limit = Math.max(
     0,
-    Math.min(Number.isFinite(requestedLimit) ? requestedLimit : 12, maxLimit)
+    Math.min(Number.isFinite(requestedLimit) ? requestedLimit : 12, sessionScanLimit)
   )
   let recommendations = caches.get(services)
   if (recommendations === undefined) {

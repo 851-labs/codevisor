@@ -1,4 +1,5 @@
 import { existsSync, mkdirSync, readFileSync, renameSync, writeFileSync } from "node:fs"
+import { readdir } from "node:fs/promises"
 import { homedir } from "node:os"
 import { dirname, join } from "node:path"
 import { performance } from "node:perf_hooks"
@@ -60,6 +61,15 @@ export const screenSharingProvider = (
     vnc.desktop === "xfce" ? xfceScaler(vnc.port - 5900, systemScalerCommands) : undefined
   return { screenSharing: vncScreenSharing(vnc, scaler), screenSharingVNC: vnc }
 }
+export const canReadFolder = async (path: string): Promise<boolean> => {
+  try {
+    await readdir(path)
+    return true
+  } catch {
+    return false
+  }
+}
+
 export const simulatorsProvider = (dataDir: string): Simulators | undefined =>
   process.platform === "darwin"
     ? makeSimulators(systemSimulatorEnvironment, () => macNativeHostAvailable(dataDir))

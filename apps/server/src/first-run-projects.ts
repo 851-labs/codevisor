@@ -13,6 +13,7 @@ export interface FirstRunProjectContext {
   readonly homeDirectory: string
   readonly projectFolders: ReadonlyArray<string>
   readonly excludedRoots: ReadonlyArray<string>
+  readonly limit?: number
 }
 
 export interface SkippedFirstRunProject {
@@ -76,7 +77,8 @@ const isClaimed = ({ path, added, context }: Candidate): boolean =>
     isPathInside(path, resolve(folder))
   )
 
-const isOverLimit = ({ added }: Candidate): boolean => added.length >= firstRunProjectLimit
+const isOverLimit = ({ added, context }: Candidate): boolean =>
+  added.length >= (context.limit ?? firstRunProjectLimit)
 
 const skipRules: ReadonlyArray<SkipRule> = [
   { reason: "no chats in the last 7 days", applies: (candidate) => !isRecentlyActive(candidate) },

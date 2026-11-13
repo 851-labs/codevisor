@@ -94,7 +94,10 @@ public final class FirstLaunchSetup {
   }
 
   private func confirmsNewInstall() async -> Bool {
-    if !hasServerAnswer, !(await serverAnswersInTime()) { handOff() }
+    if !hasServerAnswer {
+      let answered = await becomes(within: timing.serverAnswerTimeout) { self.hasServerAnswer }
+      if !answered { handOff() }
+    }
     guard presentation == .visible else { return false }
     guard isNewInstall == true else {
       presentation = .notNeeded
@@ -108,13 +111,13 @@ public final class FirstLaunchSetup {
     isNewInstall != nil || presentation != .visible
   }
 
-  private func serverAnswersInTime() async -> Bool {
-    while true {
+  private func elapses(_ limit: Duration) async {
+    while !Task.isCancelled {
       let waitsBefore = userWaits
-      if await becomes(within: timing.serverAnswerTimeout, { self.hasServerAnswer }) { return true }
-      guard isWaitingOnUser || userWaits != waitsBefore else { return hasServerAnswer }
+      try? await sleep(limit)
+      guard isWaitingOnUser || userWaits != waitsBefore else { return }
 
-      await waitUntil { !self.isWaitingOnUser || self.hasServerAnswer }
+      await waitUntil { !self.isWaitingOnUser }
     }
   }
 
@@ -136,8 +139,8 @@ public final class FirstLaunchSetup {
         await self.waitUntil(condition)
         return true
       },
-      { [sleep] in
-        try? await sleep(limit)
+      { @MainActor in
+        await self.elapses(limit)
         return false
       },
     ])
@@ -164,7 +167,11 @@ public final class FirstLaunchSetup {
       self.record($0, for: .harnesses)
     }
     async let projects: Void = runStep(.projects, within: timing.projectsTimeout) { [work] in
-      try await work.addRecentProjects { self.record($0, for: .projects) }
+      try await work.addRecentProjects {
+        self.record($0, for: .projects)
+      } waitingOnUser: {
+        self.setWaitingOnUser($0)
+      }
     } record: {
       self.record($0, for: .projects)
     }
@@ -205,8 +212,8 @@ public final class FirstLaunchSetup {
   ) async -> Value? {
     await FirstLaunchRace.first([
       { @MainActor in try? await operation() },
-      { [sleep] in
-        try? await sleep(limit)
+      { @MainActor in
+        await self.elapses(limit)
         return nil
       },
     ])

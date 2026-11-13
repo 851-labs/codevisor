@@ -19,6 +19,16 @@
 	</dict>
 	<key>NSScreenCaptureUsageDescription</key>
 	<string>Codevisor uses window sharing to show which apps Computer Use can see and control.</string>
+	<key>NSDesktopFolderUsageDescription</key>
+	<string>Codevisor adds and works with your projects in this folder.</string>
+	<key>NSDocumentsFolderUsageDescription</key>
+	<string>Codevisor adds and works with your projects in this folder.</string>
+	<key>NSDownloadsFolderUsageDescription</key>
+	<string>Codevisor adds and works with your projects in this folder.</string>
+	<key>NSRemovableVolumesUsageDescription</key>
+	<string>Codevisor adds and works with your projects on this drive.</string>
+	<key>NSNetworkVolumesUsageDescription</key>
+	<string>Codevisor adds and works with your projects on this drive.</string>
 	<key>NSLocalNetworkUsageDescription</key>
 	<string>Connect directly to your machines running Codevisor on your local network.</string>
 	<key>NSBluetoothAlwaysUsageDescription</key>

@@ -186,6 +186,9 @@ public protocol CodevisorServerClienting: BrowserStateClienting, BrowserFaviconC
   func listDirectory(path: String?, showHidden: Bool) async throws -> ServerFsListing
   func projectRecommendations(limit: Int) async throws -> [ServerProjectRecommendation]
   func firstRunStatus() async throws -> ServerFirstRunStatus
+  func answerFirstRunFolder(
+    id: String, access: ServerFirstRunFolderAnswer.Access
+  ) async throws -> ServerFirstRunStatus
   func createDirectory(path: String) async throws -> String
   func createProjectFromGit(id: UUID, url: String, name: String?) async throws -> ServerProject
   func projectSetupSource(projectId: UUID) async throws -> ServerProjectSetupSource

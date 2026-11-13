@@ -116,6 +116,27 @@ struct FirstLaunchSetupTests {
     #expect(setup.canGetStarted)
   }
 
+  @Test("Keeps a step going past its time limit while the user answers a sheet")
+  func stepsWaitForTheUser() async {
+    let clock = TestClock()
+    let work = newInstall()
+    work.harnesses.resolve([])
+    work.models.resolve(())
+    let setup = FirstLaunchSetup(clock: clock)
+    let running = Task { await setup.run(work) }
+    await work.projectsRequested.wait()
+    await clock.waitForSleep(.seconds(10))
+    work.waitOnUser()
+    clock.advance(by: .seconds(10))
+
+    work.projects.resolve([])
+    await awaitObserved { setup.outcomes[.projects] == .done }
+    await clock.waitForSleep(.milliseconds(400))
+    clock.advance(by: .milliseconds(400))
+    await running.value
+    #expect(setup.canGetStarted)
+  }
+
   @Test("Keeps asking through unreadable answers, then hands off after fifteen seconds")
   func keepsAskingThroughErrors() async {
     let clock = TestClock()
