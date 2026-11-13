@@ -11,7 +11,8 @@ final class ScreenSharingHostService {
   typealias Display = (id: UInt32, description: ServerScreenSharingDisplay)
   static let logger = Logger(subsystem: "com.851labs.Codevisor", category: "ScreenSharing")
   private(set) var current: ScreenSharingHostSession?
-  private var lastEnd: (owner: ScreenSharingHostLease.Owner, reason: String)?
+  private var lastEnd: (owner: ScreenSharingHostLease.Owner, ending: ScreenSharingHostEnding)?
+  private var displayChoice = ScreenSharingHostDisplayChoice()
   private var pendingStarts: [UUID: ScreenSharingHostLease.Owner] = [:]
   private var isShutdown = false
   private var stopGeneration = 0
@@ -44,10 +45,19 @@ final class ScreenSharingHostService {
   }
 
   func handle(_ request: ServerScreenSharingRequest) async -> ServerScreenSharingReply {
+    var reply = await respond(to: request)
+    reply.abilities = [ServerScreenSharingReply.appSessions]
+    guard request.app != nil, ["connecting", "viewing"].contains(reply.status), let current,
+      current.owner == .init(request)
+    else { return reply }
+    reply.display = current.display
+    reply.displays = current.displays
+    return reply
+  }
+
+  private func respond(to request: ServerScreenSharingRequest) async -> ServerScreenSharingReply {
     guard !isShutdown, !Task.isCancelled else { return .init(status: "stopped") }
-    guard request.version == 1 else {
-      return .init(status: "unavailable", message: "Update Codevisor to use Screen Sharing.")
-    }
+    guard request.version == 1 else { return ScreenSharingHostRefusal.updateNeeded.reply }
     let attempt = [.start, .restart].contains(request.operation) ? registerStart(request) : nil
     defer { if let attempt { pendingStarts.removeValue(forKey: attempt) } }
     installObservers()
@@ -64,23 +74,20 @@ final class ScreenSharingHostService {
     case .stop:
       stopGeneration += 1
       let owner = ScreenSharingHostLease.Owner(request)
-      pendingStarts = pendingStarts.filter { $0.value != owner }
-      if let current, current.owner == .init(request) { await end(current) }
+      pendingStarts = pendingStarts.filter { !$0.value.isSameAttempt(as: owner) }
+      if let current, current.owner.isSameAttempt(as: owner) { await end(current) }
       return .init(status: "stopped")
     case .heartbeat:
       guard let current, !current.stopping,
         lease.renew(.init(request), now: ProcessInfo.processInfo.systemUptime)
-      else {
-        if let lastEnd, lastEnd.owner == .init(request) { return .init(status: "failed", message: lastEnd.reason) }
-        return .init(status: "stopped", message: "Screen sharing ended on the host Mac.")
-      }
+      else { return ScreenSharingHostEnding.reply(to: .init(request), lastEnd: lastEnd, holder: current?.owner) }
       if let error = ["captureError", "encoderError"].compactMap(current.metrics.label).first(where: { !$0.isEmpty }) {
         await end(current)
         return .init(status: "failed", message: error)
       }
       return .init(status: current.state, message: current.notice)
     case .capabilities:
-      guard captureAccess() else { return permissionRequired() }
+      guard captureAccess() else { return ScreenSharingHostRefusal.permissionMissing.reply }
       do {
         var reply = ServerScreenSharingReply(
           status: current == nil ? "available" : "busy", displays: try await enumerateDisplays().map(\.description))
@@ -95,15 +102,16 @@ final class ScreenSharingHostService {
 
   private func registerStart(_ request: ServerScreenSharingRequest) -> UUID {
     let owner = ScreenSharingHostLease.Owner(request)
-    pendingStarts = pendingStarts.filter { !$0.value.isSamePane(as: owner) }
+    pendingStarts = pendingStarts.filter { !$0.value.isSameHolder(as: owner) }
     let attempt = UUID()
     pendingStarts[attempt] = owner
     return attempt
   }
 
   private func start(_ request: ServerScreenSharingRequest, attempt: UUID) async -> ServerScreenSharingReply {
+    let owner = ScreenSharingHostLease.Owner(request)
     var replacement: ScreenSharingHostLease.ReplacementPermit?
-    if request.operation == .restart {
+    if request.operation == .restart, owner.appKey == nil {
       guard let old = current, !old.stopping, old.owner == .init(request),
         old.display.id == request.displayId,
         let permit = lease.replacementPermit(
@@ -118,14 +126,12 @@ final class ScreenSharingHostService {
         return .init(status: "stopped", message: "Screen sharing ended on the host Mac.")
       }
     }
-    if request.operation == .start, let old = current, old.owner.isSamePane(as: .init(request)) {
-      await end(old)
+    if request.operation == .start || owner.appKey != nil, let old = current {
+      if let refusal = await displace(old, for: request, attempt: attempt) { return refusal }
       guard !isShutdown, pendingStarts[attempt] != nil else { return .init(status: "stopped") }
     }
-    guard current == nil else {
-      return .init(status: "busy", message: "This Mac is already sharing with another viewer.")
-    }
-    guard captureAccess() else { return permissionRequired() }
+    guard current == nil else { return inUse }
+    guard captureAccess() else { return ScreenSharingHostRefusal.permissionMissing.reply }
     guard mediaEndpoint.isAvailable else {
       return .init(status: "failed", message: "This Mac's screen-sharing endpoint isn't available.")
     }
@@ -140,7 +146,7 @@ final class ScreenSharingHostService {
 
   private func startSession(
     _ request: ServerScreenSharingRequest, attempt: UUID, replacement: ScreenSharingHostLease.ReplacementPermit?,
-    displayId: String, viewerMedia: ServerScreenSharingMediaAddress
+    displayId: String?, viewerMedia: ServerScreenSharingMediaAddress
   ) async throws -> ServerScreenSharingReply {
     let available = try await enumerateDisplays()
     try Task.checkCancellation()
@@ -148,11 +154,9 @@ final class ScreenSharingHostService {
     if let replacement, !replacement.isValid(revision: stopGeneration, now: ProcessInfo.processInfo.systemUptime) {
       return .init(status: "stopped", message: "Screen sharing ended on the host Mac.")
     }
-    guard current == nil else {
-      return .init(status: "busy", message: "This Mac is already sharing with another viewer.")
-    }
-    guard let display = available.first(where: { $0.description.id == displayId }) else {
-      return .init(status: "unavailable", message: "The selected display is no longer available.")
+    guard current == nil else { return inUse }
+    guard let display = displayChoice.display(for: .init(request), asking: displayId, among: available) else {
+      return ScreenSharingHostRefusal.noDisplay.reply
     }
     let session = try ScreenSharingHostSession(
       request: request, display: display.description, displayID: display.id,
@@ -171,22 +175,57 @@ final class ScreenSharingHostService {
     }
     guard current == nil, lease.reserve(session.owner, now: ProcessInfo.processInfo.systemUptime) else {
       session.peer.close()
-      return .init(status: "busy", message: "This Mac is already sharing with another viewer.")
+      return inUse
     }
     current = session
     lastEnd = nil
+    session.displays = available.map(\.description)
+    displayChoice.remember(display, for: session.owner)
     configureChannels(session)
     return await startV2(session)
   }
 
   private func startMedia(
     _ request: ServerScreenSharingRequest
-  ) -> (displayId: String, viewerMedia: ServerScreenSharingMediaAddress)? {
-    guard request.engine == ScreenSharingEngine.v2.rawValue, let viewerMedia = request.media,
-      let displayId = request.displayId
-    else { return nil }
+  ) -> (displayId: String?, viewerMedia: ServerScreenSharingMediaAddress)? {
+    guard request.engine == ScreenSharingEngine.v2.rawValue, let viewerMedia = request.media else { return nil }
 
-    return (displayId, viewerMedia)
+    guard let app = request.app else { return request.displayId.map { ($0, viewerMedia) } }
+
+    guard app.key.lowercased() == viewerMedia.endpointId.lowercased() else { return nil }
+
+    return (request.displayId, viewerMedia)
+  }
+
+  private var inUse: ServerScreenSharingReply { ScreenSharingHostRefusal.inUse(by: current?.owner.name).reply }
+
+  private func displace(
+    _ old: ScreenSharingHostSession, for request: ServerScreenSharingRequest, attempt: UUID
+  ) async -> ServerScreenSharingReply? {
+    let owner = ScreenSharingHostLease.Owner(request)
+    switch owner.admission(against: old.owner, intent: request.intent) {
+    case .refused: return inUse
+    case .replacesOwn: await end(old)
+    case .takesOver:
+      if let refusal = await takeoverRefusal(request) { return refusal }
+      guard !isShutdown, pendingStarts[attempt] != nil else { return .init(status: "stopped") }
+      await end(old, as: .takenOver(by: owner.name))
+    }
+    return nil
+  }
+
+  private func takeoverRefusal(_ request: ServerScreenSharingRequest) async -> ServerScreenSharingReply? {
+    guard startMedia(request) != nil else { return .init(status: "failed", message: "Invalid Screen Sharing request.") }
+    guard captureAccess() else { return ScreenSharingHostRefusal.permissionMissing.reply }
+    let available = try? await enumerateDisplays()
+    return available?.isEmpty == true ? ScreenSharingHostRefusal.noDisplay.reply : nil
+  }
+
+  func refreshDisplays(of session: ScreenSharingHostSession) async {
+    guard session.owner.appKey != nil, let available = try? await enumerateDisplays(), current === session else {
+      return
+    }
+    session.displays = available.map(\.description)
   }
 
   func mediaEndpointHandle() async -> NetEndpointHandle? {
@@ -301,35 +340,35 @@ final class ScreenSharingHostService {
       session.displaySleepAssertion = ScreenSharingDisplaySleepAssertion(reason: "Codevisor Screen Sharing")
       indicator.show(display: session.display.name) { [weak self, weak session] in
         guard let self, let session else { return }
-        self.scheduleEnd(session)
+        self.scheduleEnd(session, as: .stoppedOnHost)
       }
       await recoverStalledCapture(session, baseline: baseline)
     } catch {
-      await end(session, reason: (error as? ScreenSharingError)?.localizedDescription ?? Self.captureFailed)
+      await end(session, as: .failed((error as? ScreenSharingError)?.localizedDescription ?? Self.captureFailed))
     }
   }
 
-  private func scheduleEnd(_ session: ScreenSharingHostSession) {
+  private func scheduleEnd(_ session: ScreenSharingHostSession, as ending: ScreenSharingHostEnding) {
     guard current === session else { return }
     stopGeneration += 1
     session.state = "stopping"
     session.control?.revoke("Screen sharing ended.")
     session.clipboard?.cancel(reason: "Screen sharing ended.")
-    Task { await end(session, reason: "Screen sharing was stopped on the host Mac.") }
+    Task { await end(session, as: ending) }
   }
 
   static let captureFailed = "The host Mac couldn't start capturing its screen. Try again."
 
-  func end(_ session: ScreenSharingHostSession, reason: String? = nil) async {
+  func end(_ session: ScreenSharingHostSession, as cause: ScreenSharingHostEnding? = nil) async {
     guard current === session else { return }
     if let ending = session.ending { return await ending.value }
-    if let reason { lastEnd = (session.owner, reason) }
+    if let cause { lastEnd = (session.owner, cause) }
     session.stopping = true
     session.control?.revoke("Screen sharing ended.")
     session.clipboard?.cancel(reason: "Screen sharing ended.")
     let metrics = session.metrics.snapshot()
     Self.logger.notice(
-      "Host ended (\(reason ?? "stopped", privacy: .public)): \(session.state, privacy: .public), \(String(describing: metrics.counters), privacy: .public), \(String(describing: metrics.labels), privacy: .public)"
+      "Host ended (\(cause?.reason?.rawValue ?? cause?.message ?? "stopped", privacy: .public)): \(session.state, privacy: .public), \(String(describing: metrics.counters), privacy: .public), \(String(describing: metrics.labels), privacy: .public)"
     )
     session.watchdog?.cancel()
     session.mediaAccept?.cancel()
@@ -353,22 +392,23 @@ final class ScreenSharingHostService {
     await ending.value
   }
 
-  func systemStopped() {
+  func systemStopped(_ ending: ScreenSharingHostEnding) {
     stopGeneration += 1
     pendingStarts.removeAll()
-    if let current { scheduleEnd(current) }
+    if let current { scheduleEnd(current, as: ending) }
   }
 
   private func installObservers() {
     guard observers.isEmpty else { return }
-    let stop: @Sendable (Notification) -> Void = { [weak self] _ in
-      MainActor.assumeIsolated {
-        self?.systemStopped()
-      }
-    }
-    for name in [NSWorkspace.screensDidSleepNotification, NSWorkspace.sessionDidResignActiveNotification] {
+    let endings: [(Notification.Name, ScreenSharingHostEnding)] = [
+      (NSWorkspace.screensDidSleepNotification, .displayAsleep),
+      (NSWorkspace.sessionDidResignActiveNotification, .sessionSwitched),
+    ]
+    for (name, ending) in endings {
       observers.append(
-        workspaceNotificationCenter.addObserver(forName: name, object: nil, queue: .main, using: stop))
+        workspaceNotificationCenter.addObserver(forName: name, object: nil, queue: .main) { [weak self] _ in
+          MainActor.assumeIsolated { self?.systemStopped(ending) }
+        })
     }
     observers.append(
       notificationCenter.addObserver(
@@ -379,19 +419,11 @@ final class ScreenSharingHostService {
 }
 
 extension ScreenSharingHostService {
-  private func permissionRequired() -> ServerScreenSharingReply {
-    .init(
-      status: "permission-required",
-      message:
-        "Allow Codevisor in System Settings → Privacy & Security → Screen & System Audio Recording on the host Mac, then retry."
-    )
-  }
-
   private func captureStopped(_ session: ScreenSharingHostSession, message: String) {
     guard current === session, !session.stopping else { return }
     guard session.captureRestarts.allowsRestart(now: ProcessInfo.processInfo.systemUptime) else {
       Self.logger.error("Capture stopped again (\(message, privacy: .public)); ending the session")
-      scheduleEnd(session)
+      scheduleEnd(session, as: .captureLost)
       return
     }
     Self.logger.notice("Capture stopped (\(message, privacy: .public)); restarting it")

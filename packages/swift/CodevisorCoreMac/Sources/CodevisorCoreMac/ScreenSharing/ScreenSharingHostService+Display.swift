@@ -172,8 +172,9 @@ extension ScreenSharingHostService {
         virtual: current.virtualDisplay?.displayID, online: online)
     else {
       Self.logger.notice("The shared display went away; ending the session")
-      return systemStopped()
+      return systemStopped(.displayGone)
     }
+    Task { await refreshDisplays(of: current) }
     let shared = current.displayID
     followDisplay(current)
     if current.displayID != shared { Task { await updateDisplay(current) } }

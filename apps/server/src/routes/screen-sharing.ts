@@ -55,6 +55,26 @@ const isKnownTarget = (displayId: string): boolean =>
 
 const endpointId = /^[0-9a-f]{64}$/i
 const maxMediaAddrs = 32
+const maxAppNameLength = 64
+
+const appIsWellFormed = (payload: ScreenSharingRequest): boolean =>
+  payload.app === undefined ||
+  (endpointId.test(payload.app.key) &&
+    payload.app.name.trim().length > 0 &&
+    payload.app.name.length <= maxAppNameLength)
+
+const appStartIsComplete = (payload: ScreenSharingRequest): boolean =>
+  payload.app === undefined ||
+  (payload.intent !== undefined &&
+    payload.media?.endpointId.toLowerCase() === payload.app.key.toLowerCase())
+
+const startTargetIsValid = (payload: ScreenSharingRequest): boolean =>
+  payload.displayId === undefined ? payload.app !== undefined : isKnownTarget(payload.displayId)
+
+const appOwnsDesktopSession = (payload: ScreenSharingRequest): boolean =>
+  payload.app !== undefined &&
+  computerUseSessionId(payload.displayId) === undefined &&
+  !isSimulatorTarget(payload.displayId)
 
 const isMediaAddress = (media: ScreenSharingMediaAddress | undefined): boolean =>
   media !== undefined &&
@@ -93,17 +113,19 @@ export const routeScreenSharing = async (
     )
   if (![payload.workspaceId, payload.paneId, payload.viewerId].every((id) => uuid.test(id)))
     throw new HttpFailure(400, "Invalid Screen Sharing identity")
+  if (!appIsWellFormed(payload)) throw new HttpFailure(400, "Invalid Screen Sharing identity")
+  const starts = payload.operation === "start" || payload.operation === "restart"
   if (
-    (payload.operation === "start" || payload.operation === "restart") &&
-    (payload.engine !== "v2" ||
-      !isMediaAddress(payload.media) ||
-      payload.displayId === undefined ||
-      !isKnownTarget(payload.displayId))
+    starts &&
+    (payload.engine !== "v2" || !isMediaAddress(payload.media) || !startTargetIsValid(payload))
   )
     throw new HttpFailure(400, "Invalid Screen Sharing media or display")
+  if (starts && !appStartIsComplete(payload))
+    throw new HttpFailure(400, "Invalid Screen Sharing identity")
   if (payload.displayId !== undefined && !isKnownTarget(payload.displayId))
     throw new HttpFailure(400, "Invalid Screen Sharing display")
-  if (["start", "restart", "heartbeat"].includes(payload.operation)) {
+  const checksPane = ["start", "restart", "heartbeat"].includes(payload.operation)
+  if (checksPane && !appOwnsDesktopSession(payload)) {
     const sessionId = computerUseSessionId(payload.displayId)
     const workspace = (await run(services.db.listWorkspaces)).find(
       (item) => item.id.toLowerCase() === payload.workspaceId.toLowerCase()

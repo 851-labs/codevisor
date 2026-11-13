@@ -145,7 +145,7 @@ struct ScreenSharingHostRequestTests {
     await entered.wait()
     let pendingSecond = Task { await host.handle(second) }
     await entered.wait(for: 2)
-    host.systemStopped()
+    host.systemStopped(.displayAsleep)
     release.signal()
     #expect(await pendingFirst.value.status == "stopped")
     #expect(await pendingSecond.value.status == "stopped")

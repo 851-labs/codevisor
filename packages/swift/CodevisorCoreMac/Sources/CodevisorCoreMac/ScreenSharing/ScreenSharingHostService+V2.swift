@@ -47,7 +47,7 @@ extension ScreenSharingHostService {
         guard !Task.isCancelled, let self, let session else { return }
 
         Self.logger.notice("Engine v2 viewer didn't connect: \(error.localizedDescription, privacy: .public)")
-        await self.end(session, reason: "The viewer couldn't connect to this Mac over engine v2.")
+        await self.end(session, as: .failed("The viewer couldn't connect to this Mac over engine v2."))
       }
     }
   }

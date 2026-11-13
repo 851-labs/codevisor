@@ -13,6 +13,7 @@ final class ScreenSharingHostSession {
   let capture: ScreenSharingCapture
   let metrics: ScreenSharingMetrics
   let display: ServerScreenSharingDisplay
+  var displays: [ServerScreenSharingDisplay] = []
   var displayID: UInt32 {
     get { sharedDisplay.displayID }
     set { sharedDisplay.displayID = newValue }

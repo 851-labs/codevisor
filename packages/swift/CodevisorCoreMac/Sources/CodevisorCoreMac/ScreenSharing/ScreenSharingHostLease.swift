@@ -3,13 +3,30 @@ import CodevisorCore
 
 struct ScreenSharingHostLease {
   struct Owner: Equatable, Sendable {
+    enum Admission: Equatable { case replacesOwn, takesOver, refused }
     let workspaceId: UUID
     let paneId: UUID
     let viewerId: UUID
+    let appKey: String?
+    let name: String?
     init(_ request: ServerScreenSharingRequest) {
       workspaceId = request.workspaceId; paneId = request.paneId; viewerId = request.viewerId
+      appKey = request.app?.key.lowercased(); name = request.app?.name
     }
-    func isSamePane(as other: Owner) -> Bool { workspaceId == other.workspaceId && paneId == other.paneId }
+    static func == (lhs: Owner, rhs: Owner) -> Bool {
+      guard lhs.appKey == nil, rhs.appKey == nil else { return lhs.appKey == rhs.appKey }
+      return lhs.isSameHolder(as: rhs) && lhs.viewerId == rhs.viewerId
+    }
+    func isSameHolder(as other: Owner) -> Bool {
+      guard appKey == nil, other.appKey == nil else { return appKey == other.appKey }
+      return workspaceId == other.workspaceId && paneId == other.paneId
+    }
+    func isSameAttempt(as other: Owner) -> Bool { self == other && viewerId == other.viewerId }
+    func admission(against holder: Owner, intent: ServerScreenSharingRequest.Intent?) -> Admission {
+      if isSameHolder(as: holder) { return .replacesOwn }
+      if appKey != nil, intent == .open { return .takesOver }
+      return .refused
+    }
   }
   private(set) var owner: Owner?
   private(set) var expiresAt: TimeInterval = 0

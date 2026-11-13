@@ -19,6 +19,7 @@ public struct ServerScreenSharingDisplay: Codable, Sendable, Equatable, Identifi
 
 public struct ServerScreenSharingRequest: Codable, Sendable {
   public enum Operation: String, Codable, Sendable { case capabilities, start, restart, heartbeat, stop, setScale }
+  public enum Intent: String, Codable, Sendable { case open, attach }
   public let version: Int
   public let operation: Operation
   public let workspaceId: UUID
@@ -29,6 +30,8 @@ public struct ServerScreenSharingRequest: Codable, Sendable {
   public var engine: String?
   public var media: ServerScreenSharingMediaAddress?
   public var chroma: String?
+  public var app: ServerScreenSharingApp?
+  public var intent: Intent?
 
   public init(
     operation: Operation, workspaceId: UUID, paneId: UUID, viewerId: UUID,
@@ -49,6 +52,12 @@ public struct ServerScreenSharingReply: Codable, Sendable {
   public var controlLease: Bool?
   public var engines: [String]?
   public var media: ServerScreenSharingMediaGrant?
+  public var abilities: [String]?
+  public var reason: ServerScreenSharingReason?
+  public var holderName: String?
+  public var display: ServerScreenSharingDisplay?
+
+  public static let appSessions = "app-sessions"
 
   public init(
     status: String, message: String? = nil, displays: [ServerScreenSharingDisplay] = [], provider: String? = nil
