@@ -24,6 +24,29 @@ struct ThreadParticipantAvatar: View {
   }
 }
 
+struct ThreadGroupAvatar: View {
+  let bot: Bot
+  let participant: ServerThreadParticipant?
+  let size: CGFloat
+
+  var body: some View {
+    ZStack {
+      Circle().fill(.background)
+      Circle().fill(Color.gray.opacity(0.3))
+      BotAvatar(bot: bot, size: size * 0.56)
+        .padding([.top, .leading], size * 0.11)
+        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
+      if let participant {
+        ThreadParticipantAvatar(participant: participant, size: size * 0.38)
+          .padding([.bottom, .trailing], size * 0.1)
+          .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .bottomTrailing)
+      }
+    }
+    .frame(width: size, height: size)
+    .accessibilityHidden(true)
+  }
+}
+
 extension ServerThreadParticipant {
   var threadDisplayName: String {
     name.isEmpty ? "Agent" : name

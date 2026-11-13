@@ -16,7 +16,7 @@ struct BotThreadScreen: View {
       .navigationBarTitleDisplayMode(.inline)
       .toolbar {
         ToolbarItem(placement: .principal) {
-          BotThreadHeader(participant: other)
+          BotThreadHeader(bot: bot, participant: other)
             .background {
               WindowFrameProbe { headerWindowBottom = $0.maxY }
             }
@@ -93,16 +93,15 @@ struct BotThreadScreen: View {
 }
 
 private struct BotThreadHeader: View {
+  let bot: Bot
   let participant: ServerThreadParticipant?
   @ScaledMetric(relativeTo: .headline) private var avatarSize: CGFloat = 56
 
   var body: some View {
     VStack(spacing: -8) {
-      if let participant {
-        ThreadParticipantAvatar(participant: participant, size: avatarSize)
-          .zIndex(1)
-      }
-      Text(participant?.threadDisplayName ?? "Thread")
+      ThreadGroupAvatar(bot: bot, participant: participant, size: avatarSize)
+        .zIndex(1)
+      Text(title)
         .font(.headline)
         .lineLimit(1)
         .padding(.horizontal, 12)
@@ -110,7 +109,11 @@ private struct BotThreadHeader: View {
         .glassEffect(.regular, in: .capsule)
     }
     .accessibilityElement(children: .ignore)
-    .accessibilityLabel("Thread with \(participant?.threadDisplayName ?? "an agent")")
+    .accessibilityLabel("Thread between \(title)")
     .accessibilityIdentifier("bot.thread.header")
+  }
+
+  private var title: String {
+    "\(bot.name) & \(participant?.threadDisplayName ?? "Agent")"
   }
 }

@@ -20,7 +20,7 @@ struct BotThreadScreen: View {
     )
     .environment(\.transcriptTopChromeHeight, BotConversationHeader.height)
     .overlay(alignment: .top) {
-      BotThreadHeader(participant: other)
+      BotThreadHeader(bot: bot, participant: other)
         .ignoresSafeArea(edges: .top)
     }
     .toolbar {
@@ -63,14 +63,13 @@ struct BotThreadScreen: View {
 }
 
 private struct BotThreadHeader: View {
+  let bot: Bot
   let participant: ServerThreadParticipant?
 
   var body: some View {
     VStack(spacing: -BotConversationHeader.overlap) {
-      if let participant {
-        ThreadParticipantAvatar(participant: participant, size: BotConversationHeader.avatarSize)
-      }
-      Text(participant?.threadDisplayName ?? "Thread")
+      ThreadGroupAvatar(bot: bot, participant: participant, size: BotConversationHeader.avatarSize)
+      Text(title)
         .font(.headline)
         .lineLimit(1)
         .padding(.horizontal, 12)
@@ -83,6 +82,10 @@ private struct BotThreadHeader: View {
     .padding(.top, 6)
     .frame(height: BotConversationHeader.height, alignment: .top)
     .accessibilityElement(children: .ignore)
-    .accessibilityLabel("Thread with \(participant?.threadDisplayName ?? "an agent")")
+    .accessibilityLabel("Thread between \(title)")
+  }
+
+  private var title: String {
+    "\(bot.name) & \(participant?.threadDisplayName ?? "Agent")"
   }
 }
