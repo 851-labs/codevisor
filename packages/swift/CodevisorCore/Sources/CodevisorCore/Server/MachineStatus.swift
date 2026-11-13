@@ -32,7 +32,6 @@ public struct MachineStatus: Sendable, Equatable {
   public var supportsComputerUseStreaming: Bool { features.contains("computer-use-stream-v1") }
   public var supportsLivePreview: Bool { features.contains("live-preview-v1") }
   public var supportsSimulator: Bool { features.contains("simulator-v1") }
-  public var supportsBots: Bool { features.contains("bots-v1") }
   public var supportsBotProjectChanges: Bool { features.contains("bot-projects-v1") }
   public var supportsBotArchive: Bool { features.contains("bot-archive-v1") }
   public var supportsBotFork: Bool { features.contains("bot-fork-v1") }

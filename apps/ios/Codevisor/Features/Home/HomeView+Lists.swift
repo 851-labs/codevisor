@@ -25,18 +25,7 @@ extension HomeView {
       actions: sidebarActionHandler,
       splitNavigation: layoutMode == .split ? navigation : nil,
       gitLookups: sidebarGitLookups,
-      mode: sidebarMode
-    )
-  }
-
-  var showsSidebarModes: Bool {
-    HomeSidebarContentBuilder(environment: environment, gitLookups: sidebarGitLookups).showsChatMode
-  }
-
-  var sidebarMode: Binding<SidebarMode> {
-    Binding(
-      get: { showsSidebarModes ? storedSidebarMode : .code },
-      set: { storedSidebarMode = $0 }
+      mode: $sidebarMode
     )
   }
 

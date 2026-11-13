@@ -53,7 +53,7 @@ struct HomeView: View {
   @State var sidebarGitLookups = SidebarGitLookups()
   @ClientPreference(SidebarPreferenceKey.pinnedWorkspaces, default: []) var pinnedWorkspaceIDs: [String]
   @ClientPreference(SidebarGrouping.collapsedPreferenceKey, default: []) var collapsedGroupIDs: [String]
-  @ClientPreference(SidebarMode.preferenceKey, default: SidebarMode.code) var storedSidebarMode
+  @ClientPreference(SidebarMode.preferenceKey, default: SidebarMode.code) var sidebarMode
   @State var navigationPresentation: HomeNavigationPresentation?
   @State var hostWindow = WeakWindow()
   #if DEBUG || NAVIGATION_DIAGNOSTICS
@@ -132,11 +132,11 @@ struct HomeView: View {
   }
 
   var showsNewChatToolbarButton: Bool {
-    showsNewChatButton && sidebarMode.wrappedValue == .code
+    showsNewChatButton && sidebarMode == .code
   }
 
   var showsNewBotToolbarButton: Bool {
-    showsNewChatButton && sidebarMode.wrappedValue == .bots && !environment.bots.botMachines.isEmpty
+    showsNewChatButton && sidebarMode == .bots
   }
 
   var body: some View {

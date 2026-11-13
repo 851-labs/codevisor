@@ -20,8 +20,8 @@ extension HomeView {
         sidebarOptionsMenu
       }
     }
-    if hasRemoteMachines && showsSidebarModes {
-      ToolbarItem(placement: .principal) { SidebarModePicker(mode: sidebarMode) }
+    if hasRemoteMachines {
+      ToolbarItem(placement: .principal) { SidebarModePicker(mode: $sidebarMode) }
       if showsSyncIndicator {
         ToolbarItem(placement: settingsPlacement) { syncSpinner }
       }
@@ -34,7 +34,7 @@ extension HomeView {
 
   @ViewBuilder
   private var sidebarOptionsMenu: some View {
-    if sidebarMode.wrappedValue == .bots {
+    if sidebarMode == .bots {
       HomeSidebarOptionsMenu(
         sections: environment.botSections.sections, actions: sidebarActions.botSections,
         managesSections: !showsSampleSidebar, showsGrouping: false)
