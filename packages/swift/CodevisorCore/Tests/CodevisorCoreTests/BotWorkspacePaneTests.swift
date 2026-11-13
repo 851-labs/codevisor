@@ -72,6 +72,31 @@ struct BotWorkspacePaneTests {
     #expect(paneIds(in: fixture) == [chatPaneId, terminal.id])
   }
 
+  @Test("Closing a pane the server holds in a bot's workspace removes it there too, so it cannot come back")
+  func closingAServerPaneTellsTheServer() async throws {
+    var tabbed = workspace
+    tabbed.mainSessionId = chat.id
+    tabbed.centerTabs += [WorkspaceTab(root: .leaf(PaneGroupState(panes: [terminal], selectedPaneId: terminal.id)))]
+    let fixture = NavigationFixture()
+    await fixture.install(sessions: [chat], workspaces: [tabbed])
+    fixture.store.keepPanesOnDevice(in: [workspace.id])
+
+    fixture.workspaceSync.closePaneLocally(id: terminal.id, workspaceId: workspace.id, repository: fixture.workspaces)
+
+    #expect(paneIds(in: fixture) == [chatPaneId])
+    #expect(fixture.store.pendingIntents.map(\.intent) == [.closePane(paneId: terminal.id, workspaceId: workspace.id)])
+  }
+
+  @Test("Closing a pane that only this device holds in a bot's workspace sends nothing")
+  func closingADeviceOnlyPaneStaysLocal() async throws {
+    let fixture = try await splitBotWorkspace()
+
+    fixture.workspaceSync.closePaneLocally(id: terminal.id, workspaceId: workspace.id, repository: fixture.workspaces)
+
+    #expect(paneIds(in: fixture) == [chatPaneId])
+    #expect(fixture.store.pendingIntents.isEmpty)
+  }
+
   private var chatPaneId: UUID? { workspace.allPanes.first?.id }
 
   private func splitBotWorkspace() async throws -> NavigationFixture {
