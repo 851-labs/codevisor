@@ -8,19 +8,11 @@ import TranscriptKit
 extension ChatScreen {
   var composerOverlay: some View {
     let childAgents = visibleChildAgents
-    let threads = visibleThreads
     return VStack(spacing: ComposerGlassStyle.clusterSpacing) {
-      if childAgents != nil || threads != nil {
+      if let childAgents {
         ChildAgentsRowLayout {
-          HStack(spacing: ComposerGlassStyle.clusterSpacing) {
-            if let childAgents {
-              ChildAgentsPill(content: childAgents, glassNamespace: composerGlassNamespace)
-            }
-            if let threads {
-              BotThreadsPill(content: threads, glassNamespace: composerGlassNamespace)
-            }
-          }
-          .padding(.leading, composerFieldLeadingInset)
+          ChildAgentsPill(content: childAgents, glassNamespace: composerGlassNamespace)
+            .padding(.leading, composerFieldLeadingInset)
           if showsTranscriptScrollControls {
             transcriptScrollControls
           }
@@ -92,20 +84,12 @@ extension ChatScreen {
     }
     .animation(
       Motion.quick(reduceMotion: reduceMotion),
-      value: visibleComposerGlassElements(showsChildAgents: childAgents != nil, showsThreads: threads != nil)
+      value: visibleComposerGlassElements(showsChildAgents: childAgents != nil)
     )
   }
 
   var showsChildAgentsRow: Bool {
-    !isReadOnly && (visibleChildAgents != nil || visibleThreads != nil)
-  }
-
-  private var visibleThreads: BotThreadsPillContent? {
-    guard presentsBotConversation, !isSlashPalettePresented, let session = controller.serverSession,
-      let bot = environment.bots.bot(forSession: session.id, serverId: session.serverId)
-    else { return nil }
-    let threads = environment.botThreads.threads(of: bot)
-    return threads.isEmpty ? nil : BotThreadsPillContent(bot: bot, threads: threads)
+    !isReadOnly && visibleChildAgents != nil
   }
 
   private var visibleChildAgents: ChildAgentsPillContent? {
@@ -172,11 +156,10 @@ extension ChatScreen {
     }
   }
 
-  func visibleComposerGlassElements(showsChildAgents: Bool, showsThreads: Bool = false) -> [ComposerGlassElement] {
+  func visibleComposerGlassElements(showsChildAgents: Bool) -> [ComposerGlassElement] {
     let hasTodos = controller.visibleTodos != nil
     return ComposerGlassElements.visible(
       showsChildAgents: showsChildAgents,
-      showsThreads: showsThreads,
       hasTodos: hasTodos,
       showsGoal: controller.supportsGoals && !controller.isGoalEditing
         && (controller.goal ?? controller.draftGoal) != nil
