@@ -8,7 +8,7 @@ import {
 import { archiveChatAndOwned } from "../archive-jobs.js"
 import { HttpFailure, readSchema, run, writeJson } from "../server-context.js"
 import { currentState } from "./agent-lifecycle.js"
-import { assertNotOwnedByBot } from "./bot-guards.js"
+import { assertNotOwnedByBot, refuseBotAsAgent } from "./bot-guards.js"
 import type { RouteContext } from "./route-context.js"
 import { cancelTurn } from "./session-actions.js"
 import { findSession } from "./session-workspace.js"
@@ -18,6 +18,7 @@ import { findWorkspace, sameId } from "./workspace-lookups.js"
 export const archiveAgent = async (route: RouteContext, agentId: string): Promise<boolean> => {
   const { callerAgentId } = await readSchema(route.request, ArchiveAgentRequest)
   const agent = await run(route.services.db.getSessionSummary(agentId))
+  await refuseBotAsAgent(route.services, agent.id, "archive")
   const caller = await callerOf(route, callerAgentId)
   refuseSelf(agent, caller)
 
