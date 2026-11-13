@@ -27,7 +27,6 @@ struct GeneralSettingsView: View {
       ScreenRecordingSettingsRow(model: permissions)
       AccessibilitySettingsRow(model: permissions)
       NotificationsSettingsRow()
-      LocalNetworkSettingsRow(model: permissions)
     }
   }
 

@@ -167,10 +167,6 @@ public final class ComputerUsePermissionsModel {
     probes.openSettingsPane(.fullDiskAccess)
   }
 
-  public func openSettings(_ pane: SystemSettingsPane) {
-    probes.openSettingsPane(pane)
-  }
-
   private func openPaneUnlessGranted(
     _ pane: SystemSettingsPane,
     granted: @escaping @MainActor () -> Bool
