@@ -26,6 +26,10 @@ struct ChatPaneContentView: View {
       case let .ready(chatSession, chatProject):
         if let bot = conversationBot, let thread = environment.botThreads.openThread(of: bot) {
           threadScreen(thread, of: bot, chat: chatSession, in: chatProject)
+        } else if let bot = conversationBot, let agent = environment.openAgentChat(of: bot),
+          let agentProject = project(of: agent)
+        {
+          agentScreen(agent, in: agentProject)
         } else if role.offersNewChat, isUnstarted(chatSession) {
           unstartedChat(chatSession, in: chatProject)
         } else {
@@ -92,6 +96,20 @@ struct ChatPaneContentView: View {
       focus: focus
     )
     .onDisappear { store.releaseTranscriptViewer(paneID: viewerId, sessionID: chatSession.id) }
+  }
+
+  private func project(of chat: ChatSession) -> Project? {
+    environment.projectList.projects.first { $0.serverId == chat.serverId && $0.id == chat.projectId }
+  }
+
+  private func agentScreen(_ agent: ChatSession, in agentProject: Project) -> some View {
+    let controller = store.controller(for: agent, project: agentProject)
+    return BotAgentScreen(
+      chat: agent,
+      controller: controller,
+      surface: store.transcriptSurface(for: agent, paneID: agent.id, controller: controller),
+      focus: focus
+    )
   }
 
   private func chatScreen(_ chatSession: ChatSession, in chatProject: Project) -> some View {

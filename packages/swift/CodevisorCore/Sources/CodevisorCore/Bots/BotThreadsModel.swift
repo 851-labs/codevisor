@@ -10,6 +10,7 @@ public final class BotThreadsModel {
   public private(set) var messagesByThread: [String: [ServerThreadMessage]] = [:]
   public private(set) var threadsWithOlderMessages: Set<String> = []
   public var openThreadByBot: [UUID: String] = [:]
+  public private(set) var openAgentByBot: [UUID: UUID] = [:]
   @ObservationIgnored public var botLookup: (String, UUID) -> Bot? = { _, _ in nil }
   @ObservationIgnored private let machines: MachineController
   @ObservationIgnored private var serverByBot: [UUID: String] = [:]
@@ -37,7 +38,22 @@ public final class BotThreadsModel {
 
   public func open(_ threadId: String, of bot: Bot) async {
     if !threads(of: bot).contains(where: { $0.threadId == threadId }) { await refreshThreads(of: bot) }
+    openAgentByBot[bot.id] = nil
     openThreadByBot[bot.id] = threadId
+  }
+
+  public func openAgent(of bot: Bot) -> UUID? {
+    openAgentByBot[bot.id]
+  }
+
+  public func showAgent(_ sessionId: UUID, of bot: Bot) {
+    openThreadByBot[bot.id] = nil
+    openAgentByBot[bot.id] = sessionId
+  }
+
+  public func closePage(of bot: Bot) {
+    openThreadByBot[bot.id] = nil
+    openAgentByBot[bot.id] = nil
   }
 
   public func refreshThreads(of bot: Bot) async {

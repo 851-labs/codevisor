@@ -14,7 +14,7 @@ struct BotConversationChrome: ViewModifier {
       .environment(\.transcriptTopChromeHeight, topChromeHeight)
       .toolbar(removing: isActive ? .title : nil)
       .overlay(alignment: .top) {
-        if !isSplit, environment.botThreads.openThread(of: bot) == nil {
+        if !isSplit, environment.botThreads.openThread(of: bot) == nil, environment.openAgentChat(of: bot) == nil {
           BotConversationTopBar(bot: bot, showsHeader: showsHeader, onOpenDetails: openDetails)
         }
       }

@@ -256,6 +256,11 @@ struct WorkspaceInspectorPresentation: ViewModifier {
 
   private func harnessChat(for inspected: Inspected) -> ChatSession? {
     let workspace = inspected.workspace
+    if let bot = environment.bots.bot(forWorkspace: workspace.id, serverId: workspace.serverId),
+      let agent = environment.openAgentChat(of: bot)
+    {
+      return agent
+    }
     return workspace.focusedChatSessionId.flatMap {
       environment.projectList.chat($0, preferring: workspace.serverId)
     } ?? inspected.chat

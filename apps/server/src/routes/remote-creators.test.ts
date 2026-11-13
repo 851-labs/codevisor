@@ -104,7 +104,7 @@ describe("agents started from another machine", () => {
     ])
   })
 
-  it("get a workspace of their own only when a bot on the other machine started them", async () => {
+  it("get no workspace of their own, whether an agent or a bot on the other machine started them", async () => {
     const { home, remote, parentOrigin } = await startFleet()
     const start = (origin: MachineCallOrigin) =>
       home.machines
@@ -114,10 +114,8 @@ describe("agents started from another machine", () => {
     const byAgent = await start(parentOrigin)
     const byBot = await start({ ...parentOrigin, botId: "bot-on-studio" })
 
-    expect(byAgent.workspaceId).toBeUndefined()
-    expect((await run(remote.services.db.listWorkspaces)).map((workspace) => workspace.id)).toEqual(
-      [byBot.workspaceId]
-    )
+    expect([byAgent.workspaceId, byBot.workspaceId]).toEqual([undefined, undefined])
+    expect(await run(remote.services.db.listWorkspaces)).toEqual([])
   })
 
   it("refuse a creator on another machine unless the call comes from that machine", async () => {

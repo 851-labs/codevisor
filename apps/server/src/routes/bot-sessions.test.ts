@@ -69,6 +69,33 @@ describe("bot chats", () => {
     )
   })
 
+  it("gives an agent a bot starts a chat and a folder, but no workspace of its own", async () => {
+    const running = await setUp()
+    await running.addProject("api-project", "api")
+    const bot = decodeBot((await createBot(running, { projectIds: ["api-project"] })).body)
+    const workspacesBefore = (await run(running.services.db.listWorkspaces)).length
+
+    const started = await jsonRequest(running.server, "/v1/agents", {
+      body: JSON.stringify({
+        prompt: "Go",
+        title: "Helper",
+        checkout: "project",
+        project: "api-project",
+        harness: "codex",
+        callerAgentId: bot.sessionId
+      }),
+      method: "POST"
+    })
+
+    expect(started.status).toBe(201)
+    const agent = (await run(running.services.db.listSessions)).find(
+      (session) => session.title === "Helper"
+    )
+    expect(agent).toMatchObject({ createdByAgentId: bot.sessionId, createdBy: "agent" })
+    expect(agent?.workspaceId).toBeUndefined()
+    expect(await run(running.services.db.listWorkspaces)).toHaveLength(workspacesBefore)
+  })
+
   it("keeps the workspaces a bot's agents start as ordinary workspaces after the bot is deleted", async () => {
     const running = await setUp()
     await running.addProject("api-project", "api")
