@@ -7,6 +7,7 @@ import type { CodevisorDatabaseService, PluginEventSubscriptionRecord } from "@c
 import { compileEventFilter, type EventFilterAccepted } from "@codevisor/plugins"
 
 import { HttpFailure, run } from "../../server-context.js"
+import type { BuiltinEventSources, PreparedSubscription } from "./builtin-event-sources.js"
 import type { PluginEventTypes } from "./plugin-event-types.js"
 
 export interface PluginEventPreviewRequest {
@@ -25,12 +26,16 @@ export interface PluginEventPreview {
 export interface PluginEventSubscriptionsDeps {
   readonly db: CodevisorDatabaseService
   readonly types: PluginEventTypes
+  readonly builtins: BuiltinEventSources
   readonly pluginName: (serverId: string) => Promise<string>
 }
 
 export interface SubscriptionLabels {
   readonly pluginName: string
+  readonly symbolName?: string
   readonly eventTitle?: string
+  readonly label?: string
+  readonly firesAt?: string
 }
 
 export const previewScanLimit = 50
@@ -40,25 +45,53 @@ export const createSubscription = async (
   request: CreatePluginEventSubscriptionRequest
 ): Promise<PluginEventSubscription> => {
   const type = await requireEventType(deps.types, request.plugin, request.event)
-  const filter = requireFilter(request.filter, type)
+  const prepared = prepareRequest(deps.builtins, type, request)
+  const filter = requireFilter(prepared.request.filter, type)
   const record = await run(
-    deps.db.createPluginEventSubscription({
-      sessionId: request.sessionId,
-      serverId: type.plugin,
-      ...(request.accountId === undefined ? {} : { accountId: request.accountId }),
-      eventName: type.name,
-      arguments: request.arguments ?? {},
-      ...(request.filter === undefined || request.filter.trim() === ""
-        ? {}
-        : { filter: request.filter.trim() }),
-      explained: filter.explained,
-      ...(request.note === undefined ? {} : { note: request.note }),
-      once: request.once ?? false,
-      createdBy: request.createdBy ?? "agent"
-    })
+    deps.db.createPluginEventSubscription(subscriptionRecord(type, prepared, filter))
   )
-  return publicSubscription(record, eventLabels(type))
+  return publicSubscription(record, labelsOf(deps.builtins, type, record))
 }
+
+const subscriptionRecord = (
+  type: PluginEventType,
+  { request, explained }: PreparedSubscription,
+  filter: EventFilterAccepted
+) => ({
+  sessionId: request.sessionId,
+  serverId: type.plugin,
+  ...(request.accountId === undefined ? {} : { accountId: request.accountId }),
+  eventName: type.name,
+  arguments: request.arguments ?? {},
+  ...(hasFilter(request.filter) ? { filter: request.filter.trim() } : {}),
+  explained: explanation(explained, filter, hasFilter(request.filter)),
+  ...(request.note === undefined ? {} : { note: request.note }),
+  once: request.once ?? false,
+  createdBy: request.createdBy ?? "agent"
+})
+
+const prepareRequest = (
+  builtins: BuiltinEventSources,
+  type: PluginEventType,
+  request: CreatePluginEventSubscriptionRequest
+): PreparedSubscription => {
+  const builtin = builtins.owner(type.plugin)
+  if (builtin === undefined) return { request }
+  return builtin.prepare({ ...request, event: type.name })
+}
+
+const explanation = (
+  schedule: string | undefined,
+  filter: EventFilterAccepted,
+  filtered: boolean
+): string => {
+  if (schedule === undefined) return filter.explained
+  if (!filtered) return schedule
+  return `${schedule}, when ${filter.explained}`
+}
+
+const hasFilter = (filter: string | undefined): filter is string =>
+  filter !== undefined && filter.trim() !== ""
 
 export const listSubscriptions = async (
   deps: PluginEventSubscriptionsDeps,
@@ -102,6 +135,9 @@ export const publicSubscription = (
   sessionId: record.sessionId,
   plugin: record.serverId,
   pluginName: labels.pluginName,
+  ...(labels.symbolName === undefined ? {} : { symbolName: labels.symbolName }),
+  ...(labels.label === undefined ? {} : { label: labels.label }),
+  ...(labels.firesAt === undefined ? {} : { firesAt: labels.firesAt }),
   ...(record.accountId === undefined ? {} : { accountId: record.accountId }),
   event: record.eventName,
   ...(labels.eventTitle === undefined ? {} : { eventTitle: labels.eventTitle }),
@@ -120,14 +156,22 @@ const recordLabels = async (
   record: PluginEventSubscriptionRecord
 ): Promise<SubscriptionLabels> => {
   const type = await deps.types.find(record.serverId, record.eventName)
-  if (type !== undefined) return eventLabels(type)
+  if (type !== undefined) return labelsOf(deps.builtins, type, record)
   return { pluginName: await deps.pluginName(record.serverId) }
 }
 
-const eventLabels = (type: PluginEventType): SubscriptionLabels => ({
-  pluginName: type.pluginName,
-  ...(type.title === undefined ? {} : { eventTitle: type.title })
-})
+const labelsOf = (
+  builtins: BuiltinEventSources,
+  type: PluginEventType,
+  record: PluginEventSubscriptionRecord
+): SubscriptionLabels => {
+  const builtin = builtins.owner(type.plugin)
+  return {
+    pluginName: type.pluginName,
+    ...(type.title === undefined ? {} : { eventTitle: type.title }),
+    ...(builtin === undefined ? {} : { symbolName: builtin.symbolName, ...builtin.display(record) })
+  }
+}
 
 const requireEventType = async (
   types: PluginEventTypes,

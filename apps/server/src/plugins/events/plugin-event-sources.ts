@@ -2,6 +2,7 @@ import type { PluginEventType } from "@codevisor/api"
 import type { CodevisorDatabaseService } from "@codevisor/db"
 
 import { run } from "../../server-context.js"
+import type { BuiltinEventSource, BuiltinEventSources } from "./builtin-event-sources.js"
 import type { PluginEventConnections } from "./plugin-event-connections.js"
 import type { PluginEventIngest } from "./plugin-event-ingest.js"
 import { sourceKeyOf, sourceOf, type EventSource } from "./plugin-event-source-key.js"
@@ -20,6 +21,7 @@ export interface PluginEventSourcesDeps {
   readonly db: CodevisorDatabaseService
   readonly connections: PluginEventConnections
   readonly types: PluginEventTypes
+  readonly builtins: BuiltinEventSources
   readonly ingest: PluginEventIngest
   readonly timers: EventTimers
   readonly webhooks?: WebhookSources
@@ -106,6 +108,9 @@ const runOnce = async (
   source: EventSource,
   signal: AbortSignal
 ): Promise<number> => {
+  const builtin = deps.builtins.owner(source.serverId)
+  if (builtin !== undefined) return runBuiltin(deps, builtin, source)
+
   const type = await deps.types.find(source.serverId, source.eventName)
   if (type === undefined) throw new Error(`Event type is unavailable: ${source.eventName}`)
 
@@ -117,6 +122,19 @@ const runOnce = async (
     return 0
   }
   throw new Error(`No supported delivery for ${source.eventName}`)
+}
+
+const runBuiltin = (
+  deps: PluginEventSourcesDeps,
+  builtin: BuiltinEventSource,
+  source: EventSource
+): Promise<number> => {
+  const key = sourceKeyOf(source)
+  return builtin.run(source, {
+    cursor: () => run(deps.db.pluginEventCursor(key)),
+    saveCursor: (cursor) => run(deps.db.savePluginEventCursor(key, cursor)),
+    ingest: (occurrences) => deps.ingest.ingest(source, occurrences)
+  })
 }
 
 const streamThenReconnect = async (sourceRun: SourceRun): Promise<number> => {

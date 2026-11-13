@@ -1,5 +1,6 @@
 import type { McpServer, PluginEventDelivery, PluginEventType } from "@codevisor/api"
 
+import type { BuiltinEventSources } from "./builtin-event-sources.js"
 import { offersEvents, type PluginEventConnections } from "./plugin-event-connections.js"
 
 export interface PluginEventTypes {
@@ -8,7 +9,10 @@ export interface PluginEventTypes {
   readonly forget: (serverId: string) => void
 }
 
-export const makePluginEventTypes = (connections: PluginEventConnections): PluginEventTypes => {
+export const makePluginEventTypes = (
+  connections: PluginEventConnections,
+  builtins: BuiltinEventSources
+): PluginEventTypes => {
   const cache = new Map<string, Promise<ReadonlyArray<PluginEventType>>>()
 
   const typesOf = (server: McpServer): Promise<ReadonlyArray<PluginEventType>> => {
@@ -24,7 +28,7 @@ export const makePluginEventTypes = (connections: PluginEventConnections): Plugi
 
   const allTypes = async (): Promise<ReadonlyArray<PluginEventType>> => {
     const servers = (await connections.servers()).filter(offersEvents)
-    return (await Promise.all(servers.map(typesOf))).flat()
+    return [...builtins.types, ...(await Promise.all(servers.map(typesOf))).flat()]
   }
 
   return {

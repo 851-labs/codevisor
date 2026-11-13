@@ -17,7 +17,17 @@ public final class ChatPluginSubscriptionsModel {
     guard let subscriptions = try? await client.listPluginEventSubscriptions(sessionId: sessionId) else { return }
     guard !Task.isCancelled else { return }
 
-    show(SubscribedPluginEvent.distinct(subscriptions), for: sessionId)
+    show(subscriptions.map(SubscribedPluginEvent.init), for: sessionId)
+  }
+
+  public func remove(_ event: SubscribedPluginEvent, client: any CodevisorServerClienting) async -> Bool {
+    do {
+      try await client.removePluginEventSubscription(id: event.id)
+    } catch {
+      return false
+    }
+    events.removeAll { $0.id == event.id }
+    return true
   }
 
   private func show(_ events: [SubscribedPluginEvent], for sessionId: UUID?) {

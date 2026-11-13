@@ -1,24 +1,28 @@
 import CodevisorCore
+import Foundation
 
 public struct SubscribedPluginEvent: Equatable, Identifiable, Sendable {
+  public let id: String
   public let plugin: String
   public let pluginName: String
+  public let symbolName: String?
   public let event: String
-  public let eventTitle: String
+  public let title: String
+  public let firesAt: Date?
+  public let note: String?
+  public let explained: String
 
-  public var id: String { "\(plugin)/\(event)" }
-
-  public var label: String { "\(pluginName) · \(eventTitle)" }
+  public var label: String { "\(pluginName) · \(title)" }
 
   init(_ subscription: ServerPluginEventSubscription) {
+    id = subscription.id
     plugin = subscription.plugin
     pluginName = subscription.pluginName
+    symbolName = subscription.symbolName
     event = subscription.event
-    eventTitle = subscription.eventTitle ?? subscription.event
-  }
-
-  public static func distinct(_ subscriptions: [ServerPluginEventSubscription]) -> [SubscribedPluginEvent] {
-    var seen: Set<String> = []
-    return subscriptions.map(SubscribedPluginEvent.init).filter { seen.insert($0.id).inserted }
+    title = subscription.label ?? subscription.eventTitle ?? subscription.event
+    firesAt = subscription.firesAt.flatMap { try? ServerDateCoding.date(from: $0) }
+    note = subscription.note
+    explained = subscription.explained
   }
 }

@@ -99,7 +99,11 @@ export const makeMcpService = (
       }),
     deleteMcpServer: (id) =>
       attempt("deleteMcpServer", () => {
-        sqlite.prepare(mcpServerSql.delete).run(id)
+        sqlite.transaction(() => {
+          sqlite.prepare(mcpServerSql.deleteEventSubscriptions).run(id)
+          sqlite.prepare(mcpServerSql.deleteEvents).run(id)
+          sqlite.prepare(mcpServerSql.delete).run(id)
+        })()
       }),
     setProjectMcpEnabled: (projectId, mcpServerId, enabled) =>
       attempt("setProjectMcpEnabled", () => {
@@ -189,7 +193,9 @@ const mcpServerSql = {
                detail = excluded.detail, secret_cipher = excluded.secret_cipher,
                catalog_id = excluded.catalog_id, catalog_version = excluded.catalog_version,
                capabilities = excluded.capabilities, updated_at = excluded.updated_at`,
-  delete: "delete from mcp_servers where id = ?"
+  delete: "delete from mcp_servers where id = ?",
+  deleteEventSubscriptions: "delete from plugin_event_subscriptions where server_id = ?",
+  deleteEvents: "delete from plugin_events where server_id = ?"
 }
 
 const mcpSettingSql = {

@@ -27,13 +27,13 @@ const NoArgs = Schema.Struct({})
 export const codevisorEventTools: ReadonlyArray<AgentTool> = [
   agentTool(
     "events.topics",
-    "List the events installed plugins can wake you with: plugin, event, description, and payloadSchema (the fields a filter can use). Filter by query (plugin or event name). If nothing fits, find a plugin with plugins.search.",
+    "List the events that can wake you: the built-in Clock (after a delay, at a time, on a cron schedule) and installed plugins' events. Each has plugin, event, description, arguments (what to pass to events.subscribe), and payloadSchema (the fields a filter can use). Filter by query (plugin or event name). If nothing fits, find a plugin with plugins.search.",
     TopicsArgs,
     (tool, args) => topics(tool, Schema.decodeUnknownSync(TopicsArgs)(args))
   ),
   agentTool(
     "events.subscribe",
-    'Wake up when a plugin event happens. Each match arrives as a hidden <codevisor-event type="plugin.event"> message: it wakes you when idle, or waits for the end of your turn. filter is a CEL expression over the event payload, type-checked against the payloadSchema from events.topics, e.g. labels.severity == "critical" && labels.env in ["prod", "staging"]. Omit it to get every event. Check a filter with events.preview first. note is a short human description of why you subscribed. The result has explained: read it back to the user in plain words. once: true removes the subscription after the first match. Subscriptions survive restarts; events wait while your Mac sleeps and arrive on wake.',
+    'Wake up when a plugin event happens, or at a time with the built-in Clock: plugin "clock" with event "after" (arguments { minutes: 30 }), "at" ({ at: "2026-11-14T09:00" }), or "every" ({ cron: "0 9 * * 1-5" }), each with optional timezone. Each match arrives as a hidden <codevisor-event type="plugin.event"> message: it wakes you when idle, or waits for the end of your turn. filter is a CEL expression over the event payload, type-checked against the payloadSchema from events.topics, e.g. labels.severity == "critical" && labels.env in ["prod", "staging"]. Omit it to get every event. Check a filter with events.preview first. note is a short human description of why you subscribed. The result has explained: read it back to the user in plain words. once: true removes the subscription after the first match. Subscriptions survive restarts; events wait while your Mac sleeps and arrive on wake.',
     SubscribeArgs,
     (tool, args) => subscribe(tool, Schema.decodeUnknownSync(SubscribeArgs)(args))
   ),

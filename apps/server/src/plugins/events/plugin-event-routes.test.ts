@@ -188,12 +188,17 @@ describe("plugin event routes", () => {
     ])
   })
 
-  it("lists no event types on a server without plugins installed", async () => {
+  it("lists only the built-in Clock events on a server without plugins installed", async () => {
     const { server } = await start()
 
     const types = await jsonRequest(server, "/v1/plugins/events/types")
 
-    expect(types.body).toEqual({ types: [] })
+    const listed = Schema.decodeUnknownSync(TypesResponse)(types.body).types
+    expect(listed.map((type) => `${type.pluginName}.${type.name}`)).toEqual([
+      "Clock.after",
+      "Clock.at",
+      "Clock.every"
+    ])
   })
 
   it("answers 501 when this server runs without plugins", async () => {

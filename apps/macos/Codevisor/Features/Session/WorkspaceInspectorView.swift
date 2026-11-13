@@ -275,7 +275,7 @@ struct WorkspaceInspectorView: View {
         if !subscriptions.events.isEmpty {
           WorkspaceInspectorSubscriptionsSection(
             events: subscriptions.events, serverId: workspace.serverId, client: client,
-            isExpanded: expansion("Subscriptions"))
+            isExpanded: expansion("Subscriptions"), onRemove: removeAutomation)
         }
 
         if !shownTasks.isEmpty {
@@ -306,6 +306,10 @@ struct WorkspaceInspectorView: View {
   }
 
   private var shownTasks: [WorkspaceInspectorTask] { tasks + remoteTasks.tasks }
+
+  private func removeAutomation(_ event: SubscribedPluginEvent) async -> Bool {
+    await subscriptions.remove(event, client: client)
+  }
 
   private func removeMirror(_ mirror: ServerWorkspaceMirror) {
     Task { await workspaceMirrors.remove(mirror, workspaceId: workspace.id, client: client) }

@@ -326,5 +326,5 @@ export const rewindPluginsSql = `
   alter table mcp_servers drop column capabilities;
   alter table prompt_queue_items drop column attribution;
   alter table chat_items drop column attribution;
-  delete from schema_migrations where id = 82;
+  delete from schema_migrations where id in (82, 108);
 `

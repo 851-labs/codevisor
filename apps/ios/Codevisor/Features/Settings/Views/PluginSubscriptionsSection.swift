@@ -8,7 +8,7 @@ struct PluginSubscriptionsSection: View {
 
   var body: some View {
     if !model.subscriptions.isEmpty {
-      PluginListDisclosure("Subscriptions", count: model.subscriptions.count, message: model.errorMessage) {
+      PluginListDisclosure("Automations", count: model.subscriptions.count, message: model.errorMessage) {
         ForEach(model.subscriptions) { subscription in
           PluginSubscriptionLabel(subscription: subscription, chatTitle: chatTitle(subscription.sessionId))
             .swipeActions {

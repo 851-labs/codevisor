@@ -18,6 +18,25 @@ struct TranscriptEventSummaryTests {
     #expect(title(["plugin": "Slack", "event": "message.posted"]) == "Plugin event")
   }
 
+  @Test("A Clock wake-up is named by the automation's own label, next to its symbol")
+  func clockEventLabel() {
+    let event = TranscriptEvent(
+      type: "plugin.event",
+      attributes: [
+        "plugin": "Clock", "pluginId": "codevisor.clock", "event": "every", "eventTitle": "On a schedule",
+        "label": "Tuesdays at 3:00 PM", "symbol": "clock",
+      ],
+      body: "")
+    let summary = TranscriptEventSummary(event: event, agents: agents)
+
+    #expect(summary.title == "Tuesdays at 3:00 PM")
+    guard case let .symbol(name) = summary.icon else {
+      Issue.record("Expected a symbol icon")
+      return
+    }
+    #expect(name == "clock")
+  }
+
   @Test("Thread messages read as a count with the other side, and one alone says which way it went")
   func threadMessages() throws {
     let received = TranscriptEvent(
