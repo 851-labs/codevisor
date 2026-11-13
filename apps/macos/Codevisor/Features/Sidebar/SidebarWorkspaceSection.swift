@@ -6,7 +6,6 @@ import SwiftUI
 struct SidebarWorkspaceSection: View, Equatable {
   struct Actions {
     let activate: @MainActor (SidebarWorkspaceListItem) -> Void
-    let openAsking: @MainActor (SidebarWorkspaceListItem) -> Void
     let commands: WorkspaceRowCommands
   }
 
@@ -43,23 +42,12 @@ struct SidebarWorkspaceSection: View, Equatable {
         store: store,
         isSelected: isSelected,
         isReordering: isReordering,
-        onActivate: { activate(listItem, content: content) },
+        onActivate: { actions.activate(listItem) },
         lifecycle: .active(
           actions.commands.actions(
             for: item, workspace: workspace, isPinned: isPinned, sectionPlacement: sectionPlacement))
       )
     }
-  }
-
-  private func activate(_ listItem: SidebarWorkspaceListItem, content: SidebarRowContent) {
-    guard let asker = askingItem(content: content) else { return actions.activate(listItem) }
-    actions.openAsking(asker)
-  }
-
-  private func askingItem(content: SidebarRowContent) -> SidebarWorkspaceListItem? {
-    guard let askingID = status?.askingWorkspaceID, askingID != item.id else { return nil }
-    let source = SidebarRowStatusSource(environment: environment, store: store)
-    return source.item(askingID).flatMap { content.listItem(for: $0) }
   }
 }
 

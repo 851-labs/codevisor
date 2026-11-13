@@ -18,10 +18,7 @@ struct HomeSidebarBotRowView: View, Equatable {
       && lhs.isOpen == rhs.isOpen && lhs.sections == rhs.sections && lhs.isConversation == rhs.isConversation
   }
 
-  private func onOpen() {
-    guard let asking = bot.asking else { return actions.actions.openBot(bot.bot) }
-    actions.actions.openAsking(asking)
-  }
+  private func onOpen() { actions.actions.openBot(bot.bot) }
   private func onEdit() { actions.actions.editBot(bot.bot) }
   private func onFork() { actions.actions.forkBot(bot.bot) }
   private func onArchive() { actions.actions.archiveBot(bot.bot) }

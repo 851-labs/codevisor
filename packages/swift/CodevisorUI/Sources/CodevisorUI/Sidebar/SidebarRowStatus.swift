@@ -2,20 +2,13 @@ import Foundation
 import SwiftUI
 
 public enum SidebarRowStatus: Equatable, Sendable {
-  case input(askingWorkspaceID: UUID)
-  case approval(askingWorkspaceID: UUID)
+  case input
+  case approval
   case settingUp
   case working(since: Date?)
   case waiting
   case failed
   case limited
-
-  public var askingWorkspaceID: UUID? {
-    switch self {
-    case let .input(id), let .approval(id): id
-    case .settingUp, .working, .waiting, .failed, .limited: nil
-    }
-  }
 
   public var workingSince: Date? {
     guard case let .working(since) = self else { return nil }

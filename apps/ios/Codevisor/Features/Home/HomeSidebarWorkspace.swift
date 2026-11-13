@@ -10,7 +10,6 @@ struct HomeSidebarWorkspace: Identifiable, Equatable {
   let anchorSessionId: UUID?
   var subtitle: String? = nil
   var rowStatus: SidebarRowStatus? = nil
-  var asking: HomeSidebarWorkspaceRef? = nil
   var showsStatusLabel = false
   var machine: HomeSidebarRowMachine? = nil
   var pullRequest: ServerGitPullRequest? = nil
