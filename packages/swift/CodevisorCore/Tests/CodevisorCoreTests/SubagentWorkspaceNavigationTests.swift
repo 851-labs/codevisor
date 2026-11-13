@@ -56,6 +56,29 @@ struct SubagentWorkspaceNavigationTests {
       ])
   }
 
+  @Test("A chat's checkout is on the machine the app reached it through, whatever the server calls itself")
+  func checkoutMachineIsTheAppsMachine() async throws {
+    let lead = chat("Lead")
+    var snapshot = ServerNavigationSnapshot.fixture(
+      projects: [project], sessions: [lead], workspaces: [workspace(lead)])
+    snapshot.sessions[0].checkoutId = "C1"
+    snapshot.checkouts = [
+      ServerCheckout(
+        id: "c1", serverId: "machine-studio", projectId: project.id.uuidString, path: "/src/app",
+        worktreeName: "spicy-pesto", createdAt: "2026-11-13T00:00:00.000Z")
+    ]
+    let fixture = NavigationFixture()
+
+    await fixture.store.replace(snapshot, machineId: "studio-in-app", requestedAt: Date())
+
+    let projected = try #require(fixture.store.projection.sessions.first)
+    let checkout = try #require(fixture.store.projection.checkout(for: projected))
+    #expect(checkout.serverId == "studio-in-app")
+    #expect(checkout.serverId == projected.serverId)
+    #expect(checkout.path == "/src/app")
+    #expect(checkout.worktreeName == "spicy-pesto")
+  }
+
   @Test("An agent that stands alone has no parent, though the agent that started it is known")
   func standaloneAgentHasNoParent() async {
     let lead = chat("Lead")
