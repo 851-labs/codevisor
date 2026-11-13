@@ -182,7 +182,6 @@ struct HomeSidebarList: View {
   private func sections(_ content: HomeSidebarContent) -> some View {
     switch mode?.wrappedValue {
     case .bots:
-      if showsBotsEmptyRow(content) { botsEmptyRow(content) }
       chatSections(content)
       archivedSection(content)
     case .code:
@@ -258,22 +257,8 @@ struct HomeSidebarList: View {
     isConversation && content.bots.isEmpty && content.archivedBots.isEmpty
   }
 
-  private func showsBotsEmptyRow(_ content: HomeSidebarContent) -> Bool {
-    isConversation && content.bots.isEmpty && !content.archivedBots.isEmpty
-  }
-
   private func botsEmptyState(_ content: HomeSidebarContent) -> some View {
     HomeSidebarBotsEmptyState(canCreateBots: content.canCreateBots, onNewBot: actions.actions.newBot)
-  }
-
-  private func botsEmptyRow(_ content: HomeSidebarContent) -> some View {
-    Section {
-      botsEmptyState(content)
-        .listRowInsets(EdgeInsets())
-        .listRowBackground(Color.clear)
-        .listRowSeparator(.hidden)
-    }
-    .listSectionSeparator(.hidden)
   }
 
   private func moveBot(_ source: IndexSet, to destination: Int, among bots: [HomeSidebarBot], section: UUID?) {
