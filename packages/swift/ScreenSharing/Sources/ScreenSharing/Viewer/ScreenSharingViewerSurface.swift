@@ -4,7 +4,6 @@
   @MainActor
   public protocol ScreenSharingViewerSurface: AnyObject {
     var view: NSView { get }
-    var onPresented: (() -> Void)? { get set }
     var onFocusChanged: ((Bool) -> Void)? { get set }
     var onInput: ((ScreenSharingInputEvent) -> Void)? { get set }
     var onInputReleased: (() -> Void)? { get set }

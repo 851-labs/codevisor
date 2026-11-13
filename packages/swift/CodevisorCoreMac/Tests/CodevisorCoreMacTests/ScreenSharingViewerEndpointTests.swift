@@ -243,10 +243,7 @@ struct ScreenSharingViewerEndpointTests {
       session.resizesDesktop = resizes
     }
 
-    func make() -> ScreenSharingViewerEndpoint {
-      session.surface = surface
-      return ScreenSharingViewerEndpoint(session: session, surface: surface)
-    }
+    func make() -> ScreenSharingViewerEndpoint { ScreenSharingViewerEndpoint(session: session, surface: surface) }
 
     func observe(_ endpoint: ScreenSharingViewerEndpoint) -> ControlEventLog {
       let log = ControlEventLog()

@@ -3,6 +3,7 @@ import CodevisorClient
 import ScreenSharing
 import ScreenSharingV2
 import CodevisorTestSupport
+import CoreVideo
 import Foundation
 import Observation
 @testable import CodevisorCoreMac
@@ -68,7 +69,6 @@ final class FakeMediaSession: ScreenSharingV2StartableSession {
   private(set) var highDynamicRangeReports: [Bool] = []
   func setDisplayHighDynamicRange(_ supported: Bool) { highDynamicRangeReports.append(supported) }
   var onVideoFormatChanged: ((ScreenSharingDynamicRange, String?) -> Void)?
-  weak var surface: FakeSurface?
   var startHangs = false
   private var hungStart: CheckedContinuation<Void, any Error>?
   private(set) var tokens: [String] = []
@@ -82,7 +82,12 @@ final class FakeMediaSession: ScreenSharingV2StartableSession {
       try await withCheckedThrowingContinuation { hungStart = $0 }
     }
     controlChannel.isAvailable = true
-    if deliversVideo { surface?.present() }
+    if deliversVideo { deliverFrame() }
+  }
+  func deliverFrame() {
+    var pixel: CVPixelBuffer?
+    CVPixelBufferCreate(nil, 2, 2, kCVPixelFormatType_32BGRA, nil, &pixel)
+    if let pixel { frames.put(ScreenSharingVideoFrame(pixelBuffer: pixel, timestampNs: 0)) }
   }
   func statistics() async -> [String: String] { [:] }
   func close() {
@@ -97,7 +102,6 @@ final class FakeMediaSession: ScreenSharingV2StartableSession {
 @MainActor
 final class FakeSurface: ScreenSharingViewerSurface {
   let view = NSView()
-  var onPresented: (() -> Void)?
   var onFocusChanged: ((Bool) -> Void)?
   var onInput: ((ScreenSharingInputEvent) -> Void)?
   var onInputReleased: (() -> Void)?
@@ -109,7 +113,6 @@ final class FakeSurface: ScreenSharingViewerSurface {
   var dropsInjectedInput = true
   var beginInputSucceeds = true
   private(set) var inputActive = false
-  private(set) var presentations = 0
   private(set) var stopped = false
   private(set) var videoShowsPointer: Bool?
 
@@ -122,10 +125,6 @@ final class FakeSurface: ScreenSharingViewerSurface {
   }
   func endInput() { inputActive = false }
   func stop() { stopped = true }
-  func present() {
-    presentations += 1
-    onPresented?()
-  }
 }
 
 actor SharingTransport: ServerRequestTransport {
@@ -243,9 +242,8 @@ final class NativeBackendHarness {
     backend = .native(
       client: client, workspaceId: UUID(), paneId: UUID(), v2: connector, sleep: { try await clock.sleep(for: $0) },
       now: { clock.now },
-      makeSurface: { [unowned self] session in
+      makeSurface: { [unowned self] _ in
         let surface = FakeSurface()
-        (session as? FakeMediaSession)?.surface = surface
         surfaces.append(surface)
         return surface
       },

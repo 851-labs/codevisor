@@ -20,7 +20,7 @@ struct NativeScreenSharingViewerBackendTests {
     #expect(await unavailable.transport.requests.map(\.operation) == [.capabilities])
   }
 
-  @Test func opensThenReportsReadyOnceAfterTheFirstPresentedFrame() async throws {
+  @Test func reportsReadyOnceTheFirstFrameArrivesEvenIfNoViewDrawsIt() async throws {
     let harness = NativeBackendHarness()
     harness.configureSession = { $0.deliversVideo = false }
     harness.connect()
@@ -29,7 +29,7 @@ struct NativeScreenSharingViewerBackendTests {
     let endpoint = try #require(harness.log.endpoints.first)
     expectNoDifference(harness.log.events, [.opened(endpoint)])
     #expect(harness.sessions[0].tokens == ["fixture token"])
-    harness.surfaces[0].present()
+    harness.sessions[0].deliverFrame()
     await awaitObserved { harness.log.events.count >= 2 }
     expectNoDifference(harness.log.events, [.opened(endpoint), .ready])
     #expect(harness.sessions[0].metrics.snapshot().labels["connectTime"]?.hasPrefix("0.0 s (reach 0.0") == true)
@@ -192,7 +192,7 @@ struct NativeScreenSharingViewerBackendTests {
     expectNoDifference(
       harness.log.events,
       [.opened(endpoint), .progress(.waitingForVideo), .ended(ScreenSharingConnectStage.waitingForVideo.failure)])
-    harness.surfaces[0].present()
+    harness.sessions[0].deliverFrame()
     #expect(!harness.log.events.contains(.ready), "a late first frame can't revive the connection")
     #expect(harness.sessions[0].closed)
     #expect(harness.clock.pendingCount == 0)
@@ -323,7 +323,6 @@ struct NativeScreenSharingViewerBackendTests {
     #expect(await awaitPolled { harness.log.endpoints.count == 1 })
     #expect(await opened.displays == ["vnc:5901"])
     #expect(harness.sessions.isEmpty)
-    harness.surfaces[0].present()
     #expect(await awaitPolled { harness.log.events.count == 2 })
     expectNoDifference(harness.log.events, [.opened(harness.log.endpoints[0]), .ready])
     await harness.cancelConsumers()

@@ -329,7 +329,6 @@ final class ComputerUseLivePreviewContainer: NSView {
 final class ComputerUseLivePreviewSurface: NSView, ScreenSharingViewerSurface {
   private let metal: ScreenSharingMetalView
   var onFrameSize: ((CGSize) -> Void)?
-  var onPresented: (() -> Void)?
   var onFocusChanged: ((Bool) -> Void)?
   var onInput: ((ScreenSharingInputEvent) -> Void)?
   var onInputReleased: (() -> Void)?
@@ -348,7 +347,6 @@ final class ComputerUseLivePreviewSurface: NSView, ScreenSharingViewerSurface {
     metal.autoresizingMask = [.width, .height]
     addSubview(metal)
     metal.onFrameSize = { [weak self] size in self?.onFrameSize?(size) }
-    metal.onPresented = { [weak self] _ in self?.onPresented?() }
   }
 
   @available(*, unavailable)

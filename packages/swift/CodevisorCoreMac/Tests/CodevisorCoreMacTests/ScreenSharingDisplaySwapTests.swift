@@ -40,11 +40,7 @@ struct ScreenSharingDisplaySwapTests {
       client: CodevisorServerClient(config: .init(requestTransport: host)), workspaceId: UUID(), paneId: UUID(),
       machineId: machineId, role: role, v2: connector, sleep: { try await clock.sleep(for: $0) },
       now: { clock.now },
-      makeSurface: { session in
-        let surface = FakeSurface()
-        (session as? FakeMediaSession)?.surface = surface
-        return surface
-      })
+      makeSurface: { _ in FakeSurface() })
     return Store(initialState: ScreenSharingViewer.State()) {
       ScreenSharingViewer()
     } withDependencies: {
