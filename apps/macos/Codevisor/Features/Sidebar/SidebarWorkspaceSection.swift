@@ -88,7 +88,27 @@ struct SidebarRowContent {
       showsStatusLabel: rowDetails.contains(.status),
       icon: icon(for: item, isQuiet: isQuiet),
       pullRequest: pullRequest(for: workspace),
-      machine: machine(for: workspace, headingNamesMachine: headingNamesMachine)
+      machine: headingNamesMachine ? nil : machine(onServer: workspace.serverId)
+    )
+  }
+
+  func details(for chat: ChatSession, status: SidebarRowStatus?) -> WorkspaceRowDetails {
+    let checkout = environment.navigationStore.projection.checkout(for: chat)
+    return WorkspaceRowDetails(
+      name: chat.title,
+      subtitle: SidebarRowSubtitle.make(
+        details: rowDetails,
+        title: chat.title,
+        projectName: projectName(onServer: chat.serverId, projectId: chat.projectId),
+        branch: checkout?.git.flatMap(SidebarGitLookups.head(of:)),
+        worktreeName: checkout?.worktreeName,
+        groupNamesProject: false
+      ),
+      status: status,
+      showsStatusLabel: rowDetails.contains(.status),
+      icon: .chat(chat, isQuiet: chat.createdByAgent != nil),
+      pullRequest: rowDetails.contains(.pullRequest) ? checkout?.git?.pullRequest : nil,
+      machine: machine(onServer: chat.serverId)
     )
   }
 
@@ -96,29 +116,24 @@ struct SidebarRowContent {
     SidebarRowSubtitle.make(
       details: rowDetails,
       title: workspace.name,
-      projectName: projectName(for: workspace),
+      projectName: projectName(onServer: workspace.serverId, projectId: workspace.projectId),
       branch: store?.gitLookups.branch(for: workspace),
       worktreeName: workspace.worktreeName,
       groupNamesProject: grouping == .project && isUnderGroupHeading(workspace, isPinned: isPinned)
     )
   }
 
-  func projectName(for workspace: Workspace) -> String? {
-    ProjectGroup.grouping(list.projects).first {
-      $0.contains(serverId: workspace.serverId, projectId: workspace.projectId)
-    }?.name
+  func projectName(onServer serverId: String, projectId: UUID) -> String? {
+    ProjectGroup.grouping(list.projects).first { $0.contains(serverId: serverId, projectId: projectId) }?.name
   }
 
   func pullRequest(for workspace: Workspace) -> ServerGitPullRequest? {
     rowDetails.contains(.pullRequest) ? store?.gitLookups.pullRequest(for: workspace) : nil
   }
 
-  func machine(for workspace: Workspace, headingNamesMachine: Bool) -> SidebarRowMachine? {
-    guard rowDetails.contains(.machine), !headingNamesMachine,
-      let machine = environment.machines.machine(for: workspace.serverId),
-      let name = machineName(forServer: workspace.serverId)
-    else { return nil }
-    return SidebarRowMachine(name: name, systemImage: machine.icon.systemImage)
+  func machine(onServer serverId: String) -> SidebarRowMachine? {
+    guard rowDetails.contains(.machine), let machine = environment.machines.machine(for: serverId) else { return nil }
+    return SidebarRowMachine(name: Self.machineName(machine), systemImage: machine.icon.systemImage)
   }
 
   func machineName(forServer serverId: String) -> String? {

@@ -119,7 +119,43 @@ struct SubagentWorkspaceNavigationTests {
     #expect(list.owningWorkspaceId(of: looseChild) == parent.id)
     #expect(list.owningWorkspaceId(of: standalone) == nil)
     #expect(list.owningWorkspaceId(of: lead) == nil)
-    #expect(list.chats(ownedBy: [lead.id]).map(\.title) == ["Loose"])
+  }
+
+  @Test("An agent's parent and children follow who started it, whichever machine or workspace each is in")
+  func familyFollowsTheAgentNotTheWorkspace() async {
+    let lead = chat("Lead")
+    let sameWorkspace = chat("Same workspace", createdBy: lead)
+    let loose = chat("Loose", createdBy: lead)
+    let onLaptop = chat("On laptop", on: "laptop", createdBy: lead)
+    let grandchild = chat("Grandchild", createdBy: loose)
+    var archived = chat("Archived", createdBy: lead)
+    archived.isArchived = true
+    var standalone = chat("Standalone", createdBy: lead)
+    standalone.isDetached = true
+    let fork = ChatSession(
+      projectId: project.id, serverId: "m", title: "Fork",
+      forkedFromAgent: AgentReference(agentId: lead.id, machineId: "m"))
+    let fixture = NavigationFixture()
+
+    await fixture.install(
+      machineId: "m", projects: [project],
+      sessions: [lead, sameWorkspace, loose, grandchild, archived, standalone, fork],
+      workspaces: [workspace(lead, sameWorkspace), workspace(fork)])
+    await fixture.install(
+      machineId: "laptop", projects: [laptopProject], sessions: [onLaptop],
+      workspaces: [workspace(onLaptop, on: "laptop")])
+
+    let list = fixture.projectList
+    let titles = { (chats: [ChatSession]) in Set(chats.map(\.title)) }
+    #expect(titles(list.children(of: lead)) == ["Same workspace", "Loose", "On laptop", "Fork"])
+    #expect(titles(list.children(of: loose)) == ["Grandchild"])
+    #expect(list.children(of: sameWorkspace).isEmpty)
+    #expect(list.parent(of: sameWorkspace)?.title == "Lead")
+    #expect(list.parent(of: onLaptop)?.title == "Lead")
+    #expect(list.parent(of: grandchild)?.title == "Loose")
+    #expect(list.parent(of: fork)?.title == "Lead")
+    #expect(list.parent(of: standalone) == nil)
+    #expect(list.parent(of: lead) == nil)
   }
 
   @Test("A bot's workspace is known from its project, before any bot list has loaded")

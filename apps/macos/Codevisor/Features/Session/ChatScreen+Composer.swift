@@ -93,17 +93,12 @@ extension ChatScreen {
   }
 
   private var visibleChildAgents: ChildAgentsPillContent? {
-    guard !isSlashPalettePresented, let workspaceChildAgents, let workspace = hostWorkspace else { return nil }
-    return workspaceChildAgents.pill(for: workspace)
+    guard !isSlashPalettePresented, let workspaceChildAgents, let chat = controller.serverSession else { return nil }
+    return workspaceChildAgents.pill(for: chat)
   }
 
   private var composerFieldLeadingInset: CGFloat {
     ComposerSlimLayout.isActive(usesSlimComposer, for: controller) ? ComposerSlimLayout.fieldLeadingInset : 0
-  }
-
-  private var hostWorkspace: Workspace? {
-    let sessionWorkspaceId = controller.serverSession.flatMap { environment.workspaces.workspaceId(forSession: $0.id) }
-    return (sessionWorkspaceId ?? controller.hostWorkspaceId).flatMap { environment.workspaces.workspace(id: $0) }
   }
 
   var hasPromptQueue: Bool {

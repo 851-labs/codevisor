@@ -4,7 +4,6 @@ import SwiftUI
 
 struct WorkspaceChildAgentsEnvironment: ViewModifier {
   @Environment(AppEnvironment.self) private var environment
-  @ClientPreference(SidebarGrouping.preferenceKey, default: SidebarGrouping.flat) private var sidebarGrouping
   @ClientPreference(SidebarPreferenceKey.pinnedWorkspaces, default: []) private var pinnedWorkspaceIDs: [String]
   @State private var renamingWorkspace: Workspace?
   @State private var sectionPrompt: SectionPrompt?
@@ -22,8 +21,8 @@ struct WorkspaceChildAgentsEnvironment: ViewModifier {
   private var childAgents: WorkspaceChildAgents? {
     guard let store else { return nil }
     return WorkspaceChildAgents(
-      environment: environment, store: store, grouping: sidebarGrouping,
-      commands: commands, selection: $selection, revealRequest: revealRequest)
+      environment: environment, store: store, commands: commands, selection: $selection,
+      revealRequest: revealRequest)
   }
 
   private var commands: WorkspaceRowCommands {
