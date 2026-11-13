@@ -133,7 +133,7 @@ struct SidebarView: View {
     if !rows.isEmpty {
       workspaceGroupList(workspaceGroups, rows: rows)
     } else if hasLoadedWorkspaces {
-      SidebarWorkspacesPlaceholder(onNewChat: startNewChat)
+      SidebarWorkspacesPlaceholder()
         .containerRelativeFrame(.vertical)
     }
   }
@@ -215,11 +215,6 @@ struct SidebarView: View {
       archiveWorkspace: { archiveSelectedWorkspace() },
       activeWorkspace: { activeWorkspaceActions }
     )
-  }
-
-  private func startNewChat() {
-    selection = .newChat(nil)
-    store?.newChatComposerFocusRequested = true
   }
 
   private func startAddProject() {
