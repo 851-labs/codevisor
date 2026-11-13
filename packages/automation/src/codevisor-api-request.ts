@@ -30,6 +30,11 @@ export const requestUrl = (
 ): URL => {
   const path = resolvedPath(spec, context, args)
   const url = new URL(path, loopbackBaseUrl(getBaseUrl()))
+  if (spec.name === "bots.messages") {
+    for (const [name, value] of Object.entries(senderFields(context.sessionId))) {
+      url.searchParams.set(name, String(value))
+    }
+  }
   return withQuery(url, spec, args)
 }
 
@@ -174,7 +179,9 @@ const bodyPayload = (
 ): unknown => {
   if (spec.wrappedBody === true) return args.body
   const payload = definedArguments(args, bodyPropertyNames(spec.body!))
-  if (spec.name === "agents.message") return { ...payload, ...senderFields(context.sessionId) }
+  if (spec.name === "agents.message" || spec.name === "bots.message") {
+    return { ...payload, ...senderFields(context.sessionId) }
+  }
   if (spec.name === "agents.start") return startPayload(payload, context)
   if (spec.name === "shell.exec") return execPayload(payload, context)
   if (spec.name === "bots.create") return { ...BOT_TOOL_DEFAULTS, ...payload }

@@ -134,7 +134,8 @@ export type BotMessageAttachmentInput = typeof BotMessageAttachmentInput.Type
 
 export const SendBotMessageRequest = Schema.Struct({
   text: Schema.String,
-  attachments: Schema.optional(Schema.Array(BotMessageAttachmentInput))
+  attachments: Schema.optional(Schema.Array(BotMessageAttachmentInput)),
+  threadId: Schema.optional(Schema.String)
 })
 export type SendBotMessageRequest = typeof SendBotMessageRequest.Type
 

@@ -72,14 +72,14 @@ const dispatchSessionAction = (route: RouteContext): Promise<boolean> => {
 }
 
 const routeAfterDelegates = async (route: RouteContext): Promise<boolean> => {
-  const { services, fanout, routeState, request, response, url } = route
+  const { services, routeState, request, response, url } = route
   if (
     request.method === "GET" &&
     (await routeSessionTranscript(services, routeState, request, response, url))
   ) {
     return true
   }
-  if (await routeBotConversation(services, fanout, routeState, request, response, url)) {
+  if (await routeBotConversation(route)) {
     return true
   }
 

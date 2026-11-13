@@ -34,6 +34,7 @@ import { makeSteeredPromptQueueService } from "./steered-prompt-queue-service.js
 import { makeStreamingReconciliationService } from "./streaming-reconciliation-service.js"
 import { makeSyncService } from "./sync-service.js"
 import { makeTerminalPaneTitlesService } from "./terminal-pane-titles.js"
+import { makeThreadsService } from "./threads.js"
 import { makeTranscriptService } from "./transcript-service.js"
 import { makeUpdatesService } from "./updates-service.js"
 import { makeWorkspaceCreationService } from "./workspace-creation-service.js"
@@ -58,6 +59,7 @@ export const createService = (
     ...makeWorktreesService(context),
     ...makeBotsService(context),
     ...makeBotMessagesService(context),
+    ...makeThreadsService(context),
     ...makeWorkspacesService(context),
     ...makeCheckoutsService(context),
     ...makeTerminalPaneTitlesService(context),

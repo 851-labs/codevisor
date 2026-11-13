@@ -1,4 +1,3 @@
-import type { IncomingMessage, ServerResponse } from "node:http"
 import { isAbsolute } from "node:path"
 
 import type { AgentRef, AttachmentRef, BotConversationPage, EventEnvelope } from "@codevisor/api"
@@ -13,15 +12,16 @@ import {
   swallowError,
   writeJson,
   type CodevisorServerServices,
-  type EventFanout,
-  type RouteState
+  type EventFanout
 } from "../server-context.js"
 import { isRecord } from "../unknown-values.js"
 import { captureMarkdownFiles } from "./assistant-artifacts.js"
 import { captureAssistantFile } from "./assistant-files.js"
 import { listedBotMessages } from "./bot-message-list.js"
+import { listedThreadOfBot, sendThreadMessage } from "./bot-threads.js"
 import { botForChat, postBotMessage } from "./bot-turns.js"
 import { hasLiveTurn } from "./prompt-queue.js"
+import type { RouteContext } from "./route-context.js"
 import { attribute } from "./session-event-messages.js"
 
 const PAGE_LIMIT = 50
@@ -47,14 +47,8 @@ const pageBefore = (raw: string | null): number | undefined => {
   return Number.isFinite(parsed) ? parsed : undefined
 }
 
-export const routeBotConversation = async (
-  services: CodevisorServerServices,
-  fanout: EventFanout,
-  routeState: RouteState,
-  request: IncomingMessage,
-  response: ServerResponse,
-  url: URL
-): Promise<boolean> => {
+export const routeBotConversation = async (route: RouteContext): Promise<boolean> => {
+  const { services, fanout, routeState, request, response, url } = route
   const conversationSessionId = matchRoute(url.pathname, "/v1/sessions/:id/conversation")
   if (conversationSessionId !== undefined && request.method === "GET") {
     const page = await run(
@@ -73,6 +67,12 @@ export const routeBotConversation = async (
   }
 
   const messagesSessionId = matchRoute(url.pathname, "/v1/sessions/:id/messages")
+  const threadId = url.searchParams.get("threadId")
+  if (messagesSessionId !== undefined && request.method === "GET" && threadId !== null) {
+    writeJson(response, 200, await listedThreadOfBot(route, messagesSessionId, threadId))
+    return true
+  }
+
   if (messagesSessionId !== undefined && request.method === "GET") {
     await requireBotSession(services, messagesSessionId)
     writeJson(response, 200, await listedBotMessages(services, messagesSessionId, url.searchParams))
@@ -84,6 +84,14 @@ export const routeBotConversation = async (
     const payload = await readSchema(request, SendBotMessageRequest)
     const text = payload.text.trim()
     const inputs = payload.attachments ?? []
+    if (payload.threadId !== undefined) {
+      if (inputs.length > 0) {
+        throw new HttpFailure(422, "A message in a thread can't carry attachments yet")
+      }
+      const sent = await sendThreadMessage(route, messagesSessionId, payload.threadId, text)
+      writeJson(response, 200, { sent: true, messageId: sent.id })
+      return true
+    }
     if (text.length === 0 && inputs.length === 0) {
       throw new HttpFailure(422, "A message needs text or an attachment")
     }

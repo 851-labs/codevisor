@@ -69,6 +69,6 @@ const conversationSql = {
           where conversation_id = bots.conversation_id and kind = 'bot' and bot_id = bots.id)
           as bot_participant_id
       from bots where bots.session_id = ?`,
-  deleteOfBot:
-    "delete from conversations where id = (select conversation_id from bots where id = ?)"
+  deleteOfBot: `delete from conversations where id in (
+        select conversation_id from conversation_participants where bot_id = ?)`
 }
