@@ -15,6 +15,7 @@ import {
   readCloudRegistration,
   waitForCloudConnection
 } from "./cloud-control.js"
+import { explainMissingGit, isGitMissing } from "./git-requirement.js"
 import { renderQr } from "./qr.js"
 import { resolvePort, type CliDeps, type CommandOptions } from "./support.js"
 
@@ -94,6 +95,10 @@ export const authLoginCommand = async (
       deps.log(`This machine is already connected to ${existing.serverUrl ?? "Codevisor Cloud"}.`)
       deps.log("Run `codevisor auth logout` first to connect it to a different account.")
       return 0
+    }
+    if (await isGitMissing(deps, port)) {
+      await explainMissingGit(deps, port)
+      return 1
     }
     if (options.inviteCode !== undefined) {
       return await joinWithInvite(deps, port, options.inviteCode, options.machineName)

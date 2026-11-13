@@ -3,10 +3,14 @@ import { Schema } from "effect"
 export const ServerKind = Schema.Literals(["local", "remote"])
 export type ServerKind = typeof ServerKind.Type
 
+export const GitAvailability = Schema.Literals(["ready", "missing"])
+export type GitAvailability = typeof GitAvailability.Type
+
 export const HealthResponse = Schema.Struct({
   ok: Schema.Boolean,
   version: Schema.String,
   database: Schema.Literals(["ready", "migrating", "failed"]),
+  git: Schema.optional(GitAvailability),
   bootId: Schema.optional(Schema.String),
   processId: Schema.optional(Schema.Number),
   appOwned: Schema.optional(Schema.Boolean),

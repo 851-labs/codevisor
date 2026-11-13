@@ -4,6 +4,7 @@ import { mkdir, rm, writeFile } from "node:fs/promises"
 import { dirname, join } from "node:path"
 
 import { isPlainRecord } from "@codevisor/api"
+import { gitExecutable } from "@codevisor/worktrees"
 
 import { isPathSafe, sanitizeName, SkillsError } from "./skills-store.js"
 
@@ -194,7 +195,7 @@ export const cloneSkillSource = (
       url,
       destination
     ]
-    const child = spawn("git", args, {
+    const child = spawn(gitExecutable(), args, {
       env: {
         ...process.env,
         GIT_ASKPASS: "true",

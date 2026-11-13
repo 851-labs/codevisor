@@ -616,6 +616,12 @@ final class ConnectionStatus {
   quotes the identifier, like `dropTriggerSql(name)`. Tests,
   test support, and the `packages/db` migration and upgrade files are
   excluded by path in `.oxlintrc.json`.
+- **Located Git**: `codevisor/located-git` fails a bare `"git"` passed to
+  `spawn`, `exec*` or `withPriority` in server and package code. Run Git
+  through `gitExecutable()` from `@codevisor/worktrees`: on a Mac without
+  Apple's developer tools, `/usr/bin/git` is a placeholder that opens Apple's
+  installer. Tests, test support, `scripts/` and `packages/devtools` are
+  excluded by path.
 - **File size** (rule 13, S1): oxlint `max-lines` 500; SwiftLint
   `file_length` 500 and `type_body_length` 400.
 - **Swift function length** (S3): SwiftLint `function_body_length` 50. The

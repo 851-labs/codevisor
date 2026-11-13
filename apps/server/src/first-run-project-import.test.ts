@@ -8,13 +8,22 @@ import {
 } from "@codevisor/agent-runtime"
 import type { Harness } from "@codevisor/api"
 import { FIRST_RUN_PROJECTS_SETTING } from "@codevisor/db"
+import type { GitInstallation } from "@codevisor/worktrees"
 import { Effect } from "effect"
-import { afterEach, beforeEach, describe, expect, it, vi } from "vitest"
+import { afterEach, beforeEach, describe, expect, it, onTestFinished, vi } from "vitest"
 
 import { importFirstRunProjects, startFirstRunProjectImport } from "./first-run-project-import.js"
+import { startGitDependentWork } from "./git-readiness.js"
 import { defaultServerConfig } from "./server-config.js"
 import { makeEventFanout } from "./server-context.js"
-import { jsonRequest, listEvents, makeServices, run, startWithApp } from "./test-support.js"
+import {
+  jsonRequest,
+  listEvents,
+  makeServices,
+  run,
+  startWithApp,
+  waitFor
+} from "./test-support.js"
 
 const roots: Array<string> = []
 
@@ -181,6 +190,21 @@ describe("first-run project import", () => {
     expect((await jsonRequest(server, "/v1/first-run")).body).toEqual({ state: "notApplicable" })
   })
 
+  it("holds the scan on a machine without Git and runs it once Git is installed", async () => {
+    const machine = await makeMachine()
+    await run(machine.services.db.setHarnessEnabled("opencode", false))
+    const git = installableGit()
+    onTestFinished(startGitDependentWork(machine.services, machine.fanout, machine.config, git))
+
+    await git.foundMissing
+    expect(machine.scannedHarnesses).toEqual([])
+    expect(await machine.marker()).toBe("pending")
+
+    git.install()
+    await waitFor(async () => (await machine.marker()) === "done")
+    expect(await machine.projectFolders()).toEqual([machine.folders.recent, machine.folders.older])
+  })
+
   it("runs only on servers configured for it", async () => {
     const machine = await makeMachine()
     const unconfigured = defaultServerConfig({ bootId: "boot", id: "test" })
@@ -255,6 +279,24 @@ const makeMachine = async (overrides: Partial<AgentRuntimeService> = {}) => {
       (await run(services.db.listProjects))
         .map((project) => project.locations[0]!.folderPath)
         .toSorted((left, right) => right.localeCompare(left))
+  }
+}
+
+const installableGit = () => {
+  let installation: GitInstallation = { state: "missing" }
+  const lookedWhileMissing = Promise.withResolvers<void>()
+  const installed = Promise.withResolvers<void>()
+  return {
+    installation: () => Promise.resolve(installation),
+    sleep: () => {
+      lookedWhileMissing.resolve()
+      return installed.promise
+    },
+    foundMissing: lookedWhileMissing.promise,
+    install: () => {
+      installation = { state: "ready", path: "/usr/bin/git" }
+      installed.resolve()
+    }
   }
 }
 

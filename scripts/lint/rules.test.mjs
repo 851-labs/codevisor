@@ -5,6 +5,7 @@ import { RuleTester } from "oxlint/plugins-dev"
 
 import { repoRoot } from "./exemptions.mjs"
 import { isolatedModuleMocks } from "./isolated-module-mocks.mjs"
+import { locatedGit } from "./located-git.mjs"
 import { namedSql } from "./named-sql.mjs"
 import { noEffectTernary } from "./no-effect-ternary.mjs"
 import { noImportTimeTestHooks } from "./no-import-time-test-hooks.mjs"
@@ -103,6 +104,27 @@ describe("codevisor/isolated-module-mocks", () => {
       { filename: shared, code: 'vi.doMock("./a.js")', errors: [{ message }] },
       { filename: shared, code: 'vi.unmock("./a.js")', errors: [{ message }] },
       { filename: shared, code: "vi.resetModules()", errors: [{ message }] }
+    ]
+  })
+})
+
+describe("codevisor/located-git", () => {
+  const message = /^Run Git through gitExecutable\(\)/
+  tester.run("located-git", locatedGit, {
+    valid: [
+      { filename, code: "spawn(await gitExecutable(), args)" },
+      { filename, code: 'withPriority(executable, ["status"], priority)' },
+      {
+        filename,
+        code: 'spawn("gh", ["auth", "status"]); field(payload, "git"); join(store, "git")'
+      }
+    ],
+    invalid: [
+      { filename, code: 'spawn("git", ["status"])', errors: [{ message }] },
+      { filename, code: 'execFile("git", args, done)', errors: [{ message }] },
+      { filename, code: 'await execFileAsync("git", ["config"])', errors: [{ message }] },
+      { filename, code: 'childProcess.spawnSync("git", args)', errors: [{ message }] },
+      { filename, code: 'withPriority("git", args, priority)', errors: [{ message }] }
     ]
   })
 })

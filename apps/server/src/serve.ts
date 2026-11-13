@@ -28,6 +28,7 @@ import { pluginAuthoringSkill } from "@codevisor/plugins"
 import { attachingFilesSkill, makeSkillStore, migrateLegacySkills } from "@codevisor/skills"
 import { makeBlobStore } from "@codevisor/sync"
 import { makeTerminalManager } from "@codevisor/terminal"
+import { useGitEnvironment } from "@codevisor/worktrees"
 import { Effect } from "effect"
 
 import { agentProviderFactories } from "./agent-providers.js"
@@ -262,6 +263,7 @@ export const runServe = (
     )
     const icon = yield* Effect.promise(() => iconGuess)
     const shellEnv = makeShellEnvCache(() => resolveShellEnv())
+    useGitEnvironment(shellEnv.current)
     const directoryEnv = makeDirectoryShellEnvCache((cwd) => resolveShellEnv({ cwd }), {
       fallback: shellEnv.current
     })

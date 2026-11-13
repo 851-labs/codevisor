@@ -91,6 +91,31 @@ struct FirstLaunchSetupTests {
     await running.value
   }
 
+  @Test("Stays up past fifteen seconds while the user installs Git, then carries on")
+  func waitsForTheUser() async {
+    let clock = TestClock()
+    let work = FirstLaunchFakeWork()
+    work.harnesses.resolve([])
+    work.projects.resolve([])
+    work.models.resolve(())
+    let setup = FirstLaunchSetup(clock: clock)
+    let running = Task { await setup.run(work) }
+    await clock.waitForSleep(.seconds(15))
+    await work.serverStartRequested.wait()
+    work.waitOnUser()
+    clock.advance(by: .seconds(15))
+
+    work.server.resolve(.ready)
+    work.newInstall.resolve(true)
+    await awaitObserved { setup.revealed(.server) == .done }
+    await clock.waitForSleep(.milliseconds(400))
+    clock.advance(by: .milliseconds(400))
+    await running.value
+
+    #expect(setup.presentation == .visible)
+    #expect(setup.canGetStarted)
+  }
+
   @Test("Keeps asking through unreadable answers, then hands off after fifteen seconds")
   func keepsAskingThroughErrors() async {
     let clock = TestClock()

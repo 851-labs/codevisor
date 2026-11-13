@@ -9,6 +9,8 @@ public final class FirstLaunchSetup {
   private var foundNames: [FirstLaunchStep: [String]] = [:]
   private var visibleCounts: [FirstLaunchStep: Int] = [:]
   private var isNewInstall: Bool?
+  private var isWaitingOnUser = false
+  private var userWaits = 0
 
   @ObservationIgnored private let timing: FirstLaunchSetupTiming
   @ObservationIgnored private let sleep: @Sendable (Duration) async throws -> Void
@@ -92,12 +94,7 @@ public final class FirstLaunchSetup {
   }
 
   private func confirmsNewInstall() async -> Bool {
-    if isNewInstall == nil, presentation == .visible {
-      let answered = await becomes(within: timing.serverAnswerTimeout) {
-        self.isNewInstall != nil || self.presentation != .visible
-      }
-      if !answered { handOff() }
-    }
+    if !hasServerAnswer, !(await serverAnswersInTime()) { handOff() }
     guard presentation == .visible else { return false }
     guard isNewInstall == true else {
       presentation = .notNeeded
@@ -105,6 +102,28 @@ public final class FirstLaunchSetup {
       return false
     }
     return true
+  }
+
+  private var hasServerAnswer: Bool {
+    isNewInstall != nil || presentation != .visible
+  }
+
+  private func serverAnswersInTime() async -> Bool {
+    while true {
+      let waitsBefore = userWaits
+      if await becomes(within: timing.serverAnswerTimeout, { self.hasServerAnswer }) { return true }
+      guard isWaitingOnUser || userWaits != waitsBefore else { return hasServerAnswer }
+
+      await waitUntil { !self.isWaitingOnUser || self.hasServerAnswer }
+    }
+  }
+
+  private func setWaitingOnUser(_ isWaiting: Bool) {
+    guard isWaitingOnUser != isWaiting else { return }
+
+    isWaitingOnUser = isWaiting
+    if isWaiting { userWaits += 1 }
+    changed()
   }
 
   private func settles(within limit: Duration) async -> Bool {
@@ -126,7 +145,9 @@ public final class FirstLaunchSetup {
 
   private func performSteps(_ work: any FirstLaunchSetupWork) async {
     set(.server, .running)
-    guard await work.startServer() == .ready else {
+    let start = await work.startServer { self.setWaitingOnUser($0) }
+    setWaitingOnUser(false)
+    guard start == .ready else {
       set(.server, .skipped)
       handOff()
       return

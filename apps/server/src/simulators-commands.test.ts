@@ -46,6 +46,7 @@ const fakeMac = (mac: FakeMac = {}) => {
   const files = new Map(Object.entries(mac.files ?? {}))
   const environment: SimulatorEnvironment = {
     platform: "darwin",
+    hasSimulatorTools: async () => true,
     run: async (file, args) => {
       commands.push([file, ...args])
       if (file === "plutil") {

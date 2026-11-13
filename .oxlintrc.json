@@ -47,6 +47,7 @@
     "codevisor/named-sql": "error",
     "codevisor/isolated-module-mocks": "error",
     "codevisor/no-import-time-test-hooks": "error",
+    "codevisor/located-git": "error",
     "typescript/no-floating-promises": [
       "error",
       {
@@ -67,6 +68,20 @@
     ]
   },
   "overrides": [
+    {
+      "files": [
+        "**/*.test.ts",
+        "**/*.test.mjs",
+        "**/test/**",
+        "**/test-support.ts",
+        "**/*-test-support.ts",
+        "scripts/**",
+        "packages/devtools/**"
+      ],
+      "rules": {
+        "codevisor/located-git": "off"
+      }
+    },
     {
       "files": ["apps/cloud/**"],
       "rules": {

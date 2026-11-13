@@ -1,3 +1,5 @@
+import CodevisorTestSupport
+
 @testable import CodevisorCore
 
 @MainActor
@@ -10,8 +12,17 @@ final class FirstLaunchFakeWork: FirstLaunchSetupWork {
   private var projectProgress: (@MainActor ([String]) -> Void)?
   private var unreportedProjects: [String]?
 
-  func startServer() async -> FirstLaunchServerStart {
-    (try? await server.value()) ?? .failed
+  let serverStartRequested = TestSignal()
+  private var reportWaitingOnUser: (@MainActor (Bool) -> Void)?
+
+  func startServer(waitingOnUser: @escaping @MainActor (Bool) -> Void) async -> FirstLaunchServerStart {
+    reportWaitingOnUser = waitingOnUser
+    serverStartRequested.signal()
+    return (try? await server.value()) ?? .failed
+  }
+
+  func waitOnUser() {
+    reportWaitingOnUser?(true)
   }
 
   func isNewInstall() async throws -> Bool {

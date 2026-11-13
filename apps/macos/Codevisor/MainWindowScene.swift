@@ -17,6 +17,7 @@ struct MainWindowScene: Scene {
             .frame(minWidth: 480, minHeight: 600)
             .modifier(DebugMetricsOverlayModifier())
         }
+        .modifier(GitRequirement(machines: environment.machines))
         .appWindowRoot(environment)
         .handlesExternalEvents(preferring: ["*"], allowing: ["*"])
       } else {

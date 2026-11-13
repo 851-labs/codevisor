@@ -44,6 +44,10 @@ final class MachineConnections {
     byId[machineId]?.availability ?? .waiting(.connecting)
   }
 
+  func isWaitingForGit(on machineId: String) -> Bool {
+    byId[machineId]?.isWaitingForGit ?? false
+  }
+
   func updateActivity(for machineId: String) -> ServerUpdateActivity? {
     byId[machineId]?.updateActivity
   }

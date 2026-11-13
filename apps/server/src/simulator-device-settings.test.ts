@@ -43,6 +43,7 @@ const fakeMac = (supported = true) => {
   let now = 0
   const environment: SimulatorEnvironment = {
     platform: "darwin",
+    hasSimulatorTools: async () => true,
     run: async (file, args) => {
       commands.push([file, ...args])
       if (!supported) throw new SimulatorCommandError("Unknown command 'settings'")

@@ -12,7 +12,8 @@ const styleRules = new Set([
   "codevisor(no-effect-ternary)",
   "codevisor(named-sql)",
   "codevisor(isolated-module-mocks)",
-  "codevisor(no-import-time-test-hooks)"
+  "codevisor(no-import-time-test-hooks)",
+  "codevisor(located-git)"
 ])
 
 const repoConfig = () => {
@@ -95,6 +96,22 @@ test("cloud tests, which keep per-file isolation, may mock modules and hook from
   assert.deepEqual(violations, [
     "apps/server/src/storage-test-support.ts codevisor(no-import-time-test-hooks)",
     "apps/server/src/storage.test.ts codevisor(isolated-module-mocks)"
+  ])
+})
+
+test("server and package code must locate Git, while tests and dev tooling may call it bare", (t) => {
+  const bareGit = 'import { spawn } from "node:child_process"\nspawn("git", ["status"])\n'
+  const violations = lintWithRepoConfig(t, {
+    "apps/server/src/status.ts": bareGit,
+    "packages/example/src/status.ts": bareGit,
+    "packages/example/src/status.test.ts": bareGit,
+    "packages/example/src/git-test-support.ts": bareGit,
+    "packages/devtools/src/ship.ts": bareGit,
+    "scripts/release/notes.mjs": bareGit
+  })
+  assert.deepEqual(violations, [
+    "apps/server/src/status.ts codevisor(located-git)",
+    "packages/example/src/status.ts codevisor(located-git)"
   ])
 })
 

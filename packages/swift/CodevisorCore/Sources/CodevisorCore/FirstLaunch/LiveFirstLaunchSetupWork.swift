@@ -12,8 +12,9 @@ public final class LiveFirstLaunchSetupWork: FirstLaunchSetupWork {
     self.environment = environment
   }
 
-  public func startServer() async -> FirstLaunchServerStart {
+  public func startServer(waitingOnUser: @escaping @MainActor (Bool) -> Void) async -> FirstLaunchServerStart {
     while true {
+      waitingOnUser(environment.machines.isWaitingForGit(on: machineId))
       switch environment.machines.availability(for: machineId) {
       case .ready: return .ready
       case .failed: return .failed
@@ -97,6 +98,7 @@ public final class LiveFirstLaunchSetupWork: FirstLaunchSetupWork {
     await withCheckedContinuation { continuation in
       withObservationTracking {
         _ = environment.machines.availability(for: machineId)
+        _ = environment.machines.isWaitingForGit(on: machineId)
       } onChange: {
         continuation.resume()
       }
