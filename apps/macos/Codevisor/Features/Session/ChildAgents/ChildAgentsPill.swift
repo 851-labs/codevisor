@@ -63,7 +63,7 @@ private struct ChildAgentsPillLabel: View {
   private static let dotDiameter: CGFloat = 6
 }
 
-struct ChildAgentsPillButtonStyle: ButtonStyle {
+private struct ChildAgentsPillButtonStyle: ButtonStyle {
   func makeBody(configuration: Configuration) -> some View {
     ChildAgentsPillButtonBody(configuration: configuration)
   }
