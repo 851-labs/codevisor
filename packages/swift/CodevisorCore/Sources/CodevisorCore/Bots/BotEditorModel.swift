@@ -33,7 +33,7 @@ public final class BotEditorModel {
     switch target {
     case .create:
       name = ""
-      serverId = environment.defaultBotServerId
+      serverId = environment.defaultComposerServerId
     case let .edit(bot):
       name = bot.name
       mascot = bot.mascot

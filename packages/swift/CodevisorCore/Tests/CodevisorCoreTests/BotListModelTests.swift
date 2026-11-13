@@ -94,16 +94,6 @@ struct BotListModelTests {
     #expect(model.botMachines.map(\.id) == [CodevisorMachine.local.id])
   }
 
-  @Test("A machine that does not advertise bots lists none")
-  func unsupportedMachineListsNone() async {
-    let (model, _, _, _) = await makeModel(features: [], bots: [.fixture()])
-
-    await model.refresh(serverId: CodevisorMachine.local.id)
-
-    #expect(!model.supportsBots(on: CodevisorMachine.local.id))
-    #expect(model.bots.isEmpty)
-  }
-
   @Test("Creating a bot returns once its workspace is in navigation")
   func createWaitsForNavigation() async throws {
     let (model, _, fake, navigation) = await makeModel()

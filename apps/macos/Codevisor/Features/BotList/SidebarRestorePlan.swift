@@ -110,8 +110,7 @@ struct SidebarRestorePlan {
   }
 
   private func hasLoadedBots(on serverId: String) -> Bool {
-    let lacksBots = environment.machines.statusByMachineId[serverId].map { !$0.supportsBots } ?? false
-    return environment.bots.recordsByServer[serverId] != nil || lacksBots
+    environment.bots.recordsByServer[serverId] != nil
   }
 
   private var isRosterLoading: Bool { environment.navigationRosterStatus == .unverified }

@@ -11,12 +11,6 @@ extension AppEnvironment {
     bots.bots.map(BotSidebarEntry.init(bot:))
   }
 
-  public var defaultBotServerId: String {
-    let preferred = defaultComposerServerId
-    if bots.supportsBots(on: preferred) { return preferred }
-    return bots.botMachines.first?.id ?? preferred
-  }
-
   public func home(of bot: Bot) -> Workspace? {
     navigationStore.workspaceEntries.entry(bot.workspaceId).workspace
   }

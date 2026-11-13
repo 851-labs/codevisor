@@ -65,12 +65,8 @@ public final class BotListModel {
   }
 
   public var botMachines: [CodevisorMachine] {
-    let ids = Set(machineIdsByServer.filter(supportsBots(on:)))
+    let ids = Set(machineIdsByServer)
     return machines.allMachines.filter { ids.contains($0.id) }
-  }
-
-  public func supportsBots(on serverId: String) -> Bool {
-    machines.statusByMachineId[serverId]?.supportsBots == true
   }
 
   public func supportsProjectChanges(on serverId: String) -> Bool {
@@ -116,10 +112,6 @@ public final class BotListModel {
     let generation = (refreshGenerations[serverId] ?? 0) + 1
     refreshGenerations[serverId] = generation
     guard machines.statusByMachineId[serverId] != nil else { return }
-    guard supportsBots(on: serverId) else {
-      recordsByServer[serverId] = nil
-      return
-    }
     guard let records = try? await machines.client(for: serverId).listBots(),
       refreshGenerations[serverId] == generation
     else { return }
