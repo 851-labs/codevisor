@@ -171,7 +171,7 @@ final class SessionStore {
       notificationDelivery: notificationDelivery,
       attachmentFiles: environment.composerDrafts.attachmentFiles
     )
-    controller.hostWorkspaceIsOnAnotherMachine = hostElsewhere(of: session) != nil
+    controller.isGuestInHostWorkspace = guestHost(of: session) != nil
     controller.transcriptCache = environment.transcriptCache
     controller.configureExistingSession(session)
     return controller
@@ -234,7 +234,7 @@ final class SessionStore {
   }
 
   func workspace(for session: ChatSession, project: Project) -> Workspace {
-    if let host = hostElsewhere(of: session) { return host }
+    if let host = guestHost(of: session) { return host }
     let seed = WorkspaceSessionSeed(
       sessionId: session.id,
       initialName: session.worktreeName ?? project.name,
@@ -268,13 +268,13 @@ final class SessionStore {
     return workspace
   }
 
-  func hostElsewhere(of session: ChatSession) -> Workspace? {
+  func guestHost(of session: ChatSession) -> Workspace? {
     let workspaces = environment.workspaces
     let hostId =
       workspaces.workspaceId(forSession: session.id) ?? environment.projectList.owningWorkspaceId(of: session)
-    guard let hostId, let host = workspaces.workspace(id: hostId), host.serverId != session.serverId else {
-      return nil
-    }
+    guard let hostId, let host = workspaces.workspace(id: hostId),
+      host.serverId != session.serverId || host.projectId != session.projectId
+    else { return nil }
     return host
   }
 

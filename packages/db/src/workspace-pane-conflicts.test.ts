@@ -43,6 +43,26 @@ describe("workspace pane conflicts", () => {
       /Workspace not found/
     )
   })
+  it("shows a chat from another project as a tab without moving the chat into that workspace", async () => {
+    const { db, target } = await seed()
+    const elsewhere = await run(db.createProject({ folderPath: "/tmp/pane-conflicts-other" }))
+    const guest = await run(db.createSession({ projectId: elsewhere.id, harnessId: "codex" }))
+
+    const tab = await run(
+      db.upsertWorkspacePane(target.id, {
+        id: "guest-pane",
+        providerId: "codevisor",
+        paneType: "chat",
+        title: "Guest",
+        resourceKind: "session",
+        resourceId: guest.id
+      })
+    )
+
+    expect(tab).toMatchObject({ workspaceId: target.id, resourceId: guest.id })
+    expect((await run(db.getSessionSummary(guest.id))).workspaceId).toBeUndefined()
+    expect(await run(db.findWorkspaceShowingSession(guest.id))).toBe(target.id)
+  })
   it.each(["upsertWorkspacePane", "updateWorkspacePane", "promoteWorkspacePaneToSession"] as const)(
     "rolls back conflict deletion and membership when %s aborts its pane write",
     async (operation) => {

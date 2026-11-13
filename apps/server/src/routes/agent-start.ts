@@ -210,13 +210,12 @@ const placementFor = async (
 const belongsToItsStarter = async (
   { services }: RouteContext,
   request: StartAgentRequest,
-  { caller, projectId }: AgentPlan
+  { caller }: AgentPlan
 ): Promise<boolean> => {
-  if (request.standalone === true || request.checkout === "none") return false
+  if (request.standalone === true) return false
   if (caller.creator === undefined) return false
   if (caller.sessionId === undefined) return request.callerBotId === undefined
   if (caller.workspaceId === undefined && !caller.isOwned) return false
-  if (caller.projectId !== projectId) return false
   return (await run(services.db.findBotOwning({ sessionId: caller.sessionId }))) === undefined
 }
 
