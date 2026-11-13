@@ -101,6 +101,7 @@ public struct ServerForkBotRequest: Encodable, Equatable, Sendable {
   public var harnessId: String
   public var configSelections: [String: String]?
   public var moveAgents: Bool
+  public var toMachine: String?
 
   public init(
     id: String? = nil,
@@ -108,7 +109,8 @@ public struct ServerForkBotRequest: Encodable, Equatable, Sendable {
     mascot: ServerBotMascot? = nil,
     harnessId: String,
     configSelections: [String: String]? = nil,
-    moveAgents: Bool
+    moveAgents: Bool,
+    toMachine: String? = nil
   ) {
     self.id = id
     self.name = name
@@ -116,6 +118,7 @@ public struct ServerForkBotRequest: Encodable, Equatable, Sendable {
     self.harnessId = harnessId
     self.configSelections = configSelections
     self.moveAgents = moveAgents
+    self.toMachine = toMachine
   }
 }
 

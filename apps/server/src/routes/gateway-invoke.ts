@@ -8,11 +8,13 @@ import {
   FLEET_MIRROR_PATH,
   FLEET_SANDBOX_ACTION_PATH,
   FLEET_SESSION_EVENT_PATH,
-  FLEET_THREAD_MESSAGE_PATH
+  FLEET_THREAD_MESSAGE_PATH,
+  FLEET_BOT_IMPORT_PATH
 } from "@codevisor/api"
 import type { GatewayOrigin } from "@codevisor/mcp"
 
 import { failureMessage, HttpFailure, readJson, writeJson } from "../server-context.js"
+import { receiveBotImport } from "./bot-import.js"
 import { receiveAgentsArchived } from "./fleet-agents-archived.js"
 import { receiveAgentsMoved } from "./fleet-agents-moved.js"
 import { fleetCall, invokeForFleet } from "./fleet-calls.js"
@@ -73,7 +75,8 @@ const answerSandboxAction = async (
     writeJson(response, 200, { result: await receive() })
   } catch (cause) {
     writeError(response, cause instanceof HttpFailure ? cause.status : 500, {
-      message: failureMessage(cause)
+      message: failureMessage(cause),
+      code: cause instanceof HttpFailure ? cause.code : undefined
     })
   }
 }
@@ -115,6 +118,10 @@ export const routeGatewayInvoke = async (route: RouteContext): Promise<boolean> 
   }
   if (path === FLEET_AGENTS_ARCHIVED_PATH) {
     await answerSandboxAction(response, () => receiveAgentsArchived(route, call, body.args))
+    return true
+  }
+  if (path === FLEET_BOT_IMPORT_PATH) {
+    await answerSandboxAction(response, () => receiveBotImport(route, call, body.args))
     return true
   }
   if (path === FLEET_AGENTS_MOVED_PATH) {

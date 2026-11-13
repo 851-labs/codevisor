@@ -1,6 +1,6 @@
 import { randomUUID } from "node:crypto"
 
-import type { BotMessage, BotMessageSender } from "@codevisor/api"
+import type { BotImportMessage, BotMessage, BotMessageSender } from "@codevisor/api"
 import { isoTimestamp } from "@codevisor/api"
 
 import { botMessageRows, type BotMessageRow, type BotsService } from "./bot-rows.js"
@@ -10,6 +10,7 @@ import { canonicalUuid } from "./ids.js"
 import { parseAttachments, serializeAttachments } from "./message-row-codecs.js"
 import { journaledNavigationChanges } from "./navigation-changes.js"
 import type { ServiceContext } from "./service-context.js"
+import { linkSessionFiles } from "./session-files.js"
 
 const botMessageFromRow = (row: BotMessageRow, sessionId: string): BotMessage => {
   const attachments = parseAttachments(row.attachments)
@@ -26,7 +27,10 @@ const botMessageFromRow = (row: BotMessageRow, sessionId: string): BotMessage =>
 
 export const makeBotMessagesService = (
   context: ServiceContext
-): Pick<BotsService, "appendBotMessage" | "listBotMessages" | "copyBotMessages"> => {
+): Pick<
+  BotsService,
+  "appendBotMessage" | "listBotMessages" | "copyBotMessages" | "importBotMessages"
+> => {
   const { sqlite } = context
   const journaled = journaledNavigationChanges(context)
 
@@ -85,8 +89,36 @@ export const makeBotMessagesService = (
           sqlite.prepare(botMessageSql.copyFiles).run(targetId, sourceId)
           sqlite.prepare(botMessageSql.announceSession).run(targetId, now)
         })
+      }),
+    importBotMessages: (rawSessionId, messages) =>
+      attempt("importBotMessages", () => {
+        const sessionId = canonicalUuid(rawSessionId)
+        return journaled((now) => {
+          const target = { ...requireConversation(sqlite, sessionId), sessionId }
+          messages.forEach((message, index) => importMessage(sqlite, message, index + 1, target))
+          sqlite.prepare(botMessageSql.announceSession).run(sessionId, now)
+        })
       })
   }
+}
+
+const importMessage = (
+  sqlite: ServiceContext["sqlite"],
+  message: BotImportMessage,
+  sequence: number,
+  target: BotConversation & { readonly sessionId: string }
+) => {
+  const attachments = serializeAttachments(message.attachments)
+  sqlite.prepare(botMessageSql.copy).run({
+    id: randomUUID(),
+    conversationId: target.conversationId,
+    sequence,
+    senderId: senderId(message.sender, target),
+    text: message.text,
+    attachments,
+    createdAt: message.createdAt
+  })
+  if (attachments !== null) linkSessionFiles(sqlite, target.sessionId, attachments)
 }
 
 const requireConversation = (sqlite: ServiceContext["sqlite"], sessionId: string) => {

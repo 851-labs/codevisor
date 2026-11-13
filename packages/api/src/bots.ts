@@ -87,7 +87,8 @@ export const ForkBotRequest = Schema.Struct({
   mascot: Schema.optional(BotMascot),
   harnessId: Schema.String,
   configSelections: Schema.optional(Schema.Record(Schema.String, Schema.String)),
-  moveAgents: Schema.optional(Schema.Boolean)
+  moveAgents: Schema.optional(Schema.Boolean),
+  toMachine: Schema.optional(Schema.String)
 })
 export type ForkBotRequest = typeof ForkBotRequest.Type
 

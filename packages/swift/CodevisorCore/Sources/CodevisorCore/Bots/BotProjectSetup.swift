@@ -31,6 +31,21 @@ public final class BotProjectSetup {
     )
   }
 
+  func canClone(_ group: ProjectGroup, to serverId: String, retry: @escaping () -> Void) async -> Bool {
+    guard !isPresented else { return false }
+
+    let setup = ProjectMachineSetup(machines: environment.machines)
+    let preferredSource = environment.projectList.mostRecentlyUsedMember(of: group)
+    guard let plan = setup.clonePlan(group: group, targetServerId: serverId, preferredSource: preferredSource)
+    else { return true }
+    guard let failure = await setup.cloneAccessFailure(plan) else { return true }
+
+    setup.retryHandler = retry
+    self.setup = setup
+    setup.present(plan, failure: failure)
+    return false
+  }
+
   public func dismiss() {
     guard let setup, !setup.isRunning else { return }
 

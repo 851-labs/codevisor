@@ -12,6 +12,7 @@ export interface HandoffAgent {
   readonly id: string
   readonly title: string
   readonly isWorking: boolean
+  readonly machineName?: string | undefined
 }
 
 export const HANDOFF_OPENING = '<codevisor-event type="bot.handoff">'
@@ -83,4 +84,7 @@ const agentsSection = (agents: ReadonlyArray<HandoffAgent>): ReadonlyArray<strin
 }
 
 const agentLine = (agent: HandoffAgent): string =>
-  `- ${agent.title} (agentId \`${agent.id}\`): ${agent.isWorking ? "working" : "idle"}`
+  `- ${agent.title} (agentId \`${agent.id}\`${machineNote(agent)}): ${agent.isWorking ? "working" : "idle"}`
+
+const machineNote = (agent: HandoffAgent): string =>
+  agent.machineName === undefined ? "" : ` on machine ${agent.machineName}`

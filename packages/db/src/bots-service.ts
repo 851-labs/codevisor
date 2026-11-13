@@ -26,7 +26,11 @@ export const makeBotsService = (
   context: ServiceContext
 ): Omit<
   BotsService,
-  "appendBotMessage" | "listBotMessages" | "copyBotMessages" | keyof ThreadsService
+  | "appendBotMessage"
+  | "listBotMessages"
+  | "copyBotMessages"
+  | "importBotMessages"
+  | keyof ThreadsService
 > => {
   const { sqlite, config } = context
 

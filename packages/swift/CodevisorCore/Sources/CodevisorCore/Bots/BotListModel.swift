@@ -85,6 +85,10 @@ public final class BotListModel {
     machines.statusByMachineId[serverId]?.supportsBotFork == true
   }
 
+  public func supportsForkAcrossMachines(on serverId: String) -> Bool {
+    machines.statusByMachineId[serverId]?.supportsBotForkAcrossMachines == true
+  }
+
   private var machineIdsByServer: [String] {
     var seen = Set<String>()
     return machines.allMachines.map(\.id).filter { machineId in
@@ -130,11 +134,14 @@ public final class BotListModel {
   }
 
   @discardableResult
-  public func fork(_ bot: Bot, _ request: ServerForkBotRequest) async throws -> Bot {
+  public func fork(_ bot: Bot, _ request: ServerForkBotRequest, to serverId: String) async throws -> Bot {
+    var request = request
+    request.toMachine = serverId == bot.serverId ? nil : machines.statusByMachineId[serverId]?.serverId
     let record = try await machines.client(for: bot.serverId).forkBot(id: bot.record.id, request)
-    await machines.refreshNavigationState(for: bot.serverId)
-    store(record, on: bot.serverId)
-    guard let forked = Bot(serverId: bot.serverId, record: record) else {
+    await machines.refreshNavigationState(for: serverId)
+    if serverId != bot.serverId { await machines.refreshNavigationState(for: bot.serverId) }
+    store(record, on: serverId)
+    guard let forked = Bot(serverId: serverId, record: record) else {
       throw CodevisorServerClientError.invalidResponse
     }
     return forked

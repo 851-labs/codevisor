@@ -287,6 +287,73 @@ struct BotEditorModelTests {
     #expect(editor.createdBot?.name == "Helper (fork)")
   }
 
+  @Test("Forking onto another machine signs in where a project can't be cloned, then forks there")
+  func forkingOntoAnotherMachine() async throws {
+    let remote = accountMachine("remote-a", name: "Studio")
+    let projectId = UUID()
+    let (local, studio) = (forkingMachine(projects: [widgetProject(projectId)]), forkingMachine())
+    local.setBots([.fixture(name: "Helper", projectIds: [projectId])])
+    studio.configureInfoId("studio-server")
+    let access = LockIsolated(ServerProjectCloneAccess(ok: false, code: "auth_failed"))
+    studio.cloneAccessHandler = { _ in access.value }
+    let sent = LockIsolated<ServerForkBotRequest?>(nil)
+    local.botForkHandler = { _, request in
+      sent.setValue(request)
+      return .fixture(name: request.name)
+    }
+    let environment = AppEnvironment(
+      configCache: ConfigOptionCache(store: InMemoryStore()),
+      settings: AppSettingsModel(store: InMemoryStore()),
+      machineStore: InMemoryStore(),
+      harnessService: PreviewHarnessService(),
+      machineClientFactory: { $0.id == remote.id ? studio : local }
+    )
+    signIn(environment.machines, machines: [remote])
+    await environment.machines.refreshStatus(for: CodevisorMachine.local.id)
+    await environment.machines.refreshStatus(for: remote.id)
+    await environment.projectList.refreshFromServer(serverId: CodevisorMachine.local.id, client: local)
+    await environment.bots.refresh(serverId: CodevisorMachine.local.id)
+    let bot = try #require(environment.bots.bots.first)
+    let editor = BotEditorModel(target: .fork(bot), environment: environment)
+
+    editor.serverId = remote.id
+    await editor.loadModels()
+    let forkedRightAway = await editor.save()
+    let signInPhase = editor.projectSetup.setup?.phase
+    access.setValue(ServerProjectCloneAccess(ok: true))
+    editor.projectSetup.setup?.retry()
+    await awaitObserved { editor.createdBot != nil }
+
+    #expect(editor.canChangeMachine)
+    #expect(editor.machines.map(\.id).contains(remote.id))
+    #expect(!forkedRightAway)
+    guard case .signingIn = signInPhase else {
+      Issue.record("Expected GitHub sign-in before forking, got \(String(describing: signInPhase))")
+      return
+    }
+    #expect(sent.value?.toMachine == "studio-server")
+    #expect(editor.createdBot?.serverId == remote.id)
+  }
+
+  private func forkingMachine(projects: [ServerProject] = []) -> SyncFakeServerClient {
+    let fake = SyncFakeServerClient(projects: projects, sessions: [])
+    fake.configureInfoFeatures(["bots-v1", "bot-fork-v1", "bot-fork-machines-v1", "project-clone-access-v1"])
+    fake.capabilitiesHandler = { _ in ServerCapabilities(harnesses: [Self.readyHarness]) }
+    return fake
+  }
+
+  private func widgetProject(_ id: UUID) -> ServerProject {
+    let projectId = id.uuidString.lowercased()
+    return ServerProject(
+      id: projectId, name: "widget", origin: .codevisor, createdAt: "2026-11-13T12:00:00.000Z",
+      locations: [
+        ServerProjectLocation(
+          id: "location", projectId: projectId, serverId: "local", folderPath: "/src/widget",
+          createdAt: "2026-11-13T12:00:00.000Z", isGitRepository: true)
+      ],
+      repoUrl: "https://github.com/acme/widget.git")
+  }
+
   @Test("A machine without project changes keeps an existing bot's projects as they are")
   func olderMachinesKeepProjects() async throws {
     let project = UUID()
