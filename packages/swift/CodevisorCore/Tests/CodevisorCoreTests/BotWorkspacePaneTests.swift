@@ -97,7 +97,75 @@ struct BotWorkspacePaneTests {
     #expect(fixture.store.pendingIntents.isEmpty)
   }
 
+  @Test("A pane opened beside a bot is sent to a server that takes a bot's panes")
+  func openedPaneIsSent() async throws {
+    let fixture = try await sharedBotWorkspace()
+
+    try open(terminal, in: fixture)
+
+    #expect(fixture.store.pendingIntents.map(\.intent) == [.upsertPane(terminal, workspaceId: workspace.id)])
+    #expect(paneIds(in: fixture) == [chatPaneId, terminal.id])
+  }
+
+  @Test("A pane another device opens beside a bot shows here as a split, and leaves when that device closes it")
+  func otherDevicePanesFollowTheServer() async throws {
+    let fixture = try await sharedBotWorkspace()
+    var opened = workspace
+    opened.centerTabs += [WorkspaceTab(root: .leaf(PaneGroupState(panes: [terminal], selectedPaneId: terminal.id)))]
+
+    await fixture.store.replace(
+      .fixture(sessions: [chat], workspaces: [opened], cursor: 2), machineId: "local", requestedAt: Date())
+
+    #expect(fixture.workspaces.workspace(id: workspace.id)?.centerTabs.count == 1)
+    #expect(paneIds(in: fixture) == [chatPaneId, terminal.id])
+
+    await fixture.store.replace(snapshot(cursor: 3), machineId: "local", requestedAt: Date())
+
+    #expect(paneIds(in: fixture) == [chatPaneId])
+  }
+
+  @Test("Panes a bot kept on this device are sent once its server takes them, and stay open meanwhile")
+  func devicePanesAreSentOnce() async throws {
+    let fixture = try await splitBotWorkspace()
+
+    fixture.store.sharePanes(in: [workspace.id])
+
+    #expect(fixture.store.pendingIntents.map(\.intent) == [.upsertPane(terminal, workspaceId: workspace.id)])
+    #expect(paneIds(in: fixture) == [chatPaneId, terminal.id])
+
+    fixture.store.sharePanes(in: [workspace.id])
+
+    #expect(fixture.store.pendingIntents.count == 1)
+  }
+
+  @Test("Another agent's chat opened beside a bot stays on this device")
+  func otherChatsStayOnDevice() async throws {
+    let fixture = try await sharedBotWorkspace()
+    let other = PaneDescriptorState(
+      id: UUID(), kind: .chat, name: "Agent", terminalKey: "a", chatSessionId: UUID())
+
+    try open(other, in: fixture)
+    await fixture.store.replace(snapshot(cursor: 2), machineId: "local", requestedAt: Date())
+
+    #expect(fixture.store.pendingIntents.isEmpty)
+    #expect(paneIds(in: fixture) == [chatPaneId, other.id])
+  }
+
   private var chatPaneId: UUID? { workspace.allPanes.first?.id }
+
+  private func sharedBotWorkspace() async throws -> NavigationFixture {
+    let fixture = NavigationFixture()
+    await fixture.install(sessions: [chat], workspaces: [workspace])
+    fixture.store.sharePanes(in: [workspace.id])
+    return fixture
+  }
+
+  private func open(_ pane: PaneDescriptorState, in fixture: NavigationFixture) throws {
+    var split = try #require(fixture.workspaces.workspace(id: workspace.id))
+    _ = split.insertPane(pane, besidePane: try #require(chatPaneId), destination: .split(.trailing))
+    fixture.workspaces.save(split)
+    fixture.workspaceSync.publishPane(pane, workspaceId: workspace.id)
+  }
 
   private func splitBotWorkspace() async throws -> NavigationFixture {
     let fixture = NavigationFixture()

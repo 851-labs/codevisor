@@ -73,7 +73,7 @@ Panes are shared workspace content: a pane you add opens as its own tab on every
 
 - `paneId` must be a new UUID. The call accepts any string, but the apps skip a pane whose id isn't a UUID. The sandbox has no `crypto`, so build the UUID yourself as above.
 - Built-in panes use `providerId: "codevisor"` and `paneType` `chat`, `terminal`, `browser`, or `markdown`. A chat references `resourceKind: "session"` and its agent id; markdown references `resourceKind: "file"` and an absolute path.
-- If you are a bot, your own workspace keeps its splits on each device, so `pane_upsert` refuses a new pane there with a 409. Attach the file to a `messages.send` message instead, or open the pane in the workspace of an agent you started. Every other workspace, including those of agents a bot started, takes new panes as usual.
+- If you are a bot, a pane you add to your own workspace shows as a split beside your conversation on every Mac; each Mac arranges its splits itself, and iOS shows the conversation alone. To show the user a file on every device, attach it to a `messages.send` message instead.
 - `workspaces.pane_close({ workspaceId, paneId })` removes it everywhere. To select it in one window, call `c.navigate` with `destination: { kind: "pane", id: paneId }`.
 
 ## Disconnects

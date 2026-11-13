@@ -98,7 +98,7 @@ describe("bot chats", () => {
     expect(child.createdByAgentMachineId).toBe(child.serverId)
   })
 
-  it("refuses new tabs in a bot's own workspace but not in its sub-agents' workspaces", async () => {
+  it("takes new panes in a bot's own workspace and in its sub-agents' workspaces", async () => {
     const running = await setUp()
     await running.addProject("api-project", "api")
     const bot = decodeBot((await createBot(running, { projectIds: ["api-project"] })).body)
@@ -115,14 +115,13 @@ describe("bot chats", () => {
     const [chatPane] = await panesIn(bot.workspaceId)
     if (chatPane === undefined) throw new Error("missing the bot's chat pane")
 
-    const refused = await putPane(bot.workspaceId, randomUUID(), terminal)
+    const terminalId = randomUUID()
 
-    expect(refused.status).toBe(409)
-    expect(refused.body).toMatchObject({
-      error:
-        "Cannot add a pane to this workspace: it belongs to the bot Release Helper. A bot conversation shows splits only, and each device keeps its own. Attach the file to a message, or open the pane in the workspace of an agent you started."
-    })
-    expect(await panesIn(bot.workspaceId)).toEqual([chatPane])
+    expect((await putPane(bot.workspaceId, terminalId, terminal)).status).toBe(200)
+    expect((await panesIn(bot.workspaceId)).map((pane) => pane.id)).toEqual([
+      chatPane.id,
+      terminalId
+    ])
     expect(
       (
         await putPane(bot.workspaceId, chatPane.id, {

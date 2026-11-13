@@ -24,7 +24,6 @@ import {
   run,
   writeJson
 } from "../server-context.js"
-import { assertNotOwnedByBot } from "./bot-guards.js"
 import type { RouteContext } from "./route-context.js"
 import { routeParam } from "./route-params.js"
 import { createSessionIfMissing } from "./session-workspace.js"
@@ -137,7 +136,6 @@ const upsertPane = async (route: RouteContext, params: RouteParams): Promise<boo
   refuseNonUuidPaneId(ids.paneId)
   refuseMismatchedBodyId("Pane", payload, ids.paneId)
   requireWorkspace(await findWorkspace(services, ids.workspaceId), ids.workspaceId)
-  await refuseNewPaneInBotWorkspace(services, ids)
 
   const pane = await run(
     services.db.upsertWorkspacePane(ids.workspaceId, { ...payload, id: ids.paneId })
@@ -177,20 +175,6 @@ const paneIds = (params: RouteParams): PaneIds => ({
 
 const refuseNonUuidPaneId = (paneId: string): void => {
   if (!isUuid(paneId)) throw new HttpFailure(400, `Pane id must be a UUID: ${paneId}`)
-}
-
-const refuseNewPaneInBotWorkspace = async (
-  services: RouteContext["services"],
-  ids: PaneIds
-): Promise<void> => {
-  if (hasPane(await run(services.db.listWorkspacePanes), ids)) return
-
-  await assertNotOwnedByBot(
-    services,
-    { workspaceId: ids.workspaceId },
-    "add a pane to this workspace",
-    "A bot conversation shows splits only, and each device keeps its own. Attach the file to a message, or open the pane in the workspace of an agent you started."
-  )
 }
 
 const promotedWorkspace = (workspaces: ReadonlyArray<Workspace>, ids: PaneIds): Workspace => {
