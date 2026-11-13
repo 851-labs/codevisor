@@ -29,11 +29,6 @@ public struct TranscriptBotMessage: Identifiable, Equatable, Sendable {
     case notice
   }
 
-  public enum Side: Equatable, Sendable {
-    case leading
-    case trailing
-  }
-
   public let id: String
   public let sender: Sender
   public let text: String
@@ -43,22 +38,21 @@ public struct TranscriptBotMessage: Identifiable, Equatable, Sendable {
   public let files: [PreviewFile]
   public let isTranscriptMarkdown: Bool
   public let app: CodevisorExecutionApp?
-  public let side: Side
   public let author: TranscriptBotAuthor?
 
   public init(
     id: String, sender: Sender, text: String, attachments: [Attachment] = [], sentAt: Date? = nil,
-    delivery: TranscriptDelivery? = nil, side: Side = .leading, author: TranscriptBotAuthor? = nil
+    delivery: TranscriptDelivery? = nil, author: TranscriptBotAuthor? = nil
   ) {
     self.init(
       id: id, sender: sender, text: text, attachments: attachments, sentAt: sentAt, delivery: delivery, files: [],
-      isTranscriptMarkdown: false, side: side, author: author)
+      isTranscriptMarkdown: false, author: author)
   }
 
   init(
     id: String, sender: Sender, text: String, attachments: [Attachment], sentAt: Date?,
     delivery: TranscriptDelivery?, files: [PreviewFile], isTranscriptMarkdown: Bool, app: CodevisorExecutionApp? = nil,
-    side: Side = .leading, author: TranscriptBotAuthor? = nil
+    author: TranscriptBotAuthor? = nil
   ) {
     self.id = id
     self.sender = sender
@@ -69,14 +63,13 @@ public struct TranscriptBotMessage: Identifiable, Equatable, Sendable {
     self.files = files
     self.isTranscriptMarkdown = isTranscriptMarkdown
     self.app = app
-    self.side = side
     self.author = author
   }
 
   public func withDelivery(_ delivery: TranscriptDelivery?) -> TranscriptBotMessage {
     TranscriptBotMessage(
       id: id, sender: sender, text: text, attachments: attachments, sentAt: sentAt, delivery: delivery, files: files,
-      isTranscriptMarkdown: isTranscriptMarkdown, app: app, side: side, author: author)
+      isTranscriptMarkdown: isTranscriptMarkdown, app: app, author: author)
   }
 }
 

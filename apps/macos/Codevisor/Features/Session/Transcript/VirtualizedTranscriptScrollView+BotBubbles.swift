@@ -35,8 +35,7 @@ extension VirtualizedTranscriptScrollView {
 
   func nativeBotPart(for row: TranscriptVirtualRow) -> NativeBotPart? {
     guard case let .botMessage(message, content, _) = row.content,
-      message.sender == .bot, message.side == .leading, message.author == nil, message.app == nil,
-      content.files.isEmpty
+      message.sender == .bot, message.author == nil, message.app == nil, content.files.isEmpty
     else { return nil }
 
     if case let .image(source, alt) = content.partStyle { return .image(source: source, alt: alt) }

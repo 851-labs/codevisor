@@ -91,11 +91,11 @@ enum TranscriptBotMessageParts {
     case let .text(text), let .block(text):
       return TranscriptBotMessage(
         id: id, sender: .bot, text: text, attachments: [], sentAt: whole.sentAt, delivery: nil, files: [],
-        isTranscriptMarkdown: false, side: whole.side, author: whole.author)
+        isTranscriptMarkdown: false, author: whole.author)
     case let .files(files):
       return TranscriptBotMessage(
         id: id, sender: .bot, text: "", attachments: [], sentAt: whole.sentAt, delivery: nil, files: files,
-        isTranscriptMarkdown: true, side: whole.side, author: whole.author)
+        isTranscriptMarkdown: true, author: whole.author)
     }
   }
 

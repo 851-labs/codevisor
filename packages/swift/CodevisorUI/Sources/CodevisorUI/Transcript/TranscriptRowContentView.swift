@@ -132,9 +132,7 @@ public struct TranscriptRowContentView: View {
       } else if let app = message.app {
         PluginAppBotBubble(app: app)
       } else if let author = message.author {
-        TranscriptAuthoredBubbleRow(
-          side: message.side, avatar: isGroupTail ? leaves.botAuthorAvatar(author) : nil
-        ) {
+        TranscriptAuthoredBubbleRow(avatar: isGroupTail ? leaves.botAuthorAvatar(author) : nil) {
           leaves.botMessage(message, content)
         }
       } else {
@@ -142,6 +140,8 @@ public struct TranscriptRowContentView: View {
       }
     case let .botTimestamp(date):
       TranscriptBotTimestampRow(date: date)
+    case let .botAuthorName(name):
+      TranscriptBotAuthorNameRow(name: name)
     case let .delivery(id, delivery):
       TranscriptDeliveryRow(
         delivery: delivery,

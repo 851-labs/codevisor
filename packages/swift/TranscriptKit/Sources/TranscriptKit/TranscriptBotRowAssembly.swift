@@ -32,6 +32,7 @@ enum TranscriptBotRowAssembly {
             estimatedHeight: 28
           ))
       }
+      appendAuthorName(heading: message, after: previous, to: &rows)
       let next = messages.indices.contains(index + 1) ? messages[index + 1] : nil
       let isGroupTail = next.map { !continuesGroup($0, after: message) } ?? true
       if let delivery = message.delivery, message.sender == .user, let id = UUID(uuidString: message.id) {
@@ -129,6 +130,21 @@ enum TranscriptBotRowAssembly {
     return conversation.messages.contains { $0.id.lowercased() == id } ? nil : pending
   }
 
+  private static func appendAuthorName(
+    heading message: TranscriptBotMessage, after previous: TranscriptBotMessage?,
+    to rows: inout [TranscriptPresentationRow]
+  ) {
+    guard let name = message.author?.name, !name.isEmpty else { return }
+    if let previous, continuesGroup(message, after: previous) { return }
+    rows.append(
+      .init(
+        id: .botAuthorName(message.id),
+        content: .botAuthorName(name),
+        estimatedHeight: 18,
+        spacingAfter: groupedSpacing
+      ))
+  }
+
   private static func startsNewMoment(_ sentAt: Date, after previous: TranscriptBotMessage?) -> Bool {
     guard let previous else { return true }
     guard let previousAt = previous.sentAt else { return false }
@@ -136,9 +152,9 @@ enum TranscriptBotRowAssembly {
   }
 
   private static func continuesGroup(_ next: TranscriptBotMessage, after message: TranscriptBotMessage) -> Bool {
-    guard next.sender == message.sender, next.side == message.side, next.author == message.author,
-      message.sender != .notice
-    else { return false }
+    guard next.sender == message.sender, next.author == message.author, message.sender != .notice else {
+      return false
+    }
     guard let nextAt = next.sentAt, let sentAt = message.sentAt else { return true }
     return nextAt.timeIntervalSince(sentAt) <= timestampGap
   }

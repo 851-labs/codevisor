@@ -5,10 +5,9 @@ import Testing
 
 @Suite("A thread in the transcript")
 struct PresentedThreadTests {
-  @Test("The bot whose screen shows the thread writes on the trailing side, and the other side on the leading")
-  func viewerWritesOnTheTrailingSide() throws {
+  @Test("Each thread message becomes a bot bubble that names its author")
+  func messagesNameTheirAuthors() {
     let record = ServerBot.fixture(name: "Release")
-    let release = try #require(Bot(serverId: "local", record: record))
     let releaseSide = ServerThreadParticipant(
       kind: .bot, name: "Release", agentId: record.sessionId, botId: record.id.uppercased())
     let agent = ServerThreadParticipant(kind: .agent, name: "Fix login", agentId: "agent-1", machineId: "machine-b")
@@ -21,10 +20,9 @@ struct PresentedThreadTests {
         createdAt: "2026-11-12T10:00:05.000Z"),
     ]
 
-    let conversation = TranscriptBotConversation.thread(messages, viewedBy: release)
+    let conversation = TranscriptBotConversation.thread(messages)
 
     #expect(conversation.messages.map(\.id) == ["m1", "m2"])
-    #expect(conversation.messages.map(\.side) == [.leading, .trailing])
     #expect(conversation.messages.map(\.sender) == [.bot, .bot])
     #expect(
       conversation.messages.map(\.author) == [

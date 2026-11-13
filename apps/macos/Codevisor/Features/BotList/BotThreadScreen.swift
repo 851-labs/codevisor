@@ -49,7 +49,7 @@ struct BotThreadScreen: View {
 
   private var presented: PresentedThread {
     PresentedThread(
-      conversation: .thread(environment.botThreads.messages(in: thread.threadId), viewedBy: bot),
+      conversation: .thread(environment.botThreads.messages(in: thread.threadId)),
       hasOlder: environment.botThreads.threadsWithOlderMessages.contains(thread.threadId))
   }
 

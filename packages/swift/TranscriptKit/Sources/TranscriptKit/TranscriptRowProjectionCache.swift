@@ -125,6 +125,7 @@ public struct TranscriptPresentationRow: Identifiable, Equatable, Sendable {
     case active(UUID)
     case botMessage(String)
     case botTimestamp(String)
+    case botAuthorName(String)
     case delivery(UUID)
     case botTyping
     case setupRequest(String)
@@ -175,6 +176,7 @@ public struct TranscriptPresentationRow: Identifiable, Equatable, Sendable {
       case let .active(id): "message:\(id.uuidString)"
       case let .botMessage(id): "bot:\(id)"
       case let .botTimestamp(id): "bot:\(id):timestamp"
+      case let .botAuthorName(id): "bot:\(id):author"
       case let .delivery(id): "message:\(id.uuidString):delivery"
       case .botTyping: "special:bot-typing"
       case let .setupRequest(id): "setup-request:\(id)"
@@ -201,7 +203,7 @@ public struct TranscriptPresentationRow: Identifiable, Equatable, Sendable {
       case .message, .assistantPlanning, .plan, .planHeader, .planMarkdown,
         .assistantResult, .assistantWorkedHeader, .assistantWorkedItem,
         .assistantChrome, .assistantMarkdown, .assistantAttachment, .assistantPluginApps, .compactionMarker,
-        .forkMarker, .eventMarker, .botMessage, .botTimestamp:
+        .forkMarker, .eventMarker, .botMessage, .botTimestamp, .botAuthorName:
         true
       case .delivery, .botTyping, .active, .activePlanning, .activePlanHeader, .activePlanMarkdown,
         .activeResult, .activeWorkedHeader, .activeWorkedItem, .activeChrome,
@@ -238,7 +240,8 @@ public struct TranscriptPresentationRow: Identifiable, Equatable, Sendable {
         let .assistantPluginApps(id), let .activePluginApps(id), let .compactionMarker(id),
         let .forkMarker(id), let .eventMarker(id):
         id
-      case .botMessage, .botTimestamp, .delivery, .botTyping, .setupRequest, .interaction, .setup, .startingAgent,
+      case .botMessage, .botTimestamp, .botAuthorName, .delivery, .botTyping, .setupRequest, .interaction, .setup,
+        .startingAgent,
         .backgroundTask,
         .updateGate, .connecting, .serverWait, .sandboxPower, .error, .statusError, .bottomSpacer:
         nil
@@ -268,6 +271,7 @@ public struct TranscriptPresentationRow: Identifiable, Equatable, Sendable {
     case active(ConversationItem)
     case botMessage(TranscriptBotMessage, TranscriptBotMessageContent, isGroupTail: Bool)
     case botTimestamp(Date)
+    case botAuthorName(String)
     case delivery(UUID, TranscriptDelivery)
     case botTyping
     case setupRequest(TranscriptSetupRequest, inBotConversation: Bool)
