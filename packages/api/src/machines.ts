@@ -39,6 +39,8 @@ export const MachineCallOrigin = Schema.Struct({
   sessionId: Schema.optional(Schema.String),
   sessionTitle: Schema.optional(Schema.String),
   botId: Schema.optional(Schema.String),
+  createdByAgentId: Schema.optional(Schema.String),
+  createdByAgentMachineId: Schema.optional(Schema.String),
   clientId: Schema.optional(Schema.String)
 })
 export type MachineCallOrigin = typeof MachineCallOrigin.Type

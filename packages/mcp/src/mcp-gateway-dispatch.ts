@@ -247,7 +247,12 @@ export const makeGatewayDispatch = (deps: GatewayDispatchDeps) => {
     } else if (provider.id === "codevisor" && remote !== undefined) {
       providerContext = {
         ...callContext,
-        remoteCaller: { name: remote.sessionTitle, botId: remote.botId }
+        remoteCaller: {
+          name: remote.sessionTitle,
+          botId: remote.botId,
+          createdByAgentId: remote.createdByAgentId,
+          createdByAgentMachineId: remote.createdByAgentMachineId
+        }
       }
     } else if (provider.id === "browser") {
       providerContext = browserProviderContext({

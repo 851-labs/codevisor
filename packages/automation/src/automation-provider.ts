@@ -11,6 +11,8 @@ export interface ComputerUseApp {
 export interface RemoteCaller {
   readonly name?: string | undefined
   readonly botId?: string | undefined
+  readonly createdByAgentId?: string | undefined
+  readonly createdByAgentMachineId?: string | undefined
 }
 
 export interface AutomationProviderContext {

@@ -1,4 +1,4 @@
-import type { ExecutionJob } from "@codevisor/api"
+import type { ExecutionJob, SessionSummary } from "@codevisor/api"
 import type {
   AutomationToolProvider,
   CodeExecutionResult,
@@ -264,7 +264,23 @@ const describedOrigin = async (
   if (session === undefined) return origin
   const bot = await run(deps.config.db.findBotOwning({ sessionId: session.id }))
   const isBotChat = bot?.sessionId.toLowerCase() === session.id.toLowerCase()
-  return { ...origin, sessionTitle: session.title, ...(isBotChat ? { botId: bot.id } : {}) }
+  return {
+    ...origin,
+    sessionTitle: session.title,
+    ...(isBotChat ? { botId: bot.id } : {}),
+    ...starterOf(session, origin.machineId)
+  }
+}
+
+const starterOf = (
+  session: SessionSummary,
+  machineId: string
+): Pick<GatewayOrigin, "createdByAgentId" | "createdByAgentMachineId"> => {
+  if (session.createdByAgentId === undefined || session.isDetached === true) return {}
+  return {
+    createdByAgentId: session.createdByAgentId,
+    createdByAgentMachineId: session.createdByAgentMachineId ?? machineId
+  }
 }
 
 const remoteTarget = (

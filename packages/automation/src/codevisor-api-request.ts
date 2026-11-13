@@ -189,10 +189,16 @@ const bodyPayload = (
   return payload
 }
 
-const remoteSenderFields = ({ remoteCaller }: AutomationProviderContext): UnknownRecord => ({
-  ...(remoteCaller?.botId === undefined ? {} : { sentByBotId: remoteCaller.botId }),
-  ...(remoteCaller?.name === undefined ? {} : { sentByName: remoteCaller.name })
-})
+const remoteSenderFields = ({ remoteCaller }: AutomationProviderContext): UnknownRecord =>
+  definedArguments(
+    {
+      sentByBotId: remoteCaller?.botId,
+      sentByName: remoteCaller?.name,
+      senderCreatedByAgentId: remoteCaller?.createdByAgentId,
+      senderCreatedByAgentMachineId: remoteCaller?.createdByAgentMachineId
+    },
+    ["sentByBotId", "sentByName", "senderCreatedByAgentId", "senderCreatedByAgentMachineId"]
+  )
 
 const senderFields = (sessionId: string): UnknownRecord => {
   if (isFromExternalClient(sessionId)) return {}

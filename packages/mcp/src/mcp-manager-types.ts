@@ -49,6 +49,8 @@ export interface GatewayOrigin {
   readonly sessionId?: string
   readonly sessionTitle?: string
   readonly botId?: string
+  readonly createdByAgentId?: string
+  readonly createdByAgentMachineId?: string
   readonly clientId?: string
 }
 

@@ -83,9 +83,11 @@ const messageBot = async (route: RouteContext, botId: string): Promise<boolean> 
     agentId: payload.sentByAgentId,
     machineId: payload.sentByAgentMachineId,
     botId: payload.sentByBotId,
-    name: payload.sentByName
+    name: payload.sentByName,
+    createdByAgentId: payload.senderCreatedByAgentId,
+    createdByAgentMachineId: payload.senderCreatedByAgentMachineId
   })
-  refuseOwnBot(sender, bot)
+  refuseOwnBot(route, sender, bot)
   if (bot.isArchived) throw new HttpFailure(409, `${bot.name} is archived`)
 
   const to: ThreadParty = { kind: "bot", botId: bot.id }
