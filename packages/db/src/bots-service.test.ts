@@ -322,25 +322,7 @@ describe("bot workspaces", () => {
     useWorktreesRoot()
     const db = await openDatabase()
     const { home } = await seedBot(db)
-    await run(
-      db.createWorkspaceWithSession({
-        workspace: { id: "ws-fork", projectId: home.id, name: "Fork", hasCustomName: false },
-        session: { id: "chat-fork", projectId: home.id, harnessId: "codex", title: "Fork" }
-      })
-    )
-    await run(
-      db.createBot({
-        id: "bot-fork",
-        name: "Fork",
-        symbolName: "sparkles",
-        mascot: { color: "mint", hat: "none", eyewear: "none" },
-        slug: "fork",
-        projectId: home.id,
-        sessionId: "chat-fork",
-        workspaceId: "ws-fork",
-        projects: []
-      })
-    )
+    await seedFork(db, home.id)
     await run(db.appendBotMessage("chat-helper", { sender: "user", text: "ship it" }))
     await run(db.appendBotMessage("chat-helper", { sender: "bot", text: "shipping" }))
 
@@ -355,4 +337,77 @@ describe("bot workspaces", () => {
       ["navigation.changed", "chat-fork", { table: "sessions" }]
     ])
   })
+
+  it("imports a conversation from another machine with its times and files", async () => {
+    useWorktreesRoot()
+    const db = await openDatabase()
+    const { home } = await seedBot(db)
+    await seedFork(db, home.id)
+    const file = await run(
+      db.createDiskFile({
+        id: "file-shot",
+        name: "shot.png",
+        mimeType: "image/png",
+        sizeBytes: 3,
+        sha256: "abc",
+        kind: "image",
+        createdAt: "2026-11-01T00:00:00.000Z"
+      })
+    )
+    const shot = {
+      fileId: file.id,
+      name: "shot.png",
+      mimeType: "image/png",
+      sizeBytes: 3,
+      kind: "image" as const
+    }
+
+    const changes = await run(
+      db.importBotMessages("chat-fork", [
+        { sender: "user", text: "ship it", createdAt: "2026-11-01T10:00:00.000Z" },
+        { sender: "bot", text: "here", attachments: [shot], createdAt: "2026-11-01T10:01:00.000Z" }
+      ])
+    )
+    const imported = await run(db.listBotMessages("chat-fork", undefined, 10))
+    await run(db.deleteBot("bot-fork"))
+    await run(db.deleteSession("chat-fork"))
+
+    expect(
+      imported.messages.map((message) => [
+        message.sender,
+        message.text,
+        message.createdAt,
+        message.attachments
+      ])
+    ).toEqual([
+      ["user", "ship it", "2026-11-01T10:00:00.000Z", undefined],
+      ["bot", "here", "2026-11-01T10:01:00.000Z", [shot]]
+    ])
+    expect(changes.map((change) => [change.kind, change.subjectId])).toEqual([
+      ["navigation.changed", "chat-fork"]
+    ])
+    expect(await run(db.getFileMetadata(file.id))).toBeUndefined()
+  })
 })
+
+const seedFork = async (db: CodevisorDatabaseService, homeProjectId: string) => {
+  await run(
+    db.createWorkspaceWithSession({
+      workspace: { id: "ws-fork", projectId: homeProjectId, name: "Fork", hasCustomName: false },
+      session: { id: "chat-fork", projectId: homeProjectId, harnessId: "codex", title: "Fork" }
+    })
+  )
+  await run(
+    db.createBot({
+      id: "bot-fork",
+      name: "Fork",
+      symbolName: "sparkles",
+      mascot: { color: "mint", hat: "none", eyewear: "none" },
+      slug: "fork",
+      projectId: homeProjectId,
+      sessionId: "chat-fork",
+      workspaceId: "ws-fork",
+      projects: []
+    })
+  )
+}

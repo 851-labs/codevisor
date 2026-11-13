@@ -23,6 +23,7 @@ final class SyncFakeServerClient: CodevisorServerClienting, @unchecked Sendable 
   var _threadMessages: [String: [ServerThreadMessage]] = [:]
   var botCreateHandler: (@Sendable (ServerCreateBotRequest) async throws -> ServerBot)?
   var botForkHandler: (@Sendable (String, ServerForkBotRequest) async throws -> ServerBot)?
+  var cloneAccessHandler: (@Sendable (String) -> ServerProjectCloneAccess)?
   var botProjectError: (any Error)?
   var listedProjects: [ServerProject]?
   var botMascotOptionsResult: ServerBotMascotOptions?

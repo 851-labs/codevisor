@@ -10,7 +10,7 @@ import { CodeExecutionToolError } from "@codevisor/automation"
 import { Schema } from "effect"
 
 import { makeFleetTickets, withTicket, type FleetTickets } from "../infra/fleet-tickets.js"
-import type { MachineLink } from "../infra/machine-link.js"
+import { PeerAnswerError, type MachineLink } from "../infra/machine-link.js"
 import type { CodevisorServerServices } from "../server-context.js"
 import {
   defaultServerConfig,
@@ -180,6 +180,13 @@ const offlineError = (machine: string): CodeExecutionToolError =>
 
 const callAs = async (caller: Member, target: FleetMachine, body: unknown): Promise<unknown> => {
   const answer = await invokeAs(caller, target, body)
-  if (answer.status !== 200) throw new Error(JSON.stringify(answer.body))
+  if (answer.status !== 200) throw peerAnswerError(answer)
   return resultOf(answer.body)
+}
+
+const peerAnswerError = (answer: Answer): PeerAnswerError => {
+  const error = isRecord(answer.body) && isRecord(answer.body.error) ? answer.body.error : {}
+  const message = typeof error.message === "string" ? error.message : JSON.stringify(answer.body)
+  const code = typeof error.code === "string" ? { code: error.code } : {}
+  return new PeerAnswerError(message, code, answer.status)
 }

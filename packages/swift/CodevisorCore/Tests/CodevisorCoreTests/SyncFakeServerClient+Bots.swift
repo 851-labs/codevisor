@@ -25,6 +25,11 @@ extension SyncFakeServerClient {
     return bot
   }
 
+  func projectCloneAccess(url: String) async throws -> ServerProjectCloneAccess {
+    guard let cloneAccessHandler else { throw CodevisorServerClientError.invalidResponse }
+    return cloneAccessHandler(url)
+  }
+
   func updateBot(id: String, _ request: ServerUpdateBotRequest) async throws -> ServerBot {
     try changeBot(id) { bot in
       bot.name = request.name ?? bot.name

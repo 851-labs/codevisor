@@ -1,6 +1,7 @@
 import type {
   AttachmentRef,
   Bot,
+  BotImportMessage,
   BotMascot,
   BotMessage,
   BotMessageSender,
@@ -156,5 +157,9 @@ export interface BotsService extends ThreadsService {
   readonly copyBotMessages: (
     sourceSessionId: string,
     targetSessionId: string
+  ) => Effect.Effect<ReadonlyArray<EventEnvelope>, DatabaseError>
+  readonly importBotMessages: (
+    sessionId: string,
+    messages: ReadonlyArray<BotImportMessage>
   ) => Effect.Effect<ReadonlyArray<EventEnvelope>, DatabaseError>
 }

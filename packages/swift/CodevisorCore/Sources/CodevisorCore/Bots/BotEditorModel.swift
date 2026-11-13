@@ -64,8 +64,11 @@ public final class BotEditorModel {
   }
 
   public var canChangeMachine: Bool {
-    if case .create = target { return true }
-    return false
+    switch target {
+    case .create: true
+    case .edit: false
+    case let .fork(bot): environment.bots.supportsForkAcrossMachines(on: bot.serverId)
+    }
   }
 
   public var symbolName: String {
@@ -77,7 +80,10 @@ public final class BotEditorModel {
   }
 
   public var machines: [CodevisorMachine] {
-    environment.bots.botMachines
+    guard let forkedBot else { return environment.bots.botMachines }
+    return environment.bots.botMachines.filter {
+      $0.id == forkedBot.serverId || environment.bots.supportsForkAcrossMachines(on: $0.id)
+    }
   }
 
   public var machineName: String {
@@ -296,6 +302,8 @@ public final class BotEditorModel {
 
   private func fork(_ bot: Bot) async throws -> Bot? {
     guard let models, let harnessId = models.harnessId else { return nil }
+    guard await canCloneProjects(of: bot) else { return nil }
+
     return try await environment.bots.fork(
       bot,
       ServerForkBotRequest(
@@ -305,7 +313,29 @@ public final class BotEditorModel {
         harnessId: harnessId,
         configSelections: models.configSelections,
         moveAgents: movesAgents
-      )
+      ),
+      to: serverId
     )
+  }
+
+  private func canCloneProjects(of bot: Bot) async -> Bool {
+    for group in projectGroupsMissing(from: bot) {
+      let canClone = await projectSetup.canClone(group, to: serverId) { [weak self] in
+        Task { await self?.save() }
+      }
+      guard canClone else { return false }
+    }
+    return true
+  }
+
+  private func projectGroupsMissing(from bot: Bot) -> [ProjectGroup] {
+    guard serverId != bot.serverId else { return [] }
+
+    let projectList = environment.projectList
+    let ids = Set(bot.record.projects.compactMap { UUID(uuidString: $0.projectId) })
+    return projectList.fleetActiveProjects
+      .filter { $0.serverId == bot.serverId && ids.contains($0.id) }
+      .compactMap { projectList.fleetProjectGroup(containing: $0) }
+      .filter { $0.member(on: serverId) == nil }
   }
 }

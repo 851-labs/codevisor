@@ -16,6 +16,7 @@ import {
 export interface AgentsMove {
   readonly fromAgentId: string
   readonly toAgentId: string
+  readonly toMachineId?: string | undefined
 }
 
 export const moveBotAgents = async (
@@ -25,14 +26,23 @@ export const moveBotAgents = async (
   move: AgentsMove
 ): Promise<ReadonlyArray<SessionSummary>> => {
   const moved = await moveLocalAgents(services, fanout, { ...move, creatorMachineId: serverId })
-  await moveSubscriptions(services, move, moved)
+  await moveSubscriptions(services, { ...move, staysHere: staysOn(move, serverId) }, moved)
   await broadcastToOtherMachines(services, serverId, {
     kind: "agents_moved",
     path: FLEET_AGENTS_MOVED_PATH,
-    args: { fromAgentId: move.fromAgentId, toAgentId: move.toAgentId }
+    args: movedArgs(move)
   })
   return moved
 }
+
+const staysOn = (move: AgentsMove, serverId: string): boolean =>
+  move.toMachineId === undefined || move.toMachineId === serverId
+
+const movedArgs = (move: AgentsMove): Readonly<Record<string, string>> => ({
+  fromAgentId: move.fromAgentId,
+  toAgentId: move.toAgentId,
+  ...(move.toMachineId === undefined ? {} : { toMachineId: move.toMachineId })
+})
 
 export const moveLocalAgents = async (
   services: CodevisorServerServices,
@@ -50,14 +60,15 @@ export const moveLocalAgents = async (
 
 const moveSubscriptions = async (
   services: CodevisorServerServices,
-  move: AgentsMove,
+  move: AgentsMove & { readonly staysHere: boolean },
   moved: ReadonlyArray<SessionSummary>
 ): Promise<void> => {
   const movedIds = new Set(moved.map((session) => session.id.toLowerCase()))
   const subscriptions = await run(services.db.listSessionSubscriptions(move.fromAgentId))
   for (const subscription of subscriptions) {
     if (!movedIds.has(subscription.targetSessionId.toLowerCase())) continue
-    await resubscribe(services, subscription, move.toAgentId)
+    if (move.staysHere) await resubscribe(services, subscription, move.toAgentId)
+    else await run(services.db.deleteSessionSubscription(subscription.id))
   }
 }
 

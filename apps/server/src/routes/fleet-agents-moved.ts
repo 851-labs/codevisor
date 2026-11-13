@@ -21,6 +21,8 @@ const agentsMoveOf = (args: unknown): AgentsMove | undefined => {
   if (typeof args !== "object" || args === null) return undefined
   const fromAgentId: unknown = Reflect.get(args, "fromAgentId")
   const toAgentId: unknown = Reflect.get(args, "toAgentId")
+  const toMachineId: unknown = Reflect.get(args, "toMachineId")
   if (typeof fromAgentId !== "string" || typeof toAgentId !== "string") return undefined
-  return { fromAgentId, toAgentId }
+  if (typeof toMachineId !== "string") return { fromAgentId, toAgentId }
+  return { fromAgentId, toAgentId, toMachineId }
 }

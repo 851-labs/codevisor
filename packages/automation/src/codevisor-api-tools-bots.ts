@@ -79,6 +79,12 @@ const ForkBotBody = Schema.Struct({
       description:
         "true (the default) transfers every agent the bot started to the fork, so their results go to it. false leaves them with the bot."
     })
+  ),
+  toMachine: Schema.optional(
+    Schema.String.annotate({
+      description:
+        "Another machine (id or name, from machines.list()) to put the fork on. It clones the bot's projects there if needed and copies its notes, conversation and files. Defaults to the bot's own machine. Pass machine as usual for the bot's own machine."
+    })
   )
 })
 
@@ -117,7 +123,7 @@ export const codevisorBotApiTools: ReadonlyArray<CodevisorApiToolSpec> = [
   ),
   apiTool(
     "bots.fork",
-    "Fork a bot onto another harness or model, the same as Fork… in the app. The fork gets the bot's projects, mascot, notes and conversation, and on its first turn a summary of where things stand. Returns the new bot.",
+    "Fork a bot onto another harness, model or machine, the same as Fork… in the app. The fork gets the bot's projects, mascot, notes and conversation, and on its first turn a summary of where things stand. Returns the new bot.",
     "POST",
     "/v1/bots/:id/fork",
     { body: ForkBotBody }

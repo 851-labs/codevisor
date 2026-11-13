@@ -9,6 +9,7 @@ export interface CreatedAgentsMove {
   readonly fromAgentId: string
   readonly toAgentId: string
   readonly creatorMachineId: string
+  readonly toMachineId?: string | undefined
 }
 
 export interface CreatedAgentsService {
@@ -27,7 +28,8 @@ export const makeCreatedAgentsService = (context: ServiceContext): CreatedAgents
         const ids = idRows
           .all(sqlite.prepare(createdAgentsSql.created).all(from, move.creatorMachineId))
           .map((row) => row.id)
-        sqlite.prepare(createdAgentsSql.move).run(to, from, move.creatorMachineId)
+        const toMachineId = move.toMachineId ?? move.creatorMachineId
+        sqlite.prepare(createdAgentsSql.move).run(to, toMachineId, from, move.creatorMachineId)
         return ids
       })()
     })
@@ -37,6 +39,6 @@ const createdAgentsSql = {
   created: `select id from sessions
               where created_by_agent_id = ? collate nocase and created_by_agent_machine_id = ?
               order by created_at asc`,
-  move: `update sessions set created_by_agent_id = ?
+  move: `update sessions set created_by_agent_id = ?, created_by_agent_machine_id = ?
            where created_by_agent_id = ? collate nocase and created_by_agent_machine_id = ?`
 }

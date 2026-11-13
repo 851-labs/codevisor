@@ -37,16 +37,24 @@ export const syncBotInstructions = async (
   return true
 }
 
-export const copyBotNotes = async (
+export const copyBotNotes = (
   services: CodevisorServerServices,
   source: Bot,
   target: Bot
-): Promise<void> => {
-  const sourceText = readIfPresent(instructionsPath(source.rootPath))
-  if (sourceText === undefined) return
+): Promise<void> => writeBotNotes(services, target, botNotes(source))
 
-  const subject = await instructionsSubject(services, target)
-  writeFileSync(instructionsPath(target.rootPath), instructionsWithBlock(sourceText, subject))
+export const botNotes = (bot: Bot): string | undefined =>
+  readIfPresent(instructionsPath(bot.rootPath))
+
+export const writeBotNotes = async (
+  services: CodevisorServerServices,
+  bot: Bot,
+  notes: string | undefined
+): Promise<void> => {
+  if (notes === undefined) return
+
+  const subject = await instructionsSubject(services, bot)
+  writeFileSync(instructionsPath(bot.rootPath), instructionsWithBlock(notes, subject))
 }
 
 export const syncAllBotInstructions = async (
