@@ -1,4 +1,4 @@
-import type { SessionSummary, Workspace } from "@codevisor/api"
+import type { SessionSummary, Workspace, WorkspacePane } from "@codevisor/api"
 
 import {
   archiveAgentsCreatedBy,
@@ -215,13 +215,32 @@ const clearPromptQueue = async (
   await publishPromptQueue(services.db, fanout, chatId)
 }
 
-const closeChatTabs = async (
+export const closeTabsOfRemoteChats = async (
+  { services, fanout }: ArchiveContext,
+  { creatorIds, creatorMachineId }: Creators
+): Promise<void> => {
+  const ids = new Set(creatorIds.map((id) => id.toLowerCase()))
+  await closeTabs(
+    services,
+    fanout,
+    (pane) =>
+      pane.resourceServerId === creatorMachineId && ids.has(pane.resourceId?.toLowerCase() ?? "")
+  )
+}
+
+const closeChatTabs = (
   services: CodevisorServerServices,
   fanout: EventFanout,
   chatId: string
+): Promise<void> => closeTabs(services, fanout, (pane) => pane.resourceId === chatId)
+
+const closeTabs = async (
+  services: CodevisorServerServices,
+  fanout: EventFanout,
+  showsChat: (pane: WorkspacePane) => boolean
 ): Promise<void> => {
   const tabs = (await run(services.db.listWorkspacePanes)).filter(
-    (pane) => pane.resourceKind === "session" && pane.resourceId === chatId
+    (pane) => pane.resourceKind === "session" && showsChat(pane)
   )
   for (const tab of tabs) {
     await run(services.db.deleteWorkspacePane(tab.workspaceId, tab.id))

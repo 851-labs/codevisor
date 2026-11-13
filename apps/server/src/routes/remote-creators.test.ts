@@ -40,6 +40,15 @@ const failureOf = (pending: Promise<unknown>): Promise<string> =>
     (cause: unknown) => String(cause)
   )
 
+const tabShowing = (resourceId: string) => ({
+  providerId: "codevisor",
+  paneType: "chat",
+  title: "Chat",
+  resourceKind: "session",
+  resourceId,
+  resourceServerId: laptop.id
+})
+
 const isArchived = async (machine: FleetMachine, sessionId: string): Promise<boolean> =>
   (await run(machine.services.db.getSessionSummary(sessionId))).isArchived === true
 
@@ -251,6 +260,33 @@ describe("archiving an agent whose agents run on another machine", () => {
     expect([unverified.status, malformed.status]).toEqual([403, 400])
     expect(resultOf(fromCreatorMachine.body)).toEqual({ archived: 1 })
     expect(await isArchived(remote, child.id)).toBe(true)
+  })
+
+  it("closes the tab showing one on its starter's machine once it is archived", async () => {
+    const { home, remote, parent, parentOrigin } = await startFleet()
+    const child = await startedSession(
+      remote,
+      await home.machines.invoke(
+        laptop.id,
+        "codevisor.agents.start",
+        startArgs("one"),
+        parentOrigin
+      )
+    )
+    const other = "9c2e7b10-4d3f-4a6b-8f21-5e6d7c8b9a01"
+    const panes = `/v1/workspaces/${parent.workspaceId}/panes`
+    await post(home, `${panes}/7a1f0c35-2a64-4f3e-9d0a-3b7f3c1c9a11`, tabShowing(child.id), "PUT")
+    await post(home, `${panes}/7a1f0c35-2a64-4f3e-9d0a-3b7f3c1c9a12`, tabShowing(other), "PUT")
+    const shown = async () =>
+      (await run(home.services.db.listWorkspacePanes))
+        .filter((pane) => pane.resourceServerId === laptop.id)
+        .map((pane) => pane.resourceId)
+    expect(await shown()).toEqual([child.id, other])
+
+    await post(remote, `/v1/agents/${child.id}/archive`, {})
+
+    await waitFor(async () => (await shown()).length === 1)
+    expect(await shown()).toEqual([other])
   })
 
   it("sends the archive to the other machine when its workspace is archived", async () => {

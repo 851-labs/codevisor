@@ -1,4 +1,4 @@
-import { archiveAgentsOfRemote } from "../archive-jobs.js"
+import { archiveAgentsOfRemote, closeTabsOfRemoteChats } from "../archive-jobs.js"
 import { HttpFailure } from "../server-context.js"
 import type { FleetCall } from "./fleet-calls.js"
 import type { RouteContext } from "./route-context.js"
@@ -13,11 +13,9 @@ export const receiveAgentsArchived = async (
   if (creatorIds === undefined) throw new HttpFailure(400, "Expected { agentIds: string[] }")
 
   const creators = { creatorIds, creatorMachineId: call.origin.machineId }
-  const archived = await archiveAgentsOfRemote(
-    { services, fanout, config, turns: routeState },
-    creators
-  )
-  return { archived }
+  const context = { services, fanout, config, turns: routeState }
+  await closeTabsOfRemoteChats(context, creators)
+  return { archived: await archiveAgentsOfRemote(context, creators) }
 }
 
 const agentIdsOf = (args: unknown): ReadonlyArray<string> | undefined => {
