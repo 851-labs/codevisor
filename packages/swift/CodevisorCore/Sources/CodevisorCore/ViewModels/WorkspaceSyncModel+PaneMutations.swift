@@ -28,10 +28,14 @@ extension WorkspaceSyncModel {
     optimisticReplacement: PaneDescriptorState? = nil,
     client: (any CodevisorServerClienting)? = nil
   ) {
-    guard !keepsPanesOnDevice(workspaceId), let workspace = repository.workspace(id: workspaceId),
-      workspace.isServerSynced
+    guard let workspace = repository.workspace(id: workspaceId), workspace.isServerSynced,
+      !keepsPanesOnDevice(workspaceId) || serverHoldsPane(id, in: workspace)
     else { return }
     enqueue(.closePane(paneId: id, workspaceId: workspaceId), serverId: workspace.serverId)
+  }
+
+  private func serverHoldsPane(_ id: UUID, in workspace: Workspace) -> Bool {
+    navigationStore?.serverHoldsPane(id, machineId: workspace.serverId) == true
   }
 
   private func keepsPanesOnDevice(_ workspaceId: UUID) -> Bool {

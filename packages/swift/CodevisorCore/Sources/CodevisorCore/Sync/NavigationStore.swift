@@ -46,6 +46,11 @@ public final class NavigationStore {
 
   public var deviceLocalWorkspaceIds: Set<UUID> { layouts.localPaneWorkspaceIds }
 
+  func serverHoldsPane(_ id: UUID, machineId: String) -> Bool {
+    let paneId = id.uuidString.lowercased()
+    return caches.caches[machineId]?.snapshot.panes.contains { $0.id.lowercased() == paneId } == true
+  }
+
   public func keepPanesOnDevice(in workspaceIds: Set<UUID>) {
     guard layouts.keepPanesOnDevice(in: workspaceIds) else { return }
     projector.reset()
