@@ -40,6 +40,7 @@ export const EventKind = Schema.Literals([
   "plugin.subscriptions.updated",
   "bot.updated",
   "bot.message",
+  "thread.message",
   "sync.changed"
 ])
 export type EventKind = typeof EventKind.Type

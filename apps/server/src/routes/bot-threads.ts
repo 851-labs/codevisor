@@ -9,6 +9,7 @@ import {
 import type { ThreadParty } from "@codevisor/db"
 
 import {
+  appendAndPublish,
   HttpFailure,
   matchRoute,
   readSchema,
@@ -45,7 +46,33 @@ export const routeBotThreads = async (route: RouteContext): Promise<boolean> => 
 
   const sessionId = matchRoute(url.pathname, "/v1/sessions/:id/threads")
   if (sessionId !== undefined && request.method === "GET") return listBotThreads(route, sessionId)
+
+  const ofBotId = matchRoute(url.pathname, "/v1/bots/:id/threads")
+  if (ofBotId !== undefined && request.method === "GET") return showBotThreads(route, ofBotId)
+  const threadId = matchRoute(url.pathname, "/v1/threads/:id/messages")
+  if (threadId !== undefined && request.method === "GET") return showThreadMessages(route, threadId)
   return false
+}
+
+const showBotThreads = async (route: RouteContext, botId: string): Promise<boolean> => {
+  const { services, response } = route
+  const bot = await requireBot(route, botId)
+  writeJson(response, 200, await run(services.db.listThreads({ kind: "bot", botId: bot.id })))
+  return true
+}
+
+const showThreadMessages = async (route: RouteContext, threadId: string): Promise<boolean> => {
+  const { services, response, url } = route
+  if ((await run(services.db.getThread(threadId))) === undefined) {
+    throw new HttpFailure(404, `Thread not found: ${threadId}`)
+  }
+  const query = url.searchParams
+  writeJson(
+    response,
+    200,
+    await run(services.db.listThreadMessages(threadId, before(query), limit(query)))
+  )
+  return true
 }
 
 const messageBot = async (route: RouteContext, botId: string): Promise<boolean> => {
@@ -59,7 +86,7 @@ const messageBot = async (route: RouteContext, botId: string): Promise<boolean> 
 
   const to: ThreadParty = { kind: "bot", botId: bot.id }
   const thread = await run(services.db.openThread(sender.party, to))
-  const message = await run(services.db.appendThreadMessage(thread.threadId, sender.party, text))
+  const message = await postThreadMessage(route, thread.threadId, sender.party, text)
   await deliverToChat(route, bot.sessionId, threadEvent(message))
   writeJson(response, 200, { sent: true, threadId: thread.threadId, messageId: message.id })
   return true
@@ -98,7 +125,6 @@ export const sendThreadMessage = async (
   threadId: string,
   rawText: string
 ): Promise<ThreadMessage> => {
-  const { services } = route
   const bot = await requireBotChat(route, sessionId)
   const me: ThreadParty = { kind: "bot", botId: bot.id }
   const thread = await requireThreadOf(route, threadId, me)
@@ -108,7 +134,7 @@ export const sendThreadMessage = async (
   if (chat === undefined)
     throw new HttpFailure(409, "The other side of this thread is archived or gone")
 
-  const message = await run(services.db.appendThreadMessage(threadId, me, text))
+  const message = await postThreadMessage(route, threadId, me, text)
   await deliverToChat(route, chat.id, threadEvent(message))
   return message
 }
@@ -122,6 +148,17 @@ export const listedThreadOfBot = async (
   const me: ThreadParty = { kind: "bot", botId: bot.id }
   const thread = await requireThreadOf(route, threadId, me)
   return listedThreadMessages(route, thread, me, route.url.searchParams)
+}
+
+const postThreadMessage = async (
+  { services, fanout }: RouteContext,
+  threadId: string,
+  from: ThreadParty,
+  text: string
+): Promise<ThreadMessage> => {
+  const message = await run(services.db.appendThreadMessage(threadId, from, text))
+  await appendAndPublish(services.db, fanout, "thread.message", threadId, { message })
+  return message
 }
 
 const listedThreadMessages = async (

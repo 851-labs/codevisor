@@ -20,6 +20,7 @@ public final class AppEnvironment {
   public let updateCenter: UpdateCenter
   public let configSync: ConfigSync
   public let bots: BotListModel
+  public let botThreads: BotThreadsModel
   public let botSections: CustomSectionStore
   public let workspaceSections: CustomSectionStore
   public let sandboxSettings = SandboxSettingsModel()
@@ -104,6 +105,7 @@ public final class AppEnvironment {
     updateCenter = UpdateCenter(machines: machines, appUpdate: self.appUpdate, now: now)
     configSync = ConfigSync(machines: machines)
     bots = BotListModel(machines: machines, navigationStore: navigationStore, store: navigationPersistence)
+    botThreads = BotThreadsModel(machines: machines)
     botSections = CustomSectionStore(configSync: configSync, namespace: CustomSectionStore.botNamespace)
     workspaceSections = CustomSectionStore(configSync: configSync, namespace: CustomSectionStore.workspaceNamespace)
     self.cloud = CloudAccountController(
@@ -203,6 +205,10 @@ public final class AppEnvironment {
     machines.onBotsChanged = { [weak self] serverId in
       guard let bots = self?.bots else { return }
       Task { await bots.refresh(serverId: serverId) }
+    }
+    botThreads.botLookup = { [weak self] serverId, botId in self?.bots.bot(serverId: serverId, id: botId) }
+    machines.onThreadMessage = { [weak self] serverId, posted in
+      self?.botThreads.receive(posted, serverId: serverId)
     }
   }
 

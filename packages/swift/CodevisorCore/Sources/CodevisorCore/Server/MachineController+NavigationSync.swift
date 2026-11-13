@@ -10,6 +10,7 @@ extension MachineController {
     "mcp.updated",
     "plugin.subscriptions.updated",
     "bot.updated",
+    "thread.message",
     "update.changed",
     "restart.drain.updated",
     "update.run.updated",
@@ -85,6 +86,10 @@ extension MachineController {
       pluginSubscriptionsRevision += 1
     case "bot.updated":
       onBotsChanged?(serverId)
+    case "thread.message":
+      if let posted = ShellSyncPayload.decoded(ServerThreadMessageEvent.self, from: event.payload) {
+        onThreadMessage?(serverId, posted)
+      }
     case "update.changed":
       if let info = ShellSyncPayload.decoded(ServerUpdateInfo.self, from: event.payload) {
         connection(for: serverId).updateInfo = info

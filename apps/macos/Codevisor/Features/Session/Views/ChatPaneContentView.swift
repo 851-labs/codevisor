@@ -24,7 +24,9 @@ struct ChatPaneContentView: View {
     if let chatSessionId = role.sessionId(of: descriptor) {
       switch resolver.chat(chatSessionId, on: hostWorkspace.serverId) {
       case let .ready(chatSession, chatProject):
-        if role.offersNewChat, isUnstarted(chatSession) {
+        if let bot = conversationBot, let thread = environment.botThreads.openThread(of: bot) {
+          BotThreadScreen(bot: bot, thread: thread)
+        } else if role.offersNewChat, isUnstarted(chatSession) {
           unstartedChat(chatSession, in: chatProject)
         } else {
           chatScreen(chatSession, in: chatProject)
@@ -48,6 +50,11 @@ struct ChatPaneContentView: View {
         hostWorkspaceId: hostWorkspace.id
       )
     }
+  }
+
+  private var conversationBot: Bot? {
+    guard role == .botConversation, let sessionId = descriptor.chatSessionId else { return nil }
+    return environment.bots.bot(forSession: sessionId, serverId: hostWorkspace.serverId)
   }
 
   private var resetToPlaceholder: (() -> Void)? {
@@ -100,6 +107,9 @@ struct ChatPaneContentView: View {
       store.reconcile(controller, for: chatSession, project: updatedProject)
     }
     .attachmentDropTarget(isReadOnly ? nil : controller)
+    .task(id: conversationBot?.id) {
+      if let bot = conversationBot { await environment.botThreads.refreshThreads(of: bot) }
+    }
   }
 
   private func assignCreatedChat(_ created: ChatSession) {

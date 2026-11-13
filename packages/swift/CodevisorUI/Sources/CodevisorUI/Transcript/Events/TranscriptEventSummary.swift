@@ -70,6 +70,10 @@ struct TranscriptEventSummary {
     case "session.restarted": .init(title: "Codevisor restarted", icon: .symbol("arrow.clockwise"))
     case "session.usage_limit_reset": .init(title: "Usage limit reset", icon: .symbol("clock.arrow.circlepath"))
     case "question.answered": .init(title: "Answer delivered", icon: .symbol("questionmark.circle"))
+    case "thread.message":
+      .init(
+        agentName: event[attribute: "name"], title: "sent a message",
+        icon: .symbol("bubble.left.and.bubble.right"))
     default: .init(title: "Codevisor event", icon: .symbol("bolt"))
     }
   }

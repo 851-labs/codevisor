@@ -54,6 +54,23 @@ extension SyncFakeServerClient {
     try changeBot(botId) { bot in bot.projects.removeAll { $0.projectId == projectId } }
   }
 
+  func setThreads(_ threads: [ServerThread], ofBot botId: String) {
+    lock.withLock { _threads[botId] = threads }
+  }
+
+  func setMessages(_ messages: [ServerThreadMessage], inThread threadId: String) {
+    lock.withLock { _threadMessages[threadId] = messages }
+  }
+
+  func botThreads(botId: String) async throws -> [ServerThread] {
+    lock.withLock { _threads[botId] ?? [] }
+  }
+
+  func threadMessages(threadId: String, before: Int?, limit: Int) async throws -> ServerThreadMessagePage {
+    let older = lock.withLock { _threadMessages[threadId] ?? [] }.filter { $0.sequence < before ?? .max }
+    return ServerThreadMessagePage(messages: Array(older.suffix(limit)), hasMore: older.count > limit)
+  }
+
   private func changeBot(_ botId: String, _ change: (inout ServerBot) -> Void) throws -> ServerBot {
     try lock.withLock {
       if let botProjectError { throw botProjectError }

@@ -19,6 +19,8 @@ final class SyncFakeServerClient: CodevisorServerClienting, @unchecked Sendable 
   var resolvedCapabilitiesHandler: (@Sendable (String, String, [String: String]) async throws -> ServerCapabilities)?
   var skillsList = ServerSkillsList()
   var _bots: [ServerBot] = []
+  var _threads: [String: [ServerThread]] = [:]
+  var _threadMessages: [String: [ServerThreadMessage]] = [:]
   var botCreateHandler: (@Sendable (ServerCreateBotRequest) async throws -> ServerBot)?
   var botForkHandler: (@Sendable (String, ServerForkBotRequest) async throws -> ServerBot)?
   var botProjectError: (any Error)?
