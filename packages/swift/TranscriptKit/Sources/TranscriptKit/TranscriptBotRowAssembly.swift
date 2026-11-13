@@ -136,7 +136,9 @@ enum TranscriptBotRowAssembly {
   }
 
   private static func continuesGroup(_ next: TranscriptBotMessage, after message: TranscriptBotMessage) -> Bool {
-    guard next.sender == message.sender, next.side == message.side, message.sender != .notice else { return false }
+    guard next.sender == message.sender, next.side == message.side, next.author == message.author,
+      message.sender != .notice
+    else { return false }
     guard let nextAt = next.sentAt, let sentAt = message.sentAt else { return true }
     return nextAt.timeIntervalSince(sentAt) <= timestampGap
   }

@@ -26,6 +26,11 @@ struct PresentedThreadTests {
     #expect(conversation.messages.map(\.id) == ["m1", "m2"])
     #expect(conversation.messages.map(\.side) == [.leading, .trailing])
     #expect(conversation.messages.map(\.sender) == [.bot, .bot])
+    #expect(
+      conversation.messages.map(\.author) == [
+        TranscriptBotAuthor(id: "agent-1", name: "Fix login"),
+        TranscriptBotAuthor(id: record.id.uppercased(), name: "Release"),
+      ])
     #expect(conversation.messages.map(\.text) == ["Login is **fixed**.", "Thanks."])
     #expect(conversation.messages[1].sentAt == conversation.messages[0].sentAt?.addingTimeInterval(5))
     #expect(!conversation.isWorking)

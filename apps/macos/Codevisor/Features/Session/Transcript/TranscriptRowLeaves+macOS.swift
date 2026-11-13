@@ -10,7 +10,7 @@ extension TranscriptRowLeaves {
     focus: TerminalFocusController?,
     errorRow: @escaping (String) -> AnyView
   ) -> TranscriptRowLeaves {
-    TranscriptRowLeaves(
+    var leaves = TranscriptRowLeaves(
       conversationItem: { item, isWaitingOnUser, waitingOnBackgroundTask, goalActivity in
         AnyView(
           ConversationItemView(
@@ -58,6 +58,8 @@ extension TranscriptRowLeaves {
         errorRow(message)
       }
     )
+    leaves.botAuthorAvatar = { AnyView(ThreadAuthorAvatar(author: $0)) }
+    return leaves
   }
 
   @MainActor
