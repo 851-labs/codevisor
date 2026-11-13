@@ -35,6 +35,11 @@ public final class BotThreadsModel {
     thread.participants.first { $0.botId?.lowercased() != bot.record.id.lowercased() }
   }
 
+  public func open(_ threadId: String, of bot: Bot) async {
+    if !threads(of: bot).contains(where: { $0.threadId == threadId }) { await refreshThreads(of: bot) }
+    openThreadByBot[bot.id] = threadId
+  }
+
   public func refreshThreads(of bot: Bot) async {
     serverByBot[bot.id] = bot.serverId
     guard let threads = try? await machines.client(for: bot.serverId).botThreads(botId: bot.record.id) else { return }

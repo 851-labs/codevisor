@@ -20,9 +20,18 @@ struct TranscriptEventSummary {
   let title: String
   let icon: TranscriptEventIconKind
   var tone = Tone.standard
+  var namesPartyLast = false
 
   var sentence: String {
-    [agentName, title].compactMap(\.self).joined(separator: " ")
+    let words = namesPartyLast ? [title, agentName] : [agentName, title]
+    return words.compactMap(\.self).joined(separator: " ")
+  }
+
+  @MainActor
+  static func thread(_ marker: TranscriptEventMarker, agents: TranscriptEventAgents) -> TranscriptEventSummary {
+    let count = marker.events.count
+    return threadSummary(
+      marker.events.last, title: count == 1 ? "1 message with" : "\(count) messages with", agents: agents)
   }
 
   @MainActor
@@ -36,6 +45,10 @@ struct TranscriptEventSummary {
 
   @MainActor
   init(event: TranscriptEvent, agents: TranscriptEventAgents) {
+    if event.threadID != nil {
+      self = Self.threadMessage(event, agents: agents)
+      return
+    }
     guard TranscriptEventAgents.isAgentEvent(event) else {
       self = Self.systemSummary(event)
       return
@@ -70,12 +83,32 @@ struct TranscriptEventSummary {
     case "session.restarted": .init(title: "Codevisor restarted", icon: .symbol("arrow.clockwise"))
     case "session.usage_limit_reset": .init(title: "Usage limit reset", icon: .symbol("clock.arrow.circlepath"))
     case "question.answered": .init(title: "Answer delivered", icon: .symbol("questionmark.circle"))
-    case "thread.message":
-      .init(
-        agentName: event[attribute: "name"], title: "sent a message",
-        icon: .symbol("bubble.left.and.bubble.right"))
     default: .init(title: "Codevisor event", icon: .symbol("bolt"))
     }
+  }
+
+  @MainActor
+  private static func threadMessage(_ event: TranscriptEvent, agents: TranscriptEventAgents) -> TranscriptEventSummary {
+    guard event[attribute: "to"] != nil else {
+      return .init(agentName: threadPartyName(event), title: "sent a message", icon: agents.threadPartyIcon(for: event))
+    }
+    return threadSummary(event, title: "Sent a message to", agents: agents)
+  }
+
+  @MainActor
+  private static func threadSummary(
+    _ event: TranscriptEvent?, title: String, agents: TranscriptEventAgents
+  ) -> TranscriptEventSummary {
+    var summary = TranscriptEventSummary(
+      agentName: event.map(threadPartyName), title: title,
+      icon: event.map(agents.threadPartyIcon) ?? .symbol(TranscriptEventAgents.threadSymbol))
+    summary.namesPartyLast = true
+    return summary
+  }
+
+  private static func threadPartyName(_ event: TranscriptEvent) -> String {
+    guard let name = event[attribute: "name"], !name.isEmpty else { return "Agent" }
+    return name
   }
 
   private static func turnEndedTitle(_ event: TranscriptEvent) -> String {

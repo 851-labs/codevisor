@@ -11,6 +11,20 @@ public struct TranscriptEventMarker: Sendable, Equatable {
     self.events = events
   }
 
+  private init(messageID: UUID, events: [TranscriptEvent]) {
+    self.messageID = messageID
+    self.events = events
+  }
+
+  public var threadID: String? {
+    guard let threadID = events.first?.threadID, events.allSatisfy({ $0.threadID == threadID }) else { return nil }
+    return threadID
+  }
+
+  func merging(_ later: TranscriptEventMarker) -> TranscriptEventMarker {
+    TranscriptEventMarker(messageID: messageID, events: events + later.events)
+  }
+
   private static func events(of message: UserMessage) -> [TranscriptEvent]? {
     if message.isEvent { return TranscriptEventParser.events(in: message.text) }
     guard let sender = message.sentByAgentId else { return nil }

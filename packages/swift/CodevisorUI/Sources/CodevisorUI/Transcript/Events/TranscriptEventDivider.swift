@@ -23,10 +23,9 @@ private struct TranscriptEventDividerLabel: View {
   let isActive: Bool
 
   var body: some View {
-    HStack(spacing: 6) {
-      TranscriptEventIcon(icon: summary.icon, size: 14)
-      TranscriptEventTitle(summary: summary, nameStyle: .primary, titleStyle: .secondary)
-    }
+    TranscriptEventTitle(
+      summary: summary, iconSize: 14, iconSpacing: 6, nameStyle: .primary, titleStyle: .secondary
+    )
     .font(.caption)
     .foregroundStyle(summary.tone.style(standard: .secondary))
     .padding(.horizontal, 8)

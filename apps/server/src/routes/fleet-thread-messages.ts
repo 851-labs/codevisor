@@ -4,7 +4,7 @@ import type { ThreadParty } from "@codevisor/db"
 import { appendAndPublish, HttpFailure, run } from "../server-context.js"
 import type { FleetCall } from "./fleet-calls.js"
 import type { RouteContext } from "./route-context.js"
-import { deliverToChat, sameParticipant, threadEvent } from "./thread-delivery.js"
+import { deliverToChat, noteSentInChat, sameParticipant, threadEvent } from "./thread-delivery.js"
 
 const decodeFleetThreadMessage = decode(FleetThreadMessage)
 
@@ -43,6 +43,7 @@ export const receiveThreadMessage = async (
 
   await appendAndPublish(services.db, fanout, "thread.message", thread.threadId, { message })
   if (from === remote) await deliverToChat(route, bot.sessionId, threadEvent(route, message))
+  else await noteSentInChat(route, thread, message)
   return true
 }
 

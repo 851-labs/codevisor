@@ -40,6 +40,11 @@ const deliveredTo = async (running: Running, text: string): Promise<unknown> => 
   return running.agents.prompts.find(carries)?.[1]
 }
 
+const sentFrom = (running: Running, sessionId: string): ReadonlyArray<unknown> =>
+  listSubjectEvents(running.services, sessionId)
+    .map((event) => field(event.payload, "text"))
+    .filter((text) => typeof text === "string" && text.includes(' to="'))
+
 describe("bot threads", () => {
   it("carries a message from one bot to another and the reply back, in one thread", async () => {
     const { running, release, triage } = await startBots()
@@ -108,6 +113,9 @@ describe("bot threads", () => {
       `/v1/sessions/${triage.sessionId}/conversation`
     )
     expect(field(conversation.body, "messages")).toEqual([])
+    expect(sentFrom(running, release.sessionId)).toEqual([
+      `<codevisor-event type="thread.message" threadId="${threadId}" to="bot" botId="${triage.id}" machineId="server-a" name="Triage">\nIs the build green?\n</codevisor-event>`
+    ])
   })
 
   it("lets an agent message a bot, read the thread, and get the bot's reply", async () => {

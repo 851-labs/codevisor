@@ -21,7 +21,7 @@ enum TranscriptBotRowAssembly {
     for (index, message) in messages.enumerated() {
       if index.isMultiple(of: 32), Task.isCancelled { throw CancellationError() }
       while let next = timedRows.first, wasAsked(next.askedAt, before: message) {
-        rows.append(next.row)
+        TranscriptThreadEventRows.append(next.row, to: &rows)
         timedRows.removeFirst()
       }
       if let sentAt = message.sentAt, startsNewMoment(sentAt, after: previous) {
@@ -47,7 +47,7 @@ enum TranscriptBotRowAssembly {
       previous = message
     }
     appendPendingMessage(input, conversation: conversation, to: &rows)
-    rows += timedRows.map(\.row)
+    for entry in timedRows { TranscriptThreadEventRows.append(entry.row, to: &rows) }
     if let stoppedTurn {
       TranscriptAssistantRowProjection.appendStopDetail(stoppedTurn, to: &rows)
     }

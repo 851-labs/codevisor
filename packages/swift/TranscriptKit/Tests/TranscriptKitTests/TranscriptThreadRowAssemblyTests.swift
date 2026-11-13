@@ -37,6 +37,63 @@ struct TranscriptThreadRowAssemblyTests {
     #expect(authorNames(rows) == ["Release", "Triage"])
   }
 
+  @Test("Thread messages with nothing between them in a bot's conversation share one line, per thread")
+  func neighbouringThreadMessagesShareALine() throws {
+    let asked = threadEvent("t1", "to", "Is it green?")
+    let answered = threadEvent("t1", "from", "Yes.")
+    let elsewhere = threadEvent("t2", "from", "Ping.")
+    let later = threadEvent("t1", "from", "Still green.")
+    var reply = AssistantTurn(entries: [.text(id: "work", markdown: "Telling the user")])
+    reply.startedAt = start.addingTimeInterval(30)
+    let conversation = TranscriptBotConversation(
+      messages: [
+        TranscriptBotMessage(id: "b1", sender: .bot, text: "It is green.", sentAt: start.addingTimeInterval(40))
+      ],
+      isWorking: false)
+    let settled: [ConversationItem] = [
+      .user(asked), .user(answered), .user(elsewhere), .assistant(AssistantMessage(turn: reply)), .user(later),
+    ]
+
+    let rows = try TranscriptRowProjectionCache.project(
+      TranscriptProjectionInput(
+        settledConversation: settled, pendingUserMessage: nil, activeItem: nil, setupPhases: [],
+        waitingBackgroundTaskDescription: nil, waitingHarnessUpdateName: nil, isLoadingInitialHistory: false,
+        serverWaitMessage: nil, sessionErrorMessage: nil, status: .idle, botConversation: conversation),
+      options: .init(includesConnectingRow: false, presentsBotConversation: true))
+
+    #expect(
+      threadLines(rows) == [
+        ThreadLine(id: .eventMarker(asked.id), threadID: "t1", bodies: ["Is it green?", "Yes."]),
+        ThreadLine(id: .eventMarker(elsewhere.id), threadID: "t2", bodies: ["Ping."]),
+        ThreadLine(id: .eventMarker(later.id), threadID: "t1", bodies: ["Still green."]),
+      ])
+    #expect(
+      rows.map(\.id).filter { $0 != .botTimestamp("b1") }
+        == [.eventMarker(asked.id), .eventMarker(elsewhere.id), .botMessage("b1"), .eventMarker(later.id)])
+  }
+
+  private struct ThreadLine: Equatable {
+    let id: TranscriptPresentationRow.ID
+    let threadID: String?
+    let bodies: [String]
+  }
+
+  private func threadLines(_ rows: [TranscriptPresentationRow]) -> [ThreadLine] {
+    rows.compactMap { row in
+      guard case let .eventMarker(marker, _) = row.content else { return nil }
+      return ThreadLine(id: row.id, threadID: marker.threadID, bodies: marker.events.map(\.body))
+    }
+  }
+
+  private func threadEvent(_ threadID: String, _ direction: String, _ text: String) -> UserMessage {
+    UserMessage(
+      text: """
+        <codevisor-event type="thread.message" threadId="\(threadID)" \(direction)="bot" botId="bot-triage" name="Triage">
+        \(text)
+        </codevisor-event>
+        """, isEvent: true)
+  }
+
   private func authorNames(_ rows: [TranscriptPresentationRow]) -> [String] {
     rows.compactMap { row in
       if case let .botAuthorName(name) = row.content { return name }

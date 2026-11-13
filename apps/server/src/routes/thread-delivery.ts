@@ -1,3 +1,5 @@
+import { randomUUID } from "node:crypto"
+
 import {
   FLEET_SESSION_EVENT_PATH,
   FLEET_THREAD_MESSAGE_PATH,
@@ -12,6 +14,7 @@ import { run, swallowError } from "../server-context.js"
 import { drainPromptQueue } from "./prompt-queue.js"
 import type { RouteContext } from "./route-context.js"
 import { attribute } from "./session-event-messages.js"
+import { recordUserPrompt } from "./user-prompts.js"
 
 export const isOnAnotherMachine = (
   { config }: RouteContext,
@@ -30,7 +33,9 @@ export const announceThreadMessage = async (
     const wroteIt = sameParticipant(participant, message.from)
     if (isOnAnotherMachine(route, participant)) {
       await sendToMachine(route, participant, thread, message, wroteIt)
-    } else if (!wroteIt) {
+    } else if (wroteIt) {
+      await noteSentInChat(route, thread, message)
+    } else {
       await deliverToChat(route, participant.agentId, threadEvent(route, message))
     }
   }
@@ -45,15 +50,39 @@ export const deliverToChat = async (
   void drainPromptQueue(services, fanout, routeState, config.id, sessionId).catch(swallowError)
 }
 
-export const threadEvent = ({ config }: RouteContext, message: ThreadMessage): string => {
-  const { from } = message
+export const noteSentInChat = async (
+  route: RouteContext,
+  thread: Thread,
+  message: ThreadMessage
+): Promise<void> => {
+  const { services, fanout, config } = route
+  const to = thread.participants.find((participant) => !sameParticipant(participant, message.from))
+  if (message.from.botId === undefined || to === undefined) return
+  await recordUserPrompt(services, fanout, config.id, message.from.agentId, {
+    messageId: randomUUID(),
+    text: eventText(route, message, "to", to),
+    attachments: undefined,
+    origin: "system",
+    startsTurn: false
+  })
+}
+
+export const threadEvent = (route: RouteContext, message: ThreadMessage): string =>
+  eventText(route, message, "from", message.from)
+
+const eventText = (
+  { config }: RouteContext,
+  message: ThreadMessage,
+  direction: "from" | "to",
+  other: ThreadParticipant
+): string => {
   const who =
-    from.botId === undefined
-      ? `from="agent" agentId="${attribute(from.agentId)}"`
-      : `from="bot" botId="${attribute(from.botId)}"`
-  const machine = ` machineId="${attribute(from.machineId ?? config.id)}"`
+    other.botId === undefined
+      ? `${direction}="agent" agentId="${attribute(other.agentId)}"`
+      : `${direction}="bot" botId="${attribute(other.botId)}"`
+  const machine = ` machineId="${attribute(other.machineId ?? config.id)}"`
   return [
-    `<codevisor-event type="thread.message" threadId="${attribute(message.threadId)}" ${who}${machine} name="${attribute(from.name)}">`,
+    `<codevisor-event type="thread.message" threadId="${attribute(message.threadId)}" ${who}${machine} name="${attribute(other.name)}">`,
     message.text,
     "</codevisor-event>"
   ].join("\n")
