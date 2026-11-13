@@ -66,7 +66,7 @@ struct TranscriptEventSummary {
     case "execution.job_finished": taskSummary(event, finished: "Job finished", failed: "Job failed")
     case "exec.task_finished", "harness.task_finished":
       taskSummary(event, finished: "Background task finished", failed: "Background task failed")
-    case "plugin.event": .init(title: "Plugin event", icon: pluginIcon(event))
+    case "plugin.event": .init(title: pluginEventTitle(event), icon: pluginIcon(event))
     case "session.restarted": .init(title: "Codevisor restarted", icon: .symbol("arrow.clockwise"))
     case "session.usage_limit_reset": .init(title: "Usage limit reset", icon: .symbol("clock.arrow.circlepath"))
     case "question.answered": .init(title: "Answer delivered", icon: .symbol("questionmark.circle"))
@@ -90,6 +90,10 @@ struct TranscriptEventSummary {
 
   private static func didFail(_ event: TranscriptEvent) -> Bool {
     event[attribute: "status"] == "failed" || event[attribute: "state"] == "failed"
+  }
+
+  private static func pluginEventTitle(_ event: TranscriptEvent) -> String {
+    event[attribute: "eventTitle"] ?? "Plugin event"
   }
 
   private static func pluginIcon(_ event: TranscriptEvent) -> TranscriptEventIconKind {

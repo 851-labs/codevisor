@@ -4,6 +4,7 @@ import {
   connectSlack,
   dana,
   deliver,
+  deployBot,
   eng,
   eventCallback,
   incidents,
@@ -122,6 +123,20 @@ describe("Slack events", () => {
       bot: true,
       author: { id: "B0DEPLOY001", name: null }
     })
+  })
+
+  it("marks bot users' messages as bots, but not a person's message posted through an app", async () => {
+    const fromBot = await eventsFor(
+      "message.posted",
+      message({ user: deployBot.id, bot_id: "B0DEPLOY001" })
+    )
+    const throughApp = await eventsFor(
+      "message.posted",
+      message({ user: sam.id, bot_id: "B0CODEVISOR" })
+    )
+
+    expect(fromBot.events[0]?.params?.data).toMatchObject({ bot: true })
+    expect(throughApp.events[0]?.params?.data).toMatchObject({ bot: false })
   })
 
   it("relays reactions to the user's messages from other people", async () => {

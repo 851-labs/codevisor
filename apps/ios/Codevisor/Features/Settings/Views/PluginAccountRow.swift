@@ -14,6 +14,9 @@ struct PluginAccountRow: View {
     PluginAccountLabel(account: account, fallbackName: fallbackName)
       .swipeActions {
         Button(actions.removeTitle, role: .destructive, action: onRemove)
+        if actions.canRevisit(account) {
+          Button(actions.revisitTitle(for: account), action: onEdit)
+        }
       }
       .contextMenu {
         Button(actions.revisitTitle(for: account), systemImage: "pencil", action: onEdit)

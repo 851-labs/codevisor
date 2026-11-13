@@ -22,6 +22,7 @@
       "ageRating": 4,
       "accounts": {
         "label": "Linear workspace",
+        "noun": "workspace",
         "oauth": {
           "provider": "linear",
           "authorizeUrl": "https://linear.app/oauth/authorize",

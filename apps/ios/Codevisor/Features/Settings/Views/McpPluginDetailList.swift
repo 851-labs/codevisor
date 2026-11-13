@@ -32,7 +32,6 @@ struct McpPluginDetailList: View {
       }
       if let accounts {
         PluginAccountsSection(model: accounts)
-        PluginAccountSignOutSection(model: accounts)
       }
       McpAccountsSection(entry: entry, model: model)
       McpMachinesSection(entry: entry, model: model)

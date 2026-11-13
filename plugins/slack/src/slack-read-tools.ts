@@ -10,7 +10,7 @@ import {
   userReply
 } from "./slack-api-schemas.js"
 import { conversationType, displayNameOf, type SlackDirectory } from "./slack-directory.js"
-import { messageSummary, peopleIn } from "./slack-messages.js"
+import { botUsersIn, messageSummary, peopleIn } from "./slack-messages.js"
 import {
   channelTypes,
   fileSearchArguments,
@@ -31,16 +31,18 @@ export const searchMessages: ToolRunner = async (args, { api, directory }) => {
   const found = messageSearchReply.parse(
     await api.call("search.messages", { query, count, page, ...searchOrder(sort) })
   ).messages
+  const bots = await botUsersIn(found.matches, directory)
+  const people = await directory.people([
+    ...peopleIn(found.matches),
+    ...found.matches.flatMap((match) => dmPartnerOf(match.channel) ?? [])
+  ])
   return {
     messages: found.matches.map((match) => ({
-      channel: {
-        id: match.channel.id,
-        ...(match.channel.name ? { name: match.channel.name } : {})
-      },
-      ...messageSummary(match),
+      channel: searchChannel(match.channel, people),
+      ...messageSummary(match, bots),
       ...(match.permalink === undefined ? {} : { link: match.permalink })
     })),
-    people: await directory.people(peopleIn(found.matches)),
+    people,
     ...pagination(found.pagination)
   }
 }
@@ -114,9 +116,10 @@ export const readChannel: ToolRunner = async (args, { api, directory }) => {
     cursor
   })
   const messages = messagesReply.parse(body).messages.toReversed()
+  const bots = await botUsersIn(messages, directory)
   return {
     channel: id,
-    messages: messages.map(messageSummary),
+    messages: messages.map((message) => messageSummary(message, bots)),
     people: await directory.people(peopleIn(messages)),
     ...nextCursor(body)
   }
@@ -127,9 +130,10 @@ export const readThread: ToolRunner = async (args, { api, directory }) => {
   const id = await directory.resolveConversation(channel)
   const body = await api.call("conversations.replies", { channel: id, ts, limit, cursor })
   const messages = messagesReply.parse(body).messages
+  const bots = await botUsersIn(messages, directory)
   return {
     channel: id,
-    messages: messages.map(messageSummary),
+    messages: messages.map((message) => messageSummary(message, bots)),
     people: await directory.people(peopleIn(messages)),
     ...nextCursor(body)
   }
@@ -146,6 +150,24 @@ export const listChannelMembers: ToolRunner = async (args, { api, directory }) =
     members: members.map((member) => ({ id: member, name: people[member] ?? member })),
     ...nextCursor(body)
   }
+}
+
+interface SearchChannel {
+  id: string
+  name?: string | undefined
+}
+
+const dmPartnerOf = (channel: SearchChannel): string | undefined =>
+  channel.id.startsWith("D") && channel.name !== undefined && userIdPattern.test(channel.name)
+    ? channel.name
+    : undefined
+
+const userIdPattern = /^[UW][A-Z0-9]+$/
+
+const searchChannel = (channel: SearchChannel, people: Readonly<Record<string, string>>) => {
+  const partner = dmPartnerOf(channel)
+  const name = partner === undefined ? channel.name : (people[partner] ?? partner)
+  return { id: channel.id, ...(name ? { name } : {}) }
 }
 
 const searchOrder = (sort: "newest" | "relevance") =>

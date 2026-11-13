@@ -3,7 +3,7 @@ import type { EventOccurrence } from "@codevisor/plugin-kit"
 import { conversationType, type SlackDirectory, type SlackIdentity } from "./slack-directory.js"
 import { type MessageEvent, type ReactionEvent, slackEvent } from "./slack-envelope.js"
 import { slackEvents } from "./slack-event-catalog.js"
-import { isReply, mentions, messageLink } from "./slack-messages.js"
+import { isBotPost, isReply, mentions, messageLink } from "./slack-messages.js"
 
 export interface FeedContext {
   me: SlackIdentity
@@ -63,7 +63,7 @@ const messagePayload = async (
     link: messageLink(feed.me.url, event.channel, event.ts, event.thread_ts),
     channel: await channelPayload(event.channel, channelTypes[event.channel_type ?? ""], feed),
     author: await personPayload(author, event.user === undefined, feed),
-    bot: event.bot_id !== undefined || event.subtype === "bot_message",
+    bot: isBotPost(event, await isBotUser(event, feed)),
     mentionsMe: mentions(text, feed.me.userId),
     isReply: reply,
     inMyThread: reply && event.parent_user_id === feed.me.userId
@@ -121,6 +121,11 @@ const channelPayload = async (id: string, knownType: string | undefined, feed: F
     name: await feed.directory.conversationName(id),
     type: knownType ?? (conversation === null ? "public" : conversationType(conversation))
   }
+}
+
+const isBotUser = async (event: MessageEvent, feed: FeedContext): Promise<boolean> => {
+  if (event.user === undefined || event.bot_id === undefined) return false
+  return (await feed.directory.user(event.user))?.is_bot === true
 }
 
 const personPayload = async (id: string, isBotId: boolean, feed: FeedContext) => {

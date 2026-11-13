@@ -1,10 +1,35 @@
 import type { SlackMessage } from "./slack-api-schemas.js"
+import type { SlackDirectory } from "./slack-directory.js"
 
-export const messageSummary = (message: SlackMessage): Record<string, unknown> => ({
+export type BotUsers = ReadonlySet<string>
+
+export const botUsersIn = async (
+  messages: ReadonlyArray<SlackMessage>,
+  directory: SlackDirectory
+): Promise<BotUsers> => {
+  const candidates = new Set(
+    messages.flatMap((message) =>
+      message.bot_id === undefined || message.user === undefined ? [] : [message.user]
+    )
+  )
+  const users = await Promise.all([...candidates].map((id) => directory.user(id)))
+  return new Set(users.flatMap((user) => (user?.is_bot === true ? [user.id] : [])))
+}
+
+export const isBotPost = (
+  post: { user?: string | undefined; bot_id?: string | undefined; subtype?: string | undefined },
+  isBotUser: boolean
+): boolean =>
+  post.subtype === "bot_message" ||
+  (post.user === undefined ? post.bot_id !== undefined : isBotUser)
+
+export const messageSummary = (message: SlackMessage, bots: BotUsers): Record<string, unknown> => ({
   ts: message.ts,
   ...threadOf(message),
   author: message.user ?? message.username ?? message.bot_id ?? "unknown",
-  ...(message.bot_id === undefined ? {} : { bot: true }),
+  ...(isBotPost(message, message.user !== undefined && bots.has(message.user))
+    ? { bot: true }
+    : {}),
   text: message.text ?? "",
   ...(message.reply_count ? { replies: message.reply_count } : {}),
   ...filesOf(message),

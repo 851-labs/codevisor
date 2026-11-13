@@ -43,6 +43,7 @@ export type PluginAccountGuide = typeof PluginAccountGuide.Type
 
 export const PluginAccountSpec = Schema.Struct({
   label: Schema.String,
+  noun: Schema.optional(Schema.String),
   oauth: Schema.optional(PluginOAuthSpec),
   fields: Schema.Array(ConfigField),
   guide: Schema.optional(PluginAccountGuide)

@@ -129,7 +129,7 @@ public final class PluginAccountsModel {
   }
 
   private func ingressURLs(for accounts: [ServerPluginAccount]) async -> [String: [ServerPluginIngressURL]] {
-    guard receivesWebhooks else { return [:] }
+    guard receivesWebhooks, spec?.guide == nil else { return [:] }
     var urls: [String: [ServerPluginIngressURL]] = [:]
     for account in accounts {
       urls[account.id] = try? await client.pluginAccountIngress(serverId: serverId, accountId: account.id)

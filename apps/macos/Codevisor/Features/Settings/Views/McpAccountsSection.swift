@@ -13,11 +13,14 @@ struct McpAccountsSection: View {
     if let account {
       SettingsAccountsSection(isSignedOut: account == .signedOut, message: nil) {
         McpAccountRow(
-          account: account, actions: actions, onSignIn: signIn, onSignOut: { confirmingSignOut = true })
+          account: account, actions: actions, isWorking: isWorking, onSignIn: signIn,
+          onSignOut: { confirmingSignOut = true })
       } buttons: {
-        McpAccountFooterButtons(
-          account: account, actions: actions, isWorking: isWorking,
-          onSignIn: signIn, onSignOut: { confirmingSignOut = true })
+        if account == .signedOut {
+          Button(actions.signInTitle, action: signIn)
+            .buttonStyle(.borderedProminent)
+            .disabled(isWorking)
+        }
       }
       .confirmationDialog(actions.signOutPrompt, isPresented: $confirmingSignOut, titleVisibility: .visible) {
         Button(actions.signOutTitle, role: .destructive, action: signOut)

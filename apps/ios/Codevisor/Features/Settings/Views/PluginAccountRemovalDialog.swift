@@ -4,35 +4,32 @@ import SwiftUI
 
 struct PluginAccountRemovalDialog: ViewModifier {
   let actions: PluginAccountActions
-  @Binding var candidates: [ServerPluginAccount]
+  @Binding var removing: ServerPluginAccount?
   let onRemove: (ServerPluginAccount) -> Void
 
   func body(content: Content) -> some View {
     content.confirmationDialog(
-      actions.removalPrompt(for: candidates),
+      removing.map(actions.removalPrompt(for:)) ?? "",
       isPresented: isPresented,
-      titleVisibility: .visible
-    ) {
-      ForEach(candidates) { account in
-        Button(actions.removalButtonTitle(for: account, among: candidates), role: .destructive) {
-          onRemove(account)
-        }
-      }
+      titleVisibility: .visible,
+      presenting: removing
+    ) { account in
+      Button(actions.removeTitle, role: .destructive) { onRemove(account) }
       Button("Cancel", role: .cancel) {}
     }
   }
 
   private var isPresented: Binding<Bool> {
-    Binding(get: { !candidates.isEmpty }, set: { if !$0 { candidates = [] } })
+    Binding(get: { removing != nil }, set: { if !$0 { removing = nil } })
   }
 }
 
 extension View {
   func pluginAccountRemovalDialog(
     actions: PluginAccountActions,
-    candidates: Binding<[ServerPluginAccount]>,
+    removing: Binding<ServerPluginAccount?>,
     onRemove: @escaping (ServerPluginAccount) -> Void
   ) -> some View {
-    modifier(PluginAccountRemovalDialog(actions: actions, candidates: candidates, onRemove: onRemove))
+    modifier(PluginAccountRemovalDialog(actions: actions, removing: removing, onRemove: onRemove))
   }
 }

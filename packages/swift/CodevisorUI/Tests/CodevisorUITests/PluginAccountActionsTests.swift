@@ -6,6 +6,9 @@ import Testing
 struct PluginAccountActionsTests {
   private let google = ServerPluginAccountSpec(
     label: "Google account", oauth: ServerPluginOAuthSpec(provider: "google"))
+  private let slack = ServerPluginAccountSpec(
+    label: "Slack workspace", noun: "workspace",
+    fields: [ServerConfigField(key: "userToken", label: "Token", type: .secret, required: true)])
   private let apiKey = ServerPluginAccountSpec(
     label: "Grafana", fields: [ServerConfigField(key: "url", label: "URL", type: .url, required: true)])
 
@@ -28,42 +31,40 @@ struct PluginAccountActionsTests {
     #expect(renamed.subtitle == "dylan@851.sh")
   }
 
-  @Test("Sign-in is the first action only while no account is connected")
+  @Test("Sign-in is the first action only while no account is connected, and Add names the plugin's account noun")
   func firstAccount() {
     let empty = PluginAccountActions(spec: google, accounts: [])
     let connected = PluginAccountActions(spec: google, accounts: [account("a", identity: "dylan@851.sh")])
+    let workspaces = PluginAccountActions(spec: slack, accounts: [account("w", method: "fields")])
 
     #expect(empty.needsFirstAccount)
     #expect(!connected.needsFirstAccount)
     #expect(connected.addAnotherTitle == "Add Account…")
+    #expect(slack.accountsTitle == "Workspaces" && workspaces.addAnotherTitle == "Add Workspace…")
+    #expect(workspaces.removeTitle == "Remove Workspace" && workspaces.rowRemoveTitle == "Remove…")
   }
 
-  @Test("Offers Sign In Again only for a single account that needs it, and Edit for a single field account")
+  @Test("Each account offers Edit, or Sign In Again only once its sign-in has lapsed")
   func revisit() {
-    let healthy = PluginAccountActions(spec: google, accounts: [account("a")])
-    let expired = PluginAccountActions(spec: google, accounts: [account("a", status: "reauthorize")])
-    let fields = PluginAccountActions(spec: apiKey, accounts: [account("k", method: "fields")])
-    let several = PluginAccountActions(
-      spec: google, accounts: [account("a", status: "reauthorize"), account("b")])
+    let actions = PluginAccountActions(spec: google, accounts: [])
+    let fields = PluginAccountActions(spec: apiKey, accounts: [])
+    let expired = account("a", status: "reauthorize")
+    let key = account("k", method: "fields")
 
-    #expect(healthy.revisitTarget == nil)
-    #expect(expired.revisitTarget.map(expired.revisitTitle(for:)) == "Sign In Again…")
-    #expect(fields.revisitTarget.map(fields.revisitTitle(for:)) == "Edit…")
-    #expect(several.revisitTarget == nil)
+    #expect(!actions.canRevisit(account("a")))
+    #expect(actions.canRevisit(expired) && actions.revisitTitle(for: expired) == "Sign In Again…")
+    #expect(fields.canRevisit(key) && fields.revisitTitle(for: key) == "Edit…")
   }
 
-  @Test("Sign-out names the one account, or asks which when there are several")
+  @Test("Removing names the account, as a sign-out for OAuth plugins")
   func removal() {
     let work = account("a", identity: "dylan@851.sh")
-    let personal = account("b", label: "Personal", identity: "me@example.com")
-    let actions = PluginAccountActions(spec: google, accounts: [work, personal])
+    let actions = PluginAccountActions(spec: google, accounts: [work])
     let fields = PluginAccountActions(spec: apiKey, accounts: [account("k", method: "fields")])
 
-    #expect(actions.removalPrompt(for: [work]) == "Sign out of dylan@851.sh?")
-    #expect(actions.removalButtonTitle(for: work, among: [work]) == "Sign Out")
-    #expect(actions.removalPrompt(for: [work, personal]) == "Choose an account to sign out")
-    #expect(actions.removalButtonTitle(for: personal, among: [work, personal]) == "Sign Out Personal")
-    #expect(fields.removalPrompt(for: fields.accounts) == "Remove Grafana?")
+    #expect(actions.removalPrompt(for: work) == "Sign out of dylan@851.sh?")
+    #expect(actions.removeTitle == "Sign Out" && actions.rowRemoveTitle == "Sign Out…")
+    #expect(fields.removalPrompt(for: account("k", method: "fields")) == "Remove Grafana?")
     #expect(fields.removeTitle == "Remove Account")
   }
 }

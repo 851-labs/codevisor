@@ -7,7 +7,7 @@ struct PluginAccountsSection: View {
   let model: PluginAccountsModel
   @State private var editing: PluginAccountEditing?
   @State private var guiding: PluginAccountGuideModel?
-  @State private var removalCandidates: [ServerPluginAccount] = []
+  @State private var removing: ServerPluginAccount?
 
   var body: some View {
     if let spec = model.spec {
@@ -20,12 +20,12 @@ struct PluginAccountsSection: View {
             ingress: model.ingress[account.id] ?? [],
             actions: actions,
             onEdit: { edit(account, spec: spec) },
-            onRemove: { removalCandidates = [account] }
+            onRemove: { removing = account }
           )
         }
         accountButtons(actions)
       } header: {
-        Text("Accounts")
+        Text(spec.accountsTitle)
       } footer: {
         if let errorMessage = model.errorMessage, editing == nil {
           Text(errorMessage).foregroundStyle(.red)
@@ -37,7 +37,7 @@ struct PluginAccountsSection: View {
       .sheet(item: $editing) { PluginAccountEditorScreen(editing: $0, model: model) }
       .sheet(item: $guiding) { PluginAccountGuideScreen(model: $0) { await model.reload() } }
       .task(id: model.hasLoaded) { offerFirstRunGuide() }
-      .pluginAccountRemovalDialog(actions: actions, candidates: $removalCandidates) { remove($0) }
+      .pluginAccountRemovalDialog(actions: actions, removing: $removing) { remove($0) }
     }
   }
 
@@ -48,10 +48,6 @@ struct PluginAccountsSection: View {
         .fontWeight(.semibold)
         .disabled(model.isWorking)
     } else {
-      if let account = actions.revisitTarget {
-        Button(actions.revisitTitle(for: account)) { edit(account, spec: actions.spec) }
-          .disabled(model.isWorking)
-      }
       Button(actions.addAnotherTitle) { add(actions.spec) }
         .disabled(model.isWorking)
     }
@@ -83,7 +79,7 @@ struct PluginAccountsSection: View {
   }
 
   private func remove(_ account: ServerPluginAccount) {
-    removalCandidates = []
+    removing = nil
     Task { await model.remove(account) }
   }
 }

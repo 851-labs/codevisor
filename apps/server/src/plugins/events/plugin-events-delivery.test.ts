@@ -4,9 +4,11 @@ import { describe, expect, it } from "vitest"
 import { run } from "../../test-support.js"
 import { maxEventsPerDay } from "./plugin-event-delivery.js"
 import {
+  eventList,
   eventsFixture,
   ping,
   pingPlugin,
+  pingType,
   type EventsFixture
 } from "./plugin-events-test-support.js"
 
@@ -26,9 +28,11 @@ const pings = (from: number, count: number) =>
   Array.from({ length: count }, (_, index) => ping(`e${from + index}`))
 
 describe("delivering plugin events", () => {
-  it("wakes the subscriber once per matching event, ignoring repeats from the plugin", async () => {
+  it("wakes the subscriber once per matching event, named by the event's title, ignoring repeats from the plugin", async () => {
     const fixture = await eventsFixture()
-    const pinger = await pingPlugin(fixture)
+    const pinger = await pingPlugin(fixture, "Pinger", {
+      "events/list": eventList(pingType({ title: "Ping" }))
+    })
     const events = fixture.engine()
     const subscription = await events.subscribe({
       sessionId: fixture.session.id,
@@ -50,7 +54,7 @@ describe("delivering plugin events", () => {
         event: {
           message: {
             text: [
-              `<codevisor-event type="plugin.event" plugin="Pinger" pluginId="${pinger.id}" event="ping" subscriptionId="${subscription.id}" note="Warn pings" eventId="${eventId}" occurredAt="2026-10-27T09:00:00.000Z">`,
+              `<codevisor-event type="plugin.event" plugin="Pinger" pluginId="${pinger.id}" event="ping" eventTitle="Ping" subscriptionId="${subscription.id}" note="Warn pings" eventId="${eventId}" occurredAt="2026-10-27T09:00:00.000Z">`,
               'Pinger ping matched "Warn pings".',
               '{"message":"hello","level":"warn","count":1}',
               `Full payload: events.get({ eventId: "${eventId}" }).`,
