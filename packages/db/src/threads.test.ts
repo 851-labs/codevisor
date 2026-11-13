@@ -41,7 +41,7 @@ const seedTwoBots = async () => {
   return { db, release, triage }
 }
 
-const remoteAgent: ThreadParty = { kind: "agent", agentId: "agent-far", machineId: "machine-b" }
+const remoteAgent = { kind: "agent", agentId: "agent-far", machineId: "machine-b" } as const
 
 describe("threads", () => {
   it("keeps one thread per pair, whoever opens it", async () => {
@@ -93,9 +93,11 @@ describe("threads", () => {
     const { db, release, triage } = await seedTwoBots()
     const { threadId } = await run(db.openThread(release.party, triage.party))
 
-    await run(db.appendThreadMessage(threadId, release.party, "Is the build green?"))
-    await run(db.appendThreadMessage(threadId, triage.party, "Yes."))
-    const last = await run(db.appendThreadMessage(threadId, release.party, "Shipping."))
+    await run(db.appendThreadMessage(threadId, release.party, { text: "Is the build green?" }))
+    await run(db.appendThreadMessage(threadId, triage.party, { text: "Yes." }))
+    const { message: last } = await run(
+      db.appendThreadMessage(threadId, release.party, { text: "Shipping." })
+    )
 
     expect(last).toMatchObject({
       threadId,
@@ -115,9 +117,9 @@ describe("threads", () => {
     const { db, release, triage } = await seedTwoBots()
     const { threadId } = await run(db.openThread(release.party, triage.party))
 
-    await expect(run(db.appendThreadMessage(threadId, remoteAgent, "Hi"))).rejects.toThrow(
-      `Not in thread ${threadId}`
-    )
+    await expect(
+      run(db.appendThreadMessage(threadId, remoteAgent, { text: "Hi" }))
+    ).rejects.toThrow(`Not in thread ${threadId}`)
   })
 
   it("lists a participant's threads newest first and leaves out the conversation with the user", async () => {
@@ -125,7 +127,7 @@ describe("threads", () => {
     const withAgent = await run(db.openThread(release.party, remoteAgent))
     const withBot = await run(db.openThread(release.party, triage.party))
     await run(db.appendBotMessage("chat-release", { sender: "user", text: "Hello" }))
-    await run(db.appendThreadMessage(withAgent.threadId, remoteAgent, "Done"))
+    await run(db.appendThreadMessage(withAgent.threadId, remoteAgent, { text: "Done" }))
 
     const threads = await run(db.listThreads(release.party))
 
@@ -147,10 +149,67 @@ describe("threads", () => {
     expect(await run(db.getThread("missing"))).toBeUndefined()
   })
 
+  it("keeps a copy of a thread with a bot on another machine, under the id that machine gave it", async () => {
+    const { db, release } = await seedTwoBots()
+    const far: ThreadParty = {
+      kind: "remoteBot",
+      botId: "bot-far",
+      agentId: "chat-far",
+      machineId: "machine-b",
+      name: "Far Bot"
+    }
+
+    const copy = await run(db.openThread(release.party, far, "thread-from-b"))
+    const first = await run(
+      db.appendThreadMessage("thread-from-b", far, {
+        id: "message-from-b",
+        text: "Hello from B",
+        createdAt: "2026-11-12T00:00:00.000Z"
+      })
+    )
+    const again = await run(
+      db.appendThreadMessage("thread-from-b", far, { id: "message-from-b", text: "Hello from B" })
+    )
+
+    expect(copy).toMatchObject({
+      threadId: "thread-from-b",
+      participants: [
+        { kind: "bot", botId: "bot-release" },
+        {
+          kind: "bot",
+          name: "Far Bot",
+          agentId: "chat-far",
+          botId: "bot-far",
+          machineId: "machine-b"
+        }
+      ]
+    })
+    expect(first).toMatchObject({
+      created: true,
+      message: { id: "message-from-b", sequence: 1, createdAt: "2026-11-12T00:00:00.000Z" }
+    })
+    expect(again).toEqual({ message: first.message, created: false })
+    expect((await run(db.openThread(far, release.party))).threadId).toBe("thread-from-b")
+  })
+
+  it("names an agent on another machine by the name it came with", async () => {
+    const { db, release } = await seedTwoBots()
+    const named: ThreadParty = { ...remoteAgent, name: "Fix login" }
+
+    const thread = await run(db.openThread(named, release.party))
+
+    expect(thread.participants[0]).toEqual({
+      kind: "agent",
+      name: "Fix login",
+      agentId: "agent-far",
+      machineId: "machine-b"
+    })
+  })
+
   it("deletes a bot's threads with the bot", async () => {
     const { db, release, triage } = await seedTwoBots()
     const { threadId } = await run(db.openThread(release.party, triage.party))
-    await run(db.appendThreadMessage(threadId, release.party, "Hi"))
+    await run(db.appendThreadMessage(threadId, release.party, { text: "Hi" }))
 
     await run(db.deleteBot("bot-triage"))
 

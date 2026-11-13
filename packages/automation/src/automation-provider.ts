@@ -8,6 +8,11 @@ export interface ComputerUseApp {
   readonly path?: string
 }
 
+export interface RemoteCaller {
+  readonly name?: string | undefined
+  readonly botId?: string | undefined
+}
+
 export interface AutomationProviderContext {
   readonly sessionId: string
   readonly projectId?: string | undefined
@@ -15,6 +20,7 @@ export interface AutomationProviderContext {
   readonly signal?: AbortSignal | undefined
   readonly deadline?: number | undefined
   readonly callerAgentTicket?: string | undefined
+  readonly remoteCaller?: RemoteCaller | undefined
   readonly invokeBrowser?: (name: string, args: Record<string, unknown>) => Promise<unknown>
   readonly onApp?: (app: ComputerUseApp) => void
   readonly requestPermissions?: () => Promise<boolean>

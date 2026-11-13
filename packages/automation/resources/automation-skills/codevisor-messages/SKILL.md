@@ -82,13 +82,14 @@ When an agent's question is the user's to answer, ask it in a message with `mess
 Other bots, and agents you didn't start, write to you with `bots.message`. Each of them has one thread with you. The user is not in a thread and sees none of it. A message arrives as an event:
 
 ```
-<codevisor-event type="thread.message" threadId="…" from="bot" botId="…" name="Release">
+<codevisor-event type="thread.message" threadId="…" from="bot" botId="…" machineId="…" name="Release">
 Is the build green?
 </codevisor-event>
 ```
 
 - Reply in the thread with `messages.send({ threadId, text })`. A thread takes text only.
 - Start one yourself with `bots.message({ botId, text })`; `bots.list()` has each bot's `botId`. Writing to the same bot again continues the same thread.
+- It works across machines. For a bot on another machine, pass `machine`: `bots.message({ botId, text, machine })`, with `bots.list({ machine })` to find it. Replying with `messages.send({ threadId, text })` needs no machine.
 - `messages.threads()` lists your threads, and `messages.list({ threadId })` reads one back.
 - Reply when you have an answer or a question. Don't reply only to acknowledge or to thank.
 - Anything the user should know still goes to them with a plain `messages.send`.
@@ -106,7 +107,6 @@ Codevisor sends you messages that the user doesn't see, wrapped in `<codevisor-e
   </codevisor-event>
   ```
 
-- `session.message` (`from="…" title="…"`) is a message another agent sent you with `agents.message`. It comes from that agent, not the user. Like the user's messages, it can reach you mid-task.
 - `bot.projects_changed` says which repository the user added or removed. It needs no reply.
 - `bot.instructions_updated` says Codevisor rewrote its part of your AGENTS.md. Reread the file. It needs no reply.
 

@@ -193,7 +193,7 @@ describe("bot conversations", () => {
     ])
   })
 
-  it("hands the bot a message from another agent without showing it in the conversation", async () => {
+  it("refuses an agent's message aimed at a bot's chat and names the way to reach it", async () => {
     const { running, bot } = await startBot()
     const agent = decode(SessionSummary)(
       (
@@ -207,25 +207,24 @@ describe("bot conversations", () => {
         })
       ).body
     )
+    const send = (sentByAgentId: string) =>
+      jsonRequest(running.server, `/v1/sessions/${bot.sessionId}/prompt`, {
+        body: JSON.stringify({ text: "login is fixed", sentByAgentId }),
+        method: "POST"
+      })
 
-    await jsonRequest(running.server, `/v1/sessions/${bot.sessionId}/prompt`, {
-      body: JSON.stringify({ text: "login is fixed", sentByAgentId: agent.id }),
-      method: "POST"
-    })
+    const refused = await send(agent.id)
 
-    await waitFor(() =>
-      running.agents.prompts.some(
-        ([, input]) => typeof input === "string" && input.includes("login is fixed")
-      )
-    )
-    const delivered = running.agents.prompts.find(
-      ([, input]) => typeof input === "string" && input.includes("login is fixed")
-    )?.[1]
-    expect(delivered).toBe(
-      `<codevisor-event type="session.message" from="${agent.id}" fromMachineId="server-a" title="Fix login">\nlogin is fixed\n</codevisor-event>`
-    )
-    await waitFor(async () => !(await conversation(running, bot.sessionId)).working)
-    expect(await transcript(running, bot.sessionId)).toEqual([])
+    expect([refused.status, refused.body]).toEqual([
+      409,
+      {
+        error: `Release Helper is a bot, not an agent. Message it with bots.message({ botId: "${bot.id}", text })`
+      }
+    ])
+    expect(running.agents.prompts).toEqual([])
+    expect((await send(bot.sessionId)).status).toBe(202)
+    await waitFor(() => running.agents.prompts.length === 1)
+    expect(await transcript(running, bot.sessionId)).toEqual([["user", "login is fixed"]])
   })
 
   it("tells the bot when an agent it started finishes, without showing the user", async () => {

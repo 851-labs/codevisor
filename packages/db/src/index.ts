@@ -49,7 +49,13 @@ export type { CheckoutsService } from "./checkouts-service.js"
 export type { CreatedAgentsMove } from "./created-agents-service.js"
 export type { FleetMessage, FleetPrompt } from "./fleet-outbox-service.js"
 export type { FinishedTurn } from "./turn-finish.js"
-export type { ThreadMessagePage, ThreadParty, ThreadsService } from "./threads.js"
+export type {
+  AppendedThreadMessage,
+  ThreadMessagePage,
+  ThreadMessageRecord,
+  ThreadParty,
+  ThreadsService
+} from "./threads.js"
 
 export type {
   WorkspaceFileEdit,

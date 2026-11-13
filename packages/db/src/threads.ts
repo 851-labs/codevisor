@@ -16,7 +16,30 @@ import type { ServiceContext } from "./service-context.js"
 
 export type ThreadParty =
   | { readonly kind: "bot"; readonly botId: string }
-  | { readonly kind: "agent"; readonly agentId: string; readonly machineId: string }
+  | {
+      readonly kind: "agent"
+      readonly agentId: string
+      readonly machineId: string
+      readonly name?: string | undefined
+    }
+  | {
+      readonly kind: "remoteBot"
+      readonly botId: string
+      readonly agentId: string
+      readonly machineId: string
+      readonly name: string
+    }
+
+export interface ThreadMessageRecord {
+  readonly id?: string | undefined
+  readonly text: string
+  readonly createdAt?: string | undefined
+}
+
+export interface AppendedThreadMessage {
+  readonly message: ThreadMessage
+  readonly created: boolean
+}
 
 export interface ThreadMessagePage {
   readonly messages: ReadonlyArray<ThreadMessage>
@@ -26,7 +49,8 @@ export interface ThreadMessagePage {
 export interface ThreadsService {
   readonly openThread: (
     first: ThreadParty,
-    second: ThreadParty
+    second: ThreadParty,
+    threadId?: string
   ) => Effect.Effect<Thread, DatabaseError>
   readonly findThread: (
     first: ThreadParty,
@@ -37,8 +61,8 @@ export interface ThreadsService {
   readonly appendThreadMessage: (
     threadId: string,
     from: ThreadParty,
-    text: string
-  ) => Effect.Effect<ThreadMessage, DatabaseError>
+    record: ThreadMessageRecord
+  ) => Effect.Effect<AppendedThreadMessage, DatabaseError>
   readonly listThreadMessages: (
     threadId: string,
     before: number | undefined,
@@ -47,11 +71,12 @@ export interface ThreadsService {
 }
 
 export const makeThreadsService = ({ sqlite, config }: ServiceContext): ThreadsService => ({
-  openThread: (first, second) =>
+  openThread: (first, second, threadId) =>
     attempt("openThread", () =>
       sqlite.transaction(() => {
         const existing = threadIdOf(sqlite, first, second)
-        return knownThread(sqlite, existing ?? createThread(sqlite, config.serverId, first, second))
+        const parties = { first, second, threadId: threadId ?? randomUUID() }
+        return knownThread(sqlite, existing ?? createThread(sqlite, config.serverId, parties))
       })()
     ),
   findThread: (first, second) =>
@@ -66,18 +91,25 @@ export const makeThreadsService = ({ sqlite, config }: ServiceContext): ThreadsS
         .all(sqlite.prepare(threadSql.ofParty).all(partyKey(party)))
         .map((row) => knownThread(sqlite, row.id))
     ),
-  appendThreadMessage: (threadId, from, body) =>
+  appendThreadMessage: (threadId, from, record) =>
     attempt("appendThreadMessage", () =>
       sqlite.transaction(() => {
         const sender = participantRows.maybe(
           sqlite.prepare(threadSql.participant).get({ threadId, ...partyKey(from) })
         )
         if (sender === undefined) throw new Error(`Not in thread ${threadId}`)
-        const id = randomUUID()
-        sqlite
-          .prepare(threadSql.insertMessage)
-          .run({ id, threadId, senderId: sender.id, text: body, createdAt: isoTimestamp() })
-        return messageFromRow(messageRows.one(sqlite.prepare(threadSql.message).get(id)))
+        const id = record.id ?? randomUUID()
+        const existing = messageRows.maybe(sqlite.prepare(threadSql.message).get(id))
+        if (existing !== undefined) return { message: messageFromRow(existing), created: false }
+        sqlite.prepare(threadSql.insertMessage).run({
+          id,
+          threadId,
+          senderId: sender.id,
+          text: record.text,
+          createdAt: record.createdAt ?? isoTimestamp()
+        })
+        const row = messageRows.one(sqlite.prepare(threadSql.message).get(id))
+        return { message: messageFromRow(row), created: true }
       })()
     ),
   listThreadMessages: (threadId, before, limit) =>
@@ -94,16 +126,17 @@ export const makeThreadsService = ({ sqlite, config }: ServiceContext): ThreadsS
     })
 })
 
-const createThread = (
-  sqlite: Database.Database,
-  serverId: string,
-  first: ThreadParty,
-  second: ThreadParty
-): string => {
-  const threadId = randomUUID()
+interface NewThread {
+  readonly first: ThreadParty
+  readonly second: ThreadParty
+  readonly threadId: string
+}
+
+const createThread = (sqlite: Database.Database, serverId: string, thread: NewThread): string => {
+  const { threadId } = thread
   const createdAt = isoTimestamp()
   sqlite.prepare(threadSql.insert).run(threadId, serverId, createdAt)
-  for (const party of [first, second]) {
+  for (const party of [thread.first, thread.second]) {
     sqlite
       .prepare(threadSql.addParticipant)
       .run({ id: randomUUID(), threadId, createdAt, ...partyColumns(party) })
@@ -168,7 +201,7 @@ const partyKey = (party: ThreadParty): PartyKey =>
   party.kind === "bot"
     ? { kind: "bot", botId: canonicalUuid(party.botId), agentId: "", machineId: "" }
     : {
-        kind: "agent",
+        kind: party.kind === "agent" ? "agent" : "bot",
         botId: "",
         agentId: canonicalUuid(party.agentId),
         machineId: party.machineId
@@ -176,11 +209,14 @@ const partyKey = (party: ThreadParty): PartyKey =>
 
 const partyColumns = (party: ThreadParty) => {
   const key = partyKey(party)
+  const isLocalBot = party.kind === "bot"
   return {
     kind: key.kind,
-    botId: key.kind === "bot" ? key.botId : null,
-    agentId: key.kind === "agent" ? key.agentId : null,
-    machineId: key.kind === "agent" ? key.machineId : null
+    botId: isLocalBot ? key.botId : null,
+    agentId: isLocalBot ? null : key.agentId,
+    machineId: isLocalBot ? null : key.machineId,
+    remoteBotId: party.kind === "remoteBot" ? canonicalUuid(party.botId) : null,
+    name: party.kind === "bot" ? null : (party.name ?? null)
   }
 }
 
@@ -191,6 +227,7 @@ const participantColumns = {
   bot_id: nullable(text),
   agent_id: nullable(text),
   agent_machine_id: nullable(text),
+  remote_bot_id: nullable(text),
   chat_id: text,
   name: text
 }
@@ -208,16 +245,21 @@ const messageRows = rowReader({
 
 type ParticipantFields = Pick<
   ReturnType<typeof participantRows.one>,
-  "kind" | "bot_id" | "agent_machine_id" | "chat_id" | "name"
+  "kind" | "bot_id" | "agent_machine_id" | "remote_bot_id" | "chat_id" | "name"
 >
 
 const participantFromRow = (row: ParticipantFields): ThreadParticipant => ({
   kind: row.kind === "bot" ? "bot" : "agent",
   name: row.name,
   agentId: row.chat_id,
-  ...(row.bot_id === null ? {} : { botId: row.bot_id }),
+  ...botIdOf(row),
   ...(row.agent_machine_id === null ? {} : { machineId: row.agent_machine_id })
 })
+
+const botIdOf = (row: ParticipantFields): { readonly botId?: string } => {
+  const botId = row.bot_id ?? row.remote_bot_id
+  return botId === null ? {} : { botId }
+}
 
 const messageFromRow = (row: ReturnType<typeof messageRows.one>): ThreadMessage => ({
   id: row.id,
@@ -228,9 +270,9 @@ const messageFromRow = (row: ReturnType<typeof messageRows.one>): ThreadMessage 
   createdAt: row.created_at
 })
 
-const participantSelect = `p.kind, p.bot_id, p.agent_id, p.agent_machine_id,
+const participantSelect = `p.kind, p.bot_id, p.agent_id, p.agent_machine_id, p.remote_bot_id,
       coalesce(p.agent_id, (select session_id from bots where bots.id = p.bot_id), '') as chat_id,
-      coalesce((select name from bots where bots.id = p.bot_id),
+      coalesce((select name from bots where bots.id = p.bot_id), p.name,
         (select title from sessions where sessions.id = p.agent_id), '') as name`
 
 const matches = (side: "a" | "b") => `exists (
@@ -247,8 +289,10 @@ const messageSelect = `select m.id, m.conversation_id, m.sequence, m.text, m.cre
 const threadSql = {
   insert: "insert into conversations (id, server_id, created_at) values (?, ?, ?)",
   addParticipant: `insert into conversation_participants (
-        id, conversation_id, kind, bot_id, agent_id, agent_machine_id, created_at
-      ) values (@id, @threadId, @kind, @botId, @agentId, @machineId, @createdAt)`,
+        id, conversation_id, kind, bot_id, agent_id, agent_machine_id, remote_bot_id, name, created_at
+      ) values (
+        @id, @threadId, @kind, @botId, @agentId, @machineId, @remoteBotId, @name, @createdAt
+      )`,
   between: `select c.id from conversations c
       where (select count(*) from conversation_participants p where p.conversation_id = c.id) = 2
         and ${matches("a")} and ${matches("b")}

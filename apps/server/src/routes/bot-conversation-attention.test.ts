@@ -1,4 +1,5 @@
-import { decode, SessionSummary } from "@codevisor/api"
+import { Bot, decode, SessionSummary } from "@codevisor/api"
+import { Schema } from "effect"
 import { describe, expect, it } from "vitest"
 
 import { jsonRequest, listSubjectEvents, run, waitFor } from "../test-support.js"
@@ -25,7 +26,14 @@ const publishedAttention = (running: Running, sessionId: string) =>
     .map((event) => decodeSummary(event.payload))
 
 const finishSilentTurn = async (running: Running, sessionId: string) => {
-  await post(running, `/v1/sessions/${sessionId}/prompt`, {
+  const bots = decode(Schema.Array(Bot))((await jsonRequest(running.server, "/v1/bots")).body)
+  const bot = bots.find((candidate) => candidate.sessionId === sessionId)!
+  await post(running, "/v1/sessions", {
+    id: "release-agent",
+    projectId: "api-project",
+    harnessId: "codex"
+  })
+  await post(running, `/v1/bots/${bot.id}/messages`, {
     text: "release finished",
     sentByAgentId: "release-agent"
   })

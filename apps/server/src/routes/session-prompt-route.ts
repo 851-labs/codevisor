@@ -3,6 +3,7 @@ import type { ServerResponse } from "node:http"
 import type {
   AgentRef,
   AttachmentRef,
+  Bot,
   PromptOrigin,
   PromptQueueItem,
   PromptRequest as PromptRequestBody,
@@ -12,7 +13,6 @@ import { PromptRequest } from "@codevisor/api"
 
 import { archivedChatRefusal, HttpFailure, readSchema, run, writeJson } from "../server-context.js"
 import type { CodevisorServerServices, RouteState } from "../server-context.js"
-import { agentMessageEvent } from "./bot-conversation.js"
 import { botForChat, postBotMessage } from "./bot-turns.js"
 import { assertAgentVerified, remoteCallerAgent } from "./fleet-calls.js"
 import { verifiedAttribution } from "./prompt-attribution.js"
@@ -54,24 +54,16 @@ export const sendPrompt = async (route: RouteContext, sessionId: string): Promis
   await requireKnownAttachments(services, attachments)
   const attribution = await verifiedAttribution(services, sessionId, payload.attribution)
   const sentByAgent = verifiedSender(route, payload)
+  const bot = await botForChat(services, sessionId)
+  refuseAgentMessageToBot(bot, sentByAgent, sessionId)
   markPromptActionPending(routeState, actionKey)
 
-  const toBot = (await botForChat(services, sessionId)) !== undefined
-  const relayedFrom = relayedSender(toBot, sentByAgent, sessionId)
   const enqueue = promptEnqueuer(services, sessionId, payload, attachments, {
     attribution,
     sentByAgent
   })
-  let queueItem: PromptQueueItem
-  if (relayedFrom === undefined) {
-    queueItem = await enqueue(payload.text, "user")
-    if (toBot) await mirrorToBot(route, sessionId, queueItem, payload, attachments)
-  } else {
-    queueItem = await enqueue(
-      await agentMessageEvent(services, relayedFrom, payload.text),
-      "system"
-    )
-  }
+  const queueItem = await enqueue(payload.text, "user")
+  if (bot !== undefined) await mirrorToBot(route, sessionId, queueItem, payload, attachments)
 
   const outcome = await deliverPrompt(route, sessionId, queueItem, payload, sentByAgent)
   const result = acceptedPrompt(sessionId, queueItem.id, outcome)
@@ -121,11 +113,17 @@ const verifiedSender = (route: RouteContext, payload: PromptRequestBody): AgentR
   return claimed
 }
 
-const relayedSender = (
-  toBot: boolean,
+const refuseAgentMessageToBot = (
+  bot: Bot | undefined,
   sender: AgentRef | undefined,
   sessionId: string
-): AgentRef | undefined => (toBot && !isSelf(sender, sessionId) ? sender : undefined)
+): void => {
+  if (bot === undefined || sender === undefined || isSelf(sender, sessionId)) return
+  throw new HttpFailure(
+    409,
+    `${bot.name} is a bot, not an agent. Message it with bots.message({ botId: "${bot.id}", text })`
+  )
+}
 
 const isSelf = (sender: AgentRef | undefined, sessionId: string): boolean =>
   sender?.agentId.toLowerCase() === sessionId.toLowerCase()

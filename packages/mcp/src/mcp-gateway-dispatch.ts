@@ -244,6 +244,11 @@ export const makeGatewayDispatch = (deps: GatewayDispatchDeps) => {
         ...computerUsePermissionPrompt(context, remote),
         ...(onApp === undefined ? {} : { onApp })
       }
+    } else if (provider.id === "codevisor" && remote !== undefined) {
+      providerContext = {
+        ...callContext,
+        remoteCaller: { name: remote.sessionTitle, botId: remote.botId }
+      }
     } else if (provider.id === "browser") {
       providerContext = browserProviderContext({
         provider,

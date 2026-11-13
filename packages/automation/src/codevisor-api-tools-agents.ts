@@ -53,7 +53,7 @@ export const codevisorAgentApiTools: ReadonlyArray<CodevisorApiToolSpec> = [
   ),
   apiTool(
     "agents.message",
-    "Send a follow-up message to an agent. An idle agent starts a turn with it. While it is working, delivery picks how it lands: steer (the default) adds it to the running turn, so the agent reads it at its next step; queue holds it until the turn and any earlier queued messages finish. Messages go in the order you sent them: a steer first delivers anything you queued earlier, in order. delivered reports what happened: sent, steered, or queued. steerDeclined: true means the running turn couldn't take it (its harness can't steer, or is updating), so it was queued.",
+    "Send a follow-up message to an agent. A bot is not an agent: message a bot with bots.message. An idle agent starts a turn with it. While it is working, delivery picks how it lands: steer (the default) adds it to the running turn, so the agent reads it at its next step; queue holds it until the turn and any earlier queued messages finish. Messages go in the order you sent them: a steer first delivers anything you queued earlier, in order. delivered reports what happened: sent, steered, or queued. steerDeclined: true means the running turn couldn't take it (its harness can't steer, or is updating), so it was queued.",
     "POST",
     "/v1/sessions/:id/prompt",
     { body: MessageAgentBody }

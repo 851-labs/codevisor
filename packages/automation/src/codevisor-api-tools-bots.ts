@@ -96,7 +96,7 @@ const UpdateBotBody = Schema.Struct({
 export const codevisorBotApiTools: ReadonlyArray<CodevisorApiToolSpec> = [
   apiTool(
     "bots.list",
-    "List this machine's Codevisor bots, archived ones included: botId, name, mascot, harnessId, configSelections (the options picked for its chat, such as its model; absent while it uses the harness defaults), isArchived, projects (each checked-out repository), rootPath (the bot's folder) and agentId (the bot's own chat, for agents.status or agents.message).",
+    "List this machine's Codevisor bots, archived ones included: botId, name, mascot, harnessId, configSelections (the options picked for its chat, such as its model; absent while it uses the harness defaults), isArchived, projects (each checked-out repository), rootPath (the bot's folder) and agentId (the bot's own chat, for agents.status).",
     "GET",
     "/v1/bots"
   ),
@@ -137,7 +137,7 @@ export const codevisorBotApiTools: ReadonlyArray<CodevisorApiToolSpec> = [
   ),
   apiTool(
     "bots.message",
-    'Send a message to a bot on this machine, from you: another bot, or an agent. It lands in your thread with that bot, which the user is not part of, and the bot reads it at its next step. Its reply reaches you as a <codevisor-event type="thread.message">. A bot refuses this from an agent it started, whose final reply it already gets. Returns { sent, threadId, messageId }.',
+    'Send a message to a bot, from you: another bot, or an agent. For a bot on another machine pass machine. It lands in your thread with that bot, which the user is not part of, and the bot reads it at its next step. Its reply reaches you as a <codevisor-event type="thread.message">. A bot refuses this from an agent it started, whose final reply it already gets. Returns { sent, threadId, messageId }.',
     "POST",
     "/v1/bots/:id/messages",
     { body: MessageBotBody }

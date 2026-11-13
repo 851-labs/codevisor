@@ -29,6 +29,15 @@ export type Thread = typeof Thread.Type
 export const MessageBotRequest = Schema.Struct({
   text: Schema.String,
   sentByAgentId: Schema.optional(Schema.String),
-  sentByAgentMachineId: Schema.optional(Schema.String)
+  sentByAgentMachineId: Schema.optional(Schema.String),
+  sentByBotId: Schema.optional(Schema.String),
+  sentByName: Schema.optional(Schema.String)
 })
 export type MessageBotRequest = typeof MessageBotRequest.Type
+
+export const FleetThreadMessage = Schema.Struct({
+  threadId: Schema.String,
+  participants: Schema.Array(ThreadParticipant),
+  message: ThreadMessage
+})
+export type FleetThreadMessage = typeof FleetThreadMessage.Type

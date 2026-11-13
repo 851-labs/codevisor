@@ -38,6 +38,7 @@ export const MachineCallOrigin = Schema.Struct({
   machineName: Schema.String,
   sessionId: Schema.optional(Schema.String),
   sessionTitle: Schema.optional(Schema.String),
+  botId: Schema.optional(Schema.String),
   clientId: Schema.optional(Schema.String)
 })
 export type MachineCallOrigin = typeof MachineCallOrigin.Type
@@ -46,6 +47,7 @@ export const FLEET_CALLER_HEADER = "x-codevisor-fleet-caller"
 export const FLEET_SESSION_EVENT_PATH = "fleet.session_event"
 export const FLEET_AGENTS_ARCHIVED_PATH = "fleet.agents_archived"
 export const FLEET_AGENTS_MOVED_PATH = "fleet.agents_moved"
+export const FLEET_THREAD_MESSAGE_PATH = "fleet.thread_message"
 
 export const isFleetPath = (path: string): boolean => path.startsWith("fleet.")
 export const CALLER_AGENT_TICKET_HEADER = "x-codevisor-caller-agent-ticket"
