@@ -7,7 +7,7 @@ import UIKit
 extension TranscriptRowLeaves {
   @MainActor
   static func iOS(controller: SessionController) -> TranscriptRowLeaves {
-    TranscriptRowLeaves(
+    var leaves = TranscriptRowLeaves(
       conversationItem: { item, isWaitingOnUser, waitingOnBackgroundTask, goalActivity in
         AnyView(
           ConversationItemRow(
@@ -54,6 +54,8 @@ extension TranscriptRowLeaves {
         AnyView(SessionErrorRow(controller: controller, message: message, rowID: rowID))
       }
     )
+    leaves.botAuthorAvatar = { AnyView(ThreadAuthorAvatar(author: $0)) }
+    return leaves
   }
 
   @MainActor

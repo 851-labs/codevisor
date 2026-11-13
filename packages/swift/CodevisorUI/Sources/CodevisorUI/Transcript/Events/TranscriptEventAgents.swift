@@ -7,6 +7,8 @@ struct TranscriptEventAgents {
     "session.turn_ended", "session.waiting_for_user", "session.errored", TranscriptEvent.agentMessageType,
   ]
 
+  static let threadSymbol = "bubble.left.and.bubble.right"
+
   let sessions: [ChatSession]
   let bots: BotListModel?
 
@@ -33,6 +35,19 @@ struct TranscriptEventAgents {
   func icon(for event: TranscriptEvent) -> TranscriptEventIconKind {
     if let bot = bot(for: event) { return .bot(bot) }
     guard let session = session(for: event), !session.harnessId.isEmpty else { return .symbol("person.crop.circle") }
+    return .harness(session.harnessId)
+  }
+
+  func threadPartyIcon(for event: TranscriptEvent) -> TranscriptEventIconKind {
+    if let id = event[attribute: "botId"]?.lowercased(),
+      let bot = bots?.bots.first(where: { $0.record.id.lowercased() == id })
+    {
+      return .bot(bot)
+    }
+    let agent = event[attribute: "agentId"].flatMap(UUID.init(uuidString:))
+    guard let session = sessions.first(where: { $0.id == agent }), !session.harnessId.isEmpty else {
+      return .symbol(Self.threadSymbol)
+    }
     return .harness(session.harnessId)
   }
 

@@ -14,15 +14,15 @@ struct TranscriptEventStamp: View {
   }
 }
 
-private struct TranscriptEventStampLabel: View {
+struct TranscriptEventStampLabel: View {
   let summary: TranscriptEventSummary
   let isActive: Bool
 
   var body: some View {
-    HStack(spacing: 4) {
-      TranscriptEventIcon(icon: summary.icon, size: 12)
-      TranscriptEventTitle(summary: summary, nameStyle: .secondary, titleStyle: .tertiary)
-    }
+    TranscriptEventTitle(
+      summary: summary, iconSize: summary.namesPartyLast ? 14 : 12, iconSpacing: 4, nameStyle: .secondary,
+      titleStyle: .tertiary
+    )
     .font(.caption2.weight(.medium))
     .foregroundStyle(summary.tone.style(standard: .tertiary))
     .opacity(isActive ? 0.7 : 1)

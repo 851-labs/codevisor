@@ -31,6 +31,7 @@ public struct TranscriptRowLeaves {
     ) -> AnyView
   public var userMessage: (_ message: UserMessage) -> AnyView
   public var botMessage: (_ message: TranscriptBotMessage, _ content: TranscriptBotMessageContent) -> AnyView
+  public var botAuthorAvatar: (_ author: TranscriptBotAuthor) -> AnyView = { _ in AnyView(EmptyView()) }
   public var attachmentThumbnail: (_ file: PreviewFile) -> AnyView
   public var setup: (_ phases: [SessionSetupPhase]) -> AnyView
   public var setupRequest:
@@ -125,16 +126,22 @@ public struct TranscriptRowContentView: View {
       TranscriptEventRow(marker: marker, inBotConversation: inBotConversation)
     case let .active(item):
       TranscriptActiveItemRow(controller: controller, projectedItem: item, leaves: leaves)
-    case let .botMessage(message, content, _):
+    case let .botMessage(message, content, isGroupTail):
       if message.sender == .notice {
         TranscriptBotNoticeRow(text: message.text)
       } else if let app = message.app {
         PluginAppBotBubble(app: app)
+      } else if let author = message.author {
+        TranscriptAuthoredBubbleRow(avatar: isGroupTail ? leaves.botAuthorAvatar(author) : nil) {
+          leaves.botMessage(message, content)
+        }
       } else {
         leaves.botMessage(message, content)
       }
     case let .botTimestamp(date):
       TranscriptBotTimestampRow(date: date)
+    case let .botAuthorName(name):
+      TranscriptBotAuthorNameRow(name: name)
     case let .delivery(id, delivery):
       TranscriptDeliveryRow(
         delivery: delivery,

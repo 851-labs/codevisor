@@ -43,6 +43,15 @@ struct BotThreadsModelTests {
     #expect(model.openThreadByBot[release.id] == nil)
   }
 
+  @Test("Opening a thread the bot's list has not loaded yet loads the list first")
+  func opensAThreadByItsId() async {
+    fake.setThreads([thread("t1", last: message(1, triageSide))], ofBot: release.record.id)
+
+    await model.open("t1", of: release)
+
+    #expect(model.openThread(of: release)?.threadId == "t1")
+  }
+
   @Test("A thread's messages load newest page first, and older pages join in order")
   func pagesMessages() async {
     let all = (1...(BotThreadsModel.pageSize + 2)).map { message($0, $0.isMultiple(of: 2) ? triageSide : releaseSide) }

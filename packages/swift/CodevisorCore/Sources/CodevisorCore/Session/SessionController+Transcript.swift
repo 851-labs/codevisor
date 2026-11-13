@@ -26,6 +26,7 @@ extension SessionController {
   }
 
   public var transcriptProjectionInput: TranscriptProjectionInput {
+    if let presentedThread { return TranscriptProjectionInput(thread: presentedThread.conversation) }
     let sandboxPower = transcriptSandboxPower
     let outgoing = transcriptOutgoing
     return TranscriptProjectionInput(
@@ -137,7 +138,8 @@ extension SessionController {
   }
 
   public func hasOlderHistory(presentingBotConversation: Bool) -> Bool {
-    presentingBotConversation ? hasOlderBotMessages : hasOlderHistory
+    if let presentedThread { return presentedThread.hasOlder }
+    return presentingBotConversation ? hasOlderBotMessages : hasOlderHistory
   }
 
   public func isLoadingOlderHistory(presentingBotConversation: Bool) -> Bool {
@@ -146,6 +148,11 @@ extension SessionController {
 
   @discardableResult
   public func loadOlderHistory(presentingBotConversation: Bool) async -> Int {
+    if let presentedThread {
+      await loadOlderThreadMessages?()
+      return max(
+        0, (self.presentedThread?.conversation.messages.count ?? 0) - presentedThread.conversation.messages.count)
+    }
     if presentingBotConversation { return await loadOlderBotMessages() }
     return await loadOlderHistory()
   }
@@ -309,7 +316,14 @@ extension SessionController {
 }
 
 extension SessionController {
+  public func presentThread(_ conversation: TranscriptBotConversation, hasOlder: Bool) {
+    presentedThread = PresentedThread(conversation: conversation, hasOlder: hasOlder)
+    presentsBotConversation = true
+    isLoadingInitialHistory = false
+  }
+
   public func presentBotConversation(_ presents: Bool) {
+    guard presentedThread == nil else { return }
     guard presents else {
       presentsBotConversation = false
       model?.presentsBotConversation = false

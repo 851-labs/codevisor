@@ -2,7 +2,7 @@ import { decode, Thread, type MachineCallOrigin } from "@codevisor/api"
 import { Schema } from "effect"
 import { describe, expect, it } from "vitest"
 
-import { jsonRequest, run, waitFor } from "../test-support.js"
+import { jsonRequest, listSubjectEvents, run, waitFor } from "../test-support.js"
 import { field } from "../unknown-values.js"
 import { createBot, decodeBot } from "./bot-test-support.js"
 import {
@@ -54,6 +54,11 @@ const delivered = async (machine: FleetMachine, text: string): Promise<unknown> 
   return machine.agents.prompts.find(carries)?.[1]
 }
 
+const sentFrom = (machine: FleetMachine, sessionId: string): ReadonlyArray<unknown> =>
+  listSubjectEvents(machine.services, sessionId)
+    .map((event) => field(event.payload, "text"))
+    .filter((text) => typeof text === "string" && text.includes(' to="'))
+
 describe("bot threads across machines", () => {
   it("carries a thread between bots on two machines, with a copy on each", async () => {
     const { home, remote, release, triage, releaseOrigin } = await startBots()
@@ -101,6 +106,12 @@ describe("bot threads across machines", () => {
     await waitFor(async () => (await textsIn(home, threadId)).length === 3)
     expect(await textsIn(home, threadId)).toEqual(["Is the build green?", "Yes.", "Shipping."])
     expect(await textsIn(remote, threadId)).toEqual(["Is the build green?", "Yes.", "Shipping."])
+    const sentToTriage = (text: string) =>
+      `<codevisor-event type="thread.message" threadId="${threadId}" to="bot" botId="${triage.id}" machineId="${laptop.id}" name="Triage">\n${text}\n</codevisor-event>`
+    expect(sentFrom(home, release.sessionId)).toEqual([
+      sentToTriage("Is the build green?"),
+      sentToTriage("Shipping.")
+    ])
     expect(
       home.agents.prompts.filter(
         ([, input]) => typeof input === "string" && input.includes("Is the build green?")

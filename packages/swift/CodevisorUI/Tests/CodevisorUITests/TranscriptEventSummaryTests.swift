@@ -17,4 +17,30 @@ struct TranscriptEventSummaryTests {
     #expect(title(["plugin": "Slack", "event": "message.posted", "eventTitle": "New message"]) == "New message")
     #expect(title(["plugin": "Slack", "event": "message.posted"]) == "Plugin event")
   }
+
+  @Test("Thread messages read as a count with the other side, and one alone says which way it went")
+  func threadMessages() throws {
+    let received = TranscriptEvent(
+      type: "thread.message", attributes: ["threadId": "t1", "from": "bot", "botId": "b1", "name": "Triage"], body: "")
+    let sent = TranscriptEvent(
+      type: "thread.message", attributes: ["threadId": "t1", "to": "agent", "agentId": "a1", "name": ""], body: "")
+    let one = try #require(marker("to", "Is it green?"))
+    let two = try #require(marker("to", "Is it green?", "from", "Yes."))
+
+    #expect(TranscriptEventSummary.thread(one, agents: agents).sentence == "1 message with Triage")
+    #expect(TranscriptEventSummary.thread(two, agents: agents).sentence == "2 messages with Triage")
+    #expect(TranscriptEventSummary(event: received, agents: agents).sentence == "Triage sent a message")
+    #expect(TranscriptEventSummary(event: sent, agents: agents).sentence == "Sent a message to Agent")
+  }
+
+  private func marker(_ parts: String...) -> TranscriptEventMarker? {
+    let events = stride(from: 0, to: parts.count, by: 2).map { index in
+      """
+      <codevisor-event type="thread.message" threadId="t1" \(parts[index])="bot" botId="b1" name="Triage">
+      \(parts[index + 1])
+      </codevisor-event>
+      """
+    }
+    return TranscriptEventMarker(message: UserMessage(text: events.joined(separator: "\n"), isEvent: true))
+  }
 }

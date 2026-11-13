@@ -1,10 +1,11 @@
 import CodevisorCore
+import CodevisorUI
 import SwiftUI
 
 struct BotConversationHeader: View {
   static let avatarSize: CGFloat = 44
   static let height: CGFloat = 74
-  static let overlap: CGFloat = 8
+  static let overlap = BotHeaderAvatarMetrics.overlap
 
   let bot: Bot
   let onOpenDetails: (() -> Void)?
@@ -13,6 +14,7 @@ struct BotConversationHeader: View {
     Button(action: { onOpenDetails?() }) {
       VStack(spacing: -Self.overlap) {
         BotAvatar(bot: bot, size: Self.avatarSize)
+          .botHeaderAvatarShadow()
         BotConversationHeaderName(
           name: bot.name,
           shape: BotConversationHeaderNameShape(avatarSize: Self.avatarSize, overlap: Self.overlap)
@@ -23,7 +25,7 @@ struct BotConversationHeader: View {
     .allowsHitTesting(opensDetails)
     .accessibilityLabel(bot.name)
     .accessibilityHint(opensDetails ? "Edit bot" : "")
-    .padding(.top, 6)
+    .padding(.top, 4)
     .frame(height: Self.height, alignment: .top)
   }
 

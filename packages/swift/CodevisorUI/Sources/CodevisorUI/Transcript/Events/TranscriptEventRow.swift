@@ -14,7 +14,9 @@ public struct TranscriptEventRow: View {
   public var body: some View {
     let agents = TranscriptEventAgents(sessions: environment?.projectList.sessions ?? [], bots: environment?.bots)
     let summary = TranscriptEventSummary(marker: marker, agents: agents)
-    if inBotConversation {
+    if inBotConversation, let threadID = marker.threadID {
+      TranscriptThreadStamp(threadID: threadID, summary: .thread(marker, agents: agents))
+    } else if inBotConversation {
       TranscriptEventStamp(marker: marker, summary: summary)
     } else {
       TranscriptEventDivider(marker: marker, summary: summary)
