@@ -14,6 +14,7 @@ export * from "./identity.js"
 export * from "./ids.js"
 
 export {
+  ARCHIVE_RETENTION_SINCE_SETTING,
   FIRST_RUN_PROJECTS_PENDING,
   FIRST_RUN_PROJECTS_SETTING
 } from "./machine-settings-service.js"
@@ -49,6 +50,7 @@ export type { CheckoutsService } from "./checkouts-service.js"
 export type { CreatedAgentsMove } from "./created-agents-service.js"
 export type { FleetMessage, FleetPrompt } from "./fleet-outbox-service.js"
 export type { FinishedTurn } from "./turn-finish.js"
+export type { UnusedFile } from "./unused-files.js"
 export type {
   AppendedThreadMessage,
   ThreadMessagePage,

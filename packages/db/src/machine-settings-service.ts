@@ -1,3 +1,4 @@
+import { isoTimestamp } from "@codevisor/api"
 import type Database from "better-sqlite3"
 
 import { instanceMetaSql, readInstanceMeta } from "./common-rows.js"
@@ -8,6 +9,8 @@ import type { CodevisorDatabaseService } from "./service.js"
 export const FIRST_RUN_PROJECTS_SETTING = "first-run-projects"
 
 export const FIRST_RUN_PROJECTS_PENDING = "pending"
+
+export const ARCHIVE_RETENTION_SINCE_SETTING = "archive-retention-since"
 
 export const makeMachineSettingsService = ({
   sqlite
@@ -28,6 +31,12 @@ export const markFirstRunProjectsPending = (sqlite: Database.Database): void => 
   sqlite
     .prepare(instanceMetaSql.upsert)
     .run(settingKey(FIRST_RUN_PROJECTS_SETTING), FIRST_RUN_PROJECTS_PENDING)
+}
+
+export const startArchiveRetentionGrace = (sqlite: Database.Database): void => {
+  sqlite
+    .prepare(instanceMetaSql.upsert)
+    .run(settingKey(ARCHIVE_RETENTION_SINCE_SETTING), isoTimestamp())
 }
 
 const settingKey = (key: string): string => `machine-setting:${key}`

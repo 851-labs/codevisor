@@ -18,16 +18,20 @@ export const linkSessionFiles = (
   for (const fileId of referencedFileIds(encodedPayload)) link.run(sessionId, fileId)
 }
 
-export const deleteSessionWithFiles = (
-  sqlite: Database.Database,
-  sessionId: string,
-  deleteSession: () => void
-): void => {
-  const owned = ownedFileIds(sqlite, sessionId)
-  deleteSession()
+export const chatFileSourceCount = (): number => chatFileSources.length
 
-  const purge = sqlite.prepare(sessionFileSql.deleteUnowned)
-  for (const fileId of owned) purge.run(fileId, fileId)
+export const linkStoredChatFiles = (
+  sqlite: Database.Database,
+  onSourceLinked: (linked: number) => void
+): void => {
+  const link = sqlite.prepare(sessionFileSql.link)
+  for (const [index, source] of chatFileSources.entries()) {
+    for (const reference of chatFileReferences(sqlite, source)) {
+      link.run(reference.sessionId, reference.fileId)
+    }
+    onSourceLinked(index + 1)
+  }
+  sqlite.prepare(sessionFileSql.purgeLinkedLegacyFiles).run()
 }
 
 export const storedFileReferences = (sqlite: Database.Database): StoredFileReferences => {
@@ -38,25 +42,58 @@ export const storedFileReferences = (sqlite: Database.Database): StoredFileRefer
   }
 }
 
-const fileIdKey = '"fileId":"'
+const fileIdKey = "fileId"
 
-const fileIdPattern = /"fileId":"([^"\\]+)"/g
+const fileIdPattern = /\\*"fileId\\*":\\*"([^"\\]+)/g
 
-const referencedFileIds = (encodedPayload: string): ReadonlySet<string> =>
+export const referencedFileIds = (encodedPayload: string): ReadonlySet<string> =>
   new Set([...encodedPayload.matchAll(fileIdPattern)].map((match) => match[1]!))
 
-const ownedFileIds = (sqlite: Database.Database, sessionId: string): ReadonlyArray<string> =>
-  ownedFileRows.all(sqlite.prepare(sessionFileSql.owned).all(sessionId)).map((row) => row.file_id)
+interface ChatFileReference {
+  readonly sessionId: string
+  readonly fileId: string
+}
 
-const ownedFileRows = rowReader({ file_id: text })
+const chatFileReferences = (
+  sqlite: Database.Database,
+  source: string
+): ReadonlyArray<ChatFileReference> => {
+  const references: Array<ChatFileReference> = []
+  for (const raw of sqlite.prepare(source).iterate()) {
+    const row = chatFileRows.one(raw)
+    for (const fileId of referencedFileIds(row.encoded)) {
+      references.push({ sessionId: row.session_id, fileId })
+    }
+  }
+  return references
+}
+
+const chatFileRows = rowReader({ session_id: text, encoded: text })
 
 const storedFileRows = rowReader({ id: text, sha256: text })
+
+const chatFileSources = [
+  `select session_id, attachments as encoded from chat_items
+     where attachments like '%fileId%'`,
+  `select chat_items.session_id, json_object('fileId', chat_item_media.file_id) as encoded
+     from chat_item_media join chat_items on chat_items.id = chat_item_media.item_id`,
+  `select chat_items.session_id, transcript_entries.payload as encoded
+     from transcript_entries join chat_items on chat_items.id = transcript_entries.item_id
+     where transcript_entries.payload like '%fileId%'`,
+  `select chat_items.session_id, transcript_body_chunks.text as encoded
+     from transcript_body_chunks join chat_items on chat_items.id = transcript_body_chunks.item_id
+     where transcript_body_chunks.text like '%fileId%'`,
+  `select session_id, attachments as encoded from conversation_items
+     where attachments like '%fileId%'`,
+  `select session_id, payload as encoded from session_events
+     where payload like '%fileId%'`
+]
 
 const sessionFileSql = {
   link: `insert or ignore into session_files (session_id, file_id)
            select ?, id from files where id = ?`,
-  owned: "select file_id from session_files where session_id = ?",
-  deleteUnowned: `delete from files where id = ? and purge_with_chats = 1
-           and not exists (select 1 from session_files where file_id = ?)`,
+  purgeLinkedLegacyFiles: `update files set purge_with_chats = 1
+           where purge_with_chats = 0
+             and exists (select 1 from session_files where file_id = files.id)`,
   storedFiles: "select id, sha256 from files"
 }

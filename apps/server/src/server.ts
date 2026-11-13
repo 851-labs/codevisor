@@ -48,6 +48,7 @@ import {
 } from "./routes/sessions.js"
 import { makeAuthSyncRefreshScheduler, publishMcpChanges } from "./routes/sync-readiness.js"
 import { runBackgroundSyncReconcile } from "./routes/sync-reconcilers.js"
+import { startServerArchiveRetention } from "./server-archive-retention.js"
 import {
   appendAndPublish,
   failureMessage,
@@ -192,6 +193,7 @@ export const makeCodevisorServerApp = (
     ).catch(swallowError)
   }, 60_000)
   staleTurnSweep.unref()
+  const stopArchiveRetention = startServerArchiveRetention(services, config, fanout, routeState)
   const attentionSettle = makeAttentionSettleScheduler(services.db, fanout)
   const autoResume = makeServerAutoResume(services, fanout, routeState, config.id)
   routeState.autoResume = autoResume
@@ -301,6 +303,7 @@ export const makeCodevisorServerApp = (
       browserProxy.close()
       clientControl.close()
       clearInterval(staleTurnSweep)
+      stopArchiveRetention()
       clearInterval(fleetRetry)
       restart.close()
       updateResume.close()

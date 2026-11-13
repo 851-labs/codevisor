@@ -15,6 +15,7 @@ import {
 import type { ServiceContext } from "./service-context.js"
 import type { CodevisorDatabaseService } from "./service.js"
 import { storedFileReferences } from "./session-files.js"
+import { deleteFiles, unusedFiles } from "./unused-files.js"
 
 const storageStateRows = rowReader({ storage_state: fileStorageState })
 
@@ -33,6 +34,8 @@ export const makeFilesService = (
   | "markFileStorageDual"
   | "markFileStorageDisk"
   | "storedFileReferences"
+  | "listUnusedFiles"
+  | "deleteFiles"
 > => {
   const { sqlite } = context
 
@@ -109,6 +112,8 @@ export const makeFilesService = (
         }
       }),
     storedFileReferences: attempt("storedFileReferences", () => storedFileReferences(sqlite)),
+    listUnusedFiles: attempt("listUnusedFiles", () => unusedFiles(sqlite)),
+    deleteFiles: (ids) => attempt("deleteFiles", () => deleteFiles(sqlite, ids)),
     markFileStorageDisk: (id) =>
       attempt("markFileStorageDisk", () => {
         const result = sqlite.prepare(fileSql.markDisk).run(id)
