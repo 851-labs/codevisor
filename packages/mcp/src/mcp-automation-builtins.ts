@@ -56,8 +56,14 @@ const AUTOMATION_SKILLS = [
     gate: "codevisor",
     name: "codevisor-agents",
     summary:
-      "Use when you want a helper agent, an agent per issue or PR, to brief, answer, or manage agents, or to manage bots",
+      "Use when you want another agent's help, an agent per issue or PR, or to brief, answer, or manage agents",
     composer: "Start and coordinate other agents in Codevisor"
+  },
+  {
+    gate: "codevisor",
+    name: "codevisor-bots",
+    summary:
+      "Use when the user asks you to create, change, fork, archive, or delete a Codevisor bot"
   },
   {
     gate: "codevisor",
