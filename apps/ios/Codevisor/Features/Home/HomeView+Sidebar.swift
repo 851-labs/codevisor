@@ -53,7 +53,6 @@ extension HomeView {
               chatSessionId: workspace.primaryRow?.chatSessionId, paneId: workspace.primaryRow?.id))
         } : nil,
       openBot: { bot in openBot(bot) },
-      openAsking: { ref in openAskingWorkspace(ref) },
       newBot: { botEditor = .create },
       editBot: { bot in botEditor = .edit(bot) },
       forkBot: { bot in botEditor = .fork(bot) },
@@ -84,13 +83,6 @@ extension HomeView {
         preferredPaneId: row.id
       )
     )
-  }
-
-  private func openAskingWorkspace(_ ref: HomeSidebarWorkspaceRef) {
-    openRoute(
-      .workspace(
-        serverId: ref.serverId, workspaceId: ref.id, anchorSessionId: ref.anchorSessionId,
-        preferredChatSessionId: ref.anchorSessionId, preferredPaneId: nil))
   }
 
   private func openSidebarWorkspace(_ workspace: HomeSidebarWorkspace) {

@@ -8,28 +8,23 @@ struct SidebarRowStatusSource {
   let store: SessionStore?
 
   var statuses: SidebarRowStatuses {
-    SidebarRowStatuses(environment.navigationStore.workspaceEntries.sidebar, activity: activity)
+    let list = environment.projectList
+    return SidebarRowStatuses(
+      environment.navigationStore.workspaceEntries.sidebar, chats: list.sessions, mainChat: list.mainChat(of:),
+      activity: activity(of:), chatless: terminalActivity(of:))
   }
 
-  func item(_ workspaceId: UUID) -> WorkspaceSidebarItem? {
-    environment.navigationStore.workspaceEntries.sidebar.first { $0.id == workspaceId }
-  }
-
-  private func activity(of item: WorkspaceSidebarItem) -> SidebarChatActivity? {
-    if let chat = environment.projectList.mainChat(of: item) {
-      return SidebarChatActivity(
-        session: chat, isWorking: isWorking(chat), isSettingUp: store?.isSettingUp(chat) == true)
-    }
-    guard hasWorkingTerminal(item) else { return nil }
-    return SidebarChatActivity(isWorking: true)
+  private func activity(of chat: ChatSession) -> SidebarChatActivity {
+    SidebarChatActivity(session: chat, isWorking: isWorking(chat), isSettingUp: store?.isSettingUp(chat) == true)
   }
 
   private func isWorking(_ chat: ChatSession) -> Bool {
     store?.isInProgress(chat) ?? (chat.sidebarState == .inProgress)
   }
 
-  private func hasWorkingTerminal(_ item: WorkspaceSidebarItem) -> Bool {
+  private func terminalActivity(of item: WorkspaceSidebarItem) -> SidebarChatActivity? {
     let workspace = environment.navigationStore.workspaceEntries.entry(item.id).workspace
-    return workspace?.allPanes.contains { $0.terminalAgentStatus == .working } == true
+    guard workspace?.allPanes.contains(where: { $0.terminalAgentStatus == .working }) == true else { return nil }
+    return SidebarChatActivity(isWorking: true)
   }
 }

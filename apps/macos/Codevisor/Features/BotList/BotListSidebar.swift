@@ -115,7 +115,6 @@ struct BotListSidebar: View {
   private var rowActions: BotSidebarRowActions {
     BotSidebarRowActions(
       select: select,
-      openAgent: openAgent,
       edit: { botEditor = .edit($0) },
       canFork: { environment.bots.supportsFork(on: $0.serverId) },
       fork: { botEditor = .fork($0) },
@@ -179,16 +178,6 @@ struct BotListSidebar: View {
 
   private func select(_ bot: Bot) {
     selection = .bot(serverId: bot.serverId, id: bot.id)
-  }
-
-  private func openAgent(_ workspaceId: UUID) {
-    let source = SidebarRowStatusSource(environment: environment, store: store)
-    guard let item = source.item(workspaceId),
-      let workspace = environment.navigationStore.workspaceEntries.entry(workspaceId).workspace
-    else { return }
-    let agent = SidebarWorkspaceListItem(
-      workspace: workspace, routingSession: environment.projectList.mainChat(of: item))
-    SidebarWorkspaceNavigator(environment: environment, store: store, selection: $selection).activate(agent)
   }
 
   private func step(_ offset: Int) {

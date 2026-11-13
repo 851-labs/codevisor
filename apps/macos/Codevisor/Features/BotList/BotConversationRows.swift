@@ -50,8 +50,8 @@ struct BotConversationRows: View {
     let status = statuses?.status(of: bot.workspaceId)
     return conversationRow(conversation, status: status)
       .opacity(reorder.isDragging(bot.id) ? 0.4 : 1)
-      .onSidebarRowPress { open(bot, status: status) }
-      .accessibilityAction(.default) { open(bot, status: status) }
+      .onSidebarRowPress { actions.select(bot) }
+      .accessibilityAction(.default) { actions.select(bot) }
       .simultaneousGesture(reorderGesture(for: bot))
       .contextMenu {
         if let chat = chat(of: bot) {
@@ -116,11 +116,6 @@ struct BotConversationRows: View {
     BotConversationRow(
       conversation: conversation, isSelected: conversation.bot.id == selectedBotID, status: status,
       showsStatusLabel: showsStatusLabel)
-  }
-
-  private func open(_ bot: Bot, status: SidebarRowStatus?) {
-    guard let agent = status?.askingWorkspaceID, agent != bot.workspaceId else { return actions.select(bot) }
-    actions.openAgent(agent)
   }
 
   private func chat(of bot: Bot) -> ChatSession? {

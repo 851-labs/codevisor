@@ -25,8 +25,6 @@ struct HomeSidebarWorkspaceRowView: View, Equatable {
   private func onOpen() {
     if workspace.isArchived {
       confirmsRestore = true
-    } else if let asking = workspace.asking {
-      actions.actions.openAsking(asking)
     } else {
       actions.actions.openWorkspace(workspace)
     }

@@ -87,8 +87,7 @@ struct HomeSidebarContentBuilder {
       canArchive: environment.bots.supportsArchive(on: bot.serverId),
       canFork: environment.bots.supportsFork(on: bot.serverId),
       sectionID: environment.botSections.membership[bot.id],
-      rowStatus: rowStatus?.status,
-      asking: rowStatus?.asking,
+      rowStatus: rowStatus,
       showsStatusLabel: preferences.rowDetails.contains(.status)
     )
   }
@@ -147,8 +146,7 @@ struct HomeSidebarContentBuilder {
         worktreeName: workspace.worktreeName,
         groupNamesProject: preferences.grouping == .project && heading != nil
       ),
-      rowStatus: rowStatus?.status,
-      asking: rowStatus?.asking,
+      rowStatus: rowStatus,
       showsStatusLabel: details.contains(.status),
       machine: details.contains(.machine) && heading?.namesMachine != true
         ? rowMachine(serverId: workspace.serverId) : nil,
