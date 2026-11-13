@@ -1,5 +1,6 @@
 import type { IncomingMessage, ServerResponse } from "node:http"
 
+import { localNetworkPermission } from "../infra/local-network-permission.js"
 import { HttpFailure, readJson, writeJson, type CodevisorServerConfig } from "../server-context.js"
 import { field } from "../unknown-values.js"
 
@@ -124,6 +125,10 @@ export const routeCloud = async (
     if (typeof allowed !== "boolean") throw new HttpFailure(400, "allowed must be a boolean")
     const pathPolicy = control.setDirectPaths(allowed)
     writeJson(response, 200, pathPolicy === undefined ? {} : { pathPolicy })
+    return true
+  }
+  if (request.method === "GET" && url.pathname === "/v1/cloud/local-network") {
+    writeJson(response, 200, { permission: await localNetworkPermission() })
     return true
   }
   throw new HttpFailure(404, "Cloud route not found")

@@ -40,13 +40,7 @@ struct MachinesSettingsScreen: View {
         }
 
         Section {
-          if environment.hasRequestedLocalNetworkAccess {
-            Toggle("Connect over LAN", isOn: localNetworkBinding)
-          } else {
-            LabeledContent("Connect over LAN") {
-              Button("Set Up…") { environment.setLocalNetworkAccess(.requested) }
-            }
-          }
+          ConnectOverLANRow()
         } footer: {
           Text("Connect to your machines directly over the local network when available.")
         }
@@ -72,13 +66,6 @@ struct MachinesSettingsScreen: View {
         try? await Task.sleep(for: .seconds(10))
       }
     }
-  }
-
-  private var localNetworkBinding: Binding<Bool> {
-    Binding(
-      get: { environment.localNetworkAccess == .requested },
-      set: { environment.setLocalNetworkAccess($0 ? .requested : .deferred) }
-    )
   }
 
   private func cloudMachine(for machine: CodevisorMachine) -> CloudMachine? {

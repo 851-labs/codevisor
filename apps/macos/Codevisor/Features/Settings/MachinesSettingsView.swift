@@ -47,26 +47,13 @@ struct MachinesSettingsView: View {
       }
 
       Section {
-        if environment.hasRequestedLocalNetworkAccess {
-          Toggle("Connect over LAN", isOn: localNetworkBinding)
-        } else {
-          LabeledContent("Connect over LAN") {
-            Button("Set Up…") { environment.setLocalNetworkAccess(.requested) }
-          }
-        }
+        ConnectOverLANRow()
       } footer: {
         Text("Connect to your machines directly over the local network when available.")
           .foregroundStyle(.secondary)
       }
     }
     .formStyle(.grouped)
-  }
-
-  private var localNetworkBinding: Binding<Bool> {
-    Binding(
-      get: { environment.localNetworkAccess == .requested },
-      set: { environment.setLocalNetworkAccess($0 ? .requested : .deferred) }
-    )
   }
 
   var body: some View {

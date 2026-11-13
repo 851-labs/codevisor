@@ -26,6 +26,11 @@ extension AppEnvironment {
     return localNetworkAccess == .requested || requested == true
   }
 
+  public var localServerClient: (any CodevisorServerClienting)? {
+    guard localServer != nil else { return nil }
+    return machines.client(for: CodevisorMachine.local.id)
+  }
+
   public func setLocalNetworkAccess(_ access: LocalNetworkAccess) {
     preferences.set(access, forKey: LocalNetworkAccess.preferenceKey)
     if access == .requested {
@@ -40,9 +45,8 @@ extension AppEnvironment {
   }
 
   func syncLocalServerDirectPaths() {
-    guard localServer != nil else { return }
+    guard let client = localServerClient else { return }
     let allowed = localNetworkAccess == .requested
-    let client = machines.client(for: CodevisorMachine.local.id)
     let previous = localServerDirectPathsSync
     localServerDirectPathsSync = Task {
       await previous?.value

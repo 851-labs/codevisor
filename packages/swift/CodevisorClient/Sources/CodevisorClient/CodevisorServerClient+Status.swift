@@ -309,6 +309,14 @@ extension CodevisorServerClient {
     try await sendNoResponse("/v1/cloud/direct-paths", method: "PUT", body: Body(allowed: allowed))
   }
 
+  public func cloudLocalNetworkPermission() async throws -> LocalNetworkPermission {
+    struct Response: Decodable {
+      let permission: LocalNetworkPermission
+    }
+    let response: Response = try await get("/v1/cloud/local-network")
+    return response.permission
+  }
+
   public func updateInfo(
     refresh: Bool = false,
     channel: ServerUpdateChannel = .stable
