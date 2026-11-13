@@ -11,11 +11,6 @@ protocol ScreenSharingViewerConnecting: AnyObject {
 final class ScreenSharingViewerRegistry {
   static let shared = ScreenSharingViewerRegistry()
 
-  struct Key: Hashable {
-    let machineId: String
-    let displayId: String
-  }
-
   @MainActor
   final class Share {
     let machineId: String
@@ -25,7 +20,7 @@ final class ScreenSharingViewerRegistry {
     private let registry: ScreenSharingViewerRegistry
     fileprivate var visible = false
     fileprivate var claimed = 0
-    fileprivate var key: Key?
+    fileprivate var heardStream = 0
     fileprivate var subscription: UUID?
     fileprivate var continuation: AsyncStream<ScreenSharingViewerEvent>.Continuation?
 
@@ -43,7 +38,6 @@ final class ScreenSharingViewerRegistry {
 
     fileprivate func end() {
       let continuation = continuation
-      key = nil
       subscription = nil
       lastElsewhere = nil
       self.continuation = nil
@@ -61,34 +55,44 @@ final class ScreenSharingViewerRegistry {
       self.runner = runner
     }
 
-    func connect(_ display: String) -> AsyncStream<ScreenSharingViewerEvent> {
-      registry.subscribe(self, to: Key(machineId: machineId, displayId: display))
+    func connect(_ display: String, switching: Bool = false) -> AsyncStream<ScreenSharingViewerEvent> {
+      registry.subscribe(self, to: display, switching: switching)
     }
 
     func setVisible(_ visible: Bool) { registry.setVisible(self, visible) }
     func claim() { registry.claim(self) }
-    func retire() { registry.retire(paneId: paneId) }
-    func liveStreams() -> AsyncStream<Void> { registry.liveStreams(machineId: machineId) }
+    func retire() { registry.retire(self) }
+    func liveStreams() -> AsyncStream<Void> { registry.liveStreams(for: self) }
   }
 
   private final class Entry {
+    let machineId: String
     var sponsor: Share
+    var display: String
     var subscribers: [Share] = []
     var active: Share?
     var endpoint: ScreenSharingViewerEndpoint?
+    var stream = 0
     var ready = false
     var notice: String?
     var progress: ScreenSharingConnectStage?
     var generation = 0
     var task: Task<Void, Never>?
 
-    init(sponsor: Share) { self.sponsor = sponsor }
+    init(sponsor: Share, display: String) {
+      machineId = sponsor.machineId
+      self.sponsor = sponsor
+      self.display = display
+    }
   }
 
-  private var entries: [Key: Entry] = [:]
-  private var draining: [Key: Task<Void, Never>] = [:]
+  private typealias LiveWatcher = (share: Share, continuation: AsyncStream<Void>.Continuation)
+
+  private var entries: [String: Entry] = [:]
+  private var draining: [String: Task<Void, Never>] = [:]
   private var claims = 0
-  private var liveWatchers: [String: [UUID: AsyncStream<Void>.Continuation]] = [:]
+  private var streams = 0
+  private var liveWatchers: [String: [UUID: LiveWatcher]] = [:]
 
   func share(
     machineId: String, paneId: UUID, role: ScreenSharingViewerRole = .tab, runner: any ScreenSharingViewerConnecting
@@ -96,30 +100,30 @@ final class ScreenSharingViewerRegistry {
     Share(registry: self, machineId: machineId, paneId: paneId, role: role, runner: runner)
   }
 
-  fileprivate func liveStreams(machineId: String) -> AsyncStream<Void> {
+  fileprivate func liveStreams(for share: Share) -> AsyncStream<Void> {
     let (stream, continuation) = AsyncStream<Void>.makeStream()
     let id = UUID()
-    liveWatchers[machineId, default: [:]][id] = continuation
+    let machineId = share.machineId
+    liveWatchers[machineId, default: [:]][id] = (share, continuation)
     continuation.onTermination = { [weak self] _ in
       Task { @MainActor in self?.liveWatchers[machineId]?[id] = nil }
     }
-    if isLive(machineId) { continuation.yield() }
+    announceLive(to: (share, continuation))
     return stream
   }
 
-  private func isLive(_ machineId: String) -> Bool {
-    entries.contains { $0.key.machineId == machineId && $0.value.endpoint != nil }
+  private func announceLive(to watcher: LiveWatcher) {
+    guard let entry = entries[watcher.share.machineId], entry.endpoint != nil else { return }
+    guard entry.stream > watcher.share.heardStream, case .enqueued = watcher.continuation.yield() else { return }
+    watcher.share.heardStream = entry.stream
   }
 
-  private func announceLive(_ machineId: String) {
-    for continuation in liveWatchers[machineId, default: [:]].values { continuation.yield() }
-  }
-
-  fileprivate func subscribe(_ share: Share, to key: Key) -> AsyncStream<ScreenSharingViewerEvent> {
+  fileprivate func subscribe(
+    _ share: Share, to display: String, switching: Bool
+  ) -> AsyncStream<ScreenSharingViewerEvent> {
     let (stream, continuation) = AsyncStream<ScreenSharingViewerEvent>.makeStream()
     unsubscribe(share)
     let subscription = UUID()
-    share.key = key
     share.subscription = subscription
     share.continuation = continuation
     continuation.onTermination = { [weak self, weak share] _ in
@@ -128,14 +132,7 @@ final class ScreenSharingViewerRegistry {
         self.unsubscribe(share)
       }
     }
-    let entry: Entry
-    if let existing = entries[key] {
-      entry = existing
-    } else {
-      entry = Entry(sponsor: share)
-      entries[key] = entry
-      run(entry, key: key, after: draining.removeValue(forKey: key))
-    }
+    let entry = connection(for: share, on: display, switching: switching)
     entry.subscribers.append(share)
     updateAudio(entry)
     if canTakeOver(share, in: entry) {
@@ -146,21 +143,32 @@ final class ScreenSharingViewerRegistry {
     return stream
   }
 
+  private func connection(for share: Share, on display: String, switching: Bool) -> Entry {
+    if let existing = entries[share.machineId] {
+      if switching, existing.display != display { reconnect(existing, under: existing.sponsor, on: display) }
+      return existing
+    }
+    let entry = Entry(sponsor: share, display: display)
+    entries[share.machineId] = entry
+    run(entry, after: draining.removeValue(forKey: share.machineId))
+    return entry
+  }
+
   private func unsubscribe(_ share: Share) {
-    guard let key = share.key else { return }
+    guard share.subscription != nil else { return }
     share.end()
-    guard let entry = entries[key] else { return }
+    guard let entry = entries[share.machineId] else { return }
     entry.subscribers.removeAll { $0 === share }
     updateAudio(entry)
     guard entry.subscribers.isEmpty else {
       if entry.active === share { handOff(from: share, in: entry) }
       return
     }
-    entries[key] = nil
+    entries[entry.machineId] = nil
     entry.task?.cancel()
     let task = entry.task
     let runner = entry.sponsor.runner
-    draining[key] = Task { @MainActor in
+    draining[entry.machineId] = Task { @MainActor in
       await task?.value
       await runner.idle()
     }
@@ -168,7 +176,7 @@ final class ScreenSharingViewerRegistry {
 
   fileprivate func setVisible(_ share: Share, _ visible: Bool) {
     share.visible = visible
-    guard let key = share.key, let entry = entries[key] else { return }
+    guard share.subscription != nil, let entry = entries[share.machineId] else { return }
     if visible {
       if canTakeOver(share, in: entry) { claim(share, in: entry) }
     } else if entry.active === share, let next = successor(in: entry, visibleOnly: true) {
@@ -177,7 +185,7 @@ final class ScreenSharingViewerRegistry {
   }
 
   fileprivate func claim(_ share: Share) {
-    guard share.role != .watcher, let key = share.key, let entry = entries[key] else { return }
+    guard share.role != .watcher, share.subscription != nil, let entry = entries[share.machineId] else { return }
     claim(share, in: entry)
   }
 
@@ -196,25 +204,29 @@ final class ScreenSharingViewerRegistry {
     entry.endpoint?.relinquish()
   }
 
-  fileprivate func retire(paneId: UUID) {
-    for (key, entry) in entries where entry.sponsor.paneId == paneId {
-      guard let next = entry.subscribers.first(where: { $0.paneId != paneId }) else { continue }
-      let previous = entry.task
-      let runner = entry.sponsor.runner
-      previous?.cancel()
-      entry.sponsor = next
-      entry.endpoint = nil
-      entry.ready = false
-      entry.notice = nil
-      entry.progress = nil
-      for subscriber in entry.subscribers { subscriber.emit(.reconnecting) }
-      run(
-        entry, key: key,
-        after: Task { @MainActor in
-          await previous?.value
-          await runner.idle()
-        })
-    }
+  fileprivate func retire(_ share: Share) {
+    guard let entry = entries[share.machineId], entry.sponsor.paneId == share.paneId else { return }
+    guard let next = entry.subscribers.first(where: { $0.paneId != share.paneId }) else { return }
+    reconnect(entry, under: next, on: entry.display)
+  }
+
+  private func reconnect(_ entry: Entry, under sponsor: Share, on display: String) {
+    let previous = entry.task
+    let runner = entry.sponsor.runner
+    previous?.cancel()
+    entry.sponsor = sponsor
+    entry.display = display
+    entry.endpoint = nil
+    entry.ready = false
+    entry.notice = nil
+    entry.progress = nil
+    for subscriber in entry.subscribers { subscriber.emit(.reconnecting) }
+    run(
+      entry,
+      after: Task { @MainActor in
+        await previous?.value
+        await runner.idle()
+      })
   }
 
   private func claim(_ share: Share, in entry: Entry) {
@@ -246,20 +258,24 @@ final class ScreenSharingViewerRegistry {
     entry.endpoint?.audio?.audible = entry.subscribers.contains { $0.role != .watcher }
   }
 
-  private func run(_ entry: Entry, key: Key, after: Task<Void, Never>?) {
+  private func run(_ entry: Entry, after: Task<Void, Never>?) {
     entry.generation += 1
     let generation = entry.generation
     let runner = entry.sponsor.runner
+    let display = entry.display
+    let machineId = entry.machineId
     entry.task = Task { @MainActor [weak self] in
       await after?.value
       guard !Task.isCancelled else { return }
-      for await event in runner.connect(key.displayId) {
+      for await event in runner.connect(display) {
         guard entry.generation == generation else { break }
         self?.deliver(event, to: entry)
       }
-      guard let self, !Task.isCancelled, entry.generation == generation, self.entries[key] === entry else { return }
-      self.entries[key] = nil
-      self.draining[key] = Task { @MainActor in await runner.idle() }
+      guard let self, !Task.isCancelled, entry.generation == generation, self.entries[machineId] === entry else {
+        return
+      }
+      self.entries[machineId] = nil
+      self.draining[machineId] = Task { @MainActor in await runner.idle() }
       for subscriber in entry.subscribers { subscriber.end() }
     }
   }
@@ -273,7 +289,9 @@ final class ScreenSharingViewerRegistry {
       updateAudio(entry)
       entry.active?.emit(event)
       for subscriber in entry.subscribers where subscriber !== entry.active { subscriber.emit(.elsewhere(endpoint)) }
-      announceLive(entry.sponsor.machineId)
+      streams += 1
+      entry.stream = streams
+      for watcher in liveWatchers[entry.machineId, default: [:]].values { announceLive(to: watcher) }
     case .ready:
       entry.ready = true
       entry.progress = nil

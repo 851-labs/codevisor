@@ -8,6 +8,7 @@ public final class ScreenSharingViewerEndpoint: Equatable, Identifiable {
   public typealias ID = UUID
   private static let logger = Logger(subsystem: "com.851labs.Codevisor", category: "ScreenSharing")
   public let id = ID()
+  public let displayId: String?
   public let capabilities: ScreenSharingCapabilities
   public var supportsControl: Bool { capabilities.contains(.control) }
   public var supportsClipboard: Bool { capabilities.contains(.clipboard) }
@@ -123,7 +124,11 @@ public final class ScreenSharingViewerEndpoint: Equatable, Identifiable {
     Task { @MainActor in await setDesktopScale(scale) }
   }
 
-  init(session: any ScreenSharingViewingSession, surface: any ScreenSharingViewerSurface, sound: Bool = true) {
+  init(
+    session: any ScreenSharingViewingSession, surface: any ScreenSharingViewerSurface, sound: Bool = true,
+    displayId: String? = nil
+  ) {
+    self.displayId = displayId
     self.session = session
     self.surface = surface
     capabilities = session.capabilities
@@ -186,16 +191,18 @@ public final class ScreenSharingViewerEndpoint: Equatable, Identifiable {
         }
       }
     }
-    if clipboard != nil {
-      clipboardTask = Task { [weak self] in
-        while !Task.isCancelled {
-          do { try await Task.sleep(for: .milliseconds(250)) } catch { return }
-          self?.clipboard?.poll()
-        }
-      }
-    }
+    if clipboard != nil { clipboardTask = makeClipboardTask() }
     diagnosticsTask = makeDiagnosticsTask()
     ScreenSharingEndpointRegistry.shared.register(self)
+  }
+
+  private func makeClipboardTask() -> Task<Void, Never> {
+    Task { [weak self] in
+      while !Task.isCancelled {
+        do { try await Task.sleep(for: .milliseconds(250)) } catch { return }
+        self?.clipboard?.poll()
+      }
+    }
   }
 
   private func makeDiagnosticsTask() -> Task<Void, Never> {

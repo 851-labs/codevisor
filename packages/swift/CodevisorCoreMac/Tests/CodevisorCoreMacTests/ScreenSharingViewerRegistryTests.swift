@@ -6,63 +6,8 @@ import Testing
 @testable import CodevisorCoreMac
 
 @MainActor
+@Suite(.timeLimit(.minutes(1)))
 struct ScreenSharingViewerRegistryTests {
-  @MainActor
-  private final class FakeRunner: ScreenSharingViewerConnecting {
-    let connected = TestSignal()
-    let terminated = TestSignal()
-    let idling = TestSignal()
-    let stopFinished = TestSignal()
-    var holdsStop = false
-    private(set) var connects = 0
-    private var continuation: AsyncStream<ScreenSharingViewerEvent>.Continuation?
-
-    func connect(_ display: String) -> AsyncStream<ScreenSharingViewerEvent> {
-      connects += 1
-      let (stream, continuation) = AsyncStream<ScreenSharingViewerEvent>.makeStream()
-      self.continuation = continuation
-      continuation.onTermination = { [terminated] _ in terminated.signal() }
-      connected.signal()
-      return stream
-    }
-
-    func idle() async {
-      idling.signal()
-      if holdsStop { await stopFinished.wait() }
-    }
-
-    func send(_ event: ScreenSharingViewerEvent) { continuation?.yield(event) }
-    func finish() { continuation?.finish() }
-  }
-
-  @MainActor
-  private final class Pane {
-    let runner = FakeRunner()
-    let share: ScreenSharingViewerRegistry.Share
-    let log = ScreenSharingEventLog()
-    private var consumer: Task<Void, Never>?
-
-    init(
-      _ registry: ScreenSharingViewerRegistry, machine: String = "studio", role: ScreenSharingViewerRole = .tab
-    ) {
-      share = registry.share(machineId: machine, paneId: UUID(), role: role, runner: runner)
-    }
-
-    func show(visible: Bool = true) {
-      share.setVisible(visible)
-      let stream = share.connect("display")
-      consumer = Task { @MainActor [log] in
-        for await event in stream { log.append(event) }
-        log.finish()
-      }
-    }
-
-    func leave() async {
-      consumer?.cancel()
-      await consumer?.value
-    }
-  }
-
   private let registry = ScreenSharingViewerRegistry()
   private let session = FakeMediaSession()
   private let surface = FakeSurface()
@@ -73,21 +18,21 @@ struct ScreenSharingViewerRegistryTests {
   }
 
   @Test func panesShowingTheSameDesktopShareTheFirstPanesConnection() async {
-    let first = Pane(registry)
-    let second = Pane(registry)
-    let otherMachine = Pane(registry, machine: "laptop")
+    let first = RegistryPane(registry)
+    let second = RegistryPane(registry)
+    let otherMachine = RegistryPane(registry, machine: "laptop")
     first.show()
     second.show(visible: false)
     otherMachine.show()
     await first.runner.connected.wait()
     await otherMachine.runner.connected.wait()
     await awaitObserved { second.log.events == [.elsewhere(nil)] }
-    #expect(first.runner.connects == 1 && second.runner.connects == 0)
+    #expect(first.runner.displays == ["display"] && second.runner.displays.isEmpty)
   }
 
   @Test func showingAnotherPaneMovesTheLiveViewAfterReleasingControl() async throws {
-    let first = Pane(registry)
-    let second = Pane(registry)
+    let first = RegistryPane(registry)
+    let second = RegistryPane(registry)
     first.show()
     second.show(visible: false)
     await first.runner.connected.wait()
@@ -108,15 +53,15 @@ struct ScreenSharingViewerRegistryTests {
   }
 
   @Test func hidingTheSponsorKeepsItsConnectionButClosingItReconnectsUnderAnotherPane() async {
-    let sponsor = Pane(registry)
-    let viewer = Pane(registry)
+    let sponsor = RegistryPane(registry)
+    let viewer = RegistryPane(registry)
     sponsor.show()
     viewer.show(visible: false)
     await sponsor.runner.connected.wait()
     sponsor.runner.send(.opened(endpoint()))
     await sponsor.leave()
     await awaitObserved { viewer.log.events.contains { if case .opened = $0 { true } else { false } } }
-    #expect(sponsor.runner.terminated.value == 0 && viewer.runner.connects == 0)
+    #expect(sponsor.runner.terminated.value == 0 && viewer.runner.displays.isEmpty)
 
     sponsor.share.retire()
 
@@ -126,7 +71,7 @@ struct ScreenSharingViewerRegistryTests {
   }
 
   @Test func theLastPaneLeavingStopsTheConnectionBeforeANewOneStarts() async {
-    let first = Pane(registry)
+    let first = RegistryPane(registry)
     first.runner.holdsStop = true
     first.show()
     await first.runner.connected.wait()
@@ -134,16 +79,16 @@ struct ScreenSharingViewerRegistryTests {
     await first.runner.terminated.wait()
     await first.runner.idling.wait()
 
-    let next = Pane(registry)
+    let next = RegistryPane(registry)
     next.show()
-    #expect(next.runner.connects == 0)
+    #expect(next.runner.displays.isEmpty)
     first.runner.stopFinished.signal()
     await next.runner.connected.wait()
   }
 
   @Test func aWatcherMirrorsTheLiveEndpointWithoutEverTakingIt() async {
-    let tab = Pane(registry)
-    let watcher = Pane(registry, role: .watcher)
+    let tab = RegistryPane(registry)
+    let watcher = RegistryPane(registry, role: .watcher)
     tab.show(visible: false)
     watcher.show()
     await tab.runner.connected.wait()
@@ -161,8 +106,8 @@ struct ScreenSharingViewerRegistryTests {
 
   @Test func theStreamPlaysSoundOnlyWhileAPaneOtherThanAWatcherShowsIt() async throws {
     session.supportsAudio = true
-    let watcher = Pane(registry, role: .watcher)
-    let tab = Pane(registry)
+    let watcher = RegistryPane(registry, role: .watcher)
+    let tab = RegistryPane(registry)
     watcher.show()
     await watcher.runner.connected.wait()
     let endpoint = endpoint(sound: false)
@@ -181,8 +126,8 @@ struct ScreenSharingViewerRegistryTests {
   }
 
   @Test func aDesktopWindowKeepsTheStreamOverATabUntilItCloses() async {
-    let tab = Pane(registry)
-    let window = Pane(registry, role: .window)
+    let tab = RegistryPane(registry)
+    let window = RegistryPane(registry, role: .window)
     tab.show()
     await tab.runner.connected.wait()
     let endpoint = endpoint()
@@ -201,9 +146,9 @@ struct ScreenSharingViewerRegistryTests {
   }
 
   @Test func aPaneWaitingOnAMachineHearsWhenItsDesktopStartsStreaming() async {
-    let watcher = Pane(registry, role: .watcher)
-    let otherMachine = Pane(registry, machine: "laptop")
-    let window = Pane(registry, role: .window)
+    let watcher = RegistryPane(registry, role: .watcher)
+    let otherMachine = RegistryPane(registry, machine: "laptop")
+    let window = RegistryPane(registry, role: .window)
     let heard = ScreenSharingEventLog()
     let listener = Task { @MainActor in
       for await _ in watcher.share.liveStreams() { heard.append(.ready) }
@@ -220,13 +165,53 @@ struct ScreenSharingViewerRegistryTests {
 
     await awaitObserved { heard.events.count == 1 }
     listener.cancel()
-    var late = watcher.share.liveStreams().makeAsyncIterator()
+    var late = RegistryPane(registry, role: .watcher).share.liveStreams().makeAsyncIterator()
     #expect(await late.next() != nil)
   }
 
+  @Test func aPaneThatFoundAnotherDisplayJoinsTheMachinesOneConnection() async {
+    let preview = RegistryPane(registry, role: .watcher)
+    let tab = RegistryPane(registry)
+    let window = RegistryPane(registry, role: .window)
+    preview.show("stand-in")
+    await preview.runner.connected.wait()
+    let endpoint = endpoint()
+    preview.runner.send(.opened(endpoint))
+    await awaitObserved { preview.log.events == [.elsewhere(nil), .elsewhere(endpoint)] }
+
+    tab.show("virtual", visible: false)
+    window.show("virtual")
+
+    await awaitObserved { window.log.events == [.opened(endpoint)] && tab.log.events.count == 2 }
+    expectNoDifference(tab.log.events, [.opened(endpoint), .elsewhere(endpoint)])
+    expectNoDifference(preview.log.events, [.elsewhere(nil), .elsewhere(endpoint)])
+    #expect(preview.runner.displays == ["stand-in"] && tab.runner.displays.isEmpty && window.runner.displays.isEmpty)
+  }
+
+  @Test func choosingAnotherDisplayMovesTheMachinesConnectionForEveryPane() async {
+    let preview = RegistryPane(registry, role: .watcher)
+    let window = RegistryPane(registry, role: .window)
+    preview.show()
+    await preview.runner.connected.wait()
+    let first = endpoint()
+    preview.runner.send(.opened(first))
+    window.show()
+    await awaitObserved { window.log.events == [.opened(first)] }
+
+    window.show("second", switching: true)
+
+    await preview.runner.connected.wait(for: 2)
+    #expect(preview.runner.idling.value == 1 && window.runner.displays.isEmpty)
+    expectNoDifference(preview.runner.displays, ["display", "second"])
+    let second = endpoint()
+    preview.runner.send(.opened(second))
+    await awaitObserved { window.log.events.last == .opened(second) && preview.log.events.last == .elsewhere(second) }
+    expectNoDifference(preview.log.events, [.elsewhere(nil), .elsewhere(first), .reconnecting, .elsewhere(second)])
+  }
+
   @Test func aHostEndEndsEveryPanesStream() async {
-    let first = Pane(registry)
-    let second = Pane(registry)
+    let first = RegistryPane(registry)
+    let second = RegistryPane(registry)
     first.show()
     second.show(visible: false)
     await first.runner.connected.wait()

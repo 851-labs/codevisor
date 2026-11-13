@@ -85,6 +85,7 @@ public struct ScreenSharingViewer {
         if state.phase == .elsewhere { state.phase = .connecting }
         state.mirror = nil
         state.endpoint = endpoint
+        showDisplay(of: endpoint, &state)
         state.lease = ControlLease.State(endpoint: endpoint.id)
         let id = endpoint.id
         let display = state.displays.first(where: { $0.id == state.selectedDisplayId })
@@ -130,6 +131,7 @@ public struct ScreenSharingViewer {
         state.phase = .elsewhere
         state.connectStep = nil
         state.mirror = mirror
+        if let mirror { showDisplay(of: mirror, &state) }
         state.message = nil
         return .cancel(id: CancelID.controlEvents)
 
@@ -161,7 +163,7 @@ public struct ScreenSharingViewer {
 
       case .displaySelected(let id):
         guard state.displays.contains(where: { $0.id == id }) else { return .none }
-        return select(id, &state)
+        return select(id, &state, switchingDisplay: true)
 
       case .hiddenGraceExpired:
         guard !state.visible else { return .none }
@@ -260,13 +262,18 @@ public struct ScreenSharingViewer {
       .cancellable(id: CancelID.connection, cancelInFlight: true))
   }
 
-  private func select(_ id: String, _ state: inout State) -> Effect<Action> {
+  private func select(_ id: String, _ state: inout State, switchingDisplay: Bool = false) -> Effect<Action> {
     if state.preferences.preferredDisplayId != id {
       state.preferences.preferredDisplayId = id
       state.preferencesRevision += 1
     }
     state.selectedDisplayId = id
-    return connect(&state)
+    return connect(&state, switchingDisplay: switchingDisplay)
+  }
+
+  private func showDisplay(of endpoint: ScreenSharingViewerEndpoint, _ state: inout State) {
+    guard let id = endpoint.displayId, state.displays.contains(where: { $0.id == id }) else { return }
+    state.selectedDisplayId = id
   }
 
   private func disconnect(_ state: inout State) -> Effect<Action> {
@@ -282,7 +289,7 @@ public struct ScreenSharingViewer {
     [.loading, .connecting, .elsewhere, .reconnecting, .viewing].contains(phase)
   }
 
-  private func connect(_ state: inout State) -> Effect<Action> {
+  private func connect(_ state: inout State, switchingDisplay: Bool = false) -> Effect<Action> {
     guard let display = state.selectedDisplayId else { return .none }
     dropEndpoint(&state)
     state.phase = .connecting
@@ -290,7 +297,9 @@ public struct ScreenSharingViewer {
     return .merge(
       .cancel(id: CancelID.controlEvents),
       .run { [backend, clock] send in
-        for await event in await backend.connect(display) { await send(.connectionEvent(event)) }
+        let events =
+          if switchingDisplay { await backend.switchDisplay(display) } else { await backend.connect(display) }
+        for await event in events { await send(.connectionEvent(event)) }
         try await clock.sleep(for: ScreenSharingTransientRetry.delay)
         await send(.connectionFinished)
       }

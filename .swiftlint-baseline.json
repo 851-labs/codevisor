@@ -1215,14 +1215,14 @@
     }
   },
   {
-    "text": "  init(session: any ScreenSharingViewingSession, surface: any ScreenSharingViewerSurface, sound: Bool = true) {",
+    "text": "  init(",
     "violation": {
       "location": {
         "character": 3,
         "file": "packages/swift/CodevisorCoreMac/Sources/CodevisorCoreMac/ScreenSharing/ScreenSharingViewerEndpoint.swift",
-        "line": 121
+        "line": 127
       },
-      "reason": "Initializer body should span 50 lines or less excluding comments and whitespace: currently spans 72 lines",
+      "reason": "Initializer body should span 50 lines or less excluding comments and whitespace: currently spans 66 lines",
       "ruleDescription": "Function bodies should not span too many lines",
       "ruleIdentifier": "function_body_length",
       "ruleName": "Function Body Length",
