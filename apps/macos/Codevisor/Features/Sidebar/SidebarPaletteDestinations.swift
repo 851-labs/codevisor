@@ -20,9 +20,12 @@ struct SidebarPaletteDestinations {
   private func workspaceItem(_ item: SidebarWorkspaceListItem) -> CommandPaletteItem {
     let workspace = item.workspace
     let title = SidebarWorkspaceRowLabel.title(for: workspace.name)
-    let details = [rowContent.projectName(for: workspace), remoteMachineName(for: workspace)]
-      .compactMap { $0 }
-      .filter { $0 != title }
+    let details = [
+      rowContent.projectName(onServer: workspace.serverId, projectId: workspace.projectId),
+      remoteMachineName(for: workspace),
+    ]
+    .compactMap { $0 }
+    .filter { $0 != title }
     return CommandPaletteItem(
       id: "workspace:\(workspace.id)", title: title,
       subtitle: details.isEmpty ? nil : details.joined(separator: " · "),

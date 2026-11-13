@@ -33,6 +33,20 @@ struct SidebarRowStatusesTests {
   private let asking = SidebarChatActivity(request: .input)
   private let approving = SidebarChatActivity(request: .approval)
 
+  @Test("An agent's own row reads the same as its workspace row would: its own state, then a busy sub-agent")
+  func agentRowStatus() {
+    let helper = subAgent()
+    let activities = [helper.id: working]
+    let status = { (chat: ChatSession, known: [UUID: SidebarChatActivity]) in
+      SidebarRowStatuses.status(of: chat, among: [main, helper]) { known[$0.id] ?? SidebarChatActivity() }
+    }
+
+    #expect(status(helper, activities) == .working(since: nil))
+    #expect(status(main, activities) == .waiting)
+    #expect(status(main, [main.id: asking, helper.id: working]) == .input)
+    #expect(status(main, [:]) == nil)
+  }
+
   @Test func idleChatsShowNothing() {
     #expect(status([main.id: SidebarChatActivity()]) == nil)
   }

@@ -78,6 +78,10 @@ public struct ChatSession: Identifiable, Sendable, Codable, Equatable {
     isDetached ? nil : createdByAgent
   }
 
+  public var parentAgent: AgentReference? {
+    isDetached ? nil : createdByAgent ?? forkedFromAgent
+  }
+
   public var hasAgentSession: Bool {
     agentSessionId?.isEmpty == false
   }

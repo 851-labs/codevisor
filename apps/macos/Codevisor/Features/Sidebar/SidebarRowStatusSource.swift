@@ -14,6 +14,10 @@ struct SidebarRowStatusSource {
       activity: activity(of:), chatless: terminalActivity(of:))
   }
 
+  func status(of chat: ChatSession) -> SidebarRowStatus? {
+    SidebarRowStatuses.status(of: chat, among: environment.projectList.sessions, activity: activity(of:))
+  }
+
   private func activity(of chat: ChatSession) -> SidebarChatActivity {
     SidebarChatActivity(session: chat, isWorking: isWorking(chat), isSettingUp: store?.isSettingUp(chat) == true)
   }

@@ -154,7 +154,7 @@ public final class NavigationWorkspaces {
   static func parentLinks(in projection: NavigationProjection) -> [UUID: WorkspaceParentLink] {
     var parents: [UUID: WorkspaceParentLink] = [:]
     for session in projection.sessions {
-      guard let source = session.isDetached ? nil : session.createdByAgent ?? session.forkedFromAgent,
+      guard let source = session.parentAgent,
         let workspaceId = projection.sessionIndex[session.id],
         let parentId = projection.sessionIndex[source.agentId], parentId != workspaceId,
         projection.workspacesById[workspaceId] != nil,

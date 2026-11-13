@@ -28,6 +28,15 @@ public struct SidebarRowStatuses {
     statuses[workspaceId]
   }
 
+  public static func status(
+    of chat: ChatSession, among chats: [ChatSession], activity: (ChatSession) -> SidebarChatActivity
+  ) -> SidebarRowStatus? {
+    let hasBusySubAgent = chats.contains {
+      !$0.isArchived && $0.ownerAgent?.agentId == chat.id && activity($0).isBusy
+    }
+    return status(own: activity(chat), hasBusySubAgent: hasBusySubAgent)
+  }
+
   private static func status(own: SidebarChatActivity?, hasBusySubAgent: Bool) -> SidebarRowStatus? {
     switch own?.request {
     case .input: return .input
