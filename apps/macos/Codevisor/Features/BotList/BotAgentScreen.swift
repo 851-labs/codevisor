@@ -55,6 +55,17 @@ extension AppEnvironment {
     return chat
   }
 
+  func hasOpenPage(_ bot: Bot) -> Bool {
+    botThreads.openThread(of: bot) != nil || openAgentChat(of: bot) != nil
+  }
+
+  func leavesCoveredByBotPage(in workspace: Workspace) -> Set<UUID> {
+    guard let bot = bots.bot(forWorkspace: workspace.id, serverId: workspace.serverId), hasOpenPage(bot),
+      let conversation = workspace.centerTree.groupId(containingChat: bot.sessionId)
+    else { return [] }
+    return Set(workspace.centerTree.allGroups.map(\.id)).subtracting([conversation])
+  }
+
   func botShowing(_ chat: ChatSession) -> Bot? {
     var current = chat
     var seen: Set<UUID> = [chat.id]

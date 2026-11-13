@@ -88,6 +88,9 @@ struct SessionContainerView: View {
       .onChange(of: floatingLayout, initial: true) { _, _ in
         dockStaleFloatingPanes()
       }
+      .onChange(of: leavesCoveredByPage) { before, after in
+        showPage(covering: after, uncovering: before.subtracting(after))
+      }
       .modifier(
         CenterTabRequests(store: store, workspaceId: workspace.id, onClose: closeCenterTab)
       )
@@ -168,7 +171,8 @@ struct SessionContainerView: View {
 
   private func setSelectedPanesVisible(_ visible: Bool) {
     let workspace = selectedWorkspace
-    for leaf in workspace.selectedCenterTab?.root.allGroups ?? [] {
+    let covered = leavesCoveredByPage
+    for leaf in workspace.selectedCenterTab?.root.allGroups ?? [] where !covered.contains(leaf.id) {
       let key = SessionStore.CenterLeafKey(workspaceId: workspace.id, groupId: leaf.id)
       store.centerLeafGroups[key]?.selectedPane?.visibilityChanged(visible)
     }
@@ -189,7 +193,7 @@ struct SessionContainerView: View {
         centerGroup: activeCenterModel(in: workspace),
         focus: sessionFocus,
         onWorkspaceCommand: handleWorkspaceCommand,
-        centerTree: floatingLayout.visibleTree(liveCenterTree ?? workspace.centerTree),
+        centerTree: visibleTree(liveCenterTree ?? workspace.centerTree),
         primaryLeafId: session.flatMap { workspace.centerTree.groupId(containingChat: $0.id) },
         activeLeafId: activeLeafId,
         centerLeafModel: { leafId in configuredCenterModel(leafId: leafId) },
@@ -202,11 +206,11 @@ struct SessionContainerView: View {
         openingSplit: openingSplit,
         onSplitOpeningFinished: finishSplitOpening,
         onCenterTreeChanged: { visible in
-          let tree = restoringFloatingLeaves(visible)
+          let tree = restoringHiddenLeaves(visible)
           liveCenterTree = tree
           saveSelectedTree(tree, workspaceId: workspace.id)
         },
-        onCenterTreeLiveChanged: { visible in liveCenterTree = restoringFloatingLeaves(visible) }
+        onCenterTreeLiveChanged: { visible in liveCenterTree = restoringHiddenLeaves(visible) }
       )
       .overlay { floatingPaneOverlay }
       .environment(\.usesSlimComposer, isTabless)

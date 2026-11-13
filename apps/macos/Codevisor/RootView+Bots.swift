@@ -17,7 +17,7 @@ extension RootView {
   var openBotThread: OpenBotThread? {
     guard case let .bot(serverId, botId) = selection,
       let bot = environment.bots.bot(serverId: serverId, id: botId),
-      environment.botThreads.openThread(of: bot) != nil || environment.openAgentChat(of: bot) != nil
+      environment.hasOpenPage(bot)
     else { return nil }
     return OpenBotThread(botName: bot.name) { [botThreads = environment.botThreads] in
       botThreads.closePage(of: bot)

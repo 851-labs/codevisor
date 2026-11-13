@@ -10,14 +10,6 @@ public struct WorkspaceFloatingLayout: Equatable {
     stale = flagged.subtracting(self.floating)
   }
 
-  public func visibleTree(_ tree: SplitNode) -> SplitNode {
-    SplitTreeVisibility.visible(tree, hiding: floating) ?? tree
-  }
-
-  public func restoring(_ visible: SplitNode, in full: SplitNode) -> SplitNode {
-    SplitTreeVisibility.restoring(floating, in: full, from: visible)
-  }
-
   public func canFloat(_ leafId: UUID, in tree: SplitNode) -> Bool {
     let docked = Set(tree.allGroups.map(\.id)).subtracting(floating)
     return docked.contains(leafId) && docked.count > 1
