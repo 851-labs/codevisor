@@ -17,6 +17,16 @@ import {
 
 const run = <A, E>(effect: Effect.Effect<A, E>): Promise<A> => Effect.runPromise(effect)
 
+const ready = (id: string): Harness => ({
+  id,
+  name: id,
+  symbolName: "terminal",
+  source: "registry",
+  launchKind: "executable",
+  enabled: true,
+  readiness: { state: "ready", path: `/usr/local/bin/${id}` }
+})
+
 const directories: string[] = []
 const databases: CodevisorDatabaseService[] = []
 
@@ -129,6 +139,28 @@ describe("harness authentication decoration", () => {
       auth: { state: "unauthenticated" }
     })
     expect(probeHarnessAuth).not.toHaveBeenCalled()
+  })
+
+  it("gives Claude no account for the machine's own profile, unlike other harnesses", async () => {
+    const directory = mkdtempSync(join(tmpdir(), "codevisor-auth-managed-only-"))
+    directories.push(directory)
+    const db = await run(
+      makeDatabase({ filename: join(directory, "codevisor.sqlite"), serverId: "test" })
+    )
+    databases.push(db)
+    const manager = makeHarnessAuthManager({
+      agents: fakeAgentRuntime(),
+      dataDir: directory,
+      db,
+      terminal: fakeTerminalManager(),
+      resolveEnv: () => Promise.resolve({ HOME: directory })
+    })
+    const [claude] = await manager.decorateHarnessesFromStoredState([ready("claude-code")])
+    await manager.decorateHarnessesFromStoredState([ready("gemini")])
+
+    expect(claude?.enabled).toBe(false)
+    expect(await run(db.listHarnessAccounts("claude-code"))).toEqual([])
+    expect(await run(db.listHarnessAccounts("gemini"))).toMatchObject([{ profileKind: "default" }])
   })
 
   it("carries the active account's failure onto the harness auth", async () => {

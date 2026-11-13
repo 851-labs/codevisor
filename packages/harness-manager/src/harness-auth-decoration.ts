@@ -13,6 +13,8 @@ export type HarnessAuthDecoration = Pick<
   readonly authSnapshot: (harnessId: string) => Promise<HarnessAuth>
 }
 
+const MANAGED_ONLY_HARNESSES: ReadonlySet<string> = new Set(["claude-code"])
+
 const defaultAccountLabel = (harness: Harness): string => {
   if (harness.id === "pi") return "Pi configuration"
   if (harness.id === "opencode") return "Existing OpenCode profile"
@@ -26,7 +28,9 @@ export const makeHarnessAuthDecoration = (
   const { acpLoginMethods, catalog, config, persistProbe, publicAccount, refreshes } = core
   const { probeAccount } = probes
 
-  const ensureDefault = async (harness: Harness): Promise<HarnessAccountRecord> => {
+  const ensureDefault = async (harness: Harness): Promise<HarnessAccountRecord | undefined> => {
+    if (MANAGED_ONLY_HARNESSES.has(harness.id)) return undefined
+
     const existing = (await run(config.db.listHarnessAccounts(harness.id))).find(
       (account) => account.profileKind === "default"
     )
@@ -39,7 +43,6 @@ export const makeHarnessAuthDecoration = (
         authState: "checking",
         canLogin:
           harness.id === "codex" ||
-          harness.id === "claude-code" ||
           harness.id === "cursor" ||
           harness.id === "pi" ||
           harness.id === "opencode" ||
@@ -198,6 +201,15 @@ export const makeHarnessAuthDecoration = (
     )
   }
 
+  const refreshForMode = async (
+    account: HarnessAccountRecord,
+    mode: HarnessAuthRefresh | "stored"
+  ): Promise<void> => {
+    if (mode === "force") await refreshAccount(account, true)
+    else if (mode === "settle") await refreshAccount(account, false)
+    else if (mode === "passive") void refreshAccount(account, false).catch(() => undefined)
+  }
+
   const decorateHarnessesWithMode = async (
     harnesses: ReadonlyArray<Harness>,
     mode: HarnessAuthRefresh | "stored"
@@ -212,13 +224,8 @@ export const makeHarnessAuthDecoration = (
         const account =
           (await run(config.db.listHarnessAccounts(harness.id))).find((row) => row.isActive) ??
           fallback
-        if (mode === "force") {
-          await refreshAccount(account, true)
-        } else if (mode === "settle") {
-          await refreshAccount(account, false)
-        } else if (mode === "passive") {
-          void refreshAccount(account, false).catch(() => undefined)
-        }
+        if (account !== undefined) await refreshForMode(account, mode)
+
         const auth = await authSnapshot(harness.id)
         const usable = auth.state === "authenticated" || auth.state === "notRequired"
         return { ...harness, desiredEnabled, enabled: desiredEnabled && usable, auth }
