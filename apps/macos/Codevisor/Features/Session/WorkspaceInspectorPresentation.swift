@@ -141,7 +141,7 @@ struct WorkspaceInspectorPresentation: ViewModifier {
       for: workspace, project: inspected.project, environment: environment)
     return WorkspaceInspectorView(
       workspace: workspace,
-      project: inspected.project,
+      project: chat.flatMap(project(of:)) ?? inspected.project,
       branch: place.branch,
       worktreeName: place.worktreeName,
       pullRequest: place.pullRequest,
@@ -250,10 +250,14 @@ struct WorkspaceInspectorPresentation: ViewModifier {
       branch: SidebarGitLookups.head(of: git), worktreeName: checkout.worktreeName, pullRequest: git.pullRequest)
   }
 
+  private func project(of chat: ChatSession) -> Project? {
+    environment.projectList.projects.first { $0.serverId == chat.serverId && $0.id == chat.projectId }
+  }
+
   private func harnessChat(for inspected: Inspected) -> ChatSession? {
     let workspace = inspected.workspace
     return workspace.focusedChatSessionId.flatMap {
-      environment.projectList.session($0, serverId: workspace.serverId)
+      environment.projectList.chat($0, preferring: workspace.serverId)
     } ?? inspected.chat
   }
 
@@ -272,7 +276,7 @@ struct WorkspaceInspectorPresentation: ViewModifier {
 
   private func mainChat(of workspace: Workspace) -> ChatSession? {
     environment.workspaces.mainFirstChatSessionIds(in: workspace).lazy.compactMap {
-      environment.projectList.session($0, serverId: workspace.serverId)
+      environment.projectList.chat($0, preferring: workspace.serverId)
     }.first
   }
 

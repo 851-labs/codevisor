@@ -55,7 +55,7 @@ extension SessionContainerView {
     model.onPaneClosed = { descriptor in
       if descriptor.kind == .chat {
         if let closedSessionId = descriptor.chatSessionId {
-          if let closed = environment.projectList.session(closedSessionId, serverId: selectedWorkspace.serverId) {
+          if let closed = environment.projectList.chat(closedSessionId, preferring: selectedWorkspace.serverId) {
             environment.closeSession(closed)
           }
         } else {
@@ -188,7 +188,7 @@ extension SessionContainerView {
 
   func chatPaneTitle(_ descriptor: PaneDescriptorState) -> String {
     guard let id = descriptor.chatSessionId else { return descriptor.name }
-    let chat = environment.projectList.session(id, serverId: selectedWorkspace.serverId)
+    let chat = environment.projectList.chat(id, preferring: selectedWorkspace.serverId)
     return chat.map(selectedWorkspace.title(ofChat:)) ?? descriptor.name
   }
 }

@@ -22,16 +22,19 @@ public struct PaneChatResolver {
     self.machines = machines
   }
 
-  public func chat(_ sessionId: UUID, on machineId: String) -> PaneChat {
-    if let listed = listedChat(sessionId, on: machineId) { return listed }
+  public func chat(_ sessionId: UUID, on hostMachineId: String, machineKey: String? = nil) -> PaneChat {
+    let machineId = machineKey.flatMap(machines.machineId(forSyncKey:)) ?? hostMachineId
+    if let listed = listedChat(sessionId, preferring: machineId) { return listed }
     guard machines.availability(for: machineId) != .ready else { return .missing }
 
     return isOffline(machineId) ? .offline(machine(machineId)) : .connecting(machine(machineId))
   }
 
-  private func listedChat(_ sessionId: UUID, on machineId: String) -> PaneChat? {
-    guard let session = projectList.session(sessionId, serverId: machineId),
-      let project = projectList.projects.first(where: { $0.serverId == machineId && $0.id == session.projectId })
+  private func listedChat(_ sessionId: UUID, preferring machineId: String) -> PaneChat? {
+    guard let session = projectList.chat(sessionId, preferring: machineId),
+      let project = projectList.projects.first(where: {
+        $0.serverId == session.serverId && $0.id == session.projectId
+      })
     else { return nil }
     return .ready(session, project)
   }

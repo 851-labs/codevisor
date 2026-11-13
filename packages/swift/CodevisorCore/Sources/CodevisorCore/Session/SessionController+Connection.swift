@@ -302,7 +302,7 @@ extension SessionController {
 
     var preloadedTranscript: ServerTranscriptPage?
     var persistedRuntime: ServerSessionRuntimeMetadata?
-    let workspaceId = hostWorkspaceId
+    let workspaceId = hostWorkspaceIsOnAnotherMachine ? nil : hostWorkspaceId
     let transport: ServerSessionTransport
     let model: SessionModel
     let reusesCachedDisplay: Bool

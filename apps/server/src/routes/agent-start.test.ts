@@ -304,7 +304,12 @@ describe("POST /v1/agents", () => {
       (await startAgent({ callerAgentId: callerInWorkspace, standalone: true })).body
     )
 
+    const grandchild = decode(StartedAgent)(
+      (await startAgent({ callerAgentId: owned.agentId })).body
+    )
+
     expect(owned.workspaceId).toBeUndefined()
+    expect(grandchild.workspaceId).toBeUndefined()
     expect(await run(services.db.getSessionSummary(owned.agentId))).toMatchObject({
       createdByAgentId: callerInWorkspace,
       worktreeName: owned.worktreeName

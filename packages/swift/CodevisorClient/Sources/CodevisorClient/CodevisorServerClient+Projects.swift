@@ -247,6 +247,7 @@ private struct UpsertWorkspacePaneBody: Encodable {
   var title: String
   var resourceKind: String?
   var resourceId: String?
+  var resourceServerId: String?
   var metadata: String?
   var createdAt: String
 
@@ -257,6 +258,7 @@ private struct UpsertWorkspacePaneBody: Encodable {
     title = pane.title
     resourceKind = pane.resourceKind
     resourceId = pane.resourceId
+    resourceServerId = pane.resourceServerId
     metadata = pane.metadata
     createdAt = pane.createdAt
   }

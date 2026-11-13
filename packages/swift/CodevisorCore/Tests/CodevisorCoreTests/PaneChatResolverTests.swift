@@ -38,4 +38,18 @@ struct PaneChatResolverTests {
 
     #expect(resolver.chat(sessionId, on: studio.id) == .missing)
   }
+
+  @Test("A chat pane shows its chat from whichever machine runs it, not only the workspace's machine")
+  func chatOnAnotherMachine() async {
+    let machines = await machines(listingChatOn: ["laptop"])
+    let resolver = PaneChatResolver(projectList: machines.projectList, machines: machines)
+
+    guard case let .ready(chat, project) = resolver.chat(sessionId, on: studio.id) else {
+      Issue.record("The chat on the laptop was not found")
+      return
+    }
+
+    #expect(chat.serverId == "laptop")
+    #expect(project.serverId == "laptop")
+  }
 }

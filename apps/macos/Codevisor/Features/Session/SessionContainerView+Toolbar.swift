@@ -104,7 +104,7 @@ extension SessionContainerView {
     guard let descriptor = activePaneDescriptor, workspace.isMainChatPane(descriptor),
       let id = descriptor.chatSessionId
     else { return nil }
-    return environment.projectList.session(id, serverId: workspace.serverId)
+    return environment.projectList.chat(id, preferring: workspace.serverId)
   }
 
   private func title(renaming chat: ChatSession) -> Binding<String> {

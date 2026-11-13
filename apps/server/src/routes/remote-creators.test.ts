@@ -4,7 +4,8 @@ import {
   FLEET_CALLER_HEADER,
   FLEET_SESSION_EVENT_PATH,
   StartedAgent,
-  decode
+  decode,
+  type MachineCallOrigin
 } from "@codevisor/api"
 import { describe, expect, it } from "vitest"
 
@@ -22,7 +23,6 @@ import {
   startFleet,
   stranger,
   studio,
-  workspaceOf,
   type Answer,
   type FleetMachine
 } from "./fleet-test-support.js"
@@ -39,6 +39,9 @@ const failureOf = (pending: Promise<unknown>): Promise<string> =>
     () => "",
     (cause: unknown) => String(cause)
   )
+
+const isArchived = async (machine: FleetMachine, sessionId: string): Promise<boolean> =>
+  (await run(machine.services.db.getSessionSummary(sessionId))).isArchived === true
 
 const sessionCount = async (machine: FleetMachine) =>
   (await run(machine.services.db.listSessions)).length
@@ -83,12 +86,29 @@ describe("agents started from another machine", () => {
 
     expect(decode(StartedAgent)(started).subscribed).toBe(true)
     expect(child).toMatchObject({ createdByAgentId: parent.id, createdByAgentMachineId: studio.id })
-    expect(await workspaceOf(remote, child)).not.toHaveProperty("botId")
+    expect(child.workspaceId).toBeUndefined()
+    expect(await run(remote.services.db.listWorkspaces)).toEqual([])
     const opening = `<codevisor-event machine="Laptop" machineId="${laptop.id}" type="session.turn_ended" agentId="${child.id}" title="Fix the laptop"`
     expect(reports()).toEqual([
       expect.stringMatching(new RegExp(`^${escapeRegExp(opening)}.*\\nEcho: one\\n`, "s")),
       expect.stringMatching(new RegExp(`^${escapeRegExp(opening)}.*\\nEcho: two\\n`, "s"))
     ])
+  })
+
+  it("get a workspace of their own only when a bot on the other machine started them", async () => {
+    const { home, remote, parentOrigin } = await startFleet()
+    const start = (origin: MachineCallOrigin) =>
+      home.machines
+        .invoke(laptop.id, "codevisor.agents.start", startArgs("go"), origin)
+        .then((started) => startedSession(remote, started))
+
+    const byAgent = await start(parentOrigin)
+    const byBot = await start({ ...parentOrigin, botId: "bot-on-studio" })
+
+    expect(byAgent.workspaceId).toBeUndefined()
+    expect((await run(remote.services.db.listWorkspaces)).map((workspace) => workspace.id)).toEqual(
+      [byBot.workspaceId]
+    )
   })
 
   it("refuse a creator on another machine unless the call comes from that machine", async () => {
@@ -230,7 +250,7 @@ describe("archiving an agent whose agents run on another machine", () => {
     expect(resultOf(fromLaptop.body)).toEqual({ archived: 0 })
     expect([unverified.status, malformed.status]).toEqual([403, 400])
     expect(resultOf(fromCreatorMachine.body)).toEqual({ archived: 1 })
-    expect((await workspaceOf(remote, child))?.isArchived).toBe(true)
+    expect(await isArchived(remote, child.id)).toBe(true)
   })
 
   it("sends the archive to the other machine when its workspace is archived", async () => {
@@ -247,7 +267,7 @@ describe("archiving an agent whose agents run on another machine", () => {
 
     await post(home, `/v1/workspaces/${parent.workspaceId}`, { isArchived: true }, "PATCH")
 
-    await waitFor(async () => (await workspaceOf(remote, child))?.isArchived === true)
+    await waitFor(() => isArchived(remote, child.id))
   })
 })
 

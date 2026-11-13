@@ -15,6 +15,7 @@ nonisolated enum ServerPaneMapping {
       title: pane.name,
       resourceKind: fields.resourceKind,
       resourceId: fields.resourceId,
+      resourceServerId: fields.resourceServerId,
       metadata: fields.metadata,
       createdAt: ServerDateCoding.string(from: createdAt)
     )
@@ -33,6 +34,7 @@ private nonisolated struct PaneFields {
   var paneType: String
   var resourceKind: String?
   var resourceId: String?
+  var resourceServerId: String?
   var metadata: String?
 }
 
@@ -76,14 +78,16 @@ private nonisolated struct PaneFormat: Sendable {
       PaneFields(
         paneType: "chat",
         resourceKind: pane.chatSessionId == nil ? nil : "session",
-        resourceId: pane.chatSessionId?.uuidString
+        resourceId: pane.chatSessionId?.uuidString,
+        resourceServerId: pane.chatMachineKey
       )
     },
     descriptor: { record, id in
       let sessionId = chatSessionId(of: record)
       return PaneDescriptorState(
         id: id, kind: .chat, name: record.title,
-        terminalKey: sessionId?.uuidString ?? id.uuidString, chatSessionId: sessionId)
+        terminalKey: sessionId?.uuidString ?? id.uuidString, chatSessionId: sessionId,
+        chatMachineKey: sessionId == nil ? nil : record.resourceServerId)
     }
   )
 

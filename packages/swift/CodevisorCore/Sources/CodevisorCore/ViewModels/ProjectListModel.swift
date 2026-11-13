@@ -8,9 +8,14 @@ public final class ProjectListModel {
   @ObservationIgnored private var projectedProjects: [Project] = []
   @ObservationIgnored private var cloningProjects: [Project] = []
   public internal(set) var sessions: [ChatSession] = [] {
-    didSet { sessionPositions = Self.positions(of: sessions) }
+    didSet {
+      sessionPositions = Self.positions(of: sessions)
+      sessionPositionsById = Dictionary(
+        sessions.enumerated().map { ($0.element.id, $0.offset) }, uniquingKeysWith: { first, _ in first })
+    }
   }
   @ObservationIgnored private var sessionPositions: [SessionKey: Int] = [:]
+  @ObservationIgnored private var sessionPositionsById: [UUID: Int] = [:]
 
   struct SessionKey: Hashable {
     let serverId: String
@@ -43,6 +48,10 @@ public final class ProjectListModel {
 
   public func session(_ id: UUID, serverId: String) -> ChatSession? {
     sessionPositions[SessionKey(serverId: serverId, id: id)].map { sessions[$0] }
+  }
+
+  public func chat(_ id: UUID, preferring serverId: String) -> ChatSession? {
+    session(id, serverId: serverId) ?? sessionPositionsById[id].map { sessions[$0] }
   }
 
   private func pendingSession(_ id: UUID, serverId: String) -> (session: ChatSession, isExpected: Bool)? {

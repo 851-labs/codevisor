@@ -74,7 +74,7 @@ struct ArchivedWorkspaceRouteView: View {
     switch pane.kind {
     case .chat:
       if let id = pane.chatSessionId,
-        let session = environment.projectList.session(id, serverId: workspace.serverId),
+        let session = environment.projectList.chat(id, preferring: workspace.serverId),
         session.hasAgentSession,
         let project = environment.projectList.projects.first(where: {
           $0.serverId == workspace.serverId && $0.id == session.projectId

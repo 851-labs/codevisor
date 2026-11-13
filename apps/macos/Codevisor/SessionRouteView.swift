@@ -8,6 +8,7 @@ struct SessionRouteView: View {
   let sessionId: UUID
   let onFocusedChatChanged: (UUID) -> Void
   let onDisposition: (WorkspaceRouteDisposition) -> Void
+  var onShownElsewhere: (ChatSession) -> Void = { _ in }
 
   private struct DispositionKey: Equatable {
     let hasSession: Bool
@@ -20,7 +21,9 @@ struct SessionRouteView: View {
     let workspaceId = environment.workspaces.workspaceId(forSession: sessionId)
     let entry = workspaceId.map { environment.navigationStore.workspaceEntries.entry($0) }
     Group {
-      if let session, let project = project(for: session) {
+      if let session, store.hostElsewhere(of: session) != nil {
+        Color.clear.task(id: session.id) { onShownElsewhere(session) }
+      } else if let session, let project = project(for: session) {
         let workspace = entry?.workspace ?? store.workspace(for: session, project: project)
         let controller = store.controller(for: session, project: project)
         SessionContainerView(

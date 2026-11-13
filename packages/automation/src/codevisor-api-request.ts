@@ -219,7 +219,14 @@ const startPayload = (
   if (isFromExternalClient(context.sessionId)) return externalStartPayload(payload, context)
   const remote = parseRemoteSessionKey(context.sessionId)
   if (remote === undefined) return { ...payload, callerAgentId: context.sessionId }
-  return { ...payload, callerAgentId: remote.sessionId, callerAgentMachineId: remote.machineId }
+  return {
+    ...payload,
+    callerAgentId: remote.sessionId,
+    callerAgentMachineId: remote.machineId,
+    ...(context.remoteCaller?.botId === undefined
+      ? {}
+      : { callerBotId: context.remoteCaller.botId })
+  }
 }
 
 const externalStartPayload = (

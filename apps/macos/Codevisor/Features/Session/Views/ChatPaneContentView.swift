@@ -22,7 +22,7 @@ struct ChatPaneContentView: View {
 
   var body: some View {
     if let chatSessionId = role.sessionId(of: descriptor) {
-      switch resolver.chat(chatSessionId, on: hostWorkspace.serverId) {
+      switch resolver.chat(chatSessionId, on: hostWorkspace.serverId, machineKey: descriptor.chatMachineKey) {
       case let .ready(chatSession, chatProject):
         if let bot = conversationBot, let thread = environment.botThreads.openThread(of: bot) {
           threadScreen(thread, of: bot, chat: chatSession, in: chatProject)
