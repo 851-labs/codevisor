@@ -162,10 +162,10 @@ export const assignPaneSession = (
   resourceKind: string | null | undefined,
   resourceId: string | null
 ): void => {
-  if (resourceKind === "session" && resourceId !== null) {
-    sqlite.prepare(sessionWorkspaceSql).run(workspaceId, resourceId)
-    adoptDefaultCheckout(sqlite, workspaceId, resourceId)
-  }
+  if (resourceKind !== "session" || resourceId === null) return
+
+  const moved = sqlite.prepare(sessionWorkspaceSql).run(workspaceId, resourceId, workspaceId)
+  if (moved.changes > 0) adoptDefaultCheckout(sqlite, workspaceId, resourceId)
 }
 
 const firstConflictingPosition = (
@@ -190,4 +190,5 @@ const conflictingPaneSql = {
            and (workspace_id = ? or ? = 'session')`
 }
 
-const sessionWorkspaceSql = "update sessions set workspace_id = ? where id = ?"
+const sessionWorkspaceSql = `update sessions set workspace_id = ?
+  where id = ? and project_id = (select project_id from workspaces where id = ?)`

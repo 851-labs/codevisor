@@ -46,8 +46,9 @@ extension SessionStore {
     else { return ownSelection }
     var workspace = workspace(for: session, project: project)
     let runsElsewhere = workspace.serverId != session.serverId
+    let isGuest = runsElsewhere || workspace.projectId != session.projectId
     let hadChatPane =
-      runsElsewhere
+      isGuest
       ? workspace.tabId(containingChat: session.id) != nil
       : environment.workspaces.workspaceId(forSession: session.id)
         .flatMap { environment.workspaces.workspace(id: $0)?.tabId(containingChat: session.id) } != nil
@@ -67,6 +68,6 @@ extension SessionStore {
       }
     }
     selectDestination(.chat(session.id), in: workspace.id)
-    return runsElsewhere ? .workspace(serverId: workspace.serverId, id: workspace.id) : ownSelection
+    return isGuest ? .workspace(serverId: workspace.serverId, id: workspace.id) : ownSelection
   }
 }
