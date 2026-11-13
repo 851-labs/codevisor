@@ -3,6 +3,7 @@ import { randomUUID } from "node:crypto"
 import type { DetachedAgent, SessionSummary } from "@codevisor/api"
 
 import { appendAndPublish, HttpFailure, run, writeJson } from "../server-context.js"
+import { refuseBotAsAgent } from "./bot-guards.js"
 import type { RouteContext } from "./route-context.js"
 import { applySessionUpdate } from "./session-workspace.js"
 import { findWorkspace, sameId } from "./workspace-lookups.js"
@@ -10,6 +11,7 @@ import { findWorkspace, sameId } from "./workspace-lookups.js"
 export const detachAgent = async (route: RouteContext, agentId: string): Promise<boolean> => {
   const { services, fanout, response } = route
   const agent = await run(services.db.getSessionSummary(agentId))
+  await refuseBotAsAgent(services, agent.id, "detach")
   if (agent.createdByAgentId === undefined) {
     throw new HttpFailure(
       422,

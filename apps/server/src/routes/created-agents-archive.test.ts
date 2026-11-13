@@ -211,6 +211,36 @@ describe("archiving an agent's workspace", () => {
     expect([...(await archivedIds(running))].toSorted()).toEqual(["ws-child", "ws-grandchild"])
   })
 
+  it("refuses an agent that tries to archive or detach a bot", async () => {
+    const running = await setUp()
+    await running.addProject("api-project", "api")
+    const bot = decodeBot((await createBot(running, { projectIds: ["api-project"] })).body)
+    await jsonRequest(running.server, "/v1/sessions", {
+      body: JSON.stringify({
+        id: "beside-bot",
+        projectId: bot.projectId,
+        harnessId: "codex",
+        workspaceId: bot.workspaceId,
+        createdBy: "agent",
+        createdByAgentId: bot.sessionId
+      }),
+      method: "POST"
+    })
+
+    const archived = await jsonRequest(running.server, `/v1/agents/${bot.sessionId}/archive`, {
+      body: JSON.stringify({ callerAgentId: "beside-bot" }),
+      method: "POST"
+    })
+    const detached = await jsonRequest(running.server, `/v1/agents/${bot.sessionId}/detach`, {
+      body: JSON.stringify({}),
+      method: "POST"
+    })
+
+    expect([archived.status, detached.status]).toEqual([409, 409])
+    expect(JSON.stringify(archived.body)).toContain("is a bot")
+    expect(await archivedChats(running)).toEqual([])
+  })
+
   it("archives the agents a bot started when the bot is archived", async () => {
     const running = await setUp()
     await running.addProject("api-project", "api")
