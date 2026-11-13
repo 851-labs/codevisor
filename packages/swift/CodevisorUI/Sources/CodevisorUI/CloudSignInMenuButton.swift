@@ -25,8 +25,7 @@
     func updateNSView(_ button: MenuPushButton, context: Context) {
       context.coordinator.items = items
       button.isEnabled = context.environment.isEnabled
-      button.plainTitle = title
-      button.attributedTitle = MenuButtonTitle.make(title, enabled: button.isEnabled)
+      button.title = title
     }
 
     func sizeThatFits(_ proposal: ProposedViewSize, nsView: MenuPushButton, context: Context) -> CGSize? {
@@ -72,42 +71,8 @@
     }
 
     final class MenuPushButton: NSButton {
-      var plainTitle = ""
-
       override func accessibilityRole() -> NSAccessibility.Role? { .menuButton }
-      override func accessibilityTitle() -> String? { plainTitle }
-      override func accessibilityLabel() -> String? { plainTitle }
     }
   }
 
-  private enum MenuButtonTitle {
-    static func make(_ title: String, enabled: Bool) -> NSAttributedString {
-      let font = NSFont.systemFont(ofSize: NSFont.systemFontSize)
-      let text = NSMutableAttributedString(string: title + " ")
-      text.append(NSAttributedString(attachment: chevron(centeredOn: font)))
-      text.addAttributes(attributes(font: font, enabled: enabled), range: NSRange(location: 0, length: text.length))
-      return text
-    }
-
-    private static func chevron(centeredOn font: NSFont) -> NSTextAttachment {
-      let attachment = NSTextAttachment()
-      let configuration = NSImage.SymbolConfiguration(pointSize: 9, weight: .semibold)
-      guard
-        let image = NSImage(systemSymbolName: "chevron.down", accessibilityDescription: nil)?
-          .withSymbolConfiguration(configuration)
-      else { return attachment }
-
-      attachment.image = image
-      let size = image.size
-      attachment.bounds = CGRect(x: 0, y: (font.capHeight - size.height) / 2, width: size.width, height: size.height)
-      return attachment
-    }
-
-    private static func attributes(font: NSFont, enabled: Bool) -> [NSAttributedString.Key: Any] {
-      let paragraph = NSMutableParagraphStyle()
-      paragraph.alignment = .center
-      let color: NSColor = enabled ? .controlTextColor : .disabledControlTextColor
-      return [.font: font, .foregroundColor: color, .paragraphStyle: paragraph]
-    }
-  }
 #endif

@@ -23,7 +23,7 @@
         items.append(.init(title: "Sign in with Apple", image: symbol("apple.logo")) { signIn(.apple) })
       }
       if cloud.supportsEmailSignIn {
-        items.append(.init(title: "Sign in with Email…", image: symbol("envelope"), action: signInWithEmail))
+        items.append(.init(title: "Sign in with Email", image: symbol("envelope"), action: signInWithEmail))
       }
       if cloud.developmentAccountAvailable {
         items.append(
