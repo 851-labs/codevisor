@@ -98,6 +98,8 @@ extension HomeView {
       BotConversationScreen(
         serverId: serverId, botId: botId, showsHeader: false,
         onOpenDetails: { botEditor = .edit($0) })
+    case let .agent(serverId, sessionId):
+      AgentChatScreen(serverId: serverId, sessionId: sessionId)
     }
   }
 }

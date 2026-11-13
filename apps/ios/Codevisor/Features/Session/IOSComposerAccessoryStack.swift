@@ -5,6 +5,7 @@ import SwiftUI
 
 struct IOSComposerAccessoryStack: View {
   @Environment(\.accessibilityReduceMotion) private var reduceMotion
+  @Environment(AppEnvironment.self) private var environment
   @Bindable var controller: SessionController
   let isComposerExpanded: Bool
   let maximumTodoHeight: CGFloat
@@ -24,9 +25,14 @@ struct IOSComposerAccessoryStack: View {
     controller.configurationValidationError != nil
   }
 
+  private var agents: [ChatSession] {
+    controller.serverSession.map(environment.projectList.children(of:)) ?? []
+  }
+
   private var hasInformationalAccessory: Bool {
     guard !isComposerExpanded else { return false }
     return controller.visibleTodos != nil
+      || !agents.isEmpty
       || visibleGoal != nil
       || (controller.configurationValidationError == nil
         && controller.configurationAdjustmentMessage != nil)
@@ -57,6 +63,11 @@ struct IOSComposerAccessoryStack: View {
   var body: some View {
     VStack(spacing: ComposerGlassStyle.clusterSpacing) {
       if !isComposerExpanded {
+        if !agents.isEmpty {
+          IOSAgentsAccessory(agents: agents, glassNamespace: glassNamespace)
+            .transition(.opacity)
+        }
+
         if let todos = controller.visibleTodos {
           TodoPanelView(
             plan: todos,

@@ -9,6 +9,7 @@ public enum HomeDetailIdentity: Hashable, Sendable {
   case draft(UUID)
   case workspace(UUID)
   case bot(UUID)
+  case agent(UUID)
 }
 
 public struct HomeLayoutTransition: Equatable, Sendable {
@@ -38,6 +39,7 @@ public struct HomeNavigationState: Equatable, Sendable {
     case .newChat: "new_chat"
     case .workspace: "workspace"
     case .bot: "bot"
+    case .agent: "agent"
     }
   }
 
@@ -103,6 +105,8 @@ public struct HomeNavigationState: Equatable, Sendable {
       return .workspace(workspaceId)
     case let .bot(_, botId):
       return .bot(botId)
+    case let .agent(_, sessionId):
+      return .agent(sessionId)
     }
   }
 
