@@ -8,6 +8,8 @@ extension HomeView {
     switch launch {
     case .content:
       sidebarList
+    case .empty where sidebarMode.wrappedValue == .bots:
+      sidebarList
     case .empty, .onboarding:
       refreshableState(allowsStateHitTesting: false) {
         emptyState
