@@ -55,6 +55,12 @@ to skip the confirmation, for example when no terminal is attached. Homebrew use
 | `CODEVISOR_NO_SETUP=1`       | Skip signing in during installation               | setup runs when a terminal is available           |
 | `CODEVISOR_INSTALL_SERVER=1` | Install the server on an Intel Mac without asking | asks for confirmation                             |
 
+## Git
+
+Codevisor needs Git on every machine it runs on. `codevisor setup` and `codevisor auth login` stop
+before connecting a machine that has no Git and print the command that installs it. On a Mac, the
+Codevisor app asks to install Apple's developer tools, which include Git, before it starts.
+
 ## Installing with sudo
 
 The server never runs as root on Linux: agents such as Claude Code refuse to run with root

@@ -62,8 +62,23 @@ extension MachineController {
       markUnreachable(machineId, message: message)
       return .failed
     }
+    await waitForGit(on: machineId, client: client)
+    guard !Task.isCancelled else { return .failed }
     if serverState == .alreadyRunning { rescanHarnesses(client) }
     return nil
+  }
+
+  private func waitForGit(on machineId: String, client: any CodevisorServerClienting) async {
+    let connection = connection(for: machineId)
+    defer { connection.isWaitingForGit = false }
+    while !Task.isCancelled, await isGitMissing(client) {
+      connection.isWaitingForGit = true
+      try? await updateScheduler.sleep(updatePollInterval)
+    }
+  }
+
+  private func isGitMissing(_ client: any CodevisorServerClienting) async -> Bool {
+    (try? await client.health())?.isGitMissing == true
   }
 
   private func unreachable(

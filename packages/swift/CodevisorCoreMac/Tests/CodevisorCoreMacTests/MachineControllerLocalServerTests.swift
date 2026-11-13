@@ -72,9 +72,43 @@ struct MachineControllerLocalServerTests {
     #expect(client.rescans == 1)
   }
 
+  @Test("Holds the local machine behind Git, then connects once the server finds it")
+  func waitsForGit() async throws {
+    let client = RescanCountingClient(git: "missing")
+    let localServer = LocalCodevisorServer(
+      client: client,
+      allowsDevelopmentLaunch: true,
+      entrypoint: URL(fileURLWithPath: "/tmp/main.js"),
+      serverEnvironmentProvider: { [:] },
+      launcher: { _ in Process() }
+    )
+    let polled = TestSignal()
+    let installed = TestSignal()
+    let scheduler = ServerUpdateScheduler(now: { ContinuousClock.now }) { _ in
+      polled.signal()
+      await installed.cancellableWait()
+    }
+    let (controller, _, _) = makeController(client: client, localServer: localServer, updateScheduler: scheduler)
+
+    let preparing = Task { await controller.prepareMachine("local") }
+    await polled.wait()
+    #expect(controller.isWaitingForGit(on: "local"))
+    #expect(controller.availability(for: "local") == .waiting(.starting))
+    #expect(client.rescans == 0)
+
+    client.report(git: "ready")
+    installed.signal()
+    await preparing.value
+    try await waitForSync { client.rescans == 1 }
+    controller.stopEventSync()
+    #expect(!controller.isWaitingForGit(on: "local"))
+    #expect(controller.availability(for: "local") == .ready)
+  }
+
   private func makeController(
     client: any CodevisorServerClienting,
-    localServer: LocalCodevisorServer
+    localServer: LocalCodevisorServer,
+    updateScheduler: ServerUpdateScheduler = .continuous
   ) -> (
     controller: MachineController,
     projectList: ProjectListModel,
@@ -89,7 +123,8 @@ struct MachineControllerLocalServerTests {
       store: store,
       projectList: projectList,
       localServer: localServer,
-      clientFactory: { _ in client }
+      clientFactory: { _ in client },
+      updateScheduler: updateScheduler
     )
     return (controller, projectList, store)
   }
@@ -105,9 +140,15 @@ private final class RescanCountingClient: CodevisorServerClienting, @unchecked S
   private var _rescans = 0
   private var _failNextHealth: Bool
   private var _bootId: String?
+  private var _git: String?
 
-  init(failFirstHealth: Bool = false) {
+  init(failFirstHealth: Bool = false, git: String? = nil) {
     _failNextHealth = failFirstHealth
+    _git = git
+  }
+
+  func report(git: String) {
+    lock.withLock { _git = git }
   }
 
   var rescans: Int { lock.withLock { _rescans } }
@@ -119,17 +160,18 @@ private final class RescanCountingClient: CodevisorServerClienting, @unchecked S
   }
 
   func health() async throws -> ServerHealth {
-    let (failNow, bootId) = lock.withLock {
+    let (failNow, bootId, git) = lock.withLock {
       let fail = _failNextHealth
       _failNextHealth = false
-      return (fail, _bootId)
+      return (fail, _bootId, _git)
     }
     if failNow { throw HealthError() }
     return ServerHealth(
       ok: true,
       version: "0.1.0",
       database: "ready",
-      bootId: bootId
+      bootId: bootId,
+      git: git
     )
   }
 

@@ -56,6 +56,7 @@ const fakeMac = (overrides: Partial<SimulatorEnvironment> = {}) => {
   let now = 0
   const environment: SimulatorEnvironment = {
     platform: "darwin",
+    hasSimulatorTools: async () => true,
     run: async (file, args) => {
       commands.push([file, ...args])
       if (args[0] === "simctl" && args[1] === "list")
@@ -159,6 +160,13 @@ describe("simulator availability", () => {
     })
     expect(await makeSimulators(noXcode.environment).available()).toBe(false)
     expect(await makeSimulators(fakeMac().environment).available()).toBe(true)
+  })
+
+  it("leaves xcrun alone when Apple's simulator tools are not installed", async () => {
+    const mac = fakeMac({ hasSimulatorTools: async () => false })
+
+    expect(await makeSimulators(mac.environment).available()).toBe(false)
+    expect(mac.commands).toEqual([])
   })
 
   it("caches the probe and retries a failed one after 30 seconds", async () => {

@@ -489,6 +489,7 @@
       "dependencies": {
         "@codevisor/agent-runtime": "workspace:*",
         "@codevisor/api": "workspace:*",
+        "@codevisor/worktrees": "workspace:*",
         "yaml": "2.9.0",
       },
       "devDependencies": {

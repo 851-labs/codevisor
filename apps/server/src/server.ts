@@ -8,7 +8,7 @@ import { WebSocketServer } from "ws"
 
 import { archiveJobs } from "./archive-jobs.js"
 import type { BootListener } from "./boot-listener.js"
-import { startFirstRunProjectImport } from "./first-run-project-import.js"
+import { startGitDependentWork } from "./git-readiness.js"
 import { makeAttentionSettleScheduler } from "./infra/attention-settle.js"
 import { BrowserProxy } from "./infra/browser-proxy.js"
 import { ClientControlBroker } from "./infra/client-control.js"
@@ -73,7 +73,6 @@ import { handleRequest } from "./server-router.js"
 import { forwardSharedAccountEvents } from "./shared-account-events.js"
 import { continueAfterUpdate, makeUpdateResumer } from "./update-resume.js"
 import { makeServerUpdateRun } from "./update-run-server.js"
-import { reconcileWorktreeArchives } from "./worktree-reconcile.js"
 
 export * from "./server-context.js"
 export { defaultServerConfig } from "./server-config.js"
@@ -415,19 +414,12 @@ export const startCodevisorServer = (
               return
             }
             app = makeCodevisorServerApp(services, config, fanout)
-            void backfillProjectRepoUrls(
-              services.db,
-              config.id,
-              fanout,
-              services.resolveGitEnvironment
-            ).catch(swallowError)
-            void reconcileWorktreeArchives(services, fanout, config).catch(swallowError)
-            void startFirstRunProjectImport(services, fanout, config)
+            const stopGitWork = startGitDependentWork(services, fanout, config)
             resolve({
               host: config.host,
               port,
               url: `http://${config.host}:${port}`,
-              close: closeServer(server, app)
+              close: closeServer(server, app, stopGitWork)
             })
           }
           const listening = (): void => {
@@ -455,10 +447,15 @@ export const startCodevisorServer = (
 const isAddressInfo = (address: string | AddressInfo | null): address is AddressInfo =>
   typeof address === "object" && address !== null && "port" in address
 
-const closeServer = (server: Server, app: CodevisorServerApp): Effect.Effect<void, ServerError> =>
+const closeServer = (
+  server: Server,
+  app: CodevisorServerApp,
+  stopGitWork: () => void
+): Effect.Effect<void, ServerError> =>
   Effect.tryPromise({
     try: () =>
       new Promise<void>((resolve, reject) => {
+        stopGitWork()
         void Effect.runPromise(app.close)
           .catch(swallowError)
           .finally(() =>

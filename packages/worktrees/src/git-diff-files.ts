@@ -3,7 +3,7 @@ import { finished } from "node:stream"
 
 import type { GitDiffFile } from "@codevisor/api"
 
-import { GitError } from "./git.js"
+import { GitError, gitExecutable } from "./git.js"
 import { withPriority } from "./low-priority.js"
 import { heavyGit } from "./working-state.js"
 
@@ -22,7 +22,7 @@ export const gitBytes = async (
   env: NodeJS.ProcessEnv | undefined,
   input?: string
 ): Promise<Buffer> => {
-  const command = withPriority("git", args, heavyGit.priority)
+  const command = withPriority(gitExecutable(env), args, heavyGit.priority)
   let child!: ChildProcess
   const exited = new Promise<{
     readonly error: Error | null

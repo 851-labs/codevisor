@@ -6,12 +6,20 @@ import { join, resolve as resolvePath } from "node:path"
 import type { BranchDiffTotals, GitHead } from "@codevisor/api"
 
 import { cloneCancelled, nonInteractiveGitEnvironment, parseCloneProgress } from "./git-clone.js"
+import {
+  gitExecutable,
+  gitInstallationFor,
+  gitMissingMessage,
+  GitMissingError
+} from "./git-command.js"
 import { CloneError, classifyCloneFailure, GitError, gitFailureMessage } from "./git-errors.js"
 import { GitCommandOutput, type GitOutputListener } from "./git-output.js"
 import { type CommandPriority, withPriority } from "./low-priority.js"
 
 export { CloneError, type CloneFailureCode, classifyCloneFailure, GitError } from "./git-errors.js"
 export * from "./git-clone.js"
+export * from "./git-command.js"
+export * from "./git-installation.js"
 
 export {
   sanitizeGitOutputLine,
@@ -32,7 +40,7 @@ const git = (
   options: GitRunOptions = {}
 ): Promise<string> =>
   new Promise((resolve, reject) => {
-    const command = withPriority("git", args, options.priority)
+    const command = withPriority(gitExecutable(env), args, options.priority)
     execFile(
       command.command,
       command.args,
@@ -55,7 +63,7 @@ const gitRaw = (
 ): Promise<string> =>
   new Promise((resolve, reject) => {
     execFile(
-      "git",
+      gitExecutable(env),
       args,
       { cwd, ...(env === undefined ? {} : { env }) },
       (error, stdout, stderr) => {
@@ -79,7 +87,8 @@ export const runGit = (
 export const isGitWorkTree = async (dir: string): Promise<boolean> => {
   try {
     return (await git("rev-parse", ["rev-parse", "--is-inside-work-tree"], dir)) === "true"
-  } catch {
+  } catch (cause) {
+    if (cause instanceof GitMissingError) throw cause
     return false
   }
 }
@@ -237,7 +246,7 @@ export const addWorktree = (
     if (startPoint !== undefined) {
       args.push(startPoint)
     }
-    const child = spawn("git", args, {
+    const child = spawn(gitExecutable(env), args, {
       cwd: repoDir,
       ...(env === undefined ? {} : { env })
     })
@@ -276,7 +285,7 @@ export const cloneRepository = (
   signal?: AbortSignal
 ): Promise<void> =>
   new Promise((resolve, reject) => {
-    const child = spawn("git", ["clone", "--progress", "--", url, destination], {
+    const child = spawn(cloneExecutable(env), ["clone", "--progress", "--", url, destination], {
       env: { ...nonInteractiveGitEnvironment(env), GIT_PROGRESS_DELAY: "0", LC_ALL: "C" },
       ...(signal === undefined ? {} : { signal })
     })
@@ -306,6 +315,13 @@ export const cloneRepository = (
       settle(new CloneError(message, classifyCloneFailure(stderrText)))
     })
   })
+
+const cloneExecutable = (env: NodeJS.ProcessEnv): string => {
+  const installation = gitInstallationFor(env)
+  if (installation.state === "missing") throw new CloneError(gitMissingMessage, undefined)
+
+  return installation.path
+}
 
 export const releaseBranch = async (
   repoDir: string,

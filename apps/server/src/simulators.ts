@@ -12,6 +12,7 @@ import {
   type SimulatorSettings,
   type SimulatorSettingsChange
 } from "@codevisor/api"
+import { hasAppleDeveloperTool } from "@codevisor/worktrees"
 import { Schema } from "effect"
 
 import { makeSimulatorDeviceSettings } from "./simulator-device-settings.js"
@@ -33,6 +34,7 @@ export interface SimulatorCommandResult {
 
 export interface SimulatorEnvironment {
   readonly platform: NodeJS.Platform
+  readonly hasSimulatorTools: () => Promise<boolean>
   readonly run: (
     file: string,
     args: ReadonlyArray<string>,
@@ -47,6 +49,7 @@ export interface SimulatorEnvironment {
 
 export const systemSimulatorEnvironment: SimulatorEnvironment = {
   platform: process.platform,
+  hasSimulatorTools: () => Promise.resolve(hasAppleDeveloperTool("simctl")),
   run: (file, args, options) =>
     new Promise((resolve, reject) => {
       execFile(
@@ -149,6 +152,16 @@ export const makeSimulators = (
   const rawList = async (): Promise<RawList> =>
     decodeRawList(JSON.parse((await simctl(["list", "-j"])).toString("utf8")))
 
+  const hasSimulatorRuntimes = async (): Promise<boolean> => {
+    if (!(await environment.hasSimulatorTools())) return false
+
+    try {
+      return parseSimulatorList(await rawList()).runtimes.length > 0
+    } catch {
+      return false
+    }
+  }
+
   const plistJSON = async (path: string): Promise<Readonly<Record<string, unknown>>> =>
     asRecord(
       JSON.parse(
@@ -222,13 +235,7 @@ export const makeSimulators = (
       if (probe !== undefined && now - probe.at < (probe.value ? availableTTL : unavailableTTL))
         return Promise.resolve(probe.value)
       probing ??= (async () => {
-        let value = false
-        try {
-          const list = parseSimulatorList(await rawList())
-          value = list.runtimes.length > 0
-        } catch {
-          value = false
-        }
+        const value = await hasSimulatorRuntimes()
         probe = { value, at: environment.now() }
         probing = undefined
         return value

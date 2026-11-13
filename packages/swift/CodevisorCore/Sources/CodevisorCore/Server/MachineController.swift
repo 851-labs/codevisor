@@ -144,6 +144,7 @@ public final class MachineController {
   public var availabilityByMachineId: [String: ServerAvailability] { connections.availabilityById }
   public var navigationSyncStateByMachineId: [String: NavigationSyncState] { connections.navigationSyncStateById }
   public func availability(for machineId: String) -> ServerAvailability { connections.availability(for: machineId) }
+  public func isWaitingForGit(on machineId: String) -> Bool { connections.isWaitingForGit(on: machineId) }
   public func updateActivity(for machineId: String) -> ServerUpdateActivity? {
     connections.updateActivity(for: machineId)
   }

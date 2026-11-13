@@ -13,6 +13,9 @@ public struct ServerHealth: Decodable, Equatable, Sendable {
   public var sourceRevision: String? = nil
   public var serviceManaged: Bool? = nil
   public var migration: ServerMigrationProgress?
+  public var git: String? = nil
+
+  public var isGitMissing: Bool { git == "missing" }
 
   public init(
     ok: Bool,
@@ -24,7 +27,8 @@ public struct ServerHealth: Decodable, Equatable, Sendable {
     buildNumber: Int? = nil,
     sourceRevision: String? = nil,
     serviceManaged: Bool? = nil,
-    migration: ServerMigrationProgress? = nil
+    migration: ServerMigrationProgress? = nil,
+    git: String? = nil
   ) {
     self.ok = ok
     self.version = version
@@ -36,6 +40,7 @@ public struct ServerHealth: Decodable, Equatable, Sendable {
     self.sourceRevision = sourceRevision
     self.serviceManaged = serviceManaged
     self.migration = migration
+    self.git = git
   }
 }
 

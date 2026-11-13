@@ -1,5 +1,7 @@
 import { spawn } from "node:child_process"
 
+import { gitExecutable } from "@codevisor/worktrees"
+
 export class GitCommandError extends Error {
   constructor(
     readonly args: ReadonlyArray<string>,
@@ -38,7 +40,7 @@ const runGit = (
   options: GitOptions
 ): Promise<Buffer> =>
   new Promise((resolve, reject) => {
-    const child = spawn("git", [...args], {
+    const child = spawn(gitExecutable(options.env), [...args], {
       env: { ...process.env, ...options.env, GIT_TERMINAL_PROMPT: "0" },
       ...(options.cwd === undefined ? {} : { cwd: options.cwd }),
       stdio: ["pipe", "pipe", "pipe"]

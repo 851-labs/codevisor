@@ -1,5 +1,6 @@
 import { spawn } from "node:child_process"
 
+import { gitInstallationFor, gitMissingMessage } from "./git-command.js"
 import { CloneError, classifyCloneFailure, type CloneFailureCode } from "./git-errors.js"
 
 export type CloneStage = "counting" | "receiving" | "resolving" | "checkout"
@@ -125,9 +126,14 @@ export const probeRemote = (
   env: NodeJS.ProcessEnv = process.env,
   signal?: AbortSignal,
   timeoutMs = 30_000
-): Promise<RemoteProbeResult> =>
-  new Promise((resolve) => {
-    const child = spawn("git", ["ls-remote", "-q", url, "HEAD"], {
+): Promise<RemoteProbeResult> => {
+  const installation = gitInstallationFor(env)
+  if (installation.state === "missing") {
+    return Promise.resolve({ ok: false, message: gitMissingMessage })
+  }
+
+  return new Promise((resolve) => {
+    const child = spawn(installation.path, ["ls-remote", "-q", url, "HEAD"], {
       env: nonInteractiveGitEnvironment(env),
       stdio: ["ignore", "ignore", "pipe"],
       timeout: timeoutMs,
@@ -152,5 +158,6 @@ export const probeRemote = (
       }
     })
   })
+}
 
 export const cloneCancelled = (): CloneError => new CloneError("Clone cancelled", "cancelled")

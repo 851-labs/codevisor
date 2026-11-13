@@ -1,6 +1,8 @@
 import type { ServerResponse } from "node:http"
 import { hostname } from "node:os"
 
+import { gitInstallation } from "@codevisor/worktrees"
+
 import { HttpFailure, run, writeJson } from "../server-context.js"
 import type { CodevisorServerConfig } from "../server-context.js"
 import { liveCloudDeviceId } from "./cloud.js"
@@ -97,18 +99,21 @@ const forwardClaudeGateway = ({
   return respondAfter(response, services.sharedAccounts.gateway.handle(request, response, url))
 }
 
-const writeHealth = ({ config, response }: RouteContext): void =>
-  writeJson(response, 200, {
-    ok: true,
-    version: config.version,
-    database: "ready",
-    bootId: config.bootId,
-    processId: config.processId,
-    appOwned: config.appOwned,
-    buildNumber: config.buildNumber,
-    sourceRevision: config.sourceRevision,
-    serviceManaged: config.serviceManaged
-  })
+const writeHealth = ({ config, response }: RouteContext): Promise<void> =>
+  respondAfter(response, gitInstallation(), (git) =>
+    writeJson(response, 200, {
+      ok: true,
+      version: config.version,
+      database: "ready",
+      git: git.state,
+      bootId: config.bootId,
+      processId: config.processId,
+      appOwned: config.appOwned,
+      buildNumber: config.buildNumber,
+      sourceRevision: config.sourceRevision,
+      serviceManaged: config.serviceManaged
+    })
+  )
 
 const writeDiscovery = ({ services, config, response }: RouteContext): Promise<void> => {
   const serverId = config.id

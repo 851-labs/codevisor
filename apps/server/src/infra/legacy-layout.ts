@@ -19,6 +19,7 @@ import { basename, dirname, join, relative, resolve, sep } from "node:path"
 import { promisify } from "node:util"
 
 import type { DataUpgradeProgress } from "@codevisor/api"
+import { gitExecutable } from "@codevisor/worktrees"
 
 import { errorCode } from "../unknown-values.js"
 
@@ -171,7 +172,7 @@ interface SubmoduleWorktreeRepair {
 
 const configuredSubmoduleWorktree = async (configPath: string): Promise<string | undefined> => {
   try {
-    const { stdout } = await execFileAsync("git", [
+    const { stdout } = await execFileAsync(gitExecutable(), [
       "config",
       "--file",
       configPath,
@@ -285,13 +286,13 @@ const repairMovedWorktrees = async (
       if (!(await worktreeNeedsRepair(gitFile, legacyWorktreesRoot, canonicalWorktreesRoot))) {
         continue
       }
-      await execFileAsync("git", ["-C", worktree, "worktree", "repair", worktree])
+      await execFileAsync(gitExecutable(), ["-C", worktree, "worktree", "repair", worktree])
       for (const repair of await submoduleWorktreesNeedingRepair(
         gitFile,
         legacyWorktreesRoot,
         canonicalWorktreesRoot
       )) {
-        await execFileAsync("git", [
+        await execFileAsync(gitExecutable(), [
           "config",
           "--file",
           repair.configPath,
