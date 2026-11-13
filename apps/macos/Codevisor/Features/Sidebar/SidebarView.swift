@@ -130,16 +130,13 @@ struct SidebarView: View {
   @ViewBuilder
   private var workspaceList: some View {
     let rows = sidebarRows
-    if !rows.isEmpty {
+    if rows.isEmpty {
+      SidebarPlaceholder(
+        icon: Image(systemName: WorkspaceListEmptyCopy.systemImage), title: WorkspaceListEmptyCopy.title,
+        message: WorkspaceListEmptyCopy.message)
+    } else {
       workspaceGroupList(workspaceGroups, rows: rows)
-    } else if hasLoadedWorkspaces {
-      SidebarWorkspacesPlaceholder()
-        .containerRelativeFrame(.vertical)
     }
-  }
-
-  private var hasLoadedWorkspaces: Bool {
-    environment.navigationLaunch(hasVisibleContent: false) != .loading
   }
 
   private func workspaceGroupList(_ groups: [SidebarWorkspaceGroup], rows: [SidebarRow]) -> some View {

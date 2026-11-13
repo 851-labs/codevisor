@@ -72,24 +72,7 @@ public enum BotSidebarRows {
   }
 
   public static func derive(_ state: State) -> [BotSidebarRow] {
-    let known = Set(state.sections.map(\.id))
-    let active = state.conversations.filter { !$0.bot.isArchived }
-    let bySection = Dictionary(grouping: active) { conversation in
-      state.membership[conversation.id].flatMap { known.contains($0) ? $0 : nil }
-    }
-    var rows = (bySection[nil] ?? []).map { BotSidebarRow(.bot($0, section: nil)) }
-    for section in state.sections {
-      let isExpanded = !state.collapsedSectionIDs.contains(section.id)
-      rows.append(BotSidebarRow(.section(section, isExpanded: isExpanded)))
-      let shown = SidebarCollapse.shown(
-        bySection[section.id] ?? [], isExpanded: isExpanded, keeping: state.selectedBotID)
-      rows += shown.map { BotSidebarRow(.bot($0, section: section.id)) }
-    }
-    let archived = state.conversations.filter(\.bot.isArchived)
-    guard !archived.isEmpty else { return rows }
-    rows.append(BotSidebarRow(.archivedSection(isExpanded: state.isArchivedExpanded)))
-    let shown = SidebarCollapse.shown(archived, isExpanded: state.isArchivedExpanded, keeping: state.selectedBotID)
-    return rows + shown.map { BotSidebarRow(.archivedBot($0)) }
+    activeRows(state) + archivedRows(state)
   }
 
   public static func replacement(forArchiving botID: UUID, in rows: [BotSidebarRow]) -> Bot? {
@@ -130,5 +113,33 @@ public enum BotSidebarRows {
   public static func step(from selectedID: UUID?, by offset: Int, in rows: [BotSidebarRow]) -> Bot? {
     let bots = rows.compactMap(\.bot)
     return SidebarStep.target(in: bots, from: bots.firstIndex { $0.id == selectedID }, by: offset)
+  }
+
+  private static func activeRows(_ state: State) -> [BotSidebarRow] {
+    let active = state.conversations.filter { !$0.bot.isArchived }
+    guard !active.isEmpty else { return [] }
+
+    let known = Set(state.sections.map(\.id))
+    let bySection = Dictionary(grouping: active) { conversation in
+      state.membership[conversation.id].flatMap { known.contains($0) ? $0 : nil }
+    }
+    var rows = (bySection[nil] ?? []).map { BotSidebarRow(.bot($0, section: nil)) }
+    for section in state.sections {
+      let isExpanded = !state.collapsedSectionIDs.contains(section.id)
+      rows.append(BotSidebarRow(.section(section, isExpanded: isExpanded)))
+      let shown = SidebarCollapse.shown(
+        bySection[section.id] ?? [], isExpanded: isExpanded, keeping: state.selectedBotID)
+      rows += shown.map { BotSidebarRow(.bot($0, section: section.id)) }
+    }
+    return rows
+  }
+
+  private static func archivedRows(_ state: State) -> [BotSidebarRow] {
+    let archived = state.conversations.filter(\.bot.isArchived)
+    guard !archived.isEmpty else { return [] }
+
+    let shown = SidebarCollapse.shown(archived, isExpanded: state.isArchivedExpanded, keeping: state.selectedBotID)
+    return [BotSidebarRow(.archivedSection(isExpanded: state.isArchivedExpanded))]
+      + shown.map { BotSidebarRow(.archivedBot($0)) }
   }
 }
