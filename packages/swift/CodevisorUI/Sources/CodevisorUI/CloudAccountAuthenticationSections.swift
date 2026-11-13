@@ -37,6 +37,7 @@ struct CloudAccountAuthenticationSections: View {
       Section {
         CloudAccountRow(subtitle: Self.signInPurpose) {
           CloudSignInMenu(cloud: cloud, signIn: start, signInWithEmail: signInWithEmail)
+            .disabled(isSigningIn)
         }
       }
     #else

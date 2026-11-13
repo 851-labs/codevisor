@@ -1,46 +1,47 @@
-import CodevisorCore
-import SwiftUI
+#if os(macOS)
+  import AppKit
+  import CodevisorCore
+  import SwiftUI
 
-struct CloudSignInMenu: View {
-  let cloud: CloudAccountController
-  let signIn: (CloudSignInProvider) -> Void
-  let signInWithEmail: () -> Void
+  struct CloudSignInMenu: View {
+    let cloud: CloudAccountController
+    let signIn: (CloudSignInProvider) -> Void
+    let signInWithEmail: () -> Void
 
-  var body: some View {
-    Menu("Sign In") {
+    var body: some View {
+      CloudSignInMenuButton(title: "Sign In", items: items)
+        .fixedSize()
+        .disabled(items.isEmpty)
+    }
+
+    private var items: [CloudSignInMenuItem] {
+      var items: [CloudSignInMenuItem] = []
       if cloud.supportsGitHubSignIn {
-        item("Sign in with GitHub", icon: CodevisorSymbol.gitHubMark.image) { signIn(.github) }
+        items.append(.init(title: "Sign in with GitHub", image: gitHubMark) { signIn(.github) })
       }
       if cloud.supportsAppleSignIn {
-        item("Sign in with Apple", icon: Image(systemName: "apple.logo")) { signIn(.apple) }
+        items.append(.init(title: "Sign in with Apple", image: symbol("apple.logo")) { signIn(.apple) })
       }
       if cloud.supportsEmailSignIn {
-        item("Sign in with Email…", icon: Image(systemName: "envelope"), action: signInWithEmail)
+        items.append(.init(title: "Sign in with Email…", image: symbol("envelope"), action: signInWithEmail))
       }
       if cloud.developmentAccountAvailable {
-        item("Use Development Account", icon: Image(systemName: "hammer")) {
-          Task { await cloud.signInWithDevelopmentAccount() }
-        }
+        items.append(
+          .init(title: "Use Development Account", image: symbol("hammer")) {
+            Task { await cloud.signInWithDevelopmentAccount() }
+          })
       }
+      return items
     }
-    .menuIndicator(.visible)
-    .fixedSize()
-    .disabled(!offersSignIn)
-  }
 
-  private var offersSignIn: Bool {
-    cloud.supportsGitHubSignIn || cloud.supportsAppleSignIn || cloud.supportsEmailSignIn
-      || cloud.developmentAccountAvailable
-  }
+    private var gitHubMark: NSImage? {
+      let image = Bundle.module.image(forResource: CodevisorSymbol.gitHubMark.rawValue)
+      image?.isTemplate = true
+      return image
+    }
 
-  private func item(_ title: String, icon: Image, action: @escaping () -> Void) -> some View {
-    Button(action: action) {
-      Label {
-        Text(title)
-      } icon: {
-        icon
-      }
-      .labelStyle(.titleAndIcon)
+    private func symbol(_ name: String) -> NSImage? {
+      NSImage(systemSymbolName: name, accessibilityDescription: nil)
     }
   }
-}
+#endif
