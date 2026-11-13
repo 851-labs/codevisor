@@ -16,11 +16,11 @@ struct WorkspaceChildAgents {
   }
 
   func children(of workspace: Workspace) -> [WorkspaceInspectorAgent] {
-    agents(childItems(of: workspace))
+    agents(childItems(of: workspace)) + ownedChats(in: workspace).map { chatAgent($0) }
   }
 
   func pill(for workspace: Workspace) -> ChildAgentsPillContent? {
-    let children = agents(childItems(of: workspace))
+    let children = children(of: workspace)
     guard let summary = ChildAgentsSummary(children, isWorking: isWorking, harnessId: harnessId) else { return nil }
 
     return ChildAgentsPillContent(summary: summary, agents: children, store: store)
@@ -56,9 +56,10 @@ struct WorkspaceChildAgents {
         details: content.details(
           for: listItem, isPinned: false, headingNamesMachine: listing.headingNamesMachine(workspace.id),
           isQuiet: QuietChildren.isQuiet(item)),
-        actions: commands.actions(
-          for: item, workspace: workspace, isPinned: commands.isPinned(workspace),
-          sectionPlacement: WorkspaceSectionPlacement(workspace.id, in: tree, membership: membership))
+        lifecycle: .active(
+          commands.actions(
+            for: item, workspace: workspace, isPinned: commands.isPinned(workspace),
+            sectionPlacement: WorkspaceSectionPlacement(workspace.id, in: tree, membership: membership)))
       ) {
         open(listItem)
       }
@@ -73,6 +74,35 @@ struct WorkspaceChildAgents {
     }
     revealRequest?.rowID = workspace.id
     SidebarWorkspaceNavigator(environment: environment, store: store, selection: $selection).activate(item)
+  }
+
+  private func ownedChats(in workspace: Workspace) -> [ChatSession] {
+    let workspaces = environment.workspaces
+    let held = environment.projectList.sessions.filter {
+      $0.serverId == workspace.serverId && workspaces.workspaceId(forSession: $0.id) == workspace.id
+    }
+    let owners = Set(workspace.chatSessionIds).union(held.map(\.id))
+    return environment.projectList.chats(ownedBy: owners).filter { chat in
+      guard chat.serverId == workspace.serverId else { return false }
+      let home = workspaces.workspaceId(forSession: chat.id)
+      return home == nil || home == workspace.id
+    }
+  }
+
+  private func chatAgent(_ chat: ChatSession) -> WorkspaceInspectorAgent {
+    WorkspaceInspectorAgent(
+      id: chat.id,
+      details: WorkspaceRowDetails(name: chat.title, icon: .chat(chat, isQuiet: true)),
+      lifecycle: .chat { archive(chat) }
+    ) {
+      store.selectChat(chat)
+      selection = .session(serverId: chat.serverId, id: chat.id)
+    }
+  }
+
+  private func archive(_ chat: ChatSession) {
+    let client = environment.machines.client(for: chat.serverId)
+    Task { try? await client.archiveAgent(id: chat.id) }
   }
 
   private func parentItems(of workspace: Workspace) -> [WorkspaceSidebarItem] {

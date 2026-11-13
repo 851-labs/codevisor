@@ -172,6 +172,7 @@ public protocol CodevisorServerClienting: BrowserStateClienting, BrowserFaviconC
   ) async throws -> ServerWorkspacePanePromotion?
   func closeWorkspacePane(workspaceId: UUID, paneId: UUID) async throws -> ServerWorkspacePane?
   func setWorkspaceArchived(id: UUID, isArchived: Bool) async throws
+  func archiveAgent(id: UUID) async throws
   func reorderWorkspace(id: UUID, position: String, expectedRevision: Int) async throws -> ServerWorkspace
   func moveWorkspacePane(workspaceId: UUID, paneId: UUID, position: String) async throws
   func renameWorkspace(id: UUID, name: String, hasCustomName: Bool) async throws

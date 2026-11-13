@@ -99,7 +99,7 @@ struct SidebarNestedTabs {
     for id in workspaceIDs {
       guard let workspace = environment.navigationStore.workspaceEntries.entry(id).workspace, nestsTabs(workspace)
       else { continue }
-      tabs[id] = workspace.sideTabs.map(\.id)
+      tabs[id] = AgentChatTabs.listedTabIds(of: workspace, sessions: environment.projectList)
     }
     return tabs
   }

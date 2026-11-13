@@ -7,7 +7,7 @@ struct WorkspaceInspectorAgentRow: View {
 
   var body: some View {
     WorkspaceRow(
-      details: agent.details, store: store, lifecycle: .active(agent.actions), style: .card(focusShape: focusShape),
+      details: agent.details, store: store, lifecycle: agent.lifecycle, style: .card(focusShape: focusShape),
       onActivate: agent.open
     )
     .containerValue(\.fillsWorkspaceInspectorCardRow, true)

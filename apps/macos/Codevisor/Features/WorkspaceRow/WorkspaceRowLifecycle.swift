@@ -1,5 +1,6 @@
 enum WorkspaceRowLifecycle {
   case active(WorkspaceRowActions)
+  case chat(onArchive: () -> Void)
   case archived(onRestore: () -> Void)
 
   var isArchived: Bool {

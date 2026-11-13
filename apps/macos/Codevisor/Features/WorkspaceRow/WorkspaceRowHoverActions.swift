@@ -12,6 +12,8 @@ struct WorkspaceRowHoverActions: View {
           button(systemImage: pin.systemImage, help: "\(pin.title) workspace", label: pin.title, action: pin.toggle)
         }
         button(systemImage: "archivebox", help: "Archive workspace", label: "Archive", action: actions.archive)
+      case let .chat(onArchive):
+        button(systemImage: "archivebox", help: "Archive agent", label: "Archive", action: onArchive)
       case let .archived(onRestore):
         button(systemImage: "arrow.uturn.backward", help: "Restore workspace", label: "Restore", action: onRestore)
       }
