@@ -14,27 +14,6 @@ struct CodevisorApp: App {
   }
 }
 
-struct ClientDataStartupFailureView: View {
-  let message: String
-  let retry: () -> Void
-  let showDataFolder: () -> Void
-
-  var body: some View {
-    ContentUnavailableView {
-      Label("Codevisor Couldn't Open Its Data", systemImage: "externaldrive.badge.exclamationmark")
-    } description: {
-      Text("The app stopped before loading or syncing so your existing data remains intact.\n\n\(message)")
-    } actions: {
-      HStack {
-        Button("Try Again", action: retry)
-          .buttonStyle(.borderedProminent)
-        Button("Show Data Folder", action: showDataFolder)
-      }
-    }
-    .padding(32)
-  }
-}
-
 struct RootView: View {
   @Environment(AppEnvironment.self) var environment
   @Environment(\.openSettings) var openClientSettings
@@ -119,7 +98,6 @@ struct RootView: View {
       .modifier(UpdateCenterUpkeep())
       .modifier(ConnectionRecoveryUpkeep())
       .modifier(ChromiumBrowserHostSync())
-      .modifier(ServerDataUpgradePresentation())
       .modifier(CloudAuthDeeplinkHandling())
       .modifier(KeyboardNavigationPrompt())
   }

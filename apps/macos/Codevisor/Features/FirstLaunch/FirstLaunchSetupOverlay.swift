@@ -8,6 +8,7 @@ struct FirstLaunchSetupOverlay<Content: View>: View {
   let content: Content
   @State private var phase: FirstLaunchOverlayPhase
   @Environment(\.accessibilityReduceMotion) private var reduceMotion
+  @Environment(\.appIsCovered) private var launchCoversApp
   private let composerStyle = ComposerCardStyle()
 
   init(setup: FirstLaunchSetup?, landing: FirstLaunchLanding?, @ViewBuilder content: () -> Content) {
@@ -23,7 +24,7 @@ struct FirstLaunchSetupOverlay<Content: View>: View {
         .opacity(phase.coversApp ? 0 : 1)
         .accessibilityHidden(phase.coversApp)
         .toolbar(removing: phase.coversApp ? .title : nil)
-        .environment(\.firstLaunchCoversApp, phase.coversApp)
+        .environment(\.appIsCovered, launchCoversApp || phase.coversApp)
       if phase != .gone, let setup {
         FirstLaunchSetupView(
           setup: setup,

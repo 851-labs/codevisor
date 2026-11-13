@@ -13,18 +13,8 @@ struct ClientSettingsScene: Scene {
         SettingsView()
           .themedRoot()
           .environment(environment)
-      } else if let startupError = runtime.startupError {
-        ClientDataStartupFailureView(
-          message: startupError,
-          retry: runtime.retry,
-          showDataFolder: {
-            NSWorkspace.shared.activateFileViewerSelecting([
-              CodevisorAppVariant.applicationSupportURL()
-            ])
-          }
-        )
       } else {
-        FirstLaunchStartingView()
+        LaunchCover(runtime: runtime) { EmptyView() }
           .task { await runtime.startIfNeeded() }
       }
     }

@@ -11,20 +11,20 @@ struct MainWindowScene: Scene {
 
   var body: some Scene {
     WindowGroup(id: Self.id) {
-      if let environment = runtime.environment {
-        FirstLaunchSetupOverlay(setup: runtime.firstLaunchSetup, landing: runtime.firstLaunchLanding) {
-          RootView()
-            .frame(minWidth: 480, minHeight: 600)
-            .modifier(DebugMetricsOverlayModifier())
+      LaunchCover(runtime: runtime) {
+        if let environment = runtime.environment {
+          FirstLaunchSetupOverlay(setup: runtime.firstLaunchSetup, landing: runtime.firstLaunchLanding) {
+            RootView()
+              .modifier(DebugMetricsOverlayModifier())
+          }
+          .modifier(FolderAccessGate(folders: runtime.firstRunFolders))
+          .modifier(GitRequirement(machines: environment.machines))
+          .appWindowRoot(environment)
+          .handlesExternalEvents(preferring: ["*"], allowing: ["*"])
         }
-        .modifier(FolderAccessGate(folders: runtime.firstRunFolders))
-        .modifier(GitRequirement(machines: environment.machines))
-        .appWindowRoot(environment)
-        .handlesExternalEvents(preferring: ["*"], allowing: ["*"])
-      } else {
-        ClientDataLaunchView(runtime: runtime)
-          .frame(minWidth: 480, minHeight: 600)
       }
+      .frame(minWidth: 480, minHeight: 600)
+      .task { await runtime.startIfNeeded() }
     }
     .defaultSize(width: 1280, height: 820)
     .windowResizability(.contentMinSize)

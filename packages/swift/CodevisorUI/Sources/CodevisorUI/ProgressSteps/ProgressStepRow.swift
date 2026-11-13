@@ -27,5 +27,5 @@ struct ProgressStepRow: View {
   }
 
   private static let height: CGFloat = 22
-  private static let detailWidth: CGFloat = 170
+  private static let detailWidth: CGFloat = 200
 }

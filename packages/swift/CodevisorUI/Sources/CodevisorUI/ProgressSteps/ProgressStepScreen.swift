@@ -19,7 +19,7 @@ public struct ProgressStepScreen<Actions: View>: View {
   }
 
   public var body: some View {
-    VStack(spacing: 22) {
+    IconAnchoredStack {
       CodevisorAppIconView(size: 72)
       ProgressStepTitle(title: title)
       ProgressStepCard(steps: steps)
@@ -28,7 +28,6 @@ public struct ProgressStepScreen<Actions: View>: View {
       }
       actions
     }
-    .padding(32)
     .frame(maxWidth: .infinity, maxHeight: .infinity)
     .accessibilityElement(children: .contain)
     .accessibilityLabel(title)
