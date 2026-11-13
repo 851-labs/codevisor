@@ -22,9 +22,9 @@ struct MachineDesktopPreview: View {
       .task(id: registrationAttempt) { await register() }
       .background {
         if registration == .registered, isStreaming {
-          Color.clear
-            .onAppear { session.preview.mounted(mount) }
-            .onDisappear { session.preview.unmounted(mount) }
+          MachineDesktopOnScreen { onScreen in
+            if onScreen { session.preview.mounted(mount) } else { session.preview.unmounted(mount) }
+          }
         }
       }
     }
