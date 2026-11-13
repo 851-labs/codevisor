@@ -8,6 +8,7 @@ import {
 
 export interface PluginEventEnvelope {
   readonly pluginName: string
+  readonly eventTitle?: string
   readonly accountLabel?: string
   readonly subscription: PluginEventSubscriptionRecord
   readonly event: PluginEventStored
@@ -27,6 +28,7 @@ export const sourceSessionIdFor = (serverId: string): string => `plugin:${server
 
 const headerAttributes = ({
   pluginName,
+  eventTitle,
   accountLabel,
   subscription,
   event
@@ -35,6 +37,7 @@ const headerAttributes = ({
     ["plugin", pluginName],
     ["pluginId", subscription.serverId],
     ["event", event.eventName],
+    ["eventTitle", eventTitle],
     ["account", accountLabel],
     ["subscriptionId", subscription.id],
     ["note", subscription.note],

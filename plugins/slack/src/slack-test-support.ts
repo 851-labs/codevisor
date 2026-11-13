@@ -32,6 +32,14 @@ export const sam = {
   profile: { display_name: "Sam", email: "sam@acme.com", title: "SRE" }
 }
 
+export const deployBot = {
+  id: "U0DEPLOY001",
+  name: "deploy",
+  real_name: "Deploy Bot",
+  is_bot: true,
+  profile: { display_name: "Deploy" }
+}
+
 export const eng = { id: "C0ENG000001", name: "eng", is_private: false }
 export const incidents = {
   id: "C0INC000001",
@@ -104,7 +112,7 @@ export const fileDownloadUrl =
 export const uploadUrl = "https://files.slack.com/upload/v1/abc"
 export const fileText = "Rollout notes\n"
 
-const people = [dana, sam]
+const people = [dana, sam, deployBot]
 const conversations = [eng, incidents, samDm]
 
 const defaultHandlers: Readonly<Record<string, SlackHandler>> = {

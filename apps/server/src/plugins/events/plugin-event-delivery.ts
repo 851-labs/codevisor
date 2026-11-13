@@ -17,6 +17,7 @@ export interface PluginEventDeliveryDeps {
   readonly outbox: PluginEventOutbox
   readonly now: () => number
   readonly pluginName: (serverId: string) => Promise<string>
+  readonly eventTitle: (serverId: string, eventName: string) => Promise<string | undefined>
   readonly accountLabel: (serverId: string, accountId: string) => Promise<string | undefined>
   readonly onSubscriptionsChanged: (sessionId: string) => void
 }
@@ -94,9 +95,11 @@ const sessionEvent = async (
   pending: PendingPluginEventDelivery
 ): Promise<PendingSessionEvent> => {
   const accountLabel = await labelOf(deps, subscription.serverId, pending.event.accountId)
+  const eventTitle = await deps.eventTitle(subscription.serverId, pending.event.eventName)
   return {
     message: pluginEventMessage({
       pluginName: await deps.pluginName(subscription.serverId),
+      ...(eventTitle === undefined ? {} : { eventTitle }),
       ...(accountLabel === undefined ? {} : { accountLabel }),
       subscription,
       event: pending.event

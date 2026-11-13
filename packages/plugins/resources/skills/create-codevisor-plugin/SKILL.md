@@ -63,7 +63,9 @@ plugins/
   bundled plugins are not installed from npm.
 - `_meta["dev.codevisor/plugin"]` describes the plugin to Codevisor:
   `{ bundled: "<plugin>", entry: "dist/main.js", accounts?, capabilities, devOnly? }`.
-  - `accounts` is a `PluginAccountSpec`: `{ label, oauth?, fields, guide? }`. OAuth
+  - `accounts` is a `PluginAccountSpec`: `{ label, noun?, oauth?, fields, guide? }`.
+    `noun` names one account in Settings (`"workspace"` gives a Workspaces list
+    and Add Workspace…); it defaults to `"account"`. OAuth
     returns to the machine's loopback callback by default. A provider that
     needs one fixed redirect URI (Linear) sets
     `oauth.redirectUrl: "https://cloud.codevisor.dev/oauth/plugins/callback"`:

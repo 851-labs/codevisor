@@ -79,6 +79,7 @@ export const makePluginEvents = (deps: PluginEventsDeps): PluginEvents => {
     outbox: deps.outbox,
     now: deps.now,
     pluginName,
+    eventTitle: async (serverId, eventName) => (await types.find(serverId, eventName))?.title,
     accountLabel: deps.accountLabel ?? (async () => undefined),
     onSubscriptionsChanged: subscriptionsChanged
   })

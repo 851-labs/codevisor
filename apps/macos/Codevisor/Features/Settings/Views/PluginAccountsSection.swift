@@ -7,12 +7,13 @@ struct PluginAccountsSection: View {
   let model: PluginAccountsModel
   @State private var editing: PluginAccountEditing?
   @State private var guiding: PluginAccountGuideModel?
-  @State private var removalCandidates: [ServerPluginAccount] = []
+  @State private var removing: ServerPluginAccount?
 
   var body: some View {
     if let spec = model.spec {
       let actions = PluginAccountActions(spec: spec, accounts: model.accounts)
       SettingsAccountsSection(
+        title: spec.accountsTitle,
         isSignedOut: actions.needsFirstAccount,
         signedOutText: spec.guide?.summary ?? "Not signed in",
         message: editing == nil ? model.errorMessage : nil
@@ -23,40 +24,32 @@ struct PluginAccountsSection: View {
             fallbackName: spec.label,
             ingress: model.ingress[account.id] ?? [],
             actions: actions,
+            isWorking: model.isWorking,
             onEdit: { edit(account, spec: spec) },
-            onRemove: { removalCandidates = [account] }
+            onRemove: { removing = account }
           )
         }
       } buttons: {
-        PluginAccountFooterButtons(
-          actions: actions,
-          isWorking: model.isWorking,
-          onAdd: { add(spec) },
-          onEdit: { edit($0, spec: spec) },
-          onRemove: { removalCandidates = model.accounts }
-        )
+        PluginAccountFooterButtons(actions: actions, isWorking: model.isWorking) { add(spec) }
       }
       .onChange(of: environment.pluginAccountsRevision) { Task { await model.reload() } }
       .sheet(item: $editing) { PluginAccountEditorSheet(editing: $0, model: model) }
       .sheet(item: $guiding) { PluginAccountGuideSetupSheet(model: $0) { await model.reload() } }
       .task(id: model.hasLoaded) { offerFirstRunGuide() }
       .confirmationDialog(
-        actions.removalPrompt(for: removalCandidates),
+        removing.map(actions.removalPrompt(for:)) ?? "",
         isPresented: removalPresented,
-        titleVisibility: .visible
-      ) {
-        ForEach(removalCandidates) { account in
-          Button(actions.removalButtonTitle(for: account, among: removalCandidates), role: .destructive) {
-            remove(account)
-          }
-        }
+        titleVisibility: .visible,
+        presenting: removing
+      ) { account in
+        Button(actions.removeTitle, role: .destructive) { remove(account) }
         Button("Cancel", role: .cancel) {}
       }
     }
   }
 
   private var removalPresented: Binding<Bool> {
-    Binding(get: { !removalCandidates.isEmpty }, set: { if !$0 { removalCandidates = [] } })
+    Binding(get: { removing != nil }, set: { if !$0 { removing = nil } })
   }
 
   private func edit(_ account: ServerPluginAccount, spec: ServerPluginAccountSpec) {
@@ -85,7 +78,7 @@ struct PluginAccountsSection: View {
   }
 
   private func remove(_ account: ServerPluginAccount) {
-    removalCandidates = []
+    removing = nil
     Task { await model.remove(account) }
   }
 }

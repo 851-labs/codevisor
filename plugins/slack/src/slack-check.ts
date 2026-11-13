@@ -5,7 +5,6 @@ import { type Fetch, rejectsToken, slackApi, SlackApiError } from "./slack-api.j
 
 export interface CheckedSlackAccount {
   [key: string]: unknown
-  identity: string
   label: string
 }
 
@@ -41,7 +40,7 @@ export const checkSlackAccount = async (
   requireScopes(reply.scopes)
 
   const me = identityReply.parse(reply.body)
-  return { identity: `@${me.user} · ${new URL(me.url).host}`, label: me.team }
+  return { label: me.team }
 }
 
 const requireUserToken = (value: unknown): string => {

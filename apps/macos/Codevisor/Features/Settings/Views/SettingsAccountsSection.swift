@@ -2,6 +2,7 @@ import CodevisorUI
 import SwiftUI
 
 struct SettingsAccountsSection<Rows: View, Buttons: View>: View {
+  var title = "Accounts"
   let isSignedOut: Bool
   var signedOutText = "Not signed in"
   let message: String?
@@ -15,7 +16,7 @@ struct SettingsAccountsSection<Rows: View, Buttons: View>: View {
       }
       rows()
     } header: {
-      Text("Accounts")
+      Text(title)
     } footer: {
       SettingsListActions(message: message, actions: buttons)
     }

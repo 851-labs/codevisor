@@ -13,10 +13,10 @@ const check = async (fields: Record<string, unknown>) => {
 }
 
 describe("account check", () => {
-  it("names the account after the workspace and the user", async () => {
+  it("names the account after the workspace", async () => {
     const { result } = await check({ userToken, signingSecret })
 
-    await expect(result).resolves.toEqual({ identity: "@dana · acme.slack.com", label: "Acme" })
+    await expect(result).resolves.toEqual({ label: "Acme" })
   })
 
   it("explains which token was pasted when it isn't the user token", async () => {

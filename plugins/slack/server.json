@@ -23,6 +23,7 @@
       "featureFlag": "slackPlugin",
       "accounts": {
         "label": "Slack workspace",
+        "noun": "workspace",
         "fields": [
           {
             "key": "signingSecret",

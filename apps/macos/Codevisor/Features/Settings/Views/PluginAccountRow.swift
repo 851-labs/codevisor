@@ -7,15 +7,24 @@ struct PluginAccountRow: View {
   let fallbackName: String
   let ingress: [ServerPluginIngressURL]
   let actions: PluginAccountActions
+  let isWorking: Bool
   let onEdit: () -> Void
   let onRemove: () -> Void
 
   var body: some View {
-    PluginAccountLabel(account: account, fallbackName: fallbackName)
-      .contextMenu {
+    HStack(spacing: 10) {
+      PluginAccountLabel(account: account, fallbackName: fallbackName)
+      Spacer()
+      if actions.canRevisit(account) {
         Button(actions.revisitTitle(for: account), action: onEdit)
-        Button("\(actions.removeTitle)…", role: .destructive, action: onRemove)
       }
+      Button(actions.rowRemoveTitle, action: onRemove)
+    }
+    .disabled(isWorking)
+    .contextMenu {
+      Button(actions.revisitTitle(for: account), action: onEdit)
+      Button(actions.rowRemoveTitle, role: .destructive, action: onRemove)
+    }
     ForEach(ingress) { PluginIngressRow(ingress: $0) }
   }
 }

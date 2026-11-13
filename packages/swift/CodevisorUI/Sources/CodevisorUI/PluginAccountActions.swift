@@ -11,16 +11,18 @@ public struct PluginAccountActions: Equatable, Sendable {
 
   public var needsFirstAccount: Bool { accounts.isEmpty }
 
-  public var addAnotherTitle: String { "Add Account…" }
+  public var addAnotherTitle: String { "Add \(spec.accountNoun)…" }
 
   public var removeTitle: String {
-    spec.oauth == nil ? "Remove Account" : "Sign Out"
+    spec.oauth == nil ? "Remove \(spec.accountNoun)" : "Sign Out"
   }
 
-  public var revisitTarget: ServerPluginAccount? {
-    guard accounts.count == 1, let account = accounts.first else { return nil }
-    guard !account.isOAuth || account.needsReauthorization else { return nil }
-    return account
+  public var rowRemoveTitle: String {
+    spec.oauth == nil ? "Remove…" : "Sign Out…"
+  }
+
+  public func canRevisit(_ account: ServerPluginAccount) -> Bool {
+    !account.isOAuth || account.needsReauthorization
   }
 
   public func revisitTitle(for account: ServerPluginAccount) -> String {
@@ -31,14 +33,7 @@ public struct PluginAccountActions: Equatable, Sendable {
     account.label ?? account.identity ?? spec.label
   }
 
-  public func removalPrompt(for candidates: [ServerPluginAccount]) -> String {
-    guard candidates.count == 1, let account = candidates.first else {
-      return "Choose an account to \(removeTitle.lowercased())"
-    }
-    return spec.oauth == nil ? "Remove \(name(of: account))?" : "Sign out of \(name(of: account))?"
-  }
-
-  public func removalButtonTitle(for account: ServerPluginAccount, among candidates: [ServerPluginAccount]) -> String {
-    candidates.count == 1 ? removeTitle : "\(removeTitle) \(name(of: account))"
+  public func removalPrompt(for account: ServerPluginAccount) -> String {
+    spec.oauth == nil ? "Remove \(name(of: account))?" : "Sign out of \(name(of: account))?"
   }
 }

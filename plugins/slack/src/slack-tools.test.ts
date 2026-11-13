@@ -4,6 +4,7 @@ import { describe, expect, it } from "vitest"
 import {
   callSlackTool,
   connectSlack,
+  deployBot,
   eng,
   fileDownloadUrl,
   fileText,
@@ -51,6 +52,51 @@ describe("reading", () => {
       page: 1,
       pages: 3,
       total: 41
+    })
+  })
+
+  it("names a DM after the other person and marks only bot users as bots", async () => {
+    const connected = await connectSlack()
+    connected.slack.on("search.messages", () => ({
+      messages: {
+        matches: [
+          {
+            ts: "1731350000.000100",
+            user: sam.id,
+            bot_id: "B0CODEVISOR",
+            text: "Posted through an app",
+            channel: { id: samDm.id, name: sam.id }
+          },
+          {
+            ts: "1731350001.000100",
+            user: deployBot.id,
+            bot_id: "B0DEPLOY001",
+            text: "Deploy is green",
+            channel: { id: eng.id, name: "eng" }
+          }
+        ]
+      }
+    }))
+
+    const result = await callSlackTool(connected, "search_messages", { query: "deploy" })
+
+    expect(structured(result)).toEqual({
+      messages: [
+        {
+          channel: { id: samDm.id, name: "Sam" },
+          ts: "1731350000.000100",
+          author: sam.id,
+          text: "Posted through an app"
+        },
+        {
+          channel: { id: eng.id, name: "eng" },
+          ts: "1731350001.000100",
+          author: deployBot.id,
+          bot: true,
+          text: "Deploy is green"
+        }
+      ],
+      people: { [sam.id]: "Sam", [deployBot.id]: "Deploy" }
     })
   })
 
