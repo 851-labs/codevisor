@@ -70,7 +70,8 @@ struct ScreenSharingSymbolicHotKeysTests {
     #expect(ScreenSharingSymbolicHotKeys.names(for: .screenshots, in: hotKeys) == ["⇧⌘3", "⌥⌘S", "⌘F5"])
     hotKeys["184"] = hotKeys["30"]
     #expect(
-      ScreenSharingSymbolicHotKeys.names(for: .screenshots, in: hotKeys) == ["⇧⌘3", "⌥⌘S"], "a shared combo is named once")
+      ScreenSharingSymbolicHotKeys.names(for: .screenshots, in: hotKeys) == ["⇧⌘3", "⌥⌘S"],
+      "a shared combo is named once")
   }
 
   private static func entry(enabled: Bool, parameters: [Int]) -> [String: Any] {
