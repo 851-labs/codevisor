@@ -14,6 +14,8 @@ public enum HomeRoute: Hashable, Sendable {
 
   case bot(serverId: String, botId: UUID)
 
+  case agent(serverId: String, sessionId: UUID)
+
   public var isNewChat: Bool {
     if case .newChat = self { return true }
     return false

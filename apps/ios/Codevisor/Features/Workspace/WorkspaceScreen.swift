@@ -102,6 +102,11 @@ struct WorkspaceScreen: View {
     environment.projectList.session(id, serverId: resolvedServerId)
   }
 
+  func chatOnAnotherMachine(in pane: PaneDescriptorState) -> ChatSession? {
+    guard pane.kind == .chat, let id = pane.chatSessionId, session(for: id) == nil else { return nil }
+    return environment.projectList.chat(id, preferring: resolvedServerId)
+  }
+
   var rootSession: ChatSession? { activeSessionId.flatMap(session(for:)) }
 
   func chatTitle(for id: UUID) -> String? {
@@ -155,6 +160,7 @@ struct WorkspaceScreen: View {
   func title(for pane: PaneDescriptorState) -> String {
     switch pane.kind {
     case .chat:
+      if let remote = chatOnAnotherMachine(in: pane), !remote.title.isEmpty { return remote.title }
       let title = (pane.chatSessionId ?? activeSessionId).flatMap(chatTitle(for:)) ?? pane.name
       return title.isEmpty ? "New Chat" : title
     case .newTab:
@@ -200,6 +206,9 @@ struct WorkspaceScreen: View {
           isLocal: false,
           serverUpdate: machines.updateActivity(for: resolvedServerId)
         )
+      } else if let pane = activePane, let remote = chatOnAnotherMachine(in: pane) {
+        AgentChatScreen(serverId: remote.serverId, sessionId: remote.id, setsTitle: false)
+          .id(remote.id)
       } else if missing {
         ContentUnavailableView("Chat Not Found", systemImage: "questionmark.bubble")
       } else if isDraft, draftController == nil {

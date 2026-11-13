@@ -75,6 +75,8 @@ extension HomeView {
     if case let .bot(serverId, botId) = route {
       BotConversationScreen(
         serverId: serverId, botId: botId, onOpenDetails: { botEditor = .edit($0) })
+    } else if case let .agent(serverId, sessionId) = route {
+      AgentChatScreen(serverId: serverId, sessionId: sessionId)
     } else {
       workspaceDetailScreen(for: route)
     }
@@ -149,7 +151,7 @@ struct HomeDetailParameters {
           ChatControllerCache.shared.existingController(sessionId: session.id, serverId: serverId)
         }
       isDraft = false
-    case let .bot(serverId, _):
+    case let .bot(serverId, _), let .agent(serverId, _):
       self.serverId = serverId
       isDraft = false
     }

@@ -22,7 +22,7 @@ final class ChatControllerCache {
   func controller(
     for session: ChatSession,
     project: Project,
-    workspaceId: UUID,
+    workspaceId: UUID?,
     environment: AppEnvironment
   ) -> SessionController {
     let key = Key(serverId: session.serverId, id: session.id)
