@@ -5,6 +5,7 @@ import SwiftUI
 struct SidebarComposeToolbarItem: ToolbarContent {
   @ClientPreference(SidebarMode.preferenceKey, default: SidebarMode.code) private var storedMode
   @Environment(\.firstLaunchCoversApp) private var firstLaunchCoversApp
+  @Environment(AdaptivePanelLayout.self) private var panelLayout
 
   let newChat: () -> Void
   let newBot: () -> Void
@@ -12,16 +13,25 @@ struct SidebarComposeToolbarItem: ToolbarContent {
 
   var body: some ToolbarContent {
     ToolbarItem(placement: .navigation) {
-      switch storedMode {
-      case .bots:
-        if let openThread {
-          BotThreadBackButton(thread: openThread)
-        } else {
-          BotComposeButton(onNewBot: newBot)
-        }
-      case .code: NewChatComposeButton(onNewChat: newChat)
+      if let shownThread {
+        BotThreadBackButton(thread: shownThread)
+      } else {
+        SidebarModeNewButton(mode: storedMode, newChat: newChat, newBot: newBot)
       }
     }
-    .hidden(firstLaunchCoversApp)
+    .hidden(firstLaunchCoversApp || !showsButton)
+  }
+
+  private var shownThread: OpenBotThread? {
+    storedMode == .bots ? openThread : nil
+  }
+
+  private var showsButton: Bool {
+    shownThread != nil || !sidebarShowsNewButton
+  }
+
+  private var sidebarShowsNewButton: Bool {
+    SidebarModeSwitchPlacement.current == .sidebar
+      && !RootSidebarVisibility(panelLayout: panelLayout).hidesDockedColumn
   }
 }

@@ -9,6 +9,7 @@ struct RootSidebar: View {
   let revealRequest: SidebarRevealRequest
   var publishesSceneActions = true
   var isDrawer = false
+  var actions: RootSidebarActions?
   @ClientPreference(SidebarMode.preferenceKey, default: SidebarMode.code) private var storedMode
   @State private var visitedModes: Set<SidebarMode> = []
   @State private var parkedMode: SidebarMode?
@@ -29,6 +30,11 @@ struct RootSidebar: View {
       VStack(spacing: 0) {
         DrawerModePicker(mode: $storedMode)
           .padding(.top, 10)
+        content
+      }
+    } else if SidebarModeSwitchPlacement.current == .sidebar {
+      VStack(spacing: 0) {
+        SidebarModeRow(mode: $storedMode, actions: actions)
         content
       }
     } else {
