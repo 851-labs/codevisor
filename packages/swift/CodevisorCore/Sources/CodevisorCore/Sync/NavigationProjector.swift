@@ -19,7 +19,7 @@ final class NavigationProjector {
     var sessions: [ChatSession] = []
     var workspaces: [Workspace] = []
     var sessionIndex: [UUID: UUID] = [:]
-    var checkouts: [String: ServerCheckout] = [:]
+    var checkouts: [String: Checkout] = [:]
   }
 
   private struct WorkspaceKey: Equatable {
@@ -92,7 +92,8 @@ final class NavigationProjector {
     NavigationOverlay.apply(entries, to: &records)
     var machine = MachineProjection(projects: records.projects, sessions: records.sessions)
     machine.checkouts = Dictionary(
-      records.checkouts.map { ($0.id.lowercased(), $0) }, uniquingKeysWith: { _, new in new })
+      records.checkouts.map { ($0.id.lowercased(), Checkout(record: $0, machineId: machineId)) },
+      uniquingKeysWith: { _, new in new })
     let panesByWorkspace = Dictionary(grouping: records.panes) { $0.workspaceId.lowercased() }
     let worktreeNames = Self.worktreeNames(in: records)
     var serverWorkspaceIds = Set<UUID>()
