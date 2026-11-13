@@ -215,11 +215,24 @@ struct SidebarRowsTests {
     }
 
     #expect(
-      ids(visibleCount: 3) == [.section(.list), .section(.archived)] + archived.prefix(3).map { .workspace($0.id) }
+      ids(visibleCount: 3) == [.section(.archived)] + archived.prefix(3).map { .workspace($0.id) }
         + [.showMoreArchived])
-    #expect(ids(visibleCount: 5) == [.section(.list), .section(.archived)] + archived.map { .workspace($0.id) })
-    #expect(ids(visibleCount: 3, expanded: false) == [.section(.list), .section(.archived)])
-    #expect(derive(SidebarRows.State(groups: groups([]))).ids == [.section(.list)])
+    #expect(ids(visibleCount: 5) == [.section(.archived)] + archived.map { .workspace($0.id) })
+    #expect(ids(visibleCount: 3, expanded: false) == [.section(.archived)])
+  }
+
+  @Test("With no active workspaces, no Pinned, section or list headers show: only Archived, or nothing")
+  func noActiveWorkspacesLeavesNoEmptyHeaders() {
+    let section = CustomSection(id: UUID(), name: "Later", position: "4")
+    let archived = [item(studio)]
+    func ids(_ grouping: SidebarGrouping, archived: [WorkspaceSidebarItem]) -> [SidebarRowID] {
+      derive(SidebarRows.State(groups: groups([], grouping, sections: [section]), archived: archived)).ids
+    }
+
+    for grouping in SidebarGrouping.allCases {
+      #expect(ids(grouping, archived: archived) == [.section(.archived)])
+      #expect(ids(grouping, archived: []).isEmpty)
+    }
   }
 
   @Test("Row ids stay unique across every combination of grouping, expansion and selection")

@@ -249,6 +249,11 @@ struct NewChatView: View {
       else { return }
       Task { await controller.prepare() }
     }
+    .onChange(of: store.newChatComposerFocusRequested, initial: true) { _, requested in
+      guard requested, paneDraftId == nil else { return }
+      store.newChatComposerFocusRequested = false
+      focus.focusComposer()
+    }
     .focusedSceneValue(
       \.newChatComposerFocus,
       NewChatComposerFocus(

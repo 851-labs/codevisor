@@ -48,7 +48,7 @@ struct SidebarView: View {
             SidebarDevelopmentWorktreeRow()
               .padding(.horizontal, 10)
           }
-          workspaceGroupList(workspaceGroups)
+          workspaceList
         }
         .padding(.top, 8)
       }
@@ -127,9 +127,24 @@ struct SidebarView: View {
     )
   }
 
-  private func workspaceGroupList(_ groups: [SidebarWorkspaceGroup]) -> some View {
+  @ViewBuilder
+  private var workspaceList: some View {
+    let rows = sidebarRows
+    if !rows.isEmpty {
+      workspaceGroupList(workspaceGroups, rows: rows)
+    } else if hasLoadedWorkspaces {
+      SidebarWorkspacesPlaceholder(onNewChat: startNewChat)
+        .containerRelativeFrame(.vertical)
+    }
+  }
+
+  private var hasLoadedWorkspaces: Bool {
+    environment.navigationLaunch(hasVisibleContent: false) != .loading
+  }
+
+  private func workspaceGroupList(_ groups: [SidebarWorkspaceGroup], rows: [SidebarRow]) -> some View {
     let headed = groups.filter { $0.id != SidebarWorkspaceGroup.pinnedID }.map(\.id)
-    return workspaceRowList(sidebarRows)
+    return workspaceRowList(rows)
       .padding(.horizontal, 10)
       .padding(.bottom, 8)
       .onChange(of: headed) { _, ids in endGroupDrag(ifMissingFrom: ids) }
@@ -200,6 +215,11 @@ struct SidebarView: View {
       archiveWorkspace: { archiveSelectedWorkspace() },
       activeWorkspace: { activeWorkspaceActions }
     )
+  }
+
+  private func startNewChat() {
+    selection = .newChat(nil)
+    store?.newChatComposerFocusRequested = true
   }
 
   private func startAddProject() {

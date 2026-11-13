@@ -117,6 +117,12 @@ public enum SidebarRows {
   }
 
   public static func derive(_ state: State) -> [SidebarRow] {
+    guard hasActiveWorkspaces(state) else { return archivedRows(state) }
+
+    return activeRows(state) + archivedRows(state)
+  }
+
+  private static func activeRows(_ state: State) -> [SidebarRow] {
     var rows: [SidebarRow] = []
     let expansion = state.expansion
 
@@ -165,7 +171,11 @@ public enum SidebarRows {
       }
     }
 
-    return rows + archivedRows(state)
+    return rows
+  }
+
+  private static func hasActiveWorkspaces(_ state: State) -> Bool {
+    state.groups.contains { !$0.items.isEmpty }
   }
 
   private static func archivedRows(_ state: State) -> [SidebarRow] {
