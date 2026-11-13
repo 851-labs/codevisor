@@ -131,6 +131,10 @@ the agents it starts with `agents.wait` and `agents.status`, and background jobs
 `agents.start` needs `harness` (from `harnesses.list`) and, without `--project`, a `project` or
 `checkout: "none"`. The connection reconnects by itself when the Codevisor server restarts.
 
+To have an agent outside Codevisor install the server and connect itself, point it at
+[codevisor.dev/SKILL.md](https://www.codevisor.dev/SKILL.md). It covers installing, signing the
+machine in, adding the gateway, and delegating work to agents.
+
 `codevisor mcp` opens its gateway with `POST /v1/mcp-gateways`. Any process that can run it has
 the same access as the [connection token](/docs/authentication) that `codevisor token` prints.
 
