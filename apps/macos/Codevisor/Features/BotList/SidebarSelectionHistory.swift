@@ -14,6 +14,7 @@ struct SidebarSelectionHistory: ViewModifier {
     content
       .onChange(of: selection, initial: true) { _, next in record(next) }
       .focusedSceneValue(\.sidebarHistory, actions)
+      .environment(\.sidebarHistory, actions)
   }
 
   private var actions: SidebarHistoryActions {

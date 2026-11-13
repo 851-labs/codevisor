@@ -153,7 +153,9 @@ struct RootView: View {
 
   private var mainSplit: some View {
     RootSplitView(store: store, windowControl: clientWindow) {
-      RootSidebar(selection: $selection, botEditor: $botEditor, store: store, revealRequest: sidebarRevealRequest)
+      RootSidebar(
+        selection: $selection, botEditor: $botEditor, store: store, revealRequest: sidebarRevealRequest,
+        actions: rootActions)
     } detail: {
       Group {
         if let store {

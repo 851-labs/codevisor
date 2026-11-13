@@ -21,7 +21,12 @@ struct RootSplitView<Sidebar: View, Detail: View>: View {
   var body: some View {
     NavigationSplitView(columnVisibility: visibility.columnVisibility) {
       sidebar
-        .toolbar(removing: firstLaunchCoversApp ? .sidebarToggle : nil)
+        .toolbar(removing: removesSystemToggle ? .sidebarToggle : nil)
+        .toolbar {
+          if showsLeadingItems {
+            SidebarLeadingToolbarItems(sidebar: toggle)
+          }
+        }
         .navigationSplitViewColumnWidth(min: 260, ideal: 270, max: 360)
     } detail: {
       detail
@@ -29,9 +34,7 @@ struct RootSplitView<Sidebar: View, Detail: View>: View {
     .background(
       SidebarToggleHelp(help: PanelToggleShortcut.sidebar.help(isVisible: isVisible)).frame(width: 0, height: 0)
     )
-    .focusedSceneValue(
-      \.sidebarVisibility, SidebarVisibilityToggle(isVisible: isVisible, setVisible: visibility.setVisible)
-    )
+    .focusedSceneValue(\.sidebarVisibility, toggle)
     .onChange(of: isVisible, initial: true) { _, visible in
       store?.isSidebarVisible = visible
     }
@@ -46,5 +49,17 @@ struct RootSplitView<Sidebar: View, Detail: View>: View {
 
   private var isVisible: Bool {
     visibility.isVisible
+  }
+
+  private var toggle: SidebarVisibilityToggle {
+    SidebarVisibilityToggle(isVisible: isVisible, setVisible: visibility.setVisible)
+  }
+
+  private var removesSystemToggle: Bool {
+    firstLaunchCoversApp || SidebarModeSwitchPlacement.current == .sidebar
+  }
+
+  private var showsLeadingItems: Bool {
+    SidebarModeSwitchPlacement.current == .sidebar && !firstLaunchCoversApp
   }
 }

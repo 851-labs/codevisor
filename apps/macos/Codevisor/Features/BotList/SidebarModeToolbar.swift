@@ -20,6 +20,6 @@ struct SidebarModeToolbar: ViewModifier {
   }
 
   private var showsModePicker: Bool {
-    !isDrawer && panelLayout.docksSidebar && !sidebarCollapsed
+    SidebarModeSwitchPlacement.current == .toolbar && !isDrawer && panelLayout.docksSidebar && !sidebarCollapsed
   }
 }
