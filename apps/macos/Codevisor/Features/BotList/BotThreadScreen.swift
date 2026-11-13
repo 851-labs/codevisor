@@ -23,16 +23,6 @@ struct BotThreadScreen: View {
       BotThreadHeader(bot: bot, participant: other)
         .ignoresSafeArea(edges: .top)
     }
-    .toolbar {
-      ToolbarSpacer(.fixed, placement: .navigation)
-      ToolbarItem(placement: .navigation) {
-        Button(action: close) {
-          Label("Back to \(bot.name)", systemImage: "chevron.backward")
-        }
-        .help("Back to your conversation with \(bot.name)")
-        .keyboardShortcut(.cancelAction)
-      }
-    }
     .id(thread.threadId)
     .task(id: thread.threadId) {
       await environment.botThreads.loadMessages(in: thread.threadId, serverId: bot.serverId)
@@ -55,10 +45,6 @@ struct BotThreadScreen: View {
 
   private var other: ServerThreadParticipant? {
     environment.botThreads.other(in: thread, than: bot)
-  }
-
-  private func close() {
-    environment.botThreads.openThreadByBot[bot.id] = nil
   }
 }
 

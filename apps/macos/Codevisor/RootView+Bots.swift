@@ -14,6 +14,16 @@ extension RootView {
       newChat: openNewChat, newBot: openNewBot, editBot: editBot)
   }
 
+  var openBotThread: OpenBotThread? {
+    guard case let .bot(serverId, botId) = selection,
+      let bot = environment.bots.bot(serverId: serverId, id: botId),
+      environment.botThreads.openThread(of: bot) != nil
+    else { return nil }
+    return OpenBotThread(botName: bot.name) { [botThreads = environment.botThreads] in
+      botThreads.openThreadByBot[bot.id] = nil
+    }
+  }
+
   func openNewChat() {
     selection = .newChat(nil)
     sidebarMode = .code
