@@ -52,8 +52,8 @@ struct WorkspaceSplitView: View {
             width: max(0, leaf.frame.width),
             height: max(0, leaf.frame.height)
           )
-          .position(x: leaf.frame.midX, y: leaf.frame.midY)
           .clipShape(clip)
+          .position(x: leaf.frame.midX, y: leaf.frame.midY)
           .transition(openingTransition(for: opening))
         }
 
