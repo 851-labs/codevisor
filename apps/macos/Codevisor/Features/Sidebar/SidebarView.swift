@@ -48,7 +48,7 @@ struct SidebarView: View {
             SidebarDevelopmentWorktreeRow()
               .padding(.horizontal, 10)
           }
-          workspaceGroupList(workspaceGroups)
+          workspaceList
         }
         .padding(.top, 8)
       }
@@ -127,9 +127,21 @@ struct SidebarView: View {
     )
   }
 
-  private func workspaceGroupList(_ groups: [SidebarWorkspaceGroup]) -> some View {
+  @ViewBuilder
+  private var workspaceList: some View {
+    let rows = sidebarRows
+    if rows.isEmpty {
+      SidebarPlaceholder(
+        icon: Image(systemName: WorkspaceListEmptyCopy.systemImage), title: WorkspaceListEmptyCopy.title,
+        message: WorkspaceListEmptyCopy.message)
+    } else {
+      workspaceGroupList(workspaceGroups, rows: rows)
+    }
+  }
+
+  private func workspaceGroupList(_ groups: [SidebarWorkspaceGroup], rows: [SidebarRow]) -> some View {
     let headed = groups.filter { $0.id != SidebarWorkspaceGroup.pinnedID }.map(\.id)
-    return workspaceRowList(sidebarRows)
+    return workspaceRowList(rows)
       .padding(.horizontal, 10)
       .padding(.bottom, 8)
       .onChange(of: headed) { _, ids in endGroupDrag(ifMissingFrom: ids) }

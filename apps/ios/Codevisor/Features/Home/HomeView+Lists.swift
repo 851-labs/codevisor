@@ -38,8 +38,8 @@ extension HomeView {
   #endif
 
   var emptyState: some View {
-    Text("No Workspaces")
-      .font(.title3.weight(.bold))
-      .frame(maxWidth: .infinity, maxHeight: .infinity)
+    ContentUnavailableView(
+      WorkspaceListEmptyCopy.title, systemImage: WorkspaceListEmptyCopy.systemImage,
+      description: Text(WorkspaceListEmptyCopy.message))
   }
 }

@@ -101,6 +101,20 @@ struct BotSidebarRowsTests {
     #expect(withoutArchived.map(\.id) == [.bot(atlas.id), .section(work.id), .bot(ledger.id)])
   }
 
+  @Test("With no active bots, section headers drop out: only Archived shows, or nothing when there are no bots")
+  func noActiveBotsLeavesNoEmptyHeaders() {
+    let scout = conversation("Scout", isArchived: true)
+    let work = section("Work", at: "8000000000008")
+    var state = BotSidebarRows.State(conversations: [scout], sections: [work], membership: [scout.id: work.id])
+
+    let archivedOnly = BotSidebarRows.derive(state)
+    state.conversations = []
+    let noBots = BotSidebarRows.derive(state)
+
+    #expect(archivedOnly.map(\.id) == [.archivedSection])
+    #expect(noBots.isEmpty)
+  }
+
   @Test("Archiving the selected bot hands the selection to the next active bot, or the previous one at the end")
   func archiveReplacement() {
     let (atlas, scout, ledger) = (
