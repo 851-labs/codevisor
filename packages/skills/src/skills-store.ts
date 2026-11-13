@@ -24,6 +24,7 @@ export const RESERVED_SKILL_NAMES: ReadonlySet<string> = new Set([
   "computer-use",
   "codevisor",
   "codevisor-agents",
+  "codevisor-bots",
   "codevisor-machines",
   "codevisor-clients",
   "codevisor-messages",

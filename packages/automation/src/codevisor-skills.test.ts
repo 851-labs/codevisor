@@ -70,6 +70,7 @@ describe("managed Codevisor skills", () => {
     expect(codevisorSkills.map((skill) => skill.name).toSorted()).toEqual([
       "codevisor",
       "codevisor-agents",
+      "codevisor-bots",
       "codevisor-clients",
       "codevisor-machines",
       "codevisor-messages"
