@@ -8,13 +8,20 @@ import type { SessionEventRow } from "./rows.js"
 
 export const botMessagePreviewLength = 280
 
+const notFromTheUserInBotChat = `cm.conversation_id = (
+          select conversation_id from bots where bots.session_id = sessions.id
+        ) and not exists (
+          select 1 from conversation_participants cp
+            where cp.id = cm.sender_id and cp.kind = 'user'
+        )`
+
 export const latestBotMessageColumns = `
-      (select substr(bm.text, 1, ${botMessagePreviewLength}) from bot_messages bm
-        where bm.session_id = sessions.id and bm.sender != 'user'
-        order by bm.sequence desc limit 1) as latest_bot_message_text,
-      (select bm.attachments from bot_messages bm
-        where bm.session_id = sessions.id and bm.sender != 'user'
-        order by bm.sequence desc limit 1) as latest_bot_message_attachments`
+      (select substr(cm.text, 1, ${botMessagePreviewLength}) from conversation_messages cm
+        where ${notFromTheUserInBotChat}
+        order by cm.sequence desc limit 1) as latest_bot_message_text,
+      (select cm.attachments from conversation_messages cm
+        where ${notFromTheUserInBotChat}
+        order by cm.sequence desc limit 1) as latest_bot_message_attachments`
 
 export const isBotConversation = (sqlite: Database.Database, sessionId: string): boolean =>
   sqlite.prepare(botConversationSql).get(sessionId) !== undefined

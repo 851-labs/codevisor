@@ -8,6 +8,7 @@ import {
   type BotRow,
   type BotsService
 } from "./bot-rows.js"
+import { closeBotConversation, openBotConversation } from "./conversations.js"
 import { attempt } from "./errors.js"
 import { sessionConfigSelectionsFromRaw } from "./event-payloads.js"
 import { canonicalUuid } from "./ids.js"
@@ -90,6 +91,7 @@ export const makeBotsService = (
               canonicalUuid(record.workspaceId),
               isoTimestamp()
             )
+          openBotConversation(sqlite, { id, serverId: config.serverId }, isoTimestamp())
           const insertProject = sqlite.prepare(botProjectSql.insert)
           record.projects.forEach((project, position) => {
             insertProject.run(
@@ -150,7 +152,10 @@ export const makeBotsService = (
       }),
     deleteBot: (id) =>
       attempt("deleteBot", () => {
-        sqlite.prepare(botSql.delete).run(canonicalUuid(id))
+        sqlite.transaction(() => {
+          closeBotConversation(sqlite, canonicalUuid(id))
+          sqlite.prepare(botSql.delete).run(canonicalUuid(id))
+        })()
       }),
     findBotOwning: (query) =>
       attempt("findBotOwning", () => {

@@ -63,7 +63,6 @@ export const botRows = rowReader<BotRow>({
 
 export interface BotMessageRow {
   readonly id: string
-  readonly session_id: string
   readonly sequence: number
   readonly sender: string
   readonly text: string
@@ -73,7 +72,6 @@ export interface BotMessageRow {
 
 export const botMessageRows = rowReader<BotMessageRow>({
   id: text,
-  session_id: text,
   sequence: integer,
   sender: text,
   text,
