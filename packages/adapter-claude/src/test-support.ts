@@ -377,6 +377,7 @@ export const makeProvider = (
 ) =>
   makeClaudeProvider(environment, {
     subagentTranscripts: () => NO_SUBAGENT_TRANSCRIPTS,
+    fetch: () => Promise.reject(new Error("Tests make no network requests")),
     ...extra,
     checkVersion,
     ...(getSessionInfo === undefined ? {} : { getSessionInfo }),

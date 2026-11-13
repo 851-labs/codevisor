@@ -88,6 +88,7 @@ export const makeClaudeProvider = (
 
   const startSession = makeStartSession({
     environment,
+    fetch: config.fetch ?? fetch,
     getSessionInfo,
     guardVersion,
     locateClaude,
