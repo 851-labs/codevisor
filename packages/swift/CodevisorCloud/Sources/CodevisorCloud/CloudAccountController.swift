@@ -11,6 +11,7 @@ public final class CloudAccountController {
   var userId: String?
   public internal(set) var machines: [CloudMachine] = []
   public var lastError: String?
+  public private(set) var isDeletingAccount = false
   public internal(set) var linkedProviders: Set<CloudSignInProvider>?
   var authenticationRevision: UInt64 = 0
 
@@ -239,6 +240,8 @@ public final class CloudAccountController {
     guard state.isSignedIn, let token = storedToken else { return }
     let server = serverURL
     lastError = nil
+    isDeletingAccount = true
+    defer { isDeletingAccount = false }
     do {
       try await client.deleteAccount(token: token)
       guard storedToken == token, serverURL == server else { return }

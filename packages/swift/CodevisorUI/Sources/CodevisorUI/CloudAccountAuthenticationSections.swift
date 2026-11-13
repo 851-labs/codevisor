@@ -15,13 +15,7 @@ struct CloudAccountAuthenticationSections: View {
       if link {
         connectionsSections
       } else {
-        Section {
-          providerButtons
-        } header: {
-          Text("Codevisor Cloud")
-        } footer: {
-          Text("Sign in to connect to your machines from anywhere.")
-        }
+        signInSection
       }
     }
     .task(id: cloud.state.isSignedIn) {
@@ -37,6 +31,27 @@ struct CloudAccountAuthenticationSections: View {
       Text(errorMessage ?? "")
     }
   }
+
+  private var signInSection: some View {
+    #if os(macOS)
+      Section {
+        CloudAccountRow(subtitle: Self.signInPurpose) {
+          CloudSignInMenu(cloud: cloud, signIn: start, signInWithEmail: signInWithEmail)
+            .disabled(isSigningIn)
+        }
+      }
+    #else
+      Section {
+        providerButtons
+      } header: {
+        Text("Codevisor Cloud")
+      } footer: {
+        Text(Self.signInPurpose)
+      }
+    #endif
+  }
+
+  private static let signInPurpose = "Sign in to connect to your machines from anywhere."
 
   @ViewBuilder
   private var connectionsSections: some View {

@@ -75,19 +75,21 @@ struct CloudSettingsView: View {
 
   private var dataSection: some View {
     Section("Data") {
-      HStack(alignment: .center, spacing: 16) {
-        VStack(alignment: .leading, spacing: 3) {
-          Text("Delete all data")
-          Text("Removes all projects, chats, and settings, then restarts setup.")
-            .font(.callout)
-            .foregroundStyle(.secondary)
-            .fixedSize(horizontal: false, vertical: true)
-        }
-        Spacer(minLength: 8)
+      SettingsDeletionRow(
+        title: "Delete all data",
+        description: "Removes all projects, chats, and settings, then restarts setup."
+      ) {
         Button("Delete…", role: .destructive) {
           isConfirmingDataDeletion = true
         }
-        .fixedSize()
+      }
+      if environment.cloud.state.isSignedIn {
+        SettingsDeletionRow(
+          title: "Delete cloud account",
+          description: "Permanently deletes your account and disconnects your machines."
+        ) {
+          CloudAccountDeletionButton(cloud: environment.cloud, title: "Delete…", deletingTitle: "Deleting…")
+        }
       }
     }
   }

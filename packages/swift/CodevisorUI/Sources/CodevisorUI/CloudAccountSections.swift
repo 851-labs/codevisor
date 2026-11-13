@@ -7,7 +7,6 @@ public struct CloudAccountSections: View {
   private let configureServer: () -> Void
   private let signInWithEmail: () -> Void
   @State private var isSigningIn = false
-  @State private var isDeleting = false
 
   public init(
     cloud: CloudAccountController,
@@ -49,7 +48,7 @@ public struct CloudAccountSections: View {
             .foregroundStyle(.primary)
           }
           .buttonStyle(.plain)
-          .disabled(isDeleting)
+          .disabled(cloud.isDeletingAccount)
         }
         Button(action: configureServer) {
           HStack {
@@ -64,49 +63,27 @@ public struct CloudAccountSections: View {
           .foregroundStyle(.primary)
         }
         .buttonStyle(.plain)
-        .disabled(isSigningIn || isDeleting)
+        .disabled(isSigningIn || cloud.isDeletingAccount)
       }
       #if os(iOS)
-        CloudAccountDeletionSection(cloud: cloud, isDeleting: $isDeleting)
+        CloudAccountDeletionSection(cloud: cloud)
       #endif
     }
   }
 
   private func accountSection(_ email: String?) -> some View {
     Section {
-      HStack(spacing: 12) {
-        Image(systemName: "person.crop.circle.fill")
-          .font(.system(size: 40))
-          .foregroundStyle(.secondary)
-          .accessibilityHidden(true)
-        VStack(alignment: .leading, spacing: 4) {
-          Text("Codevisor Cloud").font(.headline)
-          Text(email ?? "Signed in")
-            .font(.subheadline)
-            .foregroundStyle(.secondary)
-            .textSelection(.enabled)
-        }
-      }
-      .padding(.vertical, 4)
-      #if os(iOS)
-        signOutButton
-      #endif
-    } footer: {
       #if os(macOS)
-        HStack(spacing: 8) {
-          signOutButton
-          CloudAccountDeletionButton(cloud: cloud, isDeleting: $isDeleting)
-          Spacer()
-        }
-        .buttonStyle(.bordered)
-        .controlSize(.regular)
-        .font(.body)
+        CloudAccountRow(subtitle: email ?? "Signed in") { signOutButton }
+      #else
+        CloudAccountRow(subtitle: email ?? "Signed in")
+        signOutButton
       #endif
     }
   }
 
   private var signOutButton: some View {
     Button("Sign Out") { cloud.signOut() }
-      .disabled(isDeleting)
+      .disabled(cloud.isDeletingAccount)
   }
 }
