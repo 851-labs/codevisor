@@ -12,21 +12,8 @@ extension NewChatView {
     environment.machines.machine(for: serverId)?.name ?? "this machine"
   }
 
-  func projectSetupModel() -> ProjectMachineSetup {
-    if let projectSetup { return projectSetup }
-    let setup = makeProjectSetup()
-    projectSetup = setup
-    return setup
-  }
-
   private func makeProjectSetup() -> ProjectMachineSetup {
-    let machines = environment.machines
-    return ProjectMachineSetup(
-      clientFor: { machines.client(for: $0) },
-      machineName: { machines.machine(for: $0)?.name ?? "this machine" },
-      isReachable: { machines.availability(for: $0) == .ready },
-      adopt: { _ in }
-    )
+    ProjectMachineSetup(machines: environment.machines)
   }
 
   var pendingCloneGroup: ProjectGroup? {
@@ -45,24 +32,44 @@ extension NewChatView {
   }
 
   private func interceptSetupSend(_ group: ProjectGroup, controller: SessionController) -> Bool {
-    let cloneSetup = makeProjectSetup()
+    if projectSetup?.isPresented == true { return true }
+
+    let setup = makeProjectSetup()
     let preferredSource = environment.projectList.mostRecentlyUsedMember(of: group)
-    if let plan = cloneSetup.clonePlan(
+    if let plan = setup.clonePlan(
       group: group, targetServerId: controller.project.serverId, preferredSource: preferredSource)
     {
-      controller.projectClone = ProjectCloneRequest(
-        plan: plan, setup: cloneSetup, projectList: environment.projectList)
-      controller.onProjectCloned = { project in adoptClonedProject(project) }
-      return false
+      let request = ProjectCloneRequest(plan: plan, setup: setup, projectList: environment.projectList)
+      return interceptCloneSend(request, controller: controller)
     }
-    let setup = projectSetupModel()
-    guard !setup.isPresented else { return true }
+    projectSetup = setup
     setup.onFinished = { [weak controller] project in
       guard let controller else { return }
       adoptSetUpProject(project, controller: controller)
     }
     beginProjectSetup(group, setup: setup, controller: controller)
     return true
+  }
+
+  private func interceptCloneSend(_ request: ProjectCloneRequest, controller: SessionController) -> Bool {
+    let access = controller.projectCloneAccess
+    guard !access.isChecking else { return true }
+    guard access.isVerified(request.plan) else {
+      checkCloneAccess(request.plan, controller: controller)
+      return true
+    }
+
+    controller.projectClone = request
+    controller.onProjectCloned = { project in adoptClonedProject(project) }
+    return false
+  }
+
+  private func checkCloneAccess(_ plan: ProjectMachineSetup.Plan, controller: SessionController) {
+    let failures = makeProjectSetup()
+    projectSetup = failures
+    controller.projectCloneAccess.check(plan, failuresOn: failures) { [weak controller] in
+      controller?.requestSubmit()
+    }
   }
 
   private func adoptClonedProject(_ project: Project) {

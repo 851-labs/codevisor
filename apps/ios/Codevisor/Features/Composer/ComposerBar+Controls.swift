@@ -173,6 +173,10 @@ extension ComposerBar {
   private var sendButtonLabel: some View {
     if usesBotLayout {
       botSendButtonLabel
+    } else if controller.projectCloneAccess.isChecking {
+      ProgressView()
+        .controlSize(.small)
+        .composerCircleActionLabel(.primary, isEnabled: false)
     } else {
       Image(systemName: controller.isGoalEditing || controller.isEditingQueuedPrompt ? "checkmark" : "arrow.up")
         .composerCircleActionLabel(.primary, isEnabled: canSend)
@@ -186,6 +190,7 @@ extension ComposerBar {
 
   private var sendButtonAccessibilityHint: String {
     if controller.isPausedForUpdate { return "\(controller.updatingName) is updating" }
+    if let checking = controller.projectCloneAccess.label { return checking }
     return controller.requiresModelSelection ? "Select a model" : ""
   }
 

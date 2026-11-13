@@ -72,6 +72,7 @@ export const endpoints = [
   "GET /v1/projects/clone-settings",
   "PUT /v1/projects/clone-settings",
   "GET /v1/projects/:id/setup-source",
+  "POST /v1/projects/clone-access",
   "GET /v1/git/auth/status",
   "POST /v1/git/auth/login",
   "GET /v1/git/auth/login/:flowId",

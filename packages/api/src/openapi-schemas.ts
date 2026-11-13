@@ -28,16 +28,8 @@ import {
   CloseWorkspacePaneResponse,
   CreateHarnessAccountRequest,
   CreateMcpServerRequest,
-  CreateProjectFromGitRequest,
   CreateProjectRequest,
   CreateSessionRequest,
-  ReadProjectEnvFilesRequest,
-  PublishProjectRemoteRequest,
-  ReadProjectEnvFilesResponse,
-  UpdateProjectCloneSettingsRequest,
-  GitAuthFlow,
-  GitHostAuthStatus,
-  StartGitAuthRequest,
   CreateSkillRequest,
   CreateWorktreeRequest,
   StartWorktreeSetupRequest,
@@ -81,9 +73,7 @@ import {
   PiAuthProviderFlow,
   Project,
   ProjectGitBranch,
-  ProjectCloneSettings,
   ProjectRecommendation,
-  ProjectSetupSource,
   PromoteWorkspacePaneToChatRequest,
   PromoteWorkspacePaneToChatResponse,
   PromptAcceptedResponse,
@@ -162,6 +152,10 @@ import { NavigationSnapshot } from "./navigation.js"
 import { botRequestSchemas, botResponseSchemas } from "./openapi-bot-schemas.js"
 import type { Endpoint } from "./openapi-endpoints.js"
 import {
+  projectSetupRequestSchemas,
+  projectSetupResponseSchemas
+} from "./openapi-project-setup-schemas.js"
+import {
   CompletePluginAccountOAuthRequest,
   CompletePluginAccountOAuthResponse,
   CreatePluginEventSubscriptionRequest,
@@ -213,11 +207,7 @@ export const nullable = (schema: Schema.Constraint): Schema.Constraint => Schema
 
 export const requestSchemas = (): Partial<Record<Endpoint, Schema.Constraint>> => ({
   "POST /v1/projects": CreateProjectRequest,
-  "POST /v1/projects/from-git": CreateProjectFromGitRequest,
-  "PUT /v1/projects/clone-settings": UpdateProjectCloneSettingsRequest,
-  "POST /v1/git/auth/login": StartGitAuthRequest,
-  "POST /v1/projects/:id/env-files/read": ReadProjectEnvFilesRequest,
-  "POST /v1/projects/:id/remote": PublishProjectRemoteRequest,
+  ...projectSetupRequestSchemas,
   "PATCH /v1/projects/:id": UpdateProjectRequest,
   "POST /v1/projects/:id/worktrees": CreateWorktreeRequest,
   "POST /v1/projects/:id/worktree-setups": StartWorktreeSetupRequest,
@@ -315,15 +305,7 @@ export const responseSchemas = (): Partial<Record<Endpoint, Schema.Constraint>> 
   "GET /v1/projects/recommendations": arrayOf(ProjectRecommendation),
   "GET /v1/first-run": FirstRunStatus,
   "POST /v1/projects": Project,
-  "POST /v1/projects/from-git": Project,
-  "GET /v1/projects/clone-settings": ProjectCloneSettings,
-  "PUT /v1/projects/clone-settings": ProjectCloneSettings,
-  "GET /v1/projects/:id/setup-source": ProjectSetupSource,
-  "GET /v1/git/auth/status": GitHostAuthStatus,
-  "POST /v1/git/auth/login": GitAuthFlow,
-  "GET /v1/git/auth/login/:flowId": GitAuthFlow,
-  "POST /v1/projects/:id/env-files/read": ReadProjectEnvFilesResponse,
-  "POST /v1/projects/:id/remote": Project,
+  ...projectSetupResponseSchemas,
   "GET /v1/fs/list": FsListResponse,
   "POST /v1/fs/mkdir": FsMkdirResponse,
   "GET /v1/fs/git/diff": GitDiff,

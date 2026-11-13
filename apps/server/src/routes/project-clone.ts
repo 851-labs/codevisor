@@ -20,17 +20,13 @@ import {
 } from "@codevisor/api"
 import type { CodevisorDatabaseService } from "@codevisor/db"
 import {
-  alternateCloneUrl,
   CloneError,
   cloneRepository,
   cloneUrlHost,
   gitRemoteUrl,
   type GitOutputListener,
   isGitWorkTree,
-  moreTellingFailure,
-  parseCloneProgress,
-  probeRemote,
-  type RemoteProbeResult
+  parseCloneProgress
 } from "@codevisor/worktrees"
 import { Schema } from "effect"
 
@@ -46,6 +42,7 @@ import {
   type CodevisorServerServices,
   type EventFanout
 } from "../server-context.js"
+import { reachableCloneUrl } from "./project-clone-access.js"
 import { logCloneFailure } from "./project-clone-log.js"
 import { cloneBaseFolder } from "./project-clone-settings.js"
 import { cloneDirectoryName, looksLikeGitUrl } from "./project-git-url.js"
@@ -355,35 +352,6 @@ const chooseDestination = async (options: {
 
 const isCloneOf = async (path: string, repoUrl: string, env: NodeJS.ProcessEnv): Promise<boolean> =>
   (await isGitWorkTree(path)) && sameRepository(await gitRemoteUrl(path, env), repoUrl)
-
-const reachableCloneUrl = async (
-  repoUrl: string,
-  env: NodeJS.ProcessEnv,
-  signal: AbortSignal
-): Promise<string> => {
-  const first = await probeAndLog(repoUrl, env, signal)
-  if (first.ok) return repoUrl
-
-  const alternate = alternateCloneUrl(repoUrl)
-  if (alternate === undefined) throw probeFailure(first)
-
-  const second = await probeAndLog(alternate, env, signal)
-  if (second.ok) return alternate
-  throw probeFailure(moreTellingFailure(first, second))
-}
-
-const probeAndLog = async (
-  url: string,
-  env: NodeJS.ProcessEnv,
-  signal: AbortSignal
-): Promise<RemoteProbeResult> => {
-  const result = await probeRemote(url, env, signal)
-  if (!result.ok) logCloneFailure(url, result)
-  return result
-}
-
-const probeFailure = (result: RemoteProbeResult): CloneError =>
-  new CloneError(result.message, result.code)
 
 const cloneAndLog = (
   url: string,

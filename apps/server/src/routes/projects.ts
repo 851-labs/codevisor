@@ -29,6 +29,7 @@ import {
   type EventFanout
 } from "../server-context.js"
 import { assertNotOwnedByBot } from "./bot-guards.js"
+import { routeProjectCloneAccess } from "./project-clone-access.js"
 import { routeProjectCloneSettings } from "./project-clone-settings.js"
 import { cancelProjectSetup, routeProjectFromGit } from "./project-clone.js"
 import { addProject } from "./project-create.js"
@@ -62,6 +63,10 @@ export const routeProjects = async (
     return createProject(services, fanout, serverId, request, response)
   if (request.method === "POST" && url.pathname === "/v1/projects/from-git") {
     await routeProjectFromGit(services, fanout, serverId, request, response)
+    return true
+  }
+  if (request.method === "POST" && url.pathname === "/v1/projects/clone-access") {
+    await routeProjectCloneAccess(services, request, response)
     return true
   }
   if (url.pathname === "/v1/projects/clone-settings") {

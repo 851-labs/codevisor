@@ -152,6 +152,7 @@ final public class SessionController {
   public var onFirstSend: ((String) -> Void)?
   public var onScratchProjectCreated: ((Project) -> Void)?
   public var projectClone: ProjectCloneRequest?
+  public let projectCloneAccess = ProjectCloneAccessCheck()
   public internal(set) var projectCloneFailure: ProjectMachineSetup.Failure?
   public var onProjectCloned: ((Project) -> Void)?
   public var onSetupFailed: (() -> Void)?
