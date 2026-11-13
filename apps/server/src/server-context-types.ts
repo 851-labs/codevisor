@@ -89,6 +89,8 @@ export interface CodevisorServerConfig {
 export interface FirstRunProjectsConfig {
   readonly dataDirectory: string
   readonly homeDirectory: string
+  readonly platform: NodeJS.Platform
+  readonly canReadFolder: (path: string) => Promise<boolean>
 }
 
 export interface ScreenSharingVNCConfig {

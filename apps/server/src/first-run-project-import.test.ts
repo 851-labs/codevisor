@@ -248,7 +248,12 @@ const makeMachine = async (overrides: Partial<AgentRuntimeService> = {}) => {
   const config = defaultServerConfig({
     bootId: "boot",
     id: "test",
-    firstRunProjects: { dataDirectory: makeFolder(home, "data"), homeDirectory: home }
+    firstRunProjects: {
+      dataDirectory: makeFolder(home, "data"),
+      homeDirectory: home,
+      platform: "linux",
+      canReadFolder: () => Promise.resolve(true)
+    }
   })
   const debug = vi.spyOn(console, "debug").mockImplementation(() => undefined)
   return {

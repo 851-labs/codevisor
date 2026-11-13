@@ -57,6 +57,7 @@ import {
   bootPluginCatalog,
   restoreTerminalPersistence,
   screenSharingProvider,
+  canReadFolder,
   simulatorsProvider,
   startMachineNetwork,
   systemNativeMcpManager
@@ -445,7 +446,12 @@ export const runServe = (
         worktreeNameStyle,
         cloud: cloudControl,
         workspaceGit: true,
-        firstRunProjects: { dataDirectory: dirname(databasePath), homeDirectory: homedir() },
+        firstRunProjects: {
+          dataDirectory: dirname(databasePath),
+          homeDirectory: homedir(),
+          platform: process.platform,
+          canReadFolder
+        },
         icon,
         bootId,
         processId: process.pid,

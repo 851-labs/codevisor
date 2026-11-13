@@ -5,11 +5,13 @@ import Observation
 @MainActor
 public final class LiveFirstLaunchSetupWork: FirstLaunchSetupWork {
   private let environment: AppEnvironment
+  private let folders: FirstRunFolderAccess
   private let machineId = CodevisorMachine.local.id
   private lazy var feed = FirstRunStatusFeed(client: environment.machines.client(for: machineId))
 
-  public init(environment: AppEnvironment) {
+  public init(environment: AppEnvironment, folders: FirstRunFolderAccess) {
     self.environment = environment
+    self.folders = folders
   }
 
   public func startServer(waitingOnUser: @escaping @MainActor (Bool) -> Void) async -> FirstLaunchServerStart {
@@ -34,15 +36,43 @@ public final class LiveFirstLaunchSetupWork: FirstLaunchSetupWork {
     return try await installedHarnessNames()
   }
 
-  public func addRecentProjects(progress: @escaping @MainActor ([String]) -> Void) async throws -> [String] {
+  public func addRecentProjects(
+    progress: @escaping @MainActor ([String]) -> Void,
+    waitingOnUser: @escaping @MainActor (Bool) -> Void
+  ) async throws -> [String] {
+    let reporting = Task { await self.reportFolderQuestions(to: waitingOnUser) }
+    defer { reporting.cancel() }
+
     var reported = 0
     while true {
-      let status = try await feed.status { $0.isFinal || Self.projectNames(in: $0).count > reported }
+      let status = try await feed.status { Self.isSettled($0) || Self.projectNames(in: $0).count > reported }
       let names = Self.projectNames(in: status)
       reported = names.count
       progress(names)
-      guard status.isFinal else { continue }
+      guard Self.isSettled(status) else { continue }
       return try finalProjectNames(status)
+    }
+  }
+
+  private static func isSettled(_ status: ServerFirstRunStatus) -> Bool {
+    status.isFinal && status.foldersToAsk.isEmpty
+  }
+
+  private func reportFolderQuestions(to waitingOnUser: @MainActor (Bool) -> Void) async {
+    defer { waitingOnUser(false) }
+    while !Task.isCancelled {
+      waitingOnUser(folders.isAsking)
+      await folderQuestionsChange()
+    }
+  }
+
+  private func folderQuestionsChange() async {
+    await withCheckedContinuation { continuation in
+      withObservationTracking {
+        _ = folders.isAsking
+      } onChange: {
+        continuation.resume()
+      }
     }
   }
 

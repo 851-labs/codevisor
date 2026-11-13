@@ -5,6 +5,8 @@ import { basename, dirname, isAbsolute, resolve, sep } from "node:path"
 import type { AgentSessionSummary, ProjectRecommendation } from "@codevisor/api"
 import { worktreesRoot } from "@codevisor/db"
 
+import { openFolderAccess, type FolderAccess, type ProtectedFolder } from "./protected-folders.js"
+
 interface RecommendationAggregate {
   readonly path: string
   sessionCount: number
@@ -16,46 +18,93 @@ export interface ProjectRecommendationOptions {
   readonly limit?: number
   readonly managedWorktreesRoot?: string
   readonly temporaryDirectory?: string
+  readonly access?: FolderAccess
+}
+
+export interface HeldProject {
+  readonly folder: ProtectedFolder
+  readonly project: ProjectRecommendation
+}
+
+export interface SessionFolderScan {
+  readonly recommendations: ReadonlyArray<ProjectRecommendation>
+  readonly held: ReadonlyArray<HeldProject>
 }
 
 export const recommendProjectsFromSessions = (
   sessions: ReadonlyArray<AgentSessionSummary>,
   options: ProjectRecommendationOptions = {}
-): ReadonlyArray<ProjectRecommendation> => {
+): ReadonlyArray<ProjectRecommendation> => scanSessionFolders(sessions, options).recommendations
+
+export const scanSessionFolders = (
+  sessions: ReadonlyArray<AgentSessionSummary>,
+  options: ProjectRecommendationOptions = {}
+): SessionFolderScan => {
   const limit = Math.max(0, Math.min(options.limit ?? 12, 50))
-  if (limit === 0) return []
-  const managedRoot = resolve(options.managedWorktreesRoot ?? worktreesRoot())
-  const temporaryRoot = resolve(options.temporaryDirectory ?? tmpdir())
-  const grouped = new Map<string, RecommendationAggregate>()
+  if (limit === 0) return { recommendations: [], held: [] }
+  const roots: ScanRoots = {
+    managed: resolve(options.managedWorktreesRoot ?? worktreesRoot()),
+    temporary: resolve(options.temporaryDirectory ?? tmpdir()),
+    access: options.access ?? openFolderAccess
+  }
+  const projects = new Map<string, RecommendationAggregate>()
+  const held = new Map<string, RecommendationAggregate>()
+  const heldFolders = new Map<string, ProtectedFolder>()
 
   for (const session of sessions) {
-    const path = recommendationPath(session, managedRoot, temporaryRoot)
-    if (path === undefined) continue
-    recordRecommendation(grouped, path, session)
+    const place = sessionPlace(session, roots)
+    if (place === undefined) continue
+    if (place.folder !== undefined) heldFolders.set(place.path, place.folder)
+    recordRecommendation(place.folder === undefined ? projects : held, place.path, session)
   }
 
-  return [...grouped.values()]
-    .toSorted((left, right) => compareRecommendations(left, right))
-    .slice(0, limit)
-    .map((entry) => recommendationDTO(entry))
+  return {
+    recommendations: byRecentActivity(projects).slice(0, limit).map(recommendationDTO),
+    held: byRecentActivity(held).map((entry) => ({
+      folder: heldFolders.get(entry.path)!,
+      project: recommendationDTO(entry)
+    }))
+  }
 }
 
-const recommendationPath = (
-  session: AgentSessionSummary,
-  managedRoot: string,
-  temporaryRoot: string
-): string | undefined => {
+interface ScanRoots {
+  readonly managed: string
+  readonly temporary: string
+  readonly access: FolderAccess
+}
+
+interface SessionPlace {
+  readonly path: string
+  readonly folder?: ProtectedFolder
+}
+
+const byRecentActivity = (
+  entries: ReadonlyMap<string, RecommendationAggregate>
+): ReadonlyArray<RecommendationAggregate> =>
+  [...entries.values()].toSorted((left, right) => compareRecommendations(left, right))
+
+const sessionPlace = (session: AgentSessionSummary, roots: ScanRoots): SessionPlace | undefined => {
   if (!isAbsolute(session.cwd)) return undefined
   const sessionPath = resolve(session.cwd)
   if (sessionPath === "/") return undefined
+  if (roots.access(sessionPath).kind !== "open") return unreadPlace(sessionPath, roots)
 
-  const linked = linkedWorktree(sessionPath)
-  const isManaged = isPathInside(sessionPath, managedRoot)
+  const linked = linkedWorktree(sessionPath, roots.access)
+  const isManaged = isPathInside(sessionPath, roots.managed)
   if (linked.isLinked && linked.root === undefined) return undefined
   if (isManaged && linked.root === undefined) return undefined
 
   const path = linked.root ?? sessionPath
-  return isRecommendationRoot(path, managedRoot, temporaryRoot) ? path : undefined
+  if (roots.access(path).kind !== "open") return unreadPlace(path, roots)
+  return isRecommendationRoot(path, roots.managed, roots.temporary) ? { path } : undefined
+}
+
+const unreadPlace = (path: string, roots: ScanRoots): SessionPlace | undefined => {
+  const access = roots.access(path)
+  if (access.kind !== "held") return undefined
+  if (isPathInside(path, roots.managed) || isExcludedPath(path, roots.temporary)) return undefined
+
+  return { path, folder: access.folder }
 }
 
 const isRecommendationRoot = (
@@ -168,7 +217,8 @@ const isExcludedPath = (path: string, temporaryRoot: string): boolean => {
 }
 
 const linkedWorktree = (
-  checkout: string
+  checkout: string,
+  access: FolderAccess
 ): { readonly isLinked: boolean; readonly root?: string } => {
   const dotGit = resolve(checkout, ".git")
   let info: ReturnType<typeof statSync>
@@ -183,6 +233,7 @@ const linkedWorktree = (
     const gitDirValue = metadataPath(readFileSync(dotGit, "utf8"), "gitdir")
     if (gitDirValue === undefined) return { isLinked: true }
     const gitDir = resolve(checkout, gitDirValue)
+    if (access(gitDir).kind !== "open") return unreadWorktreeRoot(gitDir)
     const commonDirValue = readFileSync(resolve(gitDir, "commondir"), "utf8").trim()
     if (commonDirValue.length === 0) return { isLinked: true }
     const commonDir = resolve(gitDir, commonDirValue)
@@ -192,6 +243,15 @@ const linkedWorktree = (
   } catch {
     return { isLinked: true }
   }
+}
+
+const worktreeGitDir = /^(.+)\/\.git\/worktrees\/[^/]+$/u
+
+const unreadWorktreeRoot = (
+  gitDir: string
+): { readonly isLinked: true; readonly root?: string } => {
+  const root = worktreeGitDir.exec(gitDir)?.[1]
+  return root === undefined ? { isLinked: true } : { isLinked: true, root }
 }
 
 const metadataPath = (contents: string, key: string): string | undefined => {

@@ -13,6 +13,7 @@ final class FirstLaunchFakeWork: FirstLaunchSetupWork {
   private var unreportedProjects: [String]?
 
   let serverStartRequested = TestSignal()
+  let projectsRequested = TestSignal()
   private var reportWaitingOnUser: (@MainActor (Bool) -> Void)?
 
   func startServer(waitingOnUser: @escaping @MainActor (Bool) -> Void) async -> FirstLaunchServerStart {
@@ -33,8 +34,13 @@ final class FirstLaunchFakeWork: FirstLaunchSetupWork {
     try await harnesses.value()
   }
 
-  func addRecentProjects(progress: @escaping @MainActor ([String]) -> Void) async throws -> [String] {
+  func addRecentProjects(
+    progress: @escaping @MainActor ([String]) -> Void,
+    waitingOnUser: @escaping @MainActor (Bool) -> Void
+  ) async throws -> [String] {
     projectProgress = progress
+    reportWaitingOnUser = waitingOnUser
+    projectsRequested.signal()
     if let unreportedProjects { progress(unreportedProjects) }
     return try await projects.value()
   }

@@ -1,11 +1,25 @@
-import type { FirstRunHarness, FirstRunProject, Harness } from "@codevisor/api"
+import type {
+  FirstRunHarness,
+  FirstRunProject,
+  FirstRunStatus,
+  Harness,
+  ProjectRecommendation
+} from "@codevisor/api"
 import { FIRST_RUN_PROJECTS_PENDING, FIRST_RUN_PROJECTS_SETTING } from "@codevisor/db"
 
-import { selectFirstRunProjects, type FirstRunProjectSelection } from "./first-run-projects.js"
+import { groupByFolder, savePendingFolders } from "./first-run-folders.js"
+import {
+  firstRunProjectLimit,
+  selectFirstRunProjects,
+  type FirstRunProjectContext,
+  type FirstRunProjectSelection
+} from "./first-run-projects.js"
 import { failedFirstRunStatus, publishFirstRunStatus } from "./first-run-status.js"
+import { scanSessionFolders, type HeldProject } from "./project-recommendations.js"
+import { beginFolderDecisions, folderAccess } from "./protected-folders.js"
 import { discoverHarnesses } from "./routes/harnesses.js"
 import { addProject } from "./routes/project-create.js"
-import { recommendFromHarnesses } from "./routes/project-recommendations.js"
+import { listHarnessSessions, sessionScanLimit } from "./routes/project-recommendations.js"
 import {
   failureMessage,
   run,
@@ -14,6 +28,13 @@ import {
   type EventFanout,
   type FirstRunProjectsConfig
 } from "./server-context.js"
+
+export interface FirstRun {
+  readonly services: CodevisorServerServices
+  readonly fanout: EventFanout
+  readonly serverId: string
+  readonly config: FirstRunProjectsConfig
+}
 
 export const startFirstRunProjectImport = async (
   services: CodevisorServerServices,
@@ -41,6 +62,7 @@ export const importFirstRunProjects = async (
 ): Promise<void> => {
   if (!(await isFirstRunPending(services))) return
 
+  const firstRun: FirstRun = { services, fanout, serverId, config }
   await publishFirstRunStatus(services, fanout, { state: "running" })
   const started = performance.now()
   await refreshHarnessEnvironment(services)
@@ -48,25 +70,15 @@ export const importFirstRunProjects = async (
   const harnesses = (await discoverHarnesses(services)).filter(isInstalledHarness)
   const found = harnesses.map(foundHarness)
   await publishFirstRunStatus(services, fanout, { state: "running", harnesses: found })
-  const recommendations = await recommendFromHarnesses(services, harnesses)
+  const scan = await scanHarnessSessions(firstRun, harnesses)
   const scanMs = performance.now() - started - environmentMs
 
-  const selection = selectFirstRunProjects(recommendations, {
-    now: Date.now(),
-    homeDirectory: config.homeDirectory,
-    excludedRoots: [config.dataDirectory],
-    projectFolders: await localProjectFolders(services, serverId)
+  const selection = selectFirstRunProjects(scan.recommendations, await selectionContext(firstRun))
+  const added = await addFirstRunProjects(firstRun, selection.added.toReversed(), {
+    state: "running",
+    harnesses: found
   })
-  const added: Array<FirstRunProject> = []
-  for (const candidate of selection.added.toReversed()) {
-    const project = await addProject(services, fanout, { folderPath: candidate.path })
-    added.push({ id: project.id, name: project.name })
-    await publishFirstRunStatus(services, fanout, {
-      state: "running",
-      harnesses: found,
-      projects: [...added]
-    })
-  }
+  await holdFolders(firstRun, scan.held, firstRunProjectLimit - added.length)
   await run(services.db.setMachineSetting(FIRST_RUN_PROJECTS_SETTING, firstRunProjectsDone))
   await publishFirstRunStatus(services, fanout, {
     state: "done",
@@ -75,9 +87,35 @@ export const importFirstRunProjects = async (
   })
 
   debugLog(
-    `scanned harness chats in ${Math.round(scanMs)}ms after ${Math.round(environmentMs)}ms resolving the shell environment; ${recommendations.length} candidate folders`
+    `scanned harness chats in ${Math.round(scanMs)}ms after ${Math.round(environmentMs)}ms resolving the shell environment; ${scan.recommendations.length} candidate folders`
   )
   logSelection(selection)
+}
+
+export const selectionContext = async (
+  firstRun: FirstRun,
+  limit: number = firstRunProjectLimit
+): Promise<FirstRunProjectContext> => ({
+  now: Date.now(),
+  homeDirectory: firstRun.config.homeDirectory,
+  excludedRoots: [firstRun.config.dataDirectory],
+  projectFolders: await localProjectFolders(firstRun.services, firstRun.serverId),
+  limit
+})
+
+export const addFirstRunProjects = async (
+  { services, fanout }: FirstRun,
+  candidates: ReadonlyArray<ProjectRecommendation>,
+  progress: FirstRunStatus
+): Promise<ReadonlyArray<FirstRunProject>> => {
+  const before = progress.projects ?? []
+  const added: Array<FirstRunProject> = []
+  for (const candidate of candidates) {
+    const project = await addProject(services, fanout, { folderPath: candidate.path })
+    added.push({ id: project.id, name: project.name })
+    await publishFirstRunStatus(services, fanout, { ...progress, projects: [...before, ...added] })
+  }
+  return added
 }
 
 const firstRunProjectsDone = "done"
@@ -90,6 +128,31 @@ const refreshHarnessEnvironment = async (services: CodevisorServerServices): Pro
   try {
     await run(services.agents.refreshEnvironment)
   } catch {}
+}
+
+const scanHarnessSessions = async (firstRun: FirstRun, harnesses: ReadonlyArray<Harness>) => {
+  const sessions = await listHarnessSessions(firstRun.services, harnesses)
+  const decisions = await beginFolderDecisions(firstRun.services)
+  return scanSessionFolders(sessions, {
+    limit: sessionScanLimit,
+    access: folderAccess(decisions, firstRun.config)
+  })
+}
+
+const holdFolders = async (
+  firstRun: FirstRun,
+  held: ReadonlyArray<HeldProject>,
+  remaining: number
+): Promise<void> => {
+  const context = await selectionContext(firstRun, remaining)
+  const worthAsking = new Set(
+    selectFirstRunProjects(
+      held.map((entry) => entry.project),
+      context
+    ).added
+  )
+  const folders = groupByFolder(held.filter((entry) => worthAsking.has(entry.project)))
+  await savePendingFolders(firstRun.services, { remaining, folders })
 }
 
 const isInstalledHarness = (harness: Harness): boolean =>
