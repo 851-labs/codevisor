@@ -75,6 +75,30 @@ struct SubagentWorkspaceNavigationTests {
     #expect(fixture.store.projection.sessions.first { $0.id == standalone.id }?.createdByAgent?.agentId == lead.id)
   }
 
+  @Test("A chat with no workspace belongs in the workspace of the agent that owns it")
+  func ownedChatUsesOwnersWorkspace() async {
+    let lead = chat("Lead")
+    let loose = chat("Loose", createdBy: lead)
+    let looseChild = chat("Loose child", createdBy: loose)
+    var archived = chat("Archived", createdBy: lead)
+    archived.isArchived = true
+    var standalone = chat("Standalone", createdBy: lead)
+    standalone.isDetached = true
+    let parent = workspace(lead)
+    let fixture = NavigationFixture()
+
+    await fixture.install(
+      machineId: "m", projects: [project], sessions: [lead, loose, looseChild, archived, standalone],
+      workspaces: [parent])
+
+    let list = fixture.projectList
+    #expect(list.owningWorkspaceId(of: loose) == parent.id)
+    #expect(list.owningWorkspaceId(of: looseChild) == parent.id)
+    #expect(list.owningWorkspaceId(of: standalone) == nil)
+    #expect(list.owningWorkspaceId(of: lead) == nil)
+    #expect(list.chats(ownedBy: [lead.id]).map(\.title) == ["Loose"])
+  }
+
   @Test("A bot's workspace is known from its project, before any bot list has loaded")
   func botHomeKnownFromProject() async {
     let botHome = Project.fromFolder(URL(fileURLWithPath: "/tmp/codevisor/bots/helper"), serverId: "m")

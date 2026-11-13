@@ -250,10 +250,20 @@ final class SessionStore {
       ephemeralWorkspaces[session.id] = ephemeral
       return ephemeral
     }
+    if let owning = workspaceOfOwner(of: session) { return owning }
     return environment.workspaces.ensureWorkspace(
       for: seed,
       legacyGroups: environment.paneGroups
     )
+  }
+
+  private func workspaceOfOwner(of session: ChatSession) -> Workspace? {
+    guard environment.workspaces.workspaceId(forSession: session.id) == nil,
+      let ownerWorkspaceId = environment.projectList.owningWorkspaceId(of: session),
+      let workspace = environment.workspaces.workspace(id: ownerWorkspaceId),
+      workspace.serverId == session.serverId
+    else { return nil }
+    return workspace
   }
 
   func centerGroup(

@@ -11,6 +11,8 @@ struct WorkspaceRowAccessibilityActions: View {
       }
       Button("Rename", action: actions.rename)
       Button("Archive", action: actions.archive)
+    case let .chat(onArchive):
+      Button("Archive", action: onArchive)
     case let .archived(onRestore):
       Button("Restore", action: onRestore)
     }
