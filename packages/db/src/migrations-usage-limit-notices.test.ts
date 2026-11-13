@@ -24,6 +24,19 @@ const seedV80 = async (filename: string) => {
         session: { id, projectId: project.id, harnessId: "claude-code", title: id }
       })
     )
+    await run(
+      db.createBot({
+        id: `bot-${id}`,
+        name: id,
+        symbolName: "sparkles",
+        mascot: { color: "mint", hat: "none", eyewear: "none" },
+        slug: id,
+        projectId: project.id,
+        sessionId: id,
+        workspaceId: `ws-${id}`,
+        projects: []
+      })
+    )
   }
   const notices: ReadonlyArray<[string, "user" | "notice", string]> = [
     [limitedChat, "user", "Summarize today's PRs"],
@@ -45,11 +58,35 @@ const seedV80 = async (filename: string) => {
     insertStop.run("limited-stop", limitedChat, 0, fiveHourLimit, "usageLimit")
     insertStop.run("refused-stop", limitedChat, 1, "Refused", null)
     insertStop.run("other-stop", otherChat, 0, fiveHourLimit, null)
-    sqlite.exec("delete from schema_migrations where id = 81")
+    sqlite.exec(beforeConversationsSql)
+    sqlite.exec("delete from schema_migrations where id in (81, 104)")
   } finally {
     sqlite.close()
   }
 }
+
+const beforeConversationsSql = `
+  create table bot_messages (
+    id text primary key,
+    session_id text not null references sessions(id) on delete cascade,
+    sequence integer not null,
+    sender text not null,
+    text text not null,
+    attachments text,
+    created_at text not null
+  );
+  create unique index bot_messages_session_sequence_idx on bot_messages(session_id, sequence);
+  insert into bot_messages (id, session_id, sequence, sender, text, attachments, created_at)
+    select m.id, bots.session_id, m.sequence,
+      coalesce((select kind from conversation_participants p where p.id = m.sender_id), 'notice'),
+      m.text, m.attachments, m.created_at
+    from conversation_messages m join bots on bots.conversation_id = m.conversation_id;
+  drop table conversation_messages;
+  drop table conversation_participants;
+  drop index bots_session_idx;
+  alter table bots drop column conversation_id;
+  drop table conversations;
+`
 
 const conversation = async (db: CodevisorDatabaseService, sessionId: string) =>
   (await run(db.listBotMessages(sessionId, undefined, 10))).messages.map((message) => [
@@ -58,7 +95,7 @@ const conversation = async (db: CodevisorDatabaseService, sessionId: string) =>
   ])
 
 describe("usage-limit bot notice upgrade", () => {
-  it("drops notices that repeat a chat's usage-limit stop and keeps every other message", async () => {
+  it("drops notices that repeat a chat's usage-limit stop and keeps every other message through the move into conversations", async () => {
     const filename = tempDatabase()
     await seedV80(filename)
 

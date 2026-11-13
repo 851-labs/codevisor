@@ -294,6 +294,30 @@ describe("bot workspaces", () => {
     ])
   })
 
+  it("ends a bot's conversation with the bot", async () => {
+    useWorktreesRoot()
+    const db = await openDatabase()
+    const { home } = await seedBot(db)
+    await run(db.appendBotMessage("chat-helper", { sender: "user", text: "remember this" }))
+
+    await run(db.deleteBot("bot-helper"))
+    await run(
+      db.createBot({
+        id: "bot-again",
+        name: "Again",
+        symbolName: "sparkles",
+        mascot: { color: "mint", hat: "none", eyewear: "none" },
+        slug: "again",
+        projectId: home.id,
+        sessionId: "chat-helper",
+        workspaceId: "ws-helper",
+        projects: []
+      })
+    )
+
+    expect((await run(db.listBotMessages("chat-helper", undefined, 10))).messages).toEqual([])
+  })
+
   it("copies a conversation to another bot's chat and tells clients to refresh it", async () => {
     useWorktreesRoot()
     const db = await openDatabase()
@@ -302,6 +326,19 @@ describe("bot workspaces", () => {
       db.createWorkspaceWithSession({
         workspace: { id: "ws-fork", projectId: home.id, name: "Fork", hasCustomName: false },
         session: { id: "chat-fork", projectId: home.id, harnessId: "codex", title: "Fork" }
+      })
+    )
+    await run(
+      db.createBot({
+        id: "bot-fork",
+        name: "Fork",
+        symbolName: "sparkles",
+        mascot: { color: "mint", hat: "none", eyewear: "none" },
+        slug: "fork",
+        projectId: home.id,
+        sessionId: "chat-fork",
+        workspaceId: "ws-fork",
+        projects: []
       })
     )
     await run(db.appendBotMessage("chat-helper", { sender: "user", text: "ship it" }))
