@@ -7,6 +7,14 @@ public struct CloudEmailSignInButton: View {
   public init(action: @escaping () -> Void) { self.action = action }
 
   public var body: some View {
-    CloudSignInProviderButton(title: "Sign in with email", icon: .system("envelope.fill"), action: action)
+    CloudSignInProviderButton(title: title, icon: .system("envelope.fill"), action: action)
+  }
+
+  private var title: String {
+    #if os(macOS)
+      "Sign in with Email…"
+    #else
+      "Sign in with email"
+    #endif
   }
 }

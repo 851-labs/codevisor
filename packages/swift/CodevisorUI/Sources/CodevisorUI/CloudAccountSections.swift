@@ -74,33 +74,18 @@ public struct CloudAccountSections: View {
 
   private func accountSection(_ email: String?) -> some View {
     Section {
-      HStack(spacing: 12) {
-        Image(systemName: "person.crop.circle.fill")
-          .font(.system(size: 40))
-          .foregroundStyle(.secondary)
-          .accessibilityHidden(true)
-        VStack(alignment: .leading, spacing: 4) {
-          Text("Codevisor Cloud").font(.headline)
-          Text(email ?? "Signed in")
-            .font(.subheadline)
-            .foregroundStyle(.secondary)
-            .textSelection(.enabled)
-        }
-      }
-      .padding(.vertical, 4)
-      #if os(iOS)
-        signOutButton
-      #endif
-    } footer: {
       #if os(macOS)
-        HStack(spacing: 8) {
-          signOutButton
-          CloudAccountDeletionButton(cloud: cloud, isDeleting: $isDeleting)
-          Spacer()
+        CloudAccountRow(subtitle: email ?? "Signed in") {
+          HStack(spacing: 8) {
+            signOutButton
+            CloudAccountDeletionButton(cloud: cloud, isDeleting: $isDeleting)
+          }
+          .buttonStyle(.bordered)
+          .controlSize(.large)
         }
-        .buttonStyle(.bordered)
-        .controlSize(.regular)
-        .font(.body)
+      #else
+        CloudAccountRow(subtitle: email ?? "Signed in")
+        signOutButton
       #endif
     }
   }
