@@ -133,7 +133,7 @@ public final class ScreenSharingDesktopSurface {
     snapshot.isTakingLong = desktop.connection.isTakingLong
     snapshot.hostNotice = desktop.connection.hostNotice
     snapshot.displays = desktop.connection.displays
-    snapshot.displayId = desktop.displayId
+    snapshot.displayId = desktop.connection.display?.id
     snapshot.picture = picture(on: desktop)
     return snapshot
   }

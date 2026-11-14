@@ -24,12 +24,6 @@ public final class ScreenSharingDesktop {
     sessionObservation = observe { [weak self] in self?.show(connection.session) }
   }
 
-  var displayId: String? {
-    let displays = connection.displays
-    let fallback = displays.first { $0.id == connection.preferredDisplayId } ?? displays.first
-    return connection.display?.id ?? fallback?.id
-  }
-
   func join(_ id: UUID, role: ScreenSharingViewerRole) {
     seat { $0.join(id, role: role) }
   }
@@ -65,7 +59,7 @@ public final class ScreenSharingDesktop {
 
     shownSession = identity
     endpoint?.close()
-    endpoint = session.flatMap { makeEndpoint($0, displayId) }
+    endpoint = session.flatMap { makeEndpoint($0, connection.display?.id) }
     endpoint?.audio?.audible = seats.playsSound
   }
 }

@@ -192,7 +192,7 @@ private struct ScreenSharingPaneView: View {
   let pane: ScreenSharingPane
 
   var body: some View {
-    Group {
+    ZStack {
       if let store = pane.store {
         if let failure = store.failure {
           ScreenSharingFailureView(pane: pane, message: failure) { store.send(.retryButtonTapped) }
