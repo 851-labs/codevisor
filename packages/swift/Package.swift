@@ -456,6 +456,7 @@ let package = Package(
         "ACPKit",
         "ScreenSharing",
         "ScreenSharingConnection",
+        "ScreenSharingConnectionTesting",
         "ScreenSharingTesting",
         "Sentry",
       ],
