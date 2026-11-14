@@ -333,6 +333,24 @@ it("keeps checking an archived workspace's open pull request until it closes", a
   expect(lookups).toEqual(["/repo/archived@feature"])
 })
 
+it("looks a folder up once however many workspaces sit in it", async () => {
+  const { db, branches, pullRequests, lookups, workspace, start, git } = await fixture()
+  const closed = await workspace("closed", "/repo/shared")
+  const open = await workspace("open", "/repo/shared")
+  await run(db.updateWorkspace(closed.id, { isArchived: true }))
+  branches.set("/repo/shared", "feature")
+  pullRequests.set("/repo/shared", pullRequest(5))
+  const monitor = start()
+  await monitor.settled()
+  lookups.length = 0
+
+  await monitor.sweep(true)
+
+  expect(lookups).toEqual(["/repo/shared@feature"])
+  expect(await git(open.id)).toEqual({ branch: "feature", pullRequest: pullRequest(5) })
+  expect(await git(closed.id)).toEqual({ branch: "feature", pullRequest: pullRequest(5) })
+})
+
 it("does no more work once closed", async () => {
   const { branches, workspace, start, git } = await fixture()
   const feature = await workspace("feature", "/repo/feature")

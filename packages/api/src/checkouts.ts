@@ -11,6 +11,7 @@ export const Checkout = Schema.Struct({
   worktreeName: Schema.optional(Schema.String),
   git: Schema.optional(WorkspaceGit),
   createdAt: Schema.String,
-  updatedAt: Schema.optional(Schema.String)
+  updatedAt: Schema.optional(Schema.String),
+  retiredAt: Schema.optional(Schema.String)
 })
 export type Checkout = typeof Checkout.Type

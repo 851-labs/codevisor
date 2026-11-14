@@ -128,7 +128,7 @@ const reclaimChatWorktrees = async (
   const checkouts = await chatCheckoutsBeside(services, serverId, workspace, runtime?.sessions)
   for (const checkout of checkouts) {
     const archived = await withWorktreeLifecycle(services, checkout.path, () =>
-      archiveUnusedWorktree(services, serverId, checkout.projectId, checkout.path)
+      archiveUnusedWorktree(services, serverId, checkout)
     )
     queue.track(archived.purged)
   }
@@ -149,7 +149,7 @@ export const reclaimArchivedChat = (
     if (checkout === undefined || checkout.worktreeName === undefined) return
     if (checkout.serverId !== config.id) return
     const archived = await withWorktreeLifecycle(services, checkout.path, () =>
-      archiveUnusedWorktree(services, config.id, checkout.projectId, checkout.path)
+      archiveUnusedWorktree(services, config.id, checkout)
     )
     queue.track(archived.purged)
   })

@@ -1,8 +1,42 @@
+import { randomUUID } from "node:crypto"
+
+import { isoTimestamp } from "@codevisor/api"
 import type Database from "better-sqlite3"
 
-import { ensureCheckout, sessionCheckoutPlace } from "./checkouts.js"
+import { sessionCheckoutPlace, type CheckoutPlace } from "./checkouts.js"
+import { canonicalUuid } from "./ids.js"
 import type { Migration } from "./migration-types.js"
+import { worktreeNameAt } from "./paths.js"
 import { nullable, rowReader, text } from "./row-reader.js"
+
+const idRows = rowReader({ id: text })
+
+const ensureCheckout = (sqlite: Database.Database, place: CheckoutPlace): string => {
+  const existing = idRows.maybe(sqlite.prepare(backfillSql.byPlace).get(place.serverId, place.path))
+  if (existing !== undefined) return existing.id
+
+  const id = randomUUID()
+  const projectId = canonicalUuid(place.projectId)
+  const worktreeName = place.worktreeName ?? worktreeNameAt(place.projectId, place.path)
+  const worktree =
+    worktreeName === undefined
+      ? undefined
+      : idRows.maybe(
+          sqlite.prepare(backfillSql.worktreeId).get(projectId, place.serverId, worktreeName)
+        )
+  sqlite
+    .prepare(backfillSql.insert)
+    .run(
+      id,
+      place.serverId,
+      projectId,
+      worktree?.id ?? null,
+      worktreeName ?? null,
+      place.path,
+      isoTimestamp()
+    )
+  return id
+}
 
 const workspaceRootRows = rowReader({
   id: text,
@@ -101,6 +135,11 @@ export const migrations99: ReadonlyArray<Migration> = [
 ]
 
 const backfillSql = {
+  byPlace: "select id from checkouts where server_id = ? and path = ?",
+  worktreeId: "select id from worktrees where project_id = ? and server_id = ? and name = ?",
+  insert: `insert into checkouts (
+      id, server_id, project_id, worktree_id, worktree_name, path, created_at
+    ) values (?, ?, ?, ?, ?, ?, ?)`,
   workspaceRoots: `select id, server_id, project_id, root_directory, git_branch, git_detached_head, git_pull_request
       from workspaces where root_directory is not null order by is_archived desc, created_at, id`,
   copyGit: `update checkouts set git_branch = ?, git_detached_head = ?, git_pull_request = ?, git_known = 1

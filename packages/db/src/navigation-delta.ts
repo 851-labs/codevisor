@@ -9,6 +9,7 @@ import {
   workspaceFromRow,
   workspacePaneFromRow
 } from "./row-mappers.js"
+import { rowReader, text } from "./row-reader.js"
 import { projectRows, sessionRows } from "./rows.js"
 import { sessionByIdSql, type ServiceContext } from "./service-context.js"
 import type { SyncBatch } from "./sync-journal.js"
@@ -51,7 +52,7 @@ export const materializeNavigationDelta = (
     if (row === undefined) deleted.push({ table: "sessions", id })
     else sessions.push(sessionFromRow(row, localLocationFor(row.project_id)?.folder_path))
   }
-  for (const id of ids.get("workspaces") ?? []) {
+  for (const id of workspacesToSend(sqlite, ids)) {
     const row = readWorkspaceRow(sqlite, id)
     if (row === undefined) deleted.push({ table: "workspaces", id })
     else workspaces.push(workspaceFromRow(row))
@@ -79,6 +80,18 @@ export const materializeNavigationDelta = (
   return { ...batch, events }
 }
 
+const workspacesToSend = (
+  sqlite: ServiceContext["sqlite"],
+  ids: ReadonlyMap<string, ReadonlySet<string>>
+): ReadonlySet<string> => {
+  const workspaces = new Set(ids.get("workspaces"))
+  const select = sqlite.prepare(workspacesAtCheckoutSql)
+  for (const checkoutId of ids.get("checkouts") ?? []) {
+    for (const row of idRows.all(select.all(checkoutId))) workspaces.add(row.id)
+  }
+  return workspaces
+}
+
 const changedTable = (source: unknown): unknown => {
   if (source === "project_locations") return "projects"
   if (source === "session_attention" || source === "session_read_state") return "sessions"
@@ -91,4 +104,8 @@ const projectRow = (sqlite: ServiceContext["sqlite"], id: string) =>
 const sessionSummaryRow = (sqlite: ServiceContext["sqlite"], summarySelect: string, id: string) =>
   sessionRows.maybe(sqlite.prepare(sessionByIdSql(summarySelect)).get(id))
 
+const idRows = rowReader({ id: text })
+
 const projectByIdSql = "select * from projects where id = ?"
+
+const workspacesAtCheckoutSql = "select id from workspaces where default_checkout_id = ?"

@@ -124,7 +124,8 @@ describe("@codevisor/db", () => {
       name: "Main",
       hasCustomName: false,
       isArchived: false,
-      createdAt: "2026-07-01T00:00:00.000Z"
+      createdAt: "2026-07-01T00:00:00.000Z",
+      git: { branch: null, pullRequest: null }
     })
 
     const generated = await run(

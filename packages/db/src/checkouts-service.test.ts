@@ -300,6 +300,166 @@ describe("checkouts", () => {
       sessions.find((s) => s.id === child.id)?.checkoutId
     )
   })
+
+  it("starts a new checkout when a worktree's name is used again, and leaves the old chat on its own", async () => {
+    useWorktreesRoot()
+    const { db } = await openDatabase()
+    const { project, worktree } = await projectWithWorktree(db, "reused")
+    const before = await run(
+      db.createSession({ projectId: project.id, harnessId: "codex", worktreeName: worktree.name })
+    )
+    await run(db.deleteWorktree(worktree.id))
+
+    const again = await run(db.createWorktree(project.id, worktree.name, "codevisor/again"))
+    const after = await run(
+      db.createSession({ projectId: project.id, harnessId: "codex", worktreeName: worktree.name })
+    )
+    const renamed = await run(db.updateSession(before.id, { title: "Still the old one" }))
+
+    expect(after.checkoutId).not.toBe(before.checkoutId)
+    expect(renamed.checkoutId).toBe(before.checkoutId)
+    const checkouts = new Map((await run(db.listCheckouts)).map((c) => [c.id, c]))
+    expect(checkouts.get(before.checkoutId ?? "")).toMatchObject({
+      worktreeId: worktree.id,
+      retiredAt: expect.any(String)
+    })
+    expect(checkouts.get(after.checkoutId ?? "")).toMatchObject({ worktreeId: again.id })
+    expect(checkouts.get(after.checkoutId ?? "")?.retiredAt).toBeUndefined()
+  })
+
+  it("moves a checkout with its worktree when the worktree comes back under another name", async () => {
+    useWorktreesRoot()
+    const { db } = await openDatabase()
+    const { project, worktree } = await projectWithWorktree(db, "renamed")
+    const chat = await run(
+      db.createSession({ projectId: project.id, harnessId: "codex", worktreeName: worktree.name })
+    )
+    await run(db.deleteWorktree(worktree.id))
+    await run(db.createWorktree(project.id, worktree.name, "codevisor/squatter"))
+
+    const back = await run(
+      db.createWorktree(project.id, `${worktree.name}-2`, worktree.branch, worktree.id)
+    )
+
+    const found = (await run(db.listSessions)).find((candidate) => candidate.id === chat.id)
+    expect(found).toMatchObject({
+      checkoutId: chat.checkoutId,
+      worktreeName: back.name,
+      cwd: back.path
+    })
+  })
+
+  it("splits a checkout that several worktrees of one name had shared", async () => {
+    useWorktreesRoot()
+    const { db, filename } = await openDatabase()
+    const { project, worktree } = await projectWithWorktree(db, "shared")
+    const life = (id: string, branch: string, createdAt: string) =>
+      run(
+        db.createArchivedWorktree({
+          id,
+          projectId: project.id,
+          serverId: "local",
+          originalName: worktree.name,
+          state: "complete",
+          branch,
+          parentSha: "a".repeat(40),
+          snapshotRef: `refs/codevisor/archived/${id}`,
+          createdAt
+        })
+      )
+    const first = await workspaceWithChat(db, project.id, worktree.path)
+    const second = await workspaceWithChat(db, project.id, worktree.path)
+    const open = await workspaceWithChat(db, project.id, worktree.path)
+    const chatIn = (workspaceId: string) =>
+      run(
+        db.createSession({
+          projectId: project.id,
+          harnessId: "codex",
+          worktreeName: worktree.name,
+          workspaceId
+        })
+      )
+    const firstChat = await chatIn(first.workspace.id)
+    const openChat = await chatIn(open.workspace.id)
+    await life(
+      "11111111-1111-4111-8111-111111111111",
+      "codevisor/first",
+      "2026-07-01T00:00:05.000Z"
+    )
+    await life(
+      "22222222-2222-4222-8222-222222222222",
+      "codevisor/second",
+      "2026-08-01T00:00:05.000Z"
+    )
+    await run(db.close)
+
+    const sqlite = new Database(filename)
+    try {
+      const close = sqlite.prepare(
+        `update workspaces set is_archived = 1, archived_at = ?, git_known = 1, git_branch = ?
+           where id = ?`
+      )
+      close.run("2026-07-01T00:00:00.000Z", "feature/first", first.workspace.id)
+      close.run("2026-08-01T00:00:00.000Z", "feature/second", second.workspace.id)
+      sqlite
+        .prepare("update sessions set is_archived = 1, archived_at = ? where id = ?")
+        .run("2026-07-01T00:00:00.000Z", firstChat.id)
+      sqlite.exec("delete from schema_migrations where id = 109")
+    } finally {
+      sqlite.close()
+    }
+
+    const upgraded = await run(makeDatabase({ filename, serverId: "local" }))
+    onTestFinished(() => run(upgraded.close))
+    const checkouts = new Map((await run(upgraded.listCheckouts)).map((c) => [c.id, c]))
+    const workspaces = new Map((await run(upgraded.listWorkspaces)).map((w) => [w.id, w]))
+    const checkoutOf = (workspaceId: string) =>
+      checkouts.get(workspaces.get(workspaceId)?.defaultCheckoutId ?? "")
+    expect(checkoutOf(first.workspace.id)).toMatchObject({
+      worktreeId: "11111111-1111-4111-8111-111111111111",
+      retiredAt: "2026-07-01T00:00:05.000Z",
+      git: { branch: "feature/first", pullRequest: null }
+    })
+    expect(checkoutOf(second.workspace.id)).toMatchObject({
+      worktreeId: "22222222-2222-4222-8222-222222222222",
+      git: { branch: "feature/second", pullRequest: null }
+    })
+    expect(checkoutOf(open.workspace.id)).toMatchObject({ worktreeId: worktree.id })
+    expect(checkoutOf(open.workspace.id)?.retiredAt).toBeUndefined()
+    const chats = new Map((await run(upgraded.listSessions)).map((chat) => [chat.id, chat]))
+    expect(chats.get(firstChat.id)?.checkoutId).toBe(checkoutOf(first.workspace.id)?.id)
+    expect(chats.get(openChat.id)?.checkoutId).toBe(checkoutOf(open.workspace.id)?.id)
+  })
+
+  it("gives a checkout the branch its open workspace knew when the checkout did not", async () => {
+    const { db, filename } = await openDatabase()
+    const project = await run(db.createProject({ folderPath: "/tmp/checkouts-known" }))
+    const closed = await workspaceWithChat(db, project.id, "/tmp/checkouts-known")
+    await run(db.updateWorkspace(closed.workspace.id, { isArchived: true }))
+    const open = await workspaceWithChat(db, project.id, "/tmp/checkouts-known")
+    await run(db.close)
+
+    const sqlite = new Database(filename)
+    try {
+      sqlite
+        .prepare("update workspaces set git_known = 1, git_branch = ? where id = ?")
+        .run("stale", closed.workspace.id)
+      sqlite
+        .prepare("update workspaces set git_known = 1, git_branch = ? where id = ?")
+        .run("main", open.workspace.id)
+      sqlite.exec("delete from schema_migrations where id = 109")
+    } finally {
+      sqlite.close()
+    }
+
+    const upgraded = await run(makeDatabase({ filename, serverId: "local" }))
+    onTestFinished(() => run(upgraded.close))
+    const workspaces = await run(upgraded.listWorkspaces)
+    expect(workspaces.map((workspace) => workspace.git)).toEqual([
+      { branch: "main", pullRequest: null },
+      { branch: "main", pullRequest: null }
+    ])
+  })
 })
 
 const rewindCheckoutsSql = `
@@ -310,5 +470,5 @@ const rewindCheckoutsSql = `
   alter table sessions drop column checkout_id;
   alter table workspaces drop column default_checkout_id;
   drop table checkouts;
-  delete from schema_migrations where id = 99;
+  delete from schema_migrations where id in (99, 109);
 `

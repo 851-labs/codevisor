@@ -160,6 +160,18 @@ const checkoutIdFor = (
   return ensureCheckout(sqlite, place)
 }
 
+const updatedCheckoutId = (
+  context: ServiceContext,
+  current: SessionSummary,
+  projectId: string,
+  worktreeName: string | undefined
+): string | null => {
+  const stays = projectId === current.projectId && worktreeName === current.worktreeName
+  if (stays && worktreeName !== undefined && current.checkoutId !== undefined)
+    return current.checkoutId
+  return checkoutIdFor(context, projectId, worktreeName)
+}
+
 const updatedWorktreeName = (
   request: UpdateSessionRequest,
   current: SessionSummary
@@ -189,7 +201,7 @@ const sessionUpdateParams = (
     request.agentSessionId ?? current.agentSessionId ?? null,
     worktreeName ?? null,
     projectId,
-    checkoutIdFor(context, projectId, worktreeName),
+    updatedCheckoutId(context, current, projectId, worktreeName),
     request.harnessId ?? current.harnessId,
     request.harnessAccountId ?? current.harnessAccountId ?? null,
     request.updatedAt ?? current.updatedAt ?? null,

@@ -250,9 +250,17 @@ const panesFrom = (select: Database.Statement, workspaceId: string) =>
 
 const sidebarPositionRows = rowReader({ sidebar_position: text })
 
+const workspaceSelectSql = `select workspaces.*,
+    checkouts.path as checkout_path,
+    checkouts.git_branch as checkout_git_branch,
+    checkouts.git_detached_head as checkout_git_detached_head,
+    checkouts.git_pull_request as checkout_git_pull_request,
+    checkouts.git_known as checkout_git_known
+  from workspaces left join checkouts on checkouts.id = workspaces.default_checkout_id`
+
 const workspaceSql = {
-  byId: "select * from workspaces where id = ?",
-  list: "select * from workspaces order by sidebar_position, id",
+  byId: `${workspaceSelectSql} where workspaces.id = ?`,
+  list: `${workspaceSelectSql} order by workspaces.sidebar_position, workspaces.id`,
   headPosition: "select sidebar_position from workspaces order by sidebar_position limit 1",
   upsert: `insert into workspaces (
                  id, server_id, project_id, name, has_custom_name,
