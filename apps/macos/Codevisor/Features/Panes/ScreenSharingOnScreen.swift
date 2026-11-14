@@ -4,21 +4,19 @@ import SwiftUI
 struct ScreenSharingOnScreen: NSViewRepresentable {
   let onChange: @MainActor (Bool) -> Void
 
+  func makeCoordinator() -> ScreenSharingOnScreenReporter { ScreenSharingOnScreenReporter() }
+
   func makeNSView(context: Context) -> ScreenSharingOnScreenProbe {
     let probe = ScreenSharingOnScreenProbe()
-    probe.onChange = deferred
+    context.coordinator.follow(probe, report: onChange)
     return probe
   }
 
   func updateNSView(_ probe: ScreenSharingOnScreenProbe, context: Context) {
-    probe.onChange = deferred
+    context.coordinator.report = onChange
   }
 
-  static func dismantleNSView(_ probe: ScreenSharingOnScreenProbe, coordinator: ()) {
+  static func dismantleNSView(_ probe: ScreenSharingOnScreenProbe, coordinator: ScreenSharingOnScreenReporter) {
     probe.retire()
-  }
-
-  private var deferred: (Bool) -> Void {
-    { [onChange] onScreen in DispatchQueue.main.async { onChange(onScreen) } }
   }
 }
