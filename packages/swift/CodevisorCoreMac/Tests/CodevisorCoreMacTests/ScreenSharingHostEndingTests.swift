@@ -64,6 +64,58 @@ struct ScreenSharingHostEndingTests {
     }
   }
 
+  @Test func theDisplayWakingLetsTheAppAttachAgain() async throws {
+    try await Fixture.run { mac in
+      _ = await mac.send(mac.start(as: .macBook, .open))
+      let session = try #require(mac.host.current)
+      mac.workspace.post(name: NSWorkspace.screensDidSleepNotification, object: nil)
+      await mac.host.end(session)
+      #expect(await mac.send(mac.start(as: .macBook, .attach)).reason == .displayAsleep)
+
+      mac.workspace.post(name: NSWorkspace.screensDidWakeNotification, object: nil)
+
+      #expect(await mac.send(mac.start(as: .macBook, .attach)).status == "connecting")
+    }
+  }
+
+  @Test func wakingTheDisplayDoesNotUndoStopSharing() async throws {
+    try await Fixture.run { mac in
+      _ = await mac.send(mac.start(as: .macBook, .open))
+      await mac.host.end(try #require(mac.host.current), as: .stoppedOnHost)
+
+      mac.workspace.post(name: NSWorkspace.screensDidWakeNotification, object: nil)
+
+      #expect(await mac.send(mac.start(as: .macBook, .attach)).reason == .stoppedOnHost)
+    }
+  }
+
+  @Test func aStableViewersStopThatRacesStopSharingLeavesItStoppedAsBefore() async throws {
+    try await Fixture.run { mac in
+      let stable = mac.stableStart()
+      _ = await mac.send(stable)
+
+      mac.host.systemStopped(.stoppedOnHost)
+      #expect(await mac.send(mac.following(stable, .stop)).status == "stopped")
+
+      let beat = await mac.send(mac.following(stable, .heartbeat))
+      #expect(beat.status == "stopped" && beat.reason == nil)
+      #expect(beat.message == "Screen sharing ended on the host Mac.")
+    }
+  }
+
+  @Test func anAppsStopThatRacesStopSharingStillHoldsBackItsReconnect() async throws {
+    try await Fixture.run { mac in
+      let start = mac.start(as: .macBook, .open)
+      _ = await mac.send(start)
+
+      mac.host.systemStopped(.stoppedOnHost)
+      #expect(await mac.send(mac.following(start, .stop)).status == "stopped")
+
+      #expect(await mac.send(mac.following(start, .heartbeat)).reason == .stoppedOnHost)
+      #expect(await mac.send(mac.start(as: .macBook, .attach)).reason == .stoppedOnHost)
+    }
+  }
+
   @Test func aDisplayThatWentAwayDoesNotHoldBackAReconnect() async throws {
     try await Fixture.run { mac in
       _ = await mac.send(mac.start(as: .macBook, .open))

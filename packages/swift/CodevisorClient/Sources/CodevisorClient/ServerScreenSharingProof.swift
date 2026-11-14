@@ -24,13 +24,21 @@ public struct ServerScreenSharingProof: Codable, Sendable, Equatable {
   }
 
   public static func message(for request: ServerScreenSharingRequest, hostKey: String, nonce: String) -> Data? {
-    guard let app = request.app, let intent = request.intent else { return nil }
+    let target = request.displayId ?? ""
+    guard let app = request.app, let intent = request.intent, [.start, .restart].contains(request.operation),
+      [hostKey, nonce, app.key].allSatisfy(isKey),
+      !target.unicodeScalars.contains(where: CharacterSet.newlines.contains)
+    else { return nil }
 
     let lines = [
-      purpose, request.operation.rawValue, hostKey.lowercased(), nonce.lowercased(), app.key.lowercased(),
-      request.viewerId.uuidString.lowercased(), intent.rawValue, request.displayId ?? "",
+      purpose, request.operation.rawValue, hostKey, nonce, app.key, request.viewerId.uuidString.lowercased(),
+      intent.rawValue, target,
     ]
     return Data(lines.joined(separator: "\n").utf8)
+  }
+
+  public static func isKey(_ text: String) -> Bool {
+    text.utf8.count == 64 && text.utf8.allSatisfy { (48...57).contains($0) || (97...102).contains($0) }
   }
 
   public func proves(_ request: ServerScreenSharingRequest, to hostKey: String) -> Bool {
@@ -50,11 +58,20 @@ extension Data {
 
     var bytes: [UInt8] = []
     for index in stride(from: 0, to: digits.count, by: 2) {
-      guard let byte = UInt8(String(decoding: digits[index...index + 1], as: UTF8.self), radix: 16) else { return nil }
+      guard let high = Self.hexValue(digits[index]), let low = Self.hexValue(digits[index + 1]) else { return nil }
 
-      bytes.append(byte)
+      bytes.append(high << 4 | low)
     }
     self.init(bytes)
+  }
+
+  private static func hexValue(_ digit: UInt8) -> UInt8? {
+    switch digit {
+    case 48...57: digit - 48
+    case 65...70: digit - 55
+    case 97...102: digit - 87
+    default: nil
+    }
   }
 
   public var hexEncoded: String { map { String(format: "%02x", $0) }.joined() }

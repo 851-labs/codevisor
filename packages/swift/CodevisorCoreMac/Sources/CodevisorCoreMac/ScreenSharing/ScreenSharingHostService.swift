@@ -11,8 +11,9 @@ final class ScreenSharingHostService {
   typealias Display = (id: UInt32, description: ServerScreenSharingDisplay)
   static let logger = Logger(subsystem: "com.851labs.Codevisor", category: "ScreenSharing")
   private(set) var current: ScreenSharingHostSession?
-  private(set) var lastEnd: (owner: ScreenSharingHostLease.Owner, ending: ScreenSharingHostEnding)?
+  var lastEnd: (owner: ScreenSharingHostLease.Owner, ending: ScreenSharingHostEnding)?
   var displaced: (owner: ScreenSharingHostLease.Owner, by: ScreenSharingHostLease.Owner)?
+  var takeovers: [UUID: ScreenSharingHostLease.Owner] = [:]
   var challenges = ScreenSharingHostChallenges()
   var endedSessions: [(token: String, owner: ScreenSharingHostLease.Owner)] = []
   private(set) var displayChoice: ScreenSharingHostDisplayChoice
@@ -55,9 +56,9 @@ final class ScreenSharingHostService {
   private func respond(to request: ServerScreenSharingRequest) async -> ServerScreenSharingReply {
     guard !isShutdown, !Task.isCancelled else { return .init(status: "stopped") }
     guard request.version == 1 else { return ScreenSharingHostRefusal.updateNeeded.reply }
-    if startsAppSession(request), !provesItsKey(request) { return await proofRejected() }
+    if let refusal = await refusalBeforeRegistering(request) { return refusal }
     let attempt = [.start, .restart].contains(request.operation) ? registerStart(request) : nil
-    defer { if let attempt { pendingStarts.removeValue(forKey: attempt) } }
+    defer { if let attempt { forget(attempt) } }
     installObservers()
     if lease.isExpired(now: ProcessInfo.processInfo.systemUptime), let current {
       Self.logger.notice(
@@ -107,6 +108,11 @@ final class ScreenSharingHostService {
     return session.owner.appKey != nil && session.hasToken(token) && lease.renew(session.owner, now: now)
   }
 
+  private func forget(_ attempt: UUID) {
+    pendingStarts.removeValue(forKey: attempt)
+    takeovers.removeValue(forKey: attempt)
+  }
+
   private func registerStart(_ request: ServerScreenSharingRequest) -> UUID {
     let owner = ScreenSharingHostLease.Owner(request)
     pendingStarts = pendingStarts.filter { !$0.value.isSameHolder(as: owner) }
@@ -116,7 +122,6 @@ final class ScreenSharingHostService {
   }
 
   private func start(_ request: ServerScreenSharingRequest, attempt: UUID) async -> ServerScreenSharingReply {
-    if let refusal = refusalBeforeStarting(request) { return refusal }
     let owner = ScreenSharingHostLease.Owner(request)
     var replacement: ScreenSharingHostLease.ReplacementPermit?
     if request.operation == .restart, owner.appKey == nil {
@@ -186,6 +191,7 @@ final class ScreenSharingHostService {
     current = session
     lastEnd = nil
     if displaced?.owner == session.owner { displaced = nil }
+    if let taken = takeovers[attempt] { displaced = (taken, session.owner) }
     session.displays = available.map(\.description)
     displayChoice.remember(display, for: session.owner)
     configureChannels(session)
@@ -330,7 +336,7 @@ final class ScreenSharingHostService {
     session.state = "stopping"
     session.control?.revoke("Screen sharing ended.")
     session.clipboard?.cancel(reason: "Screen sharing ended.")
-    lastEnd = (session.owner, ending)
+    if session.owner.appKey != nil { lastEnd = (session.owner, ending) }
     Task { await end(session, as: ending) }
   }
 
@@ -389,6 +395,10 @@ final class ScreenSharingHostService {
           MainActor.assumeIsolated { self?.systemStopped(ending) }
         })
     }
+    observers.append(
+      workspaceNotificationCenter.addObserver(
+        forName: NSWorkspace.screensDidWakeNotification, object: nil, queue: .main
+      ) { [weak self] _ in MainActor.assumeIsolated { self?.displayWoke() } })
     observers.append(
       notificationCenter.addObserver(
         forName: NSApplication.didChangeScreenParametersNotification, object: nil, queue: .main
