@@ -133,6 +133,7 @@ struct ScreenSharingDesktopsTests {
 
     harness.world.machineName = nil
     await awaitObserved { model?.isEnded == true && harness.host.stops.count == 1 }
+    #expect(harness.model() == nil, "no new Desktop, so no spinner, while the machine is gone")
     harness.world.machineName = "croissant"
 
     #expect(harness.model() !== model)
