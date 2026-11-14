@@ -107,6 +107,7 @@ final class ScreenSharingAttempt {
 
       return makeVNC(display.id, capabilities.base.controlLease == true)
     }
+    guard capabilities.base.provider != "vnc" else { throw ScreenSharingAttemptEnd.refused(.unsupportedOnThisDevice) }
     guard capabilities.offersV2 else { throw ScreenSharingAttemptEnd.refused(.updateNeeded) }
 
     return ScreenSharingMediaSessionTransport(

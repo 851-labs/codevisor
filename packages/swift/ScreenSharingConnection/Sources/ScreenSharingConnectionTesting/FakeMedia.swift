@@ -6,16 +6,18 @@ import ScreenSharingV2
 
 @MainActor
 @Observable
-final class FakeMedia {
-  nonisolated static let address = ServerScreenSharingMediaAddress(
+public final class FakeMedia {
+  public nonisolated static let address = ServerScreenSharingMediaAddress(
     endpointId: String(repeating: "a", count: 64), relayUrl: nil, directAddrs: ["192.168.1.2:4433"])
 
-  var endpointId = FakeMedia.address.endpointId
-  var connectFails = false
-  var handshakeHangs = false
-  private(set) var sessions: [LoopbackSession] = []
+  public var endpointId = FakeMedia.address.endpointId
+  public var connectFails = false
+  public var handshakeHangs = false
+  public private(set) var sessions: [LoopbackSession] = []
 
-  var connector: ScreenSharingV2Connector {
+  public init() {}
+
+  public var connector: ScreenSharingV2Connector {
     ScreenSharingV2Connector(
       address: { [weak self] in
         ServerScreenSharingMediaAddress(

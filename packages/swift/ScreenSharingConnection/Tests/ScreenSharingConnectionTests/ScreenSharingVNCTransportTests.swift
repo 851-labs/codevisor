@@ -4,6 +4,7 @@
   import Foundation
   import ScreenSharing
   import ScreenSharingConnection
+  import ScreenSharingConnectionTesting
   import ScreenSharingTesting
   import Testing
 

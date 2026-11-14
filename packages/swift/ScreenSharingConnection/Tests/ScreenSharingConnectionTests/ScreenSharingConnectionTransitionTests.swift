@@ -1,6 +1,7 @@
 import CodevisorTestSupport
 import Foundation
 import ScreenSharingConnection
+import ScreenSharingConnectionTesting
 import Testing
 
 @MainActor
@@ -69,6 +70,18 @@ struct ScreenSharingConnectionTransitionTests {
     await harness.settle(.failed(refusal.expected))
 
     #expect(harness.host.starts.count == (refusal.operation == .start ? 1 : 0))
+    await harness.noTimersLeft()
+  }
+
+  @Test("A VNC machine viewed from an app that brings no VNC transport fails as unsupported here, with no start")
+  func failsForAVNCMachineWithoutATransport() async {
+    let host = FakeHost.old()
+    host.provider = "vnc"
+    let harness = ConnectionHarness(host: host)
+    harness.show()
+    await harness.settle(.failed(.unsupportedOnThisDevice))
+
+    #expect(host.starts.isEmpty && host.registeredPanes.isEmpty)
     await harness.noTimersLeft()
   }
 

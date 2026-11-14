@@ -47,6 +47,17 @@ public final class ScreenSharingConnection {
 
   public func systemWoke() { handle(.systemWoke) }
 
+  public func restart() { handle(.restartRequested) }
+
+  public func switchDisplay(to displayId: String) {
+    guard preferredDisplayId != displayId else { return }
+
+    preferredDisplayId = displayId
+    guard state == .reconnecting || display?.id != displayId else { return }
+
+    restart()
+  }
+
   func end() { handle(.ended) }
 
   func surface(_ id: UUID) -> ScreenSharingSurfaceState? {
@@ -118,6 +129,9 @@ public final class ScreenSharingConnection {
     case .start(let intent, let wait, let asksWhyItEnded):
       if asksWhyItEnded { host.sessionDropped() }
       start(.init(intent: intent, preferredDisplayId: preferredDisplayId), after: wait)
+    case .restart:
+      stopOnHost()
+      start(.init(intent: .attach, preferredDisplayId: preferredDisplayId), after: .zero)
     case .stop:
       stop()
     case nil:
@@ -179,6 +193,10 @@ public final class ScreenSharingConnection {
   private func stop() {
     cancelAttempt()
     display = nil
+    stopOnHost()
+  }
+
+  private func stopOnHost() {
     guard let owner = host.takeStarted() else { return }
 
     Task { [host] in await host.stop(owner) }

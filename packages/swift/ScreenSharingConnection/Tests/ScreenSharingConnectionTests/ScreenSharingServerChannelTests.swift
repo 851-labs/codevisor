@@ -3,6 +3,7 @@ import CodevisorTestSupport
 import CryptoKit
 import Foundation
 import ScreenSharingConnection
+import ScreenSharingConnectionTesting
 import ScreenSharingV2
 import Testing
 
