@@ -4,6 +4,7 @@ import AppKit
 public final class ScreenSharingOnScreenProbe: NSView {
   public var onChange: ((Bool) -> Void)?
   public private(set) var isOnScreen = false
+  var isApplicationHidden: () -> Bool = { NSApplication.shared.isHidden }
   private var windowVisibility: NSKeyValueObservation?
 
   public override func viewWillMove(toWindow newWindow: NSWindow?) {
@@ -49,6 +50,9 @@ public final class ScreenSharingOnScreenProbe: NSView {
     for change in [NSWindow.didMiniaturizeNotification, NSWindow.didDeminiaturizeNotification] {
       NotificationCenter.default.addObserver(self, selector: #selector(windowChanged), name: change, object: window)
     }
+    for change in [NSApplication.didHideNotification, NSApplication.didUnhideNotification] {
+      NotificationCenter.default.addObserver(self, selector: #selector(windowChanged), name: change, object: nil)
+    }
   }
 
   private func stopWatchingWindow() {
@@ -63,7 +67,7 @@ public final class ScreenSharingOnScreenProbe: NSView {
   private var isInAShowingWindow: Bool {
     guard let window else { return false }
 
-    return window.isVisible && !window.isMiniaturized
+    return window.isVisible && !window.isMiniaturized && !isApplicationHidden()
   }
 
   private func report() {
