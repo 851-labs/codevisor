@@ -235,7 +235,7 @@ const folderOwnerId = (
   projectIdRows.maybe(sqlite.prepare(projectLocationSql.folderOwner).get(serverId, folderPath))
     ?.project_id
 
-const projectChildTables = ["project_locations", "sessions", "worktrees"]
+const projectChildTables = ["project_locations", "sessions", "worktrees", "checkouts"]
 
 const projectIdRows = rowReader({ project_id: text })
 

@@ -257,8 +257,7 @@ const sessionPlace = (row: SessionRow, folderPath: string | undefined): SessionP
   if (row.checkout_path != null && row.checkout_worktree_name != null) {
     return { cwd: row.checkout_path, worktreeName: row.checkout_worktree_name }
   }
-  const worktreeName = row.checkout_path == null ? (row.worktree_name ?? undefined) : undefined
-  return { cwd: resolveSessionCwd(folderPath, row.project_id, worktreeName), worktreeName }
+  return { cwd: resolveSessionCwd(folderPath, row.project_id, undefined), worktreeName: undefined }
 }
 
 export const sessionFromRow = (row: SessionRow, folderPath: string | undefined): SessionSummary => {

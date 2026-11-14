@@ -111,7 +111,7 @@ const setupChunksFrom = (db: Database.Database, subject: string, kind: string, p
 const accessibleSetup = `select setup.* from setup_state setup join sessions s on s.id = ?
   where setup.subject_id = s.id or (setup.kind = 'project.setup' and setup.subject_id = s.project_id)
     or (setup.kind = 'worktree.setup' and setup.subject_id in (
-      select id from worktrees where project_id = s.project_id and name = s.worktree_name))`
+      select worktree_id from checkouts where checkouts.id = s.checkout_id))`
 
 const setupSql = {
   upsert: `insert into setup_state(subject_id, kind, revision, created_at, payload) values (?, ?, ?, ?, ?)

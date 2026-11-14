@@ -24,7 +24,7 @@ export const installNavigationJournal = (db: Database.Database): void => {
       "harness_id",
       "harness_account_id",
       "workspace_id",
-      "worktree_name",
+      "checkout_id",
       "is_archived",
       "is_detached",
       "sidebar_state",

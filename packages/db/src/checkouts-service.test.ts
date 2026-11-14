@@ -395,6 +395,7 @@ describe("checkouts", () => {
 
     const sqlite = new Database(filename)
     try {
+      sqlite.exec(legacyColumnsSql)
       const close = sqlite.prepare(
         `update workspaces set is_archived = 1, archived_at = ?, git_known = 1, git_branch = ?
            where id = ?`
@@ -404,7 +405,6 @@ describe("checkouts", () => {
       sqlite
         .prepare("update sessions set is_archived = 1, archived_at = ? where id = ?")
         .run("2026-07-01T00:00:00.000Z", firstChat.id)
-      sqlite.exec("delete from schema_migrations where id = 109")
     } finally {
       sqlite.close()
     }
@@ -441,13 +441,14 @@ describe("checkouts", () => {
 
     const sqlite = new Database(filename)
     try {
+      sqlite.exec(legacyColumnsSql)
+      sqlite.exec("update checkouts set git_known = 0, git_branch = null")
       sqlite
         .prepare("update workspaces set git_known = 1, git_branch = ? where id = ?")
         .run("stale", closed.workspace.id)
       sqlite
         .prepare("update workspaces set git_known = 1, git_branch = ? where id = ?")
         .run("main", open.workspace.id)
-      sqlite.exec("delete from schema_migrations where id = 109")
     } finally {
       sqlite.close()
     }
@@ -462,7 +463,28 @@ describe("checkouts", () => {
   })
 })
 
+const legacyColumnsSql = `
+  drop trigger navigation_sessions_update;
+  alter table sessions add column worktree_name text;
+  update sessions set worktree_name = (
+    select worktree_name from checkouts where checkouts.id = sessions.checkout_id
+  );
+  alter table workspaces add column root_directory text;
+  alter table workspaces add column git_branch text;
+  alter table workspaces add column git_detached_head text;
+  alter table workspaces add column git_pull_request text;
+  alter table workspaces add column git_known integer not null default 0;
+  update workspaces set
+    root_directory = (select path from checkouts where checkouts.id = default_checkout_id),
+    git_branch = (select git_branch from checkouts where checkouts.id = default_checkout_id),
+    git_known = coalesce(
+      (select git_known from checkouts where checkouts.id = default_checkout_id), 0
+    );
+  delete from schema_migrations where id in (109, 110);
+`
+
 const rewindCheckoutsSql = `
+  ${legacyColumnsSql}
   drop index workspace_panes_checkout_idx;
   drop index sessions_checkout_idx;
   alter table workspace_panes drop column resource_server_id;
@@ -470,5 +492,5 @@ const rewindCheckoutsSql = `
   alter table sessions drop column checkout_id;
   alter table workspaces drop column default_checkout_id;
   drop table checkouts;
-  delete from schema_migrations where id in (99, 109);
+  delete from schema_migrations where id = 99;
 `
