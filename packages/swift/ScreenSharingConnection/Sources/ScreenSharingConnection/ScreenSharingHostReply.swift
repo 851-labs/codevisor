@@ -10,9 +10,9 @@ struct ScreenSharingHostReply {
   }
 
   var challenge: ServerScreenSharingChallenge? {
-    guard let challenge = base.challenge, Self.isKey(challenge.hostKey), Self.isKey(challenge.nonce) else {
-      return nil
-    }
+    guard let challenge = base.challenge, ServerScreenSharingProof.isKey(challenge.hostKey),
+      ServerScreenSharingProof.isKey(challenge.nonce)
+    else { return nil }
 
     return challenge
   }
@@ -50,10 +50,4 @@ struct ScreenSharingHostReply {
     if heartbeatToOldHost, base.status == "failed" { return .refused(.unclassified(message: base.message)) }
     return .hostFailed(message: base.message)
   }
-
-  private static func isKey(_ text: String) -> Bool {
-    text.utf8.count == 64 && text.utf8.allSatisfy { hexDigits.contains($0) }
-  }
-
-  private static let hexDigits = Set("0123456789abcdef".utf8)
 }
