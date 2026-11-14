@@ -1,5 +1,6 @@
 [
   "ControlLeaseTests",
+  "ScreenSharingViewerHarness",
   "ScreenSharingViewerTests",
   "NavigationRaceTests",
   "CloudTunnelRaceTests",
