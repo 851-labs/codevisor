@@ -43,6 +43,7 @@ struct ScreenSharingConnectionStateMachine: Equatable, Sendable {
   private var retriedHostFailure = false
   private var openPending = false
   private var attemptIntent = ServerScreenSharingRequest.Intent.attach
+  private var failureIsSticky = false
 
   init() {}
 
@@ -98,7 +99,7 @@ struct ScreenSharingConnectionStateMachine: Equatable, Sendable {
   private var staysFailed: Bool {
     guard case .failed = state else { return false }
 
-    return attached
+    return attached && failureIsSticky
   }
 
   private var lingersUnseen: Bool {
@@ -132,9 +133,9 @@ struct ScreenSharingConnectionStateMachine: Equatable, Sendable {
   }
 
   private mutating func recover(from reason: ScreenSharingFailureReason) -> Command? {
-    guard state == .failed(reason) else { return nil }
+    guard state == .failed(reason), visible else { return nil }
 
-    return visible ? connect(open: false) : turnOff()
+    return connect(open: false)
   }
 
   private mutating func enter(_ stage: ScreenSharingConnectStage) -> Command? {
@@ -166,6 +167,8 @@ struct ScreenSharingConnectionStateMachine: Equatable, Sendable {
       return nil
     case (_, .hostFailed(let message)):
       return hostFailed(message)
+    case (_, .endedByHost(let message)):
+      return fail(.unclassified(message: message), sticky: true)
     case (.live, .refused(let reason)), (.connecting, .dropped(let reason)):
       return fail(reason)
     case (.live, .dropped):
@@ -193,6 +196,7 @@ struct ScreenSharingConnectionStateMachine: Equatable, Sendable {
   }
 
   private mutating func connect(open: Bool) -> Command? {
+    failureIsSticky = false
     state = .connecting(.reachingHost)
     return start(after: .zero, open: open)
   }
@@ -218,8 +222,9 @@ struct ScreenSharingConnectionStateMachine: Equatable, Sendable {
     return .start(attemptIntent, after: wait, asksWhyItEnded: asksWhyItEnded)
   }
 
-  private mutating func fail(_ reason: ScreenSharingFailureReason) -> Command? {
+  private mutating func fail(_ reason: ScreenSharingFailureReason, sticky: Bool = false) -> Command? {
     state = .failed(reason)
+    failureIsSticky = sticky || reason.isDecidedByHost
     triesUsed = 0
     retriedHostFailure = false
     if staysFailed, unseen == .lingering { unseen = nil }
@@ -230,6 +235,7 @@ struct ScreenSharingConnectionStateMachine: Equatable, Sendable {
     guard state != .off else { return nil }
 
     state = .off
+    failureIsSticky = false
     unseen = nil
     triesUsed = 0
     retriedHostFailure = false

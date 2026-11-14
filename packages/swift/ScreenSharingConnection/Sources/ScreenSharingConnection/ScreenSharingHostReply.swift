@@ -47,7 +47,7 @@ struct ScreenSharingHostReply {
     case "stopped": return .dropped(.unclassified(message: base.message))
     default: break
     }
-    if heartbeatToOldHost, base.status == "failed" { return .refused(.unclassified(message: base.message)) }
+    if heartbeatToOldHost, base.status == "failed" { return .endedByHost(message: base.message) }
     return .hostFailed(message: base.message)
   }
 }

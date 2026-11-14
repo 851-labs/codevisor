@@ -54,6 +54,13 @@ public enum ScreenSharingFailureReason: Equatable, Sendable {
     }
   }
 
+  var isDecidedByHost: Bool {
+    switch self {
+    case .takenOver, .inUse, .inUseOldHost, .stoppedOnHost, .displayAsleep, .sessionSwitched: true
+    default: false
+    }
+  }
+
   var yieldsToAnOpen: Bool {
     switch self {
     case .inUse, .stoppedOnHost, .displayAsleep, .sessionSwitched: true

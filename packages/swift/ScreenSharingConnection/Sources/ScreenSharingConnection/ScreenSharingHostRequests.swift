@@ -95,7 +95,7 @@ final class ScreenSharingHostRequests {
     owesAnExplanation = started != nil
   }
 
-  func whyItEnded() async throws -> ScreenSharingFailureReason? {
+  func whyItEnded() async throws -> ScreenSharingAttemptEnd? {
     guard owesAnExplanation else { return nil }
 
     let reply: ScreenSharingHostReply?
@@ -105,9 +105,13 @@ final class ScreenSharingHostRequests {
       reply = nil
     }
     owesAnExplanation = false
-    guard let reply, !reply.isSharing, case .refused(let reason) = heartbeatEnd(for: reply) else { return nil }
+    guard let reply, !reply.isSharing else { return nil }
 
-    return reason
+    switch heartbeatEnd(for: reply) {
+    case .refused(let reason): return .refused(reason)
+    case .endedByHost(let message): return .endedByHost(message: message)
+    case .dropped, .hostFailed: return nil
+    }
   }
 
   func takeStarted() -> Owner? {
