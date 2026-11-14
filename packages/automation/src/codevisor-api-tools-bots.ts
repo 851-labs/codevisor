@@ -143,7 +143,7 @@ export const codevisorBotApiTools: ReadonlyArray<CodevisorApiToolSpec> = [
   ),
   apiTool(
     "bots.message",
-    'Send a message to a bot, from you: another bot, or an agent. For a bot on another machine pass machine. It lands in your thread with that bot, which the user is not part of, and the bot reads it at its next step. Its reply reaches you as a <codevisor-event type="thread.message">. A bot refuses this from an agent it started, whose final reply it already gets. Returns { sent, threadId, messageId }.',
+    'Send a message to a bot, from you: another bot, or an agent. Write as yourself to a peer, saying what the user needs and whose it is ("Can you log Maya\'s lunch?"), not as if you were the user. For a bot on another machine pass machine. It lands in your thread with that bot, which the user is not part of, and the bot reads it at its next step. Its reply reaches you as a <codevisor-event type="thread.message">. A bot refuses this from an agent it started, whose final reply it already gets. Returns { sent, threadId, messageId }.',
     "POST",
     "/v1/bots/:id/messages",
     { body: MessageBotBody }
