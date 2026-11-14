@@ -16,10 +16,12 @@ public struct ScreenSharingHostRequest: Sendable {
   public var base: ServerScreenSharingRequest
   public var app: App?
   public var intent: ScreenSharingStartIntent?
+  public var proof: ScreenSharingProof?
+  public var session: String?
 
-  public init(_ base: ServerScreenSharingRequest, app: App? = nil, intent: ScreenSharingStartIntent? = nil) {
+  public init(_ base: ServerScreenSharingRequest, app: App? = nil, session: String? = nil) {
     self.base = base
     self.app = app
-    self.intent = intent
+    self.session = session
   }
 }

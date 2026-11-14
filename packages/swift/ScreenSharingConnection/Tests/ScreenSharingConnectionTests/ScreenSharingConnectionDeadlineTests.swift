@@ -101,13 +101,13 @@ struct ScreenSharingConnectionDeadlineTests {
     await harness.settle(.failed(.noVideo))
   }
 
-  enum Interrupted: CaseIterable, Sendable { case capabilities, start }
+  enum Interrupted: CaseIterable, Sendable { case capabilities, startOnAnOldHost }
 
   @Test(
     "A request the relay interrupts, or the gateway times out, is sent again inside the connect and still goes live",
     arguments: Interrupted.allCases, [false, true])
   func resendsAnInterruptedRequest(_ interrupted: Interrupted, gatewayTimedOut: Bool) async {
-    let harness = ConnectionHarness()
+    let harness = ConnectionHarness(host: interrupted == .capabilities ? FakeHost() : .old())
     let operation: FakeHost.Operation = interrupted == .capabilities ? .capabilities : .start
     harness.host.answerNext(operation, .failure(gatewayTimedOut ? FakeHost.gatewayTimedOut : FakeHost.interrupted))
     harness.show()

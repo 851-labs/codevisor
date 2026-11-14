@@ -214,7 +214,7 @@ struct ScreenSharingConnectionLifetimeTests {
     let harness = ConnectionHarness()
     let base = harness.machine
     let other = ScreenSharingMachine(
-      id: "tamale", channel: base.channel, connector: base.connector, appName: base.appName,
+      id: "tamale", channel: base.channel, connector: base.connector, appName: base.appName, signer: base.signer,
       installId: base.installId, liveWorkspace: base.liveWorkspace)
 
     #expect(harness.manager.connection(for: harness.machine) === harness.connection)

@@ -10,6 +10,7 @@ final class ConnectionHarness {
   let clock = TestClock()
   var host: FakeHost
   let media = FakeMedia()
+  let signer = FakeSigner()
   let manager: ScreenSharingConnectionManager
   let installId = UUID()
   var workspaces = [UUID()]
@@ -26,7 +27,8 @@ final class ConnectionHarness {
   var machine: ScreenSharingMachine {
     ScreenSharingMachine(
       id: Self.machineId, channel: { [weak self, host] in self?.host ?? host }, connector: media.connector,
-      appName: Self.appName, installId: installId, liveWorkspace: { [weak self] in self?.workspaces.first },
+      appName: Self.appName, signer: signer.signer, installId: installId,
+      liveWorkspace: { [weak self] in self?.workspaces.first },
       makeVNCTransport: makeVNCTransport)
   }
 

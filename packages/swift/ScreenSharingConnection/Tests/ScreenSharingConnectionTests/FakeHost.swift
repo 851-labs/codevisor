@@ -28,6 +28,8 @@ final class FakeHost: ScreenSharingHostChannel {
     404, #"{"error":"Screen Sharing pane is no longer available"}"#)
 
   var abilities: [String]
+  var mintsChallenges = true
+  var challengeHostKey = FakeHost.grant.endpointId
   var provider: String?
   var displays = [FakeHost.display]
   var isReconnecting = false
@@ -38,6 +40,8 @@ final class FakeHost: ScreenSharingHostChannel {
   @ObservationIgnored private var queued: [Operation: [Answer]] = [:]
   @ObservationIgnored private var standing: [Operation: Answer] = [:]
   @ObservationIgnored private var gates: [Operation: TestSignal] = [:]
+  @ObservationIgnored private var liveNonces: Set<String> = []
+  @ObservationIgnored private var minted = 0
 
   init(abilities: [String] = [ScreenSharingHostReply.appSessions]) {
     self.abilities = abilities
@@ -92,10 +96,38 @@ final class FakeHost: ScreenSharingHostChannel {
     case .reply(let status, let message, let reason, let holderName):
       var base = ServerScreenSharingReply(status: status, message: message)
       if status == "connecting" { base.media = Self.grant }
-      return ScreenSharingHostReply(base, abilities: abilities, reason: reason, holderName: holderName)
+      var reply = ScreenSharingHostReply(base, abilities: abilities, reason: reason, holderName: holderName)
+      if reason == ScreenSharingHostReply.proofRejected { reply.challenge = mintChallenge() }
+      if status == "connecting", request.app != nil { reply.session = mintSession() }
+      return reply
     case nil:
       return healthyReply(to: request)
     }
+  }
+
+  static func token(_ number: Int) -> String {
+    String(repeating: "0", count: 60) + String(format: "%04x", number)
+  }
+
+  private var verifiesApps: Bool { mintsChallenges && abilities.contains(ScreenSharingHostReply.appSessions) }
+
+  private func mintChallenge() -> ScreenSharingChallenge {
+    minted += 1
+    let nonce = Self.token(minted)
+    liveNonces.insert(nonce)
+    return ScreenSharingChallenge(hostKey: challengeHostKey, nonce: nonce)
+  }
+
+  private func mintSession() -> String {
+    minted += 1
+    return Self.token(minted)
+  }
+
+  private func acceptsTheProof(of request: ScreenSharingHostRequest) -> Bool {
+    guard verifiesApps, request.app != nil else { return true }
+    guard let nonce = request.proof?.nonce else { return false }
+
+    return liveNonces.remove(nonce) != nil
   }
 
   func registerDesktopPane(_ identity: ScreenSharingLegacyIdentity) async throws {
@@ -107,11 +139,23 @@ final class FakeHost: ScreenSharingHostChannel {
     case .capabilities:
       var base = ServerScreenSharingReply(status: "available", displays: displays, provider: provider)
       base.engines = ["v2"]
-      return ScreenSharingHostReply(base, abilities: abilities)
+      var reply = ScreenSharingHostReply(base, abilities: abilities)
+      if verifiesApps, request.app != nil { reply.challenge = mintChallenge() }
+      return reply
     case .start, .restart:
+      guard acceptsTheProof(of: request) else {
+        var rejected = ScreenSharingHostReply(
+          ServerScreenSharingReply(status: "failed", message: "The request couldn't be verified."),
+          abilities: abilities, reason: ScreenSharingHostReply.proofRejected)
+        rejected.challenge = mintChallenge()
+        return rejected
+      }
+
       var base = ServerScreenSharingReply(status: "connecting")
       base.media = Self.grant
-      return sharing(base, for: request)
+      var reply = sharing(base, for: request)
+      if verifiesApps, request.app != nil { reply.session = mintSession() }
+      return reply
     case .heartbeat:
       return sharing(ServerScreenSharingReply(status: "viewing"), for: request)
     case .stop, .setScale:
@@ -122,7 +166,7 @@ final class FakeHost: ScreenSharingHostChannel {
   private func sharing(
     _ base: ServerScreenSharingReply, for request: ScreenSharingHostRequest
   ) -> ScreenSharingHostReply {
-    guard request.app != nil, abilities.contains(ScreenSharingHostReply.appSessions) else {
+    guard verifiesApps, request.app != nil || request.session != nil else {
       return ScreenSharingHostReply(base, abilities: abilities)
     }
 

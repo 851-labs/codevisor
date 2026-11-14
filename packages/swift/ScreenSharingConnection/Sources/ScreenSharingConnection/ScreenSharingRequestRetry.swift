@@ -15,7 +15,7 @@ enum ScreenSharingRequestRetry {
     return try await request()
   }
 
-  private static func isTransient(_ error: any Error) -> Bool {
+  static func isTransient(_ error: any Error) -> Bool {
     if case CodevisorServerClientError.httpStatus(504, _) = error { return true }
     return ServerConnectionLoss.isInterruption(error)
   }

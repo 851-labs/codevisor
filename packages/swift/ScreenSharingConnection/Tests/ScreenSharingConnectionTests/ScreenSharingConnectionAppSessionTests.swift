@@ -10,7 +10,7 @@ struct ScreenSharingConnectionAppSessionTests {
   private static let app = ScreenSharingHostRequest.App(
     key: FakeMedia.address.endpointId, name: ConnectionHarness.appName)
 
-  @Test("A host with app-owned sessions gets the app's key and name on start, heartbeat and stop, and no pane")
+  @Test("A host with app-owned sessions gets the app on capabilities and start, then only the session token")
   func presentsTheAppIdentity() async throws {
     let harness = ConnectionHarness()
     let surface = harness.show()
@@ -20,13 +20,14 @@ struct ScreenSharingConnectionAppSessionTests {
     await harness.elapse(ScreenSharingConnectionDeadlines.unseenDebounce)
     await harness.clock.waitForSleep(ScreenSharingConnectionDeadlines.linger)
     await harness.stayLive(for: ScreenSharingConnectionDeadlines.linger)
-    await awaitObserved { harness.host.requests(.stop).count == 1 }
+    await awaitObserved { harness.host.stops.count == 1 }
 
     let start = try #require(harness.host.starts.first)
-    #expect(harness.host.requests(.capabilities).allSatisfy { $0.app == nil })
+    let token = FakeHost.token(2)
+    #expect(harness.host.requests(.capabilities).allSatisfy { $0.app == Self.app && $0.proof == nil })
     #expect(start.app == Self.app && start.intent == .attach && start.base.displayId == nil)
-    #expect(harness.host.requests(.heartbeat).allSatisfy { $0.app == Self.app && $0.intent == nil })
-    #expect(harness.host.requests(.stop)[0].app == Self.app)
+    #expect(harness.host.requests(.heartbeat).allSatisfy { $0.session == token && $0.app == nil })
+    #expect(harness.host.stops[0].session == token && harness.host.stops[0].app == nil)
     #expect(harness.host.registeredPanes.isEmpty)
   }
 
@@ -56,7 +57,8 @@ struct ScreenSharingConnectionAppSessionTests {
 
     let operations = harness.host.requests.filter { [.start, .stop].contains($0.base.operation) }
     #expect(operations.map(\.base.operation) == [.start, .stop, .start])
-    #expect(operations.map(\.app) == [Self.app, Self.app, nil])
+    #expect(operations.map(\.app) == [Self.app, nil, nil])
+    #expect(operations.map(\.session) == [nil, FakeHost.token(2), nil])
     #expect(harness.host.registeredPanes == [harness.legacyIdentity(harness.workspaces[0])])
   }
 
@@ -135,6 +137,7 @@ struct ScreenSharingConnectionAppSessionTests {
 
     let attempt = harness.host.starts[0].base.viewerId
     #expect(harness.host.stops.map(\.base.viewerId) == [attempt, attempt])
+    #expect(harness.host.stops.map(\.session) == [nil, FakeHost.token(2)], "no token until the start is answered")
     #expect(harness.connection.state == .off && harness.media.sessions.isEmpty, "the late grant opened nothing")
   }
 
