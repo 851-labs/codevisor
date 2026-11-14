@@ -1,44 +1,41 @@
 import CodevisorCore
 import SwiftUI
 
-public struct CloudAccountDeletionSection: View {
-  private let cloud: CloudAccountController
+struct CloudAccountDeletionSection: View {
+  let cloud: CloudAccountController
 
-  public init(cloud: CloudAccountController) {
-    self.cloud = cloud
-  }
-
-  public var body: some View {
+  var body: some View {
     if cloud.state.isSignedIn {
-      Section {
-        CloudAccountDeletionButton(cloud: cloud)
-      } footer: {
-        Text(
-          "Permanently delete your Cloud account and disconnect its machines. Files and chats on your machines are kept."
-        )
-      }
+      #if os(macOS)
+        Section {
+          SettingsDeletionRow(
+            title: "Delete cloud account",
+            description: "Permanently deletes your account and disconnects your machines."
+          ) {
+            CloudAccountDeletionButton(cloud: cloud, title: "Delete…", deletingTitle: "Deleting…")
+          }
+        }
+      #else
+        Section {
+          CloudAccountDeletionButton(cloud: cloud, title: "Delete Cloud Account", deletingTitle: "Deleting Account…")
+        } footer: {
+          Text(
+            "Permanently delete your Cloud account and disconnect its machines. Files and chats on your machines are kept."
+          )
+        }
+      #endif
     }
   }
 }
 
-public struct CloudAccountDeletionButton: View {
-  private let cloud: CloudAccountController
-  private let title: String
-  private let deletingTitle: String
+struct CloudAccountDeletionButton: View {
+  let cloud: CloudAccountController
+  let title: String
+  let deletingTitle: String
   @State private var showsDeleteConfirmation = false
   @State private var errorMessage: String?
 
-  public init(
-    cloud: CloudAccountController,
-    title: String = "Delete Cloud Account",
-    deletingTitle: String = "Deleting Account…"
-  ) {
-    self.cloud = cloud
-    self.title = title
-    self.deletingTitle = deletingTitle
-  }
-
-  public var body: some View {
+  var body: some View {
     Button(cloud.isDeletingAccount ? deletingTitle : title, role: .destructive) {
       showsDeleteConfirmation = true
     }
