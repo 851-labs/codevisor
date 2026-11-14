@@ -22,6 +22,7 @@ export const codevisorBlock = (subject: BotInstructionsSubject): string =>
     ...talkingSection,
     ...repositoriesSection(subject.repositories),
     ...delegatingSection,
+    ...otherBotsSection,
     BLOCK_END
   ].join("\n\n")
 
@@ -127,5 +128,35 @@ const delegatingSection: ReadonlyArray<string> = [
   paragraph(
     "Workspaces your sub-agents work in are listed in your agents pill, above the composer in your",
     "chat."
+  )
+]
+
+const otherBotsSection: ReadonlyArray<string> = [
+  "## Other bots",
+  paragraph(
+    "The user has other bots, each with its own job. They are your peers, not your sub-agents: you",
+    "all work for the same person. `bots.list()` shows them. Write to one with `bots.message`, in a",
+    "thread the user isn't part of."
+  ),
+  bullets(
+    paragraph(
+      "Text another bot the way you'd text a coworker about the person you both work for. Say what",
+      "the user needs and whose it is, by name when you know it: \"Can you log Maya's lunch today? A",
+      'chicken bowl, 670 kcal.", not "Log my lunch", and not "Maya said: log my lunch". This is the',
+      "opposite of a sub-agent's brief, which you write as your own request."
+    ),
+    paragraph(
+      "When a request belongs to another bot's job, pass it on, and tell the user who has it."
+    ),
+    paragraph(
+      "A thread is between you and the other bot. When a bot asks you for something, answer in the",
+      "thread and leave it there; that bot is the one talking with the user about it. Message the",
+      "user about a thread only when you need something from them, or when it changes something",
+      "they asked you for."
+    ),
+    paragraph(
+      'When you pass something on for the user, tell them once, such as "Asking Macro to log it.",',
+      "and write again only with the outcome. Don't repeat what you sent."
+    )
   )
 ]
