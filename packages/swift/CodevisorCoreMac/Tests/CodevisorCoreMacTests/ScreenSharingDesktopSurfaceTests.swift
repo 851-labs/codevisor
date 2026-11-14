@@ -40,7 +40,7 @@ struct ScreenSharingDesktopSurfaceTests {
     #expect(window.snapshot.displayId == FakeHost.display.id, "both show what the connection shares")
   }
 
-  @Test("The picture moves to the surface that takes it, and every surface sees who has it")
+  @Test("The picture moves to the surface that takes it, and every surface sees who has it at once")
   func movesThePictureBetweenSurfaces() async throws {
     let fixture = Fixture()
     let (tab, window) = (fixture.surface(.tab), fixture.surface(.window))
@@ -50,11 +50,11 @@ struct ScreenSharingDesktopSurfaceTests {
     await awaitObserved { window.snapshot.endpoint != nil && tab.snapshot.mirror != nil }
 
     tab.surface.takePicture()
-    await awaitObserved { tab.snapshot.endpoint != nil }
+    #expect(tab.snapshot.endpoint != nil, "both learn it in the same turn, so the video view has one owner")
     #expect(window.snapshot.mirror == tab.snapshot.endpoint)
 
     tab.surface.detach()
-    await awaitObserved { window.snapshot.endpoint != nil }
+    #expect(window.snapshot.endpoint != nil)
   }
 
   @Test("Sound plays only while a tab or window is on screen, never for a preview alone")

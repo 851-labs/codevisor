@@ -84,7 +84,7 @@ public final class ScreenSharingDesktopSurface {
 
       bindFailure = nil
       bound = (desktop, desktop.connection.attach(role.surfaceKind))
-      desktop.join(id, role: role)
+      desktop.join(id, role: role) { [weak self] in self?.report() }
       if isOnScreen { show() }
     } catch {
       bindFailure = error.localizedDescription
