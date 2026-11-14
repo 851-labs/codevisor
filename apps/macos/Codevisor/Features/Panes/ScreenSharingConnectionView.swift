@@ -22,7 +22,7 @@ struct ScreenSharingConnectionView: View {
       if store.isLive, let notice = store.hostNotice { banner(notice) }
       ZStack {
         if let endpoint = store.endpoint {
-          ScreenSharingNativeView(endpoint: endpoint).id(store.picturesTaken)
+          ScreenSharingNativeView(endpoint: endpoint, holdsPicture: { pane.holdsPicture }).id(store.picturesTaken)
         }
         if !store.isLive { progress }
       }

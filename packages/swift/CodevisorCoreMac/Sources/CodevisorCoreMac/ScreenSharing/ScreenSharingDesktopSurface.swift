@@ -30,6 +30,12 @@ public final class ScreenSharingDesktopSurface {
     unbind()
   }
 
+  public var holdsPicture: Bool {
+    guard let desktop = bound?.desktop else { return false }
+
+    return desktop.endpoint != nil && desktop.holder == id
+  }
+
   public func setOnScreen(_ onScreen: Bool, preferringDisplay displayId: String?) {
     isOnScreen = onScreen
     preferredDisplayId = displayId
@@ -141,6 +147,6 @@ public final class ScreenSharingDesktopSurface {
   private func picture(on desktop: ScreenSharingDesktop) -> ScreenSharingSurfaceSnapshot.Picture {
     guard let endpoint = desktop.endpoint else { return .none }
 
-    return desktop.holder == id ? .here(endpoint) : .elsewhere(endpoint)
+    return holdsPicture ? .here(endpoint) : .elsewhere(endpoint)
   }
 }

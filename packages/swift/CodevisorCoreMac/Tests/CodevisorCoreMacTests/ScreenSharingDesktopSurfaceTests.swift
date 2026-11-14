@@ -52,6 +52,7 @@ struct ScreenSharingDesktopSurfaceTests {
     tab.surface.takePicture()
     #expect(tab.snapshot.endpoint != nil, "both learn it in the same turn, so the video view has one owner")
     #expect(window.snapshot.mirror == tab.snapshot.endpoint)
+    #expect(tab.surface.holdsPicture && !window.surface.holdsPicture)
 
     tab.surface.detach()
     #expect(window.snapshot.endpoint != nil)

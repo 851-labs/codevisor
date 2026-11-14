@@ -173,6 +173,8 @@ final class ScreenSharingPane: Pane {
   func willDelete() async { leave() }
   func detach() { leave() }
 
+  var holdsPicture: Bool { surface?.holdsPicture ?? false }
+
   func openedByUser() {
     surface?.openedByUser()
   }
