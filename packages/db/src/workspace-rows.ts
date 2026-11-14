@@ -11,16 +11,11 @@ export interface WorkspaceRow {
   readonly project_id: string
   readonly name: string
   readonly has_custom_name: number
-  readonly root_directory: string | null
   readonly is_archived: number
   readonly archived_at: string | null
   readonly created_at: string
   readonly updated_at: string | null
   readonly labels?: string | null
-  readonly git_branch?: string | null
-  readonly git_detached_head?: string | null
-  readonly git_pull_request?: string | null
-  readonly git_known?: number
   readonly main_session_id?: string | null
   readonly default_checkout_id?: string | null
   readonly checkout_path?: string | null
@@ -57,16 +52,11 @@ export const workspaceRows = rowReader<WorkspaceRow>({
   project_id: text,
   name: text,
   has_custom_name: integer,
-  root_directory: nullable(text),
   is_archived: integer,
   archived_at: nullable(text),
   created_at: text,
   updated_at: nullable(text),
   labels: optional(nullable(text)),
-  git_branch: optional(nullable(text)),
-  git_detached_head: optional(nullable(text)),
-  git_pull_request: optional(nullable(text)),
-  git_known: optional(integer),
   main_session_id: optional(nullable(text)),
   default_checkout_id: optional(nullable(text)),
   checkout_path: optional(nullable(text)),

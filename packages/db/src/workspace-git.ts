@@ -15,29 +15,9 @@ export const makeWorkspaceGitService = (
       attempt("setWorkspaceGit", () =>
         journaled(() => {
           const workspaceId = canonicalUuid(rawWorkspaceId)
-          const keepsPullRequest = pullRequest === undefined ? 1 : 0
-          const serialized = pullRequest == null ? null : JSON.stringify(pullRequest)
-          context.sqlite.prepare(workspaceGitSql).run({
-            id: workspaceId,
-            branch: head.branch,
-            detachedHead: head.detachedHead ?? null,
-            keeps: keepsPullRequest,
-            pullRequest: serialized
-          })
           const checkoutId = workspaceDefaultCheckoutId(context.sqlite, workspaceId)
           if (checkoutId !== null) writeCheckoutGit(context.sqlite, checkoutId, head, pullRequest)
         })
       )
   }
 }
-
-const workspaceGitSql = `update workspaces set
-                   git_branch = @branch,
-                   git_detached_head = @detachedHead,
-                   git_pull_request = case when @keeps then git_pull_request else @pullRequest end,
-                   git_known = 1
-                 where id = @id
-                   and (git_known = 0
-                     or git_branch is not @branch
-                     or git_detached_head is not @detachedHead
-                     or (not @keeps and git_pull_request is not @pullRequest))`

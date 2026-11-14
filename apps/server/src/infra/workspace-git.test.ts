@@ -133,13 +133,11 @@ it("records each workspace's branch and pull request at boot and publishes only 
   const checkoutOf = (path: string) => checkouts.find((c) => c.path === path)
   expect(published.map((event) => [event.kind, event.subjectId])).toEqual(
     expect.arrayContaining([
-      ["navigation.changed", feature.id],
-      ["navigation.changed", main.id],
       ["navigation.changed", checkoutOf("/repo/feature")?.id],
       ["navigation.changed", checkoutOf("/repo/main")?.id]
     ])
   )
-  expect(published).toHaveLength(4)
+  expect(published).toHaveLength(2)
   expect(checkoutOf("/repo/feature")?.git).toEqual(await git(feature.id))
 })
 

@@ -35,9 +35,8 @@ it("records the branch and pull request and journals only real changes", async (
   const repeated = await run(db.setWorkspaceGit(workspace.id, { branch: "feature" }, pullRequest))
 
   expect((await read())?.git).toEqual({ branch: "feature", pullRequest })
-  expect(first.map((event) => [event.kind, event.subjectId])).toContainEqual([
-    "navigation.changed",
-    workspace.id
+  expect(first.map((event) => [event.kind, event.subjectId])).toEqual([
+    ["navigation.changed", workspace.defaultCheckoutId]
   ])
   expect(repeated).toEqual([])
 })

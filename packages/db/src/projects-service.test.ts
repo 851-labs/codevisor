@@ -89,6 +89,10 @@ describe("@codevisor/db", () => {
       const session = await run(
         db.createSession({ harnessId: "codex", projectId: original.id, title: "Kept" })
       )
+      const worktree = await run(db.createWorktree(original.id, "sushi", "codevisor/sushi"))
+      const inWorktree = await run(
+        db.createSession({ harnessId: "codex", projectId: original.id, worktreeName: "sushi" })
+      )
       const merged = await run(
         db.createProject({
           folderPath: "/tmp/duplicate",
@@ -110,6 +114,11 @@ describe("@codevisor/db", () => {
       expect(projects.map((project) => project.id)).not.toContain(original.id)
       const detail = await run(db.getSessionDetail(session.id))
       expect(detail.session.projectId).toBe("client-id-3")
+      expect((await run(db.getSessionDetail(inWorktree.id))).session).toMatchObject({
+        projectId: "client-id-3",
+        worktreeName: "sushi",
+        cwd: worktree.path
+      })
 
       const failed = await Effect.runPromiseExit(
         db.createSession({ harnessId: "codex", projectId: "missing-project", title: "x" })
