@@ -1,14 +1,20 @@
-import CodevisorCoreMac
+import Foundation
 
-final class ScreenSharingOnScreenReporter {
-  private static let hiddenConfirmation: Duration = .milliseconds(150)
+@MainActor
+public final class ScreenSharingOnScreenReporter {
+  public static let hiddenConfirmation: Duration = .milliseconds(150)
 
-  var report: (Bool) -> Void = { _ in }
+  public var report: (Bool) -> Void = { _ in }
+  private let sleep: @Sendable (Duration) async throws -> Void
   private weak var probe: ScreenSharingOnScreenProbe?
   private var reported = false
   private var settling: Task<Void, Never>?
 
-  func follow(_ probe: ScreenSharingOnScreenProbe, report: @escaping (Bool) -> Void) {
+  public init(sleep: @escaping @Sendable (Duration) async throws -> Void = { try await Task.sleep(for: $0) }) {
+    self.sleep = sleep
+  }
+
+  public func follow(_ probe: ScreenSharingOnScreenProbe, report: @escaping (Bool) -> Void) {
     self.probe = probe
     self.report = report
     probe.onChange = { [weak self] _ in self?.settle() }
@@ -19,7 +25,7 @@ final class ScreenSharingOnScreenReporter {
   private func settle() {
     settling?.cancel()
     settling = Task {
-      if !self.isOnScreen { try? await Task.sleep(for: Self.hiddenConfirmation) }
+      if !self.isOnScreen { try? await self.sleep(Self.hiddenConfirmation) }
       guard !Task.isCancelled else { return }
 
       self.deliver()

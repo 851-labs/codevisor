@@ -45,6 +45,7 @@ struct ControlLeaseTests {
       await store.send(.controlReleased(reason: nil)) {
         $0.wantsControl = false
         $0.requestID = nil
+        $0.unansweredRequestID = UUID(1)
         $0.phase = .viewing
       }
       await store.receive(\.delegate.released)
@@ -77,10 +78,11 @@ struct ControlLeaseTests {
       await store.send(.controlReleased(reason: nil)) {
         $0.wantsControl = false
         $0.requestID = nil
+        $0.unansweredRequestID = UUID(0)
         $0.phase = .viewing
       }
       await store.receive(\.delegate.released)
-      await store.send(.event(.message(.grant(request: UUID(0), lease: lease))))
+      await store.send(.event(.message(.grant(request: UUID(0), lease: lease)))) { $0.unansweredRequestID = nil }
       expectNoDifference(client.messages(to: endpoint).last, .release(lease: lease))
       await store.send(.controlRequested) {
         $0.wantsControl = true
@@ -98,6 +100,98 @@ struct ControlLeaseTests {
       await store.send(.event(.message(.grant(request: UUID(1), lease: lease))))
       expectNoDifference(client.messages(to: endpoint).last, .release(lease: lease))
       expectNoDifference(client.beginInputs.count, 0)
+    }
+  }
+
+  @Test func aRequestStillInFlightWhenTheSurfaceHidesIsPickedUpAgainInsteadOfSentTwice() async {
+    await withMainSerialExecutor {
+      let client = FakeEndpointClient()
+      let store = await makeHiddenMidRequestStore(client)
+
+      await store.send(.controlRequested) {
+        $0.wantsControl = true
+        $0.requestID = UUID(0)
+        $0.unansweredRequestID = nil
+        $0.phase = .requesting
+      }
+      await store.send(.event(.message(.grant(request: UUID(0), lease: lease)))) {
+        $0.requestID = nil
+        $0.lease = self.lease
+        $0.phase = .controlling
+      }
+
+      expectNoDifference(client.messages(to: endpoint), [.request(id: UUID(0))])
+      expectNoDifference(client.beginInputs.map(\.lease), [lease])
+      await store.send(.controlReleased(reason: nil)) {
+        $0.wantsControl = false
+        $0.lease = nil
+        $0.phase = .viewing
+      }
+      await store.receive(\.delegate.released)
+    }
+  }
+
+  @Test(arguments: [true, false])
+  func anAnswerThatArrivesWhileHiddenSettlesTheRequestAndShowingAgainAsksAfresh(granted: Bool) async {
+    await withMainSerialExecutor {
+      let client = FakeEndpointClient()
+      let store = await makeHiddenMidRequestStore(client)
+      let answer: ScreenSharingControlMessage =
+        granted
+        ? .grant(request: UUID(0), lease: lease) : .denied(request: UUID(0), reason: "Control is already active.")
+
+      await store.send(.event(.message(answer))) { $0.unansweredRequestID = nil }
+      await store.send(.controlRequested) {
+        $0.wantsControl = true
+        $0.requestID = UUID(1)
+        $0.phase = .requesting
+      }
+
+      let released: [ScreenSharingControlMessage] = granted ? [.release(lease: lease)] : []
+      expectNoDifference(client.messages(to: endpoint), [.request(id: UUID(0))] + released + [.request(id: UUID(1))])
+      #expect(store.state.message == nil, "a denial of a request nobody is waiting for is not shown")
+      await store.send(.suspended) {
+        $0.wantsControl = false
+        $0.requestID = nil
+        $0.unansweredRequestID = UUID(1)
+        $0.phase = .viewing
+      }
+    }
+  }
+
+  @Test func aPickedUpRequestThatIsNeverAnsweredTimesOutAndTheNextOneIsNew() async {
+    await withMainSerialExecutor {
+      let client = FakeEndpointClient()
+      let clock = Clocks.TestClock()
+      let store = await makeHiddenMidRequestStore(client, clock: clock)
+      await store.send(.controlRequested) {
+        $0.wantsControl = true
+        $0.requestID = UUID(0)
+        $0.unansweredRequestID = nil
+        $0.phase = .requesting
+      }
+
+      await clock.advance(by: .seconds(3))
+      await store.receive(\.requestTimedOut) {
+        $0.wantsControl = false
+        $0.requestID = nil
+        $0.phase = .viewing
+        $0.message = "The host did not grant control. Try again."
+      }
+      await store.receive(\.delegate.released)
+      await store.send(.controlRequested) {
+        $0.wantsControl = true
+        $0.requestID = UUID(1)
+        $0.phase = .requesting
+        $0.message = nil
+      }
+
+      expectNoDifference(client.messages(to: endpoint), [.request(id: UUID(0)), .request(id: UUID(1))])
+      await store.send(.event(.availability(false))) {
+        $0.available = false
+        $0.requestID = nil
+        $0.phase = .viewing
+      }
     }
   }
 
@@ -145,6 +239,7 @@ struct ControlLeaseTests {
       await store.send(.controlReleased(reason: nil)) {
         $0.wantsControl = false
         $0.requestID = nil
+        $0.unansweredRequestID = UUID(1)
         $0.phase = .viewing
       }
       await store.receive(\.delegate.released)
@@ -246,6 +341,25 @@ struct ControlLeaseTests {
       $0.continuousClock = clock
       $0.uuid = .incrementing
     }
+  }
+
+  private func makeHiddenMidRequestStore(
+    _ client: FakeEndpointClient, clock: any Clock<Duration> = Clocks.TestClock()
+  ) async -> TestStoreOf<ControlLease> {
+    let store = makeStore(client, clock: clock)
+    await store.send(.event(.availability(true))) { $0.available = true }
+    await store.send(.controlRequested) {
+      $0.wantsControl = true
+      $0.requestID = UUID(0)
+      $0.phase = .requesting
+    }
+    await store.send(.suspended) {
+      $0.wantsControl = false
+      $0.requestID = nil
+      $0.unansweredRequestID = UUID(0)
+      $0.phase = .viewing
+    }
+    return store
   }
 
   private func makeControllingStore(

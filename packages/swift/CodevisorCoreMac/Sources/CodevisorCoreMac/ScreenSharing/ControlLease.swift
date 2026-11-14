@@ -14,6 +14,7 @@ public struct ControlLease {
     public var message: String?
     public var phase: Phase = .viewing
     public var requestID: UUID?
+    public var unansweredRequestID: UUID?
     public var wantsControl = false
 
     public init(endpoint: ScreenSharingViewerEndpoint.ID) { self.endpoint = endpoint }
@@ -50,7 +51,10 @@ public struct ControlLease {
         return pause(&state)
 
       case .controlReleased(let reason):
-        return release(&state, reason: reason)
+        let unanswered = requestInFlight(state)
+        let effect = release(&state, reason: reason)
+        state.unansweredRequestID = unanswered ?? state.unansweredRequestID
+        return effect
 
       case .controlRequested:
         guard state.phase == .viewing else { return .none }
@@ -63,7 +67,10 @@ public struct ControlLease {
       case .event(.availability(let available)):
         guard available != state.available else { return .none }
         state.available = available
-        if !available { return pause(&state) }
+        if !available {
+          state.unansweredRequestID = nil
+          return pause(&state)
+        }
         state.message = nil
         return state.wantsControl && state.phase == .viewing ? request(&state) : .none
 
@@ -77,6 +84,7 @@ public struct ControlLease {
 
       case .event(.message(.grant(let request, let lease))):
         guard state.requestID == request, state.phase == .requesting, state.available else {
+          forget(request, &state)
           let id = state.endpoint
           return .run { [endpoint] _ in _ = await endpoint.sendControl(id, .release(lease: lease)) }
         }
@@ -96,7 +104,10 @@ public struct ControlLease {
           .cancellable(id: CancelID.heartbeat, cancelInFlight: true))
 
       case .event(.message(.denied(let request, let reason))):
-        guard state.requestID == request else { return .none }
+        guard state.requestID == request else {
+          forget(request, &state)
+          return .none
+        }
         return release(&state, reason: reason)
 
       case .event(.message(.revoked(let lease, let reason))):
@@ -123,30 +134,45 @@ public struct ControlLease {
         return release(&state, reason: "The host did not grant control. Try again.")
 
       case .suspended:
+        let unanswered = requestInFlight(state)
         let effect = pause(&state)
         state.wantsControl = false
+        state.unansweredRequestID = unanswered ?? state.unansweredRequestID
         return effect
       }
     }
   }
 
   private func request(_ state: inout State) -> Effect<Action> {
-    let requestID = uuid()
+    let unanswered = state.unansweredRequestID
+    let requestID = unanswered ?? uuid()
+    state.unansweredRequestID = nil
     state.requestID = requestID
     state.phase = .requesting
     state.message = nil
     let id = state.endpoint
+    let deadline = Effect<Action>.run { [clock] send in
+      try await clock.sleep(for: .seconds(3))
+      await send(.requestTimedOut)
+    }
+    .cancellable(id: CancelID.requestDeadline, cancelInFlight: true)
+    guard unanswered == nil else { return deadline }
+
     return .merge(
       .run { [endpoint] send in
         if !(await endpoint.sendControl(id, .request(id: requestID))) {
           await send(.channelSendFailed(reason: "The control channel is unavailable."))
         }
       },
-      .run { [clock] send in
-        try await clock.sleep(for: .seconds(3))
-        await send(.requestTimedOut)
-      }
-      .cancellable(id: CancelID.requestDeadline, cancelInFlight: true))
+      deadline)
+  }
+
+  private func requestInFlight(_ state: State) -> UUID? {
+    state.phase == .requesting ? state.requestID : nil
+  }
+
+  private func forget(_ request: UUID, _ state: inout State) {
+    if state.unansweredRequestID == request { state.unansweredRequestID = nil }
   }
 
   private func pause(_ state: inout State) -> Effect<Action> {

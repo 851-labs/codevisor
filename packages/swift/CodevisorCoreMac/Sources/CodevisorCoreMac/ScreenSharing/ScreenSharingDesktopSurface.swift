@@ -1,10 +1,13 @@
 import ComposableArchitecture
 import Foundation
+import OSLog
 import ScreenSharingConnection
 
 @MainActor
 public final class ScreenSharingDesktopSurface {
   typealias FindDesktop = @MainActor () throws -> ScreenSharingDesktop?
+
+  private static let logger = Logger(subsystem: "com.851labs.Codevisor", category: "ScreenSharing")
 
   public let role: ScreenSharingViewerRole
   public var onChange: ((ScreenSharingSurfaceSnapshot) -> Void)?
@@ -47,6 +50,7 @@ public final class ScreenSharingDesktopSurface {
   }
 
   public func openedByUser() {
+    Self.logger.notice("Desktop opened by the user in a \(String(describing: self.role), privacy: .public)")
     bound?.surface.openedByUser()
   }
 
