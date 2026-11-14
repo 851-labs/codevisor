@@ -33,8 +33,21 @@ const skips = (workspace: Workspace, pullRequests: boolean): boolean =>
   settledArchive(workspace) ||
   (workspace.isArchived && workspace.git !== undefined && !pullRequests)
 
+const onePerCheckout = (workspaces: ReadonlyArray<Workspace>): ReadonlyArray<Workspace> => {
+  const chosen = new Map<string, Workspace>()
+  for (const workspace of workspaces) {
+    const key = workspace.defaultCheckoutId ?? workspace.id
+    const current = chosen.get(key)
+    if (current === undefined || (current.isArchived && !workspace.isArchived))
+      chosen.set(key, workspace)
+  }
+  return [...chosen.values()]
+}
+
 const rootsNoWorkspace = (checkout: Checkout, rooted: ReadonlySet<string | undefined>): boolean =>
-  checkout.worktreeName !== undefined && !rooted.has(checkout.id)
+  checkout.worktreeName !== undefined &&
+  checkout.retiredAt === undefined &&
+  !rooted.has(checkout.id)
 
 /* v8 ignore next 3 */
 const swallow = (cause: unknown): void => {
@@ -192,7 +205,7 @@ export const startWorkspaceGitMonitor = ({
   }
   const sweep = (pullRequests: boolean): Promise<void> => {
     const pass = (async () => {
-      for (const workspace of await run(db.listWorkspaces)) {
+      for (const workspace of onePerCheckout(await run(db.listWorkspaces))) {
         if (skips(workspace, pullRequests)) continue
         enqueue(workspace.id, pullRequests || workspace.git === undefined, workspace)
       }

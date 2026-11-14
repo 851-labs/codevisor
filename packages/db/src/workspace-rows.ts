@@ -23,6 +23,11 @@ export interface WorkspaceRow {
   readonly git_known?: number
   readonly main_session_id?: string | null
   readonly default_checkout_id?: string | null
+  readonly checkout_path?: string | null
+  readonly checkout_git_branch?: string | null
+  readonly checkout_git_detached_head?: string | null
+  readonly checkout_git_pull_request?: string | null
+  readonly checkout_git_known?: number | null
 }
 
 export interface WorkspacePaneRow {
@@ -63,7 +68,12 @@ export const workspaceRows = rowReader<WorkspaceRow>({
   git_pull_request: optional(nullable(text)),
   git_known: optional(integer),
   main_session_id: optional(nullable(text)),
-  default_checkout_id: optional(nullable(text))
+  default_checkout_id: optional(nullable(text)),
+  checkout_path: optional(nullable(text)),
+  checkout_git_branch: optional(nullable(text)),
+  checkout_git_detached_head: optional(nullable(text)),
+  checkout_git_pull_request: optional(nullable(text)),
+  checkout_git_known: optional(nullable(integer))
 })
 
 export const workspacePaneRows = rowReader<WorkspacePaneRow>({

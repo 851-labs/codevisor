@@ -322,6 +322,52 @@ describe("project worktree archive routes", () => {
     })
   })
 
+  it("restores a workspace's own worktree after its name was used again", async () => {
+    await withWorktreesRoot(async () => {
+      const { server, services } = await setUpGitProjects()
+      const workIn = async (workspaceId: string, file: string) => {
+        const worktree = decodeWorktree(
+          (
+            await jsonRequest(server, "/v1/projects/git-project/worktrees", {
+              body: JSON.stringify({ name: "sushi" }),
+              method: "POST"
+            })
+          ).body
+        )
+        await jsonRequest(server, `/v1/workspaces/${workspaceId}`, {
+          body: JSON.stringify({
+            projectId: "git-project",
+            name: workspaceId,
+            hasCustomName: false,
+            rootDirectory: worktree.path
+          }),
+          method: "PUT"
+        })
+        writeFileSync(join(worktree.path, file), file)
+        return worktree
+      }
+      const setArchived = async (id: string, isArchived: boolean) => {
+        const response = await jsonRequest(server, `/v1/workspaces/${id}`, {
+          body: JSON.stringify({ isArchived }),
+          method: "PATCH"
+        })
+        await archiveJobs(services).idle()
+        return response
+      }
+      const first = await workIn("first-ws", "first.txt")
+      await setArchived("first-ws", true)
+      const second = await workIn("second-ws", "second.txt")
+      expect(second.path).toBe(first.path)
+      await setArchived("second-ws", true)
+
+      const restored = decodeRooted((await setArchived("first-ws", false)).body)
+
+      expect(readdirSync(restored.rootDirectory).filter((name) => name.endsWith(".txt"))).toEqual([
+        "first.txt"
+      ])
+    })
+  })
+
   it("keeps a workspace archived until its worktree can be restored", async () => {
     await withWorktreesRoot(async () => {
       const { server, services, worktreeNames } = await setUpGitProjects()

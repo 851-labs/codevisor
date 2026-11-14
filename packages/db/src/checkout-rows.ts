@@ -1,4 +1,4 @@
-import { integer, nullable, rowReader, text } from "./row-reader.js"
+import { integer, nullable, optional, rowReader, text } from "./row-reader.js"
 
 export interface CheckoutRow {
   readonly id: string
@@ -13,6 +13,7 @@ export interface CheckoutRow {
   readonly git_known: number
   readonly created_at: string
   readonly updated_at: string | null
+  readonly retired_at?: string | null
 }
 
 export const checkoutRows = rowReader<CheckoutRow>({
@@ -27,5 +28,6 @@ export const checkoutRows = rowReader<CheckoutRow>({
   git_pull_request: nullable(text),
   git_known: integer,
   created_at: text,
-  updated_at: nullable(text)
+  updated_at: nullable(text),
+  retired_at: optional(nullable(text))
 })

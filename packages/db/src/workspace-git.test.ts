@@ -1,6 +1,6 @@
 import { expect, it } from "vitest"
 
-import { memoryDatabase, run } from "./test-support.js"
+import { memoryDatabase, navigationDelta, run } from "./test-support.js"
 
 const pullRequest = {
   number: 42,
@@ -17,7 +17,8 @@ const workspaceFixture = async () => {
     fixture.db.upsertWorkspace({
       projectId: fixture.project.id,
       name: "work",
-      hasCustomName: false
+      hasCustomName: false,
+      rootDirectory: "/work/app"
     })
   )
   const read = async () =>
@@ -34,8 +35,9 @@ it("records the branch and pull request and journals only real changes", async (
   const repeated = await run(db.setWorkspaceGit(workspace.id, { branch: "feature" }, pullRequest))
 
   expect((await read())?.git).toEqual({ branch: "feature", pullRequest })
-  expect(first.map((event) => [event.kind, event.subjectId])).toEqual([
-    ["navigation.changed", workspace.id]
+  expect(first.map((event) => [event.kind, event.subjectId])).toContainEqual([
+    "navigation.changed",
+    workspace.id
   ])
   expect(repeated).toEqual([])
 })
@@ -57,7 +59,7 @@ it("leaves git unknown until checked, then records a checkout with no branch or 
 
   const events = await run(db.setWorkspaceGit(workspace.id, { branch: null }, null))
 
-  expect(events).toHaveLength(1)
+  expect(events).not.toEqual([])
   expect((await read())?.git).toEqual({ branch: null, pullRequest: null })
 })
 
@@ -67,7 +69,7 @@ it("records a detached HEAD's commit and clears it once a branch is checked out"
   const detached = await run(
     db.setWorkspaceGit(workspace.id, { branch: null, detachedHead: "e6a622bef" }, null)
   )
-  expect(detached).toHaveLength(1)
+  expect(detached).not.toEqual([])
   expect((await read())?.git).toEqual({
     branch: null,
     detachedHead: "e6a622bef",
@@ -77,7 +79,7 @@ it("records a detached HEAD's commit and clears it once a branch is checked out"
   const moved = await run(
     db.setWorkspaceGit(workspace.id, { branch: null, detachedHead: "c1c800ab2" }, undefined)
   )
-  expect(moved).toHaveLength(1)
+  expect(moved).not.toEqual([])
 
   await run(db.setWorkspaceGit(workspace.id, { branch: "feature" }, undefined))
   expect((await read())?.git).toStrictEqual({ branch: "feature", pullRequest: null })
@@ -103,7 +105,50 @@ it("treats a stored pull request it can no longer read as none", async () => {
   const { db, sqlite, workspace, read } = await workspaceFixture()
   await run(db.setWorkspaceGit(workspace.id, { branch: "feature" }, pullRequest))
 
-  sqlite.prepare("update workspaces set git_pull_request = ? where id = ?").run("{", workspace.id)
+  sqlite
+    .prepare("update checkouts set git_pull_request = ? where id = ?")
+    .run("{", workspace.defaultCheckoutId)
 
   expect((await read())?.git).toEqual({ branch: "feature", pullRequest: null })
+})
+
+it("gives every workspace in a folder the branch and pull request found there", async () => {
+  const { db, project, workspace } = await workspaceFixture()
+  const beside = await run(
+    db.upsertWorkspace({
+      projectId: project.id,
+      name: "beside",
+      hasCustomName: false,
+      rootDirectory: "/work/app"
+    })
+  )
+  const cursor = (await run(db.getNavigationSnapshot)).eventCursor
+
+  await run(db.setWorkspaceGit(workspace.id, { branch: "feature" }, pullRequest))
+
+  const workspaces = await run(db.listWorkspaces)
+  expect(workspaces.find((candidate) => candidate.id === beside.id)?.git).toEqual({
+    branch: "feature",
+    pullRequest
+  })
+  const batch = await run(db.readSyncBatch(cursor))
+  const sent = batch.events
+    .filter((event) => event.kind === "navigation.changed")
+    .flatMap((event) => navigationDelta(event).workspaces.map((changed) => changed.id))
+  expect(sent.toSorted()).toEqual([workspace.id, beside.id].toSorted())
+})
+
+it("knows a workspace with no folder has no branch or pull request", async () => {
+  const fixture = await memoryDatabase()
+
+  const workspace = await run(
+    fixture.db.upsertWorkspace({
+      projectId: fixture.project.id,
+      name: "loose",
+      hasCustomName: false
+    })
+  )
+
+  expect(workspace.git).toEqual({ branch: null, pullRequest: null })
+  expect(workspace.rootDirectory).toBeUndefined()
 })

@@ -153,9 +153,22 @@ const workspaceGitFromRow = (row: GitColumns): WorkspaceGit | undefined => {
   return { ...git, detachedHead: row.git_detached_head }
 }
 
+const noGit: WorkspaceGit = { branch: null, pullRequest: null }
+
+const workspaceGit = (row: WorkspaceRow): WorkspaceGit | undefined => {
+  if (row.default_checkout_id == null) return noGit
+  return workspaceGitFromRow({
+    git_branch: row.checkout_git_branch ?? null,
+    git_detached_head: row.checkout_git_detached_head ?? null,
+    git_pull_request: row.checkout_git_pull_request ?? null,
+    git_known: row.checkout_git_known ?? 0
+  })
+}
+
 export const workspaceFromRow = (row: WorkspaceRow): Workspace => {
   const labels = parseLabels(row.labels)
-  const git = workspaceGitFromRow(row)
+  const git = workspaceGit(row)
+  const rootDirectory = row.checkout_path ?? null
   return {
     sidebarPosition: row.sidebar_position,
     sidebarOrderRevision: row.sidebar_order_revision,
@@ -164,7 +177,7 @@ export const workspaceFromRow = (row: WorkspaceRow): Workspace => {
     projectId: row.project_id,
     name: row.name,
     hasCustomName: row.has_custom_name === 1,
-    ...(row.root_directory === null ? {} : { rootDirectory: row.root_directory }),
+    ...(rootDirectory === null ? {} : { rootDirectory }),
     isArchived: row.is_archived === 1,
     ...(row.archived_at === null ? {} : { archivedAt: row.archived_at }),
     createdAt: row.created_at,
@@ -187,7 +200,8 @@ export const checkoutFromRow = (row: CheckoutRow): Checkout => {
     ...(row.worktree_name === null ? {} : { worktreeName: row.worktree_name }),
     ...(git === undefined ? {} : { git }),
     createdAt: row.created_at,
-    ...(row.updated_at === null ? {} : { updatedAt: row.updated_at })
+    ...(row.updated_at === null ? {} : { updatedAt: row.updated_at }),
+    ...(row.retired_at == null ? {} : { retiredAt: row.retired_at })
   }
 }
 

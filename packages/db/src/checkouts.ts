@@ -106,6 +106,32 @@ const worktreeId = (
   )
 }
 
+export interface WorktreePlace {
+  readonly id: string
+  readonly serverId: string
+  readonly name: string
+  readonly path: string
+}
+
+export const retireCheckoutOf = (sqlite: Database.Database, worktree: WorktreePlace): void => {
+  sqlite
+    .prepare(checkoutSql.retire)
+    .run(worktree.id, isoTimestamp(), worktree.serverId, worktree.path)
+}
+
+export const claimCheckoutFor = (sqlite: Database.Database, worktree: WorktreePlace): void => {
+  const own = checkoutRows.maybe(sqlite.prepare(checkoutSql.retiredOf).get(worktree.id))
+  if (own === undefined) {
+    sqlite
+      .prepare(checkoutSql.retireStranger)
+      .run(isoTimestamp(), worktree.serverId, worktree.path, worktree.id)
+    sqlite.prepare(checkoutSql.adopt).run(worktree.id, worktree.serverId, worktree.path)
+    return
+  }
+  sqlite.prepare(checkoutSql.retireAt).run(isoTimestamp(), worktree.serverId, worktree.path)
+  sqlite.prepare(checkoutSql.revive).run(worktree.path, worktree.name, own.id)
+}
+
 export const checkoutInUse = (sqlite: Database.Database, checkoutId: string): boolean =>
   inUseRows.one(sqlite.prepare(checkoutSql.inUse).get({ id: checkoutId })).in_use === 1
 
@@ -128,7 +154,21 @@ const checkoutSql = {
       )
     ) as in_use`,
   byId: "select * from checkouts where id = ?",
-  byPlace: "select * from checkouts where server_id = ? and path = ?",
+  byPlace: "select * from checkouts where server_id = ? and path = ? and retired_at is null",
+  retire: `update checkouts set worktree_id = coalesce(worktree_id, ?), retired_at = ?
+      where server_id = ? and path = ? and retired_at is null`,
+  retiredOf: `select * from checkouts where worktree_id = ? and retired_at is not null
+      order by retired_at desc, id limit 1`,
+  retireStranger: `update checkouts set retired_at = ?
+      where server_id = ? and path = ? and retired_at is null
+        and worktree_id is not null and worktree_id <> ?`,
+  adopt: `update checkouts set worktree_id = ?
+      where server_id = ? and path = ? and retired_at is null and worktree_id is null`,
+  retireAt: `update checkouts set retired_at = ?
+      where server_id = ? and path = ? and retired_at is null`,
+  revive: `update checkouts set path = ?, worktree_name = ?, retired_at = null,
+        updated_at = strftime('%Y-%m-%dT%H:%M:%fZ', 'now')
+      where id = ?`,
   list: "select * from checkouts order by created_at, id",
   insert: `insert into checkouts (
              id, server_id, project_id, worktree_id, worktree_name, path, created_at

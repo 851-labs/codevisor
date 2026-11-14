@@ -3,6 +3,7 @@ import { randomUUID } from "node:crypto"
 import type { Worktree } from "@codevisor/api"
 import { isoTimestamp } from "@codevisor/api"
 
+import { claimCheckoutFor, retireCheckoutOf } from "./checkouts.js"
 import { attempt } from "./errors.js"
 import { canonicalUuid } from "./ids.js"
 import { worktreePath } from "./paths.js"
@@ -19,7 +20,6 @@ export const makeWorktreesService = (
   | "listWorktrees"
   | "deleteWorktree"
   | "createArchivedWorktree"
-  | "findArchivedWorktree"
   | "listArchivedWorktrees"
   | "deleteArchivedWorktree"
 > => {
@@ -42,13 +42,19 @@ export const makeWorktreesService = (
         sqlite
           .prepare(worktreeSql.insert)
           .run(worktree.id, projectId, worktree.serverId, name, branch, worktree.createdAt)
+        claimCheckoutFor(sqlite, worktree)
         return worktree
       }),
     listWorktrees: (projectId) =>
       attempt("listWorktrees", () => projectWorktrees(sqlite, projectId).map(worktreeFromRow)),
     deleteWorktree: (id) =>
       attempt("deleteWorktree", () => {
-        sqlite.prepare(worktreeSql.delete).run(canonicalUuid(id))
+        const row = worktreeRows.maybe(sqlite.prepare(worktreeSql.byId).get(canonicalUuid(id)))
+        if (row === undefined) return
+        sqlite.transaction(() => {
+          retireCheckoutOf(sqlite, worktreeFromRow(row))
+          sqlite.prepare(worktreeSql.delete).run(row.id)
+        })()
       }),
     createArchivedWorktree: (record) =>
       attempt("createArchivedWorktree", () => {
@@ -68,11 +74,6 @@ export const makeWorktreesService = (
           )
         return archivedWorktreeFromRow(savedArchivedWorktree(sqlite, id))
       }),
-    findArchivedWorktree: (rawProjectId, serverId, originalName) =>
-      attempt("findArchivedWorktree", () => {
-        const row = latestArchivedWorktree(sqlite, rawProjectId, serverId, originalName)
-        return row === undefined ? undefined : archivedWorktreeFromRow(row)
-      }),
     listArchivedWorktrees: (rawProjectId) =>
       attempt("listArchivedWorktrees", () =>
         projectArchivedWorktrees(sqlite, rawProjectId).map(archivedWorktreeFromRow)
@@ -90,18 +91,6 @@ const projectWorktrees = (sqlite: ServiceContext["sqlite"], rawProjectId: string
 const savedArchivedWorktree = (sqlite: ServiceContext["sqlite"], id: string) =>
   archivedWorktreeRows.one(sqlite.prepare(archivedWorktreeSql.byId).get(id))
 
-const latestArchivedWorktree = (
-  sqlite: ServiceContext["sqlite"],
-  rawProjectId: string,
-  serverId: string,
-  originalName: string
-) =>
-  archivedWorktreeRows.maybe(
-    sqlite
-      .prepare(archivedWorktreeSql.latestByName)
-      .get(canonicalUuid(rawProjectId), serverId, originalName)
-  )
-
 const projectArchivedWorktrees = (sqlite: ServiceContext["sqlite"], rawProjectId: string) =>
   archivedWorktreeRows.all(
     sqlite.prepare(archivedWorktreeSql.byProject).all(canonicalUuid(rawProjectId))
@@ -112,6 +101,7 @@ const worktreeSql = {
               id, project_id, server_id, name, branch, created_at
             ) values (?, ?, ?, ?, ?, ?)`,
   byProject: "select * from worktrees where project_id = ? order by created_at asc",
+  byId: "select * from worktrees where id = ?",
   delete: "delete from worktrees where id = ?"
 }
 
@@ -127,9 +117,6 @@ const archivedWorktreeSql = {
                snapshot_ref = excluded.snapshot_ref,
                state = excluded.state`,
   byId: "select * from archived_worktrees where id = ?",
-  latestByName: `select * from archived_worktrees
-             where project_id = ? collate nocase and server_id = ? and original_name = ?
-             order by created_at desc limit 1`,
   byProject:
     "select * from archived_worktrees where project_id = ? collate nocase order by created_at desc",
   delete: "delete from archived_worktrees where id = ?"

@@ -134,11 +134,6 @@ export interface CodevisorDatabaseService
   readonly createArchivedWorktree: (
     record: ArchivedWorktree
   ) => Effect.Effect<ArchivedWorktree, DatabaseError>
-  readonly findArchivedWorktree: (
-    projectId: string,
-    serverId: string,
-    originalName: string
-  ) => Effect.Effect<ArchivedWorktree | undefined, DatabaseError>
   readonly listArchivedWorktrees: (
     projectId: string
   ) => Effect.Effect<ReadonlyArray<ArchivedWorktree>, DatabaseError>
