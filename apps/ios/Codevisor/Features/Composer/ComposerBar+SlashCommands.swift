@@ -77,6 +77,9 @@ extension ComposerBar {
         ) {
           Task {
             guard let forked = await controller.fork() else { return }
+            await environment.workspaceSync.refreshFromServer(
+              serverId: forked.serverId, client: environment.machines.client(for: forked.serverId)
+            )
             await openChat?(forked)
           }
         }
