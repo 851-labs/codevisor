@@ -6,7 +6,7 @@ public struct ScreenSharingMachine {
     @MainActor (_ displayId: String, _ arbitratedByServer: Bool) -> any ScreenSharingTransport
 
   public let id: String
-  public var channel: any ScreenSharingHostChannel
+  public var channel: @MainActor () -> any ScreenSharingHostChannel
   public var connector: ScreenSharingV2Connector
   public var appName: String
   public var installId: UUID
@@ -15,7 +15,7 @@ public struct ScreenSharingMachine {
   public var makeVNCTransport: MakeVNCTransport?
 
   public init(
-    id: String, channel: any ScreenSharingHostChannel, connector: ScreenSharingV2Connector, appName: String,
+    id: String, channel: @escaping @MainActor () -> any ScreenSharingHostChannel, connector: ScreenSharingV2Connector, appName: String,
     installId: UUID, liveWorkspace: @escaping @MainActor () -> UUID?, presentsTiles: Bool = false,
     makeVNCTransport: MakeVNCTransport? = nil
   ) {

@@ -1,5 +1,6 @@
 import CodevisorClient
 import Foundation
+import ScreenSharingV2
 
 @MainActor
 final class ScreenSharingHostRequests {
@@ -16,24 +17,25 @@ final class ScreenSharingHostRequests {
   }
 
   struct Start {
+    var capabilities: ScreenSharingHostReply
     var displayId: String?
     var media: ServerScreenSharingMediaAddress
     var chroma: String
     var intent: ScreenSharingStartIntent
-    var ownedByApp: Bool
   }
 
   private let machine: ScreenSharingMachine
-  private let sleep: @Sendable (Duration) async throws -> Void
+  private let clock: ScreenSharingConnectionClock
   private var started: Owner?
+  private var owesAnExplanation = false
   private var registered: ScreenSharingLegacyIdentity?
 
-  init(machine: ScreenSharingMachine, sleep: @escaping @Sendable (Duration) async throws -> Void) {
+  init(machine: ScreenSharingMachine, clock: ScreenSharingConnectionClock) {
     self.machine = machine
-    self.sleep = sleep
+    self.clock = clock
   }
 
-  var isLinkReconnecting: Bool { machine.channel.isReconnecting }
+  var isLinkReconnecting: Bool { machine.channel().isReconnecting }
 
   func capabilities() async throws -> ScreenSharingHostReply {
     let asker = Owner(workspaceId: machine.installId, paneId: machine.installId, viewerId: UUID(), app: nil)
@@ -46,7 +48,7 @@ final class ScreenSharingHostRequests {
   func start(_ start: Start) async throws -> ScreenSharingHostReply {
     let owner = try await owner(for: start)
     try Task.checkCancellation()
-    if let started, !started.holdsTheSameSession(as: owner) { await stop() }
+    if let previous = takeStarted(), !previous.holdsTheSameSession(as: owner) { await stop(previous) }
     var request = request(.start, from: owner, displayId: start.displayId)
     request.base.engine = ScreenSharingHostRequest.engine
     request.base.media = start.media
@@ -54,7 +56,9 @@ final class ScreenSharingHostRequests {
     if owner.app != nil { request.intent = start.intent }
     started = owner
     do {
-      return try await retrying(request)
+      let reply = try await retrying(request)
+      if started != owner, reply.grant != nil { await stop(owner) }
+      return reply
     } catch {
       if CodevisorServerClientError.isRefusal(error) { registered = nil }
       throw error
@@ -65,7 +69,7 @@ final class ScreenSharingHostRequests {
     guard let started else { return nil }
 
     do {
-      return try await machine.channel.send(request(.heartbeat, from: started))
+      return try await machine.channel().send(request(.heartbeat, from: started))
     } catch {
       if CodevisorServerClientError.isRefusal(error) { registered = nil }
       throw error
@@ -76,31 +80,51 @@ final class ScreenSharingHostRequests {
     reply.end(heartbeatToOldHost: started?.app == nil)
   }
 
-  func whyItEnded() async -> ScreenSharingFailureReason? {
-    guard let reply = try? await heartbeat(), !reply.isSharing else { return nil }
-    guard case .refused(let reason) = heartbeatEnd(for: reply) else { return nil }
+  func sessionDropped() {
+    owesAnExplanation = started != nil
+  }
+
+  func whyItEnded() async throws -> ScreenSharingFailureReason? {
+    guard owesAnExplanation else { return nil }
+
+    let reply: ScreenSharingHostReply?
+    do {
+      reply = try await heartbeat()
+    } catch where CodevisorServerClientError.isRefusal(error) {
+      reply = nil
+    }
+    owesAnExplanation = false
+    guard let reply, !reply.isSharing, case .refused(let reason) = heartbeatEnd(for: reply) else { return nil }
 
     return reason
   }
 
-  func stop() async {
-    guard let started else { return }
+  func takeStarted() -> Owner? {
+    defer {
+      started = nil
+      owesAnExplanation = false
+    }
+    return started
+  }
 
-    self.started = nil
-    _ = try? await machine.channel.send(request(.stop, from: started))
+  func stop(_ owner: Owner) async {
+    let (channel, request, sleep) = (machine.channel(), request(.stop, from: owner), clock.sleep)
+    _ = try? await ScreenSharingRace.value(
+      of: { try await channel.send(request) },
+      before: { try await sleep(ScreenSharingConnectionDeadlines.stopRequest) }, cancellingLateWork: false)
   }
 
   private func owner(for start: Start) async throws -> Owner {
     let viewerId = UUID()
-    guard !start.ownedByApp else {
+    guard !start.capabilities.ownsSessionsByApp else {
       let app = ScreenSharingHostRequest.App(key: start.media.endpointId, name: machine.appName)
       return Owner(workspaceId: machine.installId, paneId: machine.installId, viewerId: viewerId, app: app)
     }
-    guard let workspaceId = machine.liveWorkspace() else { throw ScreenSharingAttemptEnd.refused(.updateNeeded) }
+    guard let workspaceId = machine.liveWorkspace() else { throw ScreenSharingAttemptEnd.refused(.noWorkspace) }
 
     let identity = ScreenSharingLegacyIdentity(workspaceId: workspaceId, installId: machine.installId)
     if registered != identity {
-      try await machine.channel.registerDesktopPane(identity)
+      try await machine.channel().registerDesktopPane(identity)
       registered = identity
     }
     return Owner(workspaceId: identity.workspaceId, paneId: identity.paneId, viewerId: viewerId, app: nil)
@@ -116,7 +140,7 @@ final class ScreenSharingHostRequests {
   }
 
   private func retrying(_ request: ScreenSharingHostRequest) async throws -> ScreenSharingHostReply {
-    let channel = machine.channel
-    return try await ScreenSharingRequestRetry.run(sleep: sleep) { try await channel.send(request) }
+    let channel = machine.channel()
+    return try await ScreenSharingRequestRetry.run(sleep: clock.sleep) { try await channel.send(request) }
   }
 }

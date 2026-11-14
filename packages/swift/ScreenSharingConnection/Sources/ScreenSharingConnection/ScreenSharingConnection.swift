@@ -13,7 +13,8 @@ public final class ScreenSharingConnection {
   public private(set) var display: ServerScreenSharingDisplay?
   public private(set) var displays: [ServerScreenSharingDisplay] = []
   public private(set) var hostNotice: String?
-  public private(set) var surfaces: [ScreenSharingSurface] = []
+  public private(set) var surfaces: [ScreenSharingSurfaceState] = []
+  public private(set) var isEnded = false
   public var preferredDisplayId: String?
   public let machineId: String
 
@@ -22,7 +23,7 @@ public final class ScreenSharingConnection {
   @ObservationIgnored private let host: ScreenSharingHostRequests
   @ObservationIgnored private var transitions = ScreenSharingConnectionStateMachine()
   @ObservationIgnored private var attempt: (id: UUID, runner: ScreenSharingAttempt?, task: Task<Void, Never>)?
-  @ObservationIgnored private var stopping: Task<Void, Never>?
+  @ObservationIgnored private var pendingOpen: (surface: UUID, at: ContinuousClock.Instant)?
   @ObservationIgnored private var unseenTimer: Task<Void, Never>?
   @ObservationIgnored private var liveSince: ContinuousClock.Instant?
 
@@ -30,53 +31,98 @@ public final class ScreenSharingConnection {
     self.machine = machine
     self.clock = clock
     machineId = machine.id
-    host = ScreenSharingHostRequests(machine: machine, sleep: clock.sleep)
+    host = ScreenSharingHostRequests(machine: machine, clock: clock)
   }
 
   public func attach(_ kind: ScreenSharingSurfaceKind) -> ScreenSharingSurface {
-    let surface = ScreenSharingSurface(kind: kind, connection: self)
-    surfaces.append(surface)
+    let surface = ScreenSharingSurface(id: UUID(), kind: kind, connection: self)
+    surfaces.append(ScreenSharingSurfaceState(id: surface.id, kind: kind))
     surfacesChanged()
     return surface
   }
 
   public func machineCameOnline() { handle(.machineCameOnline) }
 
+  public func workspaceAppeared() { handle(.workspaceAppeared) }
+
   public func systemWoke() { handle(.systemWoke) }
 
   func end() { handle(.ended) }
 
-  func detach(_ surface: ScreenSharingSurface) {
-    surfaces.removeAll { $0 === surface }
+  func surface(_ id: UUID) -> ScreenSharingSurfaceState? {
+    surfaces.first { $0.id == id }
+  }
+
+  func setOnScreen(_ onScreen: Bool, for id: UUID) {
+    guard let index = surfaces.firstIndex(where: { $0.id == id }), surfaces[index].isOnScreen != onScreen else {
+      return
+    }
+
+    surfaces[index].isOnScreen = onScreen
+    if !onScreen { forgetOpen(by: id) }
     surfacesChanged()
   }
 
-  func surfacesChanged() {
+  func setSize(_ size: ScreenSharingSurfaceSize?, for id: UUID) {
+    guard let index = surfaces.firstIndex(where: { $0.id == id }), surfaces[index].size != size else { return }
+
+    surfaces[index].size = size
+  }
+
+  func detach(_ id: UUID) {
+    guard let index = surfaces.firstIndex(where: { $0.id == id }) else { return }
+
+    surfaces.remove(at: index)
+    forgetOpen(by: id)
+    surfacesChanged()
+  }
+
+  func openRequested(by id: UUID) {
+    guard surface(id) != nil, state != .live else { return }
+
+    pendingOpen = (id, clock.now())
+    handle(.openRequested)
+  }
+
+  func retryRequested() { handle(.retryRequested) }
+
+  private func surfacesChanged() {
     handle(.surfacesChanged(attached: !surfaces.isEmpty, visible: surfaces.contains(where: \.isOnScreen)))
   }
 
-  func openRequested() { handle(.openRequested) }
+  private func forgetOpen(by id: UUID) {
+    if pendingOpen?.surface == id { pendingOpen = nil }
+  }
 
-  func retryRequested() { handle(.retryRequested) }
+  private var hasPendingOpen: Bool {
+    guard let pendingOpen, surface(pendingOpen.surface)?.isOnScreen == true else { return false }
+
+    return clock.now() - pendingOpen.at <= ScreenSharingConnectionDeadlines.pendingOpen
+  }
 
   private func handle(_ event: ScreenSharingConnectionStateMachine.Event) {
     if hasStayedLive { _ = transitions.handle(.stayedLive) }
     let wasLive = state == .live
     let wasUnseen = transitions.unseen
-    let command = transitions.handle(event)
+    let command = transitions.handle(event, openPending: hasPendingOpen)
     if state != transitions.state { state = transitions.state }
+    if isEnded != transitions.isEnded { isEnded = transitions.isEnded }
     if !wasLive, state == .live { liveSince = clock.now() }
+    if state == .live || command?.opens == true { pendingOpen = nil }
+    run(command)
+    if transitions.unseen != wasUnseen { restartUnseenTimer() }
+  }
+
+  private func run(_ command: ScreenSharingConnectionStateMachine.Command?) {
     switch command {
     case .start(let intent, let wait, let asksWhyItEnded):
-      let plan = ScreenSharingAttempt.Plan(
-        intent: intent, asksWhyItEnded: asksWhyItEnded, preferredDisplayId: preferredDisplayId, stopping: stopping)
-      start(plan, after: wait)
+      if asksWhyItEnded { host.sessionDropped() }
+      start(.init(intent: intent, preferredDisplayId: preferredDisplayId), after: wait)
     case .stop:
       stop()
     case nil:
       break
     }
-    if transitions.unseen != wasUnseen { restartUnseenTimer() }
   }
 
   private var hasStayedLive: Bool {
@@ -133,11 +179,9 @@ public final class ScreenSharingConnection {
   private func stop() {
     cancelAttempt()
     display = nil
-    let previous = stopping
-    stopping = Task { [host] in
-      await previous?.value
-      await host.stop()
-    }
+    guard let owner = host.takeStarted() else { return }
+
+    Task { [host] in await host.stop(owner) }
   }
 
   private func cancelAttempt() {

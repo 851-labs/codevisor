@@ -20,7 +20,7 @@ struct ScreenSharingConnectionDeadlineTests {
   @Test("A connect with no picture says it's taking long at 4 s, fails at 10 s and is not retried")
   func failsWithoutAFirstFrame() async {
     let harness = ConnectionHarness()
-    _ = harness.show()
+    harness.show()
     let session = await harness.startedSession()
 
     await reachTheHint(harness)
@@ -31,7 +31,8 @@ struct ScreenSharingConnectionDeadlineTests {
     await awaitObserved { harness.host.requests(.stop).count == 1 }
 
     #expect(session.isClosed && !harness.connection.isTakingLong)
-    #expect(harness.host.starts.count == 1 && harness.clock.pendingCount == 0)
+    #expect(harness.host.starts.count == 1)
+    await harness.noTimersLeft()
   }
 
   enum StuckStep: CaseIterable, Sendable { case reachingTheMachine, askingTheHost, settingUpVideo }
@@ -44,7 +45,7 @@ struct ScreenSharingConnectionDeadlineTests {
     case .askingTheHost: harness.host.hold(.start)
     case .settingUpVideo: harness.media.handshakeHangs = true
     }
-    _ = harness.show()
+    harness.show()
     switch step {
     case .reachingTheMachine: await awaitObserved { harness.host.requests(.capabilities).count == 1 }
     case .askingTheHost: await awaitObserved { harness.host.starts.count == 1 }
@@ -62,7 +63,7 @@ struct ScreenSharingConnectionDeadlineTests {
   func waitsLongerWhileTheLinkReconnects() async {
     let harness = ConnectionHarness()
     harness.host.isReconnecting = true
-    _ = harness.show()
+    harness.show()
     _ = await harness.startedSession()
 
     await reachTheHint(harness)
@@ -80,17 +81,17 @@ struct ScreenSharingConnectionDeadlineTests {
     let harness = ConnectionHarness()
     harness.host.answerNext(.start, .reply(status: "connecting", message: notice))
     harness.host.answerEvery(.heartbeat, .reply(status: "connecting", message: notice))
-    _ = harness.show()
+    harness.show()
     let session = await harness.startedSession()
     #expect(harness.connection.hostNotice == notice)
 
     await reachTheHint(harness)
-    await harness.stayLive(for: .seconds(4))
-    await harness.stayLive(for: .seconds(2))
+    await harness.beat(after: .seconds(4))
+    await harness.tick(after: .seconds(2))
     #expect(harness.connection.state == .connecting(.waitingForVideo) && !session.isClosed, "paused at 10 s")
 
     harness.host.answerEvery(.heartbeat, nil)
-    await harness.stayLive(for: .seconds(6))
+    await harness.beat(after: .seconds(6))
     harness.clock.advance(by: .seconds(2))
     await harness.clock.waitForSleep(.seconds(10))
     #expect(harness.connection.hostNotice == nil)
@@ -109,7 +110,7 @@ struct ScreenSharingConnectionDeadlineTests {
     let harness = ConnectionHarness()
     let operation: FakeHost.Operation = interrupted == .capabilities ? .capabilities : .start
     harness.host.answerNext(operation, .failure(gatewayTimedOut ? FakeHost.gatewayTimedOut : FakeHost.interrupted))
-    _ = harness.show()
+    harness.show()
 
     await harness.elapse(.milliseconds(500))
     await harness.goLive()

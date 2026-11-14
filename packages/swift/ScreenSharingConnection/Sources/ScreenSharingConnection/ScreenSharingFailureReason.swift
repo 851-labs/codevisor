@@ -9,6 +9,7 @@ public enum ScreenSharingFailureReason: Equatable, Sendable {
   case displayAsleep
   case sessionSwitched
   case noDisplay
+  case noWorkspace
   case permissionMissing
   case updateNeeded
   case networkBlocked
@@ -27,6 +28,13 @@ public enum ScreenSharingFailureReason: Equatable, Sendable {
     case "permission-missing": self = .permissionMissing
     case "update-needed": self = .updateNeeded
     default: return nil
+    }
+  }
+
+  var yieldsToAnOpen: Bool {
+    switch self {
+    case .inUse, .stoppedOnHost, .displayAsleep, .sessionSwitched: true
+    default: false
     }
   }
 

@@ -29,7 +29,7 @@ struct ScreenSharingConnectionRetryTests {
   @Test("Reconnecting tries five times, after 0, 1, 2, 4 and 8 s, then fails as kept dropping")
   func retriesOnTheScheduleThenFails() async {
     let harness = ConnectionHarness()
-    _ = harness.show()
+    harness.show()
     await harness.goLive()
     harness.media.connectFails = true
 
@@ -37,13 +37,13 @@ struct ScreenSharingConnectionRetryTests {
     await harness.settle(.failed(.keptDropping))
 
     #expect(harness.host.starts.count == 6)
-    #expect(harness.clock.pendingCount == 0)
+    await harness.noTimersLeft()
   }
 
   @Test("Tries used up without reaching the machine fail as can't reach, and the machine coming back reconnects")
   func failsAsUnreachableWhenTheMachineIsGone() async {
     let harness = ConnectionHarness()
-    _ = harness.show()
+    harness.show()
     await harness.goLive()
     harness.host.answerEvery(.capabilities, .failure(FakeHost.unreachable))
 
@@ -59,7 +59,7 @@ struct ScreenSharingConnectionRetryTests {
   @Test("A link that shows a picture for 2 s and drops, again and again, fails as kept dropping after five tries")
   func givesUpOnALinkThatKeepsDropping() async {
     let harness = ConnectionHarness()
-    _ = harness.show()
+    harness.show()
     var session = await harness.goLive()
 
     for wait in ScreenSharingRetryPolicy.waits {
@@ -79,7 +79,7 @@ struct ScreenSharingConnectionRetryTests {
   @Test("After staying live for 30 s the earlier tries are forgiven", arguments: [false, true])
   func forgivesTriesAfterStayingLive(stayedLive: Bool) async {
     let harness = ConnectionHarness()
-    _ = harness.show()
+    harness.show()
     let first = await harness.goLive()
     first.host.report(connection: "failed")
     await harness.settle(.reconnecting)
@@ -87,6 +87,7 @@ struct ScreenSharingConnectionRetryTests {
 
     let stable = ScreenSharingConnectionDeadlines.stableLive
     await harness.stayLive(for: stayedLive ? stable : stable - .milliseconds(1))
+    #expect(harness.connection.state == .live)
     harness.media.connectFails = true
     second.host.report(connection: "failed")
     await harness.clock.waitForSleep(.seconds(1))

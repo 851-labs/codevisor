@@ -58,7 +58,7 @@ struct ScreenSharingConnectionLifetimeTests {
     leave(first, detaching: detaching)
     await harness.clock.waitForSleep(Self.debounce)
     harness.clock.advance(by: .milliseconds(200))
-    _ = harness.show(.preview)
+    harness.show(.preview)
     harness.clock.advance(by: Self.debounce)
 
     #expect(harness.connection.state == state)
@@ -80,7 +80,8 @@ struct ScreenSharingConnectionLifetimeTests {
     await harness.settle(.off)
     await awaitObserved { harness.host.requests(.stop).count == 1 }
 
-    #expect(session.isClosed && harness.clock.pendingCount == 0)
+    #expect(session.isClosed)
+    await harness.noTimersLeft()
     #expect(harness.host.requests(.stop)[0].base.viewerId == harness.host.starts[0].base.viewerId)
   }
 
@@ -95,7 +96,7 @@ struct ScreenSharingConnectionLifetimeTests {
     leave(surface, detaching: detaching)
     await harness.elapse(Self.debounce)
     await harness.clock.waitForSleep(Self.linger)
-    harness.clock.advance(by: Self.linger - .milliseconds(1))
+    await harness.stayLive(for: Self.linger - .milliseconds(1))
     #expect(harness.connection.state == .live && !session.isClosed)
     harness.clock.advance(by: .milliseconds(1))
     await harness.settle(.off)
@@ -114,7 +115,7 @@ struct ScreenSharingConnectionLifetimeTests {
     preview.setOnScreen(false)
     await harness.elapse(Self.debounce)
     await harness.clock.waitForSleep(Self.linger)
-    harness.clock.advance(by: Self.linger - .milliseconds(1))
+    await harness.stayLive(for: Self.linger - .milliseconds(1))
     let window = harness.show(.window)
     harness.clock.advance(by: .milliseconds(1))
     #expect(harness.connection.state == .live && !session.isClosed)
@@ -162,6 +163,24 @@ struct ScreenSharingConnectionLifetimeTests {
     await harness.goLive()
   }
 
+  @Test("A surface that is dropped without detaching counts as gone, so the connection lingers and turns off")
+  func noticesASurfaceThatWasDropped() async {
+    let harness = ConnectionHarness()
+    var surface: ScreenSharingSurface? = harness.connection.attach(.tab)
+    surface?.setOnScreen(true)
+    let session = await harness.goLive()
+
+    surface = nil
+    await awaitObserved { harness.connection.surfaces.isEmpty }
+    await harness.elapse(Self.debounce)
+    await harness.clock.waitForSleep(Self.linger)
+    await harness.stayLive(for: Self.linger)
+    await harness.settle(.off)
+    await awaitObserved { harness.host.stops.count == 1 }
+
+    #expect(session.isClosed)
+  }
+
   @Test("A second surface attaching, opening, resizing and replacing the first sends nothing while live")
   func attachesMoreSurfacesWithoutTheNetwork() async {
     let harness = ConnectionHarness()
@@ -183,33 +202,50 @@ struct ScreenSharingConnectionLifetimeTests {
   @Test("A second surface that appears while connecting does not start a second session")
   func sharesOneAttemptBetweenSurfaces() async {
     let harness = ConnectionHarness()
-    _ = harness.show(.preview)
-    _ = harness.show(.tab)
+    harness.show(.preview)
+    harness.show(.tab)
     await harness.goLive()
 
     #expect(harness.host.starts.count == 1 && harness.media.sessions.count == 1)
   }
 
-  @Test("The manager hands out one connection per machine and ends it when the machine is removed")
+  @Test("The manager hands out one connection per machine")
   func managesOneConnectionPerMachine() async {
     let harness = ConnectionHarness()
-    let surface = harness.show()
-    let session = await harness.goLive()
     let base = harness.machine
     let other = ScreenSharingMachine(
       id: "tamale", channel: base.channel, connector: base.connector, appName: base.appName,
       installId: base.installId, liveWorkspace: base.liveWorkspace)
 
-    #expect(harness.manager.connection(for: harness.machine) === surface.connection)
-    #expect(harness.manager.connection(for: other) !== surface.connection)
+    #expect(harness.manager.connection(for: harness.machine) === harness.connection)
+    #expect(harness.manager.connection(for: other) !== harness.connection)
+  }
 
-    harness.manager.remove(ConnectionHarness.machineId)
-    #expect(surface.connection.state == .off && session.isClosed)
-    await awaitObserved { harness.host.requests(.stop).count == 1 }
+  enum Ending: CaseIterable, Sendable { case machineRemoved, shutDown }
+  enum Moment: CaseIterable, Sendable { case connecting, live }
+
+  @Test(
+    "Removing the machine or shutting down ends its connection for good, and surfaces can see that",
+    arguments: Ending.allCases, Moment.allCases)
+  func endsAConnectionForGood(_ ending: Ending, during moment: Moment) async {
+    let harness = ConnectionHarness()
+    let surface = harness.show()
+    let ended = surface.connection
+    let session = moment == .live ? await harness.goLive() : await harness.startedSession()
+
+    switch ending {
+    case .machineRemoved: harness.manager.remove(ConnectionHarness.machineId)
+    case .shutDown: harness.manager.shutdown()
+    }
+    #expect(ended.state == .off && ended.isEnded && session.isClosed)
+    await awaitObserved { harness.host.stops.count == 1 }
+    let sent = harness.host.requests.count
     surface.setOnScreen(false)
     surface.setOnScreen(true)
+    surface.retry()
 
-    #expect(surface.connection.state == .off, "a removed machine's connection never starts again")
-    #expect(harness.manager.connection(for: harness.machine) !== surface.connection)
+    #expect(ended.state == .off && harness.host.requests.count == sent, "an ended connection never starts again")
+    await harness.noTimersLeft()
+    #expect(harness.connection !== ended && !harness.connection.isEnded, "the manager hands out a fresh one")
   }
 }

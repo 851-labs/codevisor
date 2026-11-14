@@ -19,6 +19,8 @@ final class ScreenSharingMediaSessionTransport: ScreenSharingTransport {
   private var report: @MainActor (ScreenSharingTransportEvent) -> Void = { _ in }
   private let ends = AsyncStream<ScreenSharingAttemptEnd>.makeStream()
   private var beating: Task<Void, Never>?
+  private var beats: [Task<Void, Never>] = []
+  private var lastAnswer: ContinuousClock.Instant
   private var isClosed = false
 
   init(
@@ -29,6 +31,7 @@ final class ScreenSharingMediaSessionTransport: ScreenSharingTransport {
     presentsTiles = machine.presentsTiles
     self.clock = clock
     self.plan = plan
+    lastAnswer = clock.now()
   }
 
   func open(report: @escaping @MainActor (ScreenSharingTransportEvent) -> Void) async throws {
@@ -78,6 +81,7 @@ final class ScreenSharingMediaSessionTransport: ScreenSharingTransport {
   func close() {
     isClosed = true
     beating?.cancel()
+    for beat in beats { beat.cancel() }
     ends.continuation.finish()
     session?.onConnectionChanged = nil
     session?.close()
@@ -89,8 +93,8 @@ final class ScreenSharingMediaSessionTransport: ScreenSharingTransport {
   ) async throws -> (ScreenSharingHostReply, ServerScreenSharingMediaGrant) {
     let ownedByApp = plan.capabilities.ownsSessionsByApp
     let start = ScreenSharingHostRequests.Start(
-      displayId: try displayId(ownedByApp: ownedByApp), media: media, chroma: chroma, intent: plan.intent,
-      ownedByApp: ownedByApp)
+      capabilities: plan.capabilities, displayId: try displayId(ownedByApp: ownedByApp), media: media,
+      chroma: chroma, intent: plan.intent)
     let reply = try await host.start(start)
     if let grant = reply.grant { return (reply, grant) }
     guard reply.lacksTheDisplay, !ownedByApp else { throw reply.end() }
@@ -140,31 +144,32 @@ final class ScreenSharingMediaSessionTransport: ScreenSharingTransport {
   }
 
   private func heartbeats() async -> ScreenSharingAttemptEnd? {
-    var lastAnswer = clock.now()
+    lastAnswer = clock.now()
     while !Task.isCancelled {
       guard (try? await clock.sleep(ScreenSharingConnectionDeadlines.heartbeatInterval)) != nil else { return nil }
       guard !Task.isCancelled else { return nil }
 
-      do {
-        guard let reply = try await host.heartbeat() else { return nil }
-        guard reply.isSharing else { return host.heartbeatEnd(for: reply) }
-
-        lastAnswer = clock.now()
-        announce(reply)
-      } catch {
-        if let end = heartbeatFailed(error, lastAnswer: lastAnswer) { return end }
-      }
+      let silence = clock.now() - lastAnswer
+      if silence >= ScreenSharingConnectionDeadlines.failedHeartbeats { return .dropped(.cantReach) }
+      beats.append(Task { [weak self] in await self?.beat() })
     }
     return nil
   }
 
-  private func heartbeatFailed(_ error: any Error, lastAnswer: ContinuousClock.Instant) -> ScreenSharingAttemptEnd? {
-    guard !Task.isCancelled, !isTaskCancellation(error) else { return nil }
+  private func beat() async {
+    do {
+      guard let reply = try await host.heartbeat(), !isClosed else { return }
+      guard reply.isSharing else {
+        ends.continuation.yield(host.heartbeatEnd(for: reply))
+        return
+      }
 
-    if CodevisorServerClientError.isRefusal(error) {
-      return .dropped(.unclassified(message: serverErrorMessage(error)))
+      lastAnswer = clock.now()
+      announce(reply)
+    } catch {
+      guard !isClosed, CodevisorServerClientError.isRefusal(error) else { return }
+
+      ends.continuation.yield(.dropped(.unclassified(message: serverErrorMessage(error))))
     }
-    let silence = clock.now() - lastAnswer
-    return silence >= ScreenSharingConnectionDeadlines.failedHeartbeats ? .dropped(.cantReach) : nil
   }
 }

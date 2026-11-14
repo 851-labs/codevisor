@@ -2,29 +2,37 @@ import Foundation
 
 @MainActor
 public final class ScreenSharingSurface: Identifiable {
-  public nonisolated let id = UUID()
+  public nonisolated let id: UUID
   public let kind: ScreenSharingSurfaceKind
   public let connection: ScreenSharingConnection
-  public private(set) var isOnScreen = false
-  public private(set) var isAttached = true
-  public var size: ScreenSharingSurfaceSize?
 
-  init(kind: ScreenSharingSurfaceKind, connection: ScreenSharingConnection) {
+  init(id: UUID, kind: ScreenSharingSurfaceKind, connection: ScreenSharingConnection) {
+    self.id = id
     self.kind = kind
     self.connection = connection
   }
 
-  public func setOnScreen(_ onScreen: Bool) {
-    guard isAttached, onScreen != isOnScreen else { return }
+  isolated deinit {
+    connection.detach(id)
+  }
 
-    isOnScreen = onScreen
-    connection.surfacesChanged()
+  public var isAttached: Bool { connection.surface(id) != nil }
+
+  public var isOnScreen: Bool { connection.surface(id)?.isOnScreen == true }
+
+  public var size: ScreenSharingSurfaceSize? {
+    get { connection.surface(id)?.size }
+    set { connection.setSize(newValue, for: id) }
+  }
+
+  public func setOnScreen(_ onScreen: Bool) {
+    connection.setOnScreen(onScreen, for: id)
   }
 
   public func openedByUser() {
-    guard isAttached, kind.opensTheDesktop else { return }
+    guard kind.opensTheDesktop else { return }
 
-    connection.openRequested()
+    connection.openRequested(by: id)
   }
 
   public func retry() {
@@ -36,10 +44,6 @@ public final class ScreenSharingSurface: Identifiable {
   public func viewHere() { retry() }
 
   public func detach() {
-    guard isAttached else { return }
-
-    isAttached = false
-    isOnScreen = false
-    connection.detach(self)
+    connection.detach(id)
   }
 }

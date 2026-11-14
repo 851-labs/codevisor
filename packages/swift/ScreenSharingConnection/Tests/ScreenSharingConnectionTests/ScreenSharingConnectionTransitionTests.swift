@@ -26,7 +26,7 @@ struct ScreenSharingConnectionTransitionTests {
   @Test("The first decoded frame makes the connection live, with no view drawing it")
   func goesLiveOnTheFirstDecodedFrame() async {
     let harness = ConnectionHarness()
-    _ = harness.show()
+    harness.show()
     let session = await harness.goLive()
 
     #expect(harness.connection.session === session)
@@ -65,11 +65,11 @@ struct ScreenSharingConnectionTransitionTests {
       refusal.operation,
       .reply(
         status: refusal.status, message: refusal.message, reason: refusal.reason, holderName: refusal.holderName))
-    _ = harness.show()
+    harness.show()
     await harness.settle(.failed(refusal.expected))
 
     #expect(harness.host.starts.count == (refusal.operation == .start ? 1 : 0))
-    #expect(harness.clock.pendingCount == 0, "no retry or deadline is left waiting")
+    await harness.noTimersLeft()
   }
 
   enum Loss: CaseIterable, Sendable { case videoDropped, hostForgotTheSession, thisDeviceWoke }
@@ -100,21 +100,53 @@ struct ScreenSharingConnectionTransitionTests {
   @Test("One failed heartbeat leaves a healthy stream alone; 25 s of failed heartbeats reconnects")
   func toleratesFailedHeartbeatsFor25Seconds() async {
     let harness = ConnectionHarness()
-    _ = harness.show()
+    harness.show()
     let session = await harness.goLive()
 
     harness.host.answerNext(.heartbeat, .failure(FakeHost.unreachable))
-    await harness.stayLive()
-    await harness.stayLive()
+    await harness.beat()
+    await harness.beat()
     #expect(harness.connection.state == .live && !session.isClosed)
 
     harness.host.answerEvery(.heartbeat, .failure(FakeHost.unreachable))
-    for _ in 1...3 { await harness.stayLive() }
+    for _ in 1...3 { await harness.beat() }
     #expect(harness.connection.state == .live, "24 s without an answer is still inside the limit")
     harness.clock.advance(by: Self.heartbeat)
     await harness.settle(.reconnecting)
 
     #expect(session.isClosed)
+  }
+
+  @Test("A heartbeat that never returns counts as failing and does not hold back the next ones")
+  func countsAHungHeartbeatAsFailing() async {
+    let harness = ConnectionHarness()
+    harness.show()
+    await harness.goLive()
+    harness.host.hold(.heartbeat)
+
+    for _ in 1...3 { await harness.tick() }
+    await awaitObserved { harness.host.requests(.heartbeat).count == 3 }
+    #expect(harness.connection.state == .live)
+    harness.clock.advance(by: Self.heartbeat)
+    await harness.settle(.reconnecting)
+  }
+
+  @Test("If the host can't be asked why the video ended, nothing is started; the next try asks again")
+  func neverStartsWithoutKnowingWhyItEnded() async {
+    let harness = ConnectionHarness()
+    harness.show()
+    let session = await harness.goLive()
+    harness.host.answerNext(.heartbeat, .failure(FakeHost.unreachable))
+    harness.host.answerEvery(.heartbeat, .reply(status: "failed", reason: "stopped-on-host"))
+
+    session.host.report(connection: "failed")
+    await harness.clock.waitForSleep(.seconds(1))
+    #expect(harness.connection.state == .reconnecting)
+    #expect(harness.host.requests(.capabilities).count == 1 && harness.host.starts.count == 1)
+    harness.clock.advance(by: .seconds(1))
+    await harness.settle(.failed(.stoppedOnHost))
+
+    #expect(harness.host.requests(.heartbeat).count == 2 && harness.host.starts.count == 1)
   }
 
   struct HostEnd: Sendable, CustomTestStringConvertible {
@@ -135,20 +167,20 @@ struct ScreenSharingConnectionTransitionTests {
   @Test("A session the host ends on purpose fails with its reason and is never restarted", arguments: hostEnds)
   func failsWhenTheHostEndsTheSession(_ end: HostEnd) async {
     let harness = ConnectionHarness()
-    _ = harness.show()
+    harness.show()
     let session = await harness.goLive()
     harness.host.answerEvery(.heartbeat, .reply(status: "failed", reason: end.reason, holderName: end.holderName))
     harness.clock.advance(by: Self.heartbeat)
     await harness.settle(.failed(end.expected))
 
     #expect(session.isClosed && harness.host.starts.count == 1)
-    #expect(harness.clock.pendingCount == 0)
+    await harness.noTimersLeft()
   }
 
   @Test("When the video drops because sharing was stopped on the host, the connection fails without restarting")
   func asksTheHostWhyTheVideoEnded() async {
     let harness = ConnectionHarness()
-    _ = harness.show()
+    harness.show()
     let session = await harness.goLive()
     harness.host.answerEvery(.heartbeat, .reply(status: "failed", reason: "stopped-on-host"))
     session.host.report(connection: "failed")
@@ -214,7 +246,7 @@ struct ScreenSharingConnectionTransitionTests {
   func reconnectsWhenTheMachineComesBack() async {
     let harness = ConnectionHarness()
     harness.host.answerEvery(.capabilities, .failure(FakeHost.unreachable))
-    _ = harness.show()
+    harness.show()
     await harness.settle(.failed(.cantReach))
 
     harness.host.answerEvery(.capabilities, nil)
@@ -228,7 +260,7 @@ struct ScreenSharingConnectionTransitionTests {
   func staysFailedWhenTheMachineComesBackAfterARefusal() async {
     let harness = ConnectionHarness()
     harness.host.answerNext(.capabilities, .reply(status: "permission-required", reason: "permission-missing"))
-    _ = harness.show()
+    harness.show()
     await harness.settle(.failed(.permissionMissing))
 
     harness.manager.machineCameOnline(ConnectionHarness.machineId)

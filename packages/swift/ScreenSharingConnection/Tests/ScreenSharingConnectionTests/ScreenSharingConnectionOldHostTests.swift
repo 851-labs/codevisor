@@ -13,13 +13,13 @@ struct ScreenSharingConnectionOldHostTests {
   func presentsOnePaneIdentity() async throws {
     let harness = ConnectionHarness(host: .old())
     let identity = harness.legacyIdentity(harness.workspaces[0])
-    _ = harness.show(.preview)
+    harness.show(.preview)
     let first = await harness.goLive()
     harness.open(.window)
     first.host.report(connection: "failed")
     await harness.settle(.reconnecting)
     await harness.goLive()
-    await harness.stayLive()
+    await harness.beat()
 
     let starts = harness.host.starts
     #expect(harness.host.registeredPanes == [identity])
@@ -41,7 +41,8 @@ struct ScreenSharingConnectionOldHostTests {
     harness.open(.tab)
     await harness.settle(.failed(.inUseOldHost))
 
-    #expect(harness.host.starts.count == 1 && harness.clock.pendingCount == 0)
+    #expect(harness.host.starts.count == 1)
+    await harness.noTimersLeft()
   }
 
   @Test("An old host whose display changed since it was listed is listed again and tried once more")
@@ -49,7 +50,7 @@ struct ScreenSharingConnectionOldHostTests {
     let harness = ConnectionHarness(host: .old())
     harness.host.onStart = { harness.host.displays = [FakeHost.second] }
     harness.host.answerNext(.start, Self.displayGone)
-    _ = harness.show()
+    harness.show()
     await harness.goLive()
 
     #expect(harness.host.requests(.capabilities).count == 2)
@@ -62,7 +63,7 @@ struct ScreenSharingConnectionOldHostTests {
   func failsWhenTheDisplayStaysGone() async {
     let harness = ConnectionHarness(host: .old())
     harness.host.answerEvery(.start, Self.displayGone)
-    _ = harness.show()
+    harness.show()
     await harness.settle(.failed(.noDisplay))
 
     #expect(harness.host.starts.count == 2)
@@ -73,7 +74,7 @@ struct ScreenSharingConnectionOldHostTests {
     let harness = ConnectionHarness(host: .old())
     let other = UUID()
     let (old, new) = (harness.legacyIdentity(harness.workspaces[0]), harness.legacyIdentity(other))
-    _ = harness.show()
+    harness.show()
     await harness.goLive()
 
     harness.workspaces = [other]
@@ -89,21 +90,45 @@ struct ScreenSharingConnectionOldHostTests {
     #expect(operations[1].base.viewerId == operations[0].base.viewerId)
   }
 
-  @Test("An old host on a machine with no live workspace fails as needing an update, without a start")
-  func failsWithoutALiveWorkspace() async {
+  @Test("An old host on a machine with no live workspace fails for that reason, and connects once one appears")
+  func waitsForALiveWorkspace() async {
     let harness = ConnectionHarness(host: .old())
+    let workspace = harness.workspaces[0]
     harness.workspaces = []
-    _ = harness.show()
-    await harness.settle(.failed(.updateNeeded))
-
+    harness.show()
+    await harness.settle(.failed(.noWorkspace))
     #expect(harness.host.starts.isEmpty && harness.host.registeredPanes.isEmpty)
+
+    harness.workspaces = [workspace]
+    harness.manager.workspaceAppeared(ConnectionHarness.machineId)
+    await harness.goLive()
+
+    #expect(harness.host.registeredPanes == [harness.legacyIdentity(workspace)])
+    #expect(harness.host.starts.count == 1)
+  }
+
+  @Test("A workspace appearing does not restart a connection that failed for another reason, and Retry still works")
+  func leavesOtherFailuresAloneWhenAWorkspaceAppears() async {
+    let harness = ConnectionHarness(host: .old())
+    harness.host.answerNext(
+      .start, .reply(status: "busy", message: "This Mac is already sharing with another viewer."))
+    let surface = harness.show()
+    await harness.settle(.failed(.inUseOldHost))
+    await awaitObserved { harness.host.stops.count == 1 }
+    let sent = harness.host.requests.count
+
+    harness.manager.workspaceAppeared(ConnectionHarness.machineId)
+    #expect(harness.connection.state == .failed(.inUseOldHost) && harness.host.requests.count == sent)
+
+    surface.retry()
+    await harness.goLive()
   }
 
   @Test("An old host that ended the session on purpose is not restarted, and its message is kept")
   func doesNotRestartAnOldHostThatStopped() async {
     let message = "Screen sharing was stopped on the host Mac."
     let harness = ConnectionHarness(host: .old())
-    _ = harness.show()
+    harness.show()
     let session = await harness.goLive()
     harness.host.answerEvery(.heartbeat, .reply(status: "failed", message: message))
     session.host.report(connection: "failed")

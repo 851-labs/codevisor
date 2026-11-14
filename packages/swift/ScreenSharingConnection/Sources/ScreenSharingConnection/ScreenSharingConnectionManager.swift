@@ -19,6 +19,10 @@ public final class ScreenSharingConnectionManager {
     connections[machineId]?.machineCameOnline()
   }
 
+  public func workspaceAppeared(_ machineId: String) {
+    connections[machineId]?.workspaceAppeared()
+  }
+
   public func systemWoke() {
     for connection in connections.values { connection.systemWoke() }
   }

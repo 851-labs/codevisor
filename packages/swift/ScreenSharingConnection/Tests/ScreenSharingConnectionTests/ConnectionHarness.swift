@@ -8,12 +8,13 @@ final class ConnectionHarness {
   static let appName = "Alexandru's MacBook Pro"
 
   let clock = TestClock()
-  let host: FakeHost
+  var host: FakeHost
   let media = FakeMedia()
   let manager: ScreenSharingConnectionManager
   let installId = UUID()
   var workspaces = [UUID()]
   var makeVNCTransport: ScreenSharingMachine.MakeVNCTransport?
+  private var surfaces: [ScreenSharingSurface] = []
   private var startedSessions = 0
   private var eightSecondSleeps = 0
 
@@ -24,8 +25,9 @@ final class ConnectionHarness {
 
   var machine: ScreenSharingMachine {
     ScreenSharingMachine(
-      id: Self.machineId, channel: host, connector: media.connector, appName: Self.appName, installId: installId,
-      liveWorkspace: { [weak self] in self?.workspaces.first }, makeVNCTransport: makeVNCTransport)
+      id: Self.machineId, channel: { [weak self, host] in self?.host ?? host }, connector: media.connector,
+      appName: Self.appName, installId: installId, liveWorkspace: { [weak self] in self?.workspaces.first },
+      makeVNCTransport: makeVNCTransport)
   }
 
   var connection: ScreenSharingConnection { manager.connection(for: machine) }
@@ -34,8 +36,10 @@ final class ConnectionHarness {
     ScreenSharingLegacyIdentity(workspaceId: workspace, installId: installId)
   }
 
+  @discardableResult
   func show(_ kind: ScreenSharingSurfaceKind = .tab) -> ScreenSharingSurface {
     let surface = connection.attach(kind)
+    surfaces.append(surface)
     surface.setOnScreen(true)
     return surface
   }
@@ -43,6 +47,7 @@ final class ConnectionHarness {
   @discardableResult
   func open(_ kind: ScreenSharingSurfaceKind) -> ScreenSharingSurface {
     let surface = connection.attach(kind)
+    surfaces.append(surface)
     surface.openedByUser()
     surface.setOnScreen(true)
     return surface
@@ -69,9 +74,24 @@ final class ConnectionHarness {
     clock.advance(by: duration)
   }
 
-  func stayLive(for duration: Duration = ScreenSharingConnectionDeadlines.heartbeatInterval) async {
-    clock.advance(by: duration)
+  func tick(after wait: Duration = ScreenSharingConnectionDeadlines.heartbeatInterval) async {
+    clock.advance(by: wait)
     await eightSecondSleepScheduled()
+  }
+
+  func beat(after wait: Duration = ScreenSharingConnectionDeadlines.heartbeatInterval) async {
+    let answered = host.completed(.heartbeat)
+    await tick(after: wait)
+    await awaitObserved { host.completed(.heartbeat) == answered + 1 }
+  }
+
+  func stayLive(for duration: Duration) async {
+    var remaining = duration
+    while remaining >= ScreenSharingConnectionDeadlines.heartbeatInterval {
+      await beat()
+      remaining -= ScreenSharingConnectionDeadlines.heartbeatInterval
+    }
+    clock.advance(by: remaining)
   }
 
   func elapseRetryWait(_ wait: Duration) async {
@@ -87,13 +107,17 @@ final class ConnectionHarness {
     await awaitObserved { connection.state == state }
   }
 
+  func noTimersLeft() async {
+    await clock.changed.cancellableWait { clock.pendingCount == 0 }
+  }
+
   func eightSecondSleepScheduled() async {
     eightSecondSleeps += 1
     await clock.waitForSleep(.seconds(8), count: eightSecondSleeps)
   }
 
   isolated deinit {
-    for operation in [FakeHost.Operation.capabilities, .start, .heartbeat, .stop] { host.release(operation) }
+    host.releaseEverything()
     manager.shutdown()
   }
 }

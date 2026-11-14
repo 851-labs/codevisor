@@ -39,10 +39,10 @@ public struct ScreenSharingHostReply: Sendable {
     switch base.status {
     case "busy": return .refused(.inUseOldHost)
     case "permission-required": return .refused(.permissionMissing)
+    case "stopped": return .dropped(.unclassified(message: base.message))
     default: break
     }
-    let unclassified = ScreenSharingFailureReason.unclassified(message: base.message)
-    if heartbeatToOldHost, base.status == "failed" { return .refused(unclassified) }
-    return .dropped(unclassified)
+    if heartbeatToOldHost, base.status == "failed" { return .refused(.unclassified(message: base.message)) }
+    return .hostFailed(message: base.message)
   }
 }

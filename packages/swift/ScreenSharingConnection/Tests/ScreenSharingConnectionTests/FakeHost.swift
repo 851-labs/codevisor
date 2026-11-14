@@ -33,6 +33,7 @@ final class FakeHost: ScreenSharingHostChannel {
   var isReconnecting = false
   var onStart: (() -> Void)?
   private(set) var requests: [ScreenSharingHostRequest] = []
+  private(set) var completed: [Operation: Int] = [:]
   private(set) var registeredPanes: [ScreenSharingLegacyIdentity] = []
   @ObservationIgnored private var queued: [Operation: [Answer]] = [:]
   @ObservationIgnored private var standing: [Operation: Answer] = [:]
@@ -49,6 +50,15 @@ final class FakeHost: ScreenSharingHostChannel {
   }
 
   var starts: [ScreenSharingHostRequest] { requests(.start) }
+
+  var stops: [ScreenSharingHostRequest] { requests(.stop) }
+
+  func completed(_ operation: Operation) -> Int { completed[operation, default: 0] }
+
+  func releaseEverything() {
+    for gate in gates.values { gate.signal() }
+    gates = [:]
+  }
 
   func answerNext(_ operation: Operation, _ answers: Answer...) {
     queued[operation, default: []] += answers
@@ -74,6 +84,7 @@ final class FakeHost: ScreenSharingHostChannel {
       onStart()
     }
     await gates[operation]?.wait()
+    completed[operation, default: 0] += 1
     let scripted = queued[operation]?.isEmpty == false ? queued[operation]?.removeFirst() : standing[operation]
     switch scripted {
     case .failure(let error):

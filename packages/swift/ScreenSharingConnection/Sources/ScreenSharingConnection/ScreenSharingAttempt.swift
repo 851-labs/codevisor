@@ -8,9 +8,7 @@ import ScreenSharingV2
 final class ScreenSharingAttempt {
   struct Plan {
     var intent: ScreenSharingStartIntent
-    var asksWhyItEnded: Bool
     var preferredDisplayId: String?
-    var stopping: Task<Void, Never>?
   }
 
   enum Report {
@@ -74,9 +72,7 @@ final class ScreenSharingAttempt {
 
   private func work() async throws -> ScreenSharingAttemptEnd {
     do {
-      await plan.stopping?.value
-      try checkOpen()
-      if plan.asksWhyItEnded, let reason = await host.whyItEnded() { return .refused(reason) }
+      if let reason = try await host.whyItEnded() { return .refused(reason) }
       try checkOpen()
       let capabilities = try await host.capabilities()
       try checkOpen()
