@@ -65,9 +65,7 @@ public struct CloudAccountSections: View {
         .buttonStyle(.plain)
         .disabled(isSigningIn || cloud.isDeletingAccount)
       }
-      #if os(iOS)
-        CloudAccountDeletionSection(cloud: cloud)
-      #endif
+      CloudAccountDeletionSection(cloud: cloud)
     }
   }
 

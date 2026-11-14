@@ -14,6 +14,8 @@ struct GeneralSettingsView: View {
       generalSection
       ArchivedChatRetentionSection()
       permissionsSection
+      PrivacySettingsSection()
+      DataDeletionSection()
     }
     .formStyle(.grouped)
     .sheet(isPresented: $showsFullDiskAccessSetup, onDismiss: permissions.refresh) {

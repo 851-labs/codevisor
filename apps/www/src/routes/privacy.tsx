@@ -357,8 +357,8 @@ const sections = [
         <ul>
           <li>
             On macOS, turn usage analytics and crash reporting on or off independently in Settings →
-            Privacy &amp; Data. Turning them off stops future app reporting; request deletion
-            separately for information already received.
+            General. Turning them off stops future app reporting; request deletion separately for
+            information already received.
           </li>
           <li>
             On iOS, choose Settings → Privacy &amp; Data → Withdraw AI Consent. Confirming clears

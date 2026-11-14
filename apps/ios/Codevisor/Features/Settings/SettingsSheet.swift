@@ -44,7 +44,8 @@ struct SettingsSheet: View {
   }
 
   static let clientSections = [
-    "root", "account", "machines", "projects", "sandboxes", "general", "updates", "agents", "plugins", "skills",
+    "root", "account", "machines", "projects", "sandboxes", "general", "updates", "privacy", "agents", "plugins",
+    "skills",
   ]
 
   init(initialDestination: SettingsDestination = .root, onSectionChange: ((String) -> Void)? = nil) {
@@ -194,6 +195,9 @@ struct SettingsSheet: View {
         sectionLabel("Updates", icon: .updates)
           .badge(environment.updateCenter.availableCount)
       }
+      NavigationLink(value: SettingsDestination.section("privacy")) {
+        sectionLabel("Privacy & Data", icon: .privacy)
+      }
     }
     Section {
       NavigationLink(value: SettingsDestination.section("agents")) {
@@ -276,11 +280,12 @@ struct SettingsSheet: View {
   @ViewBuilder
   private func clientSection(_ section: String) -> some View {
     switch section {
-    case "account": CloudAccountScreen(dismissSettings: { dismiss() })
+    case "account": CloudAccountScreen()
     case "sandboxes": SandboxesSettingsScreen(model: environment.sandboxSettings, navigate: navigateSandboxes)
     case "projects": ProjectsSettingsScreen()
     case "general": GeneralSettingsScreen()
     case "updates": UpdatesSettingsScreen()
+    case "privacy": PrivacyDataSettingsScreen(dismissSettings: { dismiss() })
     case "agents": HarnessesSettingsScreen()
     case "skills": SkillsSettingsScreen()
     case "plugins": McpSettingsScreen()

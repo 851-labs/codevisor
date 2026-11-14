@@ -1,11 +1,17 @@
 import SwiftUI
 
-struct SettingsDeletionRow<Action: View>: View {
-  let title: String
-  let description: String
-  @ViewBuilder let action: Action
+public struct SettingsDeletionRow<Action: View>: View {
+  private let title: String
+  private let description: String
+  private let action: Action
 
-  var body: some View {
+  public init(title: String, description: String, @ViewBuilder action: () -> Action) {
+    self.title = title
+    self.description = description
+    self.action = action()
+  }
+
+  public var body: some View {
     HStack(alignment: .center, spacing: 16) {
       VStack(alignment: .leading, spacing: 3) {
         Text(title)
