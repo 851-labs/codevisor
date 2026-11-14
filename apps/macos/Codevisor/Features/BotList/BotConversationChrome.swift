@@ -14,7 +14,7 @@ struct BotConversationChrome: ViewModifier {
       .environment(\.transcriptTopChromeHeight, topChromeHeight)
       .toolbar(removing: isActive ? .title : nil)
       .overlay(alignment: .top) {
-        if !isSplit, environment.botThreads.openThread(of: bot) == nil {
+        if !isSplit, !environment.hasOpenPage(bot) {
           BotConversationTopBar(bot: bot, showsHeader: showsHeader, onOpenDetails: openDetails)
         }
       }
@@ -33,7 +33,7 @@ struct BotConversationChrome: ViewModifier {
     guard let workspace = environment.navigationStore.workspaceEntries.entry(bot.workspaceId).workspace else {
       return false
     }
-    return WorkspaceLayoutPolicy.isSplit(workspace)
+    return WorkspaceLayoutPolicy.isSplit(workspace, environment: environment)
   }
 
   private var isActive: Bool {

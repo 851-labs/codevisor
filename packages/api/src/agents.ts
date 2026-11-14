@@ -129,7 +129,6 @@ export const StartAgentRequest = Schema.Struct({
   labels: Schema.optional(Labels),
   callerAgentId: Schema.optional(Schema.String),
   callerAgentMachineId: Schema.optional(Schema.String),
-  callerBotId: Schema.optional(Schema.String),
   callerDefaults: Schema.optional(AgentCallerDefaults),
   sandbox: Schema.optional(Schema.String)
 })

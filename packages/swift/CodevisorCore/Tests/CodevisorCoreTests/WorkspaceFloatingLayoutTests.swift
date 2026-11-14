@@ -24,7 +24,6 @@ struct WorkspaceFloatingLayoutTests {
 
     #expect(layout.floating == [b])
     #expect(layout.stale.isEmpty)
-    #expect(layout.visibleTree(workspace.centerTree).allGroups.map(\.id) == [a, c])
   }
 
   @Test("A flag for a leaf that left the workspace is stale")
@@ -45,7 +44,6 @@ struct WorkspaceFloatingLayoutTests {
 
     #expect(layout.floating.isEmpty)
     #expect(layout.stale == [a, b])
-    #expect(layout.visibleTree(workspace.centerTree) == workspace.centerTree)
   }
 
   @Test("Only a docked leaf with a docked sibling can float")

@@ -42,10 +42,6 @@ extension SessionContainerView {
     focusSelectedCenterPane()
   }
 
-  func restoringFloatingLeaves(_ visible: SplitNode) -> SplitNode {
-    floatingLayout.restoring(visible, in: liveCenterTree ?? selectedWorkspace.centerTree)
-  }
-
   func dockStaleFloatingPanes() {
     FloatingPanes.shared.dock(Set(floatingLayout.stale.map(floatingKey)))
   }

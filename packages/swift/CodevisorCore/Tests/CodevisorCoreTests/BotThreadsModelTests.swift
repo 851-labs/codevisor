@@ -52,6 +52,28 @@ struct BotThreadsModelTests {
     #expect(model.openThread(of: release)?.threadId == "t1")
   }
 
+  @Test("A bot shows one page in place of its conversation: a thread or one of its agents, never both")
+  func onePageInPlace() async {
+    fake.setThreads([thread("t1", last: message(1, triageSide))], ofBot: release.record.id)
+    let agent = UUID()
+
+    await model.open("t1", of: release)
+    model.showAgent(agent, of: release)
+
+    #expect(model.openAgent(of: release) == agent)
+    #expect(model.openThread(of: release) == nil)
+
+    await model.open("t1", of: release)
+
+    #expect(model.openAgent(of: release) == nil)
+    #expect(model.openThread(of: release)?.threadId == "t1")
+
+    model.closePage(of: release)
+
+    #expect(model.openThread(of: release) == nil)
+    #expect(model.openAgent(of: release) == nil)
+  }
+
   @Test("A thread's messages load newest page first, and older pages join in order")
   func pagesMessages() async {
     let all = (1...(BotThreadsModel.pageSize + 2)).map { message($0, $0.isMultiple(of: 2) ? triageSide : releaseSide) }
