@@ -13,8 +13,7 @@ struct ScreenSharingViewerRegistryTests {
   private let surface = FakeSurface()
 
   private func endpoint(sound: Bool = true) -> ScreenSharingViewerEndpoint {
-    session.surface = surface
-    return ScreenSharingViewerEndpoint(session: session, surface: surface, sound: sound)
+    ScreenSharingViewerEndpoint(session: session, surface: surface, sound: sound)
   }
 
   @Test func panesShowingTheSameDesktopShareTheFirstPanesConnection() async {

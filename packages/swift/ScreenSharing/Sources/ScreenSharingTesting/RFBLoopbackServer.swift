@@ -36,6 +36,7 @@ public final class RFBLoopbackServer: @unchecked Sendable {
     public var fences = false
     public var desktopResize: DesktopResize = .unsupported
     public var extendedClipboard = false
+    public var sendsFramebuffer = true
     public enum DesktopResize: Sendable { case unsupported, accept, refuse }
     public init() {}
   }
@@ -362,7 +363,7 @@ public final class RFBLoopbackServer: @unchecked Sendable {
         if configuration.echoPointer, case .pointerEvent(_, let x, let y) = message {
           echoLocked(x: Int(x), y: Int(y))
         }
-        if case .framebufferUpdateRequest(let incremental, _) = message {
+        if configuration.sendsFramebuffer, case .framebufferUpdateRequest(let incremental, _) = message {
           if !incremental {
             let full = RFBRectangle(x: 0, y: 0, width: framebuffer.width, height: framebuffer.height)
             pending.append(.encoded(full))

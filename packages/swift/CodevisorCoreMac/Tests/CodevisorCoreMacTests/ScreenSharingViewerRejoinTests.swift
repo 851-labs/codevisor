@@ -110,10 +110,7 @@ struct ScreenSharingViewerRejoinTests {
   }
 
   private func endpoint() -> ScreenSharingViewerEndpoint {
-    let session = FakeMediaSession()
-    let surface = FakeSurface()
-    session.surface = surface
-    return ScreenSharingViewerEndpoint(session: session, surface: surface)
+    ScreenSharingViewerEndpoint(session: FakeMediaSession(), surface: FakeSurface())
   }
 
   @Test func aMirrorWhoseStreamEndsWithoutAReasonReconnects() async {

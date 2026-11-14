@@ -60,10 +60,8 @@ final class FakeBackend {
 
   @discardableResult
   func open(display: String? = nil) -> ScreenSharingViewerEndpoint {
-    let session = FakeMediaSession()
-    let surface = FakeSurface()
-    session.surface = surface
-    let endpoint = ScreenSharingViewerEndpoint(session: session, surface: surface, displayId: display)
+    let endpoint = ScreenSharingViewerEndpoint(
+      session: FakeMediaSession(), surface: FakeSurface(), displayId: display)
     endpoints.append(endpoint)
     continuation?.yield(.opened(endpoint))
     return endpoint

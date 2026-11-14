@@ -4,9 +4,6 @@
 
   @MainActor
   public final class ScreenSharingMirrorView: NSView {
-    public var onPresented: (() -> Void)? {
-      didSet { metal.onPresented = onPresented.map { presented in { _ in presented() } } }
-    }
     public var onStop: (() -> Void)?
     private let metal: ScreenSharingMetalView
     private var stopped = false

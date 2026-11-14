@@ -48,6 +48,12 @@ struct VNCScreenSharingViewerBackendTests {
     func stop() { server.stop() }
   }
 
+  private static var withoutVideo: RFBLoopbackServer.Configuration {
+    var configuration = RFBLoopbackServer.Configuration()
+    configuration.sendsFramebuffer = false
+    return configuration
+  }
+
   @Test func discoveryReportsTheDesktopFromTheHandshake() async throws {
     let harness = try await Harness()
     defer { harness.stop() }
@@ -68,7 +74,6 @@ struct VNCScreenSharingViewerBackendTests {
     harness.connect()
     await awaitObserved { harness.log.endpoints.count == 1 || harness.log.finished == 1 }
     try #require(harness.log.endpoints.count == 1)
-    harness.surfaces[0].present()
     await awaitObserved { harness.log.events.count >= 2 }
     expectNoDifference(harness.log.events, [.opened(harness.log.endpoints[0]), .ready])
     #expect(harness.server.connectionCount == 1)
@@ -79,7 +84,7 @@ struct VNCScreenSharingViewerBackendTests {
   }
 
   @Test func aStaleDiscoveryConnectionIsReplaced() async throws {
-    let harness = try await Harness()
+    let harness = try await Harness(configuration: Self.withoutVideo)
     defer { harness.stop() }
     _ = try await harness.backend.discover()
     harness.connect()
@@ -119,16 +124,16 @@ struct VNCScreenSharingViewerBackendTests {
     await awaitObserved { harness.log.endpoints.count == 1 || harness.log.finished == 1 }
     try #require(harness.log.endpoints.count == 1)
     let first = harness.log.endpoints[0]
-    expectNoDifference(harness.log.events, [.opened(first)])
     #expect(first.supportsControl && first.supportsClipboard)
     #expect(harness.surfaces[0].videoShowsPointer == false)
-    harness.surfaces[0].present()
     await awaitObserved { harness.log.events.count >= 2 }
+    expectNoDifference(harness.log.events, [.opened(first), .ready])
     harness.server.closeClient()
     await awaitObserved { harness.log.endpoints.count == 2 || harness.log.finished == 1 }
     try #require(harness.log.endpoints.count == 2)
     let second = harness.log.endpoints[1]
-    expectNoDifference(harness.log.events, [.opened(first), .ready, .reconnecting, .opened(second)])
+    await awaitObserved { harness.log.events.count >= 5 }
+    expectNoDifference(harness.log.events, [.opened(first), .ready, .reconnecting, .opened(second), .ready])
     #expect((first.session as? VNCScreenSharingSession)?.closed == true)
     #expect(harness.surfaces[0].stopped && !harness.surfaces[1].stopped)
     await harness.cancelConsumers()
@@ -137,7 +142,7 @@ struct VNCScreenSharingViewerBackendTests {
   }
 
   @Test func lossBeforeVideoAndBadCredentialsEndWithTheReason() async throws {
-    let harness = try await Harness()
+    let harness = try await Harness(configuration: Self.withoutVideo)
     defer { harness.stop() }
     harness.connect()
     await awaitObserved { harness.log.endpoints.count == 1 || harness.log.finished == 1 }

@@ -37,7 +37,8 @@ public final class ScreenSharingViewerEndpoint: Equatable, Identifiable {
   private var tickTask: Task<Void, Never>?
   private var clipboardTask: Task<Void, Never>?
   private var diagnosticsTask: Task<Void, Never>?
-  private var presented = false
+  private let firstFrame = UUID()
+  private var receivedVideo = false
   private var mirrors: [UUID: ScreenSharingMirrorReference] = [:]
   private var reportedFailure = false
   private var closed = false
@@ -178,7 +179,7 @@ public final class ScreenSharingViewerEndpoint: Equatable, Identifiable {
       self?.reportHighDynamicRange()
     }
     session.onVideoFormatChanged = { [weak self] in self?.hostDynamicRange = ($0, $1) }
-    surface.onPresented = { [weak self] in self?.notePresented() }
+    session.frames.tap(firstFrame).onFrameAvailable { [weak self] in Task { @MainActor in self?.noteFirstFrame() } }
     tickTask = Task { [weak self] in
       while !Task.isCancelled {
         do { try await Task.sleep(for: .seconds(1)) } catch { return }
@@ -212,7 +213,7 @@ public final class ScreenSharingViewerEndpoint: Equatable, Identifiable {
       var exportedFrames: UInt64 = 0
       while !Task.isCancelled {
         do { try await Task.sleep(for: .seconds(1)) } catch { return }
-        if let self, self.presented {
+        if let self, self.receivedVideo {
           let statistics = await self.session.statistics()
           guard !Task.isCancelled else { return }
           exportedFrames = self.recordDiagnostics(statistics, to: statsLog, after: exportedFrames)
@@ -334,7 +335,6 @@ public final class ScreenSharingViewerEndpoint: Equatable, Identifiable {
       frames.untap(id)
       return nil
     }
-    mirror.onPresented = { [weak self] in self?.notePresented() }
     mirror.onStop = { [weak self, weak frames] in
       frames?.untap(id)
       self?.mirrors[id] = nil
@@ -343,9 +343,10 @@ public final class ScreenSharingViewerEndpoint: Equatable, Identifiable {
     return mirror
   }
 
-  private func notePresented() {
-    guard !presented else { return }
-    presented = true
+  private func noteFirstFrame() {
+    session.frames.untap(firstFrame)
+    guard !receivedVideo, !closed else { return }
+    receivedVideo = true
     onReady?()
   }
 
@@ -372,6 +373,7 @@ public final class ScreenSharingViewerEndpoint: Equatable, Identifiable {
     onReady = nil
     for mirror in mirrors.values { mirror.view?.stop() }
     mirrors = [:]
+    session.frames.untap(firstFrame)
     session.frames.retainsLatest = false
     surface.stop()
     session.close()
