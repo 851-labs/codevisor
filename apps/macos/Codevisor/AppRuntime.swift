@@ -15,6 +15,7 @@ final class AppRuntime {
   private(set) var firstLaunchSetup: FirstLaunchSetup?
   private(set) var firstLaunchLanding: FirstLaunchLanding?
   private(set) var firstRunFolders: FirstRunFolderAccess?
+  @ObservationIgnored private(set) var screenSharing: ScreenSharingConnections?
   var startupError: String?
   @ObservationIgnored private var startupInProgress = false
   @ObservationIgnored let serverAgent = MacServerAgentController()
@@ -86,6 +87,7 @@ final class AppRuntime {
         instanceLease: AppDelegate.current?.appInstanceLease
       )
       environment = runtime.environment
+      screenSharing = ScreenSharingConnections(source: .live(runtime.environment))
       sparkleUpdater = runtime.updater
       AppDelegate.current?.settings = runtime.environment.settings
       AppDelegate.current?.appUpdate = runtime.environment.appUpdate

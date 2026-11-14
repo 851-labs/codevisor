@@ -129,6 +129,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
   private func shutDownBrowsersThenReply() {
     chromiumShutdownInProgress = true
+    AppRuntime.shared.screenSharing?.shutdown()
     BrowserPageClosing.shared.appWillClosePages()
     DispatchQueue.main.async {
       CVShutdownChromium {
