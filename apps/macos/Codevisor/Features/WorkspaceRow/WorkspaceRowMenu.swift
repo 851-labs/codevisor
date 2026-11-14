@@ -9,14 +9,9 @@ struct WorkspaceRowMenu: View {
     switch lifecycle {
     case let .active(actions):
       WorkspaceRowActiveMenu(actions: actions, unreadChat: unreadChat)
-    case let .chat(onArchive):
+    case .fixed:
       if let unreadChat {
         ChatSessionUnreadMenuItem(session: unreadChat)
-        Divider()
-      }
-      Button(action: onArchive) {
-        Label("Archive", systemImage: "archivebox")
-          .labelStyle(.titleAndIcon)
       }
     case let .archived(onRestore):
       Button(action: onRestore) {

@@ -6,6 +6,7 @@ struct WorkspaceChildAgentsEnvironment: ViewModifier {
   @Environment(AppEnvironment.self) private var environment
   @ClientPreference(SidebarPreferenceKey.pinnedWorkspaces, default: []) private var pinnedWorkspaceIDs: [String]
   @State private var renamingWorkspace: Workspace?
+  @State private var renamingChat: ChatSession?
   @State private var sectionPrompt: SectionPrompt?
   let store: SessionStore?
   @Binding var selection: SidebarSelection?
@@ -15,14 +16,15 @@ struct WorkspaceChildAgentsEnvironment: ViewModifier {
     content
       .environment(\.workspaceChildAgents, childAgents)
       .modifier(WorkspaceRenamePrompt(request: $renamingWorkspace))
+      .modifier(AgentRenamePrompt(request: $renamingChat))
       .modifier(SectionPromptModifier(prompt: $sectionPrompt, store: environment.workspaceSections))
   }
 
   private var childAgents: WorkspaceChildAgents? {
     guard let store else { return nil }
     return WorkspaceChildAgents(
-      environment: environment, store: store, commands: commands, selection: $selection,
-      revealRequest: revealRequest)
+      environment: environment, store: store, commands: commands, renameChat: { renamingChat = $0 },
+      selection: $selection, revealRequest: revealRequest)
   }
 
   private var commands: WorkspaceRowCommands {

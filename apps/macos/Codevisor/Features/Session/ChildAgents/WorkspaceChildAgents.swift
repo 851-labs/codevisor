@@ -7,6 +7,7 @@ struct WorkspaceChildAgents {
   let environment: AppEnvironment
   let store: SessionStore
   let commands: WorkspaceRowCommands
+  let renameChat: @MainActor (ChatSession) -> Void
   @Binding var selection: SidebarSelection?
   var revealRequest: SidebarRevealRequest?
 
@@ -47,6 +48,13 @@ struct WorkspaceChildAgents {
     let statuses = SidebarRowStatusSource(environment: environment, store: store)
     return chats.map { chat in
       let status = statuses.status(of: chat)
+      if environment.bots.bot(forSession: chat.id, serverId: chat.serverId) != nil {
+        return WorkspaceInspectorAgent(
+          id: chat.id, details: content.details(for: chat, status: status), lifecycle: .fixed
+        ) {
+          open(chat)
+        }
+      }
       if let item = ownItem(of: chat), let listItem = content.listItem(for: item) {
         return workspaceAgent(chat, item: item, listItem: listItem, content: content, status: status)
       }
@@ -85,7 +93,9 @@ struct WorkspaceChildAgents {
   }
 
   private func chatAgent(_ chat: ChatSession, details: WorkspaceRowDetails) -> WorkspaceInspectorAgent {
-    WorkspaceInspectorAgent(id: chat.id, details: details, lifecycle: .chat { archive(chat) }) {
+    let actions = WorkspaceRowActions(
+      pin: nil, rename: { renameChat(chat) }, archive: { archive(chat) }, noun: "agent")
+    return WorkspaceInspectorAgent(id: chat.id, details: details, lifecycle: .active(actions)) {
       open(chat)
     }
   }
