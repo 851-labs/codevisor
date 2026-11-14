@@ -36,9 +36,13 @@ public final class AppInstanceLease {
 
       let ownPID = ProcessInfo.processInfo.processIdentifier
       return NSRunningApplication.runningApplications(withBundleIdentifier: bundleIdentifier).first {
-        $0.processIdentifier != ownPID && !$0.isTerminated && Darwin.kill($0.processIdentifier, 0) == 0
+        $0.processIdentifier != ownPID && Self.isRunning($0)
           && includes(bundleIdentifier: $0.bundleIdentifier, bundleURL: $0.bundleURL)
       }
+    }
+
+    public static func isRunning(_ application: NSRunningApplication) -> Bool {
+      !application.isTerminated && Darwin.kill(application.processIdentifier, 0) == 0
     }
 
     fileprivate var lockKey: String {
@@ -110,6 +114,21 @@ public final class AppInstanceLease {
       Darwin.close(descriptor)
       throw error
     }
+  }
+
+  public static func exits(
+    _ isRunning: () -> Bool,
+    within limit: TimeInterval = 5,
+    now: () -> TimeInterval = { ProcessInfo.processInfo.systemUptime },
+    sleep: (TimeInterval) -> Void = { Thread.sleep(forTimeInterval: $0) }
+  ) -> Bool {
+    let deadline = now() + limit
+    while isRunning() {
+      guard now() < deadline else { return false }
+
+      sleep(0.05)
+    }
+    return true
   }
 
   public static func acquireDefault(

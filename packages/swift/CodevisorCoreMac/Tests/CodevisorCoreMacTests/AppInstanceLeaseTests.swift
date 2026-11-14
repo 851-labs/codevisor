@@ -55,6 +55,32 @@ struct AppInstanceLeaseTests {
     #expect(!scope.includes(bundleIdentifier: identifier, bundleURL: nil))
   }
 
+  @Test("A copy that finishes exiting within the wait does not stop this launch")
+  func waitsForAnExitingCopy() {
+    var clock: TimeInterval = 100
+    let exited = AppInstanceLease.exits({ clock < 102 }, within: 5, now: { clock }, sleep: { clock += $0 })
+
+    #expect(exited)
+    #expect(clock >= 102 && clock < 102.1)
+  }
+
+  @Test("A copy still running when the wait ends counts as the running app")
+  func givesUpOnACopyThatKeepsRunning() {
+    var clock: TimeInterval = 100
+    let exited = AppInstanceLease.exits({ true }, within: 5, now: { clock }, sleep: { clock += $0 })
+
+    #expect(!exited)
+    #expect(clock >= 105 && clock < 105.1)
+  }
+
+  @Test("A copy that is already gone costs no wait")
+  func doesNotWaitForACopyThatIsGone() {
+    var sleeps = 0
+    let exited = AppInstanceLease.exits({ false }, within: 5, now: { 100 }, sleep: { _ in sleeps += 1 })
+
+    #expect(exited && sleeps == 0)
+  }
+
   @Test("Rejects a second owner and releases on deinit")
   func exclusiveOwnership() throws {
     let fixture = makeFixture()

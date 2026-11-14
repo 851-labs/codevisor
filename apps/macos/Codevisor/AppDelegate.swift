@@ -32,8 +32,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     let scope = AppInstanceLease.Scope.current()
     do {
       if let lease = try AppInstanceLease.acquireDefault(for: scope) {
-        if scope.coversEveryCopy, activateExistingInstance(in: scope) {
+        if scope.coversEveryCopy, let older = instanceStillRunningAfterWaiting(in: scope) {
           Log.updates.log("launch: a copy of this app from before the shared lock is running; activating it")
+          _ = older.activate(options: [.activateAllWindows])
           NSApp.terminate(nil)
           return
         }
@@ -62,6 +63,13 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
   func applicationShouldHandleReopen(_ sender: NSApplication, hasVisibleWindows: Bool) -> Bool {
     !SandboxMode.isEnabled
+  }
+
+  private func instanceStillRunningAfterWaiting(in scope: AppInstanceLease.Scope) -> NSRunningApplication? {
+    while let other = scope.otherRunningInstance() {
+      guard AppInstanceLease.exits({ AppInstanceLease.Scope.isRunning(other) }) else { return other }
+    }
+    return nil
   }
 
   private func activateExistingInstance(in scope: AppInstanceLease.Scope) -> Bool {
