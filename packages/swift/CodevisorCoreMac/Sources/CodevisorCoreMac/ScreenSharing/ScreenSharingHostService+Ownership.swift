@@ -27,7 +27,18 @@ extension ScreenSharingHostService {
     return reply
   }
 
-  func refusalBeforeStarting(_ request: ServerScreenSharingRequest) -> ServerScreenSharingReply? {
+  func refusalBeforeRegistering(_ request: ServerScreenSharingRequest) async -> ServerScreenSharingReply? {
+    guard startsAppSession(request) else { return nil }
+    guard provesItsKey(request) else { return await proofRejected() }
+
+    return refusalBeforeStarting(request)
+  }
+
+  func displayWoke() {
+    if lastEnd?.ending == .displayAsleep { lastEnd = nil }
+  }
+
+  private func refusalBeforeStarting(_ request: ServerScreenSharingRequest) -> ServerScreenSharingReply? {
     let owner = Owner(request)
     guard owner.appKey != nil, request.intent != .open else { return nil }
 
@@ -53,6 +64,7 @@ extension ScreenSharingHostService {
     case .refused: return inUse
     case .replacesOwn: await end(old)
     case .takesOver:
+      takeovers[attempt] = old.owner
       if let refusal = await takeoverRefusal(request) { return refusal }
       guard !isShutdown, pendingStarts[attempt] != nil else { return .init(status: "stopped") }
       guard current === old else { return nil }

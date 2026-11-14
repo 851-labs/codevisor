@@ -119,6 +119,24 @@ struct ScreenSharingHostProofTests {
     }
   }
 
+  @Test func theHostRemembersWhyTheLastSixteenSessionsEndedAndNoMore() async throws {
+    try await Fixture.run { mac in
+      var starts: [ServerScreenSharingRequest] = []
+      for _ in 0...ScreenSharingHostService.rememberedEndedSessions {
+        starts.append(mac.start(as: .macBook, .open))
+        _ = await mac.send(starts[starts.count - 1])
+      }
+      await mac.host.end(try #require(mac.host.current), as: .stoppedOnHost)
+
+      let forgotten = await mac.send(mac.following(starts[0], .heartbeat))
+      #expect(forgotten.status == "stopped" && forgotten.reason == nil)
+      for remembered in [starts[1], starts[starts.count - 1]] {
+        let reply = await mac.send(mac.following(remembered, .heartbeat))
+        #expect(reply.status == "failed" && reply.reason == .stoppedOnHost)
+      }
+    }
+  }
+
   @Test func challengesExpireWorkOnceAndTheOldestGiveWayPastTheLimit() {
     var challenges = ScreenSharingHostChallenges()
     let hostKey = String(repeating: "a", count: 64)
