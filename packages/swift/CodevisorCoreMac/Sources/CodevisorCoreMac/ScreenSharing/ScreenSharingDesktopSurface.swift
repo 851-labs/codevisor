@@ -53,6 +53,7 @@ public final class ScreenSharingDesktopSurface {
   public func retry() {
     guard let bound else { return watch() }
 
+    askForThePanesDisplay(on: bound.desktop.connection)
     bound.surface.retry()
   }
 
@@ -108,11 +109,23 @@ public final class ScreenSharingDesktopSurface {
   private func show() {
     guard let bound else { return }
 
-    let connection = bound.desktop.connection
-    if connection.state == .off, let preferredDisplayId { connection.preferredDisplayId = preferredDisplayId }
+    askForThePanesDisplay(on: bound.desktop.connection)
     bound.surface.setOnScreen(true)
     bound.desktop.setOnScreen(true, for: id)
     onShown()
+  }
+
+  private func askForThePanesDisplay(on connection: ScreenSharingConnection) {
+    guard let preferredDisplayId, startsOnRequest(connection.state) else { return }
+
+    connection.preferredDisplayId = preferredDisplayId
+  }
+
+  private func startsOnRequest(_ state: ScreenSharingConnectionState) -> Bool {
+    switch state {
+    case .off, .failed: true
+    case .connecting, .live, .reconnecting: false
+    }
   }
 
   private func hide() {

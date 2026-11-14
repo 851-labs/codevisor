@@ -103,6 +103,22 @@ struct ScreenSharingDesktopSurfaceTests {
     #expect(joiner.snapshot.displayId == FakeHost.second.id)
   }
 
+  @Test("A pane that retries a failed connection asks for its own display, not the one the first pane wanted")
+  func asksForTheRetryingPanesDisplay() async throws {
+    let fixture = Fixture()
+    fixture.host.displays = [FakeHost.display, FakeHost.second]
+    fixture.host.answerNext(.capabilities, .reply(status: "permission-required", reason: "permission-missing"))
+    let (first, retrying) = (fixture.surface(.tab), fixture.surface(.tab))
+    first.show(preferringDisplay: FakeHost.second.id)
+    await fixture.settle(.failed(.permissionMissing))
+
+    retrying.show(preferringDisplay: FakeHost.display.id)
+    retrying.surface.retry()
+    try await fixture.goLive()
+
+    #expect(fixture.host.starts.map(\.displayId) == [FakeHost.display.id])
+  }
+
   @Test("A surface whose machine went away attaches again, and reconnects, when the machine is back")
   func attachesAgainWhenTheMachineReturns() async throws {
     let fixture = Fixture()
