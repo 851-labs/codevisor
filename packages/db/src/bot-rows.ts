@@ -10,7 +10,7 @@ import type {
 import type { Effect } from "effect"
 
 import type { DatabaseError } from "./errors.js"
-import { integer, nullable, rowReader, text } from "./row-reader.js"
+import { integer, nullable, optional, rowReader, text } from "./row-reader.js"
 import type { ThreadsService } from "./threads.js"
 
 export interface BotRow {
@@ -32,6 +32,7 @@ export interface BotRow {
   readonly archived_at: string | null
   readonly created_at: string
   readonly updated_at: string | null
+  readonly about?: string | null
 }
 
 export interface BotProjectRow {
@@ -60,7 +61,8 @@ export const botRows = rowReader<BotRow>({
   config_selections: text,
   archived_at: nullable(text),
   created_at: text,
-  updated_at: nullable(text)
+  updated_at: nullable(text),
+  about: optional(nullable(text))
 })
 
 export interface BotMessageRow {
@@ -124,6 +126,7 @@ export interface UpdateBotRecord {
   readonly symbolName?: string | undefined
   readonly mascot?: BotMascot | undefined
   readonly isArchived?: boolean | undefined
+  readonly about?: string | undefined
 }
 
 export interface BotOwnerQuery {

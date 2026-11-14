@@ -92,6 +92,12 @@ const UpdateBotBody = Schema.Struct({
   name: UpdateBotRequest.fields.name,
   configSelections: Schema.optional(ConfigSelections),
   mascot: Schema.optional(BotMascot),
+  about: Schema.optional(
+    Schema.String.annotate({
+      description:
+        "What the bot does, in a sentence or two. The bot keeps this current itself; set it only to correct it."
+    })
+  ),
   isArchived: Schema.optional(
     Schema.Boolean.annotate({
       description: "true archives the bot: it stops and moves to Archived. false restores it."
@@ -102,7 +108,7 @@ const UpdateBotBody = Schema.Struct({
 export const codevisorBotApiTools: ReadonlyArray<CodevisorApiToolSpec> = [
   apiTool(
     "bots.list",
-    "List this machine's Codevisor bots, archived ones included: botId, name, mascot, harnessId, configSelections (the options picked for its chat, such as its model; absent while it uses the harness defaults), isArchived, projects (each checked-out repository), rootPath (the bot's folder) and agentId (the bot's own chat, for agents.status).",
+    "List this machine's Codevisor bots, archived ones included: botId, name, about (what the bot does, in its own words; absent until it has said), mascot, harnessId, configSelections (the options picked for its chat, such as its model; absent while it uses the harness defaults), isArchived, projects (each checked-out repository), rootPath (the bot's folder) and agentId (the bot's own chat, for agents.status).",
     "GET",
     "/v1/bots"
   ),

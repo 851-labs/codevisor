@@ -36,5 +36,6 @@ export const CODEVISOR_BOT_TOOL_NAMES: ReadonlySet<string> = new Set([
   "messages.list",
   "messages.threads",
   "bot.projects_add",
-  "bot.projects_remove"
+  "bot.projects_remove",
+  "bot.describe"
 ])

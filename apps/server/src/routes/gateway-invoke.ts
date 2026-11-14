@@ -9,12 +9,14 @@ import {
   FLEET_SANDBOX_ACTION_PATH,
   FLEET_SESSION_EVENT_PATH,
   FLEET_THREAD_MESSAGE_PATH,
-  FLEET_BOT_IMPORT_PATH
+  FLEET_BOT_IMPORT_PATH,
+  FLEET_BOTS_PATH
 } from "@codevisor/api"
 import type { GatewayOrigin } from "@codevisor/mcp"
 
 import { failureMessage, HttpFailure, readJson, writeJson } from "../server-context.js"
 import { receiveBotImport } from "./bot-import.js"
+import { receiveBotRoster } from "./bot-roster.js"
 import { receiveAgentsArchived } from "./fleet-agents-archived.js"
 import { receiveAgentsMoved } from "./fleet-agents-moved.js"
 import { fleetCall, invokeForFleet } from "./fleet-calls.js"
@@ -118,6 +120,10 @@ export const routeGatewayInvoke = async (route: RouteContext): Promise<boolean> 
   }
   if (path === FLEET_AGENTS_ARCHIVED_PATH) {
     await answerSandboxAction(response, () => receiveAgentsArchived(route, call, body.args))
+    return true
+  }
+  if (path === FLEET_BOTS_PATH) {
+    await answerSandboxAction(response, () => receiveBotRoster(route, call, body.args))
     return true
   }
   if (path === FLEET_BOT_IMPORT_PATH) {

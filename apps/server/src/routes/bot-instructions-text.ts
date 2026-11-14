@@ -5,9 +5,18 @@ export interface BotRepository {
   readonly projectId: string
 }
 
+export interface OtherBot {
+  readonly botId: string
+  readonly name: string
+  readonly about?: string | undefined
+  readonly machine?: string | undefined
+}
+
 export interface BotInstructionsSubject {
   readonly name: string
+  readonly about?: string | undefined
   readonly repositories: ReadonlyArray<BotRepository>
+  readonly otherBots?: ReadonlyArray<OtherBot> | undefined
 }
 
 export const BLOCK_BEGIN = "<!-- codevisor:begin -->"
@@ -22,7 +31,8 @@ export const codevisorBlock = (subject: BotInstructionsSubject): string =>
     ...talkingSection,
     ...repositoriesSection(subject.repositories),
     ...delegatingSection,
-    ...otherBotsSection,
+    ...aboutSection(subject.about),
+    ...otherBotsSection(subject.otherBots ?? []),
     BLOCK_END
   ].join("\n\n")
 
@@ -131,12 +141,37 @@ const delegatingSection: ReadonlyArray<string> = [
   )
 ]
 
-const otherBotsSection: ReadonlyArray<string> = [
+const aboutSection = (about: string | undefined): ReadonlyArray<string> => [
+  "## What you do",
+  paragraph(
+    "The user's other bots, and their agents, see a sentence or two about what you do, so they know",
+    "what to bring you.",
+    about === undefined ? "You haven't written yours yet." : `Yours says: "${about}"`
+  ),
+  paragraph(
+    "Write it with `bot.describe({ about })` as soon as you know your job: what you handle, keep",
+    "track of, or own for the user. Rewrite it whenever that changes. Keep it to what you do, not",
+    "how. It isn't a message, so don't tell the user about it."
+  )
+]
+
+const otherBotLine = (bot: OtherBot): string => {
+  const where = bot.machine === undefined ? "" : `, on machine \`${bot.machine}\``
+  const about = bot.about ?? "hasn't said what it does yet"
+  return `- ${bot.name} (botId \`${bot.botId}\`${where}): ${about}`
+}
+
+const otherBotsSection = (bots: ReadonlyArray<OtherBot>): ReadonlyArray<string> => [
   "## Other bots",
   paragraph(
     "The user has other bots, each with its own job. They are your peers, not your sub-agents: you",
-    "all work for the same person. `bots.list()` shows them. Write to one with `bots.message`, in a",
-    "thread the user isn't part of."
+    "all work for the same person. Write to one with `bots.message`, in a thread the user isn't",
+    "part of; pass `machine` for a bot on another machine."
+  ),
+  bots.length === 0 ? "There are no other bots yet." : bots.map(otherBotLine).join("\n"),
+  paragraph(
+    "This list is from when you last started. `bots.list()` has the current one, with each bot's",
+    "`about`."
   ),
   bullets(
     paragraph(
@@ -146,7 +181,8 @@ const otherBotsSection: ReadonlyArray<string> = [
       "opposite of a sub-agent's brief, which you write as your own request."
     ),
     paragraph(
-      "When a request belongs to another bot's job, pass it on, and tell the user who has it."
+      "Before you take on something outside your own job, or tell the user you can't help, check",
+      "whether it belongs to another bot. If it does, pass it on, and tell the user who has it."
     ),
     paragraph(
       "A thread is between you and the other bot. When a bot asks you for something, answer in the",

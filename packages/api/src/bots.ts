@@ -66,9 +66,28 @@ export const Bot = Schema.Struct({
   isArchived: Schema.Boolean,
   archivedAt: Schema.optional(Schema.String),
   createdAt: Schema.String,
-  updatedAt: Schema.optional(Schema.String)
+  updatedAt: Schema.optional(Schema.String),
+  about: Schema.optional(Schema.String)
 })
 export type Bot = typeof Bot.Type
+
+export const FleetBot = Schema.Struct({
+  machineId: Schema.String,
+  machineName: Schema.String,
+  botId: Schema.String,
+  name: Schema.String,
+  about: Schema.optional(Schema.String)
+})
+export type FleetBot = typeof FleetBot.Type
+
+export const FLEET_BOTS_PATH = "fleet.bots"
+
+export const BOT_ABOUT_LIMIT = 300
+
+export const DescribeBotRequest = Schema.Struct({
+  about: Schema.String
+})
+export type DescribeBotRequest = typeof DescribeBotRequest.Type
 
 export const CreateBotRequest = Schema.Struct({
   id: Schema.optional(Schema.String),
@@ -97,7 +116,8 @@ export const UpdateBotRequest = Schema.Struct({
   symbolName: Schema.optional(Schema.String),
   mascot: Schema.optional(BotMascot),
   isArchived: Schema.optional(Schema.Boolean),
-  configSelections: Schema.optional(Schema.Record(Schema.String, Schema.String))
+  configSelections: Schema.optional(Schema.Record(Schema.String, Schema.String)),
+  about: Schema.optional(Schema.String)
 })
 export type UpdateBotRequest = typeof UpdateBotRequest.Type
 

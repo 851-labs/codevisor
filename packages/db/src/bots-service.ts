@@ -58,7 +58,8 @@ export const makeBotsService = (
       isArchived: row.archived_at !== null,
       ...(row.archived_at === null ? {} : { archivedAt: row.archived_at }),
       createdAt: row.created_at,
-      ...(row.updated_at === null ? {} : { updatedAt: row.updated_at })
+      ...(row.updated_at === null ? {} : { updatedAt: row.updated_at }),
+      ...(row.about == null || row.about === "" ? {} : { about: row.about })
     }
   }
 
@@ -131,6 +132,7 @@ export const makeBotsService = (
             mascot.eyewear,
             mascot.eyewearColor,
             nextArchivedAt(record.isArchived, row),
+            record.about ?? row.about ?? null,
             isoTimestamp(),
             current.id
           )
@@ -247,7 +249,7 @@ const botSql = {
               ) values (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
   update: `update bots set name = ?, symbol_name = ?, mascot_color = ?, mascot_hat = ?,
        mascot_hat_color = ?, mascot_eyewear = ?, mascot_eyewear_color = ?,
-       archived_at = ?, updated_at = ? where id = ?`,
+       archived_at = ?, about = ?, updated_at = ? where id = ?`,
   touch: "update bots set updated_at = ? where id = ?",
   delete: "delete from bots where id = ?",
   owning: `${botSelect}

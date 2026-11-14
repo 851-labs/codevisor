@@ -1,4 +1,9 @@
-import { AddBotProjectRequest, SendBotMessageRequest, TerminalCreateRequest } from "@codevisor/api"
+import {
+  AddBotProjectRequest,
+  DescribeBotRequest,
+  SendBotMessageRequest,
+  TerminalCreateRequest
+} from "@codevisor/api"
 
 import {
   apiTool,
@@ -61,6 +66,13 @@ export const codevisorSessionApiTools: ReadonlyArray<CodevisorApiToolSpec> = [
     "Remove a project from this bot and delete its checkout from the bot's folder. Returns the bot with its remaining projects.",
     "DELETE",
     "/v1/sessions/:id/bot/projects/:projectId"
+  ),
+  apiTool(
+    "bot.describe",
+    "Say what this bot does, in a sentence or two: what it handles, keeps track of, or owns for the user. The user's other bots and agents read it in bots.list and in their instructions to know what to bring you. Replaces what was there. Returns the bot.",
+    "PUT",
+    "/v1/sessions/:id/bot/about",
+    { body: DescribeBotRequest }
   ),
   apiTool(
     "terminals.create",
