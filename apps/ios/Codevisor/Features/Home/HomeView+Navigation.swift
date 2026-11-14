@@ -21,6 +21,7 @@ extension HomeView {
 
   func openChat(_ session: ChatSession) {
     if session.ownerAgent != nil, !isHome(hostWorkspace(of: session), for: session) {
+      IOSNavigationDiagnostics.record("home.openAgent", "session=\(shortID(session.id))")
       openRoute(.agent(serverId: session.serverId, sessionId: session.id))
       return
     }

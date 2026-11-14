@@ -17,6 +17,7 @@ struct AgentChatScreen: View {
   var body: some View {
     titled
       .task(id: session?.id) { await connect() }
+      .onAppear { IOSNavigationDiagnostics.record("agentChat.appear", "controller=\(controller != nil)") }
   }
 
   @ViewBuilder
@@ -50,7 +51,7 @@ struct AgentChatScreen: View {
         description: Text("This agent was archived or its machine is not connected.")
       )
     } else {
-      ProgressView()
+      DelayedWorkspaceLoadingView()
         .frame(maxWidth: .infinity, maxHeight: .infinity)
         .background { ChatSurfaceBackground().ignoresSafeArea() }
     }
@@ -66,7 +67,9 @@ struct AgentChatScreen: View {
       for: session, project: project, workspaceId: nil, environment: environment)
     controller.isGuestInHostWorkspace = true
     self.controller = controller
+    IOSNavigationDiagnostics.record("agentChat.controller", "model=\(controller.model != nil)")
     guard controller.model == nil, !controller.isConnecting else { return }
     await controller.connectIfNeeded()
+    IOSNavigationDiagnostics.record("agentChat.connected", "model=\(controller.model != nil)")
   }
 }

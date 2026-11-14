@@ -65,10 +65,18 @@ extension HomeView {
   }
 
   func openSyncedChat(_ session: ChatSession) async {
-    await environment.workspaceSync.refreshFromServer(
-      serverId: session.serverId, client: environment.machines.client(for: session.serverId)
-    )
+    IOSNavigationDiagnostics.record("home.openSyncedChat.begin", "known=\(opensFromWhatIsKnown(session))")
+    if !opensFromWhatIsKnown(session) {
+      await environment.workspaceSync.refreshFromServer(
+        serverId: session.serverId, client: environment.machines.client(for: session.serverId)
+      )
+    }
     openChat(session)
+  }
+
+  private func opensFromWhatIsKnown(_ session: ChatSession) -> Bool {
+    session.ownerAgent != nil
+      && environment.projectList.session(session.id, serverId: session.serverId) != nil
   }
 
   func controlClient(serverId: String, action: ClientUIAction) async throws {
