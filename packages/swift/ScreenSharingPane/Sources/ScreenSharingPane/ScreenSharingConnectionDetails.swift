@@ -9,7 +9,7 @@
     var body: some View {
       NavigationStack {
         Form {
-          if let diagnostics = model.diagnostics, model.phase == .viewing {
+          if let diagnostics = model.diagnostics, model.isViewing {
             rows(diagnostics)
           } else {
             Text("Connection details will appear when the screen share is ready.")

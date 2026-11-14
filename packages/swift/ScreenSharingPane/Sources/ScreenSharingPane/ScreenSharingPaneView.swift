@@ -15,10 +15,11 @@
         if model.session != nil {
           ScreenSharingCanvas(model: model)
             .ignoresSafeArea(.container)
-            .opacity(model.phase == .viewing ? 1 : 0)
+            .opacity(model.isViewing ? 1 : 0)
         }
-        status
+        ScreenSharingPaneStatus(model: model)
       }
+      .background { ScreenSharingOnScreenProbe(model: model) }
       .overlay(alignment: .top) { controlNotice.padding(.top, 8) }
       .overlay(alignment: .bottom) {
         if showsHint { hint.padding(.bottom, 16).transition(.move(edge: .bottom).combined(with: .opacity)) }
@@ -26,10 +27,8 @@
       .sheet(isPresented: Bindable(model).connectionDetailsShown) { ScreenSharingConnectionDetails(model: model) }
       .animation(.snappy, value: model.control?.notice)
       .animation(.snappy, value: showsHint)
-      .onAppear { model.appeared() }
-      .onDisappear { model.disappeared() }
-      .task(id: model.phase == .viewing) {
-        guard model.phase == .viewing, !hintShown else { return }
+      .task(id: model.isViewing) {
+        guard model.isViewing, !hintShown else { return }
         hintShown = true
         showsHint = true
         try? await Task.sleep(for: .seconds(5))
@@ -42,36 +41,8 @@
       }
     }
 
-    @ViewBuilder private var status: some View {
-      switch model.phase {
-      case .loading, .connecting:
-        if let step = model.stillConnectingStep {
-          VStack(spacing: 8) {
-            ProgressView()
-            Text("Still connecting…").foregroundStyle(.secondary)
-            Text(step).font(.footnote).foregroundStyle(.tertiary)
-          }
-        } else {
-          ProgressView("Connecting to Mac…")
-        }
-      case .reconnecting:
-        ProgressView("Reconnecting…")
-      case .viewing:
-        EmptyView()
-      case .failed(let message):
-        ContentUnavailableView {
-          Label("Can't Show This Mac", systemImage: "display.trianglebadge.exclamationmark")
-        } description: {
-          Text(message)
-        } actions: {
-          Button("Try Again") { model.retry() }
-            .buttonStyle(.borderedProminent)
-        }
-      }
-    }
-
     @ViewBuilder private var controlNotice: some View {
-      if let notice = model.control?.notice, model.phase == .viewing {
+      if let notice = model.control?.notice, model.isViewing {
         Label(notice, systemImage: "exclamationmark.triangle.fill")
           .font(.footnote.weight(.semibold))
           .foregroundStyle(.orange)
@@ -107,7 +78,7 @@
             Picker(
               "Display",
               selection: Binding(
-                get: { model.displayId ?? "" },
+                get: { model.selectedDisplay?.id ?? "" },
                 set: { model.select(displayId: $0) })
             ) {
               ForEach(model.displays, id: \.id) { display in
@@ -118,17 +89,17 @@
           Button("Paste from iPhone", systemImage: "doc.on.clipboard") {
             model.paste(UIPasteboard.general.string ?? "")
           }
-          .disabled(model.phase != .viewing)
+          .disabled(!model.isViewing)
           if model.control?.state == .controlling {
             Button("Stop Controlling", systemImage: "hand.raised.slash") { model.control?.release() }
           }
           Button("Connection Details", systemImage: "info.circle") { model.connectionDetailsShown = true }
-          Button("Reconnect", systemImage: "arrow.clockwise") { model.retry() }
+          Button("Reconnect", systemImage: "arrow.clockwise") { model.reconnect() }
         } label: {
           Label("More", systemImage: "ellipsis")
         }
       }
-      if model.phase == .viewing {
+      if model.isViewing {
         ToolbarSpacer(.flexible, placement: .bottomBar)
         ToolbarItem(id: "screen-sharing.keyboard", placement: .bottomBar) {
           Button {

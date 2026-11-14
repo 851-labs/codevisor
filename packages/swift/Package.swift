@@ -393,13 +393,16 @@ let package = Package(
     ),
     .target(
       name: "ScreenSharingPane",
-      dependencies: ["CodevisorCore", "ScreenSharing", "ScreenSharingV2"],
+      dependencies: ["CodevisorCore", "ScreenSharing", "ScreenSharingConnection", "ScreenSharingV2"],
       path: "ScreenSharingPane/Sources/ScreenSharingPane",
       swiftSettings: strictSwiftSettings
     ),
     .testTarget(
       name: "ScreenSharingPaneTests",
-      dependencies: ["ScreenSharingPane", "ScreenSharingV2", "CodevisorNet", "CodevisorTestSupport"],
+      dependencies: [
+        "ScreenSharingPane", "ScreenSharingConnection", "ScreenSharingConnectionTesting", "ScreenSharingV2",
+        "CodevisorTestSupport",
+      ],
       path: "ScreenSharingPane/Tests/ScreenSharingPaneTests",
       swiftSettings: strictSwiftSettings,
       linkerSettings: frameworksBesideTestBundle

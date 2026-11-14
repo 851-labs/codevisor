@@ -21,16 +21,9 @@ extension WorkspaceScreen {
 
   func screenSharingPaneModel(for pane: PaneDescriptorState) -> ScreenSharingPaneModel? {
     guard let workspace = resolvedWorkspace else { return nil }
-    let machines = environment.machines
-    let serverId = resolvedServerId
-    let client = machines.client(for: serverId)
-    let model = ScreenSharingPaneCache.shared.model(for: pane.id) {
-      ScreenSharingPaneModel(
-        client: client, preferences: pane.screenSharing, workspaceId: workspace.id, paneId: pane.id)
-    }
-    model.applyPreferences(pane.screenSharing ?? ScreenSharingPanePreferences())
-    model.onPreferencesChanged = { updateScreenSharing(pane, preferences: $0) }
-    return model
+    return ScreenSharingDesktops.shared.model(
+      for: resolvedServerId, showing: workspace.id, seedDisplayId: pane.screenSharing?.preferredDisplayId,
+      environment: environment)
   }
 
   func convertToScreenSharing(_ pane: PaneDescriptorState) {
@@ -38,16 +31,8 @@ extension WorkspaceScreen {
     var state = panes
     let converted = state.convertNewTabPane(id: pane.id, to: .screenSharing, sessionId: workspaceSessionId)
     paneBinding.wrappedValue = state
-    if let converted { publishPane(converted) }
-  }
-
-  private func updateScreenSharing(_ pane: PaneDescriptorState, preferences: ScreenSharingPanePreferences) {
-    var state = panes
-    guard let index = state.panes.firstIndex(where: { $0.id == pane.id }),
-      state.panes[index].screenSharing != preferences
-    else { return }
-    state.panes[index].screenSharing = preferences
-    paneBinding.wrappedValue = state
-    publishPane(state.panes[index])
+    guard let converted else { return }
+    publishPane(converted)
+    screenSharingPaneModel(for: converted)?.openedByUser()
   }
 }
