@@ -8,7 +8,6 @@ import OSLog
 
 @CasePathable
 public enum ScreenSharingViewerEvent: Equatable, Sendable {
-  case elsewhere(ScreenSharingViewerEndpoint?)
   case ended(String)
   case opened(ScreenSharingViewerEndpoint)
   case ready
@@ -22,14 +21,7 @@ public struct ScreenSharingViewerBackend: Sendable {
   public var connect: @Sendable (_ displayId: String) async -> AsyncStream<ScreenSharingViewerEvent> = { _ in
     .finished
   }
-  public var switchDisplay: @Sendable (_ displayId: String) async -> AsyncStream<ScreenSharingViewerEvent> = { _ in
-    .finished
-  }
   public var discover: @Sendable () async throws -> [ServerScreenSharingDisplay]
-  public var claim: @Sendable () async -> Void = {}
-  public var setVisible: @Sendable (_ visible: Bool) async -> Void = { _ in }
-  public var retire: @Sendable () async -> Void = {}
-  public var liveStreams: @Sendable () async -> AsyncStream<Void> = { .finished }
 }
 
 extension ScreenSharingViewerBackend: TestDependencyKey {
@@ -38,61 +30,24 @@ extension ScreenSharingViewerBackend: TestDependencyKey {
 
 extension ScreenSharingViewerBackend {
   @MainActor
-  public static func native(
-    client: any CodevisorServerClienting, workspaceId: UUID, paneId: UUID, machineId: String? = nil,
-    role: ScreenSharingViewerRole = .tab
-  ) -> Self {
-    native(
-      client: client, workspaceId: workspaceId, paneId: paneId, machineId: machineId, role: role,
-      v2: ScreenSharingViewerMedia.connector,
-      sleep: { try await Task.sleep(for: $0) },
-      makeSurface: { session in
-        try ScreenSharingVideoSurface(mailbox: session.frames, metrics: session.metrics)
-      },
-      vncOpen: { displayId in
-        let socket = try client.screenSharingVNCSocket(displayId: displayId)
-        return try await VNCConnection.open(transport: RFBWebSocketTransport(socket: socket), password: nil)
-      })
-  }
-
-  typealias NativeVNCOpen = @Sendable (String) async throws -> (client: RFBClient, outcome: RFBHandshake.Outcome)
-
-  @MainActor
   static func native(
-    client: any CodevisorServerClienting, workspaceId: UUID, paneId: UUID, machineId: String? = nil,
-    role: ScreenSharingViewerRole = .tab,
+    client: any CodevisorServerClienting, workspaceId: UUID, paneId: UUID,
     v2: ScreenSharingV2Connector,
     sleep: @escaping @Sendable (Duration) async throws -> Void,
     now: @escaping @Sendable () -> ContinuousClock.Instant = { .now },
     makeSurface: @escaping @MainActor (any ScreenSharingViewingSession) throws -> any ScreenSharingViewerSurface,
-    vncOpen: @escaping NativeVNCOpen = { _ in throw RFBError.transport("This machine has no VNC display.") },
     target: String? = nil,
     heartbeatInterval: Duration = .seconds(8)
   ) -> Self {
-    let sharesStream = machineId != nil
     let runner = NativeScreenSharingViewerRunner(
       client: client, workspaceId: workspaceId, paneId: paneId, sleep: sleep, now: now,
-      makeSurface: makeSurface, vncOpen: vncOpen, target: target, v2: v2,
-      heartbeatInterval: heartbeatInterval, sound: !sharesStream)
-    guard let machineId else {
-      return Self(
-        connect: { display in await runner.connect(display) },
-        switchDisplay: { display in await runner.connect(display) }, discover: { try await runner.discover() },
-        claim: {}, setVisible: { _ in }, retire: {}, liveStreams: { .finished })
-    }
-    let share = ScreenSharingViewerRegistry.shared.share(
-      machineId: machineId, paneId: paneId, role: role, runner: runner)
-    return Self(
-      connect: { display in await share.connect(display) },
-      switchDisplay: { display in await share.connect(display, switching: true) },
-      discover: { try await runner.discover() },
-      claim: { await share.claim() }, setVisible: { visible in await share.setVisible(visible) },
-      retire: { await share.retire() }, liveStreams: { await share.liveStreams() })
+      makeSurface: makeSurface, target: target, v2: v2, heartbeatInterval: heartbeatInterval)
+    return Self(connect: { display in await runner.connect(display) }, discover: { try await runner.discover() })
   }
 }
 
 @MainActor
-private final class NativeScreenSharingViewerRunner: ScreenSharingViewerConnecting {
+private final class NativeScreenSharingViewerRunner {
   private typealias Outcome = ScreenSharingViewerAttempt.Outcome
   private let client: any CodevisorServerClienting
   private let workspaceId: UUID
@@ -100,29 +55,21 @@ private final class NativeScreenSharingViewerRunner: ScreenSharingViewerConnecti
   private let sleep: @Sendable (Duration) async throws -> Void
   private let now: @Sendable () -> ContinuousClock.Instant
   private let makeSurface: @MainActor (any ScreenSharingViewingSession) throws -> any ScreenSharingViewerSurface
-  private let vncOpen: ScreenSharingViewerBackend.NativeVNCOpen
   private var previous: Task<Void, Never>?
-  private var provider: String?
-  private var controlLease = false
   private var discovered: (began: ContinuousClock.Instant, reply: ServerScreenSharingReply)?
-  private var vncRunners: [String: VNCScreenSharingViewerRunner] = [:]
   private let target: String?
   private let heartbeatInterval: Duration
   private let v2: ScreenSharingV2Connector
-  private let sound: Bool
 
   init(
     client: any CodevisorServerClienting, workspaceId: UUID, paneId: UUID,
     sleep: @escaping @Sendable (Duration) async throws -> Void,
     now: @escaping @Sendable () -> ContinuousClock.Instant,
     makeSurface: @escaping @MainActor (any ScreenSharingViewingSession) throws -> any ScreenSharingViewerSurface,
-    vncOpen: @escaping ScreenSharingViewerBackend.NativeVNCOpen,
     target: String? = nil,
     v2: ScreenSharingV2Connector,
-    heartbeatInterval: Duration = .seconds(8),
-    sound: Bool = true
+    heartbeatInterval: Duration = .seconds(8)
   ) {
-    self.sound = sound
     self.v2 = v2
     self.target = target
     self.heartbeatInterval = heartbeatInterval
@@ -132,7 +79,6 @@ private final class NativeScreenSharingViewerRunner: ScreenSharingViewerConnecti
     self.sleep = sleep
     self.now = now
     self.makeSurface = makeSurface
-    self.vncOpen = vncOpen
   }
 
   func discover() async throws -> [ServerScreenSharingDisplay] {
@@ -148,16 +94,11 @@ private final class NativeScreenSharingViewerRunner: ScreenSharingViewerConnecti
     guard reply.version == 1, ["available", "busy"].contains(reply.status) else {
       throw ViewerError(reply.message ?? "Screen Sharing is unavailable on this Mac.")
     }
-    provider = reply.provider
-    controlLease = reply.controlLease == true
     discovered = (began, reply)
     return reply.displays
   }
 
-  func idle() async { await previous?.value }
-
   func connect(_ display: String) -> AsyncStream<ScreenSharingViewerEvent> {
-    if provider == "vnc" || display.hasPrefix("vnc:") { return vncRunner(for: display).connect() }
     return AsyncStream { continuation in
       let pending = previous
       let run = Task { @MainActor [self] in
@@ -170,23 +111,6 @@ private final class NativeScreenSharingViewerRunner: ScreenSharingViewerConnecti
       previous = run
       continuation.onTermination = { _ in run.cancel() }
     }
-  }
-
-  private func vncRunner(for display: String) -> VNCScreenSharingViewerRunner {
-    if let runner = vncRunners[display] { return runner }
-    let open = vncOpen
-    let runner = VNCScreenSharingViewerRunner(
-      displayId: display, open: { try await open(display) },
-      arbitratedByServer: { [weak self] in self?.controlLease ?? false },
-      setDesktopScale: { [client, weak self] scale in
-        guard let request = self?.request(.setScale, viewerId: UUID(), displayId: display) else { return }
-        var scaled = request
-        scaled.scale = scale
-        _ = try? await client.screenSharing(scaled)
-      },
-      makeSurface: makeSurface)
-    vncRunners[display] = runner
-    return runner
   }
 
   private func sleepUntilDeadline(since began: ContinuousClock.Instant) async throws {
@@ -338,7 +262,7 @@ private final class NativeScreenSharingViewerRunner: ScreenSharingViewerConnecti
       session.close()
       throw error
     }
-    let endpoint = ScreenSharingViewerEndpoint(session: session, surface: surface, sound: sound, displayId: display)
+    let endpoint = ScreenSharingViewerEndpoint(session: session, surface: surface, displayId: display)
     endpoint.dropsInjectedInput = ScreenSharingDisplayIdentity.isOnThisMac(display)
     attempt.endpoint = endpoint
     let now = now

@@ -9,11 +9,15 @@ final class MachineDesktopWindows {
   private static let initialSize = NSSize(width: 1100, height: 720)
 
   private var windows: [String: NSWindow] = [:]
+  private var shownSessions: [String: MachineDesktopSession] = [:]
   private var closeObservers: [String: NSObjectProtocol] = [:]
 
   func present(_ session: MachineDesktopSession, machineId: String, environment: AppEnvironment) {
     let window = windows[machineId] ?? makeWindow(session, machineId: machineId, environment: environment)
     windows[machineId] = window
+    let shown = shownSessions[machineId] ?? session
+    shownSessions[machineId] = shown
+    shown.window.openedByUser()
     window.makeKeyAndOrderFront(nil)
   }
 
@@ -39,6 +43,7 @@ final class MachineDesktopWindows {
 
   private func closed(_ machineId: String) {
     windows[machineId] = nil
+    shownSessions[machineId] = nil
     closeObservers.removeValue(forKey: machineId).map(NotificationCenter.default.removeObserver)
   }
 }

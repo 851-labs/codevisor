@@ -217,9 +217,6 @@ final class NativeBackendHarness {
 
   init(
     transport: SharingTransport = SharingTransport(),
-    vncOpen: @escaping ScreenSharingViewerBackend.NativeVNCOpen = { _ in
-      throw RFBError.transport("No VNC display in this test.")
-    },
     target: String? = nil,
     heartbeatInterval: Duration = .seconds(8),
     v2: V2 = V2(),
@@ -247,7 +244,7 @@ final class NativeBackendHarness {
         surfaces.append(surface)
         return surface
       },
-      vncOpen: vncOpen, target: target, heartbeatInterval: heartbeatInterval)
+      target: target, heartbeatInterval: heartbeatInterval)
   }
 
   private func makeSession() -> FakeMediaSession {

@@ -28,6 +28,7 @@ final class ScreenSharingPane: Pane {
   private var clipboardAppliedTo: ObjectIdentifier?
   private let machineId: String
   private let connection: (kind: String, address: String?)
+  private let surface: ScreenSharingDesktopSurface?
   private var observation: ObserveToken?
 
   var connectionName: String { machineName }
@@ -39,8 +40,11 @@ final class ScreenSharingPane: Pane {
     machineId = context.machine.id
     isLocal = context.machine.isLocal
     connection = Self.connection(of: context.machine)
-    store = Self.makeStore(context: context, descriptor: descriptor, role: role)
+    surface = Self.makeSurface(context: context, role: role)
+    store = surface.map { Self.makeStore(context: context, descriptor: descriptor, surface: $0) }
     guard let store else { return }
+    surface?.onChange = { [weak store] in store?.send(.surfaceChanged($0)) }
+    if let snapshot = surface?.snapshot { store.send(.surfaceChanged(snapshot)) }
     observation = observe { [weak self] in
       guard let self else { return }
       store.endpoint?.onFocusChanged = self.onFocusChanged
@@ -65,7 +69,7 @@ final class ScreenSharingPane: Pane {
           ScreenSharingMachinePreferences().setSharedClipboard(sharing, machineId: self.machineId)
         }
       }
-      let viewing = store.phase == .viewing
+      let viewing = store.isLive
       if viewing, !self.recordedViewing {
         ScreenSharingMachinePreferences().setLastConnected(Date(), machineId: self.machineId)
       }
@@ -82,20 +86,23 @@ final class ScreenSharingPane: Pane {
   }
   func makeView() -> AnyView { AnyView(ScreenSharingPaneView(pane: self)) }
 
+  private static func makeSurface(context: PaneContext, role: ScreenSharingViewerRole) -> ScreenSharingDesktopSurface? {
+    guard context.workspaceId != nil, !context.machine.isLocal else { return nil }
+
+    return AppRuntime.shared.screenSharing?.surface(
+      onMachine: context.machine.id, role: role, inWorkspace: context.workspaceId)
+  }
+
   private static func makeStore(
-    context: PaneContext, descriptor: PaneDescriptorState, role: ScreenSharingViewerRole
-  ) -> StoreOf<ScreenSharingViewer>? {
-    guard let workspaceId = context.workspaceId, !context.machine.isLocal else { return nil }
-    let client = context.client ?? CodevisorServerClient(config: context.machine.serverConfig)
+    context: PaneContext, descriptor: PaneDescriptorState, surface: ScreenSharingDesktopSurface
+  ) -> StoreOf<ScreenSharingViewer> {
     let state = ScreenSharingViewer.State(
-      preferences: descriptor.screenSharing ?? .init(),
+      machineName: context.machine.name, preferences: descriptor.screenSharing ?? .init(),
       dynamicResolution: ScreenSharingMachinePreferences().dynamicResolution(machineId: context.machine.id))
     return Store(initialState: state) {
       ScreenSharingViewer()
     } withDependencies: {
-      $0[ScreenSharingViewerBackend.self] = .native(
-        client: client, workspaceId: workspaceId, paneId: descriptor.id, machineId: context.machine.id,
-        role: role)
+      $0[ScreenSharingSurfaceClient.self] = .live(surface)
     }
   }
 
@@ -161,50 +168,47 @@ final class ScreenSharingPane: Pane {
     return ("Codevisor server", url.host().map { host in url.port.map { "\(host):\($0)" } ?? host })
   }
   func focus() { if store?.endpoint?.videoHasKeyboardFocus != true { onFocus?() } }
-  func visibilityChanged(_ visible: Bool) { store?.send(visible ? .paneAppeared : .paneDisappeared) }
+  func visibilityChanged(_ visible: Bool) {}
   func applyPreferences(_ preferences: ScreenSharingPanePreferences) { store?.send(.preferencesSynced(preferences)) }
-  func willDelete() async {
-    mounts = []
-    await store?.send(.paneClosed).finish()
+  func willDelete() async { leave() }
+  func detach() { leave() }
+
+  var holdsPicture: Bool { surface?.holdsPicture ?? false }
+
+  func openedByUser() {
+    surface?.openedByUser()
   }
-  func detach() {
-    mounts = []
-    store?.send(.paneDisappeared)
+
+  func onScreenChanged(_ onScreen: Bool) {
+    surface?.setOnScreen(onScreen, preferringDisplay: store?.preferences.preferredDisplayId)
+    store?.send(onScreen ? .shown : .hidden)
   }
-  func mounted(_ token: UUID) {
-    mounts.insert(token)
-    store?.send(.paneAppeared)
-  }
-  func unmounted(_ token: UUID) {
-    mounts.remove(token)
-    DispatchQueue.main.async { [weak self] in
-      guard let self, self.mounts.isEmpty else { return }
-      self.store?.send(.paneDisappeared)
-    }
+
+  private func leave() {
+    store?.send(.hidden)
+    surface?.detach()
   }
 }
 
 private struct ScreenSharingPaneView: View {
   let pane: ScreenSharingPane
-  @State private var mount = UUID()
 
   var body: some View {
-    Group {
+    ZStack {
       if let store = pane.store {
-        if store.phase == .failed {
-          failure(store)
-        } else if store.phase == .elsewhere {
+        if let failure = store.failure {
+          ScreenSharingFailureView(pane: pane, message: failure) { store.send(.retryButtonTapped) }
+        } else if store.mirror != nil {
           elsewhere(store)
         } else {
-          connection(store)
+          ScreenSharingConnectionView(pane: pane, store: store)
         }
       } else {
         ContentUnavailableView(
           "Screen Sharing unavailable", systemImage: "display", description: Text(unavailableReason))
       }
     }
-    .onAppear { pane.mounted(mount) }
-    .onDisappear { pane.unmounted(mount) }
+    .background { ScreenSharingOnScreen { pane.onScreenChanged($0) } }
   }
 
   private var unavailableReason: String {
@@ -213,97 +217,11 @@ private struct ScreenSharingPaneView: View {
       : "Open this pane in a workspace connected to a Mac."
   }
 
-  private func failure(_ store: StoreOf<ScreenSharingViewer>) -> some View {
-    VStack(spacing: 12) {
-      Image(systemName: "display.trianglebadge.exclamationmark").font(.largeTitle).foregroundStyle(.secondary)
-      if let message = store.message {
-        Text(message).foregroundStyle(.secondary).multilineTextAlignment(.center).frame(maxWidth: 380)
-      }
-      Button("Retry") { store.send(.retryButtonTapped) }
-    }
-    .padding(24)
-    .frame(maxWidth: .infinity, maxHeight: .infinity)
-    .simultaneousGesture(
-      TapGesture().onEnded {
-        pane.onFocusChanged?(true)
-        pane.focus()
-      }
-    )
-  }
-
-  private func connectingTitle(_ store: StoreOf<ScreenSharingViewer>) -> String {
-    if store.phase == .reconnecting { return "Reconnecting to \(pane.connectionName)…" }
-    if store.state.stillConnectingStep(on: pane.connectionName) != nil { return "Still connecting…" }
-    return "Connecting to \(pane.connectionName)…"
-  }
-
   private func elsewhere(_ store: StoreOf<ScreenSharingViewer>) -> some View {
     ScreenSharingMirrorPane(
       endpoint: store.mirror, connectionName: pane.connectionName,
       onTakeControl: pane.role == .watcher ? nil : { store.send(.showHereTapped) }
     )
     .simultaneousGesture(TapGesture().onEnded { pane.onFocusChanged?(true) })
-  }
-
-  private func connection(_ store: StoreOf<ScreenSharingViewer>) -> some View {
-    VStack(spacing: 0) {
-      if store.phase == .viewing, let message = store.lease?.message {
-        HStack {
-          Text(message).font(.caption).foregroundStyle(.secondary)
-          Spacer()
-          if store.interactionMode == .control, store.lease?.phase == .viewing {
-            Button("Request Control") { store.send(.interactionModeChanged(.control)) }.controlSize(.small)
-          }
-        }
-        .padding(.horizontal, 12).padding(.vertical, 8)
-      }
-      if let message = store.endpoint?.clipboard?.message {
-        Text(message).font(.caption).foregroundStyle(.secondary)
-          .frame(maxWidth: .infinity, alignment: .leading).padding(.horizontal, 12).padding(.vertical, 8)
-      }
-      if store.phase == .viewing, let notice = store.hostNotice {
-        Text(notice).font(.caption).foregroundStyle(.secondary)
-          .frame(maxWidth: .infinity, alignment: .leading).padding(.horizontal, 12).padding(.vertical, 8)
-      }
-      ZStack {
-        if let endpoint = store.endpoint {
-          ScreenSharingNativeView(endpoint: endpoint)
-        }
-        if store.phase != .viewing {
-          VStack(spacing: 12) {
-            ProgressView().controlSize(.small)
-            Text(connectingTitle(store))
-            if let step = store.state.stillConnectingStep(on: pane.connectionName) {
-              Text(step).font(.callout).foregroundStyle(.secondary)
-            }
-            if let notice = store.hostNotice { Text(notice).font(.callout).foregroundStyle(.secondary) }
-          }
-          .padding(24)
-        }
-      }
-      .frame(maxWidth: .infinity, maxHeight: .infinity)
-    }
-  }
-}
-
-private struct ScreenSharingNativeView: NSViewRepresentable {
-  let endpoint: ScreenSharingViewerEndpoint
-
-  func makeNSView(context: Context) -> NSView { NSView() }
-
-  func updateNSView(_ container: NSView, context: Context) {
-    let video = endpoint.view
-    if video.superview !== container {
-      container.subviews.forEach { $0.removeFromSuperview() }
-      video.removeFromSuperview()
-      video.frame = container.bounds
-      video.autoresizingMask = [.width, .height]
-      container.addSubview(video)
-    }
-    endpoint.letterbox(.windowBackgroundColor)
-  }
-
-  static func dismantleNSView(_ container: NSView, coordinator: ()) {
-    container.subviews.forEach { $0.removeFromSuperview() }
   }
 }

@@ -81,6 +81,11 @@ extension PaneGroupModel {
     requestSelectedPaneFocus()
   }
 
+  func openDesktop(id: UUID) {
+    convertNewTabPane(id: id, to: .screenSharing)
+    (live[id] as? ScreenSharingPane)?.openedByUser()
+  }
+
   func canClose(id: UUID) -> Bool {
     guard state.canClosePane(id: id),
       let descriptor = state.panes.first(where: { $0.id == id }),

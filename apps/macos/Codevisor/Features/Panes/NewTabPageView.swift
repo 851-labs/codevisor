@@ -149,7 +149,7 @@ struct NewTabPageView: View {
         group?.convertNewTabPane(id: paneId, to: .chat)
       }
     case .screenSharing:
-      group?.convertNewTabPane(id: paneId, to: .screenSharing)
+      group?.openDesktop(id: paneId)
     case .simulator:
       group?.convertNewTabPane(id: paneId, to: .simulator)
     case .browser:
