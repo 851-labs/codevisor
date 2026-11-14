@@ -32,7 +32,7 @@
       let first = harness.connection.session
       server.enqueue([.raw(Self.screen)])
       await harness.settle(.live)
-      #expect(host.requests.map(\.base.operation) == [.capabilities])
+      #expect(host.requests.map(\.operation) == [.capabilities])
 
       server.closeClient()
       await harness.settle(.reconnecting)

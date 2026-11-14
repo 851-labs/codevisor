@@ -1,3 +1,4 @@
+import CodevisorClient
 import ScreenSharingV2
 
 public enum ScreenSharingFailureReason: Equatable, Sendable {
@@ -17,16 +18,16 @@ public enum ScreenSharingFailureReason: Equatable, Sendable {
   case keptDropping
   case unclassified(message: String?)
 
-  init?(hostCode: String?, holderName: String?) {
-    switch hostCode {
-    case "taken-over": self = .takenOver(by: holderName)
-    case "in-use": self = .inUse(by: holderName)
-    case "stopped-on-host": self = .stoppedOnHost
-    case "display-asleep": self = .displayAsleep
-    case "session-switched": self = .sessionSwitched
-    case "no-display": self = .noDisplay
-    case "permission-missing": self = .permissionMissing
-    case "update-needed": self = .updateNeeded
+  init?(hostReason: ServerScreenSharingReason?, holderName: String?) {
+    switch hostReason {
+    case .takenOver?: self = .takenOver(by: holderName)
+    case .inUse?: self = .inUse(by: holderName)
+    case .stoppedOnHost?: self = .stoppedOnHost
+    case .displayAsleep?: self = .displayAsleep
+    case .sessionSwitched?: self = .sessionSwitched
+    case .noDisplay?: self = .noDisplay
+    case .permissionMissing?: self = .permissionMissing
+    case .updateNeeded?: self = .updateNeeded
     default: return nil
     }
   }

@@ -1,33 +1,29 @@
 import CodevisorClient
 
-public struct ScreenSharingHostReply: Sendable {
-  public static let appSessions = "app-sessions"
-  public static let proofRejected = "proof-rejected"
+struct ScreenSharingHostReply {
+  static let engine = "v2"
 
-  public var base: ServerScreenSharingReply
-  public var abilities: [String]
-  public var reason: String?
-  public var holderName: String?
-  public var display: ServerScreenSharingDisplay?
-  public var challenge: ScreenSharingChallenge?
-  public var session: String?
+  let base: ServerScreenSharingReply
 
-  public init(
-    _ base: ServerScreenSharingReply, abilities: [String] = [], reason: String? = nil, holderName: String? = nil,
-    display: ServerScreenSharingDisplay? = nil
-  ) {
+  init(_ base: ServerScreenSharingReply) {
     self.base = base
-    self.abilities = abilities
-    self.reason = reason
-    self.holderName = holderName
-    self.display = display
   }
 
-  var appChallenge: ScreenSharingChallenge? { abilities.contains(Self.appSessions) ? challenge : nil }
+  var challenge: ServerScreenSharingChallenge? {
+    guard let challenge = base.challenge, Self.isKey(challenge.hostKey), Self.isKey(challenge.nonce) else {
+      return nil
+    }
+
+    return challenge
+  }
+
+  var appChallenge: ServerScreenSharingChallenge? {
+    base.abilities?.contains(ServerScreenSharingReply.appSessions) == true ? challenge : nil
+  }
 
   var ownsSessionsByApp: Bool { appChallenge != nil }
 
-  var rejectsTheProof: Bool { reason == Self.proofRejected }
+  var rejectsTheProof: Bool { base.reason == .proofRejected }
 
   var canShare: Bool { base.version == 1 && ["available", "busy"].contains(base.status) }
 
@@ -37,12 +33,14 @@ public struct ScreenSharingHostReply: Sendable {
 
   var isSharing: Bool { base.version == 1 && ["connecting", "viewing"].contains(base.status) }
 
-  var offersV2: Bool { base.engines?.contains(ScreenSharingHostRequest.engine) == true }
+  var offersV2: Bool { base.engines?.contains(Self.engine) == true }
 
-  var lacksTheDisplay: Bool { reason == nil && base.status == "unavailable" }
+  var lacksTheDisplay: Bool { base.reason == nil && base.status == "unavailable" }
 
   func end(heartbeatToOldHost: Bool = false) -> ScreenSharingAttemptEnd {
-    if let reason = ScreenSharingFailureReason(hostCode: reason, holderName: holderName) { return .refused(reason) }
+    if let reason = ScreenSharingFailureReason(hostReason: base.reason, holderName: base.holderName) {
+      return .refused(reason)
+    }
     switch base.status {
     case "busy": return .refused(.inUseOldHost)
     case "permission-required": return .refused(.permissionMissing)
@@ -52,4 +50,10 @@ public struct ScreenSharingHostReply: Sendable {
     if heartbeatToOldHost, base.status == "failed" { return .refused(.unclassified(message: base.message)) }
     return .hostFailed(message: base.message)
   }
+
+  private static func isKey(_ text: String) -> Bool {
+    text.utf8.count == 64 && text.utf8.allSatisfy { hexDigits.contains($0) }
+  }
+
+  private static let hexDigits = Set("0123456789abcdef".utf8)
 }

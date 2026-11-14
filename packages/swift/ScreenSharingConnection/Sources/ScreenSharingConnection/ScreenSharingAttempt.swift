@@ -7,7 +7,7 @@ import ScreenSharingV2
 @MainActor
 final class ScreenSharingAttempt {
   struct Plan {
-    var intent: ScreenSharingStartIntent
+    var intent: ServerScreenSharingRequest.Intent
     var preferredDisplayId: String?
   }
 

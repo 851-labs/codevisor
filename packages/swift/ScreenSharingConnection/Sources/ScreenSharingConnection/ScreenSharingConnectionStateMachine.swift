@@ -1,3 +1,4 @@
+import CodevisorClient
 import ScreenSharingV2
 
 struct ScreenSharingConnectionStateMachine: Equatable, Sendable {
@@ -23,7 +24,7 @@ struct ScreenSharingConnectionStateMachine: Equatable, Sendable {
   }
 
   enum Command: Equatable, Sendable {
-    case start(ScreenSharingStartIntent, after: Duration, asksWhyItEnded: Bool)
+    case start(ServerScreenSharingRequest.Intent, after: Duration, asksWhyItEnded: Bool)
     case stop
 
     var opens: Bool {
@@ -39,7 +40,7 @@ struct ScreenSharingConnectionStateMachine: Equatable, Sendable {
   private var triesUsed = 0
   private var retriedHostFailure = false
   private var openPending = false
-  private var attemptIntent = ScreenSharingStartIntent.attach
+  private var attemptIntent = ServerScreenSharingRequest.Intent.attach
 
   init() {}
 

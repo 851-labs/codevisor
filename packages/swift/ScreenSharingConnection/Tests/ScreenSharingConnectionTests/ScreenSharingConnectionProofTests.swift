@@ -1,3 +1,4 @@
+import CodevisorClient
 import CodevisorTestSupport
 import Foundation
 import ScreenSharingConnection
@@ -16,10 +17,11 @@ struct ScreenSharingConnectionProofTests {
     let start = try #require(harness.host.starts.first)
     let expected = [
       "codevisor.screen-sharing.start.v1", "start", FakeHost.grant.endpointId, FakeHost.token(1),
-      FakeMedia.address.endpointId, start.base.viewerId.uuidString.lowercased(), "open", FakeHost.display.id,
+      FakeMedia.address.endpointId, start.viewerId.uuidString.lowercased(), "open", FakeHost.display.id,
     ]
     #expect(harness.signer.messages == [expected.joined(separator: "\n")])
-    #expect(start.proof == ScreenSharingProof(nonce: FakeHost.token(1), signature: FakeSigner.signature(number: 1)))
+    #expect(
+      start.proof == ServerScreenSharingProof(nonce: FakeHost.token(1), signature: FakeSigner.signature(number: 1)))
   }
 
   @Test("A start with no display chosen signs an empty last line")
@@ -33,10 +35,19 @@ struct ScreenSharingConnectionProofTests {
       message.hasSuffix("\nattach\n") && message.split(separator: "\n", omittingEmptySubsequences: false).count == 8)
   }
 
-  @Test("A host that advertises app-owned sessions but sends no challenge is treated as an old host")
-  func needsAChallengeToUseTheAppIdentity() async throws {
+  enum Unusable: CaseIterable, Sendable { case missing, upperCaseHostKey, shortHostKey, nonHexNonce }
+
+  @Test(
+    "A host whose challenge is missing or isn't two 64-character lowercase hex strings is treated as an old host",
+    arguments: Unusable.allCases)
+  func needsAUsableChallengeToUseTheAppIdentity(_ challenge: Unusable) async throws {
     let harness = ConnectionHarness()
-    harness.host.mintsChallenges = false
+    switch challenge {
+    case .missing: harness.host.mintsChallenges = false
+    case .upperCaseHostKey: harness.host.challengeHostKey = String(repeating: "B", count: 64)
+    case .shortHostKey: harness.host.challengeHostKey = String(repeating: "b", count: 63)
+    case .nonHexNonce: harness.host.forgedNonce = String(repeating: "g", count: 64)
+    }
     harness.show()
     await harness.goLive()
 
@@ -63,7 +74,7 @@ struct ScreenSharingConnectionProofTests {
 
     let nonces = harness.host.starts.compactMap(\.proof?.nonce)
     #expect(harness.host.starts.count == min(rejections + 1, 3) && Set(nonces).count == nonces.count)
-    #expect(Set(harness.host.starts.map(\.base.viewerId)).count == 1, "the resends belong to one attempt")
+    #expect(Set(harness.host.starts.map(\.viewerId)).count == 1, "the resends belong to one attempt")
     #expect(harness.signer.messages.count == harness.host.starts.count)
   }
 

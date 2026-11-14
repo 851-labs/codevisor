@@ -19,7 +19,7 @@ struct ScreenSharingConnectionTransitionTests {
     #expect(harness.connection.state == .connecting(.reachingHost))
     _ = await harness.startedSession()
 
-    #expect(harness.host.requests.map(\.base.operation) == [.capabilities, .start])
+    #expect(harness.host.requests.map(\.operation) == [.capabilities, .start])
     #expect(harness.connection.state == .connecting(.waitingForVideo))
   }
 

@@ -1,3 +1,4 @@
+import CodevisorClient
 import CodevisorTestSupport
 import Foundation
 import ScreenSharingConnection
@@ -90,8 +91,8 @@ struct ScreenSharingConnectionIntentTests {
 
   @Test(
     "An Open Desktop counts for 5 s, until its surface is on screen",
-    arguments: [(Duration.seconds(5), ScreenSharingStartIntent.open), (.milliseconds(5001), .attach)])
-  func forgetsAnOpenAfterFiveSeconds(wait: Duration, expected: ScreenSharingStartIntent) async {
+    arguments: [(Duration.seconds(5), ServerScreenSharingRequest.Intent.open), (.milliseconds(5001), .attach)])
+  func forgetsAnOpenAfterFiveSeconds(wait: Duration, expected: ServerScreenSharingRequest.Intent) async {
     let harness = ConnectionHarness()
     let tab = harness.connection.attach(.tab)
     tab.openedByUser()

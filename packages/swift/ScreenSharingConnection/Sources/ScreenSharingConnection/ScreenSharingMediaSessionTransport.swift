@@ -6,7 +6,7 @@ import ScreenSharingV2
 final class ScreenSharingMediaSessionTransport: ScreenSharingTransport {
   struct Plan {
     var capabilities: ScreenSharingHostReply
-    var intent: ScreenSharingStartIntent
+    var intent: ServerScreenSharingRequest.Intent
     var preferredDisplayId: String?
   }
 
@@ -122,7 +122,7 @@ final class ScreenSharingMediaSessionTransport: ScreenSharingTransport {
 
   private func announce(_ reply: ScreenSharingHostReply) {
     report(.notice(reply.base.message))
-    guard let display = reply.display ?? requestedDisplay else { return }
+    guard let display = reply.base.display ?? requestedDisplay else { return }
 
     let displays = reply.base.displays.isEmpty ? plan.capabilities.base.displays : reply.base.displays
     report(.sharing(display: display, displays: displays))

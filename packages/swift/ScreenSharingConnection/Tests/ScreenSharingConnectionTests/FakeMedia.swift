@@ -10,13 +10,17 @@ final class FakeMedia {
   nonisolated static let address = ServerScreenSharingMediaAddress(
     endpointId: String(repeating: "a", count: 64), relayUrl: nil, directAddrs: ["192.168.1.2:4433"])
 
+  var endpointId = FakeMedia.address.endpointId
   var connectFails = false
   var handshakeHangs = false
   private(set) var sessions: [LoopbackSession] = []
 
   var connector: ScreenSharingV2Connector {
     ScreenSharingV2Connector(
-      address: { Self.address },
+      address: { [weak self] in
+        ServerScreenSharingMediaAddress(
+          endpointId: self?.endpointId ?? Self.address.endpointId, relayUrl: nil, directAddrs: Self.address.directAddrs)
+      },
       connect: { [weak self] _ in
         guard let self, !connectFails else {
           throw ScreenSharingError.unavailable("No route to the host in this test.")

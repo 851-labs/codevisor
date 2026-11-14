@@ -30,11 +30,12 @@ final class FakeHost: ScreenSharingHostChannel {
   var abilities: [String]
   var mintsChallenges = true
   var challengeHostKey = FakeHost.grant.endpointId
+  var forgedNonce: String?
   var provider: String?
   var displays = [FakeHost.display]
   var isReconnecting = false
   var onStart: (() -> Void)?
-  private(set) var requests: [ScreenSharingHostRequest] = []
+  private(set) var requests: [ServerScreenSharingRequest] = []
   private(set) var completed: [Operation: Int] = [:]
   private(set) var registeredPanes: [ScreenSharingLegacyIdentity] = []
   @ObservationIgnored private var queued: [Operation: [Answer]] = [:]
@@ -43,19 +44,19 @@ final class FakeHost: ScreenSharingHostChannel {
   @ObservationIgnored private var liveNonces: Set<String> = []
   @ObservationIgnored private var minted = 0
 
-  init(abilities: [String] = [ScreenSharingHostReply.appSessions]) {
+  init(abilities: [String] = [ServerScreenSharingReply.appSessions]) {
     self.abilities = abilities
   }
 
   static func old() -> FakeHost { FakeHost(abilities: []) }
 
-  func requests(_ operation: Operation) -> [ScreenSharingHostRequest] {
-    requests.filter { $0.base.operation == operation }
+  func requests(_ operation: Operation) -> [ServerScreenSharingRequest] {
+    requests.filter { $0.operation == operation }
   }
 
-  var starts: [ScreenSharingHostRequest] { requests(.start) }
+  var starts: [ServerScreenSharingRequest] { requests(.start) }
 
-  var stops: [ScreenSharingHostRequest] { requests(.stop) }
+  var stops: [ServerScreenSharingRequest] { requests(.stop) }
 
   func completed(_ operation: Operation) -> Int { completed[operation, default: 0] }
 
@@ -80,8 +81,8 @@ final class FakeHost: ScreenSharingHostChannel {
     gates.removeValue(forKey: operation)?.signal()
   }
 
-  func send(_ request: ScreenSharingHostRequest) async throws -> ScreenSharingHostReply {
-    let operation = request.base.operation
+  func send(_ request: ServerScreenSharingRequest) async throws -> ServerScreenSharingReply {
+    let operation = request.operation
     requests.append(request)
     if operation == .start, let onStart {
       self.onStart = nil
@@ -94,10 +95,12 @@ final class FakeHost: ScreenSharingHostChannel {
     case .failure(let error):
       throw error
     case .reply(let status, let message, let reason, let holderName):
-      var base = ServerScreenSharingReply(status: status, message: message)
-      if status == "connecting" { base.media = Self.grant }
-      var reply = ScreenSharingHostReply(base, abilities: abilities, reason: reason, holderName: holderName)
-      if reason == ScreenSharingHostReply.proofRejected { reply.challenge = mintChallenge() }
+      var reply = ServerScreenSharingReply(status: status, message: message)
+      reply.abilities = abilities
+      reply.reason = reason.map(ServerScreenSharingReason.init(rawValue:))
+      reply.holderName = holderName
+      if reply.reason == .proofRejected { reply.challenge = mintChallenge() }
+      if status == "connecting" { reply.media = Self.grant }
       if status == "connecting", request.app != nil { reply.session = mintSession() }
       return reply
     case nil:
@@ -105,17 +108,21 @@ final class FakeHost: ScreenSharingHostChannel {
     }
   }
 
+  func registerDesktopPane(_ identity: ScreenSharingLegacyIdentity) async throws {
+    registeredPanes.append(identity)
+  }
+
   static func token(_ number: Int) -> String {
     String(repeating: "0", count: 60) + String(format: "%04x", number)
   }
 
-  private var verifiesApps: Bool { mintsChallenges && abilities.contains(ScreenSharingHostReply.appSessions) }
+  private var verifiesApps: Bool { mintsChallenges && abilities.contains(ServerScreenSharingReply.appSessions) }
 
-  private func mintChallenge() -> ScreenSharingChallenge {
+  private func mintChallenge() -> ServerScreenSharingChallenge {
     minted += 1
     let nonce = Self.token(minted)
     liveNonces.insert(nonce)
-    return ScreenSharingChallenge(hostKey: challengeHostKey, nonce: nonce)
+    return ServerScreenSharingChallenge(hostKey: challengeHostKey, nonce: forgedNonce ?? nonce)
   }
 
   private func mintSession() -> String {
@@ -123,56 +130,49 @@ final class FakeHost: ScreenSharingHostChannel {
     return Self.token(minted)
   }
 
-  private func acceptsTheProof(of request: ScreenSharingHostRequest) -> Bool {
+  private func acceptsTheProof(of request: ServerScreenSharingRequest) -> Bool {
     guard verifiesApps, request.app != nil else { return true }
     guard let nonce = request.proof?.nonce else { return false }
 
     return liveNonces.remove(nonce) != nil
   }
 
-  func registerDesktopPane(_ identity: ScreenSharingLegacyIdentity) async throws {
-    registeredPanes.append(identity)
-  }
-
-  private func healthyReply(to request: ScreenSharingHostRequest) -> ScreenSharingHostReply {
-    switch request.base.operation {
+  private func healthyReply(to request: ServerScreenSharingRequest) -> ServerScreenSharingReply {
+    var reply: ServerScreenSharingReply
+    switch request.operation {
     case .capabilities:
-      var base = ServerScreenSharingReply(status: "available", displays: displays, provider: provider)
-      base.engines = ["v2"]
-      var reply = ScreenSharingHostReply(base, abilities: abilities)
+      reply = ServerScreenSharingReply(status: "available", displays: displays, provider: provider)
+      reply.engines = ["v2"]
       if verifiesApps, request.app != nil { reply.challenge = mintChallenge() }
-      return reply
     case .start, .restart:
-      guard acceptsTheProof(of: request) else {
-        var rejected = ScreenSharingHostReply(
-          ServerScreenSharingReply(status: "failed", message: "The request couldn't be verified."),
-          abilities: abilities, reason: ScreenSharingHostReply.proofRejected)
-        rejected.challenge = mintChallenge()
-        return rejected
-      }
+      guard acceptsTheProof(of: request) else { return proofRejected() }
 
-      var base = ServerScreenSharingReply(status: "connecting")
-      base.media = Self.grant
-      var reply = sharing(base, for: request)
+      reply = sharing(status: "connecting", for: request)
+      reply.media = Self.grant
       if verifiesApps, request.app != nil { reply.session = mintSession() }
-      return reply
     case .heartbeat:
-      return sharing(ServerScreenSharingReply(status: "viewing"), for: request)
+      reply = sharing(status: "viewing", for: request)
     case .stop, .setScale:
-      return ScreenSharingHostReply(ServerScreenSharingReply(status: "stopped"), abilities: abilities)
+      reply = ServerScreenSharingReply(status: "stopped")
     }
+    reply.abilities = abilities
+    return reply
   }
 
-  private func sharing(
-    _ base: ServerScreenSharingReply, for request: ScreenSharingHostRequest
-  ) -> ScreenSharingHostReply {
-    guard verifiesApps, request.app != nil || request.session != nil else {
-      return ScreenSharingHostReply(base, abilities: abilities)
-    }
+  private func proofRejected() -> ServerScreenSharingReply {
+    var reply = ServerScreenSharingReply(status: "failed", message: "The request couldn't be verified.")
+    reply.abilities = abilities
+    reply.reason = .proofRejected
+    reply.challenge = mintChallenge()
+    return reply
+  }
 
-    var base = base
-    base.displays = displays
-    let shared = displays.first { $0.id == request.base.displayId } ?? displays.first
-    return ScreenSharingHostReply(base, abilities: abilities, display: shared)
+  private func sharing(status: String, for request: ServerScreenSharingRequest) -> ServerScreenSharingReply {
+    var reply = ServerScreenSharingReply(status: status)
+    guard verifiesApps, request.app != nil || request.session != nil else { return reply }
+
+    reply.displays = displays
+    reply.display = displays.first { $0.id == request.displayId } ?? displays.first
+    return reply
   }
 }

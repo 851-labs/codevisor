@@ -24,12 +24,12 @@ struct ScreenSharingConnectionOldHostTests {
     let starts = harness.host.starts
     #expect(harness.host.registeredPanes == [identity])
     #expect(starts.count == 2 && harness.host.requests(.restart).isEmpty)
-    #expect(starts.allSatisfy { $0.base.workspaceId == identity.workspaceId && $0.base.paneId == identity.paneId })
+    #expect(starts.allSatisfy { $0.workspaceId == identity.workspaceId && $0.paneId == identity.paneId })
     #expect(starts.allSatisfy { $0.app == nil && $0.intent == nil })
-    #expect(starts.map(\.base.displayId) == [FakeHost.display.id, FakeHost.display.id])
-    #expect(starts[0].base.viewerId != starts[1].base.viewerId)
+    #expect(starts.map(\.displayId) == [FakeHost.display.id, FakeHost.display.id])
+    #expect(starts[0].viewerId != starts[1].viewerId)
     let heartbeat = try #require(harness.host.requests(.heartbeat).last)
-    #expect(heartbeat.base.paneId == identity.paneId && heartbeat.base.viewerId == starts[1].base.viewerId)
+    #expect(heartbeat.paneId == identity.paneId && heartbeat.viewerId == starts[1].viewerId)
     #expect(harness.connection.display == FakeHost.display)
   }
 
@@ -54,7 +54,7 @@ struct ScreenSharingConnectionOldHostTests {
     await harness.goLive()
 
     #expect(harness.host.requests(.capabilities).count == 2)
-    #expect(harness.host.starts.map(\.base.displayId) == [FakeHost.display.id, FakeHost.second.id])
+    #expect(harness.host.starts.map(\.displayId) == [FakeHost.display.id, FakeHost.second.id])
     #expect(harness.connection.display == FakeHost.second)
     #expect(harness.host.requests(.stop).isEmpty, "the connection never failed in between")
   }
@@ -83,11 +83,11 @@ struct ScreenSharingConnectionOldHostTests {
     await harness.settle(.reconnecting)
     await harness.goLive()
 
-    let operations = harness.host.requests.filter { [.start, .stop].contains($0.base.operation) }
+    let operations = harness.host.requests.filter { [.start, .stop].contains($0.operation) }
     #expect(harness.host.registeredPanes == [old, new])
-    #expect(operations.map(\.base.operation) == [.start, .stop, .start])
-    #expect(operations.map(\.base.paneId) == [old.paneId, old.paneId, new.paneId])
-    #expect(operations[1].base.viewerId == operations[0].base.viewerId)
+    #expect(operations.map(\.operation) == [.start, .stop, .start])
+    #expect(operations.map(\.paneId) == [old.paneId, old.paneId, new.paneId])
+    #expect(operations[1].viewerId == operations[0].viewerId)
   }
 
   @Test("An old host on a machine with no live workspace fails for that reason, and connects once one appears")

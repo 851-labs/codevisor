@@ -82,7 +82,7 @@ struct ScreenSharingConnectionLifetimeTests {
 
     #expect(session.isClosed)
     await harness.noTimersLeft()
-    #expect(harness.host.requests(.stop)[0].base.viewerId == harness.host.starts[0].base.viewerId)
+    #expect(harness.host.requests(.stop)[0].viewerId == harness.host.starts[0].viewerId)
   }
 
   @Test(
@@ -103,7 +103,7 @@ struct ScreenSharingConnectionLifetimeTests {
     await awaitObserved { harness.host.requests(.stop).count == 1 }
 
     #expect(session.isClosed && harness.connection.session == nil)
-    #expect(harness.host.requests(.stop)[0].base.viewerId == harness.host.starts[0].base.viewerId)
+    #expect(harness.host.requests(.stop)[0].viewerId == harness.host.starts[0].viewerId)
   }
 
   @Test("A surface that shows up during the linger keeps the connection, and hiding again starts over")

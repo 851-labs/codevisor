@@ -11,8 +11,8 @@ public final class ScreenSharingServerChannel: ScreenSharingHostChannel {
 
   public var isReconnecting: Bool { client.isReconnecting }
 
-  public func send(_ request: ScreenSharingHostRequest) async throws -> ScreenSharingHostReply {
-    ScreenSharingHostReply(try await client.screenSharing(request.base))
+  public func send(_ request: ServerScreenSharingRequest) async throws -> ServerScreenSharingReply {
+    try await client.screenSharing(request)
   }
 
   public func registerDesktopPane(_ identity: ScreenSharingLegacyIdentity) async throws {

@@ -1,5 +1,5 @@
+import CodevisorClient
 import Foundation
-import ScreenSharingConnection
 import Synchronization
 
 final class FakeSigner: Sendable {
@@ -16,8 +16,8 @@ final class FakeSigner: Sendable {
 
   var messages: [String] { state.withLock { $0.messages } }
 
-  var signer: ScreenSharingMachine.Signer {
-    ScreenSharingMachine.Signer(key: FakeMedia.address.endpointId) { [self] message in try sign(message) }
+  var signer: ScreenSharingStartSigner {
+    ScreenSharingStartSigner(key: FakeMedia.address.endpointId) { [self] message in try sign(message) }
   }
 
   func failFromNowOn() {
