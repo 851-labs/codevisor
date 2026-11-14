@@ -18,12 +18,7 @@ struct WorkspaceInspectorAgent: Identifiable {
   ) -> WorkspaceRowLifecycle {
     switch lifecycle {
     case let .active(actions): .active(actions.renaming(after: dismiss))
-    case let .chat(onArchive):
-      .chat {
-        dismiss()
-        onArchive()
-      }
-    case .archived: lifecycle
+    case .fixed, .archived: lifecycle
     }
   }
 }
