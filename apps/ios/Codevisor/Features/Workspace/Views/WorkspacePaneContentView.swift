@@ -114,7 +114,7 @@ struct WorkspacePaneContentView: View {
       }
     case .screenSharing:
       if let model = screenSharingPaneModel(pane) {
-        ScreenSharingPaneView(model: model)
+        ScreenSharingPaneView(model: model, pane: pane.id)
       } else {
         ContentUnavailableView("Desktop unavailable", systemImage: "display")
       }

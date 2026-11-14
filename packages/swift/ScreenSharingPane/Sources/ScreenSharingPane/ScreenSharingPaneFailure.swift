@@ -13,7 +13,7 @@ struct ScreenSharingPaneFailure: Equatable {
     sentence = reason.sentence(on: machineName)
     action =
       switch reason {
-      case .takenOver(by: .some), .inUse(by: .some): .viewHere
+      case .takenOver, .inUse: .viewHere
       case .unsupportedOnThisDevice: nil
       default: .tryAgain
       }

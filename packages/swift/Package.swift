@@ -401,7 +401,7 @@ let package = Package(
       name: "ScreenSharingPaneTests",
       dependencies: [
         "ScreenSharingPane", "ScreenSharingConnection", "ScreenSharingConnectionTesting", "ScreenSharingV2",
-        "CodevisorTestSupport",
+        "CodevisorNet", "CodevisorTestSupport",
       ],
       path: "ScreenSharingPane/Tests/ScreenSharingPaneTests",
       swiftSettings: strictSwiftSettings,

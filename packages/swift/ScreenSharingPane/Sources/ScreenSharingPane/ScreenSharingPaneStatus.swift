@@ -5,6 +5,18 @@
     let model: ScreenSharingPaneModel
 
     var body: some View {
+      if model.isEnded {
+        ContentUnavailableView("Desktop unavailable", systemImage: "display")
+      } else {
+        ScreenSharingConnectionStatus(model: model)
+      }
+    }
+  }
+
+  private struct ScreenSharingConnectionStatus: View {
+    let model: ScreenSharingPaneModel
+
+    var body: some View {
       switch model.state {
       case .off, .connecting:
         ScreenSharingConnectingStatus(step: model.stillConnectingStep)

@@ -18,6 +18,7 @@ public final class ScreenSharingDesktops {
   }
 
   private let manager: ScreenSharingConnectionManager
+  private let now: () -> ContinuousClock.Instant
   private let preferences: ScreenSharingMachinePreferences
   private let appName: String
   private var models: [String: ScreenSharingPaneModel] = [:]
@@ -26,10 +27,12 @@ public final class ScreenSharingDesktops {
   private var foreground: (any NSObjectProtocol)?
 
   init(
-    manager: ScreenSharingConnectionManager = ScreenSharingConnectionManager(), defaults: UserDefaults = .standard,
+    manager: ScreenSharingConnectionManager = ScreenSharingConnectionManager(),
+    now: @escaping () -> ContinuousClock.Instant = { .now }, defaults: UserDefaults = .standard,
     appName: String = ScreenSharingDeviceName.current
   ) {
     self.manager = manager
+    self.now = now
     self.appName = appName
     preferences = ScreenSharingMachinePreferences(defaults: defaults)
     watchForeground()
@@ -52,7 +55,7 @@ public final class ScreenSharingDesktops {
 
     let connection = manager.connection(for: machine)
     connection.preferredDisplayId = preferences.preferredDisplay(machineId: machineId) ?? seedDisplayId
-    let model = ScreenSharingPaneModel(connection: connection, machineName: name) { [preferences] in
+    let model = ScreenSharingPaneModel(connection: connection, machineName: name, now: now) { [preferences] in
       preferences.setPreferredDisplay($0, machineId: machineId)
     }
     models[machineId] = model
@@ -91,7 +94,8 @@ public final class ScreenSharingDesktops {
     guard models[machineId] != nil else { return }
 
     let now = withObservationTracking {
-      Signals(
+      _ = sources.workspacesRevision()
+      return Signals(
         machineExists: sources.machineName(machineId) != nil, isReady: sources.isReady(machineId),
         hasWorkspace: liveWorkspace(on: machineId, sources) != nil)
     } onChange: { [weak self] in

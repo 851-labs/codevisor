@@ -32,8 +32,9 @@ struct ScreenSharingDesktopsTests {
   func onlyOpenDesktopOpens() async {
     let (opened, shown) = (DesktopsHarness(), DesktopsHarness())
     let openedModel = opened.model()
-    openedModel?.openedByUser()
-    opened.show(openedModel)
+    let pane = UUID()
+    openedModel?.openedByUser(pane: pane)
+    opened.show(openedModel, pane: pane)
     await opened.goLive(openedModel)
     shown.show(shown.model())
     await shown.goLive(shown.model())
@@ -43,16 +44,61 @@ struct ScreenSharingDesktopsTests {
     #expect(opened.host.starts.first?.app?.name == DesktopsHarness.appName)
   }
 
+  @Test(
+    "An Open Desktop whose tab didn't come on screen, or came too late, doesn't turn a tab's connect into a takeover",
+    arguments: [false, true])
+  func staleOpenDoesNotTakeOver(sameTabTooLate: Bool) async {
+    let harness = DesktopsHarness()
+    let model = harness.model()
+    let opened = UUID()
+    model?.openedByUser(pane: opened)
+
+    if sameTabTooLate { harness.clock.advance(by: ScreenSharingConnectionDeadlines.pendingOpen + .seconds(1)) }
+    harness.show(model, pane: sameTabTooLate ? opened : UUID())
+    await harness.goLive(model)
+
+    #expect(harness.host.starts.map(\.intent) == [.attach])
+  }
+
+  @Test("Coming back from the background reconnects the share as an attach")
+  func returnFromBackgroundReconnects() async {
+    let harness = DesktopsHarness()
+    let model = harness.model()
+    harness.show(model)
+    let before = await harness.goLive(model)
+
+    harness.desktops.returnedToForeground()
+    let after = await harness.goLive(model)
+
+    #expect(before.isClosed && model?.session === after)
+    #expect(harness.host.starts.map(\.intent) == [.attach, .attach])
+  }
+
+  @Test("An old host with no synced workspace on the machine yet connects by itself once one appears")
+  func connectsWhenAWorkspaceAppears() async {
+    let harness = DesktopsHarness(host: .old())
+    harness.world.setLiveWorkspaces([])
+    let model = harness.model(showing: UUID())
+    harness.show(model)
+    await awaitObserved { model?.state == .failed(.noWorkspace) }
+
+    let created = UUID()
+    harness.world.setLiveWorkspaces([created])
+    await harness.goLive(model)
+
+    #expect(harness.host.starts.map(\.workspaceId) == [created])
+  }
+
   @Test("An old host is started under the workspace on screen, and under another live one once that is archived")
   func oldHostFollowsALiveWorkspace() async {
     let harness = DesktopsHarness(host: .old())
     let (kept, shown) = (UUID(), UUID())
-    harness.world.liveWorkspaces = [kept, shown]
+    harness.world.setLiveWorkspaces([kept, shown])
     let model = harness.model(showing: shown)
     harness.show(model)
     let session = await harness.goLive(model)
 
-    harness.world.liveWorkspaces = [kept]
+    harness.world.setLiveWorkspaces([kept])
     session.host.report(connection: "failed")
     await harness.goLive(model)
 
@@ -78,7 +124,7 @@ struct ScreenSharingDesktopsTests {
     #expect(harness.host.starts.map(\.intent) == [.attach])
   }
 
-  @Test("Removing the machine ends its share, and adding it back gives a fresh Desktop")
+  @Test("Removing the machine ends its share and says so at once; adding it back gives a fresh Desktop")
   func machineRemoved() async {
     let harness = DesktopsHarness()
     let model = harness.model()
@@ -86,7 +132,8 @@ struct ScreenSharingDesktopsTests {
     await harness.goLive(model)
 
     harness.world.machineName = nil
-    await awaitObserved { model?.state == .off && harness.host.stops.count == 1 }
+    await awaitObserved { model?.isEnded == true && harness.host.stops.count == 1 }
+    #expect(harness.model() == nil, "no new Desktop, so no spinner, while the machine is gone")
     harness.world.machineName = "croissant"
 
     #expect(harness.model() !== model)
@@ -186,11 +233,11 @@ struct ScreenSharingDesktopsTests {
     let lease = UUID()
     harness.media.sessions[0].host.control?.send(.grant(request: request, lease: lease))
     await awaitObserved { model.control?.state == .controlling }
-    model.setOnScreen(false, for: view)
+    harness.hide(view, of: model)
     await awaitObserved { first.messages.last == .release(lease: lease) }
     #expect(model.control?.state == .idle)
 
-    model.setOnScreen(true, for: view)
+    harness.showAgain(view, of: model)
     model.reconnect()
     let second = harness.controlLog(of: await harness.goLive(model))
     model.tap(at: point, location: .zero, time: 1)
@@ -206,7 +253,7 @@ struct ScreenSharingDesktopsTests {
     let view = harness.show(model)
     model.keyboardShown = true
 
-    model.setOnScreen(false, for: view)
+    harness.hide(view, of: model)
     #expect(model.keyboardShown)
     model.viewRemoved(view)
     #expect(!model.keyboardShown)

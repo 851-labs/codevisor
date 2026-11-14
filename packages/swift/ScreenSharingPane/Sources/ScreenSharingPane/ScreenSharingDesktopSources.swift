@@ -13,12 +13,14 @@ struct ScreenSharingDesktopSources {
   var isReady: (_ machineId: String) -> Bool
   var isLive: (_ workspaceId: UUID) -> Bool
   var liveWorkspaces: (_ machineId: String) -> [UUID]
+  var workspacesRevision: () -> UInt64
 
   init(
     signer: @escaping () throws -> ScreenSharingStartSigner,
     channel: @escaping (_ machineId: String) -> any ScreenSharingHostChannel, connector: ScreenSharingV2Connector,
     machineName: @escaping (_ machineId: String) -> String?, isReady: @escaping (_ machineId: String) -> Bool,
-    isLive: @escaping (_ workspaceId: UUID) -> Bool, liveWorkspaces: @escaping (_ machineId: String) -> [UUID]
+    isLive: @escaping (_ workspaceId: UUID) -> Bool, liveWorkspaces: @escaping (_ machineId: String) -> [UUID],
+    workspacesRevision: @escaping () -> UInt64
   ) {
     self.signer = signer
     self.channel = channel
@@ -27,10 +29,11 @@ struct ScreenSharingDesktopSources {
     self.isReady = isReady
     self.isLive = isLive
     self.liveWorkspaces = liveWorkspaces
+    self.workspacesRevision = workspacesRevision
   }
 
   init(environment: AppEnvironment) {
-    let (machines, workspaces) = (environment.machines, environment.workspaces)
+    let (machines, workspaces, navigation) = (environment.machines, environment.workspaces, environment.navigationStore)
     self.init(
       signer: { [weak environment] in
         guard let environment else { throw CancellationError() }
@@ -44,7 +47,8 @@ struct ScreenSharingDesktopSources {
       isLive: { Self.isLive(workspaces.workspace(id: $0)) },
       liveWorkspaces: { machineId in
         workspaces.loadAll().filter { $0.serverId == machineId && Self.isLive($0) }.map(\.id)
-      })
+      },
+      workspacesRevision: { navigation.revision })
   }
 
   private static var liveConnector: ScreenSharingV2Connector {
