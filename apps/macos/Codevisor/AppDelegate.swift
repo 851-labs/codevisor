@@ -29,25 +29,31 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     NSWindow.allowsAutomaticWindowTabbing = false
     guard !AppPreview.rendersFixtures else { return }
     if SandboxMode.isEnabled { NSApp.setActivationPolicy(.accessory) }
-    let bundleURL = Bundle.main.bundleURL
+    let scope = AppInstanceLease.Scope.current()
     do {
-      if let lease = try AppInstanceLease.acquireDefault(for: bundleURL) {
+      if let lease = try AppInstanceLease.acquireDefault(for: scope) {
+        if scope.coversEveryCopy, let older = instanceStillRunningAfterWaiting(in: scope) {
+          Log.updates.log("launch: a copy of this app from before the shared lock is running; activating it")
+          _ = older.activate(options: [.activateAllWindows])
+          NSApp.terminate(nil)
+          return
+        }
         appInstanceLease = lease
         return
       }
 
-      if activateExistingInstance(from: bundleURL) {
-        Log.updates.log("launch: another instance owns this bundle; activating it")
+      if activateExistingInstance(in: scope) {
+        Log.updates.log("launch: another instance is running; activating it")
         NSApp.terminate(nil)
         return
       }
-      if let lease = try AppInstanceLease.acquireDefault(for: bundleURL, waitFor: 5) {
+      if let lease = try AppInstanceLease.acquireDefault(for: scope, waitFor: 5) {
         appInstanceLease = lease
         return
       }
 
       Log.updates.fault("launch: instance lease remained locked without a visible owner")
-      _ = activateExistingInstance(from: bundleURL)
+      _ = activateExistingInstance(in: scope)
       NSApp.terminate(nil)
     } catch {
       Log.updates.fault("launch: could not acquire the app instance lease: \(error)")
@@ -59,18 +65,16 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     !SandboxMode.isEnabled
   }
 
-  private func activateExistingInstance(from bundleURL: URL) -> Bool {
-    guard let bundleIdentifier = Bundle.main.bundleIdentifier else { return false }
-    let ownPID = ProcessInfo.processInfo.processIdentifier
-    let ownBundle = bundleURL.resolvingSymlinksInPath().standardizedFileURL
-    guard
-      let existing = NSRunningApplication.runningApplications(
-        withBundleIdentifier: bundleIdentifier
-      ).first(where: {
-        $0.processIdentifier != ownPID
-          && $0.bundleURL?.resolvingSymlinksInPath().standardizedFileURL == ownBundle
-      })
-    else { return false }
+  private func instanceStillRunningAfterWaiting(in scope: AppInstanceLease.Scope) -> NSRunningApplication? {
+    while let other = scope.otherRunningInstance() {
+      guard AppInstanceLease.exits({ AppInstanceLease.Scope.isRunning(other) }) else { return other }
+    }
+    return nil
+  }
+
+  private func activateExistingInstance(in scope: AppInstanceLease.Scope) -> Bool {
+    guard let existing = scope.otherRunningInstance() else { return false }
+
     _ = existing.activate(options: [.activateAllWindows])
     return true
   }

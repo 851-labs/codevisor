@@ -1,8 +1,62 @@
+import AppKit
+import CodevisorClient
 import Darwin
 import Foundation
 
 @MainActor
 public final class AppInstanceLease {
+  public enum Scope: Equatable, Sendable {
+    case application(bundleIdentifier: String)
+    case copy(bundleURL: URL)
+
+    public static func current(
+      bundleIdentifier: String? = Bundle.main.bundleIdentifier,
+      bundleURL: URL = Bundle.main.bundleURL,
+      isDevelopment: Bool = CodevisorAppVariant.isDevelopment
+    ) -> Scope {
+      guard !isDevelopment, let bundleIdentifier else { return .copy(bundleURL: bundleURL) }
+
+      return .application(bundleIdentifier: bundleIdentifier)
+    }
+
+    public var coversEveryCopy: Bool {
+      if case .application = self { return true }
+      return false
+    }
+
+    public func includes(bundleIdentifier: String?, bundleURL: URL?) -> Bool {
+      switch self {
+      case .application(let identifier): bundleIdentifier == identifier
+      case .copy(let url): bundleURL.map(Self.resolved) == Self.resolved(url)
+      }
+    }
+
+    public func otherRunningInstance() -> NSRunningApplication? {
+      guard let bundleIdentifier = Bundle.main.bundleIdentifier else { return nil }
+
+      let ownPID = ProcessInfo.processInfo.processIdentifier
+      return NSRunningApplication.runningApplications(withBundleIdentifier: bundleIdentifier).first {
+        $0.processIdentifier != ownPID && Self.isRunning($0)
+          && includes(bundleIdentifier: $0.bundleIdentifier, bundleURL: $0.bundleURL)
+      }
+    }
+
+    public static func isRunning(_ application: NSRunningApplication) -> Bool {
+      !application.isTerminated && Darwin.kill(application.processIdentifier, 0) == 0
+    }
+
+    fileprivate var lockKey: String {
+      switch self {
+      case .application(let identifier): identifier
+      case .copy(let url): Self.resolved(url).path
+      }
+    }
+
+    private static func resolved(_ url: URL) -> URL {
+      url.resolvingSymlinksInPath().standardizedFileURL
+    }
+  }
+
   private let descriptor: Int32
 
   private init(descriptor: Int32) {
@@ -14,17 +68,16 @@ public final class AppInstanceLease {
   }
 
   public static func defaultLockURL(
-    for applicationBundleURL: URL = Bundle.main.bundleURL,
+    for scope: Scope,
     applicationSupportURL: URL? = nil
   ) -> URL {
     let support =
       applicationSupportURL
       ?? FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask)[0]
-    let bundlePath = applicationBundleURL.resolvingSymlinksInPath().standardizedFileURL.path
     return
       support
       .appendingPathComponent("Codevisor/Runtime", isDirectory: true)
-      .appendingPathComponent("app-instance-\(stableHash(bundlePath)).lock")
+      .appendingPathComponent("app-instance-\(stableHash(scope.lockKey)).lock")
   }
 
   public static func acquire(
@@ -63,11 +116,26 @@ public final class AppInstanceLease {
     }
   }
 
+  public static func exits(
+    _ isRunning: () -> Bool,
+    within limit: TimeInterval = 5,
+    now: () -> TimeInterval = { ProcessInfo.processInfo.systemUptime },
+    sleep: (TimeInterval) -> Void = { Thread.sleep(forTimeInterval: $0) }
+  ) -> Bool {
+    let deadline = now() + limit
+    while isRunning() {
+      guard now() < deadline else { return false }
+
+      sleep(0.05)
+    }
+    return true
+  }
+
   public static func acquireDefault(
-    for applicationBundleURL: URL = Bundle.main.bundleURL,
+    for scope: Scope,
     waitFor: TimeInterval = 0
   ) throws -> AppInstanceLease? {
-    try acquire(at: defaultLockURL(for: applicationBundleURL), waitFor: waitFor)
+    try acquire(at: defaultLockURL(for: scope), waitFor: waitFor)
   }
 
   public func beginUpdateHandoff(
