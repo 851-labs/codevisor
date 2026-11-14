@@ -30,6 +30,7 @@ let package = Package(
     .library(name: "Autocomplete", targets: ["Autocomplete"]),
     .library(name: "ScreenSharing", targets: ["ScreenSharing"]),
     .library(name: "ScreenSharingV2", targets: ["ScreenSharingV2"]),
+    .library(name: "ScreenSharingConnection", targets: ["ScreenSharingConnection"]),
     .library(name: "CodevisorTestSupport", targets: ["CodevisorTestSupport"]),
   ],
   dependencies: [
@@ -52,6 +53,13 @@ let package = Package(
     .testTarget(
       name: "ScreenSharingV2Tests", dependencies: ["ScreenSharingV2", "CodevisorNet", "CodevisorTestSupport"],
       path: "ScreenSharing/Tests/ScreenSharingV2Tests", swiftSettings: strictSwiftSettings),
+    .target(
+      name: "ScreenSharingConnection", dependencies: ["ScreenSharing", "ScreenSharingV2", "CodevisorClient"],
+      path: "ScreenSharingConnection/Sources/ScreenSharingConnection", swiftSettings: strictSwiftSettings),
+    .testTarget(
+      name: "ScreenSharingConnectionTests",
+      dependencies: ["ScreenSharingConnection", "ScreenSharingTesting", "CodevisorClient", "CodevisorTestSupport"],
+      path: "ScreenSharingConnection/Tests/ScreenSharingConnectionTests", swiftSettings: strictSwiftSettings),
     .target(
       name: "ScreenSharingBench",
       path: "ScreenSharing/Sources/ScreenSharingBench",
