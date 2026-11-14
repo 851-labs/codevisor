@@ -4,6 +4,7 @@ import Observation
 import ScreenSharing
 import ScreenSharingConnection
 import ScreenSharingConnectionTesting
+import ScreenSharingV2
 
 @testable import ScreenSharingPane
 
@@ -16,7 +17,13 @@ final class DesktopsHarness {
   final class World {
     var machineName: String? = "croissant"
     var isReady = true
-    var liveWorkspaces = [UUID()]
+    private(set) var revision: UInt64 = 0
+    @ObservationIgnored private(set) var liveWorkspaces = [UUID()]
+
+    func setLiveWorkspaces(_ workspaces: [UUID]) {
+      liveWorkspaces = workspaces
+      revision += 1
+    }
   }
 
   @Observable
@@ -31,8 +38,9 @@ final class DesktopsHarness {
   let world = World()
   let defaults: UserDefaults
   private let suite = "ScreenSharingDesktopsTests.\(UUID().uuidString)"
+  var connector: ScreenSharingV2Connector?
   private var managers: [ScreenSharingConnectionManager] = []
-  private var views: [UUID] = []
+  private var panes: [UUID: UUID] = [:]
   private var startedSessions = 0
   private(set) lazy var desktops = makeDesktops()
 
@@ -43,15 +51,17 @@ final class DesktopsHarness {
 
   var sources: ScreenSharingDesktopSources {
     ScreenSharingDesktopSources(
-      signer: { [signer] in signer.signer }, channel: { [host] _ in host }, connector: media.connector,
+      signer: { [signer] in signer.signer }, channel: { [host] _ in host }, connector: connector ?? media.connector,
       machineName: { [world] _ in world.machineName }, isReady: { [world] _ in world.isReady },
-      isLive: { [world] in world.liveWorkspaces.contains($0) }, liveWorkspaces: { [world] _ in world.liveWorkspaces })
+      isLive: { [world] in world.liveWorkspaces.contains($0) }, liveWorkspaces: { [world] _ in world.liveWorkspaces },
+      workspacesRevision: { [world] in world.revision })
   }
 
   func makeDesktops() -> ScreenSharingDesktops {
     let manager = ScreenSharingConnectionManager(clock: ScreenSharingConnectionClock(clock))
     managers.append(manager)
-    return ScreenSharingDesktops(manager: manager, defaults: defaults, appName: Self.appName)
+    return ScreenSharingDesktops(
+      manager: manager, now: { [clock] in clock.now }, defaults: defaults, appName: Self.appName)
   }
 
   func model(
@@ -63,10 +73,25 @@ final class DesktopsHarness {
   }
 
   @discardableResult
-  func show(_ model: ScreenSharingPaneModel?) -> UUID {
+  func show(_ model: ScreenSharingPaneModel?, pane: UUID = UUID()) -> UUID {
     let view = UUID()
-    model?.setOnScreen(true, for: view)
+    panes[view] = pane
+    model?.setOnScreen(true, for: view, showing: pane)
     return view
+  }
+
+  func hide(_ view: UUID, of model: ScreenSharingPaneModel?) {
+    setOnScreen(false, view, of: model)
+  }
+
+  func showAgain(_ view: UUID, of model: ScreenSharingPaneModel?) {
+    setOnScreen(true, view, of: model)
+  }
+
+  private func setOnScreen(_ onScreen: Bool, _ view: UUID, of model: ScreenSharingPaneModel?) {
+    guard let pane = panes[view] else { return }
+
+    model?.setOnScreen(onScreen, for: view, showing: pane)
   }
 
   @discardableResult

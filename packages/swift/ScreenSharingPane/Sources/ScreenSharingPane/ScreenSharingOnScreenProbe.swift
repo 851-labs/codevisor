@@ -3,14 +3,21 @@
 
   struct ScreenSharingOnScreenProbe: UIViewRepresentable {
     let model: ScreenSharingPaneModel
+    let pane: UUID
 
     @MainActor
     final class Coordinator {
       let id = UUID()
+      let pane: UUID
       private(set) var model: ScreenSharingPaneModel
 
-      init(model: ScreenSharingPaneModel) {
+      init(model: ScreenSharingPaneModel, pane: UUID) {
         self.model = model
+        self.pane = pane
+      }
+
+      func report(_ onScreen: Bool) {
+        model.setOnScreen(onScreen, for: id, showing: pane)
       }
 
       func follow(_ model: ScreenSharingPaneModel, onScreen: Bool) {
@@ -18,17 +25,17 @@
 
         self.model.viewRemoved(id)
         self.model = model
-        model.setOnScreen(onScreen, for: id)
+        report(onScreen)
       }
     }
 
-    func makeCoordinator() -> Coordinator { Coordinator(model: model) }
+    func makeCoordinator() -> Coordinator { Coordinator(model: model, pane: pane) }
 
     func makeUIView(context: Context) -> ScreenSharingOnScreenView {
       let view = ScreenSharingOnScreenView()
       let coordinator = context.coordinator
-      coordinator.model.setOnScreen(false, for: coordinator.id)
-      view.onChange = { coordinator.model.setOnScreen($0, for: coordinator.id) }
+      coordinator.report(false)
+      view.onChange = { coordinator.report($0) }
       return view
     }
 

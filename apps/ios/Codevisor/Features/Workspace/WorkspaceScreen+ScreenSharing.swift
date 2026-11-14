@@ -33,6 +33,6 @@ extension WorkspaceScreen {
     paneBinding.wrappedValue = state
     guard let converted else { return }
     publishPane(converted)
-    screenSharingPaneModel(for: converted)?.openedByUser()
+    screenSharingPaneModel(for: converted)?.openedByUser(pane: converted.id)
   }
 }

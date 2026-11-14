@@ -4,10 +4,14 @@
 
   public struct ScreenSharingPaneView: View {
     let model: ScreenSharingPaneModel
+    let pane: UUID
     @State private var showsHint = false
     @AppStorage("screenSharing.touchHintShown") private var hintShown = false
 
-    public init(model: ScreenSharingPaneModel) { self.model = model }
+    public init(model: ScreenSharingPaneModel, pane: UUID) {
+      self.model = model
+      self.pane = pane
+    }
 
     public var body: some View {
       ZStack {
@@ -19,7 +23,7 @@
         }
         ScreenSharingPaneStatus(model: model)
       }
-      .background { ScreenSharingOnScreenProbe(model: model) }
+      .background { ScreenSharingOnScreenProbe(model: model, pane: pane) }
       .overlay(alignment: .top) { controlNotice.padding(.top, 8) }
       .overlay(alignment: .bottom) {
         if showsHint { hint.padding(.bottom, 16).transition(.move(edge: .bottom).combined(with: .opacity)) }

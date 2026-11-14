@@ -18,16 +18,22 @@ public final class ScreenSharingPaneModel {
   private(set) var viewed: ScreenSharingViewedSession?
 
   @ObservationIgnored private let connection: ScreenSharingConnection
+  @ObservationIgnored private let now: () -> ContinuousClock.Instant
   @ObservationIgnored private let onDisplayChosen: (String) -> Void
   @ObservationIgnored private var surface: ScreenSharingSurface?
-  @ObservationIgnored private var views: [UUID: Bool] = [:]
+  @ObservationIgnored private var views: [UUID: (pane: UUID, isOnScreen: Bool)] = [:]
+  @ObservationIgnored private var opened: (pane: UUID, at: ContinuousClock.Instant)?
   @ObservationIgnored private var pointer = ScreenSharingPointerInput()
 
   public nonisolated static let requestedChroma = ScreenSharingV2Chroma.subsampled
 
-  init(connection: ScreenSharingConnection, machineName: String, onDisplayChosen: @escaping (String) -> Void) {
+  init(
+    connection: ScreenSharingConnection, machineName: String, now: @escaping () -> ContinuousClock.Instant,
+    onDisplayChosen: @escaping (String) -> Void
+  ) {
     self.connection = connection
     self.machineName = machineName
+    self.now = now
     self.onDisplayChosen = onDisplayChosen
     watchSession()
   }
@@ -41,6 +47,8 @@ public final class ScreenSharingPaneModel {
   public var state: ScreenSharingConnectionState { connection.state }
 
   public var isViewing: Bool { connection.state == .live }
+
+  public var isEnded: Bool { connection.isEnded }
 
   public var stillConnectingStep: String? {
     guard connection.isTakingLong, case .connecting(let stage) = connection.state else { return nil }
@@ -64,8 +72,8 @@ public final class ScreenSharingPaneModel {
 
   var session: (any ScreenSharingViewingSession)? { connection.session }
 
-  public func openedByUser() {
-    (surface ?? attach()).openedByUser()
+  public func openedByUser(pane: UUID) {
+    opened = (pane, now())
   }
 
   public func retry() {
@@ -107,8 +115,8 @@ public final class ScreenSharingPaneModel {
     send(ScreenSharingKeyboard.type(text, modifiers: []))
   }
 
-  func setOnScreen(_ onScreen: Bool, for view: UUID) {
-    views[view] = onScreen
+  func setOnScreen(_ onScreen: Bool, for view: UUID, showing pane: UUID) {
+    views[view] = (pane, onScreen)
     viewsChanged()
   }
 
@@ -164,9 +172,20 @@ public final class ScreenSharingPaneModel {
   private func viewsChanged() {
     guard !views.isEmpty else { return allViewsClosed() }
 
-    let onScreen = views.values.contains(true)
+    let surface = self.surface ?? attach()
+    let onScreen = views.values.contains(where: \.isOnScreen)
     if !onScreen { control?.release() }
-    (surface ?? attach()).setOnScreen(onScreen)
+    if userJustOpenedAPaneOnScreen() { surface.openedByUser() }
+    surface.setOnScreen(onScreen)
+  }
+
+  private func userJustOpenedAPaneOnScreen() -> Bool {
+    guard let opened else { return false }
+
+    let isFresh = now() - opened.at <= ScreenSharingConnectionDeadlines.pendingOpen
+    let isOnScreen = views.values.contains { $0.pane == opened.pane && $0.isOnScreen }
+    if isOnScreen || !isFresh { self.opened = nil }
+    return isOnScreen && isFresh
   }
 
   private func allViewsClosed() {

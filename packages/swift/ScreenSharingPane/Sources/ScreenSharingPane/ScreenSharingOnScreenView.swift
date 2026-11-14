@@ -3,8 +3,7 @@
 
   final class ScreenSharingOnScreenView: UIView {
     var onChange: ((Bool) -> Void)?
-    private(set) var isOnScreen = false
-    private var sceneIsActive = false
+    private var state = ScreenSharingOnScreenState()
     private weak var watchedScene: UIScene?
 
     override init(frame: CGRect) {
@@ -15,20 +14,26 @@
     @available(*, unavailable)
     required init?(coder: NSCoder) { fatalError("init(coder:) has not been implemented") }
 
+    var isOnScreen: Bool { state.isOnScreen }
+
     override func didMoveToWindow() {
       super.didMoveToWindow()
-      watch(window?.windowScene)
-      report()
+      let scene = window?.windowScene
+      watch(scene)
+      update {
+        $0.isInWindow = self.window != nil
+        $0.sceneIsActive = scene?.activationState == .foregroundActive
+      }
     }
 
     override func layoutSubviews() {
       super.layoutSubviews()
-      report()
+      update { $0.hasSize = !self.bounds.isEmpty }
     }
 
     func retire() {
       watch(nil)
-      settle(false)
+      update { $0 = ScreenSharingOnScreenState() }
       onChange = nil
     }
 
@@ -37,7 +42,6 @@
       center.removeObserver(self, name: UIScene.didActivateNotification, object: watchedScene)
       center.removeObserver(self, name: UIScene.willDeactivateNotification, object: watchedScene)
       watchedScene = scene
-      sceneIsActive = scene?.activationState == .foregroundActive
       guard let scene else { return }
 
       center.addObserver(
@@ -47,23 +51,16 @@
     }
 
     @objc private func sceneActivated() {
-      sceneIsActive = true
-      report()
+      update { $0.sceneIsActive = true }
     }
 
     @objc private func sceneDeactivating() {
-      sceneIsActive = false
-      report()
+      update { $0.sceneIsActive = false }
     }
 
-    private func report() {
-      settle(window != nil && sceneIsActive && !bounds.isEmpty)
-    }
+    private func update(_ change: (inout ScreenSharingOnScreenState) -> Void) {
+      guard let onScreen = state.change(change) else { return }
 
-    private func settle(_ onScreen: Bool) {
-      guard onScreen != isOnScreen else { return }
-
-      isOnScreen = onScreen
       onChange?(onScreen)
     }
   }
