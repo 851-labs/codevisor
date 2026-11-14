@@ -4,7 +4,8 @@ export const SessionEventType = Schema.Literals([
   "turn_ended",
   "waiting_for_user",
   "errored",
-  "job_finished"
+  "job_finished",
+  "user_message"
 ])
 export type SessionEventType = typeof SessionEventType.Type
 

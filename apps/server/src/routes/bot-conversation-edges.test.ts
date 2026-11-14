@@ -69,9 +69,12 @@ const storeImage = async (running: Running) => {
   }
 }
 
-const holdTurn = async (running: Running, sessionId: string) => {
+const holdTurn = async (running: Running, sessionId: string, sentByAgentId?: string) => {
   const before = running.agents.prompts.length
-  await prompt(running, sessionId, { text: "prompt until cancelled" })
+  await prompt(running, sessionId, {
+    text: "prompt until cancelled",
+    ...(sentByAgentId === undefined ? {} : { sentByAgentId })
+  })
   await waitFor(() => running.agents.prompts.length > before)
   return running.agents.prompts.at(-1)![0]
 }
@@ -308,7 +311,7 @@ describe("bot conversation edges", () => {
   it("reports a child that ended without a reason or reply", async () => {
     const { running, bot } = await startBot()
     const quiet = await createChat(running, { createdByAgentId: bot.sessionId })
-    const quietAgent = await holdTurn(running, quiet)
+    const quietAgent = await holdTurn(running, quiet, bot.sessionId)
 
     await cancel(running, quiet)
     await waitFor(() => reports(running).length === 1)

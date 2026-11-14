@@ -21,6 +21,7 @@ import {
   fromMachine,
   jobFinishedMessage,
   turnEndedMessage,
+  userMessageMessage,
   waitingForUserMessage,
   type SessionEventMessage,
   type TurnEnd
@@ -114,6 +115,14 @@ export const makeSessionEventRouter = (
     )
   }
 
+  const onUserMessage = async (sessionId: string, payload: Record<string, unknown>) => {
+    const target = await run(services.db.getSessionSummary(sessionId))
+    if (target.createdByAgentId === undefined || target.isDetached === true) return
+
+    const text = typeof payload.text === "string" ? payload.text : ""
+    await publish(target, "user_message", () => userMessageMessage(target, text))
+  }
+
   const onJobFinished = async ({ job, collected }: ExecutionJobFinished) => {
     const owner = await run(services.db.getSessionSummary(job.sessionId)).catch(() => undefined)
     if (owner === undefined) return
@@ -154,6 +163,7 @@ export const makeSessionEventRouter = (
       return
     }
     if (isTypedUserPrompt(event, payload)) outbox.forgetWake(event.subjectId)
+    if (isFromTheUser(event, payload)) await onUserMessage(event.subjectId, payload)
   }
 
   return {
@@ -192,7 +202,8 @@ interface PublishOptions {
 const CREATOR_EVENTS: ReadonlySet<SessionEventType> = new Set([
   "turn_ended",
   "waiting_for_user",
-  "errored"
+  "errored",
+  "user_message"
 ])
 
 const makePublisher =
@@ -232,7 +243,11 @@ const recipientsFor = async (
   const explicit = (await run(services.db.listSubscriptionsTargeting(target.id)))
     .filter((subscription) => subscription.events.includes(type))
     .map((subscription) => ({ subscriberId: subscription.subscriberSessionId, subscription }))
-  const implicit = [...extra, ...(await botCreatorRecipients(services, target, type))]
+  const implicit = [
+    ...extra,
+    ...(await botCreatorRecipients(services, target, type)),
+    ...ownerRecipients(target, type)
+  ]
   const named = new Set(explicit.map((recipient) => recipient.subscriberId))
   return [...explicit, ...implicit.filter((recipient) => !named.has(recipient.subscriberId))]
 }
@@ -249,6 +264,16 @@ const botCreatorRecipients = async (
   return creatorIsBot ? [{ subscriberId: creatorId }] : []
 }
 
+const ownerRecipients = (
+  target: SessionSummary,
+  type: SessionEventType
+): ReadonlyArray<Recipient> => {
+  const ownerId = target.createdByAgentId
+  if (type !== "user_message" || ownerId === undefined) return []
+  if (target.createdByAgentMachineId !== target.serverId) return []
+  return [{ subscriberId: ownerId }]
+}
+
 const pingPong = (
   outbox: SessionEventOutbox,
   target: SessionSummary,
@@ -258,6 +283,12 @@ const pingPong = (
 
 const isTypedUserPrompt = (event: EventEnvelope, payload: Record<string, unknown>): boolean =>
   event.kind === "session.output" && payload.role === "user" && payload.origin !== "event"
+
+const isFromTheUser = (event: EventEnvelope, payload: Record<string, unknown>): boolean =>
+  event.kind === "session.output" &&
+  payload.role === "user" &&
+  payload.origin === undefined &&
+  payload.sentByAgentId === undefined
 
 const lastAssistantItem = async (
   services: CodevisorServerServices,

@@ -28,6 +28,19 @@ export const turnEndedMessage = (
   )
 })
 
+export const userMessageMessage = (
+  target: Pick<SessionSummary, "id" | "title">,
+  text: string
+): SessionEventMessage => ({
+  text: eventBlock(
+    `type="session.user_message" agentId="${attribute(target.id)}" title="${attribute(target.title)}"`,
+    [
+      "The user wrote to this agent directly. Its next reply answers them, not you:",
+      bounded(text, "(no text)")
+    ].join("\n\n")
+  )
+})
+
 export const waitingForUserMessage = (
   target: Pick<SessionSummary, "id" | "title">,
   kind: string,

@@ -44,8 +44,11 @@ const subscribe = async (running: Running, subscriberId: string, body: Record<st
     (await post(running, `/v1/sessions/${subscriberId}/subscriptions`, body)).body
   )
 
-const prompt = (running: Running, sessionId: string, text: string) =>
-  post(running, `/v1/sessions/${sessionId}/prompt`, { text })
+const prompt = (running: Running, sessionId: string, text: string, sentByAgentId?: string) =>
+  post(running, `/v1/sessions/${sessionId}/prompt`, {
+    text,
+    ...(sentByAgentId === undefined ? {} : { sentByAgentId })
+  })
 
 const isRestartNoticeText = (input: string): boolean =>
   input.startsWith('<codevisor-event type="session.restarted">')
@@ -57,15 +60,15 @@ const eventPrompts = (running: Running) =>
       : []
   )
 
-const holdTurn = async (running: Running, sessionId: string) => {
+const holdTurn = async (running: Running, sessionId: string, sentByAgentId?: string) => {
   const before = running.agents.prompts.length
-  await prompt(running, sessionId, "prompt until cancelled")
+  await prompt(running, sessionId, "prompt until cancelled", sentByAgentId)
   await waitFor(() => running.agents.prompts.length > before)
 }
 
-const finishTurn = async (running: Running, sessionId: string) => {
+const finishTurn = async (running: Running, sessionId: string, sentByAgentId?: string) => {
   const before = running.agents.prompts.length
-  await prompt(running, sessionId, "work")
+  await prompt(running, sessionId, "work", sentByAgentId)
   await waitFor(() => running.agents.prompts.length > before)
 }
 
@@ -115,7 +118,7 @@ describe("session event subscriptions", () => {
     const worker = await createChat(running, "Fix login", { createdByAgentId: watcher })
     const subscription = await subscribe(running, watcher, { targetSessionId: worker, once: true })
 
-    await finishTurn(running, worker)
+    await finishTurn(running, worker, watcher)
     await waitFor(() => eventPrompts(running).length === 1)
 
     const delivered = eventPrompts(running)[0]!.input
@@ -336,7 +339,7 @@ describe("session event subscriptions", () => {
     const watcher = await createChat(running, "Watcher")
     const worker = await createChat(running, "Fix login", { createdByAgentId: watcher })
     await subscribe(running, watcher, { targetSessionId: worker, once: true })
-    await holdTurn(running, worker)
+    await holdTurn(running, worker, watcher)
 
     await pauseForUpdate(running.server)
     expect((await transcript(running, worker)).items.at(-1)).toMatchObject({

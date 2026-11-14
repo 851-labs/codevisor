@@ -101,6 +101,7 @@ Starting an agent links it to you, so end your turn instead of waiting. When the
 - You hear as soon as its turn is done, the same moment the user would see it as finished. Background work it leaves running, such as a dev server or a monitor, doesn't hold the event back. If that work later wakes the agent, its new turn sends a new event.
 - Only a turn still waiting on its own sub-agents, an active goal, or messages queued to it isn't done yet.
 - `session.waiting_for_user` carries a pending question, and `session.errored` carries the error.
+- `session.user_message` arrives when the user writes to an agent you started directly, and carries what they wrote. What the user tells it overrides what you told it: don't steer it back. Its next reply answers the user, not you.
 - Events that arrive while you're busy wait for your turn to end, then arrive together in the order they happened. None are dropped.
 - The user never sees these events as messages they typed.
 
