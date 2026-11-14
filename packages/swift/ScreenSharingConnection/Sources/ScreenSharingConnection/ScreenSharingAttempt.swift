@@ -73,7 +73,7 @@ final class ScreenSharingAttempt {
 
   private func work() async throws -> ScreenSharingAttemptEnd {
     do {
-      if let reason = try await host.whyItEnded() { return .refused(reason) }
+      if let end = try await host.whyItEnded() { return end }
       try checkOpen()
       let capabilities = try await host.capabilities()
       try checkOpen()

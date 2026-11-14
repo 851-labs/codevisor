@@ -215,10 +215,10 @@ struct ScreenSharingConnectionTransitionTests {
     #expect(harness.host.starts.count == 1)
   }
 
-  @Test("After sharing was stopped on the host, coming back on screen is refused the same way and only Connect opens")
+  @Test("After sharing was stopped on the host, a new surface's attach is refused the same way and only Connect opens")
   func staysStoppedUntilTheUserConnects() async {
     let harness = ConnectionHarness()
-    let surface = harness.show()
+    let first = harness.show()
     await harness.goLive()
     harness.host.answerEvery(.heartbeat, .reply(status: "failed", reason: "stopped-on-host"))
     harness.clock.advance(by: Self.heartbeat)
@@ -226,13 +226,13 @@ struct ScreenSharingConnectionTransitionTests {
 
     harness.host.answerEvery(.heartbeat, nil)
     harness.host.answerNext(.start, .reply(status: "failed", reason: "stopped-on-host"))
-    surface.setOnScreen(false)
+    first.detach()
     await harness.elapse(ScreenSharingConnectionDeadlines.unseenDebounce)
     await harness.settle(.off)
-    surface.setOnScreen(true)
+    let second = harness.show()
     await harness.settle(.failed(.stoppedOnHost))
 
-    surface.retry()
+    second.retry()
     await harness.goLive()
     #expect(harness.host.starts.map(\.intent) == [.attach, .attach, .open])
   }

@@ -57,7 +57,7 @@ struct ScreenSharingConnectionLifetimeTests {
     let sent = harness.host.requests.count
 
     leave(first, detaching: detaching)
-    await harness.clock.waitForSleep(Self.debounce)
+    if phase != .failedInUse || detaching { await harness.clock.waitForSleep(Self.debounce) }
     harness.clock.advance(by: .milliseconds(200))
     harness.show(.preview)
     harness.clock.advance(by: Self.debounce)
@@ -147,21 +147,112 @@ struct ScreenSharingConnectionLifetimeTests {
     await harness.settle(.off)
   }
 
-  @Test("A failed connection nobody sees for 2 s turns off, and the next visible surface connects afresh")
-  func turnsOffAFailedConnectionNobodyLooksAt() async {
-    let harness = ConnectionHarness()
-    harness.host.answerNext(.capabilities, .reply(status: "permission-required", reason: "permission-missing"))
+  enum HostDecided: CaseIterable, Sendable { case stoppedOnHost, takenOver, inUse, endedByAnOldHost }
+
+  private func fail(
+    _ harness: ConnectionHarness, as failure: HostDecided
+  ) async -> (surface: ScreenSharingSurface, reason: ScreenSharingFailureReason) {
+    let ended = "Screen sharing was stopped on the host Mac."
+    let phone = "Alexandru's iPhone"
     let surface = harness.show()
-    await harness.settle(.failed(.permissionMissing))
+    let session = await harness.goLive()
+    surface.setOnScreen(false)
+    await harness.elapse(Self.debounce)
+    await harness.clock.waitForSleep(Self.linger)
+    let reason: ScreenSharingFailureReason
+    switch failure {
+    case .stoppedOnHost:
+      harness.host.answerNext(.heartbeat, .reply(status: "failed", reason: "stopped-on-host"))
+      reason = .stoppedOnHost
+    case .takenOver:
+      harness.host.answerNext(.heartbeat, .reply(status: "failed", reason: "taken-over", holderName: phone))
+      reason = .takenOver(by: phone)
+    case .inUse:
+      harness.host.answerNext(.start, .reply(status: "busy", reason: "in-use", holderName: phone))
+      reason = .inUse(by: phone)
+    case .endedByAnOldHost:
+      harness.host.answerNext(.heartbeat, .reply(status: "failed", message: ended))
+      reason = .unclassified(message: ended)
+    }
+    if failure == .inUse {
+      session.host.report(connection: "failed")
+    } else {
+      harness.clock.advance(by: ScreenSharingConnectionDeadlines.heartbeatInterval)
+    }
+    await harness.settle(.failed(reason))
+    await awaitObserved { harness.host.stops.count == 1 }
+    return (surface, reason)
+  }
+
+  @Test(
+    "A failure the host decided stays while its surfaces are hidden, past the linger, and asks for nothing when shown",
+    arguments: HostDecided.allCases)
+  func keepsAHostDecidedFailureWhileHidden(_ failure: HostDecided) async {
+    let harness = ConnectionHarness(host: failure == .endedByAnOldHost ? .old() : FakeHost())
+    let (surface, reason) = await fail(harness, as: failure)
+    await harness.noTimersLeft()
+    let sent = harness.host.requests.count
+
+    harness.clock.advance(by: Self.linger)
+    harness.manager.systemWoke()
+    harness.manager.machineCameOnline(ConnectionHarness.machineId)
+    surface.setOnScreen(true)
+
+    #expect(harness.connection.state == .failed(reason))
+    #expect(harness.host.requests.count == sent)
+  }
+
+  @Test("Any other failure turns off after 2 s with nothing on screen, and the next show connects as an attach")
+  func turnsOffAnOrdinaryFailureNobodyLooksAt() async {
+    let harness = ConnectionHarness()
+    harness.host.answerEvery(.capabilities, .failure(FakeHost.unreachable))
+    let surface = harness.show()
+    await harness.settle(.failed(.cantReach))
 
     surface.setOnScreen(false)
     await harness.clock.waitForSleep(Self.debounce)
     harness.clock.advance(by: Self.debounce - .milliseconds(1))
-    #expect(harness.connection.state == .failed(.permissionMissing))
-    harness.clock.advance(by: .milliseconds(1))
+    #expect(harness.connection.state == .failed(.cantReach))
+    harness.clock.advance(by: .seconds(1) + .milliseconds(1))
     await harness.settle(.off)
+
+    harness.host.answerEvery(.capabilities, nil)
     surface.setOnScreen(true)
+    #expect(harness.connection.state == .connecting(.reachingHost))
     await harness.goLive()
+    #expect(harness.host.starts.map(\.intent) == [.attach])
+  }
+
+  @Test("A failed connection turns off 2 s after its last surface detaches; the next surface connects as an attach")
+  func turnsOffAFailedConnectionWithNoSurface() async {
+    let harness = ConnectionHarness()
+    let surface = await fail(harness, as: .stoppedOnHost).surface
+    await harness.noTimersLeft()
+
+    surface.detach()
+    await harness.clock.waitForSleep(Self.debounce)
+    harness.clock.advance(by: Self.debounce - .milliseconds(1))
+    #expect(harness.connection.state == .failed(.stoppedOnHost))
+    harness.clock.advance(by: .seconds(1) + .milliseconds(1))
+    await harness.settle(.off)
+
+    harness.show()
+    #expect(harness.connection.state == .connecting(.reachingHost))
+    await harness.goLive()
+    #expect(harness.host.starts.map(\.intent) == [.attach, .attach])
+  }
+
+  @Test("Retry from a surface that is not on screen connects, and gives up after 2 s if nothing comes on screen")
+  func givesUpARetryNobodySees() async {
+    let harness = ConnectionHarness()
+    let surface = await fail(harness, as: .inUse).surface
+    await harness.noTimersLeft()
+
+    harness.host.hold(.capabilities)
+    surface.retry()
+    #expect(harness.connection.state == .connecting(.reachingHost))
+    await harness.elapse(Self.debounce)
+    await harness.settle(.off)
   }
 
   @Test("A surface that is dropped without detaching counts as gone, so the connection lingers and turns off")

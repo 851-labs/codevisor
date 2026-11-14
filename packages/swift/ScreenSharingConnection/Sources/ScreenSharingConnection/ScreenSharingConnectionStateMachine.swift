@@ -43,6 +43,7 @@ struct ScreenSharingConnectionStateMachine: Equatable, Sendable {
   private var retriedHostFailure = false
   private var openPending = false
   private var attemptIntent = ServerScreenSharingRequest.Intent.attach
+  private var failureIsSticky = false
 
   init() {}
 
@@ -60,7 +61,7 @@ struct ScreenSharingConnectionStateMachine: Equatable, Sendable {
     case .attemptEnded(let end): return attemptEnded(end)
     case .stayedLive: return forgive()
     case .unseenBrieflyElapsed: return unseenBrieflyElapsed()
-    case .lingerElapsed: return unseen == .lingering ? turnOff() : nil
+    case .lingerElapsed: return unseen == .lingering ? stopBeingUnseen() : nil
     case .machineCameOnline: return recover(from: .cantReach)
     case .workspaceAppeared: return recover(from: .noWorkspace)
     case .systemWoke: return state == .live ? attemptEnded(.dropped(.cantReach)) : nil
@@ -72,7 +73,7 @@ struct ScreenSharingConnectionStateMachine: Equatable, Sendable {
     self.attached = attached
     self.visible = visible
     guard visible else {
-      if state != .off, unseen == nil { unseen = .briefly }
+      if state != .off, unseen == nil, !staysFailed { unseen = .briefly }
       return nil
     }
 
@@ -82,13 +83,26 @@ struct ScreenSharingConnectionStateMachine: Equatable, Sendable {
 
   private mutating func unseenBrieflyElapsed() -> Command? {
     guard unseen == .briefly else { return nil }
-    guard keepsGoingUnseen else { return turnOff() }
+    guard lingersUnseen else { return stopBeingUnseen() }
 
     unseen = .lingering
     return nil
   }
 
-  private var keepsGoingUnseen: Bool {
+  private mutating func stopBeingUnseen() -> Command? {
+    guard staysFailed else { return turnOff() }
+
+    unseen = nil
+    return nil
+  }
+
+  private var staysFailed: Bool {
+    guard case .failed = state else { return false }
+
+    return attached && failureIsSticky
+  }
+
+  private var lingersUnseen: Bool {
     switch state {
     case .live: true
     case .reconnecting: attached
@@ -99,6 +113,7 @@ struct ScreenSharingConnectionStateMachine: Equatable, Sendable {
   private mutating func userAsked() -> Command? {
     guard case .failed = state else { return nil }
 
+    if !visible { unseen = .briefly }
     return connect(open: true)
   }
 
@@ -152,6 +167,8 @@ struct ScreenSharingConnectionStateMachine: Equatable, Sendable {
       return nil
     case (_, .hostFailed(let message)):
       return hostFailed(message)
+    case (_, .endedByHost(let message)):
+      return fail(.unclassified(message: message), sticky: true)
     case (.live, .refused(let reason)), (.connecting, .dropped(let reason)):
       return fail(reason)
     case (.live, .dropped):
@@ -179,6 +196,7 @@ struct ScreenSharingConnectionStateMachine: Equatable, Sendable {
   }
 
   private mutating func connect(open: Bool) -> Command? {
+    failureIsSticky = false
     state = .connecting(.reachingHost)
     return start(after: .zero, open: open)
   }
@@ -204,10 +222,12 @@ struct ScreenSharingConnectionStateMachine: Equatable, Sendable {
     return .start(attemptIntent, after: wait, asksWhyItEnded: asksWhyItEnded)
   }
 
-  private mutating func fail(_ reason: ScreenSharingFailureReason) -> Command? {
+  private mutating func fail(_ reason: ScreenSharingFailureReason, sticky: Bool = false) -> Command? {
     state = .failed(reason)
+    failureIsSticky = sticky || reason.isDecidedByHost
     triesUsed = 0
     retriedHostFailure = false
+    if staysFailed, unseen == .lingering { unseen = nil }
     return .stop
   }
 
@@ -215,6 +235,7 @@ struct ScreenSharingConnectionStateMachine: Equatable, Sendable {
     guard state != .off else { return nil }
 
     state = .off
+    failureIsSticky = false
     unseen = nil
     triesUsed = 0
     retriedHostFailure = false
