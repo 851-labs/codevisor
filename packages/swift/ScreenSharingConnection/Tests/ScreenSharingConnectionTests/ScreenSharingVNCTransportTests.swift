@@ -31,6 +31,7 @@
       _ = harness.show()
       await awaitObserved { harness.connection.session != nil }
       let first = harness.connection.session
+      #expect(harness.connection.display == host.displays[0])
       server.enqueue([.raw(Self.screen)])
       await harness.settle(.live)
       #expect(host.requests.map(\.operation) == [.capabilities])

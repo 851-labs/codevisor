@@ -34,6 +34,19 @@ struct ScreenSharingConnectionTransitionTests {
     #expect(session.frames.take() != nil, "the frame is still there for a view to draw")
   }
 
+  @Test("A frame decoded right as the session opens is kept for a surface that starts drawing afterwards")
+  func keepsTheLatestFrameForLateSurfaces() async throws {
+    let harness = ConnectionHarness()
+    harness.show(.preview)
+    let session = await harness.goLive()
+    _ = session.frames.take()
+
+    let window = harness.show(.window)
+    let frames = try #require(harness.connection.session?.frames)
+
+    #expect(frames.tap(window.id).take()?.timestampNs == 1, "a static desktop still shows its last picture")
+  }
+
   struct Refusal: Sendable, CustomTestStringConvertible {
     var operation: FakeHost.Operation
     var status: String

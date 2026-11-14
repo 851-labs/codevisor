@@ -29,6 +29,7 @@ final class ScreenSharingAttempt {
   private var transport: (any ScreenSharingTransport)?
   private var session: (any ScreenSharingViewingSession)?
   private var decoded: ScreenSharingFrameMailbox?
+  private var opening: ScreenSharingTransportEvent?
   private var deadline: ScreenSharingAttemptDeadline?
   private var notice: String?
   private var sawFrame = false
@@ -105,6 +106,7 @@ final class ScreenSharingAttempt {
         throw ScreenSharingAttemptEnd.refused(.noDisplay)
       }
 
+      opening = .sharing(display: display, displays: displays)
       return makeVNC(display.id, capabilities.base.controlLease == true)
     }
     guard capabilities.base.provider != "vnc" else { throw ScreenSharingAttemptEnd.refused(.unsupportedOnThisDevice) }
@@ -123,6 +125,7 @@ final class ScreenSharingAttempt {
       times.enter(stage, at: clock.now())
     case .opened(let session):
       watchFrames(of: session)
+      if let opening { report(.transport(opening)) }
     case .notice(let notice):
       self.notice = notice
     case .sharing:
@@ -133,6 +136,7 @@ final class ScreenSharingAttempt {
 
   private func watchFrames(of session: any ScreenSharingViewingSession) {
     self.session = session
+    session.frames.retainsLatest = true
     let decoded = session.frames.tap(frameTap)
     self.decoded = decoded
     decoded.onFrameAvailable { [weak self] in
