@@ -68,7 +68,7 @@ struct ScreenSharingHostOwnershipTests {
       let reconnect = await mac.send(mac.start(as: .macBook, .attach))
       #expect(reconnect.status == "busy" && reconnect.reason == .inUse && reconnect.media == nil)
       #expect(reconnect.holderName == "Alexandru's iPhone")
-      #expect(await mac.send(mac.following(mac.start(as: .iPhone, .open), .heartbeat)).status == "connecting")
+      #expect(await mac.send(mac.heartbeat(as: .iPhone)).status == "connecting")
 
       let viewHere = await mac.send(mac.start(as: .macBook, .open))
       #expect(viewHere.status == "connecting")
@@ -80,11 +80,10 @@ struct ScreenSharingHostOwnershipTests {
       let macBook = mac.start(as: .macBook, .open)
       _ = await mac.send(macBook)
 
-      for intent in [ServerScreenSharingRequest.Intent.attach, nil] {
-        let refused = await mac.send(mac.start(as: .iPhone, intent))
-        #expect(refused.status == "busy" && refused.reason == .inUse)
-        #expect(refused.holderName == "Alexandru's MacBook Pro" && refused.message == Self.busyMessage)
-      }
+      let refused = await mac.send(mac.start(as: .iPhone, .attach))
+      #expect(refused.status == "busy" && refused.reason == .inUse)
+      #expect(refused.holderName == "Alexandru's MacBook Pro" && refused.message == Self.busyMessage)
+      #expect(await mac.send(mac.start(as: .iPhone, nil)).reason == .proofRejected)
       #expect(await mac.send(mac.following(macBook, .heartbeat)).status == "connecting")
     }
   }
@@ -103,7 +102,7 @@ struct ScreenSharingHostOwnershipTests {
         let refused = await mac.send(retry)
         #expect(["busy", "stopped"].contains(refused.status) && refused.media == nil)
       }
-      #expect(await mac.send(mac.following(mac.start(as: .macBook, .open), .heartbeat)).status == "connecting")
+      #expect(await mac.send(mac.heartbeat(as: .macBook)).status == "connecting")
     }
   }
 
@@ -116,17 +115,20 @@ struct ScreenSharingHostOwnershipTests {
       wrongKey.media = .init(endpointId: ServerScreenSharingApp.macBook.key, relayUrl: nil, directAddrs: [])
       #expect(await mac.send(wrongKey).status == "failed")
 
+      var takeovers: [ServerScreenSharingRequest] = []
+      for _ in 0..<3 { takeovers.append(await mac.signed(mac.start(as: .iPhone, .open))) }
+
       mac.allowsCapture = false
-      let denied = await mac.send(mac.start(as: .iPhone, .open))
+      let denied = await mac.send(takeovers[0])
       #expect(denied.status == "permission-required" && denied.reason == .permissionMissing)
       mac.allowsCapture = true
 
       mac.listDisplays = { throw CocoaError(.fileReadUnknown) }
-      #expect(await mac.send(mac.start(as: .iPhone, .open)).status == "failed")
+      #expect(await mac.send(takeovers[1]).status == "failed")
       mac.listDisplays = nil
 
       mac.media.configure { nil }
-      let noEndpoint = await mac.send(mac.start(as: .iPhone, .open))
+      let noEndpoint = await mac.send(takeovers[2])
       #expect(noEndpoint.status == "failed" && noEndpoint.message == ScreenSharingHostService.endpointUnavailable)
 
       let beat = await mac.send(mac.following(macBook, .heartbeat))
@@ -139,13 +141,14 @@ struct ScreenSharingHostOwnershipTests {
       let macBook = mac.start(as: .macBook, .open)
       _ = await mac.send(macBook)
 
+      let takeover = await mac.signed(mac.start(as: .iPhone, .open))
       var lookups = 0
       mac.listDisplays = {
         lookups += 1
         guard lookups == 1 else { throw CocoaError(.fileReadUnknown) }
         return [Fixture.main]
       }
-      #expect(await mac.send(mac.start(as: .iPhone, .open)).status == "failed")
+      #expect(await mac.send(takeover).status == "failed")
       mac.listDisplays = nil
 
       let beat = await mac.send(mac.following(macBook, .heartbeat))
@@ -156,6 +159,8 @@ struct ScreenSharingHostOwnershipTests {
 
   @Test func twoOpensAtTheSameMomentLeaveOneSessionAndTellTheLoserWhoWon() async throws {
     try await Fixture.run { mac in
+      let macBook = await mac.signed(mac.start(as: .macBook, .open))
+      let iPhone = await mac.signed(mac.start(as: .iPhone, .open))
       let entered = TestSignal()
       let release = TestSignal()
       mac.listDisplays = {
@@ -163,9 +168,9 @@ struct ScreenSharingHostOwnershipTests {
         await release.wait()
         return [Fixture.main]
       }
-      let first = Task { await mac.send(mac.start(as: .macBook, .open)) }
+      let first = Task { await mac.send(macBook) }
       await entered.wait()
-      let second = Task { await mac.send(mac.start(as: .iPhone, .open)) }
+      let second = Task { await mac.send(iPhone) }
       await entered.wait(for: 2)
       release.signal()
 
@@ -202,29 +207,51 @@ struct ScreenSharingHostOwnershipTests {
 
   @Test func anAppWaitsForTheRealDisplayWhileTheHostsOwnVirtualOneIsGoingAway() async throws {
     try await Fixture.run { mac in
+      let start = await mac.signed(mac.start(as: .macBook, .attach, display: "virtual"))
       var lookups = 0
       mac.listDisplays = {
         lookups += 1
         return lookups == 1 ? [Fixture.hostVirtual] : [Fixture.hostVirtual, Fixture.main]
       }
-      let granted = await mac.send(mac.start(as: .macBook, .attach, display: "virtual"))
+      let granted = await mac.send(start)
       #expect(granted.status == "connecting" && granted.display == Fixture.main && lookups == 2)
     }
   }
 
-  @Test func aStopEndsAnAppsSessionOnlyFromTheAttemptThatStartedIt() async throws {
+  @Test func aStopEndsAnAppsSessionOnlyWithThatSessionsToken() async throws {
     try await Fixture.run { mac in
       let first = mac.start(as: .macBook, .open)
       _ = await mac.send(first)
       let second = mac.start(as: .macBook, .attach)
       _ = await mac.send(second)
 
-      #expect(await mac.send(mac.following(first, .stop)).status == "stopped")
+      var junk = mac.following(second, .stop)
+      junk.session = String(repeating: "0", count: 64)
+      for stale in [mac.following(first, .stop), junk] {
+        #expect(await mac.send(stale).status == "stopped")
+      }
       #expect(await mac.send(mac.following(second, .heartbeat, viewerId: UUID())).status == "connecting")
 
       #expect(await mac.send(mac.following(second, .stop)).status == "stopped")
       let after = await mac.send(mac.following(second, .heartbeat))
       #expect(after.status == "stopped" && after.reason == nil)
+    }
+  }
+
+  @Test func aStopWithoutATokenEndsOnlyTheSessionItsOwnAttemptStarted() async throws {
+    try await Fixture.run { mac in
+      let start = mac.start(as: .macBook, .open)
+      _ = await mac.send(start)
+
+      var otherAttempt = mac.following(start, .stop, viewerId: UUID())
+      otherAttempt.session = nil
+      #expect(await mac.send(otherAttempt).status == "stopped")
+      #expect(await mac.send(mac.heartbeat(as: .macBook)).status == "connecting")
+
+      var sameAttempt = mac.following(start, .stop)
+      sameAttempt.session = nil
+      #expect(await mac.send(sameAttempt).status == "stopped")
+      #expect(await mac.send(mac.heartbeat(as: .macBook)).status == "stopped")
     }
   }
 
@@ -240,13 +267,13 @@ struct ScreenSharingHostOwnershipTests {
       let session = try #require(mac.host.current)
       mac.displays = [Fixture.main]
       await mac.host.refreshDisplays(of: session)
-      let beat = await mac.send(mac.following(mac.start(as: .macBook, .attach), .heartbeat))
+      let beat = await mac.send(mac.heartbeat(as: .macBook))
       #expect(beat.status == "connecting" && beat.display == Fixture.main && beat.displays == [Fixture.main])
 
       mac.displays = []
       let none = await mac.send(mac.start(as: .iPhone, .open))
       #expect(none.status == "unavailable" && none.reason == .noDisplay)
-      #expect(await mac.send(mac.following(mac.start(as: .macBook, .attach), .heartbeat)).status == "connecting")
+      #expect(await mac.send(mac.heartbeat(as: .macBook)).status == "connecting")
     }
   }
 

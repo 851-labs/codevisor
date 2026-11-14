@@ -71,18 +71,33 @@ const withDisplayName = (payload: ScreenSharingRequest): ScreenSharingRequest =>
     ? payload
     : { ...payload, app: { ...payload.app, name: appDisplayName(payload.app.name) } }
 
+const signature = /^[0-9a-f]{128}$/i
+
+const proofIsWellFormed = (payload: ScreenSharingRequest): boolean =>
+  payload.proof !== undefined &&
+  endpointId.test(payload.proof.nonce) &&
+  signature.test(payload.proof.signature)
+
 const appStartIsComplete = (payload: ScreenSharingRequest): boolean =>
   payload.app === undefined ||
   (payload.intent !== undefined &&
+    proofIsWellFormed(payload) &&
     payload.media?.endpointId.toLowerCase() === payload.app.key.toLowerCase())
+
+const sessionIsWellFormed = (payload: ScreenSharingRequest): boolean =>
+  payload.session === undefined || endpointId.test(payload.session)
 
 const startTargetIsValid = (payload: ScreenSharingRequest): boolean =>
   payload.displayId === undefined ? payload.app !== undefined : isKnownTarget(payload.displayId)
 
-const appOwnsDesktopSession = (payload: ScreenSharingRequest): boolean =>
-  payload.app !== undefined &&
-  computerUseSessionId(payload.displayId) === undefined &&
-  !isSimulatorTarget(payload.displayId)
+const isDesktopTarget = (displayId: string | undefined): boolean =>
+  computerUseSessionId(displayId) === undefined && !isSimulatorTarget(displayId)
+
+const appOwnsDesktopSession = (payload: ScreenSharingRequest): boolean => {
+  if (!isDesktopTarget(payload.displayId)) return false
+  if (payload.operation === "heartbeat") return payload.session !== undefined
+  return payload.app !== undefined
+}
 
 const isMediaAddress = (media: ScreenSharingMediaAddress | undefined): boolean =>
   media !== undefined &&
@@ -121,7 +136,8 @@ export const routeScreenSharing = async (
     )
   if (![payload.workspaceId, payload.paneId, payload.viewerId].every((id) => uuid.test(id)))
     throw new HttpFailure(400, "Invalid Screen Sharing identity")
-  if (!appIsWellFormed(payload)) throw new HttpFailure(400, "Invalid Screen Sharing identity")
+  if (!appIsWellFormed(payload) || !sessionIsWellFormed(payload))
+    throw new HttpFailure(400, "Invalid Screen Sharing identity")
   const starts = payload.operation === "start" || payload.operation === "restart"
   if (
     starts &&

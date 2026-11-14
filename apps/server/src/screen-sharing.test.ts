@@ -99,6 +99,8 @@ describe("Screen Sharing engine v2 signaling", () => {
 
 describe("app-owned Screen Sharing sessions", () => {
   const app = { key: media.endpointId, name: "Alexandru's MacBook Pro" }
+  const proof = { nonce: "c".repeat(64), signature: "d".repeat(128) }
+  const session = "e".repeat(64)
   const appStart = (): ScreenSharingRequest => ({
     ...capabilities(),
     operation: "start",
@@ -106,7 +108,8 @@ describe("app-owned Screen Sharing sessions", () => {
     engine: "v2",
     media,
     app,
-    intent: "open"
+    intent: "open",
+    proof
   })
 
   it("serves an app's desktop session without a workspace or pane, and a request without the app as before", async () => {
@@ -114,23 +117,27 @@ describe("app-owned Screen Sharing sessions", () => {
     const { post } = await fixture(helper)
     const start = appStart()
     const { displayId: _, ...anyDisplay } = start
+    const { app: __, intent: ___, proof: ____, ...stable } = start
+    const beat = { ...stable, operation: "heartbeat", session }
     for (const request of [
       start,
       anyDisplay,
       { ...start, operation: "restart" },
-      { ...start, operation: "heartbeat" },
-      { ...anyDisplay, operation: "heartbeat" },
-      { ...start, operation: "stop" }
+      beat,
+      { ...beat, displayId: undefined },
+      { ...stable, operation: "stop", session },
+      { ...stable, operation: "stop" }
     ])
       expect((await post(request)).status).toBe(200)
-    expect(helper).toHaveBeenCalledTimes(6)
+    expect(helper).toHaveBeenCalledTimes(7)
     expect(helper).toHaveBeenCalledWith(start)
+    expect(helper).toHaveBeenCalledWith(beat)
 
-    const { app: __, intent: ___, ...stable } = start
     expect((await post(stable)).status).toBe(404)
     expect((await post({ ...stable, operation: "heartbeat" })).status).toBe(404)
+    expect((await post({ ...start, operation: "heartbeat" })).status).toBe(404)
     expect((await post({ ...stable, displayId: undefined })).status).toBe(400)
-    expect(helper).toHaveBeenCalledTimes(6)
+    expect(helper).toHaveBeenCalledTimes(7)
   })
 
   it("still requires the pane for an app's Computer Use and Simulator streams", async () => {
@@ -138,7 +145,9 @@ describe("app-owned Screen Sharing sessions", () => {
     const { post } = await fixture(helper)
     for (const displayId of [`computer-use:${randomUUID()}`, `simulator:${randomUUID()}`]) {
       expect((await post({ ...appStart(), displayId })).status).toBe(404)
-      expect((await post({ ...appStart(), operation: "heartbeat", displayId })).status).toBe(404)
+      expect(
+        (await post({ ...appStart(), operation: "heartbeat", displayId, session })).status
+      ).toBe(404)
     }
     expect(helper).not.toHaveBeenCalled()
   })
@@ -152,9 +161,16 @@ describe("app-owned Screen Sharing sessions", () => {
       { app: { ...app, key: "c".repeat(64) } },
       { intent: undefined },
       { intent: "steal" },
-      { displayId: "invalid" }
+      { displayId: "invalid" },
+      { proof: undefined },
+      { proof: { ...proof, nonce: "short" } },
+      { proof: { ...proof, signature: "d".repeat(127) } },
+      { session: "not-a-token" }
     ])
       expect((await post({ ...appStart(), ...change })).status).toBe(400)
+    expect(
+      (await post({ ...appStart(), operation: "heartbeat", session: "not-a-token" })).status
+    ).toBe(400)
     expect(
       (await post({ ...appStart(), operation: "heartbeat", app: { key: "x", name: "n" } })).status
     ).toBe(400)
@@ -184,20 +200,22 @@ describe("app-owned Screen Sharing sessions", () => {
       message: "This Mac is already sharing with another viewer.",
       reason: "in-use",
       holderName: "Alexandru's iPhone",
-      abilities: ["app-sessions"]
+      abilities: ["app-sessions"],
+      challenge: { hostKey: "b".repeat(64), nonce: "c".repeat(64) }
     }
     const viewing = {
       ...reply,
       status: "viewing",
       display,
       displays: [display],
-      reason: "a-later-reason"
+      reason: "a-later-reason",
+      session
     }
     const helper = vi.fn(async (): Promise<unknown> => ({ ...refused, laterField: true }))
     const { post } = await fixture(helper)
     expect((await post({ ...appStart(), intent: "attach" })).body).toEqual(refused)
     helper.mockResolvedValueOnce(viewing)
-    expect((await post({ ...appStart(), operation: "heartbeat" })).body).toEqual(viewing)
+    expect((await post({ ...appStart(), operation: "heartbeat", session })).body).toEqual(viewing)
   })
 })
 

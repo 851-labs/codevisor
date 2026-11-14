@@ -1,6 +1,7 @@
 import CodevisorClient
 import CodevisorNet
 import CoreGraphics
+import CryptoKit
 import Foundation
 import ScreenSharingV2
 
@@ -21,6 +22,8 @@ final class ScreenSharingHostOwnershipFixture {
   let media = ScreenSharingMediaEndpoint()
   private(set) var host: ScreenSharingHostService!
   private var endpoint: NetEndpointHandle?
+  private var sessions: [UUID: String] = [:]
+  private var latestSession: [String: String] = [:]
 
   static func run(_ body: (ScreenSharingHostOwnershipFixture) async throws -> Void) async throws {
     let fixture = ScreenSharingHostOwnershipFixture()
@@ -33,7 +36,36 @@ final class ScreenSharingHostOwnershipFixture {
   }
 
   func send(_ request: ServerScreenSharingRequest) async -> ServerScreenSharingReply {
-    await host.handle(request)
+    let reply = await host.handle(await signed(request))
+    if let session = reply.session {
+      sessions[request.viewerId] = session
+      if let app = request.app { latestSession[app.key] = session }
+    }
+    return reply
+  }
+
+  func heartbeat(as app: ServerScreenSharingApp) -> ServerScreenSharingRequest {
+    var request = ServerScreenSharingRequest(
+      operation: .heartbeat, workspaceId: UUID(), paneId: UUID(), viewerId: UUID())
+    request.session = latestSession[app.key]
+    return request
+  }
+
+  func challenge(for app: ServerScreenSharingApp = .macBook) async -> ServerScreenSharingChallenge? {
+    var capabilities = ServerScreenSharingRequest(
+      operation: .capabilities, workspaceId: UUID(), paneId: UUID(), viewerId: UUID())
+    capabilities.app = app
+    return await host.handle(capabilities).challenge
+  }
+
+  func signed(_ request: ServerScreenSharingRequest) async -> ServerScreenSharingRequest {
+    guard let app = request.app, [.start, .restart].contains(request.operation), request.proof == nil,
+      let challenge = await challenge(for: app)
+    else { return request }
+
+    var signed = request
+    signed.proof = try? ServerScreenSharingProof(of: request, answering: challenge, signer: app.signer)
+    return signed
   }
 
   func start(
@@ -62,7 +94,7 @@ final class ScreenSharingHostOwnershipFixture {
     var request = ServerScreenSharingRequest(
       operation: operation, workspaceId: start.workspaceId, paneId: start.paneId,
       viewerId: viewerId ?? start.viewerId)
-    request.app = start.app
+    request.session = sessions[start.viewerId]
     return request
   }
 
@@ -97,7 +129,19 @@ final class ScreenSharingHostOwnershipFixture {
 }
 
 extension ServerScreenSharingApp {
-  static let macBook = ServerScreenSharingApp(key: String(repeating: "a", count: 64), name: "Alexandru's MacBook Pro")
-  static let iPhone = ServerScreenSharingApp(key: String(repeating: "b", count: 64), name: "Alexandru's iPhone")
-  static let iPad = ServerScreenSharingApp(key: String(repeating: "c", count: 64), name: "Alexandru's iPad")
+  static let macBook = ServerScreenSharingApp(key: signingKey(1).publicKey.rawRepresentation.hexEncoded, name: names[1])
+  static let iPhone = ServerScreenSharingApp(key: signingKey(2).publicKey.rawRepresentation.hexEncoded, name: names[2])
+  static let iPad = ServerScreenSharingApp(key: signingKey(3).publicKey.rawRepresentation.hexEncoded, name: names[3])
+
+  var signer: ScreenSharingStartSigner {
+    let key = Self.signingKey(UInt8(Self.names.firstIndex(of: name) ?? 0))
+    return ScreenSharingStartSigner(key: self.key) { try key.signature(for: $0) }
+  }
+
+  private static let names = ["", "Alexandru's MacBook Pro", "Alexandru's iPhone", "Alexandru's iPad"]
+
+  private static func signingKey(_ seed: UInt8) -> Curve25519.Signing.PrivateKey {
+    (try? Curve25519.Signing.PrivateKey(rawRepresentation: Data(repeating: seed, count: 32)))
+      ?? Curve25519.Signing.PrivateKey()
+  }
 }

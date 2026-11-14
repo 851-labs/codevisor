@@ -15,4 +15,5 @@ public struct ServerScreenSharingReason: RawRepresentable, Codable, Hashable, Se
   public static let permissionMissing = Self(rawValue: "permission-missing")
   public static let updateNeeded = Self(rawValue: "update-needed")
   public static let noDisplay = Self(rawValue: "no-display")
+  public static let proofRejected = Self(rawValue: "proof-rejected")
 }

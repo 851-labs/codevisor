@@ -13,6 +13,10 @@ struct ScreenSharingHostLease {
       workspaceId = request.workspaceId; paneId = request.paneId; viewerId = request.viewerId
       appKey = request.app?.key.lowercased(); name = request.app.flatMap { Self.displayName($0.name) }
     }
+    init(paneOf request: ServerScreenSharingRequest) {
+      workspaceId = request.workspaceId; paneId = request.paneId; viewerId = request.viewerId
+      appKey = nil; name = nil
+    }
     static func displayName(_ raw: String) -> String? {
       let printable = raw.unicodeScalars.filter {
         ![.control, .lineSeparator, .paragraphSeparator].contains($0.properties.generalCategory)
@@ -28,7 +32,9 @@ struct ScreenSharingHostLease {
       guard appKey == nil, other.appKey == nil else { return appKey == other.appKey }
       return workspaceId == other.workspaceId && paneId == other.paneId
     }
-    func isSameAttempt(as other: Owner) -> Bool { self == other && viewerId == other.viewerId }
+    func isAttempt(of request: ServerScreenSharingRequest) -> Bool {
+      appKey != nil ? viewerId == request.viewerId : self == Owner(paneOf: request)
+    }
     func admission(against holder: Owner, intent: ServerScreenSharingRequest.Intent?) -> Admission {
       if isSameHolder(as: holder) { return .replacesOwn }
       if appKey != nil, intent == .open { return .takesOver }

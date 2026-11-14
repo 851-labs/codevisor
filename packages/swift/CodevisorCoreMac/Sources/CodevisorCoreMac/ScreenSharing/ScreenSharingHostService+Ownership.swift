@@ -4,7 +4,7 @@ import Foundation
 extension ScreenSharingHostService {
   typealias Owner = ScreenSharingHostLease.Owner
 
-  static let realDisplayWait = (interval: Duration.milliseconds(100), attempts: 30)
+  static let realDisplayWait = (interval: Duration.milliseconds(100), limit: Duration.seconds(3))
   static let endpointUnavailable = "This Mac's screen-sharing endpoint isn't available."
 
   var inUse: ServerScreenSharingReply { ScreenSharingHostRefusal.inUse(by: current?.owner.name).reply }
@@ -14,12 +14,16 @@ extension ScreenSharingHostService {
   ) -> ServerScreenSharingReply {
     var reply = reply
     reply.abilities = [ServerScreenSharingReply.appSessions]
-    guard request.app != nil, ["connecting", "viewing"].contains(reply.status), let current,
-      current.owner == .init(request)
-    else { return reply }
+    guard let current, current.owner.appKey != nil, ["connecting", "viewing"].contains(reply.status) else {
+      return reply
+    }
+
+    let isGrantedStart = reply.media != nil && startsAppSession(request) && current.owner == Owner(request)
+    guard isGrantedStart || request.session.map(current.hasToken) == true else { return reply }
 
     reply.display = current.display
     reply.displays = current.displays
+    if isGrantedStart { reply.session = current.sessionToken }
     return reply
   }
 
@@ -32,9 +36,12 @@ extension ScreenSharingHostService {
     return nil
   }
 
-  func sessionlessReply(to owner: Owner) -> ServerScreenSharingReply {
-    if let lastEnd, lastEnd.owner == owner { return lastEnd.ending.reply }
-    if let holder = displacer(of: owner) { return ScreenSharingHostEnding.takenOver(by: holder.name).reply }
+  func sessionlessReply(to request: ServerScreenSharingRequest) -> ServerScreenSharingReply {
+    let owner = formerOwner(request)
+    if let owner, let lastEnd, lastEnd.owner == owner { return lastEnd.ending.reply }
+    if let holder = owner.flatMap({ displacer(of: $0) }) {
+      return ScreenSharingHostEnding.takenOver(by: holder.name).reply
+    }
     return .init(status: "stopped", message: "Screen sharing ended on the host Mac.")
   }
 
@@ -58,11 +65,10 @@ extension ScreenSharingHostService {
 
   func displaysToShare(with owner: Owner) async throws -> [Display] {
     var available = try await enumerateDisplays()
-    var waits = 0
-    while displayChoice.awaitsRealDisplay(for: owner, among: available), waits < Self.realDisplayWait.attempts {
+    let deadline = ContinuousClock.now + Self.realDisplayWait.limit
+    while displayChoice.awaitsRealDisplay(for: owner, among: available), ContinuousClock.now < deadline {
       try await Task.sleep(for: Self.realDisplayWait.interval)
       available = try await enumerateDisplays()
-      waits += 1
     }
     return available
   }

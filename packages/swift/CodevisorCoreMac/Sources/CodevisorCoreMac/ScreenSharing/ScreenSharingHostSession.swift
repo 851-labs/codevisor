@@ -9,6 +9,7 @@ final class ScreenSharingHostSession {
   let owner: ScreenSharingHostLease.Owner
   let peer: ScreenSharingV2HostLink
   let v2: V2
+  let sessionToken = ScreenSharingHostChallenges.randomHex()
   var mediaAccept: Task<Void, Never>?
   let capture: ScreenSharingCapture
   let metrics: ScreenSharingMetrics
@@ -83,6 +84,12 @@ final class ScreenSharingHostSession {
   }
 
   var hasSentVideo: Bool { metrics.counter("capturedFrames") > 0 }
+
+  func hasToken(_ candidate: String) -> Bool {
+    let mine = Array(sessionToken.utf8)
+    let theirs = Array(candidate.lowercased().utf8)
+    return mine.count == theirs.count && zip(mine, theirs).reduce(UInt8(0)) { $0 | ($1.0 ^ $1.1) } == 0
+  }
 
   func configureMediaSubscriptions() {
     self.cursorStream = ScreenSharingHostCursorStream(

@@ -13,6 +13,8 @@ final class ScreenSharingHostService {
   private(set) var current: ScreenSharingHostSession?
   private(set) var lastEnd: (owner: ScreenSharingHostLease.Owner, ending: ScreenSharingHostEnding)?
   var displaced: (owner: ScreenSharingHostLease.Owner, by: ScreenSharingHostLease.Owner)?
+  var challenges = ScreenSharingHostChallenges()
+  var endedSessions: [(token: String, owner: ScreenSharingHostLease.Owner)] = []
   private(set) var displayChoice: ScreenSharingHostDisplayChoice
   private(set) var pendingStarts: [UUID: ScreenSharingHostLease.Owner] = [:]
   private(set) var isShutdown = false
@@ -53,6 +55,7 @@ final class ScreenSharingHostService {
   private func respond(to request: ServerScreenSharingRequest) async -> ServerScreenSharingReply {
     guard !isShutdown, !Task.isCancelled else { return .init(status: "stopped") }
     guard request.version == 1 else { return ScreenSharingHostRefusal.updateNeeded.reply }
+    if startsAppSession(request), !provesItsKey(request) { return await proofRejected() }
     let attempt = [.start, .restart].contains(request.operation) ? registerStart(request) : nil
     defer { if let attempt { pendingStarts.removeValue(forKey: attempt) } }
     installObservers()
@@ -68,14 +71,13 @@ final class ScreenSharingHostService {
       return .init(status: "unsupported", message: "This Mac's display scale can't be set remotely.")
     case .stop:
       stopGeneration += 1
-      let owner = ScreenSharingHostLease.Owner(request)
-      pendingStarts = pendingStarts.filter { !$0.value.isSameAttempt(as: owner) }
-      if let current, current.owner.isSameAttempt(as: owner) { await end(current) }
+      pendingStarts = pendingStarts.filter { !stops(request, pending: $0.value) }
+      if let current, stops(request, current) { await end(current) }
       return .init(status: "stopped")
     case .heartbeat:
-      guard let current, !current.stopping,
-        lease.renew(.init(request), now: ProcessInfo.processInfo.systemUptime)
-      else { return sessionlessReply(to: .init(request)) }
+      guard let current, !current.stopping, renewsLease(of: current, for: request) else {
+        return sessionlessReply(to: request)
+      }
       if let error = ["captureError", "encoderError"].compactMap(current.metrics.label).first(where: { !$0.isEmpty }) {
         await end(current)
         return .init(status: "failed", message: error)
@@ -87,12 +89,22 @@ final class ScreenSharingHostService {
         var reply = ServerScreenSharingReply(
           status: current == nil ? "available" : "busy", displays: try await enumerateDisplays().map(\.description))
         if mediaEndpoint.isAvailable { reply.engines = [ScreenSharingEngine.v2.rawValue] }
+        if request.app != nil { reply.challenge = await challenge() }
         return reply
       } catch { return .init(status: "unavailable", message: error.localizedDescription) }
     case .start, .restart:
       guard let attempt else { return .init(status: "stopped") }
       return await start(request, attempt: attempt)
     }
+  }
+
+  private func renewsLease(
+    of session: ScreenSharingHostSession, for request: ServerScreenSharingRequest
+  ) -> Bool {
+    let now = ProcessInfo.processInfo.systemUptime
+    guard let token = request.session else { return lease.renew(.init(paneOf: request), now: now) }
+
+    return session.owner.appKey != nil && session.hasToken(token) && lease.renew(session.owner, now: now)
   }
 
   private func registerStart(_ request: ServerScreenSharingRequest) -> UUID {
@@ -329,6 +341,7 @@ final class ScreenSharingHostService {
     if let ending = session.ending { return await ending.value }
     if let cause { lastEnd = (session.owner, cause) }
     forgetDisplacement(endedBy: session)
+    rememberEnded(session)
     session.stopping = true
     session.control?.revoke("Screen sharing ended.")
     session.clipboard?.cancel(reason: "Screen sharing ended.")

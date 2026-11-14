@@ -32,6 +32,8 @@ public struct ServerScreenSharingRequest: Codable, Sendable {
   public var chroma: String?
   public var app: ServerScreenSharingApp?
   public var intent: Intent?
+  public var proof: ServerScreenSharingProof?
+  public var session: String?
 
   public init(
     operation: Operation, workspaceId: UUID, paneId: UUID, viewerId: UUID,
@@ -56,6 +58,8 @@ public struct ServerScreenSharingReply: Codable, Sendable {
   public var reason: ServerScreenSharingReason?
   public var holderName: String?
   public var display: ServerScreenSharingDisplay?
+  public var challenge: ServerScreenSharingChallenge?
+  public var session: String?
 
   public static let appSessions = "app-sessions"
 

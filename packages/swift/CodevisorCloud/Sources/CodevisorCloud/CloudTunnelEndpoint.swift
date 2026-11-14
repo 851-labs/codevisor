@@ -52,6 +52,13 @@ enum CloudTunnelIdentity {
   static func endpointId(for identity: CloudAppDeviceIdentity) -> String? {
     try? netEndpointIdForSecretKey(secretKeyHex: secretKeyHex(for: identity))
   }
+
+  static func screenSharingSigner(for identity: CloudAppDeviceIdentity) throws -> ScreenSharingStartSigner {
+    guard let seed = Data(hexEncoded: secretKeyHex(for: identity)) else { throw CocoaError(.coderInvalidValue) }
+
+    let key = try Curve25519.Signing.PrivateKey(rawRepresentation: seed)
+    return ScreenSharingStartSigner(key: key.publicKey.rawRepresentation.hexEncoded) { try key.signature(for: $0) }
+  }
 }
 
 public actor CloudTunnelEndpoint {
@@ -119,6 +126,10 @@ public actor CloudTunnelEndpoint {
     guard config?.enabled == true else { return nil }
     let handle = await currentEndpoint()
     return config?.enabled == true ? handle : nil
+  }
+
+  public nonisolated func screenSharingSigner() throws -> ScreenSharingStartSigner {
+    try CloudTunnelIdentity.screenSharingSigner(for: try credentialStore.ensureAppDeviceIdentity())
   }
 
   public func screenSharingEndpoint() async -> NetEndpointHandle? {
