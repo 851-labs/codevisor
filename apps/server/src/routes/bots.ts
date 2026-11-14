@@ -1,6 +1,6 @@
 import type { IncomingMessage, ServerResponse } from "node:http"
 
-import { UpdateBotRequest, type Bot } from "@codevisor/api"
+import { BOT_ABOUT_LIMIT, DescribeBotRequest, UpdateBotRequest, type Bot } from "@codevisor/api"
 
 import { archiveAgentsOf } from "../archive-jobs.js"
 import {
@@ -22,6 +22,7 @@ import { syncBotInstructions } from "./bot-instructions.js"
 import { assertBotMascot } from "./bot-mascots.js"
 import { routeBotProjects } from "./bot-projects.js"
 import { removeBot, retireBotRuntime } from "./bot-remove.js"
+import { botRosterChanged } from "./bot-roster.js"
 import { refusePlanConfigForBot } from "./bot-session-modes.js"
 import { applySessionConfigPick } from "./session-config.js"
 import { applySessionUpdate } from "./session-workspace.js"
@@ -52,7 +53,8 @@ const updateBot = async (
       name,
       symbolName: payload.symbolName,
       mascot: payload.mascot,
-      isArchived: payload.isArchived
+      isArchived: payload.isArchived,
+      about: payload.about === undefined ? undefined : aboutFrom(payload.about)
     })
   )
   if (bot.isArchived && !current.isArchived) {
@@ -70,6 +72,32 @@ const updateBot = async (
     await appendAndPublish(services.db, fanout, "workspace.updated", workspace.id, workspace)
   }
   await syncBotInstructions(services, bot).catch(swallowError)
+  await appendAndPublish(services.db, fanout, "bot.updated", bot.id, { id: bot.id })
+  writeJson(response, 200, bot)
+  return true
+}
+
+const aboutFrom = (text: string): string => {
+  const about = text.trim().replace(/\s+/gu, " ")
+  if (about.length > BOT_ABOUT_LIMIT) {
+    throw new HttpFailure(422, `Say what the bot does in ${BOT_ABOUT_LIMIT} characters or fewer`)
+  }
+  return about
+}
+
+const describeBot = async (
+  services: CodevisorServerServices,
+  fanout: EventFanout,
+  sessionId: string,
+  request: IncomingMessage,
+  response: ServerResponse
+): Promise<boolean> => {
+  const payload = await readSchema(request, DescribeBotRequest)
+  const current = await run(services.db.findBotOwning({ sessionId }))
+  if (current === undefined || current.sessionId.toLowerCase() !== sessionId.toLowerCase()) {
+    throw new HttpFailure(403, "Only a bot's own chat can say what it does")
+  }
+  const bot = await run(services.db.updateBot(current.id, { about: aboutFrom(payload.about) }))
   await appendAndPublish(services.db, fanout, "bot.updated", bot.id, { id: bot.id })
   writeJson(response, 200, bot)
   return true
@@ -114,6 +142,34 @@ export const routeBots = async (
 ): Promise<boolean> => {
   if (await routeBotProjects(services, config, fanout, routeState, request, response, url)) {
     return true
+  }
+  const handled = await routeBotRecords(
+    services,
+    config,
+    fanout,
+    routeState,
+    request,
+    response,
+    url
+  )
+  if (handled && request.method !== "GET") {
+    await botRosterChanged(services, config.id).catch(swallowError)
+  }
+  return handled
+}
+
+const routeBotRecords = async (
+  services: CodevisorServerServices,
+  config: CodevisorServerConfig,
+  fanout: EventFanout,
+  routeState: RouteState,
+  request: IncomingMessage,
+  response: ServerResponse,
+  url: URL
+): Promise<boolean> => {
+  const describedBy = matchRoute(url.pathname, "/v1/sessions/:id/bot/about")
+  if (describedBy !== undefined && request.method === "PUT") {
+    return describeBot(services, fanout, describedBy, request, response)
   }
   if (url.pathname === "/v1/bots") {
     if (request.method === "GET") {

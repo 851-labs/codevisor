@@ -50,6 +50,7 @@ import { createService } from "./create-service.js"
 import type { CreatedAgentsService } from "./created-agents-service.js"
 import { DatabaseError, attempt } from "./errors.js"
 import type { FileStorageService } from "./file-storage-service.js"
+import type { FleetBotsService } from "./fleet-bots-service.js"
 import type { FleetOutboxService } from "./fleet-outbox-service.js"
 import type { PluginDatabaseService } from "./plugin-database-service.js"
 import type {
@@ -95,6 +96,7 @@ export interface CodevisorDatabaseService
     SessionForkService,
     CreatedAgentsService,
     CheckoutsService,
+    FleetBotsService,
     BotsService,
     SessionSubscriptionsService,
     PluginDatabaseService,

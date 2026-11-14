@@ -33,6 +33,7 @@ import { makeFileRestartSnapshotStore, makeMemoryRestartSnapshotStore } from "./
 import { makeServerAutoResume } from "./routes/auto-resume-dispatch.js"
 import { makeBotConversationListener } from "./routes/bot-conversation.js"
 import { updateAllBotInstructions } from "./routes/bot-instructions-updates.js"
+import { broadcastBotRoster } from "./routes/bot-roster.js"
 import { makeUsageHoldReleaseListener } from "./routes/bot-usage-release.js"
 import { handleUpgrade } from "./routes/events.js"
 import { makeOAuthReturns } from "./routes/oauth-returns.js"
@@ -182,6 +183,7 @@ export const makeCodevisorServerApp = (
     if (event.task.state !== "running") sessionEvents.onExecTaskFinished(event, machine)
   }
   void updateAllBotInstructions(services, fanout, routeState, config.id).catch(swallowError)
+  void broadcastBotRoster(services, config.id).catch(swallowError)
   /* v8 ignore next 3 */
   const staleTurnSweep = setInterval(() => {
     void reconcileStaleStreamingTurns(services, fanout, routeState, config.id).catch(swallowError)

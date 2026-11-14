@@ -15,6 +15,7 @@ import { makeDatabaseSpaceService } from "./database-space.js"
 import { attempt } from "./errors.js"
 import { makeEventsService } from "./events-service.js"
 import { makeFilesService } from "./files-service.js"
+import { makeFleetBotsService } from "./fleet-bots-service.js"
 import { makeFleetOutboxService } from "./fleet-outbox-service.js"
 import { makeFreshAgentSessionsService } from "./fresh-agent-sessions-service.js"
 import { makeHarnessService } from "./harness-service.js"
@@ -63,6 +64,7 @@ export const createService = (
     ...makeThreadsService(context),
     ...makeWorkspacesService(context),
     ...makeCheckoutsService(context),
+    ...makeFleetBotsService(context),
     ...makeTerminalPaneTitlesService(context),
     ...makeWorkspaceGitService(context),
     ...makeWorkspaceCreationService(context),

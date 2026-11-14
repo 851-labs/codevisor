@@ -12,7 +12,8 @@ import {
   NOTES_HEADING,
   codevisorBlock,
   type BotInstructionsSubject,
-  type BotRepository
+  type BotRepository,
+  type OtherBot
 } from "./bot-instructions-text.js"
 
 export type { BotRepository } from "./bot-instructions-text.js"
@@ -96,8 +97,26 @@ const instructionsSubject = async (
   bot: Bot
 ): Promise<BotInstructionsSubject> => ({
   name: bot.name,
-  repositories: await botRepositories(services, bot)
+  about: bot.about,
+  repositories: await botRepositories(services, bot),
+  otherBots: await otherBots(services, bot)
 })
+
+const otherBots = async (
+  services: CodevisorServerServices,
+  bot: Bot
+): Promise<ReadonlyArray<OtherBot>> => {
+  const here = (await run(services.db.listBots))
+    .filter((candidate) => !candidate.isArchived && candidate.id !== bot.id)
+    .map((candidate) => ({ botId: candidate.id, name: candidate.name, about: candidate.about }))
+  const elsewhere = (await run(services.db.listFleetBots)).map((candidate) => ({
+    botId: candidate.botId,
+    name: candidate.name,
+    about: candidate.about,
+    machine: candidate.machineName
+  }))
+  return [...here, ...elsewhere]
+}
 
 const botRepositories = async (
   services: CodevisorServerServices,

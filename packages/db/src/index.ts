@@ -47,6 +47,7 @@ export { isAgentQuestion, setupQuestionPresentation } from "./setup-questions.js
 export type { AutoResumeRecord, AutoResumeState } from "./auto-resume-service.js"
 export type { CheckoutPlace } from "./checkouts.js"
 export type { CheckoutsService } from "./checkouts-service.js"
+export type { FleetBotRecord, FleetBotsService } from "./fleet-bots-service.js"
 export type { CreatedAgentsMove } from "./created-agents-service.js"
 export type { FleetMessage, FleetPrompt } from "./fleet-outbox-service.js"
 export type { FinishedTurn } from "./turn-finish.js"
