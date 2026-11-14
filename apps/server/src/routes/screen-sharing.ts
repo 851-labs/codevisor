@@ -57,11 +57,19 @@ const endpointId = /^[0-9a-f]{64}$/i
 const maxMediaAddrs = 32
 const maxAppNameLength = 64
 
+const unprintable = /[\p{Cc}\u2028\u2029]/gu
+
+const appDisplayName = (name: string): string =>
+  Array.from(name.replace(unprintable, "").trim()).slice(0, maxAppNameLength).join("")
+
 const appIsWellFormed = (payload: ScreenSharingRequest): boolean =>
   payload.app === undefined ||
-  (endpointId.test(payload.app.key) &&
-    payload.app.name.trim().length > 0 &&
-    payload.app.name.length <= maxAppNameLength)
+  (endpointId.test(payload.app.key) && appDisplayName(payload.app.name).length > 0)
+
+const withDisplayName = (payload: ScreenSharingRequest): ScreenSharingRequest =>
+  payload.app === undefined
+    ? payload
+    : { ...payload, app: { ...payload.app, name: appDisplayName(payload.app.name) } }
 
 const appStartIsComplete = (payload: ScreenSharingRequest): boolean =>
   payload.app === undefined ||
@@ -147,7 +155,9 @@ export const routeScreenSharing = async (
     throw new HttpFailure(501, "Screen Sharing requires the native Codevisor app on a Mac")
   let result: ScreenSharingReply
   try {
-    result = Schema.decodeUnknownSync(ScreenSharingReply)(await config.screenSharing(payload))
+    result = Schema.decodeUnknownSync(ScreenSharingReply)(
+      await config.screenSharing(withDisplayName(payload))
+    )
   } catch (cause) {
     throw screenSharingHostFailure(cause)
   }

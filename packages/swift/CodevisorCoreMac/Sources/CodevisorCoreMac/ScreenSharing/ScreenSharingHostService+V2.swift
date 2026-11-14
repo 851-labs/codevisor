@@ -10,7 +10,7 @@ extension ScreenSharingHostService {
   func startV2(_ session: ScreenSharingHostSession) async -> ServerScreenSharingReply {
     guard let endpoint = await mediaEndpointHandle() else {
       await end(session)
-      return .init(status: "failed", message: "This Mac's screen-sharing endpoint isn't available.")
+      return .init(status: "failed", message: Self.endpointUnavailable)
     }
     guard current === session, !session.stopping else { return .init(status: "stopped") }
 

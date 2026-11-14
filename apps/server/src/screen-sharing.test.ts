@@ -148,8 +148,7 @@ describe("app-owned Screen Sharing sessions", () => {
     const { post } = await fixture(helper)
     for (const change of [
       { app: { ...app, key: "not-hex" } },
-      { app: { ...app, name: " " } },
-      { app: { ...app, name: "n".repeat(65) } },
+      { app: { ...app, name: " \n\u0007 " } },
       { app: { ...app, key: "c".repeat(64) } },
       { intent: undefined },
       { intent: "steal" },
@@ -164,6 +163,17 @@ describe("app-owned Screen Sharing sessions", () => {
       (await post({ ...appStart(), app: { ...app, key: app.key.toUpperCase() }, intent: "attach" }))
         .status
     ).toBe(200)
+  })
+
+  it("gives the host a one-line app name of at most 64 characters", async () => {
+    const helper = vi.fn<(request: ScreenSharingRequest) => Promise<unknown>>(async () => reply)
+    const { post } = await fixture(helper)
+    for (const name of ["  Alexandru's\r\nMac\u0000Book\u2028 Pro\t ", "😀".repeat(70)])
+      await post({ ...appStart(), app: { ...app, name } })
+    expect(helper.mock.calls.map(([request]) => request.app?.name)).toEqual([
+      "Alexandru'sMacBook Pro",
+      "😀".repeat(64)
+    ])
   })
 
   it("passes on why the host refused or ended, who holds the session, what it shares and what it can do", async () => {

@@ -18,7 +18,7 @@ struct ScreenSharingHostDisplayChoiceTests {
 
   @Test func anAppGetsTheDisplayItAskedForThenItsLastOneThenTheMainOne() {
     let app = owner(app: .init(key: String(repeating: "a", count: 64), name: "Alexandru's MacBook Pro"))
-    var choice = ScreenSharingHostDisplayChoice()
+    var choice = ScreenSharingHostDisplayChoice(isHostVirtual: { _ in false })
     let all = [side, main, other]
 
     #expect(choice.display(for: app, asking: "other", among: all)?.description.id == "other")
@@ -32,8 +32,30 @@ struct ScreenSharingHostDisplayChoiceTests {
     #expect(choice.display(for: app, asking: nil, among: []) == nil)
   }
 
+  @Test func anAppIsNeverGivenTheHostsOwnVirtualDisplayNorIsItRemembered() {
+    let app = owner(app: .init(key: String(repeating: "a", count: 64), name: "Alexandru's MacBook Pro"))
+    let dying: ScreenSharingHostDisplayChoice.Display = (
+      CGMainDisplayID(), .init(id: "virtual", name: "Codevisor Screen Sharing", width: 1280, height: 720)
+    )
+    var choice = ScreenSharingHostDisplayChoice(isHostVirtual: { $0 == dying.id })
+
+    #expect(choice.display(for: app, asking: "virtual", among: [dying, side])?.description.id == "side")
+    #expect(choice.display(for: app, asking: nil, among: [dying, side])?.description.id == "side")
+    #expect(choice.display(for: app, asking: "virtual", among: [dying]) == nil)
+    #expect(choice.awaitsRealDisplay(for: app, among: [dying]))
+    #expect(!choice.awaitsRealDisplay(for: app, among: [dying, side]))
+    #expect(!choice.awaitsRealDisplay(for: app, among: []))
+
+    choice.remember(dying, for: app)
+    #expect(choice.display(for: app, asking: nil, among: [dying, other, side])?.description.id == "other")
+
+    let stable = owner(app: nil)
+    #expect(choice.display(for: stable, asking: "virtual", among: [dying, side])?.description.id == "virtual")
+    #expect(!choice.awaitsRealDisplay(for: stable, among: [dying]))
+  }
+
   @Test func aStableViewerOnlyGetsTheDisplayItAskedFor() {
-    var choice = ScreenSharingHostDisplayChoice()
+    var choice = ScreenSharingHostDisplayChoice(isHostVirtual: { _ in false })
     let stable = owner(app: nil)
     choice.remember(main, for: stable)
 

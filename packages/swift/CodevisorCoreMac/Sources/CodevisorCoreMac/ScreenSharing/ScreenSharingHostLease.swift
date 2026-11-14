@@ -11,7 +11,14 @@ struct ScreenSharingHostLease {
     let name: String?
     init(_ request: ServerScreenSharingRequest) {
       workspaceId = request.workspaceId; paneId = request.paneId; viewerId = request.viewerId
-      appKey = request.app?.key.lowercased(); name = request.app?.name
+      appKey = request.app?.key.lowercased(); name = request.app.flatMap { Self.displayName($0.name) }
+    }
+    static func displayName(_ raw: String) -> String? {
+      let printable = raw.unicodeScalars.filter {
+        ![.control, .lineSeparator, .paragraphSeparator].contains($0.properties.generalCategory)
+      }
+      let name = String(String.UnicodeScalarView(printable)).trimmingCharacters(in: .whitespaces)
+      return name.isEmpty ? nil : String(name.prefix(64))
     }
     static func == (lhs: Owner, rhs: Owner) -> Bool {
       guard lhs.appKey == nil, rhs.appKey == nil else { return lhs.appKey == rhs.appKey }

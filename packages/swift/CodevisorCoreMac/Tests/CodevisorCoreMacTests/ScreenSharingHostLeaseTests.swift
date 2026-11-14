@@ -57,6 +57,16 @@ struct ScreenSharingHostLeaseTests {
     #expect(released)
     #expect(!lease.isExpired(now: 100))
   }
+  @Test func anAppsNameIsShownOnOneLineWithoutControlCharactersAndAtMost64Long() {
+    var named = request()
+    named.app = .init(key: String(repeating: "a", count: 64), name: "  Alexandru's\r\nMac\u{0}Book\u{2028} Pro\t ")
+    #expect(ScreenSharingHostLease.Owner(named).name == "Alexandru'sMacBook Pro")
+    named.app = .init(key: String(repeating: "a", count: 64), name: String(repeating: "n", count: 70))
+    #expect(ScreenSharingHostLease.Owner(named).name == String(repeating: "n", count: 64))
+    named.app = .init(key: String(repeating: "a", count: 64), name: " \n ")
+    #expect(ScreenSharingHostLease.Owner(named).name == nil)
+  }
+
   private func request() -> ServerScreenSharingRequest {
     .init(operation: .start, workspaceId: UUID(), paneId: UUID(), viewerId: UUID())
   }

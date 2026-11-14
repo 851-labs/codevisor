@@ -8,11 +8,17 @@ import ScreenSharingV2
 
 @MainActor
 final class ScreenSharingHostOwnershipFixture {
-  static let main = ServerScreenSharingDisplay(id: "main", name: "Built-in Display", width: 1280, height: 720)
-  static let side = ServerScreenSharingDisplay(id: "side", name: "Side Display", width: 1280, height: 720)
+  nonisolated static let main = ServerScreenSharingDisplay(
+    id: "main", name: "Built-in Display", width: 1280, height: 720)
+  nonisolated static let side = ServerScreenSharingDisplay(id: "side", name: "Side Display", width: 1280, height: 720)
+  nonisolated static let hostVirtual = ServerScreenSharingDisplay(
+    id: "virtual", name: "Codevisor Screen Sharing", width: 1280, height: 720)
 
   var displays = [ScreenSharingHostOwnershipFixture.main]
+  var listDisplays: (() async throws -> [ServerScreenSharingDisplay])?
   var allowsCapture = true
+  let workspace = NotificationCenter()
+  let media = ScreenSharingMediaEndpoint()
   private(set) var host: ScreenSharingHostService!
   private var endpoint: NetEndpointHandle?
 
@@ -66,12 +72,14 @@ final class ScreenSharingHostOwnershipFixture {
         secretKeyHex: netGenerateSecretKeyHex(), relays: [], trustAnchorsPem: [], pathPolicy: "direct-only",
         alpns: [mediaAlpn()]))
     self.endpoint = endpoint
-    let media = ScreenSharingMediaEndpoint()
     media.configure { endpoint }
     host = ScreenSharingHostService(
       captureAccess: { [unowned self] in allowsCapture }, notificationCenter: NotificationCenter(),
-      workspaceNotificationCenter: NotificationCenter(),
-      enumerateDisplays: { [unowned self] in displays.map { (Self.displayID(of: $0), $0) } }, mediaEndpoint: media)
+      workspaceNotificationCenter: workspace,
+      enumerateDisplays: { [unowned self] in
+        try await (listDisplays?() ?? displays).map { (Self.displayID(of: $0), $0) }
+      }, mediaEndpoint: media,
+      displayChoice: .init(isHostVirtual: { $0 == Self.displayID(of: Self.hostVirtual) }))
   }
 
   private func close() async {
@@ -79,12 +87,17 @@ final class ScreenSharingHostOwnershipFixture {
     await endpoint?.close()
   }
 
-  private static func displayID(of display: ServerScreenSharingDisplay) -> CGDirectDisplayID {
-    display == main ? CGMainDisplayID() : CGMainDisplayID() &+ 1
+  nonisolated static func displayID(of display: ServerScreenSharingDisplay) -> CGDirectDisplayID {
+    switch display.id {
+    case "main": CGMainDisplayID()
+    case "virtual": CGMainDisplayID() &+ 2
+    default: CGMainDisplayID() &+ 1
+    }
   }
 }
 
 extension ServerScreenSharingApp {
   static let macBook = ServerScreenSharingApp(key: String(repeating: "a", count: 64), name: "Alexandru's MacBook Pro")
   static let iPhone = ServerScreenSharingApp(key: String(repeating: "b", count: 64), name: "Alexandru's iPhone")
+  static let iPad = ServerScreenSharingApp(key: String(repeating: "c", count: 64), name: "Alexandru's iPad")
 }

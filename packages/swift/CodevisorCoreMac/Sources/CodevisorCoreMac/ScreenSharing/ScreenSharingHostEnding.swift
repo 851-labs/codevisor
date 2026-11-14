@@ -30,13 +30,11 @@ enum ScreenSharingHostEnding: Equatable, Sendable {
     }
   }
 
-  static func reply(
-    to owner: ScreenSharingHostLease.Owner, lastEnd: (owner: ScreenSharingHostLease.Owner, ending: Self)?,
-    holder: ScreenSharingHostLease.Owner?
-  ) -> ServerScreenSharingReply {
-    if let lastEnd, lastEnd.owner == owner { return lastEnd.ending.reply }
-    if let holder, holder.appKey != nil, holder != owner { return takenOver(by: holder.name).reply }
-    return .init(status: "stopped", message: "Screen sharing ended on the host Mac.")
+  var waitsForAnOpen: Bool {
+    switch self {
+    case .stoppedOnHost, .displayAsleep, .sessionSwitched: true
+    case .displayGone, .captureLost, .takenOver, .failed: false
+    }
   }
 
   var reply: ServerScreenSharingReply {
