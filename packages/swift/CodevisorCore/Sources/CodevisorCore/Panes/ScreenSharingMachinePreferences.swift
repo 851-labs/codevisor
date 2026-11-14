@@ -70,4 +70,12 @@ public struct ScreenSharingMachinePreferences {
   public func setLastConnected(_ date: Date, machineId: String) {
     defaults.set(date, forKey: "screenSharing.lastConnected.\(machineId)")
   }
+
+  public func preferredDisplay(machineId: String) -> String? {
+    defaults.string(forKey: "screenSharing.preferredDisplay.\(machineId)")
+  }
+
+  public func setPreferredDisplay(_ displayId: String, machineId: String) {
+    defaults.set(displayId, forKey: "screenSharing.preferredDisplay.\(machineId)")
+  }
 }

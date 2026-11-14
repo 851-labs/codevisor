@@ -137,9 +137,7 @@
     }
 
     private func frameSizeChanged(_ size: CGSize) {
-      guard size.width > 0, size.height > 0 else { return }
-      model.presentedFirstFrame()
-      guard size != videoSize else { return }
+      guard size.width > 0, size.height > 0, size != videoSize else { return }
       videoSize = size
       scrollView.setZoomScale(1, animated: false)
       setNeedsLayout()
