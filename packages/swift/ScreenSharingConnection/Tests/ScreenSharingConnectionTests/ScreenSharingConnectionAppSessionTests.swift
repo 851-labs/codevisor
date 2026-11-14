@@ -78,9 +78,14 @@ struct ScreenSharingConnectionAppSessionTests {
     if stayedLive { await harness.stayLive(for: ScreenSharingConnectionDeadlines.stableLive) }
     harness.host.answerNext(.heartbeat, .reply(status: "failed", message: message))
     harness.clock.advance(by: Self.heartbeat)
-    await harness.settle(stayedLive ? .reconnecting : .failed(.unclassified(message: message)))
+    if stayedLive {
+      await harness.settle(.reconnecting)
+      await harness.goLive()
+    } else {
+      await harness.settle(.failed(.unclassified(message: message)))
+    }
 
-    #expect(harness.host.starts.count == 2)
+    #expect(harness.host.starts.count == (stayedLive ? 3 : 2))
   }
 
   @Test("A reconnect whose start fails unclassified, right after an unclassified failure, shows the host's message")
