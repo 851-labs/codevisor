@@ -2,6 +2,7 @@ import { mkdtempSync, rmSync } from "node:fs"
 import { tmpdir } from "node:os"
 import { join } from "node:path"
 
+import Database from "better-sqlite3"
 import { describe, expect, it, onTestFinished } from "vitest"
 
 import { botPath, makeDatabase, type CodevisorDatabaseService } from "./index.js"
@@ -388,6 +389,51 @@ describe("bot workspaces", () => {
     ])
     expect(await run(db.getFileMetadata(file.id))).toBeUndefined()
   })
+})
+
+it("takes the workspace away from a bot's sub-agents made the old way, and from no one else", async () => {
+  useWorktreesRoot()
+  const filename = tempDatabase()
+  const db = await run(makeDatabase({ filename, serverId: "machine-a" }))
+  const { web } = await seedBot(db)
+  const workspaceFor = (name: string, owner?: string) =>
+    run(
+      db.createWorkspaceWithSession({
+        workspace: { id: `ws-${name}`, projectId: web.id, name, hasCustomName: false },
+        session: {
+          id: `chat-${name}`,
+          projectId: web.id,
+          harnessId: "codex",
+          ...(owner === undefined ? {} : { createdByAgentId: owner })
+        }
+      })
+    )
+  await workspaceFor("agent", "chat-helper")
+  await workspaceFor("nested", "chat-agent")
+  await workspaceFor("shared", "chat-helper")
+  await run(db.createSession({ projectId: web.id, harnessId: "codex", workspaceId: "ws-shared" }))
+  await workspaceFor("mine")
+  await workspaceFor("helper-of-mine", "chat-mine")
+  await run(db.close)
+  const sqlite = new Database(filename)
+  try {
+    sqlite.exec("delete from schema_migrations where id = 111")
+  } finally {
+    sqlite.close()
+  }
+
+  const upgraded = await run(makeDatabase({ filename, serverId: "machine-a" }))
+  onTestFinished(() => run(upgraded.close))
+
+  const workspaces = (await run(upgraded.listWorkspaces)).map((workspace) => workspace.id)
+  expect(workspaces.toSorted()).toEqual(["ws-helper", "ws-helper-of-mine", "ws-mine", "ws-shared"])
+  const chats = new Map((await run(upgraded.listSessions)).map((chat) => [chat.id, chat]))
+  expect(chats.get("chat-agent")).toMatchObject({ createdByAgentId: "chat-helper" })
+  expect(chats.get("chat-agent")?.workspaceId).toBeUndefined()
+  expect(chats.get("chat-nested")?.workspaceId).toBeUndefined()
+  expect(chats.get("chat-shared")?.workspaceId).toBe("ws-shared")
+  const panes = (await run(upgraded.listWorkspacePanes)).map((pane) => pane.workspaceId)
+  expect(new Set(panes)).toEqual(new Set(workspaces))
 })
 
 const seedFork = async (db: CodevisorDatabaseService, homeProjectId: string) => {
