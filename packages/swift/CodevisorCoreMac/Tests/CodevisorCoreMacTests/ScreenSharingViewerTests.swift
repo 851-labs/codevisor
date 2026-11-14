@@ -156,6 +156,7 @@ struct ScreenSharingViewerTests {
         $0.picture = .here(endpoint)
       } then: {
         $0.lease = ControlLease.State(endpoint: endpoint.id)
+        $0.picturesTaken = 2
       }
 
       await harness.store.receive(\.lease.controlRequested) { $0.lease?.wantsControl = true }

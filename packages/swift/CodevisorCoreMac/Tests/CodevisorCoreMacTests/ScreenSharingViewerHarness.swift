@@ -64,6 +64,7 @@ final class ScreenSharingViewerHarness {
       $0.picture = .here(endpoint)
     } then: {
       $0.lease = ControlLease.State(endpoint: endpoint.id)
+      $0.picturesTaken += 1
     }
     guard channelAvailable else { return endpoint }
 

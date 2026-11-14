@@ -19,6 +19,7 @@ public struct ScreenSharingViewer {
     public var preferencesRevision = 0
     public var dynamicResolution: Bool
     public var dynamicResolutionRevision = 0
+    public var picturesTaken = 0
     public let machineName: String
     var visible = false
 
@@ -170,6 +171,7 @@ public struct ScreenSharingViewer {
     }
 
     state.lease = ControlLease.State(endpoint: endpoint.id)
+    state.picturesTaken += 1
     let id = endpoint.id
     let display = state.displays.first { $0.id == state.selectedDisplayId }
     let defaultSize = display?.defaultWidth.flatMap { width in display?.defaultHeight.map { [width, $0] } }
