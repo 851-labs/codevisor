@@ -1,6 +1,7 @@
 import CodevisorTestSupport
 import Foundation
 import ScreenSharingConnection
+import ScreenSharingConnectionTesting
 import Testing
 
 @MainActor

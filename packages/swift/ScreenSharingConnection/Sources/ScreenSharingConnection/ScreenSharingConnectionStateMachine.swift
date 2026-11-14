@@ -6,6 +6,7 @@ struct ScreenSharingConnectionStateMachine: Equatable, Sendable {
     case surfacesChanged(attached: Bool, visible: Bool)
     case openRequested
     case retryRequested
+    case restartRequested
     case stepEntered(ScreenSharingConnectStage)
     case firstFrameDecoded
     case attemptEnded(ScreenSharingAttemptEnd)
@@ -25,6 +26,7 @@ struct ScreenSharingConnectionStateMachine: Equatable, Sendable {
 
   enum Command: Equatable, Sendable {
     case start(ServerScreenSharingRequest.Intent, after: Duration, asksWhyItEnded: Bool)
+    case restart
     case stop
 
     var opens: Bool {
@@ -52,6 +54,7 @@ struct ScreenSharingConnectionStateMachine: Equatable, Sendable {
     case .surfacesChanged(let attached, let visible): return surfacesChanged(attached: attached, visible: visible)
     case .openRequested: return userAsked()
     case .retryRequested: return attached ? userAsked() : nil
+    case .restartRequested: return restart()
     case .stepEntered(let stage): return enter(stage)
     case .firstFrameDecoded: return goLive()
     case .attemptEnded(let end): return attemptEnded(end)
@@ -97,6 +100,21 @@ struct ScreenSharingConnectionStateMachine: Equatable, Sendable {
     guard case .failed = state else { return nil }
 
     return connect(open: true)
+  }
+
+  private mutating func restart() -> Command? {
+    switch state {
+    case .live, .reconnecting:
+      state = .reconnecting
+      triesUsed = 1
+      retriedHostFailure = false
+      attemptIntent = .attach
+      return .restart
+    case .failed:
+      return attached ? userAsked() : nil
+    case .off, .connecting:
+      return nil
+    }
   }
 
   private mutating func recover(from reason: ScreenSharingFailureReason) -> Command? {

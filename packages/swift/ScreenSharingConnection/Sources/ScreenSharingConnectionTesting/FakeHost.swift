@@ -6,82 +6,82 @@ import ScreenSharingConnection
 
 @MainActor
 @Observable
-final class FakeHost: ScreenSharingHostChannel {
-  typealias Operation = ServerScreenSharingRequest.Operation
+public final class FakeHost: ScreenSharingHostChannel {
+  public typealias Operation = ServerScreenSharingRequest.Operation
 
-  enum Answer {
+  public enum Answer {
     case reply(status: String, message: String? = nil, reason: String? = nil, holderName: String? = nil)
     case failure(any Error)
   }
 
-  nonisolated static let display = ServerScreenSharingDisplay(
+  public nonisolated static let display = ServerScreenSharingDisplay(
     id: "0A000000-0000-4000-8000-000000000001", name: "Built-in Display", width: 1920, height: 1080)
-  nonisolated static let second = ServerScreenSharingDisplay(
+  public nonisolated static let second = ServerScreenSharingDisplay(
     id: "0A000000-0000-4000-8000-000000000002", name: "Studio Display", width: 2560, height: 1440)
-  nonisolated static let grant = ServerScreenSharingMediaGrant(
+  public nonisolated static let grant = ServerScreenSharingMediaGrant(
     endpointId: String(repeating: "b", count: 64), relayUrl: nil, directAddrs: [], token: "grant token")
-  nonisolated static let unreachable: any Error = URLError(.cannotConnectToHost)
-  nonisolated static let interrupted: any Error = URLError(.networkConnectionLost)
-  nonisolated static let gatewayTimedOut: any Error = CodevisorServerClientError.httpStatus(
+  public nonisolated static let unreachable: any Error = URLError(.cannotConnectToHost)
+  public nonisolated static let interrupted: any Error = URLError(.networkConnectionLost)
+  public nonisolated static let gatewayTimedOut: any Error = CodevisorServerClientError.httpStatus(
     504, #"{"error":"The host Mac didn't answer in time; its screen capture may be stuck. Retry in a minute."}"#)
-  nonisolated static let paneGone: any Error = CodevisorServerClientError.httpStatus(
+  public nonisolated static let paneGone: any Error = CodevisorServerClientError.httpStatus(
     404, #"{"error":"Screen Sharing pane is no longer available"}"#)
 
-  var abilities: [String]
-  var mintsChallenges = true
-  var challengeHostKey = FakeHost.grant.endpointId
-  var forgedNonce: String?
-  var provider: String?
-  var displays = [FakeHost.display]
-  var isReconnecting = false
-  var onStart: (() -> Void)?
-  private(set) var requests: [ServerScreenSharingRequest] = []
-  private(set) var completed: [Operation: Int] = [:]
-  private(set) var registeredPanes: [ScreenSharingLegacyIdentity] = []
+  public var abilities: [String]
+  public var mintsChallenges = true
+  public var challengeHostKey = FakeHost.grant.endpointId
+  public var forgedNonce: String?
+  public var provider: String?
+  public var displays = [FakeHost.display]
+  public var isReconnecting = false
+  public var onStart: (() -> Void)?
+  public private(set) var requests: [ServerScreenSharingRequest] = []
+  public private(set) var completed: [Operation: Int] = [:]
+  public private(set) var registeredPanes: [ScreenSharingLegacyIdentity] = []
   @ObservationIgnored private var queued: [Operation: [Answer]] = [:]
   @ObservationIgnored private var standing: [Operation: Answer] = [:]
   @ObservationIgnored private var gates: [Operation: TestSignal] = [:]
   @ObservationIgnored private var liveNonces: Set<String> = []
   @ObservationIgnored private var minted = 0
 
-  init(abilities: [String] = [ServerScreenSharingReply.appSessions]) {
+  public init(abilities: [String] = [ServerScreenSharingReply.appSessions]) {
     self.abilities = abilities
   }
 
-  static func old() -> FakeHost { FakeHost(abilities: []) }
+  public static func old() -> FakeHost { FakeHost(abilities: []) }
 
-  func requests(_ operation: Operation) -> [ServerScreenSharingRequest] {
+  public func requests(_ operation: Operation) -> [ServerScreenSharingRequest] {
     requests.filter { $0.operation == operation }
   }
 
-  var starts: [ServerScreenSharingRequest] { requests(.start) }
+  public var starts: [ServerScreenSharingRequest] { requests(.start) }
 
-  var stops: [ServerScreenSharingRequest] { requests(.stop) }
+  public var stops: [ServerScreenSharingRequest] { requests(.stop) }
 
-  func completed(_ operation: Operation) -> Int { completed[operation, default: 0] }
+  public func completed(_ operation: Operation) -> Int { completed[operation, default: 0] }
 
-  func releaseEverything() {
+  public func releaseEverything() {
     for gate in gates.values { gate.signal() }
     gates = [:]
   }
 
-  func answerNext(_ operation: Operation, _ answers: Answer...) {
+  public func answerNext(_ operation: Operation, _ answers: Answer...) {
     queued[operation, default: []] += answers
   }
 
-  func answerEvery(_ operation: Operation, _ answer: Answer?) {
+  public func answerEvery(_ operation: Operation, _ answer: Answer?) {
     standing[operation] = answer
   }
 
-  func hold(_ operation: Operation) {
+  public func hold(_ operation: Operation) {
     gates[operation] = TestSignal()
   }
 
-  func release(_ operation: Operation) {
+  public func release(_ operation: Operation) {
     gates.removeValue(forKey: operation)?.signal()
   }
 
-  func send(_ request: ServerScreenSharingRequest) async throws -> ServerScreenSharingReply {
+  public func send(_ request: ServerScreenSharingRequest) async throws -> ServerScreenSharingReply {
     let operation = request.operation
     requests.append(request)
     if operation == .start, let onStart {
@@ -108,11 +108,11 @@ final class FakeHost: ScreenSharingHostChannel {
     }
   }
 
-  func registerDesktopPane(_ identity: ScreenSharingLegacyIdentity) async throws {
+  public func registerDesktopPane(_ identity: ScreenSharingLegacyIdentity) async throws {
     registeredPanes.append(identity)
   }
 
-  static func token(_ number: Int) -> String {
+  public static func token(_ number: Int) -> String {
     String(repeating: "0", count: 60) + String(format: "%04x", number)
   }
 

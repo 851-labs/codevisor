@@ -1,6 +1,7 @@
 import CodevisorTestSupport
 import Foundation
 import ScreenSharingConnection
+import ScreenSharingConnectionTesting
 
 @MainActor
 final class ConnectionHarness {

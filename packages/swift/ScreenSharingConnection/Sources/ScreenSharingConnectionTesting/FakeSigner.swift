@@ -2,9 +2,11 @@ import CodevisorClient
 import Foundation
 import Synchronization
 
-final class FakeSigner: Sendable {
-  struct Failure: LocalizedError {
-    var errorDescription: String? { "The app's key couldn't be read in this test." }
+public final class FakeSigner: Sendable {
+  public struct Failure: LocalizedError {
+    public init() {}
+
+    public var errorDescription: String? { "The app's key couldn't be read in this test." }
   }
 
   private struct State {
@@ -14,17 +16,19 @@ final class FakeSigner: Sendable {
 
   private let state = Mutex(State())
 
-  var messages: [String] { state.withLock { $0.messages } }
+  public init() {}
 
-  var signer: ScreenSharingStartSigner {
+  public var messages: [String] { state.withLock { $0.messages } }
+
+  public var signer: ScreenSharingStartSigner {
     ScreenSharingStartSigner(key: FakeMedia.address.endpointId) { [self] message in try sign(message) }
   }
 
-  func failFromNowOn() {
+  public func failFromNowOn() {
     state.withLock { $0.fails = true }
   }
 
-  static func signature(number: Int) -> String {
+  public static func signature(number: Int) -> String {
     String(repeating: String(format: "%02x", number), count: 64)
   }
 

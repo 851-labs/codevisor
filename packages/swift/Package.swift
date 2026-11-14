@@ -56,9 +56,19 @@ let package = Package(
     .target(
       name: "ScreenSharingConnection", dependencies: ["ScreenSharing", "ScreenSharingV2", "CodevisorClient"],
       path: "ScreenSharingConnection/Sources/ScreenSharingConnection", swiftSettings: strictSwiftSettings),
+    .target(
+      name: "ScreenSharingConnectionTesting",
+      dependencies: [
+        "ScreenSharingConnection", "ScreenSharing", "ScreenSharingV2", "ScreenSharingTesting", "CodevisorClient",
+        "CodevisorTestSupport",
+      ],
+      path: "ScreenSharingConnection/Sources/ScreenSharingConnectionTesting", swiftSettings: strictSwiftSettings),
     .testTarget(
       name: "ScreenSharingConnectionTests",
-      dependencies: ["ScreenSharingConnection", "ScreenSharingTesting", "CodevisorClient", "CodevisorTestSupport"],
+      dependencies: [
+        "ScreenSharingConnection", "ScreenSharingConnectionTesting", "ScreenSharingTesting", "CodevisorClient",
+        "CodevisorTestSupport",
+      ],
       path: "ScreenSharingConnection/Tests/ScreenSharingConnectionTests", swiftSettings: strictSwiftSettings),
     .target(
       name: "ScreenSharingBench",
