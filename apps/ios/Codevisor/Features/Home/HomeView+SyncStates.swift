@@ -10,20 +10,6 @@ extension HomeView {
     }
   }
 
-  var machineConnectionWarningButton: some View {
-    Button(action: openFailedMachineSettings) {
-      Label("Machine connection issues", systemImage: "exclamationmark.icloud")
-    }
-    .accessibilityHint("Opens Machines settings")
-  }
-
-  var failedSyncMachines: [CodevisorMachine] {
-    machines.allMachines.filter { machine in
-      if case .stale = machines.navigationSyncStateByMachineId[machine.id] { return true }
-      return false
-    }
-  }
-
   private var presentation: HomeNavigationPresentation {
     navigationPresentation ?? .current(in: environment)
   }
@@ -31,13 +17,6 @@ extension HomeView {
   var launch: NavigationPresentation.Launch { presentation.launch }
 
   var syncIndicator: NavigationPresentation.SyncIndicator { presentation.syncIndicator }
-
-  func openFailedMachineSettings() {
-    let failed = failedSyncMachines
-    presentedSettingsDestination = .machines(
-      focusedMachineID: failed.count == 1 ? failed[0].id : nil
-    )
-  }
 
   func refreshableState<Content: View>(
     allowsStateHitTesting: Bool = true,

@@ -1,14 +1,10 @@
-import Foundation
-
 public enum NavigationPresentation {
   public struct Machine: Equatable, Sendable {
-    public var name: String
     public var hasCache: Bool
     public var cacheIsEmpty: Bool
     public var syncState: NavigationSyncState
 
-    public init(name: String, hasCache: Bool, cacheIsEmpty: Bool, syncState: NavigationSyncState) {
-      self.name = name
+    public init(hasCache: Bool, cacheIsEmpty: Bool, syncState: NavigationSyncState) {
       self.hasCache = hasCache
       self.cacheIsEmpty = cacheIsEmpty
       self.syncState = syncState
@@ -35,18 +31,8 @@ public enum NavigationPresentation {
 
   public struct SyncIndicator: Equatable, Sendable {
     public var isSyncing: Bool
-    public var unreachableMachineNames: [String]
 
-    public static let hidden = SyncIndicator(isSyncing: false, unreachableMachineNames: [])
-
-    public var isVisible: Bool { isSyncing || !unreachableMachineNames.isEmpty }
-
-    public var label: String? {
-      if !unreachableMachineNames.isEmpty {
-        return "Can't reach \(ListFormatter.localizedString(byJoining: unreachableMachineNames))"
-      }
-      return isSyncing ? "Syncing…" : nil
-    }
+    public var label: String? { isSyncing ? "Syncing…" : nil }
   }
 
   public static func launch(
@@ -65,7 +51,6 @@ public enum NavigationPresentation {
   public static func indicator(machines: [Machine], hasVisibleContent: Bool = true) -> SyncIndicator {
     SyncIndicator(
       isSyncing: hasVisibleContent
-        && machines.contains { $0.syncState == .cached || $0.syncState == .catchingUp },
-      unreachableMachineNames: machines.filter(\.isUnreachable).map(\.name).sorted())
+        && machines.contains { $0.syncState == .cached || $0.syncState == .catchingUp })
   }
 }

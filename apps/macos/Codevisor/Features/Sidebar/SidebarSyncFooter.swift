@@ -10,12 +10,8 @@ struct SidebarSyncFooter: View {
       VStack(spacing: 0) {
         Hairline(color: .separatorColor)
         HStack(spacing: 6) {
-          if indicator.unreachableMachineNames.isEmpty {
-            ProgressView()
-              .controlSize(.mini)
-          } else {
-            Image(systemName: "exclamationmark.icloud")
-          }
+          ProgressView()
+            .controlSize(.mini)
           Text(label)
             .lineLimit(1)
             .truncationMode(.tail)
