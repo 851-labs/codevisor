@@ -7,7 +7,6 @@ extension AppEnvironment {
       .filter { !$0.isLocal || localServer != nil }
       .map { machine in
         NavigationPresentation.Machine(
-          name: machine.name,
           hasCache: navigationStore.hasCache(for: machine.id),
           cacheIsEmpty: navigationStore.isCacheEmpty(for: machine.id),
           syncState: states[machine.id] ?? .catchingUp)

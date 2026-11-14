@@ -10,11 +10,6 @@ extension HomeView {
   @ToolbarContentBuilder
   var homeSidebarToolbar: some ToolbarContent {
     ToolbarItem(placement: settingsPlacement) { settingsButton }
-    if !failedSyncMachines.isEmpty {
-      ToolbarItem(placement: settingsPlacement) {
-        machineConnectionWarningButton
-      }
-    }
     if hasRemoteMachines || showsSampleSidebar {
       ToolbarItem(placement: .topBarTrailing) {
         sidebarOptionsMenu
@@ -22,10 +17,10 @@ extension HomeView {
     }
     if hasRemoteMachines {
       ToolbarItem(placement: .principal) { SidebarModePicker(mode: $sidebarMode) }
-      if showsSyncIndicator {
+      if syncIndicator.isSyncing {
         ToolbarItem(placement: settingsPlacement) { syncSpinner }
       }
-    } else if showsSyncIndicator {
+    } else if syncIndicator.isSyncing {
       ToolbarItem(placement: .principal) {
         HomeSyncIndicatorLabel(text: syncIndicator.label ?? "Syncing…")
       }
@@ -43,10 +38,6 @@ extension HomeView {
         sections: environment.workspaceSections.sections, actions: sidebarActions.workspaceSections,
         managesSections: !showsSampleSidebar)
     }
-  }
-
-  private var showsSyncIndicator: Bool {
-    syncIndicator.isSyncing && failedSyncMachines.isEmpty
   }
 
   private var syncSpinner: some View {
