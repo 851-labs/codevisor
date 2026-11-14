@@ -32,7 +32,6 @@ final class MachineDesktopRegistry {
         project: project, workspaceRootDirectory: workspace.rootDirectory, workspaceId: workspace.id, client: client)
       return ScreenSharingPane(context: context, descriptor: descriptor, role: role)
     }
-    return MachineDesktopSession(
-      preview: pane(.watcher), window: pane(.window), workspaceId: workspace.id, client: client)
+    return MachineDesktopSession(preview: pane(.watcher), window: pane(.window))
   }
 }

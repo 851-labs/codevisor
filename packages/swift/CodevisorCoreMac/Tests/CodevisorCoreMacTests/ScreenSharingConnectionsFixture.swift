@@ -6,6 +6,7 @@ import Observation
 import ScreenSharing
 import ScreenSharingConnection
 import ScreenSharingConnectionTesting
+import ScreenSharingV2
 
 @testable import CodevisorCoreMac
 
@@ -19,6 +20,10 @@ final class ScreenSharingConnectionsFixture {
   var readyMachineIds: Set<String> = [machineId]
   @ObservationIgnored var workspaces: [Workspace] = []
   @ObservationIgnored var signerFails = false
+  @ObservationIgnored var audioSession: FakeMediaSession?
+  @ObservationIgnored var openVNC: ScreenSharingConnectionsSource.OpenVNC = { _, _ in
+    throw RFBError.transport("This test has no VNC machine.")
+  }
   @ObservationIgnored let host: FakeHost
   @ObservationIgnored let media = FakeMedia()
   @ObservationIgnored let signer = FakeSigner()
@@ -43,6 +48,10 @@ final class ScreenSharingConnectionsFixture {
     surfaces.append(surface)
     surface.setOnScreen(true)
     return surface
+  }
+
+  func surface(_ role: ScreenSharingViewerRole, inWorkspace workspaceId: UUID? = nil) -> RecordedSurface {
+    RecordedSurface(connections.surface(onMachine: Self.machineId, role: role, inWorkspace: workspaceId))
   }
 
   func goLive() async throws {
@@ -72,11 +81,18 @@ final class ScreenSharingConnectionsFixture {
       machineIds: { [unowned self] in self.machineIds },
       isReady: { [unowned self] in self.readyMachineIds.contains($0) },
       channel: { [host] _ in host },
-      openVNC: { _, _ in throw RFBError.transport("This test has no VNC machine.") },
+      openVNC: { [unowned self] in try await self.openVNC($0, $1) },
       workspaces: { [unowned self] in self.workspaces },
       signer: { [unowned self] in try self.signerOrFailure() },
-      connector: { [media] in media.connector },
+      connector: { [unowned self] in self.connector },
+      makeSurface: { _ in FakeSurface() },
       appName: { Self.appName })
+  }
+
+  private var connector: ScreenSharingV2Connector {
+    guard let audioSession else { return media.connector }
+
+    return ScreenSharingV2Connector(address: { FakeMedia.address }, connect: { _ in audioSession })
   }
 
   private func signerOrFailure() throws -> ScreenSharingStartSigner {

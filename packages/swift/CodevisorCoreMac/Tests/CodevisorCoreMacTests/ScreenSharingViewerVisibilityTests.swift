@@ -1,120 +1,58 @@
-import CodevisorClient
 import CodevisorTestSupport
 import ComposableArchitecture
 import Foundation
 import ScreenSharing
 import Testing
+
 @testable import CodevisorCoreMac
 
 @MainActor
 struct ScreenSharingViewerVisibilityTests {
-  private let display = ScreenSharingViewerFixtures.display
-  private let viewer = ScreenSharingViewerTests()
-
-  @Test func hidingKeepsTheConnectionAndShowingAsksForControlAgain() async {
+  @Test func hidingGivesControlBackAndShowingAsksForItAgain() async {
     await withMainSerialExecutor {
-      let backend = FakeBackend(displays: [display])
-      let client = FakeEndpointClient()
-      let store = await viewer.makeViewingStore(backend, client)
-      let endpoint = backend.endpoints[0]
-      let lease = UUID()
-      client.emit(.message(.grant(request: UUID(0), lease: lease)), to: endpoint.id)
-      await store.receive(\.lease.event) {
-        $0.lease?.requestID = nil
-        $0.lease?.lease = lease
-        $0.lease?.phase = .controlling
-      }
-      await store.send(.paneDisappeared) { $0.visible = false }
-      await store.receive(\.lease.suspended) {
+      let harness = ScreenSharingViewerHarness()
+      let endpoint = await harness.view()
+      let lease = await harness.grantControl(to: endpoint)
+
+      await harness.store.send(.hidden) { $0.visible = false }
+      await harness.store.receive(\.lease.suspended) {
         $0.lease?.wantsControl = false
         $0.lease?.lease = nil
         $0.lease?.phase = .viewing
       }
-      await store.send(.paneAppeared) { $0.visible = true }
-      await store.receive(\.lease.controlRequested) {
+      await harness.store.send(.hidden)
+      await harness.store.send(.shown) { $0.visible = true }
+      await harness.store.receive(\.lease.controlRequested) {
         $0.lease?.wantsControl = true
         $0.lease?.requestID = UUID(1)
         $0.lease?.phase = .requesting
       }
+
       expectNoDifference(
-        client.messages(to: endpoint.id), [.request(id: UUID(0)), .release(lease: lease), .request(id: UUID(1))])
-      expectNoDifference(backend.connections, ["display"])
-      expectNoDifference(backend.terminations.value, 0)
-      await store.send(.paneClosed) {
-        $0.visible = false
-        $0.endpoint = nil
-        $0.lease = nil
-        $0.phase = .suspended
-      }
-      await store.finish()
+        harness.client.messages(to: endpoint.id),
+        [.request(id: UUID(0)), .release(lease: lease), .request(id: UUID(1))])
+      #expect(harness.store.state.endpoint == endpoint, "hiding a surface never drops its picture")
+      await harness.finish()
     }
   }
 
-  @Test func aPaneShowingElsewhereKeepsItsConnectionUntilItIsShownHere() async {
+  @Test func aSurfaceThatGoesLiveWhileHiddenAsksForControlOnlyWhenShown() async {
     await withMainSerialExecutor {
-      let backend = FakeBackend(displays: [display])
-      let client = FakeEndpointClient()
-      let store = await viewer.makeViewingStore(backend, client, mode: .view)
-      let endpoint = backend.endpoints[0]
-      backend.emit(.elsewhere(nil))
-      await store.receive(\.connectionEvent.elsewhere) {
-        $0.endpoint = nil
-        $0.lease = nil
-        $0.phase = .elsewhere
-      }
-      await store.send(.paneDisappeared) { $0.visible = false }
-      await store.send(.paneAppeared) { $0.visible = true }
-      await store.send(.showHereTapped)
-      backend.emit(.opened(endpoint))
-      await store.receive(\.connectionEvent.opened) {
-        $0.phase = .connecting
-        $0.endpoint = endpoint
-        $0.lease = ControlLease.State(endpoint: endpoint.id)
-      }
-      backend.emit(.ready)
-      await store.receive(\.connectionEvent.ready) { $0.phase = .viewing }
-      expectNoDifference(backend.connections, ["display"])
-      expectNoDifference(backend.terminations.value, 0)
-      await store.send(.paneClosed) {
-        $0.visible = false
-        $0.endpoint = nil
-        $0.lease = nil
-        $0.phase = .suspended
-      }
-      await store.finish()
-      expectNoDifference(backend.shareCalls.value, ["visible", "hidden", "visible", "claim", "retire"])
-    }
-  }
+      let harness = ScreenSharingViewerHarness()
+      await harness.connect()
+      let endpoint = await harness.open()
+      await harness.store.send(.hidden) { $0.visible = false }
+      await harness.store.receive(\.lease.suspended)
+      await harness.surface { $0.connection = .live }
+      expectNoDifference(harness.client.messages(to: endpoint.id), [])
 
-  @Test func aPaneHiddenPastTheGraceLetsItsConnectionGo() async {
-    await withMainSerialExecutor {
-      let backend = FakeBackend(displays: [display])
-      let client = FakeEndpointClient()
-      let clock = Clocks.TestClock()
-      let store = await viewer.makeViewingStore(backend, client, mode: .view, clock: clock)
-      await store.send(.paneDisappeared) { $0.visible = false }
-      await store.receive(\.lease.suspended)
-      await clock.advance(by: ScreenSharingViewer.hiddenGrace - .seconds(1))
-      expectNoDifference(backend.terminations.value, 0)
-      await clock.advance(by: .seconds(1))
-      await store.receive(\.hiddenGraceExpired) {
-        $0.endpoint = nil
-        $0.lease = nil
-        $0.phase = .suspended
+      await harness.store.send(.shown) { $0.visible = true }
+      await harness.store.receive(\.lease.controlRequested) {
+        $0.lease?.wantsControl = true
+        $0.lease?.requestID = UUID(0)
+        $0.lease?.phase = .requesting
       }
-      expectNoDifference(backend.terminations.value, 1)
-      await store.send(.paneAppeared) {
-        $0.visible = true
-        $0.phase = .loading
-      }
-      await store.receive(\.discoveryResponse.success) { $0.phase = .connecting }
-      expectNoDifference(backend.connections, ["display", "display"])
-      await store.send(.paneClosed) {
-        $0.visible = false
-        $0.phase = .suspended
-      }
-      await store.finish()
-      expectNoDifference(backend.terminations.value, 2)
+      await harness.finish()
     }
   }
 }

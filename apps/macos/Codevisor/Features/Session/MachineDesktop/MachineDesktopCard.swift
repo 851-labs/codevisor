@@ -5,7 +5,6 @@ import SwiftUI
 struct MachineDesktopCard: View {
   private static let aspectRatio: CGFloat = 16 / 10
 
-  let registration: MachineDesktopRegistration
   let viewer: StoreOf<ScreenSharingViewer>
   let machineName: String
   let isHovered: Bool
@@ -27,13 +26,7 @@ struct MachineDesktopCard: View {
     .containerValue(\.fillsWorkspaceInspectorCardRow, true)
   }
 
-  private var preview: ScreenSharingPreview {
-    switch registration {
-    case .pending: .connecting
-    case .registered: viewer.preview
-    case .failed(let message): .failed(message)
-    }
-  }
+  private var preview: ScreenSharingPreview { viewer.preview }
 
   @ViewBuilder private var status: some View {
     switch preview {

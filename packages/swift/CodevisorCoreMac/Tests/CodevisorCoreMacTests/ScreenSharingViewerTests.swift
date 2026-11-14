@@ -1,408 +1,218 @@
 import CodevisorClient
 import CodevisorCore
-import ScreenSharing
 import CodevisorTestSupport
 import ComposableArchitecture
 import Foundation
+import ScreenSharing
 import Testing
+
 @testable import CodevisorCoreMac
 
 @MainActor
 struct ScreenSharingViewerTests {
-  let display = ScreenSharingViewerFixtures.display
+  private let display = ScreenSharingViewerFixtures.display
   private let second = ScreenSharingViewerFixtures.second
 
-  @Test func discoveryFailureShowsTheServerMessage() async {
-    await withMainSerialExecutor {
-      let backend = FakeBackend(displays: [display])
-      backend.discoveryFailure = "Screen Sharing is unavailable on this Mac."
-      let store = makeStore(backend)
-      await store.send(.paneAppeared) {
-        $0.visible = true
-        $0.phase = .loading
-      }
-      await store.receive(\.discoveryResponse.failure) {
-        $0.phase = .failed
-        $0.message = "Screen Sharing is unavailable on this Mac."
-      }
-      await store.send(.paneClosed) {
-        $0.visible = false
-        $0.phase = .suspended
-      }
-      await store.finish()
-    }
-  }
-
-  @Test func hostNoticesShowWhileConnectingAndOverLiveVideo() async {
-    await withMainSerialExecutor {
-      let backend = FakeBackend(displays: [display])
-      let client = FakeEndpointClient()
-      let store = await makeConnectingStore(backend, client)
-      await store.send(.interactionModeChanged(.view)) { $0.interactionMode = .view }
-      let endpoint = backend.open()
-      await store.receive(\.connectionEvent.opened) {
-        $0.endpoint = endpoint
-        $0.lease = ControlLease.State(endpoint: endpoint.id)
-      }
-      backend.emit(.hostNotice("Capture stalled, restarting…"))
-      await store.receive(\.connectionEvent.hostNotice) { $0.hostNotice = "Capture stalled, restarting…" }
-      backend.emit(.ready)
-      await store.receive(\.connectionEvent.ready) {
-        $0.phase = .viewing
-        $0.hostNotice = nil
-      }
-      backend.emit(.hostNotice("Capture stopped, restarting…"))
-      await store.receive(\.connectionEvent.hostNotice) { $0.hostNotice = "Capture stopped, restarting…" }
-      backend.emit(.hostNotice(nil))
-      await store.receive(\.connectionEvent.hostNotice) { $0.hostNotice = nil }
-      await store.send(.paneClosed) {
-        $0.visible = false
-        $0.endpoint = nil
-        $0.lease = nil
-        $0.phase = .suspended
-      }
-      await store.finish()
-    }
-  }
-
   @Test(arguments: [ScreenSharingViewer.InteractionMode.view, .control])
-  func connectingKeepsTheLatestModeAndRequestsControlOnlyAfterReady(
-    mode: ScreenSharingViewer.InteractionMode
-  )
-    async
-  {
+  func connectingKeepsTheLatestModeAndRequestsControlOnlyOnceLive(mode: ScreenSharingViewer.InteractionMode) async {
     await withMainSerialExecutor {
-      let backend = FakeBackend(displays: [display])
-      let client = FakeEndpointClient()
-      let store = await makeConnectingStore(backend, client)
-      await store.send(.interactionModeChanged(.view)) { $0.interactionMode = .view }
-      await store.send(.interactionModeChanged(.control)) { $0.interactionMode = .control }
-      if mode == .view { await store.send(.interactionModeChanged(.view)) { $0.interactionMode = .view } }
-      let endpoint = backend.open()
-      await store.receive(\.connectionEvent.opened) {
-        $0.endpoint = endpoint
-        $0.lease = ControlLease.State(endpoint: endpoint.id)
-      }
-      client.emit(.availability(true), to: endpoint.id)
-      await store.receive(\.lease.event) { $0.lease?.available = true }
-      expectNoDifference(client.messages(to: endpoint.id), [])
-      backend.emit(.ready)
-      await store.receive(\.connectionEvent.ready) { $0.phase = .viewing }
-      if mode == .control {
-        await store.receive(\.lease.controlRequested) {
-          $0.lease?.wantsControl = true
-          $0.lease?.requestID = UUID(0)
-          $0.lease?.phase = .requesting
-        }
-        expectNoDifference(client.messages(to: endpoint.id), [.request(id: UUID(0))])
-      } else {
-        expectNoDifference(client.messages(to: endpoint.id), [])
-      }
-      #expect(store.state.interactionMode == mode)
-      await store.send(.paneClosed) {
-        $0.visible = false
-        $0.endpoint = nil
-        $0.lease = nil
-        $0.phase = .suspended
-      }
-      await store.finish()
+      let harness = ScreenSharingViewerHarness()
+      await harness.connect()
+      await harness.store.send(.interactionModeChanged(.view)) { $0.interactionMode = .view }
+      await harness.store.send(.interactionModeChanged(.control)) { $0.interactionMode = .control }
+      if mode == .view { await harness.store.send(.interactionModeChanged(.view)) { $0.interactionMode = .view } }
+      let endpoint = await harness.open()
+      expectNoDifference(harness.client.messages(to: endpoint.id), [])
+
+      await harness.goLive(expectingRequest: UUID(0))
+
+      expectNoDifference(harness.client.messages(to: endpoint.id), mode == .control ? [.request(id: UUID(0))] : [])
+      #expect(harness.store.state.interactionMode == mode)
+      await harness.finish()
     }
   }
 
   @Test func dynamicResolutionReachesTheEndpointAndTheToggleFlipsIt() async {
     await withMainSerialExecutor {
-      let backend = FakeBackend(displays: [display])
-      let client = FakeEndpointClient()
-      let store = await makeViewingStore(backend, client, channelAvailable: false)
-      let endpoint = backend.endpoints[0]
-      await awaitObserved { client.dynamicResolutions.count == 1 }
-      #expect(client.dynamicResolutions.map(\.enabled) == [false])
-      #expect(client.dynamicResolutions.first?.endpoint == endpoint.id)
-      await store.send(.dynamicResolutionToggled) {
+      let harness = ScreenSharingViewerHarness()
+      let endpoint = await harness.view(channelAvailable: false)
+      await awaitObserved { harness.client.dynamicResolutions.count == 1 }
+      #expect(harness.client.dynamicResolutions.map(\.enabled) == [false])
+      #expect(harness.client.dynamicResolutions.first?.endpoint == endpoint.id)
+
+      await harness.store.send(.dynamicResolutionToggled) {
         $0.dynamicResolution = true
         $0.dynamicResolutionRevision = 1
       }
-      await awaitObserved { client.dynamicResolutions.count == 2 }
-      #expect(client.dynamicResolutions.map(\.enabled) == [false, true])
-      await store.send(.paneClosed) {
-        $0.visible = false
-        $0.endpoint = nil
-        $0.lease = nil
-        $0.phase = .suspended
-      }
-      await store.finish()
+      await awaitObserved { harness.client.dynamicResolutions.count == 2 }
+
+      #expect(harness.client.dynamicResolutions.map(\.enabled) == [false, true])
+      await harness.finish()
     }
   }
 
   @Test func controlIsRequestedWhenTheChannelOpensAfterVideoUnlessViewWasChosen() async {
     await withMainSerialExecutor {
-      let backend = FakeBackend(displays: [display])
-      let client = FakeEndpointClient()
-      let store = await makeViewingStore(backend, client, channelAvailable: false)
-      let endpoint = backend.endpoints[0]
-      expectNoDifference(client.messages(to: endpoint.id), [])
-      await store.send(.interactionModeChanged(.view)) { $0.interactionMode = .view }
-      await store.receive(\.lease.controlReleased) { $0.lease?.wantsControl = false }
-      client.emit(.availability(true), to: endpoint.id)
-      await store.receive(\.lease.event) { $0.lease?.available = true }
-      expectNoDifference(client.messages(to: endpoint.id), [])
-      await store.send(.interactionModeChanged(.control)) { $0.interactionMode = .control }
-      await store.receive(\.lease.controlRequested) {
+      let harness = ScreenSharingViewerHarness()
+      let endpoint = await harness.view(channelAvailable: false)
+      expectNoDifference(harness.client.messages(to: endpoint.id), [])
+      await harness.store.send(.interactionModeChanged(.view)) { $0.interactionMode = .view }
+      await harness.store.receive(\.lease.controlReleased) { $0.lease?.wantsControl = false }
+      harness.client.emit(.availability(true), to: endpoint.id)
+      await harness.store.receive(\.lease.event) { $0.lease?.available = true }
+      expectNoDifference(harness.client.messages(to: endpoint.id), [])
+
+      await harness.store.send(.interactionModeChanged(.control)) { $0.interactionMode = .control }
+      await harness.store.receive(\.lease.controlRequested) {
         $0.lease?.wantsControl = true
         $0.lease?.requestID = UUID(0)
         $0.lease?.phase = .requesting
       }
-      expectNoDifference(client.messages(to: endpoint.id), [.request(id: UUID(0))])
-      await store.send(.paneClosed) {
-        $0.visible = false
-        $0.endpoint = nil
-        $0.lease = nil
-        $0.phase = .suspended
-      }
-      await store.finish()
+
+      expectNoDifference(harness.client.messages(to: endpoint.id), [.request(id: UUID(0))])
+      await harness.finish()
     }
   }
 
   @Test(arguments: [true, false])
   func deniedOrRevokedControlKeepsControlSelectedToAskAgain(grantFirst: Bool) async {
     await withMainSerialExecutor {
-      let backend = FakeBackend(displays: [display])
-      let client = FakeEndpointClient()
-      let store = await makeViewingStore(backend, client)
-      let endpoint = backend.endpoints[0]
+      let harness = ScreenSharingViewerHarness()
+      let endpoint = await harness.view()
       if grantFirst {
-        let lease = UUID()
-        client.emit(.message(.grant(request: UUID(0), lease: lease)), to: endpoint.id)
-        await store.receive(\.lease.event) {
-          $0.lease?.requestID = nil
-          $0.lease?.lease = lease
-          $0.lease?.phase = .controlling
-        }
-        expectNoDifference(client.beginInputs.map(\.lease), [lease])
-        client.emit(.message(.revoked(lease: lease, reason: "Host ended control")), to: endpoint.id)
-        await store.receive(\.lease.event) {
+        let lease = await harness.grantControl(to: endpoint)
+        expectNoDifference(harness.client.beginInputs.map(\.lease), [lease])
+        harness.client.emit(.message(.revoked(lease: lease, reason: "Host ended control")), to: endpoint.id)
+        await harness.store.receive(\.lease.event) {
           $0.lease?.wantsControl = false
           $0.lease?.lease = nil
           $0.lease?.phase = .viewing
           $0.lease?.message = "Host ended control"
         }
       } else {
-        client.emit(.message(.denied(request: UUID(0), reason: "Host denied control")), to: endpoint.id)
-        await store.receive(\.lease.event) {
+        harness.client.emit(.message(.denied(request: UUID(0), reason: "Host denied control")), to: endpoint.id)
+        await harness.store.receive(\.lease.event) {
           $0.lease?.wantsControl = false
           $0.lease?.requestID = nil
           $0.lease?.phase = .viewing
           $0.lease?.message = "Host denied control"
         }
       }
-      await store.receive(\.lease.delegate.released)
-      expectNoDifference(client.endInputs, [endpoint.id])
-      #expect(store.state.interactionMode == .control)
-      await store.send(.interactionModeChanged(.control))
-      await store.receive(\.lease.controlRequested) {
+      await harness.store.receive(\.lease.delegate.released)
+      expectNoDifference(harness.client.endInputs, [endpoint.id])
+      #expect(harness.store.state.interactionMode == .control)
+
+      await harness.store.send(.interactionModeChanged(.control))
+      await harness.store.receive(\.lease.controlRequested) {
         $0.lease?.wantsControl = true
         $0.lease?.requestID = UUID(1)
         $0.lease?.phase = .requesting
         $0.lease?.message = nil
       }
-      expectNoDifference(client.messages(to: endpoint.id).last, .request(id: UUID(1)))
-      await store.send(.paneClosed) {
-        $0.visible = false
-        $0.endpoint = nil
-        $0.lease = nil
-        $0.phase = .suspended
-      }
-      await store.finish()
+
+      expectNoDifference(harness.client.messages(to: endpoint.id).last, .request(id: UUID(1)))
+      await harness.finish()
     }
   }
 
   @Test(arguments: [ScreenSharingViewer.InteractionMode.view, .control])
   func reconnectingReplacesTheEndpointAndPreservesTheMode(mode: ScreenSharingViewer.InteractionMode) async {
     await withMainSerialExecutor {
-      let backend = FakeBackend(displays: [display])
-      let client = FakeEndpointClient()
-      let store = await makeViewingStore(backend, client, mode: mode)
-      backend.emit(.reconnecting)
-      await store.receive(\.connectionEvent.reconnecting) {
-        $0.endpoint = nil
+      let harness = ScreenSharingViewerHarness()
+      await harness.view(mode)
+      await harness.surface {
+        $0.connection = .reconnecting
+        $0.picture = .none
+      } then: {
         $0.lease = nil
-        $0.phase = .reconnecting
-        $0.message = "Reconnecting to this Mac…"
       }
-      let replacement = backend.open()
-      await store.receive(\.connectionEvent.opened) {
-        $0.endpoint = replacement
-        $0.lease = ControlLease.State(endpoint: replacement.id)
-      }
-      client.emit(.availability(true), to: replacement.id)
-      await store.receive(\.lease.event) { $0.lease?.available = true }
-      backend.emit(.ready)
-      await store.receive(\.connectionEvent.ready) {
-        $0.phase = .viewing
-        $0.message = nil
-      }
-      if mode == .control {
-        await store.receive(\.lease.controlRequested) {
-          $0.lease?.wantsControl = true
-          $0.lease?.requestID = UUID(1)
-          $0.lease?.phase = .requesting
-        }
-        expectNoDifference(client.messages(to: replacement.id), [.request(id: UUID(1))])
-      } else {
-        expectNoDifference(client.messages(to: replacement.id), [])
-      }
-      #expect(store.state.interactionMode == mode)
-      expectNoDifference(backend.connections.count, 1)
-      await store.send(.paneClosed) {
-        $0.visible = false
-        $0.endpoint = nil
-        $0.lease = nil
-        $0.phase = .suspended
-      }
-      await store.finish()
+
+      let replacement = await harness.open()
+      await harness.goLive(expectingRequest: UUID(1))
+
+      expectNoDifference(
+        harness.client.messages(to: replacement.id), mode == .control ? [.request(id: UUID(1))] : [])
+      #expect(harness.store.state.interactionMode == mode)
+      await harness.finish()
     }
   }
 
-  @Test func selectingAnotherDisplayWhileConnectedReconnectsToIt() async {
+  @Test func losingThePictureToAnotherSurfaceDropsControlAndTakingItBackAsksAgain() async {
     await withMainSerialExecutor {
-      let backend = FakeBackend(displays: [display, second])
-      let client = FakeEndpointClient()
-      let store = await makeViewingStore(backend, client)
-      await store.send(.displaySelected("second")) {
-        $0.preferences.preferredDisplayId = "second"
-        $0.selectedDisplayId = "second"
-        $0.preferencesRevision = 2
-        $0.endpoint = nil
+      let harness = ScreenSharingViewerHarness()
+      let endpoint = await harness.view()
+      _ = await harness.grantControl(to: endpoint)
+      await harness.store.send(.showHereTapped)
+      #expect(harness.askedOfTheConnection.isEmpty, "a surface that has the picture has nothing to take")
+
+      await harness.surface {
+        $0.picture = .elsewhere(endpoint)
+      } then: {
         $0.lease = nil
-        $0.phase = .connecting
       }
-      expectNoDifference(backend.connections, ["display", "second"])
-      expectNoDifference(backend.switches, ["second"])
-      await store.send(.displaySelected("unknown"))
-      await store.send(.paneClosed) {
-        $0.visible = false
-        $0.phase = .suspended
+      await harness.store.send(.showHereTapped)
+      await awaitObserved { harness.askedOfTheConnection == ["take picture"] }
+      await harness.surface {
+        $0.picture = .here(endpoint)
+      } then: {
+        $0.lease = ControlLease.State(endpoint: endpoint.id)
       }
-      await store.finish()
+
+      await harness.store.receive(\.lease.controlRequested) { $0.lease?.wantsControl = true }
+      await harness.finish()
     }
   }
 
-  @Test func theBackendEndingFailsWithItsMessage() async {
+  @Test func choosingADisplaySavesItForThePaneAndMovesTheConnection() async {
     await withMainSerialExecutor {
-      let backend = FakeBackend(displays: [display])
-      let client = FakeEndpointClient()
-      let store = await makeViewingStore(backend, client)
-      backend.emit(.ended("Screen sharing ended on the host Mac."))
-      backend.end()
-      await store.receive(\.connectionEvent.ended) {
-        $0.endpoint = nil
-        $0.lease = nil
-        $0.phase = .failed
-        $0.message = "Screen sharing ended on the host Mac."
+      let harness = ScreenSharingViewerHarness()
+      await harness.connect(showing: [display, second])
+      await harness.store.send(.displaySelected("unplugged"))
+
+      await harness.store.send(.displaySelected(second.id)) {
+        $0.preferences.preferredDisplayId = second.id
+        $0.preferencesRevision = 1
       }
-      await store.send(.retryButtonTapped) {
-        $0.phase = .loading
-        $0.message = nil
-      }
-      await store.receive(\.discoveryResponse.success) { $0.phase = .connecting }
-      expectNoDifference(backend.connections.count, 2)
-      await store.send(.paneClosed) {
-        $0.visible = false
-        $0.phase = .suspended
-      }
-      await store.finish()
+
+      await awaitObserved { harness.askedOfTheConnection == ["switch to second"] }
+      #expect(harness.store.state.selectedDisplayId == display.id, "the picker follows the connection")
+      await harness.finish()
     }
   }
 
-  @Test func aSyncedDisplayReconnectsWithoutEchoingTheWrite() async {
+  @Test(arguments: [true, false])
+  func aDisplaySyncedFromAnotherDeviceMovesAShownPaneWithoutEchoingTheWrite(shown: Bool) async {
     await withMainSerialExecutor {
-      let backend = FakeBackend(displays: [display])
-      let client = FakeEndpointClient()
-      let store = await makeViewingStore(backend, client)
-      var preferences = store.state.preferences
-      await store.send(.preferencesSynced(preferences))
-      #expect(store.state.preferencesRevision == 1 && backend.connections.count == 1)
+      let harness = ScreenSharingViewerHarness(preferences: .init(preferredDisplayId: display.id))
+      if shown { await harness.connect(showing: [display, second]) }
+      let synced = ScreenSharingPanePreferences(preferredDisplayId: second.id)
 
-      preferences.preferredDisplayId = "missing"
-      await store.send(.preferencesSynced(preferences)) {
-        $0.preferences = preferences
-        $0.endpoint = nil
-        $0.lease = nil
-        $0.phase = .loading
-      }
-      await store.receive(\.discoveryResponse.success) {
-        $0.preferences.preferredDisplayId = "display"
-        $0.preferencesRevision = 2
-        $0.phase = .connecting
-      }
-      #expect(backend.connections.count == 2)
-      await store.send(.paneClosed) {
-        $0.visible = false
-        $0.phase = .suspended
-      }
-      await store.finish()
+      await harness.store.send(.preferencesSynced(synced)) { $0.preferences = synced }
+      await harness.store.send(.preferencesSynced(synced))
+      await harness.finish()
+
+      #expect(harness.askedOfTheConnection == (shown ? ["switch to second"] : []))
+      #expect(harness.store.state.preferencesRevision == 0)
     }
   }
 
-  func makeStore(
-    _ backend: FakeBackend, _ client: FakeEndpointClient = FakeEndpointClient(),
-    preferences: ScreenSharingPanePreferences = .init(), clock: Clocks.TestClock<Duration> = .init()
-  ) -> TestStoreOf<ScreenSharingViewer> {
-    TestStore(initialState: ScreenSharingViewer.State(preferences: preferences)) {
-      ScreenSharingViewer()
-    } withDependencies: {
-      $0[ScreenSharingViewerBackend.self] = backend.value
-      $0[ScreenSharingEndpointClient.self] = client.value
-      $0.continuousClock = clock
-      $0.uuid = .incrementing
-    }
-  }
-
-  func makeConnectingStore(
-    _ backend: FakeBackend, _ client: FakeEndpointClient, clock: Clocks.TestClock<Duration> = .init()
-  ) async -> TestStoreOf<ScreenSharingViewer> {
-    let store = makeStore(backend, client, clock: clock)
-    await store.send(.paneAppeared) {
-      $0.visible = true
-      $0.phase = .loading
-    }
-    await store.receive(\.discoveryResponse.success) {
-      $0.displays = backend.displays
-      $0.preferences.preferredDisplayId = backend.displays.first?.id
-      $0.preferencesRevision = 1
-      $0.selectedDisplayId = backend.displays.first?.id
-      $0.phase = .connecting
-    }
-    return store
-  }
-
-  func makeViewingStore(
-    _ backend: FakeBackend, _ client: FakeEndpointClient,
-    mode: ScreenSharingViewer.InteractionMode = .control, channelAvailable: Bool = true,
-    clock: Clocks.TestClock<Duration> = .init()
-  ) async -> TestStoreOf<ScreenSharingViewer> {
-    let store = await makeConnectingStore(backend, client, clock: clock)
-    if mode == .view { await store.send(.interactionModeChanged(.view)) { $0.interactionMode = .view } }
-    let endpoint = backend.open()
-    await store.receive(\.connectionEvent.opened) {
-      $0.endpoint = endpoint
-      $0.lease = ControlLease.State(endpoint: endpoint.id)
-    }
-    if channelAvailable {
-      client.emit(.availability(true), to: endpoint.id)
-      await store.receive(\.lease.event) { $0.lease?.available = true }
-    }
-    backend.emit(.ready)
-    await store.receive(\.connectionEvent.ready) { $0.phase = .viewing }
-    if mode == .control {
-      await store.receive(\.lease.controlRequested) {
-        $0.lease?.wantsControl = true
-        if channelAvailable {
-          $0.lease?.requestID = UUID(0)
-          $0.lease?.phase = .requesting
-        }
+  @Test func retryAsksTheConnectionAndAFailureReadsAsASentenceAboutTheMachine() async {
+    await withMainSerialExecutor {
+      let harness = ScreenSharingViewerHarness()
+      await harness.connect()
+      await harness.surface { $0.isTakingLong = true }
+      #expect(harness.store.state.stillConnectingStep != nil && harness.store.state.failure == nil)
+      await harness.surface {
+        $0.isTakingLong = false
+        $0.connection = .failed(.cantReach)
       }
+      #expect(harness.store.state.failure == "Can't reach croissant. Check that it's awake and online.")
+      #expect(harness.store.state.stillConnectingStep == nil)
+
+      await harness.store.send(.retryButtonTapped)
+      await harness.finish()
+
+      #expect(harness.askedOfTheConnection == ["retry"])
     }
-    return store
   }
 }

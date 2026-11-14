@@ -6,7 +6,7 @@ import ScreenSharingConnection
 @MainActor
 public final class ScreenSharingConnections {
   private struct Tracked {
-    let connection: ScreenSharingConnection
+    let desktop: ScreenSharingDesktop
     var wasReady: Bool
   }
 
@@ -37,12 +37,20 @@ public final class ScreenSharingConnections {
   }
 
   public func connection(for machineId: String) throws -> ScreenSharingConnection {
-    if let existing = tracked[machineId] { return existing.connection }
+    try desktop(for: machineId).connection
+  }
 
-    let connection = manager.connection(for: try machine(machineId))
-    tracked[machineId] = Tracked(connection: connection, wasReady: source.isReady(machineId))
-    observe()
-    return connection
+  public func surface(
+    onMachine machineId: String, role: ScreenSharingViewerRole, inWorkspace workspaceId: UUID?
+  ) -> ScreenSharingDesktopSurface {
+    ScreenSharingDesktopSurface(
+      role: role,
+      findDesktop: { [weak self] in try self?.knownDesktop(for: machineId) },
+      onShown: { [weak self] in
+        guard let workspaceId else { return }
+
+        self?.surfaceShown(inWorkspace: workspaceId, onMachine: machineId)
+      })
   }
 
   public func surfaceShown(inWorkspace workspaceId: UUID, onMachine machineId: String) {
@@ -51,8 +59,26 @@ public final class ScreenSharingConnections {
   }
 
   public func shutdown() {
+    for entry in tracked.values { entry.desktop.close() }
     tracked = [:]
     manager.shutdown()
+  }
+
+  private func knownDesktop(for machineId: String) throws -> ScreenSharingDesktop? {
+    guard source.machineIds().contains(machineId) else { return nil }
+
+    return try desktop(for: machineId)
+  }
+
+  private func desktop(for machineId: String) throws -> ScreenSharingDesktop {
+    if let existing = tracked[machineId] { return existing.desktop }
+
+    let endpoints = ScreenSharingEndpointFactory(machineId: machineId, source: source)
+    let desktop = ScreenSharingDesktop(
+      connection: manager.connection(for: try machine(machineId)), makeEndpoint: endpoints.endpoint)
+    tracked[machineId] = Tracked(desktop: desktop, wasReady: source.isReady(machineId))
+    observe()
+    return desktop
   }
 
   private func observe() {
@@ -76,6 +102,7 @@ public final class ScreenSharingConnections {
   }
 
   private func remove(_ machineId: String) {
+    tracked[machineId]?.desktop.close()
     tracked[machineId] = nil
     shownWorkspaces[machineId] = nil
     manager.remove(machineId)

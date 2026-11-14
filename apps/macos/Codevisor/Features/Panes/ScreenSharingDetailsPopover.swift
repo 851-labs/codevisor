@@ -27,7 +27,7 @@ struct ScreenSharingDetailsPopover: View {
         ScreenSharingDiagnosticsCards(diagnostics: diagnostics)
       } else {
         ScreenSharingDetailsCard {
-          Text(store.message ?? Self.placeholder)
+          Text(store.failure ?? Self.placeholder)
             .foregroundStyle(.secondary)
         }
       }

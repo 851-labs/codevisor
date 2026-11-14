@@ -57,10 +57,7 @@ extension ChatScreen {
         for: workspace, project: controller.project, environment: environment)
     else { return nil }
     return { [environment] in
-      Task {
-        guard (try? await desktop.register()) != nil else { return }
-        MachineDesktopWindows.shared.present(desktop, machineId: workspace.serverId, environment: environment)
-      }
+      MachineDesktopWindows.shared.present(desktop, machineId: workspace.serverId, environment: environment)
     }
   }
 

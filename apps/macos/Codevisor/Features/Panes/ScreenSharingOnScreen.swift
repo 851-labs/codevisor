@@ -1,7 +1,7 @@
 import CodevisorCoreMac
 import SwiftUI
 
-struct MachineDesktopOnScreen: NSViewRepresentable {
+struct ScreenSharingOnScreen: NSViewRepresentable {
   let onChange: @MainActor (Bool) -> Void
 
   func makeNSView(context: Context) -> ScreenSharingOnScreenProbe {

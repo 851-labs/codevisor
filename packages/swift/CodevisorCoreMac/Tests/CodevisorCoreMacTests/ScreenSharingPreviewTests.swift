@@ -1,32 +1,34 @@
+import ScreenSharingConnection
 import Testing
+
 @testable import CodevisorCoreMac
 
 @MainActor
 struct ScreenSharingPreviewTests {
-  @Test(arguments: [ScreenSharingViewer.Phase.idle, .loading, .connecting, .suspended, .elsewhere])
-  func previewKeepsConnectingUntilAPictureArrives(phase: ScreenSharingViewer.Phase) {
-    var state = ScreenSharingViewer.State()
-    state.phase = phase
-    #expect(state.preview == .connecting)
+  private func state(
+    _ connection: ScreenSharingConnectionState, picture: ScreenSharingSurfaceSnapshot.Picture = .none
+  ) -> ScreenSharingViewer.State {
+    var state = ScreenSharingViewer.State(machineName: "croissant")
+    state.surface.connection = connection
+    state.surface.picture = picture
+    return state
   }
 
-  @Test func previewIsLiveOnlyWhileItMirrorsAStream() {
-    let endpoint = ScreenSharingViewerEndpoint(session: FakeMediaSession(), surface: FakeSurface())
-    defer { endpoint.close() }
-    var state = ScreenSharingViewer.State()
-    state.phase = .elsewhere
-    state.mirror = endpoint
-    #expect(state.preview == .live(endpoint))
-
-    state.phase = .reconnecting
-    state.mirror = nil
-    #expect(state.preview == .reconnecting)
+  @Test(arguments: [ScreenSharingConnectionState.off, .connecting(.reachingHost), .live])
+  func previewKeepsConnectingUntilAPictureArrives(connection: ScreenSharingConnectionState) {
+    #expect(state(connection).preview == .connecting)
   }
 
-  @Test func previewShowsTheFailureMessage() {
-    var state = ScreenSharingViewer.State()
-    state.phase = .failed
-    state.message = "No displays are available on this Mac."
-    #expect(state.preview == .failed("No displays are available on this Mac."))
+  @Test func previewIsLiveOnceTheConnectionIsLiveAndHasAPicture() {
+    let endpoint = ScreenSharingViewerHarness.endpoint()
+
+    #expect(state(.live, picture: .elsewhere(endpoint)).preview == .live(endpoint))
+    #expect(state(.live, picture: .here(endpoint)).preview == .live(endpoint))
+    #expect(state(.connecting(.waitingForVideo), picture: .elsewhere(endpoint)).preview == .connecting)
+    #expect(state(.reconnecting).preview == .reconnecting)
+  }
+
+  @Test func previewShowsTheFailureAsASentence() {
+    #expect(state(.failed(.noVideo)).preview == .failed("Connected, but croissant sent no picture."))
   }
 }
