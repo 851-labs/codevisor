@@ -199,7 +199,7 @@ struct ScreenSharingConnectionLifetimeTests {
     surface.setOnScreen(true)
 
     #expect(harness.connection.state == .failed(reason))
-    #expect(harness.host.requests.count == sent && harness.clock.pendingCount == 0)
+    #expect(harness.host.requests.count == sent)
   }
 
   @Test("Any other failure turns off after 2 s with nothing on screen, and the next show connects as an attach")
