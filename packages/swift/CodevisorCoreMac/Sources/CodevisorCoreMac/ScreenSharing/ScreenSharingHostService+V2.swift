@@ -10,7 +10,7 @@ extension ScreenSharingHostService {
   func startV2(_ session: ScreenSharingHostSession) async -> ServerScreenSharingReply {
     guard let endpoint = await mediaEndpointHandle() else {
       await end(session)
-      return .init(status: "failed", message: "This Mac's screen-sharing endpoint isn't available.")
+      return .init(status: "failed", message: Self.endpointUnavailable)
     }
     guard current === session, !session.stopping else { return .init(status: "stopped") }
 
@@ -47,7 +47,7 @@ extension ScreenSharingHostService {
         guard !Task.isCancelled, let self, let session else { return }
 
         Self.logger.notice("Engine v2 viewer didn't connect: \(error.localizedDescription, privacy: .public)")
-        await self.end(session, reason: "The viewer couldn't connect to this Mac over engine v2.")
+        await self.end(session, as: .failed("The viewer couldn't connect to this Mac over engine v2."))
       }
     }
   }

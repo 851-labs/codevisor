@@ -97,6 +97,128 @@ describe("Screen Sharing engine v2 signaling", () => {
   })
 })
 
+describe("app-owned Screen Sharing sessions", () => {
+  const app = { key: media.endpointId, name: "Alexandru's MacBook Pro" }
+  const proof = { nonce: "c".repeat(64), signature: "d".repeat(128) }
+  const session = "e".repeat(64)
+  const appStart = (): ScreenSharingRequest => ({
+    ...capabilities(),
+    operation: "start",
+    displayId: randomUUID(),
+    engine: "v2",
+    media,
+    app,
+    intent: "open",
+    proof
+  })
+
+  it("serves an app's desktop session without a workspace or pane, and a request without the app as before", async () => {
+    const helper = vi.fn(async () => reply)
+    const { post } = await fixture(helper)
+    const start = appStart()
+    const { displayId: _, ...anyDisplay } = start
+    const { app: __, intent: ___, proof: ____, ...stable } = start
+    const beat = { ...stable, operation: "heartbeat", session }
+    for (const request of [
+      start,
+      anyDisplay,
+      { ...start, operation: "restart" },
+      beat,
+      { ...beat, displayId: undefined },
+      { ...stable, operation: "stop", session },
+      { ...stable, operation: "stop" }
+    ])
+      expect((await post(request)).status).toBe(200)
+    expect(helper).toHaveBeenCalledTimes(7)
+    expect(helper).toHaveBeenCalledWith(start)
+    expect(helper).toHaveBeenCalledWith(beat)
+
+    expect((await post(stable)).status).toBe(404)
+    expect((await post({ ...stable, operation: "heartbeat" })).status).toBe(404)
+    expect((await post({ ...start, operation: "heartbeat" })).status).toBe(404)
+    expect((await post({ ...stable, displayId: undefined })).status).toBe(400)
+    expect(helper).toHaveBeenCalledTimes(7)
+  })
+
+  it("still requires the pane for an app's Computer Use and Simulator streams", async () => {
+    const helper = vi.fn(async () => reply)
+    const { post } = await fixture(helper)
+    for (const displayId of [`computer-use:${randomUUID()}`, `simulator:${randomUUID()}`]) {
+      expect((await post({ ...appStart(), displayId })).status).toBe(404)
+      expect(
+        (await post({ ...appStart(), operation: "heartbeat", displayId, session })).status
+      ).toBe(404)
+    }
+    expect(helper).not.toHaveBeenCalled()
+  })
+
+  it("rejects a malformed app, a start under another key, and a start that doesn't say open or attach", async () => {
+    const helper = vi.fn(async () => reply)
+    const { post } = await fixture(helper)
+    for (const change of [
+      { app: { ...app, key: "not-hex" } },
+      { app: { ...app, name: " \n\u0007 " } },
+      { app: { ...app, key: "c".repeat(64) } },
+      { intent: undefined },
+      { intent: "steal" },
+      { displayId: "invalid" },
+      { proof: undefined },
+      { proof: { ...proof, nonce: "short" } },
+      { proof: { ...proof, signature: "d".repeat(127) } },
+      { session: "not-a-token" }
+    ])
+      expect((await post({ ...appStart(), ...change })).status).toBe(400)
+    expect(
+      (await post({ ...appStart(), operation: "heartbeat", session: "not-a-token" })).status
+    ).toBe(400)
+    expect(
+      (await post({ ...appStart(), operation: "heartbeat", app: { key: "x", name: "n" } })).status
+    ).toBe(400)
+    expect(helper).not.toHaveBeenCalled()
+    expect(
+      (await post({ ...appStart(), app: { ...app, key: app.key.toUpperCase() }, intent: "attach" }))
+        .status
+    ).toBe(200)
+  })
+
+  it("gives the host a one-line app name of at most 64 characters", async () => {
+    const helper = vi.fn<(request: ScreenSharingRequest) => Promise<unknown>>(async () => reply)
+    const { post } = await fixture(helper)
+    for (const name of ["  Alexandru's\r\nMac\u0000Book\u2028 Pro\t ", "😀".repeat(70)])
+      await post({ ...appStart(), app: { ...app, name } })
+    expect(helper.mock.calls.map(([request]) => request.app?.name)).toEqual([
+      "Alexandru'sMacBook Pro",
+      "😀".repeat(64)
+    ])
+  })
+
+  it("passes on why the host refused or ended, who holds the session, what it shares and what it can do", async () => {
+    const display = { id: randomUUID(), name: "Built-in Display", width: 3024, height: 1964 }
+    const refused = {
+      ...reply,
+      status: "busy",
+      message: "This Mac is already sharing with another viewer.",
+      reason: "in-use",
+      holderName: "Alexandru's iPhone",
+      abilities: ["app-sessions"],
+      challenge: { hostKey: "b".repeat(64), nonce: "c".repeat(64) }
+    }
+    const viewing = {
+      ...reply,
+      status: "viewing",
+      display,
+      displays: [display],
+      reason: "a-later-reason",
+      session
+    }
+    const helper = vi.fn(async (): Promise<unknown> => ({ ...refused, laterField: true }))
+    const { post } = await fixture(helper)
+    expect((await post({ ...appStart(), intent: "attach" })).body).toEqual(refused)
+    helper.mockResolvedValueOnce(viewing)
+    expect((await post({ ...appStart(), operation: "heartbeat", session })).body).toEqual(viewing)
+  })
+})
+
 describe("native Screen Sharing signaling", () => {
   it("requires machine authentication and rejects browser-originated requests", async () => {
     const helper = vi.fn(async () => reply)

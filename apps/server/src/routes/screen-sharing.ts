@@ -55,6 +55,49 @@ const isKnownTarget = (displayId: string): boolean =>
 
 const endpointId = /^[0-9a-f]{64}$/i
 const maxMediaAddrs = 32
+const maxAppNameLength = 64
+
+const unprintable = /[\p{Cc}\u2028\u2029]/gu
+
+const appDisplayName = (name: string): string =>
+  Array.from(name.replace(unprintable, "").trim()).slice(0, maxAppNameLength).join("")
+
+const appIsWellFormed = (payload: ScreenSharingRequest): boolean =>
+  payload.app === undefined ||
+  (endpointId.test(payload.app.key) && appDisplayName(payload.app.name).length > 0)
+
+const withDisplayName = (payload: ScreenSharingRequest): ScreenSharingRequest =>
+  payload.app === undefined
+    ? payload
+    : { ...payload, app: { ...payload.app, name: appDisplayName(payload.app.name) } }
+
+const signature = /^[0-9a-f]{128}$/i
+
+const proofIsWellFormed = (payload: ScreenSharingRequest): boolean =>
+  payload.proof !== undefined &&
+  endpointId.test(payload.proof.nonce) &&
+  signature.test(payload.proof.signature)
+
+const appStartIsComplete = (payload: ScreenSharingRequest): boolean =>
+  payload.app === undefined ||
+  (payload.intent !== undefined &&
+    proofIsWellFormed(payload) &&
+    payload.media?.endpointId.toLowerCase() === payload.app.key.toLowerCase())
+
+const sessionIsWellFormed = (payload: ScreenSharingRequest): boolean =>
+  payload.session === undefined || endpointId.test(payload.session)
+
+const startTargetIsValid = (payload: ScreenSharingRequest): boolean =>
+  payload.displayId === undefined ? payload.app !== undefined : isKnownTarget(payload.displayId)
+
+const isDesktopTarget = (displayId: string | undefined): boolean =>
+  computerUseSessionId(displayId) === undefined && !isSimulatorTarget(displayId)
+
+const appOwnsDesktopSession = (payload: ScreenSharingRequest): boolean => {
+  if (!isDesktopTarget(payload.displayId)) return false
+  if (payload.operation === "heartbeat") return payload.session !== undefined
+  return payload.app !== undefined
+}
 
 const isMediaAddress = (media: ScreenSharingMediaAddress | undefined): boolean =>
   media !== undefined &&
@@ -93,17 +136,20 @@ export const routeScreenSharing = async (
     )
   if (![payload.workspaceId, payload.paneId, payload.viewerId].every((id) => uuid.test(id)))
     throw new HttpFailure(400, "Invalid Screen Sharing identity")
+  if (!appIsWellFormed(payload) || !sessionIsWellFormed(payload))
+    throw new HttpFailure(400, "Invalid Screen Sharing identity")
+  const starts = payload.operation === "start" || payload.operation === "restart"
   if (
-    (payload.operation === "start" || payload.operation === "restart") &&
-    (payload.engine !== "v2" ||
-      !isMediaAddress(payload.media) ||
-      payload.displayId === undefined ||
-      !isKnownTarget(payload.displayId))
+    starts &&
+    (payload.engine !== "v2" || !isMediaAddress(payload.media) || !startTargetIsValid(payload))
   )
     throw new HttpFailure(400, "Invalid Screen Sharing media or display")
+  if (starts && !appStartIsComplete(payload))
+    throw new HttpFailure(400, "Invalid Screen Sharing identity")
   if (payload.displayId !== undefined && !isKnownTarget(payload.displayId))
     throw new HttpFailure(400, "Invalid Screen Sharing display")
-  if (["start", "restart", "heartbeat"].includes(payload.operation)) {
+  const checksPane = ["start", "restart", "heartbeat"].includes(payload.operation)
+  if (checksPane && !appOwnsDesktopSession(payload)) {
     const sessionId = computerUseSessionId(payload.displayId)
     const workspace = (await run(services.db.listWorkspaces)).find(
       (item) => item.id.toLowerCase() === payload.workspaceId.toLowerCase()
@@ -125,7 +171,9 @@ export const routeScreenSharing = async (
     throw new HttpFailure(501, "Screen Sharing requires the native Codevisor app on a Mac")
   let result: ScreenSharingReply
   try {
-    result = Schema.decodeUnknownSync(ScreenSharingReply)(await config.screenSharing(payload))
+    result = Schema.decodeUnknownSync(ScreenSharingReply)(
+      await config.screenSharing(withDisplayName(payload))
+    )
   } catch (cause) {
     throw screenSharingHostFailure(cause)
   }
