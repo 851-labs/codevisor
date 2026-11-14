@@ -37,8 +37,16 @@ const setUpRouter = async () => {
   const folder = mkdtempSync(join(tmpdir(), "codevisor-event-router-"))
   tempDirs.push(folder)
   const project = await run(services.db.createProject({ folderPath: folder }))
-  const chat = async () =>
-    (await run(services.db.createSession({ projectId: project.id, harnessId: "codex" }))).id
+  const chat = async (ownerId?: string) =>
+    (
+      await run(
+        services.db.createSession({
+          projectId: project.id,
+          harnessId: "codex",
+          ...(ownerId === undefined ? {} : { createdByAgentId: ownerId })
+        })
+      )
+    ).id
   const emit = (
     sessionId: string,
     payload: unknown,
@@ -161,6 +169,42 @@ describe("creators on other machines", () => {
     expect(router.creatorNotices[0]!.text).toContain("\nDone\n")
     expect(router.creatorNotices[0]!.occurrence).toMatch(/^\d+$/)
     expect(router.creatorNotices[2]!.text).toContain("Harness crashed")
+  })
+})
+
+describe("an agent's owner", () => {
+  it("hears what the user wrote to the agent, and not what agents or Codevisor wrote", async () => {
+    const router = await setUpRouter()
+    const owner = await router.chat()
+    const child = await router.chat(owner)
+    const standsAlone = await router.chat(owner)
+    await run(router.services.db.detachSession(standsAlone))
+    const write = (sessionId: string, extra: Record<string, unknown>) =>
+      router.emit(
+        sessionId,
+        { role: "user", text: "Use Postgres here", ...extra },
+        "session.output"
+      )
+
+    await write(child, { sentByAgentId: owner })
+    await write(child, { origin: "event" })
+    await write(standsAlone, {})
+    await write(owner, {})
+    await write(child, {})
+    await waitFor(() => router.eventPrompts().length > 0)
+
+    expect(router.eventPrompts()).toEqual([
+      [
+        `<codevisor-event type="session.user_message" agentId="${child}" title="New Session">`,
+        "The user wrote to this agent directly. Its next reply answers them, not you:",
+        "",
+        "Use Postgres here",
+        "</codevisor-event>"
+      ].join("\n")
+    ])
+    expect(router.creatorNotices.map(({ agentId, type }) => [agentId, type])).toEqual([
+      [child, "user_message"]
+    ])
   })
 })
 

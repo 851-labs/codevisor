@@ -129,6 +129,13 @@ const delegatingSection: ReadonlyArray<string> = [
       'abc."'
     ),
     paragraph(
+      "The user can step in and write to any of your agents directly. Codevisor tells you with a",
+      "`session.user_message` event that carries what they wrote. What the user tells an agent",
+      "overrides what you told it: don't steer it back, and bring your own picture of the task up",
+      "to date. The agent's next reply answers the user, who has already read it, so don't pass it",
+      "on as news."
+    ),
+    paragraph(
       "When the user changes how work that's under way should be done, steer its agent with",
       "`agents.message`. When they drop it for something unrelated, cancel the agent, archive its",
       "workspace, and start a new one; ask first if it's unclear whether they still want what it has",

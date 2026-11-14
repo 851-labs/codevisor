@@ -97,6 +97,29 @@ describe("POST /v1/agents", () => {
     await waitFor(() => agents.prompts.some(([, text]) => text === "Fix it"))
   })
 
+  it("tells the starter what the user writes to the agent, and nothing about its own brief", async () => {
+    const running = await startable()
+    const { agents, startAgent } = running
+    const started = decode(StartedAgent)((await startAgent({ checkout: "project" })).body)
+    await waitFor(() => agents.prompts.some(([, text]) => text === "Fix it"))
+    const steppedIn = () =>
+      agents.prompts.flatMap(([, text]) =>
+        typeof text === "string" && text.includes('type="session.user_message"') ? [text] : []
+      )
+
+    await jsonRequest(running.server, `/v1/sessions/${started.agentId}/prompt`, {
+      body: JSON.stringify({ text: "Use Postgres here" }),
+      method: "POST"
+    })
+    await waitFor(() => steppedIn().length > 0)
+
+    expect(steppedIn()).toEqual([
+      expect.stringMatching(
+        new RegExp(`agentId="${started.agentId}" title="Fix login">[^]*Use Postgres here`, "u")
+      )
+    ])
+  })
+
   it("removes the worktree it allocated when the chat can't be created", async () => {
     const { services, startAgent, state } = await startable()
     const before = await state()

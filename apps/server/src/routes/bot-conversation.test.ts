@@ -240,7 +240,10 @@ describe("bot conversations", () => {
     })
     const childId = decode(SessionSummary)(child.body).id
 
-    await prompt(running, childId, "fix it")
+    await jsonRequest(running.server, `/v1/sessions/${childId}/prompt`, {
+      body: JSON.stringify({ text: "fix it", sentByAgentId: bot.sessionId }),
+      method: "POST"
+    })
 
     await waitFor(() =>
       running.agents.prompts.some(

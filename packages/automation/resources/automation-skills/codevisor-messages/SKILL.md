@@ -115,6 +115,18 @@ Codevisor sends you messages that the user doesn't see, wrapped in `<codevisor-e
   </codevisor-event>
   ```
 
+- `session.user_message` arrives when the user writes to one of your agents directly, and carries what they wrote:
+
+  ```
+  <codevisor-event type="session.user_message" agentId="…" title="Fix flaky login test">
+  The user wrote to this agent directly. Its next reply answers them, not you:
+
+  Skip that test for now and open the PR.
+  </codevisor-event>
+  ```
+
+  The user has stepped in, and what they told the agent overrides what you told it. Don't steer the agent back to your plan. Update your own picture of the task, so the next thing you say or delegate matches. The agent's next `session.turn_ended` is its answer to the user, who has already read it in that chat: don't send it to them as news. It needs no reply.
+
 - `bot.projects_changed` says which repository the user added or removed. It needs no reply.
 - `bot.instructions_updated` says Codevisor rewrote its part of your AGENTS.md. Reread the file. It needs no reply.
 
@@ -130,6 +142,7 @@ After you start or message an agent, end your turn rather than blocking on `agen
 - A vague acknowledgement such as "On it." instead of saying what you're checking.
 - Sending a message for each agent that finishes while the user is talking with you about something else.
 - Telling the user that another bot wrote to you, or repeating to them what you sent a bot.
+- Steering an agent back to your plan after the user wrote to it directly, or relaying its reply to the user who was already talking with it.
 - Writing to a bot as if you were the user ("Log my lunch").
 - Asking several questions at once, or covering several topics in one burst of messages.
 - Acting on "go for it" without being sure what it refers to. Read your last messages first.
