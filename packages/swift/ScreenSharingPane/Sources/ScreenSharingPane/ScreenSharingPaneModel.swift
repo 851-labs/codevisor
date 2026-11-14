@@ -48,6 +48,12 @@ public final class ScreenSharingPaneModel {
     return stage.step(on: machineName)
   }
 
+  var failure: ScreenSharingPaneFailure? {
+    guard case .failed(let reason) = connection.state else { return nil }
+
+    return ScreenSharingPaneFailure(reason: reason, machineName: machineName)
+  }
+
   public var displays: [ServerScreenSharingDisplay] { connection.displays }
 
   public var selectedDisplay: ServerScreenSharingDisplay? { connection.display }

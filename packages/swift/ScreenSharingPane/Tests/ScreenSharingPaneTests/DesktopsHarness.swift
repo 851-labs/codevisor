@@ -80,6 +80,11 @@ final class DesktopsHarness {
     return session
   }
 
+  func heartbeat() async {
+    await clock.waitForSleep(ScreenSharingConnectionDeadlines.heartbeatInterval)
+    clock.advance(by: ScreenSharingConnectionDeadlines.heartbeatInterval)
+  }
+
   func controlLog(of session: LoopbackSession) -> ControlLog {
     let log = ControlLog()
     session.host.control?.onMessage = { log.messages.append($0) }

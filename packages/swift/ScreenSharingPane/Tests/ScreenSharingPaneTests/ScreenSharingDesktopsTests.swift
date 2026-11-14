@@ -69,6 +69,7 @@ struct ScreenSharingDesktopsTests {
     let model = harness.model()
     harness.show(model)
     await awaitObserved { model?.state == .failed(.cantReach) }
+    #expect(model?.failure?.action == .tryAgain)
 
     harness.host.answerEvery(.capabilities, nil)
     harness.world.isReady = true
@@ -120,7 +121,7 @@ struct ScreenSharingDesktopsTests {
     #expect(harness.host.starts.map(\.displayId) == [FakeHost.second.id])
   }
 
-  @Test("A Linux desktop, which the phone has no viewer for, says it can only be viewed from a Mac")
+  @Test("A Linux desktop, which the phone has no viewer for, says it can only be viewed from a Mac and offers no retry")
   func linuxDesktopIsMacOnly() async {
     let harness = DesktopsHarness()
     harness.host.provider = "vnc"
@@ -128,7 +129,44 @@ struct ScreenSharingDesktopsTests {
     harness.show(model)
     await awaitObserved { model?.state == .failed(.unsupportedOnThisDevice) }
 
+    #expect(model?.failure?.sentence == "croissant's desktop can only be viewed from a Mac.")
+    #expect(model?.failure?.action == nil)
     #expect(harness.host.starts.isEmpty)
+  }
+
+  @Test("When another device takes the desktop, the phone says who is viewing, and View here takes it back")
+  func viewHereTakesTheDesktopBack() async throws {
+    let harness = DesktopsHarness()
+    let model = try #require(harness.model())
+    harness.show(model)
+    await harness.goLive(model)
+
+    harness.host.answerNext(
+      .heartbeat, .reply(status: "failed", reason: "taken-over", holderName: "Alexandru's MacBook Pro"))
+    await harness.heartbeat()
+    await awaitObserved { model.failure != nil }
+    #expect(model.failure?.sentence == "Now viewing on Alexandru's MacBook Pro.")
+    #expect(model.failure?.action == .viewHere)
+    #expect(harness.host.starts.count == 1, "the phone doesn't take the desktop back by itself")
+
+    model.viewHere()
+    await harness.goLive(model)
+
+    #expect(harness.host.starts.map(\.intent) == [.attach, .open])
+  }
+
+  @Test(
+    "A tab that comes on screen while another device is viewing says so and offers View here instead of taking over")
+  func passiveTabDoesNotTakeOver() async throws {
+    let harness = DesktopsHarness()
+    harness.host.answerNext(.start, .reply(status: "busy", reason: "in-use", holderName: "Alexandru's MacBook Pro"))
+    let model = try #require(harness.model())
+    harness.show(model)
+    await awaitObserved { model.failure != nil }
+
+    #expect(model.failure?.sentence == "In use on Alexandru's MacBook Pro.")
+    #expect(model.failure?.action == .viewHere)
+    #expect(harness.host.starts.map(\.intent) == [.attach])
   }
 
   @Test("Touches control the share being shown, and control is given up when the Desktop leaves the screen")

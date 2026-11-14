@@ -1,5 +1,4 @@
 #if os(iOS)
-  import ScreenSharingConnection
   import SwiftUI
 
   struct ScreenSharingPaneStatus: View {
@@ -13,8 +12,8 @@
         ProgressView("Reconnecting…")
       case .live:
         EmptyView()
-      case .failed(let reason):
-        ScreenSharingFailedStatus(reason: reason, model: model)
+      case .failed:
+        ScreenSharingFailedStatus(model: model)
       }
     }
   }
@@ -36,27 +35,19 @@
   }
 
   private struct ScreenSharingFailedStatus: View {
-    let reason: ScreenSharingFailureReason
     let model: ScreenSharingPaneModel
 
     var body: some View {
       ContentUnavailableView {
-        Label("Can't Show This Mac", systemImage: "display.trianglebadge.exclamationmark")
+        Label("Can't Show This Desktop", systemImage: "display.trianglebadge.exclamationmark")
       } description: {
-        Text(reason.sentence(on: model.machineName))
+        Text(model.failure?.sentence ?? "")
       } actions: {
-        if holderIsKnown {
-          Button("View here") { model.viewHere() }.buttonStyle(.borderedProminent)
-        } else {
-          Button("Try Again") { model.retry() }.buttonStyle(.borderedProminent)
+        switch model.failure?.action {
+        case .viewHere: Button("View here") { model.viewHere() }.buttonStyle(.borderedProminent)
+        case .tryAgain: Button("Try Again") { model.retry() }.buttonStyle(.borderedProminent)
+        case nil: EmptyView()
         }
-      }
-    }
-
-    private var holderIsKnown: Bool {
-      switch reason {
-      case .takenOver(by: .some), .inUse(by: .some): true
-      default: false
       }
     }
   }
