@@ -56,12 +56,13 @@ public final class ScreenSharingConnections {
 
   public func targetConnection(
     onMachine machineId: String, target: String,
-    attachedPane: @escaping @MainActor () -> ScreenSharingLegacyIdentity?
+    attachedPane: @escaping @MainActor () -> ScreenSharingLegacyIdentity?, heartbeatInterval: Duration? = nil
   ) -> ScreenSharingConnection? {
     guard source.machineIds().contains(machineId), var machine = try? machine(machineId) else { return nil }
 
     machine.target = target
     machine.attachedPane = attachedPane
+    if let heartbeatInterval { machine.heartbeatInterval = heartbeatInterval }
     machine.presentsTiles = false
     machine.makeVNCTransport = nil
     watchTargets(on: machineId)

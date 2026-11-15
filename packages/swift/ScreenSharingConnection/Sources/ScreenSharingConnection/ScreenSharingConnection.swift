@@ -19,6 +19,7 @@ public final class ScreenSharingConnection {
   public var preferredDisplayId: String?
   public let machineId: String
   public let target: String?
+  @ObservationIgnored public var onSessionOpened: (@MainActor (any ScreenSharingViewingSession) -> Void)?
 
   @ObservationIgnored private let machine: ScreenSharingMachine
   @ObservationIgnored private let clock: ScreenSharingConnectionClock
@@ -212,6 +213,7 @@ public final class ScreenSharingConnection {
       handle(.stepEntered(stage))
     case .transport(.opened(let session)):
       self.session = session
+      onSessionOpened?(session)
     case .transport(.notice(let notice)):
       if hostNotice != notice { hostNotice = notice }
     case .transport(.sharing(let display, let displays)):
