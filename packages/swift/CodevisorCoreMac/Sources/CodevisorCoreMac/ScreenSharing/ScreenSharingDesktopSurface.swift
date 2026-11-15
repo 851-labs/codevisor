@@ -21,7 +21,7 @@ public final class ScreenSharingDesktopSurface {
   private var bound: (desktop: ScreenSharingDesktop, surface: ScreenSharingSurface)?
   private var bindFailure: String?
   private var isOnScreen = false
-  private var preferredDisplayId: String?
+  private var seedDisplayId: String?
   private var isDetached = false
   private var observation: ObserveToken?
 
@@ -36,12 +36,6 @@ public final class ScreenSharingDesktopSurface {
     unbind()
   }
 
-  public var holdsPicture: Bool {
-    guard let desktop = bound?.desktop else { return false }
-
-    return desktop.endpoint != nil && desktop.holder == id
-  }
-
   public var videoHasKeyboardFocus: Bool { bound?.desktop.endpoint?.hasKeyboardFocus(in: id) ?? false }
 
   public func videoView() -> NSView? {
@@ -52,9 +46,9 @@ public final class ScreenSharingDesktopSurface {
     bound?.desktop.endpoint?.letterbox(color, in: id)
   }
 
-  public func setOnScreen(_ onScreen: Bool, preferringDisplay displayId: String?) {
+  public func setOnScreen(_ onScreen: Bool, seedDisplay displayId: String? = nil) {
     isOnScreen = onScreen
-    preferredDisplayId = displayId
+    seedDisplayId = displayId ?? seedDisplayId
     if onScreen {
       show()
     } else {
@@ -65,21 +59,30 @@ public final class ScreenSharingDesktopSurface {
   public func openedByUser() {
     Self.logger.notice("Desktop opened by the user in a \(String(describing: self.role), privacy: .public)")
     bound?.surface.openedByUser()
+    bound?.desktop.openedByUser(id)
   }
 
   public func retry() {
     guard let bound else { return watch() }
 
-    askForThePanesDisplay(on: bound.desktop.connection)
+    askForTheSavedDisplay(on: bound.desktop)
     bound.surface.retry()
   }
 
-  public func takePicture() {
-    bound?.desktop.claim(id)
+  public func takeControl() {
+    bound?.desktop.takeControl(id)
+  }
+
+  public func setMode(_ mode: ScreenSharingViewer.InteractionMode) {
+    bound?.desktop.setMode(mode, from: id)
+  }
+
+  public func setDynamicResolution(_ enabled: Bool) {
+    bound?.desktop.setDynamicResolution(enabled)
   }
 
   public func switchDisplay(to displayId: String) {
-    bound?.desktop.connection.switchDisplay(to: displayId)
+    bound?.desktop.selectDisplay(displayId)
   }
 
   public func detach() {
@@ -134,16 +137,16 @@ public final class ScreenSharingDesktopSurface {
   private func show() {
     guard let bound else { return }
 
-    askForThePanesDisplay(on: bound.desktop.connection)
+    askForTheSavedDisplay(on: bound.desktop)
     bound.surface.setOnScreen(true)
     bound.desktop.setOnScreen(true, for: id)
     onShown()
   }
 
-  private func askForThePanesDisplay(on connection: ScreenSharingConnection) {
-    guard let preferredDisplayId, startsOnRequest(connection.state) else { return }
+  private func askForTheSavedDisplay(on desktop: ScreenSharingDesktop) {
+    guard startsOnRequest(desktop.connection.state) else { return }
 
-    connection.preferredDisplayId = preferredDisplayId
+    desktop.askForTheSavedDisplay(seed: seedDisplayId)
   }
 
   private func startsOnRequest(_ state: ScreenSharingConnectionState) -> Bool {
@@ -178,13 +181,10 @@ public final class ScreenSharingDesktopSurface {
     snapshot.hostNotice = desktop.connection.hostNotice
     snapshot.displays = desktop.connection.displays
     snapshot.displayId = desktop.connection.display?.id
-    snapshot.picture = picture(on: desktop)
+    snapshot.endpoint = desktop.endpoint
+    snapshot.control = desktop.controller == id ? desktop.controlStatus : nil
+    snapshot.mode = desktop.mode
+    snapshot.dynamicResolution = desktop.dynamicResolution
     return snapshot
-  }
-
-  private func picture(on desktop: ScreenSharingDesktop) -> ScreenSharingSurfaceSnapshot.Picture {
-    guard let endpoint = desktop.endpoint else { return .none }
-
-    return holdsPicture ? .here(endpoint) : .elsewhere(endpoint)
   }
 }

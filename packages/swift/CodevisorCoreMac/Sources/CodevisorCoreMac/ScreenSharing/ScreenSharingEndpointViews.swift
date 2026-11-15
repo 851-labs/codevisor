@@ -10,6 +10,7 @@ final class ScreenSharingEndpointViews {
     var inputReleased: (String?) -> Void = { _ in }
     var sizeChanged: () -> Void = {}
     var screenChanged: () -> Void = {}
+    var viewResized: (UUID) -> Void = { _ in }
     var focusChanged: (UUID, Bool) -> Void = { _, _ in }
     var keyboardReturned: (UUID) -> Void = { _ in }
   }
@@ -29,6 +30,7 @@ final class ScreenSharingEndpointViews {
     didSet { for shown in views.values { shown.surface.localShortcuts = localShortcuts } }
   }
   private(set) var active: UUID?
+  private(set) var driver: UUID?
   private var views: [UUID: Shown] = [:]
   private var videoShowsPointer = true
   private let frames: ScreenSharingFrameMailbox
@@ -42,17 +44,20 @@ final class ScreenSharingEndpointViews {
   }
 
   var controlled: (any ScreenSharingViewerSurface)? { active.flatMap { views[$0]?.surface } }
-  var size: (points: CGSize, backingScale: CGFloat)? { active.flatMap { views[$0]?.size } }
-  var screenShowsHighDynamicRange: Bool { active.flatMap { views[$0]?.screenShowsHighDynamicRange } ?? false }
+  var size: (points: CGSize, backingScale: CGFloat)? { driver.flatMap { views[$0]?.size } }
+  var screenShowsHighDynamicRange: Bool { driver.flatMap { views[$0]?.screenShowsHighDynamicRange } ?? false }
 
   var measured: ScreenSharingMetrics.Snapshot? {
-    (active.flatMap { views[$0] } ?? views.values.first)?.metrics?.snapshot()
+    (driver.flatMap { views[$0] } ?? views.values.first)?.metrics?.snapshot()
   }
+
+  func size(of id: UUID) -> CGSize? { views[id]?.size?.points }
 
   func adopt(_ surface: any ScreenSharingViewerSurface, as id: UUID) {
     views[id] = Shown(surface: surface, metrics: nil)
     wire(surface, as: id)
     activate(id)
+    drive(with: id)
   }
 
   func view(for id: UUID) -> NSView? {
@@ -73,15 +78,21 @@ final class ScreenSharingEndpointViews {
     guard let removed = views.removeValue(forKey: id) else { return }
 
     if active == id { activate(nil) }
+    if driver == id { drive(with: nil) }
     removed.surface.stop()
     frames.untap(id)
   }
 
   func activate(_ id: UUID?) {
-    guard id != active else { return }
+    active = id
+    if let id { _ = view(for: id) }
+  }
+
+  func drive(with id: UUID?) {
+    guard id != driver else { return }
 
     let (previousSize, showedHighDynamicRange) = (size, screenShowsHighDynamicRange)
-    active = id
+    driver = id
     if let size, size.points != previousSize?.points || size.backingScale != previousSize?.backingScale {
       events.sizeChanged()
     }
@@ -114,6 +125,7 @@ final class ScreenSharingEndpointViews {
     }
     views = [:]
     active = nil
+    driver = nil
   }
 
   private func wire(_ surface: any ScreenSharingViewerSurface, as id: UUID) {
@@ -138,11 +150,12 @@ final class ScreenSharingEndpointViews {
 
   private func resized(_ id: UUID, to size: (points: CGSize, backingScale: CGFloat)) {
     views[id]?.size = size
-    if active == id { events.sizeChanged() }
+    if driver == id { events.sizeChanged() }
+    events.viewResized(id)
   }
 
   private func screenChanged(_ id: UUID, showsHighDynamicRange: Bool) {
     views[id]?.screenShowsHighDynamicRange = showsHighDynamicRange
-    if active == id { events.screenChanged() }
+    if driver == id { events.screenChanged() }
   }
 }

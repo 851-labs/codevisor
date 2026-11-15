@@ -18,10 +18,8 @@ final class ScreenSharingPane: Pane {
   var onGroupCommand: ((PaneGroupCommand) -> Void)?
   var onFocusChanged: ((Bool) -> Void)? { didSet { surface?.onFocusChanged = onFocusChanged } }
   var onFocus: (() -> Void)?
-  var onPreferencesChanged: ((ScreenSharingPanePreferences) -> Void)?
   private var mounts = Set<UUID>()
-  private var persistedRevision = 0
-  private var persistedResolutionRevision = 0
+  private var seedDisplayId: String?
   private var recordedViewing = false
   private var soundAppliedTo: ObjectIdentifier?
   private var savedSettingsAppliedTo: ObjectIdentifier?
@@ -49,12 +47,13 @@ final class ScreenSharingPane: Pane {
     self.id = id
     self.role = role
     self.workspace = workspace
+    seedDisplayId = preferences.preferredDisplayId
     machineName = machine.name
     machineId = machine.id
     isLocal = machine.isLocal
     connection = Self.connection(of: machine)
     surface = attaches ? Self.makeSurface(machine: machine, role: role, workspace: workspace) : nil
-    store = surface.map { Self.makeStore(machine: machine, preferences: preferences, surface: $0) }
+    store = surface.map { Self.makeStore(machine: machine, surface: $0) }
     guard let store else { return }
     surface?.onChange = { [weak store] in store?.send(.surfaceChanged($0)) }
     surface?.onKeyboardReturned = { [weak self] in self?.onFocus?() }
@@ -88,14 +87,6 @@ final class ScreenSharingPane: Pane {
       ScreenSharingMachinePreferences().setLastConnected(Date(), machineId: machineId)
     }
     recordedViewing = viewing
-    if store.dynamicResolutionRevision != persistedResolutionRevision {
-      persistedResolutionRevision = store.dynamicResolutionRevision
-      ScreenSharingMachinePreferences().setDynamicResolution(store.dynamicResolution, machineId: machineId)
-    }
-    let revision = store.preferencesRevision
-    guard revision != persistedRevision else { return }
-    persistedRevision = revision
-    onPreferencesChanged?(store.preferences)
   }
 
   func makeView() -> AnyView { AnyView(ScreenSharingPaneView(pane: self)) }
@@ -109,12 +100,9 @@ final class ScreenSharingPane: Pane {
   }
 
   private static func makeStore(
-    machine: CodevisorMachine, preferences: ScreenSharingPanePreferences, surface: ScreenSharingDesktopSurface
+    machine: CodevisorMachine, surface: ScreenSharingDesktopSurface
   ) -> StoreOf<ScreenSharingViewer> {
-    let state = ScreenSharingViewer.State(
-      machineName: machine.name, preferences: preferences,
-      dynamicResolution: ScreenSharingMachinePreferences().dynamicResolution(machineId: machine.id))
-    return Store(initialState: state) {
+    Store(initialState: ScreenSharingViewer.State(machineName: machine.name)) {
       ScreenSharingViewer()
     } withDependencies: {
       $0[ScreenSharingSurfaceClient.self] = .live(surface)
@@ -128,7 +116,7 @@ final class ScreenSharingPane: Pane {
         ?? ScreenSharingMachinePreferences().dynamicResolution(
           machineId: machineId),
       displays: store?.displays.map { .init(id: $0.id, name: $0.name) } ?? [],
-      preferredDisplayId: store?.selectedDisplayId ?? store?.preferences.preferredDisplayId,
+      preferredDisplayId: store?.selectedDisplayId ?? seedDisplayId,
       lastConnected: ScreenSharingMachinePreferences().lastConnected(machineId: machineId),
       sound: store?.endpoint?.audio.map { .init(enabled: $0.enabled, volume: $0.volume) })
     settings.dynamicResolutionNote = Self.dynamicResolutionNote(store?.endpoint)
@@ -167,7 +155,7 @@ final class ScreenSharingPane: Pane {
     }
     if let keyboard = changes.keyboard {
       ScreenSharingMachinePreferences().setScreenshotsStayLocal(keyboard.screenshotsStayLocal, machineId: machineId)
-      (store.endpoint ?? store.mirror)?.localShortcuts = keyboard.localShortcuts
+      store.endpoint?.localShortcuts = keyboard.localShortcuts
     }
     if let display = changes.preferredDisplayId { store.send(.displaySelected(display)) }
   }
@@ -184,7 +172,7 @@ final class ScreenSharingPane: Pane {
   }
   func focus() { if surface?.videoHasKeyboardFocus != true { onFocus?() } }
   func visibilityChanged(_ visible: Bool) {}
-  func applyPreferences(_ preferences: ScreenSharingPanePreferences) { store?.send(.preferencesSynced(preferences)) }
+  func applyPreferences(_ preferences: ScreenSharingPanePreferences) { seedDisplayId = preferences.preferredDisplayId }
   func willDelete() async { leave() }
   func detach() { leave() }
 
@@ -198,7 +186,7 @@ final class ScreenSharingPane: Pane {
 
   func onScreenChanged(_ onScreen: Bool) {
     isOnScreen = onScreen
-    surface?.setOnScreen(onScreen, preferringDisplay: store?.preferences.preferredDisplayId)
+    surface?.setOnScreen(onScreen, seedDisplay: seedDisplayId)
     store?.send(onScreen ? .shown : .hidden)
   }
 
@@ -206,7 +194,7 @@ final class ScreenSharingPane: Pane {
     guard workspace.id != workspaceId else { return }
 
     workspace.id = workspaceId
-    if isOnScreen { surface?.setOnScreen(true, preferringDisplay: store?.preferences.preferredDisplayId) }
+    if isOnScreen { surface?.setOnScreen(true, seedDisplay: seedDisplayId) }
   }
 
   private func leave() {

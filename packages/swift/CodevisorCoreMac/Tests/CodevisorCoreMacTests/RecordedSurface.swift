@@ -14,11 +14,11 @@ final class RecordedSurface {
     surface.onChange = { [weak self] in self?.snapshot = $0 }
   }
 
-  func show(preferringDisplay displayId: String? = nil) {
-    surface.setOnScreen(true, preferringDisplay: displayId)
+  func show(seedDisplay displayId: String? = nil) {
+    surface.setOnScreen(true, seedDisplay: displayId)
   }
 
   func hide() {
-    surface.setOnScreen(false, preferringDisplay: nil)
+    surface.setOnScreen(false)
   }
 }

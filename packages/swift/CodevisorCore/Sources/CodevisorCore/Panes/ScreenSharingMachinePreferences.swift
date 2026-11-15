@@ -71,6 +71,14 @@ public struct ScreenSharingMachinePreferences {
     defaults.set(date, forKey: "screenSharing.lastConnected.\(machineId)")
   }
 
+  public func viewOnly(machineId: String) -> Bool {
+    defaults.bool(forKey: "screenSharing.viewOnly.\(machineId)")
+  }
+
+  public func setViewOnly(_ viewOnly: Bool, machineId: String) {
+    defaults.set(viewOnly, forKey: "screenSharing.viewOnly.\(machineId)")
+  }
+
   public func preferredDisplay(machineId: String) -> String? {
     defaults.string(forKey: "screenSharing.preferredDisplay.\(machineId)")
   }

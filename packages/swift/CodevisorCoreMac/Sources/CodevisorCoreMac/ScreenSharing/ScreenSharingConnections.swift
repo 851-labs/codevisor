@@ -75,7 +75,8 @@ public final class ScreenSharingConnections {
 
     let endpoints = ScreenSharingEndpointFactory(machineId: machineId, source: source)
     let desktop = ScreenSharingDesktop(
-      connection: manager.connection(for: try machine(machineId)), makeEndpoint: endpoints.endpoint)
+      connection: manager.connection(for: try machine(machineId)), preferences: source.preferences,
+      clock: source.controlClock, makeEndpoint: endpoints.endpoint)
     tracked[machineId] = Tracked(desktop: desktop, wasReady: source.isReady(machineId))
     observe()
     return desktop

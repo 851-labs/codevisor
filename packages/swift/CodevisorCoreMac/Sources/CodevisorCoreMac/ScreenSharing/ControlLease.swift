@@ -16,6 +16,7 @@ public struct ControlLease {
     public var message: String?
     public var phase: Phase = .viewing
     public var requestID: UUID?
+    public var retriedAfterRevoke = false
     public var retriedRequest = false
     public var unansweredRequests: Set<UUID> = []
     public var wantsControl = false
@@ -33,6 +34,7 @@ public struct ControlLease {
     case delegate(Delegate)
     case event(ScreenSharingControlEvent)
     case heartbeatTick
+    case leaseSettled
     case requestTimedOut
     case suspended
 
@@ -42,7 +44,7 @@ public struct ControlLease {
     }
   }
 
-  enum CancelID { case heartbeat, requestDeadline }
+  enum CancelID: Hashable { case heartbeat(UUID), requestDeadline(UUID), settling(UUID) }
 
   private static let logger = Logger(subsystem: "com.851labs.Codevisor", category: "ScreenSharing")
 
@@ -106,7 +108,7 @@ public struct ControlLease {
       case .event(.message(.revoked(let lease, let reason))):
         guard state.lease == lease else { return .none }
         note("lease \(Self.short(lease)) revoked: \(reason)", state)
-        return release(&state, reason: reason)
+        return state.retriedAfterRevoke || !state.available ? release(&state, reason: reason) : askAgain(&state)
 
       case .event(.message):
         return .none
@@ -122,6 +124,10 @@ public struct ControlLease {
             await send(.channelSendFailed(reason: "The control channel closed."))
           }
         }
+
+      case .leaseSettled:
+        state.retriedAfterRevoke = false
+        return .none
 
       case .requestTimedOut:
         guard state.phase == .requesting else { return .none }
@@ -159,7 +165,7 @@ public struct ControlLease {
         try await clock.sleep(for: .seconds(3))
         await send(.requestTimedOut)
       }
-      .cancellable(id: CancelID.requestDeadline, cancelInFlight: true))
+      .cancellable(id: CancelID.requestDeadline(state.id), cancelInFlight: true))
   }
 
   private func granted(_ request: UUID, lease: UUID, _ state: inout State) -> Effect<Action> {
@@ -185,7 +191,8 @@ public struct ControlLease {
     let id = state.endpoint
     let pane = Self.short(state.id)
     return .merge(
-      .cancel(id: CancelID.requestDeadline),
+      .cancel(id: CancelID.requestDeadline(state.id)),
+      settle(state),
       .run { [endpoint] send in
         if let failure = await endpoint.beginInput(id, lease) { await send(.event(.inputLost(failure))) }
       },
@@ -197,7 +204,29 @@ public struct ControlLease {
           await send(.heartbeatTick)
         }
       }
-      .cancellable(id: CancelID.heartbeat, cancelInFlight: true))
+      .cancellable(id: CancelID.heartbeat(state.id), cancelInFlight: true))
+  }
+
+  private func settle(_ state: State) -> Effect<Action> {
+    guard state.retriedAfterRevoke else { return .none }
+
+    return .run { [clock] send in
+      try await clock.sleep(for: .seconds(4))
+      await send(.leaseSettled)
+    }
+    .cancellable(id: CancelID.settling(state.id), cancelInFlight: true)
+  }
+
+  private func askAgain(_ state: inout State) -> Effect<Action> {
+    note("asking for control again after the host took it back", state)
+    state.retriedAfterRevoke = true
+    state.lease = nil
+    state.phase = .viewing
+    let id = state.endpoint
+    return .merge(
+      .cancel(id: CancelID.heartbeat(state.id)),
+      .run { [endpoint] _ in await endpoint.endInput(id) },
+      request(&state, isRetry: false))
   }
 
   private func sent(_ request: UUID, _ state: State) -> Bool {
@@ -213,14 +242,16 @@ public struct ControlLease {
   private func pause(_ state: inout State) -> Effect<Action> {
     let lease = state.lease
     if state.phase != .viewing { note("paused while \(state.phase)", state) }
+    state.retriedAfterRevoke = false
     state.wantsControl = state.wantsControl || state.phase != .viewing
     setAside(&state)
     state.lease = nil
     state.phase = .viewing
     let id = state.endpoint
     return .merge(
-      .cancel(id: CancelID.requestDeadline),
-      .cancel(id: CancelID.heartbeat),
+      .cancel(id: CancelID.requestDeadline(state.id)),
+      .cancel(id: CancelID.heartbeat(state.id)),
+      .cancel(id: CancelID.settling(state.id)),
       .run { [endpoint] _ in
         await endpoint.endInput(id)
         if let lease { _ = await endpoint.sendControl(id, .release(lease: lease)) }
@@ -236,10 +267,12 @@ public struct ControlLease {
     state.lease = nil
     state.phase = .viewing
     state.message = reason
+    state.retriedAfterRevoke = false
     let id = state.endpoint
     return .merge(
-      .cancel(id: CancelID.requestDeadline),
-      .cancel(id: CancelID.heartbeat),
+      .cancel(id: CancelID.requestDeadline(state.id)),
+      .cancel(id: CancelID.heartbeat(state.id)),
+      .cancel(id: CancelID.settling(state.id)),
       .run { [endpoint] _ in
         await endpoint.endInput(id)
         if let lease { _ = await endpoint.sendControl(id, .release(lease: lease)) }

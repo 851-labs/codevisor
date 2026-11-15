@@ -8,12 +8,12 @@ struct ScreenSharingConnectionView: View {
 
   var body: some View {
     VStack(spacing: 0) {
-      if store.isLive, let message = store.lease?.message {
+      if store.isLive, let message = store.control?.message {
         HStack {
           Text(message).font(.caption).foregroundStyle(.secondary)
           Spacer()
-          if store.interactionMode == .control, store.lease?.phase == .viewing {
-            Button("Request Control") { store.send(.interactionModeChanged(.control)) }.controlSize(.small)
+          if store.canAskForControl {
+            Button("Request Control") { store.send(.controlTaken) }.controlSize(.small)
           }
         }
         .padding(.horizontal, 12).padding(.vertical, 8)
@@ -21,7 +21,7 @@ struct ScreenSharingConnectionView: View {
       if let message = store.endpoint?.clipboard?.message { banner(message) }
       if store.isLive, let notice = store.hostNotice { banner(notice) }
       ZStack {
-        if let endpoint = store.endpoint ?? store.mirror {
+        if let endpoint = store.endpoint {
           ScreenSharingNativeView(pane: pane, onClick: takeControl).id(endpoint.id)
         }
         if !store.isLive { progress }
@@ -31,10 +31,12 @@ struct ScreenSharingConnectionView: View {
   }
 
   private var takeControl: (() -> Void)? {
-    guard store.mirror != nil, pane.role != .watcher else { return nil }
+    guard store.isLive, store.control == nil, store.interactionMode == .control, pane.role != .watcher else {
+      return nil
+    }
 
     return {
-      store.send(.showHereTapped)
+      store.send(.controlTaken)
       pane.onFocusChanged?(true)
     }
   }
