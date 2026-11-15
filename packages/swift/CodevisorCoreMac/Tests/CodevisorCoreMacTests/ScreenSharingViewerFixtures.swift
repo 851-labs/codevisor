@@ -6,6 +6,7 @@ import CodevisorTestSupport
 import CoreVideo
 import Foundation
 import Observation
+import Synchronization
 @testable import CodevisorCoreMac
 
 enum ScreenSharingViewerFixtures {
@@ -26,6 +27,8 @@ final class FakeChannel<Message: Sendable & Equatable>: ScreenSharingMessageChan
   }
   @ObservationIgnored var onMessage: ((Message) -> Void)?
   @ObservationIgnored var onAvailabilityChanged: ((Bool) -> Void)?
+  nonisolated let backgroundSent = Mutex<[Message]>([])
+  nonisolated let sentInBackground = TestSignal()
   private(set) var sent: [Message] = []
   private(set) var closed = false
 
@@ -279,5 +282,13 @@ final class NativeBackendHarness {
   func cancelConsumers() async {
     for consumer in consumers { consumer.cancel() }
     for consumer in consumers { await consumer.value }
+  }
+}
+
+extension FakeChannel: ScreenSharingBackgroundSending {
+  nonisolated func sendFromAnyThread(_ message: Message) -> Bool {
+    backgroundSent.withLock { $0.append(message) }
+    sentInBackground.signal()
+    return true
   }
 }

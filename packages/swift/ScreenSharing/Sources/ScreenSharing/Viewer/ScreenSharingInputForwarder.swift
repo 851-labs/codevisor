@@ -22,6 +22,10 @@
       self.heartbeatInterval = heartbeatInterval
     }
 
+    isolated deinit {
+      keepingAlive?.cancel()
+    }
+
     public var isActive: Bool { lease != nil }
     public var keepsLeaseAlive: Bool { keepingAlive != nil }
 
