@@ -82,6 +82,26 @@
       #expect(!beating.keepsLeaseAlive && !beating.isActive)
     }
 
+    @Test("The v2 control channel is one the viewer can hand its heartbeat to")
+    func offersBackgroundSendingThroughTheChannelProtocol() {
+      let channel: any ScreenSharingMessageChannel<ScreenSharingControlMessage> = Self.controlChannel()
+      #expect(channel is any ScreenSharingBackgroundSending<ScreenSharingControlMessage>)
+    }
+
+    @Test("A forwarder released without ending its lease stops keeping it alive")
+    func stopsTheKeepAliveWhenReleased() async {
+      let released = TestSignal()
+      var forwarder: ScreenSharingInputForwarder? = ScreenSharingInputForwarder(
+        send: { _ in true }, heartbeat: { [token = ReleaseToken(released)] _ in token.isAlive },
+        heartbeatInterval: .seconds(3600))
+      forwarder?.begin(lease: UUID())
+      #expect(forwarder?.keepsLeaseAlive == true)
+
+      forwarder = nil
+
+      await released.wait()
+    }
+
     private static func controlChannel(
       bufferedBytes: Int = 16 * 1024
     ) -> ScreenSharingV2Channel<
@@ -114,6 +134,18 @@
       control.receive(.request(id: UUID()))
       return granted
     }
+  }
+
+  private final class ReleaseToken: Sendable {
+    private let released: TestSignal
+
+    init(_ released: TestSignal) {
+      self.released = released
+    }
+
+    var isAlive: Bool { true }
+
+    deinit { released.signal() }
   }
 
   private final class RecordingMessageStream: ScreenSharingV2MessageStream, Sendable {

@@ -314,6 +314,10 @@ public final class ScreenSharingViewerEndpoint: Equatable, Identifiable {
     guard let surface = views.controlled else { return "Focus this window and request control again." }
     guard surface.beginInput() else { return surface.inputFailureMessage }
     forwarder.begin(lease: lease)
+    if forwarder.keepsLeaseAlive {
+      let short = lease.uuidString.prefix(4)
+      Self.logger.notice("Control: lease \(short, privacy: .public) is kept alive off the main thread")
+    }
     clipboard?.setControlling(true)
     if supportsSystemKeys, !surface.capturesSystemShortcuts { emit(.inputNotice(Self.systemShortcutsNotice())) }
     if let key = pendingSystemKey {
