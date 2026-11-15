@@ -31,13 +31,17 @@ extension ScreenSharingHostService {
     return Int(elapsed.components.seconds * 1000 + elapsed.components.attoseconds / 1_000_000_000_000_000)
   }
 
+  static func startCaptureStream(of session: ScreenSharingHostSession) async throws {
+    try await session.capture.start(
+      displayID: session.captureDisplayID, configuration: session.configuration, sink: session.peer.frameSink,
+      metrics: session.metrics)
+  }
+
   func startCapture(_ session: ScreenSharingHostSession) async throws {
     session.capturing = (session.captureDisplayID, session.configuration)
     if session.hdr.viewerSupports { await applyDynamicRange(session).value }
     if let format = session.peer.capturePixelFormat { session.capture.pixelFormat = format }
-    try await session.capture.start(
-      displayID: session.captureDisplayID, configuration: session.configuration,
-      sink: session.peer.frameSink, metrics: session.metrics)
+    try await startsCapture(session)
   }
 
   func reconcileCapture(_ session: ScreenSharingHostSession) async throws {
@@ -67,7 +71,7 @@ extension ScreenSharingHostService {
   func followDisplay(_ session: ScreenSharingHostSession) -> Bool {
     guard
       let current = ScreenSharingDisplayIdentity.follow(
-        session.displayID, identity: session.displayIdentity, online: ScreenSharingDisplayIdentity.online())
+        session.displayID, identity: session.displayIdentity, online: onlineDisplays())
     else { return false }
     guard current != session.displayID else { return true }
     Self.logger.notice("Shared display \(session.displayID) is now display \(current)")

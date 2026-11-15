@@ -19,6 +19,8 @@ final class ScreenSharingHostService {
   var displayChoice = ScreenSharingHostDisplayChoice()
   var logicalDisplays: ScreenSharingHostLogicalDisplays
   var displaySwitchWait: Duration = .seconds(10)
+  var onlineDisplays: () -> [ScreenSharingDisplayIdentity.Online] = ScreenSharingDisplayIdentity.online
+  var startsCapture: (ScreenSharingHostSession) async throws -> Void = ScreenSharingHostService.startCaptureStream
   private(set) var pendingStarts: [UUID: ScreenSharingHostLease.Owner] = [:]
   private(set) var isShutdown = false
   private var stopGeneration = 0
