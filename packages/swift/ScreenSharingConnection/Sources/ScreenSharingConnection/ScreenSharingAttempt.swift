@@ -63,6 +63,10 @@ final class ScreenSharingAttempt {
     }
   }
 
+  func switchDisplay(to displayId: String) -> Bool {
+    transport?.switchDisplay(to: displayId) ?? false
+  }
+
   func close() {
     isClosed = true
     deadline?.meet()
@@ -129,7 +133,7 @@ final class ScreenSharingAttempt {
       if let opening { report(.transport(opening)) }
     case .notice(let notice):
       self.notice = notice
-    case .sharing:
+    case .sharing, .displaySwitch:
       break
     }
     report(.transport(event))

@@ -24,6 +24,9 @@ final class ScreenSharingMediaSessionTransport: ScreenSharingTransport {
   private var beats: [Task<Void, Never>] = []
   private var lastAnswer: ContinuousClock.Instant
   private var isClosed = false
+  private var switcher = ScreenSharingDisplaySwitcher()
+  private var switchesDisplays = false
+  private var backstop: Task<Void, Never>?
 
   init(
     host: ScreenSharingHostRequests, machine: ScreenSharingMachine, clock: ScreenSharingConnectionClock, plan: Plan
@@ -49,6 +52,7 @@ final class ScreenSharingMediaSessionTransport: ScreenSharingTransport {
     try checkOpen()
     let (reply, grant) = try await granted(media: address, chroma: chroma, mayRefresh: true)
     try checkOpen()
+    switchesDisplays = plan.capabilities.switchesDisplays || reply.switchesDisplays
     announce(reply)
     report(.entered(.connectingMedia))
     let session = try await linking { try await self.connector.connect(grant) }
@@ -82,8 +86,23 @@ final class ScreenSharingMediaSessionTransport: ScreenSharingTransport {
     }
   }
 
+  func switchDisplay(to displayId: String) -> Bool {
+    guard canSwitchDisplay else { return false }
+
+    switcher.want(displayId)
+    backstop?.cancel()
+    backstop = Task { [weak self, clock] in
+      guard (try? await clock.sleep(ScreenSharingConnectionDeadlines.displaySwitch)) != nil else { return }
+
+      self?.giveUp(on: displayId)
+    }
+    if !switcher.isCarrying { beats.append(Task { [weak self] in await self?.beat() }) }
+    return true
+  }
+
   func close() {
     isClosed = true
+    backstop?.cancel()
     beating?.cancel()
     for beat in beats { beat.cancel() }
     ends.continuation.finish()
@@ -125,8 +144,18 @@ final class ScreenSharingMediaSessionTransport: ScreenSharingTransport {
     return display.id
   }
 
+  private var canSwitchDisplay: Bool {
+    target == nil && switchesDisplays && host.holdsASessionToken && beating != nil && !isClosed
+  }
+
+  private func giveUp(on displayId: String) {
+    guard switcher.giveUp(on: displayId), !isClosed else { return }
+
+    report(.displaySwitch(.init(displayId: displayId, phase: .unavailable(message: nil))))
+  }
+
   private func announce(_ reply: ScreenSharingHostReply) {
-    report(.notice(reply.base.message))
+    if !reply.isStillSwitchingDisplay, !reply.cannotSwitchDisplay { report(.notice(reply.base.message)) }
     guard let display = reply.base.display ?? requestedDisplay else { return }
 
     let displays = reply.base.displays.isEmpty ? plan.capabilities.base.displays : reply.base.displays
@@ -163,19 +192,33 @@ final class ScreenSharingMediaSessionTransport: ScreenSharingTransport {
   }
 
   private func beat() async {
+    let beat = switcher.beginBeat()
+    defer {
+      if switcher.finish(beat), !isClosed { beats.append(Task { [weak self] in await self?.beat() }) }
+    }
     do {
-      guard let reply = try await host.heartbeat(), !isClosed else { return }
+      guard let reply = try await host.heartbeat(switchingTo: beat.carrying), !isClosed else { return }
       guard reply.isSharing else {
         ends.continuation.yield(host.heartbeatEnd(for: reply))
         return
       }
 
       lastAnswer = clock.now()
-      announce(reply)
+      read(reply, of: beat)
     } catch {
       guard !isClosed, CodevisorServerClientError.isRefusal(error) else { return }
 
       ends.continuation.yield(.dropped(.unclassified(message: serverErrorMessage(error))))
     }
+  }
+
+  private func read(_ reply: ScreenSharingHostReply, of beat: ScreenSharingDisplaySwitcher.Beat) {
+    if reply.switchesDisplays { switchesDisplays = true }
+    let reading = switcher.read(reply, of: beat)
+    if reading.showsDisplay { announce(reply) }
+    guard let result = reading.result else { return }
+
+    backstop?.cancel()
+    report(.displaySwitch(result))
   }
 }

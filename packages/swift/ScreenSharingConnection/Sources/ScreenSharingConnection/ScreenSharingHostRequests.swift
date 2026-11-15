@@ -81,11 +81,15 @@ final class ScreenSharingHostRequests {
     }
   }
 
-  func heartbeat() async throws -> ScreenSharingHostReply? {
+  var holdsASessionToken: Bool { started?.session != nil }
+
+  func heartbeat(switchingTo displayId: String? = nil) async throws -> ScreenSharingHostReply? {
     guard let started else { return nil }
 
+    var request = request(.heartbeat, from: started)
+    if let displayId, started.session != nil, machine.target == nil { request.displayId = displayId }
     do {
-      return ScreenSharingHostReply(try await machine.channel().send(request(.heartbeat, from: started)))
+      return ScreenSharingHostReply(try await machine.channel().send(request))
     } catch {
       if CodevisorServerClientError.isRefusal(error) { registered = nil }
       throw error

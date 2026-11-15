@@ -8,6 +8,7 @@ public enum ScreenSharingConnectionDeadlines {
   public static let failedHeartbeats: Duration = .seconds(25)
   public static let controlRequest: Duration = .seconds(3)
   public static let stopRequest: Duration = .seconds(5)
+  public static let displaySwitch: Duration = .seconds(15)
   public static let pendingOpen: Duration = .seconds(5)
   public static let unseenDebounce: Duration = .seconds(2)
   public static let linger: Duration = .seconds(60)

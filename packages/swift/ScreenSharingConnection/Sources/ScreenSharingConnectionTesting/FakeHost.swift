@@ -9,6 +9,12 @@ import ScreenSharingConnection
 public final class FakeHost: ScreenSharingHostChannel {
   public typealias Operation = ServerScreenSharingRequest.Operation
 
+  public enum DisplaySwitchAnswer {
+    case switches
+    case stillSwitching
+    case unavailable(message: String?)
+  }
+
   public enum Answer {
     case reply(status: String, message: String? = nil, reason: String? = nil, holderName: String? = nil)
     case failure(any Error)
@@ -31,6 +37,8 @@ public final class FakeHost: ScreenSharingHostChannel {
   public var mintsChallenges = true
   public var challengeHostKey = FakeHost.grant.endpointId
   public var forgedNonce: String?
+  public var displaySwitchAnswer = DisplaySwitchAnswer.switches
+  public private(set) var sharedDisplayId: String?
   public var provider: String?
   public var displays = [FakeHost.display]
   public var isReconnecting = false
@@ -79,6 +87,14 @@ public final class FakeHost: ScreenSharingHostChannel {
 
   public func release(_ operation: Operation) {
     gates.removeValue(forKey: operation)?.signal()
+  }
+
+  public func holdOnlyThoseWaiting(_ operation: Operation) -> TestSignal? {
+    gates.removeValue(forKey: operation)
+  }
+
+  public func shareDisplay(_ displayId: String) {
+    sharedDisplayId = displayId
   }
 
   public func send(_ request: ServerScreenSharingRequest) async throws -> ServerScreenSharingReply {
@@ -147,11 +163,15 @@ public final class FakeHost: ScreenSharingHostChannel {
     case .start, .restart:
       guard acceptsTheProof(of: request) else { return proofRejected() }
 
+      sharedDisplayId = (displays.first { $0.id == request.displayId } ?? displays.first)?.id
       reply = sharing(status: "connecting", for: request)
       reply.media = Self.grant
       if verifiesApps, request.app != nil { reply.session = mintSession() }
     case .heartbeat:
+      let refusal = switchDisplay(for: request)
       reply = sharing(status: "viewing", for: request)
+      reply.reason = refusal?.reason
+      reply.message = refusal?.message
     case .stop, .setScale:
       reply = ServerScreenSharingReply(status: "stopped")
     }
@@ -172,7 +192,28 @@ public final class FakeHost: ScreenSharingHostChannel {
     guard verifiesApps, request.app != nil || request.session != nil else { return reply }
 
     reply.displays = displays
-    reply.display = displays.first { $0.id == request.displayId } ?? displays.first
+    reply.display = displays.first { $0.id == sharedDisplayId } ?? displays.first
     return reply
+  }
+
+  private func switchDisplay(
+    for request: ServerScreenSharingRequest
+  ) -> (reason: ServerScreenSharingReason, message: String?)? {
+    guard abilities.contains("display-switch"), request.session != nil, let wanted = request.displayId,
+      wanted != sharedDisplayId
+    else { return nil }
+    guard displays.contains(where: { $0.id == wanted }) else {
+      return (ServerScreenSharingReason(rawValue: "display-unavailable"), nil)
+    }
+
+    switch displaySwitchAnswer {
+    case .switches:
+      sharedDisplayId = wanted
+      return nil
+    case .stillSwitching:
+      return (ServerScreenSharingReason(rawValue: "display-switching"), nil)
+    case .unavailable(let message):
+      return (ServerScreenSharingReason(rawValue: "display-unavailable"), message)
+    }
   }
 }
