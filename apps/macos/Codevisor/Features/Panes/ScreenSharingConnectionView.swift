@@ -21,12 +21,21 @@ struct ScreenSharingConnectionView: View {
       if let message = store.endpoint?.clipboard?.message { banner(message) }
       if store.isLive, let notice = store.hostNotice { banner(notice) }
       ZStack {
-        if let endpoint = store.endpoint {
-          ScreenSharingNativeView(endpoint: endpoint, holdsPicture: { pane.holdsPicture }).id(store.picturesTaken)
+        if let endpoint = store.endpoint ?? store.mirror {
+          ScreenSharingNativeView(pane: pane, onClick: takeControl).id(endpoint.id)
         }
         if !store.isLive { progress }
       }
       .frame(maxWidth: .infinity, maxHeight: .infinity)
+    }
+  }
+
+  private var takeControl: (() -> Void)? {
+    guard store.mirror != nil, pane.role != .watcher else { return nil }
+
+    return {
+      store.send(.showHereTapped)
+      pane.onFocusChanged?(true)
     }
   }
 

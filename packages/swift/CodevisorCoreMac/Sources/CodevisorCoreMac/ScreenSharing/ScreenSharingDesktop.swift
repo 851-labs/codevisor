@@ -14,7 +14,7 @@ public final class ScreenSharingDesktop {
   public private(set) var endpoint: ScreenSharingViewerEndpoint?
   public private(set) var holder: UUID?
   @ObservationIgnored private var seats = ScreenSharingPictureSeats()
-  @ObservationIgnored private var watchers: [UUID: @MainActor () -> Void] = [:]
+  @ObservationIgnored private var watchers: [UUID: ScreenSharingDesktopSurfaceEvents] = [:]
   @ObservationIgnored private let makeEndpoint: MakeEndpoint
   @ObservationIgnored private var shownSession: ObjectIdentifier?
   @ObservationIgnored private var sessionObservation: ObserveToken?
@@ -25,13 +25,14 @@ public final class ScreenSharingDesktop {
     sessionObservation = observe { [weak self] in self?.show(connection.session) }
   }
 
-  func join(_ id: UUID, role: ScreenSharingViewerRole, onPictureChanged: @escaping @MainActor () -> Void) {
-    watchers[id] = onPictureChanged
+  func join(_ id: UUID, role: ScreenSharingViewerRole, events: ScreenSharingDesktopSurfaceEvents) {
+    watchers[id] = events
     seat { $0.join(id, role: role) }
   }
 
   func leave(_ id: UUID) {
     watchers[id] = nil
+    endpoint?.removeView(for: id)
     seat { $0.leave(id) }
   }
 
@@ -49,9 +50,8 @@ public final class ScreenSharingDesktop {
   }
 
   private func seat(_ change: (inout ScreenSharingPictureSeats) -> Void) {
-    let previous = seats.holder
     change(&seats)
-    if let previous, previous != seats.holder { endpoint?.relinquish() }
+    endpoint?.giveInput(to: seats.holder)
     endpoint?.audio?.audible = seats.playsSound
     guard holder != seats.holder else { return }
 
@@ -60,7 +60,7 @@ public final class ScreenSharingDesktop {
   }
 
   private func pictureChanged() {
-    for watcher in watchers.values { watcher() }
+    for watcher in watchers.values { watcher.pictureChanged() }
   }
 
   private func show(_ session: (any ScreenSharingViewingSession)?) {
@@ -70,6 +70,9 @@ public final class ScreenSharingDesktop {
     shownSession = identity
     endpoint?.close()
     endpoint = session.flatMap { makeEndpoint($0, connection.display?.id) }
+    endpoint?.onViewFocusChanged = { [weak self] id, focused in self?.watchers[id]?.focusChanged(focused) }
+    endpoint?.onViewKeyboardReturned = { [weak self] id in self?.watchers[id]?.keyboardReturned() }
+    endpoint?.giveInput(to: seats.holder)
     endpoint?.audio?.audible = seats.playsSound
     pictureChanged()
   }

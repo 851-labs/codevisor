@@ -5,6 +5,7 @@ import SwiftUI
 struct MachineDesktopCard: View {
   private static let aspectRatio: CGFloat = 16 / 10
 
+  let pane: ScreenSharingPane
   let viewer: StoreOf<ScreenSharingViewer>
   let machineName: String
   let isHovered: Bool
@@ -17,7 +18,7 @@ struct MachineDesktopCard: View {
         .aspectRatio(Self.aspectRatio, contentMode: .fit)
         .overlay {
           if case .live(let endpoint) = preview {
-            MachineDesktopLivePicture(endpoint: endpoint, isHovered: isHovered, onOpen: onOpen)
+            MachineDesktopLivePicture(pane: pane, endpoint: endpoint, isHovered: isHovered, onOpen: onOpen)
           }
         }
       status

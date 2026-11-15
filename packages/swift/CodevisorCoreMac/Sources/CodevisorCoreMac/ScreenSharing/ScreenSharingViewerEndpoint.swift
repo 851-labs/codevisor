@@ -13,24 +13,22 @@ public final class ScreenSharingViewerEndpoint: Equatable, Identifiable {
   public var supportsControl: Bool { capabilities.contains(.control) }
   public var supportsClipboard: Bool { capabilities.contains(.clipboard) }
   public var supportsSystemKeys: Bool { capabilities.contains(.systemKeys) }
-  public var view: NSView { surface.view }
   public var dropsInjectedInput: Bool {
-    get { surface.dropsInjectedInput }
-    set { surface.dropsInjectedInput = newValue }
+    get { views.dropsInjectedInput }
+    set { views.dropsInjectedInput = newValue }
   }
   public var localShortcuts: Set<ScreenSharingLocalShortcutGroup> {
-    get { surface.localShortcuts }
-    set { surface.localShortcuts = newValue }
+    get { views.localShortcuts }
+    set { views.localShortcuts = newValue }
   }
-  public var videoHasKeyboardFocus: Bool { view.window?.firstResponder === view }
   public let clipboard: ScreenSharingViewerClipboard?
   public let diagnostics = ScreenSharingViewerDiagnostics()
   public var failure: String? { session.failure }
-  public var onFocusChanged: ((Bool) -> Void)?
-  public var onKeyboardReturned: (() -> Void)?
+  var onViewFocusChanged: ((UUID, Bool) -> Void)?
+  var onViewKeyboardReturned: ((UUID) -> Void)?
   var onReady: (() -> Void)?
   let session: any ScreenSharingViewingSession
-  private let surface: any ScreenSharingViewerSurface
+  private let views: ScreenSharingEndpointViews
   private let channel: (any ScreenSharingMessageChannel<ScreenSharingControlMessage>)?
   private let forwarder: ScreenSharingInputForwarder
   private var subscribers: [UUID: AsyncStream<ScreenSharingControlEvent>.Continuation] = [:]
@@ -39,7 +37,6 @@ public final class ScreenSharingViewerEndpoint: Equatable, Identifiable {
   private var diagnosticsTask: Task<Void, Never>?
   private let firstFrame = UUID()
   private var receivedVideo = false
-  private var mirrors: [UUID: ScreenSharingMirrorReference] = [:]
   private var reportedFailure = false
   private var closed = false
 
@@ -60,7 +57,7 @@ public final class ScreenSharingViewerEndpoint: Equatable, Identifiable {
     didSet { if highDynamicRange != oldValue { reportHighDynamicRange() } }
   }
   public var supportsHighDynamicRange: Bool { session.supportsHighDynamicRange }
-  public private(set) var screenShowsHighDynamicRange = false
+  public var screenShowsHighDynamicRange: Bool { views.screenShowsHighDynamicRange }
   public private(set) var hostDynamicRange: (range: ScreenSharingDynamicRange, reason: String?)?
 
   public var highDynamicRangeNote: String? {
@@ -79,7 +76,7 @@ public final class ScreenSharingViewerEndpoint: Equatable, Identifiable {
   public var desktopCanScale = false {
     didSet { updateResolutionAvailability() }
   }
-  private var paneSize: (points: CGSize, backingScale: CGFloat)?
+  private var paneSize: (points: CGSize, backingScale: CGFloat)? { views.size }
   private var resolution = ScreenSharingDynamicResolution()
   private var changedDesktop = false
   private var appliedScale: Int?
@@ -125,62 +122,78 @@ public final class ScreenSharingViewerEndpoint: Equatable, Identifiable {
     Task { @MainActor in await setDesktopScale(scale) }
   }
 
-  init(
+  convenience init(
     session: any ScreenSharingViewingSession, surface: any ScreenSharingViewerSurface, sound: Bool = true,
     displayId: String? = nil
   ) {
+    self.init(session: session, sound: sound, displayId: displayId, makeSurface: nil)
+    views.adopt(surface, as: id)
+  }
+
+  init(
+    session: any ScreenSharingViewingSession, sound: Bool = true, displayId: String? = nil,
+    makeSurface: ScreenSharingEndpointViews.Make?
+  ) {
     self.displayId = displayId
     self.session = session
-    self.surface = surface
+    views = ScreenSharingEndpointViews(frames: session.frames, timeline: session.metrics.timeline, make: makeSurface)
     capabilities = session.capabilities
     session.frames.retainsLatest = true
     channel = session.control
-    let channel = session.control
+    let (channel, views) = (session.control, views)
     forwarder = ScreenSharingInputForwarder(send: { [weak channel] in channel?.send($0) ?? false })
     clipboard = session.clipboard.map { channel in
       ScreenSharingViewerClipboard(
         channel: channel, setHostSharing: { [weak session] in session?.setClipboardSharing($0) },
-        hasKeyboardFocus: { [weak surface] in
-          guard let view = surface?.view, let window = view.window else { return false }
-          return window.isKeyWindow && window.firstResponder === view
+        hasKeyboardFocus: { [weak views] in
+          guard let views, let window = views.controlled?.view.window else { return false }
+          return window.isKeyWindow && views.hasKeyboardFocus(in: views.active)
         })
     }
     session.onRichClipboardSupported = { [weak clipboard] in clipboard?.hostAcceptsRichContent() }
     channel?.onMessage = { [weak self] in self?.emit(.message($0)) }
     channel?.onAvailabilityChanged = { [weak self] in self?.emit(.availability($0)) }
     forwarder.onLost = { [weak self] reason in
-      self?.surface.endInput()
+      self?.views.controlled?.endInput()
       self?.emit(.inputLost(reason))
     }
-    surface.onKeyboardReturned = { [weak self] in self?.onKeyboardReturned?() }
-    surface.onFocusChanged = { [weak self] focused in
-      if focused { self?.clipboard?.poll() }
-      self?.onFocusChanged?(focused)
+    followViews()
+    followSession(sound: sound)
+    tickTask = makeTickTask()
+    if clipboard != nil { clipboardTask = makeClipboardTask() }
+    diagnosticsTask = makeDiagnosticsTask()
+    ScreenSharingEndpointRegistry.shared.register(self)
+  }
+
+  private func followViews() {
+    views.events.keyboardReturned = { [weak self] in self?.onViewKeyboardReturned?($0) }
+    views.events.focusChanged = { [weak self] id, focused in
+      if focused, id == self?.views.active { self?.clipboard?.poll() }
+      self?.onViewFocusChanged?(id, focused)
     }
-    surface.onInput = { [weak forwarder] in forwarder?.forward($0) }
-    surface.onInputReleased = { [weak self] in
-      guard let self else { return }
-      self.forwarder.end()
-      self.emit(.inputLost(self.surface.inputFailureMessage))
+    views.events.input = { [weak forwarder] in forwarder?.forward($0) }
+    views.events.inputReleased = { [weak self] reason in
+      self?.forwarder.end()
+      self?.emit(.inputLost(reason))
     }
-    surface.setVideoShowsPointer(session.videoShowsPointer)
-    session.onCursorChanged = { [weak surface, weak session] update in
-      if let session { surface?.setVideoShowsPointer(session.videoShowsPointer) }
-      surface?.showRemoteCursor(update)
+    views.events.sizeChanged = { [weak self] in self?.applyResolution() }
+    views.events.screenChanged = { [weak self] in self?.reportHighDynamicRange() }
+  }
+
+  private func followSession(sound: Bool) {
+    views.setVideoShowsPointer(session.videoShowsPointer)
+    session.onCursorChanged = { [weak views, weak session] update in
+      if let session { views?.setVideoShowsPointer(session.videoShowsPointer) }
+      views?.showRemoteCursor(update)
     }
     session.onResizeSupportChanged = { [weak self] in self?.desktopResizes = $0 }
     if session.supportsAudio { audio = ScreenSharingAudioControl(session: session, enabled: sound) }
-    surface.onSizeChanged = { [weak self] size, scale in
-      self?.paneSize = (size, scale)
-      self?.applyResolution()
-    }
-    surface.onScreenHighDynamicRangeChanged = { [weak self] in
-      self?.screenShowsHighDynamicRange = $0
-      self?.reportHighDynamicRange()
-    }
     session.onVideoFormatChanged = { [weak self] in self?.hostDynamicRange = ($0, $1) }
     session.frames.tap(firstFrame).onFrameAvailable { [weak self] in Task { @MainActor in self?.noteFirstFrame() } }
-    tickTask = Task { [weak self] in
+  }
+
+  private func makeTickTask() -> Task<Void, Never> {
+    Task { [weak self] in
       while !Task.isCancelled {
         do { try await Task.sleep(for: .seconds(1)) } catch { return }
         guard let self else { return }
@@ -192,9 +205,6 @@ public final class ScreenSharingViewerEndpoint: Equatable, Identifiable {
         }
       }
     }
-    if clipboard != nil { clipboardTask = makeClipboardTask() }
-    diagnosticsTask = makeDiagnosticsTask()
-    ScreenSharingEndpointRegistry.shared.register(self)
   }
 
   private func makeClipboardTask() -> Task<Void, Never> {
@@ -228,7 +238,7 @@ public final class ScreenSharingViewerEndpoint: Equatable, Identifiable {
     -> UInt64
   {
     session.metrics.timeline.observeTransport(statistics)
-    let metrics = session.metrics.snapshot()
+    let metrics = views.measured.map(session.metrics.snapshot().merging) ?? session.metrics.snapshot()
     let now = ProcessInfo.processInfo.systemUptime
     diagnostics.update(metrics: metrics, timeline: session.metrics.timeline, statistics: statistics, now: now)
     guard let statsLog else { return exported }
@@ -286,6 +296,7 @@ public final class ScreenSharingViewerEndpoint: Equatable, Identifiable {
   func sendControl(_ message: ScreenSharingControlMessage) -> Bool { channel?.send(message) ?? false }
 
   func beginInput(lease: UUID) -> String? {
+    guard let surface = views.controlled else { return "Focus this window and request control again." }
     guard surface.beginInput() else { return surface.inputFailureMessage }
     forwarder.begin(lease: lease)
     clipboard?.setControlling(true)
@@ -306,7 +317,7 @@ public final class ScreenSharingViewerEndpoint: Equatable, Identifiable {
     pendingSystemKey = nil
     clipboard?.setControlling(false)
     forwarder.end()
-    surface.endInput()
+    views.controlled?.endInput()
   }
 
   private var pendingSystemKey: ScreenSharingSystemKey?
@@ -325,22 +336,24 @@ public final class ScreenSharingViewerEndpoint: Equatable, Identifiable {
     }
   }
 
-  public func letterbox(_ color: NSColor) { surface.setLetterboxColor(color) }
+  public func view(for pane: UUID) -> NSView? {
+    closed ? nil : views.view(for: pane)
+  }
 
-  public func makeMirror() -> ScreenSharingMirrorView? {
-    guard !closed else { return nil }
-    let id = UUID()
-    let frames = session.frames
-    guard let mirror = try? ScreenSharingMirrorView(mailbox: frames.tap(id)) else {
-      frames.untap(id)
-      return nil
-    }
-    mirror.onStop = { [weak self, weak frames] in
-      frames?.untap(id)
-      self?.mirrors[id] = nil
-    }
-    mirrors[id] = ScreenSharingMirrorReference(view: mirror)
-    return mirror
+  public func letterbox(_ color: NSColor, in pane: UUID) { views.letterbox(color, in: pane) }
+
+  public func hasKeyboardFocus(in pane: UUID) -> Bool { views.hasKeyboardFocus(in: pane) }
+
+  func removeView(for pane: UUID) {
+    if views.active == pane { relinquish() }
+    views.remove(pane)
+  }
+
+  func giveInput(to pane: UUID?) {
+    guard pane != views.active else { return }
+
+    relinquish()
+    views.activate(pane)
   }
 
   private func noteFirstFrame() {
@@ -371,11 +384,9 @@ public final class ScreenSharingViewerEndpoint: Equatable, Identifiable {
       "Viewer ended: \(String(describing: metrics.counters), privacy: .public), \(String(describing: metrics.labels), privacy: .public)"
     )
     onReady = nil
-    for mirror in mirrors.values { mirror.view?.stop() }
-    mirrors = [:]
     session.frames.untap(firstFrame)
     session.frames.retainsLatest = false
-    surface.stop()
+    views.stop()
     session.close()
   }
 

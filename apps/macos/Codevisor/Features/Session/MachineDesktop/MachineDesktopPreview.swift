@@ -15,7 +15,7 @@ struct MachineDesktopPreview: View {
     ZStack {
       if let pane, let viewer = pane.store {
         MachineDesktopCard(
-          viewer: viewer, machineName: pane.machineName, isHovered: isHovered, onOpen: onOpen,
+          pane: pane, viewer: viewer, machineName: pane.machineName, isHovered: isHovered, onOpen: onOpen,
           onRetry: { viewer.send(.retryButtonTapped) }
         )
         .onHover { isHovered = $0 }

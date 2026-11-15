@@ -8,10 +8,16 @@ public final class ScreenSharingMetrics: @unchecked Sendable {
   private var indices: [String: Int] = [:]
   private var previousEvents: [String: Int64] = [:]
   private let capacity = 1800
-  public let timeline = ScreenSharingFrameTimeline()
+  public let timeline: ScreenSharingFrameTimeline
   public let commits = ScreenSharingCommitLog()
 
-  public init() {}
+  public init() {
+    timeline = ScreenSharingFrameTimeline()
+  }
+
+  public init(timeline: ScreenSharingFrameTimeline) {
+    self.timeline = timeline
+  }
   public static var nowNs: Int64 { Int64(DispatchTime.now().uptimeNanoseconds) }
 
   @discardableResult
@@ -57,6 +63,12 @@ public final class ScreenSharingMetrics: @unchecked Sendable {
     public let counters: [String: Int]
     public let labels: [String: String]
     public let timings: [String: Timing]
+
+    public func merging(_ other: Snapshot) -> Snapshot {
+      Snapshot(
+        counters: counters.merging(other.counters) { $0 + $1 }, labels: labels.merging(other.labels) { $1 },
+        timings: timings.merging(other.timings) { $1 })
+    }
   }
 
   public struct Timing: Codable, Equatable, Sendable {

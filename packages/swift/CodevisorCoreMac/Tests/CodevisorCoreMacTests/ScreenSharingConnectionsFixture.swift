@@ -90,7 +90,7 @@ final class ScreenSharingConnectionsFixture {
       workspaces: { [unowned self] in self.workspaces },
       signer: { [unowned self] in try self.signerOrFailure() },
       connector: { [unowned self] in self.connector },
-      makeSurface: { _ in FakeSurface() },
+      makeSurface: { _, _ in FakeSurface() },
       appName: { Self.appName })
   }
 

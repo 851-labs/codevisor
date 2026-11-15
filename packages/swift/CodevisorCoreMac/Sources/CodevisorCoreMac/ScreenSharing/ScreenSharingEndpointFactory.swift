@@ -12,15 +12,18 @@ struct ScreenSharingEndpointFactory {
   let source: ScreenSharingConnectionsSource
 
   func endpoint(for session: any ScreenSharingViewingSession, displayId: String?) -> ScreenSharingViewerEndpoint? {
-    do {
-      let surface = try source.makeSurface(session)
-      let endpoint = ScreenSharingViewerEndpoint(session: session, surface: surface, sound: false, displayId: displayId)
-      configure(endpoint, for: session, displayId: displayId)
-      return endpoint
-    } catch {
-      Self.logger.error("Couldn't show the desktop of \(machineId, privacy: .public): \(error, privacy: .public)")
-      return nil
+    let (machineId, makeSurface) = (machineId, source.makeSurface)
+    let endpoint = ScreenSharingViewerEndpoint(session: session, sound: false, displayId: displayId) {
+      frames, metrics in
+      do {
+        return try makeSurface(frames, metrics)
+      } catch {
+        Self.logger.error("Couldn't show the desktop of \(machineId, privacy: .public): \(error, privacy: .public)")
+        throw error
+      }
     }
+    configure(endpoint, for: session, displayId: displayId)
+    return endpoint
   }
 
   private func configure(

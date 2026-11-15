@@ -2,12 +2,13 @@ import CodevisorCoreMac
 import SwiftUI
 
 struct MachineDesktopLivePicture: View {
+  let pane: ScreenSharingPane
   let endpoint: ScreenSharingViewerEndpoint
   let isHovered: Bool
   let onOpen: () -> Void
 
   var body: some View {
-    ScreenSharingMirrorHost(endpoint: endpoint, letterbox: .clear)
+    ScreenSharingNativeView(pane: pane, letterbox: .clear)
       .id(endpoint.id)
       .allowsHitTesting(false)
       .overlay { openButton }
