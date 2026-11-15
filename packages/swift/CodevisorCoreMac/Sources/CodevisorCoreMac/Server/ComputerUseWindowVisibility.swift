@@ -44,11 +44,15 @@ public enum ComputerUseWindowVisibility: String, Equatable, Sendable {
 
 func computerUseWindowIsOnScreen(_ windowID: CGWindowID) -> Bool? {
   guard
-    let info = CGWindowListCreateDescriptionFromArray([NSNumber(value: windowID)] as CFArray)
-      as? [[String: Any]],
+    let info = CGWindowListCreateDescriptionFromArray(computerUseWindowIDList([windowID])) as? [[String: Any]],
     let window = info.first
   else { return nil }
   return window[kCGWindowIsOnscreen as String] as? Bool == true
+}
+
+func computerUseWindowIDList(_ windowIDs: [CGWindowID]) -> CFArray {
+  var values = windowIDs.map { UnsafeRawPointer(bitPattern: UInt($0)) }
+  return CFArrayCreate(nil, &values, values.count, nil)
 }
 
 private let allSpacesMask: Int32 = 7
