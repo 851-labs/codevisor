@@ -66,6 +66,25 @@ struct ScreenSharingHostDisplaySwitchTests {
     }
   }
 
+  @Test func aSwitchThatCannotReadTheDisplayListSaysWhyAndKeepsTheCurrentDisplay() async throws {
+    try await Fixture.run { mac in
+      mac.displays = [Fixture.main, Fixture.side]
+      _ = await mac.send(mac.start(as: .macBook, .open))
+      let session = try #require(mac.host.current)
+      mac.listDisplays = { throw CocoaError(.fileReadUnknown) }
+
+      let reply = await mac.send(mac.heartbeat(as: .macBook, sharing: "side"))
+
+      #expect(reply.status == "connecting" && reply.reason == .displayUnavailable)
+      #expect(reply.message == ScreenSharingHostService.displaysNotListed && reply.display == Fixture.main)
+      #expect(session.displayID == Fixture.displayID(of: Fixture.main))
+      mac.listDisplays = nil
+      let plain = await mac.send(mac.heartbeat(as: .macBook))
+      #expect(plain.reason == nil && plain.message == nil && plain.display == Fixture.main)
+      #expect(await mac.send(mac.heartbeat(as: .macBook, sharing: "side")).display == Fixture.side)
+    }
+  }
+
   @Test func whileASwitchIsUnderWayTheReplySaysSoAndAskingAgainDoesNotRestartIt() async throws {
     try await Fixture.run { mac in
       mac.displays = [Fixture.main, Fixture.side]
