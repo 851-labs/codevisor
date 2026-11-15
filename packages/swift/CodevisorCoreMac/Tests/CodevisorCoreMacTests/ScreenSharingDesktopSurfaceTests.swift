@@ -56,6 +56,7 @@ struct ScreenSharingDesktopSurfaceTests {
 
     tab.surface.detach()
     #expect(window.snapshot.endpoint != nil)
+    #expect(tab.snapshot == ScreenSharingSurfaceSnapshot(), "a closed pane is told it has nothing left to control")
   }
 
   @Test("Sound plays only while a tab or window is on screen, never for a preview alone")

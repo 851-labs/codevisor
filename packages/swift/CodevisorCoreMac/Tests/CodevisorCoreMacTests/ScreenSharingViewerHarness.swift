@@ -11,12 +11,13 @@ final class ScreenSharingViewerHarness {
   static let machine = "croissant"
 
   let client = FakeEndpointClient()
+  let clock = Clocks.TestClock<Duration>()
   let store: TestStoreOf<ScreenSharingViewer>
   private let asked = LockIsolated<[String]>([])
   private var snapshot = ScreenSharingSurfaceSnapshot()
 
   init(preferences: ScreenSharingPanePreferences = .init()) {
-    let (asked, endpoints) = (asked, client.value)
+    let (asked, endpoints, clock) = (asked, client.value, clock)
     store = TestStore(initialState: ScreenSharingViewer.State(machineName: Self.machine, preferences: preferences)) {
       ScreenSharingViewer()
     } withDependencies: {
@@ -25,7 +26,7 @@ final class ScreenSharingViewerHarness {
         takePicture: { asked.withValue { $0.append("take picture") } },
         switchDisplay: { display in asked.withValue { $0.append("switch to \(display)") } })
       $0[ScreenSharingEndpointClient.self] = endpoints
-      $0.continuousClock = Clocks.TestClock<Duration>()
+      $0.continuousClock = clock
       $0.uuid = .incrementing
     }
   }
@@ -63,7 +64,7 @@ final class ScreenSharingViewerHarness {
     await surface {
       $0.picture = .here(endpoint)
     } then: {
-      $0.lease = ControlLease.State(endpoint: endpoint.id)
+      $0.lease = ControlLease.State(endpoint: endpoint.id, id: $0.id)
       $0.picturesTaken += 1
     }
     guard channelAvailable else { return endpoint }

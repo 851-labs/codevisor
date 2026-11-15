@@ -73,6 +73,7 @@ public final class ScreenSharingDesktopSurface {
     isDetached = true
     observation = nil
     unbind()
+    report()
   }
 
   private func watch() {
