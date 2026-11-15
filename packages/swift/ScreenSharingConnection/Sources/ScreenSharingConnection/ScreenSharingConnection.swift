@@ -15,6 +15,7 @@ public final class ScreenSharingConnection {
   public private(set) var hostNotice: String?
   public private(set) var surfaces: [ScreenSharingSurfaceState] = []
   public private(set) var isEnded = false
+  public private(set) var displaySwitch: ScreenSharingDisplaySwitch?
   public var preferredDisplayId: String?
   public let machineId: String
   public let target: String?
@@ -54,7 +55,7 @@ public final class ScreenSharingConnection {
   public func restart() { handle(.restartRequested) }
 
   public func switchDisplay(to displayId: String) {
-    guard target == nil, preferredDisplayId != displayId else { return }
+    guard target == nil, !switchInSession(to: displayId), preferredDisplayId != displayId else { return }
 
     preferredDisplayId = displayId
     guard state == .reconnecting || display?.id != displayId else { return }
@@ -63,6 +64,31 @@ public final class ScreenSharingConnection {
   }
 
   func end() { handle(.ended) }
+
+  private func switchInSession(to displayId: String) -> Bool {
+    guard state == .live, let runner = attempt?.runner else { return false }
+    guard displaySwitch?.phase == .switching || display?.id != displayId else { return false }
+    guard runner.switchDisplay(to: displayId) else { return false }
+
+    displaySwitch = ScreenSharingDisplaySwitch(displayId: displayId, phase: .switching)
+    return true
+  }
+
+  private func settle(_ result: ScreenSharingDisplaySwitch) {
+    guard displaySwitch?.displayId == result.displayId, displaySwitch?.phase == .switching else { return }
+
+    displaySwitch = result
+    if result.phase == .confirmed { preferredDisplayId = result.displayId }
+  }
+
+  private func confirmLateSwitch(showing display: ServerScreenSharingDisplay) {
+    guard let pending = displaySwitch, pending.displayId == display.id, case .unavailable = pending.phase else {
+      return
+    }
+
+    displaySwitch = ScreenSharingDisplaySwitch(displayId: display.id, phase: .confirmed)
+    preferredDisplayId = display.id
+  }
 
   func surface(_ id: UUID) -> ScreenSharingSurfaceState? {
     surfaces.first { $0.id == id }
@@ -191,6 +217,9 @@ public final class ScreenSharingConnection {
     case .transport(.sharing(let display, let displays)):
       if let display, self.display != display { self.display = display }
       if self.displays != displays { self.displays = displays }
+      if let display { confirmLateSwitch(showing: display) }
+    case .transport(.displaySwitch(let result)):
+      settle(result)
     }
   }
 
@@ -213,6 +242,9 @@ public final class ScreenSharingConnection {
     session = nil
     if isTakingLong { isTakingLong = false }
     if hostNotice != nil { hostNotice = nil }
+    if let pending = displaySwitch, pending.phase == .switching {
+      displaySwitch = ScreenSharingDisplaySwitch(displayId: pending.displayId, phase: .unavailable(message: nil))
+    }
   }
 
   private func restartUnseenTimer() {

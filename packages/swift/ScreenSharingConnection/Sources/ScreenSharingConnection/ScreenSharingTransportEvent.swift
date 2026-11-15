@@ -7,4 +7,5 @@ public enum ScreenSharingTransportEvent {
   case opened(any ScreenSharingViewingSession)
   case sharing(display: ServerScreenSharingDisplay?, displays: [ServerScreenSharingDisplay])
   case notice(String?)
+  case displaySwitch(ScreenSharingDisplaySwitch)
 }
