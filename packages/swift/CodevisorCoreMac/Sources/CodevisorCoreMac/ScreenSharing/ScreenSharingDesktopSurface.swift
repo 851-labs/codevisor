@@ -59,6 +59,7 @@ public final class ScreenSharingDesktopSurface {
   public func openedByUser() {
     Self.logger.notice("Desktop opened by the user in a \(String(describing: self.role), privacy: .public)")
     bound?.surface.openedByUser()
+    bound?.desktop.openedByUser(id)
   }
 
   public func retry() {
@@ -138,7 +139,7 @@ public final class ScreenSharingDesktopSurface {
 
     askForTheSavedDisplay(on: bound.desktop)
     bound.surface.setOnScreen(true)
-    bound.desktop.setOnScreen(true, for: id, seedDisplayId: seedDisplayId)
+    bound.desktop.setOnScreen(true, for: id)
     onShown()
   }
 

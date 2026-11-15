@@ -242,6 +242,7 @@ public struct ControlLease {
   private func pause(_ state: inout State) -> Effect<Action> {
     let lease = state.lease
     if state.phase != .viewing { note("paused while \(state.phase)", state) }
+    state.retriedAfterRevoke = false
     state.wantsControl = state.wantsControl || state.phase != .viewing
     setAside(&state)
     state.lease = nil

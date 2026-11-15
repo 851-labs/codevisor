@@ -50,17 +50,36 @@ struct ScreenSharingDesktopControlTests {
     #expect(host.fixture.fake(for: window)?.stopped == false)
   }
 
+  @Test("A surface the user opens takes control when it comes on screen, without a click and without the host")
+  func givesControlToAnOpenedSurface() async throws {
+    let host = Host()
+    let (tab, window) = (host.fixture.surface(.tab), host.fixture.surface(.window))
+    tab.show()
+    await host.grant()
+    await host.controls(tab)
+
+    window.surface.openedByUser()
+    #expect(tab.snapshot.hasControl, "not before it is on screen")
+    window.show()
+
+    #expect(window.snapshot.hasControl && tab.snapshot.control == nil && host.sent.count == 1)
+    window.hide()
+    window.show()
+    #expect(tab.snapshot.hasControl, "coming back on screen later does not take control again")
+  }
+
   @Test("Hiding the surface with control gives it to a surface still on screen, or back to the host if none is")
   func passesControlOnWhenItsSurfaceHides() async throws {
     let host = Host()
     let (window, tab) = (host.fixture.surface(.window), host.fixture.surface(.tab))
     window.show()
     let lease = await host.grant()
-    await awaitObserved { window.snapshot.hasControl }
+    await host.controls(window)
     tab.show()
 
     window.hide()
-    #expect(tab.snapshot.hasControl && host.sent.count == 1, "the tab takes over locally")
+    #expect(tab.snapshot.hasControl && window.snapshot.control == nil, "the tab takes over locally")
+    #expect(host.fixture.fake(for: tab)?.inputActive == true && host.sent.count == 1)
 
     tab.hide()
     await awaitObserved { host.sent.last == .release(lease: lease) }
@@ -85,6 +104,7 @@ struct ScreenSharingDesktopControlTests {
     #expect(host.fixture.preferences.viewOnly(machineId: Fixture.machineId))
     window.surface.takeControl()
     #expect(host.requests.count == 1 && host.fixture.fake(for: window)?.inputActive == false)
+    #expect(window.snapshot.control == nil && tab.snapshot.control == nil, "View-only leaves nobody in control")
 
     tab.surface.setMode(.control)
     await awaitObserved { host.requests.count == 2 }
@@ -135,19 +155,22 @@ struct ScreenSharingDesktopControlTests {
     #expect(host.session.desktopSizeRequests.last == [640, 400], "the surface with control decides")
   }
 
-  @Test("A display is saved for the machine only once the connection shares it")
-  func savesTheDisplayOnceShared() async throws {
+  @Test("A chosen display is saved for the machine once the connection takes it; a pane's old choice is only a seed")
+  func savesTheChosenDisplayForTheMachine() async throws {
     let host = Host()
     let tab = host.fixture.surface(.tab)
-    tab.show()
+    tab.show(seedDisplay: "from an old tab")
     await awaitObserved { tab.snapshot.endpoint != nil }
-    let shared = try #require(tab.snapshot.displayId)
+    #expect(try host.fixture.connection.preferredDisplayId == "from an old tab")
+    #expect(host.fixture.preferences.preferredDisplay(machineId: Fixture.machineId) == nil, "a seed is never saved")
 
-    tab.surface.switchDisplay(to: "another")
-    #expect(host.fixture.preferences.preferredDisplay(machineId: Fixture.machineId) == nil)
+    tab.surface.switchDisplay(to: "chosen")
+    #expect(try host.fixture.connection.preferredDisplayId == "chosen")
+    #expect(host.fixture.preferences.preferredDisplay(machineId: Fixture.machineId) == "chosen")
 
-    tab.surface.switchDisplay(to: shared)
-    #expect(host.fixture.preferences.preferredDisplay(machineId: Fixture.machineId) == shared)
+    let window = host.fixture.surface(.window)
+    window.show(seedDisplay: "another old tab")
+    #expect(try host.fixture.connection.preferredDisplayId == "chosen", "the machine's choice wins over a seed")
   }
 
   @MainActor

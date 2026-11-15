@@ -17,7 +17,7 @@ public final class ScreenSharingDesktop {
     let role: ScreenSharingViewerRole
     let events: ScreenSharingDesktopSurfaceEvents
     var isOnScreen = false
-    var seedDisplayId: String?
+    var wasOpenedByUser = false
 
     var canControl: Bool { role != .watcher }
   }
@@ -50,7 +50,10 @@ public final class ScreenSharingDesktop {
     control = ScreenSharingDesktopControl(mode: viewOnly ? .view : .control, clock: clock)
     following = [
       observe { [weak self] in self?.show(connection.session) },
-      observe { [weak self] in self?.displayChanged(to: connection.display?.id, among: connection.displays) },
+      observe { [weak self] in
+        self?.saveTheChosenDisplay(preferred: connection.preferredDisplayId, shared: connection.display?.id)
+        self?.configureResolution(for: connection.display?.id, among: connection.displays)
+      },
     ]
   }
 
@@ -64,18 +67,28 @@ public final class ScreenSharingDesktop {
     hidden(id)
   }
 
-  func setOnScreen(_ onScreen: Bool, for id: UUID, seedDisplayId: String? = nil) {
+  func setOnScreen(_ onScreen: Bool, for id: UUID) {
     guard var seat = seats[id] else { return }
 
     seat.isOnScreen = onScreen
-    seat.seedDisplayId = seedDisplayId ?? seat.seedDisplayId
+    let takesControl = onScreen && seat.wasOpenedByUser
+    seat.wasOpenedByUser = false
     seats[id] = seat
     if onScreen {
-      if seat.canControl { control.offer(id) }
+      if takesControl { control.take(id) } else if seat.canControl { control.offer(id) }
       settle()
     } else {
       hidden(id)
     }
+  }
+
+  func openedByUser(_ id: UUID) {
+    guard let seat = seats[id], seat.canControl else { return }
+    guard seat.isOnScreen else {
+      seats[id]?.wasOpenedByUser = true
+      return
+    }
+    takeControl(id)
   }
 
   func takeControl(_ id: UUID) {
@@ -103,7 +116,7 @@ public final class ScreenSharingDesktop {
   func selectDisplay(_ displayId: String) {
     chosenDisplayId = displayId
     connection.switchDisplay(to: displayId)
-    displayChanged(to: connection.display?.id, among: connection.displays)
+    saveTheChosenDisplay(preferred: connection.preferredDisplayId, shared: connection.display?.id)
   }
 
   func askForTheSavedDisplay(seed: String?) {
@@ -118,8 +131,11 @@ public final class ScreenSharingDesktop {
   }
 
   private func hidden(_ id: UUID) {
-    control.drop(id)
-    if controller == nil, let next = largestOnScreen() { control.offer(next) }
+    if controller == id, let next = largestOnScreen() {
+      control.take(next)
+    } else {
+      control.drop(id)
+    }
     settle()
   }
 
@@ -142,11 +158,14 @@ public final class ScreenSharingDesktop {
     for seat in seats.values { seat.events.pictureChanged() }
   }
 
-  private func displayChanged(to displayId: String?, among displays: [ServerScreenSharingDisplay]) {
-    if let displayId, displayId == chosenDisplayId {
-      preferences.setPreferredDisplay(displayId, machineId: machineId)
-      chosenDisplayId = nil
-    }
+  private func saveTheChosenDisplay(preferred: String?, shared: String?) {
+    guard let chosenDisplayId, chosenDisplayId == preferred || chosenDisplayId == shared else { return }
+
+    preferences.setPreferredDisplay(chosenDisplayId, machineId: machineId)
+    self.chosenDisplayId = nil
+  }
+
+  private func configureResolution(for displayId: String?, among displays: [ServerScreenSharingDisplay]) {
     guard let endpoint else { return }
 
     let display = displays.first { $0.id == displayId }
@@ -167,7 +186,7 @@ public final class ScreenSharingDesktop {
     endpoint?.onViewFocusChanged = { [weak self] id, focused in self?.seats[id]?.events.focusChanged(focused) }
     endpoint?.onViewKeyboardReturned = { [weak self] id in self?.seats[id]?.events.keyboardReturned() }
     endpoint?.onViewResized = { [weak self] _ in self?.resized() }
-    displayChanged(to: connection.display?.id, among: connection.displays)
+    configureResolution(for: connection.display?.id, among: connection.displays)
     control.attach(endpoint)
     if controller == nil, let next = largestOnScreen() { control.offer(next) }
     settle()

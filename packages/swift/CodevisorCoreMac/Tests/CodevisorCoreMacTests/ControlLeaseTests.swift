@@ -204,19 +204,18 @@ struct ControlLeaseTests {
     }
   }
 
-  @Test func revocationOfAnotherLeaseIsIgnoredAndOfThisOneReleases() async {
+  @Test func revocationOfAnotherLeaseIsIgnored() async {
     await withMainSerialExecutor {
       let client = FakeEndpointClient()
       let store = await makeControllingStore(client)
       await store.send(.event(.message(.revoked(lease: UUID(), reason: "Someone else's lease"))))
-      await store.send(.event(.message(.revoked(lease: lease, reason: "Host ended control")))) {
+      expectNoDifference(client.endInputs, [])
+      await store.send(.controlReleased(reason: nil)) {
         $0.wantsControl = false
         $0.lease = nil
         $0.phase = .viewing
-        $0.message = "Host ended control"
       }
       await store.receive(\.delegate.released)
-      expectNoDifference(client.endInputs, [endpoint])
     }
   }
 
