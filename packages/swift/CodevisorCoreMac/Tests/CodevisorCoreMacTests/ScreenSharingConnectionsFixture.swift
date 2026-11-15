@@ -51,7 +51,12 @@ final class ScreenSharingConnectionsFixture {
   }
 
   func surface(_ role: ScreenSharingViewerRole, inWorkspace workspaceId: UUID? = nil) -> RecordedSurface {
-    RecordedSurface(connections.surface(onMachine: Self.machineId, role: role, inWorkspace: workspaceId))
+    surface(role, shownIn: { workspaceId })
+  }
+
+  func surface(_ role: ScreenSharingViewerRole, shownIn workspace: @escaping @MainActor () -> UUID?) -> RecordedSurface
+  {
+    RecordedSurface(connections.surface(onMachine: Self.machineId, role: role, shownIn: workspace))
   }
 
   func goLive() async throws {

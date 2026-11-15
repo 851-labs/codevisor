@@ -41,13 +41,13 @@ public final class ScreenSharingConnections {
   }
 
   public func surface(
-    onMachine machineId: String, role: ScreenSharingViewerRole, inWorkspace workspaceId: UUID?
+    onMachine machineId: String, role: ScreenSharingViewerRole, shownIn workspace: @escaping @MainActor () -> UUID?
   ) -> ScreenSharingDesktopSurface {
     ScreenSharingDesktopSurface(
       role: role,
       findDesktop: { [weak self] in try self?.knownDesktop(for: machineId) },
       onShown: { [weak self] in
-        guard let workspaceId else { return }
+        guard let workspaceId = workspace() else { return }
 
         self?.surfaceShown(inWorkspace: workspaceId, onMachine: machineId)
       })
