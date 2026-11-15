@@ -16,7 +16,8 @@ public struct ControlLease {
     public var message: String?
     public var phase: Phase = .viewing
     public var requestID: UUID?
-    public var automaticRetries: [Date] = []
+    public var recentRetries = 0
+    public var retrySettling = false
     public var revokeReason: String?
     public var retriedRequest = false
     public var retriesAFirstRefusal = false
@@ -38,7 +39,10 @@ public struct ControlLease {
     case delegate(Delegate)
     case event(ScreenSharingControlEvent)
     case heartbeatTick
+    case liveSettled
     case requestTimedOut
+    case retryAged
+    case retrySettled
     case suspended
 
     @CasePathable
@@ -47,16 +51,17 @@ public struct ControlLease {
     }
   }
 
-  enum CancelID: Hashable { case heartbeat(UUID), requestDeadline(UUID) }
+  enum CancelID: Hashable { case heartbeat(UUID), requestDeadline(UUID), liveSettling(UUID) }
 
   static let retriesPerMinute = 3
-  static let settlingTime: TimeInterval = 4
+  static let retryWindow: Duration = .seconds(60)
+  static let settlingTime: Duration = .seconds(4)
+  static let liveSettlingTime: Duration = .seconds(5)
   static let refusalRetryDelay: Duration = .seconds(1)
 
   private static let logger = Logger(subsystem: "com.851labs.Codevisor", category: "ScreenSharing")
 
   @Dependency(\.continuousClock) var clock
-  @Dependency(\.date.now) var now
   @Dependency(ScreenSharingEndpointClient.self) var endpoint
   @Dependency(\.uuid) var uuid
 
@@ -71,6 +76,22 @@ public struct ControlLease {
 
       case .connectionWentLive:
         state.retriesAFirstRefusal = true
+        return .run { [clock] send in
+          try await clock.sleep(for: Self.liveSettlingTime)
+          await send(.liveSettled)
+        }
+        .cancellable(id: CancelID.liveSettling(state.id), cancelInFlight: true)
+
+      case .liveSettled:
+        state.retriesAFirstRefusal = false
+        return .none
+
+      case .retryAged:
+        state.recentRetries = max(0, state.recentRetries - 1)
+        return .none
+
+      case .retrySettled:
+        state.retrySettling = false
         return .none
 
       case .channelSendFailed(let reason):
@@ -224,23 +245,28 @@ public struct ControlLease {
   }
 
   private func mayAskAgain(_ state: State) -> Bool {
-    let recent = state.automaticRetries.filter { now.timeIntervalSince($0) < 60 }
-    guard state.available, recent.count < Self.retriesPerMinute else { return false }
-    guard let last = recent.last else { return true }
-
-    return now.timeIntervalSince(last) >= Self.settlingTime
+    state.available && !state.retrySettling && state.recentRetries < Self.retriesPerMinute
   }
 
   private func askAgain(_ state: inout State, after reason: String) -> Effect<Action> {
     note("asking for control again after the host took it back", state)
-    state.automaticRetries = state.automaticRetries.filter { now.timeIntervalSince($0) < 60 } + [now]
+    state.recentRetries += 1
+    state.retrySettling = true
     state.lease = nil
     state.phase = .viewing
     let id = state.endpoint
     let effect = Effect<Action>.merge(
       .cancel(id: CancelID.heartbeat(state.id)),
       .run { [endpoint] _ in await endpoint.endInput(id) },
-      request(&state, isRetry: false))
+      request(&state, isRetry: false),
+      .run { [clock] send in
+        try await clock.sleep(for: Self.settlingTime)
+        await send(.retrySettled)
+      },
+      .run { [clock] send in
+        try await clock.sleep(for: Self.retryWindow)
+        await send(.retryAged)
+      })
     state.revokeReason = reason
     return effect
   }

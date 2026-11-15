@@ -156,6 +156,61 @@ struct ScreenSharingDesktopControlTests {
     #expect(!host.fixture.preferences.viewOnly(machineId: Fixture.machineId))
   }
 
+  @Test("A surface the user opens before the picture is live gets the keyboard when it goes live, without a click")
+  func givesTheKeyboardWhenAnOpenedSurfaceGoesLive() async throws {
+    let host = Host()
+    host.session.deliversVideo = false
+    let window = host.fixture.surface(.window)
+    window.surface.openedByUser()
+    window.show()
+    await awaitObserved { window.snapshot.endpoint != nil }
+    let desktopWindow = NSWindow()
+    desktopWindow.contentView?.addSubview(try #require(window.surface.videoView()))
+    #expect(desktopWindow.firstResponder !== window.surface.videoView(), "not before the picture is live")
+
+    host.session.deliverFrame()
+    await awaitObserved { host.requests.count == 1 }
+
+    #expect(desktopWindow.firstResponder === window.surface.videoView())
+  }
+
+  @Test("A surface the user opens gets the keyboard once its picture reaches a window, if it was not in one yet")
+  func givesTheKeyboardWhenThePictureReachesAWindow() async throws {
+    let host = Host()
+    let window = host.fixture.surface(.window)
+    window.surface.openedByUser()
+    window.show()
+    await awaitObserved { host.requests.count == 1 }
+    let video = try #require(window.surface.videoView())
+    #expect(video.window == nil)
+
+    let desktopWindow = NSWindow()
+    desktopWindow.contentView?.addSubview(video)
+
+    #expect(desktopWindow.firstResponder === video)
+  }
+
+  @Test("A mode taken for this connection goes back to the saved one when the connection turns off")
+  func restoresTheSavedModeWhenTheConnectionTurnsOff() async throws {
+    let host = Host()
+    let tab = host.fixture.surface(.tab)
+    tab.surface.setMode(.view)
+    tab.show()
+    await awaitObserved { tab.snapshot.connection == .live }
+    tab.surface.controlForThisSession()
+    #expect(tab.snapshot.mode == .control)
+
+    tab.hide()
+    await host.fixture.clock.waitForSleep(ScreenSharingConnectionDeadlines.unseenDebounce)
+    host.fixture.clock.advance(by: ScreenSharingConnectionDeadlines.unseenDebounce)
+    await host.fixture.clock.waitForSleep(ScreenSharingConnectionDeadlines.linger)
+    host.fixture.clock.advance(by: ScreenSharingConnectionDeadlines.linger)
+    await host.fixture.settle(.off)
+
+    await awaitObserved { tab.snapshot.mode == .view }
+    #expect(host.fixture.preferences.viewOnly(machineId: Fixture.machineId))
+  }
+
   @Test("A system key pressed in View takes control for this session and leaves the saved setting on View")
   func leavesTheSavedModeAloneForASystemKey() async throws {
     let host = Host()

@@ -21,6 +21,7 @@
     func setVideoShowsPointer(_ shows: Bool)
     var onSizeChanged: ((CGSize, CGFloat) -> Void)? { get set }
     var onScreenHighDynamicRangeChanged: ((Bool) -> Void)? { get set }
+    var onMovedToWindow: (() -> Void)? { get set }
   }
 
   extension ScreenSharingViewerSurface {
@@ -29,6 +30,10 @@
       set {}
     }
     public var onScreenHighDynamicRangeChanged: ((Bool) -> Void)? {
+      get { nil }
+      set {}
+    }
+    public var onMovedToWindow: (() -> Void)? {
       get { nil }
       set {}
     }

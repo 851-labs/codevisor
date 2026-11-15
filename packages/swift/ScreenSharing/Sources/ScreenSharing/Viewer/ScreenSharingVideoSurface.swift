@@ -20,6 +20,7 @@
       get { input.onRelease }
       set { input.onRelease = newValue }
     }
+    public var onMovedToWindow: (() -> Void)?
     public var onKeyboardReturned: (() -> Void)? {
       get { input.onKeyboardReturned }
       set { input.onKeyboardReturned = newValue }
@@ -200,6 +201,7 @@
     public override func viewDidMoveToWindow() {
       super.viewDidMoveToWindow()
       input.windowChanged()
+      onMovedToWindow?()
     }
     public func stop() { input.end(); metal.stop() }
     public override var acceptsFirstResponder: Bool { true }

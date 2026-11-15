@@ -37,7 +37,6 @@ final class ScreenSharingDesktopControl {
     } withDependencies: { [clock] in
       $0.continuousClock = clock
       $0.uuid = UUIDGenerator { UUID() }
-      $0.date = DateGenerator { Date() }
       $0[ScreenSharingEndpointClient.self] = .liveValue
     }
     self.lease = lease

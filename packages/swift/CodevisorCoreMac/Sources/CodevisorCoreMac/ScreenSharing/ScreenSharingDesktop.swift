@@ -35,6 +35,8 @@ public final class ScreenSharingDesktop {
   @ObservationIgnored private let makeEndpoint: MakeEndpoint
   @ObservationIgnored private var shownSession: ObjectIdentifier?
   @ObservationIgnored private var following: [ObserveToken] = []
+  @ObservationIgnored private var keyboardOwed: UUID?
+  @ObservationIgnored private var modeIsForThisConnection = false
 
   private var machineId: String { connection.machineId }
 
@@ -50,7 +52,7 @@ public final class ScreenSharingDesktop {
     control = ScreenSharingDesktopControl(mode: viewOnly ? .view : .control, clock: clock)
     following = [
       observe { [weak self] in self?.show(connection.session) },
-      observe { [weak self] in self?.control.setLive(connection.state == .live) },
+      observe { [weak self] in self?.connectionChanged(to: connection.state) },
       observe { [weak self] in
         self?.saveTheChosenDisplay(preferred: connection.preferredDisplayId, shared: connection.display?.id)
         self?.configureResolution(for: connection.display?.id, among: connection.displays)
@@ -95,17 +97,46 @@ public final class ScreenSharingDesktop {
 
   private func takeControlAndKeyboard(_ id: UUID) {
     control.take(id)
-    if controller == id { endpoint?.focusView(for: id) }
+    guard controller == id else { return }
+
+    keyboardOwed = id
+    deliverKeyboard()
+  }
+
+  private func deliverKeyboard() {
+    guard let id = keyboardOwed, controller == id, connection.state == .live, let endpoint else { return }
+
+    keyboardOwed = nil
+    endpoint.focusView(for: id)
+  }
+
+  private func connectionChanged(to state: ScreenSharingConnectionState) {
+    control.setLive(state == .live)
+    if state == .live { deliverKeyboard() }
+    if state == .off { restoreTheSavedMode() }
+  }
+
+  private func restoreTheSavedMode() {
+    guard modeIsForThisConnection else { return }
+
+    modeIsForThisConnection = false
+    let saved: ScreenSharingViewer.InteractionMode = preferences.viewOnly(machineId: machineId) ? .view : .control
+    guard saved != control.mode else { return }
+
+    control.setMode(saved, from: nil)
+    settle()
   }
 
   func takeControl(_ id: UUID) {
     guard seats[id]?.canControl == true else { return }
 
+    keyboardOwed = nil
     control.take(id)
     settle()
   }
 
   func setMode(_ mode: ScreenSharingViewer.InteractionMode, from id: UUID, remembered: Bool = true) {
+    modeIsForThisConnection = !remembered
     if remembered { preferences.setViewOnly(mode == .view, machineId: machineId) }
     control.setMode(mode, from: seats[id]?.canControl == true ? id : nil)
     settle()
@@ -138,6 +169,7 @@ public final class ScreenSharingDesktop {
   }
 
   private func hidden(_ id: UUID) {
+    if keyboardOwed == id { keyboardOwed = nil }
     if controller == id, let next = largestOnScreen() {
       control.take(next)
     } else {
