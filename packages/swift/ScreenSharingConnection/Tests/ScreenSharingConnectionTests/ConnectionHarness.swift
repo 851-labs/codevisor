@@ -16,6 +16,9 @@ final class ConnectionHarness {
   let installId = UUID()
   var workspaces = [UUID()]
   var makeVNCTransport: ScreenSharingMachine.MakeVNCTransport?
+  var target: String?
+  var attachedPane: ScreenSharingLegacyIdentity?
+  var heartbeatInterval = ScreenSharingConnectionDeadlines.heartbeatInterval
   private var surfaces: [ScreenSharingSurface] = []
   private var startedSessions = 0
   private var eightSecondSleeps = 0
@@ -26,11 +29,15 @@ final class ConnectionHarness {
   }
 
   var machine: ScreenSharingMachine {
-    ScreenSharingMachine(
+    var machine = ScreenSharingMachine(
       id: Self.machineId, channel: { [weak self, host] in self?.host ?? host }, connector: media.connector,
       appName: Self.appName, signer: signer.signer, installId: installId,
       liveWorkspace: { [weak self] in self?.workspaces.first },
       makeVNCTransport: makeVNCTransport)
+    machine.target = target
+    machine.attachedPane = { [weak self] in self?.attachedPane }
+    machine.heartbeatInterval = heartbeatInterval
+    return machine
   }
 
   var connection: ScreenSharingConnection { manager.connection(for: machine) }
@@ -77,28 +84,28 @@ final class ConnectionHarness {
     clock.advance(by: duration)
   }
 
-  func tick(after wait: Duration = ScreenSharingConnectionDeadlines.heartbeatInterval) async {
-    clock.advance(by: wait)
+  func tick(after wait: Duration? = nil) async {
+    clock.advance(by: wait ?? heartbeatInterval)
     await eightSecondSleepScheduled()
   }
 
-  func beat(after wait: Duration = ScreenSharingConnectionDeadlines.heartbeatInterval) async {
+  func beat(after wait: Duration? = nil) async {
     let answered = host.completed(.heartbeat)
-    await tick(after: wait)
+    await tick(after: wait ?? heartbeatInterval)
     await awaitObserved { host.completed(.heartbeat) == answered + 1 }
   }
 
   func stayLive(for duration: Duration) async {
     var remaining = duration
-    while remaining >= ScreenSharingConnectionDeadlines.heartbeatInterval {
+    while remaining >= heartbeatInterval {
       await beat()
-      remaining -= ScreenSharingConnectionDeadlines.heartbeatInterval
+      remaining -= heartbeatInterval
     }
     clock.advance(by: remaining)
   }
 
   func elapseRetryWait(_ wait: Duration) async {
-    if wait == .seconds(8) {
+    if wait == heartbeatInterval {
       await eightSecondSleepScheduled()
     } else {
       await clock.waitForSleep(wait)
@@ -116,7 +123,7 @@ final class ConnectionHarness {
 
   func eightSecondSleepScheduled() async {
     eightSecondSleeps += 1
-    await clock.waitForSleep(.seconds(8), count: eightSecondSleeps)
+    await clock.waitForSleep(heartbeatInterval, count: eightSecondSleeps)
   }
 
   isolated deinit {

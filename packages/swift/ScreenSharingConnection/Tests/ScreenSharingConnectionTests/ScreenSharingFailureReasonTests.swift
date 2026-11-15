@@ -20,6 +20,11 @@ struct ScreenSharingFailureReasonTests {
     (.keptDropping, "The connection to croissant keeps dropping."),
     (.noDisplay, "croissant has no display to share."),
     (.noWorkspace, "Open a chat on croissant to view its desktop."),
+    (
+      .nothingToView(message: "The agent is not controlling an app right now."),
+      "The agent is not controlling an app right now."
+    ),
+    (.nothingToView(message: nil), "Nothing to show on croissant yet."),
     (.unsupportedOnThisDevice, "croissant's desktop can only be viewed from a Mac."),
     (.unclassified(message: "The encoder stopped."), "The encoder stopped."),
     (.unclassified(message: nil), "croissant can't share its screen right now."),

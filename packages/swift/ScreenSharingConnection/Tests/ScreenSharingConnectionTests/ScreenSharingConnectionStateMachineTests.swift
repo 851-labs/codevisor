@@ -44,6 +44,7 @@ struct ScreenSharingConnectionStateMachineTests {
   nonisolated static let ordinary: [ScreenSharingAttemptEnd] = [
     .dropped(.cantReach), .dropped(.noVideo), .dropped(.networkBlocked), .refused(.permissionMissing),
     .refused(.updateNeeded), .refused(.noDisplay), .refused(.noWorkspace), .refused(.unsupportedOnThisDevice),
+    .refused(.nothingToView(message: nil)),
     .hostFailed(message: "The host Mac couldn't start capturing its screen."),
   ]
 

@@ -11,6 +11,7 @@ public enum ScreenSharingFailureReason: Equatable, Sendable {
   case sessionSwitched
   case noDisplay
   case noWorkspace
+  case nothingToView(message: String?)
   case unsupportedOnThisDevice
   case permissionMissing
   case updateNeeded
@@ -19,8 +20,11 @@ public enum ScreenSharingFailureReason: Equatable, Sendable {
   case keptDropping
   case unclassified(message: String?)
 
-  init?(hostReason: ServerScreenSharingReason?, holderName: String?) {
+  static let nothingToViewCode = ServerScreenSharingReason(rawValue: "nothing-to-view")
+
+  init?(hostReason: ServerScreenSharingReason?, holderName: String?, message: String?) {
     switch hostReason {
+    case Self.nothingToViewCode?: self = .nothingToView(message: message)
     case .takenOver?: self = .takenOver(by: holderName)
     case .inUse?: self = .inUse(by: holderName)
     case .stoppedOnHost?: self = .stoppedOnHost
@@ -44,6 +48,7 @@ public enum ScreenSharingFailureReason: Equatable, Sendable {
     case .sessionSwitched: "Another user is logged in on \(machine)."
     case .noDisplay: "\(machine) has no display to share."
     case .noWorkspace: "Open a chat on \(machine) to view its desktop."
+    case .nothingToView(let message): message ?? "Nothing to show on \(machine) yet."
     case .unsupportedOnThisDevice: "\(machine)'s desktop can only be viewed from a Mac."
     case .permissionMissing: "Allow Codevisor to record the screen on \(machine)."
     case .updateNeeded: "Update Codevisor on \(machine)."

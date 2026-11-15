@@ -17,9 +17,7 @@ struct ScreenSharingHostReply {
     return challenge
   }
 
-  var appChallenge: ServerScreenSharingChallenge? {
-    base.abilities?.contains(ServerScreenSharingReply.appSessions) == true ? challenge : nil
-  }
+  var appChallenge: ServerScreenSharingChallenge? { advertisesAppSessions ? challenge : nil }
 
   var ownsSessionsByApp: Bool { appChallenge != nil }
 
@@ -37,10 +35,19 @@ struct ScreenSharingHostReply {
 
   var lacksTheDisplay: Bool { base.reason == nil && base.status == "unavailable" }
 
+  var advertisesAppSessions: Bool { base.abilities?.contains(ServerScreenSharingReply.appSessions) == true }
+
+  func targetRefusal() -> ScreenSharingAttemptEnd {
+    guard base.reason == nil, !["stopped", "failed"].contains(base.status) else { return end() }
+
+    let isNotThereYet = !advertisesAppSessions && ["starting", "unavailable"].contains(base.status)
+    return .refused(isNotThereYet ? .nothingToView(message: base.message) : .unclassified(message: base.message))
+  }
+
   func end(heartbeatToOldHost: Bool = false) -> ScreenSharingAttemptEnd {
-    if let reason = ScreenSharingFailureReason(hostReason: base.reason, holderName: base.holderName) {
-      return .refused(reason)
-    }
+    let reason = ScreenSharingFailureReason(
+      hostReason: base.reason, holderName: base.holderName, message: base.message)
+    if let reason { return .refused(reason) }
     switch base.status {
     case "busy": return .refused(.inUseOldHost)
     case "permission-required": return .refused(.permissionMissing)
