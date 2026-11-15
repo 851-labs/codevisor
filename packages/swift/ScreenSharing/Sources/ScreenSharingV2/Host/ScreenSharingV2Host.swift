@@ -2,6 +2,8 @@ import Dispatch
 import ScreenSharing
 
 public final class ScreenSharingV2Host: ScreenSharingFrameSink, @unchecked Sendable {
+  public static let sentFramesMetric = "sentFrames"
+
   private struct Plan {
     let capture: ScreenSharingV2Capture
     let tiles: Set<Int>
@@ -291,7 +293,7 @@ public final class ScreenSharingV2Host: ScreenSharingFrameSink, @unchecked Senda
     let meta = ScreenSharingV2HostTiming.meta(for: tile, layout: layout, sendingNs: ScreenSharingMetrics.nowNs)
     do {
       try transport.send(tile, meta: meta.data)
-      metrics.increment("sentFrames")
+      metrics.increment(Self.sentFramesMetric)
       queue.async { [self] in recovery.sent(tile) }
     } catch {
       metrics.increment("sendErrors")

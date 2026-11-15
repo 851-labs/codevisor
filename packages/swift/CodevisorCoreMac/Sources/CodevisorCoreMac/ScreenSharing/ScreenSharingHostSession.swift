@@ -85,7 +85,9 @@ final class ScreenSharingHostSession {
     (0..<32).map { _ in String(format: "%02x", UInt8.random(in: .min ... .max)) }.joined()
   }
 
-  var hasSentVideo: Bool { metrics.counter("capturedFrames") > 0 }
+  var hasSentVideo: Bool { metrics.counter(ScreenSharingV2Host.sentFramesMetric) > 0 }
+
+  var awaitsLiveVideo: Bool { stopping || (state != "viewing" && !hasSentVideo) }
 
   struct Target {
     let displayID: UInt32

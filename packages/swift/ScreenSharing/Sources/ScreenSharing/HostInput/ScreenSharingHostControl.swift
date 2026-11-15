@@ -10,18 +10,25 @@
     private var modifiers: UInt8 = 0
     private var sequence: UInt64 = 0
     private var deadline: TimeInterval = 0
+    private var lastLook: TimeInterval?
+    private let stallAfter: TimeInterval?
     private let now: () -> TimeInterval
     private let availability: () -> String?
     private let inject: (ScreenSharingInputEvent) -> Void
     private let send: (ScreenSharingControlMessage) -> Bool
     public var onChanged: ((Bool) -> Void)?
 
+    public static let lifetime: TimeInterval = 3
+    static let shortestStall: TimeInterval = 1
+
     public init(
       now: @escaping () -> TimeInterval = { ProcessInfo.processInfo.systemUptime },
+      looksEvery interval: TimeInterval? = nil,
       availability: @escaping () -> String?, inject: @escaping (ScreenSharingInputEvent) -> Void,
       send: @escaping (ScreenSharingControlMessage) -> Bool
     ) {
       self.now = now; self.availability = availability; self.inject = inject; self.send = send
+      stallAfter = interval.map { max(Self.shortestStall, $0 * 4) }
     }
 
     public func receive(_ message: ScreenSharingControlMessage) {
@@ -33,7 +40,7 @@
           _ = send(.denied(request: request, reason: "Control is already active.")); return
         }
         let id = UUID()
-        lease = id; deadline = now() + 3; sequence = 0
+        lease = id; deadline = now() + Self.lifetime; sequence = 0
         onChanged?(true)
         if !send(.grant(request: request, lease: id)) { revoke("The control channel closed.") }
       case .release(let id):
@@ -41,7 +48,7 @@
       case .heartbeat(let id):
         guard lease == id else { return }
         if let reason = availability() { revoke(reason); return }
-        deadline = now() + 3
+        deadline = now() + Self.lifetime
       case .input(let id, let next, let event):
         guard lease == id, next > sequence else { return }
         if let reason = availability() { revoke(reason); return }
@@ -53,7 +60,18 @@
     }
 
     public func checkDeadline() {
-      if lease != nil, now() >= deadline { revoke("Control timed out. Request control again.") }
+      let now = now()
+      forgiveOwnStall(endingAt: now)
+      if lease != nil, now >= deadline { revoke("Control timed out. Request control again.") }
+    }
+
+    private func forgiveOwnStall(endingAt now: TimeInterval) {
+      defer { lastLook = now }
+      guard let stallAfter, lease != nil, let lastLook, lastLook < deadline, now - lastLook >= stallAfter else {
+        return
+      }
+
+      deadline += now - lastLook
     }
 
     public func revoke(_ reason: String) {

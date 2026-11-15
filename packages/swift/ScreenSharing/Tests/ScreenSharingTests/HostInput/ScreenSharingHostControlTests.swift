@@ -192,6 +192,69 @@ struct ScreenSharingHostControlTests {
     #expect(host.injected.count == 5, "with nothing held there is nothing to release")
   }
 
+  @Test(arguments: [true, false])
+  func heartbeatsThatQueuedWhileTheHostStalledKeepTheLease(watchdogFirst: Bool) throws {
+    let host = HostFixture(looksEvery: 0.25)
+    let lease = try #require(host.grant())
+    host.look(for: .seconds(1))
+    host.control.receive(.heartbeat(lease: lease))
+
+    host.advance(.seconds(4))
+    if watchdogFirst { host.control.checkDeadline() }
+    #expect(host.control.lease == lease)
+    host.control.receive(.heartbeat(lease: lease))
+    host.control.receive(.heartbeat(lease: lease))
+    host.look(for: .milliseconds(2750))
+
+    #expect(host.control.lease == lease && host.changes == [true])
+    #expect(!host.messages.contains { if case .revoked = $0 { true } else { false } })
+  }
+
+  @Test func aViewerThatFallsSilentStillLosesTheLeaseAfterThreeSecondsOfAResponsiveHost() throws {
+    let host = HostFixture(looksEvery: 0.25)
+    let lease = try #require(host.grant())
+
+    host.look(for: .milliseconds(2750))
+    #expect(host.control.lease == lease)
+    host.look(for: .milliseconds(250))
+    #expect(host.control.lease == nil)
+    #expect(host.messages.last == .revoked(lease: lease, reason: "Control timed out. Request control again."))
+  }
+
+  @Test func onlyTheHostsOwnStallIsForgivenNotTheViewersSilenceAroundIt() throws {
+    let host = HostFixture(looksEvery: 0.25)
+    let lease = try #require(host.grant())
+    host.look(for: .seconds(2))
+
+    host.advance(.seconds(4))
+    host.look(for: .seconds(1))
+    #expect(host.control.lease == lease)
+    host.look(for: .milliseconds(250))
+
+    #expect(host.control.lease == nil, "two seconds before the stall and one after, plus the look that ended it")
+  }
+
+  @Test func aStallNeverRevivesALeaseThatLapsedBeforeIt() throws {
+    let host = HostFixture(looksEvery: 0.25)
+    let lease = try #require(host.grant())
+    host.look(for: .seconds(3))
+    #expect(host.control.lease == nil)
+
+    host.advance(.seconds(4))
+    host.control.receive(.heartbeat(lease: lease))
+    host.control.checkDeadline()
+
+    #expect(host.control.lease == nil && host.changes == [true, false])
+  }
+
+  @Test func aHostThatDoesNotSayHowOftenItLooksCountsEveryGapAsBefore() throws {
+    let host = HostFixture()
+    let lease = try #require(host.grant())
+    host.advance(.seconds(4))
+    host.control.receive(.heartbeat(lease: lease))
+    #expect(host.control.lease == nil)
+  }
+
   @Test func theNextViewerGetsAFreshLeaseAndTheOldOneCannotSpeakAgain() throws {
     let host = HostFixture()
     let first = try #require(host.grant())
@@ -224,13 +287,17 @@ private final class HostFixture {
   private let origin: ContinuousClock.Instant
   private(set) var control: ScreenSharingHostControl!
 
-  init() {
+  private let looksEvery: TimeInterval?
+
+  init(looksEvery: TimeInterval? = nil) {
     origin = clock.now
+    self.looksEvery = looksEvery
     control = ScreenSharingHostControl(
       now: { [clock, origin] in
         let elapsed = origin.duration(to: clock.now).components
         return TimeInterval(elapsed.seconds) + TimeInterval(elapsed.attoseconds) / 1e18
       },
+      looksEvery: looksEvery,
       availability: { [unowned self] in availability },
       inject: { [unowned self] in injected.append($0) },
       send: { [unowned self] in
@@ -241,6 +308,17 @@ private final class HostFixture {
   }
 
   func advance(_ duration: Duration) { clock.advance(by: duration) }
+
+  func look(for duration: Duration) {
+    let step = Duration.milliseconds(Int((looksEvery ?? 0.25) * 1000))
+    var left = duration
+    while left > .zero {
+      let next = min(step, left)
+      clock.advance(by: next)
+      left -= next
+      control.checkDeadline()
+    }
+  }
 
   @discardableResult func request() -> UUID {
     let id = UUID()
