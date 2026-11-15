@@ -52,13 +52,15 @@ struct CloudDirectPathRaceTests {
   @Test("An open that finds a stored tunnel already down dials a fresh one")
   func openReplacesADeadTunnel() async throws {
     let script = ProbeScript()
+    let clock = TestClock()
     let machine = ScriptedDirectMachine()
     script.answer("m1", with: machine)
-    let controller = makePathController(script: script)
+    let controller = makePathController(script: script, clock: clock)
     defer { controller.dropAll() }
     let key = machine.machine.publicKey
     controller.reconcile(machines: [testMachine("m1", publicKey: key)])
     await settle(controller)
+    clock.advance(by: CloudDirectPathController.shortLivedPipe)
     let dead = try #require(controller.transport(for: "m1", publicKey: key) as? CloudDirectTransport)
     await dead.connection.shutdown()
 

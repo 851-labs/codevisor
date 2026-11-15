@@ -250,7 +250,13 @@ public final class MachineController {
 
   public func retryMachine(_ machineId: String) async {
     guard machine(for: machineId) != nil else { return }
+    redialTunnel(for: machineId)
     await prepareMachine(machineId)
+  }
+
+  public func redialTunnel(for machineId: String) {
+    guard let deviceId = CodevisorMachine.cloudDeviceId(forMachineId: machineId) else { return }
+    cloudProvider?.redialTunnel(toDeviceId: deviceId)
   }
 
   public func connectionLost(machineId: String) {

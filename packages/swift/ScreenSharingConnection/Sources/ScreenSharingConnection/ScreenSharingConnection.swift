@@ -53,7 +53,10 @@ public final class ScreenSharingConnection {
 
   public func systemWoke() { handle(.systemWoke) }
 
-  public func restart() { handle(.restartRequested) }
+  public func restart() {
+    machine.userAsked()
+    handle(.restartRequested)
+  }
 
   public func switchDisplay(to displayId: String) {
     guard target == nil, !switchInSession(to: displayId), preferredDisplayId != displayId else { return }
@@ -123,10 +126,14 @@ public final class ScreenSharingConnection {
     guard surface(id) != nil, state != .live else { return }
 
     pendingOpen = (id, clock.now())
+    machine.userAsked()
     handle(.openRequested)
   }
 
-  func retryRequested() { handle(.retryRequested) }
+  func retryRequested() {
+    machine.userAsked()
+    handle(.retryRequested)
+  }
 
   private func surfacesChanged() {
     handle(.surfacesChanged(attached: !surfaces.isEmpty, visible: surfaces.contains(where: \.isOnScreen)))

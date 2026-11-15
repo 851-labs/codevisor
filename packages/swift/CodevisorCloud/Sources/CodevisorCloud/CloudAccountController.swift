@@ -449,6 +449,10 @@ extension CloudAccountController: CloudMachineProviding {
     await refreshMachines()
   }
 
+  public func redialTunnel(toDeviceId deviceId: String) {
+    directPaths.redialNow(deviceId)
+  }
+
   public func relayServerConfig(for machine: CloudMachine) -> CodevisorServerConfig? {
     guard hubConnection() != nil, verifiedMachineKey(for: machine) != nil else {
       return nil

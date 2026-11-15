@@ -64,6 +64,11 @@ final class FakeCloudProvider: CloudMachineProviding {
   let requestTransport = FakeRelayRequestTransport()
   private(set) var configRequests: [String] = []
   private(set) var accountSyncPreparations: [String] = []
+  private(set) var redialRequests: [String] = []
+
+  func redialTunnel(toDeviceId deviceId: String) {
+    redialRequests.append(deviceId)
+  }
 
   func prepareAccountSync(on client: any CodevisorServerClienting, machineId: String) async -> Bool {
     accountSyncPreparations.append(machineId)

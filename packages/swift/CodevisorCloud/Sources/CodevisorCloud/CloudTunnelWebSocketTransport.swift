@@ -57,8 +57,19 @@ final class CloudTunnelSocket: ServerWebSocketConnecting, @unchecked Sendable {
     opened = Task { [weak self] in
       guard let handle = await endpoint.endpoint() else { throw CloudTunnelError.unavailable }
       try Task.checkCancellation()
-      let connection = try await handle.connect(
-        addr: addr, alpn: CloudTunnelEndpoint.channelsALPN, cancel: dialCancel)
+      let began = ContinuousClock.now
+      let target = Self.describe(addr)
+      let connection: NetConnectionHandle
+      do {
+        connection = try await handle.connect(
+          addr: addr, alpn: CloudTunnelEndpoint.channelsALPN, cancel: dialCancel)
+      } catch {
+        Log.cloud.notice(
+          "Tunnel dial to \(target, privacy: .public) failed after \(Self.milliseconds(since: began)) ms: \(String(describing: error), privacy: .public)"
+        )
+        throw error
+      }
+      Log.cloud.log("Tunnel dial to \(target, privacy: .public) connected in \(Self.milliseconds(since: began)) ms")
       guard let self, self.adopt(connection) else {
         connection.close(code: 1000, reason: "cancelled")
         throw CancellationError()
@@ -66,6 +77,16 @@ final class CloudTunnelSocket: ServerWebSocketConnecting, @unchecked Sendable {
       paths.adopt(connection)
       return try await connection.openMessageStream()
     }
+  }
+
+  private static func describe(_ addr: NetTunnelAddr) -> String {
+    let relay = addr.relayUrl.flatMap(URL.init(string:)).map { [$0.host, $0.port.map(String.init)].compactMap(\.self) }
+    return "\(addr.endpointId.prefix(8)) via \(relay?.joined(separator: ":") ?? "no relay")"
+  }
+
+  static func milliseconds(since start: ContinuousClock.Instant) -> Int {
+    let elapsed = ContinuousClock.now - start
+    return Int(elapsed.components.seconds * 1000 + elapsed.components.attoseconds / 1_000_000_000_000_000)
   }
 
   private func adopt(_ connection: NetConnectionHandle) -> Bool {

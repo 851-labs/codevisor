@@ -19,6 +19,7 @@ final class ConnectionHarness {
   var target: String?
   var attachedPane: ScreenSharingLegacyIdentity?
   var machineReady = false
+  private(set) var userAsks = 0
   var heartbeatInterval = ScreenSharingConnectionDeadlines.heartbeatInterval
   private var surfaces: [ScreenSharingSurface] = []
   private var startedSessions = 0
@@ -38,6 +39,7 @@ final class ConnectionHarness {
     machine.target = target
     machine.attachedPane = { [weak self] in self?.attachedPane }
     machine.isReady = { [weak self] in self?.machineReady ?? false }
+    machine.userAsked = { [weak self] in self?.userAsks += 1 }
     machine.heartbeatInterval = heartbeatInterval
     return machine
   }
