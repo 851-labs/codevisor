@@ -142,7 +142,8 @@ public final class ScreenSharingViewerEndpoint: Equatable, Identifiable {
     session.frames.retainsLatest = true
     channel = session.control
     let (channel, views) = (session.control, views)
-    forwarder = ScreenSharingInputForwarder(send: { [weak channel] in channel?.send($0) ?? false })
+    forwarder = ScreenSharingInputForwarder(
+      send: { [weak channel] in channel?.send($0) ?? false }, heartbeat: Self.backgroundHeartbeat(on: channel))
     clipboard = session.clipboard.map { channel in
       ScreenSharingViewerClipboard(
         channel: channel, setHostSharing: { [weak session] in session?.setClipboardSharing($0) },
@@ -295,7 +296,19 @@ public final class ScreenSharingViewerEndpoint: Equatable, Identifiable {
   }
 
   @discardableResult
-  func sendControl(_ message: ScreenSharingControlMessage) -> Bool { channel?.send(message) ?? false }
+  func sendControl(_ message: ScreenSharingControlMessage) -> Bool {
+    if case .heartbeat = message, forwarder.keepsLeaseAlive { return channel?.isAvailable ?? false }
+
+    return channel?.send(message) ?? false
+  }
+
+  private static func backgroundHeartbeat(
+    on channel: (any ScreenSharingMessageChannel<ScreenSharingControlMessage>)?
+  ) -> ScreenSharingInputForwarder.Heartbeat? {
+    guard let sender = channel as? any ScreenSharingBackgroundSending<ScreenSharingControlMessage> else { return nil }
+
+    return { sender.sendFromAnyThread(.heartbeat(lease: $0)) }
+  }
 
   func beginInput(lease: UUID) -> String? {
     guard let surface = views.controlled else { return "Focus this window and request control again." }

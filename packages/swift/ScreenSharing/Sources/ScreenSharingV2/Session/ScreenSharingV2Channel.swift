@@ -23,7 +23,7 @@ public final class ScreenSharingV2Channel<Message: Sendable>: ScreenSharingMessa
   private let datagrams: Datagrams?
   private let queuedBytes = Atomic(0)
   private var stream: (any ScreenSharingV2MessageStream)?
-  private var outbox: AsyncStream<Data>.Continuation?
+  private let outbox = Mutex<AsyncStream<Data>.Continuation?>(nil)
   private var tasks: [Task<Void, Never>] = []
   private var settling: Task<Void, Never>?
   private var closed = false
@@ -38,20 +38,14 @@ public final class ScreenSharingV2Channel<Message: Sendable>: ScreenSharingMessa
     guard !closed, self.stream == nil else { return }
 
     self.stream = stream
-    let (outbox, continuation) = AsyncStream<Data>.makeStream()
-    self.outbox = continuation
+    let (queued, continuation) = AsyncStream<Data>.makeStream()
+    outbox.withLock { $0 = continuation }
     tasks = [
       Task { [weak self] in
-        for await data in outbox {
-          do {
-            try await stream.send(data)
-          } catch {
-            self?.fail()
-            return
-          }
-          self?.queuedBytes.subtract(data.count, ordering: .relaxed)
+        let delivered = await Self.deliver(queued, over: stream) { [weak self] in
+          self?.queuedBytes.subtract($0, ordering: .relaxed)
         }
-        await stream.finish()
+        if !delivered { self?.fail() }
       },
       Task { [weak self, codec] in
         do {
@@ -78,6 +72,34 @@ public final class ScreenSharingV2Channel<Message: Sendable>: ScreenSharingMessa
     return enqueue(data)
   }
 
+  @discardableResult
+  public nonisolated func sendFromAnyThread(_ message: Message) -> Bool {
+    guard datagrams?.carries(message) != true, let data = try? codec.encode(message) else { return false }
+
+    return outbox.withLock { outbox in
+      guard let outbox else { return false }
+      guard queuedBytes.add(data.count, ordering: .relaxed).newValue <= bufferedBytes else {
+        queuedBytes.subtract(data.count, ordering: .relaxed)
+        return false
+      }
+
+      outbox.yield(data)
+      return true
+    }
+  }
+
+  @concurrent
+  private nonisolated static func deliver(
+    _ queued: AsyncStream<Data>, over stream: any ScreenSharingV2MessageStream, onSent: @Sendable (Int) -> Void
+  ) async -> Bool {
+    for await data in queued {
+      do { try await stream.send(data) } catch { return false }
+      onSent(data.count)
+    }
+    await stream.finish()
+    return true
+  }
+
   private func settle(_ data: Data, after delay: Duration) {
     settling?.cancel()
     settling = Task { [weak self] in
@@ -95,7 +117,7 @@ public final class ScreenSharingV2Channel<Message: Sendable>: ScreenSharingMessa
       return false
     }
 
-    outbox?.yield(data)
+    outbox.withLock { _ = $0?.yield(data) }
     return true
   }
 
@@ -113,8 +135,10 @@ public final class ScreenSharingV2Channel<Message: Sendable>: ScreenSharingMessa
     guard !closed else { return }
 
     closed = true
-    outbox?.finish()
-    outbox = nil
+    outbox.withLock {
+      $0?.finish()
+      $0 = nil
+    }
     settling?.cancel()
     tasks.last?.cancel()
     let changed = onAvailabilityChanged
@@ -123,3 +147,5 @@ public final class ScreenSharingV2Channel<Message: Sendable>: ScreenSharingMessa
     changed?(false)
   }
 }
+
+extension ScreenSharingV2Channel: ScreenSharingBackgroundSending {}
