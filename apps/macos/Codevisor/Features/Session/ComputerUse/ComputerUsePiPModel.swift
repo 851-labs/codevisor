@@ -11,6 +11,22 @@ struct ComputerUsePiPPane: Equatable {
   let paneId: UUID
 }
 
+struct ComputerUsePiPMachine {
+  let id: String
+  let name: String
+
+  var previews: ComputerUseRemotePreviewSource {
+    let machineId = id
+    return ComputerUseRemotePreviewSource(
+      machineName: name,
+      connection: { target, pane, heartbeat in
+        AppRuntime.shared.screenSharing?.targetConnection(
+          onMachine: machineId, target: target, attachedPane: { pane }, heartbeatInterval: heartbeat)
+      },
+      end: { AppRuntime.shared.screenSharing?.endTargetConnection(onMachine: machineId, target: $0) })
+  }
+}
+
 extension EnvironmentValues {
   @Entry var computerUsePiPPane: ComputerUsePiPPane?
 }
@@ -20,7 +36,7 @@ extension EnvironmentValues {
 final class ComputerUsePiPModel {
   enum Source {
     case local
-    case remote(client: any CodevisorServerClienting, pane: ComputerUsePiPPane)
+    case remote(client: any CodevisorServerClienting, pane: ComputerUsePiPPane, machine: ComputerUsePiPMachine)
   }
 
   private static var dismissedSessions: Set<UUID> = []
@@ -172,7 +188,7 @@ final class ComputerUsePiPModel {
   }
 
   private func watchForRemoteActivity() {
-    guard reappearanceTask == nil, case .remote(let client, let pane) = source else { return }
+    guard reappearanceTask == nil, case .remote(let client, let pane, _) = source else { return }
     let preview = preview
     let chatSessionID = chatSessionID
     reappearanceTask = Task { [weak self] in
@@ -222,9 +238,10 @@ final class ComputerUsePiPModel {
     switch source {
     case .local:
       return preview.makeLocalViewer(chatSession: chatSessionID)
-    case .remote(let client, let pane):
+    case .remote(let client, let pane, let machine):
       let viewer = preview.makeRemoteViewer(
-        chatSession: chatSessionID, client: client, workspaceId: pane.workspaceId, paneId: pane.paneId)
+        chatSession: chatSessionID, client: client, workspaceId: pane.workspaceId, paneId: pane.paneId,
+        source: machine.previews)
       viewer.prefersFastPolling = prefersFastPolling
       return viewer
     }

@@ -64,6 +64,10 @@ final class SimulatorStream: SimulatorConnection {
     surface?.setOnScreen(isVisible)
   }
 
+  isolated deinit {
+    part()
+  }
+
   func stop() {
     isStarted = false
     part()

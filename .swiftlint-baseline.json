@@ -1185,21 +1185,6 @@
     }
   },
   {
-    "text": "  private func attempt(",
-    "violation": {
-      "location": {
-        "character": 11,
-        "file": "packages/swift/CodevisorCoreMac/Sources/CodevisorCoreMac/ScreenSharing/ScreenSharingViewerBackend.swift",
-        "line": 251
-      },
-      "reason": "Function body should span 50 lines or less excluding comments and whitespace: currently spans 53 lines",
-      "ruleDescription": "Function bodies should not span too many lines",
-      "ruleIdentifier": "function_body_length",
-      "ruleName": "Function Body Length",
-      "severity": "error"
-    }
-  },
-  {
     "text": "  func textSelectionRange(",
     "violation": {
       "location": {

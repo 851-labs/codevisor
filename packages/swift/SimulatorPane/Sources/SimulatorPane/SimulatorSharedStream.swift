@@ -17,7 +17,8 @@ final class SimulatorSharedStream {
   init(connection: ScreenSharingConnection, panes: SimulatorAttachedPanes) {
     self.connection = connection
     self.panes = panes
-    followSession()
+    connection.onSessionOpened = { [weak self] in self?.bind($0 as? any ScreenSharingSimulatorSession) }
+    bind(connection.session as? any ScreenSharingSimulatorSession)
   }
 
   @discardableResult
@@ -25,15 +26,6 @@ final class SimulatorSharedStream {
     guard let simulator = bound?.simulator, simulator.isAvailable else { return false }
 
     return simulator.send(message)
-  }
-
-  private func followSession() {
-    let session = withObservationTracking {
-      connection.session
-    } onChange: { [weak self] in
-      Task { @MainActor in self?.followSession() }
-    }
-    bind(session as? any ScreenSharingSimulatorSession)
   }
 
   private func bind(_ session: (any ScreenSharingSimulatorSession)?) {

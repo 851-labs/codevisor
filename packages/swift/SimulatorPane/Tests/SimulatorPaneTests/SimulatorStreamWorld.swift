@@ -24,6 +24,7 @@ final class SimulatorStreamWorld {
   @ObservationIgnored let signer = FakeSigner()
   @ObservationIgnored let manager: ScreenSharingConnectionManager
   @ObservationIgnored let streams = SimulatorStreams()
+  @ObservationIgnored var stateOnStart: ScreenSharingSimulatorState?
   @ObservationIgnored private let installId = UUID()
   @ObservationIgnored private var beats = 0
 
@@ -107,6 +108,7 @@ final class SimulatorStreamWorld {
       address: { FakeMedia.address },
       connect: { [unowned self] _ in
         let session = SimulatorTestSession()
+        session.stateOnStart = stateOnStart
         sessions.append(session)
         return session
       })

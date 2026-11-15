@@ -11,6 +11,7 @@ final class SimulatorTestSession: ScreenSharingV2StartableSession, ScreenSharing
   let device: ScreenSharingLocalChannel<ScreenSharingSimulatorMessage>
   var presentsTiles = false
   private(set) var isStarted = false
+  @ObservationIgnored var stateOnStart: ScreenSharingSimulatorState?
   @ObservationIgnored private let viewing: ScreenSharingLocalViewingSession
   @ObservationIgnored private let channel: ScreenSharingLocalChannel<ScreenSharingSimulatorMessage>
 
@@ -36,6 +37,7 @@ final class SimulatorTestSession: ScreenSharingV2StartableSession, ScreenSharing
   }
 
   func start(token: String) async throws {
+    if let stateOnStart { device.send(.state(stateOnStart)) }
     isStarted = true
   }
 

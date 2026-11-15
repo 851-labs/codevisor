@@ -68,7 +68,9 @@ extension ChatScreen {
     guard let computerUsePiPPane,
       environment.machines.statusByMachineId[serverId]?.supportsComputerUseStreaming == true
     else { return nil }
-    return .remote(client: environment.machines.client(for: serverId), pane: computerUsePiPPane)
+    let machine = ComputerUsePiPMachine(
+      id: serverId, name: environment.machines.machine(for: serverId)?.name ?? "this machine")
+    return .remote(client: environment.machines.client(for: serverId), pane: computerUsePiPPane, machine: machine)
   }
 
   var transcriptBottomFade: TranscriptBottomFade {

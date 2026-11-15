@@ -60,6 +60,17 @@ struct SimulatorStreamTests {
     #expect(world.host.starts.count == 2)
   }
 
+  @Test func aPaneLetGoOfWithoutClosingStillEndsTheStreamWhenItIsTheLast() async throws {
+    let world = World()
+    var stream: SimulatorStream? = world.shown()
+    await world.goLive(try #require(stream))
+
+    stream = nil
+
+    #expect(world.ended == [World.target])
+    await awaitObserved { world.host.stops.count == 1 }
+  }
+
   @Test func aHiddenPaneKeepsItsStreamForAboutAMinuteThenConnectsAgainWhenShown() async {
     let world = World()
     let stream = world.shown()
@@ -124,6 +135,16 @@ struct SimulatorStreamTests {
 
     #expect(first.state?.orientation == .landscapeLeft && second.state == first.state)
     #expect(received == [.button(name: "home", down: true)])
+  }
+
+  @Test func theDevicesStateSentTheMomentTheSessionStartsIsNotLost() async {
+    let world = World()
+    world.stateOnStart = ScreenSharingSimulatorState(orientation: .landscapeRight)
+    let stream = world.shown()
+
+    await world.goLive(stream)
+
+    #expect(stream.state?.orientation == .landscapeRight)
   }
 
   @Test func anOldHostIsGivenAPaneThatIsAttachedNowAndTheNextOneWhenThatPaneCloses() async {
