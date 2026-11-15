@@ -1,6 +1,7 @@
 import CodevisorCore
 import CoreGraphics
 import Foundation
+import OSLog
 import ScreenSharing
 import ScreenSharingV2
 
@@ -64,6 +65,8 @@ final class SimulatorV2Peer: SimulatorStreamPeer {
 final class SimulatorStreamHost {
   static let maximumSessions = 6
   static let lifetime: TimeInterval = 25
+  static let screenWait = (tries: 60, interval: Duration.milliseconds(50))
+  private static let logger = Logger(subsystem: "com.851labs.Codevisor", category: "SimulatorStream")
 
   private typealias Owner = ScreenSharingStreamOwner
 
@@ -79,21 +82,27 @@ final class SimulatorStreamHost {
     }
   }
 
-  private final class Device {
-    let control: SimulatorDeviceControl
-    var capture: SimulatorScreenCapture?
-    var displayName: String?
+  private final class Viewed {
+    let device: any SimulatorStreamDevice
     var viewers = 0
-    init(control: SimulatorDeviceControl) { self.control = control }
+    init(device: any SimulatorStreamDevice) { self.device = device }
   }
 
-  private let identity = ScreenSharingStreamIdentity()
+  private let dependencies: SimulatorStreamHostDependencies
+  private let identity: ScreenSharingStreamIdentity
   private var sessions: [Owner: Session] = [:]
-  private var devices: [String: Device] = [:]
+  private var devices: [String: Viewed] = [:]
   private var watchdog: Task<Void, Never>?
   private var isShutdown = false
 
-  private var now: TimeInterval { ProcessInfo.processInfo.systemUptime }
+  private var now: TimeInterval { dependencies.now() }
+
+  init(dependencies: SimulatorStreamHostDependencies = .live) {
+    self.dependencies = dependencies
+    identity = ScreenSharingStreamIdentity(hostKey: dependencies.hostKey, now: dependencies.now)
+  }
+
+  var sessionCount: Int { sessions.count }
 
   func handle(_ request: ServerScreenSharingRequest) async -> ServerScreenSharingReply {
     await identity.describing(await respond(to: request), for: request)
@@ -127,7 +136,7 @@ final class SimulatorStreamHost {
     guard let owner = identity.owner(heartbeating: request, among: sessions), let session = sessions[owner],
       session.udid == udid
     else { return .init(status: "stopped", message: "The simulator stopped streaming.") }
-    guard (try? SimulatorRuntime.device(udid: udid)).map(SimulatorRuntime.isBooted) == true else {
+    guard (try? dependencies.isBooted(udid)) == true else {
       end(owner: owner, session: session)
       return Self.nothingToView(status: "stopped", message: "The simulator shut down.")
     }
@@ -145,16 +154,15 @@ final class SimulatorStreamHost {
   }
 
   private func capabilities(_ request: ServerScreenSharingRequest, udid: String) -> ServerScreenSharingReply {
-    guard SimulatorRuntime.loaded else { return Self.noXcode }
+    guard dependencies.isLoaded() else { return Self.noXcode }
     do {
-      let device = try SimulatorRuntime.device(udid: udid)
-      guard SimulatorRuntime.isBooted(device) else {
+      guard try dependencies.isBooted(udid) else {
         return Self.nothingToView(status: "starting", message: "The simulator is starting.")
       }
       var reply = ServerScreenSharingReply(
         status: "available",
         displays: [.init(id: request.displayId ?? "", name: "Simulator", width: 0, height: 0)])
-      if ScreenSharingMediaEndpoint.shared.isAvailable { reply.engines = [ScreenSharingEngine.v2.rawValue] }
+      if dependencies.offersV2() { reply.engines = [ScreenSharingEngine.v2.rawValue] }
       return reply
     } catch {
       return .init(status: "unavailable", message: error.localizedDescription)
@@ -173,12 +181,7 @@ final class SimulatorStreamHost {
     }
     do {
       let device = try attach(udid: udid)
-      var size = device.capture?.size
-      for _ in 0..<60 where size == nil {
-        try? await Task.sleep(for: .milliseconds(50))
-        size = device.capture?.size
-      }
-      guard let capture = device.capture, let size else {
+      guard let size = await screenSize(of: device) else {
         release(udid: udid)
         return Self.nothingToView(status: "starting", message: "The simulator's screen isn't ready yet.")
       }
@@ -188,7 +191,7 @@ final class SimulatorStreamHost {
       }
       let peer: any SimulatorStreamPeer
       do {
-        peer = try makePeer(size: size, media: media, request: request)
+        peer = try dependencies.makePeer(size, media, request.chroma)
       } catch {
         release(udid: udid)
         throw error
@@ -201,14 +204,21 @@ final class SimulatorStreamHost {
       let session = Session(
         udid: udid, peer: peer, attempt: request.viewerId, token: identity.token(for: owner),
         expiresAt: now + Self.lifetime)
-      return try await connect(session, capture: capture, owner: owner)
+      return try await connect(session, device: device, owner: owner)
     } catch {
       return .init(status: "failed", message: error.localizedDescription)
     }
   }
 
+  private func screenSize(of device: any SimulatorStreamDevice) async -> CGSize? {
+    for _ in 0..<Self.screenWait.tries where device.screenSize == nil {
+      await dependencies.sleep(Self.screenWait.interval)
+    }
+    return device.screenSize
+  }
+
   private func connect(
-    _ session: Session, capture: SimulatorScreenCapture, owner: Owner
+    _ session: Session, device: any SimulatorStreamDevice, owner: Owner
   ) async throws -> ServerScreenSharingReply {
     let (peer, udid) = (session.peer, session.udid)
     sessions[owner] = session
@@ -219,8 +229,8 @@ final class SimulatorStreamHost {
     }
     peer.channel.onMessage = { [weak self] message in self?.receive(message, udid: udid) }
     peer.channel.onAvailabilityChanged = { [weak self, weak peer] open in
-      guard open, let self, let peer, let device = self.devices[udid] else { return }
-      peer.channel.send(.state(device.control.state))
+      guard open, let self, let peer, let device = self.devices[udid]?.device else { return }
+      peer.channel.send(.state(device.state))
     }
     startWatchdog()
     do {
@@ -229,19 +239,14 @@ final class SimulatorStreamHost {
         self.end(owner: owner, session: session)
       }
       guard !isShutdown, sessions[owner] === session else { throw CancellationError() }
-      capture.add(peer)
+      device.show(to: peer)
+      let holder = owner.isApp ? "an app" : "a pane"
+      Self.logger.notice("Stream granted to \(holder, privacy: .public): \(self.sessions.count) viewing")
       return .connecting(grant, session: session.token)
     } catch {
       if sessions[owner] === session { end(owner: owner, session: session) }
       throw error
     }
-  }
-
-  private func makePeer(
-    size: CGSize, media: ScreenSharingStreamMedia, request: ServerScreenSharingRequest
-  ) throws -> any SimulatorStreamPeer {
-    try SimulatorV2Peer(
-      size: size, viewerEndpointId: media.viewerEndpointId, encoder: .forViewer(chroma: request.chroma))
   }
 
   func shutdown() {
@@ -251,110 +256,45 @@ final class SimulatorStreamHost {
     watchdog = nil
   }
 
-  private func attach(udid: String) throws -> Device {
-    let device: Device
-    if let existing = devices[udid] {
-      device = existing
-    } else {
-      guard SimulatorRuntime.loaded else { throw SimulatorRuntime.Failure("Xcode's simulators aren't available.") }
-      let control = try SimulatorDeviceControl(udid: udid)
-      device = Device(control: control)
-      devices[udid] = device
-      control.onChange = { [weak self] in self?.deviceChanged(udid: udid) }
+  private func attach(udid: String) throws -> any SimulatorStreamDevice {
+    let viewed = try devices[udid] ?? open(udid)
+    viewed.viewers += 1
+    do {
+      try viewed.device.startCapturing()
+    } catch {
+      release(udid: udid)
+      throw error
     }
-    device.viewers += 1
-    if device.capture == nil { try startCapture(device) }
-    return device
+    return viewed.device
   }
 
-  private func startCapture(_ device: Device) throws {
-    let wanted = device.control.displayName
-    let screens = try SimulatorRuntime.screens(SimulatorRuntime.device(udid: device.control.udid))
-    let screen =
-      screens.first { $0.name == wanted } ?? screens.first { $0.type == 0 } ?? screens.first
-    guard let screen else { throw SimulatorRuntime.Failure("The simulator has no screen to show.") }
-    let capture = SimulatorScreenCapture(screen: screen)
-    device.capture = capture
-    device.displayName = screen.name
-    capture.start()
-  }
+  private func open(_ udid: String) throws -> Viewed {
+    guard dependencies.isLoaded() else { throw SimulatorRuntime.Failure("Xcode's simulators aren't available.") }
 
-  private func turns(_ device: Device) -> Int {
-    let held = device.control.canRotate ? device.control.orientation.quarterTurns : 0
-    return held + device.control.screenTurns
+    let viewed = Viewed(device: try dependencies.openDevice(udid))
+    devices[udid] = viewed
+    viewed.device.onChange = { [weak self] in self?.deviceChanged(udid: udid) }
+    return viewed
   }
 
   private func release(udid: String) {
-    guard let device = devices[udid] else { return }
-    device.viewers -= 1
-    guard device.viewers <= 0 else { return }
-    device.capture?.stop()
-    device.control.close()
+    guard let viewed = devices[udid] else { return }
+
+    viewed.viewers -= 1
+    guard viewed.viewers <= 0 else { return }
+
+    viewed.device.close()
     devices[udid] = nil
   }
 
   private func deviceChanged(udid: String) {
-    guard let device = devices[udid] else { return }
-    if device.control.displayName != device.displayName, let old = device.capture {
-      old.stop()
-      device.capture = nil
-      try? startCapture(device)
-      for session in sessions.values where session.udid == udid { device.capture?.add(session.peer) }
-    }
-    let state = device.control.state
+    guard let state = devices[udid]?.device.state else { return }
+
     for session in sessions.values where session.udid == udid { session.peer.channel.send(.state(state)) }
   }
 
   private func receive(_ message: ScreenSharingSimulatorMessage, udid: String) {
-    guard let device = devices[udid] else { return }
-    apply(message, to: device.control, turns: turns(device))
-  }
-
-  private func apply(_ message: ScreenSharingSimulatorMessage, to control: SimulatorDeviceControl, turns: Int) {
-    switch message {
-    case .touch(let phase, let touches):
-      control.touch(
-        phase,
-        touches.prefix(5).map { touch in
-          (
-            touch.id, Self.framebufferPoint(x: touch.x, y: touch.y, turns: turns),
-            Self.edgeCode(touch.edge, turns: turns)
-          )
-        })
-    case .button(let name, let down):
-      control.button(name, down: down)
-    case .key(let usage, let down):
-      control.key(usage, down: down)
-    case .rotate(let orientation):
-      control.rotate(to: orientation)
-    case .posture(let posture):
-      control.setPosture(posture)
-    case .crown, .state:
-      break
-    }
-  }
-
-  nonisolated static func framebufferPoint(x: Double, y: Double, turns: Int) -> CGPoint {
-    let x = min(1, max(0, x)), y = min(1, max(0, y))
-    switch ((turns % 4) + 4) % 4 {
-    case 1: return CGPoint(x: y, y: 1 - x)
-    case 2: return CGPoint(x: 1 - x, y: 1 - y)
-    case 3: return CGPoint(x: 1 - y, y: x)
-    default: return CGPoint(x: x, y: y)
-    }
-  }
-
-  nonisolated static func edgeCode(_ edge: ScreenSharingSimulatorEdge?, turns: Int) -> UInt64 {
-    guard let edge else { return 0 }
-    let order: [ScreenSharingSimulatorEdge] = [.top, .right, .bottom, .left]
-    guard let index = order.firstIndex(of: edge) else { return 0 }
-    let native = order[(((index - turns) % 4) + 4) % 4]
-    switch native {
-    case .top: return 1
-    case .left: return 2
-    case .bottom: return 3
-    case .right: return 4
-    }
+    devices[udid]?.device.receive(message)
   }
 
   private func end(owner: Owner, session: Session) {
@@ -363,10 +303,11 @@ final class SimulatorStreamHost {
     session.peer.onConnectionChanged = nil
     session.peer.channel.onMessage = nil
     session.peer.channel.onAvailabilityChanged = nil
-    devices[session.udid]?.capture?.remove(session.peer)
-    devices[session.udid]?.control.releaseTouches()
+    devices[session.udid]?.device.hide(from: session.peer)
+    devices[session.udid]?.device.releaseTouches()
     session.peer.close()
     release(udid: session.udid)
+    Self.logger.notice("Stream ended: \(self.sessions.count) viewing")
     if sessions.isEmpty {
       watchdog?.cancel()
       watchdog = nil

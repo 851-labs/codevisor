@@ -36,6 +36,12 @@ struct ScreenSharingHostChallenges {
     return reply
   }
 
+  static func token(_ token: String, matches candidate: String) -> Bool {
+    let mine = Array(token.utf8)
+    let theirs = Array(candidate.lowercased().utf8)
+    return mine.count == theirs.count && zip(mine, theirs).reduce(UInt8(0)) { $0 | ($1.0 ^ $1.1) } == 0
+  }
+
   static func randomHex() -> String {
     var generator = SystemRandomNumberGenerator()
     return (0..<32).map { _ in String(format: "%02x", UInt8.random(in: .min ... .max, using: &generator)) }.joined()

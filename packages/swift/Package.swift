@@ -379,14 +379,17 @@ let package = Package(
     .target(
       name: "SimulatorPane",
       dependencies: [
-        "Autocomplete", "CodevisorCore", "CodevisorUI", "ScreenSharing", "ScreenSharingV2",
+        "Autocomplete", "CodevisorCore", "CodevisorUI", "ScreenSharing", "ScreenSharingConnection", "ScreenSharingV2",
       ],
       path: "SimulatorPane/Sources/SimulatorPane",
       swiftSettings: strictSwiftSettings
     ),
     .testTarget(
       name: "SimulatorPaneTests",
-      dependencies: ["SimulatorPane", "CodevisorTestSupport"],
+      dependencies: [
+        "SimulatorPane", "CodevisorTestSupport", "ScreenSharing", "ScreenSharingConnection",
+        "ScreenSharingConnectionTesting", "ScreenSharingTesting",
+      ],
       path: "SimulatorPane/Tests/SimulatorPaneTests",
       swiftSettings: strictSwiftSettings,
       linkerSettings: frameworksBesideTestBundle

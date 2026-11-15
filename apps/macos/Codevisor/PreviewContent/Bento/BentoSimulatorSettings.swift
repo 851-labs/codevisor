@@ -8,7 +8,7 @@
       client: DemoServerClient(machine: DemoWorld.macStudio),
       preferences: SimulatorPanePreferences(udid: DemoWorld.simulator.udid), machineId: DemoWorld.macStudio.serverId,
       workspaceId: UUID(), paneId: UUID(),
-      v2: SimulatorStreamV2(address: { nil }, connect: { _ in throw CancellationError() }))
+      streams: SimulatorStreamSource(machineName: DemoWorld.macStudio.name, connection: { _, _ in nil }, end: { _ in }))
     @State private var hasDevice = false
 
     var body: some View {

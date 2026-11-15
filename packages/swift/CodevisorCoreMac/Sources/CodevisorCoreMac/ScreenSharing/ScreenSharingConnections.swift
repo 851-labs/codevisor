@@ -16,6 +16,7 @@ public final class ScreenSharingConnections {
   private var wakeObserver: (any NSObjectProtocol)?
   private var tracked: [String: Tracked] = [:]
   private var shownWorkspaces: [String: UUID] = [:]
+  private var targetMachines: [String: Bool] = [:]
   private var observation = 0
 
   public init(
@@ -51,6 +52,24 @@ public final class ScreenSharingConnections {
 
         self?.surfaceShown(inWorkspace: workspaceId, onMachine: machineId)
       })
+  }
+
+  public func targetConnection(
+    onMachine machineId: String, target: String,
+    attachedPane: @escaping @MainActor () -> ScreenSharingLegacyIdentity?
+  ) -> ScreenSharingConnection? {
+    guard source.machineIds().contains(machineId), var machine = try? machine(machineId) else { return nil }
+
+    machine.target = target
+    machine.attachedPane = attachedPane
+    machine.presentsTiles = false
+    machine.makeVNCTransport = nil
+    watchTargets(on: machineId)
+    return manager.connection(for: machine)
+  }
+
+  public func endTargetConnection(onMachine machineId: String, target: String) {
+    manager.remove(machineId, target: target)
   }
 
   public func surfaceShown(inWorkspace workspaceId: UUID, onMachine machineId: String) {
@@ -100,6 +119,26 @@ public final class ScreenSharingConnections {
     let known = source.machineIds()
     for machineId in tracked.keys where !known.contains(machineId) { remove(machineId) }
     for machineId in tracked.keys { noteReadiness(of: machineId) }
+    for machineId in targetMachines.keys { noteTargets(on: machineId, isKnown: known.contains(machineId)) }
+  }
+
+  private func watchTargets(on machineId: String) {
+    guard targetMachines[machineId] == nil else { return }
+
+    targetMachines[machineId] = source.isReady(machineId)
+    observe()
+  }
+
+  private func noteTargets(on machineId: String, isKnown: Bool) {
+    guard isKnown else {
+      targetMachines[machineId] = nil
+      return manager.remove(machineId)
+    }
+
+    let isReady = source.isReady(machineId)
+    let cameOnline = isReady && targetMachines[machineId] == false
+    targetMachines[machineId] = isReady
+    if cameOnline, tracked[machineId] == nil { manager.machineCameOnline(machineId) }
   }
 
   private func remove(_ machineId: String) {

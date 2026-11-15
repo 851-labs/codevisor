@@ -19,7 +19,6 @@ final class AppleSimulatorPane: Pane {
   var canFocusChooser: () -> Bool = { true } {
     didSet { model?.canFocusChooser = canFocusChooser }
   }
-  private var mounts = Set<UUID>()
 
   init(context: PaneContext, descriptor: PaneDescriptorState) {
     id = descriptor.id
@@ -27,30 +26,28 @@ final class AppleSimulatorPane: Pane {
       let client = context.client ?? CodevisorServerClient(config: context.machine.serverConfig)
       return SimulatorPaneModel(
         client: client, preferences: descriptor.simulator, machineId: context.machine.id, workspaceId: workspaceId,
-        paneId: descriptor.id,
-        v2: .live(connectLocally: ScreenSharingViewerMedia.connectLocally))
+        paneId: descriptor.id, streams: Self.streams(on: context.machine))
     }
+  }
+
+  private static func streams(on machine: CodevisorMachine) -> SimulatorStreamSource {
+    let machineId = machine.id
+    return SimulatorStreamSource(
+      machineName: machine.name,
+      connection: { target, attachedPane in
+        AppRuntime.shared.screenSharing?.targetConnection(
+          onMachine: machineId, target: target, attachedPane: attachedPane)
+      },
+      end: { AppRuntime.shared.screenSharing?.endTargetConnection(onMachine: machineId, target: $0) })
   }
 
   func makeView() -> AnyView { AnyView(AppleSimulatorPaneView(pane: self)) }
   func focus() { model?.focusChooser() }
-  func visibilityChanged(_ visible: Bool) { visible ? model?.appeared() : model?.disappeared() }
+  func visibilityChanged(_ visible: Bool) {}
+  func onScreenChanged(_ onScreen: Bool) { onScreen ? model?.appeared() : model?.disappeared() }
   func applyPreferences(_ preferences: SimulatorPanePreferences) { model?.applyPreferences(preferences) }
   func willDelete() async { model?.closed() }
   func detach() { model?.closed() }
-
-  func mounted(_ token: UUID) {
-    mounts.insert(token)
-    model?.appeared()
-  }
-
-  func unmounted(_ token: UUID) {
-    mounts.remove(token)
-    DispatchQueue.main.async { [weak self] in
-      guard let self, self.mounts.isEmpty else { return }
-      self.model?.disappeared()
-    }
-  }
 
   static func saveScreenshot(_ data: Data, deviceName: String) {
     let formatter = DateFormatter()
@@ -72,20 +69,20 @@ final class AppleSimulatorPane: Pane {
 
 private struct AppleSimulatorPaneView: View {
   let pane: AppleSimulatorPane
-  @State private var mount = UUID()
 
   var body: some View {
     Group {
       if let model = pane.model {
-        SimulatorPaneView(model: model) { data, name in AppleSimulatorPane.saveScreenshot(data, deviceName: name) }
+        SimulatorPaneView(model: model, reportsAppearance: false) { data, name in
+          AppleSimulatorPane.saveScreenshot(data, deviceName: name)
+        }
       } else {
         ContentUnavailableView(
           "Simulator unavailable", systemImage: "iphone",
           description: Text("Open this pane in a workspace connected to a Mac with Xcode."))
       }
     }
-    .onAppear { pane.mounted(mount) }
-    .onDisappear { pane.unmounted(mount) }
+    .background { ScreenSharingOnScreen { pane.onScreenChanged($0) } }
     .simultaneousGesture(
       TapGesture().onEnded {
         pane.onFocusChanged?(true)

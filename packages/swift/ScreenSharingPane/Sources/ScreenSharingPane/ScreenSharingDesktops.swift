@@ -24,6 +24,8 @@ public final class ScreenSharingDesktops {
   private var models: [String: ScreenSharingPaneModel] = [:]
   private var workspaces: [String: UUID] = [:]
   private var signals: [String: Signals] = [:]
+  private var targetMachines: Set<String> = []
+  private var watching: Set<String> = []
   private var foreground: (any NSObjectProtocol)?
 
   init(
@@ -59,8 +61,34 @@ public final class ScreenSharingDesktops {
       preferences.setPreferredDisplay($0, machineId: machineId)
     }
     models[machineId] = model
-    watch(machineId, sources)
+    startWatching(machineId, sources)
     return model
+  }
+
+  public func targetConnection(
+    onMachine machineId: String, target: String,
+    attachedPane: @escaping @MainActor () -> ScreenSharingLegacyIdentity?, environment: AppEnvironment
+  ) -> ScreenSharingConnection? {
+    targetConnection(
+      onMachine: machineId, target: target, attachedPane: attachedPane,
+      sources: ScreenSharingDesktopSources(environment: environment))
+  }
+
+  func targetConnection(
+    onMachine machineId: String, target: String,
+    attachedPane: @escaping @MainActor () -> ScreenSharingLegacyIdentity?, sources: ScreenSharingDesktopSources
+  ) -> ScreenSharingConnection? {
+    guard sources.machineName(machineId) != nil, var machine = machine(machineId, sources) else { return nil }
+
+    machine.target = target
+    machine.attachedPane = attachedPane
+    targetMachines.insert(machineId)
+    startWatching(machineId, sources)
+    return manager.connection(for: machine)
+  }
+
+  public func endTargetConnection(onMachine machineId: String, target: String) {
+    manager.remove(machineId, target: target)
   }
 
   func returnedToForeground() {
@@ -90,8 +118,17 @@ public final class ScreenSharingDesktops {
     return found
   }
 
+  private func startWatching(_ machineId: String, _ sources: ScreenSharingDesktopSources) {
+    guard watching.insert(machineId).inserted else { return }
+
+    watch(machineId, sources)
+  }
+
   private func watch(_ machineId: String, _ sources: ScreenSharingDesktopSources) {
-    guard models[machineId] != nil else { return }
+    guard models[machineId] != nil || targetMachines.contains(machineId) else {
+      watching.remove(machineId)
+      return
+    }
 
     let now = withObservationTracking {
       _ = sources.workspacesRevision()
@@ -114,6 +151,8 @@ public final class ScreenSharingDesktops {
 
   private func forget(_ machineId: String) {
     models[machineId] = nil
+    targetMachines.remove(machineId)
+    watching.remove(machineId)
     workspaces[machineId] = nil
     signals[machineId] = nil
     manager.remove(machineId)
