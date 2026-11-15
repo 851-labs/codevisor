@@ -25,6 +25,7 @@ public struct ScreenSharingConnectionsSource {
   public var connector: @MainActor () -> ScreenSharingV2Connector
   public var makeSurface: ScreenSharingSurfaceFactory
   public var preferences = ScreenSharingMachinePreferences()
+  public var userAsked: @MainActor (_ machineId: String) -> Void = { _ in }
   public var controlClock: any Clock<Duration> = ContinuousClock()
 
   public init(
@@ -51,7 +52,7 @@ public struct ScreenSharingConnectionsSource {
 
   public static func live(_ environment: AppEnvironment) -> Self {
     let machines = environment.machines
-    return Self(
+    var source = Self(
       machineIds: { machines.allMachineIds },
       isReady: { machines.availability(for: $0) == .ready },
       channel: { ScreenSharingServerChannel(client: machines.client(for: $0)) },
@@ -62,5 +63,7 @@ public struct ScreenSharingConnectionsSource {
       workspaces: { environment.workspaces.loadAll() },
       signer: { try environment.screenSharingSigner() },
       connector: { ScreenSharingViewerMedia.connector })
+    source.userAsked = { machines.redialTunnel(for: $0) }
+    return source
   }
 }

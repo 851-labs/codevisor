@@ -44,6 +44,23 @@ struct ScreenSharingConnectionRetryTests {
     await harness.noTimersLeft()
   }
 
+  @Test("Automatic tries never ask for a fresh link to the machine; the user's Retry does")
+  func onlyTheUserAsksForAFreshLink() async {
+    let harness = ConnectionHarness()
+    let surface = harness.show()
+    await harness.goLive()
+    harness.host.answerEvery(.capabilities, .failure(FakeHost.unreachable))
+    await useUpTheTries(harness, failingAt: .capabilities)
+    await harness.settle(.failed(.cantReach))
+    #expect(harness.userAsks == 0)
+
+    harness.host.answerEvery(.capabilities, nil)
+    surface.retry()
+
+    #expect(harness.userAsks == 1)
+    await harness.goLive()
+  }
+
   @Test("Tries used up without reaching the machine fail as can't reach, and the machine coming back reconnects")
   func failsAsUnreachableWhenTheMachineIsGone() async {
     let harness = ConnectionHarness()

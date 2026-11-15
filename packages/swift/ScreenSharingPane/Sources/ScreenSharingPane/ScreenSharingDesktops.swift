@@ -103,6 +103,7 @@ public final class ScreenSharingDesktops {
       signer: signer, installId: installId,
       liveWorkspace: { [weak self] in self?.liveWorkspace(on: machineId, sources) })
     machine.isReady = { sources.isReady(machineId) }
+    machine.userAsked = { sources.userAsked(machineId) }
     return machine
   }
 

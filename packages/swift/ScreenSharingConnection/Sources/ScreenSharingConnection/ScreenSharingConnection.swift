@@ -123,10 +123,14 @@ public final class ScreenSharingConnection {
     guard surface(id) != nil, state != .live else { return }
 
     pendingOpen = (id, clock.now())
+    machine.userAsked()
     handle(.openRequested)
   }
 
-  func retryRequested() { handle(.retryRequested) }
+  func retryRequested() {
+    machine.userAsked()
+    handle(.retryRequested)
+  }
 
   private func surfacesChanged() {
     handle(.surfacesChanged(attached: !surfaces.isEmpty, visible: surfaces.contains(where: \.isOnScreen)))

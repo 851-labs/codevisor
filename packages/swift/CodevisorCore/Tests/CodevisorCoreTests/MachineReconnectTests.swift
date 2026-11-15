@@ -159,7 +159,7 @@ struct MachineReconnectTests {
     #expect(!twin.reconnector.isActive)
   }
 
-  @Test("Retrying a machine by hand reconnects it at once")
+  @Test("Retrying a machine by hand redials its tunnel and reconnects it at once")
   func explicitRetryReconnects() async throws {
     let fixture = ReconnectFixture()
     defer { fixture.controller.stopEventSync() }
@@ -170,6 +170,7 @@ struct MachineReconnectTests {
     fixture.fake.setInfoFails(false)
     await fixture.controller.retryMachine(remote.id)
 
+    #expect(fixture.provider?.redialRequests == ["remote-box"])
     try await fixture.controller.requestGate.waitUntilReady(for: remote.id)
     #expect(fixture.controller.navigationSyncStateByMachineId[remote.id] == .current)
   }

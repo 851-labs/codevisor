@@ -158,7 +158,7 @@ public final class ScreenSharingConnections {
 
   private func machine(_ machineId: String) throws -> ScreenSharingMachine {
     let signer = try source.signer()
-    let (channel, openVNC, isReady) = (source.channel, source.openVNC, source.isReady)
+    let (channel, openVNC, isReady, userAsked) = (source.channel, source.openVNC, source.isReady, source.userAsked)
     var machine = ScreenSharingMachine(
       id: machineId, channel: { channel(machineId) }, connector: source.connector(), appName: source.appName(),
       signer: signer, installId: try ScreenSharingInstallIdentity.id(forKey: signer.key),
@@ -169,6 +169,7 @@ public final class ScreenSharingConnections {
           open: { try await openVNC(machineId, displayId) }, arbitratedByServer: arbitratedByServer)
       })
     machine.isReady = { isReady(machineId) }
+    machine.userAsked = { userAsked(machineId) }
     return machine
   }
 

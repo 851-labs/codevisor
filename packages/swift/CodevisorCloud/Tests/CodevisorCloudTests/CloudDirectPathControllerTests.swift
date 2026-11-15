@@ -97,7 +97,8 @@ func makePathController(
     reprobeInterval: .seconds(60),
     sleep: clock.sleep,
     prober: script.prober,
-    rebuildEndpoint: { rebuilds.signal() }
+    rebuildEndpoint: { rebuilds.signal() },
+    now: { clock.now }
   )
 }
 
@@ -133,8 +134,9 @@ struct CloudDirectPathControllerTests {
   @Test("A dropped tunnel re-dials by itself, without a roster refresh")
   func dropRedials() async throws {
     let script = ProbeScript()
+    let clock = TestClock()
     script.answer("m1", with: ScriptedDirectMachine())
-    let controller = makePathController(script: script)
+    let controller = makePathController(script: script, clock: clock)
     controller.reconcile(machines: [testMachine("m1", publicKey: "key")])
     await settle(controller)
     controller.reconcile(machines: [testMachine("m1", publicKey: "key")])
@@ -142,6 +144,7 @@ struct CloudDirectPathControllerTests {
     #expect(script.probes == ["m1"])
 
     script.answer("m1", with: ScriptedDirectMachine())
+    clock.advance(by: CloudDirectPathController.shortLivedPipe)
     script.takeDown("m1")
     #expect(await waitUntil { script.probes == ["m1", "m1"] })
     await settle(controller)

@@ -14,6 +14,7 @@ struct ScreenSharingDesktopSources {
   var isLive: (_ workspaceId: UUID) -> Bool
   var liveWorkspaces: (_ machineId: String) -> [UUID]
   var workspacesRevision: () -> UInt64
+  var userAsked: (_ machineId: String) -> Void = { _ in }
 
   init(
     signer: @escaping () throws -> ScreenSharingStartSigner,
@@ -49,6 +50,7 @@ struct ScreenSharingDesktopSources {
         workspaces.loadAll().filter { $0.serverId == machineId && Self.isLive($0) }.map(\.id)
       },
       workspacesRevision: { navigation.revision })
+    userAsked = { machines.redialTunnel(for: $0) }
   }
 
   private static var liveConnector: ScreenSharingV2Connector {

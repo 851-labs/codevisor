@@ -15,6 +15,7 @@ public protocol CloudMachineProviding: AnyObject {
   func prepareAccountSync(on client: any CodevisorServerClienting, machineId: String) async -> Bool
   func adoptDirectMachine(using client: any CodevisorServerClienting, name: String) async throws -> String
   func refreshCloudMachines() async
+  func redialTunnel(toDeviceId deviceId: String)
 }
 
 public extension CloudMachineProviding {
@@ -24,6 +25,7 @@ public extension CloudMachineProviding {
   func recoverLoopbackBridge(for machine: CloudMachine) async -> Bool { false }
   func registerLocalMachineIfNeeded() {}
   func refreshCloudMachines() async {}
+  func redialTunnel(toDeviceId _: String) {}
   func prepareAccountSync(on client: any CodevisorServerClienting, machineId: String) async -> Bool { false }
   func adoptDirectMachine(using _: any CodevisorServerClienting, name _: String) async throws -> String {
     throw CloudAccountClientError.missingToken

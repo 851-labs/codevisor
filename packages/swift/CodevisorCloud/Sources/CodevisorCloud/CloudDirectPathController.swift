@@ -30,7 +30,7 @@ public final class CloudDirectPathController {
   @ObservationIgnored var pathRefresh: Task<Void, Never>?
   static let pathRefreshInterval: Duration = .seconds(5)
 
-  @ObservationIgnored private var connections: [String: (connection: CloudDirectConnection, publicKey: String)] = [:]
+  @ObservationIgnored var connections: [String: (connection: CloudDirectConnection, publicKey: String)] = [:]
   @ObservationIgnored private var connectionGenerations: [String: UUID] = [:]
   @ObservationIgnored private var downBeforeHandover: Set<UUID> = []
   @ObservationIgnored var probeTasks: [String: Task<Void, Never>] = [:]
@@ -41,12 +41,15 @@ public final class CloudDirectPathController {
   @ObservationIgnored private var rebuiltSinceLastPipe = false
   @ObservationIgnored private var endpointRebuild: Task<Void, Never>?
   @ObservationIgnored private var lastAttempt: [String: ContinuousClock.Instant] = [:]
-  @ObservationIgnored private var known: [String: CloudMachine] = [:]
+  @ObservationIgnored var known: [String: CloudMachine] = [:]
+  @ObservationIgnored var liveSince: [String: ContinuousClock.Instant] = [:]
+  @ObservationIgnored var quickWindows: [String: CloudQuickRedialWindow] = [:]
   @ObservationIgnored private var waiters: [String: [UUID: CheckedContinuation<Void, Never>]] = [:]
   private let prober: Prober
   private let rebuildEndpoint: @Sendable () async -> Void
   private let reprobeInterval: Duration
   private let sleep: @Sendable (Duration) async throws -> Void
+  let now: @Sendable () -> ContinuousClock.Instant
   public let tunnel: CloudTunnelEndpoint
 
   public init(
@@ -55,12 +58,14 @@ public final class CloudDirectPathController {
     tunnel: CloudTunnelEndpoint? = nil,
     sleep: @escaping @Sendable (Duration) async throws -> Void = { try await Task.sleep(for: $0) },
     prober: Prober? = nil,
-    rebuildEndpoint: (@Sendable () async -> Void)? = nil
+    rebuildEndpoint: (@Sendable () async -> Void)? = nil,
+    now: @escaping @Sendable () -> ContinuousClock.Instant = { .now }
   ) {
     let tunnel = tunnel ?? CloudTunnelEndpoint(credentialStore: credentialStore)
     self.tunnel = tunnel
     self.reprobeInterval = reprobeInterval
     self.sleep = sleep
+    self.now = now
     self.prober = prober ?? Self.defaultProber(credentialStore: credentialStore, tunnel: tunnel)
     self.rebuildEndpoint = rebuildEndpoint ?? { await tunnel.rebuild() }
   }
@@ -98,8 +103,9 @@ public final class CloudDirectPathController {
       known[machine.deviceId] = machine
       guard probeTasks[machine.deviceId] == nil else { continue }
       let addressChanged = previous?.tunnel?.endpointId != machine.tunnel?.endpointId
+      if !addressChanged, retryTasks[machine.deviceId] != nil { continue }
       if !addressChanged, let last = lastAttempt[machine.deviceId],
-        last.duration(to: .now) < reprobeInterval
+        last.duration(to: now()) < reprobeInterval
       {
         continue
       }
@@ -107,10 +113,10 @@ public final class CloudDirectPathController {
     }
   }
 
-  private func startProbe(_ deviceId: String) {
+  func startProbe(_ deviceId: String) {
     guard let machine = known[deviceId], machine.tunnel != nil else { return }
     retryTasks.removeValue(forKey: deviceId)?.cancel()
-    lastAttempt[deviceId] = .now
+    lastAttempt[deviceId] = now()
     dialing.insert(deviceId)
     let rebuild = endpointRebuild
     let generation = UUID()
@@ -147,6 +153,7 @@ public final class CloudDirectPathController {
       self.resetFailures(deviceId)
       self.rebuiltSinceLastPipe = false
       self.connections[deviceId] = (connection, machine.publicKey)
+      self.liveSince[deviceId] = self.now()
       self.machineIds.insert(deviceId)
       self.pathReaders[deviceId] = pipe.path
       self.refreshPaths()
@@ -158,6 +165,7 @@ public final class CloudDirectPathController {
   }
 
   private func dialFailed(_ deviceId: String) {
+    if retryQuickly(deviceId) { return }
     if connections.isEmpty, !redialedForStreak.contains(deviceId) {
       redialedForStreak.insert(deviceId)
       if !rebuiltSinceLastPipe {
@@ -176,21 +184,24 @@ public final class CloudDirectPathController {
   private func wentDownBeforeUse(_ deviceId: String) {
     Log.cloud.log("Tunnel to machine \(deviceId, privacy: .public) went down before it was used")
     lastReachable[deviceId] = Date()
-    guard redialedAfterEarlyDrop.insert(deviceId).inserted else { return scheduleRetry(deviceId) }
+    guard redialedAfterEarlyDrop.insert(deviceId).inserted else { return retryLater(deviceId) }
 
     startProbe(deviceId)
   }
 
-  private func resetFailures(_ deviceId: String) {
+  func resetFailures(_ deviceId: String) {
     failures[deviceId] = nil
     redialedForStreak.remove(deviceId)
     redialedAfterEarlyDrop.remove(deviceId)
   }
 
-  private func scheduleRetry(_ deviceId: String) {
+  func scheduleRetry(_ deviceId: String) {
     let streak = (failures[deviceId] ?? 0) + 1
     failures[deviceId] = streak
-    let delay = min(reprobeInterval * (1 << min(streak - 1, 4)), .seconds(600))
+    retry(deviceId, after: min(reprobeInterval * (1 << min(streak - 1, 4)), .seconds(600)))
+  }
+
+  func retry(_ deviceId: String, after delay: Duration) {
     let sleep = sleep
     retryTasks[deviceId]?.cancel()
     retryTasks[deviceId] = Task { [weak self] in
@@ -213,9 +224,7 @@ public final class CloudDirectPathController {
     forgetPath(deviceId)
     lastReachable[deviceId] = Date()
     Log.cloud.log("Tunnel to machine \(deviceId, privacy: .public) went down")
-    resetFailures(deviceId)
-    guard probeTasks[deviceId] == nil else { return }
-    startProbe(deviceId)
+    afterLiveDrop(deviceId)
   }
 
   public func networkChanged() {
@@ -256,7 +265,7 @@ public final class CloudDirectPathController {
     if known[deviceId] == nil, let machine, machine.deviceId == deviceId {
       known[deviceId] = machine
     }
-    if probeTasks[deviceId] == nil { startProbe(deviceId) }
+    if probeTasks[deviceId] == nil, retryTasks[deviceId] == nil { startProbe(deviceId) }
     let id = UUID()
     let sleep = sleep
     let timer = Task { [weak self] in
@@ -295,6 +304,7 @@ public final class CloudDirectPathController {
   public func drop(deviceId: String) {
     discardPipe(deviceId)
     known[deviceId] = nil
+    quickWindows[deviceId] = nil
     resumeWaiters(deviceId)
   }
 
@@ -306,6 +316,7 @@ public final class CloudDirectPathController {
     machineIds.remove(deviceId)
     dialing.remove(deviceId)
     forgetPath(deviceId)
+    liveSince[deviceId] = nil
     guard let entry = connections.removeValue(forKey: deviceId) else { return }
     Task { await entry.connection.shutdown() }
   }
@@ -376,8 +387,11 @@ extension CloudDirectPathController {
         onDown: onDown,
         describePath: { paths.current().map { "\($0.route) \($0.roundTripMilliseconds) ms" } }
       )
+      let began = ContinuousClock.now
       if await Self.verifySealedRoundTrip(connection) { return Pipe(connection: connection) { paths.current() } }
-      Log.cloud.notice("Tunnel to machine \(machine.deviceId, privacy: .public) did not verify")
+      Log.cloud.notice(
+        "Tunnel to machine \(machine.deviceId, privacy: .public) did not verify after \(CloudTunnelSocket.milliseconds(since: began)) ms"
+      )
       await connection.shutdown()
       return nil
     }
