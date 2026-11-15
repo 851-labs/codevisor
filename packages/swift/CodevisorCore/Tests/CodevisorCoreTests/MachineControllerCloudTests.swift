@@ -167,6 +167,26 @@ struct MachineControllerCloudTests {
     #expect(controller.canonicalComposerMachineId(for: "ssh-retired-box") == nil)
   }
 
+  @Test("A workspace's machine is its own, or removed once a verified roster drops it, never another machine")
+  func workspaceMachineResolution() {
+    let (controller, _, provider) = makeController()
+    provider.cloudMachines = [makeCloudMachine(deviceId: "dev-rack", name: "Rack")]
+
+    guard case let .listed(listed) = controller.workspaceMachine(for: "cloud:dev-rack") else {
+      Issue.record("the listed machine wasn't found")
+      return
+    }
+    #expect(listed.name == "Rack")
+    #expect(controller.workspaceMachine(for: "cloud:dev-retired") == .removed)
+    #expect(controller.workspaceMachine(for: "ssh-retired-box") == .unknown)
+
+    provider.isCloudRosterVerified = false
+    #expect(controller.workspaceMachine(for: "cloud:dev-retired") == .unknown)
+    provider.isCloudRosterVerified = true
+    provider.isCloudSignedIn = false
+    #expect(controller.workspaceMachine(for: "cloud:dev-retired") == .unknown)
+  }
+
   @Test("A resolved local registration removes its cloud twin before fleet sync")
   func resolvedLocalRegistrationPrunesTwin() async {
     let deviceId = "local-device"

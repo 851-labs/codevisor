@@ -195,21 +195,31 @@ struct WorkspaceScreen: View {
     .onChange(of: paneState?.selectedPaneId) { presentedSubagent = nil }
   }
 
+  @ViewBuilder
+  private var blockedServerContent: some View {
+    let machines = environment.machines
+    switch machines.workspaceMachine(for: resolvedServerId) {
+    case let .listed(machine):
+      ServerAvailabilityView(
+        machineId: machine.id,
+        availability: screenAvailability,
+        machineName: machine.name,
+        isLocal: false,
+        serverUpdate: machines.updateActivity(for: resolvedServerId)
+      )
+    case .removed:
+      ProgressStepScreen(
+        title: "Machine Removed", steps: [],
+        note: "This workspace's machine is no longer in your Codevisor account.")
+    case .unknown:
+      ProgressStepScreen(title: "Connecting…", steps: [])
+    }
+  }
+
   private var workspaceContent: some View {
     Group {
       if blocksServerContent {
-        let machines = environment.machines
-        let machine =
-          machines.machine(for: resolvedServerId)
-          ?? machines.allMachines.first
-          ?? CodevisorMachine.local
-        ServerAvailabilityView(
-          machineId: machine.id,
-          availability: screenAvailability,
-          machineName: machine.name,
-          isLocal: false,
-          serverUpdate: machines.updateActivity(for: resolvedServerId)
-        )
+        blockedServerContent
       } else if let pane = activePane, let remote = guestChat(in: pane) {
         AgentChatScreen(serverId: remote.serverId, sessionId: remote.id, setsTitle: false)
           .id(remote.id)

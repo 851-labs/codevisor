@@ -277,9 +277,10 @@ public final class CloudDirectPathController {
     }
     timer.cancel()
     if let transport = transport(for: deviceId, publicKey: publicKey) { return transport }
+    let listed = known[deviceId] ?? machine
     throw CloudTunnelUnavailableError(
       machineDeviceId: deviceId,
-      hasTunnel: known[deviceId]?.tunnel != nil
+      needsUpdate: listed.map { $0.online && $0.tunnel == nil } ?? false
     )
   }
 
@@ -359,12 +360,12 @@ public final class CloudDirectPathController {
 
 public struct CloudTunnelUnavailableError: LocalizedError, Equatable {
   public let machineDeviceId: String
-  public let hasTunnel: Bool
+  public let needsUpdate: Bool
 
   public var errorDescription: String? {
-    hasTunnel
-      ? "Check that it's online and connected to the internet."
-      : "This machine's Codevisor is too old to connect. Update Codevisor on it."
+    needsUpdate
+      ? "This machine's Codevisor is too old to connect. Update Codevisor on it."
+      : "Check that it's online and connected to the internet."
   }
 }
 

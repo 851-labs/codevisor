@@ -278,9 +278,32 @@ struct CloudDirectPathControllerTests {
     let stuck = Task { try await controller.awaitTransport(for: "old", publicKey: "key") }
     await clock.waitForSleep(.seconds(15))
     clock.advance(by: .seconds(15))
-    await #expect(throws: CloudTunnelUnavailableError(machineDeviceId: "old", hasTunnel: false)) {
+    await #expect(throws: CloudTunnelUnavailableError(machineDeviceId: "old", needsUpdate: true)) {
       try await stuck.value
     }
+  }
+
+  @Test("An open that can't reach an offline or unlisted machine says to check it's online, not that it's too old")
+  func unavailableReason() async throws {
+    let script = ProbeScript()
+    let clock = TestClock()
+    let controller = makePathController(script: script, clock: clock)
+    let offline = testMachine("asleep", publicKey: "key", online: false, tunnelEndpoint: nil)
+
+    let asleep = Task { try await controller.awaitTransport(for: "asleep", publicKey: "key", machine: offline) }
+    let gone = Task { try await controller.awaitTransport(for: "gone", publicKey: "key") }
+    await clock.waitForSleep(.seconds(15), count: 2)
+    clock.advance(by: .seconds(15))
+
+    await #expect(throws: CloudTunnelUnavailableError(machineDeviceId: "asleep", needsUpdate: false)) {
+      try await asleep.value
+    }
+    await #expect(throws: CloudTunnelUnavailableError(machineDeviceId: "gone", needsUpdate: false)) {
+      try await gone.value
+    }
+    #expect(
+      CloudTunnelUnavailableError(machineDeviceId: "gone", needsUpdate: false).errorDescription
+        == "Check that it's online and connected to the internet.")
   }
 
   @Test("An open for a machine the controller hasn't been told about dials it")
