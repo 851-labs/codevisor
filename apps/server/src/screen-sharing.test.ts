@@ -140,16 +140,23 @@ describe("app-owned Screen Sharing sessions", () => {
     expect(helper).toHaveBeenCalledTimes(7)
   })
 
-  it("still requires the pane for an app's Computer Use and Simulator streams", async () => {
+  it("serves an app's Computer Use and Simulator streams without a workspace or pane, and a request without the app as before", async () => {
     const helper = vi.fn(async () => reply)
     const { post } = await fixture(helper)
     for (const displayId of [`computer-use:${randomUUID()}`, `simulator:${randomUUID()}`]) {
-      expect((await post({ ...appStart(), displayId })).status).toBe(404)
-      expect(
-        (await post({ ...appStart(), operation: "heartbeat", displayId, session })).status
-      ).toBe(404)
+      const start = { ...appStart(), displayId }
+      const { app: _, intent: __, proof: ___, ...stable } = start
+      const beat = { ...stable, operation: "heartbeat", session }
+      for (const request of [start, { ...start, operation: "restart" }, beat])
+        expect((await post(request)).status).toBe(200)
+      expect(helper).toHaveBeenCalledWith(start)
+      expect(helper).toHaveBeenCalledWith(beat)
+
+      expect((await post(stable)).status).toBe(404)
+      expect((await post({ ...stable, operation: "heartbeat" })).status).toBe(404)
+      expect((await post({ ...start, operation: "heartbeat" })).status).toBe(404)
     }
-    expect(helper).not.toHaveBeenCalled()
+    expect(helper).toHaveBeenCalledTimes(6)
   })
 
   it("rejects a malformed app, a start under another key, and a start that doesn't say open or attach", async () => {

@@ -22,6 +22,20 @@ struct ScreenSharingHostChallenges {
     return challenge.expiresAt > now ? challenge.hostKey : nil
   }
 
+  mutating func redeem(provedBy request: ServerScreenSharingRequest, now: TimeInterval) -> Bool {
+    guard let proof = request.proof, let hostKey = redeem(proof.nonce, now: now) else { return false }
+
+    return proof.proves(request, to: hostKey)
+  }
+
+  static func rejection(offering fresh: ServerScreenSharingChallenge?) -> ServerScreenSharingReply {
+    var reply = ServerScreenSharingReply(
+      status: "failed", message: "This Mac couldn't confirm which device is asking. Try again.")
+    reply.reason = .proofRejected
+    reply.challenge = fresh
+    return reply
+  }
+
   static func randomHex() -> String {
     var generator = SystemRandomNumberGenerator()
     return (0..<32).map { _ in String(format: "%02x", UInt8.random(in: .min ... .max, using: &generator)) }.joined()

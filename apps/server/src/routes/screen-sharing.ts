@@ -90,11 +90,7 @@ const sessionIsWellFormed = (payload: ScreenSharingRequest): boolean =>
 const startTargetIsValid = (payload: ScreenSharingRequest): boolean =>
   payload.displayId === undefined ? payload.app !== undefined : isKnownTarget(payload.displayId)
 
-const isDesktopTarget = (displayId: string | undefined): boolean =>
-  computerUseSessionId(displayId) === undefined && !isSimulatorTarget(displayId)
-
-const appOwnsDesktopSession = (payload: ScreenSharingRequest): boolean => {
-  if (!isDesktopTarget(payload.displayId)) return false
+const appOwnsSession = (payload: ScreenSharingRequest): boolean => {
   if (payload.operation === "heartbeat") return payload.session !== undefined
   return payload.app !== undefined
 }
@@ -149,7 +145,7 @@ export const routeScreenSharing = async (
   if (payload.displayId !== undefined && !isKnownTarget(payload.displayId))
     throw new HttpFailure(400, "Invalid Screen Sharing display")
   const checksPane = ["start", "restart", "heartbeat"].includes(payload.operation)
-  if (checksPane && !appOwnsDesktopSession(payload)) {
+  if (checksPane && !appOwnsSession(payload)) {
     const sessionId = computerUseSessionId(payload.displayId)
     const workspace = (await run(services.db.listWorkspaces)).find(
       (item) => item.id.toLowerCase() === payload.workspaceId.toLowerCase()

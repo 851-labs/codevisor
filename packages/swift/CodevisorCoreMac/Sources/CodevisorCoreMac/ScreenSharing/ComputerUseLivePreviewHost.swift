@@ -103,6 +103,7 @@ final class ComputerUseLivePreviewHost {
     var makePeer:
       @MainActor (_ size: CGSize, _ media: ScreenSharingStreamMedia) async throws -> any ComputerUseStreamPeer
     var offersV2: @MainActor () -> Bool
+    var hostKey: @MainActor () async -> String?
     var now: @MainActor () -> TimeInterval
 
     @MainActor static var live: Dependencies {
@@ -114,6 +115,7 @@ final class ComputerUseLivePreviewHost {
         detach: { ComputerUseLivePreview.shared.detachSink(sessionID: $0, token: $1) },
         makePeer: { size, media in try ComputerUseV2Peer(size: size, viewerEndpointId: media.viewerEndpointId) },
         offersV2: { ScreenSharingMediaEndpoint.shared.isAvailable },
+        hostKey: { await ScreenSharingStreamIdentity.mediaEndpointKey() },
         now: { ProcessInfo.processInfo.systemUptime }
       )
     }
@@ -122,71 +124,90 @@ final class ComputerUseLivePreviewHost {
   static let maximumSessions = 4
   static let lifetime: TimeInterval = 25
 
-  private struct Owner: Hashable {
-    let workspaceId: UUID
-    let paneId: UUID
-    let viewerId: UUID
-    init(_ request: ServerScreenSharingRequest) {
-      workspaceId = request.workspaceId; paneId = request.paneId; viewerId = request.viewerId
-    }
-  }
+  private typealias Owner = ScreenSharingStreamOwner
 
-  private final class Session {
+  private final class Session: ScreenSharingStreamSession {
     let sessionID: String
     let bridgeSessionID: String
     let peer: any ComputerUseStreamPeer
-    var token: UUID?
+    let attempt: UUID
+    let token: String?
+    var sink: UUID?
     var state = "connecting"
     var expiresAt: TimeInterval
 
-    init(sessionID: String, bridgeSessionID: String, peer: any ComputerUseStreamPeer, expiresAt: TimeInterval) {
-      self.sessionID = sessionID; self.bridgeSessionID = bridgeSessionID
-      self.peer = peer; self.expiresAt = expiresAt
+    init(
+      sessionID: String, activity: ComputerUseLivePreview.Activity, peer: any ComputerUseStreamPeer, attempt: UUID,
+      token: String?, expiresAt: TimeInterval
+    ) {
+      self.sessionID = sessionID; bridgeSessionID = activity.bridgeSessionID
+      self.peer = peer; self.attempt = attempt; self.token = token; self.expiresAt = expiresAt
     }
   }
 
   private let dependencies: Dependencies
+  private let identity: ScreenSharingStreamIdentity
   private var sessions: [Owner: Session] = [:]
   private var watchdog: Task<Void, Never>?
   private var isShutdown = false
 
   init(dependencies: Dependencies = .live) {
     self.dependencies = dependencies
+    identity = ScreenSharingStreamIdentity(hostKey: dependencies.hostKey, now: dependencies.now)
   }
 
   var sessionCount: Int { sessions.count }
 
   func handle(_ request: ServerScreenSharingRequest) async -> ServerScreenSharingReply {
+    await identity.describing(await respond(to: request), for: request)
+  }
+
+  private func respond(to request: ServerScreenSharingRequest) async -> ServerScreenSharingReply {
     guard !isShutdown else { return .init(status: "stopped") }
-    guard request.version == 1 else {
-      return .init(status: "unavailable", message: "Update Codevisor to use the live view.")
-    }
+    guard request.version == 1 else { return Self.updateNeeded }
     guard let sessionID = ComputerUseStreamTarget.sessionID(from: request.displayId) else {
       return .init(status: "failed", message: "Invalid live view target.")
     }
+
     expireSessions()
-    let owner = Owner(request)
     switch request.operation {
-    case .capabilities:
-      return capabilities(request, sessionID: sessionID)
-    case .stop:
-      if let session = sessions[owner] { end(owner: owner, session: session) }
-      return .init(status: "stopped")
-    case .setScale:
-      return .init(status: "unsupported", message: "A live view's scale can't be set.")
-    case .heartbeat:
-      guard let session = sessions[owner], session.sessionID == sessionID else {
-        return .init(status: "stopped", message: "The live view ended on the host Mac.")
-      }
-      guard let activity = liveActivity(sessionID) else {
-        end(owner: owner, session: session)
-        return .init(status: "stopped", message: "The agent stopped controlling the app.")
-      }
-      session.expiresAt = dependencies.now() + Self.lifetime
-      return .init(status: session.state, message: activity.windowNotice)
-    case .start, .restart:
-      return await start(request, owner: owner, sessionID: sessionID)
+    case .capabilities: return capabilities(request, sessionID: sessionID)
+    case .stop: return stop(request)
+    case .setScale: return .init(status: "unsupported", message: "A live view's scale can't be set.")
+    case .heartbeat: return heartbeat(request, sessionID: sessionID)
+    case .start, .restart: return await admit(request, sessionID: sessionID)
     }
+  }
+
+  private func stop(_ request: ServerScreenSharingRequest) -> ServerScreenSharingReply {
+    if let owner = identity.owner(stoppedBy: request, among: sessions), let session = sessions[owner] {
+      end(owner: owner, session: session)
+    }
+    return .init(status: "stopped")
+  }
+
+  private func heartbeat(_ request: ServerScreenSharingRequest, sessionID: String) -> ServerScreenSharingReply {
+    guard let owner = identity.owner(heartbeating: request, among: sessions), let session = sessions[owner],
+      session.sessionID == sessionID
+    else {
+      return identity.ending(for: request)
+        ?? .init(status: "stopped", message: "The live view ended on the host Mac.")
+    }
+    guard let activity = liveActivity(sessionID) else {
+      end(owner: owner, session: session)
+      return Self.stoppedControlling
+    }
+
+    session.expiresAt = dependencies.now() + Self.lifetime
+    return .init(status: session.state, message: activity.windowNotice)
+  }
+
+  private func admit(_ request: ServerScreenSharingRequest, sessionID: String) async -> ServerScreenSharingReply {
+    if let refusal = await identity.refusal(toStart: request) { return refusal }
+
+    let owner = identity.begin(request, target: sessionID)
+    defer { identity.finish(request, as: owner) }
+    return await start(request, owner: owner, sessionID: sessionID)
   }
 
   private func capabilities(_ request: ServerScreenSharingRequest, sessionID: String) -> ServerScreenSharingReply {
@@ -217,21 +238,26 @@ final class ComputerUseLivePreviewHost {
         peer.close()
         return .init(status: "stopped")
       }
+      guard identity.isStillStarting(request, as: owner) else {
+        peer.close()
+        return .init(status: "stopped")
+      }
       if let raced = sessions[owner] { end(owner: owner, session: raced) }
       guard sessions.count < Self.maximumSessions else {
         peer.close()
         return .init(status: "busy", message: "Too many viewers are watching this agent.")
       }
-      return try await connect(peer, activity: activity, owner: owner, sessionID: sessionID)
+      let session = Session(
+        sessionID: sessionID, activity: activity, peer: peer, attempt: request.viewerId,
+        token: identity.token(for: owner), expiresAt: dependencies.now() + Self.lifetime)
+      return try await connect(session, activity: activity, owner: owner)
     } catch { return .init(status: "failed", message: error.localizedDescription) }
   }
 
   private func connect(
-    _ peer: any ComputerUseStreamPeer, activity: ComputerUseLivePreview.Activity, owner: Owner, sessionID: String
+    _ session: Session, activity: ComputerUseLivePreview.Activity, owner: Owner
   ) async throws -> ServerScreenSharingReply {
-    let session = Session(
-      sessionID: sessionID, bridgeSessionID: activity.bridgeSessionID, peer: peer,
-      expiresAt: dependencies.now() + Self.lifetime)
+    let peer = session.peer
     sessions[owner] = session
     peer.onConnectionChanged = { [weak self, weak session] state in
       guard let self, let session, self.sessions[owner] === session else { return }
@@ -248,8 +274,8 @@ final class ComputerUseLivePreviewHost {
         self.end(owner: owner, session: session)
       }
       guard !isShutdown, sessions[owner] === session else { throw CancellationError() }
-      session.token = dependencies.attach(session.bridgeSessionID, peer.sink)
-      return .connecting(grant, message: activity.windowNotice)
+      session.sink = dependencies.attach(session.bridgeSessionID, peer.sink)
+      return .connecting(grant, message: activity.windowNotice, session: session.token)
     } catch {
       if sessions[owner] === session { end(owner: owner, session: session) } else { peer.close() }
       throw error
@@ -258,6 +284,7 @@ final class ComputerUseLivePreviewHost {
 
   func activityChanged() {
     for (owner, session) in sessions where liveActivity(session.sessionID) == nil {
+      identity.remember(session, endedWith: Self.stoppedControlling)
       end(owner: owner, session: session)
     }
   }
@@ -282,8 +309,8 @@ final class ComputerUseLivePreviewHost {
   private func end(owner: Owner, session: Session) {
     guard sessions[owner] === session else { return }
     sessions.removeValue(forKey: owner)
-    if let token = session.token { dependencies.detach(session.bridgeSessionID, token) }
-    session.token = nil
+    if let sink = session.sink { dependencies.detach(session.bridgeSessionID, sink) }
+    session.sink = nil
     session.peer.onConnectionChanged = nil
     session.peer.close()
     if sessions.isEmpty {
@@ -310,9 +337,19 @@ final class ComputerUseLivePreviewHost {
     }
   }
 
-  private static let permissionRequired = ServerScreenSharingReply(
-    status: "permission-required",
-    message: "Allow Screen Recording for Codevisor on the host Mac.")
-  private static let notControlling = ServerScreenSharingReply(
-    status: "unavailable", message: "The agent is not controlling an app right now.")
+  private static let permissionRequired = reply(
+    "permission-required", "Allow Screen Recording for Codevisor on the host Mac.", .permissionMissing)
+  private static let notControlling = reply(
+    "unavailable", "The agent is not controlling an app right now.", .nothingToView)
+  private static let stoppedControlling = reply(
+    "stopped", "The agent stopped controlling the app.", .nothingToView)
+  private static let updateNeeded = reply("unavailable", "Update Codevisor to use the live view.", .updateNeeded)
+
+  private static func reply(
+    _ status: String, _ message: String, _ reason: ServerScreenSharingReason
+  ) -> ServerScreenSharingReply {
+    var reply = ServerScreenSharingReply(status: status, message: message)
+    reply.reason = reason
+    return reply
+  }
 }
