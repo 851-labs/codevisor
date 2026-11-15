@@ -53,6 +53,7 @@ public final class ScreenSharingDesktop {
     following = [
       observe { [weak self] in self?.show(connection.session) },
       observe { [weak self] in self?.connectionChanged(to: connection.state) },
+      observe { [weak self] in self?.settleTheChosenDisplay(connection.displaySwitch) },
       observe { [weak self] in
         self?.saveTheChosenDisplay(preferred: connection.preferredDisplayId, shared: connection.display?.id)
         self?.configureResolution(for: connection.display?.id, among: connection.displays)
@@ -195,6 +196,20 @@ public final class ScreenSharingDesktop {
 
   private func pictureChanged() {
     for seat in seats.values { seat.events.pictureChanged() }
+  }
+
+  private func settleTheChosenDisplay(_ result: ScreenSharingDisplaySwitch?) {
+    guard let result else { return }
+
+    switch result.phase {
+    case .switching:
+      return
+    case .confirmed:
+      preferences.setPreferredDisplay(result.displayId, machineId: machineId)
+      if chosenDisplayId == result.displayId { chosenDisplayId = nil }
+    case .unavailable:
+      if chosenDisplayId == result.displayId { chosenDisplayId = nil }
+    }
   }
 
   private func saveTheChosenDisplay(preferred: String?, shared: String?) {

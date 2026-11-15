@@ -26,6 +26,7 @@ final class ScreenSharingMediaSessionTransport: ScreenSharingTransport {
   private var isClosed = false
   private var switcher = ScreenSharingDisplaySwitcher()
   private var switchesDisplays = false
+  private var reportedSwitchable = false
   private var backstop: Task<Void, Never>?
 
   init(
@@ -78,6 +79,7 @@ final class ScreenSharingMediaSessionTransport: ScreenSharingTransport {
 
       ends.continuation.yield(end)
     }
+    reportSwitchability()
     return await withTaskCancellationHandler {
       for await end in ends.stream { return end }
       return nil
@@ -212,8 +214,17 @@ final class ScreenSharingMediaSessionTransport: ScreenSharingTransport {
     }
   }
 
+  private func reportSwitchability() {
+    let switchable = canSwitchDisplay
+    guard switchable != reportedSwitchable else { return }
+
+    reportedSwitchable = switchable
+    report(.displaySwitchAvailable(switchable))
+  }
+
   private func read(_ reply: ScreenSharingHostReply, of beat: ScreenSharingDisplaySwitcher.Beat) {
     if reply.switchesDisplays { switchesDisplays = true }
+    reportSwitchability()
     let reading = switcher.read(reply, of: beat)
     if reading.showsDisplay { announce(reply) }
     guard let result = reading.result else { return }

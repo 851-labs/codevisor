@@ -185,6 +185,8 @@ public final class ScreenSharingDesktopSurface {
     snapshot.hostNotice = desktop.connection.hostNotice
     snapshot.displays = desktop.connection.displays
     snapshot.displayId = desktop.connection.display?.id
+    snapshot.displaySwitch = desktop.connection.displaySwitch
+    snapshot.switchesDisplayInSession = desktop.connection.switchesDisplayInSession
     snapshot.endpoint = desktop.endpoint
     snapshot.control = desktop.controller == id ? desktop.controlStatus : nil
     snapshot.mode = desktop.mode

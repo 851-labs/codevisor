@@ -16,6 +16,7 @@ public final class ScreenSharingConnection {
   public private(set) var surfaces: [ScreenSharingSurfaceState] = []
   public private(set) var isEnded = false
   public private(set) var displaySwitch: ScreenSharingDisplaySwitch?
+  public var switchesDisplayInSession: Bool { state == .live && hostSwitchesDisplays && target == nil }
   public var preferredDisplayId: String?
   public let machineId: String
   public let target: String?
@@ -29,6 +30,7 @@ public final class ScreenSharingConnection {
   @ObservationIgnored private var pendingOpen: (surface: UUID, at: ContinuousClock.Instant)?
   @ObservationIgnored private var unseenTimer: Task<Void, Never>?
   @ObservationIgnored private var liveSince: ContinuousClock.Instant?
+  private var hostSwitchesDisplays = false
 
   init(machine: ScreenSharingMachine, clock: ScreenSharingConnectionClock) {
     self.machine = machine
@@ -222,6 +224,8 @@ public final class ScreenSharingConnection {
       if let display { confirmLateSwitch(showing: display) }
     case .transport(.displaySwitch(let result)):
       settle(result)
+    case .transport(.displaySwitchAvailable(let available)):
+      if hostSwitchesDisplays != available { hostSwitchesDisplays = available }
     }
   }
 
@@ -244,6 +248,7 @@ public final class ScreenSharingConnection {
     session = nil
     if isTakingLong { isTakingLong = false }
     if hostNotice != nil { hostNotice = nil }
+    if hostSwitchesDisplays { hostSwitchesDisplays = false }
     if let pending = displaySwitch, pending.phase == .switching {
       displaySwitch = ScreenSharingDisplaySwitch(displayId: pending.displayId, phase: .unavailable(message: nil))
     }

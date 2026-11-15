@@ -15,6 +15,7 @@ public struct ScreenSharingViewer {
     public var surface = ScreenSharingSurfaceSnapshot()
     public let machineName: String
     var visible = false
+    var dismissedDisplaySwitch: ScreenSharingDisplaySwitch?
 
     public init(machineName: String) {
       self.machineName = machineName
@@ -22,7 +23,24 @@ public struct ScreenSharingViewer {
 
     public var endpoint: ScreenSharingViewerEndpoint? { surface.endpoint }
     public var displays: [ServerScreenSharingDisplay] { surface.displays }
-    public var selectedDisplayId: String? { surface.displayId }
+    public var selectedDisplayId: String? {
+      guard let pending = surface.displaySwitch, pending.phase == .switching else { return surface.displayId }
+
+      return pending.displayId
+    }
+
+    public var switchesDisplayInSession: Bool { surface.switchesDisplayInSession }
+
+    public var displaySwitchLine: ScreenSharingDisplaySwitchLine? {
+      guard isLive, let result = surface.displaySwitch, result != dismissedDisplaySwitch else { return nil }
+
+      let name = surface.displays.first { $0.id == result.displayId }?.name ?? "the other display"
+      switch result.phase {
+      case .switching: return .switching("Switching to \(name)…")
+      case .unavailable(let message): return .failed(message ?? "Couldn't switch to \(name).")
+      case .confirmed: return nil
+      }
+    }
     public var hostNotice: String? { surface.hostNotice }
     public var isLive: Bool { surface.connection == .live }
     public var isReconnecting: Bool { surface.connection == .reconnecting }
@@ -60,6 +78,7 @@ public struct ScreenSharingViewer {
   public enum Action {
     case controlTaken
     case displaySelected(String)
+    case displaySwitchDismissed
     case dynamicResolutionToggled
     case hidden
     case interactionModeChanged(InteractionMode)
@@ -83,7 +102,12 @@ public struct ScreenSharingViewer {
 
       case .displaySelected(let id):
         guard state.displays.contains(where: { $0.id == id }) else { return .none }
+        state.dismissedDisplaySwitch = nil
         return .run { [surface] _ in await surface.switchDisplay(id) }
+
+      case .displaySwitchDismissed:
+        state.dismissedDisplaySwitch = state.surface.displaySwitch
+        return .none
 
       case .dynamicResolutionToggled:
         let enabled = !state.dynamicResolution
@@ -104,6 +128,7 @@ public struct ScreenSharingViewer {
         return .none
 
       case .surfaceChanged(let surface):
+        if state.isLive, surface.connection != .live { state.dismissedDisplaySwitch = surface.displaySwitch }
         state.surface = surface
         return .none
 

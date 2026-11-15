@@ -36,6 +36,7 @@ public struct ScreenSharingMachineSettings: Equatable, Sendable {
   public var sound: Sound?
   public var keyboard: Keyboard?
   public var screenshotShortcuts: [String] = []
+  public var switchesDisplayInSession = false
 
   public init(
     name: String, connection: String, address: String? = nil, dynamicResolution: Bool? = nil,
@@ -52,6 +53,10 @@ public struct ScreenSharingMachineSettings: Equatable, Sendable {
     let resizes = "Dynamic Resolution resizes this machine's screen to fit your window as you resize it."
     guard dynamicResolutionMirrorsDisplay else { return resizes }
     return "\(resizes) While you're connected, its own display mirrors the new size."
+  }
+
+  public func reconnects(applying changes: ScreenSharingMachineSettingsChanges) -> Bool {
+    changes.reconnects && !switchesDisplayInSession
   }
 
   public var screenshotsExplanation: String {
@@ -215,7 +220,7 @@ public struct ScreenSharingMachineSettingsSheet: View {
       }
       Spacer()
       Button("Cancel", role: .cancel) { dismiss() }.keyboardShortcut(.cancelAction)
-      Button(changes.reconnects ? "Reconnect" : "Done") {
+      Button(original.reconnects(applying: changes) ? "Reconnect" : "Done") {
         if !changes.isEmpty { onDone(changes) }
         dismiss()
       }
