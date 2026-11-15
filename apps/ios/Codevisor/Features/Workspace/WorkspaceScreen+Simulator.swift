@@ -27,11 +27,22 @@ extension WorkspaceScreen {
     let model = SimulatorPaneCache.shared.model(for: pane.id) {
       SimulatorPaneModel(
         client: client, preferences: pane.simulator, machineId: serverId, workspaceId: workspace.id,
-        paneId: pane.id, v2: .live(chroma: { ScreenSharingPaneModel.requestedChroma }))
+        paneId: pane.id, streams: simulatorStreams(onMachine: serverId))
     }
     model.applyPreferences(pane.simulator ?? SimulatorPanePreferences())
     model.onPreferencesChanged = { updateSimulator(pane, preferences: $0) }
     return model
+  }
+
+  private func simulatorStreams(onMachine machineId: String) -> SimulatorStreamSource {
+    let environment = environment
+    return SimulatorStreamSource(
+      machineName: environment.machines.machine(for: machineId)?.name ?? "this machine",
+      connection: { target, attachedPane in
+        ScreenSharingDesktops.shared.targetConnection(
+          onMachine: machineId, target: target, attachedPane: attachedPane, environment: environment)
+      },
+      end: { ScreenSharingDesktops.shared.endTargetConnection(onMachine: machineId, target: $0) })
   }
 
   func convertToSimulator(_ pane: PaneDescriptorState) {

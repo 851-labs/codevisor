@@ -89,15 +89,19 @@ final class ScreenSharingStreamIdentity {
   }
 
   func ending(for request: Request) -> Reply? {
-    guard let token = request.session?.lowercased() else { return nil }
+    guard let token = request.session else { return nil }
 
-    return endings.last { $0.token == token }?.reply
+    return endings.last { Self.matches($0.token, token) }?.reply
   }
 
   static func mediaEndpointKey() async -> String? {
     guard let endpoint = await ScreenSharingMediaEndpoint.shared.ready() else { return nil }
 
     return ScreenSharingMediaEndpoint.address(of: endpoint).endpointId
+  }
+
+  private static func matches(_ token: String, _ candidate: String) -> Bool {
+    ScreenSharingHostChallenges.token(token, matches: candidate)
   }
 
   private static func isIdentified(_ request: Request) -> Bool {
@@ -111,9 +115,9 @@ final class ScreenSharingStreamIdentity {
   private func holder<Session: ScreenSharingStreamSession>(
     ofTheTokenIn request: Request, among sessions: [Owner: Session]
   ) -> Owner? {
-    guard let token = request.session?.lowercased() else { return nil }
+    guard let token = request.session else { return nil }
 
-    return sessions.first { $0.key.isApp && $0.value.token == token }?.key
+    return sessions.first { $0.key.isApp && $0.value.token.map { Self.matches($0, token) } == true }?.key
   }
 
   private func challenge() async -> ServerScreenSharingChallenge? {

@@ -3,6 +3,7 @@ import CodevisorCore
 import Foundation
 import Observation
 import ScreenSharing
+import ScreenSharingConnection
 
 @MainActor
 @Observable
@@ -30,42 +31,30 @@ public final class SimulatorPaneModel {
 
   public var onPreferencesChanged: ((SimulatorPanePreferences) -> Void)?
 
-  static let hiddenGrace: Duration = .seconds(300)
-
   @ObservationIgnored let screenFeed = SimulatorScreenFeed()
 
   @ObservationIgnored let client: any SimulatorClienting
   @ObservationIgnored private let makeConnection: @MainActor (_ udid: String) -> any SimulatorConnection
-  @ObservationIgnored private let retire: @MainActor () -> Void
-  @ObservationIgnored private let clock: any Clock<Duration>
   @ObservationIgnored private var visible = false
-  @ObservationIgnored private var lingering: Task<Void, Never>?
   @ObservationIgnored private var poller: Task<Void, Never>?
   @ObservationIgnored private var loadingType: String?
 
-  public init(
+  public convenience init(
     client: any CodevisorServerClienting, preferences: SimulatorPanePreferences?, machineId: String,
-    workspaceId: UUID, paneId: UUID, v2: SimulatorStreamV2
+    workspaceId: UUID, paneId: UUID, streams: SimulatorStreamSource
   ) {
-    self.client = client
-    let sponsor = SimulatorStreamSponsor(workspaceId: workspaceId, paneId: paneId, client: client, v2: v2)
-    makeConnection = { udid in
-      SimulatorStreamRegistry.shared.handle(machineId: machineId, udid: udid, sponsor: sponsor)
+    let pane = ScreenSharingLegacyIdentity(workspaceId: workspaceId, paneId: paneId)
+    self.init(client: client, preferences: preferences) { udid in
+      SimulatorStreams.shared.stream(machineId: machineId, udid: udid, pane: pane, source: streams)
     }
-    retire = { SimulatorStreamRegistry.shared.retire(paneId: paneId) }
-    clock = ContinuousClock()
-    udid = preferences?.udid
   }
 
   init(
-    client: any SimulatorClienting, preferences: SimulatorPanePreferences?, clock: any Clock<Duration>,
-    makeConnection: @escaping @MainActor (_ udid: String) -> any SimulatorConnection,
-    retire: @escaping @MainActor () -> Void = {}
+    client: any SimulatorClienting, preferences: SimulatorPanePreferences?,
+    makeConnection: @escaping @MainActor (_ udid: String) -> any SimulatorConnection
   ) {
     self.client = client
-    self.clock = clock
     self.makeConnection = makeConnection
-    self.retire = retire
     udid = preferences?.udid
   }
 
@@ -97,8 +86,6 @@ public final class SimulatorPaneModel {
   public func appeared() {
     guard !visible else { return }
     visible = true
-    lingering?.cancel()
-    lingering = nil
     startPolling()
     syncStream()
   }
@@ -108,23 +95,13 @@ public final class SimulatorPaneModel {
     visible = false
     poller?.cancel()
     poller = nil
-    guard connection != nil else { return }
-    lingering = Task { [weak self, clock] in
-      guard (try? await clock.sleep(for: Self.hiddenGrace)) != nil else { return }
-      self?.lingeringExpired()
-    }
+    connection?.setVisible(false)
   }
 
   public func closed() {
     visible = false
     poller?.cancel()
     poller = nil
-    stopStream()
-    retire()
-  }
-
-  private func lingeringExpired() {
-    guard !visible else { return }
     stopStream()
   }
 
@@ -195,26 +172,26 @@ public final class SimulatorPaneModel {
   }
 
   private func syncStream() {
-    let running = device?.isBooted == true
-    if visible, running, connection == nil, let udid {
+    guard device?.isBooted == true, let udid else { return stopStream() }
+
+    if connection == nil, visible {
       let connection = makeConnection(udid)
       self.connection = connection
       connection.start()
-    } else if !running || !(visible || lingering != nil) {
-      stopStream()
     }
+    connection?.setVisible(visible)
+    if connection?.isWaitingForTheSimulator == true { connection?.simulatorAppeared() }
   }
 
   private func stopStream() {
-    lingering?.cancel()
-    lingering = nil
     connection?.stop()
     connection = nil
   }
 
   public func reconnect() {
-    stopStream()
-    syncStream()
+    guard let connection else { return syncStream() }
+
+    connection.retry()
   }
 
   public func perform(_ action: ServerSimulatorAction) {
@@ -337,8 +314,7 @@ public final class SimulatorPaneModel {
       client: any SimulatorClienting, udid: String, connection: any SimulatorConnection
     ) -> SimulatorPaneModel {
       SimulatorPaneModel(
-        client: client, preferences: SimulatorPanePreferences(udid: udid), clock: ContinuousClock(),
-        makeConnection: { _ in connection })
+        client: client, preferences: SimulatorPanePreferences(udid: udid), makeConnection: { _ in connection })
     }
   }
 #endif

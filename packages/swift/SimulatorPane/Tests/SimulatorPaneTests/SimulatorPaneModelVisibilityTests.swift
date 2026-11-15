@@ -4,6 +4,7 @@ import CodevisorTestSupport
 import CoreGraphics
 import Foundation
 import ScreenSharing
+import Synchronization
 import Testing
 
 @testable import SimulatorPane
@@ -15,32 +16,34 @@ import Testing
     let state: ScreenSharingSimulatorState? = nil
     let source: SimulatorScreenSource? = nil
     let frameSize: CGSize? = nil
-    private let stops: TestSignal
-    private(set) var stopped = false
-    init(stops: TestSignal) { self.stops = stops }
+    var isWaitingForTheSimulator = false
+    private(set) var visibility: [Bool] = []
+    private(set) var isStopped = false
+    private(set) var retries = 0
+    private(set) var appearances = 0
+
     func start() {}
-    func stop() {
-      stopped = true
-      stops.signal()
-    }
+    func stop() { isStopped = true }
     func send(_ message: ScreenSharingSimulatorMessage) -> Bool { true }
     func presented(frameSize: CGSize) {}
+    func setVisible(_ visible: Bool) { if visibility.last != visible { visibility.append(visible) } }
+    func retry() { retries += 1 }
+    func simulatorAppeared() { appearances += 1 }
   }
 
-  private final class Connections {
-    let starts = TestSignal()
-    let stops = TestSignal()
-    var made: [FakeConnection] = []
-  }
+  private final class Client: SimulatorClienting {
+    static let udid = "booted"
 
-  private struct BootedClient: SimulatorClienting {
-    static let device = ServerSimulatorDevice(
-      udid: "booted", name: "iPhone", state: "Booted",
-      runtime: .init(identifier: "ios", name: "iOS 27.0", platform: "iOS", version: "27.0"),
-      deviceType: .init(identifier: "iphone", name: "iPhone", productFamily: "iPhone"))
+    private let state = Mutex("Booted")
+
+    func set(state value: String) { state.withLock { $0 = value } }
 
     func simulators() async throws -> ServerSimulatorList {
-      ServerSimulatorList(devices: [Self.device], deviceTypes: [], runtimes: [])
+      let device = ServerSimulatorDevice(
+        udid: Self.udid, name: "iPhone", state: state.withLock { $0 },
+        runtime: .init(identifier: "ios", name: "iOS 27.0", platform: "iOS", version: "27.0"),
+        deviceType: .init(identifier: "iphone", name: "iPhone", productFamily: "iPhone"))
+      return ServerSimulatorList(devices: [device], deviceTypes: [], runtimes: [])
     }
     func simulatorDeviceType(identifier: String) async throws -> ServerSimulatorDeviceTypeDetail {
       throw CancellationError()
@@ -58,52 +61,80 @@ import Testing
     func simulatorScreenshot(udid: String) async throws -> Data { Data() }
   }
 
-  private let clock = TestClock()
+  private final class Connections {
+    var made: [FakeConnection] = []
+  }
+
+  private let client = Client()
   private let connections = Connections()
 
   private func makeModel() -> SimulatorPaneModel {
     let connections = connections
-    return SimulatorPaneModel(
-      client: BootedClient(), preferences: SimulatorPanePreferences(udid: BootedClient.device.udid), clock: clock
-    ) { _ in
-      let connection = FakeConnection(stops: connections.stops)
+    return SimulatorPaneModel(client: client, preferences: SimulatorPanePreferences(udid: Client.udid)) { _ in
+      let connection = FakeConnection()
       connections.made.append(connection)
-      connections.starts.signal()
       return connection
     }
   }
 
-  private func streamThenHide(_ model: SimulatorPaneModel) async {
-    model.appeared()
-    await connections.starts.wait(for: 1)
-    model.disappeared()
-    await clock.waitForSleep(SimulatorPaneModel.hiddenGrace)
-  }
-
-  @Test func showingAgainWithinTheGraceKeepsTheStream() async {
+  private func shownModel() async -> SimulatorPaneModel {
     let model = makeModel()
-    await streamThenHide(model)
-    clock.advance(by: SimulatorPaneModel.hiddenGrace - .seconds(1))
-    model.appeared()
-    clock.advance(by: .seconds(1))
     await model.refresh()
-    #expect(connections.made.count == 1 && connections.stops.value == 0)
-  }
-
-  @Test func stayingHiddenPastTheGraceEndsTheStream() async {
-    let model = makeModel()
-    await streamThenHide(model)
-    clock.advance(by: SimulatorPaneModel.hiddenGrace)
-    await connections.stops.wait(for: 1)
     model.appeared()
-    await connections.starts.wait(for: 2)
-    #expect(connections.made.count == 2 && connections.made[0].stopped && !connections.made[1].stopped)
+    return model
   }
 
-  @Test func closingWhileHiddenEndsTheStreamAtOnce() async {
-    let model = makeModel()
-    await streamThenHide(model)
+  @Test func hidingAndShowingAgainKeepsTheStreamAndOnlyReportsWhetherItIsOnScreen() async {
+    let model = await shownModel()
+    model.disappeared()
+    model.appeared()
+    await model.refresh()
+
+    #expect(connections.made.count == 1 && !connections.made[0].isStopped)
+    #expect(connections.made[0].visibility == [true, false, true])
     model.closed()
-    #expect(connections.made[0].stopped && clock.pendingCount == 0)
+  }
+
+  @Test func closingThePaneEndsItsStreamAtOnceShownOrHidden() async {
+    let shown = await shownModel()
+    shown.closed()
+    let hidden = await shownModel()
+    hidden.disappeared()
+    hidden.closed()
+
+    #expect(connections.made.count == 2 && connections.made.allSatisfy(\.isStopped))
+  }
+
+  @Test func aSimulatorThatIsNoLongerBootedEndsItsStreamAndBootingAgainStartsANewOne() async {
+    let model = await shownModel()
+    client.set(state: "Shutdown")
+    await model.refresh()
+    #expect(connections.made.count == 1 && connections.made[0].isStopped)
+
+    client.set(state: "Booted")
+    await model.refresh()
+    #expect(connections.made.count == 2 && !connections.made[1].isStopped)
+    model.closed()
+  }
+
+  @Test func aSimulatorTheHostIsNotReadyToShowIsAskedForAgainWhenTheListStillHasItBooted() async {
+    let model = await shownModel()
+    await model.refresh()
+    #expect(connections.made[0].appearances == 0)
+
+    connections.made[0].isWaitingForTheSimulator = true
+    await model.refresh()
+
+    #expect(connections.made.count == 1 && connections.made[0].appearances >= 1)
+    model.closed()
+  }
+
+  @Test func reconnectRetriesTheSameStream() async {
+    let model = await shownModel()
+
+    model.reconnect()
+
+    #expect(connections.made.count == 1 && connections.made[0].retries == 1 && !connections.made[0].isStopped)
+    model.closed()
   }
 }

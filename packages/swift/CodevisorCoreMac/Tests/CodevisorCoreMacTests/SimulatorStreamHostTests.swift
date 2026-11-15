@@ -26,21 +26,21 @@ struct SimulatorStreamHostTests {
   func touchesFollowTheTurn(turns: Int) {
     for native in [CGPoint(x: 0.1, y: 0.2), CGPoint(x: 0.9, y: 0.05), CGPoint(x: 0.5, y: 0.5)] {
       let video = Self.turned(native, turns: turns)
-      let back = SimulatorStreamHost.framebufferPoint(x: video.x, y: video.y, turns: turns)
+      let back = SimulatorLiveDevice.framebufferPoint(x: video.x, y: video.y, turns: turns)
       #expect(abs(back.x - native.x) < 1e-9 && abs(back.y - native.y) < 1e-9)
     }
   }
 
   @Test("System edge gestures name the framebuffer's edge, whatever way the device is held")
   func edges() {
-    #expect(SimulatorStreamHost.edgeCode(.top, turns: 0) == 1)
-    #expect(SimulatorStreamHost.edgeCode(.left, turns: 0) == 2)
-    #expect(SimulatorStreamHost.edgeCode(.bottom, turns: 0) == 3)
-    #expect(SimulatorStreamHost.edgeCode(.right, turns: 0) == 4)
-    #expect(SimulatorStreamHost.edgeCode(.left, turns: 1) == 3)
-    #expect(SimulatorStreamHost.edgeCode(.top, turns: 2) == 3)
-    #expect(SimulatorStreamHost.edgeCode(.right, turns: 3) == 3)
-    #expect(SimulatorStreamHost.edgeCode(nil, turns: 1) == 0)
+    #expect(SimulatorLiveDevice.edgeCode(.top, turns: 0) == 1)
+    #expect(SimulatorLiveDevice.edgeCode(.left, turns: 0) == 2)
+    #expect(SimulatorLiveDevice.edgeCode(.bottom, turns: 0) == 3)
+    #expect(SimulatorLiveDevice.edgeCode(.right, turns: 0) == 4)
+    #expect(SimulatorLiveDevice.edgeCode(.left, turns: 1) == 3)
+    #expect(SimulatorLiveDevice.edgeCode(.top, turns: 2) == 3)
+    #expect(SimulatorLiveDevice.edgeCode(.right, turns: 3) == 3)
+    #expect(SimulatorLiveDevice.edgeCode(nil, turns: 1) == 0)
   }
 
   @Test("Frames fit the encoder: scaled into 3840×2160, even sides")

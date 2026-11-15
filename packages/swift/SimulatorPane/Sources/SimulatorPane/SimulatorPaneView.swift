@@ -3,10 +3,15 @@ import SwiftUI
 
 public struct SimulatorPaneView: View {
   let model: SimulatorPaneModel
+  let reportsAppearance: Bool
   let onScreenshot: (Data, String) -> Void
 
-  public init(model: SimulatorPaneModel, onScreenshot: @escaping (Data, String) -> Void = { _, _ in }) {
+  public init(
+    model: SimulatorPaneModel, reportsAppearance: Bool = true,
+    onScreenshot: @escaping (Data, String) -> Void = { _, _ in }
+  ) {
     self.model = model
+    self.reportsAppearance = reportsAppearance
     self.onScreenshot = onScreenshot
   }
 
@@ -32,8 +37,7 @@ public struct SimulatorPaneView: View {
     .onChange(of: model.device?.isBooted) { _, booted in
       if booted != true { model.showsSettings = false }
     }
-    .onAppear { model.appeared() }
-    .onDisappear { model.disappeared() }
+    .modifier(SimulatorPaneAppearance(model: model, isEnabled: reportsAppearance))
     .alert(
       "Simulator", isPresented: Binding(get: { model.alert != nil }, set: { if !$0 { model.alert = nil } }),
       presenting: model.alert
