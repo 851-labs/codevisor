@@ -16,12 +16,14 @@ final class ScreenSharingHostService {
   var takeovers: [UUID: ScreenSharingHostLease.Owner] = [:]
   var challenges = ScreenSharingHostChallenges()
   var endedSessions: [(token: String, owner: ScreenSharingHostLease.Owner)] = []
-  private(set) var displayChoice: ScreenSharingHostDisplayChoice
+  var displayChoice = ScreenSharingHostDisplayChoice()
+  var logicalDisplays: ScreenSharingHostLogicalDisplays
+  var displaySwitchWait: Duration = .seconds(10)
   private(set) var pendingStarts: [UUID: ScreenSharingHostLease.Owner] = [:]
   private(set) var isShutdown = false
   private var stopGeneration = 0
   private var lease = ScreenSharingHostLease()
-  private let indicator = ScreenSharingHostIndicator()
+  let indicator = ScreenSharingHostIndicator()
   private var observers: [NSObjectProtocol] = []
   let captureAccess: () -> Bool
   let enumerateDisplays: () async throws -> [Display]
@@ -39,10 +41,10 @@ final class ScreenSharingHostService {
   init(
     captureAccess: @escaping () -> Bool, notificationCenter: NotificationCenter,
     workspaceNotificationCenter: NotificationCenter, enumerateDisplays: @escaping () async throws -> [Display],
-    mediaEndpoint: ScreenSharingMediaEndpoint = .shared, displayChoice: ScreenSharingHostDisplayChoice = .init()
+    mediaEndpoint: ScreenSharingMediaEndpoint = .shared, logicalDisplays: ScreenSharingHostLogicalDisplays = .init()
   ) {
     self.mediaEndpoint = mediaEndpoint
-    self.displayChoice = displayChoice
+    self.logicalDisplays = logicalDisplays
     self.captureAccess = captureAccess
     self.enumerateDisplays = enumerateDisplays
     self.notificationCenter = notificationCenter
@@ -79,16 +81,19 @@ final class ScreenSharingHostService {
       guard let current, !current.stopping, renewsLease(of: current, for: request) else {
         return sessionlessReply(to: request)
       }
+      let change = await sharing(request, in: current)
+      guard self.current === current, !current.stopping else { return sessionlessReply(to: request) }
       if let error = ["captureError", "encoderError"].compactMap(current.metrics.label).first(where: { !$0.isEmpty }) {
         await end(current)
         return .init(status: "failed", message: error)
       }
-      return .init(status: current.state, message: current.notice)
+      return heartbeatReply(from: current, after: change)
     case .capabilities:
       guard captureAccess() else { return ScreenSharingHostRefusal.permissionMissing.reply }
       do {
         var reply = ServerScreenSharingReply(
-          status: current == nil ? "available" : "busy", displays: try await enumerateDisplays().map(\.description))
+          status: current == nil ? "available" : "busy",
+          displays: listed(try await enumerateDisplays(), for: .init(request)).map(\.description))
         if mediaEndpoint.isAvailable { reply.engines = [ScreenSharingEngine.v2.rawValue] }
         if request.app != nil { reply.challenge = await challenge() }
         return reply
@@ -166,7 +171,8 @@ final class ScreenSharingHostService {
       return .init(status: "stopped", message: "Screen sharing ended on the host Mac.")
     }
     guard current == nil else { return inUse }
-    guard let display = displayChoice.display(for: .init(request), asking: displayId, among: available) else {
+    let candidates = listed(available, for: .init(request))
+    guard let display = displayChoice.display(for: .init(request), asking: displayId, among: candidates) else {
       return ScreenSharingHostRefusal.noDisplay.reply
     }
     let session = try ScreenSharingHostSession(
@@ -192,8 +198,7 @@ final class ScreenSharingHostService {
     lastEnd = nil
     if displaced?.owner == session.owner { displaced = nil }
     if let taken = takeovers[attempt] { displaced = (taken, session.owner) }
-    session.displays = available.map(\.description)
-    displayChoice.remember(display, for: session.owner)
+    describe(session, among: available)
     configureChannels(session)
     return await startV2(session)
   }
@@ -431,6 +436,7 @@ extension ScreenSharingHostService {
       do {
         try? await session.capture.stop()
         try await self.restartOnSettledDisplay(session)
+        try await self.reconcileCapture(session)
       } catch {
         guard self.current === session, !session.stopping, !Task.isCancelled else { return }
         Self.logger.error("Capture restart failed: \(error.localizedDescription, privacy: .public)")

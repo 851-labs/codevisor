@@ -16,7 +16,7 @@ struct ScreenSharingConnectionDisplaySwitchTests {
     id: "0A000000-0000-4000-8000-000000000003", name: "Projector", width: 1280, height: 720)
 
   private func liveHarness(host: FakeHost = FakeHost()) async -> (ConnectionHarness, LoopbackSession) {
-    host.abilities.append("display-switch")
+    host.abilities.append(ServerScreenSharingReply.displaySwitch)
     host.displays = [Self.first, Self.second, Self.third]
     let harness = ConnectionHarness(host: host)
     harness.show()
@@ -59,7 +59,7 @@ struct ScreenSharingConnectionDisplaySwitchTests {
     arguments: CannotSwitch.allCases)
   func restartsWhenTheHostCannotSwitch(_ reason: CannotSwitch) async {
     let host = reason == .noSessionToken ? FakeHost.old() : FakeHost()
-    if reason == .noSessionToken { host.abilities.append("display-switch") }
+    if reason == .noSessionToken { host.abilities.append(ServerScreenSharingReply.displaySwitch) }
     host.displays = [Self.first, Self.second]
     let harness = ConnectionHarness(host: host)
     harness.show()

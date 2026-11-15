@@ -59,6 +59,12 @@
     public func revoke(_ reason: String) {
       guard let previous = lease else { return }
       lease = nil
+      releaseHeld()
+      onChanged?(false)
+      _ = send(.revoked(lease: previous, reason: reason))
+    }
+
+    public func releaseHeld() {
       let modifierCodes: Set<UInt16> = [54, 55, 56, 58, 59, 60, 61, 62, 63]
       let keys = heldKeys.sorted { a, b in
         if modifierCodes.contains(a) != modifierCodes.contains(b) { return !modifierCodes.contains(a) }
@@ -72,8 +78,6 @@
         inject(.button(pointer, button: button, down: false, clicks: 1, modifiers: 0))
       }
       heldKeys = []; heldButtons = []; modifiers = 0
-      onChanged?(false)
-      _ = send(.revoked(lease: previous, reason: reason))
     }
 
     private func apply(_ event: ScreenSharingInputEvent) {

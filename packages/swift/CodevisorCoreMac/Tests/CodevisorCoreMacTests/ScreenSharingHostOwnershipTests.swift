@@ -280,7 +280,7 @@ struct ScreenSharingHostOwnershipTests {
   @Test func everyReplySaysTheHostSupportsAppSessionsAndRefusalsCarryAReason() async throws {
     try await Fixture.run { mac in
       let capabilities = await mac.send(mac.following(mac.stableStart(), .capabilities))
-      #expect(capabilities.status == "available" && capabilities.abilities == ["app-sessions"])
+      #expect(capabilities.status == "available" && capabilities.abilities == ["app-sessions", "display-switch"])
       #expect(capabilities.reason == nil)
 
       mac.allowsCapture = false

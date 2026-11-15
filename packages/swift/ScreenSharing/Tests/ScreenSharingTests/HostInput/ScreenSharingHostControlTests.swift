@@ -166,6 +166,32 @@ struct ScreenSharingHostControlTests {
     #expect(host.injected.count == 3, "revoking a lease that is already gone injects nothing")
   }
 
+  @Test func releasingHeldInputLetsGoOfKeysAndButtonsAndKeepsTheLease() throws {
+    let host = HostFixture()
+    let lease = try #require(host.grant())
+    let point = ScreenSharingPointer(x: 0.25, y: 0.5)
+    host.input(lease, .button(point, button: 0, down: true, clicks: 1, modifiers: 0))
+    host.input(lease, .key(code: 56, down: true, repeatKey: false, modifiers: 1))
+    host.input(lease, .key(code: 12, down: true, repeatKey: false, modifiers: 1))
+    host.injected = []
+
+    host.control.releaseHeld()
+
+    #expect(
+      host.injected == [
+        .key(code: 12, down: false, repeatKey: false, modifiers: 1),
+        .key(code: 56, down: false, repeatKey: false, modifiers: 0),
+        .button(point, button: 0, down: false, clicks: 1, modifiers: 0),
+      ])
+    #expect(host.control.lease == lease && host.changes == [true])
+    #expect(host.control.heldKeys.isEmpty && host.control.heldButtons.isEmpty)
+    host.input(lease, .key(code: 12, down: true, repeatKey: false, modifiers: 0))
+    #expect(host.injected.last == .key(code: 12, down: true, repeatKey: false, modifiers: 0))
+    host.control.releaseHeld()
+    host.control.releaseHeld()
+    #expect(host.injected.count == 5, "with nothing held there is nothing to release")
+  }
+
   @Test func theNextViewerGetsAFreshLeaseAndTheOldOneCannotSpeakAgain() throws {
     let host = HostFixture()
     let first = try #require(host.grant())

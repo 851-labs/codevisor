@@ -13,7 +13,7 @@ extension ScreenSharingHostService {
     _ reply: ServerScreenSharingReply, for request: ServerScreenSharingRequest
   ) -> ServerScreenSharingReply {
     var reply = reply
-    reply.abilities = [ServerScreenSharingReply.appSessions]
+    reply.abilities = [ServerScreenSharingReply.appSessions, ServerScreenSharingReply.displaySwitch]
     guard let current, current.owner.appKey != nil, ["connecting", "viewing"].contains(reply.status) else {
       return reply
     }
@@ -78,19 +78,11 @@ extension ScreenSharingHostService {
   func displaysToShare(with owner: Owner) async throws -> [Display] {
     var available = try await enumerateDisplays()
     let deadline = ContinuousClock.now + Self.realDisplayWait.limit
-    while displayChoice.awaitsRealDisplay(for: owner, among: available), ContinuousClock.now < deadline {
+    while owner.appKey != nil, logicalDisplays.hasOnlyHostVirtual(available), ContinuousClock.now < deadline {
       try await Task.sleep(for: Self.realDisplayWait.interval)
       available = try await enumerateDisplays()
     }
     return available
-  }
-
-  func refreshDisplays(of session: ScreenSharingHostSession) async {
-    guard session.owner.appKey != nil, let available = try? await enumerateDisplays(), current === session else {
-      return
-    }
-
-    session.displays = available.map(\.description)
   }
 
   func forgetDisplacement(endedBy session: ScreenSharingHostSession) {

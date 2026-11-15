@@ -35,14 +35,11 @@ struct ScreenSharingHostReply {
 
   var lacksTheDisplay: Bool { base.reason == nil && base.status == "unavailable" }
 
-  static let displaySwitching = ServerScreenSharingReason(rawValue: "display-switching")
-  static let displayUnavailable = ServerScreenSharingReason(rawValue: "display-unavailable")
+  var switchesDisplays: Bool { base.abilities?.contains(ServerScreenSharingReply.displaySwitch) == true }
 
-  var switchesDisplays: Bool { base.abilities?.contains("display-switch") == true }
+  var isStillSwitchingDisplay: Bool { base.reason == .displaySwitching }
 
-  var isStillSwitchingDisplay: Bool { base.reason == Self.displaySwitching }
-
-  var cannotSwitchDisplay: Bool { base.reason == Self.displayUnavailable }
+  var cannotSwitchDisplay: Bool { base.reason == .displayUnavailable }
 
   var advertisesAppSessions: Bool { base.abilities?.contains(ServerScreenSharingReply.appSessions) == true }
 
