@@ -16,7 +16,7 @@ final class ScreenSharingPane: Pane {
   let isLocal: Bool
   let role: ScreenSharingViewerRole
   var onGroupCommand: ((PaneGroupCommand) -> Void)?
-  var onFocusChanged: ((Bool) -> Void)? { didSet { store?.endpoint?.onFocusChanged = onFocusChanged } }
+  var onFocusChanged: ((Bool) -> Void)? { didSet { surface?.onFocusChanged = onFocusChanged } }
   var onFocus: (() -> Void)?
   var onPreferencesChanged: ((ScreenSharingPanePreferences) -> Void)?
   private var mounts = Set<UUID>()
@@ -57,13 +57,12 @@ final class ScreenSharingPane: Pane {
     store = surface.map { Self.makeStore(machine: machine, preferences: preferences, surface: $0) }
     guard let store else { return }
     surface?.onChange = { [weak store] in store?.send(.surfaceChanged($0)) }
+    surface?.onKeyboardReturned = { [weak self] in self?.onFocus?() }
     if let snapshot = surface?.snapshot { store.send(.surfaceChanged(snapshot)) }
     observation = observe { [weak self] in self?.follow(store) }
   }
 
   private func follow(_ store: StoreOf<ScreenSharingViewer>) {
-    store.endpoint?.onFocusChanged = onFocusChanged
-    store.endpoint?.onKeyboardReturned = { [weak self] in self?.onFocus?() }
     if let endpoint = store.endpoint, let audio = endpoint.audio, soundAppliedTo != ObjectIdentifier(endpoint) {
       soundAppliedTo = ObjectIdentifier(endpoint)
       let saved = ScreenSharingMachinePreferences().sound(machineId: machineId)
@@ -183,13 +182,15 @@ final class ScreenSharingPane: Pane {
     let url = machine.baseURL
     return ("Codevisor server", url.host().map { host in url.port.map { "\(host):\($0)" } ?? host })
   }
-  func focus() { if store?.endpoint?.videoHasKeyboardFocus != true { onFocus?() } }
+  func focus() { if surface?.videoHasKeyboardFocus != true { onFocus?() } }
   func visibilityChanged(_ visible: Bool) {}
   func applyPreferences(_ preferences: ScreenSharingPanePreferences) { store?.send(.preferencesSynced(preferences)) }
   func willDelete() async { leave() }
   func detach() { leave() }
 
-  var holdsPicture: Bool { surface?.holdsPicture ?? false }
+  func videoView() -> NSView? { surface?.videoView() }
+
+  func letterbox(_ color: NSColor) { surface?.letterbox(color) }
 
   func openedByUser() {
     surface?.openedByUser()
@@ -222,8 +223,6 @@ private struct ScreenSharingPaneView: View {
       if let store = pane.store {
         if let failure = store.failure {
           ScreenSharingFailureView(pane: pane, message: failure) { store.send(.retryButtonTapped) }
-        } else if store.mirror != nil {
-          elsewhere(store)
         } else {
           ScreenSharingConnectionView(pane: pane, store: store)
         }
@@ -241,11 +240,4 @@ private struct ScreenSharingPaneView: View {
       : "Open this pane in a workspace connected to a Mac."
   }
 
-  private func elsewhere(_ store: StoreOf<ScreenSharingViewer>) -> some View {
-    ScreenSharingMirrorPane(
-      endpoint: store.mirror, connectionName: pane.connectionName,
-      onTakeControl: pane.role == .watcher ? nil : { store.send(.showHereTapped) }
-    )
-    .simultaneousGesture(TapGesture().onEnded { pane.onFocusChanged?(true) })
-  }
 }

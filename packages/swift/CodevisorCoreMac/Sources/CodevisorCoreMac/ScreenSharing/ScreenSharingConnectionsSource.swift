@@ -5,6 +5,9 @@ import ScreenSharing
 import ScreenSharingConnection
 import ScreenSharingV2
 
+public typealias ScreenSharingSurfaceFactory =
+  @MainActor (ScreenSharingFrameMailbox, ScreenSharingMetrics) throws -> any ScreenSharingViewerSurface
+
 @MainActor
 public struct ScreenSharingConnectionsSource {
   public typealias OpenVNC =
@@ -20,7 +23,7 @@ public struct ScreenSharingConnectionsSource {
   public var signer: @MainActor () throws -> ScreenSharingStartSigner
   public var appName: @MainActor () -> String
   public var connector: @MainActor () -> ScreenSharingV2Connector
-  public var makeSurface: @MainActor (any ScreenSharingViewingSession) throws -> any ScreenSharingViewerSurface
+  public var makeSurface: ScreenSharingSurfaceFactory
 
   public init(
     machineIds: @escaping @MainActor () -> Set<String>,
@@ -30,9 +33,7 @@ public struct ScreenSharingConnectionsSource {
     workspaces: @escaping @MainActor () -> [Workspace],
     signer: @escaping @MainActor () throws -> ScreenSharingStartSigner,
     connector: @escaping @MainActor () -> ScreenSharingV2Connector,
-    makeSurface: @escaping @MainActor (any ScreenSharingViewingSession) throws -> any ScreenSharingViewerSurface = {
-      try ScreenSharingVideoSurface(mailbox: $0.frames, metrics: $0.metrics)
-    },
+    makeSurface: @escaping ScreenSharingSurfaceFactory = { try ScreenSharingVideoSurface(mailbox: $0, metrics: $1) },
     appName: @escaping @MainActor () -> String = { ScreenSharingAppName.current }
   ) {
     self.machineIds = machineIds

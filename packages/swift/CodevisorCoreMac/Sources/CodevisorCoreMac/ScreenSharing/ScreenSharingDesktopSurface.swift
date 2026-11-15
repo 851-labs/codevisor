@@ -1,3 +1,4 @@
+import AppKit
 import ComposableArchitecture
 import Foundation
 import OSLog
@@ -11,6 +12,8 @@ public final class ScreenSharingDesktopSurface {
 
   public let role: ScreenSharingViewerRole
   public var onChange: ((ScreenSharingSurfaceSnapshot) -> Void)?
+  public var onFocusChanged: ((Bool) -> Void)?
+  public var onKeyboardReturned: (() -> Void)?
   public private(set) var snapshot = ScreenSharingSurfaceSnapshot()
   private let id = UUID()
   private let findDesktop: FindDesktop
@@ -37,6 +40,16 @@ public final class ScreenSharingDesktopSurface {
     guard let desktop = bound?.desktop else { return false }
 
     return desktop.endpoint != nil && desktop.holder == id
+  }
+
+  public var videoHasKeyboardFocus: Bool { bound?.desktop.endpoint?.hasKeyboardFocus(in: id) ?? false }
+
+  public func videoView() -> NSView? {
+    bound?.desktop.endpoint?.view(for: id)
+  }
+
+  public func letterbox(_ color: NSColor) {
+    bound?.desktop.endpoint?.letterbox(color, in: id)
   }
 
   public func setOnScreen(_ onScreen: Bool, preferringDisplay displayId: String?) {
@@ -96,11 +109,18 @@ public final class ScreenSharingDesktopSurface {
 
       bindFailure = nil
       bound = (desktop, desktop.connection.attach(role.surfaceKind))
-      desktop.join(id, role: role) { [weak self] in self?.report() }
+      desktop.join(id, role: role, events: events)
       if isOnScreen { show() }
     } catch {
       bindFailure = error.localizedDescription
     }
+  }
+
+  private var events: ScreenSharingDesktopSurfaceEvents {
+    ScreenSharingDesktopSurfaceEvents(
+      pictureChanged: { [weak self] in self?.report() },
+      focusChanged: { [weak self] in self?.onFocusChanged?($0) },
+      keyboardReturned: { [weak self] in self?.onKeyboardReturned?() })
   }
 
   private func unbind() {

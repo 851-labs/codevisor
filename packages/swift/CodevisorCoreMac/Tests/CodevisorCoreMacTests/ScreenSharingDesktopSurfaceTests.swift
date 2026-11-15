@@ -49,13 +49,18 @@ struct ScreenSharingDesktopSurfaceTests {
     try await fixture.goLive()
     await awaitObserved { window.snapshot.endpoint != nil && tab.snapshot.mirror != nil }
 
+    let (tabView, windowView) = (try #require(tab.surface.videoView()), try #require(window.surface.videoView()))
+    #expect(tabView !== windowView, "every surface draws the desktop in a view of its own")
+
     tab.surface.takePicture()
-    #expect(tab.snapshot.endpoint != nil, "both learn it in the same turn, so the video view has one owner")
+    #expect(tab.snapshot.endpoint != nil, "both learn who has the keyboard and mouse in the same turn")
     #expect(window.snapshot.mirror == tab.snapshot.endpoint)
     #expect(tab.surface.holdsPicture && !window.surface.holdsPicture)
+    #expect(tab.surface.videoView() === tabView && window.surface.videoView() === windowView, "no view moves")
 
     tab.surface.detach()
     #expect(window.snapshot.endpoint != nil)
+    #expect(tab.surface.videoView() == nil && window.surface.videoView() === windowView)
     #expect(tab.snapshot == ScreenSharingSurfaceSnapshot(), "a closed pane is told it has nothing left to control")
   }
 
