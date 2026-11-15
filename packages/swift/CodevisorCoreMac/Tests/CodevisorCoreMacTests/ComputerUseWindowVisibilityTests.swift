@@ -24,6 +24,15 @@ struct ComputerUseWindowVisibilityTests {
     #expect(visibility == expected)
   }
 
+  @Test("Asks the window server with raw window IDs, the only form its description call reads")
+  func windowIDList() {
+    let list = computerUseWindowIDList([7, 4_000_000_000])
+
+    #expect(CFArrayGetCount(list) == 2)
+    #expect(UInt(bitPattern: CFArrayGetValueAtIndex(list, 0)) == 7)
+    #expect(UInt(bitPattern: CFArrayGetValueAtIndex(list, 1)) == 4_000_000_000)
+  }
+
   @Test("Reads accessibility only when the window's on-screen state changes, and reports its return")
   func monitor() {
     let fake = FakeWindowServer()
