@@ -240,21 +240,7 @@ final class ScreenSharingHostService {
       guard let reply = clipboard?.receive(message) else { return }
       session?.peer.channels.clipboardSharing.send(reply)
     }
-    let control = ScreenSharingHostControl(
-      availability: { [weak session] in
-        guard let session, !session.stopping, session.state == "viewing" || session.hasSentVideo else {
-          return "Wait for live video before requesting control."
-        }
-        guard session.injector.isAvailable else { return "Native input is unavailable on this Mac." }
-        guard AXIsProcessTrusted() else {
-          return
-            "Allow Codevisor in System Settings → Privacy & Security → Accessibility on the host Mac, then request control again."
-        }
-        return nil
-      },
-      inject: { [weak session] in
-        session?.metrics.increment("controlInputEvents"); session?.injector.post($0)
-      }, send: { [weak session] in session?.peer.channels.control.send($0) ?? false })
+    let control = Self.control(for: session)
     session.control = control
     session.peer.channels.control.onMessage = { [weak control] in control?.receive($0) }
     session.peer.channels.control.onAvailabilityChanged = { [weak control] available in
@@ -290,11 +276,30 @@ final class ScreenSharingHostService {
     }
     session.watchdog = Task { [weak self, weak session] in
       while !Task.isCancelled {
-        do { try await Task.sleep(for: .milliseconds(250)) } catch { return }
+        do { try await Task.sleep(for: .seconds(Self.watchInterval)) } catch { return }
         guard let self, let session, self.current === session else { return }
         guard await self.watch(session) else { return }
       }
     }
+  }
+
+  private static func control(for session: ScreenSharingHostSession) -> ScreenSharingHostControl {
+    ScreenSharingHostControl(
+      looksEvery: watchInterval,
+      availability: { [weak session] in
+        guard let session, !session.awaitsLiveVideo else {
+          return "Wait for live video before requesting control."
+        }
+        guard session.injector.isAvailable else { return "Native input is unavailable on this Mac." }
+        guard AXIsProcessTrusted() else {
+          return
+            "Allow Codevisor in System Settings → Privacy & Security → Accessibility on the host Mac, then request control again."
+        }
+        return nil
+      },
+      inject: { [weak session] in
+        session?.metrics.increment("controlInputEvents"); session?.injector.post($0)
+      }, send: { [weak session] in session?.peer.channels.control.send($0) ?? false })
   }
 
   func renewLease(for session: ScreenSharingHostSession) {
@@ -344,6 +349,8 @@ final class ScreenSharingHostService {
     if session.owner.appKey != nil { lastEnd = (session.owner, ending) }
     Task { await end(session, as: ending) }
   }
+
+  static let watchInterval: TimeInterval = 0.25
 
   static let captureFailed = "The host Mac couldn't start capturing its screen. Try again."
 

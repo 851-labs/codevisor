@@ -23,6 +23,24 @@ struct ScreenSharingV2HostTests {
     return host
   }
 
+  @Test func everyTileSentToTheViewerIsCountedUnderTheNameTheAppReads() async throws {
+    let encoder = RecordingTileEncoder(layout: Self.tiled)
+    let metrics = ScreenSharingMetrics()
+    let host = ScreenSharingV2Host(
+      transport: transport, encoder: encoder, metrics: metrics,
+      initialBitrate: ScreenSharingV2Profile.bitrateCeiling, scheduler: scheduler)
+    host.start()
+    defer { host.stop() }
+    #expect(metrics.counter(ScreenSharingV2Host.sentFramesMetric) == 0)
+
+    host.push(try TestPixels.frame(shade: 10, timestampNs: 1_000))
+    await encoder.encodes.cancellableWait(for: 1)
+    encoder.emitTiles(of: encoder.requests[0])
+
+    #expect(transport.sent.count == 4)
+    #expect(metrics.counter(ScreenSharingV2Host.sentFramesMetric) == 4)
+  }
+
   @Test func theFirstCaptureEncodesEveryTileAndLaterOnesOnlyTheTilesTheirDirtyRectsTouch() async throws {
     let encoder = RecordingTileEncoder(layout: Self.tiled)
     let host = startedHost(encoder)
