@@ -53,7 +53,10 @@ public final class ScreenSharingConnection {
 
   public func systemWoke() { handle(.systemWoke) }
 
-  public func restart() { handle(.restartRequested) }
+  public func restart() {
+    machine.userAsked()
+    handle(.restartRequested)
+  }
 
   public func switchDisplay(to displayId: String) {
     guard target == nil, !switchInSession(to: displayId), preferredDisplayId != displayId else { return }

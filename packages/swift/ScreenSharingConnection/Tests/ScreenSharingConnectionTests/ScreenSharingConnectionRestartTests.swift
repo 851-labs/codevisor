@@ -42,16 +42,18 @@ struct ScreenSharingConnectionRestartTests {
     #expect(harness.clock.requestCount(ScreenSharingConnectionDeadlines.unseenDebounce) == 0)
   }
 
-  @Test("Restart from Failed behaves like Retry and asks to take over")
+  @Test("Restart from Failed behaves like Retry: asks for a fresh link to the machine and to take over")
   func restartsFromFailedAsAnOpen() async {
     let harness = ConnectionHarness()
     harness.host.answerNext(.start, .reply(status: "busy", reason: "in-use", holderName: "Alexandru's iPhone"))
     harness.show(.preview)
     await harness.settle(.failed(.inUse(by: "Alexandru's iPhone")))
+    #expect(harness.userAsks == 0)
 
     harness.connection.restart()
     await harness.goLive()
 
+    #expect(harness.userAsks == 1)
     #expect(harness.host.starts.map(\.intent) == [.attach, .open])
   }
 
