@@ -5,6 +5,8 @@ import ScreenSharing
 extension ScreenSharingHostService {
   static let displayNotConnected = "That display isn't connected to this Mac."
   static let displayNotCaptured = "This Mac couldn't capture that display, so it kept sharing the previous one."
+  static let displaysNotListed = "This Mac couldn't list its displays, so it kept sharing the current one."
+  static let displayNotSwitched = "This Mac couldn't switch to that display, so it kept sharing the current one."
 
   func sharing(
     _ request: ServerScreenSharingRequest, in session: ScreenSharingHostSession
@@ -31,7 +33,7 @@ extension ScreenSharingHostService {
     guard let change, session.display.id != change.target else { return reply }
 
     reply.reason = change.isFinished ? .displayUnavailable : .displaySwitching
-    if change.isFinished, let failure = change.failure { reply.message = failure }
+    if change.isFinished { reply.message = change.failure ?? Self.displayNotSwitched }
     return reply
   }
 
@@ -48,7 +50,12 @@ extension ScreenSharingHostService {
   }
 
   private func perform(_ change: ScreenSharingHostDisplaySwitch, in session: ScreenSharingHostSession) async {
-    guard let available = try? await enumerateDisplays(), current === session, !session.stopping else { return }
+    let available: [Display]
+    do { available = try await enumerateDisplays() } catch {
+      change.failure = Self.displaysNotListed
+      return
+    }
+    guard current === session, !session.stopping else { return }
 
     let listed = logicalDisplays.list(available, shared: shared(session))
     guard let target = listed.first(where: { $0.description.id == change.target }) else {
