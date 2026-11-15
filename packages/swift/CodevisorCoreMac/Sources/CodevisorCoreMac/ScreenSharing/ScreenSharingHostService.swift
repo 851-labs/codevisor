@@ -332,7 +332,7 @@ final class ScreenSharingHostService {
       session.state = "viewing"
       session.notice = nil
       session.displaySleepAssertion = ScreenSharingDisplaySleepAssertion(reason: "Codevisor Screen Sharing")
-      indicator.show(display: session.display.name) { [weak self, weak session] in
+      indicator.show(display: session.display.name, viewer: session.owner.name) { [weak self, weak session] in
         guard let self, let session else { return }
         self.scheduleEnd(session, as: .stoppedOnHost)
       }
