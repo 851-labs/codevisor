@@ -13,6 +13,7 @@
     var dropsInjectedInput: Bool { get set }
     var localShortcuts: Set<ScreenSharingLocalShortcutGroup> { get set }
     func beginInput() -> Bool
+    func releaseHeldInput()
     func endInput()
     func stop()
     func setLetterboxColor(_ color: NSColor)
@@ -36,6 +37,7 @@
       set {}
     }
     public func showRemoteCursor(_ update: ScreenSharingCursorUpdate) {}
+    public func releaseHeldInput() {}
     public func setVideoShowsPointer(_ shows: Bool) {}
   }
 

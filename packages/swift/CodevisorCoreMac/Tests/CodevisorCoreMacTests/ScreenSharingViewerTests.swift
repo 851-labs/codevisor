@@ -69,7 +69,7 @@ struct ScreenSharingViewerTests {
       await store.finish()
 
       expectNoDifference(client.systemKeys.map(\.key), [.missionControl])
-      expectNoDifference(asked.value, hasControl ? [] : ["mode control"])
+      expectNoDifference(asked.value, hasControl ? [] : ["control for this session"])
     }
   }
 
@@ -83,6 +83,7 @@ struct ScreenSharingViewerTests {
         retry: { asked.withValue { $0.append("retry") } },
         takeControl: { asked.withValue { $0.append("take control") } },
         setMode: { mode in asked.withValue { $0.append("mode \(mode)") } },
+        controlForThisSession: { asked.withValue { $0.append("control for this session") } },
         setDynamicResolution: { enabled in asked.withValue { $0.append("dynamic resolution \(enabled)") } },
         switchDisplay: { display in asked.withValue { $0.append("display \(display)") } })
       $0[ScreenSharingEndpointClient.self] = endpoints

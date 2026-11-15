@@ -16,6 +16,7 @@ final class ScreenSharingDesktopControl {
   @ObservationIgnored private let clock: any Clock<Duration>
   @ObservationIgnored private var endpoint: ScreenSharingViewerEndpoint?
   @ObservationIgnored private var events: Task<Void, Never>?
+  @ObservationIgnored private var isLive = false
 
   var status: ScreenSharingControlStatus {
     lease.map { ScreenSharingControlStatus(phase: $0.phase, message: $0.message) } ?? ScreenSharingControlStatus()
@@ -36,6 +37,7 @@ final class ScreenSharingDesktopControl {
     } withDependencies: { [clock] in
       $0.continuousClock = clock
       $0.uuid = UUIDGenerator { UUID() }
+      $0.date = DateGenerator { Date() }
       $0[ScreenSharingEndpointClient.self] = .liveValue
     }
     self.lease = lease
@@ -43,7 +45,16 @@ final class ScreenSharingDesktopControl {
       for await event in endpoint.controlEvents() { lease?.send(.event(event)) }
     }
     endpoint.moveInput(to: controller)
+    if isLive { lease.send(.connectionWentLive) }
     if controller != nil { ask() }
+  }
+
+  func setLive(_ live: Bool) {
+    guard live != isLive else { return }
+
+    isLive = live
+    if live { lease?.send(.connectionWentLive) }
+    if live, controller != nil { ask() }
   }
 
   func take(_ id: UUID) {
@@ -87,6 +98,8 @@ final class ScreenSharingDesktopControl {
   }
 
   private func ask() {
+    guard isLive else { return }
+
     lease?.send(.controlRequested)
   }
 

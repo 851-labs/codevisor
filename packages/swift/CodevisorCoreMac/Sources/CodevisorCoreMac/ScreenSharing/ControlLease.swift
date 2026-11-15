@@ -16,8 +16,10 @@ public struct ControlLease {
     public var message: String?
     public var phase: Phase = .viewing
     public var requestID: UUID?
-    public var retriedAfterRevoke = false
+    public var automaticRetries: [Date] = []
+    public var revokeReason: String?
     public var retriedRequest = false
+    public var retriesAFirstRefusal = false
     public var unansweredRequests: Set<UUID> = []
     public var wantsControl = false
 
@@ -28,13 +30,14 @@ public struct ControlLease {
   }
 
   public enum Action {
+    case askedAgainAfterRefusal
     case channelSendFailed(reason: String)
+    case connectionWentLive
     case controlReleased(reason: String?)
     case controlRequested
     case delegate(Delegate)
     case event(ScreenSharingControlEvent)
     case heartbeatTick
-    case leaseSettled
     case requestTimedOut
     case suspended
 
@@ -44,11 +47,16 @@ public struct ControlLease {
     }
   }
 
-  enum CancelID: Hashable { case heartbeat(UUID), requestDeadline(UUID), settling(UUID) }
+  enum CancelID: Hashable { case heartbeat(UUID), requestDeadline(UUID) }
+
+  static let retriesPerMinute = 3
+  static let settlingTime: TimeInterval = 4
+  static let refusalRetryDelay: Duration = .seconds(1)
 
   private static let logger = Logger(subsystem: "com.851labs.Codevisor", category: "ScreenSharing")
 
   @Dependency(\.continuousClock) var clock
+  @Dependency(\.date.now) var now
   @Dependency(ScreenSharingEndpointClient.self) var endpoint
   @Dependency(\.uuid) var uuid
 
@@ -57,6 +65,14 @@ public struct ControlLease {
   public var body: some ReducerOf<Self> {
     Reduce { state, action in
       switch action {
+      case .askedAgainAfterRefusal:
+        guard state.phase == .requesting, state.requestID == nil, state.available else { return .none }
+        return request(&state, isRetry: false)
+
+      case .connectionWentLive:
+        state.retriesAFirstRefusal = true
+        return .none
+
       case .channelSendFailed(let reason):
         note("could not send: \(reason)", state)
         return pause(&state)
@@ -103,12 +119,15 @@ public struct ControlLease {
         }
         note("request \(Self.short(request)) refused: \(reason)", state)
         state.requestID = nil
-        return release(&state, reason: reason)
+        guard state.retriesAFirstRefusal, state.wantsControl, state.available else {
+          return release(&state, reason: state.revokeReason ?? reason)
+        }
+        return askAgainSoon(&state)
 
       case .event(.message(.revoked(let lease, let reason))):
         guard state.lease == lease else { return .none }
         note("lease \(Self.short(lease)) revoked: \(reason)", state)
-        return state.retriedAfterRevoke || !state.available ? release(&state, reason: reason) : askAgain(&state)
+        return mayAskAgain(state) ? askAgain(&state, after: reason) : release(&state, reason: reason)
 
       case .event(.message):
         return .none
@@ -125,10 +144,6 @@ public struct ControlLease {
           }
         }
 
-      case .leaseSettled:
-        state.retriedAfterRevoke = false
-        return .none
-
       case .requestTimedOut:
         guard state.phase == .requesting else { return .none }
         guard state.retriedRequest else {
@@ -136,7 +151,7 @@ public struct ControlLease {
           return request(&state, isRetry: true)
         }
         note("request \(Self.short(state.requestID)) had no answer in 3 s either; giving up", state)
-        return release(&state, reason: "The host did not grant control. Try again.")
+        return release(&state, reason: state.revokeReason ?? "The host did not grant control. Try again.")
 
       case .suspended:
         let effect = pause(&state)
@@ -184,6 +199,8 @@ public struct ControlLease {
     if let later = state.requestID, later != request { state.unansweredRequests.insert(later) }
     state.requestID = nil
     state.retriedRequest = false
+    state.retriesAFirstRefusal = false
+    state.revokeReason = nil
     state.lease = lease
     state.phase = .controlling
     state.message = nil
@@ -192,7 +209,6 @@ public struct ControlLease {
     let pane = Self.short(state.id)
     return .merge(
       .cancel(id: CancelID.requestDeadline(state.id)),
-      settle(state),
       .run { [endpoint] send in
         if let failure = await endpoint.beginInput(id, lease) { await send(.event(.inputLost(failure))) }
       },
@@ -207,26 +223,36 @@ public struct ControlLease {
       .cancellable(id: CancelID.heartbeat(state.id), cancelInFlight: true))
   }
 
-  private func settle(_ state: State) -> Effect<Action> {
-    guard state.retriedAfterRevoke else { return .none }
+  private func mayAskAgain(_ state: State) -> Bool {
+    let recent = state.automaticRetries.filter { now.timeIntervalSince($0) < 60 }
+    guard state.available, recent.count < Self.retriesPerMinute else { return false }
+    guard let last = recent.last else { return true }
 
-    return .run { [clock] send in
-      try await clock.sleep(for: .seconds(4))
-      await send(.leaseSettled)
-    }
-    .cancellable(id: CancelID.settling(state.id), cancelInFlight: true)
+    return now.timeIntervalSince(last) >= Self.settlingTime
   }
 
-  private func askAgain(_ state: inout State) -> Effect<Action> {
+  private func askAgain(_ state: inout State, after reason: String) -> Effect<Action> {
     note("asking for control again after the host took it back", state)
-    state.retriedAfterRevoke = true
+    state.automaticRetries = state.automaticRetries.filter { now.timeIntervalSince($0) < 60 } + [now]
     state.lease = nil
     state.phase = .viewing
     let id = state.endpoint
-    return .merge(
+    let effect = Effect<Action>.merge(
       .cancel(id: CancelID.heartbeat(state.id)),
       .run { [endpoint] _ in await endpoint.endInput(id) },
       request(&state, isRetry: false))
+    state.revokeReason = reason
+    return effect
+  }
+
+  private func askAgainSoon(_ state: inout State) -> Effect<Action> {
+    note("the host was not ready for control yet; asking again in a second", state)
+    state.retriesAFirstRefusal = false
+    return .run { [clock] send in
+      try await clock.sleep(for: Self.refusalRetryDelay)
+      await send(.askedAgainAfterRefusal)
+    }
+    .cancellable(id: CancelID.requestDeadline(state.id), cancelInFlight: true)
   }
 
   private func sent(_ request: UUID, _ state: State) -> Bool {
@@ -242,7 +268,7 @@ public struct ControlLease {
   private func pause(_ state: inout State) -> Effect<Action> {
     let lease = state.lease
     if state.phase != .viewing { note("paused while \(state.phase)", state) }
-    state.retriedAfterRevoke = false
+    state.revokeReason = nil
     state.wantsControl = state.wantsControl || state.phase != .viewing
     setAside(&state)
     state.lease = nil
@@ -251,7 +277,6 @@ public struct ControlLease {
     return .merge(
       .cancel(id: CancelID.requestDeadline(state.id)),
       .cancel(id: CancelID.heartbeat(state.id)),
-      .cancel(id: CancelID.settling(state.id)),
       .run { [endpoint] _ in
         await endpoint.endInput(id)
         if let lease { _ = await endpoint.sendControl(id, .release(lease: lease)) }
@@ -267,12 +292,11 @@ public struct ControlLease {
     state.lease = nil
     state.phase = .viewing
     state.message = reason
-    state.retriedAfterRevoke = false
+    state.revokeReason = nil
     let id = state.endpoint
     return .merge(
       .cancel(id: CancelID.requestDeadline(state.id)),
       .cancel(id: CancelID.heartbeat(state.id)),
-      .cancel(id: CancelID.settling(state.id)),
       .run { [endpoint] _ in
         await endpoint.endInput(id)
         if let lease { _ = await endpoint.sendControl(id, .release(lease: lease)) }

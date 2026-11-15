@@ -36,6 +36,7 @@
     }
     public func setLetterboxColor(_ color: NSColor) { letterboxColor = color }
     public func beginInput() -> Bool { input.begin() }
+    public func releaseHeldInput() { input.suspend() }
     public func endInput() { input.end() }
     private var tracking: NSTrackingArea?
     private static let remoteCursor = NSCursor(image: NSImage(size: NSSize(width: 1, height: 1)), hotSpot: .zero)

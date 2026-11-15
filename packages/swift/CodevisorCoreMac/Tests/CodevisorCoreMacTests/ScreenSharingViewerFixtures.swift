@@ -29,12 +29,14 @@ final class FakeChannel<Message: Sendable & Equatable>: ScreenSharingMessageChan
   @ObservationIgnored var onAvailabilityChanged: ((Bool) -> Void)?
   nonisolated let backgroundSent = Mutex<[Message]>([])
   nonisolated let sentInBackground = TestSignal()
+  @ObservationIgnored var onSend: ((Message) -> Void)?
   private(set) var sent: [Message] = []
   private(set) var closed = false
 
   @discardableResult
   func send(_ message: Message) -> Bool {
     guard isAvailable else { return false }
+    onSend?(message)
     sent.append(message)
     return true
   }
@@ -106,7 +108,7 @@ final class FakeMediaSession: ScreenSharingV2StartableSession {
 @MainActor
 @Observable
 final class FakeSurface: ScreenSharingViewerSurface {
-  @ObservationIgnored let view = NSView()
+  @ObservationIgnored let view: NSView = FocusableView()
   @ObservationIgnored var onFocusChanged: ((Bool) -> Void)?
   @ObservationIgnored var onInput: ((ScreenSharingInputEvent) -> Void)?
   @ObservationIgnored var onInputReleased: (() -> Void)?
@@ -117,6 +119,7 @@ final class FakeSurface: ScreenSharingViewerSurface {
   @ObservationIgnored var capturesSystemShortcuts = true
   @ObservationIgnored var dropsInjectedInput = true
   @ObservationIgnored var beginInputSucceeds = true
+  @ObservationIgnored var heldKey: UInt16?
   private(set) var inputActive = false
   private(set) var stopped = false
   private(set) var videoShowsPointer: Bool?
@@ -128,8 +131,18 @@ final class FakeSurface: ScreenSharingViewerSurface {
     inputActive = true
     return true
   }
+  func releaseHeldInput() {
+    guard let heldKey else { return }
+
+    self.heldKey = nil
+    onInput?(.key(code: heldKey, down: false, repeatKey: false, modifiers: 0))
+  }
   func endInput() { inputActive = false }
   func stop() { stopped = true }
+}
+
+private final class FocusableView: NSView {
+  override var acceptsFirstResponder: Bool { true }
 }
 
 actor SharingTransport: ServerRequestTransport {

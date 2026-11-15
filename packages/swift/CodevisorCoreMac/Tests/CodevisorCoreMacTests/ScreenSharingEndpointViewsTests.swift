@@ -59,12 +59,17 @@ struct ScreenSharingEndpointViewsTests {
     let lease = UUID()
     _ = fixture.endpoint.beginInput(lease: lease)
 
+    surfaces[0].heldKey = 56
     fixture.endpoint.moveInput(to: window)
     fixture.endpoint.sizeDesktop(with: window)
     surfaces[0].onInput?(.text("ignored"))
     surfaces[1].onInput?(.text("typed"))
 
-    #expect(fixture.session.controlChannel.sent == [.input(lease: lease, sequence: 1, event: .text("typed"))])
+    let released = ScreenSharingInputEvent.key(code: 56, down: false, repeatKey: false, modifiers: 0)
+    #expect(
+      fixture.session.controlChannel.sent == [
+        .input(lease: lease, sequence: 1, event: released), .input(lease: lease, sequence: 2, event: .text("typed")),
+      ], "a key held on the old pane is released on the host before the new pane types")
     #expect(!surfaces[0].inputActive && surfaces[1].inputActive, "the old pane stops capturing; it keeps its view")
     #expect(fixture.endpoint.view(for: tab) === surfaces[0].view && !surfaces[0].stopped)
     #expect(fixture.session.desktopSizeRequests == [[640, 400], [800, 600]])

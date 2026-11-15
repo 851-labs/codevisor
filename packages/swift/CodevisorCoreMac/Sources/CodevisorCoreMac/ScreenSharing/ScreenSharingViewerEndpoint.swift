@@ -370,11 +370,14 @@ public final class ScreenSharingViewerEndpoint: Equatable, Identifiable {
 
   func size(of pane: UUID) -> CGSize? { views.size(of: pane) }
 
+  func focusView(for pane: UUID) { views.focus(pane) }
+
   func sizeDesktop(with pane: UUID?) { views.drive(with: pane) }
 
   func moveInput(to pane: UUID?) {
     guard pane != views.active else { return }
 
+    views.controlled?.releaseHeldInput()
     views.controlled?.endInput()
     views.activate(pane)
     guard forwarder.isActive, let surface = views.controlled else { return }

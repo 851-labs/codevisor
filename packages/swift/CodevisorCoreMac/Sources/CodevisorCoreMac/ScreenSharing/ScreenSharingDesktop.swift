@@ -50,6 +50,7 @@ public final class ScreenSharingDesktop {
     control = ScreenSharingDesktopControl(mode: viewOnly ? .view : .control, clock: clock)
     following = [
       observe { [weak self] in self?.show(connection.session) },
+      observe { [weak self] in self?.control.setLive(connection.state == .live) },
       observe { [weak self] in
         self?.saveTheChosenDisplay(preferred: connection.preferredDisplayId, shared: connection.display?.id)
         self?.configureResolution(for: connection.display?.id, among: connection.displays)
@@ -75,7 +76,7 @@ public final class ScreenSharingDesktop {
     seat.wasOpenedByUser = false
     seats[id] = seat
     if onScreen {
-      if takesControl { control.take(id) } else if seat.canControl { control.offer(id) }
+      if takesControl { takeControlAndKeyboard(id) } else if seat.canControl { control.offer(id) }
       settle()
     } else {
       hidden(id)
@@ -88,7 +89,13 @@ public final class ScreenSharingDesktop {
       seats[id]?.wasOpenedByUser = true
       return
     }
-    takeControl(id)
+    takeControlAndKeyboard(id)
+    settle()
+  }
+
+  private func takeControlAndKeyboard(_ id: UUID) {
+    control.take(id)
+    if controller == id { endpoint?.focusView(for: id) }
   }
 
   func takeControl(_ id: UUID) {
@@ -98,8 +105,8 @@ public final class ScreenSharingDesktop {
     settle()
   }
 
-  func setMode(_ mode: ScreenSharingViewer.InteractionMode, from id: UUID) {
-    preferences.setViewOnly(mode == .view, machineId: machineId)
+  func setMode(_ mode: ScreenSharingViewer.InteractionMode, from id: UUID, remembered: Bool = true) {
+    if remembered { preferences.setViewOnly(mode == .view, machineId: machineId) }
     control.setMode(mode, from: seats[id]?.canControl == true ? id : nil)
     settle()
   }

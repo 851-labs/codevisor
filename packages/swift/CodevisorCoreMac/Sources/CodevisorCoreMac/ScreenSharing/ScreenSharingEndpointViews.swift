@@ -105,6 +105,12 @@ final class ScreenSharingEndpointViews {
     return window.firstResponder === view
   }
 
+  func focus(_ id: UUID) {
+    guard let view = views[id]?.surface.view, let window = view.window else { return }
+
+    window.makeFirstResponder(view)
+  }
+
   func letterbox(_ color: NSColor, in id: UUID) {
     views[id]?.surface.setLetterboxColor(color)
   }
