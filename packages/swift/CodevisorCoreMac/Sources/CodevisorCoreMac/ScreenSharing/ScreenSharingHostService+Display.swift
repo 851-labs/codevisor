@@ -4,10 +4,10 @@ import ScreenSharing
 extension ScreenSharingHostService {
   func configureDisplay(_ session: ScreenSharingHostSession) {
     let channel = session.peer.channels.display
-    channel.onAvailabilityChanged = { [weak channel] available in
-      guard available, let channel else { return }
+    channel.onAvailabilityChanged = { [weak self, weak channel] available in
+      guard available, let self, let channel else { return }
       channel.send(
-        ScreenSharingHostVirtualDisplay.isAvailable ? .ready : .unavailable("This Mac can't create a virtual display."))
+        virtualDisplaysAvailable() ? .ready : .unavailable("This Mac can't create a virtual display."))
     }
     channel.onMessage = { [weak self, weak session] message in
       guard let self, let session, !session.stopping else { return }
@@ -30,7 +30,7 @@ extension ScreenSharingHostService {
 
   func waitForSharedDisplay(_ session: ScreenSharingHostSession) async throws {
     for _ in 0..<150 {
-      if followDisplay(session), CGDisplayIsInMirrorSet(session.displayID) == 0 {
+      if followDisplay(session), !isMirrored(session.displayID) {
         return
       }
       try await Task.sleep(for: .milliseconds(20))
@@ -66,7 +66,7 @@ extension ScreenSharingHostService {
     followDisplay(session)
     let points = ScreenSharingHostRetina.virtualDisplaySize(
       dynamic: session.dynamicDesktop, shared: session.sharedMode,
-      virtualDisplaysAvailable: ScreenSharingHostVirtualDisplay.isAvailable)
+      virtualDisplaysAvailable: virtualDisplaysAvailable())
     let standsInForShared = session.virtualDisplayStandsInForShared
     switch (session.virtualDisplay?.size, points) {
     case (nil, nil): return

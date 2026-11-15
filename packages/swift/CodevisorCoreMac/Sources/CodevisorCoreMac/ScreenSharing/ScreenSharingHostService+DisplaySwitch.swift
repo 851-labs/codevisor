@@ -100,7 +100,7 @@ extension ScreenSharingHostService {
     try await waitForSharedDisplay(session)
     let points = ScreenSharingHostRetina.virtualDisplaySize(
       dynamic: session.dynamicDesktop, shared: session.sharedMode,
-      virtualDisplaysAvailable: ScreenSharingHostVirtualDisplay.isAvailable)
+      virtualDisplaysAvailable: virtualDisplaysAvailable())
     if let points {
       guard try await showVirtualDisplay(session, points: points, standsInForShared: false) != nil else {
         throw CancellationError()
