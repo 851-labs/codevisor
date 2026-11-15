@@ -35,17 +35,28 @@ final class MachineCatalog {
 
   var cloudOnlyMachines: [CloudMachine] {
     guard let cloudProvider, cloudProvider.isCloudSignedIn else { return [] }
+    let knownCloudIds = configuredCloudIds
+    let unconfirmedLocalName = localNameUntilDeviceIdIsKnown
+    return cloudProvider.cloudMachines.filter {
+      !knownCloudIds.contains($0.deviceId) && $0.name != unconfirmedLocalName
+    }
+  }
+
+  private var configuredCloudIds: Set<String> {
     let configuredIds = Set(machines.map(\.id))
-    let knownCloudIds = Set(
+    return Set(
       connections.statusById
         .filter { configuredIds.contains($0.key) }
         .values
         .compactMap(\.cloudDeviceId)
     )
-    let knownNames: Set<String> = includesLocalMachine ? [CodevisorMachine.local.name] : []
-    return cloudProvider.cloudMachines.filter {
-      !knownCloudIds.contains($0.deviceId) && !knownNames.contains($0.name)
+  }
+
+  private var localNameUntilDeviceIdIsKnown: String? {
+    guard includesLocalMachine, connections.statusById[CodevisorMachine.local.id]?.cloudDeviceId == nil else {
+      return nil
     }
+    return CodevisorMachine.local.name
   }
 
   var localCloudMachine: CloudMachine? {

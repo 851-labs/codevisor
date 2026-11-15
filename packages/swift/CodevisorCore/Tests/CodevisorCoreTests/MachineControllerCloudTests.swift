@@ -60,7 +60,7 @@ struct MachineControllerCloudTests {
     return (controller, projectList, provider, localTransport)
   }
 
-  @Test("This Mac's own cloud registration is hidden by device id, then name")
+  @Test("This Mac's own registration is hidden by name until its device ID is known, then by device ID only")
   func dedup() async throws {
     let deviceId = "dev-this-mac"
     let (controller, _, provider, _) = makeRegisteredLocal(deviceId: deviceId)
@@ -74,7 +74,7 @@ struct MachineControllerCloudTests {
 
     await controller.refreshStatus(for: "local")
     #expect(controller.statusByMachineId["local"]?.cloudDeviceId == deviceId)
-    #expect(controller.allMachines.map(\.id) == ["local", "cloud:dev-only"])
+    #expect(controller.allMachines.map(\.id) == ["local", "cloud:dev-name-clash", "cloud:dev-only"])
   }
 
   @Test("This Mac keeps its edited name and icon, even while its server is unreachable")
