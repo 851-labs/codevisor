@@ -1,12 +1,8 @@
 [
   "ControlLeaseTests",
   "ControlLeaseRequestTests",
-  "ScreenSharingViewerHarness",
   "ScreenSharingViewerTests",
   "NavigationRaceTests",
   "CloudTunnelRaceTests",
-  "CloudDirectPathRaceTests",
-  "ScreenSharingViewerSystemKeyTests",
-  "ScreenSharingViewerVisibilityTests",
-  "ScreenSharingViewerPanesTests"
+  "CloudDirectPathRaceTests"
 ]

@@ -32,7 +32,8 @@ struct ScreenSharingEndpointViewsTests {
     let fixture = Fixture()
     let surfaces = try fixture.show(tab, window)
     fixture.endpoint.setDynamicResolution(true)
-    fixture.endpoint.giveInput(to: tab)
+    fixture.endpoint.moveInput(to: tab)
+    fixture.endpoint.sizeDesktop(with: tab)
     let lease = UUID()
     #expect(fixture.endpoint.beginInput(lease: lease) == nil)
 
@@ -46,24 +47,44 @@ struct ScreenSharingEndpointViewsTests {
     #expect(surfaces[0].inputActive && !surfaces[1].inputActive)
   }
 
-  @Test("Moving the keyboard and mouse to another pane gives the lease back and uses that pane's size")
+  @Test("Moving the keyboard and mouse to another pane keeps the lease: nothing is sent, capture just changes views")
   func movesInputToAnotherPane() throws {
     let fixture = Fixture()
     let surfaces = try fixture.show(tab, window)
     fixture.endpoint.setDynamicResolution(true)
     surfaces[0].onSizeChanged?(CGSize(width: 640, height: 400), 1)
     surfaces[1].onSizeChanged?(CGSize(width: 800, height: 600), 1)
-    fixture.endpoint.giveInput(to: tab)
+    fixture.endpoint.moveInput(to: tab)
+    fixture.endpoint.sizeDesktop(with: tab)
     let lease = UUID()
     _ = fixture.endpoint.beginInput(lease: lease)
 
-    fixture.endpoint.giveInput(to: window)
+    fixture.endpoint.moveInput(to: window)
+    fixture.endpoint.sizeDesktop(with: window)
+    surfaces[0].onInput?(.text("ignored"))
+    surfaces[1].onInput?(.text("typed"))
 
-    #expect(fixture.session.controlChannel.sent == [.release(lease: lease)])
-    #expect(!surfaces[0].inputActive, "the old pane stops capturing; it keeps its view")
+    #expect(fixture.session.controlChannel.sent == [.input(lease: lease, sequence: 1, event: .text("typed"))])
+    #expect(!surfaces[0].inputActive && surfaces[1].inputActive, "the old pane stops capturing; it keeps its view")
     #expect(fixture.endpoint.view(for: tab) === surfaces[0].view && !surfaces[0].stopped)
     #expect(fixture.session.desktopSizeRequests == [[640, 400], [800, 600]])
-    #expect(fixture.endpoint.beginInput(lease: UUID()) == nil && surfaces[1].inputActive)
+  }
+
+  @Test("The view that sizes the host desktop can be another one than the view with the keyboard and mouse")
+  func sizesTheDesktopWithAnyPane() throws {
+    let fixture = Fixture()
+    let surfaces = try fixture.show(tab, window)
+    fixture.endpoint.setDynamicResolution(true)
+    surfaces[0].onSizeChanged?(CGSize(width: 640, height: 400), 1)
+    surfaces[1].onSizeChanged?(CGSize(width: 800, height: 600), 1)
+
+    fixture.endpoint.sizeDesktop(with: window)
+    #expect(fixture.session.desktopSizeRequests == [[800, 600]])
+    #expect(fixture.endpoint.size(of: tab) == CGSize(width: 640, height: 400))
+
+    fixture.endpoint.sizeDesktop(with: nil)
+    surfaces[1].onSizeChanged?(CGSize(width: 900, height: 600), 1)
+    #expect(fixture.session.desktopSizeRequests == [[800, 600]], "with nobody sizing it, the desktop is left alone")
   }
 
   @Test("A pane that goes away stops its view, and a focus change names the pane it happened in")

@@ -24,6 +24,8 @@ public struct ScreenSharingConnectionsSource {
   public var appName: @MainActor () -> String
   public var connector: @MainActor () -> ScreenSharingV2Connector
   public var makeSurface: ScreenSharingSurfaceFactory
+  public var preferences = ScreenSharingMachinePreferences()
+  public var controlClock: any Clock<Duration> = ContinuousClock()
 
   public init(
     machineIds: @escaping @MainActor () -> Set<String>,

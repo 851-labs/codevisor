@@ -26,6 +26,7 @@ public final class ScreenSharingViewerEndpoint: Equatable, Identifiable {
   public var failure: String? { session.failure }
   var onViewFocusChanged: ((UUID, Bool) -> Void)?
   var onViewKeyboardReturned: ((UUID) -> Void)?
+  var onViewResized: ((UUID) -> Void)?
   var onReady: (() -> Void)?
   let session: any ScreenSharingViewingSession
   private let views: ScreenSharingEndpointViews
@@ -177,6 +178,7 @@ public final class ScreenSharingViewerEndpoint: Equatable, Identifiable {
       self?.emit(.inputLost(reason))
     }
     views.events.sizeChanged = { [weak self] in self?.applyResolution() }
+    views.events.viewResized = { [weak self] in self?.onViewResized?($0) }
     views.events.screenChanged = { [weak self] in self?.reportHighDynamicRange() }
   }
 
@@ -345,15 +347,24 @@ public final class ScreenSharingViewerEndpoint: Equatable, Identifiable {
   public func hasKeyboardFocus(in pane: UUID) -> Bool { views.hasKeyboardFocus(in: pane) }
 
   func removeView(for pane: UUID) {
-    if views.active == pane { relinquish() }
+    if views.active == pane { moveInput(to: nil) }
     views.remove(pane)
   }
 
-  func giveInput(to pane: UUID?) {
+  func size(of pane: UUID) -> CGSize? { views.size(of: pane) }
+
+  func sizeDesktop(with pane: UUID?) { views.drive(with: pane) }
+
+  func moveInput(to pane: UUID?) {
     guard pane != views.active else { return }
 
-    relinquish()
+    views.controlled?.endInput()
     views.activate(pane)
+    guard forwarder.isActive, let surface = views.controlled else { return }
+    guard surface.beginInput() else {
+      forwarder.end()
+      return emit(.inputLost(surface.inputFailureMessage))
+    }
   }
 
   private func noteFirstFrame() {

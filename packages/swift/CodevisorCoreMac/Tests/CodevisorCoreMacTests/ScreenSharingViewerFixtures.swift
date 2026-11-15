@@ -19,12 +19,13 @@ enum ScreenSharingViewerFixtures {
 }
 
 @MainActor
+@Observable
 final class FakeChannel<Message: Sendable & Equatable>: ScreenSharingMessageChannel {
   var isAvailable = false {
     didSet { if isAvailable != oldValue { onAvailabilityChanged?(isAvailable) } }
   }
-  var onMessage: ((Message) -> Void)?
-  var onAvailabilityChanged: ((Bool) -> Void)?
+  @ObservationIgnored var onMessage: ((Message) -> Void)?
+  @ObservationIgnored var onAvailabilityChanged: ((Bool) -> Void)?
   private(set) var sent: [Message] = []
   private(set) var closed = false
 
@@ -100,18 +101,19 @@ final class FakeMediaSession: ScreenSharingV2StartableSession {
 }
 
 @MainActor
+@Observable
 final class FakeSurface: ScreenSharingViewerSurface {
-  let view = NSView()
-  var onFocusChanged: ((Bool) -> Void)?
-  var onInput: ((ScreenSharingInputEvent) -> Void)?
-  var onInputReleased: (() -> Void)?
-  var onKeyboardReturned: (() -> Void)?
-  var onSizeChanged: ((CGSize, CGFloat) -> Void)?
-  var onScreenHighDynamicRangeChanged: ((Bool) -> Void)?
-  var inputFailureMessage: String?
-  var capturesSystemShortcuts = true
-  var dropsInjectedInput = true
-  var beginInputSucceeds = true
+  @ObservationIgnored let view = NSView()
+  @ObservationIgnored var onFocusChanged: ((Bool) -> Void)?
+  @ObservationIgnored var onInput: ((ScreenSharingInputEvent) -> Void)?
+  @ObservationIgnored var onInputReleased: (() -> Void)?
+  @ObservationIgnored var onKeyboardReturned: (() -> Void)?
+  @ObservationIgnored var onSizeChanged: ((CGSize, CGFloat) -> Void)?
+  @ObservationIgnored var onScreenHighDynamicRangeChanged: ((Bool) -> Void)?
+  @ObservationIgnored var inputFailureMessage: String?
+  @ObservationIgnored var capturesSystemShortcuts = true
+  @ObservationIgnored var dropsInjectedInput = true
+  @ObservationIgnored var beginInputSucceeds = true
   private(set) var inputActive = false
   private(set) var stopped = false
   private(set) var videoShowsPointer: Bool?

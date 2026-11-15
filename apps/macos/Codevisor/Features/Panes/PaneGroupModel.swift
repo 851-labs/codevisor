@@ -201,15 +201,6 @@ final class PaneGroupModel: Identifiable {
       guard let self, let sharing, self.canFocusSelectedPane, self.state.selectedPaneId == sharing.id else { return }
       self.requestBackgroundFocus?()
     }
-    sharing.onPreferencesChanged = { [weak self, weak sharing] preferences in
-      guard let self, let sharing,
-        let index = self.state.panes.firstIndex(where: { $0.id == sharing.id }),
-        self.state.panes[index].screenSharing != preferences
-      else { return }
-      self.state.panes[index].screenSharing = preferences
-      self.persist()
-      self.onPaneChanged?(self.state.panes[index])
-    }
   }
 
   func wireBrowser(_ browser: BrowserPane) {

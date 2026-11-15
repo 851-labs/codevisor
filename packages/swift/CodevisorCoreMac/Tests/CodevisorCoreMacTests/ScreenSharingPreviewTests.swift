@@ -6,11 +6,11 @@ import Testing
 @MainActor
 struct ScreenSharingPreviewTests {
   private func state(
-    _ connection: ScreenSharingConnectionState, picture: ScreenSharingSurfaceSnapshot.Picture = .none
+    _ connection: ScreenSharingConnectionState, endpoint: ScreenSharingViewerEndpoint? = nil
   ) -> ScreenSharingViewer.State {
     var state = ScreenSharingViewer.State(machineName: "croissant")
     state.surface.connection = connection
-    state.surface.picture = picture
+    state.surface.endpoint = endpoint
     return state
   }
 
@@ -20,11 +20,11 @@ struct ScreenSharingPreviewTests {
   }
 
   @Test func previewIsLiveOnceTheConnectionIsLiveAndHasAPicture() {
-    let endpoint = ScreenSharingViewerHarness.endpoint()
+    let endpoint = ScreenSharingViewerEndpoint(session: FakeMediaSession(), surface: FakeSurface())
+    defer { endpoint.close() }
 
-    #expect(state(.live, picture: .elsewhere(endpoint)).preview == .live(endpoint))
-    #expect(state(.live, picture: .here(endpoint)).preview == .live(endpoint))
-    #expect(state(.connecting(.waitingForVideo), picture: .elsewhere(endpoint)).preview == .connecting)
+    #expect(state(.live, endpoint: endpoint).preview == .live(endpoint))
+    #expect(state(.connecting(.waitingForVideo), endpoint: endpoint).preview == .connecting)
     #expect(state(.reconnecting).preview == .reconnecting)
   }
 

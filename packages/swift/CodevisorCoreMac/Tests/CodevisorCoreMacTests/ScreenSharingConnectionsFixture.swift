@@ -29,6 +29,9 @@ final class ScreenSharingConnectionsFixture {
   @ObservationIgnored let signer = FakeSigner()
   @ObservationIgnored let clock = TestClock()
   @ObservationIgnored let wakeCenter = NotificationCenter()
+  @ObservationIgnored let preferences = ScreenSharingMachinePreferences(
+    defaults: UserDefaults(suiteName: "screen-sharing-tests-\(UUID().uuidString)") ?? .standard)
+  @ObservationIgnored private(set) var madeSurfaces: [FakeSurface] = []
   @ObservationIgnored private(set) lazy var connections = ScreenSharingConnections(
     source: source, clock: ScreenSharingConnectionClock(clock), wakeCenter: wakeCenter)
   @ObservationIgnored private var surfaces: [ScreenSharingSurface] = []
@@ -81,8 +84,13 @@ final class ScreenSharingConnectionsFixture {
       centerTree: .leaf(.centerInitial(sessionId: UUID())), isArchived: archived, isServerSynced: synced)
   }
 
+  func fake(for recorded: RecordedSurface) -> FakeSurface? {
+    let view = recorded.surface.videoView()
+    return madeSurfaces.first { $0.view === view }
+  }
+
   private var source: ScreenSharingConnectionsSource {
-    ScreenSharingConnectionsSource(
+    var source = ScreenSharingConnectionsSource(
       machineIds: { [unowned self] in self.machineIds },
       isReady: { [unowned self] in self.readyMachineIds.contains($0) },
       channel: { [host] _ in host },
@@ -90,8 +98,14 @@ final class ScreenSharingConnectionsFixture {
       workspaces: { [unowned self] in self.workspaces },
       signer: { [unowned self] in try self.signerOrFailure() },
       connector: { [unowned self] in self.connector },
-      makeSurface: { _, _ in FakeSurface() },
+      makeSurface: { [unowned self] _, _ in
+        let surface = FakeSurface()
+        self.madeSurfaces.append(surface)
+        return surface
+      },
       appName: { Self.appName })
+    source.preferences = preferences
+    return source
   }
 
   private var connector: ScreenSharingV2Connector {

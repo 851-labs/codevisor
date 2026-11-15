@@ -26,7 +26,7 @@ struct ScreenSharingDesktopSurfaceTests {
     let preview = fixture.surface(.watcher)
     preview.show()
     try await fixture.goLive()
-    await awaitObserved { preview.snapshot.picture != .none }
+    await awaitObserved { preview.snapshot.endpoint != nil }
     fixture.host.displays = [Self.virtual]
     fixture.host.answerEvery(.start, Self.busy)
 
@@ -35,27 +35,24 @@ struct ScreenSharingDesktopSurfaceTests {
     window.show()
 
     await awaitObserved { window.snapshot.endpoint != nil }
-    #expect(window.snapshot.connection == .live && preview.snapshot.mirror == window.snapshot.endpoint)
+    #expect(window.snapshot.connection == .live && preview.snapshot.endpoint == window.snapshot.endpoint)
     #expect(fixture.host.starts.map(\.displayId) == [FakeHost.display.id])
     #expect(window.snapshot.displayId == FakeHost.display.id, "both show what the connection shares")
   }
 
-  @Test("The picture moves to the surface that takes it, and every surface sees who has it at once")
-  func movesThePictureBetweenSurfaces() async throws {
+  @Test("Every surface draws the desktop in a view of its own, and keeps it when control moves")
+  func givesEverySurfaceItsOwnView() async throws {
     let fixture = Fixture()
     let (tab, window) = (fixture.surface(.tab), fixture.surface(.window))
     tab.show()
     window.show()
     try await fixture.goLive()
-    await awaitObserved { window.snapshot.endpoint != nil && tab.snapshot.mirror != nil }
+    await awaitObserved { window.snapshot.endpoint != nil && tab.snapshot.endpoint != nil }
 
     let (tabView, windowView) = (try #require(tab.surface.videoView()), try #require(window.surface.videoView()))
-    #expect(tabView !== windowView, "every surface draws the desktop in a view of its own")
+    #expect(tabView !== windowView)
 
-    tab.surface.takePicture()
-    #expect(tab.snapshot.endpoint != nil, "both learn who has the keyboard and mouse in the same turn")
-    #expect(window.snapshot.mirror == tab.snapshot.endpoint)
-    #expect(tab.surface.holdsPicture && !window.surface.holdsPicture)
+    tab.surface.takeControl()
     #expect(tab.surface.videoView() === tabView && window.surface.videoView() === windowView, "no view moves")
 
     tab.surface.detach()
@@ -72,8 +69,8 @@ struct ScreenSharingDesktopSurfaceTests {
     fixture.audioSession = session
     let (preview, tab) = (fixture.surface(.watcher), fixture.surface(.tab))
     preview.show()
-    await awaitObserved { preview.snapshot.picture != .none }
-    let audio = try #require(preview.snapshot.mirror?.audio)
+    await awaitObserved { preview.snapshot.endpoint != nil }
+    let audio = try #require(preview.snapshot.endpoint?.audio)
     audio.apply(.init(enabled: true, volume: 1))
     #expect(!audio.audible && session.audioRequests.last == false)
 
@@ -99,10 +96,10 @@ struct ScreenSharingDesktopSurfaceTests {
     let fixture = Fixture()
     fixture.host.displays = [FakeHost.display, FakeHost.second]
     let (first, joiner) = (fixture.surface(.tab), fixture.surface(.tab))
-    first.show(preferringDisplay: FakeHost.second.id)
+    first.show(seedDisplay: FakeHost.second.id)
     try await fixture.goLive()
 
-    joiner.show(preferringDisplay: FakeHost.display.id)
+    joiner.show(seedDisplay: FakeHost.display.id)
     await awaitObserved { joiner.snapshot.connection == .live }
 
     #expect(fixture.host.starts.map(\.displayId) == [FakeHost.second.id])
@@ -115,10 +112,10 @@ struct ScreenSharingDesktopSurfaceTests {
     fixture.host.displays = [FakeHost.display, FakeHost.second]
     fixture.host.answerNext(.capabilities, .reply(status: "permission-required", reason: "permission-missing"))
     let (first, retrying) = (fixture.surface(.tab), fixture.surface(.tab))
-    first.show(preferringDisplay: FakeHost.second.id)
+    first.show(seedDisplay: FakeHost.second.id)
     await fixture.settle(.failed(.permissionMissing))
 
-    retrying.show(preferringDisplay: FakeHost.display.id)
+    retrying.show(seedDisplay: FakeHost.display.id)
     retrying.surface.retry()
     try await fixture.goLive()
 
@@ -133,7 +130,7 @@ struct ScreenSharingDesktopSurfaceTests {
     try await fixture.goLive()
 
     fixture.machineIds = []
-    await awaitObserved { tab.snapshot.connection == .off && tab.snapshot.picture == .none }
+    await awaitObserved { tab.snapshot.connection == .off && tab.snapshot.endpoint == nil }
     fixture.machineIds = [Fixture.machineId]
     try await fixture.goLive()
 
