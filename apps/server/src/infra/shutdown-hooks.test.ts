@@ -1,6 +1,21 @@
+import { spawnSync } from "node:child_process"
+
 import { describe, expect, it } from "vitest"
 
 import { makeShutdownHooks } from "./shutdown-hooks.js"
+
+const moduleUrl = new URL("./shutdown-hooks.ts", import.meta.url).href
+
+const exitStatusOf = (setup: string): number | null =>
+  spawnSync(
+    process.execPath,
+    [
+      "--input-type=module",
+      "-e",
+      `import { processShutdown } from ${JSON.stringify(moduleUrl)}\n${setup}`
+    ],
+    { encoding: "utf8", timeout: 10_000 }
+  ).status
 
 const deferred = (): { promise: Promise<void>; resolve: () => void } => {
   let resolve!: () => void
@@ -72,5 +87,21 @@ describe("makeShutdownHooks", () => {
 
     expect(runs).toBe(1)
     expect(exits).toEqual([143])
+  })
+
+  it("exits with the requested code when a hook never settles and nothing else keeps the process alive", () => {
+    expect(
+      exitStatusOf(
+        "processShutdown.add(() => new Promise(() => undefined))\nvoid processShutdown.exit(85)"
+      )
+    ).toBe(85)
+  })
+
+  it("exits with the requested code when the only thing left is an unreferenced timer", () => {
+    expect(
+      exitStatusOf(
+        "processShutdown.add(() => new Promise((resolve) => setTimeout(resolve, 5_000).unref()))\nvoid processShutdown.exit(85)"
+      )
+    ).toBe(85)
   })
 })

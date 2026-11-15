@@ -7,11 +7,12 @@ export interface ShutdownHooks {
 
 const waitFor = (ms: number): Promise<void> =>
   new Promise((resolve) => {
-    setTimeout(resolve, ms).unref()
+    setTimeout(resolve, ms)
   })
 
 export const makeShutdownHooks = (options: {
   readonly exit: (code: number) => void
+  readonly recordExitCode?: (code: number) => void
   readonly limitMs?: number
   readonly wait?: (ms: number) => Promise<void>
 }): ShutdownHooks => {
@@ -23,6 +24,7 @@ export const makeShutdownHooks = (options: {
       hooks.push(hook)
     },
     exit: (code) => {
+      if (exiting === undefined) options.recordExitCode?.(code)
       exiting ??= (async () => {
         const settled = Promise.allSettled(hooks.map(async (hook) => hook()))
         await Promise.race([settled, wait(options.limitMs ?? SHUTDOWN_HOOK_LIMIT_MS)])
@@ -33,4 +35,9 @@ export const makeShutdownHooks = (options: {
   }
 }
 
-export const processShutdown = makeShutdownHooks({ exit: (code) => process.exit(code) })
+export const processShutdown = makeShutdownHooks({
+  exit: (code) => process.exit(code),
+  recordExitCode: (code) => {
+    process.exitCode = code
+  }
+})
