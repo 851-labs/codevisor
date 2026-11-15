@@ -21,6 +21,8 @@ final class ScreenSharingHostService {
   var displaySwitchWait: Duration = .seconds(10)
   var onlineDisplays: () -> [ScreenSharingDisplayIdentity.Online] = ScreenSharingDisplayIdentity.online
   var startsCapture: (ScreenSharingHostSession) async throws -> Void = ScreenSharingHostService.startCaptureStream
+  var virtualDisplaysAvailable: () -> Bool = { ScreenSharingHostVirtualDisplay.isAvailable }
+  var isMirrored: (CGDirectDisplayID) -> Bool = { CGDisplayIsInMirrorSet($0) != 0 }
   private(set) var pendingStarts: [UUID: ScreenSharingHostLease.Owner] = [:]
   private(set) var isShutdown = false
   private var stopGeneration = 0

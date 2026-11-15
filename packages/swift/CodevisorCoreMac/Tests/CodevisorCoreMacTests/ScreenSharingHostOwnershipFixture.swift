@@ -135,6 +135,8 @@ final class ScreenSharingHostOwnershipFixture {
       }, mediaEndpoint: media,
       logicalDisplays: .init(kind: Self.kind))
     host.onlineDisplays = { [unowned self] in displays.map(Self.online) }
+    host.virtualDisplaysAvailable = { false }
+    host.isMirrored = { _ in false }
     host.startsCapture = { [unowned self] session in
       let display = displays.first { Self.displayID(of: $0) == session.captureDisplayID }?.id ?? "unknown"
       captureStarts.append(display)
