@@ -36,10 +36,7 @@ final class MachineCatalog {
   var cloudOnlyMachines: [CloudMachine] {
     guard let cloudProvider, cloudProvider.isCloudSignedIn else { return [] }
     let knownCloudIds = configuredCloudIds
-    let unconfirmedLocalName = localNameUntilDeviceIdIsKnown
-    return cloudProvider.cloudMachines.filter {
-      !knownCloudIds.contains($0.deviceId) && $0.name != unconfirmedLocalName
-    }
+    return cloudProvider.cloudMachines.filter { !knownCloudIds.contains($0.deviceId) && !mayBeThisMac($0) }
   }
 
   private var configuredCloudIds: Set<String> {
@@ -52,11 +49,14 @@ final class MachineCatalog {
     )
   }
 
-  private var localNameUntilDeviceIdIsKnown: String? {
-    guard includesLocalMachine, connections.statusById[CodevisorMachine.local.id]?.cloudDeviceId == nil else {
-      return nil
-    }
-    return CodevisorMachine.local.name
+  private func mayBeThisMac(_ machine: CloudMachine) -> Bool {
+    guard includesLocalMachine, machine.name == CodevisorMachine.local.name else { return false }
+
+    return !localDeviceIdIsKnown || !machine.online
+  }
+
+  private var localDeviceIdIsKnown: Bool {
+    connections.statusById[CodevisorMachine.local.id]?.cloudDeviceId != nil
   }
 
   var localCloudMachine: CloudMachine? {

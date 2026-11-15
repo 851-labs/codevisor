@@ -60,13 +60,14 @@ struct MachineControllerCloudTests {
     return (controller, projectList, provider, localTransport)
   }
 
-  @Test("This Mac's own registration is hidden by name until its device ID is known, then by device ID only")
+  @Test("Entries named like this Mac are hidden until its device ID is known, then only while offline")
   func dedup() async throws {
     let deviceId = "dev-this-mac"
     let (controller, _, provider, _) = makeRegisteredLocal(deviceId: deviceId)
     provider.cloudMachines = [
       makeCloudMachine(deviceId: deviceId, name: "This Mac (Cloud)"),
       makeCloudMachine(deviceId: "dev-name-clash", name: CodevisorMachine.local.name),
+      makeCloudMachine(deviceId: "dev-old-install", name: CodevisorMachine.local.name, online: false),
       makeCloudMachine(deviceId: "dev-only", name: "Only In Cloud"),
     ]
 
