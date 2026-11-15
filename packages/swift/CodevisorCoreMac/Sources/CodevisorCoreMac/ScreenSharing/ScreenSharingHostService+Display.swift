@@ -58,6 +58,7 @@ extension ScreenSharingHostService {
     }
     session.resizing = update
     await update.value
+    await refreshDisplays(of: session)
   }
 
   private func applyDisplay(_ session: ScreenSharingHostSession, reportsFailure: Bool) async {
@@ -101,7 +102,7 @@ extension ScreenSharingHostService {
     }
   }
 
-  private func showVirtualDisplay(
+  func showVirtualDisplay(
     _ session: ScreenSharingHostSession, points: (width: Int, height: Int)?, standsInForShared: Bool
   ) async throws -> Bool? {
     guard let points else {
@@ -129,7 +130,7 @@ extension ScreenSharingHostService {
     return true
   }
 
-  private func moveCapture(_ session: ScreenSharingHostSession, movesDisplay: Bool) async throws {
+  func moveCapture(_ session: ScreenSharingHostSession, movesDisplay: Bool) async throws {
     if session.virtualDisplay != nil {
       try await Self.waitForDisplay(
         session.captureDisplayID, pixels: (session.configuration.width, session.configuration.height))
@@ -153,7 +154,7 @@ extension ScreenSharingHostService {
     )
   }
 
-  private func releaseVirtualDisplay(_ session: ScreenSharingHostSession) {
+  func releaseVirtualDisplay(_ session: ScreenSharingHostSession) {
     guard let display = session.virtualDisplay else { return }
     display.release()
     session.virtualDisplay = nil
@@ -164,6 +165,7 @@ extension ScreenSharingHostService {
 extension ScreenSharingHostService {
   func screenParametersChanged() {
     guard let current else { return }
+    Task { await refreshDisplays(of: current) }
     if ProcessInfo.processInfo.systemUptime < current.ownDisplayChangeUntil { return }
     let online = ScreenSharingDisplayIdentity.online()
     guard
@@ -174,7 +176,6 @@ extension ScreenSharingHostService {
       Self.logger.notice("The shared display went away; ending the session")
       return systemStopped(.displayGone)
     }
-    Task { await refreshDisplays(of: current) }
     let shared = current.displayID
     followDisplay(current)
     if current.displayID != shared { Task { await updateDisplay(current) } }

@@ -62,6 +62,7 @@ public struct ServerScreenSharingReply: Codable, Sendable {
   public var session: String?
 
   public static let appSessions = "app-sessions"
+  public static let displaySwitch = "display-switch"
 
   public init(
     status: String, message: String? = nil, displays: [ServerScreenSharingDisplay] = [], provider: String? = nil

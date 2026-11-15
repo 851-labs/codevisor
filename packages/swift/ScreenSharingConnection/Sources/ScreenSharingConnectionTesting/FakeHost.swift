@@ -199,11 +199,12 @@ public final class FakeHost: ScreenSharingHostChannel {
   private func switchDisplay(
     for request: ServerScreenSharingRequest
   ) -> (reason: ServerScreenSharingReason, message: String?)? {
-    guard abilities.contains("display-switch"), request.session != nil, let wanted = request.displayId,
+    guard abilities.contains(ServerScreenSharingReply.displaySwitch), request.session != nil,
+      let wanted = request.displayId,
       wanted != sharedDisplayId
     else { return nil }
     guard displays.contains(where: { $0.id == wanted }) else {
-      return (ServerScreenSharingReason(rawValue: "display-unavailable"), nil)
+      return (.displayUnavailable, nil)
     }
 
     switch displaySwitchAnswer {
@@ -211,9 +212,9 @@ public final class FakeHost: ScreenSharingHostChannel {
       sharedDisplayId = wanted
       return nil
     case .stillSwitching:
-      return (ServerScreenSharingReason(rawValue: "display-switching"), nil)
+      return (.displaySwitching, nil)
     case .unavailable(let message):
-      return (ServerScreenSharingReason(rawValue: "display-unavailable"), message)
+      return (.displayUnavailable, message)
     }
   }
 }

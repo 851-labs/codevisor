@@ -17,4 +17,6 @@ public struct ServerScreenSharingReason: RawRepresentable, Codable, Hashable, Se
   public static let noDisplay = Self(rawValue: "no-display")
   public static let proofRejected = Self(rawValue: "proof-rejected")
   public static let nothingToView = Self(rawValue: "nothing-to-view")
+  public static let displaySwitching = Self(rawValue: "display-switching")
+  public static let displayUnavailable = Self(rawValue: "display-unavailable")
 }

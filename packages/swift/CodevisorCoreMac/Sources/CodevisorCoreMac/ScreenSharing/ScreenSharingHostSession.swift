@@ -13,15 +13,17 @@ final class ScreenSharingHostSession {
   var mediaAccept: Task<Void, Never>?
   let capture: ScreenSharingCapture
   let metrics: ScreenSharingMetrics
-  let display: ServerScreenSharingDisplay
+  var display: ServerScreenSharingDisplay
   var displays: [ServerScreenSharingDisplay] = []
+  var sharesStandIn = false
   var displayID: UInt32 {
     get { sharedDisplay.displayID }
     set { sharedDisplay.displayID = newValue }
   }
-  let displayIdentity: ScreenSharingDisplayIdentity
+  private(set) var displayIdentity: ScreenSharingDisplayIdentity
   var configuration: ScreenSharingVideoConfiguration
-  let physicalConfiguration: ScreenSharingVideoConfiguration
+  private(set) var physicalConfiguration: ScreenSharingVideoConfiguration
+  var displaySwitch: ScreenSharingHostDisplaySwitch?
   var virtualDisplay: ScreenSharingHostVirtualDisplay? {
     didSet { sharedDisplay.virtualDisplayID = virtualDisplay?.displayID }
   }
@@ -84,6 +86,28 @@ final class ScreenSharingHostSession {
   }
 
   var hasSentVideo: Bool { metrics.counter("capturedFrames") > 0 }
+
+  struct Target {
+    let displayID: UInt32
+    let identity: ScreenSharingDisplayIdentity
+    let configuration: ScreenSharingVideoConfiguration
+  }
+
+  var target: Target { .init(displayID: displayID, identity: displayIdentity, configuration: physicalConfiguration) }
+
+  static func target(_ display: (id: UInt32, description: ServerScreenSharingDisplay)) throws -> Target {
+    let configuration = try ScreenSharingV2Profile.captureConfiguration(
+      width: display.description.width, height: display.description.height)
+    return .init(displayID: display.id, identity: .init(display: display.id), configuration: configuration)
+  }
+
+  func share(_ target: Target) {
+    displayID = target.displayID
+    displayIdentity = target.identity
+    sharedMode = .init(display: target.displayID)
+    physicalConfiguration = target.configuration
+    configuration = target.configuration
+  }
 
   func hasToken(_ candidate: String) -> Bool {
     let mine = Array(sessionToken.utf8)

@@ -13,7 +13,11 @@ final class ScreenSharingHostOwnershipFixture {
     id: "main", name: "Built-in Display", width: 1280, height: 720)
   nonisolated static let side = ServerScreenSharingDisplay(id: "side", name: "Side Display", width: 1280, height: 720)
   nonisolated static let hostVirtual = ServerScreenSharingDisplay(
-    id: "virtual", name: "Codevisor Screen Sharing", width: 1280, height: 720)
+    id: "virtual", name: "Codevisor Screen Sharing", width: 3840, height: 2160)
+  nonisolated static let standIn = ServerScreenSharingDisplay(
+    id: "stand-in", name: "Display", width: 1920, height: 1080)
+  nonisolated static let standInAgain = ServerScreenSharingDisplay(
+    id: "stand-in-again", name: "Display", width: 1920, height: 1080)
 
   var displays = [ScreenSharingHostOwnershipFixture.main]
   var listDisplays: (() async throws -> [ServerScreenSharingDisplay])?
@@ -44,11 +48,26 @@ final class ScreenSharingHostOwnershipFixture {
     return reply
   }
 
-  func heartbeat(as app: ServerScreenSharingApp) -> ServerScreenSharingRequest {
+  func heartbeat(as app: ServerScreenSharingApp, sharing display: String? = nil) -> ServerScreenSharingRequest {
     var request = ServerScreenSharingRequest(
-      operation: .heartbeat, workspaceId: UUID(), paneId: UUID(), viewerId: UUID())
+      operation: .heartbeat, workspaceId: UUID(), paneId: UUID(), viewerId: UUID(), displayId: display)
     request.session = latestSession[app.key]
     return request
+  }
+
+  func capabilities(as app: ServerScreenSharingApp?) async -> ServerScreenSharingReply {
+    var request = ServerScreenSharingRequest(
+      operation: .capabilities, workspaceId: UUID(), paneId: UUID(), viewerId: UUID())
+    request.app = app
+    return await host.handle(request)
+  }
+
+  func show(_ displays: [ServerScreenSharingDisplay], sharedAs display: ServerScreenSharingDisplay) async throws {
+    self.displays = displays
+    guard let session = host.current else { return }
+
+    session.displayID = Self.displayID(of: display)
+    await host.refreshDisplays(of: session)
   }
 
   func challenge(for app: ServerScreenSharingApp = .macBook) async -> ServerScreenSharingChallenge? {
@@ -111,7 +130,7 @@ final class ScreenSharingHostOwnershipFixture {
       enumerateDisplays: { [unowned self] in
         try await (listDisplays?() ?? displays).map { (Self.displayID(of: $0), $0) }
       }, mediaEndpoint: media,
-      displayChoice: .init(isHostVirtual: { $0 == Self.displayID(of: Self.hostVirtual) }))
+      logicalDisplays: .init(kind: Self.kind))
   }
 
   private func close() async {
@@ -123,7 +142,18 @@ final class ScreenSharingHostOwnershipFixture {
     switch display.id {
     case "main": CGMainDisplayID()
     case "virtual": CGMainDisplayID() &+ 2
+    case "stand-in": CGMainDisplayID() &+ 3
+    case "stand-in-again": CGMainDisplayID() &+ 4
+    case "other": CGMainDisplayID() &+ 5
     default: CGMainDisplayID() &+ 1
+    }
+  }
+
+  nonisolated static func kind(of display: CGDirectDisplayID) -> ScreenSharingHostLogicalDisplays.Kind {
+    switch display {
+    case displayID(of: hostVirtual): .hostVirtual
+    case displayID(of: standIn), displayID(of: standInAgain): .standIn
+    default: .real
     }
   }
 }
