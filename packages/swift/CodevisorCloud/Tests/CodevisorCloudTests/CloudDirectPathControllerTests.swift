@@ -17,7 +17,7 @@ final class ProbeScript: @unchecked Sendable {
   private var results: [String: ScriptedDirectMachine] = [:]
   private var downCallbacks: [String: @Sendable () -> Void] = [:]
   private var scriptedPath: CloudTunnelPath?
-  private var diesBeforeHandover: Set<String> = []
+  private var diesBeforeHandover: [String: Int] = [:]
   let log: ProbeLog
 
   @MainActor init() {
@@ -30,8 +30,16 @@ final class ProbeScript: @unchecked Sendable {
     lock.withLock { results[deviceId] = scripted }
   }
 
-  func dieBeforeHandover(_ deviceId: String) {
-    _ = lock.withLock { diesBeforeHandover.insert(deviceId) }
+  func dieBeforeHandover(_ deviceId: String, times: Int = 1) {
+    lock.withLock { diesBeforeHandover[deviceId] = times }
+  }
+
+  private func takeEarlyDrop(_ deviceId: String) -> Bool {
+    lock.withLock {
+      guard let left = diesBeforeHandover[deviceId], left > 0 else { return false }
+      diesBeforeHandover[deviceId] = left - 1
+      return true
+    }
   }
 
   func report(_ path: CloudTunnelPath?) {
@@ -52,7 +60,7 @@ final class ProbeScript: @unchecked Sendable {
       guard let scripted = lock.withLock({ results[machine.deviceId] }) else { return nil }
       let connection = makeDirectConnection(
         to: scripted, directURL: URL(string: "tunnel://\(machine.deviceId)")!, onDown: onDown)
-      if lock.withLock({ diesBeforeHandover.remove(machine.deviceId) }) != nil {
+      if takeEarlyDrop(machine.deviceId) {
         await connection.shutdown()
         onDown()
       }

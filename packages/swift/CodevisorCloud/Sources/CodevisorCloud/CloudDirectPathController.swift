@@ -37,6 +37,7 @@ public final class CloudDirectPathController {
   @ObservationIgnored var retryTasks: [String: Task<Void, Never>] = [:]
   @ObservationIgnored private var failures: [String: Int] = [:]
   @ObservationIgnored private var redialedForStreak: Set<String> = []
+  @ObservationIgnored private var redialedAfterEarlyDrop: Set<String> = []
   @ObservationIgnored private var rebuiltSinceLastPipe = false
   @ObservationIgnored private var endpointRebuild: Task<Void, Never>?
   @ObservationIgnored private var lastAttempt: [String: ContinuousClock.Instant] = [:]
@@ -135,10 +136,7 @@ public final class CloudDirectPathController {
       }
       let connection = pipe.connection
       guard !wentDown else {
-        Log.cloud.log("Tunnel to machine \(deviceId, privacy: .public) went down before it was used")
-        self.lastReachable[deviceId] = Date()
-        self.resetFailures(deviceId)
-        self.startProbe(deviceId)
+        self.wentDownBeforeUse(deviceId)
         await connection.shutdown()
         return
       }
@@ -175,9 +173,18 @@ public final class CloudDirectPathController {
     scheduleRetry(deviceId)
   }
 
+  private func wentDownBeforeUse(_ deviceId: String) {
+    Log.cloud.log("Tunnel to machine \(deviceId, privacy: .public) went down before it was used")
+    lastReachable[deviceId] = Date()
+    guard redialedAfterEarlyDrop.insert(deviceId).inserted else { return scheduleRetry(deviceId) }
+
+    startProbe(deviceId)
+  }
+
   private func resetFailures(_ deviceId: String) {
     failures[deviceId] = nil
     redialedForStreak.remove(deviceId)
+    redialedAfterEarlyDrop.remove(deviceId)
   }
 
   private func scheduleRetry(_ deviceId: String) {
