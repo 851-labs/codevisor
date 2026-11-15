@@ -46,6 +46,7 @@ import { makeRemoteWorkServices } from "./infra/remote-work.js"
 import { acquireServerLease, type ServerLease } from "./infra/server-lease.js"
 import { mcpCredentialVault } from "./infra/shared-account-storage.js"
 import { makeSharedAccounts, type SharedAccounts } from "./infra/shared-accounts.js"
+import { processShutdown } from "./infra/shutdown-hooks.js"
 import { makeAppIconLoader } from "./infra/tool-icon-apps.js"
 import { makeToolIconStore } from "./infra/tool-icons.js"
 import { makeUsageLimitsCache, makeUsageLimitsFileStore } from "./infra/usage-limits-cache.js"
@@ -469,7 +470,7 @@ export const runServe = (
           console.log("Codevisor server shutting down (requested by client)")
           stopOwnerMonitor?.()
           setTimeout(() => {
-            void lease.release().finally(() => process.exit(0))
+            void lease.release().finally(() => processShutdown.exit(0))
           }, 250)
         },
         sessionActivity,

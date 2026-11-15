@@ -14,6 +14,8 @@ import type { PeerKeyPinStore } from "./peer-pins.js"
 
 export const TUNNEL_ALPN_CHANNELS = "codevisor/channels/1"
 
+const RELAY_ONLINE_TIMEOUT_MS = 30_000
+
 const TEXT = 0
 const BINARY = 1
 
@@ -123,6 +125,7 @@ export class MachineTunnel {
   #generation = 0
   #config: TunnelConfig | undefined
   #pathPolicy: PathPolicy
+  #homeRelay: string | undefined
 
   constructor(private readonly options: MachineTunnelOptions) {
     this.#pathPolicy = options.pathPolicy ?? "auto"
@@ -169,6 +172,7 @@ export class MachineTunnel {
     this.#endpoint = endpoint
     this.#bindingKey = key
     this.options.log?.(`Tunnel: listening as ${endpoint.endpointId()} (${pathPolicy})`)
+    void this.#reportReachable(endpoint, Date.now())
     void this.#publishAddresses(endpoint)
     void this.#acceptLoop(endpoint)
   }
@@ -186,6 +190,17 @@ export class MachineTunnel {
     await endpoint?.close()
   }
 
+  async #reportReachable(endpoint: TunnelEndpoint, since: number): Promise<void> {
+    try {
+      await endpoint.online(RELAY_ONLINE_TIMEOUT_MS)
+    } catch {
+      if (this.#endpoint === endpoint) this.options.log?.("Tunnel: no home relay after 30 s")
+      return
+    }
+    if (this.#endpoint !== endpoint) return
+    this.options.log?.(`Tunnel: reachable through its relay after ${Date.now() - since} ms`)
+  }
+
   async #publishAddresses(endpoint: TunnelEndpoint): Promise<void> {
     for (;;) {
       let addr
@@ -195,6 +210,10 @@ export class MachineTunnel {
         return
       }
       if (this.#endpoint !== endpoint) return
+      if (addr.relayUrl != null && addr.relayUrl !== this.#homeRelay) {
+        this.#homeRelay = addr.relayUrl
+        this.options.log?.(`Tunnel: home relay ${addr.relayUrl}`)
+      }
       this.options.onAddr({
         endpointId: addr.endpointId,
         ...(addr.relayUrl == null ? {} : { relayUrl: addr.relayUrl }),
@@ -223,6 +242,7 @@ export class MachineTunnel {
       connection.close(1, "unsupported service")
       return
     }
+    this.options.log?.(`Tunnel: connection from ${connection.remoteId().slice(0, 8)}`)
     let stream
     try {
       stream = await connection.acceptMessageStream()

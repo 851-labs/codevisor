@@ -24,6 +24,7 @@ import { makeMachineEnrollment } from "./infra/machine-enrollment.js"
 import { makeMachineLink } from "./infra/machine-link.js"
 import { machineReleaseChannel } from "./infra/release-channel.js"
 import type { ServerLease } from "./infra/server-lease.js"
+import { processShutdown } from "./infra/shutdown-hooks.js"
 import { makeTerminalPersistence } from "./infra/terminal-persistence.js"
 import {
   installedOAuthClients,
@@ -211,7 +212,7 @@ export const monitorAppOwner = (options: {
   readonly stopProcess?: () => void
 }): (() => void) => {
   const isAlive = options.isAlive ?? processIsAlive
-  const stopProcess = options.stopProcess ?? (() => process.exit(0))
+  const stopProcess = options.stopProcess ?? (() => void processShutdown.exit(0))
   const timer = setInterval(() => {
     if (isAlive(options.ownerPid)) return
     console.log(`Codevisor host app ${options.ownerPid} exited; stopping its local server`)
@@ -276,6 +277,10 @@ export const restoreTerminalPersistence = (
   const persistence = makeTerminalPersistence({
     dataDir,
     terminal,
+    processHandle: {
+      on: (event, handler) => process.on(event, handler),
+      exit: (code) => void processShutdown.exit(code)
+    },
     log: (line) => console.log(line),
     onRestoreProgress: (completed, total) =>
       startup.work({
@@ -354,6 +359,7 @@ export const startMachineNetwork = async (options: {
     startCloudBridge(cloudBridgeOptions)
   )
   const cloudControl = makeCloudServerControl(cloudBridgeOptions, cloudBridge)
+  processShutdown.add(cloudControl.close)
   const machineName = (): string => cloudControl.machineName() ?? options.machineName
   const machine = {
     id: options.serverId,
