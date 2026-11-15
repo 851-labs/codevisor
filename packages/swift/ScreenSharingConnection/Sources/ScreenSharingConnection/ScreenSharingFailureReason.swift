@@ -20,11 +20,9 @@ public enum ScreenSharingFailureReason: Equatable, Sendable {
   case keptDropping
   case unclassified(message: String?)
 
-  static let nothingToViewCode = ServerScreenSharingReason(rawValue: "nothing-to-view")
-
   init?(hostReason: ServerScreenSharingReason?, holderName: String?, message: String?) {
     switch hostReason {
-    case Self.nothingToViewCode?: self = .nothingToView(message: message)
+    case .nothingToView?: self = .nothingToView(message: message)
     case .takenOver?: self = .takenOver(by: holderName)
     case .inUse?: self = .inUse(by: holderName)
     case .stoppedOnHost?: self = .stoppedOnHost
