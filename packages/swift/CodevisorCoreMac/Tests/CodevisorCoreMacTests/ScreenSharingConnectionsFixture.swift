@@ -18,6 +18,7 @@ final class ScreenSharingConnectionsFixture {
 
   var machineIds: Set<String> = [machineId]
   var readyMachineIds: Set<String> = [machineId]
+  var machineListVerified = true
   @ObservationIgnored var workspaces: [Workspace] = []
   @ObservationIgnored var signerFails = false
   @ObservationIgnored var audioSession: FakeMediaSession?
@@ -105,6 +106,7 @@ final class ScreenSharingConnectionsFixture {
         return surface
       },
       appName: { Self.appName })
+    source.isMachineListVerified = { [unowned self] in self.machineListVerified }
     source.preferences = preferences
     source.controlClock = controlClock
     return source

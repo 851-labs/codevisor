@@ -17,6 +17,7 @@ public final class ScreenSharingDesktopSurface {
   public private(set) var snapshot = ScreenSharingSurfaceSnapshot()
   private let id = UUID()
   private let findDesktop: FindDesktop
+  private let isMachineGone: @MainActor () -> Bool
   private let onShown: @MainActor () -> Void
   private var bound: (desktop: ScreenSharingDesktop, surface: ScreenSharingSurface)?
   private var bindFailure: String?
@@ -25,9 +26,13 @@ public final class ScreenSharingDesktopSurface {
   private var isDetached = false
   private var observation: ObserveToken?
 
-  init(role: ScreenSharingViewerRole, findDesktop: @escaping FindDesktop, onShown: @escaping @MainActor () -> Void) {
+  init(
+    role: ScreenSharingViewerRole, findDesktop: @escaping FindDesktop,
+    isMachineGone: @escaping @MainActor () -> Bool, onShown: @escaping @MainActor () -> Void
+  ) {
     self.role = role
     self.findDesktop = findDesktop
+    self.isMachineGone = isMachineGone
     self.onShown = onShown
     watch()
   }
@@ -174,11 +179,9 @@ public final class ScreenSharingDesktopSurface {
   }
 
   private var currentSnapshot: ScreenSharingSurfaceSnapshot {
+    guard let desktop = bound?.desktop else { return unboundSnapshot }
+
     var snapshot = ScreenSharingSurfaceSnapshot()
-    guard let desktop = bound?.desktop else {
-      if let bindFailure { snapshot.connection = .failed(.unclassified(message: bindFailure)) }
-      return snapshot
-    }
 
     snapshot.connection = desktop.connection.state
     snapshot.isTakingLong = desktop.connection.isTakingLong
@@ -191,6 +194,16 @@ public final class ScreenSharingDesktopSurface {
     snapshot.control = desktop.controller == id ? desktop.controlStatus : nil
     snapshot.mode = desktop.mode
     snapshot.dynamicResolution = desktop.dynamicResolution
+    return snapshot
+  }
+
+  private var unboundSnapshot: ScreenSharingSurfaceSnapshot {
+    var snapshot = ScreenSharingSurfaceSnapshot()
+    if let bindFailure {
+      snapshot.connection = .failed(.unclassified(message: bindFailure))
+    } else if isMachineGone() {
+      snapshot.connection = .failed(.cantReach)
+    }
     return snapshot
   }
 }

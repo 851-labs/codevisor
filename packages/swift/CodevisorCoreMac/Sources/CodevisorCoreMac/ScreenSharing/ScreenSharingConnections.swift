@@ -47,6 +47,7 @@ public final class ScreenSharingConnections {
     ScreenSharingDesktopSurface(
       role: role,
       findDesktop: { [weak self] in try self?.knownDesktop(for: machineId) },
+      isMachineGone: { [weak self] in self?.isGone(machineId) ?? false },
       onShown: { [weak self] in
         guard let workspaceId = workspace() else { return }
 
@@ -82,6 +83,10 @@ public final class ScreenSharingConnections {
     for entry in tracked.values { entry.desktop.close() }
     tracked = [:]
     manager.shutdown()
+  }
+
+  private func isGone(_ machineId: String) -> Bool {
+    source.isMachineListVerified() && !source.machineIds().contains(machineId)
   }
 
   private func knownDesktop(for machineId: String) throws -> ScreenSharingDesktop? {

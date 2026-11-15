@@ -24,6 +24,7 @@ public struct ScreenSharingConnectionsSource {
   public var appName: @MainActor () -> String
   public var connector: @MainActor () -> ScreenSharingV2Connector
   public var makeSurface: ScreenSharingSurfaceFactory
+  public var isMachineListVerified: @MainActor () -> Bool = { false }
   public var preferences = ScreenSharingMachinePreferences()
   public var userAsked: @MainActor (_ machineId: String) -> Void = { _ in }
   public var controlClock: any Clock<Duration> = ContinuousClock()
@@ -64,6 +65,7 @@ public struct ScreenSharingConnectionsSource {
       signer: { try environment.screenSharingSigner() },
       connector: { ScreenSharingViewerMedia.connector })
     source.userAsked = { machines.redialTunnel(for: $0) }
+    source.isMachineListVerified = { machines.cloudProvider?.isCloudRosterVerified ?? false }
     return source
   }
 }
