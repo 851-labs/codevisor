@@ -32,6 +32,7 @@ public final class CloudDirectPathController {
 
   @ObservationIgnored private var connections: [String: (connection: CloudDirectConnection, publicKey: String)] = [:]
   @ObservationIgnored private var connectionGenerations: [String: UUID] = [:]
+  @ObservationIgnored private var downBeforeHandover: Set<UUID> = []
   @ObservationIgnored var probeTasks: [String: Task<Void, Never>] = [:]
   @ObservationIgnored var retryTasks: [String: Task<Void, Never>] = [:]
   @ObservationIgnored private var failures: [String: Int] = [:]
@@ -126,12 +127,21 @@ public final class CloudDirectPathController {
       }
       self.probeTasks[deviceId] = nil
       self.dialing.remove(deviceId)
+      let wentDown = self.downBeforeHandover.remove(generation) != nil
       guard let pipe else {
         self.onDialFailed?(deviceId)
         self.dialFailed(deviceId)
         return
       }
       let connection = pipe.connection
+      guard !wentDown else {
+        Log.cloud.log("Tunnel to machine \(deviceId, privacy: .public) went down before it was used")
+        self.lastReachable[deviceId] = Date()
+        self.resetFailures(deviceId)
+        self.startProbe(deviceId)
+        await connection.shutdown()
+        return
+      }
       guard self.connections[deviceId] == nil else {
         await connection.shutdown()
         return
@@ -185,9 +195,11 @@ public final class CloudDirectPathController {
   }
 
   private func handleDown(deviceId: String, generation: UUID) {
-    guard connectionGenerations[deviceId] == generation,
-      let entry = connections.removeValue(forKey: deviceId)
-    else { return }
+    guard connectionGenerations[deviceId] == generation else { return }
+    guard let entry = connections.removeValue(forKey: deviceId) else {
+      if probeTasks[deviceId] != nil { downBeforeHandover.insert(generation) }
+      return
+    }
     connectionGenerations[deviceId] = nil
     Task { await entry.connection.shutdown() }
     machineIds.remove(deviceId)
@@ -232,6 +244,7 @@ public final class CloudDirectPathController {
     machine: CloudMachine? = nil,
     timeout: Duration = .seconds(15)
   ) async throws -> any CloudChannelTransport {
+    await discardIfDown(deviceId)
     if let transport = transport(for: deviceId, publicKey: publicKey) { return transport }
     if known[deviceId] == nil, let machine, machine.deviceId == deviceId {
       known[deviceId] = machine
@@ -254,6 +267,14 @@ public final class CloudDirectPathController {
     )
   }
 
+  private func discardIfDown(_ deviceId: String) async {
+    guard let connection = connections[deviceId]?.connection, await connection.hasGoneDown,
+      connections[deviceId]?.connection === connection, let generation = connectionGenerations[deviceId]
+    else { return }
+    Log.cloud.notice("Tunnel to machine \(deviceId, privacy: .public) was down without notice; dialing again")
+    handleDown(deviceId: deviceId, generation: generation)
+  }
+
   private func resumeWaiters(_ deviceId: String) {
     for continuation in (waiters.removeValue(forKey: deviceId) ?? [:]).values {
       continuation.resume()
@@ -271,7 +292,7 @@ public final class CloudDirectPathController {
   }
 
   private func discardPipe(_ deviceId: String) {
-    connectionGenerations[deviceId] = nil
+    if let generation = connectionGenerations.removeValue(forKey: deviceId) { downBeforeHandover.remove(generation) }
     probeTasks.removeValue(forKey: deviceId)?.cancel()
     retryTasks.removeValue(forKey: deviceId)?.cancel()
     resetFailures(deviceId)

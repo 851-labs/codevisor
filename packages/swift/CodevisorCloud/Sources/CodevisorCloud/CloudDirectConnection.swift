@@ -74,6 +74,8 @@ public actor CloudDirectConnection: CloudChannelHosting {
 
   public var isReady: Bool { isWelcomed && !isDown }
 
+  public var hasGoneDown: Bool { isDown }
+
   public func shutdown() {
     onDown = nil
     runTask?.cancel()

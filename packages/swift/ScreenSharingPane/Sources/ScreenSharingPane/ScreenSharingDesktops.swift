@@ -98,10 +98,12 @@ public final class ScreenSharingDesktops {
   private func machine(_ machineId: String, _ sources: ScreenSharingDesktopSources) -> ScreenSharingMachine? {
     guard let signer = try? sources.signer(), let installId = Self.installId(forKey: signer.key) else { return nil }
 
-    return ScreenSharingMachine(
+    var machine = ScreenSharingMachine(
       id: machineId, channel: { sources.channel(machineId) }, connector: sources.connector, appName: appName,
       signer: signer, installId: installId,
       liveWorkspace: { [weak self] in self?.liveWorkspace(on: machineId, sources) })
+    machine.isReady = { sources.isReady(machineId) }
+    return machine
   }
 
   private func remember(_ shown: UUID, on machineId: String, _ sources: ScreenSharingDesktopSources) {
