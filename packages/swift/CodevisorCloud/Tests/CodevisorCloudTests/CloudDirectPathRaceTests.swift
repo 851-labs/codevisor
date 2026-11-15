@@ -69,4 +69,30 @@ struct CloudDirectPathRaceTests {
     #expect(fresh.connection !== dead.connection)
     #expect(await fresh.connection.hasGoneDown == false)
   }
+
+  @Test("A tunnel that keeps dying before it's stored is redialed at once only once, then backs off")
+  func repeatedEarlyDropsBackOff() async throws {
+    try await withMainSerialExecutor {
+      let script = ProbeScript()
+      let clock = TestClock()
+      let machine = ScriptedDirectMachine()
+      script.answer("m1", with: machine)
+      script.dieBeforeHandover("m1", times: 2)
+      let controller = makePathController(script: script, clock: clock)
+      defer { controller.dropAll() }
+      controller.reconcile(machines: [testMachine("m1", publicKey: machine.machine.publicKey)])
+      await settle(controller)
+      await settle(controller)
+
+      try #require(script.probes == ["m1", "m1"])
+      #expect(controller.machineIds.isEmpty)
+      await clock.waitForSleep(.seconds(60))
+      clock.advance(by: .seconds(60) - .milliseconds(1))
+      #expect(script.probes == ["m1", "m1"])
+
+      clock.advance(by: .milliseconds(1))
+      #expect(await waitUntil { controller.machineIds == ["m1"] })
+      #expect(script.probes == ["m1", "m1", "m1"])
+    }
+  }
 }
