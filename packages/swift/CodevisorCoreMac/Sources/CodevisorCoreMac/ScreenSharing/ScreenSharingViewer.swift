@@ -41,6 +41,12 @@ public struct ScreenSharingViewer {
       return reason.sentence(on: machineName)
     }
 
+    public var failureAction: ScreenSharingFailureAction? {
+      guard case .failed(let reason) = surface.connection else { return nil }
+
+      return ScreenSharingFailureAction(for: reason)
+    }
+
     public var stillConnectingStep: String? {
       guard surface.isTakingLong, case .connecting(let stage) = surface.connection else { return nil }
 
@@ -52,7 +58,7 @@ public struct ScreenSharingViewer {
       case .off, .connecting: .connecting
       case .reconnecting: .reconnecting
       case .live: surface.endpoint.map(ScreenSharingPreview.live) ?? .connecting
-      case .failed: .failed(failure ?? "")
+      case .failed: .failed(failure ?? "", failureAction)
       }
     }
   }

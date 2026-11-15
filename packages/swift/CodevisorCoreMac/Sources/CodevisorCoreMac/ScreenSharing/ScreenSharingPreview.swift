@@ -1,6 +1,8 @@
+import ScreenSharingConnection
+
 public enum ScreenSharingPreview: Equatable {
   case connecting
   case reconnecting
   case live(ScreenSharingViewerEndpoint)
-  case failed(String)
+  case failed(String, ScreenSharingFailureAction?)
 }

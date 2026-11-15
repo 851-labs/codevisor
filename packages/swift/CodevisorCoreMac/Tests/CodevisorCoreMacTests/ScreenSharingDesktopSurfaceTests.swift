@@ -168,6 +168,26 @@ struct ScreenSharingDesktopSurfaceTests {
     #expect(fixture.host.starts.map(\.workspaceId) == [first.id, second.id])
   }
 
+  @Test("A pane refused because another app holds the desktop names that app and offers View here, which takes it")
+  func namesTheHolderAndViewsHere() async throws {
+    let fixture = Fixture()
+    fixture.host.answerEvery(
+      .start, .reply(status: "busy", message: "In use.", reason: "in-use", holderName: "Alexandru's iPhone"))
+    let preview = fixture.surface(.watcher)
+    preview.show()
+    await awaitObserved { preview.snapshot.connection == .failed(.inUse(by: "Alexandru's iPhone")) }
+
+    var state = ScreenSharingViewer.State(machineName: "croissant")
+    state.surface = preview.snapshot
+    #expect(state.preview == .failed("In use on Alexandru's iPhone.", .viewHere))
+    #expect(fixture.host.starts.map(\.intent) == [.attach], "the preview never takes over by itself")
+
+    fixture.host.answerEvery(.start, nil)
+    preview.surface.retry()
+    try await fixture.goLive()
+    #expect(fixture.host.starts.map(\.intent) == [.attach, .open], "View here is an open, so it takes over")
+  }
+
   @Test("A key that can't be read shows as a failure, and Retry tries again")
   func showsAnUnreadableKeyAsAFailure() async throws {
     let fixture = Fixture()

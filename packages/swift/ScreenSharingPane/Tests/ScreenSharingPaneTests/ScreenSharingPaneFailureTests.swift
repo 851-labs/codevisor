@@ -13,6 +13,8 @@ struct ScreenSharingPaneFailureTests {
       (.inUse(by: nil), .viewHere),
       (.inUseOldHost, .tryAgain),
       (.unsupportedOnThisDevice, nil),
+      (.updateNeeded, nil),
+      (.noWorkspace, .tryAgain),
       (.stoppedOnHost, .tryAgain),
       (.cantReach, .tryAgain),
       (.unclassified(message: nil), .tryAgain),

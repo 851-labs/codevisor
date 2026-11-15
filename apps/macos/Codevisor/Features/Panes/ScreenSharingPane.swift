@@ -210,7 +210,7 @@ private struct ScreenSharingPaneView: View {
     ZStack {
       if let store = pane.store {
         if let failure = store.failure {
-          ScreenSharingFailureView(pane: pane, message: failure) { store.send(.retryButtonTapped) }
+          failed(failure, store)
         } else {
           ScreenSharingConnectionView(pane: pane, store: store)
         }
@@ -220,6 +220,19 @@ private struct ScreenSharingPaneView: View {
       }
     }
     .background { ScreenSharingOnScreen { pane.onScreenChanged($0) } }
+  }
+
+  private func failed(_ sentence: String, _ store: StoreOf<ScreenSharingViewer>) -> some View {
+    ScreenSharingStatusView(content: .failure(sentence: sentence, action: store.failureAction), size: .pane) { _ in
+      store.send(.retryButtonTapped)
+    }
+    .frame(maxWidth: .infinity, maxHeight: .infinity)
+    .simultaneousGesture(
+      TapGesture().onEnded {
+        pane.onFocusChanged?(true)
+        pane.focus()
+      }
+    )
   }
 
   private var unavailableReason: String {
