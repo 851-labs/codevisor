@@ -3,6 +3,7 @@ import CodevisorNet
 import CoreGraphics
 import CryptoKit
 import Foundation
+import ScreenSharing
 import ScreenSharingV2
 
 @testable import CodevisorCoreMac
@@ -22,6 +23,8 @@ final class ScreenSharingHostOwnershipFixture {
   var displays = [ScreenSharingHostOwnershipFixture.main]
   var listDisplays: (() async throws -> [ServerScreenSharingDisplay])?
   var allowsCapture = true
+  var failsCaptureOn: Set<String> = []
+  private(set) var captureStarts: [String] = []
   let workspace = NotificationCenter()
   let media = ScreenSharingMediaEndpoint()
   private(set) var host: ScreenSharingHostService!
@@ -131,6 +134,19 @@ final class ScreenSharingHostOwnershipFixture {
         try await (listDisplays?() ?? displays).map { (Self.displayID(of: $0), $0) }
       }, mediaEndpoint: media,
       logicalDisplays: .init(kind: Self.kind))
+    host.onlineDisplays = { [unowned self] in displays.map(Self.online) }
+    host.startsCapture = { [unowned self] session in
+      let display = displays.first { Self.displayID(of: $0) == session.captureDisplayID }?.id ?? "unknown"
+      captureStarts.append(display)
+      guard !failsCaptureOn.contains(display) else { throw ScreenSharingError.unavailable("Capture refused.") }
+    }
+  }
+
+  nonisolated private static func online(_ display: ServerScreenSharingDisplay) -> ScreenSharingDisplayIdentity.Online {
+    let id = displayID(of: display)
+    return .init(
+      id: id, identity: .init(vendor: 1, model: 1, serial: id), isMain: id == CGMainDisplayID(),
+      isVirtual: kind(of: id) == .hostVirtual)
   }
 
   private func close() async {

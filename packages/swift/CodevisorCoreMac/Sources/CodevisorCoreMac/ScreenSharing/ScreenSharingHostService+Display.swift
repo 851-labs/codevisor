@@ -167,7 +167,7 @@ extension ScreenSharingHostService {
     guard let current else { return }
     Task { await refreshDisplays(of: current) }
     if ProcessInfo.processInfo.systemUptime < current.ownDisplayChangeUntil { return }
-    let online = ScreenSharingDisplayIdentity.online()
+    let online = onlineDisplays()
     guard
       ScreenSharingDisplayIdentity.sessionSurvives(
         shared: current.displayID, identity: current.displayIdentity,

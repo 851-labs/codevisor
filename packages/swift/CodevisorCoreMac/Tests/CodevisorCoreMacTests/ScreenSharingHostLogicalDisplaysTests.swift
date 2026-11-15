@@ -37,6 +37,17 @@ struct ScreenSharingHostLogicalDisplaysTests {
     #expect(back.map(\.description) == [Fixture.standIn])
   }
 
+  @Test func aMacWithTwoHeadlessDisplaysListsEachUnderItsOwnID() {
+    var displays = ScreenSharingHostLogicalDisplays(kind: Fixture.kind)
+
+    let both = displays.list([standIn, standInAgain], shared: nil)
+    #expect(both.map(\.description.id) == ["stand-in", "stand-in-again"])
+
+    let sharing = shared(Fixture.standIn, capturing: virtual, isStandIn: true)
+    let swapped = displays.list([virtual, standInAgain], shared: sharing)
+    #expect(Set(swapped.map(\.description.id)) == ["stand-in", "stand-in-again"] && swapped.count == 2)
+  }
+
   @Test func aSessionStartedUnderALaterStandInIDIsStillListedUnderTheFirstOne() {
     var displays = ScreenSharingHostLogicalDisplays(kind: Fixture.kind)
     _ = displays.list([standIn], shared: nil)

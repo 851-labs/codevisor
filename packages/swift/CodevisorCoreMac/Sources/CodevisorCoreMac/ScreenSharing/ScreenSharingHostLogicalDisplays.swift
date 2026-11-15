@@ -14,6 +14,7 @@ struct ScreenSharingHostLogicalDisplays {
 
   let kind: (CGDirectDisplayID) -> Kind
   private var standInID: String?
+  private var seesSeveralStandIns = false
 
   init(kind: @escaping (CGDirectDisplayID) -> Kind = ScreenSharingHostLogicalDisplays.kind) {
     self.kind = kind
@@ -29,6 +30,7 @@ struct ScreenSharingHostLogicalDisplays {
   }
 
   mutating func list(_ available: [Display], shared: Shared?) -> [Display] {
+    if available.count(where: { kind($0.id) == .standIn }) > 1 { seesSeveralStandIns = true }
     let listed = available.compactMap { logical($0, shared: shared) }
     guard let shared, listed.contains(where: { $0.id == shared.capturing && kind($0.id) == .hostVirtual }) else {
       return listed
@@ -57,6 +59,7 @@ struct ScreenSharingHostLogicalDisplays {
   }
 
   private mutating func standIn(_ seen: String) -> String {
+    guard !seesSeveralStandIns else { return seen }
     if let standInID { return standInID }
 
     standInID = seen
