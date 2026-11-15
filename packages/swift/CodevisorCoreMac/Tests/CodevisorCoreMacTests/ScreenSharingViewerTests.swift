@@ -155,7 +155,7 @@ struct ScreenSharingViewerTests {
       await harness.surface {
         $0.picture = .here(endpoint)
       } then: {
-        $0.lease = ControlLease.State(endpoint: endpoint.id)
+        $0.lease = ControlLease.State(endpoint: endpoint.id, id: $0.id)
         $0.picturesTaken = 2
       }
 

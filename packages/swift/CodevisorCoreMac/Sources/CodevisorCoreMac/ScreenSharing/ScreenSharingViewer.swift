@@ -2,6 +2,7 @@ import CodevisorClient
 import CodevisorCore
 import ComposableArchitecture
 import Foundation
+import OSLog
 import ScreenSharing
 import ScreenSharingConnection
 import ScreenSharingV2
@@ -11,7 +12,8 @@ public struct ScreenSharingViewer {
   public enum InteractionMode: Hashable, Sendable { case control, view }
 
   @ObservableState
-  public struct State: Equatable {
+  public struct State: Equatable, Identifiable {
+    public let id = UUID()
     public var surface = ScreenSharingSurfaceSnapshot()
     public var interactionMode: InteractionMode = .control
     public var lease: ControlLease.State?
@@ -75,7 +77,9 @@ public struct ScreenSharingViewer {
     case systemKeyTapped(ScreenSharingSystemKey)
   }
 
-  enum CancelID { case controlEvents }
+  enum CancelID: Hashable { case controlEvents(pane: UUID) }
+
+  private static let logger = Logger(subsystem: "com.851labs.Codevisor", category: "ScreenSharing")
 
   @Dependency(ScreenSharingSurfaceClient.self) var surface
   @Dependency(ScreenSharingEndpointClient.self) var endpointClient
@@ -165,12 +169,16 @@ public struct ScreenSharingViewer {
   }
 
   private func hold(_ endpoint: ScreenSharingViewerEndpoint?, _ state: inout State) -> Effect<Action> {
+    let pane = String(state.id.uuidString.prefix(4))
     guard let endpoint else {
+      Self.logger.notice("Control \(pane, privacy: .public): pane no longer holds the picture")
       state.lease = nil
-      return .cancel(id: CancelID.controlEvents)
+      return .cancel(id: CancelID.controlEvents(pane: state.id))
     }
 
-    state.lease = ControlLease.State(endpoint: endpoint.id)
+    let visible = state.visible
+    Self.logger.notice("Control \(pane, privacy: .public): pane holds the picture, visible \(visible)")
+    state.lease = ControlLease.State(endpoint: endpoint.id, id: state.id)
     state.picturesTaken += 1
     let id = endpoint.id
     let display = state.displays.first { $0.id == state.selectedDisplayId }
@@ -184,6 +192,6 @@ public struct ScreenSharingViewer {
       .run { [endpointClient] send in
         for await event in await endpointClient.controlEvents(id) { await send(.lease(.event(event))) }
       }
-      .cancellable(id: CancelID.controlEvents, cancelInFlight: true))
+      .cancellable(id: CancelID.controlEvents(pane: state.id), cancelInFlight: true))
   }
 }
