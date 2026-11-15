@@ -189,10 +189,8 @@ struct ScreenSharingConnectionDisplaySwitchTests {
     harness.host.shareDisplay(Self.first.id)
     held.signal()
     await heartbeats(harness, answered: 2)
-    harness.host.shareDisplay(Self.second.id)
-    await harness.beat()
 
-    #expect(harness.connection.display == Self.second, "the older heartbeat's answer never showed")
+    #expect(harness.connection.display == Self.second, "the older heartbeat's answer is not shown")
   }
 
   @Test("A session that drops in the middle of a switch reports it as not done and reconnects on the saved display")
