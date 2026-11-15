@@ -10,6 +10,7 @@
     private var modifiers: UInt8 = 0
     private var sequence: UInt64 = 0
     private var deadline: TimeInterval = 0
+    private var renewedAt: TimeInterval = 0
     private var lastLook: TimeInterval?
     private let stallAfter: TimeInterval?
     private let now: () -> TimeInterval
@@ -19,6 +20,7 @@
     public var onChanged: ((Bool) -> Void)?
 
     public static let lifetime: TimeInterval = 3
+    public static let longestSilence: TimeInterval = 10
     static let shortestStall: TimeInterval = 1
 
     public init(
@@ -40,7 +42,8 @@
           _ = send(.denied(request: request, reason: "Control is already active.")); return
         }
         let id = UUID()
-        lease = id; deadline = now() + Self.lifetime; sequence = 0
+        lease = id; sequence = 0
+        renew()
         onChanged?(true)
         if !send(.grant(request: request, lease: id)) { revoke("The control channel closed.") }
       case .release(let id):
@@ -48,7 +51,7 @@
       case .heartbeat(let id):
         guard lease == id else { return }
         if let reason = availability() { revoke(reason); return }
-        deadline = now() + Self.lifetime
+        renew()
       case .input(let id, let next, let event):
         guard lease == id, next > sequence else { return }
         if let reason = availability() { revoke(reason); return }
@@ -71,7 +74,12 @@
         return
       }
 
-      deadline += now - lastLook
+      deadline = min(deadline + now - lastLook, renewedAt + Self.longestSilence)
+    }
+
+    private func renew() {
+      renewedAt = now()
+      deadline = renewedAt + Self.lifetime
     }
 
     public func revoke(_ reason: String) {

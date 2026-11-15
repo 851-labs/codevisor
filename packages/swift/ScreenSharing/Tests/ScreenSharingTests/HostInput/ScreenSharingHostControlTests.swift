@@ -234,6 +234,37 @@ struct ScreenSharingHostControlTests {
     #expect(host.control.lease == nil, "two seconds before the stall and one after, plus the look that ended it")
   }
 
+  @Test func aHostThatKeepsStallingStillTakesControlFromASilentViewerTenSecondsAfterItsLastHeartbeat() throws {
+    let host = HostFixture(looksEvery: 0.25)
+    let lease = try #require(host.grant())
+    host.look(for: .seconds(1))
+    host.control.receive(.heartbeat(lease: lease))
+
+    for _ in 0..<2 {
+      host.advance(.seconds(4))
+      host.look(for: .milliseconds(250))
+    }
+    #expect(host.control.lease == lease, "nine and a half seconds after the heartbeat, almost all of it stalled")
+    host.advance(.seconds(4))
+    host.control.checkDeadline()
+
+    #expect(host.control.lease == nil)
+    #expect(host.messages.last == .revoked(lease: lease, reason: "Control timed out. Request control again."))
+  }
+
+  @Test func heartbeatsBetweenStallsMoveTheTenSecondLimitWithThem() throws {
+    let host = HostFixture(looksEvery: 0.25)
+    let lease = try #require(host.grant())
+
+    for _ in 0..<5 {
+      host.advance(.seconds(4))
+      host.control.receive(.heartbeat(lease: lease))
+      host.look(for: .milliseconds(250))
+    }
+
+    #expect(host.control.lease == lease && host.changes == [true])
+  }
+
   @Test func aStallNeverRevivesALeaseThatLapsedBeforeIt() throws {
     let host = HostFixture(looksEvery: 0.25)
     let lease = try #require(host.grant())
