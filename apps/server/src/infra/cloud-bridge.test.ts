@@ -115,7 +115,7 @@ describe("cloud connect", () => {
       serverUrl: "https://cloud.example",
       managedBy: "external",
       machineName: "test-machine",
-      stop: () => undefined,
+      stop: async () => undefined,
       state: () => "connected",
       acceptDirect: () => undefined,
       machines: () => undefined,

@@ -25,6 +25,7 @@ import {
 import type { ServerRelease, ServerUpdateChannel, ServerUpdatePrune } from "@codevisor/updater"
 import { Effect } from "effect"
 
+import { processShutdown } from "./infra/shutdown-hooks.js"
 import { failedApply, handOffToHostApp, latestApplyState } from "./serve-app-handoff.js"
 import { SERVER_PROCESS_TITLE, SERVER_UPDATE_CHECK_TTL_MS } from "./serve-boot.js"
 import type { CodevisorServerUpdater } from "./server.js"
@@ -235,7 +236,7 @@ export const makeSelfUpdater = (options: {
       await handOffToHostApp({ requestPath, dataDir: options.dataDir, version })
       return
     }
-    setTimeout(() => process.exit(APP_UPDATE_HANDOFF_EXIT_CODE), 300)
+    setTimeout(() => void processShutdown.exit(APP_UPDATE_HANDOFF_EXIT_CODE), 300)
   }
 
   const releaseFor = async (
@@ -342,7 +343,7 @@ export const makeSelfUpdater = (options: {
         [...managerArgs, "restart", "--no-block", plan.unit],
         false
       )
-      setTimeout(() => process.exit(0), 10_000).unref()
+      setTimeout(() => void processShutdown.exit(0), 10_000).unref()
       return
     }
 
@@ -359,7 +360,7 @@ export const makeSelfUpdater = (options: {
       ],
       true
     )
-    setTimeout(() => process.exit(0), 300)
+    setTimeout(() => void processShutdown.exit(0), 300)
   }
 
   return { check, apply }

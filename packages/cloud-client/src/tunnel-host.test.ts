@@ -75,11 +75,12 @@ const connection = (
 class FakeEndpoint implements TunnelEndpoint {
   incoming = new Pending<Outcome<TunnelConnection | null>>()
   addrs = new Pending<Outcome<TunnelAddr>>()
+  reachable = new Pending<Outcome<undefined>>()
   closed = false
   endpointId = (): string => "a".repeat(64)
   addr = unused
   boundSockets = (): string[] => []
-  online = unused
+  online = async (): Promise<void> => settle(this.reachable)
   connect = unused
   accept = (): Promise<TunnelConnection | null> => settle(this.incoming)
   nextAddr = (): Promise<TunnelAddr> => settle(this.addrs)
@@ -282,6 +283,12 @@ describe("MachineTunnel", () => {
     await tunnel.configure({ relays, enabled: true })
     expect(bindOptions.map((options) => options.pathPolicy)).toEqual(["relay-only"])
     expect(logs).toContain(`Tunnel: listening as ${"a".repeat(64)} (relay-only)`)
+    endpoints[0]!.reachable.push({ value: undefined })
+    await vi.waitFor(() =>
+      expect(
+        logs.some((line) => line.startsWith("Tunnel: reachable through its relay after "))
+      ).toBe(true)
+    )
 
     await tunnel.setPathPolicy("relay-only")
     await tunnel.setPathPolicy("auto")
@@ -335,6 +342,7 @@ describe("MachineTunnel", () => {
     expect(await accepted.next()).toEqual({ endpointId: "f".repeat(64) })
     expect(unsupported.close).toHaveBeenCalledWith(1, "unsupported service")
     expect(logs).toContain("Tunnel: handshake failed: Error: bad handshake")
+    expect(logs).toContain("Tunnel: connection from ffffffff")
   })
 
   it("ignores a replaced endpoint's late addresses and connections", async () => {

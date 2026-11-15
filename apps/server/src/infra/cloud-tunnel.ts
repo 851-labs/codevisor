@@ -21,7 +21,7 @@ export interface MachineTunnelBridge {
   readonly onTunnelConfig: (config: { relays: readonly CloudRelayInfo[]; enabled: boolean }) => void
   readonly onPeerDevices: (devices: readonly CloudVouchedDevice[]) => void
   readonly setDirectPaths: (allowed: boolean) => PathPolicy
-  readonly stop: () => void
+  readonly stop: () => Promise<void>
 }
 
 interface TunnelOptions {
@@ -148,10 +148,9 @@ export const prepareMachineTunnel = async (
         .catch((cause: unknown) => options.log(`Tunnel: failed to rebind: ${String(cause)}`))
       return policy
     },
-    stop: () => {
-      void tunnel
+    stop: () =>
+      tunnel
         .stop()
         .catch((cause: unknown) => options.log(`Tunnel: failed to stop: ${String(cause)}`))
-    }
   }
 }

@@ -62,7 +62,7 @@ export interface CloudBridgeOptions {
 export type CloudBridgeManagedBy = "app" | "external"
 
 export interface CloudBridge {
-  readonly stop: () => void
+  readonly stop: () => Promise<void>
   readonly state: () => MachineConnectionState
   readonly deviceId: string
   readonly serverUrl: string
@@ -293,9 +293,10 @@ const makeBridge = async (
   })
   const hubConnection = connection
   return {
-    stop: () => {
-      tunnel?.stop()
+    stop: async () => {
+      const closing = tunnel?.stop()
       hubConnection.stop()
+      await closing
     },
     state: () => hubConnection.state,
     deviceId: credentials.deviceId,
@@ -388,6 +389,7 @@ export const makeCloudServerControl = (
       | "connectWithInvite"
       | "invite"
       | "removePeer"
+      | "close"
       | "setDirectPaths"
     >
   > => {
@@ -432,8 +434,11 @@ export const makeCloudServerControl = (
       removeMachinePeer(fetchImpl(), await storedCredentials(), deviceId),
     machineRequest: async (method, path, body) =>
       machineApiRequest(fetchImpl(), await storedCredentials(), { method, path, body }),
+    close: async () => {
+      await current?.stop()
+    },
     disconnect: async () => {
-      current?.stop()
+      await current?.stop()
       current = undefined
       const stored = await readCredentials(options.credentialsPath)
       const removedFromAccount = await removeMachineFromCloudAccount(

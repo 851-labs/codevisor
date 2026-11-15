@@ -122,6 +122,7 @@ export interface CloudServerControl {
   readonly removePeer?: (deviceId: string) => Promise<void>
   readonly machineRequest?: (method: string, path: string, body?: unknown) => Promise<unknown>
   readonly disconnect: () => Promise<{ readonly removedFromAccount: boolean }>
+  readonly close?: () => Promise<void>
   readonly acceptDirect?: (socket: import("@codevisor/cloud-client").CloudSocket) => boolean
   readonly machines?: () => ReadonlyArray<import("@codevisor/api").CloudMachinePresence> | undefined
   readonly requestGateway?: (
