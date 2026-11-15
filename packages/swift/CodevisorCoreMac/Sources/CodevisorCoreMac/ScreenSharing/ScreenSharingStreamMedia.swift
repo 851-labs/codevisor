@@ -13,15 +13,19 @@ struct ScreenSharingStreamMedia: Equatable {
 
   init?(_ request: ServerScreenSharingRequest) {
     guard request.engine == ScreenSharingEngine.v2.rawValue, let media = request.media else { return nil }
+    if let app = request.app, app.key.lowercased() != media.endpointId.lowercased() { return nil }
 
     viewerEndpointId = media.endpointId
   }
 }
 
 extension ServerScreenSharingReply {
-  static func connecting(_ grant: ServerScreenSharingMediaGrant, message: String? = nil) -> Self {
+  static func connecting(
+    _ grant: ServerScreenSharingMediaGrant, message: String? = nil, session: String? = nil
+  ) -> Self {
     var reply = Self(status: "connecting", message: message)
     reply.media = grant
+    reply.session = session
     return reply
   }
 }

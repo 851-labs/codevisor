@@ -10,11 +10,7 @@ extension ScreenSharingHostService {
   }
 
   func provesItsKey(_ request: ServerScreenSharingRequest) -> Bool {
-    guard let proof = request.proof,
-      let hostKey = challenges.redeem(proof.nonce, now: ProcessInfo.processInfo.systemUptime)
-    else { return false }
-
-    return proof.proves(request, to: hostKey)
+    challenges.redeem(provedBy: request, now: ProcessInfo.processInfo.systemUptime)
   }
 
   func challenge() async -> ServerScreenSharingChallenge? {
@@ -25,11 +21,7 @@ extension ScreenSharingHostService {
   }
 
   func proofRejected() async -> ServerScreenSharingReply {
-    var reply = ServerScreenSharingReply(
-      status: "failed", message: "This Mac couldn't confirm which device is asking. Try again.")
-    reply.reason = .proofRejected
-    reply.challenge = await challenge()
-    return reply
+    ScreenSharingHostChallenges.rejection(offering: await challenge())
   }
 
   func stops(_ request: ServerScreenSharingRequest, pending owner: Owner) -> Bool {

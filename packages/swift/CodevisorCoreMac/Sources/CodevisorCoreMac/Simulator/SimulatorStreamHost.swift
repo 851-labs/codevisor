@@ -65,22 +65,17 @@ final class SimulatorStreamHost {
   static let maximumSessions = 6
   static let lifetime: TimeInterval = 25
 
-  private struct Owner: Hashable {
-    let workspaceId: UUID
-    let paneId: UUID
-    let viewerId: UUID
-    init(_ request: ServerScreenSharingRequest) {
-      workspaceId = request.workspaceId; paneId = request.paneId; viewerId = request.viewerId
-    }
-  }
+  private typealias Owner = ScreenSharingStreamOwner
 
-  private final class Session {
+  private final class Session: ScreenSharingStreamSession {
     let udid: String
     let peer: any SimulatorStreamPeer
+    let attempt: UUID
+    let token: String?
     var state = "connecting"
     var expiresAt: TimeInterval
-    init(udid: String, peer: any SimulatorStreamPeer, expiresAt: TimeInterval) {
-      self.udid = udid; self.peer = peer; self.expiresAt = expiresAt
+    init(udid: String, peer: any SimulatorStreamPeer, attempt: UUID, token: String?, expiresAt: TimeInterval) {
+      self.udid = udid; self.peer = peer; self.attempt = attempt; self.token = token; self.expiresAt = expiresAt
     }
   }
 
@@ -92,6 +87,7 @@ final class SimulatorStreamHost {
     init(control: SimulatorDeviceControl) { self.control = control }
   }
 
+  private let identity = ScreenSharingStreamIdentity()
   private var sessions: [Owner: Session] = [:]
   private var devices: [String: Device] = [:]
   private var watchdog: Task<Void, Never>?
@@ -100,34 +96,52 @@ final class SimulatorStreamHost {
   private var now: TimeInterval { ProcessInfo.processInfo.systemUptime }
 
   func handle(_ request: ServerScreenSharingRequest) async -> ServerScreenSharingReply {
+    await identity.describing(await respond(to: request), for: request)
+  }
+
+  private func respond(to request: ServerScreenSharingRequest) async -> ServerScreenSharingReply {
     guard !isShutdown else { return .init(status: "stopped") }
-    guard request.version == 1 else { return .init(status: "unavailable", message: "Update Codevisor on this Mac.") }
+    guard request.version == 1 else { return Self.updateNeeded }
     guard let udid = SimulatorStreamTarget.udid(from: request.displayId) else {
       return .init(status: "failed", message: "Invalid simulator.")
     }
+
     expireSessions()
-    let owner = Owner(request)
     switch request.operation {
-    case .capabilities:
-      return capabilities(request, udid: udid)
-    case .stop:
-      if let session = sessions[owner] { end(owner: owner, session: session) }
-      return .init(status: "stopped")
-    case .setScale:
-      return .init(status: "unsupported", message: "A simulator's scale can't be set.")
-    case .heartbeat:
-      guard let session = sessions[owner], session.udid == udid else {
-        return .init(status: "stopped", message: "The simulator stopped streaming.")
-      }
-      guard (try? SimulatorRuntime.device(udid: udid)).map(SimulatorRuntime.isBooted) == true else {
-        end(owner: owner, session: session)
-        return .init(status: "stopped", message: "The simulator shut down.")
-      }
-      session.expiresAt = now + Self.lifetime
-      return .init(status: session.state)
-    case .start, .restart:
-      return await start(request, owner: owner, udid: udid)
+    case .capabilities: return capabilities(request, udid: udid)
+    case .stop: return stop(request)
+    case .setScale: return .init(status: "unsupported", message: "A simulator's scale can't be set.")
+    case .heartbeat: return heartbeat(request, udid: udid)
+    case .start, .restart: return await admit(request, udid: udid)
     }
+  }
+
+  private func stop(_ request: ServerScreenSharingRequest) -> ServerScreenSharingReply {
+    if let owner = identity.owner(stoppedBy: request, among: sessions), let session = sessions[owner] {
+      end(owner: owner, session: session)
+    }
+    return .init(status: "stopped")
+  }
+
+  private func heartbeat(_ request: ServerScreenSharingRequest, udid: String) -> ServerScreenSharingReply {
+    guard let owner = identity.owner(heartbeating: request, among: sessions), let session = sessions[owner],
+      session.udid == udid
+    else { return .init(status: "stopped", message: "The simulator stopped streaming.") }
+    guard (try? SimulatorRuntime.device(udid: udid)).map(SimulatorRuntime.isBooted) == true else {
+      end(owner: owner, session: session)
+      return Self.nothingToView(status: "stopped", message: "The simulator shut down.")
+    }
+
+    session.expiresAt = now + Self.lifetime
+    return .init(status: session.state)
+  }
+
+  private func admit(_ request: ServerScreenSharingRequest, udid: String) async -> ServerScreenSharingReply {
+    if let refusal = await identity.refusal(toStart: request) { return refusal }
+
+    let owner = identity.begin(request, target: udid)
+    defer { identity.finish(request, as: owner) }
+    return await start(request, owner: owner, udid: udid)
   }
 
   private func capabilities(_ request: ServerScreenSharingRequest, udid: String) -> ServerScreenSharingReply {
@@ -135,7 +149,7 @@ final class SimulatorStreamHost {
     do {
       let device = try SimulatorRuntime.device(udid: udid)
       guard SimulatorRuntime.isBooted(device) else {
-        return .init(status: "starting", message: "The simulator is starting.")
+        return Self.nothingToView(status: "starting", message: "The simulator is starting.")
       }
       var reply = ServerScreenSharingReply(
         status: "available",
@@ -166,7 +180,11 @@ final class SimulatorStreamHost {
       }
       guard let capture = device.capture, let size else {
         release(udid: udid)
-        return .init(status: "starting", message: "The simulator's screen isn't ready yet.")
+        return Self.nothingToView(status: "starting", message: "The simulator's screen isn't ready yet.")
+      }
+      guard identity.isStillStarting(request, as: owner) else {
+        release(udid: udid)
+        return .init(status: "stopped")
       }
       let peer: any SimulatorStreamPeer
       do {
@@ -180,16 +198,19 @@ final class SimulatorStreamHost {
         release(udid: udid)
         return .init(status: "stopped")
       }
-      return try await connect(peer, capture: capture, owner: owner, udid: udid)
+      let session = Session(
+        udid: udid, peer: peer, attempt: request.viewerId, token: identity.token(for: owner),
+        expiresAt: now + Self.lifetime)
+      return try await connect(session, capture: capture, owner: owner)
     } catch {
       return .init(status: "failed", message: error.localizedDescription)
     }
   }
 
   private func connect(
-    _ peer: any SimulatorStreamPeer, capture: SimulatorScreenCapture, owner: Owner, udid: String
+    _ session: Session, capture: SimulatorScreenCapture, owner: Owner
   ) async throws -> ServerScreenSharingReply {
-    let session = Session(udid: udid, peer: peer, expiresAt: now + Self.lifetime)
+    let (peer, udid) = (session.peer, session.udid)
     sessions[owner] = session
     peer.onConnectionChanged = { [weak self, weak session] state in
       guard let self, let session, self.sessions[owner] === session else { return }
@@ -209,7 +230,7 @@ final class SimulatorStreamHost {
       }
       guard !isShutdown, sessions[owner] === session else { throw CancellationError() }
       capture.add(peer)
-      return .connecting(grant)
+      return .connecting(grant, session: session.token)
     } catch {
       if sessions[owner] === session { end(owner: owner, session: session) }
       throw error
@@ -370,6 +391,18 @@ final class SimulatorStreamHost {
         self.expireSessions()
       }
     }
+  }
+
+  private static func nothingToView(status: String, message: String) -> ServerScreenSharingReply {
+    var reply = ServerScreenSharingReply(status: status, message: message)
+    reply.reason = .nothingToView
+    return reply
+  }
+
+  private static var updateNeeded: ServerScreenSharingReply {
+    var reply = ServerScreenSharingReply(status: "unavailable", message: "Update Codevisor on this Mac.")
+    reply.reason = .updateNeeded
+    return reply
   }
 
   private static let noXcode = ServerScreenSharingReply(
