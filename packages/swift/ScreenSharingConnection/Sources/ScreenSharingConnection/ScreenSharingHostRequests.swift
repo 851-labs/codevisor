@@ -44,12 +44,17 @@ final class ScreenSharingHostRequests {
 
   func capabilities() async throws -> ScreenSharingHostReply {
     var request = ServerScreenSharingRequest(
-      operation: .capabilities, workspaceId: machine.installId, paneId: machine.installId, viewerId: UUID())
+      operation: .capabilities, workspaceId: machine.installId, paneId: machine.installId, viewerId: UUID(),
+      displayId: machine.target)
     request.app = app
     let reply = try await retrying(request)
-    guard reply.canShare else { throw reply.end() }
+    guard reply.canShare else { throw refusal(reply) }
 
     return reply
+  }
+
+  func refusal(_ reply: ScreenSharingHostReply) -> ScreenSharingAttemptEnd {
+    machine.target == nil ? reply.end() : reply.targetRefusal()
   }
 
   func start(_ start: Start) async throws -> ScreenSharingHostReply {
@@ -138,6 +143,7 @@ final class ScreenSharingHostRequests {
     guard !start.capabilities.ownsSessionsByApp else {
       return Owner(workspaceId: machine.installId, paneId: machine.installId, viewerId: viewerId, app: app)
     }
+    if machine.target != nil { return try paneOwner(viewerId: viewerId) }
     guard let workspaceId = machine.liveWorkspace() else { throw ScreenSharingAttemptEnd.refused(.noWorkspace) }
 
     let identity = ScreenSharingLegacyIdentity(workspaceId: workspaceId, installId: machine.installId)
@@ -148,11 +154,17 @@ final class ScreenSharingHostRequests {
     return Owner(workspaceId: identity.workspaceId, paneId: identity.paneId, viewerId: viewerId, app: nil)
   }
 
+  private func paneOwner(viewerId: UUID) throws -> Owner {
+    guard let pane = machine.attachedPane() else { throw ScreenSharingAttemptEnd.refused(.noWorkspace) }
+
+    return Owner(workspaceId: pane.workspaceId, paneId: pane.paneId, viewerId: viewerId, app: nil)
+  }
+
   private func send(
     _ start: Start, from owner: Owner
   ) async throws -> (ScreenSharingHostReply, ServerScreenSharingChallenge?) {
     var request = request(.start, from: owner)
-    request.displayId = start.displayId
+    request.displayId = machine.target ?? start.displayId
     request.engine = ScreenSharingHostReply.engine
     request.media = start.media
     request.chroma = start.chroma
@@ -197,7 +209,8 @@ final class ScreenSharingHostRequests {
     _ operation: ServerScreenSharingRequest.Operation, from owner: Owner
   ) -> ServerScreenSharingRequest {
     var request = ServerScreenSharingRequest(
-      operation: operation, workspaceId: owner.workspaceId, paneId: owner.paneId, viewerId: owner.viewerId)
+      operation: operation, workspaceId: owner.workspaceId, paneId: owner.paneId, viewerId: owner.viewerId,
+      displayId: machine.target)
     request.session = owner.session
     return request
   }

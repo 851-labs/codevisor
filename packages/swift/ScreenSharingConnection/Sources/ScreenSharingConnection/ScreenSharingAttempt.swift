@@ -49,7 +49,8 @@ final class ScreenSharingAttempt {
 
   func run() async -> ScreenSharingAttemptEnd? {
     let deadline = ScreenSharingAttemptDeadline(
-      clock: clock, isLinkReconnecting: { [host] in host.isLinkReconnecting },
+      clock: clock, heartbeatInterval: machine.heartbeatInterval,
+      isLinkReconnecting: { [host] in host.isLinkReconnecting },
       isHostRestartingCapture: { [weak self] in self?.notice != nil },
       onHint: { [weak self] in self?.hint() })
     self.deadline = deadline
@@ -101,7 +102,7 @@ final class ScreenSharingAttempt {
     let displays = capabilities.base.displays
     report(.transport(.sharing(display: nil, displays: displays)))
 
-    if capabilities.base.provider == "vnc", let makeVNC = machine.makeVNCTransport {
+    if machine.target == nil, capabilities.base.provider == "vnc", let makeVNC = machine.makeVNCTransport {
       guard let display = displays.first(where: { $0.id == plan.preferredDisplayId }) ?? displays.first else {
         throw ScreenSharingAttemptEnd.refused(.noDisplay)
       }

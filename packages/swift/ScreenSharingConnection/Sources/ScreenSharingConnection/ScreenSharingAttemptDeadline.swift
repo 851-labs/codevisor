@@ -1,6 +1,7 @@
 @MainActor
 final class ScreenSharingAttemptDeadline {
   private let clock: ScreenSharingConnectionClock
+  private let heartbeatInterval: Duration
   private let isLinkReconnecting: @MainActor () -> Bool
   private let isHostRestartingCapture: @MainActor () -> Bool
   private let onHint: @MainActor () -> Void
@@ -8,10 +9,12 @@ final class ScreenSharingAttemptDeadline {
   private var isMet = false
 
   init(
-    clock: ScreenSharingConnectionClock, isLinkReconnecting: @escaping @MainActor () -> Bool,
+    clock: ScreenSharingConnectionClock, heartbeatInterval: Duration,
+    isLinkReconnecting: @escaping @MainActor () -> Bool,
     isHostRestartingCapture: @escaping @MainActor () -> Bool, onHint: @escaping @MainActor () -> Void
   ) {
     self.clock = clock
+    self.heartbeatInterval = heartbeatInterval
     self.isLinkReconnecting = isLinkReconnecting
     self.isHostRestartingCapture = isHostRestartingCapture
     self.onHint = onHint
@@ -40,7 +43,7 @@ final class ScreenSharingAttemptDeadline {
     onHint()
     try await waitForFirstFrame(ScreenSharingConnectionDeadlines.firstFrame - hint)
     while isHostRestartingCapture() {
-      while isHostRestartingCapture() { try await clock.sleep(ScreenSharingConnectionDeadlines.heartbeatInterval) }
+      while isHostRestartingCapture() { try await clock.sleep(heartbeatInterval) }
       try await waitForFirstFrame(ScreenSharingConnectionDeadlines.firstFrame)
     }
   }

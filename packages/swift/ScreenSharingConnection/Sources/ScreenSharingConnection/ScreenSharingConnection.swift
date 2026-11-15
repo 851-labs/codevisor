@@ -17,6 +17,7 @@ public final class ScreenSharingConnection {
   public private(set) var isEnded = false
   public var preferredDisplayId: String?
   public let machineId: String
+  public let target: String?
 
   @ObservationIgnored private let machine: ScreenSharingMachine
   @ObservationIgnored private let clock: ScreenSharingConnectionClock
@@ -31,6 +32,7 @@ public final class ScreenSharingConnection {
     self.machine = machine
     self.clock = clock
     machineId = machine.id
+    target = machine.target
     host = ScreenSharingHostRequests(machine: machine, clock: clock)
   }
 
@@ -45,12 +47,14 @@ public final class ScreenSharingConnection {
 
   public func workspaceAppeared() { handle(.workspaceAppeared) }
 
+  public func targetAppeared() { handle(.targetAppeared) }
+
   public func systemWoke() { handle(.systemWoke) }
 
   public func restart() { handle(.restartRequested) }
 
   public func switchDisplay(to displayId: String) {
-    guard preferredDisplayId != displayId else { return }
+    guard target == nil, preferredDisplayId != displayId else { return }
 
     preferredDisplayId = displayId
     guard state == .reconnecting || display?.id != displayId else { return }

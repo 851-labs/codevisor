@@ -13,6 +13,8 @@ final class ScreenSharingMediaSessionTransport: ScreenSharingTransport {
   private let host: ScreenSharingHostRequests
   private let connector: ScreenSharingV2Connector
   private let presentsTiles: Bool
+  private let target: String?
+  private let heartbeatInterval: Duration
   private let clock: ScreenSharingConnectionClock
   private var plan: Plan
   private var session: (any ScreenSharingV2StartableSession)?
@@ -29,6 +31,8 @@ final class ScreenSharingMediaSessionTransport: ScreenSharingTransport {
     self.host = host
     connector = machine.connector
     presentsTiles = machine.presentsTiles
+    target = machine.target
+    heartbeatInterval = machine.heartbeatInterval
     self.clock = clock
     self.plan = plan
     lastAnswer = clock.now()
@@ -97,7 +101,7 @@ final class ScreenSharingMediaSessionTransport: ScreenSharingTransport {
       chroma: chroma, intent: plan.intent)
     let reply = try await host.start(start)
     if let grant = reply.grant { return (reply, grant) }
-    guard reply.lacksTheDisplay, !ownedByApp else { throw reply.end() }
+    guard target == nil, reply.lacksTheDisplay, !ownedByApp else { throw host.refusal(reply) }
     guard mayRefresh else { throw ScreenSharingAttemptEnd.refused(.noDisplay) }
 
     plan.capabilities = try await host.capabilities()
@@ -110,6 +114,7 @@ final class ScreenSharingMediaSessionTransport: ScreenSharingTransport {
   }
 
   private func displayId(ownedByApp: Bool) throws -> String? {
+    if let target { return target }
     guard !ownedByApp else { return plan.preferredDisplayId }
 
     let displays = plan.capabilities.base.displays
@@ -129,9 +134,10 @@ final class ScreenSharingMediaSessionTransport: ScreenSharingTransport {
   }
 
   private var requestedDisplay: ServerScreenSharingDisplay? {
+    let displays = plan.capabilities.base.displays
+    if let target { return displays.first { $0.id == target } }
     guard !plan.capabilities.ownsSessionsByApp else { return nil }
 
-    let displays = plan.capabilities.base.displays
     return displays.first { $0.id == plan.preferredDisplayId } ?? displays.first
   }
 
@@ -146,7 +152,7 @@ final class ScreenSharingMediaSessionTransport: ScreenSharingTransport {
   private func heartbeats() async -> ScreenSharingAttemptEnd? {
     lastAnswer = clock.now()
     while !Task.isCancelled {
-      guard (try? await clock.sleep(ScreenSharingConnectionDeadlines.heartbeatInterval)) != nil else { return nil }
+      guard (try? await clock.sleep(heartbeatInterval)) != nil else { return nil }
       guard !Task.isCancelled else { return nil }
 
       let silence = clock.now() - lastAnswer

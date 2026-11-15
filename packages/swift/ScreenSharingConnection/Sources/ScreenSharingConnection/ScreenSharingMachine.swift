@@ -15,6 +15,9 @@ public struct ScreenSharingMachine {
   public var liveWorkspace: @MainActor () -> UUID?
   public var presentsTiles: Bool
   public var makeVNCTransport: MakeVNCTransport?
+  public var target: String?
+  public var attachedPane: @MainActor () -> ScreenSharingLegacyIdentity? = { nil }
+  public var heartbeatInterval = ScreenSharingConnectionDeadlines.heartbeatInterval
 
   public init(
     id: String, channel: @escaping @MainActor () -> any ScreenSharingHostChannel, connector: ScreenSharingV2Connector,

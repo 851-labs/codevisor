@@ -1,26 +1,36 @@
 @MainActor
 public final class ScreenSharingConnectionManager {
+  private struct Key: Hashable {
+    let machineId: String
+    let target: String?
+  }
+
   private let clock: ScreenSharingConnectionClock
-  private var connections: [String: ScreenSharingConnection] = [:]
+  private var connections: [Key: ScreenSharingConnection] = [:]
 
   public init(clock: ScreenSharingConnectionClock = .live) {
     self.clock = clock
   }
 
   public func connection(for machine: ScreenSharingMachine) -> ScreenSharingConnection {
-    if let existing = connections[machine.id] { return existing }
+    let key = Key(machineId: machine.id, target: machine.target)
+    if let existing = connections[key] { return existing }
 
     let connection = ScreenSharingConnection(machine: machine, clock: clock)
-    connections[machine.id] = connection
+    connections[key] = connection
     return connection
   }
 
   public func machineCameOnline(_ machineId: String) {
-    connections[machineId]?.machineCameOnline()
+    for connection in connections(of: machineId) { connection.machineCameOnline() }
   }
 
   public func workspaceAppeared(_ machineId: String) {
-    connections[machineId]?.workspaceAppeared()
+    for connection in connections(of: machineId) { connection.workspaceAppeared() }
+  }
+
+  public func targetAppeared(_ machineId: String, target: String) {
+    connections[Key(machineId: machineId, target: target)]?.targetAppeared()
   }
 
   public func systemWoke() {
@@ -28,11 +38,19 @@ public final class ScreenSharingConnectionManager {
   }
 
   public func remove(_ machineId: String) {
-    connections.removeValue(forKey: machineId)?.end()
+    for key in connections.keys where key.machineId == machineId { connections.removeValue(forKey: key)?.end() }
+  }
+
+  public func remove(_ machineId: String, target: String) {
+    connections.removeValue(forKey: Key(machineId: machineId, target: target))?.end()
   }
 
   public func shutdown() {
     for connection in connections.values { connection.end() }
     connections.removeAll()
+  }
+
+  private func connections(of machineId: String) -> [ScreenSharingConnection] {
+    connections.filter { $0.key.machineId == machineId }.map(\.value)
   }
 }

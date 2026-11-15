@@ -6,6 +6,11 @@ public struct ScreenSharingLegacyIdentity: Equatable, Sendable {
   public let workspaceId: UUID
   public let paneId: UUID
 
+  public init(workspaceId: UUID, paneId: UUID) {
+    self.workspaceId = workspaceId
+    self.paneId = paneId
+  }
+
   public init(workspaceId: UUID, installId: UUID) {
     self.workspaceId = workspaceId
     paneId = Self.mix(workspaceId, installId)

@@ -15,6 +15,7 @@ struct ScreenSharingConnectionStateMachine: Equatable, Sendable {
     case lingerElapsed
     case machineCameOnline
     case workspaceAppeared
+    case targetAppeared
     case systemWoke
     case ended
   }
@@ -64,6 +65,7 @@ struct ScreenSharingConnectionStateMachine: Equatable, Sendable {
     case .lingerElapsed: return unseen == .lingering ? stopBeingUnseen() : nil
     case .machineCameOnline: return recover(from: .cantReach)
     case .workspaceAppeared: return recover(from: .noWorkspace)
+    case .targetAppeared: return targetAppeared()
     case .systemWoke: return state == .live ? attemptEnded(.dropped(.cantReach)) : nil
     case .ended: return end()
     }
@@ -130,6 +132,12 @@ struct ScreenSharingConnectionStateMachine: Equatable, Sendable {
     case .off, .connecting:
       return nil
     }
+  }
+
+  private mutating func targetAppeared() -> Command? {
+    guard case .failed(.nothingToView) = state, visible else { return nil }
+
+    return connect(open: false)
   }
 
   private mutating func recover(from reason: ScreenSharingFailureReason) -> Command? {
