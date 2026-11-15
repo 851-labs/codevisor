@@ -19,6 +19,7 @@ public struct ControlLease {
     public var automaticRetries: [Date] = []
     public var revokeReason: String?
     public var retriedRequest = false
+    public var retriesAFirstRefusal = false
     public var unansweredRequests: Set<UUID> = []
     public var wantsControl = false
 
@@ -29,7 +30,9 @@ public struct ControlLease {
   }
 
   public enum Action {
+    case askedAgainAfterRefusal
     case channelSendFailed(reason: String)
+    case connectionWentLive
     case controlReleased(reason: String?)
     case controlRequested
     case delegate(Delegate)
@@ -48,6 +51,7 @@ public struct ControlLease {
 
   static let retriesPerMinute = 3
   static let settlingTime: TimeInterval = 4
+  static let refusalRetryDelay: Duration = .seconds(1)
 
   private static let logger = Logger(subsystem: "com.851labs.Codevisor", category: "ScreenSharing")
 
@@ -61,6 +65,14 @@ public struct ControlLease {
   public var body: some ReducerOf<Self> {
     Reduce { state, action in
       switch action {
+      case .askedAgainAfterRefusal:
+        guard state.phase == .requesting, state.requestID == nil, state.available else { return .none }
+        return request(&state, isRetry: false)
+
+      case .connectionWentLive:
+        state.retriesAFirstRefusal = true
+        return .none
+
       case .channelSendFailed(let reason):
         note("could not send: \(reason)", state)
         return pause(&state)
@@ -107,7 +119,10 @@ public struct ControlLease {
         }
         note("request \(Self.short(request)) refused: \(reason)", state)
         state.requestID = nil
-        return release(&state, reason: state.revokeReason ?? reason)
+        guard state.retriesAFirstRefusal, state.wantsControl, state.available else {
+          return release(&state, reason: state.revokeReason ?? reason)
+        }
+        return askAgainSoon(&state)
 
       case .event(.message(.revoked(let lease, let reason))):
         guard state.lease == lease else { return .none }
@@ -184,6 +199,7 @@ public struct ControlLease {
     if let later = state.requestID, later != request { state.unansweredRequests.insert(later) }
     state.requestID = nil
     state.retriedRequest = false
+    state.retriesAFirstRefusal = false
     state.revokeReason = nil
     state.lease = lease
     state.phase = .controlling
@@ -227,6 +243,16 @@ public struct ControlLease {
       request(&state, isRetry: false))
     state.revokeReason = reason
     return effect
+  }
+
+  private func askAgainSoon(_ state: inout State) -> Effect<Action> {
+    note("the host was not ready for control yet; asking again in a second", state)
+    state.retriesAFirstRefusal = false
+    return .run { [clock] send in
+      try await clock.sleep(for: Self.refusalRetryDelay)
+      await send(.askedAgainAfterRefusal)
+    }
+    .cancellable(id: CancelID.requestDeadline(state.id), cancelInFlight: true)
   }
 
   private func sent(_ request: UUID, _ state: State) -> Bool {

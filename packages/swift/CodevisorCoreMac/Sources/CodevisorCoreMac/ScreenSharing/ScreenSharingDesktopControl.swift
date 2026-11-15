@@ -45,6 +45,7 @@ final class ScreenSharingDesktopControl {
       for await event in endpoint.controlEvents() { lease?.send(.event(event)) }
     }
     endpoint.moveInput(to: controller)
+    if isLive { lease.send(.connectionWentLive) }
     if controller != nil { ask() }
   }
 
@@ -52,6 +53,7 @@ final class ScreenSharingDesktopControl {
     guard live != isLive else { return }
 
     isLive = live
+    if live { lease?.send(.connectionWentLive) }
     if live, controller != nil { ask() }
   }
 

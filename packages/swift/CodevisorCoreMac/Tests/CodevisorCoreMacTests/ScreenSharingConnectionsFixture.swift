@@ -28,6 +28,7 @@ final class ScreenSharingConnectionsFixture {
   @ObservationIgnored let media = FakeMedia()
   @ObservationIgnored let signer = FakeSigner()
   @ObservationIgnored let clock = TestClock()
+  @ObservationIgnored let controlClock = TestClock()
   @ObservationIgnored let wakeCenter = NotificationCenter()
   @ObservationIgnored let preferences = ScreenSharingMachinePreferences(
     defaults: UserDefaults(suiteName: "screen-sharing-tests-\(UUID().uuidString)") ?? .standard)
@@ -105,6 +106,7 @@ final class ScreenSharingConnectionsFixture {
       },
       appName: { Self.appName })
     source.preferences = preferences
+    source.controlClock = controlClock
     return source
   }
 

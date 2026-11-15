@@ -95,6 +95,47 @@ struct ControlLeaseRevokeTests {
     }
   }
 
+  @Test func aFirstRefusalAfterGoingLiveIsAskedAgainOnceASecondLater() async {
+    await withMainSerialExecutor {
+      let client = FakeEndpointClient()
+      let clock = Clocks.TestClock()
+      let store = makeStore(client, clock: clock)
+      await store.send(.event(.availability(true)))
+      await store.send(.connectionWentLive)
+      await store.send(.controlRequested)
+      let notReady = "Wait for live video before requesting control."
+
+      await store.send(.event(.message(.denied(request: UUID(0), reason: notReady))))
+      #expect(store.state.phase == .requesting)
+      expectNoDifference(store.state.message, nil)
+      await clock.advance(by: .milliseconds(999))
+      expectNoDifference(requests(client).count, 1)
+      await clock.advance(by: .milliseconds(1))
+      await store.skipReceivedActions(strict: false)
+      expectNoDifference(requests(client), [.request(id: UUID(0)), .request(id: UUID(1))])
+
+      await store.send(.event(.message(.denied(request: UUID(1), reason: notReady))))
+      await store.skipReceivedActions(strict: false)
+      #expect(store.state.phase == .viewing)
+      expectNoDifference(store.state.message, notReady, "a second refusal is shown")
+    }
+  }
+
+  @Test func aRefusalWithoutAFreshConnectionIsShownAtOnce() async {
+    await withMainSerialExecutor {
+      let client = FakeEndpointClient()
+      let store = await makeControllingStore(client)
+      await store.send(.controlReleased(reason: nil))
+      await store.send(.controlRequested)
+
+      await store.send(.event(.message(.denied(request: UUID(1), reason: "Allow Codevisor in Accessibility."))))
+      await store.skipReceivedActions(strict: false)
+
+      #expect(store.state.phase == .viewing)
+      expectNoDifference(store.state.message, "Allow Codevisor in Accessibility.")
+    }
+  }
+
   @Test(arguments: [true, false])
   func aLeaseGivenBackOnPurposeIsNotAskedForAgain(byHiding: Bool) async {
     await withMainSerialExecutor {
@@ -127,6 +168,16 @@ struct ControlLeaseRevokeTests {
   private func makeControllingStore(
     _ client: FakeEndpointClient, clock: Clocks.TestClock<Duration> = Clocks.TestClock()
   ) async -> TestStoreOf<ControlLease> {
+    let store = makeStore(client, clock: clock)
+    await store.send(.event(.availability(true)))
+    await store.send(.controlRequested)
+    await store.send(.event(.message(.grant(request: UUID(0), lease: lease))))
+    return store
+  }
+
+  private func makeStore(
+    _ client: FakeEndpointClient, clock: Clocks.TestClock<Duration>
+  ) -> TestStoreOf<ControlLease> {
     let store = TestStore(initialState: ControlLease.State(endpoint: endpoint)) {
       ControlLease()
     } withDependencies: { [now] in
@@ -136,9 +187,6 @@ struct ControlLeaseRevokeTests {
       $0.date = DateGenerator { now.value }
     }
     store.exhaustivity = .off
-    await store.send(.event(.availability(true)))
-    await store.send(.controlRequested)
-    await store.send(.event(.message(.grant(request: UUID(0), lease: lease))))
     return store
   }
 }

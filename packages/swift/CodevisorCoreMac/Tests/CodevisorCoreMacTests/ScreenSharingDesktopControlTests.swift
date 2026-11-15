@@ -50,6 +50,24 @@ struct ScreenSharingDesktopControlTests {
     #expect(statesAtRequest == [.live], "a Mac host refuses control until it has video")
   }
 
+  @Test("A host that is not ready for control on the first frame is asked again, and control arrives")
+  func asksAgainWhenTheHostWasNotReady() async throws {
+    let host = Host()
+    let tab = host.fixture.surface(.tab)
+    tab.show()
+    await awaitObserved { host.requests.count == 1 }
+    host.session.controlChannel.deliver(
+      .denied(request: host.requests[0], reason: "Wait for live video before requesting control."))
+    await host.fixture.controlClock.waitForSleep(ControlLease.refusalRetryDelay)
+    #expect(tab.snapshot.control?.message == nil, "no banner for a refusal that is retried")
+    #expect(host.requests.count == 1)
+
+    host.fixture.controlClock.advance(by: ControlLease.refusalRetryDelay)
+    await awaitObserved { host.requests.count == 2 }
+    await host.grant()
+    await host.controls(tab)
+  }
+
   @Test("Clicking into another surface moves control locally: nothing goes to the host and both keep their picture")
   func movesControlWithoutTheHost() async throws {
     let host = Host()
