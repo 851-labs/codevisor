@@ -1,3 +1,4 @@
+import AppKit
 import CodevisorCore
 import CodevisorTestSupport
 import Foundation
@@ -30,6 +31,25 @@ struct ScreenSharingDesktopControlTests {
     #expect(host.sent == [.request(id: host.requests[0])], "lease \(lease) is asked for once")
   }
 
+  @Test("Control is asked for once the picture is live, not when the session opens")
+  func asksOnlyOnceLive() async throws {
+    let host = Host()
+    host.session.deliversVideo = false
+    var statesAtRequest: [ScreenSharingConnectionState?] = []
+    host.session.controlChannel.onSend = { [fixture = host.fixture] in
+      if case .request = $0 { statesAtRequest.append(try? fixture.connection.state) }
+    }
+    let tab = host.fixture.surface(.tab)
+    tab.show()
+    await awaitObserved { tab.snapshot.endpoint != nil && tab.snapshot.control != nil }
+    #expect(tab.snapshot.connection != .live)
+
+    host.session.deliverFrame()
+    await awaitObserved { host.requests.count == 1 }
+
+    #expect(statesAtRequest == [.live], "a Mac host refuses control until it has video")
+  }
+
   @Test("Clicking into another surface moves control locally: nothing goes to the host and both keep their picture")
   func movesControlWithoutTheHost() async throws {
     let host = Host()
@@ -58,11 +78,17 @@ struct ScreenSharingDesktopControlTests {
     await host.grant()
     await host.controls(tab)
 
+    let (tabWindow, desktopWindow) = (NSWindow(), NSWindow())
+    tabWindow.contentView?.addSubview(try #require(tab.surface.videoView()))
+    desktopWindow.contentView?.addSubview(try #require(window.surface.videoView()))
+    #expect(tabWindow.firstResponder !== tab.surface.videoView(), "a surface that merely shows takes no focus")
+
     window.surface.openedByUser()
     #expect(tab.snapshot.hasControl, "not before it is on screen")
     window.show()
 
     #expect(window.snapshot.hasControl && tab.snapshot.control == nil && host.sent.count == 1)
+    #expect(desktopWindow.firstResponder === window.surface.videoView(), "its picture gets the keyboard, no click")
     window.hide()
     window.show()
     #expect(tab.snapshot.hasControl, "coming back on screen later does not take control again")
@@ -110,6 +136,22 @@ struct ScreenSharingDesktopControlTests {
     await awaitObserved { host.requests.count == 2 }
     #expect(tab.snapshot.control != nil && window.snapshot.control == nil, "the surface that asked gets it")
     #expect(!host.fixture.preferences.viewOnly(machineId: Fixture.machineId))
+  }
+
+  @Test("A system key pressed in View takes control for this session and leaves the saved setting on View")
+  func leavesTheSavedModeAloneForASystemKey() async throws {
+    let host = Host()
+    let tab = host.fixture.surface(.tab)
+    tab.surface.setMode(.view)
+    tab.show()
+    await awaitObserved { tab.snapshot.endpoint != nil }
+    #expect(host.requests.isEmpty)
+
+    tab.surface.controlForThisSession()
+    await awaitObserved { host.requests.count == 1 }
+
+    #expect(tab.snapshot.mode == .control && tab.snapshot.control != nil)
+    #expect(host.fixture.preferences.viewOnly(machineId: Fixture.machineId), "the machine is still saved as View")
   }
 
   @Test("Dynamic Resolution is one value per machine and does not change when control moves")

@@ -112,7 +112,7 @@ public struct ScreenSharingViewer {
         let takesControl = !state.hasControl
         return .run { [endpointClient, surface] _ in
           await endpointClient.tapSystemKey(id, key)
-          if takesControl { await surface.setMode(.control) }
+          if takesControl { await surface.controlForThisSession() }
         }
       }
     }

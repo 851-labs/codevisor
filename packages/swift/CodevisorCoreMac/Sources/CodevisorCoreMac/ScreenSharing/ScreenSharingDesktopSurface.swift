@@ -77,6 +77,10 @@ public final class ScreenSharingDesktopSurface {
     bound?.desktop.setMode(mode, from: id)
   }
 
+  public func controlForThisSession() {
+    bound?.desktop.setMode(.control, from: id, remembered: false)
+  }
+
   public func setDynamicResolution(_ enabled: Bool) {
     bound?.desktop.setDynamicResolution(enabled)
   }
