@@ -147,6 +147,25 @@ struct ScreenSharingDesktopSurfaceTests {
     #expect(fixture.host.starts.map(\.workspaceId) == [shown.id])
   }
 
+  @Test("A machine's preview that moves to another workspace asks for nothing, and an old host gets that one next")
+  func followsTheWorkspaceAMachinesPreviewIsShownIn() async throws {
+    let fixture = Fixture(host: .old())
+    let (first, second) = (Fixture.workspace(), Fixture.workspace())
+    fixture.workspaces = [first, second]
+    let shownIn = LockIsolated(first.id)
+    let preview = fixture.surface(.watcher, shownIn: { shownIn.value })
+    preview.show()
+    try await fixture.goLive()
+
+    shownIn.setValue(second.id)
+    preview.show()
+    #expect(fixture.host.starts.map(\.workspaceId) == [first.id], "a live connection is left alone")
+    fixture.wake()
+    await fixture.settle(.reconnecting)
+    try await fixture.goLive()
+    #expect(fixture.host.starts.map(\.workspaceId) == [first.id, second.id])
+  }
+
   @Test("A key that can't be read shows as a failure, and Retry tries again")
   func showsAnUnreadableKeyAsAFailure() async throws {
     let fixture = Fixture()

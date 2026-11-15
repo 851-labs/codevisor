@@ -53,11 +53,10 @@ extension ChatScreen {
   private var openDesktopAction: (() -> Void)? {
     guard let workspaceId = controller.hostWorkspaceId,
       let workspace = environment.workspaces.workspace(id: workspaceId),
-      let desktop = MachineDesktopRegistry.shared.session(
-        for: workspace, project: controller.project, environment: environment)
+      let desktop = environment.machines.desktopMachine(for: workspace.serverId)
     else { return nil }
     return { [environment] in
-      MachineDesktopWindows.shared.present(desktop, machineId: workspace.serverId, environment: environment)
+      MachineDesktopWindows.shared.present(desktop, fromWorkspace: workspace.id, environment: environment)
     }
   }
 

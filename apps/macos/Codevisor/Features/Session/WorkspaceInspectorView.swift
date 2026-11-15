@@ -35,7 +35,7 @@ struct WorkspaceInspectorView: View {
   let activity: Date?
   let subscriptionsRevision: Int
   let client: any CodevisorServerClienting
-  let desktop: MachineDesktopSession?
+  let desktop: CodevisorMachine?
   let onOpenDesktop: () -> Void
   let onReload: () -> Void
   let onOpen: (Destination) -> Void
@@ -219,7 +219,8 @@ struct WorkspaceInspectorView: View {
     case .harness: harness
     case .machine:
       WorkspaceInspectorMachineView(
-        serverId: workspace.serverId, isActive: self.tab == .machine, client: client, desktop: desktop,
+        serverId: workspace.serverId, isActive: self.tab == .machine, client: client,
+        workspaceId: workspace.id, desktop: desktop,
         desktopExpansion: expansion("Desktop"),
         statsExpansion: expansion("Stats"), onOpenDesktop: onOpenDesktop)
     case .media: WorkspaceInspectorMediaView(model: media, onRetry: onReload)

@@ -29,76 +29,92 @@ final class ScreenSharingPane: Pane {
   private let machineId: String
   private let connection: (kind: String, address: String?)
   private let surface: ScreenSharingDesktopSurface?
+  private let workspace: ScreenSharingPaneWorkspace
+  private var isOnScreen = false
   private var observation: ObserveToken?
 
   var connectionName: String { machineName }
 
-  init(context: PaneContext, descriptor: PaneDescriptorState, role: ScreenSharingViewerRole = .tab) {
-    id = descriptor.id
+  convenience init(context: PaneContext, descriptor: PaneDescriptorState, role: ScreenSharingViewerRole = .tab) {
+    self.init(
+      id: descriptor.id, machine: context.machine, role: role,
+      workspace: ScreenSharingPaneWorkspace(context.workspaceId), preferences: descriptor.screenSharing ?? .init(),
+      attaches: context.workspaceId != nil)
+  }
+
+  init(
+    id: UUID = UUID(), machine: CodevisorMachine, role: ScreenSharingViewerRole, workspace: ScreenSharingPaneWorkspace,
+    preferences: ScreenSharingPanePreferences, attaches: Bool = true
+  ) {
+    self.id = id
     self.role = role
-    machineName = context.machine.name
-    machineId = context.machine.id
-    isLocal = context.machine.isLocal
-    connection = Self.connection(of: context.machine)
-    surface = Self.makeSurface(context: context, role: role)
-    store = surface.map { Self.makeStore(context: context, descriptor: descriptor, surface: $0) }
+    self.workspace = workspace
+    machineName = machine.name
+    machineId = machine.id
+    isLocal = machine.isLocal
+    connection = Self.connection(of: machine)
+    surface = attaches ? Self.makeSurface(machine: machine, role: role, workspace: workspace) : nil
+    store = surface.map { Self.makeStore(machine: machine, preferences: preferences, surface: $0) }
     guard let store else { return }
     surface?.onChange = { [weak store] in store?.send(.surfaceChanged($0)) }
     if let snapshot = surface?.snapshot { store.send(.surfaceChanged(snapshot)) }
-    observation = observe { [weak self] in
-      guard let self else { return }
-      store.endpoint?.onFocusChanged = self.onFocusChanged
-      store.endpoint?.onKeyboardReturned = { [weak self] in self?.onFocus?() }
-      if let endpoint = store.endpoint, let audio = endpoint.audio, self.soundAppliedTo != ObjectIdentifier(endpoint) {
-        self.soundAppliedTo = ObjectIdentifier(endpoint)
-        let saved = ScreenSharingMachinePreferences().sound(machineId: self.machineId)
-        audio.apply(.init(enabled: saved.enabled, volume: saved.volume))
-      }
-      if let endpoint = store.endpoint, self.savedSettingsAppliedTo != ObjectIdentifier(endpoint) {
-        self.savedSettingsAppliedTo = ObjectIdentifier(endpoint)
-        endpoint.highDynamicRange = ScreenSharingMachinePreferences().highDynamicRange(machineId: self.machineId)
-        endpoint.localShortcuts = self.savedKeyboard.localShortcuts
-      }
-      if let endpoint = store.endpoint, let clipboard = endpoint.clipboard {
-        let sharing = clipboard.sharing
-        let saved = ScreenSharingMachinePreferences().sharedClipboard(machineId: self.machineId)
-        if self.clipboardAppliedTo != ObjectIdentifier(endpoint) {
-          self.clipboardAppliedTo = ObjectIdentifier(endpoint)
-          clipboard.sharing = saved
-        } else if sharing != saved {
-          ScreenSharingMachinePreferences().setSharedClipboard(sharing, machineId: self.machineId)
-        }
-      }
-      let viewing = store.isLive
-      if viewing, !self.recordedViewing {
-        ScreenSharingMachinePreferences().setLastConnected(Date(), machineId: self.machineId)
-      }
-      self.recordedViewing = viewing
-      if store.dynamicResolutionRevision != self.persistedResolutionRevision {
-        self.persistedResolutionRevision = store.dynamicResolutionRevision
-        ScreenSharingMachinePreferences().setDynamicResolution(store.dynamicResolution, machineId: self.machineId)
-      }
-      let revision = store.preferencesRevision
-      guard revision != self.persistedRevision else { return }
-      self.persistedRevision = revision
-      self.onPreferencesChanged?(store.preferences)
-    }
+    observation = observe { [weak self] in self?.follow(store) }
   }
+
+  private func follow(_ store: StoreOf<ScreenSharingViewer>) {
+    store.endpoint?.onFocusChanged = onFocusChanged
+    store.endpoint?.onKeyboardReturned = { [weak self] in self?.onFocus?() }
+    if let endpoint = store.endpoint, let audio = endpoint.audio, soundAppliedTo != ObjectIdentifier(endpoint) {
+      soundAppliedTo = ObjectIdentifier(endpoint)
+      let saved = ScreenSharingMachinePreferences().sound(machineId: machineId)
+      audio.apply(.init(enabled: saved.enabled, volume: saved.volume))
+    }
+    if let endpoint = store.endpoint, savedSettingsAppliedTo != ObjectIdentifier(endpoint) {
+      savedSettingsAppliedTo = ObjectIdentifier(endpoint)
+      endpoint.highDynamicRange = ScreenSharingMachinePreferences().highDynamicRange(machineId: machineId)
+      endpoint.localShortcuts = savedKeyboard.localShortcuts
+    }
+    if let endpoint = store.endpoint, let clipboard = endpoint.clipboard {
+      let sharing = clipboard.sharing
+      let saved = ScreenSharingMachinePreferences().sharedClipboard(machineId: machineId)
+      if clipboardAppliedTo != ObjectIdentifier(endpoint) {
+        clipboardAppliedTo = ObjectIdentifier(endpoint)
+        clipboard.sharing = saved
+      } else if sharing != saved {
+        ScreenSharingMachinePreferences().setSharedClipboard(sharing, machineId: machineId)
+      }
+    }
+    let viewing = store.isLive
+    if viewing, !recordedViewing {
+      ScreenSharingMachinePreferences().setLastConnected(Date(), machineId: machineId)
+    }
+    recordedViewing = viewing
+    if store.dynamicResolutionRevision != persistedResolutionRevision {
+      persistedResolutionRevision = store.dynamicResolutionRevision
+      ScreenSharingMachinePreferences().setDynamicResolution(store.dynamicResolution, machineId: machineId)
+    }
+    let revision = store.preferencesRevision
+    guard revision != persistedRevision else { return }
+    persistedRevision = revision
+    onPreferencesChanged?(store.preferences)
+  }
+
   func makeView() -> AnyView { AnyView(ScreenSharingPaneView(pane: self)) }
 
-  private static func makeSurface(context: PaneContext, role: ScreenSharingViewerRole) -> ScreenSharingDesktopSurface? {
-    guard context.workspaceId != nil, !context.machine.isLocal else { return nil }
+  private static func makeSurface(
+    machine: CodevisorMachine, role: ScreenSharingViewerRole, workspace: ScreenSharingPaneWorkspace
+  ) -> ScreenSharingDesktopSurface? {
+    guard !machine.isLocal else { return nil }
 
-    return AppRuntime.shared.screenSharing?.surface(
-      onMachine: context.machine.id, role: role, inWorkspace: context.workspaceId)
+    return AppRuntime.shared.screenSharing?.surface(onMachine: machine.id, role: role, shownIn: { workspace.id })
   }
 
   private static func makeStore(
-    context: PaneContext, descriptor: PaneDescriptorState, surface: ScreenSharingDesktopSurface
+    machine: CodevisorMachine, preferences: ScreenSharingPanePreferences, surface: ScreenSharingDesktopSurface
   ) -> StoreOf<ScreenSharingViewer> {
     let state = ScreenSharingViewer.State(
-      machineName: context.machine.name, preferences: descriptor.screenSharing ?? .init(),
-      dynamicResolution: ScreenSharingMachinePreferences().dynamicResolution(machineId: context.machine.id))
+      machineName: machine.name, preferences: preferences,
+      dynamicResolution: ScreenSharingMachinePreferences().dynamicResolution(machineId: machine.id))
     return Store(initialState: state) {
       ScreenSharingViewer()
     } withDependencies: {
@@ -180,8 +196,16 @@ final class ScreenSharingPane: Pane {
   }
 
   func onScreenChanged(_ onScreen: Bool) {
+    isOnScreen = onScreen
     surface?.setOnScreen(onScreen, preferringDisplay: store?.preferences.preferredDisplayId)
     store?.send(onScreen ? .shown : .hidden)
+  }
+
+  func shown(inWorkspace workspaceId: UUID) {
+    guard workspace.id != workspaceId else { return }
+
+    workspace.id = workspaceId
+    if isOnScreen { surface?.setOnScreen(true, preferringDisplay: store?.preferences.preferredDisplayId) }
   }
 
   private func leave() {

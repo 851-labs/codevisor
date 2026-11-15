@@ -1,11 +1,13 @@
 import CodevisorClient
+import CodevisorCore
 import SwiftUI
 
 struct WorkspaceInspectorMachineView: View {
   let serverId: String
   let isActive: Bool
   let client: any CodevisorServerClienting
-  let desktop: MachineDesktopSession?
+  let workspaceId: UUID
+  let desktop: CodevisorMachine?
   let desktopExpansion: Binding<Bool>
   let statsExpansion: Binding<Bool>
   let onOpenDesktop: () -> Void
@@ -18,9 +20,10 @@ struct WorkspaceInspectorMachineView: View {
         if let desktop {
           WorkspaceInspectorCard(title: "Desktop", isExpanded: desktopExpansion) {
             MachineDesktopPreview(
-              session: desktop, isStreaming: isActive && desktopExpansion.wrappedValue, onOpen: onOpenDesktop
+              machine: desktop, workspaceId: workspaceId, isStreaming: isActive && desktopExpansion.wrappedValue,
+              onOpen: onOpenDesktop
             )
-            .id(ObjectIdentifier(desktop))
+            .id(desktop.id)
           }
         }
         if let stats, stats.serverId == serverId {
