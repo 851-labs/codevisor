@@ -10,7 +10,6 @@ struct ControlLeaseRevokeTests {
   private static let timedOut = "Control timed out. Request control again."
   private let endpoint = ScreenSharingViewerEndpoint.ID()
   private let lease = UUID()
-  private let now = LockIsolated(Date(timeIntervalSinceReferenceDate: 0))
 
   @Test func aLeaseTheHostTakesBackIsAskedForAgainWithoutABanner() async {
     await withMainSerialExecutor {
@@ -34,10 +33,11 @@ struct ControlLeaseRevokeTests {
   @Test func aLeaseTakenBackAgainRightAwayShowsTheHostsReason() async {
     await withMainSerialExecutor {
       let client = FakeEndpointClient()
-      let store = await makeControllingStore(client)
+      let clock = Clocks.TestClock()
+      let store = await makeControllingStore(client, clock: clock)
       let regained = await regain(store, after: Self.timedOut, with: UUID(1))
 
-      now.withValue { $0 += 3 }
+      await clock.advance(by: .seconds(3))
       await store.send(.event(.message(.revoked(lease: regained, reason: "Control ended."))))
       await store.skipReceivedActions(strict: false)
 
@@ -47,14 +47,16 @@ struct ControlLeaseRevokeTests {
     }
   }
 
-  @Test func automaticRetriesStopAtThreeAMinuteAndStartAgainLater() async {
+  @Test func automaticRetriesStopAtThreeAMinuteOnTheClockAndStartAgainLater() async {
     await withMainSerialExecutor {
       let client = FakeEndpointClient()
-      let store = await makeControllingStore(client)
+      let clock = Clocks.TestClock()
+      let store = await makeControllingStore(client, clock: clock)
       var held = lease
       for retry in 1...3 {
         held = await regain(store, lease: held, after: Self.timedOut, with: UUID(retry))
-        now.withValue { $0 += 10 }
+        await clock.advance(by: .seconds(10))
+        await store.skipReceivedActions(strict: false)
       }
 
       await store.send(.event(.message(.revoked(lease: held, reason: Self.timedOut))))
@@ -63,12 +65,13 @@ struct ControlLeaseRevokeTests {
       expectNoDifference(store.state.message, Self.timedOut)
       #expect(requests(client).count == 4, "the first request and three automatic retries")
 
-      now.withValue { $0 += 60 }
+      await clock.advance(by: .seconds(60))
+      await store.skipReceivedActions(strict: false)
       await store.send(.controlRequested)
       let again = UUID()
       await store.send(.event(.message(.grant(request: UUID(4), lease: again))))
       await store.send(.event(.message(.revoked(lease: again, reason: Self.timedOut))))
-      #expect(store.state.phase == .requesting, "a minute later the host taking it back is retried again")
+      #expect(store.state.phase == .requesting, "a minute later on the clock the host taking it back is retried again")
       await store.send(.controlReleased(reason: nil))
     }
   }
@@ -118,6 +121,26 @@ struct ControlLeaseRevokeTests {
       await store.skipReceivedActions(strict: false)
       #expect(store.state.phase == .viewing)
       expectNoDifference(store.state.message, notReady, "a second refusal is shown")
+    }
+  }
+
+  @Test func aRefusalSomeSecondsAfterGoingLiveIsShownAtOnce() async {
+    await withMainSerialExecutor {
+      let client = FakeEndpointClient()
+      let clock = Clocks.TestClock()
+      let store = makeStore(client, clock: clock)
+      await store.send(.event(.availability(true)))
+      await store.send(.connectionWentLive)
+      await clock.advance(by: ControlLease.liveSettlingTime)
+      await store.skipReceivedActions(strict: false)
+      #expect(!store.state.retriesAFirstRefusal)
+      await store.send(.controlRequested)
+
+      await store.send(.event(.message(.denied(request: UUID(0), reason: "Allow Codevisor in Accessibility."))))
+      await store.skipReceivedActions(strict: false)
+
+      #expect(store.state.phase == .viewing)
+      expectNoDifference(store.state.message, "Allow Codevisor in Accessibility.")
     }
   }
 
@@ -180,11 +203,10 @@ struct ControlLeaseRevokeTests {
   ) -> TestStoreOf<ControlLease> {
     let store = TestStore(initialState: ControlLease.State(endpoint: endpoint)) {
       ControlLease()
-    } withDependencies: { [now] in
+    } withDependencies: {
       $0[ScreenSharingEndpointClient.self] = client.value
       $0.continuousClock = clock
       $0.uuid = .incrementing
-      $0.date = DateGenerator { now.value }
     }
     store.exhaustivity = .off
     return store

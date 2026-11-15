@@ -31,6 +31,7 @@ final class ScreenSharingEndpointViews {
   }
   private(set) var active: UUID?
   private(set) var driver: UUID?
+  private var pendingFocus: UUID?
   private var views: [UUID: Shown] = [:]
   private var videoShowsPointer = true
   private let frames: ScreenSharingFrameMailbox
@@ -85,6 +86,7 @@ final class ScreenSharingEndpointViews {
 
   func activate(_ id: UUID?) {
     active = id
+    if pendingFocus != id { pendingFocus = nil }
     if let id { _ = view(for: id) }
   }
 
@@ -106,8 +108,12 @@ final class ScreenSharingEndpointViews {
   }
 
   func focus(_ id: UUID) {
-    guard let view = views[id]?.surface.view, let window = view.window else { return }
+    guard let view = views[id]?.surface.view, let window = view.window else {
+      pendingFocus = id
+      return
+    }
 
+    pendingFocus = nil
     window.makeFirstResponder(view)
   }
 
@@ -139,6 +145,11 @@ final class ScreenSharingEndpointViews {
     surface.localShortcuts = localShortcuts
     surface.setVideoShowsPointer(videoShowsPointer)
     surface.onKeyboardReturned = { [weak self] in self?.events.keyboardReturned(id) }
+    surface.onMovedToWindow = { [weak self] in
+      guard let self, self.pendingFocus == id else { return }
+
+      self.focus(id)
+    }
     surface.onFocusChanged = { [weak self] in self?.events.focusChanged(id, $0) }
     surface.onInput = { [weak self] in
       guard let self, self.active == id else { return }

@@ -108,7 +108,8 @@ final class FakeMediaSession: ScreenSharingV2StartableSession {
 @MainActor
 @Observable
 final class FakeSurface: ScreenSharingViewerSurface {
-  @ObservationIgnored let view: NSView = FocusableView()
+  @ObservationIgnored let view: NSView
+  @ObservationIgnored var onMovedToWindow: (() -> Void)?
   @ObservationIgnored var onFocusChanged: ((Bool) -> Void)?
   @ObservationIgnored var onInput: ((ScreenSharingInputEvent) -> Void)?
   @ObservationIgnored var onInputReleased: (() -> Void)?
@@ -123,6 +124,12 @@ final class FakeSurface: ScreenSharingViewerSurface {
   private(set) var inputActive = false
   private(set) var stopped = false
   private(set) var videoShowsPointer: Bool?
+
+  init() {
+    let focusable = FocusableView()
+    view = focusable
+    focusable.onMovedToWindow = { [weak self] in self?.onMovedToWindow?() }
+  }
 
   func setVideoShowsPointer(_ shows: Bool) { videoShowsPointer = shows }
 
@@ -142,7 +149,14 @@ final class FakeSurface: ScreenSharingViewerSurface {
 }
 
 private final class FocusableView: NSView {
+  var onMovedToWindow: (() -> Void)?
+
   override var acceptsFirstResponder: Bool { true }
+
+  override func viewDidMoveToWindow() {
+    super.viewDidMoveToWindow()
+    onMovedToWindow?()
+  }
 }
 
 actor SharingTransport: ServerRequestTransport {
