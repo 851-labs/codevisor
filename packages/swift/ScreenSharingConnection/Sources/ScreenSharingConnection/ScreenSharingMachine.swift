@@ -17,6 +17,7 @@ public struct ScreenSharingMachine {
   public var makeVNCTransport: MakeVNCTransport?
   public var target: String?
   public var attachedPane: @MainActor () -> ScreenSharingLegacyIdentity? = { nil }
+  public var isReady: @MainActor () -> Bool = { false }
   public var heartbeatInterval = ScreenSharingConnectionDeadlines.heartbeatInterval
 
   public init(

@@ -18,6 +18,7 @@ final class ConnectionHarness {
   var makeVNCTransport: ScreenSharingMachine.MakeVNCTransport?
   var target: String?
   var attachedPane: ScreenSharingLegacyIdentity?
+  var machineReady = false
   var heartbeatInterval = ScreenSharingConnectionDeadlines.heartbeatInterval
   private var surfaces: [ScreenSharingSurface] = []
   private var startedSessions = 0
@@ -36,6 +37,7 @@ final class ConnectionHarness {
       makeVNCTransport: makeVNCTransport)
     machine.target = target
     machine.attachedPane = { [weak self] in self?.attachedPane }
+    machine.isReady = { [weak self] in self?.machineReady ?? false }
     machine.heartbeatInterval = heartbeatInterval
     return machine
   }

@@ -145,6 +145,7 @@ public final class ScreenSharingConnection {
   private func handle(_ event: ScreenSharingConnectionStateMachine.Event) {
     if hasStayedLive { _ = transitions.handle(.stayedLive) }
     let wasLive = state == .live
+    let wasUnreachable = state == .failed(.cantReach)
     let wasUnseen = transitions.unseen
     let command = transitions.handle(event, openPending: hasPendingOpen)
     if state != transitions.state { state = transitions.state }
@@ -153,6 +154,7 @@ public final class ScreenSharingConnection {
     if state == .live || command?.opens == true { pendingOpen = nil }
     run(command)
     if transitions.unseen != wasUnseen { restartUnseenTimer() }
+    if !wasUnreachable, state == .failed(.cantReach), machine.isReady() { handle(.machineStillReady) }
   }
 
   private func run(_ command: ScreenSharingConnectionStateMachine.Command?) {

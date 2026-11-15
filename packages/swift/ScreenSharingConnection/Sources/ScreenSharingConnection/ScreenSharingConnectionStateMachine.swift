@@ -14,6 +14,7 @@ struct ScreenSharingConnectionStateMachine: Equatable, Sendable {
     case unseenBrieflyElapsed
     case lingerElapsed
     case machineCameOnline
+    case machineStillReady
     case workspaceAppeared
     case targetAppeared
     case systemWoke
@@ -45,6 +46,7 @@ struct ScreenSharingConnectionStateMachine: Equatable, Sendable {
   private var openPending = false
   private var attemptIntent = ServerScreenSharingRequest.Intent.attach
   private var failureIsSticky = false
+  private var retriedWhileReady = false
 
   init() {}
 
@@ -63,7 +65,10 @@ struct ScreenSharingConnectionStateMachine: Equatable, Sendable {
     case .stayedLive: return forgive()
     case .unseenBrieflyElapsed: return unseenBrieflyElapsed()
     case .lingerElapsed: return unseen == .lingering ? stopBeingUnseen() : nil
-    case .machineCameOnline: return recover(from: .cantReach)
+    case .machineCameOnline:
+      retriedWhileReady = false
+      return recover(from: .cantReach)
+    case .machineStillReady: return retryOnceWhileReady()
     case .workspaceAppeared: return recover(from: .noWorkspace)
     case .targetAppeared: return targetAppeared()
     case .systemWoke: return state == .live ? attemptEnded(.dropped(.cantReach)) : nil
@@ -115,6 +120,7 @@ struct ScreenSharingConnectionStateMachine: Equatable, Sendable {
   private mutating func userAsked() -> Command? {
     guard case .failed = state else { return nil }
 
+    retriedWhileReady = false
     if !visible { unseen = .briefly }
     return connect(open: true)
   }
@@ -140,6 +146,13 @@ struct ScreenSharingConnectionStateMachine: Equatable, Sendable {
     return connect(open: false)
   }
 
+  private mutating func retryOnceWhileReady() -> Command? {
+    guard !retriedWhileReady else { return nil }
+
+    retriedWhileReady = true
+    return recover(from: .cantReach)
+  }
+
   private mutating func recover(from reason: ScreenSharingFailureReason) -> Command? {
     guard state == .failed(reason), visible else { return nil }
 
@@ -153,7 +166,9 @@ struct ScreenSharingConnectionStateMachine: Equatable, Sendable {
 
   private mutating func goLive() -> Command? {
     switch state {
-    case .connecting, .reconnecting: state = .live
+    case .connecting, .reconnecting:
+      state = .live
+      retriedWhileReady = false
     case .off, .live, .failed: break
     }
     return nil

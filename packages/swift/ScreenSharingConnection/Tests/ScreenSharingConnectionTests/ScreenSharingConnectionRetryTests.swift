@@ -7,12 +7,15 @@ import Testing
 @MainActor
 @Suite("Screen share connection: retries", .timeLimit(.minutes(1)))
 struct ScreenSharingConnectionRetryTests {
-  private func useUpTheTries(_ harness: ConnectionHarness, failingAt operation: FakeHost.Operation) async {
+  private func useUpTheTries(
+    _ harness: ConnectionHarness, failingAt operation: FakeHost.Operation, beforeTry: (Int) -> Void = { _ in }
+  ) async {
     let before = harness.host.requests(operation).count
     harness.host.hold(operation)
     harness.media.sessions.last?.host.report(connection: "failed")
     for (index, wait) in ScreenSharingRetryPolicy.waits.dropFirst().enumerated() {
       await awaitObserved { harness.host.requests(operation).count == before + index + 1 }
+      beforeTry(index)
       await harness.clock.waitForSleep(ScreenSharingConnectionDeadlines.stillConnectingHint)
       let earlierWaits = harness.clock.requestCount(wait)
       harness.host.release(operation)
@@ -50,6 +53,46 @@ struct ScreenSharingConnectionRetryTests {
 
     await useUpTheTries(harness, failingAt: .capabilities)
     await harness.settle(.failed(.cantReach))
+
+    harness.host.answerEvery(.capabilities, nil)
+    harness.manager.machineCameOnline(ConnectionHarness.machineId)
+    await harness.goLive()
+    #expect(harness.host.starts.map(\.intent) == [.attach, .attach])
+  }
+
+  @Test("The machine coming back during the last tries reconnects with one more try once they run out")
+  func machineBackDuringTheTries() async {
+    let harness = ConnectionHarness()
+    harness.show()
+    await harness.goLive()
+    harness.host.answerEvery(.capabilities, .failure(FakeHost.unreachable))
+
+    await useUpTheTries(harness, failingAt: .capabilities) { index in
+      guard index == ScreenSharingRetryPolicy.waits.count - 2 else { return }
+      harness.machineReady = true
+      harness.manager.machineCameOnline(ConnectionHarness.machineId)
+      harness.host.answerEvery(.capabilities, nil)
+      harness.host.answerNext(.capabilities, .failure(FakeHost.unreachable), .failure(FakeHost.unreachable))
+    }
+    await harness.goLive()
+
+    #expect(harness.host.requests(.capabilities).count == ScreenSharingRetryPolicy.waits.count + 2)
+    #expect(harness.host.starts.map(\.intent) == [.attach, .attach])
+  }
+
+  @Test("A ready machine that still can't be reached gets one more try, not a loop, and coming back still reconnects")
+  func oneMoreTryWhileReady() async {
+    let harness = ConnectionHarness()
+    harness.show()
+    await harness.goLive()
+    harness.host.answerEvery(.capabilities, .failure(FakeHost.unreachable))
+    harness.machineReady = true
+
+    await useUpTheTries(harness, failingAt: .capabilities)
+    await awaitObserved { harness.host.requests(.capabilities).count == ScreenSharingRetryPolicy.waits.count + 2 }
+    await harness.settle(.failed(.cantReach))
+    await harness.noTimersLeft()
+    #expect(harness.host.requests(.capabilities).count == ScreenSharingRetryPolicy.waits.count + 2)
 
     harness.host.answerEvery(.capabilities, nil)
     harness.manager.machineCameOnline(ConnectionHarness.machineId)
