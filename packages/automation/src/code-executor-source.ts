@@ -349,6 +349,7 @@ export const buildExecutionSource = (code: string, persistent = false): string =
     "    cua: __makeCua(tabId),",
     "    dom_cua: __makeDomCua(tabId),",
     "    clipboard: __makeClipboard(tabId),",
+    "    setGeolocation: (position) => position == null ? __callTabTool(tabId, 'browser.geolocation.clear', {}).then(() => undefined) : __callTabTool(tabId, 'browser.geolocation.set', { latitude: position.latitude, longitude: position.longitude, accuracy: position.accuracy }).then(() => undefined),",
     "    content: { export: (options = {}) => __callTabTool(tabId, 'browser.content.export', options) },",
     "    capabilities: __makeCapabilities(tabId),",
     "    webmcp: __makeWebMcp(tabId),",

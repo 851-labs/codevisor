@@ -60,6 +60,12 @@ final class ChromiumAutomationBridge {
     let hub = hub
     Self.queue.async { hub.assumeIsolated { $0.download(update, model: model) } }
   }
+  func permissionRefused(_ permissions: [String], origin: String, in model: ChromiumBrowserModel) {
+    guard isControlling(model) else { return }
+
+    let hub = hub
+    Self.queue.async { hub.assumeIsolated { $0.permissionRefused(permissions, origin: origin, model: model) } }
+  }
   private func broadcast(_ event: ChromiumAutomationHub.TargetEvent) {
     let hub = hub
     Self.queue.async { hub.assumeIsolated { $0.broadcast(event) } }

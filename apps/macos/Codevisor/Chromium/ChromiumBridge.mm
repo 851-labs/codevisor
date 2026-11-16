@@ -594,13 +594,26 @@ CVChromiumPageDialogKind PageDialogKind(cef_jsdialog_type_t type) {
 NSString *PageDialogSite(const CefString& origin) {
   return origin.empty() ? @"This page" : String(CefFormatUrlForSecurityDisplay(origin));
 }
+NSArray<NSString *> *PermissionNames(uint32_t requested) {
+  static const std::pair<uint32_t, NSString *> known[] = {
+    {CEF_PERMISSION_TYPE_GEOLOCATION, @"location"}, {CEF_PERMISSION_TYPE_NOTIFICATIONS, @"notifications"},
+    {CEF_PERMISSION_TYPE_CAMERA_STREAM, @"camera"}, {CEF_PERMISSION_TYPE_MIC_STREAM, @"microphone"},
+    {CEF_PERMISSION_TYPE_CLIPBOARD, @"clipboard"}, {CEF_PERMISSION_TYPE_MIDI_SYSEX, @"MIDI devices"},
+  };
+  NSMutableArray<NSString *> *names = [NSMutableArray array];
+  for (const auto& [type, name] : known) {
+    if (requested & type) { [names addObject:name]; requested &= ~type; }
+  }
+  if (requested != 0 || names.count == 0) [names addObject:@"another permission"];
+  return names;
+}
 }
 
 class BrowserClient final : public CefClient, public CefLifeSpanHandler,
                             public CefDisplayHandler, public CefLoadHandler,
                             public CefRequestHandler, public CefContextMenuHandler,
                             public CefFindHandler, public CefDownloadHandler,
-                            public CefJSDialogHandler {
+                            public CefJSDialogHandler, public CefPermissionHandler {
  public:
   explicit BrowserClient(CVChromiumView *view) : view_(view), host_(view->_proxyHost.UTF8String ?: ""),
       username_(view->_username.UTF8String ?: ""), password_(view->_password.UTF8String ?: ""), port_((int)view->_proxyPort) {}
@@ -612,6 +625,14 @@ class BrowserClient final : public CefClient, public CefLifeSpanHandler,
   CefRefPtr<CefFindHandler> GetFindHandler() override { return this; }
   CefRefPtr<CefDownloadHandler> GetDownloadHandler() override { return this; }
   CefRefPtr<CefJSDialogHandler> GetJSDialogHandler() override { return this; }
+  CefRefPtr<CefPermissionHandler> GetPermissionHandler() override { return this; }
+  bool OnShowPermissionPrompt(CefRefPtr<CefBrowser>, uint64_t, const CefString& origin, uint32_t requested,
+                              CefRefPtr<CefPermissionPromptCallback> callback) override {
+    callback->Continue(CEF_PERMISSION_RESULT_DISMISS);
+    CVChromiumView *view = view_;
+    if (view && !view->_closed && view.permissionRefused) view.permissionRefused(String(origin), PermissionNames(requested));
+    return true;
+  }
   bool OnJSDialog(CefRefPtr<CefBrowser>, const CefString& origin, JSDialogType type, const CefString& message,
                   const CefString& defaultText, CefRefPtr<CefJSDialogCallback> callback, bool&) override {
     return OpenPageDialog(PageDialogKind(type), PageDialogSite(origin), String(message), String(defaultText), callback);

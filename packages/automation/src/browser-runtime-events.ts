@@ -4,9 +4,11 @@ import { join } from "node:path"
 
 import type { BrowserRuntime } from "./browser-cdp-engine.js"
 import { adoptFrameSession, tabSessionOf } from "./browser-frame-sessions.js"
+import { observeGeolocationEvent } from "./browser-geolocation.js"
 import { observeBrowserLoadEvent } from "./browser-load-state.js"
 import { handleTargetLifecycleEvent, installSessionRecovery } from "./browser-session-recovery.js"
 import { observeSiteAccessEvent } from "./browser-site-access.js"
+import { isStringArray } from "./unknown-values.js"
 
 type CdpParams = Readonly<Record<string, unknown>>
 type BrowserDownload = BrowserRuntime["downloads"] extends Map<string, infer D> ? D : never
@@ -53,6 +55,7 @@ export function observeBrowserRuntime(
     active.connection.on("*", (params, event) => {
       observeBrowserLoadEvent(active, event.method, params, event.sessionId)
       observeSiteAccessEvent(active, event.method, params, event.sessionId)
+      observeGeolocationEvent(active, event.method, params, event.sessionId)
       const sequence = ++active.eventSequence
       active.eventLog.push({
         method: event.method,
@@ -70,10 +73,9 @@ export function observeBrowserRuntime(
           event.method === "Runtime.exceptionThrown" ||
           event.method === "Log.entryAdded"
         ) {
-          const entries = active.logs.get(event.sessionId) ?? []
-          entries.push({ method: event.method, ...params, sequence })
-          if (entries.length > 1_000) entries.splice(0, entries.length - 1_000)
-          active.logs.set(event.sessionId, entries)
+          recordLog(active, event.sessionId, { method: event.method, ...params, sequence })
+        } else if (event.method === "Codevisor.permissionRequested") {
+          recordLog(active, event.sessionId, refusedPermissionEntry(params, sequence))
         } else if (event.method === "Page.javascriptDialogOpening") {
           active.dialogs.set(tabSessionOf(active, event.sessionId), { ...params })
         } else if (event.method === "Page.javascriptDialogClosed") {
@@ -109,4 +111,31 @@ export function observeBrowserRuntime(
       }
     })
   )
+}
+
+const maxTabLogEntries = 1_000
+
+const recordLog = (
+  active: BrowserRuntime,
+  sessionId: string,
+  entry: Readonly<Record<string, unknown>>
+): void => {
+  const entries = active.logs.get(sessionId) ?? []
+  entries.push(entry)
+  if (entries.length > maxTabLogEntries) entries.splice(0, entries.length - maxTabLogEntries)
+  active.logs.set(sessionId, entries)
+}
+
+const refusedPermissionEntry = (params: CdpParams, sequence: number) => {
+  const asked = isStringArray(params.permissions) ? params.permissions.join(", ") : "a permission"
+  return {
+    method: "Log.entryAdded",
+    sequence,
+    entry: {
+      level: "warning",
+      text: `The page asked for ${asked} and was refused: the built-in pane grants no permissions. A task that needs a location can run in the managed browser with tab.setGeolocation({ latitude, longitude }).`,
+      timestamp: Date.now(),
+      ...(typeof params.origin === "string" ? { url: params.origin } : {})
+    }
+  }
 }

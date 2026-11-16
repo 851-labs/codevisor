@@ -17,6 +17,7 @@ Every tab you open stays open until you or the user closes it; nothing closes wh
 Each operation carries its tab ID. Independent operations on different tabs may use Promise.all. Keep dependent actions ordered. Inspect state after an action before deciding the next action.
 
 Simple accessibility:
+- tab.setGeolocation({latitude,longitude,accuracy?}) gives a managed-browser tab a location for pages that ask for one; tab.setGeolocation(null) takes it away. Every other permission request (notifications, camera, microphone) is refused, a page's request for location is refused until you set one, and the built-in pane refuses them all (the refusals appear in tab.dev.logs()).
 - tab.getAXState({root?,offset?}): Promise<string>; compact accessibility snapshot with opaque refs. A long page comes 2,000 lines at a time and the last line says how to read on: getAXState({offset}) continues the same snapshot (its refs stay valid), getAXState({root}) captures one part of the page, where root is a ref or a locator.
 - tab.click(ref, {button?,doubleClick?}), tab.fill(ref,text), tab.pressKey(key).
 Refs belong to the latest observation of that tab in this session. Do not manufacture or reuse a ref after another snapshot/navigation. An old ref rejects. Prefer locators for repeated operations.

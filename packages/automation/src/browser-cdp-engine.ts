@@ -13,6 +13,7 @@ import {
   tabSessionIds,
   tabSessionOf
 } from "./browser-frame-sessions.js"
+import { withholdTabLocation } from "./browser-location-baseline.js"
 import { expectRecord, expectString } from "./unknown-values.js"
 
 export interface TargetInfo {
@@ -236,7 +237,10 @@ export const attachTarget = async (
   )
   await enableSessionDomains(runtime, attached.sessionId)
   runtime.sessions.set(targetId, attached.sessionId)
-  if (parentSessionId === undefined) await autoAttachFrames(runtime, attached.sessionId)
+  if (parentSessionId === undefined) {
+    await autoAttachFrames(runtime, attached.sessionId)
+    await withholdTabLocation(runtime, attached.sessionId)
+  }
   return attached.sessionId
 }
 

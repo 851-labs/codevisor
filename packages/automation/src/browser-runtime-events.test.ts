@@ -5,6 +5,7 @@ import { join } from "node:path"
 import { expect, it, onTestFinished, vi } from "vitest"
 
 import type { CdpConnection } from "./browser-cdp.js"
+import { readBrowserLogs } from "./browser-logs.js"
 import { observeBrowserRuntime } from "./browser-runtime-events.js"
 import { fakeBrowserRuntime, fakeCdpConnection } from "./browser-runtime-test-support.js"
 
@@ -52,6 +53,25 @@ it("retains bounded event and console history with monotonic sequence numbers", 
   for (const dispose of runtime.eventDisposers) dispose()
   expect(stopEvents).toHaveBeenCalledOnce()
   expect(stopRecovery).toHaveBeenCalledOnce()
+})
+
+it("records a permission request the pane refused as a warning in that tab's logs", () => {
+  const { runtime, emit } = fixture({ native: true })
+  emit(
+    "Codevisor.permissionRequested",
+    { origin: "https://maps.test/", permissions: ["location", "notifications"] },
+    "page"
+  )
+  expect(readBrowserLogs(runtime.logs, ["page"], {})).toEqual([
+    expect.objectContaining({
+      level: "warn",
+      url: "https://maps.test/",
+      message: expect.stringContaining(
+        "The page asked for location, notifications and was refused: the built-in pane grants no permissions."
+      )
+    })
+  ])
+  expect(runtime.logs.has("other")).toBe(false)
 })
 
 it("tracks dialogs per page and forgets destroyed targets", () => {

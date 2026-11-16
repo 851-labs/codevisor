@@ -9,6 +9,19 @@ const cdpTargetProperty = {
 
 export const browserUsePageTools: ReadonlyArray<Tool> = [
   tool(
+    "geolocation.set",
+    "Give the selected tab a location. Pages in this tab that ask for the user's location then get this one; without it every permission request is refused.",
+    objectSchema(
+      {
+        latitude: { type: "number", minimum: -90, maximum: 90 },
+        longitude: { type: "number", minimum: -180, maximum: 180 },
+        accuracy: { type: "number", minimum: 0, description: "Metres; 10 when omitted." }
+      },
+      ["latitude", "longitude"]
+    )
+  ),
+  tool("geolocation.clear", "Take the selected tab's location away again."),
+  tool(
     "clipboard.writeText",
     "Write plain text to the selected tab's browser clipboard.",
     objectSchema({ text: { type: "string" } }, ["text"])

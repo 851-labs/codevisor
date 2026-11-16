@@ -271,6 +271,17 @@ actor ChromiumAutomationConnection {
     return result
   }
 
+  func permissionRefused(_ permissions: [String], origin: String, model: ChromiumBrowserModel) {
+    guard authenticated else { return }
+
+    for (sessionId, attached) in sessions where attached.model === model && !attached.popup {
+      send([
+        "method": "Codevisor.permissionRequested", "sessionId": sessionId,
+        "params": ["origin": origin, "permissions": permissions],
+      ])
+    }
+  }
+
   func download(_ download: ChromiumAutomationDownload, model: ChromiumBrowserModel) {
     guard authenticated, sessions.values.contains(where: { $0.model === model }) else { return }
 
