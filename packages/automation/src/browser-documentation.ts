@@ -29,7 +29,7 @@ Navigation and capture:
 
 Playwright-style page API (tab.playwright):
 - domSnapshot(); locator(css); ref(ref); getByRole(role,{name?:string|RegExp,exact?}); getByLabel, getByPlaceholder, getByText(text,{exact?}); getByTestId(id).
-- frameLocator(css) composes through nested and cross-origin frames.
+- frameLocator(css) composes through nested and cross-origin frames; when several frames match, pick one with .first(), .last() or .nth(index).
 - evaluate(fn,arg?,{timeoutMs?}): read-only page evaluation.
 - expectNavigation(action,{url?,waitUntil?:'commit'|'domcontentloaded'|'load'|'networkidle',timeoutMs?}): arms before action; requires an actual main-frame navigation, including pushState/hash navigation.
 - waitForURL(url,{waitUntil?,timeoutMs?}); waitForLoadState({state?,timeoutMs?}); networkidle requires no tracked requests for 500 ms.

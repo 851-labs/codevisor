@@ -1,7 +1,11 @@
 import type { BrowserRuntime, PageHandle } from "./browser-cdp-engine.js"
 import { evaluatedValue } from "./browser-cdp.js"
 import { cssLocatorFunction, semanticLocatorFunction } from "./browser-locator-page-functions.js"
-import { type BrowserLocator, parseLocator } from "./browser-locator-parse.js"
+import {
+  type BrowserFrameStep,
+  type BrowserLocator,
+  parseLocator
+} from "./browser-locator-parse.js"
 import { normalizeRef } from "./browser-snapshot.js"
 import type { AXNode } from "./browser-snapshot.js"
 
@@ -167,13 +171,16 @@ const resolveFrameRoots = async (
   runtime: BrowserRuntime,
   page: PageHandle,
   roots: ReadonlyArray<number>,
-  selectors: ReadonlyArray<string>
+  steps: ReadonlyArray<BrowserFrameStep>
 ): Promise<number[]> => {
   let current = [...roots]
-  for (const selector of selectors) {
-    const frames = await queryCssWithinRoots(runtime, page, current, selector)
+  for (const step of steps) {
+    const frames = pickIndexed(
+      await queryCssWithinRoots(runtime, page, current, step.css),
+      step.index
+    )
     if (frames.length === 0)
-      throw new Error(`frameLocator(${JSON.stringify(selector)}) found no frames`)
+      throw new Error(`frameLocator(${JSON.stringify(step.css)}) found no frames`)
     const next: number[] = []
     for (const backendNodeId of frames) {
       const described = await runtime.connection.send<{
@@ -182,7 +189,7 @@ const resolveFrameRoots = async (
       const contentDocument = described.node.contentDocument?.backendNodeId
       if (contentDocument === undefined) {
         throw new Error(
-          `frameLocator(${JSON.stringify(selector)}) cannot access that frame document`
+          `frameLocator(${JSON.stringify(step.css)}) cannot access that frame document`
         )
       }
       next.push(contentDocument)
@@ -190,6 +197,13 @@ const resolveFrameRoots = async (
     current = [...new Set(next)]
   }
   return current
+}
+
+const pickIndexed = (ids: number[], index: number | "last" | undefined): number[] => {
+  if (index === undefined) return ids
+  const position = index === "last" ? ids.length - 1 : index
+  const picked = ids[position]
+  return picked === undefined ? [] : [picked]
 }
 
 const frameOwnerFunction =
@@ -418,9 +432,5 @@ export const locatorBackendNodeIds = async (
       ])
     ]
   }
-  if (locator.index !== undefined) {
-    const index = locator.index === "last" ? ids.length - 1 : locator.index
-    ids = index < 0 || index >= ids.length ? [] : [ids[index]!]
-  }
-  return ids
+  return pickIndexed(ids, locator.index)
 }
