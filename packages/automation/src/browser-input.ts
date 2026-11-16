@@ -187,7 +187,7 @@ export const fillResolvedElement = async (
         {
           objectId: element.objectId,
           functionDeclaration:
-            "function(value,replace){const tag=this.tagName?.toLowerCase();const type=tag==='input'?String(this.type||'text').toLowerCase():tag;const setValueTypes=new Set(['color','date','time','datetime-local','month','range','week']);const typeableTypes=new Set(['text','email','number','password','search','tel','url']);if(tag==='input'){if(!typeableTypes.has(type)&&!setValueTypes.has(type))return {error:`Input type ${type} cannot be filled`,type};if(type==='number'&&Number.isNaN(Number(String(value).trim())))return {error:'Cannot type text into input[type=number]',type};if(setValueTypes.has(type)){const normalized=String(value).trim();this.focus();this.value=type==='color'?normalized.toLowerCase():normalized;if(this.value!==normalized.toLowerCase())return {error:`Malformed value for input[type=${type}]`,actual:this.value,type};this.dispatchEvent(new Event('input',{bubbles:true,composed:true}));this.dispatchEvent(new Event('change',{bubbles:true}));return {actual:this.value,type};}}else if(tag!=='textarea'&&!this.isContentEditable)return {error:'Element is not an <input>, <textarea> or [contenteditable] element',type};this.focus();if(replace){if(typeof this.select==='function')this.select();else{const selection=getSelection(),range=document.createRange();range.selectNodeContents(this);selection.removeAllRanges();selection.addRange(range);}}return {needsInput:true,type};}",
+            "function(value,replace){const tag=this.tagName?.toLowerCase();const type=tag==='input'?String(this.type||'text').toLowerCase():tag;const setValueTypes=new Set(['color','date','time','datetime-local','month','range','week']);const typeableTypes=new Set(['text','email','number','password','search','tel','url']);if(tag==='input'){if(!typeableTypes.has(type)&&!setValueTypes.has(type))return {error:`Input type ${type} cannot be filled`,type};if(type==='number'&&Number.isNaN(Number(String(value).trim())))return {error:'Cannot type text into input[type=number]',type};if(setValueTypes.has(type)){const normalized=String(value).trim();const wanted=type==='color'?normalized.toLowerCase():normalized;const before=this.value;this.focus();this.value=wanted;if(this.value!==wanted){this.value=before;return {error:`Malformed value for input[type=${type}]`,actual:this.value,type};}this.dispatchEvent(new Event('input',{bubbles:true,composed:true}));this.dispatchEvent(new Event('change',{bubbles:true}));return {actual:this.value,type};}}else if(tag!=='textarea'&&!this.isContentEditable)return {error:'Element is not an <input>, <textarea> or [contenteditable] element',type};this.focus();if(replace){if(typeof this.select==='function')this.select();else{const selection=getSelection(),range=document.createRange();range.selectNodeContents(this);selection.removeAllRanges();selection.addRange(range);}}return {needsInput:true,type};}",
           arguments: [{ value: text }, { value: replace }],
           returnByValue: true
         },
@@ -205,26 +205,49 @@ export const fillResolvedElement = async (
       }
     } else await runtime.connection.send("Input.insertText", { text }, page.sessionId)
   }
-  const actual = optionalString(
+  const filled = await filledValue(runtime, page, element)
+  if (replace && preparation.actual === undefined && !holdsFilledText(filled, text)) {
+    throw new Error(
+      `Browser fill verification failed: expected ${JSON.stringify(text)}, received ${JSON.stringify(filled.value)}`
+    )
+  }
+  return filled.value
+}
+
+interface FilledValue {
+  readonly value?: string
+  readonly maxLength: number
+}
+
+const filledValueFunction =
+  "function(){const tag=this.tagName?.toLowerCase();const limit=typeof this.maxLength==='number'?this.maxLength:-1;if(tag==='input'||tag==='textarea')return {value:String(this.value),maxLength:limit};if(this.isContentEditable)return {value:String(this.textContent||''),maxLength:-1};return {maxLength:-1};}"
+
+const filledValue = async (
+  runtime: BrowserRuntime,
+  page: PageHandle,
+  element: ResolvedElement
+): Promise<FilledValue> => {
+  const read = expectRecord(
     evaluatedValue(
       await runtime.connection.send(
         "Runtime.callFunctionOn",
         {
           objectId: element.objectId,
-          functionDeclaration:
-            "function(){if(this.tagName?.toLowerCase()==='input'||this.tagName?.toLowerCase()==='textarea')return String(this.value);if(this.isContentEditable)return String(this.textContent||'');return undefined;}",
+          functionDeclaration: filledValueFunction,
           returnByValue: true
         },
         page.sessionId
       )
-    )
+    ),
+    "Filled value"
   )
-  if (replace && actual !== text && preparation.actual === undefined) {
-    throw new Error(
-      `Browser fill verification failed: expected ${JSON.stringify(text)}, received ${JSON.stringify(actual)}`
-    )
-  }
-  return actual
+  const value = optionalString(read.value)
+  return { ...(value === undefined ? {} : { value }), maxLength: Number(read.maxLength ?? -1) }
+}
+
+const holdsFilledText = (filled: FilledValue, text: string): boolean => {
+  if (filled.value === text) return true
+  return filled.maxLength >= 0 && filled.value === text.slice(0, filled.maxLength)
 }
 
 export const fillElement = async (
