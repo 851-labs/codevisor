@@ -125,10 +125,7 @@ struct ChatPaneContentView: View {
       isReadOnly: isReadOnly,
       presentsBotConversation: role == .botConversation
     )
-    .environment(
-      \.computerUsePiPPane,
-      ComputerUsePiPPane(workspaceId: hostWorkspace.id, paneId: descriptor.id)
-    )
+    .environment(\.allowsRemoteComputerUsePreview, true)
     .id(chatSession.id)
     .task(id: SessionStore.SessionKey(chatSession)) {
       store.noteAccess(SessionStore.SessionKey(chatSession))

@@ -14,7 +14,6 @@ public final class ScreenSharingDesktops {
   struct Signals: Equatable {
     var machineExists: Bool
     var isReady: Bool
-    var hasWorkspace: Bool
   }
 
   private let manager: ScreenSharingConnectionManager
@@ -22,7 +21,6 @@ public final class ScreenSharingDesktops {
   private let preferences: ScreenSharingMachinePreferences
   private let appName: String
   private var models: [String: ScreenSharingPaneModel] = [:]
-  private var workspaces: [String: UUID] = [:]
   private var signals: [String: Signals] = [:]
   private var targetMachines: Set<String> = []
   private var watching: Set<String> = []
@@ -41,17 +39,14 @@ public final class ScreenSharingDesktops {
   }
 
   public func model(
-    for machineId: String, showing workspaceId: UUID, seedDisplayId: String?, environment: AppEnvironment
+    for machineId: String, seedDisplayId: String?, environment: AppEnvironment
   ) -> ScreenSharingPaneModel? {
-    model(
-      for: machineId, showing: workspaceId, seedDisplayId: seedDisplayId,
-      sources: ScreenSharingDesktopSources(environment: environment))
+    model(for: machineId, seedDisplayId: seedDisplayId, sources: ScreenSharingDesktopSources(environment: environment))
   }
 
   func model(
-    for machineId: String, showing workspaceId: UUID, seedDisplayId: String?, sources: ScreenSharingDesktopSources
+    for machineId: String, seedDisplayId: String?, sources: ScreenSharingDesktopSources
   ) -> ScreenSharingPaneModel? {
-    remember(workspaceId, on: machineId, sources)
     if let model = models[machineId] { return model }
     guard let name = sources.machineName(machineId), let machine = machine(machineId, sources) else { return nil }
 
@@ -66,22 +61,18 @@ public final class ScreenSharingDesktops {
   }
 
   public func targetConnection(
-    onMachine machineId: String, target: String,
-    attachedPane: @escaping @MainActor () -> ScreenSharingLegacyIdentity?, environment: AppEnvironment
+    onMachine machineId: String, target: String, environment: AppEnvironment
   ) -> ScreenSharingConnection? {
-    targetConnection(
-      onMachine: machineId, target: target, attachedPane: attachedPane,
-      sources: ScreenSharingDesktopSources(environment: environment))
+    let sources = ScreenSharingDesktopSources(environment: environment)
+    return targetConnection(onMachine: machineId, target: target, sources: sources)
   }
 
   func targetConnection(
-    onMachine machineId: String, target: String,
-    attachedPane: @escaping @MainActor () -> ScreenSharingLegacyIdentity?, sources: ScreenSharingDesktopSources
+    onMachine machineId: String, target: String, sources: ScreenSharingDesktopSources
   ) -> ScreenSharingConnection? {
     guard sources.machineName(machineId) != nil, var machine = machine(machineId, sources) else { return nil }
 
     machine.target = target
-    machine.attachedPane = attachedPane
     targetMachines.insert(machineId)
     startWatching(machineId, sources)
     return manager.connection(for: machine)
@@ -100,25 +91,10 @@ public final class ScreenSharingDesktops {
 
     var machine = ScreenSharingMachine(
       id: machineId, channel: { sources.channel(machineId) }, connector: sources.connector, appName: appName,
-      signer: signer, installId: installId,
-      liveWorkspace: { [weak self] in self?.liveWorkspace(on: machineId, sources) })
+      signer: signer, installId: installId)
     machine.isReady = { sources.isReady(machineId) }
     machine.userAsked = { sources.userAsked(machineId) }
     return machine
-  }
-
-  private func remember(_ shown: UUID, on machineId: String, _ sources: ScreenSharingDesktopSources) {
-    if let remembered = workspaces[machineId], sources.isLive(remembered) { return }
-
-    workspaces[machineId] = shown
-  }
-
-  private func liveWorkspace(on machineId: String, _ sources: ScreenSharingDesktopSources) -> UUID? {
-    if let remembered = workspaces[machineId], sources.isLive(remembered) { return remembered }
-
-    let found = sources.liveWorkspaces(machineId).first
-    workspaces[machineId] = found
-    return found
   }
 
   private func startWatching(_ machineId: String, _ sources: ScreenSharingDesktopSources) {
@@ -134,10 +110,7 @@ public final class ScreenSharingDesktops {
     }
 
     let now = withObservationTracking {
-      _ = sources.workspacesRevision()
-      return Signals(
-        machineExists: sources.machineName(machineId) != nil, isReady: sources.isReady(machineId),
-        hasWorkspace: liveWorkspace(on: machineId, sources) != nil)
+      Signals(machineExists: sources.machineName(machineId) != nil, isReady: sources.isReady(machineId))
     } onChange: { [weak self] in
       Task { @MainActor in self?.watch(machineId, sources) }
     }
@@ -149,14 +122,12 @@ public final class ScreenSharingDesktops {
     guard now.machineExists else { return forget(machineId) }
 
     if now.isReady, before?.isReady == false { manager.machineCameOnline(machineId) }
-    if now.hasWorkspace, before?.hasWorkspace == false { manager.workspaceAppeared(machineId) }
   }
 
   private func forget(_ machineId: String) {
     models[machineId] = nil
     targetMachines.remove(machineId)
     watching.remove(machineId)
-    workspaces[machineId] = nil
     signals[machineId] = nil
     manager.remove(machineId)
   }

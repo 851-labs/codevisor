@@ -20,14 +20,14 @@ extension WorkspaceScreen {
   var simulatorTitle: String? { activeSimulatorModel?.device?.name }
 
   func simulatorPaneModel(for pane: PaneDescriptorState) -> SimulatorPaneModel? {
-    guard let workspace = resolvedWorkspace else { return nil }
+    guard resolvedWorkspace != nil else { return nil }
     let machines = environment.machines
     let serverId = resolvedServerId
     let client = machines.client(for: serverId)
     let model = SimulatorPaneCache.shared.model(for: pane.id) {
       SimulatorPaneModel(
-        client: client, preferences: pane.simulator, machineId: serverId, workspaceId: workspace.id,
-        paneId: pane.id, streams: simulatorStreams(onMachine: serverId))
+        client: client, preferences: pane.simulator, machineId: serverId,
+        streams: simulatorStreams(onMachine: serverId))
     }
     model.applyPreferences(pane.simulator ?? SimulatorPanePreferences())
     model.onPreferencesChanged = { updateSimulator(pane, preferences: $0) }
@@ -38,9 +38,8 @@ extension WorkspaceScreen {
     let environment = environment
     return SimulatorStreamSource(
       machineName: environment.machines.machine(for: machineId)?.name ?? "this machine",
-      connection: { target, attachedPane in
-        ScreenSharingDesktops.shared.targetConnection(
-          onMachine: machineId, target: target, attachedPane: attachedPane, environment: environment)
+      connection: { target in
+        ScreenSharingDesktops.shared.targetConnection(onMachine: machineId, target: target, environment: environment)
       },
       end: { ScreenSharingDesktops.shared.endTargetConnection(onMachine: machineId, target: $0) })
   }

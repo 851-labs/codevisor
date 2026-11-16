@@ -56,7 +56,7 @@ extension ChatScreen {
       let desktop = environment.machines.desktopMachine(for: workspace.serverId)
     else { return nil }
     return { [environment] in
-      MachineDesktopWindows.shared.present(desktop, fromWorkspace: workspace.id, environment: environment)
+      MachineDesktopWindows.shared.present(desktop, environment: environment)
     }
   }
 
@@ -65,12 +65,12 @@ extension ChatScreen {
     if codevisorMachineIsThisMac(serverId, statusByMachineId: environment.machines.statusByMachineId) {
       return .local
     }
-    guard let computerUsePiPPane,
+    guard allowsRemoteComputerUsePreview,
       environment.machines.statusByMachineId[serverId]?.supportsComputerUseStreaming == true
     else { return nil }
     let machine = ComputerUsePiPMachine(
       id: serverId, name: environment.machines.machine(for: serverId)?.name ?? "this machine")
-    return .remote(client: environment.machines.client(for: serverId), pane: computerUsePiPPane, machine: machine)
+    return .remote(machine)
   }
 
   var transcriptBottomFade: TranscriptBottomFade {

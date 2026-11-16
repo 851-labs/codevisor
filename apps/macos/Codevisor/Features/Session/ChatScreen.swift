@@ -23,7 +23,7 @@ struct ChatScreen: View {
   @Environment(\.usesSlimComposer) var usesSlimComposer
   @Environment(\.transcriptTopChromeHeight) var transcriptTopChromeHeight
   @Environment(AppEnvironment.self) var environment
-  @Environment(\.computerUsePiPPane) var computerUsePiPPane
+  @Environment(\.allowsRemoteComputerUsePreview) var allowsRemoteComputerUsePreview
   @Environment(\.workspaceChildAgents) var workspaceChildAgents
   @Bindable var controller: SessionController
   let focus: TerminalFocusController

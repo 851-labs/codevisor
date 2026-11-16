@@ -12,12 +12,10 @@ final class SimulatorStreams {
 
   private var streams: [Key: SimulatorSharedStream] = [:]
 
-  func stream(
-    machineId: String, udid: String, pane: ScreenSharingLegacyIdentity, source: SimulatorStreamSource
-  ) -> SimulatorStream {
+  func stream(machineId: String, udid: String, source: SimulatorStreamSource) -> SimulatorStream {
     let key = Key(machineId: machineId, udid: udid)
     return SimulatorStream(
-      pane: pane, machineName: source.machineName,
+      machineName: source.machineName,
       join: { [weak self] in self?.join(key, source) },
       leave: { [weak self] in self?.leave(key, $0, source) })
   }
@@ -25,17 +23,16 @@ final class SimulatorStreams {
   private func join(_ key: Key, _ source: SimulatorStreamSource) -> SimulatorSharedStream? {
     if let existing = streams[key], !existing.connection.isEnded { return existing }
 
-    let panes = SimulatorAttachedPanes()
     let target = SimulatorStreamSource.target(udid: key.udid)
-    guard let connection = source.connection(target, { panes.first }) else { return nil }
+    guard let connection = source.connection(target) else { return nil }
 
-    let stream = SimulatorSharedStream(connection: connection, panes: panes)
+    let stream = SimulatorSharedStream(connection: connection)
     streams[key] = stream
     return stream
   }
 
   private func leave(_ key: Key, _ stream: SimulatorSharedStream, _ source: SimulatorStreamSource) {
-    guard stream.panes.isEmpty, streams[key] === stream else { return }
+    guard stream.isUnused, streams[key] === stream else { return }
 
     streams[key] = nil
     source.end(SimulatorStreamSource.target(udid: key.udid))

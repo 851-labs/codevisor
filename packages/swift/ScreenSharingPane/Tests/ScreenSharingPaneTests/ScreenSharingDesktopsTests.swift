@@ -74,39 +74,6 @@ struct ScreenSharingDesktopsTests {
     #expect(harness.host.starts.map(\.intent) == [.attach, .attach])
   }
 
-  @Test("An old host with no synced workspace on the machine yet connects by itself once one appears")
-  func connectsWhenAWorkspaceAppears() async {
-    let harness = DesktopsHarness(host: .old())
-    harness.world.setLiveWorkspaces([])
-    let model = harness.model(showing: UUID())
-    harness.show(model)
-    await awaitObserved { model?.state == .failed(.noWorkspace) }
-
-    let created = UUID()
-    harness.world.setLiveWorkspaces([created])
-    await harness.goLive(model)
-
-    #expect(harness.host.starts.map(\.workspaceId) == [created])
-  }
-
-  @Test("An old host is started under the workspace on screen, and under another live one once that is archived")
-  func oldHostFollowsALiveWorkspace() async {
-    let harness = DesktopsHarness(host: .old())
-    let (kept, shown) = (UUID(), UUID())
-    harness.world.setLiveWorkspaces([kept, shown])
-    let model = harness.model(showing: shown)
-    harness.show(model)
-    let session = await harness.goLive(model)
-
-    harness.world.setLiveWorkspaces([kept])
-    session.host.report(connection: "failed")
-    await harness.goLive(model)
-
-    #expect(harness.host.starts.map(\.workspaceId) == [shown, kept])
-    #expect(harness.host.registeredPanes.map(\.workspaceId) == [shown, kept])
-    #expect(harness.host.starts.allSatisfy { $0.app == nil })
-  }
-
   @Test("A Desktop that couldn't reach its machine connects by itself when the machine is back online")
   func connectsWhenTheMachineComesBack() async {
     let harness = DesktopsHarness()
@@ -148,13 +115,13 @@ struct ScreenSharingDesktopsTests {
     await harness.goLive(model)
 
     model?.select(displayId: FakeHost.second.id)
-    await harness.goLive(model)
+    await awaitObserved { model?.selectedDisplay == FakeHost.second }
     let relaunched = harness.model(in: harness.makeDesktops(), seedDisplayId: FakeHost.display.id)
     harness.show(relaunched)
     await harness.goLive(relaunched)
 
-    #expect(harness.host.starts.map(\.displayId) == [nil, FakeHost.second.id, FakeHost.second.id])
-    #expect(model?.selectedDisplay == FakeHost.second)
+    #expect(harness.host.starts.map(\.displayId) == [nil, FakeHost.second.id])
+    #expect(relaunched?.selectedDisplay == FakeHost.second)
   }
 
   @Test("Until a display is picked for the machine, the one saved on the pane is asked for")

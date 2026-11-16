@@ -20,10 +20,9 @@ extension WorkspaceScreen {
   }
 
   func screenSharingPaneModel(for pane: PaneDescriptorState) -> ScreenSharingPaneModel? {
-    guard let workspace = resolvedWorkspace else { return nil }
+    guard resolvedWorkspace != nil else { return nil }
     return ScreenSharingDesktops.shared.model(
-      for: resolvedServerId, showing: workspace.id, seedDisplayId: pane.screenSharing?.preferredDisplayId,
-      environment: environment)
+      for: resolvedServerId, seedDisplayId: pane.screenSharing?.preferredDisplayId, environment: environment)
   }
 
   func convertToScreenSharing(_ pane: PaneDescriptorState) {

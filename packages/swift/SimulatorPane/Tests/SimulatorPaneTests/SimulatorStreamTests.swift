@@ -91,9 +91,8 @@ struct SimulatorStreamTests {
     #expect(world.host.starts.count == 2)
   }
 
-  @Test(arguments: [false, true])
-  func theSessionLimitShowsTheHostsSentenceWithRetry(oldHost: Bool) async {
-    let world = World(oldHost: oldHost)
+  @Test func theSessionLimitShowsTheHostsSentenceWithRetry() async {
+    let world = World()
     world.host.answerEvery(.start, .reply(status: "busy", message: World.limit))
     let stream = world.shown()
 
@@ -106,12 +105,10 @@ struct SimulatorStreamTests {
     #expect(world.host.starts.count == 2)
   }
 
-  @Test(arguments: [false, true])
-  func aSimulatorThatIsStillStartingIsWaitedForAndConnectsWhenItAppears(oldHost: Bool) async {
-    let world = World(oldHost: oldHost)
-    let reason = oldHost ? nil : "nothing-to-view"
+  @Test func aSimulatorThatIsStillStartingIsWaitedForAndConnectsWhenItAppears() async {
+    let world = World()
     world.host.answerEvery(
-      .capabilities, .reply(status: "starting", message: "The simulator is starting.", reason: reason))
+      .capabilities, .reply(status: "starting", message: "The simulator is starting.", reason: "nothing-to-view"))
     let stream = world.shown()
 
     await awaitObserved { stream.isWaitingForTheSimulator }
@@ -145,22 +142,5 @@ struct SimulatorStreamTests {
     await world.goLive(stream)
 
     #expect(stream.state?.orientation == .landscapeRight)
-  }
-
-  @Test func anOldHostIsGivenAPaneThatIsAttachedNowAndTheNextOneWhenThatPaneCloses() async {
-    let world = World(oldHost: true)
-    let (first, second) = (world.pane(), world.pane())
-    world.show(first.stream)
-    world.show(second.stream)
-    await world.goLive(first.stream)
-    #expect(world.host.starts.map(\.paneId) == [first.identity.paneId] && world.host.starts[0].app == nil)
-
-    first.stream.stop()
-    world.host.answerNext(.heartbeat, .failure(FakeHost.paneGone))
-    await world.beat()
-    await world.goLive(second.stream, session: 1)
-
-    #expect(world.host.starts.map(\.paneId) == [first.identity.paneId, second.identity.paneId])
-    #expect(world.host.starts[1].workspaceId == second.identity.workspaceId)
   }
 }
