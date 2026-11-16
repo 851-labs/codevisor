@@ -34,6 +34,12 @@ public enum TranscriptBotMessageWidth {
     return width
   }
 
+  public static func width(
+    of content: TranscriptBotMessageContent, theme: MarkdownTheme, fitting available: CGFloat
+  ) -> CGFloat {
+    min(natural(of: content, theme: theme), available)
+  }
+
   private static var codeFont: MessageFont {
     MessageFont.monospacedSystemFont(
       ofSize: MessageFont.preferredFont(forTextStyle: .callout).pointSize, weight: .regular)
@@ -82,14 +88,17 @@ extension View {
 private struct TranscriptBotMessageWidthModifier: ViewModifier {
   let content: TranscriptBotMessageContent
   @Environment(\.markdownTheme) private var theme
+  @Environment(\.streamMarkdownTextLayoutWidth) private var available
 
   func body(content view: Content) -> some View {
-    let natural = TranscriptBotMessageWidth.natural(of: content, theme: theme)
+    let width = bubbleContentWidth
     view
-      .transformEnvironment(\.streamMarkdownTextLayoutWidth) { width in
-        width = width.map { min($0, natural) }
-      }
+      .environment(\.streamMarkdownTextLayoutWidth, width)
       .environment(\.markdownTableBleedLimit, 0)
-      .frame(maxWidth: natural, alignment: .leading)
+      .frame(maxWidth: width ?? TranscriptBotMessageWidth.natural(of: content, theme: theme), alignment: .leading)
+  }
+
+  private var bubbleContentWidth: CGFloat? {
+    available.map { TranscriptBotMessageWidth.width(of: content, theme: theme, fitting: $0) }
   }
 }

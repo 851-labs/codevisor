@@ -30,7 +30,7 @@ public struct TranscriptBotImagePart: View {
         .accessibilityLabel(alt.isEmpty ? "Image" : alt)
         .accessibilityAddTraits([.isImage, .isButton])
         .accessibilityAction(.default, quickLook)
-      Spacer(minLength: 40)
+      Spacer(minLength: TranscriptBubbleMetrics.oppositeSideGap)
     }
     .task(id: source) { image = await loader.image(for: source) }
   }

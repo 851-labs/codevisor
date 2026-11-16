@@ -49,7 +49,7 @@ final class NewChatSendLanding {
     return TranscriptSendLanding(
       trailing: pageFrame.minX + rowX + rowWidth,
       top: pageFrame.minY + VirtualizedTranscriptScrollView.topPadding,
-      maxBubbleWidth: rowWidth - 40
+      maxBubbleWidth: TranscriptBubbleMetrics.maxWidth(inRow: rowWidth)
     )
   }
 }

@@ -55,7 +55,7 @@ public struct TranscriptInlineCard: View {
         .padding(.vertical, verticalPadding)
         .modifier(TranscriptInlineCardSurface(inBotConversation: inBotConversation))
         .frame(maxWidth: TranscriptInlineCardMetrics.maxWidth, alignment: .leading)
-      Spacer(minLength: inBotConversation ? TranscriptInlineCardMetrics.bubbleTrailingInset : 0)
+      Spacer(minLength: inBotConversation ? TranscriptBubbleMetrics.oppositeSideGap : 0)
     }
     .accessibilityElement(children: .contain)
     .accessibilityLabel(title)
