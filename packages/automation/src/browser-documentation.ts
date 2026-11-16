@@ -49,7 +49,7 @@ Input:
 
 Other capabilities:
 - tab.clipboard.readText(), writeText(text), read(), write([{entries:[{mimeType,text?|base64?}]}]).
-- tab.getJsDialog(): optional {type,accept(promptText?),dismiss()}.
+- tab.getJsDialog(): optional {type,message,defaultValue,accept(promptText?),dismiss()}; message is the dialog's text and defaultValue a prompt's prefilled answer.
 - tab.dev.logs({levels?,filter?,limit?}). browser.user.history({queries?,from?,to?,limit?}) requires user Chrome.
 - browser.tabGroups.list(), ensure({tabs,title,color?}), create({tabs,title?,color?}), add(group,tabs), update(group,{title?,color?,collapsed?}), ungroup(tabs). Chrome only; ensure reuses an existing title.
 - browser.capabilities.list()/get('viewport'): set({width,height,deviceScaleFactor?,mobile?,touch?}), reset().
