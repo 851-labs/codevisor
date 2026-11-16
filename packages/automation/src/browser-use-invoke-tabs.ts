@@ -9,6 +9,7 @@ import {
   waitForCreatedTarget
 } from "./browser-cdp-engine.js"
 import type { BrowserRuntime, TargetInfo } from "./browser-cdp-engine.js"
+import { awaitsDialogAnswer } from "./browser-dialog-guard.js"
 import { waitForTargetsClosed } from "./browser-runtime-lifecycle.js"
 import {
   bringTabToFront,
@@ -87,13 +88,11 @@ const finalizeNativeTabs = async (tab: BrowserTabInvocation): Promise<CallToolRe
       } catch {
         finalized.failed.push(targetId)
       }
+      discardTargetState(active, targetId)
     } else {
-      const tabSessionId = active.sessions.get(targetId)
-      if (tabSessionId !== undefined)
-        await detachTarget(active, tabSessionId).catch(() => undefined)
       recordUnclosed(finalized, targetId, origin)
+      await releaseUnlessDialogOpen(active, targetId)
     }
-    discardTargetState(active, targetId)
   }
   await waitForTargetsClosed(active, finalized.closed)
 
@@ -325,6 +324,14 @@ const scopedTabs = (
 
 const closeTarget = (active: BrowserRuntime, targetId: string) =>
   active.connection.send("Target.closeTarget", { targetId })
+
+const releaseUnlessDialogOpen = async (active: BrowserRuntime, targetId: string): Promise<void> => {
+  if (awaitsDialogAnswer(active, targetId)) return
+
+  const tabSessionId = active.sessions.get(targetId)
+  if (tabSessionId !== undefined) await detachTarget(active, tabSessionId).catch(() => undefined)
+  discardTargetState(active, targetId)
+}
 
 const detachTarget = (active: BrowserRuntime, sessionId: string) =>
   active.connection.send("Target.detachFromTarget", { sessionId })

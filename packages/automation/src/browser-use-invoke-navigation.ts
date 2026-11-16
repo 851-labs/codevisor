@@ -3,12 +3,15 @@ import type { CallToolResult } from "@modelcontextprotocol/server"
 import {
   jsonResult,
   numberArgument,
+  openDialog,
   pageInformation,
   pageResult,
   stringArgument,
-  waitForReady
+  waitForReady,
+  type BrowserRuntime,
+  type PageHandle,
+  type ResolvedElement
 } from "./browser-cdp-engine.js"
-import type { ResolvedElement } from "./browser-cdp-engine.js"
 import { releaseElement, resolveElement } from "./browser-locators.js"
 import { snapshotPage } from "./browser-snapshot.js"
 import type { BrowserToolInvocation, BrowserToolSessionState } from "./browser-use-invoke-types.js"
@@ -21,7 +24,7 @@ export const invokeNavigationTools = async (
   const { active, args, page, toolName } = invocation
   switch (toolName) {
     case "tab_info": {
-      const info = await pageInformation(active, page)
+      const info = await tabInformation(active, page)
       return jsonResult({ id: page.target.targetId, ...info })
     }
     case "navigate": {
@@ -134,4 +137,13 @@ export const invokeNavigationTools = async (
     default:
       return undefined
   }
+}
+
+const tabInformation = async (
+  runtime: BrowserRuntime,
+  page: PageHandle
+): Promise<{ url: string; title: string }> => {
+  if (openDialog(runtime, page) !== undefined)
+    return { url: page.target.url, title: page.target.title }
+  return pageInformation(runtime, page)
 }

@@ -48,4 +48,34 @@ describe("JavaScript dialogs", () => {
       browser.write([alert.type, alert.message, await frame.locator('#out').textContent(), await tab.getJsDialog() ?? null])`)
     expect(seen).toEqual(["alert", "Saved", "alerted", null])
   })
+
+  it("names the open dialog instead of timing out, and still reports the tab", async ({
+    browser
+  }) => {
+    await browser.open("/dialogs")
+    const blocked = await browser.cell(`
+      await tab.playwright.getByRole('button', {name:'Tell'}).click()
+      const refused = await tab.getAXState().catch(error => error.message)
+      const title = await tab.title()
+      await (await tab.getJsDialog()).accept()
+      browser.write({ refused, title, after: (await tab.getAXState()).includes('button "Tell"') })`)
+    expect(blocked).toEqual({
+      refused:
+        'A JavaScript alert is open on this tab saying "Saved", so the page can\'t respond until it is answered. Read it with tab.getJsDialog(), then call accept() or dismiss() on it.',
+      title: "Dialogs",
+      after: true
+    })
+  })
+
+  it("lets a later turn answer a dialog that was left open", async ({ browser }) => {
+    await browser.open("/dialogs")
+    await browser.cell("await tab.playwright.getByRole('button', {name:'Ask'}).click()")
+    await browser.endTurn()
+    const answered = await browser.cell(`
+      const kept = (await browser.tabs.list({scope:'session'}))[0]
+      const prompt = await kept.getJsDialog()
+      await prompt.accept('later')
+      browser.write([prompt.message, await kept.playwright.locator('#out').textContent()])`)
+    expect(answered).toEqual(["Your name?", "answer:later"])
+  })
 })
