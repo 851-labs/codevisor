@@ -1,6 +1,7 @@
 import {
   evaluate,
   pageInformation,
+  waitForReady,
   type BrowserRuntime,
   type PageHandle
 } from "./browser-cdp-engine.js"
@@ -112,3 +113,31 @@ export const waitForBrowserState = async (
     await delay(Math.min(50, Math.max(1, deadline - performance.now())))
   }
 }
+
+const leavePageWaitMs = 15_000
+
+export const waitForMainFrameNavigation = async (
+  runtime: BrowserRuntime,
+  page: PageHandle,
+  afterSequence: number
+): Promise<void> => {
+  const deadline = performance.now() + leavePageWaitMs
+  while (!mainFrameNavigatedSince(runtime, page, afterSequence)) {
+    if (performance.now() >= deadline) return
+    await delay(50)
+  }
+  await waitForReady(runtime, page).catch(() => undefined)
+}
+
+const mainFrameNavigatedSince = (
+  runtime: BrowserRuntime,
+  page: PageHandle,
+  afterSequence: number
+): boolean =>
+  runtime.eventLog.some(
+    (event) =>
+      event.sequence > afterSequence &&
+      event.sessionId === page.sessionId &&
+      event.method === "Page.frameNavigated" &&
+      recordOrUndefined(event.params.frame)?.parentId === undefined
+  )

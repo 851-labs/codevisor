@@ -3,6 +3,7 @@ import type { ChildProcess } from "node:child_process"
 import type { CallToolResult } from "@modelcontextprotocol/server"
 
 import { delay, evaluatedValue, type CdpConnection } from "./browser-cdp.js"
+import { sendUnlessDialogOpens } from "./browser-dialog-race.js"
 import { assertReadOnlyFunction } from "./browser-evaluate-guard.js"
 import {
   attachedFrameSession,
@@ -343,11 +344,26 @@ export const pageInformation = async (
 export const waitForReady = async (runtime: BrowserRuntime, page: PageHandle): Promise<void> => {
   const deadline = Date.now() + 15_000
   while (Date.now() < deadline) {
-    const state = await evaluate(runtime, page, "document.readyState").catch(() => "loading")
-    if (state === "interactive" || state === "complete") return
+    const state = await readyStateUnlessDialogOpens(runtime, page)
+    if (state === "interactive" || state === "complete" || state === "dialog") return
     await delay(100)
   }
   throw new Error("Timed out waiting for the page to become interactive")
+}
+
+const readyStateUnlessDialogOpens = async (
+  runtime: BrowserRuntime,
+  page: PageHandle
+): Promise<unknown> => {
+  if (openDialog(runtime, page) !== undefined) return "dialog"
+  const read = await sendUnlessDialogOpens(runtime, page, "Runtime.evaluate", {
+    expression: "document.readyState",
+    returnByValue: true,
+    awaitPromise: true
+  }).catch(() => undefined)
+  if (read === undefined) return "loading"
+  if (read.dialogOpened) return "dialog"
+  return evaluatedValue(read.result)
 }
 
 export const grantClipboardPermissions = async (

@@ -12,6 +12,7 @@ import {
   type PageHandle,
   type ResolvedElement
 } from "./browser-cdp-engine.js"
+import { sendUnlessDialogOpens } from "./browser-dialog-race.js"
 import { releaseElement, resolveElement } from "./browser-locators.js"
 import { snapshotPage } from "./browser-snapshot.js"
 import type { BrowserToolInvocation, BrowserToolSessionState } from "./browser-use-invoke-types.js"
@@ -29,14 +30,16 @@ export const invokeNavigationTools = async (
     }
     case "navigate": {
       const url = stringArgument(args, "url")
-      const response = await active.connection.send<{ errorText?: string }>(
+      const sent = await sendUnlessDialogOpens<{ errorText?: string }>(
+        active,
+        page,
         "Page.navigate",
-        { url },
-        page.sessionId
+        { url }
       )
-      if (response.errorText !== undefined) throw new Error(response.errorText)
+      if (sent.dialogOpened) return navigationResult(active, page, "navigate")
+      if (sent.result.errorText !== undefined) throw new Error(sent.result.errorText)
       await waitForReady(active, page)
-      return pageResult(active, page, { action: "navigate", path: "cdp", delivered: true })
+      return navigationResult(active, page, "navigate")
     }
     case "back":
     case "forward": {
@@ -47,18 +50,17 @@ export const invokeNavigationTools = async (
       const offset = toolName === "back" ? -1 : 1
       const entry = history.entries[history.currentIndex + offset]
       if (entry === undefined) throw new Error(`There is no page to navigate ${toolName}`)
-      await active.connection.send(
-        "Page.navigateToHistoryEntry",
-        { entryId: entry.id },
-        page.sessionId
-      )
-      await waitForReady(active, page)
-      return pageResult(active, page, { action: toolName, path: "cdp", delivered: true })
+      const sent = await sendUnlessDialogOpens(active, page, "Page.navigateToHistoryEntry", {
+        entryId: entry.id
+      })
+      if (!sent.dialogOpened) await waitForReady(active, page)
+      return navigationResult(active, page, toolName)
     }
-    case "reload":
-      await active.connection.send("Page.reload", {}, page.sessionId)
-      await waitForReady(active, page)
-      return pageResult(active, page, { action: "reload", path: "cdp", delivered: true })
+    case "reload": {
+      const sent = await sendUnlessDialogOpens(active, page, "Page.reload", {})
+      if (!sent.dialogOpened) await waitForReady(active, page)
+      return navigationResult(active, page, "reload")
+    }
     case "snapshot":
       return snapshotPage(active, page, Math.max(1, Math.min(60, Number(args.depth ?? 30))))
     case "screenshot": {
@@ -138,6 +140,9 @@ export const invokeNavigationTools = async (
       return undefined
   }
 }
+
+const navigationResult = (runtime: BrowserRuntime, page: PageHandle, action: string) =>
+  pageResult(runtime, page, { action, path: "cdp", delivered: true })
 
 const tabInformation = async (
   runtime: BrowserRuntime,
