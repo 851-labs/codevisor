@@ -26,18 +26,20 @@ extension ChromiumBrowserModel {
     let view = try await readyView()
     var metrics = params
     metrics.removeValue(forKey: "touch")
+    viewport = ChromiumViewport(width: width, height: height, dpr: dpr, mobile: mobile, touch: touch)
     let scale = view.setViewportWidth(CGFloat(width), height: CGFloat(height))
+    viewportScale = Double(scale)
     metrics["scale"] = scale
     metrics["dontSetVisibleSize"] = true
     _ = try await view.cdp("Emulation.setDeviceMetricsOverride", metrics)
     _ = try await view.cdp("Emulation.setTouchEmulationEnabled", ["enabled": touch])
-    viewport = ChromiumViewport(width: width, height: height, dpr: dpr, mobile: mobile, touch: touch)
   }
   func resetViewport() async throws {
     let view = try await readyView()
     _ = try await view.cdp("Emulation.clearDeviceMetricsOverride")
     _ = try await view.cdp("Emulation.setTouchEmulationEnabled", ["enabled": false])
     view.setViewportWidth(0, height: 0)
+    viewportScale = 1
     viewport = nil
   }
 }

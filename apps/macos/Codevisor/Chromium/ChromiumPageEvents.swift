@@ -22,6 +22,7 @@ enum ChromiumPageEvents {
     view.viewportScaleChanged = { [weak model, weak view] scale in
       Task { @MainActor [weak model, weak view] in
         guard let model, let view, model.isCurrent(token), let viewport = model.viewport else { return }
+        model.viewportScale = Double(scale)
         var metrics = viewport.parameters
         metrics["scale"] = scale
         metrics["dontSetVisibleSize"] = true

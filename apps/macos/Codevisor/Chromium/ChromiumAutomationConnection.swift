@@ -120,7 +120,8 @@ actor ChromiumAutomationConnection {
         return
       }
       return forward(
-        request.id, method, request.rawParams, to: model, session: sessions[sessionId]?.native ?? sessionId)
+        request.id, method, request.rawParams, to: model, session: sessions[sessionId]?.native ?? sessionId,
+        inFrame: sessions[sessionId] == nil)
     }
     let id = request.id
     Task {
@@ -130,11 +131,17 @@ actor ChromiumAutomationConnection {
     }
   }
 
-  private func forward(_ id: Data, _ method: String, _ params: Data?, to model: ChromiumBrowserModel, session: String) {
+  private func forward(
+    _ id: Data, _ method: String, _ params: Data?, to model: ChromiumBrowserModel, session: String,
+    inFrame: Bool = false
+  ) {
     let connection = self
     Task { @MainActor in
       do {
-        try await model.readyView().sendProtocolMethod(method, params: params, sessionId: session) { reply in
+        let view = try await model.readyView()
+        let scale = inFrame ? 1 : model.viewportScale
+        let params = ChromiumViewportScaling.params(for: method, params, scale: scale)
+        view.sendProtocolMethod(method, params: params, sessionId: session) { reply in
           ChromiumAutomationBridge.queue.async { connection.assumeIsolated { $0.forwardReply(id, reply) } }
         }
       } catch {

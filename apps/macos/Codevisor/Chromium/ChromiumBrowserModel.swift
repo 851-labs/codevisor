@@ -28,6 +28,7 @@ final class ChromiumBrowserModel {
   private(set) var snapshot: Data?
   let address = ChromiumAddressFocus()
   var viewport: ChromiumViewport?
+  @ObservationIgnored var viewportScale = 1.0
   @ObservationIgnored private var synchronized = false
   @ObservationIgnored private let readiness = ChromiumPageReadiness()
   @ObservationIgnored private let firstPage = ChromiumFirstPage()
