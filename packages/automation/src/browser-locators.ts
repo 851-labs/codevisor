@@ -6,6 +6,9 @@ import { normalizeRef } from "./browser-snapshot.js"
 import { expectBoolean, expectRecord } from "./unknown-values.js"
 export { locatorBackendNodeIds } from "./browser-locator-resolve.js"
 
+const actionPointStateFunction =
+  "function(){const r=this.getBoundingClientRect();const s=getComputedStyle(this);const root=this.getRootNode();const tree=typeof root.elementFromPoint==='function'?root:document;const h=tree.elementFromPoint(r.left+r.width/2,r.top+r.height/2);return {connected:this.isConnected,visible:r.width>0&&r.height>0&&s.visibility!=='hidden'&&s.display!=='none'&&s.pointerEvents!=='none',disabled:!!this.disabled||this.getAttribute('aria-disabled')==='true',hit:h===this||this.contains(h)};}"
+
 const resolveBackendElement = async (
   runtime: BrowserRuntime,
   page: PageHandle,
@@ -38,8 +41,7 @@ const resolveBackendElement = async (
           "Runtime.callFunctionOn",
           {
             objectId,
-            functionDeclaration:
-              "function(){const r=this.getBoundingClientRect();const s=getComputedStyle(this);const h=document.elementFromPoint(r.left+r.width/2,r.top+r.height/2);return {connected:this.isConnected,visible:r.width>0&&r.height>0&&s.visibility!=='hidden'&&s.display!=='none'&&s.pointerEvents!=='none',disabled:!!this.disabled||this.getAttribute('aria-disabled')==='true',hit:h===this||this.contains(h)};}",
+            functionDeclaration: actionPointStateFunction,
             returnByValue: true
           },
           page.sessionId
