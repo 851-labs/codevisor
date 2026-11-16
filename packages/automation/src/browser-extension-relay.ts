@@ -17,9 +17,11 @@ import { createBrowserExtensionArchive } from "./browser-extension-archive.js"
 import {
   bundledExtension,
   describeExtensionError,
+  lacksCommand,
   outdatedExtensionNote,
   readExtensionHello,
   stampExtensionBuild,
+  type ConnectedExtension,
   type ExtensionHello
 } from "./browser-extension-build.js"
 import { nativeHostNameFor } from "./browser-native-host.js"
@@ -367,7 +369,7 @@ export const makeBrowserExtensionRelay = (): BrowserExtensionRelay => {
     | {
         readonly socket: BrowserExtensionSocket
         readonly connection: CdpConnection
-        readonly hello: () => ExtensionHello | undefined
+        readonly extension: () => ConnectedExtension
       }
     | undefined
   const waiters = new Set<(connection: CdpConnection) => void>()
@@ -379,10 +381,10 @@ export const makeBrowserExtensionRelay = (): BrowserExtensionRelay => {
   const activate = (
     socket: BrowserExtensionSocket,
     connection: CdpConnection,
-    hello: () => ExtensionHello | undefined
+    extension: () => ConnectedExtension
   ) => {
     const previous = active
-    const next = { socket, connection, hello }
+    const next = { socket, connection, extension }
     active = next
     socket.once("close", () => {
       if (active !== next) return
@@ -407,12 +409,16 @@ export const makeBrowserExtensionRelay = (): BrowserExtensionRelay => {
       }
       const connection = CdpConnection.fromSocket(socket)
       let hello: ExtensionHello | undefined
+      let lackedCommand = false
       connection.on("Codevisor.hello", (params) => {
         hello = readExtensionHello(params)
       })
-      connection.describeErrorsWith(describeExtensionError)
+      connection.describeErrorsWith((summary) => {
+        lackedCommand ||= lacksCommand(summary)
+        return describeExtensionError(summary)
+      })
       void extensionReady(connection).then((ready) => {
-        if (ready && !closed) activate(socket, connection, () => hello)
+        if (ready && !closed) activate(socket, connection, () => ({ hello, lackedCommand }))
         else void connection.close().catch(() => undefined)
       })
     },
@@ -420,7 +426,7 @@ export const makeBrowserExtensionRelay = (): BrowserExtensionRelay => {
     outdatedNote: () => {
       const source = browserExtensionPath()
       if (active === undefined || source === undefined) return undefined
-      return outdatedExtensionNote(active.hello(), bundledExtension(source))
+      return outdatedExtensionNote(active.extension(), bundledExtension(source))
     },
     onConnectionChange: (listener) => {
       listeners.add(listener)

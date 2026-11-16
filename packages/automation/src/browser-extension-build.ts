@@ -42,21 +42,31 @@ export const readExtensionHello = (params: unknown): ExtensionHello | undefined 
   }
 }
 
+export interface ConnectedExtension {
+  readonly hello: ExtensionHello | undefined
+  readonly lackedCommand: boolean
+}
+
 export const outdatedExtensionNote = (
-  hello: ExtensionHello | undefined,
+  { hello, lackedCommand }: ConnectedExtension,
   expected: BundledExtension
 ): string | undefined => {
-  if (hello === undefined) return olderThanApp
+  if (lackedCommand) return olderThanApp
+  if (hello === undefined) return undefined
   if (expected.protocol !== undefined && hello.protocol < expected.protocol) return olderThanApp
   if (hello.build !== undefined && hello.build !== expected.build) return staleCopy
   return undefined
 }
 
+export const lacksCommand = (summary: string): boolean => unsupportedCommand.test(summary)
+
 export const describeExtensionError = (summary: string): string => {
-  const unsupported = /^Unsupported browser command: (.+)$/.exec(summary)
+  const unsupported = unsupportedCommand.exec(summary)
   if (unsupported === null) return summary
   return `The Codevisor Chrome extension is out of date: it doesn't know ${unsupported[1]}. ${howToUpdate}`
 }
+
+const unsupportedCommand = /^Unsupported browser command: (.+)$/
 
 const howToUpdate =
   "Update it at chrome://extensions (turn on Developer mode, then Update), or press its reload button there if it was loaded unpacked."

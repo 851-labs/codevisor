@@ -27,6 +27,10 @@ const extensionSource = (files: Record<string, string> = {}): string => {
 }
 
 const expected = { protocol: 3, build: "0.2.0 (aaaaaaaa)" }
+const introduced = (protocol: number, build?: string) => ({
+  hello: { protocol, build },
+  lackedCommand: false
+})
 
 describe("Chrome extension build", () => {
   it("names a build after the extension's own code, not the per-install relay address", () => {
@@ -61,21 +65,25 @@ describe("Chrome extension build", () => {
     expect(readExtensionHello(undefined)).toBeUndefined()
   })
 
-  it("calls an extension out of date when it is silent, speaks an older protocol, or is a stale copy", () => {
+  it("calls an extension out of date when it lacked a command, speaks an older protocol, or is a stale copy", () => {
     const older = /^The Codevisor Chrome extension is older than this app/
-    expect(outdatedExtensionNote(undefined, expected)).toMatch(older)
-    expect(outdatedExtensionNote({ protocol: 2, build: undefined }, expected)).toMatch(older)
-    expect(outdatedExtensionNote({ protocol: 3, build: "0.2.0 (bbbbbbbb)" }, expected)).toMatch(
+    const quiet = { hello: undefined, lackedCommand: false }
+    expect(outdatedExtensionNote({ ...quiet, lackedCommand: true }, expected)).toMatch(older)
+    expect(outdatedExtensionNote(introduced(2), expected)).toMatch(older)
+    expect(outdatedExtensionNote(introduced(3, "0.2.0 (bbbbbbbb)"), expected)).toMatch(
       /^Chrome is running an unpacked copy of the Codevisor extension from a different version/
     )
   })
 
-  it("accepts the same or a newer protocol, a matching copy, and a store build", () => {
-    expect(outdatedExtensionNote({ protocol: 3, build: undefined }, expected)).toBeUndefined()
-    expect(outdatedExtensionNote({ protocol: 4, build: undefined }, expected)).toBeUndefined()
-    expect(outdatedExtensionNote({ protocol: 3, build: expected.build }, expected)).toBeUndefined()
+  it("accepts an extension from before introductions, the same or a newer protocol, a matching copy, and a store build", () => {
     expect(
-      outdatedExtensionNote({ protocol: 1, build: undefined }, { ...expected, protocol: undefined })
+      outdatedExtensionNote({ hello: undefined, lackedCommand: false }, expected)
+    ).toBeUndefined()
+    expect(outdatedExtensionNote(introduced(3), expected)).toBeUndefined()
+    expect(outdatedExtensionNote(introduced(4), expected)).toBeUndefined()
+    expect(outdatedExtensionNote(introduced(3, expected.build), expected)).toBeUndefined()
+    expect(
+      outdatedExtensionNote(introduced(1), { ...expected, protocol: undefined })
     ).toBeUndefined()
   })
 
