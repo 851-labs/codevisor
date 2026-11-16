@@ -94,7 +94,7 @@ export const browserUsePageTools: ReadonlyArray<Tool> = [
         method: { type: "string" },
         params: { type: "object" },
         target: { type: "object" },
-        timeoutMs: { type: "number", minimum: 0, maximum: 30000 }
+        timeoutMs: { type: "number", minimum: 0, maximum: 120000 }
       },
       ["method"]
     )
@@ -107,7 +107,7 @@ export const browserUsePageTools: ReadonlyArray<Tool> = [
       limit: { type: "number", minimum: 1, maximum: 1000 },
       methods: { type: "array", items: { type: "string" } },
       target: { type: "object" },
-      timeoutMs: { type: "number", minimum: 0, maximum: 30000 }
+      timeoutMs: { type: "number", minimum: 0, maximum: 120000 }
     })
   ),
   tool(

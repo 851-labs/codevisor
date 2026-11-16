@@ -37,6 +37,7 @@ import {
 } from "./browser-locators.js"
 import { snapshotPage } from "./browser-snapshot.js"
 import type { BrowserToolInvocation, BrowserToolSessionState } from "./browser-use-invoke-types.js"
+import { waitBudget } from "./browser-wait-budget.js"
 import { expectString } from "./unknown-values.js"
 
 const typedKeyName = (character: string): string => {
@@ -125,7 +126,7 @@ export const invokePlaywrightTools = async (
         page,
         args.locator,
         true,
-        Number(args.timeoutMs ?? 30000)
+        waitBudget(args.timeoutMs)
       )
       try {
         await active.connection.send(
@@ -160,7 +161,7 @@ export const invokePlaywrightTools = async (
         page,
         args.locator,
         false,
-        Number(args.timeoutMs ?? 30_000)
+        waitBudget(args.timeoutMs)
       )
       try {
         await triggerMediaDownload(active, page, element.objectId)
@@ -171,7 +172,7 @@ export const invokePlaywrightTools = async (
     }
     case "playwright.waitForEvent": {
       const event = stringArgument(args, "event")
-      const timeoutMs = Math.max(0, Math.min(30_000, Number(args.timeoutMs ?? 30_000)))
+      const timeoutMs = waitBudget(args.timeoutMs)
       if (event === "filechooser") return waitForFileChooser(active, page, timeoutMs)
       if (event === "download") {
         const eventSessionId = backend === "extension" ? page.sessionId : undefined
@@ -216,7 +217,7 @@ export const invokePlaywrightTools = async (
     }
     case "playwright.downloadPath": {
       const downloadId = stringArgument(args, "downloadId")
-      const deadline = Date.now() + Math.max(0, Math.min(30_000, Number(args.timeoutMs ?? 30_000)))
+      const deadline = Date.now() + waitBudget(args.timeoutMs)
       while (true) {
         const download = active.downloads.get(downloadId)
         if (download?.state === "canceled") throw new Error("Download was canceled")
@@ -233,7 +234,7 @@ export const invokePlaywrightTools = async (
         page,
         args.locator,
         args.force !== true,
-        Number(args.timeoutMs ?? 30_000)
+        waitBudget(args.timeoutMs)
       )
       try {
         await dispatchClick(
@@ -258,7 +259,7 @@ export const invokePlaywrightTools = async (
         page,
         args.locator,
         true,
-        Number(args.timeoutMs ?? 30_000)
+        waitBudget(args.timeoutMs)
       )
       let actual: string | undefined
       try {
@@ -276,7 +277,7 @@ export const invokePlaywrightTools = async (
         page,
         args.locator,
         true,
-        Number(args.timeoutMs ?? 30_000)
+        waitBudget(args.timeoutMs)
       )
       try {
         await cursor.move(element.x, element.y)
@@ -292,7 +293,7 @@ export const invokePlaywrightTools = async (
         page,
         args.locator,
         true,
-        Number(args.timeoutMs ?? 30_000)
+        waitBudget(args.timeoutMs)
       )
       try {
         await active.connection.send(
@@ -319,7 +320,7 @@ export const invokePlaywrightTools = async (
         page,
         args.locator,
         args.force !== true,
-        Number(args.timeoutMs ?? 30_000)
+        waitBudget(args.timeoutMs)
       )
       try {
         await setCheckedElement(active, page, element, desired, cursor)
@@ -335,7 +336,7 @@ export const invokePlaywrightTools = async (
         page,
         args.locator,
         true,
-        Number(args.timeoutMs ?? 30_000)
+        waitBudget(args.timeoutMs)
       )
       let selected: string[]
       try {
@@ -356,7 +357,7 @@ export const invokePlaywrightTools = async (
           args.locator,
           "function(){return !this.disabled&&this.getAttribute('aria-disabled')!=='true';}",
           [],
-          Number(args.timeoutMs ?? 30_000)
+          waitBudget(args.timeoutMs)
         )
       })
     case "playwright.getAttribute":
@@ -367,7 +368,7 @@ export const invokePlaywrightTools = async (
           args.locator,
           "function(name){return this.getAttribute(name);}",
           [stringArgument(args, "name")],
-          Number(args.timeoutMs ?? 30_000)
+          waitBudget(args.timeoutMs)
         )
       })
     case "playwright.innerText":
@@ -378,7 +379,7 @@ export const invokePlaywrightTools = async (
           args.locator,
           "function(){return String(this.innerText||'');}",
           [],
-          Number(args.timeoutMs ?? 30_000)
+          waitBudget(args.timeoutMs)
         )
       })
     case "playwright.textContent":
@@ -389,7 +390,7 @@ export const invokePlaywrightTools = async (
           args.locator,
           "function(){return this.textContent; }",
           [],
-          Number(args.timeoutMs ?? 30_000)
+          waitBudget(args.timeoutMs)
         )
       })
     case "playwright.waitFor": {
@@ -397,8 +398,7 @@ export const invokePlaywrightTools = async (
       if (!["attached", "detached", "visible", "hidden"].includes(targetState)) {
         throw new Error("state must be attached, detached, visible, or hidden")
       }
-      const timeoutMs = Math.max(0, Math.min(30_000, Number(args.timeoutMs ?? 30_000)))
-      const deadline = Date.now() + timeoutMs
+      const deadline = Date.now() + waitBudget(args.timeoutMs)
       while (true) {
         const ids = await locatorBackendNodeIds(active, page, args.locator)
         let satisfied: boolean
@@ -423,14 +423,14 @@ export const invokePlaywrightTools = async (
       }
     }
     case "playwright.waitForTimeout":
-      await delay(Math.max(0, Math.min(30_000, numberArgument(args, "timeoutMs"))))
+      await delay(waitBudget(numberArgument(args, "timeoutMs")))
       return jsonResult({ waited: true })
     case "playwright.armNavigation":
       return jsonResult(await browserNavigationBaseline(active, page))
     case "playwright.waitForNavigation":
       await waitForBrowserState(active, page, {
         state: typeof args.waitUntil === "string" ? args.waitUntil : "load",
-        timeoutMs: Number(args.timeoutMs ?? 30000),
+        timeoutMs: waitBudget(args.timeoutMs),
         afterSequence: Number(args.afterSequence),
         frameId: String(args.frameId),
         ...(typeof args.url === "string" ? { url: args.url } : {})
@@ -440,13 +440,13 @@ export const invokePlaywrightTools = async (
       await waitForBrowserState(active, page, {
         url: stringArgument(args, "url"),
         state: typeof args.waitUntil === "string" ? args.waitUntil : "commit",
-        timeoutMs: Number(args.timeoutMs ?? 30000)
+        timeoutMs: waitBudget(args.timeoutMs)
       })
       return jsonResult({ matched: true })
     case "playwright.waitForLoadState":
       await waitForBrowserState(active, page, {
         state: typeof args.state === "string" ? args.state : "load",
-        timeoutMs: Number(args.timeoutMs ?? 30000)
+        timeoutMs: waitBudget(args.timeoutMs)
       })
       return jsonResult({ matched: true })
     default:

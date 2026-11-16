@@ -9,7 +9,8 @@ export const sendUnlessDialogOpens = async <T = Readonly<Record<string, unknown>
   runtime: BrowserRuntime,
   page: PageHandle,
   method: string,
-  params: Readonly<Record<string, unknown>>
+  params: Readonly<Record<string, unknown>>,
+  timeoutMs?: number
 ): Promise<DialogRace<T>> => {
   const { promise: dialog, resolve: resolveDialog } = Promise.withResolvers<void>()
   const stop = runtime.connection.on(
@@ -17,7 +18,7 @@ export const sendUnlessDialogOpens = async <T = Readonly<Record<string, unknown>
     () => resolveDialog(),
     tabSessionOf(runtime, page.sessionId)
   )
-  const command = runtime.connection.send<T>(method, params, page.sessionId)
+  const command = runtime.connection.send<T>(method, params, page.sessionId, timeoutMs)
   try {
     const outcome = await Promise.race([
       command.then((result) => ({ dialogOpened: false as const, result })),

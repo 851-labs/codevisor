@@ -99,7 +99,10 @@ export const browserUseNativeTools: ReadonlyArray<Tool> = [
   tool(
     "navigate",
     "Navigate the selected tab to an HTTP(S) URL.",
-    objectSchema({ url: { type: "string" } }, ["url"])
+    objectSchema(
+      { url: { type: "string" }, timeoutMs: { type: "number", minimum: 0, maximum: 120000 } },
+      ["url"]
+    )
   ),
   tool("back", "Navigate the selected tab back."),
   tool("forward", "Navigate the selected tab forward."),
@@ -320,7 +323,7 @@ export const browserUseNativeTools: ReadonlyArray<Tool> = [
       {
         x: { type: "number" },
         y: { type: "number" },
-        timeoutMs: { type: "number", minimum: 0, maximum: 30000 }
+        timeoutMs: { type: "number", minimum: 0, maximum: 120000 }
       },
       ["x", "y"]
     )
@@ -331,7 +334,7 @@ export const browserUseNativeTools: ReadonlyArray<Tool> = [
     objectSchema(
       {
         target: { type: "string" },
-        timeoutMs: { type: "number", minimum: 0, maximum: 30000 }
+        timeoutMs: { type: "number", minimum: 0, maximum: 120000 }
       },
       ["target"]
     )

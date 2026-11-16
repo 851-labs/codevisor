@@ -22,7 +22,7 @@ Simple accessibility:
 Refs belong to the latest observation of that tab in this session. Do not manufacture or reuse a ref after another snapshot/navigation. An old ref rejects. Prefer locators for repeated operations.
 
 Navigation and capture:
-- tab.goto(url), back(), forward(), reload(), close(), title(), url().
+- tab.goto(url,{timeoutMs?}), back(), forward(), reload(), close(), title(), url().
 - tab.screenshot({fullPage?:boolean,clip?:{x,y,width,height},type?:'png'|'jpeg'}).
 - tab.content.export({format?:'markdown'|'html'|'pdf'}): returns a real file and attachments. Markdown exports visible text with title/source; HTML exports the document; PDF uses the browser print engine. Maximum export size is 20 MB. These are generic page exports, not document-editor-native file formats.
 - Binary results have artifacts with local path fields through Codevisor. Read the attaching-files skill (through the skills tool) to share them; embed an existing path as ![label](<path>) or [Download](<path>).
@@ -34,7 +34,7 @@ Playwright-style page API (tab.playwright):
 - expectNavigation(action,{url?,waitUntil?:'commit'|'domcontentloaded'|'load'|'networkidle',timeoutMs?}): arms before action; requires an actual main-frame navigation, including pushState/hash navigation.
 - waitForURL(url,{waitUntil?,timeoutMs?}); waitForLoadState({state?,timeoutMs?}); networkidle requires no tracked requests for 500 ms.
 - waitForEvent('download'|'filechooser',{timeoutMs?}); arm before clicking. FileChooser has isMultiple() and setFiles(workspacePaths). Download has url(), suggestedFilename(), and path({timeoutMs?}); the saved file keeps the suggested name.
-- waitForTimeout(ms) exists; prefer observable conditions. Waits are bounded to 30 seconds.
+- waitForTimeout(ms) exists; prefer observable conditions. Every timeoutMs defaults to 30 seconds and may be up to 120000 (2 minutes); a larger value is refused, not shortened.
 
 Locators compose with locator, getBy*, filter({has,hasNot,hasText,hasNotText,visible}), and, or, first, last, nth.
 Reads: all(), allTextContents(), count(), innerText(), textContent(), getAttribute(name), isVisible(), isEnabled(), evaluate(fn,arg?,options?), evaluateAll(fn,arg?,options?).
