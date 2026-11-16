@@ -24,7 +24,9 @@ struct ScreenSharingConnectionView: View {
         if let endpoint = store.endpoint {
           ScreenSharingNativeView(pane: pane, onClick: takeControl).id(endpoint.id)
         }
-        if !store.isLive { progress }
+        if !store.isLive {
+          ScreenSharingStatusView(content: progress, size: .pane) { _ in }
+        }
       }
       .frame(maxWidth: .infinity, maxHeight: .infinity)
     }
@@ -41,16 +43,8 @@ struct ScreenSharingConnectionView: View {
     }
   }
 
-  private var progress: some View {
-    VStack(spacing: 12) {
-      ProgressView().controlSize(.small)
-      Text(title)
-      if let step = store.stillConnectingStep {
-        Text(step).font(.callout).foregroundStyle(.secondary)
-      }
-      if let notice = store.hostNotice { Text(notice).font(.callout).foregroundStyle(.secondary) }
-    }
-    .padding(24)
+  private var progress: ScreenSharingStatusView.Content {
+    .progress(title: title, details: [store.stillConnectingStep, store.hostNotice].compactMap(\.self))
   }
 
   private var title: String {

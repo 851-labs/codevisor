@@ -12,10 +12,10 @@ struct ScreenSharingPaneFailure: Equatable {
   init(reason: ScreenSharingFailureReason, machineName: String) {
     sentence = reason.sentence(on: machineName)
     action =
-      switch reason {
-      case .takenOver, .inUse: .viewHere
-      case .unsupportedOnThisDevice: nil
-      default: .tryAgain
+      switch ScreenSharingFailureAction(for: reason) {
+      case .viewHere: .viewHere
+      case .connect, .retry: .tryAgain
+      case nil: nil
       }
   }
 }

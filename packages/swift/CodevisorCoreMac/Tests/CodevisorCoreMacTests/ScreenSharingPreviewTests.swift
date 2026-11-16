@@ -28,7 +28,11 @@ struct ScreenSharingPreviewTests {
     #expect(state(.reconnecting).preview == .reconnecting)
   }
 
-  @Test func previewShowsTheFailureAsASentence() {
-    #expect(state(.failed(.noVideo)).preview == .failed("Connected, but croissant sent no picture."))
+  @Test func previewShowsTheFailureAsASentenceWithItsButton() {
+    #expect(state(.failed(.noVideo)).preview == .failed("Connected, but croissant sent no picture.", .retry))
+    #expect(
+      state(.failed(.inUse(by: "Alexandru's iPhone"))).preview == .failed("In use on Alexandru's iPhone.", .viewHere))
+    #expect(state(.failed(.stoppedOnHost)).preview == .failed("Sharing was stopped on croissant.", .connect))
+    #expect(state(.failed(.updateNeeded)).preview == .failed("Update Codevisor on croissant.", nil))
   }
 }
