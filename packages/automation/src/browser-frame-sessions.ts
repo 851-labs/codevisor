@@ -69,6 +69,16 @@ export const forgetFrameSessions = (
   }
 }
 
+export const tabSessionIds = (
+  runtime: Pick<FrameSessionRegistry, "frameParents">,
+  pageSessionId: string
+): string[] => {
+  const frames = [...runtime.frameParents]
+    .filter(([, parent]) => parent === pageSessionId)
+    .flatMap(([sessionId]) => tabSessionIds(runtime, sessionId))
+  return [pageSessionId, ...frames]
+}
+
 export const attachedFrameSession = async (
   runtime: FrameSessionRegistry,
   frameId: string

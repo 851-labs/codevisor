@@ -70,14 +70,18 @@ function readLevels(args: Entry): Set<string> | undefined {
     : undefined
 }
 
+const inOrder = (left: Entry, right: Entry): number =>
+  Number(left.sequence ?? 0) - Number(right.sequence ?? 0)
+
 export function readBrowserLogs(
   logs: BrowserRuntime["logs"],
-  sessionId: string,
+  sessionIds: ReadonlyArray<string>,
   args: Entry
 ): BrowserLogEntry[] {
   const levels = readLevels(args)
   const filter = typeof args.filter === "string" ? args.filter : undefined
-  const normalized = (logs.get(sessionId) ?? []).map(normalizeEntry)
+  const recorded = sessionIds.flatMap((sessionId) => logs.get(sessionId) ?? [])
+  const normalized = recorded.toSorted(inOrder).map(normalizeEntry)
   return normalized
     .filter(
       (entry) =>

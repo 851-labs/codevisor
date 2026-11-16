@@ -8,7 +8,8 @@ import {
   attachedFrameSession,
   autoAttachFrames,
   enableSessionDomains,
-  forgetFrameSessions
+  forgetFrameSessions,
+  tabSessionIds
 } from "./browser-frame-sessions.js"
 import { expectRecord, expectString } from "./unknown-values.js"
 
@@ -130,8 +131,9 @@ export const pageTargets = async (runtime: BrowserRuntime): Promise<TargetInfo[]
 }
 
 const discardSessionArtifacts = (runtime: BrowserRuntime, sessionId: string): void => {
+  for (const frameSessionId of tabSessionIds(runtime, sessionId))
+    runtime.logs.delete(frameSessionId)
   forgetFrameSessions(runtime, sessionId)
-  runtime.logs.delete(sessionId)
   runtime.dialogs.delete(sessionId)
   for (const [chooserId, chooser] of runtime.fileChoosers) {
     if (chooser.sessionId === sessionId) runtime.fileChoosers.delete(chooserId)
