@@ -1,8 +1,6 @@
 import SwiftUI
 
 struct MachineDesktopOpenButton: View {
-  private static let backing = Color(nsColor: .windowBackgroundColor).opacity(0.6)
-
   let action: () -> Void
 
   var body: some View {
@@ -14,7 +12,7 @@ struct MachineDesktopOpenButton: View {
         .contentShape(.capsule)
     }
     .buttonStyle(.plain)
-    .glassEffect(.regular.tint(Self.backing).interactive(), in: .capsule)
+    .glassEffect(.regular.interactive(), in: .capsule)
     .help("Open the desktop in its own window")
     .accessibilityLabel("Open Desktop")
   }
