@@ -169,6 +169,39 @@ describe("Frame locators", () => {
       expect(exported).toContain(text)
   })
 
+  it("keeps raw CDP inside the tab: frames are reachable, other tabs are not", async ({
+    browser
+  }) => {
+    const { origin, crossOrigin } = browser.origins
+    await browser.open("/leaf")
+    const scoped = await browser.cell(`
+      const info = async (owner) => (await (await owner.capabilities.get('cdp')).send('Target.getTargetInfo')).targetInfo
+      const elsewhere = await info(tab)
+      const framed = await browser.tabs.new()
+      await framed.goto(${JSON.stringify(`${origin}/frames`)})
+      const cdp = await framed.capabilities.get('cdp')
+      const targets = (await cdp.send('Target.getTargets')).targetInfos
+      const frame = targets.find(target => target.type === 'iframe')
+      const where = { expression: 'location.pathname + " on " + location.host', returnByValue: true }
+      const refused = (run) => run().then(() => false, (error) => /isn't this tab or one of its cross-site frames/.test(error.message))
+      browser.write({
+        listed: targets.map(target => target.type).sort(),
+        inFrame: (await cdp.send('Runtime.evaluate', where, { target: frame.targetId })).result.value,
+        inTab: (await cdp.send('Runtime.evaluate', where)).result.value,
+        otherTabRefused: await refused(() => cdp.send('Runtime.evaluate', where, { target: elsewhere.targetId })),
+        closeOtherRefused: await refused(() => cdp.send('Target.closeTarget', { targetId: elsewhere.targetId })),
+        otherStillOpen: (await info(tab)).targetId === elsewhere.targetId
+      })`)
+    expect(scoped).toEqual({
+      listed: ["iframe", "page"],
+      inFrame: `/leaf on ${new URL(crossOrigin).host}`,
+      inTab: `/frames on ${new URL(origin).host}`,
+      otherTabRefused: true,
+      closeOtherRefused: true,
+      otherStillOpen: true
+    })
+  })
+
   it("goes network-idle once a page with a cross-origin frame has loaded", async ({ browser }) => {
     await browser.open("/frames")
     const settled = await browser.cell(`
