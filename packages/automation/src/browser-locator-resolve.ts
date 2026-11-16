@@ -6,6 +6,7 @@ import {
   type BrowserLocator,
   parseLocator
 } from "./browser-locator-parse.js"
+import { queryShadowRoots } from "./browser-shadow-frames.js"
 import { normalizeRef } from "./browser-snapshot.js"
 import type { AXNode } from "./browser-snapshot.js"
 
@@ -175,10 +176,7 @@ const resolveFrameRoots = async (
 ): Promise<number[]> => {
   let current = [...roots]
   for (const step of steps) {
-    const frames = pickIndexed(
-      await queryCssWithinRoots(runtime, page, current, step.css),
-      step.index
-    )
+    const frames = await frameElementsWithin(runtime, page, current, step)
     if (frames.length === 0)
       throw new Error(`frameLocator(${JSON.stringify(step.css)}) found no frames`)
     const next: number[] = []
@@ -197,6 +195,28 @@ const resolveFrameRoots = async (
     current = [...new Set(next)]
   }
   return current
+}
+
+const frameElementsWithin = async (
+  runtime: BrowserRuntime,
+  page: PageHandle,
+  roots: ReadonlyArray<number>,
+  step: BrowserFrameStep
+): Promise<number[]> => {
+  const reachable = await queryCssWithinRoots(runtime, page, roots, step.css)
+  if (reachable.length > 0) return pickIndexed(reachable, step.index)
+  return pickIndexed(await queryShadowRoots(runtime, page, roots, step.css), step.index)
+}
+
+export const frameElementIds = async (
+  runtime: BrowserRuntime,
+  page: PageHandle,
+  enclosing: ReadonlyArray<BrowserFrameStep>,
+  step: BrowserFrameStep
+): Promise<number[]> => {
+  const document = await mainDocumentBackendNodeId(runtime, page)
+  const roots = await resolveFrameRoots(runtime, page, [document], enclosing)
+  return frameElementsWithin(runtime, page, roots, step)
 }
 
 const pickIndexed = (ids: number[], index: number | "last" | undefined): number[] => {
