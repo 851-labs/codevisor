@@ -22,7 +22,9 @@ public struct ProgressStepScreen<Actions: View>: View {
     IconAnchoredStack {
       CodevisorAppIconView(size: 72)
       ProgressStepTitle(title: title)
-      ProgressStepCard(steps: steps)
+      if !steps.isEmpty {
+        ProgressStepCard(steps: steps)
+      }
       if let note {
         ProgressStepNote(text: note)
       }
