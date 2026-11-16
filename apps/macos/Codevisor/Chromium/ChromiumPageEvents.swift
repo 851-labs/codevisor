@@ -44,6 +44,12 @@ enum ChromiumPageEvents {
         ChromiumAutomationBridge.shared.downloadUpdated(download, in: model)
       }
     }
+    view.permissionRefused = { [weak model] origin, permissions in
+      MainActor.assumeIsolated {
+        guard let model, model.isCurrent(token) else { return }
+        ChromiumAutomationBridge.shared.permissionRefused(permissions, origin: origin, in: model)
+      }
+    }
     view.pageDialogOpened = { [weak model] dialog in
       MainActor.assumeIsolated {
         guard let model, model.isCurrent(token) else { return dialog.dismiss() }

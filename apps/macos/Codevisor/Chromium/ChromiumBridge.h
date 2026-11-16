@@ -67,6 +67,7 @@ typedef NS_ENUM(NSInteger, CVBrowserLinkDestination) {
 @property(nonatomic, copy, nullable) void (^downloadUpdated)(CVChromiumDownload *download);
 @property(nonatomic, copy, nullable) void (^pageDialogOpened)(CVChromiumPageDialog *dialog);
 @property(nonatomic, copy, nullable) void (^pageDialogClosed)(void);
+@property(nonatomic, copy, nullable) void (^permissionRefused)(NSString *origin, NSArray<NSString *> *permissions);
 @property(nonatomic, copy, nullable) void (^proxyCredentialsRejected)(NSString *username, NSString *password, void (^reply)(NSString * _Nullable username, NSString * _Nullable password));
 - (void)sendProtocolMethod:(NSString *)method
                     params:(nullable NSData *)params

@@ -28,6 +28,13 @@ actor ChromiumAutomationHub {
     }
   }
 
+  func permissionRefused(_ permissions: [String], origin: String, model: ChromiumBrowserModel) {
+    let machineId = model.machineId
+    for connection in connections.values where connection.machineId == machineId {
+      connection.assumeIsolated { $0.permissionRefused(permissions, origin: origin, model: model) }
+    }
+  }
+
   func broadcast(_ event: TargetEvent) {
     let (message, machineId): ([String: Any], String) =
       switch event {
