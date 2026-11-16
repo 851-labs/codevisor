@@ -1,4 +1,9 @@
-import type { BrowserRuntime, PageHandle, ResolvedElement } from "./browser-cdp-engine.js"
+import {
+  openDialog,
+  type BrowserRuntime,
+  type PageHandle,
+  type ResolvedElement
+} from "./browser-cdp-engine.js"
 import { delay, evaluatedValue } from "./browser-cdp.js"
 import { assertReadOnlyFunction } from "./browser-evaluate-guard.js"
 import { locatorBackendNodeIds } from "./browser-locator-resolve.js"
@@ -132,7 +137,7 @@ export const releaseElement = async (
   page: PageHandle,
   element: ResolvedElement
 ): Promise<void> => {
-  if (runtime.dialogs.has(page.sessionId)) return
+  if (openDialog(runtime, page) !== undefined) return
   await runtime.connection
     .send("Runtime.releaseObject", { objectId: element.objectId }, page.sessionId)
     .catch(() => undefined)

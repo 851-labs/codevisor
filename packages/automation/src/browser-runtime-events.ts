@@ -3,7 +3,7 @@ import { appendFileSync } from "node:fs"
 import { join } from "node:path"
 
 import type { BrowserRuntime } from "./browser-cdp-engine.js"
-import { adoptFrameSession } from "./browser-frame-sessions.js"
+import { adoptFrameSession, tabSessionOf } from "./browser-frame-sessions.js"
 import { observeBrowserLoadEvent } from "./browser-load-state.js"
 import { handleTargetLifecycleEvent, installSessionRecovery } from "./browser-session-recovery.js"
 
@@ -73,9 +73,9 @@ export function observeBrowserRuntime(
           if (entries.length > 1_000) entries.splice(0, entries.length - 1_000)
           active.logs.set(event.sessionId, entries)
         } else if (event.method === "Page.javascriptDialogOpening") {
-          active.dialogs.set(event.sessionId, { ...params })
+          active.dialogs.set(tabSessionOf(active, event.sessionId), { ...params })
         } else if (event.method === "Page.javascriptDialogClosed") {
-          active.dialogs.delete(event.sessionId)
+          active.dialogs.delete(tabSessionOf(active, event.sessionId))
         }
       }
       if (event.method === "Codevisor.downloadData" && active.native === true) {

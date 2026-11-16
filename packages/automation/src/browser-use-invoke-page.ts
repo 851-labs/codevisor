@@ -12,6 +12,7 @@ import {
   grantClipboardPermissions,
   jsonResult,
   numberArgument,
+  openDialog,
   type PageHandle,
   stringArgument
 } from "./browser-cdp-engine.js"
@@ -209,7 +210,7 @@ export const invokePageTools = async (
         entries: readBrowserLogs(active.logs, tabSessionIds(active, page.sessionId), args)
       })
     case "getJsDialog":
-      return jsonResult({ dialog: active.dialogs.get(page.sessionId) ?? null })
+      return jsonResult({ dialog: openDialog(active, page) ?? null })
     case "viewport.set": {
       const width = Math.round(numberArgument(args, "width"))
       const height = Math.round(numberArgument(args, "height"))
