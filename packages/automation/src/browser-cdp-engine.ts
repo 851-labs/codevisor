@@ -52,7 +52,10 @@ export interface BrowserRuntime {
   }>
   readonly logs: Map<string, Array<Readonly<Record<string, unknown>>>>
   readonly dialogs: Map<string, Readonly<Record<string, unknown>>>
-  readonly fileChoosers: Map<string, { readonly sessionId: string; readonly backendNodeId: number }>
+  readonly fileChoosers: Map<
+    string,
+    { readonly sessionId: string; readonly tabSessionId?: string; readonly backendNodeId: number }
+  >
   readonly downloads: Map<
     string,
     {

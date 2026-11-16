@@ -14,6 +14,7 @@ import {
 } from "./browser-cdp-engine.js"
 import { delay, evaluatedValue } from "./browser-cdp.js"
 import { namedDownloadPath } from "./browser-downloads.js"
+import { setFileChooserFiles, waitForFileChooser } from "./browser-file-chooser.js"
 import { routeBrowserFrame } from "./browser-frame.js"
 import {
   dispatchClick,
@@ -171,30 +172,7 @@ export const invokePlaywrightTools = async (
     case "playwright.waitForEvent": {
       const event = stringArgument(args, "event")
       const timeoutMs = Math.max(0, Math.min(30_000, Number(args.timeoutMs ?? 30_000)))
-      if (event === "filechooser") {
-        await active.connection.send(
-          "Page.setInterceptFileChooserDialog",
-          { enabled: true },
-          page.sessionId
-        )
-        const opened = await waitForCdpEvent(
-          active,
-          "Page.fileChooserOpened",
-          page.sessionId,
-          timeoutMs
-        )
-        const backendNodeId = Number(opened.backendNodeId)
-        if (!Number.isInteger(backendNodeId)) {
-          throw new Error("The file chooser did not identify its file input")
-        }
-        const chooserId = randomUUID()
-        active.fileChoosers.set(chooserId, { sessionId: page.sessionId, backendNodeId })
-        return jsonResult({
-          event,
-          chooserId,
-          multiple: opened.mode === "selectMultiple"
-        })
-      }
+      if (event === "filechooser") return waitForFileChooser(active, page, timeoutMs)
       if (event === "download") {
         const eventSessionId = backend === "extension" ? page.sessionId : undefined
         const eventPromise = waitForCdpEvent(
@@ -234,19 +212,7 @@ export const invokePlaywrightTools = async (
       if (!Array.isArray(args.paths) || !args.paths.every((value) => typeof value === "string")) {
         throw new Error("paths must be an array of workspace file paths")
       }
-      const chooserId = stringArgument(args, "chooserId")
-      const chooser = active.fileChoosers.get(chooserId)
-      if (chooser === undefined) throw new Error("Unknown or expired file chooser")
-      await active.connection.send(
-        "DOM.setFileInputFiles",
-        { files: args.paths, backendNodeId: chooser.backendNodeId },
-        chooser.sessionId
-      )
-      active.fileChoosers.delete(chooserId)
-      await active.connection
-        .send("Page.setInterceptFileChooserDialog", { enabled: false }, chooser.sessionId)
-        .catch(() => undefined)
-      return jsonResult({ fileCount: args.paths.length })
+      return setFileChooserFiles(active, stringArgument(args, "chooserId"), args.paths)
     }
     case "playwright.downloadPath": {
       const downloadId = stringArgument(args, "downloadId")
