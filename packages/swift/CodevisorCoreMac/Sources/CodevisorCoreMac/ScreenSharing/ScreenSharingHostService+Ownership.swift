@@ -14,7 +14,7 @@ extension ScreenSharingHostService {
   ) -> ServerScreenSharingReply {
     var reply = reply
     reply.abilities = [ServerScreenSharingReply.appSessions, ServerScreenSharingReply.displaySwitch]
-    guard let current, current.owner.appKey != nil, ["connecting", "viewing"].contains(reply.status) else {
+    guard let current, ["connecting", "viewing"].contains(reply.status) else {
       return reply
     }
 
@@ -39,8 +39,7 @@ extension ScreenSharingHostService {
   }
 
   private func refusalBeforeStarting(_ request: ServerScreenSharingRequest) -> ServerScreenSharingReply? {
-    let owner = Owner(request)
-    guard owner.appKey != nil, request.intent != .open else { return nil }
+    guard let owner = Owner(request), request.intent != .open else { return nil }
 
     if let lastEnd, lastEnd.owner == owner, lastEnd.ending.waitsForAnOpen { return lastEnd.ending.reply }
     if let holder = displacer(of: owner) { return ScreenSharingHostRefusal.inUse(by: holder.name).reply }
@@ -57,9 +56,8 @@ extension ScreenSharingHostService {
   }
 
   func displace(
-    _ old: ScreenSharingHostSession, for request: ServerScreenSharingRequest, attempt: UUID
+    _ old: ScreenSharingHostSession, by owner: Owner, for request: ServerScreenSharingRequest, attempt: UUID
   ) async -> ServerScreenSharingReply? {
-    let owner = Owner(request)
     switch owner.admission(against: old.owner, intent: request.intent) {
     case .refused: return inUse
     case .replacesOwn: await end(old)
@@ -75,10 +73,10 @@ extension ScreenSharingHostService {
     return nil
   }
 
-  func displaysToShare(with owner: Owner) async throws -> [Display] {
+  func displaysToShare() async throws -> [Display] {
     var available = try await enumerateDisplays()
     let deadline = ContinuousClock.now + Self.realDisplayWait.limit
-    while owner.appKey != nil, logicalDisplays.hasOnlyHostVirtual(available), ContinuousClock.now < deadline {
+    while logicalDisplays.hasOnlyHostVirtual(available), ContinuousClock.now < deadline {
       try await Task.sleep(for: Self.realDisplayWait.interval)
       available = try await enumerateDisplays()
     }

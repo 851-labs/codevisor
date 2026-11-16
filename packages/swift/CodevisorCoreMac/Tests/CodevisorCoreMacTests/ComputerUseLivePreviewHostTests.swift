@@ -63,25 +63,25 @@ struct ComputerUseLivePreviewHostTests {
     world.activityState = .active
     let host = world.host()
 
-    let started = await host.handle(world.request(.start))
-    #expect(started.status == "connecting")
-    #expect(started.media == Self.grant)
+    let started = try await world.started(on: host)
+    #expect(started.reply.status == "connecting")
+    #expect(started.reply.media == Self.grant)
     let peer = try #require(world.peers.first)
     #expect(world.attached.count == 1)
     #expect(world.attached.first?.sessionID == "BRIDGE-ID")
     #expect(world.attached.first?.sink === peer.sink)
-    #expect(await host.handle(world.request(.heartbeat)).status == "connecting")
+    #expect(await host.handle(world.following(started, .heartbeat)).status == "connecting")
 
     peer.onConnectionChanged?("connected")
-    #expect(await host.handle(world.request(.heartbeat)).status == "viewing")
+    #expect(await host.handle(world.following(started, .heartbeat)).status == "viewing")
     peer.onConnectionChanged?("disconnected")
-    #expect(await host.handle(world.request(.heartbeat)).status == "reconnecting")
+    #expect(await host.handle(world.following(started, .heartbeat)).status == "reconnecting")
 
-    #expect(await host.handle(world.request(.stop)).status == "stopped")
+    #expect(await host.handle(world.following(started, .stop)).status == "stopped")
     #expect(peer.closed)
     #expect(world.detached == world.attached.map(\.token))
     #expect(host.sessionCount == 0)
-    #expect(await host.handle(world.request(.heartbeat)).status == "stopped")
+    #expect(await host.handle(world.following(started, .heartbeat)).status == "stopped")
   }
 
   @Test("Lists engine v2 when this Mac has a media endpoint, and starts a v2 viewer with a media grant")
@@ -93,50 +93,37 @@ struct ComputerUseLivePreviewHostTests {
     world.offersV2 = true
     #expect(await host.handle(world.request(.capabilities)).engines == ["v2"])
 
-    let started = await host.handle(world.request(.start))
+    let started = try await world.started(on: host)
 
-    #expect(started.status == "connecting")
-    #expect(started.media == Self.grant)
-    #expect(world.requestedMedia == [.init(viewerEndpointId: Self.viewerEndpoint)])
+    #expect(started.reply.status == "connecting")
+    #expect(started.reply.media == Self.grant)
+    #expect(world.requestedMedia == [.init(viewerEndpointId: ServerScreenSharingApp.macBook.key)])
     #expect(world.attached.first?.sink === world.peers.first?.sink)
   }
 
   @Test("Tells viewers why no video is coming while the window is out of sight, and clears it once shown")
-  func windowNotice() async {
+  func windowNotice() async throws {
     let world = ComputerUseLivePreviewHostWorld()
     world.activityState = .active
     world.windowVisibility = .appHidden
     let host = world.host()
-    let started = await host.handle(world.request(.start))
-    #expect(started.status == "connecting")
-    #expect(started.message == "TextEdit is hidden")
+    let started = try await world.started(on: host)
+    #expect(started.reply.status == "connecting")
+    #expect(started.reply.message == "TextEdit is hidden")
     world.windowVisibility = .minimized
-    #expect(await host.handle(world.request(.heartbeat)).message == "Window is minimized")
+    #expect(await host.handle(world.following(started, .heartbeat)).message == "Window is minimized")
     world.windowVisibility = .visible
-    let shown = await host.handle(world.request(.heartbeat))
+    let shown = await host.handle(world.following(started, .heartbeat))
     #expect(shown.status == "connecting")
     #expect(shown.message == nil)
   }
 
-  @Test("Restart replaces the viewer's media peer")
-  func restart() async throws {
-    let world = ComputerUseLivePreviewHostWorld()
-    world.activityState = .active
-    let host = world.host()
-    _ = await host.handle(world.request(.start))
-    #expect(await host.handle(world.request(.restart)).status == "connecting")
-    #expect(world.peers.count == 2)
-    #expect(world.peers[0].closed)
-    #expect(!world.peers[1].closed)
-    #expect(host.sessionCount == 1)
-  }
-
   @Test("Ends viewers when the agent stops controlling the app")
-  func activityStops() async {
+  func activityStops() async throws {
     let world = ComputerUseLivePreviewHostWorld()
     world.activityState = .active
     let host = world.host()
-    _ = await host.handle(world.request(.start))
+    _ = try await world.started(on: host)
     world.activityState = .stopped
     host.activityChanged()
     #expect(world.peers.first?.closed == true)
@@ -144,26 +131,25 @@ struct ComputerUseLivePreviewHostTests {
   }
 
   @Test("A viewer that stops heartbeating is expired")
-  func expiry() async {
+  func expiry() async throws {
     let world = ComputerUseLivePreviewHostWorld()
     world.activityState = .active
     let host = world.host()
-    _ = await host.handle(world.request(.start))
+    let started = try await world.started(on: host)
     world.clock += ComputerUseLivePreviewHost.lifetime + 1
-    #expect(await host.handle(world.request(.heartbeat)).status == "stopped")
+    #expect(await host.handle(world.following(started, .heartbeat)).status == "stopped")
     #expect(world.peers.first?.closed == true)
   }
 
-  @Test("Several viewers may watch, up to a bound")
-  func viewerBound() async {
+  @Test("Several apps may watch, up to a bound")
+  func viewerBound() async throws {
     let world = ComputerUseLivePreviewHostWorld()
     world.activityState = .active
     let host = world.host()
-    for _ in 0..<ComputerUseLivePreviewHost.maximumSessions {
-      let reply = await host.handle(world.request(.start, viewer: UUID()))
-      #expect(reply.status == "connecting")
+    for number in 0..<ComputerUseLivePreviewHost.maximumSessions {
+      #expect(try await world.started(as: .viewer(number), on: host).reply.status == "connecting")
     }
-    let extra = await host.handle(world.request(.start, viewer: UUID()))
+    let extra = try await world.started(as: .viewer(99), on: host).reply
     #expect(extra.status == "busy")
     #expect(host.sessionCount == ComputerUseLivePreviewHost.maximumSessions)
     host.shutdown()
@@ -172,11 +158,11 @@ struct ComputerUseLivePreviewHostTests {
   }
 
   @Test("Rejects starts without a v2 viewer address, and invalid targets, without creating media")
-  func validation() async {
+  func validation() async throws {
     let world = ComputerUseLivePreviewHostWorld()
     world.activityState = .active
     let host = world.host()
-    var noMedia = world.request(.start)
+    var noMedia = try await world.start(as: .macBook, on: host)
     noMedia.media = nil
     #expect(await host.handle(noMedia).status == "failed")
     var wrong = world.request(.capabilities)
@@ -186,12 +172,13 @@ struct ComputerUseLivePreviewHostTests {
   }
 
   @Test("Closes a peer that finishes building after shutdown")
-  func shutdownWhileBuilding() async {
+  func shutdownWhileBuilding() async throws {
     let world = ComputerUseLivePreviewHostWorld()
     world.activityState = .active
     world.peerGate = TestSignal()
     let host = world.host()
-    let start = Task { await host.handle(world.request(.start)) }
+    let request = try await world.start(as: .macBook, on: host)
+    let start = Task { await host.handle(request) }
     await world.peerRequested.wait()
     host.shutdown()
     world.peerGate?.signal()

@@ -16,8 +16,8 @@ struct ScreenSharingHostDisplayChoiceTests {
     CGMainDisplayID() &+ 2, .init(id: "other", name: "Other Display", width: 1280, height: 720)
   )
 
-  @Test func anAppGetsTheDisplayItAskedForThenItsLastOneThenTheMainOne() {
-    let app = owner(app: .init(key: String(repeating: "a", count: 64), name: "Alexandru's MacBook Pro"))
+  @Test func anAppGetsTheDisplayItAskedForThenItsLastOneThenTheMainOne() throws {
+    let app = try owner(app: .init(key: String(repeating: "a", count: 64), name: "Alexandru's MacBook Pro"))
     var choice = ScreenSharingHostDisplayChoice()
     let all = [side, main, other]
 
@@ -32,19 +32,9 @@ struct ScreenSharingHostDisplayChoiceTests {
     #expect(choice.display(for: app, asking: nil, among: []) == nil)
   }
 
-  @Test func aStableViewerOnlyGetsTheDisplayItAskedFor() {
-    var choice = ScreenSharingHostDisplayChoice()
-    let stable = owner(app: nil)
-    choice.remember(main.description, for: stable)
-
-    #expect(choice.display(for: stable, asking: "side", among: [side, main])?.description.id == "side")
-    #expect(choice.display(for: stable, asking: "gone", among: [side, main]) == nil)
-    #expect(choice.display(for: stable, asking: nil, among: [side, main]) == nil)
-  }
-
-  private func owner(app: ServerScreenSharingApp?) -> ScreenSharingHostLease.Owner {
+  private func owner(app: ServerScreenSharingApp) throws -> ScreenSharingHostLease.Owner {
     var request = ServerScreenSharingRequest(operation: .start, workspaceId: UUID(), paneId: UUID(), viewerId: UUID())
     request.app = app
-    return .init(request)
+    return try #require(ScreenSharingHostLease.Owner(request))
   }
 }

@@ -1,12 +1,12 @@
 import { randomUUID } from "node:crypto"
 
-import { ServerInfo, type ScreenSharingRequest } from "@codevisor/api"
+import { ServerInfo } from "@codevisor/api"
 import { Schema } from "effect"
 import { describe, expect, it, vi } from "vitest"
 
 import { parseDisplays, parseSimulatorList } from "./simulator-parsing.js"
 import { makeSimulators, type SimulatorEnvironment, type Simulators } from "./simulators.js"
-import { jsonRequest, makeServices, run, startWithApp } from "./test-support.js"
+import { jsonRequest, makeServices, startWithApp } from "./test-support.js"
 
 const udid = "8C2D33A1-7E5B-4F0A-9C3D-2B1E4F6A7D90"
 const list = {
@@ -266,42 +266,5 @@ describe("simulator routes", () => {
       const devices = await jsonRequest(server, "/v1/simulators")
       expect(devices.status).toBe(expected ? 200 : 501)
     }
-  })
-
-  it("streams a simulator only to a Simulator pane", async () => {
-    const helper = vi.fn(async () => ({ version: 1, status: "connecting", displays: [] }))
-    const { services } = await makeServices()
-    const server = await startWithApp(services, undefined, { screenSharing: helper })
-    const project = await run(services.db.createProject({ folderPath: "/fixture/simulator" }))
-    const workspace = await run(
-      services.db.upsertWorkspace({ projectId: project.id, name: "Sim", hasCustomName: false })
-    )
-    const paneOf = async (paneType: string) =>
-      run(
-        services.db.upsertWorkspacePane(workspace.id, {
-          id: randomUUID(),
-          providerId: "codevisor",
-          paneType,
-          title: paneType
-        })
-      )
-    const start = (paneId: string, displayId = `simulator:${udid}`): ScreenSharingRequest => ({
-      version: 1,
-      operation: "start",
-      workspaceId: workspace.id,
-      paneId,
-      viewerId: randomUUID(),
-      displayId,
-      engine: "v2",
-      media: { endpointId: "a".repeat(64), directAddrs: [] }
-    })
-    const post = (body: ScreenSharingRequest) =>
-      jsonRequest(server, "/v1/screen-sharing", { method: "POST", body: JSON.stringify(body) })
-    const simulatorPane = await paneOf("simulator")
-    const sharingPane = await paneOf("screen-sharing")
-    expect((await post(start(simulatorPane.id))).status).toBe(200)
-    expect((await post(start(sharingPane.id))).status).toBe(404)
-    expect((await post(start(simulatorPane.id, "simulator:../../etc"))).status).toBe(400)
-    expect(helper).toHaveBeenCalledOnce()
   })
 })

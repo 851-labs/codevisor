@@ -11,7 +11,7 @@ extension ScreenSharingHostService {
   func sharing(
     _ request: ServerScreenSharingRequest, in session: ScreenSharingHostSession
   ) async -> ScreenSharingHostDisplaySwitch? {
-    guard request.session != nil, session.owner.appKey != nil, let wanted = request.displayId else { return nil }
+    guard request.session != nil, let wanted = request.displayId else { return nil }
 
     let pending = session.displaySwitch
     if let pending, pending.target == wanted, pending.isMoving {

@@ -9,15 +9,11 @@ struct ScreenSharingHostDisplayChoice {
     for owner: ScreenSharingHostLease.Owner, asking displayId: String?, among available: [Display]
   ) -> Display? {
     let asked = available.first { $0.description.id == displayId }
-    guard let appKey = owner.appKey else { return asked }
-
-    let last = available.first { $0.description.id == lastShared[appKey] }
+    let last = available.first { $0.description.id == lastShared[owner.appKey] }
     return asked ?? last ?? available.first { $0.id == CGMainDisplayID() } ?? available.first
   }
 
   mutating func remember(_ display: ServerScreenSharingDisplay, for owner: ScreenSharingHostLease.Owner) {
-    guard let appKey = owner.appKey else { return }
-
-    lastShared[appKey] = display.id
+    lastShared[owner.appKey] = display.id
   }
 }

@@ -16,9 +16,8 @@ extension ScreenSharingHostService {
 
     acceptV2(session, on: endpoint)
     let address = ScreenSharingMediaEndpoint.address(of: endpoint)
-    let viewer = session.owner.appKey == nil ? "viewer \(session.owner.viewerId.uuidString.prefix(8))" : "an app"
     Self.logger.notice(
-      "Start granted to \(viewer, privacy: .public) (relay \(address.relayUrl ?? "none", privacy: .public), \(address.directAddrs.count) direct)"
+      "Start granted to an app (relay \(address.relayUrl ?? "none", privacy: .public), \(address.directAddrs.count) direct)"
     )
     return .connecting(
       .init(

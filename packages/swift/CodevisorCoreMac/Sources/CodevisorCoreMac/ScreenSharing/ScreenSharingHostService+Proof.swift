@@ -5,8 +5,16 @@ import ScreenSharingV2
 extension ScreenSharingHostService {
   static let rememberedEndedSessions = 16
 
+  static func isIdentified(_ request: ServerScreenSharingRequest) -> Bool {
+    request.app != nil || request.operation == .stop || (request.operation == .heartbeat && request.session != nil)
+  }
+
+  static func machineName() -> String {
+    Host.current().localizedName ?? "this Mac"
+  }
+
   func startsAppSession(_ request: ServerScreenSharingRequest) -> Bool {
-    request.app != nil && [.start, .restart].contains(request.operation)
+    request.app != nil && request.operation == .start
   }
 
   func provesItsKey(_ request: ServerScreenSharingRequest) -> Bool {
@@ -31,18 +39,16 @@ extension ScreenSharingHostService {
   func stops(_ request: ServerScreenSharingRequest, _ session: ScreenSharingHostSession) -> Bool {
     guard let token = request.session else { return session.owner.isAttempt(of: request) }
 
-    return session.owner.appKey != nil && session.hasToken(token)
+    return session.hasToken(token)
   }
 
   func formerOwner(_ request: ServerScreenSharingRequest) -> Owner? {
-    guard let token = request.session else { return Owner(paneOf: request) }
+    guard let token = request.session else { return Owner(request) }
 
     return endedSessions.last { $0.token == token.lowercased() }?.owner
   }
 
   func rememberEnded(_ session: ScreenSharingHostSession) {
-    guard session.owner.appKey != nil else { return }
-
     endedSessions.append((session.sessionToken, session.owner))
     endedSessions.removeFirst(max(0, endedSessions.count - Self.rememberedEndedSessions))
   }

@@ -81,7 +81,7 @@ final class ScreenSharingHostOwnershipFixture {
   }
 
   func signed(_ request: ServerScreenSharingRequest) async -> ServerScreenSharingRequest {
-    guard let app = request.app, [.start, .restart].contains(request.operation), request.proof == nil,
+    guard let app = request.app, request.operation == .start, request.proof == nil,
       let challenge = await challenge(for: app)
     else { return request }
 
@@ -93,13 +93,13 @@ final class ScreenSharingHostOwnershipFixture {
   func start(
     as app: ServerScreenSharingApp, _ intent: ServerScreenSharingRequest.Intent?, display: String? = "main"
   ) -> ServerScreenSharingRequest {
-    var request = stableStart(display: display, mediaKey: app.key)
+    var request = startWithoutApp(display: display, mediaKey: app.key)
     request.app = app
     request.intent = intent
     return request
   }
 
-  func stableStart(
+  func startWithoutApp(
     workspaceId: UUID = UUID(), paneId: UUID = UUID(), display: String? = "main",
     mediaKey: String = String(repeating: "f", count: 64)
   ) -> ServerScreenSharingRequest {
@@ -181,9 +181,19 @@ extension ServerScreenSharingApp {
   static let iPhone = ServerScreenSharingApp(key: signingKey(2).publicKey.rawRepresentation.hexEncoded, name: names[2])
   static let iPad = ServerScreenSharingApp(key: signingKey(3).publicKey.rawRepresentation.hexEncoded, name: names[3])
 
+  static func viewer(_ number: Int) -> ServerScreenSharingApp {
+    ServerScreenSharingApp(
+      key: signingKey(seed(of: "Viewer \(number)")).publicKey.rawRepresentation.hexEncoded, name: "Viewer \(number)")
+  }
+
   var signer: ScreenSharingStartSigner {
-    let key = Self.signingKey(UInt8(Self.names.firstIndex(of: name) ?? 0))
+    let key = Self.signingKey(Self.seed(of: name))
     return ScreenSharingStartSigner(key: self.key) { try key.signature(for: $0) }
+  }
+
+  private static func seed(of name: String) -> UInt8 {
+    if let index = names.firstIndex(of: name) { return UInt8(index) }
+    return UInt8(10 + (Int(name.dropFirst("Viewer ".count)) ?? 0))
   }
 
   private static let names = ["", "Alexandru's MacBook Pro", "Alexandru's iPhone", "Alexandru's iPad"]

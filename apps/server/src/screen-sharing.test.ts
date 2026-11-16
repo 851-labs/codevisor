@@ -3,6 +3,7 @@ import { randomUUID } from "node:crypto"
 import type { ScreenSharingRequest } from "@codevisor/api"
 import { describe, expect, it, vi } from "vitest"
 
+import type { CodevisorServerConfig } from "./server.js"
 import { jsonRequest, makeServices, run, startWithApp } from "./test-support.js"
 
 const capabilities = (): ScreenSharingRequest => ({
@@ -14,6 +15,28 @@ const capabilities = (): ScreenSharingRequest => ({
 })
 const reply = { version: 1, status: "available", displays: [] }
 const media = { endpointId: "a".repeat(64), directAddrs: ["192.168.1.2:4433"] }
+const app = { key: media.endpointId, name: "Alexandru's MacBook Pro" }
+const proof = { nonce: "c".repeat(64), signature: "d".repeat(128) }
+const session = "e".repeat(64)
+const machineName = "Studio Mac"
+const updateReply = {
+  version: 1,
+  status: "unavailable",
+  reason: "update-needed",
+  message: `Update Codevisor on this device to view ${machineName}.`,
+  displays: []
+}
+const appCapabilities = (): ScreenSharingRequest => ({ ...capabilities(), app })
+const appStart = (): ScreenSharingRequest => ({
+  ...capabilities(),
+  operation: "start",
+  displayId: randomUUID(),
+  engine: "v2",
+  media,
+  app,
+  intent: "open",
+  proof
+})
 const grant = {
   endpointId: "b".repeat(64),
   directAddrs: ["192.168.1.3:4433"],
@@ -21,98 +44,27 @@ const grant = {
 }
 
 const fixture = async (
-  screenSharing: (request: ScreenSharingRequest) => Promise<unknown> = async () => reply
+  screenSharing: (request: ScreenSharingRequest) => Promise<unknown> = async () => reply,
+  configOverrides: Partial<CodevisorServerConfig> = {}
 ) => {
   const { services } = await makeServices()
-  const server = await startWithApp(services, undefined, { screenSharing })
-  const project = await run(services.db.createProject({ folderPath: "/fixture/screen-sharing" }))
-  const workspace = await run(
-    services.db.upsertWorkspace({
-      projectId: project.id,
-      name: "Sharing",
-      hasCustomName: false
-    })
-  )
-  const pane = await run(
-    services.db.upsertWorkspacePane(workspace.id, {
-      id: randomUUID(),
-      providerId: "codevisor",
-      paneType: "screen-sharing",
-      title: "Screen Sharing"
-    })
-  )
-  const request: ScreenSharingRequest = {
-    ...capabilities(),
-    operation: "start",
-    workspaceId: workspace.id,
-    paneId: pane.id,
-    displayId: randomUUID(),
-    engine: "v2",
-    media
-  }
+  const server = await startWithApp(services, undefined, {
+    name: machineName,
+    screenSharing,
+    ...configOverrides
+  })
+  const request = appStart()
   const post = (body: unknown = request, headers: Record<string, string> = {}) =>
     jsonRequest(server, "/v1/screen-sharing", {
       method: "POST",
       body: JSON.stringify(body),
       headers
     })
-  return { server, services, project, workspace, pane, request, post }
+  return { server, services, request, post }
 }
 
-describe("Screen Sharing engine v2 signaling", () => {
-  it("starts v2, forwards the viewer's chroma and returns the host's media grant", async () => {
-    const helper = vi.fn(async (request: ScreenSharingRequest) => ({
-      ...reply,
-      status: "connecting",
-      engines: ["v2"],
-      ...(request.engine === "v2" ? { media: grant } : {})
-    }))
-    const { request, post } = await fixture(helper)
-    const v2 = { ...request, chroma: "420" }
-    for (const operation of ["start", "restart"])
-      expect((await post({ ...v2, operation })).body).toMatchObject({
-        engines: ["v2"],
-        media: grant
-      })
-    expect(helper).toHaveBeenCalledWith(
-      expect.objectContaining({ engine: "v2", media, chroma: "420" })
-    )
-  })
-
-  it("rejects a start without engine v2 or a valid viewer address before invoking the helper", async () => {
-    const helper = vi.fn(async () => reply)
-    const { request: v2, post } = await fixture(helper)
-    for (const change of [
-      { engine: undefined },
-      { media: undefined },
-      { media: { ...media, endpointId: "not-hex" } },
-      { media: { ...media, directAddrs: Array.from({ length: 33 }, () => "10.0.0.1:1") } },
-      { media: { ...media, directAddrs: ["x".repeat(65)] } },
-      { media: { ...media, relayUrl: `https://${"r".repeat(512)}` } },
-      { engine: "v3", media },
-      { media, chroma: "422" }
-    ])
-      expect((await post({ ...v2, ...change })).status).toBe(400)
-    expect(helper).not.toHaveBeenCalled()
-  })
-})
-
 describe("app-owned Screen Sharing sessions", () => {
-  const app = { key: media.endpointId, name: "Alexandru's MacBook Pro" }
-  const proof = { nonce: "c".repeat(64), signature: "d".repeat(128) }
-  const session = "e".repeat(64)
-  const appStart = (): ScreenSharingRequest => ({
-    ...capabilities(),
-    operation: "start",
-    displayId: randomUUID(),
-    engine: "v2",
-    media,
-    app,
-    intent: "open",
-    proof
-  })
-
-  it("serves an app's desktop session without a workspace or pane, and a request without the app as before", async () => {
+  it("serves an app's desktop session without a workspace or pane, and a heartbeat or stop that carries its session token", async () => {
     const helper = vi.fn(async () => reply)
     const { post } = await fixture(helper)
     const start = appStart()
@@ -122,39 +74,33 @@ describe("app-owned Screen Sharing sessions", () => {
     for (const request of [
       start,
       anyDisplay,
-      { ...start, operation: "restart" },
       beat,
       { ...beat, displayId: undefined },
-      { ...stable, operation: "stop", session },
-      { ...stable, operation: "stop" }
+      { ...stable, operation: "stop", session }
     ])
       expect((await post(request)).status).toBe(200)
-    expect(helper).toHaveBeenCalledTimes(7)
+    expect(helper).toHaveBeenCalledTimes(5)
     expect(helper).toHaveBeenCalledWith(start)
     expect(helper).toHaveBeenCalledWith(beat)
 
-    expect((await post(stable)).status).toBe(404)
-    expect((await post({ ...stable, operation: "heartbeat" })).status).toBe(404)
-    expect((await post({ ...start, operation: "heartbeat" })).status).toBe(404)
-    expect((await post({ ...stable, displayId: undefined })).status).toBe(400)
-    expect(helper).toHaveBeenCalledTimes(7)
+    expect((await post({ ...start, operation: "restart" })).status).toBe(400)
+    expect(helper).toHaveBeenCalledTimes(5)
   })
 
-  it("serves an app's Computer Use and Simulator streams without a workspace or pane, and a request without the app as before", async () => {
+  it("serves an app's Computer Use and Simulator streams without a workspace or pane", async () => {
     const helper = vi.fn(async () => reply)
     const { post } = await fixture(helper)
-    for (const displayId of [`computer-use:${randomUUID()}`, `simulator:${randomUUID()}`]) {
+    for (const displayId of [
+      `computer-use:${randomUUID().toUpperCase()}`,
+      `simulator:${randomUUID()}`
+    ]) {
       const start = { ...appStart(), displayId }
       const { app: _, intent: __, proof: ___, ...stable } = start
       const beat = { ...stable, operation: "heartbeat", session }
-      for (const request of [start, { ...start, operation: "restart" }, beat])
+      for (const request of [start, beat, { ...beat, operation: "stop" }])
         expect((await post(request)).status).toBe(200)
       expect(helper).toHaveBeenCalledWith(start)
       expect(helper).toHaveBeenCalledWith(beat)
-
-      expect((await post(stable)).status).toBe(404)
-      expect((await post({ ...stable, operation: "heartbeat" })).status).toBe(404)
-      expect((await post({ ...start, operation: "heartbeat" })).status).toBe(404)
     }
     expect(helper).toHaveBeenCalledTimes(6)
   })
@@ -169,6 +115,9 @@ describe("app-owned Screen Sharing sessions", () => {
       { intent: undefined },
       { intent: "steal" },
       { displayId: "invalid" },
+      { displayId: "computer-use:" },
+      { displayId: "computer-use:invalid" },
+      { displayId: "window:1" },
       { proof: undefined },
       { proof: { ...proof, nonce: "short" } },
       { proof: { ...proof, signature: "d".repeat(127) } },
@@ -198,7 +147,6 @@ describe("app-owned Screen Sharing sessions", () => {
       "😀".repeat(64)
     ])
   })
-
   it("passes on why the host refused or ended, who holds the session, what it shares and what it can do", async () => {
     const display = { id: randomUUID(), name: "Built-in Display", width: 3024, height: 1964 }
     const refused = {
@@ -226,6 +174,48 @@ describe("app-owned Screen Sharing sessions", () => {
   })
 })
 
+describe("viewers without an app identity", () => {
+  it("get the update reply naming this machine, for every operation and native target, without reaching the host", async () => {
+    const helper = vi.fn(async () => reply)
+    const { post } = await fixture(helper)
+    const { app: _, intent: __, proof: ___, ...appless } = appStart()
+    const targets = [
+      randomUUID(),
+      undefined,
+      `simulator:${randomUUID()}`,
+      `computer-use:${randomUUID()}`
+    ]
+    const operations = ["capabilities", "start", "restart", "heartbeat", "setScale"] as const
+    for (const displayId of targets)
+      for (const operation of operations) {
+        const answered = await post({ ...appless, operation, displayId })
+        expect(answered.status).toBe(200)
+        expect(answered.body).toEqual(updateReply)
+      }
+    const { engine: ____, media: _____, ...bare } = appless
+    expect((await post({ ...bare, operation: "start" })).body).toEqual(updateReply)
+    expect(helper).not.toHaveBeenCalled()
+  })
+
+  it("still pass on a stop, which only ends things: a viewer cancels a pending start with neither app nor session", async () => {
+    const helper = vi.fn(async () => ({ ...reply, status: "stopped" }))
+    const { post } = await fixture(helper)
+    const { app: _, intent: __, proof: ___, ...appless } = appStart()
+    const stop = { ...appless, operation: "stop" }
+    expect((await post(stop)).body).toEqual({ ...reply, status: "stopped" })
+    expect(helper).toHaveBeenCalledWith(stop)
+  })
+
+  it("leave a VNC machine's requests to its provider, as before", async () => {
+    const helper = vi.fn(async () => reply)
+    const { post } = await fixture(helper, { screenSharingVNC: { port: 5901, name: "Desktop" } })
+    const answered = await post(capabilities())
+    expect(answered.status).toBe(200)
+    expect(answered.body).toEqual(reply)
+    expect(helper).toHaveBeenCalledOnce()
+  })
+})
+
 describe("native Screen Sharing signaling", () => {
   it("requires machine authentication and rejects browser-originated requests", async () => {
     const helper = vi.fn(async () => reply)
@@ -235,7 +225,7 @@ describe("native Screen Sharing signaling", () => {
       screenSharing: helper,
       auth: { allowLocalhostWithoutAuth: false, requireBearerToken: true }
     })
-    const request = { method: "POST", body: JSON.stringify(capabilities()) }
+    const request = { method: "POST", body: JSON.stringify(appCapabilities()) }
     expect((await jsonRequest(server, "/v1/screen-sharing", request)).status).toBe(401)
     for (const browserHeader of [
       { Origin: "https://example.com" },
@@ -262,13 +252,13 @@ describe("native Screen Sharing signaling", () => {
     expect(helper).toHaveBeenCalledOnce()
   })
 
-  it("advertises availability, passes a valid start transiently, and permits stop after pane deletion", async () => {
+  it("advertises availability and passes an app's start, heartbeat and stop transiently", async () => {
     const helper = vi.fn(async (request: ScreenSharingRequest) => ({
       ...reply,
       status: request.operation === "start" ? "connecting" : "stopped",
       media: grant
     }))
-    const { server, services, workspace, pane, request, post } = await fixture(helper)
+    const { server, request, post } = await fixture(helper)
     expect((await jsonRequest(server, "/v1/info")).body).toMatchObject({
       features: expect.arrayContaining(["screen-sharing-v1"])
     })
@@ -280,15 +270,9 @@ describe("native Screen Sharing signaling", () => {
     expect(response.headers.get("cache-control")).toBe("no-store")
     expect(await response.json()).toMatchObject({ status: "connecting", media: grant })
     expect(helper).toHaveBeenLastCalledWith(request)
-    expect((await post({ ...request, operation: "restart" })).status).toBe(200)
-    expect((await post({ ...request, operation: "heartbeat" })).status).toBe(200)
-    expect((await run(services.db.listWorkspacePanes)).find((item) => item.id === pane.id)).toEqual(
-      pane
-    )
-    await run(services.db.deleteWorkspacePane(workspace.id, pane.id))
-    expect((await post({ ...request, operation: "heartbeat" })).status).toBe(404)
-    expect((await post({ ...request, operation: "restart" })).status).toBe(404)
-    expect((await post({ ...request, operation: "stop" })).status).toBe(200)
+    const { app: _, intent: __, proof: ___, ...stable } = request
+    expect((await post({ ...stable, operation: "heartbeat", session })).status).toBe(200)
+    expect((await post({ ...stable, operation: "stop", session })).status).toBe(200)
   })
 
   it("rejects malformed, oversized, or incompatible requests before invoking the helper", async () => {
@@ -307,81 +291,15 @@ describe("native Screen Sharing signaling", () => {
     for (const field of ["workspaceId", "paneId", "viewerId"]) {
       expect((await post({ ...request, [field]: "invalid" })).status).toBe(400)
     }
-    for (const change of [
-      { media: undefined },
-      { displayId: undefined },
-      { displayId: "invalid" }
-    ]) {
+    for (const change of [{ media: undefined }, { displayId: "invalid" }])
       expect((await post({ ...request, ...change })).status).toBe(400)
-      expect((await post({ ...request, operation: "restart", ...change })).status).toBe(400)
-    }
     expect((await post({ ...request, displayId: "x".repeat(301 * 1024) })).status).toBe(413)
-    const { engine: _, media: __, ...webRTC } = request
+    const { engine: _, media: __, app: ___, intent: ____, proof: _____, ...webRTC } = request
     const oldViewer = await post({ ...webRTC, offer: "v=0\r\na=fingerprint:sha-256 fixture\r\n" })
     expect(oldViewer.status).toBe(400)
     expect(oldViewer.body).toMatchObject({ error: expect.stringContaining("Update Codevisor") })
     expect(helper).not.toHaveBeenCalled()
   })
-
-  it("validates workspace, pane, provider and archive state for start and heartbeat", async () => {
-    const helper = vi.fn(async () => reply)
-    const { services, project, workspace, pane, request, post } = await fixture(helper)
-    expect((await post({ ...request, workspaceId: randomUUID() })).status).toBe(404)
-    expect((await post({ ...request, paneId: randomUUID() })).status).toBe(404)
-    const second = await run(
-      services.db.upsertWorkspace({
-        projectId: project.id,
-        name: "Other",
-        hasCustomName: false
-      })
-    )
-    expect((await post({ ...request, workspaceId: second.id })).status).toBe(404)
-    await run(
-      services.db.upsertWorkspacePane(workspace.id, {
-        id: pane.id,
-        title: "Screen Sharing",
-        providerId: "plugin",
-        paneType: "screen-sharing"
-      })
-    )
-    expect((await post()).status).toBe(404)
-    await run(
-      services.db.upsertWorkspacePane(workspace.id, {
-        id: pane.id,
-        title: "Screen Sharing",
-        providerId: "codevisor",
-        paneType: "browser"
-      })
-    )
-    expect((await post()).status).toBe(404)
-    await run(
-      services.db.upsertWorkspacePane(workspace.id, {
-        id: pane.id,
-        title: "Screen Sharing",
-        providerId: "codevisor",
-        paneType: "screen-sharing"
-      })
-    )
-    await run(services.db.updateWorkspace(workspace.id, { isArchived: true }))
-    expect((await post()).status).toBe(404)
-    expect(helper).not.toHaveBeenCalled()
-  })
-
-  it("streams the desktop to an inspector's hidden machine-desktop pane", async () => {
-    const helper = vi.fn(async () => reply)
-    const { services, workspace, pane, post } = await fixture(helper)
-    await run(
-      services.db.upsertWorkspacePane(workspace.id, {
-        id: pane.id,
-        title: "Desktop",
-        providerId: "codevisor",
-        paneType: "machine-desktop"
-      })
-    )
-    expect((await post()).status).toBe(200)
-    expect(helper).toHaveBeenCalledOnce()
-  })
-
   it("returns actionable errors for an absent, incompatible or failed native helper", async () => {
     const { services } = await makeServices()
     const server = await startWithApp(services)
@@ -392,15 +310,15 @@ describe("native Screen Sharing signaling", () => {
       (
         await jsonRequest(server, "/v1/screen-sharing", {
           method: "POST",
-          body: JSON.stringify(capabilities())
+          body: JSON.stringify(appCapabilities())
         })
       ).status
     ).toBe(501)
     const helper = vi.fn(async (): Promise<unknown> => ({ version: 2 }))
     const { post } = await fixture(helper)
-    expect((await post(capabilities())).status).toBe(503)
+    expect((await post(appCapabilities())).status).toBe(503)
     helper.mockRejectedValueOnce(new Error("secret helper path and token"))
-    const failed = await post(capabilities())
+    const failed = await post(appCapabilities())
     expect(failed.status).toBe(503)
     expect(JSON.stringify(failed.body)).not.toContain("secret")
     expect(failed.body).toMatchObject({
@@ -412,72 +330,26 @@ describe("native Screen Sharing signaling", () => {
     const helper = vi.fn(async (): Promise<unknown> => ({ version: 2 }))
     const { post } = await fixture(helper)
     helper.mockRejectedValueOnce(new Error("Screen Sharing host timed out."))
-    const timedOut = await post(capabilities())
+    const timedOut = await post(appCapabilities())
     expect(timedOut.status).toBe(504)
     expect(timedOut.body).toMatchObject({
       error: expect.stringContaining("screen capture may be stuck")
     })
     helper.mockRejectedValueOnce(new Error("Computer Use helper timed out"))
-    expect((await post(capabilities())).status).toBe(504)
+    expect((await post(appCapabilities())).status).toBe(504)
     helper.mockRejectedValueOnce(new Error("Screen Sharing host is stopped."))
-    const stopped = await post(capabilities())
+    const stopped = await post(appCapabilities())
     expect(stopped.status).toBe(503)
     expect(stopped.body).toMatchObject({
       error: expect.stringContaining("Open a Codevisor window")
     })
     helper.mockRejectedValueOnce(new Error("Screen Sharing host timed out. /Users/secret"))
-    const other = await post(capabilities())
+    const other = await post(appCapabilities())
     expect(other.body).toMatchObject({
       error: expect.stringContaining("Open or update Codevisor")
     })
     expect(JSON.stringify(other.body)).not.toContain("secret")
     helper.mockRejectedValueOnce("Screen Sharing host timed out.")
-    expect((await post(capabilities())).status).toBe(503)
-  })
-
-  it("streams a chat's Computer Use window only to that chat's pane", async () => {
-    const helper = vi.fn(async (request: ScreenSharingRequest) => ({
-      ...reply,
-      status: request.operation === "start" ? "connecting" : "viewing",
-      ...(request.operation === "start" ? { media: grant } : {})
-    }))
-    const { server, services, project, workspace, request, post } = await fixture(helper)
-    expect((await jsonRequest(server, "/v1/info")).body).toMatchObject({
-      features: expect.arrayContaining(["computer-use-stream-v1"])
-    })
-    const session = await run(
-      services.db.createSession({ projectId: project.id, harnessId: "codex" })
-    )
-    const other = await run(
-      services.db.createSession({ projectId: project.id, harnessId: "codex" })
-    )
-    const chatPane = await run(
-      services.db.upsertWorkspacePane(workspace.id, {
-        id: randomUUID(),
-        providerId: "codevisor",
-        paneType: "chat",
-        title: "Chat",
-        resourceKind: "session",
-        resourceId: session.id
-      })
-    )
-    const target = {
-      ...request,
-      paneId: chatPane.id,
-      displayId: `computer-use:${session.id.toUpperCase()}`
-    }
-    for (const operation of ["capabilities", "start", "restart", "heartbeat", "stop"] as const) {
-      expect((await post({ ...target, operation })).status).toBe(200)
-    }
-    expect(helper).toHaveBeenCalledTimes(5)
-
-    expect((await post({ ...target, displayId: `computer-use:${other.id}` })).status).toBe(404)
-    expect((await post({ ...request, displayId: target.displayId })).status).toBe(404)
-    for (const displayId of ["computer-use:", "computer-use:invalid", "window:1"]) {
-      expect((await post({ ...target, displayId })).status).toBe(400)
-      expect((await post({ ...target, operation: "heartbeat", displayId })).status).toBe(400)
-    }
-    expect((await post({ ...target, displayId: randomUUID() })).status).toBe(404)
-    expect(helper).toHaveBeenCalledTimes(5)
+    expect((await post(appCapabilities())).status).toBe(503)
   })
 })

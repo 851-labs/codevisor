@@ -10,28 +10,22 @@ struct ScreenSharingHostOwnershipTests {
   typealias Fixture = ScreenSharingHostOwnershipFixture
   private static let busyMessage = "This Mac is already sharing with another viewer."
 
-  @Test func aStableViewerStillReplacesItsOwnPaneAndIsBusyForAnotherPane() async throws {
+  @Test func aViewerWithoutAnAppIdentityIsToldToUpdateAndNothingStarts() async throws {
     try await Fixture.run { mac in
-      let first = mac.stableStart()
-      let granted = await mac.send(first)
-      #expect(granted.status == "connecting" && granted.media != nil)
-      #expect(granted.display == nil && granted.displays.isEmpty)
-
-      let otherPane = await mac.send(mac.stableStart())
-      #expect(otherPane.status == "busy" && otherPane.message == Self.busyMessage && otherPane.media == nil)
-
-      let beat = await mac.send(mac.following(first, .heartbeat))
-      #expect(beat.status == "connecting" && beat.display == nil && beat.displays.isEmpty)
-
-      let again = await mac.send(mac.stableStart(workspaceId: first.workspaceId, paneId: first.paneId))
-      #expect(again.status == "connecting" && again.media?.token != granted.media?.token)
-      #expect(await mac.send(mac.following(first, .heartbeat)).status == "stopped")
-
-      let unknownDisplay = await mac.send(
-        mac.stableStart(workspaceId: first.workspaceId, paneId: first.paneId, display: "gone"))
-      #expect(unknownDisplay.status == "unavailable")
-      #expect(unknownDisplay.message == "The selected display is no longer available.")
-      #expect(await mac.send(mac.stableStart(display: nil)).status == "failed")
+      let anonymous = mac.startWithoutApp()
+      var restart = ServerScreenSharingRequest(
+        operation: .restart, workspaceId: UUID(), paneId: UUID(), viewerId: UUID(), displayId: "main")
+      restart.app = .macBook
+      for request in [
+        anonymous, mac.following(anonymous, .capabilities), mac.following(anonymous, .heartbeat), restart,
+      ] {
+        let reply = await mac.send(request)
+        #expect(reply.status == "unavailable" && reply.reason == .updateNeeded && reply.displays.isEmpty)
+        #expect(reply.message == "Update Codevisor on this device to view \(ScreenSharingHostService.machineName()).")
+        #expect(reply.media == nil && reply.session == nil)
+      }
+      #expect(mac.host.current == nil)
+      #expect(await mac.send(mac.following(anonymous, .stop)).status == "stopped")
     }
   }
 
@@ -43,9 +37,6 @@ struct ScreenSharingHostOwnershipTests {
       #expect(first.status == "connecting" && again.status == "connecting")
       #expect(again.media != nil && again.media?.token != first.media?.token)
       #expect(again.reason == nil)
-
-      let restart = ServerScreenSharingRequest.restarting(mac.start(as: .macBook, intent))
-      #expect(await mac.send(restart).status == "connecting")
     }
   }
 
@@ -60,10 +51,8 @@ struct ScreenSharingHostOwnershipTests {
       let lost = await mac.send(mac.following(macBook, .heartbeat))
       #expect(lost.status == "failed" && lost.reason == .takenOver)
       #expect(lost.holderName == "Alexandru's iPhone" && lost.message == "Now viewing on Alexandru's iPhone.")
-      for bystander in [mac.start(as: .iPad, .attach), mac.stableStart()] {
-        let never = await mac.send(mac.following(bystander, .heartbeat))
-        #expect(never.status == "stopped" && never.reason == nil && never.holderName == nil)
-      }
+      let never = await mac.send(mac.following(mac.start(as: .iPad, .attach), .heartbeat))
+      #expect(never.status != "connecting" && never.reason != .takenOver && never.holderName == nil)
 
       let reconnect = await mac.send(mac.start(as: .macBook, .attach))
       #expect(reconnect.status == "busy" && reconnect.reason == .inUse && reconnect.media == nil)
@@ -85,24 +74,6 @@ struct ScreenSharingHostOwnershipTests {
       #expect(refused.holderName == "Alexandru's MacBook Pro" && refused.message == Self.busyMessage)
       #expect(await mac.send(mac.start(as: .iPhone, nil)).reason == .proofRejected)
       #expect(await mac.send(mac.following(macBook, .heartbeat)).status == "connecting")
-    }
-  }
-
-  @Test func anAppTakesOverFromAStableViewerWhichCanNeverTakeItBack() async throws {
-    try await Fixture.run { mac in
-      let stable = mac.stableStart()
-      _ = await mac.send(stable)
-
-      #expect(await mac.send(mac.start(as: .macBook, .attach)).status == "busy")
-      #expect(await mac.send(mac.start(as: .macBook, .open)).status == "connecting")
-
-      let lost = await mac.send(mac.following(stable, .heartbeat))
-      #expect(lost.status == "failed" && lost.message == "Now viewing on Alexandru's MacBook Pro.")
-      for retry in [stable, ServerScreenSharingRequest.restarting(stable), mac.stableStart()] {
-        let refused = await mac.send(retry)
-        #expect(["busy", "stopped"].contains(refused.status) && refused.media == nil)
-      }
-      #expect(await mac.send(mac.heartbeat(as: .macBook)).status == "connecting")
     }
   }
 
@@ -182,29 +153,6 @@ struct ScreenSharingHostOwnershipTests {
     }
   }
 
-  @Test func aStableRestartResumesOnlyTheSameViewerOnTheSameDisplay() async throws {
-    try await Fixture.run { mac in
-      mac.displays = [Fixture.main, Fixture.side]
-      let start = mac.stableStart()
-      let granted = await mac.send(start)
-
-      let otherViewer = mac.stableStart(workspaceId: start.workspaceId, paneId: start.paneId)
-      for refused in [
-        ServerScreenSharingRequest.restarting(otherViewer),
-        ServerScreenSharingRequest.restarting(start, display: "side"),
-        ServerScreenSharingRequest.restarting(mac.stableStart()),
-      ] {
-        let reply = await mac.send(refused)
-        #expect(reply.status == "stopped" && reply.media == nil)
-        #expect(reply.message == "The host ended this sharing session. Connect again to start a new one.")
-      }
-
-      let resumed = await mac.send(ServerScreenSharingRequest.restarting(start))
-      #expect(resumed.status == "connecting" && resumed.media?.token != granted.media?.token)
-      #expect(await mac.send(mac.following(start, .heartbeat)).status == "connecting")
-    }
-  }
-
   @Test func anAppWaitsForTheRealDisplayWhileTheHostsOwnVirtualOneIsGoingAway() async throws {
     try await Fixture.run { mac in
       let start = await mac.signed(mac.start(as: .macBook, .attach, display: "virtual"))
@@ -279,15 +227,15 @@ struct ScreenSharingHostOwnershipTests {
 
   @Test func everyReplySaysTheHostSupportsAppSessionsAndRefusalsCarryAReason() async throws {
     try await Fixture.run { mac in
-      let capabilities = await mac.send(mac.following(mac.stableStart(), .capabilities))
+      let capabilities = await mac.capabilities(as: .macBook)
       #expect(capabilities.status == "available" && capabilities.abilities == ["app-sessions", "display-switch"])
       #expect(capabilities.reason == nil)
 
+      let signed = await mac.signed(mac.start(as: .macBook, .open))
       mac.allowsCapture = false
-      for request in [mac.following(mac.stableStart(), .capabilities), mac.stableStart()] {
-        let denied = await mac.send(request)
-        #expect(denied.status == "permission-required" && denied.reason == .permissionMissing)
-      }
+      #expect(await mac.capabilities(as: .macBook).reason == .permissionMissing)
+      let denied = await mac.send(signed)
+      #expect(denied.status == "permission-required" && denied.reason == .permissionMissing)
 
       let newer = try JSONDecoder().decode(
         ServerScreenSharingRequest.self,

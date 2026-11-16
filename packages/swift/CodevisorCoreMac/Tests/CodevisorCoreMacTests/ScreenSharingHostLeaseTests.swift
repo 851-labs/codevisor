@@ -4,67 +4,57 @@ import Testing
 @testable import CodevisorCoreMac
 
 struct ScreenSharingHostLeaseTests {
-  @Test func replacementMustStillBeAuthorizedAfterAsynchronousTeardownAndDisplayLookup() throws {
-    let first = request()
+  @Test func secondAppCannotDisplaceOrRenewAnotherAppsLease() throws {
+    let first = try owner(key: "a")
+    let second = try owner(key: "b")
     var lease = ScreenSharingHostLease()
-    _ = lease.reserve(.init(first), now: 100)
-    #expect(lease.replacementPermit(.init(request()), revision: 7, now: 110) == nil)
-    let permit = try #require(lease.replacementPermit(.init(first), revision: 7, now: 110))
-    _ = lease.release(.init(first))
-    #expect(permit.isValid(revision: 7, now: 124.999))
-    #expect(!permit.isValid(revision: 7, now: 125))
-    #expect(!permit.isValid(revision: 8, now: 111))
-    #expect(lease.replacementPermit(.init(first), revision: 7, now: 111) == nil)
-  }
-  @Test func secondViewerCannotDisplaceOrRenewAnotherLease() {
-    let first = request()
-    let second = request()
-    var lease = ScreenSharingHostLease()
-    let reserved = lease.reserve(.init(first), now: 100)
-    let displaced = lease.reserve(.init(second), now: 101)
-    let foreignRenewed = lease.renew(.init(second), now: 102)
-    let foreignReleased = lease.release(.init(second))
+    let reserved = lease.reserve(first, now: 100)
+    let displaced = lease.reserve(second, now: 101)
+    let foreignRenewed = lease.renew(second, now: 102)
+    let foreignReleased = lease.release(second)
     #expect(reserved)
     #expect(!displaced)
     #expect(!foreignRenewed)
     #expect(!foreignReleased)
-    #expect(lease.owner == .init(first))
+    #expect(lease.owner == first)
     #expect(!lease.isExpired(now: 124))
     #expect(lease.isExpired(now: 125))
-    let expiredRenewed = lease.renew(.init(first), now: 125)
-    let released = lease.release(.init(first))
-    let nextReserved = lease.reserve(.init(second), now: 125)
+    let expiredRenewed = lease.renew(first, now: 125)
+    let released = lease.release(first)
+    let nextReserved = lease.reserve(second, now: 125)
     #expect(!expiredRenewed)
     #expect(released)
     #expect(nextReserved)
   }
 
-  @Test func heartbeatExtendsOnlyAnUnexpiredMatchingWorkspaceAndPane() {
-    let first = request()
-    let wrongPane = ServerScreenSharingRequest(
-      operation: .heartbeat, workspaceId: first.workspaceId,
-      paneId: UUID(), viewerId: first.viewerId)
-    var lease = ScreenSharingHostLease()
-    let reserved = lease.reserve(.init(first), now: 0)
-    let foreignRenewed = lease.renew(.init(wrongPane), now: 5)
-    let renewed = lease.renew(.init(first), now: 24)
-    #expect(reserved)
-    #expect(!foreignRenewed)
-    #expect(renewed)
-    #expect(!lease.isExpired(now: 48))
-    #expect(lease.isExpired(now: 49))
-    let released = lease.release(.init(first))
-    #expect(released)
-    #expect(!lease.isExpired(now: 100))
+  @Test func theSameAppIsTheSameHolderAcrossAttemptsAndOnlyAnOpenTakesOver() throws {
+    let first = try owner(key: "a")
+    let again = try owner(key: "a")
+    let other = try owner(key: "b")
+    #expect(first == again && first.viewerId != again.viewerId)
+    #expect(again.admission(against: first, intent: .attach) == .replacesOwn)
+    #expect(other.admission(against: first, intent: .attach) == .refused)
+    #expect(other.admission(against: first, intent: .open) == .takesOver)
   }
+
+  @Test func aRequestWithoutAnAppHasNoOwner() {
+    #expect(ScreenSharingHostLease.Owner(request()) == nil)
+  }
+
   @Test func anAppsNameIsShownOnOneLineWithoutControlCharactersAndAtMost64Long() {
     var named = request()
     named.app = .init(key: String(repeating: "a", count: 64), name: "  Alexandru's\r\nMac\u{0}Book\u{2028} Pro\t ")
-    #expect(ScreenSharingHostLease.Owner(named).name == "Alexandru'sMacBook Pro")
+    #expect(ScreenSharingHostLease.Owner(named)?.name == "Alexandru'sMacBook Pro")
     named.app = .init(key: String(repeating: "a", count: 64), name: String(repeating: "n", count: 70))
-    #expect(ScreenSharingHostLease.Owner(named).name == String(repeating: "n", count: 64))
+    #expect(ScreenSharingHostLease.Owner(named)?.name == String(repeating: "n", count: 64))
     named.app = .init(key: String(repeating: "a", count: 64), name: " \n ")
-    #expect(ScreenSharingHostLease.Owner(named).name == nil)
+    #expect(ScreenSharingHostLease.Owner(named)?.name == nil)
+  }
+
+  private func owner(key: Character) throws -> ScreenSharingHostLease.Owner {
+    var request = request()
+    request.app = .init(key: String(repeating: key, count: 64), name: "Viewer")
+    return try #require(ScreenSharingHostLease.Owner(request))
   }
 
   private func request() -> ServerScreenSharingRequest {
