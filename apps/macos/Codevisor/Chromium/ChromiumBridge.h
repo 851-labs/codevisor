@@ -17,6 +17,8 @@ typedef NS_ENUM(NSInteger, CVChromiumDownloadState) {
 @interface CVChromiumDownload : NSObject
 @property(nonatomic, readonly) uint32_t identifier;
 @property(nonatomic, readonly, copy) NSString *path;
+@property(nonatomic, readonly, copy) NSString *url;
+@property(nonatomic, readonly, copy) NSString *suggestedName;
 @property(nonatomic, readonly) int64_t receivedBytes;
 @property(nonatomic, readonly) int64_t totalBytes;
 @property(nonatomic, readonly) CVChromiumDownloadState state;
@@ -62,6 +64,7 @@ typedef NS_ENUM(NSInteger, CVBrowserLinkDestination) {
 @property(nonatomic, copy, nullable) void (^viewportScaleChanged)(CGFloat scale);
 @property(nonatomic, copy, nullable) void (^protocolEvent)(NSData *message);
 @property(nonatomic, copy, nullable) void (^findResult)(NSInteger matches, NSInteger activeMatch, BOOL finished);
+@property(nonatomic, copy, nullable) void (^downloadUpdated)(CVChromiumDownload *download);
 @property(nonatomic, copy, nullable) void (^pageDialogOpened)(CVChromiumPageDialog *dialog);
 @property(nonatomic, copy, nullable) void (^pageDialogClosed)(void);
 @property(nonatomic, copy, nullable) void (^proxyCredentialsRejected)(NSString *username, NSString *password, void (^reply)(NSString * _Nullable username, NSString * _Nullable password));

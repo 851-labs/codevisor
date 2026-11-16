@@ -37,6 +37,12 @@ enum ChromiumPageEvents {
     view.findResult = { [weak model] matches, activeMatch, finished in
       MainActor.assumeIsolated { model?.finder.publish(matches: matches, activeMatch: activeMatch, finished: finished) }
     }
+    view.downloadUpdated = { [weak model] download in
+      MainActor.assumeIsolated {
+        guard let model, model.isCurrent(token) else { return }
+        ChromiumAutomationBridge.shared.downloadUpdated(download, in: model)
+      }
+    }
     view.pageDialogOpened = { [weak model] dialog in
       MainActor.assumeIsolated {
         guard let model, model.isCurrent(token) else { return dialog.dismiss() }

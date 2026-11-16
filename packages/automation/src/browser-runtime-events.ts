@@ -1,4 +1,5 @@
 import { randomUUID } from "node:crypto"
+import { appendFileSync } from "node:fs"
 import { join } from "node:path"
 
 import type { BrowserRuntime } from "./browser-cdp-engine.js"
@@ -29,6 +30,15 @@ function downloadProgressPath(
   if (params.state === "completed" && existing.path === undefined)
     return { path: join(downloadsDir, params.guid) }
   return {}
+}
+
+const paneDownloadGuid = /^[\w-]+$/
+
+function appendPaneDownloadData(params: CdpParams, downloadsDir: string): void {
+  if (!hasDownloadGuid(params) || !paneDownloadGuid.test(params.guid)) return
+  if (typeof params.data !== "string") return
+
+  appendFileSync(join(downloadsDir, params.guid), Buffer.from(params.data, "base64"))
 }
 
 export function observeBrowserRuntime(
@@ -65,7 +75,9 @@ export function observeBrowserRuntime(
           active.dialogs.delete(event.sessionId)
         }
       }
-      if (
+      if (event.method === "Codevisor.downloadData" && active.native === true) {
+        appendPaneDownloadData(params, downloadsDir)
+      } else if (
         event.method === "Browser.downloadWillBegin" ||
         event.method === "Page.downloadWillBegin"
       ) {
