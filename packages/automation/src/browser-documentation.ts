@@ -30,7 +30,7 @@ Navigation and capture:
 Playwright-style page API (tab.playwright):
 - domSnapshot(); locator(css); ref(ref); getByRole(role,{name?:string|RegExp,exact?}); getByLabel, getByPlaceholder, getByText(text,{exact?}); getByTestId(id).
 - frameLocator(css) composes through nested and cross-origin frames; when several frames match, pick one with .first(), .last() or .nth(index).
-- evaluate(fn,arg?,{timeoutMs?}): read-only page evaluation.
+- evaluate(fn,arg?,{timeoutMs?}): read-only page evaluation. The function may compute with its own local variables and read the page (including a GET fetch); changing the DOM, storage or location, or sending a request with a method or body, is refused. Act with locators instead.
 - expectNavigation(action,{url?,waitUntil?:'commit'|'domcontentloaded'|'load'|'networkidle',timeoutMs?}): arms before action; requires an actual main-frame navigation, including pushState/hash navigation.
 - waitForURL(url,{waitUntil?,timeoutMs?}); waitForLoadState({state?,timeoutMs?}); networkidle requires no tracked requests for 500 ms.
 - waitForEvent('download'|'filechooser',{timeoutMs?}); arm before clicking. FileChooser has isMultiple() and setFiles(workspacePaths). Download has url(), suggestedFilename(), and path({timeoutMs?}); the saved file keeps the suggested name.
