@@ -1,4 +1,8 @@
-import { describe, expect } from "vitest"
+import { mkdtempSync, rmSync, writeFileSync } from "node:fs"
+import { tmpdir } from "node:os"
+import { join } from "node:path"
+
+import { describe, expect, onTestFinished } from "vitest"
 
 import { chromeBrowserSuite } from "./browser-chrome-test-support.js"
 
@@ -6,8 +10,14 @@ const leaf = `<title>Leaf</title><p id="out">none</p><script>console.log('leaf s
   <button onclick="document.querySelector('#out').textContent = 'clicked'">Frame action</button>
   <label>Frame name<input id="name"></label>`
 
+const picker = `<title>Picker</title><p id="out">none</p>
+  <input type="file" id="file" onchange="document.querySelector('#out').textContent = 'file:' + this.files[0].name">`
+
 const it = chromeBrowserSuite("frames", ({ crossOrigin }) => ({
   "/leaf": leaf,
+  "/picker": picker,
+  "/uploads": `<title>Uploads</title><iframe id="same" src="/picker"></iframe>
+    <iframe id="cross" src="${crossOrigin}/picker"></iframe>`,
   "/frames": `<title>Frames</title><button>Top action</button>
     <iframe id="same" src="/leaf"></iframe>
     <iframe id="cross" src="${crossOrigin}/leaf"></iframe>
@@ -96,5 +106,23 @@ describe("Frame locators", () => {
       browser.write([...new Set(said)].sort())`)
     const { origin, crossOrigin } = browser.origins
     expect(hosts).toEqual([new URL(origin).host, new URL(crossOrigin).host].toSorted())
+  })
+
+  it("uploads a file through an input inside a cross-origin frame", async ({ browser }) => {
+    const directory = mkdtempSync(join(tmpdir(), "frame-upload-"))
+    onTestFinished(() => rmSync(directory, { recursive: true, force: true }))
+    const file = join(directory, "report.txt")
+    writeFileSync(file, "report")
+    await browser.open("/uploads")
+    const uploaded = await browser.cell(`
+      const upload = async (selector) => {
+        const frame = tab.playwright.frameLocator(selector)
+        const chooser = tab.playwright.waitForEvent('filechooser', {timeoutMs: 5000})
+        await frame.locator('#file').click()
+        await (await chooser).setFiles([${JSON.stringify(file)}])
+        return frame.locator('#out').textContent()
+      }
+      browser.write([await upload('#cross'), await upload('#same')])`)
+    expect(uploaded).toEqual(["file:report.txt", "file:report.txt"])
   })
 })
