@@ -2,8 +2,14 @@ import { randomUUID } from "node:crypto"
 
 import type { CallToolResult } from "@modelcontextprotocol/server"
 
-import { pageInformation, type BrowserRuntime, type PageHandle } from "./browser-cdp-engine.js"
+import {
+  pageInformation,
+  type BrowserRuntime,
+  type BrowserSnapshot,
+  type PageHandle
+} from "./browser-cdp-engine.js"
 import { readFrameAccessibility, type FrameAccessibility } from "./browser-snapshot-frames.js"
+import { snapshotRoot, snapshotStarts } from "./browser-snapshot-scope.js"
 
 export interface AXValue {
   readonly value?: string | number | boolean
@@ -26,31 +32,96 @@ export interface AXNode {
   readonly backendDOMNodeId?: number
 }
 
-const maxSnapshotLines = 2_000
+export interface SnapshotRequest {
+  readonly depth: number
+  readonly root?: unknown
+  readonly offset?: unknown
+}
+
+const windowLines = 2_000
+const maxSnapshotLines = 30_000
 
 export const snapshotPage = async (
   runtime: BrowserRuntime,
   page: PageHandle,
-  depthLimit: number
+  request: SnapshotRequest
 ): Promise<CallToolResult> => {
+  const key = page.snapshotKey ?? page.target.targetId
+  if (request.offset !== undefined)
+    return snapshotResult(runtime, page, currentSnapshot(runtime, key), request.offset)
+
+  const snapshot = await takeSnapshot(runtime, page, request)
+  runtime.snapshots.set(key, snapshot)
+  return snapshotResult(runtime, page, snapshot, 0)
+}
+
+const takeSnapshot = async (
+  runtime: BrowserRuntime,
+  page: PageHandle,
+  request: SnapshotRequest
+): Promise<BrowserSnapshot> => {
+  const root = await snapshotRoot(runtime, page, request.root)
   const tree = await readFrameAccessibility(runtime, page.sessionId)
-  const outline = snapshotOutline(depthLimit, page.sessionId)
-  for (const root of tree.roots) outline.visit(tree, root, 0)
-  const snapshotId = randomUUID()
-  runtime.snapshots.set(page.snapshotKey ?? page.target.targetId, {
-    id: snapshotId,
-    targets: outline.targets,
-    frames: outline.frames
-  })
-  const info = await pageInformation(runtime, page)
+  const outline = snapshotOutline(request.depth, page.sessionId)
+  for (const start of snapshotStarts(tree, root)) outline.visit(start.tree, start.node, 0)
   return {
-    content: [
-      {
-        type: "text",
-        text: `Page URL: ${info.url}\nSnapshot: ${snapshotId}\nTitle: ${info.title}\n${outline.lines.join("\n")}${outline.truncated() ? "\n[Snapshot truncated; scope with locators or request a greater depth.]" : ""}`
-      }
-    ]
+    id: randomUUID(),
+    targets: outline.targets,
+    frames: outline.frames,
+    lines: outline.lines,
+    clipped: outline.truncated()
   }
+}
+
+const currentSnapshot = (runtime: BrowserRuntime, key: string): BrowserSnapshot => {
+  const snapshot = runtime.snapshots.get(key)
+  if (snapshot === undefined)
+    throw new Error(
+      "The page changed since the last snapshot, so there is nothing to read on from. Take a new one with tab.getAXState()."
+    )
+  return snapshot
+}
+
+const snapshotResult = async (
+  runtime: BrowserRuntime,
+  page: PageHandle,
+  snapshot: BrowserSnapshot,
+  offset: unknown
+): Promise<CallToolResult> => {
+  const start = lineOffset(offset, snapshot.lines.length)
+  const shown = snapshot.lines.slice(start, start + windowLines)
+  const info = await pageInformation(runtime, page)
+  const text = [
+    `Page URL: ${info.url}`,
+    `Snapshot: ${snapshot.id}`,
+    `Title: ${info.title}`,
+    ...shown,
+    ...windowNotes(snapshot, start, start + shown.length)
+  ].join("\n")
+  return { content: [{ type: "text", text }] }
+}
+
+const lineOffset = (offset: unknown, total: number): number => {
+  if (typeof offset !== "number" || !Number.isInteger(offset) || offset < 0)
+    throw new Error("offset must be a line count from a snapshot's own note, such as 2000")
+  if (offset > 0 && offset >= total)
+    throw new Error(`offset ${offset} is past the end of the snapshot, which has ${total} lines`)
+  return offset
+}
+
+const windowNotes = (snapshot: BrowserSnapshot, start: number, end: number): string[] => {
+  const total = snapshot.lines.length
+  const notes: string[] = []
+  if (end < total)
+    notes.push(
+      `[Lines ${start + 1}-${end} of ${total}. Read on with tab.getAXState({ offset: ${end} }); the refs above stay valid. Or show one part of the page with tab.getAXState({ root }), where root is a ref or a locator.]`
+    )
+  else if (start > 0) notes.push(`[Lines ${start + 1}-${end} of ${total}; end of the snapshot.]`)
+  if (snapshot.clipped)
+    notes.push(
+      `[Some of the page was left out: it is nested too deeply or runs past ${maxSnapshotLines} lines. Show one part of it with tab.getAXState({ root }), where root is a ref or a locator.]`
+    )
+  return notes
 }
 
 export const normalizeRef = (target: unknown): string => {

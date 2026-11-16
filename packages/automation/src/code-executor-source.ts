@@ -313,7 +313,7 @@ export const buildExecutionSource = (code: string, persistent = false): string =
     "  const tabId = __tabId(info);",
     "  return __strict('tab', {",
     "    id: tabId,",
-    "    getAXState: () => __callTabTool(tabId, 'browser.snapshot'),",
+    "    getAXState: (options = {}) => __callTabTool(tabId, 'browser.snapshot', { ...options, ...(options.root == null || typeof options.root === 'string' ? {} : { root: options.root.__locator ?? options.root }) }),",
     "    click: (ref, options = {}) => __callTabTool(tabId, 'browser.click', { ...options, target: ref }),",
     "    fill: (ref, text) => __callTabTool(tabId, 'browser.type', { target: ref, text, submit: false }),",
     "    pressKey: (key) => __callTabTool(tabId, 'browser.press_key', { key }),",

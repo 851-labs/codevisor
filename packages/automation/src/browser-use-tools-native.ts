@@ -109,8 +109,21 @@ export const browserUseNativeTools: ReadonlyArray<Tool> = [
   tool("reload", "Reload the selected tab."),
   tool(
     "snapshot",
-    "Capture a fresh page accessibility tree with snapshot-scoped element refs. Prefer refs over coordinates and re-snapshot after every action.",
-    objectSchema({ depth: { type: "number", minimum: 1, maximum: 60 }, boxes: { type: "boolean" } })
+    "Capture a fresh page accessibility tree with snapshot-scoped element refs. Prefer refs over coordinates and re-snapshot after every action. Long pages come 2,000 lines at a time: pass offset to read on in the same snapshot, or root to capture one part of the page.",
+    objectSchema({
+      depth: { type: "number", minimum: 1, maximum: 60 },
+      boxes: { type: "boolean" },
+      root: {
+        description:
+          "Capture only this element and what is under it: a ref from the latest snapshot, or a locator."
+      },
+      offset: {
+        type: "number",
+        minimum: 0,
+        description:
+          "Read on in the latest snapshot from this line instead of capturing a new one; its refs stay valid."
+      }
+    })
   ),
   tool(
     "screenshot",
