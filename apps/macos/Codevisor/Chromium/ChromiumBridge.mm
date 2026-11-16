@@ -496,13 +496,18 @@ bool IsWebLink(NSString *address) {
 }
 
 @interface CVChromiumDownload ()
-- (instancetype)initWithIdentifier:(uint32_t)identifier path:(NSString *)path received:(int64_t)received
+- (instancetype)initWithIdentifier:(uint32_t)identifier path:(NSString *)path url:(NSString *)url
+                     suggestedName:(NSString *)suggestedName received:(int64_t)received
                              total:(int64_t)total state:(CVChromiumDownloadState)state;
 @end
 @implementation CVChromiumDownload
-- (instancetype)initWithIdentifier:(uint32_t)identifier path:(NSString *)path received:(int64_t)received
+- (instancetype)initWithIdentifier:(uint32_t)identifier path:(NSString *)path url:(NSString *)url
+                     suggestedName:(NSString *)suggestedName received:(int64_t)received
                              total:(int64_t)total state:(CVChromiumDownloadState)state {
-  if ((self = [super init])) { _identifier = identifier; _path = [path copy]; _receivedBytes = received; _totalBytes = total; _state = state; }
+  if ((self = [super init])) {
+    _identifier = identifier; _path = [path copy]; _url = [url copy]; _suggestedName = [suggestedName copy];
+    _receivedBytes = received; _totalBytes = total; _state = state;
+  }
   return self;
 }
 @end
@@ -528,12 +533,12 @@ NSString *ReserveDownloadPath(NSString *suggestedName) {
     return path;
   }
 }
-void PublishDownload(CefRefPtr<CefDownloadItem> item, CefRefPtr<CefDownloadItemCallback> callback) {
+CVChromiumDownload *PublishDownload(CefRefPtr<CefDownloadItem> item, CefRefPtr<CefDownloadItemCallback> callback) {
   uint32_t identifier = item->GetId();
   NSString *path = String(item->GetFullPath());
   if (path.length) downloadPaths[identifier] = path;
   else if (downloadPaths.contains(identifier)) path = downloadPaths[identifier];
-  else return;
+  else return nil;
   CVChromiumDownloadState state = item->IsComplete() ? CVChromiumDownloadStateComplete
       : item->IsCanceled() ? CVChromiumDownloadStateCanceled
       : item->IsInterrupted() ? CVChromiumDownloadStateFailed : CVChromiumDownloadStateInProgress;
@@ -544,10 +549,11 @@ void PublishDownload(CefRefPtr<CefDownloadItem> item, CefRefPtr<CefDownloadItemC
     downloadPaths.erase(identifier);
     [ReservedDownloadPaths() removeObject:path];
   }
-  if (downloadObserver) {
-    downloadObserver([[CVChromiumDownload alloc] initWithIdentifier:identifier path:path
-        received:item->GetReceivedBytes() total:item->GetTotalBytes() state:state]);
-  }
+  CVChromiumDownload *download = [[CVChromiumDownload alloc] initWithIdentifier:identifier path:path
+      url:String(item->GetURL()) suggestedName:String(item->GetSuggestedFileName())
+      received:item->GetReceivedBytes() total:item->GetTotalBytes() state:state];
+  if (downloadObserver) downloadObserver(download);
+  return download;
 }
 }
 
@@ -777,7 +783,9 @@ class BrowserClient final : public CefClient, public CefLifeSpanHandler,
   }
   void OnDownloadUpdated(CefRefPtr<CefBrowser>, CefRefPtr<CefDownloadItem> item,
                          CefRefPtr<CefDownloadItemCallback> callback) override {
-    PublishDownload(item, callback);
+    CVChromiumDownload *download = PublishDownload(item, callback);
+    CVChromiumView *view = view_;
+    if (download && view.downloadUpdated) view.downloadUpdated(download);
   }
   bool GetAuthCredentials(CefRefPtr<CefBrowser>, const CefString&, bool isProxy,
                           const CefString& host, int port, const CefString&, const CefString&,

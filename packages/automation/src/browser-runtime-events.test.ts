@@ -1,14 +1,21 @@
-import { expect, it, vi } from "vitest"
+import { mkdtempSync, readFileSync, rmSync } from "node:fs"
+import { tmpdir } from "node:os"
+import { join } from "node:path"
+
+import { expect, it, onTestFinished, vi } from "vitest"
 
 import type { CdpConnection } from "./browser-cdp.js"
 import { observeBrowserRuntime } from "./browser-runtime-events.js"
 import { fakeBrowserRuntime, fakeCdpConnection } from "./browser-runtime-test-support.js"
 
-function fixture() {
+const chunk = (text: string) => Buffer.from(text).toString("base64")
+
+function fixture(options: { native?: boolean; downloadsDir?: string } = {}) {
   const stopEvents = vi.fn()
   const stopRecovery = vi.fn()
   let listener: Parameters<CdpConnection["on"]>[1]
   const runtime = fakeBrowserRuntime({
+    ...(options.native === true ? { native: true } : {}),
     connection: fakeCdpConnection({
       on: (_method, handler) => {
         listener = handler
@@ -17,7 +24,7 @@ function fixture() {
       setSessionRecoveryHandler: () => stopRecovery
     }).connection
   })
-  observeBrowserRuntime(runtime, "/downloads", false)
+  observeBrowserRuntime(runtime, options.downloadsDir ?? "/downloads", false)
   const emit = (method: string, params: Record<string, unknown> = {}, sessionId?: string) =>
     listener(params, { method, params, ...(sessionId === undefined ? {} : { sessionId }) })
   return { runtime, emit, stopEvents, stopRecovery }
@@ -101,4 +108,25 @@ it("assigns an identity to downloads missing an upstream guid", () => {
   })
   emit("Page.downloadProgress", { guid: download!.guid, state: "canceled" })
   expect(runtime.downloads.get(download!.guid)!.state).toBe("canceled")
+})
+
+it("stores the file a built-in pane sends for a download, and ignores it from other browsers", () => {
+  const downloadsDir = mkdtempSync(join(tmpdir(), "pane-downloads-"))
+  onTestFinished(() => rmSync(downloadsDir, { recursive: true, force: true }))
+  const pane = fixture({ native: true, downloadsDir })
+  pane.emit("Browser.downloadWillBegin", { guid: "pane-1", url: "", suggestedFilename: "a.txt" })
+  pane.emit("Codevisor.downloadData", { guid: "pane-1", data: chunk("hello ") })
+  pane.emit("Codevisor.downloadData", { guid: "pane-1", data: chunk("download") })
+  pane.emit("Codevisor.downloadData", { guid: "../escape", data: chunk("no") })
+  pane.emit("Browser.downloadProgress", { guid: "pane-1", state: "completed" })
+  expect(pane.runtime.downloads.get("pane-1")).toMatchObject({
+    state: "completed",
+    path: join(downloadsDir, "pane-1")
+  })
+  expect(readFileSync(join(downloadsDir, "pane-1"), "utf8")).toBe("hello download")
+
+  const managed = fixture({ downloadsDir })
+  managed.emit("Codevisor.downloadData", { guid: "managed-1", data: chunk("no") })
+  expect(() => readFileSync(join(downloadsDir, "managed-1"))).toThrow()
+  expect(() => readFileSync(join(downloadsDir, "..", "escape"))).toThrow()
 })
