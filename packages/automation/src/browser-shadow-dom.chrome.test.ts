@@ -8,10 +8,10 @@ const shadowPage = `<title>Shadow</title><p id="out">none</p>
   <script>
     const log = (text) => { document.querySelector('#out').textContent = text }
     const open = document.querySelector('#open').attachShadow({ mode: 'open' })
-    open.innerHTML = '<button id="outer">Open shadow</button><div id="nested"></div>'
+    open.innerHTML = '<button id="outer">Open shadow</button><input aria-label="Shadow name" placeholder="Shadow hint" data-testid="shadow-field"><div id="nested"></div>'
     open.querySelector('#outer').onclick = () => log('open')
     const nested = open.querySelector('#nested').attachShadow({ mode: 'open' })
-    nested.innerHTML = '<button>Nested shadow</button>'
+    nested.innerHTML = '<button id="inner">Nested shadow</button>'
     nested.querySelector('button').onclick = () => log('nested')
     const closed = document.querySelector('#closed').attachShadow({ mode: 'closed' })
     closed.innerHTML = '<button>Closed shadow</button>'
@@ -42,5 +42,31 @@ describe("Shadow DOM actions", () => {
     await expect(browser.cell(clickButton("Covered shadow", "{timeoutMs: 0}"))).rejects.toThrow(
       "obscured at its action point"
     )
+  })
+
+  it("finds open shadow content with CSS, label, placeholder, test id and text locators", async ({
+    browser
+  }) => {
+    await browser.open("/shadow")
+    const found = await browser.cell(`
+      const page = tab.playwright
+      await page.getByLabel('Shadow name').fill('by label')
+      await page.locator('#inner').click()
+      browser.write({
+        css: await page.locator('#outer').textContent(),
+        scoped: await page.locator('#open').locator('button').allTextContents(),
+        label: await page.getByPlaceholder('Shadow hint').evaluate(e => e.value),
+        testId: await page.getByTestId('shadow-field').count(),
+        text: await page.getByText('Nested shadow', {exact: true}).evaluate(e => e.id),
+        clicked: await page.locator('#out').textContent()
+      })`)
+    expect(found).toEqual({
+      css: "Open shadow",
+      scoped: ["Open shadow", "Nested shadow"],
+      label: "by label",
+      testId: 1,
+      text: "inner",
+      clicked: "nested"
+    })
   })
 })
