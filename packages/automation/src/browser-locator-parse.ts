@@ -1,4 +1,4 @@
-import { isPlainRecord, isStringArray } from "./unknown-values.js"
+import { isPlainRecord } from "./unknown-values.js"
 
 export interface BrowserLocator {
   readonly ref?: string
@@ -11,7 +11,7 @@ export interface BrowserLocator {
   readonly testId?: string
   readonly exact?: boolean
   readonly scope?: BrowserLocator
-  readonly frame?: ReadonlyArray<string>
+  readonly frame?: ReadonlyArray<BrowserFrameStep>
   readonly filters?: {
     readonly has?: BrowserLocator
     readonly hasNot?: BrowserLocator
@@ -22,6 +22,11 @@ export interface BrowserLocator {
   readonly index?: number | "last"
   readonly and?: BrowserLocator
   readonly or?: BrowserLocator
+}
+
+export interface BrowserFrameStep {
+  readonly css: string
+  readonly index?: number | "last"
 }
 
 type BrowserTextMatcher = string | { readonly regex: string; readonly flags?: string }
@@ -70,12 +75,19 @@ const validateLocatorDescriptor = (locator: Readonly<Record<string, unknown>>): 
   }
 }
 
-const parseLocatorFrame = (value: unknown): ReadonlyArray<string> | undefined => {
+export const parseLocatorFrame = (value: unknown): ReadonlyArray<BrowserFrameStep> | undefined => {
   if (value === undefined) return undefined
-  if (!isStringArray(value) || !value.every((selector) => selector.length > 0)) {
+  if (!Array.isArray(value)) throw new Error("locator.frame must be an array of frame selectors")
+  return value.map(parseFrameStep)
+}
+
+const parseFrameStep = (step: unknown): BrowserFrameStep => {
+  if (typeof step === "string" && step.length > 0) return { css: step }
+  if (!isPlainRecord(step) || typeof step.css !== "string" || step.css.length === 0) {
     throw new Error("locator.frame must be an array of frame selectors")
   }
-  return value
+  const index = parseLocatorIndex(step.index)
+  return { css: step.css, ...(index === undefined ? {} : { index }) }
 }
 
 const parseLocatorIndex = (value: unknown): number | "last" | undefined => {

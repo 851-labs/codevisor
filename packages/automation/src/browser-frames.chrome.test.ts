@@ -11,7 +11,11 @@ const it = chromeBrowserSuite("frames", ({ crossOrigin }) => ({
   "/frames": `<title>Frames</title><button>Top action</button>
     <iframe id="same" src="/leaf"></iframe>
     <iframe id="cross" src="${crossOrigin}/leaf"></iframe>
-    <iframe id="inline" srcdoc="<button onclick=&quot;this.textContent='inline clicked'&quot;>Inline action</button>"></iframe>`
+    <iframe id="inline" srcdoc="<button onclick=&quot;this.textContent='inline clicked'&quot;>Inline action</button>"></iframe>`,
+  "/many": `<title>Many</title>
+    <iframe class="card" srcdoc="<p>first card</p>"></iframe>
+    <iframe class="card" src="${crossOrigin}/leaf"></iframe>
+    <iframe class="card" srcdoc="<p>last card</p><iframe class='inner' srcdoc='<p>inner one</p>'></iframe><iframe class='inner' srcdoc='<p>inner two</p>'></iframe>"></iframe>`
 }))
 
 describe("Frame locators", () => {
@@ -40,6 +44,27 @@ describe("Frame locators", () => {
       cross: ["clicked", "#cross", 1],
       inline: "inline clicked",
       topLevelButtons: 1
+    })
+  })
+
+  it("picks one of several matching frames with first, nth and last", async ({ browser }) => {
+    await browser.open("/many")
+    const picked = await browser.cell(`
+      const cards = tab.playwright.frameLocator('.card')
+      browser.write({
+        first: await cards.first().locator('p').textContent(),
+        second: await cards.nth(1).getByRole('button', {name:'Frame action'}).count(),
+        last: await cards.last().locator('p').textContent(),
+        nested: await cards.last().frameLocator('.inner').nth(1).locator('p').textContent(),
+        unpicked: await cards.locator('p').count().catch(error => error.message)
+      })`)
+    expect(picked).toEqual({
+      first: "first card",
+      second: 1,
+      last: "last card",
+      nested: "inner two",
+      unpicked:
+        'frameLocator(".card") resolved to 3 frames; pick one with .first(), .last() or .nth(index)'
     })
   })
 })
