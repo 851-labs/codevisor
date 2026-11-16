@@ -36,7 +36,9 @@ import {
   resolveLocatorElement
 } from "./browser-locators.js"
 import { snapshotPage } from "./browser-snapshot.js"
+import { urlMatcher } from "./browser-url-match.js"
 import type { BrowserToolInvocation, BrowserToolSessionState } from "./browser-use-invoke-types.js"
+import { waitForPopup } from "./browser-use-invoke-waits.js"
 import { waitBudget } from "./browser-wait-budget.js"
 import { expectString } from "./unknown-values.js"
 
@@ -174,6 +176,7 @@ export const invokePlaywrightTools = async (
       const event = stringArgument(args, "event")
       const timeoutMs = waitBudget(args.timeoutMs)
       if (event === "filechooser") return waitForFileChooser(active, page, timeoutMs)
+      if (event === "popup") return waitForPopup(active, page, timeoutMs)
       if (event === "download") {
         const eventSessionId = backend === "extension" ? page.sessionId : undefined
         const eventPromise = waitForCdpEvent(
@@ -207,7 +210,7 @@ export const invokePlaywrightTools = async (
         active.downloads.set(guid, value)
         return jsonResult({ event, downloadId: guid, ...value })
       }
-      throw new Error("event must be filechooser or download")
+      throw new Error("event must be filechooser, download or popup")
     }
     case "playwright.fileChooserSetFiles": {
       if (!Array.isArray(args.paths) || !args.paths.every((value) => typeof value === "string")) {
@@ -433,12 +436,12 @@ export const invokePlaywrightTools = async (
         timeoutMs: waitBudget(args.timeoutMs),
         afterSequence: Number(args.afterSequence),
         frameId: String(args.frameId),
-        ...(typeof args.url === "string" ? { url: args.url } : {})
+        ...(args.url === undefined ? {} : { url: urlMatcher(args.url, "url") })
       })
       return jsonResult({ navigated: true })
     case "playwright.waitForURL":
       await waitForBrowserState(active, page, {
-        url: stringArgument(args, "url"),
+        url: urlMatcher(args.url, "url"),
         state: typeof args.waitUntil === "string" ? args.waitUntil : "commit",
         timeoutMs: waitBudget(args.timeoutMs)
       })

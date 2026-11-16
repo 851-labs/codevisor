@@ -491,4 +491,9 @@ export const makeBrowserUseProvider = (
 const unansweredHost = (active: BrowserRuntime) =>
   active.connection.closed ? undefined : active.nativeHost?.name
 
-const waitsOutsideQueue = new Set(["playwright.waitForEvent", "playwright.waitForTimeout"])
+const waitsOutsideQueue = new Set([
+  "playwright.waitForEvent",
+  "playwright.waitForTimeout",
+  "playwright.waitForFunction",
+  "playwright.waitForNetwork"
+])

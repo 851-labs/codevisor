@@ -2,6 +2,15 @@ import type { Tool } from "@modelcontextprotocol/server"
 
 import { objectSchema, locatorProperty, locatorSchema, tool } from "./browser-use-tool-schema.js"
 
+const urlPatternProperty = {
+  description:
+    "A full URL, a glob pattern (* within a path segment, ** across segments), or a regular expression.",
+  oneOf: [
+    { type: "string" },
+    objectSchema({ regex: { type: "string" }, flags: { type: "string" } }, ["regex"])
+  ]
+}
+
 export const browserUsePlaywrightTools: ReadonlyArray<Tool> = [
   tool(
     "content.export",
@@ -26,7 +35,7 @@ export const browserUsePlaywrightTools: ReadonlyArray<Tool> = [
       {
         afterSequence: { type: "number" },
         frameId: { type: "string" },
-        url: { type: "string" },
+        url: urlPatternProperty,
         timeoutMs: { type: "number" },
         waitUntil: { type: "string", enum: ["commit", "domcontentloaded", "load", "networkidle"] }
       },
@@ -214,10 +223,10 @@ export const browserUsePlaywrightTools: ReadonlyArray<Tool> = [
   ),
   tool(
     "playwright.waitForURL",
-    "Wait for the selected tab URL to equal the requested URL.",
+    "Wait for the selected tab URL to match a URL, a glob pattern such as **/done, or a regular expression.",
     objectSchema(
       {
-        url: { type: "string" },
+        url: urlPatternProperty,
         timeoutMs: { type: "number", minimum: 0, maximum: 120000 },
         waitUntil: {
           type: "string",
@@ -259,11 +268,42 @@ export const browserUsePlaywrightTools: ReadonlyArray<Tool> = [
     locatorSchema({ timeoutMs: { type: "number", minimum: 0, maximum: 120000 } })
   ),
   tool(
-    "playwright.waitForEvent",
-    "Wait for a native-style filechooser or download event.",
+    "playwright.waitForFunction",
+    "Wait until a read-only function returns a truthy value in the page, and return that value.",
     objectSchema(
       {
-        event: { type: "string", enum: ["filechooser", "download"] },
+        function: { type: "string" },
+        arg: {},
+        pollingMs: { type: "number", minimum: 16 },
+        timeoutMs: { type: "number", minimum: 0, maximum: 120000 }
+      },
+      ["function"]
+    )
+  ),
+  tool(
+    "playwright.waitForNetwork",
+    "Wait for the next request or response in the selected tab or its frames whose URL matches. Arm it before the action that causes it.",
+    objectSchema(
+      {
+        kind: { type: "string", enum: ["request", "response"] },
+        url: urlPatternProperty,
+        afterSequence: { type: "number", minimum: 0 },
+        timeoutMs: { type: "number", minimum: 0, maximum: 120000 }
+      },
+      ["kind"]
+    )
+  ),
+  tool(
+    "playwright.responseBody",
+    "Read the text of a response returned by playwright.waitForNetwork.",
+    objectSchema({ requestId: { type: "string" }, sessionId: { type: "string" } }, ["requestId"])
+  ),
+  tool(
+    "playwright.waitForEvent",
+    "Wait for a file chooser, a download, or a new tab opened by the page (popup).",
+    objectSchema(
+      {
+        event: { type: "string", enum: ["filechooser", "download", "popup"] },
         timeoutMs: { type: "number", minimum: 0, maximum: 120000 }
       },
       ["event"]
