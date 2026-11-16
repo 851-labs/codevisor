@@ -33,10 +33,12 @@ final class ScreenSharingStreamIdentity {
     return reply
   }
 
-  func refusal(toIdentify request: Request) -> Reply? {
-    guard !Self.isIdentified(request) || request.operation == .restart else { return nil }
+  static var updateNeeded: Reply {
+    ScreenSharingHostRefusal.viewerUpdateNeeded(machine: ScreenSharingHostService.machineName()).reply
+  }
 
-    return ScreenSharingHostRefusal.viewerUpdateNeeded(machine: ScreenSharingHostService.machineName()).reply
+  func refusal(toIdentify request: Request) -> Reply? {
+    Self.isIdentified(request) ? nil : Self.updateNeeded
   }
 
   func refusal(toStart request: Request) async -> Reply? {

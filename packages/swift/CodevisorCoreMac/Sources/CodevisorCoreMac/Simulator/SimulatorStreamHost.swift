@@ -123,7 +123,7 @@ final class SimulatorStreamHost {
     case .setScale: return .init(status: "unsupported", message: "A simulator's scale can't be set.")
     case .heartbeat: return heartbeat(request, udid: udid)
     case .start: return await admit(request, udid: udid)
-    case .restart: return identity.refusal(toIdentify: request) ?? .init(status: "stopped")
+    case .restart: return ScreenSharingStreamIdentity.updateNeeded
     }
   }
 
@@ -151,7 +151,7 @@ final class SimulatorStreamHost {
     if let refusal = await identity.refusal(toStart: request) { return refusal }
 
     guard let owner = identity.begin(request, target: udid) else {
-      return identity.refusal(toIdentify: request) ?? .init(status: "stopped")
+      return ScreenSharingStreamIdentity.updateNeeded
     }
     defer { identity.finish(request, as: owner) }
     return await start(request, owner: owner, udid: udid)

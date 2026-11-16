@@ -62,7 +62,7 @@ final class ScreenSharingHostService {
   private func respond(to request: ServerScreenSharingRequest) async -> ServerScreenSharingReply {
     guard !isShutdown, !Task.isCancelled else { return .init(status: "stopped") }
     guard request.version == 1 else { return ScreenSharingHostRefusal.updateNeeded.reply }
-    guard Self.isIdentified(request), request.operation != .restart else {
+    guard Self.isIdentified(request) else {
       return ScreenSharingHostRefusal.viewerUpdateNeeded(machine: Self.machineName()).reply
     }
     if let refusal = await refusalBeforeRegistering(request) { return refusal }

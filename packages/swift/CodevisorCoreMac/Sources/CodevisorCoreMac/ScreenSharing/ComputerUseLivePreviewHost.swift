@@ -177,7 +177,7 @@ final class ComputerUseLivePreviewHost {
     case .setScale: return .init(status: "unsupported", message: "A live view's scale can't be set.")
     case .heartbeat: return heartbeat(request, sessionID: sessionID)
     case .start: return await admit(request, sessionID: sessionID)
-    case .restart: return identity.refusal(toIdentify: request) ?? .init(status: "stopped")
+    case .restart: return ScreenSharingStreamIdentity.updateNeeded
     }
   }
 
@@ -208,7 +208,7 @@ final class ComputerUseLivePreviewHost {
     if let refusal = await identity.refusal(toStart: request) { return refusal }
 
     guard let owner = identity.begin(request, target: sessionID) else {
-      return identity.refusal(toIdentify: request) ?? .init(status: "stopped")
+      return ScreenSharingStreamIdentity.updateNeeded
     }
     defer { identity.finish(request, as: owner) }
     return await start(request, owner: owner, sessionID: sessionID)
