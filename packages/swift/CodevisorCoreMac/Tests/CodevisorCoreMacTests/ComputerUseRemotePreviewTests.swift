@@ -68,6 +68,25 @@ struct ComputerUseRemotePreviewTests {
     }
   }
 
+  @Test("Asking whether the chat controls an app goes to its machine as the app, and only the chat's target counts")
+  func asksTheMachineWhetherTheChatIsActive() async throws {
+    let fixture = Fixture()
+    let connections = fixture.connections
+    let source = ComputerUseRemotePreviewSource(
+      machineName: Fixture.machineId,
+      connection: { connections.targetConnection(onMachine: Fixture.machineId, target: $0, heartbeatInterval: $1) },
+      isActive: { await connections.targetIsActive(onMachine: Fixture.machineId, target: $0) },
+      end: { connections.endTargetConnection(onMachine: Fixture.machineId, target: $0) })
+    let chat = try #require(UUID(uuidString: Self.session))
+    let preview = ComputerUseLivePreview()
+    #expect(await preview.remoteActivityIsActive(chatSession: chat, source: source) == false)
+
+    fixture.host.displays = [.init(id: Self.target, name: "TextEdit", width: 960, height: 600)]
+    #expect(await preview.remoteActivityIsActive(chatSession: chat, source: source) == true)
+    let asked = fixture.host.requests(.capabilities)
+    #expect(asked.count == 2 && asked.allSatisfy { $0.displayId == Self.target && $0.app?.name == Fixture.appName })
+  }
+
   @Test("The preview goes live on its own connection, titled with the app's name, and shows the session's video")
   func goesLive() async throws {
     let preview = Preview()

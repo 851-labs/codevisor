@@ -40,7 +40,7 @@ struct ScreenSharingHostReply {
   var advertisesAppSessions: Bool { base.abilities?.contains(ServerScreenSharingReply.appSessions) == true }
 
   func isCurrentHost(forTarget hasTarget: Bool) -> Bool {
-    appChallenge != nil && (hasTarget || switchesDisplays)
+    base.provider == "vnc" || advertisesAppSessions && (hasTarget || switchesDisplays)
   }
 
   func targetRefusal() -> ScreenSharingAttemptEnd {

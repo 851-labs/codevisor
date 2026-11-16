@@ -115,8 +115,8 @@ final class ScreenSharingAttempt {
       return makeVNC(display.id, capabilities.base.controlLease == true)
     }
     guard capabilities.base.provider != "vnc" else { throw ScreenSharingAttemptEnd.refused(.unsupportedOnThisDevice) }
-    guard capabilities.offersV2, capabilities.isCurrentHost(forTarget: machine.target != nil) else {
-      throw ScreenSharingAttemptEnd.refused(.updateNeeded)
+    guard capabilities.offersV2, capabilities.appChallenge != nil else {
+      throw ScreenSharingAttemptEnd.dropped(.networkBlocked)
     }
 
     return ScreenSharingMediaSessionTransport(

@@ -46,6 +46,20 @@ struct ScreenSharingConnectionAppSessionTests {
   }
 
   enum Missing: CaseIterable, Sendable { case appSessions, displaySwitch }
+  enum Refusal: CaseIterable, Sendable { case none, permissionMissing }
+
+  @Test(
+    "A host without app sessions or display switching is asked to update on the first connect, before any other refusal",
+    arguments: Missing.allCases, Refusal.allCases)
+  func asksAnOldHostToUpdateFirst(_ missing: Missing, _ refusal: Refusal) async {
+    let host = FakeHost(abilities: missing == .appSessions ? [] : [ServerScreenSharingReply.appSessions])
+    if refusal == .permissionMissing { host.answerEvery(.capabilities, .reply(status: "permission-required")) }
+    let harness = ConnectionHarness(host: host)
+    harness.show()
+    await harness.settle(.failed(.updateNeeded))
+
+    #expect(host.starts.isEmpty)
+  }
 
   @Test(
     "A host that stops offering app sessions or display switching after an update is asked to update, never reconnected",

@@ -39,7 +39,7 @@ struct ScreenSharingConnectionProofTests {
   enum Unusable: CaseIterable, Sendable { case missing, upperCaseHostKey, shortHostKey, nonHexNonce }
 
   @Test(
-    "A host whose challenge is missing or isn't two 64-character lowercase hex strings is asked to update",
+    "A current host whose challenge is missing or isn't two 64-character lowercase hex strings can be retried",
     arguments: Unusable.allCases)
   func needsAUsableChallengeToUseTheAppIdentity(_ challenge: Unusable) async {
     let harness = ConnectionHarness()
@@ -50,9 +50,10 @@ struct ScreenSharingConnectionProofTests {
     case .nonHexNonce: harness.host.forgedNonce = String(repeating: "g", count: 64)
     }
     harness.show()
-    await harness.settle(.failed(.updateNeeded))
+    await harness.settle(.failed(.networkBlocked))
 
     #expect(harness.host.starts.isEmpty && harness.signer.messages.isEmpty, "nothing is signed or started")
+    #expect(ScreenSharingFailureAction(for: .networkBlocked) != nil, "it isn't told to update, and can be retried")
   }
 
   @Test(

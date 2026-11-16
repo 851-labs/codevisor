@@ -43,6 +43,9 @@ final class ScreenSharingHostRequests {
 
   func capabilities() async throws -> ScreenSharingHostReply {
     let reply = try await retrying(Self.capabilities(of: machine))
+    guard reply.isCurrentHost(forTarget: machine.target != nil) else {
+      throw ScreenSharingAttemptEnd.refused(.updateNeeded)
+    }
     guard reply.canShare else { throw refusal(reply) }
 
     return reply
