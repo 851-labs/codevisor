@@ -10,8 +10,6 @@ struct HomeSidebarBot: Identifiable, Equatable {
   var canArchive = false
   var canFork = false
   var sectionID: UUID?
-  var rowStatus: SidebarRowStatus? = nil
-  var showsStatusLabel = false
 
   var id: UUID { bot.id }
 

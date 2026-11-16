@@ -22,10 +22,6 @@ struct BotListSidebar: View {
 
   private var sections: CustomSectionStore { environment.botSections }
 
-  private var statuses: SidebarRowStatuses {
-    SidebarRowStatusSource(environment: environment, store: store).statuses
-  }
-
   private func rows(_ conversations: [BotConversation]) -> [BotSidebarRow] {
     BotSidebarRows.derive(
       BotSidebarRows.State(
@@ -103,9 +99,7 @@ struct BotListSidebar: View {
     let conversations = conversations
     if !conversations.isEmpty {
       BotConversationRows(
-        rows: rows(conversations), sections: sections.sections, selectedBotID: selectedBotID, statuses: statuses,
-        showsStatusLabel: ClientPreferences.shared.isSidebarRowDetailShown(.status),
-        actions: rowActions)
+        rows: rows(conversations), sections: sections.sections, selectedBotID: selectedBotID, actions: rowActions)
     }
   }
 

@@ -62,7 +62,7 @@ struct HomeSidebarContentBuilder {
     }
     content.canCreateBots = !environment.bots.botMachines.isEmpty
     let bots = botConversations.map {
-      sidebarBot($0, preferences: preferences, projectGroups: projectGroups, statuses: statuses)
+      sidebarBot($0, preferences: preferences, projectGroups: projectGroups)
     }
     content.bots = bots.filter { !$0.bot.isArchived }
     content.archivedBots = bots.filter(\.bot.isArchived)
@@ -71,12 +71,10 @@ struct HomeSidebarContentBuilder {
   }
 
   private func sidebarBot(
-    _ conversation: BotConversation, preferences: HomeSidebarPreferences, projectGroups: [ProjectGroup],
-    statuses: HomeSidebarStatusSource?
+    _ conversation: BotConversation, preferences: HomeSidebarPreferences, projectGroups: [ProjectGroup]
   ) -> HomeSidebarBot {
     let bot = conversation.bot
     let session = environment.projectList.session(bot.sessionId, serverId: bot.serverId)
-    let rowStatus = bot.isArchived ? nil : statuses?.status(of: bot.workspaceId)
     return HomeSidebarBot(
       conversation: conversation,
       status: session.map(status(for:)) ?? .idle,
@@ -85,9 +83,7 @@ struct HomeSidebarContentBuilder {
         .flatMap { botSidebarWorkspace($0, preferences: preferences, projectGroups: projectGroups) },
       canArchive: environment.bots.supportsArchive(on: bot.serverId),
       canFork: environment.bots.supportsFork(on: bot.serverId),
-      sectionID: environment.botSections.membership[bot.id],
-      rowStatus: rowStatus,
-      showsStatusLabel: preferences.rowDetails.contains(.status)
+      sectionID: environment.botSections.membership[bot.id]
     )
   }
 
