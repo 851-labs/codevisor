@@ -52,6 +52,18 @@ struct ScreenSharingConnectionDisplaySwitchTests {
     #expect(askedDisplays(harness) == [Self.second.id, nil], "once shown, the display is no longer asked for")
   }
 
+  @Test("The connection says it can switch in-session only while live on a host that can, and not while reconnecting")
+  func tellsWhetherItCanSwitchInSession() async {
+    let (harness, session) = await liveHarness()
+    await awaitObserved { harness.connection.switchesDisplayInSession }
+
+    session.host.report(connection: "failed")
+    await harness.settle(.reconnecting)
+    #expect(!harness.connection.switchesDisplayInSession)
+    await harness.goLive()
+    await awaitObserved { harness.connection.switchesDisplayInSession }
+  }
+
   enum CannotSwitch: CaseIterable, Sendable { case noAbility, noSessionToken }
 
   @Test(
@@ -65,6 +77,7 @@ struct ScreenSharingConnectionDisplaySwitchTests {
     harness.show()
     await harness.goLive()
 
+    #expect(!harness.connection.switchesDisplayInSession)
     harness.connection.switchDisplay(to: Self.second.id)
     #expect(harness.connection.state == .reconnecting && harness.connection.displaySwitch == nil)
     #expect(harness.connection.preferredDisplayId == Self.second.id)

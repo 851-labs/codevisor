@@ -73,6 +73,63 @@ struct ScreenSharingViewerTests {
     }
   }
 
+  private static let studio = ServerScreenSharingDisplay(
+    id: "studio", name: "Studio Display", width: 5120, height: 2880)
+
+  private static func live(switch result: ScreenSharingDisplaySwitch?) -> ScreenSharingSurfaceSnapshot {
+    var live = ScreenSharingSurfaceSnapshot()
+    live.connection = .live
+    live.displays = [display, studio]
+    live.displayId = display.id
+    live.displaySwitch = result
+    return live
+  }
+
+  @Test func thePickerShowsADisplayBeingSwitchedToAndGoesBackWhenTheSwitchFails() {
+    var state = ScreenSharingViewer.State(machineName: "croissant")
+    state.surface = Self.live(switch: ScreenSharingDisplaySwitch(displayId: "studio", phase: .switching))
+    #expect(state.selectedDisplayId == "studio")
+    #expect(state.displaySwitchLine == .switching("Switching to Studio Display…"))
+
+    state.surface.displaySwitch = ScreenSharingDisplaySwitch(displayId: "studio", phase: .unavailable(message: nil))
+    #expect(state.selectedDisplayId == "main")
+    #expect(state.displaySwitchLine == .failed("Couldn't switch to Studio Display."))
+
+    state.surface.displaySwitch = ScreenSharingDisplaySwitch(
+      displayId: "studio", phase: .unavailable(message: "That display is asleep."))
+    #expect(state.displaySwitchLine == .failed("That display is asleep."), "the host's own words win")
+
+    state.surface.displaySwitch = ScreenSharingDisplaySwitch(displayId: "studio", phase: .confirmed)
+    state.surface.displayId = "studio"
+    #expect(state.selectedDisplayId == "studio" && state.displaySwitchLine == nil)
+  }
+
+  @Test func aFailedSwitchStaysUntilItIsDismissedTheUserPicksAgainOrTheSessionLeavesLive() async {
+    await withMainSerialExecutor {
+      let asked = LockIsolated<[String]>([])
+      let store = makeStore(asked)
+      store.exhaustivity = .off
+      let failed = ScreenSharingDisplaySwitch(displayId: "studio", phase: .unavailable(message: nil))
+      await store.send(.surfaceChanged(Self.live(switch: failed)))
+      #expect(store.state.displaySwitchLine == .failed("Couldn't switch to Studio Display."))
+
+      await store.send(.displaySwitchDismissed)
+      #expect(store.state.displaySwitchLine == nil)
+      await store.send(.displaySelected("studio"))
+      await store.send(.surfaceChanged(Self.live(switch: failed)))
+      #expect(store.state.displaySwitchLine != nil, "a new pick shows its own result, even the same one")
+
+      var reconnecting = Self.live(switch: failed)
+      reconnecting.connection = .reconnecting
+      await store.send(.surfaceChanged(reconnecting))
+      await store.send(.surfaceChanged(Self.live(switch: failed)))
+      #expect(store.state.displaySwitchLine == nil, "leaving Live puts the line away for good")
+      await store.finish()
+
+      expectNoDifference(asked.value, ["display studio"])
+    }
+  }
+
   private func makeStore(
     _ asked: LockIsolated<[String]>, endpoints: ScreenSharingEndpointClient = ScreenSharingEndpointClient()
   ) -> TestStoreOf<ScreenSharingViewer> {

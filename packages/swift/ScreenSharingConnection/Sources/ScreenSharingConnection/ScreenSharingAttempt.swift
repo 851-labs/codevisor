@@ -133,7 +133,7 @@ final class ScreenSharingAttempt {
       if let opening { report(.transport(opening)) }
     case .notice(let notice):
       self.notice = notice
-    case .sharing, .displaySwitch:
+    case .sharing, .displaySwitch, .displaySwitchAvailable:
       break
     }
     report(.transport(event))

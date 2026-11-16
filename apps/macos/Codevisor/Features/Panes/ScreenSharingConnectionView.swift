@@ -20,6 +20,9 @@ struct ScreenSharingConnectionView: View {
       }
       if let message = store.endpoint?.clipboard?.message { banner(message) }
       if store.isLive, let notice = store.hostNotice { banner(notice) }
+      if let line = store.displaySwitchLine {
+        ScreenSharingDisplaySwitchBanner(line: line) { store.send(.displaySwitchDismissed) }
+      }
       ZStack {
         if let endpoint = store.endpoint {
           ScreenSharingNativeView(pane: pane, onClick: takeControl).id(endpoint.id)

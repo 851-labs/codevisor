@@ -120,6 +120,7 @@ final class ScreenSharingPane: Pane {
       lastConnected: ScreenSharingMachinePreferences().lastConnected(machineId: machineId),
       sound: store?.endpoint?.audio.map { .init(enabled: $0.enabled, volume: $0.volume) })
     settings.dynamicResolutionNote = Self.dynamicResolutionNote(store?.endpoint)
+    settings.switchesDisplayInSession = store?.switchesDisplayInSession == true
     settings.dynamicResolutionMirrorsDisplay = store?.endpoint?.resizeMirrorsHostDisplay ?? false
     if store?.endpoint?.supportsControl != false {
       settings.keyboard = savedKeyboard

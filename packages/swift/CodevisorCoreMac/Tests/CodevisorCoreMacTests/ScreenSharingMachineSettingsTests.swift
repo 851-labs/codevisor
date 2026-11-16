@@ -30,6 +30,17 @@ struct ScreenSharingMachineSettingsTests {
     #expect(draft.changes(from: Self.original).isEmpty)
   }
 
+  @Test func anotherDisplayOnAHostThatSwitchesInSessionIsDoneWithoutReconnecting() {
+    var draft = ScreenSharingMachineSettingsDraft(Self.original)
+    draft.settings.preferredDisplayId = "b"
+    let changes = draft.changes(from: Self.original)
+    var switching = Self.original
+    switching.switchesDisplayInSession = true
+
+    #expect(Self.original.reconnects(applying: changes) && !switching.reconnects(applying: changes))
+    #expect(changes == .init(preferredDisplayId: "b"), "the display is still applied")
+  }
+
   @Test func hdrChangesApplyWithoutReconnecting() {
     var withHDR = Self.original
     withHDR.highDynamicRange = false
