@@ -68,7 +68,11 @@ export const invokeNavigationTools = async (
       return navigationResult(active, page, "reload")
     }
     case "snapshot":
-      return snapshotPage(active, page, Math.max(1, Math.min(60, Number(args.depth ?? 30))))
+      return snapshotPage(active, page, {
+        depth: Math.max(1, Math.min(60, Number(args.depth ?? 30))),
+        root: args.root,
+        offset: args.offset
+      })
     case "screenshot": {
       const format = args.type === "jpeg" ? "jpeg" : "png"
       let clip: { x: number; y: number; width: number; height: number; scale: number } | undefined
@@ -119,16 +123,20 @@ export const invokeNavigationTools = async (
       }
       try {
         const captured = await withoutPointerOverlay(active, page, () =>
-          active.connection.send<{ data: string }>(
-            "Page.captureScreenshot",
-            {
-              format,
-              fromSurface: true,
-              captureBeyondViewport: args.fullPage === true,
-              clip
-            },
-            page.sessionId
-          )
+          active.connection
+            .send<{ data: string }>(
+              "Page.captureScreenshot",
+              {
+                format,
+                fromSurface: true,
+                captureBeyondViewport: args.fullPage === true,
+                clip
+              },
+              page.sessionId
+            )
+            .catch((cause: unknown) => {
+              throw captureFailure(cause, args.fullPage === true, clip)
+            })
         )
         const info = await pageInformation(active, page)
         return {
@@ -153,6 +161,17 @@ const slowNavigation = (cause: unknown, budget: number): unknown => {
   if (!/Browser command timed out: Page\.navigate/.test(String(cause))) return cause
   return new Error(
     `The page did not answer within ${budget} ms. Pass a larger timeoutMs to goto (up to ${maxWaitMs}).`
+  )
+}
+
+const captureFailure = (
+  cause: unknown,
+  fullPage: boolean,
+  clip: { width: number; height: number } | undefined
+): unknown => {
+  if (!fullPage || clip === undefined) return cause
+  return new Error(
+    `The whole page is ${Math.round(clip.width)} x ${Math.round(clip.height)} px, too large for the browser to capture as one image. Capture it in parts with tab.screenshot({ clip: { x, y, width, height } }), or read it with tab.getAXState().`
   )
 }
 

@@ -69,7 +69,7 @@ export const invokePlaywrightTools = async (
   const { downloadsDir } = state
   switch (toolName) {
     case "playwright.domSnapshot":
-      return snapshotPage(active, page, 60)
+      return snapshotPage(active, page, { depth: 60 })
     case "playwright.count": {
       const ids = await locatorBackendNodeIds(active, page, args.locator)
       return jsonResult({ count: ids.length })
