@@ -5,7 +5,6 @@ import { basename, join } from "node:path"
 import type { CallToolResult } from "@modelcontextprotocol/server"
 
 import {
-  attachTarget,
   type BrowserRuntime,
   evaluate,
   evaluateReadOnly,
@@ -16,6 +15,12 @@ import {
   type PageHandle,
   stringArgument
 } from "./browser-cdp-engine.js"
+import {
+  requireTabScopedCommand,
+  tabScopedEventSession,
+  tabScopedResult,
+  tabScopedSession
+} from "./browser-cdp-scope.js"
 import { delay, type CdpEvent } from "./browser-cdp.js"
 import { managedViewport } from "./browser-chromium.js"
 import { exportBrowserContent } from "./browser-content.js"
@@ -32,11 +37,9 @@ import {
   expectRecord,
   expectString,
   isPlainRecord,
-  isRecord,
   isStringArray,
   optionalString,
-  recordOrEmpty,
-  type UnknownRecord
+  recordOrEmpty
 } from "./unknown-values.js"
 
 const cdpEventSessionId = (event: CdpEvent): string | undefined =>
@@ -44,16 +47,6 @@ const cdpEventSessionId = (event: CdpEvent): string | undefined =>
   (event.method === "Target.detachedFromTarget" && typeof event.params.sessionId === "string"
     ? event.params.sessionId
     : undefined)
-
-const eventTargetSession = (
-  target: UnknownRecord | undefined,
-  active: BrowserRuntime,
-  page: PageHandle
-): string | undefined => {
-  if (typeof target?.sessionId === "string") return target.sessionId
-  if (typeof target?.targetId === "string") return active.sessions.get(target.targetId)
-  return page.sessionId
-}
 
 const clearViewportOverride = async (
   active: BrowserRuntime,
@@ -264,16 +257,16 @@ export const invokePageTools = async (
       return jsonResult({ reset: true })
     case "cdp.send": {
       const method = stringArgument(args, "method")
-      const target = isRecord(args.target) ? args.target : undefined
-      let sessionId = page.sessionId
-      if (typeof target?.sessionId === "string") sessionId = target.sessionId
-      if (typeof target?.targetId === "string") {
-        sessionId = await attachTarget(active, target.targetId)
-      }
       const params = isPlainRecord(args.params) ? args.params : {}
-      return jsonResult({
-        result: await active.connection.send(method, params, sessionId, waitBudget(args.timeoutMs))
-      })
+      requireTabScopedCommand(active, page, method, params)
+      const sessionId = tabScopedSession(active, page, args.target)
+      const result = await active.connection.send(
+        method,
+        params,
+        sessionId,
+        waitBudget(args.timeoutMs)
+      )
+      return jsonResult({ result: tabScopedResult(active, page, method, result) })
     }
     case "cdp.readEvents": {
       const afterSequence =
@@ -285,15 +278,14 @@ export const invokePageTools = async (
         Array.isArray(args.methods) && args.methods.every((method) => typeof method === "string")
           ? new Set(args.methods)
           : undefined
-      const target = isRecord(args.target) ? args.target : undefined
-      const targetSession = eventTargetSession(target, active, page)
+      const targetSession = tabScopedEventSession(active, page, args.target)
       const matches = () =>
         active.eventLog.filter((event) => {
           const eventSessionId = cdpEventSessionId(event)
           return (
             event.sequence > afterSequence &&
             (methods === undefined || methods.has(event.method)) &&
-            (targetSession === undefined || eventSessionId === targetSession)
+            eventSessionId === targetSession
           )
         })
       const deadline = Date.now() + waitBudget(args.timeoutMs, 0)

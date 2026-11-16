@@ -2,6 +2,11 @@ import type { Tool } from "@modelcontextprotocol/server"
 
 import { objectSchema, tool } from "./browser-use-tool-schema.js"
 
+const cdpTargetProperty = {
+  description:
+    "One of this tab's cross-site frames: its frame or target id, or an object with targetId, frameId or sessionId. Omit for the tab itself."
+}
+
 export const browserUsePageTools: ReadonlyArray<Tool> = [
   tool(
     "clipboard.writeText",
@@ -93,7 +98,7 @@ export const browserUsePageTools: ReadonlyArray<Tool> = [
       {
         method: { type: "string" },
         params: { type: "object" },
-        target: { type: "object" },
+        target: cdpTargetProperty,
         timeoutMs: { type: "number", minimum: 0, maximum: 120000 }
       },
       ["method"]
@@ -106,7 +111,7 @@ export const browserUsePageTools: ReadonlyArray<Tool> = [
       afterSequence: { type: "number", minimum: 0 },
       limit: { type: "number", minimum: 1, maximum: 1000 },
       methods: { type: "array", items: { type: "string" } },
-      target: { type: "object" },
+      target: cdpTargetProperty,
       timeoutMs: { type: "number", minimum: 0, maximum: 120000 }
     })
   ),
