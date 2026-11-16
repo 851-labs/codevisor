@@ -2,24 +2,11 @@ import CodevisorCore
 import SwiftUI
 
 struct TranscriptEventSummary {
-  enum Tone {
-    case standard
-    case error
-
-    func style(standard standardStyle: HierarchicalShapeStyle) -> AnyShapeStyle {
-      switch self {
-      case .standard: AnyShapeStyle(standardStyle)
-      case .error: AnyShapeStyle(Color.red)
-      }
-    }
-  }
-
   private static let terminalSymbol = "terminal"
 
   let agentName: String?
   let title: String
   let icon: TranscriptEventIconKind
-  var tone = Tone.standard
   var namesPartyLast = false
 
   var sentence: String {
@@ -56,11 +43,10 @@ struct TranscriptEventSummary {
     self = Self.agentSummary(event, name: agents.name(for: event), icon: agents.icon(for: event))
   }
 
-  init(agentName: String? = nil, title: String, icon: TranscriptEventIconKind, tone: Tone = .standard) {
+  init(agentName: String? = nil, title: String, icon: TranscriptEventIconKind) {
     self.agentName = agentName
     self.title = title
     self.icon = icon
-    self.tone = tone
   }
 
   private static func agentSummary(
@@ -69,7 +55,7 @@ struct TranscriptEventSummary {
     switch event.type {
     case "session.turn_ended": .init(agentName: name, title: turnEndedTitle(event), icon: icon)
     case "session.waiting_for_user": .init(agentName: name, title: waitingTitle(event), icon: icon)
-    case "session.errored": .init(agentName: name, title: "hit an error", icon: icon, tone: .error)
+    case "session.errored": .init(agentName: name, title: "hit an error", icon: icon)
     default: .init(agentName: name, title: "sent a message", icon: icon)
     }
   }
@@ -121,8 +107,7 @@ struct TranscriptEventSummary {
 
   private static func taskSummary(_ event: TranscriptEvent, finished: String, failed: String) -> TranscriptEventSummary
   {
-    guard didFail(event) else { return .init(title: finished, icon: .symbol(terminalSymbol)) }
-    return .init(title: failed, icon: .symbol(terminalSymbol), tone: .error)
+    .init(title: didFail(event) ? failed : finished, icon: .symbol(terminalSymbol))
   }
 
   private static func didFail(_ event: TranscriptEvent) -> Bool {

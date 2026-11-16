@@ -39,7 +39,7 @@ struct TranscriptEventTitle: View {
         Text(name)
           .lineLimit(1)
       }
-      .foregroundStyle(summary.tone.style(standard: nameStyle))
+      .foregroundStyle(nameStyle)
       .help(name)
     }
   }
@@ -48,6 +48,6 @@ struct TranscriptEventTitle: View {
     Text(summary.title)
       .lineLimit(1)
       .layoutPriority(1)
-      .foregroundStyle(summary.tone.style(standard: titleStyle))
+      .foregroundStyle(titleStyle)
   }
 }

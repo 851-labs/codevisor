@@ -24,7 +24,7 @@ struct TranscriptEventStampLabel: View {
       titleStyle: .tertiary
     )
     .font(.caption2.weight(.medium))
-    .foregroundStyle(summary.tone.style(standard: .tertiary))
+    .foregroundStyle(.tertiary)
     .opacity(isActive ? 0.7 : 1)
     .contentShape(Rectangle())
     .accessibilityElement(children: .ignore)
