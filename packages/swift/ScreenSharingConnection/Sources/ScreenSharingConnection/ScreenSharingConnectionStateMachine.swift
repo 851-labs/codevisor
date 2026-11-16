@@ -15,7 +15,6 @@ struct ScreenSharingConnectionStateMachine: Equatable, Sendable {
     case lingerElapsed
     case machineCameOnline
     case machineStillReady
-    case workspaceAppeared
     case targetAppeared
     case systemWoke
     case ended
@@ -69,7 +68,6 @@ struct ScreenSharingConnectionStateMachine: Equatable, Sendable {
       retriedWhileReady = false
       return recover(from: .cantReach)
     case .machineStillReady: return retryOnceWhileReady()
-    case .workspaceAppeared: return recover(from: .noWorkspace)
     case .targetAppeared: return targetAppeared()
     case .systemWoke: return state == .live ? attemptEnded(.dropped(.cantReach)) : nil
     case .ended: return end()
@@ -190,8 +188,6 @@ struct ScreenSharingConnectionStateMachine: Equatable, Sendable {
       return nil
     case (_, .hostFailed(let message)):
       return hostFailed(message)
-    case (_, .endedByHost(let message)):
-      return fail(.unclassified(message: message), sticky: true)
     case (.live, .refused(let reason)), (.connecting, .dropped(let reason)):
       return fail(reason)
     case (.live, .dropped):
@@ -245,9 +241,9 @@ struct ScreenSharingConnectionStateMachine: Equatable, Sendable {
     return .start(attemptIntent, after: wait, asksWhyItEnded: asksWhyItEnded)
   }
 
-  private mutating func fail(_ reason: ScreenSharingFailureReason, sticky: Bool = false) -> Command? {
+  private mutating func fail(_ reason: ScreenSharingFailureReason) -> Command? {
     state = .failed(reason)
-    failureIsSticky = sticky || reason.isDecidedByHost
+    failureIsSticky = reason.isDecidedByHost
     triesUsed = 0
     retriedHostFailure = false
     if staysFailed, unseen == .lingering { unseen = nil }

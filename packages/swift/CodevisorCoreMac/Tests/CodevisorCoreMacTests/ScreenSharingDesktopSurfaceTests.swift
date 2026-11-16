@@ -21,8 +21,7 @@ struct ScreenSharingDesktopSurfaceTests {
 
   @Test("A window opened after the host swapped its display joins the preview's connection and sends no start")
   func joinsTheLiveConnectionWhateverTheHostListsNow() async throws {
-    let fixture = Fixture(host: .old())
-    fixture.workspaces = [Fixture.workspace()]
+    let fixture = Fixture()
     let preview = fixture.surface(.watcher)
     preview.show()
     try await fixture.goLive()
@@ -36,7 +35,7 @@ struct ScreenSharingDesktopSurfaceTests {
 
     await awaitObserved { window.snapshot.endpoint != nil }
     #expect(window.snapshot.connection == .live && preview.snapshot.endpoint == window.snapshot.endpoint)
-    #expect(fixture.host.starts.map(\.displayId) == [FakeHost.display.id])
+    #expect(fixture.host.starts.count == 1)
     #expect(window.snapshot.displayId == FakeHost.display.id, "both show what the connection shares")
   }
 
@@ -119,7 +118,7 @@ struct ScreenSharingDesktopSurfaceTests {
     retrying.surface.retry()
     try await fixture.goLive()
 
-    #expect(fixture.host.starts.map(\.displayId) == [FakeHost.display.id])
+    #expect(fixture.host.starts.count == 1)
   }
 
   @Test("A surface whose machine left the list says it can't reach it, then reconnects when the machine is back")
@@ -149,36 +148,6 @@ struct ScreenSharingDesktopSurfaceTests {
     #expect(tab.snapshot.connection == .off)
     fixture.machineListVerified = true
     await awaitObserved { tab.snapshot.connection == .failed(.cantReach) }
-  }
-
-  @Test("An old host is given the workspace of the surface that is on screen")
-  func givesAnOldHostTheShownSurfacesWorkspace() async throws {
-    let fixture = Fixture(host: .old())
-    let (other, shown) = (Fixture.workspace(), Fixture.workspace())
-    fixture.workspaces = [other, shown]
-    fixture.surface(.tab, inWorkspace: shown.id).show()
-    try await fixture.goLive()
-
-    #expect(fixture.host.starts.map(\.workspaceId) == [shown.id])
-  }
-
-  @Test("A machine's preview that moves to another workspace asks for nothing, and an old host gets that one next")
-  func followsTheWorkspaceAMachinesPreviewIsShownIn() async throws {
-    let fixture = Fixture(host: .old())
-    let (first, second) = (Fixture.workspace(), Fixture.workspace())
-    fixture.workspaces = [first, second]
-    let shownIn = LockIsolated(first.id)
-    let preview = fixture.surface(.watcher, shownIn: { shownIn.value })
-    preview.show()
-    try await fixture.goLive()
-
-    shownIn.setValue(second.id)
-    preview.show()
-    #expect(fixture.host.starts.map(\.workspaceId) == [first.id], "a live connection is left alone")
-    fixture.wake()
-    await fixture.settle(.reconnecting)
-    try await fixture.goLive()
-    #expect(fixture.host.starts.map(\.workspaceId) == [first.id, second.id])
   }
 
   @Test("A pane refused because another app holds the desktop names that app and offers View here, which takes it")
@@ -221,7 +190,7 @@ struct ScreenSharingDesktopSurfaceTests {
     defer { server.stop() }
     let port = server.port
     let display = ServerScreenSharingDisplay(id: "vnc:5901", name: "Desktop", width: 64, height: 48)
-    let fixture = Fixture(host: .old())
+    let fixture = Fixture(host: FakeHost(abilities: []))
     fixture.host.provider = "vnc"
     fixture.host.displays = [display]
     let opened = LockIsolated<[String]>([])

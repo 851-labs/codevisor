@@ -19,8 +19,6 @@ struct ScreenSharingHostReply {
 
   var appChallenge: ServerScreenSharingChallenge? { advertisesAppSessions ? challenge : nil }
 
-  var ownsSessionsByApp: Bool { appChallenge != nil }
-
   var rejectsTheProof: Bool { base.reason == .proofRejected }
 
   var canShare: Bool { base.version == 1 && ["available", "busy"].contains(base.status) }
@@ -33,8 +31,6 @@ struct ScreenSharingHostReply {
 
   var offersV2: Bool { base.engines?.contains(Self.engine) == true }
 
-  var lacksTheDisplay: Bool { base.reason == nil && base.status == "unavailable" }
-
   var switchesDisplays: Bool { base.abilities?.contains(ServerScreenSharingReply.displaySwitch) == true }
 
   var isStillSwitchingDisplay: Bool { base.reason == .displaySwitching }
@@ -43,24 +39,25 @@ struct ScreenSharingHostReply {
 
   var advertisesAppSessions: Bool { base.abilities?.contains(ServerScreenSharingReply.appSessions) == true }
 
+  func isCurrentHost(forTarget hasTarget: Bool) -> Bool {
+    appChallenge != nil && (hasTarget || switchesDisplays)
+  }
+
   func targetRefusal() -> ScreenSharingAttemptEnd {
     guard base.reason == nil, !["stopped", "failed"].contains(base.status) else { return end() }
 
-    let isNotThereYet = !advertisesAppSessions && ["starting", "unavailable"].contains(base.status)
-    return .refused(isNotThereYet ? .nothingToView(message: base.message) : .unclassified(message: base.message))
+    return .refused(.unclassified(message: base.message))
   }
 
-  func end(heartbeatToOldHost: Bool = false) -> ScreenSharingAttemptEnd {
+  func end() -> ScreenSharingAttemptEnd {
     let reason = ScreenSharingFailureReason(
       hostReason: base.reason, holderName: base.holderName, message: base.message)
     if let reason { return .refused(reason) }
     switch base.status {
-    case "busy": return .refused(.inUseOldHost)
+    case "busy": return .refused(.unclassified(message: base.message))
     case "permission-required": return .refused(.permissionMissing)
     case "stopped": return .dropped(.unclassified(message: base.message))
-    default: break
+    default: return .hostFailed(message: base.message)
     }
-    if heartbeatToOldHost, base.status == "failed" { return .endedByHost(message: base.message) }
-    return .hostFailed(message: base.message)
   }
 }

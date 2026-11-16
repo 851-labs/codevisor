@@ -15,7 +15,6 @@ public final class ScreenSharingConnections {
   private let wakeCenter: NotificationCenter
   private var wakeObserver: (any NSObjectProtocol)?
   private var tracked: [String: Tracked] = [:]
-  private var shownWorkspaces: [String: UUID] = [:]
   private var targetMachines: [String: Bool] = [:]
   private var observation = 0
 
@@ -41,28 +40,19 @@ public final class ScreenSharingConnections {
     try desktop(for: machineId).connection
   }
 
-  public func surface(
-    onMachine machineId: String, role: ScreenSharingViewerRole, shownIn workspace: @escaping @MainActor () -> UUID?
-  ) -> ScreenSharingDesktopSurface {
+  public func surface(onMachine machineId: String, role: ScreenSharingViewerRole) -> ScreenSharingDesktopSurface {
     ScreenSharingDesktopSurface(
       role: role,
       findDesktop: { [weak self] in try self?.knownDesktop(for: machineId) },
-      isMachineGone: { [weak self] in self?.isGone(machineId) ?? false },
-      onShown: { [weak self] in
-        guard let workspaceId = workspace() else { return }
-
-        self?.surfaceShown(inWorkspace: workspaceId, onMachine: machineId)
-      })
+      isMachineGone: { [weak self] in self?.isGone(machineId) ?? false })
   }
 
   public func targetConnection(
-    onMachine machineId: String, target: String,
-    attachedPane: @escaping @MainActor () -> ScreenSharingLegacyIdentity?, heartbeatInterval: Duration? = nil
+    onMachine machineId: String, target: String, heartbeatInterval: Duration? = nil
   ) -> ScreenSharingConnection? {
     guard source.machineIds().contains(machineId), var machine = try? machine(machineId) else { return nil }
 
     machine.target = target
-    machine.attachedPane = attachedPane
     if let heartbeatInterval { machine.heartbeatInterval = heartbeatInterval }
     machine.presentsTiles = false
     machine.makeVNCTransport = nil
@@ -74,9 +64,11 @@ public final class ScreenSharingConnections {
     manager.remove(machineId, target: target)
   }
 
-  public func surfaceShown(inWorkspace workspaceId: UUID, onMachine machineId: String) {
-    shownWorkspaces[machineId] = workspaceId
-    manager.workspaceAppeared(machineId)
+  public func targetIsActive(onMachine machineId: String, target: String) async -> Bool? {
+    guard source.machineIds().contains(machineId), var machine = try? machine(machineId) else { return nil }
+
+    machine.target = target
+    return await ScreenSharingTargetActivity.isActive(on: machine)
   }
 
   public func shutdown() {
@@ -150,7 +142,6 @@ public final class ScreenSharingConnections {
   private func remove(_ machineId: String) {
     tracked[machineId]?.desktop.close()
     tracked[machineId] = nil
-    shownWorkspaces[machineId] = nil
     manager.remove(machineId)
   }
 
@@ -167,7 +158,6 @@ public final class ScreenSharingConnections {
     var machine = ScreenSharingMachine(
       id: machineId, channel: { channel(machineId) }, connector: source.connector(), appName: source.appName(),
       signer: signer, installId: try ScreenSharingInstallIdentity.id(forKey: signer.key),
-      liveWorkspace: { [weak self] in self?.liveWorkspace(on: machineId) },
       presentsTiles: true,
       makeVNCTransport: { displayId, arbitratedByServer in
         ScreenSharingVNCTransport(
@@ -176,11 +166,5 @@ public final class ScreenSharingConnections {
     machine.isReady = { isReady(machineId) }
     machine.userAsked = { userAsked(machineId) }
     return machine
-  }
-
-  private func liveWorkspace(on machineId: String) -> UUID? {
-    let live = source.workspaces().filter { $0.serverId == machineId && !$0.isArchived && !$0.isDraft }
-    let shown = live.first { $0.id == shownWorkspaces[machineId] }
-    return (shown ?? live.first)?.id
   }
 }

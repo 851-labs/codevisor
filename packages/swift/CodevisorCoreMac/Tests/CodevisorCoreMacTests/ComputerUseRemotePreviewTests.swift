@@ -32,7 +32,7 @@ struct ComputerUseRemotePreviewTests {
     var connection: ScreenSharingConnection {
       get throws {
         let connection = fixture.connections.targetConnection(
-          onMachine: Fixture.machineId, target: ComputerUseRemotePreviewTests.target, attachedPane: { nil },
+          onMachine: Fixture.machineId, target: ComputerUseRemotePreviewTests.target,
           heartbeatInterval: ComputerUseRemotePreviewTiming.heartbeat)
         return try #require(connection)
       }

@@ -10,53 +10,38 @@ struct ScreenSharingMachineSettingsTests {
 
   @Test func anUntouchedDraftChangesNothing() {
     let changes = ScreenSharingMachineSettingsDraft(Self.original).changes(from: Self.original)
-    #expect(changes.isEmpty && !changes.reconnects)
+    #expect(changes.isEmpty)
   }
 
-  @Test func dynamicResolutionAppliesWithoutReconnecting() {
+  @Test func dynamicResolutionIsTheOnlyChange() {
     var draft = ScreenSharingMachineSettingsDraft(Self.original)
     draft.settings.dynamicResolution = false
     let changes = draft.changes(from: Self.original)
     #expect(changes == .init(dynamicResolution: false))
-    #expect(!changes.reconnects)
   }
 
-  @Test func anotherDisplayReconnectsButOnlyToADisplayTheMachineHas() {
+  @Test func anotherDisplayChangesOnlyToADisplayTheMachineHas() {
     var draft = ScreenSharingMachineSettingsDraft(Self.original)
     draft.settings.preferredDisplayId = "b"
     #expect(draft.changes(from: Self.original) == .init(preferredDisplayId: "b"))
-    #expect(draft.changes(from: Self.original).reconnects)
     draft.settings.preferredDisplayId = "gone"
     #expect(draft.changes(from: Self.original).isEmpty)
   }
 
-  @Test func anotherDisplayOnAHostThatSwitchesInSessionIsDoneWithoutReconnecting() {
-    var draft = ScreenSharingMachineSettingsDraft(Self.original)
-    draft.settings.preferredDisplayId = "b"
-    let changes = draft.changes(from: Self.original)
-    var switching = Self.original
-    switching.switchesDisplayInSession = true
-
-    #expect(Self.original.reconnects(applying: changes) && !switching.reconnects(applying: changes))
-    #expect(changes == .init(preferredDisplayId: "b"), "the display is still applied")
-  }
-
-  @Test func hdrChangesApplyWithoutReconnecting() {
+  @Test func hdrChangesApply() {
     var withHDR = Self.original
     withHDR.highDynamicRange = false
     var draft = ScreenSharingMachineSettingsDraft(withHDR)
     draft.settings.highDynamicRange = true
     #expect(draft.changes(from: withHDR) == .init(highDynamicRange: true))
-    #expect(!draft.changes(from: withHDR).reconnects)
   }
 
-  @Test func soundChangesApplyWithoutReconnecting() {
+  @Test func soundChangesApply() {
     var withSound = Self.original
     withSound.sound = .init(enabled: true, volume: 1)
     var draft = ScreenSharingMachineSettingsDraft(withSound)
     draft.settings.sound?.volume = 0.4
     #expect(draft.changes(from: withSound) == .init(sound: .init(enabled: true, volume: 0.4)))
-    #expect(!draft.changes(from: withSound).reconnects)
     draft.settings.sound = .init(enabled: true, volume: 1)
     #expect(draft.changes(from: withSound).isEmpty)
     #expect(ScreenSharingMachineSettingsDraft(Self.original).changes(from: Self.original).sound == nil)
@@ -70,7 +55,7 @@ struct ScreenSharingMachineSettingsTests {
       settings.dynamicResolutionExplanation.hasSuffix("While you're connected, its own display mirrors the new size."))
   }
 
-  @Test func turningOffLocalScreenshotsAppliesWithoutReconnectingAndSendsThemToTheHost() {
+  @Test func turningOffLocalScreenshotsSendsThemToTheHost() {
     var withKeyboard = Self.original
     withKeyboard.keyboard = .init()
     #expect(withKeyboard.keyboard?.localShortcuts == [.screenshots], "screenshots stay on this Mac by default")
@@ -79,7 +64,6 @@ struct ScreenSharingMachineSettingsTests {
     let changes = draft.changes(from: withKeyboard)
     #expect(changes == .init(keyboard: .init(screenshotsStayLocal: false)))
     #expect(changes.keyboard?.localShortcuts == [])
-    #expect(!changes.reconnects)
   }
 
   @Test func theKeyboardFooterListsTheShortcutsKeptOnThisMacAndNeverNamesTheMachine() {

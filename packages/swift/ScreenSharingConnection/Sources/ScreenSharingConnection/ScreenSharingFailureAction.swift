@@ -8,7 +8,7 @@ public enum ScreenSharingFailureAction: Equatable, Sendable {
     case .takenOver, .inUse: self = .viewHere
     case .stoppedOnHost: self = .connect
     case .updateNeeded, .unsupportedOnThisDevice: return nil
-    case .cantReach, .inUseOldHost, .displayAsleep, .sessionSwitched, .noDisplay, .noWorkspace, .nothingToView,
+    case .cantReach, .displayAsleep, .sessionSwitched, .noDisplay, .nothingToView,
       .permissionMissing, .networkBlocked, .noVideo, .keptDropping, .unclassified:
       self = .retry
     }

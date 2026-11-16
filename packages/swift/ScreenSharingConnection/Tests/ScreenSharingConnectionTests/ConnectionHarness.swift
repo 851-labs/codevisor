@@ -14,10 +14,8 @@ final class ConnectionHarness {
   let signer = FakeSigner()
   let manager: ScreenSharingConnectionManager
   let installId = UUID()
-  var workspaces = [UUID()]
   var makeVNCTransport: ScreenSharingMachine.MakeVNCTransport?
   var target: String?
-  var attachedPane: ScreenSharingLegacyIdentity?
   var machineReady = false
   private(set) var userAsks = 0
   var heartbeatInterval = ScreenSharingConnectionDeadlines.heartbeatInterval
@@ -34,10 +32,8 @@ final class ConnectionHarness {
     var machine = ScreenSharingMachine(
       id: Self.machineId, channel: { [weak self, host] in self?.host ?? host }, connector: media.connector,
       appName: Self.appName, signer: signer.signer, installId: installId,
-      liveWorkspace: { [weak self] in self?.workspaces.first },
       makeVNCTransport: makeVNCTransport)
     machine.target = target
-    machine.attachedPane = { [weak self] in self?.attachedPane }
     machine.isReady = { [weak self] in self?.machineReady ?? false }
     machine.userAsked = { [weak self] in self?.userAsks += 1 }
     machine.heartbeatInterval = heartbeatInterval
@@ -45,10 +41,6 @@ final class ConnectionHarness {
   }
 
   var connection: ScreenSharingConnection { manager.connection(for: machine) }
-
-  func legacyIdentity(_ workspace: UUID) -> ScreenSharingLegacyIdentity {
-    ScreenSharingLegacyIdentity(workspaceId: workspace, installId: installId)
-  }
 
   @discardableResult
   func show(_ kind: ScreenSharingSurfaceKind = .tab) -> ScreenSharingSurface {

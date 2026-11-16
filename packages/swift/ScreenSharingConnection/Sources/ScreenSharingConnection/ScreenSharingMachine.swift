@@ -12,19 +12,17 @@ public struct ScreenSharingMachine {
   public var appName: String
   public var signer: ScreenSharingStartSigner
   public var installId: UUID
-  public var liveWorkspace: @MainActor () -> UUID?
   public var presentsTiles: Bool
   public var makeVNCTransport: MakeVNCTransport?
   public var target: String?
-  public var attachedPane: @MainActor () -> ScreenSharingLegacyIdentity? = { nil }
   public var isReady: @MainActor () -> Bool = { false }
   public var userAsked: @MainActor () -> Void = {}
   public var heartbeatInterval = ScreenSharingConnectionDeadlines.heartbeatInterval
 
   public init(
     id: String, channel: @escaping @MainActor () -> any ScreenSharingHostChannel, connector: ScreenSharingV2Connector,
-    appName: String, signer: ScreenSharingStartSigner, installId: UUID, liveWorkspace: @escaping @MainActor () -> UUID?,
-    presentsTiles: Bool = false, makeVNCTransport: MakeVNCTransport? = nil
+    appName: String, signer: ScreenSharingStartSigner, installId: UUID, presentsTiles: Bool = false,
+    makeVNCTransport: MakeVNCTransport? = nil
   ) {
     self.id = id
     self.channel = channel
@@ -32,7 +30,6 @@ public struct ScreenSharingMachine {
     self.appName = appName
     self.signer = signer
     self.installId = installId
-    self.liveWorkspace = liveWorkspace
     self.presentsTiles = presentsTiles
     self.makeVNCTransport = makeVNCTransport
   }

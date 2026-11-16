@@ -1,5 +1,4 @@
 import CodevisorClient
-import Foundation
 
 @MainActor
 public final class ScreenSharingServerChannel: ScreenSharingHostChannel {
@@ -15,11 +14,4 @@ public final class ScreenSharingServerChannel: ScreenSharingHostChannel {
     try await client.screenSharing(request)
   }
 
-  public func registerDesktopPane(_ identity: ScreenSharingLegacyIdentity) async throws {
-    let pane = ServerWorkspacePane(
-      id: identity.paneId.uuidString.lowercased(), workspaceId: identity.workspaceId.uuidString.lowercased(),
-      providerId: "codevisor", paneType: ScreenSharingLegacyIdentity.paneType, title: "Desktop",
-      createdAt: ServerDateCoding.string(from: Date()))
-    _ = try await client.upsertWorkspacePane(pane)
-  }
 }

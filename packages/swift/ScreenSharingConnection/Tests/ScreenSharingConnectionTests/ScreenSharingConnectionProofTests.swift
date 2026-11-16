@@ -39,9 +39,9 @@ struct ScreenSharingConnectionProofTests {
   enum Unusable: CaseIterable, Sendable { case missing, upperCaseHostKey, shortHostKey, nonHexNonce }
 
   @Test(
-    "A host whose challenge is missing or isn't two 64-character lowercase hex strings is treated as an old host",
+    "A host whose challenge is missing or isn't two 64-character lowercase hex strings is asked to update",
     arguments: Unusable.allCases)
-  func needsAUsableChallengeToUseTheAppIdentity(_ challenge: Unusable) async throws {
+  func needsAUsableChallengeToUseTheAppIdentity(_ challenge: Unusable) async {
     let harness = ConnectionHarness()
     switch challenge {
     case .missing: harness.host.mintsChallenges = false
@@ -50,11 +50,9 @@ struct ScreenSharingConnectionProofTests {
     case .nonHexNonce: harness.host.forgedNonce = String(repeating: "g", count: 64)
     }
     harness.show()
-    await harness.goLive()
+    await harness.settle(.failed(.updateNeeded))
 
-    let start = try #require(harness.host.starts.first)
-    #expect(start.app == nil && start.proof == nil && harness.signer.messages.isEmpty)
-    #expect(harness.host.registeredPanes == [harness.legacyIdentity(harness.workspaces[0])])
+    #expect(harness.host.starts.isEmpty && harness.signer.messages.isEmpty, "nothing is signed or started")
   }
 
   @Test(
@@ -111,7 +109,7 @@ struct ScreenSharingConnectionProofTests {
     harness.show()
     await harness.settle(.failed(.unclassified(message: "The app's key couldn't be read in this test.")))
 
-    #expect(harness.host.starts.isEmpty && harness.host.registeredPanes.isEmpty)
+    #expect(harness.host.starts.isEmpty)
   }
 
   private static let wrongHost =

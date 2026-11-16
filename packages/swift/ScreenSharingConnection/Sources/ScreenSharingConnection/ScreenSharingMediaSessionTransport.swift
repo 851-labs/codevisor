@@ -25,8 +25,6 @@ final class ScreenSharingMediaSessionTransport: ScreenSharingTransport {
   private var lastAnswer: ContinuousClock.Instant
   private var isClosed = false
   private var switcher = ScreenSharingDisplaySwitcher()
-  private var switchesDisplays = false
-  private var reportedSwitchable = false
   private var backstop: Task<Void, Never>?
 
   init(
@@ -51,9 +49,8 @@ final class ScreenSharingMediaSessionTransport: ScreenSharingTransport {
     report(.entered(.startingHost))
     let chroma = await connector.chroma().rawValue
     try checkOpen()
-    let (reply, grant) = try await granted(media: address, chroma: chroma, mayRefresh: true)
+    let (reply, grant) = try await granted(media: address, chroma: chroma)
     try checkOpen()
-    switchesDisplays = plan.capabilities.switchesDisplays || reply.switchesDisplays
     announce(reply)
     report(.entered(.connectingMedia))
     let session = try await linking { try await self.connector.connect(grant) }
@@ -79,7 +76,6 @@ final class ScreenSharingMediaSessionTransport: ScreenSharingTransport {
 
       ends.continuation.yield(end)
     }
-    reportSwitchability()
     return await withTaskCancellationHandler {
       for await end in ends.stream { return end }
       return nil
@@ -114,40 +110,23 @@ final class ScreenSharingMediaSessionTransport: ScreenSharingTransport {
   }
 
   private func granted(
-    media: ServerScreenSharingMediaAddress, chroma: String, mayRefresh: Bool
+    media: ServerScreenSharingMediaAddress, chroma: String
   ) async throws -> (ScreenSharingHostReply, ServerScreenSharingMediaGrant) {
-    let ownedByApp = plan.capabilities.ownsSessionsByApp
     let start = ScreenSharingHostRequests.Start(
-      capabilities: plan.capabilities, displayId: try displayId(ownedByApp: ownedByApp), media: media,
-      chroma: chroma, intent: plan.intent)
+      capabilities: plan.capabilities, displayId: target ?? plan.preferredDisplayId, media: media, chroma: chroma,
+      intent: plan.intent)
     let reply = try await host.start(start)
-    if let grant = reply.grant { return (reply, grant) }
-    guard target == nil, reply.lacksTheDisplay, !ownedByApp else { throw host.refusal(reply) }
-    guard mayRefresh else { throw ScreenSharingAttemptEnd.refused(.noDisplay) }
+    guard let grant = reply.grant else { throw host.refusal(reply) }
 
-    plan.capabilities = try await host.capabilities()
-    try checkOpen()
-    return try await granted(media: media, chroma: chroma, mayRefresh: false)
+    return (reply, grant)
   }
 
   private func checkOpen() throws {
     if isClosed || Task.isCancelled { throw CancellationError() }
   }
 
-  private func displayId(ownedByApp: Bool) throws -> String? {
-    if let target { return target }
-    guard !ownedByApp else { return plan.preferredDisplayId }
-
-    let displays = plan.capabilities.base.displays
-    guard let display = displays.first(where: { $0.id == plan.preferredDisplayId }) ?? displays.first else {
-      throw ScreenSharingAttemptEnd.refused(.noDisplay)
-    }
-
-    return display.id
-  }
-
   private var canSwitchDisplay: Bool {
-    target == nil && switchesDisplays && host.holdsASessionToken && beating != nil && !isClosed
+    target == nil && host.holdsASessionToken && beating != nil && !isClosed
   }
 
   private func giveUp(on displayId: String) {
@@ -165,11 +144,9 @@ final class ScreenSharingMediaSessionTransport: ScreenSharingTransport {
   }
 
   private var requestedDisplay: ServerScreenSharingDisplay? {
-    let displays = plan.capabilities.base.displays
-    if let target { return displays.first { $0.id == target } }
-    guard !plan.capabilities.ownsSessionsByApp else { return nil }
+    guard let target else { return nil }
 
-    return displays.first { $0.id == plan.preferredDisplayId } ?? displays.first
+    return plan.capabilities.base.displays.first { $0.id == target }
   }
 
   private func linking<Value>(_ work: () async throws -> Value) async throws -> Value {
@@ -214,17 +191,7 @@ final class ScreenSharingMediaSessionTransport: ScreenSharingTransport {
     }
   }
 
-  private func reportSwitchability() {
-    let switchable = canSwitchDisplay
-    guard switchable != reportedSwitchable else { return }
-
-    reportedSwitchable = switchable
-    report(.displaySwitchAvailable(switchable))
-  }
-
   private func read(_ reply: ScreenSharingHostReply, of beat: ScreenSharingDisplaySwitcher.Beat) {
-    if reply.switchesDisplays { switchesDisplays = true }
-    reportSwitchability()
     let reading = switcher.read(reply, of: beat)
     if reading.showsDisplay { announce(reply) }
     guard let result = reading.result else { return }

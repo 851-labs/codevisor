@@ -29,8 +29,6 @@ public struct ScreenSharingViewer {
       return pending.displayId
     }
 
-    public var switchesDisplayInSession: Bool { surface.switchesDisplayInSession }
-
     public var displaySwitchLine: ScreenSharingDisplaySwitchLine? {
       guard isLive, let result = surface.displaySwitch, result != dismissedDisplaySwitch else { return nil }
 

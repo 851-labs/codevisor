@@ -13,8 +13,8 @@ struct ScreenSharingConnectionStateMachineTests {
 
   nonisolated static let hostDecided: [ScreenSharingAttemptEnd] = [
     .refused(.stoppedOnHost), .refused(.displayAsleep), .refused(.sessionSwitched),
-    .refused(.inUse(by: "Alexandru's iPhone")), .refused(.inUseOldHost),
-    .refused(.takenOver(by: "Alexandru's iPhone")), .endedByHost(message: "Screen sharing was stopped."),
+    .refused(.inUse(by: "Alexandru's iPhone")),
+    .refused(.takenOver(by: "Alexandru's iPhone")),
   ]
 
   @Test("Hiding the surfaces of a failure the host decided starts no countdown, and showing them asks for nothing")
@@ -43,7 +43,7 @@ struct ScreenSharingConnectionStateMachineTests {
 
   nonisolated static let ordinary: [ScreenSharingAttemptEnd] = [
     .dropped(.cantReach), .dropped(.noVideo), .dropped(.networkBlocked), .refused(.permissionMissing),
-    .refused(.updateNeeded), .refused(.noDisplay), .refused(.noWorkspace), .refused(.unsupportedOnThisDevice),
+    .refused(.updateNeeded), .refused(.noDisplay), .refused(.unsupportedOnThisDevice),
     .refused(.nothingToView(message: nil)),
     .hostFailed(message: "The host Mac couldn't start capturing its screen."),
   ]

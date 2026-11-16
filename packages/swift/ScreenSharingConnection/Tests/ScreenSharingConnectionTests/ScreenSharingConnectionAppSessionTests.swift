@@ -30,7 +30,6 @@ struct ScreenSharingConnectionAppSessionTests {
     #expect(start.app == Self.app && start.intent == .attach && start.displayId == nil)
     #expect(harness.host.requests(.heartbeat).allSatisfy { $0.session == token && $0.app == nil })
     #expect(harness.host.stops[0].session == token && harness.host.stops[0].app == nil)
-    #expect(harness.host.registeredPanes.isEmpty)
   }
 
   @Test("The saved display is asked for, and the display the host says it shares is the connection's display")
@@ -46,22 +45,25 @@ struct ScreenSharingConnectionAppSessionTests {
     #expect(harness.connection.displays == [FakeHost.display, FakeHost.second])
   }
 
-  @Test("A host that stops advertising app-owned sessions is spoken to the old way on the next attempt")
-  func readsAbilitiesOnEveryAttempt() async {
+  enum Missing: CaseIterable, Sendable { case appSessions, displaySwitch }
+
+  @Test(
+    "A host that stops offering app sessions or display switching after an update is asked to update, never reconnected",
+    arguments: Missing.allCases)
+  func readsAbilitiesOnEveryAttempt(_ missing: Missing) async {
     let harness = ConnectionHarness()
     harness.show()
     let session = await harness.goLive()
 
-    harness.host.abilities = []
+    harness.host.abilities =
+      missing == .appSessions
+      ? [ServerScreenSharingReply.displaySwitch] : [ServerScreenSharingReply.appSessions]
     session.host.report(connection: "failed")
-    await harness.settle(.reconnecting)
-    await harness.goLive()
+    await harness.settle(.failed(.updateNeeded))
+    await harness.noTimersLeft()
 
-    let operations = harness.host.requests.filter { [.start, .stop].contains($0.operation) }
-    #expect(operations.map(\.operation) == [.start, .stop, .start])
-    #expect(operations.map(\.app) == [Self.app, nil, nil])
-    #expect(operations.map(\.session) == [nil, FakeHost.token(2), nil])
-    #expect(harness.host.registeredPanes == [harness.legacyIdentity(harness.workspaces[0])])
+    #expect(harness.host.starts.count == 1, "nothing is started on a host that would need the old way")
+    #expect(ScreenSharingFailureAction(for: .updateNeeded) == nil, "no button to retry it")
   }
 
   @Test(

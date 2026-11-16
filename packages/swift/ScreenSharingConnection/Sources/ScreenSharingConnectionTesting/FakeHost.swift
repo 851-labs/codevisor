@@ -45,18 +45,15 @@ public final class FakeHost: ScreenSharingHostChannel {
   public var onStart: (() -> Void)?
   public private(set) var requests: [ServerScreenSharingRequest] = []
   public private(set) var completed: [Operation: Int] = [:]
-  public private(set) var registeredPanes: [ScreenSharingLegacyIdentity] = []
   @ObservationIgnored private var queued: [Operation: [Answer]] = [:]
   @ObservationIgnored private var standing: [Operation: Answer] = [:]
   @ObservationIgnored private var gates: [Operation: TestSignal] = [:]
   @ObservationIgnored private var liveNonces: Set<String> = []
   @ObservationIgnored private var minted = 0
 
-  public init(abilities: [String] = [ServerScreenSharingReply.appSessions]) {
+  public init(abilities: [String] = [ServerScreenSharingReply.appSessions, ServerScreenSharingReply.displaySwitch]) {
     self.abilities = abilities
   }
-
-  public static func old() -> FakeHost { FakeHost(abilities: []) }
 
   public func requests(_ operation: Operation) -> [ServerScreenSharingRequest] {
     requests.filter { $0.operation == operation }
@@ -122,10 +119,6 @@ public final class FakeHost: ScreenSharingHostChannel {
     case nil:
       return healthyReply(to: request)
     }
-  }
-
-  public func registerDesktopPane(_ identity: ScreenSharingLegacyIdentity) async throws {
-    registeredPanes.append(identity)
   }
 
   public static func token(_ number: Int) -> String {

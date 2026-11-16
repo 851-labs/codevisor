@@ -18,7 +18,7 @@
       let server = try await RFBLoopbackServer()
       defer { server.stop() }
       let port = server.port
-      let host = FakeHost.old()
+      let host = FakeHost(abilities: [])
       host.provider = "vnc"
       host.displays = [ServerScreenSharingDisplay(id: "vnc:127.0.0.1:\(port)", name: "Loopback", width: 64, height: 48)]
       let harness = ConnectionHarness(host: host)
