@@ -12,6 +12,7 @@ import {
 import type { BrowserRuntime, PageHandle, TargetInfo } from "./browser-cdp-engine.js"
 import { makeBrowserCursorRegistry, type BrowserCursorRegistry } from "./browser-cursor.js"
 import { initialPointerState, type PointerState } from "./browser-input.js"
+import { routeSnapshotRefs } from "./browser-snapshot-refs.js"
 import { invokeInteractionTools } from "./browser-use-invoke-interaction.js"
 import { invokeMouseTools } from "./browser-use-invoke-mouse.js"
 import { invokeNavigationTools } from "./browser-use-invoke-navigation.js"
@@ -164,7 +165,7 @@ const invokeOnPage = async (session: BrowserSessionInvocation): Promise<CallTool
     page = await currentPage(active, state.selectedTargets, sessionKey)
   }
 
-  const invocation = pageInvocation(session, page)
+  const invocation = pageInvocation(session, routeSnapshotRefs(active, page, args))
   for (const invoke of toolHandlers) {
     const result = await invoke(invocation, state)
     if (result !== undefined) return result

@@ -25,6 +25,7 @@ export interface TargetInfo {
 export interface BrowserSnapshot {
   readonly id: string
   readonly targets: ReadonlyMap<string, number>
+  readonly frames: ReadonlyMap<string, string>
 }
 
 export interface NativeBrowserHost {

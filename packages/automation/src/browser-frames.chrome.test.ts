@@ -1,4 +1,4 @@
-import { mkdtempSync, rmSync, writeFileSync } from "node:fs"
+import { mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs"
 import { tmpdir } from "node:os"
 import { join } from "node:path"
 
@@ -124,5 +124,48 @@ describe("Frame locators", () => {
       }
       browser.write([await upload('#cross'), await upload('#same')])`)
     expect(uploaded).toEqual(["file:report.txt", "file:report.txt"])
+  })
+
+  it("shows frame contents in the snapshot, with refs that act inside the frame", async ({
+    browser
+  }) => {
+    await browser.open("/frames")
+    const acted = await browser.cell(`
+      const snapshot = await tab.getAXState()
+      const refs = [...snapshot.matchAll(/button "Frame action" \\[ref=(e\\d+)\\]/g)].map(match => match[1])
+      const input = snapshot.match(/textbox "Frame name" \\[ref=(e\\d+)\\]/)[1]
+      for (const ref of refs) await tab.click(ref)
+      await tab.fill(input, 'typed by ref')
+      const again = await tab.getAXState()
+      const inline = again.match(/button "Inline action" \\[ref=(e\\d+)\\]/)[1]
+      await tab.playwright.ref(inline).click()
+      const page = tab.playwright
+      browser.write({
+        frameButtons: refs.length,
+        nested: /Iframe[^\\n]*\\n\\s+- RootWebArea "Leaf"/.test(snapshot),
+        same: await page.frameLocator('#same').locator('#out').textContent(),
+        cross: await page.frameLocator('#cross').locator('#out').textContent(),
+        filled: await page.frameLocator('#same').locator('#name').evaluate(e => e.value),
+        inline: await page.frameLocator('#inline').locator('button').textContent()
+      })`)
+    expect(acted).toEqual({
+      frameButtons: 2,
+      nested: true,
+      same: "clicked",
+      cross: "clicked",
+      filled: "typed by ref",
+      inline: "inline clicked"
+    })
+  })
+
+  it("includes each frame's text in the markdown export", async ({ browser }) => {
+    await browser.open("/many")
+    const path = String(
+      await browser.cell("(await tab.content.export({format:'markdown'})).file.path")
+    )
+    const exported = readFileSync(path, "utf8")
+    expect(exported).toContain("# Many")
+    for (const text of ["first card", "last card", "inner two", "## Frame: Leaf"])
+      expect(exported).toContain(text)
   })
 })
