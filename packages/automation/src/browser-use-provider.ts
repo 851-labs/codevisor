@@ -259,7 +259,8 @@ export const makeBrowserUseProvider = (
       platform: clientPlatforms.get(context.sessionId),
       managedError: setupError,
       builtin: await builtinState(context),
-      extension: extensionReport(browserExtensionInstallation())
+      extension: extensionReport(browserExtensionInstallation()),
+      extensionNote: extensionRelay.outdatedNote()
     })
 
   const extensionReport = (installation: BrowserExtensionInstallation) =>

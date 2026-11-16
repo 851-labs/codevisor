@@ -169,6 +169,7 @@ try {
     "native-relay.js",
     "clipboard-commands.js",
     "history-commands.js",
+    "extension-build.js",
     "connect.html",
     "connect.js",
     "offscreen.html",

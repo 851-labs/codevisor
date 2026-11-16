@@ -51,6 +51,21 @@ describe("browser status", () => {
       },
       extension: { state: "connected", visibleToUser: true }
     })
+    expect(
+      browserStatusReport({
+        selected: "extension",
+        platform: undefined,
+        managedError: undefined,
+        builtin: { reason: "No Mac app is open", probes: [] },
+        extension: "connected",
+        extensionNote: "The Codevisor Chrome extension is older than this app."
+      }).extension
+    ).toEqual({
+      state: "connected",
+      visibleToUser: true,
+      outdated: true,
+      note: "The Codevisor Chrome extension is older than this app."
+    })
     const report = browserStatusReport({
       selected: "extension",
       platform: "macos",

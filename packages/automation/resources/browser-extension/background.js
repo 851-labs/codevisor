@@ -1,5 +1,6 @@
 importScripts("relay-config.js", "relay-candidates.js", "tab-groups.js")
 importScripts("native-relay.js", "clipboard-commands.js", "history-commands.js")
+importScripts("extension-build.js")
 
 const connections = new Set()
 const relays = globalThis.codevisorRelays(globalThis.CODEVISOR_RELAY)
@@ -17,8 +18,7 @@ let nextReconnectAt
 let lastConnectedAt
 let lastDisconnectedAt
 let lastConnectionError
-let lastCommandError
-let lastCommandErrorAt
+const commandErrors = globalThis.codevisorCommandErrors()
 let relayTransport = "native"
 
 const tabUrl = (tab) => tab.url || tab.pendingUrl || "about:blank"
@@ -101,6 +101,7 @@ class CodevisorConnection {
       () => this.send({ method: "Codevisor.keepalive", params: {} }),
       20_000
     )
+    this.send(globalThis.codevisorHello())
   }
 
   async receive(data) {
@@ -111,8 +112,7 @@ class CodevisorConnection {
       this.send({ id: message.id, result: result ?? {} })
     } catch (error) {
       const errorMessage = error instanceof Error ? error.message : String(error)
-      lastCommandError = errorMessage
-      lastCommandErrorAt = Date.now()
+      commandErrors.record(errorMessage)
       this.send({
         id: typeof message?.id === "number" ? message.id : -1,
         error: { message: errorMessage }
@@ -331,11 +331,12 @@ const connectionStatus = () => {
     lastConnectedAt: lastConnectedAt ?? null,
     lastDisconnectedAt: lastDisconnectedAt ?? null,
     lastConnectionError: lastConnectionError ?? null,
-    lastCommandError: lastCommandError ?? null,
-    lastCommandErrorAt: lastCommandErrorAt ?? null,
+    lastCommandError: commandErrors.message(),
+    lastCommandErrorAt: commandErrors.at(),
     relay: relayTransport === "native" ? `Native host ${CODEVISOR_NATIVE_HOST}` : relays.current(),
     transport: relayTransport,
-    version: chrome.runtime.getManifest().version
+    version: chrome.runtime.getManifest().version,
+    build: chrome.runtime.getManifest().version_name ?? null
   }
 }
 
@@ -408,6 +409,7 @@ const connectToCodevisor = () => {
       connectionState = "connected"
       lastConnectedAt = Date.now()
       lastConnectionError = undefined
+      commandErrors.clear()
       clearReconnectSchedule()
     } catch (error) {
       lastConnectionError = error instanceof Error ? error.message : String(error)

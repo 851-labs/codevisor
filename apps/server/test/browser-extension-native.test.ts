@@ -137,6 +137,7 @@ const startBackground = async ({ nativeMessaging = true } = {}) => {
   context.globalThis = context
   runInContext(await extensionScript("relay-candidates.js"), context)
   runInContext(await extensionScript("native-relay.js"), context)
+  runInContext(await extensionScript("extension-build.js"), context)
   runInContext(await extensionScript("background.js"), context)
   const status = async () => {
     const reply = vi.fn()
@@ -182,7 +183,8 @@ describe("browser extension native messaging", () => {
     await port!.onMessage.emit(
       '{"id":1,"method":"Target.attachToTarget","params":{"targetId":"7"}}'
     )
-    await port!.posts(1)
+    const introductionAndReply = 2
+    await port!.posts(introductionAndReply)
     const screenshot = "x".repeat(9 * 1024 * 1024)
     extension.debuggerSendCommand.mockResolvedValueOnce({ data: screenshot })
     const command = '{"id":2,"sessionId":"tab:7","method":"Page.captureScreenshot"}'
@@ -202,7 +204,9 @@ describe("browser extension native messaging", () => {
       data: command.slice(20)
     })
 
-    const chunks = (await port!.posts(3)).slice(1).map(chunkFields)
+    const chunks = (await port!.posts(introductionAndReply + 2))
+      .slice(introductionAndReply)
+      .map(chunkFields)
     expect(chunks.map((chunk) => [chunk.index, chunk.count])).toEqual([
       [0, 2],
       [1, 2]

@@ -14,6 +14,14 @@ import { basename, dirname, join } from "node:path"
 
 import { CdpConnection, type CdpSocket } from "./browser-cdp.js"
 import { createBrowserExtensionArchive } from "./browser-extension-archive.js"
+import {
+  bundledExtension,
+  describeExtensionError,
+  outdatedExtensionNote,
+  readExtensionHello,
+  stampExtensionBuild,
+  type ExtensionHello
+} from "./browser-extension-build.js"
 import { nativeHostNameFor } from "./browser-native-host.js"
 import { findServerResource, type ServerResourceOptions } from "./server-resources.js"
 import { expectRecord, recordOrEmpty } from "./unknown-values.js"
@@ -182,6 +190,7 @@ export const prepareBrowserExtension = (
   const staged = `${extension}.next-${process.pid}-${(stagedExtensions += 1)}`
   copyDirectory(source, staged)
   applyExtensionBranding(staged, branding)
+  stampExtensionBuild(staged, source)
   const relay = new URL("/v1/browser-use/extension/socket", serverBaseUrl)
   relay.protocol = relay.protocol === "https:" ? "wss:" : "ws:"
   writeFileSync(
@@ -348,13 +357,18 @@ export interface BrowserExtensionRelay {
   readonly connect: () => Promise<CdpConnection>
   readonly accept: (socket: BrowserExtensionSocket) => void
   readonly connected: () => boolean
+  readonly outdatedNote: () => string | undefined
   readonly onConnectionChange: (listener: (connected: boolean) => void) => () => void
   readonly close: () => Promise<void>
 }
 
 export const makeBrowserExtensionRelay = (): BrowserExtensionRelay => {
   let active:
-    | { readonly socket: BrowserExtensionSocket; readonly connection: CdpConnection }
+    | {
+        readonly socket: BrowserExtensionSocket
+        readonly connection: CdpConnection
+        readonly hello: () => ExtensionHello | undefined
+      }
     | undefined
   const waiters = new Set<(connection: CdpConnection) => void>()
   const listeners = new Set<(connected: boolean) => void>()
@@ -362,9 +376,13 @@ export const makeBrowserExtensionRelay = (): BrowserExtensionRelay => {
   const notify = (connected: boolean) => {
     for (const listener of listeners) listener(connected)
   }
-  const activate = (socket: BrowserExtensionSocket, connection: CdpConnection) => {
+  const activate = (
+    socket: BrowserExtensionSocket,
+    connection: CdpConnection,
+    hello: () => ExtensionHello | undefined
+  ) => {
     const previous = active
-    const next = { socket, connection }
+    const next = { socket, connection, hello }
     active = next
     socket.once("close", () => {
       if (active !== next) return
@@ -388,12 +406,22 @@ export const makeBrowserExtensionRelay = (): BrowserExtensionRelay => {
         return
       }
       const connection = CdpConnection.fromSocket(socket)
+      let hello: ExtensionHello | undefined
+      connection.on("Codevisor.hello", (params) => {
+        hello = readExtensionHello(params)
+      })
+      connection.describeErrorsWith(describeExtensionError)
       void extensionReady(connection).then((ready) => {
-        if (ready && !closed) activate(socket, connection)
+        if (ready && !closed) activate(socket, connection, () => hello)
         else void connection.close().catch(() => undefined)
       })
     },
     connected: () => active !== undefined,
+    outdatedNote: () => {
+      const source = browserExtensionPath()
+      if (active === undefined || source === undefined) return undefined
+      return outdatedExtensionNote(active.hello(), bundledExtension(source))
+    },
     onConnectionChange: (listener) => {
       listeners.add(listener)
       return () => listeners.delete(listener)
