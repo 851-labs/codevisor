@@ -128,6 +128,19 @@ const assertAutomationToolArguments = (
   }
 }
 
+const uploadTools = new Set([
+  "upload_files",
+  "playwright.fileChooserSetFiles",
+  "playwright.setInputFiles"
+])
+
+const uploadsFiles = (toolName: string, args: Readonly<Record<string, unknown>>): boolean => {
+  if (!uploadTools.has(toolName)) return false
+  const clearsInput =
+    toolName === "playwright.setInputFiles" && Array.isArray(args.paths) && args.paths.length === 0
+  return !clearsInput
+}
+
 const workspaceUploadPaths = (
   args: Readonly<Record<string, unknown>>,
   workspaceRoot: string,
@@ -264,10 +277,7 @@ export const makeGatewayDispatch = (deps: GatewayDispatchDeps) => {
       })
     }
     let safeArgs = args
-    if (
-      provider.id === "browser" &&
-      (toolName === "upload_files" || toolName === "playwright.fileChooserSetFiles")
-    ) {
+    if (provider.id === "browser" && uploadsFiles(toolName, args)) {
       if (remote !== undefined) {
         throw new Error(
           `Browser Use uploads files from a workspace folder on this machine; a call from ${remote.machineName} has none`

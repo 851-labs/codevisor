@@ -11,6 +11,7 @@ export const requireTabScopedCommand = (
   method: string,
   params: CdpParams
 ): void => {
+  if (namesLocalFiles(method, params)) throw new Error(localFiles(method))
   if (browserWideCommands.has(method)) throw new Error(browserWide(method))
   if (sessionCommands.has(method)) throw new Error(managedSessions(method))
   if (!method.startsWith("Target.")) return
@@ -80,6 +81,15 @@ const sessionCommands = new Set([
   "Target.sendMessageToTarget",
   "Target.setAutoAttach"
 ])
+
+const namesLocalFiles = (method: string, params: CdpParams): boolean => {
+  if (method === "DOM.setFileInputFiles") return true
+  const dragged = isPlainRecord(params.data) ? params.data.files : undefined
+  return method === "Input.dispatchDragEvent" && Array.isArray(dragged) && dragged.length > 0
+}
+
+const localFiles = (method: string): string =>
+  `${method} hands the page files by path, which raw CDP can't check. Upload with locator.setInputFiles(paths) or a file chooser's setFiles(paths); both take files from the chat's workspace.`
 
 const browserWide = (method: string): string =>
   `${method} acts on the whole browser, not this tab, so a tab can't send it. Open, select and close tabs with browser.tabs.`
