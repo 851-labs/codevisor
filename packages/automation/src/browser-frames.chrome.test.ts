@@ -12,6 +12,13 @@ const it = chromeBrowserSuite("frames", ({ crossOrigin }) => ({
     <iframe id="same" src="/leaf"></iframe>
     <iframe id="cross" src="${crossOrigin}/leaf"></iframe>
     <iframe id="inline" srcdoc="<button onclick=&quot;this.textContent='inline clicked'&quot;>Inline action</button>"></iframe>`,
+  "/shadowed": `<title>Shadowed</title><div id="open"></div><div id="closed"></div>
+    <script>
+      document.querySelector('#open').attachShadow({ mode: 'open' }).innerHTML =
+        '<iframe id="in-open" src="${crossOrigin}/leaf"></iframe>'
+      document.querySelector('#closed').attachShadow({ mode: 'closed' }).innerHTML =
+        '<iframe id="in-closed" src="${crossOrigin}/leaf"></iframe><iframe id="same-in-closed" src="/leaf"></iframe>'
+    </script>`,
   "/many": `<title>Many</title>
     <iframe class="card" srcdoc="<p>first card</p>"></iframe>
     <iframe class="card" src="${crossOrigin}/leaf"></iframe>
@@ -66,5 +73,18 @@ describe("Frame locators", () => {
       unpicked:
         'frameLocator(".card") resolved to 3 frames; pick one with .first(), .last() or .nth(index)'
     })
+  })
+
+  it("reaches frames that sit inside open and closed shadow roots", async ({ browser }) => {
+    await browser.open("/shadowed")
+    const reached = await browser.cell(`
+      const page = tab.playwright
+      const act = async (selector) => {
+        const frame = page.frameLocator(selector)
+        await frame.getByRole('button', {name:'Frame action'}).click()
+        return frame.locator('#out').textContent()
+      }
+      browser.write([await act('#in-open'), await act('#in-closed'), await act('#same-in-closed')])`)
+    expect(reached).toEqual(["clicked", "clicked", "clicked"])
   })
 })

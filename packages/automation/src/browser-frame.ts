@@ -1,6 +1,6 @@
 import { attachTarget, type BrowserRuntime, type PageHandle } from "./browser-cdp-engine.js"
 import { type BrowserFrameStep, parseLocatorFrame } from "./browser-locator-parse.js"
-import { locatorBackendNodeIds } from "./browser-locator-resolve.js"
+import { frameElementIds } from "./browser-locator-resolve.js"
 
 export const routeBrowserFrame = async (
   runtime: BrowserRuntime,
@@ -12,7 +12,7 @@ export const routeBrowserFrame = async (
   let page = original
   let frame: BrowserFrameStep[] = []
   for (const step of parseLocatorFrame(value.frame) ?? []) {
-    const ids = await locatorBackendNodeIds(runtime, page, { ...step, frame })
+    const ids = await frameElementIds(runtime, page, frame, step)
     if (ids.length !== 1) throw new Error(ambiguousFrame(step, ids.length))
     const { node } = await runtime.connection.send<{
       node: { contentDocument?: { backendNodeId?: number }; frameId?: string }
