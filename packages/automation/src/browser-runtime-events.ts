@@ -6,6 +6,7 @@ import type { BrowserRuntime } from "./browser-cdp-engine.js"
 import { adoptFrameSession, tabSessionOf } from "./browser-frame-sessions.js"
 import { observeBrowserLoadEvent } from "./browser-load-state.js"
 import { handleTargetLifecycleEvent, installSessionRecovery } from "./browser-session-recovery.js"
+import { observeSiteAccessEvent } from "./browser-site-access.js"
 
 type CdpParams = Readonly<Record<string, unknown>>
 type BrowserDownload = BrowserRuntime["downloads"] extends Map<string, infer D> ? D : never
@@ -51,6 +52,7 @@ export function observeBrowserRuntime(
   active.eventDisposers.push(
     active.connection.on("*", (params, event) => {
       observeBrowserLoadEvent(active, event.method, params, event.sessionId)
+      observeSiteAccessEvent(active, event.method, params, event.sessionId)
       const sequence = ++active.eventSequence
       active.eventLog.push({
         method: event.method,

@@ -328,7 +328,7 @@ export const buildExecutionSource = (code: string, persistent = false): string =
     "    webmcp: __makeWebMcp(tabId),",
     "    dev: { logs: (options = {}) => __callTabTool(tabId, 'browser.dev.logs', options).then(value => value.entries) },",
     "    getJsDialog: () => __callTabTool(tabId, 'browser.getJsDialog', {}).then(value => __makeJsDialog(tabId, value.dialog)),",
-    "    goto: (url, options = {}) => __callTabTool(tabId, 'browser.navigate', { url: __stringMatcher(url, 'url'), timeoutMs: options.timeoutMs }).then(() => undefined),",
+    "    goto: (url, options = {}) => __callTabTool(tabId, 'browser.navigate', { url: __stringMatcher(url, 'url'), timeoutMs: options.timeoutMs, httpCredentials: options.httpCredentials, ignoreCertificateErrors: options.ignoreCertificateErrors }).then(() => undefined),",
     "    back: () => __callTabTool(tabId, 'browser.back', {}).then(() => undefined),",
     "    forward: () => __callTabTool(tabId, 'browser.forward', {}).then(() => undefined),",
     "    reload: () => __callTabTool(tabId, 'browser.reload', {}).then(() => undefined),",

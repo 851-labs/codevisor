@@ -22,7 +22,7 @@ Simple accessibility:
 Refs belong to the latest observation of that tab in this session. Do not manufacture or reuse a ref after another snapshot/navigation. An old ref rejects. Prefer locators for repeated operations.
 
 Navigation and capture:
-- tab.goto(url,{timeoutMs?}), back(), forward(), reload(), close(), title(), url().
+- tab.goto(url,{timeoutMs?,httpCredentials?,ignoreCertificateErrors?}), back(), forward(), reload(), close(), title(), url(). httpCredentials:{username,password} answers HTTP authentication for that URL's origin in this tab from then on; ask the user for them. ignoreCertificateErrors:true proceeds past an untrusted certificate for that URL's host in this tab; use it only when the user expects one, as with a local or staging server.
 - tab.screenshot({fullPage?:boolean,clip?:{x,y,width,height},type?:'png'|'jpeg'}).
 - tab.content.export({format?:'markdown'|'html'|'pdf'}): returns a real file and attachments. Markdown exports visible text with title/source; HTML exports the document; PDF uses the browser print engine. Maximum export size is 20 MB. These are generic page exports, not document-editor-native file formats.
 - Binary results have artifacts with local path fields through Codevisor. Read the attaching-files skill (through the skills tool) to share them; embed an existing path as ![label](<path>) or [Download](<path>).

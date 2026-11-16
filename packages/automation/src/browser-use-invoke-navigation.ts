@@ -15,6 +15,7 @@ import {
 import { withoutPointerOverlay } from "./browser-cursor.js"
 import { sendUnlessDialogOpens } from "./browser-dialog-race.js"
 import { releaseElement, resolveElement } from "./browser-locators.js"
+import { grantSiteAccess, navigationFailure } from "./browser-site-access.js"
 import { snapshotPage } from "./browser-snapshot.js"
 import type { BrowserToolInvocation, BrowserToolSessionState } from "./browser-use-invoke-types.js"
 import { maxWaitMs, waitBudget } from "./browser-wait-budget.js"
@@ -33,6 +34,7 @@ export const invokeNavigationTools = async (
     case "navigate": {
       const url = stringArgument(args, "url")
       const budget = waitBudget(args.timeoutMs)
+      await grantSiteAccess(active, page, url, args)
       const sent = await sendUnlessDialogOpens<{ errorText?: string }>(
         active,
         page,
@@ -43,7 +45,8 @@ export const invokeNavigationTools = async (
         throw slowNavigation(cause, budget)
       })
       if (sent.dialogOpened) return navigationResult(active, page, "navigate")
-      if (sent.result.errorText !== undefined) throw new Error(sent.result.errorText)
+      if (sent.result.errorText !== undefined)
+        throw navigationFailure(active, page, url, sent.result.errorText)
       await waitForReady(active, page)
       return navigationResult(active, page, "navigate")
     }
