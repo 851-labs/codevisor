@@ -60,11 +60,12 @@ final class ScreenSharingHostSession {
   }
 
   init(
-    request: ServerScreenSharingRequest, display: ServerScreenSharingDisplay, displayID: UInt32,
+    owner: ScreenSharingHostLease.Owner, request: ServerScreenSharingRequest, display: ServerScreenSharingDisplay,
+    displayID: UInt32,
     viewerEndpointId: String, encoder: ScreenSharingV2EncoderKind,
     displayBounds: @escaping @Sendable (CGDirectDisplayID) -> CGRect = { CGDisplayBounds($0) }
   ) throws {
-    owner = .init(request)
+    self.owner = owner
     self.display = display
     let sharedDisplay = ScreenSharingSharedDisplay(displayID, bounds: displayBounds)
     self.sharedDisplay = sharedDisplay

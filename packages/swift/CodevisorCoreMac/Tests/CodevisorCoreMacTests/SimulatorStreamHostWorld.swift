@@ -60,11 +60,22 @@ final class SimulatorStreamHostWorld {
   ) -> ServerScreenSharingRequest {
     var request = ServerScreenSharingRequest(
       operation: operation, workspaceId: workspace, paneId: pane, viewerId: viewer ?? self.viewer, displayId: target)
-    if [.start, .restart].contains(operation) {
-      request.engine = "v2"
-      request.media = .init(endpointId: Self.viewerEndpoint, relayUrl: nil, directAddrs: [])
-    }
+    if operation == .capabilities { request.app = .macBook }
     return request
+  }
+
+  func started(
+    as app: ServerScreenSharingApp = .macBook, on host: SimulatorStreamHost, target: String = target
+  ) async throws -> (start: ServerScreenSharingRequest, reply: ServerScreenSharingReply) {
+    let start = try await start(as: app, on: host, target: target)
+    return (start, await host.handle(start))
+  }
+
+  func following(
+    _ started: (start: ServerScreenSharingRequest, reply: ServerScreenSharingReply),
+    _ operation: ServerScreenSharingRequest.Operation
+  ) -> ServerScreenSharingRequest {
+    following(started.start, operation, session: started.reply.session)
   }
 
   func capabilities(as app: ServerScreenSharingApp, target: String = target) -> ServerScreenSharingRequest {

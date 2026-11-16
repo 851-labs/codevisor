@@ -20,20 +20,19 @@ struct SimulatorStreamHostSessionTests {
 
     let ready = await host.handle(world.request(.capabilities))
     #expect(ready.status == "available" && ready.engines == ["v2"])
-    #expect(ready.displays.map(\.id) == [World.target] && ready.abilities == nil && ready.challenge == nil)
+    #expect(ready.displays.map(\.id) == [World.target])
 
     world.booted = []
     let starting = await host.handle(world.request(.capabilities))
     #expect(starting.status == "starting" && starting.message == "The simulator is starting.")
-    #expect(starting.reason == nil)
 
     world.lookupFailure = "That simulator no longer exists."
     let gone = await host.handle(world.capabilities(as: .macBook))
-    #expect(gone.status == "unavailable" && gone.message == "That simulator no longer exists." && gone.reason == nil)
+    #expect(gone.status == "unavailable" && gone.message == "That simulator no longer exists.")
 
     world.isLoaded = false
     let noXcode = await host.handle(world.capabilities(as: .macBook))
-    #expect(noXcode.status == "unavailable" && noXcode.reason == nil)
+    #expect(noXcode.status == "unavailable")
     #expect(noXcode.message == "Install Xcode on this Mac to use its simulators.")
   }
 
@@ -54,40 +53,39 @@ struct SimulatorStreamHostSessionTests {
     let world = World()
     let host = world.host()
 
-    let started = await host.handle(world.request(.start))
+    let started = try await world.started(on: host)
     let peer = try #require(world.peers.first)
     let device = try #require(world.devices.first)
-    #expect(started.status == "connecting" && started.media == World.grant && started.session == nil)
+    #expect(started.reply.status == "connecting" && started.reply.media == World.grant)
     #expect(device.sinks.count == 1 && device.sinks.first === peer)
-    #expect(await host.handle(world.request(.heartbeat)).status == "connecting")
+    #expect(await host.handle(world.following(started, .heartbeat)).status == "connecting")
 
     peer.onConnectionChanged?("connected")
-    #expect(await host.handle(world.request(.heartbeat)).status == "viewing")
+    #expect(await host.handle(world.following(started, .heartbeat)).status == "viewing")
     peer.onConnectionChanged?("disconnected")
-    #expect(await host.handle(world.request(.heartbeat)).status == "reconnecting")
+    #expect(await host.handle(world.following(started, .heartbeat)).status == "reconnecting")
 
-    #expect(await host.handle(world.request(.stop)).status == "stopped")
+    #expect(await host.handle(world.following(started, .stop)).status == "stopped")
     #expect(peer.isClosed && device.sinks.isEmpty && device.touchesReleased == 1 && device.isClosed)
     #expect(host.sessionCount == 0)
-    #expect(await host.handle(world.request(.heartbeat)).status == "stopped")
+    #expect(await host.handle(world.following(started, .heartbeat)).status == "stopped")
   }
 
   @Test func viewersOfOneSimulatorShareItsDeviceWhichClosesWithTheLastOne() async throws {
     let world = World()
     let host = world.host()
-    let (first, second) = (UUID(), UUID())
-    _ = await host.handle(world.request(.start, viewer: first))
-    _ = await host.handle(world.request(.start, viewer: second))
+    let first = try await world.started(as: .macBook, on: host)
+    let second = try await world.started(as: .iPhone, on: host)
     let device = try #require(world.devices.first)
     #expect(world.devices.count == 1 && device.sinks.count == 2)
 
-    _ = await host.handle(world.request(.stop, viewer: first))
+    _ = await host.handle(world.following(first, .stop))
     #expect(!device.isClosed && device.sinks.count == 1)
 
-    _ = await host.handle(world.request(.stop, viewer: second))
+    _ = await host.handle(world.following(second, .stop))
     #expect(device.isClosed && device.sinks.isEmpty)
 
-    _ = await host.handle(world.request(.start, viewer: first))
+    _ = try await world.started(as: .macBook, on: host)
     #expect(world.devices.count == 2, "a simulator viewed again is opened afresh")
   }
 
@@ -96,17 +94,17 @@ struct SimulatorStreamHostSessionTests {
     let host = world.host()
 
     world.captureFails = true
-    #expect(await host.handle(world.request(.start)).status == "failed")
+    #expect(try await world.started(on: host).reply.status == "failed")
     #expect(world.devices.count == 1 && world.devices[0].isClosed)
 
     world.captureFails = false
     world.screenSize = nil
-    let notReady = await host.handle(world.request(.start))
+    let notReady = try await world.started(on: host).reply
     #expect(notReady.status == "starting" && notReady.message == "The simulator's screen isn't ready yet.")
     #expect(world.devices.count == 2 && world.devices[1].isClosed && world.peers.isEmpty)
 
     world.screenSize = CGSize(width: 402, height: 874)
-    var noMedia = world.request(.start)
+    var noMedia = try await world.start(as: .macBook, on: host)
     noMedia.media = nil
     #expect(await host.handle(noMedia).status == "failed")
     #expect(world.devices.count == 2 && host.sessionCount == 0)
@@ -173,16 +171,16 @@ struct SimulatorStreamHostSessionTests {
     #expect(host.sessionCount == 3 && world.devices.count == 3)
   }
 
-  @Test func theSessionLimitKeepsTodaysReply() async throws {
+  @Test func theSessionLimitKeepsItsReply() async throws {
     let world = World()
     let host = world.host()
-    for _ in 0..<SimulatorStreamHost.maximumSessions {
-      _ = await host.handle(world.request(.start, viewer: UUID()))
+    for number in 0..<SimulatorStreamHost.maximumSessions {
+      _ = try await world.started(as: .viewer(number), on: host)
     }
 
     let extra = await host.handle(try await world.start(as: .macBook, on: host))
     #expect(extra.status == "busy" && extra.message == "Too many panes are showing simulators on this Mac.")
-    #expect(extra.reason == nil && host.sessionCount == SimulatorStreamHost.maximumSessions)
+    #expect(host.sessionCount == SimulatorStreamHost.maximumSessions)
   }
 
   @Test func aStopWithoutATokenEndsOnlyTheStartItNames() async throws {
@@ -217,37 +215,49 @@ struct SimulatorStreamHostSessionTests {
     #expect(host.sessionCount == 0 && world.peers.isEmpty && world.devices[0].isClosed)
   }
 
-  @Test func whenTheSimulatorShutsDownAnAppIsToldThereIsNothingToViewAndAnOldViewerGetsTodaysReply() async throws {
+  @Test func whenTheSimulatorShutsDownAnAppIsToldThereIsNothingToView() async throws {
     let world = World()
     let host = world.host()
-    let start = try await world.start(as: .macBook, on: host)
-    let token = await host.handle(start).session
-    _ = await host.handle(world.request(.start))
+    let started = try await world.started(on: host)
 
     world.booted = []
-    let app = await host.handle(world.following(start, .heartbeat, session: token))
-    let old = await host.handle(world.request(.heartbeat))
+    let app = await host.handle(world.following(started, .heartbeat))
 
     #expect(app.status == "stopped" && app.message == Self.shutDown && app.reason == .nothingToView)
-    #expect(old.status == "stopped" && old.message == Self.shutDown && old.reason == nil)
     #expect(host.sessionCount == 0 && world.devices.allSatisfy(\.isClosed))
   }
 
-  @Test func aViewerThatStopsHeartbeatingIsExpired() async {
+  @Test func aViewerWithoutAnAppIdentityIsToldToUpdateAndNothingStarts() async throws {
     let world = World()
     let host = world.host()
-    _ = await host.handle(world.request(.start))
+    var anonymous = world.request(.capabilities)
+    anonymous.app = nil
+    var restart = world.request(.restart)
+    restart.app = .macBook
+
+    for request in [anonymous, world.request(.start), world.request(.heartbeat), restart] {
+      let reply = await host.handle(request)
+      #expect(reply.status == "unavailable" && reply.reason == .updateNeeded && reply.displays.isEmpty)
+      #expect(reply.message == "Update Codevisor on this device to view \(ScreenSharingHostService.machineName()).")
+    }
+    #expect(world.devices.isEmpty && host.sessionCount == 0)
+  }
+
+  @Test func aViewerThatStopsHeartbeatingIsExpired() async throws {
+    let world = World()
+    let host = world.host()
+    let started = try await world.started(on: host)
 
     world.clock += SimulatorStreamHost.lifetime + 1
 
-    #expect(await host.handle(world.request(.heartbeat)).status == "stopped")
+    #expect(await host.handle(world.following(started, .heartbeat)).status == "stopped")
     #expect(world.peers.first?.isClosed == true && world.devices.first?.isClosed == true)
   }
 
   @Test func theDevicesStateReachesItsViewersAndTheirInputReachesTheDevice() async throws {
     let world = World()
     let host = world.host()
-    _ = await host.handle(world.request(.start))
+    _ = try await world.started(on: host)
     let peer = try #require(world.peers.first)
     let device = try #require(world.devices.first)
     var states: [ScreenSharingSimulatorState] = []

@@ -165,6 +165,7 @@ final class ComputerUseLivePreviewHost {
   private func respond(to request: ServerScreenSharingRequest) async -> ServerScreenSharingReply {
     guard !isShutdown else { return .init(status: "stopped") }
     guard request.version == 1 else { return Self.updateNeeded }
+    if let refusal = identity.refusal(toIdentify: request) { return refusal }
     guard let sessionID = ComputerUseStreamTarget.sessionID(from: request.displayId) else {
       return .init(status: "failed", message: "Invalid live view target.")
     }
@@ -175,7 +176,8 @@ final class ComputerUseLivePreviewHost {
     case .stop: return stop(request)
     case .setScale: return .init(status: "unsupported", message: "A live view's scale can't be set.")
     case .heartbeat: return heartbeat(request, sessionID: sessionID)
-    case .start, .restart: return await admit(request, sessionID: sessionID)
+    case .start: return await admit(request, sessionID: sessionID)
+    case .restart: return ScreenSharingStreamIdentity.updateNeeded
     }
   }
 
@@ -205,7 +207,9 @@ final class ComputerUseLivePreviewHost {
   private func admit(_ request: ServerScreenSharingRequest, sessionID: String) async -> ServerScreenSharingReply {
     if let refusal = await identity.refusal(toStart: request) { return refusal }
 
-    let owner = identity.begin(request, target: sessionID)
+    guard let owner = identity.begin(request, target: sessionID) else {
+      return ScreenSharingStreamIdentity.updateNeeded
+    }
     defer { identity.finish(request, as: owner) }
     return await start(request, owner: owner, sessionID: sessionID)
   }

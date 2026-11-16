@@ -9,179 +9,145 @@ import Testing
 
 @MainActor
 struct ScreenSharingHostRequestTests {
-  @Test func stopDuringInitialDisplayLookupPreventsTheStartFromContinuing() async {
-    let entered = TestSignal()
-    let release = TestSignal()
-    let host = makeHost {
-      entered.signal()
-      await release.wait()
-      return []
+  typealias Fixture = ScreenSharingHostOwnershipFixture
+
+  @Test func stopDuringInitialDisplayLookupPreventsTheStartFromContinuing() async throws {
+    try await Fixture.run { mac in
+      let start = await mac.signed(mac.start(as: .macBook, .open))
+      let lookup = Self.hold(mac)
+      let pending = Task { await mac.host.handle(start) }
+      await lookup.entered.wait()
+      #expect(await mac.host.handle(mac.following(start, .stop)).status == "stopped")
+      lookup.release.signal()
+      #expect(await pending.value.status == "stopped")
     }
-    let start = request()
-    let pending = Task { await host.handle(start) }
-    await entered.wait()
-    let stopped = await host.handle(stop(start))
-    #expect(stopped.status == "stopped")
-    release.signal()
-    let result = await pending.value
-    #expect(result.status == "stopped")
-    await host.shutdown()
   }
 
-  @Test func aLaterExplicitStartIsNotCancelledByTheEarlierStop() async {
-    let entered = TestSignal()
-    let release = TestSignal()
-    var lookups = 0
-    let host = makeHost {
-      lookups += 1
-      entered.signal()
-      await release.wait()
-      return []
+  @Test func aLaterExplicitStartIsNotCancelledByTheEarlierStop() async throws {
+    try await Fixture.run { mac in
+      let start = await mac.signed(mac.start(as: .macBook, .open))
+      let lookup = Self.hold(mac)
+      let pending = Task { await mac.host.handle(start) }
+      await lookup.entered.wait()
+      _ = await mac.host.handle(mac.following(start, .stop))
+      lookup.release.signal()
+      #expect(await pending.value.status == "stopped")
+      #expect(await mac.send(mac.start(as: .macBook, .open)).status == "unavailable")
     }
-    let start = request()
-    let pending = Task { await host.handle(start) }
-    await entered.wait()
-    _ = await host.handle(stop(start))
-    release.signal()
-    #expect(await pending.value.status == "stopped")
-    let next = await host.handle(start)
-    #expect(next.status == "unavailable")
-    #expect(lookups == 2)
-    await host.shutdown()
   }
 
-  @Test func aRepeatedStartFromTheSamePaneSupersedesTheOneStillPending() async {
-    let entered = TestSignal()
-    let release = TestSignal()
-    let host = makeHost {
-      entered.signal()
-      await release.wait()
-      return []
+  @Test func aRepeatedStartFromTheSameAppSupersedesTheOneStillPending() async throws {
+    try await Fixture.run { mac in
+      let first = await mac.signed(mac.start(as: .macBook, .open))
+      let retry = await mac.signed(mac.start(as: .macBook, .open))
+      let lookup = Self.hold(mac)
+      let pending = Task { await mac.host.handle(first) }
+      await lookup.entered.wait()
+      let retried = Task { await mac.host.handle(retry) }
+      await lookup.entered.wait(for: 2)
+      lookup.release.signal()
+      #expect(await pending.value.status == "stopped")
+      #expect(await retried.value.status == "unavailable")
     }
-    let start = request()
-    let first = Task { await host.handle(start) }
-    await entered.wait()
-    let retried = Task { await host.handle(start) }
-    await entered.wait(for: 2)
-    release.signal()
-    #expect(await first.value.status == "stopped")
-    #expect(await retried.value.status == "unavailable")
-    await host.shutdown()
   }
 
-  enum ForeignIdentity: CaseIterable, Sendable { case workspace, pane, viewer }
-
-  @Test(arguments: ForeignIdentity.allCases)
-  func anotherOwnersStopDoesNotCancelThePendingStart(_ identity: ForeignIdentity) async {
-    let entered = TestSignal()
-    let release = TestSignal()
-    let host = makeHost {
-      entered.signal()
-      await release.wait()
-      return []
+  @Test func anotherViewersStopDoesNotCancelThePendingStart() async throws {
+    try await Fixture.run { mac in
+      let start = await mac.signed(mac.start(as: .macBook, .open))
+      let lookup = Self.hold(mac)
+      let pending = Task { await mac.host.handle(start) }
+      await lookup.entered.wait()
+      _ = await mac.host.handle(mac.following(start, .stop, viewerId: UUID()))
+      lookup.release.signal()
+      #expect(await pending.value.status == "unavailable")
     }
-    let start = request()
-    let pending = Task { await host.handle(start) }
-    await entered.wait()
-    let foreign = ServerScreenSharingRequest(
-      operation: .stop, workspaceId: identity == .workspace ? UUID() : start.workspaceId,
-      paneId: identity == .pane ? UUID() : start.paneId,
-      viewerId: identity == .viewer ? UUID() : start.viewerId)
-    _ = await host.handle(foreign)
-    release.signal()
-    #expect(await pending.value.status == "unavailable")
-    await host.shutdown()
   }
 
-  @Test func stoppingOneOfTwoPendingOwnersDoesNotCancelTheOther() async {
-    let entered = TestSignal()
-    let release = TestSignal()
-    let host = makeHost {
-      entered.signal()
-      await release.wait()
-      return []
+  @Test func stoppingOneOfTwoPendingAppsDoesNotCancelTheOther() async throws {
+    try await Fixture.run { mac in
+      let first = await mac.signed(mac.start(as: .macBook, .open))
+      let second = await mac.signed(mac.start(as: .iPhone, .open))
+      let lookup = Self.hold(mac)
+      let pendingFirst = Task { await mac.host.handle(first) }
+      await lookup.entered.wait()
+      let pendingSecond = Task { await mac.host.handle(second) }
+      await lookup.entered.wait(for: 2)
+      _ = await mac.host.handle(mac.following(first, .stop))
+      lookup.release.signal()
+      #expect(await pendingFirst.value.status == "stopped")
+      #expect(await pendingSecond.value.status == "unavailable")
     }
-    let first = request()
-    let second = request()
-    let pendingFirst = Task { await host.handle(first) }
-    await entered.wait()
-    let pendingSecond = Task { await host.handle(second) }
-    await entered.wait(for: 2)
-    _ = await host.handle(stop(first))
-    release.signal()
-    #expect(await pendingFirst.value.status == "stopped")
-    #expect(await pendingSecond.value.status == "unavailable")
-    await host.shutdown()
   }
 
-  @Test func shutdownInvalidatesPendingDisplayLookup() async {
-    let entered = TestSignal()
-    let release = TestSignal()
-    let host = makeHost {
-      entered.signal()
-      await release.wait()
-      return []
+  @Test func shutdownInvalidatesPendingDisplayLookup() async throws {
+    try await Fixture.run { mac in
+      let start = await mac.signed(mac.start(as: .macBook, .open))
+      let lookup = Self.hold(mac)
+      let pending = Task { await mac.host.handle(start) }
+      await lookup.entered.wait()
+      await mac.host.shutdown()
+      lookup.release.signal()
+      #expect(await pending.value.status == "stopped")
+      #expect(await mac.host.handle(start).status == "stopped")
     }
-    let start = request()
-    let pending = Task { await host.handle(start) }
-    await entered.wait()
-    await host.shutdown()
-    release.signal()
-    #expect(await pending.value.status == "stopped")
-    #expect(await host.handle(start).status == "stopped")
   }
 
-  @Test func aSystemStopInvalidatesEveryPendingOwner() async {
-    let entered = TestSignal()
-    let release = TestSignal()
-    let host = makeHost {
-      entered.signal()
-      await release.wait()
-      return []
+  @Test func aSystemStopInvalidatesEveryPendingOwner() async throws {
+    try await Fixture.run { mac in
+      let first = await mac.signed(mac.start(as: .macBook, .open))
+      let second = await mac.signed(mac.start(as: .iPhone, .open))
+      let lookup = Self.hold(mac)
+      let pendingFirst = Task { await mac.host.handle(first) }
+      await lookup.entered.wait()
+      let pendingSecond = Task { await mac.host.handle(second) }
+      await lookup.entered.wait(for: 2)
+      mac.host.systemStopped(.displayAsleep)
+      lookup.release.signal()
+      #expect(await pendingFirst.value.status == "stopped")
+      #expect(await pendingSecond.value.status == "stopped")
+      #expect(await mac.send(mac.start(as: .iPad, .open)).status == "unavailable")
     }
-    let first = request()
-    let second = request()
-    let pendingFirst = Task { await host.handle(first) }
-    await entered.wait()
-    let pendingSecond = Task { await host.handle(second) }
-    await entered.wait(for: 2)
-    host.systemStopped(.displayAsleep)
-    release.signal()
-    #expect(await pendingFirst.value.status == "stopped")
-    #expect(await pendingSecond.value.status == "stopped")
-    #expect(await host.handle(request()).status == "unavailable")
-    await host.shutdown()
   }
 
-  @Test func onlyAHostWithAMediaEndpointAdvertisesEngineV2() async {
-    let plain = makeHost(mediaEndpoint: ScreenSharingMediaEndpoint()) { [] }
-    let capable = makeHost { [] }
+  @Test func onlyAHostWithAMediaEndpointAdvertisesEngineV2() async throws {
+    let plain = makeHost(mediaEndpoint: ScreenSharingMediaEndpoint())
     #expect(await plain.handle(capabilities()).engines == nil)
-    #expect(await capable.handle(capabilities()).engines == ["v2"])
     await plain.shutdown()
-    await capable.shutdown()
+    try await Fixture.run { mac in
+      #expect(await mac.capabilities(as: .macBook).engines == ["v2"])
+    }
   }
 
-  @Test func aV2StartIsRefusedByAHostWithoutAMediaEndpoint() async {
-    let host = makeHost(mediaEndpoint: ScreenSharingMediaEndpoint()) { [self.display] }
-    let reply = await host.handle(request())
-    #expect(reply.status == "failed" && reply.media == nil)
-    #expect(reply.message == "This Mac's screen-sharing endpoint isn't available.")
-    #expect(await host.handle(capabilities()).status == "available")
+  @Test func aHostWhoseMediaEndpointCantBindOffersNoChallengeSoNothingStarts() async {
+    let host = makeHost(mediaEndpoint: Self.unboundEndpoint())
+    let offered = await host.handle(capabilities())
+    #expect(offered.status == "available" && offered.challenge == nil)
+
+    var start = ServerScreenSharingRequest(
+      operation: .start, workspaceId: UUID(), paneId: UUID(), viewerId: UUID(), displayId: "display")
+    start.engine = "v2"
+    start.media = .init(endpointId: ServerScreenSharingApp.macBook.key, relayUrl: nil, directAddrs: [])
+    start.app = .macBook
+    start.intent = .open
+    start.proof = .init(nonce: String(repeating: "0", count: 64), signature: String(repeating: "0", count: 128))
+    let reply = await host.handle(start)
+    #expect(reply.status == "failed" && reply.reason == .proofRejected && reply.media == nil)
     await host.shutdown()
   }
 
-  @Test func aV2StartWhoseEndpointCantBindFailsAndLeavesTheHostFree() async {
-    let host = makeHost { [self.display] }
-    let reply = await host.handle(request())
-    #expect(reply.status == "failed")
-    #expect(reply.message == "This Mac's screen-sharing endpoint isn't available.")
-    #expect(await host.handle(capabilities()).status == "available")
-    await host.shutdown()
+  private final class Lookup {
+    let entered = TestSignal()
+    let release = TestSignal()
   }
 
-  private var display: ScreenSharingHostService.Display {
-    (CGMainDisplayID(), ServerScreenSharingDisplay(id: "display", name: "Display", width: 1280, height: 720))
+  private static func hold(_ mac: Fixture) -> Lookup {
+    let lookup = Lookup()
+    mac.listDisplays = {
+      lookup.entered.signal()
+      await lookup.release.wait()
+      return []
+    }
+    return lookup
   }
 
   private static func unboundEndpoint() -> ScreenSharingMediaEndpoint {
@@ -191,27 +157,18 @@ struct ScreenSharingHostRequestTests {
   }
 
   private func capabilities() -> ServerScreenSharingRequest {
-    .init(operation: .capabilities, workspaceId: UUID(), paneId: UUID(), viewerId: UUID())
-  }
-
-  private func request() -> ServerScreenSharingRequest {
     var request = ServerScreenSharingRequest(
-      operation: .start, workspaceId: UUID(), paneId: UUID(), viewerId: UUID(), displayId: "display")
-    request.engine = "v2"
-    request.media = .init(endpointId: String(repeating: "a", count: 64), relayUrl: nil, directAddrs: [])
+      operation: .capabilities, workspaceId: UUID(), paneId: UUID(), viewerId: UUID())
+    request.app = .macBook
     return request
   }
 
-  private func makeHost(
-    mediaEndpoint: ScreenSharingMediaEndpoint = ScreenSharingHostRequestTests.unboundEndpoint(),
-    enumerate: @escaping () async throws -> [ScreenSharingHostService.Display]
-  ) -> ScreenSharingHostService {
-    ScreenSharingHostService(
+  private func makeHost(mediaEndpoint: ScreenSharingMediaEndpoint) -> ScreenSharingHostService {
+    let display = (
+      CGMainDisplayID(), ServerScreenSharingDisplay(id: "display", name: "Display", width: 1280, height: 720)
+    )
+    return ScreenSharingHostService(
       captureAccess: { true }, notificationCenter: NotificationCenter(),
-      workspaceNotificationCenter: NotificationCenter(), enumerateDisplays: enumerate, mediaEndpoint: mediaEndpoint)
-  }
-
-  private func stop(_ start: ServerScreenSharingRequest) -> ServerScreenSharingRequest {
-    .init(operation: .stop, workspaceId: start.workspaceId, paneId: start.paneId, viewerId: start.viewerId)
+      workspaceNotificationCenter: NotificationCenter(), enumerateDisplays: { [display] }, mediaEndpoint: mediaEndpoint)
   }
 }

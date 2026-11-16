@@ -2,15 +2,11 @@ import CodevisorClient
 import Foundation
 
 extension ScreenSharingHostService {
-  func listed(_ available: [Display], for owner: Owner) -> [Display] {
-    guard owner.appKey != nil else { return available }
-
-    return logicalDisplays.list(available, shared: current.map(shared))
+  func listed(_ available: [Display]) -> [Display] {
+    logicalDisplays.list(available, shared: current.map(shared))
   }
 
   func describe(_ session: ScreenSharingHostSession, among available: [Display]) {
-    guard session.owner.appKey != nil else { return }
-
     let listed = logicalDisplays.list(available, shared: shared(session))
     let own = listed.first { $0.id == session.captureDisplayID } ?? listed.first { $0.id == session.displayID }
     guard let own else { return }
@@ -22,7 +18,7 @@ extension ScreenSharingHostService {
   }
 
   func refreshDisplays(of session: ScreenSharingHostSession) async {
-    guard session.owner.appKey != nil, let available = try? await enumerateDisplays(), current === session,
+    guard let available = try? await enumerateDisplays(), current === session,
       !session.stopping, session.displaySwitch?.isMoving != true
     else { return }
 

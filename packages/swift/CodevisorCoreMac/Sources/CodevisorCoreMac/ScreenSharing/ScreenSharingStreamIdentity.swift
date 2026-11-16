@@ -26,15 +26,19 @@ final class ScreenSharingStreamIdentity {
 
   func describing(_ reply: Reply, for request: Request) async -> Reply {
     var reply = reply
-    guard Self.isIdentified(request) else {
-      reply.reason = nil
-      return reply
-    }
-    guard request.operation == .capabilities else { return reply }
+    guard Self.isIdentified(request), request.operation == .capabilities else { return reply }
 
     reply.abilities = [Reply.appSessions]
     if reply.status == "available" { reply.challenge = await challenge() }
     return reply
+  }
+
+  static var updateNeeded: Reply {
+    ScreenSharingHostRefusal.viewerUpdateNeeded(machine: ScreenSharingHostService.machineName()).reply
+  }
+
+  func refusal(toIdentify request: Request) -> Reply? {
+    Self.isIdentified(request) ? nil : Self.updateNeeded
   }
 
   func refusal(toStart request: Request) async -> Reply? {
@@ -43,14 +47,15 @@ final class ScreenSharingStreamIdentity {
     return ScreenSharingHostChallenges.rejection(offering: await challenge())
   }
 
-  func begin(_ request: Request, target: String) -> Owner {
-    let owner = Owner(starting: request, target: target)
-    if owner.isApp { starting[owner] = request.viewerId }
+  func begin(_ request: Request, target: String) -> Owner? {
+    guard let owner = Owner(starting: request, target: target) else { return nil }
+
+    starting[owner] = request.viewerId
     return owner
   }
 
   func isStillStarting(_ request: Request, as owner: Owner) -> Bool {
-    !owner.isApp || starting[owner] == request.viewerId
+    starting[owner] == request.viewerId
   }
 
   func finish(_ request: Request, as owner: Owner) {
@@ -58,16 +63,13 @@ final class ScreenSharingStreamIdentity {
   }
 
   func token(for owner: Owner) -> String? {
-    owner.isApp ? ScreenSharingHostChallenges.randomHex() : nil
+    ScreenSharingHostChallenges.randomHex()
   }
 
   func owner<Session: ScreenSharingStreamSession>(
     heartbeating request: Request, among sessions: [Owner: Session]
   ) -> Owner? {
-    guard request.session == nil else { return holder(ofTheTokenIn: request, among: sessions) }
-
-    let pane = Owner(paneOf: request)
-    return sessions[pane] == nil ? nil : pane
+    holder(ofTheTokenIn: request, among: sessions)
   }
 
   func owner<Session: ScreenSharingStreamSession>(
@@ -76,9 +78,7 @@ final class ScreenSharingStreamIdentity {
     guard request.session == nil else { return holder(ofTheTokenIn: request, among: sessions) }
 
     starting = starting.filter { $0.value != request.viewerId }
-    let pane = Owner(paneOf: request)
-    if sessions[pane] != nil { return pane }
-    return sessions.first { $0.key.isApp && $0.value.attempt == request.viewerId }?.key
+    return sessions.first { $0.value.attempt == request.viewerId }?.key
   }
 
   func remember(_ session: any ScreenSharingStreamSession, endedWith reply: Reply) {
@@ -106,9 +106,9 @@ final class ScreenSharingStreamIdentity {
 
   private static func isIdentified(_ request: Request) -> Bool {
     switch request.operation {
-    case .capabilities, .start, .restart: request.app != nil
-    case .heartbeat, .stop: request.session != nil
-    case .setScale: false
+    case .capabilities, .start, .restart, .setScale: request.app != nil
+    case .heartbeat: request.session != nil
+    case .stop: true
     }
   }
 
@@ -117,7 +117,7 @@ final class ScreenSharingStreamIdentity {
   ) -> Owner? {
     guard let token = request.session else { return nil }
 
-    return sessions.first { $0.key.isApp && $0.value.token.map { Self.matches($0, token) } == true }?.key
+    return sessions.first { $0.value.token.map { Self.matches($0, token) } == true }?.key
   }
 
   private func challenge() async -> ServerScreenSharingChallenge? {

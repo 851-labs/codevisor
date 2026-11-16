@@ -13,14 +13,24 @@ struct ComputerUseLivePreviewHostIdentityTests {
   static let target = ComputerUseLivePreviewHostTests.target
   static let stoppedControlling = "The agent stopped controlling the app."
 
-  @Test func anAppIsOfferedAppSessionsAndAChallengeAndAnOldViewerGetsTodaysReply() async {
+  static func expectUpdateReply(_ reply: ServerScreenSharingReply) {
+    #expect(reply.status == "unavailable" && reply.reason == .updateNeeded && reply.displays.isEmpty)
+    #expect(reply.message == "Update Codevisor on this device to view \(ScreenSharingHostService.machineName()).")
+    #expect(reply.abilities == nil && reply.challenge == nil && reply.media == nil && reply.session == nil)
+  }
+
+  static func anonymous(_ request: ServerScreenSharingRequest) -> ServerScreenSharingRequest {
+    var request = request
+    request.app = nil
+    return request
+  }
+
+  @Test func anAppIsOfferedAppSessionsAndAChallengeAndAnOldViewerIsToldToUpdate() async {
     let world = World()
     world.activityState = .active
     let host = world.host()
 
-    let anonymous = await host.handle(world.request(.capabilities))
-    #expect(anonymous.status == "available")
-    #expect(anonymous.abilities == nil && anonymous.challenge == nil && anonymous.reason == nil)
+    Self.expectUpdateReply(await host.handle(Self.anonymous(world.request(.capabilities))))
 
     let named = await host.handle(world.capabilities(as: .macBook))
     #expect(named.status == "available" && named.abilities == [ServerScreenSharingReply.appSessions])
@@ -28,21 +38,17 @@ struct ComputerUseLivePreviewHostIdentityTests {
     #expect(named.displays.map(\.id) == [Self.target])
   }
 
-  @Test func refusalsCarryAReasonForAnAppAndTodaysReplyForAnOldViewer() async {
+  @Test func refusalsCarryAReasonForAnApp() async {
     let world = World()
     let host = world.host()
 
     let idle = await host.handle(world.capabilities(as: .macBook))
     #expect(idle.status == "unavailable" && idle.reason == .nothingToView && idle.challenge == nil)
     #expect(idle.message == "The agent is not controlling an app right now.")
-    let idleOld = await host.handle(world.request(.capabilities))
-    #expect(idleOld.status == "unavailable" && idleOld.message == idle.message && idleOld.reason == nil)
 
     world.activityState = .active
     world.access = false
     #expect(await host.handle(world.capabilities(as: .macBook)).reason == .permissionMissing)
-    let deniedOld = await host.handle(world.request(.capabilities))
-    #expect(deniedOld.status == "permission-required" && deniedOld.reason == nil)
   }
 
   @Test func aSignedStartIsGrantedASessionTokenThatHeartbeatsAndStopsIt() async throws {
@@ -67,16 +73,22 @@ struct ComputerUseLivePreviewHostIdentityTests {
     #expect(after.status == "stopped" && after.reason == nil)
   }
 
-  @Test func aHeartbeatWithATokenNeverFallsBackToTheWorkspaceAndPane() async {
+  @Test func onlyTheSessionsOwnTokenKeepsItAliveAndAnUnidentifiedRequestIsToldToUpdate() async throws {
     let world = World()
     world.activityState = .active
     let host = world.host()
-    _ = await host.handle(world.request(.start))
+    let started = try await world.started(on: host)
 
-    var forged = world.request(.heartbeat)
-    forged.session = String(repeating: "0", count: 64)
-    #expect(await host.handle(forged).status == "stopped")
-    #expect(await host.handle(world.request(.heartbeat)).status == "connecting")
+    #expect(
+      await host.handle(world.following(started.start, .heartbeat, session: String(repeating: "0", count: 64)))
+        .status == "stopped")
+    Self.expectUpdateReply(await host.handle(world.following(started.start, .heartbeat, session: nil)))
+    Self.expectUpdateReply(await host.handle(Self.anonymous(world.request(.start))))
+    var restart = world.request(.restart)
+    restart.app = .macBook
+    Self.expectUpdateReply(await host.handle(restart))
+    #expect(await host.handle(world.following(started, .heartbeat)).status == "connecting")
+    #expect(host.sessionCount == 1 && world.peers.count == 1)
   }
 
   @Test func aStartWhoseKeyIsNotProvenCreatesNothingAndGetsAFreshChallenge() async throws {
@@ -150,12 +162,12 @@ struct ComputerUseLivePreviewHostIdentityTests {
     #expect(await host.handle(world.following(second, .heartbeat, session: secondToken)).status == "connecting")
   }
 
-  @Test func theViewerLimitKeepsTodaysReplyAndAnAppsOwnSessionDoesNotCountTwice() async throws {
+  @Test func theViewerLimitKeepsItsReplyAndAnAppsOwnSessionDoesNotCountTwice() async throws {
     let world = World()
     world.activityState = .active
     let host = world.host()
-    for _ in 1..<ComputerUseLivePreviewHost.maximumSessions {
-      _ = await host.handle(world.request(.start, viewer: UUID()))
+    for number in 1..<ComputerUseLivePreviewHost.maximumSessions {
+      _ = try await world.started(as: .viewer(number), on: host)
     }
 
     #expect(await host.handle(try await world.start(as: .macBook, on: host)).status == "connecting")
@@ -199,20 +211,17 @@ struct ComputerUseLivePreviewHostIdentityTests {
     #expect(host.sessionCount == 0 && world.peers.allSatisfy(\.closed) && world.attached.isEmpty)
   }
 
-  @Test func whenTheAgentStopsAnAppIsToldThereIsNothingToViewAndAnOldViewerGetsTodaysReply() async throws {
+  @Test func whenTheAgentStopsAnAppIsToldThereIsNothingToView() async throws {
     let world = World()
     world.activityState = .active
     let host = world.host()
     let start = try await world.start(as: .macBook, on: host)
     let token = await host.handle(start).session
-    _ = await host.handle(world.request(.start))
 
     world.activityState = .stopped
     let app = await host.handle(world.following(start, .heartbeat, session: token))
-    let old = await host.handle(world.request(.heartbeat))
 
     #expect(app.status == "stopped" && app.message == Self.stoppedControlling && app.reason == .nothingToView)
-    #expect(old.status == "stopped" && old.message == Self.stoppedControlling && old.reason == nil)
   }
 
   @Test func aSessionTheHostEndedWhenTheAgentStoppedIsRememberedForItsLastSixteenTokens() async throws {

@@ -3,15 +3,13 @@ import type { IncomingMessage, ServerResponse } from "node:http"
 import {
   ScreenSharingReply,
   ScreenSharingRequest,
-  type ScreenSharingMediaAddress,
-  type WorkspacePane
+  type ScreenSharingMediaAddress
 } from "@codevisor/api"
 import { Schema } from "effect"
 
 import {
   BoundedBody,
   HttpFailure,
-  run,
   writeJson,
   type CodevisorServerConfig,
   type CodevisorServerServices
@@ -19,39 +17,12 @@ import {
 
 const maxRequestBytes = 300 * 1024
 const uuid = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i
-const computerUsePrefix = "computer-use:"
 const computerUseTarget =
   /^computer-use:[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i
-
-const computerUseSessionId = (displayId: string | undefined): string | undefined =>
-  displayId !== undefined && computerUseTarget.test(displayId)
-    ? displayId.slice(computerUsePrefix.length).toLowerCase()
-    : undefined
-
 const simulatorTarget = /^simulator:[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i
-const isSimulatorTarget = (displayId: string | undefined): boolean =>
-  displayId !== undefined && simulatorTarget.test(displayId)
-
-const desktopPaneTypes: ReadonlySet<string> = new Set(["screen-sharing", "machine-desktop"])
-
-const paneMismatchesTarget = (
-  pane: WorkspacePane,
-  displayId: string | undefined,
-  sessionId: string | undefined
-): boolean => {
-  if (isSimulatorTarget(displayId)) return pane.paneType !== "simulator"
-  if (sessionId === undefined) return !desktopPaneTypes.has(pane.paneType)
-  return (
-    pane.paneType !== "chat" ||
-    pane.resourceKind !== "session" ||
-    String(pane.resourceId).toLowerCase() !== sessionId
-  )
-}
 
 const isKnownTarget = (displayId: string): boolean =>
-  uuid.test(displayId) ||
-  computerUseSessionId(displayId) !== undefined ||
-  isSimulatorTarget(displayId)
+  uuid.test(displayId) || computerUseTarget.test(displayId) || simulatorTarget.test(displayId)
 
 const endpointId = /^[0-9a-f]{64}$/i
 const maxMediaAddrs = 32
@@ -90,10 +61,18 @@ const sessionIsWellFormed = (payload: ScreenSharingRequest): boolean =>
 const startTargetIsValid = (payload: ScreenSharingRequest): boolean =>
   payload.displayId === undefined ? payload.app !== undefined : isKnownTarget(payload.displayId)
 
-const appOwnsSession = (payload: ScreenSharingRequest): boolean => {
-  if (payload.operation === "heartbeat") return payload.session !== undefined
-  return payload.app !== undefined
-}
+const isIdentified = (payload: ScreenSharingRequest): boolean =>
+  payload.app !== undefined ||
+  payload.operation === "stop" ||
+  (payload.operation === "heartbeat" && payload.session !== undefined)
+
+const updateNeeded = (config: CodevisorServerConfig): ScreenSharingReply => ({
+  version: 1,
+  status: "unavailable",
+  reason: "update-needed",
+  message: `Update Codevisor on this device to view ${config.cloud?.machineName?.() ?? config.name}.`,
+  displays: []
+})
 
 const isMediaAddress = (media: ScreenSharingMediaAddress | undefined): boolean =>
   media !== undefined &&
@@ -103,7 +82,7 @@ const isMediaAddress = (media: ScreenSharingMediaAddress | undefined): boolean =
   media.directAddrs.every((addr) => addr.length <= 64)
 
 export const routeScreenSharing = async (
-  services: CodevisorServerServices,
+  _services: CodevisorServerServices,
   config: CodevisorServerConfig,
   request: IncomingMessage,
   response: ServerResponse,
@@ -132,8 +111,14 @@ export const routeScreenSharing = async (
     )
   if (![payload.workspaceId, payload.paneId, payload.viewerId].every((id) => uuid.test(id)))
     throw new HttpFailure(400, "Invalid Screen Sharing identity")
+  if (config.screenSharingVNC === undefined && !isIdentified(payload)) {
+    writeJson(response, 200, updateNeeded(config))
+    return true
+  }
   if (!appIsWellFormed(payload) || !sessionIsWellFormed(payload))
     throw new HttpFailure(400, "Invalid Screen Sharing identity")
+  if (config.screenSharingVNC === undefined && payload.operation === "restart")
+    throw new HttpFailure(400, "Invalid Screen Sharing request")
   const starts = payload.operation === "start" || payload.operation === "restart"
   if (
     starts &&
@@ -144,25 +129,6 @@ export const routeScreenSharing = async (
     throw new HttpFailure(400, "Invalid Screen Sharing identity")
   if (payload.displayId !== undefined && !isKnownTarget(payload.displayId))
     throw new HttpFailure(400, "Invalid Screen Sharing display")
-  const checksPane = ["start", "restart", "heartbeat"].includes(payload.operation)
-  if (checksPane && !appOwnsSession(payload)) {
-    const sessionId = computerUseSessionId(payload.displayId)
-    const workspace = (await run(services.db.listWorkspaces)).find(
-      (item) => item.id.toLowerCase() === payload.workspaceId.toLowerCase()
-    )
-    const pane = (await run(services.db.listWorkspacePanes)).find(
-      (item) => item.id.toLowerCase() === payload.paneId.toLowerCase()
-    )
-    if (
-      workspace === undefined ||
-      workspace.isArchived ||
-      pane === undefined ||
-      pane.workspaceId.toLowerCase() !== workspace.id.toLowerCase() ||
-      pane.providerId !== "codevisor" ||
-      paneMismatchesTarget(pane, payload.displayId, sessionId)
-    )
-      throw new HttpFailure(404, "Screen Sharing pane is no longer available")
-  }
   if (config.screenSharing === undefined)
     throw new HttpFailure(501, "Screen Sharing requires the native Codevisor app on a Mac")
   let result: ScreenSharingReply

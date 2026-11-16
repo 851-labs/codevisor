@@ -263,15 +263,6 @@ struct ScreenSharingHostDisplaySwitchTests {
   @Test func aDisplayOnAHeartbeatWithoutTheSessionsTokenIsIgnored() async throws {
     try await Fixture.run { mac in
       mac.displays = [Fixture.main, Fixture.side]
-      let stable = mac.stableStart()
-      _ = await mac.send(stable)
-      var withDisplay = mac.following(stable, .heartbeat)
-      withDisplay.displayId = "side"
-
-      let legacy = await mac.send(withDisplay)
-      #expect(legacy.status == "connecting" && legacy.reason == nil && legacy.display == nil)
-      #expect(mac.host.current?.displayID == Fixture.displayID(of: Fixture.main))
-
       #expect(await mac.send(mac.start(as: .macBook, .open)).status == "connecting")
       var junk = mac.heartbeat(as: .macBook, sharing: "side")
       junk.session = String(repeating: "0", count: 64)

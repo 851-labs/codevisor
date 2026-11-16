@@ -17,14 +17,13 @@ struct ScreenSharingHostEndingTests {
     _ ending: ScreenSharingHostEnding, _ reason: ServerScreenSharingReason
   ) async throws {
     try await Fixture.run { mac in
-      for start in [mac.start(as: .macBook, .open), mac.stableStart()] {
-        _ = await mac.send(start)
-        await mac.host.end(try #require(mac.host.current), as: ending)
-        let beat = await mac.send(mac.following(start, .heartbeat))
-        #expect(beat.status == "failed" && beat.reason == reason)
-        #expect(beat.message == "Screen sharing was stopped on the host Mac.")
-        #expect(beat.holderName == nil)
-      }
+      let start = mac.start(as: .macBook, .open)
+      _ = await mac.send(start)
+      await mac.host.end(try #require(mac.host.current), as: ending)
+      let beat = await mac.send(mac.following(start, .heartbeat))
+      #expect(beat.status == "failed" && beat.reason == reason)
+      #expect(beat.message == "Screen sharing was stopped on the host Mac.")
+      #expect(beat.holderName == nil)
     }
   }
 
@@ -39,11 +38,9 @@ struct ScreenSharingHostEndingTests {
       _ = await mac.send(mac.start(as: .macBook, .open))
       await mac.host.end(try #require(mac.host.current), as: ending)
 
-      for reconnect in [mac.start(as: .macBook, .attach), .restarting(mac.start(as: .macBook, .attach))] {
-        let refused = await mac.send(reconnect)
-        #expect(refused.status == "failed" && refused.reason == reason && refused.media == nil)
-        #expect(refused.message == "Screen sharing was stopped on the host Mac.")
-      }
+      let refused = await mac.send(mac.start(as: .macBook, .attach))
+      #expect(refused.status == "failed" && refused.reason == reason && refused.media == nil)
+      #expect(refused.message == "Screen sharing was stopped on the host Mac.")
       #expect(mac.host.current == nil)
 
       #expect(await mac.send(mac.start(as: .macBook, .open)).status == "connecting")
@@ -89,20 +86,6 @@ struct ScreenSharingHostEndingTests {
     }
   }
 
-  @Test func aStableViewersStopThatRacesStopSharingLeavesItStoppedAsBefore() async throws {
-    try await Fixture.run { mac in
-      let stable = mac.stableStart()
-      _ = await mac.send(stable)
-
-      mac.host.systemStopped(.stoppedOnHost)
-      #expect(await mac.send(mac.following(stable, .stop)).status == "stopped")
-
-      let beat = await mac.send(mac.following(stable, .heartbeat))
-      #expect(beat.status == "stopped" && beat.reason == nil)
-      #expect(beat.message == "Screen sharing ended on the host Mac.")
-    }
-  }
-
   @Test func anAppsStopThatRacesStopSharingStillHoldsBackItsReconnect() async throws {
     try await Fixture.run { mac in
       let start = mac.start(as: .macBook, .open)
@@ -144,18 +127,5 @@ struct ScreenSharingHostEndingTests {
       #expect(await mac.send(mac.following(start, .heartbeat)).reason == reason)
       #expect(await mac.send(mac.start(as: .macBook, .attach)).reason == reason)
     }
-  }
-}
-
-extension ServerScreenSharingRequest {
-  static func restarting(_ start: ServerScreenSharingRequest, display: String? = nil) -> ServerScreenSharingRequest {
-    var request = ServerScreenSharingRequest(
-      operation: .restart, workspaceId: start.workspaceId, paneId: start.paneId, viewerId: start.viewerId,
-      displayId: display ?? start.displayId)
-    request.engine = start.engine
-    request.media = start.media
-    request.app = start.app
-    request.intent = start.intent
-    return request
   }
 }

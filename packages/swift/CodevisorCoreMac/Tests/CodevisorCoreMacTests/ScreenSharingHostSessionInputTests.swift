@@ -48,10 +48,12 @@ struct ScreenSharingHostSessionInputTests {
   private static func session(
     sharing displayID: CGDirectDisplayID, on displays: FakeDisplays
   ) throws -> ScreenSharingHostSession {
-    let request = ServerScreenSharingRequest(operation: .start, workspaceId: UUID(), paneId: UUID(), viewerId: UUID())
+    var request = ServerScreenSharingRequest(operation: .start, workspaceId: UUID(), paneId: UUID(), viewerId: UUID())
+    request.app = .init(key: String(repeating: "a", count: 64), name: "Viewer")
     let display = ServerScreenSharingDisplay(id: "display", name: "Built-in Display", width: 1512, height: 982)
     return try ScreenSharingHostSession(
-      request: request, display: display, displayID: displayID, viewerEndpointId: "viewer",
+      owner: try #require(ScreenSharingHostLease.Owner(request)), request: request, display: display,
+      displayID: displayID, viewerEndpointId: "viewer",
       encoder: .videoToolbox, displayBounds: displays.bounds)
   }
 }

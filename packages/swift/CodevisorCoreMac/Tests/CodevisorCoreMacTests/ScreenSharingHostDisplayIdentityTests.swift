@@ -11,12 +11,11 @@ struct ScreenSharingHostDisplayIdentityTests {
   private static let standInWhileVirtual = ServerScreenSharingDisplay(
     id: "stand-in", name: "Display", width: 3840, height: 2160)
 
-  @Test func anAppNeverSeesTheHostsVirtualDisplayAndAStableViewerSeesTodaysList() async throws {
+  @Test func anAppNeverSeesTheHostsVirtualDisplay() async throws {
     try await Fixture.run { mac in
       mac.displays = [Fixture.hostVirtual, Fixture.main, Fixture.side]
 
       #expect(await mac.capabilities(as: .macBook).displays == [Fixture.main, Fixture.side])
-      #expect(await mac.capabilities(as: nil).displays == [Fixture.hostVirtual, Fixture.main, Fixture.side])
     }
   }
 
@@ -30,29 +29,14 @@ struct ScreenSharingHostDisplayIdentityTests {
       let swapped = await mac.send(mac.heartbeat(as: .macBook))
       #expect(swapped.display == Self.standInWhileVirtual && swapped.displays == [Self.standInWhileVirtual])
       #expect(await mac.capabilities(as: .iPhone).displays == [Self.standInWhileVirtual])
-      #expect(await mac.capabilities(as: nil).displays == [Fixture.hostVirtual])
 
       try await mac.show([Fixture.standInAgain], sharedAs: Fixture.standInAgain)
       let back = await mac.send(mac.heartbeat(as: .macBook))
       #expect(back.display == Fixture.standIn && back.displays == [Fixture.standIn])
-      #expect(await mac.capabilities(as: nil).displays == [Fixture.standInAgain])
 
       let again = await mac.send(mac.start(as: .macBook, .attach, display: "stand-in"))
       #expect(again.status == "connecting" && again.display == Fixture.standIn)
       #expect(mac.host.current?.displayID == Fixture.displayID(of: Fixture.standInAgain))
-    }
-  }
-
-  @Test func aStableViewerOnAHeadlessMacStartsOnWhateverTheListShowsAsToday() async throws {
-    try await Fixture.run { mac in
-      mac.displays = [Fixture.standIn]
-      _ = await mac.capabilities(as: .macBook)
-      mac.displays = [Fixture.standInAgain]
-
-      #expect(await mac.send(mac.stableStart(display: "stand-in")).status == "unavailable")
-      let granted = await mac.send(mac.stableStart(display: "stand-in-again"))
-      #expect(granted.status == "connecting" && granted.display == nil && granted.displays.isEmpty)
-      #expect(mac.host.current?.display == Fixture.standInAgain)
     }
   }
 

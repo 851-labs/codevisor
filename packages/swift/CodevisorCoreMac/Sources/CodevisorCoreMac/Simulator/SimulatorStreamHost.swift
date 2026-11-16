@@ -111,6 +111,7 @@ final class SimulatorStreamHost {
   private func respond(to request: ServerScreenSharingRequest) async -> ServerScreenSharingReply {
     guard !isShutdown else { return .init(status: "stopped") }
     guard request.version == 1 else { return Self.updateNeeded }
+    if let refusal = identity.refusal(toIdentify: request) { return refusal }
     guard let udid = SimulatorStreamTarget.udid(from: request.displayId) else {
       return .init(status: "failed", message: "Invalid simulator.")
     }
@@ -121,7 +122,8 @@ final class SimulatorStreamHost {
     case .stop: return stop(request)
     case .setScale: return .init(status: "unsupported", message: "A simulator's scale can't be set.")
     case .heartbeat: return heartbeat(request, udid: udid)
-    case .start, .restart: return await admit(request, udid: udid)
+    case .start: return await admit(request, udid: udid)
+    case .restart: return ScreenSharingStreamIdentity.updateNeeded
     }
   }
 
@@ -148,7 +150,9 @@ final class SimulatorStreamHost {
   private func admit(_ request: ServerScreenSharingRequest, udid: String) async -> ServerScreenSharingReply {
     if let refusal = await identity.refusal(toStart: request) { return refusal }
 
-    let owner = identity.begin(request, target: udid)
+    guard let owner = identity.begin(request, target: udid) else {
+      return ScreenSharingStreamIdentity.updateNeeded
+    }
     defer { identity.finish(request, as: owner) }
     return await start(request, owner: owner, udid: udid)
   }
@@ -240,8 +244,7 @@ final class SimulatorStreamHost {
       }
       guard !isShutdown, sessions[owner] === session else { throw CancellationError() }
       device.show(to: peer)
-      let holder = owner.isApp ? "an app" : "a pane"
-      Self.logger.notice("Stream granted to \(holder, privacy: .public): \(self.sessions.count) viewing")
+      Self.logger.notice("Stream granted to an app: \(self.sessions.count) viewing")
       return .connecting(grant, session: session.token)
     } catch {
       if sessions[owner] === session { end(owner: owner, session: session) }

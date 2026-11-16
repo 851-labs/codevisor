@@ -11,8 +11,8 @@ struct ScreenSharingHostProofTests {
 
   @Test func aChallengeIsHandedOnlyToACapabilitiesRequestThatNamesAnApp() async throws {
     try await Fixture.run { mac in
-      let anonymous = await mac.send(mac.following(mac.stableStart(), .capabilities))
-      #expect(anonymous.status == "available" && anonymous.challenge == nil)
+      let anonymous = await mac.send(mac.following(mac.startWithoutApp(), .capabilities))
+      #expect(anonymous.reason == .updateNeeded && anonymous.challenge == nil)
 
       let first = try #require(await mac.challenge())
       let second = try #require(await mac.challenge())
@@ -99,23 +99,6 @@ struct ScreenSharingHostProofTests {
 
       let beat = await mac.send(mac.following(start, .heartbeat))
       #expect(beat.status == "connecting" && beat.display == Fixture.main && beat.session == nil)
-    }
-  }
-
-  @Test func aTokenNeverKeepsAStableViewersSessionAlive() async throws {
-    try await Fixture.run { mac in
-      let stable = mac.stableStart()
-      let granted = await mac.send(stable)
-      #expect(granted.status == "connecting" && granted.session == nil)
-
-      var withToken = mac.following(stable, .heartbeat)
-      withToken.session = String(repeating: "0", count: 64)
-      #expect(await mac.send(withToken).status == "stopped")
-      var stop = mac.following(stable, .stop)
-      stop.session = String(repeating: "0", count: 64)
-      #expect(await mac.send(stop).status == "stopped")
-
-      #expect(await mac.send(mac.following(stable, .heartbeat)).status == "connecting")
     }
   }
 
