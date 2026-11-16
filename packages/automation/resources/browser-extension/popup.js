@@ -29,6 +29,11 @@ const formattedTime = (timestamp) => {
   })
 }
 
+const commandError = (status) =>
+  status.lastCommandError
+    ? `${status.lastCommandError} (${formattedTime(status.lastCommandErrorAt)})`
+    : ""
+
 const summaryFor = (status) => {
   if (status.connected) return "Connected to Codevisor"
   if (status.state === "connecting") return "Connecting to Codevisor…"
@@ -51,8 +56,8 @@ const render = (status) => {
   elements.lastConnected.textContent = formattedTime(status.lastConnectedAt)
   elements.relay.textContent = status.relay || "Unavailable"
   elements.relay.title = status.relay || ""
-  elements.version.textContent = status.version || "Unknown"
-  const error = status.lastConnectionError || status.lastCommandError
+  elements.version.textContent = status.build || status.version || "Unknown"
+  const error = status.lastConnectionError || commandError(status)
   elements.errorRow.hidden = !error
   elements.lastError.textContent = error || "—"
   elements.lastError.title = error || ""

@@ -44,6 +44,7 @@ export const browserStatusReport = (inputs: {
   readonly managedError: string | undefined
   readonly builtin: BuiltinBrowserState
   readonly extension: BrowserExtensionState
+  readonly extensionNote?: string | undefined
 }) => ({
   selected: inputs.selected ?? null,
   ...(inputs.platform === undefined ? {} : { user: { platform: inputs.platform } }),
@@ -55,7 +56,8 @@ export const browserStatusReport = (inputs: {
   builtin: builtinReport(inputs.builtin),
   extension: {
     state: inputs.extension,
-    visibleToUser: inputs.extension === "connected"
+    visibleToUser: inputs.extension === "connected",
+    ...(inputs.extensionNote === undefined ? {} : { outdated: true, note: inputs.extensionNote })
   }
 })
 

@@ -43,6 +43,7 @@ export class CdpConnection {
   #nextId = 1
   #closed: Error | undefined
   #sessionRecoveryHandler: SessionRecoveryHandler | undefined
+  #describeError: ((summary: string) => string) | undefined
 
   private constructor(socket: CdpSocket) {
     this.#socket = socket
@@ -126,6 +127,10 @@ export class CdpConnection {
     })
   }
 
+  describeErrorsWith(describe: (summary: string) => string): void {
+    this.#describeError = describe
+  }
+
   setSessionRecoveryHandler(handler: SessionRecoveryHandler): () => void {
     this.#sessionRecoveryHandler = handler
     return () => {
@@ -181,7 +186,7 @@ export class CdpConnection {
       const error = recordOrEmpty(message.error)
       const summary = typeof error.message === "string" ? error.message : "Browser command failed"
       const detail = typeof error.data === "string" ? `: ${error.data}` : ""
-      pending.reject(new Error(`${summary}${detail}`))
+      pending.reject(new Error(`${this.#describeError?.(summary) ?? summary}${detail}`))
     } else pending.resolve(message.result ?? {})
     return true
   }

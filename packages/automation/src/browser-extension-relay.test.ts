@@ -6,9 +6,10 @@ import { join } from "node:path"
 import { promisify } from "node:util"
 import { crc32 } from "node:zlib"
 
-import { afterEach, describe, expect, it, vi } from "vitest"
+import { afterEach, describe, expect, it, onTestFinished, vi } from "vitest"
 import { WebSocket } from "ws"
 
+import { bundledExtension } from "./browser-extension-build.js"
 import type { BrowserExtensionSocket } from "./browser-extension-relay.js"
 import {
   browserExtensionArchivePath,
@@ -82,6 +83,7 @@ describe("browser extension development installer", () => {
       iconDirectory: generatedIcons
     })
     const manifest: unknown = JSON.parse(await readFile(join(extension, "manifest.json"), "utf8"))
+    expect(expectRecord(manifest, "manifest").version_name).toMatch(/^0\.2\.0 \([0-9a-f]{8}\)$/)
 
     expect(manifest).toMatchObject({
       name: "Codevisor (mirrlees)",
@@ -296,8 +298,15 @@ class FakeExtensionSocket extends EventEmitter implements BrowserExtensionSocket
   readyState: number = WebSocket.OPEN
   readonly received: Array<string> = []
 
-  constructor(private unheardMessages = 0) {
+  constructor(
+    private unheardMessages = 0,
+    private readonly hello?: Record<string, unknown>
+  ) {
     super()
+  }
+
+  private reply(message: Record<string, unknown>): void {
+    this.emit("message", Buffer.from(JSON.stringify(message)))
   }
 
   send(message: string): void {
@@ -307,7 +316,10 @@ class FakeExtensionSocket extends EventEmitter implements BrowserExtensionSocket
       this.unheardMessages -= 1
       return
     }
-    this.emit("message", Buffer.from(JSON.stringify({ id, result: { targetInfos: [] } })))
+    if (this.received.length === 1 && this.hello !== undefined)
+      this.reply({ method: "Codevisor.hello", params: this.hello })
+    if (method === "Target.getTargets") this.reply({ id, result: { targetInfos: [] } })
+    else this.reply({ id, error: { message: `Unsupported browser command: ${String(method)}` } })
   }
   close(): void {
     this.readyState = WebSocket.CLOSED
@@ -317,6 +329,40 @@ class FakeExtensionSocket extends EventEmitter implements BrowserExtensionSocket
     this.close()
   }
 }
+
+const connectedRelay = async (hello?: Record<string, unknown>) => {
+  const relay = makeBrowserExtensionRelay()
+  onTestFinished(() => relay.close())
+  const ready = relay.connect()
+  relay.accept(new FakeExtensionSocket(0, hello))
+  return { relay, connection: await ready }
+}
+const bundledBuild = () => bundledExtension(browserExtensionPath()!)
+
+describe("browser extension relay version check", () => {
+  it("says nothing about an extension that matches the copy this app ships", async () => {
+    const { protocol, build } = bundledBuild()
+    expect((await connectedRelay({ protocol, build })).relay.outdatedNote()).toBeUndefined()
+    expect((await connectedRelay({ protocol, build: null })).relay.outdatedNote()).toBeUndefined()
+    expect(makeBrowserExtensionRelay().outdatedNote()).toBeUndefined()
+  })
+
+  it("flags an extension that never introduces itself, and explains the commands it lacks", async () => {
+    const { relay, connection } = await connectedRelay()
+    expect(relay.outdatedNote()).toMatch(/^The Codevisor Chrome extension is older than this app/)
+    await expect(connection.send("Target.activateTarget", { targetId: "7" })).rejects.toThrow(
+      "The Codevisor Chrome extension is out of date: it doesn't know Target.activateTarget."
+    )
+  })
+
+  it("flags an unpacked copy staged by a different version of the app", async () => {
+    const { relay } = await connectedRelay({
+      protocol: bundledBuild().protocol,
+      build: "0.2.0 (00000000)"
+    })
+    expect(relay.outdatedNote()).toMatch(/^Chrome is running an unpacked copy/)
+  })
+})
 
 describe("browser extension relay readiness", () => {
   afterEach(() => {

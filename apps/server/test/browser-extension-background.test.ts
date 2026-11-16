@@ -178,6 +178,7 @@ const startBackground = async (relay: string) => {
     URL
   })
   runInContext(await extensionScript("relay-candidates.js"), context)
+  runInContext(await extensionScript("extension-build.js"), context)
   runInContext(await extensionScript("background.js"), context)
   return {
     alarm,
@@ -259,7 +260,38 @@ describe("browser extension background tabs", () => {
   })
 })
 
+const withLastError = (message: string | null) =>
+  expect.objectContaining({ lastCommandError: message })
+
 describe("browser extension background connection", () => {
+  it("introduces itself on connect, and keeps only real command failures from this connection", async () => {
+    const { command, runtimeMessage, socket } = await connectedBackground()
+    expect(socket.sent).toContainEqual({
+      method: "Codevisor.hello",
+      params: { protocol: 1, version: "0.2.0", build: null }
+    })
+    const reportedStatus = () => {
+      const reported = vi.fn()
+      runtimeMessage.emit({ type: "status" }, {}, reported)
+      return reported
+    }
+
+    expect(await command(1, "Codevisor.futureCommand", {})).toEqual({
+      id: 1,
+      error: { message: "Unsupported browser command: Codevisor.futureCommand" }
+    })
+    expect(reportedStatus()).toHaveBeenCalledWith(withLastError(null))
+
+    await command(2, "Target.closeTarget", { targetId: "99" })
+    expect(reportedStatus()).toHaveBeenCalledWith(
+      withLastError("That tab is not shared with Codevisor")
+    )
+
+    runtimeMessage.emit({ type: "reconnect" }, {}, vi.fn())
+    await FakeWebSocket.instances.at(-1)!.open()
+    expect(reportedStatus()).toHaveBeenCalledWith(withLastError(null))
+  })
+
   it("keeps one socket active, schedules durable retries, and supports manual reconnect", async () => {
     const { alarm, alarms, importScripts, retryScheduled, runtimeMessage } = await startBackground(
       "ws://127.0.0.1:51000/relay"
@@ -274,6 +306,7 @@ describe("browser extension background connection", () => {
       "clipboard-commands.js",
       "history-commands.js"
     )
+    expect(importScripts).toHaveBeenCalledWith("extension-build.js")
     expect(FakeWebSocket.instances).toHaveLength(1)
     const first = FakeWebSocket.instances[0]!
     await first.error()
