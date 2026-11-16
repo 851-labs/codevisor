@@ -30,6 +30,10 @@ struct ChromiumBrowserPaneView: View {
         } else if model.webView == nil, model.snapshot == nil {
           ProgressView().frame(maxWidth: .infinity, maxHeight: .infinity)
         }
+        if let dialog = model.dialogs.current {
+          ChromiumPageDialogView(dialog: dialog, dialogs: model.dialogs, page: model.webView)
+            .id(ObjectIdentifier(dialog))
+        }
       }
       .frame(maxWidth: .infinity, maxHeight: .infinity)
       .overlay(alignment: .topTrailing) {
