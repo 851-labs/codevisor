@@ -27,6 +27,7 @@ import {
 import { hasUnpackedInstall } from "./browser-extension-unpacked.js"
 import {
   chosenBrowserHost,
+  browserHostLost,
   probedBrowserHost,
   makeBrowserHostRegistry,
   unreachableBrowserHostReason,
@@ -237,12 +238,13 @@ export const makeBrowserUseProvider = (
     selectedTargets.delete(handles)
     sessionTargets.delete(handles)
     sessionDispositions.delete(handles)
-    await repls.reset(context.sessionId)
+    repls.retire(context.sessionId)
   }
 
   const dropNativeRuntime = async (context: AutomationProviderContext, active: BrowserRuntime) => {
+    const silentHost = hosts.silentHost(context.sessionId) ?? unansweredHost(active)
     await retireNativeRuntime(context, active)
-    return builtinLostResult(hosts.lostHost(context.sessionId))
+    return builtinLostResult(hosts.lostHost(context.sessionId), silentHost)
   }
 
   const rerouteBuiltin = async (context: AutomationProviderContext, current: BrowserRuntime) => {
@@ -410,10 +412,7 @@ export const makeBrowserUseProvider = (
         if (shown !== undefined) void previews.activity(context.sessionId, ready, shown)
         return labelBrowserResult(effectiveTool, result, browserLabel(backend, ready.nativeHost))
       } catch (cause) {
-        if (
-          active?.native &&
-          (active.connection.closed || /timed out|disconnected/i.test(String(cause)))
-        )
+        if (active?.native && (await browserHostLost(hosts, context.sessionId, active, cause)))
           return dropNativeRuntime(context, active)
         return textToolResult(cause instanceof Error ? cause.message : String(cause), true)
       }
@@ -488,3 +487,6 @@ export const makeBrowserUseProvider = (
   }
   return provider
 }
+
+const unansweredHost = (active: BrowserRuntime) =>
+  active.connection.closed ? undefined : active.nativeHost?.name

@@ -105,3 +105,22 @@ it.each([false, true])(
     }
   }
 )
+
+it("drops bindings after the running cell when a tool retires the session", async () => {
+  const repls = makeBrowserRepls()
+  const cell = async (code: string) =>
+    browserResultValue(
+      await repls.execute("session", code, async (name) => {
+        if (name === "tabs") return { tabs: [{ id: "first", selected: true }] }
+        repls.retire("session")
+        throw new Error("The browser pane was lost")
+      })
+    )
+  try {
+    await cell("var first = await browser.tabs.new()")
+    await expect(cell("await first.title()")).rejects.toThrow("The browser pane was lost")
+    expect(await cell("typeof first")).toBe("undefined")
+  } finally {
+    await repls.close()
+  }
+})
