@@ -14,6 +14,7 @@ import { makeBrowserCursorRegistry, type BrowserCursorRegistry } from "./browser
 import { requireNoOpenDialog } from "./browser-dialog-guard.js"
 import { initialPointerState, type PointerState } from "./browser-input.js"
 import { routeSnapshotRefs } from "./browser-snapshot-refs.js"
+import { invokeElementTools } from "./browser-use-invoke-element.js"
 import { invokeInteractionTools } from "./browser-use-invoke-interaction.js"
 import { invokeMouseTools } from "./browser-use-invoke-mouse.js"
 import { invokeNavigationTools } from "./browser-use-invoke-navigation.js"
@@ -52,6 +53,7 @@ type BrowserSessionTool = (session: BrowserSessionInvocation) => Promise<CallToo
 const toolHandlers = [
   invokeNavigationTools,
   invokePlaywrightTools,
+  invokeElementTools,
   invokePageTools,
   invokeInteractionTools,
   invokeMouseTools,

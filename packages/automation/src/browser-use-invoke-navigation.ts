@@ -2,7 +2,6 @@ import type { CallToolResult } from "@modelcontextprotocol/server"
 
 import {
   jsonResult,
-  numberArgument,
   openDialog,
   pageInformation,
   pageResult,
@@ -12,14 +11,21 @@ import {
   type PageHandle,
   type ResolvedElement
 } from "./browser-cdp-engine.js"
-import { withoutPointerOverlay } from "./browser-cursor.js"
 import { sendUnlessDialogOpens } from "./browser-dialog-race.js"
 import { releaseElement, resolveElement } from "./browser-locators.js"
+import {
+  captureScreenshot,
+  elementClip,
+  fullPageClip,
+  requestedClip,
+  screenshotFormat,
+  viewportClip,
+  type ScreenshotClip
+} from "./browser-screenshot.js"
 import { grantSiteAccess, navigationFailure } from "./browser-site-access.js"
 import { snapshotPage } from "./browser-snapshot.js"
 import type { BrowserToolInvocation, BrowserToolSessionState } from "./browser-use-invoke-types.js"
 import { maxWaitMs, waitBudget } from "./browser-wait-budget.js"
-import { isPlainRecord } from "./unknown-values.js"
 
 export const invokeNavigationTools = async (
   invocation: BrowserToolInvocation,
@@ -77,80 +83,15 @@ export const invokeNavigationTools = async (
         offset: args.offset
       })
     case "screenshot": {
-      const format = args.type === "jpeg" ? "jpeg" : "png"
-      let clip: { x: number; y: number; width: number; height: number; scale: number } | undefined
       let element: ResolvedElement | undefined
-      if (args.clip !== undefined) {
-        const requested = args.clip
-        if (!isPlainRecord(requested)) throw new Error("clip must be an object")
-        clip = {
-          x: numberArgument(requested, "x"),
-          y: numberArgument(requested, "y"),
-          width: numberArgument(requested, "width"),
-          height: numberArgument(requested, "height"),
-          scale: 1
-        }
-      } else if (args.target !== undefined) {
+      if (args.clip === undefined && args.target !== undefined)
         element = await resolveElement(active, page, args.target, false)
-        const metrics = await active.connection.send<{
-          cssVisualViewport: { pageX: number; pageY: number }
-        }>("Page.getLayoutMetrics", {}, page.sessionId)
-        clip = {
-          x: metrics.cssVisualViewport.pageX + element.x - element.width / 2,
-          y: metrics.cssVisualViewport.pageY + element.y - element.height / 2,
-          width: element.width,
-          height: element.height,
-          scale: 1
-        }
-      } else if (args.fullPage === true) {
-        const metrics = await active.connection.send<{
-          contentSize: { x: number; y: number; width: number; height: number }
-        }>("Page.getLayoutMetrics", {}, page.sessionId)
-        clip = { ...metrics.contentSize, scale: 1 }
-      } else {
-        const metrics = await active.connection.send<{
-          cssVisualViewport: {
-            pageX: number
-            pageY: number
-            clientWidth: number
-            clientHeight: number
-          }
-        }>("Page.getLayoutMetrics", {}, page.sessionId)
-        clip = {
-          x: metrics.cssVisualViewport.pageX,
-          y: metrics.cssVisualViewport.pageY,
-          width: metrics.cssVisualViewport.clientWidth,
-          height: metrics.cssVisualViewport.clientHeight,
-          scale: 1
-        }
-      }
       try {
-        const captured = await withoutPointerOverlay(active, page, () =>
-          active.connection
-            .send<{ data: string }>(
-              "Page.captureScreenshot",
-              {
-                format,
-                fromSurface: true,
-                captureBeyondViewport: args.fullPage === true,
-                clip
-              },
-              page.sessionId
-            )
-            .catch((cause: unknown) => {
-              throw captureFailure(cause, args.fullPage === true, clip)
-            })
-        )
-        const info = await pageInformation(active, page)
-        return {
-          content: [
-            {
-              type: "text",
-              text: `Page URL: ${info.url}\nScreenshot coordinates are CSS viewport coordinates.`
-            },
-            { type: "image", data: captured.data, mimeType: `image/${format}` }
-          ]
-        }
+        return await captureScreenshot(active, page, {
+          format: screenshotFormat(args.type),
+          clip: await screenshotClip(active, page, args, element),
+          fullPage: args.fullPage === true
+        })
       } finally {
         if (element !== undefined) await releaseElement(active, page, element)
       }
@@ -167,15 +108,16 @@ const slowNavigation = (cause: unknown, budget: number): unknown => {
   )
 }
 
-const captureFailure = (
-  cause: unknown,
-  fullPage: boolean,
-  clip: { width: number; height: number } | undefined
-): unknown => {
-  if (!fullPage || clip === undefined) return cause
-  return new Error(
-    `The whole page is ${Math.round(clip.width)} x ${Math.round(clip.height)} px, too large for the browser to capture as one image. Capture it in parts with tab.screenshot({ clip: { x, y, width, height } }), or read it with tab.getAXState().`
-  )
+const screenshotClip = (
+  runtime: BrowserRuntime,
+  page: PageHandle,
+  args: Readonly<Record<string, unknown>>,
+  element: ResolvedElement | undefined
+): ScreenshotClip | Promise<ScreenshotClip> => {
+  if (args.clip !== undefined) return requestedClip(args.clip)
+  if (element !== undefined) return elementClip(runtime, page, element)
+  if (args.fullPage === true) return fullPageClip(runtime, page)
+  return viewportClip(runtime, page)
 }
 
 const navigationResult = (runtime: BrowserRuntime, page: PageHandle, action: string) =>

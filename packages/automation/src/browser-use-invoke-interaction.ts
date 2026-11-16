@@ -9,6 +9,7 @@ import {
   verifiedActionResult
 } from "./browser-cdp-engine.js"
 import { delay } from "./browser-cdp.js"
+import { dragBetween } from "./browser-drag.js"
 import {
   dispatchClick,
   dispatchKeyEvent,
@@ -71,49 +72,7 @@ export const invokeInteractionTools = async (
       const start = await resolveElement(active, page, args.startTarget)
       const end = await resolveElement(active, page, args.endTarget)
       try {
-        await cursor.move(start.x, start.y)
-        await active.connection.send(
-          "Input.dispatchMouseEvent",
-          { type: "mouseMoved", x: start.x, y: start.y },
-          page.sessionId
-        )
-        await active.connection.send(
-          "Input.dispatchMouseEvent",
-          {
-            type: "mousePressed",
-            x: start.x,
-            y: start.y,
-            button: "left",
-            buttons: 1,
-            clickCount: 1
-          },
-          page.sessionId
-        )
-        for (let step = 1; step <= 10; step++) {
-          const progress = step / 10
-          const x = start.x + (end.x - start.x) * progress
-          const y = start.y + (end.y - start.y) * progress
-          await cursor.track(x, y)
-          await active.connection.send(
-            "Input.dispatchMouseEvent",
-            { type: "mouseMoved", x, y, button: "left", buttons: 1 },
-            page.sessionId
-          )
-          await delay(16)
-        }
-        await active.connection.send(
-          "Input.dispatchMouseEvent",
-          {
-            type: "mouseReleased",
-            x: end.x,
-            y: end.y,
-            button: "left",
-            buttons: 0,
-            clickCount: 1
-          },
-          page.sessionId
-        )
-        await cursor.pulse(end.x, end.y)
+        await dragBetween(active, page, cursor, { x: start.x, y: start.y }, { x: end.x, y: end.y })
       } finally {
         await Promise.all([releaseElement(active, page, start), releaseElement(active, page, end)])
       }

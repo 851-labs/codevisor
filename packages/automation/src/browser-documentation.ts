@@ -28,7 +28,8 @@ Navigation and capture:
 - Binary results have artifacts with local path fields through Codevisor. Read the attaching-files skill (through the skills tool) to share them; embed an existing path as ![label](<path>) or [Download](<path>).
 
 Playwright-style page API (tab.playwright):
-- domSnapshot(); locator(css); ref(ref); getByRole(role,{name?:string|RegExp,exact?}); getByLabel, getByPlaceholder, getByText(text,{exact?}); getByTestId(id).
+- domSnapshot(); locator(css); ref(ref); getByRole(role,{name?:string|RegExp,exact?}); getByLabel, getByPlaceholder, getByText, getByAltText, getByTitle(text,{exact?}); getByTestId(id).
+- Locators: click, dblclick, hover, fill, clear, type, press, pressSequentially, check, uncheck, setChecked, selectOption, focus, blur, dragTo(target), setInputFiles(workspacePaths), scrollIntoViewIfNeeded, dispatchEvent(type,eventInit?), screenshot(); reads: count, textContent, innerText, innerHTML, inputValue, getAttribute, boundingBox, isVisible, isHidden, isEnabled, isDisabled, isEditable, isChecked, evaluate, evaluateAll, allTextContents; compose with first, last, nth, filter, and, or, locator, getBy*; waitFor({state}).
 - frameLocator(css) composes through nested and cross-origin frames; when several frames match, pick one with .first(), .last() or .nth(index).
 - evaluate(fn,arg?,{timeoutMs?}): read-only page evaluation. The function may compute with its own local variables and read the page (including a GET fetch); changing the DOM, storage or location, or sending a request with a method or body, is refused. Act with locators instead.
 - expectNavigation(action,{url?,waitUntil?:'commit'|'domcontentloaded'|'load'|'networkidle',timeoutMs?}): arms before action; requires an actual main-frame navigation, including pushState/hash navigation.

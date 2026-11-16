@@ -299,6 +299,8 @@ const semanticLocatorKind = (locator: BrowserLocator) => {
   if (locator.label !== undefined) return "label"
   if (locator.placeholder !== undefined) return "placeholder"
   if (locator.testId !== undefined) return "testId"
+  if (locator.altText !== undefined) return "altText"
+  if (locator.title !== undefined) return "title"
   return "text"
 }
 
@@ -398,7 +400,14 @@ export const locatorBackendNodeIds = async (
     ids = await filterBackendNodeIdsByRoots(runtime, page, candidates, roots)
   } else {
     const kind = semanticLocatorKind(locator)
-    const expected = locator.label ?? locator.placeholder ?? locator.testId ?? locator.text ?? ""
+    const expected =
+      locator.label ??
+      locator.placeholder ??
+      locator.testId ??
+      locator.altText ??
+      locator.title ??
+      locator.text ??
+      ""
     const exact = locator.testId !== undefined || locator.exact === true
     const matches = await Promise.all(
       roots.map((root) =>
