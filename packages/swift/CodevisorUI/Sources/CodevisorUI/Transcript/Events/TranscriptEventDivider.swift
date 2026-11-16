@@ -27,7 +27,7 @@ private struct TranscriptEventDividerLabel: View {
       summary: summary, iconSize: 14, iconSpacing: 6, nameStyle: .primary, titleStyle: .secondary
     )
     .font(.caption)
-    .foregroundStyle(summary.tone.style(standard: .secondary))
+    .foregroundStyle(.secondary)
     .padding(.horizontal, 8)
     .padding(.vertical, 3)
     .background(Capsule().fill(Color.primary.opacity(isActive ? 0.1 : 0)))
