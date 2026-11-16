@@ -11,6 +11,7 @@ import {
 } from "./browser-cdp-engine.js"
 import type { BrowserRuntime, PageHandle, TargetInfo } from "./browser-cdp-engine.js"
 import { makeBrowserCursorRegistry, type BrowserCursorRegistry } from "./browser-cursor.js"
+import { requireNoOpenDialog } from "./browser-dialog-guard.js"
 import { initialPointerState, type PointerState } from "./browser-input.js"
 import { routeSnapshotRefs } from "./browser-snapshot-refs.js"
 import { invokeInteractionTools } from "./browser-use-invoke-interaction.js"
@@ -165,6 +166,7 @@ const invokeOnPage = async (session: BrowserSessionInvocation): Promise<CallTool
     page = await currentPage(active, state.selectedTargets, sessionKey)
   }
 
+  requireNoOpenDialog(active, page, session.toolName)
   const invocation = pageInvocation(session, routeSnapshotRefs(active, page, args))
   for (const invoke of toolHandlers) {
     const result = await invoke(invocation, state)

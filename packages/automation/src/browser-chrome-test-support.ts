@@ -19,6 +19,7 @@ export interface ChromeBrowser {
   readonly origins: ChromeFixtureOrigins
   readonly cell: (code: string) => Promise<unknown>
   readonly open: (path: string) => Promise<void>
+  readonly endTurn: () => Promise<void>
 }
 
 export type ChromeFixturePages = (origins: ChromeFixtureOrigins) => Readonly<Record<string, string>>
@@ -84,7 +85,10 @@ export const chromeBrowserSuite = (projectId: string, pages: ChromeFixturePages)
       try {
         toolValue(await provider.invoke(context, "use_backend", { backend: "managed" }))
         await cell("var tab = await browser.tabs.new()")
-        await use({ context, origins, cell, open })
+        const endTurn = async () => {
+          await provider.finishTurn?.(context.sessionId)
+        }
+        await use({ context, origins, cell, open, endTurn })
       } finally {
         await provider.closeSession(context.sessionId)
       }
