@@ -28,8 +28,8 @@ final class SimulatorStreamWorld {
   @ObservationIgnored private let installId = UUID()
   @ObservationIgnored private var beats = 0
 
-  init() {
-    host = FakeHost()
+  init(host: FakeHost = FakeHost()) {
+    self.host = host
     manager = ScreenSharingConnectionManager(clock: ScreenSharingConnectionClock(clock))
   }
 

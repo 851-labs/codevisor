@@ -42,6 +42,12 @@ final class SimulatorStream: SimulatorConnection {
     if case .failed(.nothingToView) = shared?.connection.state { true } else { false }
   }
 
+  var offersRetry: Bool {
+    guard case .failed(let reason) = shared?.connection.state else { return true }
+
+    return ScreenSharingFailureAction(for: reason) != nil
+  }
+
   var state: ScreenSharingSimulatorState? { shared?.deviceState }
 
   var frameSize: CGSize? { shared?.frameSize }

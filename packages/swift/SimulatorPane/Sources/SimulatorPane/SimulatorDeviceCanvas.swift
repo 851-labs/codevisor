@@ -386,8 +386,10 @@ struct SimulatorDeviceCanvas: View {
       case .failed(let message):
         VStack(spacing: 10) {
           Text(message).font(.callout).multilineTextAlignment(.center).foregroundStyle(.white.opacity(0.85))
-          Button("Reconnect") { model.reconnect() }
-            .buttonStyle(.glass)
+          if model.connection?.offersRetry != false {
+            Button("Reconnect") { model.reconnect() }
+              .buttonStyle(.glass)
+          }
         }
         .padding(20)
       case .streaming:

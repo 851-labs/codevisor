@@ -105,6 +105,14 @@ struct SimulatorStreamTests {
     #expect(world.host.starts.count == 2)
   }
 
+  @Test func anOldHostAsksForAnUpdateWithNoReconnectAndNoStart() async {
+    let world = World(host: FakeHost(abilities: []))
+    let stream = world.shown()
+
+    await awaitObserved { stream.phase == .failed("Update Codevisor on croissant.") }
+    #expect(!stream.offersRetry && world.host.starts.isEmpty)
+  }
+
   @Test func aSimulatorThatIsStillStartingIsWaitedForAndConnectsWhenItAppears() async {
     let world = World()
     world.host.answerEvery(
