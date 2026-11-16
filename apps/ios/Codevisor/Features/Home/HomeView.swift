@@ -136,7 +136,13 @@ struct HomeView: View {
   }
 
   var showsNewBotToolbarButton: Bool {
-    showsNewChatButton && sidebarMode == .bots
+    showsNewChatButton && sidebarMode == .bots && !showsBotsEmptyState
+  }
+
+  var showsBotsEmptyState: Bool {
+    guard sidebarMode == .bots, !showsSampleSidebar else { return false }
+
+    return !HomeSidebarContentBuilder(environment: environment, gitLookups: sidebarGitLookups).hasBots
   }
 
   var body: some View {

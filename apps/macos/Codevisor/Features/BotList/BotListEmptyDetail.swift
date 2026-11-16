@@ -1,15 +1,31 @@
+import CodevisorCore
+import CodevisorUI
 import SwiftUI
 
 struct BotListEmptyDetail: View {
+  @Environment(AppEnvironment.self) private var environment
   let onNewBot: () -> Void
 
   var body: some View {
-    ContentUnavailableView {
-      Label("No Bot Selected", systemImage: "bubble.left.and.bubble.right")
-    } description: {
-      Text("Choose a bot from the sidebar to continue the conversation.")
-    } actions: {
-      Button("New Bot", action: onNewBot)
+    if availability.hasBots {
+      BotNotSelectedDetail(onNewBot: onNewBot)
+    } else {
+      noBots
+        .toolbar(removing: .title)
+        .toolbarBackgroundVisibility(.hidden, for: .windowToolbar)
     }
+  }
+
+  private var noBots: some View {
+    ZStack {
+      if availability.hasLoaded {
+        BotsEmptyState(serverId: environment.defaultComposerServerId, onNewBot: onNewBot)
+      }
+    }
+    .frame(maxWidth: .infinity, maxHeight: .infinity)
+  }
+
+  private var availability: BotListAvailability {
+    BotListAvailability(environment: environment)
   }
 }

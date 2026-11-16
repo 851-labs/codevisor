@@ -254,7 +254,7 @@ struct HomeSidebarList: View {
   }
 
   private func showsBotsEmptyOverlay(_ content: HomeSidebarContent) -> Bool {
-    isConversation && content.bots.isEmpty && content.archivedBots.isEmpty
+    isConversation && !content.hasBots
   }
 
   private var botsEmptyState: some View {

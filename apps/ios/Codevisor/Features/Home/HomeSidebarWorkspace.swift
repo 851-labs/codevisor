@@ -144,6 +144,8 @@ struct HomeSidebarContent: Equatable {
 
   var showsBots: Bool { !bots.isEmpty || canCreateBots }
 
+  var hasBots: Bool { !bots.isEmpty || !archivedBots.isEmpty }
+
   var customSections: [CustomSection] { sections.map(\.section) }
 
   var unsectionedBots: [HomeSidebarBot] { bots.filter { $0.sectionID == nil } }

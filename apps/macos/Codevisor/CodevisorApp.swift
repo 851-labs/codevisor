@@ -141,7 +141,8 @@ struct RootView: View {
         }
       }
       .toolbar {
-        SidebarComposeToolbarItem(newChat: openNewChat, newBot: openNewBot, openThread: openBotThread)
+        SidebarComposeToolbarItem(
+          showsBlankPage: showsBlankPage, newChat: openNewChat, newBot: openNewBot, openThread: openBotThread)
       }
     }
     .modifier(WorkspaceInspectorPresentation(store: store, selection: $selection))
