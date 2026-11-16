@@ -1,6 +1,7 @@
 import type { BrowserRuntime, PageHandle, ResolvedElement } from "./browser-cdp-engine.js"
 import { delay, evaluatedValue } from "./browser-cdp.js"
 import type { BrowserCursor } from "./browser-cursor.js"
+import { tabSessionOf } from "./browser-frame-sessions.js"
 import { releaseElement, resolveElement } from "./browser-locators.js"
 import {
   expectRecord,
@@ -57,7 +58,7 @@ export const dispatchMouseEvent = async (
   const stop = runtime.connection.on(
     "Page.javascriptDialogOpening",
     () => resolveDialog(),
-    page.sessionId
+    tabSessionOf(runtime, page.sessionId)
   )
   const command = runtime.connection
     .send("Input.dispatchMouseEvent", params, page.sessionId)

@@ -69,6 +69,15 @@ export const forgetFrameSessions = (
   }
 }
 
+export const tabSessionOf = (
+  runtime: Pick<FrameSessionRegistry, "frameParents">,
+  sessionId: string
+): string => {
+  const parent = runtime.frameParents.get(sessionId)
+  if (parent === undefined) return sessionId
+  return tabSessionOf(runtime, parent)
+}
+
 export const tabSessionIds = (
   runtime: Pick<FrameSessionRegistry, "frameParents">,
   pageSessionId: string

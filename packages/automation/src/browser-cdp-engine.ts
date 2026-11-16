@@ -9,7 +9,8 @@ import {
   autoAttachFrames,
   enableSessionDomains,
   forgetFrameSessions,
-  tabSessionIds
+  tabSessionIds,
+  tabSessionOf
 } from "./browser-frame-sessions.js"
 import { expectRecord, expectString } from "./unknown-values.js"
 
@@ -88,12 +89,18 @@ export const jsonResult = (value: unknown, isError = false): CallToolResult => (
   ...(isError ? { isError: true } : {})
 })
 
+export const openDialog = (
+  runtime: BrowserRuntime,
+  page: PageHandle
+): Readonly<Record<string, unknown>> | undefined =>
+  runtime.dialogs.get(tabSessionOf(runtime, page.sessionId))
+
 export const pageResult = async (
   runtime: BrowserRuntime,
   page: PageHandle,
   value: Readonly<Record<string, unknown>>
 ): Promise<CallToolResult> => {
-  const dialog = runtime.dialogs.get(page.sessionId)
+  const dialog = openDialog(runtime, page)
   let info: { url: string; title: string }
   if (dialog === undefined) info = await pageInformation(runtime, page)
   else info = { url: page.target.url, title: page.target.title }

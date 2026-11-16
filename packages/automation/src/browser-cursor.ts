@@ -1,4 +1,4 @@
-import type { BrowserRuntime, PageHandle } from "./browser-cdp-engine.js"
+import { openDialog, type BrowserRuntime, type PageHandle } from "./browser-cdp-engine.js"
 import { delay } from "./browser-cdp.js"
 import {
   pointerOverlayExpression,
@@ -72,7 +72,7 @@ export const makeBrowserCursor = (
   const send = async (
     command: Omit<PointerCommand, "session" | "color" | "side">
   ): Promise<PointerReply | undefined> => {
-    if (!enabled || runtime.dialogs.has(page.sessionId)) return undefined
+    if (!enabled || openDialog(runtime, page) !== undefined) return undefined
     try {
       const response = await Promise.race([
         runtime.connection.send<{ result?: { value?: unknown } }>(
