@@ -200,6 +200,7 @@ describe("Frame locators", () => {
       const elsewhere = await info(tab)
       const framed = await browser.tabs.new()
       await framed.goto(${JSON.stringify(`${origin}/frames`)})
+      await framed.playwright.frameLocator('#cross').getByRole('button', {name:'Frame action'}).waitFor()
       const cdp = await framed.capabilities.get('cdp')
       const targets = (await cdp.send('Target.getTargets')).targetInfos
       const frame = targets.find(target => target.type === 'iframe')
