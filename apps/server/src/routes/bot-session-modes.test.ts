@@ -25,7 +25,7 @@ describe("bot plan and goal modes", () => {
     await post(running, "/v1/sessions/chat-1/connect", {})
 
     expect(creates.mock.calls.map((call) => call[5]?.bot)).toEqual([true, undefined])
-    expect(loads.mock.calls.map((call) => call[6]?.bot)).toEqual([true, undefined])
+    expect(loads.mock.calls.map((call) => call[6]?.bot)).toEqual([true, true, undefined])
   })
 
   it("refuses plan mode and goals for a bot's chat, and lets other picks through", async () => {

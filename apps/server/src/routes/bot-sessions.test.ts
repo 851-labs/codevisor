@@ -11,21 +11,19 @@ describe("bot chats", () => {
   it("starts a fresh agent thread when a bot's untouched thread can no longer be resumed", async () => {
     const running = await setUp()
     await running.addProject("api-project", "api")
-    const bot = decodeBot((await createBot(running, { projectIds: ["api-project"] })).body)
-    const prompt = (text: string) =>
-      jsonRequest(running.server, `/v1/sessions/${bot.sessionId}/prompt`, {
-        body: JSON.stringify({ text }),
-        method: "POST"
-      })
     const resumeFails = () =>
       vi
         .spyOn(running.agents, "loadAgentSession")
         .mockReturnValueOnce(Effect.die(new Error("no rollout found for thread id")))
 
     resumeFails()
-    await prompt("hello world")
+    const bot = decodeBot((await createBot(running, { projectIds: ["api-project"] })).body)
+    const prompt = (text: string) =>
+      jsonRequest(running.server, `/v1/sessions/${bot.sessionId}/prompt`, {
+        body: JSON.stringify({ text }),
+        method: "POST"
+      })
 
-    await waitFor(() => running.agents.prompts.some(([, input]) => input === "hello world"))
     expect(running.agents.creations.filter(([, cwd]) => cwd === bot.rootPath)).toHaveLength(2)
 
     await run(
