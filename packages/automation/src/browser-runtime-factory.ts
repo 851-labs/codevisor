@@ -129,6 +129,7 @@ const runtimeFor = ({ connection, processHandle, nativeHost }: OpenedBrowser): B
   owned: processHandle !== undefined,
   sessions: new Map(),
   staleSessions: new Map(),
+  frameParents: new Map(),
   snapshots: new Map(),
   eventLog: [],
   logs: new Map(),

@@ -3,6 +3,7 @@ import { appendFileSync } from "node:fs"
 import { join } from "node:path"
 
 import type { BrowserRuntime } from "./browser-cdp-engine.js"
+import { adoptFrameSession } from "./browser-frame-sessions.js"
 import { observeBrowserLoadEvent } from "./browser-load-state.js"
 import { handleTargetLifecycleEvent, installSessionRecovery } from "./browser-session-recovery.js"
 
@@ -59,6 +60,8 @@ export function observeBrowserRuntime(
       })
       if (active.eventLog.length > 5_000) active.eventLog.splice(0, active.eventLog.length - 5_000)
       handleTargetLifecycleEvent(active, event.method, params)
+      if (event.method === "Target.attachedToTarget")
+        adoptFrameSession(active, event.sessionId, params)
       if (event.sessionId !== undefined) {
         if (
           event.method === "Runtime.consoleAPICalled" ||

@@ -4,6 +4,12 @@ import type { CallToolResult } from "@modelcontextprotocol/server"
 
 import { delay, evaluatedValue, type CdpConnection } from "./browser-cdp.js"
 import { assertReadOnlyFunction } from "./browser-evaluate-guard.js"
+import {
+  attachedFrameSession,
+  autoAttachFrames,
+  enableSessionDomains,
+  forgetFrameSessions
+} from "./browser-frame-sessions.js"
 import { expectRecord, expectString } from "./unknown-values.js"
 
 export interface TargetInfo {
@@ -34,6 +40,7 @@ export interface BrowserRuntime {
   readonly owned: boolean
   readonly sessions: Map<string, string>
   readonly staleSessions: Map<string, string>
+  readonly frameParents: Map<string, string>
   readonly snapshots: Map<string, BrowserSnapshot>
   readonly eventLog: Array<{
     readonly method: string
@@ -123,6 +130,7 @@ export const pageTargets = async (runtime: BrowserRuntime): Promise<TargetInfo[]
 }
 
 const discardSessionArtifacts = (runtime: BrowserRuntime, sessionId: string): void => {
+  forgetFrameSessions(runtime, sessionId)
   runtime.logs.delete(sessionId)
   runtime.dialogs.delete(sessionId)
   for (const [chooserId, chooser] of runtime.fileChoosers) {
@@ -197,6 +205,11 @@ export const attachTarget = async (
 ): Promise<string> => {
   const existing = runtime.sessions.get(targetId)
   if (existing !== undefined) return existing
+  if (parentSessionId !== undefined) {
+    const adopted = await attachedFrameSession(runtime, targetId)
+    if (adopted !== undefined) return adopted
+  }
+
   const attached = await runtime.connection.sendOnce<{ sessionId: string }>(
     "Target.attachToTarget",
     {
@@ -205,15 +218,9 @@ export const attachTarget = async (
     },
     parentSessionId
   )
-  await Promise.all([
-    runtime.connection.sendOnce("Page.enable", {}, attached.sessionId),
-    runtime.connection.sendOnce("Network.enable", {}, attached.sessionId),
-    runtime.connection.sendOnce("Runtime.enable", {}, attached.sessionId),
-    runtime.connection.sendOnce("DOM.enable", {}, attached.sessionId),
-    runtime.connection.sendOnce("Accessibility.enable", {}, attached.sessionId),
-    runtime.connection.sendOnce("Log.enable", {}, attached.sessionId).catch(() => undefined)
-  ])
+  await enableSessionDomains(runtime, attached.sessionId)
   runtime.sessions.set(targetId, attached.sessionId)
+  if (parentSessionId === undefined) await autoAttachFrames(runtime, attached.sessionId)
   return attached.sessionId
 }
 

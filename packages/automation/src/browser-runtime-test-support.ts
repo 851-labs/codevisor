@@ -70,6 +70,7 @@ export const fakeBrowserRuntime = (overrides: Partial<BrowserRuntime> = {}): Bro
   owned: false,
   sessions: new Map(),
   staleSessions: new Map(),
+  frameParents: new Map(),
   snapshots: new Map(),
   eventLog: [],
   logs: new Map(),
