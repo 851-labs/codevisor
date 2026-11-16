@@ -192,6 +192,75 @@ const resolveFrameRoots = async (
   return current
 }
 
+const frameOwnerFunction =
+  "function(){const view=(this.ownerDocument||this).defaultView;return view&&view.frameElement||null;}"
+
+const frameIdOfRoot = async (
+  runtime: BrowserRuntime,
+  page: PageHandle,
+  backendNodeId: number
+): Promise<string | undefined> => {
+  const root = await runtime.connection.send<{ object: { objectId?: string } }>(
+    "DOM.resolveNode",
+    { backendNodeId },
+    page.sessionId
+  )
+  const rootObjectId = root.object.objectId
+  if (rootObjectId === undefined) return undefined
+  const owner = await runtime.connection.send<{ result: { objectId?: string } }>(
+    "Runtime.callFunctionOn",
+    { objectId: rootObjectId, functionDeclaration: frameOwnerFunction, returnByValue: false },
+    page.sessionId
+  )
+  const ownerObjectId = owner.result.objectId
+  try {
+    if (ownerObjectId === undefined) return undefined
+    const described = await runtime.connection.send<{ node: { frameId?: string } }>(
+      "DOM.describeNode",
+      { objectId: ownerObjectId },
+      page.sessionId
+    )
+    return described.node.frameId
+  } finally {
+    await releaseObjects(runtime, page, [rootObjectId, ownerObjectId])
+  }
+}
+
+const releaseObjects = async (
+  runtime: BrowserRuntime,
+  page: PageHandle,
+  objectIds: ReadonlyArray<string | undefined>
+): Promise<void> => {
+  const held = objectIds.filter((objectId) => objectId !== undefined)
+  await Promise.all(
+    held.map((objectId) =>
+      runtime.connection
+        .send("Runtime.releaseObject", { objectId }, page.sessionId)
+        .catch(() => undefined)
+    )
+  )
+}
+
+const accessibilityNodesForRoots = async (
+  runtime: BrowserRuntime,
+  page: PageHandle,
+  roots: ReadonlyArray<number>
+): Promise<AXNode[]> => {
+  const frameIds = new Set(
+    await Promise.all(roots.map((root) => frameIdOfRoot(runtime, page, root)))
+  )
+  const trees = await Promise.all(
+    [...frameIds].map((frameId) =>
+      runtime.connection.send<{ nodes: AXNode[] }>(
+        "Accessibility.getFullAXTree",
+        frameId === undefined ? {} : { frameId },
+        page.sessionId
+      )
+    )
+  )
+  return trees.flatMap((tree) => tree.nodes)
+}
+
 const semanticLocatorKind = (locator: BrowserLocator) => {
   if (locator.label !== undefined) return "label"
   if (locator.placeholder !== undefined) return "placeholder"
@@ -266,17 +335,13 @@ export const locatorBackendNodeIds = async (
   } else if (locator.css !== undefined) {
     ids = await queryCssWithinRoots(runtime, page, roots, locator.css)
   } else if (locator.role !== undefined) {
-    const response = await runtime.connection.send<{ nodes: AXNode[] }>(
-      "Accessibility.getFullAXTree",
-      {},
-      page.sessionId
-    )
+    const nodes = await accessibilityNodesForRoots(runtime, page, roots)
     const role = locator.role.toLocaleLowerCase()
     const expectedName = locator.name
     const exact = locator.exact === true
     const candidates = [
       ...new Set(
-        response.nodes
+        nodes
           .filter((node) => {
             if (node.ignored || node.backendDOMNodeId === undefined) return false
             if (String(node.role?.value ?? "").toLocaleLowerCase() !== role) return false
