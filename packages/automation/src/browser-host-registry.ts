@@ -5,6 +5,7 @@ import { WebSocket } from "ws"
 
 import type { NativeBrowserHost } from "./browser-cdp-engine.js"
 import { CdpConnection, type CdpSocket } from "./browser-cdp.js"
+import { watchBrowserHostChannel } from "./browser-host-watchdog.js"
 import { recordOrEmpty } from "./unknown-values.js"
 
 export const BROWSER_HOST_HANDSHAKE_MS = 5_000
@@ -56,6 +57,7 @@ export interface BrowserHostRegistry {
   readonly accept: (socket: BrowserHostSocket) => void
   readonly hosts: () => ReadonlyArray<BrowserHostSummary>
   readonly lostHost: (sessionId: string) => string | undefined
+  readonly silentHost: (sessionId: string) => string | undefined
   readonly probe: (sessionId: string) => Promise<ReadonlyArray<BrowserHostProbe>>
   readonly connect: (sessionId: string) => Promise<BrowserHostConnection>
   readonly forgetSession: (sessionId: string) => void
@@ -88,6 +90,23 @@ export const probedBrowserHost = (
   return answeringHost(probe)
 }
 
+export const browserHostLost = async (
+  registry: Pick<BrowserHostRegistry, "probe">,
+  sessionId: string,
+  active: {
+    readonly connection: { readonly closed: boolean }
+    readonly nativeHost?: NativeBrowserHost
+  },
+  cause: unknown
+): Promise<boolean> => {
+  if (active.connection.closed || /disconnected/i.test(String(cause))) return true
+  if (!/Browser command timed out/i.test(String(cause))) return false
+
+  const hostId = active.nativeHost?.id
+  if (hostId === undefined) return true
+  return probedBrowserHost(await registry.probe(sessionId), hostId) === undefined
+}
+
 export const unreachableBrowserHostReason = (probes: ReadonlyArray<BrowserHostProbe>): string => {
   if (probes.length === 0) return noBrowserHostReason
   return probes.map(browserHostAnswerReason).join(" ")
@@ -99,6 +118,8 @@ interface Host {
   readonly socket: BrowserHostSocket
   readonly channels: Map<string, BrowserHostChannel>
   lastActiveAt: number
+  quiet: boolean
+  rechecking: boolean
 }
 
 class BrowserHostChannel extends EventEmitter implements CdpSocket {
@@ -113,6 +134,7 @@ class BrowserHostChannel extends EventEmitter implements CdpSocket {
 
   send(message: string): void {
     this.host.socket.send(`${JSON.stringify({ type: "data", channel: this.channel })}\n${message}`)
+    this.emit("sent")
   }
 
   deliver(message: string): void {
@@ -159,6 +181,7 @@ export const makeBrowserHostRegistry = (now: () => number = Date.now): BrowserHo
   const hosts = new Map<string, Host>()
   const sessionHosts = new Map<string, string>()
   const lostHosts = new Map<string, string>()
+  const silentHosts = new Map<string, string>()
 
   const remove = (host: Host) => {
     if (hosts.get(host.id) !== host) return
@@ -194,11 +217,15 @@ export const makeBrowserHostRegistry = (now: () => number = Date.now): BrowserHo
           name: typeof header.name === "string" && header.name !== "" ? header.name : "Mac",
           socket,
           channels: new Map(),
-          lastActiveAt: now() - (typeof header.idleMs === "number" ? Math.max(0, header.idleMs) : 0)
+          lastActiveAt:
+            now() - (typeof header.idleMs === "number" ? Math.max(0, header.idleMs) : 0),
+          quiet: false,
+          rechecking: false
         }
         hosts.set(id, host)
         return
       }
+      host.quiet = false
       if (header.type === "activity") host.lastActiveAt = now()
       else if (header.type === "data" && typeof header.channel === "string")
         host.channels.get(header.channel)?.deliver(body)
@@ -212,23 +239,33 @@ export const makeBrowserHostRegistry = (now: () => number = Date.now): BrowserHo
   }
 
   const ask = async (host: Host, sessionId: string): Promise<HostReply> => {
-    const connection = openChannel(host, sessionId)
+    if (host.quiet) {
+      void recheck(host, sessionId)
+      return { host: summary(host), answer: "unresponsive" }
+    }
+    const { connection, channel } = openChannel(host, sessionId)
     try {
-      const result = await connection.send<ConnectReply>(
-        "Codevisor.connect",
-        { sessionId },
-        undefined,
-        BROWSER_HOST_HANDSHAKE_MS
-      )
-      const answer = connectAnswer(result)
-      if (answer !== "unavailable") return { host: summary(host), answer, connection }
+      const answer = connectAnswer(await askToConnect(connection, sessionId))
+      if (answer !== "unavailable") return { host: summary(host), answer, connection, channel }
 
       await connection.close()
       return { host: summary(host), answer }
     } catch (cause) {
       await connection.close()
-      return { host: summary(host), answer: failureAnswer(cause) }
+      const answer = failureAnswer(cause)
+      host.quiet = answer === "unresponsive"
+      return { host: summary(host), answer }
     }
+  }
+
+  const recheck = async (host: Host, sessionId: string): Promise<void> => {
+    if (host.rechecking) return
+
+    host.rechecking = true
+    const { connection } = openChannel(host, sessionId)
+    await askToConnect(connection, sessionId).catch(() => undefined)
+    host.rechecking = false
+    await connection.close()
   }
 
   const askAll = (sessionId: string): Promise<ReadonlyArray<HostReply>> =>
@@ -250,6 +287,8 @@ export const makeBrowserHostRegistry = (now: () => number = Date.now): BrowserHo
 
     sessionHosts.set(sessionId, chosen.host.id)
     lostHosts.delete(sessionId)
+    silentHosts.delete(sessionId)
+    watchForSilence(chosen, sessionId)
     return {
       connection: chosen.connection,
       host: chosen.host,
@@ -258,23 +297,49 @@ export const makeBrowserHostRegistry = (now: () => number = Date.now): BrowserHo
     }
   }
 
-  const openChannel = (host: Host, sessionId: string): CdpConnection => {
+  const openChannel = (host: Host, sessionId: string): OpenedChannel => {
     const channelId = randomUUID()
     const channel = new BrowserHostChannel(host, channelId)
     host.channels.set(channelId, channel)
     host.socket.send(JSON.stringify({ type: "open", channel: channelId, sessionId }))
-    return CdpConnection.fromSocket(channel)
+    return { connection: CdpConnection.fromSocket(channel), channel }
+  }
+
+  const watchForSilence = ({ host: chosen, channel }: HostReply, sessionId: string) => {
+    const host = hosts.get(chosen.id)
+    if (host === undefined || channel === undefined) return
+
+    watchBrowserHostChannel(channel, BROWSER_HOST_HANDSHAKE_MS, async () => {
+      if (await answersConnect(host, sessionId)) return true
+
+      host.quiet = true
+      if (sessionHosts.get(sessionId) === host.id) sessionHosts.delete(sessionId)
+      silentHosts.set(sessionId, host.name)
+      return false
+    })
+  }
+
+  const answersConnect = async (host: Host, sessionId: string): Promise<boolean> => {
+    const { connection } = openChannel(host, sessionId)
+    const answered = await askToConnect(connection, sessionId).then(
+      () => true,
+      () => false
+    )
+    await connection.close()
+    return answered
   }
 
   return {
     accept,
     hosts: () => [...hosts.values()].map(summary),
     lostHost: (sessionId) => lostHosts.get(sessionId),
+    silentHost: (sessionId) => silentHosts.get(sessionId),
     probe,
     connect,
     forgetSession: (sessionId) => {
       sessionHosts.delete(sessionId)
       lostHosts.delete(sessionId)
+      silentHosts.delete(sessionId)
     },
     close: () => {
       for (const host of hosts.values()) {
@@ -285,15 +350,26 @@ export const makeBrowserHostRegistry = (now: () => number = Date.now): BrowserHo
   }
 }
 
+const askToConnect = (connection: CdpConnection, sessionId: string): Promise<ConnectReply> =>
+  connection.send<ConnectReply>(
+    "Codevisor.connect",
+    { sessionId },
+    undefined,
+    BROWSER_HOST_HANDSHAKE_MS
+  )
+
 interface ConnectReply {
   readonly available?: boolean
   readonly showing?: boolean
   readonly focused?: boolean
 }
 
-interface HostReply extends BrowserHostProbe {
-  readonly connection?: CdpConnection
+interface OpenedChannel {
+  readonly connection: CdpConnection
+  readonly channel: BrowserHostChannel
 }
+
+interface HostReply extends BrowserHostProbe, Partial<OpenedChannel> {}
 
 const answerRanks: Record<BrowserHostAnswer, number> = {
   focused: 3,

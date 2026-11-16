@@ -70,6 +70,7 @@ const hostRegistry = () => {
     accept: () => {},
     hosts: () => [],
     lostHost: () => current.lostHost,
+    silentHost: () => undefined,
     probe: mocks.probe,
     connect: mocks.connect,
     forgetSession: () => {},
@@ -135,6 +136,57 @@ describe("built-in browser routing", () => {
         }
       })
       expect(mocks.launch).not.toHaveBeenCalled()
+    } finally {
+      await provider.close()
+      rmSync(directory, { recursive: true, force: true })
+    }
+  })
+
+  it("keeps the pane and reports the command's own error when a command times out but the Mac still answers", async () => {
+    const directory = mkdtempSync(join(tmpdir(), "native-browser-slow-command-"))
+    const { provider } = builtinProvider(directory)
+    const context = { sessionId: "fixture-session" }
+    const native = connectTo(studio, "studio-tab")
+    mocks.probe.mockResolvedValue(answers([studio, "showing"]))
+    try {
+      await provider.invoke(context, "use_backend", { backend: "builtin" })
+      await tabsOf(provider, context.sessionId)
+      const answer = native.send.getMockImplementation()!
+      let timedOut = false
+      native.send.mockImplementation(async (method: string) => {
+        if (method !== "Target.getTargets" || timedOut) return answer(method)
+        timedOut = true
+        throw new Error("Browser command timed out: Target.getTargets")
+      })
+      const slow = await provider.invoke(context, "openTabs", {})
+      expect(slow.isError).toBe(true)
+      expect(JSON.stringify(slow)).toContain("Browser command timed out: Target.getTargets")
+      expect(JSON.stringify(await tabsOf(provider, context.sessionId))).toContain("studio-tab")
+      expect(mocks.connect).toHaveBeenCalledOnce()
+      expect(native.close).not.toHaveBeenCalled()
+    } finally {
+      await provider.close()
+      rmSync(directory, { recursive: true, force: true })
+    }
+  })
+
+  it("says the Mac stopped responding, from inside a browser cell, instead of hanging", async () => {
+    const directory = mkdtempSync(join(tmpdir(), "native-browser-silent-"))
+    const { provider } = builtinProvider(directory)
+    const context = { sessionId: "fixture-session" }
+    const native = connectTo(studio, "studio-tab")
+    mocks.probe.mockResolvedValue(answers([studio, "showing"]))
+    try {
+      await provider.invoke(context, "use_backend", { backend: "builtin" })
+      await tabsOf(provider, context.sessionId)
+      native.send.mockRejectedValue(Error("Browser command timed out: Target.getTargets"))
+      mocks.probe.mockResolvedValue(answers([studio, "unresponsive"]))
+      const lost = await provider.invoke(context, "js", { code: "await browser.user.openTabs()" })
+      expect(lost.isError).toBe(true)
+      expect(JSON.stringify(lost)).toContain(
+        "The Codevisor app on Mac Studio stopped responding, so this chat's built-in browser tabs can't be reached."
+      )
+      expect(native.close).toHaveBeenCalledOnce()
     } finally {
       await provider.close()
       rmSync(directory, { recursive: true, force: true })

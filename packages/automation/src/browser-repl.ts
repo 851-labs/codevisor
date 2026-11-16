@@ -12,8 +12,14 @@ export const makeBrowserRepls = () => {
     sessions.delete(id)
     await session?.close()
   }
+  const retire = (id: string) => {
+    const session = sessions.get(id)
+    sessions.delete(id)
+    void session?.close()
+  }
   return {
     reset,
+    retire,
     close: async () => {
       await Promise.all([...sessions.keys()].map(reset))
     },

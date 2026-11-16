@@ -73,9 +73,18 @@ export const noBrowserSelectedResult = (report: BrowserStatusReport) =>
 export const chromeNotConnectedResult = (report: BrowserStatusReport) =>
   textToolResult(`Chrome is not connected to Codevisor. ${availability(report)}`, true)
 
-export const builtinLostResult = (lostHost: string | undefined) =>
+const unreachableTabs = (host: string) =>
+  `The Codevisor app on ${host} stopped responding, so this chat's built-in browser tabs can't be reached. Check that Mac for a blocking dialog.`
+
+const lostBuiltinReason = (lostHost: string | undefined, silentHost: string | undefined) => {
+  if (lostHost !== undefined) return lostTabs(lostHost)
+  if (silentHost !== undefined) return unreachableTabs(silentHost)
+  return "The built-in browser disconnected."
+}
+
+export const builtinLostResult = (lostHost: string | undefined, silentHost?: string) =>
   textToolResult(
-    `${lostHost === undefined ? "The built-in browser disconnected." : lostTabs(lostHost)} The interrupted action was NOT retried; its outcome may be unknown. The next browser call reconnects to the Codevisor window that shows this chat, and fails if no Mac app can open it. Discard old tab IDs, locators and snapshots, then open or observe a new tab before continuing.`,
+    `${lostBuiltinReason(lostHost, silentHost)} The interrupted action was NOT retried; its outcome may be unknown. The next browser call reconnects to the Codevisor window that shows this chat, and fails if no Mac app can open it. Discard old tab IDs, locators and snapshots, then open or observe a new tab before continuing.`,
     true
   )
 

@@ -73,6 +73,12 @@ const connectedHost = async (
   return connected
 }
 
+const outcome = (command: Promise<unknown>) =>
+  command.then(
+    () => "answered",
+    (cause: unknown) => String(cause)
+  )
+
 afterEach(() => {
   vi.useRealTimers()
 })
@@ -216,6 +222,46 @@ describe("browser host registry", () => {
       "unavailable",
       "unresponsive"
     ])
+  })
+
+  it("answers for a silent Mac app at once after its first missed reply, until it speaks again", async () => {
+    vi.useFakeTimers()
+    const registry = makeBrowserHostRegistry()
+    const hung = new FakeHostSocket("silent")
+    registry.accept(hung)
+    hung.hello("hung", "MacBook Pro")
+    const answersOf = async () => (await registry.probe("chat")).map(({ answer }) => answer)
+
+    const first = registry.probe("chat")
+    await vi.advanceTimersByTimeAsync(BROWSER_HOST_HANDSHAKE_MS)
+    expect((await first).map(({ answer }) => answer)).toEqual(["unresponsive"])
+
+    expect(await answersOf()).toEqual(["unresponsive"])
+    expect(await answersOf()).toEqual(["unresponsive"])
+
+    hung.answer = { available: true, showing: true }
+    hung.fromApp({ type: "activity" })
+    expect(await answersOf()).toEqual(["showing"])
+    registry.close()
+  })
+
+  it("ends the chat's channel when the Mac app goes silent mid-command, and keeps it while the app still answers", async () => {
+    vi.useFakeTimers()
+    const registry = makeBrowserHostRegistry()
+    const studio = new FakeHostSocket({ available: true, showing: true })
+    registry.accept(studio)
+    studio.hello("studio", "Mac Studio")
+    const { connection } = await connectedHost(registry, "chat")
+    const slow = outcome(connection.send("Page.navigate"))
+    await vi.advanceTimersByTimeAsync(BROWSER_HOST_HANDSHAKE_MS)
+    expect(registry.silentHost("chat")).toBeUndefined()
+
+    studio.answer = "silent"
+    await vi.advanceTimersByTimeAsync(BROWSER_HOST_HANDSHAKE_MS * 2)
+    expect(await slow).toContain("Browser debugging connection closed")
+    expect(registry.silentHost("chat")).toBe("Mac Studio")
+    expect((await registry.probe("chat")).map(({ answer }) => answer)).toEqual(["unresponsive"])
+    registry.close()
   })
 
   it("closes sockets that never introduce themselves and replaces a reconnecting Mac app", async () => {
