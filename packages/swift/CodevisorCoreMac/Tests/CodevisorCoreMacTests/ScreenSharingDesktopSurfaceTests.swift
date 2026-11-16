@@ -122,20 +122,33 @@ struct ScreenSharingDesktopSurfaceTests {
     #expect(fixture.host.starts.map(\.displayId) == [FakeHost.display.id])
   }
 
-  @Test("A surface whose machine went away attaches again, and reconnects, when the machine is back")
-  func attachesAgainWhenTheMachineReturns() async throws {
+  @Test("A surface whose machine left the list says it can't reach it, then reconnects when the machine is back")
+  func cantReachAGoneMachineUntilItReturns() async throws {
     let fixture = Fixture()
     let tab = fixture.surface(.tab)
     tab.show()
     try await fixture.goLive()
 
     fixture.machineIds = []
-    await awaitObserved { tab.snapshot.connection == .off && tab.snapshot.endpoint == nil }
+    await awaitObserved { tab.snapshot.connection == .failed(.cantReach) && tab.snapshot.endpoint == nil }
     fixture.machineIds = [Fixture.machineId]
     try await fixture.goLive()
 
     await awaitObserved { tab.snapshot.connection == .live }
     #expect(fixture.host.starts.count == 2)
+  }
+
+  @Test("A surface whose machine is not listed yet keeps connecting until the machine list is verified")
+  func waitsForTheMachineListBeforeSayingCantReach() async {
+    let fixture = Fixture()
+    fixture.machineIds = []
+    fixture.machineListVerified = false
+    let tab = fixture.surface(.tab)
+    tab.show()
+
+    #expect(tab.snapshot.connection == .off)
+    fixture.machineListVerified = true
+    await awaitObserved { tab.snapshot.connection == .failed(.cantReach) }
   }
 
   @Test("An old host is given the workspace of the surface that is on screen")
