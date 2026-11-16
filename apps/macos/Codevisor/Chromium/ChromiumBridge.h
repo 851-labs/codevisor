@@ -25,6 +25,22 @@ typedef NS_ENUM(NSInteger, CVChromiumDownloadState) {
 FOUNDATION_EXPORT void CVObserveChromiumDownloads(void (^ _Nullable observer)(CVChromiumDownload *download));
 FOUNDATION_EXPORT void CVCancelChromiumDownload(uint32_t identifier);
 
+typedef NS_ENUM(NSInteger, CVChromiumPageDialogKind) {
+  CVChromiumPageDialogKindAlert,
+  CVChromiumPageDialogKindConfirm,
+  CVChromiumPageDialogKindPrompt,
+  CVChromiumPageDialogKindLeavePage,
+};
+
+@interface CVChromiumPageDialog : NSObject
+@property(nonatomic, readonly) CVChromiumPageDialogKind kind;
+@property(nonatomic, readonly, copy) NSString *site;
+@property(nonatomic, readonly, copy) NSString *message;
+@property(nonatomic, readonly, copy) NSString *defaultText;
+- (void)acceptWithText:(NSString *)text;
+- (void)dismiss;
+@end
+
 typedef NS_ENUM(NSInteger, CVBrowserLinkDestination) {
   CVBrowserLinkDestinationBackgroundTab,
   CVBrowserLinkDestinationForegroundTab,
@@ -46,6 +62,8 @@ typedef NS_ENUM(NSInteger, CVBrowserLinkDestination) {
 @property(nonatomic, copy, nullable) void (^viewportScaleChanged)(CGFloat scale);
 @property(nonatomic, copy, nullable) void (^protocolEvent)(NSData *message);
 @property(nonatomic, copy, nullable) void (^findResult)(NSInteger matches, NSInteger activeMatch, BOOL finished);
+@property(nonatomic, copy, nullable) void (^pageDialogOpened)(CVChromiumPageDialog *dialog);
+@property(nonatomic, copy, nullable) void (^pageDialogClosed)(void);
 @property(nonatomic, copy, nullable) void (^proxyCredentialsRejected)(NSString *username, NSString *password, void (^reply)(NSString * _Nullable username, NSString * _Nullable password));
 - (void)sendProtocolMethod:(NSString *)method
                     params:(nullable NSData *)params

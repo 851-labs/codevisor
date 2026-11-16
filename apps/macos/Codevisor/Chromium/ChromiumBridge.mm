@@ -5,6 +5,7 @@
 #include "include/cef_devtools_message_observer.h"
 #include "include/cef_download_handler.h"
 #include "include/cef_find_handler.h"
+#include "include/cef_jsdialog_handler.h"
 #include "include/cef_parser.h"
 #include "include/cef_resource_bundle.h"
 #include "include/cef_request_context_handler.h"
@@ -428,9 +429,11 @@ class ProtocolObserver final : public CefDevToolsMessageObserver {
       auto callback = found->second;
       pending.erase(found);
       callback([NSData dataWithBytes:bytes length:length]);
-    } else if (auto handler = view_.protocolEvent) {
-      handler([NSData dataWithBytes:bytes length:length]);
+      return true;
     }
+    CVChromiumView *view = view_;
+    if (LeadingMethod(message) == "Page.javascriptDialogClosed" && view.pageDialogClosed) view.pageDialogClosed();
+    if (auto handler = view.protocolEvent) handler([NSData dataWithBytes:bytes length:length]);
     return true;
   }
   void Close() {
@@ -554,10 +557,44 @@ void CVCancelChromiumDownload(uint32_t identifier) {
   if (found != downloadCallbacks.end()) found->second->Cancel();
 }
 
+@interface CVChromiumPageDialog () {
+  CefRefPtr<CefJSDialogCallback> _callback;
+}
+- (instancetype)initWithKind:(CVChromiumPageDialogKind)kind site:(NSString *)site message:(NSString *)message
+                 defaultText:(NSString *)defaultText callback:(CefRefPtr<CefJSDialogCallback>)callback;
+@end
+@implementation CVChromiumPageDialog
+- (instancetype)initWithKind:(CVChromiumPageDialogKind)kind site:(NSString *)site message:(NSString *)message
+                 defaultText:(NSString *)defaultText callback:(CefRefPtr<CefJSDialogCallback>)callback {
+  if ((self = [super init])) { _kind = kind; _site = [site copy]; _message = [message copy]; _defaultText = [defaultText copy]; _callback = callback; }
+  return self;
+}
+- (void)answer:(BOOL)accepted text:(NSString *)text {
+  auto callback = std::move(_callback);
+  if (callback) callback->Continue(accepted, String(text));
+}
+- (void)acceptWithText:(NSString *)text { [self answer:YES text:text]; }
+- (void)dismiss { [self answer:NO text:@""]; }
+@end
+
+namespace {
+CVChromiumPageDialogKind PageDialogKind(cef_jsdialog_type_t type) {
+  switch (type) {
+    case JSDIALOGTYPE_CONFIRM: return CVChromiumPageDialogKindConfirm;
+    case JSDIALOGTYPE_PROMPT: return CVChromiumPageDialogKindPrompt;
+    default: return CVChromiumPageDialogKindAlert;
+  }
+}
+NSString *PageDialogSite(const CefString& origin) {
+  return origin.empty() ? @"This page" : String(CefFormatUrlForSecurityDisplay(origin));
+}
+}
+
 class BrowserClient final : public CefClient, public CefLifeSpanHandler,
                             public CefDisplayHandler, public CefLoadHandler,
                             public CefRequestHandler, public CefContextMenuHandler,
-                            public CefFindHandler, public CefDownloadHandler {
+                            public CefFindHandler, public CefDownloadHandler,
+                            public CefJSDialogHandler {
  public:
   explicit BrowserClient(CVChromiumView *view) : view_(view), host_(view->_proxyHost.UTF8String ?: ""),
       username_(view->_username.UTF8String ?: ""), password_(view->_password.UTF8String ?: ""), port_((int)view->_proxyPort) {}
@@ -568,6 +605,28 @@ class BrowserClient final : public CefClient, public CefLifeSpanHandler,
   CefRefPtr<CefContextMenuHandler> GetContextMenuHandler() override { return this; }
   CefRefPtr<CefFindHandler> GetFindHandler() override { return this; }
   CefRefPtr<CefDownloadHandler> GetDownloadHandler() override { return this; }
+  CefRefPtr<CefJSDialogHandler> GetJSDialogHandler() override { return this; }
+  bool OnJSDialog(CefRefPtr<CefBrowser>, const CefString& origin, JSDialogType type, const CefString& message,
+                  const CefString& defaultText, CefRefPtr<CefJSDialogCallback> callback, bool&) override {
+    return OpenPageDialog(PageDialogKind(type), PageDialogSite(origin), String(message), String(defaultText), callback);
+  }
+  bool OnBeforeUnloadDialog(CefRefPtr<CefBrowser> browser, const CefString&, bool,
+                            CefRefPtr<CefJSDialogCallback> callback) override {
+    auto frame = browser->GetMainFrame();
+    return OpenPageDialog(CVChromiumPageDialogKindLeavePage, PageDialogSite(frame ? frame->GetURL() : CefString()), @"", @"", callback);
+  }
+  void OnResetDialogState(CefRefPtr<CefBrowser>) override {
+    CVChromiumView *view = view_;
+    if (view.pageDialogClosed) view.pageDialogClosed();
+  }
+  bool OpenPageDialog(CVChromiumPageDialogKind kind, NSString *site, NSString *message, NSString *defaultText,
+                      CefRefPtr<CefJSDialogCallback> callback) {
+    CVChromiumView *view = view_;
+    if (!view || view->_closed || !view.pageDialogOpened) return false;
+    view.pageDialogOpened([[CVChromiumPageDialog alloc] initWithKind:kind site:site message:message
+                                                         defaultText:defaultText callback:callback]);
+    return true;
+  }
   void OnBeforeContextMenu(CefRefPtr<CefBrowser>, CefRefPtr<CefFrame>, CefRefPtr<CefContextMenuParams> params, CefRefPtr<CefMenuModel> menu) override {
     if (!params->GetLinkUrl().empty()) {
       int index = 0;

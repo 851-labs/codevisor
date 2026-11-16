@@ -20,6 +20,7 @@ final class ChromiumBrowserModel {
   private(set) var canGoBack = false
   private(set) var canGoForward = false
   let pageZoom = ChromiumPageZoom()
+  let dialogs = ChromiumPageDialogs()
   private(set) var pageError: BrowserPageError?
   @ObservationIgnored let finder = ChromiumPageFinder()
   var find: TranscriptFindModel { finder.model }
@@ -400,6 +401,7 @@ final class ChromiumBrowserModel {
   }
   private func resetBrowser(keepingAutomationTarget: Bool = false) {
     pageZoom.reset()
+    dialogs.dismiss()
     synchronized = false
     readiness.complete(.failure(ChromiumProtocolError("Browser closed")))
     readiness.forgetFailure()

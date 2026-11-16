@@ -37,6 +37,15 @@ enum ChromiumPageEvents {
     view.findResult = { [weak model] matches, activeMatch, finished in
       MainActor.assumeIsolated { model?.finder.publish(matches: matches, activeMatch: activeMatch, finished: finished) }
     }
+    view.pageDialogOpened = { [weak model] dialog in
+      MainActor.assumeIsolated {
+        guard let model, model.isCurrent(token) else { return dialog.dismiss() }
+        model.dialogs.opened(dialog)
+      }
+    }
+    view.pageDialogClosed = { [weak model] in
+      MainActor.assumeIsolated { model?.dialogs.closed() }
+    }
   }
 
   private static func connectNavigation(_ view: CVChromiumView, to model: ChromiumBrowserModel, token: UUID) {
