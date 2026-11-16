@@ -114,10 +114,88 @@ describe("Browser load state", () => {
     const { runtime, page, event } = fixture()
     event("Network.requestWillBeSent", { requestId: "socket", type: "WebSocket" })
     event("Network.requestWillBeSent", { requestId: "events", type: "EventSource" })
+    event("Network.requestWillBeSent", { requestId: "beacon", type: "Ping" })
+    event("Network.requestWillBeSent", { requestId: "stream", type: "Fetch" })
+    event("Network.responseReceived", {
+      requestId: "stream",
+      response: { mimeType: "text/event-stream" }
+    })
     event("Network.requestWillBeSent", { requestId: "other", type: "Fetch" }, "other-session")
     const operation = waitForBrowserState(runtime, page, { state: "networkidle" })
     await vi.advanceTimersByTimeAsync(500)
     await operation
+  })
+
+  it("stops waiting for a request that has stayed open for five seconds", async () => {
+    const { runtime, page, event } = fixture()
+    event("Network.requestWillBeSent", { requestId: "long-poll", type: "Fetch" })
+    const completed = vi.fn()
+    const operation = waitForBrowserState(runtime, page, { state: "networkidle" }).then(completed)
+    await vi.advanceTimersByTimeAsync(4999)
+    expect(completed).not.toHaveBeenCalled()
+    await vi.advanceTimersByTimeAsync(1)
+    await operation
+    expect(completed).toHaveBeenCalledOnce()
+  })
+
+  it("stays idle when a request it stopped waiting for finally ends", async () => {
+    const { runtime, page, event } = fixture()
+    event("Network.requestWillBeSent", { requestId: "long-poll", type: "Fetch" })
+    await vi.advanceTimersByTimeAsync(5000)
+    event("Network.loadingFinished", { requestId: "long-poll" })
+    await waitForBrowserState(runtime, page, { state: "networkidle" })
+    expect(vi.getTimerCount()).toBe(0)
+  })
+
+  it("stops counting a frame's page load when the frame moves to another process", async () => {
+    const { runtime, page, event } = fixture()
+    event("Network.requestWillBeSent", { requestId: "ad", type: "Document", frameId: "ad-frame" })
+    event("Network.requestWillBeSent", { requestId: "own", type: "Fetch", frameId: "frame" })
+    await vi.advanceTimersByTimeAsync(500)
+    event("Page.frameDetached", { frameId: "ad-frame", reason: "swap" })
+    const completed = vi.fn()
+    const operation = waitForBrowserState(runtime, page, { state: "networkidle" }).then(completed)
+    await vi.advanceTimersByTimeAsync(50)
+    expect(completed).not.toHaveBeenCalled()
+    event("Network.loadingFinished", { requestId: "own" })
+    await vi.advanceTimersByTimeAsync(500)
+    await operation
+    expect(completed).toHaveBeenCalledOnce()
+  })
+
+  it("forgets the previous document's unfinished requests after a navigation", async () => {
+    const { runtime, page, event } = fixture()
+    event("Network.requestWillBeSent", { requestId: "left-behind", type: "Fetch", loaderId: "old" })
+    event("Network.requestWillBeSent", { requestId: "new", type: "Document", loaderId: "new" })
+    event("Page.frameNavigated", { frame: { id: "frame", loaderId: "new" } })
+    event("Network.loadingFinished", { requestId: "new" })
+    const operation = waitForBrowserState(runtime, page, { state: "networkidle" })
+    await vi.advanceTimersByTimeAsync(500)
+    await operation
+  })
+
+  it("names the latest request when the page never goes quiet", async () => {
+    const { runtime, page, event } = fixture()
+    const failed = vi.fn()
+    const operation = waitForBrowserState(runtime, page, {
+      state: "networkidle",
+      timeoutMs: 1000
+    }).catch(failed)
+    for (let poll = 0; poll < 4; poll++) {
+      event("Network.requestWillBeSent", {
+        requestId: `poll-${poll}`,
+        type: "Fetch",
+        request: { url: "https://example.test/poll" }
+      })
+      event("Network.loadingFinished", { requestId: `poll-${poll}` })
+      await vi.advanceTimersByTimeAsync(250)
+    }
+    await operation
+    expect(failed).toHaveBeenCalledExactlyOnceWith(
+      new Error(
+        "Timed out waiting for page networkidle: the page is still making requests (latest https://example.test/poll). Wait for the content you need with a locator instead"
+      )
+    )
   })
 
   it("uses monotonic elapsed time when the wall clock changes", async () => {
