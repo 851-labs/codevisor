@@ -27,6 +27,7 @@ import {
   type BrowserTabInvocation
 } from "./browser-use-invoke-tabs.js"
 import type { BrowserToolInvocation, BrowserToolSessionState } from "./browser-use-invoke-types.js"
+import { invokeWaitTools } from "./browser-use-invoke-waits.js"
 import { invokeWebMcpTools } from "./browser-use-invoke-webmcp.js"
 import type { BrowserBackend } from "./browser-use-provider.js"
 import { isStringArray } from "./unknown-values.js"
@@ -54,6 +55,7 @@ const toolHandlers = [
   invokeNavigationTools,
   invokePlaywrightTools,
   invokeElementTools,
+  invokeWaitTools,
   invokePageTools,
   invokeInteractionTools,
   invokeMouseTools,

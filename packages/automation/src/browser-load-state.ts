@@ -13,6 +13,7 @@ import {
   observeNetworkActivity,
   type NetworkActivity
 } from "./browser-network-activity.js"
+import type { UrlMatcher } from "./browser-url-match.js"
 import { waitBudget } from "./browser-wait-budget.js"
 import { recordOrUndefined } from "./unknown-values.js"
 
@@ -61,7 +62,7 @@ export const waitForBrowserState = async (
   page: PageHandle,
   options: {
     state?: string
-    url?: string
+    url?: UrlMatcher
     timeoutMs?: number
     afterSequence?: number
     frameId?: string
@@ -85,7 +86,7 @@ export const waitForBrowserState = async (
         )
       })
     const matchesUrl =
-      options.url === undefined || (await pageInformation(runtime, page)).url === options.url
+      options.url === undefined || options.url((await pageInformation(runtime, page)).url)
     if (navigated && matchesUrl) {
       let ready: unknown
       if (state === "commit") ready = "complete"
@@ -99,7 +100,7 @@ export const waitForBrowserState = async (
     }
     if (performance.now() >= deadline)
       throw new Error(
-        `Timed out waiting for ${options.afterSequence === undefined ? "page" : "navigation"} ${state}${options.url ? ` at ${options.url}` : ""}${state === "networkidle" ? busyNetworkHint(loadFor(runtime, page.sessionId)) : ""}`
+        `Timed out waiting for ${options.afterSequence === undefined ? "page" : "navigation"} ${state}${options.url ? " at the requested URL" : ""}${state === "networkidle" ? busyNetworkHint(loadFor(runtime, page.sessionId)) : ""}`
       )
     await delay(Math.min(50, Math.max(1, deadline - performance.now())))
   }
