@@ -56,7 +56,9 @@ final class ScreenSharingHostRequests {
   }
 
   func start(_ start: Start) async throws -> ScreenSharingHostReply {
-    guard let challenge = start.capabilities.appChallenge else { throw ScreenSharingAttemptEnd.refused(.updateNeeded) }
+    guard let challenge = start.capabilities.appChallenge else {
+      throw ScreenSharingAttemptEnd.dropped(.networkBlocked)
+    }
 
     let owner = Owner(viewerId: UUID())
     _ = takeStarted()
