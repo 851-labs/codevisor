@@ -22,7 +22,7 @@ import {
   viewportClip,
   type ScreenshotClip
 } from "./browser-screenshot.js"
-import { grantSiteAccess, navigationFailure } from "./browser-site-access.js"
+import { beginSiteVisit } from "./browser-site-access.js"
 import { snapshotPage } from "./browser-snapshot.js"
 import type { BrowserToolInvocation, BrowserToolSessionState } from "./browser-use-invoke-types.js"
 import { maxWaitMs, waitBudget } from "./browser-wait-budget.js"
@@ -40,21 +40,25 @@ export const invokeNavigationTools = async (
     case "navigate": {
       const url = stringArgument(args, "url")
       const budget = waitBudget(args.timeoutMs)
-      await grantSiteAccess(active, page, url, args)
-      const sent = await sendUnlessDialogOpens<{ errorText?: string }>(
-        active,
-        page,
-        "Page.navigate",
-        { url },
-        budget
-      ).catch((cause: unknown) => {
-        throw slowNavigation(cause, budget)
-      })
-      if (sent.dialogOpened) return navigationResult(active, page, "navigate")
-      if (sent.result.errorText !== undefined)
-        throw navigationFailure(active, page, url, sent.result.errorText)
-      await waitForReady(active, page)
-      return navigationResult(active, page, "navigate")
+      const visit = await beginSiteVisit(active, page, url, args)
+      try {
+        const sent = await sendUnlessDialogOpens<{ errorText?: string }>(
+          active,
+          page,
+          "Page.navigate",
+          { url },
+          budget
+        ).catch((cause: unknown) => {
+          throw slowNavigation(cause, budget)
+        })
+        if (sent.dialogOpened) return await navigationResult(active, page, "navigate")
+        const failure = visit.failure(sent.result.errorText)
+        if (failure !== undefined) throw failure
+        await waitForReady(active, page)
+        return await navigationResult(active, page, "navigate")
+      } finally {
+        await visit.end()
+      }
     }
     case "back":
     case "forward": {
