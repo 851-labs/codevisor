@@ -12,6 +12,7 @@ import {
   type PageHandle,
   type ResolvedElement
 } from "./browser-cdp-engine.js"
+import { withoutPointerOverlay } from "./browser-cursor.js"
 import { sendUnlessDialogOpens } from "./browser-dialog-race.js"
 import { releaseElement, resolveElement } from "./browser-locators.js"
 import { snapshotPage } from "./browser-snapshot.js"
@@ -117,15 +118,17 @@ export const invokeNavigationTools = async (
         }
       }
       try {
-        const captured = await active.connection.send<{ data: string }>(
-          "Page.captureScreenshot",
-          {
-            format,
-            fromSurface: true,
-            captureBeyondViewport: args.fullPage === true,
-            clip
-          },
-          page.sessionId
+        const captured = await withoutPointerOverlay(active, page, () =>
+          active.connection.send<{ data: string }>(
+            "Page.captureScreenshot",
+            {
+              format,
+              fromSurface: true,
+              captureBeyondViewport: args.fullPage === true,
+              clip
+            },
+            page.sessionId
+          )
         )
         const info = await pageInformation(active, page)
         return {
