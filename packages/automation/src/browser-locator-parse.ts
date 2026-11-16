@@ -8,6 +8,8 @@ export interface BrowserLocator {
   readonly label?: BrowserTextMatcher
   readonly placeholder?: BrowserTextMatcher
   readonly text?: BrowserTextMatcher
+  readonly altText?: BrowserTextMatcher
+  readonly title?: BrowserTextMatcher
   readonly testId?: string
   readonly exact?: boolean
   readonly scope?: BrowserLocator
@@ -55,19 +57,18 @@ const parseTextMatcher = (input: unknown, label: string): BrowserTextMatcher => 
   }
 }
 
+const textMatcherModes = new Set(["label", "placeholder", "text", "altText", "title"])
+const locatorModes = new Set(["ref", "css", "role", "testId", ...textMatcherModes])
+
 const validateLocatorDescriptor = (locator: Readonly<Record<string, unknown>>): void => {
-  const modes = ["ref", "css", "role", "label", "placeholder", "text", "testId"].filter((key) => {
+  const modes = [...locatorModes].filter((key) => {
     const candidate = locator[key]
     if (typeof candidate === "string") return candidate.length > 0
-    return (
-      ["label", "placeholder", "text"].includes(key) &&
-      candidate !== null &&
-      typeof candidate === "object"
-    )
+    return textMatcherModes.has(key) && candidate !== null && typeof candidate === "object"
   })
   if (modes.length !== 1) {
     throw new Error(
-      "locator must contain exactly one of ref, css, role, label, placeholder, text, or testId"
+      "locator must contain exactly one of ref, css, role, label, placeholder, text, altText, title, or testId"
     )
   }
   if (locator.role === undefined && locator.name !== undefined) {
@@ -143,6 +144,12 @@ export const parseLocator = (locator: unknown, depth = 0): BrowserLocator => {
       ? {}
       : { placeholder: parseTextMatcher(locator.placeholder, "locator.placeholder") }),
     ...(locator.text === undefined ? {} : { text: parseTextMatcher(locator.text, "locator.text") }),
+    ...(locator.altText === undefined
+      ? {}
+      : { altText: parseTextMatcher(locator.altText, "locator.altText") }),
+    ...(locator.title === undefined
+      ? {}
+      : { title: parseTextMatcher(locator.title, "locator.title") }),
     ...(typeof locator.testId === "string" ? { testId: locator.testId } : {}),
     ...(locator.exact === true ? { exact: true } : {}),
     ...(scope === undefined ? {} : { scope }),

@@ -25,6 +25,13 @@ export const targetProperties = {
   target: stringProperty("Exact ref (for example e12) from the latest Browser Use snapshot")
 }
 
+const textMatcherSchema = {
+  oneOf: [
+    { type: "string" },
+    objectSchema({ regex: { type: "string" }, flags: { type: "string" } }, ["regex"])
+  ]
+}
+
 export const locatorProperty = {
   type: "object",
   description:
@@ -57,6 +64,8 @@ export const locatorProperty = {
         objectSchema({ regex: { type: "string" }, flags: { type: "string" } }, ["regex"])
       ]
     },
+    altText: textMatcherSchema,
+    title: textMatcherSchema,
     testId: { type: "string" },
     exact: { type: "boolean" },
     scope: { type: "object" },

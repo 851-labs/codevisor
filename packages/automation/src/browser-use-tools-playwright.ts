@@ -121,6 +121,67 @@ export const browserUsePlaywrightTools: ReadonlyArray<Tool> = [
     locatorSchema()
   ),
   tool(
+    "playwright.hover",
+    "Move the pointer over the unique element matching a Playwright-style locator.",
+    locatorSchema({ force: { type: "boolean" } })
+  ),
+  tool(
+    "playwright.dragTo",
+    "Drag the unique element matching a locator onto the unique element matching the target locator.",
+    locatorSchema({ target: locatorProperty, force: { type: "boolean" } }, ["target"])
+  ),
+  tool(
+    "playwright.setInputFiles",
+    "Set the files of the file input matching a Playwright-style locator; an empty list clears it.",
+    locatorSchema({ paths: { type: "array", items: { type: "string" } } }, ["paths"])
+  ),
+  tool(
+    "playwright.screenshot",
+    "Capture the unique element matching a Playwright-style locator, scrolling it into view first.",
+    locatorSchema({ type: { type: "string", enum: ["png", "jpeg"] } })
+  ),
+  tool(
+    "playwright.boundingBox",
+    "Return the viewport rectangle of the unique element matching a locator, or null when it isn't visible.",
+    locatorSchema()
+  ),
+  tool("playwright.focus", "Focus the unique element matching a locator.", locatorSchema()),
+  tool(
+    "playwright.blur",
+    "Remove focus from the unique element matching a locator.",
+    locatorSchema()
+  ),
+  tool(
+    "playwright.scrollIntoViewIfNeeded",
+    "Scroll the unique element matching a locator into view.",
+    locatorSchema()
+  ),
+  tool(
+    "playwright.dispatchEvent",
+    "Dispatch a DOM event of the given type on the unique element matching a locator.",
+    locatorSchema({ type: { type: "string" }, eventInit: { type: "object" } }, ["type"])
+  ),
+  tool(
+    "playwright.inputValue",
+    "Read the value of the input, textarea or select matching a locator.",
+    locatorSchema()
+  ),
+  tool(
+    "playwright.isChecked",
+    "Return whether the checkbox or radio button matching a locator is checked.",
+    locatorSchema()
+  ),
+  tool(
+    "playwright.isEditable",
+    "Return whether the element matching a locator is enabled and not read-only.",
+    locatorSchema()
+  ),
+  tool(
+    "playwright.innerHTML",
+    "Read innerHTML from the unique element matching a locator.",
+    locatorSchema()
+  ),
+  tool(
     "playwright.getAttribute",
     "Read one attribute from the unique element matching a Playwright-style locator.",
     locatorSchema({ name: { type: "string" } }, ["name"])

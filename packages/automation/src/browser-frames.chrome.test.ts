@@ -169,6 +169,27 @@ describe("Frame locators", () => {
       expect(exported).toContain(text)
   })
 
+  it("measures and captures an element in a cross-origin frame in the tab's coordinates", async ({
+    browser
+  }) => {
+    await browser.open("/frames")
+    const measured = String(
+      await browser.cell(`
+      const page = tab.playwright
+      const button = page.frameLocator('#cross').getByRole('button', {name:'Frame action'})
+      const frame = await page.locator('#cross').boundingBox()
+      const box = await button.boundingBox()
+      const inside = await button.evaluate(element => { const rect = element.getBoundingClientRect(); return [rect.x, rect.y] })
+      const shot = await button.screenshot()
+      browser.write([box.x - frame.x - inside[0], box.y - frame.y - inside[1], box.width, box.height].map(Math.round).join(',') + '|' + shot.image.data.slice(0, 44))`)
+    )
+    const [box = "", header = ""] = measured.split("|")
+    const [insetX, insetY, width, height] = box.split(",").map(Number)
+    const png = Buffer.from(header, "base64")
+    expect([insetX, insetY]).toEqual([2, 2])
+    expect([png.readUInt32BE(16), png.readUInt32BE(20)]).toEqual([width, height])
+  })
+
   it("keeps raw CDP inside the tab: frames are reachable, other tabs are not", async ({
     browser
   }) => {
