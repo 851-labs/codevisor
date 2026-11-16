@@ -24,7 +24,7 @@ extension SessionStore {
     let group = centerGroup(leafId: placement.leafId, workspace: workspace, session: session, project: project)
     guard let browser = group.pane(for: pane) as? BrowserPane else { return false }
     if let popup {
-      browser.model.adoptPopup(popup)
+      browser.model.adoptPopup(popup, openedBy: sourcePaneId)
     } else {
       browser.model.openAsNewTab(url)
       Task { _ = try? await browser.model.readyView() }

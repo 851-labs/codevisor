@@ -31,6 +31,7 @@ actor ChromiumAutomationConnection {
   private var popupOwners: [String: ChromiumBrowserModel] = [:] {
     didSet { publishControl() }
   }
+  private var unclassifiedPopups: Set<String> = []
   private var childSessions: [String: ChromiumBrowserModel] = [:]
   private var createdTabs: [String] = []
   private var downloadGuids: [UInt32: String] = [:]
@@ -275,6 +276,35 @@ actor ChromiumAutomationConnection {
     Task { await ChromiumDownloadTransfer.send(download, guid: guid, through: self) }
   }
 
+  private func announce(
+    _ info: [String: Any], target: String, method: String, openedBy opener: ChromiumBrowserModel
+  ) {
+    guard popupOwners[target] == nil else {
+      return send(["method": method, "params": ["targetInfo": popupInfo(info)]])
+    }
+    guard unclassifiedPopups.insert(target).inserted else { return }
+
+    Task {
+      let paneTab = await isPaneTab(target, openedBy: opener)
+      unclassifiedPopups.remove(target)
+      guard !paneTab, !closed else { return }
+
+      nativeOwners[target] = opener; popupOwners[target] = opener
+      send(["method": "Target.targetCreated", "params": ["targetInfo": popupInfo(info)]])
+    }
+  }
+
+  private func isPaneTab(_ target: String, openedBy opener: ChromiumBrowserModel) async -> Bool {
+    for model in await bridge.popupTabs(openedBy: opener) {
+      guard let view = try? await model.readyView(), let response = try? await view.cdp("Target.getTargetInfo"),
+        let info = response["targetInfo"] as? [String: Any], let native = info["targetId"] as? String
+      else { continue }
+      nativeOwners[native] = model
+      if native == target { return true }
+    }
+    return false
+  }
+
   func event(_ message: BrowserProtocolMessage, method: String, model: ChromiumBrowserModel) {
     guard authenticated else { return }
     guard let native = message.string("sessionId") else {
@@ -284,9 +314,7 @@ actor ChromiumAutomationConnection {
         info["type"] as? String == "page", let target = info["targetId"] as? String,
         let opener = info["openerId"] as? String, nativeOwners[opener] === model
       {
-        let created = popupOwners[target] == nil
-        nativeOwners[target] = model; popupOwners[target] = model
-        send(["method": created ? "Target.targetCreated" : method, "params": ["targetInfo": popupInfo(info)]])
+        announce(info, target: target, method: method, openedBy: model)
       } else if method == "Target.targetDestroyed", let target = params["targetId"] as? String,
         popupOwners.removeValue(forKey: target) != nil
       {
