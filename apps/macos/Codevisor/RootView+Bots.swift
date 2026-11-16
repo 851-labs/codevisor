@@ -8,6 +8,13 @@ extension RootView {
     return true
   }
 
+  var showsBlankPage: Bool {
+    switch selection {
+    case .none, .newChat: true
+    case .session, .workspace, .archivedWorkspace, .bot: false
+    }
+  }
+
   var rootActions: RootSidebarActions? {
     guard store != nil else { return nil }
     return RootSidebarActions(

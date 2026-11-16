@@ -5,7 +5,9 @@ import SwiftUI
 struct SidebarComposeToolbarItem: ToolbarContent {
   @ClientPreference(SidebarMode.preferenceKey, default: SidebarMode.code) private var storedMode
   @Environment(\.appIsCovered) private var appIsCovered
+  @Environment(AppEnvironment.self) private var environment
 
+  let showsBlankPage: Bool
   let newChat: () -> Void
   let newBot: () -> Void
   let openThread: OpenBotThread?
@@ -22,6 +24,10 @@ struct SidebarComposeToolbarItem: ToolbarContent {
       case .code: NewChatComposeButton(onNewChat: newChat)
       }
     }
-    .hidden(appIsCovered)
+    .hidden(appIsCovered || showsBotsEmptyState)
+  }
+
+  private var showsBotsEmptyState: Bool {
+    storedMode == .bots && showsBlankPage && !BotListAvailability(environment: environment).hasBots
   }
 }

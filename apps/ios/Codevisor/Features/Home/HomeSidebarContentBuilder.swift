@@ -11,6 +11,10 @@ struct HomeSidebarContentBuilder {
     environment.botSidebarEntries.filter { environment.machines.machine(for: $0.bot.serverId) != nil }
   }
 
+  var hasBots: Bool {
+    !botEntries.isEmpty
+  }
+
   var listedItems: [WorkspaceSidebarItem] {
     let homes = botHomes
     return known(environment.navigationStore.workspaceEntries.sidebar).filter { !homes.contains($0.id) }

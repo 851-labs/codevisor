@@ -101,10 +101,7 @@ struct BotListSidebar: View {
   @ViewBuilder
   private var list: some View {
     let conversations = conversations
-    if conversations.isEmpty {
-      SidebarPlaceholder(
-        icon: CodevisorSymbol.mascot.image, title: BotListEmptyCopy.title, message: BotListEmptyCopy.message)
-    } else {
+    if !conversations.isEmpty {
       BotConversationRows(
         rows: rows(conversations), sections: sections.sections, selectedBotID: selectedBotID, statuses: statuses,
         showsStatusLabel: ClientPreferences.shared.isSidebarRowDetailShown(.status),
