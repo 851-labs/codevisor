@@ -7,8 +7,6 @@ struct BotConversationRows: View {
   let rows: [BotSidebarRow]
   let sections: [CustomSection]
   let selectedBotID: UUID?
-  var statuses: SidebarRowStatuses? = nil
-  var showsStatusLabel = false
   let actions: BotSidebarRowActions
   @Environment(AppEnvironment.self) private var environment
   @Environment(\.accessibilityReduceMotion) private var reduceMotion
@@ -47,8 +45,7 @@ struct BotConversationRows: View {
 
   private func botRow(_ conversation: BotConversation, section: UUID?) -> some View {
     let bot = conversation.bot
-    let status = statuses?.status(of: bot.workspaceId)
-    return conversationRow(conversation, status: status)
+    return BotConversationRow(conversation: conversation, isSelected: bot.id == selectedBotID)
       .opacity(reorder.isDragging(bot.id) ? 0.4 : 1)
       .onSidebarRowPress { actions.select(bot) }
       .accessibilityAction(.default) { actions.select(bot) }
@@ -110,12 +107,6 @@ struct BotConversationRows: View {
         deleteButton(bot)
       }
       .id(bot.id)
-  }
-
-  private func conversationRow(_ conversation: BotConversation, status: SidebarRowStatus?) -> BotConversationRow {
-    BotConversationRow(
-      conversation: conversation, isSelected: conversation.bot.id == selectedBotID, status: status,
-      showsStatusLabel: showsStatusLabel)
   }
 
   private func chat(of bot: Bot) -> ChatSession? {

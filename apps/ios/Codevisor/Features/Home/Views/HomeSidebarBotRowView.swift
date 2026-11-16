@@ -55,9 +55,6 @@ struct HomeSidebarBotRowView: View, Equatable {
   private var compactRow: some View {
     HStack(spacing: 10) {
       label
-      if let status = bot.rowStatus, SidebarBotStatusBadge.isVisible(status, showsLabel: bot.showsStatusLabel) {
-        SidebarBotStatusBadge(status: status, showsLabel: bot.showsStatusLabel)
-      }
       if let machine = bot.machine {
         HomeSidebarSymbol(name: machine.systemImage)
           .imageScale(.small)
@@ -198,8 +195,7 @@ struct HomeSidebarBotRowView: View, Equatable {
   private var accessibilityLabel: String {
     let status = bot.status == .idle ? nil : bot.status.caption.lowercased()
     let preview = isConversation ? bot.conversation.preview : nil
-    return [bot.bot.name, "bot", status, bot.rowStatus?.title, bot.machine.map { "on \($0.name)" }, preview].compactMap
-    { $0 }
-    .joined(separator: ", ")
+    return [bot.bot.name, "bot", status, bot.machine.map { "on \($0.name)" }, preview].compactMap { $0 }
+      .joined(separator: ", ")
   }
 }

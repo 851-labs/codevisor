@@ -151,17 +151,6 @@ struct SidebarRowStatusesTests {
     #expect(!SidebarRowStatus.settingUp.replacesLeadingIcon(isUnread: false))
   }
 
-  @Test func botRowsShowStaticSymbolsEvenWithTheLabelOff() {
-    #expect(SidebarBotStatusBadge.isVisible(.failed, showsLabel: false))
-    #expect(SidebarBotStatusBadge.isVisible(.waiting, showsLabel: false))
-  }
-
-  @Test func botRowsLeaveWorkingToTheTypingBubbleUnlessTheLabelIsOn() {
-    #expect(!SidebarBotStatusBadge.isVisible(.working(since: start), showsLabel: false))
-    #expect(!SidebarBotStatusBadge.isVisible(.settingUp, showsLabel: false))
-    #expect(SidebarBotStatusBadge.isVisible(.working(since: start), showsLabel: true))
-  }
-
   @Test func labelsNameEachState() {
     let titles = [
       SidebarRowStatus.working(since: nil), .settingUp, .waiting, .input,
