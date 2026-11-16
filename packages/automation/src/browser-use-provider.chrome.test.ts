@@ -1,7 +1,7 @@
-import { rmSync, existsSync, mkdtempSync, writeFileSync } from "node:fs"
+import { rmSync, mkdtempSync, readFileSync, writeFileSync } from "node:fs"
 import { createServer } from "node:http"
 import { tmpdir } from "node:os"
-import { join } from "node:path"
+import { basename, join } from "node:path"
 
 import { afterEach, describe, expect, it, vi } from "vitest"
 
@@ -383,7 +383,13 @@ describe("Browser Use direct CDP engine", () => {
       })
       if (downloadPath.content[0]?.type !== "text") throw new Error("Missing download path")
       const downloadPathValue = expectRecord(JSON.parse(downloadPath.content[0].text), "Path")
-      expect(existsSync(expectString(downloadPathValue.path, "Download path"))).toBe(true)
+      const savedPath = expectString(downloadPathValue.path, "Download path")
+      expect(downloadValue).toMatchObject({
+        suggestedFilename: "fixture.txt",
+        url: expect.stringContaining("/fixture.txt")
+      })
+      expect(basename(savedPath)).toBe("fixture.txt")
+      expect(readFileSync(savedPath, "utf8")).toBe("download fixture")
     } finally {
       await provider.close()
       await new Promise<void>((resolve) => server.close(() => resolve()))

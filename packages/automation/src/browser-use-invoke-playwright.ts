@@ -1,5 +1,4 @@
 import { randomUUID } from "node:crypto"
-import { join } from "node:path"
 
 import type { CallToolResult } from "@modelcontextprotocol/server"
 
@@ -14,6 +13,7 @@ import {
   waitForCdpEvent
 } from "./browser-cdp-engine.js"
 import { delay, evaluatedValue } from "./browser-cdp.js"
+import { namedDownloadPath } from "./browser-downloads.js"
 import { routeBrowserFrame } from "./browser-frame.js"
 import {
   dispatchClick,
@@ -255,7 +255,7 @@ export const invokePlaywrightTools = async (
         const download = active.downloads.get(downloadId)
         if (download?.state === "canceled") throw new Error("Download was canceled")
         if (download?.state === "completed") {
-          return jsonResult({ path: download.path ?? join(downloadsDir, downloadId) })
+          return jsonResult({ path: namedDownloadPath(downloadsDir, download) })
         }
         if (Date.now() >= deadline) throw new Error("Timed out waiting for download")
         await delay(100)

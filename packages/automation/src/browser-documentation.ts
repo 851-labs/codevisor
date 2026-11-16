@@ -33,7 +33,7 @@ Playwright-style page API (tab.playwright):
 - evaluate(fn,arg?,{timeoutMs?}): read-only page evaluation.
 - expectNavigation(action,{url?,waitUntil?:'commit'|'domcontentloaded'|'load'|'networkidle',timeoutMs?}): arms before action; requires an actual main-frame navigation, including pushState/hash navigation.
 - waitForURL(url,{waitUntil?,timeoutMs?}); waitForLoadState({state?,timeoutMs?}); networkidle requires no tracked requests for 500 ms.
-- waitForEvent('download'|'filechooser',{timeoutMs?}); arm before clicking. FileChooser has isMultiple() and setFiles(workspacePaths). Download has path({timeoutMs?}).
+- waitForEvent('download'|'filechooser',{timeoutMs?}); arm before clicking. FileChooser has isMultiple() and setFiles(workspacePaths). Download has url(), suggestedFilename(), and path({timeoutMs?}); the saved file keeps the suggested name.
 - waitForTimeout(ms) exists; prefer observable conditions. Waits are bounded to 30 seconds.
 
 Locators compose with locator, getBy*, filter({has,hasNot,hasText,hasNotText,visible}), and, or, first, last, nth.
