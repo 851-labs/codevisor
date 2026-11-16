@@ -129,3 +129,35 @@ export const makeBrowserCursorRegistry = (): BrowserCursorRegistry => {
     }
   }
 }
+
+const pointerLayerVisibility = (visibility: "hidden" | "") =>
+  `(() => { const layer = document.getElementById("codevisor-pointer-layer"); if (!layer) return false; layer.style.visibility = ${JSON.stringify(visibility)}; return true })()`
+
+const setPointerLayerVisibility = (
+  runtime: BrowserRuntime,
+  page: PageHandle,
+  visibility: "hidden" | ""
+): Promise<boolean> =>
+  runtime.connection
+    .send<{ result?: { value?: unknown } }>(
+      "Runtime.evaluate",
+      { expression: pointerLayerVisibility(visibility), returnByValue: true },
+      page.sessionId
+    )
+    .then(
+      (response) => response.result?.value === true,
+      () => false
+    )
+
+export const withoutPointerOverlay = async <T>(
+  runtime: BrowserRuntime,
+  page: PageHandle,
+  capture: () => Promise<T>
+): Promise<T> => {
+  const hidden = await setPointerLayerVisibility(runtime, page, "hidden")
+  try {
+    return await capture()
+  } finally {
+    if (hidden) await setPointerLayerVisibility(runtime, page, "")
+  }
+}
