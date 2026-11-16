@@ -397,7 +397,7 @@ export const makeBrowserUseProvider = (
         if (active.native && active.connection.closed)
           throw new Error("Native browser disconnected")
         const ready = active
-        if (effectiveTool === "playwright.waitForEvent") {
+        if (waitsOutsideQueue.has(effectiveTool)) {
           return await invokeTool(context, ready, effectiveTool, effectiveArgs)
         }
         const result = await serializedBrowserOperation(ready, async () => {
@@ -490,3 +490,5 @@ export const makeBrowserUseProvider = (
 
 const unansweredHost = (active: BrowserRuntime) =>
   active.connection.closed ? undefined : active.nativeHost?.name
+
+const waitsOutsideQueue = new Set(["playwright.waitForEvent", "playwright.waitForTimeout"])

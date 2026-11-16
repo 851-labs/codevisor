@@ -141,7 +141,7 @@ export const browserUsePlaywrightTools: ReadonlyArray<Tool> = [
     locatorSchema(
       {
         state: { type: "string", enum: ["attached", "detached", "visible", "hidden"] },
-        timeoutMs: { type: "number", minimum: 0, maximum: 30000 }
+        timeoutMs: { type: "number", minimum: 0, maximum: 120000 }
       },
       ["state"]
     )
@@ -149,7 +149,7 @@ export const browserUsePlaywrightTools: ReadonlyArray<Tool> = [
   tool(
     "playwright.waitForTimeout",
     "Wait for a bounded number of milliseconds.",
-    objectSchema({ timeoutMs: { type: "number", minimum: 0, maximum: 30000 } }, ["timeoutMs"])
+    objectSchema({ timeoutMs: { type: "number", minimum: 0, maximum: 120000 } }, ["timeoutMs"])
   ),
   tool(
     "playwright.waitForURL",
@@ -157,7 +157,7 @@ export const browserUsePlaywrightTools: ReadonlyArray<Tool> = [
     objectSchema(
       {
         url: { type: "string" },
-        timeoutMs: { type: "number", minimum: 0, maximum: 30000 },
+        timeoutMs: { type: "number", minimum: 0, maximum: 120000 },
         waitUntil: {
           type: "string",
           enum: ["commit", "domcontentloaded", "load", "networkidle"]
@@ -171,7 +171,7 @@ export const browserUsePlaywrightTools: ReadonlyArray<Tool> = [
     "Wait for the selected tab to reach a requested document load state.",
     objectSchema({
       state: { type: "string", enum: ["domcontentloaded", "load", "networkidle"] },
-      timeoutMs: { type: "number", minimum: 0, maximum: 30000 }
+      timeoutMs: { type: "number", minimum: 0, maximum: 120000 }
     })
   ),
   tool(
@@ -187,7 +187,7 @@ export const browserUsePlaywrightTools: ReadonlyArray<Tool> = [
         locator: locatorProperty,
         function: { type: "string" },
         arg: {},
-        timeoutMs: { type: "number", minimum: 0, maximum: 30000 }
+        timeoutMs: { type: "number", minimum: 0, maximum: 120000 }
       },
       ["function"]
     )
@@ -195,7 +195,7 @@ export const browserUsePlaywrightTools: ReadonlyArray<Tool> = [
   tool(
     "playwright.downloadMedia",
     "Trigger a browser download for the media or file link matched by one locator.",
-    locatorSchema({ timeoutMs: { type: "number", minimum: 0, maximum: 30000 } })
+    locatorSchema({ timeoutMs: { type: "number", minimum: 0, maximum: 120000 } })
   ),
   tool(
     "playwright.waitForEvent",
@@ -203,7 +203,7 @@ export const browserUsePlaywrightTools: ReadonlyArray<Tool> = [
     objectSchema(
       {
         event: { type: "string", enum: ["filechooser", "download"] },
-        timeoutMs: { type: "number", minimum: 0, maximum: 30000 }
+        timeoutMs: { type: "number", minimum: 0, maximum: 120000 }
       },
       ["event"]
     )
@@ -215,7 +215,7 @@ export const browserUsePlaywrightTools: ReadonlyArray<Tool> = [
       {
         chooserId: { type: "string" },
         paths: { type: "array", items: { type: "string" } },
-        timeoutMs: { type: "number", minimum: 0, maximum: 30000 }
+        timeoutMs: { type: "number", minimum: 0, maximum: 120000 }
       },
       ["chooserId", "paths"]
     )
@@ -226,7 +226,7 @@ export const browserUsePlaywrightTools: ReadonlyArray<Tool> = [
     objectSchema(
       {
         downloadId: { type: "string" },
-        timeoutMs: { type: "number", minimum: 0, maximum: 30000 }
+        timeoutMs: { type: "number", minimum: 0, maximum: 120000 }
       },
       ["downloadId"]
     )

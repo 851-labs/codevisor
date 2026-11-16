@@ -16,6 +16,7 @@ import { sendUnlessDialogOpens } from "./browser-dialog-race.js"
 import { releaseElement, resolveElement } from "./browser-locators.js"
 import { snapshotPage } from "./browser-snapshot.js"
 import type { BrowserToolInvocation, BrowserToolSessionState } from "./browser-use-invoke-types.js"
+import { maxWaitMs, waitBudget } from "./browser-wait-budget.js"
 import { isPlainRecord } from "./unknown-values.js"
 
 export const invokeNavigationTools = async (
@@ -30,12 +31,16 @@ export const invokeNavigationTools = async (
     }
     case "navigate": {
       const url = stringArgument(args, "url")
+      const budget = waitBudget(args.timeoutMs)
       const sent = await sendUnlessDialogOpens<{ errorText?: string }>(
         active,
         page,
         "Page.navigate",
-        { url }
-      )
+        { url },
+        budget
+      ).catch((cause: unknown) => {
+        throw slowNavigation(cause, budget)
+      })
       if (sent.dialogOpened) return navigationResult(active, page, "navigate")
       if (sent.result.errorText !== undefined) throw new Error(sent.result.errorText)
       await waitForReady(active, page)
@@ -139,6 +144,13 @@ export const invokeNavigationTools = async (
     default:
       return undefined
   }
+}
+
+const slowNavigation = (cause: unknown, budget: number): unknown => {
+  if (!/Browser command timed out: Page\.navigate/.test(String(cause))) return cause
+  return new Error(
+    `The page did not answer within ${budget} ms. Pass a larger timeoutMs to goto (up to ${maxWaitMs}).`
+  )
 }
 
 const navigationResult = (runtime: BrowserRuntime, page: PageHandle, action: string) =>

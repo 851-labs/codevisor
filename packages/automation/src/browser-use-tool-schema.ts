@@ -76,7 +76,7 @@ export const locatorSchema = (
   objectSchema(
     {
       locator: locatorProperty,
-      timeoutMs: { type: "number", minimum: 0, maximum: 30000 },
+      timeoutMs: { type: "number", minimum: 0, maximum: 120000 },
       ...properties
     },
     ["locator", ...required]

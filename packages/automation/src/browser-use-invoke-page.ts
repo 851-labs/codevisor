@@ -25,6 +25,7 @@ import type {
   BrowserToolInvocation,
   BrowserToolSessionState
 } from "./browser-use-invoke-types.js"
+import { waitBudget } from "./browser-wait-budget.js"
 import {
   expectArray,
   expectRecord,
@@ -253,9 +254,8 @@ export const invokePageTools = async (
         sessionId = await attachTarget(active, target.targetId)
       }
       const params = isPlainRecord(args.params) ? args.params : {}
-      const timeoutMs = Math.max(0, Math.min(30_000, Number(args.timeoutMs ?? 30_000)))
       return jsonResult({
-        result: await active.connection.send(method, params, sessionId, timeoutMs)
+        result: await active.connection.send(method, params, sessionId, waitBudget(args.timeoutMs))
       })
     }
     case "cdp.readEvents": {
@@ -279,8 +279,7 @@ export const invokePageTools = async (
             (targetSession === undefined || eventSessionId === targetSession)
           )
         })
-      const timeoutMs = Math.max(0, Math.min(30_000, Number(args.timeoutMs ?? 0)))
-      const deadline = Date.now() + timeoutMs
+      const deadline = Date.now() + waitBudget(args.timeoutMs, 0)
       while (matches().length === 0 && Date.now() < deadline) await delay(50)
       const all = matches()
       const events = all.slice(0, limit).map((event) => {

@@ -6,6 +6,7 @@ import {
   type PageHandle
 } from "./browser-cdp-engine.js"
 import { delay } from "./browser-cdp.js"
+import { waitBudget } from "./browser-wait-budget.js"
 import { recordOrUndefined } from "./unknown-values.js"
 
 const loads = new WeakMap<
@@ -76,7 +77,7 @@ export const waitForBrowserState = async (
   const state = options.state ?? "load"
   if (!["commit", "domcontentloaded", "load", "networkidle"].includes(state))
     throw new Error("Unsupported browser load state")
-  const deadline = performance.now() + Math.max(0, Math.min(30_000, options.timeoutMs ?? 30_000))
+  const deadline = performance.now() + waitBudget(options.timeoutMs)
   while (true) {
     const navigated =
       options.afterSequence === undefined ||

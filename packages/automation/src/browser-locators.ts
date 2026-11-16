@@ -8,6 +8,7 @@ import { delay, evaluatedValue } from "./browser-cdp.js"
 import { assertReadOnlyFunction } from "./browser-evaluate-guard.js"
 import { locatorBackendNodeIds } from "./browser-locator-resolve.js"
 import { normalizeRef } from "./browser-snapshot.js"
+import { waitBudget } from "./browser-wait-budget.js"
 import { expectBoolean, expectRecord } from "./unknown-values.js"
 export { locatorBackendNodeIds } from "./browser-locator-resolve.js"
 
@@ -86,9 +87,9 @@ export const resolveLocatorElement = async (
   page: PageHandle,
   locator: unknown,
   requireActionable = true,
-  timeoutMs = 30_000
+  timeoutMs?: number
 ): Promise<ResolvedElement> => {
-  const deadline = Date.now() + Math.max(0, Math.min(30_000, timeoutMs))
+  const deadline = Date.now() + waitBudget(timeoutMs)
   let lastError = "Playwright locator resolved to 0 elements"
   while (true) {
     const ids = await locatorBackendNodeIds(runtime, page, locator)
@@ -202,9 +203,9 @@ export const callLocatorFunction = async (
   locator: unknown,
   functionDeclaration: string,
   args: ReadonlyArray<unknown> = [],
-  timeoutMs = 30_000
+  timeoutMs?: number
 ): Promise<unknown> => {
-  const deadline = Date.now() + Math.max(0, Math.min(30_000, timeoutMs))
+  const deadline = Date.now() + waitBudget(timeoutMs)
   let ids: number[] = []
   while (true) {
     ids = await locatorBackendNodeIds(runtime, page, locator)
