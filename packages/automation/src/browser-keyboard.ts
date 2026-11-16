@@ -1,4 +1,5 @@
 import type { BrowserRuntime, PageHandle } from "./browser-cdp-engine.js"
+import { browserHostIsMac, macEditingCommands } from "./browser-key-commands.js"
 import { browserKeyDescription } from "./browser-key-description.js"
 
 export { browserKeyDescription } from "./browser-key-description.js"
@@ -47,6 +48,16 @@ const keyEventParameters = (
   return { type: "keyDown", ...rest, text }
 }
 
+const editingCommands = (
+  runtime: BrowserRuntime,
+  key: ReturnType<typeof browserKeyDescription>,
+  type: "keyDown" | "keyUp"
+): { commands?: string[] } => {
+  if (type === "keyUp" || !browserHostIsMac(runtime.native)) return {}
+  const commands = macEditingCommands(key)
+  return commands.length === 0 ? {} : { commands }
+}
+
 export const dispatchKeyEvent = async (
   runtime: BrowserRuntime,
   page: PageHandle,
@@ -56,7 +67,7 @@ export const dispatchKeyEvent = async (
   const { text, ...rest } = key
   await runtime.connection.send(
     "Input.dispatchKeyEvent",
-    keyEventParameters(type, rest, text),
+    { ...keyEventParameters(type, rest, text), ...editingCommands(runtime, key, type) },
     page.sessionId
   )
 }
