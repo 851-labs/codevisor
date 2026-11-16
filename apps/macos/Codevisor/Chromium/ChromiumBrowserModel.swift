@@ -189,7 +189,10 @@ final class ChromiumBrowserModel {
   @ObservationIgnored var onOpenLink: ((String, BrowserLinkDestination, CVChromiumView?) -> Bool)?
   @ObservationIgnored private(set) var browserWindow: ChromiumBrowserWindow?
 
-  func adoptPopup(_ view: CVChromiumView) {
+  @ObservationIgnored private(set) var openerPaneId: UUID?
+
+  func adoptPopup(_ view: CVChromiumView, openedBy opener: UUID? = nil) {
+    openerPaneId = opener
     BrowserPageRetention.shared.touch(self)
     isLoading = true
     firstPage.newTabURL = nil

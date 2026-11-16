@@ -67,7 +67,10 @@ final class ChromiumAutomationBridge {
   func info(_ model: ChromiumBrowserModel) -> ChromiumTargetInfo {
     ChromiumTargetInfo(
       targetId: model.paneId.uuidString.lowercased(), title: model.title,
-      url: model.url?.absoluteString ?? "about:blank")
+      url: model.url?.absoluteString ?? "about:blank", openerId: model.openerPaneId?.uuidString.lowercased())
+  }
+  func popupTabs(openedBy opener: ChromiumBrowserModel) -> [ChromiumBrowserModel] {
+    liveModels(machineId: opener.machineId).filter { $0.openerPaneId == opener.paneId }
   }
   func model(_ id: String, machineId: String) -> ChromiumBrowserModel? {
     models[id.lowercased()]?.value.flatMap { $0.machineId == machineId ? $0 : nil }
