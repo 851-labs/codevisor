@@ -2,9 +2,14 @@ import Testing
 @testable import CodevisorUI
 
 struct BotMascotMotionTests {
-  private static let working = BotMascotActivity(isInTurn: true, isTalkingToAgent: false, hasActiveAgents: true)
-  private static let calling = BotMascotActivity(isInTurn: true, isTalkingToAgent: true, hasActiveAgents: true)
-  private static let delegated = BotMascotActivity(isInTurn: false, isTalkingToAgent: false, hasActiveAgents: true)
+  private static let working = BotMascotActivity(
+    isInTurn: true, isTalkingToAgent: false, hasActiveAgents: true, hasMessages: true)
+  private static let calling = BotMascotActivity(
+    isInTurn: true, isTalkingToAgent: true, hasActiveAgents: true, hasMessages: true)
+  private static let delegated = BotMascotActivity(
+    isInTurn: false, isTalkingToAgent: false, hasActiveAgents: true, hasMessages: true)
+  private static let justCreated = BotMascotActivity(
+    isInTurn: false, isTalkingToAgent: false, hasActiveAgents: false, hasMessages: false)
 
   @Test("A bot in a turn calls while it talks to an agent and works otherwise, open or not")
   func turnsIgnoreWhetherTheBotIsOpen() {
@@ -29,5 +34,12 @@ struct BotMascotMotionTests {
 
     #expect(delegated == .idle && !delegated.followsPointer && delegated.riveMode == "idle")
     #expect(resting == .sleeping && !resting.followsPointer)
+  }
+
+  @Test("A closed bot with no messages yet stays awake instead of sleeping")
+  func botWithoutMessagesStaysAwake() {
+    let justCreated = BotMascotMotion(Self.justCreated, isOpen: false)
+
+    #expect(justCreated == .idle && !justCreated.followsPointer)
   }
 }

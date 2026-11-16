@@ -11,8 +11,10 @@ import { idOf } from "./response-test-support.js"
 
 const instructions = (bot: Bot): string => readFileSync(join(bot.rootPath, "AGENTS.md"), "utf8")
 
-const newBot = async (running: Pick<Running, "server">, name: string): Promise<Bot> =>
-  decodeBot((await createBot(running, { name, projectIds: [] })).body)
+const newBot = async (
+  running: Pick<Running, "server" | "services" | "agents">,
+  name: string
+): Promise<Bot> => decodeBot((await createBot(running, { name, projectIds: [] })).body)
 
 const sayWhatItDoes = (running: Pick<Running, "server">, chatId: string, about: string) =>
   jsonRequest(running.server, `/v1/sessions/${chatId}/bot/about`, {

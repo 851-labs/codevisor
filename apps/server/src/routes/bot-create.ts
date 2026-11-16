@@ -33,6 +33,7 @@ import {
   type EventFanout,
   type RouteState
 } from "../server-context.js"
+import { greetNewBot } from "./bot-greeting.js"
 import { writeInstructions, type BotRepository } from "./bot-instructions.js"
 import { newBotMascot } from "./bot-mascots.js"
 import { isBotProject, isScratchProject } from "./project-probe.js"
@@ -227,6 +228,7 @@ export const createBot = async (
     projectIds: payload.projectIds
   })
   writeJson(response, 201, bot)
+  await greetNewBot(services, fanout, routeState, config.id, bot).catch(swallowError)
   return true
 }
 

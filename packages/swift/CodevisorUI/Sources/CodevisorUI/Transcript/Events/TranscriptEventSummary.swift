@@ -69,6 +69,7 @@ struct TranscriptEventSummary {
     case "session.restarted": .init(title: "Codevisor restarted", icon: .symbol("arrow.clockwise"))
     case "session.usage_limit_reset": .init(title: "Usage limit reset", icon: .symbol("clock.arrow.circlepath"))
     case "question.answered": .init(title: "Answer delivered", icon: .symbol("questionmark.circle"))
+    case "bot.created": .init(title: "Bot created", icon: .symbol("sparkles"))
     default: .init(title: "Codevisor event", icon: .symbol("bolt"))
     }
   }

@@ -15,7 +15,8 @@ struct BotMascotActivities {
       isTalkingToAgent: session.talkingToAgent,
       hasActiveAgents: environment.projectList.hasAgents(startedBy: session) { agent in
         cache.isInProgress(agent) || agent.sidebarState == .waitingForUser
-      }
+      },
+      hasMessages: session.latestBotMessage != nil
     )
   }
 

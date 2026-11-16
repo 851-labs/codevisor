@@ -11,7 +11,7 @@ enum BotMascotMotion: Equatable, Sendable {
     } else if isOpen {
       self = .watching
     } else {
-      self = activity.hasActiveAgents ? .idle : .sleeping
+      self = activity.staysAwake ? .idle : .sleeping
     }
   }
 
