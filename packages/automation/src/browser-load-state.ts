@@ -6,25 +6,29 @@ import {
   type PageHandle
 } from "./browser-cdp-engine.js"
 import { delay } from "./browser-cdp.js"
+import {
+  busyNetworkHint,
+  networkIsQuiet,
+  newNetworkActivity,
+  observeNetworkActivity,
+  type NetworkActivity
+} from "./browser-network-activity.js"
 import { waitBudget } from "./browser-wait-budget.js"
 import { recordOrUndefined } from "./unknown-values.js"
 
-const loads = new WeakMap<
-  BrowserRuntime,
-  Map<string, { requests: Set<string>; changedAt: number }>
->()
+const loads = new WeakMap<BrowserRuntime, Map<string, NetworkActivity>>()
 const loadFor = (runtime: BrowserRuntime, session: string) => {
   let sessions = loads.get(runtime)
   if (!sessions) {
     sessions = new Map()
     loads.set(runtime, sessions)
   }
-  let state = sessions.get(session)
-  if (!state) {
-    state = { requests: new Set(), changedAt: performance.now() }
-    sessions.set(session, state)
+  let activity = sessions.get(session)
+  if (!activity) {
+    activity = newNetworkActivity(performance.now())
+    sessions.set(session, activity)
   }
-  return state
+  return activity
 }
 
 export const observeBrowserLoadEvent = (
@@ -34,18 +38,7 @@ export const observeBrowserLoadEvent = (
   session?: string
 ): void => {
   if (!session) return
-  const state = loadFor(runtime, session)
-  if (
-    method === "Network.requestWillBeSent" &&
-    params.type !== "WebSocket" &&
-    params.type !== "EventSource"
-  ) {
-    state.requests.add(String(params.requestId))
-    state.changedAt = performance.now()
-  } else if (method === "Network.loadingFinished" || method === "Network.loadingFailed") {
-    state.requests.delete(String(params.requestId))
-    state.changedAt = performance.now()
-  }
+  observeNetworkActivity(loadFor(runtime, session), method, params, performance.now())
   if (method === "Page.frameNavigated" || method === "Page.navigatedWithinDocument") {
     const target = [...runtime.sessions].find(([, id]) => id === session)?.[0]
     if (target)
@@ -99,17 +92,14 @@ export const waitForBrowserState = async (
       else ready = await evaluate(runtime, page, "document.readyState")
       const documentReady =
         ready === "complete" || (state === "domcontentloaded" && ready === "interactive")
-      const network = loadFor(runtime, page.sessionId)
-      if (
-        documentReady &&
-        (state !== "networkidle" ||
-          (network.requests.size === 0 && performance.now() - network.changedAt >= 500))
-      )
-        return
+      const quiet =
+        state !== "networkidle" ||
+        networkIsQuiet(loadFor(runtime, page.sessionId), performance.now())
+      if (documentReady && quiet) return
     }
     if (performance.now() >= deadline)
       throw new Error(
-        `Timed out waiting for ${options.afterSequence === undefined ? "page" : "navigation"} ${state}${options.url ? ` at ${options.url}` : ""}`
+        `Timed out waiting for ${options.afterSequence === undefined ? "page" : "navigation"} ${state}${options.url ? ` at ${options.url}` : ""}${state === "networkidle" ? busyNetworkHint(loadFor(runtime, page.sessionId)) : ""}`
       )
     await delay(Math.min(50, Math.max(1, deadline - performance.now())))
   }

@@ -168,4 +168,12 @@ describe("Frame locators", () => {
     for (const text of ["first card", "last card", "inner two", "## Frame: Leaf"])
       expect(exported).toContain(text)
   })
+
+  it("goes network-idle once a page with a cross-origin frame has loaded", async ({ browser }) => {
+    await browser.open("/frames")
+    const settled = await browser.cell(`
+      await tab.playwright.waitForLoadState({state:'networkidle', timeoutMs: 3000})
+      browser.write('idle')`)
+    expect(settled).toBe("idle")
+  })
 })

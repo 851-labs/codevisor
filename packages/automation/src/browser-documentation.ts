@@ -32,7 +32,7 @@ Playwright-style page API (tab.playwright):
 - frameLocator(css) composes through nested and cross-origin frames; when several frames match, pick one with .first(), .last() or .nth(index).
 - evaluate(fn,arg?,{timeoutMs?}): read-only page evaluation. The function may compute with its own local variables and read the page (including a GET fetch); changing the DOM, storage or location, or sending a request with a method or body, is refused. Act with locators instead.
 - expectNavigation(action,{url?,waitUntil?:'commit'|'domcontentloaded'|'load'|'networkidle',timeoutMs?}): arms before action; requires an actual main-frame navigation, including pushState/hash navigation.
-- waitForURL(url,{waitUntil?,timeoutMs?}); waitForLoadState({state?,timeoutMs?}); networkidle requires no tracked requests for 500 ms.
+- waitForURL(url,{waitUntil?,timeoutMs?}); waitForLoadState({state?,timeoutMs?}); networkidle means no requests for 500 ms; web sockets, event streams, beacons, cross-site frames and requests open longer than 5 s don't count. A page that polls constantly never goes idle: wait for the content with a locator instead.
 - waitForEvent('download'|'filechooser',{timeoutMs?}); arm before clicking. FileChooser has isMultiple() and setFiles(workspacePaths). Download has url(), suggestedFilename(), and path({timeoutMs?}); the saved file keeps the suggested name.
 - waitForTimeout(ms) exists; prefer observable conditions. Every timeoutMs defaults to 30 seconds and may be up to 120000 (2 minutes); a larger value is refused, not shortened.
 

@@ -99,7 +99,7 @@ await submit.click()
 - Refs are opaque and bound to the session, tab, and latest snapshot. Snapshot immediately before acting; old refs reject. If a ref becomes stale, discard it and take a new snapshot.
 - Prefer refs and locators. Use coordinate mouse methods only when no semantic target exists.
 - Inspect the state after every action; do not assume success. Tool failures reject the promise: do not swallow them and continue as though an action succeeded.
-- Use locator `waitFor` for visible state changes. `expectNavigation` arms before the action and requires an actual navigation; `networkidle` observes outstanding requests and a 500 ms quiet period.
+- Use locator `waitFor` for visible state changes. `expectNavigation` arms before the action and requires an actual navigation; `networkidle` means no requests for 500 ms; web sockets, event streams, beacons, cross-site frames and requests open longer than 5 s don't count, and a page that polls constantly never goes idle.
 - Optional capabilities: `browser.capabilities.list()` and `tab.capabilities.list()`, then `get(id)`. Codevisor provides browser `viewport` and tab `cdp`, `pageAssets`, and `webmcp`. User Chrome also supports `browser.user.history(options)`.
 - `tab.clipboard`, `tab.getJsDialog()`, and `tab.dev.logs()` cover the clipboard, JavaScript dialogs, and console logs. An open dialog has `type`, `message`, and, for a prompt, `defaultValue`; read them before `accept(text?)` or `dismiss()`.
 
