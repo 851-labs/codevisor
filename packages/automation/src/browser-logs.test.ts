@@ -7,15 +7,28 @@ import {
 } from "./browser-runtime-test-support.js"
 import { invokePageTools } from "./browser-use-invoke-page.js"
 
-function fixture(entries: Array<Readonly<Record<string, unknown>>>) {
+const said = (text: string, sequence: number) => ({
+  method: "Runtime.consoleAPICalled",
+  type: "log",
+  timestamp: "2000",
+  args: [{ value: text }],
+  sequence
+})
+
+function fixture(
+  entries: Array<Readonly<Record<string, unknown>>>,
+  frames: Record<string, Array<Readonly<Record<string, unknown>>>> = {}
+) {
   const logs = new Map([
     ["page", entries],
-    ["other", [{ timestamp: Infinity }]]
+    ["other", [{ timestamp: Infinity }]],
+    ...Object.entries(frames)
   ])
+  const frameParents = new Map(Object.keys(frames).map((sessionId) => [sessionId, "page"]))
   const read = async (args: Readonly<Record<string, unknown>> = {}) => {
     const result = await invokePageTools(
       fakeBrowserToolInvocation({
-        active: fakeBrowserRuntime({ logs }),
+        active: fakeBrowserRuntime({ logs, frameParents }),
         backend: "managed",
         args,
         toolName: "dev.logs"
@@ -197,5 +210,17 @@ describe("dev.logs normalization", () => {
     const empty = fixture([])
     empty.logs.delete("page")
     expect(await empty.read()).toEqual([])
+  })
+
+  it("includes the tab's frames, in the order things were logged", async () => {
+    const { read } = fixture([said("page first", 1), said("page last", 4)], {
+      frame: [said("frame second", 2), said("frame third", 3)]
+    })
+    expect((await read()).map((entry: { message: string }) => entry.message)).toEqual([
+      "page first",
+      "frame second",
+      "frame third",
+      "page last"
+    ])
   })
 })

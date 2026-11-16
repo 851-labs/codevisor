@@ -17,6 +17,7 @@ import {
 } from "./browser-cdp-engine.js"
 import { delay, type CdpEvent } from "./browser-cdp.js"
 import { exportBrowserContent } from "./browser-content.js"
+import { tabSessionIds } from "./browser-frame-sessions.js"
 import { readBrowserLogs } from "./browser-logs.js"
 import type {
   BrowserAssetInventory,
@@ -204,7 +205,9 @@ export const invokePageTools = async (
       return jsonResult({ written: true })
     }
     case "dev.logs":
-      return jsonResult({ entries: readBrowserLogs(active.logs, page.sessionId, args) })
+      return jsonResult({
+        entries: readBrowserLogs(active.logs, tabSessionIds(active, page.sessionId), args)
+      })
     case "getJsDialog":
       return jsonResult({ dialog: active.dialogs.get(page.sessionId) ?? null })
     case "viewport.set": {

@@ -2,7 +2,7 @@ import { describe, expect } from "vitest"
 
 import { chromeBrowserSuite } from "./browser-chrome-test-support.js"
 
-const leaf = `<title>Leaf</title><p id="out">none</p>
+const leaf = `<title>Leaf</title><p id="out">none</p><script>console.log('leaf says ' + location.host)</script>
   <button onclick="document.querySelector('#out').textContent = 'clicked'">Frame action</button>
   <label>Frame name<input id="name"></label>`
 
@@ -86,5 +86,15 @@ describe("Frame locators", () => {
       }
       browser.write([await act('#in-open'), await act('#in-closed'), await act('#same-in-closed')])`)
     expect(reached).toEqual(["clicked", "clicked", "clicked"])
+  })
+
+  it("reads console output from cross-origin frames along with the page's", async ({ browser }) => {
+    await browser.open("/frames")
+    const hosts = await browser.cell(`
+      await tab.playwright.frameLocator('#cross').locator('#out').waitFor({state:'visible'})
+      const said = (await tab.dev.logs({filter: 'leaf says'})).map(entry => entry.message.replace('leaf says ', ''))
+      browser.write([...new Set(said)].sort())`)
+    const { origin, crossOrigin } = browser.origins
+    expect(hosts).toEqual([new URL(origin).host, new URL(crossOrigin).host].toSorted())
   })
 })
