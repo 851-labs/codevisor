@@ -8,6 +8,7 @@ import {
   type BrowserSnapshot,
   type PageHandle
 } from "./browser-cdp-engine.js"
+import { pdfSnapshotNote, showsPdf } from "./browser-pdf.js"
 import { readFrameAccessibility, type FrameAccessibility } from "./browser-snapshot-frames.js"
 import { snapshotRoot, snapshotStarts } from "./browser-snapshot-scope.js"
 
@@ -91,12 +92,14 @@ const snapshotResult = async (
   const start = lineOffset(offset, snapshot.lines.length)
   const shown = snapshot.lines.slice(start, start + windowLines)
   const info = await pageInformation(runtime, page)
+  const pdf = await showsPdf(runtime, page)
   const text = [
     `Page URL: ${info.url}`,
     `Snapshot: ${snapshot.id}`,
     `Title: ${info.title}`,
     ...shown,
-    ...windowNotes(snapshot, start, start + shown.length)
+    ...windowNotes(snapshot, start, start + shown.length),
+    ...(pdf ? [pdfSnapshotNote] : [])
   ].join("\n")
   return { content: [{ type: "text", text }] }
 }
