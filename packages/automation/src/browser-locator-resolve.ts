@@ -365,7 +365,9 @@ export const locatorBackendNodeIds = async (
     const ref = normalizeRef(locator.ref)
     const id = snapshot.targets.get(ref)
     if (id === undefined) throw new Error(`Unknown or stale target ${ref}; take a fresh snapshot`)
-    ids = await filterBackendNodeIdsByRoots(runtime, page, [id], roots)
+    const scoped = inheritedRoots !== undefined || (locator.frame?.length ?? 0) > 0
+    if (scoped) ids = await filterBackendNodeIdsByRoots(runtime, page, [id], roots)
+    else ids = [id]
   } else if (locator.css !== undefined) {
     ids = await queryCssWithinRoots(runtime, page, roots, locator.css)
   } else if (locator.role !== undefined) {

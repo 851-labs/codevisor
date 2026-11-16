@@ -5,6 +5,7 @@ import { join } from "node:path"
 import type { CallToolResult } from "@modelcontextprotocol/server"
 
 import { evaluate, type BrowserRuntime, type PageHandle } from "./browser-cdp-engine.js"
+import { frameMarkdownSections } from "./browser-frame-text.js"
 import { expectString } from "./unknown-values.js"
 
 const contentTypes = {
@@ -12,6 +13,15 @@ const contentTypes = {
   html: ["html", "text/html"],
   pdf: ["pdf", "application/pdf"]
 } as const
+
+const pageMarkdownExpression =
+  "'# ' + document.title + '\\n\\nSource: ' + location.href + '\\n\\n' + document.body.innerText"
+
+const pageMarkdown = async (runtime: BrowserRuntime, page: PageHandle): Promise<string> => {
+  const own = expectString(await evaluate(runtime, page, pageMarkdownExpression), "Page export")
+  const frames = await frameMarkdownSections(runtime, page).catch(() => "")
+  return own + frames
+}
 
 const isContentFormat = (format: string): format is keyof typeof contentTypes =>
   Object.hasOwn(contentTypes, format)
@@ -37,19 +47,15 @@ export const exportBrowserContent = async (
       ).data,
       "base64"
     )
-  } else {
+  } else if (format === "html") {
     bytes = Buffer.from(
       expectString(
-        await evaluate(
-          runtime,
-          page,
-          format === "html"
-            ? "document.documentElement.outerHTML"
-            : "'# ' + document.title + '\\n\\nSource: ' + location.href + '\\n\\n' + document.body.innerText"
-        ),
+        await evaluate(runtime, page, "document.documentElement.outerHTML"),
         "Page export"
       )
     )
+  } else {
+    bytes = Buffer.from(await pageMarkdown(runtime, page))
   }
   if (bytes.length > 20 * 1024 * 1024)
     throw new Error("Page export exceeds the 20 MB attachment limit")

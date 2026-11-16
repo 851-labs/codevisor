@@ -67,7 +67,7 @@ describe("Browser load state", () => {
     async (method) => {
       const { runtime, page, event } = fixture()
       const baseline = await browserNavigationBaseline(runtime, page)
-      runtime.snapshots.set("owner:tab", { id: "old", targets: new Map() })
+      runtime.snapshots.set("owner:tab", { id: "old", targets: new Map(), frames: new Map() })
       event(method, { frame: { id: "frame" }, frameId: "frame" })
       await waitForBrowserState(runtime, page, { ...baseline, state: "commit" })
       expect(runtime.snapshots.has("owner:tab")).toBe(false)
