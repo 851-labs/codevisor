@@ -3,6 +3,7 @@ import type { CallToolResult } from "@modelcontextprotocol/server"
 import {
   actionResult,
   evaluate,
+  openDialog,
   pageResult,
   stringArgument,
   verifiedActionResult
@@ -17,6 +18,7 @@ import {
   pressKey,
   selectOptionsElement
 } from "./browser-input.js"
+import { waitForMainFrameNavigation } from "./browser-load-state.js"
 import { releaseElement, resolveElement } from "./browser-locators.js"
 import { normalizeRef } from "./browser-snapshot.js"
 import type { BrowserToolInvocation, BrowserToolSessionState } from "./browser-use-invoke-types.js"
@@ -222,7 +224,9 @@ export const invokeInteractionTools = async (
       }
       return pageResult(active, page, { action: "wait", path: "cdp", conditionMet: true })
     }
-    case "dialog":
+    case "dialog": {
+      const leavesPage = openDialog(active, page)?.type === "beforeunload" && args.accept === true
+      const answeredAt = active.eventSequence
       await active.connection.send(
         "Page.handleJavaScriptDialog",
         {
@@ -231,7 +235,9 @@ export const invokeInteractionTools = async (
         },
         page.sessionId
       )
+      if (leavesPage) await waitForMainFrameNavigation(active, page, answeredAt)
       return actionResult(active, page, "dialog")
+    }
     case "upload_files": {
       if (!Array.isArray(args.paths) || !args.paths.every((value) => typeof value === "string")) {
         throw new Error("paths must be an array of workspace file paths")

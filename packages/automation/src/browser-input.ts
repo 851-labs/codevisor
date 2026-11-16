@@ -1,7 +1,7 @@
 import type { BrowserRuntime, PageHandle, ResolvedElement } from "./browser-cdp-engine.js"
 import { delay, evaluatedValue } from "./browser-cdp.js"
 import type { BrowserCursor } from "./browser-cursor.js"
-import { tabSessionOf } from "./browser-frame-sessions.js"
+import { sendUnlessDialogOpens } from "./browser-dialog-race.js"
 import { releaseElement, resolveElement } from "./browser-locators.js"
 import {
   expectRecord,
@@ -54,26 +54,9 @@ export const dispatchMouseEvent = async (
   page: PageHandle,
   params: Readonly<Record<string, unknown>>
 ): Promise<MouseDispatch> => {
-  const { promise: dialog, resolve: resolveDialog } = Promise.withResolvers<void>()
-  const stop = runtime.connection.on(
-    "Page.javascriptDialogOpening",
-    () => resolveDialog(),
-    tabSessionOf(runtime, page.sessionId)
-  )
-  const command = runtime.connection
-    .send("Input.dispatchMouseEvent", params, page.sessionId)
-    .then(() => undefined)
-  try {
-    const outcome = await Promise.race([
-      command.then(() => "completed" as const),
-      dialog.then(() => "dialog" as const)
-    ])
-    if (outcome === "completed") return { dialogOpened: false, completion: command }
-    const completion = command.catch(() => undefined)
-    return { dialogOpened: true, completion }
-  } finally {
-    stop()
-  }
+  const sent = await sendUnlessDialogOpens(runtime, page, "Input.dispatchMouseEvent", params)
+  if (!sent.dialogOpened) return { dialogOpened: false, completion: Promise.resolve() }
+  return { dialogOpened: true, completion: sent.completion.then(() => undefined) }
 }
 
 export const dispatchClick = async (
