@@ -6,6 +6,7 @@ import type { CallToolResult } from "@modelcontextprotocol/server"
 
 import { evaluate, type BrowserRuntime, type PageHandle } from "./browser-cdp-engine.js"
 import { frameMarkdownSections } from "./browser-frame-text.js"
+import { pdfMarkdown, showsPdf } from "./browser-pdf.js"
 import { expectString } from "./unknown-values.js"
 
 const contentTypes = {
@@ -18,6 +19,8 @@ const pageMarkdownExpression =
   "'# ' + document.title + '\\n\\nSource: ' + location.href + '\\n\\n' + document.body.innerText"
 
 const pageMarkdown = async (runtime: BrowserRuntime, page: PageHandle): Promise<string> => {
+  if (await showsPdf(runtime, page)) return pdfMarkdown(runtime, page)
+
   const own = expectString(await evaluate(runtime, page, pageMarkdownExpression), "Page export")
   const frames = await frameMarkdownSections(runtime, page).catch(() => "")
   return own + frames
