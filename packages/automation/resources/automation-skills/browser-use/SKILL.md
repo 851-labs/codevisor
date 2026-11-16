@@ -26,7 +26,7 @@ Browser Use calls execute immediately. Do not add a separate approval or confirm
 | Close all but the tabs to keep | `browser.tabs.finalize({ keep })`                                                   |
 | Every method and its signature | `await browser.documentation()`                                                     |
 
-`browser` is `machines.current.tools.browser` in an execute script, and is already defined inside `browser.js` cells.
+`browser` is `machines.current.tools.browser` in an execute script, and is already defined inside `browser.js` cells. Another machine's browser has the same API, tab objects included: `(await machines.get(name)).tools.browser`. There is no `setTimeout`; wait with `await tab.playwright.waitForTimeout(ms)`.
 
 ## Choose the browser
 

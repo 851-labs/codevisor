@@ -45,6 +45,66 @@ const execute = async (
 }
 
 describe.sequential("sandboxes, clients, status, and typed errors", () => {
+  it("gives another machine's browser the same tab objects as this machine's", async () => {
+    const { calls, result } = await execute(
+      `async () => {
+        const laptop = await machines.get("MacBook Pro");
+        const remote = laptop.tools.browser;
+        await remote.use_backend({ backend: "extension" });
+        const tab = await remote.tabs.new();
+        await tab.goto("https://example.test/");
+        await tab.playwright.getByRole("button", { name: "Save" }).click();
+        const local = await machines.current.tools.browser.tabs.new();
+        await local.goto("https://local.test/");
+        return { remoteTab: tab.id, localTab: local.id, same: laptop.tools.browser === remote };
+      }`,
+      (call) => {
+        if (call.path === "codevisor.machines.list") return roster
+        if (call.path === "browser.tabs") {
+          const id = call.target === undefined ? "local-tab" : "remote-tab"
+          return { browser: "extension", tabs: [{ id, selected: true }] }
+        }
+        return {}
+      }
+    )
+
+    expect(result.error).toBeUndefined()
+    expect(result.result).toEqual({ remoteTab: "remote-tab", localTab: "local-tab", same: true })
+    const laptop = { machine: "mbp-1", machineName: "MacBook Pro" }
+    expect(calls.filter((call) => call.path.startsWith("browser."))).toEqual([
+      { path: "browser.use_backend", args: { backend: "extension" }, target: laptop },
+      { path: "browser.tabs", args: { action: "new" }, target: laptop },
+      {
+        path: "browser.navigate",
+        args: expect.objectContaining({ url: "https://example.test/", tabId: "remote-tab" }),
+        target: laptop
+      },
+      {
+        path: "browser.playwright.click",
+        args: expect.objectContaining({
+          locator: { role: "button", name: "Save" },
+          tabId: "remote-tab"
+        }),
+        target: laptop
+      },
+      { path: "browser.tabs", args: { action: "new" } },
+      {
+        path: "browser.navigate",
+        args: expect.objectContaining({ url: "https://local.test/", tabId: "local-tab" })
+      }
+    ])
+  })
+
+  it("says how to wait when a script reaches for setTimeout", async () => {
+    const { result } = await execute(
+      `async () => { await new Promise((resolve) => setTimeout(resolve, 100)); }`,
+      () => ({})
+    )
+    expect(result.error).toContain(
+      "setTimeout is not available in Codevisor code execution. To wait in a browser cell, use await tab.playwright.waitForTimeout(ms)."
+    )
+  })
+
   it("resolves machines by id, name, or prefix and routes their tools to that machine", async () => {
     const { calls, result } = await execute(
       `async () => {
