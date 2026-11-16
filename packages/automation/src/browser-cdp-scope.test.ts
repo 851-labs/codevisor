@@ -76,6 +76,22 @@ describe("Raw CDP tab scope", () => {
       )
   })
 
+  it("refuses commands that hand the page files by path", () => {
+    expect(() =>
+      requireTabScopedCommand(runtime, page, "DOM.setFileInputFiles", { files: ["/etc/hosts"] })
+    ).toThrow("DOM.setFileInputFiles hands the page files by path")
+    expect(() =>
+      requireTabScopedCommand(runtime, page, "Input.dispatchDragEvent", {
+        type: "drop",
+        data: { items: [], files: ["/etc/hosts"] }
+      })
+    ).toThrow("Input.dispatchDragEvent hands the page files by path")
+    requireTabScopedCommand(runtime, page, "Input.dispatchDragEvent", {
+      type: "dragOver",
+      data: { items: [{ mimeType: "text/plain", data: "card" }], files: [] }
+    })
+  })
+
   it("lets target commands name only the tab and its frames", () => {
     requireTabScopedCommand(runtime, page, "Target.getTargetInfo", {})
     requireTabScopedCommand(runtime, page, "Target.getTargetInfo", { targetId: "nested" })

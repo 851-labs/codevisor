@@ -46,8 +46,14 @@ it("preserves browser cells and applies gateway upload validation and attachment
             ]
           }
         }
-        if (name === "upload_files") {
+        if (name === "upload_files" || name === "playwright.setInputFiles") {
           nested.push(name)
+          if (
+            name === "playwright.setInputFiles" &&
+            Array.isArray(args.paths) &&
+            args.paths.length === 0
+          )
+            return { content: [{ type: "text", text: JSON.stringify({ cleared: true }) }] }
           throw new Error("Upload validation was bypassed")
         }
         if (name === "tabs" && args.action === "list" && args.scope === "session") {
@@ -90,7 +96,19 @@ it("preserves browser cells and applies gateway upload validation and attachment
     expect(await readFile(artifact.path, "utf8")).toBe("Exported page")
     const rejected = await execute("await browser.upload_files({paths:['../outside.txt']})")
     expect(JSON.stringify(rejected)).toContain("workspace")
-    expect(nested).toEqual(["content.export"])
+    const setFiles = (paths: string[]) =>
+      client.callTool({
+        name: "execute",
+        arguments: {
+          description: "Set a file input",
+          code: `async () => machines.current.tools["browser.playwright.setInputFiles"]({locator: {css: "input"}, paths: ${JSON.stringify(paths)}})`
+        }
+      })
+    expect(JSON.stringify(await setFiles(["../outside.txt"]))).toContain(
+      "Browser Use can only upload files from the current workspace"
+    )
+    expect(JSON.stringify(await setFiles([]))).toContain("cleared")
+    expect(nested).toEqual(["content.export", "playwright.setInputFiles"])
     await manager.finishTurn(session.id)
   } finally {
     await client.close()
