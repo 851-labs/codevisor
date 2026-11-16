@@ -17,6 +17,7 @@ import {
   stringArgument
 } from "./browser-cdp-engine.js"
 import { delay, type CdpEvent } from "./browser-cdp.js"
+import { managedViewport } from "./browser-chromium.js"
 import { exportBrowserContent } from "./browser-content.js"
 import { tabSessionIds } from "./browser-frame-sessions.js"
 import { readBrowserLogs } from "./browser-logs.js"
@@ -52,6 +53,22 @@ const eventTargetSession = (
   if (typeof target?.sessionId === "string") return target.sessionId
   if (typeof target?.targetId === "string") return active.sessions.get(target.targetId)
   return page.sessionId
+}
+
+const clearViewportOverride = async (
+  active: BrowserRuntime,
+  page: PageHandle,
+  backend: string
+): Promise<void> => {
+  if (backend !== "managed") {
+    await active.connection.send("Emulation.clearDeviceMetricsOverride", {}, page.sessionId)
+    return
+  }
+  await active.connection.send(
+    "Emulation.setDeviceMetricsOverride",
+    { ...managedViewport, deviceScaleFactor: 0, mobile: false },
+    page.sessionId
+  )
 }
 
 const clipboardEntries = (value: unknown) => {
@@ -238,7 +255,7 @@ export const invokePageTools = async (
       })
     }
     case "viewport.reset":
-      await active.connection.send("Emulation.clearDeviceMetricsOverride", {}, page.sessionId)
+      await clearViewportOverride(active, page, backend)
       await active.connection.send(
         "Emulation.setTouchEmulationEnabled",
         { enabled: false },

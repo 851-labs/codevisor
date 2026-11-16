@@ -174,6 +174,10 @@ const closeInheritedBrowser = async (connection: CdpConnection) => {
   await connection.close().catch(() => undefined)
 }
 
+export const managedViewport = { width: 1440, height: 900 } as const
+const managedWindowChromeHeight = 87
+const managedWindowSize = `${managedViewport.width},${managedViewport.height + managedWindowChromeHeight}`
+
 const startManagedBrowser = async (
   executablePath: string,
   profileDir: string,
@@ -200,7 +204,7 @@ const startManagedBrowser = async (
         uid: process.getuid?.(),
         containerized: linuxContainerRuntime()
       }),
-      ...(headless ? ["--headless=new"] : []),
+      ...(headless ? ["--headless=new", `--window-size=${managedWindowSize}`] : []),
       ...(userAgent === undefined ? [] : [`--user-agent=${userAgent}`]),
       "--no-startup-window"
     ],
