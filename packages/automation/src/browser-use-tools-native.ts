@@ -100,7 +100,23 @@ export const browserUseNativeTools: ReadonlyArray<Tool> = [
     "navigate",
     "Navigate the selected tab to an HTTP(S) URL.",
     objectSchema(
-      { url: { type: "string" }, timeoutMs: { type: "number", minimum: 0, maximum: 120000 } },
+      {
+        url: { type: "string" },
+        timeoutMs: { type: "number", minimum: 0, maximum: 120000 },
+        httpCredentials: {
+          type: "object",
+          description:
+            "Username and password for HTTP authentication. Used for this URL's origin in this tab from now on.",
+          properties: { username: { type: "string" }, password: { type: "string" } },
+          required: ["username", "password"],
+          additionalProperties: false
+        },
+        ignoreCertificateErrors: {
+          type: "boolean",
+          description:
+            "Proceed past an untrusted certificate. Trusts this URL's host in this tab from now on; use only when the user expects the certificate to be untrusted."
+        }
+      },
       ["url"]
     )
   ),
