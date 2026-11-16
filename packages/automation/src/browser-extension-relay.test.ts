@@ -347,12 +347,18 @@ describe("browser extension relay version check", () => {
     expect(makeBrowserExtensionRelay().outdatedNote()).toBeUndefined()
   })
 
-  it("flags an extension that never introduces itself, and explains the commands it lacks", async () => {
+  it("flags an extension from before introductions only once it lacks a command, and explains it", async () => {
     const { relay, connection } = await connectedRelay()
-    expect(relay.outdatedNote()).toMatch(/^The Codevisor Chrome extension is older than this app/)
+    expect(relay.outdatedNote()).toBeUndefined()
     await expect(connection.send("Target.activateTarget", { targetId: "7" })).rejects.toThrow(
       "The Codevisor Chrome extension is out of date: it doesn't know Target.activateTarget."
     )
+    expect(relay.outdatedNote()).toMatch(/^The Codevisor Chrome extension is older than this app/)
+  })
+
+  it("flags an extension that speaks an older protocol as soon as it connects", async () => {
+    const { relay } = await connectedRelay({ protocol: 0, build: null })
+    expect(relay.outdatedNote()).toMatch(/^The Codevisor Chrome extension is older than this app/)
   })
 
   it("flags an unpacked copy staged by a different version of the app", async () => {
