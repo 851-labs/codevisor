@@ -88,13 +88,13 @@ struct ScreenSharingConnectionTransitionTests {
 
   @Test("A VNC machine viewed from an app that brings no VNC transport fails as unsupported here, with no start")
   func failsForAVNCMachineWithoutATransport() async {
-    let host = FakeHost.old()
+    let host = FakeHost(abilities: [])
     host.provider = "vnc"
     let harness = ConnectionHarness(host: host)
     harness.show()
     await harness.settle(.failed(.unsupportedOnThisDevice))
 
-    #expect(host.starts.isEmpty && host.registeredPanes.isEmpty)
+    #expect(host.starts.isEmpty)
     await harness.noTimersLeft()
   }
 

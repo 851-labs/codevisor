@@ -147,12 +147,11 @@ struct ScreenSharingConnectionLifetimeTests {
     await harness.settle(.off)
   }
 
-  enum HostDecided: CaseIterable, Sendable { case stoppedOnHost, takenOver, inUse, endedByAnOldHost }
+  enum HostDecided: CaseIterable, Sendable { case stoppedOnHost, takenOver, inUse }
 
   private func fail(
     _ harness: ConnectionHarness, as failure: HostDecided
   ) async -> (surface: ScreenSharingSurface, reason: ScreenSharingFailureReason) {
-    let ended = "Screen sharing was stopped on the host Mac."
     let phone = "Alexandru's iPhone"
     let surface = harness.show()
     let session = await harness.goLive()
@@ -170,9 +169,6 @@ struct ScreenSharingConnectionLifetimeTests {
     case .inUse:
       harness.host.answerNext(.start, .reply(status: "busy", reason: "in-use", holderName: phone))
       reason = .inUse(by: phone)
-    case .endedByAnOldHost:
-      harness.host.answerNext(.heartbeat, .reply(status: "failed", message: ended))
-      reason = .unclassified(message: ended)
     }
     if failure == .inUse {
       session.host.report(connection: "failed")
@@ -188,7 +184,7 @@ struct ScreenSharingConnectionLifetimeTests {
     "A failure the host decided stays while its surfaces are hidden, past the linger, and asks for nothing when shown",
     arguments: HostDecided.allCases)
   func keepsAHostDecidedFailureWhileHidden(_ failure: HostDecided) async {
-    let harness = ConnectionHarness(host: failure == .endedByAnOldHost ? .old() : FakeHost())
+    let harness = ConnectionHarness()
     let (surface, reason) = await fail(harness, as: failure)
     await harness.noTimersLeft()
     let sent = harness.host.requests.count
@@ -307,7 +303,7 @@ struct ScreenSharingConnectionLifetimeTests {
     let base = harness.machine
     let other = ScreenSharingMachine(
       id: "tamale", channel: base.channel, connector: base.connector, appName: base.appName, signer: base.signer,
-      installId: base.installId, liveWorkspace: base.liveWorkspace)
+      installId: base.installId)
 
     #expect(harness.manager.connection(for: harness.machine) === harness.connection)
     #expect(harness.manager.connection(for: other) !== harness.connection)

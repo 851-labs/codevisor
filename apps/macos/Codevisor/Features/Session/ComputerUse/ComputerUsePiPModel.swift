@@ -6,11 +6,6 @@ import Observation
 import os
 import SwiftUI
 
-struct ComputerUsePiPPane: Equatable {
-  let workspaceId: UUID
-  let paneId: UUID
-}
-
 struct ComputerUsePiPMachine {
   let id: String
   let name: String
@@ -19,16 +14,21 @@ struct ComputerUsePiPMachine {
     let machineId = id
     return ComputerUseRemotePreviewSource(
       machineName: name,
-      connection: { target, pane, heartbeat in
+      connection: { target, heartbeat in
         AppRuntime.shared.screenSharing?.targetConnection(
-          onMachine: machineId, target: target, attachedPane: { pane }, heartbeatInterval: heartbeat)
+          onMachine: machineId, target: target, heartbeatInterval: heartbeat)
+      },
+      isActive: { target in
+        guard let connections = AppRuntime.shared.screenSharing else { return nil }
+
+        return await connections.targetIsActive(onMachine: machineId, target: target)
       },
       end: { AppRuntime.shared.screenSharing?.endTargetConnection(onMachine: machineId, target: $0) })
   }
 }
 
 extension EnvironmentValues {
-  @Entry var computerUsePiPPane: ComputerUsePiPPane?
+  @Entry var allowsRemoteComputerUsePreview = false
 }
 
 @MainActor
@@ -36,7 +36,7 @@ extension EnvironmentValues {
 final class ComputerUsePiPModel {
   enum Source {
     case local
-    case remote(client: any CodevisorServerClienting, pane: ComputerUsePiPPane, machine: ComputerUsePiPMachine)
+    case remote(ComputerUsePiPMachine)
   }
 
   private static var dismissedSessions: Set<UUID> = []
@@ -188,14 +188,13 @@ final class ComputerUsePiPModel {
   }
 
   private func watchForRemoteActivity() {
-    guard reappearanceTask == nil, case .remote(let client, let pane, _) = source else { return }
+    guard reappearanceTask == nil, case .remote(let machine) = source else { return }
     let preview = preview
     let chatSessionID = chatSessionID
     reappearanceTask = Task { [weak self] in
       var sawNoActivity = false
       while !Task.isCancelled {
-        let active = await preview.remoteActivityIsActive(
-          chatSession: chatSessionID, client: client, workspaceId: pane.workspaceId, paneId: pane.paneId)
+        let active = await preview.remoteActivityIsActive(chatSession: chatSessionID, source: machine.previews)
         guard !Task.isCancelled,
           let interval = self?.remoteActivityObserved(active, sawNoActivity: &sawNoActivity)
         else { return }
@@ -238,10 +237,8 @@ final class ComputerUsePiPModel {
     switch source {
     case .local:
       return preview.makeLocalViewer(chatSession: chatSessionID)
-    case .remote(let client, let pane, let machine):
-      let viewer = preview.makeRemoteViewer(
-        chatSession: chatSessionID, client: client, workspaceId: pane.workspaceId, paneId: pane.paneId,
-        source: machine.previews)
+    case .remote(let machine):
+      let viewer = preview.makeRemoteViewer(chatSession: chatSessionID, source: machine.previews)
       viewer.prefersFastPolling = prefersFastPolling
       return viewer
     }

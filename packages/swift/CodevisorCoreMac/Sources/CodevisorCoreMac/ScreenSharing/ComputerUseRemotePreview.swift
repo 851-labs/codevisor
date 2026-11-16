@@ -8,12 +8,10 @@ extension ComputerUseLivePreview {
   public static let remoteUnavailable = "This live view can't be shown right now."
 
   public func makeRemoteViewer(
-    chatSession id: UUID, client: any CodevisorServerClienting, workspaceId: UUID, paneId: UUID,
-    source: ComputerUseRemotePreviewSource
+    chatSession id: UUID, source: ComputerUseRemotePreviewSource
   ) -> ComputerUseLivePreviewViewer {
     let target = ComputerUseStreamTarget.displayId(sessionID: id.uuidString)
-    let pane = ScreenSharingLegacyIdentity(workspaceId: workspaceId, paneId: paneId)
-    guard let connection = source.connection(target, pane, ComputerUseRemotePreviewTiming.heartbeat) else {
+    guard let connection = source.connection(target, ComputerUseRemotePreviewTiming.heartbeat) else {
       return ComputerUseLivePreviewViewer(title: "", phase: .stopped(Self.remoteUnavailable), onDetach: nil)
     }
 
@@ -23,10 +21,7 @@ extension ComputerUseLivePreview {
       viewer: viewer,
       dependencies: .init(
         connection: connection, machineName: source.machineName,
-        isActive: { [weak self] in
-          await self?.remoteActivityIsActive(
-            chatSession: id, client: client, workspaceId: pane.workspaceId, paneId: pane.paneId)
-        },
+        isActive: { await source.isActive(target) },
         sleep: { try await Task.sleep(for: $0) },
         makeSurface: { session, tap in
           try? ComputerUseLivePreviewSurface(mailbox: session.frames.tap(tap), metrics: session.metrics)
@@ -36,28 +31,13 @@ extension ComputerUseLivePreview {
   }
 
   public func remoteActivityIsActive(
-    chatSession id: UUID, client: any CodevisorServerClienting, workspaceId: UUID, paneId: UUID
+    chatSession id: UUID, source: ComputerUseRemotePreviewSource
   ) async -> Bool? {
-    let target = ComputerUseStreamTarget.displayId(sessionID: id.uuidString)
-    let request = ServerScreenSharingRequest(
-      operation: .capabilities, workspaceId: workspaceId, paneId: paneId, viewerId: UUID(), displayId: target)
-    guard let reply = try? await client.screenSharing(request) else { return nil }
-
-    return Self.remoteActivityIsActive(reply: reply, target: target)
+    await source.isActive(ComputerUseStreamTarget.displayId(sessionID: id.uuidString))
   }
 
   public static func remotePollInterval(prefersFastPolling: Bool) -> Duration {
     ComputerUseRemotePreviewTiming.pollInterval(prefersFastPolling: prefersFastPolling)
-  }
-
-  static func remoteActivityIsActive(reply: ServerScreenSharingReply, target: String) -> Bool? {
-    guard reply.version == 1 else { return nil }
-
-    switch reply.status {
-    case "available", "busy": return reply.displays.contains { $0.id == target }
-    case "unavailable": return false
-    default: return nil
-    }
   }
 }
 

@@ -3,7 +3,6 @@ import CodevisorCore
 import Foundation
 import Observation
 import ScreenSharing
-import ScreenSharingConnection
 
 @MainActor
 @Observable
@@ -41,11 +40,10 @@ public final class SimulatorPaneModel {
 
   public convenience init(
     client: any CodevisorServerClienting, preferences: SimulatorPanePreferences?, machineId: String,
-    workspaceId: UUID, paneId: UUID, streams: SimulatorStreamSource
+    streams: SimulatorStreamSource
   ) {
-    let pane = ScreenSharingLegacyIdentity(workspaceId: workspaceId, paneId: paneId)
     self.init(client: client, preferences: preferences) { udid in
-      SimulatorStreams.shared.stream(machineId: machineId, udid: udid, pane: pane, source: streams)
+      SimulatorStreams.shared.stream(machineId: machineId, udid: udid, source: streams)
     }
   }
 

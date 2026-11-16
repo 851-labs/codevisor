@@ -115,7 +115,9 @@ final class ScreenSharingAttempt {
       return makeVNC(display.id, capabilities.base.controlLease == true)
     }
     guard capabilities.base.provider != "vnc" else { throw ScreenSharingAttemptEnd.refused(.unsupportedOnThisDevice) }
-    guard capabilities.offersV2 else { throw ScreenSharingAttemptEnd.refused(.updateNeeded) }
+    guard capabilities.offersV2, capabilities.appChallenge != nil else {
+      throw ScreenSharingAttemptEnd.dropped(.networkBlocked)
+    }
 
     return ScreenSharingMediaSessionTransport(
       host: host, machine: machine, clock: clock,
@@ -133,7 +135,7 @@ final class ScreenSharingAttempt {
       if let opening { report(.transport(opening)) }
     case .notice(let notice):
       self.notice = notice
-    case .sharing, .displaySwitch, .displaySwitchAvailable:
+    case .sharing, .displaySwitch:
       break
     }
     report(.transport(event))

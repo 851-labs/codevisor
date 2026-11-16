@@ -19,7 +19,6 @@ final class ScreenSharingConnectionsFixture {
   var machineIds: Set<String> = [machineId]
   var readyMachineIds: Set<String> = [machineId]
   var machineListVerified = true
-  @ObservationIgnored var workspaces: [Workspace] = []
   @ObservationIgnored var signerFails = false
   @ObservationIgnored var audioSession: FakeMediaSession?
   @ObservationIgnored var openVNC: ScreenSharingConnectionsSource.OpenVNC = { _, _ in
@@ -55,13 +54,8 @@ final class ScreenSharingConnectionsFixture {
     return surface
   }
 
-  func surface(_ role: ScreenSharingViewerRole, inWorkspace workspaceId: UUID? = nil) -> RecordedSurface {
-    surface(role, shownIn: { workspaceId })
-  }
-
-  func surface(_ role: ScreenSharingViewerRole, shownIn workspace: @escaping @MainActor () -> UUID?) -> RecordedSurface
-  {
-    RecordedSurface(connections.surface(onMachine: Self.machineId, role: role, shownIn: workspace))
+  func surface(_ role: ScreenSharingViewerRole) -> RecordedSurface {
+    RecordedSurface(connections.surface(onMachine: Self.machineId, role: role))
   }
 
   func goLive() async throws {
@@ -80,12 +74,6 @@ final class ScreenSharingConnectionsFixture {
     wakeCenter.post(name: NSWorkspace.didWakeNotification, object: nil)
   }
 
-  static func workspace(on machineId: String = machineId, archived: Bool = false, synced: Bool = true) -> Workspace {
-    Workspace(
-      name: "Chat", rootDirectory: nil, serverId: machineId, projectId: UUID(),
-      centerTree: .leaf(.centerInitial(sessionId: UUID())), isArchived: archived, isServerSynced: synced)
-  }
-
   func fake(for recorded: RecordedSurface) -> FakeSurface? {
     let view = recorded.surface.videoView()
     return madeSurfaces.first { $0.view === view }
@@ -97,7 +85,6 @@ final class ScreenSharingConnectionsFixture {
       isReady: { [unowned self] in self.readyMachineIds.contains($0) },
       channel: { [host] _ in host },
       openVNC: { [unowned self] in try await self.openVNC($0, $1) },
-      workspaces: { [unowned self] in self.workspaces },
       signer: { [unowned self] in try self.signerOrFailure() },
       connector: { [unowned self] in self.connector },
       makeSurface: { [unowned self] _, _ in

@@ -6,7 +6,6 @@ struct WorkspaceInspectorMachineView: View {
   let serverId: String
   let isActive: Bool
   let client: any CodevisorServerClienting
-  let workspaceId: UUID
   let desktop: CodevisorMachine?
   let desktopExpansion: Binding<Bool>
   let statsExpansion: Binding<Bool>
@@ -20,7 +19,7 @@ struct WorkspaceInspectorMachineView: View {
         if let desktop {
           WorkspaceInspectorCard(title: "Desktop", isExpanded: desktopExpansion) {
             MachineDesktopPreview(
-              machine: desktop, workspaceId: workspaceId, isStreaming: isActive && desktopExpansion.wrappedValue,
+              machine: desktop, isStreaming: isActive && desktopExpansion.wrappedValue,
               onOpen: onOpenDesktop
             )
             .id(desktop.id)

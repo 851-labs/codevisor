@@ -7,8 +7,7 @@
     @State private var model = SimulatorPaneModel(
       client: DemoServerClient(machine: DemoWorld.macStudio),
       preferences: SimulatorPanePreferences(udid: DemoWorld.simulator.udid), machineId: DemoWorld.macStudio.serverId,
-      workspaceId: UUID(), paneId: UUID(),
-      streams: SimulatorStreamSource(machineName: DemoWorld.macStudio.name, connection: { _, _ in nil }, end: { _ in }))
+      streams: SimulatorStreamSource(machineName: DemoWorld.macStudio.name, connection: { _ in nil }, end: { _ in }))
     @State private var hasDevice = false
 
     var body: some View {

@@ -14,7 +14,7 @@ struct ScreenSharingTargetConnectionsTests {
   private static let simulator = "simulator:0B000000-0000-4000-8000-000000000001"
 
   private func target(_ fixture: Fixture, _ target: String = simulator) -> ScreenSharingConnection? {
-    fixture.connections.targetConnection(onMachine: Fixture.machineId, target: target, attachedPane: { nil })
+    fixture.connections.targetConnection(onMachine: Fixture.machineId, target: target)
   }
 
   @Test("A target has its own connection next to the machine's desktop, and ending it leaves the desktop alone")
@@ -43,6 +43,26 @@ struct ScreenSharingTargetConnectionsTests {
     #expect(start.displayId == Self.simulator && start.app?.name == Fixture.appName)
     #expect(fixture.media.sessions.first?.presentsTiles == false)
     surface.detach()
+  }
+
+  @Test("Whether a target is active is asked as the app, and only a listed target counts")
+  func asksWhetherATargetIsActiveAsTheApp() async {
+    let fixture = Fixture()
+    let isActive = { await fixture.connections.targetIsActive(onMachine: Fixture.machineId, target: Self.simulator) }
+    #expect(await isActive() == false)
+
+    fixture.host.displays.append(.init(id: Self.simulator, name: "iPhone 17", width: 1206, height: 2622))
+    #expect(await isActive() == true)
+    let asked = fixture.host.requests(.capabilities)
+    #expect(asked.map(\.displayId) == [Self.simulator, Self.simulator])
+    #expect(asked.allSatisfy { $0.app?.name == Fixture.appName && $0.app?.key == fixture.signer.signer.key })
+
+    fixture.host.answerEvery(.capabilities, .reply(status: "unavailable"))
+    #expect(await isActive() == false)
+    fixture.host.answerEvery(.capabilities, .reply(status: "permission-required"))
+    #expect(await isActive() == nil)
+    fixture.machineIds = []
+    #expect(await isActive() == nil)
   }
 
   @Test("A target on a machine that is unknown, or whose key can't be read, has no connection")

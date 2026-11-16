@@ -28,8 +28,8 @@ final class SimulatorStreamWorld {
   @ObservationIgnored private let installId = UUID()
   @ObservationIgnored private var beats = 0
 
-  init(oldHost: Bool = false) {
-    host = oldHost ? .old() : FakeHost()
+  init(host: FakeHost = FakeHost()) {
+    self.host = host
     manager = ScreenSharingConnectionManager(clock: ScreenSharingConnectionClock(clock))
   }
 
@@ -38,10 +38,8 @@ final class SimulatorStreamWorld {
     manager.shutdown()
   }
 
-  func pane() -> (identity: ScreenSharingLegacyIdentity, stream: SimulatorStream) {
-    let identity = ScreenSharingLegacyIdentity(workspaceId: UUID(), paneId: UUID())
-    let stream = streams.stream(machineId: Self.machineId, udid: Self.udid, pane: identity, source: source)
-    return (identity, stream)
+  func pane() -> SimulatorStream {
+    streams.stream(machineId: Self.machineId, udid: Self.udid, source: source)
   }
 
   func show(_ stream: SimulatorStream) {
@@ -51,7 +49,7 @@ final class SimulatorStreamWorld {
 
   @discardableResult
   func shown() -> SimulatorStream {
-    let stream = pane().stream
+    let stream = pane()
     show(stream)
     return stream
   }
@@ -89,12 +87,11 @@ final class SimulatorStreamWorld {
   private var source: SimulatorStreamSource {
     SimulatorStreamSource(
       machineName: Self.machineId,
-      connection: { [unowned self] target, attachedPane in
+      connection: { [unowned self] target in
         var machine = ScreenSharingMachine(
           id: Self.machineId, channel: { [host] in host }, connector: connector,
-          appName: "Alexandru's MacBook Pro", signer: signer.signer, installId: installId, liveWorkspace: { nil })
+          appName: "Alexandru's MacBook Pro", signer: signer.signer, installId: installId)
         machine.target = target
-        machine.attachedPane = attachedPane
         return manager.connection(for: machine)
       },
       end: { [unowned self] target in

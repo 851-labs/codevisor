@@ -18,7 +18,6 @@ public final class ScreenSharingDesktopSurface {
   private let id = UUID()
   private let findDesktop: FindDesktop
   private let isMachineGone: @MainActor () -> Bool
-  private let onShown: @MainActor () -> Void
   private var bound: (desktop: ScreenSharingDesktop, surface: ScreenSharingSurface)?
   private var bindFailure: String?
   private var isOnScreen = false
@@ -28,12 +27,11 @@ public final class ScreenSharingDesktopSurface {
 
   init(
     role: ScreenSharingViewerRole, findDesktop: @escaping FindDesktop,
-    isMachineGone: @escaping @MainActor () -> Bool, onShown: @escaping @MainActor () -> Void
+    isMachineGone: @escaping @MainActor () -> Bool
   ) {
     self.role = role
     self.findDesktop = findDesktop
     self.isMachineGone = isMachineGone
-    self.onShown = onShown
     watch()
   }
 
@@ -149,7 +147,6 @@ public final class ScreenSharingDesktopSurface {
     askForTheSavedDisplay(on: bound.desktop)
     bound.surface.setOnScreen(true)
     bound.desktop.setOnScreen(true, for: id)
-    onShown()
   }
 
   private func askForTheSavedDisplay(on desktop: ScreenSharingDesktop) {
@@ -189,7 +186,6 @@ public final class ScreenSharingDesktopSurface {
     snapshot.displays = desktop.connection.displays
     snapshot.displayId = desktop.connection.display?.id
     snapshot.displaySwitch = desktop.connection.displaySwitch
-    snapshot.switchesDisplayInSession = desktop.connection.switchesDisplayInSession
     snapshot.endpoint = desktop.endpoint
     snapshot.control = desktop.controller == id ? desktop.controlStatus : nil
     snapshot.mode = desktop.mode

@@ -14,16 +14,16 @@ struct ScreenSharingDisplayPickerTests {
   private typealias Fixture = ScreenSharingConnectionsFixture
   private static let heartbeat: Duration = .seconds(8)
 
-  private func liveTab(switching: Bool) async throws -> (Fixture, RecordedSurface) {
+  private func liveTab() async throws -> (Fixture, RecordedSurface) {
     let host = FakeHost()
-    if switching { host.abilities.append(ServerScreenSharingReply.displaySwitch) }
     host.displays = [FakeHost.display, FakeHost.second]
     let fixture = Fixture(host: host)
     let tab = fixture.surface(.tab)
     tab.surface.openedByUser()
     tab.show()
     try await fixture.goLive()
-    await awaitObserved { tab.snapshot.endpoint != nil && tab.snapshot.switchesDisplayInSession == switching }
+    await awaitObserved { tab.snapshot.endpoint != nil }
+    await fixture.clock.waitForSleep(Self.heartbeat)
     return (fixture, tab)
   }
 
@@ -31,9 +31,9 @@ struct ScreenSharingDisplayPickerTests {
     fixture.preferences.preferredDisplay(machineId: Fixture.machineId)
   }
 
-  @Test("On a host that can switch, picking a display keeps the session and control, and saves it once shown")
+  @Test("Picking a display keeps the session and control, and saves it once shown")
   func switchesWithoutReconnecting() async throws {
-    let (fixture, tab) = try await liveTab(switching: true)
+    let (fixture, tab) = try await liveTab()
     await awaitObserved { tab.snapshot.control?.phase == .requesting }
     let (endpoint, control) = (tab.snapshot.endpoint, tab.snapshot.control)
     fixture.host.hold(.heartbeat)
@@ -52,7 +52,7 @@ struct ScreenSharingDisplayPickerTests {
 
   @Test("A display the host can't switch to leaves the current one, says why, and is saved only if it shows later")
   func keepsTheCurrentDisplayWhenTheHostCannotSwitch() async throws {
-    let (fixture, tab) = try await liveTab(switching: true)
+    let (fixture, tab) = try await liveTab()
     fixture.host.displaySwitchAnswer = .unavailable(message: "That display is asleep.")
 
     tab.surface.switchDisplay(to: FakeHost.second.id)
@@ -68,19 +68,5 @@ struct ScreenSharingDisplayPickerTests {
 
     #expect(fixture.host.completed(.heartbeat) > answered)
     #expect(tab.snapshot.displaySwitch?.phase == .confirmed && savedDisplay(fixture) == FakeHost.second.id)
-  }
-
-  @Test("On a host without the ability, picking a display reconnects on it and saves it at once, as before")
-  func reconnectsOnAHostThatCannotSwitch() async throws {
-    let (fixture, tab) = try await liveTab(switching: false)
-
-    tab.surface.switchDisplay(to: FakeHost.second.id)
-    await awaitObserved { tab.snapshot.connection == .reconnecting }
-    #expect(savedDisplay(fixture) == FakeHost.second.id)
-    try await fixture.goLive()
-
-    #expect(fixture.host.starts.map(\.displayId).last == FakeHost.second.id)
-    #expect(fixture.host.requests(.heartbeat).allSatisfy { $0.displayId == nil })
-    #expect(tab.snapshot.displaySwitch == nil && !tab.snapshot.switchesDisplayInSession)
   }
 }

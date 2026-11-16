@@ -4,6 +4,7 @@ import CodevisorTestSupport
 import Foundation
 import ScreenSharing
 import ScreenSharingConnection
+import ScreenSharingConnectionTesting
 import Testing
 
 @testable import CodevisorCoreMac
@@ -273,19 +274,21 @@ struct ScreenSharingDesktopControlTests {
   @Test("A chosen display is saved for the machine once the connection takes it; a pane's old choice is only a seed")
   func savesTheChosenDisplayForTheMachine() async throws {
     let host = Host()
+    host.fixture.host.displays = [FakeHost.display, FakeHost.second]
     let tab = host.fixture.surface(.tab)
     tab.show(seedDisplay: "from an old tab")
     await awaitObserved { tab.snapshot.endpoint != nil }
     #expect(try host.fixture.connection.preferredDisplayId == "from an old tab")
     #expect(host.fixture.preferences.preferredDisplay(machineId: Fixture.machineId) == nil, "a seed is never saved")
 
-    tab.surface.switchDisplay(to: "chosen")
-    #expect(try host.fixture.connection.preferredDisplayId == "chosen")
-    #expect(host.fixture.preferences.preferredDisplay(machineId: Fixture.machineId) == "chosen")
+    tab.surface.switchDisplay(to: FakeHost.second.id)
+    await awaitObserved { (try? host.fixture.connection.preferredDisplayId) == FakeHost.second.id }
+    #expect(host.fixture.preferences.preferredDisplay(machineId: Fixture.machineId) == FakeHost.second.id)
 
     let window = host.fixture.surface(.window)
     window.show(seedDisplay: "another old tab")
-    #expect(try host.fixture.connection.preferredDisplayId == "chosen", "the machine's choice wins over a seed")
+    #expect(
+      try host.fixture.connection.preferredDisplayId == FakeHost.second.id, "the machine's choice wins over a seed")
   }
 
   @MainActor

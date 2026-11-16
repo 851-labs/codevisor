@@ -6,10 +6,7 @@ import Foundation
 final class MachineDesktops {
   static let shared = MachineDesktops()
 
-  func pane(
-    on machine: CodevisorMachine, role: ScreenSharingViewerRole, shownInWorkspace workspaceId: UUID
-  ) -> ScreenSharingPane {
-    ScreenSharingPane(
-      machine: machine, role: role, workspace: ScreenSharingPaneWorkspace(workspaceId), preferences: .init())
+  func pane(on machine: CodevisorMachine, role: ScreenSharingViewerRole) -> ScreenSharingPane {
+    ScreenSharingPane(machine: machine, role: role, preferences: .init())
   }
 }

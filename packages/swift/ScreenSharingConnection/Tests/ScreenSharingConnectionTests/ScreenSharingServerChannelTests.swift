@@ -12,22 +12,6 @@ import Testing
 struct ScreenSharingServerChannelTests {
   private static let heartbeat = ScreenSharingConnectionDeadlines.heartbeatInterval
 
-  @Test("The old-host pane is registered as a Codevisor machine-desktop pane of its workspace")
-  func registersTheDesktopPane() async throws {
-    let host = VerifyingHost()
-    let channel = ScreenSharingServerChannel(client: CodevisorServerClient(config: .init(requestTransport: host)))
-    let identity = ScreenSharingLegacyIdentity(workspaceId: UUID(), installId: UUID())
-
-    try await channel.registerDesktopPane(identity)
-
-    let request = try #require(await host.paneRequests.first)
-    let pane = identity.paneId.uuidString.lowercased()
-    let body = try #require(try JSONSerialization.jsonObject(with: request.httpBody ?? Data()) as? [String: Any])
-    #expect(request.url?.path == "/v1/workspaces/\(identity.workspaceId.uuidString.lowercased())/panes/\(pane)")
-    #expect(body["id"] as? String == pane && body["paneType"] as? String == "machine-desktop")
-    #expect(body["providerId"] as? String == "codevisor")
-  }
-
   @Test("A host that verifies real signatures grants the start, and every new field crosses the HTTP channel")
   func speaksToANewHostOverHTTP() async throws {
     let key = Curve25519.Signing.PrivateKey()
@@ -40,8 +24,7 @@ struct ScreenSharingServerChannelTests {
     let manager = ScreenSharingConnectionManager(clock: ScreenSharingConnectionClock(clock))
     let machine = ScreenSharingMachine(
       id: "croissant", channel: { channel }, connector: media.connector, appName: "Alexandru's MacBook Pro",
-      signer: ScreenSharingStartSigner(key: appKey) { try key.signature(for: $0) }, installId: UUID(),
-      liveWorkspace: { nil })
+      signer: ScreenSharingStartSigner(key: appKey) { try key.signature(for: $0) }, installId: UUID())
     let connection = manager.connection(for: machine)
     let surface = connection.attach(.tab)
     surface.openedByUser()
@@ -83,7 +66,6 @@ private actor VerifyingHost: ServerRequestTransport {
 
   nonisolated let answered = TestSignal()
   private(set) var bodies: [[String: any Sendable]] = []
-  private(set) var paneRequests: [URLRequest] = []
   private var holder: String?
 
   func takeOver(by holder: String) {
@@ -91,11 +73,6 @@ private actor VerifyingHost: ServerRequestTransport {
   }
 
   func data(for request: URLRequest) async throws -> (Data, HTTPURLResponse) {
-    guard request.httpMethod == "POST" else {
-      paneRequests.append(request)
-      return (Data("{}".utf8), Self.response(to: request, status: 404))
-    }
-
     let body = request.httpBody ?? Data()
     let json = try JSONSerialization.jsonObject(with: body) as? [String: any Sendable]
     bodies.append(json ?? [:])
@@ -142,7 +119,7 @@ private actor VerifyingHost: ServerRequestTransport {
     case .stop, .setScale:
       reply = ServerScreenSharingReply(status: "stopped")
     }
-    reply.abilities = [ServerScreenSharingReply.appSessions]
+    reply.abilities = [ServerScreenSharingReply.appSessions, ServerScreenSharingReply.displaySwitch]
     return reply
   }
 

@@ -16,7 +16,6 @@ struct ScreenSharingConnectionDisplaySwitchTests {
     id: "0A000000-0000-4000-8000-000000000003", name: "Projector", width: 1280, height: 720)
 
   private func liveHarness(host: FakeHost = FakeHost()) async -> (ConnectionHarness, LoopbackSession) {
-    host.abilities.append(ServerScreenSharingReply.displaySwitch)
     host.displays = [Self.first, Self.second, Self.third]
     let harness = ConnectionHarness(host: host)
     harness.show()
@@ -50,41 +49,6 @@ struct ScreenSharingConnectionDisplaySwitchTests {
     connection.switchDisplay(to: Self.second.id)
     await harness.beat()
     #expect(askedDisplays(harness) == [Self.second.id, nil], "once shown, the display is no longer asked for")
-  }
-
-  @Test("The connection says it can switch in-session only while live on a host that can, and not while reconnecting")
-  func tellsWhetherItCanSwitchInSession() async {
-    let (harness, session) = await liveHarness()
-    await awaitObserved { harness.connection.switchesDisplayInSession }
-
-    session.host.report(connection: "failed")
-    await harness.settle(.reconnecting)
-    #expect(!harness.connection.switchesDisplayInSession)
-    await harness.goLive()
-    await awaitObserved { harness.connection.switchesDisplayInSession }
-  }
-
-  enum CannotSwitch: CaseIterable, Sendable { case noAbility, noSessionToken }
-
-  @Test(
-    "Against a host without the ability, or without a session token, picking a display restarts as before",
-    arguments: CannotSwitch.allCases)
-  func restartsWhenTheHostCannotSwitch(_ reason: CannotSwitch) async {
-    let host = reason == .noSessionToken ? FakeHost.old() : FakeHost()
-    if reason == .noSessionToken { host.abilities.append(ServerScreenSharingReply.displaySwitch) }
-    host.displays = [Self.first, Self.second]
-    let harness = ConnectionHarness(host: host)
-    harness.show()
-    await harness.goLive()
-
-    #expect(!harness.connection.switchesDisplayInSession)
-    harness.connection.switchDisplay(to: Self.second.id)
-    #expect(harness.connection.state == .reconnecting && harness.connection.displaySwitch == nil)
-    #expect(harness.connection.preferredDisplayId == Self.second.id)
-    await harness.goLive()
-
-    #expect(harness.host.starts.map(\.displayId).last == Self.second.id)
-    #expect(askedDisplays(harness).allSatisfy { $0 == nil })
   }
 
   @Test("The wanted display stays on the regular heartbeats until a reply shows it")

@@ -19,7 +19,6 @@ public struct ScreenSharingConnectionsSource {
   public var isReady: @MainActor (_ machineId: String) -> Bool
   public var channel: @MainActor (_ machineId: String) -> any ScreenSharingHostChannel
   public var openVNC: OpenVNC
-  public var workspaces: @MainActor () -> [Workspace]
   public var signer: @MainActor () throws -> ScreenSharingStartSigner
   public var appName: @MainActor () -> String
   public var connector: @MainActor () -> ScreenSharingV2Connector
@@ -34,7 +33,6 @@ public struct ScreenSharingConnectionsSource {
     isReady: @escaping @MainActor (_ machineId: String) -> Bool,
     channel: @escaping @MainActor (_ machineId: String) -> any ScreenSharingHostChannel,
     openVNC: @escaping OpenVNC,
-    workspaces: @escaping @MainActor () -> [Workspace],
     signer: @escaping @MainActor () throws -> ScreenSharingStartSigner,
     connector: @escaping @MainActor () -> ScreenSharingV2Connector,
     makeSurface: @escaping ScreenSharingSurfaceFactory = { try ScreenSharingVideoSurface(mailbox: $0, metrics: $1) },
@@ -44,7 +42,6 @@ public struct ScreenSharingConnectionsSource {
     self.isReady = isReady
     self.channel = channel
     self.openVNC = openVNC
-    self.workspaces = workspaces
     self.signer = signer
     self.appName = appName
     self.connector = connector
@@ -61,7 +58,6 @@ public struct ScreenSharingConnectionsSource {
         let socket = try await machines.client(for: machineId).screenSharingVNCSocket(displayId: displayId)
         return try await VNCConnection.open(transport: RFBWebSocketTransport(socket: socket), password: nil)
       },
-      workspaces: { environment.workspaces.loadAll() },
       signer: { try environment.screenSharingSigner() },
       connector: { ScreenSharingViewerMedia.connector })
     source.userAsked = { machines.redialTunnel(for: $0) }

@@ -73,14 +73,12 @@ struct ScreenSharingConnectionRestartTests {
     #expect(harness.connection.display == FakeHost.second)
   }
 
-  @Test(
-    "Switching display stops the current attempt and starts one for the new display as an attach",
-    arguments: Moment.allCases)
-  func switchesDisplayByRestarting(during moment: Moment) async {
+  @Test("Switching display while reconnecting stops the current attempt and starts one for the new display")
+  func switchesDisplayByRestartingWhileReconnecting() async {
     let harness = ConnectionHarness()
     harness.host.displays = [FakeHost.display, FakeHost.second]
     harness.open(.window)
-    await reach(moment, on: harness)
+    await reach(.reconnecting, on: harness)
     let before = harness.host.starts
 
     harness.connection.switchDisplay(to: FakeHost.second.id)

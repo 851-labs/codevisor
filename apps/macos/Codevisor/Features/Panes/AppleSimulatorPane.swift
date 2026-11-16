@@ -22,21 +22,24 @@ final class AppleSimulatorPane: Pane {
 
   init(context: PaneContext, descriptor: PaneDescriptorState) {
     id = descriptor.id
-    model = context.workspaceId.map { workspaceId in
-      let client = context.client ?? CodevisorServerClient(config: context.machine.serverConfig)
-      return SimulatorPaneModel(
-        client: client, preferences: descriptor.simulator, machineId: context.machine.id, workspaceId: workspaceId,
-        paneId: descriptor.id, streams: Self.streams(on: context.machine))
-    }
+    model = Self.makeModel(context: context, descriptor: descriptor)
+  }
+
+  private static func makeModel(context: PaneContext, descriptor: PaneDescriptorState) -> SimulatorPaneModel? {
+    guard context.workspaceId != nil else { return nil }
+
+    let client = context.client ?? CodevisorServerClient(config: context.machine.serverConfig)
+    return SimulatorPaneModel(
+      client: client, preferences: descriptor.simulator, machineId: context.machine.id,
+      streams: streams(on: context.machine))
   }
 
   private static func streams(on machine: CodevisorMachine) -> SimulatorStreamSource {
     let machineId = machine.id
     return SimulatorStreamSource(
       machineName: machine.name,
-      connection: { target, attachedPane in
-        AppRuntime.shared.screenSharing?.targetConnection(
-          onMachine: machineId, target: target, attachedPane: attachedPane)
+      connection: { target in
+        AppRuntime.shared.screenSharing?.targetConnection(onMachine: machineId, target: target)
       },
       end: { AppRuntime.shared.screenSharing?.endTargetConnection(onMachine: machineId, target: $0) })
   }

@@ -5,12 +5,10 @@ public enum ScreenSharingFailureReason: Equatable, Sendable {
   case cantReach
   case takenOver(by: String?)
   case inUse(by: String?)
-  case inUseOldHost
   case stoppedOnHost
   case displayAsleep
   case sessionSwitched
   case noDisplay
-  case noWorkspace
   case nothingToView(message: String?)
   case unsupportedOnThisDevice
   case permissionMissing
@@ -40,12 +38,11 @@ public enum ScreenSharingFailureReason: Equatable, Sendable {
     case .cantReach: "Can't reach \(machine). Check that it's awake and online."
     case .takenOver(let holder?): "Now viewing on \(holder)."
     case .inUse(let holder?): "In use on \(holder)."
-    case .takenOver(nil), .inUse(nil), .inUseOldHost: "\(machine) is in use on another device."
+    case .takenOver(nil), .inUse(nil): "\(machine) is in use on another device."
     case .stoppedOnHost: "Sharing was stopped on \(machine)."
     case .displayAsleep: "\(machine)'s display is asleep."
     case .sessionSwitched: "Another user is logged in on \(machine)."
     case .noDisplay: "\(machine) has no display to share."
-    case .noWorkspace: "Open a chat on \(machine) to view its desktop."
     case .nothingToView(let message): message ?? "Nothing to show on \(machine) yet."
     case .unsupportedOnThisDevice: "\(machine)'s desktop can only be viewed from a Mac."
     case .permissionMissing: "Allow Codevisor to record the screen on \(machine)."
@@ -59,7 +56,7 @@ public enum ScreenSharingFailureReason: Equatable, Sendable {
 
   var isDecidedByHost: Bool {
     switch self {
-    case .takenOver, .inUse, .inUseOldHost, .stoppedOnHost, .displayAsleep, .sessionSwitched: true
+    case .takenOver, .inUse, .stoppedOnHost, .displayAsleep, .sessionSwitched: true
     default: false
     }
   }

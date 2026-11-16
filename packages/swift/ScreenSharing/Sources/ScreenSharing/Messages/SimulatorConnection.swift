@@ -24,6 +24,7 @@ public protocol SimulatorConnection: AnyObject {
   @discardableResult func send(_ message: ScreenSharingSimulatorMessage) -> Bool
   func presented(frameSize: CGSize)
   var isWaitingForTheSimulator: Bool { get }
+  var offersRetry: Bool { get }
   func setVisible(_ visible: Bool)
   func retry()
   func simulatorAppeared()
@@ -31,6 +32,8 @@ public protocol SimulatorConnection: AnyObject {
 
 extension SimulatorConnection {
   public var isWaitingForTheSimulator: Bool { false }
+
+  public var offersRetry: Bool { true }
 
   public func setVisible(_ visible: Bool) {}
 

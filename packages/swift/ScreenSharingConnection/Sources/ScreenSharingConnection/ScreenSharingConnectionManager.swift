@@ -25,10 +25,6 @@ public final class ScreenSharingConnectionManager {
     for connection in connections(of: machineId) { connection.machineCameOnline() }
   }
 
-  public func workspaceAppeared(_ machineId: String) {
-    for connection in connections(of: machineId) { connection.workspaceAppeared() }
-  }
-
   public func targetAppeared(_ machineId: String, target: String) {
     connections[Key(machineId: machineId, target: target)]?.targetAppeared()
   }

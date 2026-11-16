@@ -97,36 +97,4 @@ struct ScreenSharingConnectionsTests {
 
     #expect(fixture.host.starts.map(\.intent) == [.attach, .attach])
   }
-
-  @Test("An old host is given the workspace shown last, and never an archived or unsynced one")
-  func picksALiveWorkspaceForAnOldHost() async throws {
-    let fixture = Fixture(host: .old())
-    let (archived, draft) = (Fixture.workspace(archived: true), Fixture.workspace(synced: false))
-    let (first, shown, elsewhere) = (Fixture.workspace(), Fixture.workspace(), Fixture.workspace(on: "tamale"))
-    fixture.workspaces = [archived, draft, elsewhere, first, shown]
-    fixture.connections.surfaceShown(inWorkspace: archived.id, onMachine: Fixture.machineId)
-    try fixture.show()
-    try await fixture.goLive()
-    #expect(fixture.host.starts.map(\.workspaceId) == [first.id])
-
-    fixture.connections.surfaceShown(inWorkspace: shown.id, onMachine: Fixture.machineId)
-    fixture.wake()
-    await fixture.settle(.reconnecting)
-    try await fixture.goLive()
-    #expect(fixture.host.starts.map(\.workspaceId) == [first.id, shown.id])
-  }
-
-  @Test("A surface shown in a workspace revives a connection that failed for lack of one")
-  func revivesWhenAWorkspaceIsShown() async throws {
-    let fixture = Fixture(host: .old())
-    try fixture.show()
-    await fixture.settle(.failed(.noWorkspace))
-
-    let workspace = Fixture.workspace()
-    fixture.workspaces = [workspace]
-    fixture.connections.surfaceShown(inWorkspace: workspace.id, onMachine: Fixture.machineId)
-    try await fixture.goLive()
-
-    #expect(fixture.host.starts.map(\.workspaceId) == [workspace.id])
-  }
 }

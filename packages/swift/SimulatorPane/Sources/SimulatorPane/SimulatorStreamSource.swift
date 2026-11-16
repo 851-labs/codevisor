@@ -2,9 +2,7 @@ import Foundation
 import ScreenSharingConnection
 
 public struct SimulatorStreamSource {
-  public typealias AttachedPane = @MainActor () -> ScreenSharingLegacyIdentity?
-  public typealias Connect =
-    @MainActor (_ target: String, _ attachedPane: @escaping AttachedPane) -> ScreenSharingConnection?
+  public typealias Connect = @MainActor (_ target: String) -> ScreenSharingConnection?
 
   public var machineName: String
   public var connection: Connect

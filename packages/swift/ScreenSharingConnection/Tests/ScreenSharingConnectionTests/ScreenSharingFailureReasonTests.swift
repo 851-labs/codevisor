@@ -9,7 +9,6 @@ struct ScreenSharingFailureReasonTests {
     (.inUse(by: "Alexandru's iPhone"), "In use on Alexandru's iPhone."),
     (.takenOver(by: nil), "croissant is in use on another device."),
     (.inUse(by: nil), "croissant is in use on another device."),
-    (.inUseOldHost, "croissant is in use on another device."),
     (.stoppedOnHost, "Sharing was stopped on croissant."),
     (.displayAsleep, "croissant's display is asleep."),
     (.sessionSwitched, "Another user is logged in on croissant."),
@@ -19,7 +18,6 @@ struct ScreenSharingFailureReasonTests {
     (.noVideo, "Connected, but croissant sent no picture."),
     (.keptDropping, "The connection to croissant keeps dropping."),
     (.noDisplay, "croissant has no display to share."),
-    (.noWorkspace, "Open a chat on croissant to view its desktop."),
     (
       .nothingToView(message: "The agent is not controlling an app right now."),
       "The agent is not controlling an app right now."

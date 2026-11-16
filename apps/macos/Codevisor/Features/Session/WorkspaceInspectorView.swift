@@ -219,8 +219,7 @@ struct WorkspaceInspectorView: View {
     case .harness: harness
     case .machine:
       WorkspaceInspectorMachineView(
-        serverId: workspace.serverId, isActive: self.tab == .machine, client: client,
-        workspaceId: workspace.id, desktop: desktop,
+        serverId: workspace.serverId, isActive: self.tab == .machine, client: client, desktop: desktop,
         desktopExpansion: expansion("Desktop"),
         statsExpansion: expansion("Stats"), onOpenDesktop: onOpenDesktop)
     case .media: WorkspaceInspectorMediaView(model: media, onRetry: onReload)

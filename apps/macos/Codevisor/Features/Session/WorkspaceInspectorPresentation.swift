@@ -169,7 +169,7 @@ struct WorkspaceInspectorPresentation: ViewModifier {
       onOpenDesktop: {
         guard let desktop else { return }
 
-        MachineDesktopWindows.shared.present(desktop, fromWorkspace: workspace.id, environment: environment)
+        MachineDesktopWindows.shared.present(desktop, environment: environment)
       },
       onReload: { Task { await reload(inspected, animatesUsage: true) } },
       onOpen: { destination in

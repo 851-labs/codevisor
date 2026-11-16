@@ -2,6 +2,7 @@ import CoreGraphics
 import CodevisorTestSupport
 import Foundation
 import ScreenSharing
+import ScreenSharingConnection
 import Testing
 @testable import CodevisorCore
 @testable import CodevisorCoreMac
@@ -53,7 +54,7 @@ struct ComputerUseLivePreviewHostTests {
   }
 
   private static func viewerSeesActivity(_ reply: ServerScreenSharingReply) -> Bool? {
-    ComputerUseLivePreview.remoteActivityIsActive(reply: reply, target: target)
+    ScreenSharingTargetActivity.isActive(reply, target: target)
   }
 
   @Test("Grants media, feeds frames, reports connection state, and releases on stop")

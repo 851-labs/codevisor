@@ -5,7 +5,6 @@ import SwiftUI
 
 struct MachineDesktopPreview: View {
   let machine: CodevisorMachine
-  let workspaceId: UUID
   let isStreaming: Bool
   let onOpen: () -> Void
   @State private var pane: ScreenSharingPane?
@@ -28,13 +27,12 @@ struct MachineDesktopPreview: View {
     }
     .onAppear(perform: attach)
     .onDisappear(perform: detach)
-    .onChange(of: workspaceId) { pane?.shown(inWorkspace: workspaceId) }
   }
 
   private func attach() {
     guard pane == nil else { return }
 
-    pane = MachineDesktops.shared.pane(on: machine, role: .watcher, shownInWorkspace: workspaceId)
+    pane = MachineDesktops.shared.pane(on: machine, role: .watcher)
   }
 
   private func detach() {

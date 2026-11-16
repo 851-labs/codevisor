@@ -11,14 +11,23 @@ final class SimulatorSharedStream {
   private(set) var deviceState: ScreenSharingSimulatorState?
   var frameSize: CGSize?
 
-  @ObservationIgnored let panes: SimulatorAttachedPanes
+  @ObservationIgnored private var members: Set<UUID> = []
   @ObservationIgnored private weak var bound: (any ScreenSharingSimulatorSession)?
 
-  init(connection: ScreenSharingConnection, panes: SimulatorAttachedPanes) {
+  init(connection: ScreenSharingConnection) {
     self.connection = connection
-    self.panes = panes
     connection.onSessionOpened = { [weak self] in self?.bind($0 as? any ScreenSharingSimulatorSession) }
     bind(connection.session as? any ScreenSharingSimulatorSession)
+  }
+
+  var isUnused: Bool { members.isEmpty }
+
+  func add(_ member: UUID) {
+    members.insert(member)
+  }
+
+  func remove(_ member: UUID) {
+    members.remove(member)
   }
 
   @discardableResult

@@ -12,18 +12,15 @@ struct ScreenSharingConnectionTargetTests {
   nonisolated private static let preview = "computer-use:0C000000-0000-4000-8000-000000000001"
   nonisolated private static let notControlling = "The agent is not controlling an app right now."
 
-  private func harness(_ target: String?, oldHost: Bool = false) -> ConnectionHarness {
-    let harness = ConnectionHarness(host: oldHost ? .old() : FakeHost())
+  private func harness(_ target: String?, abilities: [String]? = nil) -> ConnectionHarness {
+    let harness = ConnectionHarness(host: abilities.map { FakeHost(abilities: $0) } ?? FakeHost())
     harness.target = target
-    harness.attachedPane = ScreenSharingLegacyIdentity(workspaceId: UUID(), paneId: UUID())
     return harness
   }
 
-  @Test(
-    "A connection with a target sends it on every request and never picks a display",
-    arguments: [false, true])
-  func sendsTheTargetOnEveryRequest(oldHost: Bool) async {
-    let harness = harness(Self.simulator, oldHost: oldHost)
+  @Test("A connection with a target sends it on every request and never picks a display")
+  func sendsTheTargetOnEveryRequest() async {
+    let harness = harness(Self.simulator)
     harness.host.displays = []
     harness.connection.preferredDisplayId = FakeHost.second.id
     harness.show()
@@ -78,120 +75,76 @@ struct ScreenSharingConnectionTargetTests {
     #expect(desktop.isEnded && preview.isEnded && fresh.isEnded)
   }
 
-  enum Recovery: CaseIterable, Sendable { case machineCameOnline, workspaceAppeared }
-
-  @Test("A machine's recovery events reach every one of its connections", arguments: Recovery.allCases)
-  func reachesEveryConnectionOfTheMachine(_ recovery: Recovery) async {
-    let harness = harness(nil, oldHost: recovery == .workspaceAppeared)
-    let (workspaces, pane) = (harness.workspaces, harness.attachedPane)
-    let failure: ScreenSharingFailureReason
-    switch recovery {
-    case .machineCameOnline:
-      harness.host.answerEvery(.capabilities, .failure(FakeHost.unreachable))
-      failure = .cantReach
-    case .workspaceAppeared:
-      harness.workspaces = []
-      harness.attachedPane = nil
-      failure = .noWorkspace
-    }
+  @Test("A machine coming back online reaches every one of its connections")
+  func reachesEveryConnectionOfTheMachine() async {
+    let harness = harness(nil)
+    harness.host.answerEvery(.capabilities, .failure(FakeHost.unreachable))
     harness.show()
     let desktop = harness.connection
-    await harness.settle(.failed(failure))
+    await harness.settle(.failed(.cantReach))
     harness.target = Self.simulator
     harness.show()
     let simulator = harness.connection
-    await harness.settle(.failed(failure))
+    await harness.settle(.failed(.cantReach))
 
     harness.host.answerEvery(.capabilities, nil)
-    harness.workspaces = workspaces
-    harness.attachedPane = pane
-    switch recovery {
-    case .machineCameOnline: harness.manager.machineCameOnline(ConnectionHarness.machineId)
-    case .workspaceAppeared: harness.manager.workspaceAppeared(ConnectionHarness.machineId)
-    }
+    harness.manager.machineCameOnline(ConnectionHarness.machineId)
 
     #expect(desktop.state == .connecting(.reachingHost) && simulator.state == .connecting(.reachingHost))
   }
 
-  @Test("On an old host a target presents the pane attached right now, registers nothing, and follows a new pane")
-  func presentsTheAttachedPaneToAnOldHost() async throws {
-    let harness = harness(Self.simulator, oldHost: true)
-    let first = try #require(harness.attachedPane)
-    let second = ScreenSharingLegacyIdentity(workspaceId: UUID(), paneId: UUID())
+  @Test(
+    "A target needs app sessions but not display switching, and a host without app sessions is asked to update",
+    arguments: [false, true])
+  func needsAppSessionsForATarget(appSessions: Bool) async {
+    let harness = harness(Self.simulator, abilities: appSessions ? [ServerScreenSharingReply.appSessions] : [])
     harness.show()
-    await harness.goLive()
-    await harness.beat()
-    #expect(harness.host.requests(.heartbeat).map(\.paneId) == [first.paneId])
+    if appSessions {
+      await harness.goLive()
+    } else {
+      await harness.settle(.failed(.updateNeeded))
+    }
 
-    harness.attachedPane = second
-    harness.host.answerNext(.heartbeat, .failure(FakeHost.paneGone), .failure(FakeHost.paneGone))
-    harness.clock.advance(by: ScreenSharingConnectionDeadlines.heartbeatInterval)
-    await harness.settle(.reconnecting)
-    await harness.goLive()
-
-    let operations = harness.host.requests.filter { [.start, .stop].contains($0.operation) }
-    #expect(operations.map(\.operation) == [.start, .stop, .start])
-    #expect(operations.map(\.paneId) == [first.paneId, first.paneId, second.paneId])
-    #expect(operations.map(\.workspaceId) == [first.workspaceId, first.workspaceId, second.workspaceId])
-    #expect(operations.allSatisfy { $0.app == nil && $0.displayId == Self.simulator })
-    #expect(harness.host.registeredPanes.isEmpty)
-  }
-
-  @Test("On an old host a target with no pane attached fails as no workspace, without a start")
-  func failsWithoutAnAttachedPane() async {
-    let harness = harness(Self.simulator, oldHost: true)
-    harness.attachedPane = nil
-    harness.show()
-    await harness.settle(.failed(.noWorkspace))
-
-    #expect(harness.host.starts.isEmpty && harness.host.registeredPanes.isEmpty)
+    #expect(harness.host.starts.count == (appSessions ? 1 : 0))
   }
 
   struct Refusal: Sendable, CustomTestStringConvertible {
     var target: String?
-    var oldHost: Bool
     var operation: FakeHost.Operation
     var status: String
     var reason: String?
     var message: String?
     var expected: ScreenSharingFailureReason
     var testDescription: String {
-      "\(target == nil ? "desktop" : "target"), \(oldHost ? "old" : "new") host, \(operation) \(status) \(reason ?? "")"
+      "\(target == nil ? "desktop" : "target"), \(operation) \(status) \(reason ?? "")"
     }
   }
 
   nonisolated static let refusals = [
     Refusal(
-      target: preview, oldHost: true, operation: .capabilities, status: "unavailable", message: notControlling,
-      expected: .nothingToView(message: notControlling)),
-    Refusal(
-      target: simulator, oldHost: true, operation: .capabilities, status: "starting",
-      message: "The simulator is starting.", expected: .nothingToView(message: "The simulator is starting.")),
-    Refusal(
-      target: simulator, oldHost: true, operation: .start, status: "starting",
-      expected: .nothingToView(message: nil)),
-    Refusal(
-      target: preview, oldHost: false, operation: .capabilities, status: "unavailable", reason: "nothing-to-view",
+      target: preview, operation: .capabilities, status: "unavailable", reason: "nothing-to-view",
       message: notControlling, expected: .nothingToView(message: notControlling)),
     Refusal(
-      target: simulator, oldHost: false, operation: .capabilities, status: "unavailable",
+      target: simulator, operation: .start, status: "starting", reason: "nothing-to-view",
+      message: "The simulator is starting.", expected: .nothingToView(message: "The simulator is starting.")),
+    Refusal(
+      target: simulator, operation: .capabilities, status: "unavailable",
       message: "Install Xcode on this Mac to use its simulators.",
       expected: .unclassified(message: "Install Xcode on this Mac to use its simulators.")),
     Refusal(
-      target: preview, oldHost: true, operation: .start, status: "busy",
-      message: "Too many viewers are watching this agent.",
+      target: preview, operation: .start, status: "busy", message: "Too many viewers are watching this agent.",
       expected: .unclassified(message: "Too many viewers are watching this agent.")),
     Refusal(
-      target: nil, oldHost: true, operation: .capabilities, status: "unavailable", message: "No screens.",
+      target: nil, operation: .capabilities, status: "unavailable", message: "No screens.",
       expected: .unclassified(message: "No screens.")),
     Refusal(
-      target: nil, oldHost: true, operation: .start, status: "busy", message: "Already sharing.",
-      expected: .inUseOldHost),
+      target: nil, operation: .start, status: "busy", message: "Already sharing.",
+      expected: .unclassified(message: "Already sharing.")),
   ]
 
-  @Test("What a refusal without a reason code means depends on the target and on the host's age", arguments: refusals)
+  @Test("A refusal is the host's reason code when it gives one, and its own words when it doesn't", arguments: refusals)
   func classifiesARefusal(_ refusal: Refusal) async {
-    let harness = harness(refusal.target, oldHost: refusal.oldHost)
+    let harness = harness(refusal.target)
     harness.host.answerEvery(
       refusal.operation, .reply(status: refusal.status, message: refusal.message, reason: refusal.reason))
     harness.show()

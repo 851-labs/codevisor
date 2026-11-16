@@ -10,7 +10,6 @@ final class SimulatorStream: SimulatorConnection {
   static let unavailable = "This simulator can't be shown right now."
 
   @ObservationIgnored private let id = UUID()
-  @ObservationIgnored private let pane: ScreenSharingLegacyIdentity
   @ObservationIgnored private let machineName: String
   @ObservationIgnored private let join: @MainActor () -> SimulatorSharedStream?
   @ObservationIgnored private let leave: @MainActor (SimulatorSharedStream) -> Void
@@ -20,10 +19,9 @@ final class SimulatorStream: SimulatorConnection {
   @ObservationIgnored private var isVisible = false
 
   init(
-    pane: ScreenSharingLegacyIdentity, machineName: String, join: @escaping @MainActor () -> SimulatorSharedStream?,
+    machineName: String, join: @escaping @MainActor () -> SimulatorSharedStream?,
     leave: @escaping @MainActor (SimulatorSharedStream) -> Void
   ) {
-    self.pane = pane
     self.machineName = machineName
     self.join = join
     self.leave = leave
@@ -44,6 +42,12 @@ final class SimulatorStream: SimulatorConnection {
     if case .failed(.nothingToView) = shared?.connection.state { true } else { false }
   }
 
+  var offersRetry: Bool {
+    guard case .failed(let reason) = shared?.connection.state else { return true }
+
+    return ScreenSharingFailureAction(for: reason) != nil
+  }
+
   var state: ScreenSharingSimulatorState? { shared?.deviceState }
 
   var frameSize: CGSize? { shared?.frameSize }
@@ -59,7 +63,7 @@ final class SimulatorStream: SimulatorConnection {
     guard shared == nil, let joined = join() else { return }
 
     shared = joined
-    joined.panes.add(pane)
+    joined.add(id)
     surface = joined.connection.attach(.tab)
     surface?.setOnScreen(isVisible)
   }
@@ -113,7 +117,7 @@ final class SimulatorStream: SimulatorConnection {
     surface?.detach()
     surface = nil
     self.shared = nil
-    shared.panes.remove(pane)
+    shared.remove(id)
     leave(shared)
   }
 }

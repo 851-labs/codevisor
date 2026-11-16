@@ -27,32 +27,28 @@ final class ScreenSharingPane: Pane {
   private let machineId: String
   private let connection: (kind: String, address: String?)
   private let surface: ScreenSharingDesktopSurface?
-  private let workspace: ScreenSharingPaneWorkspace
-  private var isOnScreen = false
   private var observation: ObserveToken?
 
   var connectionName: String { machineName }
 
   convenience init(context: PaneContext, descriptor: PaneDescriptorState, role: ScreenSharingViewerRole = .tab) {
     self.init(
-      id: descriptor.id, machine: context.machine, role: role,
-      workspace: ScreenSharingPaneWorkspace(context.workspaceId), preferences: descriptor.screenSharing ?? .init(),
+      id: descriptor.id, machine: context.machine, role: role, preferences: descriptor.screenSharing ?? .init(),
       attaches: context.workspaceId != nil)
   }
 
   init(
-    id: UUID = UUID(), machine: CodevisorMachine, role: ScreenSharingViewerRole, workspace: ScreenSharingPaneWorkspace,
+    id: UUID = UUID(), machine: CodevisorMachine, role: ScreenSharingViewerRole,
     preferences: ScreenSharingPanePreferences, attaches: Bool = true
   ) {
     self.id = id
     self.role = role
-    self.workspace = workspace
     seedDisplayId = preferences.preferredDisplayId
     machineName = machine.name
     machineId = machine.id
     isLocal = machine.isLocal
     connection = Self.connection(of: machine)
-    surface = attaches ? Self.makeSurface(machine: machine, role: role, workspace: workspace) : nil
+    surface = attaches ? Self.makeSurface(machine: machine, role: role) : nil
     store = surface.map { Self.makeStore(machine: machine, surface: $0) }
     guard let store else { return }
     surface?.onChange = { [weak store] in store?.send(.surfaceChanged($0)) }
@@ -92,11 +88,11 @@ final class ScreenSharingPane: Pane {
   func makeView() -> AnyView { AnyView(ScreenSharingPaneView(pane: self)) }
 
   private static func makeSurface(
-    machine: CodevisorMachine, role: ScreenSharingViewerRole, workspace: ScreenSharingPaneWorkspace
+    machine: CodevisorMachine, role: ScreenSharingViewerRole
   ) -> ScreenSharingDesktopSurface? {
     guard !machine.isLocal else { return nil }
 
-    return AppRuntime.shared.screenSharing?.surface(onMachine: machine.id, role: role, shownIn: { workspace.id })
+    return AppRuntime.shared.screenSharing?.surface(onMachine: machine.id, role: role)
   }
 
   private static func makeStore(
@@ -120,7 +116,6 @@ final class ScreenSharingPane: Pane {
       lastConnected: ScreenSharingMachinePreferences().lastConnected(machineId: machineId),
       sound: store?.endpoint?.audio.map { .init(enabled: $0.enabled, volume: $0.volume) })
     settings.dynamicResolutionNote = Self.dynamicResolutionNote(store?.endpoint)
-    settings.switchesDisplayInSession = store?.switchesDisplayInSession == true
     settings.dynamicResolutionMirrorsDisplay = store?.endpoint?.resizeMirrorsHostDisplay ?? false
     if store?.endpoint?.supportsControl != false {
       settings.keyboard = savedKeyboard
@@ -186,16 +181,8 @@ final class ScreenSharingPane: Pane {
   }
 
   func onScreenChanged(_ onScreen: Bool) {
-    isOnScreen = onScreen
     surface?.setOnScreen(onScreen, seedDisplay: seedDisplayId)
     store?.send(onScreen ? .shown : .hidden)
-  }
-
-  func shown(inWorkspace workspaceId: UUID) {
-    guard workspace.id != workspaceId else { return }
-
-    workspace.id = workspaceId
-    if isOnScreen { surface?.setOnScreen(true, seedDisplay: seedDisplayId) }
   }
 
   private func leave() {

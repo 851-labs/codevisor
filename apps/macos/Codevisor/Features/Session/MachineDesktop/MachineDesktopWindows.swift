@@ -12,18 +12,17 @@ final class MachineDesktopWindows {
   private var open: [String: (window: NSWindow, pane: ScreenSharingPane)] = [:]
   private var closeObservers: [String: NSObjectProtocol] = [:]
 
-  func present(_ machine: CodevisorMachine, fromWorkspace workspaceId: UUID, environment: AppEnvironment) {
-    let shown = open[machine.id] ?? makeWindow(for: machine, shownInWorkspace: workspaceId, environment: environment)
+  func present(_ machine: CodevisorMachine, environment: AppEnvironment) {
+    let shown = open[machine.id] ?? makeWindow(for: machine, environment: environment)
     open[machine.id] = shown
-    shown.pane.shown(inWorkspace: workspaceId)
     shown.pane.openedByUser()
     shown.window.makeKeyAndOrderFront(nil)
   }
 
   private func makeWindow(
-    for machine: CodevisorMachine, shownInWorkspace workspaceId: UUID, environment: AppEnvironment
+    for machine: CodevisorMachine, environment: AppEnvironment
   ) -> (window: NSWindow, pane: ScreenSharingPane) {
-    let pane = MachineDesktops.shared.pane(on: machine, role: .window, shownInWorkspace: workspaceId)
+    let pane = MachineDesktops.shared.pane(on: machine, role: .window)
     let host = NSHostingController(rootView: MachineDesktopDialog(pane: pane).environment(environment).themedRoot())
     host.sceneBridgingOptions = [.toolbars, .title]
     let window = NSWindow(contentViewController: host)

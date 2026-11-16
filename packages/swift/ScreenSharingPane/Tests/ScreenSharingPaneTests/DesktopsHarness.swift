@@ -17,13 +17,6 @@ final class DesktopsHarness {
   final class World {
     var machineName: String? = "croissant"
     var isReady = true
-    private(set) var revision: UInt64 = 0
-    @ObservationIgnored private(set) var liveWorkspaces = [UUID()]
-
-    func setLiveWorkspaces(_ workspaces: [UUID]) {
-      liveWorkspaces = workspaces
-      revision += 1
-    }
   }
 
   @Observable
@@ -52,9 +45,7 @@ final class DesktopsHarness {
   var sources: ScreenSharingDesktopSources {
     ScreenSharingDesktopSources(
       signer: { [signer] in signer.signer }, channel: { [host] _ in host }, connector: connector ?? media.connector,
-      machineName: { [world] _ in world.machineName }, isReady: { [world] _ in world.isReady },
-      isLive: { [world] in world.liveWorkspaces.contains($0) }, liveWorkspaces: { [world] _ in world.liveWorkspaces },
-      workspacesRevision: { [world] in world.revision })
+      machineName: { [world] _ in world.machineName }, isReady: { [world] _ in world.isReady })
   }
 
   func makeDesktops() -> ScreenSharingDesktops {
@@ -64,12 +55,8 @@ final class DesktopsHarness {
       manager: manager, now: { [clock] in clock.now }, defaults: defaults, appName: Self.appName)
   }
 
-  func model(
-    in desktops: ScreenSharingDesktops? = nil, showing workspace: UUID? = nil, seedDisplayId: String? = nil
-  ) -> ScreenSharingPaneModel? {
-    (desktops ?? self.desktops).model(
-      for: Self.machineId, showing: workspace ?? world.liveWorkspaces[0], seedDisplayId: seedDisplayId,
-      sources: sources)
+  func model(in desktops: ScreenSharingDesktops? = nil, seedDisplayId: String? = nil) -> ScreenSharingPaneModel? {
+    (desktops ?? self.desktops).model(for: Self.machineId, seedDisplayId: seedDisplayId, sources: sources)
   }
 
   @discardableResult
