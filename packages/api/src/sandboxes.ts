@@ -101,6 +101,8 @@ export const Sandbox = Schema.Struct({
   restoresWorkspace: Schema.optional(Schema.Boolean),
   hasSavedWork: Schema.optional(Schema.Boolean),
   workLost: Schema.optional(Schema.String),
+  hasSavedChats: Schema.optional(Schema.Boolean),
+  chatsLost: Schema.optional(Schema.String),
   defersWorkspace: Schema.optional(Schema.Boolean),
   workspaceOpenedAt: Schema.optional(Schema.String),
   placeholderPending: Schema.optional(Schema.Boolean),

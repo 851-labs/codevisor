@@ -64,6 +64,7 @@ import type {
   SaveNativeMcpRemovalRequest,
   UpdateHarnessAccountAuthRequest
 } from "./rows.js"
+import type { SavedChatService } from "./saved-chat-service.js"
 import type { SessionStandingService } from "./session-archive.js"
 import type { SessionForkService } from "./session-fork-service.js"
 import type { SessionStateService } from "./session-state-types.js"
@@ -94,6 +95,7 @@ export interface CodevisorDatabaseService
   extends
     SessionStateService,
     SessionForkService,
+    SavedChatService,
     CreatedAgentsService,
     CheckoutsService,
     FleetBotsService,

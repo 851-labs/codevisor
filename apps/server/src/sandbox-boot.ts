@@ -62,6 +62,7 @@ import {
 import { makeSandboxLocalWorkspaces, type SandboxEvents } from "./infra/sandbox-local-workspaces.js"
 import { joinSandboxManagerElection, makeSandboxManagement } from "./infra/sandbox-manager-link.js"
 import { makeRetainedAccounts } from "./infra/sandbox-retained-accounts.js"
+import { makeSavedChatsStore } from "./infra/sandbox-saved-chats-store.js"
 import { makeSavedWorkStore } from "./infra/sandbox-saved-work.js"
 import { makeSandboxSettings } from "./infra/sandbox-settings.js"
 import { makeSandboxRecordStore, SANDBOX_RECORDS_NAMESPACE } from "./infra/sandbox-store.js"
@@ -156,6 +157,7 @@ export const startSandboxes = (
     projects,
     localWorkspaces: makeSandboxLocalWorkspaces(options.db, projects, events),
     savedWork: makeSavedWorkStore(options.dataDir),
+    savedChats: makeSavedChatsStore(options.dataDir),
     sync: (remote, firstHarness) =>
       pushOneWaySync({ db: options.db, blobs: options.syncBlobs }, remote, firstHarness),
     syncDeferred: (remote, order) =>

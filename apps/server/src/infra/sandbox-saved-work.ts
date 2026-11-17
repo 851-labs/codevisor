@@ -6,6 +6,7 @@ import type { SandboxProvider } from "@codevisor/sandboxes"
 import { Schema } from "effect"
 
 import { sandboxRemote, type SandboxRemote } from "./sandbox-remote.js"
+import { forgetBroughtBackChats, keptChatsOf, type KeptChats } from "./sandbox-saved-chats.js"
 import type { SandboxSetupProgress } from "./sandbox-setup-log.js"
 import type { SandboxDeps } from "./sandboxes.js"
 
@@ -15,7 +16,7 @@ export interface SavedWorkStore {
   readonly remove: (workspaceId: string) => Promise<void>
 }
 
-export type KeptWork = Pick<Sandbox, "hasSavedWork" | "workLost">
+export type KeptWork = Pick<Sandbox, "hasSavedWork" | "workLost"> & KeptChats
 
 const decodeWork = Schema.decodeUnknownSync(SavedProjectWork)
 
@@ -57,7 +58,8 @@ export const keepWork = async (
 
 export const keptWorkOf = (machine: Sandbox): KeptWork => ({
   ...(machine.hasSavedWork === true ? { hasSavedWork: true } : {}),
-  ...(machine.workLost === undefined ? {} : { workLost: machine.workLost })
+  ...(machine.workLost === undefined ? {} : { workLost: machine.workLost }),
+  ...keptChatsOf(machine)
 })
 
 export const startsOnNewBranch = (machine: Sandbox): boolean =>
@@ -93,6 +95,7 @@ export const forgetBroughtBackWork = async (deps: SandboxDeps, machine: Sandbox)
   if (machine.restoresWorkspace !== true || machine.workspaceId === undefined) return
 
   await deps.savedWork.remove(machine.workspaceId)
+  await forgetBroughtBackChats(deps, machine)
 }
 
 const notKept = "Its earlier branch and unpushed work weren't kept, so it starts on a new branch."

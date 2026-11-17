@@ -27,6 +27,7 @@ import { makePluginEventSubscriptionsService } from "./plugin-event-subscription
 import { makePluginEventsService } from "./plugin-events-service.js"
 import { makeProjectsService } from "./projects-service.js"
 import { makePromptQueueService } from "./prompt-queue-service.js"
+import { makeSavedChatService } from "./saved-chat-service.js"
 import { createServiceContext } from "./service-context.js"
 import type { CodevisorDatabaseConfig, CodevisorDatabaseService } from "./service.js"
 import { makeSessionForkService } from "./session-fork-service.js"
@@ -71,6 +72,7 @@ export const createService = (
     ...makeSessionsService(context),
     ...makeTranscriptService(context),
     ...makeSessionForkService(context),
+    ...makeSavedChatService(context),
     ...makeCreatedAgentsService(context),
     ...makeAssistantTextsService(context),
     ...makeStreamingReconciliationService(context),

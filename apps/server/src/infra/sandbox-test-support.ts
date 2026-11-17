@@ -2,7 +2,12 @@ import { mkdtempSync } from "node:fs"
 import { tmpdir } from "node:os"
 import { join } from "node:path"
 
-import type { CloudMachinePresence, GitSignIn, Project } from "@codevisor/api"
+import {
+  FLEET_SANDBOX_CHATS_PATH,
+  type CloudMachinePresence,
+  type GitSignIn,
+  type Project
+} from "@codevisor/api"
 import {
   makeFakeSandboxProvider,
   SIGN_IN_MARKER,
@@ -24,6 +29,7 @@ import { makeSandboxCredentials } from "./sandbox-credentials.js"
 import { makeSandboxLocalWorkspaces } from "./sandbox-local-workspaces.js"
 import type { SandboxManagement } from "./sandbox-manager.js"
 import { makeRetainedAccounts } from "./sandbox-retained-accounts.js"
+import { makeSavedChatsStore } from "./sandbox-saved-chats-store.js"
 import { makeSavedWorkStore } from "./sandbox-saved-work.js"
 import { makeSandboxSettings } from "./sandbox-settings.js"
 import { makeSandboxRecordStore } from "./sandbox-store.js"
@@ -47,7 +53,7 @@ export interface HarnessControls {
   listFails: boolean
   createFails: boolean
   removeFails: boolean
-  answer?: (tool: string) => unknown
+  answer?: (tool: string, args: Record<string, unknown>) => unknown
   beforeList?: () => Promise<void>
 }
 
@@ -207,6 +213,7 @@ export const sandboxHarness = async (options: SandboxHarnessOptions = {}) => {
       return (await run(services.db.listProjects)).find((candidate) => candidate.id === id)
     }
   }
+  const savedDir = savedWorkDir()
   const deps: SandboxDeps = {
     records,
     management: {
@@ -244,7 +251,9 @@ export const sandboxHarness = async (options: SandboxHarnessOptions = {}) => {
           args: record,
           ...(sessionId === undefined ? {} : { sessionId })
         })
-        return Promise.resolve(controls.answer?.(tool) ?? remoteTool(workspaces, tool, record))
+        return Promise.resolve(
+          controls.answer?.(tool, record) ?? remoteTool(workspaces, tool, record)
+        )
       }
     },
     projects: projectLookup,
@@ -254,7 +263,8 @@ export const sandboxHarness = async (options: SandboxHarnessOptions = {}) => {
         return Promise.resolve()
       }
     }),
-    savedWork: makeSavedWorkStore(savedWorkDir()),
+    savedWork: makeSavedWorkStore(savedDir),
+    savedChats: makeSavedChatsStore(savedDir),
     sync: (remote, firstHarness) => pushOneWaySync({ db: services.db }, remote, firstHarness),
     syncDeferred: (remote, order) =>
       pushRemainingAgents({ db: services.db }, remote, order, {
@@ -365,6 +375,7 @@ const remoteTool = (
   tool: string,
   args: Record<string, unknown>
 ): unknown => {
+  if (tool === FLEET_SANDBOX_CHATS_PATH) return { format: 1, chats: [], panes: [] }
   if (tool === "codevisor.projects.clone") return { id: "remote-project" }
   if (tool === "codevisor.projects.create_scratch") return { id: "remote-scratch" }
   if (tool === "codevisor.agents.start")

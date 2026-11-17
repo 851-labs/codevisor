@@ -40,6 +40,7 @@ export {
 
 export * from "./rows.js"
 
+export * from "./saved-chat-service.js"
 export * from "./service.js"
 
 export { isAgentQuestion, setupQuestionPresentation } from "./setup-questions.js"

@@ -57,6 +57,7 @@ import {
   usingProvider,
   withDeletedProvider
 } from "./sandbox-retire.js"
+import type { SavedChatsStore } from "./sandbox-saved-chats-store.js"
 import { forgetBroughtBackWork, type SavedWorkStore } from "./sandbox-saved-work.js"
 import {
   makeSandboxSetupProgress,
@@ -98,6 +99,7 @@ export interface SandboxDeps {
     readonly remove: (workspaceId: string) => Promise<void>
   }
   readonly savedWork: SavedWorkStore
+  readonly savedChats: SavedChatsStore
   readonly sync: (remote: SandboxRemote, firstHarness?: string) => Promise<OneWaySyncReport>
   readonly syncDeferred: (remote: SandboxRemote, order: AgentOrder) => Promise<void>
   readonly credentials: SandboxCredentials

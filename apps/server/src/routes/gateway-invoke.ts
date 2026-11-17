@@ -6,6 +6,7 @@ import {
   FLEET_EXEC_CONTROL_PATH,
   FLEET_EXEC_TASK_PATH,
   FLEET_MIRROR_PATH,
+  FLEET_SANDBOX_CHATS_PATH,
   FLEET_SANDBOX_ACTION_PATH,
   FLEET_SESSION_EVENT_PATH,
   FLEET_THREAD_MESSAGE_PATH,
@@ -26,6 +27,7 @@ import { receiveSessionEvent } from "./fleet-session-events.js"
 import { receiveThreadMessage } from "./fleet-thread-messages.js"
 import { routeMachineEnrollment } from "./machines.js"
 import type { RouteContext } from "./route-context.js"
+import { receiveSandboxChats } from "./sandbox-chats.js"
 
 const isRecord = (value: unknown): value is Record<string, unknown> =>
   typeof value === "object" && value !== null && !Array.isArray(value)
@@ -128,6 +130,10 @@ export const routeGatewayInvoke = async (route: RouteContext): Promise<boolean> 
   }
   if (path === FLEET_BOT_IMPORT_PATH) {
     await answerSandboxAction(response, () => receiveBotImport(route, call, body.args))
+    return true
+  }
+  if (path === FLEET_SANDBOX_CHATS_PATH) {
+    await answerSandboxAction(response, () => receiveSandboxChats(route, call, body.args))
     return true
   }
   if (path === FLEET_AGENTS_MOVED_PATH) {
