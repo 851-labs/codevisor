@@ -61,6 +61,7 @@ struct WorkspaceInspectorPresentation: ViewModifier {
     let isVisible = panelLayout.docksInspector ? isPresented : showsDrawer
     let visibleTab = inspected.map { shownTab(for: $0) } ?? tab
     let refresh = inspected.flatMap { isVisible ? refreshKey(for: $0) : nil }
+    let showsDocked = isPresented && panelLayout.docksInspector
     content
       .inspector(
         isPresented: Binding(
@@ -69,7 +70,8 @@ struct WorkspaceInspectorPresentation: ViewModifier {
         )
       ) {
         if let store, let inspected {
-          inspectorView(store, inspected)
+          FrozenWhileHidden(isShown: showsDocked) { inspectorView(store, inspected, isShown: showsDocked) }
+            .equatable()
             .inspectorColumnWidth(min: 220, ideal: idealInspectorWidth, max: 400)
             .toolbar {
               ToolbarSpacer(.flexible)
@@ -132,7 +134,7 @@ struct WorkspaceInspectorPresentation: ViewModifier {
     }
   }
 
-  private func inspectorView(_ store: SessionStore, _ inspected: Inspected) -> some View {
+  private func inspectorView(_ store: SessionStore, _ inspected: Inspected, isShown: Bool = true) -> some View {
     let workspace = inspected.workspace
     let chat = harnessChat(for: inspected)
     let place = place(of: inspected, chat: chat, store: store)
@@ -175,7 +177,8 @@ struct WorkspaceInspectorPresentation: ViewModifier {
       onOpen: { destination in
         store.inspectorOpenRequest = WorkspaceInspectorOpenRequest(
           workspaceId: workspace.id, destination: destination)
-      }
+      },
+      isShown: isShown
     )
     .environment(\.attachmentImages, imageStores.store(for: workspace.serverId, environment: environment))
   }
