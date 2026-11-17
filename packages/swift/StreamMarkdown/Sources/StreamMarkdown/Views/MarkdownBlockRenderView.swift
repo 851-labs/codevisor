@@ -226,8 +226,7 @@ public struct MarkdownFragmentRenderView: View {
   }
 
   private var contentIndent: CGFloat {
-    CGFloat(layout.quoteDepth) * MarkdownFragmentMetrics.quoteIndent
-      + CGFloat(layout.listDepth) * MarkdownFragmentMetrics.listIndent
+    MarkdownFragmentMetrics.contentIndent(of: layout)
   }
 
   private var trailingSpacing: CGFloat {
@@ -241,7 +240,7 @@ public struct MarkdownFragmentRenderView: View {
           .fill(theme.quoteBarColor)
           .frame(width: MarkdownFragmentMetrics.quoteBarWidth)
           .frame(maxHeight: .infinity)
-          .offset(x: CGFloat(depth) * MarkdownFragmentMetrics.quoteIndent)
+          .offset(x: MarkdownFragmentMetrics.quoteBarOffset(at: depth, in: layout))
       }
       ForEach(layout.listMarkers) { marker in
         Text(marker.text)
@@ -250,12 +249,7 @@ public struct MarkdownFragmentRenderView: View {
           .foregroundStyle(theme.secondaryTextForeground)
           .monospacedDigit()
           .fixedSize()
-          .offset(
-            x: CGFloat(layout.quoteDepth) * MarkdownFragmentMetrics.quoteIndent
-              + CGFloat(max(0, marker.depth - 1))
-              * MarkdownFragmentMetrics.listIndent
-              + MarkdownFragmentMetrics.listColumn(markers: [marker.text]).markerInset
-          )
+          .offset(x: MarkdownFragmentMetrics.markerOffset(marker, in: layout))
       }
     }
     .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
@@ -419,6 +413,9 @@ struct MarkdownBlockView: View {
       animationPath: "\(animationPath).quote",
       reduceMotion: reduceMotion
     )
+    .transformEnvironment(\.streamMarkdownTextLayoutWidth) { width in
+      width = width.map { max(1, $0 - MarkdownFragmentMetrics.quoteIndent) }
+    }
   }
 }
 
@@ -459,6 +456,9 @@ private struct MarkdownRecursiveListView: View {
             reduceMotion: reduceMotion,
             isListItemContent: true
           )
+          .transformEnvironment(\.streamMarkdownTextLayoutWidth) { width in
+            width = width.map { max(1, $0 - column.width) }
+          }
           .layoutPriority(1)
         }
       }

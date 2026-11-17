@@ -31,7 +31,8 @@ struct TranscriptMarkdownInvalidationTests {
 
   private func chunk(_ block: MarkdownBlock, source: String = "source") -> TranscriptMarkdownChunk {
     .init(
-      messageID: messageID, sourceID: "answer", ordinal: 0, blocks: [block],
+      messageID: messageID, sourceID: "answer", ordinal: 0,
+      content: MarkdownFragmentProjection.fragments(from: [block])[0],
       documentSource: source, lifecycle: .receiving, container: .assistantResponse)
   }
 

@@ -6,6 +6,7 @@ public struct TranscriptBotMessageContent: Equatable, Sendable {
   public let markdown: String
   public let files: [PreviewFile]
   public let blocks: [MarkdownBlock]
+  public let fragments: [MarkdownFragment]
   public let callout: TranscriptBotCallout?
 
   public init(_ message: TranscriptBotMessage) {
@@ -21,6 +22,7 @@ public struct TranscriptBotMessageContent: Equatable, Sendable {
       files = Self.unique(Self.files(in: segments))
       blocks = MarkdownParser().parse(markdown)
     }
+    fragments = MarkdownFragmentProjection.fragments(from: blocks)
     callout = TranscriptBotPartStyle(blocks: blocks) == .quote ? TranscriptBotCallout(quote: text) : nil
   }
 

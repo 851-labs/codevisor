@@ -140,41 +140,8 @@ final class TranscriptMarkdownRowDecoration: NSView {
       ? TranscriptMarkdownRowLayout.planBottomInset
       : 0
     let top = chunk.topSpacing(in: style.markdown)
-    if let context = NSGraphicsContext.current?.cgContext {
-      let color = NSColor(style.markdown.quoteBarColor)
-      for depth in 0..<fragment.quoteDepth {
-        TextKitQuoteBarPainter.fill(
-          NSRect(
-            x: planInset + CGFloat(depth) * MarkdownFragmentMetrics.quoteIndent,
-            y: top,
-            width: MarkdownFragmentMetrics.quoteBarWidth,
-            height: max(1, bounds.height - top - planBottom)
-          ),
-          color: color,
-          in: context
-        )
-      }
-    }
-
-    let bodyFont = BodyTextMetrics.font
-    for marker in fragment.listMarkers {
-      let markerAttributes: [NSAttributedString.Key: Any] = [
-        .font: MarkdownList.isBullet(marker.text) ? NSFont.boldSystemFont(ofSize: bodyFont.pointSize) : bodyFont,
-        .foregroundColor: NSColor(style.markdown.secondaryTextForeground),
-      ]
-      let x =
-        planInset
-        + CGFloat(fragment.quoteDepth) * MarkdownFragmentMetrics.quoteIndent
-        + CGFloat(max(0, marker.depth - 1)) * MarkdownFragmentMetrics.listIndent
-        + MarkdownFragmentMetrics.listColumn(markers: [marker.text]).markerInset
-      NSAttributedString(string: marker.text, attributes: markerAttributes).draw(
-        in: NSRect(
-          x: x,
-          y: top,
-          width: max(1, bounds.width - x),
-          height: max(1, bounds.height - top)
-        )
-      )
-    }
+    let decoration = NSRect(
+      x: planInset, y: top, width: max(1, bounds.width - planInset), height: max(1, bounds.height - top - planBottom))
+    MarkdownFragmentDecoration.draw(fragment, theme: style.markdown, in: decoration)
   }
 }

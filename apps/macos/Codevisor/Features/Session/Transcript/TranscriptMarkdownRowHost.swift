@@ -52,7 +52,7 @@ final class TranscriptMarkdownRowHost: TranscriptMountedRowHost {
       ? PlanDocumentMetrics.tableBleedLimit
       : .greatestFiniteMagnitude
     markdownView.setContent(
-      blocks: chunk.blocks,
+      fragment: chunk.content,
       theme: style.markdown,
       streamID: streamID,
       linkAction: linkAction,
@@ -146,11 +146,7 @@ final class TranscriptMarkdownRowHost: TranscriptMountedRowHost {
     style: TranscriptMarkdownRowStyle,
     rowWidth: CGFloat
   ) -> (contentFrame: NSRect, topInset: CGFloat, bottomInset: CGFloat) {
-    let fragmentIndent =
-      chunk.fragment.map {
-        CGFloat($0.quoteDepth) * MarkdownFragmentMetrics.quoteIndent
-          + CGFloat($0.listDepth) * MarkdownFragmentMetrics.listIndent
-      } ?? 0
+    let fragmentIndent = MarkdownFragmentMetrics.contentIndent(of: chunk.fragment)
     let planInset =
       chunk.container == .planDocument
       ? TranscriptMarkdownRowLayout.planHorizontalInset

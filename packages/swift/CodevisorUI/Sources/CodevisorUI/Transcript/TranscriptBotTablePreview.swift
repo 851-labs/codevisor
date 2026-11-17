@@ -33,12 +33,12 @@ struct TranscriptBotTablePreview<Fallback: View>: View {
   }
 
   private func bubble(_ table: DelimitedTablePreview) -> some View {
-    let blocks = [table.block]
+    let fragments = MarkdownFragmentProjection.fragments(from: [table.block])
     return TranscriptBotFileBubble(
       file: file, showsName: false, note: table.hiddenRowsNote,
-      naturalWidth: MarkdownTableNaturalWidth.widest(in: blocks, theme: theme)
+      naturalWidth: MarkdownTableNaturalWidth.widest(in: fragments, theme: theme)
     ) {
-      MarkdownBlockGroupsView(blocks: blocks, documentSource: "", streamID: "table-preview:\(file.id)")
+      MarkdownFragmentsView(fragments: fragments, documentSource: "", streamID: "table-preview:\(file.id)")
         .environment(\.markdownTableBleedLimit, 0)
     }
   }

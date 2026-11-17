@@ -118,21 +118,19 @@ enum TranscriptWorkedSectionProjection {
     let blocks = TranscriptMarkdownParseCache.shared.parse(
       markdown, messageID: message.id, sourceID: sourceID, isReceiving: lifecycle == .receiving
     )
-    let chunks = TranscriptMarkdownChunkProjection.chunks(from: blocks)
-    for (chunkIndex, chunk) in chunks.enumerated() {
-      let startsLine = chunkIndex == 0
-      let endsLine = chunkIndex == chunks.count - 1
+    let fragments = MarkdownFragmentProjection.fragments(from: blocks)
+    for (fragmentIndex, fragment) in fragments.enumerated() {
+      let startsLine = fragmentIndex == 0
+      let endsLine = fragmentIndex == fragments.count - 1
       let projected = TranscriptMarkdownChunk(
         messageID: message.id,
         sourceID: sourceID,
-        ordinal: chunk.firstOrdinal,
-        blocks: chunk.blocks,
+        ordinal: fragment.firstOrdinal,
+        content: fragment,
         documentSource: markdown,
         lifecycle: lifecycle,
         container: .assistantWorked,
         animationSourceID: entryID,
-        fragment: chunk.fragment,
-        precedingRole: chunk.precedingRole,
         timeline: TranscriptTimelineMarks(
           startsLine: startsLine,
           endsLine: endsLine,
@@ -145,8 +143,8 @@ enum TranscriptWorkedSectionProjection {
           id: TranscriptAssistantRowProjection.markdownID(
             messageID: message.id,
             sourceID: sourceID,
-            ordinal: chunk.firstOrdinal,
-            fragment: chunk.fragment?.identity,
+            ordinal: fragment.firstOrdinal,
+            fragment: fragment.layout?.identity,
             lifecycle: lifecycle
           ),
           content: .markdownChunk(projected),

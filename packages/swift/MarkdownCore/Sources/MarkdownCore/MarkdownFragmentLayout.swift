@@ -18,7 +18,7 @@ public struct MarkdownFragmentLayout: Sendable, Equatable, Hashable {
   }
 
   public let identity: String
-  public let quoteDepth: Int
+  public let quoteListDepths: [Int]
   public let listDepth: Int
   public let listMarkers: [ListMarker]
   public let trailingSpacing: TrailingSpacing
@@ -27,7 +27,7 @@ public struct MarkdownFragmentLayout: Sendable, Equatable, Hashable {
 
   public init(
     identity: String = "",
-    quoteDepth: Int,
+    quoteListDepths: [Int],
     listDepth: Int,
     listMarkers: [ListMarker],
     trailingSpacing: TrailingSpacing,
@@ -35,11 +35,17 @@ public struct MarkdownFragmentLayout: Sendable, Equatable, Hashable {
     isLastInSourceBlock: Bool = true
   ) {
     self.identity = identity
-    self.quoteDepth = max(0, quoteDepth)
+    self.quoteListDepths = quoteListDepths
     self.listDepth = max(0, listDepth)
     self.listMarkers = listMarkers
     self.trailingSpacing = trailingSpacing
     self.isFirstInSourceBlock = isFirstInSourceBlock
     self.isLastInSourceBlock = isLastInSourceBlock
+  }
+
+  public var quoteDepth: Int { quoteListDepths.count }
+
+  public func quotesEnclosing(listDepth: Int) -> Int {
+    quoteListDepths.count(where: { $0 < listDepth })
   }
 }

@@ -30,7 +30,7 @@ final class TranscriptMarkdownPrefetcher {
       let width = TranscriptMarkdownRowHost.contentGeometry(for: chunk, style: style, rowWidth: rowWidth)
         .contentFrame.width
       SettledMarkdownView.prefetch(
-        blocks: chunk.blocks, theme: style.markdown, streamID: row.layoutKey,
+        fragment: chunk.content, theme: style.markdown, streamID: row.layoutKey,
         width: width, scale: scale, appearance: appearance)
     }
   }

@@ -41,14 +41,14 @@
     }
 
     public func setContent(
-      blocks: [MarkdownBlock],
+      fragment: MarkdownFragment,
       theme: MarkdownTheme,
       streamID: String,
       linkAction: MarkdownLinkAction?,
       imageLoader: MarkdownImageLoader = .remote,
       chrome: MarkdownBlockChrome = .standard
     ) {
-      precondition(!blocks.isEmpty, "Settled Markdown requires at least one block")
+      let blocks = fragment.blocks
       let key = ContentKey(
         blocks: blocks,
         themeFingerprint: theme.renderFingerprint,
@@ -101,14 +101,14 @@
     }
 
     public static func prefetch(
-      blocks: [MarkdownBlock],
+      fragment: MarkdownFragment,
       theme: MarkdownTheme,
       streamID: String,
       width: CGFloat,
       scale: CGFloat,
       appearance: NSAppearance.Name
     ) {
-      guard !blocks.isEmpty else { return }
+      let blocks = fragment.blocks
       if MarkdownTextRunRenderer.canRenderAsTextRun(blocks) {
         StaticMarkdownTextContentView.prefetch(
           blocks: blocks, theme: theme, streamID: streamID, width: width, scale: scale, appearance: appearance)
@@ -142,9 +142,10 @@
     public var isContentReady: Bool { contentViews.allSatisfy(\.isContentReady) }
 
     public static func plainTextSurfaces(
-      blocks: [MarkdownBlock],
+      fragment: MarkdownFragment,
       theme: MarkdownTheme
     ) -> [String] {
+      let blocks = fragment.blocks
       if MarkdownTextRunRenderer.canRenderAsTextRun(blocks) {
         return [SettledMarkdownText.attributedText(for: blocks, theme: theme).string]
       }
@@ -201,13 +202,7 @@
       return blocks.enumerated().map { index, block in
         let blockID = "\(streamID).\(index)"
         switch block {
-        case .heading, .paragraph, .bulletList, .orderedList, .blockQuote:
-          return textContentView(blocks: [block], theme: theme, streamID: blockID, linkAction: linkAction)
-        case let .list(list):
-          precondition(
-            MarkdownTextRunRenderer.canRenderFlattenedList(list),
-            "Complex lists must be structurally projected before native rendering"
-          )
+        case .heading, .paragraph, .bulletList, .orderedList, .blockQuote, .list:
           return textContentView(blocks: [block], theme: theme, streamID: blockID, linkAction: linkAction)
         case let .codeBlock(language, code, _):
           return NativeMarkdownCodeBlockView(

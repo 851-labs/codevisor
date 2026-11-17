@@ -1,8 +1,8 @@
 #if canImport(AppKit)
   import AppKit
-  import MarkdownCore
   import Testing
 
+  @testable import MarkdownCore
   @testable import StreamMarkdown
 
   @MainActor
@@ -41,13 +41,13 @@
       let markdown = SettledMarkdownView(frame: NSRect(x: 40, y: 0, width: width, height: 1))
       document.addSubview(markdown)
       markdown.setContent(
-        blocks: [
+        fragment: MarkdownFragment(blocks: [
           .table(
             headers: [MarkdownText("#"), MarkdownText("Where"), MarkdownText("What hides it")],
             alignments: [],
             rows: rows
           )
-        ],
+        ]),
         theme: .default,
         streamID: "table-hosting",
         linkAction: nil

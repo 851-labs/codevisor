@@ -6,7 +6,7 @@ enum TranscriptRowTextProjection {
   static func surfaceTexts(for row: TranscriptVirtualRow, theme: MarkdownTheme) -> [String] {
     switch row.content {
     case let .markdownChunk(chunk):
-      return SettledMarkdownView.plainTextSurfaces(blocks: chunk.blocks, theme: theme)
+      return SettledMarkdownView.plainTextSurfaces(fragment: chunk.content, theme: theme)
     case let .message(item, waitingOnBackgroundTask: _):
       guard let message = item.userPrompt, !message.text.isEmpty else { return [] }
       return [message.text]

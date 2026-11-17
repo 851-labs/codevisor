@@ -20,7 +20,7 @@ public struct TranscriptBotCalloutView: View {
       VStack(alignment: .leading, spacing: 2) {
         Text(callout.label)
           .font(.caption.bold())
-        MarkdownBlockGroupsView(blocks: callout.blocks, documentSource: callout.markdown, streamID: streamID)
+        MarkdownFragmentsView(fragments: callout.fragments, documentSource: callout.markdown, streamID: streamID)
       }
     }
     .fixedSize(horizontal: false, vertical: true)

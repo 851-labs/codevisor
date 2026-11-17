@@ -90,7 +90,7 @@ struct TranscriptContentLayoutTests {
     let text = String(repeating: "A settled transcript sentence. ", count: 40)
     let chunk = TranscriptMarkdownChunk(
       messageID: UUID(), sourceID: "response", ordinal: 0,
-      blocks: MarkdownParser().parse(text), documentSource: text,
+      content: MarkdownFragmentProjection.fragments(from: MarkdownParser().parse(text))[0], documentSource: text,
       lifecycle: .settled, container: .assistantResponse
     )
     var heights: [CGFloat] = []
@@ -113,7 +113,7 @@ struct TranscriptContentLayoutTests {
       let host = TranscriptMarkdownRowHost(frame: NSRect(x: 0, y: 0, width: 400, height: 16))
       let chunk = TranscriptMarkdownChunk(
         messageID: UUID(), sourceID: "worked", ordinal: 0,
-        blocks: MarkdownParser().parse(text), documentSource: text,
+        content: MarkdownFragmentProjection.fragments(from: MarkdownParser().parse(text))[0], documentSource: text,
         lifecycle: .settled, container: .assistantWorked, timeline: timeline
       )
       var height: CGFloat = 0
