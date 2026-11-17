@@ -246,6 +246,14 @@ struct RootView: View {
           store.guestHost(of: chat) == nil
         else { return }
         self.selection = .session(serverId: serverId, id: chatId)
+      },
+      onMoved: { workspace in
+        guard selection == .workspace(serverId: serverId, id: workspaceId) else { return }
+        if workspace.isArchived {
+          selection = .archivedWorkspace(serverId: workspace.serverId, id: workspace.id)
+        } else {
+          openRestoredWorkspace(workspace, tabId: nil)
+        }
       }
     )
   }

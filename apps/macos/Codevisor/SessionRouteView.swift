@@ -73,9 +73,31 @@ struct WorkspaceRouteView: View {
   let serverId: String
   let workspaceId: UUID
   let onFocusedChatChanged: (UUID) -> Void
+  let onMoved: (Workspace) -> Void
+
+  private struct Place: Equatable {
+    let machineId: String
+    let isArchived: Bool
+  }
 
   var body: some View {
-    if let workspace = environment.navigationStore.workspaceEntries.entry(workspaceId).workspace,
+    let workspace = environment.navigationStore.workspaceEntries.entry(workspaceId).workspace
+    content(workspace)
+      .onChange(
+        of: workspace.map { Place(machineId: $0.serverId, isArchived: $0.isArchived) }, initial: true
+      ) { _, place in
+        guard let workspace, let place, place != Place(machineId: serverId, isArchived: false) else { return }
+        onMoved(workspace)
+      }
+  }
+
+  @ViewBuilder
+  private func content(_ workspace: Workspace?) -> some View {
+    if let workspace, workspace.serverId == serverId, workspace.isRestoring {
+      RestoringWorkspacePane(workspace: workspace)
+        .navigationTitle(SidebarWorkspaceRowLabel.title(for: workspace.name))
+        .navigationSubtitle("Restoring")
+    } else if let workspace,
       workspace.serverId == serverId,
       let project = environment.projectList.projects.first(where: {
         $0.serverId == serverId && $0.id == workspace.projectId

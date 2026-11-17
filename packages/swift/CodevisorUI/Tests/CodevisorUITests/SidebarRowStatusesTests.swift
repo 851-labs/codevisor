@@ -47,6 +47,15 @@ struct SidebarRowStatusesTests {
     #expect(status(main, [:]) == nil)
   }
 
+  @Test("A workspace whose sandbox is being restored says so, whatever its chats were doing")
+  func restoringWorkspace() {
+    let row = WorkspaceSidebarItem(
+      id: UUID(), serverId: "studio", projectId: UUID(), routingChatIds: [main.id], isRestoring: true)
+    let statuses = SidebarRowStatuses([row], chats: [main], mainChat: { _ in main }, activity: { _ in working })
+
+    #expect(statuses.status(of: row.id) == .restoring)
+  }
+
   @Test func idleChatsShowNothing() {
     #expect(status([main.id: SidebarChatActivity()]) == nil)
   }

@@ -50,6 +50,7 @@ final class SessionStore {
     let groupId: UUID
   }
   @ObservationIgnored var centerLeafGroups: [CenterLeafKey: PaneGroupModel] = [:]
+  @ObservationIgnored var centerLeafMachines: [UUID: String] = [:]
   @ObservationIgnored let browserPanes = BrowserPaneIndex()
   @ObservationIgnored let gitLookups = SidebarGitLookups()
   @ObservationIgnored var draftsByServer: [String: SessionController] = [:]
@@ -286,6 +287,7 @@ final class SessionStore {
     session: ChatSession?,
     project: Project
   ) -> PaneGroupModel {
+    dropCenterLeavesBuiltForAnotherMachine(of: workspace)
     let key = CenterLeafKey(workspaceId: workspace.id, groupId: leafId)
     if let existing = centerLeafGroups[key] {
       if let session, existing.sessionId == nil {
@@ -323,6 +325,15 @@ final class SessionStore {
     pruneSubagentMirrors(in: workspace)
     transcriptViewers.prune(in: workspace)
     return changed
+  }
+
+  private func dropCenterLeavesBuiltForAnotherMachine(of workspace: Workspace) {
+    let builtFor = centerLeafMachines.updateValue(workspace.serverId, forKey: workspace.id)
+    guard let builtFor, builtFor != workspace.serverId else { return }
+    for (key, model) in centerLeafGroups where key.workspaceId == workspace.id {
+      model.detachAll()
+      centerLeafGroups[key] = nil
+    }
   }
 
   func evictCenterLeaf(workspaceId: UUID, leafId: UUID) {

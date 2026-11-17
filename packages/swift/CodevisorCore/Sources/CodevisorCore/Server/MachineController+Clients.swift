@@ -59,6 +59,11 @@ extension MachineController {
       return SandboxOwner(deviceId: deviceId, client: client(for: machineId))
     }
     await sandboxMachineProfiles.load(from: owners)
+    navigationStore?.setRestoring(sandboxMachineProfiles.restoringWorkspaces)
+  }
+
+  public func restoringWorkspace(_ id: UUID) -> RestoringWorkspace? {
+    sandboxMachineProfiles.restoringWorkspaces[id]
   }
 
   public func sandboxPower(forMachineId id: String) -> SandboxMachinePower? {
@@ -102,7 +107,15 @@ extension MachineController {
     for origin in sandboxCloudMachines.compactMap(\.ephemeral) {
       owners[origin.ownerDeviceId] = ownerMachineId(of: origin)
     }
+    for machine in chatMachines {
+      guard let deviceId = cloudDeviceId(of: machine.id) else { continue }
+      owners[deviceId] = machine.id
+    }
     return owners
+  }
+
+  private func cloudDeviceId(of machineId: String) -> String? {
+    statusByMachineId[machineId]?.cloudDeviceId ?? CodevisorMachine.cloudDeviceId(forMachineId: machineId)
   }
 
   private func ownerMachineId(of origin: CloudEphemeralOrigin) -> String? {

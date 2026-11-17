@@ -16,6 +16,10 @@ public struct SidebarRowStatuses {
     }
     var statuses: [UUID: SidebarRowStatus] = [:]
     for item in items {
+      guard !item.isRestoring else {
+        statuses[item.id] = .restoring
+        continue
+      }
       let main = mainChat(item)
       let own = main.map(activity) ?? chatless(item)
       let hasBusySubAgent = main.map { busyOwners.contains($0.id) } ?? false

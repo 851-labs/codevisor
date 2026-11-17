@@ -16,6 +16,7 @@ public struct Workspace: Sendable, Equatable, Identifiable {
   public var createdAt: Date
   public var isArchived: Bool
   public var archivedAt: Date?
+  public var isRestoring = false
   public var isServerSynced: Bool
   public var git: ServerWorkspaceGit?
   public var mainSessionId: UUID?

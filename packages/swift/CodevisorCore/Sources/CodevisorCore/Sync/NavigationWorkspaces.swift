@@ -27,10 +27,11 @@ public struct WorkspaceSidebarItem: Equatable, Identifiable, Sendable {
   public let routingChatIds: [UUID]
   public let parent: WorkspaceParentLink?
   public let isBotHome: Bool
+  public let isRestoring: Bool
 
   public init(
     id: UUID, serverId: String, projectId: UUID, routingChatIds: [UUID], parent: WorkspaceParentLink? = nil,
-    isBotHome: Bool = false
+    isBotHome: Bool = false, isRestoring: Bool = false
   ) {
     self.id = id
     self.serverId = serverId
@@ -38,6 +39,7 @@ public struct WorkspaceSidebarItem: Equatable, Identifiable, Sendable {
     self.routingChatIds = routingChatIds
     self.parent = parent
     self.isBotHome = isBotHome
+    self.isRestoring = isRestoring
   }
 
   public var parentWorkspaceId: UUID? { parent?.workspaceId }
@@ -115,7 +117,7 @@ public final class NavigationWorkspaces {
       WorkspaceSidebarItem(
         id: workspace.id, serverId: workspace.serverId, projectId: workspace.projectId,
         routingChatIds: routed.isEmpty ? current.routingChatIds : routed, parent: current.parent,
-        isBotHome: current.isBotHome)
+        isBotHome: current.isBotHome, isRestoring: workspace.isRestoring)
     }
     if let index = sidebar.firstIndex(where: { $0.id == workspace.id }) {
       let item = refreshed(sidebar[index])
@@ -147,7 +149,7 @@ public final class NavigationWorkspaces {
       return WorkspaceSidebarItem(
         id: workspace.id, serverId: workspace.serverId, projectId: workspace.projectId,
         routingChatIds: routed.isEmpty ? fallback : routed, parent: parents[workspace.id],
-        isBotHome: botProjects.contains(workspace.projectId))
+        isBotHome: botProjects.contains(workspace.projectId), isRestoring: workspace.isRestoring)
     }
   }
 

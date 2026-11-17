@@ -300,6 +300,24 @@ extension MachineControllerCloudTests {
     #expect(projectList.projects.contains { $0.serverId == liveId })
   }
 
+  @Test("A machine that was connected when it left the account is pruned on the next roster refresh, not at relaunch")
+  func connectedMachineLeavesRoster() async throws {
+    let (controller, projectList, provider) = makeController()
+    provider.cloudMachines = [makeCloudMachine()]
+    provider.requestTransport.responsesByPath["/v1/info"] = """
+      {"id":"m1","name":"Sandbox","kind":"remote","version":"2.0.0",
+       "platform":"linux","bindHost":"127.0.0.1","cloudDeviceId":"dev-1"}
+      """
+    await controller.refreshStatus(for: "cloud:dev-1")
+    await projectList.installProjectWithChat(machineId: "cloud:dev-1", folder: "/srv/sandbox")
+
+    provider.cloudMachines = []
+    controller.pruneDeadCloudRecords()
+
+    #expect(projectList.sessions.isEmpty)
+    #expect(controller.statusByMachineId["cloud:dev-1"] == nil)
+  }
+
   @Test("A cloud machine yields a relay-backed client and status")
   func cloudRelayClient() async throws {
     let (controller, _, provider) = makeController()

@@ -104,16 +104,21 @@ extension MachineController {
       }
     case "sync.changed":
       if let document = ShellSyncPayload.decoded(ServerSyncDocument.self, from: event.payload) {
-        if SandboxSettingsModel.syncNamespaces.contains(document.namespace) {
-          sandboxAvailabilityRevision += 1
-          sandboxSettingsRevision += 1
-        } else if document.namespace == SandboxMachineProfiles.recordsNamespace {
-          sandboxSettingsRevision += 1
-        }
+        noteSandboxChange(in: document.namespace)
         onSyncChanged?(serverId, document)
       }
     default:
       break
+    }
+  }
+
+  private func noteSandboxChange(in namespace: String) {
+    if SandboxSettingsModel.syncNamespaces.contains(namespace) {
+      sandboxAvailabilityRevision += 1
+      sandboxSettingsRevision += 1
+    } else if namespace == SandboxMachineProfiles.recordsNamespace {
+      sandboxSettingsRevision += 1
+      Task { await cloudProvider?.refreshCloudMachines() }
     }
   }
 

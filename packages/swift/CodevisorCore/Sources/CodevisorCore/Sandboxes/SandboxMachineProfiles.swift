@@ -33,6 +33,7 @@ public final class SandboxMachineProfiles {
   private var profilesByOwner: [String: [String: SandboxMachineProfile]] = [:]
   private var powersByOwner: [String: [String: SandboxMachinePower]] = [:]
   private var sandboxIdsByOwner: [String: [String: String]] = [:]
+  private var restoringByOwner: [String: [UUID: RestoringWorkspace]] = [:]
 
   public init() {}
 
@@ -42,6 +43,10 @@ public final class SandboxMachineProfiles {
 
   public func power(forDevice deviceId: String, ownedBy ownerDeviceId: String) -> SandboxMachinePower? {
     powersByOwner[ownerDeviceId]?[deviceId]
+  }
+
+  var restoringWorkspaces: [UUID: RestoringWorkspace] {
+    restoringByOwner.values.reduce(into: [:]) { all, owned in all.merge(owned) { current, _ in current } }
   }
 
   func sandboxId(forDevice deviceId: String, ownedBy ownerDeviceId: String) -> String? {
@@ -69,6 +74,7 @@ public final class SandboxMachineProfiles {
     if profilesByOwner[ownerDeviceId] != loaded.profiles { profilesByOwner[ownerDeviceId] = loaded.profiles }
     if powersByOwner[ownerDeviceId] != loaded.powers { powersByOwner[ownerDeviceId] = loaded.powers }
     if sandboxIdsByOwner[ownerDeviceId] != loaded.sandboxIds { sandboxIdsByOwner[ownerDeviceId] = loaded.sandboxIds }
+    if restoringByOwner[ownerDeviceId] != loaded.restoring { restoringByOwner[ownerDeviceId] = loaded.restoring }
   }
 
   private nonisolated static func sandboxes(on client: any CodevisorServerClienting) async -> OwnerSandboxes? {
@@ -77,7 +83,7 @@ public final class SandboxMachineProfiles {
     guard let sandboxes = await sandboxes, let profiles = await profiles else { return nil }
     return OwnerSandboxes(
       profiles: matching(sandboxes, to: profiles), powers: SandboxMachinePower.byDevice(sandboxes),
-      sandboxIds: sandboxIdsByDevice(sandboxes))
+      sandboxIds: sandboxIdsByDevice(sandboxes), restoring: RestoringWorkspace.byWorkspace(sandboxes))
   }
 
   private nonisolated static func sandboxIdsByDevice(_ sandboxes: [ServerSandbox]) -> [String: String] {
@@ -108,4 +114,5 @@ private struct OwnerSandboxes: Sendable {
   let profiles: [String: SandboxMachineProfile]
   let powers: [String: SandboxMachinePower]
   let sandboxIds: [String: String]
+  let restoring: [UUID: RestoringWorkspace]
 }

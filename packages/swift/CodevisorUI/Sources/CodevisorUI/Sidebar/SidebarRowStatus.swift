@@ -5,6 +5,7 @@ public enum SidebarRowStatus: Equatable, Sendable {
   case input
   case approval
   case settingUp
+  case restoring
   case working(since: Date?)
   case waiting
   case failed
@@ -20,6 +21,7 @@ public enum SidebarRowStatus: Equatable, Sendable {
     case .input: "Needs Input"
     case .approval: "Needs Approval"
     case .settingUp: "Setting up"
+    case .restoring: "Restoring"
     case .working: "Working"
     case .waiting: "Waiting"
     case .failed: "Failed"
@@ -32,6 +34,7 @@ public enum SidebarRowStatus: Equatable, Sendable {
     case .input: "questionmark.bubble.fill"
     case .approval: "hand.raised.fill"
     case .settingUp: "hammer.fill"
+    case .restoring: "arrow.uturn.backward"
     case .working: "bolt.fill"
     case .waiting: "hourglass"
     case .failed: "exclamationmark.triangle.fill"
@@ -42,7 +45,7 @@ public enum SidebarRowStatus: Equatable, Sendable {
   public var tone: Tone {
     switch self {
     case .input, .approval, .limited: .attention
-    case .working, .settingUp, .waiting: .quiet
+    case .working, .settingUp, .restoring, .waiting: .quiet
     case .failed: .failure
     }
   }
@@ -57,7 +60,7 @@ public enum SidebarRowStatus: Equatable, Sendable {
 
   public var isAnimated: Bool {
     switch self {
-    case .working, .settingUp: true
+    case .working, .settingUp, .restoring: true
     case .input, .approval, .waiting, .failed, .limited: false
     }
   }
