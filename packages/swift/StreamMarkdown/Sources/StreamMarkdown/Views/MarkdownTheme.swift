@@ -75,18 +75,22 @@ public struct MarkdownImageActions: @unchecked Sendable {
   }
 }
 
-public struct MarkdownWebLinkActions: @unchecked Sendable {
+public struct MarkdownWebLinkActions: @unchecked Sendable, Equatable {
   public enum Destination: Sendable {
     case newTab
     case newWindow
     case split
   }
 
-  public var open: @MainActor (URL, Destination) -> Bool
+  public let open: @MainActor (URL, Destination) -> Bool
+  private let source: AnyHashable
 
-  public init(open: @escaping @MainActor (URL, Destination) -> Bool) {
+  public init(source: some Hashable & Sendable, open: @escaping @MainActor (URL, Destination) -> Bool) {
+    self.source = AnyHashable(source)
     self.open = open
   }
+
+  public static func == (lhs: Self, rhs: Self) -> Bool { lhs.source == rhs.source }
 }
 
 public struct MarkdownTheme: Sendable {

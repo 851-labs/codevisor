@@ -262,7 +262,8 @@ final class PaneGroupModel: Identifiable {
   }
 
   private func webLinkActions(sourcePaneId: UUID) -> MarkdownWebLinkActions {
-    MarkdownWebLinkActions { [weak self] url, destination in
+    MarkdownWebLinkActions(source: WebLinkSource(group: ObjectIdentifier(self), paneId: sourcePaneId)) {
+      [weak self] url, destination in
       let destination: BrowserLinkDestination =
         switch destination {
         case .newTab: .foregroundTab
@@ -445,4 +446,9 @@ extension PaneGroupModel {
       discardLivePane(id: pane.id)
     }
   }
+}
+
+private nonisolated struct WebLinkSource: Hashable, Sendable {
+  let group: ObjectIdentifier
+  let paneId: UUID
 }

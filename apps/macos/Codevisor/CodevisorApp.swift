@@ -26,6 +26,7 @@ struct RootView: View {
   @State private var requiresInitialNewChatProjectResolution = false
   @State var panelLayout = AdaptivePanelLayout()
   @State private var commandPalette = CommandPalette()
+  @State private var handlerIdentity = HandlerIdentity.unique
 
   var body: some View {
     mainSplit
@@ -44,8 +45,12 @@ struct RootView: View {
         )
         .frame(width: 0, height: 0)
       )
-      .background(RootTitlebar(isBotConversation: showsBotConversation, panelLayout: panelLayout))
-      .environment(\.openChat, OpenChatAction { await openChat($0) })
+      .background(
+        SidebarSelectionReader(selection: $selection) { selection in
+          RootTitlebar(isBotConversation: selection?.owningMode == .bots, panelLayout: panelLayout)
+        }
+      )
+      .environment(\.openChat, OpenChatAction(identity: handlerIdentity) { await openChat($0) })
       .environment(\.isAppUpdateInProgress, environment.isUpdateInProgress)
       .task(id: store.map(ObjectIdentifier.init)) { readBotMascotActivity() }
       .overlay { ErrorBannerLayer() }
@@ -60,18 +65,7 @@ struct RootView: View {
       .background(
         WindowLayoutReader { panelLayout.updateWindow(width: $0, isFullScreen: $1) }.frame(width: 0, height: 0)
       )
-      .onChange(of: selection) { _, newValue in
-        guard let store else { return }
-        if case let .session(serverId, sessionId) = newValue {
-          store.markOpened(sessionId, serverId: serverId)
-        } else if case let .bot(serverId, botId) = newValue,
-          let bot = environment.bots.bot(serverId: serverId, id: botId)
-        {
-          store.markOpened(bot.sessionId, serverId: serverId)
-        } else {
-          store.clearOpenSession()
-        }
-      }
+      .modifier(OpenSessionTracking(selection: $selection, store: store))
       .task(id: environment.machines.sandboxMachineProfilesLoadKey) {
         await environment.machines.loadSandboxMachineProfiles()
       }
@@ -135,14 +129,15 @@ struct RootView: View {
     } detail: {
       Group {
         if let store {
-          detail(store, selection: selection)
+          SidebarSelectionReader(selection: $selection) { selection in
+            detail(store, selection: selection)
+          }
         } else {
           ProgressView().frame(maxWidth: .infinity, maxHeight: .infinity)
         }
       }
       .toolbar {
-        SidebarComposeToolbarItem(
-          showsBlankPage: showsBlankPage, newChat: openNewChat, newBot: openNewBot, openThread: openBotThread)
+        SidebarComposeToolbarItem(selection: $selection, newChat: openNewChat, newBot: openNewBot)
       }
     }
     .modifier(WorkspaceInspectorPresentation(store: store, selection: $selection))

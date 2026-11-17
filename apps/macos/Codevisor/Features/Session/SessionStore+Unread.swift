@@ -1,6 +1,7 @@
 import Foundation
 import Observation
 import CodevisorCore
+import CodevisorUI
 import ACPKit
 
 extension SessionStore {
@@ -30,6 +31,7 @@ extension SessionStore {
   func windowClosed() {
     isWindowFocused = false
     attentionFocus = SessionAttentionWorkspaceFocus()
+    navigationTargets.select(nil)
     publishFocus()
   }
 

@@ -5,16 +5,22 @@ extension EnvironmentValues {
   @Entry public var openFileDocument: OpenFileDocumentAction?
 }
 
-public struct OpenFileDocumentAction: Sendable {
+public struct OpenFileDocumentAction: Sendable, Equatable {
+  private let identity: HandlerIdentity
   private let handler: @MainActor @Sendable (_ target: String, _ rendered: Bool) -> Bool
 
-  public init(_ handler: @escaping @MainActor @Sendable (_ target: String, _ rendered: Bool) -> Bool) {
+  public init(
+    identity: HandlerIdentity, _ handler: @escaping @MainActor @Sendable (_ target: String, _ rendered: Bool) -> Bool
+  ) {
+    self.identity = identity
     self.handler = handler
   }
 
   @MainActor @discardableResult public func callAsFunction(_ target: String, rendered: Bool = false) -> Bool {
     handler(target, rendered)
   }
+
+  public static func == (lhs: Self, rhs: Self) -> Bool { lhs.identity == rhs.identity }
 }
 
 public struct FilePaneView: View {
