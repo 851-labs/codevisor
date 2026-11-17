@@ -11,7 +11,7 @@ enum TranscriptEventRowProjection {
   }
 
   static func botFeedRow(for item: ConversationItem, spacingAfter: CGFloat) -> TranscriptPresentationRow? {
-    guard let marker = marker(of: item)?.withoutAgentStatuses else { return nil }
+    guard let marker = marker(of: item)?.shownInBotConversation else { return nil }
 
     return row(for: marker, inBotConversation: true, spacingAfter: spacingAfter)
   }

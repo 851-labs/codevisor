@@ -8,10 +8,6 @@ struct TranscriptEventAgents {
   let sessions: [ChatSession]
   let bots: BotListModel?
 
-  static func isAgentEvent(_ event: TranscriptEvent) -> Bool {
-    event.isAgentStatus || event.type == TranscriptEvent.agentMessageType
-  }
-
   func session(for event: TranscriptEvent) -> ChatSession? {
     guard let id = Self.agentId(of: event).flatMap(UUID.init(uuidString:)) else { return nil }
     return sessions.first { $0.id == id }
@@ -48,7 +44,6 @@ struct TranscriptEventAgents {
   }
 
   private static func agentId(of event: TranscriptEvent) -> String? {
-    guard isAgentEvent(event) else { return nil }
-    return event[attribute: "from"] ?? event[attribute: "agentId"]
+    event[attribute: "from"] ?? event[attribute: "agentId"]
   }
 }

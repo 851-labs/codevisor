@@ -21,8 +21,8 @@ public struct TranscriptEventMarker: Sendable, Equatable {
     return threadID
   }
 
-  var withoutAgentStatuses: TranscriptEventMarker? {
-    let kept = events.filter { !$0.isAgentStatus }
+  var shownInBotConversation: TranscriptEventMarker? {
+    let kept = events.filter(\.kind.showsInBotConversation)
     guard !kept.isEmpty else { return nil }
 
     return TranscriptEventMarker(messageID: messageID, events: kept)

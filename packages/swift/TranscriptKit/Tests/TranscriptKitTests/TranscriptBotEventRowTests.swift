@@ -26,16 +26,32 @@ struct TranscriptBotEventRowTests {
       })
   }
 
-  @Test func leavesOutItsAgentsFinishingPausingErroringAndWaiting() throws {
-    let statuses = UserMessage(
+  @Test(
+    "A bot conversation shows outside events and messages, and leaves out its agents' statuses and Codevisor bookkeeping",
+    arguments: [
+      ("plugin.event", true), ("thread.message", true), ("execution.job_finished", true),
+      ("exec.task_finished", true), ("harness.task_finished", true), ("session.restarted", true),
+      ("session.usage_limit_reset", true), ("question.answered", true), ("bot.created", true),
+      ("session.turn_ended", false), ("session.waiting_for_user", false), ("session.errored", false),
+      ("session.user_message", false), ("bot.handoff", false), ("bot.instructions_updated", false),
+      ("bot.projects_changed", false),
+    ])
+  func showsOnlyEventsWithTheirOwnRow(type: String, shows: Bool) throws {
+    let event = UserMessage(text: agentEvent(type, "a1"), isEvent: true)
+
+    let rows = try project([.user(event)], TranscriptBotConversation(messages: [], isWorking: false))
+
+    #expect(rows.contains { $0.id == .eventMarker(event.id) } == shows)
+  }
+
+  @Test func keepsTheOtherEventsOfAPromptAndMessagesFromOtherAgents() throws {
+    let mixed = UserMessage(
       text: [
-        agentEvent("session.turn_ended", "a1"), agentEvent("session.turn_ended", "a2", #"stopKind="usageLimit""#),
-        agentEvent("session.errored", "a3"), agentEvent("session.waiting_for_user", "a4", #"kind="question""#),
+        agentEvent("session.turn_ended", "a1", #"stopKind="usageLimit""#), agentEvent("session.user_message", "a1"),
+        agentEvent("plugin.event", "a1", #"plugin="Slack""#),
       ].joined(separator: "\n"),
       isEvent: true)
-    let mixed = UserMessage(
-      text: agentEvent("session.turn_ended", "a1") + "\n" + agentEvent("plugin.event", "a1", #"plugin="Slack""#),
-      isEvent: true)
+    let plain = UserMessage(text: " continue ", isEvent: true)
     let sent = UserMessage(text: "Two nits on the PR", sentByAgentId: "a5")
     var wake = AssistantTurn(entries: [.text(id: "work", markdown: "Reading the results")])
     wake.startedAt = start.addingTimeInterval(30)
@@ -45,7 +61,7 @@ struct TranscriptBotEventRowTests {
     )
 
     let rows = try project(
-      [.user(statuses), .user(mixed), .user(sent), .assistant(AssistantMessage(turn: wake))], conversation)
+      [.user(mixed), .user(plain), .user(sent), .assistant(AssistantMessage(turn: wake))], conversation)
 
     #expect(
       rows.map(\.id).filter(isFeedRow) == [
