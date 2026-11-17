@@ -12,6 +12,7 @@ final class NavigationProjector {
     var cacheGeneration: UInt64?
     var entries: [NavigationOutboxEntry]
     var layoutGeneration: UInt64
+    var yielded: Set<UUID>
   }
 
   private struct MachineProjection {
@@ -32,6 +33,7 @@ final class NavigationProjector {
   private var machines: [String: (inputs: MachineInputs, projection: MachineProjection)] = [:]
   private var fitted: [UUID: (key: WorkspaceKey, workspace: Workspace)] = [:]
   private var previous: [UUID: Workspace] = [:]
+  private let ownership = WorkspaceOwnership()
 
   func reset() {
     machines = [:]
@@ -43,24 +45,26 @@ final class NavigationProjector {
     cache: (String) -> MachineNavigationCache?,
     cacheGeneration: (String) -> UInt64?,
     entries: (String) -> [NavigationOutboxEntry],
+    restoring: [UUID: RestoringWorkspace] = [:],
     layouts: DeviceLayoutStore
   ) -> Result {
     var projection = NavigationProjection()
     var current: [String: (inputs: MachineInputs, projection: MachineProjection)] = [:]
+    let yielded = ownership.yieldedWorkspaces(machineIds: machineIds, cache: cache, cacheGeneration: cacheGeneration)
     for machineId in machineIds {
       let inputs = MachineInputs(
         cacheGeneration: cacheGeneration(machineId), entries: entries(machineId),
-        layoutGeneration: layouts.machineGeneration(machineId))
+        layoutGeneration: layouts.machineGeneration(machineId), yielded: yielded[machineId] ?? [])
       let machine: MachineProjection
       if let memo = machines[machineId], memo.inputs == inputs {
         machine = memo.projection
       } else {
-        machine = projectMachine(machineId, cache: cache(machineId), entries: inputs.entries, layouts: layouts)
+        machine = projectMachine(machineId, cache: cache(machineId), inputs: inputs, layouts: layouts)
       }
       current[machineId] = (
         MachineInputs(
           cacheGeneration: inputs.cacheGeneration, entries: inputs.entries,
-          layoutGeneration: layouts.machineGeneration(machineId)),
+          layoutGeneration: layouts.machineGeneration(machineId), yielded: inputs.yielded),
         machine
       )
       projection.projects += machine.projects
@@ -70,6 +74,7 @@ final class NavigationProjector {
       projection.checkouts.merge(machine.checkouts) { _, new in new }
     }
     machines = current
+    restoring.mark(&projection.workspaces, held: previous)
     var changed = Set<UUID>()
     var byId: [UUID: Workspace] = [:]
     byId.reserveCapacity(projection.workspaces.count)
@@ -85,11 +90,11 @@ final class NavigationProjector {
   }
 
   private func projectMachine(
-    _ machineId: String, cache: MachineNavigationCache?, entries: [NavigationOutboxEntry],
-    layouts: DeviceLayoutStore
+    _ machineId: String, cache: MachineNavigationCache?, inputs: MachineInputs, layouts: DeviceLayoutStore
   ) -> MachineProjection {
     var records = NavigationRecords(cache)
-    NavigationOverlay.apply(entries, to: &records)
+    NavigationOverlay.apply(inputs.entries, to: &records)
+    records.yield(inputs.yielded)
     var machine = MachineProjection(projects: records.projects, sessions: records.sessions)
     machine.checkouts = Dictionary(
       records.checkouts.map { ($0.id.lowercased(), Checkout(record: $0, machineId: machineId)) },
@@ -115,6 +120,7 @@ final class NavigationProjector {
       serverWorkspaceIds.insert(id)
     }
     for draft in layouts.drafts where draft.serverId == machineId && !serverWorkspaceIds.contains(draft.id) {
+      guard !inputs.yielded.contains(draft.id) else { continue }
       guard let layout = layouts.layout(for: draft.id), !layout.tabs.isEmpty else { continue }
       machine.workspaces.append(NavigationProjectionBuilder.workspace(from: draft, layout: layout))
     }
@@ -176,6 +182,23 @@ extension UUID {
   fileprivate var orderKey: (UInt64, UInt64) {
     withUnsafeBytes(of: uuid) { bytes in
       (bytes.load(as: UInt64.self).bigEndian, bytes.load(fromByteOffset: 8, as: UInt64.self).bigEndian)
+    }
+  }
+}
+
+extension [UUID: RestoringWorkspace] {
+  fileprivate func mark(_ workspaces: inout [Workspace], held: [UUID: Workspace]) {
+    guard !isEmpty else { return }
+    var listed = Set<UUID>()
+    for index in workspaces.indices {
+      guard let restoring = self[workspaces[index].id] else { continue }
+      listed.insert(workspaces[index].id)
+      let isOnSandbox = workspaces[index].serverId == restoring.sandboxMachineId
+      workspaces[index].isRestoring = !isOnSandbox && !workspaces[index].isArchived
+    }
+    for id in keys where !listed.contains(id) {
+      guard let workspace = held[id], workspace.isRestoring else { continue }
+      workspaces.append(workspace)
     }
   }
 }

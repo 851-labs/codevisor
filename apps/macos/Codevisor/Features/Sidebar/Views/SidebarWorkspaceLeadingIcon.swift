@@ -10,7 +10,10 @@ struct SidebarWorkspaceLeadingIcon: View {
   var statusColor: Color? = nil
 
   var body: some View {
-    if let status, status.replacesLeadingIcon(isUnread: showsUnreadDot) {
+    if status == .restoring {
+      AgentStatusIndicator(status: .working, activityColor: color)
+        .frame(width: 18)
+    } else if let status, status.replacesLeadingIcon(isUnread: showsUnreadDot) {
       SidebarRowStatusSymbol(status: status, size: SidebarRowIcon.size)
         .frame(width: 18)
     } else {

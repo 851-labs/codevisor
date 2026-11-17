@@ -91,6 +91,23 @@ struct SandboxMachineProfilesTests {
     #expect(controller.sandboxPower(forMachineId: studioB.id)?.power == .waking)
   }
 
+  @Test("A sandbox coming back from the archive names the workspace it restores until it is archived again")
+  func restoringWorkspaces() {
+    let workspaceId = UUID()
+    func sandbox(state: String, deviceId: String? = nil, restores: Bool? = true) -> ServerSandbox {
+      ServerSandbox(
+        id: "s", vendor: "apple-container", name: "Box", state: state, deviceId: deviceId,
+        workspaceId: workspaceId.uuidString.lowercased(), restoresWorkspace: restores)
+    }
+
+    #expect(RestoringWorkspace.byWorkspace([sandbox(state: "creating")]) == [workspaceId: .init(sandboxMachineId: nil)])
+    #expect(
+      RestoringWorkspace.byWorkspace([sandbox(state: "ready", deviceId: "d1")])
+        == [workspaceId: .init(sandboxMachineId: "cloud:d1")])
+    #expect(RestoringWorkspace.byWorkspace([sandbox(state: "archived")]).isEmpty)
+    #expect(RestoringWorkspace.byWorkspace([sandbox(state: "ready", restores: nil)]).isEmpty)
+  }
+
   @Test("A refresh that can't reach the owning Mac keeps the profiles already known")
   func failedRefreshKeepsProfiles() async {
     let controller = makeController()

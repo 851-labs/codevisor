@@ -27,10 +27,11 @@ public struct ServerSandbox: Decodable, Equatable, Sendable, Identifiable {
   public var steps: [ServerSandboxSetupStep]?
   public var power: String?
   public var error: String?
+  public var restoresWorkspace: Bool?
 
   private enum CodingKeys: String, CodingKey {
     case id, name, state, profileId, profileName, accountId, deviceId, remoteProjectId, workspaceId, plan, steps
-    case power, error
+    case power, error, restoresWorkspace
     case vendor = "provider"
   }
 
@@ -48,7 +49,8 @@ public struct ServerSandbox: Decodable, Equatable, Sendable, Identifiable {
     plan: [String]? = nil,
     steps: [ServerSandboxSetupStep]? = nil,
     power: String? = nil,
-    error: String? = nil
+    error: String? = nil,
+    restoresWorkspace: Bool? = nil
   ) {
     self.id = id
     self.vendor = vendor
@@ -64,6 +66,7 @@ public struct ServerSandbox: Decodable, Equatable, Sendable, Identifiable {
     self.steps = steps
     self.power = power
     self.error = error
+    self.restoresWorkspace = restoresWorkspace
   }
 }
 

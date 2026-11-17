@@ -339,7 +339,7 @@ public final class MachineController {
       return
     }
     let liveDeviceIds = Set(cloudProvider.cloudMachines.map(\.deviceId))
-      .union(statusByMachineId.values.compactMap(\.cloudDeviceId))
+      .union(statusByMachineId.filter { machine(for: $0.key) != nil }.values.compactMap(\.cloudDeviceId))
     let storedServerIds = Set(
       projectList.projects.map(\.serverId) + projectList.sessions.map(\.serverId)
     ).union(navigationStore?.cachedMachineIds ?? [])

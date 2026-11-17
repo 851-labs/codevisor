@@ -17,6 +17,7 @@ public final class NavigationStore {
   @ObservationIgnored private weak var projectList: ProjectListModel?
   @ObservationIgnored private weak var repository: ProjectedWorkspaceRepository?
   @ObservationIgnored private var cacheGenerations: [String: UInt64] = [:]
+  @ObservationIgnored private var restoring: [UUID: RestoringWorkspace] = [:]
 
   public init(
     store: any PersistenceStore,
@@ -148,6 +149,12 @@ public final class NavigationStore {
     return false
   }
 
+  func setRestoring(_ restoring: [UUID: RestoringWorkspace]) {
+    guard restoring != self.restoring else { return }
+    self.restoring = restoring
+    rebuild()
+  }
+
   public func forget(machineId: String) {
     cacheGenerations[machineId, default: 0] &+= 1
     caches.remove(machineId: machineId)
@@ -210,7 +217,7 @@ public final class NavigationStore {
       .union(layouts.drafts.map(\.serverId)).sorted()
     let result = projector.project(
       machineIds: machineIds, cache: { self.caches.caches[$0] }, cacheGeneration: { self.caches.generations[$0] },
-      entries: { self.outbox.entries(for: $0) }, layouts: layouts)
+      entries: { self.outbox.entries(for: $0) }, restoring: restoring, layouts: layouts)
     var promotedMachineIds = Set<String>()
     for draft in layouts.drafts where result.projection.workspacesById[draft.id]?.isServerSynced == true {
       layouts.promoteDraft(id: draft.id)

@@ -29,7 +29,7 @@ struct SidebarWorkspaceRowLabel: View {
   let store: SessionStore?
 
   private var statusLabel: SidebarRowStatus? {
-    showsStatusLabel ? status : nil
+    showsStatusLabel || status == .restoring ? status : nil
   }
 
   static func title(for name: String) -> String {
