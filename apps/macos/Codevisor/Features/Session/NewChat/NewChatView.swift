@@ -45,7 +45,7 @@ struct NewChatView: View {
 
   @Environment(AppEnvironment.self) var environment
   let store: SessionStore
-  @Binding var selection: SidebarSelection?
+  @SidebarSelectionRef var selection: SidebarSelection?
   var initialProjectTarget: NewChatTarget?
   var paneDraftId: UUID? = nil
   var onCreatedInPane: ((ChatSession) -> Void)? = nil
@@ -442,11 +442,11 @@ struct NewChatView: View {
 }
 
 #Preview {
-  @Previewable @State var selection: SidebarSelection?
+  @Previewable @State var selection = LocalSidebarSelection()
   let environment = AppEnvironment.preview()
   return NewChatView(
     store: SessionStore(environment: environment),
-    selection: $selection,
+    selection: SidebarSelectionRef(selection),
     initialProjectTarget: nil
   )
   .environment(environment)

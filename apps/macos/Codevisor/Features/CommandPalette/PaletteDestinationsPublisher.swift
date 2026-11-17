@@ -4,7 +4,7 @@ import SwiftUI
 
 struct PaletteDestinationsPublisher: ViewModifier {
   @Environment(AppEnvironment.self) private var environment
-  @Binding var selection: SidebarSelection?
+  @SidebarSelectionRef var selection: SidebarSelection?
   let store: SessionStore?
   let revealRequest: SidebarRevealRequest
   let isEnabled: Bool

@@ -5,7 +5,7 @@ import SwiftUI
 struct BotListSidebar: View {
   @Environment(AppEnvironment.self) private var environment
   @Environment(\.isActiveSidebarMode) private var isActiveSidebarMode
-  @Binding var selection: SidebarSelection?
+  @SidebarSelectionRef var selection: SidebarSelection?
   @Binding var botEditor: BotEditorTarget?
   var store: SessionStore? = nil
   var publishesSceneActions = true

@@ -7,7 +7,7 @@ struct SidebarView: View {
   @Environment(AppEnvironment.self) var environment
   @Environment(\.accessibilityReduceMotion) var reduceMotion
   @Environment(\.isActiveSidebarMode) private var isActiveSidebarMode
-  @Binding var selection: SidebarSelection?
+  @SidebarSelectionRef var selection: SidebarSelection?
   var store: SessionStore? = nil
   var publishesSceneActions = true
 
@@ -246,9 +246,9 @@ final class SidebarRevealRequest {
 }
 
 #Preview {
-  @Previewable @State var selection: SidebarSelection?
+  @Previewable @State var selection = LocalSidebarSelection()
   return NavigationSplitView {
-    SidebarView(selection: $selection)
+    SidebarView(selection: SidebarSelectionRef(selection))
       .environment(AppEnvironment.preview())
   } detail: {
     Text("Detail")

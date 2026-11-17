@@ -22,7 +22,7 @@ import CodevisorUI
   private struct AppStoreScreenshotRoot: View {
     private let scene = ProcessInfo.processInfo.environment["CODEVISOR_SCREENSHOT_SCENE"] ?? "projects"
     @StateObject private var fixture = MacScreenshotFixture()
-    @State private var selection = Self.initialSelection
+    @State private var selection = LocalSidebarSelection(Self.initialSelection)
     @State private var panelLayout = AdaptivePanelLayout()
 
     var body: some View {
@@ -65,7 +65,7 @@ import CodevisorUI
 
     private var splitView: some View {
       NavigationSplitView {
-        SidebarView(selection: $selection, store: fixture.store, publishesSceneActions: false)
+        SidebarView(selection: SidebarSelectionRef(selection), store: fixture.store, publishesSceneActions: false)
           .navigationSplitViewColumnWidth(270)
       } detail: {
         Group {
@@ -84,7 +84,7 @@ import CodevisorUI
             .navigationTitle(AppStoreScreenshotData.title)
           } else {
             NewChatView(
-              store: fixture.store, selection: $selection,
+              store: fixture.store, selection: SidebarSelectionRef(selection),
               initialProjectTarget: scene == "new-chat" ? NewChatTarget(AppStoreScreenshotData.project) : nil
             )
           }

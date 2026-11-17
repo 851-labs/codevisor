@@ -9,7 +9,7 @@ struct WorkspaceChildAgentsEnvironment: ViewModifier {
   @State private var renamingChat: ChatSession?
   @State private var sectionPrompt: SectionPrompt?
   let store: SessionStore?
-  @Binding var selection: SidebarSelection?
+  @SidebarSelectionRef var selection: SidebarSelection?
   var revealRequest: SidebarRevealRequest?
 
   func body(content: Content) -> some View {

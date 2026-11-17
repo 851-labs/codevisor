@@ -3,7 +3,7 @@ import CodevisorUI
 import SwiftUI
 
 struct SidebarModeSelectionMemory: ViewModifier {
-  @Binding var selection: SidebarSelection?
+  @SidebarSelectionRef var selection: SidebarSelection?
   let onNavigate: () -> Void
   @Environment(AppEnvironment.self) private var environment
   @ClientPreference(SidebarMode.preferenceKey, default: SidebarMode.code) private var storedMode
