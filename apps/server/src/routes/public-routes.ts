@@ -3,12 +3,13 @@ import { hostname } from "node:os"
 
 import { gitInstallation } from "@codevisor/worktrees"
 
-import { HttpFailure, run, writeJson } from "../server-context.js"
+import { HttpFailure, matchRoute, run, writeJson } from "../server-context.js"
 import type { CodevisorServerConfig } from "../server-context.js"
 import { liveCloudDeviceId } from "./cloud.js"
-import { appScheme, appSchemeParameter, oauthFinishedPage } from "./oauth-returns.js"
+import { appScheme, appSchemeParameter, oauthFinishedPage, signInPage } from "./oauth-returns.js"
 import { isMethodRoute, respondAfter } from "./route-context.js"
 import type { RouteContext, RouteHandler } from "./route-context.js"
+import { signInTicket } from "./sign-in-handoffs.js"
 
 export const accountGatewayRouteFor = ({ url }: RouteContext): RouteHandler | undefined => {
   if (url.pathname === "/harness/provider-token") return forwardProviderToken
@@ -27,6 +28,9 @@ export const mcpOAuthRouteFor = ({ request, url }: RouteContext): RouteHandler |
   if (isMethodRoute(request, url, "GET", "/v1/mcps/oauth/callback")) return finishMcpOAuth
   if (isMethodRoute(request, url, "GET", "/v1/mcps/oauth/complete")) return writeOAuthReconnecting
   if (isMethodRoute(request, url, "GET", "/v1/plugins/oauth/callback")) return finishPluginOAuth
+  if (request.method !== "GET") return undefined
+  if (matchRoute(url.pathname, "/v1/sign-in/:ticket") !== undefined) return writeSignInStarting
+  if (matchRoute(url.pathname, "/v1/sign-in/:ticket/continue") !== undefined) return continueSignIn
   return undefined
 }
 
@@ -63,6 +67,10 @@ const oauthReconnectingMessage =
 
 const pluginSignedInMessage = "Signed in. You can return to Codevisor."
 
+const signInNotFinishedMessage = "Sign-in wasn’t finished. You can return to Codevisor."
+
+const signInFailedPrefix = "Sign-in didn’t finish."
+
 const finishPluginOAuth = ({
   services,
   routeState,
@@ -79,9 +87,7 @@ const finishPluginOAuth = ({
     url.searchParams.get("error") ?? undefined
   )
   const app = routeState.oauthReturns.take(state)
-  return respondAfter(response, completing, () =>
-    writeHtml(response, oauthFinishedPage(pluginSignedInMessage, app))
-  )
+  return writeSignInResult(response, completing, pluginSignedInMessage, app)
 }
 
 const forwardProviderToken = ({ services, request, response }: RouteContext): Promise<void> => {
@@ -136,18 +142,80 @@ const forwardMcpGateway = ({ services, request, response }: RouteContext): Promi
   return respondAfter(response, services.mcp.handleGatewayRequest(request, response))
 }
 
-const finishMcpOAuth = ({ services, routeState, response, url }: RouteContext): Promise<void> => {
+const finishMcpOAuth = async ({
+  services,
+  routeState,
+  response,
+  url
+}: RouteContext): Promise<void> => {
   if (services.mcp === undefined) throw new HttpFailure(501, mcpGatewayUnavailable)
   const callback = oauthCallbackQuery(url)
-  if (!hasCallbackData(callback)) throw new HttpFailure(400, "Missing OAuth callback data")
+  const app = callback.state === null ? undefined : routeState.oauthReturns.take(callback.state)
+  if (!hasCallbackData(callback)) {
+    if (app === undefined) throw new HttpFailure(400, "Missing OAuth callback data")
+    return writeHtml(response, oauthFinishedPage(signInNotFinishedMessage, app))
+  }
 
-  const app = routeState.oauthReturns.take(callback.state)
-  return respondAfter(
+  return writeSignInResult(
     response,
     services.mcp.finishOAuth(callback.state, callback.code, callback.issuer ?? undefined),
-    () => writeHtml(response, oauthFinishedPage(oauthAuthorizedMessage, app))
+    oauthAuthorizedMessage,
+    app
   )
 }
+
+const writeSignInResult = async (
+  response: ServerResponse,
+  finishing: Promise<unknown>,
+  finishedMessage: string,
+  app: string | undefined
+): Promise<void> => {
+  if (app === undefined) {
+    return respondAfter(response, finishing, () =>
+      writeHtml(response, oauthFinishedPage(finishedMessage, app))
+    )
+  }
+  const failure = await finishing.then(
+    () => undefined,
+    (cause: unknown) => errorMessage(cause)
+  )
+  const message = failure === undefined ? finishedMessage : `${signInFailedPrefix} ${failure}`
+  writeHtml(response, oauthFinishedPage(message, app))
+}
+
+const writeSignInStarting = ({ response, url }: RouteContext): void => {
+  const ticket = signInTicket(matchRoute(url.pathname, "/v1/sign-in/:ticket"))
+  if (ticket === undefined) throw new HttpFailure(404, "Route not found")
+
+  const next = new URL(`/v1/sign-in/${ticket}/continue`, url)
+  const app = appScheme(url.searchParams.get(appSchemeParameter))
+  if (app !== undefined) next.searchParams.set(appSchemeParameter, app)
+  const name = url.searchParams.get("name")?.slice(0, 80)
+  writeHtml(
+    response,
+    signInPage({
+      title: name ? `Signing in to ${name}…` : "Signing in…",
+      message: name ? `Opening ${name} sign-in…` : "Opening sign-in…",
+      continuesAt: `${next.pathname}${next.search}`
+    })
+  )
+}
+
+const continueSignIn = async ({ routeState, response, url }: RouteContext): Promise<void> => {
+  const ticket = signInTicket(matchRoute(url.pathname, "/v1/sign-in/:ticket/continue"))
+  if (ticket === undefined) throw new HttpFailure(404, "Route not found")
+
+  const handoff = await routeState.signInHandoffs.wait(ticket)
+  if ("failure" in handoff) {
+    const app = appScheme(url.searchParams.get(appSchemeParameter))
+    return writeHtml(response, oauthFinishedPage(`${signInFailedPrefix} ${handoff.failure}`, app))
+  }
+  response.writeHead(302, { location: handoff.authorizationUrl, "cache-control": "no-store" })
+  response.end()
+}
+
+const errorMessage = (cause: unknown): string =>
+  cause instanceof Error ? cause.message : String(cause)
 
 const oauthCallbackQuery = (url: URL): OAuthCallbackQuery => ({
   state: url.searchParams.get("state"),

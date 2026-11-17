@@ -1,8 +1,9 @@
 import { randomUUID } from "node:crypto"
 
 import type { McpAuthType, McpConnectionState } from "@codevisor/api"
+import type { OAuthDiscoveryState } from "@modelcontextprotocol/client"
 
-import { detectMcpAuth } from "./mcp-auth-detection.js"
+import { detectMcpAuth, type OAuthDiscoveries } from "./mcp-auth-detection.js"
 import {
   assertCanDisableMcp,
   isBuiltinMcpId,
@@ -11,7 +12,7 @@ import {
 import type { CatalogServer, makeMcpGateway } from "./mcp-gateway.js"
 import type { McpManagerCore } from "./mcp-manager-core.js"
 import type { McpManager } from "./mcp-manager-types.js"
-import { encryptSecrets } from "./mcp-secret-store.js"
+import { encryptSecrets, type StoredSecrets } from "./mcp-secret-store.js"
 import { connectionSecretsSignature, initialSecrets, updatedSecrets } from "./mcp-secret-update.js"
 import { errorMessage, requireHttpUrl, run, validateRequest } from "./mcp-support.js"
 import type { ConnectUpstream } from "./mcp-upstream.js"
@@ -21,6 +22,7 @@ type GatewayHandles = ReturnType<typeof makeMcpGateway>
 export interface McpServerOperationDeps {
   readonly allTools: GatewayHandles["allTools"]
   readonly connectUpstream: ConnectUpstream
+  readonly recentOAuthDiscovery: OAuthDiscoveries["recent"]
   readonly refreshGatewayInventories: GatewayHandles["refreshGatewayInventories"]
 }
 
@@ -64,7 +66,7 @@ export const makeMcpServerOperations = (
     secrets,
     state
   } = core
-  const { allTools, connectUpstream, refreshGatewayInventories } = deps
+  const { allTools, connectUpstream, recentOAuthDiscovery, refreshGatewayInventories } = deps
 
   const connect: McpManager["connect"] = async (id) => {
     await closeConnection(id)
@@ -114,8 +116,11 @@ export const makeMcpServerOperations = (
       }
     }
     const id = randomUUID()
-    const stored = initialSecrets(request, authType, id)
     const url = request.transport === "http" ? requireHttpUrl(request.url) : undefined
+    const stored = withDiscovery(
+      initialSecrets(request, authType, id),
+      url === undefined ? undefined : recentOAuthDiscovery(url)
+    )
     const command = request.transport === "stdio" ? request.command : undefined
     const saved = await run(
       config.db.saveMcpServer({
@@ -356,3 +361,11 @@ export const makeMcpServerOperations = (
     update
   }
 }
+
+const withDiscovery = (
+  stored: StoredSecrets,
+  discoveryState: OAuthDiscoveryState | undefined
+): StoredSecrets =>
+  stored.oauth === undefined || discoveryState === undefined
+    ? stored
+    : { ...stored, oauth: { ...stored.oauth, discoveryState } }

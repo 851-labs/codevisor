@@ -138,8 +138,78 @@ describe("mcp installation routes", () => {
     )
     const reconnectPage = await fetch(authorizationUrl).then((response) => response.text())
 
+    beginOAuth.mockResolvedValueOnce(`https://auth.example.test/authorize?state=${id}.flow-2`)
+    await startSignIn("codevisor")
+    vi.spyOn(services.mcp, "finishOAuth").mockRejectedValueOnce(new Error("The code expired"))
+    const failed = await fetch(
+      `${server.url}/v1/mcps/oauth/callback?state=${id}.flow-2&code=code-2`
+    ).then((response) => response.text())
+    beginOAuth.mockResolvedValueOnce(`https://auth.example.test/authorize?state=${id}.flow-3`)
+    await startSignIn("codevisor")
+    const denied = await fetch(
+      `${server.url}/v1/mcps/oauth/callback?state=${id}.flow-3&error=access_denied`
+    ).then((response) => response.text())
+
     expect(signedIn).toContain('location.href = "codevisor-dev-0123456789://signed-in"')
     expect(reconnectPage).toContain('<a href="codevisor://signed-in">Open Codevisor</a>')
+    expect(failed).toContain("Sign-in didn’t finish. The code expired")
+    expect(failed).toContain('location.href = "codevisor://signed-in"')
+    expect(denied).toContain("Sign-in wasn’t finished.")
+    expect(denied).toContain('location.href = "codevisor://signed-in"')
+  })
+
+  it("opens the browser before the sign-in URL exists and sends it on once it does", async () => {
+    const { server, services } = await start()
+    const created = await jsonRequest(server, "/v1/mcps", {
+      method: "POST",
+      body: JSON.stringify({
+        authType: "oauth",
+        enabled: false,
+        name: "Linear",
+        transport: "http",
+        url: "https://mcp.example.test/mcp"
+      })
+    })
+    const id = idOf(created.body)
+    const beginOAuth = vi.spyOn(services.mcp, "beginOAuth")
+    const open = (ticket: string, suffix = "") =>
+      fetch(`${server.url}/v1/sign-in/${ticket}${suffix}`, { redirect: "manual" })
+    const startSignIn = (ticket: string) =>
+      jsonRequest(server, `/v1/mcps/${id}/oauth-start?app=codevisor&ticket=${ticket}`, {
+        method: "POST"
+      })
+
+    const opening = await open("ticket-0000000000001?app=codevisor&name=%3CLinear%3E")
+    const waiting = open("ticket-0000000000001", "/continue?app=codevisor")
+    beginOAuth.mockResolvedValueOnce(`https://auth.example.test/authorize?state=${id}.flow-1`)
+    await startSignIn("ticket-0000000000001")
+    const sentOn = await waiting
+    beginOAuth.mockRejectedValueOnce(new Error("Linear refused to register Codevisor"))
+    const refused = await startSignIn("ticket-0000000000002")
+    const failed = await open("ticket-0000000000002", "/continue?app=codevisor")
+    const abandoned = await jsonRequest(server, "/v1/sign-in/ticket-0000000000003", {
+      method: "DELETE"
+    })
+    const gaveUp = await open("ticket-0000000000003", "/continue")
+
+    expect(await opening.text()).toContain(
+      '<meta http-equiv="refresh" content="0;url=/v1/sign-in/ticket-0000000000001/continue?app=codevisor">' +
+        "<title>Signing in to &lt;Linear&gt;…</title>"
+    )
+    expect([sentOn.status, sentOn.headers.get("location")]).toEqual([
+      302,
+      `https://auth.example.test/authorize?state=${id}.flow-1`
+    ])
+    expect(refused.status).toBe(500)
+    expect(await failed.text()).toContain(
+      "Sign-in didn’t finish. Linear refused to register Codevisor</p>" +
+        '<p><a href="codevisor://signed-in">Open Codevisor</a></p>'
+    )
+    expect(abandoned.body).toEqual({ abandoned: true })
+    expect(await gaveUp.text()).toContain("Codevisor couldn’t start it.")
+    expect([(await open("bad")).status, (await open("bad", "/continue")).status]).toEqual([
+      404, 404
+    ])
   })
 
   it("manages MCP installations without returning encrypted credentials", async () => {

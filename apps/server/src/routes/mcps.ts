@@ -22,13 +22,19 @@ import {
   type CodevisorServerServices
 } from "../server-context.js"
 import { appScheme, appSchemeParameter, type OAuthReturns } from "./oauth-returns.js"
+import { signInTicket, ticketParameter, type SignInHandoffs } from "./sign-in-handoffs.js"
+
+export interface McpSignInState {
+  readonly oauthReturns: OAuthReturns
+  readonly signInHandoffs: SignInHandoffs
+}
 
 export const routeMcps = async (
   services: CodevisorServerServices,
   request: IncomingMessage,
   response: ServerResponse,
   url: URL,
-  oauthReturns: OAuthReturns
+  signIn: McpSignInState
 ): Promise<boolean> => {
   const manager = services.mcp
   if (!url.pathname.startsWith("/v1/mcps")) return false
@@ -36,7 +42,7 @@ export const routeMcps = async (
 
   const catalog = routeMcpCatalog(manager, request, response, url, services.pluginCatalog)
   if (catalog !== undefined) return catalog
-  const action = routeMcpAction(manager, request, response, url, oauthReturns)
+  const action = routeMcpAction(manager, request, response, url, signIn)
   if (action !== undefined) return action
   const mutation = routeMcpMutation(manager, request, response, url)
   if (mutation !== undefined) return mutation
@@ -69,7 +75,7 @@ function routeMcpAction(
   request: IncomingMessage,
   response: ServerResponse,
   url: URL,
-  oauthReturns: OAuthReturns
+  signIn: McpSignInState
 ): Promise<boolean> | undefined {
   const action = matchRouteParams(url.pathname, "/v1/mcps/:id/:action")
   if (action !== undefined && request.method === "POST") {
@@ -77,7 +83,7 @@ function routeMcpAction(
       case "connect":
         return connectMcpServer(manager, response, action.id!)
       case "oauth-start":
-        return beginMcpAuthorization(manager, response, action.id!, url, oauthReturns)
+        return beginMcpAuthorization(manager, response, action.id!, url, signIn)
       case "oauth-disconnect":
         return disconnectMcpAuthorization(manager, response, action.id!)
       default:
@@ -175,14 +181,23 @@ async function beginMcpAuthorization(
   response: ServerResponse,
   id: string,
   url: URL,
-  oauthReturns: OAuthReturns
+  signIn: McpSignInState
 ): Promise<boolean> {
   const app = appScheme(url.searchParams.get(appSchemeParameter))
-  const authorizationUrl = await manager.beginOAuth(id, url.origin)
-  oauthReturns.remember(authorizationUrl, app)
-  writeJson(response, 201, { authorizationUrl: withReturnApp(authorizationUrl, url, app) })
+  const ticket = signInTicket(url.searchParams.get(ticketParameter))
+  const begun = await manager.beginOAuth(id, url.origin).catch((cause: unknown) => {
+    signIn.signInHandoffs.settle(ticket, { failure: failureMessage(cause) })
+    throw cause
+  })
+  signIn.oauthReturns.remember(begun, app)
+  const authorizationUrl = withReturnApp(begun, url, app)
+  signIn.signInHandoffs.settle(ticket, { authorizationUrl })
+  writeJson(response, 201, { authorizationUrl })
   return true
 }
+
+const failureMessage = (cause: unknown): string =>
+  cause instanceof Error ? cause.message : String(cause)
 
 function withReturnApp(authorizationUrl: string, request: URL, app: string | undefined): string {
   const target = new URL(authorizationUrl)

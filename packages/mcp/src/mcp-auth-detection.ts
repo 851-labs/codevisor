@@ -1,5 +1,9 @@
 import type { McpAuthDetection } from "@codevisor/api"
-import { discoverOAuthProtectedResourceMetadata } from "@modelcontextprotocol/client"
+import {
+  discoverOAuthProtectedResourceMetadata,
+  discoverOAuthServerInfo,
+  type OAuthDiscoveryState
+} from "@modelcontextprotocol/client"
 
 import { requireHttpUrl, suggestedMcpName } from "./mcp-support.js"
 
@@ -59,3 +63,34 @@ export const detectMcpAuth = async (value: string): Promise<McpAuthDetection> =>
     }
   }
 }
+
+export interface OAuthDiscoveries {
+  readonly prepare: (url: string) => Promise<boolean>
+  readonly recent: (url: string) => OAuthDiscoveryState | undefined
+}
+
+export const makeOAuthDiscoveries = (now: () => number = Date.now): OAuthDiscoveries => {
+  const found = new Map<string, { readonly state: OAuthDiscoveryState; readonly at: number }>()
+  return {
+    prepare: async (value) => {
+      const url = requireHttpUrl(value)
+      const state = await discoverOAuthServerInfo(url, { fetchFn: withinDetectionTime }).catch(
+        () => undefined
+      )
+      if (state?.resourceMetadata === undefined) return false
+
+      found.set(url, { state, at: now() })
+      return true
+    },
+    recent: (value) => {
+      const discovery = found.get(requireHttpUrl(value))
+      if (discovery === undefined || now() - discovery.at > discoveryFreshMs) return undefined
+      return discovery.state
+    }
+  }
+}
+
+const discoveryFreshMs = 10 * 60_000
+
+const withinDetectionTime: typeof fetch = (input, init) =>
+  fetch(input, { ...init, signal: AbortSignal.timeout(5_000) })

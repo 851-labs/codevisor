@@ -79,7 +79,7 @@ export const handleRequest = async (
     if (publicRoute !== undefined) return publicRoute(route)
 
     const oauthRoute = mcpOAuthRouteFor(route)
-    if (oauthRoute !== undefined) return oauthRoute(route)
+    if (oauthRoute !== undefined) return await oauthRoute(route)
 
     const pluginAppRoute = pluginAppRouteFor(route)
     if (pluginAppRoute !== undefined) return pluginAppRoute(route)
@@ -146,7 +146,7 @@ const resourceRouteFamilies: ReadonlyArray<RouteFamily> = [
   routeFirstRun,
   routeMcpGateways,
   ({ services, routeState, request, response, url }) =>
-    routeMcps(services, request, response, url, routeState.oauthReturns),
+    routeMcps(services, request, response, url, routeState),
   ({ services, request, response, url }) => routePluginCatalog(services, request, response, url),
   routePluginApps,
   ({ services, request, response, url }) => routeMcpScopes(services, request, response, url),

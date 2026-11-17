@@ -24,6 +24,7 @@ describe("Codevisor native action parity", () => {
       "GET /v1/plugins/events/:id",
       "GET /v1/plugins/catalog",
       "GET /v1/plugins/catalog/:id",
+      "GET /v1/plugins/catalog/:id/sign-in",
       "POST /v1/plugins/catalog/:id/install",
       "GET /v1/plugins/:serverId/accounts",
       "POST /v1/plugins/:serverId/accounts",

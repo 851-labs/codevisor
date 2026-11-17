@@ -54,7 +54,7 @@ struct PluginSetupModelTests {
 
     let action = Task { await model.performPrimaryAction() }
     await signIn.presented.wait()
-    #expect(signIn.urls.map(\.absoluteString) == ["https://auth.example/authorize"])
+    #expect(signIn.urls.map { $0.path.hasPrefix("/v1/sign-in/") } == [true])
     await model.refresh()
     #expect(signIn.isOpen)
 
@@ -84,7 +84,7 @@ struct PluginSetupModelTests {
 
     let action = Task { await model.performPrimaryAction() }
     await signIn.presented.wait()
-    #expect(signIn.urls.map(\.absoluteString) == ["http://127.0.0.1:49361/authorize"])
+    #expect(signIn.urls.map { $0.path.hasPrefix("/v1/sign-in/") } == [true])
 
     remote.respond("GET /v1/mcps", with: "[\(Self.server(authType: "oauth", state: "connected"))]")
     await model.refresh()

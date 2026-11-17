@@ -27,7 +27,7 @@ public struct PluginListDisclosure<Rows: View>: View {
 
   public var body: some View {
     Section {
-      SettingsDisclosureRows(isExpanded: $isExpanded) {
+      SettingsDisclosureRows(isExpanded: $isExpanded, chevronEdge: .trailing) {
         LabeledContent(title) {
           if isLoading {
             ProgressView().controlSize(.small)

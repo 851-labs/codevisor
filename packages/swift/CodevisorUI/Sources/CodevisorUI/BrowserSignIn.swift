@@ -129,7 +129,8 @@ public final class BrowserSignIn {
     #if os(iOS)
       nil
     #else
-      guard let window = NSApp?.keyWindow ?? NSApp?.orderedWindows.first(where: isReturnTarget) else { return nil }
+      guard let front = NSApp?.keyWindow ?? NSApp?.orderedWindows.first(where: isReturnTarget) else { return nil }
+      let window = front.sheetParent ?? front
       return { [weak window] in window?.makeKeyAndOrderFront(nil) }
     #endif
   }

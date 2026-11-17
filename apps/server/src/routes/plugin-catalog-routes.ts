@@ -5,7 +5,8 @@ import {
   type ConfigField,
   type CreateMcpServerRequest,
   type McpServer,
-  type PluginCatalogEntry
+  type PluginCatalogEntry,
+  type PluginCatalogSignIn
 } from "@codevisor/api"
 import { CATALOG_STDIO_COMMAND, type McpManager } from "@codevisor/mcp"
 
@@ -41,6 +42,12 @@ export const routePluginCatalog = async (
     return true
   }
 
+  const signInId = matchRoute(url.pathname, "/v1/plugins/catalog/:id/sign-in")
+  if (signInId !== undefined && request.method === "GET") {
+    writeJson(response, 200, await catalogSignIn(requireMcp(services), catalog, signInId))
+    return true
+  }
+
   const installId = matchRoute(url.pathname, "/v1/plugins/catalog/:id/install")
   if (installId === undefined || request.method !== "POST") return false
 
@@ -48,9 +55,33 @@ export const routePluginCatalog = async (
   writeJson(
     response,
     200,
-    await installCatalogPlugin(requireMcp(services), catalog, installId, body.values ?? {})
+    await installCatalogPlugin(
+      requireMcp(services),
+      catalog,
+      installId,
+      body.values ?? {},
+      body.authType
+    )
   )
   return true
+}
+
+const catalogSignIn = async (
+  mcp: McpManager,
+  catalog: PluginCatalog,
+  catalogId: string
+): Promise<PluginCatalogSignIn> => {
+  const entry = await requireEntry(catalog, catalogId)
+  if (entry.install.kind !== "remote") return { oauth: "none" }
+
+  const url = entry.install.url
+  const detected = await mcp.detectAuth(url)
+  if (detected.authType === "oauth") {
+    void mcp.prepareOAuth(url)
+    return { oauth: "required" }
+  }
+  if (detected.authType !== "none") return { oauth: "none" }
+  return { oauth: (await mcp.prepareOAuth(url)) ? "optional" : "none" }
 }
 
 const requireEntry = async (catalog: PluginCatalog, id: string): Promise<PluginCatalogEntry> => {
@@ -63,13 +94,16 @@ export const installCatalogPlugin = async (
   mcp: McpManager,
   catalog: PluginCatalog,
   catalogId: string,
-  values: Readonly<Record<string, unknown>>
+  values: Readonly<Record<string, unknown>>,
+  authType?: "none" | "oauth"
 ): Promise<McpServer> => {
   const entry = await requireEntry(catalog, catalogId)
   const installed = (await mcp.list()).find((server) => server.catalogId === entry.id)
   if (installed !== undefined) return installed
 
-  return mcp.create(creationFor(entry, values), { connectInBackground: true })
+  const creation = creationFor(entry, values)
+  const chosen = creation.transport === "http" && authType !== undefined ? { authType } : {}
+  return mcp.create({ ...creation, ...chosen }, { connectInBackground: true })
 }
 
 export const creationFor = (

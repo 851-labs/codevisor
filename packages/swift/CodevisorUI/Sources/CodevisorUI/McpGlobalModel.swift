@@ -13,11 +13,12 @@ public final class McpGlobalModel {
   @ObservationIgnored private let pendingTimeout: Duration
   @ObservationIgnored private var reloadTask: Task<Void, Never>?
   @ObservationIgnored private var latestRequest: [String: Int] = [:]
-  @ObservationIgnored private let signIn: McpOAuthSignIn
+  @ObservationIgnored private let signIn = McpOAuthSignIn()
+  @ObservationIgnored private let webSignIn: any WebSignInPresenting
 
   public init(pendingTimeout: Duration = .seconds(30), webSignIn: any WebSignInPresenting = PluginWebSignIn()) {
     self.pendingTimeout = pendingTimeout
-    signIn = McpOAuthSignIn(presenter: webSignIn)
+    self.webSignIn = webSignIn
   }
 
   public var entries: [McpFleetEntry] { state.entries }
@@ -92,15 +93,24 @@ public final class McpGlobalModel {
     }
   }
 
-  public func connect(serverId: String, on machineId: String, in environment: AppEnvironment) async {
+  public func connect(
+    serverId: String,
+    on machineId: String,
+    in environment: AppEnvironment,
+    browser opened: PluginSignInBrowser? = nil
+  ) async {
+    var browser = opened
     do {
       let target = try signInTarget(serverId: serverId, on: machineId, in: environment)
-      let flow = try await environment.machines.client(for: target.machineId).startMcpOAuth(id: target.serverId)
-      guard let url = URL(string: flow.authorizationUrl) else { throw CodevisorServerClientError.invalidResponse }
+      let client = environment.machines.client(for: target.machineId)
+      let attempt = browser ?? PluginSignInBrowser(client: client, pluginName: target.name, presenter: webSignIn)
+      browser = attempt
+      let flow = try await client.startMcpOAuth(id: target.serverId, ticket: attempt.ticket)
 
       connectError = nil
-      await signIn.run(url, serverId: target.serverId, on: target.machineId)
+      await signIn.run(attempt, at: flow.authorizationUrl, serverId: target.serverId, on: target.machineId)
     } catch {
+      await browser?.abandon()
       pluginSignInLog.error(
         "Connect for MCP \(serverId, privacy: .public) on \(machineId, privacy: .public) failed: \(error, privacy: .public)"
       )
@@ -133,16 +143,16 @@ public final class McpGlobalModel {
 
   private func signInTarget(
     serverId: String, on machineId: String, in environment: AppEnvironment
-  ) throws -> (serverId: String, machineId: String) {
+  ) throws -> (serverId: String, machineId: String, name: String?) {
     let local = CodevisorMachine.local.id
-    guard machineId != local else { return (serverId, machineId) }
     let entry = entries.first { $0.idByMachine[machineId] == serverId }
+    guard machineId != local else { return (serverId, machineId, entry?.name) }
     let name = entry?.name ?? "This plugin"
     guard environment.machines.allMachines.contains(where: \.isLocal) else {
       throw PluginSignInError.needsMac(plugin: name)
     }
     guard let localId = entry?.idByMachine[local] else { throw PluginSignInError.notOnThisMac(plugin: name) }
-    return (localId, local)
+    return (localId, local, name)
   }
 
   private func fetch(_ machineId: String, from client: any CodevisorServerClienting) async {

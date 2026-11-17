@@ -62,6 +62,7 @@ struct PluginAccountsSection: View {
   private func offerFirstRunGuide() {
     guard guiding == nil else { return }
     guiding = model.takeFirstRunGuide()
+    if guiding == nil, editing == nil { editing = model.takeFirstRunEditing() }
   }
 
   private func add(_ spec: ServerPluginAccountSpec) {

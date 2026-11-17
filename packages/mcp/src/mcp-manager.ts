@@ -1,4 +1,4 @@
-import { detectMcpAuth } from "./mcp-auth-detection.js"
+import { detectMcpAuth, makeOAuthDiscoveries } from "./mcp-auth-detection.js"
 import { systemExecutionTimers } from "./mcp-gateway-execution.js"
 import { makeExecutionJobs } from "./mcp-gateway-jobs.js"
 import { makeMcpGateway } from "./mcp-gateway.js"
@@ -77,14 +77,17 @@ export const makeMcpManager = (config: McpManagerConfig): McpManager => {
     vault: config.oauthVault
   })
 
+  const oauthDiscoveries = makeOAuthDiscoveries()
   const serverOperations = makeMcpServerOperations(core, {
     allTools,
+    recentOAuthDiscovery: oauthDiscoveries.recent,
     connectUpstream,
     refreshGatewayInventories
   })
   const manager: McpManager = {
     composerSkills: composerSkillsFor,
     detectAuth: detectMcpAuth,
+    prepareOAuth: oauthDiscoveries.prepare,
     ...serverOperations,
     ...makeMcpReplicationOperations(core, oauthRuntime),
     ...makeMcpOAuthFlows(core, oauthRuntime),

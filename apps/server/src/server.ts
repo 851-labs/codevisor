@@ -48,6 +48,7 @@ import {
   reconcileOrphanedSessionTurns,
   reconcileStaleStreamingTurns
 } from "./routes/sessions.js"
+import { makeSignInHandoffs } from "./routes/sign-in-handoffs.js"
 import { makeAuthSyncRefreshScheduler, publishMcpChanges } from "./routes/sync-readiness.js"
 import { runBackgroundSyncReconcile } from "./routes/sync-reconcilers.js"
 import { startServerArchiveRetention } from "./server-archive-retention.js"
@@ -146,6 +147,7 @@ export const makeCodevisorServerApp = (
     turnHeldSessions: new Set(),
     updateSignature: {},
     oauthReturns: makeOAuthReturns(),
+    signInHandoffs: makeSignInHandoffs(),
     restart,
     updateRun,
     updateResume

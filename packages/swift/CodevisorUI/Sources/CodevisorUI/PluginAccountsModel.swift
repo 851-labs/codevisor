@@ -18,6 +18,7 @@ public final class PluginAccountsModel {
   @ObservationIgnored private let client: any CodevisorServerClienting
   @ObservationIgnored private let webSignIn: any WebSignInPresenting
   @ObservationIgnored private var accountsBeforeSignIn: [ServerPluginAccount]?
+  @ObservationIgnored private var signInBrowser: PluginSignInBrowser?
 
   public init(
     server: ServerMcpServer,
@@ -63,6 +64,14 @@ public final class PluginAccountsModel {
     return guide
   }
 
+  public func takeFirstRunEditing() -> PluginAccountEditing? {
+    guard hasLoaded, accounts.isEmpty, !Self.offeredGuides.contains(serverId) else { return nil }
+    guard let spec, spec.guide == nil, !spec.signsInDirectly else { return nil }
+
+    Self.offeredGuides.insert(serverId)
+    return PluginAccountEditing(newAccountFor: spec)
+  }
+
   private static var offeredGuides: Set<String> = []
 
   public func submit(_ editing: PluginAccountEditing) async -> Bool {
@@ -80,20 +89,30 @@ public final class PluginAccountsModel {
   public func signIn(
     values: [String: ServerConfigFieldValue] = [:],
     label: String? = nil,
-    accountId: String? = nil
+    accountId: String? = nil,
+    browser opened: PluginSignInBrowser? = nil
   ) async {
+    let browser =
+      opened ?? PluginSignInBrowser(client: client, pluginName: spec?.providerName, presenter: webSignIn)
     let request = ServerPluginAccountOAuthRequest(values: values, label: label, accountId: accountId)
-    guard let start = await perform({ try await client.startPluginAccountOAuth(serverId: serverId, request: request) })
-    else { return }
-    guard let url = URL(string: start.authorizationUrl) else { return }
+    let started = await perform {
+      try await client.startPluginAccountOAuth(serverId: serverId, request: request, ticket: browser.ticket)
+    }
+    guard let started else {
+      await browser.abandon()
+      return
+    }
 
     accountsBeforeSignIn = hasLoaded ? accounts : nil
-    let callback = await webSignIn.run(url)
+    signInBrowser = browser
+    let callback = await browser.finish(at: started.authorizationUrl)
     accountsBeforeSignIn = nil
-    if let callback, Self.carriesAuthorization(callback) {
-      _ = await perform { try await client.completePluginAccountOAuth(callbackURL: callback) }
+    signInBrowser = nil
+    guard let callback, Self.carriesAuthorization(callback) else {
+      await reload()
+      return
     }
-    await reload()
+    _ = await perform { try await client.completePluginAccountOAuth(callbackURL: callback) }
   }
 
   private static func carriesAuthorization(_ callback: URL) -> Bool {
@@ -106,14 +125,16 @@ public final class PluginAccountsModel {
 
   private func closeSignInIfAccountsChanged() {
     guard let accountsBeforeSignIn, accounts != accountsBeforeSignIn else { return }
-    webSignIn.cancel()
+    signInBrowser?.close()
   }
 
   private func perform<Result>(_ operation: () async throws -> Result) async -> Result? {
     isWorking = true
     defer { isWorking = false }
     let result = await report(operation)
+    let failure = errorMessage
     await reload()
+    if result == nil { errorMessage = failure }
     return result
   }
 

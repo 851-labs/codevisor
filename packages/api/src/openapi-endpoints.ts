@@ -135,6 +135,7 @@ export const endpoints = [
   "POST /v1/harnesses/:id/accounts/:accountId/logout",
   "GET /v1/plugins/catalog",
   "GET /v1/plugins/catalog/:id",
+  "GET /v1/plugins/catalog/:id/sign-in",
   "POST /v1/plugins/catalog/:id/install",
   "GET /v1/plugins/search",
   "GET /v1/plugins/describe/:plugin",
