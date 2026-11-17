@@ -18,7 +18,13 @@ public final class SandboxSettingsModel {
   public private(set) var profiles: [ServerSandboxProfile] = []
   public private(set) var hosts: [SandboxHost] = []
   public private(set) var hasLoaded = false
-  public var errorMessage: String?
+  public private(set) var refusedFieldKey: String?
+  public var errorMessage: String? {
+    didSet {
+      if errorMessage == nil { refusedFieldKey = nil }
+    }
+  }
+  private var planMaximums: [String: [String: Double]] = [:]
 
   public init() {}
 
@@ -49,12 +55,31 @@ public final class SandboxSettingsModel {
     return hosts.filter { $0.capabilities.contains(capability) }
   }
 
+  public func loadMaximums(of providerId: String?, from client: any CodevisorServerClienting) async {
+    guard let providerId, let maximums = try? await client.sandboxProviderMaximums(id: providerId) else { return }
+
+    planMaximums[providerId] = maximums
+  }
+
   public func steps(for field: ServerSandboxField, in draft: SandboxProfileDraft) -> SandboxFieldSteps? {
     guard field.steps != nil else { return nil }
 
-    let saved = profile(draft.profileId ?? "")?.values[field.key]?.numberValue
-    return SandboxFieldSteps(
-      field: field, hostMaximum: hostMaximum(of: field, providerId: draft.providerId), keeping: saved)
+    let saved = savedValue(of: field, in: draft)?.numberValue
+    return SandboxFieldSteps(field: field, maximum: maximum(of: field, providerId: draft.providerId), keeping: saved)
+  }
+
+  public func offered(_ field: ServerSandboxField, in draft: SandboxProfileDraft) -> ServerSandboxField {
+    field.limited(
+      to: maximum(of: field, providerId: draft.providerId), keeping: savedValue(of: field, in: draft)?.stringValue)
+  }
+
+  public func error(on key: String) -> String? {
+    refusedFieldKey == key ? errorMessage : nil
+  }
+
+  public func error(outside keys: [String]) -> String? {
+    guard let refusedFieldKey, keys.contains(refusedFieldKey) else { return errorMessage }
+    return nil
   }
 
   public func title(of provider: ServerSandboxProvider) -> String {
@@ -93,7 +118,7 @@ public final class SandboxSettingsModel {
       errorMessage = nil
       return .saved(provider)
     } catch {
-      errorMessage = ErrorReporter.userFacingMessage(for: error)
+      report(error)
       return ServerSandboxField.offered(in: error).map(SandboxProviderSave.choose) ?? .failed
     }
   }
@@ -174,6 +199,19 @@ public final class SandboxSettingsModel {
     hosts.first { $0.serverId == serverId }?.name ?? "another Mac"
   }
 
+  private func savedValue(of field: ServerSandboxField, in draft: SandboxProfileDraft) -> SandboxFieldValue? {
+    profile(draft.profileId ?? "")?.values[field.key]
+  }
+
+  private func maximum(of field: ServerSandboxField, providerId: String?) -> Double? {
+    planMaximums[providerId ?? ""]?[field.key] ?? hostMaximum(of: field, providerId: providerId)
+  }
+
+  private func report(_ error: any Error) {
+    errorMessage = ErrorReporter.userFacingMessage(for: error)
+    refusedFieldKey = ServerSandboxField.refusedKey(in: error)
+  }
+
   private func hostMaximum(of field: ServerSandboxField, providerId: String?) -> Double? {
     guard let provider = provider(providerId),
       let machineId = provider.machineId(for: vendor(provider.vendor))
@@ -187,7 +225,7 @@ public final class SandboxSettingsModel {
       errorMessage = nil
       return true
     } catch {
-      errorMessage = ErrorReporter.userFacingMessage(for: error)
+      report(error)
       return false
     }
   }

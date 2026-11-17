@@ -12,6 +12,7 @@ import {
   numberValue,
   optionalString,
   readFields,
+  SandboxFieldError,
   secretField,
   secretsSet,
   stringValue,
@@ -36,6 +37,14 @@ const fields = [
 ]
 
 const valid = { url: "https://orchard.example.com/", token: " secret " }
+
+const refusal = (raw: Record<string, unknown>): unknown => {
+  try {
+    return readFields(fields, raw)
+  } catch (cause) {
+    return cause
+  }
+}
 
 describe("sandbox fields", () => {
   it("trims text, normalizes URLs, parses numbers and fills defaults", () => {
@@ -72,6 +81,12 @@ describe("sandbox fields", () => {
     for (const [raw, message] of failures) expect(() => readFields(fields, raw)).toThrow(message)
   })
 
+  it("names the field a refused value belongs to", () => {
+    expect(refusal({ ...valid, cpu: 32 })).toMatchObject({ key: "cpu" })
+    expect(refusal({ token: "x" })).toBeInstanceOf(SandboxFieldError)
+    expect(refusal({ token: "x" })).toMatchObject({ key: "url" })
+  })
+
   it("takes any value for a choice whose options the provider offers at setup", () => {
     const team = offeredChoiceField("teamId", "Team")
 
@@ -90,6 +105,20 @@ describe("sandbox fields", () => {
     expect(readFields(capped, { ...valid, lifetime: 45 })).toMatchObject({ lifetime: 45 })
     expect(() => readFields(capped, { ...valid, lifetime: 46 })).toThrow(
       "Lifetime must be at most 45"
+    )
+  })
+
+  it("drops the sizes above a maximum from a choice, keeping the ones that aren't sizes", () => {
+    const sizes = choiceField("vcpus", "vCPUs", [
+      { value: "2", label: "2 vCPUs" },
+      { value: "8", label: "8 vCPUs" },
+      { value: "auto", label: "Automatic" }
+    ])
+    const [capped] = cappedFields([sizes], { vcpus: 4 })
+
+    expect(capped?.choices?.map((choice) => choice.value)).toEqual(["2", "auto"])
+    expect(() => readFields(cappedFields([sizes], { vcpus: 4 }), { vcpus: "8" })).toThrow(
+      "vCPUs must be one of 2 vCPUs, Automatic"
     )
   })
 

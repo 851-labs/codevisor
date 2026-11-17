@@ -13,6 +13,7 @@ import { describe, expect, it } from "vitest"
 import { HttpFailure, run } from "../server-context.js"
 import { makeServices } from "../test-support.js"
 import {
+  accountMaximums,
   createAccount,
   createProfile,
   deleteAccount,
@@ -340,8 +341,50 @@ describe("providers that live on a Mac", () => {
     const there = await createProfile(deps, { ...request, accountId: "id-2" })
 
     expect(hostMaximums(deps.adapters)).toEqual({ tart: { cpu: 8 } })
-    expect(here).toEqual(new HttpFailure(400, "CPUs must be between 2 and 8"))
+    expect(here).toMatchObject({ status: 400, message: "CPUs must be between 2 and 8" })
     expect(there.profile.values).toEqual({ cpu: 12 })
+  })
+})
+
+describe("providers whose plan limits sandboxes", () => {
+  const cloud: SandboxProviderDefinition = {
+    ...fakeDefinition(),
+    profileFields: [numberField("memoryGiB", "Memory", { min: 1 })]
+  }
+  const big = {
+    name: "Big",
+    provider: "e2b" as const,
+    accountId: "id-1",
+    values: { memoryGiB: 16 }
+  }
+
+  it("report the account's limits and name the field of a profile over them", async () => {
+    const limited = adapterFor(cloud, { accountMaximums: () => Promise.resolve({ memoryGiB: 8 }) })
+    const deps = await catalogWith([limited])
+    await createAccount(deps, { provider: "e2b", values: { apiKey: "k" } })
+
+    const refused = await failure(createProfile(deps, big))
+    const unnamed = await failure(createProfile(deps, { ...big, name: " " }))
+
+    expect(await accountMaximums(deps, "id-1")).toEqual({ memoryGiB: 8 })
+    expect(refused).toMatchObject({
+      status: 400,
+      message: "Memory must be between 1 and 8",
+      code: "sandboxFieldInvalid",
+      details: { key: "memoryGiB" }
+    })
+    expect(unnamed).toMatchObject({ code: "sandboxFieldInvalid", details: { key: "name" } })
+  })
+
+  it("leave a profile to the vendor when its limits can't be read", async () => {
+    const unreadable = adapterFor(cloud, {
+      accountMaximums: () => Promise.reject(new Error("403"))
+    })
+    const deps = await catalogWith([unreadable])
+    await createAccount(deps, { provider: "e2b", values: { apiKey: "k" } })
+
+    expect(await accountMaximums(deps, "id-1")).toEqual({})
+    expect((await createProfile(deps, big)).profile.values).toEqual({ memoryGiB: 16 })
   })
 })
 

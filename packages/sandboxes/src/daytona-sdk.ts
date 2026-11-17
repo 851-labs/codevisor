@@ -7,7 +7,8 @@ import type {
   DaytonaClient,
   DaytonaCreateRequest,
   DaytonaCredentials,
-  DaytonaSandboxInfo
+  DaytonaSandboxInfo,
+  DaytonaSandboxLimits
 } from "./daytona.js"
 import type { ExecResult } from "./provider.js"
 
@@ -53,7 +54,8 @@ export const daytonaSdkClient = (credentials: DaytonaCredentials): DaytonaClient
       for await (const sandbox of daytona.list({ labels })) sandboxes.push(sandboxInfo(sandbox))
       return sandboxes
     },
-    email: () => userEmail(credentials)
+    email: () => userEmail(credentials),
+    sandboxLimits: () => sandboxLimits(credentials)
   }
 }
 
@@ -138,3 +140,54 @@ const userEmail = async (credentials: DaytonaCredentials): Promise<string | unde
   const email = typeof body === "object" && body !== null ? Reflect.get(body, "email") : undefined
   return typeof email === "string" ? email : undefined
 }
+
+const containerClass = "container"
+
+const sandboxLimits = async (
+  credentials: DaytonaCredentials
+): Promise<ReadonlyArray<DaytonaSandboxLimits>> => {
+  const key = await apiJson(credentials, "/api-keys/current")
+  const organizationId = fieldOf(key, "organizationId")
+  if (typeof organizationId !== "string")
+    throw new Error("Daytona didn't name this key's organization")
+
+  const usage = await apiJson(
+    credentials,
+    `/organizations/${encodeURIComponent(organizationId)}/usage`
+  )
+  const regions = fieldOf(usage, "regionUsage")
+  return (Array.isArray(regions) ? regions : []).flatMap(regionLimits)
+}
+
+const regionLimits = (region: unknown): ReadonlyArray<DaytonaSandboxLimits> => {
+  const regionId = fieldOf(region, "regionId")
+  if (typeof regionId !== "string" || !limitsContainers(region)) return []
+
+  return [
+    {
+      regionId,
+      ...limitOf("maxCpu", fieldOf(region, "maxCpuPerSandbox")),
+      ...limitOf("maxMemoryGiB", fieldOf(region, "maxMemoryPerSandbox")),
+      ...limitOf("maxDiskGiB", fieldOf(region, "maxDiskPerSandbox"))
+    }
+  ]
+}
+
+const limitsContainers = (region: unknown): boolean => {
+  const sandboxClass = fieldOf(region, "sandboxClass")
+  return sandboxClass === undefined || sandboxClass === containerClass
+}
+
+const limitOf = (key: keyof DaytonaSandboxLimits, limit: unknown): Partial<DaytonaSandboxLimits> =>
+  typeof limit === "number" && limit > 0 ? { [key]: limit } : {}
+
+const apiJson = async (credentials: DaytonaCredentials, path: string): Promise<unknown> => {
+  const response = await fetch(`${credentials.apiUrl}${path}`, {
+    headers: { authorization: `Bearer ${credentials.apiKey}` }
+  })
+  if (!response.ok) throw new Error(`Daytona answered ${path} with ${response.status}`)
+  return response.json()
+}
+
+const fieldOf = (value: unknown, key: string): unknown =>
+  typeof value === "object" && value !== null ? Reflect.get(value, key) : undefined

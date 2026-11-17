@@ -49,6 +49,14 @@ export const codevisorSandboxApiTools: ReadonlyArray<CodevisorApiToolSpec> = [
     { body: SaveSandboxAccountRequest }
   ),
   apiTool(
+    "sandboxes.providers_limits",
+    "The highest profile values a sandbox provider's plan allows, by field key (for example " +
+      "{ cpu, memoryGiB, diskGiB } for Daytona or { vcpus } for Vercel). Empty when the vendor " +
+      "doesn't report limits; a profile over a limit is refused with code sandboxFieldInvalid.",
+    "GET",
+    "/v1/sandbox-accounts/:id/maximums"
+  ),
+  apiTool(
     "sandboxes.providers_update",
     "Change a sandbox provider's label or values. Leave a secret out (or blank) to keep the " +
       "stored one. The vendor can't change.",

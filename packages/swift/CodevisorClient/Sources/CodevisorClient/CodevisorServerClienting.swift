@@ -197,6 +197,7 @@ public protocol CodevisorServerClienting: BrowserStateClienting, BrowserFaviconC
   func createSandboxProvider(_ request: ServerSandboxProviderRequest) async throws -> ServerSandboxProvider
   func updateSandboxProvider(id: String, _ request: ServerSandboxProviderRequest) async throws -> ServerSandboxProvider
   func deleteSandboxProvider(id: String) async throws
+  func sandboxProviderMaximums(id: String) async throws -> [String: Double]
   func deleteSandboxProviderAndProfiles(id: String) async throws
   func sandboxProfiles() async throws -> [ServerSandboxProfile]
   func createSandboxProfile(_ request: ServerSandboxProfileRequest) async throws -> ServerSandboxProfile

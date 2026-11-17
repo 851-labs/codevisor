@@ -201,7 +201,8 @@ export const SandboxField = Schema.Struct({
   steps: Schema.optional(Schema.Array(Schema.Number)),
   fallbackMax: Schema.optional(Schema.Number),
   unit: Schema.optional(Schema.String),
-  capability: Schema.optional(Schema.String)
+  capability: Schema.optional(Schema.String),
+  replacedBy: Schema.optional(Schema.String)
 })
 export type SandboxField = typeof SandboxField.Type
 
@@ -236,6 +237,11 @@ export type SandboxAccount = typeof SandboxAccount.Type
 
 export const SandboxAccountsResponse = Schema.Struct({ accounts: Schema.Array(SandboxAccount) })
 export type SandboxAccountsResponse = typeof SandboxAccountsResponse.Type
+
+export const SandboxAccountMaximumsResponse = Schema.Struct({
+  maximums: Schema.Record(Schema.String, Schema.Number)
+})
+export type SandboxAccountMaximumsResponse = typeof SandboxAccountMaximumsResponse.Type
 
 export const SaveSandboxAccountRequest = Schema.Struct({
   provider: SandboxProviderKind,

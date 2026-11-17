@@ -71,6 +71,10 @@ private struct SandboxProvidersResponse: Decodable {
   var accounts: [ServerSandboxProvider]
 }
 
+private struct SandboxMaximumsResponse: Decodable {
+  var maximums: [String: Double]
+}
+
 private struct SandboxProfilesResponse: Decodable {
   var profiles: [ServerSandboxProfile]
 }
@@ -102,6 +106,11 @@ extension CodevisorServerClient {
 
   public func deleteSandboxProvider(id: String) async throws {
     try await sendNoResponse("/v1/sandbox-accounts/\(pathComponent(id))", method: "DELETE")
+  }
+
+  public func sandboxProviderMaximums(id: String) async throws -> [String: Double] {
+    let response: SandboxMaximumsResponse = try await get("/v1/sandbox-accounts/\(pathComponent(id))/maximums")
+    return response.maximums
   }
 
   public func deleteSandboxProviderAndProfiles(id: String) async throws {

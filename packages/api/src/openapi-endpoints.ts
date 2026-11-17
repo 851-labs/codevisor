@@ -23,6 +23,7 @@ export const endpoints = [
   "GET /v1/sandbox-providers",
   "GET /v1/sandbox-accounts",
   "POST /v1/sandbox-accounts",
+  "GET /v1/sandbox-accounts/:id/maximums",
   "PUT /v1/sandbox-accounts/:id",
   "DELETE /v1/sandbox-accounts/:id",
   "GET /v1/sandbox-profiles",
@@ -276,6 +277,8 @@ export const summaries: Partial<Record<Endpoint, string>> = {
     "List sandbox providers with their account and profile fields, and what this machine can run",
   "GET /v1/sandbox-accounts": "List sandbox provider accounts, without their secrets",
   "POST /v1/sandbox-accounts": "Sign in to a sandbox provider; the credentials are checked first",
+  "GET /v1/sandbox-accounts/:id/maximums":
+    "The highest profile values this account's plan allows, by field key; empty when the vendor doesn't say",
   "PUT /v1/sandbox-accounts/:id": "Change a sandbox provider account; blank secrets are kept",
   "DELETE /v1/sandbox-accounts/:id":
     "Remove a sandbox provider account no profile uses; with cascade=true, also delete its profiles and archive its sandboxes",

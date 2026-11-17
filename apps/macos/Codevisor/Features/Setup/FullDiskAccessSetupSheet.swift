@@ -1,4 +1,5 @@
 import CodevisorCoreMac
+import CodevisorUI
 import SwiftUI
 
 struct FullDiskAccessSetupSheet: View {

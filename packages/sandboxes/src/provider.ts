@@ -126,6 +126,7 @@ export interface SandboxAdapter {
   readonly connect: (account: SandboxFieldValues) => SandboxProvider
   readonly verify?: (account: SandboxFieldValues) => Promise<SandboxAccountIdentity>
   readonly hostMaximums?: () => SandboxFieldMaximums
+  readonly accountMaximums?: (account: SandboxFieldValues) => Promise<SandboxFieldMaximums>
 }
 
 export class SandboxProviderError extends Error {

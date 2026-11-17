@@ -8,7 +8,13 @@ public struct SandboxProfileDraft: Equatable, Identifiable, Sendable {
   public var name: String
   public var fields: SandboxFieldDraft
 
+  public static let nameKey = "name"
+
   public var id: String { profileId ?? "new" }
+
+  public var fieldKeys: [String] {
+    [Self.nameKey] + (vendor?.profileFields ?? []).map(\.key)
+  }
   public var isNew: Bool { profileId == nil }
 
   public var canSave: Bool {

@@ -2,6 +2,8 @@ import SwiftUI
 
 struct SandboxSettingsForm<Content: View>: View {
   @Environment(\.sandboxSheetCancel) private var cancel
+  @Environment(\.sandboxSheetBack) private var back
+  @Environment(\.sandboxSheetIsCovered) private var isCovered
   let title: String
   var actionTitle: String?
   var canAct = true
@@ -11,19 +13,21 @@ struct SandboxSettingsForm<Content: View>: View {
   @ViewBuilder let content: Content
 
   var body: some View {
-    Form {
-      SandboxSheetError(message: errorMessage)
-      content
-    }
-    .formStyle(.grouped)
-    .navigationTitle(title)
     #if os(macOS)
-      .safeAreaInset(edge: .bottom, spacing: 0) {
-        if hasFooter {
-          SheetFooter(status: status) { footerButtons }
-        }
+      SetupSheet(
+        symbol: nil, title: title, primaryTitle: actionTitle, cancelTitle: "Cancel",
+        canContinue: canAct && status == nil, status: status, onCancel: { cancel?() },
+        onBack: back.map { back in { back() } }, onContinue: onAction, stepsInCard: false
+      ) {
+        SandboxSheetFields(errorMessage: shownError) { content }
       }
     #else
+      Form {
+        SandboxSheetError(message: shownError)
+        content
+      }
+      .formStyle(.grouped)
+      .navigationTitle(title)
       .navigationBarTitleDisplayMode(.inline)
       .toolbar {
         if let cancel {
@@ -39,22 +43,7 @@ struct SandboxSettingsForm<Content: View>: View {
     #endif
   }
 
-  #if os(macOS)
-    private var hasFooter: Bool {
-      actionTitle != nil || cancel != nil
-    }
-
-    @ViewBuilder
-    private var footerButtons: some View {
-      if let cancel {
-        Button("Cancel", role: .cancel) { cancel() }
-          .keyboardShortcut(.cancelAction)
-      }
-      if let actionTitle {
-        Button(actionTitle, action: onAction)
-          .keyboardShortcut(.defaultAction)
-          .disabled(!canAct || status != nil)
-      }
-    }
-  #endif
+  private var shownError: String? {
+    isCovered ? nil : errorMessage
+  }
 }

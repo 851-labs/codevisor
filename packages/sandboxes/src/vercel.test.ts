@@ -269,6 +269,20 @@ describe("Vercel Sandbox adapter", () => {
     expect(calls).toEqual([{ list: { "codevisor-owner": "codevisor-verify" } }])
   })
 
+  it("allows the vCPUs of the team's plan, and every size when the plan is unknown", async () => {
+    const hobby = { ...personal, plan: "hobby" }
+    const pro = { ...labs, plan: "pro" }
+    const adapter = vercelAdapter(() => fakeVercel().client, fakeAccount([hobby, pro]).connect)
+    const maximums = (teamId: string) => adapter.accountMaximums?.({ token: "tok-1", teamId })
+
+    expect(await maximums("team_me")).toEqual({ vcpus: 4 })
+    expect(await maximums("team_labs")).toEqual({ vcpus: 8 })
+    expect(await maximums("team_gone")).toEqual({})
+    expect(() => readProfileOptions(VERCEL_DEFINITION, { vcpus: "8" }, { vcpus: 4 })).toThrow(
+      "vCPUs must be one of 1 vCPU · 2 GB, 2 vCPUs · 4 GB, 4 vCPUs · 8 GB"
+    )
+  })
+
   it("offers a team picker, starting on the default team, when the token reaches several", async () => {
     const account = fakeAccount([personal, labs], { defaultTeamId: "team_labs" })
     const adapter = vercelAdapter(() => fakeVercel().client, account.connect)

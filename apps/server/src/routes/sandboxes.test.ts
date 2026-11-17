@@ -197,9 +197,9 @@ describe("sandbox profiles", () => {
     })
     expect(edited).toMatchObject({ status: 200, body: { id: "id-1", values: { size: "large" } } })
     expect(failures).toEqual([
-      { error: "Name is required" },
+      { error: "Name is required", code: "sandboxFieldInvalid", details: { key: "name" } },
       { error: "Choose a Fake provider" },
-      { error: "Size must be text" }
+      { error: "Size must be text", code: "sandboxFieldInvalid", details: { key: "size" } }
     ])
     expect(deleted.status).toBe(204)
     expect(listed.body).toMatchObject({ profiles: [{ id: "id-1", name: "Big Sandbox" }] })
