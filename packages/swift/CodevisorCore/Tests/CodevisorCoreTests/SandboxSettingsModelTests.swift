@@ -243,6 +243,49 @@ struct SandboxSettingsModelTests {
     #expect(newOnStudio.fitted(nil) == 4)
   }
 
+  @Test("A provider's plan caps the sizes a profile offers, keeping a size that was saved above it")
+  func planLimits() async throws {
+    let tart = SettingsFakeServerClient.tart
+    let big = Self.tartProfile(id: "a", on: "gone", memoryGiB: 24)
+    let client = SettingsFakeServerClient(profiles: [big], planMaximums: ["memoryGiB": 12, "vcpus": 4])
+    let model = SandboxSettingsModel()
+    await model.load(from: client, machines: [])
+    let memory = try #require(tart.profileFields.first)
+    let vcpus = ServerSandboxField(
+      key: "vcpus", label: "vCPUs", type: .choice,
+      choices: [.init(value: "2", label: "2"), .init(value: "8", label: "8"), .init(value: "never", label: "Never")])
+    let draft = SandboxProfileDraft(provider: try #require(model.provider("gone")), vendor: tart)
+
+    let before = model.steps(for: memory, in: draft)
+    await model.loadMaximums(of: "gone", from: client)
+
+    #expect(before?.values == [4, 6, 8])
+    #expect(model.steps(for: memory, in: draft)?.values == [4, 6, 8, 12])
+    #expect(model.offered(vcpus, in: draft).choices?.map(\.value) == ["2", "never"])
+    #expect(model.offered(memory, in: draft) == memory)
+  }
+
+  @Test("A refused size shows on its own field, and any other failure shows for the whole sheet")
+  func refusedField() async throws {
+    let tart = SettingsFakeServerClient.tart
+    let refusal =
+      #"{"error":"Memory must be between 4 and 8","code":"sandboxFieldInvalid","details":{"key":"memoryGiB"}}"#
+    let model = SandboxSettingsModel()
+    await model.load(from: SettingsFakeServerClient(), machines: [])
+    let draft = SandboxProfileDraft(provider: try #require(model.provider("studio")), vendor: tart)
+
+    let refused = await model.save(draft, using: SettingsFakeServerClient(profileRefusal: refusal))
+    let onMemory = model.error(on: "memoryGiB")
+    let besideMemory = model.error(outside: draft.fieldKeys)
+    let failed = await model.save(draft, using: SettingsFakeServerClient(profileRefusal: #"{"error":"No"}"#))
+
+    #expect(!refused && !failed)
+    #expect(onMemory == "Memory must be between 4 and 8")
+    #expect(besideMemory == nil)
+    #expect(model.error(on: "memoryGiB") == nil)
+    #expect(model.error(outside: draft.fieldKeys) == "No")
+  }
+
   private static func tartProfile(id: String, on providerId: String, memoryGiB: Double) -> ServerSandboxProfile {
     ServerSandboxProfile(
       id: id, name: id, vendor: "tart", providerId: providerId, values: ["memoryGiB": .number(memoryGiB)])
@@ -415,13 +458,17 @@ private final class SettingsFakeServerClient: CodevisorServerClienting, @uncheck
   let infoGate: FetchGate?
   let listedSandboxes: [ServerSandbox]
   let deleteFailure: Int?
+  let planMaximums: [String: Double]
+  let profileRefusal: String?
   var calls: [String] = []
 
   init(
     serverId: String = "local", providers: [ServerSandboxProvider] = existingProviders,
     profiles: [ServerSandboxProfile] = [], sandboxes: [ServerSandbox] = [], infoGate: FetchGate? = nil,
-    deleteFailure: Int? = nil
+    deleteFailure: Int? = nil, planMaximums: [String: Double] = [:], profileRefusal: String? = nil
   ) {
+    self.planMaximums = planMaximums
+    self.profileRefusal = profileRefusal
     self.serverId = serverId
     self.providers = providers
     self.profiles = profiles
@@ -447,6 +494,8 @@ private final class SettingsFakeServerClient: CodevisorServerClienting, @uncheck
 
   func sandboxProfiles() async throws -> [ServerSandboxProfile] { profiles }
 
+  func sandboxProviderMaximums(id: String) async throws -> [String: Double] { planMaximums }
+
   func createSandboxProvider(_ request: ServerSandboxProviderRequest) async throws -> ServerSandboxProvider {
     calls.append("create provider \(request.vendor)")
     if request.vendor == "vercel", request.values["teamId"] == nil {
@@ -469,6 +518,7 @@ private final class SettingsFakeServerClient: CodevisorServerClienting, @uncheck
   }
 
   func createSandboxProfile(_ request: ServerSandboxProfileRequest) async throws -> ServerSandboxProfile {
+    if let profileRefusal { throw CodevisorServerClientError.httpStatus(400, profileRefusal) }
     calls.append("create profile \(request.name) on \(request.providerId ?? "nothing")")
     return ServerSandboxProfile(id: "p-new", name: request.name, vendor: request.vendor, providerId: request.providerId)
   }

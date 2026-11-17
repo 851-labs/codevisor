@@ -16,15 +16,21 @@ public struct SandboxNewProfileSheet: View {
   }
 
   public var body: some View {
-    NavigationStack {
-      page
-    }
-    .environment(\.sandboxSheetCancel, SandboxSheetCancel { dismiss() })
-    .sheet(isPresented: $addingProvider, onDismiss: closeWithoutProvider) {
-      SandboxProviderSheet(model: model, client: client) { providerId = $0.id }
-    }
+    stack
+      .environment(\.sandboxSheetCancel, SandboxSheetAction { dismiss() })
+      .environment(\.sandboxSheetIsCovered, addingProvider)
+      .sheet(isPresented: $addingProvider, onDismiss: closeWithoutProvider) {
+        SandboxProviderSheet(model: model, client: client) { providerId = $0.id }
+      }
+      .onDisappear { model.errorMessage = nil }
+  }
+
+  @ViewBuilder
+  private var stack: some View {
     #if os(macOS)
-      .frame(width: 480, height: 400)
+      page
+    #else
+      NavigationStack { page }
     #endif
   }
 

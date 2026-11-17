@@ -29,8 +29,8 @@ struct SandboxNewProfilePage: View {
 
   var body: some View {
     SandboxSettingsForm(
-      title: "New Profile", actionTitle: "Add Profile", canAct: draft.canSave, status: status,
-      errorMessage: model.errorMessage, onAction: add
+      title: "New Profile", vendorId: draft.vendor?.id, actionTitle: "Add Profile", canAct: draft.canSave,
+      status: status, errorMessage: model.error(outside: draft.fieldKeys), onAction: add
     ) {
       Section {
         SandboxProviderPicker(model: model, providerId: $providerId, onNewProvider: onNewProvider)
@@ -41,6 +41,7 @@ struct SandboxNewProfilePage: View {
     }
     .onAppear { model.errorMessage = nil }
     .onChange(of: providerId) { chooseProvider() }
+    .task(id: providerId) { await model.loadMaximums(of: providerId, from: client) }
   }
 
   private func chooseProvider() {
@@ -54,7 +55,9 @@ struct SandboxNewProfilePage: View {
     Task {
       let saved = await model.save(draft, using: client)
       status = nil
-      if saved { onAdded() }
+      guard saved else { return await model.loadMaximums(of: providerId, from: client) }
+
+      onAdded()
     }
   }
 }

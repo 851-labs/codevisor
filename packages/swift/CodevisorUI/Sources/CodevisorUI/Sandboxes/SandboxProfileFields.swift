@@ -29,11 +29,13 @@ struct SandboxProfileFields<Footer: View>: View {
 
   var body: some View {
     Section {
-      SandboxTextInput(label: "Name", prompt: "", text: $draft.name, onCommit: onCommit)
+      SandboxFieldIssue(message: model.error(on: SandboxProfileDraft.nameKey)) {
+        SandboxTextInput(label: "Name", prompt: "", text: $draft.name, onCommit: onCommit)
+      }
       ForEach(vendor.profileFields) { field in
         SandboxFieldRow(
-          field: field, draft: $draft.fields, hosts: model.hosts(for: field.capability),
-          steps: model.steps(for: field, in: draft), onCommit: onCommit)
+          field: model.offered(field, in: draft), draft: $draft.fields, hosts: model.hosts(for: field.capability),
+          steps: model.steps(for: field, in: draft), error: model.error(on: field.key), onCommit: onCommit)
       }
     } footer: {
       footer()

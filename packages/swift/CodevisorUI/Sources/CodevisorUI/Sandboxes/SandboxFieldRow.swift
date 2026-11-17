@@ -7,9 +7,15 @@ struct SandboxFieldRow: View {
   var secretSaved = false
   var hosts: [SandboxHost] = []
   var steps: SandboxFieldSteps?
+  var error: String?
   var onCommit: (() -> Void)?
 
   var body: some View {
+    SandboxFieldIssue(message: error) { input }
+  }
+
+  @ViewBuilder
+  private var input: some View {
     switch field.type {
     case .boolean:
       Toggle(field.label, isOn: flag)

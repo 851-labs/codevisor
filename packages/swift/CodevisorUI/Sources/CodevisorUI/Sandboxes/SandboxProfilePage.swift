@@ -28,7 +28,7 @@ struct SandboxProfilePage: View {
 
   var body: some View {
     Form {
-      SandboxSheetError(message: model.errorMessage)
+      SandboxSheetError(message: model.error(outside: draft.fieldKeys))
       if let vendor = draft.vendor {
         SandboxProfileFields(draft: $draft, vendor: vendor, model: model, onCommit: commit) {
           SandboxDeleteFooter(title: "Delete…", help: "Delete this profile") { confirmingDelete = true }
@@ -45,6 +45,7 @@ struct SandboxProfilePage: View {
       .navigationBarTitleDisplayMode(.inline)
     #endif
     .onAppear { model.errorMessage = nil }
+    .task { await model.loadMaximums(of: profile.providerId, from: client) }
     .sheet(item: $editedProvider, onDismiss: leaveIfDeleted, content: providerSheet)
     .onChange(of: isDeleted) { leaveIfDeleted() }
     .confirmationDialog("Delete “\(profile.name)”?", isPresented: $confirmingDelete, titleVisibility: .visible) {

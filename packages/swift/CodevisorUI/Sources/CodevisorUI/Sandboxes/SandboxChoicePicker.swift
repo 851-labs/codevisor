@@ -22,7 +22,16 @@ struct SandboxChoicePicker: View {
         Text(field.label)
         if let description = field.description { Text(description) }
       }
+      .onChange(of: field.choices, initial: true) { fit() }
     #endif
+  }
+
+  private func fit() {
+    guard let choices = field.choices, !selection.isEmpty, !choices.contains(where: { $0.value == selection }),
+      let largest = choices.last(where: { Double($0.value) != nil })
+    else { return }
+
+    selection = largest.value
   }
 
   private var choices: some View {

@@ -11,6 +11,7 @@ import {
   readAccountValues,
   readProfileOptions,
   SandboxChoiceNeeded,
+  SandboxFieldError,
   secretsSet,
   withoutSecrets,
   type SandboxAdapter,
@@ -145,6 +146,14 @@ export const deleteAccountAndUsers = async (
   if ((await deps.settings.account(id)) === undefined) return profileChanges
 
   return [...profileChanges, await deps.settings.removeAccount(id)]
+}
+
+export const accountMaximums = async (
+  deps: SandboxCatalogDeps,
+  id: string
+): Promise<SandboxFieldMaximums> => {
+  const account = await existingAccount(deps, id)
+  return limitsOf(accountAdapter(deps, account.provider), account)
 }
 
 export const createProfile = async (
@@ -285,7 +294,7 @@ const validProfile = async (
   request: SaveSandboxProfileRequest
 ): Promise<Omit<SandboxProfile, "id" | "createdAt">> => {
   const name = request.name.trim()
-  if (name === "") throw new HttpFailure(400, "Name is required")
+  if (name === "") throw invalidField("name", "Name is required")
 
   const adapter = requireAdapter(deps.adapters, request.provider)
   const { definition } = adapter
@@ -307,7 +316,19 @@ const maximumsForProfile = async (
 ): Promise<SandboxFieldMaximums> => {
   const account = await accountById(deps.settings, accountId)
   if (runsElsewhere(adapter.definition, account?.values ?? {}, deps.serverId)) return {}
-  return adapter.hostMaximums?.() ?? {}
+  if (account === undefined) return adapter.hostMaximums?.() ?? {}
+  return { ...adapter.hostMaximums?.(), ...(await limitsOf(adapter, account)) }
+}
+
+const limitsOf = async (
+  adapter: SandboxAdapter,
+  account: StoredSandboxAccount
+): Promise<SandboxFieldMaximums> => {
+  try {
+    return (await adapter.accountMaximums?.(account.values)) ?? {}
+  } catch {
+    return {}
+  }
 }
 
 const profileAccount = async (
@@ -410,9 +431,13 @@ const asFieldInput = <T>(read: () => T): T => {
   try {
     return read()
   } catch (cause) {
+    if (cause instanceof SandboxFieldError) throw invalidField(cause.key, cause.message)
     throw new HttpFailure(400, messageOf(cause))
   }
 }
+
+const invalidField = (key: string, message: string): HttpFailure =>
+  new HttpFailure(400, message, "sandboxFieldInvalid", { key })
 
 const messageOf = (cause: unknown): string =>
   cause instanceof Error ? cause.message : String(cause)

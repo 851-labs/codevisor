@@ -166,7 +166,14 @@ const teamOf = (team: unknown): ReadonlyArray<VercelTeam> => {
   if (typeof id !== "string") return []
 
   const labels = [fieldOf(team, "name"), fieldOf(team, "slug")]
-  return [{ id, name: labels.find((label) => typeof label === "string") ?? id }]
+  const plan = fieldOf(fieldOf(team, "billing"), "plan")
+  return [
+    {
+      id,
+      name: labels.find((label) => typeof label === "string") ?? id,
+      ...(typeof plan === "string" ? { plan } : {})
+    }
+  ]
 }
 
 const untilParam = (until: unknown): string => (typeof until === "number" ? `&until=${until}` : "")

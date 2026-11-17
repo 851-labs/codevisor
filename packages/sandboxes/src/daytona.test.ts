@@ -12,7 +12,8 @@ import {
   makeDaytonaProvider,
   type DaytonaClient,
   type DaytonaCredentials,
-  type DaytonaSandboxInfo
+  type DaytonaSandboxInfo,
+  type DaytonaSandboxLimits
 } from "./daytona.js"
 import { readAccountValues, readProfileOptions } from "./options.js"
 import type { ExecRequest, ExecResult } from "./provider.js"
@@ -21,7 +22,11 @@ const spec = { name: "box", tags: { owner: "device-a", machine: "m1" } }
 const ok: ExecResult = { exitCode: 0, stdout: "ok", stderr: "" }
 const tagged = { "codevisor-owner": "device-a", "codevisor-machine": "m1" }
 
-const fakeDaytona = (sandboxes: DaytonaSandboxInfo[] = [], email?: string) => {
+const fakeDaytona = (
+  sandboxes: DaytonaSandboxInfo[] = [],
+  email?: string,
+  limits: ReadonlyArray<DaytonaSandboxLimits> = []
+) => {
   const calls: unknown[] = []
   const client: DaytonaClient = {
     create: (request, onLog) => {
@@ -54,7 +59,8 @@ const fakeDaytona = (sandboxes: DaytonaSandboxInfo[] = [], email?: string) => {
       calls.push({ list: labels })
       return Promise.resolve(sandboxes)
     },
-    email: () => Promise.resolve(email)
+    email: () => Promise.resolve(email),
+    sandboxLimits: () => Promise.resolve(limits)
   }
   return { client, calls }
 }
@@ -121,16 +127,21 @@ describe("Daytona provider", () => {
     ])
   })
 
-  it("caps resources at the default organization limits", () => {
-    expect(() => readProfileOptions(DAYTONA_DEFINITION, { cpu: 5 })).toThrow(
+  it("refuses resources above the account's limits, and leaves them to Daytona when it has none to give", () => {
+    const limits = { cpu: 4, memoryGiB: 8, diskGiB: 10 }
+
+    expect(() => readProfileOptions(DAYTONA_DEFINITION, { cpu: 6 }, limits)).toThrow(
       "CPUs must be between 1 and 4"
     )
-    expect(() => readProfileOptions(DAYTONA_DEFINITION, { memoryGiB: 9 })).toThrow(
-      "Memory (GiB) must be between 1 and 8"
+    expect(() => readProfileOptions(DAYTONA_DEFINITION, { memoryGiB: 16 }, limits)).toThrow(
+      "Memory must be between 1 and 8 GB"
     )
-    expect(() => readProfileOptions(DAYTONA_DEFINITION, { diskGiB: 11 })).toThrow(
-      "Disk (GiB) must be between 1 and 10"
+    expect(() => readProfileOptions(DAYTONA_DEFINITION, { diskGiB: 20 }, limits)).toThrow(
+      "Disk must be between 1 and 10 GB"
     )
+    expect(readProfileOptions(DAYTONA_DEFINITION, { memoryGiB: 16 })).toMatchObject({
+      memoryGiB: 16
+    })
   })
 
   it("maps sandbox states so stopped and archived ones resume and only dead ones are gone", async () => {
@@ -299,6 +310,22 @@ describe("Daytona adapter", () => {
 
     expect(identity).toEqual({ identity: "dylan@851.sh" })
     expect(calls).toEqual([{ list: { "codevisor-owner": "codevisor-verify" } }])
+  })
+
+  it("reads the per-sandbox limits of the account's region, or the tightest of every region without one", async () => {
+    const us = { regionId: "us", maxCpu: 4, maxMemoryGiB: 8, maxDiskGiB: 10 }
+    const eu = { regionId: "eu", maxCpu: 8, maxMemoryGiB: 16 }
+    const adapter = daytonaAdapter(() => fakeDaytona([], undefined, [us, eu]).client)
+
+    expect(await adapter.accountMaximums?.({ apiKey: "k", target: "eu" })).toEqual({
+      cpu: 8,
+      memoryGiB: 16
+    })
+    expect(await adapter.accountMaximums?.({ apiKey: "k" })).toEqual({
+      cpu: 4,
+      memoryGiB: 8,
+      diskGiB: 10
+    })
   })
 
   it("verifies without an identity when the key cannot read the user", async () => {

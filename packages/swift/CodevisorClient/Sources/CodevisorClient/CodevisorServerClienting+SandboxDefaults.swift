@@ -20,6 +20,10 @@ public extension CodevisorServerClienting {
 
   func deleteSandboxProvider(id: String) async throws {}
 
+  func sandboxProviderMaximums(id: String) async throws -> [String: Double] {
+    [:]
+  }
+
   func deleteSandboxProviderAndProfiles(id: String) async throws {}
 
   func sandboxProfiles() async throws -> [ServerSandboxProfile] {

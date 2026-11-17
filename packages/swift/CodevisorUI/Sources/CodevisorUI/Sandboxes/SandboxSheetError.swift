@@ -6,7 +6,7 @@ struct SandboxSheetError: View {
   var body: some View {
     if let message {
       Section {
-        Label(message, systemImage: "exclamationmark.triangle").foregroundStyle(.red)
+        SandboxErrorLabel(message: message)
       }
     }
   }

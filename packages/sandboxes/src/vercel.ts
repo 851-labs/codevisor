@@ -6,7 +6,8 @@ import {
   stringValue,
   textField,
   type SandboxField,
-  type SandboxFieldChoice
+  type SandboxFieldChoice,
+  type SandboxFieldMaximums
 } from "./fields.js"
 import { pauseAfterField, type SandboxPausing } from "./pausing.js"
 import {
@@ -24,6 +25,7 @@ export const VERCEL_DEFAULT_IMAGE = "vercel/sandbox/universal"
 export const VERCEL_PROJECT_NAME = "codevisor-sandboxes"
 
 const defaultVcpus = "2"
+const maxVcpusByPlan: Readonly<Record<string, number>> = { hobby: 4, pro: 8, enterprise: 32 }
 const memoryGBPerVcpu = 2
 const vcpuChoices: ReadonlyArray<SandboxFieldChoice> = [1, 2, 4, 8, 16, 32].map((vcpus) => ({
   value: String(vcpus),
@@ -102,6 +104,7 @@ export interface VercelUser {
 export interface VercelTeam {
   readonly id: string
   readonly name: string
+  readonly plan?: string
 }
 
 export interface VercelAccount {
@@ -134,6 +137,10 @@ export const vercelAdapter = (
     const projectId = await vercel.project(teamId, VERCEL_PROJECT_NAME)
     await connectClient({ token, teamId, projectId }).list(ownerFilter("codevisor-verify"))
     return { ...identityFor(user.email), resolved: { teamId, projectId } }
+  },
+  accountMaximums: async (account) => {
+    const teams = await connectAccount(stringValue(account, "token")).teams()
+    return maximumsFor(teams.find((team) => team.id === stringValue(account, "teamId"))?.plan)
   }
 })
 
@@ -207,6 +214,11 @@ const expiry = (sandbox: VercelSandboxInfo | undefined): { readonly expiresAt?: 
 
 const isoOrUndefined = (ms: number | undefined): string | undefined =>
   ms === undefined ? undefined : new Date(ms).toISOString()
+
+const maximumsFor = (plan: string | undefined): SandboxFieldMaximums => {
+  const maxVcpus = plan === undefined ? undefined : maxVcpusByPlan[plan]
+  return maxVcpus === undefined ? {} : { vcpus: maxVcpus }
+}
 
 const teamFor = (
   teams: ReadonlyArray<VercelTeam>,

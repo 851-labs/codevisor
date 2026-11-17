@@ -38,6 +38,13 @@ export type SandboxFieldMaximums = Readonly<Record<string, number>>
 
 export class SandboxFieldError extends Error {
   override readonly name = "SandboxFieldError"
+
+  constructor(
+    readonly key: string,
+    message: string
+  ) {
+    super(message)
+  }
 }
 
 type FieldDetails = Partial<Omit<SandboxField, "key" | "label" | "type">>
@@ -157,27 +164,27 @@ const readField = (entry: SandboxField, raw: unknown): SandboxFieldValue | undef
 }
 
 const missing = (entry: SandboxField): undefined => {
-  if (entry.required) throw new SandboxFieldError(`${entry.label} is required`)
+  if (entry.required) throw invalid(entry, `${entry.label} is required`)
   return undefined
 }
 
 const numberIn = (entry: SandboxField, value: unknown): number => {
   const number = typeof value === "string" ? Number(value.trim()) : value
   if (typeof number !== "number" || !Number.isFinite(number)) {
-    throw new SandboxFieldError(`${entry.label} must be a number`)
+    throw invalid(entry, `${entry.label} must be a number`)
   }
-  if (outOfRange(entry, number)) throw new SandboxFieldError(rangeMessage(entry))
-  if (notAStep(entry, number)) throw new SandboxFieldError(`${entry.label} must be a whole number`)
+  if (outOfRange(entry, number)) throw invalid(entry, rangeMessage(entry))
+  if (notAStep(entry, number)) throw invalid(entry, `${entry.label} must be a whole number`)
   return number
 }
 
 const booleanIn = (entry: SandboxField, value: unknown): boolean => {
-  if (typeof value !== "boolean") throw new SandboxFieldError(`${entry.label} must be on or off`)
+  if (typeof value !== "boolean") throw invalid(entry, `${entry.label} must be on or off`)
   return value
 }
 
 const textIn = (entry: SandboxField, value: unknown): string => {
-  if (typeof value !== "string") throw new SandboxFieldError(`${entry.label} must be text`)
+  if (typeof value !== "string") throw invalid(entry, `${entry.label} must be text`)
   const text = value.trim()
   if (entry.type === "url") return urlIn(entry, text)
   if (entry.type === "choice") return choiceIn(entry, text)
@@ -186,7 +193,7 @@ const textIn = (entry: SandboxField, value: unknown): string => {
 
 const urlIn = (entry: SandboxField, text: string): string => {
   if (!URL.canParse(text) || !/^https?:/i.test(text)) {
-    throw new SandboxFieldError(`${entry.label} must be an http or https URL`)
+    throw invalid(entry, `${entry.label} must be an http or https URL`)
   }
   return text.replace(/\/+$/, "")
 }
@@ -194,7 +201,7 @@ const urlIn = (entry: SandboxField, text: string): string => {
 const choiceIn = (entry: SandboxField, text: string): string => {
   const { choices } = entry
   if (choices === undefined || choices.some((choice) => choice.value === text)) return text
-  throw new SandboxFieldError(`${entry.label} must be one of ${choiceLabels(choices)}`)
+  throw invalid(entry, `${entry.label} must be one of ${choiceLabels(choices)}`)
 }
 
 const outOfRange = (entry: SandboxField, number: number): boolean =>
@@ -205,15 +212,28 @@ const notAStep = (entry: SandboxField, number: number): boolean =>
 
 const capped = (entry: SandboxField, maximum: number | undefined): SandboxField => {
   if (maximum === undefined) return entry
+  if (entry.choices !== undefined) return { ...entry, choices: choicesUpTo(entry.choices, maximum) }
   return { ...entry, max: Math.min(entry.max ?? maximum, maximum) }
 }
 
+const choicesUpTo = (
+  choices: ReadonlyArray<SandboxFieldChoice>,
+  maximum: number
+): ReadonlyArray<SandboxFieldChoice> => choices.filter((choice) => !exceeds(choice, maximum))
+
+const exceeds = (choice: SandboxFieldChoice, maximum: number): boolean =>
+  Number(choice.value) > maximum
+
+const invalid = (entry: SandboxField, message: string): SandboxFieldError =>
+  new SandboxFieldError(entry.key, message)
+
 const rangeMessage = (entry: SandboxField): string => {
+  const unit = entry.unit === undefined ? "" : ` ${entry.unit}`
   if (entry.min !== undefined && entry.max !== undefined) {
-    return `${entry.label} must be between ${entry.min} and ${entry.max}`
+    return `${entry.label} must be between ${entry.min} and ${entry.max}${unit}`
   }
-  if (entry.min !== undefined) return `${entry.label} must be at least ${entry.min}`
-  return `${entry.label} must be at most ${String(entry.max)}`
+  if (entry.min !== undefined) return `${entry.label} must be at least ${entry.min}${unit}`
+  return `${entry.label} must be at most ${String(entry.max)}${unit}`
 }
 
 const choiceLabels = (choices: ReadonlyArray<SandboxFieldChoice>): string =>

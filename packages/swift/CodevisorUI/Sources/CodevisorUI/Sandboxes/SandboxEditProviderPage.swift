@@ -29,8 +29,8 @@ struct SandboxEditProviderPage: View {
 
   var body: some View {
     SandboxSettingsForm(
-      title: "Edit Provider", actionTitle: "Save", canAct: draft.canSave, status: status,
-      errorMessage: model.errorMessage, onAction: save
+      title: "Edit Provider", vendorId: vendor.id, actionTitle: "Save", canAct: draft.canSave, status: status,
+      errorMessage: model.error(outside: draft.shownFields.map(\.key)), onAction: save
     ) {
       SandboxProviderFields(draft: $draft, vendor: vendor, model: model) {
         SandboxDeleteFooter(

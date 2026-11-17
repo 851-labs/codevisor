@@ -2,17 +2,6 @@ import AppKit
 import CodevisorUI
 import SwiftUI
 
-struct PermissionCard<Content: View>: View {
-  @ViewBuilder var content: Content
-
-  var body: some View {
-    VStack(spacing: 0) { content }
-      .padding(.horizontal, 14)
-      .padding(.vertical, 4)
-      .background(RoundedRectangle(cornerRadius: 12).fill(Color.cardBackgroundColor))
-  }
-}
-
 struct PermissionRow<Action: View>: View {
   let symbol: String
   let title: String

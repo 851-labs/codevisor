@@ -1,6 +1,7 @@
 import { SaveSandboxAccountRequest, SaveSandboxProfileRequest } from "@codevisor/api"
 
 import {
+  accountMaximums,
   createAccount,
   createProfile,
   deleteAccount,
@@ -53,6 +54,11 @@ const routeAccounts = async (
   if (isRoute(url, request, "/v1/sandbox-accounts", "POST")) {
     const saved = await createAccount(catalog, await readSchema(request, SaveSandboxAccountRequest))
     return respond(route, 201, saved.account, saved.change)
+  }
+  const limitedId = methodRouteId(route, "GET", "/v1/sandbox-accounts/:id/maximums")
+  if (limitedId !== undefined) {
+    writeJson(response, 200, { maximums: await accountMaximums(catalog, limitedId) })
+    return true
   }
   const updateId = methodRouteId(route, "PUT", "/v1/sandbox-accounts/:id")
   if (updateId !== undefined) {

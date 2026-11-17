@@ -10,17 +10,33 @@ struct SandboxProviderSheet: View {
   @State private var path: [String] = []
 
   var body: some View {
-    NavigationStack(path: $path) {
-      root
-        .environment(\.sandboxSheetCancel, cancel)
-        .navigationDestination(for: String.self) { vendorId in
-          setUp(vendorId).environment(\.sandboxSheetCancel, pushedPageCancel)
-        }
-    }
     #if os(macOS)
-      .frame(width: 480, height: 400)
+      page
+        .environment(\.sandboxSheetCancel, cancel)
+        .animation(.snappy(duration: 0.2), value: path)
+        .onDisappear { model.errorMessage = nil }
+    #else
+      NavigationStack(path: $path) {
+        root
+          .environment(\.sandboxSheetCancel, cancel)
+          .navigationDestination(for: String.self) { vendorId in
+            setUp(vendorId)
+          }
+      }
+      .onDisappear { model.errorMessage = nil }
     #endif
   }
+
+  #if os(macOS)
+    @ViewBuilder
+    private var page: some View {
+      if let vendorId = path.last {
+        setUp(vendorId).environment(\.sandboxSheetBack, SandboxSheetAction { path.removeLast() })
+      } else {
+        root
+      }
+    }
+  #endif
 
   @ViewBuilder
   private var root: some View {
@@ -38,15 +54,7 @@ struct SandboxProviderSheet: View {
     }
   }
 
-  private var cancel: SandboxSheetCancel { SandboxSheetCancel { dismiss() } }
-
-  private var pushedPageCancel: SandboxSheetCancel? {
-    #if os(macOS)
-      cancel
-    #else
-      nil
-    #endif
-  }
+  private var cancel: SandboxSheetAction { SandboxSheetAction { dismiss() } }
 
   private func added(_ provider: ServerSandboxProvider) {
     onAdded(provider)

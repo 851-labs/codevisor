@@ -236,6 +236,11 @@ export type SandboxAccount = typeof SandboxAccount.Type
 export const SandboxAccountsResponse = Schema.Struct({ accounts: Schema.Array(SandboxAccount) })
 export type SandboxAccountsResponse = typeof SandboxAccountsResponse.Type
 
+export const SandboxAccountMaximumsResponse = Schema.Struct({
+  maximums: Schema.Record(Schema.String, Schema.Number)
+})
+export type SandboxAccountMaximumsResponse = typeof SandboxAccountMaximumsResponse.Type
+
 export const SaveSandboxAccountRequest = Schema.Struct({
   provider: SandboxProviderKind,
   label: Schema.optional(Schema.String),

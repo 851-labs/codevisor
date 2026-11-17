@@ -9,6 +9,7 @@ import {
   stringValue,
   textField,
   urlField,
+  type SandboxFieldMaximums,
   type SandboxFieldValues
 } from "./fields.js"
 import { pauseAfterField, type SandboxPausing } from "./pausing.js"
@@ -27,6 +28,10 @@ export const DAYTONA_DEFAULT_API_URL = "https://app.daytona.io/api"
 export const DAYTONA_SETUP_COMMANDS: ReadonlyArray<string> = [
   "apt-get update && apt-get install -y --no-install-recommends curl ca-certificates git sudo procps && rm -rf /var/lib/apt/lists/*"
 ]
+
+const defaultMaxCpus = 4
+const defaultMaxMemoryGiB = 8
+const defaultMaxDiskGiB = 10
 
 export const DAYTONA_DEFINITION: SandboxProviderDefinition = {
   id: "daytona",
@@ -56,9 +61,26 @@ export const DAYTONA_DEFINITION: SandboxProviderDefinition = {
     textField("snapshot", "Snapshot", {
       help: "A Daytona snapshot to start from instead of the image. CPU, memory and disk then come from the snapshot."
     }),
-    numberField("cpu", "CPUs", { default: 2, min: 1, max: 4 }),
-    numberField("memoryGiB", "Memory (GiB)", { default: 4, min: 1, max: 8 }),
-    numberField("diskGiB", "Disk (GiB)", { default: 10, min: 1, max: 10 }),
+    numberField("cpu", "CPUs", {
+      default: 2,
+      min: 1,
+      steps: [1, 2, 3, 4, 6, 8, 12, 16, 24, 32, 48, 64],
+      fallbackMax: defaultMaxCpus
+    }),
+    numberField("memoryGiB", "Memory", {
+      default: 4,
+      min: 1,
+      steps: [1, 2, 4, 8, 16, 32, 64, 128, 256],
+      fallbackMax: defaultMaxMemoryGiB,
+      unit: "GB"
+    }),
+    numberField("diskGiB", "Disk", {
+      default: 10,
+      min: 1,
+      steps: [1, 2, 5, 10, 20, 30, 50, 100, 200, 500],
+      fallbackMax: defaultMaxDiskGiB,
+      unit: "GB"
+    }),
     pauseAfterField({ never: true })
   ]
 }
@@ -67,6 +89,13 @@ export interface DaytonaResources {
   readonly cpu: number
   readonly memory: number
   readonly disk: number
+}
+
+export interface DaytonaSandboxLimits {
+  readonly regionId: string
+  readonly maxCpu?: number
+  readonly maxMemoryGiB?: number
+  readonly maxDiskGiB?: number
 }
 
 export type DaytonaSource =
@@ -103,6 +132,7 @@ export interface DaytonaClient {
   readonly remove: (sandboxId: string) => Promise<void>
   readonly list: (labels: Record<string, string>) => Promise<ReadonlyArray<DaytonaSandboxInfo>>
   readonly email: () => Promise<string | undefined>
+  readonly sandboxLimits: () => Promise<ReadonlyArray<DaytonaSandboxLimits>>
 }
 
 export interface DaytonaCredentials {
@@ -126,7 +156,9 @@ export const daytonaAdapter = (
       const client = clientFor(account)
       await client.list(ownerFilter("codevisor-verify"))
       return identityFor(await client.email())
-    }
+    },
+    accountMaximums: async (account) =>
+      maximumsIn(await clientFor(account).sandboxLimits(), optionalString(account, "target"))
   }
 }
 
@@ -170,6 +202,33 @@ const daytonaPausing = (client: DaytonaClient): SandboxPausing => ({
     return { providerMachineId: paused.providerMachineId }
   }
 })
+
+const maximumsIn = (
+  limits: ReadonlyArray<DaytonaSandboxLimits>,
+  region: string | undefined
+): SandboxFieldMaximums => {
+  const inRegion = limits.filter((entry) => entry.regionId === region)
+  const applying = inRegion.length > 0 ? inRegion : limits
+  return {
+    ...lowest(
+      "cpu",
+      applying.map((entry) => entry.maxCpu)
+    ),
+    ...lowest(
+      "memoryGiB",
+      applying.map((entry) => entry.maxMemoryGiB)
+    ),
+    ...lowest(
+      "diskGiB",
+      applying.map((entry) => entry.maxDiskGiB)
+    )
+  }
+}
+
+const lowest = (key: string, limits: ReadonlyArray<number | undefined>): SandboxFieldMaximums => {
+  const known = limits.filter((limit) => limit !== undefined)
+  return known.length === 0 ? {} : { [key]: Math.min(...known) }
+}
 
 const credentialsFor = (account: SandboxFieldValues): DaytonaCredentials => {
   const target = optionalString(account, "target")

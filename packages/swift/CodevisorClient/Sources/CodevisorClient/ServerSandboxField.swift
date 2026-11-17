@@ -13,6 +13,10 @@ public struct ServerSandboxField: Decodable, Equatable, Hashable, Sendable, Iden
       self.value = value
       self.label = label
     }
+
+    func exceeds(_ maximum: Double) -> Bool {
+      Double(value).map { $0 > maximum } ?? false
+    }
   }
 
   public var key: String
@@ -41,6 +45,22 @@ public struct ServerSandboxField: Decodable, Equatable, Hashable, Sendable, Iden
       reply.code == "sandboxChoiceNeeded"
     else { return nil }
     return reply.details.field
+  }
+
+  public static func refusedKey(in error: any Error) -> String? {
+    guard case let CodevisorServerClientError.httpStatus(_, body) = error,
+      let reply = try? JSONDecoder().decode(FieldRefused.self, from: Data(body.utf8)),
+      reply.code == "sandboxFieldInvalid"
+    else { return nil }
+    return reply.details.key
+  }
+
+  public func limited(to maximum: Double?, keeping saved: String?) -> ServerSandboxField {
+    guard let maximum, let choices else { return self }
+
+    var limited = self
+    limited.choices = choices.filter { $0.value == saved || !$0.exceeds(maximum) }
+    return limited
   }
 
   public init(
@@ -87,6 +107,15 @@ public struct ServerSandboxField: Decodable, Equatable, Hashable, Sendable, Iden
 private struct ChoiceNeeded: Decodable {
   struct Details: Decodable {
     var field: ServerSandboxField
+  }
+
+  var code: String
+  var details: Details
+}
+
+private struct FieldRefused: Decodable {
+  struct Details: Decodable {
+    var key: String
   }
 
   var code: String

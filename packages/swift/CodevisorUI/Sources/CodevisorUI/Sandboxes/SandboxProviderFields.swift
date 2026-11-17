@@ -29,7 +29,7 @@ struct SandboxProviderFields<Footer: View>: View {
       ForEach(draft.shownFields) { field in
         SandboxFieldRow(
           field: field, draft: $draft.fields, secretSaved: draft.secretsSet.contains(field.key),
-          hosts: model.hosts(for: field.capability))
+          hosts: model.hosts(for: field.capability), error: model.error(on: field.key))
       }
     } footer: {
       footer()
