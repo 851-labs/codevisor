@@ -3,15 +3,18 @@ import SwiftUI
 public struct SettingsDisclosureRow<Label: View, Content: View>: View {
   @Environment(\.accessibilityReduceMotion) private var reduceMotion
   @Binding var isExpanded: Bool
+  let chevronEdge: HorizontalEdge
   @ViewBuilder let label: () -> Label
   @ViewBuilder let content: () -> Content
 
   public init(
     isExpanded: Binding<Bool>,
+    chevronEdge: HorizontalEdge = .leading,
     @ViewBuilder label: @escaping () -> Label,
     @ViewBuilder content: @escaping () -> Content
   ) {
     _isExpanded = isExpanded
+    self.chevronEdge = chevronEdge
     self.label = label
     self.content = content
   }
@@ -26,13 +29,10 @@ public struct SettingsDisclosureRow<Label: View, Content: View>: View {
         }
       } label: {
         HStack(spacing: 7) {
-          Image(systemName: "chevron.right")
-            .font(.system(size: Typography.IconSize.disclosure, weight: .semibold))
-            .rotationEffect(.degrees(isExpanded ? 90 : 0))
-            .foregroundStyle(.secondary)
-            .accessibilityHidden(true)
+          if chevronEdge == .leading { chevron }
           label()
           Spacer(minLength: 0)
+          if chevronEdge == .trailing { chevron }
         }
         .frame(maxWidth: .infinity, minHeight: 20, alignment: .leading)
         .contentShape(Rectangle())
@@ -45,6 +45,16 @@ public struct SettingsDisclosureRow<Label: View, Content: View>: View {
         content()
       }
     }
+  }
+}
+
+extension SettingsDisclosureRow {
+  private var chevron: some View {
+    Image(systemName: "chevron.right")
+      .font(.system(size: Typography.IconSize.disclosure, weight: .semibold))
+      .rotationEffect(.degrees(isExpanded ? 90 : 0))
+      .foregroundStyle(.secondary)
+      .accessibilityHidden(true)
   }
 }
 
