@@ -47,7 +47,6 @@ describe("starting an agent on a new sandbox", () => {
         prompt: "Fix the flaky test",
         title: "Fix flake",
         checkout: "project",
-        standalone: true,
         harness: "codex",
         project: "remote-project",
         model: "gpt-6",
@@ -79,14 +78,13 @@ describe("starting an agent on a new sandbox", () => {
         prompt: "Look around",
         title: "Explore",
         checkout: "project",
-        standalone: true,
         harness: "codex",
         project: "remote-project"
       }
     })
   })
 
-  it.each([["started"], [42], [{ agentId: "remote-agent" }]])(
+  it.each([["started"], [42], [{ workspaceId: "remote-ws" }]])(
     "fails and tears the sandbox down when it answers %j instead of the agent it started",
     async (answer) => {
       const harness = await sandboxHarness({ onCurl: readyHarness("codex") })
@@ -103,7 +101,7 @@ describe("starting an agent on a new sandbox", () => {
     }
   )
 
-  it("refuses an agent for a workspace the request names, since the agent starts in its own", async () => {
+  it("refuses an agent for a workspace the request names", async () => {
     const harness = await sandboxHarness({ onCurl: readyHarness("codex") })
 
     const refused = harness.machines.create({ ...request, workspaceId: "chat-ws", agent })
@@ -111,10 +109,79 @@ describe("starting an agent on a new sandbox", () => {
     await expect(refused).rejects.toEqual(
       new HttpFailure(
         400,
-        "Pass workspaceId or agent, not both: the agent starts in a new workspace of its own"
+        "Pass workspaceId or agent, not both: the agent starts as a chat of its own"
       )
     )
     expect(await harness.machines.list()).toEqual([])
     expect(harness.provider.machines.size).toBe(0)
+  })
+})
+
+const ownedAgent = async (listed: () => unknown) => {
+  const harness = await sandboxHarness({ onCurl: readyHarness("codex") })
+  harness.controls.answer = (tool) => {
+    if (tool === "codevisor.agents.start") return { agentId: "remote-agent" }
+    return tool === "codevisor.agents.list" ? listed() : undefined
+  }
+  await harness.machines.create({ ...request, agent })
+  await harness.machines.settled()
+  return harness
+}
+
+describe("a sandbox whose agent belongs to its starter", () => {
+  it("is ready with the agent and no workspace, and lives while the agent does", async () => {
+    const harness = await ownedAgent(() => ({ items: [{ agentId: "remote-agent" }] }))
+
+    await harness.machines.watch()
+
+    const [machine] = await harness.machines.list()
+    expect(machine).toMatchObject({ state: "ready", agentId: "remote-agent" })
+    expect(machine?.workspaceId).toBeUndefined()
+    expect(harness.toolCalls.at(-1)).toMatchObject({
+      tool: "codevisor.agents.list",
+      args: { createdByAgentId: "caller-session" }
+    })
+  })
+
+  it.each([
+    ["archived", { items: [{ agentId: "remote-agent", archived: true }] }],
+    ["deleted", { items: [] }]
+  ])("is torn down once its agent is %s", async (_ending, listed) => {
+    const harness = await ownedAgent(() => listed)
+
+    await harness.machines.watch()
+
+    expect(await harness.machines.list()).toEqual([])
+    expect(harness.removed).toEqual([JOINED_DEVICE])
+  })
+
+  it("finds its agent on a later page before deciding it is gone", async () => {
+    const pages = [
+      { items: [{ agentId: "other" }], next: "50" },
+      { items: [{ agentId: "REMOTE-AGENT" }] }
+    ]
+    const harness = await ownedAgent(() => pages.shift())
+
+    await harness.machines.watch()
+
+    expect(await harness.machines.list()).toHaveLength(1)
+  })
+
+  it("stays when the sandbox can't say which agents it has", async () => {
+    const harness = await ownedAgent(() => "unavailable")
+
+    await harness.machines.watch()
+
+    expect(await harness.machines.list()).toHaveLength(1)
+  })
+
+  it("follows the workspace its agent moves into once it stands alone", async () => {
+    const harness = await ownedAgent(() => ({
+      items: [{ agentId: "remote-agent", workspaceId: "MOVED-WS" }]
+    }))
+
+    await harness.machines.watch()
+
+    expect((await harness.machines.list())[0]).toMatchObject({ workspaceId: "moved-ws" })
   })
 })

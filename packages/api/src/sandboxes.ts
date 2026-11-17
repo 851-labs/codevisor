@@ -72,6 +72,7 @@ export const SandboxAgentStart = Schema.Struct({
   harness: Schema.String,
   model: Schema.optional(Schema.String),
   labels: Schema.optional(Labels),
+  standalone: Schema.optional(Schema.Boolean),
   createdByAgentId: Schema.optional(Schema.String)
 })
 export type SandboxAgentStart = typeof SandboxAgentStart.Type

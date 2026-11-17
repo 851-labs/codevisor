@@ -15,7 +15,7 @@ export const requireOneWorkspace = (request: CreateSandboxRequest): void => {
   if (request.workspaceId === undefined || request.agent === undefined) return
   throw new HttpFailure(
     400,
-    "Pass workspaceId or agent, not both: the agent starts in a new workspace of its own"
+    "Pass workspaceId or agent, not both: the agent starts as a chat of its own"
   )
 }
 
