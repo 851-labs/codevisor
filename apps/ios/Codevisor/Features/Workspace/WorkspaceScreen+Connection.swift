@@ -113,7 +113,7 @@ extension WorkspaceScreen {
     guard let project = resolvedProject else { return }
     onDraftWillStart?()
     let session = startSession(for: controller, in: project, submittedText: submittedText)
-    let workspace = draftWorkspace(for: session, in: project)
+    let workspace = draftWorkspace(for: session, in: project, awaitsOwnCheckout: controller.awaitsOwnCheckout)
     controller.hostWorkspaceId = workspace.id
     rememberNewChatChoices(of: controller, in: project)
     let state = assignChatPane(to: session, in: workspace)
@@ -162,14 +162,16 @@ extension WorkspaceScreen {
     }
   }
 
-  private func draftWorkspace(for session: ChatSession, in project: Project) -> Workspace {
+  private func draftWorkspace(
+    for session: ChatSession, in project: Project, awaitsOwnCheckout: Bool
+  ) -> Workspace {
     environment.workspaces.ensureWorkspace(
       for: WorkspaceSessionSeed(
         sessionId: session.id,
         initialName: session.worktreeName ?? project.name,
         serverId: session.serverId,
         projectId: project.id,
-        rootDirectory: session.cwd ?? project.folderURL.path,
+        rootDirectory: awaitsOwnCheckout ? nil : session.cwd ?? project.folderURL.path,
         worktreeName: session.worktreeName,
         assignedWorkspaceId: environment.projectList.workspaceId(forSession: session.id)
       ),
