@@ -59,11 +59,18 @@ public final class BotModelSelection {
     )
   }
 
+  public func load() async {
+    async let seeded: Void = seedDefaults()
+    await revalidateCatalog()
+    await seeded
+  }
+
   public func seedDefaults() async {
-    guard harnessId == nil else { return }
+    guard !hasAvailableHarness else { return }
     let available = harnesses
     let remembered = composerDefaults.lastHarnessId(for: .newWorkspace(serverId: serverId))
     guard let harness = available.first(where: { $0.id == remembered }) ?? available.first else {
+      clearHarness()
       return
     }
     let modelId = Self.modelOption(in: capabilityOptions(harness.id))?.id
@@ -85,6 +92,26 @@ public final class BotModelSelection {
       options[index].options.contains(where: { $0.value == value })
     else { return }
     options[index].currentValue = value
+  }
+
+  private var hasAvailableHarness: Bool {
+    harnesses.contains { $0.id == harnessId }
+  }
+
+  private func revalidateCatalog() async {
+    do {
+      _ = try await configCache.revalidateMachineCapabilities(forServer: serverId, client: client)
+    } catch {
+      Log.session.error("bot model list refresh failed: \(String(describing: error), privacy: .public)")
+    }
+    await seedDefaults()
+  }
+
+  private func clearHarness() {
+    resolveGeneration &+= 1
+    harnessId = nil
+    options = []
+    isResolving = false
   }
 
   private func capabilityOptions(_ harnessId: String) -> [SessionConfigOption] {

@@ -86,7 +86,7 @@ struct BotEditorView: View {
       }
       .disabled(editor.isSaving)
       .interactiveDismissDisabled(editor.isSaving)
-      .task(id: editor.serverId) { await editor.loadModels() }
+      .task(id: editor.modelCatalogKey) { await editor.loadModels() }
       .task(id: editor.serverId) { await editor.loadMascotOptions() }
       .sheet(isPresented: isShowingProjectSetup) {
         if let setup = editor.projectSetup.setup {

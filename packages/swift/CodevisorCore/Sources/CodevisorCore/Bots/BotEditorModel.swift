@@ -47,6 +47,11 @@ public final class BotEditorModel {
 
   private static let forkSuffix = " (fork)"
 
+  public struct ModelCatalogKey: Hashable {
+    let serverId: String
+    let revision: UInt64
+  }
+
   public var editedBot: Bot? {
     if case let .edit(bot) = target { return bot }
     return nil
@@ -219,18 +224,30 @@ public final class BotEditorModel {
     }
   }
 
+  public var modelCatalogKey: ModelCatalogKey {
+    ModelCatalogKey(serverId: serverId, revision: environment.harnessCatalogRevision(for: serverId))
+  }
+
   public func loadModels() async {
     guard editedBot == nil else { return }
-    models = nil
-    await environment.warmHarnessCapabilities(for: serverId)
-    let selection = BotModelSelection(
+    let selection = reusableModels ?? makeModelSelection()
+    models = selection.harnesses.isEmpty ? nil : selection
+    await selection.load()
+    guard selection.serverId == serverId else { return }
+    models = selection
+  }
+
+  private var reusableModels: BotModelSelection? {
+    models?.serverId == serverId ? models : nil
+  }
+
+  private func makeModelSelection() -> BotModelSelection {
+    BotModelSelection(
       serverId: serverId,
       client: environment.machines.client(for: serverId),
       configCache: environment.configCache,
       composerDefaults: environment.composerDefaults
     )
-    models = selection
-    await selection.seedDefaults()
   }
 
   public func loadMascotOptions() async {

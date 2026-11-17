@@ -77,18 +77,6 @@ struct ConfigOptionCacheTests {
     #expect(reopened.options(forHarness: "codex", onServer: "remote-b").isEmpty)
   }
 
-  @Test("Speculative warm does not overwrite an existing capability snapshot")
-  func speculativeWarmPreservesExistingSnapshot() {
-    let cache = ConfigOptionCache(store: InMemoryStore())
-    let warm = capability(model: "warm")
-    let projectSpecific = capability(model: "project")
-
-    #expect(cache.storeIfEmpty([warm], forServer: "local"))
-    cache.store([projectSpecific], forServer: "local")
-    #expect(!cache.storeIfEmpty([warm], forServer: "local"))
-    #expect(cache.capabilities(forServer: "local").first?.configOptions.first?.currentValue == "project")
-  }
-
   @Test("A single-harness refresh preserves the rest of the server catalog")
   func singleHarnessMerge() {
     let cache = ConfigOptionCache(store: InMemoryStore())
@@ -126,13 +114,26 @@ struct ConfigOptionCacheTests {
   }
 
   @Test("A response started before invalidation cannot restore stale capabilities")
-  func rejectsInvalidatedResponse() {
+  func rejectsInvalidatedResponse() async {
     let cache = ConfigOptionCache(store: InMemoryStore())
-    let revision = cache.capabilityRevision(forServer: "local")
+    let stale = [capability(model: "stale")]
+    let entered = TestSignal()
+    let release = TestSignal()
+    let refresh = Task {
+      try? await cache.revalidateCapabilities(
+        forServer: "local", cwd: "",
+        fetch: {
+          entered.signal()
+          await release.wait()
+          return stale
+        })
+    }
+    await entered.wait()
 
     cache.invalidateCapabilities(forServer: "local")
+    release.signal()
 
-    #expect(!cache.storeIfEmpty([capability(model: "stale")], forServer: "local", ifRevision: revision))
+    #expect(await refresh.value == nil)
     #expect(cache.capabilities(forServer: "local").isEmpty)
   }
 

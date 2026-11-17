@@ -140,7 +140,7 @@ extension SessionController {
     let serverId = project.serverId
     guard configCache.needsCapabilityRevalidation(forServer: serverId) else { return }
     do {
-      _ = try await configCache.warmCapabilities(forServer: serverId, client: serverClient)
+      _ = try await configCache.revalidateMachineCapabilities(forServer: serverId, client: serverClient)
     } catch {
       Log.session.error("model list refresh failed: \(String(describing: error), privacy: .public)")
     }
@@ -208,15 +208,12 @@ extension SessionController {
     force: Bool = false
   ) async -> Bool {
     do {
-      let cwd = target.cwd
       guard
         let capabilities = try await configCache.revalidateCapabilities(
           forServer: target.serverId,
-          cwd: cwd,
-          force: force,
-          fetch: {
-            try await serverClient.capabilities(cwd: cwd).harnesses
-          }
+          cwd: target.cwd,
+          client: serverClient,
+          force: force
         )
       else {
         return false

@@ -121,7 +121,7 @@ public final class ConfigOptionCache {
     signInRequiredCache[serverId] ?? []
   }
 
-  public func capabilityRevision(forServer serverId: String) -> UInt64 {
+  private func capabilityRevision(forServer serverId: String) -> UInt64 {
     if let revision = capabilityRevisions[serverId] { return revision }
     capabilityRevisions[serverId] = 0
     return 0
@@ -144,14 +144,23 @@ public final class ConfigOptionCache {
     }
   }
 
-  public func warmCapabilities(
+  public func revalidateMachineCapabilities(
     forServer serverId: String,
     client: any CodevisorServerClienting
   ) async throws -> [ServerHarnessCapability] {
-    let warmed = try await revalidateCapabilities(forServer: serverId, cwd: "") {
-      try await client.capabilities(cwd: "").harnesses
+    let revalidated = try await revalidateCapabilities(forServer: serverId, cwd: "", client: client)
+    return revalidated ?? capabilities(forServer: serverId)
+  }
+
+  public func revalidateCapabilities(
+    forServer serverId: String,
+    cwd: String,
+    client: any CodevisorServerClienting,
+    force: Bool = false
+  ) async throws -> [ServerHarnessCapability]? {
+    try await revalidateCapabilities(forServer: serverId, cwd: cwd, force: force) {
+      try await client.capabilities(cwd: cwd).harnesses
     }
-    return warmed ?? capabilities(forServer: serverId)
   }
 
   func revalidateCapabilities(
@@ -223,10 +232,6 @@ public final class ConfigOptionCache {
     capabilityValidatedAt[key] = Date()
   }
 
-  public func needsCapabilityWarm(forServer serverId: String) -> Bool {
-    capabilitiesCache[serverId] == nil
-  }
-
   public func store(_ capabilities: [ServerHarnessCapability], forServer serverId: String) {
     capabilitiesCache[serverId] = capabilities.map(Self.withoutSkills)
     for capability in capabilities {
@@ -246,22 +251,6 @@ public final class ConfigOptionCache {
     capabilitiesCache[serverId] = capabilities
     cache[serverId, default: [:]][capability.harness.id] = capability.configOptions
     persist()
-  }
-
-  @discardableResult
-  public func storeIfEmpty(
-    _ capabilities: [ServerHarnessCapability],
-    forServer serverId: String,
-    ifRevision expectedRevision: UInt64? = nil
-  ) -> Bool {
-    if let expectedRevision,
-      capabilityRevision(forServer: serverId) != expectedRevision
-    {
-      return false
-    }
-    guard capabilitiesCache[serverId] == nil else { return false }
-    store(capabilities, forServer: serverId)
-    return true
   }
 
   public func invalidateCapabilities(forServer serverId: String) {

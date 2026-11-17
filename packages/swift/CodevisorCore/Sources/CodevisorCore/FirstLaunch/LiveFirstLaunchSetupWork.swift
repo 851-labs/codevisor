@@ -102,7 +102,7 @@ public final class LiveFirstLaunchSetupWork: FirstLaunchSetupWork {
     var attempt = 1
     while true {
       do {
-        return try await environment.configCache.warmCapabilities(
+        return try await environment.configCache.revalidateMachineCapabilities(
           forServer: machineId,
           client: environment.machines.client(for: machineId)
         )

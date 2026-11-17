@@ -67,7 +67,7 @@ struct BotEditorSheet: View {
         }
       }
     }
-    .task(id: editor.serverId) { await editor.loadModels() }
+    .task(id: editor.modelCatalogKey) { await editor.loadModels() }
     .task(id: editor.serverId) { await editor.loadMascotOptions() }
     .sheet(isPresented: isShowingProjectSetup) {
       if let setup = editor.projectSetup.setup {

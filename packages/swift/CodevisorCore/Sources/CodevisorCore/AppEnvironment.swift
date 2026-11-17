@@ -235,26 +235,6 @@ public final class AppEnvironment {
     projectList.showsImportedSessions = true
   }
 
-  public func warmHarnessCapabilities(for serverId: String) async {
-    guard configCache.needsCapabilityWarm(forServer: serverId) else { return }
-    let (client, cacheRevision) = (
-      machines.client(for: serverId), configCache.capabilityRevision(forServer: serverId)
-    )
-    do {
-      let response = try await client.capabilities(
-        cwd: FileManager.default.temporaryDirectory.path
-      )
-      let capabilities = response.harnesses.filter { capability in
-        capability.harness.enabled && capability.harness.isReady
-      }
-      configCache.storeIfEmpty(capabilities, forServer: serverId, ifRevision: cacheRevision)
-    } catch {
-      Log.onboarding.error(
-        "Capability cache warm failed: \(String(describing: error), privacy: .public)"
-      )
-    }
-  }
-
   public func deleteAllData() {
     Analytics.setEnabled(false)
     Diagnostics.setEnabled(false)
