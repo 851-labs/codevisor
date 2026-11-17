@@ -1,3 +1,7 @@
+import { isRecord } from "@codevisor/api"
+
+import type { RuntimeEvent } from "./types.js"
+
 export interface UsageLimitStop {
   readonly stopKind: "usageLimit"
   readonly stopDetail: string
@@ -9,6 +13,17 @@ export const usageLimitStop = (stopDetail: string, resetsAt?: Date): UsageLimitS
   stopDetail,
   ...(resetsAt === undefined ? {} : { resetsAt: resetsAt.toISOString() })
 })
+
+export const withStoppedAccount = (
+  event: RuntimeEvent,
+  accountId: string | undefined
+): RuntimeEvent => {
+  const payload = event.payload
+  if (accountId === undefined || !isRecord(payload)) return event
+  if (!endsAtUsageLimit(event, payload)) return event
+
+  return { ...event, payload: { ...payload, stoppedOnAccountId: accountId } }
+}
 
 export const isOutOfCreditsText = (text: string): boolean =>
   outOfCreditsPatterns.some((pattern) => pattern.test(text))
@@ -30,6 +45,11 @@ export const epochResetTime = (
   if (typeof value !== "number" || !Number.isFinite(value) || value <= 0) return undefined
   return new Date(unit === "seconds" ? value * millisecondsPerSecond : value)
 }
+
+const endsAtUsageLimit = (event: RuntimeEvent, payload: Record<string, unknown>): boolean =>
+  event.kind === "session.updated" &&
+  payload.turnState === "ended" &&
+  payload.stopKind === "usageLimit"
 
 const outOfCreditsPatterns = [
   /\bcredits? balance is too low\b/i,

@@ -137,6 +137,7 @@ export interface HarnessAccountContext {
   readonly env?: Readonly<Record<string, string>>
   readonly unsetEnv?: ReadonlyArray<string>
   readonly beforeTurn?: () => Promise<void>
+  readonly forChat?: (chatId: string) => HarnessAccountContext
   readonly oauth?: {
     readonly token: (rejectedAccessToken?: string) => Promise<{
       readonly accessToken: string

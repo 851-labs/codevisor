@@ -33,7 +33,12 @@ import { withBotSessionOption } from "./bot-session-modes.js"
 import { isConversationMissing, rememberConversationRecap } from "./conversation-recap.js"
 import { assertAgentVerified } from "./fleet-calls.js"
 import { restoreSessionConfigSelections } from "./session-config-restore.js"
-import { resolveSessionAccount, startSessionAgent, withStartPicks } from "./session-creation.js"
+import {
+  forChat,
+  resolveSessionAccount,
+  startSessionAgent,
+  withStartPicks
+} from "./session-creation.js"
 import { sessionEventSink } from "./session-events.js"
 import { withSessionMutation } from "./session-operations.js"
 import { publishSessionSkills } from "./session-skills.js"
@@ -316,6 +321,7 @@ export const loadAgentSessionFor = async (
   if (session.harnessAccountId === undefined && accountContext !== undefined) {
     await run(services.db.bindSessionHarnessAccount(session.id, accountContext.id))
   }
+  const chatAccount = forChat(accountContext, session.id)
   const startOptions = withBotSessionOption(project, {
     configSelections: session.configSelections ?? {}
   })
@@ -328,7 +334,7 @@ export const loadAgentSessionFor = async (
         agentSessionId,
         cwd,
         sink,
-        accountContext,
+        chatAccount,
         toolGateway,
         start.resumeInterruptedTurn === undefined
           ? startOptions
@@ -341,7 +347,7 @@ export const loadAgentSessionFor = async (
         session.harnessId,
         cwd,
         sink,
-        accountContext,
+        chatAccount,
         toolGateway,
         start.forkFrom === undefined ? startOptions : { ...startOptions, forkFrom: start.forkFrom }
       )

@@ -72,7 +72,7 @@ export const startSessionAgent = async (
         payload.harnessId,
         cwd,
         sink,
-        accountContext,
+        forChat(accountContext, sessionId),
         toolGateway,
         withBotSessionOption(
           project,
@@ -84,3 +84,8 @@ export const startSessionAgent = async (
     ))
   )
 }
+
+export const forChat = (
+  account: HarnessAccountContext | undefined,
+  chatId: string
+): HarnessAccountContext | undefined => account?.forChat?.(chatId) ?? account

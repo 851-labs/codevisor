@@ -5,7 +5,7 @@ import { SharedCredentialError } from "@codevisor/harness-manager"
 import { describe, expect, it, onTestFinished, vi } from "vitest"
 
 import { listeningPort } from "../test-support-net.js"
-import { makeSharedClaudeGateway } from "./shared-claude-gateway.js"
+import { chatGatewayUrl, makeSharedClaudeGateway } from "./shared-claude-gateway.js"
 
 const bundle = {
   harnessId: "claude-code",
@@ -75,6 +75,35 @@ describe("Claude shared account gateway", () => {
     expect(requests[1]?.url).toBe("https://api.anthropic.com/v1/messages?beta=true")
     expect(requests[0]?.body).toBe(requests[1]?.body)
     expect(token).toHaveBeenLastCalledWith("account", "current")
+  })
+  it("serves a chat's requests with the account the chat is on now, even from an agent started on another", async () => {
+    const assigned = new Map([["chat-1", "account"]])
+    const upstream: Array<{ readonly url: string; readonly authorization: string | null }> = []
+    const f = await fixture({
+      token: async (id) => ({ ...bundle, accessToken: `${id}-live` }),
+      chatAccount: async (chatId) => assigned.get(chatId),
+      fetch: async (url, options) => {
+        upstream.push({
+          url: url instanceof Request ? url.url : url.toString(),
+          authorization: new Headers(options?.headers).get("authorization")
+        })
+        return new Response("ok")
+      }
+    })
+    const chat = chatGatewayUrl("", "chat-1")
+
+    await f.send(`${chat}/v1/messages`)
+    assigned.set("chat-1", "work")
+    await f.send(`${chat}/v1/messages?beta=true`)
+    await f.send("/v1/messages")
+    await f.send(`${chatGatewayUrl("", "deleted-chat")}/v1/messages`)
+
+    expect(upstream).toEqual([
+      { url: "https://api.anthropic.com/v1/messages", authorization: "Bearer account-live" },
+      { url: "https://api.anthropic.com/v1/messages?beta=true", authorization: "Bearer work-live" },
+      { url: "https://api.anthropic.com/v1/messages", authorization: "Bearer account-live" },
+      { url: "https://api.anthropic.com/v1/messages", authorization: "Bearer account-live" }
+    ])
   })
   it("rejects unregistered credentials, browser origins and paths outside the provider API", async () => {
     const upstream = vi.fn<typeof fetch>(async () => new Response("unexpected"))

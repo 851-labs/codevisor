@@ -174,12 +174,16 @@ export const signInFlow = async (fixture: Fixture, flow: Record<string, unknown>
   await settled(fixture)
 }
 
-export const saveAccounts = async (fixture: Fixture, ids: ReadonlyArray<string>) => {
+export const saveAccounts = async (
+  fixture: Fixture,
+  ids: ReadonlyArray<string>,
+  harnessId = "claude-code"
+) => {
   for (const id of ids) {
     await run(
       fixture.db.saveHarnessAccount({
         id,
-        harnessId: "claude-code",
+        harnessId,
         profileKind: "managed",
         profileKey: id,
         label: id,

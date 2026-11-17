@@ -65,6 +65,7 @@ export const makeAgents = (): AgentRuntimeService & {
   const environmentRefreshes: Array<number> = observableFixture([])
   const sinks = new Map<string, RuntimeEventSink>()
   const sessionHarnesses = new Map<string, string>()
+  const sessionAccounts = new Map<string, string | undefined>()
   const configOptionsBySession = new Map<string, ReadonlyArray<SessionConfigOption>>()
   const dependencyConfigSessions = new Set<string>()
   const emit = async (sessionId: string, event: RuntimeEvent): Promise<void> => {
@@ -119,13 +120,14 @@ export const makeAgents = (): AgentRuntimeService & {
         state: "unavailable" as const,
         windows: []
       }),
-    createAgentSession: (harnessId, cwd, sink, _account, _toolGateway, sessionOptions) =>
+    createAgentSession: (harnessId, cwd, sink, account, _toolGateway, sessionOptions) =>
       Effect.sync(() => {
         creations.push([harnessId, cwd])
         startSelections.push(sessionOptions?.configSelections)
         const sessionId = `agent-${harnessId}-${cwd.split("/").at(-1) ?? "root"}`
         sinks.set(sessionId, sink)
         sessionHarnesses.set(sessionId, harnessId)
+        sessionAccounts.set(sessionId, account?.id)
         return sessionId
       }),
     reconcileConfigValue: (_harnessId, option, value) =>
@@ -136,7 +138,7 @@ export const makeAgents = (): AgentRuntimeService & {
       agentSessionId,
       cwd,
       sink,
-      _account,
+      account,
       _toolGateway,
       sessionOptions
     ) =>
@@ -145,6 +147,7 @@ export const makeAgents = (): AgentRuntimeService & {
         startSelections.push(sessionOptions?.configSelections)
         sinks.set(agentSessionId, sink)
         sessionHarnesses.set(agentSessionId, harnessId)
+        sessionAccounts.set(agentSessionId, account?.id)
         if (cwd.includes("no-config-options")) {
           configOptionsBySession.set(agentSessionId, [])
           return { configOptions: [], sessionId: agentSessionId }
@@ -338,7 +341,8 @@ export const makeAgents = (): AgentRuntimeService & {
       [...sinks.keys()].map((id) => ({
         sessionId: id,
         harnessId: sessionHarnesses.get(id) ?? "",
-        resumable: true
+        resumable: true,
+        ...optionalAccount(sessionAccounts.get(id))
       })),
     closeAgentSession: (sessionId) =>
       Effect.sync(() => {
@@ -448,3 +452,6 @@ export const makeAgents = (): AgentRuntimeService & {
     replyToQuestion: () => Effect.succeed(false)
   }
 }
+
+const optionalAccount = (harnessAccountId: string | undefined) =>
+  harnessAccountId === undefined ? {} : { harnessAccountId }

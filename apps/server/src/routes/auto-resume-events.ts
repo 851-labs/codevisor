@@ -2,8 +2,14 @@ import type { EventEnvelope } from "@codevisor/api"
 
 import { isRecord } from "../unknown-values.js"
 
+export interface UsageLimitStopTrigger {
+  readonly kind: "usageLimitStop"
+  readonly resetsAt: string | undefined
+  readonly stoppedOnAccountId: string | undefined
+}
+
 export type AutoResumeTrigger =
-  | { readonly kind: "usageLimitStop"; readonly resetsAt: string | undefined }
+  | UsageLimitStopTrigger
   | { readonly kind: "turnStarted" }
   | { readonly kind: "turnFinished" }
   | { readonly kind: "sessionArchived" }
@@ -29,8 +35,12 @@ const endsTurn = (event: EventEnvelope, payload: Record<string, unknown>): boole
 
 const usageLimitStop = (payload: Record<string, unknown>): AutoResumeTrigger => ({
   kind: "usageLimitStop",
-  resetsAt: typeof payload.resetsAt === "string" ? payload.resetsAt : undefined
+  resetsAt: optionalString(payload.resetsAt),
+  stoppedOnAccountId: optionalString(payload.stoppedOnAccountId)
 })
+
+const optionalString = (value: unknown): string | undefined =>
+  typeof value === "string" ? value : undefined
 
 const signedIn = (payload: Record<string, unknown>): AutoResumeTrigger | undefined => {
   if (payload.kind !== "complete" || typeof payload.accountId !== "string") return undefined

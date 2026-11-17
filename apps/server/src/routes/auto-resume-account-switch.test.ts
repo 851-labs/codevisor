@@ -10,6 +10,7 @@ import {
   lastUpdate,
   makeFixture,
   minutes,
+  publishTurn,
   saveAccounts,
   signInFlow,
   start,
@@ -70,6 +71,30 @@ describe("auto-resume when the account changes", () => {
     })
     expect(await run(fixture.db.getAutoResume(unbound))).toMatchObject({
       state: "waiting"
+    })
+  })
+
+  it("resumes right away on the active account when the paused turn ran on an account it left", async () => {
+    const fixture = await makeFixture()
+    const [stale, current] = [await createChat(fixture), await createChat(fixture)]
+    await saveAccounts(fixture, ["personal", "work"])
+    await run(fixture.db.setActiveHarnessAccount("claude-code", "work"))
+    for (const chat of [stale, current])
+      await run(fixture.db.bindSessionHarnessAccount(chat, "work"))
+
+    await publishTurn(fixture, stale, fableLimit("personal"))
+    await publishTurn(fixture, current, fableLimit("work"))
+    expect(lastUpdate(fixture, stale)).toEqual({ state: "resuming" })
+    await advance(fixture, 0)
+
+    expect(fixture.resumed).toEqual([stale])
+    expect(await run(fixture.db.getAutoResume(stale))).toMatchObject({
+      harnessAccountId: "work",
+      state: "resuming"
+    })
+    expect(lastUpdate(fixture, current)).toEqual({
+      state: "scheduled",
+      resumesAt: at(minutes(2880))
     })
   })
 
@@ -142,10 +167,11 @@ describe("auto-resume when the account changes", () => {
 
   it("checks again right away when the stopped account finishes signing in", async () => {
     const fixture = await makeFixture()
-    const [chat, other] = [await createChat(fixture), await createChat(fixture)]
+    const [chat, other] = [await createChat(fixture), await createChat(fixture, "codex")]
     await saveAccounts(fixture, ["personal", "work"])
+    await saveAccounts(fixture, ["codex-work"], "codex")
     await run(fixture.db.bindSessionHarnessAccount(chat, "personal"))
-    await run(fixture.db.bindSessionHarnessAccount(other, "work"))
+    await run(fixture.db.bindSessionHarnessAccount(other, "codex-work"))
     for (const stopped of [chat, other]) await stopAtLimit(fixture, stopped, at(minutes(240)))
 
     await signInFlow(fixture, {
@@ -174,4 +200,11 @@ describe("auto-resume when the account changes", () => {
       state: "waiting"
     })
   })
+})
+
+const fableLimit = (stoppedOnAccountId: string) => ({
+  stopKind: "usageLimit",
+  stopDetail: "You've hit your Fable limit",
+  resetsAt: at(minutes(2880)),
+  stoppedOnAccountId
 })
