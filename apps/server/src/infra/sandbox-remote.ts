@@ -1,4 +1,6 @@
-import { shellQuote, type SandboxProvider } from "@codevisor/sandboxes"
+import { shellQuote, type ExecResult, type SandboxProvider } from "@codevisor/sandboxes"
+
+import { stringField } from "../unknown-values.js"
 
 export const SANDBOX_SERVER_PORT = 49361
 
@@ -24,7 +26,7 @@ export const sandboxRemote = (
       timeoutMs: requestTimeoutMs
     })
     if (result.exitCode !== 0) {
-      throw new SandboxRemoteError(`${what} failed on the sandbox: ${result.stderr.trim()}`)
+      throw new SandboxRemoteError(`${what} failed on the sandbox: ${failureOf(result)}`)
     }
     return result.stdout
   }
@@ -40,6 +42,17 @@ export const sandboxRemote = (
     putBytes: async (path, bytes) => {
       await curl(bytesRequestScript(path), Buffer.from(bytes).toString("base64"), `PUT ${path}`)
     }
+  }
+}
+
+const failureOf = (result: ExecResult): string =>
+  [result.stderr.trim(), answeredError(result.stdout)].filter((part) => part !== "").join(": ")
+
+const answeredError = (stdout: string): string => {
+  try {
+    return stringField(JSON.parse(stdout), "error") ?? ""
+  } catch {
+    return ""
   }
 }
 

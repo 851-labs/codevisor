@@ -99,6 +99,8 @@ export const Sandbox = Schema.Struct({
   workspaceId: Schema.optional(Schema.String),
   workspaceName: Schema.optional(Schema.String),
   restoresWorkspace: Schema.optional(Schema.Boolean),
+  hasSavedWork: Schema.optional(Schema.Boolean),
+  workLost: Schema.optional(Schema.String),
   defersWorkspace: Schema.optional(Schema.Boolean),
   workspaceOpenedAt: Schema.optional(Schema.String),
   placeholderPending: Schema.optional(Schema.Boolean),

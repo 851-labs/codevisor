@@ -2,11 +2,13 @@ import type { Sandbox } from "@codevisor/api"
 
 import { createdHere, creatorOf } from "./sandbox-manager.js"
 import { OPTIONAL_LINKS, optionalLinks } from "./sandbox-profile-record.js"
+import { keptWorkOf, type KeptWork } from "./sandbox-saved-work.js"
 import type { SandboxDeps } from "./sandboxes.js"
 
 export interface RetiredWorkspace {
   readonly workspaceId: string
   readonly name: string
+  readonly kept?: KeptWork
 }
 
 const archivedRecord = (
@@ -23,7 +25,8 @@ const archivedRecord = (
   createdAt: machine.createdAt,
   createdOn: creatorOf(deps, machine),
   workspaceId: workspace.workspaceId,
-  workspaceName: workspace.name
+  workspaceName: workspace.name,
+  ...workspace.kept
 })
 
 export const leavePlaceholder = async (
@@ -42,7 +45,8 @@ export const adoptPlaceholders = async (deps: SandboxDeps): Promise<void> => {
     if (isPendingHere(deps, machine)) {
       await keepPlaceholder(deps, machine, {
         workspaceId: machine.workspaceId,
-        name: machine.workspaceName
+        name: machine.workspaceName,
+        kept: keptWorkOf(machine)
       })
     }
   }

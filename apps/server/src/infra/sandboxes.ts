@@ -46,6 +46,7 @@ import {
   requireOneWorkspace,
   restoredFields,
   restoreRequest,
+  restoringOf,
   retryRequest
 } from "./sandbox-requests.js"
 import type { RetainedAccounts } from "./sandbox-retained-accounts.js"
@@ -56,6 +57,7 @@ import {
   usingProvider,
   withDeletedProvider
 } from "./sandbox-retire.js"
+import { forgetBroughtBackWork, type SavedWorkStore } from "./sandbox-saved-work.js"
 import {
   makeSandboxSetupProgress,
   type SandboxSetupProgress,
@@ -95,6 +97,7 @@ export interface SandboxDeps {
     readonly keepArchived: (placeholder: ArchivedWorkspace) => Promise<boolean>
     readonly remove: (workspaceId: string) => Promise<void>
   }
+  readonly savedWork: SavedWorkStore
   readonly sync: (remote: SandboxRemote, firstHarness?: string) => Promise<OneWaySyncReport>
   readonly syncDeferred: (remote: SandboxRemote, order: AgentOrder) => Promise<void>
   readonly credentials: SandboxCredentials
@@ -206,7 +209,7 @@ export const makeSandboxes = (deps: SandboxDeps): Sandboxes => {
     const failed = await existingSandbox(deps, id)
     const request = retryRequest(failed)
     await deps.records.remove(id)
-    return create(request, publish).catch(async (cause: unknown) => {
+    return create(request, publish, restoringOf(failed)).catch(async (cause: unknown) => {
       await deps.records.put(failed)
       throw cause
     })
@@ -378,17 +381,13 @@ const provision = async (
   await record.advance({ state: "cloning" })
   checkpoint()
   setup.stage("clone")
-  const placed = await placeWorkspace(deps, { ...record.current(), ...joined }, git)
+  const host = { ...record.current(), ...joined }
+  const placed = await placeWorkspace(deps, host, { remote, setup, git })
   checkpoint()
-  const started = await startRequestedAgent(
-    deps,
-    remote,
-    { ...record.current(), ...joined },
-    placed,
-    setup
-  )
+  const started = await startRequestedAgent(deps, remote, host, placed, setup)
   setup.finish()
   await record.advance({ ...placed, ...started, state: "ready" })
+  await forgetBroughtBackWork(deps, record.current())
   return { remote, firstHarness }
 }
 

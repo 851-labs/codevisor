@@ -1,6 +1,9 @@
 import type { Sandbox, Project } from "@codevisor/api"
 
 import { cloneFailure, NO_GIT_ACCESS, type SandboxGitAccess } from "./sandbox-git.js"
+import type { SandboxRemote } from "./sandbox-remote.js"
+import { bringBackWork, startsOnNewBranch } from "./sandbox-saved-work.js"
+import type { SandboxSetupProgress } from "./sandbox-setup-log.js"
 import type { SandboxDeps } from "./sandboxes.js"
 
 export const SANDBOX_WORKSPACE_LABEL = "codevisor-sandbox"
@@ -17,14 +20,23 @@ export type RemoteWorkspace =
   | { readonly state: "missing" }
   | { readonly state: "active" | "archived"; readonly id: string; readonly name?: string }
 
+export interface WorkspaceSetup {
+  readonly remote: SandboxRemote
+  readonly setup: SandboxSetupProgress
+  readonly git?: SandboxGitAccess
+}
+
 export const placeWorkspace = async (
   deps: SandboxDeps,
   machine: Sandbox & { readonly machineId: string },
-  git: SandboxGitAccess = NO_GIT_ACCESS
+  { remote, setup, git = NO_GIT_ACCESS }: WorkspaceSetup
 ): Promise<PlacedWorkspace> => {
   const project = (await deps.projects.get(machine.projectId)) ?? requestedProject(machine)
 
   const remoteProjectId = await remoteProjectFor(deps, machine, project, git)
+  if (project.repoUrl !== undefined) {
+    await bringBackWork(deps, machine, { remote, setup, remoteProjectId })
+  }
   if (machine.restoresWorkspace === true && machine.workspaceId !== undefined) {
     return restoreWorkspace(deps, machine, remoteProjectId, machine.workspaceId)
   }
@@ -112,7 +124,7 @@ const remoteProjectFor = async (
 const cloneArguments = (machine: Sandbox, project: ProjectSource, repoUrl: string) => ({
   url: repoUrl,
   name: project.name,
-  startsOnNewBranch: machine.restoresWorkspace !== true,
+  startsOnNewBranch: startsOnNewBranch(machine),
   ...(project.worktreeBase === undefined ? {} : { worktreeBase: project.worktreeBase }),
   ...(project.defaultRunLocation === undefined
     ? {}

@@ -1,3 +1,7 @@
+import { mkdtempSync } from "node:fs"
+import { tmpdir } from "node:os"
+import { join } from "node:path"
+
 import type { CloudMachinePresence, GitSignIn, Project } from "@codevisor/api"
 import {
   makeFakeSandboxProvider,
@@ -12,7 +16,7 @@ import {
 import type { SyncEntryRecord } from "@codevisor/sync"
 
 import { run } from "../server-context.js"
-import { makeServices } from "../test-support.js"
+import { makeServices, tempDirs } from "../test-support.js"
 import { pushRemainingAgents } from "./sandbox-agents.js"
 import type { SandboxCatalogDeps } from "./sandbox-catalog.js"
 import { makeSandboxAdapters, makeSandboxConnections } from "./sandbox-connections.js"
@@ -20,6 +24,7 @@ import { makeSandboxCredentials } from "./sandbox-credentials.js"
 import { makeSandboxLocalWorkspaces } from "./sandbox-local-workspaces.js"
 import type { SandboxManagement } from "./sandbox-manager.js"
 import { makeRetainedAccounts } from "./sandbox-retained-accounts.js"
+import { makeSavedWorkStore } from "./sandbox-saved-work.js"
 import { makeSandboxSettings } from "./sandbox-settings.js"
 import { makeSandboxRecordStore } from "./sandbox-store.js"
 import { pushOneWaySync } from "./sandbox-sync.js"
@@ -81,7 +86,29 @@ export interface SharedSandboxWorld {
   readonly workspaces: RemoteWorkspace[]
 }
 
+const savedWorkDir = (): string => {
+  const dir = mkdtempSync(join(tmpdir(), "codevisor-sandbox-work-"))
+  tempDirs.push(dir)
+  return dir
+}
+
 export const ok = (stdout = "{}"): ExecResult => ({ exitCode: 0, stdout, stderr: "" })
+
+export const SAVED_WORK = {
+  branch: "codevisor/pear",
+  head: "1111111",
+  snapshot: "2222222",
+  bundle: "YnVuZGxl"
+}
+
+export const savesWork = (request: ExecRequest): boolean =>
+  request.script.includes("-X 'POST'") && request.script.includes("/saved-work'")
+
+export const restoresWork = (request: ExecRequest): boolean =>
+  request.script.includes("-X 'PUT'") && request.script.includes("/saved-work'")
+
+const savingWork = (request: ExecRequest): ExecResult =>
+  savesWork(request) ? ok(JSON.stringify(SAVED_WORK)) : ok()
 
 export const readyHarness =
   (harnessId: string) =>
@@ -114,7 +141,7 @@ export const sandboxHarness = async (options: SandboxHarnessOptions = {}) => {
       return bootstrapRun(options, presences, request.script)
     }
     curls.push(request)
-    return options.onCurl?.(request) ?? ok()
+    return options.onCurl?.(request) ?? savingWork(request)
   }
   const fake: FakeSandboxProvider = makeFakeSandboxProvider({
     onExec,
@@ -227,6 +254,7 @@ export const sandboxHarness = async (options: SandboxHarnessOptions = {}) => {
         return Promise.resolve()
       }
     }),
+    savedWork: makeSavedWorkStore(savedWorkDir()),
     sync: (remote, firstHarness) => pushOneWaySync({ db: services.db }, remote, firstHarness),
     syncDeferred: (remote, order) =>
       pushRemainingAgents({ db: services.db }, remote, order, {
