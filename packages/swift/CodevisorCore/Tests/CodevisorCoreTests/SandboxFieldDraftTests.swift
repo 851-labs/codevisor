@@ -5,7 +5,7 @@ import Testing
 
 @Suite("Sandbox fields while they are filled in")
 struct SandboxFieldDraftTests {
-  @Test("An empty optional field says so, and one with a default or an example shows that instead")
+  @Test("An empty field says whether it is optional or required, unless it has a default or an example to show")
   func emptyPrompts() {
     let optional = ServerSandboxField(key: "snapshot", label: "Snapshot", type: .string, placeholder: "us")
     let defaulted = ServerSandboxField(key: "image", label: "Image", type: .string, defaultValue: .string("debian"))
@@ -13,7 +13,10 @@ struct SandboxFieldDraftTests {
 
     #expect(optional.emptyPrompt == "Optional")
     #expect(defaulted.emptyPrompt == "debian")
+    let bare = ServerSandboxField(key: "token", label: "Token", type: .secret, required: true)
+
     #expect(required.emptyPrompt == "https://…")
+    #expect(bare.emptyPrompt == "Required")
   }
 
   @Test("A field another field replaces is named as coming from it only while that field is filled in")

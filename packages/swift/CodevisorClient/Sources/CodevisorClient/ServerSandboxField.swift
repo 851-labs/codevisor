@@ -42,7 +42,7 @@ public struct ServerSandboxField: Decodable, Equatable, Hashable, Sendable, Iden
 
   public var emptyPrompt: String {
     if !required, defaultValue == nil { return "Optional" }
-    return placeholder ?? defaultValue?.text ?? ""
+    return placeholder ?? defaultValue?.text ?? "Required"
   }
 
   public var awaitsChoices: Bool { type == .choice && choices == nil }

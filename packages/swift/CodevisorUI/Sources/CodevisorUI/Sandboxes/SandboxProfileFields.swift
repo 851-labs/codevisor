@@ -30,7 +30,7 @@ struct SandboxProfileFields<Footer: View>: View {
   var body: some View {
     Section {
       SandboxFieldNotes(error: model.error(on: SandboxProfileDraft.nameKey)) {
-        SandboxTextInput(label: "Name", prompt: "", text: $draft.name, onCommit: onCommit)
+        SandboxTextInput(label: "Name", prompt: "Required", text: $draft.name, onCommit: onCommit)
       }
       ForEach(vendor.profileFields) { field in
         SandboxFieldRow(
