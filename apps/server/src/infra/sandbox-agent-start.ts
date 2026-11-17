@@ -40,6 +40,7 @@ const startArguments = (agent: SandboxAgentStart, project: string) => ({
   prompt: agent.prompt,
   title: agent.title,
   checkout: "project",
+  standalone: true,
   harness: agent.harness,
   project,
   ...(agent.model === undefined ? {} : { model: agent.model }),

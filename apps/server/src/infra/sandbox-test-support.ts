@@ -171,10 +171,10 @@ export const sandboxHarness = async (options: SandboxHarnessOptions = {}) => {
     services.db.createProject({ folderPath: "/fixture/sandbox", name: "codevisor" })
   )
   const projectLookup = {
-    get: (id: string) =>
-      Promise.resolve(
-        id === project.id || id === stored.id ? { ...project, id: stored.id } : undefined
-      )
+    get: async (id: string) => {
+      if (id === project.id || id === stored.id) return { ...project, id: stored.id }
+      return (await run(services.db.listProjects)).find((candidate) => candidate.id === id)
+    }
   }
   const deps: SandboxDeps = {
     records,

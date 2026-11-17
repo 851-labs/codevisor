@@ -106,19 +106,14 @@ describe("POST /v1/agents with checkout none", () => {
     expect(scratchFolders()).toEqual([])
   })
 
-  it("refuses a project or sandbox alongside checkout none before making a folder", async () => {
+  it("refuses a project alongside checkout none before making a folder", async () => {
     const { startAgent } = await machine()
 
     const withProject = await startAgent({ harness: "codex", checkout: "none", project: "x" })
-    const withSandbox = await startAgent({ harness: "codex", checkout: "none", sandbox: "x" })
 
     expect(withProject).toMatchObject({
       status: 422,
       body: { error: expect.stringContaining("not both") }
-    })
-    expect(withSandbox).toMatchObject({
-      status: 422,
-      body: { error: expect.stringContaining("sandbox") }
     })
     expect(scratchFolders()).toEqual([])
   })

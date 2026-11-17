@@ -60,13 +60,28 @@ struct SandboxFailedSendTests {
     #expect(controller.composerText == "Which machine are you running on?")
   }
 
+  @Test("A chat with no project gets its folder, then asks for a sandbox with nothing to clone")
+  func noProjectChatAsksForASandbox() async throws {
+    let client = FailingSandboxServerClient()
+    let controller = makeController(client: client)
+    controller.project = .runTargetPlaceholder(serverId: "local")
+
+    await controller.send()
+    await awaitObserved { controller.status == .failed("Couldn't connect to the dev cloud") }
+
+    let request = try #require(client.requests.last)
+    #expect(request.projectId == FailingSandboxServerClient.scratchId)
+    #expect(request.repoUrl == nil)
+    #expect(controller.project.isScratch)
+  }
+
   @Test("A worktree that fails on the started sandbox keeps the chat and its steps, and Try Again tries it again")
   func worktreeFailureOnTheSandboxKeepsTheChat() async throws {
     let client = FailingSandboxServerClient()
     let controller = makeController(client: client)
     controller.sandboxTarget = nil
     controller.wantsNewWorktree = true
-    var connected = SandboxSetupSteps(target: .tartVM, projectName: "hello-world").phase(.connect)
+    var connected = SandboxSetupSteps(target: .tartVM, clonedProjectName: "hello-world").phase(.connect)
     connected.succeed()
     controller.beginSetupPhase(connected)
 
@@ -128,6 +143,10 @@ private final class FailingSandboxServerClient: CodevisorServerClienting, @unche
   private let refusal: CodevisorServerClientError?
   private let lock = NSLock()
   private var created: [String] = []
+  private var asked: [ServerSandboxRequest] = []
+  static let scratchId = UUID()
+
+  var requests: [ServerSandboxRequest] { lock.withLock { asked } }
 
   init(state: String = "failed", refusal: CodevisorServerClientError? = nil) {
     self.state = state
@@ -135,6 +154,7 @@ private final class FailingSandboxServerClient: CodevisorServerClienting, @unche
   }
 
   func createSandbox(_ request: ServerSandboxRequest) async throws -> ServerSandbox {
+    lock.withLock { asked.append(request) }
     creates.signal()
     if let refusal { throw refusal }
     lock.withLock { created.append(request.id) }
@@ -156,6 +176,12 @@ private final class FailingSandboxServerClient: CodevisorServerClienting, @unche
   }
 
   func destroySandbox(id: String) async throws {}
+
+  func createScratchProject(id: UUID) async throws -> ServerProject {
+    ServerProject(
+      id: Self.scratchId.uuidString, name: "amber-fox", origin: .codevisor, createdAt: "2026-10-27T00:00:00.000Z",
+      locations: [], isScratch: true)
+  }
 
   func info() async throws -> ServerInfo {
     ServerInfo(id: "local", name: "Local", kind: "local", version: "0.1.0", platform: "darwin", bindHost: "0.0.0.0")

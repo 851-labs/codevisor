@@ -128,7 +128,7 @@ The CLI does the same things through the same routes: `codevisor machines add|in
   - A ready sandbox has `machineId` (use it with `machines.get(machineId)`), `remoteProjectId` and `workspaceId`; a failed one has `error`.
   - `sandboxes.get({ sandboxId })` reads it without waiting, `sandboxes.log({ sandboxId, last? })` reads its start log, `sandboxes.retry({ sandboxId })` starts a failed one again, and `sandboxes.list()` lists them all.
   - Archiving its workspace, or `sandboxes.destroy({ sandboxId, confirm })`, deletes the vendor's machine. Unpushed work is lost, so confirm with the user first.
-- **An agent on a new sandbox:** `agents.start({ sandbox, project, harness?, title, prompt })` creates the sandbox and starts the agent there once it's ready (see `codevisor-agents`).
+- **An agent on a new sandbox:** `agents.start({ sandbox, project, harness?, title, prompt })` creates the sandbox and starts the agent there once it's ready (see `codevisor-agents`). Pass `checkout: "none"` instead of `project` for a chat with no project. On a sandbox that already runs, `agents.start({ machine, checkout: "none", … })` works like on any machine.
 - Sandboxes and `machines.*` are shared by all your machines, so they take no `machine`.
 
 ```js

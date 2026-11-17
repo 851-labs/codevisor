@@ -24,12 +24,12 @@ public enum SandboxSetupUpdate: Equatable, Sendable {
 
 public struct SandboxSetupSteps: Sendable {
   public let target: SandboxTarget
-  public let projectName: String
+  public let clonedProjectName: String?
   public var agentName: String
 
-  public init(target: SandboxTarget, projectName: String, agentName: String = "the agent") {
+  public init(target: SandboxTarget, clonedProjectName: String?, agentName: String = "the agent") {
     self.target = target
-    self.projectName = projectName
+    self.clonedProjectName = clonedProjectName
     self.agentName = agentName
   }
 
@@ -95,10 +95,15 @@ public struct SandboxSetupSteps: Sendable {
     case .install: titled("Installing", "Installed", "install", "Codevisor")
     case .signIn: titled("Signing in to", "Signed in to", "sign in to", "Codevisor")
     case .sync: titled("Syncing", "Synced", "sync", "your setup")
-    case .clone: titled("Cloning", "Cloned", "clone", projectName)
+    case .clone: cloneTitles
     case .connect: titled("Connecting to", "Connected to", "connect to", target.machineNoun)
     case .agent: titled("Preparing", "Prepared", "prepare", agentName)
     }
+  }
+
+  private var cloneTitles: Titles {
+    guard let clonedProjectName else { return titled("Preparing", "Prepared", "prepare", "the folder") }
+    return titled("Cloning", "Cloned", "clone", clonedProjectName)
   }
 
   private func titled(_ active: String, _ completed: String, _ verb: String, _ object: String) -> Titles {

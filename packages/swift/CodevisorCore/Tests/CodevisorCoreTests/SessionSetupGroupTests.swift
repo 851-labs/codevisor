@@ -5,7 +5,7 @@ import Testing
 
 @Suite("The sandbox's start steps fold into one disclosure")
 struct SessionSetupGroupTests {
-  private let steps = SandboxSetupSteps(target: .tartVM, projectName: "hello-world")
+  private let steps = SandboxSetupSteps(target: .tartVM, clonedProjectName: "hello-world")
   private let start = Date(timeIntervalSince1970: 1_000)
 
   @Test("Sandbox steps fold into one group ahead of other setup, which stays on its own")

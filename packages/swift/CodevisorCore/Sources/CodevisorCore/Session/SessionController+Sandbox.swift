@@ -17,14 +17,7 @@ extension SessionController {
 
   func createRequestedSandbox(showsSetupPhases: Bool) async -> String? {
     guard let sandboxTarget else { return nil }
-    return await sandboxFailure(sandboxTarget, showsSetupPhases: showsSetupPhases)
-  }
-
-  private func sandboxFailure(_ target: SandboxTarget, showsSetupPhases: Bool) async -> String? {
-    if project.isScratch || project.isRunTargetPlaceholder {
-      return "Choose a project to run on a \(target.machineNoun)."
-    }
-    return await startSandbox(target, showsSetupPhases: showsSetupPhases)
+    return await startSandbox(sandboxTarget, showsSetupPhases: showsSetupPhases)
   }
 
   private func startSandbox(_ target: SandboxTarget, showsSetupPhases: Bool) async -> String? {
@@ -80,7 +73,11 @@ extension SessionController {
   }
 
   private func sandboxSteps(for target: SandboxTarget) -> SandboxSetupSteps {
-    SandboxSetupSteps(target: target, projectName: project.name, agentName: selectedHarness?.name ?? "the agent")
+    SandboxSetupSteps(
+      target: target,
+      clonedProjectName: project.repoUrl == nil ? nil : project.name,
+      agentName: selectedHarness?.name ?? "the agent"
+    )
   }
 
   private func awaitSandbox(
@@ -247,7 +244,7 @@ extension SessionController {
   ) async throws -> Project {
     let projects = try await client.listProjects()
     guard let match = projects.first(where: { $0.id.lowercased() == projectId.lowercased() }) else {
-      throw SandboxSetupError(message: "The cloned project isn't on the sandbox")
+      throw SandboxSetupError(message: "The chat's folder isn't on the sandbox")
     }
     return try match.project(serverId: machineId)
   }

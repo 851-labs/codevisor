@@ -375,12 +375,17 @@ describe("POST /v1/agents", () => {
 
     const missing = await startAgent({ checkout: undefined })
     const both = await startAgent({ sandbox: "small" })
+    const folder = await startAgent({ sandbox: "small", checkout: "project" })
 
     expect(missing).toMatchObject({
       status: 422,
       body: { error: 'Pass checkout: "worktree", "shared", "project", or "none"' }
     })
     expect(both).toMatchObject({ status: 422, body: { error: expect.stringContaining("sandbox") } })
+    expect(folder).toMatchObject({
+      status: 422,
+      body: { error: expect.stringContaining("sandbox") }
+    })
     expect(await state()).toEqual(before)
   })
 })
