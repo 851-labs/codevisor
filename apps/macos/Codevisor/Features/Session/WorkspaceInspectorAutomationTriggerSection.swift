@@ -8,37 +8,56 @@ struct WorkspaceInspectorAutomationTriggerSection: View {
   let client: any CodevisorServerClienting
 
   var body: some View {
-    Section {
-      if !event.isSchedule {
-        LabeledContent("Event") {
-          WorkspaceInspectorAutomationSource(event: event, serverId: serverId, client: client)
-        }
-      }
-      WorkspaceInspectorAutomationDetailRow(title: triggerTitle, detail: event.explained)
-      if let firesAt = event.firesAt {
-        WorkspaceInspectorAutomationNextRun(firesAt: firesAt)
-      }
+    if event.isSchedule {
+      WorkspaceInspectorAutomationScheduleSection(event: event)
+    } else {
+      WorkspaceInspectorAutomationPluginTriggerSection(event: event, serverId: serverId, client: client)
     }
-  }
-
-  private var triggerTitle: String {
-    event.isSchedule ? "Schedule" : "When"
   }
 }
 
-private struct WorkspaceInspectorAutomationDetailRow: View {
-  let title: String
-  let detail: String
+private struct WorkspaceInspectorAutomationScheduleSection: View {
+  let event: SubscribedPluginEvent
+
+  var body: some View {
+    Section("Schedule") {
+      Text(event.explained)
+        .textSelection(.enabled)
+        .accessibilityLabel("Schedule")
+        .accessibilityValue(event.explained)
+      WorkspaceInspectorAutomationNextRun(event: event)
+    }
+  }
+}
+
+private struct WorkspaceInspectorAutomationPluginTriggerSection: View {
+  let event: SubscribedPluginEvent
+  let serverId: String
+  let client: any CodevisorServerClienting
+
+  var body: some View {
+    Section("Trigger") {
+      LabeledContent("Event") {
+        WorkspaceInspectorAutomationSource(event: event, serverId: serverId, client: client)
+      }
+      WorkspaceInspectorAutomationCondition(condition: event.explained)
+      WorkspaceInspectorAutomationNextRun(event: event)
+    }
+  }
+}
+
+private struct WorkspaceInspectorAutomationCondition: View {
+  let condition: String
 
   var body: some View {
     VStack(alignment: .leading, spacing: 2) {
-      Text(title)
+      Text("When")
         .accessibilityHidden(true)
-      Text(detail)
+      Text(condition)
         .foregroundStyle(.secondary)
         .textSelection(.enabled)
-        .accessibilityLabel(title)
-        .accessibilityValue(detail)
+        .accessibilityLabel("When")
+        .accessibilityValue(condition)
     }
   }
 }
@@ -58,17 +77,27 @@ private struct WorkspaceInspectorAutomationSource: View {
 }
 
 private struct WorkspaceInspectorAutomationNextRun: View {
-  let firesAt: Date
+  let event: SubscribedPluginEvent
 
   var body: some View {
-    LabeledContent("Next run") {
-      TimelineView(.periodic(from: .now, by: 1)) { context in
-        VStack(alignment: .trailing) {
+    if let firesAt = event.firesAt {
+      LabeledContent("Next run") {
+        TimelineView(.periodic(from: .now, by: 1)) { context in
           Text(SubscriptionCountdown.text(until: firesAt, now: context.date))
-          Text(firesAt.formatted(date: .abbreviated, time: .shortened))
-            .foregroundStyle(.secondary)
+            .lineLimit(1)
         }
       }
+      .help(dateTooltip(for: firesAt))
     }
+  }
+
+  private var scheduleShowsDate: Bool {
+    event.isSchedule && event.once
+  }
+
+  private func dateTooltip(for firesAt: Date) -> String {
+    guard !scheduleShowsDate else { return "" }
+
+    return firesAt.formatted(date: .abbreviated, time: .shortened)
   }
 }

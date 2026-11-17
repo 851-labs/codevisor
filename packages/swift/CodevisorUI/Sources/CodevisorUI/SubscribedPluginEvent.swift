@@ -11,6 +11,7 @@ public struct SubscribedPluginEvent: Equatable, Identifiable, Sendable {
   public let firesAt: Date?
   public let note: String?
   public let explained: String
+  public let once: Bool
 
   public var label: String { "\(pluginName) · \(title)" }
   public var isSchedule: Bool { plugin == Self.clockPlugin }
@@ -27,5 +28,6 @@ public struct SubscribedPluginEvent: Equatable, Identifiable, Sendable {
     firesAt = subscription.firesAt.flatMap { try? ServerDateCoding.date(from: $0) }
     note = subscription.note
     explained = subscription.explained
+    once = subscription.once
   }
 }
