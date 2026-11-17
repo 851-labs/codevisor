@@ -33,6 +33,7 @@ struct WorkspaceDeck<Page: View>: View {
       syncActivities(active: slot)
       guard let active, let slot else { return }
       focusAnchor.releaseFocus()
+      if !history.pages.contains(where: { $0.id == slot }) { NavigationSwitchTrace.shared.note("builtPage") }
       history.show(active, in: slot)
     }
   }

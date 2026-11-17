@@ -23,6 +23,13 @@ public enum TranscriptPerformanceTrace {
     writer.queue.async { writer.append(record) }
   }
 
+  public static func record(_ name: String, durationMS: Double, values: @autoclosure () -> [String: Double] = [:]) {
+    guard isEnabled else { return }
+    let record = Record(
+      name: name, time: Double(DispatchTime.now().uptimeNanoseconds) / 1e9, durationMS: durationMS, values: values())
+    writer.queue.async { writer.append(record) }
+  }
+
   private struct Record: Encodable, Sendable {
     let name: String
     let time: Double
