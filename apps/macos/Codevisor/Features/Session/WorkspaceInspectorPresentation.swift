@@ -57,8 +57,9 @@ struct WorkspaceInspectorPresentation: ViewModifier {
   var idealInspectorWidth: CGFloat = 260
 
   func body(content: Content) -> some View {
-    let showsDocked = inspects && isPresented && panelLayout.docksInspector
-    let inspected = showsDocked || (inspects && opensDrawer) ? inspectedWorkspace : nil
+    let opensDocked = isPresented && panelLayout.docksInspector
+    let inspected = inspects && (opensDocked || opensDrawer) ? inspectedWorkspace : nil
+    let showsDocked = inspected != nil && opensDocked
     let showsDrawer = inspected != nil && opensDrawer
     let isVisible = panelLayout.docksInspector ? isPresented : showsDrawer
     let visibleTab = inspected.map { shownTab(for: $0) } ?? tab
