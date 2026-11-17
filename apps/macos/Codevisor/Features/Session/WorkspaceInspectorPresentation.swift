@@ -69,7 +69,8 @@ struct WorkspaceInspectorPresentation: ViewModifier {
         )
       ) {
         if let store, let inspected {
-          inspectorView(store, inspected)
+          FrozenWhileHidden(isShown: isPresented && panelLayout.docksInspector) { inspectorView(store, inspected) }
+            .equatable()
             .inspectorColumnWidth(min: 220, ideal: idealInspectorWidth, max: 400)
             .toolbar {
               ToolbarSpacer(.flexible)
