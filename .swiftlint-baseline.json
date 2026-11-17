@@ -1595,7 +1595,7 @@
       "location": {
         "character": 10,
         "file": "packages/swift/CodevisorUI/Sources/CodevisorUI/Transcript/SendMotion/TranscriptSendTransitions.swift",
-        "line": 215
+        "line": 185
       },
       "reason": "Function body should span 50 lines or less excluding comments and whitespace: currently spans 63 lines",
       "ruleDescription": "Function bodies should not span too many lines",

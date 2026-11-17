@@ -1,12 +1,5 @@
 import { AgentRuntimeError, harnessFailureKind, plainFailureText } from "@codevisor/agent-runtime"
-import {
-  sentByAgentOf,
-  type AttachmentRef,
-  type ConnectedClient,
-  type EventEnvelope,
-  type PromptOrigin,
-  type PromptSource
-} from "@codevisor/api"
+import { type ConnectedClient, type EventEnvelope, type PromptQueueItem } from "@codevisor/api"
 import { Effect } from "effect"
 
 import {
@@ -33,7 +26,7 @@ import { steerClaimedPrompt } from "./prompt-steering.js"
 import { beginPromptTurn, recordTurnStart } from "./prompt-turn.js"
 import { ensureAgentSessionFor } from "./session-workspace.js"
 import { pausedForUpdate, sessionHarnessId } from "./update-pause-gate.js"
-import { recordUserPrompt } from "./user-prompts.js"
+import { queuedPrompt, recordUserPrompt } from "./user-prompts.js"
 
 export const hasLiveTurn = (routeState: RouteState, sessionId: string): boolean =>
   routeState.activePromptSessions.has(sessionId) || routeState.activeTurnSessions.has(sessionId)
@@ -229,14 +222,8 @@ export const drainPromptQueue = async (
         fanout,
         serverId,
         sessionId,
-        item.id,
-        item.text,
-        item.attachments,
-        item.clientId === undefined
-          ? undefined
-          : { clientId: item.clientId, platform: clientPlatform(routeState, item.clientId) },
-        item.origin,
-        { attribution: item.attribution, sentByAgent: sentByAgentOf(item) }
+        item,
+        queuedClient(routeState, item)
       )
       await run(services.db.completePromptQueueItem(sessionId, item.id))
     }
@@ -321,6 +308,11 @@ const steerPendingPrompts = async (
   }
 }
 
+interface PromptClient {
+  readonly clientId: string
+  readonly platform: ConnectedClient["platform"] | undefined
+}
+
 const clientPlatform = (
   routeState: RouteState,
   clientId: string
@@ -329,29 +321,22 @@ const clientPlatform = (
     .list()
     .find((client) => client.clientId.toLowerCase() === clientId.toLowerCase())?.platform
 
+const queuedClient = (routeState: RouteState, item: PromptQueueItem): PromptClient | undefined =>
+  item.clientId === undefined
+    ? undefined
+    : { clientId: item.clientId, platform: clientPlatform(routeState, item.clientId) }
+
 const runPromptInBackground = async (
   services: CodevisorServerServices,
   fanout: EventFanout,
   serverId: string,
   sessionId: string,
-  queueItemId: string,
-  text: string,
-  attachments?: ReadonlyArray<AttachmentRef>,
-  client?: {
-    readonly clientId: string
-    readonly platform: ConnectedClient["platform"] | undefined
-  },
-  origin?: PromptOrigin,
-  source: PromptSource = {}
+  item: PromptQueueItem,
+  client: PromptClient | undefined
 ): Promise<void> => {
   try {
     await recordUserPrompt(services, fanout, serverId, sessionId, {
-      messageId: queueItemId,
-      text,
-      attachments,
-      origin,
-      attribution: source.attribution,
-      sentByAgent: source.sentByAgent,
+      ...queuedPrompt(item),
       startsTurn: true
     })
     if (client === undefined) {
@@ -368,9 +353,9 @@ const runPromptInBackground = async (
       services,
       sessionId,
       {
-        text,
-        ...(attachments === undefined ? {} : { attachments }),
-        ...(origin === undefined ? {} : { origin })
+        text: item.text,
+        ...(item.attachments === undefined ? {} : { attachments: item.attachments }),
+        ...(item.origin === undefined ? {} : { origin: item.origin })
       },
       agentSession.skills
     )

@@ -9,9 +9,16 @@ enum TranscriptBotTimedRows {
 
   static func entries(in input: TranscriptProjectionInput, spacingAfter: CGFloat) -> [Entry] {
     let items = input.settledConversation + [input.activeItem].compactMap(\.self)
-    return items.indices.flatMap { index in
+    let entries = items.indices.flatMap { index in
       entries(for: items[index], startingTurnAt: nextTurnStart(after: index, in: items), spacingAfter: spacingAfter)
     }
+    return inAskedOrder(entries)
+  }
+
+  private static func inAskedOrder(_ entries: [Entry]) -> [Entry] {
+    let asked = entries.compactMap { entry in entry.askedAt.map { (askedAt: $0, entry: entry) } }
+    let unasked = entries.filter { $0.askedAt == nil }
+    return asked.sorted { $0.askedAt < $1.askedAt }.map(\.entry) + unasked
   }
 
   private static func entries(
@@ -20,9 +27,9 @@ enum TranscriptBotTimedRows {
     -> [Entry]
   {
     switch item {
-    case .user:
+    case let .user(event):
       let row = TranscriptEventRowProjection.botFeedRow(for: item, spacingAfter: spacingAfter)
-      return row.map { [Entry(askedAt: turnStart, row: $0)] } ?? []
+      return row.map { [Entry(askedAt: event.sentAt ?? turnStart, row: $0)] } ?? []
     case let .assistant(message):
       return bubbleRows(message.turn, spacingAfter: spacingAfter).map { Entry(askedAt: message.turn.endedAt, row: $0) }
     }

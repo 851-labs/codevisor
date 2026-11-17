@@ -138,4 +138,16 @@ final class TranscriptSendMorph {
     }
     CATransaction.commit()
   }
+
+  func ride(by delta: CGSize, spring: TranscriptSpring) {
+    serial &+= 1
+    end = end.offsetBy(dx: delta.width, dy: delta.height)
+    CATransaction.begin()
+    CATransaction.setDisableActions(true)
+    pill.setTranscriptSendFrame(pill.frame.offsetBy(dx: delta.width, dy: delta.height))
+    pill.transcriptSendLayer?.add(
+      TranscriptSendLayerAnimations.translation(CGSize(width: -delta.width, height: -delta.height), spring: spring),
+      forKey: "codevisor.send-morph.ride.\(serial)")
+    CATransaction.commit()
+  }
 }

@@ -19,6 +19,7 @@ export interface RecordedPrompt {
   readonly origin: PromptOrigin | undefined
   readonly attribution?: PromptAttribution | undefined
   readonly sentByAgent?: AgentRef | undefined
+  readonly sentAt?: string
   readonly startsTurn: boolean
 }
 
@@ -41,6 +42,7 @@ export const recordUserPrompt = (
       payload: {
         role: "user",
         messageId,
+        sentAt: prompt.sentAt ?? new Date().toISOString(),
         ...(startsTurn ? { startsTurn: true } : {}),
         text,
         ...(refs.length === 0 ? {} : { attachments: refs }),
@@ -53,12 +55,13 @@ export const recordUserPrompt = (
   )
 }
 
-export const steeredPrompt = (item: PromptQueueItem): RecordedPrompt => ({
+export const queuedPrompt = (item: PromptQueueItem): RecordedPrompt => ({
   messageId: item.id,
   text: item.text,
   attachments: item.attachments,
   origin: item.origin,
   attribution: item.attribution,
   sentByAgent: sentByAgentOf(item),
+  sentAt: item.createdAt,
   startsTurn: false
 })

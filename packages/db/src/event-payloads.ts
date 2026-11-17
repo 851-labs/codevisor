@@ -134,9 +134,10 @@ export const conversationEventPayload = (
       readonly origin?: "event"
       readonly attribution?: PromptAttribution
       readonly sentByAgent?: AgentRef
+      readonly sentAt?: string
     }
   | undefined => {
-  const { role, text: directText, messageId, attachments, origin } = payload
+  const { role, text: directText, messageId, attachments, origin, sentAt } = payload
   const attribution = attributionFrom(payload.attribution)
   const sentByAgent = sentByAgentOf(payload)
   if (
@@ -152,7 +153,8 @@ export const conversationEventPayload = (
       ...(attachments === undefined ? {} : { attachments }),
       ...(origin === "event" ? { origin } : {}),
       ...(attribution === undefined ? {} : { attribution }),
-      ...(sentByAgent === undefined ? {} : { sentByAgent })
+      ...(sentByAgent === undefined ? {} : { sentByAgent }),
+      ...(typeof sentAt === "string" ? { sentAt } : {})
     }
   }
   if (

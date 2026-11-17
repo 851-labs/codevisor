@@ -48,9 +48,7 @@ enum BotConversationTimeline {
   private static func delivering(
     _ delivery: TranscriptDelivery, _ shown: TranscriptBotMessage
   ) -> TranscriptBotMessage {
-    TranscriptBotMessage(
-      id: shown.id, sender: shown.sender, text: shown.text, attachments: shown.attachments, sentAt: shown.sentAt,
-      delivery: delivery)
+    shown.withDelivery(delivery)
   }
 
   private static func key(_ entry: UnsentBotMessage) -> String {

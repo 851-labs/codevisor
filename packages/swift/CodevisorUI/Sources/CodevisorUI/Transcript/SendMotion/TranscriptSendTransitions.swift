@@ -33,36 +33,6 @@ extension TranscriptSendTransitionAdapter {
 public final class TranscriptSendTransitions<Adapter: TranscriptSendTransitionAdapter> {
   public typealias Host = Adapter.Host
 
-  private enum Phase {
-    case awaitingRow
-    case awaitingFlight(mountedAt: CFTimeInterval)
-    case flying(TranscriptSendFlight)
-    case lifting
-    case landed
-  }
-
-  private struct Entry {
-    let request: UserSendAnimationRequest
-    let rowKey: String
-    let startedAt: CFTimeInterval
-    var phase: Phase
-    var isClaimed = false
-    var didNotifyStart = false
-    var didNotifyCompletion = false
-
-    var isLanded: Bool {
-      if case .landed = phase { return true }
-      return false
-    }
-
-    var hidesRow: Bool {
-      switch phase {
-      case .awaitingFlight, .flying: true
-      case .awaitingRow, .lifting, .landed: false
-      }
-    }
-  }
-
   public weak var adapter: Adapter?
   public var session: ObjectIdentifier? {
     didSet {
@@ -83,7 +53,7 @@ public final class TranscriptSendTransitions<Adapter: TranscriptSendTransitionAd
   public var onStarted: (@MainActor (UserSendAnimationRequest) -> Void)?
   public var onCompleted: (@MainActor (UserSendAnimationRequest) -> Void)?
 
-  private var entries: [Entry] = []
+  private var entries: [TranscriptSendEntry] = []
   private var receivedToken: UInt64?
   private var shifts: [(shift: TranscriptSendShift, members: Int)] = []
   private var shiftSerial: UInt64 = 0
@@ -102,7 +72,7 @@ public final class TranscriptSendTransitions<Adapter: TranscriptSendTransitionAd
     guard let request, isForeground else { return }
     let rowKey = TranscriptVirtualRow.ID.message(request.messageID).layoutKey
     entries.append(
-      Entry(request: request, rowKey: rowKey, startedAt: CACurrentMediaTime(), phase: .awaitingRow))
+      TranscriptSendEntry(request: request, rowKey: rowKey, startedAt: CACurrentMediaTime(), phase: .awaitingRow))
     if reduceMotion {
       if let session { TranscriptSendStaging.shared.cancel(session: session) }
       finish(index: entries.count - 1, claimIfNeeded: true)
@@ -243,7 +213,7 @@ public final class TranscriptSendTransitions<Adapter: TranscriptSendTransitionAd
       if pushed != nil {
         host.transcriptSendLayer?.removeAnimation(forKey: TranscriptSendAnimationKeys.push)
       }
-      if entries.contains(where: { $0.rowKey == key && $0.hidesRow }) {
+      if movesWithContent(key, previous: before[key]) {
         hiddenRows.append(host)
         continue
       }
@@ -277,6 +247,12 @@ public final class TranscriptSendTransitions<Adapter: TranscriptSendTransitionAd
     }
     CATransaction.commit()
     advance()
+  }
+
+  private func movesWithContent(_ key: String, previous: CGFloat?) -> Bool {
+    entries.contains { entry in
+      entry.rowKey == key && entry.hidesRow && (previous == nil || entry.ridesCarrier)
+    }
   }
 
   public func advance() {

@@ -39,20 +39,21 @@ public struct TranscriptBotMessage: Identifiable, Equatable, Sendable {
   public let isTranscriptMarkdown: Bool
   public let app: CodevisorExecutionApp?
   public let author: TranscriptBotAuthor?
+  public let localSentAt: Date?
 
   public init(
     id: String, sender: Sender, text: String, attachments: [Attachment] = [], sentAt: Date? = nil,
-    delivery: TranscriptDelivery? = nil, author: TranscriptBotAuthor? = nil
+    delivery: TranscriptDelivery? = nil, author: TranscriptBotAuthor? = nil, localSentAt: Date? = nil
   ) {
     self.init(
       id: id, sender: sender, text: text, attachments: attachments, sentAt: sentAt, delivery: delivery, files: [],
-      isTranscriptMarkdown: false, author: author)
+      isTranscriptMarkdown: false, author: author, localSentAt: localSentAt)
   }
 
   init(
     id: String, sender: Sender, text: String, attachments: [Attachment], sentAt: Date?,
     delivery: TranscriptDelivery?, files: [PreviewFile], isTranscriptMarkdown: Bool, app: CodevisorExecutionApp? = nil,
-    author: TranscriptBotAuthor? = nil
+    author: TranscriptBotAuthor? = nil, localSentAt: Date? = nil
   ) {
     self.id = id
     self.sender = sender
@@ -64,12 +65,15 @@ public struct TranscriptBotMessage: Identifiable, Equatable, Sendable {
     self.isTranscriptMarkdown = isTranscriptMarkdown
     self.app = app
     self.author = author
+    self.localSentAt = localSentAt
   }
+
+  public var moment: Date? { sentAt ?? localSentAt }
 
   public func withDelivery(_ delivery: TranscriptDelivery?) -> TranscriptBotMessage {
     TranscriptBotMessage(
       id: id, sender: sender, text: text, attachments: attachments, sentAt: sentAt, delivery: delivery, files: files,
-      isTranscriptMarkdown: isTranscriptMarkdown, app: app, author: author)
+      isTranscriptMarkdown: isTranscriptMarkdown, app: app, author: author, localSentAt: localSentAt)
   }
 }
 

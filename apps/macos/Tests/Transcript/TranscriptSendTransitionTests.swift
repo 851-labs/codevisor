@@ -150,6 +150,43 @@ struct TranscriptSendTransitionTests {
     #expect(bubble.isDescendant(of: view.transcriptDocumentView))
   }
 
+  @Test("A row that moves under its flying bubble takes the bubble with it on the transcript's own spring")
+  func movedRowCarriesItsFlyingBubble() throws {
+    let fixture = SendFixture(bubbleRows: true)
+    defer { fixture.tearDown() }
+    let view = fixture.view
+    let session = ObjectIdentifier(fixture)
+    view.sendTransitions.session = session
+    TranscriptSendStaging.shared.stage(
+      session: session, textView: fixture.editor, textRect: fixture.editor.bounds, lineHeight: 17,
+      bubble: .gray)
+    view.sendTransitions.receive(fixture.request, isForeground: true)
+    view.sendTransitions.startReadyFlights()
+    let row = try #require(view.mountedHosts[fixture.userRow.layoutKey])
+    let pill = try #require(fixture.track().subviews.first)
+    let rowBefore = view.sendTransitionScreenY(of: row)
+    let pillBefore = pill.frame
+    let bubbleSprings = springs(on: pill, matching: TranscriptSendMotion.bubble)
+
+    let status = TranscriptVirtualRow(id: .startingAgent, content: .startingAgent, estimatedHeight: 40)
+    view.sendTransitions.animatingContentShift {
+      fixture.replaceRows(inserting: status)
+    }
+
+    let rowMove = rowBefore - view.sendTransitionScreenY(of: row)
+    let pillMove = pill.frame.minY - pillBefore.minY
+    #expect(abs(rowMove) > 1)
+    #expect(abs(abs(pillMove) - abs(rowMove)) < 0.5)
+    #expect(springs(on: pill, matching: TranscriptSendMotion.bubble) == bubbleSprings)
+    let ride = try #require(springs(on: pill, matching: TranscriptSendMotion.content).first)
+    #expect(ride.isAdditive)
+    #expect(abs(((ride.fromValue as? NSValue)?.sizeValue.height ?? 0) + pillMove) < 0.5)
+    let rowShift = try #require(
+      row.layer?.animationKeys()?.first { $0.hasPrefix(TranscriptSendAnimationKeys.shiftPrefix) }
+        .flatMap { row.layer?.animation(forKey: $0) as? CASpringAnimation })
+    #expect(abs((rowShift.fromValue as? CGFloat ?? 0) - rowMove) < 0.5)
+  }
+
   @Test("The sent row stays hidden for as long as its bubble is in flight")
   func sentRowStaysHiddenUntilLanding() throws {
     let fixture = SendFixture()
@@ -271,6 +308,12 @@ struct TranscriptSendTransitionTests {
 }
 
 @MainActor
+private func springs(on view: NSView, matching spring: TranscriptSpring) -> [CASpringAnimation] {
+  (view.layer?.animationKeys() ?? []).compactMap { view.layer?.animation(forKey: $0) as? CASpringAnimation }
+    .filter { $0.stiffness == spring.stiffness && $0.damping == spring.damping }
+}
+
+@MainActor
 private final class SendFixture {
   final class Events {
     var claimed: [UInt64] = []
@@ -287,7 +330,7 @@ private final class SendFixture {
   let events = Events()
   private var rows: [TranscriptVirtualRow]
 
-  init() {
+  init(bubbleRows: Bool = false) {
     _ = NSApplication.shared
     let content = NSView(frame: NSRect(x: 0, y: 0, width: 900, height: 600))
     view = VirtualizedTranscriptScrollView(frame: NSRect(x: 0, y: 100, width: 900, height: 500))
@@ -312,7 +355,13 @@ private final class SendFixture {
     ]
     request = UserSendAnimationRequest(token: 7, messageID: user.id)
 
-    view.rowContent = { row in AnyView(Color.clear.frame(height: row.estimatedHeight)) }
+    let bubbleRowID = bubbleRows ? userRow.id : nil
+    view.rowContent = { row in
+      if row.id == bubbleRowID {
+        return AnyView(UserBubbleBackground(color: .blue).frame(width: 200, height: row.estimatedHeight))
+      }
+      return AnyView(Color.clear.frame(height: row.estimatedHeight))
+    }
     view.layout()
     replaceRows(inserting: nil)
     view.commitPendingMeasurements()

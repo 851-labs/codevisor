@@ -57,7 +57,8 @@ nonisolated enum ServerTranscriptHistoryMapper {
       isForkMarker: item.origin == "fork",
       attribution: item.attribution,
       sentByAgentId: item.sentByAgentId,
-      sentByAgentMachineId: item.sentByAgentMachineId
+      sentByAgentMachineId: item.sentByAgentMachineId,
+      sentAt: ServerTimestamp.date(from: item.createdAt)
     )
   }
 
@@ -92,8 +93,8 @@ nonisolated enum ServerTranscriptHistoryMapper {
       stopKind: item.stopKind,
       retryable: item.retryable == true,
       planDocument: item.planDocument,
-      startedAt: item.startedAt.flatMap(parseServerDate),
-      endedAt: item.endedAt.flatMap(parseServerDate),
+      startedAt: item.startedAt.flatMap(ServerTimestamp.date(from:)),
+      endedAt: item.endedAt.flatMap(ServerTimestamp.date(from:)),
       textPhases: textPhases(of: item, textId: textId),
       deferredDetailItemId: item.hasDetails ? item.id : nil,
       hasDeferredWorkedDetails: item.hasDetails,
@@ -120,8 +121,8 @@ nonisolated enum ServerTranscriptHistoryMapper {
   }
 
   private static func addPlanState(of item: ServerTranscriptItem, to turn: inout AssistantTurn) {
-    turn.planProposedAt = item.planProposedAt.flatMap(parseServerDate)
-    turn.planResumedAt = item.planResumedAt.flatMap(parseServerDate)
+    turn.planProposedAt = item.planProposedAt.flatMap(ServerTimestamp.date(from:))
+    turn.planResumedAt = item.planResumedAt.flatMap(ServerTimestamp.date(from:))
     turn.planResource = resource(item.planResource, largerThan: item.planDocument)
   }
 
@@ -132,10 +133,6 @@ nonisolated enum ServerTranscriptHistoryMapper {
 
   private static func holdsMore(_ resource: ToolDetailResource, than inlineText: String?) -> Bool {
     (resource.fields.first?.sizeBytes ?? 0) > (inlineText?.utf16.count ?? 0) * 2
-  }
-
-  private static func parseServerDate(_ value: String) -> Date? {
-    try? Date.ISO8601FormatStyle(includingFractionalSeconds: true).parse(value)
   }
 
   private static func uuid(from id: String) -> UUID {
