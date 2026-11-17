@@ -1,15 +1,15 @@
 #!/usr/bin/env node
 
 import { execFileSync } from "node:child_process"
-import { readFile } from "node:fs/promises"
-import { join } from "node:path"
+import { mkdir, readFile, writeFile } from "node:fs/promises"
+import { dirname, join } from "node:path"
 import { setTimeout as sleep } from "node:timers/promises"
 import { pathToFileURL } from "node:url"
 
 import { summarizeTranscriptPerformance } from "./transcript-performance-summary.mjs"
 
 const usage =
-  "Usage: TRANSCRIPT_STRESS_URL=<dev server URL> node scripts/dev-tab-switch-bench.mjs [--chats <n>] [--turns <n>] [--warm-rounds <n>] [--trace <path>]"
+  "Usage: TRANSCRIPT_STRESS_URL=<dev server URL> node scripts/dev-tab-switch-bench.mjs [--fresh] [--chats <n>] [--turns <n>] [--warm-rounds <n>] [--trace <path>]"
 const keptAlivePages = 5
 const switchRecordName = "navigation.switch"
 const recordPollMilliseconds = 50
@@ -31,6 +31,11 @@ export function benchPlan(workspaceIds, warmRounds, keptAlive = keptAlivePages) 
   return [...firstVisits, ...evicted, ...warm]
 }
 
+export function observedScenario(planned, record) {
+  const builtPage = record.values?.builtPage === 1
+  return planned === "warm" || builtPage ? planned : "warm"
+}
+
 export function summarizeSwitches(switches) {
   const timings = switches.flatMap(({ scenario, record }) => [
     { name: `${scenario}.busy`, durationMS: record.durationMS },
@@ -44,12 +49,13 @@ async function main(argv) {
   const options = parseOptions(argv)
   const server = serverUrl()
   const clientId = await macClientId(server)
-  const workspaceIds = await seedChats(server, options)
+  const workspaceIds = await benchChats(server, options)
+  await showNewChat(server, clientId)
 
   const switches = []
   for (const step of benchPlan(workspaceIds, options.warmRounds)) {
     const record = await timedSwitch(server, clientId, options.trace, step.workspaceId)
-    switches.push({ scenario: step.scenario, record })
+    switches.push({ scenario: observedScenario(step.scenario, record), record })
     await sleep(pauseBetweenSwitchesMilliseconds)
   }
 
@@ -58,14 +64,17 @@ async function main(argv) {
 
 function parseOptions(argv) {
   const options = {
+    fresh: argv.includes("--fresh"),
     chats: 8,
     turns: 200,
     warmRounds: 10,
-    trace: join(appTemporaryDirectory(), "codevisor-transcript-performance.jsonl")
+    trace: join(appTemporaryDirectory(), "codevisor-transcript-performance.jsonl"),
+    chatsFile: join(process.cwd(), "tmp/tab-switch-bench.json")
   }
   const names = { "--chats": "chats", "--turns": "turns", "--warm-rounds": "warmRounds" }
-  for (let index = 0; index < argv.length; index += 2) {
-    const [flag, value] = [argv[index], argv[index + 1]]
+  const valued = argv.filter((argument) => argument !== "--fresh")
+  for (let index = 0; index < valued.length; index += 2) {
+    const [flag, value] = [valued[index], valued[index + 1]]
     if (value === undefined) throw new Error(usage)
     if (flag === "--trace") options.trace = value
     else if (flag in names) options[names[flag]] = positiveInteger(flag, value)
@@ -101,6 +110,35 @@ async function macClientId(server) {
   return client.clientId
 }
 
+async function benchChats(server, options) {
+  if (!options.fresh) {
+    const saved = await savedChats(options)
+    if (saved !== undefined) return saved
+  }
+
+  const workspaceIds = await seedChats(server, options)
+  await mkdir(dirname(options.chatsFile), { recursive: true })
+  await writeFile(
+    options.chatsFile,
+    JSON.stringify({ chats: options.chats, turns: options.turns, workspaceIds })
+  )
+  return workspaceIds
+}
+
+async function savedChats(options) {
+  const source = await readFile(options.chatsFile, "utf8").catch(() => undefined)
+  if (source === undefined) return undefined
+
+  const saved = JSON.parse(source)
+  const matches = saved.chats === options.chats && saved.turns === options.turns
+  return matches ? saved.workspaceIds : undefined
+}
+
+async function showNewChat(server, clientId) {
+  await requestJson(server, "POST", `/v1/clients/${clientId}/page`, { page: "new_chat" })
+  await sleep(pauseBetweenSwitchesMilliseconds)
+}
+
 async function seedChats(server, options) {
   const workspaceIds = []
   for (let index = 1; index <= options.chats; index += 1) {
@@ -133,7 +171,7 @@ async function timedSwitch(server, clientId, trace, workspaceId) {
     await sleep(recordPollMilliseconds)
   }
   throw new Error(
-    `The app recorded no switch to workspace ${workspaceId} in ${trace}; is it a Debug build started with TRANSCRIPT_STRESS=1?`
+    `The app recorded no switch to workspace ${workspaceId} in ${trace}; is it a Debug build started with TRANSCRIPT_STRESS=1? Pass --fresh if the saved bench chats are gone.`
   )
 }
 

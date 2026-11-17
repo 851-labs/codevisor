@@ -1,7 +1,7 @@
 import assert from "node:assert/strict"
 import test from "node:test"
 
-import { benchPlan, summarizeSwitches } from "./dev-tab-switch-bench.mjs"
+import { benchPlan, observedScenario, summarizeSwitches } from "./dev-tab-switch-bench.mjs"
 
 test("visits every chat once, reopens only the ones that fell out of the kept-alive set, then alternates the last two", () => {
   const plan = benchPlan(["a", "b", "c", "d"], 2, 3)
@@ -42,4 +42,10 @@ test("reports main-thread work, the first pass and the time to settle per scenar
     "warm.firstPass": { count: 2, p50MS: 8, p95MS: 12, maxMS: 12 },
     "warm.settle": { count: 2, p50MS: 30, p95MS: 50, maxMS: 50 }
   })
+})
+
+test("a planned cold switch that found its page already built counts as warm", () => {
+  assert.equal(observedScenario("first-visit", { values: { builtPage: 1 } }), "first-visit")
+  assert.equal(observedScenario("evicted-reopen", { values: {} }), "warm")
+  assert.equal(observedScenario("warm", { values: { builtPage: 1 } }), "warm")
 })
