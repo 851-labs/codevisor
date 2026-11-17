@@ -106,12 +106,8 @@ struct MachinesSettingsScreen: View {
       }
     }
     .swipeActions(edge: .trailing, allowsFullSwipe: false) {
-      Button(role: .destructive) {
-        removeMachine(machine)
-      } label: {
-        Image(systemName: "trash")
-      }
-      .accessibilityLabel("Disconnect")
+      ConfirmingDestructiveButton("Disconnect", systemImage: "trash") { removeMachine(machine) }
+        .labelStyle(.iconOnly)
       Button {
         editingMachine = presence
       } label: {

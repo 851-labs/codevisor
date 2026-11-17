@@ -9,19 +9,24 @@ struct PluginAccountRow: View {
   let actions: PluginAccountActions
   let onEdit: () -> Void
   let onRemove: () -> Void
+  @State private var confirmsRemoval = false
 
   var body: some View {
     PluginAccountLabel(account: account, fallbackName: fallbackName)
       .swipeActions {
-        Button(actions.removeTitle, role: .destructive, action: onRemove)
+        ConfirmingDestructiveButton(actions.removeTitle) { confirmsRemoval = true }
         if actions.canRevisit(account) {
           Button(actions.revisitTitle(for: account), action: onEdit)
         }
       }
       .contextMenu {
         Button(actions.revisitTitle(for: account), systemImage: "pencil", action: onEdit)
-        Button(actions.removeTitle, systemImage: "trash", role: .destructive, action: onRemove)
+        Button(actions.removeTitle, systemImage: "trash", role: .destructive) { confirmsRemoval = true }
       }
+      .modifier(
+        PluginAccountRemovalDialog(
+          account: account, actions: actions, isPresented: $confirmsRemoval, onRemove: onRemove)
+      )
     ForEach(ingress) { PluginIngressRow(ingress: $0) }
   }
 }

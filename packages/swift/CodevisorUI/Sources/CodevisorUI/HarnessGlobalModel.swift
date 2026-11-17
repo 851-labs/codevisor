@@ -4,7 +4,6 @@ import Observation
 @MainActor @Observable
 public final class HarnessGlobalModel {
   var showsPicker = false
-  var uninstall: HarnessFleet.Setting?
 
   public init() {}
 

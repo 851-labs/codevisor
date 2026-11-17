@@ -11,7 +11,6 @@ struct HarnessesSettingsView: View {
   var body: some View {
     Form {
       HarnessGlobalSection(
-        model: globalModel,
         onAccounts: { presenter.showAccounts($0, startsSignIn: $1) },
         onSignIn: { presenter.showSignIn(machineId: $0, harnessId: $1, startsSignIn: $2) }
       ) { id, symbol in

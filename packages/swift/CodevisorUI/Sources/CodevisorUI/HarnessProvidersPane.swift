@@ -192,7 +192,7 @@ public struct HarnessProvidersPane: View {
       }
       .disabled(!replaceable || accounts.isWorking)
       .swipeActions(edge: .trailing, allowsFullSwipe: false) {
-        Button("Remove", systemImage: "trash", role: .destructive) { pendingRemoval = provider }
+        ConfirmingDestructiveButton("Remove", systemImage: "trash") { pendingRemoval = provider }
           .labelStyle(.iconOnly)
       }
     #endif

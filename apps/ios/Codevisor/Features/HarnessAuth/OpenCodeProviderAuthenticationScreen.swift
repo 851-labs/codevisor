@@ -65,7 +65,7 @@ struct OpenCodeProviderAuthenticationScreen: View {
             }
             .swipeActions(edge: .trailing, allowsFullSwipe: false) {
               if account.profileKind == "managed" {
-                Button("Remove", systemImage: "trash", role: .destructive) {
+                ConfirmingDestructiveButton("Remove", systemImage: "trash") {
                   pendingRemoval = account
                 }.labelStyle(.iconOnly)
                 Button("Rename", systemImage: "pencil") { requestRename(account) }.labelStyle(.iconOnly)

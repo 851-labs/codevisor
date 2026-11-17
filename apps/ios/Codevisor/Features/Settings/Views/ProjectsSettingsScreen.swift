@@ -4,7 +4,6 @@ import SwiftUI
 
 struct ProjectsSettingsScreen: View {
   @Environment(AppEnvironment.self) private var environment
-  @State private var deleting: ProjectGroup?
   @State private var addingOnMachine: AddTarget?
 
   private struct AddTarget: Identifiable {
@@ -26,23 +25,7 @@ struct ProjectsSettingsScreen: View {
 
   var body: some View {
     List {
-      ForEach(groups) { group in
-        NavigationLink {
-          ProjectSettingsScreen(groupId: group.id)
-        } label: {
-          row(group)
-        }
-        .swipeActions(edge: .trailing, allowsFullSwipe: false) {
-          Button(role: .destructive) {
-            deleting = group
-          } label: {
-            Label("Delete", systemImage: "trash")
-          }
-        }
-        .contextMenu {
-          Button("Delete…", systemImage: "trash", role: .destructive) { deleting = group }
-        }
-      }
+      ForEach(groups) { ProjectSettingsRow(group: $0) }
     }
     .overlay {
       if groups.isEmpty {
@@ -59,41 +42,9 @@ struct ProjectsSettingsScreen: View {
     .toolbar { addToolbarItem }
     .refreshable { await refresh() }
     .task(id: readyMachines.map(\.id)) { await refresh() }
-    .confirmationDialog(
-      "Delete “\(deleting?.name ?? "Project")”?",
-      isPresented: Binding(get: { deleting != nil }, set: { if !$0 { deleting = nil } }),
-      titleVisibility: .visible,
-      presenting: deleting
-    ) { group in
-      Button("Delete Project", role: .destructive) {
-        environment.projectList.removeProjectGroup(group)
-      }
-      Button("Delete Project and Files", role: .destructive) {
-        environment.projectList.removeProjectGroup(group, deletingFiles: true)
-      }
-      Button("Cancel", role: .cancel) {}
-    }
     .sheet(item: $addingOnMachine) { target in
       ManageProjectsSheet(serverId: target.id, onDeleted: { _ in })
     }
-  }
-
-  private func row(_ group: ProjectGroup) -> some View {
-    Label {
-      VStack(alignment: .leading, spacing: 2) {
-        Text(group.name)
-          .foregroundStyle(.primary)
-        Text(group.repoKey ?? group.primary.folderURL.path)
-          .font(.footnote)
-          .foregroundStyle(.secondary)
-          .lineLimit(1)
-          .truncationMode(.middle)
-      }
-    } icon: {
-      Image(systemName: EntitySystemSymbol.project)
-        .foregroundStyle(.secondary)
-    }
-    .padding(.vertical, 2)
   }
 
   @ToolbarContentBuilder
