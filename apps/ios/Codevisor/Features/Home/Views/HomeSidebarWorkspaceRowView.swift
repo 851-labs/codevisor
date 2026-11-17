@@ -3,7 +3,6 @@ import CodevisorUI
 import SwiftUI
 
 struct HomeSidebarWorkspaceRowView: View, Equatable {
-  @Environment(\.dynamicTypeSize) private var dynamicTypeSize
   @Environment(\.openURL) private var openURL
 
   let workspace: HomeSidebarWorkspace
@@ -19,6 +18,8 @@ struct HomeSidebarWorkspaceRowView: View, Equatable {
   }
 
   private var ref: HomeSidebarWorkspaceRef { workspace.workspace }
+
+  private var row: HomeSidebarRowLabel { HomeSidebarRowLabel(details: workspace.details) }
 
   private var offersPin: Bool { workspace.canPin && !workspace.isArchived }
 
@@ -83,7 +84,7 @@ struct HomeSidebarWorkspaceRowView: View, Equatable {
       Text("Archived workspaces open again once they are restored.")
     }
     .accessibilityElement(children: .combine)
-    .accessibilityLabel(accessibilityLabel)
+    .accessibilityLabel(workspace.details.accessibilityLabel)
     .accessibilityValue(workspace.isArchived ? "Archived" : "")
     .accessibilityActions {
       if workspace.isArchived {
@@ -145,82 +146,6 @@ struct HomeSidebarWorkspaceRowView: View, Equatable {
       }
     }
   }
-
-  private var row: some View {
-    HStack(spacing: 10) {
-      label
-      trailingDetails
-    }
-    .contentShape(Rectangle())
-  }
-
-  private var label: some View {
-    Label {
-      VStack(alignment: .leading, spacing: 2) {
-        HomeSidebarRowTitle(title: workspace.displayName)
-          .lineLimit(dynamicTypeSize.isAccessibilitySize ? 2 : 1)
-        if workspace.subtitle != nil || workspace.statusLabel != nil {
-          SidebarRowStatusSubtitle(status: workspace.statusLabel, subtitle: workspace.subtitle) { text in
-            HomeSidebarRowSubtitle(text: text)
-          }
-        }
-      }
-      .frame(maxWidth: .infinity, alignment: .leading)
-    } icon: {
-      leadingIcon
-    }
-  }
-
-  private var leadingStatus: SidebarRowStatus? {
-    guard let status = workspace.rowStatus,
-      status.replacesLeadingIcon(isUnread: workspace.leadingRow?.status == .unread)
-    else { return nil }
-    return status
-  }
-
-  @ViewBuilder
-  private var leadingIcon: some View {
-    if let status = leadingStatus {
-      HomeSidebarStatusSymbol(status: status)
-    } else if let row = workspace.leadingRow {
-      HomeSidebarTabIcon(row: row, serverId: workspace.serverId)
-    } else {
-      HomeSidebarSymbol(name: EntitySystemSymbol.workspace)
-    }
-  }
-
-  @ViewBuilder
-  private var trailingDetails: some View {
-    if let pullRequest = workspace.pullRequest {
-      PullRequestBadge(pullRequest: pullRequest, size: 15, slot: 22)
-    }
-    if let machine = workspace.machine {
-      HomeSidebarSymbol(name: machine.systemImage)
-        .imageScale(.small)
-    }
-    if !workspace.isArchived {
-      Image(systemName: "chevron.forward")
-        .font(.footnote.weight(.semibold))
-        .foregroundStyle(.tertiary)
-        .accessibilityHidden(true)
-    }
-  }
-
-  private var accessibilityLabel: String {
-    let status: String? =
-      switch workspace.status {
-      case .error: "error"
-      case .actionRequired: "needs attention"
-      case .unread: "unread"
-      case .inProgress: "working"
-      case .idle: nil
-      }
-    return [
-      workspace.displayName, status, workspace.rowStatus?.title, workspace.subtitle,
-      workspace.pullRequest.map { "pull request \($0.number)" },
-      workspace.machine.map { "on \($0.name)" },
-    ].compactMap { $0 }.joined(separator: ", ")
-  }
 }
 
 struct HomeSidebarGroupLabel: View {
@@ -252,19 +177,6 @@ struct HomeSidebarRowTitle: View {
     Text(title)
       .font(.body)
       .foregroundStyle(backgroundProminence == .increased ? AnyShapeStyle(.white) : AnyShapeStyle(.primary))
-  }
-}
-
-private struct HomeSidebarRowSubtitle: View {
-  let text: String
-  @Environment(\.backgroundProminence) private var backgroundProminence
-
-  var body: some View {
-    Text(text)
-      .font(.caption)
-      .lineLimit(1)
-      .foregroundStyle(
-        backgroundProminence == .increased ? AnyShapeStyle(.white.opacity(0.8)) : AnyShapeStyle(.secondary))
   }
 }
 

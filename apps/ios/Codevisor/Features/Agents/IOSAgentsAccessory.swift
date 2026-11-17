@@ -10,27 +10,18 @@ struct IOSAgentsAccessory: View {
   let glassNamespace: Namespace.ID
   @Environment(AppEnvironment.self) private var environment
   @Environment(\.openChat) private var openChat
+  @State private var isPresentingAgents = false
 
   private var summary: ChildAgentsSummary? {
-    ChildAgentsSummary(agents, isWorking: { $0.sidebarState == .inProgress }, harnessId: \.harnessId)
+    let statuses = HomeSidebarStatusSource(environment: environment)
+    return ChildAgentsSummary(agents, isWorking: statuses.isWorking, harnessId: \.harnessId)
   }
 
   var body: some View {
     if let summary {
       HStack {
-        Menu {
-          ForEach(agents) { agent in
-            Button {
-              Task { await openChat?(agent) }
-            } label: {
-              Label {
-                Text(agent.title.isEmpty ? "Agent" : agent.title)
-              } icon: {
-                HarnessGlyph(harnessId: agent.harnessId, fallbackSymbolName: "bubble.and.pencil")
-              }
-              if let place = place(of: agent) { Text(place) }
-            }
-          }
+        Button {
+          isPresentingAgents = true
         } label: {
           label(summary)
         }
@@ -41,6 +32,12 @@ struct IOSAgentsAccessory: View {
         .accessibilityLabel(accessibilityLabel(summary))
         .accessibilityHint("Shows the agents this chat started")
         .accessibilityIdentifier("composer.agents")
+        .popover(isPresented: $isPresentingAgents) {
+          IOSAgentsSheet(agents: agents) { agent in
+            Task { await openChat?(agent) }
+          }
+          .frame(idealWidth: 400, idealHeight: 480)
+        }
         Spacer(minLength: 0)
       }
       .frame(height: Self.rowHeight)
@@ -75,14 +72,5 @@ struct IOSAgentsAccessory: View {
   private func accessibilityLabel(_ summary: ChildAgentsSummary) -> String {
     guard summary.isWorking else { return summary.title }
     return "\(summary.title), \(summary.workingCount) working"
-  }
-
-  private func place(of agent: ChatSession) -> String? {
-    let machine = environment.machines.machine(for: agent.serverId)?.name
-    let project = environment.projectList.projects.first {
-      $0.serverId == agent.serverId && $0.id == agent.projectId
-    }?.name
-    let parts = [project, machine].compactMap(\.self)
-    return parts.isEmpty ? nil : parts.joined(separator: " · ")
   }
 }

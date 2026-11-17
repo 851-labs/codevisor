@@ -4,20 +4,25 @@ import Foundation
 
 @MainActor
 struct HomeSidebarStatusSource {
-  private let statuses: SidebarRowStatuses
+  let environment: AppEnvironment
 
-  init(environment: AppEnvironment) {
-    let sessions = ChatControllerCache.shared
+  var workspaces: SidebarRowStatuses {
     let list = environment.projectList
-    statuses = SidebarRowStatuses(
-      environment.navigationStore.workspaceEntries.sidebar, chats: list.sessions, mainChat: list.mainChat(of:)
-    ) { chat in
-      SidebarChatActivity(
-        session: chat, isWorking: sessions.isInProgress(chat), isSettingUp: sessions.isSettingUp(chat))
-    }
+    return SidebarRowStatuses(
+      environment.navigationStore.workspaceEntries.sidebar, chats: list.sessions, mainChat: list.mainChat(of:),
+      activity: activity(of:))
   }
 
-  func status(of workspaceId: UUID) -> SidebarRowStatus? {
-    statuses.status(of: workspaceId)
+  func status(of chat: ChatSession) -> SidebarRowStatus? {
+    SidebarRowStatuses.status(of: chat, among: environment.projectList.sessions, activity: activity(of:))
+  }
+
+  func isWorking(_ chat: ChatSession) -> Bool {
+    ChatControllerCache.shared.isInProgress(chat)
+  }
+
+  private func activity(of chat: ChatSession) -> SidebarChatActivity {
+    SidebarChatActivity(
+      session: chat, isWorking: isWorking(chat), isSettingUp: ChatControllerCache.shared.isSettingUp(chat))
   }
 }

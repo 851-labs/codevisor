@@ -24,7 +24,12 @@ struct HomeSidebarWorkspace: Identifiable, Equatable {
 
   var displayName: String { name.isEmpty ? "Workspace" : name }
 
-  var statusLabel: SidebarRowStatus? { showsStatusLabel ? rowStatus : nil }
+  var details: HomeSidebarRowDetails {
+    HomeSidebarRowDetails(
+      title: displayName, serverId: serverId, subtitle: subtitle, rowStatus: rowStatus,
+      showsStatusLabel: showsStatusLabel, machine: machine, pullRequest: pullRequest, leadingRow: leadingRow,
+      attention: status, isArchived: isArchived)
+  }
 
   var status: HomeSessionStatus { rows.map(\.status).min() ?? .idle }
 
