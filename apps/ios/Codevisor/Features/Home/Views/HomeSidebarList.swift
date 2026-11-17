@@ -258,7 +258,7 @@ struct HomeSidebarList: View {
   }
 
   private var botsEmptyState: some View {
-    HomeSidebarBotsEmptyState(onNewBot: actions.actions.newBot)
+    BotsEmptyState(onNewBot: actions.actions.newBot)
   }
 
   private func moveBot(_ source: IndexSet, to destination: Int, among bots: [HomeSidebarBot], section: UUID?) {

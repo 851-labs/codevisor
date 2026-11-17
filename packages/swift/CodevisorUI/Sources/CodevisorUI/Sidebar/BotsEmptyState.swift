@@ -3,17 +3,15 @@ import SwiftUI
 public struct BotsEmptyState: View {
   private static let messageWidth: CGFloat = 360
 
-  let serverId: String
   let onNewBot: () -> Void
 
-  public init(serverId: String, onNewBot: @escaping () -> Void) {
-    self.serverId = serverId
+  public init(onNewBot: @escaping () -> Void) {
     self.onNewBot = onNewBot
   }
 
   public var body: some View {
     VStack(spacing: 0) {
-      BotsEmptyCrew(serverId: serverId)
+      BotsEmptyCrew()
       Text("No Bots Yet")
         .font(.title2.weight(.bold))
         .padding(.top, 18)
