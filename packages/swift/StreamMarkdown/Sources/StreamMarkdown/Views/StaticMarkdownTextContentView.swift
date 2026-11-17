@@ -3,17 +3,19 @@
 
   @MainActor
   final class StaticMarkdownTextContentView: NativeMarkdownContentView {
+    private struct ShownText {
+      let key: StaticTextKey
+      let prepared: PreparedStaticText
+    }
+
     private let surface = StaticTextSurfaceView()
     private let blocks: [MarkdownBlock]
     private let theme: MarkdownTheme
     private let identity: Int
-    private var requestedKey: StaticTextKey?
-    private var preparation: Task<Void, Never>?
-    private var lastHeight: CGFloat?
-    private var reportedHeight: CGFloat?
-    private var preparedKey: StaticTextKey?
+    private lazy var attributedText = Self.attributedText(blocks: blocks, theme: theme)
+    private var shown: ShownText?
 
-    override var isContentReady: Bool { preparedKey != nil && preparedKey == requestedKey }
+    override var isContentReady: Bool { shown != nil }
 
     override var isFlipped: Bool { true }
 
@@ -32,33 +34,18 @@
       fatalError("init(coder:) has not been implemented")
     }
 
-    deinit {
-      preparation?.cancel()
-    }
-
     override func linkActionDidChange() {
       surface.linkAction = linkAction
     }
 
     override func contentHeight(forWidth width: CGFloat) -> CGFloat {
-      let request = request(forWidth: width)
-      if let prepared = StaticTextCache.shared.cached(request.key) {
-        requestedKey = request.key
-        preparedKey = request.key
-        lastHeight = prepared.size.height
-        reportedHeight = prepared.size.height
-        return prepared.size.height
-      }
-      beginPreparing(request)
-      let height = lastHeight ?? StaticTextEstimate.height(of: blocks, theme: theme, width: width)
-      reportedHeight = height
-      return height
+      text(atWidth: width).size.height
     }
 
     override func layout() {
       super.layout()
       surface.frame = bounds
-      showPreparedText(forWidth: bounds.width)
+      showText()
     }
 
     override func viewDidMoveToWindow() {
@@ -67,19 +54,23 @@
         needsLayout = true
         return
       }
-      preparation?.cancel()
-      requestedKey = nil
-      preparedKey = nil
+      shown = nil
+    }
+
+    override func viewDidEndLiveResize() {
+      super.viewDidEndLiveResize()
+      guard let shown else { return }
+      StaticTextCache.shared.store(shown.prepared, for: shown.key)
     }
 
     override func viewDidChangeEffectiveAppearance() {
       super.viewDidChangeEffectiveAppearance()
-      showPreparedText(forWidth: bounds.width)
+      showText()
     }
 
     override func viewDidChangeBackingProperties() {
       super.viewDidChangeBackingProperties()
-      showPreparedText(forWidth: bounds.width)
+      showText()
     }
 
     static func prefetch(
@@ -97,39 +88,25 @@
       StaticTextCache.shared.startPreparing(request)
     }
 
-    private func showPreparedText(forWidth width: CGFloat) {
-      guard width > 1 else { return }
+    private func showText() {
+      guard bounds.width > 1 else { return }
+      let wasReady = isContentReady
+      surface.show(text(atWidth: bounds.width))
+      if !wasReady { onContentChange?() }
+    }
+
+    private func text(atWidth width: CGFloat) -> PreparedStaticText {
       let request = request(forWidth: width)
-      guard let prepared = StaticTextCache.shared.cached(request.key) else {
-        beginPreparing(request)
-        return
-      }
-      let becameReady = !isContentReady
-      let heightChanged = reportedHeight.map { $0 != prepared.size.height } ?? false
-      requestedKey = request.key
-      preparedKey = request.key
-      surface.show(prepared)
-      if heightChanged { lastHeight = prepared.size.height }
-      if becameReady || heightChanged { onContentChange?() }
+      if let shown, shown.key == request.key { return shown.prepared }
+      let prepared = StaticTextCache.shared.cached(request.key) ?? preparedNow(request)
+      shown = ShownText(key: request.key, prepared: prepared)
+      return prepared
     }
 
-    private func beginPreparing(_ request: StaticTextRequest) {
-      guard requestedKey != request.key else { return }
-      requestedKey = request.key
-      let task = StaticTextCache.shared.startPreparing(request)
-      preparation?.cancel()
-      preparation = Task { [weak self] in
-        guard let prepared = await task.value, !Task.isCancelled else { return }
-        self?.didPrepare(prepared, for: request.key)
-      }
-    }
-
-    private func didPrepare(_ prepared: PreparedStaticText, for key: StaticTextKey) {
-      guard key == requestedKey else { return }
-      preparedKey = key
-      lastHeight = prepared.size.height
-      surface.show(prepared)
-      onContentChange?()
+    private func preparedNow(_ request: StaticTextRequest) -> PreparedStaticText {
+      let prepared = PreparedStaticText.preparedNow(request, text: attributedText)
+      if !inLiveResize { StaticTextCache.shared.store(prepared, for: request.key) }
+      return prepared
     }
 
     private func request(forWidth width: CGFloat) -> StaticTextRequest {
@@ -150,8 +127,14 @@
       StaticTextRequest(
         identity: identity, layout: .wrapping(width: width, inset: 0), scale: scale, appearance: appearance
       ) {
-        MarkdownTextRunRenderer.attributedString(for: blocks, theme: theme, foregroundColor: theme.textForeground)
+        attributedText(blocks: blocks, theme: theme)
       }
+    }
+
+    private nonisolated static func attributedText(
+      blocks: [MarkdownBlock], theme: MarkdownTheme
+    ) -> NSAttributedString {
+      MarkdownTextRunRenderer.attributedString(for: blocks, theme: theme, foregroundColor: theme.textForeground)
     }
 
     private static func identity(blocks: [MarkdownBlock], theme: MarkdownTheme, streamID: String) -> Int {

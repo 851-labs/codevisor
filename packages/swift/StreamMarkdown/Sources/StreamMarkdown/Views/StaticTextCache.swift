@@ -73,16 +73,25 @@
       }
     }
 
+    func store(_ value: PreparedStaticText, for key: StaticTextKey) {
+      state.withLock { insert(value, for: key, into: &$0) }
+    }
+
     private func finish(_ key: StaticTextKey, value: PreparedStaticText?) {
       state.withLock { state in
         state.inFlight[key] = nil
-        guard let value, state.entries[key] == nil else { return }
-        state.clock &+= 1
-        let entry = Entry(value: value, cost: value.byteCost, lastUse: state.clock)
-        state.entries[key] = entry
-        state.totalCost += entry.cost
-        evict(&state, keeping: key)
+        guard let value else { return }
+        insert(value, for: key, into: &state)
       }
+    }
+
+    private func insert(_ value: PreparedStaticText, for key: StaticTextKey, into state: inout State) {
+      guard state.entries[key] == nil else { return }
+      state.clock &+= 1
+      let entry = Entry(value: value, cost: value.byteCost, lastUse: state.clock)
+      state.entries[key] = entry
+      state.totalCost += entry.cost
+      evict(&state, keeping: key)
     }
 
     private func evict(_ state: inout State, keeping protected: StaticTextKey) {

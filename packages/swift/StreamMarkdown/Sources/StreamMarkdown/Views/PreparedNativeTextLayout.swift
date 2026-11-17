@@ -13,8 +13,13 @@
     let container: NSTextContainer
     let size: CGSize
 
-    init(text: NSAttributedString, width: CGFloat, wrapsText: Bool = true) throws {
+    convenience init(text: NSAttributedString, width: CGFloat, wrapsText: Bool = true) throws {
       try Task.checkCancellation()
+      self.init(laying: text, width: width, wrapsText: wrapsText)
+      try Task.checkCancellation()
+    }
+
+    init(laying text: NSAttributedString, width: CGFloat, wrapsText: Bool = true) {
       self.text = text
       storage = NSTextStorage(attributedString: text)
       #if canImport(AppKit)
@@ -30,7 +35,6 @@
       storage.addLayoutManager(manager)
       manager.addTextContainer(container)
       manager.ensureLayout(for: container)
-      try Task.checkCancellation()
       let used = manager.usedRect(for: container)
       size = CGSize(width: wrapsText ? width : max(1, ceil(used.width)), height: max(1, ceil(used.height)))
     }
