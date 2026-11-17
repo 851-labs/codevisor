@@ -1,9 +1,9 @@
 ---
-name: use-reference-repos
-description: Pull and inspect open-source reference code under .repos. Use when the user asks to examine code from an upstream project, when debugging or implementing an integration would benefit from reading dependency source, or when comparing Codevisor behavior with another open-source project.
+name: using-reference-repos
+description: Use when the user asks to examine code from an upstream or open-source project, when debugging or implementing an integration would benefit from reading a dependency's source, when comparing Codevisor behavior with another open-source project, or when adding or updating a reference repository under .repos.
 ---
 
-# Use reference repositories
+# Using reference repositories
 
 Use `.repos` for open-source source-code references. Do not use the old refs CLI or a `references` directory.
 

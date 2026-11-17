@@ -1,9 +1,9 @@
 ---
-name: tophat
-description: Run development changes through realistic user workflows after every change and before ending each development turn, including small UI and copy edits. Also use when asked to tophat, manually verify a feature or fix, or smoke-test a branch or PR.
+name: tophatting
+description: Use after every development change and before ending each development turn, including small UI, styling, copy, and configuration edits, to verify the change in the running app. Use when asked to tophat, manually verify or try a feature or fix, smoke-test a branch or PR, or verify a macOS or iOS change.
 ---
 
-# Tophat
+# Tophatting
 
 Put on the user's hat: run the change, exercise the affected workflow, and
 report what you observed. Inspired by Shopify's practice of manually trying
@@ -66,37 +66,23 @@ mistakes; do not expand every change into a full product audit.
 
 ## Run the right environment
 
-Read the relevant skills and follow their current instructions. Skills named
-here without a path (`computer-use`, `browser-use`, `attaching-files`) are
-Codevisor's built-in skills: read them by calling Codevisor's `skills` tool
-with the skill's name. They are not in the harness's own skill list.
+Two skills own the mechanics; read them instead of guessing commands:
 
-- [run-dev](../run-dev/SKILL.md) owns development startup and runner lifecycle.
-  Use `bun run dev` for both native apps, `bun run dev:macos` or
-  `bun run dev:ios` for one platform, `bun run dev:web` for the website, and
-  `bun run dev:mascot-playground` for the bot mascot package.
-  Before either iOS-capable runner, start `bun run ios-simulator` as a
-  separate persistent background task and wait for `Simulator ready`.
-  Keep it running across rebuilds; stopping it deletes its worktree device.
-  Reuse this worktree's matching instance when possible. Track processes you
-  start and respect the one-runner-per-worktree rule.
-- [ios-development](../ios-development/SKILL.md) owns iOS Simulator inspection
-  and interaction, including Xcode setup and tool selection.
-- Use the `computer-use` skill for macOS app interaction and recordings, and
-  `browser-use` for website interaction. Read them through the `skills` tool
-  instead of guessing tool APIs.
+- `running-dev` starts, restarts, and stops the dev server, the macOS and
+  iOS dev apps, the iOS simulator, the website, and the mascot playground. It
+  covers the flags, how to tell the app is ready, how long a build takes, and
+  background timeouts.
+- `driving-dev-apps` covers interacting with the running apps, getting past
+  onboarding, and capturing window-only screenshots and recordings.
+
+Reuse this worktree's matching instance when possible, and track the
+processes you start.
 
 Confirm that the running app and backend belong to the intended worktree and
 contain the change before testing. Use development data and the real runtime
 path affected by the change. For a CLI or backend-only change, exercise its
 actual command or API and inspect the observable result. Do not substitute
 mocked responses for the integration being verified.
-
-When a fresh iOS dev app opens in onboarding and the change isn't about
-onboarding itself, get through it quickly: sign in with "Use Development
-Account", and choose "Set Up Later" on every step that offers it. For basic
-tophatting, start chats with "No project" unless the change needs a specific
-project.
 
 ## Exercise, observe, and investigate
 
@@ -106,10 +92,10 @@ project.
 - Check the interaction details touched by the change, such as focus, keyboard
   behavior, navigation, layout, loading feedback, and error recovery. Wait for
   observable conditions instead of relying on arbitrary sleeps.
-- Capture concise evidence of the result. A screenshot suits a visible state;
-  a short recording suits an interaction, animation, or cross-device flow.
-  Inspect captured evidence before using it to support a conclusion. Read the
-  `attaching-files` skill and follow it to show evidence in the final
+- Capture concise evidence of the result with the tools in
+  `driving-dev-apps`. A screenshot suits a visible state; a short recording
+  suits an interaction, animation, or cross-device flow. Inspect captured
+  evidence before using it to support a conclusion, and show it in the final
   response; creating or inspecting a file does not by itself share it.
 - If a scenario fails, record reproduction steps and expected versus actual
   behavior, then inspect relevant logs or state to narrow the cause. Compare
@@ -118,7 +104,7 @@ project.
   scope and rerun the failed scenario plus affected nearby checks. For a
   review-only request, report findings without changing the implementation.
   If adding or changing automated regression tests, follow
-  [deterministic-tests](../deterministic-tests/SKILL.md).
+  the `writing-tests` skill.
 - Complete required automated checks as supporting evidence. Reuse relevant
   results for the same code state; repeat checks when changes invalidate them.
   If setup or tooling prevents a scenario, mark it blocked and continue other
@@ -143,7 +129,7 @@ Keep the report short and reproducible:
 Clean up temporary test data and resources you created when appropriate.
 Stop only processes you own when they are no longer needed, by the PID or
 task you started; never by pattern with `pkill`, `killall`, or
-`kill $(pgrep …)` (see the repo's AGENTS.md). A tophat result
+`kill $(pgrep …)` (the rule is in the repo's `AGENTS.md`). A tophat result
 reports verification; it does not itself publish a review, merge, or release.
 
 ## Inspiration

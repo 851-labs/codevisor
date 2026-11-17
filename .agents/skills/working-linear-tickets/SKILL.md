@@ -1,9 +1,9 @@
 ---
-name: linear-ticket
-description: Work a Linear ticket end to end — status, implementation, tophat, PR, and evidence on the ticket. Use when asked to work on, pick up, or ship a Linear issue (e.g. 851-1234), or when creating tickets for new work.
+name: working-linear-tickets
+description: Use when asked to work on, pick up, continue, or ship a Linear issue (for example 851-1234), when creating Linear tickets for new work, or when moving a ticket's status, commenting on it, or attaching evidence to it.
 ---
 
-# Linear ticket workflow
+# Working Linear tickets
 
 Use the Linear integration (via Codevisor) for every ticket step.
 
@@ -27,11 +27,15 @@ work on a ticket just because you created it.
    behavior, "optional/discuss" items, or anything the code contradicts.
    Record the answers on the ticket as a comment. If nothing is unclear,
    go straight to implementing.
-3. **Tophat:** follow the `tophat` skill. Capture evidence: a screen
+3. **Tophat:** follow the `tophatting` skill. Capture evidence: a screen
    recording for interactions, screenshots for static UI.
 4. **Open a PR** with `bun run ship --review --title "…" --body-file <path>`.
-   The pre-push hook runs the checks your changes affect, so don't bypass it.
-   If it can't run on your machine, say so in the PR and note what you ran
+   `--review` rebases onto `origin/main`, pushes, opens the PR, and stops. A
+   ticket takes this review flow by default. When the user instead says to
+   ship it, that is their approval to merge: the plain `bun run ship` opens
+   the PR and merges it in one step (`AGENTS.md` describes both). The
+   pre-push hook runs the checks your changes affect, so don't bypass it. If
+   it can't run on your machine, say so in the PR and note what you ran
    instead.
    - Title: `<summary> (<ticket id>)`.
    - Body: `Fixes <ticket id>`, a short summary, tophat notes and the

@@ -1,9 +1,9 @@
 ---
-name: release-codevisor
-description: Promote the successful Alpha artifact set at current Codevisor main HEAD to a Stable release, with a complete changelog and end-to-end publication verification. Use when the user asks to publish, release, or cut a new Codevisor version.
+name: releasing-codevisor
+description: Use when the user asks to publish, release, promote, or cut a new Codevisor version, to check which Alpha can become Stable, to verify a published release, or to submit the Chrome extension or an iOS beta.
 ---
 
-# Release Codevisor
+# Releasing Codevisor
 
 Stable is a promotion, never a rebuild. Three workflows produce every release:
 
@@ -95,8 +95,8 @@ Verify all of the following before reporting success:
 
 - `vVERSION` points to the original Alpha source SHA (the promoted Alpha's
   commit, which may be behind main HEAD when `alpha_tag` was given).
-- The Stable macOS ZIP SHA-256 values equal the corresponding Alpha ZIP
-  SHA-256 values byte-for-byte.
+- The Stable macOS ZIP (`Codevisor-macOS-arm64.zip`, the only architecture
+  built) has the same SHA-256 as the Alpha ZIP it was promoted from.
 - The GitHub release body equals the generated changelog and is non-empty.
 - The arm64 Sparkle appcast contains the promoted build without an Alpha
   channel, and its enclosure has a valid Ed25519 signature.
@@ -106,11 +106,12 @@ Verify all of the following before reporting success:
 - Homebrew points to the same Stable artifacts and keeps `auto_updates true`.
 - The versioned Chrome extension ZIP and checksum are attached to the Stable
   release, and the `submit-browser-extension` job either logged why it skipped
-  or pushed `browser-extension-v<VERSION>`. Dispatch `Publish Chrome Extension`
-  by hand only to re-run a submission the user asks for; `dry_run` checks the
-  package and Google sign-in without submitting.
-- GitHub `latest` points to the promoted Stable release, and both architecture
-  download URLs under `releases/latest/download` resolve to that release.
+  or pushed `browser-extension-v<VERSION>`. Dispatch `Release browser extension`
+  (`release-browser-extension.yml`) by hand only to re-run a submission the
+  user asks for; `dry_run` checks the package and Google sign-in without
+  submitting.
+- GitHub `latest` points to the promoted Stable release, and the download
+  URLs under `releases/latest/download` resolve to that release.
 
 If publication fails before tagging, fix `main`, wait for the new HEAD's Alpha
 to be published, and dispatch the next unused version. If it fails after tagging, repair the
