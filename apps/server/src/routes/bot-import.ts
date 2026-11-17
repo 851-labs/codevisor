@@ -56,7 +56,12 @@ const localProjectIds = async (
   route: RouteContext,
   spec: BotImportSpec
 ): Promise<ReadonlyArray<string>> => {
-  const context = { services: route.services, fanout: route.fanout, serverId: route.config.id }
+  const context = {
+    services: route.services,
+    fanout: route.fanout,
+    serverId: route.config.id,
+    worktreeNameStyle: route.config.worktreeNameStyle
+  }
   const ids: Array<string> = []
   for (const project of spec.projects) {
     const setUp = await setUpProjectFromGit(context, {

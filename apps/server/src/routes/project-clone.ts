@@ -39,10 +39,12 @@ import {
   run,
   swallowError,
   writeJson,
+  type CodevisorServerConfig,
   type CodevisorServerServices,
   type EventFanout
 } from "../server-context.js"
 import { reachableCloneUrl } from "./project-clone-access.js"
+import { startCloneOnNewBranch } from "./project-clone-branch.js"
 import { logCloneFailure } from "./project-clone-log.js"
 import { cloneBaseFolder } from "./project-clone-settings.js"
 import { cloneDirectoryName, looksLikeGitUrl } from "./project-git-url.js"
@@ -70,21 +72,21 @@ export const cancelProjectSetup = (projectId: string): boolean => {
 }
 
 export const routeProjectFromGit = async (
-  services: CodevisorServerServices,
-  fanout: EventFanout,
-  serverId: string,
+  context: ProjectSetupContext,
   request: IncomingMessage,
   response: ServerResponse
 ): Promise<void> => {
   const payload = await readSchema(request, CreateProjectFromGitRequestSchema)
-  const setUp = await setUpProjectFromGit({ services, fanout, serverId }, payload)
-  writeJson(response, setUp.adopted ? 200 : 201, await probeProject(serverId, setUp.project))
+  const setUp = await setUpProjectFromGit(context, payload)
+  const project = await probeProject(context.serverId, setUp.project)
+  writeJson(response, setUp.adopted ? 200 : 201, project)
 }
 
 export interface ProjectSetupContext {
   readonly services: CodevisorServerServices
   readonly fanout: EventFanout
   readonly serverId: string
+  readonly worktreeNameStyle: CodevisorServerConfig["worktreeNameStyle"]
 }
 
 export interface ProjectSetUp {
@@ -216,6 +218,13 @@ const cloneNewProject = async (
         environment,
         setup.controller.signal
       )
+      if (clone.payload.startsOnNewBranch === true) {
+        await startCloneOnNewBranch(destination.path, {
+          worktreeBase: clone.payload.worktreeBase,
+          worktreeNameStyle: context.worktreeNameStyle,
+          environment
+        })
+      }
     }
     if (clone.envFiles.length > 0) {
       await setup.publish({ state: "progress", progress: { stage: "copying" } })

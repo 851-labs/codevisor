@@ -111,6 +111,32 @@ describe("project setup on another machine", () => {
     })
   })
 
+  it("starts a clone on a new generated branch cut from the worktree base when asked to", async () => {
+    const origin = await makeOrigin()
+    await git(["checkout", "-b", "develop"], origin)
+    await git(["commit", "--allow-empty", "-m", "ahead of main"], origin)
+    await git(["checkout", "main"], origin)
+    const { server } = await startServer()
+    const baseFolder = await useBaseFolder(server)
+
+    const created = await jsonRequest(server, "/v1/projects/from-git", {
+      body: JSON.stringify({
+        url: `file://${origin}`,
+        worktreeBase: { remote: "origin", branch: "develop" },
+        startsOnNewBranch: true
+      }),
+      method: "POST"
+    })
+
+    const folder = join(baseFolder, "widget")
+    const revision = async (ref: string) => (await git(["rev-parse", ref], folder)).stdout.trim()
+    const branch = (await git(["symbolic-ref", "--short", "HEAD"], folder)).stdout.trim()
+    expect(created.status).toBe(201)
+    expect(branch).toMatch(/^codevisor\/[a-z0-9-]+$/)
+    expect(await revision("HEAD")).toBe(await revision("origin/develop"))
+    expect(await revision("HEAD")).not.toBe(await revision("origin/main"))
+  })
+
   it("expands, validates, and resets the clone base folder", async () => {
     const { server } = await startServer()
     const put = (baseFolder: string | null) =>

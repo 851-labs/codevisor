@@ -62,7 +62,8 @@ export const routeProjects = async (
   if (request.method === "POST" && url.pathname === "/v1/projects")
     return createProject(services, fanout, serverId, request, response)
   if (request.method === "POST" && url.pathname === "/v1/projects/from-git") {
-    await routeProjectFromGit(services, fanout, serverId, request, response)
+    const { worktreeNameStyle } = config
+    await routeProjectFromGit({ services, fanout, serverId, worktreeNameStyle }, request, response)
     return true
   }
   if (request.method === "POST" && url.pathname === "/v1/projects/clone-access") {

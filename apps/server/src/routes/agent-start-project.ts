@@ -47,7 +47,7 @@ const clonedProjectId = async (
 ): Promise<string> => {
   const { services, fanout, config } = route
   const setUp = await setUpProjectFromGit(
-    { services, fanout, serverId: config.id },
+    { services, fanout, serverId: config.id, worktreeNameStyle: config.worktreeNameStyle },
     { url: source.repoUrl, name: source.name }
   )
   return setUp.project.id

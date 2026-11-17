@@ -88,7 +88,11 @@ describe("creating a sandbox", () => {
     await harness.machines.create(request)
     await harness.machines.settled()
 
-    expect(harness.toolCalls[0]?.tool).toBe("codevisor.projects.create_scratch")
+    expect(harness.toolCalls[0]).toMatchObject({
+      tool: "codevisor.projects.create_scratch",
+      args: {}
+    })
+    expect(harness.toolCalls.map((call) => call.tool)).not.toContain("codevisor.projects.clone")
     expect((await harness.machines.list())[0]?.remoteProjectId).toBe("remote-scratch")
   })
 
@@ -295,6 +299,8 @@ describe("sandbox lifetime", () => {
         restoresWorkspace: true
       }
     ])
+    const clones = harness.toolCalls.filter((call) => call.tool === "codevisor.projects.clone")
+    expect(clones.at(-1)?.args["startsOnNewBranch"]).toBe(false)
     expect(harness.toolCalls.at(-1)).toMatchObject({
       tool: "codevisor.workspaces.upsert",
       args: { workspaceId: "id-2", name: "Renamed box" }
@@ -442,7 +448,7 @@ describe("edges of the pipeline", () => {
     expect((await harness.machines.list())[0]?.machineId).toBe(`cloud:${JOINED_DEVICE}`)
   })
 
-  it("carries the project's worktree base and run location into the clone", async () => {
+  it("clones onto a new branch, carrying the project's worktree base and run location", async () => {
     const harness = await sandboxHarness({
       project: {
         worktreeBase: { remote: "origin", branch: "main" },
@@ -456,6 +462,7 @@ describe("edges of the pipeline", () => {
     expect(harness.toolCalls[0]?.args).toEqual({
       url: "https://github.com/851-labs/codevisor.git",
       name: "codevisor",
+      startsOnNewBranch: true,
       worktreeBase: { remote: "origin", branch: "main" },
       defaultRunLocation: "newWorktree"
     })
