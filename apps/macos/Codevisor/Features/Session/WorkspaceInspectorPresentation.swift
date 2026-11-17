@@ -51,13 +51,14 @@ struct WorkspaceInspectorPresentation: ViewModifier {
   @State private var imageStores = WorkspaceInspectorImageStores()
   @State private var usage = WorkspaceInspectorUsageModel()
   @State private var lastRefresh: RefreshKey?
-  @State private var inspects = false
+  @State private var tracked: Bool?
   let store: SessionStore?
   @SidebarSelectionRef var selection: SidebarSelection?
   var idealInspectorWidth: CGFloat = 260
 
   func body(content: Content) -> some View {
     let opensDocked = isPresented && panelLayout.docksInspector
+    let inspects = tracked ?? (inspectedWorkspace != nil)
     let inspected = inspects && (opensDocked || opensDrawer) ? inspectedWorkspace : nil
     let showsDocked = inspected != nil && opensDocked
     let showsDrawer = inspected != nil && opensDrawer
@@ -78,15 +79,7 @@ struct WorkspaceInspectorPresentation: ViewModifier {
           .equatable()
           .environment(\.isWorkspaceInspectorShown, showsDocked)
           .inspectorColumnWidth(min: 220, ideal: idealInspectorWidth, max: 400)
-          .toolbar {
-            ToolbarSpacer(.flexible)
-            ToolbarItem {
-              Button(action: toggleInspector) {
-                Label(PanelToggleShortcut.inspector.title(isVisible: isVisible), systemImage: "sidebar.trailing")
-              }
-              .help(PanelToggleShortcut.inspector.help(isVisible: isVisible))
-            }
-          }
+          .toolbar { inspectorToolbar(isVisible: isVisible) }
         }
       }
       .overlay { inspectorDrawer(inspected, isPresented: showsDrawer) }
@@ -105,7 +98,21 @@ struct WorkspaceInspectorPresentation: ViewModifier {
         guard isVisible, visibleTab == .harness else { return }
         await usage.prefetch(usageCandidates) { environment.machines.client(for: $0) }
       }
-      .background(WorkspaceInspectorTracker(actions: { currentActions }, inspects: $inspects))
+      .background(
+        WorkspaceInspectorTracker(
+          actions: inspected.map { shown in { actions(for: shown, isVisible: isVisible) } } ?? { currentActions },
+          inspects: $tracked))
+  }
+
+  @ToolbarContentBuilder
+  private func inspectorToolbar(isVisible: Bool) -> some ToolbarContent {
+    ToolbarSpacer(.flexible)
+    ToolbarItem {
+      Button(action: toggleInspector) {
+        Label(PanelToggleShortcut.inspector.title(isVisible: isVisible), systemImage: "sidebar.trailing")
+      }
+      .help(PanelToggleShortcut.inspector.help(isVisible: isVisible))
+    }
   }
 
   private var opensDrawer: Bool {

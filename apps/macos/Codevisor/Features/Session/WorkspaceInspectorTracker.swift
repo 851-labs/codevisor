@@ -2,7 +2,7 @@ import SwiftUI
 
 struct WorkspaceInspectorTracker: View {
   let actions: () -> WorkspaceInspectorActions?
-  @Binding var inspects: Bool
+  @Binding var inspects: Bool?
 
   var body: some View {
     let actions = actions()
