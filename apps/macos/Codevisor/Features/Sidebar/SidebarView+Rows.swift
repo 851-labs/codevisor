@@ -15,7 +15,8 @@ extension SidebarView {
     let listing = workspaceListing(revealing: revealed)
     let tree = listing.tree
     return SidebarRows.State(
-      groups: listing.groups(of: tree.roots), children: tree.children, tabs: nestedTabs(revealing: revealed),
+      groups: listing.groups(of: tree.roots), children: tree.children,
+      tabs: nestedTabs(of: listing.listedItems, revealing: revealed),
       archived: archivedSidebarItems, archivedVisibleCount: archivedVisibleCount,
       expansion: SidebarRows.Expansion(
         pinned: pinnedExpanded, list: listExpanded, archived: archivedExpanded,

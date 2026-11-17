@@ -58,9 +58,8 @@ struct SidebarView: View {
       .background(
         SidebarSelectionSyncView(
           target: { selectionTarget }, rowIDs: Set(rows.map(\.id)), model: selectionModel,
-          scrollIfRequested: { workspaceID in
-            if revealRequest.take(workspaceID) { proxy.scrollTo(workspaceID) }
-          })
+          takeScrollRequest: { revealRequest.take($0) },
+          scroll: { proxy.scrollTo($0) })
       )
     }
     .scrollContentBackground(.hidden)

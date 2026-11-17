@@ -5,7 +5,8 @@ struct SidebarSelectionSyncView: View {
   let target: () -> SidebarSelectionTarget?
   let rowIDs: Set<SidebarRowID>
   let model: SidebarSelectionModel
-  let scrollIfRequested: (UUID) -> Void
+  let takeScrollRequest: (UUID) -> Bool
+  let scroll: (UUID) -> Void
   @State private var awaitedScroll = AwaitedScroll()
 
   var body: some View {
@@ -14,7 +15,7 @@ struct SidebarSelectionSyncView: View {
         model.select(target)
         model.highlight(among: rowIDs)
         if previous == target || previous?.workspaceID != target?.workspaceID {
-          awaitedScroll.workspaceID = target?.workspaceID
+          awaitedScroll.workspaceID = requestedScroll(to: target)
         }
         scrollOnceListed(in: rowIDs)
       }
@@ -22,15 +23,22 @@ struct SidebarSelectionSyncView: View {
         Color.clear.onChange(of: rowIDs) { _, rowIDs in
           model.highlight(among: rowIDs)
           scrollOnceListed(in: rowIDs)
+          awaitedScroll.workspaceID = nil
         }
       )
+  }
+
+  private func requestedScroll(to target: SidebarSelectionTarget?) -> UUID? {
+    guard let workspaceID = target?.workspaceID, takeScrollRequest(workspaceID) else { return nil }
+
+    return workspaceID
   }
 
   private func scrollOnceListed(in rowIDs: Set<SidebarRowID>) {
     guard let workspaceID = awaitedScroll.workspaceID, rowIDs.contains(.workspace(workspaceID)) else { return }
 
     awaitedScroll.workspaceID = nil
-    scrollIfRequested(workspaceID)
+    scroll(workspaceID)
   }
 }
 
