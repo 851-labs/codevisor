@@ -79,3 +79,26 @@ custom_rules:
       - apps/macos/Codevisor/Features/(Sidebar|BotList)/.*Rows?\.swift$
       - apps/macos/Codevisor/Features/Session/WorkspaceInspector\w*Rows?\.swift$
       - apps/macos/Codevisor/Features/Session/WorkspaceInspectorLinksView\.swift$
+  selection_binding:
+    name: Selection binding
+    message: >-
+      A Binding to the window selection re-runs every view that holds it on each tab switch. Take a
+      SidebarSelectionRef and read the selection only where it is shown.
+    regex: 'Binding<SidebarSelection\?>|@Binding\s+var\s+\w+:\s*SidebarSelection\?'
+    excluded_match_kinds: [comment, doccomment, string]
+    severity: error
+  environment_inline_action:
+    name: Environment action built inline
+    message: >-
+      An action built inline in .environment is a new value on every pass, so every view below
+      re-reads its environment. Give the action an identity (HandlerIdentity) so equal actions
+      compare equal.
+    regex: '\.environment\(\s*\\\.[A-Za-z]+,\s*(?:[A-Z][A-Za-z.]*\s*)?\{'
+    excluded_match_kinds: [comment, doccomment, string]
+    severity: error
+    included:
+      - apps/macos/Codevisor/CodevisorApp\.swift$
+      - apps/macos/Codevisor/RootView
+      - apps/macos/Codevisor/Features/(Session|Sidebar|Navigation|Panes|BotList)/
+    excluded:
+      - VirtualizedTranscriptScrollView\+Measurement\.swift$
