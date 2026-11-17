@@ -187,7 +187,7 @@ private struct QuestionOptionInfoButton: View {
     .buttonStyle(.plain)
     .help(info)
     .accessibilityLabel("About \(title)")
-    .popover(isPresented: $showsInfo, arrowEdge: .bottom) {
+    .anchoredPopover(isPresented: $showsInfo, arrowEdge: .bottom) {
       Text(info)
         .font(.callout)
         .fixedSize(horizontal: false, vertical: true)

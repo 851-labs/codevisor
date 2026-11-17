@@ -75,7 +75,7 @@ struct QuestionOptionRow: View {
     .buttonStyle(.plain)
     .padding(.trailing, 4)
     .accessibilityLabel("About \(title)")
-    .popover(isPresented: $showsInfo, arrowEdge: .bottom) {
+    .anchoredPopover(isPresented: $showsInfo, arrowEdge: .bottom) {
       Text(info)
         .font(.subheadline)
         .fixedSize(horizontal: false, vertical: true)
