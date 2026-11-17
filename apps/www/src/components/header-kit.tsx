@@ -29,6 +29,14 @@ export function GitHubMark({ className = "size-4" }: { className?: string }) {
   )
 }
 
+export function XMark({ className = "size-4" }: { className?: string }) {
+  return (
+    <svg viewBox="0 0 16 16" className={className} fill="currentColor" aria-hidden>
+      <path d="M9.11697 7.08118L13.4882 2H12.4523L8.65683 6.41192L5.62535 2H2.12891L6.71309 8.6716L2.12891 14H3.1648L7.17297 9.34086L10.3744 14H13.8709L9.11672 7.08118H9.11697ZM7.69817 8.73038L7.2337 8.06604L3.53805 2.77981H5.12913L8.11156 7.04596L8.57603 7.71031L12.4528 13.2557H10.8618L7.69817 8.73063V8.73038Z" />
+    </svg>
+  )
+}
+
 export function DiscordMark({ className = "size-[18px]" }: { className?: string }) {
   return (
     <svg viewBox="0 0 24 24" className={className} fill="currentColor" aria-hidden>
