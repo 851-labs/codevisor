@@ -128,13 +128,19 @@
         .controlSize(.large)
         .keyboardShortcut(.defaultAction)
         .disabled(!canContinue)
-        VStack(spacing: 10) {
-          if let skipTitle = model.skipTitle {
-            Button(skipTitle) { run(.skipSignIn) }.disabled(!canContinue)
+        if let skipTitle = model.skipTitle {
+          Button {
+            run(.skipSignIn)
+          } label: {
+            Text(skipTitle).frame(maxWidth: .infinity)
           }
-          Button("Cancel", action: cancel).keyboardShortcut(.cancelAction)
+          .buttonStyle(.bordered)
+          .controlSize(.large)
+          .disabled(!canContinue)
         }
-        .buttonStyle(.link)
+        Button("Cancel", action: cancel)
+          .buttonStyle(.link)
+          .keyboardShortcut(.cancelAction)
       }
     }
 
