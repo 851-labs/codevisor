@@ -1,13 +1,12 @@
 import { useEffect, useRef, useState } from "react"
 import type { ReactNode } from "react"
 
-import { DOWNLOAD_SECTION_ID, DOWNLOAD_URL } from "../components/header-kit"
+import { DOWNLOAD_SECTION_ID, DOWNLOAD_URL, TESTFLIGHT_URL } from "../components/header-kit"
 import { captureAnalytics } from "../lib/analytics"
 import { DEVICE_SHADOW, IPhonePro, MacBookPro } from "./home-devices"
 import { SectionHead } from "./section-head"
 
 const LINUX_COMMAND = "curl -fsSL https://www.codevisor.dev/install.sh | sh"
-const TESTFLIGHT_URL = "https://testflight.apple.com/join/qwsWkyxD"
 
 function CopyCommand({ command }: { command: string }) {
   const [copied, setCopied] = useState(false)
