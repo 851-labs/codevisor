@@ -1,3 +1,4 @@
+import CodevisorUI
 import SwiftUI
 
 struct ActiveWorkspaceOnly<Content: View>: View {
