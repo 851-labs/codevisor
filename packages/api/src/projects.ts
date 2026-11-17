@@ -72,6 +72,14 @@ export const ProjectEnvFileContent = Schema.Struct({
 })
 export type ProjectEnvFileContent = typeof ProjectEnvFileContent.Type
 
+export const SavedProjectWork = Schema.Struct({
+  branch: Schema.optional(Schema.String),
+  head: Schema.String,
+  snapshot: Schema.String,
+  bundle: Schema.String
+})
+export type SavedProjectWork = typeof SavedProjectWork.Type
+
 export const CreateProjectFromGitRequest = Schema.Struct({
   id: Schema.optional(Schema.String),
   url: Schema.String,

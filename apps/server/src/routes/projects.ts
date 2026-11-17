@@ -37,6 +37,7 @@ import { probeProject } from "./project-probe.js"
 import { projectRecommendationsForRequest } from "./project-recommendations.js"
 import { routePublishProjectRemote } from "./project-remote.js"
 import { reconcileProjectRepoUrls } from "./project-repo-identity.js"
+import { restoreProjectWork, saveProjectWork } from "./project-saved-work.js"
 import { createScratchProject } from "./project-scratch.js"
 import { routeProjectSetupSource, routeReadProjectEnvFiles } from "./project-setup-source.js"
 import { createProjectWorktree } from "./project-worktree-create.js"
@@ -115,6 +116,11 @@ export const routeProjects = async (
     return updateProject(services, fanout, serverId, projectId, request, response)
   if (projectId !== undefined && request.method === "DELETE")
     return deleteProject(services, config, fanout, serverId, projectId, response, url)
+  const savedWorkProjectId = matchRoute(url.pathname, "/v1/projects/:id/saved-work")
+  if (savedWorkProjectId !== undefined && request.method === "POST")
+    return saveProjectWork(services, serverId, savedWorkProjectId, response)
+  if (savedWorkProjectId !== undefined && request.method === "PUT")
+    return restoreProjectWork(services, serverId, savedWorkProjectId, request, response)
   const branchProjectId = matchRoute(url.pathname, "/v1/projects/:id/git/branches")
   if (branchProjectId !== undefined && request.method === "GET")
     return listProjectBranches(services, serverId, branchProjectId, response)

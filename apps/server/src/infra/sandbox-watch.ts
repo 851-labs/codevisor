@@ -17,6 +17,7 @@ import {
   type SandboxPowerState
 } from "./sandbox-power.js"
 import { connectionOf } from "./sandbox-profile-record.js"
+import { keepWork } from "./sandbox-saved-work.js"
 import { isoNow, remoteWorkspace } from "./sandbox-workspace.js"
 import type { SandboxDeps } from "./sandboxes.js"
 
@@ -79,9 +80,11 @@ const retireArchived = async (
   machine: PlacedMachine,
   workspace: RetiredWorkspace
 ): Promise<void> => {
+  const provider = await deps.connections.connect(connectionOf(machine))
+  const kept = await keepWork(deps, provider, machine, workspace.workspaceId)
   await deps.records.put({ ...machine, state: "destroying" })
-  await teardownMachine(deps, await deps.connections.connect(connectionOf(machine)), machine)
-  await leavePlaceholder(deps, machine, workspace)
+  await teardownMachine(deps, provider, machine)
+  await leavePlaceholder(deps, machine, { ...workspace, kept })
 }
 
 const tendLatest = async (

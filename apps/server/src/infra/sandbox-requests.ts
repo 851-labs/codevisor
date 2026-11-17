@@ -3,6 +3,7 @@ import type { ProvisionPlan } from "@codevisor/sandboxes"
 
 import { HttpFailure } from "../server-context.js"
 import { optionalLinks, profileRecordFields } from "./sandbox-profile-record.js"
+import { keptWorkOf } from "./sandbox-saved-work.js"
 import { isoNow } from "./sandbox-workspace.js"
 import type { SandboxDeps } from "./sandboxes.js"
 
@@ -51,8 +52,12 @@ export const restoreRequest = (
 
 export const restoredFields = (archived: Sandbox): Partial<Sandbox> => ({
   restoresWorkspace: true,
-  ...(archived.workspaceName === undefined ? {} : { workspaceName: archived.workspaceName })
+  ...(archived.workspaceName === undefined ? {} : { workspaceName: archived.workspaceName }),
+  ...keptWorkOf(archived)
 })
+
+export const restoringOf = (failed: Sandbox): Partial<Sandbox> | undefined =>
+  failed.restoresWorkspace === true ? restoredFields(failed) : undefined
 
 export const newRecord = (
   deps: SandboxDeps,

@@ -273,7 +273,8 @@ describe("sandbox lifetime", () => {
         createdAt: "2026-10-23T00:00:00.000Z",
         createdOn: "server-owner",
         workspaceId: "id-2",
-        workspaceName: "Renamed box"
+        workspaceName: "Renamed box",
+        hasSavedWork: true
       }
     ])
     expect(await placeholder(harness)).toMatchObject({

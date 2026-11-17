@@ -15,6 +15,12 @@ import {
 } from "./project-setup-test-support.js"
 import { field } from "./response-test-support.js"
 
+const checkoutState = async (folder: string) => ({
+  branch: (await git(["branch", "--show-current"], folder)).stdout.trim(),
+  commit: (await git(["log", "-1", "--format=%H %s"], folder)).stdout.trim(),
+  changes: (await git(["status", "--porcelain"], folder)).stdout
+})
+
 describe("project setup on another machine", () => {
   it("lists the source checkout's untracked env files and reads them back", async () => {
     const origin = await makeOrigin()
@@ -135,6 +141,43 @@ describe("project setup on another machine", () => {
     expect(branch).toMatch(/^codevisor\/[a-z0-9-]+$/)
     expect(await revision("HEAD")).toBe(await revision("origin/develop"))
     expect(await revision("HEAD")).not.toBe(await revision("origin/main"))
+  })
+
+  it("saves a checkout's branch and unpushed work, and puts them back on another machine's clone", async () => {
+    const url = `file://${await makeOrigin()}`
+    const cloned = async () => {
+      const { server } = await startServer()
+      const folder = join(await useBaseFolder(server), "widget")
+      const created = await jsonRequest(server, "/v1/projects/from-git", {
+        body: JSON.stringify({ url }),
+        method: "POST"
+      })
+      return {
+        server,
+        folder,
+        path: `/v1/projects/${String(field(created.body, "id"))}/saved-work`
+      }
+    }
+    const archived = await cloned()
+    await git(["checkout", "-b", "codevisor/pear"], archived.folder)
+    await git(["commit", "--allow-empty", "-m", "never pushed"], archived.folder)
+    writeFileSync(join(archived.folder, "README.md"), "edited")
+    writeFileSync(join(archived.folder, "notes.txt"), "untracked")
+
+    const saved = await jsonRequest(archived.server, archived.path, { method: "POST" })
+    const restored = await cloned()
+    const putBack = await jsonRequest(restored.server, restored.path, {
+      body: JSON.stringify(saved.body),
+      method: "PUT"
+    })
+
+    expect(saved.body).toMatchObject({ branch: "codevisor/pear" })
+    expect(putBack.status).toBe(204)
+    expect(await checkoutState(restored.folder)).toEqual(await checkoutState(archived.folder))
+    expect(await checkoutState(restored.folder)).toMatchObject({
+      branch: "codevisor/pear",
+      changes: " M README.md\n?? notes.txt\n"
+    })
   })
 
   it("expands, validates, and resets the clone base folder", async () => {
