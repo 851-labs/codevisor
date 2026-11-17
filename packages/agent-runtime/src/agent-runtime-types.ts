@@ -41,6 +41,7 @@ export interface AgentRuntimeConfig {
 export interface LoadedAgentSessionInfo {
   readonly sessionId: string
   readonly harnessId: string
+  readonly harnessAccountId?: string
   readonly resumable: boolean
 }
 

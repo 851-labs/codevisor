@@ -2,7 +2,11 @@ import type { HarnessUsageLimits, SessionAutoResumeUpdate } from "@codevisor/api
 import type { AutoResumeRecord, CodevisorDatabaseService } from "@codevisor/db"
 
 import { appendAndPublish, run, swallowError, type EventFanout } from "../server-context.js"
-import { autoResumeTrigger, type AutoResumeTrigger } from "./auto-resume-events.js"
+import {
+  autoResumeTrigger,
+  type AutoResumeTrigger,
+  type UsageLimitStopTrigger
+} from "./auto-resume-events.js"
 import { makeStartSlots } from "./auto-resume-slots.js"
 import {
   checkAfterBackoff,
@@ -11,6 +15,7 @@ import {
   limitState,
   maxUnknownResetChecks
 } from "./auto-resume-timing.js"
+import { makeSerialQueue } from "./serial-queue.js"
 
 export interface AutoResumeDependencies {
   readonly db: CodevisorDatabaseService
@@ -119,7 +124,7 @@ export const makeAutoResumeScheduler = (deps: AutoResumeDependencies): AutoResum
     return true
   }
 
-  const scheduleAfterStop = async (sessionId: string, reportedReset: string | undefined) => {
+  const scheduleAfterStop = async (sessionId: string, stop: UsageLimitStopTrigger) => {
     progress.delete(sessionId)
     slots.release(sessionId)
     const checks = await checksAfterStop(sessionId)
@@ -128,11 +133,30 @@ export const makeAutoResumeScheduler = (deps: AutoResumeDependencies): AutoResum
       return
     }
 
-    const { harnessId, harnessAccountId } = await run(db.getSessionSummary(sessionId))
-    const resetsAt = futureReset(reportedReset, Date.now()) ?? (await knownReset(sessionId))
-    const pending = { sessionId, harnessId, checks, ...optionalAccount(harnessAccountId) }
+    const pending = await pendingAfterStop(sessionId, checks, stop.stoppedOnAccountId)
+    const active = await deps.activeAccountId(pending.harnessId)
+    if (stoppedOnInactiveAccount(pending, active)) {
+      await checkOnAccount(pending, active)
+      return arm()
+    }
+
+    const resetsAt = futureReset(stop.resetsAt, Date.now()) ?? (await knownReset(sessionId))
     await scheduleFirstCheck(pending, resetsAt)
     await arm()
+  }
+
+  const pendingAfterStop = async (
+    sessionId: string,
+    checks: number,
+    stoppedOnAccountId: string | undefined
+  ): Promise<PendingResume> => {
+    const { harnessId, harnessAccountId } = await run(db.getSessionSummary(sessionId))
+    return {
+      sessionId,
+      harnessId,
+      checks,
+      ...optionalAccount(stoppedOnAccountId ?? harnessAccountId)
+    }
   }
 
   const checksAfterStop = async (sessionId: string): Promise<number> => {
@@ -169,7 +193,7 @@ export const makeAutoResumeScheduler = (deps: AutoResumeDependencies): AutoResum
   const handle = async (subjectId: string, trigger: AutoResumeTrigger): Promise<void> => {
     switch (trigger.kind) {
       case "usageLimitStop":
-        await scheduleAfterStop(subjectId, trigger.resetsAt)
+        await scheduleAfterStop(subjectId, trigger)
         break
       case "turnStarted":
         await settleStarted(subjectId)
@@ -207,11 +231,15 @@ export const makeAutoResumeScheduler = (deps: AutoResumeDependencies): AutoResum
     const switched = (await run(db.listWaitingAutoResumes)).filter((resume) =>
       stoppedOnOtherAccount(resume, harnessId, accountId)
     )
-    for (const resume of switched) {
-      await run(db.bindSessionHarnessAccount(resume.sessionId, accountId))
-      await checkNow({ ...resume, harnessAccountId: accountId })
-    }
+    for (const resume of switched)
+      await checkOnAccount({ ...withoutReset(resume), checks: 0 }, accountId)
     if (switched.length > 0) await arm()
+  }
+
+  const checkOnAccount = async (pending: PendingResume, accountId: string): Promise<void> => {
+    await run(db.bindSessionHarnessAccount(pending.sessionId, accountId))
+    await save({ ...pending, harnessAccountId: accountId }, new Date())
+    await markResuming(pending.sessionId)
   }
 
   const recheckAccount = async (accountId: string): Promise<void> => {
@@ -255,6 +283,14 @@ const stoppedOnOtherAccount = (
   resume.harnessId === harnessId &&
   resume.harnessAccountId !== undefined &&
   resume.harnessAccountId !== accountId
+
+const stoppedOnInactiveAccount = (
+  pending: PendingResume,
+  activeAccountId: string | undefined
+): activeAccountId is string =>
+  activeAccountId !== undefined &&
+  pending.harnessAccountId !== undefined &&
+  pending.harnessAccountId !== activeAccountId
 
 const optionalAccount = (harnessAccountId: string | undefined) =>
   harnessAccountId === undefined ? {} : { harnessAccountId }
@@ -301,14 +337,5 @@ const makeTimer = (): Timer => {
       closed = true
       clear()
     }
-  }
-}
-
-const makeSerialQueue = () => {
-  let tail: Promise<unknown> = Promise.resolve()
-  return <A>(step: () => Promise<A>): Promise<A> => {
-    const next = tail.then(step)
-    tail = next.catch(swallowError)
-    return next
   }
 }

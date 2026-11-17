@@ -25,6 +25,7 @@ import {
   type RuntimeEvent,
   type RuntimeEventSink
 } from "./types.js"
+import { withStoppedAccount } from "./usage-limit-stops.js"
 import { makeVersionProber } from "./version-probe.js"
 
 export interface ManagedSession {
@@ -143,7 +144,8 @@ export const makeAgentRuntimeCore = (config: AgentRuntimeConfig) => {
       }
     }
     let next = session.chain
-    for (const labeled of session.phases.label(withPlainFailureText(event))) {
+    const stamped = withStoppedAccount(withPlainFailureText(event), session.harnessAccountId)
+    for (const labeled of session.phases.label(stamped)) {
       next = next
         .then(() => session.sink(labeled))
         .then(

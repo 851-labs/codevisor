@@ -39,6 +39,7 @@ import { handleUpgrade } from "./routes/events.js"
 import { makeOAuthReturns } from "./routes/oauth-returns.js"
 import { backfillProjectRepoUrls } from "./routes/project-repo-identity.js"
 import { makeRemoteCreatorEvents } from "./routes/remote-creator-events.js"
+import { followRuntimeAccounts } from "./routes/runtime-account-follow-dispatch.js"
 import { makeSessionEventOutbox } from "./routes/session-event-outbox.js"
 import { makeSessionEventRouter } from "./routes/session-event-router.js"
 import {
@@ -199,6 +200,7 @@ export const makeCodevisorServerApp = (
   const attentionSettle = makeAttentionSettleScheduler(services.db, fanout)
   const autoResume = makeServerAutoResume(services, fanout, routeState, config.id)
   routeState.autoResume = autoResume
+  const stopFollowingAccounts = followRuntimeAccounts(services, fanout, routeState, config.id)
   const closeTerminalTitles = forwardTerminalTitles(services.db, services.terminal, fanout)
   const workspaceGit = startWorkspaceGitMonitorIfEnabled(services, config, fanout)
   void attentionSettle.recover().catch(swallowError)
@@ -311,6 +313,7 @@ export const makeCodevisorServerApp = (
       updateResume.close()
       attentionSettle.close()
       autoResume.close()
+      stopFollowingAccounts()
       unsubscribeTurns()
       unsubscribeBotConversations()
       unsubscribeUsageHoldRelease()

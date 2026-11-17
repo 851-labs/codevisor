@@ -59,6 +59,7 @@ const observeRootAssistantStatus = (
 }
 
 const observeAssistantStatus = (session: ClaudeSession, message: AssistantMessage): boolean => {
+  void ensureObservedTurnStarted(session)
   const contextUsage = claudeContextUsageFromAssistant(message.message)
   if (contextUsage !== undefined) session.latestContextUsage = contextUsage
   const assistantError = (message as { error?: unknown }).error
@@ -70,7 +71,6 @@ const observeAssistantStatus = (session: ClaudeSession, message: AssistantMessag
   } else {
     isErrorReply = recordUnstructuredAssistantError(session, message, usageLimitText)
   }
-  void ensureObservedTurnStarted(session)
   return isErrorReply
 }
 

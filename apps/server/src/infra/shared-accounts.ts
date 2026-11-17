@@ -1,6 +1,7 @@
 import { resolveShellEnv } from "@codevisor/agent-runtime"
 import type { CodevisorDatabaseService } from "@codevisor/db"
 import type { HarnessAuthManager, SharedCredentialVault } from "@codevisor/harness-manager"
+import { Effect } from "effect"
 
 import type { MachineClaudeLogin } from "./claude-login-takeover.js"
 import { makeSharedAccountCredentials } from "./shared-account-credentials.js"
@@ -81,7 +82,10 @@ export const makeSharedAccounts = (options: SharedAccountsOptions) => {
     forget: options.forgetProfileLogin ?? forgetNativeProfileLogin
   })
 
-  const gateway = makeSharedClaudeGateway({ token: credentials.token })
+  const gateway = makeSharedClaudeGateway({
+    token: credentials.token,
+    chatAccount: (chatId) => claudeChatAccount(db, chatId)
+  })
   const localRows = makeLocalAccountRows({ db, store, localState })
   const imports = makeSharedAccountImports({
     db,
@@ -161,3 +165,13 @@ export const makeSharedAccounts = (options: SharedAccountsOptions) => {
 }
 
 export type SharedAccounts = ReturnType<typeof makeSharedAccounts>
+
+const claudeChatAccount = async (
+  db: CodevisorDatabaseService,
+  chatId: string
+): Promise<string | undefined> => {
+  const chat = await Effect.runPromise(db.getSessionSummary(chatId)).catch(() => undefined)
+  if (chat?.harnessId !== CLAUDE_HARNESS) return undefined
+
+  return chat.harnessAccountId
+}

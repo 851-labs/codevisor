@@ -303,6 +303,10 @@ it("builds isolated Claude contexts and signs the account out everywhere", async
     ANTHROPIC_BASE_URL: "http://127.0.0.1:1/harness/claude",
     _CLAUDE_CODE_ASSUME_FIRST_PARTY_BASE_URL: "true"
   })
+  expect(context?.forChat?.("chat-1").env).toMatchObject({
+    CLAUDE_CODE_OAUTH_TOKEN: "access-alice",
+    ANTHROPIC_BASE_URL: "http://127.0.0.1:1/harness/claude/chats/chat-1"
+  })
   expect(JSON.stringify(context)).not.toContain("refreshToken")
   await m.shared.logout(id)
   expect(await m.shared.accounts("claude-code", true)).toEqual([])

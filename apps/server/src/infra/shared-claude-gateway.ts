@@ -6,8 +6,14 @@ import { SharedCredentialError, type SharedTokenBundle } from "@codevisor/harnes
 
 import { BoundedBody, isLocalhost } from "../server-http.js"
 
+export const claudeGatewayRoute = "/harness/claude"
+
+export const chatGatewayUrl = (gatewayUrl: string, chatId: string): string =>
+  `${gatewayUrl}${chatSegment}${chatId}`
+
 const maxBodyBytes = 32 * 1024 * 1024
-const routePrefix = "/harness/claude"
+const chatSegment = "/chats/"
+const chatPath = /^\/chats\/(?<chatId>[^/]+)(?<rest>\/.*)$/
 const upstreamOrigin = "https://api.anthropic.com"
 const postPaths = new Set(["/v1/messages", "/v1/messages/count_tokens"])
 const forwardedHeaderNames = new Set(["content-type", "accept", "user-agent", "x-app"])
@@ -42,8 +48,14 @@ interface UpstreamReply {
   readonly token: string
 }
 
+interface GatewayRoute {
+  readonly chatId?: string
+  readonly path: string
+}
+
 export const makeSharedClaudeGateway = (options: {
   readonly token: (id: string, rejected?: string) => Promise<SharedTokenBundle>
+  readonly chatAccount?: (chatId: string) => Promise<string | undefined>
   readonly fetch?: typeof fetch
 }) => {
   const credentials = new Map<string, string>()
@@ -60,6 +72,10 @@ export const makeSharedClaudeGateway = (options: {
     })
     return { result, token: token.accessToken }
   }
+  const servingAccount = async (route: GatewayRoute, caller: string): Promise<string> => {
+    if (route.chatId === undefined) return caller
+    return (await options.chatAccount?.(route.chatId)) ?? caller
+  }
   return {
     register: (id: string, accessToken: string) => {
       credentials.set(digest(accessToken), id)
@@ -72,11 +88,11 @@ export const makeSharedClaudeGateway = (options: {
       response.setHeader("Cache-Control", "no-store")
       if (isForeignCaller(request)) return reply(response, 403)
 
-      const id = accountFor(credentials, request)
-      if (id === undefined) return reply(response, 401)
+      const caller = accountFor(credentials, request)
+      if (caller === undefined) return reply(response, 401)
 
-      const path = url.pathname.slice(routePrefix.length)
-      if (!isProxiedRoute(request, path)) return reply(response, 404)
+      const route = gatewayRoute(url.pathname)
+      if (!isProxiedRoute(request, route.path)) return reply(response, 404)
 
       const abort = new AbortController()
       const disconnected = abortUnlessFinished(response, abort)
@@ -86,6 +102,8 @@ export const makeSharedClaudeGateway = (options: {
         for await (const chunk of request) if (!received.accept(chunk)) return reply(response, 413)
 
         const body = request.method === "POST" ? received.bytes() : undefined
+        const id = await servingAccount(route, caller)
+        const path = route.path
         const call = { id, request, url, path, headers: forwardedHeaders(request), body, abort }
         let upstream = await send(call)
         if (upstream.result.status === 401) {
@@ -108,6 +126,14 @@ export const makeSharedClaudeGateway = (options: {
 }
 
 const digest = (token: string) => createHash("sha256").update(token).digest("hex")
+
+const gatewayRoute = (pathname: string): GatewayRoute => {
+  const path = pathname.slice(claudeGatewayRoute.length)
+  const { chatId, rest } = chatPath.exec(path)?.groups ?? {}
+  if (chatId === undefined || rest === undefined) return { path }
+
+  return { chatId, path: rest }
+}
 
 const reply = (response: ServerResponse, status: number): void => {
   response.writeHead(status).end()

@@ -8,6 +8,7 @@ import type { SharedTokenBundle } from "@codevisor/harness-manager"
 
 import type { SharedHarnessAccount } from "./shared-account-store.js"
 import { antigravitySharedContext } from "./shared-antigravity.js"
+import { chatGatewayUrl, claudeGatewayRoute } from "./shared-claude-gateway.js"
 import { museSharedContext } from "./shared-muse.js"
 
 export const sharedAccountContext = async (
@@ -72,14 +73,19 @@ export const sharedAccountContext = async (
       }
     }
   deps.gateway.register(account.id, bundle.accessToken)
-  return {
+  const gatewayUrl = `${deps.baseUrl}${claudeGatewayRoute}`
+  const reaching = (baseUrl: string): HarnessAccountContext => ({
     id: account.id,
     profileKind: "managed",
     env: {
       CLAUDE_CONFIG_DIR: path,
       CLAUDE_CODE_OAUTH_TOKEN: bundle.accessToken,
-      ANTHROPIC_BASE_URL: `${deps.baseUrl}/harness/claude`,
+      ANTHROPIC_BASE_URL: baseUrl,
       _CLAUDE_CODE_ASSUME_FIRST_PARTY_BASE_URL: "true"
     }
+  })
+  return {
+    ...reaching(gatewayUrl),
+    forChat: (chatId) => reaching(chatGatewayUrl(gatewayUrl, chatId))
   }
 }
