@@ -46,6 +46,12 @@ export interface GitHost {
     onDeviceCode: (code: DeviceCode) => void
   ) => GitHostLogin
   readonly setUpGitCredentials?: (hostname: string, env: NodeJS.ProcessEnv) => Promise<void>
+  readonly token?: (hostname: string, env: NodeJS.ProcessEnv) => Promise<string | undefined>
+  readonly signInWithToken?: (
+    hostname: string,
+    token: string,
+    env: NodeJS.ProcessEnv
+  ) => Promise<GitHostLoginResult>
 }
 
 export interface OwnedBranch {

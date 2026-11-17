@@ -17,6 +17,7 @@ import {
 } from "@codevisor/sandboxes"
 
 import { HttpFailure } from "../server-context.js"
+import type { SavedGitSignIns } from "./git-sign-ins.js"
 import { forgetAbandoned, makeAbandonments, type Abandonments } from "./sandbox-abandon.js"
 import { joinAccount, requireOwner, teardownMachine } from "./sandbox-account.js"
 import { startRequestedAgent } from "./sandbox-agent-start.js"
@@ -24,6 +25,7 @@ import type { AgentOrder } from "./sandbox-agents.js"
 import { placementOf, runsElsewhere } from "./sandbox-catalog.js"
 import type { SandboxConnections } from "./sandbox-connections.js"
 import { refreshCredentials, type SandboxCredentials } from "./sandbox-credentials.js"
+import { requireGitSignIn, signInToGit } from "./sandbox-git.js"
 import { makeHarnessChoices } from "./sandbox-harness-choices.js"
 import { makeSandboxLogBook } from "./sandbox-log-book.js"
 import {
@@ -96,6 +98,8 @@ export interface SandboxDeps {
   readonly sync: (remote: SandboxRemote, firstHarness?: string) => Promise<OneWaySyncReport>
   readonly syncDeferred: (remote: SandboxRemote, order: AgentOrder) => Promise<void>
   readonly credentials: SandboxCredentials
+  readonly gitSignIns: SavedGitSignIns
+  readonly machineName: () => string
   readonly bootstrap: Omit<BootstrapRequest, "inviteCode" | "machineName">
   readonly clock: { readonly now: () => number; readonly sleep: (ms: number) => Promise<void> }
   readonly newId: () => string
@@ -163,7 +167,7 @@ export const makeSandboxes = (deps: SandboxDeps): Sandboxes => {
   const create = async (
     request: CreateSandboxRequest,
     publish?: SandboxSetupPublisher,
-    restoring: Partial<Sandbox> = {}
+    restoring?: Partial<Sandbox>
   ): Promise<Sandbox> => {
     requireOneWorkspace(request)
     requireOwner(deps)
@@ -172,6 +176,7 @@ export const makeSandboxes = (deps: SandboxDeps): Sandboxes => {
     if (runsElsewhere(provider.definition, await placementOf(deps, profile), deps.serverId)) {
       throw new HttpFailure(409, `${profile.name} runs on another Mac`)
     }
+    if (restoring === undefined) await requireGitSignIn(deps, await repoUrlOf(deps, request))
     const options = asBadRequest(() => readProfileOptions(provider.definition, profile.values))
     const plan = await planFor(provider, options)
     const machine = { ...newRecord(deps, request, profile, plan), ...restoring }
@@ -367,12 +372,13 @@ const provision = async (
   const firstHarness = planned.harness()
   const credentials = await deps.credentials.version()
   const report = await deps.sync(remote, firstHarness)
+  const git = await signInToGit(deps, remote, setup)
   deps.credentials.sent(initialId(record), credentials)
   deps.log(`Sandbox ${initialId(record)}: pushed ${report.entries} sync entries one way`)
   await record.advance({ state: "cloning" })
   checkpoint()
   setup.stage("clone")
-  const placed = await placeWorkspace(deps, { ...record.current(), ...joined })
+  const placed = await placeWorkspace(deps, { ...record.current(), ...joined }, git)
   checkpoint()
   const started = await startRequestedAgent(
     deps,
@@ -385,6 +391,12 @@ const provision = async (
   await record.advance({ ...placed, ...started, state: "ready" })
   return { remote, firstHarness }
 }
+
+const repoUrlOf = async (
+  deps: SandboxDeps,
+  request: CreateSandboxRequest
+): Promise<string | undefined> =>
+  (await deps.projects.get(request.projectId))?.repoUrl ?? request.repoUrl
 
 const installRemainingAgents = async (
   deps: SandboxDeps,

@@ -101,6 +101,7 @@ public struct ServerGitHostAuthStatus: Decodable, Equatable, Sendable {
   public var supported: Bool
   public var signedIn: Bool
   public var account: String?
+  public var copiesToSandboxes: Bool?
 
   public init(
     host: String,
@@ -109,7 +110,8 @@ public struct ServerGitHostAuthStatus: Decodable, Equatable, Sendable {
     cliInstalled: Bool = false,
     supported: Bool = false,
     signedIn: Bool = false,
-    account: String? = nil
+    account: String? = nil,
+    copiesToSandboxes: Bool? = nil
   ) {
     self.host = host
     self.provider = provider
@@ -118,6 +120,7 @@ public struct ServerGitHostAuthStatus: Decodable, Equatable, Sendable {
     self.supported = supported
     self.signedIn = signedIn
     self.account = account
+    self.copiesToSandboxes = copiesToSandboxes
   }
 }
 

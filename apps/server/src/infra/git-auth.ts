@@ -10,6 +10,7 @@ import type {
 } from "@codevisor/git-hosts"
 
 import { failureMessage } from "../server-http.js"
+import { copiesToSandboxes } from "./git-sign-ins.js"
 
 export interface GitAuthTimings {
   readonly codeWaitMs: number
@@ -54,7 +55,8 @@ export const makeGitAuthManager = (
       provider: gitHost.provider,
       cli: gitHost.command,
       supported: true,
-      ...signIn
+      ...signIn,
+      ...(copiesToSandboxes(host) ? { copiesToSandboxes: true } : {})
     }
   }
 

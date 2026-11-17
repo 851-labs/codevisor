@@ -1,4 +1,4 @@
-import type { FakePauses } from "@codevisor/sandboxes"
+import type { ExecRequest, FakePauses } from "@codevisor/sandboxes"
 import { describe, expect, it } from "vitest"
 
 import { FAKE_PROFILE, JOINED_DEVICE, ok, sandboxHarness } from "./sandbox-test-support.js"
@@ -125,6 +125,9 @@ describe("pausing an idle sandbox", () => {
   })
 })
 
+const isSignInPush = (curl: ExecRequest): boolean =>
+  curl.script.includes("/v1/sync/") || curl.script.includes("/v1/git/auth/sign-ins")
+
 describe("waking a sandbox", () => {
   it("answers waking at once, then restarts its Codevisor and gives it a fresh idle window", async () => {
     const harness = await readySandbox("in-place")
@@ -141,7 +144,7 @@ describe("waking a sandbox", () => {
     })
     expect(woken?.power).toBeUndefined()
     expect(harness.provider.machines.get("fake-1")?.state).toBe("running")
-    expect(harness.curls.findLast((curl) => !curl.script.includes("/v1/sync/"))?.script).toContain(
+    expect(harness.curls.findLast((curl) => !isSignInPush(curl))?.script).toContain(
       'codevisor" start'
     )
   })

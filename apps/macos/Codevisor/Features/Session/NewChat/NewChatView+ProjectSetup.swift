@@ -24,7 +24,9 @@ extension NewChatView {
 
   func installSendInterceptor(on controller: SessionController) {
     controller.sendInterceptor = { [weak controller] _ in
-      guard let controller, controller.project.isRunTargetPlaceholder else { return false }
+      guard let controller else { return false }
+      if let plan = controller.sandboxSignInPlan { return holdsSandboxSend(plan, controller: controller) }
+      guard controller.project.isRunTargetPlaceholder else { return false }
       controller.projectClone = nil
       guard let group = pendingSetupGroup else { return false }
       return interceptSetupSend(group, controller: controller)
@@ -62,6 +64,15 @@ extension NewChatView {
     controller.projectClone = request
     controller.onProjectCloned = { project in adoptClonedProject(project) }
     return false
+  }
+
+  private func holdsSandboxSend(_ plan: ProjectMachineSetup.Plan, controller: SessionController) -> Bool {
+    let access = controller.projectCloneAccess
+    guard !access.isChecking else { return true }
+    guard !access.isVerified(plan) else { return false }
+
+    checkCloneAccess(plan, controller: controller)
+    return true
   }
 
   private func checkCloneAccess(_ plan: ProjectMachineSetup.Plan, controller: SessionController) {

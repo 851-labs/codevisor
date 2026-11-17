@@ -32,6 +32,15 @@ struct ProjectCloner {
     return failure(plan, code: access.code)
   }
 
+  func sandboxSignInFailure(_ plan: Plan) async -> Failure? {
+    guard let host = plan.host,
+      let status = try? await clientFor(plan.targetServerId).gitAuthStatus(host: host),
+      status.copiesToSandboxes == true, !status.signedIn
+    else { return nil }
+
+    return failure(plan, code: "auth_failed", serverId: plan.targetServerId)
+  }
+
   func failure(_ plan: Plan, code: String?, serverId: String? = nil) -> Failure {
     let machine = serverId.map(machineName) ?? plan.targetMachineName
     return Failure(

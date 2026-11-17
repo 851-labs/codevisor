@@ -69,6 +69,40 @@ exit 0`)
     )
   })
 
+  it("reads the saved token, and finds none when signed out or without gh", async () => {
+    const signedIn = recordingGh(`echo "gho_saved"`)
+    const signedOut = recordingGh(`echo "no oauth token found for github.com" >&2; exit 1`)
+
+    expect(await github.token?.("github.com", signedIn.env)).toBe("gho_saved")
+    expect(signedIn.calls()[0]).toMatch(/^auth token --hostname github\.com /)
+    expect(await github.token?.("github.com", signedOut.env)).toBeUndefined()
+    expect(await github.token?.("github.com", emptyEnv())).toBeUndefined()
+  })
+
+  it("signs in with a token passed on stdin, kept out of the arguments and the failure text", async () => {
+    const taken = join(testTempDir("codevisor-gh-stdin-"), "token")
+    const accepting = recordingGh(`read -r token; echo "$token" > '${taken}'`)
+    const rejecting = recordingGh(
+      `echo "error validating token gho_copied: bad credentials" >&2; exit 1`
+    )
+
+    expect(await github.signInWithToken?.("github.com", "gho_copied", accepting.env)).toEqual({
+      signedIn: true
+    })
+    expect(readFileSync(taken, "utf8")).toBe("gho_copied\n")
+    expect(accepting.calls()[0]).toMatch(
+      /^auth login --hostname github\.com --with-token --git-protocol https --insecure-storage browser=true/
+    )
+    expect(await github.signInWithToken?.("github.com", "gho_copied", rejecting.env)).toEqual({
+      signedIn: false,
+      message: "error validating token [token]: bad credentials"
+    })
+    expect(await github.signInWithToken?.("github.com", "gho_copied", emptyEnv())).toEqual({
+      signedIn: false,
+      message: "gh isn't installed"
+    })
+  })
+
   it("explains a failed or impossible sign-in", async () => {
     const failing = recordingGh(`echo "error connecting to github.com" >&2\nexit 1`)
 

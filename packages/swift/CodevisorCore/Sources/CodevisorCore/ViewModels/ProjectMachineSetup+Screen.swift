@@ -64,12 +64,21 @@ extension ProjectMachineSetup {
     let name = provider.displayName
     let machine = model.machineName
     let message =
-      if case .confirmingSetup = model.step {
+      if plan.sandboxName != nil {
+        sandboxSignInMessage(model, service: name)
+      } else if case .confirmingSetup = model.step {
         "To clone \(plan.projectName) on \(machine), you need to sign in to \(name). Set up \(name) on \(machine)?"
       } else {
         "\(machine) needs to sign in to \(name) to continue."
       }
     return Screen(symbol: provider.logo, title: "Sign In to \(name)", message: message)
+  }
+
+  private func sandboxSignInMessage(_ model: GitSignInModel, service: String) -> String {
+    let machine = model.machineName
+    let reason = "Sandboxes use \(machine)'s \(service) sign-in to clone and push."
+    if case .confirmingSetup = model.step { return "\(reason) Set up \(service) on \(machine)?" }
+    return "\(reason) Sign in once on \(machine) and every sandbox gets it."
   }
 
   private var failureMessage: String? {

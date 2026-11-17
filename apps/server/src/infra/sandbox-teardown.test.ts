@@ -74,7 +74,9 @@ describe("teardown robustness", () => {
     await harness.machines.create(request)
     await harness.machines.settled()
 
-    expect((await harness.machines.list())[0]?.error).toBe("clone exploded")
+    expect((await harness.machines.list())[0]?.error).toBe(
+      "Couldn't clone 851-labs/codevisor: clone exploded"
+    )
   })
 
   it("keeps a sandbox created while the sweep was asking the provider for its list", async () => {

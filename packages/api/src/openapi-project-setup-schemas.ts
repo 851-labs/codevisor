@@ -1,6 +1,12 @@
 import type { Schema } from "effect"
 
-import { GitAuthFlow, GitHostAuthStatus, StartGitAuthRequest } from "./git-auth.js"
+import {
+  ApplyGitSignInsRequest,
+  ApplyGitSignInsResponse,
+  GitAuthFlow,
+  GitHostAuthStatus,
+  StartGitAuthRequest
+} from "./git-auth.js"
 import type { Endpoint } from "./openapi-endpoints.js"
 import {
   CheckProjectCloneAccessRequest,
@@ -20,6 +26,7 @@ export const projectSetupRequestSchemas: Partial<Record<Endpoint, Schema.Constra
   "PUT /v1/projects/clone-settings": UpdateProjectCloneSettingsRequest,
   "POST /v1/projects/clone-access": CheckProjectCloneAccessRequest,
   "POST /v1/git/auth/login": StartGitAuthRequest,
+  "PUT /v1/git/auth/sign-ins": ApplyGitSignInsRequest,
   "POST /v1/projects/:id/env-files/read": ReadProjectEnvFilesRequest,
   "POST /v1/projects/:id/remote": PublishProjectRemoteRequest
 }
@@ -33,6 +40,7 @@ export const projectSetupResponseSchemas: Partial<Record<Endpoint, Schema.Constr
   "GET /v1/git/auth/status": GitHostAuthStatus,
   "POST /v1/git/auth/login": GitAuthFlow,
   "GET /v1/git/auth/login/:flowId": GitAuthFlow,
+  "PUT /v1/git/auth/sign-ins": ApplyGitSignInsResponse,
   "POST /v1/projects/:id/env-files/read": ReadProjectEnvFilesResponse,
   "POST /v1/projects/:id/remote": Project
 }

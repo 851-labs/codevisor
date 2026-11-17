@@ -11,6 +11,7 @@ final class SandboxPrewarm {
   let key: Key
   let machineId: String
   let client: any CodevisorServerClienting
+  private(set) var creationFailed = false
   private var creation: Task<Result<Void, any Error>, Never>?
   private var follow: Task<Void, Never>?
   private var choice: Task<Void, Never>?
@@ -31,7 +32,11 @@ final class SandboxPrewarm {
     let request = ServerSandboxRequest(
       id: machineId, profileId: key.target.profileId, projectId: key.projectId,
       projectName: project.name, repoUrl: project.repoUrl, workspaceId: nil, harnessId: harnessId)
-    creation = Task { await Self.create(request, client: client) }
+    creation = Task { [weak self] in
+      let result = await Self.create(request, client: client)
+      if case .failure = result { self?.creationFailed = true }
+      return result
+    }
   }
 
   func created() async throws {

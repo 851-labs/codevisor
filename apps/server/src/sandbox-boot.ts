@@ -9,6 +9,7 @@ import {
   type MachineRoles
 } from "@codevisor/cloud-client"
 import type { CodevisorDatabaseService } from "@codevisor/db"
+import { makeGitHosts } from "@codevisor/git-hosts"
 import {
   appleContainerAdapter,
   containerCliHost,
@@ -38,7 +39,9 @@ import {
   type TartInstall
 } from "@codevisor/sandboxes"
 import type { BlobStore } from "@codevisor/sync"
+import { machineGitEnvironment } from "@codevisor/worktrees"
 
+import { makeSavedGitSignIns } from "./infra/git-sign-ins.js"
 import type { MachineEnrollment } from "./infra/machine-enrollment.js"
 import type { MachineLink } from "./infra/machine-link.js"
 import { FIRST_AGENT_WAIT, pushRemainingAgents } from "./infra/sandbox-agents.js"
@@ -115,6 +118,10 @@ export const startSandboxes = (
         (project) => project.id.toLowerCase() === projectId.toLowerCase()
       )
   }
+  const gitSignIns = makeSavedGitSignIns(
+    makeGitHosts({ toolsDir: join(options.dataDir, "tools") }),
+    machineGitEnvironment
+  )
   const machines = makeSandboxes({
     records,
     management: makeSandboxManagement({
@@ -154,7 +161,11 @@ export const startSandboxes = (
         ...FIRST_AGENT_WAIT,
         sleep: (ms) => delay(ms)
       }),
-    credentials: makeSandboxCredentials({ db: options.db }, (line) => console.log(line)),
+    credentials: makeSandboxCredentials({ db: options.db, gitSignIns }, (line) =>
+      console.log(line)
+    ),
+    gitSignIns,
+    machineName: options.machineName,
     bootstrap: bootstrapSettings(options.env),
     clock: { now: Date.now, sleep: (ms) => delay(ms) },
     newId: randomUUID,

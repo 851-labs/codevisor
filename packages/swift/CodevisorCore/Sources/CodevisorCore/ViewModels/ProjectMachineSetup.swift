@@ -18,6 +18,7 @@ public final class ProjectMachineSetup {
     public let worktreeBase: ProjectWorktreeBase?
     public let defaultRunLocation: ProjectRunLocation?
     public var copiesEnvFiles: Bool
+    public let sandboxName: String?
 
     public init(
       projectName: String,
@@ -32,7 +33,8 @@ public final class ProjectMachineSetup {
       homeRelativePath: String? = nil,
       worktreeBase: ProjectWorktreeBase? = nil,
       defaultRunLocation: ProjectRunLocation? = nil,
-      copiesEnvFiles: Bool = true
+      copiesEnvFiles: Bool = true,
+      sandboxName: String? = nil
     ) {
       self.projectName = projectName
       self.repoUrl = repoUrl
@@ -47,6 +49,7 @@ public final class ProjectMachineSetup {
       self.worktreeBase = worktreeBase
       self.defaultRunLocation = defaultRunLocation
       self.copiesEnvFiles = copiesEnvFiles
+      self.sandboxName = sandboxName
     }
 
     public var host: String? { GitRemoteURL.host(of: repoUrl) }
@@ -213,7 +216,8 @@ public final class ProjectMachineSetup {
   }
 
   public func cloneAccessFailure(_ plan: Plan) async -> Failure? {
-    await cloner.accessFailure(plan)
+    guard plan.sandboxName == nil else { return await cloner.sandboxSignInFailure(plan) }
+    return await cloner.accessFailure(plan)
   }
 
   public func present(_ plan: Plan, failure: Failure) {

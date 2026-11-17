@@ -4,11 +4,12 @@ import { makeCliInstaller } from "./cli-install.js"
 import { startDeviceLogin } from "./cli-login.js"
 import { runCli } from "./cli-process.js"
 import { currentPlatform, githubCliRelease } from "./cli-release.js"
-import type { GitHost, GitHostTools, PullRequestHost } from "./git-host.js"
+import type { GitHost, GitHostLoginResult, GitHostTools, PullRequestHost } from "./git-host.js"
 import { findGithubPullRequest } from "./github-pull-request.js"
 
 const command = "gh"
 const setupGitTimeoutMs = 20_000
+const tokenTimeoutMs = 20_000
 
 export const githubHost = (tools: GitHostTools = {}): GitHost & PullRequestHost => {
   const { toolsDir } = tools
@@ -38,10 +39,55 @@ export const githubHost = (tools: GitHostTools = {}): GitHost & PullRequestHost 
         timeoutMs: setupGitTimeoutMs
       })
     },
+    token: (hostname, env) => savedToken(gh(env), hostname, ghEnv(env)),
+    signInWithToken: (hostname, token, env) =>
+      signInWithToken(gh(env), hostname, token, ghEnv(env)),
     findPullRequest: (directory, env, branch, owned) =>
       findGithubPullRequest(gh(env), directory, env, branch, owned)
   }
 }
+
+const savedToken = async (
+  path: string | undefined,
+  hostname: string,
+  env: NodeJS.ProcessEnv
+): Promise<string | undefined> => {
+  if (path === undefined) return undefined
+
+  const result = await runCli(path, ["auth", "token", "--hostname", hostname], env, {
+    timeoutMs: tokenTimeoutMs
+  })
+  const token = result.stdout.trim()
+  if (result.exitCode !== 0 || token.length === 0) return undefined
+  return token
+}
+
+const signInWithToken = async (
+  path: string | undefined,
+  hostname: string,
+  token: string,
+  env: NodeJS.ProcessEnv
+): Promise<GitHostLoginResult> => {
+  if (path === undefined) return { signedIn: false, message: `${command} isn't installed` }
+
+  const result = await runCli(path, tokenLoginArgs(hostname), env, {
+    timeoutMs: tokenTimeoutMs,
+    stdin: `${token}\n`
+  })
+  if (result.exitCode === 0) return { signedIn: true }
+  return { signedIn: false, message: result.output.replaceAll(token, "[token]").trim() }
+}
+
+const tokenLoginArgs = (hostname: string): ReadonlyArray<string> => [
+  "auth",
+  "login",
+  "--hostname",
+  hostname,
+  "--with-token",
+  "--git-protocol",
+  "https",
+  "--insecure-storage"
+]
 
 const loginArgs = (hostname: string): ReadonlyArray<string> => [
   "auth",
