@@ -3,20 +3,18 @@ import CodevisorUI
 import SwiftUI
 
 struct WorkspaceDeck<Page: View>: View {
-  let active: WorkspaceDeckRoute?
+  let navigation: WindowNavigation
   @ViewBuilder let page: (WorkspaceDeckRoute) -> Page
-  @Environment(AppEnvironment.self) private var environment
-  @State private var history = RecentPages<WorkspaceDeckSlot, WorkspaceDeckRoute>(capacity: 5)
   @State private var focusAnchor = DetailColumnFocusAnchor()
-  @State private var activities: [WorkspaceDeckSlot: WorkspaceActivity] = [:]
-  @State private var sizes = WorkspaceDeckSizes()
 
   var body: some View {
+    let deck = navigation.deck
+    let sizes = navigation.deckSizes
     WorkspaceDeckLayout {
-      ForEach(history.pages(showing: active, in: activeSlot)) { mounted in
-        let isActive = mounted.id == activeSlot
+      ForEach(deck.pages) { mounted in
+        let isActive = mounted.id == deck.activeSlot
         let frozenSize = isActive ? nil : sizes.frozenSize(for: mounted.id)
-        WorkspaceDeckPage(route: mounted.route, activity: activity(for: mounted.id)) {
+        WorkspaceDeckPage(route: mounted.route, activity: deck.activity(for: mounted.id)) {
           page(mounted.route)
         }
         .equatable()
@@ -28,44 +26,9 @@ struct WorkspaceDeck<Page: View>: View {
     }
     .onGeometryChange(for: CGSize.self, of: \.size) { sizes.current = $0 }
     .background(DetailColumnFocusAnchor.Capture(anchor: focusAnchor).frame(width: 0, height: 0))
-    .onChange(of: activeSlot, initial: true) { previous, slot in
-      sizes.show(slot, hiding: previous)
-      syncActivities(active: slot)
-      guard let active, let slot else { return }
-      focusAnchor.releaseFocus()
-      if !history.pages.contains(where: { $0.id == slot }) { NavigationSwitchTrace.shared.note("builtPage") }
-      history.show(active, in: slot)
-    }
-  }
-
-  private func activity(for slot: WorkspaceDeckSlot) -> WorkspaceActivity {
-    activities[slot] ?? WorkspaceActivity(isActive: slot == activeSlot)
-  }
-
-  private func syncActivities(active: WorkspaceDeckSlot?) {
-    let mounted = Set(history.pages(showing: self.active, in: active).map(\.id))
-    activities = activities.filter { mounted.contains($0.key) }
-    sizes.keep(mounted)
-    for slot in mounted where activities[slot] == nil {
-      activities[slot] = WorkspaceActivity(isActive: slot == active)
-    }
-    for (slot, activity) in activities where activity.isActive != (slot == active) {
-      activity.isActive = slot == active
-    }
-  }
-
-  private var activeSlot: WorkspaceDeckSlot? {
-    active.map(slot(for:))
-  }
-
-  private func slot(for route: WorkspaceDeckRoute) -> WorkspaceDeckSlot {
-    switch route {
-    case let .session(_, sessionId):
-      environment.workspaces.workspaceId(forSession: sessionId).map(WorkspaceDeckSlot.workspace) ?? .session(sessionId)
-    case let .workspace(_, workspaceId):
-      .workspace(workspaceId)
-    case let .bot(_, botId):
-      .bot(botId)
+    .onChange(of: navigation.deckSlot, initial: true) { _, slot in
+      navigation.showDeckPage()
+      if slot != nil { focusAnchor.releaseFocus() }
     }
   }
 }

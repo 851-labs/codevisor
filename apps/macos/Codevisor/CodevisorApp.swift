@@ -18,7 +18,7 @@ struct RootView: View {
   @Environment(AppEnvironment.self) var environment
   @Environment(\.openSettings) var openClientSettings
   @State var clientWindow = ClientWindowControl()
-  @State var selection: SidebarSelection?
+  @State var navigation = WindowNavigation()
   @State private var sidebarRevealRequest = SidebarRevealRequest()
   @ClientPreference(SidebarMode.preferenceKey, default: SidebarMode.code) var sidebarMode
   @State var botEditor: BotEditorTarget?
@@ -27,6 +27,15 @@ struct RootView: View {
   @State var panelLayout = AdaptivePanelLayout()
   @State private var commandPalette = CommandPalette()
   @State private var handlerIdentity = HandlerIdentity.unique
+
+  var selection: SidebarSelection? {
+    get { navigation.selection }
+    nonmutating set { navigation.selection = newValue }
+  }
+
+  private var selectionBinding: Binding<SidebarSelection?> {
+    Bindable(navigation).selection
+  }
 
   var body: some View {
     mainSplit
@@ -46,7 +55,7 @@ struct RootView: View {
         .frame(width: 0, height: 0)
       )
       .background(
-        SidebarSelectionReader(selection: $selection) { selection in
+        SidebarSelectionReader(selection: selectionBinding) { selection in
           RootTitlebar(isBotConversation: selection?.owningMode == .bots, panelLayout: panelLayout)
         }
       )
@@ -65,7 +74,6 @@ struct RootView: View {
       .background(
         WindowLayoutReader { panelLayout.updateWindow(width: $0, isFullScreen: $1) }.frame(width: 0, height: 0)
       )
-      .modifier(OpenSessionTracking(selection: $selection, store: store))
       .task(id: environment.machines.sandboxMachineProfilesLoadKey) {
         await environment.machines.loadSandboxMachineProfiles()
       }
@@ -80,6 +88,7 @@ struct RootView: View {
         if store == nil {
           let created = SessionStore(environment: environment)
           store = created
+          navigation.attach(store: created, environment: environment)
           created.setWindowFocused(clientWindow.window?.isKeyWindow == true)
           ChromiumAutomationBridge.shared.addStore(created)
         }
@@ -87,8 +96,8 @@ struct RootView: View {
           await environment.cloud.bootstrap()
         }
       }
-      .modifier(SidebarModeSelectionMemory(selection: $selection) { panelLayout.dismissDrawer() })
-      .modifier(SidebarSelectionHistory(selection: $selection, revealRequest: sidebarRevealRequest))
+      .modifier(SidebarModeSelectionMemory(selection: selectionBinding) { panelLayout.dismissDrawer() })
+      .modifier(SidebarSelectionHistory(selection: selectionBinding, revealRequest: sidebarRevealRequest))
       .modifier(UpdateCenterUpkeep())
       .modifier(ConnectionRecoveryUpkeep())
       .modifier(ChromiumBrowserHostSync())
@@ -125,23 +134,23 @@ struct RootView: View {
 
   private var mainSplit: some View {
     RootSplitView(store: store, windowControl: clientWindow) {
-      RootSidebar(selection: $selection, botEditor: $botEditor, store: store, revealRequest: sidebarRevealRequest)
+      RootSidebar(selection: selectionBinding, botEditor: $botEditor, store: store, revealRequest: sidebarRevealRequest)
     } detail: {
       Group {
         if let store {
-          SidebarSelectionReader(selection: $selection) { selection in
-            detail(store, selection: selection)
-          }
+          detail(store)
         } else {
           ProgressView().frame(maxWidth: .infinity, maxHeight: .infinity)
         }
       }
       .toolbar {
-        SidebarComposeToolbarItem(selection: $selection, newChat: openNewChat, newBot: openNewBot)
+        SidebarComposeToolbarItem(selection: selectionBinding, newChat: openNewChat, newBot: openNewBot)
       }
     }
-    .modifier(WorkspaceInspectorPresentation(store: store, selection: $selection))
-    .modifier(WorkspaceChildAgentsEnvironment(store: store, selection: $selection, revealRequest: sidebarRevealRequest))
+    .modifier(WorkspaceInspectorPresentation(store: store, selection: selectionBinding))
+    .modifier(
+      WorkspaceChildAgentsEnvironment(store: store, selection: selectionBinding, revealRequest: sidebarRevealRequest)
+    )
     .overlay {
       AdaptiveDrawerLayer(
         isPresented: !panelLayout.docksSidebar && panelLayout.activeDrawer == .leading,
@@ -149,19 +158,21 @@ struct RootView: View {
         width: AdaptivePanelLayout.sidebarDrawerWidth
       ) {
         RootSidebar(
-          selection: $selection, botEditor: $botEditor, store: store, revealRequest: sidebarRevealRequest,
+          selection: selectionBinding, botEditor: $botEditor, store: store, revealRequest: sidebarRevealRequest,
           publishesSceneActions: false,
           isDrawer: true)
       }
     }
   }
 
-  private func detail(_ store: SessionStore, selection: SidebarSelection?) -> some View {
+  private func detail(_ store: SessionStore) -> some View {
     ZStack {
-      WorkspaceDeck(active: WorkspaceDeckRoute(selection)) { route in
+      WorkspaceDeck(navigation: navigation) { route in
         deckPage(store, route: route)
       }
-      transientDetail(store, selection: selection)
+      SidebarSelectionReader(selection: selectionBinding) { selection in
+        transientDetail(store, selection: selection)
+      }
     }
   }
 
@@ -282,7 +293,7 @@ struct RootView: View {
   private func newChatView(_ store: SessionStore, target: NewChatTarget?) -> some View {
     NewChatView(
       store: store,
-      selection: $selection,
+      selection: selectionBinding,
       initialProjectTarget: target.flatMap { environment.machines.isSandbox($0.serverId) ? nil : $0 },
       requiresInitialProjectResolution: requiresInitialNewChatProjectResolution,
       onInitialProjectResolutionCompleted: {

@@ -1,6 +1,7 @@
 import AppKit
 import CodevisorCore
 import StreamMarkdown
+import CodevisorUI
 import SwiftUI
 
 enum ComposerKeyCommand {
