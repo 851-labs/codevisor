@@ -9,7 +9,9 @@ import {
   payloadOf,
   resultWith,
   run,
-  sdkMessage
+  sdkMessage,
+  startTestSession,
+  systemMessage
 } from "./test-support.js"
 
 describe("Claude billing errors", () => {
@@ -49,5 +51,44 @@ describe("Claude billing errors", () => {
       expect(endedPayload).toMatchObject({ stopDetail, stopKind: "usageLimit" })
       expect(endedPayload?.retryable).toBeUndefined()
     }
+  })
+
+  it("pauses a wake-up turn Claude starts by itself when its account is out of credits", async () => {
+    const { fake, events } = await startTestSession()
+
+    fake.push(
+      systemMessage("task_notification", {
+        output_file: "/tmp/bg-1.txt",
+        status: "completed",
+        summary: "Wait finished",
+        task_id: "bg-1"
+      })
+    )
+    fake.push(
+      sdkMessage({
+        error: "billing_error",
+        message: {
+          content: [{ text: "Credit balance is too low", type: "text" }],
+          id: "msg-billing",
+          role: "assistant"
+        },
+        parent_tool_use_id: null,
+        session_id: "sdk-session-1",
+        type: "assistant",
+        uuid: "00000000-0000-0000-0000-000000000004"
+      })
+    )
+    fake.push(resultWith({ is_error: true, result: "Credit balance is too low" }))
+    await fake.drain()
+
+    const payloads = events.map(payloadOf)
+    expect(payloads.find((payload) => payload.turnState === "started")).toMatchObject({
+      initiatedBy: "agent"
+    })
+    expect(payloads.find((payload) => payload.turnState === "ended")).toMatchObject({
+      initiatedBy: "agent",
+      stopDetail: "Credit balance is too low",
+      stopKind: "usageLimit"
+    })
   })
 })
