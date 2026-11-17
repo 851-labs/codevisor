@@ -21,11 +21,7 @@ private struct WorkspaceInspectorAutomationScheduleSection: View {
 
   var body: some View {
     Section("Schedule") {
-      Text(event.explained)
-        .textSelection(.enabled)
-        .accessibilityLabel("Schedule")
-        .accessibilityValue(event.explained)
-      WorkspaceInspectorAutomationNextRun(event: event)
+      WorkspaceInspectorAutomationTimedText(title: "Schedule", text: event.explained, firesAt: event.firesAt)
     }
   }
 }
@@ -40,24 +36,21 @@ private struct WorkspaceInspectorAutomationPluginTriggerSection: View {
       LabeledContent("Event") {
         WorkspaceInspectorAutomationSource(event: event, serverId: serverId, client: client)
       }
-      WorkspaceInspectorAutomationCondition(condition: event.explained)
-      WorkspaceInspectorAutomationNextRun(event: event)
+      WorkspaceInspectorAutomationCondition(condition: event.explained, firesAt: event.firesAt)
     }
   }
 }
 
 private struct WorkspaceInspectorAutomationCondition: View {
   let condition: String
+  let firesAt: Date?
 
   var body: some View {
     VStack(alignment: .leading, spacing: 2) {
       Text("When")
         .accessibilityHidden(true)
-      Text(condition)
+      WorkspaceInspectorAutomationTimedText(title: "When", text: condition, firesAt: firesAt)
         .foregroundStyle(.secondary)
-        .textSelection(.enabled)
-        .accessibilityLabel("When")
-        .accessibilityValue(condition)
     }
   }
 }
@@ -76,28 +69,46 @@ private struct WorkspaceInspectorAutomationSource: View {
   }
 }
 
-private struct WorkspaceInspectorAutomationNextRun: View {
-  let event: SubscribedPluginEvent
+private struct WorkspaceInspectorAutomationTimedText: View {
+  let title: String
+  let text: String
+  let firesAt: Date?
 
   var body: some View {
-    if let firesAt = event.firesAt {
-      LabeledContent("Next run") {
-        TimelineView(.periodic(from: .now, by: 1)) { context in
-          Text(SubscriptionCountdown.text(until: firesAt, now: context.date))
-            .lineLimit(1)
-        }
+    if let firesAt {
+      TimelineView(.periodic(from: .now, by: 1)) { context in
+        WorkspaceInspectorAutomationCountdownLine(title: title, text: text, firesAt: firesAt, now: context.date)
       }
-      .help(dateTooltip(for: firesAt))
+    } else {
+      Text(text)
+        .textSelection(.enabled)
+        .accessibilityLabel(title)
+        .accessibilityValue(text)
+    }
+  }
+}
+
+private struct WorkspaceInspectorAutomationCountdownLine: View {
+  let title: String
+  let text: String
+  let firesAt: Date
+  let now: Date
+
+  var body: some View {
+    HStack(alignment: .firstTextBaseline) {
+      Text(text)
+        .textSelection(.enabled)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .accessibilityLabel(title)
+        .accessibilityValue(spokenValue)
+      Text(SubscriptionCountdown.text(until: firesAt, now: now))
+        .foregroundStyle(.secondary)
+        .fixedSize()
+        .accessibilityHidden(true)
     }
   }
 
-  private var scheduleShowsDate: Bool {
-    event.isSchedule && event.once
-  }
-
-  private func dateTooltip(for firesAt: Date) -> String {
-    guard !scheduleShowsDate else { return "" }
-
-    return firesAt.formatted(date: .abbreviated, time: .shortened)
+  private var spokenValue: String {
+    "\(text), \(SubscriptionCountdown.spokenText(until: firesAt, now: now))"
   }
 }
