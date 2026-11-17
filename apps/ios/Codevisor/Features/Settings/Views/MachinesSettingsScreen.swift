@@ -76,43 +76,18 @@ struct MachinesSettingsScreen: View {
     removingCloudMachine = cloudMachine(for: machine)
   }
 
-  private func connectionText(_ connection: MachineConnectionPresentation) -> Text {
-    let dot = Text(Image(systemName: "circlebadge.fill"))
-      .font(.caption2)
-      .foregroundStyle(connection.indicator == .connected ? Color.green : .gray)
-    return Text("\(dot) \(connection.label())")
-  }
-
   private func machineRow(_ machine: CodevisorMachine) -> some View {
     let presence = cloudMachine(for: machine)
-    let connection = MachineConnectionPresentation(
-      isLocal: machine.isLocal,
-      status: machines.statusByMachineId[machine.id],
-      availability: machines.availabilityByMachineId[machine.id],
-      navigationSyncState: machines.navigationSyncStateByMachineId[machine.id],
-      cloud: presence.map { CloudMachineReach(presence: $0, pipes: cloud.directPaths) }
+    return MachineSettingsRowLabel(
+      name: machine.name,
+      sandbox: presence?.ephemeral,
+      icon: SidebarGroupIcon.machine(machine.id, in: machines).image,
+      connection: connection(for: machine, presence: presence),
+      keyChanged: keyChanged(presence),
+      onTrustKey: { trustingKey = presence }
     )
-    let keyChanged = presence.map { cloud.machinesWithChangedKeys.contains($0.deviceId) } ?? false
-    return Label {
-      MachineNameText(name: machine.name, sandbox: presence?.ephemeral)
-      if keyChanged {
-        Text("\(Image(systemName: "exclamationmark.shield.fill")) Key Changed")
-          .foregroundStyle(.orange)
-      } else {
-        connectionText(connection)
-      }
-    } icon: {
-      SidebarGroupIcon.machine(machine.id, in: machines).image
-        .foregroundStyle(.secondary)
-    }
-    .accessibilityElement(children: .combine)
-    .accessibilityAddTraits(keyChanged ? .isButton : [])
-    .contentShape(Rectangle())
-    .onTapGesture {
-      if keyChanged { trustingKey = presence }
-    }
     .contextMenu {
-      if let presence, cloud.machinesWithChangedKeys.contains(presence.deviceId) {
+      if keyChanged(presence) {
         Button {
           trustingKey = presence
         } label: {
@@ -144,41 +119,22 @@ struct MachinesSettingsScreen: View {
       }
       .accessibilityLabel("Edit")
     }
-    .confirmationDialog(
-      "Disconnect “\(removingCloudMachine?.name ?? "")”?",
-      isPresented: Binding(
-        get: { presence != nil && removingCloudMachine?.deviceId == presence?.deviceId },
-        set: { if !$0 { removingCloudMachine = nil } }
-      ),
-      titleVisibility: .visible,
-      presenting: removingCloudMachine
-    ) { machine in
-      Button("Disconnect Machine", role: .destructive) {
-        Task { await cloud.remove(deviceId: machine.deviceId) }
-      }
-      Button("Cancel", role: .cancel) {}
-    } message: { machine in
-      Text(
-        "“\(machine.name)” will be signed out of your account. Nothing on the machine itself is changed — run codevisor auth login there to reconnect it."
-      )
-    }
-    .confirmationDialog(
-      "Trust the new key for “\(trustingKey?.name ?? "")”?",
-      isPresented: Binding(
-        get: { presence != nil && trustingKey?.deviceId == presence?.deviceId },
-        set: { if !$0 { trustingKey = nil } }
-      ),
-      titleVisibility: .visible,
-      presenting: trustingKey
-    ) { machine in
-      Button("Trust New Key", role: .destructive) {
-        cloud.trustChangedMachineKey(deviceId: machine.deviceId)
-      }
-      Button("Cancel", role: .cancel) {}
-    } message: { machine in
-      Text(
-        "“\(machine.name)” is presenting a different encryption key than the one this device remembers. That happens if the machine was re-provisioned — but it can also mean something between you and the machine is intercepting traffic. Only trust the new key if you expected this change."
-      )
-    }
+    .modifier(
+      MachineRowDialogs(presence: presence, cloud: cloud, removing: $removingCloudMachine, trusting: $trustingKey)
+    )
+  }
+
+  private func keyChanged(_ presence: CloudMachine?) -> Bool {
+    presence.map { cloud.machinesWithChangedKeys.contains($0.deviceId) } ?? false
+  }
+
+  private func connection(for machine: CodevisorMachine, presence: CloudMachine?) -> MachineConnectionPresentation {
+    MachineConnectionPresentation(
+      isLocal: machine.isLocal,
+      status: machines.statusByMachineId[machine.id],
+      availability: machines.availabilityByMachineId[machine.id],
+      navigationSyncState: machines.navigationSyncStateByMachineId[machine.id],
+      cloud: presence.map { CloudMachineReach(presence: $0, pipes: cloud.directPaths) }
+    )
   }
 }

@@ -180,21 +180,6 @@
     }
   },
   {
-    "text": "  private func machineRow(_ machine: CodevisorMachine) -> some View {",
-    "violation": {
-      "location": {
-        "character": 11,
-        "file": "apps/ios/Codevisor/Features/Settings/Views/MachinesSettingsScreen.swift",
-        "line": 99
-      },
-      "reason": "Function body should span 50 lines or less excluding comments and whitespace: currently spans 96 lines",
-      "ruleDescription": "Function bodies should not span too many lines",
-      "ruleIdentifier": "function_body_length",
-      "ruleName": "Function Body Length",
-      "severity": "error"
-    }
-  },
-  {
     "text": "  init(terminalKey: String, cwd: String, config: CodevisorServerConfig) {",
     "violation": {
       "location": {

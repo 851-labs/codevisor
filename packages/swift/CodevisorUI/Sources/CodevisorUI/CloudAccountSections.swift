@@ -37,32 +37,17 @@ public struct CloudAccountSections: View {
       }
       Section {
         if cloud.state.isSignedIn {
-          Button(action: manageConnections) {
-            HStack {
-              Label("Connected Accounts", systemImage: "person.crop.circle.badge.checkmark")
-              Spacer()
-              Image(systemName: "chevron.right")
-                .font(.footnote.weight(.semibold))
-                .foregroundStyle(.tertiary)
-            }
-            .foregroundStyle(.primary)
-          }
-          .buttonStyle(.plain)
+          SettingsNavigationRow(
+            "Connected Accounts",
+            systemImage: "person.crop.circle.badge.checkmark",
+            action: manageConnections
+          )
           .disabled(cloud.isDeletingAccount)
         }
-        Button(action: configureServer) {
-          HStack {
-            Label("Cloud Server", systemImage: "network")
-            Spacer()
-            Text(cloud.customServerURL == nil ? "Default" : "Custom")
-              .foregroundStyle(.secondary)
-            Image(systemName: "chevron.right")
-              .font(.footnote.weight(.semibold))
-              .foregroundStyle(.tertiary)
-          }
-          .foregroundStyle(.primary)
+        SettingsNavigationRow(title: "Cloud Server", systemImage: "network", action: configureServer) {
+          Text(cloud.customServerURL == nil ? "Default" : "Custom")
+            .foregroundStyle(.secondary)
         }
-        .buttonStyle(.plain)
         .disabled(isSigningIn || cloud.isDeletingAccount)
       }
       CloudAccountDeletionSection(cloud: cloud)
