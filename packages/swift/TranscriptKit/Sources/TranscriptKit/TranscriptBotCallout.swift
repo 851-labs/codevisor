@@ -8,7 +8,7 @@ public struct TranscriptBotCallout: Equatable, Sendable {
 
   public let label: String
   public let markdown: String
-  public let blocks: [MarkdownBlock]
+  public let fragments: [MarkdownFragment]
 
   init?(quote text: String) {
     var lines = text.replacingOccurrences(of: "\r\n", with: "\n").components(separatedBy: "\n")
@@ -17,7 +17,7 @@ public struct TranscriptBotCallout: Equatable, Sendable {
     lines.removeFirst()
     self.label = label
     markdown = TranscriptBotMessageContent.bubbleMarkdown(lines.map(Self.unquoted).joined(separator: "\n"))
-    blocks = MarkdownParser().parse(markdown)
+    fragments = MarkdownFragmentProjection.fragments(from: MarkdownParser().parse(markdown))
   }
 
   private static func label(inMarker line: String) -> String? {

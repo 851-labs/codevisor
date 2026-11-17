@@ -21,25 +21,23 @@ enum TranscriptPlanRowProjection {
         estimatedHeight: 42,
         spacingAfter: 0
       ))
-    for chunk in TranscriptMarkdownChunkProjection.chunks(from: blocks) {
+    for fragment in MarkdownFragmentProjection.fragments(from: blocks) {
       let projected = TranscriptMarkdownChunk(
         messageID: messageID,
         sourceID: "plan",
-        ordinal: chunk.firstOrdinal,
-        blocks: chunk.blocks,
+        ordinal: fragment.firstOrdinal,
+        content: fragment,
         documentSource: markdown,
         lifecycle: lifecycle,
         container: .planDocument,
-        documentBlockCount: blocks.count,
-        fragment: chunk.fragment,
-        precedingRole: chunk.precedingRole
+        documentBlockCount: blocks.count
       )
       rows.append(
         .init(
           id: markdownID(
             messageID: messageID,
-            ordinal: chunk.firstOrdinal,
-            fragment: chunk.fragment?.identity,
+            ordinal: fragment.firstOrdinal,
+            fragment: fragment.layout?.identity,
             lifecycle: lifecycle
           ),
           content: .markdownChunk(projected),

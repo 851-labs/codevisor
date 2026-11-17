@@ -12,6 +12,10 @@
 
     var listItemGap: CGFloat { lineSpacing + listItemSeparatorHeight }
 
+    func gap(above fragment: MarkdownFragment) -> CGFloat {
+      fragment.precedingRole.map { blockGap(after: $0, before: fragment.blocks[0].role) } ?? 0
+    }
+
     func gap(_ trailing: MarkdownFragmentLayout.TrailingSpacing) -> CGFloat {
       switch trailing {
       case .none: 0

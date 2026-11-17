@@ -29,7 +29,8 @@ public enum TranscriptBotMessageWidth {
     if let cached = cache[key] { return cached }
     if cache.count >= cacheLimit { cache.removeAll(keepingCapacity: true) }
     let width = max(
-      measure(content.markdown, body: body), MarkdownTableNaturalWidth.widest(in: content.blocks, theme: theme))
+      measure(content.markdown, body: body), MarkdownTableNaturalWidth.widest(in: content.fragments, theme: theme),
+      nestedCodeWidth(in: content.fragments))
     cache[key] = width
     return width
   }
@@ -58,6 +59,19 @@ public enum TranscriptBotMessageWidth {
       widest = max(widest, ceil(width))
     }
     return max(widest, 1)
+  }
+
+  private static func nestedCodeWidth(in fragments: [MarkdownFragment]) -> CGFloat {
+    let font = codeFont
+    return fragments.reduce(0) { widest, fragment in
+      guard let layout = fragment.layout else { return widest }
+      let indent = MarkdownFragmentMetrics.contentIndent(of: layout)
+      return fragment.blocks.reduce(widest) { result, block in
+        guard case let .codeBlock(_, code, _) = block else { return result }
+        let lines = code.split(separator: "\n", omittingEmptySubsequences: false)
+        return max(result, ceil(indent + (lines.map { codeWidth(of: $0, font: font) }.max() ?? 0)))
+      }
+    }
   }
 
   private static func codeWidth(of line: Substring, font: MessageFont) -> CGFloat {

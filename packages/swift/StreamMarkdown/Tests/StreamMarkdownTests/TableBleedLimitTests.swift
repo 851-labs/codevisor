@@ -1,8 +1,8 @@
 #if canImport(AppKit)
   import AppKit
-  import MarkdownCore
   import Testing
 
+  @testable import MarkdownCore
   @testable import StreamMarkdown
 
   @MainActor
@@ -17,13 +17,13 @@
       let markdown = SettledMarkdownView(frame: NSRect(x: 40, y: 0, width: 520, height: 200))
       document.addSubview(markdown)
       markdown.setContent(
-        blocks: [
+        fragment: MarkdownFragment(blocks: [
           .table(
             headers: [MarkdownText("Column"), MarkdownText("Column")],
             alignments: [],
             rows: [[MarkdownText(String(repeating: "unbreakable", count: 20)), MarkdownText("x")]]
           )
-        ],
+        ]),
         theme: .default,
         streamID: "bleed",
         linkAction: nil
@@ -62,13 +62,13 @@
       let markdown = SettledMarkdownView(frame: NSRect(x: 40, y: 0, width: 520, height: 200))
       document.addSubview(markdown)
       markdown.setContent(
-        blocks: [
+        fragment: MarkdownFragment(blocks: [
           .table(
             headers: [MarkdownText("Column"), MarkdownText("Column")],
             alignments: [],
             rows: [[MarkdownText(String(repeating: "unbreakable", count: 20)), MarkdownText("x")]]
           )
-        ],
+        ]),
         theme: .default,
         streamID: "bleed-move",
         linkAction: nil

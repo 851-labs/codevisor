@@ -203,20 +203,18 @@ enum TranscriptAssistantRowProjection {
           source, messageID: message.id, sourceID: sourceID, isReceiving: lifecycle == .receiving
         )
         let sourceOrdinal = ordinal
-        let chunks = TranscriptMarkdownChunkProjection.chunks(from: blocks)
-        for (chunkIndex, chunk) in chunks.enumerated() {
-          let chunkOrdinal = sourceOrdinal + chunk.firstOrdinal
+        let fragments = MarkdownFragmentProjection.fragments(from: blocks)
+        for (fragmentIndex, fragment) in fragments.enumerated() {
+          let chunkOrdinal = sourceOrdinal + fragment.firstOrdinal
           let projected = TranscriptMarkdownChunk(
             messageID: message.id,
             sourceID: sourceID,
             ordinal: chunkOrdinal,
-            blocks: chunk.blocks,
+            content: fragment,
             documentSource: source,
             lifecycle: lifecycle,
             container: .assistantResponse,
-            animationSourceID: segmentIndex == 0 ? entryID : sourceID,
-            fragment: chunk.fragment,
-            precedingRole: chunk.precedingRole
+            animationSourceID: segmentIndex == 0 ? entryID : sourceID
           )
           responseRows.append(
             .init(
@@ -224,13 +222,13 @@ enum TranscriptAssistantRowProjection {
                 messageID: message.id,
                 sourceID: sourceID,
                 ordinal: chunkOrdinal,
-                fragment: chunk.fragment?.identity,
+                fragment: fragment.layout?.identity,
                 lifecycle: lifecycle
               ),
               content: .markdownChunk(projected),
               estimatedHeight: projected.estimatedHeight,
               measurementRevision: projected.measurementRevision,
-              spacingAfter: chunkIndex == chunks.count - 1 ? 10 : 0
+              spacingAfter: fragmentIndex == fragments.count - 1 ? 10 : 0
             ))
         }
         ordinal += blocks.count

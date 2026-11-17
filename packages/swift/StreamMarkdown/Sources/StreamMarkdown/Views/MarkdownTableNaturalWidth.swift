@@ -2,6 +2,15 @@ import SwiftUI
 
 public enum MarkdownTableNaturalWidth {
   @MainActor
+  public static func widest(in fragments: [MarkdownFragment], theme: MarkdownTheme) -> CGFloat {
+    fragments.reduce(0) { result, fragment in
+      let table = widest(in: fragment.blocks, theme: theme)
+      guard table > 0 else { return result }
+      return max(result, table + MarkdownFragmentMetrics.contentIndent(of: fragment.layout))
+    }
+  }
+
+  @MainActor
   public static func widest(in blocks: [MarkdownBlock], theme: MarkdownTheme) -> CGFloat {
     blocks.reduce(0) { widest, block in
       guard case let .table(headers, alignments, rows) = block else { return widest }

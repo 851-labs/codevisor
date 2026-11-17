@@ -71,7 +71,7 @@ struct BotBubbleRow: View {
   }
 
   private var markdown: some View {
-    MarkdownBlockGroupsView(blocks: content.blocks, documentSource: content.markdown, streamID: message.id)
+    MarkdownFragmentsView(fragments: content.fragments, documentSource: content.markdown, streamID: message.id)
       .transcriptBotMessageWidth(fitting: content)
   }
 }

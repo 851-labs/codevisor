@@ -38,22 +38,11 @@
     }
 
     static func canRender(_ list: MarkdownList) -> Bool {
-      list.items.allSatisfy { canRender($0.blocks) }
+      !MarkdownFragmentProjection.nestsFragmentBlocks(list.items.flatMap(\.blocks))
     }
 
     static func canRender(_ blocks: [MarkdownBlock]) -> Bool {
-      blocks.allSatisfy { block in
-        switch block {
-        case .heading, .paragraph, .bulletList, .orderedList:
-          true
-        case let .list(list):
-          canRender(list)
-        case let .blockQuote(blocks):
-          canRender(blocks)
-        case .codeBlock, .table, .thematicBreak:
-          false
-        }
-      }
+      blocks.allSatisfy(MarkdownFragmentProjection.isTextBlock)
     }
 
     static func attributedString(

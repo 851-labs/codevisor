@@ -33,4 +33,27 @@ struct MarkdownListMarkerLayoutTests {
     #expect(paragraph.headIndent == MarkdownFragmentMetrics.listIndent)
     #expect(paragraph.tabStops.first?.location == MarkdownFragmentMetrics.listIndent)
   }
+
+  @Test("A quote nested in a list item draws its bar under the item's text, right of the item's marker")
+  func quoteInsideListItemSitsInsideTheItem() throws {
+    let fragments = MarkdownFragmentProjection.fragments(
+      from: MarkdownParser().parse("- Item:\n\n  > ```\n  > let x = 1\n  > ```"))
+    let item = try #require(fragments.first?.layout)
+    let quoted = try #require(fragments.last?.layout)
+    let marker = try #require(item.listMarkers.first)
+
+    #expect(MarkdownFragmentMetrics.quoteBarOffset(at: 0, in: quoted) == MarkdownFragmentMetrics.listIndent)
+    #expect(MarkdownFragmentMetrics.markerOffset(marker, in: item) < MarkdownFragmentMetrics.listIndent)
+  }
+
+  @Test("A list nested in a quote keeps its markers right of the quote bar")
+  func listInsideQuoteSitsInsideTheQuote() throws {
+    let fragments = MarkdownFragmentProjection.fragments(
+      from: MarkdownParser().parse("> - Item:\n>\n>   ```\n>   let x = 1\n>   ```"))
+    let item = try #require(fragments.first?.layout)
+    let marker = try #require(item.listMarkers.first)
+
+    #expect(MarkdownFragmentMetrics.quoteBarOffset(at: 0, in: item) == 0)
+    #expect(MarkdownFragmentMetrics.markerOffset(marker, in: item) >= MarkdownFragmentMetrics.quoteIndent)
+  }
 }

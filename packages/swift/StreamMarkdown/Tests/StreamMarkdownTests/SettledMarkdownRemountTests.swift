@@ -1,4 +1,5 @@
 import AppKit
+@testable import MarkdownCore
 @testable import StreamMarkdown
 import Testing
 
@@ -17,7 +18,7 @@ struct SettledMarkdownRemountTests {
     ]
     func mountedView(_ streamID: String) -> SettledMarkdownView {
       let view = SettledMarkdownView()
-      view.setContent(blocks: blocks, theme: .default, streamID: streamID, linkAction: nil)
+      view.setContent(fragment: MarkdownFragment(blocks: blocks), theme: .default, streamID: streamID, linkAction: nil)
       window.contentView?.addSubview(view)
       return view
     }

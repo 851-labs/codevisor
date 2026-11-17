@@ -54,7 +54,7 @@ struct TranscriptBotMessageContentTests {
     #expect(warning.partStyle == .callout)
     #expect(warning.callout?.label == "Warning")
     #expect(
-      warning.callout?.blocks == [
+      warning.callout?.fragments.flatMap(\.blocks) == [
         .paragraph(MarkdownText(spans: [.text("Back up first."), .hardBreak, .text("It deletes the cache.")]))
       ])
     #expect(content("> [!tip]\n> Use the cache.").callout?.label == "Tip")

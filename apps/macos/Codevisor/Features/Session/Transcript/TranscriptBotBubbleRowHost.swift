@@ -9,7 +9,7 @@ import TranscriptKit
 final class TranscriptBotBubbleRowHost: TranscriptMountedRowHost {
   private let bubble = TranscriptBubbleBackgroundView()
   private let anchor = UserBubbleAnchorView()
-  private let markdownView = SettledMarkdownView()
+  private let markdownView = SettledMarkdownDocumentView()
   private var content: TranscriptBotMessageContent?
   private var style: TranscriptMarkdownRowStyle?
   private var bubbleLayout = TranscriptBotBubbleLayout.plainText
@@ -61,7 +61,7 @@ final class TranscriptBotBubbleRowHost: TranscriptMountedRowHost {
     self.style = style
     bubbleLayout = layout
     markdownView.setContent(
-      blocks: content.blocks, theme: style.markdown, streamID: messageID, linkAction: linkAction,
+      fragments: content.fragments, theme: style.markdown, streamID: messageID, linkAction: linkAction,
       imageLoader: imageLoader, chrome: layout.chrome)
     bubble.isHighlighted = TranscriptMessageMenuHighlight.shared.messageID == messageID
     measuredWidth = max(1, bounds.width)

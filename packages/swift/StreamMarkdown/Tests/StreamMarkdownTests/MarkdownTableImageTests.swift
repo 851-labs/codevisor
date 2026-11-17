@@ -1,6 +1,7 @@
 import CodevisorTestSupport
 import Foundation
 import Testing
+@testable import MarkdownCore
 @testable import StreamMarkdown
 
 #if canImport(AppKit)
@@ -151,7 +152,7 @@ struct MarkdownTableImageTests {
       }
       let view = SettledMarkdownView()
       view.setContent(
-        blocks: MarkdownParser().parse("| Preview |\n| --- |\n| ![](./image.png) |"),
+        fragment: MarkdownFragment(blocks: MarkdownParser().parse("| Preview |\n| --- |\n| ![](./image.png) |")),
         theme: .default, streamID: "fixture", linkAction: nil, imageLoader: loader)
       let before = view.contentHeight(forWidth: 400)
       view.onContentHeightChange = { changed.signal() }

@@ -1,10 +1,10 @@
 import ACPKit
 import Foundation
-import MarkdownCore
 import StreamMarkdown
 import Testing
 import TranscriptKit
 @testable import CodevisorUI
+@testable import MarkdownCore
 
 @Suite("Transcript find")
 struct TranscriptFindEngineTests {
@@ -42,7 +42,8 @@ struct TranscriptFindEngineTests {
       content: .markdownChunk(
         TranscriptMarkdownChunk(
           messageID: UUID(), sourceID: "s", ordinal: 0,
-          blocks: [.paragraph(MarkdownText(text)), .codeBlock(language: nil, code: "alpha", isComplete: true)],
+          content: MarkdownFragment(
+            blocks: [.paragraph(MarkdownText(text)), .codeBlock(language: nil, code: "alpha", isComplete: true)]),
           documentSource: text, lifecycle: .settled, container: .assistantResponse
         )),
       estimatedHeight: 10
@@ -66,7 +67,8 @@ struct TranscriptFindEngineTests {
       id: .bottomSpacer,
       content: .markdownChunk(
         TranscriptMarkdownChunk(
-          messageID: UUID(), sourceID: "s", ordinal: 0, blocks: [.paragraph(MarkdownText(text))],
+          messageID: UUID(), sourceID: "s", ordinal: 0,
+          content: MarkdownFragment(blocks: [.paragraph(MarkdownText(text))]),
           documentSource: text, lifecycle: .settled, container: .assistantResponse
         )),
       estimatedHeight: 10

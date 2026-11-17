@@ -57,6 +57,6 @@ public struct TranscriptMarkdownChunkView: View {
 
 public extension TranscriptMarkdownChunk {
   func topSpacing(in theme: MarkdownTheme) -> CGFloat {
-    precedingRole.map { theme.blockGap(after: $0, before: blocks[0].role) } ?? 0
+    theme.gap(above: content)
   }
 }

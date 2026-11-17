@@ -34,5 +34,18 @@
 
       #expect(size.width == layoutWidth)
     }
+
+    @Test("A table nested in a list item makes its bubble wide enough for the table and the item's indent")
+    func nestedTableWidthIncludesListIndent() {
+      let lone = TranscriptBotMessageContent(
+        TranscriptBotMessage(id: "lone", sender: .bot, text: table, sentAt: .distantPast))
+      let nestedText = "- Today:\n\n" + table.split(separator: "\n").map { "  \($0)" }.joined(separator: "\n")
+      let nested = TranscriptBotMessageContent(
+        TranscriptBotMessage(id: "nested", sender: .bot, text: nestedText, sentAt: .distantPast))
+
+      #expect(
+        TranscriptBotMessageWidth.natural(of: nested, theme: .default)
+          >= TranscriptBotMessageWidth.natural(of: lone, theme: .default) + MarkdownFragmentMetrics.listIndent)
+    }
   }
 #endif

@@ -1,4 +1,5 @@
 import AppKit
+@testable import MarkdownCore
 @testable import StreamMarkdown
 import SwiftUI
 import Testing
@@ -51,9 +52,9 @@ struct SettledMarkdownViewTests {
   func widthControlsWrapping() {
     let view = SettledMarkdownView()
     view.setContent(
-      blocks: [
+      fragment: MarkdownFragment(blocks: [
         .paragraph(String(repeating: "A settled Markdown sentence. ", count: 30))
-      ],
+      ]),
       theme: .default,
       streamID: "settled-prose",
       linkAction: nil
@@ -77,7 +78,7 @@ struct SettledMarkdownViewTests {
     func document(_ paragraph: String) -> SettledMarkdownView {
       let view = SettledMarkdownView()
       view.setContent(
-        blocks: MarkdownParser().parse("---\n\n# Tophat\n\n\(paragraph)"),
+        fragment: MarkdownFragment(blocks: MarkdownParser().parse("---\n\n# Tophat\n\n\(paragraph)")),
         theme: .default,
         streamID: "source-wrapped-document",
         linkAction: nil
@@ -116,7 +117,7 @@ struct SettledMarkdownViewTests {
     ]
     func mountedView(_ streamID: String) -> SettledMarkdownView {
       let view = SettledMarkdownView()
-      view.setContent(blocks: blocks, theme: .default, streamID: streamID, linkAction: nil)
+      view.setContent(fragment: MarkdownFragment(blocks: blocks), theme: .default, streamID: streamID, linkAction: nil)
       window.contentView?.addSubview(view)
       return view
     }
@@ -226,7 +227,7 @@ struct SettledMarkdownViewTests {
     )
     let view = SettledMarkdownView()
     view.setContent(
-      blocks: blocks,
+      fragment: MarkdownFragment(blocks: blocks),
       theme: .default,
       streamID: "settled-complex",
       linkAction: nil
@@ -313,7 +314,7 @@ struct SettledMarkdownViewTests {
 
     dark.performAsCurrentDrawingAppearance {
       view.setContent(
-        blocks: [.codeBlock(language: nil, code: "let answer = 42", isComplete: true)],
+        fragment: MarkdownFragment(blocks: [.codeBlock(language: nil, code: "let answer = 42", isComplete: true)]),
         theme: .default, streamID: "appearance", linkAction: nil)
     }
     view.frame = NSRect(x: 0, y: 0, width: 400, height: view.contentHeight(forWidth: 400))
