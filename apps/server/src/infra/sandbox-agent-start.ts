@@ -43,18 +43,18 @@ const startArguments = (agent: SandboxAgentStart, project: string) => ({
   harness: agent.harness,
   project,
   ...(agent.model === undefined ? {} : { model: agent.model }),
-  ...(agent.labels === undefined ? {} : { labels: agent.labels })
+  ...(agent.labels === undefined ? {} : { labels: agent.labels }),
+  ...(agent.standalone === true ? { standalone: true } : {})
 })
 
-const startedIds = (
-  started: unknown
-): { readonly agentId: string; readonly workspaceId: string } => {
+const startedIds = (started: unknown): Pick<Sandbox, "agentId" | "workspaceId"> => {
   const agentId = stringField(started, "agentId")
+  if (agentId === undefined) throw new Error("The sandbox didn't say which agent it started")
+
   const workspaceId = stringField(started, "workspaceId")
-  if (agentId === undefined || workspaceId === undefined) {
-    throw new Error("The sandbox didn't say which agent it started")
-  }
-  return { agentId, workspaceId: workspaceId.toLowerCase() }
+  return workspaceId === undefined
+    ? { agentId }
+    : { agentId, workspaceId: workspaceId.toLowerCase() }
 }
 
 const stringField = (value: unknown, key: string): string | undefined => {

@@ -80,10 +80,23 @@ struct SandboxPrewarmTests {
     #expect(client.createCount == 1)
   }
 
-  @Test("Without a project there is nothing to start early")
-  func scratchProjectsWait() {
+  @Test("A chat with no project starts its VM with nothing to clone")
+  func noProjectStartsWithoutRepository() async {
     let client = PrewarmFakeServerClient()
     let controller = makeController(client: client, scratch: true)
+
+    controller.sandboxTarget = .tartVM
+    let request = await client.nextCreate()
+
+    #expect(request.projectId == controller.project.id)
+    #expect(request.repoUrl == nil)
+  }
+
+  @Test("Before a no-project chat has its folder there is nothing to start early")
+  func placeholderWaits() {
+    let client = PrewarmFakeServerClient()
+    let controller = makeController(client: client)
+    controller.project = .runTargetPlaceholder(serverId: "local")
 
     controller.sandboxTarget = .tartVM
 

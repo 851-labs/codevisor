@@ -76,7 +76,7 @@ extension SessionController {
   }
 
   private func prewarmKey(for target: SandboxTarget?) -> SandboxPrewarm.Key? {
-    guard let target, !project.isScratch, !project.isRunTargetPlaceholder else { return nil }
+    guard let target, !project.isRunTargetPlaceholder else { return nil }
     return SandboxPrewarm.Key(target: target, projectId: project.id)
   }
 }

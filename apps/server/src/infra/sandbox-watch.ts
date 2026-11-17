@@ -6,6 +6,7 @@ import {
 } from "@codevisor/sandboxes"
 
 import { teardownMachine } from "./sandbox-account.js"
+import { remoteAgent } from "./sandbox-agent-watch.js"
 import { leavePlaceholder, type RetiredWorkspace } from "./sandbox-placeholder.js"
 import {
   powerPlanFor,
@@ -123,6 +124,9 @@ const endingOf = async (
   if (providerState === "gone" || providerState === "stopped") {
     return { reason: `its ${machine.provider} machine ended` }
   }
+  if (machine.workspaceId === undefined && machine.agentId !== undefined) {
+    return agentEnding(deps, machine, machine.agentId)
+  }
   const workspace = await remoteWorkspace(deps, machine).catch(() => undefined)
   if (workspace?.state === "active") await noteWorkspaceOpened(deps, machine)
   if (workspace?.state === "archived") {
@@ -135,6 +139,20 @@ const endingOf = async (
 
   const reason = missingWorkspaceReason(deps, machine)
   return reason === undefined ? undefined : { reason }
+}
+
+const agentEnding = async (
+  deps: SandboxDeps,
+  machine: PlacedMachine,
+  agentId: string
+): Promise<Ending | undefined> => {
+  const agent = await remoteAgent(deps, machine, agentId)
+  if (agent.state === "archived") return { reason: "its agent was archived" }
+  if (agent.state === "missing") return { reason: "its agent is gone" }
+  if (agent.state === "active" && agent.workspaceId !== undefined) {
+    await deps.records.put({ ...machine, workspaceId: agent.workspaceId })
+  }
+  return undefined
 }
 
 const noteWorkspaceOpened = async (deps: SandboxDeps, machine: PlacedMachine): Promise<void> => {

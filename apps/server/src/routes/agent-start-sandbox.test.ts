@@ -1,15 +1,25 @@
-import { mkdtempSync } from "node:fs"
+import { existsSync, mkdtempSync, readdirSync } from "node:fs"
 import { tmpdir } from "node:os"
 import { join } from "node:path"
 
 import { decode, StartedSandboxAgent } from "@codevisor/api"
-import { describe, expect, it } from "vitest"
+import { scratchWorkspacesRoot } from "@codevisor/db"
+import { afterEach, describe, expect, it } from "vitest"
 
 import { readyHarness, sandboxHarness } from "../infra/sandbox-test-support.js"
-import { jsonRequest, startWithApp, tempDirs } from "../test-support.js"
+import { jsonRequest, run, startWithApp, tempDirs } from "../test-support.js"
 import { idOf } from "./response-test-support.js"
 
+afterEach(() => {
+  delete process.env["CODEVISOR_WORKTREES_ROOT"]
+})
+
+const scratchFolders = (): ReadonlyArray<string> =>
+  existsSync(scratchWorkspacesRoot()) ? readdirSync(scratchWorkspacesRoot()) : []
+
 const sandboxServer = async (callerSelections?: Record<string, string>) => {
+  process.env["CODEVISOR_WORKTREES_ROOT"] = mkdtempSync(join(tmpdir(), "codevisor-sandbox-trees-"))
+  tempDirs.push(process.env["CODEVISOR_WORKTREES_ROOT"])
   const harness = await sandboxHarness({ onCurl: readyHarness("codex") })
   const server = await startWithApp(
     { ...harness.services, sandboxes: { sandboxes: harness.machines, catalog: harness.catalog } },
@@ -96,6 +106,45 @@ describe("POST /v1/agents with a sandbox profile", () => {
 
     expect(response.status).toBe(202)
     expect((await harness.machines.get("id-1")).agent?.createdByAgentId).toBeUndefined()
+  })
+
+  it("starts a no-project chat in an empty folder on the sandbox", async () => {
+    const { harness, startAgent } = await sandboxServer()
+
+    const response = await startAgent({
+      sandbox: "profile-1",
+      project: undefined,
+      checkout: "none"
+    })
+    await harness.machines.settled()
+
+    const started = decode(StartedSandboxAgent)(response.body)
+    const home = (await run(harness.services.db.listProjects)).find(
+      (project) => project.id === started.projectId
+    )
+    expect(response.status).toBe(202)
+    expect(home).toMatchObject({ isScratch: true })
+    expect(harness.toolCalls.map((call) => call.tool)).toEqual([
+      "codevisor.projects.create_scratch",
+      "codevisor.agents.start"
+    ])
+    expect(harness.toolCalls.at(-1)?.args).toMatchObject({
+      checkout: "project",
+      project: "remote-scratch"
+    })
+    expect(await harness.machines.get("id-1")).toMatchObject({
+      state: "ready",
+      agentId: "remote-agent"
+    })
+  })
+
+  it("leaves no folder behind when a no-project sandbox chat can't start", async () => {
+    const { startAgent } = await sandboxServer()
+
+    const response = await startAgent({ sandbox: "gpu box", project: undefined, checkout: "none" })
+
+    expect(response.status).toBe(422)
+    expect(scratchFolders()).toEqual([])
   })
 
   it("names the profiles there are when none matches", async () => {

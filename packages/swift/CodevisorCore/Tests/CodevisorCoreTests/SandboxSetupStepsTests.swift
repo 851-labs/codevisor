@@ -39,7 +39,7 @@ struct SandboxSetupStepsTests {
 
   @Test("Phases and status lines name the machine, the project and the agent")
   func titles() {
-    let steps = SandboxSetupSteps(target: .tartVM, projectName: "hello-world", agentName: "OpenCode")
+    let steps = SandboxSetupSteps(target: .tartVM, clonedProjectName: "hello-world", agentName: "OpenCode")
     let phases = SandboxSetupStage.allCases.map { steps.phase($0) }
 
     #expect(phases.map(\.id).first == "sandbox-tart")
@@ -56,11 +56,20 @@ struct SandboxSetupStepsTests {
     #expect(steps.status(.clone) == "Cloning hello-world…")
   }
 
+  @Test("A chat with no repository prepares a folder instead of cloning")
+  func noProjectTitles() {
+    let steps = SandboxSetupSteps(target: .tartVM, clonedProjectName: nil)
+
+    #expect(steps.status(.clone) == "Preparing the folder…")
+    #expect(steps.phase(.clone).completedTitle == "Prepared the folder")
+    #expect(steps.phase(.clone).failedTitle == "Could not prepare the folder")
+  }
+
   @Test("An Apple container sandbox builds a Linux image instead of setting up macOS")
   func containerTitles() {
     let container = SandboxTarget(
       profileId: "linux", profileName: "Linux", vendorId: "apple-container", machineNoun: "Linux container")
-    let steps = SandboxSetupSteps(target: container, projectName: "hello-world")
+    let steps = SandboxSetupSteps(target: container, clonedProjectName: "hello-world")
 
     #expect(steps.phase(.image).activeTitle == "Building the Linux image")
     #expect(steps.phase(.image).failedTitle == "Could not build the Linux image")
@@ -77,7 +86,7 @@ struct SandboxSetupStepsTests {
 
   @Test("The machine's own record of the clone folds into the live Clone or worktree step instead of trailing the list")
   func cloneCoversProjectSetup() {
-    let steps = SandboxSetupSteps(target: .tartVM, projectName: "hello-world")
+    let steps = SandboxSetupSteps(target: .tartVM, clonedProjectName: "hello-world")
     let live = [steps.phase(.clone), steps.phase(.connect)]
     let project = SessionSetupPhase(
       id: "project.setup:p1", activeTitle: "Setting up project", completedTitle: "Set up project",

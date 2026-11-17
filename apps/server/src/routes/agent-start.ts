@@ -35,16 +35,17 @@ export const startAgent = async (route: RouteContext): Promise<boolean> => {
   const projectId = await agentProjectId(route, request, caller.projectId, created)
   const { sandbox } = request
   if (sandbox !== undefined) {
-    return startAgentOnSandbox(
-      route,
-      { ...request, sandbox },
-      {
-        projectId,
-        harnessId,
-        callerSessionId: caller.sessionId,
-        callerModel: inheritedModel(caller, harnessId)
-      }
-    )
+    const plan = {
+      projectId,
+      harnessId,
+      callerSessionId: caller.sessionId,
+      callerModel: inheritedModel(caller, harnessId)
+    }
+    try {
+      return await startAgentOnSandbox(route, { ...request, sandbox }, plan)
+    } catch (cause) {
+      throw await rolledBack(cause, created)
+    }
   }
 
   try {
@@ -57,10 +58,10 @@ export const startAgent = async (route: RouteContext): Promise<boolean> => {
 }
 
 const assertPlacementChosen = (request: StartAgentRequest): void => {
-  if (request.sandbox !== undefined && request.checkout !== undefined) {
+  if (request.sandbox !== undefined && !fitsSandbox(request.checkout)) {
     throw new HttpFailure(
       422,
-      "Leave out checkout with sandbox: the agent works in a fresh clone of the project there"
+      'With sandbox, leave out checkout to work in a fresh clone of the project there, or pass checkout: "none" for an empty folder with no project'
     )
   }
   if (request.sandbox === undefined && request.checkout === undefined) {
@@ -73,6 +74,9 @@ const assertPlacementChosen = (request: StartAgentRequest): void => {
     )
   }
 }
+
+const fitsSandbox = (checkout: StartAgentRequest["checkout"]): boolean =>
+  checkout === undefined || checkout === "none"
 
 interface AgentCaller {
   readonly sessionId: string | undefined
