@@ -233,6 +233,7 @@ extension VirtualizedTranscriptScrollView {
   }
 
   func prefetchMarkdownRows(near plan: TranscriptVirtualWindowMountPlan) {
+    guard !inLiveResize else { return }
     let indices = plan.visibleIndices + plan.runwayIndices
     guard let range = TranscriptMarkdownPrefetcher.window(around: indices, rowCount: rows.count) else { return }
     markdownPrefetcher.prefetch(
@@ -432,10 +433,11 @@ extension VirtualizedTranscriptScrollView {
   }
 
   func refreshMountedHosts(
-    previousRowsByKey: [String: TranscriptVirtualRow]?
+    previousRowsByKey: [String: TranscriptVirtualRow]?,
+    limitedTo keys: Set<String>? = nil
   ) {
     var replacementKeys: [String] = []
-    for (key, host) in mountedHosts {
+    for (key, host) in mountedHosts where keys?.contains(key) ?? true {
       guard let row = rowByKey[key] else { continue }
       if key == deferredActivePlaceholderKey { continue }
       if let previousRowsByKey {

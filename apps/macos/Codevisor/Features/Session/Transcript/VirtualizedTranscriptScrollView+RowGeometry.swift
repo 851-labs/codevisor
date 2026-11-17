@@ -4,7 +4,9 @@ import TranscriptKit
 
 extension VirtualizedTranscriptScrollView {
   func positionMountedRows(startingAt firstChangedIndex: Int? = nil) {
-    for (key, host) in mountedHosts {
+    let liveResizeKeys = liveResizeKeys()
+    if let liveResizeKeys { refreshRowsChangingWidth(among: liveResizeKeys) }
+    for (key, host) in mountedHosts where liveResizeKeys?.contains(key) ?? true {
       guard let index = virtualLayout.indexByKey[key] else { continue }
       if let firstChangedIndex, index < firstChangedIndex { continue }
       let frame = rowFrame(at: index)
@@ -22,6 +24,23 @@ extension VirtualizedTranscriptScrollView {
   static func rowWidth(forViewportWidth viewportWidth: CGFloat) -> CGFloat {
     let availableWidth = max(1, viewportWidth - horizontalPadding * 2)
     return min(maxRowWidth, availableWidth)
+  }
+
+  func liveResizeKeys() -> Set<String>? {
+    guard inLiveResize else { return nil }
+
+    let range = windowPlanner.liveResizeRange(
+      layout: virtualLayout, distanceFromBottom: lastViewportDistanceFromBottom,
+      viewportHeight: contentView.bounds.height)
+    return Set(virtualLayout.keys(in: range))
+  }
+
+  func refreshRowsChangingWidth(among keys: Set<String>) {
+    let rowWidth = Self.rowWidth(forViewportWidth: contentView.bounds.width)
+    let changing = keys.filter { key in
+      mountedHosts[key].map { abs($0.frame.width - rowWidth) > 0.5 } ?? false
+    }
+    refreshMountedHosts(previousRowsByKey: nil, limitedTo: changing)
   }
 
   func recenterMountedRows() {

@@ -4,6 +4,7 @@ import Foundation
 public struct TranscriptWindowPlanner: Sendable {
   public var policy: TranscriptVirtualWindowPolicy
   public var initialRunwayViewportCount: CGFloat
+  private static let liveResizeRunwayViewportCount: CGFloat = 0.1
 
   public init(policy: TranscriptVirtualWindowPolicy, initialRunwayViewportCount: CGFloat) {
     self.policy = policy
@@ -19,13 +20,9 @@ public struct TranscriptWindowPlanner: Sendable {
     currentTargetKeys: Set<String>
   ) -> Range<Int> {
     guard isInitialPresentationReady else {
-      let runway = viewportHeight * initialRunwayViewportCount
-      return layout.visibleRange(
-        distanceFromBottom: distanceFromBottom,
-        viewportHeight: viewportHeight,
-        runwayBefore: runway,
-        runwayAfter: runway
-      )
+      return symmetricRange(
+        layout: layout, distanceFromBottom: distanceFromBottom, viewportHeight: viewportHeight,
+        runway: viewportHeight * initialRunwayViewportCount)
     }
     return policy.targetRange(
       layout: layout,
@@ -33,6 +30,25 @@ public struct TranscriptWindowPlanner: Sendable {
       viewportHeight: viewportHeight,
       scrollDelta: scrollDelta,
       currentRange: layout.contiguousRange(of: currentTargetKeys)
+    )
+  }
+
+  public func liveResizeRange(
+    layout: VirtualTranscriptLayout, distanceFromBottom: CGFloat, viewportHeight: CGFloat
+  ) -> Range<Int> {
+    symmetricRange(
+      layout: layout, distanceFromBottom: distanceFromBottom, viewportHeight: viewportHeight,
+      runway: viewportHeight * Self.liveResizeRunwayViewportCount)
+  }
+
+  private func symmetricRange(
+    layout: VirtualTranscriptLayout, distanceFromBottom: CGFloat, viewportHeight: CGFloat, runway: CGFloat
+  ) -> Range<Int> {
+    layout.visibleRange(
+      distanceFromBottom: distanceFromBottom,
+      viewportHeight: viewportHeight,
+      runwayBefore: runway,
+      runwayAfter: runway
     )
   }
 

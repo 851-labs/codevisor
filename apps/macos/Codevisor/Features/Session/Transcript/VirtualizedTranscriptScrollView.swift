@@ -317,6 +317,12 @@ final class VirtualizedTranscriptScrollView: NSScrollView {
     }
   }
 
+  override func viewDidEndLiveResize() {
+    super.viewDidEndLiveResize()
+    refreshRowsChangingWidth(among: Set(mountedHosts.keys))
+    rebuildDocumentGeometry()
+  }
+
   override func viewDidHide() {
     super.viewDidHide()
     presentationVisibilityDidChange()

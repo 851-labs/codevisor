@@ -70,6 +70,12 @@ struct TranscriptWindowPlannerTests {
         ))
   }
 
+  @Test func liveResizeRangeCoversOnlyTheRowsOnScreen() {
+    let range = planner.liveResizeRange(layout: layout(count: 40), distanceFromBottom: 0, viewportHeight: 200)
+
+    #expect(range == 37..<40)
+  }
+
   @Test func targetKeysAlwaysCoverTheVisibleRange() {
     let l = layout(count: 10)
     let keys = TranscriptWindowPlanner.targetKeys(layout: l, targetRange: 0..<2, visibleRange: 7..<12)

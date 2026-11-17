@@ -154,7 +154,7 @@ extension VirtualizedTranscriptScrollView {
     }
     if rowWidthChanged {
       _ = activateMeasurementCacheIfNeeded()
-      refreshMountedRootViews()
+      if !inLiveResize { refreshMountedRootViews() }
       rebuildDocumentGeometry()
       if inLiveResize { settleMountedRowHeights() }
     } else if widthChanged {

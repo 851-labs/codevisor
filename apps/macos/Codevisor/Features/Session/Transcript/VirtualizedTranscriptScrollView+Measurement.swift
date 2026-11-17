@@ -273,10 +273,14 @@ extension VirtualizedTranscriptScrollView {
   }
 
   func commitMeasurementsInLayoutPass() {
-    guard !pendingMeasuredHeights.isEmpty, !inLiveResize else { return }
+    guard !pendingMeasuredHeights.isEmpty, !leavesMeasurementsToLiveResizeStep else { return }
 
     measurementCommitTask?.cancel()
     commitPendingMeasurements()
+  }
+
+  private var leavesMeasurementsToLiveResizeStep: Bool {
+    inLiveResize && hasPendingViewportResize
   }
 
   func settleMountedRowHeights() {

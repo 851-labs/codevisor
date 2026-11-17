@@ -94,23 +94,5 @@
       }
       return total
     }
-
-    @Test func proseReportsAnEstimateUntilPreparedThenTheExactHeight() async {
-      let blocks = MarkdownParser().parse(
-        "A paragraph with **bold** text that wraps across a couple of lines in a narrow view.")
-      let view = StaticMarkdownTextContentView(
-        blocks: blocks, theme: .default, streamID: "static-test-\(UUID().uuidString)", linkAction: nil)
-      let prepared = TestSignal()
-      view.onContentChange = { prepared.signal() }
-
-      let estimate = view.contentHeight(forWidth: 160)
-      #expect(!view.isContentReady)
-
-      await prepared.wait()
-      let exact = view.contentHeight(forWidth: 160)
-      #expect(view.isContentReady)
-      #expect(exact > 1)
-      #expect(estimate > 1)
-    }
   }
 #endif

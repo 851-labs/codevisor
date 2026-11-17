@@ -34,14 +34,24 @@
           wrapsText: request.layout.wrapsText
         )
       else { return nil }
+      return rendered(layout, for: request)
+    }
+
+    static func preparedNow(_ request: StaticTextRequest, text: NSAttributedString) -> PreparedStaticText {
+      let layout = PreparedNativeTextLayout(
+        laying: text,
+        width: request.layout.containerWidth,
+        wrapsText: request.layout.wrapsText
+      )
+      return rendered(layout, for: request)
+    }
+
+    private static func rendered(
+      _ layout: PreparedNativeTextLayout, for request: StaticTextRequest
+    ) -> PreparedStaticText {
       StaticTextLinkStyle.apply(to: layout)
       let inset = request.layout.inset
-      let image = StaticTextBitmap.render(
-        layout,
-        inset: inset,
-        scale: request.scale,
-        appearance: request.appearance
-      )
+      let image = StaticTextBitmap.render(layout, inset: inset, scale: request.scale, appearance: request.appearance)
       return PreparedStaticText(layout: layout, inset: inset, image: image, scale: request.scale)
     }
   }
