@@ -40,6 +40,12 @@ public struct SandboxFieldDraft: Equatable, Sendable {
     return values
   }
 
+  public func replacement(of field: ServerSandboxField, among fields: [ServerSandboxField]) -> ServerSandboxField? {
+    guard let key = field.replacedBy, !(text[key] ?? "").trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+    else { return nil }
+    return fields.first { $0.key == key }
+  }
+
   public func isFilled(_ fields: [ServerSandboxField], secretsSet: Set<String> = []) -> Bool {
     fields.filter(\.required).allSatisfy { field in
       value(for: field) != nil || secretsSet.contains(field.key)

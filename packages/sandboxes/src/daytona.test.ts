@@ -144,6 +144,14 @@ describe("Daytona provider", () => {
     })
   })
 
+  it("marks the image and sizes as coming from the snapshot once one is set", () => {
+    const replaced = DAYTONA_DEFINITION.profileFields
+      .filter((field) => field.replacedBy === "snapshot")
+      .map((field) => field.key)
+
+    expect(replaced).toEqual(["image", "cpu", "memoryGiB", "diskGiB"])
+  })
+
   it("maps sandbox states so stopped and archived ones resume and only dead ones are gone", async () => {
     const names = [
       "started",

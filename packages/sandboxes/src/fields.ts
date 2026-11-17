@@ -32,6 +32,7 @@ export interface SandboxField {
   readonly fallbackMax?: number
   readonly unit?: string
   readonly capability?: string
+  readonly replacedBy?: string
 }
 
 export type SandboxFieldMaximums = Readonly<Record<string, number>>

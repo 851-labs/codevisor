@@ -200,7 +200,8 @@ export const SandboxField = Schema.Struct({
   steps: Schema.optional(Schema.Array(Schema.Number)),
   fallbackMax: Schema.optional(Schema.Number),
   unit: Schema.optional(Schema.String),
-  capability: Schema.optional(Schema.String)
+  capability: Schema.optional(Schema.String),
+  replacedBy: Schema.optional(Schema.String)
 })
 export type SandboxField = typeof SandboxField.Type
 

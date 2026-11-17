@@ -29,6 +29,7 @@ export const DAYTONA_SETUP_COMMANDS: ReadonlyArray<string> = [
   "apt-get update && apt-get install -y --no-install-recommends curl ca-certificates git sudo procps && rm -rf /var/lib/apt/lists/*"
 ]
 
+const snapshotKey = "snapshot"
 const defaultMaxCpus = 4
 const defaultMaxMemoryGiB = 8
 const defaultMaxDiskGiB = 10
@@ -56,22 +57,25 @@ export const DAYTONA_DEFINITION: SandboxProviderDefinition = {
   profileFields: [
     textField("image", "Image", {
       default: "debian:bookworm-slim",
+      replacedBy: snapshotKey,
       help: "A public Debian or Ubuntu image with a version tag. Codevisor adds curl, git and sudo."
     }),
-    textField("snapshot", "Snapshot", {
+    textField(snapshotKey, "Snapshot", {
       help: "A Daytona snapshot to start from instead of the image. CPU, memory and disk then come from the snapshot."
     }),
     numberField("cpu", "CPUs", {
       default: 2,
       min: 1,
       steps: [1, 2, 3, 4, 6, 8, 12, 16, 24, 32, 48, 64],
-      fallbackMax: defaultMaxCpus
+      fallbackMax: defaultMaxCpus,
+      replacedBy: snapshotKey
     }),
     numberField("memoryGiB", "Memory", {
       default: 4,
       min: 1,
       steps: [1, 2, 4, 8, 16, 32, 64, 128, 256],
       fallbackMax: defaultMaxMemoryGiB,
+      replacedBy: snapshotKey,
       unit: "GB"
     }),
     numberField("diskGiB", "Disk", {
@@ -79,6 +83,7 @@ export const DAYTONA_DEFINITION: SandboxProviderDefinition = {
       min: 1,
       steps: [1, 2, 5, 10, 20, 30, 50, 100, 200, 500],
       fallbackMax: defaultMaxDiskGiB,
+      replacedBy: snapshotKey,
       unit: "GB"
     }),
     pauseAfterField({ never: true })
@@ -258,7 +263,7 @@ const credentialsFor = (account: SandboxFieldValues): DaytonaCredentials => {
 }
 
 const sourceFor = (options: SandboxFieldValues): DaytonaSource => {
-  const snapshot = optionalString(options, "snapshot")
+  const snapshot = optionalString(options, snapshotKey)
   if (snapshot !== undefined) return { kind: "snapshot", snapshot }
 
   return {

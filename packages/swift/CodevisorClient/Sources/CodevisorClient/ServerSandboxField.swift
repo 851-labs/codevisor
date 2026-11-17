@@ -34,8 +34,16 @@ public struct ServerSandboxField: Decodable, Equatable, Hashable, Sendable, Iden
   public var fallbackMax: Double?
   public var unit: String?
   public var capability: String?
+  public var replacedBy: String?
 
   public var id: String { key }
+
+  public var note: String? { description ?? help }
+
+  public var emptyPrompt: String {
+    if !required, defaultValue == nil { return "Optional" }
+    return placeholder ?? defaultValue?.text ?? ""
+  }
 
   public var awaitsChoices: Bool { type == .choice && choices == nil }
 
@@ -78,7 +86,8 @@ public struct ServerSandboxField: Decodable, Equatable, Hashable, Sendable, Iden
     steps: [Double]? = nil,
     fallbackMax: Double? = nil,
     unit: String? = nil,
-    capability: String? = nil
+    capability: String? = nil,
+    replacedBy: String? = nil
   ) {
     self.key = key
     self.label = label
@@ -95,11 +104,12 @@ public struct ServerSandboxField: Decodable, Equatable, Hashable, Sendable, Iden
     self.fallbackMax = fallbackMax
     self.unit = unit
     self.capability = capability
+    self.replacedBy = replacedBy
   }
 
   private enum CodingKeys: String, CodingKey {
     case key, label, type, required, choices, placeholder, help, description, min, max, steps, fallbackMax, unit
-    case capability
+    case capability, replacedBy
     case defaultValue = "default"
   }
 }

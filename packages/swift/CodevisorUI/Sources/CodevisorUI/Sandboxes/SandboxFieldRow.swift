@@ -7,11 +7,18 @@ struct SandboxFieldRow: View {
   var secretSaved = false
   var hosts: [SandboxHost] = []
   var steps: SandboxFieldSteps?
+  var replacement: ServerSandboxField?
   var error: String?
   var onCommit: (() -> Void)?
 
   var body: some View {
-    SandboxFieldIssue(message: error) { input }
+    SandboxFieldNotes(help: field.note, error: error) {
+      if let replacement {
+        LabeledContent(field.label, value: "From the \(replacement.label.lowercased())")
+      } else {
+        input
+      }
+    }
   }
 
   @ViewBuilder
@@ -59,9 +66,9 @@ struct SandboxFieldRow: View {
     }
   }
 
-  private var prompt: String { field.placeholder ?? field.defaultValue?.text ?? "" }
+  private var prompt: String { field.emptyPrompt }
 
-  private var secretPrompt: String { secretSaved ? "Saved" : field.placeholder ?? "" }
+  private var secretPrompt: String { secretSaved ? "Saved" : field.emptyPrompt }
 
   private var text: Binding<String> {
     Binding(get: { draft.text[field.key] ?? "" }, set: { draft.text[field.key] = $0 })
