@@ -14,7 +14,7 @@ struct TranscriptEventPopoverButton<Label: View>: View {
     }
     .buttonStyle(.plain)
     .accessibilityHint("Shows the message")
-    .popover(isPresented: $isPresented, arrowEdge: .bottom) {
+    .anchoredPopover(isPresented: $isPresented, arrowEdge: .bottom) {
       TranscriptEventPopover(marker: marker)
     }
   }
