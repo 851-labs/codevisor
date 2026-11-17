@@ -3,6 +3,7 @@ import { tmpdir } from "node:os"
 import { join } from "node:path"
 
 import { AgentRuntimeError } from "@codevisor/agent-runtime"
+import { RESTORED_AGENT_SESSION_LABEL } from "@codevisor/api"
 import { Effect } from "effect"
 import { expect, it, vi } from "vitest"
 
@@ -83,6 +84,36 @@ it("starts a chat whose conversation is lost afresh, with the earlier turns as c
     ].join("\n")
   )
   expect(next).toBe("Thanks")
+})
+
+it("starts a restored chat afresh with a recap when its carried-over session won't resume", async () => {
+  const { agents, send, services, session } = await setUp()
+  await send("Remember the codeword PINEAPPLE.")
+  await run(
+    services.db.updateSession(session.id, {
+      labels: { [RESTORED_AGENT_SESSION_LABEL]: "lost" }
+    })
+  )
+  const load = agents.loadAgentSession
+  const refused = vi
+    .spyOn(agents, "loadAgentSession")
+    .mockImplementation((harnessId, agentSessionId, ...rest) =>
+      agentSessionId === "lost"
+        ? Effect.fail(new AgentRuntimeError({ operation: "loadSession", message: "bad rollout" }))
+        : load(harnessId, agentSessionId, ...rest)
+    )
+
+  try {
+    await send("What was the codeword?")
+  } finally {
+    refused.mockRestore()
+  }
+
+  const fresh = (await run(services.db.getSessionSummary(session.id))).agentSessionId
+  expect(fresh).not.toBe("lost")
+  const prompt = JSON.stringify(agents.prompts.at(-1)?.[1])
+  expect(prompt).toContain("User: Remember the codeword PINEAPPLE.")
+  expect(prompt).toContain("What was the codeword?")
 })
 
 it("starts an empty chat whose conversation was never saved afresh, with nothing to recap", async () => {

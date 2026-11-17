@@ -249,7 +249,7 @@ const publishSession = (
   session: SessionSummary
 ): Promise<EventEnvelope> => appendAndPublish(services.db, fanout, kind, session.id, session)
 
-const publishPaneUpdated = (
+export const publishPaneUpdated = (
   { services, fanout }: RouteContext,
   pane: WorkspacePane
 ): Promise<EventEnvelope> =>

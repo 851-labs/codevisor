@@ -2,6 +2,7 @@ import type { Sandbox, Project } from "@codevisor/api"
 
 import { cloneFailure, NO_GIT_ACCESS, type SandboxGitAccess } from "./sandbox-git.js"
 import type { SandboxRemote } from "./sandbox-remote.js"
+import { bringBackChats } from "./sandbox-saved-chats.js"
 import { bringBackWork, startsOnNewBranch } from "./sandbox-saved-work.js"
 import type { SandboxSetupProgress } from "./sandbox-setup-log.js"
 import type { SandboxDeps } from "./sandboxes.js"
@@ -38,7 +39,9 @@ export const placeWorkspace = async (
     await bringBackWork(deps, machine, { remote, setup, remoteProjectId })
   }
   if (machine.restoresWorkspace === true && machine.workspaceId !== undefined) {
-    return restoreWorkspace(deps, machine, remoteProjectId, machine.workspaceId)
+    const restored = await restoreWorkspace(deps, machine, remoteProjectId, machine.workspaceId)
+    await bringBackChats(deps, machine, setup)
+    return restored
   }
   if (machine.workspaceId !== undefined)
     return { remoteProjectId, workspaceId: machine.workspaceId }

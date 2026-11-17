@@ -40,6 +40,22 @@ export const leavePlaceholder = async (
   await deps.records.put({ ...archived, placeholderPending: true })
 }
 
+export const archiveAgainAfterFailedRestore = async (
+  deps: SandboxDeps,
+  machine: Sandbox,
+  failure: string
+): Promise<boolean> => {
+  const { workspaceId } = machine
+  if (machine.restoresWorkspace !== true || workspaceId === undefined) return false
+
+  deps.log(
+    `Restoring sandbox ${machine.name} (${machine.id}) failed, so it is archived again: ${failure}`
+  )
+  const name = machine.workspaceName ?? machine.name
+  await leavePlaceholder(deps, machine, { workspaceId, name, kept: keptWorkOf(machine) })
+  return true
+}
+
 export const adoptPlaceholders = async (deps: SandboxDeps): Promise<void> => {
   for (const machine of await deps.records.list()) {
     if (isPendingHere(deps, machine)) {

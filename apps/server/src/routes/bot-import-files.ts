@@ -26,13 +26,14 @@ export const missingImportFiles = async (
 
 export const receiveImportFile = async (
   services: CodevisorServerServices,
-  chunk: ImportFileChunk
+  chunk: ImportFileChunk,
+  resend = "fork again to resend it"
 ): Promise<{ readonly stored: boolean }> => {
   const part = await writeChunk(chunk)
   if ((await stat(part)).size < chunk.file.sizeBytes) return { stored: false }
 
   try {
-    await storeFile(services, chunk.file, part)
+    await storeFile(services, chunk.file, part, resend)
   } finally {
     await rm(part, { force: true })
   }
@@ -51,11 +52,12 @@ const writeChunk = async (chunk: ImportFileChunk): Promise<string> => {
 const storeFile = async (
   services: CodevisorServerServices,
   file: FileMetadata,
-  part: string
+  part: string,
+  resend: string
 ): Promise<void> => {
   const stored = await services.attachments.putStream(createReadStream(part))
   if (stored.sha256 !== file.sha256) {
-    throw new HttpFailure(422, `${file.name} arrived damaged; fork again to resend it`)
+    throw new HttpFailure(422, `${file.name} arrived damaged; ${resend}`)
   }
   if ((await run(services.db.getFileMetadata(file.id))) !== undefined) return
 

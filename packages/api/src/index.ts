@@ -50,6 +50,7 @@ export * from "./records.js"
 export * from "./machines.js"
 export * from "./external-clients.js"
 export * from "./feature-flags.js"
+export * from "./sandbox-chats.js"
 export * from "./sandboxes.js"
 
 export * from "./workspace-position.js"
