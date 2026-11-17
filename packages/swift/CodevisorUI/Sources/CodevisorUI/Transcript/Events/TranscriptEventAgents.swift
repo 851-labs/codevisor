@@ -3,18 +3,10 @@ import Foundation
 
 @MainActor
 struct TranscriptEventAgents {
-  private static let agentEventTypes: Set<String> = [
-    "session.turn_ended", "session.waiting_for_user", "session.errored", TranscriptEvent.agentMessageType,
-  ]
-
   static let threadSymbol = "bubble.left.and.bubble.right"
 
   let sessions: [ChatSession]
   let bots: BotListModel?
-
-  static func isAgentEvent(_ event: TranscriptEvent) -> Bool {
-    agentEventTypes.contains(event.type)
-  }
 
   func session(for event: TranscriptEvent) -> ChatSession? {
     guard let id = Self.agentId(of: event).flatMap(UUID.init(uuidString:)) else { return nil }
@@ -52,7 +44,6 @@ struct TranscriptEventAgents {
   }
 
   private static func agentId(of event: TranscriptEvent) -> String? {
-    guard isAgentEvent(event) else { return nil }
-    return event[attribute: "from"] ?? event[attribute: "agentId"]
+    event[attribute: "from"] ?? event[attribute: "agentId"]
   }
 }

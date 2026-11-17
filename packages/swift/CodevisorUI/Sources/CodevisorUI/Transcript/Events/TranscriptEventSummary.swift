@@ -21,10 +21,12 @@ struct TranscriptEventSummary {
       marker.events.last, title: count == 1 ? "1 message with" : "\(count) messages with", agents: agents)
   }
 
+  static var generic: TranscriptEventSummary { .init(title: "Codevisor event", icon: .symbol("bolt")) }
+
   @MainActor
   init(marker: TranscriptEventMarker, agents: TranscriptEventAgents) {
     guard let first = marker.events.first else {
-      self.init(title: "Codevisor event", icon: .symbol("bolt"))
+      self = Self.generic
       return
     }
     self.init(event: first, agents: agents)
@@ -32,15 +34,22 @@ struct TranscriptEventSummary {
 
   @MainActor
   init(event: TranscriptEvent, agents: TranscriptEventAgents) {
-    if event.threadID != nil {
-      self = Self.threadMessage(event, agents: agents)
-      return
+    switch event.kind {
+    case .plugin: self.init(title: Self.pluginEventTitle(event), icon: Self.pluginIcon(event))
+    case .threadMessage: self = Self.threadMessage(event, agents: agents)
+    case .agentMessage: self = Self.agentSummary(event, title: "sent a message", agents: agents)
+    case .agentTurnEnded: self = Self.agentSummary(event, title: Self.turnEndedTitle(event), agents: agents)
+    case .agentWaitingForUser: self = Self.agentSummary(event, title: Self.waitingTitle(event), agents: agents)
+    case .agentErrored: self = Self.agentSummary(event, title: "hit an error", agents: agents)
+    case .jobFinished: self = Self.taskSummary(event, finished: "Job finished", failed: "Job failed")
+    case .backgroundTaskFinished:
+      self = Self.taskSummary(event, finished: "Background task finished", failed: "Background task failed")
+    case .restarted: self.init(title: "Codevisor restarted", icon: .symbol("arrow.clockwise"))
+    case .usageLimitReset: self.init(title: "Usage limit reset", icon: .symbol("clock.arrow.circlepath"))
+    case .questionAnswered: self.init(title: "Answer delivered", icon: .symbol("questionmark.circle"))
+    case .botCreated: self.init(title: "Bot created", icon: .symbol("sparkles"))
+    case .bookkeeping: self = Self.generic
     }
-    guard TranscriptEventAgents.isAgentEvent(event) else {
-      self = Self.systemSummary(event)
-      return
-    }
-    self = Self.agentSummary(event, name: agents.name(for: event), icon: agents.icon(for: event))
   }
 
   init(agentName: String? = nil, title: String, icon: TranscriptEventIconKind) {
@@ -49,29 +58,11 @@ struct TranscriptEventSummary {
     self.icon = icon
   }
 
+  @MainActor
   private static func agentSummary(
-    _ event: TranscriptEvent, name: String, icon: TranscriptEventIconKind
+    _ event: TranscriptEvent, title: String, agents: TranscriptEventAgents
   ) -> TranscriptEventSummary {
-    switch event.type {
-    case "session.turn_ended": .init(agentName: name, title: turnEndedTitle(event), icon: icon)
-    case "session.waiting_for_user": .init(agentName: name, title: waitingTitle(event), icon: icon)
-    case "session.errored": .init(agentName: name, title: "hit an error", icon: icon)
-    default: .init(agentName: name, title: "sent a message", icon: icon)
-    }
-  }
-
-  private static func systemSummary(_ event: TranscriptEvent) -> TranscriptEventSummary {
-    switch event.type {
-    case "execution.job_finished": taskSummary(event, finished: "Job finished", failed: "Job failed")
-    case "exec.task_finished", "harness.task_finished":
-      taskSummary(event, finished: "Background task finished", failed: "Background task failed")
-    case "plugin.event": .init(title: pluginEventTitle(event), icon: pluginIcon(event))
-    case "session.restarted": .init(title: "Codevisor restarted", icon: .symbol("arrow.clockwise"))
-    case "session.usage_limit_reset": .init(title: "Usage limit reset", icon: .symbol("clock.arrow.circlepath"))
-    case "question.answered": .init(title: "Answer delivered", icon: .symbol("questionmark.circle"))
-    case "bot.created": .init(title: "Bot created", icon: .symbol("sparkles"))
-    default: .init(title: "Codevisor event", icon: .symbol("bolt"))
-    }
+    .init(agentName: agents.name(for: event), title: title, icon: agents.icon(for: event))
   }
 
   @MainActor

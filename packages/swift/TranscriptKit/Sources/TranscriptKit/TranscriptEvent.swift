@@ -18,7 +18,11 @@ public struct TranscriptEvent: Sendable, Equatable {
     attributes[name]
   }
 
+  public var kind: TranscriptEventKind {
+    TranscriptEventKind(type: type)
+  }
+
   public var threadID: String? {
-    type == Self.threadMessageType ? self[attribute: "threadId"] : nil
+    kind == .threadMessage ? self[attribute: "threadId"] : nil
   }
 }

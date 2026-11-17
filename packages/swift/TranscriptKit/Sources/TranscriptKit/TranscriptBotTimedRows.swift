@@ -21,7 +21,7 @@ enum TranscriptBotTimedRows {
   {
     switch item {
     case .user:
-      let row = TranscriptEventRowProjection.row(for: item, inBotConversation: true, spacingAfter: spacingAfter)
+      let row = TranscriptEventRowProjection.botFeedRow(for: item, spacingAfter: spacingAfter)
       return row.map { [Entry(askedAt: turnStart, row: $0)] } ?? []
     case let .assistant(message):
       return bubbleRows(message.turn, spacingAfter: spacingAfter).map { Entry(askedAt: message.turn.endedAt, row: $0) }

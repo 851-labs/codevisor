@@ -52,6 +52,19 @@ struct TranscriptEventSummaryTests {
     #expect(TranscriptEventSummary(event: sent, agents: agents).sentence == "Sent a message to Agent")
   }
 
+  @Test("Every event a bot conversation shows has its own label, never the generic Codevisor event")
+  func botConversationEventsHaveTheirOwnLabels() {
+    let shown = [
+      "plugin.event", "thread.message", "session.message", "execution.job_finished", "exec.task_finished",
+      "session.restarted", "session.usage_limit_reset", "question.answered", "bot.created",
+    ].map { TranscriptEvent(type: $0, body: "") }
+
+    #expect(Set(shown.map(\.kind)) == Set(TranscriptEventKind.allCases.filter(\.showsInBotConversation)))
+    #expect(shown.filter { TranscriptEventSummary(event: $0, agents: agents).title == generic }.map(\.type) == [])
+  }
+
+  private var generic: String { TranscriptEventSummary.generic.title }
+
   private func marker(_ parts: String...) -> TranscriptEventMarker? {
     let events = stride(from: 0, to: parts.count, by: 2).map { index in
       """

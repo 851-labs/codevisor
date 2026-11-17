@@ -4,19 +4,29 @@ enum TranscriptEventRowProjection {
   static let markerEstimatedHeight: CGFloat = 24
 
   static func append(_ item: ConversationItem, to rows: inout [TranscriptPresentationRow]) -> Bool {
-    guard let row = row(for: item, inBotConversation: false) else { return false }
+    guard let marker = marker(of: item) else { return false }
 
-    rows.append(row)
+    rows.append(row(for: marker, inBotConversation: false))
     return true
   }
 
-  static func row(
-    for item: ConversationItem, inBotConversation: Bool, spacingAfter: CGFloat? = nil
-  ) -> TranscriptPresentationRow? {
-    guard case let .user(message) = item, let marker = TranscriptEventMarker(message: message) else { return nil }
+  static func botFeedRow(for item: ConversationItem, spacingAfter: CGFloat) -> TranscriptPresentationRow? {
+    guard let marker = marker(of: item)?.shownInBotConversation else { return nil }
 
-    return .init(
-      id: .eventMarker(message.id),
+    return row(for: marker, inBotConversation: true, spacingAfter: spacingAfter)
+  }
+
+  private static func marker(of item: ConversationItem) -> TranscriptEventMarker? {
+    guard case let .user(message) = item else { return nil }
+
+    return TranscriptEventMarker(message: message)
+  }
+
+  private static func row(
+    for marker: TranscriptEventMarker, inBotConversation: Bool, spacingAfter: CGFloat? = nil
+  ) -> TranscriptPresentationRow {
+    .init(
+      id: .eventMarker(marker.messageID),
       content: .eventMarker(marker, inBotConversation: inBotConversation),
       estimatedHeight: markerEstimatedHeight,
       spacingAfter: spacingAfter
