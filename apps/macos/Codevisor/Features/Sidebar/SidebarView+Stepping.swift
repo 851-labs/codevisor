@@ -10,14 +10,15 @@ extension SidebarView {
   }
 
   func sidebarStops(in rows: [SidebarRow]) -> [SidebarStop] {
-    rows.compactMap { row in
+    let content = rowContent
+    return rows.compactMap { row in
       switch row.kind {
       case let .tab(id, workspaceID, _):
         SidebarStop.tab(id, workspaceID: workspaceID)
       case let .workspace(item, .archived):
         environment.navigationStore.workspaceEntries.entry(item.id).workspace.map(SidebarStop.archived)
       case let .workspace(item, _):
-        listItem(for: item).map(SidebarStop.workspace)
+        content.listItem(for: item).map(SidebarStop.workspace)
       case .section, .group, .showMoreArchived:
         nil
       }
