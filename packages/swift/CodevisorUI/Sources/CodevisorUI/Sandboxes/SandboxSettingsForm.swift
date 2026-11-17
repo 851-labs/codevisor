@@ -5,7 +5,6 @@ struct SandboxSettingsForm<Content: View>: View {
   @Environment(\.sandboxSheetBack) private var back
   @Environment(\.sandboxSheetIsCovered) private var isCovered
   let title: String
-  var vendorId: String?
   var actionTitle: String?
   var canAct = true
   var status: String?
@@ -16,10 +15,9 @@ struct SandboxSettingsForm<Content: View>: View {
   var body: some View {
     #if os(macOS)
       SetupSheet(
-        symbol: "shippingbox", title: title, primaryTitle: actionTitle, cancelTitle: "Cancel",
+        symbol: nil, title: title, primaryTitle: actionTitle, cancelTitle: "Cancel",
         canContinue: canAct && status == nil, status: status, onCancel: { cancel?() },
-        onBack: back.map { back in { back() } }, onContinue: onAction, stepsInCard: false,
-        icon: vendorId.map { AnyView(SandboxSheetVendorIcon(vendorId: $0)) }
+        onBack: back.map { back in { back() } }, onContinue: onAction, stepsInCard: false
       ) {
         SandboxSheetFields(errorMessage: shownError) { content }
       }

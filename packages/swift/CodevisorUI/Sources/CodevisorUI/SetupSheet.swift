@@ -2,7 +2,7 @@
   import SwiftUI
 
   public struct SetupSheet<Steps: View>: View {
-    private let symbol: String
+    private let symbol: String?
     private let title: String
     private let subtitle: String?
     private let primaryTitle: String?
@@ -17,7 +17,7 @@
     private let steps: Steps
 
     public init(
-      symbol: String,
+      symbol: String?,
       title: String,
       subtitle: String? = nil,
       primaryTitle: String?,
@@ -51,7 +51,7 @@
         VStack(spacing: 10) {
           if let icon {
             icon
-          } else {
+          } else if let symbol {
             Image(systemName: symbol)
               .font(.system(size: 30, weight: .medium))
               .symbolRenderingMode(.hierarchical)

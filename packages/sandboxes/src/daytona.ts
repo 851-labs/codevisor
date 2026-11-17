@@ -157,8 +157,26 @@ export const daytonaAdapter = (
       await client.list(ownerFilter("codevisor-verify"))
       return identityFor(await client.email())
     },
-    accountMaximums: async (account) =>
-      maximumsIn(await clientFor(account).sandboxLimits(), optionalString(account, "target"))
+    accountMaximums: async (account) => ({
+      ...defaultMaximums,
+      ...maximumsIn(await reportedLimits(clientFor(account)), optionalString(account, "target"))
+    })
+  }
+}
+
+const defaultMaximums: SandboxFieldMaximums = {
+  cpu: defaultMaxCpus,
+  memoryGiB: defaultMaxMemoryGiB,
+  diskGiB: defaultMaxDiskGiB
+}
+
+const reportedLimits = async (
+  client: DaytonaClient
+): Promise<ReadonlyArray<DaytonaSandboxLimits>> => {
+  try {
+    return await client.sandboxLimits()
+  } catch {
+    return []
   }
 }
 

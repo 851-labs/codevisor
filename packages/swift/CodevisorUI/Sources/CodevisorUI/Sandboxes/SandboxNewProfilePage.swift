@@ -29,7 +29,7 @@ struct SandboxNewProfilePage: View {
 
   var body: some View {
     SandboxSettingsForm(
-      title: "New Profile", vendorId: draft.vendor?.id, actionTitle: "Add Profile", canAct: draft.canSave,
+      title: "New Profile", actionTitle: "Add Profile", canAct: draft.canSave,
       status: status, errorMessage: model.error(outside: draft.fieldKeys), onAction: add
     ) {
       Section {

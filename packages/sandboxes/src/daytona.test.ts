@@ -314,14 +314,37 @@ describe("Daytona adapter", () => {
 
   it("reads the per-sandbox limits of the account's region, or the tightest of every region without one", async () => {
     const us = { regionId: "us", maxCpu: 4, maxMemoryGiB: 8, maxDiskGiB: 10 }
-    const eu = { regionId: "eu", maxCpu: 8, maxMemoryGiB: 16 }
+    const eu = { regionId: "eu", maxCpu: 8, maxMemoryGiB: 16, maxDiskGiB: 20 }
     const adapter = daytonaAdapter(() => fakeDaytona([], undefined, [us, eu]).client)
 
     expect(await adapter.accountMaximums?.({ apiKey: "k", target: "eu" })).toEqual({
       cpu: 8,
-      memoryGiB: 16
+      memoryGiB: 16,
+      diskGiB: 20
     })
     expect(await adapter.accountMaximums?.({ apiKey: "k" })).toEqual({
+      cpu: 4,
+      memoryGiB: 8,
+      diskGiB: 10
+    })
+  })
+
+  it("keeps Daytona's default limit for each size the account doesn't report, or can't be asked about", async () => {
+    const raisedMemory = { regionId: "us", maxMemoryGiB: 12 }
+    const unreadable = {
+      ...fakeDaytona().client,
+      sandboxLimits: () => Promise.reject(new Error("403"))
+    }
+
+    const partly = daytonaAdapter(() => fakeDaytona([], undefined, [raisedMemory]).client)
+    const never = daytonaAdapter(() => unreadable)
+
+    expect(await partly.accountMaximums?.({ apiKey: "k" })).toEqual({
+      cpu: 4,
+      memoryGiB: 12,
+      diskGiB: 10
+    })
+    expect(await never.accountMaximums?.({ apiKey: "k" })).toEqual({
       cpu: 4,
       memoryGiB: 8,
       diskGiB: 10

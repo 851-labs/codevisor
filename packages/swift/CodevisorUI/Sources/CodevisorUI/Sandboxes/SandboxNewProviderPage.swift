@@ -24,7 +24,7 @@ struct SandboxNewProviderPage: View {
 
   var body: some View {
     SandboxSettingsForm(
-      title: "Set Up \(vendor.displayName)", vendorId: vendor.id, actionTitle: "Add Provider",
+      title: "Set Up \(vendor.displayName)", actionTitle: "Add Provider",
       canAct: draft.canSave, status: status, errorMessage: model.error(outside: draft.shownFields.map(\.key)),
       onAction: add
     ) {
