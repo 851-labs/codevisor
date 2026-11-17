@@ -1,3 +1,5 @@
+import { homedir } from "node:os"
+
 import {
   decode,
   isoTimestamp,
@@ -17,6 +19,12 @@ import { appendAndPublish, HttpFailure, run } from "../server-context.js"
 import { receiveImportFile } from "./bot-import-files.js"
 import type { FleetCall } from "./fleet-calls.js"
 import type { RouteContext } from "./route-context.js"
+import {
+  readResumeFile,
+  savedResumeOf,
+  writeResumeFile,
+  type ResumeHost
+} from "./sandbox-chat-resume.js"
 import { createSessionIfMissing } from "./session-workspace.js"
 import { publishPaneUpdated } from "./workspace-panes.js"
 
@@ -36,11 +44,19 @@ export const receiveSandboxChats = async (
   if (action.action === "list") return savedChats(route, action.workspaceId)
   if (action.action === "item") return run(db.exportChatItem(action.itemId))
   if (action.action === "file") return fileChunk(route, action)
+  if (action.action === "resume_file") {
+    return readResumeFile(
+      resumeHost(route),
+      await run(db.getSessionSummary(action.sessionId)),
+      action
+    )
+  }
   if (action.action === "restore_file") {
     return receiveImportFile(route.services, action, "restore the sandbox again to resend it")
   }
 
   requireFormat(action.format)
+  if (action.action === "restore_resume_file") return writeResumeFile(resumeHost(route), action)
   if (action.action === "restore_chat") return restoreChat(route, action)
   if (action.action === "restore_item") {
     await run(db.importChatItem(action.sessionId, action.item))
@@ -49,6 +65,11 @@ export const receiveSandboxChats = async (
   if (action.action === "restore_pane") return restorePane(route, action)
   return finishChat(route, action)
 }
+
+const resumeHost = ({ services }: RouteContext): ResumeHost => ({
+  auth: services.auth,
+  home: homedir()
+})
 
 const requireFormat = (format: number): void => {
   if (format === SAVED_CHAT_FORMAT) return
@@ -118,7 +139,13 @@ const savedChat = async (
     const file = await run(services.db.getFileMetadata(fileId))
     if (file !== undefined) files.push(file)
   }
-  return { session: savedSession(session), itemIds, files }
+  const resume = await savedResumeOf({ auth: services.auth, home: homedir() }, session)
+  return {
+    session: savedSession(session),
+    itemIds,
+    files,
+    ...(resume === undefined ? {} : { resume })
+  }
 }
 
 const savedSession = (session: SessionSummary): SavedChatSession => ({

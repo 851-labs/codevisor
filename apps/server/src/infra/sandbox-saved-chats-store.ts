@@ -3,7 +3,13 @@ import { appendFile, mkdir, open, readFile, rm, writeFile } from "node:fs/promis
 import { join } from "node:path"
 import { createInterface } from "node:readline"
 
-import { FileMetadata, SavedChatItem, SavedChatPane, SavedChatSession } from "@codevisor/api"
+import {
+  FileMetadata,
+  SavedChatItem,
+  SavedChatPane,
+  SavedChatResume,
+  SavedChatSession
+} from "@codevisor/api"
 import { Schema } from "effect"
 
 export const SavedChatsManifest = Schema.Struct({
@@ -12,7 +18,8 @@ export const SavedChatsManifest = Schema.Struct({
     Schema.Struct({
       session: SavedChatSession,
       files: Schema.Array(FileMetadata),
-      notKept: Schema.optional(Schema.Array(Schema.String))
+      notKept: Schema.optional(Schema.Array(Schema.String)),
+      resume: Schema.optional(SavedChatResume)
     })
   ),
   panes: Schema.Array(SavedChatPane),
@@ -24,6 +31,17 @@ export interface SavedChatsStore {
   readonly begin: (workspaceId: string) => Promise<void>
   readonly addItem: (workspaceId: string, sessionId: string, item: SavedChatItem) => Promise<void>
   readonly addFileBytes: (workspaceId: string, fileId: string, bytes: Buffer) => Promise<void>
+  readonly addResumeBytes: (
+    workspaceId: string,
+    file: SavedResumeFile,
+    bytes: Buffer
+  ) => Promise<void>
+  readonly resumeBytes: (
+    workspaceId: string,
+    file: SavedResumeFile,
+    offset: number,
+    length: number
+  ) => Promise<Buffer>
   readonly finish: (workspaceId: string, manifest: SavedChatsManifest) => Promise<void>
   readonly manifest: (workspaceId: string) => Promise<SavedChatsManifest | undefined>
   readonly items: (workspaceId: string, sessionId: string) => AsyncIterable<SavedChatItem>
@@ -36,6 +54,11 @@ export interface SavedChatsStore {
   readonly remove: (workspaceId: string) => Promise<void>
 }
 
+export interface SavedResumeFile {
+  readonly sessionId: string
+  readonly index: number
+}
+
 const decodeManifest = Schema.decodeUnknownSync(SavedChatsManifest)
 const decodeItem = Schema.decodeUnknownSync(SavedChatItem)
 
@@ -46,6 +69,8 @@ export const makeSavedChatsStore = (dataDir: string): SavedChatsStore => {
     join(folderOf(workspaceId), `${sessionId.toLowerCase()}.items.ndjson`)
   const fileOf = (workspaceId: string, fileId: string): string =>
     join(folderOf(workspaceId), "files", fileId.toLowerCase())
+  const resumeOf = (workspaceId: string, file: SavedResumeFile): string =>
+    join(folderOf(workspaceId), "resume", `${file.sessionId.toLowerCase()}.${String(file.index)}`)
   const manifestOf = (workspaceId: string): string => join(folderOf(workspaceId), "manifest.json")
   const remove = (workspaceId: string): Promise<void> =>
     rm(folderOf(workspaceId), { force: true, recursive: true })
@@ -54,11 +79,16 @@ export const makeSavedChatsStore = (dataDir: string): SavedChatsStore => {
     begin: async (workspaceId) => {
       await remove(workspaceId)
       await mkdir(join(folderOf(workspaceId), "files"), { recursive: true, mode: 0o700 })
+      await mkdir(join(folderOf(workspaceId), "resume"), { mode: 0o700 })
     },
     addItem: (workspaceId, sessionId, item) =>
       appendFile(itemsOf(workspaceId, sessionId), `${JSON.stringify(item)}\n`, { mode: 0o600 }),
     addFileBytes: (workspaceId, fileId, bytes) =>
       appendFile(fileOf(workspaceId, fileId), bytes, { mode: 0o600 }),
+    addResumeBytes: (workspaceId, file, bytes) =>
+      appendFile(resumeOf(workspaceId, file), bytes, { mode: 0o600 }),
+    resumeBytes: (workspaceId, file, offset, length) =>
+      bytesAt(resumeOf(workspaceId, file), offset, length),
     finish: (workspaceId, manifest) =>
       writeFile(manifestOf(workspaceId), JSON.stringify(manifest), { mode: 0o600 }),
     manifest: async (workspaceId) => {
