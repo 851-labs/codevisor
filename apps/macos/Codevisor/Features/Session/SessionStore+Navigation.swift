@@ -1,4 +1,5 @@
 import CodevisorCore
+import CodevisorUI
 import Foundation
 
 extension SessionStore {
@@ -7,7 +8,11 @@ extension SessionStore {
     guard var workspace = environment.workspaces.workspace(id: workspaceId) else { return false }
     let previous = workspace
     guard workspace.selectDestination(destination) else { return false }
-    if workspace != previous || navigationWorkspaceId != workspaceId {
+    let changesWorkspace = navigationWorkspaceId != workspaceId
+    if changesWorkspace || previous.selectedCenterTabId != workspace.selectedCenterTabId {
+      NavigationSwitchTrace.shared.begin(workspaceChanged: changesWorkspace)
+    }
+    if workspace != previous || changesWorkspace {
       navigationWorkspaceId = workspaceId
       navigationRevision &+= 1
     }
