@@ -9,10 +9,11 @@ extension SidebarView {
     let sections = environment.workspaceSections.sections
     let membership = environment.workspaceSections.membership
     let statuses = rowStatuses
+    let details = rowDetails
     return SidebarRowList(rows: rows, id: \.placedID, animation: Motion.listReflow(reduceMotion: reduceMotion)) { row in
       workspaceRegionRow(
         row, actions: actions, namingMachine: namingMachine, sections: sections,
-        membership: membership, statuses: statuses)
+        membership: membership, statuses: statuses, rowDetails: details)
     }
   }
 
@@ -32,7 +33,7 @@ extension SidebarView {
   private func workspaceRegionRow(
     _ row: SidebarRow,
     actions: SidebarWorkspaceSection.Actions, namingMachine: Set<SidebarRow.Placement>, sections: [CustomSection],
-    membership: [UUID: UUID], statuses: SidebarRowStatuses
+    membership: [UUID: UUID], statuses: SidebarRowStatuses, rowDetails: [SidebarRowDetail]
   ) -> some View {
     switch row.kind {
     case let .section(.pinned, isExpanded):
