@@ -66,7 +66,7 @@ export const describeExtensionError = (summary: string): string => {
   return `The Codevisor Chrome extension is out of date: it doesn't know ${unsupported[1]}. ${howToUpdate}`
 }
 
-const unsupportedCommand = /^Unsupported browser command: (.+)$/
+const unsupportedCommand = /^Unsupported browser command: ((?:Target|Codevisor)\..+)$/
 
 const howToUpdate =
   "Update it at chrome://extensions (turn on Developer mode, then Update), or press its reload button there if it was loaded unpacked."
