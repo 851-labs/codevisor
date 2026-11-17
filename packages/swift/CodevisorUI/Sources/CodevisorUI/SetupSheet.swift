@@ -11,6 +11,8 @@
     private let status: String?
     private let onCancel: () -> Void
     private let onBack: (() -> Void)?
+    private let secondaryTitle: String?
+    private let onSecondary: (() -> Void)?
     private let onContinue: () -> Void
     private let stepsInCard: Bool
     private let icon: AnyView?
@@ -26,6 +28,8 @@
       status: String? = nil,
       onCancel: @escaping () -> Void,
       onBack: (() -> Void)? = nil,
+      secondaryTitle: String? = nil,
+      onSecondary: (() -> Void)? = nil,
       onContinue: @escaping () -> Void,
       stepsInCard: Bool = true,
       icon: AnyView? = nil,
@@ -40,6 +44,8 @@
       self.status = status
       self.onCancel = onCancel
       self.onBack = onBack
+      self.secondaryTitle = secondaryTitle
+      self.onSecondary = onSecondary
       self.onContinue = onContinue
       self.stepsInCard = stepsInCard
       self.icon = icon
@@ -77,21 +83,26 @@
           steps
         }
 
-        HStack {
-          Button(cancelTitle, action: onCancel)
-            .keyboardShortcut(.cancelAction)
-          Spacer()
-          if let status {
-            SheetActivityLabel(status)
+        ViewThatFits(in: .horizontal) {
+          HStack {
+            cancelButton(fills: false)
+            Spacer()
+            if let status {
+              SheetActivityLabel(status)
+            }
+            if let onBack {
+              Button("Back", action: onBack)
+            }
+            secondaryButton(fills: false)
+            primaryButton(fills: false)
           }
-          if let onBack {
-            Button("Back", action: onBack)
-          }
-          if let primaryTitle {
-            Button(primaryTitle, action: onContinue)
-              .buttonStyle(.borderedProminent)
-              .keyboardShortcut(.defaultAction)
-              .disabled(!canContinue)
+          VStack(spacing: 8) {
+            if let status {
+              SheetActivityLabel(status)
+            }
+            primaryButton(fills: true)
+            secondaryButton(fills: true)
+            cancelButton(fills: true)
           }
         }
         .controlSize(.large)
@@ -99,6 +110,33 @@
       }
       .padding(24)
       .frame(width: 460)
+    }
+
+    private func cancelButton(fills: Bool) -> some View {
+      Button(action: onCancel) { label(cancelTitle, fills: fills) }
+        .keyboardShortcut(.cancelAction)
+    }
+
+    @ViewBuilder
+    private func secondaryButton(fills: Bool) -> some View {
+      if let secondaryTitle, let onSecondary {
+        Button(action: onSecondary) { label(secondaryTitle, fills: fills) }
+          .disabled(!canContinue)
+      }
+    }
+
+    @ViewBuilder
+    private func primaryButton(fills: Bool) -> some View {
+      if let primaryTitle {
+        Button(action: onContinue) { label(primaryTitle, fills: fills) }
+          .buttonStyle(.borderedProminent)
+          .keyboardShortcut(.defaultAction)
+          .disabled(!canContinue)
+      }
+    }
+
+    private func label(_ title: String, fills: Bool) -> some View {
+      Text(title).frame(maxWidth: fills ? .infinity : nil)
     }
   }
 #endif

@@ -140,22 +140,36 @@ public final class PluginSetupModel {
 
   private func signInToServer() async {
     guard let server else { return }
-    guard let start = await report({ try await self.startSignIn(to: server) }),
-      let url = URL(string: start.authorizationUrl)
-    else { return }
+    let browser = signInClient.map {
+      PluginSignInBrowser(client: $0, pluginName: server.name, presenter: webSignIn)
+    }
+    guard let start = await report({ try await self.startSignIn(to: server, ticket: browser?.ticket) }),
+      let browser
+    else {
+      await browser?.abandon()
+      return
+    }
 
-    await working { await webSignIn.run(url) }
+    await working { _ = await browser.finish(at: start.authorizationUrl) }
   }
 
-  private func startSignIn(to server: ServerMcpServer) async throws -> ServerMcpOAuthStart {
+  private var signInClient: (any CodevisorServerClienting)? {
+    switch signInRoute {
+    case .thisMachine: client
+    case let .localMachine(local): local
+    case .unavailable: nil
+    }
+  }
+
+  private func startSignIn(to server: ServerMcpServer, ticket: String?) async throws -> ServerMcpOAuthStart {
     switch signInRoute {
     case .thisMachine:
-      return try await client.startMcpOAuth(id: server.id)
+      return try await client.startMcpOAuth(id: server.id, ticket: ticket)
     case let .localMachine(local):
       guard let copy = try await local.listMcpServers().first(where: { $0.isSamePlugin(as: server) }) else {
         throw PluginSignInError.notOnThisMac(plugin: server.name)
       }
-      return try await local.startMcpOAuth(id: copy.id)
+      return try await local.startMcpOAuth(id: copy.id, ticket: ticket)
     case .unavailable:
       throw PluginSignInError.needsMac(plugin: server.name)
     }

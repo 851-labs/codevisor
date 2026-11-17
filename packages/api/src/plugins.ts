@@ -159,8 +159,14 @@ export const PluginCatalogResponse = Schema.Struct({
 })
 export type PluginCatalogResponse = typeof PluginCatalogResponse.Type
 
+export const PluginCatalogSignIn = Schema.Struct({
+  oauth: Schema.Literals(["none", "optional", "required"])
+})
+export type PluginCatalogSignIn = typeof PluginCatalogSignIn.Type
+
 export const InstallCatalogPluginRequest = Schema.Struct({
-  values: Schema.optional(Schema.Record(Schema.String, Schema.Unknown))
+  values: Schema.optional(Schema.Record(Schema.String, Schema.Unknown)),
+  authType: Schema.optional(Schema.Literals(["none", "oauth"]))
 })
 export type InstallCatalogPluginRequest = typeof InstallCatalogPluginRequest.Type
 

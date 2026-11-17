@@ -214,7 +214,7 @@ describe("plugin account OAuth routes", () => {
 
     expect([callback.status, await callback.text()]).toEqual([
       200,
-      "<!doctype html><title>Codevisor</title><p>Signed in. You can return to Codevisor.</p>"
+      expect.stringMatching(/<main><p>Signed in\. You can return to Codevisor\.<\/p><\/main>$/)
     ])
     expect(decode(PluginAccountsResponse)(listed.body).accounts).toEqual([
       expect.objectContaining({
@@ -241,9 +241,9 @@ describe("plugin account OAuth routes", () => {
       `${running.server.url}/v1/plugins/oauth/callback?state=${encodeURIComponent(grant.state)}&code=${grant.code}`
     ).then((response) => response.text())
 
-    expect(page).toBe(
-      "<!doctype html><title>Codevisor</title><p>Signed in. You can return to Codevisor.</p>" +
-        '<p><a href="codevisor-dev-0123456789://signed-in">Open Codevisor</a></p>' +
+    expect(page).toContain(
+      "<main><p>Signed in. You can return to Codevisor.</p>" +
+        '<p><a href="codevisor-dev-0123456789://signed-in">Open Codevisor</a></p></main>' +
         '<script>location.href = "codevisor-dev-0123456789://signed-in"</script>'
     )
   })

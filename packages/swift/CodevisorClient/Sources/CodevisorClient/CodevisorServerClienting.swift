@@ -103,7 +103,7 @@ public protocol CodevisorServerClienting: BrowserStateClienting, BrowserFaviconC
   func createMcpServer(_ request: CreateMcpServerBody) async throws -> ServerMcpServer
   func updateMcpServer(id: String, request: UpdateMcpServerBody) async throws -> ServerMcpServer
   func setMcpServerEnabled(id: String, enabled: Bool) async throws -> ServerMcpServer
-  func startMcpOAuth(id: String) async throws -> ServerMcpOAuthStart
+  func startMcpOAuth(id: String, ticket: String?) async throws -> ServerMcpOAuthStart
   func disconnectMcpOAuth(id: String) async throws -> ServerMcpServer
   func removeMcpServer(id: String) async throws
   func listMcpTools(id: String) async throws -> [ServerMcpTool]
@@ -128,7 +128,14 @@ public protocol CodevisorServerClienting: BrowserStateClienting, BrowserFaviconC
   func botThreads(botId: String) async throws -> [ServerThread]
   func threadMessages(threadId: String, before: Int?, limit: Int) async throws -> ServerThreadMessagePage
   func listPluginCatalog(query: String?) async throws -> [ServerPluginCatalogEntry]
-  func installCatalogPlugin(id: String, values: [String: ServerConfigFieldValue]) async throws -> ServerMcpServer
+  func installCatalogPlugin(
+    id: String,
+    values: [String: ServerConfigFieldValue],
+    authType: String?
+  ) async throws -> ServerMcpServer
+  func pluginCatalogSignIn(id: String) async throws -> ServerPluginCatalogSignIn
+  func signInHandoff(pluginName: String?) -> PluginSignInHandoff?
+  func abandonSignIn(ticket: String) async throws
   func pluginCatalogEntry(id: String) async throws -> ServerPluginCatalogEntry
   func listPluginAccounts(serverId: String) async throws -> [ServerPluginAccount]
   func savePluginAccount(
@@ -139,7 +146,8 @@ public protocol CodevisorServerClienting: BrowserStateClienting, BrowserFaviconC
   func removePluginAccount(serverId: String, accountId: String) async throws
   func startPluginAccountOAuth(
     serverId: String,
-    request: ServerPluginAccountOAuthRequest
+    request: ServerPluginAccountOAuthRequest,
+    ticket: String?
   ) async throws -> ServerPluginAccountOAuthStart
   func completePluginAccountOAuth(callbackURL: URL) async throws
   func pluginAccountIngress(serverId: String, accountId: String) async throws -> [ServerPluginIngressURL]

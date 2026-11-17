@@ -9,11 +9,14 @@ import type { PluginAccounts } from "../plugins/accounts/plugin-accounts.js"
 import { HttpFailure, matchRouteParams, readSchema, writeJson } from "../server-context.js"
 import { appSchemeParameter } from "./oauth-returns.js"
 import type { RouteContext } from "./route-context.js"
+import { signInTicket, ticketParameter } from "./sign-in-handoffs.js"
 
 export const routePluginAccounts = async (route: RouteContext): Promise<boolean> => {
   const { request, url } = route
   if (url.pathname === oauthCompletePath && request.method === "POST")
     return routeOAuthComplete(route)
+  const abandoned = matchRouteParams(url.pathname, "/v1/sign-in/:ticket")
+  if (abandoned !== undefined && request.method === "DELETE") return routeAbandon(route, abandoned)
   const collection = matchRouteParams(url.pathname, "/v1/plugins/:serverId/accounts")
   const member = matchRouteParams(url.pathname, "/v1/plugins/:serverId/accounts/:accountId")
   const oauth = matchRouteParams(url.pathname, "/v1/plugins/:serverId/accounts/oauth/start")
@@ -36,9 +39,24 @@ const routeOAuthStart = async (route: RouteContext, serverId: string): Promise<b
   if (route.request.method !== "POST") return false
   const accounts = requireAccounts(route)
   const body = await readSchema(route.request, OAuthStartBody)
-  const started = await accounts.startOAuth(serverId, oauthStart(body, returnApp(route)))
+  const handoffs = route.routeState.signInHandoffs
+  const ticket = signInTicket(route.url.searchParams.get(ticketParameter))
+  const started = await accounts
+    .startOAuth(serverId, oauthStart(body, returnApp(route)))
+    .catch((cause: unknown) => {
+      handoffs.settle(ticket, { failure: cause instanceof Error ? cause.message : String(cause) })
+      throw cause
+    })
   rememberReturnApp(route, started.authorizationUrl)
+  handoffs.settle(ticket, { authorizationUrl: started.authorizationUrl })
   return respond(route, started)
+}
+
+const routeAbandon = (route: RouteContext, params: Record<string, string>): boolean => {
+  route.routeState.signInHandoffs.settle(signInTicket(params.ticket), {
+    failure: "Codevisor couldn’t start it. Return to Codevisor to see why."
+  })
+  return respond(route, { abandoned: true })
 }
 
 const rememberReturnApp = (route: RouteContext, authorizationUrl: string | undefined): void => {

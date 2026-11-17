@@ -97,6 +97,7 @@ export interface McpManager {
     options?: McpCreateOptions
   ) => Promise<McpServer>
   readonly detectAuth: (url: string) => Promise<McpAuthDetection>
+  readonly prepareOAuth: (url: string) => Promise<boolean>
   readonly update: (id: string, request: UpdateMcpServerRequest) => Promise<McpServer>
   readonly staticSecrets: (id: string) => Promise<{
     readonly bearerToken?: string

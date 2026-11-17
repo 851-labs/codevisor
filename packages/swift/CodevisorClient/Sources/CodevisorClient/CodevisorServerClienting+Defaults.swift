@@ -140,10 +140,6 @@ public extension CodevisorServerClienting {
 
   func listPluginCatalog(query: String?) async throws -> [ServerPluginCatalogEntry] { [] }
 
-  func installCatalogPlugin(id: String, values: [String: ServerConfigFieldValue]) async throws -> ServerMcpServer {
-    throw CodevisorServerClientError.invalidResponse
-  }
-
   func pluginCatalogEntry(id: String) async throws -> ServerPluginCatalogEntry {
     throw CodevisorServerClientError.invalidResponse
   }
@@ -159,13 +155,6 @@ public extension CodevisorServerClienting {
   }
 
   func removePluginAccount(serverId: String, accountId: String) async throws {
-    throw CodevisorServerClientError.invalidResponse
-  }
-
-  func startPluginAccountOAuth(
-    serverId: String,
-    request: ServerPluginAccountOAuthRequest
-  ) async throws -> ServerPluginAccountOAuthStart {
     throw CodevisorServerClientError.invalidResponse
   }
 
@@ -376,7 +365,7 @@ public extension CodevisorServerClienting {
   func setMcpServerEnabled(id: String, enabled: Bool) async throws -> ServerMcpServer {
     throw CodevisorServerClientError.invalidResponse
   }
-  func startMcpOAuth(id: String) async throws -> ServerMcpOAuthStart {
+  func startMcpOAuth(id: String, ticket: String?) async throws -> ServerMcpOAuthStart {
     throw CodevisorServerClientError.invalidResponse
   }
   func disconnectMcpOAuth(id: String) async throws -> ServerMcpServer {

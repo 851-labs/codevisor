@@ -200,9 +200,9 @@ extension CodevisorServerClient {
     )
   }
 
-  public func startMcpOAuth(id: String) async throws -> ServerMcpOAuthStart {
+  public func startMcpOAuth(id: String, ticket: String?) async throws -> ServerMcpOAuthStart {
     try await send(
-      "/v1/mcps/\(pathComponent(id))/oauth-start?app=\(CodevisorDeeplinkScheme.current)",
+      "/v1/mcps/\(pathComponent(id))/oauth-start?app=\(CodevisorDeeplinkScheme.current)\(Self.ticketQuery(ticket))",
       method: "POST",
       body: Optional<EmptyBody>.none
     )
@@ -222,5 +222,9 @@ extension CodevisorServerClient {
 
   public func listMcpTools(id: String) async throws -> [ServerMcpTool] {
     try await get("/v1/mcps/\(pathComponent(id))/tools")
+  }
+
+  static func ticketQuery(_ ticket: String?) -> String {
+    ticket.map { "&ticket=\($0)" } ?? ""
   }
 }

@@ -9,9 +9,13 @@ struct McpOAuthSignInTests {
   @Test("The sign-in sheet closes once the server it's signing in to reports connected on that machine")
   func closesOnConnected() async throws {
     let presenter = FakeWebSignIn()
-    let signIn = McpOAuthSignIn(presenter: presenter)
-    let url = try #require(URL(string: "https://auth.example/authorize"))
-    let running = Task { await signIn.run(url, serverId: "mcp-1", on: "studio") }
+    let signIn = McpOAuthSignIn()
+    let studio = CodevisorServerClient(
+      config: CodevisorServerConfig(baseURL: try #require(URL(string: "https://studio.example"))))
+    let browser = PluginSignInBrowser(client: studio, pluginName: "Linear", presenter: presenter)
+    let running = Task {
+      await signIn.run(browser, at: "https://auth.example/authorize", serverId: "mcp-1", on: "studio")
+    }
     await presenter.presented.wait()
 
     signIn.closeIfConnected([try Self.server("mcp-1", state: "needsAuthorization")], on: "studio")

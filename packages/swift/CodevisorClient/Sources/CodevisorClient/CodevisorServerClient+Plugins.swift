@@ -33,6 +33,7 @@ extension CodevisorServerClient {
 
   private struct InstallCatalogPluginBody: Encodable {
     var values: [String: ServerConfigFieldValue]
+    var authType: String?
   }
 
   private static let catalogIdAllowed = CharacterSet.alphanumerics.union(CharacterSet(charactersIn: "-._~"))
@@ -44,13 +45,26 @@ extension CodevisorServerClient {
 
   public func installCatalogPlugin(
     id: String,
-    values: [String: ServerConfigFieldValue]
+    values: [String: ServerConfigFieldValue],
+    authType: String?
   ) async throws -> ServerMcpServer {
     try await send(
       "/v1/plugins/catalog/\(catalogPathComponent(id))/install",
       method: "POST",
-      body: InstallCatalogPluginBody(values: values)
+      body: InstallCatalogPluginBody(values: values, authType: authType)
     )
+  }
+
+  public func pluginCatalogSignIn(id: String) async throws -> ServerPluginCatalogSignIn {
+    try await get("/v1/plugins/catalog/\(catalogPathComponent(id))/sign-in")
+  }
+
+  public func signInHandoff(pluginName: String?) -> PluginSignInHandoff? {
+    PluginSignInHandoff(serverURL: config.baseURL, pluginName: pluginName)
+  }
+
+  public func abandonSignIn(ticket: String) async throws {
+    try await sendNoResponse("/v1/sign-in/\(ticket)", method: "DELETE")
   }
 
   public func issuePluginPaneToken(

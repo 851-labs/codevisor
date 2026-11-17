@@ -65,6 +65,7 @@ public final class PluginCatalogModel {
   public func install(
     _ entry: ServerPluginCatalogEntry,
     values: [String: ServerConfigFieldValue],
+    authType: String? = nil,
     access: PluginAccessController
   ) async throws -> ServerMcpServer {
     installing.insert(entry.id)
@@ -74,7 +75,7 @@ public final class PluginCatalogModel {
     try await access.requireEligible(subject)
     let metadata = PluginConsentMetadata(entry, ageRating: access.ageRating(for: subject))
     try await access.recordConsent(subject, metadata: metadata)
-    return try await client.installCatalogPlugin(id: entry.id, values: values)
+    return try await client.installCatalogPlugin(id: entry.id, values: values, authType: authType)
   }
 
   private func nextGeneration() -> Int {

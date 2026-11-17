@@ -1,6 +1,6 @@
 import { decode, FEATURE_FLAGS_NAMESPACE, McpServer, PluginCatalogResponse } from "@codevisor/api"
 import { Schema } from "effect"
-import { describe, expect, it } from "vitest"
+import { describe, expect, it, vi } from "vitest"
 
 import { run } from "../server-context.js"
 import { jsonRequest } from "../test-support.js"
@@ -202,6 +202,51 @@ describe("plugin catalog routes", () => {
       headerNames: []
     })
     expect(JSON.stringify(tickets)).not.toContain("Bearer token")
+  })
+
+  it("says how each plugin signs in before it is installed", async () => {
+    const running = await catalogApp()
+    const detectAuth = vi.spyOn(running.services.mcp, "detectAuth")
+    const prepareOAuth = vi.spyOn(running.services.mcp, "prepareOAuth")
+    const signIn = async (id: string) =>
+      (await jsonRequest(running.server, `/v1/plugins/catalog/${encodeURIComponent(id)}/sign-in`))
+        .body
+
+    detectAuth.mockResolvedValueOnce({ authType: "oauth", detail: "" })
+    const required = await signIn("io.example/open")
+    detectAuth.mockResolvedValueOnce({ authType: "none", detail: "" })
+    prepareOAuth.mockResolvedValueOnce(true)
+    const optional = await signIn("io.example/open")
+    detectAuth.mockResolvedValueOnce({ authType: "bearer", detail: "" })
+    const token = await signIn("io.example/open")
+    const open = await signIn("io.example/open")
+    const bundled = await signIn("dev.codevisor/alerts")
+
+    expect([required, optional, token, open, bundled]).toEqual([
+      { oauth: "required" },
+      { oauth: "optional" },
+      { oauth: "none" },
+      { oauth: "none" },
+      { oauth: "none" }
+    ])
+  })
+
+  it("installs a remote plugin the way the user chose to sign in", async () => {
+    const running = await catalogApp()
+
+    const signedIn = decode(McpServer)(
+      (
+        await post(
+          running,
+          `/v1/plugins/catalog/${encodeURIComponent("io.example/open")}/install`,
+          {
+            authType: "oauth"
+          }
+        )
+      ).body
+    )
+
+    expect(signedIn).toMatchObject({ authType: "oauth", connectionState: "needsAuthorization" })
   })
 
   it("explains unknown plugins and leaves other methods to the router", async () => {
