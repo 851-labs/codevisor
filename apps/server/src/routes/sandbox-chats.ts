@@ -1,6 +1,7 @@
 import {
   decode,
   isoTimestamp,
+  RESTORED_AGENT_SESSION_LABEL,
   SandboxChatsAction,
   type FileMetadata,
   type SavedChat,
@@ -117,6 +118,7 @@ const savedSession = (session: SessionSummary): SavedChatSession => ({
   title: session.title,
   harnessId: session.harnessId,
   createdAt: session.createdAt,
+  ...(hasAgentSession(session) ? { agentSessionId: session.agentSessionId } : {}),
   ...(session.updatedAt === undefined ? {} : { updatedAt: session.updatedAt }),
   ...(session.createdBy === undefined ? {} : { createdBy: session.createdBy }),
   ...(session.labels === undefined ? {} : { labels: session.labels }),
@@ -144,13 +146,14 @@ const restoreChat = async (
   )
   if (workspace === undefined) throw new HttpFailure(404, `Workspace not found: ${workspaceId}`)
 
+  const { agentSessionId: _resumedLater, ...fields } = session
   const created = await createSessionIfMissing(
     services,
     fanout,
     routeState,
     config,
     {
-      ...session,
+      ...fields,
       projectId: workspace.projectId,
       workspaceId: workspace.id,
       deferAgentSession: true
@@ -167,10 +170,30 @@ const finishChat = async (
 ): Promise<{ readonly restored: true }> => {
   const note = { text: action.note, createdAt: isoTimestamp() }
   await run(services.db.finishChatImport(action.sessionId, action.fileIds, note))
+  if (action.agentSessionId !== undefined) await resumeFrom(services, action, action.agentSessionId)
   const session = await run(services.db.getSessionSummary(action.sessionId))
   await appendAndPublish(services.db, fanout, "session.created", session.id, session)
   return { restored: true }
 }
+
+const resumeFrom = async (
+  services: RouteContext["services"],
+  { sessionId }: Action<"finish_chat">,
+  agentSessionId: string
+): Promise<void> => {
+  const { labels, harnessId } = await run(services.db.getSessionSummary(sessionId))
+  const account = await services.auth?.activeAccountContext(harnessId)
+  await run(
+    services.db.updateSession(sessionId, {
+      agentSessionId,
+      labels: { ...labels, [RESTORED_AGENT_SESSION_LABEL]: agentSessionId },
+      ...(account === undefined ? {} : { harnessAccountId: account.id })
+    })
+  )
+}
+
+const hasAgentSession = (session: SessionSummary): boolean =>
+  session.agentSessionId !== undefined && session.agentSessionId !== ""
 
 const sameId = (left: string | undefined, right: string): boolean =>
   left?.toLowerCase() === right.toLowerCase()

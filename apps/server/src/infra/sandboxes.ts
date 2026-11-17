@@ -36,7 +36,7 @@ import {
   type SandboxManagement,
   type SandboxRouting
 } from "./sandbox-manager.js"
-import { adoptPlaceholders } from "./sandbox-placeholder.js"
+import { adoptPlaceholders, archiveAgainAfterFailedRestore } from "./sandbox-placeholder.js"
 import { makeSandboxPowerState } from "./sandbox-power.js"
 import { connectionOf, profileOrMissing } from "./sandbox-profile-record.js"
 import { sandboxRemote, type SandboxRemote } from "./sandbox-remote.js"
@@ -46,7 +46,6 @@ import {
   requireOneWorkspace,
   restoredFields,
   restoreRequest,
-  restoringOf,
   retryRequest
 } from "./sandbox-requests.js"
 import type { RetainedAccounts } from "./sandbox-retained-accounts.js"
@@ -211,7 +210,7 @@ export const makeSandboxes = (deps: SandboxDeps): Sandboxes => {
     const failed = await existingSandbox(deps, id)
     const request = retryRequest(failed)
     await deps.records.remove(id)
-    return create(request, publish, restoringOf(failed)).catch(async (cause: unknown) => {
+    return create(request, publish).catch(async (cause: unknown) => {
       await deps.records.put(failed)
       throw cause
     })
@@ -339,8 +338,10 @@ const provisionOrFail = async (
   try {
     return await provision(deps, provider, record, setup, planned)
   } catch (cause) {
+    const error = messageOf(cause)
     await teardownMachine(deps, provider, record.current()).catch(() => undefined)
-    await record.advance({ state: "failed", error: messageOf(cause), ...harnessIdOf(planned) })
+    if (await archiveAgainAfterFailedRestore(deps, record.current(), error)) return undefined
+    await record.advance({ state: "failed", error, ...harnessIdOf(planned) })
     return undefined
   }
 }

@@ -102,17 +102,19 @@ const saveChats = async (
       await deps.savedChats.addItem(workspaceId, chat.session.id, item)
     }
     const files: Array<FileMetadata> = []
+    const notKept: Array<string> = []
     for (const file of chat.files) {
       const reason = fetched.has(file.id) ? undefined : leftOutReason(file, budget)
       if (reason !== undefined) {
         leftOut.push(leftOutLine(file, chat, reason))
+        notKept.push(`${file.name} (${megabytes(file.sizeBytes)})`)
         continue
       }
       if (!fetched.has(file.id)) await fetchFile(deps, machine, workspaceId, file)
       fetched.add(file.id)
       files.push(file)
     }
-    chats.push({ session: chat.session, files })
+    chats.push({ session: chat.session, files, ...(notKept.length === 0 ? {} : { notKept }) })
   }
   for (const line of leftOut) deps.log(`Sandbox ${machine.name} (${machine.id}): ${line}`)
   const { format, panes } = list
@@ -165,14 +167,25 @@ const putBackChat = async (
     await ask(deps, machine, { action: "restore_item", format, sessionId: session.id, item })
   }
   for (const file of files) await sendFile(deps, machine, workspaceId, file)
+  const { agentSessionId } = session
   await ask(deps, machine, {
     action: "finish_chat",
     format,
     sessionId: session.id,
     fileIds: files.map((file) => file.id),
-    note: RESTORED_CHAT_NOTE
+    note: `${restoredNote(agentSessionId)}${notKeptNote(chat.notKept ?? [])}`,
+    ...(agentSessionId === undefined ? {} : { agentSessionId })
   })
 }
+
+const notKeptNote = (notKept: ReadonlyArray<string>): string =>
+  notKept.length === 0 ? "" : ` Too large to keep: ${notKept.join(", ")}.`
+
+const restoredNote = (agentSessionId: string | undefined): string =>
+  agentSessionId === undefined ? RESTORED_CHAT_NOTE : RECAPPED_CHAT_NOTE
+
+export const RECAPPED_CHAT_NOTE =
+  "Restored from an archived sandbox. The agent starts a new session from here and may not remember everything above."
 
 export const RESTORED_CHAT_NOTE =
   "Restored from an archived sandbox. The agent starts fresh from here and doesn't remember the messages above."

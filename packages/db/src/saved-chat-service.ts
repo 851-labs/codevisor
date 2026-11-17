@@ -120,7 +120,8 @@ export const makeSavedChatService = ({ sqlite }: ServiceContext): SavedChatServi
       sqlite.transaction(() => {
         const link = sqlite.prepare(savedChatSql.linkFile)
         for (const fileId of fileIds) link.run(id, fileId)
-        appendNote(sqlite, id, note)
+        if (sqlite.prepare(savedChatSql.hasItems).get(id) !== undefined)
+          appendNote(sqlite, id, note)
       })()
     })
 })
@@ -209,6 +210,7 @@ const savedChatSql = {
   itemIds: "select id from chat_items where session_id = ? order by position",
   fileIds: "select file_id as id from session_files where session_id = ? order by file_id",
   fileExists: "select 1 from files where id = ?",
+  hasItems: "select 1 from chat_items where session_id = ? limit 1",
   linkFile: `insert or ignore into session_files (session_id, file_id)
     select ?, id from files where id = ?`,
   insertNote: `insert into chat_items (id, session_id, position, role, status, created_at,

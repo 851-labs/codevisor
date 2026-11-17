@@ -10,6 +10,7 @@ export const SavedChatSession = Schema.Struct({
   id: Schema.String,
   title: Schema.String,
   harnessId: Schema.String,
+  agentSessionId: Schema.optional(Schema.String),
   createdAt: Schema.String,
   updatedAt: Schema.optional(Schema.String),
   createdBy: Schema.optional(SessionCreator),
@@ -28,6 +29,8 @@ export const SavedChatItem = Schema.Struct({
   children: Schema.Record(Schema.String, Schema.Array(SavedChatRow))
 })
 export type SavedChatItem = typeof SavedChatItem.Type
+
+export const RESTORED_AGENT_SESSION_LABEL = "codevisor-restored-agent-session"
 
 export const SavedChat = Schema.Struct({
   session: SavedChatSession,
@@ -95,7 +98,8 @@ export const SandboxChatsAction = Schema.Union([
     format: Schema.Number,
     sessionId: Schema.String,
     fileIds: Schema.Array(Schema.String),
-    note: Schema.String
+    note: Schema.String,
+    agentSessionId: Schema.optional(Schema.String)
   })
 ])
 export type SandboxChatsAction = typeof SandboxChatsAction.Type

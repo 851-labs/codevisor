@@ -86,6 +86,20 @@ describe("a chat saved from one server and put back on another", () => {
     }
   })
 
+  it("adds no note to a chat that had no messages", async () => {
+    const { db } = await openDatabase("sandbox-after")
+    try {
+      const project = await run(db.createProject({ folderPath: "/tmp/restored-chat" }))
+      const empty = await run(db.createSession({ projectId: project.id, harnessId: "codex" }))
+
+      await run(db.finishChatImport(empty.id, [], note))
+
+      expect((await run(db.getTranscriptPage(empty.id, undefined, 8))).items).toEqual([])
+    } finally {
+      await Effect.runPromise(db.close)
+    }
+  })
+
   it("settles a turn that was still streaming and refuses rows it can't place", async () => {
     const source = await openDatabase("sandbox-before")
     const target = await openDatabase("sandbox-after")

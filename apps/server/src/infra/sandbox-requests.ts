@@ -56,9 +56,6 @@ export const restoredFields = (archived: Sandbox): Partial<Sandbox> => ({
   ...keptWorkOf(archived)
 })
 
-export const restoringOf = (failed: Sandbox): Partial<Sandbox> | undefined =>
-  failed.restoresWorkspace === true ? restoredFields(failed) : undefined
-
 export const newRecord = (
   deps: SandboxDeps,
   request: CreateSandboxRequest,

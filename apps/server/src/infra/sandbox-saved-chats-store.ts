@@ -1,4 +1,4 @@
-import { createReadStream } from "node:fs"
+import { createReadStream, existsSync } from "node:fs"
 import { appendFile, mkdir, open, readFile, rm, writeFile } from "node:fs/promises"
 import { join } from "node:path"
 import { createInterface } from "node:readline"
@@ -9,7 +9,11 @@ import { Schema } from "effect"
 export const SavedChatsManifest = Schema.Struct({
   format: Schema.Number,
   chats: Schema.Array(
-    Schema.Struct({ session: SavedChatSession, files: Schema.Array(FileMetadata) })
+    Schema.Struct({
+      session: SavedChatSession,
+      files: Schema.Array(FileMetadata),
+      notKept: Schema.optional(Schema.Array(Schema.String))
+    })
   ),
   panes: Schema.Array(SavedChatPane),
   leftOut: Schema.Array(Schema.String)
@@ -69,6 +73,8 @@ export const makeSavedChatsStore = (dataDir: string): SavedChatsStore => {
 }
 
 async function* savedItems(path: string): AsyncIterable<SavedChatItem> {
+  if (!existsSync(path)) return
+
   const stream = createReadStream(path, "utf8")
   const failure = new Promise<never>((_resolve, reject) => stream.once("error", reject))
   failure.catch(() => undefined)

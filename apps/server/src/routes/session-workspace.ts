@@ -5,12 +5,13 @@ import type {
   HarnessAccountContext,
   InterruptedTurnResume
 } from "@codevisor/agent-runtime"
-import type {
-  AgentRef,
-  CreateSessionRequest,
-  UpdateSessionRequest,
-  Project,
-  SessionSummary
+import {
+  RESTORED_AGENT_SESSION_LABEL,
+  type AgentRef,
+  type CreateSessionRequest,
+  type UpdateSessionRequest,
+  type Project,
+  type SessionSummary
 } from "@codevisor/api"
 import type { CodevisorDatabaseService } from "@codevisor/db"
 
@@ -370,7 +371,7 @@ export const loadAgentSessionFor = async (
     try {
       return { agentSessionId: resumedId, metadata: await load(resumedId) }
     } catch (cause) {
-      if (isConversationMissing(cause)) {
+      if (isConversationMissing(cause) || wasRestoredFrom(session, resumedId)) {
         await rememberConversationRecap(services, sessionId)
         return startFresh()
       }
@@ -391,6 +392,9 @@ export const loadAgentSessionFor = async (
   await publishSessionSkills(services, fanout, serverId, sessionId, metadata)
   return restoreSessionConfigSelections(services, fanout, serverId, sessionId, metadata)
 }
+
+const wasRestoredFrom = (session: SessionSummary, agentSessionId: string): boolean =>
+  session.labels?.[RESTORED_AGENT_SESSION_LABEL] === agentSessionId
 
 const hasNothingToResume = async (
   services: CodevisorServerServices,

@@ -1,6 +1,7 @@
 import type { ExecRequest, ExecResult } from "@codevisor/sandboxes"
 import { describe, expect, it } from "vitest"
 
+import { run } from "../server-context.js"
 import {
   ok,
   restoresWork,
@@ -30,6 +31,9 @@ const archived = async (options: SandboxHarnessOptions = {}) => {
 }
 
 type Harness = Awaited<ReturnType<typeof archived>>
+
+const archivedPlaceholder = async (harness: Harness) =>
+  (await run(harness.services.db.listWorkspaces)).find((workspace) => workspace.id === "id-2")
 
 const restored = async (harness: Harness) => {
   await harness.machines.restore("id-2")
@@ -83,21 +87,22 @@ describe("a sandbox's work across archive and restore", () => {
     )
   })
 
-  it("fails the restore instead of starting empty when the saved work isn't on this Mac", async () => {
+  it("archives the sandbox again instead of starting empty when the saved work isn't on this Mac", async () => {
     const harness = await archived()
     await harness.deps.savedWork.remove("id-2")
 
     const { machine } = await restored(harness)
 
-    expect(machine).toMatchObject({
-      state: "failed",
-      error:
-        "The work Spike box had before it was archived isn't on this Mac. Restore it from the Mac that archived it."
-    })
+    expect(machine).toMatchObject({ state: "archived", workspaceId: "id-2", hasSavedWork: true })
+    expect(harness.logs).toContain(
+      `Restoring sandbox Spike box (${machine.id}) failed, so it is archived again: The work Spike box had before it was archived isn't on this Mac. Restore it from the Mac that archived it.`
+    )
+    expect(await archivedPlaceholder(harness)).toMatchObject({ isArchived: true })
+    expect(harness.provider.machines.size).toBe(0)
     expect(workPutBack(harness)).toEqual([])
   })
 
-  it("keeps the saved work when the sandbox refuses it, so retrying puts it back", async () => {
+  it("archives the sandbox again with its saved work when the sandbox refuses it, so restoring again puts it back", async () => {
     let refusals = 1
     const onCurl = (curl: ExecRequest): ExecResult => {
       if (savesWork(curl)) return ok(JSON.stringify(SAVED_WORK))
@@ -107,18 +112,16 @@ describe("a sandbox's work across archive and restore", () => {
     }
     const harness = await archived({ onCurl })
 
-    const { machine: failed } = await restored(harness)
+    const { machine: again } = await restored(harness)
     const keptAfterFailure = await harness.deps.savedWork.get("id-2")
-    await harness.machines.retry(failed.id)
-    await harness.machines.settled()
+    const { machine } = await restored(harness)
 
-    expect(failed).toMatchObject({
-      state: "failed",
-      error:
-        "PUT /v1/projects/remote-project/saved-work failed on the sandbox: curl: (22) The requested URL returned error: Repository lacks these prerequisite commits"
-    })
+    expect(again).toMatchObject({ state: "archived", hasSavedWork: true })
+    expect(harness.logs).toContain(
+      `Restoring sandbox Spike box (${again.id}) failed, so it is archived again: PUT /v1/projects/remote-project/saved-work failed on the sandbox: curl: (22) The requested URL returned error: Repository lacks these prerequisite commits`
+    )
     expect(keptAfterFailure).toEqual(SAVED_WORK)
-    expect(await harness.machines.list()).toMatchObject([{ state: "ready", workspaceId: "id-2" }])
+    expect(machine).toMatchObject({ state: "ready", workspaceId: "id-2" })
     expect(workPutBack(harness)).toEqual([SAVED_WORK, SAVED_WORK])
     expect(await harness.deps.savedWork.get("id-2")).toBeUndefined()
   })

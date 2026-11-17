@@ -1,7 +1,7 @@
 import { FLEET_SANDBOX_CHATS_PATH, type FileMetadata } from "@codevisor/api"
 import { describe, expect, it } from "vitest"
 
-import { RESTORED_CHAT_NOTE } from "./sandbox-saved-chats.js"
+import { RECAPPED_CHAT_NOTE } from "./sandbox-saved-chats.js"
 import { sandboxHarness } from "./sandbox-test-support.js"
 
 const request = { profileId: "profile-1", projectId: "project-1", name: "Spike box" }
@@ -11,6 +11,7 @@ const session = {
   id: "chat-1",
   title: "Fix the flake",
   harnessId: "codex",
+  agentSessionId: "agent-1",
   createdAt: "2026-10-22T00:00:00.000Z"
 }
 const pane = {
@@ -35,27 +36,29 @@ const attachment = (id: string, megabytes: number): FileMetadata => ({
 })
 const note: FileMetadata = { ...attachment("note", 0), name: "note.txt", sizeBytes: 5 }
 
+const hello = Buffer.from("hello").toString("base64")
+
 interface FakeChats {
   readonly files?: ReadonlyArray<FileMetadata>
+  readonly itemIds?: ReadonlyArray<string>
   readonly listFails?: string
   readonly refusesRestore?: string
 }
 
 const sandboxWithChats =
-  ({ files = [note], listFails, refusesRestore }: FakeChats = {}) =>
+  (chats: FakeChats = {}) =>
   (tool: string, args: Record<string, unknown>): unknown => {
+    const { files = [note], itemIds = ["item-1", "item-2"] } = chats
+    const { listFails, refusesRestore } = chats
     if (tool !== FLEET_SANDBOX_CHATS_PATH) return undefined
     const { action } = args
     if (action === "list" && listFails !== undefined) throw new Error(listFails)
     if (action === "list") {
-      return {
-        format: 1,
-        chats: [{ session, itemIds: ["item-1", "item-2"], files }],
-        panes: [pane]
-      }
+      const chat = { session, itemIds, files }
+      return { format: 1, chats: [chat], panes: [pane] }
     }
     if (action === "item") return itemOf(String(args["itemId"]))
-    if (action === "file") return { data: Buffer.from("hello").toString("base64") }
+    if (action === "file") return { data: hello }
     if (action === "restore_chat" && refusesRestore !== undefined) throw new Error(refusesRestore)
     return { restored: true }
   }
@@ -119,7 +122,8 @@ describe("a sandbox's chats across archive and restore", () => {
         format: 1,
         sessionId: "chat-1",
         fileIds: ["note"],
-        note: RESTORED_CHAT_NOTE
+        note: RECAPPED_CHAT_NOTE,
+        agentSessionId: "agent-1"
       },
       { action: "restore_pane", format: 1, workspaceId: "id-2", pane }
     ])
@@ -150,7 +154,8 @@ describe("a sandbox's chats across archive and restore", () => {
     expect(lines).toEqual(expect.arrayContaining([tooBig, pastTotal]))
     expect(putBack.at(-2)).toMatchObject({
       action: "finish_chat",
-      fileIds: [...eight.map((file) => file.id), "note"]
+      fileIds: [...eight.map((file) => file.id), "note"],
+      note: `${RECAPPED_CHAT_NOTE} Too large to keep: recording.png (26 MB), shot-9.png (24 MB).`
     })
   })
 
@@ -169,28 +174,45 @@ describe("a sandbox's chats across archive and restore", () => {
     expect(putBack).toEqual([])
   })
 
-  it("fails the restore and keeps the saved chats when the sandbox refuses them", async () => {
+  it("archives the sandbox again with its saved chats when the new sandbox refuses them", async () => {
     const refusal =
       "These chats were saved in format 1, and this sandbox's Codevisor reads format 2"
     const harness = await archived({ refusesRestore: refusal })
 
     const { machine } = await restored(harness)
 
-    expect(machine).toMatchObject({ state: "failed", error: refusal })
+    expect(machine).toMatchObject({ state: "archived", workspaceId: "id-2", hasSavedChats: true })
+    expect(harness.logs).toContain(
+      `Restoring sandbox Spike box (${machine.id}) failed, so it is archived again: ${refusal}`
+    )
+    expect(harness.provider.machines.size).toBe(0)
     expect(await harness.deps.savedChats.manifest("id-2")).toMatchObject({ chats: [{ session }] })
   })
 
-  it("fails the restore instead of starting without chats when they aren't on this Mac", async () => {
+  it("archives the sandbox again instead of starting without chats when they aren't on this Mac", async () => {
     const harness = await archived()
     await harness.deps.savedChats.remove("id-2")
 
     const { machine, putBack } = await restored(harness)
 
-    expect(machine).toMatchObject({
-      state: "failed",
-      error:
-        "The chats Spike box had before it was archived aren't on this Mac. Restore it from the Mac that archived it."
-    })
+    expect(machine).toMatchObject({ state: "archived", hasSavedChats: true })
+    expect(harness.logs).toContain(
+      `Restoring sandbox Spike box (${machine.id}) failed, so it is archived again: The chats Spike box had before it was archived aren't on this Mac. Restore it from the Mac that archived it.`
+    )
     expect(putBack).toEqual([])
+  })
+
+  it("brings back a chat that has no messages yet", async () => {
+    const harness = await archived({ itemIds: [] })
+
+    const { machine, putBack } = await restored(harness)
+
+    expect(machine.state).toBe("ready")
+    expect(putBack.map((call) => call["action"])).toEqual([
+      "restore_chat",
+      "restore_file",
+      "finish_chat",
+      "restore_pane"
+    ])
   })
 })
