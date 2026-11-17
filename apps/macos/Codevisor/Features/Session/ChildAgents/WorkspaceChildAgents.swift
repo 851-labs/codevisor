@@ -130,3 +130,9 @@ struct WorkspaceChildAgents {
     Task { try? await client.archiveAgent(id: chat.id) }
   }
 }
+
+extension WorkspaceChildAgents: Equatable {
+  nonisolated static func == (lhs: Self, rhs: Self) -> Bool {
+    lhs.store === rhs.store && lhs.environment === rhs.environment && lhs.revealRequest === rhs.revealRequest
+  }
+}

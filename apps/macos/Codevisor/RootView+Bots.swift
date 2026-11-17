@@ -3,32 +3,10 @@ import CodevisorUI
 import SwiftUI
 
 extension RootView {
-  var showsBotConversation: Bool {
-    guard case .bot = selection else { return false }
-    return true
-  }
-
-  var showsBlankPage: Bool {
-    switch selection {
-    case .none, .newChat: true
-    case .session, .workspace, .archivedWorkspace, .bot: false
-    }
-  }
-
   var rootActions: RootSidebarActions? {
     guard store != nil else { return nil }
     return RootSidebarActions(
       newChat: openNewChat, newBot: openNewBot, editBot: editBot)
-  }
-
-  var openBotThread: OpenBotThread? {
-    guard case let .bot(serverId, botId) = selection,
-      let bot = environment.bots.bot(serverId: serverId, id: botId),
-      environment.hasOpenPage(bot)
-    else { return nil }
-    return OpenBotThread(botName: bot.name) { [botThreads = environment.botThreads] in
-      botThreads.closePage(of: bot)
-    }
   }
 
   func openNewChat() {

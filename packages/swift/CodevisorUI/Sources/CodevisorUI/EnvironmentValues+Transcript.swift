@@ -52,20 +52,26 @@ public struct TranscriptRowMeasurementInvalidationAction: Sendable {
   @MainActor public func callAsFunction() { handler() }
 }
 
-public struct OpenSubagentAction: Sendable {
+public struct OpenSubagentAction: Sendable, Equatable {
   public enum Placement: Sendable {
     case automatic
     case split
     case newTab
   }
 
+  private let identity: HandlerIdentity
   private let handler:
     @MainActor @Sendable (_ parentSessionId: UUID, _ toolCallId: String, _ title: String, _ placement: Placement)
       -> Void
 
   public init(
-    _ handler: @escaping @MainActor @Sendable (UUID, String, String, Placement) -> Void
-  ) { self.handler = handler }
+    identity: HandlerIdentity, _ handler: @escaping @MainActor @Sendable (UUID, String, String, Placement) -> Void
+  ) {
+    self.identity = identity
+    self.handler = handler
+  }
+
+  public static func == (lhs: Self, rhs: Self) -> Bool { lhs.identity == rhs.identity }
 
   @MainActor public func callAsFunction(
     parentSessionId: UUID, toolCallId: String, title: String, placement: Placement = .automatic

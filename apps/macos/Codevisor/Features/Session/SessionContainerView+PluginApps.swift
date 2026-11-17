@@ -6,7 +6,7 @@ extension SessionContainerView {
   var pluginAppPresenter: PluginAppPresenter? {
     guard !isTabless else { return nil }
 
-    return PluginAppPresenter(opensInSplit: true) { resource, chatSessionId, placement in
+    return PluginAppPresenter(identity: handlerIdentity, opensInSplit: true) { resource, chatSessionId, placement in
       openPluginApp(resource, chatSessionId: chatSessionId, placement: placement)
     }
   }

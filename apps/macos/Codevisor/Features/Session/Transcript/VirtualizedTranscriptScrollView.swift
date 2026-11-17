@@ -85,6 +85,7 @@ final class VirtualizedTranscriptScrollView: NSScrollView {
       copy: { [weak self] url in self?.markdownImageActions?.copy?(url) },
       addToChat: { [weak self] url in self?.markdownImageActions?.addToChat?(url) }),
     webLinks: MarkdownWebLinkActions(
+      source: ObjectIdentifier(self),
       open: { [weak self] url, destination in self?.markdownWebLinkActions?.open(url, destination) ?? false }))
   var markdownRowStyle = TranscriptMarkdownRowStyle(markdown: .default)
   var pendingMeasuredHeights: [String: CGFloat] = [:]

@@ -181,7 +181,7 @@ struct TranscriptSurfaceTextViewTests {
     var opened: [(URL, MarkdownWebLinkActions.Destination)] = []
     surface.linkAction = MarkdownLinkAction(
       { _ in false },
-      webLinks: MarkdownWebLinkActions { url, destination in
+      webLinks: MarkdownWebLinkActions(source: "test") { url, destination in
         opened.append((url, destination))
         return true
       })

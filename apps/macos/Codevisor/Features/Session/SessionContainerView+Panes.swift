@@ -3,6 +3,14 @@ import CodevisorCore
 import CodevisorUI
 
 extension SessionContainerView {
+  var wiring: PaneGroupWiring {
+    PaneGroupWiring(sourceId: focusSourceId, mountId: mountIdentity, workingDirectory: session?.cwd, project: project)
+  }
+
+  var handlerIdentity: HandlerIdentity {
+    HandlerIdentity(wiring)
+  }
+
   func configuredCenterModel(leafId: UUID) -> PaneGroupModel {
     let model = store.centerGroup(
       leafId: leafId,
@@ -10,7 +18,7 @@ extension SessionContainerView {
       session: session,
       project: project
     )
-    let wiring = PaneGroupWiring(sourceId: focusSourceId, mountId: mountIdentity, project: project)
+    let wiring = wiring
     guard model.wiring != wiring else { return model }
     model.wiring = wiring
     wire(model, leafId: leafId)
@@ -114,7 +122,7 @@ extension SessionContainerView {
 
   var focusedChatCandidate: UUID? {
     let workspace = selectedWorkspace
-    guard isVisible, store.navigationWorkspaceId == workspace.id else { return nil }
+    guard isVisible, store.navigationTargets.isSelected(workspace.id) else { return nil }
     guard let leafId = workspace.selectedCenterTab?.resolvedActiveLeafId(preferred: activeLeafId) else {
       return nil
     }
@@ -193,8 +201,9 @@ extension SessionContainerView {
   }
 }
 
-struct PaneGroupWiring: Equatable {
+nonisolated struct PaneGroupWiring: Equatable, Sendable {
   let sourceId: UUID
   let mountId: UUID
+  let workingDirectory: String?
   let project: Project
 }

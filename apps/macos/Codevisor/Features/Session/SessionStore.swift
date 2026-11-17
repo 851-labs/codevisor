@@ -56,13 +56,15 @@ final class SessionStore {
   @ObservationIgnored var paneDrafts: [UUID: SessionController] = [:]
   var activityRevision = 0
   var openSessionKey: SessionKey?
-  var attentionFocus = SessionAttentionWorkspaceFocus()
+  @ObservationIgnored var attentionFocus = SessionAttentionWorkspaceFocus()
+  @ObservationIgnored let navigationTargets = WorkspaceNavigationTargets()
   var isWindowFocused = false
   var navigationWorkspaceId: UUID? {
     get { attentionFocus.workspaceId }
     set {
       guard newValue != attentionFocus.workspaceId else { return }
       attentionFocus.selectWorkspace(newValue)
+      navigationTargets.select(newValue)
       publishFocus()
     }
   }

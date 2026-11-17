@@ -17,7 +17,7 @@ struct SubagentRoute: Hashable, Identifiable {
 
 extension WorkspaceScreen {
   var openSubagentAction: OpenSubagentAction {
-    OpenSubagentAction { parentId, toolCallId, title, _ in
+    OpenSubagentAction(identity: .unique) { parentId, toolCallId, title, _ in
       guard let parent = chatController(forChat: parentId) else { return }
       presentedSubagent = SubagentRoute(
         parentSessionId: parentId, toolCallId: toolCallId, title: title,

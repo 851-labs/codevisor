@@ -74,11 +74,15 @@ struct SessionContainerView: View {
     contentColumn
       .background {
         ActiveWorkspaceOnly { sceneChrome }
+        FocusedChatReporter(candidate: { focusedChatCandidate }, report: publishFocusedChat)
       }
-      .environment(\.openFileDocument, OpenFileDocumentAction { openFileDocument($0, rendered: $1) })
+      .environment(
+        \.openFileDocument,
+        OpenFileDocumentAction(identity: handlerIdentity) { openFileDocument($0, rendered: $1) }
+      )
       .environment(
         \.openSubagent,
-        OpenSubagentAction { parentId, toolCallId, title, placement in
+        OpenSubagentAction(identity: handlerIdentity) { parentId, toolCallId, title, placement in
           openSubagent(parentSessionId: parentId, toolCallId: toolCallId, title: title, placement: placement)
         }
       )
@@ -108,9 +112,6 @@ struct SessionContainerView: View {
       .onChange(of: activeLeafId) { _, leafId in
         if let openingSplit, openingSplit.leafId != leafId { self.openingSplit = nil }
         bringFloatingPaneToFront(leafId)
-      }
-      .onChange(of: focusedChatCandidate, initial: true) { _, candidate in
-        publishFocusedChat(candidate)
       }
       .onWorkspaceVisibilityChange(show: showWorkspace, hide: hideWorkspace)
       .task(id: mountIdentity) { wireMount() }

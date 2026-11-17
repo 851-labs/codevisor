@@ -7,10 +7,9 @@ struct SidebarComposeToolbarItem: ToolbarContent {
   @Environment(\.appIsCovered) private var appIsCovered
   @Environment(AppEnvironment.self) private var environment
 
-  let showsBlankPage: Bool
+  @Binding var selection: SidebarSelection?
   let newChat: () -> Void
   let newBot: () -> Void
-  let openThread: OpenBotThread?
 
   var body: some ToolbarContent {
     ToolbarItem(placement: .navigation) {
@@ -29,5 +28,23 @@ struct SidebarComposeToolbarItem: ToolbarContent {
 
   private var showsBotsEmptyState: Bool {
     storedMode == .bots && showsBlankPage && !BotListAvailability(environment: environment).hasBots
+  }
+
+  private var showsBlankPage: Bool {
+    switch selection {
+    case .none, .newChat: true
+    case .session, .workspace, .archivedWorkspace, .bot: false
+    }
+  }
+
+  private var openThread: OpenBotThread? {
+    guard case let .bot(serverId, botId) = selection,
+      let bot = environment.bots.bot(serverId: serverId, id: botId),
+      environment.hasOpenPage(bot)
+    else { return nil }
+
+    return OpenBotThread(botName: bot.name) { [botThreads = environment.botThreads] in
+      botThreads.closePage(of: bot)
+    }
   }
 }
