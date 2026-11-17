@@ -44,8 +44,9 @@ test("reports main-thread work, the first pass and the time to settle per scenar
   })
 })
 
-test("a planned cold switch that found its page already built counts as warm", () => {
+test("a switch is labelled by whether the app had to build the page, not only by the plan", () => {
   assert.equal(observedScenario("first-visit", { values: { builtPage: 1 } }), "first-visit")
   assert.equal(observedScenario("evicted-reopen", { values: {} }), "warm")
-  assert.equal(observedScenario("warm", { values: { builtPage: 1 } }), "warm")
+  assert.equal(observedScenario("warm", { values: { builtPage: 1 } }), "evicted-reopen")
+  assert.equal(observedScenario("warm", { values: {} }), "warm")
 })

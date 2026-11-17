@@ -33,7 +33,9 @@ export function benchPlan(workspaceIds, warmRounds, keptAlive = keptAlivePages) 
 
 export function observedScenario(planned, record) {
   const builtPage = record.values?.builtPage === 1
-  return planned === "warm" || builtPage ? planned : "warm"
+  if (!builtPage) return "warm"
+  if (planned === "warm") return "evicted-reopen"
+  return planned
 }
 
 export function summarizeSwitches(switches) {
