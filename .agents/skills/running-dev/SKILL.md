@@ -9,8 +9,7 @@ Run everything from the worktree root through the repo's scripts. They install
 locked dependencies, fetch the pinned native artifacts, call `xcodebuild`,
 sign, start the servers, and launch the apps. Do not run `xcodebuild`, the
 server, or the Ghostty build scripts yourself, and do not create or boot
-simulators by hand except as described under
-[If the simulator owner will not start](#if-the-simulator-owner-will-not-start).
+simulators by hand.
 
 ## Pick a command
 
@@ -205,13 +204,39 @@ link here.
    bun run ios-simulator > tmp/ios-simulator.log 2>&1
    ```
 
-2. Wait for `Simulator ready` in its output. It has created this worktree's
-   device, booted it, opened the worktree's project in Xcode, and shown the
-   device in Simulator or DeviceHub.
+2. Wait for `Simulator ready` in its log, or for the task to exit; nothing
+   else decides the outcome. Ready means it has created this worktree's
+   device and booted it. If the task exits first, startup failed and the
+   log's last lines say why.
 3. Start `bun run dev:ios` or `bun run dev` in another background task. The
    runner builds, installs, and launches the app on that exact device.
 
-Rules:
+### The ready block and the Xcode window
+
+The owner also opens the worktree's project in Xcode and shows the device in
+Simulator or DeviceHub, but the simulator never waits for either. Lines that
+start `Xcode project window skipped` or
+`The simulator is running but its window was not shown` are notes, not
+failures, so do not search the log for "error" or "failed".
+
+The ready block ends with an `Xcode:` line. Read it before using the Xcode
+MCP:
+
+| `Xcode:` line                                    | Meaning                                                                                                                                                                                                                                                                            |
+| ------------------------------------------------ | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `project window open`                            | The owner opened the project window and will close it when it stops.                                                                                                                                                                                                               |
+| `project window was already open and stays open` | It reused a window that was already there and will leave it open.                                                                                                                                                                                                                  |
+| `project window still opening; …`                | Xcode has not answered yet, which can last as long as it is busy. If you need the Xcode MCP, wait for a later `Opened an owned Xcode project window.`, `Reusing an existing Xcode project window; it will stay open.`, or `Xcode project window skipped` line; otherwise carry on. |
+| `no project window; open it with xed …`          | Carry on with the dev runner, `simctl`, and `axe`. Only if you need the Xcode MCP, run `xed apps/ios/Codevisor.xcodeproj`; a window you open this way stays open when the owner stops.                                                                                             |
+
+A problem with the Xcode window is never a reason to create your own device:
+the simulator is running and the dev runner can use it.
+
+macOS Accessibility access for the app or terminal running the command is
+needed only for the Xcode window. Without it the simulator still starts, and
+the window is skipped with a note.
+
+### Rules
 
 - The device UDID is in `tmp/runtime/ios-simulator.json`
   (`jq -r .udid tmp/runtime/ios-simulator.json`).
@@ -220,54 +245,20 @@ Rules:
   `bun run ios-simulator --device="iPhone 17" --runtime=27.0`. Device
   selection belongs to this command only. Select the printed device in
   DeviceHub if another one is showing.
-- Leave the owner running across dev-runner restarts. Stopping it shuts down
-  and deletes its device and closes the Xcode project window it opened; a
-  window that was already open is reused and left open. It never quits Xcode.
-  It cleans up the same way if its launcher dies, and a later launch recovers
-  a device orphaned by a crash. Device files live in CoreSimulator's default
-  location so DeviceHub can find them.
-- The app or terminal running the command needs macOS Accessibility access;
-  startup fails with a message when it is missing.
+- Leave the owner running across dev-runner restarts. Stopping the task, or
+  the task reaching its background time limit, shuts down and deletes its
+  device and closes the Xcode project window it opened; a window that was
+  already open is left open. It never quits Xcode. It cleans up the same way
+  if its launcher dies, and a later launch recovers a device orphaned by a
+  crash. Device files live in CoreSimulator's default location so DeviceHub
+  can find them.
+- Stopping can take up to 30 seconds longer when Xcode is not answering. The
+  owner then deletes the device anyway and may leave the window open, with a
+  `The Xcode project window was left as it is` note.
 - Never quit Simulator, DeviceHub, Xcode, or `simctl` by name or pattern, and
   never boot, delete, or reuse another worktree's device.
 - Rebuild and reinstall through the dev runner, not Xcode's Run button or
   the Xcode MCP's build tools, so the worktree's configuration is kept.
-
-### If the simulator owner will not start
-
-Temporary: the owner's dependence on its Xcode window is being fixed. Delete
-this subsection when that lands.
-
-The owner can fail at its Xcode step with `Timed out identifying the opened
-Xcode project window.` or `Cannot read AXWindows from Xcode (AX error
--25204).`, mostly on a heavily loaded Mac, and it deletes the device it
-created. Retry once. If it fails again, stop retrying, because each attempt
-can leave a stuck Xcode window, and do not quit Xcode. Then either verify
-macOS only and report iOS as blocked, or, when the change needs iOS, run the
-app on a device of your own:
-
-```sh
-bun run build:ios > tmp/build-ios.log 2>&1
-xcrun simctl create "$(basename "$PWD") tophat" "iPhone 17 Pro" > tmp/own-sim-udid
-UDID=$(cat tmp/own-sim-udid)
-xcrun simctl bootstatus "$UDID" -b
-xcrun simctl install "$UDID" tmp/build/ios/DerivedData/Build/Products/Debug-iphonesimulator/Codevisor.app
-SIMCTL_CHILD_CODEVISOR_DEV_CLOUD_URL="<cloud>" \
-SIMCTL_CHILD_CODEVISOR_NET_CA_PEM="$(cat tmp/net/ca.pem)" \
-SIMCTL_CHILD_CODEVISOR_DEV_WORKTREE="$(basename "$PWD")" \
-SIMCTL_CHILD_CODEVISOR_DEV_INSTANCE_ID="$(basename "$PWD")-<hash>" \
-SIMCTL_CHILD_CODEVISOR_DEV_ICON_COLOR="<icon>" \
-  xcrun simctl launch "$UDID" com.851labs.Codevisor.Development.iOS
-```
-
-Run `bun run dev:macos`, with your usual flags, first for the servers.
-`<cloud>` and `<icon>` are the
-`cloud:` and `icon:` values in its banner, and `<hash>` is the folder name
-after `instances/` in its `worktrees:` line. These are the variables the dev
-runner itself passes at launch. The UDID is saved in `tmp/own-sim-udid`; read
-it from there in later commands, use only that device, and remove it when you
-finish:
-`xcrun simctl shutdown "$UDID"; xcrun simctl delete "$UDID"; rm tmp/own-sim-udid`.
 
 ## Build without launching
 

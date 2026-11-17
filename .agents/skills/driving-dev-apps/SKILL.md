@@ -68,8 +68,7 @@ UDID=$(jq -r .udid tmp/runtime/ios-simulator.json)
 ```
 
 Shell variables do not survive between tool calls, so read it again in each
-one. On a device you created yourself (the fallback in `running-dev`), read
-`tmp/own-sim-udid` instead.
+one.
 
 - **Read the screen:** `axe describe-ui --udid "$UDID"` prints the
   accessibility tree with labels, identifiers, and frames in points.
@@ -91,9 +90,11 @@ one. On a device you created yourself (the fallback in `running-dev`), read
 the repo installs. When it is missing, or for an operation it lacks, use the
 Xcode MCP's device tools through Codevisor's `execute` tool
 (`machines.current.tools.search({ query: "DeviceInteraction" })`). They act
-on Xcode's active project and run destination, so check both match this
-worktree and its UDID before sending input, and do not use the Xcode MCP's
-build or run tools.
+on Xcode's active project and run destination, so first read the `Xcode:`
+line of the simulator's ready block (`running-dev` explains it) to see
+whether the project window is open, then check the project and destination
+match this worktree and its UDID before sending input. Do not use the Xcode
+MCP's build or run tools.
 
 After any input, look at the screen again; a delivered tap does not prove the
 app reacted. Never quit Simulator, DeviceHub, or Xcode to recover; restart the
