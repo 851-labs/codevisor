@@ -30,7 +30,9 @@
         PluginConnectProblems(restriction: restriction, errorMessage: model.errorMessage)
         VStack(spacing: 10) {
           PluginConnectActions(model: model, canContinue: canContinue, run: run) { dismiss() }
-          PluginConsentNotice(name: entry.name)
+          Text("By installing, you agree to the [Plugin terms](https://codevisor.dev/terms#plugins).")
+            .font(.footnote)
+            .foregroundStyle(.secondary)
             .multilineTextAlignment(.center)
             .padding(.top, 4)
         }
@@ -126,7 +128,7 @@
         .controlSize(.large)
         .keyboardShortcut(.defaultAction)
         .disabled(!canContinue)
-        HStack(spacing: 18) {
+        VStack(spacing: 10) {
           if let skipTitle = model.skipTitle {
             Button(skipTitle) { run(.skipSignIn) }.disabled(!canContinue)
           }
