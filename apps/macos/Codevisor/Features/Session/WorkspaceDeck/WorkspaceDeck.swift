@@ -14,7 +14,9 @@ struct WorkspaceDeck<Page: View>: View {
       ForEach(deck.pages) { mounted in
         let isActive = mounted.id == deck.activeSlot
         let frozenSize = isActive ? nil : sizes.frozenSize(for: mounted.id)
-        WorkspaceDeckPage(route: mounted.route, activity: deck.activity(for: mounted.id)) {
+        WorkspaceDeckPage(
+          route: mounted.route, activity: deck.activity(for: mounted.id), model: navigation.page(for: mounted.id)
+        ) {
           page(mounted.route)
         }
         .equatable()

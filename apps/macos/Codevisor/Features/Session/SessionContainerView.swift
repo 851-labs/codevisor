@@ -21,6 +21,8 @@ struct SessionContainerView: View {
   @Environment(AppEnvironment.self) var environment
   @Environment(\.accessibilityReduceMotion) var reduceMotion
   @Environment(\.quickLook) var quickLook
+  @Environment(WorkspacePageModel.self) var page: WorkspacePageModel?
+  @Environment(\.hidesWorkspaceTitle) var hidesWorkspaceTitle
   @State var splitDragCoordinator = WorkspaceSplitDragCoordinator()
   @State var sessionFocus = TerminalFocusController()
   @State var floatingFocusHandoff = PaneFocusHandoff()
@@ -73,7 +75,7 @@ struct SessionContainerView: View {
   private func mounted(in workspace: Workspace) -> some View {
     contentColumn
       .background {
-        ActiveWorkspaceOnly { sceneChrome }
+        WorkspaceChromeReporter(chrome: { chrome }, page: page)
         FocusedChatReporter(candidate: { focusedChatCandidate }, report: publishFocusedChat)
       }
       .environment(
