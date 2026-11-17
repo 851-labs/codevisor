@@ -120,10 +120,10 @@ struct HarnessAuthenticationView: View {
         }
         ForEach(model.accounts) { account in accountRow(account) }
         if harness.auth?.supportsMultipleAccounts == true {
-          addAccountControl("Add Account")
-            .buttonStyle(.plain)
-            .menuStyle(.borderlessButton)
-            .disabled(model.isWorking)
+          HarnessAddAccountControl(title: "Add Account", methods: methods, fillsRow: true) {
+            await addAccount(method: $0)
+          }
+          .disabled(model.isWorking)
         }
       }
     }
