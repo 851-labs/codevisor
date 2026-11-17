@@ -35,7 +35,7 @@
       textView.linkAction = linkAction
       view.bleedLimit = bleedLimit
       view.scrollView.setBorderColor(NSColor(borderColor))
-      view.scrollView.setShowsBorder(chrome.drawsFrame)
+      view.scrollView.setDrawsFrame(chrome.drawsFrame)
     }
 
     func sizeThatFits(_ proposal: ProposedViewSize, nsView: TableBleedContainer, context: Context) -> CGSize? {

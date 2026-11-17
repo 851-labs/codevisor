@@ -23,7 +23,26 @@ struct TranscriptBotBubbleRowHostTests {
     #expect(table.maxX == text.maxX)
   }
 
+  @Test("A click inside a table bubble reaches the table, not the bubble behind it")
+  func clicksReachTableInsideBubble() throws {
+    let host = try mountedHost(for: wideTable, expecting: .table)
+    let bubble = try #require(host.subviews.first { $0 is TranscriptBubbleBackgroundView })
+    host.setFrameSize(NSSize(width: rowWidth, height: bubble.frame.maxY))
+    host.layoutSubtreeIfNeeded()
+
+    let hit = try #require(host.hitTest(NSPoint(x: bubble.frame.midX, y: bubble.frame.midY)))
+
+    #expect(sequence(first: hit, next: \.superview).contains { $0 is SettledMarkdownView })
+  }
+
   private func bubbleFrame(for text: String, expecting style: TranscriptBotPartStyle) throws -> NSRect {
+    let host = try mountedHost(for: text, expecting: style)
+    return try #require(host.subviews.first { $0 is TranscriptBubbleBackgroundView }).frame
+  }
+
+  private func mountedHost(
+    for text: String, expecting style: TranscriptBotPartStyle
+  ) throws -> TranscriptBotBubbleRowHost {
     let message = TranscriptBotMessage(id: UUID().uuidString, sender: .bot, text: text, sentAt: .distantPast)
     let content = TranscriptBotMessageContent(message)
     #expect(content.partStyle == style)
@@ -32,6 +51,6 @@ struct TranscriptBotBubbleRowHostTests {
     host.setContent(
       content, messageID: message.id, layout: layout, style: TranscriptMarkdownRowStyle(markdown: .default),
       linkAction: nil, imageLoader: .remote, knownHeight: nil)
-    return try #require(host.subviews.first { $0 is TranscriptBubbleBackgroundView }).frame
+    return host
   }
 }

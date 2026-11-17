@@ -99,7 +99,7 @@
 
     func updateUIViewController(_ controller: NativeVirtualizedTableController, context: Context) {
       controller.tableView.configure(
-        layout: layout, theme: theme, bleed: bleed, linkAction: linkAction, showsBorder: chrome.drawsFrame)
+        layout: layout, theme: theme, bleed: bleed, linkAction: linkAction, drawsFrame: chrome.drawsFrame)
     }
   }
 
@@ -148,7 +148,6 @@
       horizontalScrollView.contentInsetAdjustmentBehavior = .never
       addSubview(horizontalScrollView)
       document.backgroundColor = .clear
-      headerFill.cornerRadius = MarkdownTableMetrics.cornerRadius
       headerFill.maskedCorners = [.layerMinXMinYCorner, .layerMaxXMinYCorner]
       document.layer.addSublayer(headerFill)
       border.fillColor = nil
@@ -165,11 +164,12 @@
 
     func configure(
       layout: UIKitMarkdownTableLayout?, theme: MarkdownTheme, bleed: CGFloat,
-      linkAction: MarkdownLinkAction?, showsBorder: Bool
+      linkAction: MarkdownLinkAction?, drawsFrame: Bool
     ) {
       self.linkAction = linkAction
       borderColor = UIColor(theme.tableBorderColor)
-      border.isHidden = !showsBorder
+      border.isHidden = !drawsFrame
+      headerFill.cornerRadius = drawsFrame ? MarkdownTableMetrics.cornerRadius : 0
       let insets = UIEdgeInsets(top: 0, left: bleed, bottom: 0, right: bleed)
       if horizontalScrollView.contentInset != insets {
         horizontalScrollView.contentInset = insets

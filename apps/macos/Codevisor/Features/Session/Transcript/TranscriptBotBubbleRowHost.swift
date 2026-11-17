@@ -29,7 +29,7 @@ final class TranscriptBotBubbleRowHost: TranscriptMountedRowHost {
     installVerticalClipMask()
     addSubview(bubble)
     bubble.addSubview(anchor)
-    addSubview(markdownView)
+    bubble.addSubview(markdownView)
     markdownView.tableBleedLimit = 0
     markdownView.onContentHeightChange = { [weak self] in
       self?.requestContentMeasurement()

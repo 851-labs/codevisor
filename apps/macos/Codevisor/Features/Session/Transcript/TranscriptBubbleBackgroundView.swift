@@ -33,7 +33,6 @@ final class TranscriptBubbleBackgroundView: NSView {
     highlight.backgroundColor = NSColor.black.cgColor
     highlight.opacity = 0
     layer?.addSublayer(highlight)
-    setAccessibilityHidden(true)
   }
 
   @available(*, unavailable)
@@ -41,7 +40,10 @@ final class TranscriptBubbleBackgroundView: NSView {
     fatalError("init(coder:) has not been implemented")
   }
 
-  override func hitTest(_: NSPoint) -> NSView? { nil }
+  override func hitTest(_ point: NSPoint) -> NSView? {
+    let hit = super.hitTest(point)
+    return hit === self ? nil : hit
+  }
 
   override func updateLayer() {
     effectiveAppearance.performAsCurrentDrawingAppearance {

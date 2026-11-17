@@ -58,7 +58,7 @@
       ]
       tableView.update(model: model, renderMemo: renderMemo)
       bleedContainer.scrollView.setBorderColor(NSColor(theme.tableBorderColor))
-      bleedContainer.scrollView.setShowsBorder(chrome.drawsFrame)
+      bleedContainer.scrollView.setDrawsFrame(chrome.drawsFrame)
       addSubview(bleedContainer)
       images.onChange = { [weak self] in self?.updateImages() }
       let sources = Set((headers + rows.flatMap { $0 }).flatMap(\.imageSources))
