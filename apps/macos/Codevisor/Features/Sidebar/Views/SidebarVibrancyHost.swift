@@ -3,6 +3,7 @@ import CodevisorUI
 import SwiftUI
 
 struct SidebarVibrancyHost<Content: View>: NSViewRepresentable {
+  var refreshesWhileHidden = false
   @ViewBuilder var content: () -> Content
 
   func makeCoordinator() -> SidebarHostBridge { SidebarHostBridge() }
@@ -19,7 +20,7 @@ struct SidebarVibrancyHost<Content: View>: NSViewRepresentable {
   func updateNSView(_ host: SidebarHostingView<SidebarHostedContent<Content>>, context: Context) {
     let isActive = context.environment.isActiveSidebarMode
     host.isHidden = !isActive
-    guard isActive else { return }
+    guard isActive || refreshesWhileHidden else { return }
     context.coordinator.openSettings = context.environment.openSettings
     host.rootView = SidebarHostedContent(content: content(), bridge: context.coordinator)
   }

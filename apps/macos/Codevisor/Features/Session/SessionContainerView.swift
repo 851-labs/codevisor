@@ -65,7 +65,12 @@ struct SessionContainerView: View {
   @State var closingCenterTabId: UUID?
   @State var openingSplit: WorkspaceSplitOpening?
   @State var focusSourceId = UUID()
-  @State var isVisible = false
+  @State private var shown = WorkspaceShownFlag()
+
+  var isVisible: Bool {
+    get { shown.isShown }
+    nonmutating set { shown.isShown = newValue }
+  }
 
   var body: some View {
     mounted(in: selectedWorkspace)

@@ -13,6 +13,7 @@ struct BotListSidebar: View {
   @State private var deletingBot: Bot?
   @State private var stepHandlerOwner = UUID()
   @State private var sectionPrompt: SectionPrompt?
+  @State private var shownRows = BotSidebarShownRows()
   @ClientPreference(SidebarPreferenceKey.collapsedBotSections, default: []) private var collapsedSectionIDs: [String]
   @ClientPreference(SidebarPreferenceKey.botArchivedExpanded, default: false) private var archivedExpanded
 
@@ -60,7 +61,7 @@ struct BotListSidebar: View {
   }
 
   private var vibrantList: some View {
-    SidebarVibrancyHost {
+    SidebarVibrancyHost(refreshesWhileHidden: true) {
       scrollingContent
         .safeAreaInset(edge: .bottom, spacing: 0) {
           VStack(spacing: 0) {
@@ -96,11 +97,16 @@ struct BotListSidebar: View {
 
   @ViewBuilder
   private var list: some View {
-    let conversations = conversations
-    if !conversations.isEmpty {
-      BotConversationRows(
-        rows: rows(conversations), sections: sections.sections, selectedBotID: selectedBotID, actions: rowActions)
+    if let rows = listedRows {
+      BotConversationRows(rows: rows, sections: sections.sections, selectedBotID: selectedBotID, actions: rowActions)
     }
+  }
+
+  private var listedRows: [BotSidebarRow]? {
+    guard isActiveSidebarMode else { return shownRows.rows }
+
+    let conversations = conversations
+    return shownRows.show(conversations.isEmpty ? nil : rows(conversations))
   }
 
   private var rowActions: BotSidebarRowActions {
