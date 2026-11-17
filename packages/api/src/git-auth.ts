@@ -10,7 +10,8 @@ export const GitHostAuthStatus = Schema.Struct({
   cliInstalled: Schema.Boolean,
   supported: Schema.Boolean,
   signedIn: Schema.Boolean,
-  account: Schema.optional(Schema.String)
+  account: Schema.optional(Schema.String),
+  copiesToSandboxes: Schema.optional(Schema.Boolean)
 })
 export type GitHostAuthStatus = typeof GitHostAuthStatus.Type
 
@@ -40,6 +41,32 @@ export const StartGitAuthRequest = Schema.Struct({
   host: Schema.String
 })
 export type StartGitAuthRequest = typeof StartGitAuthRequest.Type
+
+export const GitSignIn = Schema.Struct({
+  host: Schema.String,
+  token: Schema.String
+})
+export type GitSignIn = typeof GitSignIn.Type
+
+export const ApplyGitSignInsRequest = Schema.Struct({
+  signIns: Schema.Array(GitSignIn)
+})
+export type ApplyGitSignInsRequest = typeof ApplyGitSignInsRequest.Type
+
+export const AppliedGitSignIn = Schema.Struct({
+  host: Schema.String,
+  signedIn: Schema.Boolean,
+  account: Schema.optional(Schema.String),
+  message: Schema.optional(Schema.String)
+})
+export type AppliedGitSignIn = typeof AppliedGitSignIn.Type
+
+export const ApplyGitSignInsResponse = Schema.Struct({
+  applied: Schema.Array(AppliedGitSignIn)
+})
+export type ApplyGitSignInsResponse = typeof ApplyGitSignInsResponse.Type
+
+export const GIT_SIGN_IN_REQUIRED = "git_sign_in_required"
 
 export const gitHostProvider = (host: string): GitHostProvider | undefined => {
   const name = host.trim().toLowerCase()

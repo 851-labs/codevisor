@@ -10,22 +10,25 @@ export interface CliResult {
 export interface CliRunOptions {
   readonly timeoutMs: number
   readonly cwd?: string
+  readonly stdin?: string
 }
 
 export const runCli = (
   path: string,
   args: ReadonlyArray<string>,
   env: NodeJS.ProcessEnv,
-  { timeoutMs, cwd }: CliRunOptions
+  { timeoutMs, cwd, stdin }: CliRunOptions
 ): Promise<CliResult> =>
   new Promise((resolve) => {
     const child = spawn(path, [...args], {
       env,
-      stdio: ["ignore", "pipe", "pipe"],
+      stdio: ["pipe", "pipe", "pipe"],
       timeout: timeoutMs,
       ...(cwd === undefined ? {} : { cwd })
     })
     const captured = { stdout: "", stderr: "", output: "" }
+    child.stdin.on("error", () => undefined)
+    child.stdin.end(stdin)
     child.stdout.setEncoding("utf8")
     child.stderr.setEncoding("utf8")
     child.stdout.on("data", (chunk: string) => {

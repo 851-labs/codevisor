@@ -1,6 +1,8 @@
 import { createHash } from "node:crypto"
 
 import { run } from "../server-context.js"
+import type { SavedGitSignIns } from "./git-sign-ins.js"
+import { copyGitSignIns } from "./sandbox-git.js"
 import { connectionOf } from "./sandbox-profile-record.js"
 import { sandboxRemote, type SandboxRemote } from "./sandbox-remote.js"
 import { applyOnRemote, type OneWaySyncSource } from "./sandbox-sync.js"
@@ -20,14 +22,19 @@ export interface SandboxCredentials {
   readonly resend: (sandboxId: string, remote: SandboxRemote) => Promise<boolean>
 }
 
+export interface SandboxSignIns extends OneWaySyncSource {
+  readonly gitSignIns: SavedGitSignIns
+}
+
 export const makeSandboxCredentials = (
-  source: OneWaySyncSource,
+  source: SandboxSignIns,
   log: (line: string) => void
 ): SandboxCredentials => {
   const pushed = new Map<string, string>()
   const version = () => credentialVersion(source)
   const send = async (sandboxId: string, remote: SandboxRemote, current: string) => {
     await pushCredentials(source, remote, log)
+    await pushGitSignIns(source, remote, log)
     pushed.set(sandboxId, current)
     return true
   }
@@ -79,15 +86,34 @@ const pushCredentials = async (
   if (failed.length > 0) log(`Applying harness sign-ins on a sandbox failed: ${failed.join(", ")}`)
 }
 
-const credentialVersion = async (source: OneWaySyncSource): Promise<string> => {
+const pushGitSignIns = async (
+  source: SandboxSignIns,
+  remote: SandboxRemote,
+  log: (line: string) => void
+): Promise<void> => {
+  const applied = await copyGitSignIns(source.gitSignIns, remote).catch((cause: unknown) => {
+    log(`Copying git sign-ins to a sandbox failed: ${messageOf(cause)}`)
+    return []
+  })
+  for (const signIn of applied.filter((candidate) => !candidate.signedIn)) {
+    log(`Signing a sandbox in to ${signIn.host} failed: ${signIn.message ?? "no reason given"}`)
+  }
+}
+
+const credentialVersion = async (source: SandboxSignIns): Promise<string> => {
   const hash = createHash("sha256")
   for (const namespace of CREDENTIAL_SYNC_NAMESPACES) {
     for (const entry of await run(source.db.getSyncEntries(namespace))) {
       hash.update(JSON.stringify([namespace, entry.key, entry.timestamp, entry.deleted === true]))
     }
   }
+  for (const signIn of await source.gitSignIns.saved()) {
+    hash.update(JSON.stringify(["git", signIn.host, tokenFingerprint(signIn.token)]))
+  }
   return hash.digest("hex")
 }
+
+const tokenFingerprint = (token: string): string => createHash("sha256").update(token).digest("hex")
 
 const remoteOf = async (deps: SandboxDeps, machine: PlacedMachine): Promise<SandboxRemote> =>
   sandboxRemote(await deps.connections.connect(connectionOf(machine)), machine.providerMachineId)

@@ -1,9 +1,14 @@
 import type { IncomingMessage, ServerResponse } from "node:http"
 
-import { StartGitAuthRequest as StartGitAuthRequestSchema } from "@codevisor/api"
+import type { AppliedGitSignIn } from "@codevisor/api"
+import {
+  ApplyGitSignInsRequest as ApplyGitSignInsRequestSchema,
+  StartGitAuthRequest as StartGitAuthRequestSchema
+} from "@codevisor/api"
 
 import { makeGitAuthManager, type GitAuthManager } from "../infra/git-auth.js"
 import { gitHostsOf } from "../infra/git-hosts.js"
+import { applyGitSignIn } from "../infra/git-sign-ins.js"
 import {
   failureMessage,
   HttpFailure,
@@ -46,6 +51,10 @@ export const routeGitAuth = async (
     writeJson(response, 201, flow)
     return true
   }
+  if (request.method === "PUT" && url.pathname === "/v1/git/auth/sign-ins") {
+    writeJson(response, 200, { applied: await applySignIns(services, request) })
+    return true
+  }
   const flowId = matchRoute(url.pathname, "/v1/git/auth/login/:flowId")
   if (flowId === undefined) return false
   if (request.method === "GET") {
@@ -60,4 +69,17 @@ export const routeGitAuth = async (
     return true
   }
   return false
+}
+
+const applySignIns = async (
+  services: CodevisorServerServices,
+  request: IncomingMessage
+): Promise<ReadonlyArray<AppliedGitSignIn>> => {
+  const payload = await readSchema(request, ApplyGitSignInsRequestSchema)
+  const env = await gitEnvironment(services)
+  const applied: Array<AppliedGitSignIn> = []
+  for (const signIn of payload.signIns) {
+    applied.push(await applyGitSignIn(gitHostsOf(services), signIn, env))
+  }
+  return applied
 }

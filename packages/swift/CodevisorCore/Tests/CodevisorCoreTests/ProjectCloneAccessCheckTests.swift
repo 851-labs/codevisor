@@ -63,6 +63,58 @@ struct ProjectCloneAccessCheckTests {
     #expect(client.checkedUrls.isEmpty)
   }
 
+  @Test("Asks for a GitHub sign-in on the host before a sandbox send when the host has none to copy")
+  func signsInOnTheHostBeforeASandbox() async throws {
+    let client = AccessServerClient(
+      answers: [], signIn: ServerGitHostAuthStatus(host: "github.com", supported: true, copiesToSandboxes: true))
+    let (setup, _) = try makeSetup(client: client)
+    let plan = sandboxPlan()
+    let access = ProjectCloneAccessCheck()
+    var resubmits = 0
+
+    access.check(plan, failuresOn: setup) { resubmits += 1 }
+    let label = access.label
+    await awaitObserved { !access.isChecking }
+
+    guard case let .signingIn(shownPlan, model) = setup.phase else {
+      Issue.record("Expected GitHub sign-in on the host, got \(setup.phase)")
+      return
+    }
+    #expect(label == "Checking GitHub sign-in…")
+    #expect(shownPlan == plan)
+    #expect(model.machineName == "Studio")
+    #expect(setup.screen(showing: plan).message.hasPrefix("Sandboxes use Studio's GitHub sign-in to clone and push."))
+    #expect(resubmits == 0)
+    #expect(client.checkedUrls.isEmpty)
+  }
+
+  @Test(
+    "Sends to a sandbox without asking when the host is signed in or doesn't copy sign-ins",
+    arguments: [
+      ServerGitHostAuthStatus(host: "github.com", supported: true, signedIn: true, copiesToSandboxes: true),
+      ServerGitHostAuthStatus(host: "github.com", supported: true),
+    ])
+  func sendsToASandboxWithoutAsking(signIn: ServerGitHostAuthStatus) async throws {
+    let client = AccessServerClient(answers: [], signIn: signIn)
+    let (setup, _) = try makeSetup(client: client)
+    let plan = sandboxPlan()
+    let access = ProjectCloneAccessCheck()
+    var resubmits = 0
+
+    access.check(plan, failuresOn: setup) { resubmits += 1 }
+    await awaitObserved { !access.isChecking }
+
+    #expect(resubmits == 1)
+    #expect(access.isVerified(plan))
+    #expect(setup.phase == .idle)
+  }
+
+  private func sandboxPlan() -> ProjectMachineSetup.Plan {
+    ProjectMachineSetup.Plan(
+      projectName: "widget", repoUrl: "git@github.com:acme/widget.git", targetServerId: "studio",
+      targetMachineName: "Studio", sandboxName: "Linux Container")
+  }
+
   private func makeSetup(
     client: AccessServerClient, checksAccess: Bool = true
   ) throws -> (ProjectMachineSetup, ProjectMachineSetup.Plan) {
@@ -87,9 +139,14 @@ private final class AccessServerClient: CodevisorServerClienting, @unchecked Sen
   private var answers: [ServerProjectCloneAccess]
   private var urls: [String] = []
 
-  init(answers: [ServerProjectCloneAccess]) {
+  private let signIn: ServerGitHostAuthStatus
+
+  init(answers: [ServerProjectCloneAccess], signIn: ServerGitHostAuthStatus = .init(host: "github.com")) {
     self.answers = answers
+    self.signIn = signIn
   }
+
+  func gitAuthStatus(host: String) async throws -> ServerGitHostAuthStatus { signIn }
 
   var checkedUrls: [String] { lock.withLock { urls } }
 

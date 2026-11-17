@@ -1,4 +1,4 @@
-import type { CloudMachinePresence, Project } from "@codevisor/api"
+import type { CloudMachinePresence, GitSignIn, Project } from "@codevisor/api"
 import {
   makeFakeSandboxProvider,
   SIGN_IN_MARKER,
@@ -28,6 +28,8 @@ import { makeSandboxes, type SandboxDeps } from "./sandboxes.js"
 export const OWNER = "device-owner"
 export const JOINED_DEVICE = "device-sandbox"
 export const JOINED_SERVER = "server-sandbox"
+
+export const OWNER_GIT_SIGN_IN: GitSignIn = { host: "github.com", token: "gho_owner_token" }
 
 export interface RemoteWorkspace {
   readonly id: string
@@ -70,6 +72,7 @@ export interface SandboxHarnessOptions {
   readonly serverId?: string
   readonly management?: Partial<SandboxManagement>
   readonly sharing?: SharedSandboxWorld
+  readonly gitSignIns?: () => ReadonlyArray<GitSignIn>
 }
 
 export interface SharedSandboxWorld {
@@ -98,6 +101,7 @@ export const sandboxHarness = async (options: SandboxHarnessOptions = {}) => {
   const toolCalls: ToolCall[] = []
   const workspaces: RemoteWorkspace[] = options.sharing?.workspaces ?? []
   const logs: string[] = []
+  const gitSignIns = { saved: () => Promise.resolve(options.gitSignIns?.() ?? [OWNER_GIT_SIGN_IN]) }
   const controls: HarnessControls = {
     offline: false,
     listFails: false,
@@ -230,7 +234,9 @@ export const sandboxHarness = async (options: SandboxHarnessOptions = {}) => {
         intervalMs: 1,
         sleep: () => Promise.resolve()
       }),
-    credentials: makeSandboxCredentials({ db: services.db }, (line) => logs.push(line)),
+    credentials: makeSandboxCredentials({ db: services.db, gitSignIns }, (line) => logs.push(line)),
+    gitSignIns,
+    machineName: () => "Owner Mac",
     bootstrap: { installUrl: "https://example.test/install.sh" },
     clock: {
       now: () => clock,

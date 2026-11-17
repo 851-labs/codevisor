@@ -45,6 +45,18 @@ extension SessionController {
     return machines?.client(forServerId: host)
   }
 
+  public var sandboxSignInPlan: ProjectMachineSetup.Plan? {
+    guard let sandboxTarget, let repoUrl = project.repoUrl, let machines else { return nil }
+    let host = sandboxTarget.hostMachineId.flatMap { machines.machineId(forServerId: $0) } ?? project.serverId
+    return ProjectMachineSetup.Plan(
+      projectName: project.name,
+      repoUrl: repoUrl,
+      targetServerId: host,
+      targetMachineName: machines.machine(for: host)?.name ?? "this machine",
+      sandboxName: sandboxTarget.profileName
+    )
+  }
+
   public func abandonSandboxPrewarm() {
     sandboxPrewarm?.abandon()
     sandboxPrewarm = nil
@@ -55,7 +67,7 @@ extension SessionController {
     client: any CodevisorServerClienting
   ) -> SandboxPrewarm? {
     guard let key = prewarmKey(for: target) else { return nil }
-    if let prewarm = sandboxPrewarm, prewarm.key == key {
+    if let prewarm = sandboxPrewarm, prewarm.key == key, !prewarm.creationFailed {
       sandboxPrewarm = nil
       return prewarm
     }

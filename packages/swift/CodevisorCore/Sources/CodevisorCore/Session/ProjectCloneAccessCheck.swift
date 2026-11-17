@@ -16,7 +16,11 @@ public final class ProjectCloneAccessCheck {
   }
 
   public var label: String? {
-    checkingPlan.map { "Checking access to \($0.repositoryName)…" }
+    guard let checkingPlan else { return nil }
+    guard checkingPlan.sandboxName == nil else {
+      return "Checking \(checkingPlan.remoteProvider.displayName) sign-in…"
+    }
+    return "Checking access to \(checkingPlan.repositoryName)…"
   }
 
   public func isVerified(_ plan: Plan) -> Bool {

@@ -78,6 +78,7 @@ export const endpoints = [
   "POST /v1/git/auth/login",
   "GET /v1/git/auth/login/:flowId",
   "DELETE /v1/git/auth/login/:flowId",
+  "PUT /v1/git/auth/sign-ins",
   "POST /v1/projects/:id/env-files/read",
   "POST /v1/projects/:id/remote",
   "POST /v1/projects/scratch",

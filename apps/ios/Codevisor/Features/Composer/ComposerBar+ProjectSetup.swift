@@ -37,6 +37,7 @@ extension ComposerBar {
   }
 
   func beginProjectSetupIfNeeded() -> Bool {
+    if let plan = controller.sandboxSignInPlan { return holdsSandboxSend(plan) }
     guard controller.project.isRunTargetPlaceholder else { return false }
     controller.projectClone = nil
     guard let group = pendingSetupGroup else { return false }
@@ -65,6 +66,15 @@ extension ComposerBar {
     controller.projectClone = request
     controller.onProjectCloned = { project in adoptClonedProject(project) }
     return false
+  }
+
+  private func holdsSandboxSend(_ plan: ProjectMachineSetup.Plan) -> Bool {
+    let access = controller.projectCloneAccess
+    guard !access.isChecking else { return true }
+    guard !access.isVerified(plan) else { return false }
+
+    checkCloneAccess(plan)
+    return true
   }
 
   private func checkCloneAccess(_ plan: ProjectMachineSetup.Plan) {

@@ -17,6 +17,8 @@ export const useGitEnvironment = (environment: GitEnvironment): void => {
   latestEnvironment = undefined
 }
 
+export const machineGitEnvironment: GitEnvironment = () => machineEnvironment()
+
 export const gitInstallation = async (): Promise<GitInstallation> => {
   const environment = machineEnvironment
   const env = await environment()
