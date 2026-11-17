@@ -20,7 +20,7 @@ Done when every in-scope test file has a recorded baseline result.
 Split the surface into **lanes** along production owner boundaries, not file
 prefixes. Include the subsystem's cases at shared boundaries (server route
 tests, cross-package coverage suites such as agent-runtime running the adapter
-tests) and its manual or live-proof harnesses (such as `tophat`).
+tests) and its manual or live-proof harnesses (such as `tophatting`).
 
 Done when every test file and harness scenario the subsystem owns belongs to
 exactly one lane.
@@ -90,7 +90,7 @@ every restored contract has a caught mutation.
 
 A baseline failure that survives into a keeper is a bug report. Fix it at its
 owner as a separate commit, and prove it through the real user flow with the
-`tophat` skill, including a **control** run that reverts the fix and shows the
+`tophatting` skill, including a **control** run that reverts the fix and shows the
 old behavior. Record unrelated product discrepancies you find as follow-ups
 instead of fixing them in the campaign.
 

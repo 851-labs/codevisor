@@ -1,18 +1,80 @@
 ---
-name: deterministic-tests
-description: Write, change, review, or debug Codevisor tests. Use whenever adding tests, changing test fixtures, investigating flaky failures, or optimizing test runtime in TypeScript, Swift, or scripts.
+name: writing-tests
+description: Use when adding or changing a test or test fixture in TypeScript, Swift, or scripts, when reviewing new or changed tests, when a test is flaky, order-dependent, or timing-dependent, when test runtime needs to come down, or when deciding which command runs a test, its coverage, or the full checks.
 ---
 
-# Deterministic, fast tests
+# Writing tests
+
+Every new or changed test answers two questions. Does it earn its place? The
+[authoring gate](#authoring-gate) decides. Is it deterministic and fast? The
+rest of this skill covers that. Sweeping or pruning tests that already exist
+is the `auditing-tests` skill's job.
 
 Treat a flaky test as a defect. The same inputs must produce the same result,
 regardless of machine speed, scheduler order, current date, or other tests.
 Preserve useful behavior coverage when replacing a flaky or slow test.
 
-## Before writing a test
+## Authoring gate
 
-First pass the `test-audit` skill's authoring gate: the test must protect a
-behavior or contract that existing coverage does not already catch.
+Before adding any test, answer four questions; a missing answer means do not
+add it yet:
+
+1. What observable behavior, invariant, or independent contract does it protect?
+2. What credible regression makes it fail?
+3. Why does existing coverage not already catch that failure? Each contract has
+   one primary test owner at the strongest boundary; another layer needs its
+   own distinct risk, such as a transport or lifecycle failure the owner cannot
+   reach. Prefer extending a table-driven case or shared fixture over a
+   near-duplicate test; consolidate duplicated setup in the same change.
+4. Does it need a production seam (export, flag, wrapper, injection hook) that
+   no production caller needs? If yes, move the test to the real boundary
+   instead.
+
+Then check the test against every [junk pattern](#junk-patterns); a match fails
+the gate unless the retention bar in the `auditing-tests` skill names the
+contract it independently guards. A test that would break under behavior-preserving
+refactoring is asserting implementation, not behavior; rewrite it at the
+owning boundary before landing it.
+
+Bug regression tests must fail on the pre-fix code for the intended reason and
+pass after the owner-boundary repair. A regression test that never demonstrably
+failed proves the mock, not the fix. One regression at the owner boundary
+covers the bug; do not replay the same scenario at every layer it crosses.
+
+## Junk patterns
+
+The authoring gate rejects a new test that matches one of these, and audits
+(the `auditing-tests` skill) hunt for existing tests that do.
+
+- assertion-free coverage probes (no `expect`, `#expect`, or `XCTAssert`, or
+  only `toBeDefined()` / `not.toThrow()` on a call that cannot throw);
+- self-comparisons and identity copiers, such as comparing two calls of a pure
+  template or round-tripping synthesized `Codable` through the same coder;
+- copied fixtures, inventories, manifests, or export lists, such as
+  `allCases.count` checks or `CaseIterable` conformances only a test uses;
+- exact source, import, or string greps;
+- private predicate or call-shape tests duplicated at real boundaries;
+- duplicate invocations of the same contract;
+- adapter-local replays of shared helpers (`@codevisor/agent-runtime` and
+  `@codevisor/adapter-acp` helpers re-tested inside another `adapter-*`);
+- tests whose only purpose is preserving test-only exports, globals, or
+  wrappers;
+- dead production code whose only callers are tests;
+- expected values produced by the helper or renderer under test;
+- mocks that implement the asserted behavior, or one identical mock standing in
+  for different APIs;
+- fixtures that supply the receipt, admission, or callback ordering the owner
+  should produce, or persistence asserted against a store the path never
+  writes;
+- capability tests that restate declared flags or computed constants (a
+  `var isX: Bool { true }`) instead of exercising what the flag promises;
+- negative controls that pass for an unrelated reason, such as a denial from a
+  different guard, a rejection the production path never reaches, or a
+  platform-specific failure (`/proc` missing on macOS);
+- names or fixtures that promise more than the input exercises, such as an
+  "immovable pane" test asserting the pane is movable.
+
+## Design the test
 
 1. Identify the observable behavior and the smallest component that owns it.
 2. List uncontrolled inputs: clocks, task scheduling, randomness, network,
@@ -137,7 +199,7 @@ test target over another bespoke implementation.
   `bun run check`. Put a test there only when it needs a real rendering engine
   (accessibility tree, document order, trusted input, frames, real CDP
   events); prove tab and session bookkeeping with the CDP fakes in
-  `browser-tab-lifecycle.test.ts` or `browser-tab-routing.test.ts`. Chrome
+  `browser-tab-lifecycle.test.ts` or `browser-tab-routing.isolated.test.ts`. Chrome
   suites start the browser once per file in `beforeAll`, and each test uses
   its own agent session.
 
@@ -166,8 +228,9 @@ real clock reads, tiny deadlines, random input, fixed ports, and leaked tasks.
 Inspect each match; fake timer callbacks and production watchdogs are not
 automatically defects.
 
-Run the affected test target, then its typecheck and relevant coverage checks.
-Run the full applicable suites after broad changes. For repaired races, repeat
+Run the affected test target, then its typecheck and relevant coverage checks
+(see [Run the tests](#run-the-tests)). Run the full applicable suites after
+broad changes. For repaired races, repeat
 the affected suite with different test order/seed and ordinary parallelism;
 do not enable retries. A passing repetition is supporting evidence, not proof
 of determinism. Explain which source of nondeterminism was removed.
@@ -177,6 +240,32 @@ to obtain a green run. Replace redundant tests only after identifying where
 the same behavior remains covered. Report environmental blockers and remaining
 known risks candidly; do not claim that a passing run proves no flakes exist.
 
+## Run the tests
+
+Never edit source or tests while a test run is still running in the checkout.
+A new worktree already has its dependencies: the post-checkout hook installs
+them. If `node_modules` is missing, run `bun install --frozen-lockfile` with
+Node on PATH (see the `running-dev` skill).
+
+1. Run the smallest owner and sibling tests: from the package directory,
+   `bunx vitest run <path>` (add `-t "<test name>"` for one test in the
+   file); for scripts, `node --test <file>`; for Swift
+   suites, `swift test --package-path packages/swift --filter <Suite>` (suites
+   listed in `packages/swift/main-serial-executor-suites.json` must run through
+   `bun run swift:test` instead).
+2. Run `bun run test:coverage` in each touched TypeScript package so coverage
+   thresholds are checked.
+3. Typecheck the touched packages:
+   `bunx turbo run typecheck --filter=<package> ...`.
+4. Run `bun run format:check`, `bun run lint`, `bun run ratchet:check`, and
+   `git diff --check`.
+
+`bun run check` runs every check your changes can affect against `HEAD`
+(`bun run check -- --dry-run` lists them), including the Swift suites when
+Swift changed. The pre-push hook runs the same plan against `origin/main`
+without the Swift suites, and Build runs all of it on main after the merge; allow
+them time rather than bypassing them. `bun run check:all` runs everything.
+
 ## References
 
 - [Vitest: fake timers](https://vitest.dev/guide/mocking/timers)
@@ -184,3 +273,7 @@ known risks candidly; do not claim that a passing run proves no flakes exist.
 - [Google: sources of test flakiness](https://testing.googleblog.com/2020/12/test-flakiness-one-of-main-challenges.html)
 - [Playwright: test isolation and behavior assertions](https://playwright.dev/docs/best-practices)
 - [AppKit: update layout before inspecting it](https://developer.apple.com/documentation/appkit/nsview/layoutsubtreeifneeded%28%29)
+
+The authoring gate and junk patterns are adapted from OpenClaw's `test-audit`
+skill (MIT,
+https://github.com/openclaw/openclaw/tree/main/.agents/skills/test-audit).

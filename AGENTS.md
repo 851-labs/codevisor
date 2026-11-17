@@ -18,4 +18,13 @@ Never give timelines for changes or estimates of how long a change will take.
 
 Your answers should never be guesses; they should be grounded in the code itself.
 
-When the user is ready to ship their changes, ship them with `bun run ship`. It opens a PR for the change and merges it; every change goes through a PR, never a direct push to main. The checks run on main after the merge, and the build waits for them.
+The repo's skills are in `.agents/skills`. Run, build, and stop Codevisor through the dev scripts as the `running-dev` skill describes, never by calling `xcodebuild` yourself; drive the running apps and capture evidence with `driving-dev-apps`; verify every change with `tophatting`.
+
+Never stop processes by pattern: no `pkill`, no `killall`, no `kill -1`, and no `kill` fed straight from `pgrep`, `pidof`, `ps`, or `lsof`. They match every worktree's dev runners and every chat's harness on this machine, including other agents' work. Find the PIDs with `pgrep -fl <pattern>` (options before the pattern), check them, then `kill <pid>` only the ones you started, or stop the background task you started. A hook (`scripts/agent-hooks/kill-guard.mjs`) blocks the broad forms.
+
+There are two ways to ship, and every change goes through a PR, never a direct push to main:
+
+- When the user is ready to ship their changes, ship them with `bun run ship`. It opens a PR for the change and merges it. The checks run on main after the merge, and the build waits for them.
+- When the user asks for a review first, use `bun run ship --review`. It opens the PR and stops. Merge it with `gh pr merge --squash` only after the user approves. Linear ticket work takes this review flow by default (the `working-linear-tickets` skill); when the user says to ship it, that is their approval to merge, and `bun run ship` applies.
+
+Both ship only committed work from a branch other than main, rebase it onto `origin/main`, and push it, which runs the pre-push checks. `--title` and `--body` or `--body-file` set the PR's text; without them it is filled from the commits.

@@ -1,13 +1,14 @@
 ---
-name: code-style
-description: Codevisor's code style and readability rules for TypeScript and Swift. Use whenever writing, refactoring, or reviewing TypeScript or Swift code in this repo, including small edits and code-review passes.
+name: writing-code
+description: Use when writing, refactoring, or reviewing TypeScript or Swift code in this repo, including small edits and code-review passes, and when a style lint fails (nested or effect-choosing ternary, inline SQL, bare git, file or function length, comments).
 ---
 
-# Code style
+# Writing code
 
-Write code that reads like a description of what happens. A reader must be
-able to follow a top-level function without opening its helpers, and to
-understand any helper at a glance.
+These are Codevisor's code style and readability rules for TypeScript and
+Swift. Write code that reads like a description of what happens. A reader
+must be able to follow a top-level function without opening its helpers, and
+to understand any helper at a glance.
 
 Apply these rules to code you write or change. When reviewing, flag
 violations in the diff.
@@ -494,6 +495,8 @@ Know the isolation default of the target you're editing:
   function runs on its caller's actor.
 - **Other `packages/swift` targets** use the Swift 6 language mode with no
   default isolation. Declarations are nonisolated unless you mark them.
+  `CodevisorNet`, which wraps the generated networking bindings, is the one
+  target still on the Swift 5 mode.
 
 Put these on the main actor: SwiftUI views, AppKit and UIKit types,
 `@Observable` models that views read, and anything else that touches UI
