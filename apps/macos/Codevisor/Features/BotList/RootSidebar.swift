@@ -3,7 +3,7 @@ import CodevisorUI
 import SwiftUI
 
 struct RootSidebar: View {
-  @Binding var selection: SidebarSelection?
+  @SidebarSelectionRef var selection: SidebarSelection?
   @Binding var botEditor: BotEditorTarget?
   let store: SessionStore?
   let revealRequest: SidebarRevealRequest
@@ -12,7 +12,7 @@ struct RootSidebar: View {
   @ClientPreference(SidebarMode.preferenceKey, default: SidebarMode.code) private var storedMode
   @State private var visitedModes: Set<SidebarMode> = []
   @State private var parkedMode: SidebarMode?
-  @State private var parkedSelection: SidebarSelection?
+  @State private var parked = LocalSidebarSelection()
 
   var body: some View {
     layout
@@ -48,7 +48,7 @@ struct RootSidebar: View {
     }
     .onChange(of: storedMode, initial: true) { _, mode in
       visitedModes.insert(mode)
-      parkedSelection = selection
+      parked.selection = selection
       parkedMode = SidebarMode.allCases.first { $0 != mode }
     }
   }
@@ -57,8 +57,8 @@ struct RootSidebar: View {
     mode == storedMode || visitedModes.contains(mode)
   }
 
-  private func listSelection(for mode: SidebarMode) -> Binding<SidebarSelection?> {
-    mode != storedMode && mode == parkedMode ? $parkedSelection : $selection
+  private func listSelection(for mode: SidebarMode) -> SidebarSelectionRef {
+    mode != storedMode && mode == parkedMode ? SidebarSelectionRef(parked) : $selection
   }
 
   @ViewBuilder

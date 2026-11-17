@@ -3,7 +3,7 @@ import CodevisorUI
 import SwiftUI
 
 struct SidebarSelectionHistory: ViewModifier {
-  @Binding var selection: SidebarSelection?
+  @SidebarSelectionRef var selection: SidebarSelection?
   let revealRequest: SidebarRevealRequest
   @Environment(AppEnvironment.self) private var environment
   @State private var history = SidebarHistory<RememberedSidebarSelection>()

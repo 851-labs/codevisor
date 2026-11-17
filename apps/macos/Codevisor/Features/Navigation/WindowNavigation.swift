@@ -4,7 +4,7 @@ import Foundation
 import Observation
 
 @Observable
-final class WindowNavigation {
+final class WindowNavigation: SidebarSelectionOwner {
   static let keptAlivePages = 5
 
   let id = UUID()

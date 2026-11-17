@@ -7,7 +7,7 @@ struct SidebarComposeToolbarItem: ToolbarContent {
   @Environment(\.appIsCovered) private var appIsCovered
   @Environment(AppEnvironment.self) private var environment
 
-  @Binding var selection: SidebarSelection?
+  @SidebarSelectionRef var selection: SidebarSelection?
   let newChat: () -> Void
   let newBot: () -> Void
 

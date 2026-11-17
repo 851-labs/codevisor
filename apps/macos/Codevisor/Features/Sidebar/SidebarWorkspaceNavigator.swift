@@ -5,7 +5,7 @@ import SwiftUI
 struct SidebarWorkspaceNavigator {
   let environment: AppEnvironment
   let store: SessionStore?
-  @Binding var selection: SidebarSelection?
+  @SidebarSelectionRef var selection: SidebarSelection?
 
   func routesSelectedSession(_ workspace: Workspace) -> Bool {
     switch selection {

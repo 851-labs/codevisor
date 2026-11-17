@@ -52,7 +52,7 @@ struct WorkspaceInspectorPresentation: ViewModifier {
   @State private var usage = WorkspaceInspectorUsageModel()
   @State private var lastRefresh: RefreshKey?
   let store: SessionStore?
-  @Binding var selection: SidebarSelection?
+  @SidebarSelectionRef var selection: SidebarSelection?
   var idealInspectorWidth: CGFloat = 260
 
   func body(content: Content) -> some View {

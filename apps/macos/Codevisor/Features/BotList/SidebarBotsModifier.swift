@@ -4,7 +4,7 @@ import SwiftUI
 struct SidebarBotsModifier: ViewModifier {
   @Environment(AppEnvironment.self) private var environment
   @Binding var deletingBot: Bot?
-  @Binding var selection: SidebarSelection?
+  @SidebarSelectionRef var selection: SidebarSelection?
 
   func body(content: Content) -> some View {
     content

@@ -8,7 +8,7 @@ struct WorkspaceChildAgents {
   let store: SessionStore
   let commands: WorkspaceRowCommands
   let renameChat: @MainActor (ChatSession) -> Void
-  @Binding var selection: SidebarSelection?
+  @SidebarSelectionRef var selection: SidebarSelection?
   var revealRequest: SidebarRevealRequest?
 
   func parent(of chat: ChatSession) -> WorkspaceInspectorAgent? {
