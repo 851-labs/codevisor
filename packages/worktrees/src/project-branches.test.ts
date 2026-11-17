@@ -6,6 +6,7 @@ import { join } from "node:path"
 import { describe, expect, it } from "vitest"
 
 import { testTempDir } from "./git-test-support.js"
+import { checkoutNewBranch, gitCurrentBranch } from "./git.js"
 import { listProjectGitBranches, worktreeStartPoint } from "./project-branches.js"
 
 const makeRepo = (): { readonly root: string; readonly repo: string } => {
@@ -22,6 +23,25 @@ const makeRepo = (): { readonly root: string; readonly repo: string } => {
 }
 
 describe("project worktree branches", () => {
+  it("checks out a new branch from the current commit, or from a start point", async () => {
+    const { repo } = makeRepo()
+    const head = () => execFileSync("git", ["rev-parse", "HEAD"], { cwd: repo }).toString().trim()
+    const first = head()
+    execFileSync(
+      "git",
+      ["-c", "user.email=t@t", "-c", "user.name=t", "commit", "--allow-empty", "-m", "later"],
+      { cwd: repo }
+    )
+
+    await checkoutNewBranch(repo, "codevisor/from-head")
+    const fromHead = head()
+    await checkoutNewBranch(repo, "codevisor/from-first", first)
+
+    expect(fromHead).not.toBe(first)
+    expect(await gitCurrentBranch(repo, process.env)).toBe("codevisor/from-first")
+    expect(head()).toBe(first)
+  })
+
   it("lists remote branches and resolves an explicitly configured worktree base", async () => {
     const root = testTempDir(join(tmpdir(), "codevisor-git-branches-"))
     const origin = join(root, "origin")

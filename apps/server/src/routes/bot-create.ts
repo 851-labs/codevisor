@@ -37,7 +37,11 @@ import { greetNewBot } from "./bot-greeting.js"
 import { writeInstructions, type BotRepository } from "./bot-instructions.js"
 import { newBotMascot } from "./bot-mascots.js"
 import { isBotProject, isScratchProject } from "./project-probe.js"
-import { availableWorktreeName, slugifyWorktreeName } from "./project-worktree-create.js"
+import {
+  availableWorktreeName,
+  slugifyWorktreeName,
+  worktreeBranchName
+} from "./project-worktree-create.js"
 import { applySessionUpdate, createSessionIfMissing } from "./session-workspace.js"
 
 interface BotSource {
@@ -125,7 +129,7 @@ export const checkOut = async (
     source,
     folderName,
     path: join(botPath(slug), folderName),
-    branch: `codevisor/${branchName}`,
+    branch: worktreeBranchName(branchName),
     env
   }
   const startPoint = await worktreeStartPoint(source.repoDir, source.project.worktreeBase, env)

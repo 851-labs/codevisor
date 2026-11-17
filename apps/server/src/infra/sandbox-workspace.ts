@@ -24,7 +24,7 @@ export const placeWorkspace = async (
 ): Promise<PlacedWorkspace> => {
   const project = (await deps.projects.get(machine.projectId)) ?? requestedProject(machine)
 
-  const remoteProjectId = await remoteProjectFor(deps, machine.machineId, project, git)
+  const remoteProjectId = await remoteProjectFor(deps, machine, project, git)
   if (machine.restoresWorkspace === true && machine.workspaceId !== undefined) {
     return restoreWorkspace(deps, machine, remoteProjectId, machine.workspaceId)
   }
@@ -91,26 +91,28 @@ const requestedProject = (machine: Sandbox): ProjectSource => {
 
 const remoteProjectFor = async (
   deps: SandboxDeps,
-  machineId: string,
+  machine: Sandbox & { readonly machineId: string },
   project: ProjectSource,
   git: SandboxGitAccess
 ): Promise<string> => {
+  const { machineId } = machine
   const { repoUrl } = project
   if (repoUrl === undefined) {
     return idOf(await deps.remoteTools.call(machineId, "codevisor.projects.create_scratch", {}))
   }
 
   const cloned = await deps.remoteTools
-    .call(machineId, "codevisor.projects.clone", cloneArguments(project, repoUrl))
+    .call(machineId, "codevisor.projects.clone", cloneArguments(machine, project, repoUrl))
     .catch((cause: unknown) => {
       throw cloneFailure(cause, repoUrl, git, deps.machineName())
     })
   return idOf(cloned)
 }
 
-const cloneArguments = (project: ProjectSource, repoUrl: string) => ({
+const cloneArguments = (machine: Sandbox, project: ProjectSource, repoUrl: string) => ({
   url: repoUrl,
   name: project.name,
+  startsOnNewBranch: machine.restoresWorkspace !== true,
   ...(project.worktreeBase === undefined ? {} : { worktreeBase: project.worktreeBase }),
   ...(project.defaultRunLocation === undefined
     ? {}

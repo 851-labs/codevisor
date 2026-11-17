@@ -79,7 +79,8 @@ export const CreateProjectFromGitRequest = Schema.Struct({
   homeRelativePath: Schema.optional(Schema.String),
   envFiles: Schema.optional(Schema.Array(ProjectEnvFileContent)),
   worktreeBase: Schema.optional(ProjectWorktreeBase),
-  defaultRunLocation: Schema.optional(ProjectRunLocation)
+  defaultRunLocation: Schema.optional(ProjectRunLocation),
+  startsOnNewBranch: Schema.optional(Schema.Boolean)
 })
 export type CreateProjectFromGitRequest = typeof CreateProjectFromGitRequest.Type
 

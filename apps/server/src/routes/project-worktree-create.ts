@@ -219,7 +219,7 @@ export const addPlannedWorktree = async (plan: WorktreePlan): Promise<Worktree> 
       existing.add(name)
       continue
     }
-    const branch = `codevisor/${name}`
+    const branch = worktreeBranchName(name)
     let worktree: Worktree
     try {
       worktree = await run(services.db.createWorktree(project.id, name, branch, payload.id))
@@ -267,8 +267,10 @@ export const addPlannedWorktree = async (plan: WorktreePlan): Promise<Worktree> 
   throw new HttpFailure(422, "Unable to allocate an unused Git worktree branch")
 }
 
-const nextWorktreeName = (
-  config: CodevisorServerConfig,
+export const worktreeBranchName = (name: string): string => `codevisor/${name}`
+
+export const nextWorktreeName = (
+  config: Pick<CodevisorServerConfig, "worktreeNameStyle">,
   requested: string | undefined,
   existing: ReadonlySet<string>
 ): string => {

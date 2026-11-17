@@ -277,6 +277,16 @@ export const addWorktree = (
     })
   })
 
+export const checkoutNewBranch = async (
+  repoDir: string,
+  branch: string,
+  startPoint?: string,
+  env?: NodeJS.ProcessEnv
+): Promise<void> => {
+  const from = startPoint === undefined ? [] : [startPoint]
+  await runGit("checkout-new-branch", ["checkout", "-b", branch, ...from], repoDir, env)
+}
+
 export const cloneRepository = (
   url: string,
   destination: string,
