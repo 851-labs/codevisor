@@ -10,7 +10,7 @@ import {
 
 const described = (plan) => plan.map((step) => `${step.scenario}:${step.workspaceId ?? step.step}`)
 
-test("visits every chat once, reopens only the ones that fell out of the kept-alive set, then steps back and forth with the hotkey", () => {
+test("visits every chat once, reopens the ones that fell out of the kept-alive set, then steps back and forth with the hotkey from a chat in the middle", () => {
   const plan = benchPlan(["a", "b", "c", "d"], 2, 3)
 
   assert.deepEqual(described(plan), [
@@ -19,6 +19,7 @@ test("visits every chat once, reopens only the ones that fell out of the kept-al
     "first-visit:c",
     "first-visit:d",
     "evicted-reopen:a",
+    "unmeasured:c",
     "warm:-1",
     "warm:1",
     "warm:-1",
@@ -34,7 +35,13 @@ test("a hotkey step is sent to one dev instance, by direction", () => {
 test("with no more chats than are kept alive, nothing is reopened cold", () => {
   const plan = benchPlan(["a", "b"], 1, 5)
 
-  assert.deepEqual(described(plan), ["first-visit:a", "first-visit:b", "warm:-1", "warm:1"])
+  assert.deepEqual(described(plan), [
+    "first-visit:a",
+    "first-visit:b",
+    "unmeasured:b",
+    "warm:-1",
+    "warm:1"
+  ])
 })
 
 test("reports main-thread work, the first pass and the time to settle per scenario", () => {

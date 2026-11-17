@@ -1,5 +1,4 @@
 import CodevisorClient
-import CodevisorUI
 import SwiftUI
 import TranscriptKit
 
@@ -17,7 +16,6 @@ struct TabSwitchBenchSteps: ViewModifier {
         DarwinNotificationObserver(Self.notificationName(direction)) { [weak store] in
           guard let store, window.window == (NSApp.keyWindow ?? NSApp.mainWindow) else { return }
 
-          NavigationSwitchTrace.shared.beginCommand()
           store.workspaceStepHandler?(offset)
         }
       }

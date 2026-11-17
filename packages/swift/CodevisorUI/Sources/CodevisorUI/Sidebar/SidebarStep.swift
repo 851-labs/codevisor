@@ -1,10 +1,6 @@
 public enum SidebarStep {
   public static func target<Item>(in items: [Item], from current: Int?, by offset: Int) -> Item? {
-    guard let current else { return entry(into: items, by: offset) }
-
-    let target = current + offset
-    guard target != current, items.indices.contains(target) else { return nil }
-    return items[target]
+    target(among: Array(items.enumerated()), isCurrent: { $0.offset == current }, by: offset) { $0.element }
   }
 
   public static func target<Row, Stop>(
@@ -24,9 +20,5 @@ public enum SidebarStep {
       index += step
     }
     return nil
-  }
-
-  private static func entry<Item>(into items: [Item], by offset: Int) -> Item? {
-    offset < 0 ? items.last : items.first
   }
 }

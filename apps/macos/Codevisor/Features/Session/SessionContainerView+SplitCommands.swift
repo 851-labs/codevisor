@@ -31,16 +31,12 @@ extension SessionContainerView {
     case .newTab:
       addCenterTab()
     case .previousTab:
-      NavigationSwitchTrace.shared.beginCommand()
       stepTab(offset: -1)
     case .nextTab:
-      NavigationSwitchTrace.shared.beginCommand()
       stepTab(offset: 1)
     case .previousWorkspace:
-      NavigationSwitchTrace.shared.beginCommand()
       store.workspaceStepHandler?(-1)
     case .nextWorkspace:
-      NavigationSwitchTrace.shared.beginCommand()
       store.workspaceStepHandler?(1)
     case let .selectTab(index):
       let workspace = navigationWorkspace

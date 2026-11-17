@@ -23,14 +23,25 @@ extension SidebarView {
   }
 
   func stepWorkspace(_ offset: Int) {
-    let selected = SidebarSelectionSync.selectedRow(showing: selectionTarget, rowIDs: shownRows.ids)
+    NavigationSwitchTrace.shared.timingCommand {
+      guard let target = stepTarget(offset) else { return }
+
+      activate(target)
+    }
+  }
+
+  private func stepTarget(_ offset: Int) -> SidebarStop? {
+    let target = selectionTarget
+    var rows = shownRows.rows
+    var selected = SidebarSelectionSync.selectedRow(showing: target, rowIDs: shownRows.ids)
+    if let listed = selected, !shownRows.ids.contains(listed) {
+      rows = sidebarRows
+      selected = SidebarSelectionSync.selectedRow(showing: target, rowIDs: Set(rows.map(\.id)))
+    }
     let content = rowContent
-    let target = SidebarStep.target(among: shownRows.rows, isCurrent: { $0.id == selected }, by: offset) { row in
+    return SidebarStep.target(among: rows, isCurrent: { $0.id == selected }, by: offset) { row in
       sidebarStop(at: row, content: content)
     }
-    guard let target else { return }
-
-    activate(target)
   }
 
   private func activate(_ stop: SidebarStop) {
