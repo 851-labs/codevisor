@@ -423,6 +423,7 @@ let package = Package(
         .copy("Resources/browser-navigation.js"),
         .process("Resources/FileIcons.xcassets"), .copy("Resources/FileIcons"),
         .process("Resources/Symbols.xcassets"), .process("Resources/MascotSymbols.xcassets"),
+        .process("Resources/BotsEmptyCrew.xcassets"),
         .copy("Resources/Octicons-LICENSE.txt"),
       ],
       swiftSettings: strictSwiftSettings

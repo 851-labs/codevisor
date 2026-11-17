@@ -1,15 +1,12 @@
-import CodevisorCore
 import SwiftUI
 
 struct BotsEmptyCrew: View {
-  private static let leader = ServerBotMascot(color: "sunny", hat: "crown", eyewear: "none")
-  private static let leftCompanion = ServerBotMascot(color: "mint", hat: "chef", eyewear: "none")
-  private static let rightCompanion = ServerBotMascot(color: "lilac", hat: "wizard", eyewear: "specs")
+  private static let leader = "bots-empty-crew-leader"
+  private static let leftCompanion = "bots-empty-crew-left"
+  private static let rightCompanion = "bots-empty-crew-right"
   private static let leaderSide: CGFloat = 152
   private static let companionSide: CGFloat = 116
   private static let overlap: CGFloat = 40
-
-  let serverId: String
 
   var body: some View {
     HStack(alignment: .bottom, spacing: -Self.overlap) {
@@ -20,8 +17,11 @@ struct BotsEmptyCrew: View {
     }
   }
 
-  private func figure(_ mascot: ServerBotMascot, side: CGFloat) -> some View {
-    BotMascotImage(mascot: mascot, serverId: serverId, kind: .figure)
+  private func figure(_ name: String, side: CGFloat) -> some View {
+    Image(decorative: name, bundle: .module)
+      .resizable()
+      .interpolation(.high)
+      .scaledToFit()
       .frame(width: side, height: side)
   }
 }

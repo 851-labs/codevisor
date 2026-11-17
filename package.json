@@ -59,7 +59,8 @@
     "boundaries": "turbo boundaries",
     "ratchet:check": "node scripts/check-size-ratchet.mjs",
     "comments:check": "node scripts/check-comments.mjs",
-    "ios-simulator": "bun scripts/ios-simulator.mjs"
+    "ios-simulator": "bun scripts/ios-simulator.mjs",
+    "mascots:export-crew": "bun --conditions=@codevisor/source scripts/export-bots-empty-crew.mjs"
   },
   "devDependencies": {
     "@types/node": "26.0.0",

@@ -19,7 +19,7 @@ struct BotListEmptyDetail: View {
   private var noBots: some View {
     ZStack {
       if availability.hasLoaded {
-        BotsEmptyState(serverId: environment.defaultComposerServerId, onNewBot: onNewBot)
+        BotsEmptyState(onNewBot: onNewBot)
       }
     }
     .frame(maxWidth: .infinity, maxHeight: .infinity)
