@@ -121,7 +121,7 @@
       let bleedContainer = TableBleedContainer(tableTextView: textView)
       bleedContainer.bleedLimit = bleedLimit
       bleedContainer.scrollView.setBorderColor(NSColor(model.theme.tableBorderColor))
-      bleedContainer.scrollView.setShowsBorder(chrome.drawsFrame)
+      bleedContainer.scrollView.setDrawsFrame(chrome.drawsFrame)
       return bleedContainer
     }
 

@@ -7,7 +7,6 @@ import TranscriptKit
 
 @MainActor
 final class TranscriptBotBubbleRowHost: TranscriptMountedRowHost {
-  private static let trailingClearance: CGFloat = 64
   private let bubble = TranscriptBubbleBackgroundView()
   private let anchor = UserBubbleAnchorView()
   private let markdownView = SettledMarkdownView()
@@ -30,7 +29,7 @@ final class TranscriptBotBubbleRowHost: TranscriptMountedRowHost {
     installVerticalClipMask()
     addSubview(bubble)
     bubble.addSubview(anchor)
-    addSubview(markdownView)
+    bubble.addSubview(markdownView)
     markdownView.tableBleedLimit = 0
     markdownView.onContentHeightChange = { [weak self] in
       self?.requestContentMeasurement()
@@ -109,8 +108,8 @@ final class TranscriptBotBubbleRowHost: TranscriptMountedRowHost {
 
     let horizontal = bubbleLayout.horizontalInset
     let vertical = bubbleLayout.verticalInset
-    let natural = TranscriptBotMessageWidth.natural(of: content, theme: style.markdown)
-    let textWidth = max(1, min(natural, bounds.width - Self.trailingClearance))
+    let available = TranscriptBubbleMetrics.contentWidth(inRow: bounds.width, horizontalInset: horizontal)
+    let textWidth = TranscriptBotMessageWidth.width(of: content, theme: style.markdown, fitting: available)
     let textHeight = markdownView.contentHeight(forWidth: textWidth)
     let height = ceil(textHeight + vertical * 2)
     bubble.frame = NSRect(x: 0, y: 0, width: ceil(textWidth + horizontal * 2), height: height)

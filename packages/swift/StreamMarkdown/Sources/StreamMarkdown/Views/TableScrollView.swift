@@ -84,8 +84,8 @@
       document.setBorderColor(color)
     }
 
-    func setShowsBorder(_ showsBorder: Bool) {
-      document.layer?.borderWidth = showsBorder ? 1 : 0
+    func setDrawsFrame(_ drawsFrame: Bool) {
+      document.setDrawsFrame(drawsFrame)
     }
 
     override func layout() {
@@ -112,9 +112,8 @@
       self.tableTextView = tableTextView
       super.init(frame: .zero)
       wantsLayer = true
-      layer?.cornerRadius = MarkdownTableMetrics.cornerRadius
       layer?.masksToBounds = true
-      layer?.borderWidth = 1
+      setDrawsFrame(true)
       addSubview(tableTextView)
     }
 
@@ -128,6 +127,11 @@
     override var wantsUpdateLayer: Bool { true }
 
     private var borderColor: NSColor = .separatorColor
+
+    func setDrawsFrame(_ drawsFrame: Bool) {
+      layer?.borderWidth = drawsFrame ? 1 : 0
+      layer?.cornerRadius = drawsFrame ? MarkdownTableMetrics.cornerRadius : 0
+    }
 
     func setBorderColor(_ color: NSColor) {
       guard color != borderColor else { return }

@@ -95,9 +95,13 @@ struct MessageBubbleView<Content: View>: View {
 
   private var alignment: HorizontalAlignment { side == .trailing ? .trailing : .leading }
 
+  private var contentLayoutWidth: CGFloat? {
+    rowLayoutWidth.map { TranscriptBubbleMetrics.contentWidth(inRow: $0, horizontalInset: insets.horizontal) }
+  }
+
   var body: some View {
     HStack {
-      if side == .trailing { Spacer(minLength: 40) }
+      if side == .trailing { Spacer(minLength: TranscriptBubbleMetrics.oppositeSideGap) }
       VStack(
         alignment: alignment, spacing: TranscriptSendFlightGeometry.attachmentSpacing
       ) {
@@ -110,10 +114,7 @@ struct MessageBubbleView<Content: View>: View {
         if !text.isEmpty {
           content()
             .environment(\.textSelectionSession, selection)
-            .environment(
-              \.streamMarkdownTextLayoutWidth,
-              rowLayoutWidth.map { max(1, $0 - 64) }
-            )
+            .environment(\.streamMarkdownTextLayoutWidth, contentLayoutWidth)
             .padding(.horizontal, insets.horizontal)
             .padding(.vertical, insets.vertical)
             .background {
@@ -136,7 +137,7 @@ struct MessageBubbleView<Content: View>: View {
             }
         }
       }
-      if side == .leading { Spacer(minLength: 40) }
+      if side == .leading { Spacer(minLength: TranscriptBubbleMetrics.oppositeSideGap) }
     }
   }
 }

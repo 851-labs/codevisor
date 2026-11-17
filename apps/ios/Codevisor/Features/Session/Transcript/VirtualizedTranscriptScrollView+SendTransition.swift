@@ -50,7 +50,8 @@ extension VirtualizedTranscriptScrollView: TranscriptSendTransitionAdapter {
       top = contentOffset.y + appliedTopContentInset + Self.runwayTopClearance
     }
     let corner = convert(CGPoint(x: rowX + rowWidth, y: top), to: nil)
-    return TranscriptSendLanding(trailing: corner.x, top: corner.y, maxBubbleWidth: rowWidth - 40)
+    return TranscriptSendLanding(
+      trailing: corner.x, top: corner.y, maxBubbleWidth: TranscriptBubbleMetrics.maxWidth(inRow: rowWidth))
   }
 
   var sendTransitionPushDistance: CGFloat? {
