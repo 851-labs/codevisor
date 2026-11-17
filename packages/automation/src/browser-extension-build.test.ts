@@ -7,6 +7,7 @@ import { describe, expect, it, onTestFinished } from "vitest"
 import {
   bundledExtension,
   describeExtensionError,
+  lacksCommand,
   outdatedExtensionNote,
   readExtensionHello,
   stampExtensionBuild
@@ -94,5 +95,9 @@ describe("Chrome extension build", () => {
     expect(describeExtensionError("That tab is not shared with Codevisor")).toBe(
       "That tab is not shared with Codevisor"
     )
+    const browserWide = "Unsupported browser command: Browser.grantPermissions"
+    expect(describeExtensionError(browserWide)).toBe(browserWide)
+    expect(lacksCommand(browserWide)).toBe(false)
+    expect(lacksCommand("Unsupported browser command: Codevisor.tabGroups.list")).toBe(true)
   })
 })
