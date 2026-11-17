@@ -1,4 +1,5 @@
 import CodevisorCore
+import CodevisorUI
 import Foundation
 
 struct WorkspaceChrome: Equatable {
@@ -12,4 +13,5 @@ struct WorkspaceChrome: Equatable {
   let removesTitle: Bool
   let toolbar: PaneToolbarSource?
   let layoutActions: WorkspaceLayoutActions
+  let handlers: HandlerIdentity
 }

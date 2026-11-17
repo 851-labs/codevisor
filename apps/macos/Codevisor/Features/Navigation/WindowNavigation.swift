@@ -7,6 +7,7 @@ import Observation
 final class WindowNavigation {
   static let keptAlivePages = 5
 
+  let id = UUID()
   let deck = PageDeck<WorkspaceDeckSlot, WorkspaceDeckRoute>(capacity: WindowNavigation.keptAlivePages)
   let deckSizes = WorkspaceDeckSizes()
 

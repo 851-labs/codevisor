@@ -6,24 +6,17 @@ import SwiftUI
 struct WorkspaceChromeHost: View {
   let navigation: WindowNavigation
   @Environment(AppEnvironment.self) private var environment
-  @State private var shown: WorkspaceChrome?
 
   var body: some View {
-    let published = navigation.activePage?.chrome
-    Group {
-      if navigation.deck.activeSlot != nil, let chrome = published ?? shown {
-        WorkspaceSceneChrome(
-          title: title(of: chrome), removesTitle: chrome.removesTitle,
-          values: WorkspaceSceneValues(
-            browser: chrome.toolbar?.browser, file: chrome.toolbar?.file, simulator: chrome.toolbar?.simulator,
-            layoutActions: .routed { navigation.activePage?.chrome?.layoutActions })
-        ) {
-          WorkspacePaneToolbar(source: chrome.toolbar, title: chrome.title)
-        }
+    if let chrome = navigation.activePage?.chrome {
+      WorkspaceSceneChrome(
+        title: title(of: chrome), removesTitle: chrome.removesTitle,
+        values: WorkspaceSceneValues(
+          browser: chrome.toolbar?.browser, file: chrome.toolbar?.file, simulator: chrome.toolbar?.simulator,
+          layoutActions: .routed(from: navigation.id) { navigation.activePage?.chrome?.layoutActions })
+      ) {
+        WorkspacePaneToolbar(source: chrome.toolbar, title: chrome.title)
       }
-    }
-    .onChange(of: published, initial: true) { _, published in
-      if let published { shown = published }
     }
   }
 

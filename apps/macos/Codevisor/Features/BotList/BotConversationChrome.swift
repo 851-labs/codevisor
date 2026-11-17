@@ -12,7 +12,7 @@ struct BotConversationChrome: ViewModifier {
   func body(content: Content) -> some View {
     content
       .environment(\.transcriptTopChromeHeight, topChromeHeight)
-      .toolbar(removing: isActive ? .title : nil)
+      .environment(\.hidesWorkspaceTitle, true)
       .overlay(alignment: .top) {
         if !isSplit, !environment.hasOpenPage(bot) {
           BotConversationTopBar(bot: bot, showsHeader: showsHeader, onOpenDetails: openDetails)

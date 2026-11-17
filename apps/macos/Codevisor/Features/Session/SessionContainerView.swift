@@ -22,6 +22,7 @@ struct SessionContainerView: View {
   @Environment(\.accessibilityReduceMotion) var reduceMotion
   @Environment(\.quickLook) var quickLook
   @Environment(WorkspacePageModel.self) var page: WorkspacePageModel?
+  @Environment(\.hidesWorkspaceTitle) var hidesWorkspaceTitle
   @State var splitDragCoordinator = WorkspaceSplitDragCoordinator()
   @State var sessionFocus = TerminalFocusController()
   @State var floatingFocusHandoff = PaneFocusHandoff()

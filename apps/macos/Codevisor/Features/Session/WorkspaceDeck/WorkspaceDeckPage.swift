@@ -14,6 +14,6 @@ struct WorkspaceDeckPage<Content: View>: View, Equatable {
   }
 
   nonisolated static func == (lhs: Self, rhs: Self) -> Bool {
-    lhs.route == rhs.route && lhs.activity === rhs.activity
+    lhs.route == rhs.route && lhs.activity === rhs.activity && lhs.model === rhs.model
   }
 }

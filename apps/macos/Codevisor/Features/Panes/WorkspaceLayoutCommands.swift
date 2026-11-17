@@ -20,11 +20,11 @@ struct WorkspaceLayoutActions: Equatable {
     lhs.workspaceId == rhs.workspaceId
   }
 
-  private static let routedWorkspaceId = UUID()
-
-  static func routed(to target: @escaping @MainActor () -> WorkspaceLayoutActions?) -> WorkspaceLayoutActions {
+  static func routed(
+    from windowId: UUID, to target: @escaping @MainActor () -> WorkspaceLayoutActions?
+  ) -> WorkspaceLayoutActions {
     WorkspaceLayoutActions(
-      workspaceId: routedWorkspaceId,
+      workspaceId: windowId,
       newTab: { target()?.newTab() },
       closeSplit: { target()?.closeSplit() },
       closeTab: { target()?.closeTab() },
