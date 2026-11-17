@@ -20,4 +20,10 @@ struct SubscriptionCountdownTests {
   func countsDown(remaining: TimeInterval, text: String) {
     #expect(SubscriptionCountdown.text(until: Self.now.addingTimeInterval(remaining), now: Self.now) == text)
   }
+
+  @Test("VoiceOver hears the countdown in full words")
+  func speaksFullWords() {
+    let firesAt = Self.now.addingTimeInterval(10_740)
+    #expect(SubscriptionCountdown.spokenText(until: firesAt, now: Self.now) == "in 2 hours 59 minutes")
+  }
 }

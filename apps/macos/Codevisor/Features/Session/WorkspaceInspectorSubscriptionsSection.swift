@@ -37,7 +37,7 @@ private struct WorkspaceInspectorSubscriptionRow: View {
     .help(event.title)
     .accessibilityLabel(event.label)
     .popover(isPresented: $showsDetails, arrowEdge: .leading) {
-      WorkspaceInspectorAutomationPopover(event: event) {
+      WorkspaceInspectorAutomationPopover(event: event, serverId: serverId, client: client) {
         await onRemove(event)
       }
     }
@@ -62,7 +62,7 @@ private struct WorkspaceInspectorSubscriptionLabel: View {
   }
 }
 
-private struct WorkspaceInspectorSubscriptionIcon: View {
+struct WorkspaceInspectorSubscriptionIcon: View {
   let event: SubscribedPluginEvent
   let serverId: String
   let client: any CodevisorServerClienting
