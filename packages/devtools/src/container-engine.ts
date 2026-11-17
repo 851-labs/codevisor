@@ -15,7 +15,12 @@ export function execEngine(
 ): Promise<string> {
   return new Promise((resolve, reject) => {
     execFile(binary, args, { maxBuffer: maxOutputBytes, ...options }, (error, stdout, stderr) => {
-      if (error) reject(new Error(`${binary} ${args.join(" ")} failed: ${stderr || error.message}`))
+      if (error)
+        reject(
+          new Error(`${binary} ${args.join(" ")} failed: ${stderr || error.message}`, {
+            cause: error
+          })
+        )
       else resolve(stdout)
     })
   })
@@ -29,6 +34,19 @@ export async function tryEngine(
   try {
     return await execEngine(binary, args, options)
   } catch {
+    return undefined
+  }
+}
+
+export async function tryEngineWithin(
+  binary: string,
+  args: ReadonlyArray<string>,
+  timeout: number
+): Promise<string | undefined> {
+  try {
+    return await execEngine(binary, args, { timeout })
+  } catch (error) {
+    if (timedOut(error)) throw error
     return undefined
   }
 }
@@ -60,6 +78,11 @@ async function appleContainerEngine(): Promise<ContainerEngine | undefined> {
 async function dockerEngine(): Promise<ContainerEngine | undefined> {
   const version = await tryEngine("docker", ["version", "--format", "{{.Server.Version}}"])
   return version === undefined ? undefined : "docker"
+}
+
+function timedOut(error: unknown): boolean {
+  const cause = error instanceof Error ? error.cause : undefined
+  return cause instanceof Error && "killed" in cause && cause.killed === true
 }
 
 function isSupportedAppleContainer(version: string): boolean {

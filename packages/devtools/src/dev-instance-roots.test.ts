@@ -1,13 +1,15 @@
-import { mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises"
+import { mkdir, mkdtemp, rm, writeFile } from "node:fs/promises"
 import { tmpdir } from "node:os"
 import { dirname, join } from "node:path"
 
 import { afterEach, describe, expect, it } from "vitest"
 
 import {
-  claimInstanceRoot,
+  claimedInstances,
+  claimInstance,
+  instanceHash,
   instanceWorktreesRoot,
-  pruneOrphanInstanceRoots
+  worktreeIsGone
 } from "./dev-instance-roots.ts"
 
 const roots: Array<string> = []
@@ -43,31 +45,45 @@ describe("instanceWorktreesRoot", () => {
   })
 })
 
-describe("pruneOrphanInstanceRoots", () => {
-  it("removes the folders of worktrees that are gone and leaves the rest", async () => {
+describe("claimedInstances", () => {
+  it("lists every claimed worktree and skips folders nobody claimed", async () => {
     const instances = await scratch()
-    const live = await scratch()
-    const liveRoot = instanceWorktreesRoot(live, instances)
-    const goneRoot = instanceWorktreesRoot("/repo/worktrees/deleted", instances)
-    await claimInstanceRoot(live, liveRoot, instances)
-    await claimInstanceRoot("/repo/worktrees/deleted", goneRoot, instances)
+    await claimInstance("/repo/worktrees/cayenne", instances)
     await mkdir(join(instances, "unclaimed"))
-    const removed: Array<string> = []
 
-    const orphans = await pruneOrphanInstanceRoots(instances, (path) => removed.push(path))
-
-    expect(orphans).toEqual([dirname(goneRoot)])
-    expect(removed).toEqual([dirname(goneRoot)])
-    expect(await readFile(join(dirname(liveRoot), "repo-root"), "utf8")).toBe(live)
+    expect(await claimedInstances(instances)).toEqual([
+      {
+        hash: instanceHash("/repo/worktrees/cayenne"),
+        root: join(instances, instanceHash("/repo/worktrees/cayenne")),
+        repoRoot: "/repo/worktrees/cayenne"
+      }
+    ])
   })
 
-  it("claims nothing for a root the environment moved elsewhere", async () => {
+  it("ignores a claim that names a different worktree than its folder", async () => {
     const instances = await scratch()
-    const elsewhere = join(await scratch(), "agent-folders")
-    await writeFile(join(instances, "keep"), "")
+    await claimInstance("/repo/worktrees/cayenne", instances)
+    await writeFile(
+      join(instances, instanceHash("/repo/worktrees/cayenne"), "repo-root"),
+      "/repo/worktrees/quark"
+    )
 
-    await claimInstanceRoot("/repo", elsewhere, instances)
+    expect(await claimedInstances(instances)).toEqual([])
+  })
+})
 
-    expect(await pruneOrphanInstanceRoots(instances, () => undefined)).toEqual([])
+describe("worktreeIsGone", () => {
+  it("still sees a worktree mid-checkout, when only its git link is there", async () => {
+    const repo = await scratch()
+    await writeFile(join(repo, ".git"), "gitdir: elsewhere")
+
+    expect(await worktreeIsGone(repo)).toBe(false)
+  })
+
+  it("treats a folder that only holds recreated build output as gone", async () => {
+    const repo = await scratch()
+    await mkdir(join(repo, "tmp/build/ios/XcodeDerivedData"), { recursive: true })
+
+    expect(await worktreeIsGone(repo)).toBe(true)
   })
 })

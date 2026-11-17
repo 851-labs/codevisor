@@ -134,6 +134,21 @@ public enum CodevisorAppVariant: Sendable {
     )
   }
 
+  public static var developmentBrowserProfilesURL: URL? {
+    guard isDevelopment else { return nil }
+    return developmentBrowserProfilesURL(from: environment)
+  }
+
+  static func developmentBrowserProfilesURL(from environment: [String: String]) -> URL? {
+    guard
+      let dataDirectory = environment["CODEVISOR_DEV_DATA_DIR"]
+        ?? environment["HERDMAN_DEV_DATA_DIR"],
+      !dataDirectory.isEmpty
+    else { return nil }
+    return URL(fileURLWithPath: dataDirectory, isDirectory: true)
+      .appendingPathComponent("Chromium-v2", isDirectory: true)
+  }
+
   public static func cacheURL(fileManager: FileManager = .default) -> URL {
     if isDevelopment,
       let override = environment["CODEVISOR_DEV_CACHE_DIR"],

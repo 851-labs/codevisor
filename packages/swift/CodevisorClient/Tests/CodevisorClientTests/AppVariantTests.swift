@@ -16,6 +16,17 @@ struct AppVariantTests {
     #expect(CodevisorAppVariant.developmentCloud(from: ["CODEVISOR_DEV_CLOUD_URL": ""]) == nil)
   }
 
+  @Test("Keeps a dev instance's browser profiles inside its own data directory")
+  func developmentBrowserProfiles() {
+    let profiles = CodevisorAppVariant.developmentBrowserProfilesURL(from: [
+      "CODEVISOR_DEV_DATA_DIR": "/worktree/tmp/.codevisor/data"
+    ])
+    #expect(profiles?.path == "/worktree/tmp/.codevisor/data/Chromium-v2")
+
+    #expect(CodevisorAppVariant.developmentBrowserProfilesURL(from: [:]) == nil)
+    #expect(CodevisorAppVariant.developmentBrowserProfilesURL(from: ["CODEVISOR_DEV_DATA_DIR": ""]) == nil)
+  }
+
   @Test("Recovers dev instance configuration when relaunched outside the runner")
   func resolvesDevLaunchEnvironment() {
     let configured = [

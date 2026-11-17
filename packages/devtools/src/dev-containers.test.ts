@@ -28,21 +28,67 @@ for (const engine of ["apple", "docker"] as const) {
             { ID: "other", Labels: "dev.codevisor.worktree=abcdef" },
             { ID: "unrelated", Labels: "other.label=abc" }
           ]
-    await sweepStaleContainers(engine, "abc", async (binary, args) => {
-      calls.push([binary, args])
-      return engine === "apple"
+    const listed = () =>
+      engine === "apple"
         ? JSON.stringify(entries)
         : entries.map((entry) => JSON.stringify(entry)).join("\n")
+    const removed = new Set<string>()
+    const remaining = () =>
+      engine === "apple"
+        ? JSON.stringify(entries.filter((entry) => !removed.has(idOf(entry))))
+        : entries
+            .filter((entry) => !removed.has(idOf(entry)))
+            .map((entry) => JSON.stringify(entry))
+            .join("\n")
+    await sweepStaleContainers(engine, "abc", async (binary, args) => {
+      calls.push([binary, args])
+      if (args[0] !== "rm") return removed.size === 0 ? listed() : remaining()
+      removed.add(args.at(-1) ?? "")
+      return ""
     })
-    assert.deepEqual(calls.at(-1), [
+    assert.deepEqual(calls[1], [
       engine === "apple" ? "container" : "docker",
       ["rm", "--force", "ours"]
     ])
-    assert.equal(calls.length, 2)
+    assert.equal(calls.length, 3)
     if (engine === "docker")
       assert.deepEqual(calls[0]?.[1], ["ps", "--all", "--format", "{{json .}}"])
   })
+
+  test(`${engine} cleanup fails when a worktree's container survives removal`, async () => {
+    const entry =
+      engine === "apple"
+        ? { configuration: { id: "stuck", labels: { "dev.codevisor.worktree": "abc" } } }
+        : { ID: "stuck", Labels: "dev.codevisor.worktree=abc" }
+
+    await assert.rejects(
+      sweepStaleContainers(engine, "abc", async (_binary, args) =>
+        args[0] === "rm" ? undefined : JSON.stringify(entry)
+      ),
+      /Could not remove .* containers: stuck/
+    )
+  })
+
+  test(`${engine} cleanup does nothing when the engine is not available`, async () => {
+    const calls: Array<ReadonlyArray<string>> = []
+
+    await sweepStaleContainers(engine, "abc", async (_binary, args) => {
+      calls.push(args)
+      return undefined
+    })
+
+    assert.equal(calls.length, 1)
+  })
 }
+
+const idOf = (entry: object): string => {
+  if ("ID" in entry && typeof entry.ID === "string") return entry.ID
+  if ("configuration" in entry && isIdentified(entry.configuration)) return entry.configuration.id
+  return ""
+}
+
+const isIdentified = (value: unknown): value is { id: string } =>
+  value !== null && typeof value === "object" && "id" in value && typeof value.id === "string"
 
 test("dev remotes persist root state and user workspaces independently", () => {
   assert.deepEqual(devRemoteHomeMounts("/tmp/remote-cloud"), [

@@ -67,5 +67,16 @@ if [ "${CODEVISOR_DEV_DESKTOP:-}" != "1" ] && [ -n "${CODEVISOR_DATA_DIR:-}" ] &
   rm -f "$CODEVISOR_DATA_DIR/screen-sharing.json"
 fi
 
+stop_when_worktree_is_gone() {
+  misses=0
+  while [ "$misses" -lt 3 ]; do
+    sleep 5
+    if [ -e "$STATE/installed.signature" ]; then misses=0; else misses=$((misses + 1)); fi
+  done
+  echo "[container] the worktree's tmp folder is gone; stopping" >&2
+  kill -TERM 1
+}
+stop_when_worktree_is_gone &
+
 echo "[container] starting server: $*"
 exec node apps/server/dist/main.js "$@"

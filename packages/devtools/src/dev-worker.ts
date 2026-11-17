@@ -21,7 +21,6 @@ import {
   serveDevEphemeralArtifacts
 } from "./dev-ephemeral.ts"
 import { createDevelopmentAppIcon, createDevelopmentBrowserExtensionIcons } from "./dev-icons.ts"
-import { claimInstanceRoot, pruneOrphanInstanceRoots } from "./dev-instance-roots.ts"
 import {
   migrateLegacyDevelopmentState,
   resolveDevelopmentInstance,
@@ -114,8 +113,6 @@ export async function runDevelopmentWorker(
   await migrateLegacyDevelopmentState(instance, repoRoot)
 
   await ensureDevelopmentDirectories(layout)
-  await claimInstanceRoot(repoRoot, layout.local.worktrees)
-  await pruneOrphanInstanceRoots()
   Object.assign(process.env, localDevelopmentEnvironment(layout, process.env))
 
   console.log(`Codevisor development instance: ${worktreeName}`)

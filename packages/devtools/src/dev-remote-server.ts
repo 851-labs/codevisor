@@ -10,7 +10,7 @@ import {
   DEV_CONTAINER_IMAGE,
   devContainerName,
   devRemoteHomeMounts,
-  WORKTREE_LABEL
+  worktreeLabel
 } from "./dev-containers.ts"
 import type { ServiceRoots } from "./dev-layout.ts"
 
@@ -127,7 +127,7 @@ async function startContainerServer(
     "--name",
     containerName,
     "--label",
-    `${WORKTREE_LABEL}=${context.worktreeHash}`,
+    worktreeLabel(context.worktreeHash),
     "--volume",
     `${context.appRoot}:/codevisor`,
     "--volume",

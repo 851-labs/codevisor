@@ -8,6 +8,8 @@
 class ChromiumRuntime final {
  public:
   static ChromiumRuntime& Shared();
+  static NSString *ProfilesRoot();
+  static void SetProfilesRoot(NSString *root);
   bool Initialize();
   void SchedulePump(int64_t delay);
   void Shutdown(void (^completion)(void));

@@ -1,16 +1,31 @@
-import { spawn } from "node:child_process"
 import { createHash } from "node:crypto"
 import { readdirSync } from "node:fs"
 import { mkdir, readdir, readFile, writeFile } from "node:fs/promises"
 import { homedir } from "node:os"
-import { dirname, join } from "node:path"
+import { join } from "node:path"
 
 import { isMissing, pathExists } from "./files.ts"
 
-const repoRootMarker = "repo-root"
+export interface ClaimedInstance {
+  readonly hash: string
+  readonly root: string
+  readonly repoRoot: string
+}
 
-export function devInstancesRoot(): string {
-  return join(homedir(), ".codevisor-development", "instances")
+type Environment = Readonly<Record<string, string | undefined>>
+
+const repoRootMarker = "repo-root"
+const checkoutMarkers = [".git", "package.json"]
+
+export function devInstancesRoot(environment: Environment = process.env): string {
+  return (
+    environment.CODEVISOR_DEV_INSTANCES_ROOT ??
+    join(homedir(), ".codevisor-development", "instances")
+  )
+}
+
+export function instanceHash(repoRoot: string): string {
+  return createHash("sha256").update(repoRoot).digest("hex").slice(0, 10)
 }
 
 export function instanceWorktreesRoot(
@@ -22,33 +37,33 @@ export function instanceWorktreesRoot(
   return join(instancesRoot, instanceHash(repoRoot), "codevisor")
 }
 
-export async function claimInstanceRoot(
+export async function claimInstance(
   repoRoot: string,
-  worktreesRoot: string,
   instancesRoot = devInstancesRoot()
 ): Promise<void> {
-  const instanceRoot = dirname(worktreesRoot)
-  if (dirname(instanceRoot) !== instancesRoot) return
-
+  const instanceRoot = join(instancesRoot, instanceHash(repoRoot))
   await mkdir(instanceRoot, { recursive: true })
   await writeFile(join(instanceRoot, repoRootMarker), repoRoot)
 }
 
-export async function pruneOrphanInstanceRoots(
-  instancesRoot = devInstancesRoot(),
-  remove: (path: string) => void = removeInBackground
-): Promise<ReadonlyArray<string>> {
-  const orphans: Array<string> = []
-  for (const name of await entriesOf(instancesRoot)) {
-    const instanceRoot = join(instancesRoot, name)
-    if (await isOrphan(instanceRoot)) orphans.push(instanceRoot)
+export async function claimedInstances(
+  instancesRoot = devInstancesRoot()
+): Promise<ReadonlyArray<ClaimedInstance>> {
+  const claimed: Array<ClaimedInstance> = []
+  for (const hash of await entriesOf(instancesRoot)) {
+    const root = join(instancesRoot, hash)
+    const repoRoot = await claimedRepoRoot(root)
+    if (repoRoot !== undefined && instanceHash(repoRoot) === hash)
+      claimed.push({ hash, root, repoRoot })
   }
-  for (const orphan of orphans) remove(orphan)
-  return orphans
+  return claimed
 }
 
-function instanceHash(repoRoot: string): string {
-  return createHash("sha256").update(repoRoot).digest("hex").slice(0, 10)
+export async function worktreeIsGone(repoRoot: string): Promise<boolean> {
+  for (const marker of checkoutMarkers) {
+    if (await pathExists(join(repoRoot, marker))) return false
+  }
+  return true
 }
 
 function holdsEntries(directory: string): boolean {
@@ -57,12 +72,6 @@ function holdsEntries(directory: string): boolean {
   } catch {
     return false
   }
-}
-
-async function isOrphan(instanceRoot: string): Promise<boolean> {
-  const repoRoot = await claimedRepoRoot(instanceRoot)
-  if (repoRoot === undefined) return false
-  return !(await pathExists(repoRoot))
 }
 
 async function claimedRepoRoot(instanceRoot: string): Promise<string | undefined> {
@@ -80,8 +89,4 @@ async function entriesOf(directory: string): Promise<ReadonlyArray<string>> {
     if (isMissing(error)) return []
     throw error
   }
-}
-
-function removeInBackground(path: string): void {
-  spawn("/bin/rm", ["-rf", "--", path], { detached: true, stdio: "ignore" }).unref()
 }

@@ -20,20 +20,26 @@ async function script(body: string) {
   return path
 }
 
+const reportsAncestry = `
+import { execFileSync } from "node:child_process"
+const launcher = Number(process.argv[2])
+const parentOf = (pid) => Number(execFileSync("ps", ["-o", "ppid=", "-p", String(pid)], { encoding: "utf8" }))
+const descendsFromLauncher = () => {
+  for (let pid = process.pid; pid > 1; pid = parentOf(pid)) if (pid === launcher) return true
+  return false
+}
+process.stdin.resume()
+process.stdin.on("end", () => process.exit(descendsFromLauncher() ? 9 : 0))
+`
+
 it("passes the task's exit code through", async () => {
   expect(await runOwnedTask(await script("process.exit(Number(process.argv[2]))"), ["3"])).toBe(3)
   expect(process.exitCode).toBe(3)
 })
 
-it("asks the task to stop by closing its stdin when the launcher is signalled", async () => {
+it("runs the task outside the launcher's process tree and stops it by closing its stdin", async () => {
   const listeners = process.listenerCount("SIGTERM")
-  const task = runOwnedTask(
-    await script(
-      `process.stdin.resume(); process.stdin.on("end", () => process.exit(0)); process.stdout.write("")`
-    ),
-    []
-  )
-  await new Promise((resolve) => setTimeout(resolve, 200))
+  const task = runOwnedTask(await script(reportsAncestry), [String(process.pid)])
   process.emit("SIGTERM", "SIGTERM")
 
   expect(await task).toBe(0)
