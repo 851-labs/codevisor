@@ -13,6 +13,9 @@ public struct SubscribedPluginEvent: Equatable, Identifiable, Sendable {
   public let explained: String
 
   public var label: String { "\(pluginName) · \(title)" }
+  public var isSchedule: Bool { plugin == Self.clockPlugin }
+
+  private static let clockPlugin = "codevisor.clock"
 
   init(_ subscription: ServerPluginEventSubscription) {
     id = subscription.id

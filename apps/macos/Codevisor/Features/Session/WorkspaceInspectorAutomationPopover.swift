@@ -1,64 +1,46 @@
+import CodevisorCore
 import CodevisorUI
 import SwiftUI
 
 struct WorkspaceInspectorAutomationPopover: View {
-  private static let width: CGFloat = 300
+  private static let width: CGFloat = 320
 
   let event: SubscribedPluginEvent
+  let serverId: String
+  let client: any CodevisorServerClienting
   let remove: () async -> Bool
-  @State private var isRemoving = false
-  @State private var removeFailed = false
 
   var body: some View {
-    VStack(alignment: .leading, spacing: 10) {
-      WorkspaceInspectorAutomationDetails(event: event)
-      actions
-    }
-    .padding(14)
-    .frame(width: Self.width, alignment: .leading)
-  }
-
-  private var actions: some View {
-    HStack {
-      if removeFailed {
-        Text("Couldn't remove")
-          .font(.callout)
-          .foregroundStyle(.red)
+    Form {
+      WorkspaceInspectorAutomationTriggerSection(event: event, serverId: serverId, client: client)
+      if let note = event.note {
+        WorkspaceInspectorAutomationInstructionsSection(note: note)
       }
-      Spacer(minLength: 0)
-      Button("Remove", role: .destructive, action: requestRemove)
-        .disabled(isRemoving)
+      WorkspaceInspectorAutomationRemoveSection(remove: remove)
     }
-    .controlSize(.small)
-  }
-
-  private func requestRemove() {
-    isRemoving = true
-    removeFailed = false
-    Task {
-      guard await remove() else {
-        isRemoving = false
-        removeFailed = true
-        return
-      }
-    }
+    .formStyle(.grouped)
+    .scrollContentBackground(.hidden)
+    .scrollDisabled(true)
+    .fixedSize(horizontal: false, vertical: true)
+    .frame(width: Self.width)
   }
 }
 
-private struct WorkspaceInspectorAutomationDetails: View {
-  let event: SubscribedPluginEvent
+private struct WorkspaceInspectorAutomationInstructionsSection: View {
+  private static let maxNoteHeight: CGFloat = 240
+
+  let note: String
 
   var body: some View {
-    VStack(alignment: .leading, spacing: 4) {
-      if let note = event.note {
+    Section("Instructions") {
+      ScrollView {
         Text(note)
           .font(.callout)
+          .textSelection(.enabled)
+          .frame(maxWidth: .infinity, alignment: .leading)
       }
-      Text(event.explained)
-        .font(.callout)
-        .foregroundStyle(.secondary)
+      .frame(maxHeight: Self.maxNoteHeight)
+      .fixedSize(horizontal: false, vertical: true)
     }
-    .textSelection(.enabled)
-    .fixedSize(horizontal: false, vertical: true)
   }
 }
