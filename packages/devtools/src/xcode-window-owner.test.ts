@@ -31,7 +31,8 @@ interface WindowSystem {
   waitForShutdown: () => unknown
   close: (window: XcodeWindow) => unknown
   now: () => number
-  pause: () => unknown
+  pause: (waited?: number) => unknown
+  stopRequested: () => boolean
   mainWindow?: () => XcodeWindow | null
   isModal?: (window: XcodeWindow) => boolean
   taskStopButton?: (window: XcodeWindow) => object | null
@@ -92,7 +93,8 @@ function fixture() {
     now: () => 0,
     pause: () => {
       throw new Error("Unexpected wait")
-    }
+    },
+    stopRequested: () => false
   }
   return { app, other, opened, state, closed, ready, system }
 }
@@ -174,24 +176,74 @@ test("ambiguous windows and an Xcode restart during opening fail without closing
   }
 })
 
-test("delayed project readiness and its deadline use the injected clock", () => {
+test("a project that takes minutes to open is still claimed, and polled less often", () => {
   const f = fixture()
+  const waits: Array<number | undefined> = []
+  let time = 0
   f.system.open = () => {}
-  f.system.pause = () => {
-    f.state.windows.push(f.opened)
+  f.system.now = () => time
+  f.system.pause = (waited) => {
+    waits.push(waited)
+    time += 60_000
+    if (time === 180_000) f.state.windows.push(f.opened)
   }
   ownXcodeWindow(f.system)
+  assert.deepEqual(waits, [0, 60_000, 120_000])
+  assert.deepEqual(f.ready, [true])
   assert.deepEqual(f.closed, [f.opened])
+})
 
-  const missing = fixture()
-  let time = 0
-  missing.system.open = () => {}
-  missing.system.now = () => time
-  missing.system.pause = () => {
-    time = 30000
+test("an unresponsive Xcode is asked again instead of ending the watch", () => {
+  const busy = Object.assign(new Error("Cannot read AXWindows from Xcode (AX error -25204)."), {
+    xcodeBusy: true
+  })
+  for (const failing of ["before opening", "while opening"]) {
+    const f = fixture()
+    const snapshot = f.system.snapshot
+    let opened = false
+    let failures = 2
+    f.system.open = () => {
+      opened = true
+      f.state.windows.push(f.opened)
+    }
+    f.system.pause = () => {
+      failures -= 1
+    }
+    f.system.snapshot = () => {
+      if (failures > 0 && opened === (failing === "while opening")) throw busy
+      return snapshot()
+    }
+    ownXcodeWindow(f.system)
+    assert.equal(failures, 0)
+    assert.deepEqual(f.ready, [true])
+    assert.deepEqual(f.closed, [f.opened])
   }
-  assert.throws(() => ownXcodeWindow(missing.system), /Timed out/)
-  assert.deepEqual(missing.closed, [])
+})
+
+test("a stop request ends the wait for Xcode without claiming or closing a window", () => {
+  for (const stopAfterOpening of [false, true]) {
+    const f = fixture()
+    let opened = false
+    f.system.open = () => {
+      opened = true
+    }
+    f.system.pause = () => {}
+    f.system.stopRequested = () => opened === stopAfterOpening
+    f.system.waitForShutdown = () => assert.fail("Nothing was claimed")
+    ownXcodeWindow(f.system)
+    assert.equal(opened, stopAfterOpening)
+    assert.deepEqual(f.ready, [])
+    assert.deepEqual(f.closed, [])
+  }
+})
+
+test("an AX failure Xcode will not recover from still ends the watch", () => {
+  const f = fixture()
+  f.system.snapshot = () => {
+    throw new Error("Cannot read AXWindows from Xcode (AX error -25211).")
+  }
+  assert.throws(() => ownXcodeWindow(f.system), /-25211/)
+  assert.deepEqual(f.ready, [])
 })
 
 test("only a new task-stop dialog for the still-owned main window may be confirmed", () => {
@@ -244,7 +296,10 @@ test("transient AX read failures wait for a real snapshot without extending the 
     if (time === 4999) time = 5000
     return { status: -25204 }
   }
-  assert.throws(() => readXcodeAttribute(system, "AXWindows"), /AX error -25204/)
+  assert.throws(() => readXcodeAttribute(system, "AXWindows"), {
+    message: /AX error -25204/,
+    xcodeBusy: true
+  })
   assert.deepEqual(timeouts, [1000, 1])
 })
 

@@ -23,10 +23,12 @@ import {
   writeJSON
 } from "./ios-simulator-state.ts"
 import { ensureXcodeDerivedDataSettings } from "./xcode-derived-data.ts"
-import { type OwnedXcodeWindow, openOwnedXcodeWindow } from "./xcode-window.ts"
+import { openXcodeWindow, type XcodeWindow } from "./xcode-window.ts"
 
 const exec = promisify(execFile)
 const stopSignals: ReadonlyArray<NodeJS.Signals> = ["SIGINT", "SIGTERM", "SIGHUP"]
+const iosProject = "apps/ios/Codevisor.xcodeproj"
+const simulatorAppTimeoutMilliseconds = 30_000
 
 export async function runIOSSimulatorOwner(
   repoRoot: string,
@@ -64,7 +66,7 @@ export async function runIOSSimulatorOwner(
   process.stdin.resume()
 
   let manifest: SimulatorManifest | undefined
-  let xcodeWindow: OwnedXcodeWindow | undefined
+  let xcodeWindow: XcodeWindow | undefined
   let marked = false
   let claimed = false
   try {
@@ -102,39 +104,24 @@ export async function runIOSSimulatorOwner(
     check()
 
     console.log(`Starting ${name}: ${udid} (${config.runtime})`)
-    await simctl(["bootstatus", udid, "-b"], { signal: startup.signal })
-    check()
     const developer = (await exec("xcode-select", ["-p"])).stdout.trim()
     await ensureXcodeDerivedDataSettings(repoRoot)
-    xcodeWindow = await openOwnedXcodeWindow(
-      join(repoRoot, "apps/ios/Codevisor.xcodeproj"),
+    xcodeWindow = openXcodeWindow(
+      join(repoRoot, iosProject),
       await realpath(join(developer, "../.."))
     )
-    xcodeWindow.exited.then(requestStop, (error: unknown) => {
-      console.error(messageOf(error))
-      exitCode = 1
-      requestStop()
-    })
-    console.log(
-      xcodeWindow.owned
-        ? "Opened an owned Xcode project window."
-        : "Reusing an existing Xcode project window; it will stay open."
-    )
+    const xcodeWindowSummary = reportXcodeWindow(xcodeWindow, () => stopping)
+    await simctl(["bootstatus", udid, "-b"], { signal: startup.signal })
     check()
 
-    for (const app of [
-      join(developer, "Applications/Simulator.app"),
-      join(developer, "../Applications/DeviceHub.app")
-    ]) {
-      if (!(await pathExists(app))) continue
-      await exec("open", [app, "--args", "-CurrentDeviceUDID", udid])
-      break
-    }
+    await showSimulator(developer, udid).catch((error: unknown) => {
+      console.warn(`The simulator is running but its window was not shown: ${lastLineOf(error)}`)
+    })
     check()
     manifest = { ...manifest, ready: true }
     await writeJSON(manifestPath, manifest)
     console.log(
-      `Simulator ready: ${name}\n  Device: ${udid}\n  Project: ${repoRoot}/apps/ios/Codevisor.xcodeproj\n  State: ${manifestPath}\nStart the app separately with bun run dev:ios or bun run dev. Leave this task running; stopping it deletes this simulator and closes any Xcode window it owns.`
+      `Simulator ready: ${name}\n  Device: ${udid}\n  Project: ${join(repoRoot, iosProject)}\n  State: ${manifestPath}\n  Xcode: ${xcodeWindowSummary()}\nStart the app separately with bun run dev:ios or bun run dev. Leave this task running; stopping it deletes this simulator and closes any Xcode window it owns.`
     )
     const lease = manifest.lease
     const monitor = setInterval(() => {
@@ -155,12 +142,9 @@ export async function runIOSSimulatorOwner(
       exitCode = 1
     }
   } finally {
-    try {
-      await xcodeWindow?.close()
-    } catch (error) {
-      console.error(`Xcode window cleanup failed: ${messageOf(error)}`)
-      exitCode = 1
-    }
+    await xcodeWindow?.close().catch((error: unknown) => {
+      console.warn(`The Xcode project window was left as it is: ${messageOf(error)}`)
+    })
     if (manifest !== undefined) {
       try {
         if (marked) await deleteOwnedSimulator(manifest)
@@ -180,6 +164,43 @@ export async function runIOSSimulatorOwner(
   return exitCode
 }
 
+function reportXcodeWindow(window: XcodeWindow, isStopping: () => boolean): () => string {
+  let summary = "project window still opening; the simulator does not wait for it"
+  void window.opened.then(
+    ({ owned }) => {
+      summary = owned ? "project window open" : "project window was already open and stays open"
+      console.log(
+        owned
+          ? "Opened an owned Xcode project window."
+          : "Reusing an existing Xcode project window; it will stay open."
+      )
+    },
+    (error: unknown) => {
+      if (isStopping()) return
+
+      summary = `no project window; open it with xed ${iosProject} if you need Xcode`
+      console.warn(
+        `Xcode project window skipped: ${messageOf(error)} The simulator does not need it; open it with xed ${iosProject} if you need Xcode.`
+      )
+    }
+  )
+  return () => summary
+}
+
+async function showSimulator(developer: string, udid: string): Promise<void> {
+  for (const app of [
+    join(developer, "Applications/Simulator.app"),
+    join(developer, "../Applications/DeviceHub.app")
+  ]) {
+    if (!(await pathExists(app))) continue
+
+    await exec("open", [app, "--args", "-CurrentDeviceUDID", udid], {
+      timeout: simulatorAppTimeoutMilliseconds
+    })
+    return
+  }
+}
+
 function listed<T>(json: string, key: string): Array<T> {
   const value: unknown = JSON.parse(json)
   const entries =
@@ -195,6 +216,10 @@ function isLeased(current: unknown, lease: string | undefined): boolean {
   return (
     current !== null && typeof current === "object" && "lease" in current && current.lease === lease
   )
+}
+
+function lastLineOf(error: unknown): string {
+  return messageOf(error).trim().split("\n").at(-1) ?? ""
 }
 
 function messageOf(error: unknown): string {

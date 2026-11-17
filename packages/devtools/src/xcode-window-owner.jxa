@@ -1,31 +1,14 @@
 function ownXcodeWindow(system) {
-  var before = system.snapshot()
   var owned
   try {
+    var before = awaitXcode(system, system.snapshot)
+    if (!before) return
     system.open()
-    var deadline = system.now() + 30000
-    while (true) {
-      var current = system.snapshot()
-      if (before.app && current.app && !system.sameApp(before.app, current.app)) {
-        throw new Error("Xcode restarted while opening the project; refusing to claim a window.")
-      }
-      var matches = current.windows.filter(system.matchesProject)
-      var existing = matches.some(function (window) {
-        return before.windows.some(function (old) {
-          return system.sameWindow(old, window)
-        })
-      })
-      if (existing) break
-      if (matches.length > 1)
-        throw new Error("Multiple Xcode project windows opened; ownership is ambiguous.")
-      if (matches.length === 1) {
-        owned = { app: current.app, window: matches[0] }
-        break
-      }
-      if (system.now() >= deadline)
-        throw new Error("Timed out identifying the opened Xcode project window.")
-      system.pause()
-    }
+    var claim = awaitXcode(system, function () {
+      return claimOpenedWindow(system, before)
+    })
+    if (!claim) return
+    owned = claim.owned
     system.ready(Boolean(owned))
     system.waitForShutdown()
   } finally {
@@ -43,6 +26,42 @@ function ownXcodeWindow(system) {
       }
     }
   }
+}
+
+function awaitXcode(system, attempt) {
+  var started = system.now()
+  while (!system.stopRequested()) {
+    var result = unlessXcodeBusy(attempt)
+    if (result) return result
+    system.pause(system.now() - started)
+  }
+  return null
+}
+
+function unlessXcodeBusy(attempt) {
+  try {
+    return attempt()
+  } catch (error) {
+    if (error.xcodeBusy) return null
+    throw error
+  }
+}
+
+function claimOpenedWindow(system, before) {
+  var current = system.snapshot()
+  if (before.app && current.app && !system.sameApp(before.app, current.app))
+    throw new Error("Xcode restarted while opening the project; refusing to claim a window.")
+  var matches = current.windows.filter(system.matchesProject)
+  var existing = matches.some(function (window) {
+    return before.windows.some(function (old) {
+      return system.sameWindow(old, window)
+    })
+  })
+  if (existing) return { owned: null }
+  if (matches.length > 1)
+    throw new Error("Multiple Xcode project windows opened; ownership is ambiguous.")
+  if (matches.length === 1) return { owned: { app: current.app, window: matches[0] } }
+  return null
 }
 
 function taskStopConfirmation(system, before, current, window) {
@@ -79,7 +98,11 @@ function readXcodeAttribute(system, name) {
       system.pause()
       if (system.now() < deadline) continue
     }
-    throw new Error("Cannot read " + name + " from Xcode (AX error " + result.status + ").")
+    var failure = new Error(
+      "Cannot read " + name + " from Xcode (AX error " + result.status + ")."
+    )
+    failure.xcodeBusy = result.status === -25204
+    throw failure
   }
 }
 
@@ -95,6 +118,7 @@ function run(argv) {
   ObjC.bindFunction("AXUIElementPerformAction", ["int", ["id", "id"]])
   ObjC.bindFunction("AXUIElementSetMessagingTimeout", ["int", ["id", "float"]])
   ObjC.bindFunction("CFEqual", ["bool", ["id", "id"]])
+  ObjC.bindFunction("poll", ["int", ["void *", "unsigned int", "int"]])
   if (!$.AXIsProcessTrusted()) {
     throw new Error(
       "Xcode window ownership requires Accessibility access for the terminal or app running ios-simulator."
@@ -142,8 +166,20 @@ function run(argv) {
       url && url.isFileURL && ObjC.unwrap(url.URLByResolvingSymlinksInPath.path) === projectPath
     )
   }
-  function pause() {
-    $.NSThread.sleepForTimeInterval(0.1)
+  var briskWaitMilliseconds = 30000
+  var briskPauseSeconds = 0.1
+  var patientPauseSeconds = 2
+  function pause(waited) {
+    $.NSThread.sleepForTimeInterval(
+      waited > briskWaitMilliseconds ? patientPauseSeconds : briskPauseSeconds
+    )
+  }
+  var standardInputReadable = $.NSMutableData.alloc.initWithBase64EncodedStringOptions(
+    "AAAAAAEAAAA=",
+    0
+  )
+  function stopRequested() {
+    return $.poll(standardInputReadable.mutableBytes, 1, 0) !== 0
   }
   function now() {
     return Number($.NSProcessInfo.processInfo.systemUptime) * 1000
@@ -186,13 +222,20 @@ function run(argv) {
     matchesProject: matchesProject,
     now: now,
     pause: pause,
+    stopRequested: stopRequested,
     open: function () {
       var task = $.NSTask.alloc.init
       task.launchPath = "/usr/bin/xed"
       task.arguments = [projectPath]
       task.standardOutput = $.NSFileHandle.fileHandleWithStandardError
       task.launch
-      task.waitUntilExit
+      while (task.isRunning) {
+        if (stopRequested()) {
+          task.terminate
+          return
+        }
+        pause()
+      }
       if (task.terminationStatus !== 0) throw new Error("xed failed to open the Xcode project.")
     },
     ready: function (owned) {
