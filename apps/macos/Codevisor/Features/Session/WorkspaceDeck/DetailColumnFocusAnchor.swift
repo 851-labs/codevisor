@@ -5,9 +5,13 @@ import SwiftUI
 final class DetailColumnFocusAnchor {
   fileprivate weak var view: NSView?
 
-  func releaseFocus() {
+  var responder: NSResponder? {
+    view?.window?.firstResponder
+  }
+
+  func releaseFocus(heldBy previous: NSResponder?) {
     guard let window = view?.window, let column = column, let responder = window.firstResponder as? NSView,
-      responder.isDescendant(of: column)
+      responder === previous, responder.isDescendant(of: column)
     else { return }
     window.makeFirstResponder(nil)
   }

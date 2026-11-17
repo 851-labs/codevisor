@@ -42,8 +42,9 @@ public final class PageDeck<Slot: Hashable, Route: Equatable> {
     activeSlot = slot
     let mounted = Set(pages.map(\.id))
     activities = activities.filter { mounted.contains($0.key) }
-    for (id, activity) in activities where activity.isActive != (id == slot) {
-      activity.isActive = id == slot
+    for (id, activity) in activities where id != slot {
+      activity.setActive(false)
     }
+    if let slot { activities[slot]?.setActive(true) }
   }
 }

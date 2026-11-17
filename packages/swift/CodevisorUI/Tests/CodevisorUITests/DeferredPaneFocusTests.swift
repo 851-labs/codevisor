@@ -109,4 +109,80 @@ struct DeferredPaneFocusTests {
     scheduler.run()
     #expect(focused == ["first", "second"])
   }
+
+  @Test("Inside an immediate scope a ready pane takes focus at once and the queue confirms it")
+  func immediateScopeFocusesReadyPane() {
+    let scheduler = Scheduler()
+    let focus = DeferredPaneFocus(schedule: { scheduler.actions.append($0) })
+    var attempts = 0
+
+    DeferredPaneFocus.attemptingNow {
+      focus.request(isCurrent: { true }) {
+        attempts += 1
+        return true
+      }
+    }
+
+    #expect(attempts == 1)
+    scheduler.run()
+    #expect(attempts == 2)
+    focus.retry()
+    #expect(scheduler.actions.isEmpty)
+  }
+
+  @Test("Inside an immediate scope a pane that is not ready yet still gets focus once it is")
+  func immediateScopeFallsBackToTheQueue() {
+    let scheduler = Scheduler()
+    let focus = DeferredPaneFocus(schedule: { scheduler.actions.append($0) })
+    var attached = false
+    var attempts = 0
+
+    DeferredPaneFocus.attemptingNow {
+      focus.request(isCurrent: { true }) {
+        attempts += 1
+        return attached
+      }
+    }
+    attached = true
+    scheduler.run()
+
+    #expect(attempts == 2)
+    #expect(scheduler.actions.isEmpty)
+  }
+
+  @Test("Outside an immediate scope focus still waits for the queue")
+  func focusWaitsOutsideTheScope() {
+    let scheduler = Scheduler()
+    let focus = DeferredPaneFocus(schedule: { scheduler.actions.append($0) })
+    var focused = false
+
+    DeferredPaneFocus.attemptingNow {}
+    focus.request(isCurrent: { true }) {
+      focused = true
+      return true
+    }
+
+    #expect(!focused)
+    scheduler.run()
+    #expect(focused)
+  }
+
+  @Test("Inside an immediate scope a pane that cannot take focus yet is asked again from the queue")
+  func immediateScopeWaitsForAPaneThatIsNotCurrentYet() {
+    let scheduler = Scheduler()
+    let focus = DeferredPaneFocus(schedule: { scheduler.actions.append($0) })
+    var current = false
+    var focused = false
+
+    DeferredPaneFocus.attemptingNow {
+      focus.request(isCurrent: { current }) {
+        focused = true
+        return true
+      }
+    }
+    current = true
+    scheduler.run()
+
+    #expect(focused)
+  }
 }

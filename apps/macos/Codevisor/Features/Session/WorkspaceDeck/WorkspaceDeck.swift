@@ -5,7 +5,6 @@ import SwiftUI
 struct WorkspaceDeck<Page: View>: View {
   let navigation: WindowNavigation
   @ViewBuilder let page: (WorkspaceDeckRoute) -> Page
-  @State private var focusAnchor = DetailColumnFocusAnchor()
 
   var body: some View {
     let deck = navigation.deck
@@ -27,10 +26,7 @@ struct WorkspaceDeck<Page: View>: View {
       }
     }
     .onGeometryChange(for: CGSize.self, of: \.size) { sizes.current = $0 }
-    .background(DetailColumnFocusAnchor.Capture(anchor: focusAnchor).frame(width: 0, height: 0))
-    .onChange(of: navigation.deckSlot, initial: true) { _, slot in
-      navigation.showDeckPage()
-      if slot != nil { focusAnchor.releaseFocus() }
-    }
+    .background(DetailColumnFocusAnchor.Capture(anchor: navigation.detailFocus).frame(width: 0, height: 0))
+    .onChange(of: navigation.deckSlot, initial: true) { _, _ in navigation.showDeckPage() }
   }
 }

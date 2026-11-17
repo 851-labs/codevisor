@@ -1,3 +1,4 @@
+import Foundation
 import Testing
 @testable import CodevisorUI
 
@@ -58,5 +59,34 @@ struct PageDeckTests {
     #expect(built)
     #expect(deck.activity(for: "a") !== evicted)
     #expect(deck.pages.map(\.id) == ["c", "a"])
+  }
+
+  @Test("Switching pages tells the old page it is hidden before the new page that it is shown")
+  func switchingNotifiesTheOldPageFirst() {
+    let deck = PageDeck<String, Int>(capacity: 3)
+    deck.show(1, in: "a")
+    deck.show(2, in: "b")
+    var events: [String] = []
+    deck.activity(for: "a").addListener(UUID()) { events.append($0 ? "show a" : "hide a") }
+    deck.activity(for: "b").addListener(UUID()) { events.append($0 ? "show b" : "hide b") }
+
+    deck.show(1, in: "a")
+
+    #expect(events == ["hide b", "show a"])
+  }
+
+  @Test("A page that stopped listening is not told about later switches")
+  func removedListenerIsNotNotified() {
+    let deck = PageDeck<String, Int>(capacity: 3)
+    deck.show(1, in: "a")
+    var events: [Bool] = []
+    let listener = UUID()
+    deck.activity(for: "a").addListener(listener) { events.append($0) }
+
+    deck.showNothing()
+    deck.activity(for: "a").removeListener(listener)
+    deck.show(1, in: "a")
+
+    #expect(events == [false])
   }
 }
