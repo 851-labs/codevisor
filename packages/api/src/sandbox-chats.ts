@@ -120,7 +120,7 @@ export const SandboxChatsAction = Schema.Union([
     format: Schema.Number,
     sessionId: Schema.String,
     fileIds: Schema.Array(Schema.String),
-    note: Schema.String,
+    note: Schema.optional(Schema.String),
     agentSessionId: Schema.optional(Schema.String)
   })
 ])

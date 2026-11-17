@@ -2,7 +2,6 @@ import { homedir } from "node:os"
 
 import {
   decode,
-  isoTimestamp,
   RESTORED_AGENT_SESSION_LABEL,
   SandboxChatsAction,
   type FileMetadata,
@@ -203,8 +202,7 @@ const finishChat = async (
   { services, fanout }: RouteContext,
   action: Action<"finish_chat">
 ): Promise<{ readonly restored: true }> => {
-  const note = { text: action.note, createdAt: isoTimestamp() }
-  await run(services.db.finishChatImport(action.sessionId, action.fileIds, note))
+  await run(services.db.finishChatImport(action.sessionId, action.fileIds))
   if (action.agentSessionId !== undefined) await resumeFrom(services, action, action.agentSessionId)
   const session = await run(services.db.getSessionSummary(action.sessionId))
   await appendAndPublish(services.db, fanout, "session.created", session.id, session)

@@ -18,7 +18,6 @@ export const SavedChatsManifest = Schema.Struct({
     Schema.Struct({
       session: SavedChatSession,
       files: Schema.Array(FileMetadata),
-      notKept: Schema.optional(Schema.Array(Schema.String)),
       resume: Schema.optional(SavedChatResume)
     })
   ),

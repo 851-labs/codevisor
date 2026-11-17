@@ -1,5 +1,3 @@
-import { randomUUID } from "node:crypto"
-
 import type Database from "better-sqlite3"
 import type { Effect } from "effect"
 
@@ -18,11 +16,6 @@ export interface SavedChatItem {
   readonly children: Readonly<Record<string, ReadonlyArray<SavedChatRow>>>
 }
 
-export interface SavedChatNote {
-  readonly text: string
-  readonly createdAt: string
-}
-
 export interface SavedChatService {
   readonly listChatItemIds: (
     sessionId: string
@@ -37,8 +30,7 @@ export interface SavedChatService {
   ) => Effect.Effect<void, DatabaseError>
   readonly finishChatImport: (
     sessionId: string,
-    fileIds: ReadonlyArray<string>,
-    note: SavedChatNote
+    fileIds: ReadonlyArray<string>
   ) => Effect.Effect<void, DatabaseError>
 }
 
@@ -114,14 +106,14 @@ export const makeSavedChatService = ({ sqlite }: ServiceContext): SavedChatServi
     attempt("importChatItem", () => {
       sqlite.transaction(() => importItem(sqlite, canonicalUuid(sessionId), saved))()
     }),
-  finishChatImport: (sessionId, fileIds, note) =>
+  finishChatImport: (sessionId, fileIds) =>
     attempt("finishChatImport", () => {
       const id = canonicalUuid(sessionId)
       sqlite.transaction(() => {
         const link = sqlite.prepare(savedChatSql.linkFile)
         for (const fileId of fileIds) link.run(id, fileId)
         if (sqlite.prepare(savedChatSql.hasItems).get(id) !== undefined)
-          appendNote(sqlite, id, note)
+          sqlite.prepare(savedChatSql.saveChatState).run(id, id)
       })()
     })
 })
@@ -164,15 +156,6 @@ const insertRow = (sqlite: Database.Database, sql: TableSql, row: SavedChatRow):
   sqlite.prepare(sql.insert).run(...sql.columns.map((column) => row[column] ?? null))
 }
 
-const appendNote = (sqlite: Database.Database, sessionId: string, note: SavedChatNote): void => {
-  const itemId = randomUUID()
-  sqlite
-    .prepare(savedChatSql.insertNote)
-    .run(itemId, sessionId, sessionId, note.createdAt, note.createdAt)
-  sqlite.prepare(savedChatSql.insertNoteText).run(randomUUID(), itemId, note.text)
-  sqlite.prepare(savedChatSql.saveChatState).run(sessionId, sessionId)
-}
-
 const savedRows = (rows: ReadonlyArray<unknown>): ReadonlyArray<SavedChatRow> =>
   rows.map((row) => {
     const saved: Record<string, SavedChatValue> = {}
@@ -213,12 +196,6 @@ const savedChatSql = {
   hasItems: "select 1 from chat_items where session_id = ? limit 1",
   linkFile: `insert or ignore into session_files (session_id, file_id)
     select ?, id from files where id = ?`,
-  insertNote: `insert into chat_items (id, session_id, position, role, status, created_at,
-      updated_at, origin)
-    values (?, ?, (select coalesce(max(position), -1) + 1 from chat_items where session_id = ?),
-      'user', 'complete', ?, ?, 'fork')`,
-  insertNoteText:
-    "insert into chat_parts (id, item_id, position, kind, text) values (?, ?, 0, 'text', ?)",
   saveChatState: `insert into session_chat_state (session_id, next_position, current_item_id)
     values (?, (select max(position) + 1 from chat_items where session_id = ?), null)
     on conflict(session_id) do update set next_position = excluded.next_position,

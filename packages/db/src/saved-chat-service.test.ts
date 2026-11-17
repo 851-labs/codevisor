@@ -54,10 +54,8 @@ const savedItemsOf = async (
   return saved
 }
 
-const note = { text: "Restored", createdAt: "2026-11-16T00:00:00.000Z" }
-
 describe("a chat saved from one server and put back on another", () => {
-  it("shows the same conversation and details there, then a note", async () => {
+  it("shows the same conversation and details there, with nothing added", async () => {
     const source = await openDatabase("sandbox-before")
     const target = await openDatabase("sandbox-after")
     try {
@@ -69,12 +67,11 @@ describe("a chat saved from one server and put back on another", () => {
       )
 
       for (const item of saved) await run(target.db.importChatItem(restored.id, item))
-      await run(target.db.finishChatImport(restored.id, [], note))
+      await run(target.db.finishChatImport(restored.id, []))
 
       const before = await run(source.db.getTranscriptPage(chat.id, undefined, 8))
       const after = await run(target.db.getTranscriptPage(restored.id, undefined, 8))
-      expect(after.items.slice(0, -1)).toEqual(before.items)
-      expect(after.items.at(-1)).toMatchObject({ role: "user", text: "Restored", origin: "fork" })
+      expect(after.items).toEqual(before.items)
       const reply = before.items[1]!
       const detailsAfter = await run(target.db.getTranscriptItemDetails(restored.id, reply.id))
       const detailsBefore = await run(source.db.getTranscriptItemDetails(chat.id, reply.id))
@@ -86,13 +83,13 @@ describe("a chat saved from one server and put back on another", () => {
     }
   })
 
-  it("adds no note to a chat that had no messages", async () => {
+  it("leaves a chat that had no messages empty", async () => {
     const { db } = await openDatabase("sandbox-after")
     try {
       const project = await run(db.createProject({ folderPath: "/tmp/restored-chat" }))
       const empty = await run(db.createSession({ projectId: project.id, harnessId: "codex" }))
 
-      await run(db.finishChatImport(empty.id, [], note))
+      await run(db.finishChatImport(empty.id, []))
 
       expect((await run(db.getTranscriptPage(empty.id, undefined, 8))).items).toEqual([])
     } finally {

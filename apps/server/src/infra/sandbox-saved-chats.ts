@@ -104,12 +104,10 @@ const saveChats = async (
       await deps.savedChats.addItem(workspaceId, chat.session.id, item)
     }
     const files: Array<FileMetadata> = []
-    const notKept: Array<string> = []
     for (const file of chat.files) {
       const reason = fetched.has(file.id) ? undefined : leftOutReason(file, budget)
       if (reason !== undefined) {
         leftOut.push(leftOutLine(file, chat, reason))
-        notKept.push(`${file.name} (${megabytes(file.sizeBytes)})`)
         continue
       }
       if (!fetched.has(file.id)) await fetchFile(deps, machine, workspaceId, file)
@@ -117,8 +115,7 @@ const saveChats = async (
       files.push(file)
     }
     const resume = await keepResume(deps, machine, workspaceId, chat, leftOut)
-    const kept = notKept.length === 0 ? { files } : { files, notKept }
-    chats.push({ session: chat.session, ...kept, ...(resume === undefined ? {} : { resume }) })
+    chats.push({ session: chat.session, files, ...(resume === undefined ? {} : { resume }) })
   }
   for (const line of leftOut) deps.log(`Sandbox ${machine.name} (${machine.id}): ${line}`)
   const { format, panes } = list
@@ -212,45 +209,42 @@ const putBackChat = async (
   deps: SandboxDeps,
   machine: PlacedSandbox,
   workspaceId: string,
-  { format }: SavedChatsManifest,
+  manifest: SavedChatsManifest,
   chat: SavedChatsManifest["chats"][number],
   setup: SandboxSetupProgress
 ): Promise<void> => {
+  const { format } = manifest
   const { session, files } = chat
   await ask(deps, machine, { action: "restore_chat", format, workspaceId, session })
   for await (const item of deps.savedChats.items(workspaceId, session.id)) {
     await ask(deps, machine, { action: "restore_item", format, sessionId: session.id, item })
   }
   for (const file of files) await sendFile(deps, machine, workspaceId, file)
-  const resumed = await putBackResume(deps, machine, workspaceId, format, chat, setup)
+  await putBackResume(deps, machine, workspaceId, manifest, chat, setup)
   const { agentSessionId } = session
   await ask(deps, machine, {
     action: "finish_chat",
     format,
     sessionId: session.id,
     fileIds: files.map((file) => file.id),
-    note: `${restoredNote(agentSessionId, resumed)}${notKeptNote(chat.notKept ?? [])}`,
     ...(agentSessionId === undefined ? {} : { agentSessionId })
   })
-}
-
-const notKeptNote = (notKept: ReadonlyArray<string>): string =>
-  notKept.length === 0 ? "" : ` Too large to keep: ${notKept.join(", ")}.`
-
-const restoredNote = (agentSessionId: string | undefined, resumed: boolean): string => {
-  if (resumed) return RESUMED_CHAT_NOTE
-  return agentSessionId === undefined ? RESTORED_CHAT_NOTE : RECAPPED_CHAT_NOTE
 }
 
 const putBackResume = async (
   deps: SandboxDeps,
   machine: PlacedSandbox,
   workspaceId: string,
-  format: number,
+  { format, leftOut }: SavedChatsManifest,
   { session, resume }: SavedChatsManifest["chats"][number],
   setup: SandboxSetupProgress
-): Promise<boolean> => {
-  if (resume === undefined) return false
+): Promise<void> => {
+  const cold = coldLine(session.title)
+  if (resume === undefined) {
+    const isExplained = leftOut.some((line) => line.startsWith(cold))
+    if (session.agentSessionId !== undefined && !isExplained) setup.log(cold)
+    return
+  }
   const { harnessId } = session
   try {
     for (const [index, { path, sizeBytes }] of resume.files.entries()) {
@@ -263,20 +257,10 @@ const putBackResume = async (
         await ask(deps, machine, { ...write, action: "restore_resume_file" })
       }
     }
-    return true
   } catch (cause) {
-    setup.log(`${coldLine(session.title)}: ${messageOf(cause)}`)
-    return false
+    setup.log(`${cold}: ${messageOf(cause)}`)
   }
 }
-
-export const RESUMED_CHAT_NOTE = "Restored from an archived sandbox."
-
-export const RECAPPED_CHAT_NOTE =
-  "Restored from an archived sandbox. The agent starts a new session from here and may not remember everything above."
-
-export const RESTORED_CHAT_NOTE =
-  "Restored from an archived sandbox. The agent starts fresh from here and doesn't remember the messages above."
 
 const sendFile = async (
   deps: SandboxDeps,

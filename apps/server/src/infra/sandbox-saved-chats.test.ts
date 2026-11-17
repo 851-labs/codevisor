@@ -1,7 +1,6 @@
 import { FLEET_SANDBOX_CHATS_PATH, type FileMetadata } from "@codevisor/api"
 import { describe, expect, it } from "vitest"
 
-import { RECAPPED_CHAT_NOTE, RESUMED_CHAT_NOTE } from "./sandbox-saved-chats.js"
 import { sandboxHarness } from "./sandbox-test-support.js"
 
 const request = { profileId: "profile-1", projectId: "project-1", name: "Spike box" }
@@ -133,12 +132,14 @@ describe("a sandbox's chats across archive and restore", () => {
         format: 1,
         sessionId: "chat-1",
         fileIds: ["note"],
-        note: RECAPPED_CHAT_NOTE,
         agentSessionId: "agent-1"
       },
       { action: "restore_pane", format: 1, workspaceId: "id-2", pane }
     ])
     expect(lines).toContain("Brought back 1 chat with its history")
+    expect(lines).toContain(
+      "The agent in the chat Fix the flake starts a new session with a recap instead of resuming"
+    )
     expect(await harness.deps.savedChats.manifest("id-2")).toBeUndefined()
   })
 
@@ -165,9 +166,9 @@ describe("a sandbox's chats across archive and restore", () => {
     expect(lines).toEqual(expect.arrayContaining([tooBig, pastTotal]))
     expect(putBack.at(-2)).toMatchObject({
       action: "finish_chat",
-      fileIds: [...eight.map((file) => file.id), "note"],
-      note: `${RECAPPED_CHAT_NOTE} Too large to keep: recording.png (26 MB), shot-9.png (24 MB).`
+      fileIds: [...eight.map((file) => file.id), "note"]
     })
+    expect(JSON.stringify(putBack)).not.toContain("Too large")
   })
 
   it("carries the agent's own session too, so the restored chat resumes it", async () => {
@@ -191,7 +192,6 @@ describe("a sandbox's chats across archive and restore", () => {
         format: 1,
         sessionId: "chat-1",
         fileIds: ["note"],
-        note: RESUMED_CHAT_NOTE,
         agentSessionId: "agent-1"
       },
       { action: "restore_pane", format: 1, workspaceId: "id-2", pane }
@@ -225,7 +225,6 @@ describe("a sandbox's chats across archive and restore", () => {
         format: 1,
         sessionId: "chat-1",
         fileIds: ["note"],
-        note: RECAPPED_CHAT_NOTE,
         agentSessionId: "agent-1"
       })
     }
