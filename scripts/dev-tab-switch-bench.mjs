@@ -163,13 +163,13 @@ function stress(server, body) {
 }
 
 async function timedSwitch(server, clientId, trace, workspaceId) {
-  const before = (await switchRecords(trace)).length
+  const lastBefore = (await switchRecords(trace)).at(-1)?.time ?? 0
   await requestJson(server, "POST", `/v1/clients/${clientId}/navigate`, { workspaceId })
 
   const deadline = Date.now() + recordTimeoutMilliseconds
   while (Date.now() < deadline) {
-    const records = await switchRecords(trace)
-    if (records.length > before) return records.at(-1)
+    const latest = (await switchRecords(trace)).at(-1)
+    if (latest !== undefined && latest.time > lastBefore) return latest
     await sleep(recordPollMilliseconds)
   }
   throw new Error(
