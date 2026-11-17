@@ -10,32 +10,16 @@ public struct HarnessAddButton: View {
   }
 
   public var body: some View {
-    Group {
-      #if os(macOS)
-        HarnessAddMenu(
-          isPresented: $model.showsPicker,
-          harnesses: availableHarnesses,
-          add: { model.add($0, in: environment) }
-        )
-      #else
-        SettingsAddButton("Add Harness") { model.showsPicker = true }
-          .sheet(isPresented: $model.showsPicker) { picker }
-      #endif
-    }
-    .confirmationDialog(
-      "Uninstall \(model.uninstall?.name ?? "harness")?",
-      isPresented: confirmsUninstall,
-      titleVisibility: .visible,
-      presenting: model.uninstall
-    ) { setting in
-      uninstallActions(setting)
-    } message: { _ in
-      Text("Applies to machines using global settings. Chats and accounts are kept.")
-    }
-  }
-
-  private var confirmsUninstall: Binding<Bool> {
-    Binding(get: { model.uninstall != nil }, set: { if !$0 { model.uninstall = nil } })
+    #if os(macOS)
+      HarnessAddMenu(
+        isPresented: $model.showsPicker,
+        harnesses: availableHarnesses,
+        add: { model.add($0, in: environment) }
+      )
+    #else
+      SettingsAddButton("Add Harness") { model.showsPicker = true }
+        .sheet(isPresented: $model.showsPicker) { picker }
+    #endif
   }
 
   private var availableHarnesses: [HarnessFleet.CatalogEntry] {
@@ -51,16 +35,4 @@ public struct HarnessAddButton: View {
       )
     }
   #endif
-
-  @ViewBuilder
-  private func uninstallActions(_ setting: HarnessFleet.Setting) -> some View {
-    Button("Uninstall", role: .destructive) {
-      var next = setting
-      next.installed = false
-      next.enabled = false
-      HarnessFleet.set(next, in: environment.configSync)
-    }
-    Button("Cancel", role: .cancel) {}
-  }
-
 }

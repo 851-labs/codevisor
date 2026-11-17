@@ -35,7 +35,7 @@ public struct SkillListSection: View {
             actions: {
               Button("Edit…") { onEdit(skill) }
               Divider()
-              Button("Remove…", role: .destructive) { onRemove(skill) }
+              ConfirmingDestructiveButton("Remove…") { onRemove(skill) }
             })
         }
       }

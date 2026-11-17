@@ -11,7 +11,6 @@ struct HarnessesSettingsScreen: View {
   var body: some View {
     List {
       HarnessGlobalSection(
-        model: globalModel,
         onAccounts: { setting, signIn in
           accountsSetting = .init(setting, startsSignIn: signIn)
         },

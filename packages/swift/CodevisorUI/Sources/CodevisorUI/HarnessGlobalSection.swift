@@ -3,18 +3,15 @@ import SwiftUI
 
 public struct HarnessGlobalSection<Icon: View>: View {
   @Environment(AppEnvironment.self) private var environment
-  private let model: HarnessGlobalModel
   private let icon: (String, String) -> Icon
   private let onAccounts: (HarnessFleet.Setting, _ startsSignIn: Bool) -> Void
   private let onSignIn: (_ machineId: String, _ harnessId: String, _ startsSignIn: Bool) -> Void
 
   public init(
-    model: HarnessGlobalModel,
     onAccounts: @escaping (HarnessFleet.Setting, _ startsSignIn: Bool) -> Void,
     onSignIn: @escaping (_ machineId: String, _ harnessId: String, _ startsSignIn: Bool) -> Void,
     @ViewBuilder icon: @escaping (String, String) -> Icon
   ) {
-    self.model = model
     self.onAccounts = onAccounts
     self.onSignIn = onSignIn
     self.icon = icon
@@ -26,7 +23,7 @@ public struct HarnessGlobalSection<Icon: View>: View {
     Section {
       ForEach(HarnessFleet.settings(environment.configSync, catalog: catalog)) { setting in
         HarnessFleetRow(
-          setting: setting, machines: machines, model: model,
+          setting: setting, machines: machines,
           authRequired: catalog.first { $0.id == setting.id }?.authRequired ?? true,
           onAccounts: onAccounts, onSignIn: onSignIn
         ) {
@@ -53,11 +50,11 @@ private struct HarnessFleetRow<Icon: View>: View {
   @Environment(AppEnvironment.self) private var environment
   let setting: HarnessFleet.Setting
   let machines: [HarnessFleet.FleetMachine]
-  let model: HarnessGlobalModel
   let authRequired: Bool
   let onAccounts: (HarnessFleet.Setting, _ startsSignIn: Bool) -> Void
   let onSignIn: (_ machineId: String, _ harnessId: String, _ startsSignIn: Bool) -> Void
   @ViewBuilder let icon: () -> Icon
+  @State private var confirmsUninstall = false
 
   var body: some View {
     let sharesAccounts = HarnessRowState.sharesFleetAccounts(harnessId: setting.id)
@@ -103,8 +100,9 @@ private struct HarnessFleetRow<Icon: View>: View {
         }
       }
     } actions: {
-      Button("Uninstall…", role: .destructive) { model.uninstall = setting }
+      ConfirmingDestructiveButton("Uninstall…") { confirmsUninstall = true }
     }
+    .modifier(HarnessUninstallDialog(setting: setting, isPresented: $confirmsUninstall))
     if live, machines.count > 1 {
       ForEach(status.machines) { row in
         HarnessMachineRow(row: row, harnessName: setting.name, actions: actions)

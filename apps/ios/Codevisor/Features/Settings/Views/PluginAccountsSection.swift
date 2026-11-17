@@ -7,7 +7,6 @@ struct PluginAccountsSection: View {
   let model: PluginAccountsModel
   @State private var editing: PluginAccountEditing?
   @State private var guiding: PluginAccountGuideModel?
-  @State private var removing: ServerPluginAccount?
 
   var body: some View {
     if let spec = model.spec {
@@ -20,7 +19,7 @@ struct PluginAccountsSection: View {
             ingress: model.ingress[account.id] ?? [],
             actions: actions,
             onEdit: { edit(account, spec: spec) },
-            onRemove: { removing = account }
+            onRemove: { remove(account) }
           )
         }
         accountButtons(actions)
@@ -37,7 +36,6 @@ struct PluginAccountsSection: View {
       .sheet(item: $editing) { PluginAccountEditorScreen(editing: $0, model: model) }
       .sheet(item: $guiding) { PluginAccountGuideScreen(model: $0) { await model.reload() } }
       .task(id: model.hasLoaded) { offerFirstRunGuide() }
-      .pluginAccountRemovalDialog(actions: actions, removing: $removing) { remove($0) }
     }
   }
 
@@ -79,7 +77,6 @@ struct PluginAccountsSection: View {
   }
 
   private func remove(_ account: ServerPluginAccount) {
-    removing = nil
     Task { await model.remove(account) }
   }
 }

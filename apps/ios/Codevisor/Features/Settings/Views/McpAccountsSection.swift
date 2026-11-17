@@ -6,7 +6,6 @@ struct McpAccountsSection: View {
   @Environment(AppEnvironment.self) private var environment
   let entry: McpFleetEntry
   let model: McpGlobalModel
-  @State private var confirmingSignOut = false
   @State private var isWorking = false
 
   var body: some View {
@@ -14,16 +13,11 @@ struct McpAccountsSection: View {
       Section("Accounts") {
         McpAccountRow(
           account: account, actions: actions, isWorking: isWorking,
-          onSignIn: signIn, onSignOut: { confirmingSignOut = true })
+          onSignIn: signIn, onSignOut: signOut)
       }
       if account == .signedIn {
         Section {
-          Button(actions.signOutTitle) { confirmingSignOut = true }
-            .disabled(isWorking)
-        }
-        .confirmationDialog(actions.signOutPrompt, isPresented: $confirmingSignOut, titleVisibility: .visible) {
-          Button(actions.signOutTitle, role: .destructive, action: signOut)
-          Button("Cancel", role: .cancel) {}
+          McpSignOutButton(actions: actions, isWorking: isWorking, signOut: signOut)
         }
       }
     }
