@@ -22,6 +22,7 @@ struct SidebarView: View {
   @State var holdsGroupToggles = false
   @State var revealRequest = SidebarRevealRequest()
   @State var selectionModel = SidebarSelectionModel()
+  @State var shownRows = SidebarShownRows()
   @ClientPreference(SidebarGrouping.preferenceKey, default: SidebarGrouping.flat) var grouping
   @ClientPreference(SidebarGrouping.collapsedPreferenceKey, default: []) var collapsedGroupIDs: [String]
   @ClientPreference(SidebarPreferenceKey.archivedExpanded, default: false) var archivedExpanded
@@ -43,6 +44,7 @@ struct SidebarView: View {
 
   private var sidebarContent: some View {
     let rows = sidebarRows
+    let rowIDs = shownRows.show(rows)
     return ScrollViewReader { proxy in
       ScrollView {
         VStack(spacing: 0) {
@@ -55,9 +57,16 @@ struct SidebarView: View {
         .padding(.top, 8)
       }
       .contextMenu { sidebarOptionsMenu }
+      .onScrollGeometryChange(for: ClosedRange<CGFloat>.self) { geometry in
+        geometry.contentInsets
+          .top...max(
+            geometry.contentInsets.top, geometry.containerSize.height - geometry.contentInsets.bottom)
+      } action: { _, visible in
+        dragGeometry.visibleRows = visible
+      }
       .background(
         SidebarSelectionSyncView(
-          target: { selectionTarget }, rowIDs: Set(rows.map(\.id)), model: selectionModel,
+          target: { selectionTarget }, rowIDs: rowIDs, model: selectionModel,
           takeScrollRequest: { revealRequest.take($0) },
           scroll: { proxy.scrollTo($0) })
       )

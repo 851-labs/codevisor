@@ -2,14 +2,14 @@
 
 import { execFileSync } from "node:child_process"
 import { mkdir, readFile, writeFile } from "node:fs/promises"
-import { dirname, join } from "node:path"
+import { basename, dirname, join } from "node:path"
 import { setTimeout as sleep } from "node:timers/promises"
-import { pathToFileURL } from "node:url"
+import { fileURLToPath, pathToFileURL } from "node:url"
 
 import { summarizeTranscriptPerformance } from "./transcript-performance-summary.mjs"
 
 const usage =
-  "Usage: TRANSCRIPT_STRESS_URL=<dev server URL> node scripts/dev-tab-switch-bench.mjs [--fresh] [--chats <n>] [--turns <n>] [--warm-rounds <n>] [--trace <path>]"
+  "Usage: TRANSCRIPT_STRESS_URL=<dev server URL> node scripts/dev-tab-switch-bench.mjs [--fresh] [--chats <n>] [--turns <n>] [--warm-rounds <n>] [--trace <path>] [--instance <dev instance name>]"
 const keptAlivePages = 5
 const switchRecordName = "navigation.switch"
 const recordPollMilliseconds = 50
@@ -22,13 +22,19 @@ export function benchPlan(workspaceIds, warmRounds, keptAlive = keptAlivePages) 
   const evicted = workspaceIds
     .slice(0, Math.max(0, workspaceIds.length - keptAlive))
     .map((workspaceId) => ({ scenario: "evicted-reopen", workspaceId }))
-  const shown = [...firstVisits, ...evicted].map((step) => step.workspaceId)
-  const warmPair = [shown.at(-2), shown.at(-1)]
+  const middle = {
+    scenario: "unmeasured",
+    workspaceId: workspaceIds[Math.floor(workspaceIds.length / 2)]
+  }
   const warm = Array.from({ length: warmRounds * 2 }, (_, index) => ({
     scenario: "warm",
-    workspaceId: warmPair[index % 2]
+    step: index % 2 === 0 ? -1 : 1
   }))
-  return [...firstVisits, ...evicted, ...warm]
+  return [...firstVisits, ...evicted, middle, ...warm]
+}
+
+export function stepNotification(instance, step) {
+  return `com.851labs.codevisor.dev.tab-step.${instance}.${step < 0 ? "previous" : "next"}`
 }
 
 export function observedScenario(planned, record) {
@@ -55,9 +61,19 @@ async function main(argv) {
   await showNewChat(server, clientId)
 
   const switches = []
+  let stepped = 0
   for (const step of benchPlan(workspaceIds, options.warmRounds)) {
-    const record = await timedSwitch(server, clientId, options.trace, step.workspaceId)
-    switches.push({ scenario: observedScenario(step.scenario, record), record })
+    let record
+    if (step.workspaceId !== undefined) {
+      record = await timedSwitch(server, clientId, options.trace, step.workspaceId)
+    } else {
+      record = await timedStep(options, step.step)
+      if (record === undefined) throw new Error(await stepHelp(server, options))
+      stepped += 1
+      if (stepped <= 2) await requireBenchChat(server, clientId, workspaceIds)
+    }
+    if (step.scenario !== "unmeasured")
+      switches.push({ scenario: observedScenario(step.scenario, record), record })
     await sleep(pauseBetweenSwitchesMilliseconds)
   }
 
@@ -71,6 +87,7 @@ function parseOptions(argv) {
     turns: 200,
     warmRounds: 10,
     trace: join(appTemporaryDirectory(), "codevisor-transcript-performance.jsonl"),
+    instance: basename(join(dirname(fileURLToPath(import.meta.url)), "..")),
     chatsFile: join(process.cwd(), "tmp/tab-switch-bench.json")
   }
   const names = { "--chats": "chats", "--turns": "turns", "--warm-rounds": "warmRounds" }
@@ -79,6 +96,7 @@ function parseOptions(argv) {
     const [flag, value] = [valued[index], valued[index + 1]]
     if (value === undefined) throw new Error(usage)
     if (flag === "--trace") options.trace = value
+    else if (flag === "--instance") options.instance = value
     else if (flag in names) options[names[flag]] = positiveInteger(flag, value)
     else throw new Error(usage)
   }
@@ -102,14 +120,32 @@ function serverUrl() {
   return url
 }
 
-async function macClientId(server) {
+const notInFront =
+  "The dev app's window is not in front. Keyboard focus only moves in the front window and hotkey steps only reach it, so bring the app to the front and run again."
+
+async function macClient(server) {
   const clients = await requestJson(server, "GET", "/v1/clients")
   const client = clients.find((candidate) => candidate.platform === "macos")
   if (client === undefined)
     throw new Error(
       "No macOS app is connected to this server; start it with TRANSCRIPT_STRESS=1 bun run dev:macos"
     )
+  return client
+}
+
+async function macClientId(server) {
+  const client = await macClient(server)
+  if (client.isActive === false) throw new Error(notInFront)
   return client.clientId
+}
+
+async function requireBenchChat(server, clientId, workspaceIds) {
+  const clients = await requestJson(server, "GET", "/v1/clients")
+  const viewed = clients.find((candidate) => candidate.clientId === clientId)?.viewing?.workspaceId
+  if (viewed === undefined || workspaceIds.includes(viewed)) return
+  throw new Error(
+    "A hotkey step left the bench chats, so the warm numbers would describe some other chat. The bench chats must sit next to each other in the sidebar: turn off grouping and pins for them, or pass --fresh to seed new ones."
+  )
 }
 
 async function benchChats(server, options) {
@@ -166,15 +202,32 @@ async function timedSwitch(server, clientId, trace, workspaceId) {
   const lastBefore = (await switchRecords(trace)).at(-1)?.time ?? 0
   await requestJson(server, "POST", `/v1/clients/${clientId}/navigate`, { workspaceId })
 
-  const deadline = Date.now() + recordTimeoutMilliseconds
+  const record = await nextRecord(trace, lastBefore, recordTimeoutMilliseconds)
+  if (record !== undefined) return record
+  throw new Error(
+    `The app recorded no switch to workspace ${workspaceId} in ${trace}; is it a Debug build started with TRANSCRIPT_STRESS=1? Pass --fresh if the saved bench chats are gone.`
+  )
+}
+
+async function timedStep(options, step) {
+  const lastBefore = (await switchRecords(options.trace)).at(-1)?.time ?? 0
+  execFileSync("notifyutil", ["-p", stepNotification(options.instance, step)])
+  return nextRecord(options.trace, lastBefore, recordTimeoutMilliseconds)
+}
+
+async function stepHelp(server, options) {
+  if ((await macClient(server)).isActive === false) return notInFront
+  return `The app did not step to a neighbouring chat. Stepping is sent to the dev instance named "${options.instance}" (pass --instance to change it) and needs its sidebar visible.`
+}
+
+async function nextRecord(trace, lastBefore, timeoutMilliseconds) {
+  const deadline = Date.now() + timeoutMilliseconds
   while (Date.now() < deadline) {
     const latest = (await switchRecords(trace)).at(-1)
     if (latest !== undefined && latest.time > lastBefore) return latest
     await sleep(recordPollMilliseconds)
   }
-  throw new Error(
-    `The app recorded no switch to workspace ${workspaceId} in ${trace}; is it a Debug build started with TRANSCRIPT_STRESS=1? Pass --fresh if the saved bench chats are gone.`
-  )
+  return undefined
 }
 
 async function switchRecords(trace) {

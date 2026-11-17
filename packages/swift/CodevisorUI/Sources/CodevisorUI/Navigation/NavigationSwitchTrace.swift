@@ -6,14 +6,30 @@ public final class NavigationSwitchTrace {
   public static let shared = NavigationSwitchTrace()
 
   private var observer: MainThreadSettleObserver?
+  private var command: MainThreadSettleObserver?
   private var values: [String: Double] = [:]
+
+  public func timingCommand(_ body: () -> Void) {
+    guard TranscriptPerformanceTrace.isEnabled else { return body() }
+
+    command = MainThreadSettleObserver { [weak self] result in self?.record(result) }
+    body()
+    command?.cancel()
+    command = nil
+  }
 
   public func begin(workspaceChanged: Bool) {
     guard TranscriptPerformanceTrace.isEnabled else { return }
 
     observer?.cancel()
     values = ["workspaceChanged": workspaceChanged ? 1 : 0]
-    observer = MainThreadSettleObserver { [weak self] result in self?.record(result) }
+    if let command {
+      values["fromCommand"] = 1
+      observer = command
+      self.command = nil
+    } else {
+      observer = MainThreadSettleObserver { [weak self] result in self?.record(result) }
+    }
   }
 
   public func note(_ name: String) {

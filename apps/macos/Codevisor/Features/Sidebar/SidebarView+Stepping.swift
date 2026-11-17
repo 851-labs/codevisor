@@ -9,53 +9,60 @@ extension SidebarView {
     case archived(Workspace)
   }
 
-  func sidebarStops(in rows: [SidebarRow]) -> [SidebarStop] {
-    let content = rowContent
-    return rows.compactMap { row in
-      switch row.kind {
-      case let .tab(id, workspaceID, _):
-        SidebarStop.tab(id, workspaceID: workspaceID)
-      case let .workspace(item, .archived):
-        environment.navigationStore.workspaceEntries.entry(item.id).workspace.map(SidebarStop.archived)
-      case let .workspace(item, _):
-        content.listItem(for: item).map(SidebarStop.workspace)
-      case .section, .group, .showMoreArchived:
-        nil
-      }
+  private func sidebarStop(at row: SidebarRow, content: SidebarRowContent) -> SidebarStop? {
+    switch row.kind {
+    case let .tab(id, workspaceID, _):
+      .tab(id, workspaceID: workspaceID)
+    case let .workspace(item, .archived):
+      environment.navigationStore.workspaceEntries.entry(item.id).workspace.map(SidebarStop.archived)
+    case let .workspace(item, _):
+      content.listItem(for: item).map(SidebarStop.workspace)
+    case .section, .group, .showMoreArchived:
+      nil
     }
   }
 
   func stepWorkspace(_ offset: Int) {
-    let rows = sidebarRows
-    let stops = sidebarStops(in: rows)
-    let selected = SidebarSelectionSync.selectedRow(showing: selectionTarget, rowIDs: Set(rows.map(\.id)))
-    let current = stops.firstIndex { isSelected($0, selected: selected) }
-    guard let target = SidebarStep.target(in: stops, from: current, by: offset) else { return }
+    NavigationSwitchTrace.shared.timingCommand {
+      guard let target = stepTarget(offset) else { return }
 
-    activate(target)
+      activate(target)
+    }
   }
 
-  private func isSelected(_ stop: SidebarStop, selected: SidebarRowID?) -> Bool {
-    switch stop {
-    case let .workspace(item):
-      selected == .workspace(item.workspace.id)
-    case let .tab(id, _):
-      selected == .tab(id)
-    case let .archived(workspace):
-      selected == .workspace(workspace.id)
+  private func stepTarget(_ offset: Int) -> SidebarStop? {
+    let target = selectionTarget
+    var rows = shownRows.rows
+    var selected = SidebarSelectionSync.selectedRow(showing: target, rowIDs: shownRows.ids)
+    if let listed = selected, !shownRows.ids.contains(listed) {
+      rows = sidebarRows
+      selected = SidebarSelectionSync.selectedRow(showing: target, rowIDs: Set(rows.map(\.id)))
+    }
+    let content = rowContent
+    return SidebarStep.target(among: rows, isCurrent: { $0.id == selected }, by: offset) { row in
+      sidebarStop(at: row, content: content)
     }
   }
 
   private func activate(_ stop: SidebarStop) {
     switch stop {
     case let .workspace(item):
-      revealRequest.rowID = item.workspace.id
+      requestReveal(of: item.workspace.id)
       activateWorkspace(item, tabId: item.workspace.mainTab.id)
     case let .tab(id, workspaceID):
       selectTab(id, in: workspaceID)
     case let .archived(workspace):
-      revealRequest.rowID = workspace.id
+      requestReveal(of: workspace.id)
       selectTab(workspace.mainTab.id, in: workspace.id)
     }
+  }
+
+  private func requestReveal(of workspaceID: UUID) {
+    if let frame = dragGeometry.workspaces[workspaceID], let visible = dragGeometry.visibleRows,
+      visible.contains(frame.minY), visible.contains(frame.maxY)
+    {
+      return
+    }
+    revealRequest.rowID = workspaceID
   }
 }
