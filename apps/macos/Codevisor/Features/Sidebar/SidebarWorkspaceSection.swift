@@ -14,7 +14,7 @@ struct SidebarWorkspaceSection: View, Equatable {
   let grouping: SidebarGrouping
   let rowDetails: [SidebarRowDetail]
   var status: SidebarRowStatus? = nil
-  let isSelected: Bool
+  let selection: SelectionMarkers<SidebarRowID>
   let isPinned: Bool
   let headingNamesMachine: Bool
   let isReordering: Bool
@@ -25,7 +25,7 @@ struct SidebarWorkspaceSection: View, Equatable {
 
   static func == (lhs: Self, rhs: Self) -> Bool {
     lhs.item == rhs.item && lhs.store === rhs.store && lhs.grouping == rhs.grouping
-      && lhs.rowDetails == rhs.rowDetails && lhs.status == rhs.status && lhs.isSelected == rhs.isSelected
+      && lhs.rowDetails == rhs.rowDetails && lhs.status == rhs.status && lhs.selection === rhs.selection
       && lhs.isPinned == rhs.isPinned
       && lhs.headingNamesMachine == rhs.headingNamesMachine && lhs.isReordering == rhs.isReordering
       && lhs.sectionPlacement == rhs.sectionPlacement
@@ -40,7 +40,7 @@ struct SidebarWorkspaceSection: View, Equatable {
         details: content.details(
           for: listItem, isPinned: isPinned, headingNamesMachine: headingNamesMachine, status: status),
         store: store,
-        isSelected: isSelected,
+        isSelected: selection.isSelected(.workspace(item.id)),
         isReordering: isReordering,
         onActivate: { actions.activate(listItem) },
         lifecycle: .active(

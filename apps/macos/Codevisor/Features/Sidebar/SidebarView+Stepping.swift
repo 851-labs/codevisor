@@ -27,7 +27,7 @@ extension SidebarView {
   func stepWorkspace(_ offset: Int) {
     let rows = sidebarRows
     let stops = sidebarStops(in: rows)
-    let selected = selectedRowID(in: rows)
+    let selected = SidebarSelectionSync.selectedRow(showing: selectionTarget, rowIDs: Set(rows.map(\.id)))
     let current = stops.firstIndex { isSelected($0, selected: selected) }
     guard let target = SidebarStep.target(in: stops, from: current, by: offset) else { return }
 

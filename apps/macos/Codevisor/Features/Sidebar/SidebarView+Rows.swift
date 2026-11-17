@@ -3,18 +3,23 @@ import CodevisorUI
 
 extension SidebarView {
   var sidebarRows: [SidebarRow] {
-    SidebarRows.derive(sidebarRowsState())
+    let unrevealed = SidebarRows.derive(sidebarRowsState(revealing: nil))
+    guard let revealed = selectionModel.reveal(amongUnrevealed: Set(unrevealed.map(\.id))) else {
+      return unrevealed
+    }
+
+    return SidebarRows.derive(sidebarRowsState(revealing: revealed))
   }
 
-  func sidebarRowsState() -> SidebarRows.State {
-    let listing = workspaceListing
+  func sidebarRowsState(revealing revealed: SidebarRevealedSelection?) -> SidebarRows.State {
+    let listing = workspaceListing(revealing: revealed)
     let tree = listing.tree
     return SidebarRows.State(
-      groups: listing.groups(of: tree.roots), children: tree.children, tabs: nestedTabs,
+      groups: listing.groups(of: tree.roots), children: tree.children, tabs: nestedTabs(revealing: revealed),
       archived: archivedSidebarItems, archivedVisibleCount: archivedVisibleCount,
       expansion: SidebarRows.Expansion(
         pinned: pinnedExpanded, list: listExpanded, archived: archivedExpanded,
         collapsedGroupIDs: Set(collapsedGroupIDs)),
-      selectedWorkspaceID: selectedWorkspaceID, selectedTabID: selectedSidebarTabID)
+      selectedWorkspaceID: revealed?.workspaceID, selectedTabID: revealed?.tabID)
   }
 }

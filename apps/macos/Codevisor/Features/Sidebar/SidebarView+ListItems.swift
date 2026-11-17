@@ -5,9 +5,13 @@ import SwiftUI
 
 extension SidebarView {
   var workspaceListing: SidebarWorkspaceListing {
+    workspaceListing(revealing: selectionModel.currentReveal)
+  }
+
+  func workspaceListing(revealing revealed: SidebarRevealedSelection?) -> SidebarWorkspaceListing {
     SidebarWorkspaceListing(
       environment: environment, grouping: grouping, pinnedIDs: pinnedWorkspaceIDs,
-      machineOrder: machineOrder, projectOrder: projectOrder, revealedWorkspaceID: selectedWorkspaceID)
+      machineOrder: machineOrder, projectOrder: projectOrder, revealedWorkspaceID: revealed?.workspaceID)
   }
 
   var listedSidebarItems: [WorkspaceSidebarItem] {
@@ -36,14 +40,6 @@ extension SidebarView {
       collapsedGroupIDs.removeAll { $0 == id }
     } else {
       collapsedGroupIDs.append(id)
-    }
-  }
-
-  var selectedWorkspaceID: UUID? {
-    switch selection {
-    case let .session(_, sessionId): environment.workspaces.workspaceId(forSession: sessionId)
-    case let .workspace(_, id), let .archivedWorkspace(_, id): id
-    case .bot, .newChat, .none: nil
     }
   }
 

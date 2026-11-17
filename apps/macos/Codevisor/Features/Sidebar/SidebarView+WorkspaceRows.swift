@@ -4,7 +4,6 @@ import SwiftUI
 
 extension SidebarView {
   func workspaceRowList(_ rows: [SidebarRow]) -> some View {
-    let selected = selectedRowID(in: rows)
     let actions = rowActions
     let namingMachine = Self.placementsNamingMachine(in: rows)
     let sections = environment.workspaceSections.sections
@@ -12,7 +11,7 @@ extension SidebarView {
     let statuses = rowStatuses
     return SidebarRowList(rows: rows, id: \.placedID, animation: Motion.listReflow(reduceMotion: reduceMotion)) { row in
       workspaceRegionRow(
-        row, selected: selected, actions: actions, namingMachine: namingMachine, sections: sections,
+        row, actions: actions, namingMachine: namingMachine, sections: sections,
         membership: membership, statuses: statuses)
     }
   }
@@ -31,7 +30,7 @@ extension SidebarView {
 
   @ViewBuilder
   private func workspaceRegionRow(
-    _ row: SidebarRow, selected: SidebarRowID?,
+    _ row: SidebarRow,
     actions: SidebarWorkspaceSection.Actions, namingMachine: Set<SidebarRow.Placement>, sections: [CustomSection],
     membership: [UUID: UUID], statuses: SidebarRowStatuses
   ) -> some View {
@@ -50,13 +49,12 @@ extension SidebarView {
     case let .section(.archived, isExpanded):
       SidebarSectionHeader(title: "Archived", isExpanded: isExpanded) { toggleArchived() }
     case let .workspace(item, .archived):
-      if let workspace = environment.navigationStore.workspaceEntries.entry(item.id).workspace {
-        archivedRow(workspace, item: item, isSelected: selected == row.id)
-          .id(workspace.id)
-      }
+      selectableArchivedRow(row, item: item)
     case let .tab(tabID, workspaceID, placement):
-      reorderableTabRow(
-        tabID, of: workspaceID, reorders: placement != .archived, depth: row.depth, isSelected: selected == row.id)
+      SidebarSelectedRow(id: row.id, selection: selectionModel.rows) { isSelected in
+        reorderableTabRow(
+          tabID, of: workspaceID, reorders: placement != .archived, depth: row.depth, isSelected: isSelected)
+      }
     case .showMoreArchived:
       showMoreArchivedRow
     case let .group(id, heading, isExpanded):
@@ -65,7 +63,7 @@ extension SidebarView {
       SidebarWorkspaceSection(
         item: item, store: store, grouping: grouping, rowDetails: rowDetails,
         status: statuses.status(of: item.id),
-        isSelected: selected == row.id,
+        selection: selectionModel.rows,
         isPinned: placement == .pinned, headingNamesMachine: namingMachine.contains(placement),
         isReordering: isReordering,
         sectionPlacement: WorkspaceSectionPlacement(row, membership: membership),
@@ -83,6 +81,16 @@ extension SidebarView {
       .geometryGroup()
       .padding(.leading, Self.groupIndent * CGFloat(row.depth))
       .id(item.id)
+    }
+  }
+
+  @ViewBuilder
+  private func selectableArchivedRow(_ row: SidebarRow, item: WorkspaceSidebarItem) -> some View {
+    if let workspace = environment.navigationStore.workspaceEntries.entry(item.id).workspace {
+      SidebarSelectedRow(id: row.id, selection: selectionModel.rows) { isSelected in
+        archivedRow(workspace, item: item, isSelected: isSelected)
+      }
+      .id(workspace.id)
     }
   }
 

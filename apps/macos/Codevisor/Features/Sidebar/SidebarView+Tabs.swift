@@ -3,22 +3,18 @@ import CodevisorUI
 import SwiftUI
 
 extension SidebarView {
-  var nestedTabs: [UUID: [UUID]] {
+  func nestedTabs(revealing revealed: SidebarRevealedSelection?) -> [UUID: [UUID]] {
     guard store != nil else { return [:] }
 
-    let ids = listedSidebarItems.map(\.id) + [selectedArchivedWorkspaceID].compactMap { $0 }
+    let ids = listedSidebarItems.map(\.id) + [revealed?.workspaceID].compactMap { $0 }
     return SidebarNestedTabs(environment: environment).tabs(of: ids)
   }
 
-  func selectedRowID(in rows: [SidebarRow]) -> SidebarRowID? {
+  var selectionTarget: SidebarSelectionTarget? {
     guard let workspace = selectedSidebarWorkspace else { return nil }
 
-    let tabRow = SidebarRowID.tab(shownTabId(of: workspace))
-    return rows.contains { $0.id == tabRow } ? tabRow : .workspace(workspace.id)
-  }
-
-  var selectedSidebarTabID: UUID? {
-    selectedSidebarWorkspace.map(shownTabId(of:))
+    return SidebarSelectionTarget(
+      workspaceID: workspace.id, tabID: shownTabId(of: workspace), isArchived: workspace.isArchived)
   }
 
   @ViewBuilder
@@ -67,11 +63,6 @@ extension SidebarView {
 
   private func activeListItem(_ workspaceID: UUID) -> SidebarWorkspaceListItem? {
     listedSidebarItems.first { $0.id == workspaceID }.flatMap(listItem(for:))
-  }
-
-  private var selectedArchivedWorkspaceID: UUID? {
-    guard case let .archivedWorkspace(_, id) = selection else { return nil }
-    return id
   }
 
   private var selectedSidebarWorkspace: Workspace? {

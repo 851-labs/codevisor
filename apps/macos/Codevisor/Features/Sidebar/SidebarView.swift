@@ -21,6 +21,7 @@ struct SidebarView: View {
   @State var tabDrag: SidebarTabDrag?
   @State var holdsGroupToggles = false
   @State var revealRequest = SidebarRevealRequest()
+  @State var selectionModel = SidebarSelectionModel()
   @ClientPreference(SidebarGrouping.preferenceKey, default: SidebarGrouping.flat) var grouping
   @ClientPreference(SidebarGrouping.collapsedPreferenceKey, default: []) var collapsedGroupIDs: [String]
   @ClientPreference(SidebarPreferenceKey.archivedExpanded, default: false) var archivedExpanded
@@ -41,21 +42,26 @@ struct SidebarView: View {
   }
 
   private var sidebarContent: some View {
-    ScrollViewReader { proxy in
+    let rows = sidebarRows
+    return ScrollViewReader { proxy in
       ScrollView {
         VStack(spacing: 0) {
           if CodevisorAppVariant.isDevelopment && !AppPreview.isRunning {
             SidebarDevelopmentWorktreeRow()
               .padding(.horizontal, 10)
           }
-          workspaceList
+          workspaceList(rows)
         }
         .padding(.top, 8)
       }
       .contextMenu { sidebarOptionsMenu }
-      .onChange(of: selectedWorkspaceID, initial: true) { _, current in
-        if let current, revealRequest.take(current) { proxy.scrollTo(current) }
-      }
+      .background(
+        SidebarSelectionSyncView(
+          target: { selectionTarget }, rowIDs: Set(rows.map(\.id)), model: selectionModel,
+          scrollIfRequested: { workspaceID in
+            if revealRequest.take(workspaceID) { proxy.scrollTo(workspaceID) }
+          })
+      )
     }
     .scrollContentBackground(.hidden)
     .scrollBounceBehavior(.basedOnSize)
@@ -128,8 +134,7 @@ struct SidebarView: View {
   }
 
   @ViewBuilder
-  private var workspaceList: some View {
-    let rows = sidebarRows
+  private func workspaceList(_ rows: [SidebarRow]) -> some View {
     if rows.isEmpty {
       SidebarPlaceholder(
         icon: Image(systemName: WorkspaceListEmptyCopy.systemImage), title: WorkspaceListEmptyCopy.title,
