@@ -9,6 +9,6 @@ struct FrozenWhileHidden<Content: View>: View, Equatable {
   }
 
   nonisolated static func == (lhs: Self, rhs: Self) -> Bool {
-    !lhs.isShown && !rhs.isShown
+    !rhs.isShown
   }
 }

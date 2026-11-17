@@ -8,10 +8,12 @@ public final class BotListModel {
 
   public private(set) var recordsByServer: [String: [ServerBot]] = [:] {
     didSet {
+      listedByServer = Self.listed(recordsByServer)
       placePanes()
       save()
     }
   }
+  @ObservationIgnored private var listedByServer: [String: [ListedBot]] = [:]
   @ObservationIgnored private let machines: MachineController
   @ObservationIgnored private weak var navigationStore: NavigationStore?
   @ObservationIgnored private let store: (any PersistenceStore)?
@@ -25,6 +27,19 @@ public final class BotListModel {
     self.navigationStore = navigationStore
     self.store = store
     recordsByServer = Self.saved(in: store)
+    listedByServer = Self.listed(recordsByServer)
+  }
+
+  private struct ListedBot {
+    let recordID: String
+    let bot: Bot?
+  }
+
+  private static func listed(_ records: [String: [ServerBot]]) -> [String: [ListedBot]] {
+    Dictionary(
+      uniqueKeysWithValues: records.map { serverId, records in
+        (serverId, records.map { ListedBot(recordID: $0.id, bot: Bot(serverId: serverId, record: $0)) })
+      })
   }
 
   private func placePanes() {
@@ -56,10 +71,11 @@ public final class BotListModel {
   }
 
   public var bots: [Bot] {
+    access(keyPath: \.recordsByServer)
     var seen = Set<String>()
     return machineIdsByServer.flatMap { machineId in
-      (recordsByServer[machineId] ?? []).compactMap { record in
-        seen.insert(record.id).inserted ? Bot(serverId: machineId, record: record) : nil
+      (listedByServer[machineId] ?? []).compactMap { listed in
+        seen.insert(listed.recordID).inserted ? listed.bot : nil
       }
     }
   }

@@ -39,7 +39,6 @@ struct WorkspaceInspectorView: View {
   let onOpenDesktop: () -> Void
   let onReload: () -> Void
   let onOpen: (Destination) -> Void
-  var isShown = true
 
   private struct TabViewport: Equatable {
     var offset: CGFloat = 0
@@ -66,6 +65,7 @@ struct WorkspaceInspectorView: View {
 
   @Environment(\.accessibilityReduceMotion) private var reduceMotion
   @Environment(AppEnvironment.self) private var environment
+  @Environment(\.isWorkspaceInspectorShown) private var isShown
   @State private var tabBarWidth: CGFloat = 0
   @State private var tabScroll = ScrollPosition(edge: .leading)
   @State private var tabViewport = TabViewport()
