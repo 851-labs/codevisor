@@ -31,8 +31,8 @@ public final class DeferredPaneFocus {
     generation &+= 1
     let request = Request(generation: generation, isCurrent: isCurrent, focus: focus)
     pending = request
-    if Self.attemptsNow, request.isCurrent() {
-      _ = request.focus()
+    if Self.attemptsNow, isCurrent() {
+      _ = focus()
       guard pending?.generation == request.generation else { return }
     }
     retry()
@@ -42,19 +42,14 @@ public final class DeferredPaneFocus {
     guard let request = pending else { return }
     schedule { [weak self] in
       guard let self, self.pending?.generation == request.generation else { return }
-      _ = self.settle(request)
+      guard request.isCurrent() else {
+        self.pending = nil
+        return
+      }
+      if request.focus(), self.pending?.generation == request.generation {
+        self.pending = nil
+      }
     }
-  }
-
-  private func settle(_ request: Request) -> Bool {
-    guard request.isCurrent() else {
-      pending = nil
-      return true
-    }
-    let focused = request.focus()
-    guard pending?.generation == request.generation else { return true }
-    if focused { pending = nil }
-    return focused
   }
 
   public func cancel() {

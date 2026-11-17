@@ -60,11 +60,9 @@ final class WindowNavigation: SidebarSelectionOwner {
       return
     }
     let slot = slot(for: route)
-    let responder = detailFocus.responder
-    if DeferredPaneFocus.attemptingNow({ deck.show(route, in: slot) }) {
-      NavigationSwitchTrace.shared.note("builtPage")
-    }
-    if slot != previous { detailFocus.releaseFocus(heldBy: responder) }
+    let focusOwner = detailFocus.focusOwner
+    if deck.show(route, in: slot) { NavigationSwitchTrace.shared.note("builtPage") }
+    if slot != previous { detailFocus.releaseFocus(heldBy: focusOwner) }
     deckSizes.show(slot, hiding: previous)
     let mounted = Set(deck.pages.map(\.id))
     deckSizes.keep(mounted)

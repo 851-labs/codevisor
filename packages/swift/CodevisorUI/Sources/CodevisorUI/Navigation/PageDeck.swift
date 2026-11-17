@@ -8,6 +8,7 @@ public final class PageDeck<Slot: Hashable, Route: Equatable> {
 
   @ObservationIgnored private var history: RecentPages<Slot, Route>
   @ObservationIgnored private var activities: [Slot: WorkspaceActivity] = [:]
+  @ObservationIgnored private var activation: UInt64 = 0
 
   public init(capacity: Int) {
     history = RecentPages(capacity: capacity)
@@ -28,23 +29,26 @@ public final class PageDeck<Slot: Hashable, Route: Equatable> {
 
     history.show(route, in: slot)
     pages = history.pages
-    activate(slot)
+    activate(slot, notifiesShownPage: mounted?.route == route)
     return mounted == nil
   }
 
   public func showNothing() {
     guard activeSlot != nil else { return }
 
-    activate(nil)
+    activate(nil, notifiesShownPage: false)
   }
 
-  private func activate(_ slot: Slot?) {
+  private func activate(_ slot: Slot?, notifiesShownPage: Bool) {
     activeSlot = slot
     let mounted = Set(pages.map(\.id))
     activities = activities.filter { mounted.contains($0.key) }
+    activation &+= 1
+    let current = activation
     for (id, activity) in activities where id != slot {
-      activity.setActive(false)
+      activity.setActive(false, notifiesListeners: true)
+      guard activation == current else { return }
     }
-    if let slot { activities[slot]?.setActive(true) }
+    if let slot { activities[slot]?.setActive(true, notifiesListeners: notifiesShownPage) }
   }
 }
