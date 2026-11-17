@@ -44,8 +44,8 @@ export const SavedChatPane = Schema.Struct({
   providerId: Schema.String,
   paneType: Schema.String,
   title: Schema.String,
-  resourceKind: Schema.String,
-  resourceId: Schema.String,
+  resourceKind: Schema.optional(Schema.String),
+  resourceId: Schema.optional(Schema.String),
   metadata: Schema.optional(Schema.String),
   createdAt: Schema.String
 })

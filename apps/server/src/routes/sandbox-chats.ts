@@ -8,7 +8,8 @@ import {
   type SavedChatList,
   type SavedChatPane,
   type SavedChatSession,
-  type SessionSummary
+  type SessionSummary,
+  type WorkspacePane
 } from "@codevisor/api"
 import { SAVED_CHAT_FORMAT } from "@codevisor/db"
 
@@ -62,34 +63,41 @@ const savedChats = async (route: RouteContext, workspaceId: string): Promise<Sav
   const inWorkspace = sessions.filter((session) => sameId(session.workspaceId, workspaceId))
   const chats: Array<SavedChat> = []
   for (const session of inWorkspace) chats.push(await savedChat(route, session))
-  return { format: SAVED_CHAT_FORMAT, chats, panes: await chatPanes(route, workspaceId, chats) }
+  return { format: SAVED_CHAT_FORMAT, chats, panes: await keptPanes(route, workspaceId, chats) }
 }
 
-const chatPanes = async (
+const keptPanes = async (
   { services }: RouteContext,
   workspaceId: string,
   chats: ReadonlyArray<SavedChat>
 ): Promise<ReadonlyArray<SavedChatPane>> => {
   const chatIds = new Set(chats.map((chat) => chat.session.id.toLowerCase()))
   const panes = await run(services.db.listWorkspacePanes)
-  return panes.flatMap((pane) => {
-    const { resourceId } = pane
-    if (!sameId(pane.workspaceId, workspaceId) || pane.resourceKind !== "session") return []
-    if (resourceId === undefined || !chatIds.has(resourceId.toLowerCase())) return []
-    return [
-      {
-        id: pane.id,
-        providerId: pane.providerId,
-        paneType: pane.paneType,
-        title: pane.title,
-        resourceKind: pane.resourceKind,
-        resourceId,
-        createdAt: pane.createdAt,
-        ...(pane.metadata === undefined ? {} : { metadata: pane.metadata })
-      }
-    ]
-  })
+  return panes
+    .filter((pane) => sameId(pane.workspaceId, workspaceId) && outlivesSandbox(pane, chatIds))
+    .toSorted((left, right) => positionOf(left).localeCompare(positionOf(right)))
+    .map(savedPane)
 }
+
+const outlivesSandbox = (pane: WorkspacePane, chatIds: ReadonlySet<string>): boolean => {
+  if (pane.resourceKind === undefined) return true
+  if (pane.resourceKind === "file") return true
+  if (pane.resourceKind !== "session" || pane.resourceId === undefined) return false
+  return chatIds.has(pane.resourceId.toLowerCase())
+}
+
+const positionOf = (pane: WorkspacePane): string => pane.position ?? ""
+
+const savedPane = (pane: WorkspacePane): SavedChatPane => ({
+  id: pane.id,
+  providerId: pane.providerId,
+  paneType: pane.paneType,
+  title: pane.title,
+  createdAt: pane.createdAt,
+  ...(pane.resourceKind === undefined ? {} : { resourceKind: pane.resourceKind }),
+  ...(pane.resourceId === undefined ? {} : { resourceId: pane.resourceId }),
+  ...(pane.metadata === undefined ? {} : { metadata: pane.metadata })
+})
 
 const restorePane = async (
   route: RouteContext,

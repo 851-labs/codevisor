@@ -24,6 +24,8 @@ import { field } from "./response-test-support.js"
 
 const workspaceId = "5f0b6a52-6f0e-4a44-9d39-1b7f2d3c4e5a"
 const paneId = "9a1c2b3d-4e5f-4a6b-8c7d-0e1f2a3b4c5d"
+const reviewPaneId = "9a1c2b3d-4e5f-4a6b-8c7d-0e1f2a3b4c5e"
+const terminalPaneId = "9a1c2b3d-4e5f-4a6b-8c7d-0e1f2a3b4c5f"
 const note = "Restored from an archived sandbox."
 
 const asking =
@@ -64,6 +66,24 @@ const chattedOn = async (machine: FleetMachine, projectId: string) => {
     },
     "PUT"
   )
+  await post(
+    machine,
+    `/v1/workspaces/${workspaceId}/panes/${reviewPaneId}`,
+    { providerId: "codevisor", paneType: "review", title: "Review Changes" },
+    "PUT"
+  )
+  await post(
+    machine,
+    `/v1/workspaces/${workspaceId}/panes/${terminalPaneId}`,
+    {
+      providerId: "codevisor",
+      paneType: "terminal",
+      title: "Terminal 1",
+      resourceKind: "terminal",
+      resourceId: "t1"
+    },
+    "PUT"
+  )
   const { id: fileId, name, mimeType, sizeBytes, kind } = file
   await post(machine, `/v1/sessions/${sessionId}/prompt`, {
     text: "hello",
@@ -99,7 +119,7 @@ const movedToStudio = async () => {
 }
 
 describe("moving a sandbox's chats between machines", () => {
-  it("hands over each chat with its history, attachment and tab, and takes them back whole", async () => {
+  it("hands over each chat with its history, attachment and tabs, and takes them back whole", async () => {
     const { home, chat, before, fromLaptop, toStudio, list } = await movedToStudio()
     const [saved] = list.chats
     if (saved === undefined) throw new Error("The laptop listed no chats")
@@ -137,7 +157,8 @@ describe("moving a sandbox's chats between machines", () => {
     expect(await attachment.text()).toBe("kept with the chat")
     const panes = await run(home.services.db.listWorkspacePanes)
     expect(panes.filter((pane) => pane.workspaceId === workspaceId)).toMatchObject([
-      { id: paneId, workspaceId, resourceId: sessionId }
+      { id: paneId, workspaceId, resourceId: sessionId },
+      { id: reviewPaneId, workspaceId, paneType: "review" }
     ])
   })
 
