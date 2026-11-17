@@ -407,7 +407,7 @@ struct NewChatView: View {
         store.removePaneDraft(paneId: paneDraftId)
         onCreatedInPane(session)
       } else {
-        let workspace = store.createWorkspace(for: session, project: project)
+        let workspace = store.createWorkspace(for: session, project: project, startedBy: controller)
         controller.hostWorkspaceId = workspace.id
         environment.composerDefaults.performPersistenceBatch(
           flushImmediately: true

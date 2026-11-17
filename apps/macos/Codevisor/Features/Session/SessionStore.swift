@@ -235,14 +235,14 @@ final class SessionStore {
     return centerGroup(leafId: leafId, workspace: workspace, session: session, project: project)
   }
 
-  func workspace(for session: ChatSession, project: Project) -> Workspace {
+  func workspace(for session: ChatSession, project: Project, awaitsOwnCheckout: Bool = false) -> Workspace {
     if let host = guestHost(of: session) { return host }
     let seed = WorkspaceSessionSeed(
       sessionId: session.id,
       initialName: session.worktreeName ?? project.name,
       serverId: session.serverId,
       projectId: project.id,
-      rootDirectory: session.cwd ?? project.folderURL.path,
+      rootDirectory: awaitsOwnCheckout ? nil : session.cwd ?? project.folderURL.path,
       worktreeName: session.worktreeName,
       assignedWorkspaceId: environment.projectList.workspaceId(forSession: session.id)
     )

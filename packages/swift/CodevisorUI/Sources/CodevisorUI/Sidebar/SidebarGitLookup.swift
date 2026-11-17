@@ -19,8 +19,13 @@ public final class SidebarGitLookup<Request: Equatable & Sendable, Value: Equata
   public typealias Fetch = @Sendable (Target) async throws -> Value?
   public typealias Answers = (_ asked: Request, _ wanted: Request) -> Bool
 
+  struct Answer: Equatable {
+    let request: Request
+    let value: Value
+  }
+
   let refreshInterval: Duration?
-  public private(set) var byWorkspace: [UUID: Value] = [:]
+  private var byWorkspace: [UUID: Answer] = [:]
   @ObservationIgnored private let answers: Answers
   @ObservationIgnored private let fetch: Fetch
   @ObservationIgnored private var lastAsked: [UUID: (request: Request, at: ContinuousClock.Instant)] = [:]
@@ -50,6 +55,11 @@ public final class SidebarGitLookup<Request: Equatable & Sendable, Value: Equata
     }
   }
 
+  func value(for workspaceId: UUID, asking request: Request) -> Value? {
+    guard let answer = byWorkspace[workspaceId], answers(answer.request, request) else { return nil }
+    return answer.value
+  }
+
   public func forget(_ workspaceIds: [UUID]) {
     for id in workspaceIds where lastAsked[id] != nil {
       lastAsked[id] = nil
@@ -60,8 +70,9 @@ public final class SidebarGitLookup<Request: Equatable & Sendable, Value: Equata
   private func record(_ value: Value?, for target: Target) {
     inFlight.remove(target.workspaceId)
     lastAsked[target.workspaceId] = (target.request, clock.now)
-    if byWorkspace[target.workspaceId] != value {
-      byWorkspace[target.workspaceId] = value
+    let answer = value.map { Answer(request: target.request, value: $0) }
+    if byWorkspace[target.workspaceId] != answer {
+      byWorkspace[target.workspaceId] = answer
     }
   }
 }
@@ -118,8 +129,8 @@ public final class SidebarGitLookups {
 
   public func branch(for workspace: Workspace) -> String? {
     if let git = workspace.git { return Self.head(of: git) }
-    if workspace.isArchived, let archived = archivedGit.byWorkspace[workspace.id] { return Self.head(of: archived) }
-    return branches.byWorkspace[workspace.id]
+    if workspace.isArchived, let archived = archivedGit(for: workspace) { return Self.head(of: archived) }
+    return Self.checkoutPath(of: workspace).flatMap { branches.value(for: workspace.id, asking: $0) }
   }
 
   public static func head(of git: ServerWorkspaceGit) -> String? {
@@ -129,8 +140,17 @@ public final class SidebarGitLookups {
 
   public func pullRequest(for workspace: Workspace) -> ServerGitPullRequest? {
     if let git = workspace.git { return git.pullRequest }
-    if workspace.isArchived, let archived = archivedGit.byWorkspace[workspace.id] { return archived.pullRequest }
-    return pullRequests.byWorkspace[workspace.id]
+    if workspace.isArchived, let archived = archivedGit(for: workspace) { return archived.pullRequest }
+    return Self.checkoutPath(of: workspace).flatMap { pullRequests.value(for: workspace.id, asking: $0) }
+  }
+
+  private func archivedGit(for workspace: Workspace) -> ServerWorkspaceGit? {
+    archivedGit.value(for: workspace.id, asking: false)
+  }
+
+  private static func checkoutPath(of workspace: Workspace) -> String? {
+    guard let path = workspace.rootDirectory, !path.isEmpty else { return nil }
+    return path
   }
 
   public func refresh(
@@ -146,7 +166,7 @@ public final class SidebarGitLookups {
       }
     }
     let checkouts = active.compactMap { workspace -> (Workspace, String)? in
-      guard workspace.git == nil, let path = workspace.rootDirectory, !path.isEmpty else { return nil }
+      guard workspace.git == nil, let path = Self.checkoutPath(of: workspace) else { return nil }
       return (workspace, path)
     }
     let wantsPullRequests = details.contains(.pullRequest)
@@ -157,7 +177,7 @@ public final class SidebarGitLookups {
       branches.refresh(targets(checkouts))
     }
     archivedGit.forget(listedIds)
-    let archivedCheckouts = archived.filter { $0.git == nil && $0.rootDirectory?.isEmpty == false }
+    let archivedCheckouts = archived.filter { $0.git == nil && Self.checkoutPath(of: $0) != nil }
     archivedGit.refresh(targets(archivedCheckouts.map { ($0, wantsPullRequests) }))
   }
 }

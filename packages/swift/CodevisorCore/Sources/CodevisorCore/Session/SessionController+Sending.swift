@@ -156,8 +156,16 @@ extension SessionController {
     onFirstSend = nil
   }
 
+  public var awaitsOwnCheckout: Bool {
+    sandboxTarget != nil || awaitsNewWorktree
+  }
+
+  private var awaitsNewWorktree: Bool {
+    wantsNewWorktree && sessionCwdOverride == nil && !project.isScratch
+  }
+
   private func createRequestedWorktree(showsSetupPhases: Bool) async -> String? {
-    guard wantsNewWorktree, sessionCwdOverride == nil, !project.isScratch else { return nil }
+    guard awaitsNewWorktree else { return nil }
     guard let failure = await createWorktree(showsSetupPhase: showsSetupPhases) else { return nil }
 
     mutateSetupPhase(id: SessionSetupPhase.worktreePhaseId) { $0.fail(message: failure) }

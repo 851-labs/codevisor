@@ -13,12 +13,32 @@ struct SidebarGitLookupsTests {
     number: 7, title: "Badge", state: .open, isDraft: false,
     url: URL(string: "https://github.com/acme/app/pull/7")!)
 
-  private func workspace(_ path: String, git: ServerWorkspaceGit?) -> Workspace {
+  private func workspace(_ path: String?, git: ServerWorkspaceGit?, id: UUID = UUID()) -> Workspace {
     var workspace = Workspace(
-      name: path, rootDirectory: path, serverId: "local", projectId: UUID(),
+      id: id, name: path ?? "pending", rootDirectory: path, serverId: "local", projectId: UUID(),
       centerTree: .leaf(.centerInitialWithoutChat()), isServerSynced: true)
     workspace.git = git
     return workspace
+  }
+
+  @Test("A row whose checkout moved or isn't known yet shows nothing from the checkout it was last looked up in")
+  func answersStayWithTheirCheckout() async {
+    let lookups = SidebarGitLookups()
+    let inProjectFolder = workspace("/repo/project", git: nil)
+    let client = CodevisorServerClient(config: CodevisorServerConfig(requestTransport: GitRecordingTransport()))
+    lookups.refresh(
+      active: [inProjectFolder], archived: [], listedIds: [inProjectFolder.id], details: [.branch, .pullRequest],
+      client: { _ in client })
+    await awaitObserved {
+      lookups.branch(for: inProjectFolder) != nil && lookups.pullRequest(for: inProjectFolder) != nil
+    }
+
+    let inOwnWorktree = workspace("/repo/worktrees/chat", git: nil, id: inProjectFolder.id)
+    let awaitingCheckout = workspace(nil, git: nil, id: inProjectFolder.id)
+    #expect(lookups.branch(for: inOwnWorktree) == nil)
+    #expect(lookups.pullRequest(for: inOwnWorktree) == nil)
+    #expect(lookups.branch(for: awaitingCheckout) == nil)
+    #expect(lookups.pullRequest(for: awaitingCheckout) == nil)
   }
 
   @Test("A workspace the server reports git for answers from its record, even with no branch")
