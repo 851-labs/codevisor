@@ -14,7 +14,7 @@ struct IOSAgentRowView: View {
 
   var body: some View {
     Button(action: actions.open) {
-      HomeSidebarRowLabel(details: row.details)
+      HomeSidebarRowLabel(details: row.details, showsChevron: false)
     }
     .tint(.primary)
     .swipeActions(edge: .leading, allowsFullSwipe: true) {

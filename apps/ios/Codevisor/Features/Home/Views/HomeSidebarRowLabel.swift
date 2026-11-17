@@ -6,6 +6,7 @@ struct HomeSidebarRowLabel: View {
   @Environment(\.dynamicTypeSize) private var dynamicTypeSize
 
   let details: HomeSidebarRowDetails
+  var showsChevron = true
 
   var body: some View {
     HStack(spacing: 10) {
@@ -52,7 +53,7 @@ struct HomeSidebarRowLabel: View {
       HomeSidebarSymbol(name: machine.systemImage)
         .imageScale(.small)
     }
-    if !details.isArchived {
+    if showsChevron && !details.isArchived {
       Image(systemName: "chevron.forward")
         .font(.footnote.weight(.semibold))
         .foregroundStyle(.tertiary)
