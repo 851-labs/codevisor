@@ -191,7 +191,8 @@ enum ServerSessionEventDecoder {
           isEvent: payload["origin"]?.stringValue == "event",
           assistantItemId: payload["assistantItemId"]?.stringValue.flatMap(UUID.init(uuidString:)),
           attribution: attribution(from: payload),
-          sentByAgent: sender(from: payload)
+          sentByAgent: sender(from: payload),
+          sentAt: payload["sentAt"]?.stringValue.flatMap(ServerTimestamp.date(from:))
         )
       ]
     default:

@@ -104,7 +104,7 @@ const projectUserOrSystemConversation = (
   )
   const itemId =
     existingUser ??
-    createChatItem(sqlite, sessionId, conversation.role, event.created_at, {
+    createChatItem(sqlite, sessionId, conversation.role, conversation.sentAt ?? event.created_at, {
       text: conversation.text,
       ...(conversation.messageId === undefined ? {} : { messageId: conversation.messageId }),
       status: "complete",

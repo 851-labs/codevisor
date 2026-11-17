@@ -27,6 +27,33 @@ struct ServerEventPromptOriginTests {
     #expect(typed == [.userMessage(id: "m1", text: eventText, attachments: [], isEvent: false)])
   }
 
+  @Test("A user message keeps the time the server received it, live and from history")
+  func sentAtSurvivesLiveAndHistory() throws {
+    let receivedAt = "2026-10-19T00:00:00.250Z"
+    let live = ServerSessionEventDecoder.decode(
+      from: envelope(
+        kind: "session.output",
+        payload: .object([
+          "role": .string("user"), "messageId": .string("m1"), "text": .string(eventText),
+          "origin": .string("event"), "sentAt": .string(receivedAt),
+        ])
+      ))
+    let history = ServerTranscriptHistoryMapper.historyPage(
+      from: ServerTranscriptPage(
+        items: [try decodeTranscriptItem(origin: #""origin": "event","#)], hasMore: false, eventCursor: 0))
+
+    let expected = try #require(ServerTimestamp.date(from: receivedAt))
+    #expect(
+      live == [
+        .userMessage(id: "m1", text: eventText, attachments: [], isEvent: true, sentAt: expected)
+      ])
+    guard case let .user(message) = history.conversation.first else {
+      Issue.record("Missing user message")
+      return
+    }
+    #expect(message.sentAt == ServerTimestamp.date(from: "2026-10-19T00:00:00.000Z"))
+  }
+
   @Test("Steered user output names the assistant item that continues the turn")
   func steeredOutputAssistantItem() {
     let itemId = UUID()

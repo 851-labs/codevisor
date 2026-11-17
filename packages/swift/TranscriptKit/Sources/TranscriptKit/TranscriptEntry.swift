@@ -31,6 +31,7 @@ public struct UserMessage: Identifiable, Sendable, Equatable {
   public var attribution: UserMessageAttribution?
   public var sentByAgentId: String?
   public var sentByAgentMachineId: String?
+  public var sentAt: Date?
 
   public init(
     id: UUID = UUID(),
@@ -42,7 +43,8 @@ public struct UserMessage: Identifiable, Sendable, Equatable {
     isForkMarker: Bool = false,
     attribution: UserMessageAttribution? = nil,
     sentByAgentId: String? = nil,
-    sentByAgentMachineId: String? = nil
+    sentByAgentMachineId: String? = nil,
+    sentAt: Date? = nil
   ) {
     self.id = id
     self.text = text
@@ -54,6 +56,7 @@ public struct UserMessage: Identifiable, Sendable, Equatable {
     self.attribution = attribution
     self.sentByAgentId = sentByAgentId
     self.sentByAgentMachineId = sentByAgentMachineId
+    self.sentAt = sentAt
   }
 }
 

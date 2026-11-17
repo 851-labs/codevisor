@@ -18,13 +18,11 @@ enum TranscriptBotRowAssembly {
     rows.reserveCapacity(messages.count + 4)
     var previous: TranscriptBotMessage?
     var timedRows = TranscriptBotTimedRows.entries(in: input, spacingAfter: groupTailSpacing)[...]
+    let placements = placementTimes(of: messages)
     for (index, message) in messages.enumerated() {
       if index.isMultiple(of: 32), Task.isCancelled { throw CancellationError() }
-      while let next = timedRows.first, wasAsked(next.askedAt, before: message) {
-        TranscriptThreadEventRows.append(next.row, to: &rows)
-        timedRows.removeFirst()
-      }
-      if let sentAt = message.sentAt, startsNewMoment(sentAt, after: previous) {
+      let followsTimedRow = appendTimedRows(askedBefore: placements[index], from: &timedRows, to: &rows)
+      if let sentAt = message.moment, startsNewMoment(sentAt, after: previous) {
         rows.append(
           .init(
             id: .botTimestamp(message.id),
@@ -32,9 +30,8 @@ enum TranscriptBotRowAssembly {
             estimatedHeight: 28
           ))
       }
-      appendAuthorName(heading: message, after: previous, to: &rows)
-      let next = messages.indices.contains(index + 1) ? messages[index + 1] : nil
-      let isGroupTail = next.map { !continuesGroup($0, after: message) } ?? true
+      appendAuthorName(heading: message, after: followsTimedRow ? nil : previous, to: &rows)
+      let isGroupTail = endsGroup(at: index, of: messages, placements: placements, before: timedRows)
       if let delivery = message.delivery, message.sender == .user, let id = UUID(uuidString: message.id) {
         rows.append(row(for: message, isGroupTail: isGroupTail, spacingAfter: TranscriptPresentationRow.deliveryGap))
         rows.append(
@@ -46,6 +43,7 @@ enum TranscriptBotRowAssembly {
       }
       previous = message
     }
+    appendTimedRows(askedBefore: .distantFuture, from: &timedRows, to: &rows)
     appendPendingMessage(input, conversation: conversation, to: &rows)
     for entry in timedRows { TranscriptThreadEventRows.append(entry.row, to: &rows) }
     if let stoppedTurn {
@@ -76,9 +74,39 @@ enum TranscriptBotRowAssembly {
     return Array(messages[..<kept])
   }
 
-  private static func wasAsked(_ askedAt: Date?, before message: TranscriptBotMessage) -> Bool {
-    guard let askedAt, let sentAt = message.sentAt else { return false }
-    return askedAt < sentAt
+  private static func placementTimes(of messages: [TranscriptBotMessage]) -> [Date] {
+    var later = Date.distantFuture
+    let reversed = messages.reversed().map { message in
+      later = message.sentAt ?? later
+      return later
+    }
+    return reversed.reversed()
+  }
+
+  @discardableResult
+  private static func appendTimedRows(
+    askedBefore placement: Date,
+    from timedRows: inout ArraySlice<TranscriptBotTimedRows.Entry>,
+    to rows: inout [TranscriptPresentationRow]
+  ) -> Bool {
+    var appended = false
+    while let next = timedRows.first, let askedAt = next.askedAt, askedAt < placement {
+      TranscriptThreadEventRows.append(next.row, to: &rows)
+      timedRows.removeFirst()
+      appended = true
+    }
+    return appended
+  }
+
+  private static func endsGroup(
+    at index: Int, of messages: [TranscriptBotMessage], placements: [Date],
+    before timedRows: ArraySlice<TranscriptBotTimedRows.Entry>
+  ) -> Bool {
+    let nextIndex = index + 1
+    guard messages.indices.contains(nextIndex) else { return true }
+    guard continuesGroup(messages[nextIndex], after: messages[index]) else { return true }
+    guard let askedAt = timedRows.first?.askedAt else { return false }
+    return askedAt < placements[nextIndex]
   }
 
   private static func row(
@@ -147,7 +175,7 @@ enum TranscriptBotRowAssembly {
 
   private static func startsNewMoment(_ sentAt: Date, after previous: TranscriptBotMessage?) -> Bool {
     guard let previous else { return true }
-    guard let previousAt = previous.sentAt else { return false }
+    guard let previousAt = previous.moment else { return false }
     return sentAt.timeIntervalSince(previousAt) > timestampGap
   }
 
@@ -155,7 +183,7 @@ enum TranscriptBotRowAssembly {
     guard next.sender == message.sender, next.author == message.author, message.sender != .notice else {
       return false
     }
-    guard let nextAt = next.sentAt, let sentAt = message.sentAt else { return true }
+    guard let nextAt = next.moment, let sentAt = message.moment else { return true }
     return nextAt.timeIntervalSince(sentAt) <= timestampGap
   }
 

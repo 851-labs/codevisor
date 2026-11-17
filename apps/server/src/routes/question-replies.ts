@@ -9,7 +9,7 @@ import {
 } from "../server-context.js"
 import { pendingAgentQuestion } from "./parked-questions.js"
 import { ensureAgentSessionFor } from "./session-workspace.js"
-import { recordUserPrompt, steeredPrompt } from "./user-prompts.js"
+import { recordUserPrompt, queuedPrompt } from "./user-prompts.js"
 
 interface QuestionReplyTarget {
   readonly agentSessionId: string
@@ -27,7 +27,7 @@ export const answeredPendingQuestion = async (
   const question = await pendingAgentQuestion(services, sessionId)
   if (question === undefined) return false
 
-  await recordUserPrompt(services, fanout, serverId, sessionId, steeredPrompt(item))
+  await recordUserPrompt(services, fanout, serverId, sessionId, queuedPrompt(item))
   const agentSession = await ensureAgentSessionFor(services, fanout, serverId, sessionId)
   const target = { agentSessionId: agentSession.sessionId, questionId: question.questionId }
   return replyToQuestion(services, target, item)

@@ -51,6 +51,7 @@ final class SendQueue {
     let message: UserMessage
     let attachmentIDs: [UUID]
     let route: Route
+    let queuedAt = Date()
     var stage = Stage.preparing
     var showsProgress = false
     var isStale = false
@@ -145,7 +146,7 @@ final class SendQueue {
       return UnsentBotMessage(
         message: TranscriptBotMessage(
           id: entry.message.id.uuidString.lowercased(), sender: .user, text: entry.message.text,
-          attachments: entry.message.attachments, delivery: entry.delivery),
+          attachments: entry.message.attachments, delivery: entry.delivery, localSentAt: entry.queuedAt),
         afterSequence: afterSequence)
     }
   }

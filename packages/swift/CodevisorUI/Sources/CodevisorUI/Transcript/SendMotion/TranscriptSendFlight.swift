@@ -240,9 +240,9 @@ public final class TranscriptSendFlight {
     targetOrigin = origin
     shiftSerial &+= 1
     let key = TranscriptSendAnimationKeys.shiftPrefix + String(shiftSerial)
-    if let morph = stage.morph, let landing = morphLanding {
+    if let morph = stage.morph, morphLanding != nil {
       proxy.frame = proxy.frame.offsetBy(dx: delta.width, dy: delta.height)
-      morph.retarget(to: morph.end.offsetBy(dx: delta.width, dy: delta.height), onSettle: landing)
+      morph.ride(by: delta, spring: TranscriptSendMotion.content)
       for piece in pieces { piece.shift(by: delta, key: key) }
       return
     }
@@ -273,6 +273,8 @@ public final class TranscriptSendFlight {
       stage.carrier?.sync()
     #endif
   }
+
+  public var ridesCarrier: Bool { Self.rides(stage) }
 
   public static var ridesTranscript: Bool {
     #if canImport(UIKit)

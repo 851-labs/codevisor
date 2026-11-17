@@ -12,7 +12,7 @@ import { promptInput } from "./prompt-input.js"
 import { publishPromptQueue } from "./prompt-queue-publish.js"
 import { answeredPendingQuestion } from "./question-replies.js"
 import { ensureAgentSessionFor } from "./session-workspace.js"
-import { recordUserPrompt, steeredPrompt } from "./user-prompts.js"
+import { recordUserPrompt, queuedPrompt } from "./user-prompts.js"
 
 export const steerClaimedPrompt = async (
   services: CodevisorServerServices,
@@ -35,7 +35,7 @@ export const steerClaimedPrompt = async (
   }
 
   if (steer.timing === "nextStep") return holdUntilAbsorbed(services, fanout, sessionId, item)
-  await recordUserPrompt(services, fanout, serverId, sessionId, steeredPrompt(item))
+  await recordUserPrompt(services, fanout, serverId, sessionId, queuedPrompt(item))
   await run(services.db.completePromptQueueItem(sessionId, item.id))
   if (steer.timing === "interruptsStep") await interruptRunningStep(services, steer.agentSessionId)
   return true
@@ -124,7 +124,7 @@ const recordAbsorbedSteer = async (
   const item = await run(services.db.takeSteeredPromptQueueItem(sessionId, settlement.id))
   if (item === undefined) return
 
-  const prompt = { ...steeredPrompt(item), startsTurn: settlement.startsTurn }
+  const prompt = { ...queuedPrompt(item), startsTurn: settlement.startsTurn }
   await publishPromptQueue(services.db, fanout, sessionId)
   await recordUserPrompt(services, fanout, serverId, sessionId, prompt)
   await run(services.db.completePromptQueueItem(sessionId, item.id))

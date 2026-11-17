@@ -36,7 +36,7 @@ extension SessionModel {
     return UnsentBotMessage(
       message: TranscriptBotMessage(
         id: message.id.uuidString.lowercased(), sender: .user, text: message.text,
-        attachments: message.attachments, delivery: delivery),
+        attachments: message.attachments, delivery: delivery, localSentAt: outgoing.sentAt),
       afterSequence: outgoing.afterBotSequence)
   }
 
