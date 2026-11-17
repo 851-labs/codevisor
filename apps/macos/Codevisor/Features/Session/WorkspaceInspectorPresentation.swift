@@ -51,37 +51,35 @@ struct WorkspaceInspectorPresentation: ViewModifier {
   @State private var imageStores = WorkspaceInspectorImageStores()
   @State private var usage = WorkspaceInspectorUsageModel()
   @State private var lastRefresh: RefreshKey?
+  @State private var tracked: Bool?
   let store: SessionStore?
   @SidebarSelectionRef var selection: SidebarSelection?
   var idealInspectorWidth: CGFloat = 260
 
   func body(content: Content) -> some View {
-    let inspected = inspectedWorkspace
-    let showsDrawer = inspected != nil && !panelLayout.docksInspector && panelLayout.activeDrawer == .trailing
+    let opensDocked = isPresented && panelLayout.docksInspector
+    let inspects = tracked ?? (inspectedWorkspace != nil)
+    let inspected = inspects && (opensDocked || opensDrawer) ? inspectedWorkspace : nil
+    let showsDocked = inspected != nil && opensDocked
+    let showsDrawer = inspected != nil && opensDrawer
     let isVisible = panelLayout.docksInspector ? isPresented : showsDrawer
     let visibleTab = inspected.map { shownTab(for: $0) } ?? tab
     let refresh = inspected.flatMap { isVisible ? refreshKey(for: $0) : nil }
-    let showsDocked = isPresented && panelLayout.docksInspector
     content
       .inspector(
         isPresented: Binding(
-          get: { inspected != nil && isPresented && panelLayout.docksInspector },
+          get: { showsDocked },
           set: { if panelLayout.docksInspector { isPresented = $0 } }
         )
       ) {
-        if let store, let inspected {
-          FrozenWhileHidden(isShown: showsDocked) { inspectorView(store, inspected, isShown: showsDocked) }
-            .equatable()
-            .inspectorColumnWidth(min: 220, ideal: idealInspectorWidth, max: 400)
-            .toolbar {
-              ToolbarSpacer(.flexible)
-              ToolbarItem {
-                Button(action: toggleInspector) {
-                  Label(PanelToggleShortcut.inspector.title(isVisible: isVisible), systemImage: "sidebar.trailing")
-                }
-                .help(PanelToggleShortcut.inspector.help(isVisible: isVisible))
-              }
-            }
+        if let store, inspects {
+          FrozenWhileHidden(isShown: showsDocked) {
+            if let inspected { inspectorView(store, inspected) }
+          }
+          .equatable()
+          .environment(\.isWorkspaceInspectorShown, showsDocked)
+          .inspectorColumnWidth(min: 220, ideal: idealInspectorWidth, max: 400)
+          .toolbar { inspectorToolbar(isVisible: isVisible) }
         }
       }
       .overlay { inspectorDrawer(inspected, isPresented: showsDrawer) }
@@ -100,7 +98,31 @@ struct WorkspaceInspectorPresentation: ViewModifier {
         guard isVisible, visibleTab == .harness else { return }
         await usage.prefetch(usageCandidates) { environment.machines.client(for: $0) }
       }
-      .focusedSceneValue(\.workspaceInspector, inspected.map { actions(for: $0, isVisible: isVisible) })
+      .background(
+        WorkspaceInspectorTracker(
+          actions: inspected.map { shown in { actions(for: shown, isVisible: isVisible) } } ?? { currentActions },
+          inspects: $tracked))
+  }
+
+  @ToolbarContentBuilder
+  private func inspectorToolbar(isVisible: Bool) -> some ToolbarContent {
+    ToolbarSpacer(.flexible)
+    ToolbarItem {
+      Button(action: toggleInspector) {
+        Label(PanelToggleShortcut.inspector.title(isVisible: isVisible), systemImage: "sidebar.trailing")
+      }
+      .help(PanelToggleShortcut.inspector.help(isVisible: isVisible))
+    }
+  }
+
+  private var opensDrawer: Bool {
+    !panelLayout.docksInspector && panelLayout.activeDrawer == .trailing
+  }
+
+  private var currentActions: WorkspaceInspectorActions? {
+    guard let inspected = inspectedWorkspace else { return nil }
+
+    return actions(for: inspected, isVisible: panelLayout.docksInspector ? isPresented : opensDrawer)
   }
 
   private func actions(for inspected: Inspected, isVisible: Bool) -> WorkspaceInspectorActions {
@@ -134,7 +156,7 @@ struct WorkspaceInspectorPresentation: ViewModifier {
     }
   }
 
-  private func inspectorView(_ store: SessionStore, _ inspected: Inspected, isShown: Bool = true) -> some View {
+  private func inspectorView(_ store: SessionStore, _ inspected: Inspected) -> some View {
     let workspace = inspected.workspace
     let chat = harnessChat(for: inspected)
     let place = place(of: inspected, chat: chat, store: store)
@@ -177,8 +199,7 @@ struct WorkspaceInspectorPresentation: ViewModifier {
       onOpen: { destination in
         store.inspectorOpenRequest = WorkspaceInspectorOpenRequest(
           workspaceId: workspace.id, destination: destination)
-      },
-      isShown: isShown
+      }
     )
     .environment(\.attachmentImages, imageStores.store(for: workspace.serverId, environment: environment))
   }

@@ -136,4 +136,18 @@ struct BotListModelTests {
     #expect(navigation.store.workspaceEntries.entry(workspaceId).workspace != nil)
     #expect(model.bots.map(\.id) == [bot.id])
   }
+
+  @Test("A bot the machine no longer reports is not listed or found by its workspace")
+  func removedBotIsForgotten() async throws {
+    let (model, _, fake, _) = await makeModel(bots: [.fixture(name: "First")])
+    await model.refresh(serverId: CodevisorMachine.local.id)
+    let bot = try #require(model.bots.first)
+    #expect(model.bot(forWorkspace: bot.workspaceId, serverId: bot.serverId) == bot)
+
+    fake.setBots([])
+    await model.refresh(serverId: CodevisorMachine.local.id)
+
+    #expect(model.bots.isEmpty)
+    #expect(model.bot(forWorkspace: bot.workspaceId, serverId: bot.serverId) == nil)
+  }
 }
