@@ -6,61 +6,18 @@ import SimulatorPane
 import SwiftUI
 
 extension SessionContainerView {
-  var sceneChrome: some View {
-    WorkspaceSceneChrome(
-      title: sceneTitle, removesTitle: paneControlsReplaceTitle,
-      values: WorkspaceSceneValues(
-        browser: activeBrowserModel, file: activeFileModel, simulator: activeSimulatorModel,
-        layoutActions: layoutActions(in: selectedWorkspace))
-    ) {
-      paneToolbar
-    }
+  var chrome: WorkspaceChrome {
+    WorkspaceChrome(
+      title: activeFileModel?.title ?? activePaneTitle,
+      renamedChat: activeFileModel == nil ? renamedChat : nil,
+      removesTitle: paneControlsReplaceTitle,
+      toolbar: activeToolbarSource,
+      layoutActions: layoutActions(in: selectedWorkspace)
+    )
   }
 
-  private var sceneTitle: WorkspaceSceneTitle {
-    if let model = activeFileModel { return .fixed(model.title) }
-    guard let chat = activeMainChat else { return .fixed(activePaneTitle) }
-    return .editable(title(renaming: chat))
-  }
-
-  @ToolbarContentBuilder
-  private var paneToolbar: some ToolbarContent {
-    if let browser = activeBrowserModel {
-      ChromiumBrowserNavigationControls(model: browser)
-      ChromiumBrowserAddressToolbarItem(model: browser)
-    } else {
-      machinePaneToolbar
-    }
-  }
-
-  @ToolbarContentBuilder
-  private var machinePaneToolbar: some ToolbarContent {
-    if let pane = activeScreenSharingPane, let store = pane.store {
-      ScreenSharingToolbar(
-        store: store, settings: { pane.machineSettings() }, applySettings: { pane.applyMachineSettings($0) })
-    } else {
-      documentPaneToolbar
-    }
-  }
-
-  @ToolbarContentBuilder
-  private var documentPaneToolbar: some ToolbarContent {
-    if let model = activeFileModel {
-      FilePaneToolbar(model: model)
-    } else {
-      reviewOrSimulatorToolbar
-    }
-  }
-
-  @ToolbarContentBuilder
-  private var reviewOrSimulatorToolbar: some ToolbarContent {
-    if let model = activeReviewModel {
-      ReviewPaneToolbar(model: model, title: activePaneTitle)
-    } else if let model = activeSimulatorModel {
-      SimulatorPaneToolbar(model: model) { data, name in
-        AppleSimulatorPane.saveScreenshot(data, deviceName: name)
-      }
-    }
+  private var renamedChat: WorkspaceChrome.RenamedChat? {
+    activeMainChat.map { WorkspaceChrome.RenamedChat(id: $0.id, serverId: $0.serverId) }
   }
 
   private var activeToolbarSource: PaneToolbarSource? {
@@ -105,12 +62,5 @@ extension SessionContainerView {
       let id = descriptor.chatSessionId
     else { return nil }
     return environment.projectList.chat(id, preferring: workspace.serverId)
-  }
-
-  private func title(renaming chat: ChatSession) -> Binding<String> {
-    Binding(
-      get: { activePaneTitle },
-      set: { environment.projectList.renameSession(chat, to: $0) }
-    )
   }
 }

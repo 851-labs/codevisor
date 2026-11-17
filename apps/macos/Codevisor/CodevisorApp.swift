@@ -170,6 +170,7 @@ struct RootView: View {
       WorkspaceDeck(navigation: navigation) { route in
         deckPage(store, route: route)
       }
+      .background(WorkspaceChromeHost(navigation: navigation))
       SidebarSelectionReader(selection: selectionBinding) { selection in
         transientDetail(store, selection: selection)
       }

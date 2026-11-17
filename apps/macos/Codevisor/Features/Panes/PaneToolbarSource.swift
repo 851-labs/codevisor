@@ -74,3 +74,16 @@ enum PaneToolbarSource {
     }
   }
 }
+
+extension PaneToolbarSource: Equatable {
+  static func == (lhs: Self, rhs: Self) -> Bool {
+    switch (lhs, rhs) {
+    case let (.browser(left), .browser(right)): left === right
+    case let (.screenSharing(left), .screenSharing(right)): left === right
+    case let (.file(left), .file(right)): left === right
+    case let (.review(left), .review(right)): left === right
+    case let (.simulator(left), .simulator(right)): left === right
+    default: false
+    }
+  }
+}

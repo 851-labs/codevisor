@@ -11,6 +11,7 @@ final class WindowNavigation {
   let deckSizes = WorkspaceDeckSizes()
 
   private var storedSelection: SidebarSelection?
+  @ObservationIgnored private var pages: [WorkspaceDeckSlot: WorkspacePageModel] = [:]
   @ObservationIgnored private weak var store: SessionStore?
   @ObservationIgnored private var environment: AppEnvironment?
 
@@ -27,6 +28,18 @@ final class WindowNavigation {
 
   var deckSlot: WorkspaceDeckSlot? {
     WorkspaceDeckRoute(selection).map(slot(for:))
+  }
+
+  var activePage: WorkspacePageModel? {
+    deck.activeSlot.map(page(for:))
+  }
+
+  func page(for slot: WorkspaceDeckSlot) -> WorkspacePageModel {
+    if let page = pages[slot] { return page }
+
+    let page = WorkspacePageModel()
+    pages[slot] = page
+    return page
   }
 
   func attach(store: SessionStore, environment: AppEnvironment) {
@@ -47,7 +60,9 @@ final class WindowNavigation {
     let slot = slot(for: route)
     if deck.show(route, in: slot) { NavigationSwitchTrace.shared.note("builtPage") }
     deckSizes.show(slot, hiding: previous)
-    deckSizes.keep(Set(deck.pages.map(\.id)))
+    let mounted = Set(deck.pages.map(\.id))
+    deckSizes.keep(mounted)
+    pages = pages.filter { mounted.contains($0.key) }
   }
 
   private func slot(for route: WorkspaceDeckRoute) -> WorkspaceDeckSlot {

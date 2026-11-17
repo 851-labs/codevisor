@@ -19,6 +19,26 @@ struct WorkspaceLayoutActions: Equatable {
   static func == (lhs: Self, rhs: Self) -> Bool {
     lhs.workspaceId == rhs.workspaceId
   }
+
+  private static let routedWorkspaceId = UUID()
+
+  static func routed(to target: @escaping @MainActor () -> WorkspaceLayoutActions?) -> WorkspaceLayoutActions {
+    WorkspaceLayoutActions(
+      workspaceId: routedWorkspaceId,
+      newTab: { target()?.newTab() },
+      closeSplit: { target()?.closeSplit() },
+      closeTab: { target()?.closeTab() },
+      reopenClosedPane: { target()?.reopenClosedPane() },
+      previousTab: { target()?.previousTab() },
+      nextTab: { target()?.nextTab() },
+      previousTabInWorkspace: { target()?.previousTabInWorkspace() },
+      nextTabInWorkspace: { target()?.nextTabInWorkspace() },
+      previousSplit: { target()?.previousSplit() },
+      nextSplit: { target()?.nextSplit() },
+      split: { target()?.split($0) },
+      focus: { target()?.focus($0) }
+    )
+  }
 }
 
 private struct WorkspaceLayoutActionsKey: FocusedValueKey {
