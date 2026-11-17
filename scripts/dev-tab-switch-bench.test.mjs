@@ -1,34 +1,40 @@
 import assert from "node:assert/strict"
 import test from "node:test"
 
-import { benchPlan, observedScenario, summarizeSwitches } from "./dev-tab-switch-bench.mjs"
+import {
+  benchPlan,
+  observedScenario,
+  stepNotification,
+  summarizeSwitches
+} from "./dev-tab-switch-bench.mjs"
 
-test("visits every chat once, reopens only the ones that fell out of the kept-alive set, then alternates the last two", () => {
+const described = (plan) => plan.map((step) => `${step.scenario}:${step.workspaceId ?? step.step}`)
+
+test("visits every chat once, reopens only the ones that fell out of the kept-alive set, then steps back and forth with the hotkey", () => {
   const plan = benchPlan(["a", "b", "c", "d"], 2, 3)
 
-  assert.deepEqual(
-    plan.map((step) => `${step.scenario}:${step.workspaceId}`),
-    [
-      "first-visit:a",
-      "first-visit:b",
-      "first-visit:c",
-      "first-visit:d",
-      "evicted-reopen:a",
-      "warm:d",
-      "warm:a",
-      "warm:d",
-      "warm:a"
-    ]
-  )
+  assert.deepEqual(described(plan), [
+    "first-visit:a",
+    "first-visit:b",
+    "first-visit:c",
+    "first-visit:d",
+    "evicted-reopen:a",
+    "warm:-1",
+    "warm:1",
+    "warm:-1",
+    "warm:1"
+  ])
+})
+
+test("a hotkey step is sent to one dev instance, by direction", () => {
+  assert.equal(stepNotification("grits", -1), "com.851labs.codevisor.dev.tab-step.grits.previous")
+  assert.equal(stepNotification("grits", 1), "com.851labs.codevisor.dev.tab-step.grits.next")
 })
 
 test("with no more chats than are kept alive, nothing is reopened cold", () => {
   const plan = benchPlan(["a", "b"], 1, 5)
 
-  assert.deepEqual(
-    plan.map((step) => `${step.scenario}:${step.workspaceId}`),
-    ["first-visit:a", "first-visit:b", "warm:a", "warm:b"]
-  )
+  assert.deepEqual(described(plan), ["first-visit:a", "first-visit:b", "warm:-1", "warm:1"])
 })
 
 test("reports main-thread work, the first pass and the time to settle per scenario", () => {

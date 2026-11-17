@@ -8,6 +8,7 @@ final class SidebarDragGeometryStore {
   var workspacePlacements: [UUID: SidebarRow.Placement] = [:]
   var tabs: [UUID: CGRect] = [:]
   var headings: [String: CGRect] = [:]
+  var visibleRows: ClosedRange<CGFloat>?
 }
 
 struct SidebarDrag: Equatable {

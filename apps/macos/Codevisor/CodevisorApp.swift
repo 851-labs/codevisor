@@ -97,6 +97,7 @@ struct RootView: View {
         }
       }
       .modifier(SidebarModeSelectionMemory(selection: selectionRef) { panelLayout.dismissDrawer() })
+      .modifier(TabSwitchBenchSteps(store: store, window: clientWindow))
       .modifier(SidebarSelectionHistory(selection: selectionRef, revealRequest: sidebarRevealRequest))
       .modifier(UpdateCenterUpkeep())
       .modifier(ConnectionRecoveryUpkeep())
