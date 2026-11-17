@@ -39,6 +39,7 @@ struct WorkspaceInspectorView: View {
   let onOpenDesktop: () -> Void
   let onReload: () -> Void
   let onOpen: (Destination) -> Void
+  var isShown = true
 
   private struct TabViewport: Equatable {
     var offset: CGFloat = 0
@@ -219,7 +220,7 @@ struct WorkspaceInspectorView: View {
     case .harness: harness
     case .machine:
       WorkspaceInspectorMachineView(
-        serverId: workspace.serverId, isActive: self.tab == .machine, client: client, desktop: desktop,
+        serverId: workspace.serverId, isActive: isShown && self.tab == .machine, client: client, desktop: desktop,
         desktopExpansion: expansion("Desktop"),
         statsExpansion: expansion("Stats"), onOpenDesktop: onOpenDesktop)
     case .media: WorkspaceInspectorMediaView(model: media, onRetry: onReload)
@@ -294,18 +295,23 @@ struct WorkspaceInspectorView: View {
       }
       .padding(.vertical, 10)
     }
-    .task(id: SubscriptionsKey(sessionId: harnessChat?.id, revision: subscriptionsRevision)) {
+    .task(id: isShown ? SubscriptionsKey(sessionId: harnessChat?.id, revision: subscriptionsRevision) : nil) {
+      guard isShown else { return }
       await subscriptions.load(sessionId: harnessChat?.id, client: client)
     }
-    .task(id: workspace.id) {
+    .task(id: isShown ? workspace.id : nil) {
+      guard isShown else { return }
       await workspaceMirrors.keepLoading(workspaceId: workspace.id, client: client)
     }
-    .task(id: workspace.id) {
+    .task(id: isShown ? workspace.id : nil) {
+      guard isShown else { return }
       await remoteTasks.keepLoading(workspace: workspace, client: client, machines: environment.machines)
     }
   }
 
   private var shownTasks: [WorkspaceInspectorTask] { tasks + remoteTasks.tasks }
+
+  private var shownHarnessChat: ChatSession? { isShown ? harnessChat : nil }
 
   private func removeAutomation(_ event: SubscribedPluginEvent) async -> Bool {
     await subscriptions.remove(event, client: client)
@@ -330,11 +336,11 @@ struct WorkspaceInspectorView: View {
       .padding(.vertical, 10)
     }
     .task(
-      id: harnessChat.map {
+      id: shownHarnessChat.map {
         WorkspaceInspectorContextSection.LoadKey(sessionId: $0.id, usage: chatUsage, activity: activity)
       }
     ) {
-      guard let harnessChat else { return }
+      guard let harnessChat = shownHarnessChat else { return }
       let context = try? await client.sessionContext(id: harnessChat.id)
       guard !Task.isCancelled, let context else { return }
 
