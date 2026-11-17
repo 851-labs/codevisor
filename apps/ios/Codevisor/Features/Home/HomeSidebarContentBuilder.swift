@@ -39,7 +39,7 @@ struct HomeSidebarContentBuilder {
     let archivedIDs = Set(environment.navigationStore.workspaceEntries.archived.map(\.id))
     let tree = SidebarWorkspaceTree(
       listedItems, pinnedIDs: preferences.pinnedIDs, hiddenParentIDs: homes.union(archivedIDs))
-    let statuses = HomeSidebarStatusSource(environment: environment)
+    let statuses = HomeSidebarStatusSource(environment: environment).workspaces
     var content = HomeSidebarContent.make(
       listed: tree.roots,
       children: tree.children,
@@ -109,6 +109,58 @@ struct HomeSidebarContentBuilder {
       workspace, item: item, preferences: preferences, projectGroups: projectGroups, heading: nil)
   }
 
+  func agentDetails(
+    for workspace: Workspace, item: WorkspaceSidebarItem, rowDetails: [SidebarRowDetail], status: SidebarRowStatus?
+  ) -> HomeSidebarRowDetails {
+    var details = sidebarWorkspace(
+      workspace, item: item, preferences: HomeSidebarPreferences(rowDetails: rowDetails),
+      projectGroups: ProjectGroup.grouping(environment.projectList.projects), heading: nil
+    ).details
+    details.rowStatus = status
+    return details
+  }
+
+  func agentDetails(
+    for chat: ChatSession, rowDetails: [SidebarRowDetail], status: SidebarRowStatus?
+  ) -> HomeSidebarRowDetails {
+    let checkout = environment.navigationStore.projection.checkout(for: chat)
+    let row = agentRow(for: chat)
+    return HomeSidebarRowDetails(
+      title: row.title,
+      serverId: chat.serverId,
+      subtitle: SidebarRowSubtitle.make(
+        details: rowDetails,
+        title: chat.title,
+        projectName: projectName(of: chat),
+        branch: checkout?.git.flatMap(SidebarGitLookups.head(of:)),
+        worktreeName: checkout?.worktreeName,
+        groupNamesProject: false
+      ),
+      rowStatus: status,
+      showsStatusLabel: rowDetails.contains(.status),
+      machine: rowDetails.contains(.machine) ? rowMachine(serverId: chat.serverId) : nil,
+      pullRequest: rowDetails.contains(.pullRequest) ? checkout?.git?.pullRequest : nil,
+      leadingRow: row,
+      attention: row.status
+    )
+  }
+
+  private func agentRow(for chat: ChatSession) -> HomeSidebarTabRow {
+    HomeSidebarTabRow(
+      id: chat.id,
+      title: chat.title.isEmpty ? "Agent" : chat.title,
+      icon: .chat(harnessId: chat.harnessId, fallbackSymbolName: harnessSymbol(for: chat)),
+      status: status(for: chat),
+      chatSessionId: chat.id,
+      isUnread: chat.isUnread
+    )
+  }
+
+  private func projectName(of chat: ChatSession) -> String? {
+    ProjectGroup.grouping(environment.projectList.projects)
+      .first { $0.contains(serverId: chat.serverId, projectId: chat.projectId) }?.name
+  }
+
   private func known(_ items: [WorkspaceSidebarItem]) -> [WorkspaceSidebarItem] {
     items.filter { environment.machines.machine(for: $0.serverId) != nil }
   }
@@ -119,7 +171,7 @@ struct HomeSidebarContentBuilder {
     preferences: HomeSidebarPreferences,
     projectGroups: [ProjectGroup],
     heading: SidebarWorkspaceGroup.Heading?,
-    statuses: HomeSidebarStatusSource? = nil
+    statuses: SidebarRowStatuses? = nil
   ) -> HomeSidebarWorkspace {
     let details = preferences.rowDetails
     let rowStatus = workspace.isArchived ? nil : statuses?.status(of: workspace.id)
