@@ -32,6 +32,26 @@ struct TranscriptBotRowPlacementTests {
       ])
   }
 
+  @Test func aSendMovesNoRowButItsOwn() throws {
+    let builder = event(from: "builder", at: 20)
+    let tester = event(from: "tester", at: 21)
+    let settled: [ConversationItem] = [
+      .user(builder), .assistant(AssistantMessage(turn: AssistantTurn(startedAt: at(20), endedAt: at(20.5)))),
+      .user(tester), .assistant(AssistantMessage(turn: AssistantTurn(startedAt: at(21), endedAt: at(21.5)))),
+    ]
+    let earlier = [message("b1", .bot, "I asked the team.", at: 5), message("u1", .user, "Thanks", at: 10)]
+    let id = sentID.uuidString.lowercased()
+    let sending = TranscriptBotMessage(id: id, sender: .user, text: "Next?", localSentAt: at(30))
+
+    let idle = try projected(settled, earlier)
+    let whileSending = try projected(settled, earlier + [sending]).filter { $0.id != .message(sentID) }
+    let echoed = try projected(settled, earlier + [message(id, .user, "Next?", at: 30)])
+      .filter { $0.id != .message(sentID) }
+
+    #expect(whileSending == idle)
+    #expect(echoed == idle)
+  }
+
   @Test func aSendAfterAQuietSpellShowsItsTimeBeforeTheServerEchoesIt() throws {
     let earlier = [message("b1", .bot, "Done for today.", at: 0)]
     let id = sentID.uuidString.lowercased()
@@ -63,6 +83,12 @@ struct TranscriptBotRowPlacementTests {
   private func rows(
     _ settled: [ConversationItem], _ messages: [TranscriptBotMessage], pending: UserMessage? = nil
   ) throws -> [TranscriptPresentationRow.ID] {
+    try projected(settled, messages, pending: pending).map(\.id)
+  }
+
+  private func projected(
+    _ settled: [ConversationItem], _ messages: [TranscriptBotMessage], pending: UserMessage? = nil
+  ) throws -> [TranscriptPresentationRow] {
     let input = TranscriptProjectionInput(
       settledConversation: settled,
       pendingUserMessage: pending,
@@ -76,7 +102,7 @@ struct TranscriptBotRowPlacementTests {
       status: .idle,
       botConversation: TranscriptBotConversation(messages: messages, isWorking: false)
     )
-    return try TranscriptRowProjectionCache.project(input, options: options).map(\.id)
+    return try TranscriptRowProjectionCache.project(input, options: options)
   }
 
   private func askingTurn(endedAt seconds: TimeInterval) -> AssistantTurn {
@@ -89,7 +115,8 @@ struct TranscriptBotRowPlacementTests {
 
   private func event(from agent: String, at seconds: TimeInterval) -> UserMessage {
     UserMessage(
-      text: "<codevisor-event type=\"session.turn_ended\" agentId=\"\(agent)\">\ndone\n</codevisor-event>",
+      text: "<codevisor-event type=\"thread.message\" threadId=\"\(agent)\" from=\"bot\" botId=\"\(agent)\">\ndone\n"
+        + "</codevisor-event>",
       isEvent: true, sentAt: at(seconds))
   }
 

@@ -21,7 +21,7 @@ enum TranscriptBotRowAssembly {
     let placements = placementTimes(of: messages)
     for (index, message) in messages.enumerated() {
       if index.isMultiple(of: 32), Task.isCancelled { throw CancellationError() }
-      appendTimedRows(askedBefore: placements[index], from: &timedRows, to: &rows)
+      let followsTimedRow = appendTimedRows(askedBefore: placements[index], from: &timedRows, to: &rows)
       if let sentAt = message.moment, startsNewMoment(sentAt, after: previous) {
         rows.append(
           .init(
@@ -30,9 +30,8 @@ enum TranscriptBotRowAssembly {
             estimatedHeight: 28
           ))
       }
-      appendAuthorName(heading: message, after: previous, to: &rows)
-      let next = messages.indices.contains(index + 1) ? messages[index + 1] : nil
-      let isGroupTail = next.map { !continuesGroup($0, after: message) } ?? true
+      appendAuthorName(heading: message, after: followsTimedRow ? nil : previous, to: &rows)
+      let isGroupTail = endsGroup(at: index, of: messages, placements: placements, before: timedRows)
       if let delivery = message.delivery, message.sender == .user, let id = UUID(uuidString: message.id) {
         rows.append(row(for: message, isGroupTail: isGroupTail, spacingAfter: TranscriptPresentationRow.deliveryGap))
         rows.append(
@@ -84,15 +83,30 @@ enum TranscriptBotRowAssembly {
     return reversed.reversed()
   }
 
+  @discardableResult
   private static func appendTimedRows(
     askedBefore placement: Date,
     from timedRows: inout ArraySlice<TranscriptBotTimedRows.Entry>,
     to rows: inout [TranscriptPresentationRow]
-  ) {
+  ) -> Bool {
+    var appended = false
     while let next = timedRows.first, let askedAt = next.askedAt, askedAt < placement {
       TranscriptThreadEventRows.append(next.row, to: &rows)
       timedRows.removeFirst()
+      appended = true
     }
+    return appended
+  }
+
+  private static func endsGroup(
+    at index: Int, of messages: [TranscriptBotMessage], placements: [Date],
+    before timedRows: ArraySlice<TranscriptBotTimedRows.Entry>
+  ) -> Bool {
+    let nextIndex = index + 1
+    guard messages.indices.contains(nextIndex) else { return true }
+    guard continuesGroup(messages[nextIndex], after: messages[index]) else { return true }
+    guard let askedAt = timedRows.first?.askedAt else { return false }
+    return askedAt < placements[nextIndex]
   }
 
   private static func row(
