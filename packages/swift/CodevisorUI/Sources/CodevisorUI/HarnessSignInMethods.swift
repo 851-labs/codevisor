@@ -47,33 +47,49 @@ public struct HarnessSignInMethods: View {
 public struct HarnessAddAccountControl: View {
   let title: String
   let methods: [ServerHarnessAuthMethod]
+  let fillsRow: Bool
   let add: (ServerHarnessAuthMethod?) async -> Void
 
   public init(
-    title: String, methods: [ServerHarnessAuthMethod],
+    title: String, methods: [ServerHarnessAuthMethod], fillsRow: Bool = false,
     add: @escaping (ServerHarnessAuthMethod?) async -> Void
   ) {
     self.title = title
     self.methods = methods
+    self.fillsRow = fillsRow
     self.add = add
   }
 
   public var body: some View {
+    if fillsRow {
+      control.buttonStyle(.plain).menuStyle(.button)
+    } else {
+      control
+    }
+  }
+
+  @ViewBuilder private var control: some View {
     if methods.count > 1 {
       Menu {
         ForEach(methods) { method in
           Button(method.name) { Task { await add(method) } }
         }
       } label: {
-        Label("\(title)…", systemImage: "plus")
+        label("\(title)…")
       }
       .menuIndicator(.hidden)
     } else {
       Button {
         Task { await add(methods.first) }
       } label: {
-        Label(title, systemImage: "plus")
+        label(title)
       }
     }
+  }
+
+  private func label(_ text: String) -> some View {
+    Label(text, systemImage: "plus")
+      .frame(maxWidth: fillsRow ? .infinity : nil, alignment: .leading)
+      .contentShape(Rectangle())
   }
 }
