@@ -51,6 +51,7 @@ export const DAYTONA_DEFINITION: SandboxProviderDefinition = {
     }),
     textField("target", "Region", {
       placeholder: "us",
+      description: "us or eu. Empty uses your organization's default.",
       help: "us or eu. Leave empty for your organization's default region."
     })
   ],
@@ -61,6 +62,7 @@ export const DAYTONA_DEFINITION: SandboxProviderDefinition = {
       help: "A public Debian or Ubuntu image with a version tag. Codevisor adds curl, git and sudo."
     }),
     textField(snapshotKey, "Snapshot", {
+      description: "Start from a Daytona snapshot instead of an image.",
       help: "A Daytona snapshot to start from instead of the image. CPU, memory and disk then come from the snapshot."
     }),
     numberField("cpu", "CPUs", {

@@ -7,18 +7,11 @@ struct SandboxFieldRow: View {
   var secretSaved = false
   var hosts: [SandboxHost] = []
   var steps: SandboxFieldSteps?
-  var replacement: ServerSandboxField?
   var error: String?
   var onCommit: (() -> Void)?
 
   var body: some View {
-    SandboxFieldNotes(help: field.note, error: error) {
-      if let replacement {
-        LabeledContent(field.label, value: "From the \(replacement.label.lowercased())")
-      } else {
-        input
-      }
-    }
+    SandboxFieldNotes(help: field.description, error: error) { input }
   }
 
   @ViewBuilder

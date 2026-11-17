@@ -38,11 +38,9 @@ public struct ServerSandboxField: Decodable, Equatable, Hashable, Sendable, Iden
 
   public var id: String { key }
 
-  public var note: String? { description ?? help }
-
   public var emptyPrompt: String {
     if !required, defaultValue == nil { return "Optional" }
-    return placeholder ?? defaultValue?.text ?? "Required"
+    return placeholder ?? defaultValue?.text ?? ""
   }
 
   public var awaitsChoices: Bool { type == .choice && choices == nil }

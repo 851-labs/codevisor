@@ -47,6 +47,7 @@ export const TART_ORCHARD_DEFINITION: SandboxProviderDefinition = {
     secretField("serviceAccountToken", "Service account token", { required: true }),
     textField("certificateFingerprint", "Certificate fingerprint", {
       placeholder: "AB CD EF …",
+      description: "Only for a controller with a self-signed certificate.",
       help: "Only for a controller using its self-signed certificate: the SHA-256 fingerprint that orchard context create prints."
     })
   ],

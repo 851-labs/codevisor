@@ -30,14 +30,12 @@ struct SandboxProfileFields<Footer: View>: View {
   var body: some View {
     Section {
       SandboxFieldNotes(error: model.error(on: SandboxProfileDraft.nameKey)) {
-        SandboxTextInput(label: "Name", prompt: "Required", text: $draft.name, onCommit: onCommit)
+        SandboxTextInput(label: "Name", prompt: "", text: $draft.name, onCommit: onCommit)
       }
-      ForEach(vendor.profileFields) { field in
+      ForEach(vendor.profileFields.filter { !draft.fields.isReplaced($0) }) { field in
         SandboxFieldRow(
           field: model.offered(field, in: draft), draft: $draft.fields, hosts: model.hosts(for: field.capability),
-          steps: model.steps(for: field, in: draft),
-          replacement: draft.fields.replacement(of: field, among: vendor.profileFields),
-          error: model.error(on: field.key), onCommit: onCommit)
+          steps: model.steps(for: field, in: draft), error: model.error(on: field.key), onCommit: onCommit)
       }
     } footer: {
       footer()
