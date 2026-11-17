@@ -4,14 +4,14 @@ import Foundation
 @MainActor
 final class SandboxSetupTracker {
   let steps: SandboxSetupSteps
-  private weak var controller: SessionController?
+  private weak var controller: (any SandboxSetupDisplay)?
   private let showsPhases: Bool
   private var begun: Set<SandboxSetupStage> = []
   private var finished: Set<SandboxSetupStage> = []
   private var upcoming: Set<SandboxSetupStage> = []
   private var current: SandboxSetupStage?
 
-  init(controller: SessionController, steps: SandboxSetupSteps, showsPhases: Bool) {
+  init(controller: any SandboxSetupDisplay, steps: SandboxSetupSteps, showsPhases: Bool) {
     self.controller = controller
     self.steps = steps
     self.showsPhases = showsPhases
@@ -42,7 +42,7 @@ final class SandboxSetupTracker {
     guard !begun.contains(stage) else { return }
     begun.insert(stage)
     current = stage
-    controller?.status = .connecting(steps.status(stage))
+    controller?.showSetupStatus(steps.status(stage))
     if upcoming.remove(stage) != nil {
       mutate(stage) { $0.start(at: startedAt) }
     } else if showsPhases {

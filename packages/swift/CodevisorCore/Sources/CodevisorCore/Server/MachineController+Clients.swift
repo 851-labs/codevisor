@@ -62,6 +62,10 @@ extension MachineController {
     navigationStore?.setRestoring(sandboxMachineProfiles.restoringWorkspaces)
   }
 
+  public func restoringWorkspace(_ id: UUID) -> RestoringWorkspace? {
+    sandboxMachineProfiles.restoringWorkspaces[id]
+  }
+
   public func sandboxPower(forMachineId id: String) -> SandboxMachinePower? {
     guard let cloud = cloudMachine(forMachineId: id), let origin = cloud.ephemeral else { return nil }
     return sandboxMachineProfiles.power(forDevice: cloud.deviceId, ownedBy: origin.ownerDeviceId)

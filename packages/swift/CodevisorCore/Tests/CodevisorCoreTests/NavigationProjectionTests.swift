@@ -114,9 +114,13 @@ struct NavigationProjectionTests {
     }
 
     await fixture.install(machineId: "mac", projects: [project], workspaces: [standIn])
-    fixture.store.setRestoring([standIn.id: RestoringWorkspace(sandboxMachineId: nil)])
+    fixture.store.setRestoring([
+      standIn.id: RestoringWorkspace(sandboxId: "s", vendorId: "apple-container", sandboxMachineId: nil)
+    ])
     let started = shown()
-    fixture.store.setRestoring([standIn.id: RestoringWorkspace(sandboxMachineId: "sandbox")])
+    fixture.store.setRestoring([
+      standIn.id: RestoringWorkspace(sandboxId: "s", vendorId: "apple-container", sandboxMachineId: "sandbox")
+    ])
     await fixture.install(machineId: "mac", projects: [project], workspaces: [], cursor: 2)
     let handedOver = shown()
     await fixture.install(machineId: "sandbox", projects: [project], sessions: [chat], workspaces: [restored])
@@ -134,7 +138,9 @@ struct NavigationProjectionTests {
       createdAt: Date(timeIntervalSince1970: 200), isServerSynced: true)
     let fixture = NavigationFixture()
     await fixture.install(machineId: "mac", projects: [project], workspaces: [standIn])
-    fixture.store.setRestoring([standIn.id: RestoringWorkspace(sandboxMachineId: nil)])
+    fixture.store.setRestoring([
+      standIn.id: RestoringWorkspace(sandboxId: "s", vendorId: "apple-container", sandboxMachineId: nil)
+    ])
 
     standIn.isArchived = true
     standIn.archivedAt = standIn.createdAt

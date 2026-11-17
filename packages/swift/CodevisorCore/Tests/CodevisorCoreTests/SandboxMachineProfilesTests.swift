@@ -100,12 +100,40 @@ struct SandboxMachineProfilesTests {
         workspaceId: workspaceId.uuidString.lowercased(), restoresWorkspace: restores)
     }
 
-    #expect(RestoringWorkspace.byWorkspace([sandbox(state: "creating")]) == [workspaceId: .init(sandboxMachineId: nil)])
+    #expect(
+      RestoringWorkspace.byWorkspace([sandbox(state: "creating")]) == [
+        workspaceId: .init(sandboxId: "s", vendorId: "apple-container", sandboxMachineId: nil)
+      ])
     #expect(
       RestoringWorkspace.byWorkspace([sandbox(state: "ready", deviceId: "d1")])
-        == [workspaceId: .init(sandboxMachineId: "cloud:d1")])
+        == [workspaceId: .init(sandboxId: "s", vendorId: "apple-container", sandboxMachineId: "cloud:d1")])
     #expect(RestoringWorkspace.byWorkspace([sandbox(state: "archived")]).isEmpty)
     #expect(RestoringWorkspace.byWorkspace([sandbox(state: "ready", restores: nil)]).isEmpty)
+  }
+
+  @Test("A restoring sandbox shows the same setup steps a new sandbox chat shows, then connects")
+  func restoreProgress() {
+    let progress = SandboxRestoreProgress()
+    let tracker = progress.begin(
+      RestoringWorkspace(sandboxId: "s", vendorId: "apple-container", sandboxMachineId: nil),
+      clonedProjectName: "widget")
+    func sandbox(state: String, steps: [ServerSandboxSetupStep]) -> ServerSandbox {
+      ServerSandbox(
+        id: "s", vendor: "apple-container", name: "Box", state: state, plan: ["create", "clone"], steps: steps)
+    }
+    let created = ServerSandboxSetupStep(
+      stage: "create", startedAt: "2026-11-17T10:00:00.000Z", endedAt: "2026-11-17T10:00:05.000Z")
+    let cloning = ServerSandboxSetupStep(stage: "clone", startedAt: "2026-11-17T10:00:05.000Z")
+    let cloned = ServerSandboxSetupStep(
+      stage: "clone", startedAt: "2026-11-17T10:00:05.000Z", endedAt: "2026-11-17T10:00:09.000Z")
+
+    SandboxRestoreProgress.show(sandbox(state: "creating", steps: [created, cloning]), in: tracker)
+    let running = SandboxStartSummary(steps: progress.phases)?.log
+    SandboxRestoreProgress.show(sandbox(state: "ready", steps: [created, cloned]), in: tracker)
+
+    #expect(running == "==> Creating sandbox\n==> Cloning widget")
+    #expect(SandboxStartSummary(steps: progress.phases)?.log.hasSuffix("==> Connecting to sandbox") == true)
+    #expect(SandboxStartSummary(steps: progress.phases)?.state == .running)
   }
 
   @Test("A refresh that can't reach the owning Mac keeps the profiles already known")

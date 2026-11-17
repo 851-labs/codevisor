@@ -94,15 +94,9 @@ struct WorkspaceRouteView: View {
   @ViewBuilder
   private func content(_ workspace: Workspace?) -> some View {
     if let workspace, workspace.serverId == serverId, workspace.isRestoring {
-      ContentUnavailableView {
-        Label("Restoring Workspace", systemImage: "arrow.uturn.backward")
-      } description: {
-        Text("Its sandbox is being set up again. Its chats and tabs open here when it's ready.")
-      } actions: {
-        ProgressView().controlSize(.small)
-      }
-      .navigationTitle(SidebarWorkspaceRowLabel.title(for: workspace.name))
-      .navigationSubtitle("Restoring")
+      RestoringWorkspacePane(workspace: workspace)
+        .navigationTitle(SidebarWorkspaceRowLabel.title(for: workspace.name))
+        .navigationSubtitle("Restoring")
     } else if let workspace,
       workspace.serverId == serverId,
       let project = environment.projectList.projects.first(where: {
