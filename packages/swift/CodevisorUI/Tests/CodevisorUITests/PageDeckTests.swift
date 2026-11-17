@@ -1,3 +1,4 @@
+import Foundation
 import Testing
 @testable import CodevisorUI
 
@@ -58,5 +59,83 @@ struct PageDeckTests {
     #expect(built)
     #expect(deck.activity(for: "a") !== evicted)
     #expect(deck.pages.map(\.id) == ["c", "a"])
+  }
+
+  @Test("Switching pages tells the old page it is hidden before the new page that it is shown")
+  func switchingNotifiesTheOldPageFirst() {
+    let deck = PageDeck<String, Int>(capacity: 3)
+    deck.show(1, in: "a")
+    deck.show(2, in: "b")
+    var events: [String] = []
+    deck.activity(for: "a").addListener(UUID()) { events.append($0 ? "show a" : "hide a") }
+    deck.activity(for: "b").addListener(UUID()) { events.append($0 ? "show b" : "hide b") }
+
+    deck.show(1, in: "a")
+
+    #expect(events == ["hide b", "show a"])
+  }
+
+  @Test("A page that stopped listening is not told about later switches")
+  func removedListenerIsNotNotified() {
+    let deck = PageDeck<String, Int>(capacity: 3)
+    deck.show(1, in: "a")
+    var events: [Bool] = []
+    let listener = UUID()
+    deck.activity(for: "a").addListener(listener) { events.append($0) }
+
+    deck.showNothing()
+    deck.activity(for: "a").removeListener(listener)
+    deck.show(1, in: "a")
+
+    #expect(events == [false])
+  }
+
+  @Test("A page shown with a new route is not told at once, so its view reports it after rendering the route")
+  func routeChangeIsNotNotifiedAtOnce() {
+    let deck = PageDeck<String, Int>(capacity: 3)
+    deck.show(1, in: "a")
+    deck.show(2, in: "b")
+    var events: [Bool] = []
+    let activity = deck.activity(for: "a")
+    activity.addListener(UUID()) { events.append($0) }
+
+    deck.show(3, in: "a")
+
+    #expect(activity.isActive)
+    #expect(events.isEmpty)
+  }
+
+  @Test("A page's listeners hear about a switch in the order they started listening")
+  func listenersAreNotifiedInOrder() {
+    let deck = PageDeck<String, Int>(capacity: 3)
+    deck.show(1, in: "a")
+    deck.show(2, in: "b")
+    var events: [Int] = []
+    let activity = deck.activity(for: "a")
+    for listener in 1...4 {
+      activity.addListener(UUID()) { _ in events.append(listener) }
+    }
+
+    deck.show(1, in: "a")
+
+    #expect(events == [1, 2, 3, 4])
+  }
+
+  @Test("A listener that switches pages while being told leaves only the newest page active")
+  func switchingFromAListenerKeepsOnePageActive() {
+    let deck = PageDeck<String, Int>(capacity: 3)
+    deck.show(1, in: "a")
+    deck.show(2, in: "b")
+    deck.show(3, in: "c")
+    deck.activity(for: "c").addListener(UUID()) { active in
+      if !active { deck.show(2, in: "b") }
+    }
+
+    deck.show(1, in: "a")
+
+    #expect(deck.activeSlot == "b")
+    #expect(deck.activity(for: "b").isActive)
+    #expect(!deck.activity(for: "a").isActive)
+    #expect(!deck.activity(for: "c").isActive)
   }
 }

@@ -5,11 +5,20 @@ import SwiftUI
 final class DetailColumnFocusAnchor {
   fileprivate weak var view: NSView?
 
-  func releaseFocus() {
+  var focusOwner: AnyObject? {
+    Self.owner(of: view?.window?.firstResponder)
+  }
+
+  func releaseFocus(heldBy previous: AnyObject?) {
     guard let window = view?.window, let column = column, let responder = window.firstResponder as? NSView,
-      responder.isDescendant(of: column)
+      Self.owner(of: responder) === previous, responder.isDescendant(of: column)
     else { return }
     window.makeFirstResponder(nil)
+  }
+
+  private static func owner(of responder: NSResponder?) -> AnyObject? {
+    if let editor = responder as? NSText, editor.isFieldEditor, let field = editor.delegate { return field }
+    return responder
   }
 
   private var column: NSView? {

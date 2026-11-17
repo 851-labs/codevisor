@@ -10,9 +10,18 @@ public final class DeferredPaneFocus {
     let focus: () -> Bool
   }
 
+  private static var attemptsNow = false
+
   private let schedule: Schedule
   private var generation: UInt64 = 0
   private var pending: Request?
+
+  public static func attemptingNow<Result>(_ body: () throws -> Result) rethrows -> Result {
+    let previous = attemptsNow
+    attemptsNow = true
+    defer { attemptsNow = previous }
+    return try body()
+  }
 
   public init(schedule: @escaping Schedule = { action in DispatchQueue.main.async { action() } }) {
     self.schedule = schedule
@@ -20,7 +29,12 @@ public final class DeferredPaneFocus {
 
   public func request(isCurrent: @escaping () -> Bool, focus: @escaping () -> Bool) {
     generation &+= 1
-    pending = Request(generation: generation, isCurrent: isCurrent, focus: focus)
+    let request = Request(generation: generation, isCurrent: isCurrent, focus: focus)
+    pending = request
+    if Self.attemptsNow, isCurrent() {
+      _ = focus()
+      guard pending?.generation == request.generation else { return }
+    }
     retry()
   }
 
