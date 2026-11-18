@@ -409,7 +409,6 @@ export const UpdateSessionRequest = Schema.Struct({
   projectId: Schema.optional(Schema.String),
   workspaceId: Schema.optional(Schema.String),
   harnessId: Schema.optional(Schema.String),
-  harnessAccountId: Schema.optional(Schema.String),
   labels: Schema.optional(Labels),
   updatedAt: Schema.optional(Schema.String)
 })

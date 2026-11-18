@@ -237,9 +237,14 @@ export const makeAutoResumeScheduler = (deps: AutoResumeDependencies): AutoResum
   }
 
   const checkOnAccount = async (pending: PendingResume, accountId: string): Promise<void> => {
-    await run(db.bindSessionHarnessAccount(pending.sessionId, accountId))
+    await moveToAccount(pending.sessionId, accountId)
     await save({ ...pending, harnessAccountId: accountId }, new Date())
     await markResuming(pending.sessionId)
+  }
+
+  const moveToAccount = async (sessionId: string, accountId: string): Promise<void> => {
+    const moved = await run(db.bindSessionHarnessAccount(sessionId, accountId))
+    await appendAndPublish(db, deps.fanout, "session.updated", moved.id, moved)
   }
 
   const recheckAccount = async (accountId: string): Promise<void> => {

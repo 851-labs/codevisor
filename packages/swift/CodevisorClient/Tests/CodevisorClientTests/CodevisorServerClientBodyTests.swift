@@ -17,6 +17,16 @@ struct CodevisorServerClientBodyTests {
     #expect(fallback["title"] == .string("First message"))
   }
 
+  @Test("Saving a chat leaves its harness account to the server")
+  func sessionUpdateOmitsAccount() throws {
+    let session = ChatSession(projectId: UUID(), harnessId: "claude-code", harnessAccountId: "personal", title: "Chat")
+    let saved = try JSONDecoder().decode(
+      JSONValue.self, from: JSONEncoder().encode(UpdateSessionBody(session: session))
+    )
+    #expect(saved["harnessId"] == .string("claude-code"))
+    #expect(saved["harnessAccountId"] == nil)
+  }
+
   @Test("Creating a session's workspace asks for its draft's sidebar position")
   func draftSidebarPosition() throws {
     let session = ChatSession(projectId: UUID(), title: "First message")

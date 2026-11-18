@@ -224,10 +224,10 @@ const resumeFrom = async (
   await run(
     services.db.updateSession(sessionId, {
       agentSessionId,
-      labels: { ...labels, [RESTORED_AGENT_SESSION_LABEL]: agentSessionId },
-      ...(account === undefined ? {} : { harnessAccountId: account.id })
+      labels: { ...labels, [RESTORED_AGENT_SESSION_LABEL]: agentSessionId }
     })
   )
+  if (account !== undefined) await run(services.db.bindSessionHarnessAccount(sessionId, account.id))
 }
 
 const hasAgentSession = (session: SessionSummary): boolean =>
