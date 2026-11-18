@@ -19,4 +19,5 @@ nonisolated enum WorkspaceDeckSlot: Hashable {
   case workspace(UUID)
   case session(UUID)
   case bot(UUID)
+  case sharedChat
 }

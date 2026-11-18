@@ -114,6 +114,13 @@ final class TerminalFocusController {
     }
   }
 
+  func forgetChat(_ sessionId: UUID) {
+    chatComposers[sessionId] = nil
+    chatTranscripts[sessionId] = nil
+    chatQuestionPickers[sessionId] = nil
+    if pendingComposerFocus == sessionId { pendingComposerFocus = nil }
+  }
+
   func registerTranscript(_ view: NSView, forChat sessionId: UUID) {
     chatTranscripts[sessionId] = WeakNSView(view)
   }

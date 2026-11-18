@@ -19,6 +19,7 @@ struct WorkspaceDeck<Page: View>: View {
           page(mounted.route)
         }
         .equatable()
+        .environment(\.reusesChatPage, mounted.id == .sharedChat)
         .frame(width: frozenSize?.width, height: frozenSize?.height)
         .opacity(isActive ? 1 : 0)
         .allowsHitTesting(isActive)

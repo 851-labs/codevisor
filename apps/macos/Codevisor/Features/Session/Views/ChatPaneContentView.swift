@@ -12,6 +12,7 @@ struct ChatPaneContentView: View {
   let store: SessionStore
   let environment: AppEnvironment
   var role = ChatPaneRole.chat
+  @Environment(\.reusesChatPage) private var reusesChatPage
 
   private var isReadOnly: Bool { role.isReadOnly || isArchivedBot }
 
@@ -126,7 +127,7 @@ struct ChatPaneContentView: View {
       presentsBotConversation: role == .botConversation
     )
     .environment(\.allowsRemoteComputerUsePreview, true)
-    .id(chatSession.id)
+    .id(reusesChatPage ? AnyHashable(WorkspaceDeckSlot.sharedChat) : AnyHashable(chatSession.id))
     .task(id: SessionStore.SessionKey(chatSession)) {
       store.noteAccess(SessionStore.SessionKey(chatSession))
     }

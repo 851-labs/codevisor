@@ -121,6 +121,7 @@ struct SessionContainerView: View {
         bringFloatingPaneToFront(leafId)
       }
       .onWorkspaceVisibilityChange(show: showWorkspace, hide: hideWorkspace)
+      .onChange(of: mountedWorkspace.id) { previous, _ in showWorkspace(replacing: previous) }
       .task(id: mountIdentity) { wireMount() }
   }
 
@@ -169,6 +170,19 @@ struct SessionContainerView: View {
     setSelectedPanesVisible(true)
     publishFocusedChat(focusedChatCandidate)
     focusSelectedCenterPane()
+  }
+
+  private func showWorkspace(replacing previous: UUID) {
+    closingCenterTabId = nil
+    openingSplit = nil
+    wireMount()
+    synchronizeMountedPaneGroups()
+    guard isVisible else { return }
+
+    for (key, model) in store.centerLeafGroups where key.workspaceId == previous {
+      model.selectedPane?.visibilityChanged(false)
+    }
+    showWorkspace()
   }
 
   private func hideWorkspace() {

@@ -22,6 +22,9 @@ struct SessionScreen: View {
   var onCenterTreeChanged: ((SplitNode) -> Void)? = nil
   var onCenterTreeLiveChanged: ((SplitNode) -> Void)? = nil
 
+  @Environment(\.reusesChatPage) private var reusesChatPage
+  @State private var input = InputHandling()
+
   var body: some View {
     centerContent
       .background(
@@ -31,15 +34,20 @@ struct SessionScreen: View {
         .frame(width: 0, height: 0)
       )
       .onWorkspaceVisibilityChange(show: startHandlingInput, hide: stopHandlingInput)
+      .onChange(of: ObjectIdentifier(centerGroup)) {
+        if reusesChatPage, input.isActive { startHandlingInput() }
+      }
   }
 
   private func startHandlingInput() {
+    input.isActive = true
     focus.workspaceCommandHandler = onWorkspaceCommand
     focus.centerGroup = centerGroup
     focus.startTypeToFocus()
   }
 
   private func stopHandlingInput() {
+    input.isActive = false
     focus.stopTypeToFocus()
     splitDragCoordinator?.dragCancelled()
   }
@@ -60,7 +68,8 @@ struct SessionScreen: View {
           openingSplit: openingSplit,
           onOpeningFinished: { onSplitOpeningFinished?($0) },
           onTreeChanged: { onCenterTreeChanged?($0) },
-          onLiveTreeChanged: { onCenterTreeLiveChanged?($0) }
+          onLiveTreeChanged: { onCenterTreeLiveChanged?($0) },
+          reusedLeafId: reusesChatPage ? primaryLeafId : nil
         )
       } else {
         PaneGroupContent(group: centerGroup)
@@ -69,6 +78,10 @@ struct SessionScreen: View {
     .frame(maxWidth: .infinity, maxHeight: .infinity)
   }
 
+}
+
+private final class InputHandling {
+  var isActive = false
 }
 
 #if DEBUG

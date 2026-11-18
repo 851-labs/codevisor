@@ -70,6 +70,34 @@ final class WindowNavigation: SidebarSelectionOwner {
   }
 
   private func slot(for route: WorkspaceDeckRoute) -> WorkspaceDeckSlot {
+    guard WorkspaceDeckPolicy.reusesChatPage else { return ownSlot(for: route) }
+
+    let workspace = workspaceId(of: route)
+    if let mounted = deck.pages.first(where: {
+      $0.route == route || (workspace != nil && workspaceId(of: $0.route) == workspace)
+    }) {
+      return mounted.id
+    }
+    return showsPlainChat(route) ? .sharedChat : ownSlot(for: route)
+  }
+
+  private func workspaceId(of route: WorkspaceDeckRoute) -> UUID? {
+    switch route {
+    case let .session(_, sessionId): environment?.workspaces.workspaceId(forSession: sessionId)
+    case let .workspace(_, workspaceId): workspaceId
+    case .bot: nil
+    }
+  }
+
+  private func showsPlainChat(_ route: WorkspaceDeckRoute) -> Bool {
+    guard case let .session(_, sessionId) = route, let environment,
+      let workspaceId = environment.workspaces.workspaceId(forSession: sessionId)
+    else { return false }
+
+    return environment.navigationStore.workspaceEntries.entry(workspaceId).workspace?.isPlainChat == true
+  }
+
+  private func ownSlot(for route: WorkspaceDeckRoute) -> WorkspaceDeckSlot {
     switch route {
     case let .session(_, sessionId):
       environment?.workspaces.workspaceId(forSession: sessionId).map(WorkspaceDeckSlot.workspace) ?? .session(sessionId)

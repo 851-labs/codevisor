@@ -17,6 +17,7 @@ struct WorkspaceSplitView: View {
   var onOpeningFinished: ((WorkspaceSplitOpening) -> Void)? = nil
   let onTreeChanged: (SplitNode) -> Void
   var onLiveTreeChanged: ((SplitNode) -> Void)? = nil
+  var reusedLeafId: UUID? = nil
 
   @Environment(\.accessibilityReduceMotion) private var reduceMotion
   @Environment(\.transcriptTopChromeHeight) private var transcriptTopChromeHeight
@@ -32,7 +33,8 @@ struct WorkspaceSplitView: View {
       let clip = WorkspaceSplitClip(extendsAboveTop: extendsChatAboveTop(snapshot))
 
       ZStack(alignment: .topLeading) {
-        ForEach(snapshot.leaves) { leaf in
+        ForEach(SplitLeafSlot.all(snapshot.leaves, reusing: reusedLeafId)) { slot in
+          let leaf = slot.leaf
           let opening = openingSplit?.leafId == leaf.id ? openingSplit : nil
           SplitLeafView(
             leafId: leaf.id,
@@ -309,6 +311,18 @@ private extension SplitEdge {
     case .trailing: .leading
     case .top: .bottom
     case .bottom: .top
+    }
+  }
+}
+
+private struct SplitLeafSlot: Identifiable {
+  let id: AnyHashable
+  let leaf: WorkspaceSplitLayoutSnapshot.Leaf
+
+  static func all(_ leaves: [WorkspaceSplitLayoutSnapshot.Leaf], reusing reusedLeafId: UUID?) -> [SplitLeafSlot] {
+    leaves.map { leaf in
+      SplitLeafSlot(
+        id: leaf.id == reusedLeafId ? AnyHashable(WorkspaceDeckSlot.sharedChat) : AnyHashable(leaf.id), leaf: leaf)
     }
   }
 }

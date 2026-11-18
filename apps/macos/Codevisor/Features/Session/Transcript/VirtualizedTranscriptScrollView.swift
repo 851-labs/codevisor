@@ -349,6 +349,8 @@ final class VirtualizedTranscriptScrollView: NSScrollView {
   }
 
   override func layout() {
+    guard !isHidden else { return super.layout() }
+
     let previousSize = lastViewportSize
     let previousDistance = lastViewportDistanceFromBottom
     super.layout()
@@ -367,6 +369,7 @@ final class VirtualizedTranscriptScrollView: NSScrollView {
 
   override func scrollWheel(with event: NSEvent) {
     guard initialPresentationGate.isReady else { return }
+    if !hasVerticalScroller { hasVerticalScroller = true }
     cancelDisclosureViewportAnchor()
     bottomJumpGate.cancel()
     lockedRestoreDistance = nil
