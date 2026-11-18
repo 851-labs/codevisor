@@ -1,16 +1,16 @@
 import CodevisorCore
 import SwiftUI
 
-public struct CloudServerSettings: View {
+struct CloudServerSettings: View {
   private let cloud: CloudAccountController
   @Environment(\.dismiss) private var dismiss
   @State private var address = ""
   @State private var isConnecting = false
   @State private var errorMessage: String?
 
-  public init(cloud: CloudAccountController) { self.cloud = cloud }
+  init(cloud: CloudAccountController) { self.cloud = cloud }
 
-  public var body: some View {
+  var body: some View {
     Form {
       Section {
         LabeledContent("Current Server", value: cloud.serverURL.host() ?? cloud.serverURL.absoluteString)

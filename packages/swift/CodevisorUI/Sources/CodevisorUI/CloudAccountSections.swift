@@ -1,23 +1,20 @@
 import CodevisorCore
 import SwiftUI
 
-public struct CloudAccountSections: View {
+public struct CloudAccountSections<PageLink: View>: View {
   private let cloud: CloudAccountController
-  private let manageConnections: () -> Void
-  private let configureServer: () -> Void
   private let signInWithEmail: () -> Void
+  private let pageLink: (CloudAccountPage) -> PageLink
   @State private var isSigningIn = false
 
   public init(
     cloud: CloudAccountController,
-    manageConnections: @escaping () -> Void,
-    configureServer: @escaping () -> Void,
-    signInWithEmail: @escaping () -> Void
+    signInWithEmail: @escaping () -> Void,
+    @ViewBuilder pageLink: @escaping (CloudAccountPage) -> PageLink
   ) {
     self.cloud = cloud
-    self.manageConnections = manageConnections
-    self.configureServer = configureServer
     self.signInWithEmail = signInWithEmail
+    self.pageLink = pageLink
   }
 
   public var body: some View {
@@ -37,18 +34,11 @@ public struct CloudAccountSections: View {
       }
       Section {
         if cloud.state.isSignedIn {
-          SettingsNavigationRow(
-            "Connected Accounts",
-            systemImage: "person.crop.circle.badge.checkmark",
-            action: manageConnections
-          )
-          .disabled(cloud.isDeletingAccount)
+          pageLink(.connectedAccounts)
+            .disabled(cloud.isDeletingAccount)
         }
-        SettingsNavigationRow(title: "Cloud Server", systemImage: "network", action: configureServer) {
-          Text(cloud.customServerURL == nil ? "Default" : "Custom")
-            .foregroundStyle(.secondary)
-        }
-        .disabled(isSigningIn || cloud.isDeletingAccount)
+        pageLink(.server)
+          .disabled(isSigningIn || cloud.isDeletingAccount)
       }
       CloudAccountDeletionSection(cloud: cloud)
     }
