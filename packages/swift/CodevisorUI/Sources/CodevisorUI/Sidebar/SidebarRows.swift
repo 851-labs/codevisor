@@ -187,10 +187,7 @@ public enum SidebarRows {
       expansion.archived
       ? Array(archived.prefix(state.archivedVisibleCount))
       : SidebarCollapse.shown(archived, isExpanded: false, keeping: state.selectedWorkspaceID)
-    for item in shown {
-      rows.append(SidebarRow(.workspace(item, .archived)))
-      rows += tabRows(state.tabs[item.id] ?? [], of: item.id, .archived, depth: 1)
-    }
+    rows += shown.map { SidebarRow(.workspace($0, .archived)) }
     if expansion.archived && archived.count > state.archivedVisibleCount {
       rows.append(SidebarRow(.showMoreArchived))
     }
