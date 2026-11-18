@@ -20,8 +20,8 @@ public struct AppSettings: Sendable, Codable, Equatable {
   public init(
     hasCompletedOnboarding: Bool = false,
     importExternalSessions: Bool = false,
-    shareAnalytics: Bool = false,
-    shareCrashReports: Bool = false,
+    shareAnalytics: Bool = true,
+    shareCrashReports: Bool = true,
     alphaUpdatesEnabled: Bool = false,
     confirmBeforeQuitting: Bool = true,
     confirmBeforeClosingWorkingChat: Bool = true,
@@ -59,10 +59,8 @@ public struct AppSettings: Sendable, Codable, Equatable {
     let container = try decoder.container(keyedBy: CodingKeys.self)
     hasCompletedOnboarding = try container.decodeIfPresent(Bool.self, forKey: .hasCompletedOnboarding) ?? false
     importExternalSessions = try container.decodeIfPresent(Bool.self, forKey: .importExternalSessions) ?? false
-    shareAnalytics =
-      try container.decodeIfPresent(Bool.self, forKey: .shareAnalytics)
-      ?? hasCompletedOnboarding
-    shareCrashReports = try container.decodeIfPresent(Bool.self, forKey: .shareCrashReports) ?? false
+    shareAnalytics = try container.decodeIfPresent(Bool.self, forKey: .shareAnalytics) ?? true
+    shareCrashReports = try container.decodeIfPresent(Bool.self, forKey: .shareCrashReports) ?? true
     alphaUpdatesEnabled =
       try container.decodeIfPresent(Bool.self, forKey: .alphaUpdatesEnabled)
       ?? container.decodeIfPresent(Bool.self, forKey: .betaUpdatesEnabled)

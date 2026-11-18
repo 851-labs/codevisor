@@ -257,6 +257,8 @@ public final class AppEnvironment {
     }
     setLocalNetworkAccess(.unasked)
     settings.reset()
+    Analytics.setEnabled(settings.shareAnalytics)
+    Diagnostics.setEnabled(settings.shareCrashReports)
     appUpdate.setAllowsAlphaUpdates(settings.alphaUpdatesEnabled)
     projectList.showsImportedSessions = settings.importExternalSessions
   }
@@ -280,6 +282,7 @@ public final class AppEnvironment {
     let settings = AppSettingsModel(store: InMemoryStore())
     let machineStore = InMemoryStore()
     settings.completeOnboarding(importExternalSessions: false)
+    settings.setShareAnalytics(false)
     settings.setShareCrashReports(false)
     let environment = AppEnvironment(
       configCache: ConfigOptionCache(store: InMemoryStore()),

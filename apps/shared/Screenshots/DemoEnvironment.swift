@@ -45,6 +45,7 @@
     private static func settings() -> AppSettingsModel {
       let settings = AppSettingsModel(store: InMemoryStore())
       settings.completeOnboarding(importExternalSessions: false)
+      settings.setShareAnalytics(false)
       settings.setShareCrashReports(false)
       settings.setChatFinishedSoundPath(DemoWorld.chatFinishedSoundPath)
       settings.setActionRequiredSoundPath(DemoWorld.actionRequiredSoundPath)
