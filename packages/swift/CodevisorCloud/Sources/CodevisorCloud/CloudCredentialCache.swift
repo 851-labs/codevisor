@@ -1,3 +1,4 @@
+import CodevisorClient
 import Foundation
 import Observation
 
@@ -6,7 +7,6 @@ import Observation
 final class CloudCredentialCache {
   struct Credentials: Sendable {
     var token: String?
-    var serverURL: URL?
   }
 
   @ObservationIgnored private let store: any CloudCredentialStore
@@ -45,9 +45,20 @@ final class CloudCredentialCache {
     update { $0.token = nil }
   }
 
-  func saveServerURL(_ url: URL?) throws {
-    try store.saveServerURL(url)
-    update { $0.serverURL = url }
+  func takeLegacyServerURL() async -> URL? {
+    let store = store
+    let legacy = await Task.detached(priority: .userInitiated) { () -> URL? in
+      guard let url = try? store.legacyServerURL() else { return nil }
+      do {
+        try store.removeLegacyServerURL()
+      } catch {
+        Log.cloud.error("Failed to clear the retired cloud server: \(String(describing: error), privacy: .public)")
+      }
+      return url
+    }.value
+    guard legacy != nil else { return nil }
+    await load()
+    return legacy
   }
 
   private func update(_ change: (inout Credentials) -> Void) {
@@ -59,6 +70,6 @@ final class CloudCredentialCache {
   }
 
   nonisolated private static func read(from store: any CloudCredentialStore) -> Credentials {
-    Credentials(token: (try? store.token()) ?? nil, serverURL: (try? store.serverURL()) ?? nil)
+    Credentials(token: (try? store.token()) ?? nil)
   }
 }

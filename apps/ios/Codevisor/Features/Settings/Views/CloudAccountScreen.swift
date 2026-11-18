@@ -13,7 +13,7 @@ struct CloudAccountScreen: View {
         SettingsNavigationRow {
           openedPage = page
         } content: {
-          CloudAccountPageLabel(page, cloud: environment.cloud)
+          CloudAccountPageLabel(page)
         }
       }
     }

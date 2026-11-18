@@ -8,7 +8,7 @@ import CodevisorProtocol
 @MainActor
 @Suite("CloudAccountController")
 struct CloudAccountControllerTests {
-  @Test("Server URL resolution: custom beats dev cloud beats default")
+  @Test("Server URL resolution: dev cloud beats default")
   func serverURLResolution() throws {
     let dev = CodevisorAppVariant.DevelopmentCloud(url: URL(string: "http://127.0.0.1:8787")!)
 
@@ -17,12 +17,6 @@ struct CloudAccountControllerTests {
 
     let withDev = makeController(environmentCloud: dev)
     #expect(withDev.controller.serverURL == URL(string: "http://127.0.0.1:8787")!)
-
-    let custom = makeController(
-      store: InMemoryCloudCredentialStore(serverURL: URL(string: "https://cloud.example.com")!),
-      environmentCloud: dev
-    )
-    #expect(custom.controller.serverURL == URL(string: "https://cloud.example.com")!)
   }
 
   @Test("The development account signs in through the production path when the cloud advertises it")
@@ -229,14 +223,13 @@ struct CloudAccountControllerTests {
     #expect(controller.lastError != nil)
   }
 
-  @Test("Sign-out clears the token and machines but keeps the custom server")
-  func signOutKeepsCustomServer() async throws {
+  @Test("Sign-out clears the token and machines")
+  func signOutClearsSession() async throws {
     let client = FakeCloudClient()
     client.verifyResult = .success("session-token")
     client.sessions["session-token"] = CloudSessionUser(userId: "u1", email: "me@example.com")
     client.machinesResult = .success([testMachine("m1")])
-    let store = InMemoryCloudCredentialStore(serverURL: URL(string: "https://cloud.example.com")!)
-    let (controller, _, _) = makeController(client: client, store: store)
+    let (controller, _, store) = makeController(client: client)
     await controller.completeSignIn(ott: "ott-1")
 
     controller.signOut()
@@ -244,7 +237,6 @@ struct CloudAccountControllerTests {
     #expect(controller.state == .signedOut)
     #expect(controller.machines.isEmpty)
     #expect(try store.token() == nil)
-    #expect(try store.serverURL() == URL(string: "https://cloud.example.com")!)
   }
 
   @Test("Editing a machine applies its name and icon optimistically, calls the server, and refreshes")
@@ -304,38 +296,6 @@ struct CloudAccountControllerTests {
     #expect(controller.machines.map(\.deviceId) == ["m2"])
   }
 
-  @Test("Custom server validation rejects non-cloud instances")
-  func customServerRejectsNonCloud() async throws {
-    let client = FakeCloudClient()
-    client.discoverResult = .success(CloudInstanceInfo(service: "some-other-service"))
-    let (controller, _, store) = makeController(client: client)
-
-    await #expect(throws: CloudAccountClientError.notACloudInstance) {
-      try await controller.setCustomServer(URL(string: "https://not-cloud.example.com")!)
-    }
-    #expect(try store.serverURL() == nil)
-    #expect(controller.serverURL == CloudAccountController.defaultServerURL)
-  }
-
-  @Test("A validated custom server is saved and the old session dropped")
-  func customServerAcceptsCloudInstance() async throws {
-    let client = FakeCloudClient()
-    client.verifyResult = .success("t")
-    client.sessions["t"] = CloudSessionUser(userId: "u1", email: "me@example.com")
-    client.discoverResult = .success(CloudInstanceInfo(service: "codevisor-cloud"))
-    let (controller, _, store) = makeController(client: client)
-    await controller.completeSignIn(ott: "ott")
-
-    try await controller.setCustomServer(URL(string: "https://cloud.example.com")!)
-
-    #expect(try store.serverURL() == URL(string: "https://cloud.example.com")!)
-    #expect(controller.state == .signedOut)
-    #expect(try store.token() == nil)
-
-    try await controller.setCustomServer(nil)
-    #expect(try store.serverURL() == nil)
-  }
-
   @Test("Sign-in URL percent-encodes the handoff redirect")
   func signInURLEncoding() {
     let (controller, _, _) = makeController()
@@ -344,12 +304,12 @@ struct CloudAccountControllerTests {
         == "https://cloud.codevisor.dev/login/github?redirect=/auth/handoff%3Fapp%3Dcodevisor-dev"
     )
 
-    let custom = makeController(
-      store: InMemoryCloudCredentialStore(serverURL: URL(string: "https://cloud.example.com/")!)
+    let dev = makeController(
+      environmentCloud: CodevisorAppVariant.DevelopmentCloud(url: URL(string: "http://127.0.0.1:8787/")!)
     )
     #expect(
-      custom.controller.signInURL(scheme: "codevisor").absoluteString
-        == "https://cloud.example.com/login/github?redirect=/auth/handoff%3Fapp%3Dcodevisor"
+      dev.controller.signInURL(scheme: "codevisor").absoluteString
+        == "http://127.0.0.1:8787/login/github?redirect=/auth/handoff%3Fapp%3Dcodevisor"
     )
   }
 
@@ -436,19 +396,5 @@ struct CloudAccountControllerTests {
     await controller.refreshMachines()
     #expect(controller.machinesWithChangedKeys.isEmpty)
     #expect(try store.pinnedMachineKeys()["m1"] == "pk_fresh")
-  }
-
-  @Test("Switching servers clears the pins — a different TOFU world")
-  func customServerClearsPins() async throws {
-    let (controller, client, store) = await makeSignedIn(machines: [testMachine("m1")])
-    #expect(try store.pinnedMachineKeys() == ["m1": "pk_m1"])
-
-    client.discoverResult = .success(
-      CloudInstanceInfo(service: "codevisor-cloud", instance: "Homelab")
-    )
-    try await controller.setCustomServer(URL(string: "https://cloud.example.com")!)
-
-    #expect(try store.pinnedMachineKeys() == [:])
-    #expect(controller.machinesWithChangedKeys.isEmpty)
   }
 }

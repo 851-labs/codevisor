@@ -86,17 +86,6 @@ struct CloudNativeAuthenticationTests {
     #expect(try store.token() == nil)
   }
 
-  @Test("Switching servers invalidates pending authentication")
-  func serverChange() async throws {
-    let (controller, _, store) = makeController()
-    let context = try controller.authenticationContext(link: false)
-    try await controller.setCustomServer(URL(string: "https://other.example"))
-    await #expect(throws: CancellationError.self) {
-      try await controller.completeNativeApple(credential, context: context)
-    }
-    #expect(try store.token() == nil)
-  }
-
   @Test("Provider lookup errors are visible and retry recovers")
   func providerRetry() async {
     let (controller, client, _) = await makeSignedIn(machines: [])

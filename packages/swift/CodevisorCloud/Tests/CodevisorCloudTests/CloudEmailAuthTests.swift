@@ -155,25 +155,4 @@ struct CloudEmailAuthTests {
     #expect(try store.token() == nil)
     #expect(model.password.isEmpty && !model.isComplete)
   }
-
-  @Test("Server changes invalidate pending email authentication")
-  func serverChange() async throws {
-    let (cloud, client, store) = makeController()
-    let entered = TestSignal()
-    let release = TestSignal()
-    client.emailRequest = { _ in
-      entered.signal()
-      await release.wait()
-      return "wrong-server-token"
-    }
-    let context = try cloud.authenticationContext(link: false)
-    let task = Task {
-      try await cloud.authenticateEmail(.verify(email: "person@example.com", code: "123456"), context: context)
-    }
-    await entered.wait()
-    try await cloud.setCustomServer(URL(string: "https://other.example"))
-    release.signal()
-    await #expect(throws: CancellationError.self) { try await task.value }
-    #expect(try store.token() == nil)
-  }
 }

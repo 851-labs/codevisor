@@ -21,11 +21,10 @@ public final class CloudAccountController {
   public var hasCompletedBootstrap: Bool { validation.hasCompletedBootstrap }
   public var isRosterVerified: Bool { validation.isRosterVerified }
   public var machinesWithChangedKeys: Set<String> { machineKeyPins.changedKeys }
-  public var customServerURL: URL? { credentialCache.current.serverURL }
   var storedToken: String? { credentialCache.current.token }
 
   public var developmentAccountAvailable: Bool {
-    providerDiscovery.offersDevelopmentAccount && customServerURL == nil
+    providerDiscovery.offersDevelopmentAccount
   }
 
   public typealias ClientFactory = @Sendable (URL) -> any CloudAccountClienting
@@ -40,7 +39,7 @@ public final class CloudAccountController {
   private let providerDiscovery = CloudAuthProviders()
   let localRegistration = CloudLocalMachineRegistration()
   private let hubLink: CloudHubLink
-  private let environmentCloud: CodevisorAppVariant.DevelopmentCloud?
+  public let serverURL: URL
   public let directPaths: CloudDirectPathController
   private let loopbackPool = CloudLoopbackBridgePool()
   @ObservationIgnored public var onSignedOut: (() -> Void)?
@@ -69,13 +68,9 @@ public final class CloudAccountController {
     self.machineKeyPins = machineKeyPins
     self.validation = CloudSessionValidation(
       clock: retryClock, credentials: credentialCache, pins: machineKeyPins, rosterStore: credentialStore)
-    self.environmentCloud = environmentCloud
+    self.serverURL = environmentCloud?.url ?? Self.defaultServerURL
     self.hubLink = CloudHubLink(factory: hubConnectionFactory)
     self.directPaths = directPaths ?? CloudDirectPathController(credentialStore: credentialStore)
-  }
-
-  public var serverURL: URL {
-    customServerURL ?? environmentCloud?.url ?? Self.defaultServerURL
   }
 
   var client: any CloudAccountClienting {
@@ -87,6 +82,7 @@ public final class CloudAccountController {
   }
 
   public func bootstrap() async {
+    await retireLegacyServerOverride()
     await validation.bootstrap(for: self)
   }
 
@@ -110,10 +106,10 @@ public final class CloudAccountController {
     let client = client
     do {
       let token = try await obtainToken()
-      guard isCurrent(attempt) else { return }
+      guard authenticationRevision == attempt else { return }
       try await signIn(with: token, attempt: attempt, client: client)
     } catch {
-      guard isCurrent(attempt) else { return }
+      guard authenticationRevision == attempt else { return }
       signInFailed(error)
     }
   }
@@ -178,18 +174,11 @@ public final class CloudAccountController {
     await refreshMachines()
   }
 
-  public func setCustomServer(_ url: URL?) async throws {
-    guard let url else {
-      signOut()
-      try credentialCache.saveServerURL(nil)
-      try machineKeyPins.clear()
-      return
-    }
-    let info = try await cloudInstance(at: url)
-    signOut()
-    try credentialCache.saveServerURL(url)
-    providerDiscovery.adopt(info.authProviders)
-    try machineKeyPins.clear()
+  private func retireLegacyServerOverride() async {
+    guard let legacyServer = await credentialCache.takeLegacyServerURL() else { return }
+    Log.cloud.notice("Signing out of the retired custom cloud server \(legacyServer.absoluteString, privacy: .public)")
+    endSession(deregisterLocalMachine: true, accountClient: clientFactory(legacyServer))
+    try? machineKeyPins.clear()
   }
 
   public func hubConnection() -> CloudHubConnection? {
@@ -224,13 +213,12 @@ public final class CloudAccountController {
 
   public func connectAccountURL(provider: CloudSignInProvider, scheme: String) async -> URL? {
     guard state.isSignedIn, let token = storedToken else { return nil }
-    let server = serverURL
     do {
       let ott = try await client.generateOneTimeToken(token: token)
-      guard storedToken == token, serverURL == server else { return nil }
-      return CloudAuthLinks.connectAccount(server: server, provider: provider, scheme: scheme, ott: ott)
+      guard storedToken == token else { return nil }
+      return CloudAuthLinks.connectAccount(server: serverURL, provider: provider, scheme: scheme, ott: ott)
     } catch {
-      guard storedToken == token, serverURL == server else { return nil }
+      guard storedToken == token else { return nil }
       lastError = error.localizedDescription
       return nil
     }
@@ -238,16 +226,15 @@ public final class CloudAccountController {
 
   public func deleteAccount() async {
     guard state.isSignedIn, let token = storedToken else { return }
-    let server = serverURL
     lastError = nil
     isDeletingAccount = true
     defer { isDeletingAccount = false }
     do {
       try await client.deleteAccount(token: token)
-      guard storedToken == token, serverURL == server else { return }
+      guard storedToken == token else { return }
       signOut()
     } catch {
-      guard storedToken == token, serverURL == server else { return }
+      guard storedToken == token else { return }
       lastError = error.localizedDescription
     }
   }
@@ -257,32 +244,22 @@ public final class CloudAccountController {
     machineKeyPins.trust(machine)
   }
 
-  private struct SignInAttempt {
-    let revision: UInt64
-    let server: URL
-  }
-
-  private func startSignInAttempt() -> SignInAttempt {
+  private func startSignInAttempt() -> UInt64 {
     authenticationRevision &+= 1
-    let attempt = SignInAttempt(revision: authenticationRevision, server: serverURL)
     state = .validating
     userId = nil
     linkedProviders = nil
     lastError = nil
     validation.unverify()
-    return attempt
+    return authenticationRevision
   }
 
-  private func isCurrent(_ attempt: SignInAttempt) -> Bool {
-    authenticationRevision == attempt.revision && serverURL == attempt.server
-  }
-
-  private func signIn(with token: String, attempt: SignInAttempt, client: any CloudAccountClienting) async throws {
+  private func signIn(with token: String, attempt: UInt64, client: any CloudAccountClienting) async throws {
     await discardHubForCredentialChange()
-    guard isCurrent(attempt) else { return }
+    guard authenticationRevision == attempt else { return }
     try credentialCache.saveToken(token)
     let user = (try? await client.session(token: token)) ?? nil
-    guard isCurrent(attempt), storedToken == token else { return }
+    guard authenticationRevision == attempt, storedToken == token else { return }
     userId = user?.userId
     state = .signedIn(userEmail: user?.email)
     if await performMachineRefresh().needsValidationRetry {
@@ -296,13 +273,13 @@ public final class CloudAccountController {
     lastError = error.localizedDescription
   }
 
-  private func endSession(deregisterLocalMachine: Bool) {
+  private func endSession(deregisterLocalMachine: Bool, accountClient: (any CloudAccountClienting)? = nil) {
     authenticationRevision &+= 1
     linkedProviders = nil
     lastError = nil
     let token = storedToken
     let localClient = localServerClient
-    let accountClient = client
+    let accountClient = accountClient ?? client
     clearSessionCredential()
     discardSessionRoster()
     discardSessionTransports()
@@ -418,14 +395,6 @@ public final class CloudAccountController {
     loopbackPool.remove(deviceId)
     directPaths.drop(deviceId: deviceId)
     machineKeyPins.removePin(deviceId: deviceId)
-  }
-
-  private func cloudInstance(at url: URL) async throws -> CloudInstanceInfo {
-    let info = try await clientFactory(url).discover()
-    guard info.service == CloudInstanceInfo.expectedService else {
-      throw CloudAccountClientError.notACloudInstance
-    }
-    return info
   }
 
   private func recoverLoopbackBridges() async {

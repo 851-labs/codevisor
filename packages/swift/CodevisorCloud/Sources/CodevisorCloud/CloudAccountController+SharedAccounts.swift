@@ -5,13 +5,13 @@ extension CloudAccountController {
   public func prepareAccountSync(on client: any CodevisorServerClienting, machineId: String) async -> Bool {
     guard state.isSignedIn, let token = storedToken else { return false }
     let server = serverURL
-    let key = "\(authenticationRevision):\(server.absoluteString):\(machineId)"
+    let key = "\(authenticationRevision):\(machineId)"
     if let pending = accountSyncRegistrations[key] { return await pending.value }
     let task = Task { [weak self] in
       do {
         let registration = try await client.cloudRegistration()
         guard !registration.connected, let self,
-          self.state.isSignedIn, self.storedToken == token, self.serverURL == server,
+          self.state.isSignedIn, self.storedToken == token,
           !Task.isCancelled
         else { return false }
         _ = try await client.connectCloud(serverURL: server, sessionToken: token)

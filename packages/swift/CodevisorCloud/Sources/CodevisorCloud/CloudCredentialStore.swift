@@ -6,8 +6,8 @@ public protocol CloudCredentialStore: Sendable {
   func token() throws -> String?
   func saveToken(_ token: String) throws
   func removeToken() throws
-  func serverURL() throws -> URL?
-  func saveServerURL(_ url: URL?) throws
+  func legacyServerURL() throws -> URL?
+  func removeLegacyServerURL() throws
   func appDeviceId() throws -> String?
   func saveAppDeviceId(_ id: String) throws
   func appSecretKey() throws -> Data?
@@ -89,7 +89,7 @@ public final class KeychainCloudCredentialStore: CloudCredentialStore, @unchecke
   public static let shared = KeychainCloudCredentialStore()
 
   private static let tokenAccount = "session-token"
-  private static let serverURLAccount = "server-url"
+  private static let legacyServerURLAccount = "server-url"
   private static let appDeviceIdAccount = "app-device-id"
   private static let appSecretKeyAccount = "app-device-secret-key"
   private static let machineKeyPinsAccount = "machine-key-pins"
@@ -130,16 +130,12 @@ public final class KeychainCloudCredentialStore: CloudCredentialStore, @unchecke
     try remove(account: Self.tokenAccount)
   }
 
-  public func serverURL() throws -> URL? {
-    try read(account: Self.serverURLAccount).flatMap(URL.init(string:))
+  public func legacyServerURL() throws -> URL? {
+    try read(account: Self.legacyServerURLAccount).flatMap(URL.init(string:))
   }
 
-  public func saveServerURL(_ url: URL?) throws {
-    if let url {
-      try write(url.absoluteString, account: Self.serverURLAccount)
-    } else {
-      try remove(account: Self.serverURLAccount)
-    }
+  public func removeLegacyServerURL() throws {
+    try remove(account: Self.legacyServerURLAccount)
   }
 
   public func appDeviceId() throws -> String? {
@@ -212,15 +208,15 @@ public final class KeychainCloudCredentialStore: CloudCredentialStore, @unchecke
 public final class InMemoryCloudCredentialStore: CloudCredentialStore, @unchecked Sendable {
   private let lock = NSLock()
   private var storedToken: String?
-  private var storedServerURL: URL?
+  private var storedLegacyServerURL: URL?
   private var storedAppDeviceId: String?
   private var storedAppSecretKey: Data?
   private var storedMachineKeyPins: [String: String] = [:]
   private var storedRoster: CachedRoster?
 
-  public init(token: String? = nil, serverURL: URL? = nil, roster: CachedRoster? = nil) {
+  public init(token: String? = nil, legacyServerURL: URL? = nil, roster: CachedRoster? = nil) {
     storedToken = token
-    storedServerURL = serverURL
+    storedLegacyServerURL = legacyServerURL
     storedRoster = roster
   }
 
@@ -236,12 +232,12 @@ public final class InMemoryCloudCredentialStore: CloudCredentialStore, @unchecke
     lock.withLock { storedToken = nil }
   }
 
-  public func serverURL() throws -> URL? {
-    lock.withLock { storedServerURL }
+  public func legacyServerURL() throws -> URL? {
+    lock.withLock { storedLegacyServerURL }
   }
 
-  public func saveServerURL(_ url: URL?) throws {
-    lock.withLock { storedServerURL = url }
+  public func removeLegacyServerURL() throws {
+    lock.withLock { storedLegacyServerURL = nil }
   }
 
   public func appDeviceId() throws -> String? {

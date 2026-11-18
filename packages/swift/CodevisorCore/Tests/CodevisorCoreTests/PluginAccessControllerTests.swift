@@ -44,7 +44,7 @@ struct PluginAccessControllerTests {
     let consents = ConsentLog()
     let cloud = CloudAccountController(
       clientFactory: { _ in PolicyCloudClient(consents: consents) },
-      credentialStore: InMemoryCloudCredentialStore(token: "token", serverURL: URL(string: "https://cloud.test")))
+      credentialStore: InMemoryCloudCredentialStore(token: "token"))
     let store = InMemoryStore()
     try PluginConsentOutbox(store: store).record(
       key: "old", account: cloud.pluginConsentAccount, body: Data(#"{"pluginId":"custom:npx -y notes"}"#.utf8))
@@ -64,7 +64,7 @@ struct PluginAccessControllerTests {
     let consents = ConsentLog()
     let cloud = CloudAccountController(
       clientFactory: { _ in PolicyCloudClient(consents: consents) },
-      credentialStore: InMemoryCloudCredentialStore(serverURL: URL(string: "https://cloud.test")))
+      credentialStore: InMemoryCloudCredentialStore())
     let access = PluginAccessController(cloud: cloud, store: InMemoryStore(), enforcesAgeGate: false)
     let notion = ServerPluginCatalogEntry(
       id: "com.notion/mcp", name: "Notion", description: "", publisher: "Notion", version: "remote", transport: "http")
