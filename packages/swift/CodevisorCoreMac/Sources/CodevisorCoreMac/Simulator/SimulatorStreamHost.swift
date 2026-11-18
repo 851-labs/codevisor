@@ -90,15 +90,17 @@ final class SimulatorStreamHost {
 
   private let dependencies: SimulatorStreamHostDependencies
   private let identity: ScreenSharingStreamIdentity
-  private var sessions: [Owner: Session] = [:]
+  private let hosting: ScreenSharingHostActivity.Claim
+  private var sessions: [Owner: Session] = [:] { didSet { hosting.isHosting = !sessions.isEmpty } }
   private var devices: [String: Viewed] = [:]
   private var watchdog: Task<Void, Never>?
   private var isShutdown = false
 
   private var now: TimeInterval { dependencies.now() }
 
-  init(dependencies: SimulatorStreamHostDependencies = .live) {
+  init(dependencies: SimulatorStreamHostDependencies = .live, activity: ScreenSharingHostActivity = .shared) {
     self.dependencies = dependencies
+    hosting = activity.claim()
     identity = ScreenSharingStreamIdentity(hostKey: dependencies.hostKey, now: dependencies.now)
   }
 

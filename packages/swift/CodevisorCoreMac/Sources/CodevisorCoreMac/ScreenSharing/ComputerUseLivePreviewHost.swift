@@ -147,12 +147,14 @@ final class ComputerUseLivePreviewHost {
 
   private let dependencies: Dependencies
   private let identity: ScreenSharingStreamIdentity
-  private var sessions: [Owner: Session] = [:]
+  private let hosting: ScreenSharingHostActivity.Claim
+  private var sessions: [Owner: Session] = [:] { didSet { hosting.isHosting = !sessions.isEmpty } }
   private var watchdog: Task<Void, Never>?
   private var isShutdown = false
 
-  init(dependencies: Dependencies = .live) {
+  init(dependencies: Dependencies = .live, activity: ScreenSharingHostActivity = .shared) {
     self.dependencies = dependencies
+    hosting = activity.claim()
     identity = ScreenSharingStreamIdentity(hostKey: dependencies.hostKey, now: dependencies.now)
   }
 

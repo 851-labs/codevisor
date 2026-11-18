@@ -27,6 +27,7 @@ final class ScreenSharingHostOwnershipFixture {
   private(set) var captureStarts: [String] = []
   let workspace = NotificationCenter()
   let media = ScreenSharingMediaEndpoint()
+  let hosting = ScreenSharingHostActivityLog()
   private(set) var host: ScreenSharingHostService!
   private var endpoint: NetEndpointHandle?
   private var sessions: [UUID: String] = [:]
@@ -133,7 +134,7 @@ final class ScreenSharingHostOwnershipFixture {
       enumerateDisplays: { [unowned self] in
         try await (listDisplays?() ?? displays).map { (Self.displayID(of: $0), $0) }
       }, mediaEndpoint: media,
-      logicalDisplays: .init(kind: Self.kind))
+      logicalDisplays: .init(kind: Self.kind), activity: hosting.activity)
     host.onlineDisplays = { [unowned self] in displays.map(Self.online) }
     host.virtualDisplaysAvailable = { false }
     host.isMirrored = { _ in false }

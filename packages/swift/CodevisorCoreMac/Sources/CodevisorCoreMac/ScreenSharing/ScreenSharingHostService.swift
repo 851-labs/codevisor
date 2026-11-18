@@ -10,7 +10,7 @@ import OSLog
 final class ScreenSharingHostService {
   typealias Display = (id: UInt32, description: ServerScreenSharingDisplay)
   static let logger = Logger(subsystem: "com.851labs.Codevisor", category: "ScreenSharing")
-  private(set) var current: ScreenSharingHostSession?
+  private(set) var current: ScreenSharingHostSession? { didSet { hosting.isHosting = current != nil } }
   var lastEnd: (owner: ScreenSharingHostLease.Owner, ending: ScreenSharingHostEnding)?
   var displaced: (owner: ScreenSharingHostLease.Owner, by: ScreenSharingHostLease.Owner)?
   var takeovers: [UUID: ScreenSharingHostLease.Owner] = [:]
@@ -34,6 +34,7 @@ final class ScreenSharingHostService {
   private let notificationCenter: NotificationCenter
   private let workspaceNotificationCenter: NotificationCenter
   let mediaEndpoint: ScreenSharingMediaEndpoint
+  private let hosting: ScreenSharingHostActivity.Claim
 
   convenience init() {
     self.init(
@@ -45,9 +46,11 @@ final class ScreenSharingHostService {
   init(
     captureAccess: @escaping () -> Bool, notificationCenter: NotificationCenter,
     workspaceNotificationCenter: NotificationCenter, enumerateDisplays: @escaping () async throws -> [Display],
-    mediaEndpoint: ScreenSharingMediaEndpoint = .shared, logicalDisplays: ScreenSharingHostLogicalDisplays = .init()
+    mediaEndpoint: ScreenSharingMediaEndpoint = .shared, logicalDisplays: ScreenSharingHostLogicalDisplays = .init(),
+    activity: ScreenSharingHostActivity = .shared
   ) {
     self.mediaEndpoint = mediaEndpoint
+    hosting = activity.claim()
     self.logicalDisplays = logicalDisplays
     self.captureAccess = captureAccess
     self.enumerateDisplays = enumerateDisplays
