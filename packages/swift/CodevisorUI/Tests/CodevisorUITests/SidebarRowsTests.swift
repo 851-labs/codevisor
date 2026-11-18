@@ -446,4 +446,25 @@ struct SidebarRowsTests {
       selectingTab: browser)
     #expect(keepsSelected.ids.dropFirst(2) == [.workspace(parent.id), .tab(browser)])
   }
+
+  @Test("Archived workspaces list flat without their tabs, selected or not, while active ones keep theirs")
+  func archivedWorkspacesNestNoTabs() {
+    let active = item(studio)
+    let archived = [item(studio), item(studio), item(studio)]
+    let (activeTab, terminal, browser) = (UUID(), UUID(), UUID())
+    let tabs = [active.id: [activeTab], archived[0].id: [terminal], archived[1].id: [browser]]
+
+    let expanded = nested(
+      [active], archived: archived, archivedVisibleCount: 2, tabs: tabs,
+      expansion: SidebarRows.Expansion(archived: true))
+    #expect(
+      expanded.ids.dropFirst(2) == [
+        .workspace(active.id), .tab(activeTab), .section(.archived), .workspace(archived[0].id),
+        .workspace(archived[1].id), .showMoreArchived,
+      ])
+
+    let collapsed = nested(
+      [active], archived: archived, tabs: tabs, selecting: archived[1].id, selectingTab: browser)
+    #expect(collapsed.ids.suffix(2) == [.section(.archived), .workspace(archived[1].id)])
+  }
 }
