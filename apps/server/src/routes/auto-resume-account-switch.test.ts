@@ -74,6 +74,24 @@ describe("auto-resume when the account changes", () => {
     })
   })
 
+  it("announces the chat on its new account when the switch moves it", async () => {
+    const fixture = await makeFixture()
+    const chat = await createChat(fixture)
+    await saveAccounts(fixture, ["personal", "work"])
+    await run(fixture.db.bindSessionHarnessAccount(chat, "personal"))
+    await stopAtLimit(fixture, chat, at(minutes(240)))
+    const announced: Array<unknown> = []
+    fixture.fanout.subscribe((event) => {
+      if (event.kind === "session.updated" && event.subjectId === chat)
+        announced.push(event.payload)
+    })
+
+    await run(fixture.db.setActiveHarnessAccount("claude-code", "work"))
+    await accountsChanged(fixture, "claude-code")
+
+    expect(announced).toMatchObject([{ id: chat, harnessAccountId: "work" }])
+  })
+
   it("resumes right away on the active account when the paused turn ran on an account it left", async () => {
     const fixture = await makeFixture()
     const [stale, current] = [await createChat(fixture), await createChat(fixture)]

@@ -43,7 +43,6 @@ struct UpdateSessionBody: Encodable {
   var worktreeName: String?
   var workspaceId: String?
   var harnessId: String?
-  var harnessAccountId: String?
 
   init(session: ChatSession, workspaceId: UUID? = nil) {
     agentSessionId = session.agentSessionId
@@ -52,7 +51,6 @@ struct UpdateSessionBody: Encodable {
     self.workspaceId = workspaceId?.uuidString
     sidebarPosition = workspaceId.flatMap(WorkspaceOrderClock.shared.draftPosition(of:))
     harnessId = session.harnessId.isEmpty ? nil : session.harnessId
-    harnessAccountId = session.harnessAccountId
   }
 }
 

@@ -201,13 +201,24 @@ const sessionUpdateParams = (
     projectId,
     updatedCheckoutId(context, current, projectId, worktreeName),
     request.harnessId ?? current.harnessId,
-    request.harnessAccountId ?? current.harnessAccountId ?? null,
+    accountAfterUpdate(request, current),
     request.updatedAt ?? current.updatedAt ?? null,
     request.labels === undefined ? 0 : 1,
     serializeLabels(request.labels),
     id
   ]
 }
+
+const accountAfterUpdate = (
+  request: UpdateSessionRequest,
+  current: SessionSummary
+): string | null => {
+  if (changesHarness(request, current)) return null
+  return current.harnessAccountId ?? null
+}
+
+const changesHarness = (request: UpdateSessionRequest, current: SessionSummary): boolean =>
+  request.harnessId !== undefined && request.harnessId !== current.harnessId
 
 const pendingQuestionJson = (sqlite: ServiceContext["sqlite"], rawId: string): string | null =>
   pendingQuestionRows.maybe(sqlite.prepare(sessionSql.pendingQuestion).get(canonicalUuid(rawId)))
