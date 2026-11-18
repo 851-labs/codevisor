@@ -114,7 +114,7 @@ final class PluginPane: Pane, Identifiable {
         guard let base = await self.resolveBaseURL() else {
           guard !Task.isCancelled else { return }
           self.phase = .failed(
-            "This machine's relay connection isn't available yet. Try again once it reconnects."
+            "This machine's Codevisor Relay connection isn't available yet. Try again once it reconnects."
           )
           return
         }

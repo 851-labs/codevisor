@@ -102,7 +102,7 @@ describe("CLI Cloud lifecycle", () => {
       expect(rejected).toHaveBeenCalledWith(
         expect.objectContaining({
           message: expect.stringContaining(
-            `credentials are saved, but the relay is ${state ?? "not connected"}.`
+            `credentials are saved, but the Codevisor Relay is ${state ?? "not connected"}.`
           )
         })
       )

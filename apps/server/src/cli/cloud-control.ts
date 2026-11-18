@@ -55,7 +55,7 @@ export const waitForCloudConnection = async (
     }
     if (elapsed >= timeoutMs) {
       throw new Error(
-        `Cloud credentials are saved, but the relay is ${registration.state ?? "not connected"}. Check codevisor auth status and codevisor logs.`
+        `Cloud credentials are saved, but the Codevisor Relay is ${registration.state ?? "not connected"}. Check codevisor auth status and codevisor logs.`
       )
     }
     await deps.sleep(intervalMs)

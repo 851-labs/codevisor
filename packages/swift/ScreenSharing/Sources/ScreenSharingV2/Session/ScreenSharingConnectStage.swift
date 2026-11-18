@@ -24,7 +24,7 @@ public enum ScreenSharingConnectStage: String, CaseIterable, Sendable {
     case .startingHost:
       "The host Mac didn't answer the request to share its screen. Check that it's awake and online, then retry."
     case .connectingMedia:
-      "Couldn't open a media connection to the host Mac. The network or relay between these Macs may be blocking it. Check the connection, then retry."
+      "Couldn't open a media connection to the host Mac. The network or the Codevisor Relay between these Macs may be blocking it. Check the connection, then retry."
     case .handshake:
       "The host Mac didn't accept the screen-sharing connection. Retry. If it keeps happening, quit and reopen Codevisor on the host Mac."
     case .waitingForVideo:
