@@ -1,7 +1,6 @@
 import { FLEET_SANDBOX_CHATS_PATH, type FileMetadata } from "@codevisor/api"
 import { describe, expect, it } from "vitest"
 
-import { RECAPPED_CHAT_NOTE } from "./sandbox-saved-chats.js"
 import { sandboxHarness } from "./sandbox-test-support.js"
 
 const request = { profileId: "profile-1", projectId: "project-1", name: "Spike box" }
@@ -36,11 +35,15 @@ const attachment = (id: string, megabytes: number): FileMetadata => ({
 })
 const note: FileMetadata = { ...attachment("note", 0), name: "note.txt", sizeBytes: 5 }
 
+const resumePath = "-repo/agent-1.jsonl"
+const agentSession = { agentSessionId: "agent-1", files: [{ path: resumePath, sizeBytes: 5 }] }
 const hello = Buffer.from("hello").toString("base64")
 
 interface FakeChats {
   readonly files?: ReadonlyArray<FileMetadata>
   readonly itemIds?: ReadonlyArray<string>
+  readonly resume?: { readonly agentSessionId: string; readonly files: ReadonlyArray<object> }
+  readonly refusesResume?: string
   readonly listFails?: string
   readonly refusesRestore?: string
 }
@@ -48,17 +51,24 @@ interface FakeChats {
 const sandboxWithChats =
   (chats: FakeChats = {}) =>
   (tool: string, args: Record<string, unknown>): unknown => {
-    const { files = [note], itemIds = ["item-1", "item-2"] } = chats
-    const { listFails, refusesRestore } = chats
+    const { files = [note], itemIds = ["item-1", "item-2"], resume } = chats
+    const { listFails, refusesRestore, refusesResume } = chats
     if (tool !== FLEET_SANDBOX_CHATS_PATH) return undefined
     const { action } = args
     if (action === "list" && listFails !== undefined) throw new Error(listFails)
     if (action === "list") {
       const chat = { session, itemIds, files }
-      return { format: 1, chats: [chat], panes: [pane] }
+      return {
+        format: 1,
+        chats: [resume === undefined ? chat : { ...chat, resume }],
+        panes: [pane]
+      }
     }
     if (action === "item") return itemOf(String(args["itemId"]))
-    if (action === "file") return { data: hello }
+    if (action === "file" || action === "resume_file") return { data: hello }
+    if (action === "restore_resume_file" && refusesResume !== undefined) {
+      throw new Error(refusesResume)
+    }
     if (action === "restore_chat" && refusesRestore !== undefined) throw new Error(refusesRestore)
     return { restored: true }
   }
@@ -108,7 +118,7 @@ describe("a sandbox's chats across archive and restore", () => {
     })
     expect(machine).toMatchObject({ state: "ready", workspaceId: "id-2" })
     expect(putBack).toEqual([
-      { action: "restore_chat", format: 1, workspaceId: "id-2", session },
+      { action: "restore_chat", format: 1, workspaceId: "id-2", session, hidden: true },
       { action: "restore_item", format: 1, sessionId: "chat-1", item: itemOf("item-1") },
       { action: "restore_item", format: 1, sessionId: "chat-1", item: itemOf("item-2") },
       {
@@ -122,12 +132,16 @@ describe("a sandbox's chats across archive and restore", () => {
         format: 1,
         sessionId: "chat-1",
         fileIds: ["note"],
-        note: RECAPPED_CHAT_NOTE,
+        workspaceId: "id-2",
+        restore: expect.any(Object),
         agentSessionId: "agent-1"
       },
       { action: "restore_pane", format: 1, workspaceId: "id-2", pane }
     ])
     expect(lines).toContain("Brought back 1 chat with its history")
+    expect(lines).toContain(
+      "The agent in the chat Fix the flake starts a new session with a recap instead of resuming"
+    )
     expect(await harness.deps.savedChats.manifest("id-2")).toBeUndefined()
   })
 
@@ -152,11 +166,84 @@ describe("a sandbox's chats across archive and restore", () => {
     ])
     expect(harness.logs).toContain(`Sandbox Spike box (id-1): ${tooBig}`)
     expect(lines).toEqual(expect.arrayContaining([tooBig, pastTotal]))
+    const finished = JSON.stringify(putBack.at(-2))
+    const cold =
+      "The agent in the chat Fix the flake starts a new session with a recap instead of resuming"
+    const order = [tooBig, pastTotal, cold, "==> "].map((line) => finished.indexOf(line))
+    expect(order).toEqual(order.toSorted((left, right) => left - right))
+    expect(order[0]).toBeGreaterThan(0)
     expect(putBack.at(-2)).toMatchObject({
       action: "finish_chat",
       fileIds: [...eight.map((file) => file.id), "note"],
-      note: `${RECAPPED_CHAT_NOTE} Too large to keep: recording.png (26 MB), shot-9.png (24 MB).`
+      restore: {
+        startedAt: expect.any(String),
+        completedAt: expect.any(String),
+        lines: expect.arrayContaining(["==> Preparing the project"])
+      }
     })
+  })
+
+  it("carries the agent's own session too, so the restored chat resumes it", async () => {
+    const harness = await archived({ resume: agentSession })
+    const kept = await harness.deps.savedChats.manifest("id-2")
+
+    const { putBack } = await restored(harness)
+
+    expect(kept?.chats[0]?.resume).toEqual(agentSession)
+    expect(putBack.slice(-3)).toEqual([
+      {
+        action: "restore_resume_file",
+        format: 1,
+        harnessId: "codex",
+        path: resumePath,
+        offset: 0,
+        data: hello
+      },
+      {
+        action: "finish_chat",
+        format: 1,
+        sessionId: "chat-1",
+        fileIds: ["note"],
+        workspaceId: "id-2",
+        restore: expect.any(Object),
+        agentSessionId: "agent-1"
+      },
+      { action: "restore_pane", format: 1, workspaceId: "id-2", pane }
+    ])
+  })
+
+  it("brings the chat back with a fresh agent when its session is too big or the sandbox won't take it", async () => {
+    const huge = {
+      agentSessionId: "agent-1",
+      files: [{ path: resumePath, sizeBytes: 101 * megabyte }]
+    }
+    const tooBig =
+      "The agent in the chat Fix the flake starts a new session with a recap instead of resuming: its agent session is 101 MB, over the 100 MB kept per chat"
+    const refusedLine =
+      "The agent in the chat Fix the flake starts a new session with a recap instead of resuming: codex isn't signed in on this sandbox yet"
+    const oversized = await archived({ resume: huge })
+    const unwelcome = await archived({
+      resume: agentSession,
+      refusesResume: "codex isn't signed in on this sandbox yet"
+    })
+
+    const big = await restored(oversized)
+    const refused = await restored(unwelcome)
+
+    expect(big.lines).toContain(tooBig)
+    expect(refused.lines).toContain(refusedLine)
+    for (const { machine, putBack } of [big, refused]) {
+      expect(machine.state).toBe("ready")
+      expect(putBack.at(-2)).toEqual({
+        action: "finish_chat",
+        format: 1,
+        sessionId: "chat-1",
+        fileIds: ["note"],
+        workspaceId: "id-2",
+        restore: expect.any(Object),
+        agentSessionId: "agent-1"
+      })
+    }
   })
 
   it("restores without chats and says why when they couldn't be saved", async () => {

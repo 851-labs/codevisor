@@ -131,6 +131,7 @@ public struct TranscriptPresentationRow: Identifiable, Equatable, Sendable {
     case setupRequest(String)
     case interaction(String)
     case setup
+    case setupAfter(UUID)
     case startingAgent
     case backgroundTask
     case updateGate
@@ -182,6 +183,7 @@ public struct TranscriptPresentationRow: Identifiable, Equatable, Sendable {
       case let .setupRequest(id): "setup-request:\(id)"
       case let .interaction(id): "interaction:\(id)"
       case .setup: "special:setup"
+      case let .setupAfter(id): "setup-after:\(id.uuidString)"
       case .startingAgent: "special:starting-agent"
       case .backgroundTask: "special:background"
       case .updateGate: "special:update-gate"
@@ -207,8 +209,8 @@ public struct TranscriptPresentationRow: Identifiable, Equatable, Sendable {
         true
       case .delivery, .botTyping, .active, .activePlanning, .activePlanHeader, .activePlanMarkdown,
         .activeResult, .activeWorkedHeader, .activeWorkedItem, .activeChrome,
-        .activeMarkdown, .activeAttachment, .activePluginApps, .setupRequest, .interaction, .setup, .startingAgent,
-        .backgroundTask, .updateGate, .connecting, .serverWait, .sandboxPower, .error,
+        .activeMarkdown, .activeAttachment, .activePluginApps, .setupRequest, .interaction, .setup, .setupAfter,
+        .startingAgent, .backgroundTask, .updateGate, .connecting, .serverWait, .sandboxPower, .error,
         .statusError, .bottomSpacer:
         false
       }
@@ -241,7 +243,7 @@ public struct TranscriptPresentationRow: Identifiable, Equatable, Sendable {
         let .forkMarker(id), let .eventMarker(id):
         id
       case .botMessage, .botTimestamp, .botAuthorName, .delivery, .botTyping, .setupRequest, .interaction, .setup,
-        .startingAgent,
+        .setupAfter, .startingAgent,
         .backgroundTask,
         .updateGate, .connecting, .serverWait, .sandboxPower, .error, .statusError, .bottomSpacer:
         nil

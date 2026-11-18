@@ -26,7 +26,6 @@ const workspaceId = "5f0b6a52-6f0e-4a44-9d39-1b7f2d3c4e5a"
 const paneId = "9a1c2b3d-4e5f-4a6b-8c7d-0e1f2a3b4c5d"
 const reviewPaneId = "9a1c2b3d-4e5f-4a6b-8c7d-0e1f2a3b4c5e"
 const terminalPaneId = "9a1c2b3d-4e5f-4a6b-8c7d-0e1f2a3b4c5f"
-const note = "Restored from an archived sandbox."
 
 const asking =
   (from: FleetMachine, self: Member, target: Member) =>
@@ -126,7 +125,9 @@ describe("moving a sandbox's chats between machines", () => {
     const { format } = list
     const sessionId = saved.session.id
 
-    await toStudio({ action: "restore_chat", format, workspaceId, session: saved.session })
+    const { session } = saved
+    await toStudio({ action: "restore_chat", format, workspaceId, session, hidden: true })
+    const midway = await jsonRequest(home.server, `/v1/sessions/${sessionId}`)
     for (const itemId of saved.itemIds) {
       const item = decode(SavedChatItem)(await fromLaptop({ action: "item", itemId }))
       await toStudio({ action: "restore_item", format, sessionId, item })
@@ -137,16 +138,19 @@ describe("moving a sandbox's chats between machines", () => {
       await toStudio({ action: "restore_file", file, offset: 0, data })
     }
     const fileIds = saved.files.map((file) => file.id)
-    await toStudio({ action: "finish_chat", format, sessionId, fileIds, note })
+    const restore = {
+      startedAt: "2026-11-16T00:01:00.000Z",
+      completedAt: "2026-11-16T00:01:40.000Z",
+      lines: ["==> Creating the sandbox"]
+    }
+    await toStudio({ action: "finish_chat", format, sessionId, fileIds, workspaceId, restore })
     for (const pane of list.panes)
       await toStudio({ action: "restore_pane", format, workspaceId, pane })
 
+    expect(field(midway.body, "session")).not.toHaveProperty("workspaceId")
     expect(saved.session).toMatchObject({ id: chat.sessionId, title: "Fix the laptop" })
     expect(saved.files).toEqual([chat.file])
-    expect(await transcriptOn(home, sessionId)).toEqual([
-      ...before,
-      [expect.any(String), "user", note, undefined]
-    ])
+    expect(await transcriptOn(home, sessionId)).toEqual(before)
     const restored = await jsonRequest(home.server, `/v1/sessions/${sessionId}`)
     expect(field(restored.body, "session")).toMatchObject({
       title: "Fix the laptop",

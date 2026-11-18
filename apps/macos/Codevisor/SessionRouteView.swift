@@ -96,7 +96,6 @@ struct WorkspaceRouteView: View {
     if let workspace, workspace.serverId == serverId, workspace.isRestoring {
       RestoringWorkspacePane(workspace: workspace)
         .navigationTitle(SidebarWorkspaceRowLabel.title(for: workspace.name))
-        .navigationSubtitle("Restoring")
     } else if let workspace,
       workspace.serverId == serverId,
       let project = environment.projectList.projects.first(where: {

@@ -54,10 +54,14 @@ const savedItemsOf = async (
   return saved
 }
 
-const note = { text: "Restored", createdAt: "2026-11-16T00:00:00.000Z" }
+const restoreAt = (minute: string, lines: ReadonlyArray<string>) => ({
+  startedAt: `2026-11-16T00:0${minute}:00.000Z`,
+  completedAt: `2026-11-16T00:0${minute}:40.000Z`,
+  lines
+})
 
 describe("a chat saved from one server and put back on another", () => {
-  it("shows the same conversation and details there, then a note", async () => {
+  it("shows the same conversation and details there, with nothing added", async () => {
     const source = await openDatabase("sandbox-before")
     const target = await openDatabase("sandbox-after")
     try {
@@ -69,12 +73,11 @@ describe("a chat saved from one server and put back on another", () => {
       )
 
       for (const item of saved) await run(target.db.importChatItem(restored.id, item))
-      await run(target.db.finishChatImport(restored.id, [], note))
+      await run(target.db.finishChatImport(restored.id, []))
 
       const before = await run(source.db.getTranscriptPage(chat.id, undefined, 8))
       const after = await run(target.db.getTranscriptPage(restored.id, undefined, 8))
-      expect(after.items.slice(0, -1)).toEqual(before.items)
-      expect(after.items.at(-1)).toMatchObject({ role: "user", text: "Restored", origin: "fork" })
+      expect(after.items).toEqual(before.items)
       const reply = before.items[1]!
       const detailsAfter = await run(target.db.getTranscriptItemDetails(restored.id, reply.id))
       const detailsBefore = await run(source.db.getTranscriptItemDetails(chat.id, reply.id))
@@ -86,13 +89,73 @@ describe("a chat saved from one server and put back on another", () => {
     }
   })
 
-  it("adds no note to a chat that had no messages", async () => {
+  it("keeps a line for each restore after the last message it brought back, across a later restore", async () => {
+    const source = await openDatabase("sandbox-before")
+    const second = await openDatabase("sandbox-second")
+    const third = await openDatabase("sandbox-third")
+    const putBack = async (
+      from: typeof source,
+      to: typeof source,
+      chatId: string,
+      restore: ReturnType<typeof restoreAt>
+    ) => {
+      const project = await run(to.db.createProject({ folderPath: "/tmp/restored-chat" }))
+      await run(to.db.createSession({ id: chatId, projectId: project.id, harnessId: "codex" }))
+      for (const item of await savedItemsOf(from.db, chatId))
+        await run(to.db.importChatItem(chatId, item))
+      await run(to.db.finishChatImport(chatId, [], restore))
+    }
+    try {
+      const chat = await talkedIn(source.db)
+      const before = await run(source.db.getTranscriptPage(chat.id, undefined, 8))
+
+      await putBack(
+        source,
+        second,
+        chat.id,
+        restoreAt("1", ["==> Creating the sandbox", "Left out big.bin"])
+      )
+      await run(
+        second.db.appendEvent("session.output", chat.id, {
+          role: "user",
+          messageId: "8f5d2c1e-3b4a-4c6d-9e7f-0a1b2c3d4e5f",
+          startsTurn: true,
+          text: "still there?"
+        })
+      )
+      await putBack(second, third, chat.id, restoreAt("5", ["==> Booting the sandbox"]))
+
+      const after = await run(third.db.getTranscriptPage(chat.id, undefined, 8))
+      expect(after.items.map((item) => item.text)).toEqual(["hi", "Hello there.", "still there?"])
+      expect(after.items.slice(0, 2)).toEqual(before.items)
+      expect(after.setupActivities).toEqual([
+        expect.objectContaining({
+          kind: "sandbox.restore",
+          state: "completed",
+          createdAt: "2026-11-16T00:01:00.000Z",
+          durationMs: 40_000,
+          afterItemId: before.items[1]!.id,
+          lines: ["==> Creating the sandbox", "Left out big.bin"]
+        }),
+        expect.objectContaining({
+          kind: "sandbox.restore",
+          createdAt: "2026-11-16T00:05:00.000Z",
+          afterItemId: after.items[2]!.messageId ?? after.items[2]!.id,
+          lines: ["==> Booting the sandbox"]
+        })
+      ])
+    } finally {
+      for (const opened of [source, second, third]) await Effect.runPromise(opened.db.close)
+    }
+  })
+
+  it("leaves a chat that had no messages empty", async () => {
     const { db } = await openDatabase("sandbox-after")
     try {
       const project = await run(db.createProject({ folderPath: "/tmp/restored-chat" }))
       const empty = await run(db.createSession({ projectId: project.id, harnessId: "codex" }))
 
-      await run(db.finishChatImport(empty.id, [], note))
+      await run(db.finishChatImport(empty.id, []))
 
       expect((await run(db.getTranscriptPage(empty.id, undefined, 8))).items).toEqual([])
     } finally {

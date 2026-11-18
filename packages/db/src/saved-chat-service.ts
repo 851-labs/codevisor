@@ -18,9 +18,12 @@ export interface SavedChatItem {
   readonly children: Readonly<Record<string, ReadonlyArray<SavedChatRow>>>
 }
 
-export interface SavedChatNote {
-  readonly text: string
-  readonly createdAt: string
+export const SANDBOX_RESTORE_ORIGIN = "sandbox-restore"
+
+export interface SavedChatRestore {
+  readonly startedAt: string
+  readonly completedAt: string
+  readonly lines: ReadonlyArray<string>
 }
 
 export interface SavedChatService {
@@ -38,7 +41,7 @@ export interface SavedChatService {
   readonly finishChatImport: (
     sessionId: string,
     fileIds: ReadonlyArray<string>,
-    note: SavedChatNote
+    restore?: SavedChatRestore
   ) => Effect.Effect<void, DatabaseError>
 }
 
@@ -114,14 +117,15 @@ export const makeSavedChatService = ({ sqlite }: ServiceContext): SavedChatServi
     attempt("importChatItem", () => {
       sqlite.transaction(() => importItem(sqlite, canonicalUuid(sessionId), saved))()
     }),
-  finishChatImport: (sessionId, fileIds, note) =>
+  finishChatImport: (sessionId, fileIds, restore) =>
     attempt("finishChatImport", () => {
       const id = canonicalUuid(sessionId)
       sqlite.transaction(() => {
         const link = sqlite.prepare(savedChatSql.linkFile)
         for (const fileId of fileIds) link.run(id, fileId)
-        if (sqlite.prepare(savedChatSql.hasItems).get(id) !== undefined)
-          appendNote(sqlite, id, note)
+        if (sqlite.prepare(savedChatSql.hasItems).get(id) === undefined) return
+        if (restore !== undefined) recordRestore(sqlite, id, restore)
+        sqlite.prepare(savedChatSql.saveChatState).run(id, id)
       })()
     })
 })
@@ -164,13 +168,16 @@ const insertRow = (sqlite: Database.Database, sql: TableSql, row: SavedChatRow):
   sqlite.prepare(sql.insert).run(...sql.columns.map((column) => row[column] ?? null))
 }
 
-const appendNote = (sqlite: Database.Database, sessionId: string, note: SavedChatNote): void => {
+const recordRestore = (
+  sqlite: Database.Database,
+  sessionId: string,
+  { startedAt, completedAt, lines }: SavedChatRestore
+): void => {
   const itemId = randomUUID()
   sqlite
-    .prepare(savedChatSql.insertNote)
-    .run(itemId, sessionId, sessionId, note.createdAt, note.createdAt)
-  sqlite.prepare(savedChatSql.insertNoteText).run(randomUUID(), itemId, note.text)
-  sqlite.prepare(savedChatSql.saveChatState).run(sessionId, sessionId)
+    .prepare(savedChatSql.insertRestore)
+    .run(itemId, sessionId, sessionId, completedAt, completedAt, startedAt, completedAt)
+  sqlite.prepare(savedChatSql.insertRestoreLog).run(randomUUID(), itemId, lines.join("\n"))
 }
 
 const savedRows = (rows: ReadonlyArray<unknown>): ReadonlyArray<SavedChatRow> =>
@@ -213,12 +220,12 @@ const savedChatSql = {
   hasItems: "select 1 from chat_items where session_id = ? limit 1",
   linkFile: `insert or ignore into session_files (session_id, file_id)
     select ?, id from files where id = ?`,
-  insertNote: `insert into chat_items (id, session_id, position, role, status, created_at,
-      updated_at, origin)
+  insertRestore: `insert into chat_items (id, session_id, position, role, status, created_at,
+      updated_at, started_at, completed_at, origin)
     values (?, ?, (select coalesce(max(position), -1) + 1 from chat_items where session_id = ?),
-      'user', 'complete', ?, ?, 'fork')`,
-  insertNoteText:
-    "insert into chat_parts (id, item_id, position, kind, text) values (?, ?, 0, 'text', ?)",
+      'system', 'complete', ?, ?, ?, ?, '${SANDBOX_RESTORE_ORIGIN}')`,
+  insertRestoreLog: `insert into chat_parts (id, item_id, position, kind, text)
+    values (?, ?, 0, '${SANDBOX_RESTORE_ORIGIN}', ?)`,
   saveChatState: `insert into session_chat_state (session_id, next_position, current_item_id)
     values (?, (select max(position) + 1 from chat_items where session_id = ?), null)
     on conflict(session_id) do update set next_position = excluded.next_position,

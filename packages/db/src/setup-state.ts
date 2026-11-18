@@ -3,7 +3,8 @@ import type Database from "better-sqlite3"
 
 import { jsonRecord } from "./event-payloads.js"
 import { parseJsonObject } from "./json-column.js"
-import { integer, rowReader, text } from "./row-reader.js"
+import { renderableChatItem } from "./renderable-chat-item.js"
+import { integer, nullable, rowReader, text } from "./row-reader.js"
 
 const nextPositionRows = rowReader({ n: integer })
 
@@ -17,6 +18,14 @@ const setupRows = rowReader({
 })
 
 const setupChunkRows = rowReader({ position: integer, text })
+
+const restoreRows = rowReader({
+  id: text,
+  started_at: text,
+  completed_at: text,
+  log: text,
+  after_item_id: nullable(text)
+})
 
 export const projectSetupState = (
   db: Database.Database,
@@ -50,7 +59,24 @@ export const projectSetupState = (
   db.prepare(setupSql.growTextLength).run(line.length, subject, kind)
 }
 
-export const sessionSetupState = (db: Database.Database, sessionId: string): unknown[] => {
+export const sessionSetupState = (db: Database.Database, sessionId: string): unknown[] => [
+  ...setupActivities(db, sessionId),
+  ...sandboxRestores(db, sessionId)
+]
+
+const sandboxRestores = (db: Database.Database, sessionId: string): unknown[] =>
+  restoreRows.all(db.prepare(setupSql.sandboxRestores).all(sessionId)).map((row) => ({
+    id: `sandbox.restore:${row.id}`,
+    kind: "sandbox.restore",
+    subjectId: row.id,
+    state: "completed",
+    createdAt: row.started_at,
+    durationMs: Date.parse(row.completed_at) - Date.parse(row.started_at),
+    lines: row.log === "" ? [] : row.log.split("\n"),
+    ...(row.after_item_id === null ? {} : { afterItemId: row.after_item_id })
+  }))
+
+const setupActivities = (db: Database.Database, sessionId: string): unknown[] => {
   const rows = accessibleSetupRows(db, sessionId)
   return rows.map((row) => ({
     ...parseJsonObject(row.payload),
@@ -124,6 +150,18 @@ const setupSql = {
   growTextLength:
     "update setup_state set text_length = text_length + ? where subject_id = ? and kind = ?",
   accessibleSubject: `select 1 from (${accessibleSetup}) where subject_id = ? and kind = ?`,
+  sandboxRestores: `select item.id, item.started_at, item.completed_at,
+      coalesce((select text from chat_parts where item_id = item.id order by position limit 1), '') as log,
+      (select case when earlier.role = 'user' and earlier.message_id is not null
+          then earlier.message_id else earlier.id end
+        from chat_items earlier
+        where earlier.session_id = item.session_id and earlier.position < item.position
+          and earlier.role in ('user', 'assistant') and ${renderableChatItem("earlier")}
+        order by earlier.position desc limit 1) as after_item_id
+    from chat_items item
+    where item.session_id = ? and item.role = 'system' and item.origin = 'sandbox-restore'
+      and item.started_at is not null and item.completed_at is not null
+    order by item.position`,
   chunksFrom:
     "select position, text from setup_text_chunks where subject_id = ? and kind = ? and position >= ? order by position limit 2"
 }

@@ -133,6 +133,20 @@ struct RootView: View {
     }
   }
 
+  private var detailSubtitle: String {
+    let entries = environment.navigationStore.workspaceEntries
+    switch selection {
+    case let .archivedWorkspace(serverId, id):
+      let workspace = entries.entry(id).workspace
+      return workspace?.serverId == serverId && workspace?.isArchived == true ? "Archived" : ""
+    case let .workspace(serverId, id):
+      let workspace = entries.entry(id).workspace
+      return workspace?.serverId == serverId && workspace?.isRestoring == true ? "Restoring" : ""
+    case .session, .bot, .newChat, .none:
+      return ""
+    }
+  }
+
   private var mainSplit: some View {
     RootSplitView(store: store, windowControl: clientWindow) {
       RootSidebar(selection: selectionRef, botEditor: $botEditor, store: store, revealRequest: sidebarRevealRequest)
@@ -144,6 +158,7 @@ struct RootView: View {
           ProgressView().frame(maxWidth: .infinity, maxHeight: .infinity)
         }
       }
+      .navigationSubtitle(detailSubtitle)
       .toolbar {
         SidebarComposeToolbarItem(selection: selectionRef, newChat: openNewChat, newBot: openNewBot)
       }

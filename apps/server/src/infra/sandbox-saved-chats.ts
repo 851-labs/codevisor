@@ -6,17 +6,19 @@ import {
   type FileMetadata,
   type Sandbox,
   type SandboxChatsAction,
-  type SavedChat
+  type SavedChat,
+  type SavedChatResume
 } from "@codevisor/api"
 import { Schema } from "effect"
 
-import type { SavedChatsManifest } from "./sandbox-saved-chats-store.js"
+import type { SavedChatsManifest, SavedResumeFile } from "./sandbox-saved-chats-store.js"
 import type { SandboxSetupProgress } from "./sandbox-setup-log.js"
 import type { SandboxDeps } from "./sandboxes.js"
 
 export const SAVED_CHAT_CHUNK_BYTES = 4 * 1024 * 1024
 export const SAVED_CHAT_FILE_MAX_BYTES = 25 * 1024 * 1024
 export const SAVED_CHAT_FILES_MAX_BYTES = 200 * 1024 * 1024
+export const SAVED_CHAT_RESUME_MAX_BYTES = 100 * 1024 * 1024
 
 export type KeptChats = Pick<Sandbox, "hasSavedChats" | "chatsLost">
 
@@ -65,13 +67,13 @@ export const bringBackChats = async (
     )
   }
   const { format, chats, panes } = manifest
-  for (const chat of chats) await putBackChat(deps, machine, workspaceId, manifest, chat)
+  for (const line of manifest.leftOut) setup.log(line)
+  for (const chat of chats) await putBackChat(deps, machine, workspaceId, manifest, chat, setup)
   for (const pane of panes)
     await ask(deps, machine, { action: "restore_pane", format, workspaceId, pane })
   setup.log(
     `Brought back ${chats.length === 1 ? "1 chat with its" : `${String(chats.length)} chats with their`} history`
   )
-  for (const line of manifest.leftOut) setup.log(line)
 }
 
 export const forgetBroughtBackChats = async (
@@ -102,24 +104,73 @@ const saveChats = async (
       await deps.savedChats.addItem(workspaceId, chat.session.id, item)
     }
     const files: Array<FileMetadata> = []
-    const notKept: Array<string> = []
     for (const file of chat.files) {
       const reason = fetched.has(file.id) ? undefined : leftOutReason(file, budget)
       if (reason !== undefined) {
         leftOut.push(leftOutLine(file, chat, reason))
-        notKept.push(`${file.name} (${megabytes(file.sizeBytes)})`)
         continue
       }
       if (!fetched.has(file.id)) await fetchFile(deps, machine, workspaceId, file)
       fetched.add(file.id)
       files.push(file)
     }
-    chats.push({ session: chat.session, files, ...(notKept.length === 0 ? {} : { notKept }) })
+    const resume = await keepResume(deps, machine, workspaceId, chat, leftOut)
+    chats.push({ session: chat.session, files, ...(resume === undefined ? {} : { resume }) })
   }
   for (const line of leftOut) deps.log(`Sandbox ${machine.name} (${machine.id}): ${line}`)
   const { format, panes } = list
   await deps.savedChats.finish(workspaceId, { format, chats, panes, leftOut })
   return chats.length
+}
+
+const keepResume = async (
+  deps: SandboxDeps,
+  machine: PlacedSandbox,
+  workspaceId: string,
+  { session, resume }: SavedChat,
+  leftOut: Array<string>
+): Promise<SavedChatResume | undefined> => {
+  if (resume === undefined) return undefined
+  const size = resume.files.reduce((total, file) => total + file.sizeBytes, 0)
+  if (size > SAVED_CHAT_RESUME_MAX_BYTES) {
+    leftOut.push(
+      `${coldLine(session.title)}: its agent session is ${megabytes(size)}, over the ${megabytes(SAVED_CHAT_RESUME_MAX_BYTES)} kept per chat`
+    )
+    return undefined
+  }
+  try {
+    for (const [index, file] of resume.files.entries()) {
+      await fetchResumeFile(deps, machine, workspaceId, { sessionId: session.id, index }, file)
+    }
+    return resume
+  } catch (cause) {
+    leftOut.push(`${coldLine(session.title)}: ${messageOf(cause)}`)
+    return undefined
+  }
+}
+
+const coldLine = (title: string): string =>
+  `The agent in the chat ${title} starts a new session with a recap instead of resuming`
+
+const fetchResumeFile = async (
+  deps: SandboxDeps,
+  machine: PlacedSandbox,
+  workspaceId: string,
+  saved: SavedResumeFile,
+  { path, sizeBytes }: SavedChatResume["files"][number]
+): Promise<void> => {
+  for (let offset = 0; offset < Math.max(sizeBytes, 1); offset += SAVED_CHAT_CHUNK_BYTES) {
+    const length = SAVED_CHAT_CHUNK_BYTES
+    const read = {
+      action: "resume_file",
+      sessionId: saved.sessionId,
+      path,
+      offset,
+      length
+    } as const
+    const chunk = decodeChunk(await ask(deps, machine, read))
+    await deps.savedChats.addResumeBytes(workspaceId, saved, Buffer.from(chunk.data, "base64"))
+  }
 }
 
 const leftOutReason = (file: FileMetadata, budget: { left: number }): string | undefined => {
@@ -158,37 +209,69 @@ const putBackChat = async (
   deps: SandboxDeps,
   machine: PlacedSandbox,
   workspaceId: string,
-  { format }: SavedChatsManifest,
-  chat: SavedChatsManifest["chats"][number]
+  manifest: SavedChatsManifest,
+  chat: SavedChatsManifest["chats"][number],
+  setup: SandboxSetupProgress
 ): Promise<void> => {
+  const { format } = manifest
   const { session, files } = chat
-  await ask(deps, machine, { action: "restore_chat", format, workspaceId, session })
+  await ask(deps, machine, { action: "restore_chat", format, workspaceId, session, hidden: true })
   for await (const item of deps.savedChats.items(workspaceId, session.id)) {
     await ask(deps, machine, { action: "restore_item", format, sessionId: session.id, item })
   }
   for (const file of files) await sendFile(deps, machine, workspaceId, file)
+  await putBackResume(deps, machine, workspaceId, manifest, chat, setup)
   const { agentSessionId } = session
   await ask(deps, machine, {
     action: "finish_chat",
     format,
     sessionId: session.id,
     fileIds: files.map((file) => file.id),
-    note: `${restoredNote(agentSessionId)}${notKeptNote(chat.notKept ?? [])}`,
+    workspaceId,
+    restore: {
+      startedAt: machine.createdAt,
+      completedAt: new Date(deps.clock.now()).toISOString(),
+      lines: aboutThisChatFirst(setup.lines(), session.title)
+    },
     ...(agentSessionId === undefined ? {} : { agentSessionId })
   })
 }
 
-const notKeptNote = (notKept: ReadonlyArray<string>): string =>
-  notKept.length === 0 ? "" : ` Too large to keep: ${notKept.join(", ")}.`
+const aboutThisChatFirst = (lines: ReadonlyArray<string>, title: string): ReadonlyArray<string> => {
+  const isAboutChat = (line: string): boolean => line.includes(`the chat ${title}`)
+  return [...lines.filter(isAboutChat), ...lines.filter((line) => !isAboutChat(line))]
+}
 
-const restoredNote = (agentSessionId: string | undefined): string =>
-  agentSessionId === undefined ? RESTORED_CHAT_NOTE : RECAPPED_CHAT_NOTE
-
-export const RECAPPED_CHAT_NOTE =
-  "Restored from an archived sandbox. The agent starts a new session from here and may not remember everything above."
-
-export const RESTORED_CHAT_NOTE =
-  "Restored from an archived sandbox. The agent starts fresh from here and doesn't remember the messages above."
+const putBackResume = async (
+  deps: SandboxDeps,
+  machine: PlacedSandbox,
+  workspaceId: string,
+  { format, leftOut }: SavedChatsManifest,
+  { session, resume }: SavedChatsManifest["chats"][number],
+  setup: SandboxSetupProgress
+): Promise<void> => {
+  const cold = coldLine(session.title)
+  if (resume === undefined) {
+    const isExplained = leftOut.some((line) => line.startsWith(cold))
+    if (session.agentSessionId !== undefined && !isExplained) setup.log(cold)
+    return
+  }
+  const { harnessId } = session
+  try {
+    for (const [index, { path, sizeBytes }] of resume.files.entries()) {
+      const saved = { sessionId: session.id, index }
+      for (let offset = 0; offset < Math.max(sizeBytes, 1); offset += SAVED_CHAT_CHUNK_BYTES) {
+        const length = SAVED_CHAT_CHUNK_BYTES
+        const bytes = await deps.savedChats.resumeBytes(workspaceId, saved, offset, length)
+        const data = bytes.toString("base64")
+        const write = { action: "restore_resume_file", format, harnessId, path, offset, data }
+        await ask(deps, machine, { ...write, action: "restore_resume_file" })
+      }
+    }
+  } catch (cause) {
+    setup.log(`${cold}: ${messageOf(cause)}`)
+  }
+}
 
 const sendFile = async (
   deps: SandboxDeps,

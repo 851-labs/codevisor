@@ -32,12 +32,26 @@ export type SavedChatItem = typeof SavedChatItem.Type
 
 export const RESTORED_AGENT_SESSION_LABEL = "codevisor-restored-agent-session"
 
+export const SavedChatResume = Schema.Struct({
+  agentSessionId: Schema.String,
+  files: Schema.Array(Schema.Struct({ path: Schema.String, sizeBytes: Schema.Number }))
+})
+export type SavedChatResume = typeof SavedChatResume.Type
+
 export const SavedChat = Schema.Struct({
   session: SavedChatSession,
   itemIds: Schema.Array(Schema.String),
-  files: Schema.Array(FileMetadata)
+  files: Schema.Array(FileMetadata),
+  resume: Schema.optional(SavedChatResume)
 })
 export type SavedChat = typeof SavedChat.Type
+
+export const SavedChatRestore = Schema.Struct({
+  startedAt: Schema.String,
+  completedAt: Schema.String,
+  lines: Schema.Array(Schema.String)
+})
+export type SavedChatRestore = typeof SavedChatRestore.Type
 
 export const SavedChatPane = Schema.Struct({
   id: Schema.String,
@@ -70,9 +84,25 @@ export const SandboxChatsAction = Schema.Union([
     length: Schema.Number
   }),
   Schema.Struct({
+    action: Schema.Literal("resume_file"),
+    sessionId: Schema.String,
+    path: Schema.String,
+    offset: Schema.Number,
+    length: Schema.Number
+  }),
+  Schema.Struct({
+    action: Schema.Literal("restore_resume_file"),
+    format: Schema.Number,
+    harnessId: Schema.String,
+    path: Schema.String,
+    offset: Schema.Number,
+    data: Schema.String
+  }),
+  Schema.Struct({
     action: Schema.Literal("restore_chat"),
     format: Schema.Number,
     workspaceId: Schema.String,
+    hidden: Schema.optional(Schema.Boolean),
     session: SavedChatSession
   }),
   Schema.Struct({
@@ -98,7 +128,9 @@ export const SandboxChatsAction = Schema.Union([
     format: Schema.Number,
     sessionId: Schema.String,
     fileIds: Schema.Array(Schema.String),
-    note: Schema.String,
+    note: Schema.optional(Schema.String),
+    restore: Schema.optional(SavedChatRestore),
+    workspaceId: Schema.optional(Schema.String),
     agentSessionId: Schema.optional(Schema.String)
   })
 ])
