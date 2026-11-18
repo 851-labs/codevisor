@@ -13,7 +13,7 @@ final class WorkspaceInspectorFileTreeModel {
   }
 
   private static let hiddenNames: Set<String> = [".git"]
-  private static let slowDelay = Duration.milliseconds(800)
+  static let slowDelay = Duration.milliseconds(800)
 
   private(set) var root: String?
   private(set) var listings: [String: [ServerFileEntry]] = [:]
