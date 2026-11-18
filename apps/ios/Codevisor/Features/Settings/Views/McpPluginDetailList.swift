@@ -11,7 +11,7 @@ struct McpPluginDetailList: View {
   let model: McpGlobalModel
   @State private var confirmingRemoval = false
   @State private var accounts: PluginAccountsModel?
-  @State private var subscriptions: PluginSubscriptionsModel?
+  @State private var lists: PluginListsModel?
   @State private var removalError: String?
   @State private var reporting = false
   @State private var confirmingBlock = false
@@ -35,11 +35,11 @@ struct McpPluginDetailList: View {
       }
       McpAccountsSection(entry: entry, model: model)
       McpMachinesSection(entry: entry, model: model)
-      if let subscriptions { PluginSubscriptionsSection(model: subscriptions, chatTitle: chatTitle) }
-      McpServerToolSections(server: server, client: client, isConnected: isConnected)
+      if let lists { PluginListLinks(model: lists, server: server) }
       if showsModeration || entry.canRemove { manageSection }
     }
     .task(id: server.id) { await loadPluginDetails() }
+    .task(id: "\(server.id)|\(isConnected)") { await lists?.loadTools(for: server) }
     .sheet(isPresented: $reporting) {
       PluginReportSheet(subject: subject).environment(environment)
     }
@@ -88,16 +88,12 @@ struct McpPluginDetailList: View {
 
   private func loadPluginDetails() async {
     let accounts = PluginAccountsModel(server: server, client: client)
-    let subscriptions = PluginSubscriptionsModel(serverId: server.id, client: client)
+    let lists = PluginListsModel(serverId: server.id, client: client)
     self.accounts = accounts
-    self.subscriptions = subscriptions
+    self.lists = lists
     await accounts.load()
-    await subscriptions.load()
-  }
-
-  private func chatTitle(_ sessionId: String) -> String? {
-    guard let id = UUID(uuidString: sessionId) else { return nil }
-    return environment.projectList.sessions.first { $0.id == id }?.title
+    await lists.subscriptions.load()
+    await lists.loadTools(for: server)
   }
 
   private func save(_ body: UpdateMcpServerBody) async throws -> ServerMcpServer {

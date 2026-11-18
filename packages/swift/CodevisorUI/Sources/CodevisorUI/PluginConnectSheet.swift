@@ -30,6 +30,15 @@
     }
 
     public var body: some View {
+      NavigationStack { content.modifier(ClearsInitialFocus()) }
+        .frame(width: 460)
+        .disabled(model.isWorking)
+        .interactiveDismissDisabled(model.isWorking)
+        .task { await model.load() }
+        .task { try? await environment.pluginAccess.refresh() }
+    }
+
+    private var content: some View {
       VStack(spacing: 20) {
         PluginConnectHeader(entry: entry, client: client)
         if hasDetails { details }
@@ -47,11 +56,6 @@
         .padding(.horizontal, 28)
       }
       .padding(.vertical, 28)
-      .frame(width: 460)
-      .disabled(model.isWorking)
-      .interactiveDismissDisabled(model.isWorking)
-      .task { await model.load() }
-      .task { try? await environment.pluginAccess.refresh() }
     }
 
     private var hasDetails: Bool {
@@ -64,7 +68,7 @@
 
     private var details: some View {
       Form {
-        PluginCapabilitySections(capabilities: entry.capabilities)
+        PluginCapabilityLinks(lists: PluginCapabilityLists(capabilities: entry.capabilities))
         if !model.draft.fields.isEmpty {
           Section("Configuration") {
             ConfigFieldForm(draft: $model.draft)

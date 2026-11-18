@@ -25,21 +25,19 @@ public struct PluginInstallSheet: View {
   private var subject: PluginModerationSubject { PluginModerationSubject(catalogEntry: entry) }
 
   public var body: some View {
-    #if os(macOS)
-      form
+    NavigationStack { form.modifier(ClearsInitialFocus()) }
+      #if os(macOS)
         .frame(width: 480)
         .frame(maxHeight: 640)
         .presentationSizing(.form.fitted(horizontal: false, vertical: true))
-    #else
-      NavigationStack { form }
-    #endif
+      #endif
   }
 
   private var form: some View {
     let restriction = environment.pluginAccess.restriction(for: subject)
     return Form {
       PluginInstallSummary(entry: entry, client: client, subject: subject, restriction: restriction)
-      PluginCapabilitySections(capabilities: entry.capabilities)
+      PluginCapabilityLinks(lists: PluginCapabilityLists(capabilities: entry.capabilities))
       if !draft.fields.isEmpty {
         Section("Configuration") {
           ConfigFieldForm(draft: $draft)
