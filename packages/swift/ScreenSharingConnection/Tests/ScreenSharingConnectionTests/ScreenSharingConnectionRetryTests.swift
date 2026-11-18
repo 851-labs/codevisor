@@ -7,29 +7,6 @@ import Testing
 @MainActor
 @Suite("Screen share connection: retries", .timeLimit(.minutes(1)))
 struct ScreenSharingConnectionRetryTests {
-  private func useUpTheTries(
-    _ harness: ConnectionHarness, failingAt operation: FakeHost.Operation, beforeTry: (Int) -> Void = { _ in }
-  ) async {
-    let before = harness.host.requests(operation).count
-    harness.host.hold(operation)
-    harness.media.sessions.last?.host.report(connection: "failed")
-    for (index, wait) in ScreenSharingRetryPolicy.waits.dropFirst().enumerated() {
-      await awaitObserved { harness.host.requests(operation).count == before + index + 1 }
-      beforeTry(index)
-      await harness.clock.waitForSleep(ScreenSharingConnectionDeadlines.stillConnectingHint)
-      let earlierWaits = harness.clock.requestCount(wait)
-      harness.host.release(operation)
-      harness.host.hold(operation)
-      await harness.clock.waitForSleep(wait, count: earlierWaits + 1)
-      harness.clock.advance(by: wait - .milliseconds(1))
-      #expect(harness.host.requests(operation).count == before + index + 1)
-      #expect(harness.connection.state == .reconnecting)
-      harness.clock.advance(by: .milliseconds(1))
-    }
-    await awaitObserved { harness.host.requests(operation).count == before + ScreenSharingRetryPolicy.waits.count }
-    harness.host.release(operation)
-  }
-
   @Test("Reconnecting tries five times, after 0, 1, 2, 4 and 8 s, then fails as kept dropping")
   func retriesOnTheScheduleThenFails() async {
     let harness = ConnectionHarness()
@@ -37,11 +14,10 @@ struct ScreenSharingConnectionRetryTests {
     await harness.goLive()
     harness.media.connectFails = true
 
-    await useUpTheTries(harness, failingAt: .start)
+    await harness.useUpTheTries(failingAt: .start)
     await harness.settle(.failed(.keptDropping))
 
     #expect(harness.host.starts.count == 6)
-    await harness.noTimersLeft()
   }
 
   @Test("Automatic tries never ask for a fresh link to the machine; the user's Retry does")
@@ -50,7 +26,7 @@ struct ScreenSharingConnectionRetryTests {
     let surface = harness.show()
     await harness.goLive()
     harness.host.answerEvery(.capabilities, .failure(FakeHost.unreachable))
-    await useUpTheTries(harness, failingAt: .capabilities)
+    await harness.useUpTheTries(failingAt: .capabilities)
     await harness.settle(.failed(.cantReach))
     #expect(harness.userAsks == 0)
 
@@ -68,7 +44,7 @@ struct ScreenSharingConnectionRetryTests {
     await harness.goLive()
     harness.host.answerEvery(.capabilities, .failure(FakeHost.unreachable))
 
-    await useUpTheTries(harness, failingAt: .capabilities)
+    await harness.useUpTheTries(failingAt: .capabilities)
     await harness.settle(.failed(.cantReach))
 
     harness.host.answerEvery(.capabilities, nil)
@@ -84,7 +60,7 @@ struct ScreenSharingConnectionRetryTests {
     await harness.goLive()
     harness.host.answerEvery(.capabilities, .failure(FakeHost.unreachable))
 
-    await useUpTheTries(harness, failingAt: .capabilities) { index in
+    await harness.useUpTheTries(failingAt: .capabilities) { index in
       guard index == ScreenSharingRetryPolicy.waits.count - 2 else { return }
       harness.machineReady = true
       harness.manager.machineCameOnline(ConnectionHarness.machineId)
@@ -97,7 +73,9 @@ struct ScreenSharingConnectionRetryTests {
     #expect(harness.host.starts.map(\.intent) == [.attach, .attach])
   }
 
-  @Test("A ready machine that still can't be reached gets one more try, not a loop, and coming back still reconnects")
+  @Test(
+    "A ready machine that still can't be reached gets one more try at once, not a loop, and coming back still reconnects"
+  )
   func oneMoreTryWhileReady() async {
     let harness = ConnectionHarness()
     harness.show()
@@ -105,10 +83,10 @@ struct ScreenSharingConnectionRetryTests {
     harness.host.answerEvery(.capabilities, .failure(FakeHost.unreachable))
     harness.machineReady = true
 
-    await useUpTheTries(harness, failingAt: .capabilities)
+    await harness.useUpTheTries(failingAt: .capabilities)
     await awaitObserved { harness.host.requests(.capabilities).count == ScreenSharingRetryPolicy.waits.count + 2 }
     await harness.settle(.failed(.cantReach))
-    await harness.noTimersLeft()
+    await harness.clock.waitForSleep(ScreenSharingRetryPolicy.quietWaits[0])
     #expect(harness.host.requests(.capabilities).count == ScreenSharingRetryPolicy.waits.count + 2)
 
     harness.host.answerEvery(.capabilities, nil)

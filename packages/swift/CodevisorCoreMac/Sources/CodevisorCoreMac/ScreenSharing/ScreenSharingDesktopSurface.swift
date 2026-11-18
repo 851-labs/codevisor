@@ -122,6 +122,8 @@ public final class ScreenSharingDesktopSurface {
       desktop.join(id, role: role, events: events)
       if isOnScreen { show() }
     } catch {
+      Self.logger.error(
+        "Desktop \(String(describing: self.role), privacy: .public) couldn't attach: \(error, privacy: .public)")
       bindFailure = error.localizedDescription
     }
   }

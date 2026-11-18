@@ -24,6 +24,7 @@ public final class ScreenSharingConnection {
   @ObservationIgnored private let machine: ScreenSharingMachine
   @ObservationIgnored private let clock: ScreenSharingConnectionClock
   @ObservationIgnored private let host: ScreenSharingHostRequests
+  @ObservationIgnored private let log: ScreenSharingConnectionLog
   @ObservationIgnored private var transitions = ScreenSharingConnectionStateMachine()
   @ObservationIgnored private var attempt: (id: UUID, runner: ScreenSharingAttempt?, task: Task<Void, Never>)?
   @ObservationIgnored private var pendingOpen: (surface: UUID, at: ContinuousClock.Instant)?
@@ -36,6 +37,7 @@ public final class ScreenSharingConnection {
     machineId = machine.id
     target = machine.target
     host = ScreenSharingHostRequests(machine: machine, clock: clock)
+    log = ScreenSharingConnectionLog(machineId: machine.id, target: machine.target)
   }
 
   public func attach(_ kind: ScreenSharingSurfaceKind) -> ScreenSharingSurface {
@@ -152,8 +154,11 @@ public final class ScreenSharingConnection {
     let wasLive = state == .live
     let wasUnreachable = state == .failed(.cantReach)
     let wasUnseen = transitions.unseen
+    let before = state
     let command = transitions.handle(event, openPending: hasPendingOpen)
     if state != transitions.state { state = transitions.state }
+    log.note(event, from: before, to: state, then: command)
+    if transitions.unseen == .lingering, wasUnseen != .lingering { log.lingering() }
     if isEnded != transitions.isEnded { isEnded = transitions.isEnded }
     if !wasLive, state == .live { liveSince = clock.now() }
     if state == .live || command?.opens == true { pendingOpen = nil }
@@ -172,6 +177,9 @@ public final class ScreenSharingConnection {
       start(.init(intent: .attach, preferredDisplayId: preferredDisplayId), after: .zero)
     case .stop:
       stop()
+    case .stopAndTryQuietly(let wait):
+      stop()
+      start(.init(intent: .attach, preferredDisplayId: preferredDisplayId), after: wait)
     case nil:
       break
     }
