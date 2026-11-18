@@ -58,15 +58,21 @@ final class AppRuntime {
       }
     }
     let isFirstLaunch = environment.settings.claimFirstLaunch()
-    Analytics.sink = AnalyticsClient.shared
-    Diagnostics.sink = DiagnosticsClient.shared
-    AnalyticsClient.shared.configureFromMainBundle(enabled: environment.settings.shareAnalytics)
-    AnalyticsClient.shared.captureAppOpenedOnce()
-    DiagnosticsClient.shared.configureFromMainBundle(enabled: environment.settings.shareCrashReports)
+    if !AppPreview.isRunning {
+      startReporting(environment.settings)
+    }
     ChatNotificationManager.shared.attach(to: environment)
     SidebarQuietChildren.muteAnnouncements(on: environment)
     RetiredChildDisclosure.clear()
     return (environment, sparkleUpdater, isFirstLaunch)
+  }
+
+  private static func startReporting(_ settings: AppSettingsModel) {
+    Analytics.sink = AnalyticsClient.shared
+    Diagnostics.sink = DiagnosticsClient.shared
+    AnalyticsClient.shared.configureFromMainBundle(enabled: settings.shareAnalytics)
+    AnalyticsClient.shared.captureAppOpenedOnce()
+    DiagnosticsClient.shared.configureFromMainBundle(enabled: settings.shareCrashReports)
   }
 
   func retry() {

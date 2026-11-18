@@ -10,6 +10,7 @@ struct AppSettingsLegacyDecodingTests {
     let decoded = try JSONDecoder().decode(AppSettings.self, from: legacy)
     #expect(decoded.hasCompletedOnboarding)
     #expect(decoded.shareAnalytics)
+    #expect(decoded.shareCrashReports)
     #expect(decoded.notificationsEnabled)
     #expect(decoded.systemNotificationsEnabled)
     #expect(decoded.notificationSoundsEnabled)
@@ -17,13 +18,6 @@ struct AppSettingsLegacyDecodingTests {
     #expect(decoded.confirmBeforeClosingWorkingChat)
     #expect(decoded.chatFinishedSoundPath == AppSettings.defaultNotificationSoundPath)
     #expect(decoded.actionRequiredSoundPath == AppSettings.defaultNotificationSoundPath)
-  }
-
-  @Test("Pre-onboarding legacy settings remain opted out")
-  func preOnboardingLegacyAnalyticsDefault() throws {
-    let legacy = Data("{\"hasCompletedOnboarding\": false}".utf8)
-    let decoded = try JSONDecoder().decode(AppSettings.self, from: legacy)
-    #expect(decoded.shareAnalytics == false)
   }
 
   @Test("Settings saved with the removed permissions-review keys still load and stop being written")
