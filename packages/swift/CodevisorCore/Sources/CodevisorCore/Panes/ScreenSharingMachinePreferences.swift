@@ -88,7 +88,8 @@ public struct ScreenSharingMachinePreferences {
   }
 
   public func pictureSize(machineId: String) -> CGSize? {
-    guard let saved = defaults.array(forKey: "screenSharing.pictureSize.\(machineId)") as? [Double], saved.count == 2
+    guard let saved = defaults.array(forKey: "screenSharing.pictureSize.\(machineId)") as? [Double], saved.count == 2,
+      saved.allSatisfy({ $0.isFinite && $0 > 0 })
     else { return nil }
 
     return CGSize(width: saved[0], height: saved[1])

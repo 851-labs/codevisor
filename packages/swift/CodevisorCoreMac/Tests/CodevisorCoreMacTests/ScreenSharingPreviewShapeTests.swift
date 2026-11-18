@@ -35,7 +35,10 @@ struct ScreenSharingPreviewShapeTests {
 
   @Test(
     "A machine whose screen was never seen gets a 16:10 card",
-    arguments: [nil, CGSize.zero, CGSize(width: 1920, height: 0)])
+    arguments: [
+      nil, CGSize.zero, CGSize(width: 1920, height: 0), CGSize(width: -1920, height: 1080),
+      CGSize(width: CGFloat.infinity, height: 1080), CGSize(width: CGFloat.infinity, height: CGFloat.infinity),
+    ])
   func startsAtSixteenByTen(screen: CGSize?) {
     #expect(Shape(screen: screen).card == 1.6 && Shape(screen: screen).picture == 1.6)
   }
@@ -55,6 +58,27 @@ struct ScreenSharingPreviewShapeTests {
     video.onVideoSizeChanged?(Self.notched)
     await awaitObserved { preview.snapshot.pictureSize == Self.notched }
     #expect(fixture.preferences.pictureSize(machineId: Fixture.machineId) == Self.notched)
+  }
+
+  @Test("The shape is saved when it changes, not every time the picture reports the same one")
+  func savesTheShapeOnlyWhenItChanges() async throws {
+    let fixture = Fixture()
+    let preview = fixture.surface(.watcher)
+    preview.show()
+    try await fixture.goLive()
+    await awaitObserved { preview.snapshot.endpoint != nil }
+    let video = try #require(fixture.fake(for: preview))
+    video.onVideoSizeChanged?(Self.notched)
+    #expect(fixture.preferences.pictureSize(machineId: Fixture.machineId) == Self.notched)
+
+    let marker = CGSize(width: 640, height: 480)
+    fixture.preferences.setPictureSize(marker, machineId: Fixture.machineId)
+    video.onVideoSizeChanged?(Self.notched)
+    #expect(fixture.preferences.pictureSize(machineId: Fixture.machineId) == marker, "not saved again")
+
+    let ultrawide = CGSize(width: 3440, height: 1440)
+    video.onVideoSizeChanged?(ultrawide)
+    #expect(fixture.preferences.pictureSize(machineId: Fixture.machineId) == ultrawide)
   }
 
   @Test("A machine seen before starts in the shape its picture last had, before anything connects")

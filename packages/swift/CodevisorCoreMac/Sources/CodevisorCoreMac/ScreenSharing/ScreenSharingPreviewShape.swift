@@ -8,7 +8,7 @@ public struct ScreenSharingPreviewShape: Equatable, Sendable {
   public let picture: CGFloat
 
   public init(screen: CGSize?) {
-    guard let screen, screen.width > 0, screen.height > 0 else {
+    guard let screen, screen.width > 0, screen.height > 0, screen.width.isFinite, screen.height.isFinite else {
       self = Self.standard
       return
     }
