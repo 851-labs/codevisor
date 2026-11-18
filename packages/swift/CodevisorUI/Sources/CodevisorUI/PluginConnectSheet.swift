@@ -30,7 +30,7 @@
     }
 
     public var body: some View {
-      NavigationStack { content }
+      NavigationStack { content.modifier(ClearsInitialFocus()) }
         .frame(width: 460)
         .disabled(model.isWorking)
         .interactiveDismissDisabled(model.isWorking)

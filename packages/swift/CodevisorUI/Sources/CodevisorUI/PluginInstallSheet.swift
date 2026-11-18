@@ -25,7 +25,7 @@ public struct PluginInstallSheet: View {
   private var subject: PluginModerationSubject { PluginModerationSubject(catalogEntry: entry) }
 
   public var body: some View {
-    NavigationStack { form }
+    NavigationStack { form.modifier(ClearsInitialFocus()) }
       #if os(macOS)
         .frame(width: 480)
         .frame(maxHeight: 640)

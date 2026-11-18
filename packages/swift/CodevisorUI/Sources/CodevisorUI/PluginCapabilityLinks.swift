@@ -11,6 +11,7 @@ public struct PluginCapabilityLinks: View {
     PluginListsSection(summaries: lists.summaries) { summary in
       NavigationLink {
         PluginCapabilityListPage(summary.page, lists: lists)
+          .modifier(ClearsInitialFocus())
       } label: {
         PluginListRowLabel(summary)
       }
