@@ -18,7 +18,7 @@ struct PluginSetupModelTests {
     #expect(model.step == .checking)
     await model.refresh()
     #expect(model.step == .install)
-    #expect(model.canAct && !model.isInstalled)
+    #expect(model.canAct)
 
     await model.performPrimaryAction()
     #expect(model.installing?.id == "grafana")
@@ -27,7 +27,7 @@ struct PluginSetupModelTests {
     transport.respond("GET /v1/plugins/mcp-1/accounts", with: #"{"accounts":[]}"#)
     await model.refresh()
     #expect(model.step == .signIn)
-    #expect(model.canAct && model.isInstalled)
+    #expect(model.canAct)
 
     await model.performPrimaryAction()
     #expect(model.addingAccount?.draft.fields.map(\.key) == ["url"])

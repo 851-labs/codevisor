@@ -54,7 +54,7 @@ public struct PluginSetupCard: View {
     if isConnected { return .done(request.auth == .none ? "Installed" : "Connected") }
     if model.isWorking { return .working }
     if model.step == .unavailable { return .unavailable }
-    return .action(model.isInstalled ? "Connect" : "Add", isEnabled: model.canAct)
+    return .action("Connect", isEnabled: model.canAct)
   }
 
   private func performPrimaryAction() {

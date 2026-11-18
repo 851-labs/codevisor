@@ -58,8 +58,6 @@ public final class PluginSetupModel {
     }
   }
 
-  public var isInstalled: Bool { server != nil }
-
   public func refresh() async {
     await loadEntry()
     guard let servers = await report({ try await client.listMcpServers() }) else {
