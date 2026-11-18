@@ -231,10 +231,15 @@ const putBackChat = async (
     restore: {
       startedAt: machine.createdAt,
       completedAt: new Date(deps.clock.now()).toISOString(),
-      lines: setup.lines()
+      lines: aboutThisChatFirst(setup.lines(), session.title)
     },
     ...(agentSessionId === undefined ? {} : { agentSessionId })
   })
+}
+
+const aboutThisChatFirst = (lines: ReadonlyArray<string>, title: string): ReadonlyArray<string> => {
+  const isAboutChat = (line: string): boolean => line.includes(`the chat ${title}`)
+  return [...lines.filter(isAboutChat), ...lines.filter((line) => !isAboutChat(line))]
 }
 
 const putBackResume = async (

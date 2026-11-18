@@ -46,4 +46,26 @@ struct TranscriptRestoreLineProjectionTests {
     #expect(order.firstIndex(of: .setupAfter(reply.id))! < order.firstIndex(of: .message(later.id))!)
     #expect(order.firstIndex(of: .message(later.id))! < order.firstIndex(of: .setupAfter(answer.id))!)
   }
+
+  @Test("A restore right after the newest reply still shows its line while that reply is the open turn")
+  func restoreAfterTheOpenTurn() throws {
+    let ask = UserMessage(text: "Remember PAPAYA")
+    let reply = AssistantMessage(turn: AssistantTurn(entries: [.text(id: "a", markdown: "OK")]))
+    var restore = SessionSetupPhase(
+      id: "sandbox.restore:r", activeTitle: "Restoring sandbox", completedTitle: "Restored sandbox",
+      failedTitle: "Could not restore sandbox")
+    restore.succeed(durationMs: 40_000)
+    restore.followsItemId = reply.id
+
+    let rows = try TranscriptRowProjectionCache.project(
+      TranscriptProjectionInput(
+        settledConversation: [.user(ask), .assistant(reply)],
+        pendingUserMessage: nil, activeItem: .assistant(reply), setupPhases: [restore],
+        waitingBackgroundTaskDescription: nil, waitingHarnessUpdateName: nil, isLoadingInitialHistory: false,
+        serverWaitMessage: nil, sessionErrorMessage: nil, status: .idle),
+      options: .init(includesConnectingRow: false))
+    let order = rows.map(\.id)
+
+    #expect(order.firstIndex(of: .active(reply.id))! < order.firstIndex(of: .setupAfter(reply.id))!)
+  }
 }

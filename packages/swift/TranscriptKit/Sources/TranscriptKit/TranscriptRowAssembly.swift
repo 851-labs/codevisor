@@ -157,10 +157,7 @@ enum TranscriptRowAssembly {
       if index == 0, hasSetup, TranscriptAssistantRowProjection.isUser(item) {
         appendSetupPhases(input.setupPhases.filter { $0.followsItemId == nil }, to: &rows)
       }
-      let following = input.setupPhases.filter { $0.followsItemId == item.id }
-      if !following.isEmpty {
-        rows.append(.init(id: .setupAfter(item.id), content: .setup(following), estimatedHeight: 40))
-      }
+      appendSetupPhases(input.setupPhases, following: item.id, to: &rows)
     }
   }
 
@@ -185,6 +182,7 @@ enum TranscriptRowAssembly {
           ),
           spacingAfter: TranscriptAssistantRowProjection.activeFallbackSpacingAfter(for: activeItem)
         ))
+      appendSetupPhases(input.setupPhases, following: activeItem.id, to: &rows)
     }
     if !pendingIsOpeningRow, let message = pendingMessage {
       appendOptimisticMessage(message, input: input, to: &rows)
@@ -284,6 +282,14 @@ enum TranscriptRowAssembly {
     if let delivery = input.deliveries[message.id] {
       appendDelivery(message.id, delivery, to: &rows)
     }
+  }
+
+  private static func appendSetupPhases(
+    _ phases: [SessionSetupPhase], following itemId: UUID, to rows: inout [TranscriptPresentationRow]
+  ) {
+    let following = phases.filter { $0.followsItemId == itemId }
+    guard !following.isEmpty else { return }
+    rows.append(.init(id: .setupAfter(itemId), content: .setup(following), estimatedHeight: 40))
   }
 
   private static func appendSetupPhases(

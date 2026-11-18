@@ -166,18 +166,19 @@ describe("a sandbox's chats across archive and restore", () => {
     ])
     expect(harness.logs).toContain(`Sandbox Spike box (id-1): ${tooBig}`)
     expect(lines).toEqual(expect.arrayContaining([tooBig, pastTotal]))
+    const finished = JSON.stringify(putBack.at(-2))
+    const cold =
+      "The agent in the chat Fix the flake starts a new session with a recap instead of resuming"
+    const order = [tooBig, pastTotal, cold, "==> "].map((line) => finished.indexOf(line))
+    expect(order).toEqual(order.toSorted((left, right) => left - right))
+    expect(order[0]).toBeGreaterThan(0)
     expect(putBack.at(-2)).toMatchObject({
       action: "finish_chat",
       fileIds: [...eight.map((file) => file.id), "note"],
       restore: {
         startedAt: expect.any(String),
         completedAt: expect.any(String),
-        lines: expect.arrayContaining([
-          "==> Preparing the project",
-          tooBig,
-          pastTotal,
-          "The agent in the chat Fix the flake starts a new session with a recap instead of resuming"
-        ])
+        lines: expect.arrayContaining(["==> Preparing the project"])
       }
     })
   })
