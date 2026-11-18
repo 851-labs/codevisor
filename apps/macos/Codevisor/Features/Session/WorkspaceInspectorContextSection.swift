@@ -5,12 +5,6 @@ import CodevisorUI
 import SwiftUI
 
 struct WorkspaceInspectorContextSection: View {
-  struct LoadKey: Equatable {
-    let sessionId: UUID
-    let usage: SessionUsage?
-    let activity: Date?
-  }
-
   let context: ServerSessionContext?
   let usage: SessionUsage?
   @Binding var isExpanded: Bool

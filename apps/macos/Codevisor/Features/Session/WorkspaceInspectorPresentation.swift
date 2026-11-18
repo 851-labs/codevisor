@@ -1,3 +1,4 @@
+import ACPKit
 import CodevisorClient
 import CodevisorCore
 import CodevisorUI
@@ -27,13 +28,14 @@ struct WorkspaceInspectorPresentation: ViewModifier {
   private struct RefreshKey: Equatable {
     let shown: ShownView
     let activity: Date?
+    let chatUsage: SessionUsage?
   }
 
   private struct ShownView: Equatable {
     let workspaceId: UUID
     let tab: WorkspaceInspectorTab
     let usageChatId: UUID?
-    let usageAccount: WorkspaceInspectorUsageModel.Account?
+    let usageAccount: WorkspaceInspectorHarnessModel.Account?
   }
 
   static let usageRefreshInterval: Duration = .seconds(120)
@@ -49,7 +51,7 @@ struct WorkspaceInspectorPresentation: ViewModifier {
   @State private var media = WorkspaceInspectorMediaModel()
   @State private var fileTree = WorkspaceInspectorFileTreeModel()
   @State private var imageStores = WorkspaceInspectorImageStores()
-  @State private var usage = WorkspaceInspectorUsageModel()
+  @State private var harness = WorkspaceInspectorHarnessModel()
   @State private var lastRefresh: RefreshKey?
   @State private var tracked: Bool?
   let store: SessionStore?
@@ -87,16 +89,16 @@ struct WorkspaceInspectorPresentation: ViewModifier {
         let isSameView = lastRefresh?.shown == refresh?.shown
         lastRefresh = refresh
         guard let inspected, isVisible else { return }
-        await reload(inspected, animatesUsage: isSameView)
+        await reload(inspected, animatesHarness: isSameView)
         guard visibleTab == .harness, harnessChat(for: inspected) != nil else { return }
         while true {
           do { try await Task.sleep(for: Self.usageRefreshInterval) } catch { return }
-          await reloadUsage(inspected, animated: true)
+          await loadHarness(inspected, animated: true)
         }
       }
       .task(id: isVisible && visibleTab == .harness ? usageAccounts : nil) {
         guard isVisible, visibleTab == .harness else { return }
-        await usage.prefetch(usageCandidates) { environment.machines.client(for: $0) }
+        await harness.prefetch(usageCandidates) { environment.machines.client(for: $0) }
       }
       .background(
         WorkspaceInspectorTracker(
@@ -177,16 +179,13 @@ struct WorkspaceInspectorPresentation: ViewModifier {
       parent: shownTab(for: inspected) == .info ? chat.flatMap { childAgents?.parent(of: $0) } : nil,
       agents: shownTab(for: inspected) == .info ? chat.flatMap { childAgents?.children(of: $0) } ?? [] : [],
       store: store,
-      usage: usage,
+      harness: harness,
       tabs: tabs(for: inspected),
       tab: Binding(get: { shownTab(for: inspected) }, set: { tab = $0 }),
       media: media,
       fileTree: fileTree,
       activeFilePath: activeDocumentPath(in: workspace),
-      chatUsage: chat.flatMap {
-        store.controllers[SessionStore.SessionKey(serverId: $0.serverId, sessionId: $0.id)]?.model?.usage
-      },
-      activity: activity(in: workspace),
+      chatUsage: chat.flatMap(usage(of:)),
       subscriptionsRevision: environment.machines.pluginSubscriptionsRevision,
       client: environment.machines.client(for: workspace.serverId),
       desktop: desktop,
@@ -195,7 +194,7 @@ struct WorkspaceInspectorPresentation: ViewModifier {
 
         MachineDesktopWindows.shared.present(desktop, environment: environment)
       },
-      onReload: { Task { await reload(inspected, animatesUsage: true) } },
+      onReload: { Task { await reload(inspected, animatesHarness: true) } },
       onOpen: { destination in
         store.inspectorOpenRequest = WorkspaceInspectorOpenRequest(
           workspaceId: workspace.id, destination: destination)
@@ -217,11 +216,13 @@ struct WorkspaceInspectorPresentation: ViewModifier {
     let usageChat = tab == .harness ? harnessChat(for: inspected) : nil
     let shown = ShownView(
       workspaceId: inspected.workspace.id, tab: tab, usageChatId: usageChat?.id,
-      usageAccount: usageChat.map(WorkspaceInspectorUsageModel.Account.init))
-    return RefreshKey(shown: shown, activity: activity(in: inspected.workspace))
+      usageAccount: usageChat.map(WorkspaceInspectorHarnessModel.Account.init))
+    return RefreshKey(
+      shown: shown, activity: activity(in: inspected.workspace),
+      chatUsage: usageChat.flatMap(usage(of:)))
   }
 
-  private func reload(_ inspected: Inspected, animatesUsage: Bool) async {
+  private func reload(_ inspected: Inspected, animatesHarness: Bool) async {
     let workspace = inspected.workspace
     let client = environment.machines.client(for: workspace.serverId)
     let tab = shownTab(for: inspected)
@@ -234,7 +235,7 @@ struct WorkspaceInspectorPresentation: ViewModifier {
     case .info, .media, .links:
       await media.reload(tab, workspaceId: workspace.id, client: client)
     case .harness:
-      await reloadUsage(inspected, animated: animatesUsage)
+      await loadHarness(inspected, animated: animatesHarness)
     case .machine:
       break
     }
@@ -287,17 +288,21 @@ struct WorkspaceInspectorPresentation: ViewModifier {
     } ?? inspected.chat
   }
 
-  private func reloadUsage(_ inspected: Inspected, animated: Bool) async {
+  private func loadHarness(_ inspected: Inspected, animated: Bool) async {
     guard let chat = harnessChat(for: inspected) else { return }
-    await usage.reload(chat, client: environment.machines.client(for: chat.serverId), animated: animated)
+    await harness.load(chat, client: environment.machines.client(for: chat.serverId), animated: animated)
+  }
+
+  private func usage(of chat: ChatSession) -> SessionUsage? {
+    store?.controllers[SessionStore.SessionKey(serverId: chat.serverId, sessionId: chat.id)]?.model?.usage
   }
 
   private var usageCandidates: [ChatSession] {
     environment.projectList.sessions
   }
 
-  private var usageAccounts: Set<WorkspaceInspectorUsageModel.Account> {
-    Set(usageCandidates.map(WorkspaceInspectorUsageModel.Account.init))
+  private var usageAccounts: Set<WorkspaceInspectorHarnessModel.Account> {
+    Set(usageCandidates.map(WorkspaceInspectorHarnessModel.Account.init))
   }
 
   private func mainChat(of workspace: Workspace) -> ChatSession? {

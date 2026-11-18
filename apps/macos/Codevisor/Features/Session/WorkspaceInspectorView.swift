@@ -25,14 +25,13 @@ struct WorkspaceInspectorView: View {
   let parent: WorkspaceInspectorAgent?
   let agents: [WorkspaceInspectorAgent]
   let store: SessionStore
-  let usage: WorkspaceInspectorUsageModel
+  let harness: WorkspaceInspectorHarnessModel
   let tabs: [WorkspaceInspectorTab]
   @Binding var tab: WorkspaceInspectorTab
   let media: WorkspaceInspectorMediaModel
   let fileTree: WorkspaceInspectorFileTreeModel
   let activeFilePath: String?
   let chatUsage: SessionUsage?
-  let activity: Date?
   let subscriptionsRevision: Int
   let client: any CodevisorServerClienting
   let desktop: CodevisorMachine?
@@ -71,8 +70,6 @@ struct WorkspaceInspectorView: View {
   @State private var tabViewport = TabViewport()
   @State private var tabFrames: [WorkspaceInspectorTab: CGRect] = [:]
   @State private var visited: Set<WorkspaceInspectorTab> = []
-  @State private var chatContexts: [UUID: ServerSessionContext] = [:]
-  @State private var lastLoadedChatId: UUID?
   @State private var subscriptions = ChatPluginSubscriptionsModel()
   @State private var workspaceMirrors = WorkspaceInspectorMirrors()
   @State private var remoteTasks = WorkspaceInspectorRemoteTasks()
@@ -217,7 +214,10 @@ struct WorkspaceInspectorView: View {
   private func content(for tab: WorkspaceInspectorTab) -> some View {
     switch tab {
     case .info: info
-    case .harness: harness
+    case .harness:
+      WorkspaceInspectorHarnessView(
+        chat: harnessChat, model: harness, chatUsage: chatUsage, isUsageExpanded: expansion("Usage"),
+        isContextExpanded: expansion("Context"))
     case .machine:
       WorkspaceInspectorMachineView(
         serverId: workspace.serverId, isActive: isShown && self.tab == .machine, client: client, desktop: desktop,
@@ -311,48 +311,12 @@ struct WorkspaceInspectorView: View {
 
   private var shownTasks: [WorkspaceInspectorTask] { tasks + remoteTasks.tasks }
 
-  private var shownHarnessChat: ChatSession? { isShown ? harnessChat : nil }
-
   private func removeAutomation(_ event: SubscribedPluginEvent) async -> Bool {
     await subscriptions.remove(event, client: client)
   }
 
   private func removeMirror(_ mirror: ServerWorkspaceMirror) {
     Task { await workspaceMirrors.remove(mirror, workspaceId: workspace.id, client: client) }
-  }
-
-  private var harness: some View {
-    ScrollView {
-      VStack(alignment: .leading, spacing: 10) {
-        if let harnessChat, let limits = usage.limits(for: harnessChat) {
-          WorkspaceInspectorUsageSection(limits: limits, isExpanded: expansion("Usage"))
-        }
-
-        if harnessChat != nil {
-          WorkspaceInspectorContextSection(
-            context: harnessContext, usage: chatUsage, isExpanded: expansion("Context"))
-        }
-      }
-      .padding(.vertical, 10)
-    }
-    .task(
-      id: shownHarnessChat.map {
-        WorkspaceInspectorContextSection.LoadKey(sessionId: $0.id, usage: chatUsage, activity: activity)
-      }
-    ) {
-      guard let harnessChat = shownHarnessChat else { return }
-      let context = try? await client.sessionContext(id: harnessChat.id)
-      guard !Task.isCancelled, let context else { return }
-
-      withTransaction(\.disablesAnimations, lastLoadedChatId != harnessChat.id) {
-        chatContexts[harnessChat.id] = context
-      }
-      lastLoadedChatId = harnessChat.id
-    }
-  }
-
-  private var harnessContext: ServerSessionContext? {
-    harnessChat.flatMap { chatContexts[$0.id] }
   }
 
   private func detail(_ title: String, icon: Image, value: String) -> some View {
