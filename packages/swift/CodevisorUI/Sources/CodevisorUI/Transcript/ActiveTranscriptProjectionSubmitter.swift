@@ -11,7 +11,12 @@ struct ActiveTranscriptProjectionSubmitter: View {
   var body: some View {
     let key = ActiveTranscriptProjectionKey(controller: controller, projectedItem: projectedItem)
     Color.clear
-      .task(id: key) { submit(key) }
+      .task(id: Submission(key: key, staging: ObjectIdentifier(staging))) { submit(key) }
+  }
+
+  private struct Submission: Hashable {
+    let key: ActiveTranscriptProjectionKey
+    let staging: ObjectIdentifier
   }
 
   private func submit(_ key: ActiveTranscriptProjectionKey) {

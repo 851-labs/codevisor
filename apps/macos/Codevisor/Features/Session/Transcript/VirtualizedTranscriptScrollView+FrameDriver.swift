@@ -24,6 +24,15 @@ extension VirtualizedTranscriptScrollView: TranscriptFrameAdapter {
     activeRowsVersion = nil
   }
 
+  func setAside() {
+    hasVerticalScroller = false
+    isHidden = true
+  }
+
+  func showFromAside() {
+    isHidden = false
+  }
+
   func prepareForDismantle() {
     persistViewport()
     isDetaching = true

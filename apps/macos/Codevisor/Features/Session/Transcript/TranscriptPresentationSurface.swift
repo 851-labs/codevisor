@@ -10,6 +10,7 @@ final class TranscriptPresentationSurface {
   let textAnimationRegistry = StreamingTextAnimationRegistry()
   let findModel = TranscriptFindModel()
   let projection = TranscriptSettledProjection()
+  let activeProjection = ActiveTranscriptProjection()
   let workedRowsVisibility = TranscriptWorkedRowsVisibilityCache()
   let composer = TranscriptComposerMetrics()
   let presentation: ChatPresentationState
@@ -25,7 +26,11 @@ final class TranscriptPresentationSurface {
 
   var existingScrollView: VirtualizedTranscriptScrollView? { retainedScrollView }
   var isWarm: Bool { retainedScrollView?.isInitialPresentationReady == true }
-  var isAttachedToWindow: Bool { retainedScrollView?.window != nil }
+  var isAttachedToWindow: Bool {
+    guard let retainedScrollView else { return false }
+
+    return retainedScrollView.window != nil && !retainedScrollView.isHidden
+  }
 
   func ensureScrollView() -> VirtualizedTranscriptScrollView {
     if let retainedScrollView { return retainedScrollView }
@@ -48,6 +53,10 @@ final class TranscriptPresentationSurface {
     }
   }
 
+  func isPresented(by owner: UUID) -> Bool {
+    visibilityOwners.contains(owner)
+  }
+
   func disappear(owner: UUID) {
     visibilityOwners.remove(owner)
     if visibilityOwners.isEmpty {
@@ -56,7 +65,7 @@ final class TranscriptPresentationSurface {
   }
 
   func prepareForEviction() {
-    guard let scrollView = retainedScrollView, scrollView.window == nil else { return }
+    guard let scrollView = retainedScrollView, !isAttachedToWindow else { return }
     findModel.dismiss()
     retainedScrollView = nil
     scrollView.prepareForDismantle()

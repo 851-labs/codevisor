@@ -41,10 +41,11 @@ extension ChatScreen {
   var transcriptSurface: some View {
     ZStack {
       Color.clear
-      if isTranscriptMounted {
+      if isTranscriptMounted || (reusesChatPage && transcriptMount.hasMounted) {
         ActiveTranscriptProjectionScope(
           controller: controller,
-          projectedRows: projection.rows
+          projectedRows: projection.rows,
+          projection: presentationSurface.activeProjection
         ) {
           activeRows, activeRowsVersion, isActiveProjectionPending, isAwaitingFirstActiveProjection,
           activeTextRestorationID in
@@ -163,6 +164,7 @@ extension ChatScreen {
             markdownRowStyle: transcriptMarkdownRowStyle,
             topChromeHeight: transcriptTopChromeHeight,
             addToChatShortcut: ShortcutCatalog.addToChatShortcut,
+            keepsSurfacesAside: reusesChatPage,
             onInitialPresentationReady: {
               isInitialTranscriptReady = true
             },

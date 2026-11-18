@@ -25,6 +25,7 @@ struct ChatScreen: View {
   @Environment(AppEnvironment.self) var environment
   @Environment(\.allowsRemoteComputerUsePreview) var allowsRemoteComputerUsePreview
   @Environment(\.workspaceChildAgents) var workspaceChildAgents
+  @Environment(\.reusesChatPage) var reusesChatPage
   @Bindable var controller: SessionController
   let focus: TerminalFocusController
   let presentationSurface: TranscriptPresentationSurface
@@ -32,6 +33,7 @@ struct ChatScreen: View {
   let presentsBotConversation: Bool
   @State var historyLoadTask: Task<Void, Never>?
   @State var reportsScrollState = true
+  @State var transcriptMount = TranscriptMountLatch()
   @State var showsInitialLoadingSpinner = false
   @State var presentationVisibilityOwner = UUID()
   @State var showsPromptQueue = false
@@ -96,6 +98,7 @@ struct ChatScreen: View {
       .modifier(ChatSetupSheets(controller: controller))
       .environment(\.attachmentImages, attachmentImages)
       .pointerStyle(.default)
+      .transaction(value: ObjectIdentifier(controller)) { $0.animation = nil }
       .animation(Motion.quick(reduceMotion: reduceMotion), value: isAtBottom)
       .animation(Motion.quick(reduceMotion: reduceMotion), value: earlierHistoryCollapse)
       .animation(Motion.quick(reduceMotion: reduceMotion), value: presentationSurface.findModel.isPresented)
@@ -128,6 +131,12 @@ struct ChatScreen: View {
         controller.presentBotConversation(presentsBotConversation)
       }
       .onChange(of: ObjectIdentifier(controller), initial: true) { QueuedPromptFlight.install(on: controller) }
+      .onChange(of: ChatPresentationTarget(controller: controller, surface: presentationSurface)) { old, _ in
+        present(replacing: old)
+      }
+      .onChange(of: isTranscriptMounted, initial: true) { _, isMounted in
+        if isMounted { transcriptMount.hasMounted = true }
+      }
       .onChange(of: hasPromptQueue, initial: true) { _, hasQueue in
         updatePromptQueueVisibility(hasQueue)
       }
@@ -173,4 +182,32 @@ struct ChatScreen: View {
     presentationSurface.disappear(owner: presentationVisibilityOwner)
     controller.presentationClock.viewDidDisappear()
   }
+
+  private func present(replacing old: ChatPresentationTarget) {
+    historyLoadTask?.cancel()
+    historyLoadTask = nil
+    _ = queueSends.sentSinceLastCheck(in: controller)
+    withTransaction(\.disablesAnimations, true) { showsPromptQueue = hasPromptQueue }
+    if let textView = focus.composerTextView, let chatId = controller.serverSession?.id {
+      focus.registerComposer(textView, forChat: chatId)
+    }
+    guard old.surface.isPresented(by: presentationVisibilityOwner) else { return }
+
+    old.surface.disappear(owner: presentationVisibilityOwner)
+    old.controller.presentationClock.viewDidDisappear()
+    showPresentation()
+  }
+}
+
+private struct ChatPresentationTarget: Equatable {
+  let controller: SessionController
+  let surface: TranscriptPresentationSurface
+
+  static func == (lhs: Self, rhs: Self) -> Bool {
+    lhs.controller === rhs.controller && lhs.surface === rhs.surface
+  }
+}
+
+final class TranscriptMountLatch {
+  var hasMounted = false
 }

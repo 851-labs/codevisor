@@ -3,6 +3,7 @@ import SwiftUI
 
 struct SessionRouteView: View {
   @Environment(AppEnvironment.self) private var environment
+  @Environment(\.reusesChatPage) private var reusesChatPage
   let store: SessionStore
   let serverId: String
   let sessionId: UUID
@@ -32,7 +33,7 @@ struct SessionRouteView: View {
           store: store,
           onFocusedChatChanged: onFocusedChatChanged
         )
-        .id(workspace.id)
+        .id(reusesChatPage ? AnyHashable(WorkspaceDeckSlot.sharedChat) : AnyHashable(workspace.id))
         .task(id: SessionStore.SessionKey(session)) {
           store.noteAccess(SessionStore.SessionKey(session))
         }

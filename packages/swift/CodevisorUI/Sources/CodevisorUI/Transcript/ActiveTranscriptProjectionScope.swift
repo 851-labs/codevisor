@@ -5,6 +5,7 @@ import TranscriptKit
 public struct ActiveTranscriptProjectionScope<Content: View>: View {
   private let controller: SessionController
   private let projectedRows: [TranscriptPresentationRow]
+  private let sharedProjection: ActiveTranscriptProjection?
   private let content: ([TranscriptPresentationRow], UInt64, Bool, Bool, String?) -> Content
   @State private var activeRows: [TranscriptPresentationRow] = []
   @State private var activeRowsVersion: UInt64 = 0
@@ -12,18 +13,21 @@ public struct ActiveTranscriptProjectionScope<Content: View>: View {
   @State private var publishedProjectionKey: TaskKey?
   @State private var projectionStaging = ProjectionStaging()
   @State private var projectionWorker = TranscriptActiveProjectionWorker()
-  @State private var framedStaging = ActiveTranscriptProjectionStaging()
-  @State private var presentObserver: UUID?
+  @State private var ownProjection = ActiveTranscriptProjection()
 
   public init(
     controller: SessionController,
     projectedRows: [TranscriptPresentationRow],
+    projection: ActiveTranscriptProjection? = nil,
     @ViewBuilder content: @escaping ([TranscriptPresentationRow], UInt64, Bool, Bool, String?) -> Content
   ) {
     self.controller = controller
     self.projectedRows = projectedRows
+    sharedProjection = projection
     self.content = content
   }
+
+  private var projection: ActiveTranscriptProjection { sharedProjection ?? ownProjection }
 
   public var body: some View {
     #if os(macOS)
@@ -34,49 +38,27 @@ public struct ActiveTranscriptProjectionScope<Content: View>: View {
   }
 
   private var framedBody: some View {
+    let projection = projection
     let isAwaitingFirstProjection =
-      projectedItem != nil && publishedProjectionKey?.projectedID != projectedItem?.id
+      projectedItem != nil && projection.publishedKey?.projectedID != projectedItem?.id
     return content(
-      activeRows, activeRowsVersion, isAwaitingFirstProjection, isAwaitingFirstProjection,
-      activeTextRestorationID
+      projection.rows, projection.rowsVersion, isAwaitingFirstProjection, isAwaitingFirstProjection,
+      projection.textRestorationID
     )
     .background {
       ActiveTranscriptProjectionSubmitter(
         controller: controller,
         projectedItem: projectedItem,
-        worker: projectionWorker,
-        staging: framedStaging
+        worker: projection.worker,
+        staging: projection.staging
       )
     }
-    .onAppear { observePresentedFrames() }
-    .onDisappear { stopObservingPresentedFrames() }
-  }
-
-  private func observePresentedFrames() {
-    guard presentObserver == nil else { return }
-    let staging = framedStaging
-    let publish = publishFramedProjection
-    presentObserver = controller.presentationClock.addPresentObserver {
-      guard let ready = staging.takePublishable() else { return }
-      publish(ready)
+    .onAppear { projection.observeFrames(of: controller.presentationClock) }
+    .onChange(of: ActiveTranscriptProjectionBinding(projection: projection, controller: controller)) { old, new in
+      old.projection.stopObservingFrames()
+      new.projection.observeFrames(of: new.controller.presentationClock)
     }
-  }
-
-  private func stopObservingPresentedFrames() {
-    if let presentObserver { controller.presentationClock.removePresentObserver(presentObserver) }
-    presentObserver = nil
-    projectionWorker.cancel()
-  }
-
-  private func publishFramedProjection(_ ready: ActiveTranscriptReadyProjection) {
-    activeRows = ready.rows
-    activeTextRestorationID = ready.restorationID
-    activeRowsVersion &+= 1
-    publishedProjectionKey = TaskKey(
-      revision: ready.key.revision,
-      projectedID: ready.key.projectedID,
-      waitingDescription: ready.key.waitingDescription
-    )
+    .onDisappear { projection.stopObservingFrames() }
   }
 
   @ViewBuilder

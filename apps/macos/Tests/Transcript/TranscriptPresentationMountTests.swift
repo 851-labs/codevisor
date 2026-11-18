@@ -47,6 +47,48 @@ struct TranscriptPresentationMountTests {
     #expect(!surface.presentation.isInitialTranscriptReady)
   }
 
+  @Test("A transcript set aside stays in its container, hidden, until it is released")
+  func setAsideKeepsTheTranscriptHidden() {
+    let surface = TranscriptPresentationSurface(controller: controller())
+    let container = NativeTranscriptView.SurfaceContainerView()
+    let scrollView = surface.ensureScrollView()
+    container.presentationSurface = surface
+    container.addSubview(scrollView)
+
+    container.setSurfaceAside()
+
+    #expect(scrollView.superview === container)
+    #expect(scrollView.isHidden)
+    #expect(container.presentationSurface == nil)
+
+    container.releaseSurface()
+
+    #expect(scrollView.superview == nil)
+  }
+
+  @Test("A transcript set aside in a window counts as detached and can be evicted")
+  func setAsideTranscriptCanBeEvicted() {
+    let window = NSWindow(
+      contentRect: NSRect(x: 0, y: 0, width: 400, height: 300), styleMask: [.titled], backing: .buffered, defer: true)
+    let surface = TranscriptPresentationSurface(controller: controller())
+    let container = NativeTranscriptView.SurfaceContainerView()
+    window.contentView = container
+    let scrollView = surface.ensureScrollView()
+    container.presentationSurface = surface
+    container.addSubview(scrollView)
+
+    #expect(surface.isAttachedToWindow)
+
+    container.setSurfaceAside()
+
+    #expect(!surface.isAttachedToWindow)
+
+    surface.prepareForEviction()
+
+    #expect(surface.existingScrollView == nil)
+    #expect(scrollView.superview == nil)
+  }
+
   private func controller() -> SessionController {
     SessionController(
       project: .fromFolder(URL(fileURLWithPath: "/tmp/transcript-presentation-mount-tests")),

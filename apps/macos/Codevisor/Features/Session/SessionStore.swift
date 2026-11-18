@@ -37,7 +37,7 @@ final class SessionStore {
   @ObservationIgnored var isConfirmingChatClose = false
   @ObservationIgnored var scrollStates: [SessionKey: SessionScrollState] = [:]
   @ObservationIgnored var transcriptSurfaces =
-    TranscriptPresentationSurfaceCache()
+    TranscriptPresentationSurfaceCache(maxDetachedSurfaceCount: WorkspaceDeckPolicy.warmTranscripts)
   @ObservationIgnored var subagentMirrors: [SubagentPaneKey: SubagentMirror] = [:]
   @ObservationIgnored let transcriptViewers = TranscriptViewerControllers()
   struct SubagentPaneKey: Hashable {

@@ -12,12 +12,14 @@ struct NativeTranscriptView: NSViewRepresentable {
   let markdownRowStyle: TranscriptMarkdownRowStyle
   var topChromeHeight: CGFloat = 0
   var addToChatShortcut: TranscriptAddToChatShortcut?
+  var keepsSurfacesAside = false
   var onInitialPresentationReady: (@MainActor () -> Void)? = nil
   var onScrollViewReady: (@MainActor (NSView) -> Void)? = nil
 
   final class SurfaceContainerView: NSView {
     var presentationSurface: TranscriptPresentationSurface?
     var reclaimSurface: (() -> Void)?
+    var keepsSurfacesAside = false
 
     override func layout() {
       super.layout()
@@ -32,18 +34,26 @@ struct NativeTranscriptView: NSViewRepresentable {
     }
 
     func releaseSurface() {
-      guard let presentationSurface else {
-        reclaimSurface = nil
-        return
-      }
-      if let scrollView = presentationSurface.existingScrollView,
+      if let presentationSurface, let scrollView = presentationSurface.existingScrollView,
         scrollView.superview === self
       {
         scrollView.prepareForDismantle()
         scrollView.removeFromSuperview()
         if !presentationSurface.isWarm { presentationSurface.presentation.forgetMount() }
       }
-      self.presentationSurface = nil
+      presentationSurface = nil
+      reclaimSurface = nil
+      for case let aside as VirtualizedTranscriptScrollView in subviews {
+        aside.prepareForDismantle()
+        aside.removeFromSuperview()
+      }
+    }
+
+    func setSurfaceAside() {
+      if let scrollView = presentationSurface?.existingScrollView, scrollView.superview === self {
+        scrollView.setAside()
+      }
+      presentationSurface = nil
       reclaimSurface = nil
     }
 
@@ -56,6 +66,7 @@ struct NativeTranscriptView: NSViewRepresentable {
 
   func makeNSView(context: Context) -> SurfaceContainerView {
     let container = SurfaceContainerView()
+    container.keepsSurfacesAside = keepsSurfacesAside
     let scrollView = presentationSurface.ensureScrollView()
     container.presentationSurface = presentationSurface
     container.reclaimSurface = { [weak container] in
@@ -70,10 +81,9 @@ struct NativeTranscriptView: NSViewRepresentable {
   }
 
   func updateNSView(_ container: SurfaceContainerView, context: Context) {
+    container.keepsSurfacesAside = keepsSurfacesAside
     if container.presentationSurface !== presentationSurface {
-      container.releaseSurface()
-      container.presentationSurface = presentationSurface
-      presentationSurface.ensureScrollView().prepareForPresentationAttachment()
+      showSurface(in: container)
     }
     container.reclaimSurface = { [weak container] in
       guard let container else { return }
@@ -81,6 +91,22 @@ struct NativeTranscriptView: NSViewRepresentable {
     }
     Self.attach(presentationSurface, to: container)
     configure(presentationSurface.ensureScrollView())
+  }
+
+  private func showSurface(in container: SurfaceContainerView) {
+    if keepsSurfacesAside {
+      container.setSurfaceAside()
+    } else {
+      container.releaseSurface()
+    }
+    container.presentationSurface = presentationSurface
+    let scrollView = presentationSurface.ensureScrollView()
+    if scrollView.superview === container {
+      scrollView.showFromAside()
+    } else {
+      scrollView.prepareForPresentationAttachment()
+    }
+    onScrollViewReady?(scrollView)
   }
 
   static func dismantleNSView(_ container: SurfaceContainerView, coordinator: Void) {
@@ -110,7 +136,12 @@ struct NativeTranscriptView: NSViewRepresentable {
     (scrollView.superview as? SurfaceContainerView)?
       .relinquishSurface(presentationSurface)
     scrollView.removeFromSuperview()
-    container.subviews.forEach { $0.removeFromSuperview() }
+    if container.keepsSurfacesAside {
+      for case let aside as VirtualizedTranscriptScrollView in container.subviews { aside.setAside() }
+    } else {
+      container.subviews.forEach { $0.removeFromSuperview() }
+    }
+    scrollView.isHidden = false
     scrollView.translatesAutoresizingMaskIntoConstraints = false
     container.addSubview(scrollView)
     NSLayoutConstraint.activate([

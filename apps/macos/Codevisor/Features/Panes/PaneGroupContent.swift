@@ -3,12 +3,19 @@ import CodevisorCore
 
 struct PaneGroupContent: View {
   var group: PaneGroupModel
+  @Environment(\.reusesChatPage) private var reusesChatPage
 
   var body: some View {
     if let descriptor = group.state.selectedPane {
       PaneContentMount(group: group, paneId: descriptor.id)
-        .id("\(descriptor.id):\(descriptor.kind.rawValue)")
+        .id(identity(of: descriptor))
     }
+  }
+
+  private func identity(of descriptor: PaneDescriptorState) -> String {
+    if reusesChatPage, descriptor.kind == .chat { return descriptor.kind.rawValue }
+
+    return "\(descriptor.id):\(descriptor.kind.rawValue)"
   }
 }
 

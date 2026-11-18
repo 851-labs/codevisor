@@ -367,6 +367,7 @@ final class VirtualizedTranscriptScrollView: NSScrollView {
 
   override func scrollWheel(with event: NSEvent) {
     guard initialPresentationGate.isReady else { return }
+    if !hasVerticalScroller { hasVerticalScroller = true }
     cancelDisclosureViewportAnchor()
     bottomJumpGate.cancel()
     lockedRestoreDistance = nil
