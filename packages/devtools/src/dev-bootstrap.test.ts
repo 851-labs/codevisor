@@ -36,7 +36,11 @@ async function fixture() {
   await executable(join(bin, "bun"), `#!/bin/sh\necho "bun $*" >> "${log}"\n`)
   await executable(
     join(repoRoot, "node_modules/.bin/turbo"),
-    `#!/bin/sh\necho "turbo $2" >> "${log}"\nmkdir -p "${native}/CodevisorNetFFI.xcframework" && echo "// ffi" > "${native}/codevisor_net_ffi.swift"\n`
+    `#!/bin/sh
+case "$*" in *--dry=json*) echo '{"tasks":[{"hash":"0123456789abcdef","cache":{"status":"MISS"}}]}'; exit 0 ;; esac
+echo "turbo $2" >> "${log}"
+mkdir -p "${native}/CodevisorNetFFI.xcframework" && echo "// ffi" > "${native}/codevisor_net_ffi.swift"
+`
   )
   await executable(
     join(repoRoot, "apps/macos/scripts/build-ghostty.sh"),

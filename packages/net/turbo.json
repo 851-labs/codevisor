@@ -4,8 +4,9 @@
   "tasks": {
     "build:swift": {
       "inputs": [
-        "$TURBO_DEFAULT$",
-        "!native/**",
+        "Cargo.toml",
+        "Cargo.lock",
+        "crates/**",
         "$TURBO_ROOT$/scripts/net-artifact.mjs",
         "$TURBO_ROOT$/scripts/net-build.mjs",
         "$TURBO_ROOT$/packages/devtools/src/net-artifact.ts",
@@ -25,8 +26,9 @@
     },
     "build:node:darwin-arm64": {
       "inputs": [
-        "$TURBO_DEFAULT$",
-        "!native/**",
+        "Cargo.toml",
+        "Cargo.lock",
+        "crates/**",
         "$TURBO_ROOT$/scripts/net-artifact.mjs",
         "$TURBO_ROOT$/scripts/net-build.mjs",
         "$TURBO_ROOT$/packages/devtools/src/net-artifact.ts",
@@ -46,8 +48,9 @@
     },
     "build:node:darwin-x64": {
       "inputs": [
-        "$TURBO_DEFAULT$",
-        "!native/**",
+        "Cargo.toml",
+        "Cargo.lock",
+        "crates/**",
         "$TURBO_ROOT$/scripts/net-artifact.mjs",
         "$TURBO_ROOT$/scripts/net-build.mjs",
         "$TURBO_ROOT$/packages/devtools/src/net-artifact.ts",
@@ -67,8 +70,9 @@
     },
     "build:node:linux-x64": {
       "inputs": [
-        "$TURBO_DEFAULT$",
-        "!native/**",
+        "Cargo.toml",
+        "Cargo.lock",
+        "crates/**",
         "$TURBO_ROOT$/scripts/net-artifact.mjs",
         "$TURBO_ROOT$/scripts/net-build.mjs",
         "$TURBO_ROOT$/packages/devtools/src/net-artifact.ts",
@@ -88,8 +92,9 @@
     },
     "build:node:linux-arm64": {
       "inputs": [
-        "$TURBO_DEFAULT$",
-        "!native/**",
+        "Cargo.toml",
+        "Cargo.lock",
+        "crates/**",
         "$TURBO_ROOT$/scripts/net-artifact.mjs",
         "$TURBO_ROOT$/scripts/net-build.mjs",
         "$TURBO_ROOT$/packages/devtools/src/net-artifact.ts",

@@ -1,7 +1,7 @@
 import { copyFile, mkdir, rename, rm } from "node:fs/promises"
 import { dirname, join } from "node:path"
 
-import { runCommand } from "./commands.ts"
+import { runWithProgress } from "./build-progress.ts"
 import {
   cargoEnvironment,
   hostTarget,
@@ -30,7 +30,7 @@ export async function buildSwiftFramework(
   const destination = join(netNativeRoot(repoRoot), "apple")
   const staging = `${destination}.staging`
   await rm(staging, { recursive: true, force: true })
-  await runCommand("bash", [join(repoRoot, "scripts", "build-net-swift.sh"), staging], {
+  await runWithProgress("bash", [join(repoRoot, "scripts", "build-net-swift.sh"), staging], {
     cwd: netRoot(repoRoot),
     env: await cargoEnvironment(repoRoot, environment)
   })
@@ -86,17 +86,20 @@ async function compileForHost(repoRoot: string, environment: Environment): Promi
   const args = ["--release", "--locked", "-p", "codevisor-net-node"]
   const env = await cargoEnvironment(repoRoot, environment)
   const cwd = netRoot(repoRoot)
+  const phase = `Compiling the Node addon for ${hostTarget()}`
   if (process.platform !== "linux") {
-    await runCommand("cargo", ["build", ...args], { cwd, env })
+    await runWithProgress("cargo", ["build", ...args], { cwd, env }, phase)
     return join(cwd, "target", "release", "libcodevisor_net_node.dylib")
   }
 
   const lock = await readNetLock(repoRoot)
   const triple = `${process.arch === "arm64" ? "aarch64" : "x86_64"}-unknown-linux-gnu`
-  await runCommand("cargo", ["zigbuild", ...args, "--target", `${triple}.${lock.linuxGlibc}`], {
-    cwd,
-    env
-  })
+  await runWithProgress(
+    "cargo",
+    ["zigbuild", ...args, "--target", `${triple}.${lock.linuxGlibc}`],
+    { cwd, env },
+    phase
+  )
   return join(cwd, "target", triple, "release", "libcodevisor_net_node.so")
 }
 
@@ -108,14 +111,16 @@ async function compileInLinuxContainer(
   const cargoHome = join(netArtifactsRoot(environment), "linux-cargo-home")
   await mkdir(cargoHome, { recursive: true })
   const engine = environment.CODEVISOR_CONTAINER_ENGINE === "apple" ? "container" : "docker"
-  await runCommand(
+  await runWithProgress(
     engine,
     linuxContainerBuild({
       target,
       netRoot: netRoot(repoRoot),
       cargoHome,
       rust: await rustToolchain(repoRoot)
-    })
+    }),
+    {},
+    `Compiling the Node addon for ${target} in a container`
   )
   return join(netRoot(repoRoot), "target", target, "release", "libcodevisor_net_node.so")
 }

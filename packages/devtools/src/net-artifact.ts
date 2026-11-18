@@ -19,6 +19,7 @@ import { runCommand } from "./commands.ts"
 import type { ContainerEngine } from "./container-engine.ts"
 import type { NetArtifacts } from "./dev-net.ts"
 import { pathExists } from "./files.ts"
+import { runSharedNetTask, type TurboCommand } from "./net-build-cache.ts"
 
 type Environment = Readonly<Record<string, string | undefined>>
 
@@ -52,6 +53,9 @@ export function netArtifactsRoot(environment: Environment = process.env): string
     join(homedir(), ".codevisor-development", "artifacts", "net")
   )
 }
+
+export const netBuildCache = (environment: Environment = process.env): string =>
+  join(netArtifactsRoot(environment), "turbo-cache")
 
 export function netArtifacts(
   repoRoot: string,
@@ -248,18 +252,22 @@ export async function ensureSwiftFramework(
 
 async function runNetTask(repoRoot: string, task: string, environment: Environment): Promise<void> {
   await discardLegacyBuilds(environment)
-  const [command, args] = turboCommand(repoRoot, task)
   await withArtifactLock(join(netNativeRoot(repoRoot), `.${task.replaceAll(":", "-")}.lock`), () =>
-    runCommand(command, args, { cwd: repoRoot, env: environment })
+    runSharedNetTask({
+      repoRoot,
+      task,
+      environment,
+      cache: netBuildCache(environment),
+      turbo: turboCommand(repoRoot)
+    })
   )
 }
 
-function turboCommand(repoRoot: string, task: string): [string, Array<string>] {
-  const args = ["run", task, "--filter=@codevisor/net", "--output-logs=errors-only"]
+function turboCommand(repoRoot: string): TurboCommand {
   const installed = join(repoRoot, "node_modules", ".bin", "turbo")
-  if (existsSync(installed)) return [installed, args]
+  if (existsSync(installed)) return { command: installed, args: [] }
 
-  return ["npx", ["--yes", `turbo@${pinnedTurbo(repoRoot)}`, ...args]]
+  return { command: "npx", args: ["--yes", `turbo@${pinnedTurbo(repoRoot)}`] }
 }
 
 function pinnedTurbo(repoRoot: string): string {
