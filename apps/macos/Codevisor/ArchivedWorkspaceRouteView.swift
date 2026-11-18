@@ -21,7 +21,6 @@ struct ArchivedWorkspaceRouteView: View {
       if let workspace, workspace.isArchived {
         content(workspace)
           .navigationTitle(SidebarWorkspaceRowLabel.title(for: workspace.name))
-          .navigationSubtitle("Archived")
           .focusedSceneValue(\.workspaceTabCycling, tabCycling(in: workspace))
       } else if workspace == nil {
         ContentUnavailableView(
