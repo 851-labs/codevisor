@@ -29,6 +29,7 @@ struct ChatInputEditor: NSViewRepresentable {
   @Binding var text: String
   @Binding var calculatedHeight: CGFloat
   var selection: Binding<NSRange>? = nil
+  var undo: ComposerUndoHistories? = nil
   var minHeight: CGFloat = Self.singleLineHeight
   var maxHeight: CGFloat = 240
   var topBleed: CGFloat = 0
@@ -116,12 +117,14 @@ struct ChatInputEditor: NSViewRepresentable {
         scrollView.reflectScrolledClipView(clipView)
       }
     }
+    let changedChat = context.coordinator.adopt(undo?.history(for: textView), in: textView, showing: text)
     if textView.string != text {
       if textView.hasMarkedText() {
         textView.inputContext?.discardMarkedText()
         textView.unmarkText()
       }
       textView.string = text
+      if !changedChat { context.coordinator.forgetUndoHistory() }
     }
     if let selection, !textView.hasMarkedText() {
       let length = (textView.string as NSString).length
@@ -157,7 +160,27 @@ struct ChatInputEditor: NSViewRepresentable {
     private var measuredWidth: CGFloat = -1
     private var isHeightUpdateScheduled = false
 
+    private var undo: ComposerUndoHistory?
+
     init(_ parent: ChatInputEditor) { self.parent = parent }
+
+    func adopt(_ undo: ComposerUndoHistory?, in textView: NSTextView, showing text: String) -> Bool {
+      guard self.undo !== undo else { return false }
+
+      self.undo?.leave(showing: textView.string)
+      textView.breakUndoCoalescing()
+      self.undo = undo
+      undo?.enter(showing: text)
+      return true
+    }
+
+    func forgetUndoHistory() {
+      undo?.forget()
+    }
+
+    func undoManager(for view: NSTextView) -> UndoManager? {
+      undo?.manager ?? view.window?.undoManager
+    }
 
     deinit {
       NotificationCenter.default.removeObserver(self)

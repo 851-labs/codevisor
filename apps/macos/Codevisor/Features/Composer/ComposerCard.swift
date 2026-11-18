@@ -21,16 +21,11 @@ struct ComposerCard: View {
   @Environment(AppEnvironment.self) private var environment
   @Environment(\.usesSlimComposer) private var usesSlimComposer
   @State private var editorHeight: CGFloat = ChatInputEditor.singleLineHeight
-  @State var selection = NSRange(location: 0, length: 0)
-  @State var slashSelection = 0
-  @State var promptHistory: ComposerPromptHistory?
-  @State var isSlashMenuDismissed = false
   @State private var slashMenuContentHeight: CGFloat = 0
-  @State var didStartResolvingQuestion = false
-  @State var didAcceptSubmission = false
-  @State private var isPickingFiles = false
-  @State private var isPickingPhotos = false
+  @State var isPickingFiles = false
+  @State var isPickingPhotos = false
   @State var sendSource = ComposerSendSource()
+  var state: ComposerViewState { .of(controller) }
 
   private static let slashMenuMaxHeight: CGFloat = 220
 
@@ -59,7 +54,7 @@ struct ComposerCard: View {
         ComposerQuestionPicker(
           controller: controller,
           request: question,
-          didStartResolving: $didStartResolvingQuestion,
+          didStartResolving: resolving(question.questionId),
           focus: focus,
           chatId: focusChatId
         )
@@ -126,13 +121,12 @@ struct ComposerCard: View {
     .onChange(of: ChatSignal(controller.submitRequest, of: controller)) { old, new in
       if old.isSameChat(as: new) { sendDraft(delivery: .steer) }
     }
-    .onChange(of: chatScope) { old, new in
-      chatScopeChanged(from: old, to: new)
-    }
-    .onChange(of: slashToken) { oldToken, newToken in
+    .onChange(of: ObjectIdentifier(controller)) { chatChanged(hasSlashToken: slashToken != nil) }
+    .onChange(of: ChatSignal(slashToken, of: controller)) { old, new in
+      guard old.isSameChat(as: new) else { return }
       slashSelection = 0
       isSlashMenuDismissed = false
-      if oldToken == nil, newToken != nil {
+      if old.value == nil, new.value != nil {
         controller.refreshCodevisorSkills()
       }
     }
@@ -178,7 +172,8 @@ private extension ComposerCard {
         ChatInputEditor(
           text: $controller.composerText,
           calculatedHeight: $editorHeight,
-          selection: $selection,
+          selection: selectionBinding,
+          undo: state.undo,
           topBleed: editorTopBleed,
           onSubmit: submitOrAcceptSlash,
           onQueueSubmit: submitToQueue,
@@ -191,7 +186,8 @@ private extension ComposerCard {
         )
         .frame(height: editorHeight + editorTopBleed)
         .writingToolsAffordanceVisibility(.hidden)
-        .onChange(of: controller.editingQueuedPromptID) { _, _ in
+        .onChange(of: ChatSignal(controller.editingQueuedPromptID, of: controller)) { old, new in
+          guard old.isSameChat(as: new) else { return }
           selection = NSRange(location: (controller.composerText as NSString).length, length: 0)
         }
         .disabled(
@@ -261,7 +257,7 @@ private extension ComposerCard {
   }
 
   private var isQuestionResolving: Bool {
-    didStartResolvingQuestion || controller.isResolvingQuestion
+    state.isResolving(controller.composerQuestion?.questionId) || controller.isResolvingQuestion
   }
 
   private var goalEditBackButton: some View {
