@@ -76,6 +76,16 @@ void ChromiumRuntime::StartPumpTimer(int64_t delay) {
   }];
   [NSRunLoop.mainRunLoop addTimer:pumpTimer_ forMode:NSRunLoopCommonModes];
 }
+static NSString *configuredProfilesRoot = nil;
+
+void ChromiumRuntime::SetProfilesRoot(NSString *root) { configuredProfilesRoot = [root copy]; }
+
+NSString *ChromiumRuntime::ProfilesRoot() {
+  if (configuredProfilesRoot.length > 0) return configuredProfilesRoot;
+  NSString *support = [NSSearchPathForDirectoriesInDomains(NSApplicationSupportDirectory, NSUserDomainMask, YES) firstObject];
+  return [[support stringByAppendingPathComponent:NSBundle.mainBundle.bundleIdentifier] stringByAppendingPathComponent:@"Chromium-v2"];
+}
+
 bool ChromiumRuntime::Initialize() {
   if (initialized_) {
     if (!shuttingDown_) SchedulePump(0);
@@ -87,8 +97,7 @@ bool ChromiumRuntime::Initialize() {
   CefSettings settings;
   settings.external_message_pump = true;
   settings.log_severity = LOGSEVERITY_WARNING;
-  NSString *support = [NSSearchPathForDirectoriesInDomains(NSApplicationSupportDirectory, NSUserDomainMask, YES) firstObject];
-  NSString *root = [[support stringByAppendingPathComponent:NSBundle.mainBundle.bundleIdentifier] stringByAppendingPathComponent:@"Chromium-v2"];
+  NSString *root = ProfilesRoot();
   CefString(&settings.root_cache_path) = RuntimeString(root);
   CefString(&settings.log_file) = RuntimeString([root stringByAppendingPathComponent:@"chromium.log"]);
   NSString *appName = NSBundle.mainBundle.executablePath.lastPathComponent;

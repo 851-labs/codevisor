@@ -927,6 +927,8 @@ class BrowserClient final : public CefClient, public CefLifeSpanHandler,
 };
 
 @implementation CVChromiumView
++ (NSString *)profilesRoot { return ChromiumRuntime::ProfilesRoot(); }
++ (void)setProfilesRoot:(NSString *)root { ChromiumRuntime::SetProfilesRoot(root); }
 - (CGFloat)setViewportWidth:(CGFloat)width height:(CGFloat)height {
   _viewportWidth = width; _viewportHeight = height;
   [self layoutViewport];
@@ -1023,9 +1025,7 @@ class BrowserClient final : public CefClient, public CefLifeSpanHandler,
   if (!ChromiumRuntime::Shared().Initialize()) { if (self.loadFailed) self.loadFailed(0, @"Couldn’t start Chromium.", @""); return; }
   CefRequestContextSettings settings;
   settings.persist_session_cookies = true;
-  NSString *support = [NSSearchPathForDirectoriesInDomains(NSApplicationSupportDirectory, NSUserDomainMask, YES) firstObject];
-  NSString *root = [[support stringByAppendingPathComponent:NSBundle.mainBundle.bundleIdentifier] stringByAppendingPathComponent:@"Chromium-v2"];
-  CefString(&settings.cache_path) = String([root stringByAppendingPathComponent:_profile]);
+  CefString(&settings.cache_path) = String([ChromiumRuntime::ProfilesRoot() stringByAppendingPathComponent:_profile]);
   _context = CefRequestContext::CreateContext(settings, new ContextHandler(self));
 }
 - (BOOL)hasOpenDevTools { return _toolsContainer != nil; }

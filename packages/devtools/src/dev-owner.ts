@@ -1,13 +1,18 @@
 import { spawn } from "node:child_process"
-import { createHash } from "node:crypto"
 import { mkdir, rm } from "node:fs/promises"
 import { basename, dirname, join } from "node:path"
 
 import { waitForExit } from "./child-processes.ts"
 import { parseDevelopmentRunnerArguments } from "./dev-arguments.ts"
 import { sweepStaleContainers } from "./dev-containers.ts"
+import { claimInstance, instanceHash } from "./dev-instance-roots.ts"
 import { developmentLayout, iosDevelopmentBundleIdentifier } from "./dev-layout.ts"
 import { claimDevelopmentRunner, releaseDevelopmentRunner } from "./dev-runtime.ts"
+import {
+  nativeWorktreeReaper,
+  reapDeletedWorktrees,
+  reapOwnWorktreeIfGone
+} from "./dev-worktree-reaper.ts"
 import {
   type IdentityLookup,
   readJSON,
@@ -57,7 +62,8 @@ export async function runDevelopmentOwner(
     repoRoot,
     startedAt: new Date().toISOString()
   }
-  const hash = createHash("sha256").update(repoRoot).digest("hex").slice(0, 10)
+  const hash = instanceHash(repoRoot)
+  const reaper = nativeWorktreeReaper({ readProcessTable, stopProcesses })
   const appName = `Codevisor (${basename(repoRoot)})`
   const appExecutable = join(
     layout.build.macos.derivedData,
@@ -83,7 +89,8 @@ export async function runDevelopmentOwner(
     await mkdir(dirname(claimPath), { recursive: true })
     await claimDevelopmentRunner(claimPath, claim, identity)
     claimed = true
-    await cleanupExternalResources()
+    await claimInstance(repoRoot)
+    await Promise.all([cleanupExternalResources(), reapWorktreesThatAreGone()])
     if (!stopRequested) {
       const worker = spawn(
         process.execPath,
@@ -121,6 +128,7 @@ export async function runDevelopmentOwner(
       }
       try {
         await cleanupExternalResources()
+        await reapOwnWorktreeIfGone(repoRoot, reaper)
       } catch (error) {
         failures.push(error)
       }
@@ -129,6 +137,15 @@ export async function runDevelopmentOwner(
       if (failures.length > 0) process.exitCode = 1
     }
     process.stdin.destroy()
+  }
+
+  async function reapWorktreesThatAreGone() {
+    try {
+      for (const reaped of await reapDeletedWorktrees(reaper))
+        console.log(`Cleaned up after the deleted worktree ${reaped}`)
+    } catch (error) {
+      console.warn(`Deleted worktrees were not fully cleaned up: ${messageOf(error)}`)
+    }
   }
 
   async function cleanupExternalResources() {

@@ -78,6 +78,7 @@ typedef NS_ENUM(NSInteger, CVBrowserLinkDestination) {
 @property(nonatomic, readonly) BOOL hasOpenDevTools;
 @property(nonatomic, readonly) BOOL hasPageFocus;
 @property(nonatomic, copy, nullable) void (^loadFailed)(NSInteger code, NSString *message, NSString *url);
+@property(class, nonatomic, copy, null_resettable) NSString *profilesRoot;
 - (instancetype)initWithProfile:(NSString *)profile
                      proxyHost:(NSString *)host
                      proxyPort:(NSInteger)port

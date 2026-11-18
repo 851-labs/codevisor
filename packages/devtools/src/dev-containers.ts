@@ -2,7 +2,13 @@ import { mkdir } from "node:fs/promises"
 import { homedir } from "node:os"
 import { join } from "node:path"
 
-import { type ContainerEngine, engineBinary, execEngine, tryEngine } from "./container-engine.ts"
+import {
+  type ContainerEngine,
+  engineBinary,
+  execEngine,
+  tryEngine,
+  tryEngineWithin
+} from "./container-engine.ts"
 import { syncLinuxWorkspace } from "./dev-container-workspace.ts"
 import { pathExists } from "./files.ts"
 
@@ -31,6 +37,7 @@ type Environment = Readonly<Record<string, string | undefined>>
 type EngineRunner = (binary: string, args: ReadonlyArray<string>) => Promise<string | undefined>
 
 const maxContainerNameLength = 63
+const sweepTimeoutMilliseconds = 60_000
 
 export function devRemoteHomeMounts(remoteRootHost: string): Array<HomeMount> {
   return [
@@ -60,19 +67,21 @@ export function linuxBunCacheRoot(environment: Environment = process.env): strin
 export async function sweepStaleContainers(
   engine: ContainerEngine,
   worktreeHash: string,
-  runEngine: EngineRunner = (binary, args) => tryEngine(binary, args, { timeout: 5_000 })
+  runEngine: EngineRunner = (binary, args) =>
+    tryEngineWithin(binary, args, sweepTimeoutMilliseconds)
 ): Promise<void> {
-  const listing =
-    engine === "apple"
-      ? ["list", "--all", "--format", "json"]
-      : ["ps", "--all", "--format", "{{json .}}"]
-  const raw = await runEngine(engineBinary(engine), listing)
-  if (raw === undefined) return
+  const binary = engineBinary(engine)
+  const owned = await worktreeContainers(engine, worktreeHash, runEngine)
+  if (owned.length === 0) return
 
-  for (const entry of parseContainerEntries(raw)) {
-    const id = staleContainerId(entry, worktreeHash)
-    if (id !== undefined) await runEngine(engineBinary(engine), ["rm", "--force", id])
-  }
+  for (const id of owned) await runEngine(binary, ["rm", "--force", id])
+  const remaining = await worktreeContainers(engine, worktreeHash, runEngine)
+  if (remaining.length > 0)
+    throw new Error(`Could not remove ${binary} containers: ${remaining.join(", ")}`)
+}
+
+export function worktreeLabel(worktreeHash: string): string {
+  return `${WORKTREE_LABEL}=${worktreeHash}`
 }
 
 export async function ensureDevContainerImage(engine: ContainerEngine): Promise<void> {
@@ -144,7 +153,7 @@ async function provisionWorkspace(context: DevContainerContext): Promise<void> {
     "--memory",
     "4g",
     "--label",
-    `${WORKTREE_LABEL}=${context.worktreeHash}`,
+    worktreeLabel(context.worktreeHash),
     "--volume",
     `${context.appRoot}:/codevisor`,
     "--volume",
@@ -160,6 +169,21 @@ async function provisionWorkspace(context: DevContainerContext): Promise<void> {
     "/entry.sh",
     "--provision-only"
   ])
+}
+
+async function worktreeContainers(
+  engine: ContainerEngine,
+  worktreeHash: string,
+  runEngine: EngineRunner
+): Promise<Array<string>> {
+  const listing =
+    engine === "apple"
+      ? ["list", "--all", "--format", "json"]
+      : ["ps", "--all", "--format", "{{json .}}"]
+  const raw = await runEngine(engineBinary(engine), listing)
+  if (raw === undefined) return []
+
+  return parseContainerEntries(raw).flatMap((entry) => staleContainerId(entry, worktreeHash) ?? [])
 }
 
 function parseContainerEntries(raw: string): Array<unknown> {
@@ -186,7 +210,7 @@ function staleContainerId(entry: unknown, worktreeHash: string): string | undefi
 
 function labelsMatch(labels: unknown, worktreeHash: string): boolean {
   if (typeof labels === "string")
-    return labels.split(",").some((label) => label === `${WORKTREE_LABEL}=${worktreeHash}`)
+    return labels.split(",").some((label) => label === worktreeLabel(worktreeHash))
 
   return asRecord(labels)[WORKTREE_LABEL] === worktreeHash
 }

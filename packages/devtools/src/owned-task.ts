@@ -1,28 +1,45 @@
 import { spawn } from "node:child_process"
+import { Readable, Writable } from "node:stream"
 
 const stopSignals: ReadonlyArray<NodeJS.Signals> = ["SIGINT", "SIGTERM", "SIGHUP"]
+const statusDescriptor = 3
+const lifelineDescriptor = 4
+const detachedTask = `( "$@" <&${lifelineDescriptor} ${lifelineDescriptor}<&- ${statusDescriptor}>&-; /bin/echo $? >&${statusDescriptor} 2>/dev/null ) &`
 
 export function runOwnedTask(script: string, args: ReadonlyArray<string>): Promise<number> {
-  const child = spawn(process.execPath, [script, ...args], {
+  const host = spawn("/bin/sh", ["-c", detachedTask, "sh", process.execPath, script, ...args], {
     detached: true,
-    stdio: ["pipe", "inherit", "inherit"]
+    stdio: ["ignore", "inherit", "inherit", "pipe", "pipe"]
   })
+  const status = host.stdio[statusDescriptor]
+  const lifeline = host.stdio[lifelineDescriptor]
+  if (!(status instanceof Readable) || !(lifeline instanceof Writable))
+    throw new Error("The owned task's pipes could not be opened")
+
   const stop = (): void => {
-    child.stdin.end()
+    lifeline.end()
   }
   for (const signal of stopSignals) process.on(signal, stop)
-  child.stdin.on("error", () => {})
+  lifeline.on("error", () => {})
 
   return new Promise((resolve) => {
-    const finish = (code: number | null): void => {
+    let reported = ""
+    const finish = (code: number): void => {
       for (const signal of stopSignals) process.off(signal, stop)
-      process.exitCode = code ?? 1
-      resolve(code ?? 1)
+      process.exitCode = code
+      resolve(code)
     }
-    child.once("error", (error) => {
+    host.once("error", (error) => {
       console.error(error.message)
       finish(1)
     })
-    child.once("exit", finish)
+    status.on("data", (chunk: Buffer) => {
+      reported += chunk.toString("utf8")
+    })
+    status.once("end", () => finish(exitCodeOf(reported)))
   })
+}
+
+function exitCodeOf(reported: string): number {
+  return /^\d+\s*$/.test(reported) ? Number(reported) : 1
 }

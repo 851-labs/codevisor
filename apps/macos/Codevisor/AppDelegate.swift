@@ -27,6 +27,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
   func applicationWillFinishLaunching(_ notification: Notification) {
     NSWindow.allowsAutomaticWindowTabbing = false
+    CVChromiumView.profilesRoot = CodevisorAppVariant.developmentBrowserProfilesURL?.path
     guard !AppPreview.rendersFixtures else { return }
     if SandboxMode.isEnabled { NSApp.setActivationPolicy(.accessory) }
     let scope = AppInstanceLease.Scope.current()

@@ -151,16 +151,45 @@ because its packages add a few seconds to every boot.
   next free one is used when it is taken, and the "is listening on" line has
   the real one.
 - **Data and logs:** `tmp/.codevisor/data` (server database, app state,
-  sign-in) and `tmp/.codevisor/logs/server.log`. Dev Cloud's are under
-  `tmp/remote-cloud`.
+  sign-in, and the Mac app's browser profiles in `Chromium-v2`) and
+  `tmp/.codevisor/logs/server.log`. Dev Cloud's are under `tmp/remote-cloud`.
 - **Folders agents work in** (worktrees, bots, and no-project chats the dev
   app creates): `~/.codevisor-development/instances/<worktree hash>/codevisor`,
   outside the repo, so an agent there never picks up this repo's `AGENTS.md`.
   A worktree that already has them in `tmp/codevisor` keeps using that
-  folder. Instance folders of deleted worktrees are removed the next time a
-  dev runner starts.
+  folder.
 
 Everything else the runners write stays under the worktree's ignored `tmp/`.
+
+### What lives outside `tmp/`, and who removes it
+
+A few things cannot live in the worktree. Each is keyed to the worktree by
+the hash of its path, and `~/.codevisor-development/instances/<worktree hash>/repo-root`
+records which worktree that is:
+
+- the Dev Cloud container, labelled `dev.codevisor.worktree=<worktree hash>`;
+- the instance folder above;
+- what macOS keeps per app under `~/Library` (Preferences, Caches,
+  HTTPStorages, WebKit, Application Support), in the per-user cache and temp
+  folders, and in the keychain and privacy permissions, all named
+  `com.851labs.Codevisor.Development.<worktree hash>`;
+- the simulator device, named `Codevisor Worktree <worktree> (<worktree hash>)`.
+
+They are removed in three ways, so deleting or archiving a worktree needs no
+manual cleanup:
+
+- The runner removes its container and stops its app when it stops, and the
+  simulator owner deletes its device. Both run outside the process tree of
+  the command that started them, so they still do this when that command, or
+  the whole task, is killed with `SIGKILL`. A runner that stops because its
+  worktree is gone also removes the instance folder and the `~/Library`
+  state.
+- The Dev Cloud container stops itself when the worktree's `tmp/` is deleted,
+  even if no runner is left to remove it.
+- Every dev runner start, in any worktree, cleans up after worktrees that no
+  longer exist: their containers, processes still running from their folder,
+  their `~/Library` state, and their instance folder. It prints
+  `Cleaned up after the deleted worktree <path>` for each.
 
 ## Restart and stop
 
@@ -184,10 +213,12 @@ Everything else the runners write stays under the worktree's ignored `tmp/`.
   runner, then wait for it to exit. This worktree's runner is the `bun`
   process that `pgrep -fl "$PWD/scripts/dev-owner.mjs"` prints (`kill <pid>`),
   and its simulator owner is the one
-  `pgrep -fl "$PWD/scripts/ios-simulator-owner.mjs"` prints. Cleanup takes a few
-  seconds and removes this worktree's app, servers, and container. The same
-  cleanup runs when the `bun run` command that started the runner dies, even
-  from `SIGKILL`.
+  `pgrep -fl "$PWD/scripts/ios-simulator-owner.mjs"` prints. `pgrep` also
+  prints an `sh` line for each: the small shell that waits for the `bun`
+  process, which is the one to signal. Cleanup takes a few seconds and
+  removes this worktree's app, servers, and container. The same cleanup runs
+  when the `bun run` command that started the runner dies, even when the
+  whole task is killed with `SIGKILL`.
 - Never stop another worktree's instance, and never stop processes by
   pattern (`pkill`, `killall`, `kill $(pgrep …)`): those match every
   worktree's runners and every chat's harness on the machine. `AGENTS.md`
