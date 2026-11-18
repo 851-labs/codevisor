@@ -20,12 +20,17 @@
     func showRemoteCursor(_ update: ScreenSharingCursorUpdate)
     func setVideoShowsPointer(_ shows: Bool)
     var onSizeChanged: ((CGSize, CGFloat) -> Void)? { get set }
+    var onVideoSizeChanged: ((CGSize) -> Void)? { get set }
     var onScreenHighDynamicRangeChanged: ((Bool) -> Void)? { get set }
     var onMovedToWindow: (() -> Void)? { get set }
   }
 
   extension ScreenSharingViewerSurface {
     public var onSizeChanged: ((CGSize, CGFloat) -> Void)? {
+      get { nil }
+      set {}
+    }
+    public var onVideoSizeChanged: ((CGSize) -> Void)? {
       get { nil }
       set {}
     }

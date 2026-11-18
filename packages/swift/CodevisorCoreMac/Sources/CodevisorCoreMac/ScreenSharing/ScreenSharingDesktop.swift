@@ -25,6 +25,7 @@ public final class ScreenSharingDesktop {
   public let connection: ScreenSharingConnection
   public private(set) var endpoint: ScreenSharingViewerEndpoint?
   public private(set) var dynamicResolution: Bool
+  public private(set) var pictureSize: CGSize?
   public var controller: UUID? { control.controller }
   public var controlStatus: ScreenSharingControlStatus { control.status }
   public var mode: ScreenSharingViewer.InteractionMode { control.mode }
@@ -48,6 +49,7 @@ public final class ScreenSharingDesktop {
     self.preferences = preferences
     self.makeEndpoint = makeEndpoint
     dynamicResolution = preferences.dynamicResolution(machineId: connection.machineId)
+    pictureSize = preferences.pictureSize(machineId: connection.machineId)
     let viewOnly = preferences.viewOnly(machineId: connection.machineId)
     control = ScreenSharingDesktopControl(mode: viewOnly ? .view : .control, clock: clock)
     following = [
@@ -240,6 +242,8 @@ public final class ScreenSharingDesktop {
     endpoint?.onViewFocusChanged = { [weak self] id, focused in self?.seats[id]?.events.focusChanged(focused) }
     endpoint?.onViewKeyboardReturned = { [weak self] id in self?.seats[id]?.events.keyboardReturned() }
     endpoint?.onViewResized = { [weak self] _ in self?.resized() }
+    endpoint?.onPictureSized = { [weak self] in self?.rememberPicture(sized: $0) }
+    if let size = endpoint?.pictureSize { rememberPicture(sized: size) }
     configureResolution(for: connection.display?.id, among: connection.displays)
     control.attach(endpoint)
     if controller == nil, let next = largestOnScreen() { control.offer(next) }
@@ -248,5 +252,12 @@ public final class ScreenSharingDesktop {
 
   private func resized() {
     endpoint?.sizeDesktop(with: controller ?? largestOnScreen())
+  }
+
+  private func rememberPicture(sized size: CGSize) {
+    guard size != pictureSize else { return }
+
+    pictureSize = size
+    preferences.setPictureSize(size, machineId: machineId)
   }
 }

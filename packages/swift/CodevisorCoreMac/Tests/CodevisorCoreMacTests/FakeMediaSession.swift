@@ -105,6 +105,7 @@ final class FakeSurface: ScreenSharingViewerSurface {
   @ObservationIgnored var onInputReleased: (() -> Void)?
   @ObservationIgnored var onKeyboardReturned: (() -> Void)?
   @ObservationIgnored var onSizeChanged: ((CGSize, CGFloat) -> Void)?
+  @ObservationIgnored var onVideoSizeChanged: ((CGSize) -> Void)?
   @ObservationIgnored var onScreenHighDynamicRangeChanged: ((Bool) -> Void)?
   @ObservationIgnored var inputFailureMessage: String?
   @ObservationIgnored var capturesSystemShortcuts = true

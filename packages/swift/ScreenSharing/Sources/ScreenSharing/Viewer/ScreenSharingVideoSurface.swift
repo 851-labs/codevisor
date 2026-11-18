@@ -48,6 +48,9 @@
     }
     private var videoSize = CGSize(width: 1920, height: 1080)
     private var hasVideo = false
+    public var onVideoSizeChanged: ((CGSize) -> Void)? {
+      didSet { if hasVideo { onVideoSizeChanged?(videoSize) } }
+    }
     private var remoteShape: RFBCursorShape?
     private var remoteShapeSize: (width: Double, height: Double)?
     private var remoteImage: CGImage?
@@ -74,6 +77,7 @@
           self.hasVideo = true
           self.refreshRemoteCursor()
         }
+        self.onVideoSizeChanged?(size)
       }
       applyLetterboxColor()
     }
