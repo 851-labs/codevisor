@@ -116,9 +116,16 @@ struct SettingsView: View {
               McpPluginDetailView(entryName: name, plugins: plugins)
                 .navigationBarBackButtonHidden(true)
                 .settingsNavigationToolbar()
+            case let .cloudAccount(page):
+              CloudAccountPageView(page, cloud: environment.cloud)
+                .navigationBarBackButtonHidden(true)
+                .settingsNavigationToolbar()
             }
           }
       }
+    }
+    .onChange(of: environment.cloud.state.isSignedIn, initial: true) { _, signedIn in
+      if !signedIn { router.close(.cloudAccount(.connectedAccounts)) }
     }
     .onChange(of: router.currentLocation) { previous, current in
       if let pending = router.pendingAppliedLocation {

@@ -58,11 +58,16 @@ enum SettingsPaneRoute: Hashable {
   case sandbox(SandboxSettingsPage)
   case pluginCatalog
   case plugin(String)
+  case cloudAccount(CloudAccountPage)
 }
 
 struct SettingsLocation: Equatable {
   var tab: SettingsTab
   var panePath: [SettingsPaneRoute]
+
+  func closing(_ route: SettingsPaneRoute) -> SettingsLocation {
+    SettingsLocation(tab: tab, panePath: Array(panePath.prefix { $0 != route }))
+  }
 }
 
 struct HarnessAccountSettingsRequest: Equatable {
@@ -109,7 +114,26 @@ final class SettingsRouter {
     apply(target)
   }
 
+  func close(_ route: SettingsPaneRoute) {
+    let target = currentLocation.closing(route)
+    backHistory = Self.history(backHistory, closing: route, beside: target)
+    forwardHistory = Self.history(forwardHistory, closing: route, beside: target)
+    apply(target)
+  }
+
+  private static func history(
+    _ history: [SettingsLocation], closing route: SettingsPaneRoute, beside current: SettingsLocation
+  ) -> [SettingsLocation] {
+    var closed: [SettingsLocation] = []
+    for location in history.map({ $0.closing(route) }) where location != closed.last {
+      closed.append(location)
+    }
+    if closed.last == current { closed.removeLast() }
+    return closed
+  }
+
   private func apply(_ location: SettingsLocation) {
+    guard location != currentLocation else { return }
     pendingAppliedLocation = location
     selectedTab = location.tab
     panePath = location.panePath

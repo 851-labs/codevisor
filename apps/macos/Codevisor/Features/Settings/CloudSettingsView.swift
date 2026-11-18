@@ -4,42 +4,17 @@ import SwiftUI
 
 struct CloudSettingsView: View {
   @Environment(AppEnvironment.self) private var environment
-  @State private var showsServer = false
-  @State private var showsConnections = false
   @State private var showsEmailSignIn = false
 
   var body: some View {
     Form {
-      CloudAccountSections(
-        cloud: environment.cloud,
-        manageConnections: { showsConnections = true },
-        configureServer: { showsServer = true },
-        signInWithEmail: { showsEmailSignIn = true }
-      )
+      CloudAccountSections(cloud: environment.cloud, signInWithEmail: { showsEmailSignIn = true }) { page in
+        NavigationLink(value: SettingsPaneRoute.cloudAccount(page)) {
+          CloudAccountPageLabel(page, cloud: environment.cloud)
+        }
+      }
     }
     .formStyle(.grouped)
     .sheet(isPresented: $showsEmailSignIn) { CloudEmailAuthSheet(cloud: environment.cloud) }
-    .sheet(isPresented: $showsServer) {
-      NavigationStack {
-        CloudServerSettings(cloud: environment.cloud)
-          .toolbar {
-            ToolbarItem(placement: .confirmationAction) {
-              Button("Done") { showsServer = false }
-            }
-          }
-      }
-      .frame(width: 460, height: 340)
-    }
-    .sheet(isPresented: $showsConnections) {
-      NavigationStack {
-        CloudConnectedAccountsSettings(cloud: environment.cloud)
-          .toolbar {
-            ToolbarItem(placement: .confirmationAction) {
-              Button("Done") { showsConnections = false }
-            }
-          }
-      }
-      .frame(width: 460, height: 400)
-    }
   }
 }
