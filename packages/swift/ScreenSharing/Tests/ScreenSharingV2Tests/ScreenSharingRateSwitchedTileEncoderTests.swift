@@ -147,6 +147,25 @@ struct ScreenSharingRateSwitchedTileEncoderTests {
     #expect(fast.acknowledgedTokens == [9])
   }
 
+  @Test func anEncoderTakingATileBackNoLongerTakesAcknowledgementsOfItsEarlierFrames() throws {
+    let encoder = try switched(bitrate: Self.fastBitrate)
+    let first = try Self.request(id: 1, tiles: [0])
+    try encoder.encode(first)
+    slow.emitTile(of: first, keyframe: true, token: 7)
+    switchToFast(encoder)
+    let second = try Self.request(id: 2, tiles: [0])
+    try encoder.encode(second)
+    fast.emitTile(of: second, keyframe: true, token: 9)
+    try moveToSlow(encoder)
+    try encoder.encode(try Self.request(id: 3, tiles: [0]))
+
+    encoder.acknowledge([7, 9], tile: 0)
+
+    #expect(slow.requests.last?.refreshes == [0: .keyframe])
+    #expect(slow.acknowledgedTokens.isEmpty)
+    #expect(fast.acknowledgedTokens == [9])
+  }
+
   @Test func throughTheHostAnAcknowledgementOfAFrameTheOtherEncoderSentIsNotTakenAfterTheSwitch() async throws {
     let encoder = try switched(bitrate: Self.fastBitrate)
     let transport = LoopbackMediaTransport()

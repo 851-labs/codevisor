@@ -1,16 +1,16 @@
 struct ScreenSharingV2Recovery {
-  private var sentTokens: [Int: Set<UInt64>] = [:]
+  private var sentTokens: [Int: [UInt64]] = [:]
   private var acknowledgedTiles: Set<Int> = []
   private var pending: [Int: ScreenSharingTileRefresh] = [:]
 
   var pendingTiles: Set<Int> { Set(pending.keys) }
 
   mutating func sent(_ tile: ScreenSharingEncodedTile) {
-    if tile.isKeyFrame {
-      sentTokens[tile.tile] = []
-      acknowledgedTiles.remove(tile.tile)
-    }
-    if let sentToken = tile.ltrToken { sentTokens[tile.tile, default: []].insert(sentToken) }
+    if tile.isKeyFrame { forget(tile.tile) }
+    guard let sentToken = tile.ltrToken else { return }
+
+    let remembered = sentTokens[tile.tile, default: []] + [sentToken]
+    sentTokens[tile.tile] = Array(remembered.suffix(ScreenSharingV2SentTokens.remembered))
   }
 
   mutating func acknowledged(sentToken: UInt64, tile: Int) -> Bool {
@@ -21,7 +21,7 @@ struct ScreenSharingV2Recovery {
   }
 
   mutating func unsent(_ tile: ScreenSharingEncodedTile) {
-    if tile.isKeyFrame { acknowledgedTiles.remove(tile.tile) }
+    if tile.isKeyFrame { forget(tile.tile) }
     lost(tile: tile.tile)
   }
 
@@ -44,6 +44,12 @@ struct ScreenSharingV2Recovery {
 
   mutating func takeRefreshes() -> [Int: ScreenSharingTileRefresh] {
     defer { pending = [:] }
+    for (tile, refresh) in pending where refresh == .keyframe { forget(tile) }
     return pending
+  }
+
+  private mutating func forget(_ tile: Int) {
+    sentTokens[tile] = nil
+    acknowledgedTiles.remove(tile)
   }
 }
