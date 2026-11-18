@@ -75,4 +75,31 @@ struct ScreenSharingMachinePreferencesTests {
     #expect(ScreenSharingMachinePreferences(defaults: defaults).lastConnected(machineId: "local") == date)
     #expect(preferences.lastConnected(machineId: "remote-vps") == nil)
   }
+
+  @Test func theLastPictureSizeIsPerMachineAndAbsentUntilSeen() throws {
+    let suite = "ScreenSharingMachinePreferencesTests.\(UUID().uuidString)"
+    let defaults = try #require(UserDefaults(suiteName: suite))
+    defer { defaults.removePersistentDomain(forName: suite) }
+    let preferences = ScreenSharingMachinePreferences(defaults: defaults)
+    #expect(preferences.pictureSize(machineId: "local") == nil)
+    preferences.setPictureSize(CGSize(width: 3024, height: 1964), machineId: "local")
+    let reopened = ScreenSharingMachinePreferences(defaults: defaults)
+    #expect(reopened.pictureSize(machineId: "local") == CGSize(width: 3024, height: 1964))
+    #expect(preferences.pictureSize(machineId: "remote-vps") == nil)
+  }
+
+  @Test func aSavedPictureSizeThatIsNotARealSizeIsIgnored() throws {
+    let suite = "ScreenSharingMachinePreferencesTests.\(UUID().uuidString)"
+    let defaults = try #require(UserDefaults(suiteName: suite))
+    defer { defaults.removePersistentDomain(forName: suite) }
+    let preferences = ScreenSharingMachinePreferences(defaults: defaults)
+    let saved: [Any] = [
+      [-3024.0, 1964.0], [3024.0, 0.0], [Double.infinity, 1964.0], [3024.0, Double.nan], [3024.0],
+      [3024.0, 1964.0, 2.0], ["3024", "1964"], "3024x1964",
+    ]
+    for value in saved {
+      defaults.set(value, forKey: "screenSharing.pictureSize.local")
+      #expect(preferences.pictureSize(machineId: "local") == nil, "\(value)")
+    }
+  }
 }

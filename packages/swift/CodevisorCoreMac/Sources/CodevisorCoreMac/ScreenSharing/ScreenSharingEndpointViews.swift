@@ -11,6 +11,7 @@ final class ScreenSharingEndpointViews {
     var sizeChanged: () -> Void = {}
     var screenChanged: () -> Void = {}
     var viewResized: (UUID) -> Void = { _ in }
+    var videoSizeChanged: (CGSize) -> Void = { _ in }
     var focusChanged: (UUID, Bool) -> Void = { _, _ in }
     var keyboardReturned: (UUID) -> Void = { _ in }
   }
@@ -162,6 +163,7 @@ final class ScreenSharingEndpointViews {
       self.events.inputReleased(surface?.inputFailureMessage)
     }
     surface.onSizeChanged = { [weak self] size, scale in self?.resized(id, to: (size, scale)) }
+    surface.onVideoSizeChanged = { [weak self] in self?.events.videoSizeChanged($0) }
     surface.onScreenHighDynamicRangeChanged = { [weak self] in self?.screenChanged(id, showsHighDynamicRange: $0) }
   }
 

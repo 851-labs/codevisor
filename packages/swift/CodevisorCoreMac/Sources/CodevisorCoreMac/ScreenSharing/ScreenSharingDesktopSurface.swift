@@ -189,6 +189,7 @@ public final class ScreenSharingDesktopSurface {
     snapshot.displayId = desktop.connection.display?.id
     snapshot.displaySwitch = desktop.connection.displaySwitch
     snapshot.endpoint = desktop.endpoint
+    snapshot.pictureSize = desktop.pictureSize
     snapshot.control = desktop.controller == id ? desktop.controlStatus : nil
     snapshot.mode = desktop.mode
     snapshot.dynamicResolution = desktop.dynamicResolution

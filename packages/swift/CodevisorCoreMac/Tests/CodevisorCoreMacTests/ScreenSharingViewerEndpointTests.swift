@@ -47,6 +47,24 @@ struct ScreenSharingViewerEndpointTests {
     #expect(scales.values == [2, 1], "the scale is sent when it changes, not with every size")
   }
 
+  @Test func aPictureWithNoSizeLeavesTheLastKnownSize() {
+    let fixture = EndpointFixture()
+    let endpoint = fixture.make()
+    defer { endpoint.close() }
+    var reported: [CGSize] = []
+    endpoint.onPictureSized = { reported.append($0) }
+
+    fixture.surface.onVideoSizeChanged?(.zero)
+    #expect(endpoint.pictureSize == nil)
+
+    let notched = CGSize(width: 3024, height: 1964)
+    fixture.surface.onVideoSizeChanged?(notched)
+    fixture.surface.onVideoSizeChanged?(CGSize(width: 3024, height: 0))
+    fixture.surface.onVideoSizeChanged?(.zero)
+    #expect(endpoint.pictureSize == notched)
+    #expect(reported == [notched])
+  }
+
   @Test func aSlowLinkKeepsARetinaPaneAtOneX() {
     let fixture = EndpointFixture()
     fixture.session.linkBitsPerSecond = 3_000_000

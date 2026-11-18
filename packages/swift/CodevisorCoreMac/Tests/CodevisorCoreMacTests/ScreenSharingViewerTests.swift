@@ -130,6 +130,23 @@ struct ScreenSharingViewerTests {
     }
   }
 
+  @Test func aCardKeepsItsShapeWhenItsMachineHasNoPictureToGiveAnyMore() async {
+    await withMainSerialExecutor {
+      let store = makeStore(LockIsolated([]))
+      store.exhaustivity = .off
+      var live = ScreenSharingSurfaceSnapshot()
+      live.connection = .live
+      live.pictureSize = CGSize(width: 3024, height: 1964)
+      await store.send(.surfaceChanged(live))
+      #expect(store.state.previewShape.picture == 3024.0 / 1964)
+
+      var gone = ScreenSharingSurfaceSnapshot()
+      gone.connection = .failed(.cantReach)
+      await store.send(.surfaceChanged(gone))
+      #expect(store.state.previewShape.picture == 3024.0 / 1964, "the failed card is not reshaped")
+    }
+  }
+
   private func makeStore(
     _ asked: LockIsolated<[String]>, endpoints: ScreenSharingEndpointClient = ScreenSharingEndpointClient()
   ) -> TestStoreOf<ScreenSharingViewer> {

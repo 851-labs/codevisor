@@ -27,7 +27,9 @@ public final class ScreenSharingViewerEndpoint: Equatable, Identifiable {
   var onViewFocusChanged: ((UUID, Bool) -> Void)?
   var onViewKeyboardReturned: ((UUID) -> Void)?
   var onViewResized: ((UUID) -> Void)?
+  var onPictureSized: ((CGSize) -> Void)?
   var onReady: (() -> Void)?
+  public private(set) var pictureSize: CGSize?
   let session: any ScreenSharingViewingSession
   private let views: ScreenSharingEndpointViews
   private let channel: (any ScreenSharingMessageChannel<ScreenSharingControlMessage>)?
@@ -180,6 +182,7 @@ public final class ScreenSharingViewerEndpoint: Equatable, Identifiable {
     }
     views.events.sizeChanged = { [weak self] in self?.applyResolution() }
     views.events.viewResized = { [weak self] in self?.onViewResized?($0) }
+    views.events.videoSizeChanged = { [weak self] in self?.pictureSized($0) }
     views.events.screenChanged = { [weak self] in self?.reportHighDynamicRange() }
   }
 
@@ -388,10 +391,19 @@ public final class ScreenSharingViewerEndpoint: Equatable, Identifiable {
   }
 
   private func noteFirstFrame() {
+    let first = session.frames.tap(firstFrame).take()
     session.frames.untap(firstFrame)
     guard !receivedVideo, !closed else { return }
     receivedVideo = true
+    if let first { pictureSized(first.size) }
     onReady?()
+  }
+
+  private func pictureSized(_ size: CGSize) {
+    guard !closed, size != pictureSize, size.width > 0, size.height > 0 else { return }
+
+    pictureSize = size
+    onPictureSized?(size)
   }
 
   private func emit(_ event: ScreenSharingControlEvent) {

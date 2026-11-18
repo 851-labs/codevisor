@@ -86,4 +86,16 @@ public struct ScreenSharingMachinePreferences {
   public func setPreferredDisplay(_ displayId: String, machineId: String) {
     defaults.set(displayId, forKey: "screenSharing.preferredDisplay.\(machineId)")
   }
+
+  public func pictureSize(machineId: String) -> CGSize? {
+    guard let saved = defaults.array(forKey: "screenSharing.pictureSize.\(machineId)") as? [Double], saved.count == 2,
+      saved.allSatisfy({ $0.isFinite && $0 > 0 })
+    else { return nil }
+
+    return CGSize(width: saved[0], height: saved[1])
+  }
+
+  public func setPictureSize(_ size: CGSize, machineId: String) {
+    defaults.set([Double(size.width), Double(size.height)], forKey: "screenSharing.pictureSize.\(machineId)")
+  }
 }

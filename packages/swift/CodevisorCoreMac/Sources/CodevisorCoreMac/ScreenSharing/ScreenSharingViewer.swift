@@ -16,6 +16,7 @@ public struct ScreenSharingViewer {
     public let machineName: String
     var visible = false
     var dismissedDisplaySwitch: ScreenSharingDisplaySwitch?
+    var lastPictureSize: CGSize?
 
     public init(machineName: String) {
       self.machineName = machineName
@@ -67,6 +68,10 @@ public struct ScreenSharingViewer {
       guard surface.isTakingLong, case .connecting(let stage) = surface.connection else { return nil }
 
       return stage.step(on: machineName)
+    }
+
+    public var previewShape: ScreenSharingPreviewShape {
+      ScreenSharingPreviewShape(screen: surface.pictureSize ?? lastPictureSize)
     }
 
     public var preview: ScreenSharingPreview {
@@ -133,6 +138,7 @@ public struct ScreenSharingViewer {
 
       case .surfaceChanged(let surface):
         if state.isLive, surface.connection != .live { state.dismissedDisplaySwitch = surface.displaySwitch }
+        state.lastPictureSize = surface.pictureSize ?? state.lastPictureSize
         state.surface = surface
         return .none
 

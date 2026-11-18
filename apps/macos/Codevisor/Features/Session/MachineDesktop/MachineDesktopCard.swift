@@ -4,7 +4,7 @@ import ScreenSharingConnection
 import SwiftUI
 
 struct MachineDesktopCard: View {
-  private static let aspectRatio: CGFloat = 16 / 10
+  private static let reshape = Animation.smooth(duration: 0.3)
 
   let pane: ScreenSharingPane
   let viewer: StoreOf<ScreenSharingViewer>
@@ -12,23 +12,35 @@ struct MachineDesktopCard: View {
   let isHovered: Bool
   let onOpen: () -> Void
   let onRetry: () -> Void
+  @Environment(\.accessibilityReduceMotion) private var reduceMotion
+  @State private var settledShape: ScreenSharingPreviewShape?
 
   var body: some View {
     ZStack {
       Color.clear
-        .aspectRatio(Self.aspectRatio, contentMode: .fit)
+        .aspectRatio(shape.card, contentMode: .fit)
         .overlay {
           if case .live(let endpoint) = preview {
-            MachineDesktopLivePicture(pane: pane, endpoint: endpoint, isHovered: isHovered, onOpen: onOpen)
+            MachineDesktopLivePicture(
+              pane: pane, endpoint: endpoint, aspectRatio: viewer.previewShape.picture, isHovered: isHovered,
+              onOpen: onOpen)
           }
         }
       status
     }
     .clipShape(WorkspaceInspectorCardShape.card)
     .containerValue(\.fillsWorkspaceInspectorCardRow, true)
+    .onChange(of: viewer.previewShape, initial: true) { _, shape in settle(on: shape) }
   }
 
   private var preview: ScreenSharingPreview { viewer.preview }
+
+  private var shape: ScreenSharingPreviewShape { settledShape ?? viewer.previewShape }
+
+  private func settle(on shape: ScreenSharingPreviewShape) {
+    let isFirst = settledShape == nil
+    withAnimation(isFirst || reduceMotion ? nil : Self.reshape) { settledShape = shape }
+  }
 
   @ViewBuilder private var status: some View {
     switch preview {
