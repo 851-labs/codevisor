@@ -18,7 +18,7 @@ struct PluginSetupModelTests {
     #expect(model.step == .checking)
     await model.refresh()
     #expect(model.step == .install)
-    #expect(model.canAct && model.connectsAccount)
+    #expect(model.canAct && !model.isInstalled)
 
     await model.performPrimaryAction()
     #expect(model.installing?.id == "grafana")
@@ -27,7 +27,7 @@ struct PluginSetupModelTests {
     transport.respond("GET /v1/plugins/mcp-1/accounts", with: #"{"accounts":[]}"#)
     await model.refresh()
     #expect(model.step == .signIn)
-    #expect(model.canAct)
+    #expect(model.canAct && model.isInstalled)
 
     await model.performPrimaryAction()
     #expect(model.addingAccount?.draft.fields.map(\.key) == ["url"])
@@ -42,7 +42,6 @@ struct PluginSetupModelTests {
   func mcpSignInClosesOnConnect() async throws {
     let transport = SetupTransport()
     transport.respond("GET /v1/plugins/catalog/grafana", with: Self.remoteEntry)
-    transport.respond("GET /v1/plugins/catalog/grafana/sign-in", with: #"{"oauth":"required"}"#)
     transport.respond("GET /v1/mcps", with: "[\(Self.server(authType: "oauth", state: "needsAuthorization"))]")
     transport.respond(
       "POST /v1/mcps/mcp-1/oauth-start", with: #"{"authorizationUrl":"https://auth.example/authorize"}"#)
@@ -71,7 +70,6 @@ struct PluginSetupModelTests {
   func remoteCardSignsInLocally() async throws {
     let remote = SetupTransport()
     remote.respond("GET /v1/plugins/catalog/grafana", with: Self.remoteEntry)
-    remote.respond("GET /v1/plugins/catalog/grafana/sign-in", with: #"{"oauth":"required"}"#)
     remote.respond("GET /v1/mcps", with: "[\(Self.server(authType: "oauth", state: "needsAuthorization"))]")
     let local = SetupTransport()
     local.respond(
@@ -99,7 +97,6 @@ struct PluginSetupModelTests {
   func cardWithoutLocalMachine() async throws {
     let transport = SetupTransport()
     transport.respond("GET /v1/plugins/catalog/grafana", with: Self.remoteEntry)
-    transport.respond("GET /v1/plugins/catalog/grafana/sign-in", with: #"{"oauth":"required"}"#)
     transport.respond("GET /v1/mcps", with: "[\(Self.server(authType: "oauth", state: "needsAuthorization"))]")
     let signIn = FakeWebSignIn()
     let model = PluginSetupModel(
@@ -118,7 +115,6 @@ struct PluginSetupModelTests {
   func cardRetriesAfterLoadFailure() async throws {
     let transport = SetupTransport()
     transport.respond("GET /v1/plugins/catalog/grafana", with: Self.remoteEntry)
-    transport.respond("GET /v1/plugins/catalog/grafana/sign-in", with: #"{"oauth":"required"}"#)
     transport.respond("GET /v1/mcps", with: #"{"error":"database busy"}"#, status: 503)
     let model = PluginSetupModel(request: try Self.request(auth: "mcpOAuth"), client: Self.client(transport))
 

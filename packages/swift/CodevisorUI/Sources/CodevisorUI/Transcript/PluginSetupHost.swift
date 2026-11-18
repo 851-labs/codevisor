@@ -74,7 +74,7 @@ public struct PluginSetupHost<AccountSheet: View, GuideSheet: View>: View {
   }
 
   private var icon: PluginCatalogIcon {
-    let side = PluginSetupCardMetrics.iconSize
+    let side = TranscriptInlineCardMetrics.iconSize
     if let server = model.server {
       return PluginCatalogIcon(
         pluginId: server.id, name: server.name, host: server.url.flatMap { URL(string: $0)?.host() },
@@ -98,8 +98,4 @@ public struct PluginSetupHost<AccountSheet: View, GuideSheet: View>: View {
   private func refresh() {
     Task { await refreshWhilePending() }
   }
-}
-
-nonisolated enum PluginSetupCardMetrics {
-  static let iconSize: CGFloat = 20
 }

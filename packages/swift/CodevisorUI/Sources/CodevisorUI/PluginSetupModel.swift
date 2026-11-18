@@ -22,7 +22,6 @@ public final class PluginSetupModel {
   @ObservationIgnored private let signInRoute: PluginSignInRoute
   @ObservationIgnored private let webSignIn: any WebSignInPresenting
   @ObservationIgnored private let opensConnectSheet: Bool
-  @ObservationIgnored private var catalogSignIn: ServerPluginCatalogSignIn.OAuth?
   @ObservationIgnored private var signingIn: PluginSignInBrowser?
   @ObservationIgnored private var awaitsAccountSetup = false
 
@@ -59,10 +58,7 @@ public final class PluginSetupModel {
     }
   }
 
-  public var connectsAccount: Bool {
-    if server != nil || entry?.accounts != nil || request.auth != .none { return true }
-    return catalogSignIn == .required || catalogSignIn == .optional
-  }
+  public var isInstalled: Bool { server != nil }
 
   public func refresh() async {
     await loadEntry()
@@ -155,9 +151,6 @@ public final class PluginSetupModel {
   private func loadEntry() async {
     guard entry == nil, let catalogId = request.catalogId else { return }
     entry = await report { try await client.pluginCatalogEntry(id: catalogId) }
-    guard let entry, entry.accounts == nil, entry.transport == "http" else { return }
-
-    catalogSignIn = try? await client.pluginCatalogSignIn(id: entry.id).oauth
   }
 
   private func refreshAccounts() async {

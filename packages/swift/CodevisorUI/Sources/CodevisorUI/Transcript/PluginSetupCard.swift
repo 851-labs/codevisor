@@ -24,54 +24,41 @@ public struct PluginSetupCard: View {
 
   public var body: some View {
     HStack(spacing: 0) {
-      Button(action: performPrimaryAction) {
-        PluginSetupCardLabel(title: title, isConnected: isConnected, icon: icon)
-          .padding(.horizontal, 12)
-          .padding(.vertical, 8)
-          .modifier(TranscriptInlineCardSurface(inBotConversation: inBotConversation))
-          .contentShape(Rectangle())
+      HStack(alignment: .center, spacing: TranscriptInlineCardMetrics.iconSpacing) {
+        icon
+        TranscriptInlineCardText(title: request.name, message: summary)
+        Spacer(minLength: 8)
+        PluginSetupCardAccessory(state: accessory, perform: performPrimaryAction)
       }
-      .buttonStyle(.plain)
-      .disabled(!canAct && !isConnected)
-      .allowsHitTesting(!isConnected)
-      .help(request.reason)
+      .padding(ComposerCardStyle.contentPadding)
+      .modifier(TranscriptInlineCardSurface(inBotConversation: inBotConversation))
+      .frame(maxWidth: TranscriptInlineCardMetrics.maxWidth, alignment: .leading)
       Spacer(minLength: inBotConversation ? TranscriptBubbleMetrics.oppositeSideGap : 0)
     }
+    .accessibilityElement(children: .contain)
+    .accessibilityLabel(request.name)
   }
 
-  private var name: String { request.name }
-
-  private var canAct: Bool {
-    !isConnected && model.canAct && !model.isWorking
+  private var summary: String {
+    request.description.flatMap(Self.firstSentence) ?? request.reason
   }
 
-  private var title: String {
-    if isConnected { return request.auth == .none ? "Installed \(name)" : "Connected with \(name)" }
-    if model.step == .unavailable { return "\(name) isn’t available" }
-    return model.connectsAccount ? "Connect with \(name)" : "Install \(name)"
+  private static func firstSentence(of text: String) -> String? {
+    let trimmed = text.trimmingCharacters(in: .whitespacesAndNewlines)
+    guard !trimmed.isEmpty else { return nil }
+    guard let end = trimmed.range(of: ". ") else { return trimmed }
+    return String(trimmed[..<end.lowerBound]) + "."
+  }
+
+  private var accessory: PluginSetupCardAccessory.State {
+    if isConnected { return .done(request.auth == .none ? "Installed" : "Connected") }
+    if model.isWorking { return .working }
+    if model.step == .unavailable { return .unavailable }
+    return .action(model.isInstalled ? "Connect" : "Add", isEnabled: model.canAct)
   }
 
   private func performPrimaryAction() {
-    guard canAct else { return }
+    guard !isConnected, model.canAct, !model.isWorking else { return }
     Task { await model.performPrimaryAction() }
-  }
-}
-
-private struct PluginSetupCardLabel: View {
-  let title: String
-  let isConnected: Bool
-  let icon: AnyView
-
-  var body: some View {
-    HStack(spacing: 8) {
-      icon
-      Text(title)
-        .font(.callout.weight(.medium))
-        .lineLimit(1)
-      Image(systemName: isConnected ? "checkmark" : "chevron.right")
-        .font(.caption.weight(.semibold))
-        .foregroundStyle(.secondary)
-        .accessibilityHidden(true)
-    }
   }
 }
