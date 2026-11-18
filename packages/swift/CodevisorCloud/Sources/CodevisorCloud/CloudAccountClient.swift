@@ -21,8 +21,6 @@ public struct CloudInstanceInfo: Codable, Equatable, Sendable {
     self.protocols = protocols
     self.authProviders = authProviders
   }
-
-  public static let expectedService = "codevisor-cloud"
 }
 
 public struct CloudMachine: Codable, Identifiable, Equatable, Sendable {

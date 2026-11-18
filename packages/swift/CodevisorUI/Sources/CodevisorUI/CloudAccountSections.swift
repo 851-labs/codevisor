@@ -32,13 +32,11 @@ public struct CloudAccountSections<PageLink: View>: View {
       case let .signedIn(email):
         accountSection(email)
       }
-      Section {
-        if cloud.state.isSignedIn {
+      if cloud.state.isSignedIn {
+        Section {
           pageLink(.connectedAccounts)
             .disabled(cloud.isDeletingAccount)
         }
-        pageLink(.server)
-          .disabled(isSigningIn || cloud.isDeletingAccount)
       }
       CloudAccountDeletionSection(cloud: cloud)
     }

@@ -37,7 +37,7 @@ final class CountingCredentialStore: CloudCredentialStore, @unchecked Sendable {
   private let base: InMemoryCloudCredentialStore
   private let lock = NSLock()
   private var tokenReadCount = 0
-  private var serverURLReadCount = 0
+  private var legacyServerURLReadCount = 0
   private var mainThreadCredentialReadCount = 0
   private var deviceIdReadCount = 0
   private var secretKeyReadCount = 0
@@ -69,8 +69,8 @@ final class CountingCredentialStore: CloudCredentialStore, @unchecked Sendable {
     lock.withLock { (tokenReadCount, deviceIdReadCount, secretKeyReadCount) }
   }
 
-  var credentialReadCounts: (token: Int, serverURL: Int, onMainThread: Int) {
-    lock.withLock { (tokenReadCount, serverURLReadCount, mainThreadCredentialReadCount) }
+  var credentialReadCounts: (token: Int, legacyServerURL: Int, onMainThread: Int) {
+    lock.withLock { (tokenReadCount, legacyServerURLReadCount, mainThreadCredentialReadCount) }
   }
 
   func token() throws -> String? {
@@ -83,14 +83,14 @@ final class CountingCredentialStore: CloudCredentialStore, @unchecked Sendable {
 
   func saveToken(_ token: String) throws { try base.saveToken(token) }
   func removeToken() throws { try base.removeToken() }
-  func serverURL() throws -> URL? {
+  func legacyServerURL() throws -> URL? {
     lock.withLock {
-      serverURLReadCount += 1
+      legacyServerURLReadCount += 1
       if Thread.isMainThread { mainThreadCredentialReadCount += 1 }
     }
-    return try base.serverURL()
+    return try base.legacyServerURL()
   }
-  func saveServerURL(_ url: URL?) throws { try base.saveServerURL(url) }
+  func removeLegacyServerURL() throws { try base.removeLegacyServerURL() }
 
   func appDeviceId() throws -> String? {
     lock.withLock { deviceIdReadCount += 1 }

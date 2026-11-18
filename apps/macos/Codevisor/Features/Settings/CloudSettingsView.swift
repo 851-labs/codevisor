@@ -10,7 +10,7 @@ struct CloudSettingsView: View {
     Form {
       CloudAccountSections(cloud: environment.cloud, signInWithEmail: { showsEmailSignIn = true }) { page in
         NavigationLink(value: SettingsPaneRoute.cloudAccount(page)) {
-          CloudAccountPageLabel(page, cloud: environment.cloud)
+          CloudAccountPageLabel(page)
         }
       }
     }

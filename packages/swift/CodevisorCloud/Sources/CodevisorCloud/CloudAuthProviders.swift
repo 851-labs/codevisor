@@ -19,17 +19,12 @@ final class CloudAuthProviders {
     }
   }
 
-  func adopt(_ providers: [String]?) {
-    advertised = providers
-  }
-
   func refreshIfUnknown(for account: CloudAccountController) {
     guard advertised == nil else { return }
-    let server = account.serverURL
-    let client = account.clientFactory(server)
-    Task { [weak self, weak account] in
+    let client = account.client
+    Task { [weak self] in
       guard let providers = try? await client.discover().authProviders else { return }
-      guard let self, let account, account.serverURL == server, self.advertised == nil else { return }
+      guard let self, self.advertised == nil else { return }
       self.advertised = providers
     }
   }

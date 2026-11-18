@@ -72,10 +72,8 @@ struct KeychainCredentialStoreTests {
     )
 
     try cloud.saveToken("cloud-token")
-    try cloud.saveServerURL(URL(string: "https://cloud.example")!)
 
     #expect(try cloud.token() == "cloud-token")
-    #expect(try cloud.serverURL() == URL(string: "https://cloud.example"))
     #expect(keychain.value(service: "cloud.dev-a", account: "session-token") == "cloud-token")
     #expect(keychain.records.allSatisfy { !$0.usesDataProtectionKeychain })
 

@@ -13,7 +13,6 @@ public struct CloudAccountPageView: View {
   public var body: some View {
     switch page {
     case .connectedAccounts: CloudConnectedAccountsSettings(cloud: cloud)
-    case .server: CloudServerSettings(cloud: cloud)
     }
   }
 }

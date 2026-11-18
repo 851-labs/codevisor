@@ -1,7 +1,6 @@
 import Foundation
 
 public struct CloudAuthenticationContext: Sendable {
-  let server: URL
   let token: String?
   let revision: UInt64
   let link: Bool
@@ -14,11 +13,11 @@ extension CloudAccountController {
     }
     lastError = nil
     return CloudAuthenticationContext(
-      server: serverURL, token: storedToken, revision: authenticationRevision, link: link)
+      token: storedToken, revision: authenticationRevision, link: link)
   }
 
   public func isCurrent(_ context: CloudAuthenticationContext) -> Bool {
-    context.server == serverURL && context.token == storedToken && context.revision == authenticationRevision
+    context.token == storedToken && context.revision == authenticationRevision
   }
 
   public func startNativeApple(_ context: CloudAuthenticationContext) async throws -> CloudAppleChallenge {
@@ -53,14 +52,13 @@ extension CloudAccountController {
 
   public func refreshLinkedProviders() async {
     guard state.isSignedIn, let token = storedToken else { return }
-    let server = serverURL
     do {
       let providers = try await client.linkedProviders(token: token)
-      guard storedToken == token, serverURL == server else { return }
+      guard storedToken == token else { return }
       linkedProviders = providers
       lastError = nil
     } catch {
-      guard storedToken == token, serverURL == server else { return }
+      guard storedToken == token else { return }
       lastError = error.localizedDescription
     }
   }
