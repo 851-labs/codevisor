@@ -14,8 +14,7 @@ struct ScreenSharingFailureReasonTests {
     (.sessionSwitched, "Another user is logged in on croissant."),
     (
       .permissionMissing,
-      "croissant isn't letting Codevisor record its screen. "
-        + "Check Screen Recording there in System Settings › Privacy & Security."
+      "croissant isn't letting Codevisor record its screen. Check Screen Recording in its System Settings."
     ),
     (.updateNeeded, "Update Codevisor on croissant."),
     (.networkBlocked, "Couldn't open a video connection to croissant."),

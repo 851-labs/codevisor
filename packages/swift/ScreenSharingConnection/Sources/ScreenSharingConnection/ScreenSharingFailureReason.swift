@@ -46,8 +46,7 @@ public enum ScreenSharingFailureReason: Equatable, Sendable {
     case .nothingToView(let message): message ?? "Nothing to show on \(machine) yet."
     case .unsupportedOnThisDevice: "\(machine)'s desktop can only be viewed from a Mac."
     case .permissionMissing:
-      "\(machine) isn't letting Codevisor record its screen. "
-        + "Check Screen Recording there in System Settings › Privacy & Security."
+      "\(machine) isn't letting Codevisor record its screen. Check Screen Recording in its System Settings."
     case .updateNeeded: "Update Codevisor on \(machine)."
     case .networkBlocked: "Couldn't open a video connection to \(machine)."
     case .noVideo: "Connected, but \(machine) sent no picture."
