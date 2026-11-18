@@ -45,6 +45,34 @@
       #expect(fixture.sink.lastDirtyRects == nil)
     }
 
+    @Test func framesThatArriveDuringAReconfigureAndTheFirstAfterItLeaveTheirChangesUnknown() async throws {
+      let fixture = CaptureFixture()
+      try await fixture.start()
+      let output = try #require(fixture.target.output)
+      let held = CaptureGate()
+      fixture.stream.holdUpdate = held
+      let rect = CGRect(x: 2, y: 4, width: 6, height: 8)
+      var delivered: [[CGRect]?] = []
+      let deliver = { (presentationNs: Int64) in
+        output.deliver(
+          try Self.sample(presentationNs: presentationNs, contentScale: 1, dirtyRects: [rect]), of: .screen)
+        delivered.append(fixture.sink.lastDirtyRects)
+      }
+
+      try deliver(1)
+      try deliver(2)
+      let reconfigure = Task { @MainActor in try await fixture.capture.update(configuration: .init()) }
+      await held.entered.wait()
+      try deliver(3)
+      try deliver(4)
+      held.release()
+      try await reconfigure.value
+      try deliver(5)
+      try deliver(6)
+
+      #expect(delivered == [nil, [rect], nil, nil, nil, [rect]])
+    }
+
     private static func replay(_ history: CaptureHistory, on fixture: CaptureFixture) async throws {
       guard history != .nothing else { return }
       let output = try #require(fixture.target.output)

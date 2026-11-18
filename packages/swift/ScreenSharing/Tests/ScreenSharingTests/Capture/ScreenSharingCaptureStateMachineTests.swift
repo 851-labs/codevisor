@@ -448,6 +448,10 @@
       get { lock.withLock { gates[.stop] } }
       set { lock.withLock { gates[.stop] = newValue } }
     }
+    var holdUpdate: CaptureGate? {
+      get { lock.withLock { gates[.update] } }
+      set { lock.withLock { gates[.update] = newValue } }
+    }
 
     nonisolated(nonsending) func startCapture() async throws {
       await lock.withLock { gates[.start] }?.enter()
@@ -460,6 +464,7 @@
     }
 
     nonisolated(nonsending) func updateConfiguration(_ configuration: SCStreamConfiguration) async throws {
+      await lock.withLock { gates[.update] }?.enter()
       let settings = Settings(configuration)
       try lock.withLock {
         recorded.append(.update)

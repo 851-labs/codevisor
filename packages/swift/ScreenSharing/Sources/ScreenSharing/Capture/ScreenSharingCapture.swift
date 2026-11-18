@@ -124,7 +124,8 @@
     public func update(configuration: ScreenSharingVideoConfiguration) async throws {
       guard let stream, let output else { throw ScreenSharingError.unavailable("Capture is not running.") }
       let generation = generation
-      defer { output.changes.interrupt() }
+      output.changes.reconfigurationBegan()
+      defer { output.changes.reconfigurationEnded() }
       try await stream.updateConfiguration(
         Self.streamConfiguration(
           configuration, pixelFormat: pixelFormat, showsCursor: showsCursor, capturesAudio: capturesAudio,
