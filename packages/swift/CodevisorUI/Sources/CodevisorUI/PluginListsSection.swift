@@ -11,7 +11,7 @@ public struct PluginListsSection<Link: View>: View {
 
   public var body: some View {
     if !summaries.isEmpty {
-      Section {
+      Section("Capabilities") {
         ForEach(summaries) { link($0) }
       }
     }
