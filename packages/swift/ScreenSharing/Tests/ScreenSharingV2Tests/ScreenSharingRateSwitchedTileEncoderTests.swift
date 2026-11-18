@@ -1,3 +1,4 @@
+import CodevisorTestSupport
 import Synchronization
 import Testing
 
@@ -144,6 +145,56 @@ struct ScreenSharingRateSwitchedTileEncoderTests {
 
     #expect(slow.acknowledgedTokens == [7])
     #expect(fast.acknowledgedTokens == [9])
+  }
+
+  @Test func anEncoderTakingATileBackNoLongerTakesAcknowledgementsOfItsEarlierFrames() throws {
+    let encoder = try switched(bitrate: Self.fastBitrate)
+    let first = try Self.request(id: 1, tiles: [0])
+    try encoder.encode(first)
+    slow.emitTile(of: first, keyframe: true, token: 7)
+    switchToFast(encoder)
+    let second = try Self.request(id: 2, tiles: [0])
+    try encoder.encode(second)
+    fast.emitTile(of: second, keyframe: true, token: 9)
+    try moveToSlow(encoder)
+    try encoder.encode(try Self.request(id: 3, tiles: [0]))
+
+    encoder.acknowledge([7, 9], tile: 0)
+
+    #expect(slow.requests.last?.refreshes == [0: .keyframe])
+    #expect(slow.acknowledgedTokens.isEmpty)
+    #expect(fast.acknowledgedTokens == [9])
+  }
+
+  @Test func throughTheHostAnAcknowledgementOfAFrameTheOtherEncoderSentIsNotTakenAfterTheSwitch() async throws {
+    let encoder = try switched(bitrate: Self.fastBitrate)
+    let transport = LoopbackMediaTransport()
+    let host = ScreenSharingV2Host(
+      transport: transport, encoder: encoder, metrics: metrics, initialBitrate: Self.fastBitrate,
+      scheduler: ManualScheduler())
+    host.start()
+    defer { host.stop() }
+    host.push(try TestPixels.frame(shade: 10, timestampNs: 1_000))
+    await slow.encodes.cancellableWait(for: 1)
+    for tile in 0..<4 { slow.emitTile(of: slow.requests[0], tile: tile, keyframe: true, token: 0) }
+    switchToFast(encoder)
+    host.push(try TestPixels.frame(shade: 20, timestampNs: 2_000))
+    await fast.encodes.cancellableWait(for: 1)
+    for tile in 0..<4 { fast.emitTile(of: fast.requests[0], tile: tile, keyframe: true, token: 0) }
+
+    transport.emit(.ltrAcked(stream: 0, token: try #require(transport.sent[0].ltrToken)))
+    transport.emit(.frameLost(stream: 0, frame: 1))
+    await fast.encodes.cancellableWait(for: 2)
+    let afterTheOtherEncodersAcknowledgement = (fast.acknowledgedTokens, fast.requests[1].refreshes)
+    fast.emitTile(of: fast.requests[1], tile: 0, keyframe: true, token: 0)
+    transport.emit(.ltrAcked(stream: 0, token: try #require(transport.sent[8].ltrToken)))
+    transport.emit(.frameLost(stream: 0, frame: 2))
+    await fast.encodes.cancellableWait(for: 3)
+
+    #expect(afterTheOtherEncodersAcknowledgement == ([], [0: .keyframe]))
+    #expect(fast.acknowledgedTokens == [0])
+    #expect(fast.requests[2].refreshes == [0: .longTermReference])
+    #expect(slow.acknowledgedTokens.isEmpty)
   }
 
   @Test func aSlowLinkMovesBackToTheSlowEncoderWithoutAskingForKeyframes() throws {

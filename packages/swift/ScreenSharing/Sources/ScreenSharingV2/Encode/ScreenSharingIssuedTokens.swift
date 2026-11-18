@@ -7,6 +7,10 @@ struct ScreenSharingIssuedTokens: Sendable {
     tokens[tile] = Array((tokens[tile, default: []] + [token]).suffix(Self.remembered))
   }
 
+  mutating func forget(tile: Int) {
+    tokens[tile] = nil
+  }
+
   func issued(_ candidates: [UInt64], tile: Int) -> [UInt64] {
     let known = Set(tokens[tile, default: []])
     return candidates.filter(known.contains)

@@ -305,14 +305,15 @@ struct ScreenSharingV2HostTests {
     #expect(encoder.requests.last?.refreshes == [0: .longTermReference])
   }
 
-  @Test func anAcknowledgedReferenceFromBeforeTheLatestKeyframeNoLongerCounts() async throws {
+  @Test(arguments: [nil, 9])
+  func anAcknowledgedReferenceFromBeforeTheLatestKeyframeNoLongerCounts(keyframeToken: UInt64?) async throws {
     let host = startedHost(encoder)
     defer { host.stop() }
 
     try await sendFirstFrame(through: host, keyframe: true, token: 9)
     host.push(try TestPixels.frame(shade: 20, timestampNs: 2_000))
     await encoder.encodes.cancellableWait(for: 2)
-    encoder.emitTile(of: encoder.requests[1], keyframe: true, token: nil)
+    encoder.emitTile(of: encoder.requests[1], keyframe: true, token: keyframeToken)
     await transport.sends.cancellableWait(for: 2)
     try acknowledge(transport.sent[0])
     transport.emit(.frameLost(stream: 0, frame: 1))
@@ -320,6 +321,26 @@ struct ScreenSharingV2HostTests {
 
     #expect(encoder.acknowledgedTokens.isEmpty)
     #expect(encoder.requests.last?.refreshes == [0: .keyframe])
+  }
+
+  @Test func anAcknowledgementThatArrivesWhileAKeyframeIsBeingEncodedIsNotTaken() async throws {
+    let encoder = RecordingTileEncoder(layout: Self.tiled)
+    let host = startedHost(encoder)
+    defer { host.stop() }
+    host.push(try TestPixels.frame(shade: 10, timestampNs: 1_000))
+    await encoder.encodes.cancellableWait(for: 1)
+    for tile in 0..<4 { encoder.emitTile(of: encoder.requests[0], tile: tile, keyframe: true, token: 9) }
+    let firstTile = try #require(transport.sent.first { $0.tile == 0 })
+
+    try acknowledge(firstTile)
+    transport.emit(.refreshRequested(stream: 0, keyframe: true))
+    await encoder.encodes.cancellableWait(for: 2)
+    try acknowledge(firstTile)
+    transport.emit(.frameLost(stream: 0, frame: 1))
+    await encoder.encodes.cancellableWait(for: 3)
+
+    #expect(encoder.acknowledgedTokens == [9])
+    #expect(encoder.requests.map(\.refreshes) == [[:], [0: .keyframe], [0: .keyframe]])
   }
 
   @Test func anAcknowledgementOfAFrameAnEarlierEncoderSentIsNotTaken() async throws {

@@ -14,7 +14,10 @@ struct ScreenSharingV2TileOwners: Sendable {
 
   mutating func claim(_ tiles: Set<Int>, for owner: Owner) -> Set<Int> {
     let claimed = tiles.filter { owners[$0] != owner }
-    for tile in claimed { owners[tile] = owner }
+    for tile in claimed {
+      owners[tile] = owner
+      issued[owner]?.forget(tile: tile)
+    }
     return claimed
   }
 
