@@ -30,6 +30,7 @@ final class SimulatorStreamHostWorld {
   let workspace = UUID()
   let pane = UUID()
   let viewer = UUID()
+  let hosting = ScreenSharingHostActivityLog()
 
   func host() -> SimulatorStreamHost {
     SimulatorStreamHost(
@@ -52,7 +53,7 @@ final class SimulatorStreamHostWorld {
         offersV2: { [unowned self] in offersV2 },
         hostKey: { [unowned self] in hostKey },
         now: { [unowned self] in clock },
-        sleep: { [weak self] _ in await self?.screenWait() }))
+        sleep: { [weak self] _ in await self?.screenWait() }), activity: hosting.activity)
   }
 
   func request(

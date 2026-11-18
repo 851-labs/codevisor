@@ -24,6 +24,7 @@ final class ComputerUseLivePreviewHostWorld {
   let workspace = UUID()
   let pane = UUID()
   let viewer = UUID()
+  let hosting = ScreenSharingHostActivityLog()
 
   func request(_ operation: ServerScreenSharingRequest.Operation, viewer: UUID? = nil) -> ServerScreenSharingRequest {
     var request = ServerScreenSharingRequest(
@@ -107,7 +108,7 @@ final class ComputerUseLivePreviewHostWorld {
         offersV2: { [unowned self] in offersV2 },
         hostKey: { [unowned self] in hostKey },
         now: { [unowned self] in clock }
-      ))
+      ), activity: hosting.activity)
   }
 }
 
