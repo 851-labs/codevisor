@@ -46,6 +46,13 @@ export const SavedChat = Schema.Struct({
 })
 export type SavedChat = typeof SavedChat.Type
 
+export const SavedChatRestore = Schema.Struct({
+  startedAt: Schema.String,
+  completedAt: Schema.String,
+  lines: Schema.Array(Schema.String)
+})
+export type SavedChatRestore = typeof SavedChatRestore.Type
+
 export const SavedChatPane = Schema.Struct({
   id: Schema.String,
   providerId: Schema.String,
@@ -121,6 +128,7 @@ export const SandboxChatsAction = Schema.Union([
     sessionId: Schema.String,
     fileIds: Schema.Array(Schema.String),
     note: Schema.optional(Schema.String),
+    restore: Schema.optional(SavedChatRestore),
     agentSessionId: Schema.optional(Schema.String)
   })
 ])

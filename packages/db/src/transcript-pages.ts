@@ -11,6 +11,7 @@ import { canonicalUuid } from "./ids.js"
 import { itemCompaction } from "./item-compaction.js"
 import { itemPluginApps } from "./item-plugin-apps.js"
 import { itemQuestionSummaries } from "./item-question-summaries.js"
+import { renderableChatItem } from "./renderable-chat-item.js"
 import { transcriptFromChatRow } from "./row-mappers.js"
 import { integer, nullable, rowReader, text } from "./row-reader.js"
 import { chatItemRows, type ChatItemRow } from "./rows.js"
@@ -19,18 +20,7 @@ import { readSessionSkills } from "./session-skills.js"
 import { sessionSetupState } from "./setup-state.js"
 import { transcriptTextResource } from "./transcript-bodies.js"
 
-const renderableChatItemPredicate = `(
-  chat_items.status = 'streaming'
-  or chat_items.has_details = 1
-  or length(coalesce(chat_items.stop_reason, '')) > 0
-  or length(coalesce(chat_items.stop_detail, '')) > 0
-  or (chat_items.attachments is not null and chat_items.attachments != '[]')
-  or exists (
-    select 1 from chat_parts as renderable_part
-    where renderable_part.item_id = chat_items.id
-      and length(coalesce(renderable_part.text, '')) > 0
-  )
-)`
+const renderableChatItemPredicate = renderableChatItem("chat_items")
 
 const positionRows = rowReader({ position: integer })
 
@@ -247,9 +237,9 @@ const transcriptPageSql = {
     "select position from chat_items where session_id = ? and (id = ? or lower(message_id) = ?)",
   firstTextEntry:
     "select entry_key from transcript_entries where item_id = ? and category = 'text' order by position limit 1",
-  olderRenderableItem: `select 1 from chat_items where session_id = ?
+  olderRenderableItem: `select 1 from chat_items where session_id = ? and role in ('user', 'assistant')
           and ${renderableChatItemPredicate} and position < ? limit 1`,
-  newerRenderableItem: `select 1 from chat_items where session_id = ?
+  newerRenderableItem: `select 1 from chat_items where session_id = ? and role in ('user', 'assistant')
           and ${renderableChatItemPredicate} and position > ? limit 1`,
   pageState: `select revision as cursor, pending_question, background_tasks, session_plan
              from sessions where id = ?`,

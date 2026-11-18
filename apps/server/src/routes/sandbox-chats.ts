@@ -202,7 +202,7 @@ const finishChat = async (
   { services, fanout }: RouteContext,
   action: Action<"finish_chat">
 ): Promise<{ readonly restored: true }> => {
-  await run(services.db.finishChatImport(action.sessionId, action.fileIds))
+  await run(services.db.finishChatImport(action.sessionId, action.fileIds, action.restore))
   if (action.agentSessionId !== undefined) await resumeFrom(services, action, action.agentSessionId)
   const session = await run(services.db.getSessionSummary(action.sessionId))
   await appendAndPublish(services.db, fanout, "session.created", session.id, session)

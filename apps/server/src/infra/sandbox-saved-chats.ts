@@ -67,13 +67,13 @@ export const bringBackChats = async (
     )
   }
   const { format, chats, panes } = manifest
+  for (const line of manifest.leftOut) setup.log(line)
   for (const chat of chats) await putBackChat(deps, machine, workspaceId, manifest, chat, setup)
   for (const pane of panes)
     await ask(deps, machine, { action: "restore_pane", format, workspaceId, pane })
   setup.log(
     `Brought back ${chats.length === 1 ? "1 chat with its" : `${String(chats.length)} chats with their`} history`
   )
-  for (const line of manifest.leftOut) setup.log(line)
 }
 
 export const forgetBroughtBackChats = async (
@@ -227,6 +227,11 @@ const putBackChat = async (
     format,
     sessionId: session.id,
     fileIds: files.map((file) => file.id),
+    restore: {
+      startedAt: machine.createdAt,
+      completedAt: new Date(deps.clock.now()).toISOString(),
+      lines: setup.lines()
+    },
     ...(agentSessionId === undefined ? {} : { agentSessionId })
   })
 }

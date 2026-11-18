@@ -17,7 +17,8 @@ enum TranscriptRowAssembly {
     var rows: [TranscriptPresentationRow] = []
     let settled = input.settledConversation.filter { $0.id != input.activeItem?.id }
     rows.reserveCapacity(settled.count + 6)
-    let hasSetup = !input.setupPhases.isEmpty && input.activityMessage == nil
+    let openingPhases = input.setupPhases.filter { $0.followsItemId == nil }
+    let hasSetup = !openingPhases.isEmpty && input.activityMessage == nil
     let pendingMessage = pendingMessageNotInHistory(input, settled: settled)
     let pendingIsOpeningRow = settled.isEmpty && !input.hasActiveItem
     let waitingDescription = input.activityMessage == nil ? input.waitingBackgroundTaskDescription : nil
@@ -85,7 +86,7 @@ enum TranscriptRowAssembly {
       appendOptimisticMessage(message, input: input, to: &rows)
     }
     if hasSetup {
-      appendSetupPhases(input.setupPhases, to: &rows)
+      appendSetupPhases(input.setupPhases.filter { $0.followsItemId == nil }, to: &rows)
     }
     if let message = pendingMessage, input.deliveries[message.id]?.isFailed != true,
       TranscriptRowProjectionCache.showsOptimisticAgentActivity(input)
@@ -140,7 +141,7 @@ enum TranscriptRowAssembly {
     for (index, item) in settled.enumerated() {
       if index.isMultiple(of: 32), Task.isCancelled { throw CancellationError() }
       if index == 0, hasSetup, TranscriptAssistantRowProjection.isAssistant(item) {
-        appendSetupPhases(input.setupPhases, to: &rows)
+        appendSetupPhases(input.setupPhases.filter { $0.followsItemId == nil }, to: &rows)
       }
       TranscriptAssistantRowProjection.appendSettled(
         item,
@@ -154,7 +155,11 @@ enum TranscriptRowAssembly {
         appendDelivery(message.id, delivery, to: &rows)
       }
       if index == 0, hasSetup, TranscriptAssistantRowProjection.isUser(item) {
-        appendSetupPhases(input.setupPhases, to: &rows)
+        appendSetupPhases(input.setupPhases.filter { $0.followsItemId == nil }, to: &rows)
+      }
+      let following = input.setupPhases.filter { $0.followsItemId == item.id }
+      if !following.isEmpty {
+        rows.append(.init(id: .setupAfter(item.id), content: .setup(following), estimatedHeight: 40))
       }
     }
   }
@@ -168,7 +173,7 @@ enum TranscriptRowAssembly {
     to rows: inout [TranscriptPresentationRow]
   ) {
     if settled.isEmpty, input.hasActiveItem, hasSetup {
-      appendSetupPhases(input.setupPhases, to: &rows)
+      appendSetupPhases(input.setupPhases.filter { $0.followsItemId == nil }, to: &rows)
     }
     if let activeItem = input.activeItem {
       rows.append(

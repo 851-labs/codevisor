@@ -31,6 +31,7 @@ public struct SessionSetupPhase: Identifiable, Equatable, Sendable {
   public private(set) var outcome: Outcome
   public private(set) var logs: [SessionSetupLogLine]
   public var logResource: ToolDetailResource? = nil
+  public var followsItemId: UUID? = nil
   private var nextLogId = 0
 
   public init(

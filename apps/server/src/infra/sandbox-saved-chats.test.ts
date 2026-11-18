@@ -132,6 +132,7 @@ describe("a sandbox's chats across archive and restore", () => {
         format: 1,
         sessionId: "chat-1",
         fileIds: ["note"],
+        restore: expect.any(Object),
         agentSessionId: "agent-1"
       },
       { action: "restore_pane", format: 1, workspaceId: "id-2", pane }
@@ -166,9 +167,18 @@ describe("a sandbox's chats across archive and restore", () => {
     expect(lines).toEqual(expect.arrayContaining([tooBig, pastTotal]))
     expect(putBack.at(-2)).toMatchObject({
       action: "finish_chat",
-      fileIds: [...eight.map((file) => file.id), "note"]
+      fileIds: [...eight.map((file) => file.id), "note"],
+      restore: {
+        startedAt: expect.any(String),
+        completedAt: expect.any(String),
+        lines: expect.arrayContaining([
+          "==> Preparing the project",
+          tooBig,
+          pastTotal,
+          "The agent in the chat Fix the flake starts a new session with a recap instead of resuming"
+        ])
+      }
     })
-    expect(JSON.stringify(putBack)).not.toContain("Too large")
   })
 
   it("carries the agent's own session too, so the restored chat resumes it", async () => {
@@ -192,6 +202,7 @@ describe("a sandbox's chats across archive and restore", () => {
         format: 1,
         sessionId: "chat-1",
         fileIds: ["note"],
+        restore: expect.any(Object),
         agentSessionId: "agent-1"
       },
       { action: "restore_pane", format: 1, workspaceId: "id-2", pane }
@@ -225,6 +236,7 @@ describe("a sandbox's chats across archive and restore", () => {
         format: 1,
         sessionId: "chat-1",
         fileIds: ["note"],
+        restore: expect.any(Object),
         agentSessionId: "agent-1"
       })
     }

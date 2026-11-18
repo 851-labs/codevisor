@@ -6,6 +6,7 @@ export type SandboxSetupPublisher = (log: SandboxSetupLog) => Promise<void>
 export interface SandboxSetupProgress {
   readonly stage: (stage: SandboxSetupStage) => void
   readonly log: (line: string, stream?: OutputStream) => void
+  readonly lines: () => ReadonlyArray<string>
   readonly output: (stream: OutputStream, text: string) => void
   readonly flush: () => void
   readonly redact: (secret: string) => void
@@ -20,6 +21,18 @@ export interface SandboxSetupProgressOptions {
 }
 
 const maxLineLength = 2000
+const maxKeptLines = 400
+const stageTitles: Readonly<Record<SandboxSetupStage, string>> = {
+  tart: "Installing Tart",
+  container: "Installing Apple's container tool",
+  image: "Preparing the image",
+  create: "Creating the sandbox",
+  boot: "Booting the sandbox",
+  install: "Installing Codevisor",
+  signIn: "Signing in to Codevisor",
+  sync: "Syncing your setup",
+  clone: "Preparing the project"
+}
 const ansiEscape = new RegExp(`${String.fromCharCode(27)}\\[[0-9;?]*[A-Za-z]`, "g")
 const lineBreak = /\r\n|\r|\n/
 
@@ -28,6 +41,7 @@ export const makeSandboxSetupProgress = (
 ): SandboxSetupProgress => {
   const steps: SandboxSetupStep[] = []
   const secrets: string[] = []
+  const kept: string[] = []
   const pending: Record<OutputStream, string> = { stdout: "", stderr: "" }
   let published: Promise<void> = Promise.resolve()
 
@@ -41,13 +55,17 @@ export const makeSandboxSetupProgress = (
     const at = options.now()
     closeCurrent(at)
     steps.push({ stage: next, startedAt: at })
+    kept.push(`==> ${stageTitles[next]}`)
     options.persist([...steps])
   }
 
   const log = (raw: string, stream: OutputStream = "stdout"): void => {
     const line = cleaned(raw, secrets)
     const current = steps.at(-1)?.stage
-    if (line === "" || current === undefined || options.publish === undefined) return
+    if (line === "" || current === undefined) return
+    kept.push(line)
+    if (kept.length > maxKeptLines) kept.shift()
+    if (options.publish === undefined) return
 
     const publish = options.publish
     const event = { machineId: options.machineId, stage: current, stream, line }
@@ -62,6 +80,7 @@ export const makeSandboxSetupProgress = (
   return {
     stage,
     log,
+    lines: () => [...kept],
     output: (stream, text) => {
       const lines = (pending[stream] + text).split(lineBreak)
       pending[stream] = lines.splice(-1).join("")
