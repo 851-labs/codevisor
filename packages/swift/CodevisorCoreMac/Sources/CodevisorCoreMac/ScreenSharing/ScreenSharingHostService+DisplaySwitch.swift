@@ -7,6 +7,7 @@ extension ScreenSharingHostService {
   static let displayNotCaptured = "This Mac couldn't capture that display, so it kept sharing the previous one."
   static let displaysNotListed = "This Mac couldn't list its displays, so it kept sharing the current one."
   static let displayNotSwitched = "This Mac couldn't switch to that display, so it kept sharing the current one."
+  static let displayNotResized = "This Mac couldn't change its display size."
 
   func sharing(
     _ request: ServerScreenSharingRequest, in session: ScreenSharingHostSession

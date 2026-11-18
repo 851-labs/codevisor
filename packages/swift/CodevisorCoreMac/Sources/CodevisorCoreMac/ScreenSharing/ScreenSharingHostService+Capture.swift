@@ -20,7 +20,7 @@ extension ScreenSharingHostService {
       Self.logger.notice("Capture started in \(Self.milliseconds(since: began)) ms (\(reason, privacy: .public))")
     } catch {
       Self.logger.error(
-        "Capture start failed after \(Self.milliseconds(since: began)) ms (\(reason, privacy: .public)): \(error.localizedDescription, privacy: .public)"
+        "Capture start failed after \(Self.milliseconds(since: began)) ms (\(reason, privacy: .public), \(ScreenSharingHostFailure(error).code, privacy: .public)): \(error.localizedDescription, privacy: .public)"
       )
       throw error
     }

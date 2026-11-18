@@ -24,6 +24,7 @@ final class ScreenSharingHostOwnershipFixture {
   var listDisplays: (() async throws -> [ServerScreenSharingDisplay])?
   var allowsCapture = true
   var failsCaptureOn: Set<String> = []
+  var captureFailure: any Error = ScreenSharingError.unavailable("Capture refused.")
   private(set) var captureStarts: [String] = []
   let workspace = NotificationCenter()
   let media = ScreenSharingMediaEndpoint()
@@ -141,7 +142,7 @@ final class ScreenSharingHostOwnershipFixture {
     host.startsCapture = { [unowned self] session in
       let display = displays.first { Self.displayID(of: $0) == session.captureDisplayID }?.id ?? "unknown"
       captureStarts.append(display)
-      guard !failsCaptureOn.contains(display) else { throw ScreenSharingError.unavailable("Capture refused.") }
+      guard !failsCaptureOn.contains(display) else { throw captureFailure }
     }
   }
 

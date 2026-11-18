@@ -73,6 +73,23 @@ struct ScreenSharingConnectionRecoveryTests {
     #expect(harness.host.starts.allSatisfy { $0.intent == .attach })
   }
 
+  @Test("A preview the host won't record for keeps trying quietly and goes live by itself once the host allows it")
+  func recoversOnceTheHostAllowsRecording() async {
+    let harness = ConnectionHarness()
+    harness.host.answerEvery(.capabilities, .reply(status: "permission-required", reason: "permission-missing"))
+    harness.show(.preview)
+    await harness.settle(.failed(.permissionMissing))
+
+    await harness.elapse(Self.quietWaits[0])
+    await awaitObserved { harness.host.completed(.capabilities) == 2 }
+    #expect(harness.connection.state == .failed(.permissionMissing), "a quiet try refused again is not the last one")
+
+    harness.host.answerEvery(.capabilities, nil)
+    await harness.elapse(Self.quietWaits[1])
+    await harness.goLive()
+    #expect(harness.host.starts.map(\.intent) == [.attach])
+  }
+
   @Test(
     "A preview hidden while live that loses its host turns off when the tries run out, and showing it connects afresh")
   func turnsOffWhenTheTriesRunOutWithNothingOnScreen() async {

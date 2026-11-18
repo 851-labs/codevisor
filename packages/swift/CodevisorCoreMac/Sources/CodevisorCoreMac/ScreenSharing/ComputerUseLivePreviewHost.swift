@@ -257,7 +257,7 @@ final class ComputerUseLivePreviewHost {
         sessionID: sessionID, activity: activity, peer: peer, attempt: request.viewerId,
         token: identity.token(for: owner), expiresAt: dependencies.now() + Self.lifetime)
       return try await connect(session, activity: activity, owner: owner)
-    } catch { return .init(status: "failed", message: error.localizedDescription) }
+    } catch { return ScreenSharingHostFailure(error).reply(status: "failed") }
   }
 
   private func connect(
@@ -343,8 +343,7 @@ final class ComputerUseLivePreviewHost {
     }
   }
 
-  private static let permissionRequired = reply(
-    "permission-required", "Allow Screen Recording for Codevisor on the host Mac.", .permissionMissing)
+  private static let permissionRequired = ScreenSharingHostRefusal.permissionMissing.reply
   private static let notControlling = reply(
     "unavailable", "The agent is not controlling an app right now.", .nothingToView)
   private static let stoppedControlling = reply(

@@ -61,7 +61,7 @@ struct ScreenSharingConnectionTransitionTests {
   nonisolated static let refusals = [
     Refusal(
       operation: .capabilities, status: "permission-required", reason: "permission-missing",
-      expected: .permissionMissing),
+      expected: .permissionMissing, isTriedAgainQuietly: true),
     Refusal(operation: .capabilities, status: "unavailable", reason: "update-needed", expected: .updateNeeded),
     Refusal(operation: .start, status: "unavailable", reason: "no-display", expected: .noDisplay),
     Refusal(operation: .start, status: "failed", reason: "display-asleep", expected: .displayAsleep),
@@ -75,7 +75,7 @@ struct ScreenSharingConnectionTransitionTests {
   ]
 
   @Test(
-    "A host that refuses the first connect fails it with the host's reason; only a failure it gives no reason for is tried again",
+    "A host that refuses the first connect fails it with its reason; only one that can clear on the host is tried again",
     arguments: refusals)
   func failsWhenTheHostRefuses(_ refusal: Refusal) async {
     let harness = ConnectionHarness()
@@ -293,13 +293,13 @@ struct ScreenSharingConnectionTransitionTests {
   @Test("A machine that comes back online does not restart a connection that failed for another reason")
   func staysFailedWhenTheMachineComesBackAfterARefusal() async {
     let harness = ConnectionHarness()
-    harness.host.answerNext(.capabilities, .reply(status: "permission-required", reason: "permission-missing"))
+    harness.host.answerNext(.capabilities, .reply(status: "unavailable", reason: "no-display"))
     harness.show()
-    await harness.settle(.failed(.permissionMissing))
+    await harness.settle(.failed(.noDisplay))
 
     harness.manager.machineCameOnline(ConnectionHarness.machineId)
 
-    #expect(harness.connection.state == .failed(.permissionMissing))
+    #expect(harness.connection.state == .failed(.noDisplay))
     #expect(harness.host.requests.count == 1 && harness.clock.pendingCount == 0)
   }
 }

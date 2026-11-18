@@ -7,7 +7,14 @@ enum ScreenSharingHostEnding: Equatable, Sendable {
   case displayGone
   case captureLost
   case takenOver(by: String?)
+  case captureRefused
   case failed(String)
+
+  static func captureFailed(_ failure: ScreenSharingHostFailure) -> Self {
+    if failure.isRefusedCapture { return .captureRefused }
+
+    return .failed(failure.sentence ?? ScreenSharingHostService.captureFailed)
+  }
 
   var reason: ServerScreenSharingReason? {
     switch self {
@@ -16,6 +23,7 @@ enum ScreenSharingHostEnding: Equatable, Sendable {
     case .sessionSwitched: .sessionSwitched
     case .displayGone: .noDisplay
     case .takenOver: .takenOver
+    case .captureRefused: .permissionMissing
     case .captureLost, .failed: nil
     }
   }
@@ -26,6 +34,7 @@ enum ScreenSharingHostEnding: Equatable, Sendable {
       "Screen sharing was stopped on the host Mac."
     case .takenOver(let name?): "Now viewing on \(name)."
     case .takenOver(nil): "Now viewing on another device."
+    case .captureRefused: ScreenSharingHostRefusal.permissionMessage
     case .failed(let message): message
     }
   }
@@ -33,7 +42,7 @@ enum ScreenSharingHostEnding: Equatable, Sendable {
   var waitsForAnOpen: Bool {
     switch self {
     case .stoppedOnHost, .displayAsleep, .sessionSwitched: true
-    case .displayGone, .captureLost, .takenOver, .failed: false
+    case .displayGone, .captureLost, .takenOver, .captureRefused, .failed: false
     }
   }
 

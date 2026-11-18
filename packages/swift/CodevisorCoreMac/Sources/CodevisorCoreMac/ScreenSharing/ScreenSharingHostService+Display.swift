@@ -98,7 +98,9 @@ extension ScreenSharingHostService {
       Self.logger.error("Display change failed: \(error.localizedDescription, privacy: .public)")
       session.metrics.label("displaySize", error.localizedDescription)
       if session.virtualDisplay == nil { try? await waitForSharedDisplay(session) }
-      if reportsFailure { channel.send(.unavailable(error.localizedDescription)) }
+      if reportsFailure {
+        channel.send(.unavailable(ScreenSharingHostFailure(error).sentence ?? Self.displayNotResized))
+      }
     }
   }
 
