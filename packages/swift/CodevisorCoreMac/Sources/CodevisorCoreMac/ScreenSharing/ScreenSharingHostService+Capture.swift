@@ -26,6 +26,18 @@ extension ScreenSharingHostService {
     }
   }
 
+  func restartFailed(_ session: ScreenSharingHostSession, _ error: any Error) async {
+    let failure = ScreenSharingHostFailure(error)
+    Self.logger.error(
+      "Capture restart failed (\(failure.code, privacy: .public)): \(error.localizedDescription, privacy: .public)")
+    guard failure.isRefusedCapture else {
+      session.captureFailure = "The host Mac's screen capture stopped and couldn't be restarted."
+      return
+    }
+
+    await end(session, as: .captureRefused)
+  }
+
   static func milliseconds(since start: ContinuousClock.Instant) -> Int {
     let elapsed = ContinuousClock.now - start
     return Int(elapsed.components.seconds * 1000 + elapsed.components.attoseconds / 1_000_000_000_000_000)

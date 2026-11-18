@@ -59,11 +59,25 @@ struct ScreenSharingConnectionRecoveryTests {
     #expect(harness.host.requests(.capabilities).count == waits.count + 1)
   }
 
-  @Test("A quiet try the host refuses shows the host's reason and is the last one")
-  func stopsAtTheHostsAnswer() async {
+  enum QuietlyTrying: CaseIterable, Sendable { case afterDropping, afterAScreenRecordingRefusal }
+
+  private func tryQuietly(_ harness: ConnectionHarness, _ trying: QuietlyTrying) async {
+    switch trying {
+    case .afterDropping:
+      await keepDropping(harness)
+      harness.media.connectFails = false
+    case .afterAScreenRecordingRefusal:
+      harness.host.answerNext(.capabilities, .reply(status: "permission-required", reason: "permission-missing"))
+      harness.show(.preview)
+      await harness.settle(.failed(.permissionMissing))
+    }
+  }
+
+  @Test(
+    "A quiet try the host answers with in use shows that and is the last one", arguments: QuietlyTrying.allCases)
+  func stopsAtTheHostsAnswer(_ trying: QuietlyTrying) async {
     let harness = ConnectionHarness()
-    await keepDropping(harness)
-    harness.media.connectFails = false
+    await tryQuietly(harness, trying)
     harness.host.answerNext(.start, .reply(status: "busy", reason: "in-use", holderName: "Alexandru's iPhone"))
 
     await harness.elapse(Self.quietWaits[0])

@@ -234,11 +234,7 @@
     }
 
     private static func requirePermission() throws {
-      guard CGPreflightScreenCaptureAccess() else {
-        throw ScreenSharingError.unavailable(
-          "Screen Recording permission is required. Enable it for this app in System Settings, then relaunch."
-        )
-      }
+      guard CGPreflightScreenCaptureAccess() else { throw ScreenSharingError.captureNotPermitted }
     }
 
     public func stop() async throws {

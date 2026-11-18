@@ -10,7 +10,7 @@ import Testing
 struct ScreenSharingHostRefusedCaptureTests {
   typealias Fixture = ScreenSharingHostOwnershipFixture
 
-  private static func refusedByMacOS() -> NSError {
+  nonisolated private static func refusedByMacOS() -> NSError {
     NSError(
       domain: SCStreamErrorDomain, code: SCStreamError.Code.userDeclined.rawValue,
       userInfo: [NSLocalizedDescriptionKey: "The user declined TCCs for application, window, display capture"])
@@ -20,10 +20,22 @@ struct ScreenSharingHostRefusedCaptureTests {
     reply.reason == .permissionMissing && reply.message == ScreenSharingHostRefusal.permissionMessage
   }
 
-  @Test func whenMacOSRefusesTheDisplayListEveryAskIsAnsweredAsAPermissionRefusal() async throws {
+  enum Refused: CaseIterable, Sendable {
+    case byScreenCaptureKit, byTheCaptureCheck
+
+    var error: any Error {
+      switch self {
+      case .byScreenCaptureKit: ScreenSharingHostRefusedCaptureTests.refusedByMacOS()
+      case .byTheCaptureCheck: ScreenSharingError.captureNotPermitted
+      }
+    }
+  }
+
+  @Test(arguments: Refused.allCases)
+  func whenMacOSRefusesTheDisplayListEveryAskIsAnsweredAsAPermissionRefusal(_ refused: Refused) async throws {
     try await Fixture.run { mac in
       let start = await mac.signed(mac.start(as: .macBook, .open))
-      mac.listDisplays = { throw Self.refusedByMacOS() }
+      mac.listDisplays = { throw refused.error }
 
       let asked = await mac.capabilities(as: .macBook)
       #expect(asked.status == "permission-required" && Self.isPermissionRefusal(asked))
@@ -76,6 +88,40 @@ struct ScreenSharingHostRefusedCaptureTests {
       #expect(beat.status == "failed" && Self.isPermissionRefusal(beat))
       mac.failsCaptureOn = []
       #expect(await mac.send(mac.start(as: .macBook, .attach)).status == "connecting")
+    }
+  }
+
+  private static func captureStops(
+    in mac: Fixture, failingItsRestartWith error: any Error
+  ) async throws -> ServerScreenSharingReply {
+    let start = mac.start(as: .macBook, .open)
+    _ = await mac.send(start)
+    let session = try #require(mac.host.current)
+    session.state = "viewing"
+    mac.host.captureRestartDelay = .zero
+    mac.failsCaptureOn = ["main"]
+    mac.captureFailure = error
+
+    session.capture.onStopped?("Failed during stream due to application connection being interrupted")
+    await session.captureTask?.value
+    return await mac.send(mac.following(start, .heartbeat))
+  }
+
+  @Test func aRestartMacOSRefusesMidSessionEndsTheSessionAsAPermissionRefusal() async throws {
+    try await Fixture.run { mac in
+      let beat = try await Self.captureStops(in: mac, failingItsRestartWith: Self.refusedByMacOS())
+
+      #expect(beat.status == "failed" && Self.isPermissionRefusal(beat))
+      #expect(mac.host.current == nil)
+    }
+  }
+
+  @Test func aRestartThatFailsForAnotherReasonEndsTheSessionWithTheHostsOwnSentence() async throws {
+    try await Fixture.run { mac in
+      let beat = try await Self.captureStops(in: mac, failingItsRestartWith: CocoaError(.fileReadUnknown))
+
+      #expect(beat.status == "failed" && beat.reason == nil && mac.host.current == nil)
+      #expect(beat.message == "The host Mac's screen capture stopped and couldn't be restarted.")
     }
   }
 

@@ -1,6 +1,8 @@
 import ScreenSharing
 
 extension ScreenSharingHostService {
+  static let dynamicRangeNotChanged = "This Mac couldn't change the video's dynamic range."
+
   struct DynamicRangeState {
     var viewerSupports = false
     var task: Task<Void, Never>?
@@ -28,7 +30,7 @@ extension ScreenSharingHostService {
         try await session.capture.setDynamicRange(decision.range)
       } catch {
         Self.logger.error("HDR switch failed: \(error.localizedDescription, privacy: .public)")
-        sent = (session.capture.dynamicRange, error.localizedDescription)
+        sent = (session.capture.dynamicRange, ScreenSharingHostFailure(error).sentence ?? Self.dynamicRangeNotChanged)
       }
       session.metrics.label("hostDynamicRange", sent.range.rawValue)
       if session.hdr.reported?.range != sent.range || session.hdr.reported?.reason != sent.reason {

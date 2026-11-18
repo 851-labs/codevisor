@@ -11,6 +11,8 @@ struct ScreenSharingHostFailure {
   }
 
   var isRefusedCapture: Bool {
+    if case ScreenSharingError.captureNotPermitted = error { return true }
+
     let system = error as NSError
     return system.domain == SCStreamErrorDomain && system.code == SCStreamError.Code.userDeclined.rawValue
   }
