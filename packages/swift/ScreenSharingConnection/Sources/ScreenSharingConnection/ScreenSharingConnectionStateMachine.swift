@@ -283,6 +283,8 @@ struct ScreenSharingConnectionStateMachine: Equatable, Sendable {
   }
 
   private mutating func fail(_ reason: ScreenSharingFailureReason, keepsTrying: Bool = false) -> Command? {
+    if keepsTrying, !visible { return turnOff() }
+
     state = .failed(reason)
     failureIsSticky = reason.isDecidedByHost
     triesUsed = 0

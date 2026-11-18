@@ -41,6 +41,15 @@ struct ScreenSharingConnectionStateMachineTests {
     }
   }
 
+  @Test("A quiet try that fails with nothing on screen turns the connection off instead of scheduling the next one")
+  func turnsOffWhenAQuietTryFailsUnseen() {
+    var machine = failed(with: .dropped(.cantReach))
+    _ = machine.handle(.surfacesChanged(attached: true, visible: false))
+
+    #expect(machine.handle(.attemptEnded(.dropped(.cantReach))) == .stop)
+    #expect(machine.state == .off && machine.unseen == nil)
+  }
+
   nonisolated static let ordinary: [ScreenSharingAttemptEnd] = [
     .dropped(.cantReach), .dropped(.noVideo), .dropped(.networkBlocked), .refused(.permissionMissing),
     .refused(.updateNeeded), .refused(.noDisplay), .refused(.unsupportedOnThisDevice),

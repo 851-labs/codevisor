@@ -50,6 +50,7 @@ struct ScreenSharingConnectionRecoveryTests {
       await awaitObserved { harness.host.requests(.capabilities).count == index + 2 }
       #expect(harness.connection.state == .failed(.cantReach))
     }
+    await harness.clock.waitForSleep(slowest, count: waits.filter { $0 == slowest }.count + 1)
 
     surface.setOnScreen(false)
     await harness.elapse(Self.debounce)
@@ -69,6 +70,29 @@ struct ScreenSharingConnectionRecoveryTests {
     await harness.settle(.failed(.inUse(by: "Alexandru's iPhone")))
 
     await harness.noTimersLeft()
+    #expect(harness.host.starts.allSatisfy { $0.intent == .attach })
+  }
+
+  @Test(
+    "A preview hidden while live that loses its host turns off when the tries run out, and showing it connects afresh")
+  func turnsOffWhenTheTriesRunOutWithNothingOnScreen() async {
+    let harness = ConnectionHarness()
+    let surface = harness.show(.preview)
+    await harness.goLive()
+    surface.setOnScreen(false)
+    await harness.elapse(Self.debounce)
+    await harness.clock.waitForSleep(ScreenSharingConnectionDeadlines.linger)
+
+    harness.media.connectFails = true
+    await harness.useUpTheTries(failingAt: .start)
+    await harness.settle(.off)
+
+    await harness.noTimersLeft()
+    #expect(harness.media.sessions.count == 1, "nothing went live while hidden")
+    harness.media.connectFails = false
+    surface.setOnScreen(true)
+    #expect(harness.connection.state == .connecting(.reachingHost))
+    await harness.goLive()
     #expect(harness.host.starts.allSatisfy { $0.intent == .attach })
   }
 
