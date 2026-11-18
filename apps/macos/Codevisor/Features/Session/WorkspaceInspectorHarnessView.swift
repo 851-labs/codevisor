@@ -17,7 +17,7 @@ struct WorkspaceInspectorHarnessView: View {
             WorkspaceInspectorUsageSection(limits: limits, isExpanded: $isUsageExpanded)
           }
           WorkspaceInspectorContextSection(
-            context: snapshot.context, usage: summaryUsage(of: snapshot), isExpanded: $isContextExpanded)
+            context: snapshot.context, usage: chatUsage, isExpanded: $isContextExpanded)
         }
         .padding(.vertical, 10)
       }
@@ -28,10 +28,6 @@ struct WorkspaceInspectorHarnessView: View {
 
   private var snapshot: WorkspaceInspectorHarnessModel.Snapshot? {
     chat.flatMap(model.snapshot(for:))
-  }
-
-  private func summaryUsage(of snapshot: WorkspaceInspectorHarnessModel.Snapshot) -> SessionUsage? {
-    snapshot.chatId == chat?.id ? chatUsage : nil
   }
 }
 

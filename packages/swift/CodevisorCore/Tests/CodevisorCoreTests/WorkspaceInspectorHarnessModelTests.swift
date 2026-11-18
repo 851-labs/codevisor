@@ -23,7 +23,7 @@ import Testing
 
     client.contextGate.signal()
     await load.value
-    #expect(model.snapshot(for: first) == Snapshot(chatId: first.id, limits: .weekly(40), context: .used(1_000)))
+    #expect(model.snapshot(for: first) == Snapshot(limits: .weekly(40), context: .used(1_000)))
   }
 
   @Test func prefetchedLimitsShowNothingUntilTheContextSettles() async {
@@ -35,7 +35,7 @@ import Testing
 
     await model.load(first, client: client, animated: false)
 
-    #expect(model.snapshot(for: first) == Snapshot(chatId: first.id, limits: .weekly(40), context: .used(1_000)))
+    #expect(model.snapshot(for: first) == Snapshot(limits: .weekly(40), context: .used(1_000)))
   }
 
   @Test func showsTheContextWhenTheLimitsFail() async {
@@ -43,7 +43,7 @@ import Testing
 
     await model.load(first, client: HarnessSourcesClient(limits: nil, context: .used(1_000)), animated: false)
 
-    #expect(model.snapshot(for: first) == Snapshot(chatId: first.id, limits: nil, context: .used(1_000)))
+    #expect(model.snapshot(for: first) == Snapshot(limits: nil, context: .used(1_000)))
   }
 
   @Test func showsTheLimitsWhenTheContextFails() async {
@@ -51,7 +51,7 @@ import Testing
 
     await model.load(first, client: HarnessSourcesClient(limits: .weekly(40), context: nil), animated: false)
 
-    #expect(model.snapshot(for: first) == Snapshot(chatId: first.id, limits: .weekly(40), context: nil))
+    #expect(model.snapshot(for: first) == Snapshot(limits: .weekly(40), context: nil))
   }
 
   @Test func refreshKeepsTheShownDataUntilTheNewDataArrives() async {
@@ -62,11 +62,11 @@ import Testing
 
     client.limitsGate.signal()
     await client.limitsServed.wait()
-    #expect(model.snapshot(for: first) == Snapshot(chatId: first.id, limits: .weekly(40), context: .used(1_000)))
+    #expect(model.snapshot(for: first) == Snapshot(limits: .weekly(40), context: .used(1_000)))
 
     client.contextGate.signal()
     await refresh.value
-    #expect(model.snapshot(for: first) == Snapshot(chatId: first.id, limits: .weekly(55), context: .used(2_000)))
+    #expect(model.snapshot(for: first) == Snapshot(limits: .weekly(55), context: .used(2_000)))
   }
 
   @Test func failedRefreshKeepsTheShownData() async {
@@ -75,19 +75,19 @@ import Testing
 
     await model.load(first, client: HarnessSourcesClient(limits: nil, context: nil), animated: true)
 
-    #expect(model.snapshot(for: first) == Snapshot(chatId: first.id, limits: .weekly(40), context: .used(1_000)))
+    #expect(model.snapshot(for: first) == Snapshot(limits: .weekly(40), context: .used(1_000)))
   }
 
-  @Test func switchingChatsKeepsThePreviousChatShownUntilTheNewOneSettles() async {
+  @Test func switchingToAnUnloadedChatShowsNothingUntilItSettles() async {
     let model = WorkspaceInspectorHarnessModel()
     await model.load(first, client: HarnessSourcesClient(limits: .weekly(40), context: .used(1_000)), animated: false)
 
-    #expect(model.snapshot(for: second)?.chatId == first.id)
+    #expect(model.snapshot(for: second) == nil)
 
     await model.load(second, client: HarnessSourcesClient(limits: .weekly(40), context: .used(3_000)), animated: false)
 
-    #expect(model.snapshot(for: second) == Snapshot(chatId: second.id, limits: .weekly(40), context: .used(3_000)))
-    #expect(model.snapshot(for: first) == Snapshot(chatId: first.id, limits: .weekly(40), context: .used(1_000)))
+    #expect(model.snapshot(for: second) == Snapshot(limits: .weekly(40), context: .used(3_000)))
+    #expect(model.snapshot(for: first) == Snapshot(limits: .weekly(40), context: .used(1_000)))
   }
 }
 

@@ -20,7 +20,6 @@ public final class WorkspaceInspectorHarnessModel {
   }
 
   public struct Snapshot: Equatable, Sendable {
-    public let chatId: UUID
     public let limits: ServerHarnessUsageLimits?
     public let context: ServerSessionContext?
   }
@@ -31,12 +30,13 @@ public final class WorkspaceInspectorHarnessModel {
 
   private var limits: [Account: Settled<ServerHarnessUsageLimits>] = [:]
   private var contexts: [UUID: Settled<ServerSessionContext>] = [:]
-  private var lastSettled: Snapshot?
 
   public init() {}
 
   public func snapshot(for chat: ChatSession) -> Snapshot? {
-    settledSnapshot(for: chat) ?? lastSettled
+    guard let limits = limits[Account(chat)], let context = contexts[chat.id] else { return nil }
+
+    return Snapshot(limits: limits.value.flatMap(Self.shown), context: context.value)
   }
 
   public func load(_ chat: ChatSession, client: any CodevisorServerClienting, animated: Bool) async {
@@ -45,7 +45,7 @@ public final class WorkspaceInspectorHarnessModel {
     let fetched = await (limits: limits, context: context)
     guard !Task.isCancelled else { return }
 
-    let animatesChange = animated && settledSnapshot(for: chat) != nil
+    let animatesChange = animated && snapshot(for: chat) != nil
     withTransaction(\.disablesAnimations, !animatesChange) {
       settle(chat, limits: fetched.limits, context: fetched.context)
     }
@@ -71,13 +71,6 @@ public final class WorkspaceInspectorHarnessModel {
     let account = Account(chat)
     limits[account] = Settled(value: fetched ?? limits[account]?.value)
     contexts[chat.id] = Settled(value: context ?? contexts[chat.id]?.value)
-    lastSettled = settledSnapshot(for: chat)
-  }
-
-  private func settledSnapshot(for chat: ChatSession) -> Snapshot? {
-    guard let limits = limits[Account(chat)], let context = contexts[chat.id] else { return nil }
-
-    return Snapshot(chatId: chat.id, limits: limits.value.flatMap(Self.shown), context: context.value)
   }
 
   private nonisolated static func shown(_ limits: ServerHarnessUsageLimits) -> ServerHarnessUsageLimits? {
