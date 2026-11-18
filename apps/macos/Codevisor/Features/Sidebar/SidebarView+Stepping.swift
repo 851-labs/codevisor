@@ -4,6 +4,7 @@ import SwiftUI
 
 extension SidebarView {
   enum SidebarStop {
+    case newChat
     case workspace(SidebarWorkspaceListItem)
     case tab(UUID, workspaceID: UUID)
     case archived(Workspace)
@@ -39,13 +40,20 @@ extension SidebarView {
       selected = SidebarSelectionSync.selectedRow(showing: target, rowIDs: Set(rows.map(\.id)))
     }
     let content = rowContent
-    return SidebarStep.target(among: rows, isCurrent: { $0.id == selected }, by: offset) { row in
-      sidebarStop(at: row, content: content)
+    let showsNewChat = selection.showsNewChat
+    let steps = [SidebarStepRow.newChat] + rows.map(SidebarStepRow.row)
+    return SidebarStep.target(among: steps, isCurrent: { $0.isCurrent(showsNewChat, selected) }, by: offset) {
+      switch $0 {
+      case .newChat: .newChat
+      case let .row(row): sidebarStop(at: row, content: content)
+      }
     }
   }
 
   private func activate(_ stop: SidebarStop) {
     switch stop {
+    case .newChat:
+      selection = .newChat(nil)
     case let .workspace(item):
       requestReveal(of: item.workspace.id)
       activateWorkspace(item, tabId: item.workspace.mainTab.id)
@@ -64,5 +72,17 @@ extension SidebarView {
       return
     }
     revealRequest.rowID = workspaceID
+  }
+}
+
+private enum SidebarStepRow {
+  case newChat
+  case row(SidebarRow)
+
+  func isCurrent(_ showsNewChat: Bool, _ selected: SidebarRowID?) -> Bool {
+    switch self {
+    case .newChat: showsNewChat
+    case let .row(row): row.id == selected
+    }
   }
 }

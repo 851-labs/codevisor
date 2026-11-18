@@ -18,7 +18,6 @@ struct SidebarPlaceholder: View {
       } description: {
         Text(message)
       }
-      .containerRelativeFrame(.vertical)
     }
   }
 
