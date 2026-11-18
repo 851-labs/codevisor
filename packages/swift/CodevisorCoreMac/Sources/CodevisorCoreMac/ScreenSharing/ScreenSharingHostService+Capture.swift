@@ -81,21 +81,23 @@ extension ScreenSharingHostService {
 
   @discardableResult
   func followDisplay(_ session: ScreenSharingHostSession) -> Bool {
-    guard
-      let current = ScreenSharingDisplayIdentity.follow(
-        session.displayID, identity: session.displayIdentity, online: onlineDisplays())
-    else { return false }
-    guard current != session.displayID else { return true }
-    Self.logger.notice("Shared display \(session.displayID) is now display \(current)")
-    session.displayID = current
-    session.sharedMode = .init(display: current)
-    return true
+    switch successor(of: session) {
+    case .unchanged: return true
+    case .another, .none: return false
+    case .renumbered(let current):
+      Self.logger.notice("Shared display \(session.displayID) is now display \(current)")
+      session.displayID = current
+      session.sharedMode = .init(display: current)
+      return true
+    }
   }
 
   func restartOnSettledDisplay(_ session: ScreenSharingHostSession) async throws {
     var lastError: (any Error)?
     for attempt in 0..<Self.displaySettleAttempts {
       if attempt > 0 { try await Task.sleep(for: Self.displaySettleInterval) }
+      guard !session.stopping, !Task.isCancelled else { throw CancellationError() }
+      if followsToAnotherDisplay(session) { await session.displayFollow?.value }
       guard !session.stopping, !Task.isCancelled else { throw CancellationError() }
       guard followDisplay(session) else { continue }
       do {

@@ -63,6 +63,8 @@ extension ScreenSharingHostService {
 
   private func applyDisplay(_ session: ScreenSharingHostSession, reportsFailure: Bool) async {
     let channel = session.peer.channels.display
+    await moveToRemainingDisplay(session)
+    guard current === session, !session.stopping else { return }
     followDisplay(session)
     let points = ScreenSharingHostRetina.virtualDisplaySize(
       dynamic: session.dynamicDesktop, shared: session.sharedMode,
@@ -178,6 +180,7 @@ extension ScreenSharingHostService {
       Self.logger.notice("The shared display went away; ending the session")
       return systemStopped(.displayGone)
     }
+    if followsToAnotherDisplay(current) { return }
     let shared = current.displayID
     followDisplay(current)
     if current.displayID != shared { Task { await updateDisplay(current) } }

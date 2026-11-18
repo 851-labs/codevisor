@@ -415,6 +415,10 @@ final class ScreenSharingHostService {
 extension ScreenSharingHostService {
   private func captureStopped(_ session: ScreenSharingHostSession, message: String) {
     guard current === session, !session.stopping else { return }
+    if session.state == "viewing", followsToAnotherDisplay(session) {
+      Self.logger.notice("Capture stopped (\(message, privacy: .public)); its display went away")
+      return
+    }
     guard session.captureRestarts.allowsRestart(now: ProcessInfo.processInfo.systemUptime) else {
       Self.logger.error("Capture stopped again (\(message, privacy: .public)); ending the session")
       scheduleEnd(session, as: .captureLost)

@@ -21,9 +21,11 @@ final class ScreenSharingHostSession {
     set { sharedDisplay.displayID = newValue }
   }
   private(set) var displayIdentity: ScreenSharingDisplayIdentity
+  private(set) var displayPixels: ScreenSharingDisplayIdentity.Pixels
   var configuration: ScreenSharingVideoConfiguration
   private(set) var physicalConfiguration: ScreenSharingVideoConfiguration
   var displaySwitch: ScreenSharingHostDisplaySwitch?
+  var displayFollow: Task<Void, Never>?
   var virtualDisplay: ScreenSharingHostVirtualDisplay? {
     didSet { sharedDisplay.virtualDisplayID = virtualDisplay?.displayID }
   }
@@ -78,6 +80,7 @@ final class ScreenSharingHostSession {
     self.sharedDisplay = sharedDisplay
     injector = ScreenSharingInputInjector(displayBounds: { sharedDisplay.bounds })
     displayIdentity = ScreenSharingDisplayIdentity(display: displayID)
+    displayPixels = .init(width: display.width, height: display.height)
     sharedMode = .init(display: displayID)
     capture = ScreenSharingCapture()
     metrics = ScreenSharingMetrics()
@@ -100,20 +103,27 @@ final class ScreenSharingHostSession {
   struct Target {
     let displayID: UInt32
     let identity: ScreenSharingDisplayIdentity
+    let pixels: ScreenSharingDisplayIdentity.Pixels
     let configuration: ScreenSharingVideoConfiguration
   }
 
-  var target: Target { .init(displayID: displayID, identity: displayIdentity, configuration: physicalConfiguration) }
+  var target: Target {
+    .init(displayID: displayID, identity: displayIdentity, pixels: displayPixels, configuration: physicalConfiguration)
+  }
 
   static func target(_ display: (id: UInt32, description: ServerScreenSharingDisplay)) throws -> Target {
     let configuration = try ScreenSharingV2Profile.captureConfiguration(
       width: display.description.width, height: display.description.height)
-    return .init(displayID: display.id, identity: .init(display: display.id), configuration: configuration)
+    return .init(
+      displayID: display.id, identity: .init(display: display.id),
+      pixels: .init(width: display.description.width, height: display.description.height),
+      configuration: configuration)
   }
 
   func share(_ target: Target) {
     displayID = target.displayID
     displayIdentity = target.identity
+    displayPixels = target.pixels
     sharedMode = .init(display: target.displayID)
     physicalConfiguration = target.configuration
     configuration = target.configuration

@@ -150,7 +150,7 @@ final class ScreenSharingHostOwnershipFixture {
     let id = displayID(of: display)
     return .init(
       id: id, identity: .init(vendor: 1, model: 1, serial: id), isMain: id == CGMainDisplayID(),
-      isVirtual: kind(of: id) == .hostVirtual)
+      isVirtual: kind(of: id) == .hostVirtual, pixels: .init(width: display.width, height: display.height))
   }
 
   private func close() async {
