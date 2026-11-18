@@ -291,16 +291,17 @@ struct ScreenSharingV2HostTests {
     #expect(encoder.requests.map(\.refreshes) == [[:], [0: .keyframe]])
   }
 
-  @Test func aLossAfterAnAcknowledgedReferenceAsksForALongTermReferenceRefresh() async throws {
+  @Test(arguments: [9, UInt64.max])
+  func aLossAfterAnAcknowledgedReferenceAsksForALongTermReferenceRefresh(token: UInt64) async throws {
     let host = startedHost(encoder)
     defer { host.stop() }
 
-    try await sendFirstFrame(through: host, keyframe: true, token: 9)
+    try await sendFirstFrame(through: host, keyframe: true, token: token)
     try acknowledge(transport.sent[0])
     transport.emit(.frameLost(stream: 0, frame: 1))
     await encoder.encodes.cancellableWait(for: 2)
 
-    #expect(encoder.acknowledgedTokens == [9])
+    #expect(encoder.acknowledgedTokens == [token])
     #expect(encoder.requests.last?.refreshes == [0: .longTermReference])
   }
 

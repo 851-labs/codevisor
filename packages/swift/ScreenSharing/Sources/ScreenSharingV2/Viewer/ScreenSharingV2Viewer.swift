@@ -5,41 +5,6 @@ import Synchronization
 import VideoToolbox
 
 public final class ScreenSharingV2Viewer: @unchecked Sendable {
-  private struct State {
-    var gate = ScreenSharingV2RecoveryGate()
-    var assembly = ScreenSharingV2UpdateAssembly()
-    var canvas: ScreenSharingV2TileCanvas?
-    var encoder: ScreenSharingV2EncoderGeneration?
-    var nextComposite: UInt64 = 0
-
-    func shows(_ meta: ScreenSharingV2FrameMeta) -> Bool {
-      canvas?.layout == meta.layout && encoder == meta.encoder
-    }
-
-    mutating func follows(_ meta: ScreenSharingV2FrameMeta) -> Bool {
-      guard !shows(meta) else { return true }
-      guard !isReplaced(meta.encoder) else { return false }
-
-      if meta.encoder != encoder { gate.restart() }
-      encoder = meta.encoder
-      canvas = ScreenSharingV2TileCanvas(layout: meta.layout)
-      assembly.clear()
-      return true
-    }
-
-    private func isReplaced(_ sender: ScreenSharingV2EncoderGeneration?) -> Bool {
-      guard let sender, let encoder else { return false }
-
-      return encoder.replaces(sender)
-    }
-  }
-
-  private struct Composite: @unchecked Sendable {
-    let sequence: UInt64
-    let snapshot: ScreenSharingV2TileCanvas.Snapshot
-    let group: ScreenSharingV2UpdateAssembly.Group?
-  }
-
   private static let transportPollInterval = Duration.seconds(1)
 
   public let frames: ScreenSharingFrameMailbox
@@ -49,7 +14,7 @@ public final class ScreenSharingV2Viewer: @unchecked Sendable {
   private let composer = ScreenSharingV2FrameComposer()
   private let presentsTiles: Bool
   private let presentedComposite = Atomic<UInt64>(0)
-  private let state = Mutex(State())
+  private let state = Mutex(ScreenSharingV2Picture())
   private let stopped = Atomic(false)
   private var tasks: [Task<Void, Never>] = []
 
@@ -102,7 +67,7 @@ public final class ScreenSharingV2Viewer: @unchecked Sendable {
       return
     }
     guard let admission = admits(frame, meta: meta, receivedNs: receivedNs) else {
-      resolve(meta, tile: Int(frame.stream), .missing)
+      missing(meta, tile: Int(frame.stream))
       metrics.increment("framesDroppedAwaitingRecovery")
       return
     }
@@ -113,11 +78,11 @@ public final class ScreenSharingV2Viewer: @unchecked Sendable {
       }
     } catch ScreenSharingV2DecoderError.sessionLost {
       lostSession(frame.stream, admission: admission, atNs: receivedNs)
-      resolve(meta, tile: Int(frame.stream), .missing)
+      missing(meta, tile: Int(frame.stream))
     } catch {
       metrics.label("lastDecodeError", error.localizedDescription)
       failed(frame.stream, admission: admission, atNs: receivedNs)
-      resolve(meta, tile: Int(frame.stream), .missing)
+      missing(meta, tile: Int(frame.stream))
     }
   }
 
@@ -125,7 +90,7 @@ public final class ScreenSharingV2Viewer: @unchecked Sendable {
     _ frame: ScreenSharingReceivedFrame, meta: ScreenSharingV2FrameMeta, receivedNs: Int64
   ) -> ScreenSharingV2RecoveryGate.Admission? {
     let (admission, stalled) = state.withLock { state in
-      state.assembly.received(meta.update, tile: Int(frame.stream))
+      state.received(meta.update, tile: Int(frame.stream))
       let admission = state.gate.admits(stream: frame.stream, isKeyFrame: frame.isKeyFrame, isRefresh: meta.isRefresh)
       guard admission == nil else { return (admission, ScreenSharingTileRefresh?.none) }
 
@@ -147,8 +112,7 @@ public final class ScreenSharingV2Viewer: @unchecked Sendable {
     metrics.increment("skippedFrames")
     let composite = state.withLock { state in
       state.gate.skipped(stream: stream, atNs: nowNs)
-      state.assembly.skipped(tile: Int(stream))
-      return compose(&state)
+      return state.skipped(tile: Int(stream))
     }
     present(composite)
   }
@@ -186,7 +150,7 @@ public final class ScreenSharingV2Viewer: @unchecked Sendable {
       } else {
         failed(context.frame.stream, admission: admission, atNs: ScreenSharingMetrics.nowNs)
       }
-      resolve(context.meta, tile: Int(context.frame.stream), .missing)
+      missing(context.meta, tile: Int(context.frame.stream))
     }
   }
 
@@ -198,50 +162,26 @@ public final class ScreenSharingV2Viewer: @unchecked Sendable {
 
     metrics.increment("decodedFrames")
     metrics.observe("decode", milliseconds: Double(decodedNs - context.submittedNs) / 1_000_000)
-    let tile = Int(context.frame.stream)
-    let composite = state.withLock { state in
+    let outcome = ScreenSharingV2UpdateAssembly.Outcome.decoded(context, image)
+    let placement = state.withLock { state in
       if let stallNs = state.gate.decoded(stream: context.frame.stream, admission, atNs: decodedNs) {
         metrics.increment("recoveredTiles")
         metrics.observe("tileRecovery", milliseconds: Double(stallNs) / 1_000_000)
       }
-      guard state.shows(context.meta) else { return Composite?.none }
-
-      let current = state.assembly.resolve(update: context.meta.update.id, tile: tile, .decoded(context, image))
-      if !current {
-        metrics.increment("lateTiles")
-        state.canvas?.place(image, tile: tile)
-      }
-      return compose(&state, presentingLate: !current)
+      return state.resolved(outcome, of: context.meta, tile: Int(context.frame.stream))
     }
-    present(composite)
+    if placement?.isLate == true { metrics.increment("lateTiles") }
+    present(placement?.composite)
     guard let token = context.frame.ltrToken else { return }
 
     transport.acknowledge(ltrToken: token, stream: context.frame.stream)
   }
 
-  private func resolve(_ meta: ScreenSharingV2FrameMeta, tile: Int, _ outcome: ScreenSharingV2UpdateAssembly.Outcome) {
-    let composite = state.withLock { state in
-      guard state.shows(meta) else { return Composite?.none }
-
-      _ = state.assembly.resolve(update: meta.update.id, tile: tile, outcome)
-      return compose(&state)
-    }
-    present(composite)
+  private func missing(_ meta: ScreenSharingV2FrameMeta, tile: Int) {
+    present(state.withLock { $0.resolved(.missing, of: meta, tile: tile) }?.composite)
   }
 
-  private func compose(_ state: inout State, presentingLate: Bool = false) -> Composite? {
-    let ready = state.assembly.ready()
-    for released in ready {
-      for (tile, image) in released.images { state.canvas?.place(image, tile: tile) }
-    }
-    let group = ready.last { !$0.decoded.isEmpty }
-    guard group != nil || presentingLate, let snapshot = state.canvas?.snapshot else { return nil }
-
-    state.nextComposite += 1
-    return Composite(sequence: state.nextComposite, snapshot: snapshot, group: group)
-  }
-
-  private func present(_ composite: Composite?) {
+  private func present(_ composite: ScreenSharingV2Picture.Composite?) {
     guard let composite, !stopped.load(ordering: .relaxed) else { return }
 
     let startNs = ScreenSharingMetrics.nowNs
