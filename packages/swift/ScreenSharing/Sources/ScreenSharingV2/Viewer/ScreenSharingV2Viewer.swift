@@ -9,7 +9,29 @@ public final class ScreenSharingV2Viewer: @unchecked Sendable {
     var gate = ScreenSharingV2RecoveryGate()
     var assembly = ScreenSharingV2UpdateAssembly()
     var canvas: ScreenSharingV2TileCanvas?
+    var encoder: ScreenSharingV2EncoderGeneration?
     var nextComposite: UInt64 = 0
+
+    func shows(_ meta: ScreenSharingV2FrameMeta) -> Bool {
+      canvas?.layout == meta.layout && encoder == meta.encoder
+    }
+
+    mutating func follows(_ meta: ScreenSharingV2FrameMeta) -> Bool {
+      guard !shows(meta) else { return true }
+      guard !isReplaced(meta.encoder) else { return false }
+
+      if meta.encoder != encoder { gate.restart() }
+      encoder = meta.encoder
+      canvas = ScreenSharingV2TileCanvas(layout: meta.layout)
+      assembly.clear()
+      return true
+    }
+
+    private func isReplaced(_ sender: ScreenSharingV2EncoderGeneration?) -> Bool {
+      guard let sender, let encoder else { return false }
+
+      return encoder.replaces(sender)
+    }
   }
 
   private struct Composite: @unchecked Sendable {
@@ -75,6 +97,10 @@ public final class ScreenSharingV2Viewer: @unchecked Sendable {
       metrics.increment("unreadableMeta")
       return
     }
+    guard state.withLock({ $0.follows(meta) }) else {
+      metrics.increment("framesFromReplacedEncoder")
+      return
+    }
     guard let admission = admits(frame, meta: meta, receivedNs: receivedNs) else {
       resolve(meta, tile: Int(frame.stream), .missing)
       metrics.increment("framesDroppedAwaitingRecovery")
@@ -99,10 +125,6 @@ public final class ScreenSharingV2Viewer: @unchecked Sendable {
     _ frame: ScreenSharingReceivedFrame, meta: ScreenSharingV2FrameMeta, receivedNs: Int64
   ) -> ScreenSharingV2RecoveryGate.Admission? {
     let (admission, stalled) = state.withLock { state in
-      if state.canvas?.layout != meta.layout {
-        state.canvas = ScreenSharingV2TileCanvas(layout: meta.layout)
-        state.assembly.clear()
-      }
       state.assembly.received(meta.update, tile: Int(frame.stream))
       let admission = state.gate.admits(stream: frame.stream, isKeyFrame: frame.isKeyFrame, isRefresh: meta.isRefresh)
       guard admission == nil else { return (admission, ScreenSharingTileRefresh?.none) }
@@ -182,7 +204,7 @@ public final class ScreenSharingV2Viewer: @unchecked Sendable {
         metrics.increment("recoveredTiles")
         metrics.observe("tileRecovery", milliseconds: Double(stallNs) / 1_000_000)
       }
-      guard state.canvas?.layout == context.meta.layout else { return Composite?.none }
+      guard state.shows(context.meta) else { return Composite?.none }
 
       let current = state.assembly.resolve(update: context.meta.update.id, tile: tile, .decoded(context, image))
       if !current {
@@ -199,6 +221,8 @@ public final class ScreenSharingV2Viewer: @unchecked Sendable {
 
   private func resolve(_ meta: ScreenSharingV2FrameMeta, tile: Int, _ outcome: ScreenSharingV2UpdateAssembly.Outcome) {
     let composite = state.withLock { state in
+      guard state.shows(meta) else { return Composite?.none }
+
       _ = state.assembly.resolve(update: meta.update.id, tile: tile, outcome)
       return compose(&state)
     }

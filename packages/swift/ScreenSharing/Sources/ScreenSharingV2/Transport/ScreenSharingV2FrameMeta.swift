@@ -3,6 +3,7 @@ import Foundation
 public struct ScreenSharingV2FrameMeta: Equatable, Sendable {
   public static let version: UInt8 = 2
   static let byteCount = 46
+  private static let encoderByteCount = 4
   private static let refreshFlag: UInt8 = 1
   private static let refinementFlag: UInt8 = 2
 
@@ -15,10 +16,12 @@ public struct ScreenSharingV2FrameMeta: Equatable, Sendable {
   public let isRefresh: Bool
   public let update: ScreenSharingTileUpdate
   public let layout: ScreenSharingV2TileLayout
+  public let encoder: ScreenSharingV2EncoderGeneration?
 
   public init(
     sourceTimestampNs: Int64, clock: UInt64, captureUs: UInt32, admissionUs: UInt32, encodeUs: UInt32,
-    handOffUs: UInt32, isRefresh: Bool, update: ScreenSharingTileUpdate, layout: ScreenSharingV2TileLayout
+    handOffUs: UInt32, isRefresh: Bool, update: ScreenSharingTileUpdate, layout: ScreenSharingV2TileLayout,
+    encoder: ScreenSharingV2EncoderGeneration?
   ) {
     self.sourceTimestampNs = sourceTimestampNs
     self.clock = clock
@@ -29,6 +32,7 @@ public struct ScreenSharingV2FrameMeta: Equatable, Sendable {
     self.isRefresh = isRefresh
     self.update = update
     self.layout = layout
+    self.encoder = encoder
   }
 
   public init(_ data: Data) throws {
@@ -59,10 +63,12 @@ public struct ScreenSharingV2FrameMeta: Equatable, Sendable {
     update = ScreenSharingTileUpdate(
       id: updateID, tiles: Set((0..<count).filter { mask & (1 << $0) != 0 }),
       isRefinement: flags & Self.refinementFlag != 0)
+    let namesEncoder = data.count >= Self.byteCount + Self.encoderByteCount
+    encoder = namesEncoder ? ScreenSharingV2EncoderGeneration(number: reader.integer(UInt32.self)) : nil
   }
 
   public var data: Data {
-    var data = Data(capacity: Self.byteCount)
+    var data = Data(capacity: Self.byteCount + Self.encoderByteCount)
     data.append(Self.version)
     data.append((isRefresh ? Self.refreshFlag : 0) | (update.isRefinement ? Self.refinementFlag : 0))
     Self.append(update.id, to: &data)
@@ -74,6 +80,7 @@ public struct ScreenSharingV2FrameMeta: Equatable, Sendable {
     Self.append(UInt64(bitPattern: sourceTimestampNs), to: &data)
     Self.append(clock, to: &data)
     for value in [captureUs, admissionUs, encodeUs, handOffUs] { Self.append(value, to: &data) }
+    if let encoder { Self.append(encoder.number, to: &data) }
     return data
   }
 

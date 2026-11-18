@@ -2,7 +2,8 @@ import ScreenSharing
 
 enum ScreenSharingV2HostTiming {
   static func meta(
-    for tile: ScreenSharingEncodedTile, layout: ScreenSharingV2TileLayout, sendingNs: Int64
+    for tile: ScreenSharingEncodedTile, layout: ScreenSharingV2TileLayout,
+    encoder: ScreenSharingV2EncoderGeneration, sendingNs: Int64
   ) -> ScreenSharingV2FrameMeta {
     ScreenSharingV2FrameMeta(
       sourceTimestampNs: tile.sourceTimestampNs, clock: ScreenSharingClockIdentity.current,
@@ -10,7 +11,7 @@ enum ScreenSharingV2HostTiming {
       admissionUs: microseconds(from: tile.capturedNs, to: tile.submittedNs),
       encodeUs: microseconds(from: tile.submittedNs, to: tile.encodedNs),
       handOffUs: microseconds(from: tile.encodedNs, to: sendingNs), isRefresh: tile.recovers, update: tile.update,
-      layout: layout)
+      layout: layout, encoder: encoder)
   }
 
   private static func microseconds(from start: Int64, to end: Int64) -> UInt32 {

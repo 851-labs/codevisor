@@ -14,6 +14,7 @@ public final class ScreenSharingV2Host: ScreenSharingFrameSink, @unchecked Senda
   private let transport: any ScreenSharingMediaTransport
   private let encoder: any ScreenSharingTileEncoder
   private let layout: ScreenSharingV2TileLayout
+  private let generation = ScreenSharingV2EncoderGeneration.next()
   private let scheduler: any ScreenSharingV2Scheduler
   private let queue = DispatchQueue(label: "codevisor.screen-sharing.v2.host", qos: .userInteractive)
   private var slot: ScreenSharingV2CaptureSlot
@@ -291,9 +292,11 @@ public final class ScreenSharingV2Host: ScreenSharingFrameSink, @unchecked Senda
   }
 
   private func send(_ tile: ScreenSharingEncodedTile) {
-    let meta = ScreenSharingV2HostTiming.meta(for: tile, layout: layout, sendingNs: ScreenSharingMetrics.nowNs)
+    let meta = ScreenSharingV2HostTiming.meta(
+      for: tile, layout: layout, encoder: generation, sendingNs: ScreenSharingMetrics.nowNs)
+    let sentToken = tile.ltrToken.flatMap(generation.sentToken)
     do {
-      try transport.send(tile, meta: meta.data)
+      try transport.send(tile.withToken(sentToken), meta: meta.data)
       metrics.increment(Self.sentFramesMetric)
       queue.async { [self] in recovery.sent(tile) }
     } catch {
@@ -338,8 +341,9 @@ public final class ScreenSharingV2Host: ScreenSharingFrameSink, @unchecked Senda
     pump()
   }
 
-  private func acknowledged(_ token: UInt64, tile: Int) {
-    guard recovery.acknowledged(token: token, tile: tile) else {
+  private func acknowledged(_ sentToken: UInt64, tile: Int) {
+    guard let token = generation.token(acknowledgedAs: sentToken), recovery.acknowledged(token: token, tile: tile)
+    else {
       metrics.increment("staleLTRAcknowledgements")
       return
     }

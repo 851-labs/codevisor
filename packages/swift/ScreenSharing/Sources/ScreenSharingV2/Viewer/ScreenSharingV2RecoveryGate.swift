@@ -76,6 +76,10 @@ struct ScreenSharingV2RecoveryGate {
     return entry.state == .needsKeyframe ? .keyframe : .longTermReference
   }
 
+  mutating func restart() {
+    for stream in streams.keys { streams[stream] = Stream(epoch: streams[stream]?.epoch ?? 0) }
+  }
+
   private mutating func ask(
     _ refresh: ScreenSharingTileRefresh, stream: UInt8, atNs nowNs: Int64
   ) -> ScreenSharingTileRefresh {

@@ -296,7 +296,7 @@ struct ScreenSharingV2HostTests {
     defer { host.stop() }
 
     try await sendFirstFrame(through: host, keyframe: true, token: 9)
-    transport.emit(.ltrAcked(stream: 0, token: 9))
+    try acknowledge(transport.sent[0])
     transport.emit(.frameLost(stream: 0, frame: 1))
     await encoder.encodes.cancellableWait(for: 2)
 
@@ -313,9 +313,23 @@ struct ScreenSharingV2HostTests {
     await encoder.encodes.cancellableWait(for: 2)
     encoder.emitTile(of: encoder.requests[1], keyframe: true, token: nil)
     await transport.sends.cancellableWait(for: 2)
-    transport.emit(.ltrAcked(stream: 0, token: 9))
+    try acknowledge(transport.sent[0])
     transport.emit(.frameLost(stream: 0, frame: 1))
     await encoder.encodes.cancellableWait(for: 3)
+
+    #expect(encoder.acknowledgedTokens.isEmpty)
+    #expect(encoder.requests.last?.refreshes == [0: .keyframe])
+  }
+
+  @Test func anAcknowledgementOfAFrameAnEarlierEncoderSentIsNotTaken() async throws {
+    let earlier = try await tileSentByAnEarlierEncoder(token: 0)
+    let host = startedHost(encoder)
+    defer { host.stop() }
+
+    try await sendFirstFrame(through: host, keyframe: true, token: 0)
+    try acknowledge(earlier)
+    transport.emit(.frameLost(stream: 0, frame: 1))
+    await encoder.encodes.cancellableWait(for: 2)
 
     #expect(encoder.acknowledgedTokens.isEmpty)
     #expect(encoder.requests.last?.refreshes == [0: .keyframe])
@@ -356,7 +370,7 @@ struct ScreenSharingV2HostTests {
     defer { host.stop() }
 
     try await sendFirstFrame(through: host, keyframe: true, token: 9)
-    transport.emit(.ltrAcked(stream: 0, token: 9))
+    try acknowledge(transport.sent[0])
     transport.emit(.refreshRequested(stream: 0, keyframe: false))
     await encoder.encodes.cancellableWait(for: 2)
     encoder.emitTile(of: encoder.requests[1], keyframe: false, token: nil, refresh: .longTermReference)
@@ -374,7 +388,7 @@ struct ScreenSharingV2HostTests {
     host.push(try TestPixels.frame(shade: 10, timestampNs: 1_000))
     await encoder.encodes.cancellableWait(for: 1)
     for tile in 0..<4 { encoder.emitTile(of: encoder.requests[0], tile: tile, keyframe: true, token: UInt64(tile)) }
-    for tile in 0..<4 { transport.emit(.ltrAcked(stream: UInt8(tile), token: UInt64(tile))) }
+    for tile in transport.sent { try acknowledge(tile) }
     transport.emit(.frameLost(stream: 2, frame: 2))
     for (index, frame) in [UInt32(4), 5, 6].enumerated() {
       await encoder.encodes.cancellableWait(for: index + 2)
@@ -403,6 +417,23 @@ struct ScreenSharingV2HostTests {
     #expect(early == 1)
     #expect(encoder.networkFeedback.count == 2)
     #expect(encoder.networkFeedback.first?.transmissionBitsPerSecond == 100_000_000)
+  }
+
+  private func acknowledge(_ sent: ScreenSharingEncodedTile) throws {
+    transport.emit(.ltrAcked(stream: UInt8(sent.tile), token: try #require(sent.ltrToken)))
+  }
+
+  private func tileSentByAnEarlierEncoder(token: UInt64) async throws -> ScreenSharingEncodedTile {
+    let (encoder, transport) = (RecordingTileEncoder(), LoopbackMediaTransport())
+    let host = ScreenSharingV2Host(
+      transport: transport, encoder: encoder, metrics: ScreenSharingMetrics(),
+      initialBitrate: ScreenSharingV2Profile.bitrateCeiling, scheduler: scheduler)
+    host.start()
+    defer { host.stop() }
+    host.push(try TestPixels.frame(shade: 10, timestampNs: 1_000))
+    await encoder.encodes.cancellableWait(for: 1)
+    encoder.emitTile(of: encoder.requests[0], keyframe: true, token: token)
+    return try #require(transport.sent.first)
   }
 
   private func sendFirstFrame(through host: ScreenSharingV2Host, keyframe: Bool, token: UInt64?) async throws {

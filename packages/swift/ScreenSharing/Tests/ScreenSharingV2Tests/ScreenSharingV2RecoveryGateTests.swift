@@ -110,6 +110,19 @@ struct ScreenSharingV2RecoveryGateTests {
     #expect(asks == [nil, .keyframe])
   }
 
+  @Test func afterARestartAStreamWaitsForAKeyframeAndEarlierFramesNoLongerCount() throws {
+    var gate = ScreenSharingV2RecoveryGate()
+    let earlier = try Self.admit(&gate, keyframe: true, refresh: true)
+
+    gate.restart()
+
+    #expect(gate.admits(stream: 0, isKeyFrame: false, isRefresh: true) == nil)
+    #expect(gate.failed(stream: 0, earlier, atNs: 0) == nil)
+    _ = try Self.admit(&gate, keyframe: true, refresh: false)
+    #expect(gate.failed(stream: 0, earlier, atNs: 0) == nil)
+    #expect(gate.state(of: 0) == .decoding)
+  }
+
   @Test func aLostSessionReportedForAFrameFromBeforeTheLatestRecoveryIsIgnored() throws {
     var gate = ScreenSharingV2RecoveryGate()
     let first = try Self.admit(&gate, keyframe: true, refresh: true)
