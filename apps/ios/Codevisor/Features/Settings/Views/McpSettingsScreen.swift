@@ -10,11 +10,7 @@ struct McpSettingsScreen: View {
   @State private var openedPlugin: String?
   @State private var installed: ServerMcpServer?
 
-  private var authoringMachineId: String {
-    let selected = environment.machines.selectedMachineId
-    guard !supportsPlugins(selected) else { return selected }
-    return environment.machines.allMachines.map(\.id).first(where: supportsPlugins) ?? selected
-  }
+  private var authoringMachineId: String { environment.machines.selectedMachineId }
 
   var body: some View {
     List {
@@ -33,9 +29,7 @@ struct McpSettingsScreen: View {
     .toolbar {
       ToolbarItem(placement: .topBarTrailing) {
         Menu {
-          if supportsCatalog {
-            Button("Browse Plugins…") { showingCatalog = true }
-          }
+          Button("Browse Plugins…") { showingCatalog = true }
           Button("Add MCP…") { addingCustom = true }
         } label: {
           Label("Add", systemImage: "plus")
@@ -67,14 +61,6 @@ struct McpSettingsScreen: View {
         McpFleetEntryLabel(entry: entry, model: model) { McpEntryIcon(entry: entry) }
       }
     }
-  }
-
-  private var supportsCatalog: Bool {
-    supportsPlugins(authoringMachineId)
-  }
-
-  private func supportsPlugins(_ machineId: String) -> Bool {
-    environment.machines.statusByMachineId[machineId]?.supportsPlugins == true
   }
 
   private func openInstalled() {

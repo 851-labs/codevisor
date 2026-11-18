@@ -32,7 +32,6 @@ struct McpSettingsView: View {
     .formStyle(.grouped)
     .settingsAddToolbarItem {
       PluginAddMenu(
-        canBrowse: supportsCatalog,
         onBrowse: { SettingsRouter.shared.panePath.append(.pluginCatalog) },
         onAddCustom: { showingCustom = true })
     }
@@ -52,10 +51,6 @@ struct McpSettingsView: View {
         McpFleetEntryLabel(entry: entry, model: model) { McpEntryIcon(entry: entry) }
       }
     }
-  }
-
-  private var supportsCatalog: Bool {
-    environment.machines.statusByMachineId[CodevisorMachine.local.id]?.supportsPlugins == true
   }
 
   private func recordConsent(for values: McpFormValues) async throws {

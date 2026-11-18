@@ -32,7 +32,6 @@ struct MachineStatusFeaturesTests {
     let status = try #require(controller.statusByMachineId[remote.id])
     #expect(status.features == ["plugins-v2", "screen-sharing-v1"])
     #expect(status.supportsScreenSharing)
-    #expect(status.supportsPlugins)
     #expect(status.uploadLimitBytes == 524_288_000)
   }
 
