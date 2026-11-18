@@ -36,12 +36,25 @@ public final class ActiveTranscriptProjection {
     if let observation { observation.clock.removePresentObserver(observation.id) }
     observation = nil
     worker.cancel()
+    forgetRows()
+  }
+
+  private func forgetRows() {
+    staging.ready = nil
+    staging.latestKey = nil
+    if !rows.isEmpty || textRestorationID != nil {
+      rows = []
+      textRestorationID = nil
+      rowsVersion &+= 1
+    }
+    if publishedKey != nil { publishedKey = nil }
   }
 
   private func publishStaged() {
     guard let ready = staging.takePublishable() else { return }
 
-    if ready.rows != rows || ready.restorationID != textRestorationID {
+    let staysEmpty = ready.rows.isEmpty && rows.isEmpty && ready.restorationID == textRestorationID
+    if !staysEmpty {
       rows = ready.rows
       textRestorationID = ready.restorationID
       rowsVersion &+= 1

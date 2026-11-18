@@ -349,6 +349,8 @@ final class VirtualizedTranscriptScrollView: NSScrollView {
   }
 
   override func layout() {
+    guard !isHidden else { return super.layout() }
+
     let previousSize = lastViewportSize
     let previousDistance = lastViewportDistanceFromBottom
     super.layout()

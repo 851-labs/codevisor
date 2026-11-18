@@ -30,7 +30,7 @@ struct ComposerCard: View {
   @State var didAcceptSubmission = false
   @State private var isPickingFiles = false
   @State private var isPickingPhotos = false
-  @State private var sendSource = ComposerSendSource()
+  @State var sendSource = ComposerSendSource()
 
   private static let slashMenuMaxHeight: CGFloat = 220
 

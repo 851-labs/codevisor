@@ -25,12 +25,15 @@ extension VirtualizedTranscriptScrollView: TranscriptFrameAdapter {
   }
 
   func setAside() {
+    persistViewport()
     hasVerticalScroller = false
     isHidden = true
   }
 
   func showFromAside() {
+    isAwaitingWarmProjection = initialPresentationGate.isReady
     isHidden = false
+    needsLayout = true
     DispatchQueue.main.async { [weak self] in
       guard let self, !isHidden, !hasVerticalScroller else { return }
 

@@ -21,5 +21,6 @@ extension ComposerCard {
     didAcceptSubmission = false
     slashSelection = 0
     isSlashMenuDismissed = false
+    sendSource.textView?.undoManager?.removeAllActions()
   }
 }

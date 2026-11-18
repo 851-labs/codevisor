@@ -65,6 +65,13 @@ struct NativeTranscriptView: NSViewRepresentable {
       reclaimSurface = nil
     }
 
+    func makeRoom() {
+      let aside = keepsSurfacesAside ? asideSurfaces.compactMap(\.existingScrollView) : []
+      for subview in subviews where !aside.contains(where: { $0 === subview }) {
+        subview.removeFromSuperview()
+      }
+    }
+
     func takeFromAside(_ surface: TranscriptPresentationSurface) {
       asideSurfaces.removeAll { $0 === surface || $0.existingScrollView?.superview !== self }
     }
@@ -149,11 +156,7 @@ struct NativeTranscriptView: NSViewRepresentable {
     (scrollView.superview as? SurfaceContainerView)?
       .relinquishSurface(presentationSurface)
     scrollView.removeFromSuperview()
-    if container.keepsSurfacesAside {
-      for case let aside as VirtualizedTranscriptScrollView in container.subviews { aside.setAside() }
-    } else {
-      container.subviews.forEach { $0.removeFromSuperview() }
-    }
+    container.makeRoom()
     scrollView.isHidden = false
     if !scrollView.hasVerticalScroller { scrollView.hasVerticalScroller = true }
     scrollView.translatesAutoresizingMaskIntoConstraints = false

@@ -38,20 +38,33 @@ struct ActiveTranscriptProjectionTests {
     #expect(projection.rows.isEmpty)
   }
 
-  @Test("Presenting the same rows again is not a new version")
-  func sameRowsKeepTheirVersion() {
+  @Test("Presenting no rows again is not a new version, presenting rows is")
+  func emptyRowsKeepTheirVersion() {
     let projection = ActiveTranscriptProjection()
     projection.observeFrames(of: controller.presentationClock, for: UUID())
-    present([row], in: projection)
+    present([], in: projection)
     let version = projection.rowsVersion
-
-    present([row], in: projection)
-
-    #expect(projection.rowsVersion == version)
 
     present([], in: projection)
 
+    #expect(projection.rowsVersion == version)
+
+    present([row], in: projection)
+
     #expect(projection.rowsVersion == version + 1)
+  }
+
+  @Test("Rows are forgotten when the last view leaves, so the next view starts clean")
+  func leavingForgetsRows() {
+    let projection = ActiveTranscriptProjection()
+    let view = UUID()
+    projection.observeFrames(of: controller.presentationClock, for: view)
+    present([row], in: projection)
+
+    projection.stopObservingFrames(for: view)
+
+    #expect(projection.rows.isEmpty)
+    #expect(projection.publishedKey == nil)
   }
 
   private func present(_ rows: [TranscriptPresentationRow], in projection: ActiveTranscriptProjection) {
