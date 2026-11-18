@@ -30,14 +30,8 @@ struct ChatScreen: View {
   let presentationSurface: TranscriptPresentationSurface
   let isReadOnly: Bool
   let presentsBotConversation: Bool
-  @State var isAtBottom: Bool
-  @State var earlierHistoryCollapse: TranscriptEarlierHistoryCollapse?
-  @State var autoFollow: Bool
-  @State var composerCardHeight: CGFloat = 0
-  @State var scrollCommand = TranscriptScrollCommand()
   @State var historyLoadTask: Task<Void, Never>?
-  @State var isTranscriptMounted: Bool
-  @State var isInitialTranscriptReady: Bool
+  @State var reportsScrollState = true
   @State var showsInitialLoadingSpinner = false
   @State var presentationVisibilityOwner = UUID()
   @State var showsPromptQueue = false
@@ -71,13 +65,6 @@ struct ChatScreen: View {
     self.presentationSurface = presentationSurface
     self.isReadOnly = isReadOnly
     self.presentsBotConversation = presentsBotConversation
-    let isWarm = presentationSurface.isWarm
-    _isAtBottom = State(initialValue: controller.scrollState?.isAtBottom ?? true)
-    _autoFollow = State(
-      initialValue: controller.scrollState?.followMode.followsLatest ?? true
-    )
-    _isTranscriptMounted = State(initialValue: isWarm)
-    _isInitialTranscriptReady = State(initialValue: isWarm)
   }
 
   var attachmentImages: AttachmentImageStore { SessionAttachmentImages.store(for: controller) }
@@ -113,11 +100,13 @@ struct ChatScreen: View {
       .animation(Motion.quick(reduceMotion: reduceMotion), value: earlierHistoryCollapse)
       .animation(Motion.quick(reduceMotion: reduceMotion), value: presentationSurface.findModel.isPresented)
       .onAppear {
+        reportsScrollState = true
         autoFollow = controller.scrollState?.followMode.followsLatest ?? true
         isAtBottom = controller.scrollState?.isAtBottom ?? true
       }
       .onWorkspaceVisibilityChange(show: showPresentation, hide: hidePresentation)
       .onDisappear {
+        reportsScrollState = false
         historyLoadTask?.cancel()
         historyLoadTask = nil
       }
@@ -129,7 +118,7 @@ struct ChatScreen: View {
           isTranscriptMounted = true
           return
         }
-        isTranscriptMounted = false
+        guard !isTranscriptMounted else { return }
         await Task.yield()
         try? await Task.sleep(for: .milliseconds(16))
         guard !Task.isCancelled else { return }

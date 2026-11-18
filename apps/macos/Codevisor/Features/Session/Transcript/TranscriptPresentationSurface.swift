@@ -12,6 +12,7 @@ final class TranscriptPresentationSurface {
   let projection = TranscriptSettledProjection()
   let workedRowsVisibility = TranscriptWorkedRowsVisibilityCache()
   let composer = TranscriptComposerMetrics()
+  let presentation: ChatPresentationState
 
   private weak var controller: SessionController?
   private var retainedScrollView: VirtualizedTranscriptScrollView?
@@ -19,6 +20,7 @@ final class TranscriptPresentationSurface {
 
   init(controller: SessionController) {
     self.controller = controller
+    presentation = ChatPresentationState(scrollState: controller.scrollState)
   }
 
   var existingScrollView: VirtualizedTranscriptScrollView? { retainedScrollView }
@@ -61,6 +63,7 @@ final class TranscriptPresentationSurface {
     scrollView.removeFromSuperview()
     visibilityOwners.removeAll()
     textAnimationVisibility.disappear()
+    presentation.forgetMount()
   }
 }
 
