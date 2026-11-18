@@ -20,6 +20,7 @@ struct NativeTranscriptView: NSViewRepresentable {
     var presentationSurface: TranscriptPresentationSurface?
     var reclaimSurface: (() -> Void)?
     var keepsSurfacesAside = false
+    private var asideSurfaces: [TranscriptPresentationSurface] = []
 
     override func layout() {
       super.layout()
@@ -43,18 +44,29 @@ struct NativeTranscriptView: NSViewRepresentable {
       }
       presentationSurface = nil
       reclaimSurface = nil
-      for case let aside as VirtualizedTranscriptScrollView in subviews {
-        aside.prepareForDismantle()
-        aside.removeFromSuperview()
+      for surface in asideSurfaces {
+        guard let scrollView = surface.existingScrollView, scrollView.superview === self else { continue }
+
+        scrollView.prepareForDismantle()
+        scrollView.removeFromSuperview()
+        if !surface.isWarm { surface.presentation.forgetMount() }
       }
+      asideSurfaces.removeAll()
     }
 
     func setSurfaceAside() {
-      if let scrollView = presentationSurface?.existingScrollView, scrollView.superview === self {
+      if let presentationSurface, let scrollView = presentationSurface.existingScrollView,
+        scrollView.superview === self
+      {
         scrollView.setAside()
+        asideSurfaces.append(presentationSurface)
       }
       presentationSurface = nil
       reclaimSurface = nil
+    }
+
+    func takeFromAside(_ surface: TranscriptPresentationSurface) {
+      asideSurfaces.removeAll { $0 === surface || $0.existingScrollView?.superview !== self }
     }
 
     func relinquishSurface(_ surface: TranscriptPresentationSurface) {
@@ -101,6 +113,7 @@ struct NativeTranscriptView: NSViewRepresentable {
     }
     container.presentationSurface = presentationSurface
     let scrollView = presentationSurface.ensureScrollView()
+    container.takeFromAside(presentationSurface)
     if scrollView.superview === container {
       scrollView.showFromAside()
     } else {
@@ -142,6 +155,7 @@ struct NativeTranscriptView: NSViewRepresentable {
       container.subviews.forEach { $0.removeFromSuperview() }
     }
     scrollView.isHidden = false
+    if !scrollView.hasVerticalScroller { scrollView.hasVerticalScroller = true }
     scrollView.translatesAutoresizingMaskIntoConstraints = false
     container.addSubview(scrollView)
     NSLayoutConstraint.activate([

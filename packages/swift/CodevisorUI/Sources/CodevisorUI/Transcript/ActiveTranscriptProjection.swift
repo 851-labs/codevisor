@@ -14,10 +14,12 @@ public final class ActiveTranscriptProjection {
   @ObservationIgnored let staging = ActiveTranscriptProjectionStaging()
   @ObservationIgnored let worker = TranscriptActiveProjectionWorker()
   @ObservationIgnored private var observation: (clock: TranscriptPresentationClock, id: UUID)?
+  @ObservationIgnored private var observers: Set<UUID> = []
 
   public init() {}
 
-  func observeFrames(of clock: TranscriptPresentationClock) {
+  func observeFrames(of clock: TranscriptPresentationClock, for observer: UUID) {
+    observers.insert(observer)
     if let observation {
       guard observation.clock !== clock else { return }
 
@@ -27,7 +29,10 @@ public final class ActiveTranscriptProjection {
     observation = (clock, id)
   }
 
-  func stopObservingFrames() {
+  func stopObservingFrames(for observer: UUID) {
+    observers.remove(observer)
+    guard observers.isEmpty else { return }
+
     if let observation { observation.clock.removePresentObserver(observation.id) }
     observation = nil
     worker.cancel()
@@ -36,9 +41,11 @@ public final class ActiveTranscriptProjection {
   private func publishStaged() {
     guard let ready = staging.takePublishable() else { return }
 
-    rows = ready.rows
-    textRestorationID = ready.restorationID
-    rowsVersion &+= 1
-    publishedKey = ready.key
+    if ready.rows != rows || ready.restorationID != textRestorationID {
+      rows = ready.rows
+      textRestorationID = ready.restorationID
+      rowsVersion &+= 1
+    }
+    if publishedKey != ready.key { publishedKey = ready.key }
   }
 }

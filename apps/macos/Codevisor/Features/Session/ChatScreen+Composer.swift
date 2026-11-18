@@ -25,6 +25,7 @@ extension ChatScreen {
           glassNamespace: composerGlassNamespace
         )
         .transition(Motion.unfold(reduceMotion: reduceMotion, anchor: .bottom))
+        .id(ObjectIdentifier(controller))
       }
       if controller.supportsGoals, !controller.isGoalEditing {
         if let model = controller.model {
@@ -33,12 +34,14 @@ extension ChatScreen {
             model: model,
             glassNamespace: composerGlassNamespace
           )
+          .id(ObjectIdentifier(controller))
         } else if let goal = controller.draftGoal {
           GoalBannerView(
             controller: controller,
             goal: goal,
             glassNamespace: composerGlassNamespace
           )
+          .id(ObjectIdentifier(controller))
         }
       }
       if showsPromptQueue {
@@ -50,6 +53,7 @@ extension ChatScreen {
             focus.focusComposer()
           }
         )
+        .id(ObjectIdentifier(controller))
       }
       composerNoticeRail
       ComposerCard(

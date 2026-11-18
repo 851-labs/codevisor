@@ -77,7 +77,9 @@ struct ChatScreen: View {
 
   var body: some View {
     transcriptSurface
-      .onChange(of: controller.userSendSignal) { _, _ in
+      .onChange(of: ChatSignal(controller.userSendSignal, of: controller)) { old, new in
+        guard old.isSameChat(as: new) else { return }
+
         autoFollow = true
         scrollCommand.token &+= 1
       }
@@ -87,7 +89,9 @@ struct ChatScreen: View {
       .onChange(of: controller.quoteRevealRequest, initial: true) { _, _ in
         revealRequestedQuote()
       }
-      .onChange(of: controller.transcriptPickSignal) { _, _ in
+      .onChange(of: ChatSignal(controller.transcriptPickSignal, of: controller)) { old, new in
+        guard old.isSameChat(as: new) else { return }
+
         presentationSurface.ensureScrollView().holdViewportForComposerChange()
       }
       .overlay { initialLoadingOverlay }
@@ -188,6 +192,7 @@ struct ChatScreen: View {
     historyLoadTask = nil
     _ = queueSends.sentSinceLastCheck(in: controller)
     withTransaction(\.disablesAnimations, true) { showsPromptQueue = hasPromptQueue }
+    if let previous = old.controller.serverSession?.id { focus.forgetChat(previous) }
     if let textView = focus.composerTextView, let chatId = controller.serverSession?.id {
       focus.registerComposer(textView, forChat: chatId)
     }

@@ -22,9 +22,9 @@ struct ComposerCard: View {
   @Environment(\.usesSlimComposer) private var usesSlimComposer
   @State private var editorHeight: CGFloat = ChatInputEditor.singleLineHeight
   @State var selection = NSRange(location: 0, length: 0)
-  @State private var slashSelection = 0
+  @State var slashSelection = 0
   @State var promptHistory: ComposerPromptHistory?
-  @State private var isSlashMenuDismissed = false
+  @State var isSlashMenuDismissed = false
   @State private var slashMenuContentHeight: CGFloat = 0
   @State var didStartResolvingQuestion = false
   @State var didAcceptSubmission = false
@@ -123,8 +123,8 @@ struct ComposerCard: View {
       controller.attachments.attachFileURLs(urls)
     }
     .modifier(ComposerPhotosPicker(isPresented: $isPickingPhotos, controller: controller))
-    .onChange(of: controller.submitRequest) { _, _ in
-      sendDraft(delivery: .steer)
+    .onChange(of: ChatSignal(controller.submitRequest, of: controller)) { old, new in
+      if old.isSameChat(as: new) { sendDraft(delivery: .steer) }
     }
     .onChange(of: chatScope) { old, new in
       chatScopeChanged(from: old, to: new)

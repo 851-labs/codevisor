@@ -31,6 +31,11 @@ extension VirtualizedTranscriptScrollView: TranscriptFrameAdapter {
 
   func showFromAside() {
     isHidden = false
+    DispatchQueue.main.async { [weak self] in
+      guard let self, !isHidden, !hasVerticalScroller else { return }
+
+      hasVerticalScroller = true
+    }
   }
 
   func prepareForDismantle() {

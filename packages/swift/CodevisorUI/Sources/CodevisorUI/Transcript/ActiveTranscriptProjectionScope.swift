@@ -13,7 +13,8 @@ public struct ActiveTranscriptProjectionScope<Content: View>: View {
   @State private var publishedProjectionKey: TaskKey?
   @State private var projectionStaging = ProjectionStaging()
   @State private var projectionWorker = TranscriptActiveProjectionWorker()
-  @State private var ownProjection = ActiveTranscriptProjection()
+  @State private var ownProjection = ActiveTranscriptProjectionFallback()
+  @State private var frameObserver = UUID()
 
   public init(
     controller: SessionController,
@@ -27,7 +28,7 @@ public struct ActiveTranscriptProjectionScope<Content: View>: View {
     self.content = content
   }
 
-  private var projection: ActiveTranscriptProjection { sharedProjection ?? ownProjection }
+  private var projection: ActiveTranscriptProjection { sharedProjection ?? ownProjection.projection }
 
   public var body: some View {
     #if os(macOS)
@@ -53,12 +54,12 @@ public struct ActiveTranscriptProjectionScope<Content: View>: View {
         staging: projection.staging
       )
     }
-    .onAppear { projection.observeFrames(of: controller.presentationClock) }
+    .onAppear { projection.observeFrames(of: controller.presentationClock, for: frameObserver) }
     .onChange(of: ActiveTranscriptProjectionBinding(projection: projection, controller: controller)) { old, new in
-      old.projection.stopObservingFrames()
-      new.projection.observeFrames(of: new.controller.presentationClock)
+      old.projection.stopObservingFrames(for: frameObserver)
+      new.projection.observeFrames(of: new.controller.presentationClock, for: frameObserver)
     }
-    .onDisappear { projection.stopObservingFrames() }
+    .onDisappear { projection.stopObservingFrames(for: frameObserver) }
   }
 
   @ViewBuilder

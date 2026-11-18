@@ -19,5 +19,7 @@ extension ComposerCard {
     selection = NSRange(location: (controller.composerText as NSString).length, length: 0)
     promptHistory = nil
     didAcceptSubmission = false
+    slashSelection = 0
+    isSlashMenuDismissed = false
   }
 }

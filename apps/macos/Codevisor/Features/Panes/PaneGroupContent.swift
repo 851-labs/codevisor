@@ -36,6 +36,9 @@ private struct PaneContentMount: View {
           .frame(maxWidth: .infinity, maxHeight: .infinity)
       }
     }
+    .onChange(of: PaneMount(group: group, paneId: paneId)) { _, mount in
+      if canMount { mount.group.paneContentDidMount(id: mount.paneId) }
+    }
     .task(id: paneId) {
       guard !group.presentedPaneIDs.contains(paneId) else { return }
       await Task.yield()
@@ -43,5 +46,14 @@ private struct PaneContentMount: View {
       guard !Task.isCancelled, group.state.selectedPaneId == paneId else { return }
       canMount = true
     }
+  }
+}
+
+private struct PaneMount: Equatable {
+  let group: PaneGroupModel
+  let paneId: UUID
+
+  static func == (lhs: Self, rhs: Self) -> Bool {
+    lhs.group === rhs.group && lhs.paneId == rhs.paneId
   }
 }
