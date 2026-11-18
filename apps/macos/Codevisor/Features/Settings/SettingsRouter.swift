@@ -58,6 +58,7 @@ enum SettingsPaneRoute: Hashable {
   case sandbox(SandboxSettingsPage)
   case pluginCatalog
   case plugin(String)
+  case pluginList(String, PluginListPage)
   case cloudAccount(CloudAccountPage)
 }
 

@@ -13,13 +13,16 @@ struct McpPluginDetailForm: View {
     probes: AppPreview.isRunning ? .granted : .live)
   @State private var confirmingRemoval = false
   @State private var accounts: PluginAccountsModel?
-  @State private var subscriptions: PluginSubscriptionsModel?
   @State private var removalError: String?
 
   private var model: McpGlobalModel { plugins.fleet }
 
   private var client: any CodevisorServerClienting {
     environment.machines.client(for: machineId)
+  }
+
+  private var lists: PluginListsModel {
+    plugins.lists(serverId: server.id, machineId: machineId, client: client)
   }
 
   var body: some View {
@@ -33,12 +36,16 @@ struct McpPluginDetailForm: View {
           ComputerUsePermissionRowsView(model: permissions)
         }
       }
-      if let subscriptions { PluginSubscriptionsSection(model: subscriptions, chatTitle: chatTitle) }
-      McpServerToolSections(server: server, client: client, isConnected: isConnected)
+      PluginListsSection(summaries: lists.summaries(for: server)) { summary in
+        NavigationLink(value: SettingsPaneRoute.pluginList(entry.name, summary.page)) {
+          PluginListRowLabel(summary)
+        }
+      }
       if entry.canRemove { removeSection }
     }
     .formStyle(.grouped)
     .task(id: server.id) { await loadPluginDetails() }
+    .task(id: "\(server.id)|\(isConnected)") { await lists.loadTools(for: server) }
     .onChange(of: permissions.allGranted) { _, granted in
       guard !granted else { return }
       disableComputerUseWithoutPermissions()
@@ -127,16 +134,9 @@ struct McpPluginDetailForm: View {
 
   private func loadPluginDetails() async {
     let accounts = PluginAccountsModel(server: server, client: client)
-    let subscriptions = PluginSubscriptionsModel(serverId: server.id, client: client)
     self.accounts = accounts
-    self.subscriptions = subscriptions
     await accounts.load()
-    await subscriptions.load()
-  }
-
-  private func chatTitle(_ sessionId: String) -> String? {
-    guard let id = UUID(uuidString: sessionId) else { return nil }
-    return environment.projectList.session(id, serverId: machineId)?.title
+    await lists.subscriptions.load()
   }
 
   private func save(_ body: UpdateMcpServerBody) async throws -> ServerMcpServer {

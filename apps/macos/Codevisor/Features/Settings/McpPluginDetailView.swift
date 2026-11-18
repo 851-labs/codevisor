@@ -10,34 +10,15 @@ struct McpPluginDetailView: View {
 
   var body: some View {
     Group {
-      if let entry = model.entry(named: entryName),
-        let machineId = entry.machineId(preferring: CodevisorMachine.local.id),
-        let server = entry.server(on: machineId)
-      {
-        McpPluginDetailForm(entry: entry, server: server, machineId: machineId, plugins: plugins)
+      if let plugin = plugins.installedPlugin(named: entryName) {
+        McpPluginDetailForm(
+          entry: plugin.entry, server: plugin.server, machineId: plugin.machineId, plugins: plugins)
       } else {
-        unavailable
+        McpPluginUnavailableForm(isLoading: model.isLoading)
       }
     }
     .navigationTitle(entryName)
     .mcpFleetLiveUpdates(model)
     .pluginConnectErrorAlert(model)
-  }
-
-  private var unavailable: some View {
-    Form {
-      if model.isLoading {
-        ProgressView().frame(maxWidth: .infinity)
-      } else {
-        ContentUnavailableView {
-          Label("Plugin Unavailable", systemImage: "puzzlepiece.extension")
-        } description: {
-          Text("This plugin may have been removed.")
-        } actions: {
-          Button("Back to Plugins") { SettingsRouter.shared.panePath = [] }
-        }
-      }
-    }
-    .formStyle(.grouped)
   }
 }

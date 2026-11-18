@@ -116,6 +116,10 @@ struct SettingsView: View {
               McpPluginDetailView(entryName: name, plugins: plugins)
                 .navigationBarBackButtonHidden(true)
                 .settingsNavigationToolbar()
+            case let .pluginList(name, page):
+              McpPluginListPage(entryName: name, page: page, plugins: plugins)
+                .navigationBarBackButtonHidden(true)
+                .settingsNavigationToolbar()
             case let .cloudAccount(page):
               CloudAccountPageView(page, cloud: environment.cloud)
                 .navigationBarBackButtonHidden(true)
