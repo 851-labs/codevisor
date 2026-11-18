@@ -7,6 +7,7 @@ struct WorkspaceInspectorMachineSection: View {
   static let historySlots = 100
 
   let stats: ServerMachineStats
+  let connection: MachineConnectionPresentation?
   let latencyMilliseconds: Double?
   @Binding var isExpanded: Bool
   @Environment(\.accessibilityReduceMotion) private var reduceMotion
@@ -24,6 +25,14 @@ struct WorkspaceInspectorMachineSection: View {
       WorkspaceInspectorMachineUsageRow(title: "Memory", usage: stats.memory, style: .memory)
       if let disk = stats.disk {
         WorkspaceInspectorMachineUsageRow(title: "Disk", usage: disk, style: .file)
+      }
+      if let routeName = connection?.routeName {
+        LabeledContent("Connection") {
+          Text(routeName)
+            .contentTransition(.numericText())
+        }
+        .help(connection?.help ?? "")
+        .animation(Motion.meter(reduceMotion: reduceMotion), value: routeName)
       }
       if let latencyMilliseconds {
         LabeledContent("Latency") {

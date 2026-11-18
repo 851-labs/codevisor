@@ -110,6 +110,11 @@ public enum MachineConnectionPresentation: Equatable {
     }
   }
 
+  public var routeName: String? {
+    guard case .connected(let path?) = self else { return nil }
+    return MachineRouteDescription.name(path.route)
+  }
+
   public var help: String? {
     switch self {
     case .connected(let path): MachineRouteDescription(path: path).help
@@ -123,5 +128,21 @@ public enum MachineConnectionPresentation: Equatable {
     let formatter = RelativeDateTimeFormatter()
     formatter.unitsStyle = .full
     return formatter.localizedString(for: date, relativeTo: now)
+  }
+}
+
+extension MachineConnectionPresentation {
+  @MainActor
+  public init(_ machine: CodevisorMachine, environment: AppEnvironment) {
+    let machines = environment.machines
+    self.init(
+      isLocal: machine.isLocal,
+      status: machines.statusByMachineId[machine.id],
+      availability: machines.availabilityByMachineId[machine.id],
+      navigationSyncState: machines.navigationSyncStateByMachineId[machine.id],
+      cloud: machines.cloudMachine(forMachineId: machine.id).map {
+        CloudMachineReach(presence: $0, pipes: environment.cloud.directPaths)
+      }
+    )
   }
 }

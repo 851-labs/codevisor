@@ -13,7 +13,7 @@ struct MachineRouteDescription {
     path.map { Self.place($0.route) }
   }
 
-  private static func name(_ route: CloudTunnelRoute) -> String {
+  static func name(_ route: CloudTunnelRoute) -> String {
     switch route {
     case .localNetwork: "Local network"
     case .tailscale: "Tailscale"
