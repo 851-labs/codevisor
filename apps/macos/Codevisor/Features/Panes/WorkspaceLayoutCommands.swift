@@ -1,5 +1,6 @@
 import SwiftUI
 import CodevisorCore
+import CodevisorUI
 
 struct WorkspaceLayoutActions: Equatable {
   let workspaceId: UUID
@@ -15,9 +16,16 @@ struct WorkspaceLayoutActions: Equatable {
   let nextSplit: @MainActor () -> Void
   let split: @MainActor (SplitEdge) -> Void
   let focus: @MainActor (SplitEdge) -> Void
+  var resolveShownPage: (@MainActor () -> WorkspaceLayoutActions?)? = nil
 
   static func == (lhs: Self, rhs: Self) -> Bool {
     lhs.workspaceId == rhs.workspaceId
+  }
+
+  var shownPage: WorkspaceLayoutActions? {
+    guard let resolveShownPage else { return self }
+
+    return resolveShownPage()
   }
 
   static func routed(
@@ -36,7 +44,8 @@ struct WorkspaceLayoutActions: Equatable {
       previousSplit: { target()?.previousSplit() },
       nextSplit: { target()?.nextSplit() },
       split: { target()?.split($0) },
-      focus: { target()?.focus($0) }
+      focus: { target()?.focus($0) },
+      resolveShownPage: target
     )
   }
 }
@@ -123,16 +132,16 @@ struct WorkspaceLayoutCommands: Commands {
 
   @ViewBuilder
   private var tabAndWorkspaceItems: some View {
-    ShortcutButton(.previousTab) { stepTab(-1) }
-      .disabled(actions == nil && sidebarActions == nil)
-    ShortcutButton(.nextTab) { stepTab(1) }
-      .disabled(actions == nil && sidebarActions == nil)
+    ShortcutButton(.previousTab) { sidebarItemRoute.step(-1) }
+      .disabled(!sidebarItemRoute.isAvailable)
+    ShortcutButton(.nextTab) { sidebarItemRoute.step(1) }
+      .disabled(!sidebarItemRoute.isAvailable)
     ShortcutButton(.previousTabInWorkspace) {
-      if let actions { actions.previousTabInWorkspace() } else { tabCycling?.previous() }
+      if let page = actions?.shownPage { page.previousTabInWorkspace() } else { tabCycling?.previous() }
     }
     .disabled(actions == nil && tabCycling == nil)
     ShortcutButton(.nextTabInWorkspace) {
-      if let actions { actions.nextTabInWorkspace() } else { tabCycling?.next() }
+      if let page = actions?.shownPage { page.nextTabInWorkspace() } else { tabCycling?.next() }
     }
     .disabled(actions == nil && tabCycling == nil)
 
@@ -144,11 +153,15 @@ struct WorkspaceLayoutCommands: Commands {
       .disabled(sidebarActions?.stepWorkspace == nil)
   }
 
-  private func stepTab(_ offset: Int) {
-    if let actions {
-      if offset < 0 { actions.previousTab() } else { actions.nextTab() }
-    } else {
-      sidebarActions?.stepWorkspace?(offset)
+  private var sidebarItemRoute: SidebarItemStepRoute {
+    SidebarItemStepRoute(
+      page: actions.map { actions in { actions.shownPage.map(Self.tabStep(on:)) } },
+      sidebar: sidebarActions?.stepWorkspace)
+  }
+
+  private static func tabStep(on page: WorkspaceLayoutActions) -> SidebarItemStepRoute.Step {
+    { offset in
+      if offset < 0 { page.previousTab() } else { page.nextTab() }
     }
   }
 }
