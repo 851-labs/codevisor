@@ -300,10 +300,11 @@ public final class ScreenSharingV2Host: ScreenSharingFrameSink, @unchecked Senda
     let meta = ScreenSharingV2HostTiming.meta(
       for: tile, layout: layout, encoder: generation, sendingNs: ScreenSharingMetrics.nowNs)
     let sentToken = tile.ltrToken.map { token in sentTokens.withLock { $0.sending(token, tile: tile.tile) } }
+    let sent = tile.withToken(sentToken)
     do {
-      try transport.send(tile.withToken(sentToken), meta: meta.data)
+      try transport.send(sent, meta: meta.data)
       metrics.increment(Self.sentFramesMetric)
-      queue.async { [self] in recovery.sent(tile) }
+      queue.async { [self] in recovery.sent(sent) }
     } catch {
       metrics.increment("sendErrors")
       metrics.label("lastSendError", "\(error)")
@@ -347,8 +348,8 @@ public final class ScreenSharingV2Host: ScreenSharingFrameSink, @unchecked Senda
   }
 
   private func acknowledged(_ sentToken: UInt64, tile: Int) {
-    let sent = sentTokens.withLock { $0.token(acknowledgedAs: sentToken, tile: tile) }
-    guard let token = sent, recovery.acknowledged(token: token, tile: tile) else {
+    let issued = sentTokens.withLock { $0.token(acknowledgedAs: sentToken, tile: tile) }
+    guard let token = issued, recovery.acknowledged(sentToken: sentToken, tile: tile) else {
       metrics.increment("staleLTRAcknowledgements")
       return
     }

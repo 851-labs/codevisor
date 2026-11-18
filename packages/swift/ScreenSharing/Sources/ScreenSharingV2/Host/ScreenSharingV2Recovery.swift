@@ -1,5 +1,5 @@
 struct ScreenSharingV2Recovery {
-  private var issuedTokens: [Int: Set<UInt64>] = [:]
+  private var sentTokens: [Int: Set<UInt64>] = [:]
   private var acknowledgedTiles: Set<Int> = []
   private var pending: [Int: ScreenSharingTileRefresh] = [:]
 
@@ -7,14 +7,14 @@ struct ScreenSharingV2Recovery {
 
   mutating func sent(_ tile: ScreenSharingEncodedTile) {
     if tile.isKeyFrame {
-      issuedTokens[tile.tile] = []
+      sentTokens[tile.tile] = []
       acknowledgedTiles.remove(tile.tile)
     }
-    if let token = tile.ltrToken { issuedTokens[tile.tile, default: []].insert(token) }
+    if let sentToken = tile.ltrToken { sentTokens[tile.tile, default: []].insert(sentToken) }
   }
 
-  mutating func acknowledged(token: UInt64, tile: Int) -> Bool {
-    guard issuedTokens[tile]?.contains(token) == true else { return false }
+  mutating func acknowledged(sentToken: UInt64, tile: Int) -> Bool {
+    guard sentTokens[tile]?.contains(sentToken) == true else { return false }
 
     acknowledgedTiles.insert(tile)
     return true
