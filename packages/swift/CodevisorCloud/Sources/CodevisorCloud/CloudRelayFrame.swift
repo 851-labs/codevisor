@@ -111,7 +111,7 @@ public enum CloudHubConnectionError: Error, Equatable, Sendable, LocalizedError 
     case .timedOut:
       "Timed out connecting to Codevisor Cloud."
     case .channelClosed:
-      "The relay channel is closed."
+      "The Codevisor Relay channel is closed."
     }
   }
 }

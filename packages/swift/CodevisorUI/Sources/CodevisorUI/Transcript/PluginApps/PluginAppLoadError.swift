@@ -6,7 +6,8 @@ enum PluginAppLoadError: LocalizedError {
 
   var errorDescription: String? {
     switch self {
-    case .relayUnavailable: "This machine's relay connection isn't available yet. Try again once it reconnects."
+    case .relayUnavailable:
+      "This machine's Codevisor Relay connection isn't available yet. Try again once it reconnects."
     case .unusableAddress: "The server returned an unusable app address."
     }
   }

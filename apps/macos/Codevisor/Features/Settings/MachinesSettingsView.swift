@@ -113,7 +113,7 @@ struct MachinesSettingsView: View {
       machine: machine,
       presence: presence,
       keyChanged: environment.cloud.machinesWithChangedKeys.contains(presence.deviceId),
-      connection: connection(for: machine, presence: presence),
+      connection: MachineConnectionPresentation(machine, environment: environment),
       onEdit: { editingCloud = presence },
       onRemove: { removingCloud = presence },
       onTrustKey: { trustingKeyCloud = presence }
@@ -163,18 +163,8 @@ struct MachinesSettingsView: View {
 
   fileprivate func statusLabel(_ machine: CodevisorMachine) -> some View {
     let status = machines.statusByMachineId[machine.id]
-    return MachineConnectionBadge(connection(for: machine, presence: nil))
+    return MachineConnectionBadge(MachineConnectionPresentation(machine, environment: environment))
       .help(status?.isReachable == false ? status?.label ?? "" : "")
-  }
-
-  fileprivate func connection(for machine: CodevisorMachine, presence: CloudMachine?) -> MachineConnectionPresentation {
-    MachineConnectionPresentation(
-      isLocal: machine.isLocal,
-      status: machines.statusByMachineId[machine.id],
-      availability: machines.availabilityByMachineId[machine.id],
-      navigationSyncState: machines.navigationSyncStateByMachineId[machine.id],
-      cloud: presence.map { CloudMachineReach(presence: $0, pipes: environment.cloud.directPaths) }
-    )
   }
 
   fileprivate func refreshStatuses() async {

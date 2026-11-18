@@ -11,13 +11,13 @@ public enum CloudRelayTransportError: Error, Equatable, Sendable, LocalizedError
   public var errorDescription: String? {
     switch self {
     case .invalidRequest:
-      "The request cannot be sent over the cloud relay."
+      "The request cannot be sent over the Codevisor Relay."
     case .invalidFrame:
-      "The machine sent an unexpected relay frame."
+      "The machine sent an unexpected Codevisor Relay frame."
     case let .channelClosed(reason):
       switch reason {
       case .none:
-        "The cloud relay connection was interrupted."
+        "The Codevisor Relay connection was interrupted."
       case .done:
         "The machine closed the connection."
       case .rejected:

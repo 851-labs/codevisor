@@ -47,7 +47,12 @@ public final class ScreenSharingViewerDiagnostics {
 
   private func updateV2(metrics: ScreenSharingMetrics.Snapshot, statistics: [String: String]) {
     engine = "v2 · QUIC"
-    route = statistics["v2.route"] == "relay" ? "Relay" : statistics["v2.route"] == nil ? "Connecting" : "Direct"
+    route =
+      switch statistics["v2.route"] {
+      case "relay": "Codevisor Relay"
+      case nil: "Connecting"
+      default: "Direct"
+      }
     roundTripMilliseconds = statistics["v2.roundTripMs"].flatMap(Double.init)
     decodeMilliseconds = metrics.timings["decode"]?.p95Ms
     recovery = Self.v2Recovery(statistics)

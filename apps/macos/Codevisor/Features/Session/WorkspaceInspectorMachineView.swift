@@ -1,5 +1,6 @@
 import CodevisorClient
 import CodevisorCore
+import CodevisorUI
 import SwiftUI
 
 struct WorkspaceInspectorMachineView: View {
@@ -10,6 +11,7 @@ struct WorkspaceInspectorMachineView: View {
   let desktopExpansion: Binding<Bool>
   let statsExpansion: Binding<Bool>
   let onOpenDesktop: () -> Void
+  @Environment(AppEnvironment.self) private var environment
   @State private var stats: (serverId: String, stats: ServerMachineStats)?
   @State private var latency: (serverId: String, milliseconds: Double)?
 
@@ -27,12 +29,17 @@ struct WorkspaceInspectorMachineView: View {
         }
         if let stats, stats.serverId == serverId {
           WorkspaceInspectorMachineSection(
-            stats: stats.stats, latencyMilliseconds: latencyMilliseconds, isExpanded: statsExpansion)
+            stats: stats.stats, connection: connection,
+            latencyMilliseconds: latencyMilliseconds, isExpanded: statsExpansion)
         }
       }
       .padding(.vertical, 10)
     }
     .task(id: isActive ? serverId : nil) { await pollStats() }
+  }
+
+  private var connection: MachineConnectionPresentation? {
+    environment.machines.machine(for: serverId).map { MachineConnectionPresentation($0, environment: environment) }
   }
 
   private var latencyMilliseconds: Double? {

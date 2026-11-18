@@ -19,7 +19,7 @@ struct ScreenSharingViewerDiagnosticsTests {
     statistics["v2.route"] = "relay"
     diagnostics.update(metrics: metrics.snapshot(), timeline: metrics.timeline, statistics: statistics, now: 12)
     #expect(diagnostics.megabitsPerSecond == 10)
-    #expect(diagnostics.route == "Relay")
+    #expect(diagnostics.route == "Codevisor Relay")
   }
 
   @Test func vncSessionsReportUpdateRateBandwidthSizeAndLatency() {
@@ -79,7 +79,7 @@ struct ScreenSharingViewerDiagnosticsTests {
     #expect(diagnostics.framesPerSecond == 60)
     #expect(diagnostics.megabitsPerSecond == 12)
     #expect(diagnostics.roundTripMilliseconds == 12)
-    #expect(diagnostics.route == "Relay")
+    #expect(diagnostics.route == "Codevisor Relay")
     #expect(diagnostics.resolution == "1920 × 1080")
     #expect(diagnostics.decodeMilliseconds == 2.5)
     #expect(diagnostics.droppedFrames == 3)

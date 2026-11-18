@@ -82,7 +82,7 @@ struct MachinesSettingsScreen: View {
       name: machine.name,
       sandbox: presence?.ephemeral,
       icon: SidebarGroupIcon.machine(machine.id, in: machines).image,
-      connection: connection(for: machine, presence: presence),
+      connection: MachineConnectionPresentation(machine, environment: environment),
       keyChanged: keyChanged(presence),
       onTrustKey: { trustingKey = presence }
     )
@@ -122,15 +122,5 @@ struct MachinesSettingsScreen: View {
 
   private func keyChanged(_ presence: CloudMachine?) -> Bool {
     presence.map { cloud.machinesWithChangedKeys.contains($0.deviceId) } ?? false
-  }
-
-  private func connection(for machine: CodevisorMachine, presence: CloudMachine?) -> MachineConnectionPresentation {
-    MachineConnectionPresentation(
-      isLocal: machine.isLocal,
-      status: machines.statusByMachineId[machine.id],
-      availability: machines.availabilityByMachineId[machine.id],
-      navigationSyncState: machines.navigationSyncStateByMachineId[machine.id],
-      cloud: presence.map { CloudMachineReach(presence: $0, pipes: cloud.directPaths) }
-    )
   }
 }
