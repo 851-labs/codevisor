@@ -160,7 +160,7 @@ struct RootView: View {
       }
       .navigationSubtitle(detailSubtitle)
       .toolbar {
-        SidebarComposeToolbarItem(selection: selectionRef, newChat: openNewChat, newBot: openNewBot)
+        BotComposeToolbarItem(selection: selectionRef, newBot: openNewBot)
       }
     }
     .modifier(WorkspaceInspectorPresentation(store: store, selection: selectionRef))
@@ -340,6 +340,15 @@ nonisolated enum SidebarSelection: Hashable, Codable, Sendable {
     case .bot: .bots
     case .session, .workspace, .archivedWorkspace: .code
     case .newChat: nil
+    }
+  }
+}
+
+nonisolated extension SidebarSelection? {
+  var showsNewChat: Bool {
+    switch self {
+    case .none, .newChat: true
+    case .session, .workspace, .archivedWorkspace, .bot: false
     }
   }
 }

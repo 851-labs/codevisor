@@ -48,13 +48,15 @@ struct SidebarView: View {
     return ScrollViewReader { proxy in
       ScrollView {
         VStack(spacing: 0) {
-          if CodevisorAppVariant.isDevelopment && !AppPreview.isRunning {
-            SidebarDevelopmentWorktreeRow()
-              .padding(.horizontal, 10)
+          newChatRows
+          if !rows.isEmpty {
+            workspaceGroupList(workspaceGroups, rows: rows)
           }
-          workspaceList(rows)
         }
         .padding(.top, 8)
+      }
+      .overlay {
+        if rows.isEmpty { emptyPlaceholder }
       }
       .contextMenu { sidebarOptionsMenu }
       .onScrollGeometryChange(for: ClosedRange<CGFloat>.self) { geometry in
@@ -141,15 +143,22 @@ struct SidebarView: View {
     )
   }
 
-  @ViewBuilder
-  private func workspaceList(_ rows: [SidebarRow]) -> some View {
-    if rows.isEmpty {
-      SidebarPlaceholder(
-        icon: Image(systemName: WorkspaceListEmptyCopy.systemImage), title: WorkspaceListEmptyCopy.title,
-        message: WorkspaceListEmptyCopy.message)
-    } else {
-      workspaceGroupList(workspaceGroups, rows: rows)
+  private var newChatRows: some View {
+    VStack(alignment: .leading, spacing: 1) {
+      if CodevisorAppVariant.isDevelopment && !AppPreview.isRunning {
+        SidebarDevelopmentWorktreeRow()
+      }
+      SidebarNewChatRow(selection: $selection, isHoverEnabled: !isReordering)
     }
+    .padding(.horizontal, 10)
+  }
+
+  private var emptyPlaceholder: some View {
+    SidebarPlaceholder(
+      icon: Image(systemName: WorkspaceListEmptyCopy.systemImage), title: WorkspaceListEmptyCopy.title,
+      message: WorkspaceListEmptyCopy.message
+    )
+    .allowsHitTesting(false)
   }
 
   private func workspaceGroupList(_ groups: [SidebarWorkspaceGroup], rows: [SidebarRow]) -> some View {
