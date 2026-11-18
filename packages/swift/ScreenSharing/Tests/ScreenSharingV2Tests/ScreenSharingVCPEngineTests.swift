@@ -128,6 +128,30 @@ extension HardwareCodecTests {
     }
 
     @Test(.enabled(if: available, "No VideoProcessing encoder on this machine."))
+    func anAcknowledgementOfAFrameAnEarlierEncoderSentIsNotTakenButItsOwnIs() async throws {
+      let earlier = try await Self.firstTileSentByAnEarlierEncoder()
+      let transport = LoopbackMediaTransport()
+      try await HardwareEncoderBudget.require(vcpTiles: 1)
+      let host = Self.host(try Self.vcp(tiles: 1, metrics: ScreenSharingMetrics()), transport: transport)
+      host.start()
+      defer { host.stop() }
+      host.push(try TestBGRAPixels.frame(shades: [60], timestampNs: 1_000))
+      await transport.sends.cancellableWait(for: 1)
+
+      transport.emit(.ltrAcked(stream: 0, token: try #require(earlier.ltrToken)))
+      transport.emit(.frameLost(stream: 0, frame: 0))
+      await transport.sends.cancellableWait(for: 2)
+      host.push(try TestBGRAPixels.frame(shades: [90], timestampNs: 2_000))
+      await transport.sends.cancellableWait(for: 3)
+      transport.emit(.ltrAcked(stream: 0, token: try #require(transport.sent[2].ltrToken)))
+      transport.emit(.frameLost(stream: 0, frame: 2))
+      await transport.sends.cancellableWait(for: 4)
+
+      #expect(transport.sent.map(\.isKeyFrame) == [true, true, false, false])
+      #expect(transport.sent.last?.refresh == .longTermReference)
+    }
+
+    @Test(.enabled(if: available, "No VideoProcessing encoder on this machine."))
     func aFailureMidSessionFallsBackToVideoToolboxWithAKeyframeOnEveryTile() async throws {
       let (hostSide, viewerSide) = LoopbackMediaTransport.pair()
       let metrics = ScreenSharingMetrics()
@@ -157,6 +181,17 @@ extension HardwareCodecTests {
       #expect(decoded.sourceTimestamps == [1_000, 2_000])
       #expect(metrics.counter("encoderFallbacks") == 1)
       #expect(metrics.snapshot().timings["encoderFallbackToKeyframe"]?.count == 1)
+    }
+
+    private static func firstTileSentByAnEarlierEncoder() async throws -> ScreenSharingEncodedTile {
+      let transport = LoopbackMediaTransport()
+      try await HardwareEncoderBudget.require(vcpTiles: 1)
+      let host = Self.host(try Self.vcp(tiles: 1, metrics: ScreenSharingMetrics()), transport: transport)
+      host.start()
+      defer { host.stop() }
+      host.push(try TestBGRAPixels.frame(shades: [60], timestampNs: 1_000))
+      await transport.sends.cancellableWait(for: 1)
+      return try #require(transport.sent.first)
     }
 
     private static func configuration() throws -> ScreenSharingVideoConfiguration {

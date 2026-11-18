@@ -42,7 +42,8 @@ struct ScreenSharingV2ViewerTimingTests {
   ) -> ScreenSharingV2DecodeContext {
     let meta = ScreenSharingV2FrameMeta(
       sourceTimestampNs: 1, clock: 3, captureUs: 1_000, admissionUs: 1_000, encodeUs: encodeUs, handOffUs: handOffUs,
-      isRefresh: false, update: update, layout: ScreenSharingV2TileLayout(width: 640, height: 360, count: 2))
+      isRefresh: false, update: update, layout: ScreenSharingV2TileLayout(width: 640, height: 360, count: 2),
+      encoder: nil)
     let frame = ScreenSharingReceivedFrame(
       stream: UInt8(tile), frame: update.id, isKeyFrame: false, ltrToken: nil, meta: meta.data,
       payload: ScreenSharingAccessUnit(Data()), assemblingUs: assemblingUs, recovery: .none)

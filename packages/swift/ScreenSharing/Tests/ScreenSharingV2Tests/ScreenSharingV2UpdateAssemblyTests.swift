@@ -116,7 +116,8 @@ struct ScreenSharingV2UpdateAssemblyTests {
   private static func context(_ update: ScreenSharingTileUpdate, tile: Int) throws -> ScreenSharingV2DecodeContext {
     let meta = ScreenSharingV2FrameMeta(
       sourceTimestampNs: Int64(update.id), clock: 0, captureUs: 0, admissionUs: 0, encodeUs: 0, handOffUs: 0,
-      isRefresh: false, update: update, layout: ScreenSharingV2TileLayout(width: 640, height: 360, count: 4))
+      isRefresh: false, update: update, layout: ScreenSharingV2TileLayout(width: 640, height: 360, count: 4),
+      encoder: nil)
     let frame = ScreenSharingReceivedFrame(
       stream: UInt8(tile), frame: update.id, isKeyFrame: false, ltrToken: nil, meta: meta.data,
       payload: ScreenSharingAccessUnit(Data()), assemblingUs: 0, recovery: .none)

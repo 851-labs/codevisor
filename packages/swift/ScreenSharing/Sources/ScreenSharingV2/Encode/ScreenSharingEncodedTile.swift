@@ -28,4 +28,11 @@ public struct ScreenSharingEncodedTile: Sendable {
   }
 
   public var recovers: Bool { isKeyFrame || refresh != nil }
+
+  func withToken(_ token: UInt64?) -> ScreenSharingEncodedTile {
+    ScreenSharingEncodedTile(
+      tile: tile, update: update, sourceTimestampNs: sourceTimestampNs, capturedNs: capturedNs,
+      submittedNs: submittedNs, encodedNs: encodedNs, isKeyFrame: isKeyFrame, refresh: refresh, ltrToken: token,
+      accessUnit: accessUnit)
+  }
 }
