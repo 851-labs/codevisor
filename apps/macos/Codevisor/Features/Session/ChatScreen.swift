@@ -33,19 +33,12 @@ struct ChatScreen: View {
   @State var isAtBottom: Bool
   @State var earlierHistoryCollapse: TranscriptEarlierHistoryCollapse?
   @State var autoFollow: Bool
-  @State var composerHeight: CGFloat
   @State var composerCardHeight: CGFloat = 0
   @State var scrollCommand = TranscriptScrollCommand()
   @State var historyLoadTask: Task<Void, Never>?
   @State var isTranscriptMounted: Bool
   @State var isInitialTranscriptReady: Bool
   @State var showsInitialLoadingSpinner = false
-  @State var projectedRows: [TranscriptVirtualRow] = []
-  @State var projectedRowsVersion: UInt64 = 0
-  @State var workedRowsVisibilityCache = TranscriptWorkedRowsVisibilityCache()
-  @State var projectedSessionID: UUID?
-  @State var projectionPublication = TranscriptProjectionPublicationState()
-  @State var projectionWorker = TranscriptSettledProjectionWorker()
   @State var presentationVisibilityOwner = UUID()
   @State var showsPromptQueue = false
   @State var queueSends = QueueSendObserver()
@@ -83,12 +76,15 @@ struct ChatScreen: View {
     _autoFollow = State(
       initialValue: controller.scrollState?.followMode.followsLatest ?? true
     )
-    _composerHeight = State(initialValue: isReadOnly ? 0 : presentationSurface.composerHeight)
     _isTranscriptMounted = State(initialValue: isWarm)
     _isInitialTranscriptReady = State(initialValue: isWarm)
   }
 
   var attachmentImages: AttachmentImageStore { SessionAttachmentImages.store(for: controller) }
+
+  var projection: TranscriptSettledProjection { presentationSurface.projection }
+
+  var composerHeight: CGFloat { isReadOnly ? 0 : presentationSurface.composer.height }
 
   var body: some View {
     transcriptSurface
@@ -124,7 +120,6 @@ struct ChatScreen: View {
       .onDisappear {
         historyLoadTask?.cancel()
         historyLoadTask = nil
-        projectionWorker.cancel()
       }
       .task(id: ObjectIdentifier(controller)) {
         let hasWarmPresentation = presentationSurface.isWarm

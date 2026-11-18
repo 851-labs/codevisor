@@ -79,8 +79,7 @@ extension ChatScreen {
     .onGeometryChange(for: CGFloat.self) {
       $0.size.height
     } action: {
-      composerHeight = $0
-      presentationSurface.updateComposerHeight($0)
+      presentationSurface.composer.update(height: $0)
     }
     .animation(
       Motion.quick(reduceMotion: reduceMotion),
