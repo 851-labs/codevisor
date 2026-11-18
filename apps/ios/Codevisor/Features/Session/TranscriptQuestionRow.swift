@@ -12,12 +12,14 @@ struct TranscriptQuestionRow: View {
   var body: some View {
     switch interaction.content {
     case let .question(question):
-      if let setup = ServerPluginSetupRequest.decoded(from: question.request.questions) {
-        PluginSetupRow(question: question, request: setup, inBotConversation: inBotConversation, controller: controller)
-      } else if question.answer == nil {
+      if question.answer == nil {
         TranscriptQuestionCard(controller: controller, request: question.request, inBotConversation: inBotConversation)
       } else {
         TranscriptQuestionSummaryView(question: question, inBotConversation: inBotConversation)
+      }
+    case let .pluginSetup(setup):
+      if let request = ServerPluginSetupRequest.decoded(from: setup.request) {
+        PluginSetupRow(setup: setup, request: request, inBotConversation: inBotConversation, controller: controller)
       }
     }
   }

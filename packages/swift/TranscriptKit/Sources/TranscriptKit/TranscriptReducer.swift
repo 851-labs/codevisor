@@ -58,6 +58,9 @@ public enum TranscriptReducer {
     case let .questionResolved(resolution):
       applyResolution(resolution, to: &turn)
 
+    case let .pluginSetup(setup):
+      turn.interactions.show(TranscriptPluginSetup(setup))
+
     case .availableCommandsUpdate, .availableSkillsUpdate, .currentModeUpdate,
       .configOptionUpdate, .usageUpdate, .goalUpdate, .goalCleared:
       break

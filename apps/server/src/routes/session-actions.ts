@@ -248,10 +248,8 @@ const deliverAnswer = async (
 ): Promise<AnswerResult> => {
   const { services } = route
   const answer = questionAnswer(payload)
-  const handledBySetup =
-    (await route.routeState.pluginDiscovery?.setup.answer(sessionId, questionId, answer)) ?? false
   const handledByAutomation =
-    handledBySetup || ((await services.mcp?.answerQuestion(sessionId, questionId, answer)) ?? false)
+    (await services.mcp?.answerQuestion(sessionId, questionId, answer)) ?? false
   if (
     !handledByAutomation &&
     !(await answeredParkedQuestion(route, sessionId, questionId, answer))

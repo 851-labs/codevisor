@@ -10,6 +10,7 @@ import {
 import { canonicalUuid } from "./ids.js"
 import { itemCompaction } from "./item-compaction.js"
 import { itemPluginApps } from "./item-plugin-apps.js"
+import { itemPluginSetups } from "./item-plugin-setups.js"
 import { itemQuestionSummaries } from "./item-question-summaries.js"
 import { transcriptFromChatRow } from "./row-mappers.js"
 import { integer, nullable, rowReader, text } from "./row-reader.js"
@@ -99,11 +100,13 @@ const transcriptPageItem = (
   }
   const summary = chatAssistantSummary(sqlite, sessionId, row.id)
   const { setupRequests, interactions } = itemQuestionSummaries(sqlite, row.id, pendingQuestionId)
+  const pluginSetups = itemPluginSetups(sqlite, row.id)
   const apps = itemPluginApps(sqlite, row.id)
   const compaction = itemCompaction(sqlite, row.id)
   return {
     ...(setupRequests.length === 0 ? {} : { setupRequests }),
     ...(interactions.length === 0 ? {} : { interactions }),
+    ...(pluginSetups.length === 0 ? {} : { pluginSetups }),
     ...(apps.length === 0 ? {} : { apps }),
     ...(compaction === undefined ? {} : { compaction }),
     ...item,

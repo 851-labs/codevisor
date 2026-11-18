@@ -8,8 +8,14 @@
     @State private var model: PluginConnectModel
     private let client: any CodevisorServerClienting
 
-    public init(entry: ServerPluginCatalogEntry, client: any CodevisorServerClienting, host: PluginConnectHost) {
-      _model = State(initialValue: PluginConnectModel(entry: entry, client: client, host: host))
+    public init(
+      entry: ServerPluginCatalogEntry,
+      installed: ServerMcpServer? = nil,
+      client: any CodevisorServerClienting,
+      host: PluginConnectHost
+    ) {
+      _model = State(
+        initialValue: PluginConnectModel(entry: entry, installed: installed, client: client, host: host))
       self.client = client
     }
 
@@ -30,11 +36,13 @@
         PluginConnectProblems(restriction: restriction, errorMessage: model.errorMessage)
         VStack(spacing: 10) {
           PluginConnectActions(model: model, canContinue: canContinue, run: run) { dismiss() }
-          Text("By installing, you agree to the [Plugin terms](https://codevisor.dev/terms#plugins).")
-            .font(.footnote)
-            .foregroundStyle(.secondary)
-            .multilineTextAlignment(.center)
-            .padding(.top, 4)
+          if !model.isInstalled {
+            Text("By installing, you agree to the [Plugin terms](https://codevisor.dev/terms#plugins).")
+              .font(.footnote)
+              .foregroundStyle(.secondary)
+              .multilineTextAlignment(.center)
+              .padding(.top, 4)
+          }
         }
         .padding(.horizontal, 28)
       }

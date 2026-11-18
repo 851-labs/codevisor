@@ -221,6 +221,8 @@ extension SessionModel {
       applyQuestion(request)
     case let .questionResolved(resolution):
       applyQuestionResolution(resolution)
+    case let .pluginSetup(setup):
+      applyPluginSetup(setup)
     default:
       applyTranscriptUpdate(update)
     }
@@ -261,6 +263,14 @@ extension SessionModel {
     } else if resolution.outcome == .answered {
       applyAnswer(resolution)
     }
+  }
+
+  private func applyPluginSetup(_ setup: PluginSetupUpdate) {
+    let isShown = (0..<itemCount).contains { asksQuestion(setup.setupId, at: $0) }
+    guard isShown || setup.state == .pending else { return }
+
+    if questionOwnerIndex(questionId: setup.setupId) == nil { ensureAssistantTurn() }
+    applyTurnQuestionUpdate(.pluginSetup(setup), questionId: setup.setupId)
   }
 
   private func resolveTurnQuestion(_ resolution: QuestionResolution) {

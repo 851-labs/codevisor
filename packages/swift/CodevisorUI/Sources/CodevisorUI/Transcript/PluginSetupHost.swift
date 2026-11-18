@@ -4,41 +4,44 @@ import SwiftUI
 public struct PluginSetupHost<AccountSheet: View, GuideSheet: View>: View {
   @Environment(AppEnvironment.self) private var environment: AppEnvironment?
   @State private var model: PluginSetupModel
-  let resolution: PluginSetupResolution?
+  let request: ServerPluginSetupRequest
+  let isConnected: Bool
   let machineId: String
   let client: any CodevisorServerClienting
   let inBotConversation: Bool
-  let onDecline: () -> Void
   let accountSheet: (PluginAccountEditing, PluginAccountsModel) -> AccountSheet
   let guideSheet: (PluginAccountGuideModel, @escaping () async -> Void) -> GuideSheet
 
   public init(
     request: ServerPluginSetupRequest,
-    resolution: PluginSetupResolution?,
+    isConnected: Bool,
     machineId: String,
     client: any CodevisorServerClienting,
     signInRoute: PluginSignInRoute,
     inBotConversation: Bool,
-    onDecline: @escaping () -> Void,
     @ViewBuilder accountSheet: @escaping (PluginAccountEditing, PluginAccountsModel) -> AccountSheet,
     @ViewBuilder guideSheet: @escaping (PluginAccountGuideModel, @escaping () async -> Void) -> GuideSheet
   ) {
-    _model = State(initialValue: PluginSetupModel(request: request, client: client, signInRoute: signInRoute))
-    self.resolution = resolution
+    _model = State(
+      initialValue: PluginSetupModel(
+        request: request, client: client, signInRoute: signInRoute,
+        opensConnectSheet: Self.opensConnectSheet(for: signInRoute)))
+    self.request = request
+    self.isConnected = isConnected
     self.machineId = machineId
     self.client = client
     self.inBotConversation = inBotConversation
-    self.onDecline = onDecline
     self.accountSheet = accountSheet
     self.guideSheet = guideSheet
   }
 
   public var body: some View {
     PluginSetupCard(
-      model: model, resolution: resolution, inBotConversation: inBotConversation, icon: AnyView(icon),
-      onDecline: onDecline
+      model: model, request: request, isConnected: isConnected, inBotConversation: inBotConversation,
+      icon: AnyView(icon)
     )
     .task(id: refreshKey) { await refreshWhilePending() }
+    .modifier(PluginSetupConnectSheet(model: model, client: client))
     .sheet(item: $model.installing) { entry in
       PluginInstallSheet(entry: entry, client: client) { try await model.install(values: $0) }
     }
@@ -48,6 +51,26 @@ public struct PluginSetupHost<AccountSheet: View, GuideSheet: View>: View {
     .sheet(item: $model.guiding, onDismiss: refresh) { guide in
       guideSheet(guide) { await model.refresh() }
     }
+    .alert("Couldn’t set up \(model.request.name)", isPresented: showsError) {
+      Button("OK", role: .cancel) {}
+    } message: {
+      Text(model.errorMessage ?? "")
+    }
+  }
+
+  private static func opensConnectSheet(for route: PluginSignInRoute) -> Bool {
+    #if os(macOS)
+      if case .thisMachine = route { return true }
+    #endif
+    return false
+  }
+
+  private var showsError: Binding<Bool> {
+    Binding(
+      get: { model.errorMessage != nil && !isConnected },
+      set: { shown in
+        if !shown { model.errorMessage = nil }
+      })
   }
 
   private var icon: PluginCatalogIcon {
@@ -68,7 +91,7 @@ public struct PluginSetupHost<AccountSheet: View, GuideSheet: View>: View {
   }
 
   private func refreshWhilePending() async {
-    guard resolution == nil else { return }
+    guard !isConnected else { return }
     await model.refresh()
   }
 

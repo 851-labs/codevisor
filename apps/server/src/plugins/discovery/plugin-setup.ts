@@ -1,201 +1,155 @@
 import { randomUUID } from "node:crypto"
 
-import type { QuestionAnswer } from "@codevisor/agent-runtime"
-import type { PluginSetupRequest, QuestionSpec } from "@codevisor/api"
+import type { PluginSetupPayload, PluginSetupRequest, PluginSetupState } from "@codevisor/api"
 
+import type { PendingSessionEvent } from "../../routes/session-event-outbox.js"
 import { failureMessage, HttpFailure } from "../../server-context.js"
 import {
   authOf,
   capabilitiesOf,
   type PluginDirectory,
+  type PluginDirectoryItem,
   type PluginTarget
 } from "./plugin-directory.js"
+import { pluginSetupFinishedEvent } from "./plugin-setup-messages.js"
 
-export type PluginSetupOutcomeKind = "connected" | "declined" | "pending"
+export type PluginSetupOutcomeKind = "ready" | "requested" | "disabled"
+
+export type PluginSetupNeed = "install" | "connect"
 
 export interface PluginSetupOutcome {
   readonly outcome: PluginSetupOutcomeKind
   readonly plugin: string
   readonly name: string
   readonly accounts: ReadonlyArray<string>
+  readonly needs?: PluginSetupNeed
+  readonly next: string
 }
 
 export interface PluginSetupInput {
   readonly sessionId: string
   readonly plugin: string
   readonly reason: string
-  readonly waitMs: number
 }
 
 export interface PluginSetupBroker {
   readonly request: (input: PluginSetupInput) => Promise<PluginSetupOutcome>
-  readonly answer: (
-    sessionId: string,
-    questionId: string,
-    answer: QuestionAnswer
-  ) => Promise<boolean>
   readonly refresh: () => Promise<void>
-  readonly adoptWaiting: () => Promise<void>
+  readonly adoptPending: () => Promise<void>
 }
 
-export interface WaitingSetup {
+export interface ShownSetup {
+  readonly setupId: string
   readonly sessionId: string
-  readonly questionId: string
-  readonly question: QuestionSpec
+  readonly request: PluginSetupRequest
 }
 
 export interface PluginSetupDeps {
   readonly directory: PluginDirectory
-  readonly emit: (sessionId: string, payload: unknown) => Promise<void>
+  readonly emit: (sessionId: string, payload: PluginSetupPayload) => Promise<void>
+  readonly notify: (sessionId: string, event: PendingSessionEvent) => Promise<void>
   readonly machine: { readonly id: string; readonly name: string }
-  readonly wait: (ms: number) => Promise<void>
   readonly prepare: (target: PluginTarget) => Promise<void>
-  readonly isAsking: (sessionId: string, questionId: string) => Promise<boolean>
-  readonly waiting: () => Promise<ReadonlyArray<WaitingSetup>>
+  readonly pending: () => Promise<ReadonlyArray<ShownSetup>>
 }
 
-export const setupQuestionId = "plugin_setup"
-
 export const makePluginSetupBroker = (deps: PluginSetupDeps): PluginSetupBroker => {
-  const pending = new Map<string, PendingSetup>()
+  const pending = new Map<string, ShownSetup>()
 
-  const settle = async (
-    questionId: string,
-    kind: PluginSetupOutcomeKind,
-    outcome: "autoResolved" | "cancelled"
-  ) => {
-    const entry = pending.get(questionId)
-    if (entry === undefined) return
-    pending.delete(questionId)
-    await deps
-      .emit(entry.sessionId, resolvedPayload(questionId, entry.question, outcome))
-      .catch(() => undefined)
-    entry.settle(kind)
-  }
-
-  const stillAsking = async (
-    input: PluginSetupInput,
-    target: PluginTarget
-  ): Promise<PendingSetup | undefined> => {
-    const existing = [...pending.values()].find(
-      (entry) => entry.sessionId === input.sessionId && entry.plugin === target.plugin
+  const alreadyShown = (input: PluginSetupInput, target: PluginTarget): boolean =>
+    [...pending.values()].some(
+      (setup) => setup.sessionId === input.sessionId && namesSamePlugin(setup, target)
     )
-    if (existing === undefined) return undefined
-    if (await deps.isAsking(existing.sessionId, existing.questionId)) return existing
-    pending.delete(existing.questionId)
-    existing.settle("declined")
-    return undefined
-  }
 
-  const ask = async (input: PluginSetupInput, target: PluginTarget): Promise<PendingSetup> => {
+  const show = async (input: PluginSetupInput, target: PluginTarget): Promise<void> => {
     await deps.prepare(target).catch((cause: unknown) => {
       throw new HttpFailure(
         409,
         `${nameOf(target)} can't start sign-in on ${deps.machine.name}: ${failureMessage(cause)}. No setup card was shown.`
       )
     })
-    const entry = newPendingSetup(input, target, deps.machine)
-    pending.set(entry.questionId, entry)
-    await deps.emit(input.sessionId, {
-      sessionUpdate: "question",
-      questionId: entry.questionId,
-      questions: [entry.question]
-    })
-    return entry
+    const setup = newSetup(input, target, deps.machine)
+    pending.set(setup.setupId, setup)
+    await deps.emit(setup.sessionId, setupPayload(setup, "pending"))
   }
 
-  const itemOf = async (plugin: string) => {
-    const target = await deps.directory.find(plugin)
-    if (target === undefined) return undefined
-    return deps.directory.item(target)
-  }
-
-  const outcomeOf = async (
-    plugin: string,
-    kind: PluginSetupOutcomeKind
-  ): Promise<PluginSetupOutcome> => {
-    const item = await itemOf(plugin)
-    return {
-      outcome: kind,
-      plugin: item?.plugin ?? plugin,
-      name: item?.name ?? plugin,
-      accounts: item?.accounts ?? []
-    }
+  const finish = async (setup: ShownSetup, item: PluginDirectoryItem): Promise<void> => {
+    await deps
+      .emit(setup.sessionId, setupPayload(finishedWith(setup, item), "connected"))
+      .catch(() => undefined)
+    await deps
+      .notify(setup.sessionId, pluginSetupFinishedEvent(item, deps.machine))
+      .catch(() => undefined)
   }
 
   const refresh = async (): Promise<void> => {
-    for (const entry of pending.values()) {
-      const target = await deps.directory.find(entry.plugin)
-      if (target === undefined || !(await deps.directory.item(target)).ready) continue
-      await settle(entry.questionId, "connected", "autoResolved")
+    for (const setup of pending.values()) {
+      const target = await deps.directory.find(setup.request.plugin)
+      if (target === undefined) continue
+
+      const item = await deps.directory.item(target)
+      if (!item.ready || !pending.delete(setup.setupId)) continue
+
+      await finish(setup, item)
     }
   }
 
   return {
     request: async (input) => {
       const target = await requireTarget(deps, input.plugin)
-      if ((await deps.directory.item(target)).ready) return outcomeOf(input.plugin, "connected")
-      const entry = (await stillAsking(input, target)) ?? (await ask(input, target))
-      const kind = await Promise.race([
-        entry.done,
-        deps.wait(input.waitMs).then(() => "pending" as const)
-      ])
-      return outcomeOf(input.plugin, kind)
-    },
-    answer: async (sessionId, questionId, answer) => {
-      const entry = pending.get(questionId)
-      if (entry === undefined || entry.sessionId !== sessionId) return false
-      if (isDecline(answer)) await settle(questionId, "declined", "cancelled")
-      return true
+      const item = await deps.directory.item(target)
+      if (item.ready) return outcome("ready", item)
+      if (item.installed && !item.enabled) return outcome("disabled", item)
+
+      if (!alreadyShown(input, target)) await show(input, target)
+      return outcome("requested", item)
     },
     refresh,
-    adoptWaiting: async () => {
-      for (const waiting of await deps.waiting()) {
-        const entry = adoptedSetup(waiting)
-        if (entry !== undefined && !pending.has(entry.questionId)) {
-          pending.set(entry.questionId, entry)
-        }
-      }
+    adoptPending: async () => {
+      for (const setup of await deps.pending()) pending.set(setup.setupId, setup)
       await refresh()
     }
   }
 }
 
-interface PendingSetup {
-  readonly questionId: string
-  readonly sessionId: string
-  readonly plugin: string
-  readonly question: QuestionSpec
-  readonly done: Promise<PluginSetupOutcomeKind>
-  readonly settle: (kind: PluginSetupOutcomeKind) => void
+const outcome = (kind: PluginSetupOutcomeKind, item: PluginDirectoryItem): PluginSetupOutcome => ({
+  outcome: kind,
+  plugin: item.plugin,
+  name: item.name,
+  accounts: item.accounts,
+  ...(kind === "requested" ? { needs: needOf(item) } : {}),
+  next: nextStep(kind, item)
+})
+
+const needOf = (item: PluginDirectoryItem): PluginSetupNeed =>
+  item.installed ? "connect" : "install"
+
+const nextStep = (kind: PluginSetupOutcomeKind, item: PluginDirectoryItem): string => {
+  if (kind === "ready") return `${item.name} is ready to use. No card was shown.`
+  if (kind === "disabled") {
+    return `${item.name} is installed but turned off, so no card was shown. Ask the user to turn it on in Settings › Plugins.`
+  }
+  return `A card to ${cardAction(item)} is in the chat and stays there. Tell the user in one sentence what it's for, then end your turn. A hidden <codevisor-event type="plugin.setup_finished"> arrives when ${item.name} is ready, so don't wait, poll, or call this again.`
 }
 
-const newPendingSetup = (
+const cardAction = (item: PluginDirectoryItem): string =>
+  item.installed ? `connect ${item.name}` : `install ${item.name}`
+
+const namesSamePlugin = (setup: ShownSetup, target: PluginTarget): boolean => {
+  const shown = setup.request
+  if (shown.plugin === target.plugin) return true
+  return shown.catalogId !== undefined && shown.catalogId === target.entry?.id
+}
+
+const newSetup = (
   input: PluginSetupInput,
   target: PluginTarget,
   machine: { readonly id: string; readonly name: string }
-): PendingSetup => {
-  const { promise, resolve } = Promise.withResolvers<PluginSetupOutcomeKind>()
-  return {
-    questionId: `plugin-setup:${randomUUID()}`,
-    sessionId: input.sessionId,
-    plugin: target.plugin,
-    question: setupQuestion(setupRequest(input, target, machine)),
-    done: promise,
-    settle: resolve
-  }
-}
-
-const adoptedSetup = ({
-  sessionId,
-  questionId,
-  question
-}: WaitingSetup): PendingSetup | undefined => {
-  const plugin = question.pluginSetup?.plugin
-  if (question.id !== setupQuestionId || plugin === undefined) return undefined
-  const { promise, resolve } = Promise.withResolvers<PluginSetupOutcomeKind>()
-  return { questionId, sessionId, plugin, question, done: promise, settle: resolve }
-}
+): ShownSetup => ({
+  setupId: `plugin-setup:${randomUUID()}`,
+  sessionId: input.sessionId,
+  request: setupRequest(input, target, machine)
+})
 
 const setupRequest = (
   input: PluginSetupInput,
@@ -218,31 +172,17 @@ const setupRequest = (
   machine
 })
 
-const setupQuestion = (request: PluginSetupRequest): QuestionSpec => ({
-  id: setupQuestionId,
-  header: request.name,
-  question: request.reason,
-  options: [{ label: "Set Up" }, { label: "Not Now" }],
-  multiSelect: false,
-  allowsOther: false,
-  presentation: "pluginSetup",
-  pluginSetup: request
+const finishedWith = (setup: ShownSetup, item: PluginDirectoryItem): ShownSetup => ({
+  ...setup,
+  request: { ...setup.request, auth: item.auth }
 })
 
-const resolvedPayload = (
-  questionId: string,
-  question: QuestionSpec,
-  outcome: "autoResolved" | "cancelled"
-) => ({
-  sessionUpdate: "question_resolved",
-  questionId,
-  questions: [question],
-  outcome
+const setupPayload = (setup: ShownSetup, state: PluginSetupState): PluginSetupPayload => ({
+  sessionUpdate: "plugin_setup",
+  setupId: setup.setupId,
+  state,
+  request: setup.request
 })
-
-const isDecline = (answer: QuestionAnswer): boolean =>
-  answer.outcome === "cancelled" ||
-  answer.answers?.[setupQuestionId]?.answers.includes("Not Now") === true
 
 const nameOf = (target: PluginTarget): string => target.server?.name ?? target.entry!.name
 

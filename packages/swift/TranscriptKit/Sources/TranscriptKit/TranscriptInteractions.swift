@@ -40,6 +40,15 @@ public struct TranscriptInteractions: Sendable, Equatable {
     items[index].content = .question(question)
   }
 
+  mutating func show(_ setup: TranscriptPluginSetup) {
+    let shown = TranscriptInteraction(id: setup.id, content: .pluginSetup(setup))
+    guard let index = items.firstIndex(where: { $0.id == setup.id }) else {
+      items.append(shown)
+      return
+    }
+    items[index] = shown
+  }
+
   public mutating func adoptMissing(from other: TranscriptInteractions) -> Bool {
     let missing = other.items.filter { !contains(id: $0.id) }
     items += missing

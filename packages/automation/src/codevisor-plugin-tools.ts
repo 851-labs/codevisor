@@ -7,9 +7,6 @@ const SearchArgs = Schema.Struct({ query: Schema.optional(Schema.String) })
 const DescribeArgs = Schema.Struct({ plugin: Schema.String })
 const SetupArgs = Schema.Struct({ plugin: Schema.String, reason: Schema.String })
 
-export const setupWaitMarginMs = 5_000
-export const maxSetupWaitMs = 5 * 60_000
-
 export const codevisorPluginTools: ReadonlyArray<AgentTool> = [
   agentTool(
     "plugins.search",
@@ -29,7 +26,7 @@ export const codevisorPluginTools: ReadonlyArray<AgentTool> = [
   ),
   agentTool(
     "plugins.request_setup",
-    "Ask the user to install a plugin and sign in, from a card in this chat that works on any of their devices. reason is one plain sentence about what you'll do with it. Waits while the user sets it up and returns outcome: connected (ready to use), declined, or pending (the card stays; call again to keep waiting). Only call it after plugins.search and plugins.describe show the plugin can do what the user asked.",
+    "Show the user a card in this chat to set up a plugin: install it, or just connect their account when it's installed but not signed in. reason is one plain sentence about what you'll do with it. Returns at once with outcome: ready (already set up, no card), requested (the card is showing; needs says install or connect), or disabled (installed but turned off, no card). It doesn't wait: after requested, end your turn, and a hidden <codevisor-event type=\"plugin.setup_finished\"> wakes you when the plugin is ready. Only call it after plugins.search and plugins.describe show the plugin can do what the user asked.",
     SetupArgs,
     (tool, args) => requestSetup(tool, Schema.decodeUnknownSync(SetupArgs)(args))
   )
@@ -43,13 +40,6 @@ const requestSetup = (tool: AgentToolContext, args: typeof SetupArgs.Type): Prom
     body: {
       sessionId: localCallerId(tool, "plugins.request_setup"),
       plugin: args.plugin,
-      reason: args.reason,
-      waitMs: setupWaitMs(tool.context.deadline)
+      reason: args.reason
     }
   })
-
-export const setupWaitMs = (deadline: number | undefined): number =>
-  Math.max(
-    0,
-    Math.min(maxSetupWaitMs, (deadline ?? Infinity) - setupWaitMarginMs - performance.now())
-  )

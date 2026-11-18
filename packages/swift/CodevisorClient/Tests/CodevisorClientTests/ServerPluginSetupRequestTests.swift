@@ -5,39 +5,66 @@ import TranscriptKit
 
 @testable import CodevisorClient
 
-@Suite("Plugin setup questions")
+@Suite("Plugin setup cards")
 struct ServerPluginSetupRequestTests {
-  @Test("A pluginSetup question carries its plugin and stays an in-transcript question")
-  func decodesSetupRequest() throws {
-    let questions = try Self.questions(presentation: "pluginSetup", payload: Self.setupJSON)
+  @Test("A plugin_setup update carries its plugin and is a card, not a question")
+  func decodesSetupUpdate() throws {
+    let json =
+      #"{"sessionUpdate":"plugin_setup","setupId":"plugin-setup:1","state":"pending","request":\#(Self.setupJSON)}"#
 
-    let setup = try #require(ServerPluginSetupRequest.decoded(from: questions))
+    let update = try JSONDecoder().decode(SessionUpdate.self, from: Data(json.utf8))
 
+    guard case let .pluginSetup(shown) = update else {
+      Issue.record("expected a plugin setup update")
+      return
+    }
+    let setup = try #require(ServerPluginSetupRequest.decoded(from: shown.request))
+    #expect(shown.setupId == "plugin-setup:1" && shown.state == .pending)
     #expect(setup.name == "Gmail")
     #expect(setup.catalogId == "gmail")
     #expect(setup.auth == .oauth2)
     #expect(setup.machine.name == "Studio")
     #expect(setup.capabilities.events.map(\.name) == ["message.received"])
-    #expect(TranscriptSetupRequest.kind(of: questions) == nil)
-    #expect(TranscriptQuestion.asksInTranscript(questions))
   }
 
-  @Test("A question with a presentation this client doesn't know still renders as a plain question")
-  func unknownPresentation() throws {
-    let questions = try Self.questions(presentation: "somethingNew", payload: nil)
+  @Test("A transcript item lists its setup cards with the state the server gave them")
+  func historyCards() throws {
+    let json =
+      #"[{"id":"plugin-setup:1","state":"connected","request":\#(Self.setupJSON)},{"id":"plugin-setup:2","state":"later","request":{}}]"#
 
-    #expect(questions.first?.presentation == nil)
-    #expect(ServerPluginSetupRequest.decoded(from: questions) == nil)
-    #expect(TranscriptQuestion.asksInTranscript(questions))
+    let cards = try JSONDecoder().decode([ServerTranscriptPluginSetup].self, from: Data(json.utf8))
+      .compactMap(\.transcriptInteraction)
+
+    #expect(cards.map(\.id) == ["plugin-setup:1"])
+    guard case let .pluginSetup(card)? = cards.first?.content else {
+      Issue.record("expected a plugin setup card")
+      return
+    }
+    #expect(card.state == .connected)
   }
 
-  private static func questions(presentation: String, payload: String?) throws -> [QuestionSpec] {
-    let setup = payload.map { #","pluginSetup":"# + $0 } ?? ""
+  @Test("A setup question from before cards stays only when it ended connected")
+  func earlierSetupQuestions() throws {
+    let connected = try Self.earlierQuestion(answer: #","answer":{"outcome":"autoResolved"}"#)
+    let declined = try Self.earlierQuestion(answer: #","answer":{"outcome":"cancelled"}"#)
+    let abandoned = try Self.earlierQuestion(answer: "")
+
+    guard case let .pluginSetup(card)? = connected.transcriptInteraction?.content else {
+      Issue.record("expected the connected card")
+      return
+    }
+    #expect(card.state == .connected)
+    #expect(declined.transcriptInteraction == nil)
+    #expect(abandoned.transcriptInteraction == nil)
+  }
+
+  private static func earlierQuestion(answer: String) throws -> ServerTranscriptInteraction {
     let json = """
-      [{"id":"plugin_setup","header":"Gmail","question":"Read your inbox","options":[{"label":"Set Up"},\
-      {"label":"Not Now"}],"allowsOther":false,"presentation":"\(presentation)"\(setup)}]
+      {"id":"plugin-setup:0","kind":"question","payload":{"questions":[{"id":"plugin_setup","header":"Gmail",\
+      "question":"Read your inbox","options":[{"label":"Set Up"},{"label":"Not Now"}],"allowsOther":false,\
+      "presentation":"pluginSetup","pluginSetup":\(setupJSON)}]}\(answer)}
       """
-    return try JSONDecoder().decode([QuestionSpec].self, from: Data(json.utf8))
+    return try JSONDecoder().decode(ServerTranscriptInteraction.self, from: Data(json.utf8))
   }
 
   private static let setupJSON = """

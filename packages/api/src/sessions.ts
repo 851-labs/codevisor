@@ -20,9 +20,10 @@ import {
   QuestionAnswerEntry,
   QuestionOutcome,
   QuestionPayload,
-  QuestionPresentation,
   QuestionSpec,
   SessionPlan,
+  TranscriptPluginSetup,
+  TranscriptSetupRequest,
   TurnStopKind
 } from "./session-updates.js"
 import { WorkspacePosition } from "./workspace-position.js"
@@ -217,13 +218,6 @@ export const TranscriptBodyResource = Schema.Struct({
 })
 export type TranscriptBodyResource = typeof TranscriptBodyResource.Type
 
-export const TranscriptSetupRequest = Schema.Struct({
-  questionId: Schema.String,
-  presentation: QuestionPresentation,
-  outcome: Schema.optional(QuestionOutcome)
-})
-export type TranscriptSetupRequest = typeof TranscriptSetupRequest.Type
-
 export const TranscriptQuestionInteraction = Schema.Struct({
   id: Schema.String,
   kind: Schema.Literal("question"),
@@ -287,6 +281,7 @@ export const TranscriptItem = Schema.Struct({
   textPosition: Schema.optional(Schema.Number),
   setupRequests: Schema.optional(Schema.Array(TranscriptSetupRequest)),
   interactions: Schema.optional(Schema.Array(TranscriptInteraction)),
+  pluginSetups: Schema.optional(Schema.Array(TranscriptPluginSetup)),
   apps: Schema.optional(Schema.Array(TranscriptPluginApp)),
   compaction: Schema.optional(ContextCompactionStatus),
   revision: Schema.Number

@@ -3,42 +3,44 @@ import SwiftUI
 
 public struct PluginSetupCard: View {
   let model: PluginSetupModel
-  let resolution: PluginSetupResolution?
+  let request: ServerPluginSetupRequest
+  let isConnected: Bool
   let inBotConversation: Bool
   let icon: AnyView
-  let onDecline: () -> Void
 
   public init(
     model: PluginSetupModel,
-    resolution: PluginSetupResolution?,
+    request: ServerPluginSetupRequest,
+    isConnected: Bool,
     inBotConversation: Bool,
-    icon: AnyView,
-    onDecline: @escaping () -> Void
+    icon: AnyView
   ) {
     self.model = model
-    self.resolution = resolution
+    self.request = request
+    self.isConnected = isConnected
     self.inBotConversation = inBotConversation
     self.icon = icon
-    self.onDecline = onDecline
   }
 
   public var body: some View {
-    TranscriptInlineCard(
-      title: model.request.name,
-      state: state,
-      inBotConversation: inBotConversation,
-      tone: model.errorMessage == nil ? .neutral : .error,
-      leadingIconView: isResolved ? nil : icon
-    )
-  }
-
-  private var isResolved: Bool {
-    resolution != nil || model.step == .ready
+    HStack(spacing: 0) {
+      HStack(alignment: .center, spacing: TranscriptInlineCardMetrics.iconSpacing) {
+        icon
+        TranscriptInlineCardText(title: request.name, message: summary)
+        Spacer(minLength: 8)
+        PluginSetupCardAccessory(state: accessory, perform: performPrimaryAction)
+      }
+      .padding(ComposerCardStyle.contentPadding)
+      .modifier(TranscriptInlineCardSurface(inBotConversation: inBotConversation))
+      .frame(maxWidth: TranscriptInlineCardMetrics.maxWidth, alignment: .leading)
+      Spacer(minLength: inBotConversation ? TranscriptBubbleMetrics.oppositeSideGap : 0)
+    }
+    .accessibilityElement(children: .contain)
+    .accessibilityLabel(request.name)
   }
 
   private var summary: String {
-    if let description = model.request.description.flatMap(Self.firstSentence) { return description }
-    return model.step == .install ? "Install it to use it in this chat." : "Sign in to use it in this chat."
+    request.description.flatMap(Self.firstSentence) ?? request.reason
   }
 
   private static func firstSentence(of text: String) -> String? {
@@ -48,20 +50,15 @@ public struct PluginSetupCard: View {
     return String(trimmed[..<end.lowerBound]) + "."
   }
 
-  private var state: TranscriptInlineCard.State {
-    if resolution == .declined { return .resolved(.declined("Declined")) }
-    if resolution == .connected || model.step == .ready { return .resolved(.completed("Connected")) }
-    return .pending(message: model.errorMessage ?? summary, actions: actions)
-  }
-
-  private var actions: [TranscriptInlineCard.Action] {
-    let decline = TranscriptInlineCard.Action(PluginSetupResolution.declineLabel, emphasis: .quiet, perform: onDecline)
-    guard let title = model.actionTitle else { return [decline] }
-    return [decline, TranscriptInlineCard.Action(title, emphasis: .primary, perform: performPrimaryAction)]
+  private var accessory: PluginSetupCardAccessory.State {
+    if isConnected { return .done(request.auth == .none ? "Installed" : "Connected") }
+    if model.isWorking { return .working }
+    if model.step == .unavailable { return .unavailable }
+    return .action("Connect", isEnabled: model.canAct)
   }
 
   private func performPrimaryAction() {
-    guard !model.isWorking else { return }
+    guard !isConnected, model.canAct, !model.isWorking else { return }
     Task { await model.performPrimaryAction() }
   }
 }

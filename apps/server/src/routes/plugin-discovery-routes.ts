@@ -16,26 +16,15 @@ export const routePluginDiscovery = async (route: RouteContext): Promise<boolean
   }
   if (request.method === "POST" && url.pathname === "/v1/plugins/setup-requests") {
     const body = await readSchema(request, SetupRequestBody)
-    return respond(route, await requireDiscovery(route).setup.request(setupInput(body)))
+    return respond(route, await requireDiscovery(route).setup.request(body))
   }
   return false
 }
 
-export const defaultSetupWaitMs = 5 * 60_000
-const maxSetupWaitMs = 9 * 60_000
-
 const SetupRequestBody = Schema.Struct({
   sessionId: Schema.String,
   plugin: Schema.String,
-  reason: Schema.String,
-  waitMs: Schema.optional(Schema.Number)
-})
-
-const setupInput = (body: typeof SetupRequestBody.Type) => ({
-  sessionId: body.sessionId,
-  plugin: body.plugin,
-  reason: body.reason,
-  waitMs: Math.max(0, Math.min(maxSetupWaitMs, body.waitMs ?? defaultSetupWaitMs))
+  reason: Schema.String
 })
 
 const requireDescription = async (discovery: PluginDiscovery, plugin: string) => {

@@ -14,22 +14,28 @@ public final class PluginSetupModel {
   public private(set) var isWorking = false
   public var errorMessage: String?
   public var installing: ServerPluginCatalogEntry?
+  public var connecting: PluginConnectTarget?
   public var addingAccount: PluginAccountEditing?
   public var guiding: PluginAccountGuideModel?
 
   @ObservationIgnored private let client: any CodevisorServerClienting
   @ObservationIgnored private let signInRoute: PluginSignInRoute
   @ObservationIgnored private let webSignIn: any WebSignInPresenting
+  @ObservationIgnored private let opensConnectSheet: Bool
+  @ObservationIgnored private var signingIn: PluginSignInBrowser?
+  @ObservationIgnored private var awaitsAccountSetup = false
 
   public init(
     request: ServerPluginSetupRequest,
     client: any CodevisorServerClienting,
     signInRoute: PluginSignInRoute = .thisMachine,
+    opensConnectSheet: Bool = false,
     webSignIn: any WebSignInPresenting = PluginWebSignIn()
   ) {
     self.request = request
     self.client = client
     self.signInRoute = signInRoute
+    self.opensConnectSheet = opensConnectSheet
     self.webSignIn = webSignIn
   }
 
@@ -45,12 +51,10 @@ public final class PluginSetupModel {
     }
   }
 
-  public var actionTitle: String? {
+  public var canAct: Bool {
     switch step {
-    case .install: "Install"
-    case .signIn: signInTitle
-    case .failed: "Retry"
-    case .checking, .ready, .unavailable: nil
+    case .install, .signIn, .failed: true
+    case .checking, .ready, .unavailable: false
     }
   }
 
@@ -66,16 +70,40 @@ public final class PluginSetupModel {
     server = servers.first(where: matchesRequest)
     await refreshAccounts()
     hasChecked = true
-    if step == .ready { webSignIn.cancel() }
+    if step == .ready { closeSignIn() }
   }
 
   public func performPrimaryAction() async {
     switch step {
-    case .install: installing = entry
-    case .signIn: await beginSignIn()
+    case .install: beginInstall()
+    case .signIn: await beginConnect()
     case .failed: await refresh()
     case .checking, .ready, .unavailable: return
     }
+  }
+
+  public func didInstall(_ server: ServerMcpServer) {
+    self.server = server
+    awaitsAccountSetup = entry?.accounts.map { !$0.signsInDirectly } ?? false
+  }
+
+  public func connectSheetDismissed() async {
+    await refresh()
+    guard awaitsAccountSetup else { return }
+
+    awaitsAccountSetup = false
+    if step == .signIn { await beginSignIn() }
+  }
+
+  public func signIn(to server: ServerMcpServer, browser: PluginSignInBrowser) async {
+    guard let start = await report({ try await self.startSignIn(to: server, ticket: browser.ticket) }) else {
+      await browser.abandon()
+      return
+    }
+
+    signingIn = browser
+    await working { _ = await browser.finish(at: start.authorizationUrl) }
+    signingIn = nil
   }
 
   public func install(values: [String: ServerConfigFieldValue]) async throws {
@@ -91,12 +119,25 @@ public final class PluginSetupModel {
     return entry == nil ? request.auth : .none
   }
 
-  private var signInTitle: String {
-    switch auth {
-    case .oauth2: entry?.accounts?.addTitle ?? "Sign In"
-    case .fields: entry?.accounts?.addTitle ?? "Add Account"
-    case .mcpOAuth, .none: "Sign In"
+  private func beginInstall() {
+    guard opensConnectSheet, let entry else {
+      installing = entry
+      return
     }
+    connecting = PluginConnectTarget(entry: entry, installed: nil)
+  }
+
+  private func beginConnect() async {
+    guard opensConnectSheet, let entry, let server else {
+      await beginSignIn()
+      return
+    }
+    connecting = PluginConnectTarget(entry: entry, installed: server)
+  }
+
+  private func closeSignIn() {
+    webSignIn.cancel()
+    signingIn?.close()
   }
 
   private func matchesRequest(_ server: ServerMcpServer) -> Bool {
@@ -140,17 +181,13 @@ public final class PluginSetupModel {
 
   private func signInToServer() async {
     guard let server else { return }
-    let browser = signInClient.map {
-      PluginSignInBrowser(client: $0, pluginName: server.name, presenter: webSignIn)
-    }
-    guard let start = await report({ try await self.startSignIn(to: server, ticket: browser?.ticket) }),
-      let browser
-    else {
-      await browser?.abandon()
+    guard let signInClient else {
+      _ = await report { try await self.startSignIn(to: server, ticket: nil) }
       return
     }
 
-    await working { _ = await browser.finish(at: start.authorizationUrl) }
+    await signIn(
+      to: server, browser: PluginSignInBrowser(client: signInClient, pluginName: server.name, presenter: webSignIn))
   }
 
   private var signInClient: (any CodevisorServerClienting)? {
