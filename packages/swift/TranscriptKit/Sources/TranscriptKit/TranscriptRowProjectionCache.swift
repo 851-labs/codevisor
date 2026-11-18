@@ -209,8 +209,8 @@ public struct TranscriptPresentationRow: Identifiable, Equatable, Sendable {
         true
       case .delivery, .botTyping, .active, .activePlanning, .activePlanHeader, .activePlanMarkdown,
         .activeResult, .activeWorkedHeader, .activeWorkedItem, .activeChrome,
-        .activeMarkdown, .activeAttachment, .activePluginApps, .setupRequest, .interaction, .setup, .startingAgent,
-        .backgroundTask, .updateGate, .connecting, .serverWait, .sandboxPower, .error,
+        .activeMarkdown, .activeAttachment, .activePluginApps, .setupRequest, .interaction, .setup, .setupAfter,
+        .startingAgent, .backgroundTask, .updateGate, .connecting, .serverWait, .sandboxPower, .error,
         .statusError, .bottomSpacer:
         false
       }
@@ -243,7 +243,7 @@ public struct TranscriptPresentationRow: Identifiable, Equatable, Sendable {
         let .forkMarker(id), let .eventMarker(id):
         id
       case .botMessage, .botTimestamp, .botAuthorName, .delivery, .botTyping, .setupRequest, .interaction, .setup,
-        .startingAgent,
+        .setupAfter, .startingAgent,
         .backgroundTask,
         .updateGate, .connecting, .serverWait, .sandboxPower, .error, .statusError, .bottomSpacer:
         nil

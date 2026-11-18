@@ -215,7 +215,7 @@ const putBackChat = async (
 ): Promise<void> => {
   const { format } = manifest
   const { session, files } = chat
-  await ask(deps, machine, { action: "restore_chat", format, workspaceId, session })
+  await ask(deps, machine, { action: "restore_chat", format, workspaceId, session, hidden: true })
   for await (const item of deps.savedChats.items(workspaceId, session.id)) {
     await ask(deps, machine, { action: "restore_item", format, sessionId: session.id, item })
   }
@@ -227,6 +227,7 @@ const putBackChat = async (
     format,
     sessionId: session.id,
     fileIds: files.map((file) => file.id),
+    workspaceId,
     restore: {
       startedAt: machine.createdAt,
       completedAt: new Date(deps.clock.now()).toISOString(),

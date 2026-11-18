@@ -24,7 +24,7 @@ import {
   writeResumeFile,
   type ResumeHost
 } from "./sandbox-chat-resume.js"
-import { createSessionIfMissing } from "./session-workspace.js"
+import { applySessionUpdate, createSessionIfMissing } from "./session-workspace.js"
 import { publishPaneUpdated } from "./workspace-panes.js"
 
 type Action<Name extends SandboxChatsAction["action"]> = Extract<
@@ -172,7 +172,7 @@ const fileChunk = async (
 
 const restoreChat = async (
   route: RouteContext,
-  { workspaceId, session }: Action<"restore_chat">
+  { workspaceId, session, hidden }: Action<"restore_chat">
 ): Promise<{ readonly sessionId: string }> => {
   const { services, fanout, routeState, config } = route
   const workspace = (await run(services.db.listWorkspaces)).find((candidate) =>
@@ -189,7 +189,7 @@ const restoreChat = async (
     {
       ...fields,
       projectId: workspace.projectId,
-      workspaceId: workspace.id,
+      ...(hidden === true ? {} : { workspaceId: workspace.id }),
       deferAgentSession: true
     },
     false
@@ -204,6 +204,11 @@ const finishChat = async (
 ): Promise<{ readonly restored: true }> => {
   await run(services.db.finishChatImport(action.sessionId, action.fileIds, action.restore))
   if (action.agentSessionId !== undefined) await resumeFrom(services, action, action.agentSessionId)
+  if (action.workspaceId !== undefined) {
+    await applySessionUpdate(services, fanout, action.sessionId, {
+      workspaceId: action.workspaceId
+    })
+  }
   const session = await run(services.db.getSessionSummary(action.sessionId))
   await appendAndPublish(services.db, fanout, "session.created", session.id, session)
   return { restored: true }

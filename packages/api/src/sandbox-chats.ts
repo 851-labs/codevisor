@@ -102,6 +102,7 @@ export const SandboxChatsAction = Schema.Union([
     action: Schema.Literal("restore_chat"),
     format: Schema.Number,
     workspaceId: Schema.String,
+    hidden: Schema.optional(Schema.Boolean),
     session: SavedChatSession
   }),
   Schema.Struct({
@@ -129,6 +130,7 @@ export const SandboxChatsAction = Schema.Union([
     fileIds: Schema.Array(Schema.String),
     note: Schema.optional(Schema.String),
     restore: Schema.optional(SavedChatRestore),
+    workspaceId: Schema.optional(Schema.String),
     agentSessionId: Schema.optional(Schema.String)
   })
 ])

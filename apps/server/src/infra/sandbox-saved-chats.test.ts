@@ -118,7 +118,7 @@ describe("a sandbox's chats across archive and restore", () => {
     })
     expect(machine).toMatchObject({ state: "ready", workspaceId: "id-2" })
     expect(putBack).toEqual([
-      { action: "restore_chat", format: 1, workspaceId: "id-2", session },
+      { action: "restore_chat", format: 1, workspaceId: "id-2", session, hidden: true },
       { action: "restore_item", format: 1, sessionId: "chat-1", item: itemOf("item-1") },
       { action: "restore_item", format: 1, sessionId: "chat-1", item: itemOf("item-2") },
       {
@@ -132,6 +132,7 @@ describe("a sandbox's chats across archive and restore", () => {
         format: 1,
         sessionId: "chat-1",
         fileIds: ["note"],
+        workspaceId: "id-2",
         restore: expect.any(Object),
         agentSessionId: "agent-1"
       },
@@ -202,6 +203,7 @@ describe("a sandbox's chats across archive and restore", () => {
         format: 1,
         sessionId: "chat-1",
         fileIds: ["note"],
+        workspaceId: "id-2",
         restore: expect.any(Object),
         agentSessionId: "agent-1"
       },
@@ -236,6 +238,7 @@ describe("a sandbox's chats across archive and restore", () => {
         format: 1,
         sessionId: "chat-1",
         fileIds: ["note"],
+        workspaceId: "id-2",
         restore: expect.any(Object),
         agentSessionId: "agent-1"
       })
