@@ -93,6 +93,7 @@ public final class ScreenSharingV2Host: ScreenSharingFrameSink, @unchecked Senda
     metrics.observe("captureQueueWait", milliseconds: Double(ScreenSharingMetrics.nowNs - capture.capturedNs) / 1e6)
     refreshPhase.observe(frameAtNs: capture.frame.timestampNs)
     refinementWakeNs = nil
+    if capture.frame.dirtyRects == nil { metrics.increment("capturesWithUnknownChanges") }
     let reported = layout.tiles(touching: capture.frame.dirtyRects)
     let previous = (slot.waiting ?? slot.lastEncoded)?.frame.pixelBuffer
     let candidates = reported.subtracting(slot.waitingTiles)

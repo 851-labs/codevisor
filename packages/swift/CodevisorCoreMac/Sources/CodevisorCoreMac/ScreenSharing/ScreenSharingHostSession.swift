@@ -121,17 +121,28 @@ final class ScreenSharingHostSession {
       channel: self.peer.channels.cursor, display: self.sharedDisplay, metrics: self.metrics,
       isStopping: { [weak self] in self?.stopping ?? true },
       setShowsCursor: { [weak self] showsCursor in
-        guard let self else { return }
-        Task { try? await self.capture.setShowsCursor(showsCursor) }
+        self?.changeCapture("cursor stream \(showsCursor ? "off" : "on")") { try await $0.setShowsCursor(showsCursor) }
       })
     self.audioStream = ScreenSharingHostAudioStream(
       channel: self.peer.channels.audio, sendPacket: self.peer.sendAudioPacket,
       tap: self.capture.audio, metrics: self.metrics,
       isStopping: { [weak self] in self?.stopping ?? true },
       setCapturesAudio: { [weak self] capturesAudio in
-        guard let self else { return }
-        Task { try? await self.capture.setCapturesAudio(capturesAudio) }
+        self?.changeCapture("audio \(capturesAudio ? "on" : "off")") { try await $0.setCapturesAudio(capturesAudio) }
       })
+  }
+
+  private func changeCapture(_ what: String, _ change: @escaping @MainActor (ScreenSharingCapture) async throws -> Void)
+  {
+    Task {
+      do {
+        try await change(capture)
+        ScreenSharingHostService.logger.notice("Capture changed (\(what, privacy: .public))")
+      } catch {
+        ScreenSharingHostService.logger.error(
+          "Capture change failed (\(what, privacy: .public)): \(error.localizedDescription, privacy: .public)")
+      }
+    }
   }
 
   func stopMediaPublishing() {
