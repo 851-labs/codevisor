@@ -41,6 +41,7 @@ struct NativeTranscriptView: NSViewRepresentable {
       {
         scrollView.prepareForDismantle()
         scrollView.removeFromSuperview()
+        if !presentationSurface.isWarm { presentationSurface.presentation.forgetMount() }
       }
       self.presentationSurface = nil
       reclaimSurface = nil
