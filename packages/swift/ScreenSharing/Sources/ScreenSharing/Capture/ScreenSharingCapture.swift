@@ -122,8 +122,10 @@
     }
 
     public func update(configuration: ScreenSharingVideoConfiguration) async throws {
-      guard let stream, output != nil else { throw ScreenSharingError.unavailable("Capture is not running.") }
+      guard let stream, let output else { throw ScreenSharingError.unavailable("Capture is not running.") }
       let generation = generation
+      output.changes.reconfigurationBegan()
+      defer { output.changes.reconfigurationEnded() }
       try await stream.updateConfiguration(
         Self.streamConfiguration(
           configuration, pixelFormat: pixelFormat, showsCursor: showsCursor, capturesAudio: capturesAudio,
@@ -270,6 +272,7 @@
     let metrics: ScreenSharingMetrics
     let onStopped: @Sendable (String) -> Void
     let audio: ScreenSharingCaptureAudioTap?
+    let changes = ScreenSharingCaptureChanges()
 
     init(
       sink: any ScreenSharingFrameSink, metrics: ScreenSharingMetrics,
@@ -301,18 +304,25 @@
         ScreenSharingCaptureCallbackAccounting.record(
           valid: sampleBuffer.isValid, rawStatus: status, hasImage: pixel != nil, metrics: metrics),
         let pixel
-      else { return }
+      else { return skipped(status: status) }
       let time = CMTimeConvertScale(sampleBuffer.presentationTimeStamp, timescale: 1_000_000_000, method: .default)
-      guard time.isNumeric, time.value >= 0 else { return }
+      guard time.isNumeric, time.value >= 0 else { return changes.interrupt() }
       let hostTime = CMClockGetTime(CMClockGetHostTimeClock())
       metrics.observe(
         "captureDeliveryAge", milliseconds: CMTimeGetSeconds(hostTime - sampleBuffer.presentationTimeStamp) * 1000)
       ScreenSharingCaptureColorTags.tagStandardTransfer(pixel)
       let nativeScale = (attachments?.first?[.contentScale] as? Double).map { $0 == 1 } ?? false
-      let dirtyRects = (attachments?.first?[.dirtyRects] as? [NSDictionary]).flatMap { rects in
+      let reported = (attachments?.first?[.dirtyRects] as? [NSDictionary]).flatMap { rects in
         nativeScale ? rects.compactMap { CGRect(dictionaryRepresentation: $0) } : nil
       }
+      let dirtyRects = changes.sinceLastDeliveredFrame(reported)
       sink.push(ScreenSharingVideoFrame(pixelBuffer: pixel, timestampNs: time.value, dirtyRects: dirtyRects))
+    }
+
+    private func skipped(status: Int?) {
+      guard status != ScreenSharingCaptureCallbackAccounting.Status.idle.rawValue else { return }
+
+      changes.interrupt()
     }
 
     func stream(_ stream: SCStream, didStopWithError error: any Error) {

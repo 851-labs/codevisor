@@ -314,20 +314,10 @@
       #expect(transfer == delivered)
     }
 
-    @Test(arguments: [(1.0, true), (0.5, false)])
-    func dirtyRectsReachTheSinkOnlyAtNativeScale(contentScale: Double, delivered: Bool) async throws {
-      let fixture = CaptureFixture()
-      try await fixture.start()
-      let output = try #require(fixture.target.output)
-      let rect = CGRect(x: 2, y: 4, width: 6, height: 8)
-      let sample = try Self.screenSample(presentationNs: 1, contentScale: contentScale, dirtyRects: [rect])
-      output.deliver(sample, of: .screen)
-      #expect(fixture.sink.lastDirtyRects == (delivered ? [rect] : nil))
-    }
-
-    private static func screenSample(
+    static func screenSample(
       presentationNs: Int64, pixelFormat: OSType = kCVPixelFormatType_32BGRA, space: CFString? = nil,
-      transfer: CFString? = nil, contentScale: Double? = nil, dirtyRects: [CGRect]? = nil
+      transfer: CFString? = nil, contentScale: Double? = nil, dirtyRects: [CGRect]? = nil,
+      status: SCFrameStatus = .complete
     ) throws -> CMSampleBuffer {
       var pixel: CVPixelBuffer?
       #expect(
@@ -355,7 +345,7 @@
       let attachments =
         CMSampleBufferGetSampleAttachmentsArray(ready, createIfNecessary: true) as? [NSMutableDictionary]
       let first = try #require(attachments?.first)
-      first[SCStreamFrameInfo.status.rawValue] = SCFrameStatus.complete.rawValue
+      first[SCStreamFrameInfo.status.rawValue] = status.rawValue
       if let contentScale { first[SCStreamFrameInfo.contentScale.rawValue] = contentScale }
       if let dirtyRects {
         first[SCStreamFrameInfo.dirtyRects.rawValue] = dirtyRects.map { $0.dictionaryRepresentation }
@@ -366,7 +356,7 @@
 
   private enum CaptureFailure: Error, Equatable { case start, stop, update, makeStream }
 
-  @MainActor private final class CaptureFixture {
+  @MainActor final class CaptureFixture {
     let capture: ScreenSharingCapture
     let metrics = ScreenSharingMetrics()
     let sink = RecordingFrameSink()
@@ -381,7 +371,7 @@
     }
   }
 
-  private final class CaptureTargetDouble: ScreenSharingCaptureTarget {
+  final class CaptureTargetDouble: ScreenSharingCaptureTarget {
     let stream = CaptureStreamDouble()
     let captureContent: ScreenSharingCaptureContent
     var makeFailure: (any Error)?
@@ -403,7 +393,7 @@
     }
   }
 
-  private final class CaptureStreamDouble: ScreenSharingCaptureStream, @unchecked Sendable {
+  final class CaptureStreamDouble: ScreenSharingCaptureStream, @unchecked Sendable {
     enum Call: Equatable { case start, stop, update }
 
     struct Settings {
@@ -458,6 +448,10 @@
       get { lock.withLock { gates[.stop] } }
       set { lock.withLock { gates[.stop] = newValue } }
     }
+    var holdUpdate: CaptureGate? {
+      get { lock.withLock { gates[.update] } }
+      set { lock.withLock { gates[.update] = newValue } }
+    }
 
     nonisolated(nonsending) func startCapture() async throws {
       await lock.withLock { gates[.start] }?.enter()
@@ -470,6 +464,7 @@
     }
 
     nonisolated(nonsending) func updateConfiguration(_ configuration: SCStreamConfiguration) async throws {
+      await lock.withLock { gates[.update] }?.enter()
       let settings = Settings(configuration)
       try lock.withLock {
         recorded.append(.update)
@@ -486,7 +481,7 @@
     }
   }
 
-  private final class CaptureGate: @unchecked Sendable {
+  final class CaptureGate: @unchecked Sendable {
     let entered = TestSignal()
     private let lock = NSLock()
     private var continuation: CheckedContinuation<Void, Never>?
@@ -515,7 +510,7 @@
     }
   }
 
-  private final class RecordingFrameSink: ScreenSharingFrameSink, @unchecked Sendable {
+  final class RecordingFrameSink: ScreenSharingFrameSink, @unchecked Sendable {
     private let lock = NSLock()
     private var pushed: [Int64] = []
     private var last: ScreenSharingVideoFrame?
