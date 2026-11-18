@@ -77,6 +77,7 @@ public enum SessionUpdate: Sendable, Codable, Equatable {
   case planDocument(markdown: String, detailResource: ToolDetailResource? = nil, stateRevision: Int? = nil)
   case question(QuestionRequest)
   case questionResolved(QuestionResolution)
+  case pluginSetup(PluginSetupUpdate)
 
   private enum Keys: String, CodingKey {
     case sessionUpdate, messageId, parentToolCallId, phase, content, entries, availableCommands
@@ -175,12 +176,21 @@ public enum SessionUpdate: Sendable, Codable, Equatable {
           assistantItemId: try container.decodeIfPresent(String.self, forKey: .assistantItemId)
         ))
     default:
+      self = try Self.decodeCard(kind, from: decoder, in: container)
+    }
+  }
+
+  private static func decodeCard(
+    _ kind: String, from decoder: any Decoder, in container: KeyedDecodingContainer<Keys>
+  ) throws -> SessionUpdate {
+    guard kind == "plugin_setup" else {
       throw DecodingError.dataCorruptedError(
         forKey: .sessionUpdate,
         in: container,
         debugDescription: "Unknown session update: \(kind)"
       )
     }
+    return .pluginSetup(try PluginSetupUpdate(from: decoder))
   }
 
   private static func decodePhase(from container: KeyedDecodingContainer<Keys>) -> MessagePhase? {
@@ -267,6 +277,14 @@ public enum SessionUpdate: Sendable, Codable, Equatable {
       try container.encode(markdown, forKey: .markdown)
       try container.encodeIfPresent(resource, forKey: .detailResource)
       try container.encodeIfPresent(revision, forKey: .stateRevision)
+    case .question, .questionResolved, .pluginSetup:
+      try encodeInteraction(to: encoder)
+    }
+  }
+
+  private func encodeInteraction(to encoder: any Encoder) throws {
+    var container = encoder.container(keyedBy: Keys.self)
+    switch self {
     case let .question(request):
       try container.encode("question", forKey: .sessionUpdate)
       try container.encode(request.questionId, forKey: .questionId)
@@ -281,6 +299,11 @@ public enum SessionUpdate: Sendable, Codable, Equatable {
       try container.encodeIfPresent(resolution.answers, forKey: .answers)
       try container.encodeIfPresent(resolution.statePosition, forKey: .statePosition)
       try container.encodeIfPresent(resolution.assistantItemId, forKey: .assistantItemId)
+    case let .pluginSetup(setup):
+      try container.encode("plugin_setup", forKey: .sessionUpdate)
+      try setup.encode(to: encoder)
+    default:
+      break
     }
   }
 

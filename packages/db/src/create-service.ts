@@ -25,6 +25,7 @@ import { makeNavigationService } from "./navigation-service.js"
 import { makePluginAppContextsService } from "./plugin-app-contexts-service.js"
 import { makePluginEventSubscriptionsService } from "./plugin-event-subscriptions-service.js"
 import { makePluginEventsService } from "./plugin-events-service.js"
+import { makePluginSetupsService } from "./plugin-setups-service.js"
 import { makeProjectsService } from "./projects-service.js"
 import { makePromptQueueService } from "./prompt-queue-service.js"
 import { makeSavedChatService } from "./saved-chat-service.js"
@@ -83,6 +84,7 @@ export const createService = (
     ...makePluginEventSubscriptionsService(context),
     ...makePluginAppContextsService(context),
     ...makePluginEventsService(context),
+    ...makePluginSetupsService(context),
     ...makeAutoResumeService(context),
     ...makeFleetOutboxService(context),
     ...makeFilesService(context),

@@ -3,6 +3,7 @@ import ACPKit
 public struct TranscriptInteraction: Sendable, Equatable, Identifiable {
   public enum Content: Sendable, Equatable {
     case question(TranscriptQuestion)
+    case pluginSetup(TranscriptPluginSetup)
   }
 
   public var id: String
@@ -16,12 +17,14 @@ public struct TranscriptInteraction: Sendable, Equatable, Identifiable {
   public var isPending: Bool {
     switch content {
     case let .question(question): question.answer == nil
+    case .pluginSetup: false
     }
   }
 
   public var isShownInTranscript: Bool {
     switch content {
     case let .question(question): question.answer?.outcome != .replied
+    case .pluginSetup: true
     }
   }
 }

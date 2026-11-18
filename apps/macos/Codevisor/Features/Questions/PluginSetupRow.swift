@@ -6,7 +6,7 @@ import TranscriptKit
 
 struct PluginSetupRow: View {
   @Environment(AppEnvironment.self) private var environment
-  let question: TranscriptQuestion
+  let setup: TranscriptPluginSetup
   let request: ServerPluginSetupRequest
   let inBotConversation: Bool
   let controller: SessionController
@@ -14,12 +14,11 @@ struct PluginSetupRow: View {
   var body: some View {
     PluginSetupHost(
       request: request,
-      resolution: PluginSetupResolution(question.answer),
+      isConnected: setup.state == .connected,
       machineId: controller.project.serverId,
       client: environment.machines.client(for: controller.project.serverId),
       signInRoute: signInRoute,
-      inBotConversation: inBotConversation,
-      onDecline: decline
+      inBotConversation: inBotConversation
     ) { editing, accounts in
       PluginAccountEditorSheet(editing: editing, model: accounts)
     } guideSheet: { guide, onSaved in
@@ -30,12 +29,5 @@ struct PluginSetupRow: View {
   private var signInRoute: PluginSignInRoute {
     let local = CodevisorMachine.local.id
     return controller.project.serverId == local ? .thisMachine : .localMachine(environment.machines.client(for: local))
-  }
-
-  private func decline() {
-    let id = question.request.questionId
-    guard let spec = question.request.questions.first else { return }
-    let answer = QuestionAnswerEntry(answers: [PluginSetupResolution.declineLabel])
-    Task { await controller.answerTranscriptQuestion(id, with: [spec.id: answer]) }
   }
 }

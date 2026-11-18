@@ -198,3 +198,28 @@ export const QuestionResolvedPayload = Schema.Struct({
   answers: Schema.optional(Schema.Record(Schema.String, QuestionAnswerEntry))
 })
 export type QuestionResolvedPayload = typeof QuestionResolvedPayload.Type
+
+export const PluginSetupState = Schema.Literals(["pending", "connected"])
+export type PluginSetupState = typeof PluginSetupState.Type
+
+export const PluginSetupPayload = Schema.Struct({
+  sessionUpdate: Schema.Literals(["plugin_setup"]),
+  setupId: Schema.String,
+  state: PluginSetupState,
+  request: PluginSetupRequest
+})
+export type PluginSetupPayload = typeof PluginSetupPayload.Type
+
+export const TranscriptSetupRequest = Schema.Struct({
+  questionId: Schema.String,
+  presentation: QuestionPresentation,
+  outcome: Schema.optional(QuestionOutcome)
+})
+export type TranscriptSetupRequest = typeof TranscriptSetupRequest.Type
+
+export const TranscriptPluginSetup = Schema.Struct({
+  id: Schema.String,
+  state: PluginSetupState,
+  request: PluginSetupRequest
+})
+export type TranscriptPluginSetup = typeof TranscriptPluginSetup.Type

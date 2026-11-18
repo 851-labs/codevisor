@@ -161,7 +161,7 @@ export const executeSkill: BuiltinSkill = {
           "## Plugins",
           "Plugin and event tools are the `plugins` and `events` globals.",
           [
-            "- When the user asks for something a service or app could do, call `plugins.search`, then `plugins.describe` to confirm its exact tools and events, then `plugins.request_setup` if it isn't ready.",
+            "- When the user asks for something a service or app could do, call `plugins.search`, then `plugins.describe` to confirm its exact tools and events, then `plugins.request_setup` if it isn't ready. It shows a setup card and returns at once; a hidden `plugin.setup_finished` event wakes you when the user finishes, so end your turn instead of waiting.",
             "- Never claim a capability that `plugins.describe` doesn't list.",
             "- To react to outside events (a new email, an alert), call `events.topics`, check a CEL filter with `events.preview`, then `events.subscribe`, and read its `explained` back to the user.",
             '- When the user wants something done later or on a schedule (a reminder, "check back in an hour", every weekday at 9), don\'t do it now: subscribe to the built-in Clock and end your turn. Read `codevisor-events`.'

@@ -67,6 +67,24 @@ struct PluginConnectModelTests {
     #expect(presenter.urls.count == 1)
   }
 
+  @Test("For a plugin that is already installed the sheet only connects: no install, no skip, browser at once")
+  func connectsInstalledPlugin() async throws {
+    let presenter = FakeWebSignIn()
+    let host = ConnectHost()
+    let model = PluginConnectModel(
+      entry: try Self.entry(Self.remote(id: "acme", name: "Acme")), installed: try Self.server(),
+      client: Self.client(ConnectTransport()), host: host.host, webSignIn: presenter)
+    await model.load()
+
+    #expect(model.primaryTitle == "Sign in with Acme" && model.skipTitle == nil)
+    #expect(await model.run(.finishSetup))
+    await host.signingIn.wait()
+
+    #expect(host.authTypes.isEmpty)
+    #expect(host.installed.map(\.id) == ["mcp-1"])
+    #expect(host.browsers.count == 1 && presenter.urls.count == 1)
+  }
+
   @Test("Using an optional plugin without signing in installs it and opens nothing")
   func skippingSignIn() async throws {
     let transport = ConnectTransport()

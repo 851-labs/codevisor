@@ -3,65 +3,75 @@ import SwiftUI
 
 public struct PluginSetupCard: View {
   let model: PluginSetupModel
-  let resolution: PluginSetupResolution?
+  let request: ServerPluginSetupRequest
+  let isConnected: Bool
   let inBotConversation: Bool
   let icon: AnyView
-  let onDecline: () -> Void
 
   public init(
     model: PluginSetupModel,
-    resolution: PluginSetupResolution?,
+    request: ServerPluginSetupRequest,
+    isConnected: Bool,
     inBotConversation: Bool,
-    icon: AnyView,
-    onDecline: @escaping () -> Void
+    icon: AnyView
   ) {
     self.model = model
-    self.resolution = resolution
+    self.request = request
+    self.isConnected = isConnected
     self.inBotConversation = inBotConversation
     self.icon = icon
-    self.onDecline = onDecline
   }
 
   public var body: some View {
-    TranscriptInlineCard(
-      title: model.request.name,
-      state: state,
-      inBotConversation: inBotConversation,
-      tone: model.errorMessage == nil ? .neutral : .error,
-      leadingIconView: isResolved ? nil : icon
-    )
+    HStack(spacing: 0) {
+      Button(action: performPrimaryAction) {
+        PluginSetupCardLabel(title: title, isConnected: isConnected, icon: icon)
+          .padding(.horizontal, 12)
+          .padding(.vertical, 8)
+          .modifier(TranscriptInlineCardSurface(inBotConversation: inBotConversation))
+          .contentShape(Rectangle())
+      }
+      .buttonStyle(.plain)
+      .disabled(!canAct && !isConnected)
+      .allowsHitTesting(!isConnected)
+      .help(request.reason)
+      Spacer(minLength: inBotConversation ? TranscriptBubbleMetrics.oppositeSideGap : 0)
+    }
   }
 
-  private var isResolved: Bool {
-    resolution != nil || model.step == .ready
+  private var name: String { request.name }
+
+  private var canAct: Bool {
+    !isConnected && model.canAct && !model.isWorking
   }
 
-  private var summary: String {
-    if let description = model.request.description.flatMap(Self.firstSentence) { return description }
-    return model.step == .install ? "Install it to use it in this chat." : "Sign in to use it in this chat."
-  }
-
-  private static func firstSentence(of text: String) -> String? {
-    let trimmed = text.trimmingCharacters(in: .whitespacesAndNewlines)
-    guard !trimmed.isEmpty else { return nil }
-    guard let end = trimmed.range(of: ". ") else { return trimmed }
-    return String(trimmed[..<end.lowerBound]) + "."
-  }
-
-  private var state: TranscriptInlineCard.State {
-    if resolution == .declined { return .resolved(.declined("Declined")) }
-    if resolution == .connected || model.step == .ready { return .resolved(.completed("Connected")) }
-    return .pending(message: model.errorMessage ?? summary, actions: actions)
-  }
-
-  private var actions: [TranscriptInlineCard.Action] {
-    let decline = TranscriptInlineCard.Action(PluginSetupResolution.declineLabel, emphasis: .quiet, perform: onDecline)
-    guard let title = model.actionTitle else { return [decline] }
-    return [decline, TranscriptInlineCard.Action(title, emphasis: .primary, perform: performPrimaryAction)]
+  private var title: String {
+    if isConnected { return request.auth == .none ? "Installed \(name)" : "Connected with \(name)" }
+    if model.step == .unavailable { return "\(name) isn’t available" }
+    return model.connectsAccount ? "Connect with \(name)" : "Install \(name)"
   }
 
   private func performPrimaryAction() {
-    guard !model.isWorking else { return }
+    guard canAct else { return }
     Task { await model.performPrimaryAction() }
+  }
+}
+
+private struct PluginSetupCardLabel: View {
+  let title: String
+  let isConnected: Bool
+  let icon: AnyView
+
+  var body: some View {
+    HStack(spacing: 8) {
+      icon
+      Text(title)
+        .font(.callout.weight(.medium))
+        .lineLimit(1)
+      Image(systemName: isConnected ? "checkmark" : "chevron.right")
+        .font(.caption.weight(.semibold))
+        .foregroundStyle(.secondary)
+        .accessibilityHidden(true)
+    }
   }
 }

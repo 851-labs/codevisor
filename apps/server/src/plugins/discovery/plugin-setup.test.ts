@@ -3,10 +3,16 @@ import { Schema } from "effect"
 import { describe, expect, it, vi } from "vitest"
 
 import { fakeOAuthMcpServer, manualOAuthClock } from "../../infra/mcp-oauth-test-support.js"
-import { bodyId, jsonRequest, listSubjectEvents, waitFor } from "../../test-support.js"
+import { bodyId, jsonRequest, listSubjectEvents, run, waitFor } from "../../test-support.js"
 import { field, isRecord, stringField } from "../../unknown-values.js"
 import { savePluginRow } from "../events/plugin-events-test-support.js"
-import { createChat, post, startPluginServer, type PluginServer } from "../plugin-test-support.js"
+import {
+  createChat,
+  post,
+  startPluginServer,
+  testEventsId,
+  type PluginServer
+} from "../plugin-test-support.js"
 
 const grafanaId = "dev.codevisor/grafana"
 const trackerServer = {
@@ -23,173 +29,173 @@ const setupUpdates = (
 ): ReadonlyArray<Readonly<Record<string, unknown>>> =>
   listSubjectEvents(running.services, sessionId).flatMap((event) => {
     const payload = event.payload
-    const isSetup = stringField(payload, "questionId")?.startsWith("plugin-setup:") === true
+    const isSetup = stringField(payload, "sessionUpdate") === "plugin_setup"
     if (event.kind !== "session.output" || !isRecord(payload) || !isSetup) return []
     return [payload]
   })
 
-const asArray = (value: unknown): ReadonlyArray<unknown> => (Array.isArray(value) ? value : [])
+const setupStates = (running: PluginServer, sessionId: string): ReadonlyArray<unknown> =>
+  setupUpdates(running, sessionId).map((update) => update["state"])
+
+const finishedPrompts = (running: PluginServer): ReadonlyArray<string> =>
+  running.agents.prompts.flatMap(([, input]) =>
+    typeof input === "string" && input.includes('type="plugin.setup_finished"') ? [input] : []
+  )
 
 const ItemsResponse = Schema.Struct({ items: Schema.Array(Schema.Unknown) })
 
-const requestSetup = (running: PluginServer, sessionId: string, plugin: string, waitMs?: number) =>
-  post(running, "/v1/plugins/setup-requests", {
-    sessionId,
-    plugin,
-    reason,
-    ...(waitMs === undefined ? {} : { waitMs })
+const requestSetup = (running: PluginServer, sessionId: string, plugin: string) =>
+  post(running, "/v1/plugins/setup-requests", { sessionId, plugin, reason })
+
+const installGrafana = async (running: PluginServer): Promise<string> =>
+  bodyId(await post(running, `/v1/plugins/catalog/${encodeURIComponent(grafanaId)}/install`))
+
+const addGrafanaAccount = (running: PluginServer, serverId: string) =>
+  post(running, `/v1/plugins/${serverId}/accounts`, {
+    values: { url: "https://grafana.example.com", token: "glsa_secret" }
   })
 
-const askedQuestion = async (running: PluginServer, sessionId: string): Promise<string> => {
-  await waitFor(() => setupUpdates(running, sessionId).length > 0)
-  return stringField(setupUpdates(running, sessionId)[0], "questionId")!
-}
-
-const answer = (
-  running: PluginServer,
-  sessionId: string,
-  questionId: string,
-  body: Record<string, unknown>
-) =>
-  post(
-    running,
-    `/v1/sessions/${sessionId}/questions/${encodeURIComponent(questionId)}/answer`,
-    body
-  )
-
-const choose = (label: string) => ({
-  outcome: "answered",
-  answers: { plugin_setup: { answers: [label] } }
-})
-
 describe("plugin setup requests", () => {
-  it("reports a plugin that is already ready as connected without asking", async () => {
+  it("reports a plugin that is already set up as ready without showing a card", async () => {
     const running = await startPluginServer()
     const pinger = await savePluginRow(running.services.db, "Pinger")
     const chat = await createChat(running, "Chat")
 
-    const requested = await requestSetup(running, chat, "pinger", 0)
+    const requested = await requestSetup(running, chat, "pinger")
 
     expect(requested.body).toEqual({
-      outcome: "connected",
+      outcome: "ready",
       plugin: pinger.id,
       name: "Pinger",
-      accounts: []
+      accounts: [],
+      next: "Pinger is ready to use. No card was shown."
     })
     expect(setupUpdates(running, chat)).toEqual([])
   })
 
-  it("asks once in the chat and reports pending when nobody answers in time", async () => {
+  it("shows one card and returns at once, however often it is asked", async () => {
     const running = await startPluginServer()
     const chat = await createChat(running, "Chat")
 
-    const first = await requestSetup(running, chat, grafanaId, 0)
-    const again = await requestSetup(running, chat, "Grafana", -5)
+    const first = await requestSetup(running, chat, grafanaId)
+    const again = await requestSetup(running, chat, "Grafana")
 
-    expect([first.body, again.body]).toEqual([
-      { outcome: "pending", plugin: grafanaId, name: "Grafana", accounts: [] },
-      { outcome: "pending", plugin: grafanaId, name: "Grafana", accounts: [] }
-    ])
+    expect(first.body).toEqual({
+      outcome: "requested",
+      needs: "install",
+      plugin: grafanaId,
+      name: "Grafana",
+      accounts: [],
+      next: expect.stringContaining('<codevisor-event type="plugin.setup_finished">')
+    })
+    expect(again.body).toEqual(first.body)
     expect(setupUpdates(running, chat)).toEqual([
       {
-        sessionUpdate: "question",
+        sessionUpdate: "plugin_setup",
         chatItemId: expect.any(String),
-        questionId: expect.stringMatching(/^plugin-setup:/),
-        questions: [
-          {
-            id: "plugin_setup",
-            header: "Grafana",
-            question: reason,
-            options: [{ label: "Set Up" }, { label: "Not Now" }],
-            multiSelect: false,
-            allowsOther: false,
-            presentation: "pluginSetup",
-            pluginSetup: {
-              plugin: grafanaId,
-              catalogId: grafanaId,
-              publisher: expect.any(String),
-              description: expect.stringContaining("Grafana"),
-              name: "Grafana",
-              reason,
-              auth: "fields",
-              capabilities: expect.objectContaining({
-                ingress: [{ name: "alerts", title: "Grafana alert webhook" }]
-              }),
-              machine: { id: "server-a", name: "Local Codevisor" }
-            }
-          }
-        ]
+        setupId: expect.stringMatching(/^plugin-setup:/),
+        state: "pending",
+        request: {
+          plugin: grafanaId,
+          catalogId: grafanaId,
+          publisher: expect.any(String),
+          description: expect.stringContaining("Grafana"),
+          name: "Grafana",
+          reason,
+          auth: "fields",
+          capabilities: expect.objectContaining({
+            ingress: [{ name: "alerts", title: "Grafana alert webhook" }]
+          }),
+          machine: { id: "server-a", name: "Local Codevisor" }
+        }
       }
     ])
   })
 
-  it("connects once the plugin is installed and an account is added", async () => {
+  it("leaves the chat free: the card is not a question waiting on the user", async () => {
     const running = await startPluginServer()
     const chat = await createChat(running, "Chat")
 
-    const requesting = requestSetup(running, chat, grafanaId)
-    const questionId = await askedQuestion(running, chat)
-    const installed = await post(
-      running,
-      `/v1/plugins/catalog/${encodeURIComponent(grafanaId)}/install`
-    )
-    const serverId = bodyId(installed)
-    await post(running, `/v1/plugins/${serverId}/accounts`, {
-      values: { url: "https://grafana.example.com", token: "glsa_secret" }
-    })
+    await requestSetup(running, chat, grafanaId)
 
-    expect((await requesting).body).toEqual({
-      outcome: "connected",
-      plugin: serverId,
-      name: "Grafana",
-      accounts: ["grafana.example.com"]
-    })
+    const page = await run(running.services.db.getTranscriptPage(chat, undefined, 10))
+    expect(page.pendingQuestion).toBeUndefined()
+    expect(page.items.flatMap((item) => item.pluginSetups ?? [])).toEqual([
+      expect.objectContaining({ state: "pending", request: expect.objectContaining({ reason }) })
+    ])
+  })
+
+  it("marks the card connected and tells the agent once an account is added", async () => {
+    const running = await startPluginServer()
+    const chat = await createChat(running, "Chat")
+    await requestSetup(running, chat, grafanaId)
+
+    const serverId = await installGrafana(running)
+    const installedOnly = setupStates(running, chat)
+    await addGrafanaAccount(running, serverId)
+    await waitFor(() => finishedPrompts(running).length > 0)
+
+    expect(installedOnly).toEqual(["pending"])
+    expect(setupStates(running, chat)).toEqual(["pending", "connected"])
+    expect(field(setupUpdates(running, chat)[1]?.["request"], "auth")).toBe("fields")
+    expect(finishedPrompts(running)).toEqual([
+      [
+        `<codevisor-event machine="Local Codevisor" machineId="server-a" type="plugin.setup_finished" plugin="Grafana" pluginId="${serverId}">`,
+        "The user finished setting up Grafana from the card you showed. It's installed and ready to use.",
+        "Signed-in accounts: grafana.example.com.",
+        `Carry on with what you needed it for. plugins.describe({ plugin: "${serverId}" }) lists its tools.`,
+        "</codevisor-event>"
+      ].join("\n")
+    ])
+    const page = await run(running.services.db.getTranscriptPage(chat, undefined, 10))
     expect(
-      setupUpdates(running, chat).map((update) => [
-        update["sessionUpdate"],
-        update["questionId"],
-        update["outcome"]
-      ])
-    ).toEqual([
-      ["question", questionId, undefined],
-      ["question_resolved", questionId, "autoResolved"]
-    ])
+      page.items.flatMap((item) => item.pluginSetups ?? []).map((setup) => setup.state)
+    ).toEqual(["connected"])
   })
 
-  it("keeps waiting after Set Up and declines on Not Now", async () => {
+  it("offers only the connect step for a plugin that is installed but not connected", async () => {
     const running = await startPluginServer()
     const chat = await createChat(running, "Chat")
+    const serverId = await installGrafana(running)
 
-    const requesting = requestSetup(running, chat, grafanaId, 60_000)
-    const questionId = await askedQuestion(running, chat)
-    await answer(running, chat, questionId, choose("Set Up"))
-    const stillAsking = setupUpdates(running, chat).length
-    await answer(running, chat, questionId, choose("Not Now"))
+    const requested = await requestSetup(running, chat, "Grafana")
+    await addGrafanaAccount(running, serverId)
+    await waitFor(() => finishedPrompts(running).length > 0)
 
-    expect((await requesting).body).toMatchObject({ outcome: "declined", plugin: grafanaId })
-    expect(stillAsking).toBe(1)
-    expect(setupUpdates(running, chat).at(-1)).toMatchObject({
-      sessionUpdate: "question_resolved",
-      questionId,
-      outcome: "cancelled"
+    expect(requested.body).toMatchObject({ outcome: "requested", needs: "connect" })
+    expect(setupUpdates(running, chat)[0]).toMatchObject({
+      request: { serverId, catalogId: grafanaId }
     })
+    expect(setupStates(running, chat)).toEqual(["pending", "connected"])
   })
 
-  it("declines when the question is dismissed, ignoring answers from another chat", async () => {
+  it("records on the finished card whether the plugin ended up with an account", async () => {
     const running = await startPluginServer()
     const chat = await createChat(running, "Chat")
-    const other = await createChat(running, "Other chat")
+    await requestSetup(running, chat, "Test Events")
 
-    const requesting = requestSetup(running, chat, grafanaId, 60_000)
-    const questionId = await askedQuestion(running, chat)
-    const fromOther = await answer(running, other, questionId, choose("Not Now"))
-    await answer(running, chat, questionId, { outcome: "cancelled" })
+    await post(running, `/v1/plugins/catalog/${encodeURIComponent(testEventsId)}/install`)
+    await waitFor(() => finishedPrompts(running).length > 0)
 
-    expect(fromOther.status).toBe(202)
-    expect(running.agents.questionAnswers).toEqual([
-      [expect.any(String), questionId, expect.objectContaining({ outcome: "answered" })]
+    expect(setupUpdates(running, chat).map((update) => field(update["request"], "auth"))).toEqual([
+      "none",
+      "none"
     ])
-    expect((await requesting).body).toMatchObject({ outcome: "declined" })
+    expect(finishedPrompts(running)[0]).not.toContain("Signed-in accounts")
+  })
+
+  it("shows no card for a plugin that is installed but turned off", async () => {
+    const running = await startPluginServer()
+    await savePluginRow(running.services.db, "Pinger", { enabled: false })
+    const chat = await createChat(running, "Chat")
+
+    const requested = await requestSetup(running, chat, "Pinger")
+
+    expect(requested.body).toMatchObject({
+      outcome: "disabled",
+      next: expect.stringContaining("Settings › Plugins")
+    })
+    expect(setupUpdates(running, chat)).toEqual([])
   })
 
   it("asks to sign in to an installed custom plugin by its server", async () => {
@@ -198,22 +204,22 @@ describe("plugin setup requests", () => {
     const tracker = await running.mcp.create({ ...trackerServer, url: provider.url })
     const chat = await createChat(running, "Chat")
 
-    const requested = await requestSetup(running, chat, "Tracker", 0)
+    const requested = await requestSetup(running, chat, "Tracker")
 
     expect(requested.body).toMatchObject({
-      outcome: "pending",
+      outcome: "requested",
+      needs: "connect",
       plugin: tracker.id,
       name: "Tracker"
     })
-    const [question] = Array.from(asArray(field(setupUpdates(running, chat)[0], "questions")))
-    const pluginSetup = field(question, "pluginSetup")
-    expect(pluginSetup).toMatchObject({
+    const shown = field(setupUpdates(running, chat)[0], "request")
+    expect(shown).toMatchObject({
       plugin: tracker.id,
       serverId: tracker.id,
       name: "Tracker",
       auth: "mcpOAuth"
     })
-    expect(pluginSetup).not.toHaveProperty("catalogId")
+    expect(shown).not.toHaveProperty("catalogId")
   })
 
   it("tells the model why sign-in can't start instead of showing a card", async () => {
@@ -221,7 +227,7 @@ describe("plugin setup requests", () => {
     await running.mcp.create({ ...trackerServer, url: "http://127.0.0.1:9/mcp" })
     const chat = await createChat(running, "Chat")
 
-    const requested = await requestSetup(running, chat, "Tracker", 0)
+    const requested = await requestSetup(running, chat, "Tracker")
 
     expect(requested.status).toBe(409)
     expect(stringField(requested.body, "error")).toMatch(
@@ -235,7 +241,7 @@ describe("plugin setup requests", () => {
     const chat = await createChat(running, "Chat")
     vi.spyOn(running.mcp, "list").mockRejectedValue(new Error("database busy"))
 
-    const requested = await requestSetup(running, chat, "Tracker", 0)
+    const requested = await requestSetup(running, chat, "Tracker")
 
     expect(requested.status).toBe(503)
     expect(stringField(requested.body, "error")).toMatch(
@@ -263,7 +269,7 @@ describe("plugin setup requests", () => {
     const running = await startPluginServer()
     const chat = await createChat(running, "Chat")
 
-    const unknown = await requestSetup(running, chat, "io.example/nope", 0)
+    const unknown = await requestSetup(running, chat, "io.example/nope")
 
     expect([unknown.status, unknown.body]).toEqual([
       404,

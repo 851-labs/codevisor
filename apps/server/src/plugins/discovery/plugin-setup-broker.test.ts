@@ -1,26 +1,25 @@
-import { QuestionSpec, type McpServer } from "@codevisor/api"
-import { Schema } from "effect"
+import type { McpServer } from "@codevisor/api"
 import { describe, expect, it } from "vitest"
 
-import { observableFixture } from "../../changes-test-support.js"
 import { makeEventFanout } from "../../server-context.js"
-import { makeServices, run, waitFor } from "../../test-support.js"
-import { field, stringField } from "../../unknown-values.js"
+import { makeServices, run } from "../../test-support.js"
+import { stringField } from "../../unknown-values.js"
 import { savePluginRow } from "../events/plugin-events-test-support.js"
 import { makePluginCatalog } from "../plugin-catalog.js"
 import { fixtureCatalogOptions } from "../plugin-fixture-catalog.js"
 import { pluginServices } from "../plugin-test-support.js"
 import { makePluginDirectory } from "./plugin-directory.js"
 import { startPluginDiscovery } from "./plugin-discovery-boot.js"
-import { makePluginSetupBroker, type WaitingSetup } from "./plugin-setup.js"
+import { makePluginSetupBroker, type ShownSetup } from "./plugin-setup.js"
 
 const brokerFixture = async (
-  options: { readonly failResolutions?: boolean; readonly asking?: () => boolean } = {}
+  options: { readonly failUpdates?: boolean; readonly failEvents?: boolean } = {}
 ) => {
   const { services } = await makeServices("server-a")
   const servers: Array<McpServer> = []
   const labels = new Map<string, ReadonlyArray<string>>()
-  const emitted: Array<unknown> = observableFixture([])
+  const emitted: Array<ShownSetup & { readonly state: string }> = []
+  const notified: Array<readonly [sessionId: string, text: string]> = []
   const directory = makePluginDirectory({
     catalog: makePluginCatalog({
       dev: true,
@@ -32,151 +31,144 @@ const brokerFixture = async (
     tools: async () => [],
     eventTypes: async () => []
   })
-  const makeBroker = (waiting: ReadonlyArray<WaitingSetup> = []) =>
+  const makeBroker = (shown: ReadonlyArray<ShownSetup> = []) =>
     makePluginSetupBroker({
       directory,
       machine: { id: "server-a", name: "Studio" },
-      emit: async (_sessionId, payload) => {
-        const resolution = stringField(payload, "sessionUpdate") === "question_resolved"
-        if (options.failResolutions === true && resolution) throw new Error("chat is gone")
-        emitted.push(payload)
+      emit: async (sessionId, { setupId, state, request }) => {
+        if (options.failUpdates === true && state === "connected") throw new Error("chat is gone")
+        emitted.push({ sessionId, setupId, state, request })
       },
-      wait: () => new Promise(() => undefined),
+      notify: async (sessionId, event) => {
+        if (options.failEvents === true) throw new Error("chat is archived")
+        notified.push([sessionId, event.message.text])
+      },
       prepare: async () => undefined,
-      isAsking: async () => options.asking?.() ?? true,
-      waiting: async () => waiting
+      pending: async () => shown
     })
-  const broker = makeBroker()
   const install = async (name: string, overrides: Parameters<typeof savePluginRow>[2] = {}) => {
     const server = await savePluginRow(services.db, name, overrides)
     servers.push(server)
     return server
   }
-  const questionId = async () => {
-    await waitFor(() => emitted.length > 0)
-    return stringField(emitted[0], "questionId")!
-  }
-  return { broker, makeBroker, servers, labels, emitted, install, questionId }
+  return { broker: makeBroker(), makeBroker, servers, labels, emitted, notified, install }
 }
 
-const request = { sessionId: "session-1", reason: "To read alerts", waitMs: 60_000 }
+const request = { sessionId: "session-1", reason: "To read alerts" }
+
+const grafanaOptions = { catalogId: "dev.codevisor/grafana" }
 
 describe("plugin setup broker", () => {
-  it("asks again when the earlier card is no longer waiting in the chat", async () => {
-    let asking = true
-    const fixture = await brokerFixture({ asking: () => asking })
-    const grafana = await fixture.install("Grafana", { catalogId: "dev.codevisor/grafana" })
-    const first = fixture.broker.request({ ...request, plugin: grafana.id })
-    await fixture.questionId()
-
-    asking = false
-    void fixture.broker.request({ ...request, plugin: grafana.id })
-
-    await waitFor(() => fixture.emitted.length === 2)
-    expect((await first).outcome).toBe("declined")
-    expect(stringField(fixture.emitted[1], "sessionUpdate")).toBe("question")
-    expect(stringField(fixture.emitted[1], "questionId")).not.toBe(
-      stringField(fixture.emitted[0], "questionId")
-    )
-  })
-
-  it("resolves a question once when two refreshes see the plugin become ready", async () => {
+  it("finishes a setup once when two refreshes see the plugin become ready", async () => {
     const fixture = await brokerFixture()
-    const grafana = await fixture.install("Grafana", { catalogId: "dev.codevisor/grafana" })
-    const requesting = fixture.broker.request({ ...request, plugin: grafana.id })
-    await fixture.questionId()
+    const grafana = await fixture.install("Grafana", grafanaOptions)
+    await fixture.broker.request({ ...request, plugin: grafana.id })
 
     fixture.labels.set(grafana.id, ["grafana.example.com"])
     await Promise.all([fixture.broker.refresh(), fixture.broker.refresh()])
 
-    expect((await requesting).outcome).toBe("connected")
-    expect(fixture.emitted.map((update) => stringField(update, "sessionUpdate"))).toEqual([
-      "question",
-      "question_resolved"
+    expect(fixture.emitted.map((update) => update.state)).toEqual(["pending", "connected"])
+    expect(fixture.notified.map(([sessionId]) => sessionId)).toEqual(["session-1"])
+  })
+
+  it("tells each chat that asked, and shows a new card after the first one finished", async () => {
+    const fixture = await brokerFixture()
+    const grafana = await fixture.install("Grafana", grafanaOptions)
+    await fixture.broker.request({ ...request, plugin: grafana.id })
+    await fixture.broker.request({ ...request, sessionId: "session-2", plugin: "Grafana" })
+
+    fixture.labels.set(grafana.id, ["grafana.example.com"])
+    await fixture.broker.refresh()
+    fixture.labels.delete(grafana.id)
+    const askedAgain = await fixture.broker.request({ ...request, plugin: grafana.id })
+
+    expect(fixture.notified.map(([sessionId]) => sessionId)).toEqual(["session-1", "session-2"])
+    expect(askedAgain.outcome).toBe("requested")
+    expect(fixture.emitted.map((update) => [update.sessionId, update.state])).toEqual([
+      ["session-1", "pending"],
+      ["session-2", "pending"],
+      ["session-1", "connected"],
+      ["session-2", "connected"],
+      ["session-1", "pending"]
     ])
   })
 
-  it("still finishes a declined setup when the chat can't show the resolution", async () => {
-    const fixture = await brokerFixture({ failResolutions: true })
-    const grafana = await fixture.install("Grafana", { catalogId: "dev.codevisor/grafana" })
-    const requesting = fixture.broker.request({ ...request, plugin: grafana.id })
+  it("still tells the agent when the chat can't show the card as connected", async () => {
+    const fixture = await brokerFixture({ failUpdates: true })
+    const grafana = await fixture.install("Grafana", grafanaOptions)
+    await fixture.broker.request({ ...request, plugin: grafana.id })
 
-    const handled = await fixture.broker.answer("session-1", await fixture.questionId(), {
-      outcome: "cancelled"
-    })
-
-    expect(handled).toBe(true)
-    expect((await requesting).outcome).toBe("declined")
-  })
-
-  it("names a plugin that disappeared meanwhile by what was asked for", async () => {
-    const fixture = await brokerFixture()
-    await fixture.install("Tracker", { authType: "oauth", connectionState: "needsAuthorization" })
-    const requesting = fixture.broker.request({ ...request, plugin: "Tracker" })
-    const questionId = await fixture.questionId()
-
-    fixture.servers.splice(0)
+    fixture.labels.set(grafana.id, ["grafana.example.com"])
     await fixture.broker.refresh()
-    await fixture.broker.answer("session-1", questionId, { outcome: "cancelled" })
 
-    expect(await requesting).toEqual({
-      outcome: "declined",
-      plugin: "Tracker",
-      name: "Tracker",
-      accounts: []
-    })
+    expect(fixture.notified).toHaveLength(1)
   })
 
-  it("settles setup cards left waiting by a restart once the plugin connects or on Not Now", async () => {
+  it("marks the card connected even when the agent can't be told", async () => {
+    const fixture = await brokerFixture({ failEvents: true })
+    const grafana = await fixture.install("Grafana", grafanaOptions)
+    await fixture.broker.request({ ...request, plugin: grafana.id })
+
+    fixture.labels.set(grafana.id, ["grafana.example.com"])
+    await fixture.broker.refresh()
+
+    expect(fixture.emitted.map((update) => update.state)).toEqual(["pending", "connected"])
+  })
+
+  it("keeps the one card when the plugin is installed after it was shown and asked for again", async () => {
     const fixture = await brokerFixture()
-    const grafana = await fixture.install("Grafana", { catalogId: "dev.codevisor/grafana" })
+    await fixture.broker.request({ ...request, plugin: "Grafana" })
+
+    const grafana = await fixture.install("Grafana", grafanaOptions)
+    const again = await fixture.broker.request({ ...request, plugin: grafana.id })
+
+    expect(again).toMatchObject({ outcome: "requested", needs: "connect" })
+    expect(fixture.emitted.map((update) => update.state)).toEqual(["pending"])
+  })
+
+  it("keeps a card pending while its plugin is missing, and finishes it when it returns ready", async () => {
+    const fixture = await brokerFixture()
     const tracker = await fixture.install("Tracker", {
       authType: "oauth",
       connectionState: "needsAuthorization"
     })
-    void fixture.broker.request({ ...request, plugin: grafana.id })
-    void fixture.broker.request({ ...request, sessionId: "session-2", plugin: tracker.id })
-    await waitFor(() => fixture.emitted.length === 2)
-    const waiting = fixture.emitted.map((payload, index) => ({
-      sessionId: `session-${index + 1}`,
-      questionId: stringField(payload, "questionId")!,
-      question: Schema.decodeUnknownSync(Schema.Array(QuestionSpec))(
-        field(payload, "questions")
-      )[0]!
-    }))
-    const restarted = fixture.makeBroker([
-      ...waiting,
-      {
-        ...waiting[0]!,
-        questionId: "agent-question",
-        question: { ...waiting[0]!.question, id: "db" }
-      }
-    ])
-    await restarted.adoptWaiting()
+    await fixture.broker.request({ ...request, plugin: "Tracker" })
+
+    fixture.servers.splice(0)
+    await fixture.broker.refresh()
+    const whileMissing = fixture.notified.length
+    fixture.servers.push({ ...tracker, connectionState: "connected" })
+    await fixture.broker.refresh()
+
+    expect(whileMissing).toBe(0)
+    expect(stringField({ text: fixture.notified[0]?.[1] }, "text")).toContain(
+      `type="plugin.setup_finished" plugin="Tracker" pluginId="${tracker.id}"`
+    )
+  })
+
+  it("finishes the cards a restart left pending", async () => {
+    const fixture = await brokerFixture()
+    const grafana = await fixture.install("Grafana", grafanaOptions)
+    await fixture.broker.request({ ...request, plugin: grafana.id })
+    const [shown] = fixture.emitted
 
     fixture.labels.set(grafana.id, ["grafana.example.com"])
-    await restarted.refresh()
-    const declined = await restarted.answer("session-2", waiting[1]!.questionId, {
-      outcome: "cancelled"
-    })
+    await fixture.makeBroker([shown!]).adoptPending()
 
-    expect(declined).toBe(true)
-    expect(await restarted.answer("session-1", "agent-question", { outcome: "cancelled" })).toBe(
-      false
-    )
-    expect(fixture.emitted.slice(2)).toEqual([
-      expect.objectContaining({ questionId: waiting[0]!.questionId, outcome: "autoResolved" }),
-      expect.objectContaining({ questionId: waiting[1]!.questionId, outcome: "cancelled" })
-    ])
+    expect(fixture.emitted.at(-1)).toMatchObject({ setupId: shown!.setupId, state: "connected" })
+    expect(fixture.notified.map(([sessionId]) => sessionId)).toEqual(["session-1"])
   })
 
   it("describes plugins without event types when the events engine isn't running", async () => {
     const { services } = await pluginServices()
     const pinger = await savePluginRow(services.db, "Pinger", { enabled: false })
-    const discovery = startPluginDiscovery(services, await run(makeEventFanout), undefined, {
-      id: "server-a",
-      name: "Studio"
-    })!
+    const discovery = startPluginDiscovery(
+      services,
+      await run(makeEventFanout),
+      undefined,
+      { deliver: async () => undefined, wokenBy: () => new Set(), forgetWake: () => undefined },
+      { id: "server-a", name: "Studio" }
+    )!
 
     const described = await discovery.directory.describe(pinger.id)
     discovery.close()

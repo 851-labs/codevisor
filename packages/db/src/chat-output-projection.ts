@@ -251,6 +251,8 @@ const projectWorkedDetail = (
   sessionId: string,
   update: string | undefined
 ): string | undefined => {
+  if (update === "plugin_setup") return projectPluginSetup(sqlite, event, payload, sessionId)
+
   const rendersInAssistantTurn =
     hasRenderableWorkedDetail(payload) ||
     (update === "plan_document" && typeof payload.markdown === "string")
@@ -276,6 +278,24 @@ const projectWorkedDetail = (
     return itemId
   }
   return undefined
+}
+
+const projectPluginSetup = (
+  sqlite: Database.Database,
+  event: SessionEventRow,
+  payload: JsonRecord,
+  sessionId: string
+): string | undefined => {
+  if (typeof payload.setupId !== "string") return undefined
+
+  const route = `plugin_setup:${payload.setupId}`
+  const shownIn = chatRoute(sqlite, sessionId, route)
+  if (shownIn === undefined && payload.state !== "pending") return undefined
+
+  const itemId = shownIn ?? ensureAssistantChatItem(sqlite, sessionId, event.created_at)
+  setChatRoute(sqlite, sessionId, route, itemId)
+  sqlite.prepare(chatItemSql.touch).run(event.created_at, itemId)
+  return itemId
 }
 
 export const projectChatOutput = (
@@ -349,6 +369,7 @@ const chatItemSql = {
   proposePlan: "update chat_items set plan_proposed_at = ?, plan_resumed_at = null where id = ?",
   resumePlan: `update chat_items set plan_resumed_at = ?
                  where id = ? and plan_proposed_at is not null and plan_resumed_at is null`,
+  touch: "update chat_items set updated_at = ?, revision = revision + 1 where id = ?",
   attachments: "select attachments from chat_items where id = ?",
   setAttachments: "update chat_items set attachments = ? where id = ?",
   markDetails: `update chat_items set has_details = max(has_details, ?), updated_at = ?,

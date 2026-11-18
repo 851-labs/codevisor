@@ -485,9 +485,9 @@
       "location": {
         "character": 10,
         "file": "packages/swift/ACPKit/Sources/ACPKit/Protocol/SessionUpdate.swift",
-        "line": 89
+        "line": 90
       },
-      "reason": "Initializer body should span 50 lines or less excluding comments and whitespace: currently spans 94 lines",
+      "reason": "Initializer body should span 50 lines or less excluding comments and whitespace: currently spans 90 lines",
       "ruleDescription": "Function bodies should not span too many lines",
       "ruleIdentifier": "function_body_length",
       "ruleName": "Function Body Length",
@@ -500,9 +500,9 @@
       "location": {
         "character": 10,
         "file": "packages/swift/ACPKit/Sources/ACPKit/Protocol/SessionUpdate.swift",
-        "line": 204
+        "line": 214
       },
-      "reason": "Function body should span 50 lines or less excluding comments and whitespace: currently spans 80 lines",
+      "reason": "Function body should span 50 lines or less excluding comments and whitespace: currently spans 68 lines",
       "ruleDescription": "Function bodies should not span too many lines",
       "ruleIdentifier": "function_body_length",
       "ruleName": "Function Body Length",

@@ -20,8 +20,16 @@ public struct ServerTranscriptInteraction: Decodable, Equatable, Sendable {
 
   var transcriptInteraction: TranscriptInteraction? {
     guard kind == "question" else { return nil }
+    if let setup = payload.questions.lazy.compactMap(\.pluginSetup).first { return finishedSetupCard(for: setup) }
+
     let request = QuestionRequest(questionId: id, message: payload.message, questions: payload.questions)
     let answer = answer.map { TranscriptQuestion.Answer(outcome: $0.outcome, entries: $0.answers ?? [:]) }
     return TranscriptInteraction(id: id, content: .question(TranscriptQuestion(request: request, answer: answer)))
+  }
+
+  private func finishedSetupCard(for request: JSONValue) -> TranscriptInteraction? {
+    guard answer?.outcome == .autoResolved else { return nil }
+    return TranscriptInteraction(
+      id: id, content: .pluginSetup(TranscriptPluginSetup(id: id, state: .connected, request: request)))
   }
 }

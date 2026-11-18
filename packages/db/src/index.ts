@@ -80,6 +80,7 @@ export type {
   NewPluginEventSubscription,
   PluginEventSubscriptionRecord
 } from "./plugin-event-subscriptions-service.js"
+export type { ShownPluginSetup } from "./plugin-setups-service.js"
 export type {
   PendingPluginEventDelivery,
   PluginEventOccurrence,

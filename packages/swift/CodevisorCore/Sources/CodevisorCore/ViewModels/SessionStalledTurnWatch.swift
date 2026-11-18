@@ -59,7 +59,7 @@ final class SessionStalledTurnWatch {
       .toolCall, .toolCallUpdate, .question, .questionResolved, .contextCompaction:
       true
     case .userMessageChunk, .availableCommandsUpdate, .availableSkillsUpdate, .currentModeUpdate,
-      .configOptionUpdate, .usageUpdate, .goalUpdate, .goalCleared:
+      .configOptionUpdate, .usageUpdate, .goalUpdate, .goalCleared, .pluginSetup:
       false
     }
   }

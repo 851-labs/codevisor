@@ -275,6 +275,8 @@ export const projectTranscriptState = (
     projectTranscriptCompaction(db, event, itemId, payload, parent)
   } else if (update === "question" || update === "question_resolved") {
     save(db, event, itemId, `${update}:${String(payload.questionId)}`, "question", parent, payload)
+  } else if (update === "plugin_setup") {
+    save(db, event, itemId, `${update}:${String(payload.setupId)}`, update, parent, payload)
   } else if (update !== undefined) {
     save(db, event, itemId, update, update, parent, payload)
   }

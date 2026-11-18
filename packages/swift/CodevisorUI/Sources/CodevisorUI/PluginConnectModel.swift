@@ -39,6 +39,7 @@ public final class PluginConnectModel {
   }
 
   public let entry: ServerPluginCatalogEntry
+  public let installed: ServerMcpServer?
   public var draft: ConfigFieldDraft
   public private(set) var isWorking = false
   public var errorMessage: String?
@@ -52,21 +53,26 @@ public final class PluginConnectModel {
 
   public init(
     entry: ServerPluginCatalogEntry,
+    installed: ServerMcpServer? = nil,
     client: any CodevisorServerClienting,
     host: PluginConnectHost,
     webSignIn: any WebSignInPresenting = PluginWebSignIn()
   ) {
     self.entry = entry
+    self.installed = installed
     self.client = client
     self.host = host
     self.webSignIn = webSignIn
-    draft = ConfigFieldDraft(fields: entry.installFields)
+    draft = ConfigFieldDraft(fields: installed == nil ? entry.installFields : [])
   }
+
+  public var isInstalled: Bool { installed != nil }
 
   public var setup: PluginConnectSetup {
     if let spec = entry.accounts {
       return spec.signsInDirectly ? .accountSignIn(title: spec.addTitle) : .accountSetup(title: spec.addTitle)
     }
+    if installed != nil { return .serverSignIn(isOptional: false) }
     guard entry.transport == "http" else { return .install }
     guard hasChecked else { return .checking }
 
@@ -93,7 +99,7 @@ public final class PluginConnectModel {
   public var canContinue: Bool { draft.isComplete && !isWorking }
 
   public func load() async {
-    guard entry.accounts == nil, entry.transport == "http", !hasChecked else { return }
+    guard installed == nil, entry.accounts == nil, entry.transport == "http", !hasChecked else { return }
 
     serverSignIn = try? await client.pluginCatalogSignIn(id: entry.id).oauth
     hasChecked = true
@@ -104,7 +110,7 @@ public final class PluginConnectModel {
     defer { isWorking = false }
     let browser = opensBrowser(for: choice) ? makeBrowser() : nil
     do {
-      let server = try await host.install(draft.submittedValues, authType(for: choice))
+      let server = try await installedServer(for: choice)
       errorMessage = nil
       host.didInstall(server)
       startSignIn(to: server, browser: browser, choice: choice)
@@ -114,6 +120,11 @@ public final class PluginConnectModel {
       errorMessage = ErrorReporter.userFacingMessage(for: error)
       return false
     }
+  }
+
+  private func installedServer(for choice: Choice) async throws -> ServerMcpServer {
+    if let installed { return installed }
+    return try await host.install(draft.submittedValues, authType(for: choice))
   }
 
   private func opensBrowser(for choice: Choice) -> Bool {
@@ -139,7 +150,8 @@ public final class PluginConnectModel {
   }
 
   private func startSignIn(to server: ServerMcpServer, browser: PluginSignInBrowser?, choice: Choice) {
-    let detectedLate = choice == .finishSetup && entry.accounts == nil && server.awaitsAuthorization
+    let signsInToServer = entry.accounts == nil && (server.awaitsAuthorization || installed != nil)
+    let detectedLate = choice == .finishSetup && signsInToServer
     guard let browser = browser ?? (detectedLate ? makeBrowser() : nil) else { return }
 
     Task { await signIn(to: server, browser: browser) }

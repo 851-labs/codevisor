@@ -25,9 +25,8 @@ public struct ServerPluginSetupRequest: Decodable, Equatable, Sendable {
   public var capabilities: ServerPluginCapabilities
   public var machine: Machine
 
-  public static func decoded(from questions: [QuestionSpec]) -> ServerPluginSetupRequest? {
-    guard let payload = questions.lazy.compactMap(\.pluginSetup).first else { return nil }
-    guard let data = try? JSONEncoder().encode(payload) else { return nil }
+  public static func decoded(from request: JSONValue) -> ServerPluginSetupRequest? {
+    guard let data = try? JSONEncoder().encode(request) else { return nil }
     return try? JSONDecoder().decode(ServerPluginSetupRequest.self, from: data)
   }
 }

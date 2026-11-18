@@ -1,7 +1,6 @@
 import { afterEach, describe, expect, it, vi } from "vitest"
 
 import { call, jsonResponse, local, remote, type Recorded } from "./codevisor-agent-test-support.js"
-import { maxSetupWaitMs, setupWaitMarginMs, setupWaitMs } from "./codevisor-plugin-tools.js"
 
 afterEach(() => {
   vi.unstubAllGlobals()
@@ -61,7 +60,7 @@ const routes: Record<string, unknown> = {
   "GET /v1/plugins/events/evt-1": { id: "evt-1" },
   "GET /v1/plugins/search": { items: [{ plugin: "codevisor.gmail" }] },
   "GET /v1/plugins/describe/Gmail": { plugin: "codevisor.gmail" },
-  "POST /v1/plugins/setup-requests": { outcome: "connected" }
+  "POST /v1/plugins/setup-requests": { outcome: "requested" }
 }
 
 const fakeApi = (): Array<Recorded> => {
@@ -194,19 +193,11 @@ describe("plugin tools", () => {
     })
     expect(
       await call(local, "plugins.request_setup", { plugin: "Gmail", reason: "Reply to Pat" })
-    ).toEqual({ outcome: "connected" })
+    ).toEqual({ outcome: "requested" })
     expect(requests.at(-1)?.body).toEqual({
       sessionId: "caller",
       plugin: "Gmail",
-      reason: "Reply to Pat",
-      waitMs: maxSetupWaitMs
+      reason: "Reply to Pat"
     })
-  })
-
-  it("waits for setup only as long as the execute call allows", () => {
-    const now = performance.now()
-    expect(setupWaitMs(undefined)).toBe(maxSetupWaitMs)
-    expect(setupWaitMs(now + setupWaitMarginMs + 1_000)).toBeLessThanOrEqual(1_000)
-    expect(setupWaitMs(now)).toBe(0)
   })
 })
