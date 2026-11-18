@@ -171,7 +171,7 @@ final class SimulatorStreamHost {
       if dependencies.offersV2() { reply.engines = [ScreenSharingEngine.v2.rawValue] }
       return reply
     } catch {
-      return .init(status: "unavailable", message: error.localizedDescription)
+      return ScreenSharingHostFailure(error).reply(status: "unavailable")
     }
   }
 
@@ -212,7 +212,7 @@ final class SimulatorStreamHost {
         expiresAt: now + Self.lifetime)
       return try await connect(session, device: device, owner: owner)
     } catch {
-      return .init(status: "failed", message: error.localizedDescription)
+      return ScreenSharingHostFailure(error).reply(status: "failed")
     }
   }
 

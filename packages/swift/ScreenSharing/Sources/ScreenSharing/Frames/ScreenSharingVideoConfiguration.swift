@@ -5,11 +5,14 @@ public enum ScreenSharingError: Error, LocalizedError, Sendable {
   case unavailable(String)
   case invalid(String)
   case codec(String, Int32)
+  case captureNotPermitted
 
   public var errorDescription: String? {
     switch self {
     case .unavailable(let message), .invalid(let message): message
     case .codec(let operation, let status): "\(operation) failed (\(status))."
+    case .captureNotPermitted:
+      "Screen Recording permission is required. Enable it for this app in System Settings, then relaunch."
     }
   }
 }

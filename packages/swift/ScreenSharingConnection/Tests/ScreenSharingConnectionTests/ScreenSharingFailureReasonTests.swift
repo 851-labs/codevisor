@@ -12,7 +12,10 @@ struct ScreenSharingFailureReasonTests {
     (.stoppedOnHost, "Sharing was stopped on croissant."),
     (.displayAsleep, "croissant's display is asleep."),
     (.sessionSwitched, "Another user is logged in on croissant."),
-    (.permissionMissing, "Allow Codevisor to record the screen on croissant."),
+    (
+      .permissionMissing,
+      "croissant isn't letting Codevisor record its screen. Check Screen Recording in its System Settings."
+    ),
     (.updateNeeded, "Update Codevisor on croissant."),
     (.networkBlocked, "Couldn't open a video connection to croissant."),
     (.noVideo, "Connected, but croissant sent no picture."),

@@ -53,6 +53,13 @@ final class ScreenSharingHostSession {
   var ending: Task<Void, Never>?
   var watchdog: Task<Void, Never>?
   var captureTask: Task<Void, Never>?
+  var captureFailure: String?
+  var failure: String? {
+    if let captureFailure { return captureFailure }
+    guard let encoder = metrics.label("encoderError"), !encoder.isEmpty else { return nil }
+
+    return encoder
+  }
 
   struct V2 {
     let token: String

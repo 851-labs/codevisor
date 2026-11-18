@@ -105,6 +105,14 @@ extension ScreenSharingHostService {
 
     do {
       return try await enumerateDisplays().isEmpty ? ScreenSharingHostRefusal.noDisplay.reply : nil
-    } catch { return .init(status: "failed", message: error.localizedDescription) }
+    } catch { return failed("Display listing", error, status: "failed") }
+  }
+
+  func failed(_ step: String, _ error: any Error, status: String) -> ServerScreenSharingReply {
+    let failure = ScreenSharingHostFailure(error)
+    Self.logger.error(
+      "\(step, privacy: .public) \(failure.isRefusedCapture ? "refused" : "failed", privacy: .public) (\(failure.code, privacy: .public)): \(error.localizedDescription, privacy: .public)"
+    )
+    return failure.reply(status: status)
   }
 }

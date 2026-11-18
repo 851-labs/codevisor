@@ -32,10 +32,12 @@ enum ScreenSharingHostRefusal: Equatable, Sendable {
     }
   }
 
+  static let permissionMessage =
+    "This Mac isn't letting Codevisor record its screen. Check Screen Recording in System Settings › Privacy & Security."
+
   private var message: String {
     switch self {
-    case .permissionMissing:
-      "Allow Codevisor in System Settings → Privacy & Security → Screen & System Audio Recording on the host Mac, then retry."
+    case .permissionMissing: Self.permissionMessage
     case .updateNeeded: "Update Codevisor to use Screen Sharing."
     case .viewerUpdateNeeded(let machine): "Update Codevisor on this device to view \(machine)."
     case .noDisplay: "The selected display is no longer available."

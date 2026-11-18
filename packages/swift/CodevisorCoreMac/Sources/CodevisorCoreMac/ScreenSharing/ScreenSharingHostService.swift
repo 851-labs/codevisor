@@ -19,6 +19,7 @@ final class ScreenSharingHostService {
   var displayChoice = ScreenSharingHostDisplayChoice()
   var logicalDisplays: ScreenSharingHostLogicalDisplays
   var displaySwitchWait: Duration = .seconds(10)
+  var captureRestartDelay = ScreenSharingCaptureRestartPolicy.delay
   var onlineDisplays: () -> [ScreenSharingDisplayIdentity.Online] = ScreenSharingDisplayIdentity.online
   var startsCapture: (ScreenSharingHostSession) async throws -> Void = ScreenSharingHostService.startCaptureStream
   var virtualDisplaysAvailable: () -> Bool = { ScreenSharingHostVirtualDisplay.isAvailable }
@@ -93,9 +94,9 @@ final class ScreenSharingHostService {
       }
       let change = await sharing(request, in: current)
       guard self.current === current, !current.stopping else { return sessionlessReply(to: request) }
-      if let error = ["captureError", "encoderError"].compactMap(current.metrics.label).first(where: { !$0.isEmpty }) {
+      if let failure = current.failure {
         await end(current)
-        return .init(status: "failed", message: error)
+        return .init(status: "failed", message: failure)
       }
       return heartbeatReply(from: current, after: change)
     case .capabilities:
@@ -117,7 +118,7 @@ final class ScreenSharingHostService {
       if mediaEndpoint.isAvailable { reply.engines = [ScreenSharingEngine.v2.rawValue] }
       reply.challenge = await challenge()
       return reply
-    } catch { return .init(status: "unavailable", message: error.localizedDescription) }
+    } catch { return failed("Display listing", error, status: "unavailable") }
   }
 
   private func renewsLease(
@@ -158,7 +159,7 @@ final class ScreenSharingHostService {
     do {
       return try await startSession(
         request, by: owner, attempt: attempt, displayId: displayId, viewerMedia: viewerMedia)
-    } catch { return .init(status: "failed", message: error.localizedDescription) }
+    } catch { return failed("Start", error, status: "failed") }
   }
 
   private func startSession(
@@ -328,7 +329,7 @@ final class ScreenSharingHostService {
       }
       await recoverStalledCapture(session, baseline: baseline)
     } catch {
-      await end(session, as: .failed((error as? ScreenSharingError)?.localizedDescription ?? Self.captureFailed))
+      await end(session, as: .captureFailed(ScreenSharingHostFailure(error)))
     }
   }
 
@@ -344,7 +345,7 @@ final class ScreenSharingHostService {
 
   static let watchInterval: TimeInterval = 0.25
 
-  static let captureFailed = "The host Mac couldn't start capturing its screen. Try again."
+  nonisolated static let captureFailed = "The host Mac couldn't start capturing its screen. Try again."
 
   func end(_ session: ScreenSharingHostSession, as cause: ScreenSharingHostEnding? = nil) async {
     guard current === session else { return }
@@ -421,7 +422,7 @@ extension ScreenSharingHostService {
     }
     Self.logger.notice("Capture stopped (\(message, privacy: .public)); restarting it")
     session.metrics.increment("captureRestarts")
-    session.metrics.label("captureError", "")
+    session.captureFailure = nil
     session.control?.revoke("The host's screen capture stopped.")
     session.state = "connecting"
     session.notice = "Capture stopped, restarting…"
@@ -429,7 +430,7 @@ extension ScreenSharingHostService {
     pending?.cancel()
     session.captureTask = Task { [weak self, weak session] in
       await pending?.value
-      try? await Task.sleep(for: ScreenSharingCaptureRestartPolicy.delay)
+      try? await Task.sleep(for: self?.captureRestartDelay ?? .zero)
       guard let self, let session, self.current === session, !session.stopping, !Task.isCancelled else { return }
       let baseline = ScreenSharingCaptureStallRecovery.activity(session.metrics.counters())
       do {
@@ -438,9 +439,7 @@ extension ScreenSharingHostService {
         try await self.reconcileCapture(session)
       } catch {
         guard self.current === session, !session.stopping, !Task.isCancelled else { return }
-        Self.logger.error("Capture restart failed: \(error.localizedDescription, privacy: .public)")
-        session.metrics.label("captureError", "The host Mac's screen capture stopped and couldn't be restarted.")
-        return
+        return await self.restartFailed(session, error)
       }
       guard self.current === session, !session.stopping else { return }
       session.state = "viewing"
@@ -483,8 +482,8 @@ extension ScreenSharingHostService {
     case .failed:
       Self.logger.error("Capture stalled and did not recover")
       session.notice = nil
-      session.metrics.label(
-        "captureError", "The host Mac couldn't capture its screen. Restarting the host Mac fixes this if it persists.")
+      session.captureFailure =
+        "The host Mac couldn't capture its screen. Restarting the host Mac fixes this if it persists."
     }
   }
 }

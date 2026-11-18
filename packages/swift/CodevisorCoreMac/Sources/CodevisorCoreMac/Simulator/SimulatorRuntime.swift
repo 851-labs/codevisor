@@ -2,6 +2,7 @@ import CoreGraphics
 import Darwin
 import Foundation
 import IOSurface
+import OSLog
 import ObjectiveC
 import XPC
 
@@ -10,6 +11,17 @@ enum SimulatorRuntime {
     let message: String
     init(_ message: String) { self.message = message }
     var errorDescription: String? { message }
+  }
+
+  private static let logger = Logger(subsystem: "com.851labs.Codevisor", category: "SimulatorStream")
+
+  static func failure(_ sentence: String, from system: NSError?) -> Failure {
+    if let system {
+      logger.error(
+        "\(sentence, privacy: .public) (\(system.domain, privacy: .public) \(system.code)): \(system.localizedDescription, privacy: .public)"
+      )
+    }
+    return Failure(sentence)
   }
 
   static let developerDirectory: String? = {
@@ -76,14 +88,14 @@ enum SimulatorRuntime {
     guard
       let context = unsafeBitCast(method_getImplementation(method), to: Shared.self)(
         cls, sharedSelector, developer as NSString, &error)
-    else { throw Failure(error?.localizedDescription ?? "CoreSimulator is unavailable.") }
+    else { throw failure("CoreSimulator is unavailable.", from: error) }
     typealias DefaultSet =
       @convention(c) (AnyObject, Selector, AutoreleasingUnsafeMutablePointer<NSError?>)
       -> NSObject?
     guard
       let set = implementation(context, "defaultDeviceSetWithError:", as: DefaultSet.self)?(
         context, selector("defaultDeviceSetWithError:"), &error)
-    else { throw Failure(error?.localizedDescription ?? "No simulator device set.") }
+    else { throw failure("No simulator device set.", from: error) }
     return set
   }
 
@@ -211,7 +223,7 @@ enum SimulatorRuntime {
         let bridgeSymbol = dlsym(handle, "xpc_connection_enable_sim2host_4sim"),
         let endpoint = unsafeBitCast(endpointSymbol, to: EndpointFromPort.self)(port, 0, 0),
         let connection = unsafeBitCast(connectionSymbol, to: ConnectionFromEndpoint.self)(endpoint)
-      else { throw Failure(error?.localizedDescription ?? "The simulator doesn't offer \(feature).") }
+      else { throw SimulatorRuntime.failure("The simulator doesn't offer \(feature).", from: error) }
       unsafeBitCast(bridgeSymbol, to: EnableHostBridge.self)(connection)
       xpc_connection_set_event_handler(connection) { _ in }
       xpc_connection_resume(connection)
@@ -271,7 +283,7 @@ enum SimulatorRuntime {
       guard
         let client = unsafeBitCast(method, to: Initialize.self)(
           class_createInstance(cls, 0) as AnyObject, initializer, device, &error)
-      else { throw Failure(error?.localizedDescription ?? "Can't send input to the simulator.") }
+      else { throw SimulatorRuntime.failure("Can't send input to the simulator.", from: error) }
       self.client = client
     }
 
