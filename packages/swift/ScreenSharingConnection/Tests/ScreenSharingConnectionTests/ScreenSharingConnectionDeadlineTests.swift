@@ -18,7 +18,7 @@ struct ScreenSharingConnectionDeadlineTests {
     await harness.clock.waitForSleep(.seconds(6))
   }
 
-  @Test("A connect with no picture says it's taking long at 4 s, fails at 10 s and is not retried")
+  @Test("A connect with no picture says it's taking long at 4 s, fails at 10 s and is not tried again for 15 s")
   func failsWithoutAFirstFrame() async {
     let harness = ConnectionHarness()
     harness.show()
@@ -32,8 +32,8 @@ struct ScreenSharingConnectionDeadlineTests {
     await awaitObserved { harness.host.requests(.stop).count == 1 }
 
     #expect(session.isClosed && !harness.connection.isTakingLong)
+    await harness.clock.waitForSleep(ScreenSharingRetryPolicy.quietWaits[0])
     #expect(harness.host.starts.count == 1)
-    await harness.noTimersLeft()
   }
 
   enum StuckStep: CaseIterable, Sendable { case reachingTheMachine, askingTheHost, settingUpVideo }

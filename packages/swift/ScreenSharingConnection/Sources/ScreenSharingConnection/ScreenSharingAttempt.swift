@@ -17,7 +17,7 @@ final class ScreenSharingAttempt {
     case firstFrameDecoded
   }
 
-  private static let logger = Logger(subsystem: "com.851labs.Codevisor", category: "ScreenSharingConnection")
+  private static let logger = Logger(subsystem: "com.851labs.Codevisor", category: "ScreenSharing")
 
   private let machine: ScreenSharingMachine
   private let host: ScreenSharingHostRequests
@@ -91,7 +91,7 @@ final class ScreenSharingAttempt {
     } catch let end as ScreenSharingAttemptEnd {
       return end
     } catch {
-      guard !isClosed, !Task.isCancelled, !isTaskCancellation(error) else { throw CancellationError() }
+      guard !isClosed, !Task.isCancelled else { throw CancellationError() }
 
       Self.logger.error("Attempt failed at \(self.times.stage.rawValue, privacy: .public): \(error, privacy: .public)")
       return .dropped(Self.reason(for: error))
@@ -184,6 +184,8 @@ final class ScreenSharingAttempt {
   }
 
   private static func reason(for error: any Error) -> ScreenSharingFailureReason {
-    ServerConnectionLoss.isConnectionLoss(error) ? .cantReach : .unclassified(message: serverErrorMessage(error))
+    if ServerConnectionLoss.isConnectionLoss(error) || isTaskCancellation(error) { return .cantReach }
+
+    return .unclassified(message: serverErrorMessage(error))
   }
 }

@@ -54,6 +54,7 @@ struct ScreenSharingConnectionTransitionTests {
     var holderName: String?
     var message: String?
     var expected: ScreenSharingFailureReason
+    var isTriedAgainQuietly = false
     var testDescription: String { reason ?? status }
   }
 
@@ -69,10 +70,13 @@ struct ScreenSharingConnectionTransitionTests {
       expected: .inUse(by: "Alexandru's iPhone")),
     Refusal(
       operation: .start, status: "failed", message: "The host Mac couldn't start capturing its screen. Try again.",
-      expected: .unclassified(message: "The host Mac couldn't start capturing its screen. Try again.")),
+      expected: .unclassified(message: "The host Mac couldn't start capturing its screen. Try again."),
+      isTriedAgainQuietly: true),
   ]
 
-  @Test("A host that refuses the first connect fails it with the host's reason and is not retried", arguments: refusals)
+  @Test(
+    "A host that refuses the first connect fails it with the host's reason; only a failure it gives no reason for is tried again",
+    arguments: refusals)
   func failsWhenTheHostRefuses(_ refusal: Refusal) async {
     let harness = ConnectionHarness()
     harness.host.answerNext(
@@ -83,7 +87,11 @@ struct ScreenSharingConnectionTransitionTests {
     await harness.settle(.failed(refusal.expected))
 
     #expect(harness.host.starts.count == (refusal.operation == .start ? 1 : 0))
-    await harness.noTimersLeft()
+    if refusal.isTriedAgainQuietly {
+      await harness.clock.waitForSleep(ScreenSharingRetryPolicy.quietWaits[0])
+    } else {
+      await harness.noTimersLeft()
+    }
   }
 
   @Test("A VNC machine viewed from an app that brings no VNC transport fails as unsupported here, with no start")

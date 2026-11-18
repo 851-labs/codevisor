@@ -29,6 +29,7 @@ struct ScreenSharingConnectionStateMachine: Equatable, Sendable {
     case start(ServerScreenSharingRequest.Intent, after: Duration, asksWhyItEnded: Bool)
     case restart
     case stop
+    case stopAndTryQuietly(after: Duration)
 
     var opens: Bool {
       if case .start(.open, _, _) = self { true } else { false }
@@ -46,6 +47,8 @@ struct ScreenSharingConnectionStateMachine: Equatable, Sendable {
   private var attemptIntent = ServerScreenSharingRequest.Intent.attach
   private var failureIsSticky = false
   private var retriedWhileReady = false
+  private var keepsTrying = false
+  private var quietTries = 0
 
   init() {}
 
@@ -66,10 +69,10 @@ struct ScreenSharingConnectionStateMachine: Equatable, Sendable {
     case .lingerElapsed: return unseen == .lingering ? stopBeingUnseen() : nil
     case .machineCameOnline:
       retriedWhileReady = false
-      return recover(from: .cantReach)
+      return tryAgainNow()
     case .machineStillReady: return retryOnceWhileReady()
     case .targetAppeared: return targetAppeared()
-    case .systemWoke: return state == .live ? attemptEnded(.dropped(.cantReach)) : nil
+    case .systemWoke: return woke()
     case .ended: return end()
     }
   }
@@ -145,16 +148,30 @@ struct ScreenSharingConnectionStateMachine: Equatable, Sendable {
   }
 
   private mutating func retryOnceWhileReady() -> Command? {
-    guard !retriedWhileReady else { return nil }
+    guard !retriedWhileReady, state == .failed(.cantReach) else { return nil }
 
     retriedWhileReady = true
-    return recover(from: .cantReach)
+    return tryAgainNow()
   }
 
-  private mutating func recover(from reason: ScreenSharingFailureReason) -> Command? {
-    guard state == .failed(reason), visible else { return nil }
+  private mutating func tryAgainNow() -> Command? {
+    guard case .failed = state, keepsTrying, visible else { return nil }
 
     return connect(open: false)
+  }
+
+  private mutating func woke() -> Command? {
+    switch state {
+    case .live: return attemptEnded(.dropped(.cantReach))
+    case .reconnecting: return startOver()
+    case .failed: return tryAgainNow()
+    case .off, .connecting: return nil
+    }
+  }
+
+  private mutating func startOver() -> Command? {
+    triesUsed = 1
+    return start(after: .zero, open: false)
   }
 
   private mutating func enter(_ stage: ScreenSharingConnectStage) -> Command? {
@@ -163,13 +180,21 @@ struct ScreenSharingConnectionStateMachine: Equatable, Sendable {
   }
 
   private mutating func goLive() -> Command? {
-    switch state {
-    case .connecting, .reconnecting:
-      state = .live
-      retriedWhileReady = false
-    case .off, .live, .failed: break
-    }
+    guard canGoLive else { return nil }
+
+    state = .live
+    retriedWhileReady = false
+    keepsTrying = false
+    quietTries = 0
     return nil
+  }
+
+  private var canGoLive: Bool {
+    switch state {
+    case .connecting, .reconnecting: true
+    case .failed: keepsTrying
+    case .off, .live: false
+    }
   }
 
   private mutating func forgive() -> Command? {
@@ -184,12 +209,16 @@ struct ScreenSharingConnectionStateMachine: Equatable, Sendable {
     guard attached || unseen == .briefly else { return turnOff() }
 
     switch (state, end) {
-    case (.off, _), (.failed, _):
+    case (.off, _):
       return nil
+    case (.failed, _):
+      return quietTryEnded(end)
     case (_, .hostFailed(let message)):
       return hostFailed(message)
-    case (.live, .refused(let reason)), (.connecting, .dropped(let reason)):
+    case (.live, .refused(let reason)):
       return fail(reason)
+    case (.connecting, .dropped(let reason)):
+      return fail(reason, keepsTrying: true)
     case (.live, .dropped):
       return reconnect()
     case (.connecting, .refused(let reason)):
@@ -203,11 +232,21 @@ struct ScreenSharingConnectionStateMachine: Equatable, Sendable {
 
   private mutating func hostFailed(_ message: String?) -> Command? {
     let reason = ScreenSharingFailureReason.unclassified(message: message)
-    if case .connecting = state { return fail(reason) }
-    guard !retriedHostFailure else { return fail(reason) }
+    if case .connecting = state { return fail(reason, keepsTrying: true) }
+    guard !retriedHostFailure else { return fail(reason, keepsTrying: true) }
 
     retriedHostFailure = true
     return state == .live ? reconnect() : nextTry(after: reason)
+  }
+
+  private mutating func quietTryEnded(_ end: ScreenSharingAttemptEnd) -> Command? {
+    guard keepsTrying else { return nil }
+
+    switch end {
+    case .refused(let reason): return fail(reason)
+    case .dropped(let reason): return fail(reason, keepsTrying: true)
+    case .hostFailed(let message): return fail(.unclassified(message: message), keepsTrying: true)
+    }
   }
 
   private func upgradesToOpen(_ reason: ScreenSharingFailureReason) -> Bool {
@@ -216,6 +255,8 @@ struct ScreenSharingConnectionStateMachine: Equatable, Sendable {
 
   private mutating func connect(open: Bool) -> Command? {
     failureIsSticky = false
+    keepsTrying = false
+    quietTries = 0
     state = .connecting(.reachingHost)
     return start(after: .zero, open: open)
   }
@@ -229,7 +270,7 @@ struct ScreenSharingConnectionStateMachine: Equatable, Sendable {
     after reason: ScreenSharingFailureReason?, asksWhyItEnded: Bool = false
   ) -> Command? {
     guard let wait = ScreenSharingRetryPolicy.wait(afterTries: triesUsed) else {
-      return fail(reason == .cantReach ? .cantReach : .keptDropping)
+      return fail(reason == .cantReach ? .cantReach : .keptDropping, keepsTrying: true)
     }
 
     triesUsed += 1
@@ -241,13 +282,17 @@ struct ScreenSharingConnectionStateMachine: Equatable, Sendable {
     return .start(attemptIntent, after: wait, asksWhyItEnded: asksWhyItEnded)
   }
 
-  private mutating func fail(_ reason: ScreenSharingFailureReason) -> Command? {
+  private mutating func fail(_ reason: ScreenSharingFailureReason, keepsTrying: Bool = false) -> Command? {
     state = .failed(reason)
     failureIsSticky = reason.isDecidedByHost
     triesUsed = 0
     retriedHostFailure = false
     if staysFailed, unseen == .lingering { unseen = nil }
-    return .stop
+    self.keepsTrying = keepsTrying
+    guard keepsTrying else { return .stop }
+
+    quietTries += 1
+    return .stopAndTryQuietly(after: ScreenSharingRetryPolicy.quietWait(afterTries: quietTries - 1))
   }
 
   private mutating func turnOff() -> Command? {
@@ -255,6 +300,8 @@ struct ScreenSharingConnectionStateMachine: Equatable, Sendable {
 
     state = .off
     failureIsSticky = false
+    keepsTrying = false
+    quietTries = 0
     unseen = nil
     triesUsed = 0
     retriedHostFailure = false

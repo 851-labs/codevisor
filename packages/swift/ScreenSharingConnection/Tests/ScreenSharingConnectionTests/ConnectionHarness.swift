@@ -2,6 +2,7 @@ import CodevisorTestSupport
 import Foundation
 import ScreenSharingConnection
 import ScreenSharingConnectionTesting
+import Testing
 
 @MainActor
 final class ConnectionHarness {
@@ -107,6 +108,27 @@ final class ConnectionHarness {
       await clock.waitForSleep(wait)
     }
     clock.advance(by: wait)
+  }
+
+  func useUpTheTries(failingAt operation: FakeHost.Operation, beforeTry: (Int) -> Void = { _ in }) async {
+    let before = host.requests(operation).count
+    host.hold(operation)
+    media.sessions.last?.host.report(connection: "failed")
+    for (index, wait) in ScreenSharingRetryPolicy.waits.dropFirst().enumerated() {
+      await awaitObserved { host.requests(operation).count == before + index + 1 }
+      beforeTry(index)
+      await clock.waitForSleep(ScreenSharingConnectionDeadlines.stillConnectingHint)
+      let earlierWaits = clock.requestCount(wait)
+      host.release(operation)
+      host.hold(operation)
+      await clock.waitForSleep(wait, count: earlierWaits + 1)
+      clock.advance(by: wait - .milliseconds(1))
+      #expect(host.requests(operation).count == before + index + 1)
+      #expect(connection.state == .reconnecting)
+      clock.advance(by: .milliseconds(1))
+    }
+    await awaitObserved { host.requests(operation).count == before + ScreenSharingRetryPolicy.waits.count }
+    host.release(operation)
   }
 
   func settle(_ state: ScreenSharingConnectionState) async {
