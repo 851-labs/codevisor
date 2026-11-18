@@ -44,13 +44,13 @@ extension ChatScreen {
       if isTranscriptMounted {
         ActiveTranscriptProjectionScope(
           controller: controller,
-          projectedRows: projectedRows
+          projectedRows: projection.rows
         ) {
           activeRows, activeRowsVersion, isActiveProjectionPending, isAwaitingFirstActiveProjection,
           activeTextRestorationID in
-          let visibleRows = workedRowsVisibilityCache.presentSettled(
-            projectedRows,
-            sourceVersion: projectedRowsVersion,
+          let visibleRows = presentationSurface.workedRowsVisibility.presentSettled(
+            projection.rows,
+            sourceVersion: projection.rowsVersion,
             disclosure: controller.disclosure
           )
           let visibleActiveRows = TranscriptWorkedRowsVisibility.present(activeRows, disclosure: controller.disclosure)
@@ -66,10 +66,10 @@ extension ChatScreen {
                 visibilityRevision: visibleActiveRows.visibilityRevision
               ),
               rowsVersion: TranscriptRowSetRevision(
-                sourceRevision: projectedRowsVersion,
+                sourceRevision: projection.rowsVersion,
                 visibilityRevision: visibleRows.visibilityRevision
               ),
-              projectionRevision: projectedRowsVersion,
+              projectionRevision: projection.rowsVersion,
               initialState: controller.scrollState,
               followsLatest: autoFollow,
               hasOlderHistory: hasOlderHistory,
@@ -203,26 +203,8 @@ extension ChatScreen {
 
   func submitProjection() {
     guard let request = mountedProjectionRequest else { return }
-    if projectedSessionID != request.key.sessionID {
-      resetProjection(for: request.key.sessionID)
-    }
-    projectionWorker.submit(request, input: controller.transcriptProjectionInput) { output in
-      publishProjection(output)
-    }
-  }
 
-  private func resetProjection(for sessionID: UUID) {
-    projectedRows = []
-    projectedRowsVersion &+= 1
-    projectedSessionID = sessionID
-    projectionPublication.reset()
-  }
-
-  private func publishProjection(_ output: TranscriptSettledProjectionWorker.Output) {
-    guard output.request.key.sessionID == projectedSessionID else { return }
-    projectedRows = output.rows
-    projectedRowsVersion &+= 1
-    projectionPublication.publish(output.request)
+    projection.submit(request, input: controller.transcriptProjectionInput)
   }
 
   var transcriptMarkdownTheme: MarkdownTheme {
@@ -252,6 +234,6 @@ extension ChatScreen {
   }
 
   var isPreparingTranscript: Bool {
-    projectionPublication.isPending(currentRequest: transcriptProjectionRequest)
+    projection.isPending(currentRequest: transcriptProjectionRequest)
   }
 }

@@ -2,17 +2,20 @@ import AppKit
 import CodevisorCore
 import CodevisorUI
 import StreamMarkdown
+import TranscriptKit
 
 @MainActor
 final class TranscriptPresentationSurface {
   let textAnimationVisibility = StreamingTextAnimationVisibility(initiallyVisible: false)
   let textAnimationRegistry = StreamingTextAnimationRegistry()
   let findModel = TranscriptFindModel()
+  let projection = TranscriptSettledProjection()
+  let workedRowsVisibility = TranscriptWorkedRowsVisibilityCache()
+  let composer = TranscriptComposerMetrics()
 
   private weak var controller: SessionController?
   private var retainedScrollView: VirtualizedTranscriptScrollView?
   private var visibilityOwners: Set<UUID> = []
-  private(set) var composerHeight: CGFloat = 96
 
   init(controller: SessionController) {
     self.controller = controller
@@ -48,10 +51,6 @@ final class TranscriptPresentationSurface {
     if visibilityOwners.isEmpty {
       textAnimationVisibility.disappear()
     }
-  }
-
-  func updateComposerHeight(_ height: CGFloat) {
-    composerHeight = height
   }
 
   func prepareForEviction() {
