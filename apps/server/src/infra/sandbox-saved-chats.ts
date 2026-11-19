@@ -11,6 +11,7 @@ import {
 } from "@codevisor/api"
 import { Schema } from "effect"
 
+import { askSandbox } from "./sandbox-remote-calls.js"
 import type { SavedChatsManifest, SavedResumeFile } from "./sandbox-saved-chats-store.js"
 import type { SandboxSetupProgress } from "./sandbox-setup-log.js"
 import type { SandboxDeps } from "./sandboxes.js"
@@ -295,7 +296,13 @@ const ask = (
   deps: SandboxDeps,
   machine: PlacedSandbox,
   action: SandboxChatsAction
-): Promise<unknown> => deps.remoteTools.call(machine.machineId, FLEET_SANDBOX_CHATS_PATH, action)
+): Promise<unknown> =>
+  askSandbox(deps, {
+    machineId: machine.machineId,
+    tool: FLEET_SANDBOX_CHATS_PATH,
+    args: action,
+    repeatable: true
+  })
 
 const megabytes = (bytes: number): string =>
   `${String(Math.max(1, Math.round(bytes / (1024 * 1024))))} MB`

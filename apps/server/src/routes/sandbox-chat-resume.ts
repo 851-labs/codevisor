@@ -1,10 +1,11 @@
-import { appendFile, mkdir, open, readdir, stat, writeFile } from "node:fs/promises"
+import { mkdir, open, readdir, stat } from "node:fs/promises"
 import { dirname, join, relative } from "node:path"
 
 import type { HarnessAccountContext } from "@codevisor/agent-runtime"
 import type { SavedChatResume, SessionSummary } from "@codevisor/api"
 
 import { HttpFailure, type CodevisorServerServices } from "../server-context.js"
+import { writeAt } from "./bot-import-files.js"
 import { isSafeRelativePath } from "./project-setup-source.js"
 
 type AccountEnvironment = Readonly<Record<string, string>> | undefined
@@ -100,8 +101,7 @@ export const writeResumeFile = async (
   const target = join(store.rootOf(host.home, account?.env), chunk.path)
   const bytes = Buffer.from(chunk.data, "base64")
   await mkdir(dirname(target), { recursive: true, mode: 0o700 })
-  if (chunk.offset === 0) await writeFile(target, bytes, { mode: 0o600 })
-  else await appendFile(target, bytes)
+  await writeAt(target, chunk.offset, bytes, 0o600)
   return account === undefined || !store.needsAccount ? {} : { accountId: account.id }
 }
 

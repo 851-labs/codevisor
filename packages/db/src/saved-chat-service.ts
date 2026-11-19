@@ -147,6 +147,8 @@ const importItem = (sqlite: Database.Database, sessionId: string, saved: SavedCh
   const itemId = saved.item["id"]
   if (typeof itemId !== "string") throw new Error("A saved chat item has no id")
 
+  if (sqlite.prepare(savedChatSql.hasItem).get(itemId) !== undefined) return
+
   const status = saved.item["status"] === "streaming" ? "complete" : (saved.item["status"] ?? null)
   insertRow(sqlite, itemSql, { ...saved.item, session_id: sessionId, status })
   for (const [table, rows] of Object.entries(saved.children)) {
@@ -173,6 +175,8 @@ const recordRestore = (
   sessionId: string,
   { startedAt, completedAt, lines }: SavedChatRestore
 ): void => {
+  if (sqlite.prepare(savedChatSql.hasRestore).get(sessionId, startedAt) !== undefined) return
+
   const itemId = randomUUID()
   sqlite
     .prepare(savedChatSql.insertRestore)
@@ -218,6 +222,9 @@ const savedChatSql = {
   fileIds: "select file_id as id from session_files where session_id = ? order by file_id",
   fileExists: "select 1 from files where id = ?",
   hasItems: "select 1 from chat_items where session_id = ? limit 1",
+  hasItem: "select 1 from chat_items where id = ?",
+  hasRestore: `select 1 from chat_items
+    where session_id = ? and origin = '${SANDBOX_RESTORE_ORIGIN}' and started_at = ?`,
   linkFile: `insert or ignore into session_files (session_id, file_id)
     select ?, id from files where id = ?`,
   insertRestore: `insert into chat_items (id, session_id, position, role, status, created_at,

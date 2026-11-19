@@ -194,7 +194,10 @@ const restoreChat = async (
     },
     false
   )
-  if (!created.created) throw new HttpFailure(409, `${session.title} is already on this sandbox`)
+  const isBeingPutBack = hidden === true && created.session.workspaceId === undefined
+  if (!created.created && !isBeingPutBack) {
+    throw new HttpFailure(409, `${session.title} is already on this sandbox`)
+  }
   return { sessionId: created.session.id }
 }
 

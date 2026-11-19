@@ -140,3 +140,49 @@ describe("a project this machine doesn't have", () => {
     expect(harness.events).toEqual([])
   })
 })
+
+const unavailable = (phase: "before-send" | "in-flight") =>
+  Object.assign(new Error("Lost connection to the sandbox mid-call"), {
+    code: "machine_unavailable",
+    details: { phase }
+  })
+
+const failing = async (tool: string, phase: "before-send" | "in-flight", times: number) => {
+  const harness = await sandboxHarness()
+  let left = times
+  harness.controls.answer = (asked) => {
+    if (asked !== tool || left === 0) return undefined
+    left -= 1
+    return Promise.reject(unavailable(phase))
+  }
+  await harness.machines.create({ ...request, workspaceId: undefined })
+  await harness.machines.settled()
+  const asked = harness.toolCalls.filter((call) => call.tool === tool).length
+  return { asked, machine: (await harness.machines.list())[0] }
+}
+
+describe("a sandbox that can't be reached for a moment during setup", () => {
+  it("asks again for a clone whose answer was lost, and carries on from what the sandbox has", async () => {
+    const { asked, machine } = await failing("codevisor.projects.clone", "in-flight", 2)
+
+    expect(asked).toBe(3)
+    expect(machine).toMatchObject({ state: "ready" })
+  })
+
+  it("asks again for any step that never reached the sandbox", async () => {
+    const { asked, machine } = await failing("codevisor.workspaces.upsert", "before-send", 3)
+
+    expect(asked).toBe(4)
+    expect(machine).toMatchObject({ state: "ready" })
+  })
+
+  it("fails setup with the reason when the sandbox stays out of reach", async () => {
+    const { asked, machine } = await failing("codevisor.projects.clone", "in-flight", 7)
+
+    expect(asked).toBe(7)
+    expect(machine).toMatchObject({
+      state: "failed",
+      error: expect.stringContaining("Lost connection to the sandbox mid-call")
+    })
+  })
+})

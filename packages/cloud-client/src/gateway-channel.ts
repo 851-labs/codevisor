@@ -9,6 +9,8 @@ import type { CancelTimeout } from "./machine-socket.js"
 export const GATEWAY_CHUNK_CHARS = 128 * 1024
 export const MAX_GATEWAY_BODY_CHARS = 32 * 1024 * 1024
 export const GATEWAY_ACCEPT_TIMEOUT_MS = 20_000
+export const GATEWAY_PROBE_INTERVAL_MS = 15_000
+const GATEWAY_UNANSWERED_PROBES = 2
 
 export interface GatewayExchange {
   readonly status: number
@@ -47,9 +49,51 @@ const endedBeforeSend = (end: OutgoingChannelEnd, accepted: boolean): boolean =>
 const describeEnd = (end: OutgoingChannelEnd): string =>
   end.kind === "peer-closed" ? `closed by the target (${end.reason})` : end.kind
 
+type Schedule = (callback: () => void, delayMs: number) => CancelTimeout
+
+interface AnswerWatch {
+  readonly heard: () => void
+  readonly start: (answersProbes: boolean) => void
+  readonly stop: () => void
+}
+
+const watchForAnswer = (
+  channel: OutgoingChannel,
+  schedule: Schedule,
+  intervalMs: number,
+  lost: () => void
+): AnswerWatch => {
+  let cancel: CancelTimeout | undefined
+  let answersProbes = false
+  let unanswered = 0
+  const probe = (): void => {
+    if (answersProbes && unanswered >= GATEWAY_UNANSWERED_PROBES) {
+      lost()
+      return
+    }
+    unanswered += 1
+    channel.send({ kind: "probe" })
+    cancel = schedule(probe, intervalMs)
+  }
+  return {
+    heard: () => {
+      unanswered = 0
+    },
+    start: (answers) => {
+      answersProbes = answers
+      cancel = schedule(probe, intervalMs)
+    },
+    stop: () => {
+      cancel?.()
+      cancel = undefined
+    }
+  }
+}
+
 export interface GatewayRequestOptions {
   readonly signal?: AbortSignal
   readonly acceptTimeoutMs?: number
+  readonly probeIntervalMs?: number
   readonly scheduleTimeout?: (callback: () => void, delayMs: number) => CancelTimeout
 }
 
@@ -96,6 +140,7 @@ export const requestOverGatewayChannel = (
       if (settled) return false
       settled = true
       cancelAcceptTimeout?.()
+      watch.stop()
       signal?.removeEventListener("abort", onAbort)
       return true
     }
@@ -105,6 +150,12 @@ export const requestOverGatewayChannel = (
       reject(error)
     }
     const onAbort = (): void => fail(signal!.reason, "done")
+    const watch = watchForAnswer(
+      channel,
+      schedule,
+      options.probeIntervalMs ?? GATEWAY_PROBE_INTERVAL_MS,
+      () => fail(new GatewayChannelError("in-flight", "the target stopped answering"), "done")
+    )
     let cancelAcceptTimeout: CancelTimeout | undefined = schedule(() => {
       cancelAcceptTimeout = undefined
       fail(new GatewayChannelError("in-flight", "the target did not answer"), "done")
@@ -124,12 +175,15 @@ export const requestOverGatewayChannel = (
         fail(new GatewayChannelError("in-flight", "malformed answer"), "protocol-error")
         return
       }
+      watch.heard()
       if (value.kind === "accepted") {
         accepted = true
         cancelAcceptTimeout?.()
         cancelAcceptTimeout = undefined
+        watch.start(value.probes === true)
         return
       }
+      if (value.kind === "working") return
       if (value.kind === "chunk" && typeof value.data === "string") {
         response += value.data
         if (response.length <= MAX_GATEWAY_BODY_CHARS) return
@@ -157,13 +211,16 @@ export const gatewayChannelHandler =
     let started = false
     channel.onClosed = () => controller.abort(new Error("the caller cancelled the request"))
     channel.onData = (value) => {
-      if (started) return
+      if (started) {
+        if (isRecord(value) && value.kind === "probe") channel.send({ kind: "working" })
+        return
+      }
       if (isRecord(value) && value.kind === "chunk" && typeof value.data === "string") {
         request += value.data
         if (request.length <= MAX_GATEWAY_BODY_CHARS) return
       } else if (isRecord(value) && value.kind === "end") {
         started = true
-        channel.send({ kind: "accepted" })
+        channel.send({ kind: "accepted", probes: true })
         void run()
         return
       }

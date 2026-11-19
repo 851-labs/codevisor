@@ -118,8 +118,12 @@ const movedToStudio = async () => {
 }
 
 describe("moving a sandbox's chats between machines", () => {
-  it("hands over each chat with its history, attachment and tabs, and takes them back whole", async () => {
-    const { home, chat, before, fromLaptop, toStudio, list } = await movedToStudio()
+  it("hands over each chat with its history, attachment and tabs, and takes them back whole, even when each step is sent twice", async () => {
+    const { home, chat, before, fromLaptop, toStudio: once, list } = await movedToStudio()
+    const toStudio = async (action: SandboxChatsAction): Promise<unknown> => {
+      await once(action)
+      return once(action)
+    }
     const [saved] = list.chats
     if (saved === undefined) throw new Error("The laptop listed no chats")
     const { format } = list
@@ -151,6 +155,10 @@ describe("moving a sandbox's chats between machines", () => {
     expect(saved.session).toMatchObject({ id: chat.sessionId, title: "Fix the laptop" })
     expect(saved.files).toEqual([chat.file])
     expect(await transcriptOn(home, sessionId)).toEqual(before)
+    const page = await run(home.services.db.getTranscriptPage(sessionId, undefined, 8))
+    expect(
+      page.setupActivities.filter((line) => field(line, "kind") === "sandbox.restore")
+    ).toHaveLength(1)
     const restored = await jsonRequest(home.server, `/v1/sessions/${sessionId}`)
     expect(field(restored.body, "session")).toMatchObject({
       title: "Fix the laptop",

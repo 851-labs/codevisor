@@ -1,5 +1,5 @@
 import { createReadStream } from "node:fs"
-import { appendFile, mkdir, rm, stat, writeFile } from "node:fs/promises"
+import { mkdir, open, rm, stat } from "node:fs/promises"
 import { tmpdir } from "node:os"
 import { join } from "node:path"
 
@@ -29,6 +29,8 @@ export const receiveImportFile = async (
   chunk: ImportFileChunk,
   resend = "fork again to resend it"
 ): Promise<{ readonly stored: boolean }> => {
+  if ((await run(services.db.getFileMetadata(chunk.file.id))) !== undefined) return { stored: true }
+
   const part = await writeChunk(chunk)
   if ((await stat(part)).size < chunk.file.sizeBytes) return { stored: false }
 
@@ -44,9 +46,22 @@ const writeChunk = async (chunk: ImportFileChunk): Promise<string> => {
   const part = partPath(chunk.file)
   await mkdir(importDirectory, { recursive: true })
   const bytes = Buffer.from(chunk.data, "base64")
-  if (chunk.offset === 0) await writeFile(part, bytes)
-  else await appendFile(part, bytes)
+  await writeAt(part, chunk.offset, bytes)
   return part
+}
+
+export const writeAt = async (
+  path: string,
+  offset: number,
+  bytes: Uint8Array,
+  mode?: number
+): Promise<void> => {
+  const handle = await open(path, offset === 0 ? "w" : "r+", mode)
+  try {
+    await handle.write(bytes, 0, bytes.byteLength, offset)
+  } finally {
+    await handle.close()
+  }
 }
 
 const storeFile = async (

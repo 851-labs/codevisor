@@ -1,6 +1,7 @@
 import type { Sandbox, Project } from "@codevisor/api"
 
 import { cloneFailure, NO_GIT_ACCESS, type SandboxGitAccess } from "./sandbox-git.js"
+import { askSandbox } from "./sandbox-remote-calls.js"
 import type { SandboxRemote } from "./sandbox-remote.js"
 import { bringBackChats } from "./sandbox-saved-chats.js"
 import { bringBackWork, startsOnNewBranch } from "./sandbox-saved-work.js"
@@ -48,7 +49,7 @@ export const placeWorkspace = async (
   if (machine.defersWorkspace === true) return { remoteProjectId }
 
   const workspaceId = deps.newId()
-  await deps.remoteTools.call(machine.machineId, "codevisor.workspaces.upsert", {
+  await upsertWorkspace(deps, machine.machineId, {
     workspaceId,
     projectId: remoteProjectId,
     name: machine.name,
@@ -80,7 +81,7 @@ const restoreWorkspace = async (
   workspaceId: string
 ): Promise<PlacedWorkspace> => {
   await deps.localWorkspaces.remove(workspaceId)
-  await deps.remoteTools.call(machine.machineId, "codevisor.workspaces.upsert", {
+  await upsertWorkspace(deps, machine.machineId, {
     workspaceId,
     projectId: remoteProjectId,
     name: machine.workspaceName ?? machine.name,
@@ -89,6 +90,9 @@ const restoreWorkspace = async (
   })
   return { remoteProjectId, workspaceId, workspaceOpenedAt: isoNow(deps) }
 }
+
+const upsertWorkspace = (deps: SandboxDeps, machineId: string, args: unknown): Promise<unknown> =>
+  askSandbox(deps, { machineId, tool: "codevisor.workspaces.upsert", args, repeatable: true })
 
 export const isoNow = (deps: SandboxDeps): string => new Date(deps.clock.now()).toISOString()
 
@@ -113,14 +117,20 @@ const remoteProjectFor = async (
   const { machineId } = machine
   const { repoUrl } = project
   if (repoUrl === undefined) {
-    return idOf(await deps.remoteTools.call(machineId, "codevisor.projects.create_scratch", {}))
+    return idOf(
+      await askSandbox(deps, { machineId, tool: "codevisor.projects.create_scratch", args: {} })
+    )
   }
 
-  const cloned = await deps.remoteTools
-    .call(machineId, "codevisor.projects.clone", cloneArguments(machine, project, repoUrl))
-    .catch((cause: unknown) => {
-      throw cloneFailure(cause, repoUrl, git, deps.machineName())
-    })
+  const clone = cloneArguments(machine, project, repoUrl)
+  const cloned = await askSandbox(deps, {
+    machineId,
+    tool: "codevisor.projects.clone",
+    args: clone,
+    repeatable: true
+  }).catch((cause: unknown) => {
+    throw cloneFailure(cause, repoUrl, git, deps.machineName())
+  })
   return idOf(cloned)
 }
 
