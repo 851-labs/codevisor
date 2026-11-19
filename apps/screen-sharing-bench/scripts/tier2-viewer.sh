@@ -103,6 +103,10 @@ shape() {
   shaped_network=$network
 }
 
+skip() {
+  tier2_skip viewer "$name" "$dir" "$1"
+}
+
 run_one() {
   local index=$1 scene=$2 system=$3 rep=$4 observed=$5 network=$6
   local name dir started_at status=ok
@@ -118,12 +122,12 @@ run_one() {
   started_at=$(date -u '+%Y-%m-%dT%H:%M:%SZ')
   shape "$network" || status="$network shaping didn't load"
   [[ "$status" != ok ]] || preflight "$dir/viewer-before-preflight.json" || status="viewer preflight failed"
-  meet viewer "$name-start" "$status" || { say "skipping $name: not ready at start"; return 0; }
-  meet viewer "$name-system" || { say "skipping $name: the host could not start"; return 0; }
+  meet viewer "$name-start" "$status" || { skip "$(tier2_unmet start "$status")"; return 0; }
+  meet viewer "$name-system" || { skip "the host could not start"; return 0; }
   start_system "$system" "$dir" "$scene" || status="$system did not become ready"
-  meet viewer "$name-ready" "$status" || { say "skipping $name: $status"; stop_system; return 0; }
+  meet viewer "$name-ready" "$status" || { skip "$(tier2_unmet ready "$status")"; stop_system; return 0; }
   [[ "$network" == N0 ]] || network_check "$dir"
-  meet viewer "$name-measure" || { say "skipping $name: host preflight failed"; stop_system; return 0; }
+  meet viewer "$name-measure" || { skip "host preflight failed"; stop_system; return 0; }
   say "measuring $name"
   measure "$dir" "$system" "$scene" || say "a viewer measurement process failed in $name"
   meet viewer "$name-done" || true

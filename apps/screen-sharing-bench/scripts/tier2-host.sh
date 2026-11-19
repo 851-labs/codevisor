@@ -128,6 +128,10 @@ stop_share() {
   share_job="" shared_display=""
 }
 
+skip() {
+  tier2_skip host "$name" "$dir" "$1"
+}
+
 run_one() {
   local index=$1 scene=$2 system=$3 rep=$4 observed=$5 network=$6
   local name dir status=ok
@@ -138,12 +142,12 @@ run_one() {
   rm -f "$work/ready" "$work/stop"
   share_job=""
   preflight "$dir/host-before-preflight.json" --allow-screen-sharing-from "$(viewer_addresses)" || status="host preflight failed"
-  meet host "$name-start" "$status" || return 0
+  meet host "$name-start" "$status" || { skip "$(tier2_unmet start "$status")"; return 0; }
   if [[ "$system" == codevisor* ]] && ! start_share "$dir" "$system"; then status="share did not start"; fi
-  meet host "$name-system" "$status" || { stop_share; return 0; }
-  meet host "$name-ready" || { stop_share; return 0; }
+  meet host "$name-system" "$status" || { skip "$(tier2_unmet system "$status")"; stop_share; return 0; }
+  meet host "$name-ready" || { skip "the viewer's system did not become ready"; stop_share; return 0; }
   preflight "$dir/host-during-preflight.json" --allow-screen-sharing-from "$(viewer_addresses)" || status="host preflight failed"
-  meet host "$name-measure" "$status" || { stop_share; return 0; }
+  meet host "$name-measure" "$status" || { skip "$(tier2_unmet measure "$status")"; stop_share; return 0; }
   say "measuring $name"
   measure "$scene" "$system" "$dir" "$observed" || say "a host measurement process failed in $name"
   meet host "$name-done" || true

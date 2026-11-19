@@ -22,7 +22,10 @@ struct Tier2ReportCommand: BenchCommand {
   }
 
   func run() async throws {
-    let measurements = try Self.load(runs)
+    let loaded = try Self.load(runs)
+    let measurements = loaded.measurements
+    let skipped = try Tier2SkippedRuns(
+      in: runs, measured: Set(measurements.map(\.files.directory.lastPathComponent)), unreadable: loaded.unreadable)
     guard let environment = Tier2Environment.make(measurements) else {
       throw BenchUsageError(message: "no run in \(runs.path) has a host preflight")
     }
@@ -37,25 +40,37 @@ struct Tier2ReportCommand: BenchCommand {
         nullSharingImageAgeMs: floors.pooledMs, localI2pMs: inputFloors.pooledMs,
         observerInterference: Tier2Interference.calibration(interference)),
       results: results, comparisons: Tier2Comparisons.make(results))
-    if let output { try BenchReportCodec.write(report, to: URL(fileURLWithPath: output)) }
+    if let output {
+      try BenchReportCodec.write(report, to: URL(fileURLWithPath: output))
+      try skipped.write(beside: URL(fileURLWithPath: output))
+    }
     let summary = Tier2Markdown(
-      report: report, floors: floors, inputFloors: inputFloors, interference: interference, measurements: measurements)
+      report: report, floors: floors, inputFloors: inputFloors, interference: interference, measurements: measurements,
+      skipped: skipped)
     if let markdown { try summary.text.write(toFile: markdown, atomically: true, encoding: .utf8) }
     print(summary.text)
+    guard skipped.runs.isEmpty else { throw Tier2RunsSkipped(skipped: skipped) }
   }
 
-  private static func load(_ runs: URL) throws -> [Tier2Measurement] {
+  private struct Loaded {
+    var measurements: [Tier2Measurement] = []
+    var unreadable: [String: String] = [:]
+  }
+
+  private static func load(_ runs: URL) throws -> Loaded {
     let directories = try FileManager.default.contentsOfDirectory(at: runs, includingPropertiesForKeys: nil)
       .filter { FileManager.default.fileExists(atPath: $0.appending(path: "meta.json").path) }
-    return directories.compactMap(measurement).sorted { $0.files.meta.index < $1.files.meta.index }
+    var loaded = directories.reduce(into: Loaded(), read)
+    loaded.measurements.sort { $0.files.meta.index < $1.files.meta.index }
+    return loaded
   }
 
-  private static func measurement(_ directory: URL) -> Tier2Measurement? {
+  private static func read(_ loaded: inout Loaded, _ directory: URL) {
     do {
-      return Tier2Measurement(try Tier2RunFiles(directory: directory))
+      loaded.measurements.append(Tier2Measurement(try Tier2RunFiles(directory: directory)))
     } catch {
-      BenchConsole.error("skipping \(directory.lastPathComponent): \(error)")
-      return nil
+      BenchConsole.error("could not read \(directory.lastPathComponent): \(error)")
+      loaded.unreadable[directory.lastPathComponent] = "\(error)"
     }
   }
 

@@ -6,11 +6,12 @@ struct Tier2Markdown {
   let inputFloors: Tier2InputFloors
   let interference: [Tier2Interference]
   let measurements: [Tier2Measurement]
+  let skipped: Tier2SkippedRuns
 
   var text: String {
     let parity = Tier2PhaseParity(results: report.results)
     return [
-      parity.headline, Tier2SystemLabel.legend, targetTable, verdictTable,
+      skipped.warning, parity.headline, Tier2SystemLabel.legend, targetTable, verdictTable,
       Tier2InputTable(measurements, floors: inputFloors).text,
       Tier2Milestone(report: report, floors: floors).text, Tier2BottomTable(measurements).text,
       parity.text, Tier2V2Table(report.results).text,
