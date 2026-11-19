@@ -47,16 +47,19 @@ network_pipes() {
 }
 
 network_load_rules() {
-  sudo -n pfctl -q -a "$tier2_network_anchor" -f - 2>/dev/null || return 1
+  local problem
+  problem=$(sudo -n pfctl -q -a "$tier2_network_anchor" -f - 2>&1) || { say "pfctl didn't load the rules: $problem"; return 1; }
   [[ -n "$tier2_network_pf_token" ]] || tier2_network_pf_token=$(sudo -n pfctl -E 2>&1 | awk '/Token/ { print $NF }')
-  network_loaded || { say "dummynet rules or pipes didn't load"; return 1; }
+  network_loaded
 }
 
 network_loaded() {
   local rules pipes
-  rules=$(sudo -n pfctl -a "$tier2_network_anchor" -s dummynet 2>/dev/null) || return 1
-  pipes=$(sudo -n dnctl list 2>/dev/null) || return 1
-  [[ -n "$tier2_network_pf_token" && "$rules" == *"pipe 1"* && $'\n'"$pipes" == *$'\n00002:'* ]]
+  rules=$(sudo -n pfctl -a "$tier2_network_anchor" -s dummynet 2>&1) || { say "pfctl couldn't list the rules: $rules"; return 1; }
+  pipes=$(sudo -n dnctl list 2>&1) || { say "dnctl couldn't list the pipes: $pipes"; return 1; }
+  [[ -n "$tier2_network_pf_token" ]] || { say "pfctl -E gave no token, so pf may not be enabled"; return 1; }
+  [[ "$rules" == *"pipe 1"* ]] || { say "the anchor holds no dummynet rule: ${rules:-nothing listed}"; return 1; }
+  [[ $'\n'"$pipes" == *$'\n00002:'* ]] || { say "dnctl lists no pipe 2: ${pipes:-nothing listed}"; return 1; }
 }
 
 network_check() {

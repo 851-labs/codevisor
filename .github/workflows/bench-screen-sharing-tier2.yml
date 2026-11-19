@@ -195,9 +195,15 @@ jobs:
       - name: Install the build where the permission grants are
         if: steps.pair.outputs.paired == 'true'
         run: apps/screen-sharing-bench/scripts/install-granted.sh
+      - name: Quit the Codevisor app for the measurement
+        if: steps.pair.outputs.paired == 'true'
+        run: apps/screen-sharing-bench/scripts/codevisor-app.sh quit
       - name: Host the Tier 2 runs on tamale
         if: steps.pair.outputs.paired == 'true'
         run: caffeinate -d -i -s apps/screen-sharing-bench/scripts/tier2-host.sh "$RUNNER_TEMP/results"
+      - name: Reopen the Codevisor app
+        if: always()
+        run: apps/screen-sharing-bench/scripts/codevisor-app.sh reopen
       - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
         if: always() && steps.pair.outputs.paired == 'true'
         with:
@@ -233,9 +239,15 @@ jobs:
       - name: Install the build where the permission grants are
         if: steps.pair.outputs.paired == 'true'
         run: apps/screen-sharing-bench/scripts/install-granted.sh
+      - name: Quit the Codevisor app for the measurement
+        if: steps.pair.outputs.paired == 'true'
+        run: apps/screen-sharing-bench/scripts/codevisor-app.sh quit
       - name: View the Tier 2 runs on croissant
         if: steps.pair.outputs.paired == 'true'
         run: caffeinate -d -i -s apps/screen-sharing-bench/scripts/tier2-viewer.sh "$RUNNER_TEMP/results"
+      - name: Reopen the Codevisor app
+        if: always()
+        run: apps/screen-sharing-bench/scripts/codevisor-app.sh reopen
       - name: Remove any network shaping
         if: always() && steps.pair.outputs.paired == 'true'
         run: apps/screen-sharing-bench/scripts/tier2-network-reset.sh
