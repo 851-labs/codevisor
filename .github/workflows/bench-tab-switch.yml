@@ -1,0 +1,66 @@
+name: Bench tab switch
+
+on:
+  schedule:
+    - cron: "23 12 * * *"
+  workflow_dispatch:
+    inputs:
+      limits:
+        description: Limits in ms of main-thread work per switch, as scenario=ms pairs (first-visit, revisit, warm)
+        required: false
+        default: first-visit=300,revisit=90,warm=60
+        type: string
+      enforce:
+        description: Fail the run when a limit is exceeded (off while the limits are being chosen)
+        required: false
+        default: false
+        type: boolean
+
+permissions:
+  contents: read
+
+concurrency:
+  group: tab-switch-bench
+  cancel-in-progress: false
+
+jobs:
+  bench:
+    runs-on: [self-hosted, macOS, ARM64, tamale]
+    timeout-minutes: 30
+    env:
+      TAB_SWITCH_LIMITS: ${{ inputs.limits || 'first-visit=300,revisit=90,warm=60' }}
+      TAB_SWITCH_ENFORCE: ${{ inputs.enforce && '1' || '' }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          set-safe-directory: false
+      - name: Select full Xcode
+        run: echo "DEVELOPER_DIR=$(scripts/release/resolve-xcode.sh)" >> "$GITHUB_ENV"
+      - uses: ./.github/actions/setup-node
+      - uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6
+        with:
+          bun-version-file: package.json
+      - uses: ./.github/actions/setup-rust
+      - run: bun install --frozen-lockfile
+      - name: Measure tab switches in the dev app
+        run: caffeinate -d -i -s scripts/tab-switch-bench-ci.sh --fresh-data "$RUNNER_TEMP/tab-switch-bench"
+      - name: Report
+        if: always()
+        run: |
+          report="$RUNNER_TEMP/tab-switch-bench/report.md"
+          if [[ -f "$report" ]]; then
+            {
+              echo "### Tab switch, main-thread work per switch (Debug build)"
+              echo
+              cat "$report"
+              echo
+              cat "$RUNNER_TEMP/tab-switch-bench/load.txt"
+            } >> "$GITHUB_STEP_SUMMARY"
+          fi
+      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
+        if: always()
+        with:
+          name: tab-switch-bench
+          path: ${{ runner.temp }}/tab-switch-bench
+          if-no-files-found: ignore
+          retention-days: 30
