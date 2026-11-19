@@ -103,7 +103,7 @@ struct SidebarWorkspaceGroupTests {
   }
 
   @Test func subtitleDropsTheProjectAGroupHeadingAlreadyNames() {
-    let details = SidebarRowDetail.defaults
+    let details: [SidebarRowDetail] = [.project, .branch]
     #expect(
       SidebarRowSubtitle.make(
         details: details, title: "Fix login", projectName: "api", branch: "main", worktreeName: nil,
@@ -134,9 +134,16 @@ struct SidebarWorkspaceGroupTests {
         == "codevisor/emmer")
   }
 
+  @MainActor @Test func unsetRowDetailsFollowTheDefaultsAndSetOnesKeepTheirValue() {
+    let preferences = ClientPreferences()
+    #expect(preferences.sidebarRowDetails == [.pullRequest, .machine, .status, .project, .worktree])
+    preferences.setSidebarRowDetail(.branch, shown: true)
+    preferences.setSidebarRowDetail(.project, shown: false)
+    #expect(preferences.sidebarRowDetails == [.pullRequest, .machine, .status, .branch, .worktree])
+  }
+
   @MainActor @Test func rowDetailsKeepTheLegacyListUntilEachDetailIsSetOnItsOwn() {
     let preferences = ClientPreferences()
-    #expect(preferences.sidebarRowDetails == [.pullRequest, .machine, .project, .branch])
     preferences.set([SidebarRowDetail.project], forKey: SidebarRowDetail.legacyPreferenceKey)
     #expect(preferences.sidebarRowDetails == [.project])
     preferences.setSidebarRowDetail(.project, shown: false)

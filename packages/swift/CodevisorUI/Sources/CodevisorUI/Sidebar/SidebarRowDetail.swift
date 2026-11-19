@@ -21,7 +21,7 @@ public enum SidebarRowDetail: String, CaseIterable, Codable, Identifiable, Senda
 
   public var preferenceKey: String { "sidebar.rowDetail.\(rawValue)" }
 
-  public var isShownByDefault: Bool { self != .status && self != .worktree }
+  public var isShownByDefault: Bool { self != .branch }
 
   public var title: String {
     switch self {
@@ -59,5 +59,11 @@ extension ClientPreferences {
 
   public func setSidebarRowDetail(_ detail: SidebarRowDetail, shown: Bool) {
     set(shown, forKey: detail.preferenceKey)
+  }
+
+  public func setSidebarRowDetails(_ shown: [SidebarRowDetail]) {
+    for detail in SidebarRowDetail.allCases {
+      setSidebarRowDetail(detail, shown: shown.contains(detail))
+    }
   }
 }
