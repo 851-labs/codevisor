@@ -144,6 +144,50 @@ describe("gateway exchanges between machines", () => {
     expect(a.socket.lastClose().reason).toBe("done")
   })
 
+  it("notices an answer that was lost on the way back instead of waiting forever", async () => {
+    const answer = Promise.withResolvers<GatewayExchange>()
+    const { a, b, hub } = pair({ b: { handle: () => answer.promise } })
+    const clock = timers()
+    const pending = gatewayRequest(a, b, "{}", {
+      scheduleTimeout: clock.scheduleTimeout,
+      probeIntervalMs: 1000
+    })
+    hub.flush()
+    const deliver = b.socket.onRelay
+    b.socket.onRelay = () => undefined
+    answer.resolve({ status: 200, body: "lost" })
+    await answer.promise
+    await Promise.resolve()
+    b.socket.onRelay = deliver
+
+    nextProbe(clock).callback()
+    hub.flush()
+
+    expect(await failure(pending)).toMatchObject({
+      phase: "in-flight",
+      closeReason: "peer-disconnected"
+    })
+  })
+
+  it("keeps waiting on a slow call while the target says it is still working", async () => {
+    const answer = Promise.withResolvers<GatewayExchange>()
+    const { a, b, hub } = pair({ b: { handle: () => answer.promise } })
+    const clock = timers()
+    const pending = gatewayRequest(a, b, "{}", {
+      scheduleTimeout: clock.scheduleTimeout,
+      probeIntervalMs: 1000
+    })
+    hub.flush()
+    for (let round = 0; round < 5; round += 1) {
+      nextProbe(clock).callback()
+      hub.flush()
+    }
+
+    answer.resolve({ status: 200, body: "slow but fine" })
+
+    expect(await pending).toEqual({ status: 200, body: "slow but fine" })
+  })
+
   it("answers handler failures and refuses malformed requests on the target", async () => {
     const failures: unknown[] = [new Error("boom"), "bare"]
     const { a, b, hub } = pair({
@@ -218,6 +262,16 @@ describe("gateway responder over a scripted channel", () => {
   })
 })
 
+const nextProbe = (clock: ReturnType<typeof timers>) => {
+  const probe = clock.pending.findLast((timer) => !timer.cancelled && timer.delayMs === 1000)
+  if (probe === undefined) throw new Error("no probe is scheduled")
+  probe.cancelled = true
+  return probe
+}
+
+const isProbe = (value: unknown): boolean =>
+  typeof value === "object" && value !== null && "kind" in value && value.kind === "probe"
+
 const scriptedChannel = () => {
   const sent: unknown[] = []
   const closes: string[] = []
@@ -276,9 +330,10 @@ describe("gateway exchange over a scripted channel", () => {
       const streamed = requestOverGatewayChannel(() => accepted.channel, "{}")
       expect(vi.getTimerCount()).toBe(1)
       accepted.channel.onData?.({ kind: "accepted" })
-      expect(vi.getTimerCount()).toBe(0)
+      expect(vi.getTimerCount()).toBe(1)
       accepted.channel.onData?.({ kind: "end", status: 200 })
       expect(await streamed).toEqual({ status: 200, body: "" })
+      expect(vi.getTimerCount()).toBe(0)
 
       const ended = scriptedChannel()
       const pending = requestOverGatewayChannel(() => ended.channel, "{}")
@@ -289,6 +344,38 @@ describe("gateway exchange over a scripted channel", () => {
     } finally {
       vi.useRealTimers()
     }
+  })
+
+  it("gives up on a target that stops answering probes, but never on one too old to answer them", async () => {
+    const current = scriptedChannel()
+    const old = scriptedChannel()
+    const clock = timers()
+    const oldClock = timers()
+    const options = { probeIntervalMs: 1000 }
+    const stalled = requestOverGatewayChannel(() => current.channel, "{}", {
+      ...options,
+      scheduleTimeout: clock.scheduleTimeout
+    })
+    const waiting = requestOverGatewayChannel(() => old.channel, "{}", {
+      ...options,
+      scheduleTimeout: oldClock.scheduleTimeout
+    })
+    current.channel.onData?.({ kind: "accepted", probes: true })
+    old.channel.onData?.({ kind: "accepted" })
+
+    for (let round = 0; round < 3; round += 1) {
+      nextProbe(clock).callback()
+      nextProbe(oldClock).callback()
+    }
+
+    expect(await failure(stalled)).toMatchObject({
+      phase: "in-flight",
+      reason: "the target stopped answering"
+    })
+    expect(current.sent.filter(isProbe)).toHaveLength(2)
+    expect(old.sent.filter(isProbe)).toHaveLength(3)
+    old.channel.onData?.({ kind: "end", status: 200 })
+    expect(await waiting).toEqual({ status: 200, body: "" })
   })
 
   it("maps non-Error open failures", async () => {
