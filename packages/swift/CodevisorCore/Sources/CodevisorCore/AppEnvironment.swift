@@ -33,6 +33,7 @@ public final class AppEnvironment {
   @ObservationIgnored public var onDeleteAllData: (@MainActor () -> Void)?
   @ObservationIgnored var clientPreferenceSync: ClientPreferenceSync?
   @ObservationIgnored var featureFlagSync: FeatureFlagSync?
+  @ObservationIgnored var teardownTasks: [Task<Void, Never>] = []
   @ObservationIgnored let harnessNotices = HarnessNoticeCenter()
   @ObservationIgnored var localServerDirectPathsSync: Task<Void, Never>?
   public let paneGroups: any PaneGroupRepository
@@ -147,6 +148,10 @@ public final class AppEnvironment {
     {
       self.composerDefaults.rememberNewWorkspaceServer(serverId: machines.selectedMachineId)
     }
+  }
+
+  isolated deinit {
+    for task in teardownTasks { task.cancel() }
   }
 
   private func wireAppUpdateRequests() {

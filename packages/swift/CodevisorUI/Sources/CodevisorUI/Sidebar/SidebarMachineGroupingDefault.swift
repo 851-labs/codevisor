@@ -15,6 +15,17 @@ public final class SidebarMachineGroupingDefault {
     case settleUnlessAnotherDeviceDecided
   }
 
+  enum Decision: Equatable {
+    case apply(Step)
+    case stop
+  }
+
+  enum FallbackRank {
+    static let oneMachine = 0
+    static let machineGrouping = 0
+    static let settled = 1
+  }
+
   nonisolated public static let preferenceKey = "sidebar.machineGroupingDefault"
 
   private weak var environment: AppEnvironment?
@@ -28,22 +39,25 @@ public final class SidebarMachineGroupingDefault {
   @discardableResult
   public static func start(environment: AppEnvironment) -> Task<Void, Never> {
     let watcher = SidebarMachineGroupingDefault(environment: environment)
-    return Task { await watcher.run() }
+    let task = Task { await watcher.run() }
+    environment.cancelOnTeardown(task)
+    return task
   }
 
   func run() async {
     var applied: Step?
-    while await ObservedState.first(nextStep(waitingAfter: applied)) != nil {
+    while case .apply? = await ObservedState.first(nextDecision(waitingAfter: applied)) {
       applied = applyNextStep()
     }
   }
 
-  private func nextStep(waitingAfter applied: Step?) -> () -> Step? {
+  private func nextDecision(waitingAfter applied: Step?) -> () -> Decision? {
     var isFirstLook = true
     return {
       defer { isFirstLook = false }
-      let step = self.nextStep()
-      return isFirstLook && step == applied ? nil : step
+      guard self.progress != .settled, self.environment != nil else { return .stop }
+      guard let step = self.nextStep(), !(isFirstLook && step == applied) else { return nil }
+      return .apply(step)
     }
   }
 
@@ -55,7 +69,9 @@ public final class SidebarMachineGroupingDefault {
   }
 
   func nextStep() -> Step? {
-    guard let environment, environment.hasSyncedClientPreferences else { return nil }
+    let progress = progress
+    guard progress != .settled, let environment else { return nil }
+    guard environment.hasClientPreferencesFromReachableMachines else { return nil }
     guard let machineCount = environment.machines.accountMachineCount else { return nil }
     return Self.step(progress: progress, groupingIsChosen: groupingIsChosen, machineCount: machineCount)
   }
@@ -70,15 +86,19 @@ public final class SidebarMachineGroupingDefault {
   private func apply(_ step: Step) {
     switch step {
     case .awaitSecondMachine:
-      preferences.set(Progress.oneMachine, forKey: Self.preferenceKey)
+      fallback(Progress.oneMachine, forKey: Self.preferenceKey, rank: FallbackRank.oneMachine)
     case .groupByMachine:
-      preferences.set(SidebarGrouping.machine, forKey: SidebarGrouping.preferenceKey)
+      fallback(SidebarGrouping.machine, forKey: SidebarGrouping.preferenceKey, rank: FallbackRank.machineGrouping)
       preferences.set(Progress.settled, forKey: Self.preferenceKey)
     case .settle:
       preferences.set(Progress.settled, forKey: Self.preferenceKey)
     case .settleUnlessAnotherDeviceDecided:
-      environment?.setClientPreferenceFallback(Progress.settled, forKey: Self.preferenceKey)
+      fallback(Progress.settled, forKey: Self.preferenceKey, rank: FallbackRank.settled)
     }
+  }
+
+  private func fallback<Value: Codable>(_ value: Value, forKey key: String, rank: Int) {
+    environment?.setClientPreferenceFallback(value, forKey: key, rank: rank)
   }
 
   private var progress: Progress? {

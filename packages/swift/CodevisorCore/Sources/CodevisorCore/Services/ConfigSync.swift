@@ -18,6 +18,7 @@ public final class ConfigSync {
   let deviceId: String
   public private(set) var revisionsByNamespace: [String: UInt64] = [:]
   public private(set) var receivedNamespaces: Set<String> = []
+  public private(set) var namespacesReceivedByMachine: [String: Set<String>] = [:]
   @ObservationIgnored public var onNamespaceChanged: ((String) -> Void)?
   @ObservationIgnored public var onHarnessCatalogChanged: ((String) -> Void)?
   @ObservationIgnored private var entriesByNamespace: [String: [ServerSyncEntry]] = [:]
@@ -45,6 +46,10 @@ public final class ConfigSync {
 
   public func hasSnapshot(namespace: String) -> Bool {
     receivedNamespaces.contains(namespace) || store.loadData(forKey: "configSync.replica.\(namespace)") != nil
+  }
+
+  public func hasReceived(namespace: String, fromMachine machineId: String) -> Bool {
+    namespacesReceivedByMachine[machineId]?.contains(namespace) == true
   }
 
   public func value(namespace: String, key: String) -> JSONValue? {
@@ -115,6 +120,7 @@ public final class ConfigSync {
     }
     let documents = await mergeNamespaceDocuments(client: client, namespaces: namespaces)
     adoptNamespaceDocuments(documents, namespaces: namespaces)
+    namespacesReceivedByMachine[machineId, default: []].formUnion(documents.keys)
   }
 
   private func mergeNamespaceDocuments(

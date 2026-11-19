@@ -61,8 +61,17 @@ final class MachineCatalog {
 
   var accountMachineCount: Int? {
     guard let cloudProvider, cloudProvider.isCloudSignedIn, cloudProvider.isCloudRosterVerified else { return nil }
-    guard !includesLocalMachine || localCloudMachine != nil else { return nil }
-    return Set(cloudProvider.cloudMachines.filter { $0.ephemeral == nil }.map(\.deviceId)).count
+    guard !includesLocalMachine || localStatusIsKnown else { return nil }
+    let listed = allMachines.filter { cloudMachine(forMachineId: $0.id)?.ephemeral == nil }
+    return Dictionary(grouping: listed, by: \.name).values.reduce(0) { $0 + max(1, $1.count(where: isOnline)) }
+  }
+
+  private var localStatusIsKnown: Bool {
+    connections.statusById[CodevisorMachine.local.id]?.isReachable == true
+  }
+
+  private func isOnline(_ machine: CodevisorMachine) -> Bool {
+    cloudMachine(forMachineId: machine.id)?.online ?? true
   }
 
   var localCloudMachine: CloudMachine? {

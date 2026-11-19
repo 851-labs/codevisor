@@ -11,8 +11,8 @@ import Testing
 @Suite("SidebarMachineGroupingDefault")
 struct SidebarMachineGroupingDefaultTests {
   @Test("Going from one machine to two groups the sidebar by machine; sandboxes don't count")
-  func secondMachineGroupsByMachine() {
-    let account = Account(machines: [.thisMac, .sandbox])
+  func secondMachineGroupsByMachine() async {
+    let account = await Account.synced(machines: [.thisMac, .sandbox])
     account.settle()
     #expect(account.grouping == nil)
 
@@ -22,8 +22,8 @@ struct SidebarMachineGroupingDefaultTests {
   }
 
   @Test("After the switch, a later second machine leaves the user's grouping alone")
-  func switchesOnlyOnce() {
-    let account = Account(machines: [.thisMac])
+  func switchesOnlyOnce() async {
+    let account = await Account.synced(machines: [.thisMac])
     account.settle()
     account.connect(.studio)
     account.settle()
@@ -37,8 +37,8 @@ struct SidebarMachineGroupingDefaultTests {
   }
 
   @Test("A grouping the user picked, even None, is kept when a second machine arrives")
-  func chosenGroupingIsKept() {
-    let account = Account(machines: [.thisMac])
+  func chosenGroupingIsKept() async {
+    let account = await Account.synced(machines: [.thisMac])
     account.preferences.set(SidebarGrouping.flat, forKey: SidebarGrouping.preferenceKey)
     account.settle()
 
@@ -48,8 +48,8 @@ struct SidebarMachineGroupingDefaultTests {
   }
 
   @Test("Accounts that already have two machines are never switched, even after dropping to one")
-  func existingAccountsAreLeftAlone() {
-    let account = Account(machines: [.thisMac, .studio])
+  func existingAccountsAreLeftAlone() async {
+    let account = await Account.synced(machines: [.thisMac, .studio])
     account.settle()
     #expect(account.grouping == nil)
 
@@ -60,25 +60,65 @@ struct SidebarMachineGroupingDefaultTests {
     #expect(account.grouping == nil)
   }
 
-  @Test("A new device that sees two machines first still switches once another device's single-machine record arrives")
-  func otherDeviceRecordWins() {
-    let account = Account(machines: [.thisMac, .studio])
+  @Test("Nothing is decided from preferences saved on this device until this session has synced them")
+  func waitsForThisSessionsSync() async {
+    let account = Account(machines: [.thisMac])
+    account.preferences.set(["pinned"], forKey: SidebarPreferenceKey.pinnedWorkspaces)
+    account.settle()
+    #expect(account.progress == nil)
+
+    await account.syncWithThisMac()
+    account.settle()
+    #expect(account.progress == .oneMachine)
+  }
+
+  @Test("Another device's settled record wins over this device's one-machine record")
+  func settledBeatsOneMachine() async {
+    let account = await Account.synced(machines: [.thisMac])
     account.settle()
 
-    account.receiveFromAnotherDevice(SidebarMachineGroupingDefault.Progress.oneMachine)
+    account.receiveFromAnotherDevice(SidebarMachineGroupingDefault.Progress.settled, wallMs: 1)
+    account.connect(.studio)
+    account.settle()
+    #expect(account.progress == .settled)
+    #expect(account.grouping == nil)
+  }
+
+  @Test("A grouping the user picked on another device wins over the automatic switch, even when it syncs later")
+  func userChoiceElsewhereBeatsAutomaticGrouping() async {
+    let account = await Account.synced(machines: [.thisMac])
+    account.settle()
+    account.connect(.studio)
+    account.settle()
+
+    account.receiveFromAnotherDevice(SidebarGrouping.flat, forKey: SidebarGrouping.preferenceKey, wallMs: 1_000)
+    #expect(account.grouping == .flat)
+  }
+
+  @Test("A stale offline record of this Mac (same name) is not a second machine; an offline other machine is")
+  func staleRecordOfThisMacDoesNotCount() async {
+    let account = await Account.synced(machines: [.thisMac])
+    account.settle()
+
+    account.connect(.staleThisMac)
+    account.settle()
+    #expect(account.grouping == nil)
+
+    account.connect(.offlineStudio)
     account.settle()
     #expect(account.grouping == .machine)
   }
 
-  @Test("The running watcher switches the grouping when the second machine shows up")
+  @Test("The running watcher switches the grouping when the second machine shows up, then stops")
   func watcherReactsToRoster() async {
     let account = Account(machines: [.thisMac])
     let watcher = Task { await account.subject.run() }
-    defer { watcher.cancel() }
+    await account.syncWithThisMac()
     await awaitObserved { account.progress == .oneMachine }
 
     account.connect(.studio)
-    await awaitObserved { account.grouping == .machine }
+    await watcher.value
+    #expect(account.grouping == .machine)
     #expect(account.progress == .settled)
   }
 }
@@ -96,7 +136,12 @@ private final class Account {
     environment.machines.adoptLocalCloudIdentity(deviceId: CloudMachine.thisMac.deviceId)
     environment.syncClientPreferences(SidebarPreferenceKey.synced, preferences: preferences)
     subject = SidebarMachineGroupingDefault(environment: environment, preferences: preferences)
-    receiveFromAnotherDevice(["pinned"], forKey: SidebarPreferenceKey.pinnedWorkspaces)
+  }
+
+  static func synced(machines: [CloudMachine]) async -> Account {
+    let account = Account(machines: machines)
+    await account.syncWithThisMac()
+    return account
   }
 
   var grouping: SidebarGrouping? {
@@ -105,6 +150,11 @@ private final class Account {
 
   var progress: SidebarMachineGroupingDefault.Progress? {
     preferences.valueIfPresent(forKey: SidebarMachineGroupingDefault.preferenceKey)
+  }
+
+  func syncWithThisMac() async {
+    await environment.configSync.synchronize(
+      machineId: CodevisorMachine.local.id, namespaces: [ClientPreferenceSync.namespace])
   }
 
   func connect(_ machine: CloudMachine) {
@@ -123,10 +173,10 @@ private final class Account {
   }
 
   func receiveFromAnotherDevice<Value: Encodable>(
-    _ value: Value, forKey key: String = SidebarMachineGroupingDefault.preferenceKey
+    _ value: Value, forKey key: String = SidebarMachineGroupingDefault.preferenceKey, wallMs: Int
   ) {
     let json = try! JSONDecoder().decode(JSONValue.self, from: JSONEncoder().encode(value))
-    let stamp = ServerSyncTimestamp(wallMs: 1, counter: 0, deviceId: "other-device")
+    let stamp = ServerSyncTimestamp(wallMs: wallMs, counter: 0, deviceId: "other-device")
     environment.configSync.applyRemoteChange(
       namespace: ClientPreferenceSync.namespace, entries: [ServerSyncEntry(key: key, value: json, timestamp: stamp)])
   }
@@ -145,12 +195,16 @@ private final class Roster: CloudMachineProviding {
 extension CloudMachine {
   fileprivate static let thisMac = machine("this-mac")
   fileprivate static let studio = machine("studio")
+  fileprivate static let staleThisMac = machine("this-mac-before-reinstall", name: "this-mac", online: false)
+  fileprivate static let offlineStudio = machine("studio-asleep", online: false)
   fileprivate static let sandbox = machine(
     "sandbox", ephemeral: CloudEphemeralOrigin(provider: "tart", ownerDeviceId: "this-mac"))
 
-  private static func machine(_ deviceId: String, ephemeral: CloudEphemeralOrigin? = nil) -> CloudMachine {
+  private static func machine(
+    _ deviceId: String, name: String? = nil, online: Bool = true, ephemeral: CloudEphemeralOrigin? = nil
+  ) -> CloudMachine {
     CloudMachine(
-      deviceId: deviceId, name: deviceId, publicKey: "pk-\(deviceId)", ephemeral: ephemeral, online: true,
+      deviceId: deviceId, name: name ?? deviceId, publicKey: "pk-\(deviceId)", ephemeral: ephemeral, online: online,
       lastSeenAt: "2026-11-19T00:00:00.000Z")
   }
 }

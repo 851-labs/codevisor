@@ -108,17 +108,23 @@ extension AppEnvironment {
     sync.start()
   }
 
-  public var hasSyncedClientPreferences: Bool {
-    configSync.hasSnapshot(namespace: ClientPreferenceSync.namespace)
+  public var hasClientPreferencesFromReachableMachines: Bool {
+    let reachable = machines.reachableChatMachineIds
+    return !reachable.isEmpty
+      && reachable.allSatisfy { configSync.hasReceived(namespace: ClientPreferenceSync.namespace, fromMachine: $0) }
   }
 
-  public func setClientPreferenceFallback<Value: Codable>(_ value: Value, forKey key: String) {
+  public func setClientPreferenceFallback<Value: Codable>(_ value: Value, forKey key: String, rank: Int = 0) {
     guard let sync = clientPreferenceSync else {
       if preferences.valueIfPresent(forKey: key, as: Value.self) == nil { preferences.set(value, forKey: key) }
       return
     }
     guard let data = try? JSONEncoder().encode(value) else { return }
-    sync.publishFallback(data, forKey: key)
+    sync.publishFallback(data, forKey: key, rank: rank)
+  }
+
+  public func cancelOnTeardown(_ task: Task<Void, Never>) {
+    teardownTasks.append(task)
   }
 
   public func syncFeatureFlags(preferences: ClientPreferences = .shared) {
