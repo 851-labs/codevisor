@@ -21,8 +21,8 @@ public struct SandboxSettingsSheets: ViewModifier {
   @ViewBuilder
   private func page(_ sheet: SandboxSettingsSheet) -> some View {
     switch sheet {
-    case let .newProvider(vendorId):
-      SandboxProviderSheet(model: model, client: client, vendorId: vendorId) { addedProvider = $0 }
+    case .newProvider:
+      SandboxProviderSheet(model: model, client: client) { addedProvider = $0 }
     case let .editProvider(provider):
       SandboxProviderSheet(model: model, client: client, editing: provider)
     case let .newProfile(provider):

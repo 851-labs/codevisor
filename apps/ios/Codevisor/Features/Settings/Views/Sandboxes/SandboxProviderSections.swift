@@ -5,11 +5,13 @@ import SwiftUI
 struct SandboxProviderSections: View {
   let model: SandboxSettingsModel
   @Binding var sheet: SandboxSettingsSheet?
+  @Binding var deleting: ServerSandboxProvider?
   let onOpen: (ServerSandboxProfile) -> Void
 
   var body: some View {
     ForEach(model.providers) { provider in
-      SandboxProviderSection(provider: provider, model: model, sheet: $sheet, row: row)
+      SandboxProviderSection(
+        provider: provider, model: model, sheet: $sheet, onDelete: { deleting = provider }, row: row)
     }
     if !model.profilesWithoutProvider.isEmpty {
       Section("Other Profiles") {

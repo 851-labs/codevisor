@@ -2,7 +2,6 @@ import CodevisorCore
 import SwiftUI
 
 struct SandboxEditProviderPage: View {
-  @Environment(AppEnvironment.self) private var environment
   let provider: ServerSandboxProvider
   let vendor: ServerSandboxVendor
   let model: SandboxSettingsModel
@@ -10,7 +9,7 @@ struct SandboxEditProviderPage: View {
   let onDone: () -> Void
   @State private var draft: SandboxProviderDraft
   @State private var status: String?
-  @State private var removal: SandboxProviderRemoval?
+  @State private var deleting: ServerSandboxProvider?
 
   init(
     provider: ServerSandboxProvider,
@@ -30,28 +29,15 @@ struct SandboxEditProviderPage: View {
   var body: some View {
     SandboxSettingsForm(
       title: "Edit Provider", actionTitle: "Save", canAct: draft.canSave, status: status,
-      errorMessage: model.error(outside: draft.shownFields.map(\.key)), onAction: save
+      errorMessage: model.error(outside: draft.shownFields.map(\.key)), onAction: save, onDelete: delete
     ) {
-      SandboxProviderFields(draft: $draft, vendor: vendor, model: model) {
-        SandboxDeleteFooter(
-          title: "Delete Provider…", help: "Delete this provider and its profiles", onDelete: prepareDeletion)
-      }
-      SandboxDeleteSection(title: "Delete Provider", onDelete: prepareDeletion)
+      SandboxProviderFields(draft: $draft, vendor: vendor, model: model)
+      SandboxDeleteSection(title: "Delete Provider", onDelete: delete)
     }
-    .confirmationDialog(
-      removal?.title ?? "", isPresented: presence($removal), titleVisibility: .visible, presenting: removal
-    ) { _ in
-      Button("Delete Provider", role: .destructive, action: deleteProvider)
-      Button("Cancel", role: .cancel) {}
-    } message: { removal in
-      Text(removal.message)
-    }
+    .modifier(
+      SandboxProviderDeletion(provider: $deleting, model: model, client: client, status: $status, onDeleted: onDone)
+    )
     .onAppear { model.errorMessage = nil }
-  }
-
-  private var reachableMachines: [SandboxMachine] {
-    let reachable = SandboxMachine.reachable(in: environment.machines)
-    return reachable.isEmpty ? [SandboxMachine(name: "", client: client)] : reachable
   }
 
   private func save() {
@@ -67,25 +53,7 @@ struct SandboxEditProviderPage: View {
     }
   }
 
-  private func prepareDeletion() {
-    let offline = SandboxMachine.offlineNames(in: environment.machines)
-    status = "Checking…"
-    Task {
-      removal = await model.removal(of: provider, on: reachableMachines, offline: offline)
-      status = nil
-    }
-  }
-
-  private func deleteProvider() {
-    status = "Deleting…"
-    Task {
-      let deleted = await model.delete(provider, on: reachableMachines)
-      status = nil
-      if deleted { onDone() }
-    }
-  }
-
-  private func presence<Value>(_ state: Binding<Value?>) -> Binding<Bool> {
-    Binding(get: { state.wrappedValue != nil }, set: { if !$0 { state.wrappedValue = nil } })
+  private func delete() {
+    deleting = provider
   }
 }

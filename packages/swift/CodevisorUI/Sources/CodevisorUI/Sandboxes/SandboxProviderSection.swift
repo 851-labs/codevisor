@@ -5,56 +5,63 @@ public struct SandboxProviderSection<Row: View>: View {
   let provider: ServerSandboxProvider
   let model: SandboxSettingsModel
   @Binding var sheet: SandboxSettingsSheet?
+  let onDelete: () -> Void
   @ViewBuilder let row: (ServerSandboxProfile) -> Row
 
   public init(
     provider: ServerSandboxProvider,
     model: SandboxSettingsModel,
     sheet: Binding<SandboxSettingsSheet?>,
+    onDelete: @escaping () -> Void = {},
     @ViewBuilder row: @escaping (ServerSandboxProfile) -> Row
   ) {
     self.provider = provider
     self.model = model
     _sheet = sheet
+    self.onDelete = onDelete
     self.row = row
   }
 
   public var body: some View {
-    Section {
-      ForEach(profiles, content: row)
-      if profiles.isEmpty {
-        Text("No profiles yet").foregroundStyle(.secondary)
+    #if os(iOS)
+      Section {
+        SandboxProviderTitleRow(icon: icon, title: title, onEdit: edit, onDelete: onDelete)
       }
-      #if os(iOS)
+      .listSectionSpacing(8)
+      Section {
+        rows
         Button("Add Profile…", action: addProfile)
-      #endif
-    } header: {
-      header
-    } footer: {
-      #if os(macOS)
+      }
+    #else
+      Section {
+        rows
+      } header: {
+        HStack(spacing: 6) {
+          icon
+          Text(title)
+        }
+      } footer: {
         SettingsListActions {
           Button("Edit Provider…", action: edit)
           Button("Add Profile…", action: addProfile)
         }
-      #endif
+      }
+    #endif
+  }
+
+  @ViewBuilder
+  private var rows: some View {
+    ForEach(profiles, content: row)
+    if profiles.isEmpty {
+      Text("No profiles yet").foregroundStyle(.secondary)
     }
   }
 
   private var profiles: [ServerSandboxProfile] { model.profiles(of: provider) }
 
-  private var header: some View {
-    HStack(spacing: 6) {
-      CodevisorSymbol.sandboxVendor(provider.vendor)
-      Text(model.title(of: provider))
-      #if os(iOS)
-        Spacer()
-        Button("Edit", action: edit)
-          .font(.subheadline)
-          .accessibilityLabel("Edit Provider")
-      #endif
-    }
-    .textCase(nil)
-  }
+  private var icon: Image { CodevisorSymbol.sandboxVendor(provider.vendor) }
+
+  private var title: String { model.title(of: provider) }
 
   private func edit() {
     sheet = .editProvider(provider)

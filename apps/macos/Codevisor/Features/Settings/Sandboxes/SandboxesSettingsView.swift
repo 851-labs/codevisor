@@ -14,16 +14,16 @@ struct SandboxesSettingsView: View {
   }
 
   var body: some View {
-    Form {
+    Group {
       if model.hasNothingSetUp {
-        SandboxProviderSetupSection(vendors: model.vendors.vendors) { sheet = .newProvider(vendorId: $0.id) }
+        SandboxEmptyState { sheet = .newProvider }
       } else {
-        SandboxProviderSections(model: model, sheet: $sheet)
+        Form { SandboxProviderSections(model: model, sheet: $sheet) }
+          .formStyle(.grouped)
       }
     }
-    .formStyle(.grouped)
     .settingsAddToolbarItem {
-      SettingsAddButton("Add Provider") { sheet = .newProvider(vendorId: nil) }
+      SettingsAddButton("Add Provider") { sheet = .newProvider }
         .disabled(!model.hasLoaded)
     }
     .modifier(SandboxSettingsSheets(sheet: $sheet, model: model, client: client))

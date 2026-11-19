@@ -9,6 +9,7 @@ struct SandboxSettingsForm<Content: View>: View {
   var status: String?
   var errorMessage: String?
   var onAction: () -> Void = {}
+  var onDelete: (() -> Void)?
   @ViewBuilder let content: Content
 
   var body: some View {
@@ -16,7 +17,7 @@ struct SandboxSettingsForm<Content: View>: View {
       SetupSheet(
         symbol: nil, title: title, primaryTitle: actionTitle, cancelTitle: "Cancel",
         canContinue: canAct && status == nil, status: status, onCancel: { cancel?() },
-        onBack: back.map { back in { back() } }, onContinue: onAction, stepsInCard: false
+        onBack: back.map { back in { back() } }, onContinue: onAction, onDelete: onDelete, stepsInCard: false
       ) {
         SandboxSheetFields(errorMessage: errorMessage) { content }
       }
