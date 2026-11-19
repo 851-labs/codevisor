@@ -8,6 +8,7 @@ import { WebSocketServer } from "ws"
 
 import { archiveJobs } from "./archive-jobs.js"
 import type { BootListener } from "./boot-listener.js"
+import { startDeferredArchives } from "./deferred-archives.js"
 import { startGitDependentWork } from "./git-readiness.js"
 import { makeAttentionSettleScheduler } from "./infra/attention-settle.js"
 import { BrowserProxy } from "./infra/browser-proxy.js"
@@ -168,7 +169,10 @@ export const makeCodevisorServerApp = (
   )
   const remoteCreators = makeRemoteCreatorEvents(services, config.id, fleetLinkFor(services))
   const outbox = makeSessionEventOutbox(services, fanout, routeState, config.id)
-  const sessionEvents = makeSessionEventRouter(services, outbox, remoteCreators)
+  const deferredArchives = startDeferredArchives({ services, fanout, config, turns: routeState })
+  const sessionEvents = makeSessionEventRouter(services, outbox, remoteCreators, (sessionId) =>
+    deferredArchives.turnFinished(sessionId)
+  )
   const stopPlugins = startPlugins(services, fanout, routeState, outbox, config)
   routeState.drainSessionQueue = (sessionId) =>
     drainPromptQueue(services, fanout, routeState, config.id, sessionId).catch(swallowError)

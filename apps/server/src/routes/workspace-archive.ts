@@ -1,19 +1,11 @@
-import { ArchiveWorkspaceRequest, type ArchivedWorkspace, type Workspace } from "@codevisor/api"
+import { ArchiveWorkspaceRequest, type ArchivedWorkspace } from "@codevisor/api"
 
-import { archiveAgentsOfWorkspace, archiveWorkspaceAndWait } from "../archive-jobs.js"
-import {
-  appendAndPublish,
-  HttpFailure,
-  matchRoute,
-  readSchema,
-  run,
-  writeJson
-} from "../server-context.js"
-import { captureWorkspaceRuntime } from "../server-workspace-effects.js"
+import { archiveWorkspaceNow } from "../archive-jobs.js"
+import { matchRoute, readSchema, writeJson } from "../server-context.js"
 import { assertNotOwnedByBot } from "./bot-guards.js"
 import type { RouteContext } from "./route-context.js"
-import { findSession } from "./session-workspace.js"
-import { findWorkspace, requireWorkspace, sameId } from "./workspace-lookups.js"
+import { archiveContextOf, callerOf, deferWorkspaceArchive, isInside } from "./self-archive.js"
+import { findWorkspace, requireWorkspace } from "./workspace-lookups.js"
 
 export const routeWorkspaceArchive = (route: RouteContext): Promise<boolean> | undefined => {
   const workspaceId = matchRoute(route.url.pathname, "/v1/workspaces/:id/archive")
@@ -24,38 +16,18 @@ export const routeWorkspaceArchive = (route: RouteContext): Promise<boolean> | u
 const archiveWorkspace = async (route: RouteContext, workspaceId: string): Promise<boolean> => {
   const { callerAgentId } = await readSchema(route.request, ArchiveWorkspaceRequest)
   const workspace = requireWorkspace(await findWorkspace(route.services, workspaceId), workspaceId)
-  await refuseCallerWorkspace(route, workspace, callerAgentId)
+  const caller = await callerOf(route, callerAgentId)
   await assertNotOwnedByBot(route.services, { workspaceId: workspace.id }, "archive this workspace")
 
-  await archiveAndWait(route, workspace)
-  const archived: ArchivedWorkspace = { workspaceId: workspace.id, archived: true }
-  writeJson(route.response, 200, archived)
-  return true
-}
-
-const refuseCallerWorkspace = async (
-  { services }: RouteContext,
-  workspace: Workspace,
-  callerAgentId: string | undefined
-): Promise<void> => {
-  if (callerAgentId === undefined) return
-  const caller = await findSession(services.db, callerAgentId)
-  if (caller === undefined) throw new HttpFailure(422, `Unknown caller: ${callerAgentId}`)
-  if (caller.workspaceId !== undefined && sameId(caller.workspaceId, workspace.id)) {
-    throw new HttpFailure(
-      422,
-      `Workspace ${workspace.id} is your own: you can't archive it. To finish with a helper in it, call agents.archive({ agentId })`
-    )
+  if (isInside(caller, workspace)) {
+    const later = await deferWorkspaceArchive(route, caller, workspace)
+    return respond(route, { workspaceId: workspace.id, ...later })
   }
+  await archiveWorkspaceNow(archiveContextOf(route), workspace)
+  return respond(route, { workspaceId: workspace.id, archived: true })
 }
 
-export const archiveAndWait = async (
-  { services, fanout, config, routeState }: RouteContext,
-  workspace: Workspace
-): Promise<void> => {
-  const archived = await run(services.db.updateWorkspace(workspace.id, { isArchived: true }))
-  await appendAndPublish(services.db, fanout, "workspace.updated", archived.id, archived)
-  const runtime = await captureWorkspaceRuntime(services, routeState, archived)
-  await archiveAgentsOfWorkspace({ services, fanout, config, turns: routeState }, archived)
-  await archiveWorkspaceAndWait(services, fanout, config, archived, runtime)
+const respond = (route: RouteContext, body: ArchivedWorkspace): boolean => {
+  writeJson(route.response, 200, body)
+  return true
 }

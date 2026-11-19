@@ -58,6 +58,13 @@ const respond = (
   if (method === "POST" && archived !== null) {
     return jsonResponse({ agentId: archived[1], archived: true })
   }
+  if (method === "GET" && path === "/v1/sessions/caller") {
+    return jsonResponse({ session: { workspaceId: "own-workspace" } })
+  }
+  const archivedWorkspace = /^\/v1\/workspaces\/([^/]+)\/archive$/.exec(path)
+  if (method === "POST" && archivedWorkspace !== null) {
+    return jsonResponse({ workspaceId: archivedWorkspace[1], archived: false, scheduled: true })
+  }
   const detached = /^\/v1\/agents\/([^/]+)\/detach$/.exec(path)
   if (method === "POST" && detached !== null) {
     return jsonResponse({ agentId: detached[1], workspaceId: "own", detached: true })

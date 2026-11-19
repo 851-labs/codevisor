@@ -205,6 +205,10 @@ struct SidebarView: View {
 
   private var sidebarConfiguredView: some View {
     sidebarAlertsView
+      .onChange(of: workspaceSectionIDs) { previous, current in
+        followArchivedSelection(from: previous, to: current)
+      }
+      .forgetsPlacementOfArchivedWorkspaces()
       .onDisappear {
         if publishesSceneActions {
           store?.clearWorkspaceStepHandler(owner: stepHandlerOwner)

@@ -12,6 +12,7 @@ import { makeCheckoutsService } from "./checkouts-service.js"
 import { makeCreatedAgentsService } from "./created-agents-service.js"
 import { runDatabaseMigrations } from "./database-migrations.js"
 import { makeDatabaseSpaceService } from "./database-space.js"
+import { makeDeferredArchivesService } from "./deferred-archives.js"
 import { attempt } from "./errors.js"
 import { makeEventsService } from "./events-service.js"
 import { makeFilesService } from "./files-service.js"
@@ -75,6 +76,7 @@ export const createService = (
     ...makeSessionForkService(context),
     ...makeSavedChatService(context),
     ...makeCreatedAgentsService(context),
+    ...makeDeferredArchivesService(context),
     ...makeAssistantTextsService(context),
     ...makeStreamingReconciliationService(context),
     ...makeEventsService(context),

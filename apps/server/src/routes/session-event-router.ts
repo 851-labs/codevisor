@@ -61,7 +61,8 @@ const usageLimitDetailOf = (item: TranscriptItem): string | undefined =>
 export const makeSessionEventRouter = (
   services: CodevisorServerServices,
   outbox: SessionEventOutbox,
-  remoteCreators: RemoteCreatorEvents
+  remoteCreators: RemoteCreatorEvents,
+  onTurnAnnounced: (sessionId: string) => void = () => undefined
 ): SessionEventRouter => {
   const actionKinds = new Map<string, string | undefined>()
   const publish = makePublisher(services, outbox, remoteCreators)
@@ -81,6 +82,7 @@ export const makeSessionEventRouter = (
     )
     await run(services.db.markTurnAnnounced(sessionId, finished.revision))
     outbox.forgetWake(sessionId)
+    onTurnAnnounced(sessionId)
   }
 
   const announceInOrder = (sessionId: string): Promise<void> => {

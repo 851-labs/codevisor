@@ -175,6 +175,7 @@ struct HomeView: View {
         }
       }
     )
+    .forgetsPlacementOfArchivedWorkspaces()
     .environment(\.homeLayoutMode, layoutMode)
     .environment(\.openChat, OpenChatAction(identity: .unique) { openChat($0) })
     .environment(\.sidebarGitLookups, sidebarGitLookups)

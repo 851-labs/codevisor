@@ -5,14 +5,19 @@ import {
   type Workspace
 } from "@codevisor/api"
 
-import { archiveChatAndOwned } from "../archive-jobs.js"
-import { HttpFailure, readSchema, run, writeJson } from "../server-context.js"
+import { archiveChatAndOwned, archiveWorkspaceNow } from "../archive-jobs.js"
+import { readSchema, run, writeJson } from "../server-context.js"
 import { currentState } from "./agent-lifecycle.js"
 import { assertNotOwnedByBot, refuseBotAsAgent } from "./bot-guards.js"
 import type { RouteContext } from "./route-context.js"
+import {
+  archiveContextOf,
+  callerOf,
+  deferChatArchive,
+  deferWorkspaceArchive,
+  type ScheduledArchive
+} from "./self-archive.js"
 import { cancelTurn } from "./session-actions.js"
-import { findSession } from "./session-workspace.js"
-import { archiveAndWait } from "./workspace-archive.js"
 import { findWorkspace, sameId } from "./workspace-lookups.js"
 
 export const archiveAgent = async (route: RouteContext, agentId: string): Promise<boolean> => {
@@ -20,33 +25,33 @@ export const archiveAgent = async (route: RouteContext, agentId: string): Promis
   const agent = await run(route.services.db.getSessionSummary(agentId))
   await refuseBotAsAgent(route.services, agent.id, "archive")
   const caller = await callerOf(route, callerAgentId)
-  refuseSelf(agent, caller)
+
+  if (isSelf(agent, caller))
+    return respond(route, { agentId: agent.id, ...(await archiveSelf(route, agent)) })
 
   const own = await ownWorkspaceOf(route, agent, caller)
   if (own === undefined) await archiveChat(route, agent, caller)
   else await archiveOwnWorkspace(route, own)
+  return respond(route, { agentId: agent.id, archived: true })
+}
 
-  const archived: ArchivedAgent = { agentId: agent.id, archived: true }
-  writeJson(route.response, 200, archived)
+const respond = (route: RouteContext, body: ArchivedAgent): boolean => {
+  writeJson(route.response, 200, body)
   return true
 }
 
-const callerOf = async (
-  { services }: RouteContext,
-  callerAgentId: string | undefined
-): Promise<SessionSummary | undefined> => {
-  if (callerAgentId === undefined) return undefined
-  const caller = await findSession(services.db, callerAgentId)
-  if (caller === undefined) throw new HttpFailure(422, `Unknown caller: ${callerAgentId}`)
-  return caller
-}
+const isSelf = (agent: SessionSummary, caller: SessionSummary | undefined): boolean =>
+  caller !== undefined && sameId(agent.id, caller.id)
 
-const refuseSelf = (agent: SessionSummary, caller: SessionSummary | undefined): void => {
-  if (caller === undefined || !sameId(agent.id, caller.id)) return
-  throw new HttpFailure(
-    422,
-    `Agent ${agent.id} is you: you can't archive yourself. Finish your turn instead`
-  )
+const archiveSelf = async (
+  route: RouteContext,
+  agent: SessionSummary
+): Promise<ScheduledArchive> => {
+  const own = await ownWorkspaceOf(route, agent, undefined)
+  if (own === undefined) return deferChatArchive(route, agent)
+
+  await assertNotOwnedByBot(route.services, { workspaceId: own.id }, "archive this agent")
+  return deferWorkspaceArchive(route, agent, own)
 }
 
 const ownWorkspaceOf = async (
@@ -69,7 +74,7 @@ const isSideChat = (workspace: Workspace, agent: SessionSummary): boolean =>
 
 const archiveOwnWorkspace = async (route: RouteContext, workspace: Workspace): Promise<void> => {
   await assertNotOwnedByBot(route.services, { workspaceId: workspace.id }, "archive this agent")
-  await archiveAndWait(route, workspace)
+  await archiveWorkspaceNow(archiveContextOf(route), workspace)
 }
 
 const archiveChat = async (
@@ -79,8 +84,7 @@ const archiveChat = async (
 ): Promise<void> => {
   if (caller !== undefined) await unsubscribeCaller(route, caller.id, agent.id)
   if (await isRunning(route, agent)) await cancelTurn(route, agent.id)
-  const { services, fanout, config, routeState } = route
-  await archiveChatAndOwned({ services, fanout, config, turns: routeState }, agent)
+  await archiveChatAndOwned(archiveContextOf(route), agent)
 }
 
 const unsubscribeCaller = async ({ services }: RouteContext, callerId: string, agentId: string) => {

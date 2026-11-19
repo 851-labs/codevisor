@@ -173,6 +173,18 @@ export interface ArchiveContext {
   readonly turns: RetiredTurnState
 }
 
+export const archiveWorkspaceNow = async (
+  context: ArchiveContext,
+  workspace: Workspace
+): Promise<void> => {
+  const { services, fanout, config, turns } = context
+  const archived = await run(services.db.updateWorkspace(workspace.id, { isArchived: true }))
+  await appendAndPublish(services.db, fanout, "workspace.updated", archived.id, archived)
+  const runtime = await captureWorkspaceRuntime(services, turns, archived)
+  await archiveAgentsOfWorkspace(context, archived)
+  await archiveWorkspaceAndWait(services, fanout, config, archived, runtime)
+}
+
 export const archiveAgentsOf = (context: ArchiveContext, agentIds: ReadonlyArray<string>) =>
   archiveAgentsCreatedBy(context.services, context.config.id, agentIds, archiveChild(context))
 

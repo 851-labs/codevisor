@@ -88,7 +88,8 @@ export const machinesAndClientsSource: ReadonlyArray<string> = [
   "  startMirror: (args) => __callTool('codevisor.workspaces.mirror_start', { machine: __mirrorMachine(args) }),",
   "  mirrorStatus: (args) => __callTool('codevisor.workspaces.mirror_status', { machine: __mirrorMachine(args) }),",
   "  waitForMirror: (args) => __callTool('codevisor.workspaces.mirror_wait', { machine: __mirrorMachine(args), ...(typeof args?.timeoutMs === 'number' ? { timeoutMs: args.timeoutMs } : {}) }),",
-  "  stopMirror: (args) => __callTool('codevisor.workspaces.mirror_stop', { machine: __mirrorMachine(args) })",
+  "  stopMirror: (args) => __callTool('codevisor.workspaces.mirror_stop', { machine: __mirrorMachine(args) }),",
+  "  archive: () => __callTool('codevisor.workspaces.archive_own', {})",
   "};",
   "const __searchTools = async (args = {}) => {",
   "  const { machines: scope, ...query } = args && typeof args === 'object' ? args : {};",
@@ -150,6 +151,7 @@ declare const workspace: { // this chat's workspace; a mirror is a one-way, kept
   waitForMirror(machine: Machine | string | { machine: Machine | string; timeoutMs?: number }): Promise<WorkspaceMirror & { timedOut: boolean }>
   stopMirror(machine: Machine | string): Promise<{ stopped: true }> // also deletes the mirror on that machine
   mirrors(): Promise<{ items: WorkspaceMirror[] }>
+  archive(): Promise<{ workspaceId: string; archived: boolean; scheduled?: true; message?: string }> // archives it with every agent in it, like the user's archive, after your turn ends: end your turn right after
 }
 interface WorkspaceMirror {
   machine: { machineId: string; name: string }; path?: string; state: "syncing" | "synced" | "failed"; pendingChanges: boolean
@@ -232,6 +234,13 @@ export const SANDBOX_GLOBALS: ReadonlyArray<SandboxGlobal> = [
       "workspace.startMirror(machine), workspace.mirrorStatus(machine), workspace.waitForMirror(machine), workspace.stopMirror(machine), workspace.mirrors()",
     description:
       "Mirror this chat's workspace one way to another machine, kept current in the background so commands there see your edits; stopMirror deletes the mirror.",
+    gate: "codevisor"
+  },
+  {
+    name: "workspace.archive",
+    signature: "workspace.archive()",
+    description:
+      "Archive this chat's workspace and every agent in it, the same as the user's archive, once your turn ends; end your turn right after. A new message from the user first cancels it.",
     gate: "codevisor"
   },
   {

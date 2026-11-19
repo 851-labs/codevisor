@@ -91,7 +91,9 @@ export type ArchiveAgentRequest = typeof ArchiveAgentRequest.Type
 
 export const ArchivedAgent = Schema.Struct({
   agentId: Schema.String,
-  archived: Schema.Literal(true)
+  archived: Schema.Boolean,
+  scheduled: Schema.optional(Schema.Literal(true)),
+  message: Schema.optional(Schema.String)
 })
 export type ArchivedAgent = typeof ArchivedAgent.Type
 

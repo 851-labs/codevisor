@@ -65,7 +65,9 @@ export type ArchiveWorkspaceRequest = typeof ArchiveWorkspaceRequest.Type
 
 export const ArchivedWorkspace = Schema.Struct({
   workspaceId: Schema.String,
-  archived: Schema.Literal(true)
+  archived: Schema.Boolean,
+  scheduled: Schema.optional(Schema.Literal(true)),
+  message: Schema.optional(Schema.String)
 })
 export type ArchivedWorkspace = typeof ArchivedWorkspace.Type
 

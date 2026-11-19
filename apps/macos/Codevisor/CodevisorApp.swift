@@ -129,8 +129,15 @@ struct RootView: View {
       }
       selection = .session(serverId: serverId, id: replacementId)
     case .dismiss:
-      selection = .newChat(nil)
+      selection = archivedWorkspace(of: sessionId, serverId: serverId) ?? .newChat(nil)
     }
+  }
+
+  private func archivedWorkspace(of sessionId: UUID, serverId: String) -> SidebarSelection? {
+    guard let workspaceId = environment.workspaces.workspaceId(forSession: sessionId),
+      environment.navigationStore.workspaceEntries.entry(workspaceId).workspace?.isArchived == true
+    else { return nil }
+    return .archivedWorkspace(serverId: serverId, id: workspaceId)
   }
 
   private var detailSubtitle: String {
