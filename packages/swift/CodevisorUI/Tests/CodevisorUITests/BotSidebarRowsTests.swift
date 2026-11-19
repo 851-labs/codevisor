@@ -14,7 +14,7 @@ struct BotSidebarRowsTests {
       bot: Bot(serverId: "studio", record: record)!, session: nil, home: nil, activity: .idle, isUnread: false)
   }
 
-  @Test("Stepping walks the derived rows: no selection enters at the end it moves from, and the ends don't wrap")
+  @Test("Stepping walks the derived rows: no selection enters at the end it moves from, and the ends loop around")
   func steppingWalksDerivedRows() {
     let (atlas, scout, ledger) = (conversation("Atlas"), conversation("Scout"), conversation("Ledger"))
     let rows = BotSidebarRows.derive(BotSidebarRows.State(conversations: [atlas, scout, ledger]))
@@ -26,8 +26,8 @@ struct BotSidebarRowsTests {
     #expect(step(from: nil, by: -1) == ledger.id)
     #expect(step(from: atlas, by: 1) == scout.id)
     #expect(step(from: ledger, by: -1) == scout.id)
-    #expect(step(from: ledger, by: 1) == nil)
-    #expect(step(from: atlas, by: -1) == nil)
+    #expect(step(from: ledger, by: 1) == atlas.id)
+    #expect(step(from: atlas, by: -1) == ledger.id)
   }
 
   private func section(_ name: String, at position: String) -> CustomSection {
@@ -69,7 +69,7 @@ struct BotSidebarRowsTests {
 
     #expect(rows.map(\.id) == [.bot(atlas.id), .section(work.id), .bot(ledger.id)])
     #expect(BotSidebarRows.step(from: atlas.id, by: 1, in: rows)?.id == ledger.id)
-    #expect(BotSidebarRows.step(from: ledger.id, by: 1, in: rows) == nil)
+    #expect(BotSidebarRows.step(from: ledger.id, by: 1, in: rows)?.id == atlas.id)
   }
 
   @Test(
