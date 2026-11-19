@@ -26,7 +26,8 @@ struct Tier2SystemRow {
       median(valid) { $0.systemCpuPct?.host }, median(valid) { $0.systemCpuPct?.viewer },
       median(valid) { $0.bitrateMbps?.p50 },
     ].map(Tier2Format.number)
-    let label = "| \(group.scene) | \(group.resolution) | \(group.network) | \(system.rawValue) | \(encoded ?? "–") | "
+    let label =
+      "| \(group.scene) | \(group.resolution) | \(group.network) | \(Tier2SystemLabel.of(system)) | \(encoded ?? "–") | "
     return label + cells.joined(separator: " | ") + " | \(valid.count)/\(all.count) |"
   }
 

@@ -10,7 +10,9 @@ struct Tier2PhaseParityTests {
     #expect(parity.regressions.map(\.group.scene) == ["scroll"])
     let headline = try #require(parity.headline)
     #expect(headline.contains("Regression (851-4092)"))
-    #expect(headline.contains("codevisor-v2 on scroll (p50 +15.0, p95 +5.0 ms against Apple HP)"))
+    #expect(
+      headline.contains(
+        "Codevisor, fallback encoder (VideoToolbox) on scroll (p50 +15.0, p95 +5.0 ms against Apple HP)"))
   }
 
   @Test func theSameMissAtOrAboveTwelveMillisecondsIsNoRegression() {

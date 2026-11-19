@@ -32,7 +32,7 @@ struct Tier2InputRow {
       median { $0.byKind[.click]?.p50 }, difference(p50, floors.p50(network: key.network)),
       difference(p95, floors.p95(network: key.network)), difference(p50, appleP50),
     ]
-    return [key.resolution, key.network, key.system.rawValue] + numbers.map(Tier2Format.number)
+    return [key.resolution, key.network, Tier2SystemLabel.of(key.system)] + numbers.map(Tier2Format.number)
       + ["\(valid.count)/\(all.count)"]
   }
 

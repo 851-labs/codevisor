@@ -32,6 +32,8 @@ struct Tier2DispatchesMarkdown {
         + "so its figures below are the median across dispatches of each dispatch's median, and v2 is judged against "
         + "HP only within a dispatch.",
       "",
+      Tier2SystemLabel.legend,
+      "",
       "| Dispatch | Scenes | Display phase ms | v2 vs HP below \(Int(Tier2PhaseParity.thresholdMs)) ms (851-4092) |",
       "| --- | --- | --- | --- |",
     ]
@@ -67,7 +69,7 @@ struct Tier2DispatchesMarkdown {
     guard p50s.contains(where: { $0 != nil }) else { return nil }
 
     let cells = [
-      group.scene, group.resolution, group.network, system.rawValue, byDispatch(p50s),
+      group.scene, group.resolution, group.network, Tier2SystemLabel.of(system), byDispatch(p50s),
       Tier2Format.number(BenchSystemComparison.median(p50s.compactMap(\.self))), byDispatch(p95s),
       Tier2Format.number(BenchSystemComparison.median(p95s.compactMap(\.self))),
     ]
@@ -99,7 +101,8 @@ struct Tier2DispatchesMarkdown {
     }
     guard verdicts.contains(where: { $0 != nil }) else { return nil }
 
-    let cells = [group.scene, group.resolution, group.network, system.rawValue, metric] + verdicts.map { $0 ?? "–" }
+    let cells =
+      [group.scene, group.resolution, group.network, Tier2SystemLabel.of(system), metric] + verdicts.map { $0 ?? "–" }
     return "| " + cells.joined(separator: " | ") + " |"
   }
 

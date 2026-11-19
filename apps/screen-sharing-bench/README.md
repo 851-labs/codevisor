@@ -264,8 +264,9 @@ that Mac. The app is opened with an empty environment (`env -i /usr/bin/open`): 
 to the app, and when a job completes the runner ends every process that carries the job's `RUNNER_TRACKING_ID`
 ("Terminate orphan process"), which closed the reopened app three seconds later in run 44445681285. With an empty one
 the app gets the login session's environment, as from the Dock. The Mac's Codevisor server is a separate LaunchAgent (`com.851labs.Codevisor.ServerAgent`) that the app
-leaves running when it quits and adopts when it opens; both steps print its pid. Tier 1, the PR gate and the encoder
-lab run the same C5 check on tamale and don't quit the app: it isn't kept open there.
+leaves running when it quits and adopts when it opens; both steps print its pid. Tier 1 and the PR gate run the same
+C5 check on tamale, so their jobs quit and reopen the app the same way (it isn't kept open there today). The encoder
+lab and the lab job don't.
 
 Why this rule: replaying the minis' jobs from both repositories over 3 November 2026, 16:00 to 02:00 UTC, for a
 dispatch every 5 minutes:
@@ -301,7 +302,7 @@ four tiles). On croissant's main display both `R1x2` streams are shown at half s
 floor window), `measure` (the host's preflight during the run) and `done`. Measurement starts at `measure`:
 the viewer's observer, clock probes and sampler, the host's observer and sampler, and 3 s later the
 player. A failed status at a barrier skips the run on both Macs. The `report` job merges both artifacts and
-runs `tier2-report`, which writes `report.json` and `summary.md` (also the job summary). In every scene but test cards and input, the player draws the bottom barcode and each side runs a second observer on it (`host-bottom.jsonl`, `viewer-bottom.jsonl`). The summary's top-and-bottom table gives the image age at both barcodes and the share of viewer frames whose two barcodes show different versions (torn frames: at every frame either observer records inside the run's window, the latest version each has seen, with readings less than 2 ms apart taken as one frame; a region stream records a frame only when its own strip changed, so frames aren't paired one to one). The host draws both barcodes in one frame, so its torn share is a check on the method and should be 0. The bottom image age uses the top's window.
+runs `tier2-report`, which writes `report.json` and `summary.md` (also the job summary). The summaries name each system in plain words (`Tier2SystemLabel`: "Apple HP", "Codevisor, default encoder (VCP)", "Codevisor, fallback encoder (VideoToolbox)") under a one-line legend; `report.json` keeps the system ids (`apple-hp`, `codevisor-v2-vcp`, `codevisor-v2`). In every scene but test cards and input, the player draws the bottom barcode and each side runs a second observer on it (`host-bottom.jsonl`, `viewer-bottom.jsonl`). The summary's top-and-bottom table gives the image age at both barcodes and the share of viewer frames whose two barcodes show different versions (torn frames: at every frame either observer records inside the run's window, the latest version each has seen, with readings less than 2 ms apart taken as one frame; a region stream records a frame only when its own strip changed, so frames aren't paired one to one). The host draws both barcodes in one frame, so its torn share is a check on the method and should be 0. The bottom image age uses the top's window.
 
 - `rendezvous --serve` holds each named barrier until both parties arrive, then tells both every party's
   status; `rendezvous --host <ipv4> --barrier <name> --party host|viewer [--status <text>]` exits 1 unless
@@ -556,8 +557,11 @@ tier2_b_scenes=typing`). `tier2-summary` then runs `tier2-dispatches` on
   five, 851-3975) while its repetitions within one agree, so one dispatch can't settle a verdict against HP.
   `Bench screen sharing tier 2 weekly` (`.github/workflows/bench-screen-sharing-tier2-weekly.yml`, Saturdays 20:00 UTC
   and `workflow_dispatch`) builds once and runs three dispatches in a row of typing, scroll and window-drag at N0
-  (`apple-hp,codevisor-v2`, 2 repetitions of 30 s, about 17 minutes each). Its summary gives HP's image age as the
-  median across the dispatches of each dispatch's median, and judges v2 against HP only within each dispatch.
+  (`apple-hp,codevisor-v2,codevisor-v2-vcp`, 2 repetitions of 30 s: 22 runs, about 22 minutes each, 1,320 s of the
+  1,800 s plan budget). So each dispatch compares Apple HP with both of Codevisor's encoders: VCP, the one the app
+  ships with, and VideoToolbox, which the app uses when VCP fails or the link is slow (851-4433; before, the weekly
+  measured only VideoToolbox). Its summary gives HP's image age as the median across the dispatches of each
+  dispatch's median, and judges v2 against HP only within each dispatch.
 
 `preflight --quiet` is C5. It waits at least `--settle` seconds (60) and up to `--settle-limit` (300) for the
 1-minute load to drop to 2.0 and Spotlight to stop indexing (a fresh build sets it off), then fails on a thermal state other than nominal, Spotlight indexing (`mds_stores` or

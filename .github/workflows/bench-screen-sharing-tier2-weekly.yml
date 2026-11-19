@@ -35,7 +35,7 @@ jobs:
       label: a
       bench-artifact: bench-app
       scenes: typing,scroll,window-drag
-      systems: apple-hp,codevisor-v2
+      systems: apple-hp,codevisor-v2,codevisor-v2-vcp
       repetitions: "2"
       duration: "30"
 
@@ -51,7 +51,7 @@ jobs:
       label: b
       bench-artifact: bench-app
       scenes: typing,scroll,window-drag
-      systems: apple-hp,codevisor-v2
+      systems: apple-hp,codevisor-v2,codevisor-v2-vcp
       repetitions: "2"
       duration: "30"
 
@@ -67,7 +67,7 @@ jobs:
       label: c
       bench-artifact: bench-app
       scenes: typing,scroll,window-drag
-      systems: apple-hp,codevisor-v2
+      systems: apple-hp,codevisor-v2,codevisor-v2-vcp
       repetitions: "2"
       duration: "30"
 

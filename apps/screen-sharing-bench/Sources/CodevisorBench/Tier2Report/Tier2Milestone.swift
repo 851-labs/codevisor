@@ -18,7 +18,7 @@ struct Tier2Milestone {
     guard !groups.isEmpty else { return nil }
 
     let header = [
-      "### M2 targets (\(Self.system.rawValue), median of valid repetitions)", "",
+      "### M2 targets (\(Tier2SystemLabel.of(Self.system)), median of valid repetitions)", "",
       "p50 at most floor + \(Int(Self.p50AboveFloorMs)) ms and p95 at most the floor's p95 + "
         + "\(Int(Self.p95AboveFloorMs)) ms (the floor of the same scene and network), idle-cursor at most "
         + "\(Self.idleCursorMbps) Mbit/s, \(Self.lossyNetwork) shown ratio at least \(Self.shownRatio), and no image "

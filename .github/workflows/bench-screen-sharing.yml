@@ -224,6 +224,8 @@ jobs:
       - name: Install it where the permission grants are (own-window only)
         if: ${{ needs.plan.outputs.own_window == 'true' }}
         run: apps/screen-sharing-bench/scripts/install-granted.sh
+      - name: Quit the Codevisor app for the measurement
+        run: apps/screen-sharing-bench/scripts/codevisor-app.sh quit
       - name: Wait for a quiet machine (C5)
         run: |
           mkdir -p "$RUNNER_TEMP/results"
@@ -238,6 +240,9 @@ jobs:
       - name: Write the summary
         if: ${{ !cancelled() }}
         run: apps/screen-sharing-bench/scripts/summary.sh "$RUNNER_TEMP/results" >> "$GITHUB_STEP_SUMMARY"
+      - name: Reopen the Codevisor app
+        if: always()
+        run: apps/screen-sharing-bench/scripts/codevisor-app.sh reopen
       - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
         if: always()
         with:
@@ -285,6 +290,8 @@ jobs:
           certificate: ${{ secrets.APPLE_CERTIFICATE_BASE64 }}
           certificate-password: ${{ secrets.APPLE_CERTIFICATE_PASSWORD }}
           identity: ${{ secrets.APPLE_CODESIGN_IDENTITY }}
+      - name: Quit the Codevisor app for the measurement
+        run: apps/screen-sharing-bench/scripts/codevisor-app.sh quit
       - name: Wait for a quiet machine (C5)
         run: apps/screen-sharing-bench/scripts/run-installed.sh preflight --quiet --allow-locked > "$RUNNER_TEMP/results/preflight.json"
       - name: Run the gate cells twice
@@ -298,6 +305,9 @@ jobs:
             --first "$results/first-v2.json" --second "$results/second-v2.json" > "$results/gate-v2.md" || status=1
           cat "$results/gate-v2.md" "$results/waited.md" >> "$GITHUB_STEP_SUMMARY"
           exit "$status"
+      - name: Reopen the Codevisor app
+        if: always()
+        run: apps/screen-sharing-bench/scripts/codevisor-app.sh reopen
       - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
         if: always()
         with:

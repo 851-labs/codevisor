@@ -10,7 +10,8 @@ struct Tier2Markdown {
   var text: String {
     let parity = Tier2PhaseParity(results: report.results)
     return [
-      parity.headline, targetTable, verdictTable, Tier2InputTable(measurements, floors: inputFloors).text,
+      parity.headline, Tier2SystemLabel.legend, targetTable, verdictTable,
+      Tier2InputTable(measurements, floors: inputFloors).text,
       Tier2Milestone(report: report, floors: floors).text, Tier2BottomTable(measurements).text,
       parity.text, Tier2V2Table(report.results).text,
       Tier2TextTable(measurements).text,
@@ -66,7 +67,7 @@ struct Tier2Markdown {
     ]
     let rows = report.comparisons.map { comparison in
       "| \(comparison.scene) | \(comparison.resolution) | \(comparison.network) | "
-        + "\(comparison.system?.rawValue ?? "–") | \(comparison.metric) | "
+        + "\(comparison.system.map(Tier2SystemLabel.of) ?? "–") | \(comparison.metric) | "
         + "\(Tier2Format.list(comparison.appleHp)) | "
         + "\(Tier2Format.list(comparison.codevisor)) | \(Tier2Format.number(comparison.noiseBandMs)) | "
         + "\(comparison.verdict.rawValue) | \(Tier2Comparisons.basis(of: comparison)) |"

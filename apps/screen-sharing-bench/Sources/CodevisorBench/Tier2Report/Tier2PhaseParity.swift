@@ -74,7 +74,7 @@ struct Tier2PhaseParity {
     }
     if !regressions.isEmpty {
       let misses = regressions.map { row in
-        "\(row.system.rawValue) on \(row.group.scene) (p50 \(signed(row.p50OverAppleMs)), "
+        "\(Tier2SystemLabel.of(row.system)) on \(row.group.scene) (p50 \(signed(row.p50OverAppleMs)), "
           + "p95 \(signed(row.p95OverAppleMs)) ms against Apple HP)"
       }
       return "**⚠️ Regression (851-4092): at display phase \(Tier2Format.number(phaseMs)) ms, "
@@ -92,7 +92,8 @@ struct Tier2PhaseParity {
     guard phaseMs != nil else { return "– no phase" }
     guard isBelowThreshold else { return "not checked (at or above \(Int(Self.thresholdMs)) ms)" }
     if !regressions.isEmpty {
-      return "❌ regression: " + regressions.map { "\($0.system.rawValue) on \($0.group.scene)" }.joined(separator: ", ")
+      return "❌ regression: "
+        + regressions.map { "\(Tier2SystemLabel.of($0.system)) on \($0.group.scene)" }.joined(separator: ", ")
     }
     return rows.contains { $0.met != nil } ? "✅ within M3" : "– nothing to compare"
   }
@@ -128,7 +129,8 @@ struct Tier2PhaseParity {
       case nil: "– not measured"
       }
     let cells = [
-      row.group.scene, row.system.rawValue, Tier2Format.number(row.p50Ms), Tier2Format.number(row.appleP50Ms),
+      row.group.scene, Tier2SystemLabel.of(row.system), Tier2Format.number(row.p50Ms),
+      Tier2Format.number(row.appleP50Ms),
       signed(row.p50OverAppleMs), Tier2Format.number(row.p95Ms), Tier2Format.number(row.appleP95Ms),
       signed(row.p95OverAppleMs), result,
     ]
