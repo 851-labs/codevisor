@@ -105,7 +105,7 @@
       self.controller = controller
       self.browser = browser
       ClientPreferences.shared.set(SidebarGrouping.machine, forKey: SidebarGrouping.preferenceKey)
-      ClientPreferences.shared.setSidebarRowDetail(.project, shown: false)
+      ClientPreferences.shared.setSidebarRowDetails([.pullRequest, .machine, .branch])
       ClientPreferences.shared.set(AIDataSharingConsent.currentVersion, forKey: AIDataSharingConsent.preferenceKey)
       ClientPreferences.shared.set(true, forKey: OnboardingView.dismissedPreferenceKey)
     }

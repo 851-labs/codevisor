@@ -105,6 +105,7 @@ import CodevisorUI
 
     func prepare() async {
       ClientPreferences.shared.set(SidebarGrouping.machine, forKey: SidebarGrouping.preferenceKey)
+      ClientPreferences.shared.setSidebarRowDetails([.pullRequest, .machine, .project, .branch])
       if AppStoreScreenshotData.showsInspector {
         ClientPreferences.shared.set(true, forKey: WorkspaceInspectorPresentation.presentedKey)
       }
