@@ -9,19 +9,15 @@ import { fileURLToPath, pathToFileURL } from "node:url"
 import { summarizeTranscriptPerformance } from "./transcript-performance-summary.mjs"
 
 const usage =
-  "Usage: TRANSCRIPT_STRESS_URL=<dev server URL> node scripts/dev-tab-switch-bench.mjs [--fresh] [--chats <n>] [--turns <n>] [--warm-rounds <n>] [--trace <path>] [--instance <dev instance name>]"
-const keptAlivePages = 5
+  "Usage: TRANSCRIPT_STRESS_URL=<dev server URL> node scripts/dev-tab-switch-bench.mjs [--fresh] [--enforce] [--chats <n>] [--turns <n>] [--warm-rounds <n>] [--trace <path>] [--instance <name>] [--limits <scenario>=<ms>,...] [--report <path>]"
 const switchRecordName = "navigation.switch"
 const recordPollMilliseconds = 50
 const recordTimeoutMilliseconds = 10_000
 const pauseBetweenSwitchesMilliseconds = 400
 const pauseAfterSeedingMilliseconds = 3_000
 
-export function benchPlan(workspaceIds, warmRounds, keptAlive = keptAlivePages) {
-  const firstVisits = workspaceIds.map((workspaceId) => ({ scenario: "first-visit", workspaceId }))
-  const evicted = workspaceIds
-    .slice(0, Math.max(0, workspaceIds.length - keptAlive))
-    .map((workspaceId) => ({ scenario: "evicted-reopen", workspaceId }))
+export function benchPlan(workspaceIds, warmRounds) {
+  const visits = (scenario) => workspaceIds.map((workspaceId) => ({ scenario, workspaceId }))
   const middle = {
     scenario: "unmeasured",
     workspaceId: workspaceIds[Math.floor(workspaceIds.length / 2)]
@@ -30,18 +26,60 @@ export function benchPlan(workspaceIds, warmRounds, keptAlive = keptAlivePages) 
     scenario: "warm",
     step: index % 2 === 0 ? -1 : 1
   }))
-  return [...firstVisits, ...evicted, middle, ...warm]
+  return [...visits("first-visit"), ...visits("revisit"), middle, ...warm]
 }
 
 export function stepNotification(instance, step) {
   return `com.851labs.codevisor.dev.tab-step.${instance}.${step < 0 ? "previous" : "next"}`
 }
 
-export function observedScenario(planned, record) {
-  const builtPage = record.values?.builtPage === 1
-  if (!builtPage) return "warm"
-  if (planned === "warm") return "evicted-reopen"
-  return planned
+export function parseLimits(source) {
+  const limits = {}
+  for (const entry of source.split(",").map((part) => part.trim())) {
+    if (entry === "") continue
+    const parts = entry.split("=")
+    const limit = Number(parts[1])
+    if (parts.length !== 2 || parts[0] === "" || !Number.isFinite(limit) || limit <= 0)
+      throw new Error(`--limits needs <scenario>=<ms> pairs, got "${entry}"`)
+    limits[parts[0]] = limit
+  }
+  return limits
+}
+
+export function overLimits(summary, limits) {
+  return Object.entries(limits).flatMap(([scenario, limit]) => {
+    const measured = summary[`${scenario}.busy`]?.p50MS
+    if (measured === undefined) return [`${scenario}: no switches were measured`]
+    if (measured <= limit) return []
+    return [
+      `${scenario}: ${measured} ms of main-thread work per switch is over the ${limit} ms limit`
+    ]
+  })
+}
+
+function reportRow(scenario, busy, limit) {
+  if (busy === undefined) return `| ${scenario} | 0 |  |  | ${limit ?? ""} | not measured |`
+  const verdict = limit === undefined ? "" : resultWithin(busy.p50MS, limit)
+  return `| ${scenario} | ${busy.count} | ${busy.p50MS} | ${busy.p95MS} | ${limit ?? ""} | ${verdict} |`
+}
+
+function resultWithin(measured, limit) {
+  return measured <= limit ? "within" : "over"
+}
+
+export function benchReport(summary, limits) {
+  const measured = Object.keys(summary)
+    .filter((name) => name.endsWith(".busy"))
+    .map((name) => name.slice(0, -".busy".length))
+  const scenarios = [...new Set([...measured, ...Object.keys(limits)])]
+  return [
+    "| Switch | Count | Median ms | 95th percentile ms | Limit ms | Result |",
+    "|---|---|---|---|---|---|",
+    ...scenarios.map((scenario) =>
+      reportRow(scenario, summary[`${scenario}.busy`], limits[scenario])
+    ),
+    ""
+  ].join("\n")
 }
 
 export function summarizeSwitches(switches) {
@@ -72,17 +110,24 @@ async function main(argv) {
       stepped += 1
       if (stepped <= 2) await requireBenchChat(server, clientId, workspaceIds)
     }
-    if (step.scenario !== "unmeasured")
-      switches.push({ scenario: observedScenario(step.scenario, record), record })
+    if (step.scenario !== "unmeasured") switches.push({ scenario: step.scenario, record })
     await sleep(pauseBetweenSwitchesMilliseconds)
   }
 
-  process.stdout.write(`${JSON.stringify(summarizeSwitches(switches), null, 2)}\n`)
+  const summary = summarizeSwitches(switches)
+  const over = overLimits(summary, options.limits)
+  process.stdout.write(`${JSON.stringify(summary, null, 2)}\n`)
+  if (options.report !== undefined)
+    await writeFile(options.report, benchReport(summary, options.limits))
+  for (const line of over) process.stderr.write(`${line}\n`)
+  if (options.enforce && over.length > 0) process.exitCode = 1
 }
 
 function parseOptions(argv) {
   const options = {
     fresh: argv.includes("--fresh"),
+    enforce: argv.includes("--enforce"),
+    limits: {},
     chats: 8,
     turns: 200,
     warmRounds: 10,
@@ -91,16 +136,20 @@ function parseOptions(argv) {
     chatsFile: join(process.cwd(), "tmp/tab-switch-bench.json")
   }
   const names = { "--chats": "chats", "--turns": "turns", "--warm-rounds": "warmRounds" }
-  const valued = argv.filter((argument) => argument !== "--fresh")
+  const valued = argv.filter((argument) => argument !== "--fresh" && argument !== "--enforce")
   for (let index = 0; index < valued.length; index += 2) {
     const [flag, value] = [valued[index], valued[index + 1]]
     if (value === undefined) throw new Error(usage)
     if (flag === "--trace") options.trace = value
     else if (flag === "--instance") options.instance = value
+    else if (flag === "--limits") options.limits = parseLimits(value)
+    else if (flag === "--report") options.report = value
     else if (flag in names) options[names[flag]] = positiveInteger(flag, value)
     else throw new Error(usage)
   }
   if (options.chats < 2) throw new Error("--chats must be at least 2")
+  if (options.enforce && Object.keys(options.limits).length === 0)
+    throw new Error("--enforce needs --limits")
   return options
 }
 
