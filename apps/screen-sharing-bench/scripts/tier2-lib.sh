@@ -45,6 +45,17 @@ say() {
   echo "$(date '+%H:%M:%S') $*" >&2
 }
 
+tier2_skip() {
+  local party=$1 name=$2 dir=$3 reason=$4
+  say "skipping $name: $reason"
+  echo "$reason" >"$dir/$party-skipped.txt"
+}
+
+tier2_unmet() {
+  local barrier=$1 status=$2
+  if [[ "$status" == ok ]]; then echo "not ready at $barrier"; else echo "$status"; fi
+}
+
 tier2_plan() {
   local index=0 token scene network rep tokens warm_up=0
   IFS=, read -r -a tokens <<<"$TIER2_SCENES"

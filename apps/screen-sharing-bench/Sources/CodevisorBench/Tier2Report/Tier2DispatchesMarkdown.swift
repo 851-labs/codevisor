@@ -11,7 +11,14 @@ struct Tier2DispatchesMarkdown {
   }
 
   var text: String {
-    ([regressions, dispatchTable, acrossTable, verdictTable].compactMap(\.self)).joined(separator: "\n\n") + "\n"
+    ([incomplete, regressions, dispatchTable, acrossTable, verdictTable].compactMap(\.self))
+      .joined(separator: "\n\n") + "\n"
+  }
+
+  private var incomplete: String? {
+    let lines = dispatches.compactMap { dispatch in dispatch.skipped.warning.map { "Dispatch \(dispatch.label): \($0)" }
+    }
+    return lines.isEmpty ? nil : lines.joined(separator: "\n\n")
   }
 
   private var regressions: String? {
@@ -34,14 +41,15 @@ struct Tier2DispatchesMarkdown {
       "",
       Tier2SystemLabel.legend,
       "",
-      "| Dispatch | Scenes | Display phase ms | v2 vs HP below \(Int(Tier2PhaseParity.thresholdMs)) ms (851-4092) |",
-      "| --- | --- | --- | --- |",
+      "| Dispatch | Scenes | Runs not measured | Display phase ms | "
+        + "v2 vs HP below \(Int(Tier2PhaseParity.thresholdMs)) ms (851-4092) |",
+      "| --- | --- | --- | --- | --- |",
     ]
     let rows = dispatches.map { dispatch in
       let groups = Tier2Group.all(dispatch.report.results).map { "\($0.scene) \($0.network)" }
       let parity = dispatch.parity
-      return "| \(dispatch.label) | \(groups.joined(separator: ", ")) | \(Tier2Format.number(parity.phaseMs)) | "
-        + "\(parity.status) |"
+      return "| \(dispatch.label) | \(groups.joined(separator: ", ")) | \(dispatch.skipped.runs.count) | "
+        + "\(Tier2Format.number(parity.phaseMs)) | \(parity.status) |"
     }
     return (header + rows).joined(separator: "\n")
   }

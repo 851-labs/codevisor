@@ -35,7 +35,8 @@ struct Tier2DispatchesCommand: BenchCommand {
       guard FileManager.default.fileExists(atPath: file.path) else { return nil }
 
       return Tier2Dispatch(
-        label: directory.lastPathComponent, report: try BenchReportCodec.decode(Data(contentsOf: file)))
+        label: directory.lastPathComponent, report: try BenchReportCodec.decode(Data(contentsOf: file)),
+        skipped: try Tier2SkippedRuns(beside: file))
     }
   }
 }
@@ -43,6 +44,7 @@ struct Tier2DispatchesCommand: BenchCommand {
 struct Tier2Dispatch {
   let label: String
   let report: BenchReport
+  let skipped: Tier2SkippedRuns
 
   var parity: Tier2PhaseParity {
     Tier2PhaseParity(results: report.results)
