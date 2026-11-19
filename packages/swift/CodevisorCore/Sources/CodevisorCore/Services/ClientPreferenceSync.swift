@@ -45,12 +45,13 @@ final class ClientPreferenceSync {
     }
   }
 
-  func publishFallback(_ data: Data, forKey key: String, rank: Int) {
-    guard keys.contains(key), let value = try? JSONDecoder().decode(JSONValue.self, from: data) else { return }
+  func publishFallback(_ data: Data, forKey key: String, rank: Int) -> Bool {
+    guard keys.contains(key), let value = try? JSONDecoder().decode(JSONValue.self, from: data) else { return false }
     let timestamp = ServerSyncTimestamp(wallMs: rank, counter: 0, deviceId: configSync.deviceId)
     let entry = ServerSyncEntry(key: key, value: value, timestamp: timestamp)
     configSync.applyRemoteChange(namespace: Self.namespace, entries: [entry])
     adoptSyncedValues()
+    return true
   }
 
   private var olderThanAnyWrite: ServerSyncTimestamp {

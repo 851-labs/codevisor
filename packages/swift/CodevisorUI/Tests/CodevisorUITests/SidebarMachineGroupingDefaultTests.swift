@@ -16,7 +16,7 @@ struct SidebarMachineGroupingDefaultTests {
     account.settle()
     #expect(account.grouping == nil)
 
-    account.connect(.studio)
+    await account.connect(.studio)
     account.settle()
     #expect(account.grouping == .machine)
   }
@@ -25,13 +25,13 @@ struct SidebarMachineGroupingDefaultTests {
   func switchesOnlyOnce() async {
     let account = await Account.synced(machines: [.thisMac])
     account.settle()
-    account.connect(.studio)
+    await account.connect(.studio)
     account.settle()
 
     account.preferences.set(SidebarGrouping.flat, forKey: SidebarGrouping.preferenceKey)
     account.disconnect(.studio)
     account.settle()
-    account.connect(.studio)
+    await account.connect(.studio)
     account.settle()
     #expect(account.grouping == .flat)
   }
@@ -42,7 +42,7 @@ struct SidebarMachineGroupingDefaultTests {
     account.preferences.set(SidebarGrouping.flat, forKey: SidebarGrouping.preferenceKey)
     account.settle()
 
-    account.connect(.studio)
+    await account.connect(.studio)
     account.settle()
     #expect(account.grouping == .flat)
   }
@@ -55,7 +55,7 @@ struct SidebarMachineGroupingDefaultTests {
 
     account.disconnect(.studio)
     account.settle()
-    account.connect(.studio)
+    await account.connect(.studio)
     account.settle()
     #expect(account.grouping == nil)
   }
@@ -72,13 +72,28 @@ struct SidebarMachineGroupingDefaultTests {
     #expect(account.progress == .oneMachine)
   }
 
+  @Test("A machine that reconnects must sync again before anything is decided")
+  func reconnectWaitsForFreshSync() async {
+    let account = await Account.synced(machines: [.thisMac])
+    account.settle()
+
+    await account.connect(.studio)
+    account.environment.noteMachineConnected(CodevisorMachine.local.id)
+    account.settle()
+    #expect(account.grouping == nil)
+
+    await account.syncWithThisMac()
+    account.settle()
+    #expect(account.grouping == .machine)
+  }
+
   @Test("Another device's settled record wins over this device's one-machine record")
   func settledBeatsOneMachine() async {
     let account = await Account.synced(machines: [.thisMac])
     account.settle()
 
     account.receiveFromAnotherDevice(SidebarMachineGroupingDefault.Progress.settled, wallMs: 1)
-    account.connect(.studio)
+    await account.connect(.studio)
     account.settle()
     #expect(account.progress == .settled)
     #expect(account.grouping == nil)
@@ -88,25 +103,45 @@ struct SidebarMachineGroupingDefaultTests {
   func userChoiceElsewhereBeatsAutomaticGrouping() async {
     let account = await Account.synced(machines: [.thisMac])
     account.settle()
-    account.connect(.studio)
+    await account.connect(.studio)
     account.settle()
 
     account.receiveFromAnotherDevice(SidebarGrouping.flat, forKey: SidebarGrouping.preferenceKey, wallMs: 1_000)
     #expect(account.grouping == .flat)
   }
 
-  @Test("A stale offline record of this Mac (same name) is not a second machine; an offline other machine is")
-  func staleRecordOfThisMacDoesNotCount() async {
+  @Test("A new Mac set up while the first one sleeps waits for it, then switches with it")
+  func newMacWaitsForSleepingFirstMac() async {
+    let account = await Account.synced(machines: [.thisMac, .sleepingStudio])
+    account.settle()
+    #expect(account.progress == nil)
+
+    account.receiveFromAnotherDevice(SidebarMachineGroupingDefault.Progress.oneMachine, wallMs: 0)
+    await account.wake(.sleepingStudio)
+    account.settle()
+    #expect(account.grouping == .machine)
+  }
+
+  @Test("A stale offline record of this Mac never switches a one-Mac account")
+  func staleRecordOfThisMacNeverSwitches() async {
     let account = await Account.synced(machines: [.thisMac])
     account.settle()
 
-    account.connect(.staleThisMac)
+    await account.connect(.staleThisMac)
     account.settle()
     #expect(account.grouping == nil)
+  }
 
-    account.connect(.offlineStudio)
+  @Test("A second Mac with this Mac's name counts as its own machine while it's offline")
+  func sameNamedMacsCountSeparately() async {
+    let account = await Account.synced(machines: [.thisMac, .sleepingTwinNamedMac])
     account.settle()
-    #expect(account.grouping == .machine)
+    #expect(account.progress == nil)
+
+    await account.wake(.sleepingTwinNamedMac)
+    account.settle()
+    #expect(account.progress == .settled)
+    #expect(account.grouping == nil)
   }
 
   @Test("The running watcher switches the grouping when the second machine shows up, then stops")
@@ -116,7 +151,7 @@ struct SidebarMachineGroupingDefaultTests {
     await account.syncWithThisMac()
     await awaitObserved { account.progress == .oneMachine }
 
-    account.connect(.studio)
+    await account.connect(.studio)
     await watcher.value
     #expect(account.grouping == .machine)
     #expect(account.progress == .settled)
@@ -141,6 +176,9 @@ private final class Account {
   static func synced(machines: [CloudMachine]) async -> Account {
     let account = Account(machines: machines)
     await account.syncWithThisMac()
+    for machine in machines where machine.online && machine.ephemeral == nil && machine != .thisMac {
+      await account.bringOnline(machine)
+    }
     return account
   }
 
@@ -153,12 +191,20 @@ private final class Account {
   }
 
   func syncWithThisMac() async {
-    await environment.configSync.synchronize(
-      machineId: CodevisorMachine.local.id, namespaces: [ClientPreferenceSync.namespace])
+    await sync(CodevisorMachine.local.id)
   }
 
-  func connect(_ machine: CloudMachine) {
+  func connect(_ machine: CloudMachine) async {
     roster.cloudMachines.append(machine)
+    guard machine.online else { return }
+    await bringOnline(machine)
+  }
+
+  func wake(_ machine: CloudMachine) async {
+    var awake = machine
+    awake.online = true
+    roster.cloudMachines = roster.cloudMachines.map { $0.deviceId == machine.deviceId ? awake : $0 }
+    await bringOnline(awake)
   }
 
   func disconnect(_ machine: CloudMachine) {
@@ -180,6 +226,16 @@ private final class Account {
     environment.configSync.applyRemoteChange(
       namespace: ClientPreferenceSync.namespace, entries: [ServerSyncEntry(key: key, value: json, timestamp: stamp)])
   }
+
+  private func bringOnline(_ machine: CloudMachine) async {
+    let id = CodevisorMachine.cloud(from: machine).id
+    environment.machines.connection(for: id).status = MachineStatus(isReachable: true, label: machine.name)
+    await sync(id)
+  }
+
+  private func sync(_ machineId: String) async {
+    await environment.configSync.synchronize(machineId: machineId, namespaces: [ClientPreferenceSync.namespace])
+  }
 }
 
 @MainActor
@@ -195,8 +251,9 @@ private final class Roster: CloudMachineProviding {
 extension CloudMachine {
   fileprivate static let thisMac = machine("this-mac")
   fileprivate static let studio = machine("studio")
+  fileprivate static let sleepingStudio = machine("studio-asleep", online: false)
   fileprivate static let staleThisMac = machine("this-mac-before-reinstall", name: "this-mac", online: false)
-  fileprivate static let offlineStudio = machine("studio-asleep", online: false)
+  fileprivate static let sleepingTwinNamedMac = machine("second-mac", name: "this-mac", online: false)
   fileprivate static let sandbox = machine(
     "sandbox", ephemeral: CloudEphemeralOrigin(provider: "tart", ownerDeviceId: "this-mac"))
 

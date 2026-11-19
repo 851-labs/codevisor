@@ -40,7 +40,7 @@ public final class SidebarMachineGroupingDefault {
   public static func start(environment: AppEnvironment) -> Task<Void, Never> {
     let watcher = SidebarMachineGroupingDefault(environment: environment)
     let task = Task { await watcher.run() }
-    environment.cancelOnTeardown(task)
+    environment.cancelOnDeinit(task)
     return task
   }
 
@@ -71,8 +71,7 @@ public final class SidebarMachineGroupingDefault {
   func nextStep() -> Step? {
     let progress = progress
     guard progress != .settled, let environment else { return nil }
-    guard environment.hasClientPreferencesFromReachableMachines else { return nil }
-    guard let machineCount = environment.machines.accountMachineCount else { return nil }
+    guard let machineCount = environment.accountMachineCountAfterPreferenceSync else { return nil }
     return Self.step(progress: progress, groupingIsChosen: groupingIsChosen, machineCount: machineCount)
   }
 
@@ -98,7 +97,7 @@ public final class SidebarMachineGroupingDefault {
   }
 
   private func fallback<Value: Codable>(_ value: Value, forKey key: String, rank: Int) {
-    environment?.setClientPreferenceFallback(value, forKey: key, rank: rank)
+    environment?.setClientPreferenceFallback(value, forKey: key, rank: rank, preferences: preferences)
   }
 
   private var progress: Progress? {

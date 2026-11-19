@@ -52,6 +52,10 @@ public final class ConfigSync {
     namespacesReceivedByMachine[machineId]?.contains(namespace) == true
   }
 
+  func forgetReceived(fromMachine machineId: String) {
+    namespacesReceivedByMachine[machineId] = nil
+  }
+
   public func value(namespace: String, key: String) -> JSONValue? {
     guard let entry = loadNamespace(namespace).first(where: { $0.key == key }),
       entry.deleted != true

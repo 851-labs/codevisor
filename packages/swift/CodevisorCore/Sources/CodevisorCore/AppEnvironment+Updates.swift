@@ -30,6 +30,7 @@ extension AppEnvironment {
 
   func noteMachineConnected(_ machineId: String) {
     checkHarnessNotices(onServer: machineId)
+    configSync.forgetReceived(fromMachine: machineId)
     Task { await bots.refresh(serverId: machineId) }
     Task {
       await configSync.synchronizeMachine(machineId)
@@ -108,23 +109,29 @@ extension AppEnvironment {
     sync.start()
   }
 
-  public var hasClientPreferencesFromReachableMachines: Bool {
-    let reachable = machines.reachableChatMachineIds
-    return !reachable.isEmpty
-      && reachable.allSatisfy { configSync.hasReceived(namespace: ClientPreferenceSync.namespace, fromMachine: $0) }
+  public var accountMachineCountAfterPreferenceSync: Int? {
+    guard let ids = machines.accountMachineIds, ids.allSatisfy(hasCurrentClientPreferences(from:)) else { return nil }
+    return ids.count
   }
 
-  public func setClientPreferenceFallback<Value: Codable>(_ value: Value, forKey key: String, rank: Int = 0) {
-    guard let sync = clientPreferenceSync else {
-      if preferences.valueIfPresent(forKey: key, as: Value.self) == nil { preferences.set(value, forKey: key) }
+  public func setClientPreferenceFallback<Value: Codable>(
+    _ value: Value, forKey key: String, rank: Int, preferences: ClientPreferences
+  ) {
+    if let sync = clientPreferenceSync, let data = try? JSONEncoder().encode(value),
+      sync.publishFallback(data, forKey: key, rank: rank)
+    {
       return
     }
-    guard let data = try? JSONEncoder().encode(value) else { return }
-    sync.publishFallback(data, forKey: key, rank: rank)
+    if preferences.valueIfPresent(forKey: key, as: Value.self) == nil { preferences.set(value, forKey: key) }
   }
 
-  public func cancelOnTeardown(_ task: Task<Void, Never>) {
-    teardownTasks.append(task)
+  public func cancelOnDeinit(_ task: Task<Void, Never>) {
+    deinitCancelledTasks.append(task)
+  }
+
+  private func hasCurrentClientPreferences(from machineId: String) -> Bool {
+    machines.isReachable(machineId)
+      && configSync.hasReceived(namespace: ClientPreferenceSync.namespace, fromMachine: machineId)
   }
 
   public func syncFeatureFlags(preferences: ClientPreferences = .shared) {
