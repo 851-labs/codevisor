@@ -11,14 +11,22 @@ struct SidebarStepTests {
     #expect(SidebarStep.target(in: [String](), from: nil, by: 1) == nil)
   }
 
-  @Test("A listed selection moves by the offset and stops at the ends")
-  func listedSelectionStopsAtTheEnds() {
+  @Test("A listed selection moves by the offset and loops around at the ends")
+  func listedSelectionLoopsAround() {
     let items = ["a", "b", "c"]
 
     #expect(SidebarStep.target(in: items, from: 1, by: 1) == "c")
     #expect(SidebarStep.target(in: items, from: 1, by: -1) == "a")
-    #expect(SidebarStep.target(in: items, from: 2, by: 1) == nil)
-    #expect(SidebarStep.target(in: items, from: 0, by: -1) == nil)
+    #expect(SidebarStep.target(in: items, from: 2, by: 1) == "a")
+    #expect(SidebarStep.target(in: items, from: 0, by: -1) == "c")
+    #expect(SidebarStep.target(in: items, from: 2, by: 2) == "b")
+  }
+
+  @Test("A step that would land back on the selection goes nowhere")
+  func steppingOntoTheSelectionGoesNowhere() {
+    #expect(SidebarStep.target(in: ["a"], from: 0, by: 1) == nil)
+    #expect(SidebarStep.target(in: ["a"], from: 0, by: -1) == nil)
+    #expect(SidebarStep.target(in: ["a", "b"], from: 0, by: 2) == nil)
   }
 
   private func step(_ rows: [String], from current: String?, by offset: Int) -> String? {
@@ -33,8 +41,9 @@ struct SidebarStepTests {
 
     #expect(step(rows, from: "a", by: 1) == "B")
     #expect(step(rows, from: "b", by: -1) == "A")
-    #expect(step(rows, from: "c", by: 1) == nil)
-    #expect(step(rows, from: "a", by: -1) == nil)
+    #expect(step(rows, from: "c", by: 1) == "A")
+    #expect(step(rows, from: "a", by: -1) == "C")
+    #expect(step(["-heading", "a", "-more"], from: "a", by: 1) == nil)
   }
 
   @Test("Stepping over rows enters at an end when the selection is not a stop in the list")
@@ -45,6 +54,7 @@ struct SidebarStepTests {
     #expect(step(rows, from: nil, by: -1) == "B")
     #expect(step(rows, from: "-heading", by: 1) == "A")
     #expect(step([], from: nil, by: 1) == nil)
+    #expect(step(["-heading", "-more"], from: nil, by: 1) == nil)
   }
 
   @Test("Stepping over rows matches stepping over the resolved stops")
