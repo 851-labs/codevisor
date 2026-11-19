@@ -201,9 +201,7 @@ struct WorkspaceInspectorView: View {
             .foregroundStyle(.secondary)
         }
       } icon: {
-        Image(systemName: "text.page")
-          .foregroundStyle(.secondary)
-          .frame(width: 20)
+        WorkspaceInspectorRowIcon(systemName: "text.page")
       }
     }
     .help("Show everything the bot did, including its tool calls and the messages it received")
@@ -324,9 +322,7 @@ struct WorkspaceInspectorView: View {
       Text(value)
         .textSelection(.enabled)
     } icon: {
-      icon
-        .foregroundStyle(.secondary)
-        .frame(width: 20)
+      WorkspaceInspectorRowIcon(icon)
     }
     .help(title)
     .accessibilityElement(children: .ignore)

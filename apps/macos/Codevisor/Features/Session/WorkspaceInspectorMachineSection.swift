@@ -26,29 +26,43 @@ struct WorkspaceInspectorMachineSection: View {
       if let disk = stats.disk {
         WorkspaceInspectorMachineUsageRow(title: "Disk", usage: disk, style: .file)
       }
-      if let routeName = connection?.routeName {
-        LabeledContent("Connection") {
+      if let routeName = connection?.routeName, let routeSystemImage = connection?.routeSystemImage {
+        LabeledContent {
           Text(routeName)
             .contentTransition(.numericText())
+        } label: {
+          Self.label("Connection", systemImage: routeSystemImage)
         }
         .help(connection?.help ?? "")
         .animation(Motion.meter(reduceMotion: reduceMotion), value: routeName)
       }
       if let latencyMilliseconds {
-        LabeledContent("Latency") {
+        LabeledContent {
           Text(Self.latencyText(latencyMilliseconds))
             .monospacedDigit()
             .contentTransition(.numericText(value: latencyMilliseconds))
+        } label: {
+          Self.label("Latency", systemImage: "stopwatch")
         }
         .animation(Motion.meter(reduceMotion: reduceMotion), value: latencyMilliseconds)
       }
       let uptime = Self.uptimeText(stats.uptimeSeconds)
-      LabeledContent("Uptime") {
+      LabeledContent {
         Text(uptime)
           .monospacedDigit()
           .contentTransition(.numericText(value: stats.uptimeSeconds))
+      } label: {
+        Self.label("Uptime", systemImage: "clock")
       }
       .animation(Motion.meter(reduceMotion: reduceMotion), value: uptime)
+    }
+  }
+
+  private static func label(_ title: String, systemImage: String) -> some View {
+    Label {
+      Text(title)
+    } icon: {
+      WorkspaceInspectorRowIcon(systemName: systemImage)
     }
   }
 

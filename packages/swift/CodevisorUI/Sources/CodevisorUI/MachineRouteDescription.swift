@@ -22,6 +22,15 @@ struct MachineRouteDescription {
     }
   }
 
+  static func systemImage(_ route: CloudTunnelRoute) -> String {
+    switch route {
+    case .localNetwork: "house"
+    case .tailscale: "point.3.connected.trianglepath.dotted"
+    case .internet: "globe"
+    case .relay: "cloud"
+    }
+  }
+
   private static func place(_ route: CloudTunnelRoute) -> String {
     switch route {
     case .localNetwork(let address), .tailscale(let address), .internet(let address): address

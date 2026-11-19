@@ -115,6 +115,11 @@ public enum MachineConnectionPresentation: Equatable {
     return MachineRouteDescription.name(path.route)
   }
 
+  public var routeSystemImage: String? {
+    guard case .connected(let path?) = self else { return nil }
+    return MachineRouteDescription.systemImage(path.route)
+  }
+
   public var help: String? {
     switch self {
     case .connected(let path): MachineRouteDescription(path: path).help

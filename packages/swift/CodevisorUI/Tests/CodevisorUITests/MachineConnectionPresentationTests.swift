@@ -48,12 +48,15 @@ struct MachineConnectionPresentationTests {
     #expect(relayed.help == "San Jose")
   }
 
-  @Test("The route name is the Settings name alone, and only once the route is known")
+  @Test("The route name and symbol are the Settings name alone, and only once the route is known")
   func routeName() {
     #expect(presentation().routeName == "Local network")
+    #expect(presentation().routeSystemImage == "house")
     let relayed = presentation(cloud: Self.reach(.relay(url: "https://relay-sjc-1.codevisor.dev/"), milliseconds: 48))
     #expect(relayed.routeName == "Codevisor Relay")
+    #expect(relayed.routeSystemImage == "cloud")
     #expect(presentation(cloud: CloudMachineReach(online: true, hasTunnel: true)).routeName == nil)
+    #expect(presentation(cloud: CloudMachineReach(online: true, hasTunnel: true)).routeSystemImage == nil)
     #expect(presentation(cloud: nil, isLocal: true).routeName == nil)
     #expect(presentation(sync: .catchingUp).routeName == nil)
   }
