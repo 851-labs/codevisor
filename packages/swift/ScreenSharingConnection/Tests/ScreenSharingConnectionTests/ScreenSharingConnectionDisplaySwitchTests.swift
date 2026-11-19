@@ -151,6 +151,20 @@ struct ScreenSharingConnectionDisplaySwitchTests {
     #expect(harness.host.sharedDisplayId == Self.first.id)
   }
 
+  @Test("A host that moves to another display by itself is followed, and the saved choice is left alone")
+  func followsAHostThatMovedByItself() async {
+    let (harness, session) = await liveHarness()
+    let connection = harness.connection
+
+    harness.host.shareDisplay(Self.second.id)
+    await harness.beat()
+    await awaitObserved { connection.display == Self.second }
+
+    #expect(connection.displaySwitch == nil, "nothing was picked, so there is no switch to report")
+    #expect(connection.preferredDisplayId == nil && connection.state == .live && !session.isClosed)
+    #expect(askedDisplays(harness) == [nil] && harness.host.starts.count == 1)
+  }
+
   @Test("A display from a heartbeat older than the newest one answered is ignored")
   func ignoresAStaleDisplay() async throws {
     let (harness, _) = await liveHarness()

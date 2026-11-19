@@ -47,6 +47,56 @@ struct ScreenSharingDisplayIdentityTests {
     #expect(ScreenSharingDisplayIdentity.follow(188, identity: Self.studioDisplay, online: onlyVirtual) == nil)
   }
 
+  @Test("A shared display that is gone is told apart from one that only got a new number")
+  func successor() {
+    typealias Identity = ScreenSharingDisplayIdentity
+    let builtIn = Self.online(1, Self.otherDisplay, main: true)
+    let projector = Self.online(7, Identity(vendor: 0x4C2D, model: 9, serial: 3))
+    let hostVirtual = Self.online(129, Self.virtual, virtual: true)
+
+    #expect(Identity.successor(of: 188, identity: Self.studioDisplay, online: [builtIn]) == .another(1))
+    #expect(Identity.successor(of: 188, identity: Self.studioDisplay, online: [projector, builtIn]) == .another(1))
+    #expect(Identity.successor(of: 188, identity: Self.studioDisplay, online: [projector, hostVirtual]) == .another(7))
+    #expect(Identity.successor(of: 188, identity: Self.studioDisplay, online: [hostVirtual]) == Identity.Successor.none)
+
+    let renumbered = [builtIn, Self.online(190, Self.studioDisplay)]
+    #expect(Identity.successor(of: 188, identity: Self.studioDisplay, online: renumbered) == .renumbered(190))
+    #expect(Identity.successor(of: 1, identity: Self.otherDisplay, online: renumbered) == .unchanged)
+  }
+
+  @Test("A display with the shared one's identity but another size is moved to, not renumbered and not skipped")
+  func sameIdentityAnotherSize() {
+    typealias Identity = ScreenSharingDisplayIdentity
+    let landscape = Identity.Pixels(width: 2560, height: 1440)
+    let builtIn = Self.online(1, Self.otherDisplay, main: true)
+    var alike = Self.online(190, Self.studioDisplay)
+
+    alike.pixels = Identity.Pixels(width: 1440, height: 2560)
+    #expect(
+      Identity.successor(of: 188, identity: Self.studioDisplay, pixels: landscape, online: [builtIn, alike])
+        == .another(190), "it stays with its own display, at that display's size, instead of going to the main one")
+
+    alike.pixels = landscape
+    #expect(
+      Identity.successor(of: 188, identity: Self.studioDisplay, pixels: landscape, online: [builtIn, alike])
+        == .renumbered(190))
+    #expect(
+      Identity.successor(of: 188, identity: Self.studioDisplay, pixels: nil, online: [builtIn, alike])
+        == .renumbered(190), "with no size on record the identity decides, as before")
+  }
+
+  @Test("A headless Mac's framebuffer is the same display whatever size it comes back at")
+  func headlessFramebufferIgnoresSize() {
+    typealias Identity = ScreenSharingDisplayIdentity
+    let framebuffer = Identity(
+      vendor: Identity.headlessFramebuffer.vendor, model: Identity.headlessFramebuffer.model, serial: 0)
+    var back = Self.online(46, framebuffer, main: true)
+    back.pixels = Identity.Pixels(width: 1280, height: 720)
+    let shared = Identity.Pixels(width: 1920, height: 1080)
+
+    #expect(Identity.successor(of: 44, identity: framebuffer, pixels: shared, online: [back]) == .renumbered(46))
+  }
+
   @Test("A display change that keeps both displays online doesn't end the session")
   func survivesOwnChange() {
     let online = [Self.online(1, Self.studioDisplay, main: true), Self.online(129, Self.virtual, virtual: true)]

@@ -51,6 +51,7 @@ extension ScreenSharingHostService {
 
   func startCapture(_ session: ScreenSharingHostSession) async throws {
     session.capturing = (session.captureDisplayID, session.configuration)
+    session.captureGeneration += 1
     if session.hdr.viewerSupports { await applyDynamicRange(session).value }
     if let format = session.peer.capturePixelFormat { session.capture.pixelFormat = format }
     try await startsCapture(session)
@@ -81,14 +82,15 @@ extension ScreenSharingHostService {
 
   @discardableResult
   func followDisplay(_ session: ScreenSharingHostSession) -> Bool {
-    guard
-      let current = ScreenSharingDisplayIdentity.follow(
-        session.displayID, identity: session.displayIdentity, online: onlineDisplays())
-    else { return false }
-    guard current != session.displayID else { return true }
-    Self.logger.notice("Shared display \(session.displayID) is now display \(current)")
-    session.displayID = current
-    session.sharedMode = .init(display: current)
+    switch successor(of: session) {
+    case .another, .none: return false
+    case .unchanged: break
+    case .renumbered(let current):
+      Self.logger.notice("Shared display \(session.displayID) is now display \(current)")
+      session.displayID = current
+      session.sharedMode = .init(display: current)
+    }
+    noteSharedDisplaySize(session)
     return true
   }
 
@@ -96,6 +98,8 @@ extension ScreenSharingHostService {
     var lastError: (any Error)?
     for attempt in 0..<Self.displaySettleAttempts {
       if attempt > 0 { try await Task.sleep(for: Self.displaySettleInterval) }
+      guard !session.stopping, !Task.isCancelled else { throw CancellationError() }
+      if followsToAnotherDisplay(session) { await session.displayFollow?.value }
       guard !session.stopping, !Task.isCancelled else { throw CancellationError() }
       guard followDisplay(session) else { continue }
       do {

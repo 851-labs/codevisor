@@ -21,9 +21,13 @@ final class ScreenSharingHostSession {
     set { sharedDisplay.displayID = newValue }
   }
   private(set) var displayIdentity: ScreenSharingDisplayIdentity
+  var displayPixels: ScreenSharingDisplayIdentity.Pixels?
   var configuration: ScreenSharingVideoConfiguration
   private(set) var physicalConfiguration: ScreenSharingVideoConfiguration
   var displaySwitch: ScreenSharingHostDisplaySwitch?
+  var displayFollow: Task<Void, Never>?
+  var captureGeneration = 0
+  var captureStopLeftToFollow: (message: String, generation: Int)?
   var virtualDisplay: ScreenSharingHostVirtualDisplay? {
     didSet { sharedDisplay.virtualDisplayID = virtualDisplay?.displayID }
   }
@@ -69,7 +73,7 @@ final class ScreenSharingHostSession {
   init(
     owner: ScreenSharingHostLease.Owner, request: ServerScreenSharingRequest, display: ServerScreenSharingDisplay,
     displayID: UInt32,
-    viewerEndpointId: String, encoder: ScreenSharingV2EncoderKind,
+    viewerEndpointId: String, encoder: ScreenSharingV2EncoderKind, identity: ScreenSharingDisplayIdentity? = nil,
     displayBounds: @escaping @Sendable (CGDirectDisplayID) -> CGRect = { CGDisplayBounds($0) }
   ) throws {
     self.owner = owner
@@ -77,7 +81,7 @@ final class ScreenSharingHostSession {
     let sharedDisplay = ScreenSharingSharedDisplay(displayID, bounds: displayBounds)
     self.sharedDisplay = sharedDisplay
     injector = ScreenSharingInputInjector(displayBounds: { sharedDisplay.bounds })
-    displayIdentity = ScreenSharingDisplayIdentity(display: displayID)
+    displayIdentity = identity ?? ScreenSharingDisplayIdentity(display: displayID)
     sharedMode = .init(display: displayID)
     capture = ScreenSharingCapture()
     metrics = ScreenSharingMetrics()
@@ -105,15 +109,18 @@ final class ScreenSharingHostSession {
 
   var target: Target { .init(displayID: displayID, identity: displayIdentity, configuration: physicalConfiguration) }
 
-  static func target(_ display: (id: UInt32, description: ServerScreenSharingDisplay)) throws -> Target {
+  static func target(
+    _ display: (id: UInt32, description: ServerScreenSharingDisplay), identity: ScreenSharingDisplayIdentity? = nil
+  ) throws -> Target {
     let configuration = try ScreenSharingV2Profile.captureConfiguration(
       width: display.description.width, height: display.description.height)
-    return .init(displayID: display.id, identity: .init(display: display.id), configuration: configuration)
+    return .init(displayID: display.id, identity: identity ?? .init(display: display.id), configuration: configuration)
   }
 
   func share(_ target: Target) {
     displayID = target.displayID
     displayIdentity = target.identity
+    displayPixels = nil
     sharedMode = .init(display: target.displayID)
     physicalConfiguration = target.configuration
     configuration = target.configuration

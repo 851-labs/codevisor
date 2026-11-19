@@ -64,7 +64,7 @@ extension ScreenSharingHostService {
       return
     }
     guard target.id != session.captureDisplayID, target.id != session.displayID,
-      let next = try? ScreenSharingHostSession.target(target)
+      let next = try? ScreenSharingHostSession.target(target, identity: identity(of: target.id))
     else { return describe(session, among: available) }
 
     let previous = session.target
@@ -88,7 +88,7 @@ extension ScreenSharingHostService {
     indicator.setDisplay(session.display.name)
   }
 
-  private func move(_ session: ScreenSharingHostSession, to target: ScreenSharingHostSession.Target) async throws {
+  func move(_ session: ScreenSharingHostSession, to target: ScreenSharingHostSession.Target) async throws {
     session.ownDisplayChangeUntil = ProcessInfo.processInfo.systemUptime + 10
     defer { session.ownDisplayChangeUntil = ProcessInfo.processInfo.systemUptime + 5 }
     session.control?.releaseHeld()

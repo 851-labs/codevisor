@@ -69,4 +69,27 @@ struct ScreenSharingDisplayPickerTests {
     #expect(fixture.host.completed(.heartbeat) > answered)
     #expect(tab.snapshot.displaySwitch?.phase == .confirmed && savedDisplay(fixture) == FakeHost.second.id)
   }
+
+  @Test("When the host moves to another display by itself, the picker follows and the desktop is sized for it")
+  func followsAHostThatMovedByItself() async throws {
+    let (fixture, tab) = try await liveTab()
+    await awaitObserved { tab.snapshot.control?.phase == .requesting }
+    let endpoint = try #require(tab.snapshot.endpoint)
+    let control = tab.snapshot.control
+    #expect(!endpoint.desktopCanScale)
+    var retina = FakeHost.second
+    retina.scales = [1, 2]
+    retina.defaultWidth = 1280
+    retina.defaultHeight = 720
+    fixture.host.displays = [FakeHost.display, retina]
+
+    fixture.host.shareDisplay(retina.id)
+    await fixture.clock.waitForSleep(Self.heartbeat)
+    fixture.clock.advance(by: Self.heartbeat)
+    await awaitObserved { tab.snapshot.displayId == retina.id && endpoint.resolutionAvailability.available == true }
+
+    #expect(tab.snapshot.connection == .live && tab.snapshot.endpoint == endpoint && tab.snapshot.control == control)
+    #expect(tab.snapshot.displaySwitch == nil && savedDisplay(fixture) == nil, "nothing was picked or saved")
+    #expect(endpoint.desktopCanScale && endpoint.defaultDesktopSize?.width == 1280)
+  }
 }
