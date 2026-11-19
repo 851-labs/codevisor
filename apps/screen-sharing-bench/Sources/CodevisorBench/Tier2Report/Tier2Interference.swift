@@ -19,7 +19,7 @@ struct Tier2Interference: Encodable {
       }
       guard !off.isEmpty, !on.isEmpty else { return nil }
 
-      return Tier2Interference(system: system.rawValue, observed: on, unobserved: off)
+      return Tier2Interference(system: Tier2SystemLabel.of(system), observed: on, unobserved: off)
     }
   }
 

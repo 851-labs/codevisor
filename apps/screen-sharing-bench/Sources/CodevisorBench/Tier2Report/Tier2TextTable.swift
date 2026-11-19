@@ -30,7 +30,7 @@ struct Tier2TextTable {
     ].map(Self.number)
     let oneToOne = analysis.notOneToOneReason.map { "not_1to1: \($0)" } ?? "yes"
     return
-      "| \(measurement.files.directory.lastPathComponent) | \(meta.benchSystem?.rawValue ?? meta.system.rawValue) | "
+      "| \(measurement.files.directory.lastPathComponent) | \(meta.benchSystem.map(Tier2SystemLabel.of) ?? meta.system.rawValue) | "
       + "\(meta.resolutionLabel) | \(meta.viewerDisplay ?? "main") | \(Self.stream(measurement)) | "
       + numbers.joined(separator: " | ")
       + " | \(analysis.textFrames), \(analysis.chromaFrames) | \(oneToOne) |"

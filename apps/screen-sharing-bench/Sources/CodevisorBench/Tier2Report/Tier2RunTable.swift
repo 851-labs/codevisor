@@ -20,7 +20,7 @@ struct Tier2RunTable {
     let cells: [String] = [
       "\(meta.index)", meta.scene, meta.resolutionLabel,
       meta.networkLabel, Tier2NetworkCheck.describe(measurement.files.realizedNetwork),
-      meta.benchSystem?.rawValue ?? meta.system.rawValue,
+      meta.benchSystem.map(Tier2SystemLabel.of) ?? meta.system.rawValue,
       "\(meta.repetition)", Tier2Format.number(measurement.displayPhaseMs), meta.hostObserver ? "on" : "off",
       measurement.files.hostDisplayDuringRun ?? "–",
       Tier2Format.number(quality?.epsilonMs), Tier2Format.number(quality?.residualMs),

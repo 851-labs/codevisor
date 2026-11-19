@@ -42,7 +42,7 @@ struct Tier2V2Table {
       { $0.capacityKbps.map { Double($0) / 1000 } },
     ]
     let cells =
-      [system.rawValue, group.scene, group.resolution, group.network]
+      [Tier2SystemLabel.of(system), group.scene, group.resolution, group.network]
       + [median(runs.compactMap { $0.stagesMs?.encode?.p50 }), median(runs.compactMap { $0.stagesMs?.encode?.p95 })]
       + stages.dropFirst().map { stage in median(runs.compactMap { $0.stagesMs.flatMap(stage)?.p50 }) }
       + counters.map { counter in median(runs.compactMap { $0.media.flatMap(counter) }) }

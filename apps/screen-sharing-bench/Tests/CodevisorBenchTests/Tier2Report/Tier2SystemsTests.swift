@@ -39,6 +39,20 @@ struct Tier2SystemsTests {
     #expect(comparisons.map(\.verdict) == [.appleFaster, .codevisorFaster, .noDifference])
   }
 
+  @Test(arguments: [
+    (BenchSystem.codevisorV2VCP, "| Codevisor, default encoder (VCP) |"),
+    (.codevisorV2, "| Codevisor, fallback encoder (VideoToolbox) |"),
+    (.appleHP, "| Apple HP |"),
+  ])
+  func aTargetTableRowNamesItsSystemAndEncoderInPlainWords(system: BenchSystem, cell: String) throws {
+    let results = [Self.result(system, repetition: 1, imageAgeP50: 30)]
+    let group = try #require(Tier2Group.all(results).first)
+
+    let row = try #require(Tier2SystemRow(group: group, system: system, results: results, encoded: nil))
+
+    #expect(row.text.contains(cell))
+  }
+
   @Test func cpuGapsUnderOnePercentagePointAreNoDifference() throws {
     let results = [(BenchSystem.appleHP, [0.3, 0.3, 0.3]), (.codevisorV2, [0.9, 0.9, 0.9])].flatMap { system, cpu in
       cpu.enumerated().map { index, cpu in

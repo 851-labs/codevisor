@@ -39,7 +39,7 @@ struct Tier2BottomTable {
 
   private func row(_ system: BenchSystem, _ group: Tier2Group, runs: [Tier2Measurement]) -> String {
     let cells: [String] = [
-      group.scene, group.resolution, group.network, system.rawValue,
+      group.scene, group.resolution, group.network, Tier2SystemLabel.of(system),
       median(runs.compactMap { $0.result?.imageAgeMs?.p50 }), median(runs.compactMap { $0.result?.imageAgeMs?.p95 }),
       median(runs.compactMap { $0.bottom?.imageAgeMs?.p50 }), median(runs.compactMap { $0.bottom?.imageAgeMs?.p95 }),
       median(runs.compactMap { $0.bottom?.viewerTornFraction.map { $0 * 100 } }),
