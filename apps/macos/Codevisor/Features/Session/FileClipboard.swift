@@ -26,7 +26,7 @@ enum FileClipboard {
   }
 
   private nonisolated static func freshStagingDirectory() throws -> URL {
-    let root = FileManager.default.temporaryDirectory.appendingPathComponent("codevisor-file-copies", isDirectory: true)
+    let root = CodevisorAppVariant.temporaryURL().appendingPathComponent("codevisor-file-copies", isDirectory: true)
     try? FileManager.default.removeItem(at: root)
     let directory = root.appendingPathComponent(UUID().uuidString, isDirectory: true)
     try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)

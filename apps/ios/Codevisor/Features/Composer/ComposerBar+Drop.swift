@@ -53,7 +53,7 @@ extension ComposerBar {
   }
 
   private nonisolated static func copyDroppedFile(_ url: URL, named name: String) -> URL? {
-    let directory = FileManager.default.temporaryDirectory
+    let directory = CodevisorAppVariant.temporaryURL()
       .appendingPathComponent("ComposerDrops", isDirectory: true)
       .appendingPathComponent(UUID().uuidString, isDirectory: true)
     let destination = directory.appendingPathComponent(name)

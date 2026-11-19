@@ -55,7 +55,6 @@ public final class DeviceLayoutStore: @unchecked Sendable {
   private let lock = NSLock()
   private let persistenceOwner = UUID()
   private var payload: Payload
-  private var allGeneration: UInt64 = 0
   private var machineGenerations: [String: UInt64] = [:]
   private var workspaceGenerations: [UUID: UInt64] = [:]
 
@@ -102,11 +101,11 @@ public final class DeviceLayoutStore: @unchecked Sendable {
   }
 
   func machineGeneration(_ serverId: String) -> UInt64 {
-    lock.withLock { machineGenerations[serverId, default: 0] &+ allGeneration }
+    lock.withLock { machineGenerations[serverId, default: 0] }
   }
 
   func workspaceGeneration(_ workspaceId: UUID) -> UInt64 {
-    lock.withLock { workspaceGenerations[workspaceId, default: 0] &+ allGeneration }
+    lock.withLock { workspaceGenerations[workspaceId, default: 0] }
   }
 
   private func noteChange(workspaceId: UUID, serverIds: [String?]) {
@@ -190,14 +189,6 @@ public final class DeviceLayoutStore: @unchecked Sendable {
       return !gone.isEmpty
     }
     if changed { persist() }
-  }
-
-  public func removeAll() {
-    lock.withLock {
-      payload = Payload()
-      allGeneration &+= 1
-    }
-    persist()
   }
 
   private func persist() {

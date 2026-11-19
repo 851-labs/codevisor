@@ -192,32 +192,6 @@ struct ComposerDefaultsStoreTests {
     #expect(store.loadData(forKey: "composer-defaults-pre-v7-backup") == nil)
   }
 
-  @Test("Clear resets active defaults and removes the migration backups")
-  func clears() {
-    let legacy =
-      #"{"machines":{"local":{"lastHarnessId":"codex","configSelections":{"codex":{"model":"gpt-5.6"}}}},"workspaces":{}}"#
-    let store = InMemoryStore(storage: [
-      "composer-defaults": Data(legacy.utf8),
-      "composer-defaults-pre-v6-backup": Data(legacy.utf8),
-      "composer-defaults-pre-v5-backup": Data(legacy.utf8),
-      "composer-defaults-pre-v4-backup": Data(legacy.utf8),
-      "composer-defaults-pre-v3-backup": Data(legacy.utf8),
-    ])
-    let defaults = ComposerDefaultsStore(store: store)
-    #expect(store.loadData(forKey: "composer-defaults-pre-v7-backup") != nil)
-
-    defaults.clear()
-
-    #expect(defaults.lastHarnessId(for: .newWorkspace(serverId: "local")) == nil)
-    #expect(defaults.configSelections(forHarness: "codex", model: nil).isEmpty)
-    #expect(defaults.lastNewWorkspaceServerId == nil)
-    #expect(store.loadData(forKey: "composer-defaults-pre-v7-backup") == nil)
-    #expect(store.loadData(forKey: "composer-defaults-pre-v6-backup") == nil)
-    #expect(store.loadData(forKey: "composer-defaults-pre-v5-backup") == nil)
-    #expect(store.loadData(forKey: "composer-defaults-pre-v4-backup") == nil)
-    #expect(store.loadData(forKey: "composer-defaults-pre-v3-backup") == nil)
-  }
-
   @Test("Corrupted data decodes as empty and is quarantined, not overwritten")
   func corrupted() throws {
     let directory = FileManager.default.temporaryDirectory

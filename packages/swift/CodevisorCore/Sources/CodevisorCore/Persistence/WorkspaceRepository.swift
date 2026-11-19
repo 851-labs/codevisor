@@ -7,7 +7,6 @@ public protocol WorkspaceRepository: Sendable {
   func save(_ workspace: Workspace)
   func setAutomaticName(_ name: String, forWorkspace workspaceId: UUID)
   func delete(id: UUID)
-  func removeAll()
   func ensureWorkspace(
     for seed: WorkspaceSessionSeed,
     legacyGroups: (any PaneGroupRepository)?
@@ -24,12 +23,6 @@ public extension WorkspaceRepository {
       let mainSessionId = workspace(id: workspaceId)?.mainSessionId
     else { return false }
     return mainSessionId != sessionId
-  }
-
-  func removeAll() {
-    for workspace in loadAll() {
-      delete(id: workspace.id)
-    }
   }
 
   func ephemeralWorkspace(for seed: WorkspaceSessionSeed) -> Workspace {

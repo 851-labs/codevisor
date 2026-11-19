@@ -27,7 +27,7 @@ struct PrivacyDataSettingsScreen: View {
         .foregroundStyle(.red)
       } footer: {
         Text(
-          "Removes this device's paired machines, Codevisor Cloud sign-in, and local state. Nothing on your machines is changed."
+          "Removes everything Codevisor stores on this device, including caches, Codevisor Cloud sign-in, and settings. Nothing on your machines is changed."
         )
       }
     }

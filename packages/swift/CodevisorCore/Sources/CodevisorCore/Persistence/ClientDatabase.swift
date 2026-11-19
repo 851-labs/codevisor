@@ -10,10 +10,6 @@ public struct ClientDatabaseError: Error, LocalizedError, Sendable {
   }
 }
 
-public protocol ClientDataResetting: Sendable {
-  func resetClientData() throws
-}
-
 private let sqliteTransient = unsafeBitCast(-1, to: sqlite3_destructor_type.self)
 
 public final class ClientDatabase: @unchecked Sendable {

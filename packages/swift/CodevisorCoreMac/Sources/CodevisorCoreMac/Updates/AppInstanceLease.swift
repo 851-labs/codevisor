@@ -71,13 +71,15 @@ public final class AppInstanceLease {
     for scope: Scope,
     applicationSupportURL: URL? = nil
   ) -> URL {
+    runtimeDirectory(applicationSupportURL: applicationSupportURL)
+      .appendingPathComponent("app-instance-\(stableHash(scope.lockKey)).lock")
+  }
+
+  public static func runtimeDirectory(applicationSupportURL: URL? = nil) -> URL {
     let support =
       applicationSupportURL
       ?? FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask)[0]
-    return
-      support
-      .appendingPathComponent("Codevisor/Runtime", isDirectory: true)
-      .appendingPathComponent("app-instance-\(stableHash(scope.lockKey)).lock")
+    return support.appendingPathComponent("Codevisor/Runtime", isDirectory: true)
   }
 
   public static func acquire(

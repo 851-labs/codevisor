@@ -59,6 +59,10 @@ final class TerminalSessionCache {
     for key in sessions.keys where key.terminalKey == terminalKey { evict(key) }
   }
 
+  func removeAll() {
+    for key in Array(sessions.keys) { evict(key) }
+  }
+
   private func evictHidden() {
     for (key, session) in sessions where !session.isVisible { evict(key) }
   }

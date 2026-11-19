@@ -182,7 +182,7 @@ public enum AttachmentClipboard {
   }
 
   static func materializeClipboardFile(data: Data, name: String) async -> URL? {
-    let directory = FileManager.default.temporaryDirectory
+    let directory = CodevisorAppVariant.temporaryURL()
       .appendingPathComponent("Codevisor-Clipboard", isDirectory: true)
       .appendingPathComponent(UUID().uuidString, isDirectory: true)
     let lastPathComponent = (name as NSString).lastPathComponent
@@ -216,7 +216,7 @@ struct ShareableAttachment<T: AttachmentShareType>: Transferable {
   static var transferRepresentation: some TransferRepresentation {
     FileRepresentation(exportedContentType: T.contentType) { item in
       let data = try await item.store.data(for: item.file.source)
-      let directory = FileManager.default.temporaryDirectory
+      let directory = CodevisorAppVariant.temporaryURL()
         .appendingPathComponent("Codevisor-Shared-Files", isDirectory: true)
         .appendingPathComponent(UUID().uuidString, isDirectory: true)
       try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)

@@ -263,26 +263,6 @@ public final class ConfigOptionCache {
     }
   }
 
-  public func clear() {
-    let servers = Set(capabilityRevisions.keys)
-      .union(cache.keys)
-      .union(capabilitiesCache.keys)
-    for serverId in servers {
-      capabilityRevisions[serverId, default: 0] &+= 1
-    }
-    for refresh in capabilityRefreshes.values { refresh.task.cancel() }
-    capabilityRefreshes = [:]
-    capabilityValidatedAt = [:]
-    cache = [:]
-    capabilitiesCache = [:]
-    signInRequiredCache = [:]
-    harnessSkillsCache = [:]
-    codevisorSkillsCache = [:]
-    for refresh in codevisorSkillRefreshes.values { refresh.task.cancel() }
-    codevisorSkillRefreshes = [:]
-    persist()
-  }
-
   public func skills(forHarness harnessId: String, onServer serverId: String, cwd: String) -> SessionSkills? {
     harnessSkillsCache[HarnessSkillsKey(serverId: serverId, cwd: cwd, harnessId: harnessId)]
   }

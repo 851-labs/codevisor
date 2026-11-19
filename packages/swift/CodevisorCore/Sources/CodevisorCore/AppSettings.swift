@@ -216,11 +216,6 @@ public final class AppSettingsModel {
     persist()
   }
 
-  public func reset() {
-    settings = AppSettings()
-    persist()
-  }
-
   private func persist() {
     do {
       try store.saveData(JSONEncoder().encode(settings), forKey: key)

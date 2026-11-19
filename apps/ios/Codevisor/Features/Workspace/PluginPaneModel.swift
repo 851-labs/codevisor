@@ -230,6 +230,10 @@ final class PluginPaneCache {
     return model
   }
 
+  func removeAll() {
+    for paneId in Array(models.keys) { remove(paneId: paneId) }
+  }
+
   func remove(paneId: UUID) {
     usageOrder.removeAll { $0 == paneId }
     lastUsed.removeValue(forKey: paneId)

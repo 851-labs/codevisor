@@ -68,17 +68,6 @@ public final class ClientPreferences {
     onLocalChange?(LocalPreferenceChange(key: key, data: nil) { _ in true })
   }
 
-  public func removeAll() {
-    if database != nil {
-      persist { $0.clearAll() }
-      cacheIsComplete = true
-    } else {
-      fallback.removeAll()
-    }
-    cache.removeAll()
-    revision &+= 1
-  }
-
   func store(_ data: Data?, forKey key: String) {
     if database != nil {
       persist { $0.set(data, forKey: key) }
@@ -107,9 +96,9 @@ public final class ClientPreferences {
     change(pending)
     PersistenceEncoding.enqueueLatest(owner: persistenceOwner, key: pending.key) {
       let batch = pending.take()
-      guard batch.clearsAll || !batch.changes.isEmpty else { return }
+      guard !batch.changes.isEmpty else { return }
       do {
-        try database.applyPreferenceChanges(clearingAll: batch.clearsAll, changes: batch.changes)
+        try database.applyPreferenceChanges(batch.changes)
       } catch {
         Log.persistence.error(
           "Failed to save preferences: \(String(describing: error), privacy: .public)"
@@ -147,7 +136,6 @@ struct LocalPreferenceChange {
 
 private final class PendingPreferenceWrites: @unchecked Sendable {
   struct Batch {
-    var clearsAll = false
     var changes: [String: Data?] = [:]
   }
 
@@ -157,10 +145,6 @@ private final class PendingPreferenceWrites: @unchecked Sendable {
 
   func set(_ data: Data?, forKey key: String) {
     lock.withLock { batch.changes[key] = .some(data) }
-  }
-
-  func clearAll() {
-    lock.withLock { batch = Batch(clearsAll: true) }
   }
 
   func take() -> Batch {

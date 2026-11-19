@@ -68,33 +68,14 @@ extension ClientDatabase {
     }
   }
 
-  public func removeAllPreferences() throws {
-    try lock.withLock {
-      try execute("DELETE FROM client_preferences;")
-    }
-  }
-
-  public func applyPreferenceChanges(clearingAll: Bool, changes: [String: Data?]) throws {
+  public func applyPreferenceChanges(_ changes: [String: Data?]) throws {
     try withTransaction {
-      if clearingAll { try removeAllPreferences() }
       for (key, value) in changes {
         if let value {
           try setPreference(value, forKey: key)
         } else {
           try removePreference(forKey: key)
         }
-      }
-    }
-  }
-
-  public func resetClientData() throws {
-    try lock.withLock {
-      try withTransaction {
-        try execute("DELETE FROM client_values;")
-        try execute("DELETE FROM client_preferences;")
-        try execute("DELETE FROM client_quarantine;")
-        try execute("DELETE FROM client_blob_assets;")
-        try execute("DELETE FROM client_metadata;")
       }
     }
   }

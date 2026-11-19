@@ -168,19 +168,6 @@ struct ComposerDraftStoreTests {
     #expect(!FileManager.default.fileExists(atPath: orphan.fileURL.path))
   }
 
-  @Test("clear() wipes pane drafts too")
-  func clearWipesPaneDrafts() {
-    let store = InMemoryStore()
-    let drafts = ComposerDraftStore(store: store)
-    let paneId = UUID()
-    drafts.savePaneDraft(.init(projectId: UUID(), composerText: "x"), forPane: paneId)
-    drafts.saveDraft(.init(projectId: UUID(), composerText: "y"), forServer: "local")
-    drafts.clear()
-    let reloaded = ComposerDraftStore(store: store)
-    #expect(reloaded.draft(forServer: "local") == nil)
-    #expect(reloaded.paneDraft(forPane: paneId) == nil)
-  }
-
   @Test("Persists the complete unsent draft across instances")
   func persistsCompleteDraft() throws {
     let store = InMemoryStore()

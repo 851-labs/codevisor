@@ -91,16 +91,6 @@ public final class ProjectedWorkspaceRepository: WorkspaceRepository, @unchecked
     }
   }
 
-  public func removeAll() {
-    lock.withLock {
-      workspacesById = [:]
-      ordered = []
-      sessionIndex = [:]
-    }
-    layouts.removeAll()
-    onMain { $0.rebuild() }
-  }
-
   public func ensureWorkspace(
     for seed: WorkspaceSessionSeed,
     legacyGroups: (any PaneGroupRepository)?

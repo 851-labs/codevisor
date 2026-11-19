@@ -124,6 +124,10 @@ public final class ScreenSharingDesktops {
     if now.isReady, before?.isReady == false { manager.machineCameOnline(machineId) }
   }
 
+  public func removeAll() {
+    for machineId in Array(models.keys) + Array(watching) { forget(machineId) }
+  }
+
   private func forget(_ machineId: String) {
     models[machineId] = nil
     targetMachines.remove(machineId)

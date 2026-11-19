@@ -4,7 +4,7 @@ public enum CodevisorAppVariant: Sendable {
   public static let productionPort = 49_361
   public static let developmentPort = 49_362
 
-  private static let stashedEnvironmentKey = "dev.launchEnvironment"
+  public static let stashedEnvironmentKey = "dev.launchEnvironment"
 
   private static let resolvedEnvironment: [String: String] = {
     let live = ProcessInfo.processInfo.environment
@@ -115,23 +115,37 @@ public enum CodevisorAppVariant: Sendable {
   }
 
   public static func applicationSupportURL(fileManager: FileManager = .default) -> URL {
+    let root = variantDataURL(fileManager: fileManager)
+    guard isDevelopment else { return createdDirectory(at: root, fileManager: fileManager) }
+    _ = splitDevelopmentClientData
+    return createdDirectory(at: DevelopmentClientDataSplit.clientDirectory(in: root), fileManager: fileManager)
+  }
+
+  public static func temporaryURL(fileManager: FileManager = .default) -> URL {
+    let name = Bundle.main.bundleIdentifier ?? ProcessInfo.processInfo.processName
+    return createdDirectory(
+      at: fileManager.temporaryDirectory.appendingPathComponent(name, isDirectory: true),
+      fileManager: fileManager
+    )
+  }
+
+  private static let splitDevelopmentClientData: Void = DevelopmentClientDataSplit.run(
+    sharedDirectory: variantDataURL(fileManager: .default),
+    fileManager: .default
+  )
+
+  private static func variantDataURL(fileManager: FileManager) -> URL {
     if isDevelopment,
       let override = environment["CODEVISOR_DEV_DATA_DIR"]
         ?? environment["HERDMAN_DEV_DATA_DIR"],
       !override.isEmpty
     {
-      return createdDirectory(
-        at: URL(fileURLWithPath: override, isDirectory: true),
-        fileManager: fileManager
-      )
+      return URL(fileURLWithPath: override, isDirectory: true)
     }
     let base =
       fileManager.urls(for: .applicationSupportDirectory, in: .userDomainMask).first
       ?? Self.homeDirectory(fileManager: fileManager).appendingPathComponent("Library/Application Support")
-    return createdDirectory(
-      at: base.appendingPathComponent(applicationSupportDirectoryName, isDirectory: true),
-      fileManager: fileManager
-    )
+    return base.appendingPathComponent(applicationSupportDirectoryName, isDirectory: true)
   }
 
   public static var developmentBrowserProfilesURL: URL? {
@@ -145,7 +159,7 @@ public enum CodevisorAppVariant: Sendable {
         ?? environment["HERDMAN_DEV_DATA_DIR"],
       !dataDirectory.isEmpty
     else { return nil }
-    return URL(fileURLWithPath: dataDirectory, isDirectory: true)
+    return DevelopmentClientDataSplit.clientDirectory(in: URL(fileURLWithPath: dataDirectory, isDirectory: true))
       .appendingPathComponent("Chromium-v2", isDirectory: true)
   }
 
@@ -183,7 +197,7 @@ public enum CodevisorAppVariant: Sendable {
   }
 
   public static func serverDataDirectoryURL(fileManager: FileManager = .default) -> URL {
-    guard !isDevelopment else { return applicationSupportURL(fileManager: fileManager) }
+    guard !isDevelopment else { return developmentSharedDataURL(fileManager: fileManager) }
     return createdDirectory(
       at: Self.homeDirectory(fileManager: fileManager)
         .appendingPathComponent(".codevisor/data", isDirectory: true),
@@ -201,12 +215,16 @@ public enum CodevisorAppVariant: Sendable {
         fileManager: fileManager
       )
     }
-    guard !isDevelopment else { return applicationSupportURL(fileManager: fileManager) }
+    guard !isDevelopment else { return developmentSharedDataURL(fileManager: fileManager) }
     return createdDirectory(
       at: Self.homeDirectory(fileManager: fileManager)
         .appendingPathComponent(".codevisor/logs", isDirectory: true),
       fileManager: fileManager
     )
+  }
+
+  private static func developmentSharedDataURL(fileManager: FileManager) -> URL {
+    createdDirectory(at: variantDataURL(fileManager: fileManager), fileManager: fileManager)
   }
 
   private static func homeDirectory(fileManager: FileManager) -> URL {

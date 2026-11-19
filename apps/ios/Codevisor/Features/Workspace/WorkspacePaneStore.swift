@@ -48,6 +48,10 @@ final class WorkspacePaneStore {
     return decoded
   }
 
+  func removeAll() {
+    cache = [:]
+  }
+
   func save(_ state: PaneGroupState, for workspaceId: UUID) {
     cache[workspaceId] = state
     if let data = try? JSONEncoder().encode(state) {

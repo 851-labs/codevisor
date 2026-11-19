@@ -13,6 +13,14 @@ public enum KeychainCredentialServices {
     scopedService(productionService: productionCloud)
   }
 
+  public static var browserSafeStorage: String {
+    "\(Bundle.main.bundleIdentifier ?? "com.851labs.Codevisor").browser.safe-storage"
+  }
+
+  public static var all: [String] {
+    [machine, cloud, browserSafeStorage]
+  }
+
   private static func scopedService(productionService: String) -> String {
     scopedService(
       productionService: productionService,

@@ -9,7 +9,7 @@ public struct ComposerAttachmentFileStore: Sendable, Equatable {
 
   public static func temporary() -> ComposerAttachmentFileStore {
     ComposerAttachmentFileStore(
-      root: FileManager.default.temporaryDirectory
+      root: CodevisorAppVariant.temporaryURL()
         .appendingPathComponent("CodevisorComposerAttachments-\(UUID().uuidString)", isDirectory: true)
     )
   }

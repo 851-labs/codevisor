@@ -34,6 +34,18 @@ struct CloudAccountSignOutTests {
     #expect(client.removals.isEmpty)
   }
 
+  @Test("Deleting this device's data signs the app out but keeps this machine on the account")
+  func forgettingTheSessionKeepsAppManagedMachine() async throws {
+    let (controller, client, localServer) = await makeSignedInWithLocalServer()
+
+    controller.forgetSessionOnThisDevice()
+    await controller.localRegistration.deregistrationTask?.value
+
+    #expect(!controller.state.isSignedIn)
+    #expect(localServer.disconnects == 0)
+    #expect(client.removals.isEmpty)
+  }
+
   @Test("Signing in replaces an app registration the cloud has refused")
   func signInReplacesRefusedAppRegistration() async throws {
     let (_, _, localServer) = await makeSignedInWithLocalServer(

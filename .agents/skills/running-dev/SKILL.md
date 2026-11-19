@@ -172,8 +172,9 @@ because its packages add a few seconds to every boot.
   answers when it is up. The port is derived from the worktree path; the
   next free one is used when it is taken, and the "is listening on" line has
   the real one.
-- **Data and logs:** `tmp/.codevisor/data` (server database, app state,
-  sign-in, and the Mac app's browser profiles in `Chromium-v2`) and
+- **Data and logs:** `tmp/.codevisor/data` (the server's database and data;
+  the Mac app's own state, sign-in, and browser profiles are in its `Client`
+  folder, which the app's "Delete app data" removes) and
   `tmp/.codevisor/logs/server.log`. Dev Cloud's are under `tmp/remote-cloud`.
 - **Folders agents work in** (worktrees, bots, and no-project chats the dev
   app creates): `~/.codevisor-development/instances/<worktree hash>/codevisor`,

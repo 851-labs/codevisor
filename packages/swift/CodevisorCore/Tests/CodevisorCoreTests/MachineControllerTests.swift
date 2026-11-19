@@ -45,7 +45,7 @@ struct MachineControllerTests {
 
     let (controller, _, _) = makeController(store: store)
     #expect(controller.selectedMachineId == "cloud:dev-1")
-    controller.resetSelection()
+    controller.handleCloudAccountSignedOut()
 
     let persistedData = try #require(store.loadData(forKey: "machines"))
     let persisted = try #require(JSONSerialization.jsonObject(with: persistedData) as? [String: Any])

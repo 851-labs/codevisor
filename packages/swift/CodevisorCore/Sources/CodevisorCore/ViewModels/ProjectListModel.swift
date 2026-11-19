@@ -124,10 +124,6 @@ public final class ProjectListModel {
     navigationStore?.withdrawExpectedSession(session.id, machineId: session.serverId)
   }
 
-  public func removeAll() {
-    for project in projects where project.serverId == CodevisorMachine.local.id { removeProject(project) }
-  }
-
   @discardableResult
   public func markSessionRead(
     _ sessionId: UUID,

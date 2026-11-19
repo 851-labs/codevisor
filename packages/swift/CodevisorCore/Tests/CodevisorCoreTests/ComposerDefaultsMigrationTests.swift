@@ -69,12 +69,6 @@ struct ComposerDefaultsMigrationTests {
     #expect(defaults.lastHarnessId(for: .newWorkspace(serverId: "local")) == "claude-code")
     #expect(store.loadData(forKey: "composer-defaults") == data)
     #expect(store.loadData(forKey: "composer-defaults-pre-v7-backup") == nil)
-
-    defaults.clear()
-    PersistenceEncoding.drain()
-    let cleared = try #require(store.loadData(forKey: "composer-defaults"))
-    let object = try #require(JSONSerialization.jsonObject(with: cleared) as? [String: Any])
-    #expect(object["version"] as? Int == 7)
   }
 
   @Test("Migrates V5: machine defaults survive, workspace profiles are dropped")

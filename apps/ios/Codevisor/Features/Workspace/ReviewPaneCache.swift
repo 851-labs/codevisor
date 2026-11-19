@@ -16,6 +16,10 @@ final class ReviewPaneCache {
     return model
   }
 
+  func removeAll() {
+    for paneId in Array(models.keys) { remove(paneId: paneId) }
+  }
+
   func remove(paneId: UUID) {
     models.removeValue(forKey: paneId)
     order.removeAll { $0 == paneId }

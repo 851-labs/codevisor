@@ -221,6 +221,19 @@ final class ChatControllerCache {
     }
   }
 
+  func removeAll() {
+    for controller in Array(controllers.values) + Array(draftsByServer.values) {
+      controller.onScrollStateChange = nil
+      controller.model?.shutdown()
+    }
+    for key in Array(slots.keys) { setController(nil, for: key) }
+    controllers = [:]
+    draftsByServer = [:]
+    scrollStates = [:]
+    todoExpansionStates = [:]
+    accessOrder = []
+  }
+
   private func evictIfNeeded() {
     var idle = accessOrder.filter { key in
       guard let controller = controllers[key] else { return false }
