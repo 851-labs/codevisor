@@ -1,5 +1,6 @@
 import type Database from "better-sqlite3"
 
+import { markDeferredArchiveDue } from "./deferred-archives.js"
 import type { JsonRecord } from "./event-payloads.js"
 import { integer, nullable, rowReader, text } from "./row-reader.js"
 import type { SessionEventRow } from "./rows.js"
@@ -53,6 +54,7 @@ export const recordTurnEnd = (
 
 export const announceFinishedTurn = (sqlite: Database.Database, sessionId: string): void => {
   sqlite.prepare(turnFinishSql.markFinished).run(sessionId)
+  markDeferredArchiveDue(sqlite, sessionId)
 }
 
 export const finishedTurn = (

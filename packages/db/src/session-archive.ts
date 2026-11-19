@@ -1,10 +1,15 @@
 import type Database from "better-sqlite3"
 import type { Effect } from "effect"
 
+import {
+  forgetDeferredArchive,
+  forgetDeferredArchivesIn,
+  type DeferredArchivesService
+} from "./deferred-archives.js"
 import type { DatabaseError } from "./errors.js"
 import { retireSessionTurn, retireWorkspaceTurns } from "./session-turn-retire.js"
 
-export interface SessionStandingService {
+export interface SessionStandingService extends DeferredArchivesService {
   readonly retireSessionTurn: (id: string) => Effect.Effect<void, DatabaseError>
   readonly archiveSession: (id: string) => Effect.Effect<void, DatabaseError>
   readonly detachSession: (id: string) => Effect.Effect<void, DatabaseError>
@@ -23,6 +28,7 @@ export const followWorkspaceArchive = (
 ): void => {
   if (change.to === null) sqlite.prepare(archiveSql.restoreWith).run(workspaceId, change.from)
   else sqlite.prepare(archiveSql.archiveWith).run(change.to, workspaceId)
+  forgetDeferredArchivesIn(sqlite, workspaceId)
   retireWorkspaceTurns(sqlite, workspaceId, changedAt)
 }
 
@@ -32,6 +38,7 @@ export const archiveSession = (
   changedAt: string
 ): void => {
   sqlite.prepare(archiveSql.archive).run(changedAt, sessionId)
+  forgetDeferredArchive(sqlite, sessionId)
   retireSessionTurn(sqlite, sessionId, changedAt)
 }
 

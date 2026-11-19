@@ -11,6 +11,7 @@ import type {
 } from "@codevisor/api"
 import { PromptRequest } from "@codevisor/api"
 
+import { cancelDeferredArchivesFor } from "../deferred-archives.js"
 import { archivedChatRefusal, HttpFailure, readSchema, run, writeJson } from "../server-context.js"
 import type { CodevisorServerServices, RouteState } from "../server-context.js"
 import { botForChat, postBotMessage } from "./bot-turns.js"
@@ -63,6 +64,7 @@ export const sendPrompt = async (route: RouteContext, sessionId: string): Promis
     sentByAgent
   })
   const queueItem = await enqueue(payload.text, "user")
+  if (sentByAgent === undefined) await cancelDeferredArchivesFor(services, sessionId)
   if (bot !== undefined) await mirrorToBot(route, sessionId, queueItem, payload, attachments)
 
   const outcome = await deliverPrompt(route, sessionId, queueItem, payload, sentByAgent)

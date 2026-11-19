@@ -198,7 +198,7 @@ Examples:
 - When you're done with an agent you started, call `agent.archive()`: once you have a shared helper's reply, or once a separate agent's work is merged or no longer needed. It stops if still running, you stop getting its events, and its chat is archived: it takes no more messages and its tab closes.
   - Cleanup depends on where it ran. A `"shared"` helper ran in your checkout, so nothing on disk changes. A `"worktree"` agent's worktree is reclaimed when nothing else uses it: tracked and untracked files are kept as a restorable snapshot and everything else in the folder, ignored files included, is deleted. The project folder itself is never touched. Files already sent in a chat stay with that chat.
   - It releases the branch name, so push or open the PR first if the branch should stay.
-- You can't archive yourself.
+- To archive yourself or your own workspace when the user asks ("all done? archive this workspace"), call `workspace.archive()` (your workspace and every agent in it) or `agents.archive({ agentId })` with your own id (just your chat if you are a helper in someone else's workspace). It returns at once with `scheduled: true` and runs after your turn ends, the same as the user's archive, so finish your reply and end your turn. If the user sends a message first, it is cancelled.
 
 ## Agents that stand alone
 

@@ -96,6 +96,23 @@ describe("agents.archive", () => {
   })
 })
 
+describe("workspaces.archive_own", () => {
+  it("archives the caller's own workspace, naming the caller so it waits for the turn to end", async () => {
+    const requests = fakeServer()
+
+    const archived = await call(local, "workspaces.archive_own", {})
+
+    expect(archived).toEqual({ workspaceId: "own-workspace", archived: false, scheduled: true })
+    expect(requests.map(({ method, path, body }) => [method, path, body])).toEqual([
+      ["GET", "/v1/sessions/caller", undefined],
+      ["POST", "/v1/workspaces/own-workspace/archive", { callerAgentId: "caller" }]
+    ])
+    await expect(call(remote, "workspaces.archive_own", {})).rejects.toThrow(
+      "workspace.archive only works for agents on your own machine"
+    )
+  })
+})
+
 describe("agent subscriptions", () => {
   it("subscribes, lists, and unsubscribes as the caller with agent-named fields", async () => {
     const requests = fakeServer()

@@ -7,7 +7,7 @@ export const codevisorToolScopes = (
 
 const onMachineObjects = new Set(["files.read", "machines.list"])
 const onMachineObjectGroups = new Set(["shell", "clients"])
-const onWorkspaceGlobal = /^workspaces\.mirror/
+const onWorkspaceGlobal = /^workspaces\.(mirror|archive_own$)/
 
 const chatGroups = new Set(["context", "events", "jobs", "messages", "bot"])
 const chatTools = new Set([

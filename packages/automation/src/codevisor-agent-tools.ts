@@ -1,6 +1,7 @@
 import {
   AgentList,
   ArchivedAgent,
+  ArchivedWorkspace,
   DetachedAgent,
   AgentState,
   DEFAULT_SESSION_WAIT_TIMEOUT_MS,
@@ -32,6 +33,9 @@ const SubscribeArgs = Schema.Struct({
 })
 const UnsubscribeArgs = Schema.Struct({ subscriptionId: Schema.String })
 const NoArgs = Schema.Struct({})
+const OwnWorkspace = Schema.Struct({
+  session: Schema.Struct({ workspaceId: Schema.optional(Schema.String) })
+})
 const WaitArgs = Schema.Struct({
   agentIds: Schema.Array(Schema.String),
   until: Schema.optional(Schema.Array(AgentState)),
@@ -57,7 +61,7 @@ export const codevisorAgentTools: ReadonlyArray<AgentTool> = [
   ),
   agentTool(
     "agents.archive",
-    'Archive an agent you started once you have what you need from it or its work is merged, and wait until it is done. It stops if still running, you stop getting its events, and its chat is archived: it takes no more messages and its tab closes. Cleanup depends on where it ran. A shared helper (checkout: "shared") ran in your checkout, so nothing on disk changes. A worktree agent\'s worktree is reclaimed when nothing else uses it: the branch name is released, tracked and untracked files are kept as a restorable snapshot, and everything else in the folder, ignored files included, is deleted, so push or open the PR first if the branch should stay. The project folder itself is never touched. If the archive fails, this call fails and nothing is removed. Refuses yourself.',
+    "Archive an agent you started once you have what you need from it or its work is merged, and wait until it is done. It stops if still running, you stop getting its events, and its chat is archived: it takes no more messages and its tab closes. Cleanup depends on where it ran. A shared helper (checkout: \"shared\") ran in your checkout, so nothing on disk changes. A worktree agent's worktree is reclaimed when nothing else uses it: the branch name is released, tracked and untracked files are kept as a restorable snapshot, and everything else in the folder, ignored files included, is deleted, so push or open the PR first if the branch should stay. The project folder itself is never touched. If the archive fails, this call fails and nothing is removed. Pass your own agentId to archive yourself: it returns at once with scheduled: true and happens after your turn ends, the same as when the user archives you (as your workspace's main chat, your whole workspace and every agent in it); end your turn right after, and a new message from the user first cancels it.",
     AgentIdArgs,
     (tool, args) => archiveAgent(tool, Schema.decodeUnknownSync(AgentIdArgs)(args).agentId)
   ),
@@ -91,6 +95,12 @@ export const codevisorAgentTools: ReadonlyArray<AgentTool> = [
     "Wait inside this call until any listed agent reaches one of the until states (default idle, waitingForUser, errored). Returns every listed agent's state (background work an agent left running doesn't count as working, and an idle one with queued messages hasn't settled) and pendingQuestion, and timedOut when none matched in time. timeoutMs defaults to 60000, is capped at 300000, and shrinks to fit this execute call's budget (clampedToMs). For anything longer than a minute or two, end your turn and let the event arrive instead.",
     WaitArgs,
     (tool, args) => waitForAgents(tool, Schema.decodeUnknownSync(WaitArgs)(args))
+  ),
+  agentTool(
+    "workspaces.archive_own",
+    "Archive your own workspace, the same as when the user archives it from the sidebar: every agent in it is archived and its worktree is reclaimed. It returns at once with scheduled: true and happens after your turn ends, so end your turn right after. A new message from the user first cancels it.",
+    NoArgs,
+    (tool) => archiveOwnWorkspace(tool)
   ),
   agentTool(
     "agents.debug.transcript",
@@ -140,6 +150,24 @@ const detachAgent = async (tool: AgentToolContext, agentId: string): Promise<unk
   Schema.decodeUnknownSync(DetachedAgent)(
     await tool.api("POST", `/v1/agents/${encodeURIComponent(agentId)}/detach`, { body: {} })
   )
+
+const archiveOwnWorkspace = async (tool: AgentToolContext): Promise<unknown> => {
+  const callerAgentId = localCallerId(tool, "workspace.archive")
+  const workspaceId = await workspaceOf(tool, callerAgentId)
+  return Schema.decodeUnknownSync(ArchivedWorkspace)(
+    await tool.api("POST", `/v1/workspaces/${encodeURIComponent(workspaceId)}/archive`, {
+      body: { callerAgentId }
+    })
+  )
+}
+
+const workspaceOf = async (tool: AgentToolContext, agentId: string): Promise<string> => {
+  const { workspaceId } = Schema.decodeUnknownSync(OwnWorkspace)(
+    await tool.api("GET", `/v1/sessions/${encodeURIComponent(agentId)}`)
+  ).session
+  if (workspaceId === undefined) throw new Error("This chat has no workspace to archive")
+  return workspaceId
+}
 
 const archiveCaller = (tool: AgentToolContext) => {
   if (hasNoLocalChat(tool.context.sessionId)) return {}
