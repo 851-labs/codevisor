@@ -207,6 +207,32 @@ describe("plugin consent and publisher blocks", () => {
     }
   })
 
+  it("accepts the consent older apps send, with every tool description, and stores only the summary", async () => {
+    const token = await devLogin()
+    const tools = Array.from({ length: 83 }, (_, index) => ({
+      name: `tool_${index}`,
+      description: "A long tool description. ".repeat(12)
+    }))
+    const fromOlderApp = { ...consent, metadata: { ...metadata, tools, panes: [] } }
+    const oversizedReport = { ...report, details: "x".repeat(9000) }
+
+    expect(JSON.stringify(fromOlderApp).length).toBeGreaterThan(20_000)
+    expect((await send("/api/plugins/consent", token, fromOlderApp)).status).toBe(200)
+    expect((await send("/api/plugins/reports", token, oversizedReport)).status).toBe(413)
+    const index = await send("/api/plugins/index", token, undefined, "GET")
+
+    expect(await index.json()).toEqual({
+      entries: [
+        {
+          ...metadata,
+          id: "app.linear/linear",
+          consentKey: consent.consentKey,
+          url: "https://www.codevisor.dev/plugins/app.linear%2Flinear"
+        }
+      ]
+    })
+  })
+
   it("lists consented plugins in the account index with universal links", async () => {
     const token = await devLogin()
     const custom = { ...consent, pluginId: "custom:mcp.example.com", consentKey: "b".repeat(64) }

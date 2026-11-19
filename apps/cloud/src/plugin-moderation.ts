@@ -16,10 +16,16 @@ export const supportedAgeRating = 16
 export const reportsPerHour = 20
 
 const maxBodyBytes = 8192
+const maxConsentBodyBytes = 262_144
+const consentPath = "/api/plugins/consent"
 
 export const pluginModeration = new Hono<ModerationEnv>()
 
-pluginModeration.use("/api/plugins/*", bodyLimit({ maxSize: maxBodyBytes }))
+pluginModeration.use(consentPath, bodyLimit({ maxSize: maxConsentBodyBytes }))
+pluginModeration.use("/api/plugins/*", (c, next) => {
+  if (c.req.path === consentPath) return next()
+  return bodyLimit({ maxSize: maxBodyBytes })(c, next)
+})
 pluginModeration.use("/api/plugins/*", async (c, next) => {
   c.header("Cache-Control", "no-store")
   const userId = await sessionUserId(c)
@@ -47,7 +53,7 @@ pluginModeration.get("/api/plugins/preferences", async (c) => {
   return c.json({ blockedPublishers, consents })
 })
 
-pluginModeration.post("/api/plugins/consent", async (c) => {
+pluginModeration.post(consentPath, async (c) => {
   const consent = ConsentRequest.safeParse(await readBody(c.req.raw))
   if (!consent.success) return c.json({ error: "invalid consent" }, 400)
 
