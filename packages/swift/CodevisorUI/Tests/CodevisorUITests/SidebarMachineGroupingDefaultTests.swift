@@ -8,7 +8,7 @@ import Testing
 @testable import CodevisorUI
 
 @MainActor
-@Suite("SidebarMachineGroupingDefault")
+@Suite("SidebarMachineGroupingDefault", .timeLimit(.minutes(1)))
 struct SidebarMachineGroupingDefaultTests {
   @Test("Going from one machine to two groups the sidebar by machine; sandboxes don't count")
   func secondMachineGroupsByMachine() async {
