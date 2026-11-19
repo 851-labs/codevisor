@@ -12,7 +12,7 @@ public struct SandboxProviderSection<Row: View>: View {
     provider: ServerSandboxProvider,
     model: SandboxSettingsModel,
     sheet: Binding<SandboxSettingsSheet?>,
-    onDelete: @escaping () -> Void = {},
+    onDelete: @escaping () -> Void,
     @ViewBuilder row: @escaping (ServerSandboxProfile) -> Row
   ) {
     self.provider = provider
@@ -42,6 +42,9 @@ public struct SandboxProviderSection<Row: View>: View {
         }
       } footer: {
         SettingsListActions {
+          Button("Delete…", role: .destructive, action: onDelete)
+            .buttonStyle(.bordered)
+            .help("Delete this provider and its profiles")
           Button("Edit Provider…", action: edit)
           Button("Add Profile…", action: addProfile)
         }

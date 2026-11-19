@@ -30,15 +30,14 @@ struct SandboxesSettingsScreen: View {
     .environment(\.defaultMinListRowHeight, SandboxProviderTitleRow.height)
     .overlay {
       if model.hasNothingSetUp {
-        SandboxEmptyState { sheet = .newProvider }
+        SandboxEmptyState()
       }
     }
     .navigationTitle("Sandboxes")
     .navigationBarTitleDisplayMode(.inline)
     .toolbar {
       ToolbarItem(placement: .topBarTrailing) {
-        Button("Add Provider", systemImage: "plus") { sheet = .newProvider }
-          .labelStyle(.iconOnly)
+        SandboxAddProviderButton(isPrimary: model.hasNothingSetUp) { sheet = .newProvider }
           .disabled(!model.hasLoaded)
       }
     }

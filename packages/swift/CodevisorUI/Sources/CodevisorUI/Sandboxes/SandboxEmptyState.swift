@@ -3,9 +3,9 @@ import SwiftUI
 public struct SandboxEmptyState: View {
   private static let opticalCenter = 0.4
 
-  let onAdd: () -> Void
+  let onAdd: (() -> Void)?
 
-  public init(onAdd: @escaping () -> Void) {
+  public init(onAdd: (() -> Void)? = nil) {
     self.onAdd = onAdd
   }
 
@@ -23,8 +23,10 @@ public struct SandboxEmptyState: View {
     } description: {
       Text("Add a provider to run chats in a sandbox.")
     } actions: {
-      Button("Add Provider…", action: onAdd)
-        .buttonStyle(.borderedProminent)
+      if let onAdd {
+        Button("Add Provider…", action: onAdd)
+          .buttonStyle(.borderedProminent)
+      }
     }
   }
 }

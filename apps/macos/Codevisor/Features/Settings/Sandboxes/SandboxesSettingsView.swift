@@ -6,6 +6,7 @@ struct SandboxesSettingsView: View {
   @Environment(AppEnvironment.self) private var environment
   let model: SandboxSettingsModel
   @State private var sheet: SandboxSettingsSheet?
+  @State private var deleting: ServerSandboxProvider?
 
   private var router: SettingsRouter { SettingsRouter.shared }
 
@@ -18,7 +19,7 @@ struct SandboxesSettingsView: View {
       if model.hasNothingSetUp {
         SandboxEmptyState { sheet = .newProvider }
       } else {
-        Form { SandboxProviderSections(model: model, sheet: $sheet) }
+        Form { SandboxProviderSections(model: model, sheet: $sheet, deleting: $deleting) }
           .formStyle(.grouped)
       }
     }
@@ -27,6 +28,7 @@ struct SandboxesSettingsView: View {
         .disabled(!model.hasLoaded)
     }
     .modifier(SandboxSettingsSheets(sheet: $sheet, model: model, client: client))
+    .modifier(SandboxProviderDeletion(provider: $deleting, model: model, client: client))
     .alert("Couldn’t change sandboxes", isPresented: errorShown) {
       Button("OK", role: .cancel) {}
     } message: {
