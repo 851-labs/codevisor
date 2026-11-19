@@ -164,6 +164,16 @@ final class TerminalFocusController {
     return composer
   }
 
+  func focusComposerAfterAddToChat(forChat sessionId: UUID) {
+    guard let composer = chatComposers[sessionId]?.view, composer.isEditable,
+      let window = composer.window, window.attachedSheet == nil, NSApp.modalWindow == nil,
+      window.makeFirstResponder(composer)
+    else { return }
+    let end = NSRange(location: (composer.string as NSString).length, length: 0)
+    composer.setSelectedRange(end)
+    composer.scrollRangeToVisible(end)
+  }
+
   func typeIntoComposer(_ event: NSEvent, forChat sessionId: UUID) {
     focusComposerText(forChat: sessionId)?.keyDown(with: event)
   }

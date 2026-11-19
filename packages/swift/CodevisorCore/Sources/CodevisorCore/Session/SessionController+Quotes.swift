@@ -8,6 +8,7 @@ extension SessionController {
     quote.sentAt = quote.sentAt ?? sentAt(ofMessage: quote.messageID)
     transcriptPickSignal &+= 1
     composerQuotes.append(quote)
+    addToChatSignal &+= 1
   }
 
   public func removeQuote(id: String) {

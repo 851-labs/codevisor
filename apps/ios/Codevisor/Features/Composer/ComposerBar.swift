@@ -246,6 +246,7 @@ struct ComposerBar: View {
       text = newValue
       selection = NSRange(location: (newValue as NSString).length, length: 0)
     }
+    .onChange(of: controller.addToChatSignal) { focusEditorAfterAddToChat() }
     .onChange(of: controller.isEditingQueuedPrompt) { _, isEditing in
       goalEditFocusRequest = isEditing ? UUID() : nil
     }

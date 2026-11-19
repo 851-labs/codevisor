@@ -141,6 +141,11 @@ extension ComposerBar {
     }
   }
 
+  func focusEditorAfterAddToChat() {
+    selection = NSRange(location: (text as NSString).length, length: 0)
+    focusEditorFromPreview()
+  }
+
   func updateEditorFocus(_ isFocused: Bool) {
     guard isEditorFocused != isFocused else { return }
     if isEditorFocused == nil {

@@ -27,9 +27,11 @@ extension SessionController {
       let fileURL = try files.stage(data: try await data(), id: id, name: name)
       return LoadedAttachmentFile(fileURL: fileURL, name: name, mimeType: mimeType, kind: .image)
     }
-    if attached == nil {
+    guard attached != nil else {
       status = .failed("A message can carry at most \(ComposerAttachments.maxAttachments) attachments.")
+      return
     }
+    addToChatSignal &+= 1
   }
 
   private static func imageName(_ name: String, mimeType: String) -> String {
