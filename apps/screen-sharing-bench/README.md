@@ -251,6 +251,19 @@ fails at once if its peer ended without running the bench. `report` merges which
 uploads `tier2-tamale-retry` or `tier2-croissant-retry`), and runs only when both sides did. The hello rendezvous below starts only once both
 jobs are paired.
 
+**The Codevisor app (851-4433).** croissant is also a real Codevisor screen sharing host, so the Codevisor Mac app is
+usually open there, and C5 refuses to measure while another app is open ("other apps are open: Codevisor"). Once a host
+or viewer job is paired and has its build, it quits the app (`scripts/codevisor-app.sh quit`), and a step that runs
+however the job ends reopens it (`codevisor-app.sh reopen`). `quit-apps --bundle-ids <id>,… --record <file>` asks with
+`NSRunningApplication.terminate()`, the quit event the Dock's Quit sends: Codevisor closes its sessions and skips its
+quit confirmation for it, and the bench needs no Automation grant. It fails when an app is still running after
+`--timeout` seconds (60). The apps to reopen are written to the record
+(`~/Library/Application Support/CodevisorBench/reopen-apps.txt`) before they are asked to quit, and the record is
+removed only after `open` has started them again, so a job that died in between leaves it for the next Tier 2 job on
+that Mac. The Mac's Codevisor server is a separate LaunchAgent (`com.851labs.Codevisor.ServerAgent`) that the app
+leaves running when it quits and adopts when it opens; both steps print its pid. Tier 1, the PR gate and the encoder
+lab run the same C5 check on tamale and don't quit the app: it isn't kept open there.
+
 Why this rule: replaying the minis' jobs from both repositories over 3 November 2026, 16:00 to 02:00 UTC, for a
 dispatch every 5 minutes:
 

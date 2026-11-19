@@ -24,6 +24,7 @@ enum BenchCommands {
     HostRunCommand.self,
     EncoderReleaseCommand.self,
     VCPLevelsCommand.self,
+    QuitAppsCommand.self,
   ]
 
   static func named(_ name: String) -> (any BenchCommand.Type)? {
