@@ -217,9 +217,11 @@ test("native artifacts are built through turbo and the Swift framework is linked
   const link = await ensureSwiftFramework(repoRoot, environment)
   await ensureSwiftFramework(repoRoot, environment)
 
+  const linuxAddon = `build:node:linux-${process.arch}`
+  const hostBuiltIt = hostTarget() === `linux-${process.arch}`
   assert.deepEqual(await turboRuns(), [
     `built build:node:${hostTarget()}`,
-    `built build:node:linux-${process.arch}`,
+    `${hostBuiltIt ? "reused" : "built"} ${linuxAddon}`,
     "built build:swift",
     "reused build:swift"
   ])
