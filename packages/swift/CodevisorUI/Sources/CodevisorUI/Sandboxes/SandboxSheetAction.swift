@@ -3,7 +3,6 @@ import SwiftUI
 extension EnvironmentValues {
   @Entry var sandboxSheetCancel: SandboxSheetAction?
   @Entry var sandboxSheetBack: SandboxSheetAction?
-  @Entry var sandboxSheetIsCovered = false
 }
 
 struct SandboxSheetAction: Sendable {

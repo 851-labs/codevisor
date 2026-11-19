@@ -12,6 +12,7 @@
     private let onCancel: () -> Void
     private let onBack: (() -> Void)?
     private let onContinue: () -> Void
+    private let onDelete: (() -> Void)?
     private let stepsInCard: Bool
     private let icon: AnyView?
     private let steps: Steps
@@ -27,6 +28,7 @@
       onCancel: @escaping () -> Void,
       onBack: (() -> Void)? = nil,
       onContinue: @escaping () -> Void,
+      onDelete: (() -> Void)? = nil,
       stepsInCard: Bool = true,
       icon: AnyView? = nil,
       @ViewBuilder steps: () -> Steps
@@ -41,6 +43,7 @@
       self.onCancel = onCancel
       self.onBack = onBack
       self.onContinue = onContinue
+      self.onDelete = onDelete
       self.stepsInCard = stepsInCard
       self.icon = icon
       self.steps = steps()
@@ -80,6 +83,11 @@
         HStack {
           Button(cancelTitle, action: onCancel)
             .keyboardShortcut(.cancelAction)
+          if let onDelete {
+            Button("Delete", role: .destructive, action: onDelete)
+              .foregroundStyle(.red)
+              .disabled(status != nil)
+          }
           Spacer()
           if let status {
             SheetActivityLabel(status)

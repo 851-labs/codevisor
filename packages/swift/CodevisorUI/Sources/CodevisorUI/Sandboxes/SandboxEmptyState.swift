@@ -3,9 +3,9 @@ import SwiftUI
 public struct SandboxEmptyState: View {
   private static let opticalCenter = 0.4
 
-  let onAdd: () -> Void
+  let onAdd: (() -> Void)?
 
-  public init(onAdd: @escaping () -> Void) {
+  public init(onAdd: (() -> Void)? = nil) {
     self.onAdd = onAdd
   }
 
@@ -19,12 +19,14 @@ public struct SandboxEmptyState: View {
 
   private var content: some View {
     ContentUnavailableView {
-      Label("No Sandbox Profiles", systemImage: "shippingbox")
+      Label("No Sandbox Providers", systemImage: "shippingbox")
     } description: {
-      Text("Add a profile to run chats in a sandbox.")
+      Text("Add a provider to run chats in a sandbox.")
     } actions: {
-      Button("Add Profile…", action: onAdd)
-        .buttonStyle(.borderedProminent)
+      if let onAdd {
+        Button("Add Provider…", action: onAdd)
+          .buttonStyle(.borderedProminent)
+      }
     }
   }
 }

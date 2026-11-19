@@ -5,7 +5,8 @@ import SwiftUI
 struct SandboxesSettingsView: View {
   @Environment(AppEnvironment.self) private var environment
   let model: SandboxSettingsModel
-  @State private var adding = false
+  @State private var sheet: SandboxSettingsSheet?
+  @State private var deleting: ServerSandboxProvider?
 
   private var router: SettingsRouter { SettingsRouter.shared }
 
@@ -13,26 +14,21 @@ struct SandboxesSettingsView: View {
     environment.machines.client(for: CodevisorMachine.local.id)
   }
 
-  private var isEmpty: Bool {
-    model.hasLoaded && model.profiles.isEmpty
-  }
-
   var body: some View {
     Group {
-      if isEmpty {
-        SandboxEmptyState { adding = true }
+      if model.hasNothingSetUp {
+        SandboxEmptyState { sheet = .newProvider }
       } else {
-        Form { profilesSection }
+        Form { SandboxProviderSections(model: model, sheet: $sheet, deleting: $deleting) }
           .formStyle(.grouped)
       }
     }
     .settingsAddToolbarItem {
-      SettingsAddButton("Add Profile") { adding = true }
+      SettingsAddButton("Add Provider") { sheet = .newProvider }
         .disabled(!model.hasLoaded)
     }
-    .sheet(isPresented: $adding) {
-      SandboxNewProfileSheet(model: model, client: client)
-    }
+    .modifier(SandboxSettingsSheets(sheet: $sheet, model: model, client: client))
+    .modifier(SandboxProviderDeletion(provider: $deleting, model: model, client: client))
     .alert("Couldn’t change sandboxes", isPresented: errorShown) {
       Button("OK", role: .cancel) {}
     } message: {
@@ -40,18 +36,6 @@ struct SandboxesSettingsView: View {
     }
     .task(id: reloadKey) {
       await model.load(from: client, machines: reachableMachines)
-    }
-  }
-
-  private var profilesSection: some View {
-    Section {
-      ForEach(model.profiles) { profile in
-        NavigationLink(value: SettingsPaneRoute.sandbox(.editProfile(profileId: profile.id))) {
-          SandboxProfileRow(profile: profile)
-        }
-      }
-    } header: {
-      Text("Profiles")
     }
   }
 
@@ -68,7 +52,7 @@ struct SandboxesSettingsView: View {
 
   private var errorShown: Binding<Bool> {
     Binding(
-      get: { model.errorMessage != nil && router.panePath.isEmpty && !adding },
+      get: { model.errorMessage != nil && router.panePath.isEmpty && sheet == nil },
       set: { if !$0 { model.errorMessage = nil } }
     )
   }

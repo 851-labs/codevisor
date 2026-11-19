@@ -1,27 +1,15 @@
 import CodevisorCore
 import SwiftUI
 
-public struct SandboxNewProfileSheet: View {
+struct SandboxNewProfileSheet: View {
   @Environment(\.dismiss) private var dismiss
   let model: SandboxSettingsModel
   let client: any CodevisorServerClienting
-  @State private var providerId: String?
-  @State private var addingProvider: Bool
+  let provider: ServerSandboxProvider
 
-  public init(model: SandboxSettingsModel, client: any CodevisorServerClienting) {
-    self.model = model
-    self.client = client
-    _providerId = State(initialValue: model.providers.first?.id)
-    _addingProvider = State(initialValue: model.providers.isEmpty)
-  }
-
-  public var body: some View {
+  var body: some View {
     stack
       .environment(\.sandboxSheetCancel, SandboxSheetAction { dismiss() })
-      .environment(\.sandboxSheetIsCovered, addingProvider)
-      .sheet(isPresented: $addingProvider, onDismiss: closeWithoutProvider) {
-        SandboxProviderSheet(model: model, client: client) { providerId = $0.id }
-      }
       .onDisappear { model.errorMessage = nil }
   }
 
@@ -36,26 +24,8 @@ public struct SandboxNewProfileSheet: View {
 
   @ViewBuilder
   private var page: some View {
-    if let provider = model.provider(providerId), let vendor = model.vendor(provider.vendor) {
-      SandboxNewProfilePage(
-        model: model, client: client, provider: provider, vendor: vendor, providerId: chosenProvider,
-        onNewProvider: { addingProvider = true }, onAdded: { dismiss() })
-    } else {
-      SandboxSettingsForm(title: "New Profile") {
-        Section {
-          SandboxProviderPicker(model: model, providerId: chosenProvider) { addingProvider = true }
-        }
-      }
+    if let vendor = model.vendor(provider.vendor) {
+      SandboxNewProfilePage(model: model, client: client, provider: provider, vendor: vendor) { dismiss() }
     }
-  }
-
-  private var chosenProvider: Binding<String> {
-    Binding(get: { providerId ?? "" }, set: { providerId = $0 })
-  }
-
-  private func closeWithoutProvider() {
-    guard model.provider(providerId) == nil else { return }
-
-    dismiss()
   }
 }

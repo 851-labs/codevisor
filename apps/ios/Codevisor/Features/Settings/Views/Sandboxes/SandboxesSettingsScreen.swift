@@ -6,7 +6,8 @@ struct SandboxesSettingsScreen: View {
   @Environment(AppEnvironment.self) private var environment
   let model: SandboxSettingsModel
   let navigate: (SandboxSettingsNavigation) -> Void
-  @State private var adding = false
+  @State private var sheet: SandboxSettingsSheet?
+  @State private var deleting: ServerSandboxProvider?
 
   static func machineId(in machines: MachineController) -> String {
     if machines.availability(for: machines.selectedMachineId) == .ready { return machines.selectedMachineId }
@@ -18,34 +19,30 @@ struct SandboxesSettingsScreen: View {
     environment.machines.client(for: Self.machineId(in: environment.machines))
   }
 
-  private var isEmpty: Bool {
-    model.hasLoaded && model.profiles.isEmpty
-  }
-
   var body: some View {
-    Group {
-      if isEmpty {
-        SandboxEmptyState { adding = true }
-      } else {
-        List {
-          SandboxProfilesList(model: model) { navigate(.push(.editProfile(profileId: $0.id))) }
+    List {
+      if !model.hasNothingSetUp {
+        SandboxProviderSections(model: model, sheet: $sheet, deleting: $deleting) {
+          navigate(.push(.editProfile(profileId: $0.id)))
         }
+      }
+    }
+    .environment(\.defaultMinListRowHeight, SandboxProviderTitleRow.height)
+    .overlay {
+      if model.hasNothingSetUp {
+        SandboxEmptyState()
       }
     }
     .navigationTitle("Sandboxes")
     .navigationBarTitleDisplayMode(.inline)
     .toolbar {
-      if !isEmpty {
-        ToolbarItem(placement: .topBarTrailing) {
-          Button("Add Profile", systemImage: "plus") { adding = true }
-            .labelStyle(.iconOnly)
-            .disabled(!model.hasLoaded)
-        }
+      ToolbarItem(placement: .topBarTrailing) {
+        SandboxAddProviderButton(isPrimary: model.hasNothingSetUp) { sheet = .newProvider }
+          .disabled(!model.hasLoaded)
       }
     }
-    .sheet(isPresented: $adding) {
-      SandboxNewProfileSheet(model: model, client: client)
-    }
+    .modifier(SandboxSettingsSheets(sheet: $sheet, model: model, client: client))
+    .modifier(SandboxProviderDeletion(provider: $deleting, model: model, client: client))
     .task(id: reloadKey) {
       await model.load(from: client, machines: reachableMachines.map(sandboxMachine))
     }
