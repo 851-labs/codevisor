@@ -137,6 +137,7 @@ final public class SessionController {
   public internal(set) var userSendSignal = 0
   public internal(set) var queueSendSignal = 0
   public internal(set) var transcriptPickSignal = 0
+  public internal(set) var addToChatSignal = 0
   public var transcriptRevealRequest: TranscriptRevealRequest?
   public var quoteRevealRequest: TranscriptQuoteRevealRequest?
   public internal(set) var userSendAnimationRequest: UserSendAnimationRequest?

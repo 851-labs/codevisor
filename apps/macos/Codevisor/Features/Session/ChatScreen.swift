@@ -94,6 +94,7 @@ struct ChatScreen: View {
 
         presentationSurface.ensureScrollView().holdViewportForComposerChange()
       }
+      .focusesComposerAfterAddToChat(controller, focus: focus)
       .overlay { initialLoadingOverlay }
       .overlay(alignment: .bottom) { bottomChromeOverlay }
       .overlay(alignment: .topTrailing) { findBarOverlay }
