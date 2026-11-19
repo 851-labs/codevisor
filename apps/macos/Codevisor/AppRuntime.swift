@@ -26,8 +26,9 @@ final class AppRuntime {
   }
 
   private static var startsFresh: Bool {
-    !AppPreview.isRunning
-      && ClientStorageBootstrap.startsFresh(directory: CodevisorAppVariant.applicationSupportURL())
+    guard !AppPreview.isRunning else { return false }
+    return DeviceDataDeletion.isPending
+      || ClientStorageBootstrap.startsFresh(directory: CodevisorAppVariant.applicationSupportURL())
   }
 
   private static func makeRuntime(
@@ -36,6 +37,7 @@ final class AppRuntime {
     instanceLease: AppInstanceLease?
   ) -> (environment: AppEnvironment, updater: SparkleUpdateController?, isFirstLaunch: Bool) {
     let environment = AppEnvironment.live(storage: storage)
+    environment.onDeleteAllData = { DeviceDataDeletion.relaunchIntoDeletion() }
     environment.syncClientPreferences(SyncedPreferences.keys)
     environment.syncFeatureFlags()
     if !CodevisorAppVariant.isDevelopment && !StandaloneServerPreference.isEnabled {

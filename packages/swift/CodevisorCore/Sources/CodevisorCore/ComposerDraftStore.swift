@@ -204,13 +204,6 @@ public final class ComposerDraftStore {
     persistPaneMetadata(immediately: true)
   }
 
-  public func clear() {
-    let serverIds = Array(drafts.keys)
-    for serverId in serverIds { clearDraft(forServer: serverId) }
-    let paneIds = Array(paneDrafts.keys)
-    for paneId in paneIds { clearPaneDraft(forPane: paneId) }
-  }
-
   public func removeUnreferencedAttachmentFiles() {
     let referenced = Set(
       (Array(drafts.values) + Array(paneDrafts.values)).flatMap { $0.attachments.map(\.id) })

@@ -44,23 +44,6 @@ struct ClientPreferencesTests {
     #expect(try database.preference(forKey: "sidebar") == nil)
   }
 
-  @Test("Clearing everything is ordered before later changes, in memory and in SQLite")
-  func removeAllThenSet() throws {
-    let (database, directory) = try makeDatabase()
-    defer { try? FileManager.default.removeItem(at: directory) }
-    let preferences = ClientPreferences(database: database)
-    preferences.set(1, forKey: "old")
-    PersistenceEncoding.drain()
-
-    preferences.removeAll()
-    preferences.set(2, forKey: "new")
-    #expect(preferences.valueIfPresent(forKey: "old", as: Int.self) == nil)
-    #expect(preferences.value(forKey: "new", default: 0) == 2)
-
-    PersistenceEncoding.drain()
-    #expect(try database.allPreferences() == ["new": JSONEncoder().encode(2)])
-  }
-
   @Test("Preloaded preferences answer every read without the database")
   func preloadedReadsDoNotWaitForTheDatabase() async throws {
     let (database, directory) = try makeDatabase()
@@ -85,17 +68,6 @@ struct ClientPreferencesTests {
 
     #expect(modeReader.hasFired)
     #expect(!groupingReader.hasFired)
-  }
-
-  @Test("Clearing every preference invalidates readers of any key")
-  func removeAllInvalidatesEveryReader() {
-    let preferences = ClientPreferences()
-    preferences.set("chat", forKey: "sidebar.mode")
-    let reader = observeChanges { _ = preferences.value(forKey: "sidebar.mode", default: "code") }
-
-    preferences.removeAll()
-
-    #expect(reader.hasFired)
   }
 
   private func observeChanges(_ read: () -> Void) -> ObservedChange {

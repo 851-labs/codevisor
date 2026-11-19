@@ -27,7 +27,7 @@ struct FileMediaPreview: View {
         let bytes = try await FileDocumentLocation.data(path: path, client: client)
         try Task.checkCancellation()
         let hash = SHA256.hash(data: bytes).map { String(format: "%02x", $0) }.joined()
-        let directory = FileManager.default.temporaryDirectory.appendingPathComponent("CodevisorFilePreview/\(hash)")
+        let directory = CodevisorAppVariant.temporaryURL().appendingPathComponent("CodevisorFilePreview/\(hash)")
         try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
         let target = directory.appendingPathComponent(FileDocumentLocation.name(path))
         try bytes.write(to: target, options: .atomic)

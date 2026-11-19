@@ -122,6 +122,10 @@ public final class CloudAccountController {
     endSession(deregisterLocalMachine: false)
   }
 
+  public func forgetSessionOnThisDevice() {
+    endSession(deregisterLocalMachine: false)
+  }
+
   public func refreshMachines() async {
     await performMachineRefresh()
   }

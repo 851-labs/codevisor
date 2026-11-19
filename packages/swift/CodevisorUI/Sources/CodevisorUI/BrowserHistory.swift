@@ -12,6 +12,10 @@ public final class BrowserHistory {
 
   public init(defaults: UserDefaults? = .standard) { self.defaults = defaults }
 
+  public func forgetLoaded() {
+    profiles = [:]
+  }
+
   public func visits(profile: String) -> [Visit] {
     if let cached = profiles[profile] { return cached }
     let saved =

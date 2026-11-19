@@ -16,6 +16,7 @@ struct CodevisorApp: App {
   init() {
     _environment = State(initialValue: nil)
     _startupError = State(initialValue: nil)
+    AppDeviceDataTeardown.register()
   }
 
   var body: some Scene {
@@ -112,6 +113,17 @@ struct CodevisorApp: App {
     return environment
   }
 
+  private func deleteDeviceData() {
+    do {
+      try DeviceDataWipe(scope: .appContainer()).schedule()
+    } catch {
+      startupError = error.localizedDescription
+      return
+    }
+    hasCompletedBootstrap = false
+    environment = nil
+  }
+
   private func retryStartup() {
     startupError = nil
     Task { await startEnvironmentIfNeeded() }
@@ -123,11 +135,14 @@ struct CodevisorApp: App {
     startupInProgress = true
     defer { startupInProgress = false }
     do {
+      await DeviceDataWipe(scope: .appContainer()).runIfPending()
       let directory = URL.applicationSupportDirectory
         .appendingPathComponent("Codevisor", isDirectory: true)
       let storage = try await ClientStorageBootstrap.openAsync(directory: directory)
       RetiredChildDisclosure.clear()
-      environment = Self.makeEnvironment(storage: storage)
+      let environment = Self.makeEnvironment(storage: storage)
+      environment.onDeleteAllData = deleteDeviceData
+      self.environment = environment
       startupError = nil
     } catch {
       startupError = error.localizedDescription

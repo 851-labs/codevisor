@@ -3,11 +3,6 @@ import Foundation
 public protocol PaneGroupRepository: Sendable {
   func load(sessionId: UUID?) -> PaneGroupState?
   func save(_ state: PaneGroupState, sessionId: UUID?)
-  func removeAll()
-}
-
-public extension PaneGroupRepository {
-  func removeAll() {}
 }
 
 public final class DefaultPaneGroupRepository: PaneGroupRepository, @unchecked Sendable {
@@ -36,19 +31,6 @@ public final class DefaultPaneGroupRepository: PaneGroupRepository, @unchecked S
       } catch {
         Log.persistence.error(
           "Failed to save \(self.key, privacy: .public): \(String(describing: error), privacy: .public)")
-      }
-    }
-  }
-
-  public func removeAll() {
-    lock.withLock {
-      cache = [:]
-      do {
-        try store.removeData(forKey: key)
-      } catch {
-        Log.persistence.error(
-          "Failed to clear \(self.key, privacy: .public): \(String(describing: error), privacy: .public)"
-        )
       }
     }
   }

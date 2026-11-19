@@ -180,20 +180,6 @@ public final class ComposerDefaultsStore {
     updates()
   }
 
-  public func clear() {
-    defaults = ComposerDefaults()
-    preservesNewerPayload = false
-    for backupKey in [migrationBackupKey] + retiredBackupKeys {
-      do {
-        try store.removeData(forKey: backupKey)
-      } catch {
-        Log.persistence.error(
-          "Failed to remove \(backupKey, privacy: .public): \(String(describing: error), privacy: .public)")
-      }
-    }
-    persist()
-  }
-
   private func backupAndPersistMigratedPayload(_ data: Data) {
     if store.loadData(forKey: migrationBackupKey) == nil {
       do {

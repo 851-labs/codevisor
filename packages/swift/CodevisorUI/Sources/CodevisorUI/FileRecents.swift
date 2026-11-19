@@ -10,6 +10,10 @@ public final class FileRecents {
 
   public init(defaults: UserDefaults? = .standard) { self.defaults = defaults }
 
+  public func forgetLoaded() {
+    scopes = [:]
+  }
+
   public func paths(machineId: String, root: String) -> [String] {
     let scope = Self.scope(machineId: machineId, root: root)
     if let cached = scopes[scope] { return cached }

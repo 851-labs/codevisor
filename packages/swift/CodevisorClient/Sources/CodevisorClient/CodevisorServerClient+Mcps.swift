@@ -165,7 +165,7 @@ extension CodevisorServerClient {
 
   private func writeBrowserExtensionDownload(_ data: Data, filename: String) throws -> URL {
     let port = config.baseURL.port.map(String.init) ?? "default"
-    let directory = FileManager.default.temporaryDirectory
+    let directory = CodevisorAppVariant.temporaryURL()
       .appendingPathComponent("Codevisor Browser Extension-\(port)", isDirectory: true)
     try FileManager.default.createDirectory(
       at: directory,

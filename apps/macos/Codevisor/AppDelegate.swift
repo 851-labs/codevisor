@@ -22,6 +22,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
   func applicationDidFinishLaunching(_ notification: Notification) {
     guard appInstanceLease != nil else { return }
+    DeviceDataDeletion.finishIfPending()
     Task { @MainActor in await AppRuntime.shared.startIfNeeded() }
   }
 

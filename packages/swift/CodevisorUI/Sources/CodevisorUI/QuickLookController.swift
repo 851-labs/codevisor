@@ -144,7 +144,7 @@ public final class QuickLookController {
     name: String,
     mimeType: String
   ) throws -> (directory: URL, file: URL) {
-    let directory = FileManager.default.temporaryDirectory
+    let directory = CodevisorAppVariant.temporaryURL()
       .appendingPathComponent("Codevisor-QuickLook", isDirectory: true)
       .appendingPathComponent(UUID().uuidString, isDirectory: true)
     try FileManager.default.createDirectory(

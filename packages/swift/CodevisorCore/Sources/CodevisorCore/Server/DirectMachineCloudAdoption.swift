@@ -78,12 +78,6 @@ public final class DirectMachineCloudAdoption {
     }
   }
 
-  public func reset() {
-    for machine in pending { try? removeToken(machine.id) }
-    pending = []
-    persist()
-  }
-
   private func register(_ machine: PendingDirectMachine, cloud: any CloudMachineProviding) async -> String? {
     let token = machine.legacyToken ?? (try? readToken(machine.id)) ?? nil
     let client = clientFactory(CodevisorServerConfig(baseURL: machine.baseURL, bearerToken: token))

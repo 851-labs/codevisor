@@ -90,7 +90,7 @@ extension CodevisorGhosttyApp {
   }
 
   private static func writeOverrideConfig(systemIsDark: Bool?) -> String? {
-    let url = FileManager.default.temporaryDirectory.appendingPathComponent("codevisor-ghostty.conf")
+    let url = CodevisorAppVariant.temporaryURL().appendingPathComponent("codevisor-ghostty.conf")
     var contents = """
       font-size = \(terminalFontSize)
       crash-report = false

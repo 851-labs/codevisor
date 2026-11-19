@@ -9,24 +9,25 @@ struct DataDeletionSection: View {
   var body: some View {
     Section("Data") {
       SettingsDeletionRow(
-        title: "Delete all data",
-        description: "Removes all projects, chats, and settings, then restarts setup."
+        title: "Delete app data",
+        description:
+          "Removes everything this app stores on this Mac, including caches, sign-in, and settings, then restarts Codevisor. Projects and chats on your machines aren't changed."
       ) {
         Button("Delete…", role: .destructive) {
           isConfirmingDeletion = true
         }
       }
       .confirmationDialog(
-        "Delete all Codevisor data?",
+        "Delete Codevisor's app data on this Mac?",
         isPresented: $isConfirmingDeletion,
         titleVisibility: .visible
       ) {
-        Button("Delete everything", role: .destructive) {
+        Button("Delete and Restart", role: .destructive) {
           environment.deleteAllData()
         }
         Button("Cancel", role: .cancel) {}
       } message: {
-        Text("This can't be undone. You'll be taken back through setup.")
+        Text("This can't be undone. Codevisor will restart signed out, with default settings.")
       }
     }
   }

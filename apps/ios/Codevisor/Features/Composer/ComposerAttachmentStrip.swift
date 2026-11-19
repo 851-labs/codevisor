@@ -172,7 +172,7 @@ nonisolated private struct PickedMediaFile: Transferable {
 
   static var transferRepresentation: some TransferRepresentation {
     FileRepresentation(importedContentType: .data) { received in
-      let directory = FileManager.default.temporaryDirectory
+      let directory = CodevisorAppVariant.temporaryURL()
         .appendingPathComponent("ComposerAttachments", isDirectory: true)
         .appendingPathComponent(UUID().uuidString, isDirectory: true)
       try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)

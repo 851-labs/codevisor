@@ -41,7 +41,7 @@ nonisolated enum WorkspaceFileDragItem {
   }
 
   private static func stagingDirectory() throws -> URL {
-    let directory = FileManager.default.temporaryDirectory
+    let directory = CodevisorAppVariant.temporaryURL()
       .appendingPathComponent("codevisor-file-drags", isDirectory: true)
       .appendingPathComponent(UUID().uuidString, isDirectory: true)
     try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)

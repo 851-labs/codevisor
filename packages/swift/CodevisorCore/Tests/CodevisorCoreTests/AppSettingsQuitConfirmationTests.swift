@@ -44,14 +44,4 @@ struct AppSettingsQuitConfirmationTests {
     #expect(AppSettingsModel(store: store).confirmBeforeClosingWorkingChat == false)
     #expect(AppSettingsModel(store: store).confirmBeforeQuitting)
   }
-
-  @Test("Deleting all data restores the confirmation")
-  @MainActor
-  func resetRestoresDefault() {
-    let store = InMemoryStore()
-    let model = AppSettingsModel(store: store)
-    model.setConfirmBeforeQuitting(false)
-    model.reset()
-    #expect(model.confirmBeforeQuitting)
-  }
 }

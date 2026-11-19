@@ -30,6 +30,7 @@ public final class AppEnvironment {
   @ObservationIgnored var projectRecommendationCache: [String: [ProjectRecommendation]] = [:]
   @ObservationIgnored var failedDialRefresh = CloudRosterRefreshThrottle()
   @ObservationIgnored public var onSessionStateChanged: ((ChatSession, Int?) -> Void)?
+  @ObservationIgnored public var onDeleteAllData: (@MainActor () -> Void)?
   @ObservationIgnored var clientPreferenceSync: ClientPreferenceSync?
   @ObservationIgnored var featureFlagSync: FeatureFlagSync?
   @ObservationIgnored let harnessNotices = HarnessNoticeCenter()
@@ -43,7 +44,6 @@ public final class AppEnvironment {
   var harnessCatalogRevisions: [String: UInt64] = [:]
   var mcpStateRevisions: [String: UInt64] = [:]
   public internal(set) var pluginAccountsRevision: UInt64 = 0
-  private let clientDataResetter: (any ClientDataResetting)?
   let preferences: ClientPreferences
   public let now: @MainActor () -> Date
 
@@ -94,7 +94,6 @@ public final class AppEnvironment {
     self.composerDrafts = composerDrafts ?? ComposerDraftStore(store: InMemoryStore())
     self.settings = settings
     self.localServer = localServer
-    self.clientDataResetter = machineStore as? any ClientDataResetting
     self.machines = MachineController(
       store: machineStore,
       projectList: projectList,
@@ -238,29 +237,15 @@ public final class AppEnvironment {
   public func deleteAllData() {
     Analytics.setEnabled(false)
     Diagnostics.setEnabled(false)
-    projectList.removeAll()
-    configCache.clear()
-    composerDefaults.clear()
-    composerDrafts.clear()
-    paneGroups.removeAll()
-    workspaces.removeAll()
-    machines.resetSelection()
-    directMachineAdoption.reset()
-    cloud.signOut()
-    preferences.removeAll()
-    do {
-      try clientDataResetter?.resetClientData()
-    } catch {
-      Log.persistence.error(
-        "Failed to clear client SQLite data: \(String(describing: error), privacy: .public)"
-      )
-    }
-    setLocalNetworkAccess(.unasked)
-    settings.reset()
-    Analytics.setEnabled(settings.shareAnalytics)
-    Diagnostics.setEnabled(settings.shareCrashReports)
-    appUpdate.setAllowsAlphaUpdates(settings.alphaUpdatesEnabled)
-    projectList.showsImportedSessions = settings.importExternalSessions
+    stopForDeviceDataDeletion()
+    onDeleteAllData?()
+  }
+
+  private func stopForDeviceDataDeletion() {
+    networkPath.onOnlineChange = nil
+    configSync.stopPeriodicSweep()
+    machines.stopEventSync()
+    cloud.forgetSessionOnThisDevice()
   }
 
   public func setShareAnalytics(_ enabled: Bool) {

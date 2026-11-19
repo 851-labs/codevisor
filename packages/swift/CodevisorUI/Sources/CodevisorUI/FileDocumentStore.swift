@@ -16,18 +16,27 @@ public final class FileDocumentStore {
 
   init(capacity: Int = 32) { self.capacity = capacity }
 
+  static var draftsDirectory: URL {
+    CodevisorAppVariant.applicationSupportURL().appendingPathComponent("FileDrafts", isDirectory: true)
+  }
+
   public func document(machineId: String, path: String, client: any CodevisorServerClienting) -> FileDocumentModel {
     let key = machineId + ":" + path
     return document(key: key) {
       let hash = SHA256.hash(data: Data(key.utf8)).map { String(format: "%02x", $0) }.joined()
-      let draftURL = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask).first?
-        .appendingPathComponent("Codevisor/FileDrafts/\(hash).json")
+      let draftURL = Self.draftsDirectory.appendingPathComponent("\(hash).json")
       return FileDocumentModel(
         path: path, draftURL: draftURL,
         read: { try await FileDocumentLocation.read(path: path, client: client) },
         write: { try await client.saveDocument(path: path, content: $0, version: $1) },
         create: { try await client.createDocument(path: path, content: $0) })
     }
+  }
+
+  public func removeAll() {
+    documents = [:]
+    retained = [:]
+    accessOrder = []
   }
 
   func document(key: String, make: () -> FileDocumentModel) -> FileDocumentModel {

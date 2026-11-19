@@ -14,8 +14,7 @@ public final class TranscriptPageCache: @unchecked Sendable {
   }
 
   public static let shared = TranscriptPageCache(
-    directory: FileManager.default.urls(for: .cachesDirectory, in: .userDomainMask)[0]
-      .appendingPathComponent("transcripts", isDirectory: true))
+    directory: CodevisorAppVariant.cacheURL().appendingPathComponent("transcripts", isDirectory: true))
 
   public func load(machineId: String, sessionId: UUID) async -> Data? {
     let url = fileURL(machineId: machineId, sessionId: sessionId)
@@ -45,10 +44,6 @@ public final class TranscriptPageCache: @unchecked Sendable {
   public func remove(machineId: String, sessionId: UUID) {
     let url = fileURL(machineId: machineId, sessionId: sessionId)
     queue.async { [self] in try? fileManager.removeItem(at: url) }
-  }
-
-  public func removeAll() {
-    queue.async { [self] in try? fileManager.removeItem(at: directory) }
   }
 
   private func fileURL(machineId: String, sessionId: UUID) -> URL {

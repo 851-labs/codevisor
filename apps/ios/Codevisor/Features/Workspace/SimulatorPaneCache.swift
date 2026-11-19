@@ -16,6 +16,10 @@ final class SimulatorPaneCache {
     return model
   }
 
+  func removeAll() {
+    for paneId in Array(models.keys) { remove(paneId: paneId) }
+  }
+
   func remove(paneId: UUID) {
     models.removeValue(forKey: paneId)?.closed()
     order.removeAll { $0 == paneId }

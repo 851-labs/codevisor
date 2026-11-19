@@ -22,6 +22,10 @@ final class BrowserPaneCache {
     return model
   }
 
+  func removeAll() {
+    for paneId in Array(models.keys) { remove(paneId: paneId) }
+  }
+
   func remove(paneId: UUID) {
     evictModel(paneId: paneId)
   }

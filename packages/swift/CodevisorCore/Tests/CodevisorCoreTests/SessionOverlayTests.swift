@@ -95,27 +95,6 @@ struct SessionOverlayTests {
     #expect(model.sessions.first { $0.id == session.id }?.agentSessionId == "agent-123")
   }
 
-  @Test("deleteAllData wipes data and re-triggers onboarding")
-  func deleteAllData() {
-    let environment = AppEnvironment.preview()
-    environment.configCache.store([], forHarness: "claude-code", onServer: "local")
-    environment.setAlphaUpdatesEnabled(true)
-    #expect(environment.settings.hasCompletedOnboarding)
-    #expect(environment.appUpdate.allowsAlphaUpdates)
-    #expect(!environment.projectList.projects.isEmpty)
-
-    environment.deleteAllData()
-
-    #expect(environment.projectList.projects.isEmpty)
-    #expect(environment.projectList.sessions.isEmpty)
-    #expect(environment.configCache.options(forHarness: "claude-code", onServer: "local").isEmpty)
-    #expect(!environment.settings.hasCompletedOnboarding)
-    #expect(environment.settings.shareAnalytics)
-    #expect(environment.settings.shareCrashReports)
-    #expect(!environment.settings.alphaUpdatesEnabled)
-    #expect(!environment.appUpdate.allowsAlphaUpdates)
-  }
-
   @Test("SessionImporter fetches across ready harnesses")
   func importer() async {
     let importer = SessionImporter(harnessService: FakeImportService())

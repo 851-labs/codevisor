@@ -206,11 +206,6 @@ public final class MachineController {
     persist()
   }
 
-  public func resetSelection() {
-    registry = MachineRegistry()
-    persist()
-  }
-
   func persist() {
     do {
       try store.saveData(JSONEncoder().encode(registry.normalized()), forKey: key)

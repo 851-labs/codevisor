@@ -88,28 +88,6 @@ struct ClientDatabaseTests {
     try database.assertHealthy()
   }
 
-  @Test("Reset clears user rows but preserves migration history")
-  func resetPreservesMigrationHistory() throws {
-    let directory = temporaryDirectory()
-    defer { try? FileManager.default.removeItem(at: directory) }
-
-    let database = try ClientDatabase(
-      url: directory.appendingPathComponent(ClientDatabase.fileName)
-    )
-    try database.migrate()
-    try database.beginDataMigration(id: 99, name: "test marker")
-    try database.completeDataMigration(id: 99)
-    try database.setValue(Data("value".utf8), forKey: "projects")
-    try database.setPreference(Data("preference".utf8), forKey: "sidebar.order")
-
-    try SQLitePersistenceStore(database: database).resetClientData()
-
-    #expect(try database.value(forKey: "projects") == nil)
-    #expect(try database.preference(forKey: "sidebar.order") == nil)
-    #expect(try database.dataMigrationState(id: 99) == "completed")
-    try database.assertHealthy()
-  }
-
   @Test("Draft attachment bytes use the managed asset directory")
   func attachmentAssets() throws {
     let directory = temporaryDirectory()
@@ -135,9 +113,6 @@ struct ClientDatabaseTests {
           .appendingPathComponent("ClientAssets/DraftAttachments/\(key).json")
           .path
       ))
-
-    try store.resetClientData()
-    #expect(store.loadData(forKey: key) == nil)
     try database.assertHealthy()
   }
 

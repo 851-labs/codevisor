@@ -2,7 +2,6 @@ import Foundation
 
 public final class SQLitePersistenceStore:
   PersistenceStore,
-  ClientDataResetting,
   @unchecked Sendable
 {
   public let database: ClientDatabase
@@ -39,15 +38,10 @@ public final class SQLitePersistenceStore:
       )
     }
   }
-
-  public func resetClientData() throws {
-    try database.resetClientData()
-  }
 }
 
 public final class ClientPersistenceStore:
   PersistenceStore,
-  ClientDataResetting,
   @unchecked Sendable
 {
   public static let assetDirectoryName = "ClientAssets"
@@ -118,18 +112,6 @@ public final class ClientPersistenceStore:
 
   public func flushBlobWrites() {
     blobs.flushPendingWrites()
-  }
-
-  public func resetClientData() throws {
-    blobs.flushPendingWrites()
-    if fileManager.fileExists(atPath: blobDirectory.path) {
-      try fileManager.removeItem(at: blobDirectory)
-    }
-    try fileManager.createDirectory(
-      at: blobDirectory,
-      withIntermediateDirectories: true
-    )
-    try database.resetClientData()
   }
 
   private static func isBlobKey(_ key: String) -> Bool {
