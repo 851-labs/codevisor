@@ -4,7 +4,6 @@ import SwiftUI
 
 struct PluginLinkRouting: ViewModifier {
   @Environment(AppEnvironment.self) private var environment
-  @Environment(\.openURL) private var openURL
   @Binding var catalogId: String?
   @State private var entry: ServerPluginCatalogEntry?
   @State private var errorMessage: String?
@@ -17,7 +16,7 @@ struct PluginLinkRouting: ViewModifier {
     content
       .task(id: catalogId) { await open() }
       .sheet(item: $entry) { entry in
-        PluginInstallSheet(entry: entry, client: client) { values in try await install(entry, values: values) }
+        PluginConnectSheet(entry: entry, client: client, host: host(for: entry))
           .environment(environment)
       }
       .alert(
@@ -41,12 +40,15 @@ struct PluginLinkRouting: ViewModifier {
     }
   }
 
-  private func install(_ entry: ServerPluginCatalogEntry, values: [String: ServerConfigFieldValue]) async throws {
-    let catalog = PluginCatalogModel(client: client)
-    let installed = try await catalog.install(entry, values: values, access: environment.pluginAccess)
-    guard installed.awaitsAuthorization else { return }
-
-    let flow = try await client.startMcpOAuth(id: installed.id)
-    if let url = URL(string: flow.authorizationUrl) { openURL(url) }
+  private func host(for entry: ServerPluginCatalogEntry) -> PluginConnectHost {
+    PluginConnectHost(
+      install: { values, authType in
+        try await PluginCatalogModel(client: client).install(
+          entry, values: values, authType: authType, access: environment.pluginAccess)
+      },
+      didInstall: { _ in },
+      signIn: nil,
+      signInFailed: { errorMessage = $0 }
+    )
   }
 }

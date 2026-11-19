@@ -46,436 +46,436 @@
         "tools": [
           {
             "name": "get_attachment",
-            "description": "Get attachment",
+            "description": "Retrieve an issue attachment by ID. Use format=url to get its title and download URL without fetching the file content. Linear upload URLs are signed for five minutes; call again to refresh. External URLs are returned unchanged. Files embedded in comments have no issue attachment ID; use the URLs in list_comments attachments instead. Download and process documents with your own file tools.",
             "effects": "read"
           },
           {
             "name": "prepare_attachment_upload",
-            "description": "Prepare attachment upload",
+            "description": "Prepare a direct Linear file upload for an existing issue.\nUploaded files appear in the issue's Resources; they are not native Linear Documents. To embed a file in Markdown without adding it to an issue's Resources, use prepare_file_upload instead. For written findings or proposals, prefer updating the issue description or using save_document with issue to create an editable Linear Document, unless the user requests a file. The upload workflow creates the Resources link; do not also add the upload URL to save_issue's links field. To revise a file, upload a replacement. To remove its Resources link, use delete_attachment with the attachment ID returned by get_issue. These tools do not edit uploaded file contents, permanently delete stored files, or inspect or change per-file permissions. Explain these limits when relevant.\n\nWorkflow:\n1. Call this tool with issue, filename, contentType, and size.\n2. Upload raw bytes with PUT to uploadRequest.url outside MCP.\n3. All headers in uploadRequest.headers are part of the signed request, so send them verbatim.\n4. After PUT succeeds, call create_attachment_from_upload with assetUrl to link it to the issue.\n\nDo not base64-encode or transform the file. Use curl --data-binary @path or fetch(url, { method: 'PUT', body: blob }).\nOmitting or modifying any signed header, including casing, will return HTTP 403.\nThe signed URL must be used within 60 seconds or it will expire.\n\nUpload sequencing:\nPrepare, PUT, and finalize one file before calling this tool for another file.\nDo not batch multiple prepare_attachment_upload calls before starting the PUTs because earlier signed URLs can expire while later files are prepared.\n\nExample:\ncurl -X PUT --data-binary @file.png \\\n  -H \"content-type: image/png\" \\\n  -H \"x-goog-content-length-range: N,N\" \\\n  -H \"cache-control: public, max-age=31536000\" \\\n  -H 'Content-Disposition: attachment; filename=\"file.png\"' \\\n  \"<uploadRequest.url>\"",
             "effects": "write"
           },
           {
             "name": "prepare_file_upload",
-            "description": "Prepare file upload",
+            "description": "Prepare a direct Linear file upload to embed an image or file in a Markdown field.\nThe file is not added to any issue's Resources. To attach a file to an issue's Resources, use prepare_attachment_upload.\n\nWorkflow:\n1. Call this tool with filename, contentType, and size.\n2. Upload raw bytes with PUT to uploadRequest.url outside MCP.\n3. All headers in uploadRequest.headers are part of the signed request, so send them verbatim.\n4. After PUT succeeds, put markdown (or assetUrl) in the body of save_diff_comment, update_diff, submit_diff_review, save_comment, save_document, save_project, or another Markdown field.\n\nDo not base64-encode or transform the file. Use curl --data-binary @path or fetch(url, { method: 'PUT', body: blob }).\nOmitting or modifying any signed header, including casing, will return HTTP 403.\nThe signed URL must be used within 60 seconds or it will expire.\n\nUpload sequencing:\nPrepare and PUT one file before calling this tool for another file.\nDo not batch multiple prepare_file_upload calls before starting the PUTs because earlier signed URLs can expire while later files are prepared.\n\nExample:\ncurl -X PUT --data-binary @file.png \\\n  -H \"content-type: image/png\" \\\n  -H \"x-goog-content-length-range: N,N\" \\\n  -H \"cache-control: public, max-age=31536000\" \\\n  -H 'Content-Disposition: attachment; filename=\"file.png\"' \\\n  \"<uploadRequest.url>\"",
             "effects": "write"
           },
           {
             "name": "create_attachment_from_upload",
-            "description": "Create attachment from upload",
+            "description": "Link an already-uploaded Linear assetUrl to an existing issue as an attachment.\nUploaded files appear in the issue's Resources; they are not native Linear Documents. To embed a file in Markdown without adding it to an issue's Resources, use prepare_file_upload instead. For written findings or proposals, prefer updating the issue description or using save_document with issue to create an editable Linear Document, unless the user requests a file. The upload workflow creates the Resources link; do not also add the upload URL to save_issue's links field. To revise a file, upload a replacement. To remove its Resources link, use delete_attachment with the attachment ID returned by get_issue. These tools do not edit uploaded file contents, permanently delete stored files, or inspect or change per-file permissions. Explain these limits when relevant.\n\nUse this only after:\n1. prepare_attachment_upload returned an assetUrl and uploadRequest.\n2. The client successfully PUT raw file bytes to uploadRequest.url.\n\nThis tool does not upload file content. It only creates the Linear attachment row.\nIf the direct upload failed or the signed URL expired, rerun prepare_attachment_upload and upload again.",
             "effects": "write"
           },
           {
             "name": "create_attachment",
-            "description": "Create attachment (deprecated)",
+            "description": "Deprecated fallback for tiny files only. Accepts base64 file content, verifies SHA-256 checksum, and uploads it through the MCP worker.\nPrefer `prepare_attachment_upload` plus direct PUT plus `create_attachment_from_upload`.\nUploaded files appear in the issue's Resources; they are not native Linear Documents. To embed a file in Markdown without adding it to an issue's Resources, use prepare_file_upload instead. For written findings or proposals, prefer updating the issue description or using save_document with issue to create an editable Linear Document, unless the user requests a file. The upload workflow creates the Resources link; do not also add the upload URL to save_issue's links field. To revise a file, upload a replacement. To remove its Resources link, use delete_attachment with the attachment ID returned by get_issue. These tools do not edit uploaded file contents, permanently delete stored files, or inspect or change per-file permissions. Explain these limits when relevant.\n\nCRITICAL: Do not print base64Content and then copy it into this tool call.\nOpaque base64 copied through model-visible text is easy to corrupt.\n\nGenerate base64Content mechanically from the source bytes and pass it through a programmatic argument construction path whenever available. Before calling this tool, verify the values are consistent:\n\nUnix-like shells:\nfile=\"/path/to/file\"\nbase64Content=$(base64 < \"$file\" | tr -d '\\n\\r')\nsha256=$(shasum -a 256 \"$file\" | awk '{print $1}')\ndecodedSha256=$(printf '%s' \"$base64Content\" | base64 -d | shasum -a 256 | awk '{print $1}')\nsize=$(wc -c < \"$file\" | tr -d ' ') # optional; stat can also get file byte size\ndecodedSize=$(printf '%s' \"$base64Content\" | base64 -d | wc -c | tr -d ' ')\n\nPowerShell:\n$file = 'C:\\path\\to\\file'\n$bytes = [IO.File]::ReadAllBytes($file)\n$base64Content = [Convert]::ToBase64String($bytes)\n$sha256 = (Get-FileHash -Algorithm SHA256 -Path $file).Hash.ToLower()\n$size = $bytes.Length # optional\n$decoded = [Convert]::FromBase64String($base64Content)\n$decodedStream = [IO.MemoryStream]::new($decoded)\n$decodedSha256 = (Get-FileHash -Algorithm SHA256 -InputStream $decodedStream).Hash.ToLower()\n$decodedSize = $decoded.Length\n\ndecodedSha256 must equal sha256. If you pass size, decodedSize must equal size.\nPass `sha256`. Passing `size` is optional, but recommended for clearer mismatch errors.",
             "effects": "write"
           },
           {
             "name": "delete_attachment",
-            "description": "Delete attachment",
+            "description": "Remove an attachment link from an issue's Resources. This does not delete the stored file. Use the attachment ID from get_issue's attachments array, not a UUID from the upload URL.",
             "effects": "write"
           },
           {
             "name": "list_agent_skills",
-            "description": "List agent skills",
+            "description": "List Linear Agent skills available to the authenticated user.",
             "effects": "read"
           },
           {
             "name": "get_agent_skill",
-            "description": "Get agent skill",
+            "description": "Retrieve a Linear Agent skill by ID, including its full markdown instructions.",
             "effects": "read"
           },
           {
             "name": "list_comments",
-            "description": "List comments",
+            "description": "List comments on a Linear issue, project, initiative, document, project milestone, or project/initiative status update. Provide exactly one of `issueId`, `projectId`, `initiativeId`, `documentId`, `milestoneId`, or `statusUpdateId`. `statusUpdateType` applies only to `statusUpdateId`; omit it for every other parent. For issues, projects, and initiatives this returns both top-level discussion threads and inline description comments. Inline (anchored) comments carry a non-null `quotedText` set to the snippet of description text they reference. Returned comments include `author` and nullable `onBehalfOf`; when set, `onBehalfOf` identifies the user the agent author acted for. Files uploaded in comment bodies are returned in `attachments` with titles and download URLs, not issue attachment IDs. Signed upload URLs expire after five minutes; call list_comments again to refresh them. Download documents using these URLs and process them with your own file tools.",
             "effects": "read"
           },
           {
             "name": "save_comment",
-            "description": "Save comment",
+            "description": "Create or update a comment on a Linear issue, project, initiative, document, project milestone, or project/initiative status update. If `id` is provided, updates the existing comment; otherwise creates a new one. To start a new thread, pass `body` and exactly one of `issueId`, `projectId`, `initiativeId`, `documentId`, `milestoneId`, or `statusUpdateId` (`statusUpdateType` applies only to `statusUpdateId`; omit it for every other parent) — comments on issues/projects/initiatives become top-level discussion threads; comments on documents/milestones become description comments. A status update holds a single thread, so a comment on an update that already has one is added to it as a reply. To reply to an existing thread, pass `parentId` and `body`; the reply inherits the parent's thread type, so no entity reference is needed. Parent reference fields are ignored when `id` or `parentId` is provided (`statusUpdateType` is rejected instead).",
             "effects": "write"
           },
           {
             "name": "delete_comment",
-            "description": "Delete comment",
+            "description": "Delete a Linear comment. Inline description comments (those with non-null `quotedText`) anchor a mark in the editor, so their root cannot be deleted — delete the replies individually or resolve the thread instead.",
             "effects": "write"
           },
           {
             "name": "list_cycles",
-            "description": "List cycles",
+            "description": "List a team's cycles with their IDs, numbers, dates, and issue and scope histories",
             "effects": "read"
           },
           {
             "name": "list_custom_views",
-            "description": "List custom views",
+            "description": "Find saved issue, project, and initiative views accessible to the user, including personal, workspace, and team views. Excludes archived views and views scoped to a project or initiative. Returns view metadata, not the records matching its filters.",
             "effects": "read"
           },
           {
             "name": "get_document",
-            "description": "Get document",
+            "description": "Retrieve a Linear document by ID or slug",
             "effects": "read"
           },
           {
             "name": "list_documents",
-            "description": "List documents",
+            "description": "List documents in the user's Linear workspace",
             "effects": "read"
           },
           {
             "name": "save_document",
-            "description": "Save document",
+            "description": "Create or update a Linear document. If `id` is provided, edits the existing document; otherwise creates a new one. When creating, `title` is required and exactly one parent (`project`, `issue`, `initiative`, `cycle`, or `team`) must be specified. On update, passing a parent reparents the document. To change parts of the content without resending all of it, pass `patch` instead of `content`.",
             "effects": "write"
           },
           {
             "name": "extract_images",
-            "description": "Extract images",
+            "description": "Extract and fetch images from markdown content. Use this to view screenshots, diagrams, or other images embedded in Linear issues, comments, or documents. Pass the markdown content (e.g., issue description) and receive the images as viewable data.",
             "effects": "read"
           },
           {
             "name": "get_issue",
-            "description": "Get issue",
+            "description": "Retrieve detailed information about an issue by ID, including attachments, git branch name, and active Triage Intelligence suggestions when the issue is in triage. A nonempty fields selection overrides the include options; request optional fields directly in fields.",
             "effects": "read"
           },
           {
             "name": "list_issues",
-            "description": "List issues",
+            "description": "List issues in the user's Linear workspace, including active Triage Intelligence suggestions for issues in triage. For issues assigned to me, use \"me\" as the assignee. For issues created by me, use \"me\" as the creator. Use \"null\" for no assignee.",
             "effects": "read"
           },
           {
             "name": "save_issue",
-            "description": "Save issue",
+            "description": "Create or update a Linear issue. If `id` is provided, updates the existing issue; otherwise creates a new one. When creating, `team` is required, and `title` is required unless `template` is set. Note: use `assignee` (not `assigneeId`) to set the assignee — it accepts a user ID, name, email, or \"me\".",
             "effects": "write"
           },
           {
             "name": "list_issue_statuses",
-            "description": "List issue statuses",
+            "description": "List available issue statuses in a Linear team",
             "effects": "read"
           },
           {
             "name": "get_issue_status",
-            "description": "Get issue status",
+            "description": "Retrieve detailed information about an issue status in Linear by name or ID",
             "effects": "read"
           },
           {
             "name": "list_issue_labels",
-            "description": "List issue labels",
+            "description": "List available issue labels in a Linear workspace or team. A retired label carries `retiredAt` and cannot be applied to new issues.",
             "effects": "read"
           },
           {
             "name": "save_issue_label",
-            "description": "Save issue label",
+            "description": "Create or update a Linear issue label. If `id` is provided, updates the existing label; otherwise creates a new one. When creating, `name` is required.",
             "effects": "write"
           },
           {
             "name": "create_issue_label",
-            "description": "Create issue label (deprecated)",
+            "description": "Create a new Linear issue label. Deprecated: use `save_issue_label`, which can also update labels.",
             "effects": "write"
           },
           {
             "name": "retire_issue_label",
-            "description": "Retire issue label",
+            "description": "Retire a Linear issue label so it cannot be applied to new issues. The label stays visible on issues that already have it. Retiring a label group also retires its child labels. Undo with `restore_issue_label`.",
             "effects": "write"
           },
           {
             "name": "restore_issue_label",
-            "description": "Restore issue label",
+            "description": "Restore a retired Linear issue label, making it available for use on issues again. Restoring a label group also restores every child label, including any that were retired separately.",
             "effects": "write"
           },
           {
             "name": "list_projects",
-            "description": "List projects",
+            "description": "List projects in the user's Linear workspace",
             "effects": "read"
           },
           {
             "name": "get_project",
-            "description": "Get project",
+            "description": "Retrieve details of a specific project in Linear",
             "effects": "read"
           },
           {
             "name": "save_project",
-            "description": "Save project",
+            "description": "Create or update a Linear project. If `id` is provided, updates the existing project; otherwise creates a new one. When creating, `name` and at least one team (via `addTeams` or `setTeams`) are required. Pass `template` to create the project from a project template. To change parts of the description without resending all of it, pass `patch` instead of `description`. `state` resolves against the project statuses of the lead team, so pass `leadTeam` when creating a multi-team project whose teams use different statuses.",
             "effects": "write"
           },
           {
             "name": "list_project_labels",
-            "description": "List project labels",
+            "description": "List available project labels in a Linear workspace or team. Returns workspace labels by default; pass `team` to also include that team's labels. Pass `includeGroups` to include groups, which return `groupType`; child labels return their `parent` and `parentGroupType`. A team-scoped label carries a `team` field; different teams can hold same-named labels, so check it before acting on an ID. A retired label carries `retiredAt` and cannot be applied to new projects.",
             "effects": "read"
           },
           {
             "name": "retire_project_label",
-            "description": "Retire project label",
+            "description": "Retire a Linear project label so it cannot be applied to new projects. The label stays visible on projects that already have it. Retiring a label group also retires its child labels. Undo with `restore_project_label`.",
             "effects": "write"
           },
           {
             "name": "restore_project_label",
-            "description": "Restore project label",
+            "description": "Restore a retired Linear project label, making it available for use on projects again. Restoring a label group also restores every child label, including any that were retired separately.",
             "effects": "write"
           },
           {
             "name": "save_project_label",
-            "description": "Save project label",
+            "description": "Create or update a Linear project label. If `id` is provided, updates the existing label; otherwise creates a new one. When creating, `name` is required.",
             "effects": "write"
           },
           {
             "name": "list_release_pipelines",
-            "description": "List release pipelines",
+            "description": "List release pipelines in the workspace.",
             "effects": "read"
           },
           {
             "name": "list_releases",
-            "description": "List releases",
+            "description": "List releases in the workspace, with optional filtering by pipeline, stage, version, and text.",
             "effects": "read"
           },
           {
             "name": "get_release",
-            "description": "Get release",
+            "description": "Retrieve details of a release by ID or slug.",
             "effects": "read"
           },
           {
             "name": "save_release",
-            "description": "Save release",
+            "description": "Create or update a release. If `id` is provided, updates the existing release; otherwise creates a new one. When creating, `name` and `pipeline` are required. Release status is modeled as the release pipeline stage.",
             "effects": "write"
           },
           {
             "name": "list_release_notes",
-            "description": "List release notes",
+            "description": "List release notes in the workspace, optionally filtered by pipeline or covered release.",
             "effects": "read"
           },
           {
             "name": "get_release_note",
-            "description": "Get release notes",
+            "description": "Retrieve release notes by ID or slug, including markdown content.",
             "effects": "read"
           },
           {
             "name": "save_release_note",
-            "description": "Save release notes",
+            "description": "Create or update release notes. If `id` is provided, updates the existing release notes; otherwise creates a new one. When creating, `pipeline` and either `releases` or a release range are required. To change parts of the content without resending all of it, pass `patch` instead of `content`.",
             "effects": "write"
           },
           {
             "name": "share_issue",
-            "description": "Share issue",
+            "description": "Share an issue with a workspace user who cannot otherwise access it. Use this tool only when the user explicitly asks to share the issue.",
             "effects": "write"
           },
           {
             "name": "unshare_issue",
-            "description": "Unshare issue",
+            "description": "Remove a workspace user's shared access to an issue. Use this tool only when the user explicitly asks to stop sharing the issue.",
             "effects": "write"
           },
           {
             "name": "list_milestones",
-            "description": "List project milestones",
+            "description": "List all milestones in a Linear project",
             "effects": "read"
           },
           {
             "name": "get_milestone",
-            "description": "Get milestone",
+            "description": "Retrieve details of a specific milestone by ID or name",
             "effects": "read"
           },
           {
             "name": "save_milestone",
-            "description": "Save milestone",
+            "description": "Create or update a milestone in a Linear project. If `id` is provided, updates the existing milestone; otherwise creates a new one. When creating, `name` is required.",
             "effects": "write"
           },
           {
             "name": "get_notifications",
-            "description": "Get notifications",
+            "description": "Get a page of notifications from the authenticated user's Linear inbox.",
             "effects": "read"
           },
           {
             "name": "mark_notification",
-            "description": "Mark notification",
+            "description": "Mark a Linear inbox notification as read or unread, or snooze or unsnooze it.",
             "effects": "write"
           },
           {
             "name": "list_teams",
-            "description": "List teams",
+            "description": "List teams in the user's Linear workspace, including their parent IDs and hierarchy names",
             "effects": "read"
           },
           {
             "name": "get_team",
-            "description": "Get team",
+            "description": "Retrieve details of a specific Linear team, including its parent ID and hierarchy name. Use list_teams with parentTeam or ancestorTeam to find its sub-teams",
             "effects": "read"
           },
           {
             "name": "get_triage_responsibility",
-            "description": "Get triage responsibility",
+            "description": "Retrieve who is responsible for a team's triage: the person on triage now, what happens when an issue enters triage, and the upcoming shifts of the team's triage rotation. Pass `user` to get only that person's shifts, for example to find when their next triage duty starts, even when it is weeks away.",
             "effects": "read"
           },
           {
             "name": "list_templates",
-            "description": "List templates",
+            "description": "List the Linear issue, project, and document templates available to the authenticated user. Use this to find the template a team expects, then call get_template for its content.",
             "effects": "read"
           },
           {
             "name": "get_template",
-            "description": "Get template",
+            "description": "Retrieve a Linear template by ID or name: the content it pre-fills, the ids it applies, its sub-issues, and its form fields. Pass the template to save_issue or save_project to apply it. References come back as ids, so read a name with the matching tool when you need one. A form template collects its answers through a form, so applying one here creates an issue with the form unanswered.",
             "effects": "read"
           },
           {
             "name": "list_users",
-            "description": "List users",
+            "description": "List workspace users with their IDs, names, emails, and admin, guest, and active flags. Use get_user for team memberships.",
             "effects": "read"
           },
           {
             "name": "get_user",
-            "description": "Get user",
+            "description": "Retrieve one user's profile, email, admin, guest, and active flags, plus team IDs, names, and keys. Use list_users to find matching users.",
             "effects": "read"
           },
           {
             "name": "get_workspace",
-            "description": "Get workspace",
+            "description": "Retrieve the connected workspace's ID, name, and URL to confirm which workspace you are using",
             "effects": "read"
           },
           {
             "name": "search_documentation",
-            "description": "Search documentation",
+            "description": "Search Linear's product documentation for feature and usage guidance. Returns up to five results with titles, URLs, and content snippets per page.",
             "effects": "read"
           },
           {
             "name": "get_diff",
-            "description": "Get diff",
+            "description": "Exact lookup for a Linear diff. Use with review URLs, GitHub PR URLs, Linear full identifiers, UUIDs, or slugs.",
             "effects": "read"
           },
           {
             "name": "list_diffs",
-            "description": "List diffs",
+            "description": "List Linear diff pull requests visible to the authenticated user",
             "effects": "read"
           },
           {
             "name": "get_diff_threads",
-            "description": "Get diff threads",
+            "description": "Exact lookup for diff threads and the authenticated user's drafts. Use with review URLs, GitHub PR URLs, Linear full identifiers, UUIDs, or slugs.",
             "effects": "read"
           },
           {
             "name": "save_diff_comment",
-            "description": "Save diff comment",
+            "description": "Create, reply to, or edit a comment or persisted draft on a Linear diff. Set draft to true to save without submitting. Provide draftId to edit or submit a persisted draft, and commentId only to edit a submitted comment. Submitting an inline draft reuses its saved anchor; submitting a reply draft requires parentId again.",
             "effects": "external-write"
           },
           {
             "name": "resolve_diff_thread",
-            "description": "Resolve diff thread",
+            "description": "Resolve or reopen a top-level comment thread on a Linear diff",
             "effects": "external-write"
           },
           {
             "name": "delete_diff_comment",
-            "description": "Delete diff comment",
+            "description": "Delete a comment or persisted draft from a Linear diff",
             "effects": "external-write"
           },
           {
             "name": "submit_diff_review",
-            "description": "Submit diff review",
+            "description": "Approve a Linear diff, request changes, or submit a review comment",
             "effects": "external-write"
           },
           {
             "name": "update_diff",
-            "description": "Update diff",
+            "description": "Update a Linear diff's title, description, reviewer requests, issue links, or status. Provide at least one update. Combined updates can partially succeed; inspect the result before retrying. Use merge_diff to merge and submit_diff_review to approve or request changes.",
             "effects": "external-write"
           },
           {
             "name": "merge_diff",
-            "description": "Merge diff",
+            "description": "Merge a Linear diff or add it to the repository's merge queue",
             "effects": "external-write"
           },
           {
             "name": "list_customers",
-            "description": "List customers",
+            "description": "List customers in the user's Linear workspace",
             "effects": "read"
           },
           {
             "name": "save_customer",
-            "description": "Save customer",
+            "description": "Create or update a Linear customer. If `id` is provided, updates the existing customer; otherwise creates a new one. When creating, `name` is required.",
             "effects": "write"
           },
           {
             "name": "delete_customer",
-            "description": "Delete customer",
+            "description": "Delete a customer in Linear",
             "effects": "write"
           },
           {
             "name": "list_customer_needs",
-            "description": "List customer needs",
+            "description": "List customer needs (customer requests) for an issue, project, or initiative. Provide exactly one of `issue`, `project`, or `initiative`. Project results include requests linked to the project's issues; initiative results include requests on projects in the initiative or any of its sub-initiatives, and on their issues. Returns requests on closed work too; each need includes its issue's workflow state and its project's status so callers can filter. Paginated; pass `cursor` from the previous page to fetch the next.",
             "effects": "read"
           },
           {
             "name": "save_customer_need",
-            "description": "Save customer need",
+            "description": "Create or update a customer need (request) in Linear. If `id` is provided, updates the existing need; otherwise creates a new one. When creating, `body` is required.",
             "effects": "write"
           },
           {
             "name": "delete_customer_need",
-            "description": "Delete customer need",
+            "description": "Archive a customer need (request) in Linear",
             "effects": "write"
           },
           {
             "name": "list_initiatives",
-            "description": "List initiatives",
+            "description": "List initiatives in the user's Linear workspace",
             "effects": "read"
           },
           {
             "name": "get_initiative",
-            "description": "Get initiative",
+            "description": "Retrieve detailed information about a specific initiative in Linear",
             "effects": "read"
           },
           {
             "name": "save_initiative",
-            "description": "Save initiative",
+            "description": "Create or update a Linear initiative. If `id` is provided, updates the existing initiative; otherwise creates a new one. When creating, `name` is required. To change parts of the description without resending all of it, pass `patch` instead of `description`.",
             "effects": "write"
           },
           {
             "name": "list_initiative_labels",
-            "description": "List initiative labels",
+            "description": "List available initiative labels in the Linear workspace. Pass `includeGroups` to include groups, which return `groupType`; child labels return their `parent` and `parentGroupType`. A retired label carries `retiredAt` and cannot be applied to new initiatives.",
             "effects": "read"
           },
           {
             "name": "save_initiative_label",
-            "description": "Save initiative label",
+            "description": "Create or update a Linear initiative label. If `id` is provided, updates the existing label; otherwise creates a new one. When creating, `name` is required.",
             "effects": "write"
           },
           {
             "name": "create_initiative_label",
-            "description": "Create initiative label (deprecated)",
+            "description": "Create a new Linear initiative label. Deprecated: use `save_initiative_label`, which can also update labels.",
             "effects": "write"
           },
           {
             "name": "retire_initiative_label",
-            "description": "Retire initiative label",
+            "description": "Retire a Linear initiative label so it cannot be applied to new initiatives. The label stays visible on initiatives that already have it. Retiring a label group also retires its child labels. Undo with `restore_initiative_label`.",
             "effects": "write"
           },
           {
             "name": "restore_initiative_label",
-            "description": "Restore initiative label",
+            "description": "Restore a retired Linear initiative label, making it available for use on initiatives again. Restoring a label group also restores every child label, including any that were retired separately.",
             "effects": "write"
           },
           {
             "name": "get_status_updates",
-            "description": "Get status updates",
+            "description": "List or get project/initiative status updates with their body, health, author, and parent project or initiative. Pass id to get one update and ignore list filters; omit id to list.",
             "effects": "read"
           },
           {
             "name": "save_status_update",
-            "description": "Save status update",
+            "description": "Create or update a project/initiative status update and return the saved update. To create, omit id and provide body plus project or initiative matching type. To update, provide id; project and initiative are ignored.",
             "effects": "write"
           },
           {
             "name": "delete_status_update",
-            "description": "Delete status update",
+            "description": "Delete (archive) a project or initiative status update.",
             "effects": "write"
           }
         ],
         "events": [
           {
             "name": "issue.created",
-            "description": "A new issue was created"
+            "description": "An issue was created in a Linear team you can see. Filter on issue.team.key, issue.project.name, assignedToMe or byMe."
           },
           {
             "name": "issue.updated",
-            "description": "An issue changed status, assignee, priority or other fields"
+            "description": "An issue changed: its status, assignee, priority, title, labels, project and so on. `changes` lists what changed (for example \"status\" in changes) and `from` holds the previous status, assignee and priority."
           },
           {
             "name": "comment.created",
-            "description": "Someone commented on an issue"
+            "description": "Someone commented on an issue. mentionsMe is true when the comment mentions you."
           },
           {
             "name": "mention.created",
-            "description": "Someone mentioned you in a comment or new issue"
+            "description": "Someone else mentioned you in a comment or in a new issue's description. source is \"comment\" or \"issue\"; comment is null for issues."
           }
         ],
         "skills": [

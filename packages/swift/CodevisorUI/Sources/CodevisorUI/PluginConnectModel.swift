@@ -6,13 +6,13 @@ public struct PluginConnectHost {
   public var install:
     @MainActor (_ values: [String: ServerConfigFieldValue], _ authType: String?) async throws -> ServerMcpServer
   public var didInstall: @MainActor (ServerMcpServer) -> Void
-  public var signIn: @MainActor (ServerMcpServer, PluginSignInBrowser) async -> Void
+  public var signIn: (@MainActor (ServerMcpServer, PluginSignInBrowser) async -> Void)?
   public var signInFailed: @MainActor (String) -> Void
 
   public init(
     install: @escaping @MainActor ([String: ServerConfigFieldValue], String?) async throws -> ServerMcpServer,
     didInstall: @escaping @MainActor (ServerMcpServer) -> Void,
-    signIn: @escaping @MainActor (ServerMcpServer, PluginSignInBrowser) async -> Void,
+    signIn: (@MainActor (ServerMcpServer, PluginSignInBrowser) async -> Void)?,
     signInFailed: @escaping @MainActor (String) -> Void
   ) {
     self.install = install
@@ -72,6 +72,7 @@ public final class PluginConnectModel {
     if let spec = entry.accounts {
       return spec.signsInDirectly ? .accountSignIn(title: spec.addTitle) : .accountSetup(title: spec.addTitle)
     }
+    guard signsInToServerHere else { return .install }
     if installed != nil { return .serverSignIn(isOptional: false) }
     guard entry.transport == "http" else { return .install }
     guard hasChecked else { return .checking }
@@ -94,6 +95,15 @@ public final class PluginConnectModel {
 
   public var skipTitle: String? {
     setup == .serverSignIn(isOptional: true) ? "Use Without Signing In" : nil
+  }
+
+  public var signInNote: String? {
+    guard !signsInToServerHere, entry.accounts == nil, installed == nil else { return nil }
+
+    switch serverSignIn {
+    case .required, .optional: return PluginSignInError.needsMac(plugin: entry.name).errorDescription
+    case .some(.none), nil: return nil
+    }
   }
 
   public var canContinue: Bool { draft.isComplete && !isWorking }
@@ -145,12 +155,15 @@ public final class PluginConnectModel {
     PluginSignInBrowser(client: client, pluginName: signInName, presenter: webSignIn)
   }
 
+  private var signsInToServerHere: Bool { host.signIn != nil }
+
   private var signInName: String {
     entry.accounts?.providerName ?? entry.name
   }
 
   private func startSignIn(to server: ServerMcpServer, browser: PluginSignInBrowser?, choice: Choice) {
-    let signsInToServer = entry.accounts == nil && (server.awaitsAuthorization || installed != nil)
+    let needsServerSignIn = entry.accounts == nil && (server.awaitsAuthorization || installed != nil)
+    let signsInToServer = needsServerSignIn && signsInToServerHere
     let detectedLate = choice == .finishSetup && signsInToServer
     guard let browser = browser ?? (detectedLate ? makeBrowser() : nil) else { return }
 
@@ -159,7 +172,7 @@ public final class PluginConnectModel {
 
   private func signIn(to server: ServerMcpServer, browser: PluginSignInBrowser) async {
     guard let spec = entry.accounts else {
-      await host.signIn(server, browser)
+      await host.signIn?(server, browser)
       return
     }
     let accounts = PluginAccountsModel(server: server, client: client, spec: spec, webSignIn: webSignIn)

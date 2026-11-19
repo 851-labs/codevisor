@@ -60,7 +60,11 @@ extension CodevisorServerClient {
   }
 
   public func signInHandoff(pluginName: String?) -> PluginSignInHandoff? {
-    PluginSignInHandoff(serverURL: config.baseURL, pluginName: pluginName)
+    #if os(iOS)
+      nil
+    #else
+      PluginSignInHandoff(serverURL: config.baseURL, pluginName: pluginName)
+    #endif
   }
 
   public func abandonSignIn(ticket: String) async throws {

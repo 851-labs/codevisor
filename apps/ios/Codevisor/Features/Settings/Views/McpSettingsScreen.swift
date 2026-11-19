@@ -40,11 +40,11 @@ struct McpSettingsScreen: View {
     .navigationDestination(item: $openedPlugin) { name in
       McpPluginDetailScreen(entryName: name, model: model)
     }
-    .sheet(isPresented: $addingCustom, onDismiss: openInstalled) {
+    .sheet(isPresented: $addingCustom, onDismiss: { openInstalled(signingIn: true) }) {
       McpServerEditor(machineId: authoringMachineId) { try await add($0) }
         .environment(environment)
     }
-    .sheet(isPresented: $showingCatalog, onDismiss: openInstalled) {
+    .sheet(isPresented: $showingCatalog, onDismiss: { openInstalled(signingIn: false) }) {
       PluginCatalogScreen(
         client: environment.machines.client(for: authoringMachineId),
         fleet: model,
@@ -63,7 +63,7 @@ struct McpSettingsScreen: View {
     }
   }
 
-  private func openInstalled() {
+  private func openInstalled(signingIn: Bool) {
     guard let installed else { return }
 
     self.installed = nil
@@ -72,7 +72,7 @@ struct McpSettingsScreen: View {
       await model.load(machineId, in: environment)
       openedPlugin = installed.name
       Task { await model.load(in: environment) }
-      guard installed.awaitsAuthorization else { return }
+      guard signingIn, installed.awaitsAuthorization else { return }
 
       await model.connect(serverId: installed.id, on: machineId, in: environment)
     }

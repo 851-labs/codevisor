@@ -24,6 +24,22 @@ public struct PluginSetupCard: View {
 
   public var body: some View {
     HStack(spacing: 0) {
+      content
+        .modifier(TranscriptInlineCardSurface(inBotConversation: inBotConversation))
+        .frame(maxWidth: TranscriptInlineCardMetrics.maxWidth, alignment: .leading)
+      Spacer(minLength: inBotConversation ? TranscriptBubbleMetrics.oppositeSideGap : 0)
+    }
+    .accessibilityElement(children: .contain)
+    .accessibilityLabel(request.name)
+  }
+
+  #if os(iOS)
+    private var content: some View {
+      PluginSetupCompactRow(
+        name: request.name, summary: summary, icon: icon, accessory: accessory, perform: performPrimaryAction)
+    }
+  #else
+    private var content: some View {
       HStack(alignment: .center, spacing: TranscriptInlineCardMetrics.iconSpacing) {
         icon
         TranscriptInlineCardText(title: request.name, message: summary)
@@ -31,13 +47,8 @@ public struct PluginSetupCard: View {
         PluginSetupCardAccessory(state: accessory, perform: performPrimaryAction)
       }
       .padding(ComposerCardStyle.contentPadding)
-      .modifier(TranscriptInlineCardSurface(inBotConversation: inBotConversation))
-      .frame(maxWidth: TranscriptInlineCardMetrics.maxWidth, alignment: .leading)
-      Spacer(minLength: inBotConversation ? TranscriptBubbleMetrics.oppositeSideGap : 0)
     }
-    .accessibilityElement(children: .contain)
-    .accessibilityLabel(request.name)
-  }
+  #endif
 
   private var summary: String {
     request.description.flatMap(Self.firstSentence) ?? request.reason
@@ -51,7 +62,7 @@ public struct PluginSetupCard: View {
   }
 
   private var accessory: PluginSetupCardAccessory.State {
-    if isConnected { return .done(request.auth == .none ? "Installed" : "Connected") }
+    if isConnected { return .done("Connected") }
     if model.isWorking { return .working }
     if model.step == .unavailable { return .unavailable }
     return .action("Connect", isEnabled: model.canAct)

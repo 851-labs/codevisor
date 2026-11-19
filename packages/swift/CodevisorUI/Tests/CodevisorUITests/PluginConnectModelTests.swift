@@ -106,6 +106,33 @@ struct PluginConnectModelTests {
     #expect(host.browsers.isEmpty)
   }
 
+  @Test("Where the plugin's own sign-in can't run, the sheet installs it and says where to sign in")
+  func installsWhereSignInCannotRun() async throws {
+    let transport = ConnectTransport()
+    transport.respond("GET /v1/plugins/catalog/acme/sign-in", with: #"{"oauth":"required"}"#)
+    let presenter = FakeWebSignIn()
+    let host = ConnectHost()
+    var phone = host.host
+    phone.signIn = nil
+    let model = PluginConnectModel(
+      entry: try Self.entry(Self.remote(id: "acme", name: "Acme")), client: Self.client(transport), host: phone,
+      webSignIn: presenter)
+
+    #expect(model.primaryTitle == "Install" && model.signInNote == nil)
+    await model.load()
+    #expect(model.primaryTitle == "Install" && model.skipTitle == nil)
+    #expect(model.signInNote?.hasPrefix("Sign in to Acme from Codevisor on your Mac.") == true)
+
+    let running = Task { await model.run(.finishSetup) }
+    await host.installing.wait()
+    host.finishInstall(with: try Self.server())
+
+    #expect(await running.value)
+    #expect(host.authTypes == [nil])
+    #expect(host.installed.map(\.id) == ["mcp-1"])
+    #expect(presenter.urls.isEmpty)
+  }
+
   @Test("When the install fails, the sheet stays up with the reason and the waiting browser is told")
   func installFailureAbandonsBrowser() async throws {
     let transport = ConnectTransport()

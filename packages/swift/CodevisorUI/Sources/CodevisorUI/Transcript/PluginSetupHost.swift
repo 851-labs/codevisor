@@ -61,8 +61,10 @@ public struct PluginSetupHost<AccountSheet: View, GuideSheet: View>: View {
   private static func opensConnectSheet(for route: PluginSignInRoute) -> Bool {
     #if os(macOS)
       if case .thisMachine = route { return true }
+      return false
+    #else
+      return true
     #endif
-    return false
   }
 
   private var showsError: Binding<Bool> {

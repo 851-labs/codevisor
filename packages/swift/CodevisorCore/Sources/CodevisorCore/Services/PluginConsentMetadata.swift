@@ -1,15 +1,20 @@
 import Foundation
 
 public struct PluginConsentMetadata: Encodable, Sendable {
-  public struct Pane: Encodable, Sendable { let type: String; let title: String }
-  public struct Tool: Encodable, Sendable { let name: String; let description: String }
+  public struct Capabilities: Encodable, Sendable {
+    let tools: Int
+    let events: Int
+    let skills: Int
+    let panes: Int
+    let ingress: Int
+  }
+
   let name: String
   let version: String
   let publisher: String
   let description: String?
   let ageRating: Int?
-  let panes: [Pane]
-  let tools: [Tool]
+  let capabilities: Capabilities?
 
   public init(_ entry: ServerPluginCatalogEntry, ageRating: Int?) {
     name = entry.name
@@ -17,8 +22,10 @@ public struct PluginConsentMetadata: Encodable, Sendable {
     publisher = PluginModerationSubject.publisher(ofCatalogId: entry.id)
     description = entry.description
     self.ageRating = ageRating
-    panes = entry.capabilities.panes.map { Pane(type: $0.type, title: $0.title) }
-    tools = entry.capabilities.tools.map { Tool(name: $0.name, description: $0.description ?? "") }
+    let listed = entry.capabilities
+    capabilities = Capabilities(
+      tools: listed.tools.count, events: listed.events.count, skills: listed.skills.count,
+      panes: listed.panes.count, ingress: listed.ingress.count)
   }
 
   public init(custom subject: PluginModerationSubject) {
@@ -27,8 +34,7 @@ public struct PluginConsentMetadata: Encodable, Sendable {
     publisher = subject.publisher
     description = nil
     ageRating = nil
-    panes = []
-    tools = []
+    capabilities = nil
   }
 
   static let customVersion = "custom"

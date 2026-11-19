@@ -116,95 +116,95 @@
         "tools": [
           {
             "name": "search_messages",
-            "description": "Search messages",
+            "description": "Search messages the user can see. Supports Slack search syntax such as in:#eng from:@ana after:2026-11-01 has:link. Returns matches with permalinks, newest first unless sort is relevance.",
             "effects": "read"
           },
           {
             "name": "search_files",
-            "description": "Search shared files",
+            "description": "Search files shared in conversations the user can see. Supports Slack search syntax.",
             "effects": "read"
           },
           {
             "name": "list_channels",
-            "description": "List your conversations",
+            "description": "List conversations the user is in: channels, private channels, DMs and group DMs, with ids. Filter by name with query.",
             "effects": "read"
           },
           {
             "name": "find_users",
-            "description": "Find people",
+            "description": "Find people in the workspace by name, @handle or email. Returns user ids for mentions and DMs.",
             "effects": "read"
           },
           {
             "name": "get_user",
-            "description": "Get a person's profile",
+            "description": "Get a person's profile: name, handle, title, email and time zone. Pass me for the user.",
             "effects": "read"
           },
           {
             "name": "read_channel",
-            "description": "Read a conversation",
+            "description": "Read a conversation's recent messages, oldest first, with each thread's reply count. Use nextCursor for older messages and read_thread for replies.",
             "effects": "read"
           },
           {
             "name": "read_thread",
-            "description": "Read a thread",
+            "description": "Read a thread: the parent message and its replies, oldest first.",
             "effects": "read"
           },
           {
             "name": "list_channel_members",
-            "description": "List a conversation's members",
+            "description": "List the people in a conversation, with names.",
             "effects": "read"
           },
           {
             "name": "download_file",
-            "description": "Download a shared file",
+            "description": "Download a file shared in Slack to this machine. Returns its local path, and its text when it's a small text file.",
             "effects": "read"
           },
           {
             "name": "add_reaction",
-            "description": "Add a reaction",
+            "description": "React to a message with an emoji.",
             "effects": "write"
           },
           {
             "name": "remove_reaction",
-            "description": "Remove a reaction",
+            "description": "Remove the user's emoji reaction from a message.",
             "effects": "write"
           },
           {
             "name": "post_message",
-            "description": "Post a message after approval",
+            "description": "Post a message as the user, or reply in a thread with threadTs. Requires the user's explicit approval: confirm must be true.",
             "effects": "external-write"
           },
           {
             "name": "schedule_message",
-            "description": "Schedule a message after approval",
+            "description": "Schedule a message to post later as the user. Requires the user's explicit approval: confirm must be true.",
             "effects": "external-write"
           },
           {
             "name": "upload_file",
-            "description": "Share a file after approval",
+            "description": "Share a file from this machine in a conversation as the user. Requires the user's explicit approval: confirm must be true.",
             "effects": "external-write"
           }
         ],
         "events": [
           {
             "name": "message.posted",
-            "description": "Someone posted in a conversation you're in"
+            "description": "Someone else posted in a conversation you're in. Filter it: busy workspaces post a lot. For example channel.name == \"incidents\" or text.contains(\"deploy\")."
           },
           {
             "name": "mention.created",
-            "description": "Someone @-mentioned you"
+            "description": "Someone else @-mentioned you in a message."
           },
           {
             "name": "dm.received",
-            "description": "Someone sent you a direct message"
+            "description": "Someone sent you a DM or wrote in a group DM you're in. channel.type is dm or group_dm."
           },
           {
             "name": "thread.replied",
-            "description": "Someone replied in a thread you started"
+            "description": "Someone else replied in a thread you started."
           },
           {
             "name": "reaction.added",
-            "description": "Someone reacted to your message"
+            "description": "Someone reacted to one of your messages. reaction is the emoji name, such as white_check_mark."
           }
         ],
         "skills": [

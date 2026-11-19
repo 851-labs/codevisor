@@ -45,12 +45,23 @@ struct PluginCatalogScreen: View {
       .task { try? await environment.pluginAccess.refresh() }
       .onChange(of: query) { _, text in catalog.search(text) }
       .sheet(item: $installTarget) { entry in
-        PluginInstallSheet(entry: entry, client: client) { values in
-          onInstalled(try await catalog.install(entry, values: values, access: environment.pluginAccess))
-          dismiss()
-        }
-        .environment(environment)
+        PluginConnectSheet(entry: entry, client: client, host: host(for: entry))
+          .environment(environment)
       }
     }
+  }
+
+  private func host(for entry: ServerPluginCatalogEntry) -> PluginConnectHost {
+    PluginConnectHost(
+      install: { values, authType in
+        try await catalog.install(entry, values: values, authType: authType, access: environment.pluginAccess)
+      },
+      didInstall: { server in
+        onInstalled(server)
+        dismiss()
+      },
+      signIn: nil,
+      signInFailed: { fleet.connectError = $0 }
+    )
   }
 }
