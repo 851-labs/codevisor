@@ -137,4 +137,111 @@ struct ScreenSharingHostDisplayFollowTests {
       #expect(mac.captureStarts.isEmpty && session.state == "viewing")
     }
   }
+
+  @Test func aDisplayThatChangedSizeAndIsLaterRenumberedIsStillTheSharedDisplay() async throws {
+    try await Fixture.run { mac in
+      let session = try await viewing(mac)
+      let resized = ServerScreenSharingDisplay(id: Self.wide.id, name: Self.wide.name, width: 1720, height: 720)
+      mac.displays = [Fixture.main, resized]
+      mac.host.screenParametersChanged()
+
+      let renumbered = CGMainDisplayID() &+ 9
+      let builtIn = ScreenSharingDisplayIdentity.Online(
+        id: Fixture.displayID(of: Fixture.main), identity: .init(vendor: 1, model: 1, serial: 1), isMain: true,
+        isVirtual: false, pixels: .init(width: 1280, height: 720))
+      let shared = ScreenSharingDisplayIdentity.Online(
+        id: renumbered, identity: session.displayIdentity, isMain: false, isVirtual: false,
+        pixels: .init(width: 1720, height: 720))
+      mac.host.onlineDisplays = { [builtIn, shared] }
+      mac.host.screenParametersChanged()
+      await session.resizing?.value
+
+      #expect(session.displayID == renumbered && session.displayFollow == nil, "not left for the main display")
+      #expect(mac.captureStarts.isEmpty && session.state == "viewing")
+    }
+  }
+
+  @Test func aHeadlessMacsFramebufferBackUnderANewNumberAndSizeIsStillTheSharedDisplay() async throws {
+    try await Fixture.run { mac in
+      mac.displays = [Fixture.standIn]
+      _ = await mac.send(mac.start(as: .macBook, .open))
+      let session = try #require(mac.host.current)
+      session.state = "viewing"
+      let back = ServerScreenSharingDisplay(id: Fixture.standInAgain.id, name: "Display", width: 1280, height: 720)
+
+      mac.displays = [back]
+      mac.host.screenParametersChanged()
+      await session.resizing?.value
+
+      #expect(session.displayID == Fixture.displayID(of: back) && session.displayFollow == nil)
+      #expect(session.configuration.width == 1920 && session.configuration.height == 1080)
+      #expect(mac.captureStarts.isEmpty && session.state == "viewing")
+    }
+  }
+
+  @Test func whenTheDisplayIsBackBeforeTheMoveRunsTheStoppedCaptureGetsTheUsualRestart() async throws {
+    try await Fixture.run { mac in
+      let session = try await viewing(mac)
+      mac.host.displayListCatchUp = .zero
+      mac.displays = [Fixture.main]
+      session.capture.onStopped?(Self.gone)
+      #expect(session.displayFollow != nil && session.state == "viewing")
+
+      mac.displays = [Fixture.main, Self.wide]
+      await session.resizing?.value
+      await session.captureTask?.value
+
+      #expect(session.state == "connecting" && session.metrics.counter("captureRestarts") == 1)
+      #expect(session.displayID == Fixture.displayID(of: Self.wide) && session.displayFollow == nil)
+    }
+  }
+
+  @Test func aCaptureThatStopsAgainWhileTheMoveIsFinishingGetsTheUsualRestart() async throws {
+    try await Fixture.run { mac in
+      let session = try await viewing(mac)
+      var stoppedAgain = false
+      mac.listDisplays = { [unowned mac] in
+        if mac.captureStarts == ["main"], !stoppedAgain {
+          stoppedAgain = true
+          session.capture.onStopped?(Self.gone)
+        }
+        return mac.displays
+      }
+
+      mac.displays = [Fixture.main]
+      mac.host.screenParametersChanged()
+      await session.resizing?.value
+
+      #expect(stoppedAgain && session.displayID == Fixture.displayID(of: Fixture.main))
+      #expect(session.state == "connecting" && session.metrics.counter("captureRestarts") == 1)
+    }
+  }
+
+  @Test func aCaptureStopThatBeatsTheDisplayListStillMovesTheSessionAndKeepsItViewing() async throws {
+    try await Fixture.run { mac in
+      let session = try await viewing(mac)
+      mac.host.displayListCatchUp = .zero
+
+      session.capture.onStopped?(Self.gone)
+      #expect(session.state == "viewing" && session.displayFollow == nil, "it waits for the display list first")
+      mac.displays = [Fixture.main]
+      await session.captureTask?.value
+      await session.resizing?.value
+
+      await expectMovedToMain(session, on: mac)
+    }
+  }
+
+  @Test func aCaptureThatStopsWhileEveryDisplayStaysGetsTheUsualRestart() async throws {
+    try await Fixture.run { mac in
+      let session = try await viewing(mac)
+      mac.host.displayListCatchUp = .zero
+
+      session.capture.onStopped?("Failed during stream due to application connection being interrupted")
+      await session.captureTask?.value
+
+      #expect(session.state == "connecting" && session.metrics.counter("captureRestarts") == 1)
+      #expect(session.displayFollow == nil && session.displayID == Fixture.displayID(of: Self.wide))
+    }
+  }
 }

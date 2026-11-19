@@ -148,9 +148,14 @@ final class ScreenSharingHostOwnershipFixture {
 
   nonisolated private static func online(_ display: ServerScreenSharingDisplay) -> ScreenSharingDisplayIdentity.Online {
     let id = displayID(of: display)
+    let headless = ScreenSharingDisplayIdentity.headlessFramebuffer
+    let identity =
+      kind(of: id) == .standIn
+      ? ScreenSharingDisplayIdentity(vendor: headless.vendor, model: headless.model, serial: 0)
+      : ScreenSharingDisplayIdentity(vendor: 1, model: 1, serial: id)
     return .init(
-      id: id, identity: .init(vendor: 1, model: 1, serial: id), isMain: id == CGMainDisplayID(),
-      isVirtual: kind(of: id) == .hostVirtual, pixels: .init(width: display.width, height: display.height))
+      id: id, identity: identity, isMain: id == CGMainDisplayID(), isVirtual: kind(of: id) == .hostVirtual,
+      pixels: .init(width: display.width, height: display.height))
   }
 
   private func close() async {

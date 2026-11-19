@@ -16,7 +16,7 @@ struct ScreenSharingDisplayIdentity: Equatable, Sendable {
 
     func isTheSameDisplay(as identity: ScreenSharingDisplayIdentity, pixels shared: Pixels?) -> Bool {
       guard self.identity == identity else { return false }
-      guard let shared, let pixels else { return true }
+      guard !identity.isHeadlessFramebuffer, let shared, let pixels else { return true }
 
       return pixels == shared
     }
@@ -38,9 +38,10 @@ struct ScreenSharingDisplayIdentity: Equatable, Sendable {
   ) -> Successor {
     if online.contains(where: { $0.id == id }) { return .unchanged }
     let physical = online.filter { !$0.isVirtual }
-    let matching = physical.filter { $0.isTheSameDisplay(as: identity, pixels: pixels) }
-    if let same = onlyOrMain(matching) { return .renumbered(same) }
-    guard matching.isEmpty, let other = onlyOrMain(physical) else { return .none }
+    let alike = physical.filter { $0.identity == identity }
+    let same = alike.filter { $0.isTheSameDisplay(as: identity, pixels: pixels) }
+    if let renumbered = onlyOrMain(same) { return .renumbered(renumbered) }
+    guard same.isEmpty, let other = onlyOrMain(alike) ?? onlyOrMain(physical) else { return .none }
 
     return .another(other)
   }

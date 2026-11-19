@@ -169,6 +169,7 @@ extension ScreenSharingHostService {
 extension ScreenSharingHostService {
   func screenParametersChanged() {
     guard let current else { return }
+    noteSharedDisplaySize(current)
     Task { await refreshDisplays(of: current) }
     if ProcessInfo.processInfo.systemUptime < current.ownDisplayChangeUntil { return }
     let online = onlineDisplays()

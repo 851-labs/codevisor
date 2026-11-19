@@ -64,7 +64,7 @@ extension ScreenSharingHostService {
       return
     }
     guard target.id != session.captureDisplayID, target.id != session.displayID,
-      let next = try? ScreenSharingHostSession.target(target)
+      let next = try? ScreenSharingHostSession.target(target, identity: identity(of: target.id))
     else { return describe(session, among: available) }
 
     let previous = session.target

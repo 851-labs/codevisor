@@ -64,19 +64,37 @@ struct ScreenSharingDisplayIdentityTests {
     #expect(Identity.successor(of: 1, identity: Self.otherDisplay, online: renumbered) == .unchanged)
   }
 
-  @Test("An identical monitor of another shape is another display, not the shared one renumbered")
-  func twinOfAnotherShape() {
+  @Test("A display with the shared one's identity but another size is moved to, not renumbered and not skipped")
+  func sameIdentityAnotherSize() {
     typealias Identity = ScreenSharingDisplayIdentity
     let landscape = Identity.Pixels(width: 2560, height: 1440)
-    var twin = Self.online(190, Self.studioDisplay, main: true)
+    let builtIn = Self.online(1, Self.otherDisplay, main: true)
+    var alike = Self.online(190, Self.studioDisplay)
 
-    twin.pixels = Identity.Pixels(width: 1440, height: 2560)
+    alike.pixels = Identity.Pixels(width: 1440, height: 2560)
     #expect(
-      Identity.successor(of: 188, identity: Self.studioDisplay, pixels: landscape, online: [twin]) == .another(190))
+      Identity.successor(of: 188, identity: Self.studioDisplay, pixels: landscape, online: [builtIn, alike])
+        == .another(190), "it stays with its own display, at that display's size, instead of going to the main one")
 
-    twin.pixels = landscape
+    alike.pixels = landscape
     #expect(
-      Identity.successor(of: 188, identity: Self.studioDisplay, pixels: landscape, online: [twin]) == .renumbered(190))
+      Identity.successor(of: 188, identity: Self.studioDisplay, pixels: landscape, online: [builtIn, alike])
+        == .renumbered(190))
+    #expect(
+      Identity.successor(of: 188, identity: Self.studioDisplay, pixels: nil, online: [builtIn, alike])
+        == .renumbered(190), "with no size on record the identity decides, as before")
+  }
+
+  @Test("A headless Mac's framebuffer is the same display whatever size it comes back at")
+  func headlessFramebufferIgnoresSize() {
+    typealias Identity = ScreenSharingDisplayIdentity
+    let framebuffer = Identity(
+      vendor: Identity.headlessFramebuffer.vendor, model: Identity.headlessFramebuffer.model, serial: 0)
+    var back = Self.online(46, framebuffer, main: true)
+    back.pixels = Identity.Pixels(width: 1280, height: 720)
+    let shared = Identity.Pixels(width: 1920, height: 1080)
+
+    #expect(Identity.successor(of: 44, identity: framebuffer, pixels: shared, online: [back]) == .renumbered(46))
   }
 
   @Test("A display change that keeps both displays online doesn't end the session")

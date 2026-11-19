@@ -20,6 +20,7 @@ final class ScreenSharingHostService {
   var logicalDisplays: ScreenSharingHostLogicalDisplays
   var displaySwitchWait: Duration = .seconds(10)
   var captureRestartDelay = ScreenSharingCaptureRestartPolicy.delay
+  var displayListCatchUp = ScreenSharingHostService.displaySettleInterval
   var onlineDisplays: () -> [ScreenSharingDisplayIdentity.Online] = ScreenSharingDisplayIdentity.online
   var startsCapture: (ScreenSharingHostSession) async throws -> Void = ScreenSharingHostService.startCaptureStream
   var virtualDisplaysAvailable: () -> Bool = { ScreenSharingHostVirtualDisplay.isAvailable }
@@ -176,7 +177,8 @@ final class ScreenSharingHostService {
     }
     let session = try ScreenSharingHostSession(
       owner: owner, request: request, display: display.description, displayID: display.id,
-      viewerEndpointId: viewerMedia.endpointId, encoder: .forViewer(chroma: request.chroma))
+      viewerEndpointId: viewerMedia.endpointId, encoder: .forViewer(chroma: request.chroma),
+      identity: identity(of: display.id))
     if Task.isCancelled {
       session.peer.close()
       throw CancellationError()
@@ -194,6 +196,7 @@ final class ScreenSharingHostService {
     if displaced?.owner == session.owner { displaced = nil }
     if let taken = takeovers[attempt] { displaced = (taken, session.owner) }
     describe(session, among: available)
+    noteSharedDisplaySize(session)
     configureChannels(session)
     return await startV2(session)
   }
@@ -413,12 +416,7 @@ final class ScreenSharingHostService {
 }
 
 extension ScreenSharingHostService {
-  private func captureStopped(_ session: ScreenSharingHostSession, message: String) {
-    guard current === session, !session.stopping else { return }
-    if session.state == "viewing", followsToAnotherDisplay(session) {
-      Self.logger.notice("Capture stopped (\(message, privacy: .public)); its display went away")
-      return
-    }
+  func restartCapture(_ session: ScreenSharingHostSession, after message: String) {
     guard session.captureRestarts.allowsRestart(now: ProcessInfo.processInfo.systemUptime) else {
       Self.logger.error("Capture stopped again (\(message, privacy: .public)); ending the session")
       scheduleEnd(session, as: .captureLost)
