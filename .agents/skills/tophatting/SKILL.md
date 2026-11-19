@@ -84,6 +84,27 @@ path affected by the change. For a CLI or backend-only change, exercise its
 actual command or API and inspect the observable result. Do not substitute
 mocked responses for the integration being verified.
 
+## Use real harnesses and real models
+
+Tophat harness behaviour (chats, turns, tool calls, permissions, questions,
+models, and accounts) with a real harness, signed in to a real account,
+talking to a real model. That is what users run. The dev server on the Mac
+uses the harnesses and accounts already signed in on this Mac, so Codex,
+Claude Code, and the others work in a dev instance just as they do in the
+released app.
+
+- Never put a fake agent binary on `PATH`, point a harness at a mock API, or
+  replay canned replies to stand in for a harness. Those exercise code that
+  users never run.
+- Pick a harness that is signed in (Settings › Harnesses). If none can
+  exercise the change, mark the scenario **Blocked** and say which harness
+  or account it needs.
+- Dev Cloud in its Linux container (the default without `--no-containers`)
+  gets its own empty home folder, so no harness is installed or signed in
+  there. With `--no-containers` it runs on this Mac with its harnesses. A
+  change to harness behaviour on the Linux server cannot be tophatted in
+  the container yet; report that scenario as blocked.
+
 ## Exercise, observe, and investigate
 
 - Perform the scenarios through the real interface. Inspect the resulting
