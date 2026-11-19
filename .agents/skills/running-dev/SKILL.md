@@ -93,13 +93,35 @@ Failure lines:
 
 ### How long it takes
 
-A first run in a fresh worktree is slow and starts silent. Before anything
-else it compiles the Rust networking library for five Apple targets, and
-prints nothing after `Running build:swift in 1 packages` while it does. That
-measured about 13 minutes on a busy 14-core Mac, followed by a full Xcode
-build of about 10 more. Later runs in the same worktree reuse both and only
-rebuild what changed. `build:macos` and `build:ios` pay the same first-run
-cost.
+A first run in a fresh worktree does a full Xcode build, which measured
+from 3 to 10 minutes on a 14-core Mac depending on how busy it was. Later
+runs in the same worktree only rebuild what changed. `build:macos` and
+`build:ios` pay the same first-run cost.
+
+The Rust networking library is normally not part of that cost: every
+worktree whose networking inputs match reuses one build per machine (see
+[Shared artifacts and disk](#shared-artifacts-and-disk)), and the log says
+so:
+
+```
+codevisor-net build:swift 10b9eff5159cdbb6: reusing the shared build
+```
+
+When no worktree on this Mac has built those inputs yet, the run compiles
+the library for five Apple targets first, which measured 7 to 13 more
+minutes. It prints a headline per target and a line every 20 seconds while
+it works:
+
+```
+codevisor-net build:swift 10b9eff5159cdbb6: no shared build yet
+==> Compiling for aarch64-apple-ios (3 of 5)
+    Compiling for aarch64-apple-ios (3 of 5): 212 crates so far, 1m 40s
+```
+
+When another worktree is already building the same inputs, the run waits
+for it instead of building a second copy, and prints
+`another worktree is using it; waiting (1m 20s)` every 20 seconds until it
+can reuse the result.
 
 Before the ready lines appear, tell slow from stuck by checking whether the
 build is still writing files:
@@ -328,9 +350,24 @@ serializes concurrent first-time provisioning:
   artifact and Chromium entries unused for 30 days are pruned; the bun cache,
   like bun's default global cache, is not.
 
-The Rust networking library is not shared: each worktree builds its own into
-`packages/net/target`. A fresh macOS dev run measured about 12 GB in the
-worktree (5 GB in `tmp/build`, 6.6 GB in `packages/net/target`). Measure a
+- The Rust networking library (`net/turbo-cache/`): the xcframework and the
+  Node addons that the `build:swift` and `build:node:<target>` turbo tasks
+  in `packages/net` produce. The dev runners, tests, and release scripts run
+  those tasks against this one cache, so a build is keyed by turbo's hash of
+  the task's inputs (`packages/net/turbo.json`: the crates, `Cargo.lock`,
+  `rust-toolchain.toml`, the pins in `scripts/net-build.lock.json`, and the
+  build scripts). A worktree with the same inputs gets the build restored
+  into its own `packages/net/native` (about 0.3 GB); a worktree that changes
+  any input gets a different hash and compiles its own, leaving the other
+  builds untouched. A lock per hash makes worktrees that need the same
+  build wait for the first one instead of compiling it twice. Builds unused
+  for 30 days are pruned.
+
+Only a worktree that compiles the networking library has a
+`packages/net/target` (about 6 GB of cargo output, kept so its next Rust
+edit rebuilds incrementally); delete it when that worktree is done with
+Rust. A fresh macOS dev run that reuses the shared build measured about
+10 GB in the worktree by `du`, half of it in `tmp/build`. Measure a
 worktree's real cost with private (unshared) bytes, not `du`, which counts
 every clone in full. Both folders are ignored build output; deleting `tmp/`
 also deletes the dev instance's data and sign-in.
@@ -355,8 +392,9 @@ intentionally rebuilding GhosttyKit itself, run `bun run ghostty:build`.
 
 ## Common mistakes
 
-- Reading the silent first build as a hang and killing it, or switching to
-  `xcodebuild`.
+- Reading a long first build as a hang and killing it, or switching to
+  `xcodebuild` or `cargo`. The networking build reports progress every 20
+  seconds; a run waiting on another worktree's build says so.
 - Starting the runner or simulator owner with the default background timeout,
   then finding the app, servers, or simulator gone half an hour later.
 - Quitting the Mac app to "restart" it, which stops the servers too.
