@@ -26,12 +26,12 @@ struct WorkspaceInspectorMachineSection: View {
       if let disk = stats.disk {
         WorkspaceInspectorMachineUsageRow(title: "Disk", usage: disk, style: .file)
       }
-      if let routeName = connection?.routeName, let routeSystemImage = connection?.routeSystemImage {
+      if let routeName = connection?.routeName {
         LabeledContent {
           Text(routeName)
             .contentTransition(.numericText())
         } label: {
-          Self.label("Connection", systemImage: routeSystemImage)
+          Self.label("Connection", systemImage: "point.3.filled.connected.trianglepath.dotted")
         }
         .help(connection?.help ?? "")
         .animation(Motion.meter(reduceMotion: reduceMotion), value: routeName)
