@@ -107,10 +107,6 @@ extension CodevisorServerClient {
     try await send("/v1/sandbox-accounts/\(pathComponent(id))", method: "PUT", body: request)
   }
 
-  public func deleteSandboxProvider(id: String) async throws {
-    try await sendNoResponse("/v1/sandbox-accounts/\(pathComponent(id))", method: "DELETE")
-  }
-
   public func sandboxProviderMaximums(id: String) async throws -> [String: Double] {
     let response: SandboxMaximumsResponse = try await get("/v1/sandbox-accounts/\(pathComponent(id))/maximums")
     return response.maximums

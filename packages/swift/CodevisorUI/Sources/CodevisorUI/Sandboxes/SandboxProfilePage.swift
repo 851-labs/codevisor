@@ -8,7 +8,6 @@ struct SandboxProfilePage: View {
   let navigate: (SandboxSettingsNavigation) -> Void
   @State private var draft: SandboxProfileDraft
   @State private var saved: SandboxProfileDraft
-  @State private var editedProvider: ServerSandboxProvider?
   @State private var confirmingDelete = false
 
   init(
@@ -35,7 +34,9 @@ struct SandboxProfilePage: View {
         }
       }
       if let provider {
-        SandboxProfileProviderSection(title: model.title(of: provider)) { editedProvider = provider }
+        Section {
+          LabeledContent("Provider", value: model.title(of: provider))
+        }
       }
       SandboxDeleteSection(title: "Delete Profile") { confirmingDelete = true }
     }
@@ -46,7 +47,6 @@ struct SandboxProfilePage: View {
     #endif
     .onAppear { model.errorMessage = nil }
     .task { await model.loadMaximums(of: profile.providerId, from: client) }
-    .sheet(item: $editedProvider, onDismiss: leaveIfDeleted, content: providerSheet)
     .onChange(of: isDeleted) { leaveIfDeleted() }
     .confirmationDialog("Delete “\(profile.name)”?", isPresented: $confirmingDelete, titleVisibility: .visible) {
       Button("Delete", role: .destructive, action: delete)
@@ -58,12 +58,8 @@ struct SandboxProfilePage: View {
 
   private var isDeleted: Bool { model.profile(profile.id) == nil }
 
-  private func providerSheet(_ provider: ServerSandboxProvider) -> some View {
-    SandboxProviderSheet(model: model, client: client, editing: provider)
-  }
-
   private func leaveIfDeleted() {
-    guard isDeleted, editedProvider == nil else { return }
+    guard isDeleted else { return }
 
     navigate(.reset(to: nil))
   }

@@ -4,8 +4,8 @@ import SwiftUI
 struct SandboxNewProfilePage: View {
   let model: SandboxSettingsModel
   let client: any CodevisorServerClienting
-  @Binding var providerId: String
-  let onNewProvider: () -> Void
+  let provider: ServerSandboxProvider
+  let vendor: ServerSandboxVendor
   let onAdded: () -> Void
   @State private var draft: SandboxProfileDraft
   @State private var status: String?
@@ -15,39 +15,33 @@ struct SandboxNewProfilePage: View {
     client: any CodevisorServerClienting,
     provider: ServerSandboxProvider,
     vendor: ServerSandboxVendor,
-    providerId: Binding<String>,
-    onNewProvider: @escaping () -> Void,
     onAdded: @escaping () -> Void
   ) {
     self.model = model
     self.client = client
-    _providerId = providerId
-    self.onNewProvider = onNewProvider
+    self.provider = provider
+    self.vendor = vendor
     self.onAdded = onAdded
     _draft = State(initialValue: SandboxProfileDraft(provider: provider, vendor: vendor))
   }
 
   var body: some View {
     SandboxSettingsForm(
-      title: "New Profile", actionTitle: "Add Profile", canAct: draft.canSave,
+      title: title, actionTitle: "Add Profile", canAct: draft.canSave,
       status: status, errorMessage: model.error(outside: draft.fieldKeys), onAction: add
     ) {
-      Section {
-        SandboxProviderPicker(model: model, providerId: $providerId, onNewProvider: onNewProvider)
-      }
-      if let vendor = draft.vendor {
-        SandboxProfileFields(draft: $draft, vendor: vendor, model: model)
-      }
+      SandboxProfileFields(draft: $draft, vendor: vendor, model: model)
     }
     .onAppear { model.errorMessage = nil }
-    .onChange(of: providerId) { chooseProvider() }
-    .task(id: providerId) { await model.loadMaximums(of: providerId, from: client) }
+    .task { await model.loadMaximums(of: provider.id, from: client) }
   }
 
-  private func chooseProvider() {
-    guard let provider = model.provider(providerId), let vendor = model.vendor(provider.vendor) else { return }
-
-    draft.choose(provider, vendor: vendor)
+  private var title: String {
+    #if os(macOS)
+      "New \(vendor.displayName) Profile"
+    #else
+      "New Profile"
+    #endif
   }
 
   private func add() {
@@ -55,7 +49,7 @@ struct SandboxNewProfilePage: View {
     Task {
       let saved = await model.save(draft, using: client)
       status = nil
-      guard saved else { return await model.loadMaximums(of: providerId, from: client) }
+      guard saved else { return await model.loadMaximums(of: provider.id, from: client) }
 
       onAdded()
     }

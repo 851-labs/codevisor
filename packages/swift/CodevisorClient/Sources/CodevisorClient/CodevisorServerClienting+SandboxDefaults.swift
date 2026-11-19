@@ -18,8 +18,6 @@ public extension CodevisorServerClienting {
     throw CodevisorServerClientError.invalidResponse
   }
 
-  func deleteSandboxProvider(id: String) async throws {}
-
   func sandboxProviderMaximums(id: String) async throws -> [String: Double] {
     [:]
   }

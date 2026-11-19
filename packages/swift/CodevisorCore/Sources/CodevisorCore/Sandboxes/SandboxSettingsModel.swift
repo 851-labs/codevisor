@@ -50,6 +50,18 @@ public final class SandboxSettingsModel {
     id.flatMap { id in providers.first { $0.id == id } }
   }
 
+  public func profiles(of provider: ServerSandboxProvider) -> [ServerSandboxProfile] {
+    profiles.filter { $0.providerId == provider.id }
+  }
+
+  public var profilesWithoutProvider: [ServerSandboxProfile] {
+    profiles.filter { provider($0.providerId) == nil }
+  }
+
+  public var hasNothingSetUp: Bool {
+    hasLoaded && providers.isEmpty && profiles.isEmpty
+  }
+
   public func hosts(for capability: String?) -> [SandboxHost] {
     guard let capability else { return hosts }
     return hosts.filter { $0.capabilities.contains(capability) }
@@ -138,15 +150,10 @@ public final class SandboxSettingsModel {
   }
 
   public func delete(_ profile: ServerSandboxProfile, using client: any CodevisorServerClienting) async {
-    let deleted = await attempt {
+    _ = await attempt {
       try await client.deleteSandboxProfile(id: profile.id)
       profiles.removeAll { $0.id == profile.id }
     }
-    guard deleted, let provider = provider(profile.providerId),
-      !profiles.contains(where: { $0.providerId == provider.id })
-    else { return }
-    guard (try? await client.deleteSandboxProvider(id: provider.id)) != nil else { return }
-    providers.removeAll { $0.id == provider.id }
   }
 
   public func removal(
@@ -155,7 +162,7 @@ public final class SandboxSettingsModel {
     let sandboxes = await Self.sandboxes(on: machines)
     return SandboxProviderRemoval(
       providerTitle: title(of: provider),
-      profileCount: profiles.filter { $0.providerId == provider.id }.count,
+      profileCount: profiles(of: provider).count,
       workspaceCount: sandboxes.filter { Self.holdsWorkspace($0, on: provider) }.count,
       offlineMachineNames: offline)
   }

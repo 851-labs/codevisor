@@ -7,9 +7,6 @@ struct SandboxProfileListRow: View {
 
   var body: some View {
     HStack(spacing: 10) {
-      CodevisorSymbol.sandboxVendor(profile.vendor)
-        .foregroundStyle(.secondary)
-        .frame(width: 22)
       Text(profile.name)
         .foregroundStyle(.primary)
       Spacer()

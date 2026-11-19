@@ -3,7 +3,6 @@ import SwiftUI
 struct SandboxSettingsForm<Content: View>: View {
   @Environment(\.sandboxSheetCancel) private var cancel
   @Environment(\.sandboxSheetBack) private var back
-  @Environment(\.sandboxSheetIsCovered) private var isCovered
   let title: String
   var actionTitle: String?
   var canAct = true
@@ -19,11 +18,11 @@ struct SandboxSettingsForm<Content: View>: View {
         canContinue: canAct && status == nil, status: status, onCancel: { cancel?() },
         onBack: back.map { back in { back() } }, onContinue: onAction, stepsInCard: false
       ) {
-        SandboxSheetFields(errorMessage: shownError) { content }
+        SandboxSheetFields(errorMessage: errorMessage) { content }
       }
     #else
       Form {
-        SandboxSheetError(message: shownError)
+        SandboxSheetError(message: errorMessage)
         content
       }
       .formStyle(.grouped)
@@ -41,9 +40,5 @@ struct SandboxSettingsForm<Content: View>: View {
       }
       .sheetStatus(status)
     #endif
-  }
-
-  private var shownError: String? {
-    isCovered ? nil : errorMessage
   }
 }

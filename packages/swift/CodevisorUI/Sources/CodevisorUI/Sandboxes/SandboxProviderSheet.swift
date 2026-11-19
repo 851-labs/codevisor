@@ -5,9 +5,23 @@ struct SandboxProviderSheet: View {
   @Environment(\.dismiss) private var dismiss
   let model: SandboxSettingsModel
   let client: any CodevisorServerClienting
-  var editing: ServerSandboxProvider?
-  var onAdded: (ServerSandboxProvider) -> Void = { _ in }
-  @State private var path: [String] = []
+  let editing: ServerSandboxProvider?
+  let onAdded: (ServerSandboxProvider) -> Void
+  @State private var path: [String]
+
+  init(
+    model: SandboxSettingsModel,
+    client: any CodevisorServerClienting,
+    editing: ServerSandboxProvider? = nil,
+    vendorId: String? = nil,
+    onAdded: @escaping (ServerSandboxProvider) -> Void = { _ in }
+  ) {
+    self.model = model
+    self.client = client
+    self.editing = editing
+    self.onAdded = onAdded
+    _path = State(initialValue: vendorId.map { [$0] } ?? [])
+  }
 
   var body: some View {
     #if os(macOS)

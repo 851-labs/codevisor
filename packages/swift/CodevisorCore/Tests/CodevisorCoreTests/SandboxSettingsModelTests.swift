@@ -58,25 +58,17 @@ struct SandboxSettingsModelTests {
     #expect(model.provider("studio").map(model.title(of:)) == "Tart · Mac Studio")
   }
 
-  @Test("A new profile starts on its provider's vendor, and switching vendor starts its fields over")
-  func choosingProviders() async throws {
+  @Test("A new profile belongs to the provider it was added under, named after that vendor's sandboxes")
+  func newProfileOnAProvider() async throws {
     let model = SandboxSettingsModel()
     await model.load(from: SettingsFakeServerClient(), machines: [])
-    var draft = SandboxProfileDraft(
-      provider: try #require(model.provider("labs")), vendor: SettingsFakeServerClient.e2b)
 
-    let e2bName = draft.name
-    draft.fields.text["template"] = "custom"
-    draft.choose(try #require(model.provider("personal")), vendor: SettingsFakeServerClient.e2b)
-    let keptTemplate = draft.fields.text["template"]
-    draft.choose(try #require(model.provider("studio")), vendor: SettingsFakeServerClient.tart)
+    let draft = SandboxProfileDraft(
+      provider: try #require(model.provider("studio")), vendor: SettingsFakeServerClient.tart)
 
-    #expect(e2bName == "E2B sandbox")
-    #expect(keptTemplate == "custom")
     #expect(draft.name == "Tart VM")
     #expect(draft.request?.vendor == "tart")
     #expect(draft.request?.providerId == "studio")
-    #expect(draft.fields.text["template"] == nil)
     #expect(draft.canSave)
   }
 
@@ -181,40 +173,6 @@ struct SandboxSettingsModelTests {
     #expect(reset == start)
   }
 
-  @Test("Switching a new profile to another vendor's provider keeps what was typed and takes the new defaults")
-  func switchingVendorKeepsTypedFields() {
-    let first = ServerSandboxVendor(
-      id: "first", displayName: "First", sandboxNoun: "first box", platform: "linux", tested: true,
-      providerFields: [],
-      profileFields: [
-        .init(key: "template", label: "Template", type: .string),
-        .init(key: "cpu", label: "CPUs", type: .number, defaultValue: .number(2)),
-        .init(key: "region", label: "Region", type: .choice, choices: [.init(value: "mars", label: "Mars")]),
-      ])
-    let second = ServerSandboxVendor(
-      id: "second", displayName: "Second", sandboxNoun: "second box", platform: "linux", tested: true,
-      providerFields: [],
-      profileFields: [
-        .init(key: "template", label: "Template", type: .string),
-        .init(key: "cpu", label: "CPUs", type: .number, defaultValue: .number(4)),
-        .init(
-          key: "region", label: "Region", type: .choice, defaultValue: .string("us"),
-          choices: [.init(value: "us", label: "US")]),
-      ])
-    var draft = SandboxProfileDraft(provider: ServerSandboxProvider(id: "a", vendor: "first"), vendor: first)
-    draft.name = "Work"
-    draft.fields.text["template"] = "custom"
-    draft.fields.text["region"] = "mars"
-
-    draft.choose(ServerSandboxProvider(id: "b", vendor: "second"), vendor: second)
-
-    #expect(draft.name == "Work")
-    #expect(draft.request?.providerId == "b")
-    #expect(draft.fields.text["template"] == "custom")
-    #expect(draft.fields.text["cpu"] == "4")
-    #expect(draft.fields.text["region"] == "us")
-  }
-
   @Test("Memory offers the steps up to the provider Mac's limit, falls back without it, and fits a saved size")
   func memorySteps() async throws {
     let tart = SettingsFakeServerClient.tart
@@ -291,24 +249,26 @@ struct SandboxSettingsModelTests {
       id: id, name: id, vendor: "tart", providerId: providerId, values: ["memoryGiB": .number(memoryGiB)])
   }
 
-  @Test("Deleting a profile removes its provider once no other profile uses it")
-  func deletingTheLastProfile() async {
+  @Test("Deleting a provider's last profile keeps the provider, listed with no profiles")
+  func deletingTheLastProfile() async throws {
     let client = SettingsFakeServerClient(
       profiles: [
         ServerSandboxProfile(id: "a", name: "A", vendor: "e2b", providerId: "labs"),
-        ServerSandboxProfile(id: "b", name: "B", vendor: "e2b", providerId: "labs"),
         ServerSandboxProfile(id: "c", name: "C", vendor: "e2b", providerId: "personal"),
+        ServerSandboxProfile(id: "lost", name: "Lost", vendor: "e2b", providerId: "deleted elsewhere"),
       ])
     let model = SandboxSettingsModel()
     await model.load(from: client, machines: [])
+    let personal = try #require(model.provider("personal"))
 
-    for id in ["a", "c"] {
-      guard let profile = model.profiles.first(where: { $0.id == id }) else { continue }
-      await model.delete(profile, using: client)
-    }
+    await model.delete(try #require(model.profile("c")), using: client)
 
-    #expect(client.calls == ["delete profile a", "delete profile c", "delete provider personal"])
-    #expect(model.providers.map(\.id) == ["labs", "studio", "gone"])
+    #expect(client.calls == ["delete profile c"])
+    #expect(model.providers.map(\.id) == ["labs", "personal", "studio", "gone"])
+    #expect(model.profiles(of: personal).isEmpty)
+    #expect(model.profiles(of: try #require(model.provider("labs"))).map(\.id) == ["a"])
+    #expect(model.profilesWithoutProvider.map(\.id) == ["lost"])
+    #expect(!model.hasNothingSetUp)
   }
 
   @Test(
@@ -391,6 +351,10 @@ struct SandboxSettingsModelTests {
       providerTitle: "E2B", profileCount: 1, workspaceCount: 1, offlineMachineNames: [])
     let quiet = SandboxProviderRemoval(
       providerTitle: "E2B", profileCount: 1, workspaceCount: 0, offlineMachineNames: ["Studio"])
+    let empty = SandboxProviderRemoval(
+      providerTitle: "E2B", profileCount: 0, workspaceCount: 0, offlineMachineNames: [])
+    let leftover = SandboxProviderRemoval(
+      providerTitle: "E2B", profileCount: 0, workspaceCount: 1, offlineMachineNames: [])
 
     #expect(full.title == "Delete “E2B”?")
     #expect(
@@ -406,6 +370,11 @@ struct SandboxSettingsModelTests {
       quiet.message
         == "This also deletes its 1 profile. "
         + "Studio is offline. Sandboxes it started keep running, and cost money, until it’s back online.")
+    #expect(empty.message.isEmpty)
+    #expect(
+      leftover.message
+        == "This archives the 1 workspace using it. Archiving destroys its sandbox, so any work that isn’t pushed is lost."
+    )
   }
 
   private static func sandbox(
@@ -511,10 +480,6 @@ private final class SettingsFakeServerClient: CodevisorServerClienting, @uncheck
   {
     calls.append("update provider \(id)")
     return ServerSandboxProvider(id: id, vendor: request.vendor, secretsSet: ["apiKey"])
-  }
-
-  func deleteSandboxProvider(id: String) async throws {
-    calls.append("delete provider \(id)")
   }
 
   func createSandboxProfile(_ request: ServerSandboxProfileRequest) async throws -> ServerSandboxProfile {

@@ -19,11 +19,12 @@ public struct SandboxProviderRemoval: Equatable, Sendable {
     [cascade, workLost, offline].compactMap(\.self).joined(separator: " ")
   }
 
-  private var cascade: String {
+  private var cascade: String? {
     let profiles = Self.counted(profileCount, "profile")
+    let workspaces = Self.counted(workspaceCount, "workspace")
+    guard profileCount > 0 else { return workspaceCount > 0 ? "This archives the \(workspaces) using it." : nil }
     guard workspaceCount > 0 else { return "This also deletes its \(profiles)." }
 
-    let workspaces = Self.counted(workspaceCount, "workspace")
     let users = profileCount == 1 ? "it" : "them"
     return "This also deletes its \(profiles) and archives the \(workspaces) using \(users)."
   }
