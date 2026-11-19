@@ -5,15 +5,16 @@ on:
     - cron: "23 12 * * *"
   workflow_dispatch:
     inputs:
-      limits:
-        description: Limits in ms of main-thread work per switch, as scenario=ms pairs (first-visit, revisit, warm)
+      kind:
+        description: nightly adds the run to the baseline (main only); adhoc records nothing
         required: false
-        default: first-visit=300,revisit=90,warm=60
-        type: string
+        default: adhoc
+        type: choice
+        options: [adhoc, nightly]
       enforce:
-        description: Fail the run when a limit is exceeded (off while the limits are being chosen)
+        description: Fail the run when a switch is over its limit in both measurements (a run that is over is never recorded)
         required: false
-        default: false
+        default: true
         type: boolean
 
 permissions:
@@ -26,10 +27,12 @@ concurrency:
 jobs:
   bench:
     runs-on: [self-hosted, macOS, ARM64, tamale]
-    timeout-minutes: 30
+    timeout-minutes: 45
+    permissions:
+      contents: write
     env:
-      TAB_SWITCH_LIMITS: ${{ inputs.limits || 'first-visit=300,revisit=90,warm=60' }}
-      TAB_SWITCH_ENFORCE: ${{ inputs.enforce && '1' || '' }}
+      TAB_SWITCH_ENFORCE: ${{ (github.event_name == 'schedule' || inputs.enforce) && '1' || '' }}
+      TAB_SWITCH_RECORD: ${{ github.ref == 'refs/heads/main' && (github.event_name == 'schedule' || inputs.kind == 'nightly') && '1' || '' }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
         with:

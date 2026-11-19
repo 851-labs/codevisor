@@ -18,6 +18,7 @@ mkdir -p "$out"
 log="$out/dev.log"
 runner=""
 server=""
+regressed=3
 
 stop_app() {
   local waited=0
@@ -58,15 +59,6 @@ if ioreg -n Root -d1 -a | grep -A1 CGSSessionScreenIsLocked | grep -q "<true/>";
   exit 1
 fi
 
-if [[ -n "$fresh_data" ]]; then
-  rm -rf tmp/.codevisor
-  start_app
-  stop_app
-  start_app --reuse-macos-build
-else
-  start_app
-fi
-
 settle() {
   local waited=0
   until awk '{ exit !($2 < 4) }' <<<"$(sysctl -n vm.loadavg)"; do
@@ -76,18 +68,39 @@ settle() {
   done
 }
 
+measure() {
+  local attempt=$1
+  start_app --reuse-macos-build
+  settle || quiet=""
+  open "$app"
+  sleep 10
+  echo "Load before run $attempt: $(sysctl -n vm.loadavg)" | tee -a "$out/load.txt"
+  TRANSCRIPT_STRESS_URL="$server" node scripts/dev-tab-switch-bench.mjs --fresh --chats 8 --turns 200 \
+    | tee "$out/run-$attempt.json"
+  stop_app
+}
+
+if [[ -n "$fresh_data" ]]; then rm -rf tmp/.codevisor; fi
+start_app
+stop_app
+
 app="$(find tmp/build/macos/DerivedData/Build/Products/Debug -maxdepth 1 -name "*.app" | head -1)"
 quiet=1
-settle || quiet=""
-open "$app"
-sleep 10
+: >"$out/load.txt"
+for attempt in 1 2; do measure "$attempt"; done
+if [[ -z "$quiet" ]]; then
+  echo "The Mac was still busy after three minutes, so this run is reported but neither enforced nor recorded." \
+    | tee -a "$out/load.txt"
+fi
 
-options=()
-if [[ -n "${TAB_SWITCH_LIMITS:-}" ]]; then options+=(--limits "$TAB_SWITCH_LIMITS"); fi
-if [[ -n "${TAB_SWITCH_ENFORCE:-}" && -n "$quiet" ]]; then options+=(--enforce); fi
-{
-  echo "Load before the run: $(sysctl -n vm.loadavg)"
-  if [[ -z "$quiet" ]]; then echo "The Mac was still busy after three minutes, so the limits are reported but not enforced."; fi
-} | tee "$out/load.txt"
-TRANSCRIPT_STRESS_URL="$server" node scripts/dev-tab-switch-bench.mjs --fresh --chats 8 --turns 200 \
-  ${options[@]+"${options[@]}"} --report "$out/report.md" | tee "$out/summary.json"
+scripts/tab-switch-results.sh index "$out/index.jsonl"
+status=0
+node scripts/tab-switch-gate.mjs judge --index "$out/index.jsonl" --run "$out/run-1.json" --run "$out/run-2.json" \
+  --report "$out/report.md" || status=$?
+if ((status != 0 && status != regressed)); then exit "$status"; fi
+if ((status == 0)) && [[ -n "${TAB_SWITCH_RECORD:-}" && -n "$quiet" ]]; then
+  scripts/tab-switch-results.sh publish "$out/run-1.json" "${GITHUB_RUN_ID:-local}" "$(git rev-parse HEAD)" \
+    "$(date -u +%Y-%m-%dT%H:%M:%SZ)"
+fi
+if [[ -z "${TAB_SWITCH_ENFORCE:-}" || -z "$quiet" ]]; then exit 0; fi
+exit "$status"
