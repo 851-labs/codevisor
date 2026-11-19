@@ -56,6 +56,25 @@ struct WorkspaceInspectorCard<Content: View>: View {
   }
 }
 
+struct WorkspaceInspectorRowIcon: View {
+  let image: Image
+
+  init(_ image: Image) {
+    self.image = image
+  }
+
+  init(systemName: String) {
+    self.init(Image(systemName: systemName))
+  }
+
+  var body: some View {
+    image
+      .foregroundStyle(.secondary)
+      .frame(width: 20)
+      .accessibilityHidden(true)
+  }
+}
+
 struct WorkspaceInspectorLabelStyle: LabelStyle {
   func makeBody(configuration: Configuration) -> some View {
     HStack(spacing: 10) {
