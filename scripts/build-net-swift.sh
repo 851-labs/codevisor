@@ -8,9 +8,11 @@ export CARGO_PROFILE_RELEASE_OPT_LEVEL=s
 targets=(aarch64-apple-darwin x86_64-apple-darwin aarch64-apple-ios aarch64-apple-ios-sim x86_64-apple-ios)
 : "${RUSTUP_TOOLCHAIN:?run through scripts/net-artifact.mjs ensure-swift}"
 rustup target add "${targets[@]}" >/dev/null
-for target in "${targets[@]}"; do
-  cargo build --release --locked -p codevisor-net-ffi --lib --target "$target"
+for index in "${!targets[@]}"; do
+  echo "==> Compiling for ${targets[$index]} ($((index + 1)) of ${#targets[@]})"
+  cargo build --release --locked -p codevisor-net-ffi --lib --target "${targets[$index]}"
 done
+echo "==> Combining the Apple slices"
 lib=libcodevisor_net_ffi.a
 work="$out/work"
 rm -rf "$work" && mkdir -p "$work/macos" "$work/ios" "$work/ios-sim" "$work/headers" "$work/swift"
@@ -23,12 +25,14 @@ for slice in macos ios ios-sim; do
   strip -S "$work/$slice/$lib" 2> >(grep -v "already stripped" >&2)
 done
 
+echo "==> Generating the Swift bindings"
 cargo run --release --locked -p codevisor-net-ffi --bin uniffi-bindgen -- generate \
   --library target/aarch64-apple-darwin/release/$lib --language swift --out-dir "$work/swift"
 cp "$work/swift/codevisor_net_ffiFFI.h" crates/codevisor-net-ffi/include/codevisor_media.h "$work/headers/"
 sed 's|header "codevisor_net_ffiFFI.h"|&\n    header "codevisor_media.h"|' "$work/swift/codevisor_net_ffiFFI.modulemap" \
   > "$work/headers/module.modulemap"
 
+echo "==> Assembling CodevisorNetFFI.xcframework"
 rm -rf "$out/CodevisorNetFFI.xcframework"
 xcodebuild -create-xcframework \
   -library "$work/macos/$lib" -headers "$work/headers" \

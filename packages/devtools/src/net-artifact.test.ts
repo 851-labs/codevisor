@@ -2,21 +2,33 @@ import assert from "node:assert/strict"
 import { execFileSync } from "node:child_process"
 import { createHash } from "node:crypto"
 import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs"
-import { chmod, mkdir, readdir, readFile, readlink, utimes, writeFile } from "node:fs/promises"
+import {
+  chmod,
+  mkdir,
+  readdir,
+  readFile,
+  readlink,
+  stat,
+  utimes,
+  writeFile
+} from "node:fs/promises"
 import { createServer } from "node:http"
 import { tmpdir } from "node:os"
 import { join } from "node:path"
 
 import { onTestFinished, test, vi } from "vitest"
 
+import { STORE_RETENTION_MS } from "./apfs-clone.ts"
 import {
   cargoEnvironment,
+  ensureNodeAddon,
   ensureRelayBinary,
   ensureSwiftFramework,
   findRustup,
   hostTarget,
   netArtifacts,
   netArtifactsRoot,
+  netBuildCache,
   netSourceStamp,
   readNetLock,
   relayBuildArguments,
@@ -53,11 +65,29 @@ test("the first directory with both rustup and its cargo proxy wins; a lone carg
   }
 })
 
-async function fakeRepo(
-  root: string,
-  relayURL = "http://127.0.0.1:9/relay.tar.gz",
-  relaySha = "0".repeat(64)
-) {
+interface FakeRepoOptions {
+  readonly relayURL?: string
+  readonly relaySha?: string
+  readonly turboLog?: string
+  readonly buildGate?: BuildGate
+}
+
+const gateDeadlockGuardMs = 20_000
+
+interface BuildGate {
+  readonly started: string
+  readonly release: string
+}
+
+function heldBuildGate(root: string): BuildGate {
+  const gate = { started: join(root, "build-started"), release: join(root, "build-release") }
+  execFileSync("mkfifo", [gate.started, gate.release])
+  return gate
+}
+
+async function fakeRepo(root: string, options: FakeRepoOptions = {}) {
+  const { relayURL = "http://127.0.0.1:9/relay.tar.gz", relaySha = "0".repeat(64) } = options
+  const turboLog = options.turboLog ?? join(root, "turbo.log")
   const repoRoot = join(root, "repo")
   await mkdir(join(repoRoot, "scripts"), { recursive: true })
   await mkdir(join(repoRoot, "packages/net/src"), { recursive: true })
@@ -80,28 +110,59 @@ async function fakeRepo(
       }
     })
   )
-  const native = join(repoRoot, "packages/net/native")
-  const tasks = join(root, "turbo.jsonl")
   await writeFile(
     join(repoRoot, "node_modules/.bin/turbo"),
-    `#!${process.execPath}
-const fs = require("node:fs")
-const task = process.argv[3]
-fs.appendFileSync(${JSON.stringify(tasks)}, task + "\\n")
-const out = task === "build:swift" ? ${JSON.stringify(native)} + "/apple" : ${JSON.stringify(native)} + "/" + task.slice("build:node:".length)
-fs.mkdirSync(out + "/CodevisorNetFFI.xcframework", { recursive: true })
-fs.writeFileSync(out + "/codevisor_net_ffi.swift", "// generated " + task)
-fs.writeFileSync(out + "/codevisor_net.node", "addon")
-`
+    fakeTurbo({ native: join(repoRoot, "packages/net/native"), turboLog, ...options })
   )
   await chmod(join(repoRoot, "node_modules/.bin/turbo"), 0o755)
-  return { repoRoot, tasks: async () => (await readFile(tasks, "utf8")).trim().split("\n") }
+  return {
+    repoRoot,
+    turboRuns: async () => (await readFile(turboLog, "utf8")).trim().split("\n")
+  }
+}
+
+function fakeTurbo(fake: { native: string; turboLog: string; buildGate?: BuildGate }): string {
+  return `#!${process.execPath}
+const fs = require("node:fs")
+const crypto = require("node:crypto")
+const [, task, ...flags] = process.argv.slice(2)
+const cache = flags.find((flag) => flag.startsWith("--cache-dir=")).slice("--cache-dir=".length)
+const sources = fs.readFileSync("packages/net/src/lib.rs", "utf8")
+const hash = crypto.createHash("sha256").update(task + sources).digest("hex").slice(0, 16)
+const archive = cache + "/" + hash + ".tar.zst"
+const cached = fs.existsSync(archive)
+if (flags.includes("--dry=json")) {
+  console.log(JSON.stringify({ tasks: [{ hash, cache: { status: cached ? "HIT" : "MISS" } }] }))
+  process.exit(0)
+}
+const gate = ${JSON.stringify(fake.buildGate ?? null)}
+const held = async () => {
+  if (cached || gate === null) return
+  setTimeout(() => process.exit(1), ${gateDeadlockGuardMs}).unref()
+  await fs.promises.writeFile(gate.started, "building")
+  await fs.promises.readFile(gate.release)
+}
+held().then(() => {
+  fs.appendFileSync(${JSON.stringify(fake.turboLog)}, (cached ? "reused " : "built ") + task + "\\n")
+  const out = ${JSON.stringify(fake.native)} + "/" + (task === "build:swift" ? "apple" : task.slice("build:node:".length))
+  fs.mkdirSync(out + "/CodevisorNetFFI.xcframework", { recursive: true })
+  fs.writeFileSync(out + "/codevisor_net_ffi.swift", "// generated " + sources)
+  fs.writeFileSync(out + "/codevisor_net.node", "addon " + sources)
+  fs.mkdirSync(cache, { recursive: true })
+  fs.writeFileSync(archive, "")
+  fs.writeFileSync(cache + "/" + hash + "-meta.json", "{}")
+  process.exit(0)
+})
+`
 }
 
 test("the lock, toolchain, and relay build arguments are read from the repo", async () => {
   const root = mkdtempSync(join(tmpdir(), "net-artifact-"))
   onTestFinished(() => rmSync(root, { recursive: true, force: true }))
-  const { repoRoot } = await fakeRepo(root, "https://example.test/relay.tar.gz", "ab".repeat(32))
+  const { repoRoot } = await fakeRepo(root, {
+    relayURL: "https://example.test/relay.tar.gz",
+    relaySha: "ab".repeat(32)
+  })
 
   assert.equal(await rustToolchain(repoRoot), "1.98.1")
   assert.deepEqual(relayBuildArguments(await readNetLock(repoRoot)), [
@@ -137,11 +198,12 @@ test("the source stamp covers native sources and the build pins, not build outpu
 test("native artifacts are built through turbo and the Swift framework is linked into the package", async () => {
   const root = mkdtempSync(join(tmpdir(), "net-artifact-"))
   onTestFinished(() => rmSync(root, { recursive: true, force: true }))
-  const { repoRoot, tasks } = await fakeRepo(root)
+  const { repoRoot, turboRuns } = await fakeRepo(root)
   const environment = { ...process.env, CODEVISOR_NET_ARTIFACTS_ROOT: join(root, "artifacts") }
   await mkdir(join(root, "artifacts/0123456789abcdef"), { recursive: true })
   const old = new Date(Date.now() - 30 * 24 * 60 * 60 * 1000)
   await utimes(join(root, "artifacts/0123456789abcdef"), old, old)
+  vi.spyOn(console, "log").mockImplementation(() => {})
 
   const artifacts = netArtifacts(repoRoot, environment)
   assert.equal(
@@ -155,11 +217,13 @@ test("native artifacts are built through turbo and the Swift framework is linked
   const link = await ensureSwiftFramework(repoRoot, environment)
   await ensureSwiftFramework(repoRoot, environment)
 
-  assert.deepEqual(await tasks(), [
-    `build:node:${hostTarget()}`,
-    `build:node:linux-${process.arch}`,
-    "build:swift",
-    "build:swift"
+  const linuxAddon = `build:node:linux-${process.arch}`
+  const hostBuiltIt = hostTarget() === `linux-${process.arch}`
+  assert.deepEqual(await turboRuns(), [
+    `built build:node:${hostTarget()}`,
+    `${hostBuiltIt ? "reused" : "built"} ${linuxAddon}`,
+    "built build:swift",
+    "reused build:swift"
   ])
   assert.equal(await readlink(link), "../../net/native/apple/CodevisorNetFFI.xcframework")
   assert.equal(
@@ -170,9 +234,84 @@ test("native artifacts are built through turbo and the Swift framework is linked
       ),
       "utf8"
     ),
-    "// generated build:swift"
+    "// generated fn main() {}"
   )
-  assert.deepEqual(await readdir(join(root, "artifacts")), [])
+  assert.deepEqual(await readdir(join(root, "artifacts")), ["turbo-cache"])
+})
+
+test("worktrees that need the same build share one: the second waits for the first, then reuses it", async () => {
+  const root = mkdtempSync(join(tmpdir(), "net-artifact-"))
+  onTestFinished(() => rmSync(root, { recursive: true, force: true }))
+  const shared = { turboLog: join(root, "turbo.log"), buildGate: heldBuildGate(root) }
+  const first = await fakeRepo(join(root, "first"), shared)
+  const second = await fakeRepo(join(root, "second"), shared)
+  const environment = { ...process.env, CODEVISOR_NET_ARTIFACTS_ROOT: join(root, "artifacts") }
+  const secondIsWaiting = new Promise<void>((resolve) => {
+    vi.spyOn(console, "log").mockImplementation((message: unknown) => {
+      if (String(message).includes("waiting")) resolve()
+    })
+  })
+
+  const addons = Promise.all([
+    ensureNodeAddon(first.repoRoot, environment),
+    ensureNodeAddon(second.repoRoot, environment)
+  ])
+  await readFile(shared.buildGate.started)
+  await secondIsWaiting
+  await writeFile(shared.buildGate.release, "finish")
+
+  for (const addon of await addons)
+    assert.equal(await readFile(addon, "utf8"), "addon fn main() {}")
+  assert.deepEqual(await first.turboRuns(), [
+    `built build:node:${hostTarget()}`,
+    `reused build:node:${hostTarget()}`
+  ])
+})
+
+test("a worktree with changed sources builds its own without waiting for or replacing another's", async () => {
+  const root = mkdtempSync(join(tmpdir(), "net-artifact-"))
+  onTestFinished(() => rmSync(root, { recursive: true, force: true }))
+  const turboLog = join(root, "turbo.log")
+  const buildGate = heldBuildGate(root)
+  const held = await fakeRepo(join(root, "held"), { turboLog, buildGate })
+  const changed = await fakeRepo(join(root, "changed"), { turboLog })
+  await writeFile(join(changed.repoRoot, "packages/net/src/lib.rs"), "fn changed() {}")
+  const environment = { ...process.env, CODEVISOR_NET_ARTIFACTS_ROOT: join(root, "artifacts") }
+  vi.spyOn(console, "log").mockImplementation(() => {})
+
+  const heldAddon = ensureNodeAddon(held.repoRoot, environment)
+  await readFile(buildGate.started)
+  const changedAddon = await ensureNodeAddon(changed.repoRoot, environment)
+  await writeFile(buildGate.release, "finish")
+
+  assert.equal(await readFile(changedAddon, "utf8"), "addon fn changed() {}")
+  assert.equal(await readFile(await heldAddon, "utf8"), "addon fn main() {}")
+  const archives = (await readdir(netBuildCache(environment))).filter((name) =>
+    name.endsWith(".tar.zst")
+  )
+  assert.equal(archives.length, 2)
+})
+
+test("shared builds unused for the retention period are removed; the one in use is kept fresh", async () => {
+  const root = mkdtempSync(join(tmpdir(), "net-artifact-"))
+  onTestFinished(() => rmSync(root, { recursive: true, force: true }))
+  const { repoRoot } = await fakeRepo(root)
+  const environment = { ...process.env, CODEVISOR_NET_ARTIFACTS_ROOT: join(root, "artifacts") }
+  const cache = netBuildCache(environment)
+  vi.spyOn(console, "log").mockImplementation(() => {})
+  await ensureNodeAddon(repoRoot, environment)
+  const inUse = await readdir(cache)
+  const expired = new Date(Date.now() - STORE_RETENTION_MS - 60_000)
+  for (const name of [...inUse, "0123456789abcdef.tar.zst", "0123456789abcdef-meta.json"]) {
+    await writeFile(join(cache, name), "")
+    await utimes(join(cache, name), expired, expired)
+  }
+
+  await ensureNodeAddon(repoRoot, environment)
+
+  assert.deepEqual((await readdir(cache)).toSorted(), inUse.toSorted())
+  for (const name of inUse)
+    assert.ok((await stat(join(cache, name))).mtimeMs > expired.getTime() + 60_000)
 })
 
 test("the pinned relay is downloaded once, verified, and unpacked", async () => {
@@ -201,14 +340,13 @@ test("the pinned relay is downloaded once, verified, and unpacked", async () => 
   const environment = { CODEVISOR_NET_ARTIFACTS_ROOT: join(root, "artifacts") }
   vi.spyOn(console, "log").mockImplementation(() => {})
 
-  const corrupt = await fakeRepo(join(root, "corrupt"), url)
+  const corrupt = await fakeRepo(join(root, "corrupt"), { relayURL: url })
   await assert.rejects(ensureRelayBinary(corrupt.repoRoot, environment), /checksum mismatch/)
 
-  const { repoRoot } = await fakeRepo(
-    join(root, "valid"),
-    url,
-    createHash("sha256").update(archive).digest("hex")
-  )
+  const { repoRoot } = await fakeRepo(join(root, "valid"), {
+    relayURL: url,
+    relaySha: createHash("sha256").update(archive).digest("hex")
+  })
   const binary = await ensureRelayBinary(repoRoot, environment)
   assert.equal(await ensureRelayBinary(repoRoot, environment), binary)
   assert.equal(await readFile(binary, "utf8"), "relay binary")

@@ -46,9 +46,10 @@ export async function runCommand(
 export async function captureCommand(
   command: string,
   args: ReadonlyArray<string>,
-  options: SpawnOptions = {}
+  options: SpawnOptions = {},
+  errors: "ignore" | "inherit" = "ignore"
 ): Promise<string> {
-  const child = spawn(command, args, { ...options, stdio: ["ignore", "pipe", "ignore"] })
+  const child = spawn(command, args, { ...options, stdio: ["ignore", "pipe", errors] })
   let output = ""
   child.stdout.setEncoding("utf8")
   child.stdout.on("data", (chunk: string) => {

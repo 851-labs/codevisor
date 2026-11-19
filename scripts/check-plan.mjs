@@ -16,7 +16,9 @@ const nativeInputs = [
   "scripts/net-build.mjs",
   "scripts/net-artifact.mjs",
   "packages/devtools/src/net-artifact.ts",
-  "packages/devtools/src/net-build.ts"
+  "packages/devtools/src/net-build.ts",
+  "packages/devtools/src/net-build-cache.ts",
+  "packages/devtools/src/build-progress.ts"
 ]
 
 const hardwareCodecInputs = [
