@@ -13,6 +13,10 @@ say_server() {
   echo "Codevisor's server ($server_agent) $1: pid ${pid:-none}"
 }
 
+open_outside_the_job() {
+  env -i /usr/bin/open "$1"
+}
+
 quit() {
   mkdir -p "$(dirname "$record")"
   say_server "before the app quits"
@@ -24,7 +28,7 @@ reopen() {
   [[ -s "$record" ]] || { echo "No benchmark quit the Codevisor app; nothing to reopen"; return 0; }
   local app
   while IFS= read -r app; do
-    open "$app"
+    open_outside_the_job "$app"
     echo "Reopened $app"
   done <"$record"
   rm -f "$record"

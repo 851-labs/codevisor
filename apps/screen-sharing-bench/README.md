@@ -235,7 +235,7 @@ probes (UDP 47592), which keep C2 a clean clock reference. Before each run it pr
 47596, shaped) for 10 s (160 probes) and records the round trip and loss that took effect (`network-check.json`, the
 runs table's "Network check", and each result's `network_check`). The summary's "Network as realized" table pools
 them per network against the spec: the unshaped round trip from the same runs' clock probes plus twice the delay, and
-a round-trip loss of 1 − (1 − loss each way)² (1.99% for N3). The anchor and pipes are flushed at the start and on exit. Runs over ssh are for
+a round-trip loss of 1 − (1 − loss each way)² (1.99% for N3). The anchor and pipes are flushed at the start and on exit. When a network's shaping doesn't load, the viewer says which check failed (pf's enable token, the anchor's dummynet rule or pipe 2) and what `pfctl` or `dnctl` listed; its runs on that network are skipped until a later load works, and the job fails. Runs over ssh are for
 development only.
 
 The minis are organization runners shared by this repository's CI and 851-labs/lil.tech's (`check` jobs),
@@ -260,7 +260,10 @@ quit confirmation for it, and the bench needs no Automation grant. It fails when
 `--timeout` seconds (60). The apps to reopen are written to the record
 (`~/Library/Application Support/CodevisorBench/reopen-apps.txt`) before they are asked to quit, and the record is
 removed only after `open` has started them again, so a job that died in between leaves it for the next Tier 2 job on
-that Mac. The Mac's Codevisor server is a separate LaunchAgent (`com.851labs.Codevisor.ServerAgent`) that the app
+that Mac. The app is opened with an empty environment (`env -i /usr/bin/open`): `open` hands its caller's environment
+to the app, and when a job completes the runner ends every process that carries the job's `RUNNER_TRACKING_ID`
+("Terminate orphan process"), which closed the reopened app three seconds later in run 44445681285. With an empty one
+the app gets the login session's environment, as from the Dock. The Mac's Codevisor server is a separate LaunchAgent (`com.851labs.Codevisor.ServerAgent`) that the app
 leaves running when it quits and adopts when it opens; both steps print its pid. Tier 1, the PR gate and the encoder
 lab run the same C5 check on tamale and don't quit the app: it isn't kept open there.
 
