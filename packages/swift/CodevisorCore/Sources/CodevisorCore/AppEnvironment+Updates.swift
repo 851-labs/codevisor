@@ -108,6 +108,19 @@ extension AppEnvironment {
     sync.start()
   }
 
+  public var hasSyncedClientPreferences: Bool {
+    configSync.hasSnapshot(namespace: ClientPreferenceSync.namespace)
+  }
+
+  public func setClientPreferenceFallback<Value: Codable>(_ value: Value, forKey key: String) {
+    guard let sync = clientPreferenceSync else {
+      if preferences.valueIfPresent(forKey: key, as: Value.self) == nil { preferences.set(value, forKey: key) }
+      return
+    }
+    guard let data = try? JSONEncoder().encode(value) else { return }
+    sync.publishFallback(data, forKey: key)
+  }
+
   public func syncFeatureFlags(preferences: ClientPreferences = .shared) {
     let sync = FeatureFlagSync(preferences: preferences, configSync: configSync)
     featureFlagSync = sync

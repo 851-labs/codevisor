@@ -39,6 +39,7 @@ final class AppRuntime {
     let environment = AppEnvironment.live(storage: storage)
     environment.onDeleteAllData = { DeviceDataDeletion.relaunchIntoDeletion() }
     environment.syncClientPreferences(SyncedPreferences.keys)
+    SidebarMachineGroupingDefault.start(environment: environment)
     environment.syncFeatureFlags()
     if !CodevisorAppVariant.isDevelopment && !StandaloneServerPreference.isEnabled {
       environment.localServer?.configureManagedService(serverAgent.managedService)

@@ -59,6 +59,12 @@ final class MachineCatalog {
     connections.statusById[CodevisorMachine.local.id]?.cloudDeviceId != nil
   }
 
+  var accountMachineCount: Int? {
+    guard let cloudProvider, cloudProvider.isCloudSignedIn, cloudProvider.isCloudRosterVerified else { return nil }
+    guard !includesLocalMachine || localCloudMachine != nil else { return nil }
+    return Set(cloudProvider.cloudMachines.filter { $0.ephemeral == nil }.map(\.deviceId)).count
+  }
+
   var localCloudMachine: CloudMachine? {
     guard let deviceId = connections.statusById[CodevisorMachine.local.id]?.cloudDeviceId,
       let cloudProvider, cloudProvider.isCloudSignedIn
