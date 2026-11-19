@@ -45,7 +45,7 @@ public struct SandboxProviderSection<Row: View>: View {
           Button("Delete…", role: .destructive, action: onDelete)
             .buttonStyle(.bordered)
             .help("Delete this provider and its profiles")
-          Button("Edit Provider…", action: edit)
+          Button("Edit…", action: edit)
           Button("Add Profile…", action: addProfile)
         }
       }
