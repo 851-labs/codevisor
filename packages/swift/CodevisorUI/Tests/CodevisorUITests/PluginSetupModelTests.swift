@@ -101,12 +101,13 @@ struct PluginSetupModelTests {
     let signIn = FakeWebSignIn()
     let model = PluginSetupModel(
       request: try Self.request(auth: "mcpOAuth"), client: Self.client(transport), signInRoute: .unavailable,
-      webSignIn: signIn)
+      opensConnectSheet: true, webSignIn: signIn)
     await model.refresh()
 
     await model.performPrimaryAction()
 
     #expect(signIn.urls.isEmpty)
+    #expect(model.connecting == nil)
     #expect(model.step == .signIn)
     #expect(model.errorMessage?.hasPrefix("Sign in to Grafana from Codevisor on your Mac.") == true)
   }

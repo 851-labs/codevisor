@@ -36,14 +36,15 @@ public final class PluginAccountsModel {
 
   public func load() async {
     if spec == nil, let catalogId {
-      spec = await report { try await client.pluginCatalogEntry(id: catalogId).accounts } ?? nil
+      spec = await report { try await read { try await client.pluginCatalogEntry(id: catalogId).accounts } } ?? nil
     }
     await reload()
   }
 
   public func reload() async {
     guard spec != nil else { return }
-    guard let loaded = await report({ try await client.listPluginAccounts(serverId: serverId) }) else { return }
+    let listed = await report { try await read { try await client.listPluginAccounts(serverId: serverId) } }
+    guard let loaded = listed else { return }
 
     accounts = loaded
     closeSignInIfAccountsChanged()
@@ -112,7 +113,9 @@ public final class PluginAccountsModel {
       await reload()
       return
     }
-    _ = await perform { try await client.completePluginAccountOAuth(callbackURL: callback) }
+    let accountsBefore = accounts
+    let completed: Void? = await perform { try await client.completePluginAccountOAuth(callbackURL: callback) }
+    if completed == nil, accounts != accountsBefore { errorMessage = nil }
   }
 
   private static func carriesAuthorization(_ callback: URL) -> Bool {
@@ -143,10 +146,17 @@ public final class PluginAccountsModel {
       let result = try await operation()
       errorMessage = nil
       return result
+    } catch  where isTaskCancellation(error) {
+      return nil
     } catch {
+      pluginSignInLog.error("Plugin account step failed: \(error, privacy: .public)")
       errorMessage = ErrorReporter.userFacingMessage(for: error)
       return nil
     }
+  }
+
+  private func read<Result>(_ operation: () async throws -> Result) async throws -> Result {
+    try await ServerConnectionLoss.retryingInterruptions(sleep: { try await Task.sleep(for: $0) }, operation)
   }
 
   private func ingressURLs(for accounts: [ServerPluginAccount]) async -> [String: [ServerPluginIngressURL]] {

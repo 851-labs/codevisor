@@ -58,6 +58,8 @@ public final class PluginSetupModel {
     }
   }
 
+  public var signsInToServerHere: Bool { signInClient != nil }
+
   public func refresh() async {
     await loadEntry()
     guard let servers = await report({ try await client.listMcpServers() }) else {
@@ -128,11 +130,15 @@ public final class PluginSetupModel {
   }
 
   private func beginConnect() async {
-    guard opensConnectSheet, let entry, let server else {
+    guard opensConnectSheet, signsInFromConnectSheet, let entry, let server else {
       await beginSignIn()
       return
     }
     connecting = PluginConnectTarget(entry: entry, installed: server)
+  }
+
+  private var signsInFromConnectSheet: Bool {
+    auth != .mcpOAuth || signsInToServerHere
   }
 
   private func closeSignIn() {
@@ -224,6 +230,8 @@ public final class PluginSetupModel {
       let result = try await operation()
       errorMessage = nil
       return result
+    } catch  where isTaskCancellation(error) {
+      return nil
     } catch {
       pluginSignInLog.error("Plugin setup step failed: \(error, privacy: .public)")
       errorMessage = ErrorReporter.userFacingMessage(for: error)

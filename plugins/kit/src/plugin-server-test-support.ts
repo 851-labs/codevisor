@@ -157,8 +157,8 @@ const notificationInbox = (): NotificationInbox & { deliver(notification: Notifi
 }
 
 export interface CapabilityDigest {
-  tools: Array<{ name: string; app: boolean }>
-  events: Array<string>
+  tools: Array<{ name: string; description: string | undefined; app: boolean }>
+  events: Array<{ name: string; description: string }>
   skills: Array<{ name: string; description: string }>
   panes: Array<{ type: string; title: string; resourceUri: string }>
   ingress: Array<{ name: string; title?: string | undefined; route?: string | undefined }>
@@ -167,8 +167,12 @@ export interface CapabilityDigest {
 export const advertisedCapabilities = (serverJson: unknown): CapabilityDigest => {
   const capabilities = advertisedServer.parse(serverJson)._meta["dev.codevisor/plugin"].capabilities
   return {
-    tools: capabilities.tools.map((tool) => ({ name: tool.name, app: tool.app ?? false })),
-    events: capabilities.events.map((event) => event.name),
+    tools: capabilities.tools.map((tool) => ({
+      name: tool.name,
+      description: tool.description,
+      app: tool.app ?? false
+    })),
+    events: capabilities.events,
     skills: capabilities.skills,
     panes: capabilities.panes,
     ingress: capabilities.ingress
@@ -179,7 +183,11 @@ export const servedCapabilities = async (client: Client): Promise<CapabilityDige
   const extensions = client.getServerCapabilities()?.extensions ?? {}
   const { tools } = await client.listTools()
   return {
-    tools: tools.map((tool) => ({ name: tool.name, app: servedApp.safeParse(tool._meta).success })),
+    tools: tools.map((tool) => ({
+      name: tool.name,
+      description: tool.description,
+      app: servedApp.safeParse(tool._meta).success
+    })),
     events: await servedEvents(client, eventsExtension in extensions),
     skills: await servedSkills(client, skillsExtension in extensions),
     panes: panesSetting.parse(extensions[panesExtension] ?? { panes: [] }).panes,
@@ -187,11 +195,14 @@ export const servedCapabilities = async (client: Client): Promise<CapabilityDige
   }
 }
 
-const servedEvents = async (client: Client, declared: boolean): Promise<Array<string>> => {
+const servedEvents = async (
+  client: Client,
+  declared: boolean
+): Promise<CapabilityDigest["events"]> => {
   if (!declared) return []
 
   const listed = await client.request({ method: "events/list" }, eventList)
-  return listed.events.map((event) => event.name)
+  return listed.events.map((event) => ({ name: event.name, description: event.description }))
 }
 
 const servedSkills = async (
@@ -213,7 +224,9 @@ const ingress = z.object({
 const panesSetting = z.object({ panes: z.array(pane) })
 const ingressSetting = z.object({ ingress: z.array(ingress) })
 const servedApp = z.object({ ui: z.object({ resourceUri: z.string() }) })
-const eventList = z.object({ events: z.array(z.object({ name: z.string() })) })
+const eventList = z.object({
+  events: z.array(z.object({ name: z.string(), description: z.string() }))
+})
 const skillList = z.object({
   skills: z.array(
     z.object({ frontmatter: z.object({ name: z.string(), description: z.string() }) })
@@ -224,8 +237,14 @@ const advertisedServer = z.object({
   _meta: z.object({
     "dev.codevisor/plugin": z.object({
       capabilities: z.object({
-        tools: z.array(z.object({ name: z.string(), app: z.boolean().optional() })),
-        events: z.array(z.object({ name: z.string() })),
+        tools: z.array(
+          z.object({
+            name: z.string(),
+            description: z.string().optional(),
+            app: z.boolean().optional()
+          })
+        ),
+        events: z.array(z.object({ name: z.string(), description: z.string() })),
         skills: z.array(z.object({ name: z.string(), description: z.string() })),
         panes: z.array(pane),
         ingress: z.array(ingress)

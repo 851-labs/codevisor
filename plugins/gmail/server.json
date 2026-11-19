@@ -42,94 +42,94 @@
         "tools": [
           {
             "name": "search_messages",
-            "description": "Search messages",
+            "description": "Search messages. Returns compact summaries with message and thread ids.",
             "effects": "read"
           },
           {
             "name": "search_threads",
-            "description": "Search conversations",
+            "description": "Search conversations. Returns one compact summary per thread.",
             "effects": "read"
           },
           {
             "name": "read_message",
-            "description": "Read one message",
+            "description": "Read one message: headers, labels, plain-text body and attachment names. The body includes quoted history.",
             "effects": "read"
           },
           {
             "name": "read_thread",
-            "description": "Read a whole conversation",
+            "description": "Read a whole conversation, oldest first, with quoted history trimmed from each message.",
             "effects": "read"
           },
           {
             "name": "list_labels",
-            "description": "List labels",
+            "description": "List the mailbox's labels with their ids and names.",
             "effects": "read"
           },
           {
             "name": "list_send_as",
-            "description": "List the addresses you can send from",
+            "description": "List the addresses this account can send from: its own address and its Gmail send-as aliases. Pass one as from when writing.",
             "effects": "read"
           },
           {
             "name": "create_draft",
-            "description": "Create a draft or draft reply",
+            "description": "Create a draft without sending it. Pass inReplyToMessageId to draft a reply in that message's thread; recipients and subject then default to the reply's.",
             "effects": "write"
           },
           {
             "name": "update_draft",
-            "description": "Change a draft",
+            "description": "Change a draft. Fields you leave out keep their current values.",
             "effects": "write"
           },
           {
             "name": "send",
-            "description": "Send a message or draft after approval",
+            "description": "Send a new message, or an existing draft by draftId. Requires the user's explicit approval: confirm must be true.",
             "effects": "external-write"
           },
           {
             "name": "reply",
-            "description": "Reply in a thread after approval",
+            "description": "Send a reply in a message's thread, to its sender (or everyone with replyAll). Requires the user's explicit approval: confirm must be true.",
             "effects": "external-write"
           },
           {
             "name": "archive",
-            "description": "Archive messages or threads",
+            "description": "Archive messages or threads: remove them from the inbox.",
             "effects": "write"
           },
           {
             "name": "modify_labels",
-            "description": "Add or remove labels",
+            "description": "Add or remove labels by name or id on messages or threads.",
             "effects": "write"
           },
           {
             "name": "create_label",
-            "description": "Create a label",
+            "description": "Create a label. Use / in the name to nest it under an existing label, such as Clients/Acme.",
             "effects": "write"
           },
           {
             "name": "update_label",
-            "description": "Rename or recolor a label",
+            "description": "Rename a label, or change its color or visibility. Settings you leave out keep their current values. System labels such as INBOX can't change.",
             "effects": "write"
           },
           {
             "name": "delete_label",
-            "description": "Delete a label",
+            "description": "Delete a label. Its messages stay in the mailbox and lose only that label. System labels can't be deleted.",
             "effects": "write"
           },
           {
             "name": "mark_read",
-            "description": "Mark as read",
+            "description": "Mark messages or threads as read.",
             "effects": "write"
           },
           {
             "name": "mark_unread",
-            "description": "Mark as unread",
+            "description": "Mark messages or threads as unread.",
             "effects": "write"
           }
         ],
         "events": [
           {
             "name": "message.received",
-            "description": "A new message arrived in the inbox"
+            "description": "A new message arrived in the inbox. Mail you sent yourself is skipped."
           }
         ],
         "skills": [

@@ -22,6 +22,22 @@ struct PluginConsentMetadataTests {
     #expect(added["version"] as? String == "custom")
   }
 
+  @Test("Consent sends how many tools a plugin has, not their descriptions, so a large plugin still fits")
+  func capabilityCounts() throws {
+    let tools = (0..<83).map {
+      ServerPluginToolDigest(name: "tool_\($0)", description: String(repeating: "Long description. ", count: 40))
+    }
+    let linear = ServerPluginCatalogEntry(
+      id: "dev.codevisor/linear", name: "Linear", description: "", publisher: "Codevisor", version: "1.0.0",
+      transport: "stdio", capabilities: ServerPluginCapabilities(tools: tools))
+
+    let metadata = PluginConsentMetadata(linear, ageRating: 4)
+    let counts = try #require(try encoded(metadata)["capabilities"] as? [String: Int])
+
+    #expect(counts == ["tools": 83, "events": 0, "skills": 0, "panes": 0, "ingress": 0])
+    #expect(try JSONEncoder().encode(metadata).count < 1024)
+  }
+
   private func encoded(_ metadata: PluginConsentMetadata) throws -> [String: Any] {
     try #require(try JSONSerialization.jsonObject(with: JSONEncoder().encode(metadata)) as? [String: Any])
   }

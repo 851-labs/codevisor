@@ -1,79 +1,67 @@
-#if os(macOS)
-  import CodevisorCore
-  import SwiftUI
+import CodevisorCore
+import SwiftUI
 
-  public struct PluginConnectSheet: View {
-    @Environment(AppEnvironment.self) private var environment
-    @Environment(\.dismiss) private var dismiss
-    @State private var model: PluginConnectModel
-    private let client: any CodevisorServerClienting
+public struct PluginConnectSheet: View {
+  @Environment(AppEnvironment.self) private var environment
+  @Environment(\.dismiss) private var dismiss
+  @State private var model: PluginConnectModel
+  private let client: any CodevisorServerClienting
 
-    public init(
-      entry: ServerPluginCatalogEntry,
-      installed: ServerMcpServer? = nil,
-      client: any CodevisorServerClienting,
-      host: PluginConnectHost
-    ) {
-      _model = State(
-        initialValue: PluginConnectModel(entry: entry, installed: installed, client: client, host: host))
-      self.client = client
-    }
+  public init(
+    entry: ServerPluginCatalogEntry,
+    installed: ServerMcpServer? = nil,
+    client: any CodevisorServerClienting,
+    host: PluginConnectHost
+  ) {
+    _model = State(
+      initialValue: PluginConnectModel(entry: entry, installed: installed, client: client, host: host))
+    self.client = client
+  }
 
-    private var entry: ServerPluginCatalogEntry { model.entry }
+  private var entry: ServerPluginCatalogEntry { model.entry }
 
-    private var restriction: String? {
-      environment.pluginAccess.restriction(for: PluginModerationSubject(catalogEntry: entry))
-    }
+  private var subject: PluginModerationSubject { PluginModerationSubject(catalogEntry: entry) }
 
-    private var canContinue: Bool {
-      model.canContinue && restriction == nil && model.primaryTitle != nil
-    }
+  private var restriction: String? {
+    environment.pluginAccess.restriction(for: subject)
+  }
 
-    public var body: some View {
-      NavigationStack { content.modifier(ClearsInitialFocus()) }
+  private var lists: PluginCapabilityLists { PluginCapabilityLists(capabilities: entry.capabilities) }
+
+  private var canContinue: Bool {
+    model.canContinue && restriction == nil && model.primaryTitle != nil
+  }
+
+  public var body: some View {
+    NavigationStack { content.modifier(ClearsInitialFocus()) }
+      #if os(macOS)
         .frame(width: 460)
-        .disabled(model.isWorking)
-        .interactiveDismissDisabled(model.isWorking)
-        .task { await model.load() }
-        .task { try? await environment.pluginAccess.refresh() }
-    }
+      #endif
+      .disabled(model.isWorking)
+      .interactiveDismissDisabled(model.isWorking)
+      .task { await model.load() }
+      .task { try? await environment.pluginAccess.refresh() }
+  }
 
+  #if os(macOS)
     private var content: some View {
       VStack(spacing: 20) {
         PluginConnectHeader(entry: entry, client: client)
         if hasDetails { details }
-        PluginConnectProblems(restriction: restriction, errorMessage: model.errorMessage)
-        VStack(spacing: 10) {
-          PluginConnectActions(model: model, canContinue: canContinue, run: run) { dismiss() }
-          if !model.isInstalled {
-            Text("By installing, you agree to the [Plugin terms](https://codevisor.dev/terms#plugins).")
-              .font(.footnote)
-              .foregroundStyle(.secondary)
-              .multilineTextAlignment(.center)
-              .padding(.top, 4)
-          }
-        }
-        .padding(.horizontal, 28)
+        problems
+        footer
       }
       .padding(.vertical, 28)
     }
 
     private var hasDetails: Bool {
-      let capabilities = entry.capabilities
-      let listed = [
-        capabilities.tools.count, capabilities.skills.count, capabilities.events.count, capabilities.panes.count,
-      ]
-      return listed.contains { $0 > 0 } || !model.draft.fields.isEmpty
+      !lists.summaries.isEmpty || !model.draft.fields.isEmpty
     }
 
     private var details: some View {
       Form {
-        PluginCapabilityLinks(lists: PluginCapabilityLists(capabilities: entry.capabilities))
-        if !model.draft.fields.isEmpty {
-          Section("Configuration") {
-            ConfigFieldForm(draft: $model.draft)
-          }
-        }
+        PluginCapabilityLinks(lists: lists)
+        configuration
       }
       .formStyle(.grouped)
       .scrollContentBackground(.hidden)
@@ -82,112 +70,188 @@
       .frame(maxHeight: 360)
       .fixedSize(horizontal: false, vertical: true)
     }
-
-    private func run(_ choice: PluginConnectModel.Choice) {
-      Task {
-        if await model.run(choice) { dismiss() }
-      }
-    }
-  }
-
-  private struct PluginConnectHeader: View {
-    let entry: ServerPluginCatalogEntry
-    let client: any CodevisorServerClienting
-
-    var body: some View {
-      VStack(spacing: 12) {
-        HStack(spacing: 12) {
-          CodevisorAppIconView(size: 74)
-          HStack(spacing: 4) {
-            ForEach(0..<3, id: \.self) { _ in
-              Circle().fill(.tertiary).frame(width: 4, height: 4)
+  #else
+    private var content: some View {
+      Form {
+        Section {
+          PluginConnectHeader(entry: entry, client: client)
+            .frame(maxWidth: .infinity)
+            .listRowInsets(EdgeInsets())
+            .listRowBackground(Color.clear)
+        }
+        Section {
+          PluginAgeRatingRow(subject: subject)
+          ForEach(lists.summaries) { summary in
+            NavigationLink {
+              PluginCapabilityListPage(summary.page, lists: lists)
+            } label: {
+              PluginListRowLabel(summary)
             }
           }
-          PluginCatalogIcon(entry: entry, client: client, side: 60)
-            .clipShape(RoundedRectangle(cornerRadius: 14, style: .continuous))
-            .padding(7)
         }
-        .accessibilityHidden(true)
-        VStack(spacing: 4) {
-          Text(entry.name).font(.title.weight(.semibold))
-          if !entry.description.isEmpty {
-            Text(entry.description)
-              .font(.callout)
-              .foregroundStyle(.secondary)
-              .multilineTextAlignment(.center)
-              .fixedSize(horizontal: false, vertical: true)
-          }
+        configuration
+        if !subject.isFirstParty { PluginModerationSection(subject: subject) }
+      }
+      .navigationBarTitleDisplayMode(.inline)
+      .toolbar {
+        ToolbarItem(placement: .cancellationAction) {
+          Button("Cancel") { dismiss() }
         }
       }
-      .padding(.horizontal, 28)
+      .safeAreaInset(edge: .bottom, spacing: 0) {
+        VStack(spacing: 12) {
+          problems
+          footer
+        }
+        .padding(.top, 12)
+        .padding(.bottom, 8)
+        .frame(maxWidth: .infinity)
+        .background(Color(uiColor: .systemGroupedBackground))
+      }
+    }
+  #endif
+
+  @ViewBuilder
+  private var configuration: some View {
+    if !model.draft.fields.isEmpty {
+      Section("Configuration") {
+        ConfigFieldForm(draft: $model.draft)
+      }
     }
   }
 
-  private struct PluginConnectActions: View {
-    let model: PluginConnectModel
-    let canContinue: Bool
-    let run: (PluginConnectModel.Choice) -> Void
-    let cancel: () -> Void
+  private var problems: some View {
+    PluginConnectProblems(restriction: restriction, signInNote: model.signInNote, errorMessage: model.errorMessage)
+      .padding(.horizontal, 28)
+  }
 
-    var body: some View {
-      VStack(spacing: 10) {
-        Button {
-          run(.finishSetup)
-        } label: {
-          primaryLabel.frame(maxWidth: .infinity)
-        }
-        .buttonStyle(.borderedProminent)
-        .controlSize(.large)
-        .keyboardShortcut(.defaultAction)
-        .disabled(!canContinue)
-        if let skipTitle = model.skipTitle {
-          Button {
-            run(.skipSignIn)
-          } label: {
-            Text(skipTitle).frame(maxWidth: .infinity)
+  private var footer: some View {
+    VStack(spacing: 10) {
+      PluginConnectActions(model: model, canContinue: canContinue, run: run) { dismiss() }
+      if !model.isInstalled { PluginConnectTerms() }
+    }
+    .padding(.horizontal, 28)
+  }
+
+  private func run(_ choice: PluginConnectModel.Choice) {
+    Task {
+      if await model.run(choice) { dismiss() }
+    }
+  }
+}
+
+private struct PluginConnectHeader: View {
+  let entry: ServerPluginCatalogEntry
+  let client: any CodevisorServerClienting
+
+  var body: some View {
+    VStack(spacing: 12) {
+      HStack(spacing: 12) {
+        CodevisorAppIconView(size: 74)
+        HStack(spacing: 4) {
+          ForEach(0..<3, id: \.self) { _ in
+            Circle().fill(.tertiary).frame(width: 4, height: 4)
           }
-          .buttonStyle(.bordered)
-          .controlSize(.large)
-          .disabled(!canContinue)
         }
+        PluginCatalogIcon(entry: entry, client: client, side: 60)
+          .clipShape(RoundedRectangle(cornerRadius: 14, style: .continuous))
+          .padding(7)
+      }
+      .accessibilityHidden(true)
+      VStack(spacing: 4) {
+        Text(entry.name).font(.title.weight(.semibold))
+        if !entry.description.isEmpty {
+          Text(entry.description)
+            .font(.callout)
+            .foregroundStyle(.secondary)
+            .multilineTextAlignment(.center)
+            .fixedSize(horizontal: false, vertical: true)
+        }
+      }
+    }
+    .padding(.horizontal, 28)
+  }
+}
+
+private struct PluginConnectActions: View {
+  let model: PluginConnectModel
+  let canContinue: Bool
+  let run: (PluginConnectModel.Choice) -> Void
+  let cancel: () -> Void
+
+  var body: some View {
+    VStack(spacing: 10) {
+      Button {
+        run(.finishSetup)
+      } label: {
+        primaryLabel.frame(maxWidth: .infinity)
+      }
+      .buttonStyle(.borderedProminent)
+      .controlSize(.large)
+      .keyboardShortcut(.defaultAction)
+      .disabled(!canContinue)
+      if let skipTitle = model.skipTitle {
+        Button {
+          run(.skipSignIn)
+        } label: {
+          Text(skipTitle).frame(maxWidth: .infinity)
+        }
+        .buttonStyle(.bordered)
+        .controlSize(.large)
+        .disabled(!canContinue)
+      }
+      #if os(macOS)
         Button("Cancel", action: cancel)
           .buttonStyle(.link)
           .keyboardShortcut(.cancelAction)
-      }
-    }
-
-    @ViewBuilder
-    private var primaryLabel: some View {
-      if model.isWorking {
-        ProgressView().controlSize(.small)
-      } else {
-        Text(model.primaryTitle ?? "Checking sign-in…")
-      }
+      #endif
     }
   }
 
-  private struct PluginConnectProblems: View {
-    let restriction: String?
-    let errorMessage: String?
+  @ViewBuilder
+  private var primaryLabel: some View {
+    if model.isWorking {
+      ProgressView().controlSize(.small)
+    } else {
+      Text(model.primaryTitle ?? "Checking sign-in…")
+    }
+  }
+}
 
-    var body: some View {
-      if restriction != nil || errorMessage != nil {
-        VStack(spacing: 8) {
-          if let restriction {
-            Text(restriction)
-              .font(.callout)
-              .foregroundStyle(.secondary)
-              .multilineTextAlignment(.center)
-          }
-          if let errorMessage {
-            Label(errorMessage, systemImage: "exclamationmark.triangle.fill")
-              .font(.callout)
-              .foregroundStyle(.red)
-              .fixedSize(horizontal: false, vertical: true)
-          }
+private struct PluginConnectProblems: View {
+  let restriction: String?
+  let signInNote: String?
+  let errorMessage: String?
+
+  private var notes: [String] { [restriction, signInNote].compactMap(\.self) }
+
+  var body: some View {
+    if !notes.isEmpty || errorMessage != nil {
+      VStack(spacing: 8) {
+        ForEach(notes, id: \.self) { note in
+          Text(note)
+            .font(.callout)
+            .foregroundStyle(.secondary)
+            .multilineTextAlignment(.center)
+            .fixedSize(horizontal: false, vertical: true)
         }
-        .padding(.horizontal, 28)
+        if let errorMessage {
+          Label(errorMessage, systemImage: "exclamationmark.triangle.fill")
+            .font(.callout)
+            .foregroundStyle(.red)
+            .fixedSize(horizontal: false, vertical: true)
+        }
       }
     }
   }
-#endif
+}
+
+private struct PluginConnectTerms: View {
+  var body: some View {
+    Text("By installing, you agree to the [Plugin terms](https://codevisor.dev/terms#plugins).")
+      .font(.footnote)
+      .foregroundStyle(.secondary)
+      .multilineTextAlignment(.center)
+      .padding(.top, 4)
+  }
+}
