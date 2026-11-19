@@ -305,7 +305,9 @@ player. A failed status at a barrier skips the run on both Macs. The `report` jo
 runs `tier2-report`, which writes `report.json` and `summary.md` (also the job summary). The summaries name each system in plain words (`Tier2SystemLabel`: "Apple HP", "Codevisor, default encoder (VCP)", "Codevisor, fallback encoder (VideoToolbox)") under a one-line legend; `report.json` keeps the system ids (`apple-hp`, `codevisor-v2-vcp`, `codevisor-v2`). In every scene but test cards and input, the player draws the bottom barcode and each side runs a second observer on it (`host-bottom.jsonl`, `viewer-bottom.jsonl`). The summary's top-and-bottom table gives the image age at both barcodes and the share of viewer frames whose two barcodes show different versions (torn frames: at every frame either observer records inside the run's window, the latest version each has seen, with readings less than 2 ms apart taken as one frame; a region stream records a frame only when its own strip changed, so frames aren't paired one to one). The host draws both barcodes in one frame, so its torn share is a check on the method and should be 0. The bottom image age uses the top's window.
 
 - `rendezvous --serve` holds each named barrier until both parties arrive, then tells both every party's
-  status; `rendezvous --host <ipv4> --barrier <name> --party host|viewer [--status <text>]` exits 1 unless
+  status (it queues up to 16 pending connections: with a queue of one, both Macs reaching a barrier at the same
+  instant could have one connection reset, which the viewer took for "the host could not start", skipped the run,
+  and left the two jobs one run out of step for the rest of the dispatch; weekly run 44473660542, dispatch b); `rendezvous --host <ipv4> --barrier <name> --party host|viewer [--status <text>]` exits 1 unless
   every status is `ok`.
 - `preflight [--allow-screen-sharing-from <address or Bonjour name>,…]` prints load, thermal state, CI jobs,
   the displays and every established `:5900` peer, and fails when the session is locked, a peer isn't

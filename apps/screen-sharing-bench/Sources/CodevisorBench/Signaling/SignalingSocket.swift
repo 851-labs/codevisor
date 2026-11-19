@@ -2,6 +2,7 @@ import Darwin
 
 enum SignalingSocket {
   static let defaultPort: UInt16 = 47_593
+  private static let pendingConnections: Int32 = 16
 
   static func listen(port: UInt16) throws -> Int32 {
     let descriptor = try stream()
@@ -9,7 +10,9 @@ enum SignalingSocket {
     setsockopt(descriptor, SOL_SOCKET, SO_REUSEADDR, &reuse, socklen_t(MemoryLayout<Int32>.size))
     var address = socketAddress(port: port, ipv4: in_addr(s_addr: INADDR_ANY))
     let bound = withSocketAddress(&address) { Darwin.bind(descriptor, $0, $1) }
-    guard bound == 0, Darwin.listen(descriptor, 1) == 0 else { throw failure("bind/listen", closing: descriptor) }
+    guard bound == 0, Darwin.listen(descriptor, pendingConnections) == 0 else {
+      throw failure("bind/listen", closing: descriptor)
+    }
 
     return descriptor
   }
