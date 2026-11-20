@@ -8,6 +8,7 @@ import {
   ImportRemoteSkillRequest,
   RemoveNativeMcpRequest,
   SetNativeMcpEnabledRequest,
+  StartPluginAccountOAuthRequest,
   UpdateMcpServerRequest
 } from "@codevisor/api"
 
@@ -62,6 +63,13 @@ export const codevisorExtensionApiTools: ReadonlyArray<CodevisorApiToolSpec> = [
     "Start OAuth sign-in for a plugin that is a hosted MCP server.",
     "POST",
     "/v1/mcps/:id/oauth-start"
+  ),
+  apiTool(
+    "plugins.account_oauth_start",
+    "Start signing in to a plugin's provider account, such as a Linear workspace or Google account. Returns an authorizationUrl for the user to open in a browser on any of their devices; the account appears once they finish. Pass accountId to re-authorize an existing account.",
+    "POST",
+    "/v1/plugins/:serverId/accounts/oauth/start",
+    { body: StartPluginAccountOAuthRequest }
   ),
   apiTool(
     "plugins.oauth_disconnect",

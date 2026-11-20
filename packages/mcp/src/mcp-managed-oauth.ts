@@ -3,8 +3,13 @@ import type { FetchLike } from "@modelcontextprotocol/server"
 
 import type { McpCatalogResolver } from "./mcp-manager-types.js"
 
+export interface ManagedOAuthClient {
+  readonly clientId: string
+  readonly cloudCallback: boolean
+}
+
 export interface ManagedOAuthClients {
-  readonly clientId: (client: string) => Promise<string>
+  readonly client: (client: string) => Promise<ManagedOAuthClient>
   readonly exchange: (client: string, tokenUrl: string, form: string) => Promise<unknown>
 }
 

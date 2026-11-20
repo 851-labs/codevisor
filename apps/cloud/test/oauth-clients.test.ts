@@ -56,8 +56,20 @@ describe("managed OAuth clients", () => {
     const anonymous = await call(bindings, "/api/machine/oauth-clients/github", undefined)
     const unset = await call(env, "/api/machine/oauth-clients/github", apiKey)
 
-    expect(await readJson(known, jsonRecord)).toEqual({ clientId: "github-client" })
+    expect(await readJson(known, jsonRecord)).toEqual({
+      clientId: "github-client",
+      cloudCallback: false
+    })
     expect([unknown.status, anonymous.status, unset.status]).toEqual([404, 401, 503])
+  })
+
+  it("tells machines to use the Cloud callback only for clients configured to accept it", async () => {
+    const apiKey = await machineKey()
+    const bindings = { ...configured(vi.fn()), MANAGED_OAUTH_CLOUD_CALLBACK: "slack, github" }
+
+    const github = await call(bindings, "/api/machine/oauth-clients/github", apiKey)
+
+    expect(await readJson(github, jsonRecord)).toMatchObject({ cloudCallback: true })
   })
 
   it("adds the client secret to a machine's code exchange", async () => {
@@ -153,7 +165,10 @@ describe("managed OAuth clients", () => {
     await exchange(publicClient)
     await exchange(withSecret)
 
-    expect(await readJson(known, jsonRecord)).toEqual({ clientId: "slack-client" })
+    expect(await readJson(known, jsonRecord)).toEqual({
+      clientId: "slack-client",
+      cloudCallback: false
+    })
     expect(unset.status).toBe(503)
     expect(fetcher.mock.calls.map(([url, init]) => [url, sentSecret(init)])).toEqual([
       [slackTokenUrl, null],

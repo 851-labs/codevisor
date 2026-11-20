@@ -10,9 +10,11 @@ const googleClient = (clientId: string, clientSecret?: string) => ({
   installed: {
     client_id: clientId,
     ...(clientSecret === undefined ? {} : { client_secret: clientSecret }),
-    redirect_uris: ["http://localhost"]
+    redirect_uris: googleRedirects
   }
 })
+
+const googleRedirects = ["http://localhost"]
 
 const temporaryRoot = async (): Promise<string> => {
   const root = await mkdtemp(join(tmpdir(), "installed-oauth-"))
@@ -50,7 +52,11 @@ describe("installed OAuth clients", () => {
 
     const client = await paths.clients({}, true)("google")
 
-    expect(client).toEqual({ clientId: "dev-client", clientSecret: "dev-secret" })
+    expect(client).toEqual({
+      clientId: "dev-client",
+      clientSecret: "dev-secret",
+      redirectUris: googleRedirects
+    })
   })
 
   it("uses the client a release build bundled, in any build and ahead of the dev file", async () => {
@@ -61,7 +67,11 @@ describe("installed OAuth clients", () => {
     const release = await paths.clients({}, false)("google")
     const dev = await paths.clients({}, true)("google")
 
-    expect(release).toEqual({ clientId: "bundled-client", clientSecret: "bundled-secret" })
+    expect(release).toEqual({
+      clientId: "bundled-client",
+      clientSecret: "bundled-secret",
+      redirectUris: googleRedirects
+    })
     expect(dev).toEqual(release)
   })
 
@@ -80,8 +90,8 @@ describe("installed OAuth clients", () => {
       false
     )("google")
 
-    expect(fromEnv).toEqual({ clientId: "prod-client" })
-    expect(fallback).toEqual({ clientId: "bundled-client" })
+    expect(fromEnv).toEqual({ clientId: "prod-client", redirectUris: googleRedirects })
+    expect(fallback).toEqual({ clientId: "bundled-client", redirectUris: googleRedirects })
   })
 
   it("has no client in release builds without configuration, or for unknown providers", async () => {

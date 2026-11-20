@@ -1,10 +1,12 @@
 import { generateDeviceKeyPair, openChannel, sealJson, toBase64Url } from "@codevisor/cloud-crypto"
 import { z } from "zod"
 
+export type InboxItemKind = "webhook" | "oauth"
+
 export interface InboxItemFrame {
   readonly t: "inbox-item"
   readonly itemId: string
-  readonly kind: "webhook"
+  readonly kind: InboxItemKind
   readonly sender: string
   readonly ephemeralKey: string
   readonly sealed: string
@@ -22,18 +24,30 @@ export interface WebhookItem extends InboxRequest {
   readonly inboxId: string
 }
 
+export interface OAuthCallbackItem {
+  readonly state: string
+  readonly code?: string
+  readonly iss?: string
+  readonly error?: string
+}
+
 export const INBOX_SEAL_DIRECTION = "opener-to-responder"
 export const INBOX_SEAL_SEQ = 0
 export const MAX_ACK_BATCH = 500
 
-export const sealInboxItem = (devicePublicKey: string, item: WebhookItem): InboxItemFrame => {
+export const sealInboxItem = (
+  devicePublicKey: string,
+  itemId: string,
+  kind: InboxItemKind,
+  payload: WebhookItem | OAuthCallbackItem
+): InboxItemFrame => {
   const sender = generateDeviceKeyPair()
   const channel = openChannel(sender.secretKey, devicePublicKey)
-  const sealed = sealJson(channel.cipher, item.itemId, INBOX_SEAL_DIRECTION, INBOX_SEAL_SEQ, item)
+  const sealed = sealJson(channel.cipher, itemId, INBOX_SEAL_DIRECTION, INBOX_SEAL_SEQ, payload)
   return {
     t: "inbox-item",
-    itemId: item.itemId,
-    kind: "webhook",
+    itemId,
+    kind,
     sender: sender.publicKey,
     ephemeralKey: channel.ephemeralPublicKey,
     sealed: toBase64Url(sealed)

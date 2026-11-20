@@ -1,21 +1,22 @@
 import type { McpServer } from "@codevisor/api"
 import type { CodevisorDatabaseService } from "@codevisor/db"
-import type { ManagedOAuthClients, McpManager } from "@codevisor/mcp"
+import type { ManagedOAuthClients, McpManager, McpManagerConfig } from "@codevisor/mcp"
 import type { SyncEntryRecord } from "@codevisor/sync"
 
-import type { CloudInbox } from "../infra/cloud-inbox.js"
+import type { CloudInbox, InboxOAuthCallback } from "../infra/cloud-inbox.js"
 import type { CloudServerControl } from "../server-context-types.js"
 import { HttpFailure } from "../server-context.js"
 import { field } from "../unknown-values.js"
 import type { InstalledOAuthClients } from "./accounts/installed-oauth-clients.js"
 import { checkPluginAccount } from "./accounts/plugin-account-check.js"
-import type { OAuthRedirects } from "./accounts/plugin-account-flows.js"
 import { makePluginAccountStore } from "./accounts/plugin-account-store.js"
 import {
   makePluginAccounts,
   type PluginAccounts,
   type PluginVault
 } from "./accounts/plugin-accounts.js"
+import { sealedPendingOAuthStorage } from "./accounts/plugin-oauth-storage.js"
+import { makeOAuthRelay, type OAuthRelay } from "./oauth-relay.js"
 import type { PluginCatalog } from "./plugin-catalog.js"
 
 export interface PluginPlatform {
@@ -28,7 +29,7 @@ export interface PluginPlatform {
     listener: (entries: ReadonlyArray<SyncEntryRecord>) => void
   ) => () => void
   readonly onAccountRemoving: (listener: AccountRemovingListener) => () => void
-  readonly managedOAuth: ManagedOAuthClients
+  readonly mcpOAuth: Pick<McpManagerConfig, "managedOAuth" | "oauthRelay">
   readonly accountSource: {
     readonly list: (serverId: string) => Promise<ReadonlyArray<{ id: string; label: string }>>
     readonly meta: (
@@ -49,6 +50,8 @@ export interface PluginPlatformDeps {
   readonly inbox: CloudInbox | undefined
   readonly localBaseUrl: string
   readonly installedClients?: InstalledOAuthClients
+  readonly secretKey?: Buffer
+  readonly appScheme?: string
 }
 
 export const makePluginPlatform = (deps: PluginPlatformDeps): PluginPlatform => {
@@ -62,13 +65,16 @@ export const makePluginPlatform = (deps: PluginPlatformDeps): PluginPlatform => 
     return found
   }
 
+  const relay = oauthRelayFor(deps)
   const accounts = makePluginAccounts({
     store: makePluginAccountStore(deps.db, deps.serverId),
     vault: deps.vault,
     server,
     spec: (found) =>
       found.catalogId === undefined ? undefined : deps.catalog.entry(found.catalogId)?.accounts,
-    redirects: oauthRedirects(deps),
+    redirects: { loopbackUri: loopbackUri(deps), relay },
+    pendingStorage:
+      deps.secretKey === undefined ? undefined : sealedPendingOAuthStorage(deps.db, deps.secretKey),
     installedClients: deps.installedClients,
     check: (found, account) =>
       checkPluginAccount((id) => requireMcp(mcp).pluginConnection(id), found.id, account),
@@ -80,6 +86,8 @@ export const makePluginPlatform = (deps: PluginPlatformDeps): PluginPlatform => 
     }
   })
 
+  deps.inbox?.onOAuth((callback) => completeRelayedOAuth(accounts, mcp, callback))
+
   return {
     accounts,
     inbox: deps.inbox,
@@ -88,7 +96,7 @@ export const makePluginPlatform = (deps: PluginPlatformDeps): PluginPlatform => 
     attachMcp: (manager) => {
       mcp = manager
     },
-    managedOAuth: managedOAuthClients(deps),
+    mcpOAuth: { managedOAuth: managedOAuthClients(deps), oauthRelay: relay },
     onAccountsChanged: (listener) => {
       listeners.add(listener)
       return () => {
@@ -114,12 +122,45 @@ export const makePluginPlatform = (deps: PluginPlatformDeps): PluginPlatform => 
   }
 }
 
+const completeRelayedOAuth = async (
+  accounts: PluginAccounts,
+  mcp: McpManager | undefined,
+  callback: InboxOAuthCallback
+): Promise<void> => {
+  await finishRelayedOAuth(accounts, mcp, callback).catch((cause: unknown) => {
+    console.log(`A relayed sign-in didn't finish: ${errorText(cause)}`)
+  })
+}
+
+const finishRelayedOAuth = async (
+  accounts: PluginAccounts,
+  mcp: McpManager | undefined,
+  callback: InboxOAuthCallback
+): Promise<void> => {
+  if (await accounts.ownsOAuthState(callback.state)) {
+    return accounts.completeOAuth(callback.state, callback.code, callback.error)
+  }
+  if (mcp === undefined || callback.code === undefined) return
+
+  await mcp.finishOAuth(callback.state, callback.code, callback.issuer)
+}
+
+const errorText = (cause: unknown): string =>
+  cause instanceof Error ? cause.message : String(cause)
+
+const oauthRelayFor = (deps: PluginPlatformDeps): OAuthRelay =>
+  makeOAuthRelay({
+    cloud: deps.cloud,
+    appScheme: deps.appScheme ?? "codevisor",
+    log: (message) => console.log(message)
+  })
+
 const managedOAuthClients = (deps: PluginPlatformDeps): ManagedOAuthClients => ({
-  clientId: async (client) => {
+  client: async (client) => {
     const reply = await requireCloudRequest(deps)("GET", `/api/machine/oauth-clients/${client}`)
     const clientId = field(reply, "clientId")
     if (typeof clientId !== "string") throw new Error("The cloud didn't return an OAuth client")
-    return clientId
+    return { clientId, cloudCallback: field(reply, "cloudCallback") === true }
   },
   exchange: (client, tokenUrl, form) =>
     requireCloudRequest(deps)("POST", `/api/machine/oauth-clients/${client}/token`, {
@@ -135,14 +176,8 @@ const requireCloudRequest = (deps: PluginPlatformDeps) => {
   return request
 }
 
-const oauthRedirects = (deps: PluginPlatformDeps): OAuthRedirects => ({
-  prepare: async () => loopbackRedirect(deps)
-})
-
-const loopbackRedirect = (deps: PluginPlatformDeps) => ({
-  redirectUri: new URL("/v1/plugins/oauth/callback", deps.localBaseUrl).toString(),
-  returnTo: "local"
-})
+const loopbackUri = (deps: PluginPlatformDeps): string =>
+  new URL("/v1/plugins/oauth/callback", deps.localBaseUrl).toString()
 
 const requireMcp = (mcp: McpManager | undefined): McpManager => {
   if (mcp === undefined) throw new HttpFailure(501, "Plugins unavailable")

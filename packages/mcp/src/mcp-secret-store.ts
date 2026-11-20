@@ -50,20 +50,26 @@ export const loadEncryptionKey = (dataDir: string): Buffer => {
   return key
 }
 
-export const encryptSecrets = (key: Buffer, value: StoredSecrets): string => {
+export const encryptSecrets = (key: Buffer, value: StoredSecrets): string => sealJson(key, value)
+
+export const decryptSecrets = (key: Buffer, value: string | undefined): StoredSecrets => {
+  if (value === undefined) return {}
+  // oxlint-disable-next-line typescript/no-unsafe-type-assertion
+  return openJson(key, value) as StoredSecrets
+}
+
+export const sealJson = (key: Buffer, value: unknown): string => {
   const iv = randomBytes(12)
   const cipher = createCipheriv("aes-256-gcm", key, iv)
   const ciphertext = Buffer.concat([cipher.update(JSON.stringify(value), "utf8"), cipher.final()])
   return Buffer.concat([iv, cipher.getAuthTag(), ciphertext]).toString("base64")
 }
 
-export const decryptSecrets = (key: Buffer, value: string | undefined): StoredSecrets => {
-  if (value === undefined) return {}
+export const openJson = (key: Buffer, value: string): unknown => {
   const encoded = Buffer.from(value, "base64")
   if (encoded.length < 29) throw new Error("Invalid encrypted MCP credentials")
   const decipher = createDecipheriv("aes-256-gcm", key, encoded.subarray(0, 12))
   decipher.setAuthTag(encoded.subarray(12, 28))
   const plaintext = Buffer.concat([decipher.update(encoded.subarray(28)), decipher.final()])
-  // oxlint-disable-next-line typescript/no-unsafe-type-assertion
-  return JSON.parse(plaintext.toString("utf8")) as StoredSecrets
+  return JSON.parse(plaintext.toString("utf8"))
 }

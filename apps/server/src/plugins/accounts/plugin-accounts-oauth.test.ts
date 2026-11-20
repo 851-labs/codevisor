@@ -1,109 +1,17 @@
-import { dirname } from "node:path"
-
 import type { PluginAccountSpec } from "@codevisor/api"
-import type { SyncEntryRecord } from "@codevisor/sync"
 import { describe, expect, it } from "vitest"
 
-import { manualOAuthClock, sharedCoordinator } from "../../infra/mcp-oauth-test-support.js"
-import { mcpCredentialVault } from "../../infra/shared-account-storage.js"
-import { HttpFailure } from "../../server-context.js"
-import { makeServices } from "../../test-support.js"
-import { savePluginRow } from "../events/plugin-events-test-support.js"
-import type { InstalledOAuthClients } from "./installed-oauth-clients.js"
-import { oauthFlowLifetimeMs } from "./plugin-account-oauth.js"
-import { makePluginAccountStore } from "./plugin-account-store.js"
-import { makePluginAccounts } from "./plugin-accounts.js"
 import {
-  fakeOAuthProvider,
-  type FakeOAuthProvider,
-  type ProviderOptions
-} from "./plugin-oauth-test-support.js"
-
-const callbackUrl = "http://127.0.0.1:43210/v1/plugins/oauth/callback"
-
-const clientFields: PluginAccountSpec["fields"] = [
-  { key: "clientId", label: "OAuth client ID", type: "string", required: true },
-  { key: "clientSecret", label: "OAuth client secret", type: "secret", required: true }
-]
-
-interface FixtureOptions {
-  readonly catalogId?: string
-  readonly revokeFails?: boolean
-  readonly installedClients?: InstalledOAuthClients
-}
-
-const oauthFixture = async (
-  specFor: (provider: FakeOAuthProvider) => PluginAccountSpec | undefined,
-  options: ProviderOptions = {},
-  fixtureOptions: FixtureOptions = { catalogId: "example.mail" }
-) => {
-  const { services } = await makeServices("server-a")
-  const clock = manualOAuthClock(Date.UTC(2026, 9, 27, 9))
-  const vault = mcpCredentialVault(
-    dirname(services.attachments.root),
-    sharedCoordinator(clock).machine("server-a"),
-    clock.now
-  )
-  const provider = await fakeOAuthProvider(options)
-  const server = await savePluginRow(
-    services.db,
-    "Mail",
-    fixtureOptions.catalogId === undefined ? {} : { catalogId: fixtureOptions.catalogId }
-  )
-  const changes: Array<ReadonlyArray<SyncEntryRecord>> = []
-  const accounts = makePluginAccounts({
-    store: makePluginAccountStore(services.db, "server-a", clock.now),
-    vault:
-      fixtureOptions.revokeFails === true
-        ? { ...vault, revoke: () => Promise.reject(new Error("vault offline")) }
-        : vault,
-    server: async (serverId) => {
-      if (serverId === server.id) return server
-      throw new HttpFailure(404, `Plugin not found: ${serverId}`)
-    },
-    spec: () => specFor(provider),
-    redirects: { prepare: async () => ({ redirectUri: callbackUrl, returnTo: "local" }) },
-    ...(fixtureOptions.installedClients === undefined
-      ? {}
-      : { installedClients: fixtureOptions.installedClients }),
-    onChanged: (entries) => changes.push(entries),
-    now: clock.now
-  })
-  const signIn = async (
-    request: {
-      readonly label?: string
-      readonly accountId?: string
-      readonly values?: Record<string, unknown>
-      readonly callbackScheme?: string
-    } = {}
-  ) => {
-    const started = await accounts.startOAuth(server.id, {
-      values: request.values ?? { clientId: "client-1", clientSecret: "client-secret" },
-      ...(request.label === undefined ? {} : { label: request.label }),
-      ...(request.callbackScheme === undefined ? {} : { callbackScheme: request.callbackScheme }),
-      ...(request.accountId === undefined ? {} : { accountId: request.accountId })
-    })
-    return { started, grant: provider.authorize(started.authorizationUrl) }
-  }
-  const storedCredential = async (accountId: string) => {
-    const record = await makePluginAccountStore(services.db, "server-a").get(accountId)
-    return record!.credential!
-  }
-  return { accounts, provider, server, clock, vault, changes, signIn, storedCredential }
-}
-
-const exampleSpec = (provider: FakeOAuthProvider): PluginAccountSpec => ({
-  label: "Example account",
-  oauth: provider.spec({ authorizeParams: { access_type: "offline" } }),
-  fields: clientFields
-})
-
-const cloudRedirect = "https://cloud.example/oauth/plugins/callback"
-
-const appRedirectSpec = (provider: FakeOAuthProvider): PluginAccountSpec => ({
-  ...exampleSpec(provider),
-  oauth: provider.spec({ redirectUrl: cloudRedirect })
-})
+  appRedirectSpec,
+  callbackUrl,
+  clientFields,
+  cloudRedirect,
+  exampleSpec,
+  failure,
+  oauthFixture
+} from "./plugin-account-oauth-test-support.js"
+import { oauthFlowLifetimeMs } from "./plugin-account-oauth.js"
+import type { FakeOAuthProvider } from "./plugin-oauth-test-support.js"
 
 const graphqlSpec = (provider: FakeOAuthProvider): PluginAccountSpec => ({
   label: "Workspace",
@@ -115,8 +23,6 @@ const graphqlSpec = (provider: FakeOAuthProvider): PluginAccountSpec => ({
   }),
   fields: clientFields
 })
-
-const failure = (status: number, message: string) => expect.objectContaining({ status, message })
 
 describe("plugin account OAuth", () => {
   it("signs in with PKCE and names the account after the provider's identity", async () => {
@@ -194,7 +100,10 @@ describe("plugin account OAuth", () => {
 
     for (const callbackScheme of [undefined, "https", "codevisor-dev-../evil"])
       await expect(signIn(callbackScheme === undefined ? {} : { callbackScheme })).rejects.toEqual(
-        failure(400, "Sign in to this plugin from the Codevisor app")
+        failure(
+          400,
+          "Start this sign-in from the Codevisor app, or sign this machine in to Codevisor Cloud so it can finish from any device"
+        )
       )
   })
 

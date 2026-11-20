@@ -185,7 +185,7 @@ async function beginMcpAuthorization(
 ): Promise<boolean> {
   const app = appScheme(url.searchParams.get(appSchemeParameter))
   const ticket = signInTicket(url.searchParams.get(ticketParameter))
-  const begun = await manager.beginOAuth(id, url.origin).catch((cause: unknown) => {
+  const begun = await manager.beginOAuth(id, url.origin, app).catch((cause: unknown) => {
     signIn.signInHandoffs.settle(ticket, { failure: failureMessage(cause) })
     throw cause
   })
