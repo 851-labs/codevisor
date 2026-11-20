@@ -226,7 +226,7 @@ records which worktree that is:
   mounted from `tmp/`, but the container's own disk cannot be: Apple's
   `container` keeps it in its one data folder for the whole Mac,
   `~/Library/Application Support/com.apple.container/containers/<name>`
-  (about 2 GB), and Docker and OrbStack keep it in their own VM disk. The
+  (2.4 to 3 GB measured), and Docker and OrbStack keep it in their own VM disk. The
   container is started with `--rm`, so that disk is deleted as soon as the
   container stops, and Docker and OrbStack also delete its volumes. The
   `node:22-bookworm` image (about 1 GB) and the Linux bun cache

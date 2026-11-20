@@ -106,9 +106,13 @@ A fresh dev instance signs into the development account by itself on its
 first launch (`running-dev` explains when), so the other dev machines are
 listed without a sign-in step. When the app is signed out, because it was
 signed out or its data was deleted, it opens in onboarding; when the change
-is not about onboarding, sign in with "Use Development Account". Choose
+is not about onboarding, sign in with "Use Development Account". A fresh
+iOS app still asks for the AI data-sharing consent ("Where your data goes",
+Continue) even when it is signed in; that is not a sign-in step. Choose
 "Set Up Later" on every step that offers it, and start chats with "No
-project" unless the change needs a specific project.
+project" unless the change needs a specific project. If `axe tap` reports
+success but an onboarding button does not react, repeat it with
+`--tap-style physical`.
 
 ## Marketing screenshots are a different thing
 
