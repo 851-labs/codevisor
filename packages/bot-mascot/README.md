@@ -48,16 +48,28 @@ normally. `mountBotMascot(element)` writes frames into an element, rewriting onl
 Idle is the hub: every animation starts from idle and returns to it. `botMascotSegments` names each part
 and the state it goes from and to:
 
-| Segment        | From → to         | What he does                                           |
-| -------------- | ----------------- | ------------------------------------------------------ |
-| `idle`         | idle → idle       | the resting loop                                       |
-| `pickUp`       | idle → calling    | the phone pops in, he grabs it and lifts it to his ear |
-| `calling`      | calling → calling | talks on the phone; loops cleanly                      |
-| `hangUp`       | calling → idle    | says bye, lowers the phone, puts it away and settles   |
-| `angryHangUp`  | calling → idle    | gets annoyed, yells, throws the phone and huffs it off |
-| `startWorking` | idle → working    | grows his arms and pops out the clipboard              |
-| `working`      | working → working | reads the clipboard and flips its page                 |
-| `stopWorking`  | working → idle    | tucks the clipboard and his arms away                  |
+| Segment        | From → to         | What he does                                            |
+| -------------- | ----------------- | ------------------------------------------------------- |
+| `idle`         | idle → idle       | the resting loop                                        |
+| `pickUp`       | idle → calling    | the phone pops in, he grabs it and lifts it to his ear  |
+| `calling`      | calling → calling | talks on the phone; loops cleanly                       |
+| `hangUp`       | calling → idle    | says bye, lowers the phone, puts it away and settles    |
+| `angryHangUp`  | calling → idle    | gets annoyed, yells, throws the phone and huffs it off  |
+| `startWorking` | idle → working    | grows his arms and pops out the clipboard               |
+| `working`      | working → working | reads the clipboard and flips its page                  |
+| `stopWorking`  | working → idle    | tucks the clipboard and his arms away                   |
+| `waiting`      | idle → idle       | idle, with a quick look at his watch, then a longer one |
+
+`waiting` is for a bot that is idle while its sub-agents work (`src/animations/waiting.ts`). It's one idle loop
+with a look at his wristwatch in it: he holds his wrist in front of his body and bows down to it for a quick look,
+comes back up, then bows again for a longer look, comes a little closer with his eye a little wider, and tucks it
+away, breathing throughout. His eye darts to his arm as it comes out and stays on the watch while he looks. No
+request routes to it in the player; the Rive character plays it as the `waiting` mode, and the Mac and iOS apps
+show it for a bot that isn't in a turn and isn't open while any agent it started is working.
+
+His eye travels far sideways (34 across at a full turn) and hardly at all up or down (6 for a whole `up`), so the
+look down is carried by his bow (a squash) and by an `up` of 3, past what a gaze does. The watch stays where it is
+on the stage while he bows to it.
 
 `botMascotRoute(state, request)` gives the chain for a request (`"idle"`, `"calling"`, `"working"`,
 `"hangUp"`, `"angryHangUp"`): from calling, `"working"` is `["hangUp", "startWorking", "working"]`.
@@ -131,16 +143,17 @@ curl -fsSL https://releases.rive.app/cli/v1.8.0/rive-macos-arm64.tar.gz | tar xz
 
 The artboard `Bot Mascot` and state machine `Bot Mascot` use the view model `BotMascot`:
 
-| Property                                                           | Meaning                                                    |
-| ------------------------------------------------------------------ | ---------------------------------------------------------- |
-| `mode`                                                             | enum: `idle`, `working` or `calling`                       |
-| `hangUp`, `angryHangUp`                                            | triggers that end a call                                   |
-| `hat`, `outfit`                                                    | enums: `none` or an item id                                |
-| `body0…`, `hat0…`, `outfit0…`                                      | color slots for the body, the hat and the outfit           |
-| `gazeX`, `gazeY`, `gazeWeight`                                     | the look direction (-1 to 1, already eased) and its weight |
-| `face/eyewear`                                                     | enum: `none` or an eyewear id                              |
-| `face/lashesOn`, `face/blushOn`, `face/frecklesOn`                 | 0 or 1                                                     |
-| `face/face0…`, `face/blush0…`, `face/freckles0…`, `face/eyewear0…` | color slots for the face parts                             |
+| Property                                                           | Meaning                                                     |
+| ------------------------------------------------------------------ | ----------------------------------------------------------- |
+| `mode`                                                             | enum: `idle`, `working`, `calling`, `sleeping` or `waiting` |
+| `hangUp`, `angryHangUp`                                            | triggers that end a call                                    |
+| `hat`, `outfit`                                                    | enums: `none` or an item id                                 |
+| `body0…`, `hat0…`, `outfit0…`                                      | color slots for the body, the hat and the outfit            |
+| `phone0…`, `clipboard0…`, `watch0…`                                | color slots for the props                                   |
+| `gazeX`, `gazeY`, `gazeWeight`                                     | the look direction (-1 to 1, already eased) and its weight  |
+| `face/eyewear`                                                     | enum: `none` or an eyewear id                               |
+| `face/lashesOn`, `face/blushOn`, `face/frecklesOn`                 | 0 or 1                                                      |
+| `face/face0…`, `face/blush0…`, `face/freckles0…`, `face/eyewear0…` | color slots for the face parts                              |
 
 `riveValues(config)` turns a look into those values, using `src/data/rive-colors.json` (every item × color
 choice × body color, so a host never computes colors). The face is the nested `Face` artboard: three row
@@ -157,6 +170,13 @@ shoulders is keyed to the TypeScript body, so the arms fit it exactly, and a joi
 body-and-arm silhouette, fillets included, wherever an arm pushes past the body. Grow and collapse are
 keyed every frame and the rest every other frame. A draw rule moves the right arm behind the clipboard or
 between its pages, and outfits with sleeves get clipped sleeves.
+
+`waiting` plays the waiting loop through idle in two baked parts, so it only ever leaves while his arm is in: a
+rest (plain idle, the loop's first 4.4 s) and the check (the rest of the loop, arm out and back to idle). While
+`mode` stays `waiting` they alternate; set it to anything else and he goes back to idle from the rest at once,
+or at the end of the check if he's looking at his watch. Blend states have no exit time in the Rive runtime, so
+the rest is its own animation rather than idle itself. The watch is its own prop over the arm: its strap's
+corners, its face's place and turn and the light on the dial are keyed every frame from the TypeScript renderer.
 
 `rive/bootstrap/` generated the first version of these files once, from the TypeScript renderer
 (`bun packages/bot-mascot/rive/bootstrap/build.ts`). It's kept as a record until the TypeScript renderer is

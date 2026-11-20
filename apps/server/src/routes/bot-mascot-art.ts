@@ -18,7 +18,7 @@ export interface MascotArt {
 }
 
 export const mascotFramings: ReadonlyArray<MascotFraming> = ["portrait", "figure"]
-export const mascotLoops: ReadonlyArray<BotMascotLoop> = ["idle", "working"]
+export const mascotLoops: ReadonlyArray<BotMascotLoop> = ["idle", "working", "waiting"]
 
 const stillPixels = 384
 const loopPixels = 112

@@ -50,7 +50,13 @@ export const eyewearEnum = enumXml("BotMascotEyewear", [
   "none",
   ...botMascotEyewear.map((e) => e.id)
 ])
-export const modeEnum = enumXml("BotMascotMode", ["idle", "working", "calling", "sleeping"])
+export const modeEnum = enumXml("BotMascotMode", [
+  "idle",
+  "working",
+  "calling",
+  "sleeping",
+  "waiting"
+])
 export const prop = {
   mode: newId(),
   hangUp: newId(),
@@ -140,7 +146,7 @@ ${colorValues("face", "face")}${colorValues("blush", "blush")}${colorValues("fre
 <ViewModelPropertyNumber name="gazeY" id="${prop.gazeY}"/>
 <ViewModelPropertyNumber name="gazeWeight" id="${prop.gazeWeight}"/>
 <ViewModelPropertyViewModel viewModelReferenceId="${faceVm.id}" name="face" id="${prop.face}"/>
-${["body", "hat", "outfit", "phone", "clipboard"].map(colorProps).join("")}
+${["body", "hat", "outfit", "phone", "clipboard", "watch"].map(colorProps).join("")}
 <ViewModelInstance exports="true" name="Default" id="${mainVm.inst}">
 <ViewModelInstanceEnum propertyValue="${modeEnum.values[0]}" viewModelPropertyId="${prop.mode}"/>
 <ViewModelInstanceTrigger viewModelPropertyId="${prop.hangUp}"/>
@@ -149,6 +155,6 @@ ${["body", "hat", "outfit", "phone", "clipboard"].map(colorProps).join("")}
 <ViewModelInstanceEnum propertyValue="${outfitEnum.values[0]}" viewModelPropertyId="${prop.outfit}"/>
 ${num(prop.gazeX, 0)}${num(prop.gazeY, 0)}${num(prop.gazeWeight, 0)}
 <ViewModelInstanceViewModel propertyValue="${faceVm.inst}" viewModelPropertyId="${prop.face}"/>
-${colorValues("body", "body")}${colorValues("hat", "beanie")}${colorValues("outfit", "tie")}${colorValues("phone", "phone")}${colorValues("clipboard", "clipboard")}
+${colorValues("body", "body")}${colorValues("hat", "beanie")}${colorValues("outfit", "tie")}${colorValues("phone", "phone")}${colorValues("clipboard", "clipboard")}${colorValues("watch", "watch")}
 </ViewModelInstance>
 </ViewModel>`

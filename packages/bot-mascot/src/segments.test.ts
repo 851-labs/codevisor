@@ -27,6 +27,11 @@ const at = (segment: BotMascotSegment, t: number, clock = t): SegmentFrame => ({
 })
 const justBefore = (segment: BotMascotSegment): number => botMascotSegments[segment].seconds - 1e-9
 const holdsPhone = (svg: string): boolean => svg.includes('data-r="hand"')
+const armOut = (svg: string): boolean => svg.includes('data-r="outline"')
+const wearsWatch = (svg: string): boolean => /<g transform="matrix\(/.test(svg)
+const comingOut = Array.from({ length: 40 }, (_, i) => 4.4 + i * 0.04)
+const firstWith = (shows: (svg: string) => boolean): number =>
+  comingOut.find((t) => shows(draw(at("waiting", t)))) ?? Infinity
 const zsWhileWaking = (t: number): number => sleepZs(draw({ ...at("wakeUp", t), since: 3 }))
 const sleepZs = (svg: string): number => svg.match(/data-r="z"/g)?.length ?? 0
 const flyingPhone = (svg: string): boolean =>
@@ -139,6 +144,18 @@ describe("mascot segments", () => {
   it("lets the z's fade out as he wakes", () => {
     expect(zsWhileWaking(0.05)).toBeGreaterThan(0)
     expect(zsWhileWaking(0.5)).toBe(0)
+  })
+
+  it("plays waiting as idle but for two looks at his watch", () => {
+    expect(draw(at("waiting", 3))).toBe(draw(at("idle", 3)))
+    expect(wearsWatch(draw(at("waiting", 5.6)))).toBe(true)
+    expect(wearsWatch(draw(at("waiting", 7.6)))).toBe(true)
+    expect(draw(at("waiting", 9.8))).toBe(draw(at("idle", 9.8)))
+  })
+
+  it("brings the watch in on his arm, never ahead of it", () => {
+    expect(firstWith(armOut)).toBeLessThan(firstWith(wearsWatch))
+    expect(firstWith(wearsWatch)).toBeLessThan(Infinity)
   })
 
   const { in: start, out, end } = IDLE_WORKING_TIMES

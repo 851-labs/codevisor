@@ -11,6 +11,7 @@ import { paintsOf, type Item, type Stop } from "./collect.js"
 import { COLORS, type PartOf, mainBodyPart, noMakeup, part, render } from "./parts.js"
 import { clipboardItems, phoneItems } from "./props.js"
 import { sleevePart } from "./sleeves.js"
+import { watchItems } from "./watch.js"
 
 export interface Slots {
   readonly paintSlot: Array<number | null>
@@ -226,6 +227,18 @@ export const categories: Category[] = [
         config: () => ({ makeup: noMakeup }),
         of: () => [],
         itemsFor: clipboardItems
+      }
+    ]
+  },
+  {
+    name: "watch",
+    items: [
+      {
+        id: "watch",
+        choices: ["auto"],
+        config: () => ({ makeup: noMakeup }),
+        of: () => [],
+        itemsFor: watchItems
       }
     ]
   }

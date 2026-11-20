@@ -224,6 +224,19 @@ const drawn = drawRig(ctx, svg, p ? [p] : [], { uid: "pg", pal: "sunny", pose })
   - **In the builder:** it's a mood. Leaving it, the phone pops away and the arm shrinks in (`EXIT`) before
     the next mood's arms come in. Coming from Working, it waits for Working's arms to swing out.
 
+- **Waiting** (`src/animations/waiting.ts`). The screen-right arm, with targets only, across his front: it grows
+  out across his belly, swings to the hold across his lower belly, clear of his legs' arch (a little past, then
+  back), lifts a touch as he comes closer, and goes back the same way.
+  - **The watch stays put while he bows:** the hold is a place on the stage, and each frame it's worked back into
+    his body's space through his lean and squash, as Working does for the board.
+  - **The wristwatch is worn, not held:** a strap across the arm a little back from the tip, cut to the arm's own
+    two edges, and its face on the arm's edge nearer his eye, turned to face him (drawn as a flattened disc with
+    its case's edge showing on the far side). It's drawn over the arm with no hand over it, and pops in once its
+    place on the arm is clear of his side.
+  - **Out past his side** (not used): an arm held out past his side is only clean at the root up to about 20°
+    above level, with his head's tilt held at a small negative value and no twist. Raised steeper, the root's upper
+    corner hooks at every angle and tilt tried.
+
 ## Body zones
 
 `bodyOf({ dy, y0, neck })` (`src/body/zones.ts`) gives him a head, a neck and

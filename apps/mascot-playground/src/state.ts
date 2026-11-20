@@ -7,7 +7,14 @@ export type Backdrop = "light" | "dark"
 export type ArmSide = "left" | "right"
 export type View = "outfit" | "animation"
 export type Theme = "light" | "dark"
-export type Move = "idle" | "working" | "calling" | "sleeping" | "hangUp" | "angryHangUp"
+export type Move =
+  | "idle"
+  | "working"
+  | "calling"
+  | "waiting"
+  | "sleeping"
+  | "hangUp"
+  | "angryHangUp"
 
 export interface ArmControls {
   readonly on: boolean
@@ -73,6 +80,7 @@ export const moves: ReadonlyArray<Move> = [
   "idle",
   "working",
   "calling",
+  "waiting",
   "sleeping",
   "hangUp",
   "angryHangUp"
