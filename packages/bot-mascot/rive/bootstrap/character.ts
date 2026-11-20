@@ -4,14 +4,15 @@ import { paintsOf } from "./collect.js"
 import { planned, plannedItems } from "./colors.js"
 import { bindFor, bindMain, conv, mainVm, modeEnum, prop, solo } from "./data.js"
 import { emitItems, f, idsFor, newId, pointsPath, type Skinning } from "./emit.js"
-import { annoyedAnim, blinkAnim, faceBoard, madAnim, rows } from "./face.js"
+import { annoyedAnim, blinkAnim, faceBoard, madAnim, rows, wideAnim } from "./face.js"
 import { joinIds, joinRig } from "./join-rig.js"
 import { bodyLayer, idlePropsXml, movesXml, propsLayer, restKeys, type MoveIds } from "./moves.js"
-import { FEET, PIVOT, mainBodyPart, noMakeup, part, render } from "./parts.js"
+import { FEET, PIVOT, ROWS, mainBodyPart, noMakeup, part, render } from "./parts.js"
 import { clipboardItems, phoneItems, restHanging, restRising } from "./props.js"
 import { upperWeight } from "./skinning.js"
 import { sleepZsAnimationsXml, sleepZsLayer, sleepZsXml } from "./sleep-zs.js"
 import { sleevePart } from "./sleeves.js"
+import { watchRig } from "./watch.js"
 
 export const bone = { base: newId(), lean: newId(), gaze: newId() }
 export const tendon = (id: string, ty: number) =>
@@ -89,7 +90,9 @@ export const remapId = {
   wanderMid: newId(),
   wanderUp: newId(),
   wanderDown: newId(),
+  wanderDeep: newId(),
   blink: newId(),
+  wide: newId(),
   annoyed: newId(),
   mad: newId()
 }
@@ -107,12 +110,14 @@ export const faceNested = `<NestedArtboard artboardId="${faceBoard}" dataBindPat
 ${remap("Wander mid", rows.mid.id, 1, "", remapId.wanderMid)}
 ${remap("Wander up", rows.up.id, 0, "", remapId.wanderUp)}
 ${remap("Wander down", rows.down.id, 0, "", remapId.wanderDown)}
+${remap("Wander deep", rows.deep.id, 0, "", remapId.wanderDeep)}
 ${remap("Gaze mid", rows.mid.id, 0, gazeTime + bindMain(prop.gazeWeight, 200))}
 ${remap("Gaze up", rows.up.id, 0, gazeTime + bindMain(prop.gazeY, 200, conv.upMix))}
 ${remap("Gaze down", rows.down.id, 0, gazeTime + bindMain(prop.gazeY, 200, conv.downMix))}
 ${remap("Blink", blinkAnim, 1, "", remapId.blink, 0)}
 ${remap("Annoyed", annoyedAnim, 1, "", remapId.annoyed, 0)}
 ${remap("Mad", madAnim, 1, "", remapId.mad, 0)}
+${remap("Wide", wideAnim, 1, "", remapId.wide, 0)}
 </NestedArtboard>`
 
 export const head = `<Node x="${f(PIVOT[1])}" y="${f(-PIVOT[0])}" rotation="${f(Math.PI / 2)}" name="Head space" id="${newId()}">
@@ -130,6 +135,8 @@ export const sample = (every: number, value: (t: number) => number) =>
 export const keyed = (obj: string, props: Array<[string, number, (t: number) => number]>) =>
   `<KeyedObject objectId="${obj}">${props.map(([p, every, v]) => `<KeyedProperty property="${p}">${sample(every, v)}</KeyedProperty>`).join("")}</KeyedObject>`
 export const idleFace = (t: number) => idleAt(t).face ?? {}
+export const deepMix = (up: number) =>
+  Math.max(0, Math.min(1, (up - ROWS.down) / (ROWS.deep - ROWS.down)))
 export const idleSy = (t: number) => idleAt(t).sy ?? 1
 export const blinkTime = (t: number) =>
   Math.max(0, Math.min(1, (1 - (idleFace(t).blink ?? 1)) / 0.92))
@@ -154,7 +161,11 @@ ${keyed(remapId.wanderUp, [
 ])}
 ${keyed(remapId.wanderDown, [
   ["time", 2, turnTime],
-  ["mix", 2, (t) => Math.max(0, idleFace(t).up ?? 0)]
+  ["mix", 2, (t) => Math.min(1, Math.max(0, idleFace(t).up ?? 0))]
+])}
+${keyed(remapId.wanderDeep, [
+  ["time", 2, turnTime],
+  ["mix", 2, (t) => deepMix(idleFace(t).up ?? 0)]
 ])}
 </LinearAnimation>`
 const bodyFill = bodyItem[0].fill
@@ -166,6 +177,7 @@ const phoneNode = newId()
 const phone = emitItems(plannedItems("phone/phone", phoneItems({ color: "sunny" })), {
   bind: bindFor("phone", "phone")
 })
+const watch = watchRig(bindFor("watch", "watch"))
 const clipboardNode = newId()
 const clipboard = emitItems(
   plannedItems("clipboard/clipboard", clipboardItems({ color: "sunny" })),
@@ -231,6 +243,7 @@ export const moveIds: MoveIds = {
   layers: layerTargets,
   phone: phoneNode,
   clipboard: clipboardNode,
+  watch: watch.ids,
   page
 }
 const idleState = newId()
@@ -242,7 +255,8 @@ const stateRefs = {
     idle: modeEnum.values[0],
     working: modeEnum.values[1],
     calling: modeEnum.values[2],
-    sleeping: modeEnum.values[3]
+    sleeping: modeEnum.values[3],
+    waiting: modeEnum.values[4]
   },
   hangUp: prop.hangUp,
   angryHangUp: prop.angryHangUp,
@@ -271,6 +285,7 @@ ${sleepZsXml(zInk)}
 <Node x="${f(FEET[0])}" y="${f(FEET[1])}" name="Character" id="${character}">
 <Node x="${f(-FEET[0])}" y="${f(-FEET[1])}" name="Arms" id="${newId()}">
 ${arms.hand}
+${watch.xml}
 <Node opacity="0" name="Phone" id="${phoneNode}">${phone.rml}${phone.clipRml}</Node>
 ${arms.arms}
 </Node>

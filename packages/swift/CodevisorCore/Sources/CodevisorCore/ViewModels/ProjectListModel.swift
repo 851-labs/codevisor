@@ -43,7 +43,7 @@ public final class ProjectListModel {
   }
 
   public func hasAgents(startedBy session: ChatSession, where isActive: (ChatSession) -> Bool) -> Bool {
-    sessions.contains { $0.ownerAgent?.agentId == session.id && isActive($0) }
+    sessions.contains { !$0.isArchived && $0.ownerAgent?.agentId == session.id && isActive($0) }
   }
 
   public func session(_ id: UUID, serverId: String) -> ChatSession? {

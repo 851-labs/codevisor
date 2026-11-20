@@ -39,6 +39,10 @@ nudged the other way.
     page.
   - **The phone:** the handset's depth side darkens, and its face is lighter toward the upper right. The handset
     keeps its own drawn shading as the rig turns it.
+  - **The wristwatch:** the case and the dial each carry a crisp band on their lower left, the disc less itself
+    nudged toward the light, worked out against the turn and the flattening of the watch so the band stays on the lower
+    left however the arm holds it. The edge of the case is the metal, darker. The dial is shiny, so it gets one white streak and one dot on its upper right. The strap is
+    darker on the half that faces away from the light.
 - **Hats, eyewear and outfits:** lighter toward the upper right, darker toward the lower left (and underneath).
   The `litGradient` helper (`src/color/colors.ts`) runs from the upper right to the lower left; the lens tint
   does too, and the tie's and the suit's sheens are lit from the upper right.

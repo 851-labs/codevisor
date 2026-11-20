@@ -46,7 +46,8 @@ function slotsOf(look: ReturnType<typeof resolveConfig>): ReadonlyArray<Slot> {
     { prefix: "face/blush", category: "blush", item: "blush", choice: look.blushColor },
     { prefix: "face/freckles", category: "freckles", item: "freckles", choice: "auto" },
     { prefix: "phone", category: "phone", item: "phone", choice: "auto" },
-    { prefix: "clipboard", category: "clipboard", item: "clipboard", choice: "auto" }
+    { prefix: "clipboard", category: "clipboard", item: "clipboard", choice: "auto" },
+    { prefix: "watch", category: "watch", item: "watch", choice: "auto" }
   ]
   if (look.hat !== "none")
     slots.push({ prefix: "hat", category: "hat", item: look.hat, choice: look.hatColor })

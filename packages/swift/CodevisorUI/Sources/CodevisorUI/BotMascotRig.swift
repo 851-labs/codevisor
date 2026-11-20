@@ -5,15 +5,18 @@ import Foundation
 final class BotMascotRig {
   private static let artboardName = "Bot Mascot"
   private static let stateMachineName = "Bot Mascot"
+  private static let modeEnumName = "BotMascotMode"
 
   let rive: Rive
   private let instance: ViewModelInstance
+  private let modes: Set<String>?
   private var motion: BotMascotMotion?
   private var gaze: BotMascotGaze?
 
-  private init(rive: Rive, instance: ViewModelInstance) {
+  private init(rive: Rive, instance: ViewModelInstance, modes: Set<String>?) {
     self.rive = rive
     self.instance = instance
+    self.modes = modes
   }
 
   static func make(file: File, values: BotMascotRiveValues) async throws -> BotMascotRig {
@@ -22,7 +25,12 @@ final class BotMascotRig {
     values.apply(to: instance)
     let machine = try await artboard.createStateMachine(stateMachineName, binding: instance)
     let rive = try await Rive(file: file, artboard: artboard, stateMachine: machine)
-    return BotMascotRig(rive: rive, instance: instance)
+    return BotMascotRig(rive: rive, instance: instance, modes: await modes(in: file))
+  }
+
+  private static func modes(in file: File) async -> Set<String>? {
+    guard let enums = try? await file.getViewModelEnums() else { return nil }
+    return enums.first { $0.name == modeEnumName }.map { Set($0.values) }
   }
 
   func dress(_ values: BotMascotRiveValues) {
@@ -33,7 +41,12 @@ final class BotMascotRig {
     guard motion != self.motion else { return }
 
     self.motion = motion
-    instance.setValue(of: EnumProperty(path: "mode"), to: motion.riveMode)
+    instance.setValue(of: EnumProperty(path: "mode"), to: playable(motion).riveMode)
+  }
+
+  private func playable(_ motion: BotMascotMotion) -> BotMascotMotion {
+    guard let modes, !modes.contains(motion.riveMode) else { return motion }
+    return motion.olderFileStandIn
   }
 
   func look(_ gaze: BotMascotGaze) {

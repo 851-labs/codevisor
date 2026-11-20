@@ -50,4 +50,5 @@ public struct ServerBotMascotArt: Hashable, Sendable {
 public enum ServerBotMascotLoop: String, Hashable, Sendable {
   case idle
   case working
+  case waiting
 }

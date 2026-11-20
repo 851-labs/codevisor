@@ -19,6 +19,12 @@ import {
 import { armsFrameState, type ArmsFrameState } from "../../src/animations/idle-working.js"
 import { apply, invert, multiply, parseTransform, placement } from "../../src/animations/matrix.js"
 import { fallingAsleep, sleepPose, wakingUp } from "../../src/animations/sleeping.js"
+import {
+  waitingArm,
+  waitingPose,
+  WATCH_CHECK_FROM,
+  type WatchOnWrist
+} from "../../src/animations/waiting.js"
 import { flipState, holdPoint, type CarryLayer } from "../../src/animations/working-flip.js"
 import { poseArm, type Matrix, type PosedArm } from "../../src/arms/arm-pose.js"
 import type { RigArm, Torso } from "../../src/arms/rig-arm.js"
@@ -32,8 +38,15 @@ import { renderFrame } from "../../src/render/frame.js"
 import { svgBody, svgTransform } from "../../src/render/svg-parts.js"
 
 type SleepSegment = "fallAsleep" | "sleeping" | "wakeUp"
+type WaitingSegment = "waitingRest" | "checkWatch"
 
-export type Segment = CallSegment | SleepSegment | "startWorking" | "working" | "stopWorking"
+export type Segment =
+  | CallSegment
+  | SleepSegment
+  | WaitingSegment
+  | "startWorking"
+  | "working"
+  | "stopWorking"
 
 export interface ArmSample {
   readonly arm: RigArm
@@ -47,6 +60,8 @@ export interface Sample {
   readonly arms: Readonly<Record<"left" | "right", ArmSample | null>>
   readonly phone: Matrix | null
   readonly board: { readonly matrix: Matrix; readonly flip: number; readonly page: number } | null
+  readonly watch: WatchOnWrist | null
+  readonly clock: number
 }
 
 interface Scene {
@@ -73,6 +88,8 @@ export function sample(segment: Segment, t: number): Sample {
     return workingSample(segment, t)
   if (segment === "fallAsleep" || segment === "sleeping" || segment === "wakeUp")
     return sleepSample(sleepPoses[segment](t))
+  if (segment === "waitingRest" || segment === "checkWatch")
+    return waitingSample(segment === "checkWatch" ? WATCH_CHECK_FROM + t : t)
   return callingSample(segment, t)
 }
 
@@ -84,7 +101,25 @@ const sleepPoses: Readonly<Record<SleepSegment, (t: number) => BotMascotPose>> =
 
 function sleepSample(pose: BotMascotPose): Sample {
   const s = renderFrame(renderContext(), PAL, pose, { viewBox: VIEW, uid: "z" })
-  return { pose, body: svgBody(s), arms: { left: null, right: null }, phone: null, board: null }
+  return { ...still, pose, body: svgBody(s) }
+}
+
+const still = {
+  arms: { left: null, right: null },
+  phone: null,
+  board: null,
+  watch: null,
+  clock: 0
+} as const
+
+function waitingSample(t: number): Sample {
+  const pose = waitingPose(t, idleAt(t))
+  const ctx = renderContext()
+  const s = renderFrame(ctx, PAL, pose, { viewBox: VIEW, uid: "wt" })
+  const torso: Torso = { d: svgBody(s), shoulderY: ctx.body.shoulderY }
+  const { arm, watch } = waitingArm(torso, t, t, pose)
+  const right = arm?.arm ? { arm: arm.arm, layer: "front" as const, hand: 0 } : null
+  return { ...still, pose, body: torso.d, arms: { left: null, right }, watch, clock: t }
 }
 
 function workingSample(segment: Segment, t: number): Sample {
@@ -107,8 +142,7 @@ function workingFrom(st: ArmsFrameState, t: number): Sample {
       ? { k: clipboardPopScale(fx.pop), ny: 1.5 * fx.nod - (pose.y ?? 0), tt: fx.tt }
       : null
   const torso: Torso = { d: svgBody(s), shoulderY: renderContext().body.shoulderY }
-  if (!board || st.tw === null)
-    return { pose, body: torso.d, arms: { left: null, right: null }, phone: null, board: null }
+  if (!board || st.tw === null) return { ...still, pose, body: torso.d }
   const tt = st.tw >= 0.4 ? (st.tw - 0.4) % 12 : -1
   const fl = tt >= 0 ? flipState(tt) : { f: 0 }
   const onBoard = ([x, y]: Point): Point => boardToBody([x, y + board.ny], pose)
@@ -133,7 +167,9 @@ function workingFrom(st: ArmsFrameState, t: number): Sample {
     body: torso.d,
     arms: { left: arm(-1), right: arm(1) },
     phone: null,
-    board: { matrix: multiply(invert(tfMatrix(pose)), world), flip: board.tt, page: board.k }
+    board: { matrix: multiply(invert(tfMatrix(pose)), world), flip: board.tt, page: board.k },
+    watch: null,
+    clock: t
   }
 }
 
@@ -167,7 +203,7 @@ function callingSample(segment: CallSegment, tau: number): Sample {
         hand: holdsWithHand(scene.arm)
       }
     : null
-  return { pose: shot.pose, body: torso.d, arms: { left: null, right }, phone, board: null }
+  return { ...still, pose: shot.pose, body: torso.d, arms: { left: null, right }, phone }
 }
 
 const holdsWithHand = (p: PosedArm): number => p.over ?? 0

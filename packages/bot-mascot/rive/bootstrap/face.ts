@@ -7,6 +7,7 @@ import {
   type Face,
   type PartOf,
   ROWS,
+  WIDEST,
   TURNS,
   body,
   noMakeup,
@@ -336,7 +337,8 @@ export function rowAnimation(name: string, up: number): { id: string; xml: strin
 export const rows = {
   up: rowAnimation("Up", ROWS.up),
   mid: rowAnimation("Mid", ROWS.mid),
-  down: rowAnimation("Down", ROWS.down)
+  down: rowAnimation("Down", ROWS.down),
+  deep: rowAnimation("Deep", ROWS.deep)
 }
 
 export const faceToggle = (name: string, p: string, xml: string) =>
@@ -380,6 +382,9 @@ const key = (frame: number, value: number) =>
   `<KeyFrameDouble value="${f(value)}" frame="${frame}" interpolationType="linear"/>`
 export const annoyedAnim = newId()
 export const madAnim = newId()
+export const wideAnim = newId()
+const wide = newId()
+const wideXml = `<LinearAnimation duration="60" name="Wide" id="${wideAnim}"><KeyedObject objectId="${wide}"><KeyedProperty property="scaleX">${key(0, 1)}${key(60, WIDEST)}</KeyedProperty><KeyedProperty property="scaleY">${key(0, 1)}${key(60, WIDEST)}</KeyedProperty></KeyedObject></LinearAnimation>`
 const moodXml = `<LinearAnimation duration="60" name="Annoyed" id="${annoyedAnim}"><KeyedObject objectId="${annoyedBrow}"><KeyedProperty property="rotation">${key(0, 0)}${key(60, (22 * Math.PI) / 180)}</KeyedProperty><KeyedProperty property="opacity">${key(0, 0)}${key(3, 1)}${key(60, 1)}</KeyedProperty></KeyedObject></LinearAnimation>
 <LinearAnimation duration="60" name="Mad" id="${madAnim}"><KeyedObject objectId="${squint}"><KeyedProperty property="scaleY">${key(0, 1)}${key(60, 0.8)}</KeyedProperty><KeyedProperty property="y">${key(0, 0)}${key(60, 6)}</KeyedProperty></KeyedObject><KeyedObject objectId="${madBrow}"><KeyedProperty property="opacity">${key(0, 0)}${key(60, 1)}</KeyedProperty></KeyedObject></LinearAnimation>`
 
@@ -389,10 +394,12 @@ export const faceArtboard = `<Artboard isComponent="true" width="500" height="50
 ${solo("Eyewear", prop.eyewear, bindFace, eyewearChildren)}
 ${browsXml}
 <Node x="${f(lidRest[0])}" y="${f(lidRest[1])}" name="Lid" id="${lid}">
+<Node name="Wide" id="${wide}">
 <Node name="Squint" id="${squint}">
 ${faceToggle("Lashes", prop.lashesOn, xmlOf("lashes"))}
 <Node name="Shine" id="${shine}">${xmlOf("shine")}</Node>
 <Node name="Eye" id="${newId()}">${xmlOf("eye")}</Node>
+</Node>
 </Node>
 </Node>
 ${faceToggle("Freckles", prop.frecklesOn, xmlOf("freckles"))}
@@ -401,7 +408,9 @@ ${faceClipXml}
 ${rows.up.xml}
 ${rows.mid.xml}
 ${rows.down.xml}
+${rows.deep.xml}
 ${blinkXml}
 ${moodXml}
+${wideXml}
 </Artboard>
 <ComponentAsset artboardId="${faceBoard}" name="Face"/>`

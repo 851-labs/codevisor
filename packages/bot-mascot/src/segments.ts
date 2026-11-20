@@ -1,5 +1,6 @@
 import { callSeconds } from "./animations/calling-segments.js"
 import { FALL_ASLEEP, SLEEP_LOOP, WAKE_UP } from "./animations/sleeping.js"
+import { WAITING_LOOP } from "./animations/waiting.js"
 import { CLIPBOARD_LOOP } from "./effects/clipboard.js"
 import { IDLE_LOOP } from "./moods/expressions.js"
 
@@ -17,6 +18,7 @@ export type BotMascotSegment =
   | "fallAsleep"
   | "sleeping"
   | "wakeUp"
+  | "waiting"
 
 export type BotMascotRequest =
   | "idle"
@@ -78,7 +80,8 @@ export const botMascotSegments: Readonly<Record<BotMascotSegment, SegmentInfo>> 
   stopWorking: segmentInfo("Stop working", "working", "idle", WORKING_SWING),
   fallAsleep: segmentInfo("Fall asleep", "idle", "sleeping", FALL_ASLEEP),
   sleeping: { ...segmentInfo("Sleeping", "sleeping", "sleeping", SLEEP_LOOP), loops: true },
-  wakeUp: segmentInfo("Wake up", "sleeping", "idle", WAKE_UP)
+  wakeUp: segmentInfo("Wake up", "sleeping", "idle", WAKE_UP),
+  waiting: { ...segmentInfo("Waiting", "idle", "idle", WAITING_LOOP), loops: true }
 }
 
 export const botMascotSegmentIds: ReadonlyArray<BotMascotSegment> =

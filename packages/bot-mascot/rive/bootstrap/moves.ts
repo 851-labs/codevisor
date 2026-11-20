@@ -1,14 +1,17 @@
 import { callSeconds } from "../../src/animations/calling-segments.js"
 import { FALL_ASLEEP, SLEEP_LOOP, WAKE_UP } from "../../src/animations/sleeping.js"
+import { WAITING_LOOP, WATCH_CHECK_FROM } from "../../src/animations/waiting.js"
 import type { Matrix } from "../../src/arms/arm-pose.js"
 import { CLIPBOARD_LOOP } from "../../src/effects/clipboard.js"
 import { keyArms, restArmKeys, type ArmKeyIds } from "./arm-keys.js"
 import { newId } from "./emit.js"
 import { sample, type Sample, type Segment } from "./motion.js"
+import { ROWS, WIDEST } from "./parts.js"
 import { pageAt } from "./props.js"
 import { restTargets, shoulderTargets } from "./skinning.js"
 import { pathContours } from "./svg.js"
 import { add, keyVertex, tracksXml, type Tracks } from "./tracks.js"
+import { keyWatch, type WatchIds } from "./watch.js"
 
 export interface MoveIds extends ArmKeyIds {
   readonly bodyVertices: ReadonlyArray<string>
@@ -17,10 +20,14 @@ export interface MoveIds extends ArmKeyIds {
   readonly shadowSquash: number
   readonly lean: string
   readonly remaps: Readonly<
-    Record<"wanderMid" | "wanderUp" | "wanderDown" | "blink" | "annoyed" | "mad", string>
+    Record<
+      "wanderMid" | "wanderUp" | "wanderDown" | "wanderDeep" | "blink" | "annoyed" | "mad" | "wide",
+      string
+    >
   >
   readonly phone: string
   readonly clipboard: string
+  readonly watch: WatchIds
   readonly page: Readonly<
     Record<
       "rising" | "hanging",
@@ -78,7 +85,21 @@ export const moves: ReadonlyArray<Move> = [
   },
   { segment: "fallAsleep", seconds: FALL_ASLEEP, loops: false, animation: newId(), props: newId() },
   { segment: "sleeping", seconds: SLEEP_LOOP, loops: true, animation: newId(), props: newId() },
-  { segment: "wakeUp", seconds: WAKE_UP, loops: false, animation: newId(), props: newId() }
+  { segment: "wakeUp", seconds: WAKE_UP, loops: false, animation: newId(), props: newId() },
+  {
+    segment: "waitingRest",
+    seconds: WATCH_CHECK_FROM,
+    loops: false,
+    animation: newId(),
+    props: newId()
+  },
+  {
+    segment: "checkWatch",
+    seconds: WAITING_LOOP - WATCH_CHECK_FROM,
+    loops: false,
+    animation: newId(),
+    props: newId()
+  }
 ]
 
 const rad = (deg: number | undefined) => ((deg ?? 0) * Math.PI) / 180
@@ -116,8 +137,17 @@ function keyFace(tracks: Tracks, ids: MoveIds, s: Sample, frame: number) {
   add(tracks, ids.remaps.wanderMid, "time", frame, turn)
   add(tracks, ids.remaps.wanderUp, "time", frame, turn)
   add(tracks, ids.remaps.wanderDown, "time", frame, turn)
+  add(tracks, ids.remaps.wanderDeep, "time", frame, turn)
   add(tracks, ids.remaps.wanderUp, "mix", frame, Math.max(0, -up))
-  add(tracks, ids.remaps.wanderDown, "mix", frame, Math.max(0, up))
+  add(tracks, ids.remaps.wanderDown, "mix", frame, clamp01(up))
+  add(
+    tracks,
+    ids.remaps.wanderDeep,
+    "mix",
+    frame,
+    clamp01((up - ROWS.down) / (ROWS.deep - ROWS.down))
+  )
+  add(tracks, ids.remaps.wide, "time", frame, clamp01(((face.wide ?? 1) - 1) / (WIDEST - 1)))
   add(tracks, ids.remaps.blink, "time", frame, clamp01((1 - (face.blink ?? 1)) / 0.92))
   const mad = face.mode === "mad"
   add(tracks, ids.remaps.annoyed, "time", frame, mad ? 0 : clamp01((face.brow ?? 0) / 22))
@@ -165,6 +195,7 @@ function animationXml(move: Move, ids: MoveIds): string {
     keyPlacement(props, ids.phone, s.phone, frame)
     keyPlacement(props, ids.clipboard, s.board?.matrix ?? null, frame)
     keyPage(props, ids, s, frame)
+    keyWatch(props, ids.watch, s.watch, s.clock, frame)
   }
   const loop = move.loops ? ` loopValue="loop"` : ""
   const timeline = (name: string, id: string, tracks: Tracks) =>
@@ -182,6 +213,7 @@ export function restKeys(ids: MoveIds): string {
   const tracks: Tracks = new Map()
   add(tracks, ids.remaps.annoyed, "time", 0, 0)
   add(tracks, ids.remaps.mad, "time", 0, 0)
+  add(tracks, ids.remaps.wide, "time", 0, 0)
   add(tracks, ids.shadow, "opacity", 0, 1)
   add(tracks, ids.shadow, "scaleY", 0, ids.shadowSquash)
   add(tracks, ids.character, "y", 0, 412)
@@ -196,6 +228,7 @@ export function idlePropsXml(ids: MoveIds): string {
   for (const target of restTargets()) keyPoint(tracks, ids.bodyVertices[target.index], target.p, 0)
   add(tracks, ids.phone, "opacity", 0, 0)
   add(tracks, ids.clipboard, "opacity", 0, 0)
+  add(tracks, ids.watch.node, "opacity", 0, 0)
   for (const kind of ["rising", "hanging"] as const) {
     add(tracks, ids.page[kind].shape, "opacity", 0, 0)
     add(tracks, ids.page[kind].dim, "opacity", 0, 0)
@@ -206,7 +239,9 @@ export function idlePropsXml(ids: MoveIds): string {
 export interface StateRefs {
   readonly vm: string
   readonly mode: string
-  readonly modeValues: Readonly<Record<"idle" | "working" | "calling" | "sleeping", string>>
+  readonly modeValues: Readonly<
+    Record<"idle" | "working" | "calling" | "sleeping" | "waiting", string>
+  >
   readonly hangUp: string
   readonly angryHangUp: string
   readonly idleState: string
@@ -218,8 +253,8 @@ const fired = (r: StateRefs, prop: string) =>
   `<TransitionViewModelCondition><TransitionPropertyViewModelComparator><BindablePropertyTrigger><DataBindContext sourcePathIds="${r.vm}-${prop}" propertyKey="686"/></BindablePropertyTrigger></TransitionPropertyViewModelComparator><TransitionValueTriggerComparator/></TransitionViewModelCondition>`
 export const go = (to: string, ms: number, conditions = "") =>
   `<StateTransition stateToId="${to}" duration="${ms}">${conditions}</StateTransition>`
-export const after = (to: string, ms = 0) =>
-  `<StateTransition stateToId="${to}" duration="${ms}" enableExitTime="true" exitTimeIsPercetange="true" exitTime="100"/>`
+export const after = (to: string, ms = 0, conditions = "") =>
+  `<StateTransition stateToId="${to}" duration="${ms}" enableExitTime="true" exitTimeIsPercetange="true" exitTime="100">${conditions}</StateTransition>`
 
 export interface Layer {
   readonly idle: string
@@ -261,7 +296,8 @@ function layerStates(r: StateRefs, layer: Layer): string {
     "<!--transitions-->",
     go(id("startWorking"), ms(250), modeIs(r, r.modeValues.working)) +
       go(id("pickUp"), ms(250), modeIs(r, r.modeValues.calling)) +
-      go(id("fallAsleep"), ms(250), modeIs(r, r.modeValues.sleeping))
+      go(id("fallAsleep"), ms(250), modeIs(r, r.modeValues.sleeping)) +
+      go(id("waitingRest"), ms(250), modeIs(r, r.modeValues.waiting))
   )
   return [
     idle,
@@ -291,6 +327,19 @@ function layerStates(r: StateRefs, layer: Layer): string {
       560,
       go(id("wakeUp"), ms(250), modeIs(r, r.modeValues.sleeping, "notEqual"))
     ),
-    state("wakeUp", 40, 420, after(layer.idleState, ms(200)))
+    state("wakeUp", 40, 420, after(layer.idleState, ms(200))),
+    state(
+      "waitingRest",
+      0,
+      240,
+      go(layer.idleState, ms(200), modeIs(r, r.modeValues.waiting, "notEqual")) +
+        after(id("checkWatch"))
+    ),
+    state(
+      "checkWatch",
+      -40,
+      380,
+      after(id("waitingRest"), 0, modeIs(r, r.modeValues.waiting)) + after(layer.idleState, ms(200))
+    )
   ].join("\n")
 }

@@ -2,14 +2,11 @@ import Testing
 @testable import CodevisorUI
 
 struct BotMascotMotionTests {
-  private static let working = BotMascotActivity(
-    isInTurn: true, isTalkingToAgent: false, hasActiveAgents: true, hasMessages: true)
-  private static let calling = BotMascotActivity(
-    isInTurn: true, isTalkingToAgent: true, hasActiveAgents: true, hasMessages: true)
-  private static let delegated = BotMascotActivity(
-    isInTurn: false, isTalkingToAgent: false, hasActiveAgents: true, hasMessages: true)
-  private static let justCreated = BotMascotActivity(
-    isInTurn: false, isTalkingToAgent: false, hasActiveAgents: false, hasMessages: false)
+  private static let working = activity(isInTurn: true, hasWorkingAgents: true)
+  private static let calling = activity(isInTurn: true, isTalkingToAgent: true, hasWorkingAgents: true)
+  private static let delegated = activity(hasWorkingAgents: true)
+  private static let blockedOnYou = activity(hasAgentsWaitingOnYou: true)
+  private static let justCreated = activity(hasMessages: false)
 
   @Test("A bot in a turn calls while it talks to an agent and works otherwise, open or not")
   func turnsIgnoreWhetherTheBotIsOpen() {
@@ -21,25 +18,34 @@ struct BotMascotMotionTests {
 
   @Test("Between turns an open bot watches the pointer, whatever its agents are doing")
   func openBotWatchesBetweenTurns() {
-    for activity in [BotMascotActivity.resting, Self.delegated] {
+    for activity in [BotMascotActivity.resting, Self.delegated, Self.blockedOnYou] {
       let motion = BotMascotMotion(activity, isOpen: true)
       #expect(motion == .watching && motion.followsPointer)
     }
   }
 
-  @Test("Between turns a closed bot stays awake without the pointer while its agents are active, else sleeps")
-  func closedBotSleepsOnceItsAgentsAreDone() {
-    let delegated = BotMascotMotion(Self.delegated, isOpen: false)
-    let resting = BotMascotMotion(.resting, isOpen: false)
+  @Test("A closed bot waits while its agents work, and plays the waiting animation")
+  func closedBotWaitsOnWorkingAgents() {
+    let motion = BotMascotMotion(Self.delegated, isOpen: false)
 
-    #expect(delegated == .idle && !delegated.followsPointer && delegated.riveMode == "idle")
-    #expect(resting == .sleeping && !resting.followsPointer)
+    #expect(motion == .waiting && !motion.followsPointer && motion.riveMode == "waiting")
   }
 
-  @Test("A closed bot with no messages yet stays awake instead of sleeping")
-  func botWithoutMessagesStaysAwake() {
-    let justCreated = BotMascotMotion(Self.justCreated, isOpen: false)
+  @Test("A closed bot stays awake while an agent waits on you or before its first message, else sleeps")
+  func closedBotSleepsOnceNothingNeedsIt() {
+    for activity in [Self.blockedOnYou, Self.justCreated] {
+      let motion = BotMascotMotion(activity, isOpen: false)
+      #expect(motion == .idle && !motion.followsPointer && motion.riveMode == "idle")
+    }
+    #expect(BotMascotMotion(.resting, isOpen: false) == .sleeping)
+  }
 
-    #expect(justCreated == .idle && !justCreated.followsPointer)
+  private static func activity(
+    isInTurn: Bool = false, isTalkingToAgent: Bool = false, hasWorkingAgents: Bool = false,
+    hasAgentsWaitingOnYou: Bool = false, hasMessages: Bool = true
+  ) -> BotMascotActivity {
+    BotMascotActivity(
+      isInTurn: isInTurn, isTalkingToAgent: isTalkingToAgent, hasWorkingAgents: hasWorkingAgents,
+      hasAgentsWaitingOnYou: hasAgentsWaitingOnYou, hasMessages: hasMessages)
   }
 }

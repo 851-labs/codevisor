@@ -10,12 +10,12 @@ struct BotMascotActivities {
       return .resting
     }
 
+    let agents = environment.projectList
     return BotMascotActivity(
       isInTurn: store.isInProgress(session),
       isTalkingToAgent: session.talkingToAgent,
-      hasActiveAgents: environment.projectList.hasAgents(startedBy: session) { agent in
-        store.isInProgress(agent) || agent.sidebarState == .waitingForUser
-      },
+      hasWorkingAgents: agents.hasAgents(startedBy: session) { store.isInProgress($0) },
+      hasAgentsWaitingOnYou: agents.hasAgents(startedBy: session) { $0.sidebarState == .waitingForUser },
       hasMessages: session.latestBotMessage != nil
     )
   }
