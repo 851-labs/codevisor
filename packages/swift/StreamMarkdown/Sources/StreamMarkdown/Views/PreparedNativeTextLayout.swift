@@ -13,18 +13,19 @@
     let container: NSTextContainer
     let size: CGSize
 
-    convenience init(text: NSAttributedString, width: CGFloat, wrapsText: Bool = true) throws {
+    convenience init(text: NSAttributedString, width: CGFloat, wrapsText: Bool = true, isTable: Bool = false) throws {
       try Task.checkCancellation()
-      self.init(laying: text, width: width, wrapsText: wrapsText)
+      self.init(laying: text, width: width, wrapsText: wrapsText, isTable: isTable)
       try Task.checkCancellation()
     }
 
-    init(laying text: NSAttributedString, width: CGFloat, wrapsText: Bool = true) {
+    init(laying text: NSAttributedString, width: CGFloat, wrapsText: Bool = true, isTable: Bool = false) {
       self.text = text
       storage = NSTextStorage(attributedString: text)
       #if canImport(AppKit)
         manager = StreamingTextLayoutManager()
         manager.backgroundLayoutEnabled = false
+        if isTable { MarkdownTableTypesetter.install(on: manager) }
       #else
         manager = UIKitStreamingTextLayoutManager()
       #endif
