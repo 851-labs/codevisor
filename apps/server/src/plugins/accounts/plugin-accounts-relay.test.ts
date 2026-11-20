@@ -18,6 +18,7 @@ const cloudCallback = "https://cloud.example/oauth/callback"
 const recordingRelay = () => {
   const registered: Array<{ readonly state: string; readonly request?: McpOAuthRelayRequest }> = []
   const relay: McpOAuthRelay = {
+    signedInPage: (app) => `https://cloud.example/oauth/signed-in?app=${app ?? ""}`,
     register: async (state, request) => {
       registered.push({ state, ...(request === undefined ? {} : { request }) })
       return request?.accepted?.find((url) => url.startsWith("https://cloud.example/"))

@@ -232,6 +232,7 @@ export interface McpOAuthRelayRequest {
 
 export interface McpOAuthRelay {
   readonly register: (state: string, request?: McpOAuthRelayRequest) => Promise<string | undefined>
+  readonly signedInPage: (app?: string) => string | undefined
 }
 
 export interface McpManagerConfig {

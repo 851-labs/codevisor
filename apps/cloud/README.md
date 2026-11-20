@@ -53,9 +53,12 @@ One Cloudflare Worker contains the whole plane:
   browser to `GET /oauth/callback` (or the older `/oauth/plugins/callback`),
   which consumes the flow once within 15 minutes and seals the code, state and
   issuer to that machine through `UserHub`, queued for 5 minutes if it is
-  offline. The machine checks the state and redeems the code itself. An
-  unregistered `/oauth/plugins/callback` still bounces to the app's URL scheme
-  for older clients.
+  offline. The machine checks the state, redeems the code itself, and reports
+  the outcome in its `inbox-ack`; the page waits up to
+  `OAUTH_RESULT_WAIT_MS` (10 s) for it and says "Signed in" only then.
+  `GET /oauth/signed-in` is the page for a plugin that was already signed in.
+  An unregistered `/oauth/plugins/callback` still bounces to the app's URL
+  scheme for older clients.
 - **Plugin moderation** — `GET /plugins/policy` publishes blocks and age
   ratings straight from D1; signed-in users record consent, block
   publishers, and file reports under `/api/plugins/*`. Reports are stored

@@ -1,4 +1,4 @@
-import { describe, expect, it } from "vitest"
+import { describe, expect, it, vi } from "vitest"
 
 import { inboxDevice as device, sealedInboxItem as sealed } from "./cloud-inbox-test-support.js"
 import {
@@ -65,24 +65,43 @@ describe("cloud inbox", () => {
     expect(webhooks.map((request) => request.headers)).toEqual([{}])
   })
 
-  it("hands relayed OAuth callbacks to sign-in handlers, never to webhook handlers", async () => {
+  it("hands relayed OAuth callbacks to sign-in handlers and acks each with its outcome", async () => {
     const { inbox, webhooks } = recordingInbox()
     const callbacks: Array<InboxOAuthCallback> = []
     inbox.onOAuth(async (callback) => {
       callbacks.push(callback)
+      return callback.code === undefined ? { ok: false, error: "denied" } : { ok: true }
     })
-
-    await inbox.receive(
-      device.secretKey,
-      sealed("o1", "oauth", { state: "s-1", code: "c-1", iss: "https://auth.example" })
+    const acks: Array<unknown> = []
+    const handleFrame = inboxFrameHandler(inbox, device.secretKey, (itemIds, results) =>
+      acks.push({ itemIds, results })
     )
-    await inbox.receive(device.secretKey, sealed("o2", "oauth", { state: "s-2", error: "denied" }))
-    await inbox.receive(device.secretKey, sealed("o3", "oauth", { code: "no-state" }))
+    const frames = [
+      sealed("o1", "oauth", { state: "s-1", code: "c-1", iss: "https://auth.example" }),
+      sealed("o2", "oauth", { state: "s-2", error: "denied" }),
+      sealed("o3", "oauth", { code: "no-state" })
+    ]
 
-    expect(callbacks).toEqual([
-      { state: "s-1", code: "c-1", issuer: "https://auth.example" },
-      { state: "s-2", error: "denied" }
-    ])
+    for (const frame of frames) handleFrame(frame)
+    await vi.waitFor(() => expect(acks).toHaveLength(3))
+
+    expect(callbacks).toEqual(
+      expect.arrayContaining([
+        { state: "s-1", code: "c-1", issuer: "https://auth.example" },
+        { state: "s-2", error: "denied" }
+      ])
+    )
+    expect(acks).toHaveLength(3)
+    expect(acks).toEqual(
+      expect.arrayContaining([
+        { itemIds: ["o1"], results: [{ itemId: "o1", ok: true }] },
+        { itemIds: ["o2"], results: [{ itemId: "o2", ok: false, error: "denied" }] },
+        {
+          itemIds: ["o3"],
+          results: [{ itemId: "o3", ok: false, error: "The sign-in callback was malformed" }]
+        }
+      ])
+    )
     expect(webhooks).toEqual([])
   })
 

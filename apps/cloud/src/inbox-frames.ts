@@ -54,14 +54,33 @@ export const sealInboxItem = (
   }
 }
 
-export const inboxAckItemIds = (message: string): string[] | undefined => {
-  const parsed = InboxAckFrame.safeParse(parseJson(message))
-  return parsed.success ? parsed.data.itemIds : undefined
+export interface OAuthResult {
+  readonly itemId: string
+  readonly ok: boolean
+  readonly error?: string | undefined
 }
+
+export interface InboxAck {
+  readonly itemIds: readonly string[]
+  readonly results: readonly OAuthResult[]
+}
+
+export const inboxAck = (message: string): InboxAck | undefined => {
+  const parsed = InboxAckFrame.safeParse(parseJson(message))
+  if (!parsed.success) return undefined
+
+  return { itemIds: parsed.data.itemIds, results: parsed.data.results ?? [] }
+}
+
+const itemId = z.string().min(1).max(100)
 
 const InboxAckFrame = z.object({
   t: z.literal("inbox-ack"),
-  itemIds: z.array(z.string().min(1).max(100)).max(MAX_ACK_BATCH)
+  itemIds: z.array(itemId).max(MAX_ACK_BATCH),
+  results: z
+    .array(z.object({ itemId, ok: z.boolean(), error: z.string().max(500).optional() }))
+    .max(MAX_ACK_BATCH)
+    .optional()
 })
 
 const parseJson = (message: string): unknown => {

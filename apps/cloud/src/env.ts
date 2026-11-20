@@ -25,6 +25,7 @@ export interface CloudEnv extends Omit<Env, "APPLE_NATIVE_CLIENT_ID" | "RELAY_MA
   GMAIL_PUSH_TOPIC?: string
   LINEAR_WEBHOOK_SECRET?: string
   RESUME_GRACE_MS?: string
+  OAUTH_RESULT_WAIT_MS?: string
   RELAY_MAP?: string
   RELAY_AUTHORIZE_TOKEN?: string
 }

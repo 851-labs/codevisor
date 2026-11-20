@@ -8,6 +8,29 @@ type Ctx = Context<{ Bindings: CloudEnv }>
 
 export type OAuthPageDelivery = OAuthDelivery | { readonly outcome: "expired" }
 
+export const alreadySignedInPage = (c: Ctx, app: string | undefined) => {
+  c.header("Cache-Control", "no-store")
+  c.header("Referrer-Policy", "no-referrer")
+  const link = appLink(app)
+  const title = "Already signed in"
+  return page(
+    c,
+    title,
+    <>
+      {heading(
+        title,
+        "Codevisor is reconnecting the plugin. You can close this tab and return to Codevisor."
+      )}
+      {link === undefined ? null : (
+        <a class="text-sm text-sky-400 hover:text-sky-300" href={link}>
+          Open Codevisor
+        </a>
+      )}
+    </>,
+    link === undefined ? undefined : `location.href = ${JSON.stringify(link)}`
+  )
+}
+
 export interface OAuthPageOptions {
   readonly app?: string
   readonly opensApp?: boolean
@@ -24,7 +47,7 @@ export const oauthCallbackPage = (
   c.header("Cache-Control", "no-store")
   c.header("Referrer-Policy", "no-referrer")
   const link = copy.status === 200 ? appLink(options.app) : undefined
-  const opens = link !== undefined && options.opensApp === true && delivery.outcome === "online"
+  const opens = link !== undefined && options.opensApp === true && delivery.outcome === "finished"
   return page(
     c,
     copy.title,
@@ -48,19 +71,33 @@ interface OAuthPageCopy {
 
 const pageCopy = (delivery: OAuthPageDelivery, error: string | undefined): OAuthPageCopy => {
   const machine = "machineName" in delivery ? delivery.machineName : undefined
-  if (error !== undefined && isDelivered(delivery)) return providerErrorCopy(error)
-  if (delivery.outcome === "online") return signedInCopy(machine)
+  if (error !== undefined && reachedMachine(delivery)) return providerErrorCopy(error)
+  if (delivery.outcome === "finished") return signedInCopy(machine)
+  if (delivery.outcome === "failed") return failedCopy(machine, delivery.error)
+  if (delivery.outcome === "unconfirmed") return unconfirmedCopy(machine)
   if (delivery.outcome === "offline") return offlineCopy(machine)
   return failureCopy[delivery.outcome]
 }
 
-const isDelivered = (delivery: OAuthPageDelivery): boolean =>
-  delivery.outcome === "online" || delivery.outcome === "offline"
+const reachedMachine = (delivery: OAuthPageDelivery): boolean =>
+  ["finished", "failed", "unconfirmed", "offline"].includes(delivery.outcome)
 
 const signedInCopy = (machine: string | undefined): OAuthPageCopy => ({
   status: 200,
   title: "Signed in",
-  subtitle: `${machine ?? "Your machine"} is finishing up. You can close this tab and return to Codevisor.`
+  subtitle: `${machine ?? "Your machine"} finished signing in. You can close this tab and return to Codevisor.`
+})
+
+const failedCopy = (machine: string | undefined, error: string | undefined): OAuthPageCopy => ({
+  status: 400,
+  title: "Sign-in didn't finish",
+  subtitle: `${machine ?? "Your machine"} couldn't finish signing in: ${error ?? "it didn't say why"}. Start signing in again from Codevisor.`
+})
+
+const unconfirmedCopy = (machine: string | undefined): OAuthPageCopy => ({
+  status: 200,
+  title: "Still finishing",
+  subtitle: `${machine ?? "Your machine"} received the sign-in but hasn't confirmed it yet. Check the plugin in Codevisor in a moment. If it isn't connected, start signing in again.`
 })
 
 const offlineCopy = (machine: string | undefined): OAuthPageCopy => ({

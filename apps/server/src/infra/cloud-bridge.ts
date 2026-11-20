@@ -246,8 +246,8 @@ const makeBridge = async (
     socketFactory,
     channelHandlers,
     ...(options.roles === undefined ? {} : { roles: options.roles }),
-    onInboxItem: inboxFrameHandler(options.inbox, credentials.secretKey, (itemIds) =>
-      connection?.ackInboxItems(itemIds)
+    onInboxItem: inboxFrameHandler(options.inbox, credentials.secretKey, (itemIds, results) =>
+      connection?.ackInboxItems(itemIds, results)
     ),
     onWelcome: ({ resumed, replayedFrames }) => {
       if (resumed) {

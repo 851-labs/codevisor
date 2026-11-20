@@ -110,6 +110,10 @@ export const makeMcpOAuthFlows = (core: McpManagerCore, deps: McpOAuthFlowDeps):
     })
   }
 
+  const alreadySignedInPage = (app: string | undefined): string =>
+    core.config.oauthRelay?.signedInPage(app) ??
+    new URL("/v1/mcps/oauth/complete", state.oauthBaseUrl).toString()
+
   const beginOAuth: McpManager["beginOAuth"] = async (id, redirectBaseUrl, app) => {
     if (redirectBaseUrl !== undefined) state.oauthBaseUrl = redirectBaseUrl
     const server = await record(id)
@@ -123,7 +127,7 @@ export const makeMcpOAuthFlows = (core: McpManagerCore, deps: McpOAuthFlowDeps):
         detail: undefined
       })
       validateInBackground(id)
-      return new URL("/v1/mcps/oauth/complete", state.oauthBaseUrl).toString()
+      return alreadySignedInPage(app)
     }
     const authorizationUrl = await startAuthorization(server, app)
     await saveRecord(await record(id), {
