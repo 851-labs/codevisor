@@ -5,7 +5,7 @@ struct ComposerSandboxPicks {
   let selectedProfileId: String?
   let isCheckingSelection: Bool
   let loadKey: SandboxProfilesLoadKey
-  let load: @MainActor () async -> Void
+  let follow: @MainActor () async -> Void
   let onPick: (SandboxProfileChoice) -> Void
   let onManage: () -> Void
 }

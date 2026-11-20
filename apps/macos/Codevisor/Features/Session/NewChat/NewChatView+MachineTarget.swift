@@ -117,13 +117,14 @@ extension NewChatView {
 
   func relocateWhenSandboxIsReady(_ controller: SessionController) {
     controller.onSandboxReady = { [weak controller, weak store = store] previous, relocated, project in
-      SandboxSessionRelocation.relocate(
+      let carried = SandboxSessionRelocation.relocate(
         previous,
         to: relocated,
         project: project,
         projectList: environment.projectList,
         workspaces: environment.workspaces
       )
+      store?.follow(carried, to: project)
       guard let controller, let store else { return }
       controller.onAgentSessionCreated = { [weak projectList = environment.projectList] agentSessionId in
         projectList?.setAgentSessionId(agentSessionId, for: relocated.id, serverId: relocated.serverId)

@@ -138,7 +138,10 @@ struct HomeSidebarContentBuilder {
       ),
       rowStatus: status,
       showsStatusLabel: rowDetails.contains(.status),
-      machine: rowDetails.contains(.machine) ? rowMachine(serverId: chat.serverId) : nil,
+      machine: rowDetails.contains(.machine)
+        ? rowMachine(
+          serverId: chat.serverId, workspaceId: environment.workspaces.workspaceId(forSession: chat.id), mainChat: chat)
+        : nil,
       pullRequest: rowDetails.contains(.pullRequest) ? checkout?.git?.pullRequest : nil,
       leadingRow: row,
       attention: row.status
@@ -179,7 +182,8 @@ struct HomeSidebarContentBuilder {
     let projectName = projectGroups.first {
       $0.contains(serverId: workspace.serverId, projectId: workspace.projectId)
     }?.name
-    let mainChatId = environment.projectList.mainChat(of: item)?.id
+    let mainChat = environment.projectList.mainChat(of: item)
+    let mainChatId = mainChat?.id
     return HomeSidebarWorkspace(
       id: workspace.id,
       serverId: workspace.serverId,
@@ -196,7 +200,7 @@ struct HomeSidebarContentBuilder {
       rowStatus: rowStatus,
       showsStatusLabel: details.contains(.status),
       machine: details.contains(.machine) && heading?.namesMachine != true
-        ? rowMachine(serverId: workspace.serverId) : nil,
+        ? rowMachine(serverId: workspace.serverId, workspaceId: workspace.id, mainChat: mainChat) : nil,
       pullRequest: details.contains(.pullRequest) ? gitLookups.pullRequest(for: workspace) : nil,
       leadingRow: leadingRow(rows, workspace: workspace, mainChatId: mainChatId),
       primaryRowId: selectedPaneId(in: workspace),
@@ -207,9 +211,15 @@ struct HomeSidebarContentBuilder {
     )
   }
 
-  private func rowMachine(serverId: String) -> HomeSidebarRowMachine? {
-    guard let machine = environment.machines.machine(for: serverId) else { return nil }
-    return HomeSidebarRowMachine(name: machine.name, systemImage: machine.icon.systemImage)
+  private func rowMachine(
+    serverId: String, workspaceId: UUID? = nil, mainChat: ChatSession? = nil
+  ) -> HomeSidebarRowMachine? {
+    let launching = mainChat.flatMap(ChatControllerCache.shared.launchingSandbox)
+    switch environment.machines.place(onServer: serverId, workspaceId: workspaceId, launching: launching) {
+    case let .machine(machine): return HomeSidebarRowMachine(name: machine.name, systemImage: machine.icon.systemImage)
+    case let .sandbox(name): return HomeSidebarRowMachine(name: name, systemImage: WorkspacePlace.sandboxSystemImage)
+    case nil: return nil
+    }
   }
 
   private func selectedPaneId(in workspace: Workspace) -> UUID? {

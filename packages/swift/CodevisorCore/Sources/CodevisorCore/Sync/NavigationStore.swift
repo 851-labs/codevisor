@@ -174,6 +174,17 @@ public final class NavigationStore {
 
   public var pendingIntents: [NavigationOutboxEntry] { outbox.entries }
 
+  func moveDraftWorkspace(
+    _ workspaceId: UUID, from machineId: String, to project: Project,
+    relocating relocate: (ChatSession) -> ChatSession
+  ) -> [ChatSession] {
+    let moved = outbox.moveDraftWorkspace(
+      workspaceId, from: machineId, to: project.serverId, relocating: relocate)
+    rebuild()
+    executor.resume(machineId: project.serverId)
+    return moved
+  }
+
   func withdrawExpectedSession(_ sessionId: UUID, machineId: String) {
     guard outbox.retireExpectedSessions(machineId: machineId, listed: [sessionId]) else { return }
     rebuild()

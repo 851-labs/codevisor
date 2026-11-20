@@ -38,6 +38,18 @@ extension SessionStore {
     retargetCenterLeaves(for: relocated)
   }
 
+  func follow(_ moves: [SandboxSessionRelocation.Move], to project: Project) {
+    let client = environment.machines.client(for: project.serverId)
+    for move in moves {
+      if let controller = controllers[SessionKey(move.previous)] {
+        reregister(controller, from: move.previous, to: move.relocated)
+        controller.followWorkspace(to: project, serverClient: client)
+      } else if let location = paneDraftLocation(for: move.relocated), let draft = paneDrafts[location.paneId] {
+        draft.followWorkspace(to: project, serverClient: client)
+      }
+    }
+  }
+
   private func retargetCenterLeaves(for session: ChatSession) {
     guard let workspaceId = environment.workspaces.workspaceId(forSession: session.id),
       let workspace = environment.workspaces.workspace(id: workspaceId),

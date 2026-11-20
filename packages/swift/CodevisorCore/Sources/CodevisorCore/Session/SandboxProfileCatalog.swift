@@ -46,6 +46,7 @@ public struct SandboxProfilesLoadKey: Equatable, Sendable {
 @Observable
 public final class SandboxProfileCatalog {
   static let disconnectedHostReason = "Its Mac isn't connected"
+  static let blockedRecheckInterval = Duration.seconds(10)
 
   private var targets: [SandboxTarget] = []
   private var answersByComposer: [String: [String: SandboxProfileAvailability]] = [:]
@@ -62,12 +63,25 @@ public final class SandboxProfileCatalog {
     return answersByComposer[composerId]?[profileId] ?? .checking
   }
 
-  public func load(
+  public func follow(
+    composerId: String,
+    from composer: any CodevisorServerClienting,
+    clock: any Clock<Duration> = ContinuousClock(),
+    host: (String) -> SandboxHostConnection
+  ) async {
+    guard let sources = await refresh(composerId: composerId, from: composer, host: host) else { return }
+    while isBlocked(sources, composerId: composerId) {
+      do { try await clock.sleep(for: Self.blockedRecheckInterval) } catch { return }
+      await check(sources, composerId: composerId)
+    }
+  }
+
+  private func refresh(
     composerId: String,
     from composer: any CodevisorServerClienting,
     host: (String) -> SandboxHostConnection
-  ) async {
-    guard let loaded = await Self.targets(from: composer) else { return }
+  ) async -> [AvailabilitySource]? {
+    guard let loaded = await Self.targets(from: composer) else { return nil }
     targets = loaded
 
     let checks = Self.availabilityChecks(for: loaded, composer: composer, host: host)
@@ -75,12 +89,26 @@ public final class SandboxProfileCatalog {
     for profileId in checks.disconnectedProfileIds {
       setAnswer(.unavailable(Self.disconnectedHostReason), for: profileId, composerId: composerId)
     }
+    await check(checks.sources, composerId: composerId)
+    return checks.sources
+  }
+
+  private func check(_ sources: [AvailabilitySource], composerId: String) async {
     await withTaskGroup(of: ([String], [String: SandboxProfileAvailability]?).self) { group in
-      for check in checks.sources {
-        group.addTask { (check.profileIds, await Self.availability(from: check.client)) }
+      for source in sources {
+        group.addTask { (source.profileIds, await Self.availability(from: source.client)) }
       }
       for await (profileIds, answer) in group {
         record(answer, for: profileIds, composerId: composerId)
+      }
+    }
+  }
+
+  private func isBlocked(_ sources: [AvailabilitySource], composerId: String) -> Bool {
+    sources.flatMap(\.profileIds).contains { profileId in
+      switch answersByComposer[composerId]?[profileId] {
+      case .unavailable, .full: true
+      case .checking, .available, nil: false
       }
     }
   }

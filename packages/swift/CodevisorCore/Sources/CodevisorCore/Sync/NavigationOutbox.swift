@@ -124,6 +124,29 @@ final class NavigationOutbox {
     return true
   }
 
+  func moveDraftWorkspace(
+    _ workspaceId: UUID, from oldMachine: String, to newMachine: String,
+    relocating relocate: (ChatSession) -> ChatSession
+  ) -> [ChatSession] {
+    let queued = entries.filter { $0.machineId == oldMachine && $0.state == .pending }
+    let chats = queued.filter { $0.intent.workspaceId == workspaceId }.compactMap(\.intent.carriedSession)
+    let chatIds = Set(chats.map(\.id))
+    let moving = Set(
+      queued.filter { entry in
+        entry.intent.workspaceId == workspaceId || entry.intent.carriedSession.map { chatIds.contains($0.id) } == true
+      }.map(\.id))
+    guard !moving.isEmpty else { return [] }
+    entries = entries.map { entry in
+      guard moving.contains(entry.id) else { return entry }
+      let intent = entry.intent.carriedSession.map { entry.intent.carrying(relocate($0)) } ?? entry.intent
+      return NavigationOutboxEntry(id: entry.id, machineId: newMachine, intent: intent)
+    }
+    persist()
+    return chats.reduce(into: []) { unique, chat in
+      if !unique.contains(where: { $0.id == chat.id }) { unique.append(chat) }
+    }
+  }
+
   func removeAll(machineId: String) {
     let before = entries.count
     entries.removeAll { $0.machineId == machineId }

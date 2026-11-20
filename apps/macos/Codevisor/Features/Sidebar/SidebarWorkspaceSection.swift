@@ -88,7 +88,8 @@ struct SidebarRowContent {
       showsStatusLabel: rowDetails.contains(.status),
       icon: icon(for: item, isQuiet: isQuiet),
       pullRequest: pullRequest(for: workspace),
-      machine: headingNamesMachine ? nil : machine(onServer: workspace.serverId)
+      machine: headingNamesMachine
+        ? nil : machine(onServer: workspace.serverId, workspaceId: workspace.id, mainChat: item.routingSession)
     )
   }
 
@@ -108,7 +109,8 @@ struct SidebarRowContent {
       showsStatusLabel: rowDetails.contains(.status),
       icon: .chat(chat, isQuiet: chat.createdByAgent != nil),
       pullRequest: rowDetails.contains(.pullRequest) ? checkout?.git?.pullRequest : nil,
-      machine: machine(onServer: chat.serverId)
+      machine: machine(
+        onServer: chat.serverId, workspaceId: environment.workspaces.workspaceId(forSession: chat.id), mainChat: chat)
     )
   }
 
@@ -131,9 +133,18 @@ struct SidebarRowContent {
     rowDetails.contains(.pullRequest) ? store?.gitLookups.pullRequest(for: workspace) : nil
   }
 
-  func machine(onServer serverId: String) -> SidebarRowMachine? {
-    guard rowDetails.contains(.machine), let machine = environment.machines.machine(for: serverId) else { return nil }
-    return SidebarRowMachine(name: Self.machineName(machine), systemImage: machine.icon.systemImage)
+  func machine(onServer serverId: String, workspaceId: UUID?, mainChat: ChatSession?) -> SidebarRowMachine? {
+    guard rowDetails.contains(.machine) else { return nil }
+    let launching = mainChat.flatMap { store?.launchingSandbox(of: $0) }
+    return environment.machines.place(onServer: serverId, workspaceId: workspaceId, launching: launching)
+      .map(Self.rowMachine)
+  }
+
+  static func rowMachine(_ place: WorkspacePlace) -> SidebarRowMachine {
+    switch place {
+    case let .machine(machine): SidebarRowMachine(name: machineName(machine), systemImage: machine.icon.systemImage)
+    case let .sandbox(name): SidebarRowMachine(name: name, systemImage: WorkspacePlace.sandboxSystemImage)
+    }
   }
 
   func machineName(forServer serverId: String) -> String? {

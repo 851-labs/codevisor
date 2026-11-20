@@ -20,7 +20,9 @@ struct SandboxProfileCatalogTests {
       availability: [.init(profileId: "studio", disabledReason: "This Mac already runs 2 macOS VMs", full: true)])
     let catalog = SandboxProfileCatalog()
 
-    await catalog.load(composerId: "composer", from: composer) { $0 == "server-studio" ? .ready(studio) : .unreachable }
+    await catalog.settle(composerId: "composer", from: composer) {
+      $0 == "server-studio" ? .ready(studio) : .unreachable
+    }
 
     let choices = catalog.choices(for: "composer")
     #expect(choices.map(\.target.profileName) == ["Ubuntu Sandbox", "Studio VM", "Laptop VM"])
@@ -35,7 +37,7 @@ struct SandboxProfileCatalogTests {
   func unreachableComposer() async {
     let catalog = SandboxProfileCatalog()
 
-    await catalog.load(composerId: "composer", from: CatalogFakeServerClient(failing: true)) { _ in .unreachable }
+    await catalog.settle(composerId: "composer", from: CatalogFakeServerClient(failing: true)) { _ in .unreachable }
 
     #expect(catalog.choices(for: "composer").isEmpty)
   }
@@ -45,9 +47,9 @@ struct SandboxProfileCatalogTests {
     let catalog = SandboxProfileCatalog()
     let composer = CatalogFakeServerClient(
       profiles: [ubuntuProfile], availability: [.init(profileId: "ubuntu", disabledReason: "Add an E2B account")])
-    await catalog.load(composerId: "composer", from: composer) { _ in .unreachable }
+    await catalog.settle(composerId: "composer", from: composer) { _ in .unreachable }
 
-    await catalog.load(composerId: "composer", from: CatalogFakeServerClient(failing: true)) { _ in .unreachable }
+    await catalog.settle(composerId: "composer", from: CatalogFakeServerClient(failing: true)) { _ in .unreachable }
 
     #expect(catalog.choices(for: "composer") == [ubuntuChoice(.unavailable("Add an E2B account"))])
   }
@@ -59,7 +61,9 @@ struct SandboxProfileCatalogTests {
       profiles: [ubuntuProfile], availability: [.init(profileId: "ubuntu")], availabilityGate: gate)
     let catalog = SandboxProfileCatalog()
 
-    let load = Task { await catalog.load(composerId: "composer", from: composer) { _ in .unreachable } }
+    let load = Task {
+      await catalog.follow(composerId: "composer", from: composer, clock: TestClock()) { _ in .unreachable }
+    }
     await composer.availabilityRequested.wait()
 
     #expect(catalog.choices(for: "composer") == [ubuntuChoice(.checking)])
@@ -74,14 +78,34 @@ struct SandboxProfileCatalogTests {
     let catalog = SandboxProfileCatalog()
     let composer = CatalogFakeServerClient(
       profiles: [ubuntuProfile], availability: [.init(profileId: "ubuntu", disabledReason: "Add an E2B account")])
-    await catalog.load(composerId: "composer", from: composer) { _ in .unreachable }
+    await catalog.settle(composerId: "composer", from: composer) { _ in .unreachable }
 
     let unanswered = CatalogFakeServerClient(profiles: [ubuntuProfile], failingAvailability: true)
-    await catalog.load(composerId: "composer", from: unanswered) { _ in .unreachable }
-    await catalog.load(composerId: "other-composer", from: unanswered) { _ in .unreachable }
+    await catalog.settle(composerId: "composer", from: unanswered) { _ in .unreachable }
+    await catalog.settle(composerId: "other-composer", from: unanswered) { _ in .unreachable }
 
     #expect(catalog.choices(for: "composer") == [ubuntuChoice(.unavailable("Add an E2B account"))])
     #expect(catalog.choices(for: "other-composer") == [ubuntuChoice(.available)])
+  }
+
+  @Test("A profile that can't start is asked again until it can, so its reason doesn't go stale")
+  func blockedProfileIsAskedAgain() async {
+    let clock = TestClock()
+    let composer = CatalogFakeServerClient(
+      profiles: [ubuntuProfile],
+      availability: [.init(profileId: "ubuntu", disabledReason: "Only 4.0 GB of disk is free on this Mac")])
+    let catalog = SandboxProfileCatalog()
+    let following = Task {
+      await catalog.follow(composerId: "composer", from: composer, clock: clock) { _ in .unreachable }
+    }
+    await clock.waitForSleep(SandboxProfileCatalog.blockedRecheckInterval)
+    #expect(catalog.choices(for: "composer") == [ubuntuChoice(.unavailable("Only 4.0 GB of disk is free on this Mac"))])
+
+    composer.availability = [.init(profileId: "ubuntu")]
+    clock.advance(by: SandboxProfileCatalog.blockedRecheckInterval)
+    await following.value
+
+    #expect(catalog.choices(for: "composer") == [ubuntuChoice(.available)])
   }
 
   @Test("A profile on this Mac stays in Checking while its server is still starting")
@@ -89,7 +113,7 @@ struct SandboxProfileCatalogTests {
     let composer = CatalogFakeServerClient(profiles: tartProfiles)
     let catalog = SandboxProfileCatalog()
 
-    await catalog.load(composerId: "composer", from: composer) { $0 == "server-studio" ? .starting : .unreachable }
+    await catalog.settle(composerId: "composer", from: composer) { $0 == "server-studio" ? .starting : .unreachable }
 
     #expect(
       catalog.choices(for: "composer").map(\.availability) == [.checking, .unavailable("Its Mac isn't connected")])
@@ -114,9 +138,26 @@ struct SandboxProfileCatalogTests {
   }
 }
 
+extension SandboxProfileCatalog {
+  func settle(
+    composerId: String,
+    from composer: any CodevisorServerClienting,
+    host: @escaping (String) -> SandboxHostConnection
+  ) async {
+    let clock = TestClock()
+    let following = Task { await follow(composerId: composerId, from: composer, clock: clock, host: host) }
+    let stopAtRecheck = Task {
+      await clock.waitForSleep(Self.blockedRecheckInterval)
+      following.cancel()
+    }
+    await following.value
+    stopAtRecheck.cancel()
+  }
+}
+
 private final class CatalogFakeServerClient: CodevisorServerClienting, @unchecked Sendable {
   let profiles: [ServerSandboxProfile]
-  let availability: [ServerSandboxAvailability]
+  var availability: [ServerSandboxAvailability]
   let failing: Bool
   let failingAvailability: Bool
   let availabilityGate: TestSignal?

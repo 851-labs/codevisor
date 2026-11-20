@@ -26,6 +26,10 @@ extension SessionStore {
     controllers[SessionKey(session)]?.isSettingUp == true
   }
 
+  func launchingSandbox(of session: ChatSession) -> SandboxTarget? {
+    controllers[SessionKey(session)]?.launchingSandbox
+  }
+
   func isWaitingOnUser(_ session: ChatSession) -> Bool {
     guard let controller = controllers[SessionKey(session)] else {
       return session.actionRequired

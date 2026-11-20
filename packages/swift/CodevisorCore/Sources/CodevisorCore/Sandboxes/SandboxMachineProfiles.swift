@@ -34,6 +34,7 @@ public final class SandboxMachineProfiles {
   private var powersByOwner: [String: [String: SandboxMachinePower]] = [:]
   private var sandboxIdsByOwner: [String: [String: String]] = [:]
   private var restoringByOwner: [String: [UUID: RestoringWorkspace]] = [:]
+  private var sandboxNamesByOwner: [String: [UUID: String]] = [:]
 
   public init() {}
 
@@ -47,6 +48,10 @@ public final class SandboxMachineProfiles {
 
   var restoringWorkspaces: [UUID: RestoringWorkspace] {
     restoringByOwner.values.reduce(into: [:]) { all, owned in all.merge(owned) { current, _ in current } }
+  }
+
+  func sandboxName(forWorkspace workspaceId: UUID) -> String? {
+    sandboxNamesByOwner.values.lazy.compactMap { $0[workspaceId] }.first
   }
 
   func sandboxId(forDevice deviceId: String, ownedBy ownerDeviceId: String) -> String? {
@@ -75,6 +80,9 @@ public final class SandboxMachineProfiles {
     if powersByOwner[ownerDeviceId] != loaded.powers { powersByOwner[ownerDeviceId] = loaded.powers }
     if sandboxIdsByOwner[ownerDeviceId] != loaded.sandboxIds { sandboxIdsByOwner[ownerDeviceId] = loaded.sandboxIds }
     if restoringByOwner[ownerDeviceId] != loaded.restoring { restoringByOwner[ownerDeviceId] = loaded.restoring }
+    if sandboxNamesByOwner[ownerDeviceId] != loaded.sandboxNames {
+      sandboxNamesByOwner[ownerDeviceId] = loaded.sandboxNames
+    }
   }
 
   private nonisolated static func sandboxes(on client: any CodevisorServerClienting) async -> OwnerSandboxes? {
@@ -83,7 +91,17 @@ public final class SandboxMachineProfiles {
     guard let sandboxes = await sandboxes, let profiles = await profiles else { return nil }
     return OwnerSandboxes(
       profiles: matching(sandboxes, to: profiles), powers: SandboxMachinePower.byDevice(sandboxes),
-      sandboxIds: sandboxIdsByDevice(sandboxes), restoring: RestoringWorkspace.byWorkspace(sandboxes))
+      sandboxIds: sandboxIdsByDevice(sandboxes), restoring: RestoringWorkspace.byWorkspace(sandboxes),
+      sandboxNames: sandboxNamesByWorkspace(sandboxes))
+  }
+
+  private nonisolated static func sandboxNamesByWorkspace(_ sandboxes: [ServerSandbox]) -> [UUID: String] {
+    var names: [UUID: String] = [:]
+    for sandbox in sandboxes where sandbox.state != "failed" {
+      guard let workspaceId = sandbox.workspaceId.flatMap(UUID.init(uuidString:)) else { continue }
+      names[workspaceId] = sandbox.name
+    }
+    return names
   }
 
   private nonisolated static func sandboxIdsByDevice(_ sandboxes: [ServerSandbox]) -> [String: String] {
@@ -115,4 +133,5 @@ private struct OwnerSandboxes: Sendable {
   let powers: [String: SandboxMachinePower]
   let sandboxIds: [String: String]
   let restoring: [UUID: RestoringWorkspace]
+  let sandboxNames: [UUID: String]
 }

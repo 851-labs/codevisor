@@ -13,10 +13,16 @@ struct SandboxMachineProfilesTests {
   private let studioA = accountMachine("studio-a")
   private let studioB = accountMachine("studio-b")
   private let orphan = accountMachine("orphan")
+  private static let archivedWorkspace = UUID()
+  private static let studioWorkspace = UUID()
   private let ownerFake = SandboxOwnerFakeServerClient(
     sandboxes: [
       ServerSandbox(
-        id: "a", vendor: "tart", name: "Tart VM a", state: "ready", profileId: "studio", deviceId: "studio-a"),
+        id: "a", vendor: "tart", name: "Tart VM a", state: "ready", profileId: "studio", deviceId: "studio-a",
+        workspaceId: studioWorkspace.uuidString.lowercased()),
+      ServerSandbox(
+        id: "old", vendor: "apple-container", name: "Linux container 1a2b", state: "archived",
+        workspaceId: archivedWorkspace.uuidString.lowercased()),
       ServerSandbox(
         id: "b", vendor: "tart", name: "Tart VM b", state: "ready", profileId: "studio", deviceId: "studio-b",
         power: "paused"),
@@ -48,6 +54,28 @@ struct SandboxMachineProfilesTests {
     #expect(controller.sandboxProfile(forMachineId: studioB.id) == studio)
     #expect(controller.sandboxProfile(forMachineId: orphan.id) == nil)
     #expect(controller.sandboxProfile(forMachineId: owner.id) == nil)
+  }
+
+  @Test("A sandbox's workspace reads as on the sandbox while it starts and while it's archived on its Mac")
+  func workspacesPlacedOnTheirSandbox() async {
+    let controller = makeController()
+    let launching = SandboxTarget(
+      profileId: "box", profileName: "Linux container", vendorId: "apple-container", machineNoun: "Linux container")
+
+    await controller.loadSandboxMachineProfiles()
+
+    #expect(
+      controller.place(onServer: owner.id, workspaceId: Self.archivedWorkspace, launching: nil)
+        == .sandbox(name: "Linux container 1a2b"))
+    #expect(
+      controller.place(onServer: owner.id, workspaceId: UUID(), launching: launching)
+        == .sandbox(name: "Linux container"))
+    #expect(
+      controller.place(onServer: studioA.id, workspaceId: Self.studioWorkspace, launching: nil)
+        == controller.machine(for: studioA.id).map(WorkspacePlace.machine))
+    #expect(
+      controller.place(onServer: owner.id, workspaceId: UUID(), launching: nil)
+        == controller.machine(for: owner.id).map(WorkspacePlace.machine))
   }
 
   @Test("A sandbox names the Mac that owns it, so New Chat can start another from its profile there")
