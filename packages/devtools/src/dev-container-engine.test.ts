@@ -157,7 +157,7 @@ describe("prepareDevContainers", () => {
     const provision = (await docker.calls()).find((args) => args.at(-1) === "--provision-only")
     expect(provision).toContain(`${context.appRoot}:/codevisor`)
     expect(provision).toContain("dev.codevisor.worktree=abc")
-    expect(context.serverLog).toBe(join(containerRoot, "server.log"))
+    expect(context.serverLog).toBe(join(containerRoot, "state", "server.log"))
   })
 })
 
@@ -166,10 +166,9 @@ describe("launchDevRemoteServer", () => {
     vi.spyOn(console, "log").mockImplementation(() => {})
     const repoRoot = await fakeRepo()
     const remoteRootHost = join(repoRoot, "tmp/remote-cloud")
-    const docker = await fakeEngine("docker", { "run --detach": "container-id", logs: "booted\n" })
+    const docker = await fakeEngine("docker", { "run --detach": "container-id" })
     const serverRoots = developmentLayout(repoRoot, {}).remoteCloud
-    const serverLog = join(repoRoot, "tmp/container/server.log")
-    await mkdir(join(repoRoot, "tmp/container"), { recursive: true })
+    const serverLog = join(repoRoot, "tmp/container/state/server.log")
 
     const handle = await launchDevRemoteServer({
       containerContext: {
@@ -209,6 +208,7 @@ describe("launchDevRemoteServer", () => {
     const run = calls.find((args) => args[0] === "run")
     expect(run?.slice(0, 3)).toEqual(["run", "--detach", "--rm"])
     expect(run).toContain("codevisor-dev-dev-cloud-cayenne-abcdef1234")
+    expect(run).toContain("CODEVISOR_DEV_CONTAINER_LOG=/codevisor-state/server.log")
     expect(run).toContain("127.0.0.1:47000:47000")
     expect(run).toContain("CODEVISOR_DEV_CLOUD_URL=http://host.docker.internal:41000")
     expect(run).toContain("CODEVISOR_DEV_DATA_DIR=/codevisor-data/.codevisor/data")

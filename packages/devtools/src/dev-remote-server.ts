@@ -1,6 +1,4 @@
-import { spawn } from "node:child_process"
 import { EventEmitter } from "node:events"
-import { createWriteStream } from "node:fs"
 import { mkdir, readdir, readFile, writeFile } from "node:fs/promises"
 import { dirname, join } from "node:path"
 
@@ -135,6 +133,8 @@ async function startContainerServer(
     "IS_SANDBOX=1",
     "--env",
     `CODEVISOR_DEV_DESKTOP=${context.desktop ? 1 : 0}`,
+    "--env",
+    "CODEVISOR_DEV_CONTAINER_LOG=/codevisor-state/server.log",
     ...containerEnvironment(options.environment, context, toContainerPath),
     DEV_CONTAINER_IMAGE,
     "sh",
@@ -143,22 +143,7 @@ async function startContainerServer(
   ])
   console.log(`  container ${containerName} (${context.engineName}) → 127.0.0.1:${options.port}`)
   console.log(`  container log: ${context.serverLog}`)
-  return makeContainerHandle(context.engine, containerName, {
-    path: context.serverLog,
-    stop: followLogs(binary, containerName, context.serverLog)
-  })
-}
-
-function followLogs(binary: string, name: string, logPath: string): () => void {
-  const log = createWriteStream(logPath, { flags: "a" })
-  const follower = spawn(binary, ["logs", "--follow", name], { stdio: ["ignore", "pipe", "pipe"] })
-  follower.stdout.pipe(log, { end: false })
-  follower.stderr.pipe(log, { end: false })
-  follower.on("error", () => {})
-  follower.once("exit", () => log.end())
-  return () => {
-    follower.kill("SIGTERM")
-  }
+  return makeContainerHandle(context.engine, containerName, context.serverLog)
 }
 
 function containerEnvironment(
@@ -193,7 +178,7 @@ function isProductVariable(key: string): boolean {
 function makeContainerHandle(
   engine: ContainerEngine,
   name: string,
-  logs: { readonly path: string; readonly stop: () => void }
+  logPath: string
 ): RemoteServerHandle {
   const binary = engineBinary(engine)
   const emitter = new EventEmitter()
@@ -219,8 +204,7 @@ function makeContainerHandle(
     misses = inspected?.includes('"running"') ? 0 : misses + 1
     if (misses < missesBeforeExit) return
 
-    logs.stop()
-    await reportStoppedContainer(name, logs.path)
+    await reportStoppedContainer(name, logPath)
     handle.exitCode = 0
     clearInterval(poll)
     emitter.emit("exit", 0, null)

@@ -156,7 +156,7 @@ export async function prepareDevContainers(options: {
     worktreeHash,
     appRoot,
     stateRoot,
-    serverLog: join(containerRoot, "server.log"),
+    serverLog: join(stateRoot, "server.log"),
     bunCache,
     entryScript: join(repoRoot, "scripts", "dev-container-entry.sh"),
     nativesCheck: join(repoRoot, "scripts", "dev-container-natives.mjs"),

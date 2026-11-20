@@ -206,7 +206,7 @@ off by default because its packages add a few seconds to every boot.
   folder, which the app's "Delete app data" removes) and
   `tmp/.codevisor/logs/server.log`. With `dev:linux`, Dev Cloud's data is
   under `tmp/remote-cloud`, its Linux workspace under `tmp/container`, and
-  its server log in `tmp/container/server.log`.
+  its server log in `tmp/container/state/server.log`.
 - **Folders agents work in** (worktrees, bots, and no-project chats the dev
   app creates): `~/.codevisor-development/instances/<worktree hash>/codevisor`,
   outside the repo, so an agent there never picks up this repo's `AGENTS.md`.
