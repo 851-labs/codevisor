@@ -41,7 +41,7 @@ app_connected() {
 
 start_app() {
   local waited=0
-  TRANSCRIPT_STRESS=1 bun run dev:macos --no-containers "$@" >"$log" 2>&1 &
+  TRANSCRIPT_STRESS=1 bun run dev "$@" >"$log" 2>&1 &
   runner=$!
   until app_connected; do
     if ! kill -0 "$runner" 2>/dev/null || ((waited > 1200)); then

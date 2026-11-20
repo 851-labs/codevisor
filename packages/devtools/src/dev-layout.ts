@@ -42,7 +42,12 @@ export interface DevelopmentLayout {
     readonly turboCache: string
   }
   readonly wrangler: string
-  readonly runtime: { readonly root: string; readonly temp: string; readonly manifest: string }
+  readonly runtime: {
+    readonly root: string
+    readonly temp: string
+    readonly manifest: string
+    readonly signIn: string
+  }
 }
 
 type Environment = Readonly<Record<string, string | undefined>>
@@ -81,7 +86,8 @@ export function developmentLayout(
     runtime: {
       root: join(tmpRoot, "runtime"),
       temp: join(tmpRoot, "runtime", "temp"),
-      manifest: join(tmpRoot, "runtime", "manifest.json")
+      manifest: join(tmpRoot, "runtime", "manifest.json"),
+      signIn: join(tmpRoot, "runtime", "sign-in")
     }
   }
 }

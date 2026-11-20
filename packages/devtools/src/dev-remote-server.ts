@@ -1,15 +1,17 @@
-import { type ChildProcess, spawn } from "node:child_process"
+import { spawn } from "node:child_process"
 import { EventEmitter } from "node:events"
+import { createWriteStream } from "node:fs"
 import { mkdir, readdir, readFile, writeFile } from "node:fs/promises"
 import { dirname, join } from "node:path"
 
 import type { ExitingProcess } from "./child-processes.ts"
-import { engineBinary, execEngine, tryEngine } from "./container-engine.ts"
+import { type ContainerEngine, engineBinary, execEngine, tryEngine } from "./container-engine.ts"
 import {
   type DevContainerContext,
   DEV_CONTAINER_IMAGE,
   devContainerName,
   devRemoteHomeMounts,
+  removeContainerArguments,
   worktreeLabel
 } from "./dev-containers.ts"
 import type { ServiceRoots } from "./dev-layout.ts"
@@ -21,7 +23,7 @@ export interface RemoteServerHandle extends ExitingProcess {
 }
 
 export interface DevRemoteServerOptions {
-  readonly containerContext: DevContainerContext | undefined
+  readonly containerContext: DevContainerContext
   readonly repoRoot: string
   readonly remoteRootHost: string
   readonly serverRoots: ServiceRoots
@@ -37,14 +39,12 @@ const logLinesOnExit = 15
 
 export async function launchDevRemoteServer(
   options: DevRemoteServerOptions
-): Promise<ChildProcess | RemoteServerHandle> {
+): Promise<RemoteServerHandle> {
   const { containerContext, environment, serverRoots } = options
   const cloudUrl = rewriteHost(environment.CODEVISOR_DEV_CLOUD_URL, containerContext)
   if (cloudUrl !== undefined && (environment.CODEVISOR_DEV_CLOUD_TOKEN ?? "").length > 0) {
     await alignDevCloudCredentialUrl(join(serverRoots.data, "cloud.json"), cloudUrl)
   }
-  if (containerContext === undefined) return spawnLocalServer(options)
-
   return startContainerServer(options, containerContext)
 }
 
@@ -91,28 +91,13 @@ function serveArguments(options: DevRemoteServerOptions, dataPath: string): Arra
   ]
 }
 
-function spawnLocalServer(options: DevRemoteServerOptions): ChildProcess {
-  return spawn(
-    "node",
-    [
-      join(options.repoRoot, "apps/server/dist/main.js"),
-      ...serveArguments(options, options.serverRoots.data)
-    ],
-    {
-      cwd: options.repoRoot,
-      env: options.environment,
-      stdio: "inherit"
-    }
-  )
-}
-
 async function startContainerServer(
   options: DevRemoteServerOptions,
   context: DevContainerContext
 ): Promise<RemoteServerHandle> {
   const binary = engineBinary(context.engine)
   const containerName = devContainerName(options.serverName, context.worktreeHash)
-  await tryEngine(binary, ["rm", "--force", containerName])
+  await tryEngine(binary, removeContainerArguments(context.engine, containerName))
   const homeMounts = devRemoteHomeMounts(options.remoteRootHost)
   await Promise.all(homeMounts.map(({ host }) => mkdir(host, { recursive: true })))
   const toContainerPath = (hostPath: string) =>
@@ -120,6 +105,7 @@ async function startContainerServer(
   await execEngine(binary, [
     "run",
     "--detach",
+    "--rm",
     "--cpus",
     "4",
     "--memory",
@@ -155,8 +141,24 @@ async function startContainerServer(
     "/entry.sh",
     ...serveArguments(options, toContainerPath(options.serverRoots.data))
   ])
-  console.log(`  container ${containerName} (${context.engine}) → 127.0.0.1:${options.port}`)
-  return makeContainerHandle(binary, containerName)
+  console.log(`  container ${containerName} (${context.engineName}) → 127.0.0.1:${options.port}`)
+  console.log(`  container log: ${context.serverLog}`)
+  return makeContainerHandle(context.engine, containerName, {
+    path: context.serverLog,
+    stop: followLogs(binary, containerName, context.serverLog)
+  })
+}
+
+function followLogs(binary: string, name: string, logPath: string): () => void {
+  const log = createWriteStream(logPath, { flags: "a" })
+  const follower = spawn(binary, ["logs", "--follow", name], { stdio: ["ignore", "pipe", "pipe"] })
+  follower.stdout.pipe(log, { end: false })
+  follower.stderr.pipe(log, { end: false })
+  follower.on("error", () => {})
+  follower.once("exit", () => log.end())
+  return () => {
+    follower.kill("SIGTERM")
+  }
 }
 
 function containerEnvironment(
@@ -188,14 +190,19 @@ function isProductVariable(key: string): boolean {
   return key.startsWith("CODEVISOR_") || key.startsWith("HERDMAN_")
 }
 
-function makeContainerHandle(binary: string, name: string): RemoteServerHandle {
+function makeContainerHandle(
+  engine: ContainerEngine,
+  name: string,
+  logs: { readonly path: string; readonly stop: () => void }
+): RemoteServerHandle {
+  const binary = engineBinary(engine)
   const emitter = new EventEmitter()
   const handle: RemoteServerHandle = {
     exitCode: null,
     signalCode: null,
     once: (event, listener) => emitter.once(event, listener),
     kill: () => {
-      void tryEngine(binary, ["rm", "--force", name])
+      void tryEngine(binary, removeContainerArguments(engine, name))
       return true
     }
   }
@@ -212,7 +219,8 @@ function makeContainerHandle(binary: string, name: string): RemoteServerHandle {
     misses = inspected?.includes('"running"') ? 0 : misses + 1
     if (misses < missesBeforeExit) return
 
-    await reportStoppedContainer(binary, name)
+    logs.stop()
+    await reportStoppedContainer(name, logs.path)
     handle.exitCode = 0
     clearInterval(poll)
     emitter.emit("exit", 0, null)
@@ -220,10 +228,10 @@ function makeContainerHandle(binary: string, name: string): RemoteServerHandle {
   return handle
 }
 
-async function reportStoppedContainer(binary: string, name: string): Promise<void> {
-  console.error(`  container ${name} is no longer running; last log lines:`)
-  const logs = await tryEngine(binary, ["logs", name])
-  for (const line of logs?.split("\n").slice(-logLinesOnExit) ?? []) console.error(`    ${line}`)
+async function reportStoppedContainer(name: string, logPath: string): Promise<void> {
+  console.error(`  container ${name} is no longer running; last lines of ${logPath}:`)
+  const logs = await readFile(logPath, "utf8").catch(() => "")
+  for (const line of logs.trimEnd().split("\n").slice(-logLinesOnExit)) console.error(`    ${line}`)
 }
 
 async function rebindSharedCredential(path: string, origin: string): Promise<void> {

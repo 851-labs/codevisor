@@ -99,10 +99,9 @@ released app.
 - Pick a harness that is signed in (Settings › Harnesses). If none can
   exercise the change, mark the scenario **Blocked** and say which harness
   or account it needs.
-- Dev Cloud in its Linux container (the default without `--no-containers`)
-  gets its own empty home folder, so no harness is installed or signed in
-  there. With `--no-containers` it runs on this Mac with its harnesses. A
-  change to harness behaviour on the Linux server cannot be tophatted in
+- Dev Cloud, the Linux container that only `bun run dev:linux` starts, gets
+  its own empty home folder, so no harness is installed or signed in there.
+  A change to harness behaviour on the Linux server cannot be tophatted in
   the container yet; report that scenario as blocked.
 
 ## Exercise, observe, and investigate

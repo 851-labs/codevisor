@@ -13,20 +13,22 @@ simulators by hand.
 
 ## Pick a command
 
-| Goal                                  | Command                                    | Needs first         |
-| ------------------------------------- | ------------------------------------------ | ------------------- |
-| macOS app with all dev services       | `bun run dev:macos`                        | nothing             |
-| iOS app with its dev services         | `bun run dev:ios`                          | the simulator owner |
-| Both apps on one set of services      | `bun run dev`                              | the simulator owner |
-| Check that an app compiles, no launch | `bun run build:macos`, `bun run build:ios` | nothing             |
-| Website only                          | `bun run dev:web`                          | nothing             |
-| Bot mascot package in a browser       | `bun run dev:mascot-playground`            | nothing             |
+| Goal                                                  | Command                                    | Needs first                                      |
+| ----------------------------------------------------- | ------------------------------------------ | ------------------------------------------------ |
+| macOS app and its dev server                          | `bun run dev`                              | nothing                                          |
+| macOS app and the iOS app, signed into one account    | `bun run dev:ios`                          | the simulator owner                              |
+| macOS app and a Linux container as the remote machine | `bun run dev:linux`                        | Apple's `container`, OrbStack, or Docker Desktop |
+| Check that an app compiles, no launch                 | `bun run build:macos`, `bun run build:ios` | nothing                                          |
+| Website only                                          | `bun run dev:web`                          | nothing                                          |
+| Bot mascot package in a browser                       | `bun run dev:mascot-playground`            | nothing                                          |
 
-`bun run dev` and `bun run dev:ios` exit at once with "This worktree's
-simulator must already be running" until the simulator owner is up; see
-[iOS simulator](#ios-simulator). Use `dev:macos` when the change is macOS-only.
-Add `--no-containers` to any of the three runners unless the change touches
-the Linux server, sandboxes, or containers; see [Flags](#flags).
+`bun run dev` is the everyday command. Use `dev:ios` when the change touches
+the iOS app or something you check from a second device; it exits at once
+with "This worktree's simulator must already be running" until the simulator
+owner is up (see [iOS simulator](#ios-simulator)). Use `dev:linux` only when
+the change touches the Linux server, sandboxes, or containers; see
+[The Linux container](#the-linux-container-devlinux). None of them starts a
+container unless it is `dev:linux`.
 
 ## Before you start
 
@@ -54,29 +56,29 @@ The output is tens of thousands of lines of raw `xcodebuild` log, so send it
 to a file and search the file. The usual start for a macOS change:
 
 ```sh
-mkdir -p tmp && bun run dev:macos --no-containers > tmp/dev.log 2>&1
+mkdir -p tmp && bun run dev > tmp/dev.log 2>&1
 ```
 
 Then wait for a ready or failure line in a second background task:
 
 ```sh
-until grep -qE "is ready; it appears|xcodebuild failed|exited with code|exited unexpectedly|already active" tmp/dev.log; do sleep 5; done
-grep -E "is listening on|is ready; it appears|iOS is running|error:|xcodebuild failed|exited" tmp/dev.log | tail
+until grep -qE "Codevisor dev is ready|xcodebuild failed|exited with code|exited unexpectedly|already active" tmp/dev.log; do sleep 5; done
+grep -E "is listening on|Linux container|iOS is running|Codevisor dev is ready|error:|xcodebuild failed|exited" tmp/dev.log | tail
 ```
 
 The runner prints these lines, in this order:
 
 1. A banner with this instance's addresses: `server:` (the dev server),
-   `www:`, `viacloud:` (Dev Cloud), `cloud:`, `data:`, `worktrees:`, `icon:`.
+   `www:`, `cloud:`, `data:`, `worktrees:`, `icon:`, `targets:`, and for
+   `dev:linux` also `viacloud:` (Dev Cloud).
 2. `Codevisor dev server is listening on http://127.0.0.1:<port>`.
-3. `Dev Cloud (<worktree>) is ready; it appears after signing into the dev cloud.`
-   The Mac app opens right after this line. Nothing is printed when its
-   window appears, so confirm the process with
+3. `dev:linux` only: `Dev Cloud (<worktree>) is running in its Linux container.`
+4. `dev:ios` only: `Codevisor iOS is running on <simulator> against the dev cloud:`.
+5. `Codevisor dev is ready: <what started>.` The Mac app was opened just
+   before this line. Nothing is printed when its window appears, so confirm
+   the process with
    `pgrep -fl "$PWD/tmp/build/macos/.*Contents/MacOS/Codevisor"`, and its
    window with the window list in the `driving-dev-apps` skill.
-4. With iOS: `Codevisor iOS is running on <simulator> against the dev cloud:`,
-   and for `bun run dev` a final `Press Ctrl+C to stop both apps and their
-shared development services.`
 
 After that the log keeps filling with server and harness-inspection messages;
 they are not errors in your change.
@@ -85,11 +87,15 @@ Failure lines:
 
 - `xcodebuild failed (code 65)`: a compile error. Find it with
   `grep -n "error:" tmp/dev.log`.
-- `error: script "dev:macos" exited with code 1`: the runner stopped; the
-  reason is a few lines above.
+- `error: script "dev" exited with code 1` (or `dev:ios`, `dev:linux`): the
+  runner stopped; the reason is a few lines above.
+- `dev:linux runs its remote machine in a Linux container and found no
+container engine`: install or start one of the engines it names; see
+  [The Linux container](#the-linux-container-devlinux).
 - `Codevisor server exited unexpectedly`: usually no Node on PATH.
-- `Unknown development runner argument`: the runners take only the flags
-  listed below. There is no `--help`.
+- `Unknown development runner argument`: the runners take only
+  `--reuse-macos-build`. There is no `--help`, and the old `--no-ios`,
+  `--containers`, `--no-containers`, and `--container-engine` flags are gone.
 
 ### How long it takes
 
@@ -139,29 +145,52 @@ not see. Once the app is ready, a quiet log is normal.
 
 ## Flags
 
-| Flag                                     | Runners     | What it does                                                                                                                             |
-| ---------------------------------------- | ----------- | ---------------------------------------------------------------------------------------------------------------------------------------- |
-| `--no-containers`                        | all three   | Runs Dev Cloud as a process on this Mac instead of a Linux container. The usual choice; see below.                                       |
-| `--containers`                           | all three   | The default: Dev Cloud in a Linux container (Apple `container` preferred, Docker fallback, same-host process when neither is available). |
-| `--container-engine=apple\|docker\|none` | all three   | Picks the engine; `none` equals `--no-containers`.                                                                                       |
-| `--reuse-macos-build`                    | `dev:macos` | Relaunches the existing signed Mac app without building. See [Restart and stop](#restart-and-stop).                                      |
+`--reuse-macos-build` is the only flag, and all three runners take it. It
+relaunches the existing signed Mac app without building it; see
+[Restart and stop](#restart-and-stop). The runners reject anything else,
+including `xcodebuild` arguments; only `build:macos` and `build:ios` forward
+those.
 
-The dev runners accept nothing else. They reject `xcodebuild` arguments;
-only `build:macos` and `build:ios` forward those.
+## Signing in
 
-Containers are the default, but most local work does not need them: pass
-`--no-containers` unless the change touches the Linux server, sandboxes, or
-containers (including the container desktop).
+The apps sign into the local dev cloud's development account by themselves
+the first time they launch in a fresh instance, so on `dev:ios` the iOS app
+lists the Mac's machine, and on `dev:linux` the Mac app lists Dev Cloud,
+with no sign-in step. "Fresh" means:
 
-Dev Cloud is the second machine the apps talk to. It signs into the local dev
-cloud, so the apps list it only after you sign in with "Use Development
-Account"; machines are never added by address. `--no-containers` is also
-the fix when Dev Cloud never appears because its container cannot reach the
-local cloud. With `CODEVISOR_DEV_CONTAINER_DESKTOP=1` each dev
-container also runs an Xfce desktop over VNC
-(`scripts/dev-container-desktop.sh`), which the macOS app opens as a Screen
-Sharing pane and Computer Use drives through AT-SPI; it is off by default
-because its packages add a few seconds to every boot.
+- the Mac app: once per worktree `tmp/`;
+- the iOS app: once per simulator device, so a new simulator owner's device
+  is signed in again.
+
+After that it is ordinary sign-in: signing out, or deleting the app's data
+(Delete app data on macOS, Delete Device Data on iOS), leaves the app signed
+out across relaunches, so onboarding and the sign-in screens can be tested
+from a clean state. "Use Development Account" signs back in. To have the
+runner sign the apps in again, delete `tmp/runtime/sign-in` and restart the
+runner. The runner records each offer there; it is not in the app's data, so
+the app cannot undo it.
+
+## The Linux container (`dev:linux`)
+
+`dev:linux` runs the second machine, Dev Cloud, as a Linux server in one
+container (4 CPUs, 4 GB). It signs into the dev cloud itself, the "already
+signed in somewhere else" machine. It uses the first engine that works, in
+this order, and prints the one it picked:
+
+1. Apple's `container` (1.x; `brew install container`).
+2. Docker, served by OrbStack (`brew install orbstack`) or Docker Desktop.
+
+With none of them it stops with an error that names what to install. It
+never runs Dev Cloud as a process on the Mac instead, because that is not
+Linux. The first boot in a worktree installs Linux `node_modules` into
+`tmp/container`, which takes a few minutes; later boots reuse it. The
+container has an empty home folder, so no harness is installed or signed in
+there.
+
+With `CODEVISOR_DEV_CONTAINER_DESKTOP=1` the container also runs an Xfce
+desktop over VNC (`scripts/dev-container-desktop.sh`), which the macOS app
+opens as a Screen Sharing pane and Computer Use drives through AT-SPI. It is
+off by default because its packages add a few seconds to every boot.
 
 ## Where things are
 
@@ -175,7 +204,9 @@ because its packages add a few seconds to every boot.
 - **Data and logs:** `tmp/.codevisor/data` (the server's database and data;
   the Mac app's own state, sign-in, and browser profiles are in its `Client`
   folder, which the app's "Delete app data" removes) and
-  `tmp/.codevisor/logs/server.log`. Dev Cloud's are under `tmp/remote-cloud`.
+  `tmp/.codevisor/logs/server.log`. With `dev:linux`, Dev Cloud's data is
+  under `tmp/remote-cloud`, its Linux workspace under `tmp/container`, and
+  its server log in `tmp/container/server.log`.
 - **Folders agents work in** (worktrees, bots, and no-project chats the dev
   app creates): `~/.codevisor-development/instances/<worktree hash>/codevisor`,
   outside the repo, so an agent there never picks up this repo's `AGENTS.md`.
@@ -190,7 +221,17 @@ A few things cannot live in the worktree. Each is keyed to the worktree by
 the hash of its path, and `~/.codevisor-development/instances/<worktree hash>/repo-root`
 records which worktree that is:
 
-- the Dev Cloud container, labelled `dev.codevisor.worktree=<worktree hash>`;
+- `dev:linux` only: the Dev Cloud container, labelled
+  `dev.codevisor.worktree=<worktree hash>`. Every folder it writes to is
+  mounted from `tmp/`, but the container's own disk cannot be: Apple's
+  `container` keeps it in its one data folder for the whole Mac,
+  `~/Library/Application Support/com.apple.container/containers/<name>`
+  (about 2 GB), and Docker and OrbStack keep it in their own VM disk. The
+  container is started with `--rm`, so that disk is deleted as soon as the
+  container stops, and Docker and OrbStack also delete its volumes. The
+  `node:22-bookworm` image (about 1 GB) and the Linux bun cache
+  (`~/.codevisor-development/artifacts/linux-bun-cache`) are shared by every
+  worktree and stay;
 - the instance folder above;
 - what macOS keeps per app under `~/Library` (Preferences, Caches,
   HTTPStorages, WebKit, Application Support), in the per-user cache and temp
@@ -201,14 +242,15 @@ records which worktree that is:
 They are removed in three ways, so deleting or archiving a worktree needs no
 manual cleanup:
 
-- The runner removes its container and stops its app when it stops, and the
+- The runner removes its container (and its disk) and stops its app when it stops, and the
   simulator owner deletes its device. Both run outside the process tree of
   the command that started them, so they still do this when that command, or
   the whole task, is killed with `SIGKILL`. A runner that stops because its
   worktree is gone also removes the instance folder and the `~/Library`
   state.
-- The Dev Cloud container stops itself when the worktree's `tmp/` is deleted,
-  even if no runner is left to remove it.
+- The Dev Cloud container stops itself when the worktree's `tmp/` is
+  deleted, even if no runner is left to remove it, and `--rm` then deletes
+  its disk.
 - Every dev runner start, in any worktree, cleans up after worktrees that no
   longer exist: their containers, processes still running from their folder,
   their `~/Library` state, and their instance folder. It prints
@@ -217,19 +259,20 @@ manual cleanup:
 ## Restart and stop
 
 - **The runner lives as long as the Mac app.** Quitting the app, or a crash,
-  stops the runner, the dev server, and Dev Cloud. Data in `tmp/` survives.
+  stops the runner, the dev server, and Dev Cloud if it runs. Data in `tmp/`
+  survives.
 - **Pick up a code change:** stop the runner, wait for it to exit, start it
   again. It rebuilds what changed.
 - **Relaunch without a native change** (after quitting the app, a crash, a
   permission grant that needs the same signed binary, or a server-only
   change): wait for the old runner to exit, then run
-  `bun run dev:macos --reuse-macos-build`, with the same container flag as
-  before. It verifies the app's identity and signature, skips native
+  the same runner again with `--reuse-macos-build`, for example
+  `bun run dev --reuse-macos-build`. It verifies the app's identity and signature, skips native
   building and signing, and starts the usual services. It does not pick up
   Swift edits, and a missing or mismatched app fails with "Cannot reuse macOS
   build" instead of rebuilding.
-- **`bun run dev` and `dev:ios` have no reuse flag.** Start them again the
-  normal way; the build is incremental.
+- **`dev:ios` still builds the iOS app** with `--reuse-macos-build`; only
+  the Mac build is skipped.
 - **The dev server is never restarted on its own.** When it is stuck or
   needs new server code, restart the runner.
 - **Stop:** stop the background task you started, or send `SIGTERM` to the
@@ -262,8 +305,8 @@ link here.
    else decides the outcome. Ready means it has created this worktree's
    device and booted it. If the task exits first, startup failed and the
    log's last lines say why.
-3. Start `bun run dev:ios` or `bun run dev` in another background task. The
-   runner builds, installs, and launches the app on that exact device.
+3. Start `bun run dev:ios` in another background task. The runner builds,
+   installs, and launches the app on that exact device.
 
 ### The ready block and the Xcode window
 
@@ -323,7 +366,7 @@ bun run build:ios
 
 - These are compile checks. `build:macos` produces an unsigned
   `Codevisor.app`, not this worktree's dev app, so do not launch it; use
-  `dev:macos` to run the app.
+  `bun run dev` to run the app.
 - Extra arguments go straight to `xcodebuild`, for example
   `bun run build:macos -jobs 4`.
 - They write to the same `tmp/build/<platform>/DerivedData` as the dev
@@ -399,8 +442,10 @@ intentionally rebuilding GhosttyKit itself, run `bun run ghostty:build`.
 - Starting the runner or simulator owner with the default background timeout,
   then finding the app, servers, or simulator gone half an hour later.
 - Quitting the Mac app to "restart" it, which stops the servers too.
-- Running `bun run dev` for a macOS-only change, which needs the simulator
-  for nothing.
+- Running `bun run dev:ios` for a macOS-only change, which needs the
+  simulator for nothing, or `dev:linux` for a change that does not touch the
+  Linux server, sandboxes, or containers, which pays for a 4 GB VM for
+  nothing.
 - Launching the `build:macos` product, or building in Xcode, instead of
   using the dev runner.
 

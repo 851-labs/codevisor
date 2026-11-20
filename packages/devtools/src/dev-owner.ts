@@ -40,22 +40,18 @@ export interface DevOwnerProcesses {
 
 export async function runDevelopmentOwner(
   repoRoot: string,
-  kind: string | undefined,
   args: ReadonlyArray<string>,
   processes: DevOwnerProcesses
 ): Promise<void> {
   const { identity, readProcessTable, stopProcesses, trackProcessTree } = processes
-  parseDevelopmentRunnerArguments(args, {
-    allowedArguments: kind === "ios" ? [] : ["--no-ios", "--reuse-macos-build"]
-  })
+  const { target } = parseDevelopmentRunnerArguments(args)
   let simulator: SimulatorManifest | undefined
-  if (kind === "ios" || !args.includes("--no-ios"))
-    simulator = await requireIOSSimulator(repoRoot, { identity: identity })
+  if (target === "ios") simulator = await requireIOSSimulator(repoRoot, { identity: identity })
   const layout = developmentLayout(repoRoot)
   const claimPath = layout.runtime.manifest
   const ownerStartedAt = (await identity(process.pid))?.startedAt
   const claim = {
-    kind,
+    kind: target,
     pid: process.ppid,
     ownerPid: process.pid,
     ...(ownerStartedAt === undefined ? {} : { ownerStartedAt }),
@@ -94,10 +90,7 @@ export async function runDevelopmentOwner(
     if (!stopRequested) {
       const worker = spawn(
         process.execPath,
-        [
-          join(repoRoot, "scripts", kind === "ios" ? "dev-ios-worker.mjs" : "dev-worker.mjs"),
-          ...args
-        ],
+        [join(repoRoot, "scripts", "dev-worker.mjs"), ...args],
         { cwd: repoRoot, stdio: "inherit", detached: true }
       )
       const exited = waitForExit(worker)
@@ -150,16 +143,10 @@ export async function runDevelopmentOwner(
 
   async function cleanupExternalResources() {
     const cleanup = [
-      ...(kind === "ios"
-        ? []
-        : [
-            (async () => {
-              const apps = (await readProcessTable()).filter(
-                (entry) => entry.command === appExecutable
-              )
-              await stopProcesses(apps, { graceMs: 2_000 })
-            })()
-          ]),
+      (async () => {
+        const apps = (await readProcessTable()).filter((entry) => entry.command === appExecutable)
+        await stopProcesses(apps, { graceMs: 2_000 })
+      })(),
       ...(simulator
         ? [
             simctl(["terminate", simulator.udid, iosDevelopmentBundleIdentifier(repoRoot)], {

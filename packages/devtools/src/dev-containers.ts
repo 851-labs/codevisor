@@ -17,9 +17,11 @@ export const WORKTREE_LABEL = "dev.codevisor.worktree"
 
 export interface DevContainerContext {
   readonly engine: ContainerEngine
+  readonly engineName: string
   readonly worktreeHash: string
   readonly appRoot: string
   readonly stateRoot: string
+  readonly serverLog: string
   readonly bunCache: string
   readonly entryScript: string
   readonly nativesCheck: string
@@ -74,10 +76,14 @@ export async function sweepStaleContainers(
   const owned = await worktreeContainers(engine, worktreeHash, runEngine)
   if (owned.length === 0) return
 
-  for (const id of owned) await runEngine(binary, ["rm", "--force", id])
+  for (const id of owned) await runEngine(binary, removeContainerArguments(engine, id))
   const remaining = await worktreeContainers(engine, worktreeHash, runEngine)
   if (remaining.length > 0)
     throw new Error(`Could not remove ${binary} containers: ${remaining.join(", ")}`)
+}
+
+export function removeContainerArguments(engine: ContainerEngine, id: string): Array<string> {
+  return engine === "docker" ? ["rm", "--force", "--volumes", id] : ["rm", "--force", id]
 }
 
 export function worktreeLabel(worktreeHash: string): string {
@@ -117,9 +123,10 @@ export async function prepareDevContainers(options: {
   readonly repoRoot: string
   readonly containerRoot: string
   readonly engine: ContainerEngine
+  readonly engineName: string
   readonly worktreeHash: string
 }): Promise<DevContainerContext> {
-  const { repoRoot, containerRoot, engine, worktreeHash } = options
+  const { repoRoot, containerRoot, engine, engineName, worktreeHash } = options
   const stateRoot = join(containerRoot, "state")
   const bunCache = linuxBunCacheRoot()
   await Promise.all([stateRoot, bunCache].map((directory) => mkdir(directory, { recursive: true })))
@@ -128,9 +135,11 @@ export async function prepareDevContainers(options: {
   await sweepStaleContainers(engine, worktreeHash)
   const context = {
     engine,
+    engineName,
     worktreeHash,
     appRoot,
     stateRoot,
+    serverLog: join(containerRoot, "server.log"),
     bunCache,
     entryScript: join(repoRoot, "scripts", "dev-container-entry.sh"),
     nativesCheck: join(repoRoot, "scripts", "dev-container-natives.mjs"),

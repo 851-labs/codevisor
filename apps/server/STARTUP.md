@@ -23,4 +23,4 @@ ServiceManagement calls have a fifteen-second deadline and cannot overlap an out
 
 The LaunchAgent uses a fixed PATH and starts Node without evaluating user shell startup files. The server resolves the user's shell environment asynchronously with its existing timeout. Sharp loads only when an icon needs normalization. Full foreign-key validation runs after schema migrations, and identity adoption records its completed server ID transactionally so unchanged boots skip those scans.
 
-Use `bun run dev:macos --no-containers` to inspect checkpoint logs in the isolated development environment. Focused regressions live in `startup-progress.test.ts`, `terminal-persistence.test.ts`, database upgrade tests, and Swift's local-server/ownership tests. Native builds use `bun run build:macos` and `bun run build:ios`.
+Use `bun run dev` to inspect checkpoint logs in the isolated development environment. Focused regressions live in `startup-progress.test.ts`, `terminal-persistence.test.ts`, database upgrade tests, and Swift's local-server/ownership tests. Native builds use `bun run build:macos` and `bun run build:ios`.

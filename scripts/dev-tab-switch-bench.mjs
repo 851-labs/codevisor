@@ -177,7 +177,7 @@ async function macClient(server) {
   const client = clients.find((candidate) => candidate.platform === "macos")
   if (client === undefined)
     throw new Error(
-      "No macOS app is connected to this server; start it with TRANSCRIPT_STRESS=1 bun run dev:macos"
+      "No macOS app is connected to this server; start it with TRANSCRIPT_STRESS=1 bun run dev"
     )
   return client
 }

@@ -40,6 +40,7 @@ public final class CloudAccountController {
   let localRegistration = CloudLocalMachineRegistration()
   private let hubLink: CloudHubLink
   public let serverURL: URL
+  let developmentSignInTicket: URL?
   public let directPaths: CloudDirectPathController
   private let loopbackPool = CloudLoopbackBridgePool()
   @ObservationIgnored public var onSignedOut: (() -> Void)?
@@ -52,6 +53,7 @@ public final class CloudAccountController {
     clientFactory: @escaping ClientFactory = { CloudAccountClient(baseURL: $0) },
     credentialStore: any CloudCredentialStore,
     environmentCloud: CodevisorAppVariant.DevelopmentCloud? = CodevisorAppVariant.developmentCloud,
+    developmentSignInTicket: URL? = CodevisorAppVariant.developmentSignInTicket,
     hubConnectionFactory: @escaping HubConnectionFactory = { serverURL, store in
       CloudHubConnection(serverURL: serverURL, credentialStore: store)
     },
@@ -69,6 +71,7 @@ public final class CloudAccountController {
     self.validation = CloudSessionValidation(
       clock: retryClock, credentials: credentialCache, pins: machineKeyPins, rosterStore: credentialStore)
     self.serverURL = environmentCloud?.url ?? Self.defaultServerURL
+    self.developmentSignInTicket = developmentSignInTicket
     self.hubLink = CloudHubLink(factory: hubConnectionFactory)
     self.directPaths = directPaths ?? CloudDirectPathController(credentialStore: credentialStore)
   }
@@ -84,6 +87,7 @@ public final class CloudAccountController {
   public func bootstrap() async {
     await retireLegacyServerOverride()
     await validation.bootstrap(for: self)
+    await redeemDevelopmentSignInTicket()
   }
 
   public func retryIfUnverified() async {

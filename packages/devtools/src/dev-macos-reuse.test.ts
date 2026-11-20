@@ -1,7 +1,6 @@
 import { describe, expect, it } from "vitest"
 
-import { parseDevelopmentRunnerArguments } from "./dev-arguments.ts"
-import { requestsMacOSBuildReuse, verifyReusableMacOSApp } from "./dev-macos-reuse.ts"
+import { verifyReusableMacOSApp } from "./dev-macos-reuse.ts"
 
 const plutil = [
   "/usr/bin/plutil",
@@ -82,13 +81,4 @@ describe("verifyReusableMacOSApp", () => {
       expect(calls).toEqual(expectedCalls)
     }
   )
-})
-
-describe("requestsMacOSBuildReuse", () => {
-  it("is explicit and rejected by combined or iOS runners", () => {
-    expect(requestsMacOSBuildReuse(["--no-ios"])).toBe(false)
-    expect(requestsMacOSBuildReuse(["--no-ios", "--reuse-macos-build"])).toBe(true)
-    expect(() => requestsMacOSBuildReuse(["--reuse-macos-build"])).toThrow(/only by dev:macos/)
-    expect(() => parseDevelopmentRunnerArguments(["--reuse-macos-build"])).toThrow(/Unknown/)
-  })
 })

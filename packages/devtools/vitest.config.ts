@@ -16,7 +16,6 @@ export default defineTestConfig({
         "src/ios-simulator-owner.ts",
         "src/dev-owner.ts",
         "src/dev-worker.ts",
-        "src/dev-ios-worker.ts",
         "src/xcode-window.ts",
         ...macOSOnly
       ],

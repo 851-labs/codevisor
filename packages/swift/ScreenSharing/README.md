@@ -21,7 +21,7 @@ The working path is engine v2 (see [Engine v2](#engine-v2)): ScreenCaptureKit �
 
 ## Native workspace pane
 
-Run `bun run dev:macos`. In a workspace hosted by a Mac, open New Tab → Screen Sharing and select a display from the searchable chooser to connect. The host must run this version of the native app and allow Screen Recording. The native toolbar shows the machine name and resolution, View/Control, clipboard and connection details. The video always scales to fit the pane. Closing the tab ends the session.
+Run `bun run dev`. In a workspace hosted by a Mac, open New Tab → Screen Sharing and select a display from the searchable chooser to connect. The host must run this version of the native app and allow Screen Recording. The native toolbar shows the machine name and resolution, View/Control, clipboard and connection details. The video always scales to fit the pane. Closing the tab ends the session.
 
 The viewer sends a v2 start (its media endpoint address, no SDP) through the existing machine-authenticated, relay-aware client to `POST /v1/screen-sharing`. The server validates the active workspace and native pane, then forwards the request over Codevisor’s authenticated Unix bridge to the app’s native host service, which answers with its own media address and a session token. Signaling stays transient; only the stable display UUID and fit preference enter pane metadata. Synced size preferences update the existing native surface; a display change from another client requires a fresh Connect. Websites are rejected even on loopback.
 
