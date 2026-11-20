@@ -18,6 +18,8 @@ public final class ConfigSync {
   let deviceId: String
   public private(set) var revisionsByNamespace: [String: UInt64] = [:]
   public private(set) var receivedNamespaces: Set<String> = []
+  public private(set) var namespacesReceivedByMachine: [String: Set<String>] = [:]
+  @ObservationIgnored private var receiptGenerations: [String: Int] = [:]
   @ObservationIgnored public var onNamespaceChanged: ((String) -> Void)?
   @ObservationIgnored public var onHarnessCatalogChanged: ((String) -> Void)?
   @ObservationIgnored private var entriesByNamespace: [String: [ServerSyncEntry]] = [:]
@@ -45,6 +47,15 @@ public final class ConfigSync {
 
   public func hasSnapshot(namespace: String) -> Bool {
     receivedNamespaces.contains(namespace) || store.loadData(forKey: "configSync.replica.\(namespace)") != nil
+  }
+
+  public func hasReceived(namespace: String, fromMachine machineId: String) -> Bool {
+    namespacesReceivedByMachine[machineId]?.contains(namespace) == true
+  }
+
+  func forgetReceived(fromMachine machineId: String) {
+    namespacesReceivedByMachine[machineId] = nil
+    receiptGenerations[machineId, default: 0] &+= 1
   }
 
   public func value(namespace: String, key: String) -> JSONValue? {
@@ -108,6 +119,7 @@ public final class ConfigSync {
   public func synchronize(machineId: String, namespaces: [String] = ConfigSync.namespaces) async {
     guard syncs(with: machineId) else { return }
     let client = machines.client(for: machineId)
+    let generation = receiptGenerations[machineId, default: 0]
     if namespaces.contains("harness-shared-accounts"),
       await machines.cloudProvider?.prepareAccountSync(on: client, machineId: machineId) == true
     {
@@ -115,6 +127,8 @@ public final class ConfigSync {
     }
     let documents = await mergeNamespaceDocuments(client: client, namespaces: namespaces)
     adoptNamespaceDocuments(documents, namespaces: namespaces)
+    guard receiptGenerations[machineId, default: 0] == generation else { return }
+    namespacesReceivedByMachine[machineId, default: []].formUnion(documents.keys)
   }
 
   private func mergeNamespaceDocuments(

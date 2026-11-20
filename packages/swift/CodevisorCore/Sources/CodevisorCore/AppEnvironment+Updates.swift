@@ -30,6 +30,7 @@ extension AppEnvironment {
 
   func noteMachineConnected(_ machineId: String) {
     checkHarnessNotices(onServer: machineId)
+    configSync.forgetReceived(fromMachine: machineId)
     Task { await bots.refresh(serverId: machineId) }
     Task {
       await configSync.synchronizeMachine(machineId)
@@ -106,6 +107,31 @@ extension AppEnvironment {
     let sync = ClientPreferenceSync(preferences: preferences, configSync: configSync, keys: keys)
     clientPreferenceSync = sync
     sync.start()
+  }
+
+  public var accountMachineCountAfterPreferenceSync: Int? {
+    guard let ids = machines.accountMachineIds, ids.allSatisfy(hasCurrentClientPreferences(from:)) else { return nil }
+    return ids.count
+  }
+
+  public func setClientPreferenceFallback<Value: Codable>(
+    _ value: Value, forKey key: String, rank: Int, preferences: ClientPreferences
+  ) {
+    if let sync = clientPreferenceSync, let data = try? JSONEncoder().encode(value),
+      sync.publishFallback(data, forKey: key, rank: rank)
+    {
+      return
+    }
+    if preferences.valueIfPresent(forKey: key, as: Value.self) == nil { preferences.set(value, forKey: key) }
+  }
+
+  public func cancelOnDeinit(_ task: Task<Void, Never>) {
+    deinitCancelledTasks.append(task)
+  }
+
+  private func hasCurrentClientPreferences(from machineId: String) -> Bool {
+    machines.isReachable(machineId)
+      && configSync.hasReceived(namespace: ClientPreferenceSync.namespace, fromMachine: machineId)
   }
 
   public func syncFeatureFlags(preferences: ClientPreferences = .shared) {

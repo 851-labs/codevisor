@@ -2,8 +2,8 @@ import Foundation
 import Observation
 
 @MainActor
-enum ObservedState {
-  static func first<Value>(_ evaluate: () -> Value?) async -> Value? {
+public enum ObservedState {
+  public static func first<Value>(_ evaluate: () -> Value?) async -> Value? {
     while !Task.isCancelled {
       let change = ObservedChange()
       if let value = withObservationTracking(evaluate, onChange: { change.signal() }) { return value }

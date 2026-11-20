@@ -116,6 +116,8 @@ public final class MachineController {
   public var allMachines: [CodevisorMachine] { catalog.allMachines }
   public var allMachineIds: Set<String> { Set(catalog.allMachines.map(\.id)) }
   public var localCloudMachine: CloudMachine? { catalog.localCloudMachine }
+  public var accountMachineIds: [String]? { catalog.hasAccountMachineList ? chatMachines.map(\.id) : nil }
+  public func isReachable(_ id: String) -> Bool { connections.statusById[id]?.isReachable == true }
   public func machine(for id: String) -> CodevisorMachine? { catalog.machine(for: id) }
   public func cloudMachine(forMachineId id: String) -> CloudMachine? { catalog.cloudMachine(forMachineId: id) }
   public var chatMachines: [CodevisorMachine] { allMachines.filter { !isSandbox($0.id) } }

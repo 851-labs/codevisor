@@ -47,7 +47,10 @@ public enum SidebarPreferenceKey {
   public static let projectOrder = "sidebar.projectOrder"
 
   public static let synced = Set(
-    [SidebarGrouping.preferenceKey, pinnedWorkspaces, machineOrder, projectOrder] + SidebarRowDetail.preferenceKeys)
+    [
+      SidebarGrouping.preferenceKey, SidebarMachineGroupingDefault.preferenceKey, pinnedWorkspaces, machineOrder,
+      projectOrder,
+    ] + SidebarRowDetail.preferenceKeys)
 }
 
 public let sidebarArchivedPageSize = 10

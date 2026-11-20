@@ -59,6 +59,11 @@ final class MachineCatalog {
     connections.statusById[CodevisorMachine.local.id]?.cloudDeviceId != nil
   }
 
+  var hasAccountMachineList: Bool {
+    guard let cloudProvider, cloudProvider.isCloudSignedIn, cloudProvider.isCloudRosterVerified else { return false }
+    return !includesLocalMachine || connections.statusById[CodevisorMachine.local.id]?.isReachable == true
+  }
+
   var localCloudMachine: CloudMachine? {
     guard let deviceId = connections.statusById[CodevisorMachine.local.id]?.cloudDeviceId,
       let cloudProvider, cloudProvider.isCloudSignedIn

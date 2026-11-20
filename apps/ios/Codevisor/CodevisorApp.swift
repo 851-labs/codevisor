@@ -104,10 +104,12 @@ struct CodevisorApp: App {
     #if DEBUG
       if !HomeSidebarSampleData.isEnabled {
         environment.syncClientPreferences(SidebarPreferenceKey.synced)
+        SidebarMachineGroupingDefault.start(environment: environment)
         environment.syncFeatureFlags()
       }
     #else
       environment.syncClientPreferences(SidebarPreferenceKey.synced)
+      SidebarMachineGroupingDefault.start(environment: environment)
       environment.syncFeatureFlags()
     #endif
     return environment
