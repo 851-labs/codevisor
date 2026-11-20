@@ -21,7 +21,9 @@ if (options.help) {
 if (process.platform !== "darwin")
   throw new Error("iOS screenshots require macOS and Xcode with an iOS Simulator runtime.")
 
-const simulator = await requireIOSSimulator(root, { identity: processIdentity })
+const simulator = await requireIOSSimulator(root, {
+  identity: processIdentity
+})
 const { output, command, build, exportImages, finish } = await createCapture(root, "ios", options)
 const simctl = (...args) => command("xcrun", ["simctl", ...args])
 const device = devices[options.device]
@@ -33,7 +35,7 @@ const { runtimes } = JSON.parse(await simctl("list", "runtimes", "--json"))
 const runtime = selectRuntime(runtimes, [device], options.runtime ?? simulator.runtimeIdentifier)
 if (runtime.identifier !== simulator.runtimeIdentifier || device.type !== simulator.deviceType)
   throw new Error(
-    `Screenshot capture requires the worktree simulator to use ${device.name} and the requested runtime. Restart its owner with: bun run ios-simulator --device="${device.name}"`
+    `Screenshot capture requires the worktree simulator to use ${device.name} and the requested runtime. Restart it with bun run ios-simulator --stop, then bun run ios-simulator --device="${device.name}"`
   )
 await bootstrapDevelopment(root, { ghosttyKit: true })
 const bundle = `${iosDevelopmentBundleIdentifier(root)}.screenshots`

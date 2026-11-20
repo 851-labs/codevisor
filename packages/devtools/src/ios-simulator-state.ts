@@ -18,14 +18,26 @@ export interface SimulatorManifest {
   readonly udid: string
   readonly name: string
   readonly runtime?: string
+  readonly runtimeIdentifier?: string
+  readonly deviceType?: string
+  readonly deviceName?: string
   readonly lease?: string
   readonly owner?: OwnerIdentity
+  readonly xcode?: string
 }
 
 export interface SimulatorOptions {
-  device: string
+  device: string | undefined
   runtime: string | undefined
+  stop: boolean
   help: boolean
+}
+
+export interface SimulatorConfiguration {
+  readonly deviceType: string
+  readonly deviceName: string
+  readonly runtimeIdentifier: string
+  readonly runtime: string
 }
 
 export interface SimulatorDeviceType {
@@ -38,7 +50,9 @@ export interface SimulatorRuntime {
   readonly version: string
   readonly name: string
   readonly isAvailable: boolean
-  readonly supportedDeviceTypes?: ReadonlyArray<{ readonly identifier: string }>
+  readonly supportedDeviceTypes?: ReadonlyArray<{
+    readonly identifier: string
+  }>
 }
 
 export type IdentityLookup = (pid: number) => Promise<OwnerIdentity | undefined | null>
@@ -51,7 +65,7 @@ export interface SimulatorDependencies {
   readonly remove?: (path: string, options: { force: boolean }) => Promise<unknown>
 }
 
-interface ListedDevice {
+export interface ListedDevice {
   readonly udid: string
   readonly name: string
   readonly state: string
@@ -59,11 +73,19 @@ interface ListedDevice {
 
 const exec = promisify(execFile)
 const manifestFormat = "codevisor-ios-simulator-v1"
+const defaultDevice = "iPhone 17 Pro"
 const simulatorHint =
-  "This worktree's simulator must already be running. Start it in a separate background task with: bun run ios-simulator"
+  "This worktree's simulator is not running. Start it with: bun run ios-simulator (it returns once the simulator is ready and keeps running on its own)."
+export const iosProject = "apps/ios/Codevisor.xcodeproj"
 
 export const simulatorManifestPath = (repoRoot: string): string =>
   join(repoRoot, "tmp/runtime/ios-simulator.json")
+
+export const simulatorClaimPath = (repoRoot: string): string =>
+  `${simulatorManifestPath(repoRoot)}.runner`
+
+export const simulatorLogPath = (repoRoot: string): string =>
+  join(repoRoot, "tmp/runtime/ios-simulator.log")
 
 export const simulatorName = (repoRoot: string): string =>
   `Codevisor Worktree ${basename(repoRoot)} (${createHash("sha256").update(repoRoot).digest("hex").slice(0, 10)})`
@@ -103,11 +125,20 @@ export async function simctl(
 }
 
 export function parseSimulatorArguments(args: ReadonlyArray<string>): SimulatorOptions {
-  const options: SimulatorOptions = { device: "iPhone 17 Pro", runtime: undefined, help: false }
+  const options: SimulatorOptions = {
+    device: undefined,
+    runtime: undefined,
+    stop: false,
+    help: false
+  }
   for (let index = 0; index < args.length; index += 1) {
     const argument = args[index] ?? ""
     if (argument === "--help" || argument === "-h") {
       options.help = true
+      continue
+    }
+    if (argument === "--stop") {
+      options.stop = true
       continue
     }
     const match = /^--(device|runtime)(?:=(.*))?$/.exec(argument)
@@ -124,11 +155,12 @@ export function selectSimulatorConfiguration(
   options: SimulatorOptions,
   devices: ReadonlyArray<SimulatorDeviceType>,
   runtimes: ReadonlyArray<SimulatorRuntime>
-): { deviceType: string; runtimeIdentifier: string; runtime: string } {
+): SimulatorConfiguration {
   const device = findSimulatorDevice(options, devices)
   const runtime = selectInstalledRuntime(options, device, runtimes)
   return {
     deviceType: device.identifier,
+    deviceName: device.name,
     runtimeIdentifier: runtime.identifier,
     runtime: `iOS ${runtime.version}`
   }
@@ -216,7 +248,10 @@ export async function reapOrphanedSimulators(dependencies: SimulatorDependencies
   }
 }
 
-function isSameProcess(expected: OwnerIdentity, actual: OwnerIdentity | undefined | null): boolean {
+export function isSameProcess(
+  expected: OwnerIdentity,
+  actual: OwnerIdentity | undefined | null
+): boolean {
   if (actual === undefined || actual === null) return false
 
   return (
@@ -226,7 +261,7 @@ function isSameProcess(expected: OwnerIdentity, actual: OwnerIdentity | undefine
   )
 }
 
-async function listDevices(
+export async function listDevices(
   dependencies: Pick<SimulatorDependencies, "simctl">
 ): Promise<Array<ListedDevice>> {
   const listing: unknown = JSON.parse(
@@ -262,12 +297,11 @@ function findSimulatorDevice(
   options: SimulatorOptions,
   devices: ReadonlyArray<SimulatorDeviceType>
 ): SimulatorDeviceType {
-  const device = devices.find(
-    (entry) => entry.name === options.device || entry.identifier === options.device
-  )
+  const requested = options.device ?? defaultDevice
+  const device = devices.find((entry) => entry.name === requested || entry.identifier === requested)
   if (!device) {
     throw new Error(
-      `Unknown simulator device: ${options.device}. Use an installed device type from xcrun simctl list devicetypes.`
+      `Unknown simulator device: ${requested}. Use an installed device type from xcrun simctl list devicetypes.`
     )
   }
   return device
@@ -302,7 +336,7 @@ function selectInstalledRuntime(
   if (!runtime) {
     const withRuntime = options.runtime ? ` with runtime ${options.runtime}` : ""
     throw new Error(
-      `No installed iOS runtime supports ${options.device}${withRuntime}. Install it in Xcode first.`
+      `No installed iOS runtime supports ${device.name}${withRuntime}. Install it in Xcode first.`
     )
   }
   return runtime

@@ -1,10 +1,10 @@
-import { mkdtemp, rm, writeFile } from "node:fs/promises"
+import { mkdtemp, readFile, rm, writeFile } from "node:fs/promises"
 import { tmpdir } from "node:os"
-import { join } from "node:path"
+import { dirname, join } from "node:path"
 
 import { afterEach, expect, it } from "vitest"
 
-import { runOwnedTask } from "./owned-task.ts"
+import { runOwnedTask, startDetachedTask } from "./owned-task.ts"
 
 const cleanups: Array<() => Promise<unknown>> = []
 afterEach(async () => {
@@ -44,4 +44,16 @@ it("runs the task outside the launcher's process tree and stops it by closing it
 
   expect(await task).toBe(0)
   expect(process.listenerCount("SIGTERM")).toBe(listeners)
+})
+
+it("starts a detached task with no stdin, logs its output, and reports its exit", async () => {
+  const log = join(await mkdtemp(join(tmpdir(), "codevisor-detached-task-")), "task.log")
+  cleanups.push(() => rm(dirname(log), { recursive: true, force: true }))
+  const body = `process.stdin.on("end", () => console.log("stdin closed"))\n${reportsAncestry}`
+  const task = startDetachedTask(await script(body), [String(process.pid)], log)
+
+  const code = await task.exited
+  expect(await readFile(log, "utf8")).toBe("stdin closed\n")
+  expect(code).toBe(0)
+  task.release()
 })

@@ -1,10 +1,17 @@
 import { spawn } from "node:child_process"
+import { closeSync, openSync } from "node:fs"
 import { Readable, Writable } from "node:stream"
+
+export interface DetachedTask {
+  readonly exited: Promise<number>
+  readonly release: () => void
+}
 
 const stopSignals: ReadonlyArray<NodeJS.Signals> = ["SIGINT", "SIGTERM", "SIGHUP"]
 const statusDescriptor = 3
 const lifelineDescriptor = 4
 const detachedTask = `( "$@" <&${lifelineDescriptor} ${lifelineDescriptor}<&- ${statusDescriptor}>&-; /bin/echo $? >&${statusDescriptor} 2>/dev/null ) &`
+const independentTask = `( "$@" </dev/null ${statusDescriptor}>&-; /bin/echo $? >&${statusDescriptor} 2>/dev/null ) &`
 
 export function runOwnedTask(script: string, args: ReadonlyArray<string>): Promise<number> {
   const host = spawn("/bin/sh", ["-c", detachedTask, "sh", process.execPath, script, ...args], {
@@ -37,6 +44,45 @@ export function runOwnedTask(script: string, args: ReadonlyArray<string>): Promi
       reported += chunk.toString("utf8")
     })
     status.once("end", () => finish(exitCodeOf(reported)))
+  })
+}
+
+export function startDetachedTask(
+  script: string,
+  args: ReadonlyArray<string>,
+  logPath: string
+): DetachedTask {
+  const log = openSync(logPath, "a")
+  try {
+    const host = spawn(
+      "/bin/sh",
+      ["-c", independentTask, "sh", process.execPath, script, ...args],
+      { detached: true, stdio: ["ignore", log, log, "pipe"] }
+    )
+    const status = host.stdio[statusDescriptor]
+    if (!(status instanceof Readable))
+      throw new Error("The detached task's pipe could not be opened")
+
+    return {
+      exited: exitOf(host, status),
+      release: () => {
+        status.destroy()
+        host.unref()
+      }
+    }
+  } finally {
+    closeSync(log)
+  }
+}
+
+function exitOf(host: ReturnType<typeof spawn>, status: Readable): Promise<number> {
+  return new Promise((resolve) => {
+    let reported = ""
+    host.once("error", () => resolve(1))
+    status.on("data", (chunk: Buffer) => {
+      reported += chunk.toString("utf8")
+    })
+    status.once("close", () => resolve(exitCodeOf(reported)))
   })
 }
 
