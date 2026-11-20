@@ -1,3 +1,4 @@
+import CodevisorClient
 import CodevisorProtocol
 import Foundation
 import Testing
@@ -36,6 +37,28 @@ struct CloudDevelopmentSignInTicketTests {
 
     #expect(client.devLoginCount == 0)
     #expect(!FileManager.default.fileExists(atPath: ticket.path))
+  }
+
+  @Test("A session the dev cloud no longer knows is replaced by the development account")
+  func staleSessionIsReplaced() async throws {
+    let ticket = try makeTicket()
+    let client = devCloudClient()
+    let store = InMemoryCloudCredentialStore()
+    try store.saveToken("token-from-a-deleted-dev-cloud")
+    store.saveRoster(
+      CachedRoster(
+        serverURL: "http://127.0.0.1:8787", userEmail: "dev@example.com", machines: [testMachine("old")]))
+    let (controller, _, _) = makeController(
+      client: client,
+      store: store,
+      environmentCloud: CodevisorAppVariant.DevelopmentCloud(url: URL(string: "http://127.0.0.1:8787")!),
+      developmentSignInTicket: ticket
+    )
+    await controller.bootstrap()
+
+    #expect(client.devLoginCount == 1)
+    #expect(controller.state == .signedIn(userEmail: "dev@example.com"))
+    #expect(try store.token() == "dev-token")
   }
 
   private func devCloudClient() -> FakeCloudClient {
