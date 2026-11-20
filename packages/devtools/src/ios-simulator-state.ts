@@ -73,9 +73,9 @@ export interface ListedDevice {
 
 const exec = promisify(execFile)
 const manifestFormat = "codevisor-ios-simulator-v1"
-const defaultDevice = "iPhone 17 Pro"
+export const defaultSimulatorDevice = "iPhone 17 Pro"
 const simulatorHint =
-  "This worktree's simulator is not running. Start it with: bun run ios-simulator (it returns once the simulator is ready and keeps running on its own)."
+  "This worktree's simulator is not running. bun run dev:ios starts it; to pick a device first, run bun run ios-simulator --device=…"
 export const iosProject = "apps/ios/Codevisor.xcodeproj"
 
 export const simulatorManifestPath = (repoRoot: string): string =>
@@ -297,7 +297,7 @@ function findSimulatorDevice(
   options: SimulatorOptions,
   devices: ReadonlyArray<SimulatorDeviceType>
 ): SimulatorDeviceType {
-  const requested = options.device ?? defaultDevice
+  const requested = options.device ?? defaultSimulatorDevice
   const device = devices.find((entry) => entry.name === requested || entry.identifier === requested)
   if (!device) {
     throw new Error(

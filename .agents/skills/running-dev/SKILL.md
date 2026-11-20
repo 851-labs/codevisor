@@ -16,16 +16,17 @@ simulators by hand.
 | Goal                                                  | Command                                    | Needs first                                      |
 | ----------------------------------------------------- | ------------------------------------------ | ------------------------------------------------ |
 | macOS app and its dev server                          | `bun run dev`                              | nothing                                          |
-| macOS app and the iOS app, signed into one account    | `bun run dev:ios`                          | `bun run ios-simulator`                          |
+| macOS app and the iOS app, signed into one account    | `bun run dev:ios`                          | nothing                                          |
 | macOS app and a Linux container as the remote machine | `bun run dev:linux`                        | Apple's `container`, OrbStack, or Docker Desktop |
 | Check that an app compiles, no launch                 | `bun run build:macos`, `bun run build:ios` | nothing                                          |
 | Website only                                          | `bun run dev:web`                          | nothing                                          |
 | Bot mascot package in a browser                       | `bun run dev:mascot-playground`            | nothing                                          |
 
 `bun run dev` is the everyday command. Use `dev:ios` when the change touches
-the iOS app or something you check from a second device; it exits at once
-with "This worktree's simulator is not running" until `bun run ios-simulator`
-has started it (see [iOS simulator](#ios-simulator)). Use `dev:linux` only when
+the iOS app or something you check from a second device; it starts this
+worktree's iOS simulator itself, or reuses the one already running, and
+leaves it running when it stops (see [iOS simulator](#ios-simulator)). Use
+`dev:linux` only when
 the change touches the Linux server, sandboxes, or containers; see
 [The Linux container](#the-linux-container-devlinux). None of them starts a
 container unless it is `dev:linux`.
@@ -44,7 +45,8 @@ container unless it is `dev:linux`.
   `timeout: 7200000`; the default is 30 minutes). When the limit is reached
   the harness kills the task and the runner takes the app and servers down
   with it. Restart it when that happens, and say so in your report. The iOS
-  simulator is not a background task; see [iOS simulator](#ios-simulator).
+  simulator is not part of the task and stays up; see
+  [iOS simulator](#ios-simulator).
 - **One runner per worktree.** Keep at most one dev runner and one simulator
   per worktree. A second one fails with "A Codevisor development runner
   is already active". Reuse a matching instance you started; report one you
@@ -68,13 +70,17 @@ grep -E "is listening on|Linux container|iOS is running|Codevisor dev is ready|e
 
 The runner prints these lines, in this order:
 
-1. A banner with this instance's addresses: `server:` (the dev server),
+1. `dev:ios` only, before anything else: the simulator. Either the
+   simulator's startup lines and ready block followed by
+   `Started this worktree's simulator.`, or a single
+   `Reusing this worktree's simulator: <device>, <runtime> (<udid>).` line.
+2. A banner with this instance's addresses: `server:` (the dev server),
    `www:`, `cloud:`, `data:`, `worktrees:`, `icon:`, `targets:`, and for
    `dev:linux` also `viacloud:` (Dev Cloud).
-2. `Codevisor dev server is listening on http://127.0.0.1:<port>`.
-3. `dev:linux` only: `Dev Cloud (<worktree>) is running in its Linux container.`
-4. `dev:ios` only: `Codevisor iOS is running on <simulator> against the dev cloud:`.
-5. `Codevisor dev is ready: <what started>.` The Mac app was opened just
+3. `Codevisor dev server is listening on http://127.0.0.1:<port>`.
+4. `dev:linux` only: `Dev Cloud (<worktree>) is running in its Linux container.`
+5. `dev:ios` only: `Codevisor iOS is running on <simulator> against the dev cloud:`.
+6. `Codevisor dev is ready: <what started>.` The Mac app was opened just
    before this line. Nothing is printed when its window appears, so confirm
    the process with
    `pgrep -fl "$PWD/tmp/build/macos/.*Contents/MacOS/Codevisor"`, and its
@@ -85,6 +91,9 @@ they are not errors in your change.
 
 Failure lines:
 
+- `The simulator did not start` (`dev:ios`): the simulator failed before
+  anything was built; the simulator's lines just above say why, and its full
+  log is `tmp/runtime/ios-simulator.log`.
 - `xcodebuild failed (code 65)`: a compile error. Find it with
   `grep -n "error:" tmp/dev.log`.
 - `error: script "dev" exited with code 1` (or `dev:ios`, `dev:linux`): the
@@ -251,8 +260,9 @@ manual cleanup:
   started it, and deletes its device when it is stopped with
   `bun run ios-simulator --stop` or when the worktree's
   `tmp/runtime/ios-simulator.json` disappears (archiving the worktree deletes
-  `tmp/`). If the owner itself is killed, the next `bun run ios-simulator`
-  in any worktree deletes the device it left behind.
+  `tmp/`). If the owner itself is killed, the next simulator start (from
+  `bun run ios-simulator` or `dev:ios`) in any worktree deletes the device it
+  left behind.
 - The Dev Cloud container stops itself when the worktree's `tmp/` is
   deleted, even if no runner is left to remove it, and `--rm` then deletes
   its disk.
@@ -299,26 +309,32 @@ manual cleanup:
 This section is the only place the simulator flow is described; other skills
 link here.
 
-1. Start or check it, in the foreground (not as a background task):
+`bun run dev:ios` handles the simulator: it reuses this worktree's simulator
+when one is running (waiting for it if it is still starting) and otherwise
+starts one with the default device before it builds. The simulator is a
+separate process that outlives the runner, so stopping or restarting
+`dev:ios` leaves it booted and only the first run pays for booting it. It
+also keeps the iOS app's data and sign-in between runs.
 
-   ```sh
-   bun run ios-simulator
-   ```
+- **Use a specific device or runtime:** start the simulator yourself before
+  `dev:ios`, in the foreground (not as a background task):
 
-   It starts this worktree's simulator owner detached from your shell, prints
-   its startup lines, and returns once the device is created and booted,
-   ending with the ready block. Exit code 0 means ready; 1 means startup
-   failed, and the lines above say why. A first start takes a minute or two;
-   give the call a timeout of a few minutes. When the simulator is already
-   running it returns at once with `This worktree's simulator is already
-running.` and the same ready block, so run it again any time to check it.
+  ```sh
+  bun run ios-simulator --device="iPhone 17" --runtime=27.0
+  ```
 
-2. Start `bun run dev:ios` as a background task. The runner builds,
-   installs, and launches the app on that exact device.
-3. Stop it with `bun run ios-simulator --stop` when you are done with it, or
-   leave it: it keeps running across dev-runner restarts and chats until it
-   is stopped or the worktree is archived. `--stop` returns once the device
-   is deleted.
+  It returns once the device is booted, ending with the ready block (exit 0;
+  1 means startup failed and the lines above say why). `dev:ios` then reuses
+  that device as it is, and says so when it is not the default
+  `iPhone 17 Pro`. To go back to the default, stop it first.
+
+- **Check it:** `bun run ios-simulator` with no flags returns at once with
+  `This worktree's simulator is already running.` and the ready block, or
+  starts one if none is running.
+- **Stop it:** `bun run ios-simulator --stop` when you are done with iOS, or
+  leave it: it keeps running across dev-runner restarts and chats until it
+  is stopped or the worktree is archived. `--stop` returns once the device
+  is deleted. A new device is signed in again on its first `dev:ios`.
 
 The owner's own output, including notes it writes after the command returns,
 is in `tmp/runtime/ios-simulator.log`.
@@ -355,9 +371,10 @@ the window is skipped with a note.
   (`jq -r .udid tmp/runtime/ios-simulator.json`).
 - The default device is `iPhone 17 Pro` on the newest compatible installed
   runtime. Choose another with
-  `bun run ios-simulator --device="iPhone 17" --runtime=27.0`. Device
-  selection belongs to this command only. Select the printed device in
-  DeviceHub if another one is showing.
+  `bun run ios-simulator --device="iPhone 17" --runtime=27.0` before
+  `dev:ios`. Device selection belongs to this command only; `dev:ios` takes
+  no device flags. Select the printed device in DeviceHub if another one is
+  showing.
 - Leave the simulator running across dev-runner restarts. `--stop`, or
   deleting the worktree's `tmp/`, shuts down and deletes its device and
   closes the Xcode project window it opened; a window that was already open
@@ -460,8 +477,10 @@ intentionally rebuilding GhosttyKit itself, run `bun run ghostty:build`.
   seconds; a run waiting on another worktree's build says so.
 - Starting the runner with the default background timeout, then finding the
   app and servers gone half an hour later.
-- Running `bun run ios-simulator` as a background task and polling its log;
-  it returns on its own once the simulator is ready.
+- Running `bun run ios-simulator` before every `dev:ios`: `dev:ios` starts
+  or reuses the simulator itself. Run it first only to pick a device.
+- Stopping the simulator between `dev:ios` runs, which makes the next run
+  boot a new device and sign it in again.
 - Quitting the Mac app to "restart" it, which stops the servers too.
 - Running `bun run dev:ios` for a macOS-only change, which needs the
   simulator for nothing, or `dev:linux` for a change that does not touch the

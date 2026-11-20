@@ -10,6 +10,9 @@ import {
 export const xcodeWindowStillOpening =
   "project window still opening; the simulator does not wait for it"
 
+export const simulatorStaysUp =
+  "The simulator keeps running after this command exits; stop it with bun run ios-simulator --stop. Archiving the worktree (deleting its tmp/) also deletes it."
+
 export function simulatorReadyBlock(manifest: SimulatorManifest): string {
   const repoRoot = manifest.repoRoot ?? ""
   return [
@@ -17,8 +20,7 @@ export function simulatorReadyBlock(manifest: SimulatorManifest): string {
     `  Device: ${manifest.udid}`,
     `  Project: ${join(repoRoot, iosProject)}`,
     `  State: ${simulatorManifestPath(repoRoot)}`,
-    `  Xcode: ${manifest.xcode ?? xcodeWindowStillOpening}`,
-    "Start the apps with bun run dev:ios. The simulator keeps running after this command exits; stop it with bun run ios-simulator --stop. Archiving the worktree (deleting its tmp/) also deletes it."
+    `  Xcode: ${manifest.xcode ?? xcodeWindowStillOpening}`
   ].join("\n")
 }
 
