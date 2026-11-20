@@ -174,7 +174,7 @@ final class SessionStore {
       notificationDelivery: notificationDelivery,
       attachmentFiles: environment.composerDrafts.attachmentFiles
     )
-    controller.isGuestInHostWorkspace = guestHost(of: session) != nil
+    controller.isGuestInHostWorkspace = isHostedElsewhere(session)
     controller.transcriptCache = environment.transcriptCache
     controller.configureExistingSession(session)
     return controller
@@ -237,7 +237,8 @@ final class SessionStore {
   }
 
   func workspace(for session: ChatSession, project: Project, awaitsOwnCheckout: Bool = false) -> Workspace {
-    if let host = guestHost(of: session) { return host }
+    let host = environment.chatHosts.host(of: session)
+    if case let .guest(workspace) = host { return workspace }
     let seed = WorkspaceSessionSeed(
       sessionId: session.id,
       initialName: session.worktreeName ?? project.name,
@@ -247,14 +248,7 @@ final class SessionStore {
       worktreeName: session.worktreeName,
       assignedWorkspaceId: environment.projectList.workspaceId(forSession: session.id)
     )
-    if environment.workspaces.workspaceId(forSession: session.id) == nil,
-      environment.projectList.session(session.id, serverId: session.serverId) == nil
-    {
-      if let cached = ephemeralWorkspaces[session.id] { return cached }
-      let ephemeral = environment.workspaces.ephemeralWorkspace(for: seed)
-      ephemeralWorkspaces[session.id] = ephemeral
-      return ephemeral
-    }
+    if host != .own || isUnknown(session) { return ephemeralWorkspace(for: seed) }
     if let owning = workspaceOfOwner(of: session) { return owning }
     return environment.workspaces.ensureWorkspace(
       for: seed,
@@ -262,23 +256,30 @@ final class SessionStore {
     )
   }
 
+  func isHostedElsewhere(_ session: ChatSession) -> Bool {
+    environment.chatHosts.host(of: session) != .own
+  }
+
+  private func isUnknown(_ session: ChatSession) -> Bool {
+    environment.workspaces.workspaceId(forSession: session.id) == nil
+      && environment.projectList.session(session.id, serverId: session.serverId) == nil
+  }
+
+  private func ephemeralWorkspace(for seed: WorkspaceSessionSeed) -> Workspace {
+    if let cached = ephemeralWorkspaces[seed.sessionId] { return cached }
+    let ephemeral = environment.workspaces.ephemeralWorkspace(for: seed)
+    ephemeralWorkspaces[seed.sessionId] = ephemeral
+    return ephemeral
+  }
+
   private func workspaceOfOwner(of session: ChatSession) -> Workspace? {
     guard environment.workspaces.workspaceId(forSession: session.id) == nil,
       let ownerWorkspaceId = environment.projectList.owningWorkspaceId(of: session),
       let workspace = environment.workspaces.workspace(id: ownerWorkspaceId),
+      !environment.bots.ownsWorkspace(workspace),
       workspace.serverId == session.serverId, workspace.projectId == session.projectId
     else { return nil }
     return workspace
-  }
-
-  func guestHost(of session: ChatSession) -> Workspace? {
-    let workspaces = environment.workspaces
-    let hostId =
-      workspaces.workspaceId(forSession: session.id) ?? environment.projectList.owningWorkspaceId(of: session)
-    guard let hostId, let host = workspaces.workspace(id: hostId),
-      host.serverId != session.serverId || host.projectId != session.projectId
-    else { return nil }
-    return host
   }
 
   func centerGroup(

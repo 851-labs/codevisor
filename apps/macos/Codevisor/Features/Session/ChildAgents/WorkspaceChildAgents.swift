@@ -117,11 +117,6 @@ struct WorkspaceChildAgents {
       selection = .bot(serverId: bot.serverId, id: bot.id)
       return
     }
-    if let host = environment.botShowing(chat) {
-      environment.botThreads.showAgent(chat.id, of: host)
-      selection = .bot(serverId: host.serverId, id: host.id)
-      return
-    }
     selection = store.selectChat(chat)
   }
 

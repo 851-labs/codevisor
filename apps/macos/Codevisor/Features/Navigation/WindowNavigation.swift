@@ -85,8 +85,14 @@ final class WindowNavigation: SidebarSelectionOwner {
     switch route {
     case let .session(_, sessionId): environment?.workspaces.workspaceId(forSession: sessionId)
     case let .workspace(_, workspaceId): workspaceId
-    case .bot: nil
+    case let .bot(serverId, botId): environment?.bots.bot(serverId: serverId, id: botId)?.workspaceId
     }
+  }
+
+  private func botOwningWorkspace(of route: WorkspaceDeckRoute) -> Bot? {
+    guard let workspaceId = workspaceId(of: route) else { return nil }
+
+    return environment?.bots.bot(forWorkspace: workspaceId, serverId: route.serverId)
   }
 
   private func showsPlainChat(_ route: WorkspaceDeckRoute) -> Bool {
@@ -98,6 +104,11 @@ final class WindowNavigation: SidebarSelectionOwner {
   }
 
   private func ownSlot(for route: WorkspaceDeckRoute) -> WorkspaceDeckSlot {
+    if let bot = botOwningWorkspace(of: route) { return .bot(bot.id) }
+    return routeSlot(for: route)
+  }
+
+  private func routeSlot(for route: WorkspaceDeckRoute) -> WorkspaceDeckSlot {
     switch route {
     case let .session(_, sessionId):
       environment?.workspaces.workspaceId(forSession: sessionId).map(WorkspaceDeckSlot.workspace) ?? .session(sessionId)
