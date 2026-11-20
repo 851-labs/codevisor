@@ -1,7 +1,7 @@
 import type { SyncEntryRecord } from "@codevisor/sync"
 import { describe, expect, it } from "vitest"
 
-import type { CloudInbox, InboxOAuthCallback } from "../infra/cloud-inbox.js"
+import type { CloudInbox, InboxOAuthCallback, InboxOAuthHandler } from "../infra/cloud-inbox.js"
 import { fakeOAuthProvider, routeGoogleTo } from "./accounts/plugin-oauth-test-support.js"
 import { savePluginRow } from "./events/plugin-events-test-support.js"
 import { makePluginCatalog } from "./plugin-catalog.js"
@@ -9,9 +9,9 @@ import { makePluginPlatform } from "./plugin-platform.js"
 import { fakeCloud, localBaseUrl, pluginServices, type CloudReply } from "./plugin-test-support.js"
 
 const capturingInbox = () => {
-  let deliver: ((callback: InboxOAuthCallback) => Promise<void>) | undefined
+  let deliver: InboxOAuthHandler | undefined
   const inbox: CloudInbox = {
-    receive: async () => undefined,
+    receive: async () => ({}),
     onWebhook: () => () => undefined,
     onOAuth: (handler) => {
       deliver = handler
@@ -54,16 +54,17 @@ describe("plugin platform", () => {
     ])
   })
 
-  it("finishes the sign-in a relayed callback belongs to, and shrugs off ones it doesn't know", async () => {
+  it("finishes the sign-in a relayed callback belongs to, and reports ones it doesn't know", async () => {
     const relayed = capturingInbox()
     const platform = await linkedPlatform(undefined, relayed.inbox)
     const provider = await fakeOAuthProvider()
     routeGoogleTo(provider.url)
     const grant = provider.authorize((await platform.startGmail()).authorizationUrl)
 
-    await relayed.deliver({ state: "unknown-server.state", code: "stray" })
-    await relayed.deliver({ state: grant.state, code: grant.code })
+    const stray = await relayed.deliver({ state: "unknown-server.state", code: "stray" })
+    const finished = await relayed.deliver({ state: grant.state, code: grant.code })
 
+    expect([stray.ok, finished]).toEqual([false, { ok: true }])
     expect(await platform.platform.accounts.list(platform.gmail.id)).toEqual([
       expect.objectContaining({ identity: "dana@example.com" })
     ])

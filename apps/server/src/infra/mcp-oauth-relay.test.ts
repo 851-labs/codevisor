@@ -16,6 +16,7 @@ const cloudCallback = "https://cloud.example/oauth/callback"
 const recordingRelay = () => {
   const registered: Array<{ readonly state: string; readonly request?: McpOAuthRelayRequest }> = []
   const relay: McpOAuthRelay = {
+    signedInPage: (app) => `https://cloud.example/oauth/signed-in?app=${app ?? ""}`,
     register: async (state, request) => {
       registered.push({ state, ...(request === undefined ? {} : { request }) })
       return cloudCallback
@@ -65,6 +66,17 @@ describe("MCP sign-in through Codevisor Cloud", () => {
     expect(registered).toEqual([{ state, request: { app: "codevisor" } }])
     expect(finished.authType).toBe("oauth")
     await expect(manager.finishOAuth(state, code, issuer)).rejects.toThrow("Invalid OAuth state")
+  })
+
+  it("sends an already signed-in plugin to a page any device can open, not to loopback", async () => {
+    const { fake, manager, create } = await relayedMachine()
+    const created = await create()
+    const { code, state, issuer } = fake.approve(await manager.beginOAuth(created.id))
+    await manager.finishOAuth(state, code, issuer)
+
+    const again = await manager.beginOAuth(created.id, undefined, "codevisor")
+
+    expect(again).toBe("https://cloud.example/oauth/signed-in?app=codevisor")
   })
 
   it("falls back to the loopback callback when the auth server only registers loopback clients", async () => {

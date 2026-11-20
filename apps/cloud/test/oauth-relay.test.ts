@@ -8,6 +8,7 @@ import { flowIdOf, OAUTH_FLOW_TTL_MS } from "../src/oauth-relay.js"
 import { BASE, devLogin, disconnect, hubStub } from "./cloud-test-support.js"
 import {
   connectInboxMachine,
+  type InboxMachine,
   machineIdentity,
   newInboxMachine,
   nextInboxItem,
@@ -32,6 +33,11 @@ const startFlow = async (apiKey: string, extra: Record<string, unknown> = {}) =>
   expect(registered.status).toBe(200)
   return state
 }
+
+const answer = (machine: InboxMachine, itemId: string, result: Record<string, unknown>) =>
+  machine.socket.send(
+    JSON.stringify({ t: "inbox-ack", itemIds: [itemId], results: [{ itemId, ...result }] })
+  )
 
 const callback = (query: Record<string, string>, path = "/oauth/callback") =>
   SELF.fetch(`${BASE}${path}?${new URLSearchParams(query).toString()}`, { redirect: "manual" })
@@ -74,21 +80,22 @@ describe("oauth flow registration", () => {
 })
 
 describe("oauth callback relay", () => {
-  it("seals the callback to the machine that registered the flow and opens its app", async () => {
+  it("says signed in, and opens the app, only after the machine redeemed the code", async () => {
     const token = await devLogin()
     const machine = await newInboxMachine(token)
     const other = await newInboxMachine(token)
     const state = await startFlow(machine.apiKey, { app: "codevisor-dev", opensApp: true })
 
-    const page = await callback({ state, code: "auth-code", iss: "https://auth.example" })
+    const pending = callback({ state, code: "auth-code", iss: "https://auth.example" })
+    const frame = await nextInboxItem(machine.reader)
+    answer(machine, frame.itemId, { ok: true })
+    const page = await pending
 
     expect(page.status).toBe(200)
     expect(page.headers.get("cache-control")).toBe("no-store")
     const html = await page.text()
-    expect(html).toContain("Signed in")
-    expect(html).toContain("inbox machine is finishing up")
+    expect(html).toContain("inbox machine finished signing in")
     expect(html).toContain('location.href = "codevisor-dev://signed-in"')
-    const frame = await nextInboxItem(machine.reader)
     expect(frame.kind).toBe("oauth")
     expect(openInboxItem(machine, frame)).toEqual({
       state,
@@ -98,14 +105,43 @@ describe("oauth callback relay", () => {
     expect(await queuedCount(token, other.deviceId)).toBe(0)
   })
 
-  it("links to the app without opening it when an agent started the sign-in", async () => {
+  it("passes on the machine's reason when it couldn't redeem the code", async () => {
+    const machine = await newInboxMachine(await devLogin())
+    const state = await startFlow(machine.apiKey, { app: "codevisor-dev", opensApp: true })
+
+    const pending = callback({ state, code: "auth-code" })
+    answer(machine, (await nextInboxItem(machine.reader)).itemId, {
+      ok: false,
+      error: "The code expired"
+    })
+    const page = await pending
+
+    expect(page.status).toBe(400)
+    const html = await page.text()
+    expect(html).toContain("finish signing in: The code expired")
+    expect(html).not.toContain("location.href")
+  })
+
+  it("says it is still finishing when an online machine doesn't answer in time", async () => {
     const machine = await newInboxMachine(await devLogin())
     const state = await startFlow(machine.apiKey, { app: "codevisor" })
 
-    const html = await (await callback({ state, code: "auth-code" })).text()
+    const page = await callback({ state, code: "auth-code" })
 
+    expect(page.status).toBe(200)
+    const html = await page.text()
+    expect(html).toContain("Still finishing")
     expect(html).toContain('href="codevisor://signed-in"')
     expect(html).not.toContain("location.href")
+  })
+
+  it("serves an already-signed-in page any device can open", async () => {
+    const page = await SELF.fetch(`${BASE}/oauth/signed-in?app=codevisor-dev`)
+    const unknownApp = await SELF.fetch(`${BASE}/oauth/signed-in?app=javascript`)
+
+    expect(page.status).toBe(200)
+    expect(await page.text()).toContain('location.href = "codevisor-dev://signed-in"')
+    expect(await unknownApp.text()).not.toContain("location.href")
   })
 
   it("routes each flow once, and never after it expires", async () => {

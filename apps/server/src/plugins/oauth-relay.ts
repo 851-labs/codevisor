@@ -34,8 +34,18 @@ export const makeOAuthRelay = (deps: OAuthRelayDeps): OAuthRelay => ({
       return undefined
     })
     return stringField(registered, "redirectUri")
+  },
+  signedInPage: (app) => {
+    const serverUrl = deps.cloud?.serverUrl?.()
+    if (deps.cloud?.deviceId() === undefined || serverUrl === undefined) return undefined
+
+    const page = new URL(signedInPath, serverUrl)
+    if (app !== undefined) page.searchParams.set("app", app)
+    return page.toString()
   }
 })
+
+const signedInPath = "/oauth/signed-in"
 
 export const oauthFlowId = (state: string): string =>
   createHash("sha256").update(state).digest("base64url")

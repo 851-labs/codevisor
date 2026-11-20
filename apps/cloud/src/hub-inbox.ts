@@ -3,18 +3,33 @@ import { machineRow } from "./hub-schema.js"
 import type { HubSockets } from "./hub-sockets.js"
 import {
   sealInboxItem,
+  type InboxAck,
   type InboxRequest,
   type OAuthCallbackItem,
+  type OAuthResult,
   type WebhookItem
 } from "./inbox-frames.js"
+import { DEFAULT_OAUTH_RESULT_WAIT_MS, OAuthConfirmations } from "./oauth-confirmations.js"
 
 export type IngestOutcome = "accepted" | "rate-limited" | "full"
 export type SubscribeOutcome = "subscribed" | "unknown-device"
-export type OAuthDeliveryOutcome = "online" | "offline" | "unknown-device" | "full"
+export type OAuthDeliveryOutcome =
+  | "finished"
+  | "failed"
+  | "unconfirmed"
+  | "offline"
+  | "unknown-device"
+  | "full"
 
 export interface OAuthDelivery {
   readonly outcome: OAuthDeliveryOutcome
   readonly machineName?: string
+  readonly error?: string
+}
+
+export interface QueuedOAuth {
+  readonly delivery: OAuthDelivery
+  readonly result?: Promise<OAuthResult | undefined>
 }
 
 export const INBOX_ITEM_TTL_MS = 7 * 24 * 60 * 60 * 1000
@@ -24,12 +39,16 @@ export const INBOX_RATE_LIMIT = 120
 
 export class HubInbox {
   readonly #queue: DeviceQueue
+  readonly #confirmations: OAuthConfirmations
 
   constructor(
     private readonly sql: SqlStorage,
-    net: HubSockets
+    net: HubSockets,
+    env: { readonly OAUTH_RESULT_WAIT_MS?: string } = {}
   ) {
     this.#queue = new DeviceQueue(sql, net)
+    const waitMs = Number(env.OAUTH_RESULT_WAIT_MS ?? "") || DEFAULT_OAUTH_RESULT_WAIT_MS
+    this.#confirmations = new OAuthConfirmations(waitMs)
   }
 
   subscribe(inboxId: string, deviceId: string): SubscribeOutcome {
@@ -66,19 +85,28 @@ export class HubInbox {
     return this.#queue.enqueue(queued) ? "accepted" : "full"
   }
 
-  deliverOAuth(deviceId: string, callback: OAuthCallbackItem, now: number): OAuthDelivery {
+  deliverOAuth(deviceId: string, callback: OAuthCallbackItem, now: number): QueuedOAuth {
     const machine = machineRow(this.sql, deviceId)
-    if (machine === undefined) return { outcome: "unknown-device" }
+    if (machine === undefined) return { delivery: { outcome: "unknown-device" } }
 
     const machineName = machine.display_name ?? machine.name
     const queued = sealedOAuthCallback(deviceId, machine.public_key, callback, now)
-    if (!this.#queue.enqueue([queued])) return { outcome: "full", machineName }
+    if (!this.#queue.enqueue([queued])) return { delivery: { outcome: "full", machineName } }
+    if (!this.#queue.isOnline(deviceId)) return { delivery: { outcome: "offline", machineName } }
 
-    return { outcome: this.#queue.isOnline(deviceId) ? "online" : "offline", machineName }
+    const result = this.#confirmations.expect(queued.itemId)
+    return { delivery: { outcome: "unconfirmed", machineName }, result }
   }
 
-  acknowledge(deviceId: string, itemIds: readonly string[]): void {
-    this.#queue.acknowledge(deviceId, itemIds)
+  async confirmed(queued: QueuedOAuth): Promise<OAuthDelivery> {
+    if (queued.result === undefined) return queued.delivery
+
+    return confirmedDelivery(queued.delivery, await queued.result)
+  }
+
+  acknowledge(deviceId: string, ack: InboxAck): void {
+    this.#queue.acknowledge(deviceId, ack.itemIds)
+    this.#confirmations.settle(ack.results)
   }
 
   flush(socket: WebSocket, deviceId: string): void {
@@ -98,6 +126,16 @@ export class HubInbox {
     const row = this.sql.exec<RateRow>(rateSql.count, inboxId, rateWindow(now)).one()
     return row.count > INBOX_RATE_LIMIT
   }
+}
+
+const confirmedDelivery = (
+  delivery: OAuthDelivery,
+  result: OAuthResult | undefined
+): OAuthDelivery => {
+  if (result === undefined) return delivery
+  if (result.ok) return { ...delivery, outcome: "finished" }
+
+  return { ...delivery, outcome: "failed", error: result.error ?? "Sign-in failed" }
 }
 
 const rateWindow = (now: number): number => now - (now % INBOX_RATE_WINDOW_MS)

@@ -69,4 +69,13 @@ describe("OAuth relay", () => {
       expect.objectContaining({ body: expect.objectContaining({ redirectUris: accepted }) })
     ])
   })
+
+  it("links an already signed-in plugin to Cloud's page only when the machine is signed in", () => {
+    const linked = { ...fakeCloud().cloud, serverUrl: () => cloudUrl }
+
+    const page = relayOn(linked).signedInPage("codevisor")
+    const local = relayOn({ ...linked, deviceId: () => undefined }).signedInPage("codevisor")
+
+    expect([page, local]).toEqual([`${cloudUrl}/oauth/signed-in?app=codevisor`, undefined])
+  })
 })

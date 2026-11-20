@@ -25,6 +25,8 @@ import { MachinePeers } from "./machine-peers.js"
 import { roleAvailabilityForIcon } from "./machine-roles.js"
 import {
   decodeHubFrame,
+  inboxAckFrame,
+  type InboxAckResults,
   RelayOutbox,
   reconnectDelayMs,
   REVOKED_RECHECK_MS,
@@ -329,9 +331,9 @@ export class CloudMachineConnection {
     return this.#sendControl({ t: "tunnel-addr", tunnel })
   }
 
-  ackInboxItems(itemIds: ReadonlyArray<string>): boolean {
+  ackInboxItems(itemIds: ReadonlyArray<string>, results?: InboxAckResults): boolean {
     if (itemIds.length === 0) return true
-    return this.#sendControl({ t: "inbox-ack", itemIds: [...itemIds] })
+    return this.#sendControl(inboxAckFrame(itemIds, results))
   }
 
   #sendControl(frame: MachineToHub): boolean {

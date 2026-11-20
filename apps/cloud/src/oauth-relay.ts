@@ -8,11 +8,16 @@ import type { OAuthCallbackItem } from "./inbox-frames.js"
 import { userHub } from "./location-hint.js"
 import { requireMachine, type AuthenticatedMachine } from "./machine-auth.js"
 import { nativeScheme } from "./pages/account.js"
-import { oauthCallbackPage, type OAuthPageOptions } from "./pages/oauth-callback.js"
+import {
+  alreadySignedInPage,
+  oauthCallbackPage,
+  type OAuthPageOptions
+} from "./pages/oauth-callback.js"
 
 export const OAUTH_FLOW_TTL_MS = 15 * 60 * 1000
 export const OAUTH_CALLBACK_PATH = "/oauth/callback"
 export const PLUGIN_OAUTH_CALLBACK_PATH = "/oauth/plugins/callback"
+export const OAUTH_SIGNED_IN_PATH = "/oauth/signed-in"
 
 export const oauthRelayRoutes = new Hono<{ Bindings: CloudEnv }>()
 
@@ -41,6 +46,10 @@ oauthRelayRoutes.get(OAUTH_CALLBACK_PATH, async (c) => {
   const relayed = await relayOAuthCallback(c)
   return relayed ?? oauthCallbackPage(c, { outcome: "expired" })
 })
+
+oauthRelayRoutes.get(OAUTH_SIGNED_IN_PATH, (c) =>
+  alreadySignedInPage(c, nativeScheme(c.req.query("app")))
+)
 
 export const relayOAuthCallback = async (
   c: Context<{ Bindings: CloudEnv }>

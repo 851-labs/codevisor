@@ -1,4 +1,21 @@
-import { decodeHubToMachine, encodeRelayEnvelopes, type HubToMachine } from "@codevisor/api"
+import {
+  decodeHubToMachine,
+  encodeRelayEnvelopes,
+  type HubToMachine,
+  type InboxOAuthResult,
+  type MachineToHub
+} from "@codevisor/api"
+
+export type InboxAckResults = ReadonlyArray<InboxOAuthResult>
+
+export const inboxAckFrame = (
+  itemIds: ReadonlyArray<string>,
+  results: InboxAckResults = []
+): MachineToHub => ({
+  t: "inbox-ack",
+  itemIds: [...itemIds],
+  ...(results.length === 0 ? {} : { results: [...results] })
+})
 
 export interface CloudSocket {
   send(data: string | Uint8Array): void

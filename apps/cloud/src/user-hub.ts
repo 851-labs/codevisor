@@ -41,7 +41,7 @@ import {
   welcomeHead,
   type WelcomeMachines
 } from "./hub-welcome.js"
-import { inboxAckItemIds, type InboxRequest, type OAuthCallbackItem } from "./inbox-frames.js"
+import { inboxAck, type InboxRequest, type OAuthCallbackItem } from "./inbox-frames.js"
 import { admitRelayMessage } from "./relay-admission.js"
 import { routeAppRelay, routeMachineRelay, type RelayHubPort } from "./relay-routing.js"
 import { DEFAULT_RESUME_GRACE_MS, ResumeSessions } from "./resume-sessions.js"
@@ -74,7 +74,7 @@ export class UserHub extends DurableObject<CloudEnv> {
   constructor(ctx: DurableObjectState, env: CloudEnv) {
     super(ctx, env)
     this.#net = new HubSockets(ctx)
-    this.#inbox = new HubInbox(ctx.storage.sql, this.#net)
+    this.#inbox = new HubInbox(ctx.storage.sql, this.#net, env)
     this.#roles = new HubRoles(ctx.storage.sql, this.#net, (next) => this.#ensureAlarm(next))
     this.#resume = new ResumeSessions(
       ctx.storage.sql,
@@ -152,7 +152,8 @@ export class UserHub extends DurableObject<CloudEnv> {
   }
 
   async deliverOAuthCallback(deviceId: string, callback: OAuthCallbackItem) {
-    return this.#afterInboxChange(this.#inbox.deliverOAuth(deviceId, callback, Date.now()))
+    const queued = this.#inbox.deliverOAuth(deviceId, callback, Date.now())
+    return this.#inbox.confirmed(await this.#afterInboxChange(queued))
   }
 
   override async fetch(request: Request): Promise<Response> {
@@ -244,7 +245,7 @@ export class UserHub extends DurableObject<CloudEnv> {
     attachment: SocketAttachment,
     message: string
   ): Promise<void> {
-    const acked = inboxAckItemIds(message)
+    const acked = inboxAck(message)
     if (acked !== undefined) return this.#inbox.acknowledge(attachment.deviceId!, acked)
     const frame = decodeMachineToHub(message)
     if (frame.t === "ping") return answerPing(socket)
@@ -397,10 +398,7 @@ export class UserHub extends DurableObject<CloudEnv> {
   }
 
   #deliveryPort(): HubDeliveryPort {
-    return {
-      ...this.#notices(),
-      retire: (socket) => this.#retireUndeliverable(socket)
-    }
+    return { ...this.#notices(), retire: (socket) => this.#retireUndeliverable(socket) }
   }
 
   #supersedeMachine(deviceId: string, replacement: WebSocket): void {

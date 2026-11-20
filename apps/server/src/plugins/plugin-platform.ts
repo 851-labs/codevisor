@@ -3,7 +3,7 @@ import type { CodevisorDatabaseService } from "@codevisor/db"
 import type { ManagedOAuthClients, McpManager, McpManagerConfig } from "@codevisor/mcp"
 import type { SyncEntryRecord } from "@codevisor/sync"
 
-import type { CloudInbox, InboxOAuthCallback } from "../infra/cloud-inbox.js"
+import type { CloudInbox, InboxOAuthCallback, InboxOAuthOutcome } from "../infra/cloud-inbox.js"
 import type { CloudServerControl } from "../server-context-types.js"
 import { HttpFailure } from "../server-context.js"
 import { field } from "../unknown-values.js"
@@ -126,11 +126,17 @@ const completeRelayedOAuth = async (
   accounts: PluginAccounts,
   mcp: McpManager | undefined,
   callback: InboxOAuthCallback
-): Promise<void> => {
-  await finishRelayedOAuth(accounts, mcp, callback).catch((cause: unknown) => {
+): Promise<InboxOAuthOutcome> => {
+  try {
+    await finishRelayedOAuth(accounts, mcp, callback)
+    return { ok: true }
+  } catch (cause) {
     console.log(`A relayed sign-in didn't finish: ${errorText(cause)}`)
-  })
+    return { ok: false, error: errorText(cause).slice(0, maxReportedError) }
+  }
 }
+
+const maxReportedError = 300
 
 const finishRelayedOAuth = async (
   accounts: PluginAccounts,
@@ -140,7 +146,8 @@ const finishRelayedOAuth = async (
   if (await accounts.ownsOAuthState(callback.state)) {
     return accounts.completeOAuth(callback.state, callback.code, callback.error)
   }
-  if (mcp === undefined || callback.code === undefined) return
+  if (mcp === undefined) throw new Error("Plugins aren't available on this machine")
+  if (callback.code === undefined) throw new Error(callback.error ?? "The sign-in returned no code")
 
   await mcp.finishOAuth(callback.state, callback.code, callback.issuer)
 }
