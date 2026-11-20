@@ -68,22 +68,19 @@ struct WorkspaceInspectorPresentation: ViewModifier {
     let visibleTab = inspected.map { shownTab(for: $0) } ?? tab
     let refresh = inspected.flatMap { isVisible ? refreshKey(for: $0) : nil }
     content
-      .inspector(
-        isPresented: Binding(
-          get: { showsDocked },
-          set: { if panelLayout.docksInspector { isPresented = $0 } }
-        )
-      ) {
-        if let store, inspects {
-          FrozenWhileHidden(isShown: showsDocked) {
-            if let inspected { inspectorView(store, inspected) }
+      .modifier(
+        SavedInspector(isShown: showsDocked, savedIsShown: { savedShowsDocked }, close: closeDockedInspector) {
+          if let store, inspects {
+            FrozenWhileHidden(isShown: showsDocked) {
+              if let inspected { inspectorView(store, inspected) }
+            }
+            .equatable()
+            .environment(\.isWorkspaceInspectorShown, showsDocked)
+            .inspectorColumnWidth(min: 220, ideal: idealInspectorWidth, max: 400)
+            .toolbar { inspectorToolbar(isVisible: isVisible) }
           }
-          .equatable()
-          .environment(\.isWorkspaceInspectorShown, showsDocked)
-          .inspectorColumnWidth(min: 220, ideal: idealInspectorWidth, max: 400)
-          .toolbar { inspectorToolbar(isVisible: isVisible) }
         }
-      }
+      )
       .overlay { inspectorDrawer(inspected, isPresented: showsDrawer) }
       .task(id: refresh) {
         let isSameView = lastRefresh?.shown == refresh?.shown
@@ -115,6 +112,14 @@ struct WorkspaceInspectorPresentation: ViewModifier {
       }
       .help(PanelToggleShortcut.inspector.help(isVisible: isVisible))
     }
+  }
+
+  private func closeDockedInspector() {
+    isPresented = false
+  }
+
+  private var savedShowsDocked: Bool {
+    isPresented && panelLayout.docksInspector
   }
 
   private var opensDrawer: Bool {
