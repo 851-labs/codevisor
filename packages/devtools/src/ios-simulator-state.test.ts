@@ -29,8 +29,11 @@ test("device/runtime options select a supported installed runtime", () => {
   assert.deepEqual(parseSimulatorArguments(["--device=iPhone 17", "--runtime", "27.0"]), {
     device: "iPhone 17",
     runtime: "27.0",
+    stop: false,
     help: false
   })
+  assert.equal(parseSimulatorArguments([]).device, undefined)
+  assert.equal(parseSimulatorArguments(["--stop"]).stop, true)
   assert.equal(parseSimulatorArguments(["--help"]).help, true)
   assert.throws(() => parseSimulatorArguments(["--device"]), /requires a value/)
   assert.throws(() => parseSimulatorArguments(["--port=50"]), /Unknown/)
@@ -44,7 +47,7 @@ test("device/runtime options select a supported installed runtime", () => {
   }))
   assert.equal(
     selectSimulatorConfiguration(
-      { device: "phone", runtime: undefined, help: false },
+      { device: "phone", runtime: undefined, stop: false, help: false },
       types,
       runtimes
     ).runtime,
@@ -52,7 +55,7 @@ test("device/runtime options select a supported installed runtime", () => {
   )
   assert.equal(
     selectSimulatorConfiguration(
-      { device: "iPhone 17", runtime: "26.0", help: false },
+      { device: "iPhone 17", runtime: "26.0", stop: false, help: false },
       types,
       runtimes
     ).runtime,
@@ -61,7 +64,7 @@ test("device/runtime options select a supported installed runtime", () => {
   assert.throws(
     () =>
       selectSimulatorConfiguration(
-        { device: "missing", runtime: undefined, help: false },
+        { device: "missing", runtime: undefined, stop: false, help: false },
         types,
         runtimes
       ),
@@ -70,7 +73,7 @@ test("device/runtime options select a supported installed runtime", () => {
   assert.throws(
     () =>
       selectSimulatorConfiguration(
-        { device: "phone", runtime: "25", help: false },
+        { device: "phone", runtime: "25", stop: false, help: false },
         types,
         runtimes
       ),
@@ -87,9 +90,9 @@ const runtime = (platform: string, version: string, deviceType: string) => ({
   supportedDeviceTypes: [{ identifier: deviceType }]
 })
 
-test("selects an older compatible iOS runtime when the latest cannot run the device", () => {
+test("selects an older compatible iOS runtime when the latest cannot run the default device", () => {
   const result = selectSimulatorConfiguration(
-    { device: "iPhone 17 Pro", runtime: undefined, help: false },
+    { device: undefined, runtime: undefined, stop: false, help: false },
     [{ name: "iPhone 17 Pro", identifier: "phone" }],
     [
       runtime("iOS", "26.4", "phone"),
@@ -100,6 +103,7 @@ test("selects an older compatible iOS runtime when the latest cannot run the dev
   )
   assert.equal(result.runtime, "iOS 26.5")
   assert.equal(result.deviceType, "phone")
+  assert.equal(result.deviceName, "iPhone 17 Pro")
 })
 
 test("dev startup requires the live owner and the exact booted device", async () => {

@@ -90,9 +90,9 @@ one.
 the repo installs. When it is missing, or for an operation it lacks, use the
 Xcode MCP's device tools through Codevisor's `execute` tool
 (`machines.current.tools.search({ query: "DeviceInteraction" })`). They act
-on Xcode's active project and run destination, so first read the `Xcode:`
-line of the simulator's ready block (`running-dev` explains it) to see
-whether the project window is open, then check the project and destination
+on Xcode's active project and run destination, so first run
+`bun run ios-simulator` and read the `Xcode:` line of the ready block it
+prints (`running-dev` explains it) to see whether the project window is open, then check the project and destination
 match this worktree and its UDID before sending input. Do not use the Xcode
 MCP's build or run tools.
 

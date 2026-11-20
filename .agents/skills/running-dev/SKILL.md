@@ -16,7 +16,7 @@ simulators by hand.
 | Goal                                                  | Command                                    | Needs first                                      |
 | ----------------------------------------------------- | ------------------------------------------ | ------------------------------------------------ |
 | macOS app and its dev server                          | `bun run dev`                              | nothing                                          |
-| macOS app and the iOS app, signed into one account    | `bun run dev:ios`                          | the simulator owner                              |
+| macOS app and the iOS app, signed into one account    | `bun run dev:ios`                          | `bun run ios-simulator`                          |
 | macOS app and a Linux container as the remote machine | `bun run dev:linux`                        | Apple's `container`, OrbStack, or Docker Desktop |
 | Check that an app compiles, no launch                 | `bun run build:macos`, `bun run build:ios` | nothing                                          |
 | Website only                                          | `bun run dev:web`                          | nothing                                          |
@@ -24,8 +24,8 @@ simulators by hand.
 
 `bun run dev` is the everyday command. Use `dev:ios` when the change touches
 the iOS app or something you check from a second device; it exits at once
-with "This worktree's simulator must already be running" until the simulator
-owner is up (see [iOS simulator](#ios-simulator)). Use `dev:linux` only when
+with "This worktree's simulator is not running" until `bun run ios-simulator`
+has started it (see [iOS simulator](#ios-simulator)). Use `dev:linux` only when
 the change touches the Linux server, sandboxes, or containers; see
 [The Linux container](#the-linux-container-devlinux). None of them starts a
 container unless it is `dev:linux`.
@@ -39,14 +39,14 @@ container unless it is `dev:linux`.
   then the server dies with `'better-sqlite3' is not yet supported in Bun` and
   the runner exits. The same prefix fixes a commit hook that fails with
   `Cannot use test outside of the test runner`.
-- **Longest background timeout.** Start the dev runner, and the simulator
-  owner, as background tasks with your harness's longest timeout (Claude
-  Code: `run_in_background` with `timeout: 7200000`; the default is 30
-  minutes). When the limit is reached the harness kills the task: the runner
-  takes the app and servers down with it, and the simulator owner deletes its
-  device. Restart them when that happens, and say so in your report.
+- **Longest background timeout.** Start the dev runner as a background task
+  with your harness's longest timeout (Claude Code: `run_in_background` with
+  `timeout: 7200000`; the default is 30 minutes). When the limit is reached
+  the harness kills the task and the runner takes the app and servers down
+  with it. Restart it when that happens, and say so in your report. The iOS
+  simulator is not a background task; see [iOS simulator](#ios-simulator).
 - **One runner per worktree.** Keep at most one dev runner and one simulator
-  owner per worktree. A second one fails with "A Codevisor development runner
+  per worktree. A second one fails with "A Codevisor development runner
   is already active". Reuse a matching instance you started; report one you
   did not.
 
@@ -159,8 +159,8 @@ lists the Mac's machine, and on `dev:linux` the Mac app lists Dev Cloud,
 with no sign-in step. "Fresh" means:
 
 - the Mac app: once per worktree `tmp/`;
-- the iOS app: once per simulator device, so a new simulator owner's device
-  is signed in again.
+- the iOS app: once per simulator device, so a new simulator device (after
+  `--stop` or archiving) is signed in again.
 
 After that it is ordinary sign-in: signing out, or deleting the app's data
 (Delete app data on macOS, Delete Device Data on iOS), leaves the app signed
@@ -242,12 +242,17 @@ records which worktree that is:
 They are removed in three ways, so deleting or archiving a worktree needs no
 manual cleanup:
 
-- The runner removes its container (and its disk) and stops its app when it stops, and the
-  simulator owner deletes its device. Both run outside the process tree of
-  the command that started them, so they still do this when that command, or
-  the whole task, is killed with `SIGKILL`. A runner that stops because its
-  worktree is gone also removes the instance folder and the `~/Library`
-  state.
+- The runner removes its container (and its disk) and stops its app when it
+  stops, and it runs outside the process tree of the command that started
+  it, so it still does this when that command, or the whole task, is killed
+  with `SIGKILL`. A runner that stops because its worktree is gone also
+  removes the instance folder and the `~/Library` state.
+- The simulator owner runs on its own, detached from the command that
+  started it, and deletes its device when it is stopped with
+  `bun run ios-simulator --stop` or when the worktree's
+  `tmp/runtime/ios-simulator.json` disappears (archiving the worktree deletes
+  `tmp/`). If the owner itself is killed, the next `bun run ios-simulator`
+  in any worktree deletes the device it left behind.
 - The Dev Cloud container stops itself when the worktree's `tmp/` is
   deleted, even if no runner is left to remove it, and `--rm` then deletes
   its disk.
@@ -277,11 +282,10 @@ manual cleanup:
   needs new server code, restart the runner.
 - **Stop:** stop the background task you started, or send `SIGTERM` to the
   runner, then wait for it to exit. This worktree's runner is the `bun`
-  process that `pgrep -fl "$PWD/scripts/dev-owner.mjs"` prints (`kill <pid>`),
-  and its simulator owner is the one
-  `pgrep -fl "$PWD/scripts/ios-simulator-owner.mjs"` prints. `pgrep` also
-  prints an `sh` line for each: the small shell that waits for the `bun`
-  process, which is the one to signal. Cleanup takes a few seconds and
+  process that `pgrep -fl "$PWD/scripts/dev-owner.mjs"` prints (`kill <pid>`).
+  `pgrep` also prints an `sh` line: the small shell that waits for the `bun`
+  process, which is the one to signal. Stop the simulator with
+  `bun run ios-simulator --stop`, not with `kill`. Cleanup takes a few seconds and
   removes this worktree's app, servers, and container. The same cleanup runs
   when the `bun run` command that started the runner dies, even when the
   whole task is killed with `SIGKILL`.
@@ -295,18 +299,29 @@ manual cleanup:
 This section is the only place the simulator flow is described; other skills
 link here.
 
-1. Start the owner as its own background task, with the longest timeout:
+1. Start or check it, in the foreground (not as a background task):
 
    ```sh
-   bun run ios-simulator > tmp/ios-simulator.log 2>&1
+   bun run ios-simulator
    ```
 
-2. Wait for `Simulator ready` in its log, or for the task to exit; nothing
-   else decides the outcome. Ready means it has created this worktree's
-   device and booted it. If the task exits first, startup failed and the
-   log's last lines say why.
-3. Start `bun run dev:ios` in another background task. The runner builds,
+   It starts this worktree's simulator owner detached from your shell, prints
+   its startup lines, and returns once the device is created and booted,
+   ending with the ready block. Exit code 0 means ready; 1 means startup
+   failed, and the lines above say why. A first start takes a minute or two;
+   give the call a timeout of a few minutes. When the simulator is already
+   running it returns at once with `This worktree's simulator is already
+running.` and the same ready block, so run it again any time to check it.
+
+2. Start `bun run dev:ios` as a background task. The runner builds,
    installs, and launches the app on that exact device.
+3. Stop it with `bun run ios-simulator --stop` when you are done with it, or
+   leave it: it keeps running across dev-runner restarts and chats until it
+   is stopped or the worktree is archived. `--stop` returns once the device
+   is deleted.
+
+The owner's own output, including notes it writes after the command returns,
+is in `tmp/runtime/ios-simulator.log`.
 
 ### The ready block and the Xcode window
 
@@ -314,17 +329,18 @@ The owner also opens the worktree's project in Xcode and shows the device in
 Simulator or DeviceHub, but the simulator never waits for either. Lines that
 start `Xcode project window skipped` or
 `The simulator is running but its window was not shown` are notes, not
-failures, so do not search the log for "error" or "failed".
+failures, so do not search the output for "error" or "failed".
 
-The ready block ends with an `Xcode:` line. Read it before using the Xcode
-MCP:
+The ready block's `Xcode:` line shows the project window's current state.
+Read it before using the Xcode MCP; run `bun run ios-simulator` again for an
+up-to-date one:
 
-| `Xcode:` line                                    | Meaning                                                                                                                                                                                                                                                                            |
-| ------------------------------------------------ | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `project window open`                            | The owner opened the project window and will close it when it stops.                                                                                                                                                                                                               |
-| `project window was already open and stays open` | It reused a window that was already there and will leave it open.                                                                                                                                                                                                                  |
-| `project window still opening; …`                | Xcode has not answered yet, which can last as long as it is busy. If you need the Xcode MCP, wait for a later `Opened an owned Xcode project window.`, `Reusing an existing Xcode project window; it will stay open.`, or `Xcode project window skipped` line; otherwise carry on. |
-| `no project window; open it with xed …`          | Carry on with the dev runner, `simctl`, and `axe`. Only if you need the Xcode MCP, run `xed apps/ios/Codevisor.xcodeproj`; a window you open this way stays open when the owner stops.                                                                                             |
+| `Xcode:` line                                    | Meaning                                                                                                                                                                                |
+| ------------------------------------------------ | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `project window open`                            | The owner opened the project window and will close it when it stops.                                                                                                                   |
+| `project window was already open and stays open` | It reused a window that was already there and will leave it open.                                                                                                                      |
+| `project window still opening; …`                | Xcode has not answered yet, which can last as long as it is busy. If you need the Xcode MCP, run `bun run ios-simulator` again later until the line changes; otherwise carry on.       |
+| `no project window; open it with xed …`          | Carry on with the dev runner, `simctl`, and `axe`. Only if you need the Xcode MCP, run `xed apps/ios/Codevisor.xcodeproj`; a window you open this way stays open when the owner stops. |
 
 A problem with the Xcode window is never a reason to create your own device:
 the simulator is running and the dev runner can use it.
@@ -342,13 +358,16 @@ the window is skipped with a note.
   `bun run ios-simulator --device="iPhone 17" --runtime=27.0`. Device
   selection belongs to this command only. Select the printed device in
   DeviceHub if another one is showing.
-- Leave the owner running across dev-runner restarts. Stopping the task, or
-  the task reaching its background time limit, shuts down and deletes its
-  device and closes the Xcode project window it opened; a window that was
-  already open is left open. It never quits Xcode. It cleans up the same way
-  if its launcher dies, and a later launch recovers a device orphaned by a
-  crash. Device files live in CoreSimulator's default location so DeviceHub
-  can find them.
+- Leave the simulator running across dev-runner restarts. `--stop`, or
+  deleting the worktree's `tmp/`, shuts down and deletes its device and
+  closes the Xcode project window it opened; a window that was already open
+  is left open. It never quits Xcode. Killing the command that started it,
+  or the task it ran in, does not stop it. A later launch recovers a device
+  orphaned by a crashed owner. Device files live in CoreSimulator's default
+  location so DeviceHub can find them.
+- To switch devices, `--stop` first: starting with a `--device` or
+  `--runtime` that differs from the running one fails with
+  `already running as …` instead of replacing it.
 - Stopping can take up to 30 seconds longer when Xcode is not answering. The
   owner then deletes the device anyway and may leave the window open, with a
   `The Xcode project window was left as it is` note.
@@ -439,8 +458,10 @@ intentionally rebuilding GhosttyKit itself, run `bun run ghostty:build`.
 - Reading a long first build as a hang and killing it, or switching to
   `xcodebuild` or `cargo`. The networking build reports progress every 20
   seconds; a run waiting on another worktree's build says so.
-- Starting the runner or simulator owner with the default background timeout,
-  then finding the app, servers, or simulator gone half an hour later.
+- Starting the runner with the default background timeout, then finding the
+  app and servers gone half an hour later.
+- Running `bun run ios-simulator` as a background task and polling its log;
+  it returns on its own once the simulator is ready.
 - Quitting the Mac app to "restart" it, which stops the servers too.
 - Running `bun run dev:ios` for a macOS-only change, which needs the
   simulator for nothing, or `dev:linux` for a change that does not touch the
