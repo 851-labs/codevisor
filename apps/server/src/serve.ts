@@ -54,8 +54,8 @@ import { pluginIconSources } from "./plugins/plugin-icon-sources.js"
 import { makePluginPlatform } from "./plugins/plugin-platform.js"
 import { startSandboxes } from "./sandbox-boot.js"
 import {
-  bootInstalledOAuthClients,
   bootPluginCatalog,
+  bootPluginOAuth,
   restoreTerminalPersistence,
   screenSharingProvider,
   canReadFolder,
@@ -342,7 +342,7 @@ export const runServe = (
       cloud: cloudControl,
       inbox: cloudInbox,
       localBaseUrl: `http://127.0.0.1:${port}`,
-      installedClients: bootInstalledOAuthClients()
+      ...bootPluginOAuth(dirname(databasePath))
     })
     const mcp = initializeOptionalServerFeature("MCP", () =>
       makeMcpManager({
@@ -355,7 +355,7 @@ export const runServe = (
         serverKind: resolvedKind,
         oauthVault: credentialVault,
         accounts: pluginPlatform.accountSource,
-        managedOAuth: pluginPlatform.managedOAuth,
+        ...pluginPlatform.mcpOAuth,
         packagedSkills,
         catalog: pluginCatalog.resolver,
         ...(skills === undefined ? {} : { skillSource: skills })

@@ -10,17 +10,30 @@ export interface InboxWebhookRequest {
   readonly receivedAt: string
 }
 
+export interface InboxOAuthCallback {
+  readonly state: string
+  readonly code?: string
+  readonly issuer?: string
+  readonly error?: string
+}
+
 export interface CloudInbox {
   readonly receive: (secretKey: string, frame: HubInboxItem) => Promise<void>
   readonly onWebhook: (handler: (request: InboxWebhookRequest) => Promise<void>) => () => void
+  readonly onOAuth: (handler: (callback: InboxOAuthCallback) => Promise<void>) => () => void
 }
 
 export const makeCloudInbox = (): CloudInbox => {
   const webhookHandlers = new Set<(request: InboxWebhookRequest) => Promise<void>>()
+  const oauthHandlers = new Set<(callback: InboxOAuthCallback) => Promise<void>>()
   const seen = new Set<string>()
 
   const dispatch = async (frame: HubInboxItem, payload: unknown): Promise<void> => {
-    if (frame.kind !== "webhook") return
+    if (frame.kind === "oauth") {
+      const callback = oauthCallbackOf(payload)
+      if (callback !== undefined) await all(oauthHandlers, callback)
+      return
+    }
     const request = webhookRequestOf(payload)
     if (request !== undefined) await all(webhookHandlers, request)
   }
@@ -31,7 +44,8 @@ export const makeCloudInbox = (): CloudInbox => {
       await dispatch(frame, openInboxItem(secretKey, frame))
       remember(seen, frame.itemId)
     },
-    onWebhook: (handler) => register(webhookHandlers, handler)
+    onWebhook: (handler) => register(webhookHandlers, handler),
+    onOAuth: (handler) => register(oauthHandlers, handler)
   }
 }
 
@@ -74,6 +88,16 @@ const webhookRequestOf = (payload: unknown): InboxWebhookRequest | undefined => 
     headers: stringRecord(headers),
     body: String(body),
     receivedAt: String(receivedAt)
+  }
+}
+
+const oauthCallbackOf = (payload: unknown): InboxOAuthCallback | undefined => {
+  if (!isRecord(payload) || !isString(payload.state)) return undefined
+  return {
+    state: payload.state,
+    ...(isString(payload.code) ? { code: payload.code } : {}),
+    ...(isString(payload.iss) ? { issuer: payload.iss } : {}),
+    ...(isString(payload.error) ? { error: payload.error } : {})
   }
 }
 

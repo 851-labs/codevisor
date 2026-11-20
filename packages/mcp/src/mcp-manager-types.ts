@@ -117,7 +117,7 @@ export interface McpManager {
   readonly iconSources: (id: string) => Promise<McpServerIconSources | undefined>
   readonly connect: (id: string) => Promise<McpServer>
   readonly setLocalSuppression: (names: ReadonlySet<string>) => Promise<void>
-  readonly beginOAuth: (id: string, redirectBaseUrl?: string) => Promise<string>
+  readonly beginOAuth: (id: string, redirectBaseUrl?: string, app?: string) => Promise<string>
   readonly finishOAuth: (state: string, code: string, issuer?: string) => Promise<McpServer>
   readonly disconnectOAuth: (id: string) => Promise<McpServer>
   readonly resolved: (projectId?: string, sessionId?: string) => Promise<ReadonlyArray<McpServer>>
@@ -225,6 +225,15 @@ export interface McpCatalogResolver {
   readonly oauthClient?: (catalogId: string) => string | undefined
 }
 
+export interface McpOAuthRelayRequest {
+  readonly app?: string
+  readonly accepted?: ReadonlyArray<string>
+}
+
+export interface McpOAuthRelay {
+  readonly register: (state: string, request?: McpOAuthRelayRequest) => Promise<string | undefined>
+}
+
 export interface McpManagerConfig {
   readonly db: CodevisorDatabaseService
   readonly dataDir: string
@@ -237,6 +246,7 @@ export interface McpManagerConfig {
   readonly packagedSkills?: ReadonlyArray<PackagedSkill>
   readonly catalog?: McpCatalogResolver
   readonly managedOAuth?: ManagedOAuthClients
+  readonly oauthRelay?: McpOAuthRelay
   readonly accounts?: PluginAccountSource
   readonly executionTimers?: ExecutionTimers
   readonly oauthClock?: McpOAuthClock

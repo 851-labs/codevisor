@@ -304,3 +304,18 @@ export const inboxRoute = sqliteTable(
     index("inbox_route_lookup").on(table.route, table.routeKey)
   ]
 )
+
+export const oauthFlow = sqliteTable(
+  "oauth_flow",
+  {
+    flowId: text("flow_id").primaryKey(),
+    userId: text("user_id")
+      .notNull()
+      .references(() => user.id, { onDelete: "cascade" }),
+    deviceId: text("device_id").notNull(),
+    app: text("app"),
+    opensApp: integer("opens_app", { mode: "boolean" }).notNull().default(false),
+    expiresAt: integer("expires_at").notNull()
+  },
+  (table) => [index("oauth_flow_user_expires").on(table.userId, table.expiresAt)]
+)

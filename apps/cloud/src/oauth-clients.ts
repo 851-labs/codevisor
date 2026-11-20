@@ -12,7 +12,7 @@ oauthClientRoutes.get("/api/machine/oauth-clients/:name", requireMachine, (c) =>
   if (client === undefined) return c.json({ error: "unknown OAuth client" }, 404)
   if (!isConfigured(client)) return c.json({ error: "OAuth client isn't configured" }, 503)
 
-  return c.json({ clientId: client.clientId })
+  return c.json({ clientId: client.clientId, cloudCallback: client.cloudCallback })
 })
 
 oauthClientRoutes.post(
@@ -40,6 +40,7 @@ interface ManagedClient {
   readonly clientSecret: string | undefined
   readonly tokenUrl: string
   readonly needsSecret: boolean
+  readonly cloudCallback: boolean
 }
 
 interface ConfiguredClient extends ManagedClient {
@@ -85,9 +86,16 @@ const managedClient = (env: CloudEnv, name: string): ManagedClient | undefined =
     clientId: env[source.idVar],
     clientSecret: env[source.secretVar],
     tokenUrl: source.tokenUrl,
-    needsSecret: source.needsSecret
+    needsSecret: source.needsSecret,
+    cloudCallback: acceptsCloudCallback(env, name)
   }
 }
+
+const acceptsCloudCallback = (env: CloudEnv, name: string): boolean =>
+  (env.MANAGED_OAUTH_CLOUD_CALLBACK ?? "")
+    .split(",")
+    .map((entry) => entry.trim())
+    .includes(name)
 
 const isConfigured = (client: ManagedClient): client is ConfiguredClient =>
   Boolean(client.clientId) && (Boolean(client.clientSecret) || !client.needsSecret)

@@ -160,7 +160,7 @@ export const withHubSql = async <Result>(
 const InboxItemFrameBody = z.object({
   t: z.literal("inbox-item"),
   itemId: z.string(),
-  kind: z.literal("webhook"),
+  kind: z.enum(["webhook", "oauth"]),
   sender: z.string(),
   ephemeralKey: z.string(),
   sealed: z.string()

@@ -1,7 +1,7 @@
 import { readFile } from "node:fs/promises"
 import { join } from "node:path"
 
-import { recordField, stringField } from "../../unknown-values.js"
+import { field, recordField, stringField } from "../../unknown-values.js"
 import type { OAuthClient } from "./plugin-account-oauth.js"
 
 export type InstalledOAuthClients = (provider: string) => Promise<OAuthClient | undefined>
@@ -78,5 +78,13 @@ const parseInstalledClient = (file: unknown): OAuthClient | undefined => {
   if (clientId === undefined || clientId === "") return undefined
 
   const clientSecret = stringField(installed, "client_secret")
-  return { clientId, ...(clientSecret === undefined ? {} : { clientSecret }) }
+  const redirectUris = stringList(field(installed, "redirect_uris"))
+  return {
+    clientId,
+    ...(clientSecret === undefined ? {} : { clientSecret }),
+    ...(redirectUris.length === 0 ? {} : { redirectUris })
+  }
 }
+
+const stringList = (value: unknown): ReadonlyArray<string> =>
+  Array.isArray(value) ? value.filter((entry): entry is string => typeof entry === "string") : []

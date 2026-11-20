@@ -7,6 +7,12 @@ export * from "./native-config-normalize.js"
 export * from "./native-mcp-manager.js"
 export * from "./native-mcp-types.js"
 export * from "./mcp-oauth-grant.js"
-export { decryptSecrets, encryptSecrets, loadEncryptionKey } from "./mcp-secret-store.js"
+export {
+  decryptSecrets,
+  encryptSecrets,
+  loadEncryptionKey,
+  openJson,
+  sealJson
+} from "./mcp-secret-store.js"
 export { isAlwaysOnMcp, withoutAlwaysOnMcps } from "./mcp-automation-builtins.js"
 export * from "./mcp-stdio-bridge.js"

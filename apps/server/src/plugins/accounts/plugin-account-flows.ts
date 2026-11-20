@@ -17,7 +17,6 @@ import {
   exchangePluginCode,
   fetchAccountIdentity,
   type AccountIdentity,
-  flowState,
   newFlowId,
   newNonce,
   oauthBundle,
@@ -28,16 +27,12 @@ import {
 } from "./plugin-account-oauth.js"
 import type { PluginAccountRecord } from "./plugin-account-store.js"
 import type { PluginVault } from "./plugin-accounts.js"
-
-export interface OAuthRedirect {
-  readonly redirectUri: string
-  readonly returnTo: string
-  readonly callbackScheme?: string
-}
-
-export interface OAuthRedirects {
-  readonly prepare: (flowId: string) => Promise<OAuthRedirect>
-}
+import {
+  makePendingOAuthFlows,
+  memoryPendingOAuthStorage,
+  type PendingOAuthStorage
+} from "./plugin-oauth-pending.js"
+import { type OAuthRedirects, planRedirect } from "./plugin-oauth-redirects.js"
 
 export interface OAuthStartInput {
   readonly label?: string
@@ -49,6 +44,7 @@ export interface OAuthStartInput {
 export interface PluginOAuthFlowsDeps {
   readonly vault: PluginVault
   readonly redirects: OAuthRedirects
+  readonly pendingStorage?: PendingOAuthStorage | undefined
   readonly installedClients?: InstalledOAuthClients | undefined
   readonly now: () => number
   readonly fetch?: typeof fetch
@@ -57,23 +53,14 @@ export interface PluginOAuthFlowsDeps {
 
 export const makePluginOAuthFlows = (deps: PluginOAuthFlowsDeps) => {
   const installedClients = deps.installedClients ?? noInstalledOAuthClients
-  const pending = new Map<
-    string,
-    { readonly flow: PendingOAuthFlow; readonly spec: PluginOAuthSpec }
-  >()
+  const pending = makePendingOAuthFlows(
+    deps.pendingStorage ?? memoryPendingOAuthStorage(),
+    deps.now
+  )
 
-  const forgetExpired = (): void => {
-    for (const [flowId, entry] of pending)
-      if (entry.flow.expiresAt < deps.now()) pending.delete(flowId)
-  }
-
-  const takeFlow = (state: string) => {
-    forgetExpired()
+  const takeFlow = async (state: string) => {
     const parsed = parseFlowState(state)
-    const entry = parsed === undefined ? undefined : pending.get(parsed.flowId)
-    if (entry === undefined || entry.flow.nonce !== parsed?.nonce) return undefined
-    pending.delete(entry.flow.flowId)
-    return entry
+    return parsed === undefined ? undefined : pending.take(parsed.flowId, parsed.nonce)
   }
 
   const finish = async (flow: PendingOAuthFlow, spec: PluginOAuthSpec, code: string) => {
@@ -96,20 +83,18 @@ export const makePluginOAuthFlows = (deps: PluginOAuthFlowsDeps) => {
       const client = await oauthClient(server, oauth, input.split, installedClients)
       const flowId = newFlowId()
       const nonce = newNonce()
-      const redirect = await redirectFor(oauth, input, flowId, deps.redirects)
-      const started = await beginPluginOAuth(
-        oauth,
-        client,
-        redirect.redirectUri,
-        flowState(flowId, redirect.returnTo, nonce)
+      const redirect = await planRedirect(
+        { oauth, client, flowId, nonce, callbackScheme: input.callbackScheme },
+        deps.redirects
       )
-      pending.set(flowId, {
+      const started = await beginPluginOAuth(oauth, client, redirect.redirectUri, redirect.state)
+      await pending.add({
         spec: oauth,
         flow: pendingFlow(server, input, {
           flowId,
           nonce,
           client,
-          redirect,
+          redirectUri: redirect.redirectUri,
           started,
           expiresAt: deps.now() + oauthFlowLifetimeMs
         })
@@ -122,8 +107,12 @@ export const makePluginOAuthFlows = (deps: PluginOAuthFlowsDeps) => {
           : { callbackScheme: redirect.callbackScheme })
       }
     },
+    owns: async (state: string): Promise<boolean> => {
+      const parsed = parseFlowState(state)
+      return parsed !== undefined && (await pending.has(parsed.flowId))
+    },
     complete: async (state: string, code: string | undefined, error?: string): Promise<void> => {
-      const entry = takeFlow(state)
+      const entry = await takeFlow(state)
       if (entry === undefined) throw new HttpFailure(400, "This sign-in link expired. Start again.")
       if (code === undefined)
         throw new HttpFailure(400, `Sign-in was cancelled (${error ?? "no code"})`)
@@ -136,7 +125,7 @@ interface FlowParts {
   readonly flowId: string
   readonly nonce: string
   readonly client: OAuthClient
-  readonly redirect: OAuthRedirect
+  readonly redirectUri: string
   readonly started: { readonly codeVerifier: string }
   readonly expiresAt: number
 }
@@ -155,7 +144,7 @@ const pendingFlow = (
   values: input.split.values,
   secrets: input.split.secrets,
   client: parts.client,
-  redirectUri: parts.redirect.redirectUri,
+  redirectUri: parts.redirectUri,
   codeVerifier: parts.started.codeVerifier,
   expiresAt: parts.expiresAt
 })
@@ -184,26 +173,6 @@ const oauthRecord = (
   createdAt: isoTimestamp(),
   credential
 })
-
-export const appCallbackSchemePattern = /^codevisor(-dev(-[0-9a-f]{10})?)?$/
-
-const redirectFor = (
-  oauth: PluginOAuthSpec,
-  input: OAuthStartInput,
-  flowId: string,
-  redirects: OAuthRedirects
-): Promise<OAuthRedirect> => {
-  if (oauth.redirectUrl === undefined) return redirects.prepare(flowId)
-
-  return Promise.resolve(appRedirect(oauth.redirectUrl, input.callbackScheme))
-}
-
-const appRedirect = (redirectUri: string, callbackScheme: string | undefined): OAuthRedirect => {
-  if (callbackScheme === undefined || !appCallbackSchemePattern.test(callbackScheme))
-    throw new HttpFailure(400, "Sign in to this plugin from the Codevisor app")
-
-  return { redirectUri, returnTo: callbackScheme, callbackScheme }
-}
 
 const requireOAuth = (spec: PluginAccountSpec, server: McpServer): PluginOAuthSpec => {
   if (spec.oauth !== undefined) return spec.oauth

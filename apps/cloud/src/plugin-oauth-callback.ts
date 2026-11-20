@@ -1,12 +1,14 @@
 import { Hono } from "hono"
 
 import type { CloudEnv } from "./env.js"
-
-export const PLUGIN_OAUTH_CALLBACK_PATH = "/oauth/plugins/callback"
+import { PLUGIN_OAUTH_CALLBACK_PATH, relayOAuthCallback } from "./oauth-relay.js"
 
 export const pluginOAuthCallback = new Hono<{ Bindings: CloudEnv }>()
 
-pluginOAuthCallback.get(PLUGIN_OAUTH_CALLBACK_PATH, (c) => {
+pluginOAuthCallback.get(PLUGIN_OAUTH_CALLBACK_PATH, async (c) => {
+  const relayed = await relayOAuthCallback(c)
+  if (relayed !== undefined) return relayed
+
   const query = new URL(c.req.url).searchParams
   const scheme = appSchemeOf(query.get("state"))
   if (scheme === undefined) return c.html(unknownSignInPage, 400)

@@ -15,6 +15,7 @@ import { linearPush } from "./linear-push.js"
 import { userHub } from "./location-hint.js"
 import { machineInviteRoutes } from "./machine-invites.js"
 import { oauthClientRoutes } from "./oauth-clients.js"
+import { oauthRelayRoutes } from "./oauth-relay.js"
 import { connectAccount, nativeHandoff, nativeScheme } from "./pages/account.js"
 import { loginURL, validAuthRedirect } from "./pages/auth-navigation.js"
 import { loginPage } from "./pages/login.js"
@@ -61,6 +62,7 @@ app.route("/", gmailPush)
 app.route("/", linearPush)
 app.route("/", pluginOAuthCallback)
 app.route("/", oauthClientRoutes)
+app.route("/", oauthRelayRoutes)
 app.route("/", roleRoutes)
 
 app.get("/.well-known/codevisor", (c) =>

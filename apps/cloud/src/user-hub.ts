@@ -41,7 +41,7 @@ import {
   welcomeHead,
   type WelcomeMachines
 } from "./hub-welcome.js"
-import { inboxAckItemIds, type InboxRequest } from "./inbox-frames.js"
+import { inboxAckItemIds, type InboxRequest, type OAuthCallbackItem } from "./inbox-frames.js"
 import { admitRelayMessage } from "./relay-admission.js"
 import { routeAppRelay, routeMachineRelay, type RelayHubPort } from "./relay-routing.js"
 import { DEFAULT_RESUME_GRACE_MS, ResumeSessions } from "./resume-sessions.js"
@@ -148,9 +148,11 @@ export class UserHub extends DurableObject<CloudEnv> {
   }
 
   async ingestInbox(inboxId: string, request: InboxRequest): Promise<IngestOutcome> {
-    const outcome = this.#inbox.ingest(inboxId, request, Date.now())
-    await this.#scheduleInboxSweep()
-    return outcome
+    return this.#afterInboxChange(this.#inbox.ingest(inboxId, request, Date.now()))
+  }
+
+  async deliverOAuthCallback(deviceId: string, callback: OAuthCallbackItem) {
+    return this.#afterInboxChange(this.#inbox.deliverOAuth(deviceId, callback, Date.now()))
   }
 
   override async fetch(request: Request): Promise<Response> {
@@ -477,16 +479,15 @@ export class UserHub extends DurableObject<CloudEnv> {
     if (next !== undefined) await this.ctx.storage.setAlarm(Math.max(next, now + 250))
   }
 
-  async #scheduleInboxSweep(): Promise<void> {
+  async #afterInboxChange<T>(result: T): Promise<T> {
     const next = this.#inbox.nextExpiry()
     if (next !== undefined) await this.#ensureAlarm(next)
+    return result
   }
 
   async #ensureAlarm(deadline: number): Promise<void> {
     const current = await this.ctx.storage.getAlarm()
-    if (current === null || current > deadline) {
-      await this.ctx.storage.setAlarm(deadline)
-    }
+    if (current === null || current > deadline) await this.ctx.storage.setAlarm(deadline)
   }
 }
 

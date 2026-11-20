@@ -6,6 +6,7 @@ import {
   machineApiRequest,
   makeCloudInbox,
   MachineApiError,
+  type InboxOAuthCallback,
   type InboxWebhookRequest
 } from "./cloud-inbox.js"
 
@@ -62,6 +63,27 @@ describe("cloud inbox", () => {
     )
 
     expect(webhooks.map((request) => request.headers)).toEqual([{}])
+  })
+
+  it("hands relayed OAuth callbacks to sign-in handlers, never to webhook handlers", async () => {
+    const { inbox, webhooks } = recordingInbox()
+    const callbacks: Array<InboxOAuthCallback> = []
+    inbox.onOAuth(async (callback) => {
+      callbacks.push(callback)
+    })
+
+    await inbox.receive(
+      device.secretKey,
+      sealed("o1", "oauth", { state: "s-1", code: "c-1", iss: "https://auth.example" })
+    )
+    await inbox.receive(device.secretKey, sealed("o2", "oauth", { state: "s-2", error: "denied" }))
+    await inbox.receive(device.secretKey, sealed("o3", "oauth", { code: "no-state" }))
+
+    expect(callbacks).toEqual([
+      { state: "s-1", code: "c-1", issuer: "https://auth.example" },
+      { state: "s-2", error: "denied" }
+    ])
+    expect(webhooks).toEqual([])
   })
 
   it("stops delivering to a handler once it unsubscribes", async () => {
