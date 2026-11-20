@@ -112,12 +112,20 @@ describe("container images and networking", () => {
   it("finds the host address containers use to reach the Mac", async () => {
     expect(await containerHostAddress("docker")).toBe("host.docker.internal")
 
+    const probe = await fakeEngine("container", {
+      "run --rm": "192.168.65.1\n",
+      "network inspect default": JSON.stringify([{ status: { ipv4Gateway: "192.168.64.1" } }])
+    })
+    expect(await containerHostAddress("apple", "abc")).toBe("192.168.65.1")
+    expect((await probe.calls())[0]).toContain("dev.codevisor.worktree=abc")
+
     await fakeEngine("container", {
+      "run --rm": "FAIL",
       "network inspect default": JSON.stringify([{ status: { ipv4Gateway: "192.168.64.1" } }])
     })
     expect(await containerHostAddress("apple")).toBe("192.168.64.1")
 
-    await fakeEngine("container", { "network inspect default": "{}" })
+    await fakeEngine("container", { "run --rm": "FAIL", "network inspect default": "{}" })
     await expect(containerHostAddress("apple")).rejects.toThrow(/gateway/)
   })
 })

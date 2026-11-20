@@ -107,8 +107,25 @@ export async function ensureDevContainerImage(engine: ContainerEngine): Promise<
   await execEngine(binary, ["image", "pull", DEV_CONTAINER_IMAGE])
 }
 
-export async function containerHostAddress(engine: ContainerEngine): Promise<string> {
+export async function containerHostAddress(
+  engine: ContainerEngine,
+  worktreeHash = ""
+): Promise<string> {
   if (engine === "docker") return "host.docker.internal"
+
+  const probed = await tryEngine("container", [
+    "run",
+    "--rm",
+    "--label",
+    worktreeLabel(worktreeHash),
+    DEV_CONTAINER_IMAGE,
+    "sed",
+    "-n",
+    "s/^nameserver //p",
+    "/etc/resolv.conf"
+  ])
+  const nameserver = probed?.split("\n").find((line) => /^\d+\.\d+\.\d+\.\d+$/.test(line.trim()))
+  if (nameserver !== undefined) return nameserver.trim()
 
   const parsed: unknown = JSON.parse(
     await execEngine("container", ["network", "inspect", "default"])
@@ -145,7 +162,7 @@ export async function prepareDevContainers(options: {
     nativesCheck: join(repoRoot, "scripts", "dev-container-natives.mjs"),
     desktopScript: join(repoRoot, "scripts", "dev-container-desktop.sh"),
     desktop: wantsContainerDesktop(),
-    hostAddress: await containerHostAddress(engine)
+    hostAddress: await containerHostAddress(engine, worktreeHash)
   }
   if (changed || !(await pathExists(join(stateRoot, "installed.signature"))))
     await provisionWorkspace(context)
