@@ -81,6 +81,7 @@ export async function launchIOSDevelopmentApp(options: {
   readonly developmentIconColor: InstanceColor
   readonly cloudURL?: string | undefined
   readonly netCaPem?: string | undefined
+  readonly signInTicket?: string | undefined
   readonly simulatorDependencies: SimulatorDependencies
   readonly environment?: NodeJS.ProcessEnv
 }): Promise<void> {
@@ -127,6 +128,7 @@ function launchEnvironment(
     developmentIconColor: InstanceColor
     cloudURL?: string | undefined
     netCaPem?: string | undefined
+    signInTicket?: string | undefined
   }
 ): NodeJS.ProcessEnv {
   return {
@@ -137,6 +139,9 @@ function launchEnvironment(
     ...(options.netCaPem === undefined
       ? {}
       : { SIMCTL_CHILD_CODEVISOR_NET_CA_PEM: options.netCaPem }),
+    ...(options.signInTicket === undefined
+      ? {}
+      : { SIMCTL_CHILD_CODEVISOR_DEV_SIGN_IN_TICKET: options.signInTicket }),
     SIMCTL_CHILD_TRANSCRIPT_STRESS: environment.TRANSCRIPT_STRESS ?? "0",
     SIMCTL_CHILD_CODEVISOR_DEV_WORKTREE: options.worktreeName,
     SIMCTL_CHILD_CODEVISOR_DEV_INSTANCE_ID: options.instanceName,
@@ -148,7 +153,7 @@ function launchSummary(simulatorName: string, cloudURL: string | undefined): str
   if (cloudURL === undefined) {
     return `\nCodevisor iOS is running on ${simulatorName} without a dev cloud;\n  no machines are reachable until one is available.\n`
   }
-  return `\nCodevisor iOS is running on ${simulatorName} against the dev cloud:\n  Cloud: ${cloudURL}\n  Sign in with "Use Development Account" to reach the dev machines.\n`
+  return `\nCodevisor iOS is running on ${simulatorName} against the dev cloud:\n  Cloud: ${cloudURL}\n`
 }
 
 async function run(

@@ -349,7 +349,7 @@ averages measure different work from the native maximum callbacks above.
 From the worktree root, start exactly one normal runner with tracing enabled:
 
 ```sh
-TRANSCRIPT_STRESS=1 bun run dev
+TRANSCRIPT_STRESS=1 bun run dev:ios
 ```
 
 Set `CODEVISOR_IOS_SIMULATOR` on that command to select a dedicated simulator.

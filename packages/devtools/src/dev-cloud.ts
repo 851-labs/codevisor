@@ -120,18 +120,20 @@ export async function prepareCloudSession(options: {
   readonly cloudProcess: ChildProcess
   readonly cloudUrl: string
   readonly sharedEnvironment: Record<string, string | undefined>
-}): Promise<void> {
+}): Promise<boolean> {
   try {
-    if (!(await waitForCloud(options.cloudProcess, options.cloudUrl))) return
+    if (!(await waitForCloud(options.cloudProcess, options.cloudUrl))) return false
 
     options.sharedEnvironment.CODEVISOR_DEV_CLOUD_TOKEN = await devLoginToken(options.cloudUrl)
     console.log(
-      `\nCloud dev instance ready at ${options.cloudUrl}\n  Dev account session handed to the app — sign in via "Use Development Account".\n  Device approvals: ${options.cloudUrl}/device\n`
+      `\nCloud dev instance ready at ${options.cloudUrl}\n  Device approvals: ${options.cloudUrl}/device\n`
     )
+    return true
   } catch (error) {
     console.error(
       `Cloud dev instance unavailable (${error instanceof Error ? error.message : String(error)}); continuing without it.`
     )
+    return false
   }
 }
 

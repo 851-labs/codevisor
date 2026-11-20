@@ -51,19 +51,23 @@ export async function tryEngineWithin(
   }
 }
 
-export async function resolveContainerEngine(
-  preference?: string,
-  environment: Readonly<Record<string, string | undefined>> = process.env
-): Promise<ContainerEngine | undefined> {
-  const wanted = preference ?? environment.CODEVISOR_DEV_CONTAINER_ENGINE ?? "auto"
-  if (wanted === "none") return undefined
-  if (wanted === "apple") return appleContainerEngine()
-  if (wanted === "docker") return dockerEngine()
-
-  return (await appleContainerEngine()) ?? (await dockerEngine())
+export interface ResolvedContainerEngine {
+  readonly engine: ContainerEngine
+  readonly name: string
 }
 
-async function appleContainerEngine(): Promise<ContainerEngine | undefined> {
+export const containerEngineInstallHint =
+  "dev:linux runs its remote machine in a Linux container and found no container engine. " +
+  "Install one of: Apple's container (brew install container), OrbStack (brew install orbstack), " +
+  "or Docker Desktop, and make sure it is running."
+
+export async function resolveContainerEngine(): Promise<ResolvedContainerEngine> {
+  const resolved = (await appleContainerEngine()) ?? (await dockerEngine())
+  if (resolved === undefined) throw new Error(containerEngineInstallHint)
+  return resolved
+}
+
+async function appleContainerEngine(): Promise<ResolvedContainerEngine | undefined> {
   const version = await tryEngine("container", ["--version"])
   if (version === undefined) return undefined
   if (!isSupportedAppleContainer(version)) {
@@ -72,12 +76,21 @@ async function appleContainerEngine(): Promise<ContainerEngine | undefined> {
     )
     return undefined
   }
-  return (await tryEngine("container", ["system", "start"])) === undefined ? undefined : "apple"
+  if ((await tryEngine("container", ["system", "start"])) === undefined) return undefined
+  return { engine: "apple", name: "Apple container" }
 }
 
-async function dockerEngine(): Promise<ContainerEngine | undefined> {
-  const version = await tryEngine("docker", ["version", "--format", "{{.Server.Version}}"])
-  return version === undefined ? undefined : "docker"
+async function dockerEngine(): Promise<ResolvedContainerEngine | undefined> {
+  const system = await tryEngine("docker", ["info", "--format", "{{.OperatingSystem}}"])
+  if (system === undefined) return undefined
+  return { engine: "docker", name: dockerEngineName(system) }
+}
+
+export function dockerEngineName(operatingSystem: string): string {
+  const reported = operatingSystem.trim()
+  if (/orbstack/i.test(reported)) return "OrbStack"
+  if (/docker desktop/i.test(reported)) return "Docker Desktop"
+  return reported.length > 0 ? `Docker (${reported})` : "Docker"
 }
 
 function timedOut(error: unknown): boolean {

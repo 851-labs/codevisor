@@ -5,6 +5,10 @@ STATE=/codevisor-state
 APP=/codevisor
 BUN="$STATE/bun/bin/bun"
 
+if [ -n "${CODEVISOR_DEV_CONTAINER_LOG:-}" ]; then
+  exec >>"$CODEVISOR_DEV_CONTAINER_LOG" 2>&1
+fi
+
 exec 9>"$STATE/.bootstrap.lock"
 flock 9
 

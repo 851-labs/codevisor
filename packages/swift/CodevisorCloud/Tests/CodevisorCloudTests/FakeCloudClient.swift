@@ -16,6 +16,7 @@ final class FakeCloudClient: CloudAccountClienting, @unchecked Sendable {
   var sessionError: (any Error)?
   var sessionGate: TestSignal?
   private(set) var discoverCount = 0
+  private(set) var devLoginCount = 0
   var machinesResult: Result<[CloudMachine], any Error> = .success([])
   var deleteError: (any Error)?
   var providers: Set<CloudSignInProvider> = [.github]
@@ -46,7 +47,10 @@ final class FakeCloudClient: CloudAccountClienting, @unchecked Sendable {
   }
 
   func developmentLogin() async throws -> String {
-    try lock.withLock { devLoginResult }.get()
+    try lock.withLock {
+      devLoginCount += 1
+      return devLoginResult
+    }.get()
   }
 
   func generateOneTimeToken(token: String) async throws -> String {
@@ -260,6 +264,7 @@ func makeController(
   client: FakeCloudClient = FakeCloudClient(),
   store: InMemoryCloudCredentialStore = InMemoryCloudCredentialStore(),
   environmentCloud: CodevisorAppVariant.DevelopmentCloud? = nil,
+  developmentSignInTicket: URL? = nil,
   presenceSleep: @escaping @Sendable (Duration) async throws -> Void = { _ in },
   retryClock: any Clock<Duration> = TestClock(),
   hub: ScriptedCloudHub = ScriptedCloudHub(machines: []),
@@ -269,6 +274,7 @@ func makeController(
     clientFactory: { _ in client },
     credentialStore: store,
     environmentCloud: environmentCloud,
+    developmentSignInTicket: developmentSignInTicket,
     hubConnectionFactory: { serverURL, store in
       CloudHubConnection(
         serverURL: serverURL,

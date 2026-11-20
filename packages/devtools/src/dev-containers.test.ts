@@ -46,10 +46,12 @@ for (const engine of ["apple", "docker"] as const) {
       removed.add(args.at(-1) ?? "")
       return ""
     })
-    assert.deepEqual(calls[1], [
-      engine === "apple" ? "container" : "docker",
-      ["rm", "--force", "ours"]
-    ])
+    assert.deepEqual(
+      calls[1],
+      engine === "apple"
+        ? ["container", ["rm", "--force", "ours"]]
+        : ["docker", ["rm", "--force", "--volumes", "ours"]]
+    )
     assert.equal(calls.length, 3)
     if (engine === "docker")
       assert.deepEqual(calls[0]?.[1], ["ps", "--all", "--format", "{{json .}}"])

@@ -6,7 +6,7 @@ import { describeExit, type ExitingProcess, waitForExit } from "./child-processe
 import { makeCommandRunner } from "./commands.ts"
 import { resolveContainerEngine } from "./container-engine.ts"
 import { terminateExactDevelopmentApp } from "./dev-app.ts"
-import { parseDevelopmentRunnerArguments } from "./dev-arguments.ts"
+import { type DevelopmentTarget, parseDevelopmentRunnerArguments } from "./dev-arguments.ts"
 import { bootstrapDevelopment, ensureNativeFrameworks } from "./dev-bootstrap.ts"
 import {
   applyCloudDevMigrations,
@@ -37,7 +37,7 @@ import {
   localDevelopmentEnvironment,
   remoteDevelopmentEnvironment
 } from "./dev-layout.ts"
-import { requestsMacOSBuildReuse, verifyReusableMacOSApp } from "./dev-macos-reuse.ts"
+import { verifyReusableMacOSApp } from "./dev-macos-reuse.ts"
 import {
   devNetCaPem,
   devNetCloudVariables,
@@ -45,9 +45,10 @@ import {
   launchDevNet,
   prepareDevNet
 } from "./dev-net.ts"
-import { launchDevRemoteServer } from "./dev-remote-server.ts"
+import { launchDevRemoteServer, type RemoteServerHandle } from "./dev-remote-server.ts"
 import { ensureDevServerArchive } from "./dev-server-archive.ts"
 import { claimedServerPort, shutdownDevServers, waitForHealth } from "./dev-servers.ts"
+import { offerDevelopmentSignIn, type SignInTicketApp } from "./dev-sign-in-ticket.ts"
 import { resolveDevelopmentSigningArguments } from "./dev-signing.ts"
 import { resolveDevVmHost } from "./dev-vm-host.ts"
 import { type IdentityLookup, requireIOSSimulator } from "./ios-simulator-state.ts"
@@ -60,14 +61,9 @@ export async function runDevelopmentWorker(
   identity: IdentityLookup
 ): Promise<void> {
   const simulatorDependencies = { identity }
-  const { wantsContainers, containerEnginePreference } = parseDevelopmentRunnerArguments(
-    cliArguments,
-    {
-      allowedArguments: ["--no-ios", "--reuse-macos-build"]
-    }
-  )
-  const reuseMacOSBuild = requestsMacOSBuildReuse(cliArguments)
-  const includesIOS = !cliArguments.includes("--no-ios")
+  const { target, reuseMacOSBuild } = parseDevelopmentRunnerArguments(cliArguments)
+  const includesIOS = target === "ios"
+  const includesLinux = target === "linux"
   let simulator
   if (includesIOS) simulator = await requireIOSSimulator(repoRoot, simulatorDependencies)
   sanitizeAmbientEnvironment(process.env)
@@ -119,28 +115,26 @@ export async function runDevelopmentWorker(
   console.log(`  app:      ${appName}`)
   console.log(`  server:   http://127.0.0.1:${port} (preferred; the next free port if taken)`)
   console.log(`  www:      http://localhost:${wwwPort}`)
-  console.log(`  viacloud: http://127.0.0.1:${cloudRemotePort}  (${cloudRemoteName})`)
+  if (includesLinux)
+    console.log(`  viacloud: http://127.0.0.1:${cloudRemotePort}  (${cloudRemoteName})`)
   console.log(`  cloud:    ${cloudUrl}`)
   console.log(`  data:     ${dataDirectory}`)
   console.log(`  worktrees:${worktreesDirectory}`)
   console.log(`  icon:     ${developmentIconColor.hex}`)
-  if (simulator !== undefined) console.log(`  targets:  macOS + iOS (${simulator.name})`)
+  console.log(`  targets:  ${targetSummary(target, simulator?.name)}`)
 
   await bootstrapDevelopment(repoRoot, { environment: process.env })
   const macOSProject = ["-project", "apps/macos/Codevisor.xcodeproj", "-scheme", "Codevisor"]
   const prepareServers = async () => {
     await run("bun", ["run", "--cwd", "apps/server", "build"])
     await applyCloudDevMigrations({ cloudPersistPath, repoRoot, run })
-    let containerEngine
-    if (wantsContainers) containerEngine = await resolveContainerEngine(containerEnginePreference)
-    if (wantsContainers && containerEngine === undefined) {
-      console.warn("No usable container engine; the dev remote runs as a same-host process.")
-    }
-    if (containerEngine === undefined) return undefined
+    if (!includesLinux) return undefined
+    const { engine, name } = await resolveContainerEngine()
     return prepareDevContainers({
       repoRoot,
       containerRoot: join(layout.tmpRoot, "container"),
-      engine: containerEngine,
+      engine,
+      engineName: name,
       worktreeHash: instanceHash
     })
   }
@@ -275,7 +269,14 @@ export async function runDevelopmentWorker(
   const databasePath = join(dataDirectory, "codevisor-server.sqlite")
   const serverPort = () => claimedServerPort(dataDirectory, port)
   const upgradeStatusPath = join(dataDirectory, "data-upgrade.json")
-  await prepareCloudSession({ cloudProcess: cloud, cloudUrl, sharedEnvironment })
+  const cloudReady = await prepareCloudSession({
+    cloudProcess: cloud,
+    cloudUrl,
+    sharedEnvironment
+  })
+  const offerSignIn = (app: SignInTicketApp, device: string) =>
+    cloudReady ? offerDevelopmentSignIn({ root: layout.runtime.signIn, app, device }) : undefined
+  const macSignInTicket = await offerSignIn("macos", "mac")
 
   const server = spawn(
     "node",
@@ -310,23 +311,26 @@ export async function runDevelopmentWorker(
     { cwd: repoRoot, env: sharedEnvironment, stdio: "inherit" }
   )
 
-  const cloudRemoteServer = await launchDevRemoteServer({
-    containerContext,
-    repoRoot,
-    remoteRootHost: join(layout.tmpRoot, "remote-cloud"),
-    serverRoots: layout.remoteCloud,
-    port: cloudRemotePort,
-    serverName: cloudRemoteName,
-    directPath: "disabled",
-    environment: {
-      ...remoteDevelopmentEnvironment(layout, process.env),
-      CODEVISOR_DEV_INSTANCE_ID: `${instanceName}-cloud`,
-      CODEVISOR_DEV_CLOUD_URL: cloudUrl,
-      CODEVISOR_DEV_CLOUD_TOKEN: sharedEnvironment.CODEVISOR_DEV_CLOUD_TOKEN,
-      CODEVISOR_NET_PATH_POLICY: "relay-only",
-      ...(await devNetEnvironment(net, { inline: true }))
-    }
-  })
+  let cloudRemoteServer: RemoteServerHandle | undefined
+  if (containerContext !== undefined) {
+    cloudRemoteServer = await launchDevRemoteServer({
+      containerContext,
+      repoRoot,
+      remoteRootHost: join(layout.tmpRoot, "remote-cloud"),
+      serverRoots: layout.remoteCloud,
+      port: cloudRemotePort,
+      serverName: cloudRemoteName,
+      directPath: "disabled",
+      environment: {
+        ...remoteDevelopmentEnvironment(layout, process.env),
+        CODEVISOR_DEV_INSTANCE_ID: `${instanceName}-cloud`,
+        CODEVISOR_DEV_CLOUD_URL: cloudUrl,
+        CODEVISOR_DEV_CLOUD_TOKEN: sharedEnvironment.CODEVISOR_DEV_CLOUD_TOKEN,
+        CODEVISOR_NET_PATH_POLICY: "relay-only",
+        ...(await devNetEnvironment(net, { inline: true }))
+      }
+    })
+  }
 
   let app: ChildProcess | undefined
   let stopping = false
@@ -344,7 +348,7 @@ export async function runDevelopmentWorker(
 
     await shutdownDevServers([
       [serverPort(), server],
-      [cloudRemotePort, cloudRemoteServer]
+      ...(cloudRemoteServer === undefined ? [] : [[cloudRemotePort, cloudRemoteServer] as const])
     ])
     process.exitCode = exitCode
   }
@@ -362,7 +366,9 @@ export async function runDevelopmentWorker(
     })
   const serverExit = Promise.all([
     watchServerExit(server, "Codevisor server"),
-    watchServerExit(cloudRemoteServer, "Codevisor dev cloud server")
+    ...(cloudRemoteServer === undefined
+      ? []
+      : [watchServerExit(cloudRemoteServer, "Codevisor dev cloud server")])
   ])
 
   void waitForExit(www).then((result) => {
@@ -380,15 +386,20 @@ export async function runDevelopmentWorker(
   try {
     await waitForHealth(serverPort, server)
     console.log(`Codevisor dev server is listening on http://127.0.0.1:${serverPort()}`)
-    const remoteHealthAttempts = containerContext === undefined ? 120 : 2400
-    await waitForHealth(cloudRemotePort, cloudRemoteServer, remoteHealthAttempts)
-    console.log(`\n${cloudRemoteName} is ready; it appears after signing into the dev cloud.\n`)
-    const launchEnvironment = Object.entries(withoutCloudToken(sharedEnvironment)).filter(
-      ([key]) =>
-        key === "TMPDIR" ||
-        key.startsWith("CODEVISOR_") ||
-        key.startsWith("HERDMAN_") ||
-        key.startsWith("GHOSTTY_")
+    if (cloudRemoteServer !== undefined) {
+      await waitForHealth(cloudRemotePort, cloudRemoteServer, 2400)
+      console.log(`\n${cloudRemoteName} is running in its Linux container.\n`)
+    }
+    const launchEnvironment = Object.entries({
+      ...withoutCloudToken(sharedEnvironment),
+      CODEVISOR_DEV_SIGN_IN_TICKET: macSignInTicket
+    }).filter(
+      ([key, value]) =>
+        value !== undefined &&
+        (key === "TMPDIR" ||
+          key.startsWith("CODEVISOR_") ||
+          key.startsWith("HERDMAN_") ||
+          key.startsWith("GHOSTTY_"))
     )
     const openArguments = [
       "-n",
@@ -411,10 +422,12 @@ export async function runDevelopmentWorker(
         instanceName,
         developmentIconColor,
         cloudURL: cloudUrl,
-        netCaPem: await devNetCaPem(net)
+        netCaPem: await devNetCaPem(net),
+        signInTicket: await offerSignIn("ios", iosTarget.simulator.udid)
       })
-      console.log("Press Ctrl+C to stop both apps and their shared development services.")
     }
+    console.log(`\nCodevisor dev is ready: ${targetSummary(target, iosTarget?.simulator.name)}.`)
+    console.log("Press Ctrl+C to stop the apps and their development services.\n")
     const result = await waitForExit(app)
     if (!stopping) await stop(result.code ?? 0)
     await serverExit
@@ -422,6 +435,12 @@ export async function runDevelopmentWorker(
     console.error(error instanceof Error ? error.message : error)
     await stop(1)
   }
+}
+
+function targetSummary(target: DevelopmentTarget, simulatorName: string | undefined): string {
+  if (target === "ios") return `macOS app + iOS app on ${simulatorName ?? "the worktree simulator"}`
+  if (target === "linux") return "macOS app + Dev Cloud in a Linux container"
+  return "macOS app"
 }
 
 function withoutCloudToken(

@@ -1,12 +1,10 @@
-import { ChildProcess } from "node:child_process"
 import { chmod, mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises"
 import { tmpdir } from "node:os"
 import { join } from "node:path"
 
 import { afterEach, describe, expect, it, vi } from "vitest"
 
-import { waitForExit } from "./child-processes.ts"
-import { resolveContainerEngine } from "./container-engine.ts"
+import { dockerEngineName, resolveContainerEngine } from "./container-engine.ts"
 import {
   containerHostAddress,
   ensureDevContainerImage,
@@ -68,31 +66,32 @@ const fakeRepo = async () => {
 }
 
 describe("resolveContainerEngine", () => {
-  it("honors none, docker, and a too-old Apple CLI", async () => {
-    expect(await resolveContainerEngine("none")).toBeUndefined()
-
-    await fakeEngine("docker", { version: "27.0.0" })
-    expect(await resolveContainerEngine("docker")).toBe("docker")
-
-    const warn = vi.spyOn(console, "warn").mockImplementation(() => {})
-    await fakeEngine("container", { "--version": "container CLI version 0.9.0" })
-    expect(await resolveContainerEngine("apple")).toBeUndefined()
-    expect(warn).toHaveBeenCalledWith(expect.stringContaining("too old"))
-  })
-
-  it("prefers a current Apple CLI and falls back to Docker", async () => {
-    await fakeEngine("docker", { version: "27.0.0" })
+  it("prefers a current Apple CLI", async () => {
+    await fakeEngine("docker", { info: "OrbStack" })
     const apple = await fakeEngine("container", {
       "--version": "container CLI version 1.2.0",
       "system start": ""
     })
-    expect(await resolveContainerEngine(undefined, {})).toBe("apple")
+    expect(await resolveContainerEngine()).toEqual({ engine: "apple", name: "Apple container" })
     expect(await apple.calls()).toEqual([["--version"], ["system", "start"]])
+  })
 
+  it("falls back to Docker and names OrbStack or Docker Desktop behind it", async () => {
+    const warn = vi.spyOn(console, "warn").mockImplementation(() => {})
+    await fakeEngine("container", { "--version": "container CLI version 0.9.0" })
+    await fakeEngine("docker", { info: "OrbStack\n" })
+    expect(await resolveContainerEngine()).toEqual({ engine: "docker", name: "OrbStack" })
+    expect(warn).toHaveBeenCalledWith(expect.stringContaining("too old"))
+
+    await fakeEngine("docker", { info: "Docker Desktop" })
+    expect(await resolveContainerEngine()).toEqual({ engine: "docker", name: "Docker Desktop" })
+    expect(dockerEngineName("Ubuntu 24.04")).toBe("Docker (Ubuntu 24.04)")
+  })
+
+  it("stops with what to install instead of running the remote machine on the Mac", async () => {
     await fakeEngine("container", { "--version": "FAIL" })
-    expect(
-      await resolveContainerEngine(undefined, { CODEVISOR_DEV_CONTAINER_ENGINE: "auto" })
-    ).toBe("docker")
+    await fakeEngine("docker", { info: "FAIL" })
+    await expect(resolveContainerEngine()).rejects.toThrow(/OrbStack \(brew install orbstack\)/)
   })
 })
 
@@ -113,12 +112,20 @@ describe("container images and networking", () => {
   it("finds the host address containers use to reach the Mac", async () => {
     expect(await containerHostAddress("docker")).toBe("host.docker.internal")
 
+    const probe = await fakeEngine("container", {
+      "run --rm": "192.168.65.1\n",
+      "network inspect default": JSON.stringify([{ status: { ipv4Gateway: "192.168.64.1" } }])
+    })
+    expect(await containerHostAddress("apple", "abc")).toBe("192.168.65.1")
+    expect((await probe.calls())[0]).toContain("dev.codevisor.worktree=abc")
+
     await fakeEngine("container", {
+      "run --rm": "FAIL",
       "network inspect default": JSON.stringify([{ status: { ipv4Gateway: "192.168.64.1" } }])
     })
     expect(await containerHostAddress("apple")).toBe("192.168.64.1")
 
-    await fakeEngine("container", { "network inspect default": "{}" })
+    await fakeEngine("container", { "run --rm": "FAIL", "network inspect default": "{}" })
     await expect(containerHostAddress("apple")).rejects.toThrow(/gateway/)
   })
 })
@@ -138,6 +145,7 @@ describe("prepareDevContainers", () => {
       repoRoot,
       containerRoot,
       engine: "docker",
+      engineName: "OrbStack",
       worktreeHash: "abc"
     })
 
@@ -149,6 +157,7 @@ describe("prepareDevContainers", () => {
     const provision = (await docker.calls()).find((args) => args.at(-1) === "--provision-only")
     expect(provision).toContain(`${context.appRoot}:/codevisor`)
     expect(provision).toContain("dev.codevisor.worktree=abc")
+    expect(context.serverLog).toBe(join(containerRoot, "state", "server.log"))
   })
 })
 
@@ -159,13 +168,16 @@ describe("launchDevRemoteServer", () => {
     const remoteRootHost = join(repoRoot, "tmp/remote-cloud")
     const docker = await fakeEngine("docker", { "run --detach": "container-id" })
     const serverRoots = developmentLayout(repoRoot, {}).remoteCloud
+    const serverLog = join(repoRoot, "tmp/container/state/server.log")
 
     const handle = await launchDevRemoteServer({
       containerContext: {
         engine: "docker",
+        engineName: "OrbStack",
         worktreeHash: "abcdef123456",
         appRoot: "/app",
         stateRoot: "/state",
+        serverLog,
         bunCache: "/bun",
         entryScript: "/entry.sh",
         nativesCheck: "/natives.mjs",
@@ -186,8 +198,17 @@ describe("launchDevRemoteServer", () => {
       }
     })
 
-    const run = (await docker.calls()).find((args) => args[0] === "run")
+    const calls = await docker.calls()
+    expect(calls[0]).toEqual([
+      "rm",
+      "--force",
+      "--volumes",
+      "codevisor-dev-dev-cloud-cayenne-abcdef1234"
+    ])
+    const run = calls.find((args) => args[0] === "run")
+    expect(run?.slice(0, 3)).toEqual(["run", "--detach", "--rm"])
     expect(run).toContain("codevisor-dev-dev-cloud-cayenne-abcdef1234")
+    expect(run).toContain("CODEVISOR_DEV_CONTAINER_LOG=/codevisor-state/server.log")
     expect(run).toContain("127.0.0.1:47000:47000")
     expect(run).toContain("CODEVISOR_DEV_CLOUD_URL=http://host.docker.internal:41000")
     expect(run).toContain("CODEVISOR_DEV_DATA_DIR=/codevisor-data/.codevisor/data")
@@ -199,29 +220,5 @@ describe("launchDevRemoteServer", () => {
     ])
     expect(handle.exitCode).toBeNull()
     expect(handle.kill()).toBe(true)
-  })
-
-  it("runs the server directly without a container", async () => {
-    const repoRoot = await fakeRepo()
-    await mkdir(join(repoRoot, "apps/server/dist"), { recursive: true })
-    await writeFile(
-      join(repoRoot, "apps/server/dist/main.js"),
-      "process.exit(process.argv.includes('serve') ? 0 : 9)"
-    )
-    const serverRoots = developmentLayout(repoRoot, {}).local
-
-    const child = await launchDevRemoteServer({
-      containerContext: undefined,
-      repoRoot,
-      remoteRootHost: repoRoot,
-      serverRoots,
-      port: 47001,
-      serverName: "Local",
-      directPath: "/direct",
-      environment: { PATH: process.env.PATH }
-    })
-
-    if (!(child instanceof ChildProcess)) throw new Error("expected a local server process")
-    expect((await waitForExit(child)).code).toBe(0)
   })
 })

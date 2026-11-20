@@ -106,6 +106,16 @@ public enum CodevisorAppVariant: Sendable {
     return DevelopmentCloud(url: url)
   }
 
+  public static var developmentSignInTicket: URL? {
+    guard isDevelopment else { return nil }
+    return developmentSignInTicket(from: environment)
+  }
+
+  static func developmentSignInTicket(from environment: [String: String]) -> URL? {
+    guard let path = environment["CODEVISOR_DEV_SIGN_IN_TICKET"], !path.isEmpty else { return nil }
+    return URL(fileURLWithPath: path)
+  }
+
   public static var applicationSupportDirectoryName: String {
     guard isDevelopment else { return "Codevisor" }
     guard let developmentInstanceID, !developmentInstanceID.isEmpty else {

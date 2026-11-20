@@ -16,6 +16,16 @@ struct AppVariantTests {
     #expect(CodevisorAppVariant.developmentCloud(from: ["CODEVISOR_DEV_CLOUD_URL": ""]) == nil)
   }
 
+  @Test("Reads the dev runner's one-time sign-in ticket from launch environment")
+  func developmentSignInTicketParsing() {
+    let ticket = CodevisorAppVariant.developmentSignInTicket(from: [
+      "CODEVISOR_DEV_SIGN_IN_TICKET": "/worktree/tmp/runtime/sign-in/macos.ticket"
+    ])
+    #expect(ticket?.path == "/worktree/tmp/runtime/sign-in/macos.ticket")
+    #expect(CodevisorAppVariant.developmentSignInTicket(from: [:]) == nil)
+    #expect(CodevisorAppVariant.developmentSignInTicket(from: ["CODEVISOR_DEV_SIGN_IN_TICKET": ""]) == nil)
+  }
+
   @Test("Keeps a dev instance's browser profiles inside its own client data directory")
   func developmentBrowserProfiles() {
     let profiles = CodevisorAppVariant.developmentBrowserProfilesURL(from: [

@@ -1,48 +1,28 @@
-export type ContainerEngine = "apple" | "docker" | "none"
+export type DevelopmentTarget = "macos" | "ios" | "linux"
 
 export interface DevelopmentRunnerArguments {
-  readonly containerEnginePreference: ContainerEngine | undefined
-  readonly wantsContainers: boolean
+  readonly target: DevelopmentTarget
+  readonly reuseMacOSBuild: boolean
 }
 
-const containerEngines: ReadonlySet<string> = new Set(["apple", "docker", "none"])
-const engineFlag = "--container-engine="
+const targetFlags: ReadonlyMap<string, DevelopmentTarget> = new Map([
+  ["--ios", "ios"],
+  ["--linux", "linux"]
+])
+const reuseFlag = "--reuse-macos-build"
+const usage =
+  "Run bun run dev, dev:ios, or dev:linux; the only flag they take is --reuse-macos-build."
 
 export function parseDevelopmentRunnerArguments(
-  arguments_: ReadonlyArray<string>,
-  options: { readonly allowedArguments?: ReadonlyArray<string> } = {}
+  arguments_: ReadonlyArray<string>
 ): DevelopmentRunnerArguments {
-  const allowed = new Set(options.allowedArguments ?? [])
   const unknown = arguments_.filter(
-    (argument) => !allowed.has(argument) && !isContainerArgument(argument)
+    (argument) => argument !== reuseFlag && !targetFlags.has(argument)
   )
   if (unknown.length > 0)
-    throw new Error(`Unknown development runner argument: ${unknown.join(", ")}`)
+    throw new Error(`Unknown development runner argument: ${unknown.join(", ")}. ${usage}`)
 
-  const containerEnginePreference = containerEngineFrom(arguments_)
-  return {
-    containerEnginePreference,
-    wantsContainers: !arguments_.includes("--no-containers") && containerEnginePreference !== "none"
-  }
-}
-
-function isContainerArgument(argument: string): boolean {
-  return (
-    argument === "--containers" || argument === "--no-containers" || argument.startsWith(engineFlag)
-  )
-}
-
-function containerEngineFrom(arguments_: ReadonlyArray<string>): ContainerEngine | undefined {
-  const value = arguments_
-    .find((argument) => argument.startsWith(engineFlag))
-    ?.slice(engineFlag.length)
-  if (value === undefined) return undefined
-  if (!isContainerEngine(value)) {
-    throw new Error(`Unknown container engine: ${value}. Expected apple, docker, or none.`)
-  }
-  return value
-}
-
-function isContainerEngine(value: string): value is ContainerEngine {
-  return containerEngines.has(value)
+  const targets = [...new Set(arguments_.flatMap((argument) => targetFlags.get(argument) ?? []))]
+  if (targets.length > 1) throw new Error(`Pick one development runner. ${usage}`)
+  return { target: targets[0] ?? "macos", reuseMacOSBuild: arguments_.includes(reuseFlag) }
 }

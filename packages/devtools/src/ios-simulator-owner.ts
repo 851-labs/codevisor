@@ -121,7 +121,7 @@ export async function runIOSSimulatorOwner(
     manifest = { ...manifest, ready: true }
     await writeJSON(manifestPath, manifest)
     console.log(
-      `Simulator ready: ${name}\n  Device: ${udid}\n  Project: ${join(repoRoot, iosProject)}\n  State: ${manifestPath}\n  Xcode: ${xcodeWindowSummary()}\nStart the app separately with bun run dev:ios or bun run dev. Leave this task running; stopping it deletes this simulator and closes any Xcode window it owns.`
+      `Simulator ready: ${name}\n  Device: ${udid}\n  Project: ${join(repoRoot, iosProject)}\n  State: ${manifestPath}\n  Xcode: ${xcodeWindowSummary()}\nStart the apps separately with bun run dev:ios. Leave this task running; stopping it deletes this simulator and closes any Xcode window it owns.`
     )
     const lease = manifest.lease
     const monitor = setInterval(() => {

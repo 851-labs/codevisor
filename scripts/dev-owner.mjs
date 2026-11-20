@@ -10,10 +10,8 @@ import {
   trackProcessTree
 } from "../packages/processes/src/index.mjs"
 
-const [kind, ...args] = process.argv.slice(2)
 await runDevelopmentOwner(
   await realpath(fileURLToPath(new URL("..", import.meta.url))),
-  kind,
-  args,
+  process.argv.slice(2),
   { identity: processIdentity, readProcessTable, stopProcesses, trackProcessTree }
 )

@@ -10,8 +10,8 @@
   ],
   "scripts": {
     "dev": "bun scripts/dev.mjs",
-    "dev:macos": "bun scripts/dev.mjs --no-ios",
-    "dev:ios": "bun scripts/dev-ios.mjs",
+    "dev:ios": "bun scripts/dev.mjs --ios",
+    "dev:linux": "bun scripts/dev.mjs --linux",
     "build:macos": "bun scripts/build-native.mjs macos",
     "build:ios": "bun scripts/build-native.mjs ios",
     "screenshots:macos": "bun scripts/screenshots-macos.mjs",
