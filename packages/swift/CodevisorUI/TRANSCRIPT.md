@@ -352,7 +352,8 @@ From the worktree root, start exactly one normal runner with tracing enabled:
 TRANSCRIPT_STRESS=1 bun run dev:ios
 ```
 
-Set `CODEVISOR_IOS_SIMULATOR` on that command to select a dedicated simulator.
+It starts or reuses this worktree's simulator. To use a device other than the
+default, start it first with `bun run ios-simulator --device="…"`.
 In another terminal, set `TRANSCRIPT_STRESS_URL` to the local server URL printed
 by this worktree's runner. Then create any of the presets:
 

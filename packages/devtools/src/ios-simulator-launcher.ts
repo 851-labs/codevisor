@@ -1,11 +1,12 @@
 import { mkdir, open, stat } from "node:fs/promises"
-import { dirname } from "node:path"
+import { dirname, join } from "node:path"
 import { setTimeout as delay } from "node:timers/promises"
 
 import {
   simulatorMatchesRequest,
   simulatorMismatch,
-  simulatorReadyBlock
+  simulatorReadyBlock,
+  simulatorStaysUp
 } from "./ios-simulator-ready.ts"
 import {
   type IdentityLookup,
@@ -22,7 +23,7 @@ import {
   simulatorManifestPath,
   simulatorOwnerAlive
 } from "./ios-simulator-state.ts"
-import type { DetachedTask } from "./owned-task.ts"
+import { type DetachedTask, startDetachedTask } from "./owned-task.ts"
 
 export interface SimulatorLauncherDependencies {
   readonly identity: IdentityLookup
@@ -34,6 +35,10 @@ export interface SimulatorLauncherDependencies {
   readonly stopTimeoutMilliseconds?: number
 }
 
+export type SimulatorOutcome =
+  | { readonly kind: "started" | "reused"; readonly manifest: SimulatorManifest }
+  | { readonly kind: "failed"; readonly reason: string }
+
 interface LogFollower {
   readonly copy: () => Promise<void>
 }
@@ -41,14 +46,39 @@ interface LogFollower {
 const defaultPollMilliseconds = 250
 const defaultStopTimeoutMilliseconds = 180_000
 
+export function simulatorLauncher(
+  repoRoot: string,
+  identity: IdentityLookup,
+  args: ReadonlyArray<string>
+): SimulatorLauncherDependencies {
+  const ownerScript = join(repoRoot, "scripts", "ios-simulator-owner.mjs")
+  return { identity, startOwner: (logPath) => startDetachedTask(ownerScript, args, logPath) }
+}
+
 export async function startIOSSimulator(
   repoRoot: string,
   options: SimulatorOptions,
   dependencies: SimulatorLauncherDependencies
 ): Promise<number> {
+  const outcome = await ensureIOSSimulator(repoRoot, options, dependencies)
+  if (outcome.kind === "failed") return failure(dependencies, outcome.reason)
+
+  if (outcome.kind === "reused")
+    print(
+      dependencies,
+      `This worktree's simulator is already running.\n${simulatorReadyBlock(outcome.manifest)}`
+    )
+  print(dependencies, `Start the apps with bun run dev:ios. ${simulatorStaysUp}`)
+  return 0
+}
+
+export async function ensureIOSSimulator(
+  repoRoot: string,
+  options: SimulatorOptions,
+  dependencies: SimulatorLauncherDependencies
+): Promise<SimulatorOutcome> {
   const owner = await claimedOwner(repoRoot, dependencies.identity)
-  if (owner !== undefined)
-    return await reportRunningSimulator(repoRoot, owner, options, dependencies)
+  if (owner !== undefined) return await runningSimulator(repoRoot, owner, options, dependencies)
 
   return await launchOwner(repoRoot, options, dependencies)
 }
@@ -81,7 +111,7 @@ async function launchOwner(
   repoRoot: string,
   options: SimulatorOptions,
   dependencies: SimulatorLauncherDependencies
-): Promise<number> {
+): Promise<SimulatorOutcome> {
   const logPath = simulatorLogPath(repoRoot)
   await mkdir(dirname(logPath), { recursive: true })
   const follower = followLog(logPath, await sizeOf(logPath), dependencies)
@@ -92,46 +122,38 @@ async function launchOwner(
   })
   const manifest = await waitForReady(repoRoot, () => running, follower, dependencies)
   task.release()
-  if (manifest !== undefined) return 0
+  if (manifest !== undefined) return { kind: "started", manifest }
 
   const winner = await claimedOwner(repoRoot, dependencies.identity)
-  if (winner !== undefined)
-    return await reportRunningSimulator(repoRoot, winner, options, dependencies)
+  if (winner !== undefined) return await runningSimulator(repoRoot, winner, options, dependencies)
 
-  return failure(dependencies, `The simulator did not start. Its owner's log is ${logPath}.`)
+  return failed(`The simulator did not start. Its owner's log is ${logPath}.`)
 }
 
-async function reportRunningSimulator(
+async function runningSimulator(
   repoRoot: string,
   owner: OwnerIdentity,
   options: SimulatorOptions,
   dependencies: SimulatorLauncherDependencies
-): Promise<number> {
+): Promise<SimulatorOutcome> {
   if ((await readyManifest(repoRoot, dependencies.identity)) === undefined) {
     print(dependencies, "This worktree's simulator is still starting; waiting until it is ready.")
     const ownerRunning = async () => isSameProcess(owner, await dependencies.identity(owner.pid))
     const ready = await waitForReady(repoRoot, ownerRunning, { copy: async () => {} }, dependencies)
     if (ready === undefined)
-      return failure(
-        dependencies,
+      return failed(
         `This worktree's simulator stopped before it was ready. Its owner's log is ${simulatorLogPath(repoRoot)}.`
       )
   }
 
   const manifest = await usableSimulator(repoRoot, dependencies)
   if (manifest === undefined)
-    return failure(
-      dependencies,
-      "This worktree's simulator owner is running, but its device is not booted. Restart it with bun run ios-simulator --stop, then bun run ios-simulator."
+    return failed(
+      "This worktree's simulator owner is running, but its device is not booted. Remove it with bun run ios-simulator --stop, then start it again."
     )
-  if (!simulatorMatchesRequest(manifest, options))
-    return failure(dependencies, simulatorMismatch(manifest))
+  if (!simulatorMatchesRequest(manifest, options)) return failed(simulatorMismatch(manifest))
 
-  print(
-    dependencies,
-    `This worktree's simulator is already running.\n${simulatorReadyBlock(manifest)}`
-  )
-  return 0
+  return { kind: "reused", manifest }
 }
 
 async function waitForReady(
@@ -269,6 +291,10 @@ function isManifest(value: unknown): value is SimulatorManifest {
 
 function print(dependencies: SimulatorLauncherDependencies, line: string): void {
   ;(dependencies.write ?? writeToStdout)(`${line}\n`)
+}
+
+function failed(reason: string): SimulatorOutcome {
+  return { kind: "failed", reason }
 }
 
 function failure(dependencies: SimulatorLauncherDependencies, line: string): number {

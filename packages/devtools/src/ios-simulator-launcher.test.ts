@@ -1,97 +1,20 @@
-import { appendFile, mkdir, mkdtemp, rm, writeFile } from "node:fs/promises"
-import { tmpdir } from "node:os"
-import { dirname, join } from "node:path"
+import { appendFile, writeFile } from "node:fs/promises"
 
-import { afterEach, expect, it } from "vitest"
+import { expect, it } from "vitest"
 
 import { startIOSSimulator, stopIOSSimulator } from "./ios-simulator-launcher.ts"
 import {
   parseSimulatorArguments,
-  simulatorClaimPath,
   simulatorLogPath,
-  simulatorManifestPath,
-  simulatorName
+  simulatorManifestPath
 } from "./ios-simulator-state.ts"
-
-const cleanups: Array<() => Promise<unknown>> = []
-afterEach(async () => {
-  await Promise.all(cleanups.splice(0).map((cleanup) => cleanup()))
-})
-
-const owner = { pid: 42, startedAt: "first", state: "S" }
-
-async function worktree() {
-  const repoRoot = await mkdtemp(join(tmpdir(), "codevisor-simulator-launcher-"))
-  cleanups.push(() => rm(repoRoot, { recursive: true, force: true }))
-  await mkdir(dirname(simulatorManifestPath(repoRoot)), { recursive: true })
-  return repoRoot
-}
-
-function manifestFor(repoRoot: string) {
-  return {
-    format: "codevisor-ios-simulator-v1",
-    repoRoot,
-    name: simulatorName(repoRoot),
-    udid: "device-1",
-    deviceName: "iPhone 17 Pro",
-    deviceType: "phone",
-    runtime: "iOS 27.0",
-    runtimeIdentifier: "runtime.iOS-27-0",
-    lease: "lease-1",
-    owner,
-    ready: true,
-    xcode: "project window open"
-  }
-}
-
-async function runningSimulator(repoRoot: string) {
-  await writeFile(simulatorClaimPath(repoRoot), JSON.stringify({ pid: 42, startedAt: "first" }))
-  await writeFile(simulatorManifestPath(repoRoot), JSON.stringify(manifestFor(repoRoot)))
-}
-
-function harness(repoRoot: string, options: { alive?: boolean; devices?: Array<string> } = {}) {
-  let alive = options.alive ?? true
-  const devices = options.devices ?? ["device-1"]
-  const output: Array<string> = []
-  const starts: Array<string> = []
-  const signals: Array<string> = []
-  return {
-    output,
-    starts,
-    signals,
-    dependencies: {
-      identity: async (pid: number) => (alive && pid === owner.pid ? owner : undefined),
-      simctl: async () =>
-        JSON.stringify({
-          devices: {
-            runtime: devices.map((udid) => ({
-              udid,
-              name: simulatorName(repoRoot),
-              state: "Booted"
-            }))
-          }
-        }),
-      write: (text: string) => {
-        output.push(text)
-      },
-      signal: (pid: number, signal: string) => {
-        signals.push(`${pid} ${signal}`)
-        alive = false
-        devices.splice(0)
-      },
-      startOwner: (logPath: string) => {
-        starts.push(logPath)
-        return { exited: new Promise<number>(() => {}), release: () => {} }
-      },
-      pollMilliseconds: 1
-    }
-  }
-}
-
-const failingOwner = (logPath: string) => ({
-  exited: appendFile(logPath, "No installed iOS runtime\n").then(() => 1),
-  release: () => {}
-})
+import {
+  failingOwner,
+  harness,
+  manifestFor,
+  runningSimulator,
+  worktree
+} from "./ios-simulator-test-support.ts"
 
 it("starts a detached owner, echoes its log, and returns once the simulator is ready", async () => {
   const repoRoot = await worktree()
@@ -112,7 +35,9 @@ it("starts a detached owner, echoes its log, and returns once the simulator is r
 
   expect(code).toBe(0)
   expect(starts).toEqual([simulatorLogPath(repoRoot)])
-  expect(output.join("")).toBe("Starting simulator\nSimulator ready: device-1\n")
+  expect(output.join("")).toMatch(
+    /^Starting simulator\nSimulator ready: device-1\nStart the apps with bun run dev:ios\. /
+  )
 })
 
 it("reports the owner's log when it exits before the simulator is ready", async () => {
