@@ -32,6 +32,7 @@
 
       let textStorage = NSTextStorage()
       let layoutManager = NSLayoutManager()
+      MarkdownTableTypesetter.install(on: layoutManager)
       textStorage.addLayoutManager(layoutManager)
       let container = NSTextContainer(
         size: NSSize(width: 1, height: CGFloat.greatestFiniteMagnitude)

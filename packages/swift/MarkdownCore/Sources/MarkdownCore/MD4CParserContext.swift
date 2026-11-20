@@ -47,6 +47,7 @@ final class MD4CParserContext {
 
   var blockStack: [BlockState] = []
   var inlineStack: [InlineState] = []
+  var htmlDirection = InlineHTMLDirection()
   var tableSections: [TableSection] = []
   var tableByteRanges: [Range<Int>] = []
   var sourceBytes: UnsafeBufferPointer<UInt8>?
@@ -82,6 +83,7 @@ final class MD4CParserContext {
   }
 
   func beginInline(_ kind: InlineKind = .root) {
+    if inlineStack.isEmpty { htmlDirection.reset() }
     inlineStack.append(InlineState(kind: kind, children: []))
   }
 
@@ -91,6 +93,8 @@ final class MD4CParserContext {
   }
 
   func endInlineRoot() -> MarkdownText {
+    let unclosed = htmlDirection.unclosedText()
+    if !unclosed.isEmpty { appendSpan(.text(unclosed)) }
     guard let state = inlineStack.popLast() else { return MarkdownText("") }
     return MarkdownText(spans: state.children)
   }

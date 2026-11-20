@@ -96,6 +96,7 @@
     func makeNSView(context: Context) -> TableBleedContainer {
       let textStorage = NSTextStorage()
       let layoutManager = NSLayoutManager()
+      MarkdownTableTypesetter.install(on: layoutManager)
       textStorage.addLayoutManager(layoutManager)
       let container = NSTextContainer(
         size: NSSize(width: 0, height: CGFloat.greatestFiniteMagnitude)
@@ -334,6 +335,7 @@
       self.preparedLimit = max(1, preparedLimit)
       self.renderLimit = max(1, renderLimit)
       self.cellLimit = max(1, cellLimit)
+      MarkdownTableTypesetter.install(on: measurementLayoutManager)
       measurementStorage.addLayoutManager(measurementLayoutManager)
       measurementContainer.lineFragmentPadding = 0
       measurementLayoutManager.addTextContainer(measurementContainer)

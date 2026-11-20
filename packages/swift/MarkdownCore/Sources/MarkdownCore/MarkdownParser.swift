@@ -43,7 +43,6 @@ public struct MarkdownParser: Sendable {
         | UInt32(MD_FLAG_STRIKETHROUGH)
         | UInt32(MD_FLAG_TASKLISTS)
         | UInt32(MD_FLAG_NOHTMLBLOCKS)
-        | UInt32(MD_FLAG_NOHTMLSPANS)
       parser.enter_block = MD4CParserContext.enterBlockCallback
       parser.leave_block = MD4CParserContext.leaveBlockCallback
       parser.enter_span = MD4CParserContext.enterSpanCallback

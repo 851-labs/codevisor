@@ -270,8 +270,10 @@ extension MD4CParserContext {
       context.ensureTightListInlineRoot()
 
       switch type {
-      case MD_TEXT_NORMAL, MD_TEXT_CODE, MD_TEXT_HTML, MD_TEXT_LATEXMATH:
+      case MD_TEXT_NORMAL, MD_TEXT_CODE, MD_TEXT_LATEXMATH:
         context.appendSpan(.text(text))
+      case MD_TEXT_HTML:
+        context.appendSpan(.text(context.htmlDirection.text(for: text)))
       case MD_TEXT_NULLCHAR:
         context.appendSpan(.text("\u{FFFD}"))
       case MD_TEXT_BR:

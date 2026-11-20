@@ -45,7 +45,14 @@
           text = MarkdownTableRenderer.make(prepared: table, alignments: alignments, theme: theme, width: layoutWidth)
       #endif
       }
-      return try PreparedNativeTextLayout(text: text, width: layoutWidth, wrapsText: wrapsText)
+      return try PreparedNativeTextLayout(text: text, width: layoutWidth, wrapsText: wrapsText, isTable: isTable)
+    }
+
+    private var isTable: Bool {
+      #if canImport(AppKit)
+        if case .table = self { return true }
+      #endif
+      return false
     }
 
     var attributedText: NSAttributedString? {

@@ -190,13 +190,38 @@ struct MarkdownParserTests {
     #expect(text.plainText == "€ 🙂 ≂̸")
   }
 
-  @Test("Treats raw HTML as text")
-  func htmlIsText() {
-    guard case let .paragraph(text) = parser.parse("<b>safe</b>").first else {
-      Issue.record("expected literal HTML text")
+  @Test(
+    "Keeps raw HTML as text but turns direction tags into bidi isolates",
+    arguments: [
+      ("<b>safe</b> <div>x</div>", "<b>safe</b> <div>x</div>"),
+      ("a <bdi dir=\"rtl\">קוד</bdi> b", "a \u{2067}קוד\u{2069} b"),
+      ("<BDI DIR='LTR'>x</BDI>", "\u{2066}x\u{2069}"),
+      ("<bdi>x</bdi>", "\u{2068}x\u{2069}"),
+      ("<span class=\"n\" dir=\"rtl\">x</span>", "\u{2067}x\u{2069}"),
+      ("<span class=\"n\">x</span>", "<span class=\"n\">x</span>"),
+      ("<span><bdi dir=\"rtl\">x</span>", "<span>\u{2067}x\u{2069}</span>"),
+      ("<bdo dir=\"rtl\">abc</bdo>", "\u{2067}\u{202E}abc\u{202C}\u{2069}"),
+      ("<bdi dir=\"rtl\">open", "\u{2067}open\u{2069}"),
+      ("</bdi> stray", "</bdi> stray"),
+      ("`<bdi dir=\"rtl\">x</bdi>`", "<bdi dir=\"rtl\">x</bdi>"),
+      ("<bdi dir=\"rtl\">*x*</bdi>", "\u{2067}x\u{2069}"),
+    ])
+  func inlineHTML(markdown: String, expected: String) {
+    guard case let .paragraph(text) = parser.parse(markdown).first else {
+      Issue.record("expected a paragraph")
       return
     }
-    #expect(text.plainText == "<b>safe</b>")
+    #expect(text.plainText == expected)
+  }
+
+  @Test("Direction tags in table cells close within their own cell")
+  func tableCellDirection() {
+    let markdown = "| a | b |\n|---|---|\n| <bdi dir=\"rtl\">קוד | x |"
+    guard case let .table(_, _, rows) = parser.parse(markdown).first else {
+      Issue.record("expected a table")
+      return
+    }
+    #expect(rows.first?.map(\.plainText) == ["\u{2067}קוד\u{2069}", "x"])
   }
 
   @Test("Detects incomplete fences inside block quotes")
