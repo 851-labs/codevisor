@@ -9,7 +9,7 @@ public final class FirstLaunchSetup {
   private var foundNames: [FirstLaunchStep: [String]] = [:]
   private var visibleCounts: [FirstLaunchStep: Int] = [:]
   private(set) var isNewInstall: Bool?
-  private var isWaitingOnUser = false
+  private var waits: Set<FirstLaunchWait> = []
   private var userWaits = 0
 
   @ObservationIgnored private let timing: FirstLaunchSetupTiming
@@ -113,11 +113,14 @@ public final class FirstLaunchSetup {
     }
   }
 
-  private func setWaitingOnUser(_ isWaiting: Bool) {
-    guard isWaitingOnUser != isWaiting else { return }
+  private var isWaitingOnUser: Bool { !waits.isEmpty }
 
-    isWaitingOnUser = isWaiting
-    if isWaiting { userWaits += 1 }
+  private func setWaitingOnUser(_ isWaiting: Bool, for wait: FirstLaunchWait) {
+    let wasWaiting = isWaitingOnUser
+    if isWaiting { waits.insert(wait) } else { waits.remove(wait) }
+    guard isWaitingOnUser != wasWaiting else { return }
+
+    if isWaitingOnUser { userWaits += 1 }
     changed()
   }
 
@@ -139,8 +142,8 @@ public final class FirstLaunchSetup {
   }
 
   private func performSteps(_ work: any FirstLaunchSetupWork) async {
-    let start = await work.startServer { self.setWaitingOnUser($0) }
-    setWaitingOnUser(false)
+    let start = await work.startServer { self.setWaitingOnUser($0, for: .server) }
+    setWaitingOnUser(false, for: .server)
     guard start == .ready else {
       handOff()
       return
@@ -159,13 +162,15 @@ public final class FirstLaunchSetup {
       try await work.addRecentProjects {
         self.record($0, for: .projects)
       } waitingOnUser: {
-        self.setWaitingOnUser($0)
+        self.setWaitingOnUser($0, for: .step(.projects))
       }
     } record: {
       self.record($0, for: .projects)
     }
     async let models: Void = runStep(.models, within: timing.modelsTimeout) { [work] in
-      try await work.loadModels()
+      try await work.loadModels {
+        self.setWaitingOnUser($0, for: .step(.models))
+      }
     } record: { _ in
     }
     _ = await (harnesses, projects, models)

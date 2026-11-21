@@ -1,6 +1,7 @@
-import { FirstRunFolderAnswer } from "@codevisor/api"
+import { FirstRunClaudeCodeLoginAnswer, FirstRunFolderAnswer } from "@codevisor/api"
 import { Schema } from "effect"
 
+import { answerClaudeCodeLogin } from "../first-run-claude-login-answer.js"
 import { answerFirstRunFolder, isFolderAwaitingAnswer } from "../first-run-folder-answers.js"
 import { readFirstRunStatus } from "../first-run-status.js"
 import { HttpFailure, readJson, swallowError, writeJson } from "../server-context.js"
@@ -12,6 +13,10 @@ export const routeFirstRun: RouteFamily = async (route) => {
     writeJson(response, 200, await readFirstRunStatus(services))
     return true
   }
+  if (url.pathname === claudeCodeLoginPath && request.method === "POST") {
+    await answerClaudeCodeLoginQuestion(route)
+    return true
+  }
   const folderId = answeredFolderId(url)
   if (folderId === undefined || request.method !== "POST") return false
 
@@ -19,9 +24,13 @@ export const routeFirstRun: RouteFamily = async (route) => {
   return true
 }
 
+const claudeCodeLoginPath = "/v1/first-run/claude-code-login"
+
 const folderAnswerPath = /^\/v1\/first-run\/folders\/([^/]+)$/u
 
 const decodeAnswer = Schema.decodeUnknownOption(FirstRunFolderAnswer)
+
+const decodeClaudeCodeLoginAnswer = Schema.decodeUnknownOption(FirstRunClaudeCodeLoginAnswer)
 
 const answeredFolderId = (url: URL): string | undefined => {
   const encoded = folderAnswerPath.exec(url.pathname)?.[1]
@@ -44,5 +53,19 @@ const answerFolder = async (
     folderId,
     answer.value.access
   ).catch(swallowError)
+  writeJson(response, 200, await readFirstRunStatus(services))
+}
+
+const answerClaudeCodeLoginQuestion = async ({
+  services,
+  fanout,
+  request,
+  response
+}: RouteContext): Promise<void> => {
+  const answer = decodeClaudeCodeLoginAnswer(await readJson(request))
+  if (answer._tag === "None")
+    throw new HttpFailure(400, "Expected choice: transfer, signIn, or notNow")
+
+  await answerClaudeCodeLogin(services, fanout, answer.value.choice)
   writeJson(response, 200, await readFirstRunStatus(services))
 }

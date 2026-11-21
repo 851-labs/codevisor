@@ -30,6 +30,10 @@ export interface ClaudeLoginTakeoverDeps {
   readonly platform: string
 }
 
+export interface TransferOffer {
+  readonly email: string | undefined
+}
+
 export type NoticeListener = (harnessId: string, notice: HarnessNotice) => void
 
 export interface Adoption {
@@ -57,7 +61,7 @@ export const makeClaudeLoginTakeover = (deps: ClaudeLoginTakeoverDeps) => {
     nativeId: string | undefined
   ): Promise<Adoption | undefined> => {
     const login = await machine.read()
-    if (!isTakeoverCandidate(login) || (await signedOutByUser(deps, login))) return undefined
+    if (!isTakeoverCandidate(login)) return undefined
 
     const adoption = await prepare(deps, login)
     if (!(await deps.vault.claim(adoption.credential, login))) {
@@ -87,16 +91,22 @@ export const makeClaudeLoginTakeover = (deps: ClaudeLoginTakeoverDeps) => {
     for (const listener of listeners) listener("claude-code", noticeFor(notice))
   }
 
-  const takeOver = async (machine: MachineClaudeLogin, nativeId: string | undefined) => {
+  const takeOver = async (
+    machine: MachineClaudeLogin,
+    nativeId: string | undefined
+  ): Promise<boolean> => {
     const adoption = await machine.whileLocked((lock) => adoptUnderLock(machine, lock, nativeId))
-    if (adoption !== undefined) await finish(adoption)
+    if (adoption === undefined) return false
+
+    await finish(adoption)
+    return true
   }
 
   const removeLeftoverCopy = async (
     machine: MachineClaudeLogin,
     login: TakeoverCandidate,
     holder: SharedCredentialReference
-  ): Promise<void> => {
+  ): Promise<boolean> => {
     const removed = await machine.whileLocked(async () => {
       if ((await machine.read())?.refreshToken !== login.refreshToken) return false
 
@@ -104,23 +114,41 @@ export const makeClaudeLoginTakeover = (deps: ClaudeLoginTakeoverDeps) => {
       return true
     })
     if (removed) report(holder, login, "removed a leftover copy from this machine")
+    return removed
   }
 
-  const run = async (
+  const tidy = async (
     machine: MachineClaudeLogin,
-    login: SharedTokenBundle | undefined,
-    nativeId: string | undefined
+    login: SharedTokenBundle | undefined
   ): Promise<void> => {
     if (!isTakeoverCandidate(login)) return
 
     const codevisor = await codevisorLogins(deps)
-    if (codevisor.unknown) return
-
     const holder = codevisor.holders.get(login.refreshToken)
-    if (holder !== undefined) return removeLeftoverCopy(machine, login, holder)
-    if (codevisor.live) return
+    if (holder !== undefined) await removeLeftoverCopy(machine, login, holder)
+  }
 
-    await takeOver(machine, nativeId)
+  const transfer = async (
+    machine: MachineClaudeLogin,
+    nativeId: string | undefined
+  ): Promise<boolean> => {
+    const login = await machine.read()
+    if (!isTakeoverCandidate(login)) return false
+
+    const holder = (await codevisorLogins(deps)).holders.get(login.refreshToken)
+    if (holder !== undefined) return removeLeftoverCopy(machine, login, holder)
+
+    return takeOver(machine, nativeId)
+  }
+
+  const transferOffer = async (machine: MachineClaudeLogin): Promise<TransferOffer | undefined> => {
+    const login = await machine.read()
+    if (!isTakeoverCandidate(login) || (await signedOutByUser(deps, login))) return undefined
+
+    const codevisor = await codevisorLogins(deps)
+    if (codevisor.live || codevisor.unknown) return undefined
+
+    return { email: login.email }
   }
 
   return {
@@ -136,13 +164,11 @@ export const makeClaudeLoginTakeover = (deps: ClaudeLoginTakeoverDeps) => {
         listeners.delete(listener)
       }
     },
-    run: async (
-      machine: MachineClaudeLogin,
-      login: SharedTokenBundle | undefined,
-      nativeId: string | undefined
-    ): Promise<void> => {
+    transferOffer,
+    transfer,
+    tidy: async (machine: MachineClaudeLogin, login: SharedTokenBundle | undefined) => {
       try {
-        await run(machine, login, nativeId)
+        await tidy(machine, login)
       } catch (cause) {
         deps.log(takeoverSkippedLine("claude-code", failureMessage(cause)))
       }

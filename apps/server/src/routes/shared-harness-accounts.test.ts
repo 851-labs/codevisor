@@ -338,6 +338,7 @@ it("tells connected apps once it has signed this machine's Claude Code out", asy
   })
 
   await startWithApp(m.services, fanout)
+  await m.shared.transferClaudeCodeLogin()
 
   expect(await published.promise).toMatchObject({
     subjectId: "claude-code",

@@ -155,6 +155,12 @@ export const makeSharedAccounts = (options: SharedAccountsOptions) => {
     saveApiKey: imports.saveApiKey,
     prepareLogin: lifecycle.prepareLogin,
     loginFailed: lifecycle.loginFailed,
+    claudeCodeTransferOffer: imports.claudeCodeTransferOffer,
+    transferClaudeCodeLogin: async (): Promise<boolean> => {
+      const transferred = await imports.transferClaudeCodeLogin()
+      if (transferred) await localRows.applySelection(CLAUDE_HARNESS)
+      return transferred
+    },
     notice: imports.takeover.notice,
     subscribeNotices: imports.takeover.subscribe,
     captureLogin: imports.captureLogin,

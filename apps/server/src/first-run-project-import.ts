@@ -7,6 +7,7 @@ import type {
 } from "@codevisor/api"
 import { FIRST_RUN_PROJECTS_PENDING, FIRST_RUN_PROJECTS_SETTING } from "@codevisor/db"
 
+import { holdClaudeCodeLoginQuestion } from "./first-run-claude-login.js"
 import { groupByFolder, savePendingFolders } from "./first-run-folders.js"
 import {
   firstRunProjectLimit,
@@ -69,6 +70,7 @@ export const importFirstRunProjects = async (
   const environmentMs = performance.now() - started
   const harnesses = (await discoverHarnesses(services)).filter(isInstalledHarness)
   const found = harnesses.map(foundHarness)
+  await holdClaudeCodeLoginQuestion(services, found)
   await publishFirstRunStatus(services, fanout, { state: "running", harnesses: found })
   const scan = await scanHarnessSessions(firstRun, harnesses)
   const scanMs = performance.now() - started - environmentMs

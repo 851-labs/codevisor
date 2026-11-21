@@ -56,11 +56,14 @@ final class FirstRunStatusFeed {
   }
 
   private static func progress(of status: ServerFirstRunStatus?) -> FirstRunProgress {
-    guard let status else { return FirstRunProgress(stage: 0, addedProjects: 0, answeredFolders: 0) }
+    guard let status else {
+      return FirstRunProgress(stage: 0, addedProjects: 0, answeredFolders: 0, answeredClaudeCodeLogin: 0)
+    }
     return FirstRunProgress(
       stage: stage(of: status),
       addedProjects: status.projects?.count ?? 0,
-      answeredFolders: -status.foldersToAsk.count
+      answeredFolders: -status.foldersToAsk.count,
+      answeredClaudeCodeLogin: status.claudeCodeLogin == nil ? 0 : -1
     )
   }
 

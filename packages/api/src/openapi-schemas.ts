@@ -39,6 +39,7 @@ import {
   DiscoverRemoteSkillsResult,
   DiscoveryInfo,
   EventCursorResponse,
+  FirstRunClaudeCodeLoginAnswer,
   FirstRunFolderAnswer,
   FirstRunStatus,
   EventEnvelope,
@@ -211,6 +212,7 @@ export const nullable = (schema: Schema.Constraint): Schema.Constraint => Schema
 export const requestSchemas = (): Partial<Record<Endpoint, Schema.Constraint>> => ({
   "POST /v1/projects": CreateProjectRequest,
   "POST /v1/first-run/folders/:id": FirstRunFolderAnswer,
+  "POST /v1/first-run/claude-code-login": FirstRunClaudeCodeLoginAnswer,
   ...projectSetupRequestSchemas,
   "PATCH /v1/projects/:id": UpdateProjectRequest,
   "POST /v1/projects/:id/worktrees": CreateWorktreeRequest,
@@ -309,6 +311,7 @@ export const responseSchemas = (): Partial<Record<Endpoint, Schema.Constraint>> 
   "GET /v1/projects/recommendations": arrayOf(ProjectRecommendation),
   "GET /v1/first-run": FirstRunStatus,
   "POST /v1/first-run/folders/:id": FirstRunStatus,
+  "POST /v1/first-run/claude-code-login": FirstRunStatus,
   "POST /v1/projects": Project,
   ...projectSetupResponseSchemas,
   "GET /v1/fs/list": FsListResponse,

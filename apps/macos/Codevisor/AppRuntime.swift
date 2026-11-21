@@ -15,6 +15,7 @@ final class AppRuntime {
   private(set) var firstLaunchSetup: FirstLaunchSetup?
   private(set) var firstLaunchLanding: FirstLaunchLanding?
   private(set) var firstRunFolders: FirstRunFolderAccess?
+  private(set) var firstRunClaudeCodeLogin: FirstRunClaudeCodeLogin?
   @ObservationIgnored private(set) var screenSharing: ScreenSharingConnections?
   var startupError: String?
   @ObservationIgnored private var startupInProgress = false
@@ -101,8 +102,9 @@ final class AppRuntime {
       AppDelegate.current?.appUpdate = runtime.environment.appUpdate
       startupError = nil
       let folders = followFolderQuestions(runtime.environment)
+      let claudeCodeLogin = followClaudeCodeLoginQuestion(runtime.environment)
       if runtime.isFirstLaunch, !AppPreview.isRunning {
-        startFirstLaunchSetup(runtime.environment, folders: folders)
+        startFirstLaunchSetup(runtime.environment, folders: folders, claudeCodeLogin: claudeCodeLogin)
       } else {
         closeFirstLaunchSetup()
       }
@@ -130,11 +132,25 @@ final class AppRuntime {
     return folders
   }
 
-  private func startFirstLaunchSetup(_ environment: AppEnvironment, folders: FirstRunFolderAccess) {
+  private func followClaudeCodeLoginQuestion(_ environment: AppEnvironment) -> FirstRunClaudeCodeLogin {
+    let login = FirstRunClaudeCodeLogin(client: environment.machines.client(for: CodevisorMachine.local.id))
+    firstRunClaudeCodeLogin = login
+    if !AppPreview.isRunning {
+      Task { await login.follow() }
+    }
+    return login
+  }
+
+  private func startFirstLaunchSetup(
+    _ environment: AppEnvironment,
+    folders: FirstRunFolderAccess,
+    claudeCodeLogin: FirstRunClaudeCodeLogin
+  ) {
     ClientPreferences.shared.set(true, forKey: RootSidebarVisibility.collapsedKey)
     ClientPreferences.shared.set(false, forKey: WorkspaceInspectorPresentation.presentedKey)
     let setup = firstLaunchSetup ?? showFirstLaunchSetup()
-    Task { await setup.run(LiveFirstLaunchSetupWork(environment: environment, folders: folders)) }
+    let work = LiveFirstLaunchSetupWork(environment: environment, folders: folders, claudeCodeLogin: claudeCodeLogin)
+    Task { await setup.run(work) }
   }
 
   @discardableResult
