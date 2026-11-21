@@ -3,6 +3,7 @@ import SwiftUI
 struct HomeSidebarSectionToggle: View {
   let title: String
   @Binding var isExpanded: Bool
+  var chevron = HomeSidebarDisclosureChevron.Style.system
 
   var body: some View {
     Button {
@@ -11,10 +12,7 @@ struct HomeSidebarSectionToggle: View {
       HStack {
         Text(title)
         Spacer(minLength: 0)
-        Image(systemName: "chevron.forward")
-          .font(.footnote.weight(.semibold))
-          .foregroundStyle(.secondary)
-          .rotationEffect(.degrees(isExpanded ? 90 : 0))
+        HomeSidebarDisclosureChevron(isExpanded: isExpanded, style: chevron)
       }
       .contentShape(Rectangle())
     }

@@ -16,10 +16,8 @@ struct SidebarView: View {
   @State private var pendingImport: PendingSessionImport?
   @State var renamingWorkspace: Workspace?
   @State var sectionPrompt: SectionPrompt?
-  @State var drag: SidebarDrag?
-  @State var groupDrag: SidebarGroupDrag?
+  @State var reorder = SidebarReorder<SidebarRowID>()
   @State var tabDrag: SidebarTabDrag?
-  @State var holdsGroupToggles = false
   @State var revealRequest = SidebarRevealRequest()
   @State var selectionModel = SidebarSelectionModel()
   @State var shownRows = SidebarShownRows()
@@ -36,7 +34,7 @@ struct SidebarView: View {
 
   var list: ProjectListModel { environment.projectList }
   var rowDetails: [SidebarRowDetail] { ClientPreferences.shared.sidebarRowDetails }
-  var isReordering: Bool { drag != nil || groupDrag != nil || tabDrag != nil }
+  var isReordering: Bool { reorder.lifted != nil || tabDrag != nil }
 
   var body: some View {
     sidebarConfiguredView
@@ -81,9 +79,8 @@ struct SidebarView: View {
         SidebarUpdateFooter(center: environment.updateCenter)
       }
     }
-    .coordinateSpace(.named(Self.reorderSpace))
-    .overlay(alignment: .topLeading) { reorderOverlay }
-    .overlay(alignment: .topLeading) { groupReorderOverlay }
+    .coordinateSpace(SidebarReorderSpace.coordinateSpace)
+    .overlay(alignment: .topLeading) { SidebarReorderOverlay(reorder: reorder) { reorderGhost(for: $0) } }
     .overlay(alignment: .topLeading) { tabReorderOverlay }
   }
 
@@ -162,11 +159,9 @@ struct SidebarView: View {
   }
 
   private func workspaceGroupList(_ groups: [SidebarWorkspaceGroup], rows: [SidebarRow]) -> some View {
-    let headed = groups.filter { $0.id != SidebarWorkspaceGroup.pinnedID }.map(\.id)
-    return workspaceRowList(rows)
+    workspaceRowList(rows)
       .padding(.horizontal, 10)
       .padding(.bottom, 8)
-      .onChange(of: headed) { _, ids in endGroupDrag(ifMissingFrom: ids) }
   }
 
   static let groupIndent: CGFloat = 8

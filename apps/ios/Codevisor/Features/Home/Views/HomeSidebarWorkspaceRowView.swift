@@ -8,13 +8,11 @@ struct HomeSidebarWorkspaceRowView: View, Equatable {
   let workspace: HomeSidebarWorkspace
   let actions: HomeSidebarActionHandler
   var isSelectionRow = false
-  var sections: [CustomSection] = []
 
   @State private var confirmsRestore = false
 
   static func == (lhs: Self, rhs: Self) -> Bool {
     lhs.workspace == rhs.workspace && lhs.actions === rhs.actions && lhs.isSelectionRow == rhs.isSelectionRow
-      && lhs.sections == rhs.sections
   }
 
   private var ref: HomeSidebarWorkspaceRef { workspace.workspace }
@@ -43,6 +41,7 @@ struct HomeSidebarWorkspaceRowView: View, Equatable {
         row
       } else {
         Button(action: onOpen) { row }
+          .buttonStyle(.plain)
       }
     }
     .opacity(workspace.isArchived ? 0.6 : 1)
@@ -75,7 +74,6 @@ struct HomeSidebarWorkspaceRowView: View, Equatable {
         .accessibilityLabel("Rename")
       }
     }
-    .contextMenu { menu }
     .confirmationDialog(
       "Restore \(workspace.displayName)?", isPresented: $confirmsRestore, titleVisibility: .visible
     ) {
@@ -102,55 +100,10 @@ struct HomeSidebarWorkspaceRowView: View, Equatable {
       }
     }
   }
-
-  @ViewBuilder
-  private var menu: some View {
-    if workspace.isArchived {
-      Button(action: onRestore) {
-        Label("Restore", systemImage: "arrow.uturn.backward")
-      }
-    } else {
-      if let chat = workspace.mainChatRow, let chatId = chat.chatSessionId {
-        UnreadMenuItem(isUnread: chat.isUnread) { actions.actions.setUnread(chatId, workspace.serverId, $0) }
-        Divider()
-      }
-      if let open = actions.actions.openWorkspaceInNewWindow {
-        Button {
-          open(workspace)
-        } label: {
-          Label("Open in New Window", systemImage: "macwindow.badge.plus")
-        }
-        Divider()
-      }
-      if workspace.canPin {
-        Button(action: onTogglePin) {
-          Label(workspace.isPinned ? "Unpin" : "Pin", systemImage: workspace.isPinned ? "pin.slash" : "pin")
-        }
-      }
-      Button(action: onNewTab) {
-        Label("New Tab", systemImage: "plus.square.on.square")
-      }
-      Button(action: onRename) {
-        Label("Rename", systemImage: "pencil")
-      }
-      if let slot = workspace.sectionSlot {
-        Divider()
-        MoveToSectionMenu(
-          currentSectionID: slot.sectionID, sections: sections,
-          move: { actions.actions.workspaceSections.move(ref.id, $0) },
-          newSection: { actions.actions.workspaceSections.create(ref.id) })
-      }
-      Divider()
-      Button(action: onArchive) {
-        Label("Archive", systemImage: "archivebox")
-      }
-    }
-  }
 }
 
 struct HomeSidebarGroupLabel: View {
   let heading: SidebarWorkspaceGroup.Heading
-  let onNewChat: (() -> Void)?
 
   var body: some View {
     Label {
@@ -158,13 +111,6 @@ struct HomeSidebarGroupLabel: View {
         .lineLimit(1)
     } icon: {
       HomeSidebarSymbol(image: heading.icon.image)
-    }
-    .contextMenu {
-      if let onNewChat {
-        Button(action: onNewChat) {
-          Label("New Chat", systemImage: "square.and.pencil")
-        }
-      }
     }
   }
 }

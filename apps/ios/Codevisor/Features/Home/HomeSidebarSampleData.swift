@@ -62,7 +62,8 @@
           makeContent: { HomeSidebarSampleData.content(entries, archived: archivedEntries, preferences: $0) },
           actions: handler,
           isSelectable: isSelectable,
-          selected: selected
+          selected: selected,
+          mode: .constant(.code)
         )
       }
 

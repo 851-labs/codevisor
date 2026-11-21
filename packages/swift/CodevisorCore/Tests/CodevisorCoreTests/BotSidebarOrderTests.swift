@@ -44,10 +44,10 @@ struct BotSidebarOrderTests {
 
     #expect(
       BotSidebarOrder.placement(of: ledger.id, in: all, membership: membership)
-        == BotSidebarPlacement(section: section, after: atlas.id))
+        == SidebarPlacement(section: section, after: atlas.id))
     #expect(
       BotSidebarOrder.placement(of: scout.id, in: all, membership: membership)
-        == BotSidebarPlacement(section: nil, after: nil))
+        == SidebarPlacement(section: nil, after: nil))
   }
 
   @Test("Placing a bot inserts it after the named bot in the target section, or first when none is named")
@@ -58,14 +58,14 @@ struct BotSidebarOrderTests {
     let ledger = try conversation("Ledger", position: "3000000000008")
     let all = [atlas, scout, ledger]
     let membership = [atlas.id: section, ledger.id: section]
-    func names(_ placement: BotSidebarPlacement) -> [String] {
+    func names(_ placement: SidebarPlacement) -> [String] {
       BotSidebarOrder.siblings(placing: scout.bot, at: placement, in: all, membership: membership).map(\.name)
     }
 
-    #expect(names(BotSidebarPlacement(section: section, after: atlas.id)) == ["Atlas", "Scout", "Ledger"])
-    #expect(names(BotSidebarPlacement(section: section, after: nil)) == ["Scout", "Atlas", "Ledger"])
-    #expect(names(BotSidebarPlacement(section: section, after: ledger.id)) == ["Atlas", "Ledger", "Scout"])
-    #expect(names(BotSidebarPlacement(section: nil, after: nil)) == ["Scout"])
+    #expect(names(SidebarPlacement(section: section, after: atlas.id)) == ["Atlas", "Scout", "Ledger"])
+    #expect(names(SidebarPlacement(section: section, after: nil)) == ["Scout", "Atlas", "Ledger"])
+    #expect(names(SidebarPlacement(section: section, after: ledger.id)) == ["Atlas", "Ledger", "Scout"])
+    #expect(names(SidebarPlacement(section: nil, after: nil)) == ["Scout"])
   }
 
   private func conversation(

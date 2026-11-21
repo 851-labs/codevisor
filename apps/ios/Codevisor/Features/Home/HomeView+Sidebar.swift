@@ -33,6 +33,11 @@ extension HomeView {
       botSections: sectionActions(for: environment.botSections, prompt: $botSectionPrompt),
       reorder: { id, index, group in commitWorkspaceMove(id, toIndex: index, within: group) },
       placeBot: { bot, placement in commitBotMove(bot, to: placement) },
+      placeWorkspace: { id, placement, siblings, movesSection in
+        withSidebarReflow {
+          environment.placeWorkspace(id, at: placement, among: siblings, movingSection: movesSection)
+        }
+      },
       moveTab: { tabId, successor, workspace in
         withSidebarReflow {
           environment.workspaceSync.moveTab(tabId, before: successor, inWorkspace: workspace.id)
@@ -208,7 +213,7 @@ extension HomeView {
     withAnimation(Motion.listReflow(reduceMotion: reduceMotion), change)
   }
 
-  func commitBotMove(_ bot: Bot, to placement: BotSidebarPlacement) {
+  func commitBotMove(_ bot: Bot, to placement: SidebarPlacement) {
     let conversations = HomeSidebarContentBuilder(environment: environment, gitLookups: sidebarGitLookups)
       .botConversations
     withSidebarReflow { environment.moveBot(bot, to: placement, among: conversations) }

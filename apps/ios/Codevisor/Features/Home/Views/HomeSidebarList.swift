@@ -15,7 +15,9 @@ struct HomeSidebarActions {
   var workspaceSections = HomeSidebarSectionActions()
   var botSections = HomeSidebarSectionActions()
   var reorder: (UUID, Int, [UUID]) -> Void = { _, _, _ in }
-  var placeBot: (Bot, BotSidebarPlacement) -> Void = { _, _ in }
+  var placeBot: (Bot, SidebarPlacement) -> Void = { _, _ in }
+  var placeWorkspace: (_ id: UUID, SidebarPlacement, _ siblings: [UUID], _ movesSection: Bool) -> Void = { _, _, _, _ in
+  }
   var moveTab: (UUID, UUID?, HomeSidebarWorkspaceRef) -> Void = { _, _, _ in }
   var openInNewWindow: ((HomeSidebarTabRow, HomeSidebarWorkspaceRef) -> Void)?
   var openWorkspaceInNewWindow: ((HomeSidebarWorkspace) -> Void)?
@@ -43,6 +45,13 @@ final class HomeSidebarActionHandler {
 enum HomeSidebarSelection: Equatable {
   case workspace(UUID, paneId: UUID?)
   case bot(UUID)
+
+  var rowID: UUID {
+    switch self {
+    case let .workspace(id, paneId): paneId ?? id
+    case let .bot(id): id
+    }
+  }
 }
 
 struct HomeSidebarList: View {
@@ -52,7 +61,7 @@ struct HomeSidebarList: View {
   let actions: HomeSidebarActionHandler
   var isSelectable = false
   var selected: HomeSidebarSelection? = nil
-  var mode: Binding<SidebarMode>? = nil
+  let mode: Binding<SidebarMode>
   var refreshDetails: ([UUID], [SidebarRowDetail]) -> Void = { _, _ in }
 
   @Environment(\.accessibilityReduceMotion) private var reduceMotion
@@ -65,7 +74,6 @@ struct HomeSidebarList: View {
   @ClientPreference(SidebarPreferenceKey.pinnedExpanded, default: true) private var pinnedExpanded
   @ClientPreference(SidebarPreferenceKey.listExpanded, default: true) private var listExpanded
   @ClientPreference(SidebarPreferenceKey.archivedExpanded, default: false) private var archivedExpanded
-  @ClientPreference(SidebarPreferenceKey.botsExpanded, default: true) private var botsExpanded
   @ClientPreference(Self.expandedWorkspacesKey, default: []) private var expandedWorkspaceIDs: [String]
   @State private var archivedLimit = sidebarArchivedPageSize
   @State private var pendingSelection: UUID?
@@ -81,19 +89,15 @@ struct HomeSidebarList: View {
 
   var body: some View {
     let content = makeContent(preferences)
-    list(content)
-      .modifier(HomeSidebarListStyle(isConversation: isConversation))
+    collection(content)
+      .ignoresSafeArea(.container, edges: .vertical)
       .overlay {
         if showsBotsEmptyOverlay(content) { botsEmptyState }
       }
-      .animation(Motion.listReflow(reduceMotion: reduceMotion), value: content.layout)
       .onAppear { followSelection(from: nil, to: selected, in: content) }
       .onChange(of: selected) { previous, next in
         pendingSelection = nil
         followSelection(from: previous, to: next, in: content)
-      }
-      .refreshable {
-        await actions.actions.refresh()
       }
       .task(id: gitRefreshKey(content)) {
         let ids = detailedWorkspaceIDs(content)
@@ -108,6 +112,19 @@ struct HomeSidebarList: View {
       }
   }
 
+  private func collection(_ content: HomeSidebarContent) -> HomeSidebarCollection {
+    let outline = outlineRows(content)
+    return HomeSidebarCollection(
+      rows: outline.rows + noticeRows(content) + archivedRows(content).rows,
+      appearance: isConversation ? .plain : .sidebar,
+      selectedID: isSelectable ? pendingSelection ?? selectedRowID(content) : nil,
+      isSelectable: isSelectable,
+      animates: !reduceMotion,
+      onMove: outline.move,
+      onSelect: { open($0, in: content) },
+      onRefresh: actions.actions.refresh)
+  }
+
   private func gitRefreshKey(_ content: HomeSidebarContent) -> SidebarGitLookups.RefreshKey? {
     let shown = detailedWorkspaceIDs(content)
     let archived = Set(content.archived.map(\.id))
@@ -116,18 +133,15 @@ struct HomeSidebarList: View {
       archivedWorkspaceIds: shown.filter(archived.contains))
   }
 
-  private var showsChat: Bool { mode?.wrappedValue != .code }
+  private var isConversation: Bool { mode.wrappedValue == .bots }
 
-  private var isConversation: Bool { mode?.wrappedValue == .bots }
-
-  private var showsCode: Bool { mode?.wrappedValue != .bots }
+  private var showsCode: Bool { !isConversation }
 
   private func followSelection(
     from previous: HomeSidebarSelection?, to next: HomeSidebarSelection?, in content: HomeSidebarContent
   ) {
     let owner = next.flatMap(content.mode(owning:))
-    guard let mode, let owner, owner != previous.flatMap(content.mode(owning:)), owner != mode.wrappedValue
-    else { return }
+    guard let owner, owner != previous.flatMap(content.mode(owning:)), owner != mode.wrappedValue else { return }
 
     mode.wrappedValue = owner
   }
@@ -136,16 +150,6 @@ struct HomeSidebarList: View {
     var shown = showsCode ? codeWorkspaces(content).flatMap(\.subtree) : []
     if archivedExpanded { shown += archivedWorkspaces(content) }
     return shown.map(\.id)
-  }
-
-  private func shownBots(_ content: HomeSidebarContent) -> [HomeSidebarBot] {
-    switch mode?.wrappedValue {
-    case .bots:
-      let expanded = content.botSectionGroups.filter { !collapsedGroupIDs.contains($0.collapseID) }
-      return content.unsectionedBots + expanded.flatMap(\.bots)
-    case .code: return []
-    case nil: return botsExpanded ? content.bots : []
-    }
   }
 
   private func codeWorkspaces(_ content: HomeSidebarContent) -> [HomeSidebarWorkspace] {
@@ -165,91 +169,59 @@ struct HomeSidebarList: View {
     showsCode ? content.archived : []
   }
 
-  @ViewBuilder
-  private func list(_ content: HomeSidebarContent) -> some View {
-    if isSelectable {
-      List(selection: selection(content)) {
-        sections(content)
-      }
-    } else {
-      List {
-        sections(content)
-      }
+  private func outlineRows(_ content: HomeSidebarContent) -> HomeSidebarOutlineRows {
+    let outline: HomeSidebarOutline =
+      isConversation
+      ? .bots(content, expansion: outlineExpansion) : .code(content, expansion: outlineExpansion)
+    let sections = isConversation ? content.botSections : content.customSections
+    return HomeSidebarOutlineRows(
+      outline: outline, sections: sections,
+      sectionActions: isConversation ? actions.actions.botSections : actions.actions.workspaceSections,
+      actions: actions, isSelectable: true, isConversation: isConversation,
+      selectedID: isSelectable ? selected?.rowID : nil, expansion: expansion
+    ) { bot, template in
+      botRows.rows(bot, template: template, sections: sections)
     }
   }
 
-  @ViewBuilder
-  private func sections(_ content: HomeSidebarContent) -> some View {
-    switch mode?.wrappedValue {
-    case .bots:
-      chatSections(content)
-      archivedSection(content)
-    case .code:
-      codeSections(content)
-      archivedSection(content)
-    case nil:
-      if content.showsBots { botsSection(content) }
-      codeSections(content)
-      archivedSection(content)
+  private func noticeRows(_ content: HomeSidebarContent) -> [HomeSidebarCollectionRow] {
+    guard showsCode, listExpanded, content.listedWorkspaces.isEmpty else { return [] }
+
+    let notice = Text("No Workspaces").foregroundStyle(.tertiary)
+    return [HomeSidebarCollectionRow(id: .notice, content: AnyView(notice))]
+  }
+
+  private func archivedRows(_ content: HomeSidebarContent) -> HomeSidebarArchivedRows {
+    HomeSidebarArchivedRows(
+      bots: isConversation ? content.archivedBots : [],
+      workspaces: showsCode ? content.archived : [],
+      hasMoreWorkspaces: showsCode && content.archivedCount > content.archived.count,
+      isExpanded: animated($archivedExpanded), isConversation: isConversation, actions: actions, isSelectable: true,
+      botRows: { bot, template in botRows.rows(bot, template: template, sections: nil) },
+      showMore: showMoreArchived)
+  }
+
+  private var botRows: HomeSidebarBotRows {
+    HomeSidebarBotRows(
+      actions: actions, isSelectable: true, selected: selected, isConversation: isConversation,
+      tabExpansion: tabExpansion)
+  }
+
+  private func showMoreArchived() {
+    withAnimation(Motion.listReflow(reduceMotion: reduceMotion)) {
+      archivedLimit += sidebarArchivedPageSize
     }
   }
 
-  @ViewBuilder
-  private func codeSections(_ content: HomeSidebarContent) -> some View {
-    if !content.pinned.isEmpty {
-      Section("Pinned", isExpanded: animated($pinnedExpanded)) {
-        workspaceRows(content.pinned)
-      }
-    }
-    ForEach(content.sections) { group in
-      Section(group.section.name, isExpanded: groupExpansion(group.collapseID)) {
-        workspaceRows(group.workspaces, sections: content.customSections)
-      }
-    }
-    Section(content.listTitle, isExpanded: animated($listExpanded)) {
-      ForEach(content.groups) { group in
-        if let heading = group.heading {
-          DisclosureGroup(isExpanded: groupExpansion(group.id)) {
-            workspaceRows(group.workspaces, sections: content.customSections)
-          } label: {
-            HomeSidebarGroupLabel(
-              heading: heading,
-              onNewChat: heading.newChatTarget.flatMap { target in
-                target.isBareMachine ? { actions.actions.newChat(target) } : nil
-              }
-            )
-          }
-        } else {
-          workspaceRows(group.workspaces, sections: content.customSections)
-        }
-      }
-      if content.listedWorkspaces.isEmpty {
-        Text("No Workspaces")
-          .foregroundStyle(.tertiary)
-      }
-    }
+  private var outlineExpansion: HomeSidebarOutline.Expansion {
+    HomeSidebarOutline.Expansion(pinned: pinnedExpanded, list: listExpanded, collapsedIDs: Set(collapsedGroupIDs))
   }
 
-  @ViewBuilder
-  private func chatSections(_ content: HomeSidebarContent) -> some View {
-    if !content.unsectionedBots.isEmpty {
-      Section {
-        ForEach(content.unsectionedBots) { bot in
-          botRow(bot, sections: content.botSections)
-        }
-        .onMove { moveBot($0, to: $1, among: content.unsectionedBots, section: nil) }
-      }
-      .listSectionSeparator(.hidden, edges: .top)
-    }
-    ForEach(content.botSectionGroups) { group in
-      HomeSidebarCollapsibleSection(
-        title: group.section.name, isExpanded: groupExpansion(group.collapseID), isConversation: isConversation
-      ) {
-        ForEach(group.bots) { bot in
-          botRow(bot, sections: content.botSections)
-        }
-        .onMove { moveBot($0, to: $1, among: group.bots, section: group.section.id) }
-      }
+  private func expansion(_ header: HomeSidebarOutline.Header) -> Binding<Bool> {
+    switch header {
+    case .pinned: animated($pinnedExpanded)
+    case .list: animated($listExpanded)
+    case .section, .group: groupExpansion(header.id)
     }
   }
 
@@ -259,97 +231,6 @@ struct HomeSidebarList: View {
 
   private var botsEmptyState: some View {
     BotsEmptyState(onNewBot: actions.actions.newBot)
-  }
-
-  private func moveBot(_ source: IndexSet, to destination: Int, among bots: [HomeSidebarBot], section: UUID?) {
-    guard let index = source.first else { return }
-
-    let placement = BotSidebarRows.placement(
-      moving: index, to: destination, among: bots.map(\.id), section: section)
-    actions.actions.placeBot(bots[index].bot, placement)
-  }
-
-  private func botsSection(_ content: HomeSidebarContent) -> some View {
-    Section("Bots", isExpanded: animated($botsExpanded)) {
-      ForEach(content.bots) { bot in
-        botRow(bot)
-      }
-      if content.canCreateBots { newBotButton }
-    }
-  }
-
-  private var newBotButton: some View {
-    Button(action: actions.actions.newBot) {
-      Label("New Bot…", symbol: .mascotBadgePlus)
-    }
-    .accessibilityIdentifier("sidebar.newBot")
-  }
-
-  @ViewBuilder
-  private func archivedSection(_ content: HomeSidebarContent) -> some View {
-    let bots = showsChat ? content.archivedBots : []
-    let showsWorkspaces = showsCode && content.archivedCount > 0
-    if showsWorkspaces || !bots.isEmpty {
-      HomeSidebarCollapsibleSection(
-        title: "Archived", isExpanded: animated($archivedExpanded), isConversation: isConversation
-      ) {
-        archivedRows(content, bots: bots, showsWorkspaces: showsWorkspaces)
-      }
-    }
-  }
-
-  @ViewBuilder
-  private func archivedRows(
-    _ content: HomeSidebarContent, bots: [HomeSidebarBot], showsWorkspaces: Bool
-  ) -> some View {
-    ForEach(bots) { bot in
-      botRow(bot)
-    }
-    if showsWorkspaces {
-      ForEach(content.archived) { workspace in
-        HomeSidebarWorkspaceRowView(workspace: workspace, actions: actions, isSelectionRow: isSelectable)
-          .equatable()
-      }
-      if content.archivedCount > content.archived.count {
-        Button("Show More") {
-          withAnimation(Motion.listReflow(reduceMotion: reduceMotion)) {
-            archivedLimit += sidebarArchivedPageSize
-          }
-        }
-        .foregroundStyle(.secondary)
-      }
-    }
-  }
-
-  private func workspaceRows(
-    _ workspaces: [HomeSidebarWorkspace], sections: [CustomSection] = []
-  ) -> some View {
-    HomeSidebarWorkspaceRows(workspaces: workspaces, sections: sections, actions: actions, isSelectable: isSelectable)
-  }
-
-  @ViewBuilder
-  private func botRow(_ bot: HomeSidebarBot, sections: [CustomSection]? = nil) -> some View {
-    let row = HomeSidebarBotRowView(
-      bot: bot, actions: actions, isSelectionRow: isSelectable, isOpen: selected == .bot(bot.id), sections: sections,
-      isConversation: isConversation
-    )
-    .equatable()
-    .tag(bot.id)
-    if !bot.hasNestedRows {
-      row
-    } else {
-      DisclosureGroup(isExpanded: tabExpansion(bot.id)) {
-        if let home = bot.home {
-          ForEach(bot.tabs) { tab in
-            HomeSidebarTabRowView(row: tab, workspace: home.workspace, actions: actions, isSelectionRow: isSelectable)
-              .equatable()
-              .tag(tab.id)
-          }
-        }
-      } label: {
-        row
-      }
-    }
   }
 
   private func animated(_ binding: Binding<Bool>) -> Binding<Bool> {
@@ -395,25 +276,31 @@ struct HomeSidebarList: View {
     }
   }
 
-  private func selection(_ content: HomeSidebarContent) -> Binding<UUID?> {
-    Binding(
-      get: { pendingSelection ?? selectedRowID(content) },
-      set: { id in
-        guard let id else { return }
-        if let bot = content.bot(id) {
-          pendingSelection = id
-          actions.actions.openBot(bot.bot)
-        } else if let (row, workspace) = content.row(id) {
-          pendingSelection = id
-          actions.actions.open(row, workspace.workspace)
-        } else if let workspace = content.workspace(id) {
-          pendingSelection = id
-          actions.actions.openWorkspace(workspace)
-        } else {
-          return
-        }
-        actions.actions.didSelectInSplit()
-      }
-    )
+  private func open(_ id: UUID, in content: HomeSidebarContent) {
+    guard !isSelectable else { return select(id, in: content) }
+
+    if let bot = content.bot(id) ?? content.archivedBots.first(where: { $0.id == id }) {
+      actions.actions.openBot(bot.bot)
+    } else if let (row, workspace) = content.row(id) {
+      actions.actions.open(row, workspace.workspace)
+    } else if let workspace = content.workspace(id) {
+      actions.actions.openWorkspace(workspace)
+    }
+  }
+
+  private func select(_ id: UUID, in content: HomeSidebarContent) {
+    if let bot = content.bot(id) {
+      pendingSelection = id
+      actions.actions.openBot(bot.bot)
+    } else if let (row, workspace) = content.row(id) {
+      pendingSelection = id
+      actions.actions.open(row, workspace.workspace)
+    } else if let workspace = content.workspace(id) {
+      pendingSelection = id
+      actions.actions.openWorkspace(workspace)
+    } else {
+      return
+    }
+    actions.actions.didSelectInSplit()
   }
 }

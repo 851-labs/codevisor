@@ -51,6 +51,8 @@ struct HomeSidebarListEntry: Identifiable {
     workspace.nestedRows.map { Self(row: .tab($0, owner: workspace), depth: depth, parentID: workspace.id) }
   }
 
+  var isTopLevelWorkspace: Bool { parentID == nil && !isTab }
+
   private var isTab: Bool {
     if case .tab = row { return true }
     return false

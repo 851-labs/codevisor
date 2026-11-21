@@ -109,6 +109,7 @@ private struct SidebarRowFoldModifier: ViewModifier {
       .opacity(isLeaving ? 0 : 1)
       .allowsHitTesting(!isLeaving)
       .accessibilityHidden(isLeaving)
+      .environment(\.isSidebarRowLeaving, isLeaving)
       .zIndex(visibility.isFolding ? 0 : 1)
       .layoutValue(key: SidebarRowVisibilityKey.self, value: visibility)
   }

@@ -15,7 +15,7 @@ extension AppEnvironment {
     navigationStore.workspaceEntries.entry(bot.workspaceId).workspace
   }
 
-  public func moveBot(_ bot: Bot, to placement: BotSidebarPlacement, among conversations: [BotConversation]) {
+  public func moveBot(_ bot: Bot, to placement: SidebarPlacement, among conversations: [BotConversation]) {
     let membership = botSections.membership
     guard placement != BotSidebarOrder.placement(of: bot.id, in: conversations, membership: membership) else {
       return
