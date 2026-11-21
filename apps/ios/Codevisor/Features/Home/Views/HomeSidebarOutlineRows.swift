@@ -36,7 +36,8 @@ struct HomeSidebarOutlineRows<BotRow: View>: View {
     case let .header(header, _):
       HomeSidebarHeaderRow(
         header: header, isExpanded: expansion(header), isConversation: isConversation,
-        sectionMenu: sectionMenu(for: header), onNewChat: newChat(for: header))
+        isFirst: outline.items.first?.id == item.id, sectionMenu: sectionMenu(for: header),
+        onNewChat: newChat(for: header))
     case let .bot(bot, _):
       botRow(bot)
     case let .entry(entry, _):

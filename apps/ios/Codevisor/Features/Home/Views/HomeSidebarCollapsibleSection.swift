@@ -11,7 +11,7 @@ struct HomeSidebarCollapsibleSection<Content: View>: View {
       Section {
         if isExpanded { content }
       } header: {
-        HomeSidebarSectionToggle(title: title, isExpanded: $isExpanded)
+        HomeSidebarSectionToggle(title: title, isExpanded: $isExpanded, chevron: .conversation)
       }
     } else {
       Section(title, isExpanded: $isExpanded) { content }
