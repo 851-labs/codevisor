@@ -117,11 +117,21 @@ export const makeSharedAccountImports = (deps: SharedAccountImportsDeps) => {
     await localRows.applySelection(bundle.harnessId)
   }
 
-  const adoptClaudeMachineLogin = async (env: NodeJS.ProcessEnv, nativeId: string | undefined) => {
+  const syncClaudeMachineLogin = async (env: NodeJS.ProcessEnv, nativeId: string | undefined) => {
     const machine = deps.claudeMachine(env)
     const login = await machine.read()
     if (login?.authMethod === "apiKey") await importBundle(login, nativeId)
-    else await takeover.run(machine, login, nativeId)
+    else await takeover.tidy(machine, login)
+  }
+
+  const claudeMachine = async () => deps.claudeMachine(await deps.environment())
+
+  const claudeCodeTransferOffer = async () => takeover.transferOffer(await claudeMachine())
+
+  const transferClaudeCodeLogin = async (): Promise<boolean> => {
+    const rows = await run(db.listHarnessAccounts("claude-code"))
+    const nativeId = rows.find((row) => row.profileKind === "default")?.id
+    return takeover.transfer(await claudeMachine(), nativeId)
   }
 
   const saveApiKey = async (id: string, key: string): Promise<void> => {
@@ -136,7 +146,16 @@ export const makeSharedAccountImports = (deps: SharedAccountImportsDeps) => {
     await localRows.applySelection(row.harnessId)
   }
 
-  return { importBundle, nativeBundle, captureLogin, adoptClaudeMachineLogin, saveApiKey, takeover }
+  return {
+    importBundle,
+    nativeBundle,
+    captureLogin,
+    syncClaudeMachineLogin,
+    claudeCodeTransferOffer,
+    transferClaudeCodeLogin,
+    saveApiKey,
+    takeover
+  }
 }
 
 export type SharedAccountImports = ReturnType<typeof makeSharedAccountImports>

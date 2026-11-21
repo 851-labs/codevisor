@@ -295,7 +295,7 @@ it("builds isolated Claude contexts and signs the account out everywhere", async
   m.claude.signIn(login)
   const errors = vi.spyOn(console, "error").mockImplementation(() => {})
   onTestFinished(() => errors.mockRestore())
-  await m.shared.reconcile()
+  await m.shared.transferClaudeCodeLogin()
   const id = sharedOAuthIdentity(login)
   const context = await m.shared.context(id)
   expect(context?.env).toMatchObject({
@@ -405,6 +405,7 @@ it("handles anonymous account labels, explicit native directories, and missing w
   })
   const errors = vi.spyOn(console, "error").mockImplementation(() => {})
   onTestFinished(() => errors.mockRestore())
+  await m.shared.transferClaudeCodeLogin()
   expect((await m.shared.accounts("claude-code", true))?.[0]?.label).toBe("Claude")
 })
 

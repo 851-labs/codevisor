@@ -14,7 +14,9 @@ final class FirstLaunchFakeWork: FirstLaunchSetupWork {
 
   let serverStartRequested = TestSignal()
   let projectsRequested = TestSignal()
+  let modelsRequested = TestSignal()
   private var reportWaitingOnUser: (@MainActor (Bool) -> Void)?
+  private var reportModelsWaitingOnUser: (@MainActor (Bool) -> Void)?
 
   func startServer(waitingOnUser: @escaping @MainActor (Bool) -> Void) async -> FirstLaunchServerStart {
     reportWaitingOnUser = waitingOnUser
@@ -22,8 +24,12 @@ final class FirstLaunchFakeWork: FirstLaunchSetupWork {
     return (try? await server.value()) ?? .failed
   }
 
-  func waitOnUser() {
-    reportWaitingOnUser?(true)
+  func waitOnUser(_ isWaiting: Bool = true) {
+    reportWaitingOnUser?(isWaiting)
+  }
+
+  func modelsWaitOnUser(_ isWaiting: Bool) {
+    reportModelsWaitingOnUser?(isWaiting)
   }
 
   func isNewInstall() async throws -> Bool {
@@ -53,7 +59,9 @@ final class FirstLaunchFakeWork: FirstLaunchSetupWork {
     projectProgress(names)
   }
 
-  func loadModels() async throws {
+  func loadModels(waitingOnUser: @escaping @MainActor (Bool) -> Void) async throws {
+    reportModelsWaitingOnUser = waitingOnUser
+    modelsRequested.signal()
     try await models.value()
   }
 }

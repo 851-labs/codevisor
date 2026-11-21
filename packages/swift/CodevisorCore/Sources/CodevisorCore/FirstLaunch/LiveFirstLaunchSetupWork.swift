@@ -6,12 +6,18 @@ import Observation
 public final class LiveFirstLaunchSetupWork: FirstLaunchSetupWork {
   private let environment: AppEnvironment
   private let folders: FirstRunFolderAccess
+  private let claudeCodeLogin: FirstRunClaudeCodeLogin
   private let machineId = CodevisorMachine.local.id
   private lazy var feed = FirstRunStatusFeed(client: environment.machines.client(for: machineId))
 
-  public init(environment: AppEnvironment, folders: FirstRunFolderAccess) {
+  public init(
+    environment: AppEnvironment,
+    folders: FirstRunFolderAccess,
+    claudeCodeLogin: FirstRunClaudeCodeLogin
+  ) {
     self.environment = environment
     self.folders = folders
+    self.claudeCodeLogin = claudeCodeLogin
   }
 
   public func startServer(waitingOnUser: @escaping @MainActor (Bool) -> Void) async -> FirstLaunchServerStart {
@@ -88,9 +94,32 @@ public final class LiveFirstLaunchSetupWork: FirstLaunchSetupWork {
     status.projects?.map(\.name) ?? []
   }
 
-  public func loadModels() async throws {
+  public func loadModels(waitingOnUser: @escaping @MainActor (Bool) -> Void) async throws {
+    try await settleClaudeCodeLogin(waitingOnUser: waitingOnUser)
     let preparation = Task { try await self.prepareModels() }
     try await preparation.value
+  }
+
+  private func settleClaudeCodeLogin(waitingOnUser: @MainActor (Bool) -> Void) async throws {
+    defer { waitingOnUser(false) }
+    let known = try await feed.status { $0.harnesses != nil || $0.isFinal }
+    guard known.claudeCodeLogin != nil else { return }
+
+    waitingOnUser(true)
+    _ = try await feed.status { $0.claudeCodeLogin == nil }
+    while claudeCodeLogin.isWaitingOnUser, !Task.isCancelled {
+      await claudeCodeLoginChange()
+    }
+  }
+
+  private func claudeCodeLoginChange() async {
+    await withCheckedContinuation { continuation in
+      withObservationTracking {
+        _ = claudeCodeLogin.isWaitingOnUser
+      } onChange: {
+        continuation.resume()
+      }
+    }
   }
 
   private func prepareModels() async throws {

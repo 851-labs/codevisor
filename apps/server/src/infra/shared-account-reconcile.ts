@@ -34,7 +34,7 @@ export const makeSharedAccountReconcile = (deps: SharedAccountReconcileDeps) => 
         try {
           const rows = await run(db.listHarnessAccounts(harnessId))
           const nativeId = rows.find((row) => row.profileKind === "default")?.id
-          if (harnessId === "claude-code") await imports.adoptClaudeMachineLogin(env, nativeId)
+          if (harnessId === "claude-code") await imports.syncClaudeMachineLogin(env, nativeId)
           else {
             const bundle = await deps.discover(harnessId, codexHome(env), true, false, env)
             if (bundle) await imports.importBundle(bundle, nativeId)

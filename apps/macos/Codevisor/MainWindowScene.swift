@@ -17,7 +17,9 @@ struct MainWindowScene: Scene {
             RootView()
               .modifier(DebugMetricsOverlayModifier())
           }
-          .modifier(FolderAccessGate(folders: runtime.firstRunFolders))
+          .modifier(
+            FirstRunQuestionsGate(folders: runtime.firstRunFolders, claudeCodeLogin: runtime.firstRunClaudeCodeLogin)
+          )
           .modifier(GitRequirement(machines: environment.machines))
           .appWindowRoot(environment)
           .handlesExternalEvents(preferring: ["*"], allowing: ["*"])

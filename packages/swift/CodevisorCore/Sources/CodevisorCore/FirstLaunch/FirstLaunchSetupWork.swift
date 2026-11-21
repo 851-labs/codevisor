@@ -7,5 +7,5 @@ public protocol FirstLaunchSetupWork: AnyObject, Sendable {
     progress: @escaping @MainActor ([String]) -> Void,
     waitingOnUser: @escaping @MainActor (Bool) -> Void
   ) async throws -> [String]
-  func loadModels() async throws
+  func loadModels(waitingOnUser: @escaping @MainActor (Bool) -> Void) async throws
 }

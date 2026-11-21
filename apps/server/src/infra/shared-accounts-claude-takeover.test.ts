@@ -37,15 +37,35 @@ const quietLogs = () => {
 const vaultLogin = async (m: Awaited<ReturnType<ReturnType<typeof fleet>["machine"]>>) =>
   m.vault.token((await m.shared.store.get(accountId))!.credential!)
 
-describe("taking over this machine's Claude Code login", () => {
-  it("moves the login into Codevisor's vault and signs Claude Code out when Codevisor has none", async () => {
+describe("transferring this machine's Claude Code login", () => {
+  it("never signs Claude Code out on its own, on any machine", async () => {
+    startClock()
+    quietLogs()
+    const f = fleet()
+    const a = await f.machine("a")
+    const b = await f.machine("b")
+    a.claude.signIn({ ...machineLogin("first-refresh"), expiresAt: 200_000 })
+    await a.shared.transferClaudeCodeLogin()
+    vi.setSystemTime(300_000)
+    f.rotate.mockRejectedValue(new OAuthRefreshRejected(400, "invalid_grant"))
+    a.claude.signIn(machineLogin("signed-in-again"))
+    b.claude.signIn(machineLogin("b-refresh"))
+
+    await a.shared.reconcile()
+    await f.sync(a, b)
+
+    expect(a.claude.login()?.refreshToken).toBe("signed-in-again")
+    expect(b.claude.login()?.refreshToken).toBe("b-refresh")
+    expect(b.claude.signOut).not.toHaveBeenCalled()
+  })
+
+  it("moves the login into Codevisor's vault and signs Claude Code out when asked", async () => {
     startClock()
     const logs = quietLogs()
     const m = await fleet().machine("a")
     m.claude.signIn(machineLogin())
 
-    await m.shared.reconcile()
-    await m.shared.reconcile()
+    expect(await m.shared.transferClaudeCodeLogin()).toBe(true)
 
     expect(m.claude.login()).toBeUndefined()
     expect(m.claude.signOut).toHaveBeenCalledOnce()
@@ -72,7 +92,7 @@ describe("taking over this machine's Claude Code login", () => {
     })
     const m = await fleet().machine("a")
     m.claude.signIn(machineLogin())
-    await m.shared.reconcile()
+    await m.shared.transferClaudeCodeLogin()
 
     const notice = await m.shared.notice("claude-code")
     await m.shared.reconcile()
@@ -99,7 +119,7 @@ describe("taking over this machine's Claude Code login", () => {
     await m.shared.store.save(sharedAccountFor(borrowed, credential, undefined, "a"))
     m.claude.signIn(machineLogin())
 
-    await m.shared.reconcile()
+    await m.shared.transferClaudeCodeLogin()
 
     expect(m.claude.login()).toBeUndefined()
     expect(await vaultLogin(m)).toMatchObject({
@@ -119,7 +139,7 @@ describe("taking over this machine's Claude Code login", () => {
     )
     m.claude.signIn(machineLogin())
 
-    await m.shared.reconcile()
+    await m.shared.transferClaudeCodeLogin()
     unsubscribe()
 
     expect(announced).toEqual([["claude-code", await m.shared.notice("claude-code"), undefined]])
@@ -127,77 +147,69 @@ describe("taking over this machine's Claude Code login", () => {
 
   it("replaces a synced Codevisor credential that can no longer refresh", async () => {
     startClock()
-    quietLogs()
+    const logs = quietLogs()
     const f = fleet()
     const m = await f.machine("a")
     m.claude.signIn({ ...machineLogin("first-refresh"), expiresAt: 200_000 })
-    await m.shared.reconcile()
+    await m.shared.transferClaudeCodeLogin()
     const dead = (await m.shared.store.get(accountId))!.credential!
     vi.setSystemTime(300_000)
     f.rotate.mockRejectedValue(new OAuthRefreshRejected(400, "invalid_grant"))
+    vi.spyOn(m.vault, "revoke").mockRejectedValueOnce(new Error("offline"))
     m.claude.signIn(machineLogin("second-refresh", "second-access"))
 
-    await m.shared.reconcile()
+    await m.shared.transferClaudeCodeLogin()
 
     expect(m.claude.login()).toBeUndefined()
     expect((await m.shared.context(accountId))?.env?.CLAUDE_CODE_OAUTH_TOKEN).toBe("second-access")
-    expect(f.records.get(dead.id)?.revoked).toBe(true)
+    expect(f.records.get(dead.id)?.revoked).not.toBe(true)
+    expect(logs).toHaveBeenCalledWith(expect.stringMatching(/could not retire the replaced login/))
+  })
+
+  it("offers the transfer only while Codevisor has no working Claude login", async () => {
+    startClock()
+    quietLogs()
+    const m = await fleet().machine("a")
+    const codex = { ...native("bob"), ownership: "managed" as const, refreshToken: "codex-refresh" }
+    const credential = await m.vault.create(codex)
+    await m.shared.store.save(sharedAccountFor(codex, credential, undefined, "a"))
+    await m.shared.create("claude-code")
+    expect(await m.shared.claudeCodeTransferOffer()).toBeUndefined()
+
+    m.claude.signIn(machineLogin())
+    expect(await m.shared.claudeCodeTransferOffer()).toEqual({ email: "alice@example.test" })
+
+    await m.shared.transferClaudeCodeLogin()
+    m.claude.signIn(machineLogin("signed-in-again"))
+    expect(await m.shared.claudeCodeTransferOffer()).toBeUndefined()
   })
 
   it.each(["offline", "busy"] as const)(
-    "waits when it cannot tell whether Codevisor's credential still works (%s)",
+    "does not offer the transfer when it cannot tell whether Codevisor's credential works (%s)",
     async (reason) => {
       startClock()
       quietLogs()
       const m = await fleet().machine("a")
       m.claude.signIn(machineLogin("first-refresh"))
-      await m.shared.reconcile()
+      await m.shared.transferClaudeCodeLogin()
       vi.spyOn(m.vault, "token").mockRejectedValue(new SharedCredentialError(reason))
       m.claude.signIn(machineLogin("signed-in-again"))
 
-      await m.shared.reconcile()
-
-      expect(m.claude.login()?.refreshToken).toBe("signed-in-again")
+      expect(await m.shared.claudeCodeTransferOffer()).toBeUndefined()
     }
   )
 
-  it("still finishes when the replaced credential cannot be retired", async () => {
+  it("does not offer an Anthropic API key, and imports it without touching Claude Code", async () => {
     startClock()
-    const logs = quietLogs()
-    const f = fleet()
-    const m = await f.machine("a")
-    m.claude.signIn({ ...machineLogin("first-refresh"), expiresAt: 200_000 })
-    await m.shared.reconcile()
-    vi.setSystemTime(300_000)
-    f.rotate.mockRejectedValue(new OAuthRefreshRejected(400, "invalid_grant"))
-    vi.spyOn(m.vault, "revoke").mockRejectedValueOnce(new Error("offline"))
-    m.claude.signIn(machineLogin("second-refresh"))
+    const m = await fleet().machine("a")
+    const key = sharedApiKey("claude-code", "sk-ant-fixture")
+    m.claude.signIn(key)
 
+    expect(await m.shared.claudeCodeTransferOffer()).toBeUndefined()
     await m.shared.reconcile()
 
-    expect(m.claude.login()).toBeUndefined()
-    expect(await m.shared.notice("claude-code")).toBeDefined()
-    expect(logs).toHaveBeenCalledWith(expect.stringMatching(/could not retire the replaced login/))
-  })
-
-  it("keeps a separate Claude Code login while Codevisor's credential works, on every machine", async () => {
-    startClock()
-    quietLogs()
-    const f = fleet()
-    const a = await f.machine("a")
-    const b = await f.machine("b")
-    a.claude.signIn(machineLogin("adopted-refresh"))
-    await a.shared.reconcile()
-    a.claude.signIn(machineLogin("signed-in-again"))
-    b.claude.signIn(machineLogin("b-refresh"))
-
-    await a.shared.reconcile()
-    await f.sync(a, b)
-
-    expect(a.claude.login()?.refreshToken).toBe("signed-in-again")
-    expect(b.claude.login()?.refreshToken).toBe("b-refresh")
-    expect(b.claude.signOut).not.toHaveBeenCalled()
-    expect((await vaultLogin(b)).refreshToken).toBe("adopted-refresh")
+    expect(m.claude.signOut).not.toHaveBeenCalled()
+    expect((await m.shared.accounts("claude-code", true))?.[0]?.authMethod).toBe("apiKey")
   })
 
   it("lets only one machine adopt a login under the shared lease", async () => {
@@ -209,13 +221,34 @@ describe("taking over this machine's Claude Code login", () => {
     a.claude.signIn(machineLogin("a-refresh"))
     b.claude.signIn(machineLogin("b-refresh"))
 
-    await a.shared.reconcile()
-    await b.shared.reconcile()
+    expect(await a.shared.transferClaudeCodeLogin()).toBe(true)
+    expect(await b.shared.transferClaudeCodeLogin()).toBe(false)
 
     expect(a.claude.login()).toBeUndefined()
     expect(b.claude.login()?.refreshToken).toBe("b-refresh")
     expect(await b.shared.store.get(accountId)).toBeUndefined()
     expect(logs).toHaveBeenCalledWith(expect.stringMatching(/another machine adopted first$/))
+  })
+
+  it("reports nothing to transfer once Claude Code is signed out", async () => {
+    const m = await fleet().machine("a")
+
+    expect(await m.shared.transferClaudeCodeLogin()).toBe(false)
+    expect(m.claude.signOut).not.toHaveBeenCalled()
+  })
+
+  it("does not offer back an account that was signed out everywhere", async () => {
+    startClock()
+    quietLogs()
+    const m = await fleet().machine("a")
+    m.claude.signIn(machineLogin("first-refresh"))
+    await m.shared.transferClaudeCodeLogin()
+    await m.shared.logout(accountId)
+    m.claude.signIn(machineLogin("signed-in-again"))
+
+    expect(await m.shared.claudeCodeTransferOffer()).toBeUndefined()
+    await m.shared.reconcile()
+    expect(m.claude.login()?.refreshToken).toBe("signed-in-again")
   })
 
   it("saves the login to the vault before signing Claude Code out", async () => {
@@ -230,7 +263,7 @@ describe("taking over this machine's Claude Code login", () => {
       m.claude.signIn(undefined)
     })
 
-    await m.shared.reconcile()
+    await m.shared.transferClaudeCodeLogin()
 
     expect(heldAtSignOut).toEqual(["machine-refresh"])
   })
@@ -250,7 +283,7 @@ describe("taking over this machine's Claude Code login", () => {
     })
     claude.signIn(machineLogin())
 
-    await m.shared.reconcile()
+    await m.shared.transferClaudeCodeLogin()
 
     expect(await vaultLogin(m)).toMatchObject({
       refreshToken: "refreshed-before-lock",
@@ -259,26 +292,8 @@ describe("taking over this machine's Claude Code login", () => {
     expect(claude.login()).toBeUndefined()
   })
 
-  it("waits while Claude Code holds its refresh lock", async () => {
-    startClock()
-    const logs = quietLogs()
-    const f = fleet()
-    const m = await f.machine("a")
-    m.claude.signIn(machineLogin())
-    m.claude.refreshing(true)
-
-    await m.shared.reconcile()
-
-    expect(m.claude.login()).toEqual(machineLogin())
-    expect(f.records.size).toBe(0)
-    expect(logs).toHaveBeenCalledWith(expect.stringContaining("Claude Code is refreshing"))
-
-    m.claude.refreshing(false)
-    await m.shared.reconcile()
-    expect(m.claude.login()).toBeUndefined()
-  })
-
   it.each<[string, (m: Awaited<ReturnType<ReturnType<typeof fleet>["machine"]>>) => void]>([
+    ["Claude Code is refreshing", (m) => m.claude.refreshing(true)],
     [
       "the vault cannot be reached",
       (m) => vi.spyOn(m.vault, "claim").mockRejectedValueOnce(new Error("offline"))
@@ -292,17 +307,19 @@ describe("taking over this machine's Claude Code login", () => {
       (m) => vi.spyOn(m.vault, "confirm").mockResolvedValueOnce(false)
     ],
     ["Claude Code's refresh lock is lost", (m) => m.claude.loseNextLock()]
-  ])("keeps the machine login when %s, then finishes on the next pass", async (_case, fail) => {
+  ])("keeps the machine login when %s, then finishes on a retry", async (_case, fail) => {
     startClock()
     quietLogs()
-    const m = await fleet().machine("a")
+    const f = fleet()
+    const m = await f.machine("a")
     m.claude.signIn(machineLogin())
     fail(m)
 
-    await m.shared.reconcile()
+    await expect(m.shared.transferClaudeCodeLogin()).rejects.toThrow()
     expect(m.claude.login()).toEqual(machineLogin())
 
-    await m.shared.reconcile()
+    m.claude.refreshing(false)
+    expect(await m.shared.transferClaudeCodeLogin()).toBe(true)
     expect(m.claude.login()).toBeUndefined()
     expect((await vaultLogin(m)).refreshToken).toBe("machine-refresh")
   })
@@ -314,7 +331,7 @@ describe("taking over this machine's Claude Code login", () => {
     m.claude.signIn(machineLogin())
     m.claude.signOut.mockRejectedValueOnce(new Error("Keychain locked"))
 
-    await m.shared.reconcile()
+    await expect(m.shared.transferClaudeCodeLogin()).rejects.toThrow("Keychain locked")
     expect(m.claude.login()).toEqual(machineLogin())
     expect((await vaultLogin(m)).refreshToken).toBe("machine-refresh")
 
@@ -339,53 +356,11 @@ describe("taking over this machine's Claude Code login", () => {
     })
     claude.signIn(machineLogin())
     claude.signOut.mockRejectedValueOnce(new Error("Keychain locked"))
-    await m.shared.reconcile()
+    await expect(m.shared.transferClaudeCodeLogin()).rejects.toThrow()
     refreshBeforeLock = true
 
     await m.shared.reconcile()
 
     expect(claude.login()?.refreshToken).toBe("refreshed-by-claude-code")
-  })
-
-  it("ignores other harnesses and unfinished sign-ins when deciding", async () => {
-    startClock()
-    quietLogs()
-    const m = await fleet().machine("a")
-    const codex = { ...native("bob"), ownership: "managed" as const, refreshToken: "codex-refresh" }
-    const credential = await m.vault.create(codex)
-    await m.shared.store.save(sharedAccountFor(codex, credential, undefined, "a"))
-    await m.shared.create("claude-code")
-    m.claude.signIn(machineLogin())
-
-    await m.shared.reconcile()
-
-    expect(m.claude.login()).toBeUndefined()
-  })
-
-  it("does not bring back an account that was signed out everywhere", async () => {
-    startClock()
-    quietLogs()
-    const m = await fleet().machine("a")
-    m.claude.signIn(machineLogin("first-refresh"))
-    await m.shared.reconcile()
-    await m.shared.logout(accountId)
-    m.claude.signIn(machineLogin("signed-in-again"))
-
-    await m.shared.reconcile()
-
-    expect(await m.shared.store.get(accountId)).toBeUndefined()
-    expect(m.claude.login()?.refreshToken).toBe("signed-in-again")
-  })
-
-  it("imports an Anthropic API key from the environment without touching Claude Code", async () => {
-    startClock()
-    const m = await fleet().machine("a")
-    const key = sharedApiKey("claude-code", "sk-ant-fixture")
-    m.claude.signIn(key)
-
-    await m.shared.reconcile()
-
-    expect(m.claude.signOut).not.toHaveBeenCalled()
-    expect((await m.shared.accounts("claude-code", true))?.[0]?.authMethod).toBe("apiKey")
   })
 })

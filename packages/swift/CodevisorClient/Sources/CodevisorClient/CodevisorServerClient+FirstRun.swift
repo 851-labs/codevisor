@@ -47,6 +47,28 @@ public struct ServerFirstRunFolderAnswer: Codable, Equatable, Sendable {
   }
 }
 
+public struct ServerFirstRunClaudeCodeLogin: Codable, Equatable, Sendable {
+  public var email: String?
+
+  public init(email: String? = nil) {
+    self.email = email
+  }
+}
+
+public struct ServerFirstRunClaudeCodeLoginAnswer: Codable, Equatable, Sendable {
+  public enum Choice: String, Codable, Sendable {
+    case transfer
+    case signIn
+    case notNow
+  }
+
+  public var choice: Choice
+
+  public init(choice: Choice) {
+    self.choice = choice
+  }
+}
+
 public struct ServerFirstRunStatus: Codable, Equatable, Sendable {
   public enum State: String, Codable, Sendable {
     case notApplicable
@@ -62,17 +84,20 @@ public struct ServerFirstRunStatus: Codable, Equatable, Sendable {
   public var harnesses: [ServerFirstRunHarness]?
   public var projects: [ServerFirstRunProject]?
   public var folders: [ServerFirstRunFolder]?
+  public var claudeCodeLogin: ServerFirstRunClaudeCodeLogin?
 
   public init(
     state: State,
     harnesses: [ServerFirstRunHarness]? = nil,
     projects: [ServerFirstRunProject]? = nil,
-    folders: [ServerFirstRunFolder]? = nil
+    folders: [ServerFirstRunFolder]? = nil,
+    claudeCodeLogin: ServerFirstRunClaudeCodeLogin? = nil
   ) {
     self.state = state
     self.harnesses = harnesses
     self.projects = projects
     self.folders = folders
+    self.claudeCodeLogin = claudeCodeLogin
   }
 
   public var isFinal: Bool { state != .running }
@@ -99,6 +124,13 @@ extension CodevisorServerClient {
     return try await send(
       "/v1/first-run/folders/\(folder)", method: "POST", body: ServerFirstRunFolderAnswer(access: access))
   }
+
+  public func answerFirstRunClaudeCodeLogin(
+    _ choice: ServerFirstRunClaudeCodeLoginAnswer.Choice
+  ) async throws -> ServerFirstRunStatus {
+    try await send(
+      "/v1/first-run/claude-code-login", method: "POST", body: ServerFirstRunClaudeCodeLoginAnswer(choice: choice))
+  }
 }
 
 public extension CodevisorServerClienting {
@@ -108,6 +140,12 @@ public extension CodevisorServerClienting {
 
   func answerFirstRunFolder(
     id: String, access: ServerFirstRunFolderAnswer.Access
+  ) async throws -> ServerFirstRunStatus {
+    throw CodevisorServerClientError.invalidResponse
+  }
+
+  func answerFirstRunClaudeCodeLogin(
+    _ choice: ServerFirstRunClaudeCodeLoginAnswer.Choice
   ) async throws -> ServerFirstRunStatus {
     throw CodevisorServerClientError.invalidResponse
   }

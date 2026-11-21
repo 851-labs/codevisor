@@ -25,6 +25,16 @@ export const FirstRunFolderAnswer = Schema.Struct({
 })
 export type FirstRunFolderAnswer = typeof FirstRunFolderAnswer.Type
 
+export const FirstRunClaudeCodeLogin = Schema.Struct({
+  email: Schema.optional(Schema.String)
+})
+export type FirstRunClaudeCodeLogin = typeof FirstRunClaudeCodeLogin.Type
+
+export const FirstRunClaudeCodeLoginAnswer = Schema.Struct({
+  choice: Schema.Literals(["transfer", "signIn", "notNow"])
+})
+export type FirstRunClaudeCodeLoginAnswer = typeof FirstRunClaudeCodeLoginAnswer.Type
+
 export const FirstRunState = Schema.Literals(["notApplicable", "running", "done", "failed"])
 export type FirstRunState = typeof FirstRunState.Type
 
@@ -32,7 +42,8 @@ export const FirstRunStatus = Schema.Struct({
   state: FirstRunState,
   harnesses: Schema.optional(Schema.Array(FirstRunHarness)),
   projects: Schema.optional(Schema.Array(FirstRunProject)),
-  folders: Schema.optional(Schema.Array(FirstRunFolder))
+  folders: Schema.optional(Schema.Array(FirstRunFolder)),
+  claudeCodeLogin: Schema.optional(FirstRunClaudeCodeLogin)
 })
 export type FirstRunStatus = typeof FirstRunStatus.Type
 

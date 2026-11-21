@@ -1,6 +1,7 @@
 import { FIRST_RUN_EVENT_SUBJECT, type FirstRunStatus } from "@codevisor/api"
 import { FIRST_RUN_PROJECTS_PENDING, FIRST_RUN_PROJECTS_SETTING } from "@codevisor/db"
 
+import { readClaudeCodeLoginQuestion } from "./first-run-claude-login.js"
 import { foldersToAsk, readPendingFolders } from "./first-run-folders.js"
 import {
   appendAndPublish,
@@ -14,7 +15,7 @@ export const publishFirstRunStatus = async (
   fanout: EventFanout,
   progress: FirstRunStatus
 ): Promise<void> => {
-  const status = await withFoldersToAsk(services, progress)
+  const status = await withQuestions(services, progress)
   latest.set(services, status)
   await appendAndPublish(services.db, fanout, "firstRun.updated", FIRST_RUN_EVENT_SUBJECT, status)
 }
@@ -32,17 +33,22 @@ export const readFirstRunStatus = async (
   if (published !== undefined) return published
 
   const marker = await run(services.db.getMachineSetting(FIRST_RUN_PROJECTS_SETTING))
-  return withFoldersToAsk(services, statusFromMarker(marker))
+  return withQuestions(services, statusFromMarker(marker))
 }
 
 const latest = new WeakMap<CodevisorServerServices, FirstRunStatus>()
 
-const withFoldersToAsk = async (
+const withQuestions = async (
   services: CodevisorServerServices,
   status: FirstRunStatus
 ): Promise<FirstRunStatus> => {
   const folders = foldersToAsk(await readPendingFolders(services))
-  return folders.length === 0 ? progressOf(status) : { ...progressOf(status), folders }
+  const claudeCodeLogin = await readClaudeCodeLoginQuestion(services)
+  return {
+    ...progressOf(status),
+    ...(folders.length === 0 ? {} : { folders }),
+    ...(claudeCodeLogin === undefined ? {} : { claudeCodeLogin })
+  }
 }
 
 const progressOf = (status: FirstRunStatus): FirstRunStatus => ({

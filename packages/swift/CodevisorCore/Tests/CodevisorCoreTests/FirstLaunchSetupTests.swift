@@ -124,6 +124,32 @@ struct FirstLaunchSetupTests {
     #expect(setup.canGetStarted)
   }
 
+  @Test("Keeps waiting while one sheet is still up after another closes")
+  func waitsForEverySheet() async {
+    let clock = TestClock()
+    let work = newInstall()
+    work.harnesses.resolve([])
+    let setup = FirstLaunchSetup(clock: clock)
+    let running = Task { await setup.run(work) }
+    await work.projectsRequested.wait()
+    await work.modelsRequested.wait()
+    await clock.waitForSleep(.seconds(12))
+    work.modelsWaitOnUser(true)
+    work.waitOnUser()
+    work.waitOnUser(false)
+    clock.advance(by: .seconds(15))
+
+    work.modelsWaitOnUser(false)
+    await clock.waitForSleep(.seconds(12), count: 2)
+    work.projects.resolve([])
+    work.models.resolve(())
+    await awaitObserved { setup.outcomes[.models] == .done && setup.outcomes[.projects] == .done }
+    await clock.waitForSleep(.milliseconds(400))
+    clock.advance(by: .milliseconds(400))
+    await running.value
+    #expect(setup.canGetStarted)
+  }
+
   @Test("Keeps asking through unreadable answers, then hands off after fifteen seconds")
   func keepsAskingThroughErrors() async {
     let clock = TestClock()
