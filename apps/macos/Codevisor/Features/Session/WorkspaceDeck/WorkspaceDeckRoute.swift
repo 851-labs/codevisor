@@ -13,6 +13,12 @@ nonisolated enum WorkspaceDeckRoute: Hashable {
     case .archivedWorkspace, .newChat, .none: return nil
     }
   }
+
+  var serverId: String {
+    switch self {
+    case let .session(serverId, _), let .workspace(serverId, _), let .bot(serverId, _): serverId
+    }
+  }
 }
 
 nonisolated enum WorkspaceDeckSlot: Hashable {

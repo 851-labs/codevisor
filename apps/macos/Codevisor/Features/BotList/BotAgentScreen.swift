@@ -65,14 +65,4 @@ extension AppEnvironment {
     else { return [] }
     return Set(workspace.centerTree.allGroups.map(\.id)).subtracting([conversation])
   }
-
-  func botShowing(_ chat: ChatSession) -> Bot? {
-    var current = chat
-    var seen: Set<UUID> = [chat.id]
-    while let owner = projectList.parent(of: current), seen.insert(owner.id).inserted {
-      if let bot = bots.bot(forSession: owner.id, serverId: owner.serverId) { return bot }
-      current = owner
-    }
-    return nil
-  }
 }

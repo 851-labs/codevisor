@@ -237,7 +237,7 @@ struct RootView: View {
       sessionId: sessionId,
       onFocusedChatChanged: { chatId in
         let chat = environment.projectList.session(chatId, serverId: serverId)
-        if let chat, store.guestHost(of: chat) == nil {
+        if let chat, !store.isHostedElsewhere(chat) {
           self.selection = .session(serverId: serverId, id: chatId)
         } else if let workspaceId = environment.workspaces.workspaceId(forSession: sessionId) {
           self.selection = .workspace(serverId: serverId, id: workspaceId)
@@ -265,7 +265,7 @@ struct RootView: View {
       workspaceId: workspaceId,
       onFocusedChatChanged: { chatId in
         guard let chat = environment.projectList.session(chatId, serverId: serverId),
-          store.guestHost(of: chat) == nil
+          !store.isHostedElsewhere(chat)
         else { return }
         self.selection = .session(serverId: serverId, id: chatId)
       },
