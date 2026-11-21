@@ -3,7 +3,7 @@ import CodevisorUI
 import Foundation
 
 struct HomeSidebarOutline {
-  enum RowID: Hashable {
+  nonisolated enum RowID: Hashable, Sendable {
     case header(String)
     case item(UUID)
   }

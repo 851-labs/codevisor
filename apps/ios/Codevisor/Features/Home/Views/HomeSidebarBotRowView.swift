@@ -10,12 +10,11 @@ struct HomeSidebarBotRowView: View, Equatable {
   let actions: HomeSidebarActionHandler
   var isSelectionRow = false
   var isOpen = false
-  var sections: [CustomSection]?
   var isConversation = false
 
   static func == (lhs: Self, rhs: Self) -> Bool {
     lhs.bot == rhs.bot && lhs.actions === rhs.actions && lhs.isSelectionRow == rhs.isSelectionRow
-      && lhs.isOpen == rhs.isOpen && lhs.sections == rhs.sections && lhs.isConversation == rhs.isConversation
+      && lhs.isOpen == rhs.isOpen && lhs.isConversation == rhs.isConversation
   }
 
   private func onOpen() { actions.actions.openBot(bot.bot) }
@@ -24,9 +23,6 @@ struct HomeSidebarBotRowView: View, Equatable {
   private func onArchive() { actions.actions.archiveBot(bot.bot) }
   private func onUnarchive() { actions.actions.unarchiveBot(bot.bot) }
   private func onDelete() { actions.actions.deleteBot(bot.bot) }
-  private func onSetUnread(_ isUnread: Bool) {
-    actions.actions.setUnread(bot.bot.sessionId, bot.bot.serverId, isUnread)
-  }
 
   private var isArchived: Bool { bot.bot.isArchived }
 
@@ -34,7 +30,6 @@ struct HomeSidebarBotRowView: View, Equatable {
     content
       .opacity(isArchived ? 0.6 : 1)
       .swipeActions(edge: .trailing) { swipeButtons }
-      .contextMenu { menu }
       .accessibilityElement(children: .combine)
       .accessibilityLabel(accessibilityLabel)
       .accessibilityValue(isArchived ? "Archived" : "")
@@ -104,43 +99,6 @@ struct HomeSidebarBotRowView: View, Equatable {
       }
       .tint(.gray)
       .accessibilityLabel("Edit")
-    }
-  }
-
-  @ViewBuilder
-  private var menu: some View {
-    if isArchived {
-      Button(action: onUnarchive) {
-        Label("Unarchive", systemImage: "arrow.uturn.backward")
-      }
-    } else {
-      UnreadMenuItem(isUnread: bot.conversation.isUnread, setUnread: onSetUnread)
-      Divider()
-      Button(action: onEdit) {
-        Label("Edit", systemImage: "pencil")
-      }
-      if bot.canFork {
-        Button(action: onFork) {
-          Label("Fork…", systemImage: "arrow.triangle.branch")
-        }
-      }
-      if let sections {
-        Divider()
-        MoveToSectionMenu(
-          currentSectionID: bot.sectionID, sections: sections,
-          move: { actions.actions.botSections.move(bot.bot.id, $0) },
-          newSection: { actions.actions.botSections.create(bot.bot.id) })
-      }
-    }
-    Divider()
-    if offersArchive {
-      Button(action: onArchive) {
-        Label("Archive", systemImage: "archivebox")
-      }
-    } else {
-      Button(role: .destructive, action: onDelete) {
-        Label("Delete…", systemImage: "trash")
-      }
     }
   }
 

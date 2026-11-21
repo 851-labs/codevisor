@@ -18,11 +18,6 @@ struct HomeSidebarTabRowView: View, Equatable {
   private func onOpen() { actions.actions.open(row, workspace) }
   private func onClose() { actions.actions.close(row, workspace) }
 
-  private var onOpenInNewWindow: (() -> Void)? {
-    guard let open = actions.actions.openInNewWindow else { return nil }
-    return { [row, workspace] in open(row, workspace) }
-  }
-
   var body: some View {
     Group {
       if isSelectionRow {
@@ -38,23 +33,6 @@ struct HomeSidebarTabRowView: View, Equatable {
           Image(systemName: "xmark")
         }
         .accessibilityLabel("Close")
-      }
-    }
-    .contextMenu {
-      if let chatId = row.chatSessionId {
-        UnreadMenuItem(isUnread: row.isUnread) { actions.actions.setUnread(chatId, workspace.serverId, $0) }
-        Divider()
-      }
-      if let onOpenInNewWindow {
-        Button(action: onOpenInNewWindow) {
-          Label("Open in New Window", systemImage: "macwindow.badge.plus")
-        }
-        Divider()
-      }
-      if !row.isMainChat {
-        Button(role: .destructive, action: onClose) {
-          Label("Close Tab", systemImage: "xmark")
-        }
       }
     }
     .accessibilityLabel(accessibilityLabel)

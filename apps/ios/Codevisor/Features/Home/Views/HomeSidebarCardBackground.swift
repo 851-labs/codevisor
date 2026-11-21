@@ -1,33 +1,32 @@
-import SwiftUI
+import UIKit
 
 struct HomeSidebarCardEdges: Equatable {
   let top: Bool
   let bottom: Bool
 }
 
-struct HomeSidebarCardBackground: View {
+enum HomeSidebarCardBackground {
   static let radius: CGFloat = 26
 
-  let edges: HomeSidebarCardEdges
-
-  var body: some View {
-    UnevenRoundedRectangle(
-      topLeadingRadius: edges.top ? Self.radius : 0, bottomLeadingRadius: edges.bottom ? Self.radius : 0,
-      bottomTrailingRadius: edges.bottom ? Self.radius : 0, topTrailingRadius: edges.top ? Self.radius : 0,
-      style: .continuous
-    )
-    .fill(Color(uiColor: .secondarySystemGroupedBackground))
+  static func configuration(edges: HomeSidebarCardEdges, isHighlighted: Bool) -> UIBackgroundConfiguration {
+    var configuration = UIBackgroundConfiguration.clear()
+    configuration.customView = cardView(edges: edges, isHighlighted: isHighlighted)
+    return configuration
   }
-}
 
-struct HomeSidebarCardRow: ViewModifier {
-  let edges: HomeSidebarCardEdges?
+  private static func cardView(edges: HomeSidebarCardEdges, isHighlighted: Bool) -> UIView {
+    let view = UIView()
+    view.backgroundColor = isHighlighted ? .systemGray4 : .secondarySystemGroupedBackground
+    view.layer.cornerRadius = radius
+    view.layer.cornerCurve = .continuous
+    view.layer.maskedCorners = corners(edges)
+    return view
+  }
 
-  func body(content: Content) -> some View {
-    if let edges {
-      content.listRowBackground(HomeSidebarCardBackground(edges: edges))
-    } else {
-      content
-    }
+  private static func corners(_ edges: HomeSidebarCardEdges) -> CACornerMask {
+    var corners: CACornerMask = []
+    if edges.top { corners.formUnion([.layerMinXMinYCorner, .layerMaxXMinYCorner]) }
+    if edges.bottom { corners.formUnion([.layerMinXMaxYCorner, .layerMaxXMaxYCorner]) }
+    return corners
   }
 }
