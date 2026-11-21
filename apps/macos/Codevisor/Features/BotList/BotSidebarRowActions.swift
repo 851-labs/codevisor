@@ -4,9 +4,7 @@ import Foundation
 struct BotSidebarRowActions {
   let select: (Bot) -> Void
   let edit: (Bot) -> Void
-  let canFork: (Bot) -> Bool
   let fork: (Bot) -> Void
-  let canArchive: (Bot) -> Bool
   let archive: (Bot) -> Void
   let unarchive: (Bot) -> Void
   let delete: (Bot) -> Void

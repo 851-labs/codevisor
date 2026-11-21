@@ -8,8 +8,6 @@ struct HomeSidebarBotMenu {
 
   private var isArchived: Bool { bot.bot.isArchived }
 
-  private var offersArchive: Bool { bot.canArchive && !isArchived }
-
   var menu: HomeSidebarMenu {
     var menu = HomeSidebarMenu()
     if isArchived {
@@ -24,9 +22,10 @@ struct HomeSidebarBotMenu {
   }
 
   private var editing: [HomeSidebarMenu.Item] {
-    let edit = HomeSidebarMenu.Item.action("Edit", systemImage: "pencil") { actions.actions.editBot(bot.bot) }
-    guard bot.canFork else { return [edit] }
-    return [edit, .action("Fork…", systemImage: "arrow.triangle.branch") { actions.actions.forkBot(bot.bot) }]
+    [
+      .action("Edit", systemImage: "pencil") { actions.actions.editBot(bot.bot) },
+      .action("Fork…", systemImage: "arrow.triangle.branch") { actions.actions.forkBot(bot.bot) },
+    ]
   }
 
   private var moveToSection: [HomeSidebarMenu.Item] {
@@ -40,7 +39,7 @@ struct HomeSidebarBotMenu {
   }
 
   private var removal: HomeSidebarMenu.Item {
-    guard offersArchive else {
+    if isArchived {
       return .action("Delete…", systemImage: "trash", isDestructive: true) { actions.actions.deleteBot(bot.bot) }
     }
     return .action("Archive", systemImage: "archivebox") { actions.actions.archiveBot(bot.bot) }

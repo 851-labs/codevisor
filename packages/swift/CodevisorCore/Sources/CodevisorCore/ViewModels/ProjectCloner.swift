@@ -7,7 +7,6 @@ struct ProjectCloner {
 
   let clientFor: (String) -> any CodevisorServerClienting
   let machineName: (String) -> String
-  let checksAccess: (String) -> Bool
 
   func clone(
     _ plan: Plan,
@@ -25,7 +24,6 @@ struct ProjectCloner {
   }
 
   func accessFailure(_ plan: Plan) async -> Failure? {
-    guard checksAccess(plan.targetServerId) else { return nil }
     guard let access = try? await clientFor(plan.targetServerId).projectCloneAccess(url: plan.repoUrl), !access.ok
     else { return nil }
 

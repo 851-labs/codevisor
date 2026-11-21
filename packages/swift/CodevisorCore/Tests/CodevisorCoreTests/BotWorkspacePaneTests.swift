@@ -17,28 +17,6 @@ struct BotWorkspacePaneTests {
       centerTabs: [WorkspaceTab(root: .leaf(.centerInitial(sessionId: chat.id)))], isServerSynced: true)
   }
 
-  @Test("A bot's own workspace keeps its split panes on this device: they are never sent and survive a snapshot")
-  func splitPanesStayOnDevice() async throws {
-    let fixture = try await splitBotWorkspace()
-
-    await fixture.store.replace(snapshot(cursor: 2), machineId: "local", requestedAt: Date())
-
-    #expect(fixture.store.pendingIntents.isEmpty)
-    #expect(paneIds(in: fixture) == [chatPaneId, terminal.id])
-    #expect(fixture.workspaces.workspace(id: workspace.id)?.centerTabs.count == 1)
-  }
-
-  @Test("A bot's split panes survive a relaunch whose first snapshot arrives before the bot list")
-  func splitPanesSurviveRelaunch() async throws {
-    let fixture = try await splitBotWorkspace()
-    PersistenceEncoding.drain()
-
-    let relaunched = NavigationFixture(persistence: fixture.persistence)
-    await relaunched.store.replace(snapshot(cursor: 2), machineId: "local", requestedAt: Date())
-
-    #expect(paneIds(in: relaunched) == [chatPaneId, terminal.id])
-  }
-
   @Test("Tabs a bot's workspace had from before become splits after its conversation's; empty New Tabs go")
   func earlierTabsBecomeSplits() async throws {
     var tabbed = workspace
@@ -49,7 +27,7 @@ struct BotWorkspacePaneTests {
     let fixture = NavigationFixture()
     await fixture.install(sessions: [chat], workspaces: [tabbed])
 
-    fixture.store.keepPanesOnDevice(in: [workspace.id])
+    fixture.store.sharePanes(in: [workspace.id])
 
     let folded = try #require(fixture.workspaces.workspace(id: workspace.id))
     #expect(folded.centerTabs.count == 1)
@@ -62,7 +40,7 @@ struct BotWorkspacePaneTests {
   func savedTabBecomesSplit() async throws {
     let fixture = NavigationFixture()
     await fixture.install(sessions: [chat], workspaces: [workspace])
-    fixture.store.keepPanesOnDevice(in: [workspace.id])
+    fixture.store.sharePanes(in: [workspace.id])
 
     var tabbed = try #require(fixture.workspaces.workspace(id: workspace.id))
     _ = tabbed.insertPane(terminal, besidePane: try #require(chatPaneId), destination: .foregroundTab)
@@ -79,7 +57,7 @@ struct BotWorkspacePaneTests {
     tabbed.centerTabs += [WorkspaceTab(root: .leaf(PaneGroupState(panes: [terminal], selectedPaneId: terminal.id)))]
     let fixture = NavigationFixture()
     await fixture.install(sessions: [chat], workspaces: [tabbed])
-    fixture.store.keepPanesOnDevice(in: [workspace.id])
+    fixture.store.sharePanes(in: [workspace.id])
 
     fixture.workspaceSync.closePaneLocally(id: terminal.id, workspaceId: workspace.id, repository: fixture.workspaces)
 
@@ -87,17 +65,7 @@ struct BotWorkspacePaneTests {
     #expect(fixture.store.pendingIntents.map(\.intent) == [.closePane(paneId: terminal.id, workspaceId: workspace.id)])
   }
 
-  @Test("Closing a pane that only this device holds in a bot's workspace sends nothing")
-  func closingADeviceOnlyPaneStaysLocal() async throws {
-    let fixture = try await splitBotWorkspace()
-
-    fixture.workspaceSync.closePaneLocally(id: terminal.id, workspaceId: workspace.id, repository: fixture.workspaces)
-
-    #expect(paneIds(in: fixture) == [chatPaneId])
-    #expect(fixture.store.pendingIntents.isEmpty)
-  }
-
-  @Test("A pane opened beside a bot is sent to a server that takes a bot's panes")
+  @Test("A pane opened beside a bot is sent to its server")
   func openedPaneIsSent() async throws {
     let fixture = try await sharedBotWorkspace()
 
@@ -124,9 +92,9 @@ struct BotWorkspacePaneTests {
     #expect(paneIds(in: fixture) == [chatPaneId])
   }
 
-  @Test("Panes a bot kept on this device are sent once its server takes them, and stay open meanwhile")
+  @Test("Panes an older app kept on this device beside a bot are sent once, and stay open meanwhile")
   func devicePanesAreSentOnce() async throws {
-    let fixture = try await splitBotWorkspace()
+    let fixture = try await botWorkspaceWithDevicePanes()
 
     fixture.store.sharePanes(in: [workspace.id])
 
@@ -167,16 +135,22 @@ struct BotWorkspacePaneTests {
     fixture.workspaceSync.publishPane(pane, workspaceId: workspace.id)
   }
 
-  private func splitBotWorkspace() async throws -> NavigationFixture {
-    let fixture = NavigationFixture()
+  private func botWorkspaceWithDevicePanes() async throws -> NavigationFixture {
+    let persistence = InMemoryStore()
+    try persistence.saveData(devicePanesLayout(), forKey: DeviceLayoutStore.storageKey)
+    let fixture = NavigationFixture(persistence: persistence)
     await fixture.install(sessions: [chat], workspaces: [workspace])
-    fixture.store.keepPanesOnDevice(in: [workspace.id])
 
     var split = try #require(fixture.workspaces.workspace(id: workspace.id))
     _ = split.insertPane(terminal, besidePane: try #require(chatPaneId), destination: .split(.trailing))
     fixture.workspaces.save(split)
     fixture.workspaceSync.publishPane(terminal, workspaceId: workspace.id)
     return fixture
+  }
+
+  private func devicePanesLayout() throws -> Data {
+    let payload: [String: Any] = ["layouts": [], "drafts": [], "localPaneWorkspaceIds": [workspace.id.uuidString]]
+    return try JSONSerialization.data(withJSONObject: payload)
   }
 
   private func snapshot(cursor: Int) -> ServerNavigationSnapshot {

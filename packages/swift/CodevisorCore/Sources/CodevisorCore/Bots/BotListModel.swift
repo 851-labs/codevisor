@@ -43,14 +43,7 @@ public final class BotListModel {
   }
 
   private func placePanes() {
-    var shared = Set<UUID>()
-    var onDevice = Set<UUID>()
-    for bot in bots {
-      guard let status = machines.statusByMachineId[bot.serverId] else { continue }
-      if status.supportsBotPanes { shared.insert(bot.workspaceId) } else { onDevice.insert(bot.workspaceId) }
-    }
-    navigationStore?.sharePanes(in: shared)
-    navigationStore?.keepPanesOnDevice(in: onDevice)
+    navigationStore?.sharePanes(in: Set(bots.map(\.workspaceId)))
   }
 
   private static func saved(in store: (any PersistenceStore)?) -> [String: [ServerBot]] {
@@ -83,26 +76,6 @@ public final class BotListModel {
   public var botMachines: [CodevisorMachine] {
     let ids = Set(machineIdsByServer)
     return machines.allMachines.filter { ids.contains($0.id) }
-  }
-
-  public func supportsProjectChanges(on serverId: String) -> Bool {
-    machines.statusByMachineId[serverId]?.supportsBotProjectChanges == true
-  }
-
-  public func supportsProjectlessBots(on serverId: String) -> Bool {
-    machines.statusByMachineId[serverId]?.supportsProjectlessBots == true
-  }
-
-  public func supportsArchive(on serverId: String) -> Bool {
-    machines.statusByMachineId[serverId]?.supportsBotArchive == true
-  }
-
-  public func supportsFork(on serverId: String) -> Bool {
-    machines.statusByMachineId[serverId]?.supportsBotFork == true
-  }
-
-  public func supportsForkAcrossMachines(on serverId: String) -> Bool {
-    machines.statusByMachineId[serverId]?.supportsBotForkAcrossMachines == true
   }
 
   private var machineIdsByServer: [String] {

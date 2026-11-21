@@ -31,38 +31,24 @@ struct BotEditorModelTests {
     #expect(!editor.canSave)
   }
 
-  @Test("A new bot keeps each chosen project once and drops them when its machine changes")
-  func creatingTracksProjectsPerMachine() async {
-    let environment = AppEnvironment.preview(seedProjects: [], seedSessions: [])
-    let editor = BotEditorModel(target: .create, environment: environment)
-    let project = UUID()
-
-    editor.name = "Helper"
-    await editor.addProject(project)
-    await editor.addProject(project)
-    #expect(editor.projectIds == [project])
-    #expect(!editor.canSave)
-
-    editor.serverId = "another-machine"
-    #expect(editor.projectIds.isEmpty)
-  }
-
   @Test("Add Project lists the composer's git projects not yet on the bot, wherever they live, in one list")
-  func addProjectListsComposerProjects() async {
+  func addProjectListsComposerProjects() throws {
     let shared = checkout("app", on: [CodevisorMachine.local.id, "remote-b"])
     let elsewhere = checkout("api", on: ["remote-b"])
     let plainFolder = checkout("notes", on: ["remote-c"], isGit: false)
     let environment = AppEnvironment.preview(seedProjects: shared + elsewhere + plainFolder, seedSessions: [])
-    let editor = BotEditorModel(target: .create, environment: environment)
-    editor.serverId = CodevisorMachine.local.id
     let composerOrder = environment.projectList.fleetActiveProjectGroupsByWorkspaceRecency([]).map(\.name)
 
-    #expect(editor.addableProjectGroups.map(\.name) == composerOrder.filter { ["app", "api"].contains($0) })
+    let empty = try editor(of: .fixture(), in: environment)
+    #expect(empty.addableProjectGroups.map(\.name) == composerOrder.filter { ["app", "api"].contains($0) })
 
-    let app = editor.addableProjectGroups.first { $0.name == "app" }
-    if let app { await editor.addProject(from: app) }
-    #expect(editor.projectIds == [shared[0].id])
-    #expect(editor.addableProjectGroups.map(\.name) == ["api"])
+    let withApp = try editor(of: .fixture(projectIds: [shared[0].id]), in: environment)
+    #expect(withApp.addableProjectGroups.map(\.name) == ["api"])
+  }
+
+  private func editor(of record: ServerBot, in environment: AppEnvironment) throws -> BotEditorModel {
+    let bot = try #require(Bot(serverId: CodevisorMachine.local.id, record: record))
+    return BotEditorModel(target: .edit(bot), environment: environment)
   }
 
   private func checkout(_ name: String, on serverIds: [String], isGit: Bool = true) -> [Project] {
@@ -82,7 +68,7 @@ struct BotEditorModelTests {
     let fake = SyncFakeServerClient(projects: [], sessions: [])
     fake.botMascotOptionsResult = Self.options
     let creator = BotEditorModel(target: .create, environment: makeEnvironment(fake))
-    let (editor, editedFake) = try await editedBot(features: ["bots-v1"], projectIds: [], mascot: Self.crowned)
+    let (editor, editedFake) = try await editedBot(projectIds: [], mascot: Self.crowned)
     editedFake.botMascotOptionsResult = Self.options
 
     await creator.loadMascotOptions()
@@ -126,12 +112,10 @@ struct BotEditorModelTests {
   }
 
   private func editedBot(
-    features: [String],
     projectIds: [UUID],
     mascot: ServerBotMascot? = nil
   ) async throws -> (BotEditorModel, SyncFakeServerClient) {
     let fake = SyncFakeServerClient(projects: [], sessions: [])
-    fake.configureInfoFeatures(features)
     fake.setBots([.fixture(projectIds: projectIds, mascot: mascot)])
     let environment = makeEnvironment(fake)
     await environment.machines.refreshStatus(for: CodevisorMachine.local.id)
@@ -140,19 +124,16 @@ struct BotEditorModelTests {
     return (BotEditorModel(target: .edit(bot), environment: environment), fake)
   }
 
-  @Test("Editing a bot adds and removes projects on its machine right away but keeps the last one")
+  @Test("Editing a bot adds and removes projects on its machine right away")
   func editingChangesProjectsOnTheMachine() async throws {
     let first = UUID()
     let second = UUID()
-    let (editor, fake) = try await editedBot(features: ["bots-v1", "bot-projects-v1"], projectIds: [first])
-    #expect(!editor.canRemoveProject(first))
+    let (editor, fake) = try await editedBot(projectIds: [first])
 
     await editor.addProject(second)
     #expect(editor.projectIds == [first, second])
     #expect(try await fake.listBots().first?.projects.count == 2)
     await editor.removeProject(first)
-    #expect(editor.projectIds == [second])
-    await editor.removeProject(second)
     #expect(editor.projectIds == [second])
 
     fake.botProjectError = CodevisorServerClientError.invalidResponse
@@ -164,7 +145,7 @@ struct BotEditorModelTests {
 
   @Test("A new project joins the bot when its machine says it is a git repo, before the local list catches up")
   func newProjectsTrustTheMachine() async throws {
-    let (editor, fake) = try await editedBot(features: ["bots-v1", "bot-projects-v1"], projectIds: [UUID()])
+    let (editor, fake) = try await editedBot(projectIds: [UUID()])
     let cloned = localFolder("cloned")
     let plain = localFolder("plain")
     fake.setProjects([serverProject(cloned, isGit: false), serverProject(plain, isGit: false)])
@@ -194,10 +175,9 @@ struct BotEditorModelTests {
       ])
   }
 
-  @Test("A new bot on a machine that allows project-less bots skips projects and saves without one")
-  func projectlessMachinesCreateWithoutProjects() async {
+  @Test("A new bot skips projects and saves without one")
+  func newBotsSaveWithoutProjects() async {
     let fake = SyncFakeServerClient(projects: [], sessions: [])
-    fake.configureInfoFeatures(["bots-v1", "bot-projects-v1", "bot-projectless-v1"])
     fake.capabilitiesHandler = { _ in ServerCapabilities(harnesses: [Self.readyHarness]) }
     let environment = makeEnvironment(fake)
     await environment.machines.refreshStatus(for: CodevisorMachine.local.id)
@@ -212,28 +192,10 @@ struct BotEditorModelTests {
     #expect(editor.canSave)
   }
 
-  @Test("A new bot on an older machine still asks for a project before it can save")
-  func olderMachinesNeedAProjectToCreate() async {
-    let fake = SyncFakeServerClient(projects: [], sessions: [])
-    fake.configureInfoFeatures(["bots-v1", "bot-projects-v1"])
-    fake.capabilitiesHandler = { _ in ServerCapabilities(harnesses: [Self.readyHarness]) }
-    let environment = makeEnvironment(fake)
-    await environment.machines.refreshStatus(for: CodevisorMachine.local.id)
-    let editor = BotEditorModel(target: .create, environment: environment)
-    editor.serverId = CodevisorMachine.local.id
-    editor.name = "Helper"
-
-    await editor.loadModels()
-
-    #expect(editor.showsProjects)
-    #expect(!editor.canSave)
-  }
-
-  @Test("Editing a bot on a machine that allows project-less bots can remove its last project")
-  func projectlessMachinesDropTheLastProject() async throws {
+  @Test("Editing a bot can remove its last project")
+  func editingDropsTheLastProject() async throws {
     let project = UUID()
-    let (editor, fake) = try await editedBot(
-      features: ["bots-v1", "bot-projects-v1", "bot-projectless-v1"], projectIds: [project])
+    let (editor, fake) = try await editedBot(projectIds: [project])
 
     #expect(editor.showsProjects)
     #expect(editor.canRemoveProject(project))
@@ -258,7 +220,6 @@ struct BotEditorModelTests {
   @Test("Forking a bot starts from its mascot, keeps its machine and projects, and sends the model and agent move")
   func forkingSendsModelAndAgentMove() async throws {
     let fake = SyncFakeServerClient(projects: [], sessions: [])
-    fake.configureInfoFeatures(["bots-v1", "bot-fork-v1"])
     fake.capabilitiesHandler = { _ in ServerCapabilities(harnesses: [Self.readyHarness]) }
     fake.setBots([.fixture(name: "Helper", projectIds: [UUID()], mascot: Self.crowned)])
     let sent = LockIsolated<(String, ServerForkBotRequest)?>(nil)
@@ -278,7 +239,8 @@ struct BotEditorModelTests {
     #expect(editor.name == "Helper (fork)")
     #expect(editor.mascot == Self.crowned)
     #expect(!editor.showsProjects)
-    #expect(!editor.canChangeMachine)
+    #expect(editor.canChangeMachine)
+    #expect(editor.serverId == bot.serverId)
     #expect(await editor.save())
     #expect(sent.value?.0 == bot.record.id)
     #expect(sent.value?.1.harnessId == "codex")
@@ -337,7 +299,6 @@ struct BotEditorModelTests {
 
   private func forkingMachine(projects: [ServerProject] = []) -> SyncFakeServerClient {
     let fake = SyncFakeServerClient(projects: projects, sessions: [])
-    fake.configureInfoFeatures(["bots-v1", "bot-fork-v1", "bot-fork-machines-v1", "project-clone-access-v1"])
     fake.capabilitiesHandler = { _ in ServerCapabilities(harnesses: [Self.readyHarness]) }
     return fake
   }
@@ -352,17 +313,5 @@ struct BotEditorModelTests {
           createdAt: "2026-11-13T12:00:00.000Z", isGitRepository: true)
       ],
       repoUrl: "https://github.com/acme/widget.git")
-  }
-
-  @Test("A machine without project changes keeps an existing bot's projects as they are")
-  func olderMachinesKeepProjects() async throws {
-    let project = UUID()
-    let (editor, fake) = try await editedBot(features: ["bots-v1"], projectIds: [project])
-
-    await editor.addProject(UUID())
-
-    #expect(!editor.canChangeProjects)
-    #expect(editor.projectIds == [project])
-    #expect(try await fake.listBots().first?.projects.count == 1)
   }
 }

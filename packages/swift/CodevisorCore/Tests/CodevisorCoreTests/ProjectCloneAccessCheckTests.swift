@@ -48,21 +48,6 @@ struct ProjectCloneAccessCheckTests {
     #expect(setup.phase == .idle)
   }
 
-  @Test("Sends without asking a machine that can't check access")
-  func sendsWithoutCheckingOlderMachines() async throws {
-    let client = AccessServerClient(answers: [])
-    let (setup, plan) = try makeSetup(client: client, checksAccess: false)
-    let access = ProjectCloneAccessCheck()
-    var resubmits = 0
-
-    access.check(plan, failuresOn: setup) { resubmits += 1 }
-    await awaitObserved { !access.isChecking }
-
-    #expect(resubmits == 1)
-    #expect(access.isVerified(plan))
-    #expect(client.checkedUrls.isEmpty)
-  }
-
   @Test("Asks for a GitHub sign-in on the host before a sandbox send when the host has none to copy")
   func signsInOnTheHostBeforeASandbox() async throws {
     let client = AccessServerClient(
@@ -115,14 +100,11 @@ struct ProjectCloneAccessCheckTests {
       targetMachineName: "Studio", sandboxName: "Linux Container")
   }
 
-  private func makeSetup(
-    client: AccessServerClient, checksAccess: Bool = true
-  ) throws -> (ProjectMachineSetup, ProjectMachineSetup.Plan) {
+  private func makeSetup(client: AccessServerClient) throws -> (ProjectMachineSetup, ProjectMachineSetup.Plan) {
     let setup = ProjectMachineSetup(
       clientFor: { _ in client },
       machineName: { $0 == "mac" ? "MacBook" : "Studio" },
       isReachable: { _ in false },
-      checksCloneAccess: { _ in checksAccess },
       adopt: { _ in }
     )
     let onMac = Project(
