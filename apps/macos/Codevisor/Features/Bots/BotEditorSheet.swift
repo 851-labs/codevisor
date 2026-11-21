@@ -158,15 +158,7 @@ struct BotEditorSheet: View {
   @ViewBuilder
   private var projectsSection: some View {
     Section {
-      if let bot = editor.editedBot, !editor.canChangeProjects {
-        ForEach(bot.record.projects, id: \.projectId) { project in
-          LabeledContent {
-            Text(project.branch).foregroundStyle(.secondary)
-          } label: {
-            Label(project.folderName, systemImage: EntitySystemSymbol.project)
-          }
-        }
-      } else if editor.eligibleProjects.isEmpty {
+      if editor.eligibleProjects.isEmpty {
         Text("This machine has no git projects yet.")
           .foregroundStyle(.secondary)
       } else if editor.selectedProjects.isEmpty {
@@ -180,11 +172,9 @@ struct BotEditorSheet: View {
     } header: {
       Text("Projects")
     } footer: {
-      if editor.canChangeProjects {
-        HStack {
-          Spacer()
-          addProjectMenu
-        }
+      HStack {
+        Spacer()
+        addProjectMenu
       }
     }
   }
@@ -220,11 +210,7 @@ struct BotEditorSheet: View {
           Task { await editor.removeProject(project.id) }
         }
         .controlSize(.small)
-        .disabled(!editor.canRemoveProject(project.id))
-        .help(
-          editor.canRemoveProject(project.id)
-            ? "Remove \(project.name) from this bot" : "A bot needs at least one project"
-        )
+        .help("Remove \(project.name) from this bot")
         .accessibilityLabel("Remove \(project.name)")
       }
     }

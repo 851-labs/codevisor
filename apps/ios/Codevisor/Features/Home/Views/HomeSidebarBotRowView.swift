@@ -73,8 +73,6 @@ struct HomeSidebarBotRowView: View, Equatable {
     }
   }
 
-  private var offersArchive: Bool { bot.canArchive && !isArchived }
-
   @ViewBuilder
   private var swipeButtons: some View {
     if isArchived {
@@ -85,15 +83,11 @@ struct HomeSidebarBotRowView: View, Equatable {
       .accessibilityLabel("Unarchive")
       deleteSwipe
     } else {
-      if offersArchive {
-        Button(action: onArchive) {
-          Image(systemName: "archivebox")
-        }
-        .tint(.indigo)
-        .accessibilityLabel("Archive")
-      } else {
-        deleteSwipe
+      Button(action: onArchive) {
+        Image(systemName: "archivebox")
       }
+      .tint(.indigo)
+      .accessibilityLabel("Archive")
       Button(action: onEdit) {
         Image(systemName: "pencil")
       }
@@ -108,14 +102,12 @@ struct HomeSidebarBotRowView: View, Equatable {
       Button("Unarchive", action: onUnarchive)
     } else {
       Button("Edit", action: onEdit)
-      if bot.canFork {
-        Button("Fork", action: onFork)
-      }
+      Button("Fork", action: onFork)
     }
-    if offersArchive {
-      Button("Archive", action: onArchive)
-    } else {
+    if isArchived {
       Button("Delete", action: onDelete)
+    } else {
+      Button("Archive", action: onArchive)
     }
   }
 

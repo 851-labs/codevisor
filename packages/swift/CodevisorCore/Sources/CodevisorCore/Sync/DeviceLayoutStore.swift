@@ -142,17 +142,6 @@ public final class DeviceLayoutStore: @unchecked Sendable {
     if changed { persist() }
   }
 
-  func keepPanesOnDevice(in workspaceIds: Set<UUID>) -> Bool {
-    let changed = lock.withLock {
-      let current = payload.localPaneWorkspaceIds ?? []
-      guard !workspaceIds.isSubset(of: current) else { return false }
-      payload.localPaneWorkspaceIds = current.union(workspaceIds)
-      return true
-    }
-    if changed { persist() }
-    return changed
-  }
-
   func sharePanes(in workspaceIds: Set<UUID>) -> Bool {
     let changed = lock.withLock {
       let shared = payload.sharedPaneBotWorkspaceIds ?? []

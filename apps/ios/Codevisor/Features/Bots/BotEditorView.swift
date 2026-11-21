@@ -12,25 +12,21 @@ struct BotEditorView: View {
   @Environment(\.dismiss) private var dismiss
   @Environment(AppEnvironment.self) private var environment
   @State private var editor: BotEditorModel
-  @State private var confirmsDelete = false
   @State private var showingNewProject = false
   @State private var editsMascot = false
   @FocusState private var isNameFocused: Bool
   @ScaledMetric(relativeTo: .largeTitle) private var iconSize: CGFloat = 88
   let onCreated: (Bot) -> Void
   let onArchive: (Bot) -> Void
-  let onDelete: (Bot) -> Void
 
   init(
     target: BotEditorTarget,
     environment: AppEnvironment,
     onCreated: @escaping (Bot) -> Void,
-    onArchive: @escaping (Bot) -> Void,
-    onDelete: @escaping (Bot) -> Void
+    onArchive: @escaping (Bot) -> Void
   ) {
     self.onCreated = onCreated
     self.onArchive = onArchive
-    self.onDelete = onDelete
     _editor = State(initialValue: BotEditorModel(target: target, environment: environment))
   }
 
@@ -48,11 +44,7 @@ struct BotEditorView: View {
         }
         if let bot = editor.editedBot {
           editedBotModelSection(bot)
-          if environment.bots.supportsArchive(on: bot.serverId) {
-            archiveSection(bot)
-          } else {
-            deleteSection(bot)
-          }
+          archiveSection(bot)
         } else {
           modelSection
         }
@@ -120,23 +112,6 @@ struct BotEditorView: View {
     }
   }
 
-  private func deleteSection(_ bot: Bot) -> some View {
-    Section {
-      Button("Delete Bot", role: .destructive) { confirmsDelete = true }
-        .frame(maxWidth: .infinity)
-        .confirmationDialog(
-          "Delete \(bot.name)?", isPresented: $confirmsDelete, titleVisibility: .visible
-        ) {
-          Button("Delete Bot", role: .destructive) {
-            dismiss()
-            onDelete(bot)
-          }
-        } message: {
-          Text(Bot.deletionMessage)
-        }
-    }
-  }
-
   private var identitySection: some View {
     Section {
       VStack(spacing: 16) {
@@ -187,46 +162,31 @@ struct BotEditorView: View {
     }
   }
 
-  @ViewBuilder
   private var projectsSection: some View {
-    if let bot = editor.editedBot, !editor.canChangeProjects {
-      Section("Projects") {
-        ForEach(bot.record.projects, id: \.projectId) { project in
-          LabeledContent {
-            Text(project.branch)
-              .foregroundStyle(.secondary)
-              .lineLimit(1)
-          } label: {
-            projectLabel(project.folderName)
+    Section("Projects") {
+      ForEach(editor.selectedProjects) { project in
+        LabeledContent {
+          if editor.changingProjectIds.contains(project.id) {
+            ProgressView()
+          }
+        } label: {
+          projectLabel(project.name)
+        }
+        .deleteDisabled(!editor.canRemoveProject(project.id))
+      }
+      .onDelete { offsets in
+        let projects = offsets.map { editor.selectedProjects[$0] }
+        Task {
+          for project in projects {
+            await editor.removeProject(project.id)
           }
         }
       }
-    } else {
-      Section("Projects") {
-        ForEach(editor.selectedProjects) { project in
-          LabeledContent {
-            if editor.changingProjectIds.contains(project.id) {
-              ProgressView()
-            }
-          } label: {
-            projectLabel(project.name)
-          }
-          .deleteDisabled(!editor.canRemoveProject(project.id))
-        }
-        .onDelete { offsets in
-          let projects = offsets.map { editor.selectedProjects[$0] }
-          Task {
-            for project in projects {
-              await editor.removeProject(project.id)
-            }
-          }
-        }
-        if editor.eligibleProjects.isEmpty {
-          Text("This machine has no git projects yet.")
-            .foregroundStyle(.secondary)
-        }
-        addProjectMenu
+      if editor.eligibleProjects.isEmpty {
+        Text("This machine has no git projects yet.")
+          .foregroundStyle(.secondary)
       }
+      addProjectMenu
     }
   }
 

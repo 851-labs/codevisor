@@ -56,12 +56,6 @@ public final class NavigationStore {
     layouts.keepsOnDevice(pane, in: workspaceId)
   }
 
-  public func keepPanesOnDevice(in workspaceIds: Set<UUID>) {
-    guard layouts.keepPanesOnDevice(in: workspaceIds) else { return }
-    projector.reset()
-    rebuild()
-  }
-
   public func sharePanes(in workspaceIds: Set<UUID>) {
     let held = workspaceIds.intersection(layouts.localPaneWorkspaceIds)
     let unsent = held.compactMap { repository?.workspace(id: $0) }

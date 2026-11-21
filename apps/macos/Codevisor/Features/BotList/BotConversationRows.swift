@@ -59,30 +59,24 @@ struct BotConversationRows: View {
           Label("Edit", systemImage: "pencil")
             .labelStyle(.titleAndIcon)
         }
-        if actions.canFork(bot) {
-          Button {
-            actions.fork(bot)
-          } label: {
-            Label("Fork…", systemImage: "arrow.triangle.branch")
-              .labelStyle(.titleAndIcon)
-          }
+        Button {
+          actions.fork(bot)
+        } label: {
+          Label("Fork…", systemImage: "arrow.triangle.branch")
+            .labelStyle(.titleAndIcon)
         }
         Divider()
         MoveToSectionMenu(
           currentSectionID: section, sections: sections, move: { actions.moveBot(bot.id, $0) },
           newSection: { actions.newSection(bot) })
         Divider()
-        if actions.canArchive(bot) {
-          Button {
-            actions.archive(bot)
-          } label: {
-            Label("Archive", systemImage: "archivebox")
-              .labelStyle(.titleAndIcon)
-          }
-          .shortcut(.archiveWorkspace)
-        } else {
-          deleteButton(bot)
+        Button {
+          actions.archive(bot)
+        } label: {
+          Label("Archive", systemImage: "archivebox")
+            .labelStyle(.titleAndIcon)
         }
+        .shortcut(.archiveWorkspace)
       }
       .id(bot.id)
   }

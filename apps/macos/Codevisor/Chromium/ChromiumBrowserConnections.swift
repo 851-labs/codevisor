@@ -38,7 +38,7 @@ final class ChromiumBrowserConnections {
   private func session(
     machineId: String, client: any CodevisorServerClienting
   ) async throws -> ServerBrowserProxySession {
-    let task = sessions[machineId] ?? Task { try await Self.fetchSession(client) }
+    let task = sessions[machineId] ?? Task { try await client.browserProxySession() }
     sessions[machineId] = task
     do {
       return try await task.value
@@ -46,18 +46,5 @@ final class ChromiumBrowserConnections {
       if sessions[machineId] == task { sessions[machineId] = nil }
       throw error
     }
-  }
-
-  private static func fetchSession(_ client: any CodevisorServerClienting) async throws -> ServerBrowserProxySession {
-    async let info = client.info()
-    async let session = client.browserProxySession()
-    guard let features = try await info.features, features.contains("browser-http-proxy-v1"),
-      features.contains("browser-state-v1")
-    else { throw ServerUpdateRequired() }
-    return try await session
-  }
-
-  private struct ServerUpdateRequired: LocalizedError {
-    var errorDescription: String? { "Update the Codevisor server on this machine to use Chromium browser panes." }
   }
 }

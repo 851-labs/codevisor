@@ -113,9 +113,7 @@ struct BotListSidebar: View {
     BotSidebarRowActions(
       select: select,
       edit: { botEditor = .edit($0) },
-      canFork: { environment.bots.supportsFork(on: $0.serverId) },
       fork: { botEditor = .fork($0) },
-      canArchive: { environment.bots.supportsArchive(on: $0.serverId) },
       archive: archive,
       unarchive: { setArchived($0, false) },
       delete: { deletingBot = $0 },
@@ -150,7 +148,7 @@ struct BotListSidebar: View {
   }
 
   private var archivableSelectedBot: Bot? {
-    guard let bot = selectedBot, !bot.isArchived, environment.bots.supportsArchive(on: bot.serverId) else { return nil }
+    guard let bot = selectedBot, !bot.isArchived else { return nil }
     return bot
   }
 

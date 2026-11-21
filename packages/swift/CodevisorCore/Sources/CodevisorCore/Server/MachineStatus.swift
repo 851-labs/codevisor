@@ -32,13 +32,6 @@ public struct MachineStatus: Sendable, Equatable {
   public var supportsComputerUseStreaming: Bool { features.contains("computer-use-stream-v1") }
   public var supportsLivePreview: Bool { features.contains("live-preview-v1") }
   public var supportsSimulator: Bool { features.contains("simulator-v1") }
-  public var supportsBotProjectChanges: Bool { features.contains("bot-projects-v1") }
-  public var supportsBotArchive: Bool { features.contains("bot-archive-v1") }
-  public var supportsBotFork: Bool { features.contains("bot-fork-v1") }
-  public var supportsBotForkAcrossMachines: Bool { features.contains("bot-fork-machines-v1") }
-  public var supportsProjectlessBots: Bool { features.contains("bot-projectless-v1") }
-  public var supportsBotPanes: Bool { features.contains("bot-panes-v1") }
-  public var supportsProjectCloneAccess: Bool { features.contains("project-clone-access-v1") }
 }
 
 public func codevisorMachineIsThisMac(

@@ -8,9 +8,7 @@ public final class BotEditorModel {
   public var name: String
   public var mascot: ServerBotMascot?
   public var movesAgents = true
-  public var serverId: String {
-    didSet { if serverId != oldValue { draftProjectIds = [] } }
-  }
+  public var serverId: String
   public private(set) var models: BotModelSelection?
   public private(set) var mascotOptions: ServerBotMascotOptions?
   public private(set) var isSaving = false
@@ -19,7 +17,6 @@ public final class BotEditorModel {
   public private(set) var errorMessage: String?
   public private(set) var changingProjectIds: Set<UUID> = []
   public let projectSetup: BotProjectSetup
-  private var draftProjectIds: [UUID] = []
   private var addingProjectIds: [UUID] = []
   @ObservationIgnored private let environment: AppEnvironment
   @ObservationIgnored private let botId = UUID()
@@ -70,9 +67,8 @@ public final class BotEditorModel {
 
   public var canChangeMachine: Bool {
     switch target {
-    case .create: true
+    case .create, .fork: true
     case .edit: false
-    case let .fork(bot): environment.bots.supportsForkAcrossMachines(on: bot.serverId)
     }
   }
 
@@ -85,10 +81,7 @@ public final class BotEditorModel {
   }
 
   public var machines: [CodevisorMachine] {
-    guard let forkedBot else { return environment.bots.botMachines }
-    return environment.bots.botMachines.filter {
-      $0.id == forkedBot.serverId || environment.bots.supportsForkAcrossMachines(on: $0.id)
-    }
+    environment.bots.botMachines
   }
 
   public var machineName: String {
@@ -102,31 +95,17 @@ public final class BotEditorModel {
   }
 
   public var projectIds: [UUID] {
-    guard let bot = currentBot else { return draftProjectIds }
+    guard let bot = currentBot else { return [] }
     let saved = bot.record.projects.compactMap { UUID(uuidString: $0.projectId) }
     return saved + addingProjectIds.filter { !saved.contains($0) }
   }
 
-  public var canChangeProjects: Bool {
-    editedBot == nil || environment.bots.supportsProjectChanges(on: serverId)
-  }
-
   public var showsProjects: Bool {
-    guard forkedBot == nil else { return false }
-    return editedBot != nil || needsProject
-  }
-
-  private var needsProject: Bool {
-    !environment.bots.supportsProjectlessBots(on: serverId)
+    editedBot != nil
   }
 
   public func canRemoveProject(_ id: UUID) -> Bool {
-    guard editedBot != nil else { return true }
-    return canChangeProjects && hasProjectToSpare && !changingProjectIds.contains(id)
-  }
-
-  private var hasProjectToSpare: Bool {
-    !needsProject || projectIds.count > 1
+    !changingProjectIds.contains(id)
   }
 
   private var currentBot: Bot? {
@@ -154,20 +133,11 @@ public final class BotEditorModel {
   public var canSave: Bool {
     guard !trimmedName.isEmpty, !isSaving, !didSave else { return false }
     if editedBot != nil { return true }
-    return hasRequiredProject && models?.harnessId != nil && models?.isResolving == false
-  }
-
-  private var hasRequiredProject: Bool {
-    forkedBot != nil || !needsProject || !selectedProjects.isEmpty
+    return models?.harnessId != nil && models?.isResolving == false
   }
 
   public func addProject(_ id: UUID) async {
-    guard !projectIds.contains(id) else { return }
-    guard let bot = currentBot else {
-      draftProjectIds.append(id)
-      return
-    }
-    guard canChangeProjects else { return }
+    guard !projectIds.contains(id), let bot = currentBot else { return }
     addingProjectIds.append(id)
     await changeProject(id) { try await $0.addProject(id, to: bot) }
     addingProjectIds.removeAll { $0 == id }
@@ -205,11 +175,7 @@ public final class BotEditorModel {
   }
 
   public func removeProject(_ id: UUID) async {
-    guard let bot = currentBot else {
-      draftProjectIds.removeAll { $0 == id }
-      return
-    }
-    guard projectIds.contains(id), canRemoveProject(id) else { return }
+    guard let bot = currentBot, projectIds.contains(id), canRemoveProject(id) else { return }
     await changeProject(id) { try await $0.removeProject(id, from: bot) }
   }
 
@@ -311,7 +277,7 @@ public final class BotEditorModel {
         mascot: mascot,
         harnessId: harnessId,
         configSelections: models.configSelections,
-        projectIds: selectedProjects.map { $0.id.uuidString.lowercased() }
+        projectIds: []
       ),
       on: serverId
     )
