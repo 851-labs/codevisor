@@ -20,9 +20,10 @@ struct HomeSidebarHeaderRow: View {
         .foregroundStyle(.secondary)
         .frame(minHeight: Self.height - 2 * Self.verticalInset, maxHeight: .infinity, alignment: .bottom)
         .accessibilityAddTraits(.isHeader)
+        .contentShape([.contextMenuPreview, .dragPreview], previewShape)
         .contextMenu { sectionMenu }
         .listRowInsets(insets)
-        .listRowBackground(Color.clear)
+        .listRowBackground(listBackground)
         .listRowSeparator(.hidden, edges: isConversation ? .bottom : .all)
     }
   }
@@ -35,6 +36,14 @@ struct HomeSidebarHeaderRow: View {
     let horizontal: CGFloat = isConversation ? 16 : 20
     return EdgeInsets(
       top: gap + Self.verticalInset, leading: horizontal, bottom: Self.verticalInset, trailing: horizontal)
+  }
+
+  private var previewShape: HomeSidebarHeaderPreviewShape {
+    HomeSidebarHeaderPreviewShape(horizontal: insets.leading, vertical: Self.verticalInset)
+  }
+
+  private var listBackground: Color {
+    Color(uiColor: isConversation ? .systemBackground : .systemGroupedBackground)
   }
 
   private var title: String {
@@ -59,5 +68,15 @@ struct HomeSidebarHeaderRow: View {
     }
     .buttonStyle(.plain)
     .accessibilityValue(isExpanded ? "Expanded" : "Collapsed")
+  }
+}
+
+nonisolated struct HomeSidebarHeaderPreviewShape: Shape {
+  let horizontal: CGFloat
+  let vertical: CGFloat
+
+  func path(in rect: CGRect) -> Path {
+    let row = rect.insetBy(dx: -horizontal, dy: -vertical)
+    return RoundedRectangle(cornerRadius: row.height / 2, style: .continuous).path(in: row)
   }
 }
