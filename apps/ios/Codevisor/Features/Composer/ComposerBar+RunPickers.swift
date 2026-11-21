@@ -65,8 +65,8 @@ extension ComposerBar {
       selectedProfileId: controller.sandboxTarget?.profileId,
       isCheckingSelection: controller.sandboxTargetAvailability == .checking,
       loadKey: machines.sandboxProfilesLoadKey(composerId: serverId),
-      load: {
-        await catalog.load(composerId: serverId, from: machines.client(for: serverId)) {
+      follow: {
+        await catalog.follow(composerId: serverId, from: machines.client(for: serverId)) {
           machines.sandboxHostConnection(forServerId: $0)
         }
       },
@@ -77,9 +77,11 @@ extension ComposerBar {
 
   private func selectSandbox(_ choice: SandboxProfileChoice) {
     controller.onSandboxReady = { [weak controller] previous, relocated, project in
-      SandboxSessionRelocation.relocate(
+      let carried = SandboxSessionRelocation.relocate(
         previous, to: relocated, project: project,
         projectList: environment.projectList, workspaces: environment.workspaces)
+      ChatControllerCache.shared.follow(
+        carried, to: project, client: environment.machines.client(for: project.serverId))
       guard let controller else { return }
       ChatControllerCache.shared.reregister(controller, from: previous, to: relocated)
     }

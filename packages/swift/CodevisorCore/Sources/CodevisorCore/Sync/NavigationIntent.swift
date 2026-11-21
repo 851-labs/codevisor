@@ -53,6 +53,22 @@ public enum NavigationIntent: Codable, Equatable, Sendable {
     }
   }
 
+  var carriedSession: ChatSession? {
+    switch self {
+    case let .promotePane(_, _, session), let .upsertSession(session, _), let .expectSession(session): session
+    default: nil
+    }
+  }
+
+  func carrying(_ session: ChatSession) -> NavigationIntent {
+    switch self {
+    case let .promotePane(pane, workspaceId, _): .promotePane(pane, workspaceId: workspaceId, session: session)
+    case let .upsertSession(_, workspaceId): .upsertSession(session, workspaceId: workspaceId)
+    case .expectSession: .expectSession(session)
+    default: self
+    }
+  }
+
   var isSentElsewhere: Bool {
     if case .expectSession = self { return true }
     return false

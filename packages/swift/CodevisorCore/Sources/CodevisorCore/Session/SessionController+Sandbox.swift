@@ -12,6 +12,16 @@ private struct SandboxOrigin {
 }
 
 extension SessionController {
+  public var launchingSandbox: SandboxTarget? {
+    hasSentFirst ? sandboxTarget : nil
+  }
+
+  public func followWorkspace(to project: Project, serverClient client: any CodevisorServerClienting) {
+    guard !hasSentFirst else { return }
+    handOff(to: project, serverClient: client)
+    Task { await refreshHarnessCapabilities() }
+  }
+
   private static let agentStallLimit = Duration.seconds(180)
   private static let agentWaitLimit = Duration.seconds(30 * 60)
 

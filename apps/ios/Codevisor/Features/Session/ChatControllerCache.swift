@@ -165,6 +165,17 @@ final class ChatControllerCache {
     bindRetainedSessionState(controller, to: key)
   }
 
+  func follow(
+    _ moves: [SandboxSessionRelocation.Move], to project: Project, client: any CodevisorServerClienting
+  ) {
+    for move in moves {
+      guard let controller = existingController(sessionId: move.previous.id, serverId: move.previous.serverId)
+      else { continue }
+      reregister(controller, from: move.previous, to: move.relocated)
+      controller.followWorkspace(to: project, serverClient: client)
+    }
+  }
+
   func existingController(sessionId: UUID, serverId: String) -> SessionController? {
     slot(Key(serverId: serverId, id: sessionId)).controller
   }
@@ -181,6 +192,10 @@ final class ChatControllerCache {
 
   func isSettingUp(_ session: ChatSession) -> Bool {
     slot(Key(serverId: session.serverId, id: session.id)).controller?.isSettingUp == true
+  }
+
+  func launchingSandbox(_ session: ChatSession) -> SandboxTarget? {
+    slot(Key(serverId: session.serverId, id: session.id)).controller?.launchingSandbox
   }
 
   func reconcileInFlightControllers() async {

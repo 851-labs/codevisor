@@ -62,6 +62,18 @@ extension MachineController {
     navigationStore?.setRestoring(sandboxMachineProfiles.restoringWorkspaces)
   }
 
+  public func place(
+    onServer serverId: String, workspaceId: UUID?, launching target: SandboxTarget?
+  ) -> WorkspacePlace? {
+    if let target { return .sandbox(name: target.profileName) }
+    if cloudMachine(forMachineId: serverId)?.ephemeral == nil,
+      let name = workspaceId.flatMap(sandboxMachineProfiles.sandboxName(forWorkspace:))
+    {
+      return .sandbox(name: name)
+    }
+    return machine(for: serverId).map(WorkspacePlace.machine)
+  }
+
   public func restoringWorkspace(_ id: UUID) -> RestoringWorkspace? {
     sandboxMachineProfiles.restoringWorkspaces[id]
   }

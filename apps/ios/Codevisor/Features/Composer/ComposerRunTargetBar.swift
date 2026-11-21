@@ -102,7 +102,7 @@ struct ComposerRunTargetBar: View {
     .buttonStyle(.plain)
     .padding(.horizontal, 4)
     .accessibilityElement(children: .contain)
-    .task(id: sandboxes.loadKey) { await sandboxes.load() }
+    .task(id: sandboxes.loadKey) { await sandboxes.follow() }
   }
 
   private var locationSymbol: String {

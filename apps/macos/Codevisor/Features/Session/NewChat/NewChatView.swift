@@ -192,7 +192,7 @@ struct NewChatView: View {
     .modifier(initialSandbox)
     .task(id: environment.machines.sandboxProfilesLoadKey(composerId: composerServerId)) {
       let machines = environment.machines
-      await environment.machines.sandboxProfiles.load(
+      await environment.machines.sandboxProfiles.follow(
         composerId: composerServerId, from: machines.client(for: composerServerId)
       ) { machines.sandboxHostConnection(forServerId: $0) }
     }

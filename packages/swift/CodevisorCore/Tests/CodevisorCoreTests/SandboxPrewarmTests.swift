@@ -112,7 +112,7 @@ struct SandboxPrewarmTests {
     let machines = MachineController(
       store: InMemoryStore(), projectList: ProjectListModel.fixture(), clientFactory: { _ in client })
     let controller = makeController(client: client, machines: machines)
-    await machines.sandboxProfiles.load(composerId: "local", from: client) { _ in .unreachable }
+    await machines.sandboxProfiles.settle(composerId: "local", from: client) { _ in .unreachable }
 
     controller.sandboxTarget = .tartVM
 
@@ -129,7 +129,7 @@ struct SandboxPrewarmTests {
     let machines = MachineController(
       store: InMemoryStore(), projectList: ProjectListModel.fixture(), clientFactory: { _ in client })
     let controller = makeController(client: client, machines: machines)
-    await machines.sandboxProfiles.load(composerId: "local", from: client) { _ in .unreachable }
+    await machines.sandboxProfiles.settle(composerId: "local", from: client) { _ in .unreachable }
 
     controller.sandboxTarget = .tartVM
 
@@ -141,7 +141,7 @@ struct SandboxPrewarmTests {
     #expect(controller.sandboxPrewarm == nil)
 
     client.availabilityReason = nil
-    await machines.sandboxProfiles.load(composerId: "local", from: client) { _ in .unreachable }
+    await machines.sandboxProfiles.settle(composerId: "local", from: client) { _ in .unreachable }
     controller.refreshSandboxPrewarm()
 
     #expect(controller.acceptsSends)
@@ -163,7 +163,7 @@ struct SandboxPrewarmTests {
     #expect(pending.map(\.availability) == [.checking])
     #expect(!controller.acceptsSends)
 
-    await machines.sandboxProfiles.load(composerId: "local", from: client) { _ in .unreachable }
+    await machines.sandboxProfiles.settle(composerId: "local", from: client) { _ in .unreachable }
     controller.refreshSandboxPrewarm()
     _ = await client.nextCreate()
     let recheck = [SandboxProfileChoice(target: .tartVM, availability: .checking)]
