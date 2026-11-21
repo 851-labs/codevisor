@@ -14,15 +14,24 @@ struct HomeSidebarOutlineRows<BotRow: View>: View {
   @ViewBuilder let botRow: (HomeSidebarBot) -> BotRow
 
   var body: some View {
-    Section {
-      ForEach(Array(outline.items.enumerated()), id: \.element.id) { index, item in
-        row(item)
-          .modifier(HomeSidebarCardRow(edges: cardEdges(of: item, at: index)))
-          .moveDisabled(!item.isMovable)
+    if isConversation {
+      Section { rows }
+        .listSectionSeparator(.hidden, edges: .top)
+    } else {
+      Section {
+        rows
+      } header: {
+        Color.clear.frame(height: 0)
       }
-      .onMove(perform: move)
     }
-    .listSectionSeparator(.hidden, edges: .top)
+  }
+
+  private var rows: some View {
+    ForEach(Array(outline.items.enumerated()), id: \.element.id) { index, item in
+      row(item)
+        .modifier(HomeSidebarCardRow(edges: cardEdges(of: item, at: index)))
+    }
+    .onMove(perform: move)
   }
 
   private func cardEdges(of item: HomeSidebarOutline.Item, at index: Int) -> HomeSidebarCardEdges? {

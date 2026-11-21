@@ -49,13 +49,6 @@ struct HomeSidebarOutline {
       return true
     }
 
-    var isMovable: Bool {
-      switch row {
-      case .header(.section, _), .bot, .entry: true
-      case .header: false
-      }
-    }
-
     var id: RowID {
       switch row {
       case let .header(header, _): .header(header.id)
