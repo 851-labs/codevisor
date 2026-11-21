@@ -5,8 +5,6 @@ public enum WorkspaceSectionPlacement: Hashable, Sendable {
   case section(UUID)
   case unsectioned
 
-  public static let unsectionedHeadingID = "list"
-
   public init?(_ row: SidebarRow) {
     guard row.parentID == nil, case let .workspace(_, placement) = row.kind else { return nil }
 
@@ -36,13 +34,6 @@ public enum WorkspaceSectionPlacement: Hashable, Sendable {
     switch self {
     case let .section(id): id
     case .unsectioned: nil
-    }
-  }
-
-  public var headingID: String {
-    switch self {
-    case let .section(id): SidebarWorkspaceGroup.customSectionID(id)
-    case .unsectioned: Self.unsectionedHeadingID
     }
   }
 }

@@ -141,32 +141,58 @@ struct BotSidebarRowsTests {
       BotSidebarRows.State(
         conversations: [atlas, scout, ledger, patch], sections: [work, home],
         membership: [scout.id: work.id, ledger.id: work.id], isArchivedExpanded: true))
-    func placement(_ index: Int) -> BotSidebarPlacement {
-      BotSidebarRows.placement(insertingAt: index, excluding: scout.id, in: rows)
+    let region = BotSidebarRows.dropRegion(in: rows)
+    func placement(_ index: Int) -> SidebarPlacement {
+      region.placement(insertingAt: index, excluding: scout.id)
     }
 
     #expect(
-      BotSidebarRows.dropSlots(in: rows) == [
+      region.slots.map(\.row) == [
         .bot(atlas.id), .section(work.id), .bot(scout.id), .bot(ledger.id), .section(home.id),
       ])
-    #expect(placement(0) == BotSidebarPlacement(section: nil, after: nil))
-    #expect(placement(1) == BotSidebarPlacement(section: nil, after: atlas.id))
-    #expect(placement(2) == BotSidebarPlacement(section: work.id, after: nil))
-    #expect(placement(3) == BotSidebarPlacement(section: work.id, after: ledger.id))
-    #expect(placement(4) == BotSidebarPlacement(section: home.id, after: nil))
+    #expect(placement(0) == SidebarPlacement(section: nil, after: nil))
+    #expect(placement(1) == SidebarPlacement(section: nil, after: atlas.id))
+    #expect(placement(2) == SidebarPlacement(section: work.id, after: nil))
+    #expect(placement(3) == SidebarPlacement(section: work.id, after: ledger.id))
+    #expect(placement(4) == SidebarPlacement(section: home.id, after: nil))
   }
 
-  @Test("A list move (destination counted before removal) lands after the bot that ends up above it")
-  func listMovePlacement() {
-    let (atlas, scout, ledger) = (UUID(), UUID(), UUID())
-    let section = UUID()
-    func placement(_ index: Int, to destination: Int) -> BotSidebarPlacement {
-      BotSidebarRows.placement(moving: index, to: destination, among: [atlas, scout, ledger], section: section)
+  @Test("A list drop lands under the rows left above it, and dropping a bot back where it was changes nothing")
+  func listDropPlacement() {
+    let (atlas, scout, ledger) = (conversation("Atlas"), conversation("Scout"), conversation("Ledger"))
+    let (work, home) = (section("Work", at: "4000000000008"), section("Home", at: "8000000000008"))
+    let rows = BotSidebarRows.derive(
+      BotSidebarRows.State(
+        conversations: [atlas, scout, ledger], sections: [work, home],
+        membership: [scout.id: work.id, ledger.id: work.id]))
+    let region = BotSidebarRows.dropRegion(in: rows)
+    func drop(below rows: [BotSidebarRowID]) -> SidebarPlacement? {
+      region.placement(dropping: scout.id, below: rows)
     }
 
-    #expect(placement(2, to: 0) == BotSidebarPlacement(section: section, after: nil))
-    #expect(placement(2, to: 1) == BotSidebarPlacement(section: section, after: atlas))
-    #expect(placement(0, to: 3) == BotSidebarPlacement(section: section, after: ledger))
-    #expect(placement(0, to: 2) == BotSidebarPlacement(section: section, after: scout))
+    #expect(drop(below: []) == SidebarPlacement(section: nil, after: nil))
+    #expect(
+      drop(below: [.bot(atlas.id), .section(work.id), .bot(ledger.id)])
+        == SidebarPlacement(section: work.id, after: ledger.id))
+    #expect(
+      drop(below: [.bot(atlas.id), .section(work.id), .bot(ledger.id), .section(home.id)])
+        == SidebarPlacement(section: home.id, after: nil))
+    #expect(drop(below: [.bot(atlas.id), .section(work.id)]) == nil)
+  }
+
+  @Test("Each section header carries the bots under it, so a section moves as one block")
+  func sectionBlocks() {
+    let (atlas, scout, ledger) = (conversation("Atlas"), conversation("Scout"), conversation("Ledger"))
+    let (work, home) = (section("Work", at: "4000000000008"), section("Home", at: "8000000000008"))
+    let rows = BotSidebarRows.derive(
+      BotSidebarRows.State(
+        conversations: [atlas, scout, ledger], sections: [work, home],
+        membership: [scout.id: work.id, ledger.id: home.id]))
+
+    #expect(
+      BotSidebarRows.sectionBlocks(in: rows).blocks == [
+        SidebarDropBlock(header: .section(work.id), rows: [.bot(scout.id)]),
+        SidebarDropBlock(header: .section(home.id), rows: [.bot(ledger.id)]),
+      ])
   }
 }

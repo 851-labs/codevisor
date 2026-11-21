@@ -1,25 +1,14 @@
 import CodevisorCore
 import SwiftUI
 
-struct HomeSidebarSectionsMenu: View {
+struct HomeSidebarSectionMenu: View {
+  let section: CustomSection
   let sections: [CustomSection]
   let actions: HomeSidebarSectionActions
 
-  var body: some View {
-    Button("New Section…", systemImage: "folder.badge.plus") { actions.create(nil) }
-    if !sections.isEmpty {
-      Menu {
-        ForEach(Array(sections.enumerated()), id: \.element.id) { index, section in
-          Menu(section.name) { sectionActions(section, at: index) }
-        }
-      } label: {
-        Label("Sections", systemImage: "folder")
-      }
-    }
-  }
+  private var index: Int { sections.firstIndex { $0.id == section.id } ?? 0 }
 
-  @ViewBuilder
-  private func sectionActions(_ section: CustomSection, at index: Int) -> some View {
+  var body: some View {
     Button("Rename…", systemImage: "pencil") { actions.rename(section) }
     if index > 0 {
       Button("Move Up", systemImage: "arrow.up") { actions.reorder(section.id, index - 1) }

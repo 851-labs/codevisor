@@ -31,12 +31,9 @@ extension HomeView {
   private var sidebarOptionsMenu: some View {
     if sidebarMode == .bots {
       HomeSidebarOptionsMenu(
-        sections: environment.botSections.sections, actions: sidebarActions.botSections,
-        managesSections: !showsSampleSidebar, showsGrouping: false)
+        actions: sidebarActions.botSections, managesSections: !showsSampleSidebar, showsGrouping: false)
     } else {
-      HomeSidebarOptionsMenu(
-        sections: environment.workspaceSections.sections, actions: sidebarActions.workspaceSections,
-        managesSections: !showsSampleSidebar)
+      HomeSidebarOptionsMenu(actions: sidebarActions.workspaceSections, managesSections: !showsSampleSidebar)
     }
   }
 

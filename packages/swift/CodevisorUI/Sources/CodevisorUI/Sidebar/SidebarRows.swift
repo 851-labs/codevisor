@@ -51,6 +51,18 @@ public struct SidebarRow: Identifiable, Equatable {
     }
   }
 
+  public var placement: Placement? {
+    switch kind {
+    case let .workspace(_, placement), let .tab(_, _, placement): placement
+    case .section, .group, .showMoreArchived: nil
+    }
+  }
+
+  public var groupID: String? {
+    guard case let .group(id, _, _) = kind else { return nil }
+    return id
+  }
+
   public var id: SidebarRowID {
     switch kind {
     case let .section(section, _): .section(section)

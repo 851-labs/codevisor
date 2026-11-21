@@ -15,7 +15,9 @@ struct HomeSidebarActions {
   var workspaceSections = HomeSidebarSectionActions()
   var botSections = HomeSidebarSectionActions()
   var reorder: (UUID, Int, [UUID]) -> Void = { _, _, _ in }
-  var placeBot: (Bot, BotSidebarPlacement) -> Void = { _, _ in }
+  var placeBot: (Bot, SidebarPlacement) -> Void = { _, _ in }
+  var placeWorkspace: (_ id: UUID, SidebarPlacement, _ siblings: [UUID], _ movesSection: Bool) -> Void = { _, _, _, _ in
+  }
   var moveTab: (UUID, UUID?, HomeSidebarWorkspaceRef) -> Void = { _, _, _ in }
   var openInNewWindow: ((HomeSidebarTabRow, HomeSidebarWorkspaceRef) -> Void)?
   var openWorkspaceInNewWindow: ((HomeSidebarWorkspace) -> Void)?
@@ -43,6 +45,13 @@ final class HomeSidebarActionHandler {
 enum HomeSidebarSelection: Equatable {
   case workspace(UUID, paneId: UUID?)
   case bot(UUID)
+
+  var rowID: UUID {
+    switch self {
+    case let .workspace(id, paneId): paneId ?? id
+    case let .bot(id): id
+    }
+  }
 }
 
 struct HomeSidebarList: View {
@@ -196,60 +205,42 @@ struct HomeSidebarList: View {
 
   @ViewBuilder
   private func codeSections(_ content: HomeSidebarContent) -> some View {
-    if !content.pinned.isEmpty {
-      Section("Pinned", isExpanded: animated($pinnedExpanded)) {
-        workspaceRows(content.pinned)
-      }
-    }
-    ForEach(content.sections) { group in
-      Section(group.section.name, isExpanded: groupExpansion(group.collapseID)) {
-        workspaceRows(group.workspaces, sections: content.customSections)
-      }
-    }
-    Section(content.listTitle, isExpanded: animated($listExpanded)) {
-      ForEach(content.groups) { group in
-        if let heading = group.heading {
-          DisclosureGroup(isExpanded: groupExpansion(group.id)) {
-            workspaceRows(group.workspaces, sections: content.customSections)
-          } label: {
-            HomeSidebarGroupLabel(
-              heading: heading,
-              onNewChat: heading.newChatTarget.flatMap { target in
-                target.isBareMachine ? { actions.actions.newChat(target) } : nil
-              }
-            )
-          }
-        } else {
-          workspaceRows(group.workspaces, sections: content.customSections)
-        }
-      }
-      if content.listedWorkspaces.isEmpty {
-        Text("No Workspaces")
-          .foregroundStyle(.tertiary)
-      }
+    outlineRows(
+      .code(content, expansion: outlineExpansion), sections: content.customSections,
+      sectionActions: actions.actions.workspaceSections)
+    if listExpanded && content.listedWorkspaces.isEmpty {
+      Text("No Workspaces")
+        .foregroundStyle(.tertiary)
     }
   }
 
-  @ViewBuilder
   private func chatSections(_ content: HomeSidebarContent) -> some View {
-    if !content.unsectionedBots.isEmpty {
-      Section {
-        ForEach(content.unsectionedBots) { bot in
-          botRow(bot, sections: content.botSections)
-        }
-        .onMove { moveBot($0, to: $1, among: content.unsectionedBots, section: nil) }
-      }
-      .listSectionSeparator(.hidden, edges: .top)
+    outlineRows(
+      .bots(content, expansion: outlineExpansion), sections: content.botSections,
+      sectionActions: actions.actions.botSections)
+  }
+
+  private func outlineRows(
+    _ outline: HomeSidebarOutline, sections: [CustomSection], sectionActions: HomeSidebarSectionActions
+  ) -> some View {
+    HomeSidebarOutlineRows(
+      outline: outline, sections: sections, sectionActions: sectionActions, actions: actions,
+      isSelectable: isSelectable, isConversation: isConversation, selectedID: isSelectable ? selected?.rowID : nil,
+      expansion: expansion
+    ) { bot in
+      botRow(bot, sections: sections)
     }
-    ForEach(content.botSectionGroups) { group in
-      HomeSidebarCollapsibleSection(
-        title: group.section.name, isExpanded: groupExpansion(group.collapseID), isConversation: isConversation
-      ) {
-        ForEach(group.bots) { bot in
-          botRow(bot, sections: content.botSections)
-        }
-        .onMove { moveBot($0, to: $1, among: group.bots, section: group.section.id) }
-      }
+  }
+
+  private var outlineExpansion: HomeSidebarOutline.Expansion {
+    HomeSidebarOutline.Expansion(pinned: pinnedExpanded, list: listExpanded, collapsedIDs: Set(collapsedGroupIDs))
+  }
+
+  private func expansion(_ header: HomeSidebarOutline.Header) -> Binding<Bool> {
+    switch header {
+    case .pinned: animated($pinnedExpanded)
+    case .list: animated($listExpanded)
+    case .section, .group: groupExpansion(header.id)
     }
   }
 
@@ -259,14 +250,6 @@ struct HomeSidebarList: View {
 
   private var botsEmptyState: some View {
     BotsEmptyState(onNewBot: actions.actions.newBot)
-  }
-
-  private func moveBot(_ source: IndexSet, to destination: Int, among bots: [HomeSidebarBot], section: UUID?) {
-    guard let index = source.first else { return }
-
-    let placement = BotSidebarRows.placement(
-      moving: index, to: destination, among: bots.map(\.id), section: section)
-    actions.actions.placeBot(bots[index].bot, placement)
   }
 
   private func botsSection(_ content: HomeSidebarContent) -> some View {
@@ -319,12 +302,6 @@ struct HomeSidebarList: View {
         .foregroundStyle(.secondary)
       }
     }
-  }
-
-  private func workspaceRows(
-    _ workspaces: [HomeSidebarWorkspace], sections: [CustomSection] = []
-  ) -> some View {
-    HomeSidebarWorkspaceRows(workspaces: workspaces, sections: sections, actions: actions, isSelectable: isSelectable)
   }
 
   @ViewBuilder

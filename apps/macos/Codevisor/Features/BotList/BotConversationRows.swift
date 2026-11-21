@@ -1,7 +1,6 @@
 import CodevisorCore
 import CodevisorUI
 import SwiftUI
-import UniformTypeIdentifiers
 
 struct BotConversationRows: View {
   let rows: [BotSidebarRow]
@@ -10,23 +9,18 @@ struct BotConversationRows: View {
   let actions: BotSidebarRowActions
   @Environment(AppEnvironment.self) private var environment
   @Environment(\.accessibilityReduceMotion) private var reduceMotion
-  @State private var reorder = BotRowReorder()
-  @State private var draggedSection: UUID?
-  @State private var sectionDropTarget: UUID?
+  @State private var reorder = SidebarReorder<BotSidebarRowID>()
 
   var body: some View {
     SidebarRowList(rows: rows, id: \.placedID, spacing: 2, animation: Motion.listReflow(reduceMotion: reduceMotion)) {
       row($0)
-        .onGeometryChange(for: CGRect.self) { proxy in
-          proxy.frame(in: .named(BotRowReorder.space))
-        } action: { [id = $0.id] frame in
-          reorder.frames[id] = frame
-        }
     }
     .padding(.horizontal, 8)
     .padding(.bottom, 8)
-    .coordinateSpace(.named(BotRowReorder.space))
-    .overlay(alignment: .topLeading) { BotRowReorderOverlay(reorder: reorder, rows: rows) }
+    .coordinateSpace(SidebarReorderSpace.coordinateSpace)
+    .overlay(alignment: .topLeading) {
+      SidebarReorderOverlay(reorder: reorder) { BotSidebarReorderGhost(lifted: $0, rows: rows) }
+    }
   }
 
   @ViewBuilder
@@ -46,10 +40,14 @@ struct BotConversationRows: View {
   private func botRow(_ conversation: BotConversation, section: UUID?) -> some View {
     let bot = conversation.bot
     return BotConversationRow(conversation: conversation, isSelected: bot.id == selectedBotID)
-      .opacity(reorder.isDragging(bot.id) ? 0.4 : 1)
       .onSidebarRowPress { actions.select(bot) }
       .accessibilityAction(.default) { actions.select(bot) }
-      .simultaneousGesture(reorderGesture(for: bot))
+      .modifier(
+        SidebarReorderable(
+          reorder: reorder, row: .bot(bot.id),
+          lift: { reorder.liftItem(bot.id, row: .bot(bot.id), in: BotSidebarRows.dropRegion(in: rows)) },
+          commit: { commit($0, bot: bot) })
+      )
       .contextMenu {
         if let chat = chat(of: bot) {
           ChatSessionUnreadMenuItem(session: chat)
@@ -125,52 +123,32 @@ struct BotConversationRows: View {
   private func sectionHeader(_ section: CustomSection, isExpanded: Bool) -> some View {
     CustomSectionHeader(
       section: section, isExpanded: isExpanded,
-      isDropTarget: reorder.drag?.target == .section(section.id) || sectionDropTarget == section.id,
-      onToggle: { actions.toggleSection(section.id) }, onRename: { actions.renameSection(section) },
-      onDelete: { actions.deleteSection(section) }
+      onToggle: { if reorder.allowsToggle { actions.toggleSection(section.id) } },
+      actions: CustomSectionActions(
+        sections: sections, section: section, rename: actions.renameSection, delete: actions.deleteSection,
+        move: actions.moveSection)
     )
-    .onDrag {
-      draggedSection = section.id
-      return NSItemProvider(object: section.id.uuidString as NSString)
-    }
-    .onDrop(
-      of: [.plainText],
-      delegate: BotSectionDropDelegate(
-        target: section.id, dragging: $draggedSection, dropTarget: $sectionDropTarget,
-        perform: sectionDropAction(onto: section)))
+    .modifier(SidebarReorderHighlight(reorder: reorder, section: section.id))
+    .modifier(
+      SidebarReorderable(
+        reorder: reorder, row: .section(section.id),
+        lift: { reorder.liftBlock(.section(section.id), in: BotSidebarRows.sectionBlocks(in: rows)) },
+        commit: { commit($0, section: section) }))
   }
 
-  private func sectionDropAction(onto section: CustomSection) -> (() -> Void)? {
-    guard let draggedSection, draggedSection != section.id,
-      let index = sections.firstIndex(where: { $0.id == section.id })
-    else { return nil }
-    return { actions.moveSection(draggedSection, index) }
+  private func commit(_ drop: SidebarReorder<BotSidebarRowID>.Drop, section: CustomSection) {
+    guard case let .block(index) = drop.target else { return }
+    actions.moveSection(section.id, index)
   }
 
-  private func reorderGesture(for bot: Bot) -> some Gesture {
-    DragGesture(minimumDistance: 4, coordinateSpace: .named(BotRowReorder.space))
-      .onChanged { value in
-        if !reorder.isDragging(bot.id) {
-          withAnimation(Motion.quick(reduceMotion: reduceMotion)) { reorder.lift(bot.id) }
-        }
-        reorder.move(bot.id, by: value.translation.height, in: rows)
-      }
-      .onEnded { value in
-        guard reorder.isDragging(bot.id) else { return }
-        reorder.move(bot.id, by: value.translation.height, in: rows)
-        let finished = withAnimation(Motion.quick(reduceMotion: reduceMotion)) { reorder.drop() }
-        if let finished { drop(finished, bot: bot) }
-      }
-  }
+  private func commit(_ drop: SidebarReorder<BotSidebarRowID>.Drop, bot: Bot) {
+    guard case let .item(id, region) = drop.lifted.lift, case let .item(target) = drop.target else { return }
 
-  private func drop(_ drag: BotRowDrag, bot: Bot) {
-    switch drag.target {
-    case let .section(section):
-      actions.moveBot(bot.id, section)
+    switch target {
+    case let .header(section):
+      actions.moveBot(id, section)
     case let .insertion(index):
-      actions.placeBot(bot, BotSidebarRows.placement(insertingAt: index, excluding: bot.id, in: rows))
-    case nil:
-      break
+      actions.placeBot(bot, region.placement(insertingAt: index, excluding: id))
     }
   }
 }

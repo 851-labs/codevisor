@@ -34,10 +34,11 @@ public struct BotSidebarRow: Identifiable, Equatable {
     return conversation.bot
   }
 
-  public var isDropSlot: Bool {
+  public var dropSlot: SidebarDropSlot<BotSidebarRowID>? {
     switch kind {
-    case .bot, .section: true
-    case .archivedSection, .archivedBot: false
+    case let .bot(conversation, section): .item(conversation.id, row: id, section: section)
+    case let .section(section, _): .header(id, section: section.id)
+    case .archivedSection, .archivedBot: nil
     }
   }
 
@@ -83,36 +84,28 @@ public enum BotSidebarRows {
     return active.indices.contains(index - 1) ? active[index - 1] : nil
   }
 
-  public static func dropSlots(in rows: [BotSidebarRow]) -> [BotSidebarRowID] {
-    rows.filter(\.isDropSlot).map(\.id)
+  public static func dropRegion(in rows: [BotSidebarRow]) -> SidebarDropRegion<BotSidebarRowID> {
+    SidebarDropRegion(slots: rows.compactMap(\.dropSlot), movesSections: true)
   }
 
-  public static func placement(
-    insertingAt index: Int, excluding botID: UUID, in rows: [BotSidebarRow]
-  ) -> BotSidebarPlacement {
-    let others = rows.filter { $0.isDropSlot && $0.id != .bot(botID) }
-    guard others.indices.contains(index - 1) else { return BotSidebarPlacement(section: nil, after: nil) }
-
-    switch others[index - 1].kind {
-    case let .section(section, _): return BotSidebarPlacement(section: section.id, after: nil)
-    case let .bot(conversation, section): return BotSidebarPlacement(section: section, after: conversation.id)
-    case .archivedSection, .archivedBot: return BotSidebarPlacement(section: nil, after: nil)
-    }
-  }
-
-  public static func placement(
-    moving index: Int, to destination: Int, among ids: [UUID], section: UUID?
-  ) -> BotSidebarPlacement {
-    let others = ids.enumerated().filter { $0.offset != index }.map(\.element)
-    let slot = destination > index ? destination - 1 : destination
-    guard others.indices.contains(slot - 1) else { return BotSidebarPlacement(section: section, after: nil) }
-
-    return BotSidebarPlacement(section: section, after: others[slot - 1])
+  public static func sectionBlocks(in rows: [BotSidebarRow]) -> SidebarDropBlocks<BotSidebarRowID> {
+    SidebarDropBlocks(
+      rows.compactMap { row in
+        guard case let .section(section, _) = row.kind else { return nil }
+        return SidebarDropBlock(header: row.id, rows: members(of: section.id, in: rows))
+      })
   }
 
   public static func step(from selectedID: UUID?, by offset: Int, in rows: [BotSidebarRow]) -> Bot? {
     let bots = rows.compactMap(\.bot)
     return SidebarStep.target(in: bots, from: bots.firstIndex { $0.id == selectedID }, by: offset)
+  }
+
+  private static func members(of section: UUID, in rows: [BotSidebarRow]) -> [BotSidebarRowID] {
+    rows.compactMap { row in
+      guard case let .bot(_, member) = row.kind, member == section else { return nil }
+      return row.id
+    }
   }
 
   private static func activeRows(_ state: State) -> [BotSidebarRow] {

@@ -33,6 +33,10 @@ public final class CustomSectionStore {
     return membership
   }
 
+  public func section(_ id: UUID) -> CustomSection? {
+    sections.first { $0.id == id }
+  }
+
   @discardableResult
   public func create(name: String) -> CustomSection {
     let id = UUID()

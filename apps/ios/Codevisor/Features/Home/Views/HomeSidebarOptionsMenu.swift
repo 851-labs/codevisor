@@ -3,7 +3,6 @@ import CodevisorUI
 import SwiftUI
 
 struct HomeSidebarOptionsMenu: View {
-  let sections: [CustomSection]
   let actions: HomeSidebarSectionActions
   var managesSections = true
   var showsGrouping = true
@@ -12,7 +11,7 @@ struct HomeSidebarOptionsMenu: View {
   var body: some View {
     Menu {
       if managesSections {
-        HomeSidebarSectionsMenu(sections: sections, actions: actions)
+        Button("New Section…", systemImage: "folder.badge.plus") { actions.create(nil) }
         Divider()
       }
       if showsGrouping {

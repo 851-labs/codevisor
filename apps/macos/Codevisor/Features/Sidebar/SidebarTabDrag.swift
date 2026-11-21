@@ -14,7 +14,7 @@ struct SidebarTabDrag: Equatable {
 
 extension SidebarView {
   func tabReorderGesture(for tabID: UUID, in workspaceID: UUID) -> some Gesture {
-    DragGesture(minimumDistance: 4, coordinateSpace: .named(Self.reorderSpace))
+    DragGesture(minimumDistance: 4, coordinateSpace: SidebarReorderSpace.coordinateSpace)
       .onChanged { value in
         if tabDrag?.tabID != tabID {
           guard let frame = dragGeometry.tabs[tabID], frame != .zero else { return }
@@ -40,11 +40,12 @@ extension SidebarView {
     tabRow(tabID, of: workspaceID, isSelected: isSelected)
       .opacity(tabDrag?.tabID == tabID ? 0.4 : 1)
       .onGeometryChange(for: CGRect.self) { proxy in
-        proxy.frame(in: .named(Self.reorderSpace))
+        proxy.frame(in: SidebarReorderSpace.coordinateSpace)
       } action: { frame in
         dragGeometry.tabs[tabID] = frame
       }
       .onDisappear { dragGeometry.tabs[tabID] = nil }
+      .modifier(SidebarReorderFrame(reorder: reorder, row: .tab(tabID)))
       .simultaneousGesture(tabReorderGesture(for: tabID, in: workspaceID), including: reorders ? .all : .subviews)
       .padding(.leading, Self.groupIndent * CGFloat(depth))
   }
@@ -59,9 +60,7 @@ extension SidebarView {
           .sidebarDragLift()
           .position(x: frame.midX, y: frame.midY)
         if let line = tabInsertionLine(for: tabDrag) {
-          SidebarInsertionLine()
-            .frame(width: line.width, height: SidebarInsertionLine.height)
-            .position(x: line.midX, y: line.minY)
+          SidebarPlacedInsertionLine(frame: line)
         }
       }
       .allowsHitTesting(false)
@@ -99,7 +98,7 @@ extension SidebarView {
     guard let index = drag.targetIndex else { return nil }
 
     let others = tabOrder(in: drag.workspaceID).filter { $0 != drag.tabID }.compactMap { dragGeometry.tabs[$0] }
-    return SidebarInsertionLine.frame(at: index, among: others)
+    return SidebarDropLine.frame(at: index, among: others)
   }
 
   @ViewBuilder

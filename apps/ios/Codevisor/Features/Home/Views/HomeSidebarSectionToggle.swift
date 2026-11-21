@@ -11,10 +11,7 @@ struct HomeSidebarSectionToggle: View {
       HStack {
         Text(title)
         Spacer(minLength: 0)
-        Image(systemName: "chevron.forward")
-          .font(.footnote.weight(.semibold))
-          .foregroundStyle(.secondary)
-          .rotationEffect(.degrees(isExpanded ? 90 : 0))
+        HomeSidebarDisclosureChevron(isExpanded: isExpanded)
       }
       .contentShape(Rectangle())
     }
