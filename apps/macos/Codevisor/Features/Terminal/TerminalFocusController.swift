@@ -169,9 +169,7 @@ final class TerminalFocusController {
       let window = composer.window, window.attachedSheet == nil, NSApp.modalWindow == nil,
       window.makeFirstResponder(composer)
     else { return }
-    let end = NSRange(location: (composer.string as NSString).length, length: 0)
-    composer.setSelectedRange(end)
-    composer.scrollRangeToVisible(end)
+    composer.scrollRangeToVisible(composer.selectedRange())
   }
 
   func typeIntoComposer(_ event: NSEvent, forChat sessionId: UUID) {

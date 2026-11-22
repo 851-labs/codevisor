@@ -25,10 +25,8 @@ extension VirtualizedTranscriptScrollView {
   }
 
   @objc func copy(_: Any?) {
-    guard let text = selectedTranscriptText(), !text.isEmpty else { return }
-    let pasteboard = NSPasteboard.general
-    pasteboard.clearContents()
-    pasteboard.setString(text, forType: .string)
+    guard let selection = selectedTranscriptPrompt(), !selection.text.isEmpty else { return }
+    TranscriptQuotePasteboard.copy(selection)
   }
 
   override func selectAll(_: Any?) {

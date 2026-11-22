@@ -27,9 +27,9 @@ struct ComposerBar: View {
 
   var cardStyle = ComposerCardStyle()
 
-  @State var text = ""
+  @State var draft = TranscriptQuotedPrompt()
   @State var selection = NSRange(location: 0, length: 0)
-  @State var pendingTextEdit: ComposerTextEdit?
+  @State var pendingTextEdit: TranscriptQuotedPromptEdit?
   @State var slashMenuContentHeight: CGFloat = 0
   @State var measuredTextHeight: CGFloat = 0
   @State private var runPickersHeight: CGFloat = 0
@@ -58,6 +58,11 @@ struct ComposerBar: View {
   @State var isClearingGoal = false
   @State var goalClearError: String?
   @Environment(AppEnvironment.self) var environment
+
+  var text: String {
+    get { draft.text }
+    nonmutating set { draft = TranscriptQuotedPrompt(text: newValue, quotes: draft.quotes) }
+  }
 
   var trimmed: String {
     text.trimmingCharacters(in: .whitespacesAndNewlines)
@@ -227,11 +232,12 @@ struct ComposerBar: View {
       }
     }
     .onAppear {
-      text = controller.composerText
+      draft = controller.composerPrompt
       selection = NSRange(
         location: (controller.composerText as NSString).length,
         length: 0
       )
+      insertPendingQuotes()
     }
     #if DEBUG || NAVIGATION_DIAGNOSTICS
       .onReceive(
@@ -241,10 +247,10 @@ struct ComposerBar: View {
         submitComposer()
       }
     #endif
-    .onChange(of: controller.composerText) { _, newValue in
-      guard text != newValue else { return }
-      text = newValue
-      selection = NSRange(location: (newValue as NSString).length, length: 0)
+    .onChange(of: controller.composerPrompt) { _, newValue in
+      guard draft != newValue else { return }
+      draft = newValue
+      selection = NSRange(location: (newValue.text as NSString).length, length: 0)
     }
     .onChange(of: controller.addToChatSignal) { focusEditorAfterAddToChat() }
     .onChange(of: controller.isEditingQueuedPrompt) { _, isEditing in
@@ -267,11 +273,11 @@ struct ComposerBar: View {
       }
     }
     .onDisappear {
-      controller.composerText = text
+      controller.composerPrompt = draft
     }
     .onChange(of: scenePhase) { _, phase in
       guard phase == .background else { return }
-      controller.composerText = text
+      controller.composerPrompt = draft
     }
     .photosPicker(
       isPresented: $isPickingPhotos,

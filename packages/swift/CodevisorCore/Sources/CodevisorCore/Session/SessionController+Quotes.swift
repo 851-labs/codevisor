@@ -1,54 +1,52 @@
 import Foundation
 
 extension SessionController {
-  public func addQuote(_ quote: TranscriptQuote) {
-    guard !quote.text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else { return }
+  public var composerText: String {
+    get { composerPrompt.text }
+    set { composerPrompt = TranscriptQuotedPrompt(text: newValue, quotes: composerPrompt.quotes) }
+  }
 
+  public var composerQuotes: [TranscriptQuote] { composerPrompt.quotes }
+
+  public func addQuote(_ quote: TranscriptQuote) {
     var quote = quote
+    quote.text = quote.text.trimmingCharacters(in: .whitespacesAndNewlines)
+    guard !quote.text.isEmpty else { return }
+
     quote.sentAt = quote.sentAt ?? sentAt(ofMessage: quote.messageID)
     transcriptPickSignal &+= 1
-    composerQuotes.append(quote)
+    pendingQuoteInsertions.append(quote)
     addToChatSignal &+= 1
   }
 
-  public func removeQuote(id: String) {
-    transcriptPickSignal &+= 1
-    composerQuotes.removeAll { $0.id == id }
+  public func finishQuoteInsertions(_ ids: Set<String>) {
+    pendingQuoteInsertions.removeAll { ids.contains($0.id) }
   }
 
   public func revealQuote(_ quote: TranscriptQuote) {
     quoteRevealRequest = TranscriptQuoteRevealRequest(quote: quote)
   }
 
-  public var composerQuoteSendFlightIDs: [String] {
-    composerQuotes.indices.map(TranscriptQuote.sendFlightID(at:))
-  }
-
   public var hasComposerChips: Bool {
-    !composerAttachments.isEmpty || !composerQuotes.isEmpty
+    !composerAttachments.isEmpty
   }
 
   public var hasComposerDraft: Bool {
-    !composerText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
-      || !composerAttachments.isEmpty
-      || !composerQuotes.isEmpty
+    !composerPrompt.isEmpty || !composerAttachments.isEmpty
   }
 
   var composerPromptText: String {
-    let typed = composerText.trimmingCharacters(in: .whitespacesAndNewlines)
-    return TranscriptQuotedPrompt(quotes: composerQuotes, text: typed).promptText
+    composerPrompt.trimmed.promptText
   }
 
   func takeComposerPromptText() -> String {
     let text = composerPromptText
-    composerQuotes = []
+    composerPrompt = TranscriptQuotedPrompt()
     return text
   }
 
   func restoreComposerPrompt(_ promptText: String) {
-    let prompt = TranscriptQuotedPrompt(promptText: promptText)
-    composerQuotes = prompt.quotes
-    composerText = prompt.text
+    composerPrompt = TranscriptQuotedPrompt(promptText: promptText)
   }
 
   private func sentAt(ofMessage messageID: String) -> Date? {

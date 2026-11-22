@@ -103,36 +103,29 @@ public enum TranscriptSelectionText {
     return previous.spacingAfter == 0 ? "\n" : "\n\n"
   }
 
-  public static func text(
+  public static func prompt(
     in span: TranscriptSelectionSpan,
     surfaceLengths: (_ rowIndex: Int) -> [Int],
-    substring: (_ rowIndex: Int, _ surface: Int, _ range: Range<Int>) -> String,
+    substring: (_ rowIndex: Int, _ surface: Int, _ range: Range<Int>) -> TranscriptQuotedPrompt,
     rowSeparator: (_ rowIndex: Int) -> String,
     surfaceSeparator: String = "\n\n"
-  ) -> String {
-    var result = ""
+  ) -> TranscriptQuotedPrompt {
+    var result = TranscriptQuotedPrompt()
     for rowIndex in span.rowRange {
       let ranges = span.surfaceRanges(rowIndex: rowIndex, surfaceLengths: surfaceLengths(rowIndex))
-      var pieces: [String] = []
-      for (surface, range) in ranges.enumerated() {
-        guard let range else { continue }
-        let piece = substring(rowIndex, surface, range)
-        if !piece.isEmpty { pieces.append(piece) }
+      let pieces = ranges.enumerated().compactMap { surface, range in range.map { substring(rowIndex, surface, $0) } }
+        .filter { !$0.text.isEmpty }
+      guard let row = joined(pieces, separator: surfaceSeparator) else { continue }
+      if !result.text.isEmpty {
+        result = result.appending(TranscriptQuotedPrompt(text: rowSeparator(rowIndex)))
       }
-      guard !pieces.isEmpty else { continue }
-      if !result.isEmpty {
-        result += rowSeparator(rowIndex)
-      }
-      result += pieces.joined(separator: surfaceSeparator)
+      result = result.appending(row)
     }
     return result
   }
 
-  public static func substring(of text: String, in range: Range<Int>) -> String {
-    let nsText = text as NSString
-    let lower = min(max(0, range.lowerBound), nsText.length)
-    let upper = min(max(lower, range.upperBound), nsText.length)
-    guard lower < upper else { return "" }
-    return nsText.substring(with: NSRange(location: lower, length: upper - lower))
+  private static func joined(_ pieces: [TranscriptQuotedPrompt], separator: String) -> TranscriptQuotedPrompt? {
+    guard let first = pieces.first else { return nil }
+    return pieces.dropFirst().reduce(first) { $0.appending(TranscriptQuotedPrompt(text: separator)).appending($1) }
   }
 }

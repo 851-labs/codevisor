@@ -1,3 +1,5 @@
+import CodevisorCore
+import CodevisorUI
 import UIKit
 
 final class HeightReportingTextView: UITextView {
@@ -29,6 +31,48 @@ final class HeightReportingTextView: UITextView {
 
   func textDidChangeByUser() {
     revealSentText()
+  }
+
+  func show(_ content: NSAttributedString) {
+    attributedText = content
+    typingAttributes = ComposerTextView.textAttributes
+    revealSentText()
+  }
+
+  override func copy(_ sender: Any?) {
+    guard let selection = selectedQuotedPrompt else { return super.copy(sender) }
+    TranscriptQuotePasteboard.copy(selection)
+  }
+
+  override func cut(_ sender: Any?) {
+    guard let selection = selectedQuotedPrompt else { return super.cut(sender) }
+    TranscriptQuotePasteboard.copy(selection)
+    replaceUndoably(selectedRange, with: NSAttributedString())
+  }
+
+  override func paste(_ sender: Any?) {
+    guard let pasted = TranscriptQuotePasteboard.copiedPrompt() else { return super.paste(sender) }
+    replaceUndoably(selectedRange, with: ComposerTextView.attributedText(pasted))
+  }
+
+  private var selectedQuotedPrompt: TranscriptQuotedPrompt? {
+    let selection = quotedPrompt.subprompt(in: selectedRange)
+    return selection.quotes.isEmpty ? nil : selection
+  }
+
+  func replaceUndoably(_ range: NSRange, with replacement: NSAttributedString) {
+    let location = min(max(0, range.location), textStorage.length)
+    let range = NSRange(location: location, length: min(max(0, range.length), textStorage.length - location))
+    let replaced = textStorage.attributedSubstring(from: range)
+    let inserted = NSRange(location: range.location, length: replacement.length)
+    inputDelegate?.selectionWillChange(self)
+    inputDelegate?.textWillChange(self)
+    textStorage.replaceCharacters(in: range, with: replacement)
+    selectedRange = NSRange(location: NSMaxRange(inserted), length: 0)
+    inputDelegate?.textDidChange(self)
+    inputDelegate?.selectionDidChange(self)
+    undoManager?.registerUndo(withTarget: self) { view in view.replaceUndoably(inserted, with: replaced) }
+    delegate?.textViewDidChange?(self)
   }
 
   func setPromotionResponderHold(_ holds: Bool, releaseAfter delay: TimeInterval? = nil) {
@@ -294,5 +338,11 @@ final class HeightReportingTextView: UITextView {
     guard abs(height - lastReportedHeight) > 0.5 else { return }
     lastReportedHeight = height
     onContentHeightChange?(height)
+  }
+}
+
+extension UITextView {
+  var quotedPrompt: TranscriptQuotedPrompt {
+    TranscriptQuoteBadgeText.prompt(in: attributedText ?? NSAttributedString())
   }
 }

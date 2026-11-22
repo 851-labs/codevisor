@@ -38,16 +38,11 @@ struct UserMessageView: View {
     MessageBubbleView(
       messageID: message.id.uuidString,
       side: .trailing,
-      text: message.text,
+      text: message.quotedPrompt,
       attachments: message.attachments,
-      quotes: message.quotes,
       fill: style.fill
     ) {
-      SelectableTextView(
-        message.text,
-        font: .preferredFont(forTextStyle: .body),
-        foregroundColor: NSColor(style.text)
-      )
+      TranscriptQuotedMessageText(message.quotedPrompt, font: .preferredFont(forTextStyle: .body), color: style.text)
     }
   }
 }
@@ -90,7 +85,8 @@ struct BotMessageView: View {
     insets: (horizontal: CGFloat, vertical: CGFloat), @ViewBuilder content body: @escaping () -> some View
   ) -> some View {
     MessageBubbleView(
-      messageID: message.id, side: .leading, text: content.copyText, attachments: [], insets: insets, content: body)
+      messageID: message.id, side: .leading, text: TranscriptQuotedPrompt(text: content.copyText), attachments: [],
+      insets: insets, content: body)
   }
 
   private var blockMarkdown: some View {
@@ -113,9 +109,8 @@ struct MessageBubbleView<Content: View>: View {
   @Environment(\.dynamicTypeSize) private var dynamicTypeSize
   let messageID: String
   let side: Side
-  let text: String
+  let text: TranscriptQuotedPrompt
   let attachments: [Attachment]
-  var quotes: [TranscriptQuote] = []
   var fill = Color.bubbleBackground
   var insets = TranscriptSendFlightGeometry.bubbleTextInsets
   @ViewBuilder let content: () -> Content
@@ -136,13 +131,10 @@ struct MessageBubbleView<Content: View>: View {
       VStack(
         alignment: alignment, spacing: TranscriptSendFlightGeometry.attachmentSpacing
       ) {
-        if !quotes.isEmpty {
-          TranscriptQuoteChipRow(quotes: quotes)
-        }
         TranscriptInlineFileStack(files: attachments.map(PreviewFile.init(attachment:)), alignment: alignment) {
           AttachmentThumbnailView(file: $0)
         }
-        if !text.isEmpty {
+        if !text.text.isEmpty {
           content()
             .environment(\.streamMarkdownTextLayoutWidth, contentLayoutWidth)
             .padding(.horizontal, insets.horizontal)
@@ -162,8 +154,8 @@ struct MessageBubbleView<Content: View>: View {
     }
     .accessibilityElement(children: .contain)
     .accessibilityActions {
-      if !text.isEmpty {
-        Button("Copy") { PlatformPasteboard.copy(text) }
+      if !text.text.isEmpty {
+        Button("Copy") { TranscriptQuotePasteboard.copy(text) }
       }
     }
   }

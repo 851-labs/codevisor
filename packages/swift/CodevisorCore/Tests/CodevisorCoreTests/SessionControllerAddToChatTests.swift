@@ -41,21 +41,43 @@ struct SessionControllerAddToChatTests {
     }
   }
 
-  @Test("Removing a quote, a blank quote, or an image past the limit leaves focus alone")
+  @Test("A blank quote or an image past the limit leaves focus alone")
   func nothingAddedLeavesFocusAlone() {
     withController { controller in
-      let kept = quote("Kept")
-      controller.addQuote(kept)
       for index in 1...ComposerAttachments.maxAttachments {
         controller.addTranscriptImage(image("Image \(index).png"))
       }
       let requests = controller.addToChatSignal
 
-      controller.removeQuote(id: kept.id)
       controller.addQuote(quote("  \n "))
       controller.addTranscriptImage(image("Over the limit.png"))
 
       #expect(controller.addToChatSignal == requests)
+    }
+  }
+
+  @Test("An added quote waits for the composer, then is sent and saved where it sits")
+  func addedQuoteTravelsInline() {
+    withController { controller in
+      controller.composerText = "compare"
+      controller.addQuote(quote("  Use a mutex.\n"))
+      let pending = controller.pendingQuoteInsertions
+      #expect(pending.map(\.text) == ["Use a mutex."])
+
+      let edit = TranscriptQuotedPromptEdit.insertingQuotes(pending, into: controller.composerPrompt, at: 7)
+      controller.composerPrompt = edit.applied(to: controller.composerPrompt)
+      controller.finishQuoteInsertions(Set(pending.map(\.id)))
+      controller.composerText += "please"
+
+      #expect(controller.pendingQuoteInsertions.isEmpty)
+      #expect(controller.composerPromptText.hasPrefix("compare <codevisor-quote role=\"assistant\""))
+      #expect(controller.composerPromptText.hasSuffix(">Use a mutex.</codevisor-quote> please"))
+
+      let saved = controller.draftSnapshot()
+      controller.composerPrompt = TranscriptQuotedPrompt()
+      controller.restoreDraft(saved)
+      #expect(controller.composerQuotes.map(\.text) == ["Use a mutex."])
+      #expect(controller.composerText == "compare \(TranscriptQuotedPrompt.quoteMarker) please")
     }
   }
 }

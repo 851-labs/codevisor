@@ -110,7 +110,7 @@ extension ComposerBar {
 
   var compactPreviewText: String? {
     let flattened =
-      trimmed
+      draft.trimmed.replacingQuotes { "“\($0.snippet)”" }
       .split(whereSeparator: \.isNewline)
       .map { $0.trimmingCharacters(in: .whitespaces) }
       .filter { !$0.isEmpty }
@@ -119,7 +119,7 @@ extension ComposerBar {
   }
 
   var compactAttachmentCount: some View {
-    let count = controller.composerAttachments.count + controller.composerQuotes.count
+    let count = controller.composerAttachments.count
     return Button(action: focusEditorFromPreview) {
       AttachmentCountBadge(count: count)
         .expandedHitTarget(base: ComposerCardStyle.actionDiameter)
@@ -142,8 +142,20 @@ extension ComposerBar {
   }
 
   func focusEditorAfterAddToChat() {
-    selection = NSRange(location: (text as NSString).length, length: 0)
+    insertPendingQuotes()
     focusEditorFromPreview()
+  }
+
+  func insertPendingQuotes() {
+    let quotes = controller.pendingQuoteInsertions
+    guard !quotes.isEmpty else { return }
+
+    let edit = TranscriptQuotedPromptEdit.insertingQuotes(quotes, into: draft, at: NSMaxRange(selection))
+    pendingTextEdit = edit
+    draft = edit.applied(to: draft)
+    selection = edit.selectionAfter
+    controller.composerPrompt = draft
+    controller.finishQuoteInsertions(Set(quotes.map(\.id)))
   }
 
   func updateEditorFocus(_ isFocused: Bool) {

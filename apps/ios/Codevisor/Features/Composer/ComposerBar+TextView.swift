@@ -4,7 +4,7 @@ import SwiftUI
 extension ComposerBar {
   func composerTextView(topInset: CGFloat, resizesComposer: Bool) -> ComposerTextView {
     var editor = ComposerTextView(
-      text: $text,
+      content: $draft,
       selection: $selection,
       pendingEdit: pendingTextEdit,
       handoffID: textEditorHandoffID,

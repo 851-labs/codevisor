@@ -79,12 +79,12 @@ extension SessionController {
       let text = ComposerPromptHistory.step(
         &cursor,
         fresh: fresh,
-        composerText: composerText,
+        composerText: composerPrompt.promptText,
         hasAttachments: !composerAttachments.isEmpty,
         older: older
       )
     else { return nil }
-    composerText = text
-    return NSRange(location: older ? 0 : (text as NSString).length, length: 0)
+    restoreComposerPrompt(text)
+    return NSRange(location: older ? 0 : (composerText as NSString).length, length: 0)
   }
 }

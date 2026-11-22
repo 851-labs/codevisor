@@ -15,7 +15,7 @@ extension VirtualizedTranscriptScrollView {
     return menu
   }
 
-  private func copyItem(_ title: String, copying text: String) -> NSMenuItem {
+  private func copyItem(_ title: String, copying text: TranscriptQuotedPrompt) -> NSMenuItem {
     let item = NSMenuItem(title: title, action: #selector(copyMessage(_:)), keyEquivalent: "")
     item.target = self
     item.image = NSImage(systemSymbolName: "doc.on.doc", accessibilityDescription: nil)
@@ -24,10 +24,8 @@ extension VirtualizedTranscriptScrollView {
   }
 
   @objc func copyMessage(_ sender: NSMenuItem) {
-    guard let text = sender.representedObject as? String else { return }
-    let pasteboard = NSPasteboard.general
-    pasteboard.clearContents()
-    pasteboard.setString(text, forType: .string)
+    guard let text = sender.representedObject as? TranscriptQuotedPrompt else { return }
+    TranscriptQuotePasteboard.copy(text)
   }
 
   private func messageMenu(atBubbleUnder event: NSEvent) -> NSMenu? {
@@ -42,11 +40,12 @@ extension VirtualizedTranscriptScrollView {
     return nil
   }
 
-  private func message(forRowKey key: String) -> (id: String, text: String)? {
+  private func message(forRowKey key: String) -> (id: String, text: TranscriptQuotedPrompt)? {
     switch rowByKey[key]?.content {
-    case let .message(.user(message), _) where !message.isEvent: (message.id.uuidString, message.text)
-    case let .optimistic(message): (message.id.uuidString, message.text)
-    case let .botMessage(message, content, _) where message.sender != .notice: (message.id, content.copyText)
+    case let .message(.user(message), _) where !message.isEvent: (message.id.uuidString, message.quotedPrompt)
+    case let .optimistic(message): (message.id.uuidString, message.quotedPrompt)
+    case let .botMessage(message, content, _) where message.sender != .notice:
+      (message.id, TranscriptQuotedPrompt(text: content.copyText))
     default: nil
     }
   }

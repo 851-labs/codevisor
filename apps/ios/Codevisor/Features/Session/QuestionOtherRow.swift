@@ -78,7 +78,10 @@ private struct QuestionOtherEditorRow: View {
 
   private var editor: some View {
     ComposerTextView(
-      text: Binding(get: { draft.typedAnswer(for: question) }, set: { draft.setTypedAnswer($0, for: question) }),
+      content: Binding(
+        get: { TranscriptQuotedPrompt(text: draft.typedAnswer(for: question)) },
+        set: { draft.setTypedAnswer($0.text, for: question) }
+      ),
       selection: $selection,
       handoffID: nil,
       handoffRole: .none,

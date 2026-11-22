@@ -10,18 +10,9 @@ struct UserBubbleRow: View {
 
   var body: some View {
     MessageBubbleView(
-      side: .trailing, text: message.text, attachments: message.attachments, quotes: message.quotes, fill: style.fill
+      side: .trailing, text: message.quotedPrompt, attachments: message.attachments, fill: style.fill
     ) {
-      SelectableTextView(
-        attributedText: NSAttributedString(
-          string: message.text,
-          attributes: [
-            .font: BodyTextMetrics.font,
-            .foregroundColor: UIColor(style.text),
-          ]
-        ),
-        fillsWidth: false
-      )
+      TranscriptQuotedMessageText(message.quotedPrompt, font: BodyTextMetrics.font, color: style.text)
     }
   }
 }
@@ -63,7 +54,9 @@ struct BotBubbleRow: View {
   private func bubble(
     insets: (horizontal: CGFloat, vertical: CGFloat), @ViewBuilder content body: @escaping () -> some View
   ) -> some View {
-    MessageBubbleView(side: .leading, text: content.copyText, attachments: [], insets: insets, content: body)
+    MessageBubbleView(
+      side: .leading, text: TranscriptQuotedPrompt(text: content.copyText), attachments: [], insets: insets,
+      content: body)
   }
 
   private var blockMarkdown: some View {
@@ -86,9 +79,8 @@ struct MessageBubbleView<Content: View>: View {
   @Environment(\.dynamicTypeSize) private var dynamicTypeSize
   @State private var selection = TextSelectionSession()
   let side: Side
-  let text: String
+  let text: TranscriptQuotedPrompt
   let attachments: [Attachment]
-  var quotes: [TranscriptQuote] = []
   var fill = Color.bubbleBackground
   var insets = TranscriptSendFlightGeometry.bubbleTextInsets
   @ViewBuilder let content: () -> Content
@@ -105,13 +97,10 @@ struct MessageBubbleView<Content: View>: View {
       VStack(
         alignment: alignment, spacing: TranscriptSendFlightGeometry.attachmentSpacing
       ) {
-        if !quotes.isEmpty {
-          TranscriptQuoteChipRow(quotes: quotes)
-        }
         TranscriptInlineFileStack(files: attachments.map(PreviewFile.init(attachment:)), alignment: alignment) {
           AttachmentThumbnailView(file: $0)
         }
-        if !text.isEmpty {
+        if !text.text.isEmpty {
           content()
             .environment(\.textSelectionSession, selection)
             .environment(\.streamMarkdownTextLayoutWidth, contentLayoutWidth)
@@ -128,7 +117,7 @@ struct MessageBubbleView<Content: View>: View {
             .contextMenu {
               if !selection.isActive {
                 Button("Copy", systemImage: "doc.on.doc") {
-                  PlatformPasteboard.copy(text)
+                  TranscriptQuotePasteboard.copy(text)
                 }
                 Button("Select Text", systemImage: "selection.pin.in.out") {
                   selection.begin()

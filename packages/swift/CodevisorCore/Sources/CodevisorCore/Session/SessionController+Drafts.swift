@@ -6,7 +6,7 @@ extension SessionController {
     ComposerDraftStore.Draft(
       projectId: project.isScratch ? Project.runTargetPlaceholderID : project.id,
       projectServerId: project.serverId,
-      composerText: composerText,
+      composerText: composerPrompt.promptText,
       attachments: composerAttachments.compactMap {
         guard $0.state != .loading, let fileURL = $0.fileURL else { return nil }
         return ComposerDraftStore.DraftAttachment(
@@ -30,7 +30,7 @@ extension SessionController {
 
   public func restoreDraft(_ draft: ComposerDraftStore.Draft) {
     isRestoringDraft = true
-    composerText = draft.composerText
+    restoreComposerPrompt(draft.composerText)
     let restoredAttachments = draft.attachments.map {
       ComposerAttachment(
         id: $0.id,

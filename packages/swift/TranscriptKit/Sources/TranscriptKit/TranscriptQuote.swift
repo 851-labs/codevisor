@@ -36,10 +36,6 @@ public struct TranscriptQuote: Identifiable, Hashable, Sendable {
     Self.messageID(forRowKey: rowKey) == messageID
   }
 
-  public static func sendFlightID(at index: Int) -> String {
-    "quote-\(index)"
-  }
-
   public static func messageID(forRowKey rowKey: String) -> String? {
     if rowKey.hasPrefix(botRowPrefix) { return String(rowKey.dropFirst(botRowPrefix.count)) }
     guard rowKey.hasPrefix(messageRowPrefix) else { return nil }
