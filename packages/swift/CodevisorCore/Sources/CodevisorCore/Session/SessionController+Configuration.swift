@@ -53,6 +53,11 @@ extension SessionController {
     return message
   }
 
+  public var failureBannerMessage: String? {
+    guard case let .failed(message) = status, message != configurationValidationError else { return nil }
+    return message
+  }
+
   func updateConfigurationValidationState() {
     guard hasExistingAgentSession else {
       configurationValidationState = .ready

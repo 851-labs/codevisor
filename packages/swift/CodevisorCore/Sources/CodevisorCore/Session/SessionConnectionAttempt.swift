@@ -12,9 +12,14 @@ final class SessionConnectionAttempt {
   }
 
   private var attempt: Task<Void, Never>?
-  private static let serverWaitFailureThreshold: Duration = .seconds(10)
-  private static let serverWaitRetryInterval: Duration = .milliseconds(500)
+  private static let firstConnectionRetryDelay: Duration = .milliseconds(500)
+  private static let connectionRetryCeiling: Duration = .seconds(2)
+  private let sleep: @MainActor (Duration) async throws -> Void
   var isRunning: Bool { attempt != nil }
+
+  init(sleep: @escaping @MainActor (Duration) async throws -> Void = { try await Task.sleep(for: $0) }) {
+    self.sleep = sleep
+  }
 
   func start(
     harnessName: String,
@@ -28,8 +33,7 @@ final class SessionConnectionAttempt {
         attempt = nil
       }
       onEvent(.starting(harnessName))
-      let clock = ContinuousClock()
-      let start = clock.now
+      var retryDelay = Self.firstConnectionRetryDelay
       while true {
         do {
           try await connect()
@@ -40,16 +44,13 @@ final class SessionConnectionAttempt {
             onEvent(.cancelled)
             return
           }
-          let message = serverErrorMessage(error)
-          let elapsed = clock.now - start
-          guard message == serverUnreachableErrorMessage,
-            elapsed < Self.serverWaitFailureThreshold
-          else {
-            onEvent(.failed(message))
+          guard ServerConnectionLoss.isConnectionLoss(error) else {
+            onEvent(.failed(serverErrorMessage(error)))
             return
           }
           onEvent(.waitingForServer)
-          try? await Task.sleep(for: Self.serverWaitRetryInterval)
+          try? await sleep(retryDelay)
+          retryDelay = min(retryDelay * 2, Self.connectionRetryCeiling)
           guard !Task.isCancelled else {
             onEvent(.cancelled)
             return

@@ -173,7 +173,7 @@ struct NewChatView: View {
       sendLanding.returnSend(session)
     }
     .overlay(alignment: .top) {
-      if let controller, case let .failed(message) = controller.status {
+      if let message = controller?.failureBannerMessage {
         setupFailureBanner(message)
           .frame(maxWidth: 720)
           .padding(.horizontal, 16)
