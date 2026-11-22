@@ -35,6 +35,7 @@ import { agentProviderFactories } from "./agent-providers.js"
 import { FAILED_UPGRADE_GRACE_MS, type BootListener } from "./boot-listener.js"
 import { makeActiveWorkSleepInhibitor } from "./infra/active-work-sleep-inhibitor.js"
 import { canonicalDatabasePaths, resolveServerDataLayout } from "./infra/data-dir.js"
+import { startServerDiagnostics } from "./infra/diagnostics/boot.js"
 import { migrateLegacyLayout, migrateTmpDataDir } from "./infra/legacy-layout.js"
 import { makeLinkPreviewStore } from "./infra/link-previews.js"
 import { migrateLinuxDataLayout } from "./infra/linux-data-migration.js"
@@ -75,6 +76,7 @@ import {
   bundledBuildMetadata,
   resolveServeModes,
   selfUpdateServeArgs,
+  serverWorktreeNameStyle,
   databaseStartupFailure
 } from "./serve-boot.js"
 import { claimServeListener } from "./serve-listener.js"
@@ -115,11 +117,7 @@ export const runServe = (
 
   const program = Effect.gen(function* () {
     const host = args.host ?? "127.0.0.1"
-    const worktreeNameStyle =
-      process.env.CODEVISOR_DEV_INSTANCE_ID !== undefined ||
-      process.env.HERDMAN_DEV_INSTANCE_ID !== undefined
-        ? "development"
-        : "production"
+    const worktreeNameStyle = serverWorktreeNameStyle(process.env)
     const { authMode, directPathMode, resolvedKind } = resolveServeModes(args, host)
     const version = args.version ?? bundledVersion()
     const launchDirectory = process.cwd()
@@ -208,6 +206,7 @@ export const runServe = (
         Effect.sync(() => reportUpgrade(databaseStartupFailure(cause.message)))
       )
     )
+    startServerDiagnostics({ db, version, env: process.env })
     const attachments = makeAttachmentStore(dirname(databasePath))
     yield* Effect.tryPromise({
       try: () => migrateAttachmentBlobs(db, attachments, reportUpgrade),

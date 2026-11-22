@@ -8,6 +8,7 @@ export interface SafetyNetProcess {
 
 export interface SafetyNetOptions {
   log: (line: string) => void
+  report: (cause: unknown, origin: string) => void
   exit: (code: number) => void
   now: () => number
 }
@@ -21,9 +22,11 @@ export const installProcessSafetyNet = (
 ): void => {
   let recent: number[] = []
   target.on("unhandledRejection", (reason) => {
+    options.report(reason, "unhandledRejection")
     options.log(`[safety-net] unhandled rejection (server kept running): ${describe(reason)}`)
   })
   target.on("uncaughtException", (error, origin) => {
+    options.report(error, origin)
     const now = options.now()
     recent = [...recent.filter((at) => now - at < UNCAUGHT_EXCEPTION_WINDOW_MS), now]
     if (recent.length > UNCAUGHT_EXCEPTION_BUDGET) {

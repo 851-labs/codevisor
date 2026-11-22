@@ -26,6 +26,7 @@ public final class AnalyticsClient: AnalyticsSink {
   private var enabled = false
   private var sdkIsSetUp = false
   private var capturedAppOpen = false
+  private var contextProperties: [String: Any] = [:]
 
   private init() {}
 
@@ -67,6 +68,17 @@ public final class AnalyticsClient: AnalyticsSink {
     }
   }
 
+  public func setContext(_ context: TelemetryContext) {
+    var properties: [String: Any] = [
+      "update_channel": context.updateChannel,
+      "feature_flags": context.enabledFlags,
+    ]
+    for flag in context.enabledFlags {
+      properties[TelemetryContext.flagPrefix + flag] = true
+    }
+    contextProperties = properties
+  }
+
   public func captureAppOpenedOnce() {
     guard enabled, sdkIsSetUp, !capturedAppOpen else { return }
     capturedAppOpen = true
@@ -78,7 +90,7 @@ public final class AnalyticsClient: AnalyticsSink {
     properties: [String: AnalyticsPropertyValue] = [:]
   ) {
     guard enabled, sdkIsSetUp else { return }
-    var payload = commonProperties()
+    var payload = commonProperties().merging(contextProperties) { _, context in context }
     for (key, value) in properties {
       payload[key] = value.postHogValue
     }

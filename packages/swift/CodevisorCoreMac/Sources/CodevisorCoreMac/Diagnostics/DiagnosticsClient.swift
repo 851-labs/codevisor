@@ -58,12 +58,20 @@ public final class DiagnosticsClient: DiagnosticsSink {
     }
   }
 
-  public func capture(_ issue: DiagnosticIssueName) {
+  public func setContext(_ context: TelemetryContext) {
+    consentGate.setContextTags(context.tags)
+  }
+
+  public func capture(_ error: ReportedError) {
     guard consentGate.isEnabled, sdkIsSetUp else { return }
-    SentrySDK.capture(message: issue.rawValue) { scope in
-      scope.setTag(value: issue.rawValue, key: "diagnostic_issue")
-      scope.setTag(value: issue.component, key: "component")
-      scope.setFingerprint([issue.rawValue, "{{ default }}"])
+    SentrySDK.capture(message: error.title) { scope in
+      scope.setTag(value: error.issue, key: "diagnostic_issue")
+      scope.setTag(value: error.component, key: "component")
+      scope.setContext(
+        value: DiagnosticsPrivacyFilter.reportedContext(error),
+        key: DiagnosticsPrivacyFilter.reportedContextKey
+      )
+      scope.setFingerprint([error.issue, error.title])
     }
   }
 
@@ -123,6 +131,7 @@ public final class DiagnosticsClient: DiagnosticsSink {
     options.beforeSendMetric = { _ in nil }
     options.beforeSend = { event in
       guard gate.isEnabled else { return nil }
+      event.tags = (event.tags ?? [:]).merging(gate.contextTags) { _, context in context }
       return DiagnosticsPrivacyFilter.sanitize(event)
     }
     SentrySDK.start(options: options)
@@ -145,97 +154,21 @@ public final class DiagnosticsClient: DiagnosticsSink {
 private final class DiagnosticsConsentGate: @unchecked Sendable {
   private let lock = NSLock()
   private var enabled = false
+  private var tags: [String: String] = [:]
 
   var isEnabled: Bool {
     lock.withLock { enabled }
   }
 
+  var contextTags: [String: String] {
+    lock.withLock { tags }
+  }
+
   func setEnabled(_ value: Bool) {
     lock.withLock { enabled = value }
   }
-}
 
-enum DiagnosticsPrivacyFilter {
-  private static let allowedMessages = Set(DiagnosticIssueName.allCases.map(\.rawValue))
-  private static let allowedTags = Set([
-    "component", "diagnostic_issue", "machine_kind", "sync_event_kind",
-  ])
-
-  static func sanitize(_ event: Event) -> Event {
-    event.user = nil
-    event.request = nil
-    event.serverName = nil
-    event.logger = nil
-    event.transaction = nil
-    event.extra = nil
-    event.modules = nil
-    event.breadcrumbs = nil
-    event.error = nil
-
-    event.tags = event.tags?.filter { allowedTags.contains($0.key) }
-    event.context = sanitizedContext(event.context)
-
-    if let message = event.message {
-      if allowedMessages.contains(message.formatted) {
-        message.message = nil
-        message.params = nil
-      } else {
-        event.message = nil
-      }
-    }
-
-    for exception in event.exceptions ?? [] {
-      exception.value = nil
-      sanitize(exception.stacktrace)
-    }
-    for thread in event.threads ?? [] {
-      thread.name = nil
-      sanitize(thread.stacktrace)
-    }
-    sanitize(event.stacktrace)
-    for image in event.debugMeta ?? [] {
-      image.codeFile = lastPathComponent(image.codeFile)
-    }
-    return event
-  }
-
-  private static func sanitizedContext(
-    _ context: [String: [String: Any]]?
-  ) -> [String: [String: Any]]? {
-    guard let context else { return nil }
-    var result: [String: [String: Any]] = [:]
-    copy(["app_identifier", "app_version", "app_build"], from: context["app"], to: &result, key: "app")
-    copy(["name", "version"], from: context["os"], to: &result, key: "os")
-    copy(["arch"], from: context["device"], to: &result, key: "device")
-    return result.isEmpty ? nil : result
-  }
-
-  private static func copy(
-    _ keys: [String],
-    from source: [String: Any]?,
-    to destination: inout [String: [String: Any]],
-    key: String
-  ) {
-    guard let source else { return }
-    let values = source.filter { keys.contains($0.key) }
-    if !values.isEmpty {
-      destination[key] = values
-    }
-  }
-
-  private static func sanitize(_ stacktrace: SentryStacktrace?) {
-    for frame in stacktrace?.frames ?? [] {
-      frame.fileName = lastPathComponent(frame.fileName)
-      frame.package = lastPathComponent(frame.package)
-      frame.contextLine = nil
-      frame.preContext = nil
-      frame.postContext = nil
-      frame.vars = nil
-    }
-  }
-
-  private static func lastPathComponent(_ value: String?) -> String? {
-    guard let value, !value.isEmpty else { return value }
-    return (value as NSString).lastPathComponent
+  func setContextTags(_ value: [String: String]) {
+    lock.withLock { tags = value }
   }
 }

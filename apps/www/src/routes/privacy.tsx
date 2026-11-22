@@ -175,10 +175,11 @@ const sections = [
     body: (
       <>
         <p>
-          Usage analytics in the macOS app is off by default. If you enable it, Codevisor sends
-          selected product events to PostHog, such as opening the app, creating a chat, sending a
-          message, selecting a model or agent, and whether a turn completed. Events may include the
-          app version, operating system, processor architecture, coarse usage ranges, and
+          Usage analytics in the macOS app is on by default, and you can turn it off in Settings.
+          While it is on, Codevisor sends selected product events to PostHog, such as opening the
+          app, creating a chat, sending a message, selecting a model or agent, and whether a turn
+          completed. Events may include the app version, operating system, processor architecture,
+          update channel, which Codevisor feature flags are on, coarse usage ranges, and
           automatically generated analytics identifiers.
         </p>
         <p>
@@ -196,22 +197,27 @@ const sections = [
     body: (
       <>
         <p>
-          Crash and error reporting in the macOS app is off by default. If you enable it, Codevisor
-          uses Sentry to receive native crash stack traces and selected internal error identifiers.
-          Reports may include the Codevisor version and build, macOS name and version, processor
-          architecture, loaded binary identifiers needed for symbolication, and technical stack
-          frames.
+          Crash and error reporting is on by default, and you can turn it off in Settings on macOS.
+          While it is on, Codevisor uses Sentry to receive crash stack traces and reports of errors
+          from the macOS app and from the Codevisor server on your computers. Reports may include
+          the Codevisor version and build, operating system name and version, processor
+          architecture, loaded binary identifiers needed for symbolication, technical stack frames,
+          update channel, which Codevisor feature flags are on, and a short error description.
         </p>
         <p>
           We disable session recording, screenshots, automatic activity and network capture, and
-          performance tracing. Before sending a report, Codevisor removes user and request details,
-          exception messages, and directory paths from technical stack traces.
+          performance tracing. Before sending a report, Codevisor removes user and request details
+          and directory paths from technical stack traces, and removes file paths, email addresses,
+          your computer account name, and credentials such as tokens and keys from error
+          descriptions. Error descriptions can still contain short technical text, such as a status
+          code or the name of the tool that failed.
         </p>
         <p>
           Reports are designed not to include prompts, responses, code, file paths, project names,
-          browser content, terminal commands, or account identifiers. The current iOS app does not
-          send these reports to Sentry. These settings do not control diagnostic information you
-          separately choose to share with Apple through your device or TestFlight.
+          browser content, terminal commands, or account identifiers. Your choice applies to every
+          computer connected to your Codevisor account. The current iOS app does not send these
+          reports to Sentry. These settings do not control diagnostic information you separately
+          choose to share with Apple through your device or TestFlight.
         </p>
       </>
     )

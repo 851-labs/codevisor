@@ -104,6 +104,26 @@ extension SessionModel {
   }
 
   func deliver(_ message: UserMessage, delivery: ServerPromptDelivery?, actionID: String) async -> SendOutcome {
+    let outcome = await attemptDelivery(message, delivery: delivery, actionID: actionID)
+    if case let .failed(error) = outcome { reportUndelivered(error) }
+    return outcome
+  }
+
+  private func reportUndelivered(_ error: any Error) {
+    guard !(error is CancellationError) else { return }
+    let detail = serverErrorMessage(error)
+    let reported = ReportedError(
+      title: "Message wasn't delivered",
+      detail: detail,
+      component: "session",
+      error: error
+    )
+    Diagnostics.capture(reported)
+  }
+
+  private func attemptDelivery(
+    _ message: UserMessage, delivery: ServerPromptDelivery?, actionID: String
+  ) async -> SendOutcome {
     let notice = startSendingNotice(for: message.id)
     defer { notice.cancel() }
     let startedAt = now()

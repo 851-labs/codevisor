@@ -41,6 +41,7 @@ final class AppRuntime {
     environment.onDeleteAllData = { DeviceDataDeletion.relaunchIntoDeletion() }
     environment.syncClientPreferences(SyncedPreferences.keys)
     environment.syncFeatureFlags()
+    environment.syncPrivacySettings()
     if !CodevisorAppVariant.isDevelopment && !StandaloneServerPreference.isEnabled {
       environment.localServer?.configureManagedService(serverAgent.managedService)
     }
@@ -62,7 +63,7 @@ final class AppRuntime {
     }
     let isFirstLaunch = environment.settings.claimFirstLaunch()
     if !AppPreview.isRunning {
-      startReporting(environment.settings)
+      startReporting(environment)
     }
     ChatNotificationManager.shared.attach(to: environment)
     SidebarQuietChildren.muteAnnouncements(on: environment)
@@ -70,9 +71,11 @@ final class AppRuntime {
     return (environment, sparkleUpdater, isFirstLaunch)
   }
 
-  private static func startReporting(_ settings: AppSettingsModel) {
+  private static func startReporting(_ environment: AppEnvironment) {
+    let settings = environment.settings
     Analytics.sink = AnalyticsClient.shared
     Diagnostics.sink = DiagnosticsClient.shared
+    environment.refreshTelemetryContext()
     AnalyticsClient.shared.configureFromMainBundle(enabled: settings.shareAnalytics)
     AnalyticsClient.shared.captureAppOpenedOnce()
     DiagnosticsClient.shared.configureFromMainBundle(enabled: settings.shareCrashReports)

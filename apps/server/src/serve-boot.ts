@@ -85,6 +85,13 @@ export const systemNativeMcpManager = (
     fs: defaultNativeConfigFileSystem,
     homedir: homedir()
   })
+export const serverWorktreeNameStyle = (
+  env: Readonly<Record<string, string | undefined>>
+): "development" | "production" =>
+  env.CODEVISOR_DEV_INSTANCE_ID !== undefined || env.HERDMAN_DEV_INSTANCE_ID !== undefined
+    ? "development"
+    : "production"
+
 export const SERVER_UPDATE_CHECK_TTL_MS = 15 * 60 * 1_000
 
 export const resolveServeModes = (

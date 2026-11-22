@@ -10,6 +10,8 @@ import { SkillsError } from "@codevisor/skills"
 import { CloneError, GitError } from "@codevisor/worktrees"
 import { Effect, Schema } from "effect"
 
+import { routeTag } from "./infra/diagnostics/route-tag.js"
+import { reportServerError } from "./infra/diagnostics/server-diagnostics.js"
 import { EventFanout } from "./server-context-types.js"
 import type { CodevisorServerConfig } from "./server-context-types.js"
 
@@ -185,7 +187,7 @@ export const writeFailure = (response: ServerResponse, cause: unknown): void => 
     return
   }
   if (cause instanceof AttachmentStoreError) {
-    writeJson(response, 500, { error: cause.message })
+    writeUnexpectedFailure(response, cause, cause.message)
     return
   }
   if (cause instanceof SkillsError) {
@@ -211,7 +213,7 @@ export const writeFailure = (response: ServerResponse, cause: unknown): void => 
     writeJson(response, 422, { error: cause.message })
     return
   }
-  writeJson(response, 500, { error: failureMessage(cause) })
+  writeUnexpectedFailure(response, cause, failureMessage(cause))
 }
 
 export const parseRequestUrl = (request: IncomingMessage): URL => {
@@ -317,4 +319,13 @@ export class HttpFailure extends Error {
   ) {
     super(message)
   }
+}
+
+const writeUnexpectedFailure = (
+  response: ServerResponse,
+  cause: unknown,
+  message: string
+): void => {
+  reportServerError(cause, { component: "http", tags: { route: routeTag(response.req) } })
+  writeJson(response, 500, { error: message })
 }
