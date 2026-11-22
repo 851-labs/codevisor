@@ -29,6 +29,7 @@ public final class CloudDirectPathController {
   @ObservationIgnored private var pathReaders: [String: @Sendable () -> CloudTunnelPath?] = [:]
   @ObservationIgnored var pathRefresh: Task<Void, Never>?
   static let pathRefreshInterval: Duration = .seconds(5)
+  static let retryCeilingIntervals = 15
 
   @ObservationIgnored var connections: [String: (connection: CloudDirectConnection, publicKey: String)] = [:]
   @ObservationIgnored private var connectionGenerations: [String: UUID] = [:]
@@ -54,7 +55,7 @@ public final class CloudDirectPathController {
 
   public init(
     credentialStore: any CloudCredentialStore,
-    reprobeInterval: Duration = .seconds(60),
+    reprobeInterval: Duration = .seconds(1),
     tunnel: CloudTunnelEndpoint? = nil,
     sleep: @escaping @Sendable (Duration) async throws -> Void = { try await Task.sleep(for: $0) },
     prober: Prober? = nil,
@@ -198,7 +199,8 @@ public final class CloudDirectPathController {
   func scheduleRetry(_ deviceId: String) {
     let streak = (failures[deviceId] ?? 0) + 1
     failures[deviceId] = streak
-    retry(deviceId, after: min(reprobeInterval * (1 << min(streak - 1, 4)), .seconds(600)))
+    let ceiling = reprobeInterval * Self.retryCeilingIntervals
+    retry(deviceId, after: min(reprobeInterval * (1 << min(streak - 1, 4)), ceiling))
   }
 
   func retry(_ deviceId: String, after delay: Duration) {

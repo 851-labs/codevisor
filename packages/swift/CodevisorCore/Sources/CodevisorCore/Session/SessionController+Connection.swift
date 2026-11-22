@@ -75,8 +75,11 @@ extension SessionController {
     let harnessName = selectedHarness?.name ?? harnessId
     connectionAttempt.start(
       harnessName: harnessName,
-      connect: { self.model = try await self.connect(harnessId: harnessId) },
-      onEvent: { self.handleConnectionEvent($0) })
+      connect: { [weak self] in
+        guard let self else { throw CancellationError() }
+        self.model = try await self.connect(harnessId: harnessId)
+      },
+      onEvent: { [weak self] in self?.handleConnectionEvent($0) })
     await connectionAttempt.waitForCompletion()
   }
 

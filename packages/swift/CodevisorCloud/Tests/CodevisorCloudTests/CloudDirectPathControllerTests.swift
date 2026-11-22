@@ -191,6 +191,30 @@ struct CloudDirectPathControllerTests {
     #expect(rebuilds.value == 0)
   }
 
+  @Test("By default a failing machine is retried after 1, 2, 4 and 8 s, then every 15 s")
+  func defaultRetrySchedule() async throws {
+    let script = ProbeScript()
+    let clock = TestClock()
+    script.answer("m1", with: ScriptedDirectMachine())
+    let controller = CloudDirectPathController(
+      credentialStore: InMemoryCloudCredentialStore(),
+      sleep: clock.sleep,
+      prober: script.prober,
+      rebuildEndpoint: {},
+      now: { clock.now }
+    )
+    controller.reconcile(machines: [testMachine("m1", publicKey: "key")])
+    await settle(controller)
+
+    controller.reconcile(machines: [testMachine("m1", publicKey: "key"), testMachine("m2", publicKey: "key")])
+    for wait in [1, 2, 4, 8, 15, 15].map(Duration.seconds) {
+      await clock.waitForSleep(wait)
+      clock.advance(by: wait)
+    }
+
+    #expect(await waitUntil { script.probes.filter { $0 == "m2" }.count == 7 })
+  }
+
   @Test("A network change replaces every pipe and pending retry with a dial now, without the roster")
   func networkChangeRedials() async throws {
     let script = ProbeScript()

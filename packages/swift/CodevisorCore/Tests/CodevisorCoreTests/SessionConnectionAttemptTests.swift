@@ -68,6 +68,31 @@ struct SessionConnectionAttemptTests {
     #expect(!owner.isRunning)
   }
 
+  @Test func anUnreachableMachineKeepsTheChatWaitingUntilItConnects() async {
+    var waits: [Duration] = []
+    let owner = SessionConnectionAttempt(sleep: { waits.append($0) })
+    var attempts = 0
+    var events: [String] = []
+    owner.start(
+      harnessName: "Agent",
+      connect: {
+        attempts += 1
+        if attempts <= 5 { throw MachineUnreachableError(machineId: "studio") }
+      },
+      onEvent: { event in
+        switch event {
+        case .waitingForServer: events.append("waiting")
+        case .connected: events.append("connected")
+        case .failed: events.append("failed")
+        default: break
+        }
+      })
+    await owner.waitForCompletion()
+
+    #expect(events == ["waiting", "waiting", "waiting", "waiting", "waiting", "connected"])
+    #expect(waits == [.milliseconds(500), .seconds(1), .seconds(2), .seconds(2), .seconds(2)])
+  }
+
   @Test func anOrdinaryFailureReleasesTheAttemptForRetry() async {
     let owner = SessionConnectionAttempt()
     var failures = 0
