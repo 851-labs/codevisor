@@ -18,7 +18,7 @@ final class TranscriptSelectionState {
   var isDragging = false
   var lastDragLocationInWindow: NSPoint?
   var autoScrollTask: Task<Void, Never>?
-  var endpointTexts: [String: [String]] = [:]
+  var endpointTexts: [String: [NSAttributedString]] = [:]
   var highlightedHostKeys: Set<String> = []
   var mouseDownMonitor: Any?
   var windowKeyObservers: [NSObjectProtocol] = []
@@ -186,12 +186,12 @@ extension VirtualizedTranscriptScrollView: TranscriptSelectionCoordinating, NSUs
 
   func cacheEndpointTexts() {
     guard let selection = textSelection.selection else { return }
-    var texts: [String: [String]] = [:]
+    var texts: [String: [NSAttributedString]] = [:]
     for key in [selection.anchor.rowKey, selection.focus.rowKey] {
       if let cached = textSelection.endpointTexts[key] {
         texts[key] = cached
       } else if let host = mountedHosts[key] {
-        texts[key] = selectionSurfaces(in: host).map(\.transcriptString)
+        texts[key] = selectionSurfaces(in: host).map(\.transcriptText)
       }
     }
     textSelection.endpointTexts = texts
@@ -335,47 +335,20 @@ extension VirtualizedTranscriptScrollView: TranscriptSelectionCoordinating, NSUs
     clearSelectionHighlights(in: host)
   }
 
-  func selectedTranscriptText() -> String? {
+  func selectedTranscriptPrompt() -> TranscriptQuotedPrompt? {
     guard let span = resolvedSelectionSpan, !span.isEmpty else { return nil }
-    enum Source {
-      case mounted([any TranscriptTextSurface])
-      case text([String])
-    }
-    var sources: [Int: Source] = [:]
-    func source(_ index: Int) -> Source {
+    var sources: [Int: TranscriptSelectionSource] = [:]
+    func source(_ index: Int) -> TranscriptSelectionSource {
       if let cached = sources[index] { return cached }
-      let key = virtualLayout.keys[index]
-      let resolved: Source
-      if let host = mountedHosts[key] {
-        resolved = .mounted(selectionSurfaces(in: host))
-      } else if let cached = textSelection.endpointTexts[key] {
-        resolved = .text(cached)
-      } else if let row = rowByKey[key] {
-        resolved = .text(
-          TranscriptRowTextProjection.surfaceTexts(for: row, theme: markdownRowStyle.markdown))
-      } else {
-        resolved = .text([])
-      }
+      let resolved = selectionSource(forRowKey: virtualLayout.keys[index])
       sources[index] = resolved
       return resolved
     }
 
-    return TranscriptSelectionText.text(
+    return TranscriptSelectionText.prompt(
       in: span,
-      surfaceLengths: { index in
-        switch source(index) {
-        case let .mounted(surfaces): surfaces.map(\.transcriptTextLength)
-        case let .text(texts): texts.map { ($0 as NSString).length }
-        }
-      },
-      substring: { index, surface, range in
-        switch source(index) {
-        case let .mounted(surfaces):
-          surfaces[surface].transcriptPlainText(in: NSRange(range))
-        case let .text(texts):
-          TranscriptSelectionText.substring(of: texts[surface], in: range)
-        }
-      },
+      surfaceLengths: { source($0).surfaceLengths },
+      substring: { index, surface, range in source(index).prompt(ofSurface: surface, in: range) },
       rowSeparator: { index in
         TranscriptSelectionText.rowSeparator(
           previous: index > 0 ? rowByKey[virtualLayout.keys[index - 1]] : nil,
@@ -383,6 +356,13 @@ extension VirtualizedTranscriptScrollView: TranscriptSelectionCoordinating, NSUs
         )
       }
     )
+  }
+
+  private func selectionSource(forRowKey key: String) -> TranscriptSelectionSource {
+    if let host = mountedHosts[key] { return .mounted(selectionSurfaces(in: host)) }
+    if let cached = textSelection.endpointTexts[key] { return .cached(cached) }
+    guard let row = rowByKey[key] else { return .projected([]) }
+    return .projected(TranscriptRowTextProjection.surfaceTexts(for: row, theme: markdownRowStyle.markdown))
   }
 
   private func startSelectionAutoScroll() {

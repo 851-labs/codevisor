@@ -21,7 +21,7 @@ extension EnvironmentValues {
   ) -> UIMenu? {
     guard let action, range.length > 0, NSMaxRange(range) <= textView.textStorage.length else { return nil }
 
-    let text = (textView.textStorage.string as NSString).substring(with: range)
+    let text = textView.textStorage.attributedSubstring(from: range).streamMarkdownPlainText
     let addToChat = UIAction(title: "Add to Chat", image: UIImage(systemName: "text.quote")) { [weak textView] _ in
       action.add(text)
       textView?.selectedRange = NSRange(location: range.location, length: 0)

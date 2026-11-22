@@ -33,9 +33,9 @@ final public class SessionController {
     onDisappear: { [weak self] in self?.model?.viewDidDisappear() }
   )
 
-  public var composerText: String = "" { didSet { draftDidChange() } }
+  public var composerPrompt = TranscriptQuotedPrompt() { didSet { draftDidChange() } }
+  public internal(set) var pendingQuoteInsertions: [TranscriptQuote] = []
   public var composerAttachments: [ComposerAttachment] { attachments.items }
-  public internal(set) var composerQuotes: [TranscriptQuote] = []
   @ObservationIgnored public private(set) lazy var attachments = ComposerAttachments(
     files: attachmentFiles,
     client: { [weak self] in self?.serverClient },

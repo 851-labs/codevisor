@@ -2,6 +2,7 @@ import ACPKit
 import CodevisorCore
 import CodevisorUI
 import SwiftUI
+import TranscriptKit
 
 struct QuestionAnswerEditor: View {
   let draft: QuestionDraft
@@ -16,7 +17,10 @@ struct QuestionAnswerEditor: View {
   var body: some View {
     ZStack(alignment: .topLeading) {
       ChatInputEditor(
-        text: Binding(get: { draft.typedAnswer(for: question) }, set: { draft.setTypedAnswer($0, for: question) }),
+        content: Binding(
+          get: { TranscriptQuotedPrompt(text: draft.typedAnswer(for: question)) },
+          set: { draft.setTypedAnswer($0.text, for: question) }
+        ),
         calculatedHeight: $height,
         minHeight: 24,
         maxHeight: 120,

@@ -189,14 +189,6 @@ struct ComposerAttachmentStrip: View {
   var body: some View {
     ScrollView(.horizontal, showsIndicators: false) {
       HStack(spacing: 8) {
-        ForEach(Array(controller.composerQuotes.enumerated()), id: \.element.id) { index, quote in
-          ComposerQuoteChip(
-            quote: quote,
-            flightID: TranscriptQuote.sendFlightID(at: index),
-            onOpen: { controller.revealQuote(quote) },
-            onRemove: { controller.removeQuote(id: quote.id) }
-          )
-        }
         ForEach(controller.composerAttachments) { attachment in
           ComposerAttachmentChip(
             attachment: attachment,

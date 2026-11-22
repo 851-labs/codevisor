@@ -116,20 +116,49 @@ struct TranscriptTextSelectionTests {
       end: .init(rowKey: "d", surface: 1, offset: 0),
       endRow: 3
     )
-    let text = TranscriptSelectionText.text(
+    let text = TranscriptSelectionText.prompt(
       in: span,
       surfaceLengths: { rows[$0].map { ($0 as NSString).length } },
       substring: { row, surface, range in
-        TranscriptSelectionText.substring(of: rows[row][surface], in: range)
+        TranscriptQuotedPrompt(text: rows[row][surface]).subprompt(in: NSRange(range))
       },
       rowSeparator: { $0 == 3 ? "\n" : "\n\n" }
     )
-    #expect(text == "world\n\nsecond surface\n\n```code```\ntail")
+    #expect(text.text == "world\n\nsecond surface\n\n```code```\ntail")
   }
 
-  @Test func substringToleratesOutOfRangeOffsets() {
-    #expect(TranscriptSelectionText.substring(of: "abc", in: 1..<10) == "bc")
-    #expect(TranscriptSelectionText.substring(of: "abc", in: 5..<10) == "")
-    #expect(TranscriptSelectionText.substring(of: "abc", in: 0..<0) == "")
+  @Test func selectionKeepsEachQuoteItCovers() {
+    let marker = TranscriptQuotedPrompt.quoteMarker
+    let rows = [
+      TranscriptQuotedPrompt(
+        text: "see \(marker) and \(marker)",
+        quotes: [
+          TranscriptQuote(text: "first", messageID: "A", role: .assistant),
+          TranscriptQuote(text: "second", messageID: "B", role: .assistant),
+        ]),
+      TranscriptQuotedPrompt(text: "reply"),
+    ]
+    let span = TranscriptSelectionSpan(
+      start: .init(rowKey: "a", surface: 0, offset: 6),
+      startRow: 0,
+      end: .init(rowKey: "b", surface: 0, offset: 5),
+      endRow: 1
+    )
+
+    let selected = TranscriptSelectionText.prompt(
+      in: span,
+      surfaceLengths: { [(rows[$0].text as NSString).length] },
+      substring: { row, _, range in rows[row].subprompt(in: NSRange(range)) },
+      rowSeparator: { _ in "\n\n" }
+    )
+
+    #expect(selected.readableText == "and “second”\n\nreply")
+  }
+
+  @Test func subpromptToleratesOutOfRangeOffsets() {
+    let text = TranscriptQuotedPrompt(text: "abc")
+    #expect(text.subprompt(in: NSRange(location: 1, length: 9)).text == "bc")
+    #expect(text.subprompt(in: NSRange(location: 5, length: 5)).text == "")
+    #expect(text.subprompt(in: NSRange(location: 0, length: 0)).text == "")
   }
 }

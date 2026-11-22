@@ -1,17 +1,17 @@
+import CodevisorCore
+import CodevisorUI
 import SwiftUI
 import UIKit
 import UniformTypeIdentifiers
 
-struct ComposerTextEdit: Equatable {
-  let id = UUID()
-  let range: NSRange
-  let replacement: String
-}
-
 struct ComposerTextView: UIViewRepresentable {
-  @Binding var text: String
+  static var textAttributes: [NSAttributedString.Key: Any] {
+    [.font: UIFont.preferredFont(forTextStyle: .body), .foregroundColor: UIColor.label]
+  }
+
+  @Binding var content: TranscriptQuotedPrompt
   @Binding var selection: NSRange
-  var pendingEdit: ComposerTextEdit? = nil
+  var pendingEdit: TranscriptQuotedPromptEdit? = nil
   let handoffID: UUID?
   let handoffRole: ComposerTextEditorHandoffRole
   var isEditable: Bool
@@ -107,6 +107,7 @@ struct ComposerTextView: UIViewRepresentable {
       UTType.fileURL.identifier,
       UTType.image.identifier,
     ])
+    view.typingAttributes = Self.textAttributes
     view.setContentHuggingPriority(.defaultLow, for: .horizontal)
     view.setContentCompressionResistancePriority(.defaultLow, for: .horizontal)
     return view
@@ -127,8 +128,8 @@ struct ComposerTextView: UIViewRepresentable {
       coordinator.appliedEditID = edit.id
       applyUndoably(edit, to: view)
     }
-    if view.text != text, view.markedTextRange == nil {
-      view.text = text
+    if view.quotedPrompt != content, view.markedTextRange == nil {
+      view.show(Self.attributedText(content))
       view.reportContentHeight()
     }
     let textLength = (view.text as NSString).length
@@ -157,27 +158,28 @@ struct ComposerTextView: UIViewRepresentable {
     view.onHardwareQueue = onHardwareQueue
   }
 
-  private func applyUndoably(_ edit: ComposerTextEdit, to view: UITextView) {
-    guard view.markedTextRange == nil,
-      let start = view.position(from: view.beginningOfDocument, offset: edit.range.location),
-      let end = view.position(from: start, offset: edit.range.length),
-      let range = view.textRange(from: start, to: end)
-    else { return }
+  private func applyUndoably(_ edit: TranscriptQuotedPromptEdit, to view: HeightReportingTextView) {
+    guard view.markedTextRange == nil else { return }
+
     view.undoManager?.beginUndoGrouping()
-    view.replace(range, withText: edit.replacement)
+    view.replaceUndoably(edit.range, with: Self.attributedText(edit.replacement))
     view.undoManager?.endUndoGrouping()
+  }
+
+  static func attributedText(_ prompt: TranscriptQuotedPrompt) -> NSAttributedString {
+    TranscriptQuoteBadgeText.attributedString(prompt, attributes: textAttributes)
   }
 
   func makeCoordinator() -> Coordinator {
     Coordinator(
-      text: $text,
+      content: $content,
       selection: $selection,
       onPasteAttachmentEvent: onPasteAttachmentEvent
     )
   }
 
   final class Coordinator: NSObject, UITextViewDelegate, UITextPasteDelegate {
-    private let text: Binding<String>
+    private let content: Binding<TranscriptQuotedPrompt>
     private let selection: Binding<NSRange>
     var onPasteAttachmentEvent: (ComposerPasteEvent) -> Void
     var isApplyingSwiftUIUpdate = false
@@ -185,11 +187,11 @@ struct ComposerTextView: UIViewRepresentable {
     var appliedEditID: UUID?
 
     init(
-      text: Binding<String>,
+      content: Binding<TranscriptQuotedPrompt>,
       selection: Binding<NSRange>,
       onPasteAttachmentEvent: @escaping (ComposerPasteEvent) -> Void
     ) {
-      self.text = text
+      self.content = content
       self.selection = selection
       self.onPasteAttachmentEvent = onPasteAttachmentEvent
     }
@@ -197,7 +199,7 @@ struct ComposerTextView: UIViewRepresentable {
     func textViewDidChange(_ textView: UITextView) {
       (textView as? HeightReportingTextView)?.textDidChangeByUser()
       guard !isApplyingSwiftUIUpdate else { return }
-      text.wrappedValue = textView.text
+      content.wrappedValue = textView.quotedPrompt
       selection.wrappedValue = textView.selectedRange
       (textView as? HeightReportingTextView)?.reportContentHeight()
     }
@@ -213,6 +215,7 @@ struct ComposerTextView: UIViewRepresentable {
     }
 
     func textViewDidChangeSelection(_ textView: UITextView) {
+      if textView.markedTextRange == nil { textView.typingAttributes = ComposerTextView.textAttributes }
       guard !isApplyingSwiftUIUpdate else { return }
       selection.wrappedValue = textView.selectedRange
     }

@@ -26,21 +26,21 @@ extension SessionController {
     isGoalComposerArmed = false
     isGoalEditing = false
     if let composerTextBeforeGoalEdit {
-      composerText = composerTextBeforeGoalEdit
+      restoreComposerPrompt(composerTextBeforeGoalEdit)
       self.composerTextBeforeGoalEdit = nil
     }
   }
 
   public func editGoal() {
     guard let objective = (goal ?? draftGoal)?.objective else { return }
-    composerTextBeforeGoalEdit = composerText
-    composerText = objective
+    composerTextBeforeGoalEdit = composerPrompt.promptText
+    restoreComposerPrompt(objective)
     isGoalComposerArmed = true
     isGoalEditing = true
   }
 
   public func submitGoalFromComposer() async {
-    let objective = composerText.trimmingCharacters(in: .whitespacesAndNewlines)
+    let objective = composerPromptText
     guard !objective.isEmpty, isReadyToSubmit else { return }
 
     if let model {
@@ -56,7 +56,7 @@ extension SessionController {
 
     isGoalComposerArmed = false
     isGoalEditing = false
-    composerText = composerTextBeforeGoalEdit ?? ""
+    restoreComposerPrompt(composerTextBeforeGoalEdit ?? "")
     composerTextBeforeGoalEdit = nil
   }
 
@@ -69,7 +69,7 @@ extension SessionController {
     composerText = ""
 
     func restoreComposer() {
-      composerText = objective
+      restoreComposerPrompt(objective)
       pendingGoal = nil
       isGoalComposerArmed = true
     }

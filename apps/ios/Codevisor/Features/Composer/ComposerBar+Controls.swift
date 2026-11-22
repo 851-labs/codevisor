@@ -236,7 +236,7 @@ extension ComposerBar {
 
   var goalModeChip: some View {
     Button {
-      controller.composerText = text
+      controller.composerPrompt = draft
       withAnimation(Motion.quick(reduceMotion: reduceMotion)) {
         controller.exitGoalComposer()
       }
@@ -373,24 +373,24 @@ extension ComposerBar {
 
   func submitComposer(delivery: ServerPromptDelivery = .steer) {
     if controller.isEditingQueuedPrompt {
-      controller.composerText = text
+      controller.composerPrompt = draft
       Task { await controller.saveEditedQueuedPrompt() }
       return
     }
-    let outgoing = text
+    let outgoing = draft
     let isSubmittingGoal = controller.isGoalComposerArmed
     if showsRunPickers, !isSubmittingGoal, beginProjectSetupIfNeeded() {
-      controller.composerText = outgoing
+      controller.composerPrompt = outgoing
       return
     }
     IOSNavigationDiagnostics.record(
       "composer.submit",
-      "chars=\(outgoing.count) preservesFocus=\(preservesFocusAfterSend) role=\(textEditorHandoffRole)"
+      "chars=\(outgoing.text.count) preservesFocus=\(preservesFocusAfterSend) role=\(textEditorHandoffRole)"
     )
     if !isSubmittingGoal {
-      onWillSend?(outgoing, delivery)
+      onWillSend?(outgoing.readableText, delivery)
     }
-    controller.composerText = outgoing
+    controller.composerPrompt = outgoing
     if !preservesFocusAfterSend {
       if textEditorHandoffRole == .promotionSource, !reduceMotion {
         holdsFoldUntilFlight = true

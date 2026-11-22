@@ -360,7 +360,7 @@ struct SessionTranscriptView: View {
 
 extension SessionTranscriptView {
   var flyingAttachmentIDs: [String] {
-    controller.composerQuoteSendFlightIDs + controller.composerAttachments.map(\.sentFileID)
+    controller.composerAttachments.map(\.sentFileID)
   }
 
   var composerMaxHeight: CGFloat {

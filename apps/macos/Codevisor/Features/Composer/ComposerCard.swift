@@ -170,7 +170,7 @@ private extension ComposerCard {
 
       ZStack(alignment: .topLeading) {
         ChatInputEditor(
-          text: $controller.composerText,
+          content: $controller.composerPrompt,
           calculatedHeight: $editorHeight,
           selection: selectionBinding,
           undo: state.undo,
@@ -182,7 +182,10 @@ private extension ComposerCard {
           onTextViewReady: { textView in
             sendSource.textView = textView
             onTextViewReady?(textView)
-          }
+          },
+          quoteInsertions: controller.pendingQuoteInsertions,
+          onQuotesInserted: controller.finishQuoteInsertions,
+          onOpenQuote: controller.revealQuote
         )
         .frame(height: editorHeight + editorTopBleed)
         .writingToolsAffordanceVisibility(.hidden)

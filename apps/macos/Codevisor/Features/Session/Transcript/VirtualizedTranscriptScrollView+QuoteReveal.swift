@@ -63,7 +63,7 @@ extension VirtualizedTranscriptScrollView: TranscriptQuoteRevealTarget {
   private func quoteSurfaceTexts(forRowKey key: String) -> [String] {
     if let host = mountedHosts[key] { return selectionSurfaces(in: host).map(\.transcriptString) }
     guard let row = rowByKey[key] else { return [] }
-    return TranscriptRowTextProjection.surfaceTexts(for: row, theme: markdownRowStyle.markdown)
+    return TranscriptRowTextProjection.surfaceTexts(for: row, theme: markdownRowStyle.markdown).map(\.text)
   }
 
   private func quoteRowSeparator(before index: Int) -> String {

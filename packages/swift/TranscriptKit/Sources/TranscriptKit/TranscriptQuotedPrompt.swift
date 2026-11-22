@@ -1,86 +1,94 @@
 import Foundation
 
 public struct TranscriptQuotedPrompt: Equatable, Sendable {
-  public var quotes: [TranscriptQuote]
-  public var text: String
+  public static let quoteMarker = "\u{FFFC}"
 
-  public init(quotes: [TranscriptQuote], text: String) {
-    self.quotes = quotes
-    self.text = text
+  public private(set) var text: String
+  public private(set) var quotes: [TranscriptQuote]
+
+  public init(text: String = "", quotes: [TranscriptQuote] = []) {
+    let markers = Self.markerCount(in: text)
+    self.text = markers > quotes.count ? Self.droppingMarkers(after: quotes.count, in: text) : text
+    self.quotes = Array(quotes.prefix(markers))
   }
 
   public init(promptText: String) {
-    var rest = Substring(promptText)
-    var quotes: [TranscriptQuote] = []
-    while let (quote, remainder) = Self.leadingQuote(in: rest, index: quotes.count) {
-      quotes.append(quote)
-      rest = remainder
-    }
-    self.init(quotes: quotes, text: quotes.isEmpty ? promptText : String(rest))
+    self = TranscriptQuoteTagReader(promptText: promptText).prompt
   }
 
   public var promptText: String {
-    (quotes.map(Self.block) + [text]).filter { !$0.isEmpty }.joined(separator: Self.blockSeparator)
+    replacingQuotes(with: TranscriptQuoteTag.inline)
   }
 
-  private static let opening = "<codevisor-quote"
-  private static let closing = "\n</codevisor-quote>"
-  private static let blockSeparator = "\n\n"
-
-  private static func block(_ quote: TranscriptQuote) -> String {
-    let attributes = [
-      ("role", quote.role.rawValue),
-      ("message", quote.messageID),
-      ("sent", quote.sentAt?.formatted(.iso8601)),
-    ]
-    let header = attributes.compactMap { name, value in value.map { "\(name)=\"\(escaped($0))\"" } }
-    return "\(opening) \(header.joined(separator: " "))>\n\(quote.text)\(closing)"
+  public var isEmpty: Bool {
+    text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
   }
 
-  private static func leadingQuote(in text: Substring, index: Int) -> (TranscriptQuote, Substring)? {
-    guard text.hasPrefix(opening + " "), let headerEnd = text.firstIndex(of: "\n") else { return nil }
-    let header = text[..<headerEnd]
-    guard header.hasSuffix(">") else { return nil }
+  public var trimmed: TranscriptQuotedPrompt {
+    TranscriptQuotedPrompt(text: text.trimmingCharacters(in: .whitespacesAndNewlines), quotes: quotes)
+  }
 
-    let body = text[text.index(after: headerEnd)...]
-    guard let close = body.range(of: closing) else { return nil }
-    guard let quote = quote(header: header, text: String(body[..<close.lowerBound]), index: index) else {
-      return nil
+  public var readableText: String {
+    replacingQuotes { "“\($0.text)”" }
+  }
+
+  public func replacingQuotes(with render: (TranscriptQuote) -> String) -> String {
+    var remaining = quotes.makeIterator()
+    var result = String.UnicodeScalarView()
+    for scalar in text.unicodeScalars {
+      guard scalar == Self.markerScalar else {
+        result.append(scalar)
+        continue
+      }
+      result.append(contentsOf: (remaining.next().map(render) ?? "").unicodeScalars)
     }
-
-    return (quote, trimmingBlockSeparator(body[close.upperBound...]))
+    return String(result)
   }
 
-  private static func quote(header: Substring, text: String, index: Int) -> TranscriptQuote? {
-    let attributes = attributes(in: header)
-    guard let role = attributes["role"].flatMap(TranscriptQuote.Role.init(rawValue:)),
-      let messageID = attributes["message"]
-    else { return nil }
-
-    let sentAt = attributes["sent"].flatMap { try? Date($0, strategy: .iso8601) }
-    return TranscriptQuote(
-      id: TranscriptQuote.sendFlightID(at: index), text: text, messageID: messageID, role: role, sentAt: sentAt)
+  public func replacingCharacters(in range: NSRange, with replacement: TranscriptQuotedPrompt) -> TranscriptQuotedPrompt
+  {
+    let range = clamped(range)
+    let source = text as NSString
+    let before = Self.markerCount(in: source.substring(to: range.location))
+    let removed = Self.markerCount(in: source.substring(with: range))
+    let kept = quotes.prefix(before) + replacement.quotes + quotes.dropFirst(before + removed)
+    return TranscriptQuotedPrompt(
+      text: source.replacingCharacters(in: range, with: replacement.text), quotes: Array(kept))
   }
 
-  private static func attributes(in header: Substring) -> [String: String] {
-    let pattern = /([a-z]+)="([^"]*)"/
-    let pairs = header.matches(of: pattern).map { (String($0.output.1), unescaped(String($0.output.2))) }
-    return Dictionary(pairs) { first, _ in first }
+  public func appending(_ other: TranscriptQuotedPrompt) -> TranscriptQuotedPrompt {
+    TranscriptQuotedPrompt(text: text + other.text, quotes: quotes + other.quotes)
   }
 
-  private static func trimmingBlockSeparator(_ text: Substring) -> Substring {
-    if text.hasPrefix(blockSeparator) { return text.dropFirst(blockSeparator.count) }
-    if text.hasPrefix("\n") { return text.dropFirst() }
-    return text
+  public func subprompt(in range: NSRange) -> TranscriptQuotedPrompt {
+    let range = clamped(range)
+    let source = text as NSString
+    let before = Self.markerCount(in: source.substring(to: range.location))
+    let slice = source.substring(with: range)
+    return TranscriptQuotedPrompt(text: slice, quotes: Array(quotes.dropFirst(before)))
   }
 
-  private static func escaped(_ value: String) -> String {
-    value.replacingOccurrences(of: "&", with: "&amp;").replacingOccurrences(of: "\"", with: "&quot;")
+  public static func markerCount(in text: some StringProtocol) -> Int {
+    text.unicodeScalars.lazy.filter { $0 == markerScalar }.count
   }
 
-  private static func unescaped(_ value: String) -> String {
-    value.replacingOccurrences(of: "&quot;", with: "\"").replacingOccurrences(of: "&amp;", with: "&")
+  private func clamped(_ range: NSRange) -> NSRange {
+    let length = (text as NSString).length
+    let location = min(max(0, range.location), length)
+    return NSRange(location: location, length: min(max(0, range.length), length - location))
   }
+
+  private static func droppingMarkers(after kept: Int, in text: String) -> String {
+    var seen = 0
+    let scalars = text.unicodeScalars.filter { scalar in
+      guard scalar == markerScalar else { return true }
+      seen += 1
+      return seen <= kept
+    }
+    return String(String.UnicodeScalarView(scalars))
+  }
+
+  private static let markerScalar: Unicode.Scalar = "\u{FFFC}"
 }
 
 extension ConversationItem {
@@ -99,5 +107,9 @@ extension UserMessage {
     message.text = prompt.text
     message.quotes = prompt.quotes
     return message
+  }
+
+  public var quotedPrompt: TranscriptQuotedPrompt {
+    TranscriptQuotedPrompt(text: text, quotes: quotes)
   }
 }

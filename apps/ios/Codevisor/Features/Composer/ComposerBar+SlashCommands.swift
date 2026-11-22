@@ -215,10 +215,10 @@ extension ComposerBar {
   func acceptSlashCommand(_ command: IOSComposerSlashItem) {
     guard let range = slashToken?.range else { return }
     let replacement = command.action == nil ? "\(command.title) " : ""
-    let updatedText = (text as NSString).replacingCharacters(in: range, with: replacement)
-    pendingTextEdit = ComposerTextEdit(range: range, replacement: replacement)
-    text = updatedText
-    controller.composerText = updatedText
+    let edit = TranscriptQuotedPromptEdit(range: range, replacement: TranscriptQuotedPrompt(text: replacement))
+    pendingTextEdit = edit
+    draft = edit.applied(to: draft)
+    controller.composerPrompt = draft
     selection = NSRange(location: range.location + (replacement as NSString).length, length: 0)
     command.action?()
   }

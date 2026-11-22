@@ -97,7 +97,8 @@ extension VirtualizedTranscriptScrollView {
   }
 
   private func selectedQuote() -> TranscriptQuote? {
-    guard let span = resolvedSelectionSpan, let text = selectedTranscriptText(), !text.isEmpty else { return nil }
+    guard let span = resolvedSelectionSpan, let text = selectedTranscriptPrompt()?.readableText, !text.isEmpty
+    else { return nil }
 
     let sourceRow = span.rowRange.lazy
       .compactMap { self.rowByKey[self.virtualLayout.keys[$0]] }
