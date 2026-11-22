@@ -33,6 +33,7 @@ public final class AppEnvironment {
   @ObservationIgnored public var onDeleteAllData: (@MainActor () -> Void)?
   @ObservationIgnored var clientPreferenceSync: ClientPreferenceSync?
   @ObservationIgnored var featureFlagSync: FeatureFlagSync?
+  @ObservationIgnored var privacySettingsSync: PrivacySettingsSync?
   @ObservationIgnored let harnessNotices = HarnessNoticeCenter()
   @ObservationIgnored var localServerDirectPathsSync: Task<Void, Never>?
   public let paneGroups: any PaneGroupRepository
@@ -248,14 +249,54 @@ public final class AppEnvironment {
     cloud.forgetSessionOnThisDevice()
   }
 
+  public func syncPrivacySettings() {
+    let sync = PrivacySettingsSync(settings: settings, configSync: configSync)
+    privacySettingsSync = sync
+    sync.start()
+    applySyncedPrivacySettings()
+  }
+
   public func setShareAnalytics(_ enabled: Bool) {
+    applyShareAnalytics(enabled)
+    privacySettingsSync?.publish(.shareAnalytics, enabled: enabled)
+  }
+
+  public func setShareCrashReports(_ enabled: Bool) {
+    applyShareCrashReports(enabled)
+    privacySettingsSync?.publish(.shareCrashReports, enabled: enabled)
+  }
+
+  func applySyncedPrivacySettings() {
+    guard let sync = privacySettingsSync else { return }
+    if let enabled = sync.syncedValue(.shareAnalytics), enabled != settings.shareAnalytics {
+      applyShareAnalytics(enabled)
+    }
+    if let enabled = sync.syncedValue(.shareCrashReports), enabled != settings.shareCrashReports {
+      applyShareCrashReports(enabled)
+    }
+  }
+
+  private func applyShareAnalytics(_ enabled: Bool) {
     settings.setShareAnalytics(enabled)
     Analytics.setEnabled(enabled)
   }
 
-  public func setShareCrashReports(_ enabled: Bool) {
+  private func applyShareCrashReports(_ enabled: Bool) {
     settings.setShareCrashReports(enabled)
     Diagnostics.setEnabled(enabled)
+  }
+
+  public var telemetryContext: TelemetryContext {
+    let flags = configSync.entries(namespace: FeatureFlagSync.namespace)
+      .filter { $0.deleted != true && $0.value == .bool(true) }
+      .map(\.key)
+    return TelemetryContext(enabledFlags: flags, updateChannel: settings.alphaUpdatesEnabled ? "alpha" : "stable")
+  }
+
+  public func refreshTelemetryContext() {
+    let context = telemetryContext
+    Analytics.setContext(context)
+    Diagnostics.setContext(context)
   }
 
   public static func preview(

@@ -22,7 +22,8 @@ public enum DiagnosticIssueName: String, Sendable, CaseIterable {
 @MainActor
 public protocol DiagnosticsSink: AnyObject {
   func setEnabled(_ enabled: Bool)
-  func capture(_ issue: DiagnosticIssueName)
+  func setContext(_ context: TelemetryContext)
+  func capture(_ error: ReportedError)
   func noteSyncEvent(machineIsLocal: Bool, kind: String)
 }
 
@@ -34,8 +35,12 @@ public enum Diagnostics {
     sink?.setEnabled(enabled)
   }
 
-  public static func capture(_ issue: DiagnosticIssueName) {
-    sink?.capture(issue)
+  public static func setContext(_ context: TelemetryContext) {
+    sink?.setContext(context)
+  }
+
+  public static func capture(_ error: ReportedError) {
+    sink?.capture(error)
   }
 
   public static func noteSyncEvent(machineIsLocal: Bool, kind: String) {

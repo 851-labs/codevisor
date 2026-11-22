@@ -35,17 +35,7 @@ public final class ErrorReporter {
   public init() {}
 
   public func report(_ title: String, message: String? = nil) {
-    Log.surfaced.error("\(title, privacy: .public)\(message.map { ": \($0)" } ?? "", privacy: .public)")
-    if let existing = entries.last, existing.title == title, existing.message == message {
-      scheduleDismissal(of: existing.id)
-      return
-    }
-    let entry = Entry(title: title, message: message)
-    entries.append(entry)
-    while entries.count > maxVisible {
-      dismiss(entries[0].id)
-    }
-    scheduleDismissal(of: entry.id)
+    present(ReportedError(title: title, detail: message), title: title, message: message)
   }
 
   public func notify(_ title: String, message: String? = nil) {
@@ -61,17 +51,18 @@ public final class ErrorReporter {
     title: String,
     message: String? = nil
   ) {
-    Diagnostics.capture(issue)
-    report(title, message: message)
+    present(ReportedError(title: title, detail: message, issue: issue), title: title, message: message)
   }
 
   public func report(_ title: String, error: any Error) {
-    report(title, message: Self.userFacingMessage(for: error))
+    let message = Self.userFacingMessage(for: error)
+    present(ReportedError(title: title, detail: message, error: error), title: title, message: message)
   }
 
   public func report(_ issue: DiagnosticIssueName, title: String, error: any Error) {
-    Diagnostics.capture(issue)
-    report(title, message: Self.userFacingMessage(for: error))
+    let message = Self.userFacingMessage(for: error)
+    let reported = ReportedError(title: title, detail: message, issue: issue, error: error)
+    present(reported, title: title, message: message)
   }
 
   public func dismiss(_ id: UUID) {
@@ -84,6 +75,21 @@ public final class ErrorReporter {
     for entry in entries { dismissTasks[entry.id]?.cancel() }
     dismissTasks = [:]
     entries = []
+  }
+
+  private func present(_ reported: ReportedError, title: String, message: String?) {
+    Log.surfaced.error("\(title, privacy: .public)\(message.map { ": \($0)" } ?? "", privacy: .public)")
+    if let existing = entries.last, existing.title == title, existing.message == message {
+      scheduleDismissal(of: existing.id)
+      return
+    }
+    Diagnostics.capture(reported)
+    let entry = Entry(title: title, message: message)
+    entries.append(entry)
+    while entries.count > maxVisible {
+      dismiss(entries[0].id)
+    }
+    scheduleDismissal(of: entry.id)
   }
 
   private func scheduleDismissal(of id: UUID) {

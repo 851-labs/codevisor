@@ -121,7 +121,10 @@ extension AppEnvironment {
   func applySyncedNamespace(_ namespace: String) {
     if namespace == "settings" { applySyncedSettings() }
     if namespace == ClientPreferenceSync.namespace { clientPreferenceSync?.adoptSyncedValues() }
-    if namespace == FeatureFlagSync.namespace { featureFlagSync?.adoptSyncedValues() }
+    if namespace == FeatureFlagSync.namespace {
+      featureFlagSync?.adoptSyncedValues()
+      refreshTelemetryContext()
+    }
     if namespace == ConfigSync.skillsNamespace { Task { await configSync.synchronizeSkills() } }
     if namespace == "harnesses" || namespace == "harness-accounts"
       || namespace == "harness-credentials" || namespace == "harness-shared-accounts"
@@ -168,6 +171,12 @@ extension AppEnvironment {
   }
 
   func applySyncedSettings() {
+    applySyncedPrivacySettings()
+    applySyncedUpdateChannel()
+    refreshTelemetryContext()
+  }
+
+  private func applySyncedUpdateChannel() {
     guard
       case let .string(channel)? = configSync.value(
         namespace: "settings",

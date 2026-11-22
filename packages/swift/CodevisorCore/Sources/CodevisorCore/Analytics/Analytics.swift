@@ -20,6 +20,7 @@ public enum AnalyticsPropertyValue: Sendable, Equatable {
 @MainActor
 public protocol AnalyticsSink: AnyObject {
   func setEnabled(_ enabled: Bool)
+  func setContext(_ context: TelemetryContext)
   func capture(_ event: AnalyticsEventName, properties: [String: AnalyticsPropertyValue])
 }
 
@@ -29,6 +30,10 @@ public enum Analytics {
 
   public static func setEnabled(_ enabled: Bool) {
     sink?.setEnabled(enabled)
+  }
+
+  public static func setContext(_ context: TelemetryContext) {
+    sink?.setContext(context)
   }
 
   public static func capture(

@@ -14,7 +14,7 @@ struct PrivacySettingsSection: View {
       Text("Privacy")
     } footer: {
       Text(
-        "Anonymous. Prompts, responses, code, file paths, browser content, and terminal commands are never included."
+        "Anonymous, and applies to every computer on your account. Prompts, responses, code, file paths, browser content, and terminal commands are never included."
       )
     }
   }

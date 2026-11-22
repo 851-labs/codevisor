@@ -25,6 +25,7 @@ import { publishPromptQueue } from "./prompt-queue-publish.js"
 import { steerClaimedPrompt } from "./prompt-steering.js"
 import { beginPromptTurn, recordTurnStart } from "./prompt-turn.js"
 import { ensureAgentSessionFor } from "./session-workspace.js"
+import { reportTurnFailure } from "./turn-failure-reports.js"
 import { pausedForUpdate, sessionHarnessId } from "./update-pause-gate.js"
 import { queuedPrompt, recordUserPrompt } from "./user-prompts.js"
 
@@ -376,11 +377,13 @@ const runPromptInBackground = async (
       })
     }
     const message = plainFailureText(failureMessage(cause))
+    const stopKind = signedOut ? "authRequired" : harnessFailureKind({ message })
     await appendAndPublish(services.db, fanout, "session.error", sessionId, {
       message,
-      stopKind: signedOut ? "authRequired" : harnessFailureKind({ message }),
+      stopKind,
       serverId
     })
+    await reportTurnFailure(services.db, sessionId, { cause, stopKind })
   }
 }
 

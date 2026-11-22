@@ -12,15 +12,18 @@ const install = () => {
   const target = new EventEmitter()
   const lines: string[] = []
   const exits: number[] = []
+  const reports: Array<{ cause: unknown; origin: string }> = []
   let clock = 0
   installProcessSafetyNet(target, {
     log: (line) => lines.push(line),
+    report: (cause, origin) => reports.push({ cause, origin }),
     exit: (code) => exits.push(code),
     now: () => clock
   })
   return {
     lines,
     exits,
+    reports,
     advance: (ms: number) => {
       clock += ms
     },
@@ -42,6 +45,12 @@ describe("installProcessSafetyNet", () => {
     expect(net.lines[0]).toMatch(/unhandled rejection.*Error: tunnel stream is closed\n\s+at /s)
     expect(net.lines[1]).toContain("plain reason")
     expect(net.lines[2]).toContain("TypeError: no stack")
+    expect(net.reports.map(({ origin }) => origin)).toEqual([
+      "unhandledRejection",
+      "unhandledRejection",
+      "unhandledRejection"
+    ])
+    expect(net.reports[1]?.cause).toBe("plain reason")
   })
 
   it("survives isolated uncaught exceptions", () => {
@@ -53,6 +62,7 @@ describe("installProcessSafetyNet", () => {
     expect(net.exits).toEqual([])
     expect(net.lines).toHaveLength(UNCAUGHT_EXCEPTION_BUDGET * 3)
     expect(net.lines[0]).toMatch(/uncaught exception \(uncaughtException; server kept running\)/)
+    expect(net.reports).toHaveLength(UNCAUGHT_EXCEPTION_BUDGET * 3)
   })
 
   it("exits once a burst of uncaught exceptions exceeds the budget", () => {

@@ -1,4 +1,5 @@
 #!/usr/bin/env node
+import { reportServerError } from "./infra/diagnostics/server-diagnostics.js"
 import { installProcessSafetyNet } from "./process-safety-net.js"
 import { makeStartupReporter, parseServeArgs } from "./startup-progress.js"
 
@@ -40,6 +41,7 @@ if (wantsHelp) {
 } else {
   installProcessSafetyNet(process, {
     log: (line) => console.error(line),
+    report: (cause, origin) => reportServerError(cause, { component: "process", tags: { origin } }),
     exit: (code) => process.exit(code),
     now: () => performance.now()
   })

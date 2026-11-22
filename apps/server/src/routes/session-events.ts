@@ -23,6 +23,7 @@ import { persistGeneratedImage } from "./generated-images.js"
 import { echoesHiddenPrompt } from "./hidden-prompt-titles.js"
 import { settleSteeredPrompt } from "./prompt-steering.js"
 import { persistToolImages, toolImageCandidates } from "./tool-images.js"
+import { reportTurnFailure, turnFailureOf } from "./turn-failure-reports.js"
 
 const executionAnnotators = new WeakMap<CodevisorServerServices, ExecutionAnnotator>()
 
@@ -61,6 +62,8 @@ export const sessionEventSink =
     if (isEchoedUserPrompt(event)) {
       return undefined
     }
+    const failure = turnFailureOf(event)
+    if (failure !== undefined) void reportTurnFailure(services.db, sessionId, failure)
     const observation =
       event.kind === "session.updated" ? usageLimitsObservation(event.payload) : undefined
     if (observation !== undefined) {
