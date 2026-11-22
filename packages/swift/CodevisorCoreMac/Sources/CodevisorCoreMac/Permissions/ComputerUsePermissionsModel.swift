@@ -103,6 +103,7 @@ public final class ComputerUsePermissionsModel {
   private let screenRecordingGrantedAtStart: Bool
   private var promptedAccessibility = false
   private var promptedScreenRecording = false
+  private let requests = PermissionRequestTracker()
 
   public init(probes: ComputerUsePermissionProbes = .live) {
     self.probes = probes
@@ -129,6 +130,9 @@ public final class ComputerUsePermissionsModel {
     if isScreenRecordingGranted, !screenRecordingGrantedAtStart {
       screenRecordingGrantedThisRun = true
     }
+    requests.observe(.accessibility, isGranted: isAccessibilityGranted)
+    requests.observe(.screenRecording, isGranted: isScreenRecordingGranted)
+    requests.observe(.fullDiskAccess, isGranted: isFullDiskAccessAllowed)
   }
 
   private func refreshFullDiskAccess() {
@@ -138,6 +142,7 @@ public final class ComputerUsePermissionsModel {
 
   public func requestAccessibility() {
     guard !isAccessibilityGranted else { return }
+    requests.requested(.accessibility)
     if promptedAccessibility {
       probes.openSettingsPane(.accessibility)
       return
@@ -151,6 +156,7 @@ public final class ComputerUsePermissionsModel {
 
   public func requestScreenRecording() {
     guard !isScreenRecordingGranted else { return }
+    requests.requested(.screenRecording)
     if promptedScreenRecording {
       probes.openSettingsPane(.screenRecording)
       return
@@ -164,6 +170,7 @@ public final class ComputerUsePermissionsModel {
 
   public func requestFullDiskAccess() {
     guard !isFullDiskAccessAllowed else { return }
+    requests.requested(.fullDiskAccess)
     probes.openSettingsPane(.fullDiskAccess)
   }
 

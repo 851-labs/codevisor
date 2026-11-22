@@ -1,3 +1,4 @@
+import CodevisorCore
 import SwiftUI
 
 struct GitRequiredSheet: View {
@@ -19,6 +20,8 @@ struct GitRequiredSheet: View {
     .frame(width: 420)
     .animation(.snappy(duration: 0.2), value: install)
     .interactiveDismissDisabled()
+    .onAppear { captureStep("shown") }
+    .onDisappear { captureStep("resolved") }
   }
 
   private func openInstaller() {
@@ -26,6 +29,11 @@ struct GitRequiredSheet: View {
     Task {
       let failure = await AppleDeveloperToolsInstaller.open()
       install = failure.map(GitInstallProgress.failed) ?? .waiting
+      captureStep(failure == nil ? "installer_opened" : "installer_failed")
     }
+  }
+
+  private func captureStep(_ step: String) {
+    Analytics.capture(.gitSetup, properties: ["step": .string(step)])
   }
 }

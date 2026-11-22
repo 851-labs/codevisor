@@ -42,7 +42,9 @@ public final class FirstRunFolderAccess {
 
   public func answer(_ folder: ServerFirstRunFolder, allow: Bool) async {
     answeringId = folder.id
-    guard await send(allow ? .allow : .decline, for: folder) else {
+    let delivered = await send(allow ? .allow : .decline, for: folder)
+    capture(folder, choice: allow ? "allow" : "not_now", delivered: delivered)
+    guard delivered else {
       giveUp(on: folder)
       return
     }
@@ -70,7 +72,34 @@ public final class FirstRunFolderAccess {
 
   private func settle(_ folder: ServerFirstRunFolder, with access: ServerFirstRunFolderAnswer.Access) async {
     settledIds.insert(folder.id)
-    _ = await send(access, for: folder)
+    let delivered = await send(access, for: folder)
+    capture(folder, choice: access == .allow ? "already_allowed" : "already_denied", delivered: delivered)
+  }
+
+  private func capture(_ folder: ServerFirstRunFolder, choice: String, delivered: Bool) {
+    Analytics.capture(
+      .folderAccessAnswered,
+      properties: [
+        "folder": .string(Self.kind(of: folder)),
+        "choice": .string(choice),
+        "permission": .string(Self.name(of: permission(folder))),
+        "delivered": .boolean(delivered),
+      ])
+  }
+
+  private static let knownFolders: Set<String> = ["desktop", "documents", "downloads"]
+
+  private static func kind(of folder: ServerFirstRunFolder) -> String {
+    if knownFolders.contains(folder.id) { return folder.id }
+    return folder.id.hasPrefix("volume:") ? "volume" : "other"
+  }
+
+  private static func name(of permission: FirstRunFolderPermission) -> String {
+    switch permission {
+    case .allowed: "allowed"
+    case .denied: "denied"
+    case .undetermined: "undetermined"
+    }
   }
 
   private func send(_ access: ServerFirstRunFolderAnswer.Access, for folder: ServerFirstRunFolder) async -> Bool {

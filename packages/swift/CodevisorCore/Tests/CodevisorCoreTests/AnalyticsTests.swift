@@ -15,6 +15,18 @@ struct AnalyticsTests {
         "harness selected",
         "turn completed",
         "turn failed",
+        "first launch started",
+        "first launch step",
+        "first launch finished",
+        "claude code login answered",
+        "folder access answered",
+        "harness sign in started",
+        "harness sign in finished",
+        "permission requested",
+        "permission granted",
+        "setup request answered",
+        "git setup",
+        "project added",
       ])
   }
 

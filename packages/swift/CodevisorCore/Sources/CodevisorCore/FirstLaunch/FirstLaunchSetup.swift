@@ -15,6 +15,7 @@ public final class FirstLaunchSetup {
   @ObservationIgnored private let timing: FirstLaunchSetupTiming
   @ObservationIgnored private let sleep: @Sendable (Duration) async throws -> Void
   @ObservationIgnored private var changeWaiters: [CheckedContinuation<Void, Never>] = []
+  @ObservationIgnored private let analytics = FirstLaunchAnalytics()
 
   public init(
     timing: FirstLaunchSetupTiming = .standard,
@@ -44,10 +45,12 @@ public final class FirstLaunchSetup {
   public func getStarted() {
     guard canGetStarted, presentation == .visible else { return }
     presentation = .dismissed
+    analytics.ended(.gotStarted)
     changed()
   }
 
   public func run(_ work: any FirstLaunchSetupWork) async {
+    analytics.started()
     async let steps: Void = performSteps(work)
     async let harnesses: Void = revealNames(of: .harnesses)
     async let projects: Void = revealNames(of: .projects)
@@ -93,6 +96,7 @@ public final class FirstLaunchSetup {
     guard presentation == .visible else { return false }
     guard isNewInstall == true else {
       presentation = .notNeeded
+      analytics.ended(.notNewInstall)
       changed()
       return false
     }
@@ -191,13 +195,16 @@ public final class FirstLaunchSetup {
     record: @MainActor (Value) -> Void
   ) async {
     set(step, .running)
+    analytics.stepStarted(step)
     guard let value = await finishes(within: limit, operation) else {
       set(step, .skipped)
+      analytics.stepFinished(step, outcome: .skipped, found: target(step))
       return
     }
 
     record(value)
     set(step, .done)
+    analytics.stepFinished(step, outcome: .done, found: target(step))
   }
 
   private func finishes<Value: Sendable>(
@@ -275,6 +282,7 @@ public final class FirstLaunchSetup {
 
   private func handOff() {
     presentation = .handedOff
+    analytics.ended(.handedOff)
     changed()
   }
 

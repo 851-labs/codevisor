@@ -8,6 +8,18 @@ public enum AnalyticsEventName: String, Sendable, CaseIterable {
   case harnessSelected = "harness selected"
   case turnCompleted = "turn completed"
   case turnFailed = "turn failed"
+  case firstLaunchStarted = "first launch started"
+  case firstLaunchStep = "first launch step"
+  case firstLaunchFinished = "first launch finished"
+  case claudeCodeLoginAnswered = "claude code login answered"
+  case folderAccessAnswered = "folder access answered"
+  case harnessSignInStarted = "harness sign in started"
+  case harnessSignInFinished = "harness sign in finished"
+  case permissionRequested = "permission requested"
+  case permissionGranted = "permission granted"
+  case setupRequestAnswered = "setup request answered"
+  case gitSetup = "git setup"
+  case projectAdded = "project added"
 }
 
 public enum AnalyticsPropertyValue: Sendable, Equatable {

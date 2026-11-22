@@ -177,10 +177,11 @@ const sections = [
         <p>
           Usage analytics in the macOS app is on by default, and you can turn it off in Settings.
           While it is on, Codevisor sends selected product events to PostHog, such as opening the
-          app, creating a chat, sending a message, selecting a model or agent, and whether a turn
-          completed. Events may include the app version, operating system, processor architecture,
-          update channel, which Codevisor feature flags are on, coarse usage ranges, and
-          automatically generated analytics identifiers.
+          app, creating a chat, sending a message, selecting a model or agent, whether a turn
+          completed, and setup steps and choices, such as whether you allowed a permission or
+          folder, signed in to an agent, or added a project. Events may include the app version,
+          operating system, processor architecture, update channel, which Codevisor feature flags
+          are on, coarse usage ranges, and automatically generated analytics identifiers.
         </p>
         <p>
           Analytics events do not include prompts, responses, code, file or project names, paths,
