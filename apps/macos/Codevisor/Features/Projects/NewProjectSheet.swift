@@ -205,8 +205,19 @@ struct NewProjectSheet: View {
     let onAdded = onAdded
     dismiss()
     Task {
-      onAdded(await projectList.addProject(folderURL: url, serverId: serverId, client: client))
+      let project = await projectList.addProject(folderURL: url, serverId: serverId, client: client)
+      Self.captureAdded(project)
+      onAdded(project)
     }
+  }
+
+  private static func captureAdded(_ project: Project) {
+    Analytics.capture(
+      .projectAdded,
+      properties: [
+        "client": .string(project.serverId == CodevisorMachine.local.id ? "local" : "remote"),
+        "is_git_repo": .boolean(project.repoKey != nil),
+      ])
   }
 }
 

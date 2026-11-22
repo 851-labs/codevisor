@@ -47,9 +47,18 @@ public final class FirstRunClaudeCodeLogin {
       _ = try await client.answerFirstRunClaudeCodeLogin(choice)
       hasAnswered = true
       stage = choice == .signIn ? .signingIn : nil
+      captureAnswer(choice, succeeded: true)
     } catch {
       errorMessage = serverErrorMessage(error)
+      captureAnswer(choice, succeeded: false)
     }
+  }
+
+  private func captureAnswer(_ choice: ServerFirstRunClaudeCodeLoginAnswer.Choice, succeeded: Bool) {
+    Analytics.capture(
+      .claudeCodeLoginAnswered,
+      properties: ["choice": .string(choice.rawValue), "succeeded": .boolean(succeeded)]
+    )
   }
 
   public func finishSigningIn() {

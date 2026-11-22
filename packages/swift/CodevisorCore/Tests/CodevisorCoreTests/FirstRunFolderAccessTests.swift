@@ -17,6 +17,29 @@ struct FirstRunFolderAccessTests {
   private static let downloads = ServerFirstRunFolder(
     id: "downloads", name: "Downloads", path: "/Users/me/Downloads", projects: ["demo"])
 
+  @Test("Reports a drive's folder answer by kind, never by the drive's name")
+  func reportsDrivesWithoutTheirNames() async {
+    let driveName = "Private-Drive-\(UUID().uuidString)"
+    let drive = ServerFirstRunFolder(
+      id: "volume:\(driveName)", name: driveName, path: "/Volumes/\(driveName)", projects: ["vault"])
+    let events = RecordingAnalyticsSink()
+    Analytics.sink = events
+    defer { Analytics.sink = nil }
+    let client = FirstRunQuestionsClient(asking: [drive])
+    let access = FirstRunFolderAccess(client: client) { _ in .allowed }
+    let following = Task { await access.follow() }
+
+    await client.answered.wait(for: 1)
+    client.publish(asking: [])
+    await following.value
+
+    #expect(
+      events.captured.contains {
+        $0.properties["folder"] == .string("volume") && $0.properties["choice"] == .string("already_allowed")
+      })
+    #expect(!events.captured.contains { $0.properties.values.contains { "\($0)".contains(driveName) } })
+  }
+
   @Test("Asks only about folders macOS hasn't decided, and answers the rest by itself")
   func asksAboutUndecidedFolders() async {
     let client = FirstRunQuestionsClient(asking: [Self.documents, Self.desktop, Self.downloads])
@@ -68,5 +91,23 @@ struct FirstRunFolderAccessTests {
 
     client.publish(asking: [])
     await following.value
+  }
+}
+
+@MainActor
+private final class RecordingAnalyticsSink: AnalyticsSink {
+  struct Event {
+    let name: AnalyticsEventName
+    let properties: [String: AnalyticsPropertyValue]
+  }
+
+  private(set) var captured: [Event] = []
+
+  func setEnabled(_ enabled: Bool) {}
+
+  func setContext(_ context: TelemetryContext) {}
+
+  func capture(_ event: AnalyticsEventName, properties: [String: AnalyticsPropertyValue]) {
+    captured.append(Event(name: event, properties: properties))
   }
 }

@@ -127,6 +127,7 @@ extension HarnessAuthenticationView {
       }
       return nil
     } catch {
+      HarnessSignInAnalytics.finished(harnessId: harness.id, outcome: .failed)
       return serverErrorMessage(error)
     }
   }
@@ -136,6 +137,7 @@ extension HarnessAuthenticationView {
     method: ServerHarnessAuthMethod,
     key: String
   ) async -> String? {
+    HarnessSignInAnalytics.started(harnessId: harness.id, methodId: method.id)
     do {
       let next = try await client.loginHarnessAccount(
         harnessId: harness.id,
@@ -150,6 +152,7 @@ extension HarnessAuthenticationView {
       }
       return nil
     } catch {
+      HarnessSignInAnalytics.finished(harnessId: harness.id, outcome: .failed)
       return serverErrorMessage(error)
     }
   }
@@ -161,8 +164,15 @@ extension HarnessAuthenticationView {
   }
 
   func startLogin(_ account: ServerHarnessAccount, methodId: String?) async throws {
-    let next = try await client.loginHarnessAccount(
-      harnessId: harness.id, accountId: account.id, methodId: methodId, apiKey: nil)
+    HarnessSignInAnalytics.started(harnessId: harness.id, methodId: methodId)
+    let next: ServerHarnessAuthFlow
+    do {
+      next = try await client.loginHarnessAccount(
+        harnessId: harness.id, accountId: account.id, methodId: methodId, apiKey: nil)
+    } catch {
+      HarnessSignInAnalytics.finished(harnessId: harness.id, outcome: .failed)
+      throw error
+    }
     flow = next.kind == "complete" ? nil : next
     if next.kind == "complete" {
       draftAccount = nil
@@ -192,6 +202,7 @@ extension HarnessAuthenticationView {
         return
       }
       if account.authState == "error" {
+        HarnessSignInAnalytics.finished(harnessId: harness.id, outcome: .failed)
         let message = "Couldn't verify sign-in."
         pollingTask = nil
         await cancelFlow()
@@ -204,6 +215,7 @@ extension HarnessAuthenticationView {
   }
 
   func finishAuthentication(accountId: String) async {
+    HarnessSignInAnalytics.finished(harnessId: harness.id, outcome: .succeeded)
     choosesSignInMethod = false
     if let activated = try? await client.activateHarnessAccount(
       harnessId: harness.id,
@@ -222,6 +234,7 @@ extension HarnessAuthenticationView {
     guard flow != nil || draftAccount != nil else { return }
     await model.perform("Canceling sign-in…") {
       if let current = flow {
+        HarnessSignInAnalytics.finished(harnessId: harness.id, outcome: .cancelled)
         flow = nil
         try await client.cancelHarnessLogin(
           harnessId: harness.id, accountId: current.accountId, flowId: current.id)

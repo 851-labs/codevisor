@@ -66,12 +66,22 @@ extension SessionController {
     guard let question = pendingQuestion, question.questionId == id, let spec = question.questions.first else {
       return
     }
+    captureSetupRequestAnswer(id, outcome: "completed")
     await answerQuestion(answers: [spec.id: QuestionAnswerEntry(answers: [spec.options.first?.label ?? "Continue"])])
   }
 
   public func declineSetupRequest(_ id: String) async {
     guard pendingQuestion?.questionId == id else { return }
+    captureSetupRequestAnswer(id, outcome: "declined")
     await cancelQuestion()
+  }
+
+  private func captureSetupRequestAnswer(_ id: String, outcome: String) {
+    let kind = setupRequest(id: id)?.kind == .chromeExtension ? "chrome_extension" : "computer_use"
+    Analytics.capture(
+      .setupRequestAnswered,
+      properties: ["kind": .string(kind), "outcome": .string(outcome)]
+    )
   }
 
   public func answerQuestion(answers: [String: QuestionAnswerEntry]) async {

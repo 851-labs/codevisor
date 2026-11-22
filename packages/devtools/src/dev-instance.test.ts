@@ -25,6 +25,8 @@ describe("sanitizeAmbientEnvironment", () => {
       CODEVISOR_DEV_PORT: "45123",
       CODEVISOR_DEV_CONTAINER_DESKTOP: "1",
       CODEVISOR_SCREEN_SHARING_STATS_LOG: "/tmp/stats",
+      CODEVISOR_ENABLE_ANALYTICS: "1",
+      CODEVISOR_ENABLE_DIAGNOSTICS: "1",
       PATH: "/usr/bin"
     }
     sanitizeAmbientEnvironment(supplied)
@@ -33,6 +35,8 @@ describe("sanitizeAmbientEnvironment", () => {
     expect(launch.CODEVISOR_DEV_PORT).toBe("45123")
     expect(launch.CODEVISOR_DEV_CONTAINER_DESKTOP).toBe("1")
     expect(launch.CODEVISOR_SCREEN_SHARING_STATS_LOG).toBe("/tmp/stats")
+    expect(launch.CODEVISOR_ENABLE_ANALYTICS).toBe("1")
+    expect(launch.CODEVISOR_ENABLE_DIAGNOSTICS).toBe("1")
     expect(launch.PATH).toBe("/usr/bin")
     expect(Object.hasOwn(launch, "CODEVISOR_APP_HOSTED")).toBe(false)
     expect(Object.hasOwn(launch, "CODEVISOR_APP_BUNDLE_PATH")).toBe(false)

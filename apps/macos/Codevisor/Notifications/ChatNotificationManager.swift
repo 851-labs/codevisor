@@ -1,5 +1,6 @@
 import AppKit
 import CodevisorCore
+import CodevisorCoreMac
 import os
 import UserNotifications
 
@@ -116,8 +117,11 @@ final class ChatNotificationManager: NSObject, ChatNotificationDelivering, UNUse
 
   @discardableResult
   func requestAuthorization() async -> Bool {
+    PermissionAnalytics.requested(.notifications)
     do {
-      return try await center.requestAuthorization(options: [.alert, .sound])
+      let granted = try await center.requestAuthorization(options: [.alert, .sound])
+      if granted { PermissionAnalytics.granted(.notifications) }
+      return granted
     } catch {
       log.error("Notification authorization failed: \(String(describing: error), privacy: .public)")
       return false
