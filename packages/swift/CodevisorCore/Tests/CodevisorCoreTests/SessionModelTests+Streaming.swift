@@ -115,19 +115,18 @@ extension SessionModelTests {
       serverTransport: ServerSessionTransport(client: client, sessionId: sessionId),
       sessionId: sessionId.uuidString
     )
-    var attachmentCounts: [Int] = []
-    var queuedStates: [Bool] = []
-    model.onPromptAccepted = { attachmentCount, isQueued in
-      attachmentCounts.append(attachmentCount)
-      queuedStates.append(isQueued)
-    }
+    var acceptances: [PromptAcceptance] = []
+    model.onPromptAccepted = { acceptances.append($0) }
 
     await model.send("first")
     await model.send("queued")
 
     #expect(client.promptedTexts == ["first", "queued"])
-    #expect(attachmentCounts == [0, 0])
-    #expect(queuedStates == [false, true])
+    #expect(
+      acceptances == [
+        PromptAcceptance(attachmentCount: 0, delivery: .newTurn, outcome: .startedTurn),
+        PromptAcceptance(attachmentCount: 0, delivery: .steer, outcome: .queued),
+      ])
   }
 
   @Test("Claimed queue items announce their transcript promotion")

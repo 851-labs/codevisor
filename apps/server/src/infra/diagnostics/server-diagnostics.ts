@@ -1,3 +1,8 @@
+import {
+  flagTagPrefix,
+  telemetryContext,
+  type TelemetrySettings
+} from "../telemetry/telemetry-settings.js"
 import { scrubDiagnosticText } from "./scrub.js"
 import {
   buildSentryEvent,
@@ -8,14 +13,8 @@ import type { SendSentryEvent } from "./sentry-transport.js"
 
 export type { DiagnosticReport } from "./sentry-event.js"
 
-export interface DiagnosticsSettings {
-  readonly enabled: () => Promise<boolean>
-  readonly enabledFlags: () => Promise<ReadonlySet<string>>
-  readonly updateChannel: () => Promise<string>
-}
-
 export interface ServerDiagnosticsOptions {
-  readonly settings: DiagnosticsSettings
+  readonly settings: TelemetrySettings
   readonly environment: DiagnosticEnvironment
   readonly send: SendSentryEvent
   readonly now?: () => number
@@ -24,8 +23,6 @@ export interface ServerDiagnosticsOptions {
 export interface ServerDiagnostics {
   readonly capture: (cause: unknown, report: DiagnosticReport) => Promise<void>
 }
-
-export const flagTagPrefix = "flag_"
 
 export const makeServerDiagnostics = (options: ServerDiagnosticsOptions): ServerDiagnostics => {
   const now = options.now ?? Date.now
@@ -81,12 +78,12 @@ const reportKey = (cause: unknown, report: DiagnosticReport): string => {
   return `${report.component} ${scrubDiagnosticText(summary)}`.slice(0, reportKeyLength)
 }
 
-const contextTags = async (settings: DiagnosticsSettings): Promise<Record<string, string>> => {
-  const flags = [...(await settings.enabledFlags())].toSorted()
+const contextTags = async (settings: TelemetrySettings): Promise<Record<string, string>> => {
+  const context = await telemetryContext(settings)
   return {
-    update_channel: await settings.updateChannel(),
-    feature_flags: flags.join(","),
-    ...Object.fromEntries(flags.map((flag) => [`${flagTagPrefix}${flag}`, "true"]))
+    update_channel: context.updateChannel,
+    feature_flags: context.flags.join(","),
+    ...Object.fromEntries(context.flags.map((flag) => [`${flagTagPrefix}${flag}`, "true"]))
   }
 }
 

@@ -12,10 +12,12 @@ extension SessionController {
     Analytics.capture(.chatCreated, properties: properties)
   }
 
-  func captureMessageSent(model: SessionModel?, attachmentCount: Int, isQueued: Bool) {
+  func captureMessageSent(model: SessionModel?, acceptance: PromptAcceptance) {
     var properties = analyticsSessionProperties(model: model)
-    properties["attachment_count"] = .integer(attachmentCount)
-    properties["is_queued"] = .boolean(isQueued)
+    properties["attachment_count"] = .integer(acceptance.attachmentCount)
+    properties["is_queued"] = .boolean(acceptance.isQueued)
+    properties["delivery"] = .string(acceptance.delivery.rawValue)
+    properties["outcome"] = .string(acceptance.outcome.rawValue)
     Analytics.capture(.messageSent, properties: properties)
   }
 

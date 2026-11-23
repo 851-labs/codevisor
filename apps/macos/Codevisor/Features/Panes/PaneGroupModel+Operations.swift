@@ -76,6 +76,7 @@ extension PaneGroupModel {
     }
     if previous.kind == .newTab, converted.kind == .browser { ChromiumBrowserModels.shared.expectNewTab(id) }
     persist()
+    if previous.kind == .newTab { LayoutAnalytics.paneOpened(converted.kind) }
     if publishChange { onPaneChanged?(converted) }
     pane(for: converted).visibilityChanged(true)
     requestSelectedPaneFocus()

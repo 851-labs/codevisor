@@ -129,6 +129,10 @@ extension SessionContainerView {
       newGroupState: state
     )
     environment.workspaces.save(workspace)
+    LayoutAnalytics.splitOpened(
+      inBot: environment.bots.ownsWorkspace(workspace),
+      splitCount: workspace.centerTabs[tabIndex].root.allGroups.count
+    )
     store.selectDestination(.leaf(newLeafId), in: workspace.id)
     withAnimation(Motion.split(reduceMotion: reduceMotion)) {
       openingSplit = opening

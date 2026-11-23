@@ -20,6 +20,12 @@ public enum AnalyticsEventName: String, Sendable, CaseIterable {
   case setupRequestAnswered = "setup request answered"
   case gitSetup = "git setup"
   case projectAdded = "project added"
+  case botCreated = "bot created"
+  case botForked = "bot forked"
+  case botArchived = "bot archived"
+  case botDeleted = "bot deleted"
+  case splitOpened = "split opened"
+  case paneOpened = "pane opened"
 }
 
 public enum AnalyticsPropertyValue: Sendable, Equatable {

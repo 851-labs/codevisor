@@ -35,7 +35,6 @@ import { agentProviderFactories } from "./agent-providers.js"
 import { FAILED_UPGRADE_GRACE_MS, type BootListener } from "./boot-listener.js"
 import { makeActiveWorkSleepInhibitor } from "./infra/active-work-sleep-inhibitor.js"
 import { canonicalDatabasePaths, resolveServerDataLayout } from "./infra/data-dir.js"
-import { startServerDiagnostics } from "./infra/diagnostics/boot.js"
 import { migrateLegacyLayout, migrateTmpDataDir } from "./infra/legacy-layout.js"
 import { makeLinkPreviewStore } from "./infra/link-previews.js"
 import { migrateLinuxDataLayout } from "./infra/linux-data-migration.js"
@@ -48,6 +47,7 @@ import { acquireServerLease, type ServerLease } from "./infra/server-lease.js"
 import { mcpCredentialVault } from "./infra/shared-account-storage.js"
 import { makeSharedAccounts, type SharedAccounts } from "./infra/shared-accounts.js"
 import { processShutdown } from "./infra/shutdown-hooks.js"
+import { startServerTelemetry } from "./infra/telemetry/boot.js"
 import { makeAppIconLoader } from "./infra/tool-icon-apps.js"
 import { makeToolIconStore } from "./infra/tool-icons.js"
 import { makeUsageLimitsCache, makeUsageLimitsFileStore } from "./infra/usage-limits-cache.js"
@@ -206,7 +206,7 @@ export const runServe = (
         Effect.sync(() => reportUpgrade(databaseStartupFailure(cause.message)))
       )
     )
-    startServerDiagnostics({ db, version, env: process.env })
+    startServerTelemetry({ db, serverId, version, env: process.env })
     const attachments = makeAttachmentStore(dirname(databasePath))
     yield* Effect.tryPromise({
       try: () => migrateAttachmentBlobs(db, attachments, reportUpgrade),

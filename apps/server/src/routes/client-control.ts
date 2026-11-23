@@ -16,6 +16,7 @@ import {
   writeJson,
   type CodevisorServerServices
 } from "../server-context.js"
+import { captureAgentLayoutChanged } from "./feature-analytics.js"
 
 export const routeClientControl = async (
   broker: ClientControlBroker,
@@ -54,6 +55,7 @@ export const routeClientControl = async (
     const layout = await readSchema(request, ClientLayoutRequest)
     await refuseTabsInBotConversation(services, layout)
     writeJson(response, 200, await broker.request(route.clientId!, { method: "layout", layout }))
+    void captureAgentLayoutChanged(services.db, layout)
     return true
   }
   if (route.action === "window" && request.method === "POST") {

@@ -1,21 +1,13 @@
 import { arch, platform, release } from "node:os"
 
-import type { CodevisorDatabaseService } from "@codevisor/db"
-import { Effect } from "effect"
-
-import { enabledFeatureFlags } from "../feature-flags.js"
-import { syncedUpdateChannel } from "../release-channel.js"
+import {
+  isDevelopmentServer,
+  syncedTelemetrySettings,
+  type SettingsDatabase
+} from "../telemetry/telemetry-settings.js"
 import type { DiagnosticEnvironment } from "./sentry-event.js"
 import { parseSentryDsn, sentryEnvelopeSender } from "./sentry-transport.js"
-import {
-  installServerDiagnostics,
-  makeServerDiagnostics,
-  type DiagnosticsSettings
-} from "./server-diagnostics.js"
-
-type SettingsDatabase = Pick<CodevisorDatabaseService, "getSyncEntries">
-
-export const crashReportsSettingKey = "shareCrashReports"
+import { installServerDiagnostics, makeServerDiagnostics } from "./server-diagnostics.js"
 
 export const startServerDiagnostics = (options: {
   readonly db: SettingsDatabase
@@ -27,43 +19,25 @@ export const startServerDiagnostics = (options: {
 
   installServerDiagnostics(
     makeServerDiagnostics({
-      settings: databaseSettings(options.db),
+      settings: syncedTelemetrySettings(options.db, "shareCrashReports"),
       environment: serverEnvironment(options.version, options.env),
       send: sentryEnvelopeSender(dsn)
     })
   )
 }
 
-export const crashReportsEnabled = async (db: SettingsDatabase): Promise<boolean> =>
-  (await Effect.runPromise(db.getSyncEntries("settings"))).some(
-    (entry) =>
-      entry.key === crashReportsSettingKey && entry.value === true && entry.deleted !== true
-  )
-
 const codevisorServerSentryDsn =
   "https://c293cd825b1545aa663f20c21a7b9d66@o4506921350070272.ingest.us.sentry.io/4511781287231488"
 
 const reportsFrom = (env: Readonly<Record<string, string | undefined>>): boolean =>
-  !isDevelopment(env) || env.CODEVISOR_ENABLE_DIAGNOSTICS === "1"
-
-const isDevelopment = (env: Readonly<Record<string, string | undefined>>): boolean =>
-  env.CODEVISOR_DEV_INSTANCE_ID !== undefined || env.HERDMAN_DEV_INSTANCE_ID !== undefined
-
-const databaseSettings = (db: SettingsDatabase): DiagnosticsSettings => ({
-  enabled: () => crashReportsEnabled(db),
-  enabledFlags: () => enabledFeatureFlags(db),
-  updateChannel: async () => {
-    const channel = await syncedUpdateChannel(db)
-    return typeof channel === "string" ? channel : "stable"
-  }
-})
+  !isDevelopmentServer(env) || env.CODEVISOR_ENABLE_DIAGNOSTICS === "1"
 
 const serverEnvironment = (
   version: string | undefined,
   env: Readonly<Record<string, string | undefined>>
 ): DiagnosticEnvironment => ({
   release: `codevisor-server@${version ?? "unknown"}`,
-  environment: isDevelopment(env) ? "development" : "production",
+  environment: isDevelopmentServer(env) ? "development" : "production",
   tags: {
     runtime: "server",
     server_version: version ?? "unknown",

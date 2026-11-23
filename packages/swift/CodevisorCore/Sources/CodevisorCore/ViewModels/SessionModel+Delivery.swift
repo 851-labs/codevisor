@@ -167,7 +167,9 @@ extension SessionModel {
     switch await deliver(message, delivery: outgoing.delivery, actionID: id.uuidString.lowercased()) {
     case let .accepted(response):
       let notSteered = outgoing.delivery != nil && response?.wasSteered == false
-      onPromptAccepted?(message.attachments.count, notSteered)
+      onPromptAccepted?(
+        .outgoing(
+          attachmentCount: message.attachments.count, requested: outgoing.delivery, wasSteered: response?.wasSteered))
       if notSteered { onPromptNotSteered?(id) }
       settleAccepted(id)
       refreshQueueForUnshownSteer(id, response: response)

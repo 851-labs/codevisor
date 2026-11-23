@@ -56,7 +56,8 @@ extension SessionModel {
     switch outcome {
     case .accepted:
       slowMessageIDs.remove(message.id)
-      onPromptAccepted?(message.attachments.count, false)
+      onPromptAccepted?(
+        PromptAcceptance(attachmentCount: message.attachments.count, delivery: .newTurn, outcome: .startedTurn))
       await drain()
     case let .failed(error):
       slowMessageIDs.remove(message.id)

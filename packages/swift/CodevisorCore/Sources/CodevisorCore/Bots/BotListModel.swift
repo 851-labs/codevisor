@@ -119,6 +119,7 @@ public final class BotListModel {
     guard let bot = Bot(serverId: serverId, record: record) else {
       throw CodevisorServerClientError.invalidResponse
     }
+    BotAnalytics.created(request, on: serverId)
     return bot
   }
 
@@ -133,6 +134,7 @@ public final class BotListModel {
     guard let forked = Bot(serverId: serverId, record: record) else {
       throw CodevisorServerClientError.invalidResponse
     }
+    BotAnalytics.forked(bot, request, to: serverId)
     return forked
   }
 
@@ -144,6 +146,7 @@ public final class BotListModel {
 
   public func setArchived(_ bot: Bot, _ isArchived: Bool) async throws {
     try await update(bot, ServerUpdateBotRequest(isArchived: isArchived))
+    BotAnalytics.archived(bot, isArchived: isArchived)
   }
 
   public func addProject(_ projectId: UUID, to bot: Bot) async throws {
@@ -160,6 +163,7 @@ public final class BotListModel {
 
   public func delete(_ bot: Bot) async throws {
     try await machines.client(for: bot.serverId).deleteBot(id: bot.record.id)
+    BotAnalytics.deleted(bot)
     refreshGenerations[bot.serverId, default: 0] += 1
     recordsByServer[bot.serverId]?.removeAll { $0.id == bot.record.id }
     await machines.refreshNavigationState(for: bot.serverId)
