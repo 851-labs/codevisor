@@ -199,9 +199,10 @@ struct ComposerTextView: UIViewRepresentable {
     func textViewDidChange(_ textView: UITextView) {
       (textView as? HeightReportingTextView)?.textDidChangeByUser()
       guard !isApplyingSwiftUIUpdate else { return }
+      guard let textView = textView as? HeightReportingTextView else { return }
       content.wrappedValue = textView.quotedPrompt
       selection.wrappedValue = textView.selectedRange
-      (textView as? HeightReportingTextView)?.reportContentHeight()
+      textView.reportContentHeight()
     }
 
     func scrollViewWillEndDragging(

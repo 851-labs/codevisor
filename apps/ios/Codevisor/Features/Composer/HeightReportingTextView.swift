@@ -33,6 +33,12 @@ final class HeightReportingTextView: UITextView {
     revealSentText()
   }
 
+  let quotedText = QuotedTextSync()
+
+  var quotedPrompt: TranscriptQuotedPrompt {
+    quotedText.prompt(of: textStorage)
+  }
+
   func show(_ content: NSAttributedString) {
     attributedText = content
     typingAttributes = ComposerTextView.textAttributes
@@ -56,7 +62,7 @@ final class HeightReportingTextView: UITextView {
   }
 
   private var selectedQuotedPrompt: TranscriptQuotedPrompt? {
-    let selection = quotedPrompt.subprompt(in: selectedRange)
+    let selection = TranscriptQuoteBadgeText.prompt(in: textStorage.attributedSubstring(from: selectedRange))
     return selection.quotes.isEmpty ? nil : selection
   }
 
@@ -177,6 +183,7 @@ final class HeightReportingTextView: UITextView {
 
   override init(frame: CGRect, textContainer: NSTextContainer?) {
     super.init(frame: frame, textContainer: textContainer)
+    quotedText.observe(textStorage)
     isScrollEnabled = true
     alwaysBounceVertical = true
     panGestureRecognizer.addTarget(self, action: #selector(handleScrollPan))
@@ -338,11 +345,5 @@ final class HeightReportingTextView: UITextView {
     guard abs(height - lastReportedHeight) > 0.5 else { return }
     lastReportedHeight = height
     onContentHeightChange?(height)
-  }
-}
-
-extension UITextView {
-  var quotedPrompt: TranscriptQuotedPrompt {
-    TranscriptQuoteBadgeText.prompt(in: attributedText ?? NSAttributedString())
   }
 }
