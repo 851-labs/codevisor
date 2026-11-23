@@ -26,10 +26,9 @@ extension ComposerCard {
   var selectionBinding: Binding<NSRange> {
     let state = state
     let controller = controller
-    let editor = sendSource
     return Binding(
       get: { state.selection(in: controller.composerText) },
-      set: { state.select($0, in: editor.textView?.string ?? controller.composerText) }
+      set: { state.select($0, in: controller.composerText) }
     )
   }
 

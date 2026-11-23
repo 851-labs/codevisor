@@ -1,12 +1,6 @@
 import AppKit
-import CodevisorUI
-import TranscriptKit
 
 extension NSTextView {
-  var quotedPrompt: TranscriptQuotedPrompt {
-    textStorage.map(TranscriptQuoteBadgeText.prompt(in:)) ?? TranscriptQuotedPrompt()
-  }
-
   func replaceAsUndoableEdit(_ range: NSRange, with replacement: String) {
     replaceAsUndoableEdit(range, with: NSAttributedString(string: replacement, attributes: typingAttributes))
   }

@@ -6,7 +6,12 @@ import TranscriptKit
 final class SubmittingTextView: NSTextView {
   var onWindowChanged: (() -> Void)?
   var onMarkedTextChange: (() -> Void)?
+  let quotedText = QuotedTextSync()
   private var sentTextReveal: DispatchWorkItem?
+
+  var quotedPrompt: TranscriptQuotedPrompt {
+    textStorage.map(quotedText.prompt(of:)) ?? TranscriptQuotedPrompt()
+  }
 
   func hideSentText() {
     guard !string.isEmpty, sentTextReveal == nil else { return }
@@ -34,6 +39,7 @@ final class SubmittingTextView: NSTextView {
     usesFontPanel = false
     usesRuler = false
     typingAttributes = ChatInputEditor.textAttributes
+    if let textStorage { quotedText.observe(textStorage) }
   }
 
   func show(_ text: NSAttributedString) {
@@ -42,10 +48,10 @@ final class SubmittingTextView: NSTextView {
     revealSentText()
   }
 
-  func insertQuote(_ quote: TranscriptQuote) {
-    let edit = TranscriptQuotedPromptEdit.insertingQuote(quote, into: quotedPrompt, at: NSMaxRange(selectedRange()))
+  func insertQuotes(_ quotes: [TranscriptQuote]) {
+    let edit = TranscriptQuotedPromptEdit.insertingQuotes(quotes, into: quotedPrompt, at: NSMaxRange(selectedRange()))
     replaceAsUndoableEdit(edit.range, with: ChatInputEditor.attributedText(edit.replacement))
-    undoManager?.setActionName("Add Quote")
+    undoManager?.setActionName(quotes.count == 1 ? "Add Quote" : "Add Quotes")
   }
 
   override func didChangeText() {
@@ -95,7 +101,8 @@ final class SubmittingTextView: NSTextView {
   override var writablePasteboardTypes: [NSPasteboard.PasteboardType] { [Self.quotedPromptType, .string] }
 
   override func writeSelection(to pboard: NSPasteboard, type: NSPasteboard.PasteboardType) -> Bool {
-    let selection = quotedPrompt.subprompt(in: selectedRange())
+    guard let textStorage else { return super.writeSelection(to: pboard, type: type) }
+    let selection = TranscriptQuoteBadgeText.prompt(in: textStorage.attributedSubstring(from: selectedRange()))
     switch type {
     case Self.quotedPromptType: return pboard.setString(selection.promptText, forType: type)
     case .string: return pboard.setString(selection.readableText, forType: type)

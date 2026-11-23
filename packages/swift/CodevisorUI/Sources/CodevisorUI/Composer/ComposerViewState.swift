@@ -11,7 +11,7 @@ public final class ComposerViewState {
   public var didAcceptSubmission = false
   private var resolvingQuestion: AnyHashable?
   private var selection = NSRange(location: 0, length: 0)
-  private var selectionDraft: String?
+  @ObservationIgnored private var selectionDraft: String?
   @ObservationIgnored public let undo = ComposerUndoHistories()
 
   private static let states = NSMapTable<SessionController, ComposerViewState>.weakToStrongObjects()
@@ -27,12 +27,17 @@ public final class ComposerViewState {
   }
 
   public func selection(in draft: String) -> NSRange {
-    selectionDraft == draft ? selection : NSRange(location: (draft as NSString).length, length: 0)
+    isSelectionDraft(draft) ? selection : NSRange(location: (draft as NSString).length, length: 0)
   }
 
   public func select(_ range: NSRange, in draft: String) {
     if selection != range { selection = range }
-    if selectionDraft != draft { selectionDraft = draft }
+    selectionDraft = draft
+  }
+
+  private func isSelectionDraft(_ draft: String) -> Bool {
+    guard let selectionDraft, selectionDraft.utf8.count == draft.utf8.count else { return false }
+    return selectionDraft == draft
   }
 
   public func isResolving(_ question: AnyHashable?) -> Bool {

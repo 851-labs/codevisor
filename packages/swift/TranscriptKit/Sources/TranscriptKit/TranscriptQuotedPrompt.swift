@@ -21,7 +21,7 @@ public struct TranscriptQuotedPrompt: Equatable, Sendable {
   }
 
   public var isEmpty: Bool {
-    text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+    text.unicodeScalars.allSatisfy(CharacterSet.whitespacesAndNewlines.contains)
   }
 
   public var trimmed: TranscriptQuotedPrompt {
@@ -33,6 +33,8 @@ public struct TranscriptQuotedPrompt: Equatable, Sendable {
   }
 
   public func replacingQuotes(with render: (TranscriptQuote) -> String) -> String {
+    guard !quotes.isEmpty else { return text }
+
     var remaining = quotes.makeIterator()
     var result = String.UnicodeScalarView()
     for scalar in text.unicodeScalars {
@@ -69,13 +71,29 @@ public struct TranscriptQuotedPrompt: Equatable, Sendable {
   }
 
   public static func markerCount(in text: some StringProtocol) -> Int {
-    text.unicodeScalars.lazy.filter { $0 == markerScalar }.count
+    var text = String(text)
+    text.makeContiguousUTF8()
+    return text.utf8.withContiguousStorageIfAvailable(markerCount(inUTF8:))
+      ?? text.unicodeScalars.lazy.filter { $0 == markerScalar }.count
   }
 
   private func clamped(_ range: NSRange) -> NSRange {
     let length = (text as NSString).length
     let location = min(max(0, range.location), length)
     return NSRange(location: location, length: min(max(0, range.length), length - location))
+  }
+
+  private static func markerCount(inUTF8 bytes: UnsafeBufferPointer<UInt8>) -> Int {
+    guard let base = bytes.baseAddress else { return 0 }
+
+    var count = 0
+    var offset = 0
+    while offset < bytes.count, let hit = memchr(base + offset, Int32(markerUTF8[0]), bytes.count - offset) {
+      let index = base.distance(to: hit.assumingMemoryBound(to: UInt8.self))
+      if bytes[index...].starts(with: markerUTF8) { count += 1 }
+      offset = index + 1
+    }
+    return count
   }
 
   private static func droppingMarkers(after kept: Int, in text: String) -> String {
@@ -89,6 +107,7 @@ public struct TranscriptQuotedPrompt: Equatable, Sendable {
   }
 
   private static let markerScalar: Unicode.Scalar = "\u{FFFC}"
+  private static let markerUTF8: [UInt8] = [0xEF, 0xBF, 0xBC]
 }
 
 extension ConversationItem {

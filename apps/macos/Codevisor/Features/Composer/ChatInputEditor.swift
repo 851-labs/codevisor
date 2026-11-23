@@ -156,7 +156,8 @@ struct ChatInputEditor: NSViewRepresentable {
 
   private func applyFittingHeight(of textView: NSTextView) {
     guard let layoutManager = textView.layoutManager, let container = textView.textContainer else { return }
-    layoutManager.ensureLayout(for: container)
+    let visibleLimit = NSRect(x: 0, y: 0, width: container.size.width, height: maxHeight + 1)
+    layoutManager.ensureLayout(forBoundingRect: visibleLimit, in: container)
     let used = layoutManager.usedRect(for: container).height + textView.textContainerInset.height * 2
     let clamped = min(max(used, minHeight), maxHeight)
     if abs(clamped - calculatedHeight) > 0.5 {
@@ -168,7 +169,7 @@ struct ChatInputEditor: NSViewRepresentable {
     var parent: ChatInputEditor
     weak var textView: SubmittingTextView?
     var isApplyingUpdate = false
-    private var measuredText: String?
+    private var measuredRevision: Int?
     private var measuredWidth: CGFloat = -1
     private var isHeightUpdateScheduled = false
 
@@ -177,7 +178,9 @@ struct ChatInputEditor: NSViewRepresentable {
 
     init(_ parent: ChatInputEditor) { self.parent = parent }
 
-    func adopt(_ undo: ComposerUndoHistory?, in textView: NSTextView, showing content: TranscriptQuotedPrompt) -> Bool {
+    func adopt(
+      _ undo: ComposerUndoHistory?, in textView: SubmittingTextView, showing content: TranscriptQuotedPrompt
+    ) -> Bool {
       guard self.undo !== undo else { return false }
 
       self.undo?.leave(showing: textView.quotedPrompt.promptText)
@@ -202,7 +205,7 @@ struct ChatInputEditor: NSViewRepresentable {
         return
       }
 
-      quotes.forEach(textView.insertQuote)
+      textView.insertQuotes(quotes)
       parent.onQuotesInserted?(ids)
     }
 
@@ -221,7 +224,7 @@ struct ChatInputEditor: NSViewRepresentable {
     func recalculateHeightIfNeeded() {
       guard let textView else { return }
       let width = textView.bounds.width
-      guard measuredText != textView.string || abs(measuredWidth - width) > 0.5 else { return }
+      guard measuredRevision != textView.quotedText.revision || abs(measuredWidth - width) > 0.5 else { return }
       recordMeasurement(textView)
       scheduleHeightUpdate()
     }
@@ -245,12 +248,12 @@ struct ChatInputEditor: NSViewRepresentable {
     }
 
     private func recordMeasurement(_ textView: NSTextView) {
-      measuredText = textView.string
+      measuredRevision = (textView as? SubmittingTextView)?.quotedText.revision
       measuredWidth = textView.bounds.width
     }
 
     func textDidChange(_ notification: Notification) {
-      guard let textView = notification.object as? NSTextView else { return }
+      guard let textView = notification.object as? SubmittingTextView else { return }
       recordMeasurement(textView)
       parent.content = textView.quotedPrompt
       parent.applyFittingHeight(of: textView)
@@ -280,6 +283,7 @@ struct ChatInputEditor: NSViewRepresentable {
 
     func textViewDidChangeSelection(_ notification: Notification) {
       guard !isApplyingUpdate, let selection = parent.selection, let textView else { return }
+      if textView.quotedText.isStale { parent.content = textView.quotedPrompt }
       let range = textView.selectedRange()
       if selection.wrappedValue != range {
         selection.wrappedValue = range
