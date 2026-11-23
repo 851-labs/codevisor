@@ -257,6 +257,7 @@ export const makeHarnessOperationRunner = (
     setOperation(options.harnessId, {
       error: `${reason}\n${stripVTControlCharacters(outputTail()).trim()}`.trim(),
       phase: "failed",
+      failedPhase: options.phase,
       terminalId: handle.terminalId,
       ...operationTags(options)
     })
@@ -298,6 +299,7 @@ export const makeHarnessOperationRunner = (
       setOperation(harnessId, {
         error: errorMessage(cause),
         phase: "failed",
+        failedPhase: "updating",
         ...operationTags({ targetVersion })
       })
       onSettled?.(false)

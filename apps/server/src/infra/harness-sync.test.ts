@@ -10,22 +10,27 @@ import {
 
 const at = (wallMs: number) => ({ wallMs, counter: 0, deviceId: "elsewhere" })
 
+type HarnessFixture = Omit<LocalHarnessState, "canUninstall"> & {
+  readonly canUninstall?: boolean
+}
+
 interface World {
   readonly deps: HarnessSyncDeps
   readonly calls: {
     readonly enabled: Array<readonly [string, boolean]>
     readonly installs: Array<string>
     readonly uninstalls: Array<string>
+    readonly clearedFailures: Array<string>
   }
   readonly state: {
-    harnesses: Array<LocalHarnessState>
+    harnesses: Array<HarnessFixture>
     installFailures: Record<string, unknown>
   }
 }
 
 const makeWorld = async (serverId: string): Promise<World> => {
   const { services } = await makeServices(serverId)
-  const calls: World["calls"] = { enabled: [], installs: [], uninstalls: [] }
+  const calls: World["calls"] = { enabled: [], installs: [], uninstalls: [], clearedFailures: [] }
   const state: World["state"] = { harnesses: [], installFailures: {} }
   const deps: HarnessSyncDeps = {
     db: services.db,
@@ -34,7 +39,11 @@ const makeWorld = async (serverId: string): Promise<World> => {
     beginUninstall: async (id) => {
       calls.uninstalls.push(id)
     },
-    listHarnesses: () => Promise.resolve([...state.harnesses]),
+    clearFailure: (id) => {
+      calls.clearedFailures.push(id)
+    },
+    listHarnesses: () =>
+      Promise.resolve(state.harnesses.map((harness) => ({ canUninstall: true, ...harness }))),
     setEnabled: (harnessId, enabled) => {
       calls.enabled.push([harnessId, enabled])
       state.harnesses = state.harnesses.map((harness) =>
@@ -236,6 +245,73 @@ describe("harness sync", () => {
       (await reconcileHarnesses({ ...world.deps, beginUninstall: () => Promise.reject("Busy") }))
         .status.blocked
     ).toEqual([{ id: "claude", reason: "Busy" }])
+  })
+
+  it("turns a harness off instead of uninstalling it where Codevisor can't", async () => {
+    const world = await makeWorld("uninstall-outside")
+    world.state.harnesses = [
+      { id: "cursor", enabled: true, installed: true, authenticated: true, canUninstall: false }
+    ]
+    await run(
+      world.deps.db.mergeSyncEntries(HARNESSES_SYNC_NAMESPACE, [
+        {
+          key: "cursor",
+          value: { enabled: false, installed: false, uninstall: true },
+          timestamp: at(10)
+        }
+      ])
+    )
+
+    const result = await reconcileHarnesses(world.deps)
+    expect(world.calls.uninstalls).toEqual([])
+    expect(world.calls.enabled).toEqual([["cursor", false]])
+    expect(result.status.blocked).toEqual([])
+  })
+
+  it("clears a failure once the setting no longer asks for that operation", async () => {
+    const world = await makeWorld("stale-failures")
+    world.state.harnesses = [
+      {
+        id: "cursor",
+        enabled: true,
+        installed: true,
+        authenticated: true,
+        phase: "failed",
+        failedPhase: "uninstalling"
+      },
+      {
+        id: "amp",
+        enabled: false,
+        installed: false,
+        authenticated: true,
+        phase: "failed",
+        failedPhase: "installing"
+      },
+      {
+        id: "codex",
+        enabled: true,
+        installed: true,
+        authenticated: true,
+        phase: "failed",
+        failedPhase: "updating"
+      }
+    ]
+    await run(
+      world.deps.db.mergeSyncEntries(HARNESSES_SYNC_NAMESPACE, [
+        { key: "cursor", value: { enabled: true, installed: true }, timestamp: at(10) },
+        {
+          key: "amp",
+          value: { enabled: false, installed: false, uninstall: true },
+          timestamp: at(10)
+        },
+        { key: "codex", value: { enabled: true, installed: true }, timestamp: at(10) }
+      ])
+    )
+
+    await reconcileHarnesses(world.deps)
+    expect(world.calls.clearedFailures.toSorted()).toEqual(["amp", "cursor"])
+    expect(world.calls.installs).toEqual([])
+    expect(world.calls.uninstalls).toEqual([])
   })
 
   it("never treats legacy absence as permission to uninstall", async () => {

@@ -64,6 +64,8 @@ export interface HarnessUpdateCheckOutcome {
 
 export interface HarnessLifecycleManager {
   readonly beginUninstall: (harnessId: string) => Promise<void>
+  readonly canUninstall: (harness: Harness) => Promise<boolean>
+  readonly clearFailure: (harnessId: string) => void
   readonly decorateHarnesses: (harnesses: ReadonlyArray<Harness>) => Promise<ReadonlyArray<Harness>>
   readonly checkForUpdates: (
     force?: boolean,

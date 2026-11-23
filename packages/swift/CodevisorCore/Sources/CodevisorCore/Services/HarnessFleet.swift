@@ -12,12 +12,17 @@ public enum HarnessFleet {
     public let name: String?
     public let symbolName: String?
     public let authRequired: Bool?
+    public let needsSignIn: Bool?
+    public let canUninstall: Bool?
     public var id: String { harnessId }
 
     public init(
       harnessId: String, state: String, reason: String?, installed: Bool? = nil, version: String? = nil,
-      reportedAt: Date? = nil, name: String? = nil, symbolName: String? = nil, authRequired: Bool? = nil
+      reportedAt: Date? = nil, name: String? = nil, symbolName: String? = nil, authRequired: Bool? = nil,
+      needsSignIn: Bool? = nil, canUninstall: Bool? = nil
     ) {
+      self.needsSignIn = needsSignIn
+      self.canUninstall = canUninstall
       self.name = name
       self.symbolName = symbolName
       self.authRequired = authRequired
@@ -50,9 +55,12 @@ public enum HarnessFleet {
         let symbolName: String? =
           if case .string(let value) = fields["symbolName"], !value.isEmpty { value } else { nil }
         let authRequired: Bool? = if case .bool(let value) = fields["authRequired"] { value } else { nil }
+        let needsSignIn: Bool? = if case .bool(let value) = fields["needsSignIn"] { value } else { nil }
+        let canUninstall: Bool? = if case .bool(let value) = fields["canUninstall"] { value } else { nil }
         return MachineReadiness(
           harnessId: id, state: state, reason: reason, installed: installed, version: version,
-          reportedAt: entry.timestamp.date, name: name, symbolName: symbolName, authRequired: authRequired)
+          reportedAt: entry.timestamp.date, name: name, symbolName: symbolName, authRequired: authRequired,
+          needsSignIn: needsSignIn, canUninstall: canUninstall)
       }
     }
     return result
@@ -151,12 +159,14 @@ public enum HarnessFleet {
     public var machineId: String
     public var name: String
     public var status: MachineStatus
+    public var needsSignIn: Bool
     public var id: String { machineId }
 
-    public init(machineId: String, name: String, status: MachineStatus) {
+    public init(machineId: String, name: String, status: MachineStatus, needsSignIn: Bool = false) {
       self.machineId = machineId
       self.name = name
       self.status = status
+      self.needsSignIn = needsSignIn
     }
   }
 
@@ -191,11 +201,13 @@ public enum HarnessFleet {
     machines.map { machine in
       var status: MachineStatus
       var reportedAt: Date?
+      var needsSignIn = false
       if !machine.isReachable {
         status = .unreachable
-      } else if let key = machine.syncKey, let row = readiness[key]?.first(where: { $0.harnessId == harnessId }) {
+      } else if let row = report(of: harnessId, on: machine, readiness: readiness) {
         status = machineStatus(state: row.state, reason: row.reason)
         reportedAt = row.reportedAt
+        needsSignIn = row.needsSignIn == true
         if status == .off, wantsOn { status = .syncing }
       } else {
         status = .syncing
@@ -208,8 +220,23 @@ public enum HarnessFleet {
         case .signedIn, .notShared, .unresolved: break
         }
       }
-      return MachineRow(machineId: machine.id, name: machine.name, status: status)
+      return MachineRow(machineId: machine.id, name: machine.name, status: status, needsSignIn: needsSignIn)
     }
+  }
+
+  nonisolated public static func canUninstall(
+    harnessId: String, readiness: [String: [MachineReadiness]], machines: [FleetMachine]
+  ) -> Bool {
+    machines.contains { machine in
+      guard let row = report(of: harnessId, on: machine, readiness: readiness) else { return false }
+      return row.canUninstall ?? row.installed ?? false
+    }
+  }
+
+  nonisolated private static func report(
+    of harnessId: String, on machine: FleetMachine, readiness: [String: [MachineReadiness]]
+  ) -> MachineReadiness? {
+    machine.syncKey.flatMap { readiness[$0]?.first { $0.harnessId == harnessId } }
   }
 
   public static func status(

@@ -150,7 +150,7 @@ describe("/v1/sync/mcp-readiness", () => {
 })
 
 describe("/v1/sync/harness-readiness", () => {
-  it("applies global uninstalls and reports their lifecycle state", async () => {
+  it("uninstalls only where this machine can, and never reports the rest as blocked", async () => {
     for (const available of [false, true]) {
       const { services } = await makeServices(`uninstall-${available}`)
       await run(
@@ -167,6 +167,7 @@ describe("/v1/sync/harness-readiness", () => {
         subscribe: () => () => {},
         onGateReleased: () => () => {},
         decorateHarnesses: async (list) => list,
+        canUninstall: async () => true,
         beginUninstall: async () => {
           started = true
         }
@@ -174,9 +175,7 @@ describe("/v1/sync/harness-readiness", () => {
       const server = await startWithApp({ ...services, ...(available ? { lifecycle } : {}) })
       const result = await jsonRequest(server, "/v1/sync/harnesses/reconcile", { method: "POST" })
       expect(started).toBe(available)
-      expect(result.body).toMatchObject({
-        blocked: available ? [] : [{ id: "codex", reason: "Uninstall unavailable on this machine" }]
-      })
+      expect(result.body).toMatchObject({ blocked: [] })
     }
   })
 
@@ -185,6 +184,7 @@ describe("/v1/sync/harness-readiness", () => {
     const lifecycle = fakeHarnessLifecycle({
       subscribe: () => () => {},
       onGateReleased: () => () => {},
+      canUninstall: async (harness) => harness.id === "failed",
       decorateHarnesses: async (list) =>
         (["installing", "uninstalling", "failed"] as const).flatMap((phase) => [
           {
@@ -214,8 +214,10 @@ describe("/v1/sync/harness-readiness", () => {
     expect(field(rowWithId(rows, "installing"), "state")).toBe("installing")
     expect(rowWithId(rows, "failed")).toMatchObject({
       state: "blocked",
-      reason: "Package manager unavailable"
+      reason: "Package manager unavailable",
+      canUninstall: true
     })
+    expect(rowWithId(rows, "installing")).toMatchObject({ canUninstall: false })
     expect(rowWithId(rows, "failed-empty")).toMatchObject({ state: "blocked" })
   })
 
@@ -251,7 +253,8 @@ describe("/v1/sync/harness-readiness", () => {
     expect(rowWithId(rows, "auth-error")).toMatchObject({
       state: "signInRequired",
       reason: "Keychain is locked",
-      authRequired: true
+      authRequired: true,
+      needsSignIn: true
     })
     expect(rowWithId(rows, "auth-free")).toEqual({
       id: "auth-free",
@@ -259,7 +262,9 @@ describe("/v1/sync/harness-readiness", () => {
       symbolName: "chevron.left.forwardslash.chevron.right",
       state: "ready",
       installed: true,
-      authRequired: false
+      authRequired: false,
+      needsSignIn: false,
+      canUninstall: false
     })
   })
 })

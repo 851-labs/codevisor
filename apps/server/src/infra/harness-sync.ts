@@ -1,4 +1,4 @@
-import type { HarnessPreference } from "@codevisor/api"
+import type { HarnessOperationPhase, HarnessPreference } from "@codevisor/api"
 import type { CodevisorDatabaseService } from "@codevisor/db"
 import type { SyncEntryRecord } from "@codevisor/sync"
 import { Effect } from "effect"
@@ -17,7 +17,9 @@ export interface LocalHarnessState {
   readonly enabled: boolean
   readonly installed: boolean
   readonly authenticated: boolean
+  readonly canUninstall: boolean
   readonly phase?: string | undefined
+  readonly failedPhase?: HarnessOperationPhase | undefined
   readonly name?: string | undefined
   readonly symbolName?: string | undefined
 }
@@ -30,6 +32,7 @@ export interface HarnessSyncDeps {
   readonly setEnabled: (harnessId: string, enabled: boolean) => Promise<void>
   readonly beginInstall: (harnessId: string) => Promise<void>
   readonly beginUninstall?: (harnessId: string) => Promise<void>
+  readonly clearFailure?: (harnessId: string) => void
 }
 
 export interface HarnessSyncStatus {
@@ -62,6 +65,8 @@ export const reconcileHarnesses = async (deps: HarnessSyncDeps): Promise<Harness
     if (local === undefined) continue
 
     const wanted = effectiveHarnessPreference(settings)
+    if (outdatedFailure(local, wanted)) deps.clearFailure?.(id)
+
     if (changesEnabled(local, wanted)) {
       await deps.setEnabled(id, wanted.enabled)
       sync.applied.push(id)
@@ -149,9 +154,16 @@ const harnessTransition = (
 ): HarnessTransition => {
   if (isBusy(local)) return "busy"
   if (wanted.installed === true && !local.installed) return "install"
-  if (wanted.installed === false && local.installed) return "uninstall"
+  if (wanted.installed === false && local.installed)
+    return local.canUninstall ? "uninstall" : "none"
   if (wanted.enabled && local.installed && !local.authenticated) return "signIn"
   return "none"
+}
+
+const outdatedFailure = (local: LocalHarnessState, wanted: HarnessPreference): boolean => {
+  if (local.failedPhase === "installing") return wanted.installed !== true || local.installed
+  if (local.failedPhase === "uninstalling") return wanted.installed !== false || !local.installed
+  return false
 }
 
 const changesEnabled = (

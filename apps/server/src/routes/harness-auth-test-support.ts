@@ -49,6 +49,8 @@ export const fakeHarnessLifecycle = (
   overrides: Partial<HarnessLifecycleManager> = {}
 ): HarnessLifecycleManager => ({
   beginUninstall: unused,
+  canUninstall: unused,
+  clearFailure: unused,
   decorateHarnesses: unused,
   checkForUpdates: unused,
   startPeriodicChecks: unused,

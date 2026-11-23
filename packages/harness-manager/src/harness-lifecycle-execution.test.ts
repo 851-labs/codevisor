@@ -128,6 +128,7 @@ describe("harness lifecycle install/update execution", () => {
     expect(decorated[0]?.lifecycle).toMatchObject({
       error: "Exited with status 1\nnpm ERR! registry unreachable",
       phase: "failed",
+      failedPhase: "installing",
       terminalId: "terminal-1"
     })
 
@@ -265,7 +266,8 @@ describe("harness lifecycle install/update execution", () => {
     ])
     expect(decorated[0]?.lifecycle).toMatchObject({
       error: expect.stringContaining("still 1.0.0; expected 2.0.0"),
-      phase: "failed"
+      phase: "failed",
+      failedPhase: "updating"
     })
   })
 
