@@ -46,8 +46,8 @@ extension CodevisorServerClient {
     request: ServerPluginAccountOAuthRequest,
     ticket: String?
   ) async throws -> ServerPluginAccountOAuthStart {
-    let query = "app=\(CodevisorDeeplinkScheme.current)\(Self.ticketQuery(ticket))"
-    return try await send("\(pluginAccountsPath(serverId))/oauth/start?\(query)", method: "POST", body: request)
+    try await send(
+      "\(pluginAccountsPath(serverId))/oauth/start?\(signInQuery(ticket: ticket))", method: "POST", body: request)
   }
 
   public func completePluginAccountOAuth(callbackURL: URL) async throws {

@@ -202,7 +202,7 @@ extension CodevisorServerClient {
 
   public func startMcpOAuth(id: String, ticket: String?) async throws -> ServerMcpOAuthStart {
     try await send(
-      "/v1/mcps/\(pathComponent(id))/oauth-start?app=\(CodevisorDeeplinkScheme.current)\(Self.ticketQuery(ticket))",
+      "/v1/mcps/\(pathComponent(id))/oauth-start?\(signInQuery(ticket: ticket))",
       method: "POST",
       body: Optional<EmptyBody>.none
     )
@@ -224,7 +224,9 @@ extension CodevisorServerClient {
     try await get("/v1/mcps/\(pathComponent(id))/tools")
   }
 
-  static func ticketQuery(_ ticket: String?) -> String {
-    ticket.map { "&ticket=\($0)" } ?? ""
+  func signInQuery(ticket: String?) -> String {
+    let ticketPart = ticket.map { "&ticket=\($0)" } ?? ""
+    let crossDevicePart = isOnThisDevice ? "" : "&crossDevice=1"
+    return "app=\(CodevisorDeeplinkScheme.current)\(ticketPart)\(crossDevicePart)"
   }
 }

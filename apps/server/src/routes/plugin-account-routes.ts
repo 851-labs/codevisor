@@ -9,7 +9,7 @@ import type { PluginAccounts } from "../plugins/accounts/plugin-accounts.js"
 import { HttpFailure, matchRouteParams, readSchema, writeJson } from "../server-context.js"
 import { appSchemeParameter } from "./oauth-returns.js"
 import type { RouteContext } from "./route-context.js"
-import { signInTicket, ticketParameter } from "./sign-in-handoffs.js"
+import { signInTicket, startedOnAnotherDevice, ticketParameter } from "./sign-in-handoffs.js"
 
 export const routePluginAccounts = async (route: RouteContext): Promise<boolean> => {
   const { request, url } = route
@@ -42,7 +42,7 @@ const routeOAuthStart = async (route: RouteContext, serverId: string): Promise<b
   const handoffs = route.routeState.signInHandoffs
   const ticket = signInTicket(route.url.searchParams.get(ticketParameter))
   const started = await accounts
-    .startOAuth(serverId, oauthStart(body, returnApp(route)))
+    .startOAuth(serverId, oauthStart(body, returnApp(route), startedOnAnotherDevice(route.url)))
     .catch((cause: unknown) => {
       handoffs.settle(ticket, { failure: cause instanceof Error ? cause.message : String(cause) })
       throw cause
@@ -154,8 +154,13 @@ const routeMember = async (
   return respond(route, await accounts.saveFields(serverId, body, accountId))
 }
 
-const oauthStart = (body: typeof OAuthStartBody.Type, app: string | undefined) => ({
+const oauthStart = (
+  body: typeof OAuthStartBody.Type,
+  app: string | undefined,
+  crossDevice: boolean
+) => ({
   values: body.values ?? {},
+  crossDevice,
   ...(body.label === undefined ? {} : { label: body.label }),
   ...(body.accountId === undefined ? {} : { accountId: body.accountId }),
   ...(app === undefined ? {} : { callbackScheme: app })

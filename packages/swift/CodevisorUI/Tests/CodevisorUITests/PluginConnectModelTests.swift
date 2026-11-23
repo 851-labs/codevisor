@@ -14,7 +14,7 @@ struct PluginConnectModelTests {
     transport.respond("GET /v1/plugins/catalog/acme/sign-in", with: #"{"oauth":"required"}"#)
     transport.respond("GET /v1/plugins/catalog/shop/sign-in", with: #"{"oauth":"optional"}"#)
     transport.respond("GET /v1/plugins/catalog/notes/sign-in", with: #"{"oauth":"none"}"#)
-    let host = ConnectHost()
+    let host = ConnectHost(client: Self.client(transport))
     let make = { (entry: String) in
       PluginConnectModel(entry: try Self.entry(entry), client: Self.client(transport), host: host.host)
     }
@@ -44,7 +44,7 @@ struct PluginConnectModelTests {
     let transport = ConnectTransport()
     transport.respond("GET /v1/plugins/catalog/acme/sign-in", with: #"{"oauth":"required"}"#)
     let presenter = FakeWebSignIn()
-    let host = ConnectHost()
+    let host = ConnectHost(client: Self.client(transport))
     let model = PluginConnectModel(
       entry: try Self.entry(Self.remote(id: "acme", name: "Acme")), client: Self.client(transport), host: host.host,
       webSignIn: presenter)
@@ -70,10 +70,11 @@ struct PluginConnectModelTests {
   @Test("For a plugin that is already installed the sheet only connects: no install, no skip, browser at once")
   func connectsInstalledPlugin() async throws {
     let presenter = FakeWebSignIn()
-    let host = ConnectHost()
+    let client = Self.client(ConnectTransport())
+    let host = ConnectHost(client: client)
     let model = PluginConnectModel(
       entry: try Self.entry(Self.remote(id: "acme", name: "Acme")), installed: try Self.server(),
-      client: Self.client(ConnectTransport()), host: host.host, webSignIn: presenter)
+      client: client, host: host.host, webSignIn: presenter)
     await model.load()
 
     #expect(model.primaryTitle == "Sign in with Acme" && model.skipTitle == nil)
@@ -90,7 +91,7 @@ struct PluginConnectModelTests {
     let transport = ConnectTransport()
     transport.respond("GET /v1/plugins/catalog/shop/sign-in", with: #"{"oauth":"optional"}"#)
     let presenter = FakeWebSignIn()
-    let host = ConnectHost()
+    let host = ConnectHost(client: Self.client(transport))
     let model = PluginConnectModel(
       entry: try Self.entry(Self.remote(id: "shop", name: "Shop")), client: Self.client(transport), host: host.host,
       webSignIn: presenter)
@@ -106,14 +107,14 @@ struct PluginConnectModelTests {
     #expect(host.browsers.isEmpty)
   }
 
-  @Test("Where the plugin's own sign-in can't run, the sheet installs it and says where to sign in")
+  @Test("When the machine isn't on Cloud and there's no Mac to sign in on, the sheet installs and says what to do")
   func installsWhereSignInCannotRun() async throws {
     let transport = ConnectTransport()
     transport.respond("GET /v1/plugins/catalog/acme/sign-in", with: #"{"oauth":"required"}"#)
     let presenter = FakeWebSignIn()
-    let host = ConnectHost()
+    let host = ConnectHost(client: Self.client(transport))
     var phone = host.host
-    phone.signIn = nil
+    phone.signInRoute = { .unavailable(machineName: "Studio") }
     let model = PluginConnectModel(
       entry: try Self.entry(Self.remote(id: "acme", name: "Acme")), client: Self.client(transport), host: phone,
       webSignIn: presenter)
@@ -121,7 +122,10 @@ struct PluginConnectModelTests {
     #expect(model.primaryTitle == "Install" && model.signInNote == nil)
     await model.load()
     #expect(model.primaryTitle == "Install" && model.skipTitle == nil)
-    #expect(model.signInNote?.hasPrefix("Sign in to Acme from Codevisor on your Mac.") == true)
+    #expect(
+      model.signInNote
+        == "Studio isn't signed in to Codevisor Cloud, so Acme sign-in can't finish on this device. "
+        + "Sign Studio in to Codevisor Cloud, then try again.")
 
     let running = Task { await model.run(.finishSetup) }
     await host.installing.wait()
@@ -138,7 +142,7 @@ struct PluginConnectModelTests {
     let transport = ConnectTransport()
     transport.respond("GET /v1/plugins/catalog/acme/sign-in", with: #"{"oauth":"required"}"#)
     let presenter = FakeWebSignIn()
-    let host = ConnectHost()
+    let host = ConnectHost(client: Self.client(transport))
     let model = PluginConnectModel(
       entry: try Self.entry(Self.remote(id: "acme", name: "Acme")), client: Self.client(transport), host: host.host,
       webSignIn: presenter)
@@ -209,12 +213,17 @@ private struct ConnectFailure: LocalizedError {
 
 @MainActor
 private final class ConnectHost {
+  let client: CodevisorServerClient
   let installing = TestSignal()
   let signingIn = TestSignal()
   private(set) var authTypes: [String?] = []
   private(set) var installed: [ServerMcpServer] = []
   private(set) var browsers: [PluginSignInBrowser] = []
   private var pending: CheckedContinuation<ServerMcpServer, any Error>?
+
+  init(client: CodevisorServerClient) {
+    self.client = client
+  }
 
   var host: PluginConnectHost {
     PluginConnectHost(
@@ -230,7 +239,8 @@ private final class ConnectHost {
         browsers.append(browser)
         signingIn.signal()
       },
-      signInFailed: { _ in }
+      signInFailed: { _ in },
+      signInRoute: { [client] in .machine(id: CodevisorMachine.local.id, client: client) }
     )
   }
 

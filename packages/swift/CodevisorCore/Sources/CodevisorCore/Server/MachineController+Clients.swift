@@ -154,22 +154,31 @@ extension MachineController {
       return injectedClientFactory(machine)
     }
     if let config = relayServerConfig(forMachineId: machineId) {
-      return CodevisorServerClient(
-        config: config,
-        requestGate: requestGate,
-        machineId: machineId
-      )
+      return connectedClient(config, machineId: machineId)
     }
     if let deviceId = CodevisorMachine.cloudDeviceId(forMachineId: machineId) {
       if let config = cloudProvider?.relayServerConfig(forDeviceId: deviceId) {
-        return CodevisorServerClient(config: config, requestGate: requestGate, machineId: machineId)
+        return connectedClient(config, machineId: machineId)
       }
       return CodevisorServerClient(config: .unreachable(machineId: machineId))
     }
     guard let machine = machine(for: machineId) else {
       return CodevisorServerClient(config: .unreachable(machineId: machineId))
     }
-    return CodevisorServerClient(config: machine.serverConfig, requestGate: requestGate, machineId: machine.id)
+    return connectedClient(machine.serverConfig, machineId: machine.id)
+  }
+
+  public func isThisDevice(_ machineId: String) -> Bool {
+    #if os(macOS)
+      codevisorMachineIsThisMac(machineId, statusByMachineId: statusByMachineId)
+    #else
+      false
+    #endif
+  }
+
+  private func connectedClient(_ config: CodevisorServerConfig, machineId: String) -> CodevisorServerClient {
+    CodevisorServerClient(
+      config: config, requestGate: requestGate, machineId: machineId, isOnThisDevice: isThisDevice(machineId))
   }
 
   public func serverConfig(for machineId: String) -> CodevisorServerConfig {

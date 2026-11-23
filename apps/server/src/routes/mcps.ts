@@ -9,7 +9,7 @@ import {
   SetNativeMcpEnabledRequest as SetNativeMcpEnabledRequestSchema,
   UpdateMcpServerRequest as UpdateMcpServerRequestSchema
 } from "@codevisor/api"
-import { isAlwaysOnMcp, type McpManager } from "@codevisor/mcp"
+import { isAlwaysOnMcp, type McpManager, McpSignInNeedsMachine } from "@codevisor/mcp"
 
 import type { PluginCatalog } from "../plugins/plugin-catalog.js"
 import {
@@ -22,7 +22,12 @@ import {
   type CodevisorServerServices
 } from "../server-context.js"
 import { appScheme, appSchemeParameter, type OAuthReturns } from "./oauth-returns.js"
-import { signInTicket, ticketParameter, type SignInHandoffs } from "./sign-in-handoffs.js"
+import {
+  signInTicket,
+  startedOnAnotherDevice,
+  ticketParameter,
+  type SignInHandoffs
+} from "./sign-in-handoffs.js"
 
 export interface McpSignInState {
   readonly oauthReturns: OAuthReturns
@@ -185,9 +190,14 @@ async function beginMcpAuthorization(
 ): Promise<boolean> {
   const app = appScheme(url.searchParams.get(appSchemeParameter))
   const ticket = signInTicket(url.searchParams.get(ticketParameter))
-  const begun = await manager.beginOAuth(id, url.origin, app).catch((cause: unknown) => {
+  const begin = {
+    redirectBaseUrl: url.origin,
+    crossDevice: startedOnAnotherDevice(url),
+    ...(app === undefined ? {} : { app })
+  }
+  const begun = await manager.beginOAuth(id, begin).catch((cause: unknown) => {
     signIn.signInHandoffs.settle(ticket, { failure: failureMessage(cause) })
-    throw cause
+    throw httpSignInFailure(cause)
   })
   signIn.oauthReturns.remember(begun, app)
   const authorizationUrl = withReturnApp(begun, url, app)
@@ -195,6 +205,11 @@ async function beginMcpAuthorization(
   writeJson(response, 201, { authorizationUrl })
   return true
 }
+
+const httpSignInFailure = (cause: unknown): unknown =>
+  cause instanceof McpSignInNeedsMachine
+    ? new HttpFailure(409, cause.message, "signInNeedsMachine")
+    : cause
 
 const failureMessage = (cause: unknown): string =>
   cause instanceof Error ? cause.message : String(cause)

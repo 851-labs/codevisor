@@ -142,6 +142,7 @@ public final class CodevisorServerClient: CodevisorServerClienting, @unchecked S
   let webSocketTransport: any ServerWebSocketTransport
   let requestGate: ServerRequestGate?
   let machineId: String?
+  let isOnThisDevice: Bool
   let decoder = JSONDecoder()
   let encoder = JSONEncoder()
   let eventSleep: @Sendable (Duration) async throws -> Void
@@ -151,6 +152,7 @@ public final class CodevisorServerClient: CodevisorServerClienting, @unchecked S
     urlSession: URLSession = .shared,
     requestGate: ServerRequestGate? = nil,
     machineId: String? = nil,
+    isOnThisDevice: Bool = CodevisorServerClient.hostsServers,
     eventSleep: @escaping @Sendable (Duration) async throws -> Void = { try await Task.sleep(for: $0) }
   ) {
     self.config = config
@@ -162,8 +164,15 @@ public final class CodevisorServerClient: CodevisorServerClienting, @unchecked S
       ?? URLSessionWebSocketTransport(session: urlSession)
     self.requestGate = requestGate
     self.machineId = machineId
+    self.isOnThisDevice = isOnThisDevice
     self.eventSleep = eventSleep
   }
+
+  #if os(macOS)
+    public static let hostsServers = true
+  #else
+    public static let hostsServers = false
+  #endif
 
   func harnessAccountsPath(_ harnessId: String) -> String {
     "/v1/harnesses/\(pathComponent(harnessId))/accounts"

@@ -158,6 +158,33 @@ describe("mcp installation routes", () => {
     expect(denied).toContain('location.href = "codevisor://signed-in"')
   })
 
+  it("tells a device that can't reach this machine's loopback callback why sign-in can't start there", async () => {
+    const { server } = await start()
+    const created = await jsonRequest(server, "/v1/mcps", {
+      method: "POST",
+      body: JSON.stringify({
+        authType: "oauth",
+        enabled: false,
+        name: "Tracker",
+        transport: "http",
+        url: "https://mcp.example.test/mcp"
+      })
+    })
+
+    const refused = await jsonRequest(
+      server,
+      `/v1/mcps/${idOf(created.body)}/oauth-start?app=codevisor&crossDevice=1`,
+      { method: "POST" }
+    )
+
+    expect(refused.status).toBe(409)
+    expect(refused.body).toEqual({
+      code: "signInNeedsMachine",
+      error:
+        "Tracker sign-in can't finish from this device because the machine it runs on isn't connected to Codevisor Cloud. Sign that machine in to Codevisor Cloud, or sign in from Codevisor on that machine."
+    })
+  })
+
   it("opens the browser before the sign-in URL exists and sends it on once it does", async () => {
     const { server, services } = await start()
     const created = await jsonRequest(server, "/v1/mcps", {

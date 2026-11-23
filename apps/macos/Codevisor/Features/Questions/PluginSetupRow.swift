@@ -18,7 +18,7 @@ struct PluginSetupRow: View {
       machineId: controller.project.serverId,
       client: environment.machines.client(for: controller.project.serverId),
       signInRoute: { [machines = environment.machines, machineId = controller.project.serverId] in
-        .forChat(on: machineId, machines: machines)
+        .resolve(on: machineId, machines: machines)
       },
       inBotConversation: inBotConversation
     ) { editing, accounts in

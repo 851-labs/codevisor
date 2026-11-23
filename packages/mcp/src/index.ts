@@ -7,6 +7,7 @@ export * from "./native-config-normalize.js"
 export * from "./native-mcp-manager.js"
 export * from "./native-mcp-types.js"
 export * from "./mcp-oauth-grant.js"
+export { McpSignInNeedsMachine, type McpLoopbackReason } from "./mcp-sign-in-failure.js"
 export {
   decryptSecrets,
   encryptSecrets,

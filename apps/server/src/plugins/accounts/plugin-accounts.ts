@@ -82,6 +82,7 @@ export interface PluginAccounts {
     request: SavePluginAccountRequest & {
       readonly accountId?: string
       readonly callbackScheme?: string
+      readonly crossDevice?: boolean
     }
   ) => Promise<PluginAccountOAuthStart>
   readonly completeOAuth: (state: string, code: string | undefined, error?: string) => Promise<void>
@@ -179,6 +180,7 @@ export const makePluginAccounts = (deps: PluginAccountsDeps): PluginAccounts => 
       return flows.start(server, spec, {
         ...(request.label === undefined ? {} : { label: request.label }),
         ...(request.callbackScheme === undefined ? {} : { callbackScheme: request.callbackScheme }),
+        crossDevice: request.crossDevice === true,
         previous,
         split
       })
