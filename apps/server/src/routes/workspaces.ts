@@ -45,6 +45,7 @@ import {
 } from "./workspace-lookups.js"
 import { routeWorkspaceMedia } from "./workspace-media.js"
 import { routeWorkspacePanes } from "./workspace-panes.js"
+import { routeWorkspaceSize } from "./workspace-size.js"
 
 export const routeWorkspaces = (route: RouteContext): Promise<boolean> =>
   rejectSyncThrows(() => dispatchWorkspaceRoute(route))
@@ -88,6 +89,7 @@ const routeAfterDelegates = async (route: RouteContext): Promise<boolean> => {
 
   return (
     routeWorkspaceReads(route) ??
+    routeWorkspaceSize(route) ??
     routeWorkspaceArchive(route) ??
     routeWorkspacePanes(route) ??
     routeWorkspace(route) ??

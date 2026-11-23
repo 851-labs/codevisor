@@ -66,3 +66,8 @@ export const WorkspaceFileChanges = Schema.Struct({
   truncated: Schema.Boolean
 })
 export type WorkspaceFileChanges = typeof WorkspaceFileChanges.Type
+
+export const WorkspaceSize = Schema.Struct({
+  bytes: Schema.optional(Schema.Number)
+})
+export type WorkspaceSize = typeof WorkspaceSize.Type
