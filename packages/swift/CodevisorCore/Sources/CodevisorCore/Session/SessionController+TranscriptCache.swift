@@ -17,9 +17,9 @@ extension SessionController {
       self?.noteTurnEndedForPlanApproval()
       self?.onTurnEnded?()
     }
-    model.onPromptAccepted = { [weak self, weak model] attachmentCount, isQueued in
+    model.onPromptAccepted = { [weak self, weak model] acceptance in
       self?.configurationAdjustmentMessage = nil
-      self?.captureMessageSent(model: model, attachmentCount: attachmentCount, isQueued: isQueued)
+      self?.captureMessageSent(model: model, acceptance: acceptance)
     }
     model.onLocalUserMessageAppended = { [weak self] messageID in
       guard let self, sends.route(of: messageID)?.landsInPromptQueue == true else { return }

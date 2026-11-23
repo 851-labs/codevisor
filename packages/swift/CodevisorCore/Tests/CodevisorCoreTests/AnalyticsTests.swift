@@ -27,6 +27,12 @@ struct AnalyticsTests {
         "setup request answered",
         "git setup",
         "project added",
+        "bot created",
+        "bot forked",
+        "bot archived",
+        "bot deleted",
+        "split opened",
+        "pane opened",
       ])
   }
 

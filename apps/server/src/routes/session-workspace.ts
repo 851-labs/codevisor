@@ -32,6 +32,7 @@ import {
 } from "../server-context.js"
 import { withBotSessionOption } from "./bot-session-modes.js"
 import { isConversationMissing, rememberConversationRecap } from "./conversation-recap.js"
+import { captureSubAgentCreated } from "./feature-analytics.js"
 import { assertAgentVerified } from "./fleet-calls.js"
 import { restoreSessionConfigSelections } from "./session-config-restore.js"
 import {
@@ -142,6 +143,7 @@ export const createSessionIfMissing = async (
       verifiedCaller
     )
     created = true
+    void captureSubAgentCreated(services.db, config.id, payload)
     if (publishCreated) {
       await appendAndPublish(services.db, fanout, "session.created", session.id, session)
     }

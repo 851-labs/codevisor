@@ -1,9 +1,10 @@
 import { describe, expect, it } from "vitest"
 
+import type { TelemetrySettings } from "../telemetry/telemetry-settings.js"
 import type { SentryEvent } from "./sentry-event.js"
-import { makeServerDiagnostics, type DiagnosticsSettings } from "./server-diagnostics.js"
+import { makeServerDiagnostics } from "./server-diagnostics.js"
 
-const settings = (overrides: Partial<DiagnosticsSettings> = {}): DiagnosticsSettings => ({
+const settings = (overrides: Partial<TelemetrySettings> = {}): TelemetrySettings => ({
   enabled: async () => true,
   enabledFlags: async () => new Set(["slackPlugin", "developerMode"]),
   updateChannel: async () => "alpha",
@@ -11,7 +12,7 @@ const settings = (overrides: Partial<DiagnosticsSettings> = {}): DiagnosticsSett
 })
 
 const diagnostics = (
-  options: { settings?: DiagnosticsSettings; send?: () => Promise<void> } = {}
+  options: { settings?: TelemetrySettings; send?: () => Promise<void> } = {}
 ) => {
   const sent: SentryEvent[] = []
   let clock = 1_000_000
