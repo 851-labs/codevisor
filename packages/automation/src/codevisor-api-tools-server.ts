@@ -344,6 +344,12 @@ export const codevisorServerApiTools: ReadonlyArray<CodevisorApiToolSpec> = [
     "/v1/workspaces/:workspaceId/files"
   ),
   apiTool(
+    "workspaces.size",
+    "Get how much disk space a workspace's checkout folder takes, in bytes, as du measures it. Returns no bytes for an archived workspace or one without a checkout on disk.",
+    "GET",
+    "/v1/workspaces/:workspaceId/size"
+  ),
+  apiTool(
     "workspaces.delete",
     "Delete an empty workspace identity.",
     "DELETE",
