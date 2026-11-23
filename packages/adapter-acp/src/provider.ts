@@ -20,7 +20,8 @@ import {
   type QuestionAnswer,
   type RuntimeEmit,
   type SetGoalUpdate,
-  type ToolGatewayConfig
+  type ToolGatewayConfig,
+  turnUsageObserved
 } from "@codevisor/agent-runtime"
 import { isoTimestamp, type Harness, type HarnessUsageLimits } from "@codevisor/api"
 import { Effect } from "effect"
@@ -174,6 +175,10 @@ const acpSessionHandle = (
         emit(turnLifecycleEvent(sessionId, turnId, "started"))
       )
       const result = yield* connection.prompt(sessionId, input)
+      const tokens = result.tokens
+      if (tokens !== undefined) {
+        yield* adapterPromise("promptTurnUsage", () => emit(turnUsageObserved(sessionId, tokens)))
+      }
       yield* adapterPromise("promptTurnEnd", () =>
         emit(turnLifecycleEvent(sessionId, turnId, "ended", withSignInDetail(result, harnessName)))
       )

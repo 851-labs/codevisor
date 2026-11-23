@@ -57,6 +57,20 @@ struct SessionModelEventApplicationTests {
     #expect(model.modelFallback == nil)
   }
 
+  @Test("A usage update keeps the readings it doesn't carry, so token totals never wipe the context bar")
+  func usageUpdatesMerge() {
+    let model = makeModel()
+    defer { model.shutdown() }
+
+    model.apply(.update(.usageUpdate(SessionUsage(used: 5_000, size: 131_072))))
+    model.apply(.update(.usageUpdate(SessionUsage(inputTokens: 3_000, outputTokens: 120, totalTokens: 3_120))))
+    model.apply(.update(.usageUpdate(SessionUsage(used: 6_000))))
+
+    #expect(
+      model.usage
+        == SessionUsage(used: 6_000, size: 131_072, inputTokens: 3_000, outputTokens: 120, totalTokens: 3_120))
+  }
+
   @Test("A late tool update reaches its turn after that turn adopted the server's item id")
   func lateToolUpdateFollowsAdoptedItemId() throws {
     let model = makeModel()

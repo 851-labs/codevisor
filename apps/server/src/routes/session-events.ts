@@ -1,8 +1,10 @@
 import {
   steerSettlementOf,
+  turnUsageOf,
   usageLimitsObservation,
   type RuntimeEvent,
   type RuntimeEventSink,
+  type TurnTokens,
   type UsageLimitsObservation
 } from "@codevisor/agent-runtime"
 import type { AttachmentRef } from "@codevisor/api"
@@ -24,6 +26,7 @@ import { echoesHiddenPrompt } from "./hidden-prompt-titles.js"
 import { settleSteeredPrompt } from "./prompt-steering.js"
 import { persistToolImages, toolImageCandidates } from "./tool-images.js"
 import { reportTurnFailure, turnFailureOf } from "./turn-failure-reports.js"
+import { usageAfterTurn } from "./turn-usage.js"
 
 const executionAnnotators = new WeakMap<CodevisorServerServices, ExecutionAnnotator>()
 
@@ -69,6 +72,12 @@ export const sessionEventSink =
     if (observation !== undefined) {
       return observeUsageLimits(services, sessionId, observation).catch(() => undefined)
     }
+    const turnTokens = event.kind === "session.updated" ? turnUsageOf(event.payload) : undefined
+    if (turnTokens !== undefined) {
+      return recordTurnUsage(services, fanout, serverId, sessionId, event, turnTokens).catch(
+        swallowError
+      )
+    }
     const steer = event.kind === "session.updated" ? steerSettlementOf(event.payload) : undefined
     if (steer !== undefined) {
       return settleSteeredPrompt(services, fanout, serverId, sessionId, steer).catch(swallowError)
@@ -112,6 +121,18 @@ export const sessionEventSink =
     }
     return materializeRuntimeEvent(services.db, fanout, serverId, event, sessionId)
   }
+
+const recordTurnUsage = async (
+  services: CodevisorServerServices,
+  fanout: EventFanout,
+  serverId: string,
+  sessionId: string,
+  event: RuntimeEvent,
+  tokens: TurnTokens
+): Promise<void> => {
+  const payload = await usageAfterTurn(services.db, sessionId, tokens)
+  await materializeRuntimeEvent(services.db, fanout, serverId, { ...event, payload }, sessionId)
+}
 
 const materializeOutput = async (
   services: CodevisorServerServices,

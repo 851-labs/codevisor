@@ -10,16 +10,10 @@ struct WorkspaceInspectorUsageSection: View {
   var body: some View {
     WorkspaceInspectorCard(title: "Usage", isExpanded: $isExpanded) {
       if let account = limits.accountEmail ?? limits.accountLabel {
-        HStack(spacing: 12) {
-          Text("Account")
-            .layoutPriority(1)
-          Spacer(minLength: 0)
-          Text(account)
-            .lineLimit(1)
-            .truncationMode(.middle)
-            .foregroundStyle(.secondary)
-        }
-        .accessibilityElement(children: .combine)
+        WorkspaceInspectorUsageDetailRow(title: "Account", value: account)
+      }
+      if let plan = limits.plan {
+        WorkspaceInspectorUsageDetailRow(title: "Plan", value: plan)
       }
       ForEach(Array(limits.windows.enumerated()), id: \.offset) { _, window in
         WorkspaceInspectorUsageWindowRow(window: window)
@@ -34,6 +28,24 @@ struct WorkspaceInspectorUsageSection: View {
     guard let balance else { return "Available" }
     guard let amount = Double(balance) else { return balance }
     return amount.formatted(.number.precision(.fractionLength(0...2)))
+  }
+}
+
+private struct WorkspaceInspectorUsageDetailRow: View {
+  let title: String
+  let value: String
+
+  var body: some View {
+    HStack(spacing: 12) {
+      Text(title)
+        .layoutPriority(1)
+      Spacer(minLength: 0)
+      Text(value)
+        .lineLimit(1)
+        .truncationMode(.middle)
+        .foregroundStyle(.secondary)
+    }
+    .accessibilityElement(children: .combine)
   }
 }
 

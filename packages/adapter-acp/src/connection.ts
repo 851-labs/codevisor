@@ -7,7 +7,8 @@ import type {
   QuestionAnswer,
   RuntimeEmit,
   SetGoalUpdate,
-  ToolGatewayConfig
+  ToolGatewayConfig,
+  TurnTokens
 } from "@codevisor/agent-runtime"
 import type { SessionConfigOption, SessionGoal, TurnStopKind } from "@codevisor/api"
 import { Effect } from "effect"
@@ -32,6 +33,7 @@ export interface AcpPromptResult {
   readonly stopKind?: TurnStopKind
   readonly resetsAt?: string
   readonly retryable?: boolean
+  readonly tokens?: TurnTokens
 }
 
 export interface AcpAgentConnection {

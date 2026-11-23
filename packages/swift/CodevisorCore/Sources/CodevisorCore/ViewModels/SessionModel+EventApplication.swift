@@ -211,8 +211,8 @@ extension SessionModel {
       selectMode(modeId)
     case let .configOptionUpdate(options):
       applyConfigOptions(options)
-    case let .usageUpdate(usage):
-      self.usage = usage
+    case let .usageUpdate(update):
+      usage = usage?.merging(update) ?? update
     case let .goalUpdate(goal):
       self.goal = goal
     case .goalCleared:
