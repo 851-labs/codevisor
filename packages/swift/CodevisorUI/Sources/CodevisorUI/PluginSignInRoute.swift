@@ -2,9 +2,37 @@ import CodevisorCore
 import Foundation
 
 public enum PluginSignInRoute {
-  case thisMachine
-  case localMachine(any CodevisorServerClienting)
+  case chatMachine
+  case localMac(any CodevisorServerClienting)
   case unavailable
+
+  @MainActor
+  public static func forChat(on machineId: String, machines: MachineController) -> PluginSignInRoute {
+    forChat(on: machineId, statusByMachineId: machines.statusByMachineId) {
+      machines.client(for: CodevisorMachine.local.id)
+    }
+  }
+
+  static func forChat(
+    on machineId: String,
+    statusByMachineId: [String: MachineStatus],
+    localMac: () -> any CodevisorServerClienting
+  ) -> PluginSignInRoute {
+    if codevisorMachineIsThisMac(machineId, statusByMachineId: statusByMachineId) { return .chatMachine }
+    if relaysSignInThroughCloud(machineId, statusByMachineId: statusByMachineId) { return .chatMachine }
+    #if os(macOS)
+      return .localMac(localMac())
+    #else
+      return .unavailable
+    #endif
+  }
+
+  private static func relaysSignInThroughCloud(
+    _ machineId: String,
+    statusByMachineId: [String: MachineStatus]
+  ) -> Bool {
+    CodevisorMachine.cloudDeviceId(forMachineId: machineId) != nil || statusByMachineId[machineId]?.cloudDeviceId != nil
+  }
 }
 
 enum PluginSignInError: LocalizedError {

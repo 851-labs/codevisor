@@ -1,5 +1,6 @@
 import ACPKit
 import CodevisorCore
+import CodevisorTestSupport
 import Foundation
 import Synchronization
 import Testing
@@ -8,7 +9,7 @@ import Testing
 
 @MainActor
 struct PluginSetupModelTests {
-  @Test("A fields plugin moves from Install to Add Account to ready as the machine catches up")
+  @Test("A fields plugin's card opens the connect sheet to install, then to connect, then reads ready")
   func fieldsPluginSteps() async throws {
     let transport = SetupTransport()
     transport.respond("GET /v1/plugins/catalog/grafana", with: Self.grafanaEntry)
@@ -21,8 +22,9 @@ struct PluginSetupModelTests {
     #expect(model.canAct)
 
     await model.performPrimaryAction()
-    #expect(model.installing?.id == "grafana")
+    #expect(model.connecting?.entry.id == "grafana" && model.connecting?.installed == nil)
 
+    model.connecting = nil
     transport.respond("GET /v1/mcps", with: "[\(Self.server(authType: "none", state: "connected"))]")
     transport.respond("GET /v1/plugins/mcp-1/accounts", with: #"{"accounts":[]}"#)
     await model.refresh()
@@ -30,7 +32,8 @@ struct PluginSetupModelTests {
     #expect(model.canAct)
 
     await model.performPrimaryAction()
-    #expect(model.addingAccount?.draft.fields.map(\.key) == ["url"])
+    #expect(model.connecting?.installed?.id == "mcp-1")
+    #expect(model.addingAccount == nil)
 
     transport.respond("GET /v1/plugins/mcp-1/accounts", with: #"{"accounts":[\#(Self.account)]}"#)
     await model.refresh()
@@ -38,7 +41,7 @@ struct PluginSetupModelTests {
     #expect(!model.canAct)
   }
 
-  @Test("The MCP sign-in sheet closes by itself once the machine reports the plugin connected")
+  @Test("An MCP card signs in on the chat's machine from the connect sheet and closes once it connects")
   func mcpSignInClosesOnConnect() async throws {
     let transport = SetupTransport()
     transport.respond("GET /v1/plugins/catalog/grafana", with: Self.remoteEntry)
@@ -52,21 +55,24 @@ struct PluginSetupModelTests {
     #expect(model.step == .signIn)
     #expect(model.canAct)
 
-    let action = Task { await model.performPrimaryAction() }
+    let connected = Task {
+      try await Self.finishConnectSheet(
+        of: model, client: Self.client(transport), signIn: signIn, title: "Sign in with Grafana")
+    }
     await signIn.presented.wait()
     #expect(signIn.urls.map { $0.path.hasPrefix("/v1/sign-in/") } == [true])
+    await transport.requested("POST /v1/mcps/mcp-1/oauth-start").wait()
     await model.refresh()
     #expect(signIn.isOpen)
 
     transport.respond("GET /v1/mcps", with: "[\(Self.server(authType: "oauth", state: "connected"))]")
     await model.refresh()
     try #require(!signIn.isOpen)
-    await action.value
+    try await connected.value
     #expect(model.step == .ready)
-    #expect(!model.isWorking)
   }
 
-  @Test("A card for another machine signs in through this Mac's copy and closes once that machine connects")
+  @Test("Without Cloud on the chat's machine, the connect sheet signs in through this Mac's copy")
   func remoteCardSignsInLocally() async throws {
     let remote = SetupTransport()
     remote.respond("GET /v1/plugins/catalog/grafana", with: Self.remoteEntry)
@@ -77,19 +83,27 @@ struct PluginSetupModelTests {
     local.respond(
       "POST /v1/mcps/local-mcp/oauth-start", with: #"{"authorizationUrl":"http://127.0.0.1:49361/authorize"}"#)
     let signIn = FakeWebSignIn()
+    let localClient = Self.client(local)
+    let remoteClient = Self.lanClient(remote)
     let model = PluginSetupModel(
-      request: try Self.request(auth: "mcpOAuth"), client: Self.client(remote),
-      signInRoute: .localMachine(Self.client(local)), webSignIn: signIn)
+      request: try Self.request(auth: "mcpOAuth"), client: remoteClient,
+      signInRoute: { .localMac(localClient) }, webSignIn: signIn)
     await model.refresh()
 
-    let action = Task { await model.performPrimaryAction() }
+    let connected = Task {
+      try await Self.finishConnectSheet(of: model, client: remoteClient, signIn: signIn, title: "Sign in with Grafana")
+    }
     await signIn.presented.wait()
-    #expect(signIn.urls.map { $0.path.hasPrefix("/v1/sign-in/") } == [true])
+    let handoff = try #require(signIn.urls.first)
+    #expect(handoff.path.hasPrefix("/v1/sign-in/"))
+    await local.requested("POST /v1/mcps/local-mcp/oauth-start").wait()
+    let started = try #require(local.queries(sentTo: "POST /v1/mcps/local-mcp/oauth-start").first)
+    #expect(started.contains("ticket=\(handoff.lastPathComponent)"))
 
     remote.respond("GET /v1/mcps", with: "[\(Self.server(authType: "oauth", state: "connected"))]")
     await model.refresh()
     try #require(!signIn.isOpen)
-    await action.value
+    try await connected.value
     #expect(model.step == .ready)
   }
 
@@ -100,8 +114,8 @@ struct PluginSetupModelTests {
     transport.respond("GET /v1/mcps", with: "[\(Self.server(authType: "oauth", state: "needsAuthorization"))]")
     let signIn = FakeWebSignIn()
     let model = PluginSetupModel(
-      request: try Self.request(auth: "mcpOAuth"), client: Self.client(transport), signInRoute: .unavailable,
-      opensConnectSheet: true, webSignIn: signIn)
+      request: try Self.request(auth: "mcpOAuth"), client: Self.client(transport), signInRoute: { .unavailable },
+      webSignIn: signIn)
     await model.refresh()
 
     await model.performPrimaryAction()
@@ -196,7 +210,9 @@ struct PluginSetupModelTests {
     let model = PluginSetupModel(request: try Self.request(auth: "fields"), client: Self.client(transport))
     await model.refresh()
 
-    await model.performPrimaryAction()
+    try await Self.finishConnectSheet(of: model, client: Self.client(transport))
+    #expect(model.guiding == nil)
+    await model.connectSheetDismissed()
     let guide = try #require(model.guiding)
 
     let setup = PluginAccountGuideModel(
@@ -235,37 +251,13 @@ struct PluginSetupModelTests {
     #expect(accounts.makeGuide() != nil)
   }
 
-  @Test("On the Mac the card opens the connect sheet: to install, or just to connect an installed plugin")
-  func cardOpensConnectSheet() async throws {
-    let transport = SetupTransport()
-    transport.respond("GET /v1/plugins/catalog/grafana", with: Self.grafanaEntry)
-    transport.respond("GET /v1/mcps", with: "[]")
-    let model = PluginSetupModel(
-      request: try Self.request(auth: "fields"), client: Self.client(transport), opensConnectSheet: true)
-    await model.refresh()
-
-    await model.performPrimaryAction()
-    #expect(model.installing == nil)
-    #expect(model.connecting?.installed == nil)
-
-    model.connecting = nil
-    transport.respond("GET /v1/mcps", with: "[\(Self.server(authType: "none", state: "connected"))]")
-    transport.respond("GET /v1/plugins/mcp-1/accounts", with: #"{"accounts":[]}"#)
-    await model.refresh()
-    await model.performPrimaryAction()
-
-    #expect(model.connecting?.installed?.id == "mcp-1")
-    #expect(model.addingAccount == nil)
-  }
-
   @Test("A plugin whose account is entered by hand opens its account form once the connect sheet closes")
   func manualAccountFollowsConnectSheet() async throws {
     let transport = SetupTransport()
     transport.respond("GET /v1/plugins/catalog/grafana", with: Self.grafanaEntry)
     transport.respond("GET /v1/mcps", with: "[\(Self.server(authType: "none", state: "connected"))]")
     transport.respond("GET /v1/plugins/mcp-1/accounts", with: #"{"accounts":[]}"#)
-    let model = PluginSetupModel(
-      request: try Self.request(auth: "fields"), client: Self.client(transport), opensConnectSheet: true)
+    let model = PluginSetupModel(request: try Self.request(auth: "fields"), client: Self.client(transport))
     await model.refresh()
     let server = try #require(model.server)
 
@@ -277,8 +269,52 @@ struct PluginSetupModelTests {
     #expect(model.addingAccount?.draft.fields.map(\.key) == ["url"])
   }
 
+  @Test("Plugin sign-in starts on the chat's machine when it's this Mac or signed in to Cloud, else on this Mac")
+  func signInRouteForChat() {
+    let statuses = [
+      "local": MachineStatus(isReachable: true, label: "MacBook", serverId: "server-macbook"),
+      "studio": MachineStatus(isReachable: true, label: "Studio", cloudDeviceId: "device-studio"),
+      "loopback-macbook": MachineStatus(isReachable: true, label: "MacBook", serverId: "server-macbook"),
+      "lan-box": MachineStatus(isReachable: true, label: "Box", serverId: "server-box"),
+    ]
+    let localMac = Self.client(SetupTransport())
+    func route(_ machineId: String) -> String {
+      switch PluginSignInRoute.forChat(on: machineId, statusByMachineId: statuses, localMac: { localMac }) {
+      case .chatMachine: "chat"
+      case .localMac: "local"
+      case .unavailable: "none"
+      }
+    }
+
+    #expect(route("local") == "chat")
+    #expect(route("loopback-macbook") == "chat")
+    #expect(route("studio") == "chat")
+    #expect(route("cloud:device-offline") == "chat")
+    #expect(route("lan-box") == "local")
+  }
+
+  private static func finishConnectSheet(
+    of model: PluginSetupModel,
+    client: CodevisorServerClient,
+    signIn: FakeWebSignIn = FakeWebSignIn(),
+    title: String? = nil
+  ) async throws {
+    await model.performPrimaryAction()
+    let target = try #require(model.connecting)
+    let host = model.connectHost { _, _ in throw CancellationError() }
+    let sheet = PluginConnectModel(
+      entry: target.entry, installed: target.installed, client: client, host: host, webSignIn: signIn)
+    if let title { #expect(sheet.primaryTitle == title) }
+    #expect(await sheet.run(.finishSetup))
+  }
+
   private static func client(_ transport: SetupTransport) -> CodevisorServerClient {
     CodevisorServerClient(config: CodevisorServerConfig(requestTransport: transport))
+  }
+
+  private static func lanClient(_ transport: SetupTransport) -> CodevisorServerClient {
+    CodevisorServerClient(
+      config: CodevisorServerConfig(baseURL: URL(string: "http://studio.local:4100")!, requestTransport: transport))
   }
 
   private static func request(auth: String) throws -> ServerPluginSetupRequest {
@@ -338,9 +374,24 @@ private struct CompletionBody: Decodable {
 private final class SetupTransport: ServerRequestTransport, Sendable {
   private let routes = Mutex<[String: (status: Int, body: String)]>([:])
   private let sent = Mutex<[String: [String]]>([:])
+  private let sentQueries = Mutex<[String: [String]]>([:])
+  private let signals = Mutex<[String: TestSignal]>([:])
+
+  func requested(_ route: String) -> TestSignal {
+    signals.withLock { signals in
+      if let signal = signals[route] { return signal }
+      let signal = TestSignal()
+      signals[route] = signal
+      return signal
+    }
+  }
 
   func bodies(sentTo route: String) -> [String] {
     sent.withLock { $0[route] ?? [] }
+  }
+
+  func queries(sentTo route: String) -> [String] {
+    sentQueries.withLock { $0[route] ?? [] }
   }
 
   func respond(_ route: String, with body: String, status: Int = 200) {
@@ -352,6 +403,8 @@ private final class SetupTransport: ServerRequestTransport, Sendable {
     let route = "\(request.httpMethod ?? "GET") \(url.path)"
     let body = String(decoding: request.httpBody ?? Data(), as: UTF8.self)
     sent.withLock { $0[route, default: []].append(body) }
+    sentQueries.withLock { $0[route, default: []].append(url.query() ?? "") }
+    requested(route).signal()
     let reply = try #require(routes.withLock { $0[route] }, "Unexpected request \(route)")
     let response = try #require(
       HTTPURLResponse(url: url, statusCode: reply.status, httpVersion: "HTTP/1.1", headerFields: nil))

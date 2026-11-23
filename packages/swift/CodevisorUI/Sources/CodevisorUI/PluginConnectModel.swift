@@ -8,17 +8,20 @@ public struct PluginConnectHost {
   public var didInstall: @MainActor (ServerMcpServer) -> Void
   public var signIn: (@MainActor (ServerMcpServer, PluginSignInBrowser) async -> Void)?
   public var signInFailed: @MainActor (String) -> Void
+  public var signInClient: (any CodevisorServerClienting)?
 
   public init(
     install: @escaping @MainActor ([String: ServerConfigFieldValue], String?) async throws -> ServerMcpServer,
     didInstall: @escaping @MainActor (ServerMcpServer) -> Void,
     signIn: (@MainActor (ServerMcpServer, PluginSignInBrowser) async -> Void)?,
-    signInFailed: @escaping @MainActor (String) -> Void
+    signInFailed: @escaping @MainActor (String) -> Void,
+    signInClient: (any CodevisorServerClienting)? = nil
   ) {
     self.install = install
     self.didInstall = didInstall
     self.signIn = signIn
     self.signInFailed = signInFailed
+    self.signInClient = signInClient
   }
 }
 
@@ -152,7 +155,12 @@ public final class PluginConnectModel {
   }
 
   private func makeBrowser() -> PluginSignInBrowser {
-    PluginSignInBrowser(client: client, pluginName: signInName, presenter: webSignIn)
+    PluginSignInBrowser(client: browserClient, pluginName: signInName, presenter: webSignIn)
+  }
+
+  private var browserClient: any CodevisorServerClienting {
+    guard entry.accounts == nil else { return client }
+    return host.signInClient ?? client
   }
 
   private var signsInToServerHere: Bool { host.signIn != nil }

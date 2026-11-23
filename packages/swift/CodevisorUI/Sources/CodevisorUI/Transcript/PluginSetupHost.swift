@@ -17,15 +17,13 @@ public struct PluginSetupHost<AccountSheet: View, GuideSheet: View>: View {
     isConnected: Bool,
     machineId: String,
     client: any CodevisorServerClienting,
-    signInRoute: PluginSignInRoute,
+    signInRoute: @escaping @MainActor () -> PluginSignInRoute,
     inBotConversation: Bool,
     @ViewBuilder accountSheet: @escaping (PluginAccountEditing, PluginAccountsModel) -> AccountSheet,
     @ViewBuilder guideSheet: @escaping (PluginAccountGuideModel, @escaping () async -> Void) -> GuideSheet
   ) {
     _model = State(
-      initialValue: PluginSetupModel(
-        request: request, client: client, signInRoute: signInRoute,
-        opensConnectSheet: Self.opensConnectSheet(for: signInRoute)))
+      initialValue: PluginSetupModel(request: request, client: client, signInRoute: signInRoute))
     self.request = request
     self.isConnected = isConnected
     self.machineId = machineId
@@ -42,9 +40,6 @@ public struct PluginSetupHost<AccountSheet: View, GuideSheet: View>: View {
     )
     .task(id: refreshKey) { await refreshWhilePending() }
     .modifier(PluginSetupConnectSheet(model: model, client: client))
-    .sheet(item: $model.installing) { entry in
-      PluginInstallSheet(entry: entry, client: client) { try await model.install(values: $0) }
-    }
     .sheet(item: $model.addingAccount, onDismiss: refresh) { editing in
       if let accounts = model.accounts { accountSheet(editing, accounts) }
     }
@@ -56,15 +51,6 @@ public struct PluginSetupHost<AccountSheet: View, GuideSheet: View>: View {
     } message: {
       Text(model.errorMessage ?? "")
     }
-  }
-
-  private static func opensConnectSheet(for route: PluginSignInRoute) -> Bool {
-    #if os(macOS)
-      if case .thisMachine = route { return true }
-      return false
-    #else
-      return true
-    #endif
   }
 
   private var showsError: Binding<Bool> {

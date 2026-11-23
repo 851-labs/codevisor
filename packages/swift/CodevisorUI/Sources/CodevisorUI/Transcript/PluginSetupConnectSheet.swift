@@ -19,20 +19,10 @@ struct PluginSetupConnectSheet: ViewModifier {
   }
 
   private func host(for target: PluginConnectTarget, in environment: AppEnvironment) -> PluginConnectHost {
-    PluginConnectHost(
-      install: { values, authType in
-        try await PluginCatalogModel(client: client).install(
-          target.entry, values: values, authType: authType, access: environment.pluginAccess)
-      },
-      didInstall: { model.didInstall($0) },
-      signIn: serverSignIn,
-      signInFailed: { model.errorMessage = $0 }
-    )
-  }
-
-  private var serverSignIn: (@MainActor (ServerMcpServer, PluginSignInBrowser) async -> Void)? {
-    guard model.signsInToServerHere else { return nil }
-    return { server, browser in await model.signIn(to: server, browser: browser) }
+    model.connectHost { values, authType in
+      try await PluginCatalogModel(client: client).install(
+        target.entry, values: values, authType: authType, access: environment.pluginAccess)
+    }
   }
 
   private func finish() {

@@ -17,16 +17,14 @@ struct PluginSetupRow: View {
       isConnected: setup.state == .connected,
       machineId: controller.project.serverId,
       client: environment.machines.client(for: controller.project.serverId),
-      signInRoute: signInRoute,
+      signInRoute: { [machines = environment.machines, machineId = controller.project.serverId] in
+        .forChat(on: machineId, machines: machines)
+      },
       inBotConversation: inBotConversation
     ) { editing, accounts in
       PluginAccountEditorScreen(editing: editing, model: accounts)
     } guideSheet: { guide, onSaved in
       PluginAccountGuideScreen(model: guide, onSaved: onSaved)
     }
-  }
-
-  private var signInRoute: PluginSignInRoute {
-    controller.project.serverId == CodevisorMachine.local.id ? .thisMachine : .unavailable
   }
 }
