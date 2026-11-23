@@ -95,6 +95,15 @@ extension CodevisorServerClient {
     try await get(try workspaceMediaPath(workspaceId, "links", before: before, limit: limit))
   }
 
+  public func workspaceSize(workspaceId: UUID) async throws -> Int64? {
+    let size: WorkspaceSize = try await get("/v1/workspaces/\(workspaceId.uuidString)/size")
+    return size.bytes
+  }
+
+  private struct WorkspaceSize: Decodable {
+    let bytes: Int64?
+  }
+
   private func workspaceMediaPath(
     _ workspaceId: UUID, _ kind: String, before: String?, limit: Int
   ) throws
@@ -127,4 +136,6 @@ extension CodevisorServerClienting {
   {
     throw CodevisorServerClientError.invalidResponse
   }
+
+  public func workspaceSize(workspaceId: UUID) async throws -> Int64? { nil }
 }

@@ -72,6 +72,7 @@ struct WorkspaceInspectorView: View {
   @State private var visited: Set<WorkspaceInspectorTab> = []
   @State private var subscriptions = ChatPluginSubscriptionsModel()
   @State private var workspaceMirrors = WorkspaceInspectorMirrors()
+  @State private var checkoutSize = WorkspaceInspectorCheckoutSize()
   @State private var remoteTasks = WorkspaceInspectorRemoteTasks()
   @ClientPreference("workspace.inspectorCollapsedSections", default: []) private var collapsedSections: [String]
 
@@ -260,6 +261,9 @@ struct WorkspaceInspectorView: View {
           if let worktree = worktreeName {
             detail("Worktree", icon: Image(systemName: CodevisorSymbol.worktreeSystemName), value: worktree)
           }
+          if let size = checkoutSize.formatted {
+            detail("Size", icon: Image(systemName: "internaldrive"), value: size)
+          }
           if let machineName {
             detail(
               "Machine", icon: Image(systemName: machineSymbol ?? MachineIcon.fallback.systemImage), value: machineName)
@@ -300,6 +304,10 @@ struct WorkspaceInspectorView: View {
     .task(id: isShown ? workspace.id : nil) {
       guard isShown else { return }
       await workspaceMirrors.keepLoading(workspaceId: workspace.id, client: client)
+    }
+    .task(id: isShown ? workspace.id : nil) {
+      guard isShown else { return }
+      await checkoutSize.keepLoading(workspaceId: workspace.id, client: client)
     }
     .task(id: isShown ? workspace.id : nil) {
       guard isShown else { return }
