@@ -68,6 +68,8 @@ private struct HarnessFleetRow<Icon: View>: View {
       harnessId: setting.id, sync: environment.configSync, machines: machines, sharedSignIn: sharedSignIn)
     let live = setting.enabled
     let single = live && machines.count == 1 ? status.machines.first : nil
+    let uninstallable = HarnessFleet.canUninstall(
+      harnessId: setting.id, readiness: HarnessFleet.readiness(environment.configSync), machines: machines)
     let actions = HarnessMachineActions(
       signIn: sharesAccounts ? nil : { onSignIn($0, setting.id, true) },
       accounts: sharesAccounts || !shared.supportsAccounts ? nil : { onSignIn($0, setting.id, false) })
@@ -100,7 +102,7 @@ private struct HarnessFleetRow<Icon: View>: View {
         }
       }
     } actions: {
-      ConfirmingDestructiveButton("Uninstall…") { confirmsUninstall = true }
+      HarnessUninstallButton(harnessName: setting.name, isAvailable: uninstallable) { confirmsUninstall = true }
     }
     .modifier(HarnessUninstallDialog(setting: setting, isPresented: $confirmsUninstall))
     if live, machines.count > 1 {

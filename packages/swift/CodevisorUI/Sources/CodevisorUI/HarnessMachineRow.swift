@@ -50,9 +50,9 @@ struct HarnessMachineActionButton: View {
     Group {
       switch row.status {
       case .signInRequired, .signInFailed:
-        if let signIn = actions.signIn {
-          Button("Sign In…") { signIn(row.machineId) }
-        }
+        signInButton
+      case .blocked where row.needsSignIn:
+        signInButton
       case .ready:
         if let accounts = actions.accounts {
           Button("Accounts…") { accounts(row.machineId) }
@@ -62,5 +62,12 @@ struct HarnessMachineActionButton: View {
       }
     }
     .fleetRowButton()
+  }
+
+  @ViewBuilder
+  private var signInButton: some View {
+    if let signIn = actions.signIn {
+      Button("Sign In…") { signIn(row.machineId) }
+    }
   }
 }

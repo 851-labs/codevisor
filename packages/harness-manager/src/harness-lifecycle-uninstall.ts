@@ -2,6 +2,7 @@ import { realpathSync, existsSync } from "node:fs"
 import { join, dirname } from "node:path"
 
 import { locateExecutableOnPath } from "@codevisor/agent-runtime"
+import type { Harness } from "@codevisor/api"
 import { detectBrewPackage } from "@codevisor/updater"
 
 import type { HarnessLifecycleCore } from "./harness-lifecycle-core.js"
@@ -17,15 +18,22 @@ type UninstallPlan =
       extraEnv?: Readonly<Record<string, string>>
     }
 
+class UninstallUnavailable extends Error {}
+
 const quote = (value: string): string => `'${value.replaceAll("'", "'\\''")}'`
 
 export const makeHarnessUninstall = (
   core: HarnessLifecycleCore,
   runner: HarnessOperationRunner
 ) => {
-  const resolvePlan = async (id: string): Promise<UninstallPlan> => {
+  const resolvePlan = async (id: string): Promise<UninstallPlan> =>
+    planFor(
+      id,
+      (await run(core.config.agents.discoverHarnesses)).find((item) => item.id === id)
+    )
+
+  const planFor = async (id: string, harness: Harness | undefined): Promise<UninstallPlan> => {
     const definition = core.definitionOrThrow(id)
-    const harness = (await run(core.config.agents.discoverHarnesses)).find((item) => item.id === id)
     const path = harness?.readiness.path
     if (path === undefined || harness?.readiness.state !== "ready") {
       return { available: false, detail: "Not installed" }
@@ -123,11 +131,21 @@ export const makeHarnessUninstall = (
     }
   }
 
+  const recordFailure = (id: string, cause: unknown): void => {
+    core.setOperation(id, {
+      phase: "failed",
+      failedPhase: "uninstalling",
+      error: cause instanceof Error ? cause.message : String(cause)
+    })
+  }
+
   const release = (id: string): void => {
     core.uninstallRequests.delete(id)
     for (const listener of core.gateListeners) listener(id)
   }
   return {
+    canUninstall: async (harness: Harness): Promise<boolean> =>
+      (await planFor(harness.id, harness)).available,
     beginUninstall: async (id: string): Promise<void> => {
       if ((core.busyCounts.get(id) ?? 0) > 0)
         throw new Error("Finish or stop active chats before uninstalling")
@@ -138,7 +156,7 @@ export const makeHarnessUninstall = (
       core.uninstallRequests.add(id)
       try {
         const plan = await resolvePlan(id)
-        if (!plan.available) throw new Error(plan.detail)
+        if (!plan.available) throw new UninstallUnavailable(plan.detail)
         const target = plan.target
         await runner.runOperation({
           harnessId: id,
@@ -152,10 +170,7 @@ export const makeHarnessUninstall = (
           onSettled: () => release(id)
         })
       } catch (cause) {
-        core.setOperation(id, {
-          phase: "failed",
-          error: cause instanceof Error ? cause.message : String(cause)
-        })
+        if (!(cause instanceof UninstallUnavailable)) recordFailure(id, cause)
         release(id)
         throw cause
       }

@@ -18,7 +18,7 @@ import {
   type EventFanout
 } from "../server-context.js"
 import { discoverHarnesses } from "./harnesses.js"
-import { refreshHarnessReadiness, refreshMcpReadiness } from "./sync-readiness.js"
+import { canUninstall, refreshHarnessReadiness, refreshMcpReadiness } from "./sync-readiness.js"
 
 export type SyncReconcileNamespace = "skills" | "mcps" | "harnesses" | "credentials"
 
@@ -142,7 +142,8 @@ const reconcileHarnessesPlane = async (
     beginUninstall: async (harnessId) => {
       if (lifecycle === undefined) throw new Error("Uninstall unavailable on this machine")
       await lifecycle.beginUninstall(harnessId)
-    }
+    },
+    clearFailure: (harnessId) => lifecycle?.clearFailure(harnessId)
   })
   return {
     ...outcome,
@@ -174,22 +175,27 @@ const listSyncHarnesses = async (
     services.db.applyHarnessSettings(await run(services.agents.discoverHarnesses))
   )
   const decorated = await discoverHarnesses(services, false, undefined, true)
-  return raw.map((harness) => syncHarnessFor(services, decorated, harness))
+  return Promise.all(raw.map((harness) => syncHarnessFor(services, decorated, harness)))
 }
 
-const syncHarnessFor = (
+const syncHarnessFor = async (
   services: CodevisorServerServices,
   decorated: ReadonlyArray<Harness>,
   harness: Harness
-): LocalHarnessState => ({
-  id: harness.id,
-  name: harness.name,
-  symbolName: harness.symbolName,
-  enabled: harness.enabled,
-  installed: harness.readiness.state === "ready",
-  authenticated: isAuthenticated(services, decorated, harness),
-  phase: decoratedHarness(decorated, harness)?.lifecycle?.phase
-})
+): Promise<LocalHarnessState> => {
+  const lifecycle = decoratedHarness(decorated, harness)?.lifecycle
+  return {
+    id: harness.id,
+    name: harness.name,
+    symbolName: harness.symbolName,
+    enabled: harness.enabled,
+    installed: harness.readiness.state === "ready",
+    authenticated: isAuthenticated(services, decorated, harness),
+    canUninstall: await canUninstall(services, harness),
+    phase: lifecycle?.phase,
+    failedPhase: lifecycle?.failedPhase
+  }
+}
 
 const isAuthenticated = (
   services: CodevisorServerServices,

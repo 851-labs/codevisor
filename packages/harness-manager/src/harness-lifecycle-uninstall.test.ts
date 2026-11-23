@@ -166,11 +166,21 @@ describe("harness uninstall", () => {
     ["/opt/homebrew/Cellar/unrelated/1/bin/fake-cli", "original installer"],
     ["/home/person/.local/bin/fake-cli", "original installer"],
     ["/project/node_modules/fake-cli/bin/cli.js", "original installer"]
-  ])("refuses an unverified installation: %s", async (path, reason) => {
+  ])("refuses an unverified installation without recording a failure: %s", async (path, reason) => {
     const world = await fixture(path)
+    expect(await world.lifecycle.canUninstall(harness("fake-cli", path))).toBe(false)
     await expect(world.lifecycle.beginUninstall("fake-cli")).rejects.toThrow(reason)
     expect(world.spawns).toEqual([])
     expect(world.lifecycle.isGated("fake-cli")).toBe(false)
+    const decorated = await world.lifecycle.decorateHarnesses([harness("fake-cli", path)])
+    expect(decorated[0]?.lifecycle).toBeUndefined()
+  })
+
+  it("reports an installation it can remove as uninstallable", async () => {
+    const path = "/tools/node/lib/node_modules/fake-cli/bin/cli.js"
+    const world = await fixture(path)
+    expect(await world.lifecycle.canUninstall(harness("fake-cli", path))).toBe(true)
+    expect(world.spawns).toEqual([])
   })
 
   it("does not report success when the package manager leaves the binary", async () => {
@@ -184,9 +194,15 @@ describe("harness uninstall", () => {
     ])
     expect(decorated[0]?.lifecycle).toMatchObject({
       phase: "failed",
+      failedPhase: "uninstalling",
       error: "The installation is still present"
     })
     expect(world.lifecycle.isGated("fake-cli")).toBe(false)
+    world.lifecycle.clearFailure("fake-cli")
+    const cleared = await world.lifecycle.decorateHarnesses([
+      harness("fake-cli", "/still-installed")
+    ])
+    expect(cleared[0]?.lifecycle).toBeUndefined()
   })
 
   it("releases dispatch and retains output on a timeout", async () => {

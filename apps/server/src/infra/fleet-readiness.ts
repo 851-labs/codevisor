@@ -19,6 +19,8 @@ export interface HarnessReadinessRow {
   readonly symbolName: string
   readonly installed?: boolean
   readonly authRequired: boolean
+  readonly needsSignIn: boolean
+  readonly canUninstall: boolean
   readonly state:
     | "ready"
     | "signInRequired"

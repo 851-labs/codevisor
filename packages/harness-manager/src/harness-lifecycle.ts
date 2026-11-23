@@ -80,7 +80,8 @@ export const makeHarnessLifecycleManager = (
           if (!shown) return
           core.setOperation(harnessId, {
             error: cause instanceof Error ? cause.message : String(cause),
-            phase: "failed"
+            phase: "failed",
+            failedPhase: "updating"
           })
         }
       })
@@ -108,6 +109,9 @@ export const makeHarnessLifecycleManager = (
     ...bundledApp,
     ...makeHarnessUninstall(core, runner),
     beginInstall: runner.beginInstall,
+    clearFailure: (harnessId) => {
+      if (operations.get(harnessId)?.phase === "failed") core.setOperation(harnessId, undefined)
+    },
     checkForUpdates: async (force = false, harnessIds) => {
       if (force) {
         for (const [id, operation] of operations) {

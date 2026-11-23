@@ -198,4 +198,37 @@ struct HarnessFleetMachineStatusTests {
     )
     return ConfigSync(machines: controller, store: store)
   }
+  @Test("A machine in an error state that also needs sign-in still offers sign-in")
+  func blockedMachineKeepsSignIn() {
+    let readiness: [String: [HarnessFleet.MachineReadiness]] = [
+      "studio": [.init(harnessId: "cursor", state: "blocked", reason: "Update failed", needsSignIn: true)],
+      "book": [.init(harnessId: "cursor", state: "blocked", reason: "Update failed")],
+    ]
+    let rows = HarnessFleet.machineRows(
+      harnessId: "cursor", readiness: readiness, machines: [machine("studio"), machine("book")])
+    #expect(rows.map(\.needsSignIn) == [true, false])
+  }
+
+  @Test("Uninstall is offered when any machine can do it, ignoring machines without it or out of reach")
+  func uninstallAvailability() {
+    let machines = [machine("studio"), machine("book"), machine("vps", reachable: false), machine("fresh")]
+    func readiness(_ reports: [String: HarnessFleet.MachineReadiness]) -> [String: [HarnessFleet.MachineReadiness]] {
+      reports.mapValues { [$0] }
+    }
+    let outside = HarnessFleet.MachineReadiness(
+      harnessId: "cursor", state: "ready", reason: nil, installed: true, canUninstall: false)
+    let missing = HarnessFleet.MachineReadiness(
+      harnessId: "cursor", state: "notInstalled", reason: nil, installed: false, canUninstall: false)
+    let ours = HarnessFleet.MachineReadiness(
+      harnessId: "cursor", state: "blocked", reason: "x", installed: true, canUninstall: true)
+    let legacy = HarnessFleet.MachineReadiness(harnessId: "cursor", state: "ready", reason: nil, installed: true)
+
+    #expect(
+      !HarnessFleet.canUninstall(
+        harnessId: "cursor", readiness: readiness(["studio": outside, "book": missing]), machines: machines))
+    #expect(
+      HarnessFleet.canUninstall(
+        harnessId: "cursor", readiness: readiness(["studio": outside, "vps": ours]), machines: machines))
+    #expect(HarnessFleet.canUninstall(harnessId: "cursor", readiness: readiness(["book": legacy]), machines: machines))
+  }
 }

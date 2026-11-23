@@ -83,8 +83,12 @@ export const HarnessUpdateInfo = Schema.Struct({
 })
 export type HarnessUpdateInfo = typeof HarnessUpdateInfo.Type
 
+export const HarnessOperationPhase = Schema.Literals(["installing", "uninstalling", "updating"])
+export type HarnessOperationPhase = typeof HarnessOperationPhase.Type
+
 export const HarnessLifecycleState = Schema.Struct({
   phase: Schema.Literals(["idle", "installing", "uninstalling", "updating", "failed"]),
+  failedPhase: Schema.optional(HarnessOperationPhase),
   targetVersion: Schema.optional(Schema.String),
   methodId: Schema.optional(Schema.String),
   terminalId: Schema.optional(Schema.String),

@@ -198,6 +198,7 @@ export const makeHarnessUpdates = (
       setOperation(harnessId, {
         error: cause instanceof Error ? cause.message : String(cause),
         phase: "failed",
+        failedPhase: "updating",
         ...(targetVersion === undefined ? {} : { targetVersion })
       })
       return false

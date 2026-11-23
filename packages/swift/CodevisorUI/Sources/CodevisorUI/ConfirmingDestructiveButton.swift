@@ -4,6 +4,7 @@ public struct ConfirmingDestructiveButton: View {
   private let title: String
   private let systemImage: String?
   private let action: () -> Void
+  @Environment(\.isEnabled) private var isEnabled
 
   public init(_ title: String, systemImage: String? = nil, action: @escaping () -> Void) {
     self.title = title
@@ -14,7 +15,7 @@ public struct ConfirmingDestructiveButton: View {
   public var body: some View {
     #if os(iOS)
       Button(action: action) { label }
-        .tint(.red)
+        .tint(isEnabled ? .red : .gray)
     #else
       Button(role: .destructive, action: action) { label }
     #endif

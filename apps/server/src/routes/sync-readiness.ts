@@ -1,3 +1,4 @@
+import type { Harness } from "@codevisor/api"
 import type { McpManager } from "@codevisor/mcp"
 import type { SyncEntryRecord } from "@codevisor/sync"
 
@@ -103,54 +104,10 @@ export const refreshHarnessReadiness = async (
   answers?: ReadonlyArray<SyncEntryRecord>
 ): Promise<void> => {
   try {
-    const blockedById = new Map(blocked.map(({ id, reason }) => [id, reason]))
-    const rows: HarnessReadinessRow[] = (await discoverHarnessesFromStoredAuthState(services)).map(
-      (harness) => {
-        const authed =
-          services.auth === undefined ||
-          harness.auth?.state === "authenticated" ||
-          harness.auth?.state === "notRequired"
-        const installed = harness.readiness.state === "ready"
-        const desired = harness.desiredEnabled ?? harness.enabled
-        const phase = harness.lifecycle?.phase
-        const refusal = blockedById.get(harness.id)
-        let state: HarnessReadinessRow["state"]
-        if (phase === "failed" || (refusal !== undefined && refusal !== "Sign in required")) {
-          state = "blocked"
-        } else if (phase === "installing" || phase === "uninstalling") {
-          state = phase
-        } else if (!desired) {
-          state = "disabled"
-        } else if (!installed) {
-          state = "notInstalled"
-        } else if (authed) {
-          state = "ready"
-        } else {
-          state = "signInRequired"
-        }
-        let reason: HarnessReadinessRow["reason"]
-        if (state === "blocked") {
-          reason = refusal ?? harness.lifecycle?.error
-        } else if (state === "notInstalled") {
-          reason = harness.readiness.detail
-        } else if (
-          state === "signInRequired" &&
-          (harness.auth?.state === "error" || harness.auth?.state === "unavailable")
-        ) {
-          reason = harness.auth.detail
-        }
-        const version = installed ? harness.readiness.version : undefined
-        return {
-          id: harness.id,
-          name: harness.name,
-          symbolName: harness.symbolName,
-          state,
-          installed,
-          authRequired: harness.auth?.state !== "notRequired",
-          ...(reason ? { reason } : {}),
-          ...(version ? { version } : {})
-        }
-      }
+    const refusals = new Map(blocked.map(({ id, reason }) => [id, reason]))
+    const harnesses = await discoverHarnessesFromStoredAuthState(services)
+    const rows = await Promise.all(
+      harnesses.map((harness) => readinessRow(services, harness, refusals.get(harness.id)))
     )
     const result = await publishMachineReadiness({
       db: services.db,
@@ -162,6 +119,82 @@ export const refreshHarnessReadiness = async (
     publishReadinessChanges(services, fanout, HARNESS_READINESS_NAMESPACE, result)
   } catch {}
 }
+
+export const canUninstall = async (
+  services: CodevisorServerServices,
+  harness: Harness
+): Promise<boolean> => {
+  if (harness.readiness.state !== "ready" || services.lifecycle === undefined) return false
+  try {
+    return await services.lifecycle.canUninstall(harness)
+  } catch {
+    return false
+  }
+}
+
+const readinessRow = async (
+  services: CodevisorServerServices,
+  harness: Harness,
+  refusal: string | undefined
+): Promise<HarnessReadinessRow> => {
+  const installed = harness.readiness.state === "ready"
+  const state = readinessState(services, harness, refusal)
+  const reason = readinessReason(harness, state, refusal)
+  const version = installed ? harness.readiness.version : undefined
+  return {
+    id: harness.id,
+    name: harness.name,
+    symbolName: harness.symbolName,
+    state,
+    installed,
+    authRequired: harness.auth?.state !== "notRequired",
+    needsSignIn: needsSignIn(services, harness),
+    canUninstall: await canUninstall(services, harness),
+    ...(reason ? { reason } : {}),
+    ...(version ? { version } : {})
+  }
+}
+
+const readinessState = (
+  services: CodevisorServerServices,
+  harness: Harness,
+  refusal: string | undefined
+): HarnessReadinessRow["state"] => {
+  const phase = harness.lifecycle?.phase
+  if (phase === "failed" || isRealRefusal(refusal)) return "blocked"
+  if (phase === "installing" || phase === "uninstalling") return phase
+  if (!wantsEnabled(harness)) return "disabled"
+  if (harness.readiness.state !== "ready") return "notInstalled"
+  if (isAuthed(services, harness)) return "ready"
+  return "signInRequired"
+}
+
+const readinessReason = (
+  harness: Harness,
+  state: HarnessReadinessRow["state"],
+  refusal: string | undefined
+): string | undefined => {
+  if (state === "blocked") return refusal ?? harness.lifecycle?.error
+  if (state === "notInstalled") return harness.readiness.detail
+  if (state === "signInRequired" && authUnreadable(harness)) return harness.auth?.detail
+  return undefined
+}
+
+const needsSignIn = (services: CodevisorServerServices, harness: Harness): boolean =>
+  wantsEnabled(harness) && harness.readiness.state === "ready" && !isAuthed(services, harness)
+
+const isRealRefusal = (refusal: string | undefined): boolean =>
+  refusal !== undefined && refusal !== "Sign in required"
+
+const wantsEnabled = (harness: Harness): boolean => harness.desiredEnabled ?? harness.enabled
+
+const isAuthed = (services: CodevisorServerServices, harness: Harness): boolean =>
+  services.auth === undefined ||
+  harness.auth?.state === "authenticated" ||
+  harness.auth?.state === "notRequired"
+
+const authUnreadable = (harness: Harness): boolean =>
+  harness.auth?.state === "error" || harness.auth?.state === "unavailable"
 
 export interface RefreshScheduler {
   readonly request: () => void
