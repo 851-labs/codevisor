@@ -45,4 +45,17 @@ public struct SessionUsage: Sendable, Codable, Equatable {
     self.totalTokens = totalTokens
     self.cost = cost
   }
+
+  public func merging(_ update: SessionUsage) -> SessionUsage {
+    SessionUsage(
+      used: update.used ?? used,
+      size: update.size ?? size,
+      inputTokens: update.inputTokens ?? inputTokens,
+      cachedInputTokens: update.cachedInputTokens ?? cachedInputTokens,
+      outputTokens: update.outputTokens ?? outputTokens,
+      reasoningOutputTokens: update.reasoningOutputTokens ?? reasoningOutputTokens,
+      totalTokens: update.totalTokens ?? totalTokens,
+      cost: update.cost ?? cost
+    )
+  }
 }

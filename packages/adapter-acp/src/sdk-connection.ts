@@ -22,6 +22,7 @@ import {
 } from "./config-options.js"
 import type { AcpAgentConnection } from "./connection.js"
 import { isGenericConnectionClose } from "./internal.js"
+import { turnTokensOf } from "./prompt-usage.js"
 import { acpPrompt, type AcpPromptCapabilities } from "./prompt.js"
 import type { AcpSkillTracker } from "./skills.js"
 import { usageLimitPromptStop, type AcpUsageLimitRule } from "./usage-limit-failures.js"
@@ -267,7 +268,8 @@ export const sdkConnection = (
             prompt: acpPrompt(normalizePromptInput(input), promptCapabilities),
             sessionId
           })
-          return { stopReason: response.stopReason }
+          const tokens = turnTokensOf(response.usage)
+          return { stopReason: response.stopReason, ...(tokens === undefined ? {} : { tokens }) }
         } catch (cause) {
           if (isAuthenticationRequired(cause)) {
             return { stopReason: "end_turn", stopKind: "authRequired" as const }
