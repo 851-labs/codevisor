@@ -9,8 +9,8 @@ export async function resolveDevelopmentSigningArguments(
   capture: CommandRunner["capture"]
 ): Promise<Array<string>> {
   const identities = await capture("security", ["find-identity", "-v", "-p", "codesigning"])
-  const match = identities.match(/[0-9]+\)\s+([0-9A-F]+)\s+"(Apple Development:[^"]+)"/)
-  if (match === null) {
+  const match = usableDevelopmentIdentity(identities)
+  if (match === undefined) {
     console.warn(`\nNo Apple Development signing identity was found. ${adHocWarning}`)
     return []
   }
@@ -31,3 +31,13 @@ export async function resolveDevelopmentSigningArguments(
     "PROVISIONING_PROFILE_SPECIFIER="
   ]
 }
+
+const developmentIdentity = /[0-9]+\)\s+([0-9A-F]+)\s+"(Apple Development:[^"]+)"(.*)$/
+
+const usableDevelopmentIdentity = (identities: string): RegExpMatchArray | undefined =>
+  identities
+    .split("\n")
+    .map((line) => line.match(developmentIdentity))
+    .find((match) => match !== null && !isRejected(match[3] ?? "")) ?? undefined
+
+const isRejected = (status: string): boolean => status.includes("CSSMERR_")

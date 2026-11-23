@@ -141,6 +141,23 @@ describe("resolveDevelopmentSigningArguments", () => {
     ).toEqual([])
   })
 
+  it("skips a revoked or expired identity", async () => {
+    vi.spyOn(console, "log").mockImplementation(() => {})
+    vi.spyOn(console, "warn").mockImplementation(() => {})
+    const revoked =
+      '  1) FFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFF "Apple Development: Gone Person (ZZZZZ99999)" (CSSMERR_TP_CERT_REVOKED)'
+    const pem = certificate("/CN=Apple Development: Test Person (ABCDE12345)/OU=TEAM123456")
+    const resolve = (listing: string) =>
+      resolveDevelopmentSigningArguments(async (_command, args) =>
+        args[0] === "find-identity" ? listing : pem
+      )
+
+    expect(await resolve(`${revoked}\n${identities}`)).toContain(
+      "CODE_SIGN_IDENTITY=0123456789ABCDEF0123456789ABCDEF01234567"
+    )
+    expect(await resolve(revoked)).toEqual([])
+  })
+
   it("signs with the identity's team, or ad hoc when the certificate has none", async () => {
     vi.spyOn(console, "log").mockImplementation(() => {})
     const warn = vi.spyOn(console, "warn").mockImplementation(() => {})
