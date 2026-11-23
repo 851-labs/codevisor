@@ -52,6 +52,9 @@ public struct PluginConnectSheet: View {
         footer
       }
       .padding(.vertical, 28)
+      .overlay(alignment: .topTrailing) {
+        PluginConnectCloseButton { dismiss() }.padding(12)
+      }
     }
 
     private var hasDetails: Bool {
@@ -127,7 +130,7 @@ public struct PluginConnectSheet: View {
 
   private var footer: some View {
     VStack(spacing: 10) {
-      PluginConnectActions(model: model, canContinue: canContinue, run: run) { dismiss() }
+      PluginConnectActions(model: model, canContinue: canContinue, run: run)
       if !model.isInstalled { PluginConnectTerms() }
     }
     .padding(.horizontal, 28)
@@ -177,7 +180,6 @@ private struct PluginConnectActions: View {
   let model: PluginConnectModel
   let canContinue: Bool
   let run: (PluginConnectModel.Choice) -> Void
-  let cancel: () -> Void
 
   var body: some View {
     VStack(spacing: 10) {
@@ -200,11 +202,6 @@ private struct PluginConnectActions: View {
         .controlSize(.large)
         .disabled(!canContinue)
       }
-      #if os(macOS)
-        Button("Cancel", action: cancel)
-          .buttonStyle(.link)
-          .keyboardShortcut(.cancelAction)
-      #endif
     }
   }
 
@@ -217,6 +214,27 @@ private struct PluginConnectActions: View {
     }
   }
 }
+
+#if os(macOS)
+  private struct PluginConnectCloseButton: View {
+    let close: () -> Void
+
+    var body: some View {
+      Button(action: close) {
+        Image(systemName: "xmark")
+          .font(.system(size: 11, weight: .bold))
+          .foregroundStyle(.secondary)
+          .frame(width: 24, height: 24)
+          .background(.quaternary, in: Circle())
+          .contentShape(Circle())
+      }
+      .buttonStyle(.plain)
+      .keyboardShortcut(.cancelAction)
+      .accessibilityLabel("Close")
+      .help("Close")
+    }
+  }
+#endif
 
 private struct PluginConnectProblems: View {
   let restriction: String?
