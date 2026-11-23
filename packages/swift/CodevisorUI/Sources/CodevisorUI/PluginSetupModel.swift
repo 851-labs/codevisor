@@ -208,6 +208,12 @@ public final class PluginSetupModel {
   }
 
   private func startSignIn(to server: ServerMcpServer, ticket: String?) async throws -> ServerMcpOAuthStart {
+    try await ServerConnectionLoss.retryingInterruptions(sleep: { try await Task.sleep(for: $0) }) {
+      try await startSignInOnce(to: server, ticket: ticket)
+    }
+  }
+
+  private func startSignInOnce(to server: ServerMcpServer, ticket: String?) async throws -> ServerMcpOAuthStart {
     switch signInRoute() {
     case .chatMachine:
       return try await client.startMcpOAuth(id: server.id, ticket: ticket)

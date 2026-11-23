@@ -107,6 +107,40 @@ struct PluginSetupModelTests {
     #expect(model.step == .ready)
   }
 
+  @Test(
+    "A sign-in start cut off by a dropped connection, as right after the machine restarts, retries instead of failing")
+  func signInRetriesDroppedConnection() async throws {
+    let transport = SetupTransport()
+    transport.respond("GET /v1/plugins/catalog/grafana", with: Self.remoteEntry)
+    transport.respond("GET /v1/mcps", with: "[\(Self.server(authType: "oauth", state: "needsAuthorization"))]")
+    transport.respond(
+      "POST /v1/mcps/mcp-1/oauth-start", with: #"{"authorizationUrl":"https://auth.example/authorize"}"#)
+    transport.dropConnection(on: "POST /v1/mcps/mcp-1/oauth-start")
+    let signIn = FakeWebSignIn()
+    let client = Self.lanClient(transport)
+    let model = PluginSetupModel(request: try Self.request(auth: "mcpOAuth"), client: client, webSignIn: signIn)
+    await model.refresh()
+    let server = try #require(model.server)
+    let settled = TestSignal()
+
+    let signingIn = Task {
+      await model.signIn(
+        to: server, browser: PluginSignInBrowser(client: client, pluginName: "Grafana", presenter: signIn))
+      settled.signal()
+    }
+    Task {
+      await signIn.presented.wait()
+      settled.signal()
+    }
+    await settled.wait()
+
+    #expect(signIn.urls.map(\.absoluteString) == ["https://auth.example/authorize"])
+    #expect(transport.bodies(sentTo: "POST /v1/mcps/mcp-1/oauth-start").count == 2)
+    #expect(model.errorMessage == nil)
+    signIn.cancel()
+    await signingIn.value
+  }
+
   @Test("Without a Mac to sign in on, the card says where to sign in instead of opening anything")
   func cardWithoutLocalMachine() async throws {
     let transport = SetupTransport()
@@ -376,6 +410,7 @@ private final class SetupTransport: ServerRequestTransport, Sendable {
   private let sent = Mutex<[String: [String]]>([:])
   private let sentQueries = Mutex<[String: [String]]>([:])
   private let signals = Mutex<[String: TestSignal]>([:])
+  private let drops = Mutex<Set<String>>([])
 
   func requested(_ route: String) -> TestSignal {
     signals.withLock { signals in
@@ -398,6 +433,10 @@ private final class SetupTransport: ServerRequestTransport, Sendable {
     routes.withLock { $0[route] = (status, body) }
   }
 
+  func dropConnection(on route: String) {
+    _ = drops.withLock { $0.insert(route) }
+  }
+
   func data(for request: URLRequest) async throws -> (Data, HTTPURLResponse) {
     let url = try #require(request.url)
     let route = "\(request.httpMethod ?? "GET") \(url.path)"
@@ -405,6 +444,7 @@ private final class SetupTransport: ServerRequestTransport, Sendable {
     sent.withLock { $0[route, default: []].append(body) }
     sentQueries.withLock { $0[route, default: []].append(url.query() ?? "") }
     requested(route).signal()
+    if drops.withLock({ $0.remove(route) }) != nil { throw URLError(.networkConnectionLost) }
     let reply = try #require(routes.withLock { $0[route] }, "Unexpected request \(route)")
     let response = try #require(
       HTTPURLResponse(url: url, statusCode: reply.status, httpVersion: "HTTP/1.1", headerFields: nil))

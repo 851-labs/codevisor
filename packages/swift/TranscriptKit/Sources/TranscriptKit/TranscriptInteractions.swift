@@ -49,8 +49,8 @@ public struct TranscriptInteractions: Sendable, Equatable {
     items[index] = shown
   }
 
-  public mutating func adoptMissing(from other: TranscriptInteractions) -> Bool {
-    let missing = other.items.filter { !contains(id: $0.id) }
+  public mutating func adoptMissing(from other: TranscriptInteractions, shownElsewhere: Set<String> = []) -> Bool {
+    let missing = other.items.filter { !contains(id: $0.id) && !shownElsewhere.contains($0.id) }
     items += missing
     return !missing.isEmpty
   }

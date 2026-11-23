@@ -46,10 +46,11 @@ extension SessionModel {
 
   func setConversation(_ items: [ConversationItem]) {
     pendingOptimisticUserMessageIDs.removeAll()
+    let shown = Self.interactionIds(in: items)
     let items =
       items
       .map(transcriptDetails.restoringCachedDetails)
-      .map(carryingLiveTurnState)
+      .map { carryingLiveTurnState($0, shownElsewhere: shown) }
       .filter(\.hasRenderableTranscriptContent)
     if case .assistant = items.last {
       settledConversation = Array(items.dropLast())
@@ -63,7 +64,7 @@ extension SessionModel {
     rebuildSettledIndex()
   }
 
-  func carryingLiveTurnState(_ incoming: ConversationItem) -> ConversationItem {
+  func carryingLiveTurnState(_ incoming: ConversationItem, shownElsewhere: Set<String> = []) -> ConversationItem {
     guard case var .assistant(message) = incoming else { return incoming }
     let current: AssistantMessage? =
       if case let .assistant(active)? = activeItem, active.id == message.id {
@@ -92,7 +93,8 @@ extension SessionModel {
       message.turn.setupRequests += missingSetupRequests
       carried = true
     }
-    if message.turn.interactions.adoptMissing(from: current.turn.interactions) { carried = true }
+    let interactions = current.turn.interactions
+    if message.turn.interactions.adoptMissing(from: interactions, shownElsewhere: shownElsewhere) { carried = true }
     return carried ? .assistant(message) : incoming
   }
 
@@ -131,5 +133,13 @@ extension SessionModel {
     setConversation(conversation)
     self.isSending = isSending
     self.usage = usage
+  }
+
+  private static func interactionIds(in items: [ConversationItem]) -> Set<String> {
+    Set(
+      items.flatMap { item -> [String] in
+        guard case let .assistant(message) = item else { return [] }
+        return message.turn.interactions.items.map(\.id)
+      })
   }
 }
