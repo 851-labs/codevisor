@@ -58,6 +58,7 @@ extension VirtualizedTranscriptScrollView {
         isUserInteracting: isNativeScrollInteractionActive && !holdsForKeyboardDrag
       ) == .pinToBottom
     else { return }
+    fitRunwayToViewport()
     setDistanceFromBottom(0, synchronizesWithActiveLayoutAnimation: true)
   }
 
