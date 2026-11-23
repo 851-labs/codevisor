@@ -133,17 +133,7 @@ extension VirtualizedTranscriptScrollView {
         virtualLayout.renderedRange(anchorKey: $0.anchorKey, count: $0.count)
       }
 
-      let documentSize = CGSize(
-        width: max(1, bounds.width),
-        height: paginationHeaderLayout.documentHeight(
-          topPadding: Self.topPadding,
-          rowsHeight: virtualLayout.totalHeight
-        ),
-      )
-      contentSize = documentSize
-      canvasView.frame = CGRect(origin: .zero, size: documentSize)
-      positionPaginationLoadingIndicator()
-      positionMountedRows()
+      applyDocumentSize()
 
       if !initialPositionApplied {
         applyPendingInitialPositionIfPossible()
@@ -197,6 +187,27 @@ extension VirtualizedTranscriptScrollView {
       atBottomThreshold: Self.atBottomThreshold,
       measurements: measurements
     )
+  }
+
+  func fitRunwayToViewport() {
+    let fitted = runwayAdjustedLayout(virtualLayout)
+    guard abs(fitted.totalHeight - virtualLayout.totalHeight) > 0.5 else { return }
+
+    applyPositionTransaction {
+      virtualLayout = fitted
+      applyDocumentSize()
+    }
+  }
+
+  private func applyDocumentSize() {
+    let documentSize = CGSize(
+      width: max(1, bounds.width),
+      height: paginationHeaderLayout.documentHeight(topPadding: Self.topPadding, rowsHeight: virtualLayout.totalHeight)
+    )
+    contentSize = documentSize
+    canvasView.frame = CGRect(origin: .zero, size: documentSize)
+    positionPaginationLoadingIndicator()
+    positionMountedRows()
   }
 
   func runwayAdjustedLayout(_ layout: VirtualTranscriptLayout) -> VirtualTranscriptLayout {
