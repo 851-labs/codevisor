@@ -11,6 +11,7 @@ import { MachineRoles } from "@codevisor/cloud-client"
 import type { CodevisorDatabaseService } from "@codevisor/db"
 import {
   defaultNativeConfigFileSystem,
+  loadEncryptionKey,
   makeNativeMcpManager,
   type NativeMcpManager,
   type NativeMcpManagerConfig
@@ -424,6 +425,12 @@ export const bootPluginCatalog = (
   startCatalogRefresh(catalog, cloudUrl)
   return catalog
 }
+
+export const bootPluginOAuth = (dataDir: string) => ({
+  installedClients: bootInstalledOAuthClients(),
+  secretKey: loadEncryptionKey(dataDir),
+  appScheme: process.env.CODEVISOR_DEV_URL_SCHEME ?? "codevisor"
+})
 
 export const bootInstalledOAuthClients = (): InstalledOAuthClients =>
   installedOAuthClients({

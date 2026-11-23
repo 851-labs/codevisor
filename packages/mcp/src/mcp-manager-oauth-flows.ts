@@ -1,7 +1,7 @@
 import { randomUUID } from "node:crypto"
 
 import type { McpServerRecord } from "@codevisor/db"
-import { auth } from "@modelcontextprotocol/client"
+import { auth, RegistrationRejectedError } from "@modelcontextprotocol/client"
 
 import { type ManagedOAuth, managedOAuthOf, managedTokenFetch } from "./mcp-managed-oauth.js"
 import type { McpManagerCore } from "./mcp-manager-core.js"
@@ -45,15 +45,76 @@ export const makeMcpOAuthFlows = (core: McpManagerCore, deps: McpOAuthFlowDeps):
   const managedOAuth = (server: McpServerRecord): ManagedOAuth | undefined =>
     managedOAuthOf(core.config.catalog, core.config.managedOAuth, server)
 
-  const adoptManagedClient = async (id: string, managed: ManagedOAuth): Promise<void> => {
-    const clientId = await managed.clients.clientId(managed.client)
+  const adoptManagedClient = async (id: string, managed: ManagedOAuth): Promise<boolean> => {
+    const client = await managed.clients.client(managed.client)
     await replaceSecrets(id, (value) => ({
       ...value,
-      oauth: { ...value.oauth, configuredClientId: clientId, configuredClientSecret: undefined }
+      oauth: {
+        ...value.oauth,
+        configuredClientId: client.clientId,
+        configuredClientSecret: undefined
+      }
     }))
+    return client.cloudCallback
   }
 
-  const beginOAuth: McpManager["beginOAuth"] = async (id, redirectBaseUrl) => {
+  const acceptsCloudCallback = async (server: McpServerRecord): Promise<boolean> => {
+    const managed = managedOAuth(server)
+    if (managed !== undefined) return adoptManagedClient(server.id, managed)
+
+    return secrets(server).oauth?.configuredClientId === undefined
+  }
+
+  const authorizationUrlFor = async (
+    server: McpServerRecord,
+    redirectUrl: string,
+    oauthState: string
+  ): Promise<string> => {
+    await replaceSecrets(server.id, (value) => ({
+      ...value,
+      oauth: { ...value.oauth, redirectUrl, state: oauthState }
+    }))
+    const provider = oauthProvider(server.id, redirectUrl)
+    const serverUrl = requireHttpUrl(server.url)
+    const result = await auth(provider, {
+      serverUrl,
+      ...(server.oauthScope === undefined ? {} : { scope: server.oauthScope })
+    }).catch((cause: unknown) => {
+      throw signInFailure(cause, serverUrl)
+    })
+    if (result !== "REDIRECT" || provider.authorizationUrl === undefined) {
+      throw new Error("OAuth did not return a URL")
+    }
+    return provider.authorizationUrl.toString()
+  }
+
+  const loopbackAuthorizationUrl = (server: McpServerRecord): Promise<string> =>
+    authorizationUrlFor(server, callbackUrl(), newOAuthState(server.id))
+
+  const startAuthorization = async (
+    server: McpServerRecord,
+    app: string | undefined
+  ): Promise<string> => {
+    if (!(await acceptsCloudCallback(server))) return loopbackAuthorizationUrl(server)
+
+    const oauthState = newOAuthState(server.id)
+    const relayed = await core.config.oauthRelay?.register(
+      oauthState,
+      app === undefined ? {} : { app }
+    )
+    if (relayed === undefined) return loopbackAuthorizationUrl(server)
+
+    return authorizationUrlFor(server, relayed, oauthState).catch((cause: unknown) => {
+      if (!(cause instanceof RegistrationRejectedError)) throw cause
+      return loopbackAuthorizationUrl(server)
+    })
+  }
+
+  const alreadySignedInPage = (app: string | undefined): string =>
+    core.config.oauthRelay?.signedInPage(app) ??
+    new URL("/v1/mcps/oauth/complete", state.oauthBaseUrl).toString()
+
+  const beginOAuth: McpManager["beginOAuth"] = async (id, redirectBaseUrl, app) => {
     if (redirectBaseUrl !== undefined) state.oauthBaseUrl = redirectBaseUrl
     const server = await record(id)
     if (server.transport !== "http" || server.authType !== "oauth") {
@@ -66,32 +127,14 @@ export const makeMcpOAuthFlows = (core: McpManagerCore, deps: McpOAuthFlowDeps):
         detail: undefined
       })
       validateInBackground(id)
-      return new URL("/v1/mcps/oauth/complete", state.oauthBaseUrl).toString()
+      return alreadySignedInPage(app)
     }
-    const managed = managedOAuth(server)
-    if (managed !== undefined) await adoptManagedClient(id, managed)
-    const redirectUrl = callbackUrl()
-    const oauthState = `${id}.${randomUUID()}`
-    await replaceSecrets(id, (value) => ({
-      ...value,
-      oauth: { ...value.oauth, redirectUrl, state: oauthState }
-    }))
-    const provider = oauthProvider(id, redirectUrl)
-    const serverUrl = requireHttpUrl(server.url)
-    const result = await auth(provider, {
-      serverUrl,
-      ...(server.oauthScope === undefined ? {} : { scope: server.oauthScope })
-    }).catch((cause: unknown) => {
-      throw signInFailure(cause, serverUrl)
-    })
-    if (result !== "REDIRECT" || provider.authorizationUrl === undefined) {
-      throw new Error("OAuth did not return a URL")
-    }
+    const authorizationUrl = await startAuthorization(server, app)
     await saveRecord(await record(id), {
       connectionState: "needsAuthorization",
       detail: undefined
     })
-    return provider.authorizationUrl.toString()
+    return authorizationUrl
   }
 
   const finishOAuth: McpManager["finishOAuth"] = async (oauthState, code, issuer) => {
@@ -127,7 +170,7 @@ export const makeMcpOAuthFlows = (core: McpManagerCore, deps: McpOAuthFlowDeps):
     const current = await replaceSecrets(id, (value) => ({
       ...value,
       oauth: {
-        state: `${id}.${randomUUID()}`,
+        state: newOAuthState(id),
         credential: null,
         registrations: value.oauth?.registrations,
         discoveryState: value.oauth?.discoveryState,
@@ -148,3 +191,5 @@ export const makeMcpOAuthFlows = (core: McpManagerCore, deps: McpOAuthFlowDeps):
   return { beginOAuth, disconnectOAuth, finishOAuth }
 }
 /* v8 ignore stop */
+
+const newOAuthState = (id: string): string => `${id}.${randomUUID()}`

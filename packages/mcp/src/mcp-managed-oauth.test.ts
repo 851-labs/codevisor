@@ -13,7 +13,7 @@ const clients = (): ManagedOAuthClients & {
   const exchanges: Array<unknown> = []
   return {
     exchanges,
-    clientId: async () => "github-client",
+    client: async () => ({ clientId: "github-client", cloudCallback: false }),
     exchange: async (client, tokenUrl, form) => {
       exchanges.push({ client, tokenUrl, form: Object.fromEntries(new URLSearchParams(form)) })
       return { access_token: "gho_1", token_type: "bearer" }

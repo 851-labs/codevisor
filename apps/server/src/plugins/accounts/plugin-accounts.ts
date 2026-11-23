@@ -15,7 +15,7 @@ import type { SyncEntryRecord } from "@codevisor/sync"
 import { HttpFailure } from "../../server-context.js"
 import type { InstalledOAuthClients } from "./installed-oauth-clients.js"
 import { splitFieldValues } from "./plugin-account-fields.js"
-import { makePluginOAuthFlows, type OAuthRedirects } from "./plugin-account-flows.js"
+import { makePluginOAuthFlows } from "./plugin-account-flows.js"
 import {
   type GuideIngressUrl,
   requireGuideAccountId,
@@ -27,6 +27,8 @@ import {
   type PluginAccountRecord,
   type PluginAccountStore
 } from "./plugin-account-store.js"
+import type { PendingOAuthStorage } from "./plugin-oauth-pending.js"
+import type { OAuthRedirects } from "./plugin-oauth-redirects.js"
 
 export interface PluginVault {
   readonly create: (bundle: SharedTokenBundle) => Promise<CredentialReference>
@@ -59,6 +61,7 @@ export interface PluginAccountsDeps {
   readonly server: (serverId: string) => Promise<McpServer>
   readonly spec: (server: McpServer) => PluginAccountSpec | undefined
   readonly redirects: OAuthRedirects
+  readonly pendingStorage?: PendingOAuthStorage | undefined
   readonly installedClients?: InstalledOAuthClients | undefined
   readonly beforeRemove?: (serverId: string, accountId: string) => Promise<void>
   readonly check?: AccountChecker
@@ -82,6 +85,7 @@ export interface PluginAccounts {
     }
   ) => Promise<PluginAccountOAuthStart>
   readonly completeOAuth: (state: string, code: string | undefined, error?: string) => Promise<void>
+  readonly ownsOAuthState: (state: string) => Promise<boolean>
   readonly remove: (serverId: string, accountId: string) => Promise<void>
   readonly guide: (
     serverId: string,
@@ -180,6 +184,7 @@ export const makePluginAccounts = (deps: PluginAccountsDeps): PluginAccounts => 
       })
     },
     completeOAuth: flows.complete,
+    ownsOAuthState: flows.owns,
     guide: async (serverId, accountId, ingress) => {
       const server = await deps.server(serverId)
       const guide = requireSpec(deps.spec(server), server).guide

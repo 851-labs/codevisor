@@ -302,9 +302,17 @@ export const MachineHello = Schema.Struct({
 
 export const MachinePing = Schema.Struct({ t: Schema.Literal("ping") })
 
+export const InboxOAuthResult = Schema.Struct({
+  itemId: Schema.String,
+  ok: Schema.Boolean,
+  error: Schema.optional(Schema.String)
+})
+export type InboxOAuthResult = typeof InboxOAuthResult.Type
+
 export const MachineInboxAck = Schema.Struct({
   t: Schema.Literal("inbox-ack"),
-  itemIds: Schema.Array(Schema.String)
+  itemIds: Schema.Array(Schema.String),
+  results: Schema.optional(Schema.Array(InboxOAuthResult))
 })
 
 export const MachineToHub = Schema.Union([

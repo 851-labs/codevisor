@@ -52,9 +52,7 @@ const accountsFixture = async (options: FixtureOptions = {}) => {
     server: async () => server,
     spec: () => options.spec ?? tokenSpec,
     ...(options.check === undefined ? {} : { check: options.check }),
-    redirects: {
-      prepare: async () => ({ redirectUri: "http://127.0.0.1/callback", returnTo: "local" })
-    },
+    redirects: { loopbackUri: "http://127.0.0.1/callback" },
     onChanged: () => undefined,
     now: clock.now
   })

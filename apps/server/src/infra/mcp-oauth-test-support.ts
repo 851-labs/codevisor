@@ -124,9 +124,12 @@ const registration = (body: string): Record<string, unknown> & { redirect_uris: 
   return { ...parsed, redirect_uris: parsed.redirect_uris.map(String) }
 }
 
+const isLoopback = (redirectUri: string): boolean => new URL(redirectUri).hostname === "127.0.0.1"
+
 export const fakeOAuthMcpServer = async (
   clock: McpOAuthClock,
-  accessTokenLifetimeSeconds = 3600
+  accessTokenLifetimeSeconds = 3600,
+  options: { readonly loopbackOnly?: boolean } = {}
 ) => {
   let sequence = 0
   const next = (prefix: string): string => `${prefix}-${++sequence}`
@@ -299,6 +302,10 @@ export const fakeOAuthMcpServer = async (
         })
       } else if (path === "/register") {
         const registered = registration(await readBody(request))
+        if (options.loopbackOnly === true && !registered.redirect_uris.every(isLoopback)) {
+          json(response, 400, { error: "invalid_redirect_uri" })
+          return
+        }
         const clientId = next("client")
         clients.set(clientId, registered.redirect_uris)
         json(response, 201, { ...registered, client_id: clientId })

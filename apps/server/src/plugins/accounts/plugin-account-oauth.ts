@@ -10,6 +10,7 @@ import { field } from "../../unknown-values.js"
 export interface OAuthClient {
   readonly clientId: string
   readonly clientSecret?: string
+  readonly redirectUris?: ReadonlyArray<string>
 }
 
 export interface PendingOAuthFlow {

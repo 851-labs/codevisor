@@ -1,4 +1,4 @@
-import type { HubInboxItem } from "@codevisor/api"
+import type { HubInboxItem, InboxOAuthResult } from "@codevisor/api"
 import { openInboxItem } from "@codevisor/cloud-client"
 
 export interface InboxWebhookRequest {
@@ -10,39 +10,86 @@ export interface InboxWebhookRequest {
   readonly receivedAt: string
 }
 
+export interface InboxOAuthCallback {
+  readonly state: string
+  readonly code?: string
+  readonly issuer?: string
+  readonly error?: string
+}
+
+export type InboxOAuthOutcome =
+  | { readonly ok: true }
+  | { readonly ok: false; readonly error: string }
+
+export type InboxOAuthHandler = (callback: InboxOAuthCallback) => Promise<InboxOAuthOutcome>
+
+export interface InboxReceipt {
+  readonly oauth?: InboxOAuthOutcome
+}
+
 export interface CloudInbox {
-  readonly receive: (secretKey: string, frame: HubInboxItem) => Promise<void>
+  readonly receive: (secretKey: string, frame: HubInboxItem) => Promise<InboxReceipt>
   readonly onWebhook: (handler: (request: InboxWebhookRequest) => Promise<void>) => () => void
+  readonly onOAuth: (handler: InboxOAuthHandler) => () => void
 }
 
 export const makeCloudInbox = (): CloudInbox => {
   const webhookHandlers = new Set<(request: InboxWebhookRequest) => Promise<void>>()
+  const oauthHandlers = new Set<InboxOAuthHandler>()
   const seen = new Set<string>()
 
-  const dispatch = async (frame: HubInboxItem, payload: unknown): Promise<void> => {
-    if (frame.kind !== "webhook") return
+  const dispatch = async (frame: HubInboxItem, payload: unknown): Promise<InboxReceipt> => {
+    if (frame.kind === "oauth") return { oauth: await finishOAuth(oauthHandlers, payload) }
+
     const request = webhookRequestOf(payload)
     if (request !== undefined) await all(webhookHandlers, request)
+    return {}
   }
 
   return {
     receive: async (secretKey, frame) => {
-      if (seen.has(frame.itemId)) return
-      await dispatch(frame, openInboxItem(secretKey, frame))
+      if (seen.has(frame.itemId)) return {}
+      const receipt = await dispatch(frame, openInboxItem(secretKey, frame))
       remember(seen, frame.itemId)
+      return receipt
     },
-    onWebhook: (handler) => register(webhookHandlers, handler)
+    onWebhook: (handler) => register(webhookHandlers, handler),
+    onOAuth: (handler) => register(oauthHandlers, handler)
   }
 }
 
+export type InboxAck = (
+  itemIds: ReadonlyArray<string>,
+  results: ReadonlyArray<InboxOAuthResult>
+) => void
+
 export const inboxFrameHandler =
-  (inbox: CloudInbox, secretKey: string, ack: (itemIds: ReadonlyArray<string>) => void) =>
+  (inbox: CloudInbox, secretKey: string, ack: InboxAck) =>
   (frame: HubInboxItem): void => {
     void inbox.receive(secretKey, frame).then(
-      () => ack([frame.itemId]),
+      (receipt) => ack([frame.itemId], oauthResults(frame.itemId, receipt)),
       () => undefined
     )
   }
+
+const oauthResults = (itemId: string, receipt: InboxReceipt): ReadonlyArray<InboxOAuthResult> =>
+  receipt.oauth === undefined ? [] : [{ itemId, ...receipt.oauth }]
+
+const unclaimedSignIn: InboxOAuthOutcome = {
+  ok: false,
+  error: "No sign-in on this machine was waiting for it"
+}
+
+const finishOAuth = async (
+  handlers: ReadonlySet<InboxOAuthHandler>,
+  payload: unknown
+): Promise<InboxOAuthOutcome> => {
+  const callback = oauthCallbackOf(payload)
+  if (callback === undefined) return { ok: false, error: "The sign-in callback was malformed" }
+
+  const outcomes = await Promise.all([...handlers].map((handler) => handler(callback)))
+  return outcomes.find((outcome) => !outcome.ok) ?? outcomes[0] ?? unclaimedSignIn
+}
 
 const maxRemembered = 2_000
 
@@ -74,6 +121,16 @@ const webhookRequestOf = (payload: unknown): InboxWebhookRequest | undefined => 
     headers: stringRecord(headers),
     body: String(body),
     receivedAt: String(receivedAt)
+  }
+}
+
+const oauthCallbackOf = (payload: unknown): InboxOAuthCallback | undefined => {
+  if (!isRecord(payload) || !isString(payload.state)) return undefined
+  return {
+    state: payload.state,
+    ...(isString(payload.code) ? { code: payload.code } : {}),
+    ...(isString(payload.iss) ? { issuer: payload.iss } : {}),
+    ...(isString(payload.error) ? { error: payload.error } : {})
   }
 }
 

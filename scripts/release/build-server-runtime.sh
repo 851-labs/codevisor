@@ -33,6 +33,10 @@ Optional environment:
                                 Linear OAuth app client as {"installed":{client_id,
                                 client_secret}} for Linear plugin sign-in. Written
                                 to config/linear-oauth-client.json; never printed.
+                                For either client, listing
+                                https://cloud.codevisor.dev/oauth/callback in
+                                installed.redirect_uris switches sign-in to the
+                                Codevisor Cloud callback.
 EOF
 }
 

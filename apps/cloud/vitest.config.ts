@@ -21,7 +21,8 @@ export default defineConfig(async () => {
             RELAY_MAP: JSON.stringify([
               { url: "https://relay-test.codevisor.dev", quicPort: 7842 }
             ]),
-            RELAY_AUTHORIZE_TOKEN: "relay-secret, relay-next"
+            RELAY_AUTHORIZE_TOKEN: "relay-secret, relay-next",
+            OAUTH_RESULT_WAIT_MS: "1500"
           }
         }
       })
