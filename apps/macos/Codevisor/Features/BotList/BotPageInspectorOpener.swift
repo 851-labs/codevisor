@@ -4,10 +4,9 @@ import CodevisorUI
 
 struct BotPageInspectorOpener {
   let workspace: Workspace
-  let rootDirectory: String
   let environment: AppEnvironment
   let store: SessionStore
-  let quickLook: QuickLookController?
+  let fileOpener: FileOpener?
 
   func open(_ destination: WorkspaceInspectorView.Destination) {
     switch destination {
@@ -25,14 +24,8 @@ struct BotPageInspectorOpener {
     }
   }
 
-  private var isLocalMachine: Bool {
-    environment.machines.machine(for: workspace.serverId)?.isLocal == true
-  }
-
   private func preview(_ target: String) {
-    guard isLocalMachine, let path = FileDocumentLocation.resolve(target, relativeTo: rootDirectory) else { return }
-
-    quickLook?.updatePreviewURL(URL(fileURLWithPath: path))
+    fileOpener?.open(ViewableFile(PreviewFile(serverPath: target)))
   }
 
   private func presentTranscript() {

@@ -1,6 +1,5 @@
 #if canImport(AppKit)
   import AppKit
-  import QuickLookUI
   import QuartzCore
   import SwiftUI
 
@@ -26,13 +25,9 @@
     private var pendingServerFileLinkClick: PendingServerFileLinkClick?
     private(set) var hoveredLinkRange: NSRange?
 
-    public override func acceptsPreviewPanelControl(_: QLPreviewPanel!) -> Bool {
-      false
-    }
-
     public override func clicked(onLink link: Any, at charIndex: Int) {
       let isImage = textStorage?.streamMarkdownHasImage(at: charIndex) ?? false
-      guard !handleMarkdownLink(link, isImage: isImage, action: linkAction, in: self, at: charIndex) else { return }
+      guard !handleMarkdownLink(link, isImage: isImage, action: linkAction) else { return }
       super.clicked(onLink: link, at: charIndex)
     }
 
@@ -80,7 +75,7 @@
     public override func nativeMouseDown(with event: NSEvent) {
       let point = convert(event.locationInWindow, from: nil)
       if event.clickCount == 1,
-        event.modifierFlags.intersection([.shift, .command, .option, .control]).isEmpty,
+        event.modifierFlags.intersection([.shift, .option, .control]).isEmpty,
         let hit = linkHit(at: point), hit.isServerFile
       {
         pendingServerFileLinkClick = PendingServerFileLinkClick(
@@ -248,7 +243,7 @@
     @discardableResult
     func activateServerFileLink(_ value: Any, at index: Int? = nil) -> Bool {
       let isImage = index.map { textStorage?.streamMarkdownHasImage(at: $0) ?? false } ?? false
-      return handleMarkdownLink(value, isImage: isImage, action: linkAction, in: self, at: index)
+      return handleMarkdownLink(value, isImage: isImage, action: linkAction)
     }
 
     private var currentMouseLocation: NSPoint {

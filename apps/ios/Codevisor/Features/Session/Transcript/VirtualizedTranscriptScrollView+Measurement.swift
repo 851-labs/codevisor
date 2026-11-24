@@ -235,12 +235,10 @@ extension VirtualizedTranscriptScrollView {
         .markdownLinkHandler { [weak self] url in
           self?.openMarkdownLink?(url) ?? false
         }
-        .markdownImageActions(
-          MarkdownImageActions(
-            open: { [weak self] url in self?.markdownImageActions?.open(url) },
-            openInNewTab: { [weak self] url in self?.markdownImageActions?.openInNewTab?(url) },
-            copy: { [weak self] url in self?.markdownImageActions?.copy?(url) },
-            addToChat: { [weak self] url in self?.markdownImageActions?.addToChat?(url) })
+        .markdownFileActions(
+          MarkdownFileActions(
+            openImage: { [weak self] url in self?.markdownFileActions?.openImage(url) ?? false },
+            menu: { [weak self] url in self?.markdownFileActions?.menu(url) ?? [] })
         )
         .environment(\.streamingTextAnimationFrameClock, streamingTextFrameClock)
         .environment(\.streamMarkdownTextLayoutWidth, effectiveRowWidth)

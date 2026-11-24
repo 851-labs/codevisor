@@ -20,7 +20,7 @@ struct SessionContainerView: View {
   var onFocusedChatChanged: ((UUID) -> Void)? = nil
   @Environment(AppEnvironment.self) var environment
   @Environment(\.accessibilityReduceMotion) var reduceMotion
-  @Environment(\.quickLook) var quickLook
+  @Environment(\.fileLightbox) var fileLightbox
   @Environment(WorkspacePageModel.self) var page: WorkspacePageModel?
   @Environment(\.hidesWorkspaceTitle) var hidesWorkspaceTitle
   @State var splitDragCoordinator = WorkspaceSplitDragCoordinator()
@@ -87,6 +87,7 @@ struct SessionContainerView: View {
         \.openFileDocument,
         OpenFileDocumentAction(identity: handlerIdentity) { openFileDocument($0, rendered: $1) }
       )
+      .environment(\.fileOpener, fileOpener)
       .environment(
         \.openSubagent,
         OpenSubagentAction(identity: handlerIdentity) { parentId, toolCallId, title, placement in

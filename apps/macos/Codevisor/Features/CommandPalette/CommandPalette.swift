@@ -6,7 +6,7 @@ final class CommandPalette {
   private(set) var sections: [CommandPaletteSection] = []
   private(set) var isPresented = false
   var query = ""
-  @ObservationIgnored private var focusReturn: CommandPaletteFocusReturn?
+  @ObservationIgnored private var focusReturn: WindowFocusReturn?
 
   func toggle(_ sections: [CommandPaletteSection], in window: NSWindow?) {
     if isPresented {
@@ -32,7 +32,7 @@ final class CommandPalette {
   private func present(_ sections: [CommandPaletteSection], in window: NSWindow?) {
     self.sections = sections
     query = ""
-    focusReturn = window.map(CommandPaletteFocusReturn.init)
+    focusReturn = window.map(WindowFocusReturn.init)
     isPresented = true
   }
 }

@@ -56,7 +56,7 @@ extension VirtualizedTranscriptScrollView {
     }
     rowContent = newRowContent
     openMarkdownLink = callbacks.openMarkdownLink
-    markdownImageActions = callbacks.markdownImageActions
+    markdownFileActions = callbacks.markdownFileActions
     self.onViewportChange = onViewportChange
     self.onBottomStateChange = onBottomStateChange
     onEarlierHistoryCollapseChange = callbacks.onEarlierHistoryCollapseChange

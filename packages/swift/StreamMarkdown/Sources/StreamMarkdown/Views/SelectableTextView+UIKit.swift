@@ -200,7 +200,9 @@
         guard let url = Self.linkURL(of: textItem, in: textView), let linkAction else {
           return defaultAction
         }
-        return linkAction.activate(url, in: textView, at: textItem.range.location) ? UIAction { _ in } : defaultAction
+        let handled = MarkdownLinkActivation.activate(
+          url, with: linkAction, in: textView, at: textItem.range.location)
+        return handled ? UIAction { _ in } : defaultAction
       }
 
       private static func linkURL(of textItem: UITextItem, in textView: UITextView) -> URL? {
@@ -228,8 +230,7 @@
         menuConfigurationFor textItem: UITextItem,
         defaultMenu: UIMenu
       ) -> UITextItem.MenuConfiguration? {
-        markdownImageMenuConfiguration(
-          in: textView, for: textItem, defaultMenu: defaultMenu, action: linkAction)
+        markdownFileMenuConfiguration(for: textItem, defaultMenu: defaultMenu, action: linkAction)
       }
     }
   }

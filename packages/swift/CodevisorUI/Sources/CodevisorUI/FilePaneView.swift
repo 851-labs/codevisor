@@ -25,7 +25,6 @@ public struct OpenFileDocumentAction: Sendable, Equatable {
 
 public struct FilePaneView: View {
   @Bindable private var model: FilePaneModel
-  @Environment(\.openFileDocument) private var openFile
   @Environment(\.scenePhase) private var scenePhase
 
   public init(model: FilePaneModel) { self.model = model }
@@ -60,7 +59,7 @@ public struct FilePaneView: View {
       defer { active.flushAutosave() }
       await model.refreshDocument()
       if active.snapshot != nil, !active.isMissing { model.recordRecent() }
-      guard !model.path.hasPrefix("https://attachments.codevisor.invalid/") else { return }
+      guard !FileDocumentLocation.isSavedCopy(model.path) else { return }
       while !Task.isCancelled {
         do { try await Task.sleep(for: .seconds(3)) } catch { break }
         if scenePhase == .active { await model.refreshDocument() }
@@ -97,45 +96,8 @@ public struct FilePaneView: View {
       #else
         FileBrowserView(model: model)
       #endif
-    } else if document.isMissing {
-      FileMissingView(model: model)
-    } else if document.snapshot == nil {
-      if document.isLoading {
-        ProgressView("Opening file…").frame(maxWidth: .infinity, maxHeight: .infinity)
-      } else {
-        ContentUnavailableView(
-          "File unavailable", systemImage: "doc.questionmark", description: Text("Check the connection and try again."))
-      }
-    } else if document.snapshot?.content == nil {
-      FileMediaPreview(
-        path: model.path, client: model.client, size: document.snapshot?.size ?? 0
-      )
-      .id(document.snapshot?.version)
     } else {
-      ZStack {
-        FileSourceEditor(session: model.editor)
-          .id(model.path)
-          .opacity(model.editor.preview ? 0 : 1)
-          .allowsHitTesting(!model.editor.preview)
-          .accessibilityHidden(model.editor.preview)
-        if model.editor.preview && document.isHTML {
-          FileHTMLPreview(
-            document: document, rootPath: model.rootPath, client: model.client, openFile: openLocalFile,
-            openWebLink: { model.onOpenWebLink?($0) == true })
-        } else if model.editor.preview {
-          FileMarkdownPreview(document: document, client: model.client, openFile: openLocalFile)
-        }
-      }
+      FileViewerContent(model: model)
     }
   }
-
-  private func openLocalFile(_ target: String) -> Bool {
-    let rendered = FileDocumentLocation.opensRendered(target)
-    if openFile?(target, rendered: rendered) == true { return true }
-    guard let path = FileDocumentLocation.resolve(target, relativeTo: model.rootPath) else { return false }
-    model.navigate(to: path)
-    model.editor.reveal(target, rendered: rendered)
-    return true
-  }
-
 }

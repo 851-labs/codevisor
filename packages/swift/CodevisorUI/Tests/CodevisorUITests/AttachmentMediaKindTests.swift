@@ -6,17 +6,15 @@ import UniformTypeIdentifiers
 
 struct AttachmentMediaKindTests {
   @Test(arguments: [
-    ("scratch/shot.png", AttachmentMediaKind.image, "Copy Image"),
-    ("scratch/clip.mp4", .video, "Copy Video"),
-    ("scratch/clip.mov", .video, "Copy Video"),
-    ("docs/report.pdf", .pdf, "Copy PDF"),
-    ("notes.md", .file, "Copy File"),
-    ("archive.zzzz", .file, "Copy File"),
+    ("scratch/shot.png", AttachmentMediaKind.image),
+    ("scratch/clip.mp4", .video),
+    ("scratch/clip.mov", .video),
+    ("docs/report.pdf", .pdf),
+    ("notes.md", .file),
+    ("archive.zzzz", .file),
   ])
-  func classifiesLinkedFilesByName(path: String, kind: AttachmentMediaKind, title: String) {
-    let file = PreviewFile(serverPath: path)
-    #expect(AttachmentMediaKind(file: file) == kind)
-    #expect(kind.copyTitle == title)
+  func classifiesLinkedFilesByName(path: String, kind: AttachmentMediaKind) {
+    #expect(AttachmentMediaKind(file: PreviewFile(serverPath: path)) == kind)
   }
 
   @Test("A MIME type outranks an ambiguous name")

@@ -17,9 +17,8 @@ extension PreviewFile {
 typealias AttachmentGeometryReadinessPreferenceKey = ContentLayoutReadinessPreferenceKey
 
 struct AttachmentThumbnailView: View {
-  @Environment(\.openFileDocument) private var openFileDocument
   @Environment(\.attachmentImages) private var attachmentImages
-  @Environment(\.quickLook) private var quickLook
+  @Environment(\.fileOpener) private var fileOpener
   @Environment(\.dynamicTypeSize) private var dynamicTypeSize
   @Environment(\.markdownBlockChrome) private var chrome
   let file: PreviewFile
@@ -39,11 +38,7 @@ struct AttachmentThumbnailView: View {
             if file.isPDF { PDFBadge() }
           }
           .overlay {
-            if file.isVideo, !isLoadingPreview { VideoPlayBadge() }
-          }
-          .overlay {
-            AttachmentLoadingOverlay(isLoading: isLoadingPreview)
-              .clipShape(shape)
+            if file.isVideo { VideoPlayBadge() }
           }
       } else {
         fileChip
@@ -107,8 +102,7 @@ struct AttachmentThumbnailView: View {
     .accessibilityElement(children: .ignore)
     .accessibilityLabel("Attachment \(file.name)")
     .accessibilityAddTraits([.isImage, .isButton])
-    .accessibilityValue(isLoadingPreview ? "Loading" : "")
-    .attachmentContextMenu(file: file, image: image, openInNewTab: openInNewTab, quickLook: preview)
+    .fileContextMenu(ViewableFile(file))
   }
 
   private var isBubble: Bool { chrome == .bubble }
@@ -169,7 +163,7 @@ struct AttachmentThumbnailView: View {
   }
 
   private var fileChip: some View {
-    fileChipButton.attachmentContextMenu(file: file, image: nil, openInNewTab: openInNewTab, quickLook: preview)
+    fileChipButton.fileContextMenu(ViewableFile(file))
   }
 
   private var fileChipButton: some View {
@@ -177,7 +171,7 @@ struct AttachmentThumbnailView: View {
       preview()
     } label: {
       HStack(spacing: 6) {
-        AttachmentChipIcon(isLoading: isLoadingPreview)
+        AttachmentChipIcon()
         Text(file.name)
           .lineLimit(dynamicTypeSize.isAccessibilitySize ? 2 : 1)
           .truncationMode(.middle)
@@ -201,7 +195,6 @@ struct AttachmentThumbnailView: View {
     .buttonStyle(.plain)
     .pointerHighlight(shape)
     .accessibilityLabel(file.name)
-    .accessibilityValue(isLoadingPreview ? "Loading" : "")
   }
 
   private var chipMaxWidth: CGFloat {
@@ -209,17 +202,8 @@ struct AttachmentThumbnailView: View {
     return isBubble ? 260 : 200
   }
 
-  private func openInNewTab() {
-    _ = openFileDocument?(FileDocumentLocation.target(for: file))
-  }
-
-  private var isLoadingPreview: Bool {
-    quickLook?.isLoading(QuickLookItem(file)) ?? false
-  }
-
   private func preview() {
-    guard !file.isPendingCapture, !isLoadingPreview else { return }
-    quickLook?.present(QuickLookItem(file), attachmentStore: attachmentImages)
+    fileOpener?.open(ViewableFile(file))
   }
 }
 

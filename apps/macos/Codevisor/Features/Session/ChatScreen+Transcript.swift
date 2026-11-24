@@ -32,10 +32,21 @@ extension ChatScreen {
     presentationSurface.ensureScrollView().reveal(location)
   }
 
-  var transcriptImageActions: MarkdownImageActions {
-    TranscriptMarkdownImageOpener.actions(
-      quickLook: quickLook, attachmentImages: attachmentImages, openDocument: openFileDocument,
-      quoteActions: TranscriptQuoteActions(controller: controller))
+  var transcriptFileOpener: FileOpener? {
+    guard var opener = fileOpener?.scoped(to: ObjectIdentifier(controller)) else { return nil }
+
+    let images = attachmentImages
+    opener.siblings = { [weak controller] file in
+      guard let machineFile = file.machineFile, let conversation = controller?.conversation else { return [file] }
+      return TranscriptFileGroups.siblings(of: machineFile, in: conversation).map(ViewableFile.init)
+    }
+    opener.poster = { file in file.machineFile.flatMap { images.memoryPreview(for: $0)?.image } }
+    opener.addToChat = { [weak controller] image in controller?.addTranscriptImage(image) }
+    return opener
+  }
+
+  var transcriptFileActions: MarkdownFileActions? {
+    TranscriptMarkdownFiles.actions(opener: transcriptFileOpener)
   }
 
   var transcriptSurface: some View {
@@ -97,15 +108,14 @@ extension ChatScreen {
                   TranscriptRowContentView(row: row, controller: controller, leaves: rowLeaves)
                     .reportsStreamingTextAnimationActivity()
                     .markdownLinkHandler { url in
-                      TranscriptMarkdownLinkOpener.open(
-                        url, quickLook: quickLook, attachmentImages: attachmentImages,
-                        openDocument: openFileDocument)
+                      TranscriptMarkdownFiles.open(url, opener: transcriptFileOpener)
                     }
-                    .markdownImageActions(transcriptImageActions)
+                    .markdownFileActions(transcriptFileActions)
                     .markdownWebLinkActions(transcriptWebLinkActions)
                     .environment(environment)
                     .environment(\.attachmentImages, attachmentImages)
                     .environment(\.openFileDocument, openFileDocument)
+                    .environment(\.fileOpener, transcriptFileOpener)
                     .environment(\.openSubagent, openSubagent)
                     .environment(\.hoverTrackingSuspended, controller.isSending)
                     .environment(\.userBubbleStyle, presentsBotConversation ? .accent : .standard)
@@ -149,11 +159,9 @@ extension ChatScreen {
               },
               markdownImageLoader: attachmentImages.markdownImageLoader,
               openMarkdownLink: { url in
-                TranscriptMarkdownLinkOpener.open(
-                  url, quickLook: quickLook, attachmentImages: attachmentImages,
-                  openDocument: openFileDocument)
+                TranscriptMarkdownFiles.open(url, opener: transcriptFileOpener)
               },
-              markdownImageActions: transcriptImageActions,
+              markdownFileActions: transcriptFileActions,
               markdownWebLinkActions: transcriptWebLinkActions,
               onEarlierHistoryCollapseChange: { collapse in
                 DispatchQueue.main.async {

@@ -8,16 +8,13 @@ import SwiftUI
 import TranscriptKit
 
 struct AssistantTurnBody: View {
-  @Environment(\.openFileDocument) private var openFileDocument
   @Environment(\.transcriptDisclosure) private var disclosureStore
   @Environment(\.transcriptController) private var transcriptController
   @Environment(\.transcriptPerformAnchoredDisclosureChange)
   private var performAnchoredDisclosureChange
   @Environment(\.transcriptInvalidateRowMeasurement)
   private var invalidateRowMeasurement
-  @Environment(\.attachmentImages) private var attachmentImages
-  @Environment(\.quickLook) private var quickLook
-  @Environment(\.transcriptQuoteActions) private var quoteActions
+  @Environment(\.fileOpener) private var fileOpener
   @Environment(\.streamingTextAnimationVisibility) private var textAnimationVisibility
   @State private var textAnimationPresentation = StreamingTextAnimationPresentation()
   @State private var hasAutoCollapsed: Bool
@@ -123,7 +120,7 @@ struct AssistantTurnBody: View {
       }
     }
     .markdownLinkHandler(openMarkdownLink)
-    .markdownImageActions(imageActions)
+    .markdownFileActions(TranscriptMarkdownFiles.actions(opener: fileOpener))
     .frame(maxWidth: .infinity, alignment: .leading)
     .onChange(of: isGenerating) { _, generating in
       if generating {
@@ -238,15 +235,8 @@ struct AssistantTurnBody: View {
     HarnessSignInRequest(serverId: transcriptController.project.serverId, harnessId: harnessId).post()
   }
 
-  private var imageActions: MarkdownImageActions {
-    TranscriptMarkdownImageOpener.actions(
-      quickLook: quickLook, attachmentImages: attachmentImages, openDocument: openFileDocument,
-      quoteActions: quoteActions)
-  }
-
   private func openMarkdownLink(_ url: URL) -> Bool {
-    TranscriptMarkdownLinkOpener.open(
-      url, quickLook: quickLook, attachmentImages: attachmentImages, openDocument: openFileDocument)
+    TranscriptMarkdownFiles.open(url, opener: fileOpener)
   }
 
   private func autoCollapse() {

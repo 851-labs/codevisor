@@ -254,7 +254,7 @@ struct WorkspaceScreen: View {
     )
     .toolbar {
       if !blocksServerContent, let model = activeFileModel {
-        FilePaneToolbar(model: model, onNewTab: { addTab() })
+        FilePaneToolbar(model: model, transfers: IOSFileTransfers.transfers, onNewTab: { addTab() })
       } else {
         if !blocksServerContent, let model = activeReviewModel {
           ReviewPaneToolbar(model: model, title: activePane.map(title(for:)) ?? "Review Changes")

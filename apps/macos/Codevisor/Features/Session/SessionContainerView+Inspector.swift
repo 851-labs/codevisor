@@ -36,9 +36,7 @@ extension SessionContainerView {
 
   private var botPageInspectorOpener: BotPageInspectorOpener {
     BotPageInspectorOpener(
-      workspace: selectedWorkspace,
-      rootDirectory: selectedWorkspace.rootDirectory ?? session?.cwd ?? project.folderURL.path,
-      environment: environment, store: store, quickLook: quickLook)
+      workspace: selectedWorkspace, environment: environment, store: store, fileOpener: fileOpener)
   }
 
   private func openCenterTab(with pane: PaneDescriptorState) {

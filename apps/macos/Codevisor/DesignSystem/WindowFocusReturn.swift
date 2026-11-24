@@ -1,6 +1,6 @@
 import AppKit
 
-struct CommandPaletteFocusReturn {
+struct WindowFocusReturn {
   private weak var window: NSWindow?
   private weak var responder: NSResponder?
 

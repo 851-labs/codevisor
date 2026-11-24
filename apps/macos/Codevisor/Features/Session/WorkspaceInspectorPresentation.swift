@@ -51,6 +51,8 @@ struct WorkspaceInspectorPresentation: ViewModifier {
   @State private var media = WorkspaceInspectorMediaModel()
   @State private var fileTree = WorkspaceInspectorFileTreeModel()
   @State private var imageStores = WorkspaceInspectorImageStores()
+  @State private var fileHandlers = HandlerIdentity.unique
+  @Environment(\.fileLightbox) private var fileLightbox
   @State private var harness = WorkspaceInspectorHarnessModel()
   @State private var lastRefresh: RefreshKey?
   @State private var tracked: Bool?
@@ -206,6 +208,11 @@ struct WorkspaceInspectorPresentation: ViewModifier {
       }
     )
     .environment(\.attachmentImages, imageStores.store(for: workspace.serverId, environment: environment))
+    .environment(
+      \.fileOpener,
+      WorkspaceInspectorFiles(
+        workspace: workspace, media: media, environment: environment, store: store, identity: fileHandlers
+      ).opener(lightbox: fileLightbox))
   }
 
   private func mainChatTasks(of workspace: Workspace, store: SessionStore) -> [WorkspaceInspectorTask] {

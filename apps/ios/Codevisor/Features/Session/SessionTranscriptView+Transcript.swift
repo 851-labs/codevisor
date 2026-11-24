@@ -6,10 +6,31 @@ import SwiftUI
 import UIKit
 
 extension SessionTranscriptView {
-  var transcriptImageActions: MarkdownImageActions {
-    TranscriptMarkdownImageOpener.actions(
-      quickLook: quickLook, attachmentImages: attachmentImages, openDocument: openFileDocument,
-      quoteActions: TranscriptQuoteActions(controller: controller))
+  var fileOpener: FileOpener {
+    let serverId = controller.project.serverId
+    let site = FileOpener.Site(
+      rootPath: controller.sessionCwdURL.path, machineId: serverId, client: environment.machines.client(for: serverId))
+    var opener = FileOpener(
+      identity: HandlerIdentity(presentationOwner), site: site, lightbox: lightbox, openInTab: openFileInTab)
+    let images = attachmentImages
+    opener.transfers = IOSFileTransfers.transfers
+    opener.presentMenu = presentationSurface.fileMenuPrompt.present
+    opener.siblings = { [weak controller] file in
+      guard let machineFile = file.machineFile, let conversation = controller?.conversation else { return [file] }
+      return TranscriptFileGroups.siblings(of: machineFile, in: conversation).map(ViewableFile.init)
+    }
+    opener.poster = { file in file.machineFile.flatMap { images.memoryPreview(for: $0)?.image } }
+    opener.addToChat = { [weak controller] image in controller?.addTranscriptImage(image) }
+    return opener
+  }
+
+  private var openFileInTab: (@MainActor (String) -> Bool)? {
+    guard !controller.presentsBotConversation, let openFileDocument else { return nil }
+    return { target in openFileDocument(target, rendered: FileDocumentLocation.opensRendered(target)) }
+  }
+
+  var transcriptFileActions: MarkdownFileActions? {
+    TranscriptMarkdownFiles.actions(opener: fileOpener)
   }
 
   func revealRequestedQuote() {
@@ -25,8 +46,7 @@ extension SessionTranscriptView {
   }
 
   func openMarkdownLink(_ url: URL) -> Bool {
-    TranscriptMarkdownLinkOpener.open(
-      url, quickLook: quickLook, attachmentImages: attachmentImages, openDocument: openFileDocument)
+    TranscriptMarkdownFiles.open(url, opener: fileOpener)
   }
 
   var transcript: some View {
@@ -92,10 +112,10 @@ extension SessionTranscriptView {
               .reportsStreamingTextAnimationActivity()
               .environment(environment)
               .environment(\.attachmentImages, attachmentImages)
-              .environment(\.quickLook, quickLook)
+              .environment(\.fileOpener, fileOpener)
               .environment(\.openFileDocument, openFileDocument)
               .environment(\.openSubagent, openSubagent)
-              .markdownImageActions(transcriptImageActions)
+              .markdownFileActions(transcriptFileActions)
               .environment(\.transcriptDisclosure, disclosure)
               .environment(\.transcriptController, controller)
               .environment(
@@ -145,7 +165,7 @@ extension SessionTranscriptView {
             onSendAnimationCompleted?(request)
           },
           openMarkdownLink: openMarkdownLink,
-          markdownImageActions: transcriptImageActions,
+          markdownFileActions: transcriptFileActions,
           onSendAnimationStarted: { request in
             onSendAnimationStarted?(request)
             Task { @MainActor in

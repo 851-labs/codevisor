@@ -19,10 +19,7 @@ struct AssistantTurnView: View {
   @Environment(\.transcriptPerformAnchoredDisclosureChange) private var performAnchoredDisclosureChange
   @Environment(\.transcriptInvalidateRowMeasurement) private var invalidateRowMeasurement
   @Environment(\.openSettings) private var openSettings
-  @Environment(\.quickLook) private var quickLook
-  @Environment(\.transcriptQuoteActions) private var quoteActions
-  @Environment(\.openFileDocument) private var openFileDocument
-  @Environment(\.attachmentImages) private var attachmentImages
+  @Environment(\.fileOpener) private var fileOpener
   @Environment(\.streamingTextAnimationVisibility) private var textAnimationVisibility
   @State private var textAnimationPresentation = StreamingTextAnimationPresentation()
   @State private var hasAutoCollapsed = false
@@ -133,11 +130,7 @@ struct AssistantTurnView: View {
       }
     }
     .markdownLinkHandler(openMarkdownLink)
-    .markdownImageActions(
-      TranscriptMarkdownImageOpener.actions(
-        quickLook: quickLook, attachmentImages: attachmentImages, openDocument: openFileDocument,
-        quoteActions: quoteActions)
-    )
+    .markdownFileActions(TranscriptMarkdownFiles.actions(opener: fileOpener))
     .frame(maxWidth: .infinity, alignment: .leading)
     .onChange(of: turn.isGenerating) { _, generating in
       if generating {
@@ -211,10 +204,7 @@ struct AssistantTurnView: View {
   }
 
   private func openMarkdownLink(_ url: URL) -> Bool {
-    TranscriptMarkdownLinkOpener.open(
-      url, quickLook: quickLook, attachmentImages: attachmentImages,
-      openDocument: openFileDocument
-    )
+    TranscriptMarkdownFiles.open(url, opener: fileOpener)
   }
 
   @ViewBuilder

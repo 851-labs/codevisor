@@ -14,7 +14,7 @@ struct ChatScreen: View {
   @Environment(\.dynamicTypeSize) var dynamicTypeSize
   @Environment(\.accessibilityReduceMotion) var reduceMotion
   @Environment(\.openSettings) var openSettings
-  @Environment(\.quickLook) var quickLook
+  @Environment(\.fileOpener) var fileOpener
   @Environment(\.openFileDocument) var openFileDocument
   @Environment(\.openSubagent) var openSubagent
   @Environment(\.pluginAppPresenter) var pluginAppPresenter
@@ -102,6 +102,7 @@ struct ChatScreen: View {
       .overlay { livePreviewPiPOverlay }
       .modifier(ChatSetupSheets(controller: controller))
       .environment(\.attachmentImages, attachmentImages)
+      .environment(\.fileOpener, transcriptFileOpener)
       .pointerStyle(.default)
       .transaction(value: ObjectIdentifier(controller)) { $0.animation = nil }
       .animation(Motion.quick(reduceMotion: reduceMotion), value: presentationSurface.findModel.isPresented)

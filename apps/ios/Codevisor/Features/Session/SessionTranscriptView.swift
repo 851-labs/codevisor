@@ -41,9 +41,9 @@ struct SessionTranscriptView: View {
   @Environment(\.scenePhase) var scenePhase
   @Environment(\.markdownTheme) var markdownTheme
   @Environment(AppEnvironment.self) var environment
-  @State private var presentationOwner = UUID()
+  @State var presentationOwner = UUID()
   var disclosure: TranscriptDisclosureStore { presentationSurface.disclosure }
-  var quickLook: QuickLookController { presentationSurface.quickLook }
+  var lightbox: FileLightbox { presentationSurface.lightbox }
   @Namespace var composerGlassNamespace
   @State var composerCardHeight: CGFloat = 96
   @State var sendAnimationsStarted = 0
@@ -113,9 +113,8 @@ struct SessionTranscriptView: View {
     chat
       .modifier(ProjectCloneSheetPresenter(controller: controller))
       .botMascotOpen(openBot)
-      .attachmentQuickLookPreview(
-        Binding(get: { quickLook.previewURL }, set: { quickLook.updatePreviewURL($0) })
-      )
+      .fileLightboxSheet(lightbox)
+      .fileMenuPrompt(presentationSurface.fileMenuPrompt, share: IOSFileTransfers.transfers.share)
       .acknowledgesPresentedTurnAttention(
         controller: controller,
         presentationRole: presentationRole
@@ -183,7 +182,7 @@ struct SessionTranscriptView: View {
         }
       }
       .environment(\.attachmentImages, attachmentImages)
-      .environment(\.quickLook, quickLook)
+      .environment(\.fileOpener, fileOpener)
       .task(id: transcriptProjectionRequest) {
         submitProjection()
       }

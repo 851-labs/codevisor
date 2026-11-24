@@ -46,7 +46,7 @@ public struct TranscriptQuotedMessageText: View {
         if quotes.indices.contains(index) { actions?.reveal(quotes[index]) }
         return true
       },
-      images: fallback?.images,
+      files: fallback?.files,
       webLinks: fallback?.webLinks
     )
   }

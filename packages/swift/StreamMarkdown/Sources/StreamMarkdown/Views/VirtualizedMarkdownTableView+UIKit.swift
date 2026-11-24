@@ -334,13 +334,15 @@
 
     func textView(_ textView: UITextView, primaryActionFor textItem: UITextItem, defaultAction: UIAction) -> UIAction? {
       guard case let .link(url) = textItem.content, let linkAction else { return defaultAction }
-      return linkAction.activate(url, in: textView, at: textItem.range.location) ? UIAction { _ in } : defaultAction
+      let handled = MarkdownLinkActivation.activate(
+        url, with: linkAction, in: textView, at: textItem.range.location)
+      return handled ? UIAction { _ in } : defaultAction
     }
 
     func textView(
       _ textView: UITextView, menuConfigurationFor textItem: UITextItem, defaultMenu: UIMenu
     ) -> UITextItem.MenuConfiguration? {
-      markdownImageMenuConfiguration(in: textView, for: textItem, defaultMenu: defaultMenu, action: linkAction)
+      markdownFileMenuConfiguration(for: textItem, defaultMenu: defaultMenu, action: linkAction)
     }
   }
 #endif

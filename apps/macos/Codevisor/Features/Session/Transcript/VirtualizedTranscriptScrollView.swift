@@ -74,16 +74,14 @@ final class VirtualizedTranscriptScrollView: NSScrollView {
   var rowContent: ((TranscriptVirtualRow) -> AnyView)?
   var markdownImageLoader: MarkdownImageLoader = .remote
   var openMarkdownLink: (@MainActor (URL) -> Bool)?
-  var markdownImageActions: MarkdownImageActions?
+  var markdownFileActions: MarkdownFileActions?
   var markdownWebLinkActions: MarkdownWebLinkActions?
   var addToChatShortcut: TranscriptAddToChatShortcut?
   lazy var markdownLinkAction = MarkdownLinkAction(
     { [weak self] url in self?.openMarkdownLink?(url) ?? false },
-    images: MarkdownImageActions(
-      open: { [weak self] url in self?.markdownImageActions?.open(url) },
-      openInNewTab: { [weak self] url in self?.markdownImageActions?.openInNewTab?(url) },
-      copy: { [weak self] url in self?.markdownImageActions?.copy?(url) },
-      addToChat: { [weak self] url in self?.markdownImageActions?.addToChat?(url) }),
+    files: MarkdownFileActions(
+      openImage: { [weak self] url in self?.markdownFileActions?.openImage(url) ?? false },
+      menu: { [weak self] url in self?.markdownFileActions?.menu(url) ?? [] }),
     webLinks: MarkdownWebLinkActions(
       source: ObjectIdentifier(self),
       open: { [weak self] url, destination in self?.markdownWebLinkActions?.open(url, destination) ?? false }))

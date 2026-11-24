@@ -1,6 +1,5 @@
 #if canImport(AppKit)
   import AppKit
-  import QuickLookUI
 
   @MainActor
   final class MarkdownTextKit2View: TranscriptSurfaceTextView, NSTextViewDelegate {
@@ -136,13 +135,9 @@
       measuredWidth = -1
     }
 
-    override func acceptsPreviewPanelControl(_: QLPreviewPanel!) -> Bool {
-      false
-    }
-
     func textView(_ textView: NSTextView, clickedOnLink link: Any, at index: Int) -> Bool {
       let isImage = textStorage?.streamMarkdownHasImage(at: index) ?? false
-      return handleMarkdownLink(link, isImage: isImage, action: linkAction, in: textView, at: index)
+      return handleMarkdownLink(link, isImage: isImage, action: linkAction)
     }
 
     private static func textKit2Links(in text: NSAttributedString) -> NSAttributedString {
