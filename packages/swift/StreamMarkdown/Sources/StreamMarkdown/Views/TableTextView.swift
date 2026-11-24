@@ -5,7 +5,20 @@
     private var model: TableModel?
     private var renderMemo: MarkdownTableRenderMemo?
     private var builtWidth: CGFloat = -1
+    private var geometry: MarkdownTableGeometry?
     var preparedWidth: CGFloat?
+    var ruleColor: NSColor = .separatorColor {
+      didSet {
+        guard ruleColor != oldValue else { return }
+        needsDisplay = true
+      }
+    }
+
+    convenience init(preparedLayout layout: PreparedNativeTextLayout) {
+      self.init(frame: CGRect(origin: .zero, size: layout.size), textContainer: layout.container)
+      preparedWidth = layout.size.width
+      geometry = layout.tableGeometry
+    }
 
     var minimumTableWidth: CGFloat {
       if let preparedWidth { return preparedWidth }
@@ -31,6 +44,7 @@
       textContainer?.textView = nil
       layout.container.textView = self
       preparedWidth = layout.size.width
+      geometry = layout.tableGeometry
       if NSMaxRange(selection) <= layout.text.length { setSelectedRange(selection) }
       needsDisplay = true
     }
@@ -49,27 +63,39 @@
       updateLinkHover(at: nil)
       textStorage?.setAttributedString(string)
       if let layoutManager, let textContainer { layoutManager.ensureLayout(for: textContainer) }
+      geometry = nil
       builtWidth = bounds.width
       needsDisplay = true
     }
 
-    override func setNeedsDisplay(_ invalidRect: NSRect) {
-      super.setNeedsDisplay(Self.redrawRect(covering: invalidRect, in: bounds))
+    override func draw(_ dirtyRect: NSRect) {
+      drawChrome(in: dirtyRect)
+      super.draw(dirtyRect)
     }
 
-    override func setNeedsDisplay(_ rect: NSRect, avoidAdditionalLayout flag: Bool) {
-      super.setNeedsDisplay(Self.redrawRect(covering: rect, in: bounds), avoidAdditionalLayout: flag)
+    private func drawChrome(in dirtyRect: NSRect) {
+      guard drawsGlyphs, let chrome = measuredChrome(), let context = NSGraphicsContext.current?.cgContext else {
+        return
+      }
+
+      let origin = textContainerOrigin
+      context.saveGState()
+      context.translateBy(x: origin.x, y: origin.y)
+      chrome.fillHeader(in: context, color: Self.headerColor.cgColor)
+      chrome.fillRules(
+        intersecting: dirtyRect.offsetBy(dx: -origin.x, dy: -origin.y), in: context, color: ruleColor.cgColor)
+      context.restoreGState()
     }
 
-    static func redrawRect(covering rect: NSRect, in bounds: NSRect) -> NSRect {
-      guard !rect.isEmpty, rect.height.isFinite else { return rect }
-      let reach = MarkdownTableMetrics.verticalPadding * 2 + 1
-      let widened = NSRect(
-        x: bounds.minX, y: rect.minY - reach,
-        width: bounds.width, height: rect.height + reach * 2
-      )
-      return widened.intersection(bounds)
+    private func measuredChrome() -> MarkdownTableChrome? {
+      if geometry == nil, let layoutManager {
+        geometry = MarkdownTextTableGeometry.measured(in: layoutManager)
+      }
+      return geometry.map(MarkdownTableChrome.init)
     }
+
+    private static let headerColor = NSColor.labelColor.withAlphaComponent(
+      MarkdownTableMetrics.headerBackgroundOpacity)
 
     override func transcriptPlainText(in range: NSRange) -> String {
       guard let storage = textStorage, let tsv = Self.tsv(from: storage, in: range) else {

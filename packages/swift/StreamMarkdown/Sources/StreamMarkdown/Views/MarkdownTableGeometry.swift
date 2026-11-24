@@ -18,6 +18,12 @@ struct MarkdownTableGeometry {
       .insetBy(dx: 0, dy: -max(0, overscan)).intersection(bounds)
   }
 
+  static func tiles(from start: CGFloat, to end: CGFloat, tileLength: CGFloat) -> ClosedRange<Int> {
+    let first = Int(floor(start / tileLength))
+    let last = Int(floor((end - 0.5) / tileLength))
+    return first...max(first, last)
+  }
+
   func rows(intersecting rect: CGRect) -> Range<Int> {
     Self.intersections(rect.minY, rect.maxY, offsets: rowOffsets)
   }

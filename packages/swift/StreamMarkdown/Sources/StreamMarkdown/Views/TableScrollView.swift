@@ -82,6 +82,7 @@
 
     func setBorderColor(_ color: NSColor) {
       document.setBorderColor(color)
+      tableTextView.ruleColor = color
     }
 
     func setDrawsFrame(_ drawsFrame: Bool) {

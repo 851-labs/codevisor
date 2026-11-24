@@ -15,7 +15,7 @@
 
     func update(
       _ layout: UIKitMarkdownTableLayout, visible: CGRect, originY: CGFloat, in document: UIView,
-      skipping skipped: Set<Int>
+      skipping skipped: Set<Int>, ruleColor: UIColor
     ) {
       let bounds = CGRect(origin: .zero, size: layout.geometry.size)
       let wanted = Self.keys(covering: visible.intersection(bounds))
@@ -26,7 +26,7 @@
         let tableRect = Self.rect(of: key).intersection(bounds)
         let tile = tile(for: key, in: document)
         tile.frame = tableRect.offsetBy(dx: 0, dy: -originY)
-        tile.show(layout, tableRect: tableRect, skipping: skipped)
+        tile.show(layout, tableRect: tableRect, skipping: skipped, ruleColor: ruleColor)
       }
     }
 
@@ -56,8 +56,8 @@
       guard !rect.isNull, !rect.isEmpty else { return [] }
 
       let size = MarkdownTableTileView.size
-      let columns = Int(floor(rect.minX / size.width))...Int(floor((rect.maxX - 0.5) / size.width))
-      let rows = Int(floor(rect.minY / size.height))...Int(floor((rect.maxY - 0.5) / size.height))
+      let columns = MarkdownTableGeometry.tiles(from: rect.minX, to: rect.maxX, tileLength: size.width)
+      let rows = MarkdownTableGeometry.tiles(from: rect.minY, to: rect.maxY, tileLength: size.height)
       return rows.flatMap { row in columns.map { Key(column: $0, row: row) } }
     }
 

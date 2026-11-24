@@ -10,8 +10,7 @@
     @Environment(\.markdownBlockChrome) private var chrome
 
     func makeNSView(context: Context) -> TableBleedContainer {
-      let textView = TableTextView(frame: CGRect(origin: .zero, size: layout.size), textContainer: layout.container)
-      textView.preparedWidth = layout.size.width
+      let textView = TableTextView(preparedLayout: layout)
       textView.isEditable = false
       textView.isSelectable = true
       textView.drawsBackground = false

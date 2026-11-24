@@ -42,7 +42,7 @@
           let table = MarkdownTableRenderer.prepare(headers: headers, rows: rows, theme: theme, images: images)
           layoutWidth = MarkdownTextTableGeometry.width(
             max(width, MarkdownTableMetrics.minimumTableWidth(columnMinimumWidths: table.columnMinimumWidths)))
-          text = MarkdownTableRenderer.make(prepared: table, alignments: alignments, theme: theme, width: layoutWidth)
+          text = MarkdownTableRenderer.make(prepared: table, alignments: alignments, width: layoutWidth)
       #endif
       }
       return try PreparedNativeTextLayout(text: text, width: layoutWidth, wrapsText: wrapsText, isTable: isTable)

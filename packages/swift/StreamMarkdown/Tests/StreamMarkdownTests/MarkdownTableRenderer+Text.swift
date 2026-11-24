@@ -16,7 +16,6 @@
           theme: theme
         ),
         alignments: alignments,
-        theme: theme,
         width: width
       )
     }
