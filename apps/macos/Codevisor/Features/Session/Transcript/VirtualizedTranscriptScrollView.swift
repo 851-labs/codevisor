@@ -98,7 +98,11 @@ final class VirtualizedTranscriptScrollView: NSScrollView {
   var deferredMountedRowsUpdateScheduled = false
   var deferredMountedRowsUpdateRequested = false
   var deferredMountedRowsRangeOverride: Range<Int>?
-  var isAwaitingWarmProjection = false
+  var isAwaitingWarmProjection = false {
+    didSet {
+      scrollPositionPauseDidChange(wasPaused: oldValue || isDetaching || isPreparingInitialProjection)
+    }
+  }
   var disclosureViewportAnchor: TranscriptDisclosureViewportAnchor?
   var disclosureAnchorReleaseTask: Task<Void, Never>?
   var collapsibleEarlierHistorySection: TranscriptWorkedSectionIdentity?
@@ -114,7 +118,11 @@ final class VirtualizedTranscriptScrollView: NSScrollView {
   var needsTopInsetGeometry = false
   var topInsetAnchor: VirtualTranscriptAnchor?
   var isLoadingInitialHistory = false
-  var isPreparingInitialProjection = true
+  var isPreparingInitialProjection = true {
+    didSet {
+      scrollPositionPauseDidChange(wasPaused: oldValue || isDetaching || isAwaitingWarmProjection)
+    }
+  }
   var isActiveProjectionPending = false
   var deferredActivePlaceholderKey: String?
   var isAwaitingFirstActiveProjection = false
@@ -142,7 +150,12 @@ final class VirtualizedTranscriptScrollView: NSScrollView {
   var lastViewportSize: CGSize = .zero
   var lastViewportDistanceFromBottom: CGFloat = 0
   var historyPrefetchPolicy = TranscriptHistoryPrefetchPolicy()
-  var isDetaching = false
+  var isDetaching = false {
+    didSet {
+      scrollPositionPauseDidChange(wasPaused: oldValue || isAwaitingWarmProjection || isPreparingInitialProjection)
+    }
+  }
+  var laidOutRowWidth = VirtualizedTranscriptScrollView.rowWidth(forViewportWidth: 0)
   var lastStableScrollState: SessionScrollState?
   var viewportSnapshotGeneration: UInt64 = 0
   var boundsObserver: NSObjectProtocol?

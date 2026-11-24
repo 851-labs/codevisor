@@ -73,15 +73,10 @@ extension VirtualizedTranscriptScrollView {
     if isAwaitingWarmProjection,
       newIsPreparingInitialProjection || newIsAwaitingFirstActiveProjection
     {
-      needsLayout = true
       return
     }
-    if isAwaitingWarmProjection, hasPendingViewportResize || needsTopInsetGeometry { needsLayout = true }
     isAwaitingWarmProjection = false
-    guard !newIsPreparingInitialProjection else {
-      needsLayout = true
-      return
-    }
+    guard !newIsPreparingInitialProjection else { return }
     let projectedRowsChanged = projectedRowsVersion != newRowsVersion
     let projectionRevisionChanged = receivedProjectionRevision != newProjectionRevision
     let activeRowsChanged = activeRowsVersion != newActiveRowsVersion

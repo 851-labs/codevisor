@@ -43,19 +43,30 @@ extension VirtualizedTranscriptScrollView {
     refreshMountedHosts(previousRowsByKey: nil, limitedTo: changing)
   }
 
-  func recenterMountedRows() {
-    resizeDocumentView()
-    positionPaginationLoadingIndicator()
-    positionMountedRows()
+  var rowsNeedReflow: Bool {
+    abs(effectiveRowWidth - laidOutRowWidth) > 0.5
+  }
+
+  @discardableResult
+  func reflowRowsIfNeeded() -> Bool {
+    guard rowsNeedReflow else { return false }
+
+    laidOutRowWidth = effectiveRowWidth
+    _ = activateMeasurementCacheIfNeeded()
+    if !inLiveResize { refreshMountedRootViews() }
+    rebuildDocumentGeometry()
+    if inLiveResize { settleMountedRowHeights() }
+    return true
+  }
+
+  func rowColumnDidMove() {
     mountedHosts.values.forEach { $0.viewportDidMoveHorizontally() }
   }
 
   func rowFrame(at index: Int) -> CGRect {
-    let viewportWidth = max(1, contentView.bounds.width)
-    let rowWidth = Self.rowWidth(forViewportWidth: viewportWidth)
-    let rowX = max(Self.horizontalPadding, (viewportWidth - rowWidth) / 2)
+    let rowWidth = Self.rowWidth(forViewportWidth: max(1, contentView.bounds.width))
     return CGRect(
-      x: rowX,
+      x: 0,
       y: paginationHeaderLayout.rowOrigin(
         topPadding: transcriptTopPadding,
         rowOffset: virtualLayout.frame(at: index).minY

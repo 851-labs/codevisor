@@ -161,8 +161,93 @@ struct TranscriptRestorationTests {
     #expect(!view.mountedHosts.isEmpty)
     for host in view.mountedHosts.values {
       #expect(host.frame.width == view.effectiveRowWidth)
-      #expect(abs(host.frame.midX - view.contentView.bounds.midX) <= 0.5)
+      let frame = view.contentView.convert(host.frame, from: view.transcriptDocumentView)
+      #expect(abs(frame.midX - view.contentView.bounds.midX) <= 0.5)
     }
+  }
+
+  @Test("A width change while a shown transcript's rows are re-prepared re-centers them when the same rows return")
+  func widthChangeWhilePreparing() {
+    let controller = controller()
+    let rows = (0..<3).map { _ in row(height: 60) }
+    let view = makeView()
+    let window = NSWindow(contentRect: view.frame, styleMask: [.borderless], backing: .buffered, defer: false)
+    let container = NSView(frame: view.frame)
+    window.contentView = container
+    defer {
+      view.prepareForDismantle()
+      window.contentView = nil
+    }
+    configure(view, controller: controller, rows: rows)
+    container.addSubview(view)
+    view.layoutSubtreeIfNeeded()
+    view.setFrameSize(NSSize(width: 1700, height: 500))
+    configure(view, controller: controller, rows: rows, preparing: true, settles: false)
+    view.layoutSubtreeIfNeeded()
+    configure(view, controller: controller, rows: rows, settles: false)
+    view.layoutSubtreeIfNeeded()
+    #expect(!view.mountedHosts.isEmpty)
+    for host in view.mountedHosts.values {
+      #expect(host.frame.width == view.effectiveRowWidth)
+      let frame = view.contentView.convert(host.frame, from: view.transcriptDocumentView)
+      #expect(abs(frame.midX - view.contentView.bounds.midX) <= 0.5)
+    }
+  }
+
+  @Test("A returning transcript takes the new width while it waits for its rows and still restores its saved row")
+  func warmReattachReflowsWhileWaiting() {
+    let controller = controller()
+    let rows = (0..<8).map { _ in row() }
+    let view = makeView()
+    let window = NSWindow(contentRect: view.frame, styleMask: [.borderless], backing: .buffered, defer: false)
+    let container = NSView(frame: view.frame)
+    window.contentView = container
+    defer {
+      view.prepareForDismantle()
+      window.contentView = nil
+    }
+    configure(view, controller: controller, rows: rows)
+    scrollUp(view)
+    let anchor = view.currentViewportAnchor()
+    container.addSubview(view)
+    view.layoutSubtreeIfNeeded()
+    view.removeFromSuperview()
+    view.prepareForPresentationAttachment()
+    view.setFrameSize(NSSize(width: 600, height: 500))
+    container.addSubview(view)
+    configure(view, controller: controller, rows: rows, preparing: true, settles: false)
+    view.layoutSubtreeIfNeeded()
+    #expect(!view.mountedHosts.isEmpty)
+    for host in view.mountedHosts.values {
+      #expect(host.frame.width == view.effectiveRowWidth)
+    }
+    configure(view, controller: controller, rows: rows, settles: false)
+    view.layoutSubtreeIfNeeded()
+    #expect(view.currentViewportAnchor() == anchor)
+  }
+
+  @Test("A viewport that shrank while its rows were re-prepared is pinned to the bottom again once they return")
+  func heightChangeWhilePreparing() {
+    let controller = controller()
+    let rows = (0..<8).map { _ in row() }
+    let view = makeView()
+    let window = NSWindow(contentRect: view.frame, styleMask: [.borderless], backing: .buffered, defer: false)
+    let container = NSView(frame: view.frame)
+    window.contentView = container
+    defer {
+      view.prepareForDismantle()
+      window.contentView = nil
+    }
+    configure(view, controller: controller, rows: rows)
+    container.addSubview(view)
+    view.layoutSubtreeIfNeeded()
+    #expect(view.currentDistanceFromBottom() <= 0.5)
+    configure(view, controller: controller, rows: rows, preparing: true, settles: false)
+    view.setFrameSize(NSSize(width: 900, height: 300))
+    view.layoutSubtreeIfNeeded()
+    configure(view, controller: controller, rows: rows, settles: false)
+    view.layoutSubtreeIfNeeded()
+    #expect(view.currentDistanceFromBottom() <= 0.5)
   }
 
   @Test("A fresh jump while the reopened projection loads still follows the bottom")

@@ -69,7 +69,8 @@ struct TranscriptAutoscrollTests {
     #expect(!view.mountedHosts.isEmpty)
     for host in view.mountedHosts.values {
       #expect(host.frame.width == VirtualizedTranscriptScrollView.maxRowWidth)
-      #expect(abs(host.frame.midX - view.contentView.bounds.midX) <= 0.5)
+      let frame = view.contentView.convert(host.frame, from: view.transcriptDocumentView)
+      #expect(abs(frame.midX - view.contentView.bounds.midX) <= 0.5)
     }
     #expect(view.transcriptDocumentView.frame.width == view.contentView.bounds.width)
     #expect(view.transcriptDocumentView.frame.height == documentHeight)

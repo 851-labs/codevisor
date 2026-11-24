@@ -18,7 +18,7 @@ extension VirtualizedTranscriptScrollView {
   }
 
   func applyPendingInitialPositionIfPossible() {
-    guard !initialPositionApplied, contentView.bounds.height > 0 else { return }
+    guard !initialPositionApplied, !isScrollPositionPaused, contentView.bounds.height > 0 else { return }
 
     let shouldPublishInitialPosition =
       lastStableScrollState == nil
@@ -64,7 +64,7 @@ extension VirtualizedTranscriptScrollView {
   }
 
   var unobstructedViewport: CGRect {
-    var viewport = contentView.bounds
+    var viewport = transcriptDocumentView.convert(contentView.bounds, from: contentView)
     let covered = rowByKey[TranscriptVirtualRow.ID.bottomSpacer.layoutKey]?.estimatedHeight ?? 0
     viewport.origin.y += topContentInset
     viewport.size.height = max(1, viewport.height - topContentInset - covered)
@@ -131,14 +131,15 @@ extension VirtualizedTranscriptScrollView {
   }
 
   func layoutViewport(previousSize: CGSize, previousDistance: CGFloat) {
-    guard !isDetaching, !isAwaitingWarmProjection else { return }
+    guard !isDetaching else { return }
     let size = contentView.bounds.size
     guard size.width > 0, size.height > 0 else { return }
-    guard !isPreparingInitialProjection else { return }
-    let widthChanged = abs(size.width - previousSize.width) > 0.5
-    let rowWidthChanged =
-      abs(Self.rowWidth(forViewportWidth: size.width) - Self.rowWidth(forViewportWidth: previousSize.width)) > 0.5
-    let sizeChanged = widthChanged || abs(size.height - previousSize.height) > 0.5
+    guard !isScrollPositionPaused else {
+      if !rows.isEmpty { reflowRowsIfNeeded() }
+      return
+    }
+    let sizeChanged =
+      abs(size.width - previousSize.width) > 0.5 || abs(size.height - previousSize.height) > 0.5
     let shouldPinResize =
       sizeChanged && initialPositionApplied
       && previousSize.width > 0 && previousSize.height > 0
@@ -152,16 +153,10 @@ extension VirtualizedTranscriptScrollView {
     if shouldPinResize, !followsLatest {
       bottomJumpGate.begin()
     }
-    if rowWidthChanged {
-      _ = activateMeasurementCacheIfNeeded()
-      if !inLiveResize { refreshMountedRootViews() }
-      rebuildDocumentGeometry()
-      if inLiveResize { settleMountedRowHeights() }
-    } else if widthChanged {
-      recenterMountedRows()
-    } else if needsTopInsetGeometry {
+    let reflowed = reflowRowsIfNeeded()
+    if !reflowed, needsTopInsetGeometry {
       rebuildKeepingVisibleTop()
-    } else {
+    } else if !reflowed {
       applyPendingInitialPositionIfPossible()
       updateMountedRows()
     }
@@ -172,6 +167,18 @@ extension VirtualizedTranscriptScrollView {
     sendTransitions.advance()
     updateInitialPresentationReadiness()
     resolveBottomJumpIfPossible()
+  }
+
+  var isScrollPositionPaused: Bool {
+    isDetaching || isAwaitingWarmProjection || isPreparingInitialProjection
+  }
+
+  var owesViewportLayout: Bool {
+    hasPendingViewportResize || needsTopInsetGeometry || rowsNeedReflow
+  }
+
+  func scrollPositionPauseDidChange(wasPaused: Bool) {
+    if wasPaused, !isScrollPositionPaused, owesViewportLayout { needsLayout = true }
   }
 
   var hasPendingViewportResize: Bool {
@@ -371,7 +378,7 @@ extension VirtualizedTranscriptScrollView {
     paginationLoadingIndicator.sizeToFit()
     let size = paginationLoadingIndicator.frame.size
     paginationLoadingIndicator.frame = CGRect(
-      x: (max(1, contentView.bounds.width) - size.width) / 2,
+      x: (effectiveRowWidth - size.width) / 2,
       y: transcriptTopPadding
         + (paginationHeaderLayout.height - size.height) / 2,
       width: size.width,
