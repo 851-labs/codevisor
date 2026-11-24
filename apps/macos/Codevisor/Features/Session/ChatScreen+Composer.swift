@@ -13,8 +13,10 @@ extension ChatScreen {
         ChildAgentsRowLayout {
           ChildAgentsPill(content: childAgents, glassNamespace: composerGlassNamespace)
             .padding(.leading, composerFieldLeadingInset)
-          if showsTranscriptScrollControls {
-            transcriptScrollControls
+          animatingTranscriptScrollControls {
+            if showsTranscriptScrollControls {
+              transcriptScrollControls
+            }
           }
         }
       }

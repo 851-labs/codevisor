@@ -87,16 +87,24 @@ extension ChatScreen {
   var bottomChromeOverlay: some View {
     GlassEffectContainer(spacing: ComposerGlassStyle.clusterSpacing) {
       ZStack(alignment: .bottom) {
-        if showsTranscriptScrollControls, !showsChildAgentsRow {
-          transcriptScrollControls
-            .frame(height: ChildAgentsPill.height)
-            .padding(.bottom, transcriptScrollControlsBottomInset)
+        animatingTranscriptScrollControls {
+          if showsTranscriptScrollControls, !showsChildAgentsRow {
+            transcriptScrollControls
+              .frame(height: ChildAgentsPill.height)
+              .padding(.bottom, transcriptScrollControlsBottomInset)
+          }
         }
         if !isReadOnly {
           composerOverlay
         }
       }
     }
+  }
+
+  func animatingTranscriptScrollControls(@ViewBuilder _ controls: () -> some View) -> some View {
+    Group(content: controls)
+      .animation(Motion.quick(reduceMotion: reduceMotion), value: isAtBottom)
+      .animation(Motion.quick(reduceMotion: reduceMotion), value: earlierHistoryCollapse)
   }
 
   var showsTranscriptScrollControls: Bool {

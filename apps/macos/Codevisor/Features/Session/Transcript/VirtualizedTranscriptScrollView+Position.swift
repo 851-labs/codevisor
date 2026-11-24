@@ -273,7 +273,7 @@ extension VirtualizedTranscriptScrollView {
   }
 
   func publishBottomState(_ isAtBottom: Bool) {
-    guard lastBottomState != isAtBottom else { return }
+    guard !hasPendingViewportResize, lastBottomState != isAtBottom else { return }
     lastBottomState = isAtBottom
     onBottomStateChange?(isAtBottom)
   }
