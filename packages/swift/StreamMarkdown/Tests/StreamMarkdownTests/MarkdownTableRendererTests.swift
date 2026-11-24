@@ -7,18 +7,14 @@ import Testing
 @MainActor
 @Suite("MarkdownTableRenderer")
 struct MarkdownTableRendererTests {
-  private func cells(
-    _ attributed: NSAttributedString
-  ) -> [(row: Int, column: Int, bottomBorder: CGFloat)] {
-    var result: [(Int, Int, CGFloat)] = []
+  private func cells(_ attributed: NSAttributedString) -> [(row: Int, column: Int)] {
+    var result: [(Int, Int)] = []
     let full = NSRange(location: 0, length: attributed.length)
     attributed.enumerateAttribute(.paragraphStyle, in: full) { value, _, _ in
       guard let style = value as? NSParagraphStyle,
         let block = style.textBlocks.first as? NSTextTableBlock
       else { return }
-      result.append(
-        (block.startingRow, block.startingColumn, block.width(for: .border, edge: .maxY))
-      )
+      result.append((block.startingRow, block.startingColumn))
     }
     return result
   }
@@ -68,35 +64,19 @@ struct MarkdownTableRendererTests {
     let bleed = try #require(table.subviews.first as? TableBleedContainer)
     let scroll = bleed.scrollView
     let textView = scroll.tableTextView
-    let manager = try #require(textView.layoutManager)
-    let container = try #require(textView.textContainer)
-    let storage = try #require(textView.textStorage)
-
     for width: CGFloat in [832, 831.5, 700, 320, 838, 832] {
       table.frame = NSRect(x: 0, y: 0, width: width, height: table.contentHeight(forWidth: width))
       table.needsLayout = true
       table.layoutSubtreeIfNeeded()
-      manager.ensureLayout(for: container)
       let document = try #require(scroll.documentView)
       #expect(document.bounds.width >= width)
       #expect(document.bounds.width == textView.bounds.width)
-      var rowBounds: [Int: CGRect] = [:]
-      storage.enumerateAttribute(.paragraphStyle, in: NSRange(location: 0, length: storage.length)) {
-        value, range, _ in
-        guard let style = value as? NSParagraphStyle,
-          let block = style.textBlocks.first as? NSTextTableBlock
-        else { return }
-        let rect = manager.boundsRect(
-          for: block,
-          glyphRange: manager.glyphRange(forCharacterRange: range, actualCharacterRange: nil)
-        )
-        rowBounds[block.startingRow] = (rowBounds[block.startingRow] ?? .null).union(rect)
-        if block.startingRow == 0 { #expect(block.backgroundColor != nil) }
-      }
-      #expect(rowBounds.count == 3)
-      for rect in rowBounds.values {
-        #expect(rect.minX == 0)
-        #expect(rect.maxX == document.bounds.width)
+
+      let separators = textView.rowBottoms().dropLast()
+      #expect(separators.count == 2)
+      for y in [1] + separators.map({ $0 - 1 }) {
+        let strip = NSRect(x: 0, y: y, width: textView.bounds.width, height: 1)
+        #expect(textView.paintsEdges(redrawing: strip), "width \(width) leaves y=\(y) short of an edge")
       }
     }
   }
@@ -183,7 +163,7 @@ struct MarkdownTableRendererTests {
     #expect(cache.minimumWidth(for: model) == minimum)
 
     let attributed = MarkdownTableRenderer.make(
-      prepared: prepared, alignments: [.leading, .leading], theme: theme, width: 200
+      prepared: prepared, alignments: [.leading, .leading], width: 200
     )
     var blockWidths: [Int: CGFloat] = [:]
     attributed.enumerateAttribute(.paragraphStyle, in: NSRange(location: 0, length: attributed.length)) {
@@ -233,21 +213,6 @@ struct MarkdownTableRendererTests {
     )
     let coords = Set(cells(attributed).map { "\($0.row),\($0.column)" })
     #expect(coords == ["0,0", "0,1", "1,0", "1,1", "2,0", "2,1"])
-  }
-
-  @Test("Every row but the last carries a hairline separator")
-  func rowSeparators() {
-    let attributed = MarkdownTableRenderer.make(
-      headers: ["A", "B"], alignments: [],
-      rows: [["1", "2"], ["3", "4"]], theme: .default
-    )
-    for cell in cells(attributed) {
-      if cell.row < 2 {
-        #expect(cell.bottomBorder > 0)
-      } else {
-        #expect(cell.bottomBorder == 0)
-      }
-    }
   }
 
   @Test("Copying the whole table yields tab-separated rows")

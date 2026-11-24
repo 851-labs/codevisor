@@ -59,8 +59,7 @@
         rows: [["Alpha", "42"], ["日本語", ""]], theme: .default
       )
       let layout = try await Task.detached { try content.prepare(width: 360, wrapsText: true) }.value
-      let view = TableTextView(frame: CGRect(origin: .zero, size: layout.size), textContainer: layout.container)
-      view.preparedWidth = layout.size.width
+      let view = TableTextView(preparedLayout: layout)
       #expect(view.layoutManager === layout.manager)
       #expect(layout.manager.firstUnlaidCharacterIndex() == layout.text.length)
       #expect(
@@ -96,6 +95,31 @@
       #expect(view.layoutManager === layouts.1.manager)
       #expect(view.textStorage?.string.contains("Beta") == true)
       #expect(layouts.0.container.textView == nil)
+    }
+
+    @Test func adoptingAReplacementLayoutMovesTheRowSeparators() async throws {
+      let short = PreparedTextContent.table(
+        headers: ["Name"], alignments: [.leading], rows: [["Alpha"], ["Beta"]], theme: .default)
+      let tall = PreparedTextContent.table(
+        headers: ["Name"], alignments: [.leading],
+        rows: [[MarkdownText(String(repeating: "Alpha ", count: 200))], ["Beta"]], theme: .default)
+      let layouts = try await Task.detached {
+        (try short.prepare(width: 360, wrapsText: true), try tall.prepare(width: 360, wrapsText: true))
+      }.value
+      let view = TableTextView(preparedLayout: layouts.0)
+      let shortSeparators = view.rowBottoms().dropLast()
+      for separator in shortSeparators {
+        #expect(view.paintsEdges(redrawing: NSRect(x: 0, y: separator - 1, width: view.bounds.width, height: 1)))
+      }
+
+      view.adoptPreparedLayout(layouts.1)
+      view.setFrameSize(layouts.1.size)
+
+      let tallSeparators = view.rowBottoms().dropLast()
+      #expect(Array(tallSeparators) != Array(shortSeparators))
+      for separator in tallSeparators {
+        #expect(view.paintsEdges(redrawing: NSRect(x: 0, y: separator - 1, width: view.bounds.width, height: 1)))
+      }
     }
 
     private struct ImmutableText: @unchecked Sendable {

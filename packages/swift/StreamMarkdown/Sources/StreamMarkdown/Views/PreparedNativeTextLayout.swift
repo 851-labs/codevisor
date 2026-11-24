@@ -12,6 +12,9 @@
     let manager: NSLayoutManager
     let container: NSTextContainer
     let size: CGSize
+    #if canImport(AppKit)
+      let tableGeometry: MarkdownTableGeometry?
+    #endif
 
     convenience init(text: NSAttributedString, width: CGFloat, wrapsText: Bool = true, isTable: Bool = false) throws {
       try Task.checkCancellation()
@@ -38,6 +41,9 @@
       manager.ensureLayout(for: container)
       let used = manager.usedRect(for: container)
       size = CGSize(width: wrapsText ? width : max(1, ceil(used.width)), height: max(1, ceil(used.height)))
+      #if canImport(AppKit)
+        tableGeometry = isTable ? MarkdownTextTableGeometry.measured(in: manager) : nil
+      #endif
     }
 
     #if canImport(AppKit)

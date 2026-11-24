@@ -101,30 +101,19 @@
       #expect(wide.transcript.scrollEvents == 0)
     }
 
-    @Test("A redraw over a row separator reaches the text the separator is painted with")
-    func separatorRedrawReachesText() throws {
+    @Test("Row separators and the header fill paint in a redraw that reaches no text")
+    func chromePaintsWithoutText() throws {
       let textView = try mountTable(rows: Self.proseRows).scrollView.tableTextView
       let layoutManager = try #require(textView.layoutManager)
       let container = try #require(textView.textContainer)
-      let storage = try #require(textView.textStorage)
-      layoutManager.ensureLayout(for: container)
-
-      var separators: [CGFloat] = []
-      storage.enumerateAttribute(.paragraphStyle, in: NSRange(location: 0, length: storage.length)) {
-        value, range, _ in
-        guard let block = (value as? NSParagraphStyle)?.textBlocks.first as? NSTextTableBlock,
-          block.startingColumn == 0, block.startingRow < Self.proseRows.count
-        else { return }
-        let glyphs = layoutManager.glyphRange(forCharacterRange: range, actualCharacterRange: nil)
-        separators.append(layoutManager.boundsRect(for: block, glyphRange: glyphs).maxY)
-      }
+      let separators = textView.rowBottoms().dropLast()
       #expect(separators.count == Self.proseRows.count)
 
-      for separator in separators {
-        let strip = NSRect(x: 0, y: separator - 1, width: textView.bounds.width, height: 1)
+      let headerPadding = NSRect(x: 0, y: 1, width: textView.bounds.width, height: 1)
+      let strips = [headerPadding] + separators.map { NSRect(x: 0, y: $0 - 1, width: textView.bounds.width, height: 1) }
+      for strip in strips {
         #expect(layoutManager.glyphRange(forBoundingRect: strip, in: container).length == 0)
-        let redraw = TableTextView.redrawRect(covering: strip, in: textView.bounds)
-        #expect(layoutManager.glyphRange(forBoundingRect: redraw, in: container).length > 0)
+        #expect(textView.paintsEdges(redrawing: strip), "nothing painted at y=\(strip.minY)")
       }
     }
   }

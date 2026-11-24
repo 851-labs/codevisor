@@ -128,7 +128,6 @@
     private let tiles = MarkdownTableTiles()
     private let interactiveCells = MarkdownTableInteractiveCells()
     private var accessibilityCells: [Int: UIAccessibilityElement] = [:]
-    private var rules: [Int: CALayer] = [:]
     private var borderColor = UIColor.separator
     private var linkAction: MarkdownLinkAction?
     private weak var transcript: UIScrollView?
@@ -243,7 +242,8 @@
       document.frame = CGRect(origin: .zero, size: documentSize)
       CATransaction.begin()
       CATransaction.setDisableActions(true)
-      headerFill.frame = CGRect(x: 0, y: -visibleOriginY, width: size.width, height: tableLayout.geometry.rowOffsets[1])
+      headerFill.frame = MarkdownTableChrome(geometry: tableLayout.geometry).headerFrame
+        .offsetBy(dx: 0, dy: -visibleOriginY)
       headerFill.backgroundColor =
         UIColor.label.withAlphaComponent(MarkdownTableMetrics.headerBackgroundOpacity).cgColor
       border.frame = document.bounds
@@ -275,9 +275,9 @@
       interactiveCells.retainVisible(visibleIDs)
       interactiveCells.position(tableLayout, originY: visibleOriginY)
       tiles.update(
-        tableLayout, visible: visible, originY: visibleOriginY, in: document, skipping: interactiveCells.ids)
+        tableLayout, visible: visible, originY: visibleOriginY, in: document, skipping: interactiveCells.ids,
+        ruleColor: borderColor)
       updateAccessibility(visibleIDs, layout: tableLayout)
-      updateRules(rows: rowRange, geometry: geometry)
     }
 
     private var visibleTableRect: CGRect {
@@ -330,23 +330,6 @@
         geometry: layout.geometry, row: row, column: column
       ).offsetBy(dx: 0, dy: -visibleOriginY)
       return element
-    }
-
-    private func updateRules(rows: Range<Int>, geometry: MarkdownTableGeometry) {
-      CATransaction.begin()
-      CATransaction.setDisableActions(true)
-      for row in rows where row + 1 < geometry.rowOffsets.count - 1 {
-        let rule = rules[row] ?? CALayer()
-        if rules[row] == nil { document.layer.addSublayer(rule); rules[row] = rule }
-        rule.frame = CGRect(
-          x: 0, y: geometry.rowOffsets[row + 1] - visibleOriginY - 1, width: geometry.size.width, height: 1)
-        rule.backgroundColor = borderColor.cgColor
-      }
-      for (row, rule) in rules where !rows.contains(row) {
-        rule.removeFromSuperlayer()
-        rules[row] = nil
-      }
-      CATransaction.commit()
     }
 
     func textView(_ textView: UITextView, primaryActionFor textItem: UITextItem, defaultAction: UIAction) -> UIAction? {

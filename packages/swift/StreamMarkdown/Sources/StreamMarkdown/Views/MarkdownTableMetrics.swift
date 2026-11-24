@@ -3,6 +3,7 @@ import CoreGraphics
 enum MarkdownTableMetrics {
   static let horizontalPadding: CGFloat = 12
   static let verticalPadding: CGFloat = 7
+  static let ruleThickness: CGFloat = 1
   static let cornerRadius: CGFloat = 8
   static let headerBackgroundOpacity: CGFloat = 0.05
 

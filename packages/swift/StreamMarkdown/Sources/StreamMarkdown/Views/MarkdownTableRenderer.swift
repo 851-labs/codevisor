@@ -110,7 +110,6 @@
     static func make(
       prepared: PreparedTable,
       alignments: [ColumnAlignment],
-      theme: MarkdownTheme,
       width: CGFloat? = nil
     ) -> NSAttributedString {
       guard prepared.columnCount > 0 else { return NSAttributedString() }
@@ -127,38 +126,15 @@
       table.layoutAlgorithm = .fixedLayoutAlgorithm
       table.hidesEmptyCells = false
 
-      let separatorColor = NSColor(theme.tableBorderColor)
-      let headerBackground = NSColor.labelColor.withAlphaComponent(
-        MarkdownTableMetrics.headerBackgroundOpacity
-      )
-      let lastRowIndex = prepared.rows.count
-
       let result = NSMutableAttributedString()
-      appendRow(
-        prepared.headers,
-        rowIndex: 0,
-        isHeader: true,
-        columnCount: prepared.columnCount,
-        alignments: alignments,
-        columnWidths: columnWidths,
-        table: table,
-        separatorColor: separatorColor,
-        headerBackground: headerBackground,
-        lastRowIndex: lastRowIndex,
-        into: result
-      )
-      for (offset, row) in prepared.rows.enumerated() {
+      for (rowIndex, row) in ([prepared.headers] + prepared.rows).enumerated() {
         appendRow(
           row,
-          rowIndex: offset + 1,
-          isHeader: false,
-          columnCount: prepared.columnCount,
+          rowIndex: rowIndex,
           alignments: alignments,
           columnWidths: columnWidths,
           table: table,
-          separatorColor: separatorColor,
-          headerBackground: headerBackground,
-          lastRowIndex: lastRowIndex,
+          hasRuleBelow: rowIndex < prepared.rows.count,
           into: result
         )
       }
@@ -166,12 +142,11 @@
     }
 
     private static func appendRow(
-      _ cells: [PreparedCell], rowIndex: Int, isHeader: Bool, columnCount: Int,
-      alignments: [ColumnAlignment], columnWidths: [CGFloat], table: NSTextTable,
-      separatorColor: NSColor, headerBackground: NSColor, lastRowIndex: Int,
-      into result: NSMutableAttributedString
+      _ cells: [PreparedCell], rowIndex: Int, alignments: [ColumnAlignment], columnWidths: [CGFloat],
+      table: NSTextTable, hasRuleBelow: Bool, into result: NSMutableAttributedString
     ) {
-      for column in 0..<columnCount {
+      let bottomPadding = verticalPadding + (hasRuleBelow ? MarkdownTableMetrics.ruleThickness : 0)
+      for column in columnWidths.indices {
         let alignment = column < alignments.count ? alignments[column] : .none
 
         let block = NSTextTableBlock(
@@ -182,14 +157,7 @@
         block.setWidth(horizontalPadding, type: .absoluteValueType, for: .padding, edge: .minX)
         block.setWidth(horizontalPadding, type: .absoluteValueType, for: .padding, edge: .maxX)
         block.setWidth(verticalPadding, type: .absoluteValueType, for: .padding, edge: .minY)
-        block.setWidth(verticalPadding, type: .absoluteValueType, for: .padding, edge: .maxY)
-        if isHeader {
-          block.backgroundColor = headerBackground
-        }
-        if rowIndex < lastRowIndex {
-          block.setBorderColor(separatorColor, for: .maxY)
-          block.setWidth(1, type: .absoluteValueType, for: .border, edge: .maxY)
-        }
+        block.setWidth(bottomPadding, type: .absoluteValueType, for: .padding, edge: .maxY)
 
         let paragraph = NSMutableParagraphStyle()
         paragraph.textBlocks = [block]

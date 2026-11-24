@@ -384,7 +384,6 @@
       let attributed = MarkdownTableRenderer.make(
         prepared: prepared,
         alignments: model.alignments,
-        theme: model.theme,
         width: width
       )
       renderCount += 1
