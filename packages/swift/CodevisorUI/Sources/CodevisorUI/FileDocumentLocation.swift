@@ -1,6 +1,7 @@
 import CodevisorCore
 import Foundation
 import TranscriptKit
+import UniformTypeIdentifiers
 
 public enum FileDocumentLocation {
   public static func resolve(_ target: String, relativeTo directory: String) -> String? {
@@ -17,6 +18,7 @@ public enum FileDocumentLocation {
 
   public static func name(_ target: String) -> String {
     if target.hasSuffix("/") { return "Open File" }
+    if let device = FileDeviceLocation(target) { return device.name }
     return markdownAttachmentFile(target)?.name ?? (target as NSString).lastPathComponent
   }
 
@@ -26,9 +28,16 @@ public enum FileDocumentLocation {
     case let .attachment(fileId):
       var components = URLComponents(string: "https://attachments.codevisor.invalid/")!
       components.path = "/" + fileId
-      components.queryItems = [URLQueryItem(name: "name", value: file.name)]
+      components.queryItems = [URLQueryItem(name: "name", value: typedName(file.name, mimeType: file.mimeType))]
       return components.string!
     }
+  }
+
+  static func typedName(_ name: String, mimeType: String) -> String {
+    guard (name as NSString).pathExtension.isEmpty,
+      let inferred = UTType(mimeType: mimeType)?.preferredFilenameExtension
+    else { return name }
+    return "\(name).\(inferred)"
   }
 
   public static func isHTML(_ path: String) -> Bool {
@@ -37,7 +46,7 @@ public enum FileDocumentLocation {
 
   public static func hasPreview(_ path: String) -> Bool { MarkdownDocumentPath.isMarkdown(path) || isHTML(path) }
 
-  static func opensRendered(_ target: String) -> Bool {
+  public static func opensRendered(_ target: String) -> Bool {
     guard line(target) == nil, let path = resolve(target, relativeTo: "/") else { return false }
     return hasPreview(name(path))
   }
@@ -49,7 +58,8 @@ public enum FileDocumentLocation {
     return Int(target[range].drop(while: { !$0.isNumber }).prefix(while: \.isNumber))
   }
 
-  static func data(path: String, client: any CodevisorServerClienting) async throws -> Data {
+  public static func data(path: String, client: any CodevisorServerClienting) async throws -> Data {
+    if let device = FileDeviceLocation(path) { return try await device.data() }
     if let file = markdownAttachmentFile(path), case let .attachment(id) = file.source {
       return try await client.fileData(id: id)
     }
@@ -57,11 +67,26 @@ public enum FileDocumentLocation {
   }
 
   static func read(path: String, client: any CodevisorServerClienting) async throws -> ServerFileDocument {
-    guard markdownAttachmentFile(path) != nil else { return try await client.readDocument(path: path) }
+    guard isSavedCopy(path) else { return try await client.readDocument(path: path) }
     let bytes = try await data(path: path, client: client)
-    let text = bytes.count <= 4 * 1024 * 1024 && !bytes.contains(0) ? String(data: bytes, encoding: .utf8) : nil
     return ServerFileDocument(
-      path: path, content: text, version: "attachment", size: bytes.count, writable: false,
-      reason: "This attachment is a saved copy and is read-only.")
+      path: path, content: text(in: bytes), version: "saved-copy", size: bytes.count, writable: false,
+      reason: savedCopyReason(path))
+  }
+
+  static func isSavedCopy(_ path: String) -> Bool {
+    markdownAttachmentFile(path) != nil || FileDeviceLocation(path) != nil
+  }
+
+  private static func savedCopyReason(_ path: String) -> String {
+    if FileDeviceLocation(path) != nil { return "This file has not been sent yet and is read-only." }
+    return "This attachment is a saved copy and is read-only."
+  }
+
+  private static let textByteLimit = 4 * 1024 * 1024
+
+  private static func text(in bytes: Data) -> String? {
+    guard bytes.count <= textByteLimit, !bytes.contains(0) else { return nil }
+    return String(data: bytes, encoding: .utf8)
   }
 }

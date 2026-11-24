@@ -22,16 +22,16 @@ public typealias CodeHighlighting =
 
 public struct MarkdownLinkAction: @unchecked Sendable {
   private let handler: @MainActor (URL) -> Bool
-  public var images: MarkdownImageActions?
+  public var files: MarkdownFileActions?
   public var webLinks: MarkdownWebLinkActions?
 
   public init(
     _ handler: @escaping @MainActor (URL) -> Bool,
-    images: MarkdownImageActions? = nil,
+    files: MarkdownFileActions? = nil,
     webLinks: MarkdownWebLinkActions? = nil
   ) {
     self.handler = handler
-    self.images = images
+    self.files = files
     self.webLinks = webLinks
   }
 
@@ -43,36 +43,28 @@ public struct MarkdownLinkAction: @unchecked Sendable {
   var linkHandler: @MainActor (URL) -> Bool { handler }
 
   @MainActor
-  public func activate(
-    _ url: URL,
-    isImage: Bool,
-    imagePreparing: (Task<Void, Never>) -> Void = { _ in }
-  ) -> Bool {
-    if isImage, let images, let preparing = images.open(url) {
-      imagePreparing(preparing)
-      return true
-    }
+  public func activate(_ url: URL, isImage: Bool) -> Bool {
+    if isImage, let files, files.openImage(url) { return true }
     return handler(url)
   }
 }
 
-public struct MarkdownImageActions: @unchecked Sendable {
-  public var open: @MainActor (URL) -> Task<Void, Never>?
-  public var openInNewTab: (@MainActor (URL) -> Void)?
-  public var copy: (@MainActor (URL) -> Void)?
-  public var addToChat: (@MainActor (URL) -> Void)?
+public struct MarkdownFileActions: @unchecked Sendable {
+  public var openImage: @MainActor (URL) -> Bool
+  public var menu: @MainActor (URL) -> [MarkdownLinkMenuItem]
 
   public init(
-    open: @escaping @MainActor (URL) -> Task<Void, Never>?,
-    openInNewTab: (@MainActor (URL) -> Void)? = nil,
-    copy: (@MainActor (URL) -> Void)? = nil,
-    addToChat: (@MainActor (URL) -> Void)? = nil
+    openImage: @escaping @MainActor (URL) -> Bool,
+    menu: @escaping @MainActor (URL) -> [MarkdownLinkMenuItem] = { _ in [] }
   ) {
-    self.open = open
-    self.openInNewTab = openInNewTab
-    self.copy = copy
-    self.addToChat = addToChat
+    self.openImage = openImage
+    self.menu = menu
   }
+}
+
+public enum MarkdownLinkMenuItem: @unchecked Sendable {
+  case action(title: String, systemImage: String, perform: @MainActor () -> Void)
+  case separator
 }
 
 public struct MarkdownWebLinkActions: @unchecked Sendable, Equatable {
@@ -212,7 +204,7 @@ public extension View {
   ) -> some View {
     let action = MarkdownLinkAction(handler)
     return transformEnvironment(\.markdownLinkAction) { current in
-      current = MarkdownLinkAction(handler, images: current?.images, webLinks: current?.webLinks)
+      current = MarkdownLinkAction(handler, files: current?.files, webLinks: current?.webLinks)
     }
     .environment(
       \.openURL,
@@ -223,17 +215,17 @@ public extension View {
     )
   }
 
-  func markdownImageActions(_ actions: MarkdownImageActions) -> some View {
+  func markdownFileActions(_ actions: MarkdownFileActions?) -> some View {
     let unhandled: @MainActor (URL) -> Bool = { _ in false }
     return transformEnvironment(\.markdownLinkAction) { action in
-      action = MarkdownLinkAction(action?.linkHandler ?? unhandled, images: actions, webLinks: action?.webLinks)
+      action = MarkdownLinkAction(action?.linkHandler ?? unhandled, files: actions, webLinks: action?.webLinks)
     }
   }
 
   func markdownWebLinkActions(_ actions: MarkdownWebLinkActions?) -> some View {
     let unhandled: @MainActor (URL) -> Bool = { _ in false }
     return transformEnvironment(\.markdownLinkAction) { action in
-      action = MarkdownLinkAction(action?.linkHandler ?? unhandled, images: action?.images, webLinks: actions)
+      action = MarkdownLinkAction(action?.linkHandler ?? unhandled, files: action?.files, webLinks: actions)
     }
   }
 }

@@ -28,7 +28,7 @@ final class TranscriptBotImageRowHost: TranscriptMountedRowHost {
     installVerticalClipMask()
     configurePicture()
     configurePlaceholder()
-    addGestureRecognizer(NSClickGestureRecognizer(target: self, action: #selector(openQuickLook)))
+    addGestureRecognizer(NSClickGestureRecognizer(target: self, action: #selector(openImage)))
     setAccessibilityElement(true)
     setAccessibilityRole(.image)
   }
@@ -67,28 +67,13 @@ final class TranscriptBotImageRowHost: TranscriptMountedRowHost {
   }
 
   override func menu(for _: NSEvent) -> NSMenu? {
-    guard let url = URL(string: source), let images = linkAction?.images else { return nil }
+    guard let url = URL(string: source), let items = linkAction?.files?.menu(url), !items.isEmpty else { return nil }
 
-    let menu = NSMenu()
-    if let addToChat = images.addToChat {
-      menu.addItem(TranscriptClosureMenuItem("Add to Chat", systemImage: "text.bubble") { addToChat(url) })
-      menu.addItem(.separator())
-    }
-    menu.addItem(TranscriptClosureMenuItem("Quick Look", systemImage: "eye") { _ = images.open(url) })
-    if let openInNewTab = images.openInNewTab {
-      menu.addItem(
-        TranscriptClosureMenuItem("Open in New Tab", systemImage: "plus.rectangle.on.rectangle") {
-          openInNewTab(url)
-        })
-    }
-    if let copy = images.copy {
-      menu.addItem(TranscriptClosureMenuItem("Copy", systemImage: "doc.on.doc") { copy(url) })
-    }
-    return menu
+    return MarkdownLinkMenu.menu(for: items)
   }
 
   override func accessibilityPerformPress() -> Bool {
-    openQuickLook()
+    openImage()
     return true
   }
 
@@ -167,9 +152,9 @@ final class TranscriptBotImageRowHost: TranscriptMountedRowHost {
     onHeightChange?(height)
   }
 
-  @objc private func openQuickLook() {
-    guard let url = URL(string: source), let images = linkAction?.images else { return }
+  @objc private func openImage() {
+    guard let url = URL(string: source) else { return }
 
-    _ = images.open(url)
+    _ = linkAction?.activate(url, isImage: true)
   }
 }

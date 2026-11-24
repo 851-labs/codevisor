@@ -40,7 +40,7 @@ extension VirtualizedTranscriptScrollView: TranscriptFrameAdapter {
     sendTransitions.interrupt()
     rowContent = nil
     openMarkdownLink = nil
-    markdownImageActions = nil
+    markdownFileActions = nil
     sendTransitions.claim = nil
     sendTransitions.onStarted = nil
     sendTransitions.onCompleted = nil

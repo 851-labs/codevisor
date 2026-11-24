@@ -11,7 +11,8 @@ final class TranscriptPresentationSurface {
   let textAnimationVisibility = StreamingTextAnimationVisibility(initiallyVisible: false)
   let textAnimationRegistry = StreamingTextAnimationRegistry()
   let disclosure = TranscriptDisclosureStore()
-  let quickLook = QuickLookController()
+  let lightbox = FileLightbox()
+  let fileMenuPrompt = FileMenuPrompt()
   private(set) var hasPresentedContent = false
   @ObservationIgnored private weak var sessionController: SessionController?
   @ObservationIgnored private var retainedController: TranscriptViewController?
@@ -61,7 +62,8 @@ final class TranscriptPresentationSurface {
     retainedController = nil
     hasPresentedContent = false
     textAnimationVisibility.disappear()
-    quickLook.dismiss()
+    lightbox.dismiss()
+    fileMenuPrompt.dismiss()
   }
 }
 

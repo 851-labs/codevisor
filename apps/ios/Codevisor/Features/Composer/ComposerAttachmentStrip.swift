@@ -185,6 +185,7 @@ nonisolated private struct PickedMediaFile: Transferable {
 
 struct ComposerAttachmentStrip: View {
   @Bindable var controller: SessionController
+  @Environment(\.fileOpener) private var fileOpener
 
   var body: some View {
     ScrollView(.horizontal, showsIndicators: false) {
@@ -200,6 +201,17 @@ struct ComposerAttachmentStrip: View {
       .padding(.vertical, 2)
     }
     .scrollClipDisabled()
+    .environment(\.fileOpener, composerFileOpener)
+  }
+
+  private var composerFileOpener: FileOpener? {
+    let attachments = controller.composerAttachments
+    guard var opener = fileOpener?.scoped(to: attachments.map(\.id)) else { return nil }
+
+    opener.siblings = { _ in attachments.compactMap(ViewableFile.init) }
+    opener.poster = { _ in nil }
+    opener.addToChat = nil
+    return opener
   }
 }
 
@@ -212,7 +224,7 @@ private struct ComposerAttachmentChip: View {
 
   @State private var thumbnail: UIImage?
   @State private var loadingPreview: UIImage?
-  @State private var quickLookURL: URL?
+  @Environment(\.fileOpener) private var fileOpener
 
   private var failureReason: String? {
     if case let .failed(reason) = attachment.state { return reason }
@@ -278,7 +290,6 @@ private struct ComposerAttachmentChip: View {
       else { return }
       thumbnail = await attachmentImages?.image(for: PreviewFile(attachment: ref.attachment))?.image
     }
-    .attachmentQuickLookPreview($quickLookURL)
   }
 
   private var sentSize: CGSize {
@@ -354,11 +365,12 @@ private struct ComposerAttachmentChip: View {
     .background(Color.secondary.opacity(0.12), in: RoundedRectangle(cornerRadius: 8))
   }
 
-  private var canPreview: Bool { attachment.fileURL != nil }
+  private var canPreview: Bool { ViewableFile(attachment) != nil }
 
   private func preview() {
-    guard let fileURL = attachment.fileURL else { return }
-    quickLookURL = fileURL
+    guard let file = ViewableFile(attachment) else { return }
+
+    fileOpener?.open(file)
   }
 
   private func visualRetryButton(reason: String) -> some View {

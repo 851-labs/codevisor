@@ -2,9 +2,7 @@ import SwiftUI
 import TranscriptKit
 
 struct TranscriptBotFileBubble<Content: View>: View {
-  @Environment(\.openFileDocument) private var openFileDocument
-  @Environment(\.quickLook) private var quickLook
-  @Environment(\.attachmentImages) private var attachmentImages
+  @Environment(\.fileOpener) private var fileOpener
   @Environment(\.dynamicTypeSize) private var dynamicTypeSize
   let file: PreviewFile
   var showsName = true
@@ -38,7 +36,7 @@ struct TranscriptBotFileBubble<Content: View>: View {
     .accessibilityValue(note ?? "")
     .accessibilityAddTraits(.isButton)
     .accessibilityAction(.default, preview)
-    .attachmentContextMenu(file: file, image: nil, openInNewTab: openInNewTab, quickLook: preview)
+    .fileContextMenu(ViewableFile(file))
   }
 
   private static var minimumWidth: CGFloat { 180 }
@@ -55,11 +53,7 @@ struct TranscriptBotFileBubble<Content: View>: View {
     .padding(.top, 8)
   }
 
-  private func openInNewTab() {
-    _ = openFileDocument?(FileDocumentLocation.target(for: file))
-  }
-
   private func preview() {
-    quickLook?.present(QuickLookItem(file), attachmentStore: attachmentImages)
+    fileOpener?.open(ViewableFile(file))
   }
 }

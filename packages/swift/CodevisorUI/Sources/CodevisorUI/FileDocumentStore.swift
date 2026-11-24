@@ -33,6 +33,19 @@ public final class FileDocumentStore {
     }
   }
 
+  func viewingDocument(path: String, client: any CodevisorServerClienting) -> FileDocumentModel {
+    FileDocumentModel(
+      path: path,
+      read: { Self.viewOnly(try await FileDocumentLocation.read(path: path, client: client)) },
+      write: { _, _ in throw CodevisorServerClientError.invalidResponse })
+  }
+
+  nonisolated private static func viewOnly(_ document: ServerFileDocument) -> ServerFileDocument {
+    ServerFileDocument(
+      path: document.path, content: document.content, version: document.version, size: document.size,
+      writable: false, reason: "Open this file in a tab to edit it.")
+  }
+
   public func removeAll() {
     documents = [:]
     retained = [:]

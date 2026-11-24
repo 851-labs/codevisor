@@ -4,7 +4,7 @@ import CodevisorUI
 import SwiftUI
 
 struct ComposerAttachmentThumb: View {
-  @Environment(\.quickLook) private var quickLook
+  @Environment(\.fileOpener) private var fileOpener
   @Environment(\.attachmentImages) private var attachmentImages
   let attachment: ComposerAttachment
   let onRemove: () -> Void
@@ -108,15 +108,9 @@ struct ComposerAttachmentThumb: View {
   }
 
   private func preview() {
-    guard let fileURL = attachment.fileURL else { return }
-    quickLook?.present(
-      .local(
-        fileURL: fileURL,
-        name: attachment.name,
-        mimeType: attachment.mimeType
-      ),
-      attachmentStore: nil
-    )
+    guard let file = ViewableFile(attachment) else { return }
+
+    fileOpener?.open(file)
   }
 
   @ViewBuilder

@@ -16,14 +16,21 @@ public struct FilePanePreviewToggle: View {
       Button {
         model.editor.preview.toggle()
       } label: {
-        Label(model.editor.preview ? "Edit" : "Preview", systemImage: model.editor.preview ? "pencil" : "eye")
+        Label(model.editor.preview ? sourceTitle : "Preview", systemImage: model.editor.preview ? sourceImage : "eye")
       }
       .accessibilityLabel(helpText)
       .help(helpText)
     }
   }
 
+  private var isViewing: Bool { model.access == .viewing }
+
+  private var sourceTitle: String { isViewing ? "Source" : "Edit" }
+
+  private var sourceImage: String { isViewing ? "chevron.left.forwardslash.chevron.right" : "pencil" }
+
   private var helpText: String {
-    model.editor.preview ? "Show Editor" : "Show Preview"
+    if model.editor.preview { return isViewing ? "Show Source" : "Show Editor" }
+    return "Show Preview"
   }
 }

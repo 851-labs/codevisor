@@ -21,12 +21,7 @@ struct WorkspaceInspectorMediaView: View {
         LazyVGrid(columns: [GridItem(.adaptive(minimum: 72), spacing: 4)], spacing: 4) {
           ForEach(model.media) { item in
             WorkspaceInspectorMediaTile(
-              file: PreviewFile(
-                source: .attachment(fileId: item.attachment.fileId),
-                name: item.attachment.name,
-                mimeType: item.attachment.mimeType,
-                kind: item.isVideo ? .file : .image
-              ),
+              file: WorkspaceInspectorFiles.file(for: item),
               durationSeconds: item.durationSeconds
             )
             .onAppear {
@@ -43,7 +38,7 @@ struct WorkspaceInspectorMediaView: View {
 
 private struct WorkspaceInspectorMediaTile: View {
   @Environment(\.attachmentImages) private var attachmentImages
-  @Environment(\.quickLook) private var quickLook
+  @Environment(\.fileOpener) private var fileOpener
   let file: PreviewFile
   let durationSeconds: Double?
   @State private var image: NSImage?
@@ -71,9 +66,6 @@ private struct WorkspaceInspectorMediaTile: View {
             .padding(4)
         }
       }
-      .overlay {
-        AttachmentLoadingOverlay(isLoading: isLoadingPreview)
-      }
       .clipShape(RoundedRectangle(cornerRadius: 6))
       .contentShape(RoundedRectangle(cornerRadius: 6))
       .onTapGesture(perform: preview)
@@ -82,8 +74,7 @@ private struct WorkspaceInspectorMediaTile: View {
       .accessibilityLabel(file.isVideo ? "Video \(file.name)" : file.name)
       .accessibilityAddTraits([.isImage, .isButton])
       .accessibilityAction(.default, preview)
-      .accessibilityValue(isLoadingPreview ? "Loading" : "")
-      .attachmentContextMenu(file: file, image: image)
+      .fileContextMenu(ViewableFile(file))
       .task(id: file.name + file.mimeType + String(describing: file.source)) {
         guard let attachmentImages else { return }
         if let cached = await attachmentImages.cachedPreview(for: file) {
@@ -95,13 +86,8 @@ private struct WorkspaceInspectorMediaTile: View {
       }
   }
 
-  private var isLoadingPreview: Bool {
-    quickLook?.isLoading(QuickLookItem(file)) ?? false
-  }
-
   private func preview() {
-    guard !isLoadingPreview else { return }
-    quickLook?.present(QuickLookItem(file), attachmentStore: attachmentImages)
+    fileOpener?.open(ViewableFile(file))
   }
 }
 

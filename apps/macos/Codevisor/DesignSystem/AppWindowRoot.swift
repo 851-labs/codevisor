@@ -1,21 +1,16 @@
 import CodevisorCore
 import CodevisorUI
-import QuickLook
 import SwiftUI
 
 struct AppWindowRoot: ViewModifier {
   let environment: AppEnvironment
-  @State private var quickLook = QuickLookController.withAlerts()
+  @State private var lightbox = FileLightbox()
 
   func body(content: Content) -> some View {
     content
-      .environment(\.quickLook, quickLook)
-      .quickLookPreview(
-        Binding(
-          get: { quickLook.previewURL },
-          set: { quickLook.updatePreviewURL($0) }
-        )
-      )
+      .environment(\.fileLightbox, lightbox)
+      .background(FileLightboxWindowOverlay(lightbox: lightbox, environment: environment))
+      .onAppear { MenuOrigin.shared.startTracking() }
       .themedRoot()
       .environment(environment)
   }

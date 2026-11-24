@@ -1,6 +1,5 @@
 #if canImport(AppKit)
   import AppKit
-  import QuickLookUI
   import QuartzCore
   import SwiftUI
 

@@ -15,8 +15,7 @@ extension PreviewFile {
 }
 
 struct AttachmentThumbnailView: View {
-  @Environment(\.openFileDocument) private var openFileDocument
-  @Environment(\.quickLook) private var quickLook
+  @Environment(\.fileOpener) private var fileOpener
   @Environment(\.attachmentImages) private var attachmentImages
   @Environment(\.markdownBlockChrome) private var chrome
   @Environment(\.dynamicTypeSize) private var dynamicTypeSize
@@ -43,18 +42,14 @@ struct AttachmentThumbnailView: View {
               VideoPlayBadge()
             }
           }
-          .overlay {
-            AttachmentLoadingOverlay(isLoading: isLoadingPreview)
-              .clipShape(shape)
-          }
       } else {
-        AttachmentFileChip(name: file.name, isLoading: isLoadingPreview, isBubble: chrome == .bubble) {
+        AttachmentFileChip(name: file.name, isBubble: chrome == .bubble) {
           preview()
         }
         .transcriptSendAttachmentTarget(
           id: sentFileID, cornerRadius: 8, fill: .bubbleBackground, stroke: Color(nsColor: .separatorColor)
         )
-        .attachmentContextMenu(file: file, image: nil, openInNewTab: openInNewTab, quickLook: preview)
+        .fileContextMenu(ViewableFile(file))
       }
     }
     .task(id: AttachmentThumbnailLoadID(file: file, store: attachmentImages)) {
@@ -119,8 +114,7 @@ struct AttachmentThumbnailView: View {
     .accessibilityLabel("Attachment \(file.name)")
     .accessibilityAddTraits([.isImage, .isButton])
     .accessibilityAction(.default, preview)
-    .accessibilityValue(isLoadingPreview ? "Loading" : "")
-    .attachmentContextMenu(file: file, image: image, openInNewTab: openInNewTab, quickLook: preview)
+    .fileContextMenu(ViewableFile(file))
   }
 
   private var shape: RoundedRectangle {
@@ -178,17 +172,8 @@ struct AttachmentThumbnailView: View {
     geometry.resolve(aspectRatio: nil, fallbackAspectRatio: fallbackAspectRatio)
   }
 
-  private func openInNewTab() {
-    _ = openFileDocument?(FileDocumentLocation.target(for: file))
-  }
-
-  private var isLoadingPreview: Bool {
-    quickLook?.isLoading(QuickLookItem(file)) ?? false
-  }
-
   private func preview() {
-    guard !file.isPendingCapture, !isLoadingPreview else { return }
-    quickLook?.present(QuickLookItem(file), attachmentStore: attachmentImages)
+    fileOpener?.open(ViewableFile(file))
   }
 }
 
@@ -205,13 +190,12 @@ private struct AttachmentThumbnailLoadID: Hashable {
 struct AttachmentFileChip: View {
   @Environment(\.dynamicTypeSize) private var dynamicTypeSize
   let name: String
-  var isLoading = false
   var isBubble = false
   var onTap: (() -> Void)? = nil
 
   var body: some View {
     HStack(spacing: 6) {
-      AttachmentChipIcon(isLoading: isLoading)
+      AttachmentChipIcon()
       Text(name)
         .lineLimit(1)
         .truncationMode(.middle)
@@ -235,7 +219,6 @@ struct AttachmentFileChip: View {
     .accessibilityElement(children: .combine)
     .accessibilityAddTraits(onTap == nil ? [] : .isButton)
     .accessibilityAction(.default) { onTap?() }
-    .accessibilityValue(isLoading ? "Loading" : "")
   }
 
   private var shape: RoundedRectangle {

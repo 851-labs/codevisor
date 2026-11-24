@@ -24,12 +24,12 @@ public struct TranscriptBotImagePart: View {
         .frame(width: size.width, height: size.height)
         .clipShape(shape)
         .contentShape(shape)
-        .onTapGesture(perform: quickLook)
+        .onTapGesture(perform: open)
         .contextMenu { menu }
         .accessibilityElement(children: .ignore)
         .accessibilityLabel(alt.isEmpty ? "Image" : alt)
         .accessibilityAddTraits([.isImage, .isButton])
-        .accessibilityAction(.default, quickLook)
+        .accessibilityAction(.default, open)
       Spacer(minLength: TranscriptBubbleMetrics.oppositeSideGap)
     }
     .task(id: source) { image = await loader.image(for: source) }
@@ -50,18 +50,8 @@ public struct TranscriptBotImagePart: View {
   }
 
   @ViewBuilder private var menu: some View {
-    if let url, let images = linkAction?.images {
-      if let addToChat = images.addToChat {
-        Button("Add to Chat", systemImage: "text.bubble") { addToChat(url) }
-        Divider()
-      }
-      Button("Quick Look", systemImage: "eye") { _ = images.open(url) }
-      if let openInNewTab = images.openInNewTab {
-        Button("Open in New Tab", systemImage: "plus.rectangle.on.rectangle") { openInNewTab(url) }
-      }
-      if let copy = images.copy {
-        Button("Copy", systemImage: "doc.on.doc") { copy(url) }
-      }
+    if let url, let files = linkAction?.files {
+      MarkdownLinkMenuContent(files.menu(url))
     }
   }
 
@@ -77,9 +67,9 @@ public struct TranscriptBotImagePart: View {
     return size.width / size.height
   }
 
-  private func quickLook() {
-    guard let url, let images = linkAction?.images else { return }
-    _ = images.open(url)
+  private func open() {
+    guard let url else { return }
+    _ = linkAction?.activate(url, isImage: true)
   }
 
   private func platformImage(_ image: MarkdownPlatformImage) -> Image {

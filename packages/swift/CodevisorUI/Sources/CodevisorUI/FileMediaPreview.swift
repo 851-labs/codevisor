@@ -1,5 +1,4 @@
 import CodevisorCore
-import CryptoKit
 import SwiftUI
 
 struct FileMediaPreview: View {
@@ -9,9 +8,15 @@ struct FileMediaPreview: View {
   @State private var url: URL?
   @State private var error: String?
 
+  private static let byteLimit = 100 * 1024 * 1024
+
+  private var name: String { FileDocumentLocation.name(path) }
+
   var body: some View {
     Group {
-      if let url {
+      if !FilePreviewKind.hasSystemPreview(name: name) {
+        FileNoPreview(name: name)
+      } else if let url {
         NativeFilePreview(url: url)
       } else if let error {
         ContentUnavailableView("Preview unavailable", systemImage: "doc", description: Text(error))
@@ -20,19 +25,34 @@ struct FileMediaPreview: View {
       }
     }
     .frame(maxWidth: .infinity, maxHeight: .infinity)
-    .task(id: path) {
-      url = nil; error = nil
-      guard size <= 100 * 1024 * 1024 else { error = "This file is too large to preview here."; return }
-      do {
-        let bytes = try await FileDocumentLocation.data(path: path, client: client)
-        try Task.checkCancellation()
-        let hash = SHA256.hash(data: bytes).map { String(format: "%02x", $0) }.joined()
-        let directory = CodevisorAppVariant.temporaryURL().appendingPathComponent("CodevisorFilePreview/\(hash)")
-        try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
-        let target = directory.appendingPathComponent(FileDocumentLocation.name(path))
-        try bytes.write(to: target, options: .atomic)
-        url = target
-      } catch { if !isTaskCancellation(error) { self.error = serverErrorMessage(error) } }
+    .task(id: path) { await load() }
+  }
+
+  private func load() async {
+    url = nil
+    error = nil
+    guard FilePreviewKind.hasSystemPreview(name: name) else { return }
+    guard size <= Self.byteLimit else { return error = "This file is too large to preview here." }
+    do {
+      url = try await FileMaterializer.url(path: path, client: client)
+    } catch {
+      if !isTaskCancellation(error) { self.error = serverErrorMessage(error) }
+    }
+  }
+}
+
+private struct FileNoPreview: View {
+  let name: String
+
+  var body: some View {
+    ContentUnavailableView {
+      Label {
+        Text(name)
+      } icon: {
+        FileIcon(path: name, size: 44)
+      }
+    } description: {
+      Text("There is no preview for this kind of file.")
     }
   }
 }

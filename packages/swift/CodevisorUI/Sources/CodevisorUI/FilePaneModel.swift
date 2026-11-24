@@ -9,6 +9,7 @@ public final class FilePaneModel {
   public let rootPath: String
   public let machineId: String
   public let client: any CodevisorServerClienting
+  public let access: FileAccess
   public var showsExplorer = false
   public var showsFind = false
   public var showsReplacement = false
@@ -28,16 +29,20 @@ public final class FilePaneModel {
 
   public init(
     id: UUID, path: String, rootPath: String, machineId: String, client: any CodevisorServerClienting,
-    recents: FileRecents = .shared
+    access: FileAccess = .editing, recents: FileRecents = .shared
   ) {
     self.id = id
     self.path = path
     self.rootPath = rootPath
     self.machineId = machineId
     self.client = client
+    self.access = access
     self.recents = recents
     sessions = FileEditorSessions { path in
-      FileDocumentStore.shared.document(machineId: machineId, path: path, client: client)
+      switch access {
+      case .editing: FileDocumentStore.shared.document(machineId: machineId, path: path, client: client)
+      case .viewing: FileDocumentStore.shared.viewingDocument(path: path, client: client)
+      }
     }
     explorer = FileExplorerModel(root: rootPath, client: client)
   }
@@ -67,6 +72,11 @@ public final class FilePaneModel {
   }
 
   public var isBrowsing: Bool { path.hasSuffix("/") }
+  public var mediaKind: FilePreviewKind? {
+    guard !isBrowsing else { return nil }
+    let kind = FilePreviewKind(name: FileDocumentLocation.name(path))
+    return kind == .image || kind == .video ? kind : nil
+  }
   public var isEditingText: Bool { !isBrowsing && document.snapshot?.content != nil }
   public var displayPath: String { explorer.relativePath(path) }
   public var title: String { isBrowsing ? "Open File" : document.name }

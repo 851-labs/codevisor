@@ -28,7 +28,7 @@ struct WorkspacePaneToolbar: ToolbarContent {
   @ToolbarContentBuilder
   private var documentToolbar: some ToolbarContent {
     if let file = source?.file {
-      FilePaneToolbar(model: file)
+      FilePaneToolbar(model: file, transfers: MacFileTransfers.transfers)
     } else {
       reviewOrSimulatorToolbar
     }

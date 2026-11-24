@@ -172,7 +172,7 @@
 
     open override func menu(for event: NSEvent) -> NSMenu? {
       let point = convert(event.locationInWindow, from: nil)
-      if let menu = markdownImageMenu(at: point) ?? markdownWebLinkMenu(at: point) { return menu }
+      if let menu = markdownFileMenu(at: point) ?? markdownWebLinkMenu(at: point) { return menu }
       return transcriptSelectionCoordinator?.transcriptSelectionMenu(for: self, with: event)
         ?? super.menu(for: event)
     }

@@ -136,7 +136,7 @@ public struct TranscriptSurfaceCallbacks {
   public var onSendAnimationCompleted: @MainActor (UserSendAnimationRequest) -> Void
   public var markdownImageLoader: MarkdownImageLoader?
   public var openMarkdownLink: (@MainActor (URL) -> Bool)?
-  public var markdownImageActions: MarkdownImageActions?
+  public var markdownFileActions: MarkdownFileActions?
   public var markdownWebLinkActions: MarkdownWebLinkActions?
   public var onSendAnimationStarted: @MainActor (UserSendAnimationRequest) -> Void
   public var onEarlierHistoryCollapseChange: @MainActor (TranscriptEarlierHistoryCollapse?) -> Void
@@ -152,7 +152,7 @@ public struct TranscriptSurfaceCallbacks {
     onSendAnimationCompleted: @escaping @MainActor (UserSendAnimationRequest) -> Void = { _ in },
     markdownImageLoader: MarkdownImageLoader? = nil,
     openMarkdownLink: (@MainActor (URL) -> Bool)? = nil,
-    markdownImageActions: MarkdownImageActions? = nil,
+    markdownFileActions: MarkdownFileActions? = nil,
     markdownWebLinkActions: MarkdownWebLinkActions? = nil,
     onSendAnimationStarted: @escaping @MainActor (UserSendAnimationRequest) -> Void = { _ in },
     onEarlierHistoryCollapseChange: @escaping @MainActor (TranscriptEarlierHistoryCollapse?) -> Void = { _ in }
@@ -167,7 +167,7 @@ public struct TranscriptSurfaceCallbacks {
     self.onSendAnimationCompleted = onSendAnimationCompleted
     self.markdownImageLoader = markdownImageLoader
     self.openMarkdownLink = openMarkdownLink
-    self.markdownImageActions = markdownImageActions
+    self.markdownFileActions = markdownFileActions
     self.markdownWebLinkActions = markdownWebLinkActions
     self.onSendAnimationStarted = onSendAnimationStarted
     self.onEarlierHistoryCollapseChange = onEarlierHistoryCollapseChange

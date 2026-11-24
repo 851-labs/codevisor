@@ -3,11 +3,32 @@ import CodevisorUI
 import SwiftUI
 
 extension SessionContainerView {
+  var fileRootDirectory: String {
+    selectedWorkspace.rootDirectory ?? session?.cwd ?? project.folderURL.path
+  }
+
+  var fileOpener: FileOpener? {
+    guard let fileLightbox else { return nil }
+
+    let serverId = selectedWorkspace.serverId
+    let site = FileOpener.Site(
+      rootPath: fileRootDirectory, machineId: serverId, client: environment.machines.client(for: serverId))
+    var opener = FileOpener(
+      identity: handlerIdentity, site: site, lightbox: fileLightbox, openInTab: isTabless ? nil : openFileInTab)
+    opener.transfers = MacFileTransfers.transfers
+    opener.presentMenu = FileMenuPopup.present
+    return opener
+  }
+
+  private func openFileInTab(_ target: String) -> Bool {
+    openFileDocument(target, rendered: FileDocumentLocation.opensRendered(target))
+  }
+
   func openFileDocument(_ target: String, preview: Bool = false, rendered: Bool = false) -> Bool {
     var workspace = selectedWorkspace
     guard !isTabless,
       let path = FileDocumentLocation.resolve(
-        target, relativeTo: workspace.rootDirectory ?? session?.cwd ?? project.folderURL.path)
+        target, relativeTo: fileRootDirectory)
     else { return false }
 
     if revealOpenDocument(path, target: target, preview: preview, rendered: rendered, in: workspace) { return true }
