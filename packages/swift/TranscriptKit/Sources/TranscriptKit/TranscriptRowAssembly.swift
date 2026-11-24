@@ -10,8 +10,7 @@ enum TranscriptRowAssembly {
       let conversation = input.botConversation ?? TranscriptBotConversation(messages: [], isWorking: false)
       return try TranscriptBotRowAssembly.assemble(
         conversation.merging(TranscriptBotAppMessages.messages(in: input)),
-        input: input,
-        options: options
+        input: input
       )
     }
     var rows: [TranscriptPresentationRow] = []
@@ -45,7 +44,6 @@ enum TranscriptRowAssembly {
       input, settled: settled, waitingDescription: waitingDescription, waitingAssistantID: waitingAssistantID, to: &rows
     )
     appendActivityAndErrors(input, to: &rows)
-    appendBottomSpacer(options, to: &rows)
     return rows
   }
 
@@ -247,21 +245,6 @@ enum TranscriptRowAssembly {
       message != input.sessionErrorMessage
     {
       rows.append(.init(id: .statusError, content: .error(message), estimatedHeight: 56))
-    }
-  }
-
-  private static func appendBottomSpacer(
-    _ options: TranscriptProjectionOptions,
-    to rows: inout [TranscriptPresentationRow]
-  ) {
-    if let requestedHeight = options.bottomSpacerHeight {
-      let height = max(1, requestedHeight)
-      rows.append(
-        .init(
-          id: .bottomSpacer,
-          content: .bottomSpacer(height),
-          estimatedHeight: height
-        ))
     }
   }
 

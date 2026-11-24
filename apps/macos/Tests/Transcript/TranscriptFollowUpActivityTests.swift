@@ -15,7 +15,7 @@ struct TranscriptFollowUpActivityTests {
   func quietFollowUpAfterSendCompletion() async throws {
     let fixture = ActivityFixture()
     defer { fixture.tearDown() }
-    let options = TranscriptProjectionOptions(includesConnectingRow: false, bottomSpacerHeight: 100)
+    let options = TranscriptProjectionOptions(includesConnectingRow: false)
     let firstPrompt = UserMessage(text: "First message")
     let completed = AssistantMessage(turn: AssistantTurn(entries: [.text(id: "answer", markdown: "First answer")]))
     fixture.model.applyPreviewState(conversation: [.user(firstPrompt), .assistant(completed)], isSending: false)
@@ -53,7 +53,7 @@ struct TranscriptFollowUpActivityTests {
   func followUpOvertakesStagedProjection() async throws {
     let fixture = ActivityFixture()
     defer { fixture.tearDown() }
-    let options = TranscriptProjectionOptions(includesConnectingRow: false, bottomSpacerHeight: 100)
+    let options = TranscriptProjectionOptions(includesConnectingRow: false)
     let firstPrompt = UserMessage(text: "First message")
     var completed = AssistantMessage(
       turn: AssistantTurn(entries: [.text(id: "answer", markdown: "First answer")], isGenerating: true))
@@ -102,7 +102,7 @@ struct TranscriptFollowUpActivityTests {
   func previousAnimationRetires(previousResponseLeavesViewport: Bool) async throws {
     let fixture = ActivityFixture(reportsPreviousAnimation: true)
     defer { fixture.tearDown() }
-    let options = TranscriptProjectionOptions(includesConnectingRow: false, bottomSpacerHeight: 100)
+    let options = TranscriptProjectionOptions(includesConnectingRow: false)
     let firstPrompt = UserMessage(text: "First message")
     var completed = AssistantMessage(
       turn: AssistantTurn(
@@ -161,7 +161,7 @@ struct TranscriptFollowUpActivityTests {
     let fixture = ActivityFixture()
     defer { fixture.tearDown() }
     let cache = TranscriptRowProjectionCache()
-    let options = TranscriptProjectionOptions(includesConnectingRow: false, bottomSpacerHeight: 100)
+    let options = TranscriptProjectionOptions(includesConnectingRow: false)
 
     let firstPrompt = UserMessage(text: "First message")
     let completed = AssistantMessage(turn: AssistantTurn(entries: [.text(id: "answer", markdown: "First answer")]))
@@ -360,7 +360,7 @@ private final class ActivityFixture {
         isLoadingInitialHistory: false, isPreparingInitialProjection: false,
         isActiveProjectionPending: false, layoutFingerprint: 0,
         scrollCommand: .init(), sendAnimationRequest: sendRequest,
-        textAnimationRegistry: registry, reduceMotion: sendRequest == nil),
+        textAnimationRegistry: registry, reduceMotion: sendRequest == nil, bottomContentClearance: 100),
       callbacks: TranscriptSurfaceCallbacks(
         claimSendAnimation: { _ in true },
         rowContent: { [controller, visibility, registry, reportsPreviousAnimation] row in

@@ -41,12 +41,6 @@ extension VirtualizedTranscriptScrollView {
     let newPresentationRole = input.presentationRole
     let newReduceMotion = input.reduceMotion
     let newScrollIndicatorBottomInset = input.scrollIndicatorBottomInset
-    let newRowContent = callbacks.rowContent
-    let onViewportChange = callbacks.onViewportChange
-    let onBottomStateChange = callbacks.onBottomStateChange
-    let onFollowStateChange = callbacks.onFollowStateChange
-    let onNearTop = callbacks.onNearTop
-    let onOlderHistoryPresented = callbacks.onOlderHistoryPresented
     if sessionController !== newSessionController {
       unregisterPresentationFrameDriver()
       sessionController = newSessionController
@@ -54,15 +48,7 @@ extension VirtualizedTranscriptScrollView {
       historyPrefetchPolicy = TranscriptHistoryPrefetchPolicy()
       deferredActivePlaceholderKey = nil
     }
-    rowContent = newRowContent
-    openMarkdownLink = callbacks.openMarkdownLink
-    markdownFileActions = callbacks.markdownFileActions
-    self.onViewportChange = onViewportChange
-    self.onBottomStateChange = onBottomStateChange
-    onEarlierHistoryCollapseChange = callbacks.onEarlierHistoryCollapseChange
-    self.onFollowStateChange = onFollowStateChange
-    self.onNearTop = onNearTop
-    self.onOlderHistoryPresented = onOlderHistoryPresented
+    adoptCallbacks(callbacks)
     isPreparingInitialProjection = newIsPreparingInitialProjection
     isActiveProjectionPending = newIsActiveProjectionPending
     isAwaitingFirstActiveProjection = newIsAwaitingFirstActiveProjection
@@ -81,6 +67,7 @@ extension VirtualizedTranscriptScrollView {
     let projectedRowsChanged = projectedRowsVersion != newRowsVersion
     let projectionRevisionChanged = receivedProjectionRevision != newProjectionRevision
     let activeRowsChanged = activeRowsVersion != newActiveRowsVersion
+    let bottomClearanceChanged = surfaceController.adoptBottomClearance(input.bottomContentClearance)
     hasOlderHistory = newHasOlderHistory
     let paginationHeaderReservationChanged = paginationHeaderLayout.reserveIfNeeded(
       hasOlderHistory: newHasOlderHistory,
@@ -130,7 +117,7 @@ extension VirtualizedTranscriptScrollView {
       sendTransitions.landFlights()
     }
     let rebuiltRows: Bool
-    if projectedRowsChanged || projectionRevisionChanged || layoutFingerprintChanged {
+    if projectedRowsChanged || projectionRevisionChanged || layoutFingerprintChanged || bottomClearanceChanged {
       projectedRows = newProjectedRows
       projectedRowsVersion = newRowsVersion
       receivedProjectionRevision = newProjectionRevision
@@ -217,6 +204,18 @@ extension VirtualizedTranscriptScrollView {
 }
 
 extension VirtualizedTranscriptScrollView {
+  private func adoptCallbacks(_ callbacks: TranscriptSurfaceCallbacks) {
+    rowContent = callbacks.rowContent
+    openMarkdownLink = callbacks.openMarkdownLink
+    markdownFileActions = callbacks.markdownFileActions
+    onViewportChange = callbacks.onViewportChange
+    onBottomStateChange = callbacks.onBottomStateChange
+    onEarlierHistoryCollapseChange = callbacks.onEarlierHistoryCollapseChange
+    onFollowStateChange = callbacks.onFollowStateChange
+    onNearTop = callbacks.onNearTop
+    onOlderHistoryPresented = callbacks.onOlderHistoryPresented
+  }
+
   static let bottomSpacerShiftDuration: TimeInterval = 0.32
 
   func bottomSpacerShiftOrigin(to newRows: [TranscriptVirtualRow]) -> CGFloat? {

@@ -24,7 +24,7 @@ struct TranscriptBotRowAssemblyTests {
 
     let rows = try TranscriptRowProjectionCache.project(
       input(settled: [.assistant(turn)], pending: UserMessage(id: pendingID, text: "yes"), conversation),
-      options: .init(includesConnectingRow: false, bottomSpacerHeight: 80, presentsBotConversation: true)
+      options: .init(includesConnectingRow: false, presentsBotConversation: true)
     )
 
     #expect(
@@ -37,7 +37,6 @@ struct TranscriptBotRowAssemblyTests {
         .botMessage("n1"),
         .message(pendingID),
         .botTyping,
-        .bottomSpacer,
       ])
     #expect(groupTails(rows) == ["b1": false, "b2": true, "n1": true])
     #expect(!rows.contains { $0.id.isActiveRow || $0.id == .startingAgent })

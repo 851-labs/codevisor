@@ -97,6 +97,7 @@ extension ChatScreen {
               textAnimationRegistry: presentationSurface.textAnimationRegistry,
               allowsLiveTextAnimation: presentationSurface.textAnimationVisibility.isVisible,
               reduceMotion: reduceMotion,
+              bottomContentClearance: transcriptBottomClearance,
               bottomFade: transcriptBottomFade
             ),
             callbacks: TranscriptSurfaceCallbacks(
@@ -237,7 +238,6 @@ extension ChatScreen {
       key: controller.transcriptProjectionKey,
       options: .init(
         includesConnectingRow: false,
-        bottomSpacerHeight: composerHeight + 24,
         presentsBotConversation: presentsBotConversation
       )
     )

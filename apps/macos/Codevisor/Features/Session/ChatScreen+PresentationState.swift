@@ -27,11 +27,6 @@ extension ChatScreen {
     }
   }
 
-  var composerCardHeight: CGFloat {
-    get { presentationSurface.composer.cardHeight }
-    nonmutating set { presentationSurface.composer.update(cardHeight: newValue) }
-  }
-
   var scrollCommand: TranscriptScrollCommand {
     get { presentation.scrollCommand }
     nonmutating set { if presentation.scrollCommand != newValue { presentation.scrollCommand = newValue } }

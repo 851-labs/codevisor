@@ -98,7 +98,8 @@ extension SessionTranscriptView {
           allowsLiveTextAnimation: textAnimationVisibility.isVisible,
           reduceMotion: reduceMotion,
           scrollIndicatorBottomInset: transcriptBottomObstruction + 6,
-          topContentClearance: topContentClearance
+          topContentClearance: topContentClearance,
+          bottomContentClearance: transcriptBottomObstruction + Self.transcriptBottomBreathingRoom
         ),
         callbacks: TranscriptSurfaceCallbacks(
           claimSendAnimation: { request in
@@ -197,7 +198,6 @@ extension SessionTranscriptView {
       key: controller.transcriptProjectionKey,
       options: .init(
         includesConnectingRow: true,
-        bottomSpacerHeight: transcriptBottomObstruction + Self.transcriptBottomBreathingRoom,
         presentsBotConversation: controller.presentsBotConversation
       )
     )

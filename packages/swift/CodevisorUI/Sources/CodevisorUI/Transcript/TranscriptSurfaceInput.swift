@@ -61,6 +61,7 @@ public struct TranscriptSurfaceInput {
   public var reduceMotion: Bool
   public var scrollIndicatorBottomInset: CGFloat
   public var topContentClearance: CGFloat
+  public var bottomContentClearance: CGFloat?
   public var bottomFade: TranscriptBottomFade
 
   public init(
@@ -91,6 +92,7 @@ public struct TranscriptSurfaceInput {
     reduceMotion: Bool,
     scrollIndicatorBottomInset: CGFloat = 0,
     topContentClearance: CGFloat = 0,
+    bottomContentClearance: CGFloat? = nil,
     bottomFade: TranscriptBottomFade = .none
   ) {
     self.sessionController = sessionController
@@ -120,6 +122,7 @@ public struct TranscriptSurfaceInput {
     self.reduceMotion = reduceMotion
     self.scrollIndicatorBottomInset = scrollIndicatorBottomInset
     self.topContentClearance = topContentClearance
+    self.bottomContentClearance = bottomContentClearance
     self.bottomFade = bottomFade
   }
 }

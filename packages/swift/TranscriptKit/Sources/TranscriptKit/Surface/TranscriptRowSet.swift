@@ -7,6 +7,9 @@ public struct TranscriptRowSet: Sendable {
   public var projectedRows: [Row] = [] {
     didSet { projectedRevision &+= 1 }
   }
+  public var bottomClearance: CGFloat? {
+    didSet { projectedRevision &+= 1 }
+  }
   private var projectedRevision: UInt64 = 0
   private var resolvedProjectedRevision: UInt64?
   public var activeRows: [Row] = []
@@ -26,7 +29,19 @@ public struct TranscriptRowSet: Sendable {
     }
   }
 
-  public static func resolve(projectedRows: [Row], activeRows: [Row]) -> Resolution {
+  public static func resolve(projectedRows: [Row], activeRows: [Row], bottomClearance: CGFloat? = nil) -> Resolution {
+    let resolution = resolveActive(projectedRows: projectedRows, activeRows: activeRows)
+    guard let bottomClearance else { return resolution }
+
+    return Resolution(rows: resolution.rows + [bottomSpacer(bottomClearance)], activeRange: resolution.activeRange)
+  }
+
+  private static func bottomSpacer(_ clearance: CGFloat) -> Row {
+    let height = max(1, clearance)
+    return Row(id: .bottomSpacer, content: .bottomSpacer(height), estimatedHeight: height)
+  }
+
+  private static func resolveActive(projectedRows: [Row], activeRows: [Row]) -> Resolution {
     guard
       let activeIndex = projectedRows.firstIndex(where: {
         if case .active = $0.id { true } else { false }
@@ -103,7 +118,8 @@ public struct TranscriptRowSet: Sendable {
       return .inPlace(range: range, previousRows: previous)
     }
 
-    let resolution = Self.resolve(projectedRows: projectedRows, activeRows: newActiveRows)
+    let resolution = Self.resolve(
+      projectedRows: projectedRows, activeRows: newActiveRows, bottomClearance: bottomClearance)
     activeRows = newActiveRows
     activeRowsRange = resolution.activeRange
     resolvedProjectedRevision = projectedRevision

@@ -10,6 +10,8 @@ struct ChatScreen: View {
   static let composerTopPadding: CGFloat = 24
   static let composerHorizontalPadding: CGFloat = 24
   static let composerMaxWidth: CGFloat = 880
+  static let transcriptBottomBreathingRoom: CGFloat = 24
+  static let unmeasuredComposerHeight: CGFloat = 96
 
   @Environment(\.dynamicTypeSize) var dynamicTypeSize
   @Environment(\.accessibilityReduceMotion) var reduceMotion
@@ -38,6 +40,8 @@ struct ChatScreen: View {
   @State var presentationVisibilityOwner = UUID()
   @State var showsPromptQueue = false
   @State var queueSends = QueueSendObserver()
+  @State var measuredComposerHeight: CGFloat?
+  @State var composerCardHeight: CGFloat = 0
   @State var isSlashPalettePresented = false
   @Namespace var composerGlassNamespace
   var composerCardStyle = ComposerCardStyle()
@@ -73,7 +77,17 @@ struct ChatScreen: View {
 
   var projection: TranscriptSettledProjection { presentationSurface.projection }
 
-  var composerHeight: CGFloat { isReadOnly ? 0 : presentationSurface.composer.height }
+  var composerHeight: CGFloat {
+    guard !isReadOnly else { return 0 }
+
+    return measuredComposerHeight ?? Self.unmeasuredComposerHeight
+  }
+
+  var transcriptBottomClearance: CGFloat? {
+    guard !isReadOnly else { return Self.transcriptBottomBreathingRoom }
+
+    return measuredComposerHeight.map { $0 + Self.transcriptBottomBreathingRoom }
+  }
 
   var body: some View {
     transcriptSurface

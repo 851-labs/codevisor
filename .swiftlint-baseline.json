@@ -112,7 +112,7 @@
         "file": "apps/ios/Codevisor/Features/Session/Transcript/VirtualizedTranscriptScrollView+Configure.swift",
         "line": 10
       },
-      "reason": "Function body should span 100 lines or less excluding comments and whitespace: currently spans 199 lines",
+      "reason": "Function body should span 100 lines or less excluding comments and whitespace: currently spans 186 lines",
       "ruleDescription": "Function bodies should not span too many lines",
       "ruleIdentifier": "function_body_length",
       "ruleName": "Function Body Length",
@@ -337,7 +337,7 @@
         "file": "apps/macos/Codevisor/Features/Session/Transcript/VirtualizedTranscriptScrollView+Configure.swift",
         "line": 19
       },
-      "reason": "Function body should span 100 lines or less excluding comments and whitespace: currently spans 128 lines",
+      "reason": "Function body should span 100 lines or less excluding comments and whitespace: currently spans 115 lines",
       "ruleDescription": "Function bodies should not span too many lines",
       "ruleIdentifier": "function_body_length",
       "ruleName": "Function Body Length",

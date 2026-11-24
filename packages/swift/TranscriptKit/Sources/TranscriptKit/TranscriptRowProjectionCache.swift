@@ -29,16 +29,13 @@ public struct TranscriptProjectionKey: Hashable, Sendable {
 
 public struct TranscriptProjectionOptions: Hashable, Sendable {
   public let includesConnectingRow: Bool
-  public let bottomSpacerHeight: CGFloat?
   public let presentsBotConversation: Bool
 
   public init(
     includesConnectingRow: Bool,
-    bottomSpacerHeight: CGFloat? = nil,
     presentsBotConversation: Bool = false
   ) {
     self.includesConnectingRow = includesConnectingRow
-    self.bottomSpacerHeight = bottomSpacerHeight
     self.presentsBotConversation = presentsBotConversation
   }
 }
