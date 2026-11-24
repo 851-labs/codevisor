@@ -60,6 +60,20 @@ struct TranscriptAutoscrollTests {
     #expect(view.lastBottomState == true)
   }
 
+  @Test("A viewport size the transcript has not laid out yet cannot report that it left the bottom")
+  func unlaidOutViewportSizeKeepsBottomState() {
+    let view = makeView()
+    defer { view.prepareForDismantle() }
+    var reports: [Bool] = []
+    view.onBottomStateChange = { reports.append($0) }
+    view.setFrameSize(CGSize(width: 900, height: 140))
+    #expect(view.currentDistanceFromBottom() > VirtualizedTranscriptScrollView.atBottomThreshold)
+    view.emitViewportSnapshot()
+    resize(view, width: 900, height: 520)
+    #expect(reports.isEmpty)
+    #expect(view.currentDistanceFromBottom() <= 0.5)
+  }
+
   @Test("Resizing while rows sit at their maximum width recenters them and keeps the bottom pinned")
   func cappedRowWidthResize() {
     let view = makeView()
@@ -69,7 +83,8 @@ struct TranscriptAutoscrollTests {
     #expect(!view.mountedHosts.isEmpty)
     for host in view.mountedHosts.values {
       #expect(host.frame.width == VirtualizedTranscriptScrollView.maxRowWidth)
-      #expect(abs(host.frame.midX - view.contentView.bounds.midX) <= 0.5)
+      let frame = view.contentView.convert(host.frame, from: view.transcriptDocumentView)
+      #expect(abs(frame.midX - view.contentView.bounds.midX) <= 0.5)
     }
     #expect(view.transcriptDocumentView.frame.width == view.contentView.bounds.width)
     #expect(view.transcriptDocumentView.frame.height == documentHeight)

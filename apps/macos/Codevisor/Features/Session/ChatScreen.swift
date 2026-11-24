@@ -104,8 +104,6 @@ struct ChatScreen: View {
       .environment(\.attachmentImages, attachmentImages)
       .pointerStyle(.default)
       .transaction(value: ObjectIdentifier(controller)) { $0.animation = nil }
-      .animation(Motion.quick(reduceMotion: reduceMotion), value: isAtBottom)
-      .animation(Motion.quick(reduceMotion: reduceMotion), value: earlierHistoryCollapse)
       .animation(Motion.quick(reduceMotion: reduceMotion), value: presentationSurface.findModel.isPresented)
       .onAppear {
         reportsScrollState = true
