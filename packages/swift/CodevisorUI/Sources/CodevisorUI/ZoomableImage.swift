@@ -61,7 +61,8 @@ import SwiftUI
       guard fitsBounds, fittedSize != bounds.size, bounds.width > 0, bounds.height > 0 else { return }
 
       fittedSize = bounds.size
-      minMagnification = min(fitScale, 1)
+      minMagnification = fitScale
+      maxMagnification = max(Self.maximumZoom, fitScale)
       magnification = fitScale
     }
 
@@ -90,11 +91,11 @@ import SwiftUI
     private var fitScale: CGFloat {
       let size = imageView.frame.size
       guard size.width > 0, size.height > 0 else { return 1 }
-      return min(bounds.width / size.width, bounds.height / size.height, 1)
+      return min(bounds.width / size.width, bounds.height / size.height)
     }
 
     private func toggleZoom(at point: CGPoint) {
-      let zoomedIn = max(1, fitScale * Self.zoomedInScale)
+      let zoomedIn = min(maxMagnification, max(1, fitScale * Self.zoomedInScale))
       fitsBounds.toggle()
       animator().setMagnification(fitsBounds ? fitScale : zoomedIn, centeredAt: point)
     }
