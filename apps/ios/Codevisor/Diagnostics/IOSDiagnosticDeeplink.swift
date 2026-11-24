@@ -5,6 +5,7 @@ import Foundation
     case newChat(text: String)
     case send
     case openSession(UUID)
+    case pluginLink(URL)
 
     static func parse(_ url: URL) -> IOSDiagnosticDeeplink? {
       let items = URLComponents(url: url, resolvingAgainstBaseURL: false)?.queryItems ?? []
@@ -16,6 +17,8 @@ import Foundation
         return .send
       case "diagnostic-open-session":
         return value("id").flatMap(UUID.init(uuidString:)).map { .openSession($0) }
+      case "diagnostic-plugin-link":
+        return value("url").flatMap(URL.init(string:)).map { .pluginLink($0) }
       default:
         return nil
       }
