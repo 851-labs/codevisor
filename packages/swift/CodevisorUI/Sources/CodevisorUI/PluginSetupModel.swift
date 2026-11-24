@@ -26,12 +26,12 @@ public final class PluginSetupModel {
   public init(
     request: ServerPluginSetupRequest,
     client: any CodevisorServerClienting,
-    signInRoute: @escaping @MainActor () -> PluginSignInRoute = { .chatMachine },
+    signInRoute: (@MainActor () -> PluginSignInRoute)? = nil,
     webSignIn: any WebSignInPresenting = PluginWebSignIn()
   ) {
     self.request = request
     self.client = client
-    self.signInRoute = signInRoute
+    self.signInRoute = signInRoute ?? { .machine(id: CodevisorMachine.local.id, client: client) }
     self.webSignIn = webSignIn
   }
 
@@ -54,15 +54,7 @@ public final class PluginSetupModel {
     }
   }
 
-  private var signsInToServerHere: Bool { signInClient != nil }
-
-  private var signInClient: (any CodevisorServerClienting)? {
-    switch signInRoute() {
-    case .chatMachine: client
-    case let .localMac(local): local
-    case .unavailable: nil
-    }
-  }
+  private var signsInToServerHere: Bool { signInRoute().client != nil }
 
   public func refresh() async {
     await loadEntry()
@@ -104,22 +96,17 @@ public final class PluginSetupModel {
   public func connectHost(
     install: @escaping @MainActor ([String: ServerConfigFieldValue], String?) async throws -> ServerMcpServer
   ) -> PluginConnectHost {
-    let signInClient = signInClient
-    var signIn: (@MainActor (ServerMcpServer, PluginSignInBrowser) async -> Void)?
-    if signInClient != nil {
-      signIn = { [weak self] server, browser in await self?.signIn(to: server, browser: browser) }
-    }
-    return PluginConnectHost(
+    PluginConnectHost(
       install: install,
       didInstall: { [weak self] in self?.didInstall($0) },
-      signIn: signIn,
+      signIn: { [weak self] server, browser in await self?.signIn(to: server, browser: browser) },
       signInFailed: { [weak self] in self?.errorMessage = $0 },
-      signInClient: signInClient
+      signInRoute: signInRoute
     )
   }
 
   public func signIn(to server: ServerMcpServer, browser: PluginSignInBrowser) async {
-    guard let start = await report({ try await self.startSignIn(to: server, ticket: browser.ticket) }) else {
+    guard let start = await report({ try await self.signInRoute().start(server, ticket: browser.ticket) }) else {
       await browser.abandon()
       return
     }
@@ -198,33 +185,10 @@ public final class PluginSetupModel {
 
   private func signInToServer() async {
     guard let server else { return }
-    guard let signInClient else {
-      _ = await report { try await self.startSignIn(to: server, ticket: nil) }
-      return
-    }
+    guard let browser = await report({ try self.signInRoute().openBrowser(for: server, presenter: self.webSignIn) })
+    else { return }
 
-    await signIn(
-      to: server, browser: PluginSignInBrowser(client: signInClient, pluginName: server.name, presenter: webSignIn))
-  }
-
-  private func startSignIn(to server: ServerMcpServer, ticket: String?) async throws -> ServerMcpOAuthStart {
-    try await ServerConnectionLoss.retryingInterruptions(sleep: { try await Task.sleep(for: $0) }) {
-      try await startSignInOnce(to: server, ticket: ticket)
-    }
-  }
-
-  private func startSignInOnce(to server: ServerMcpServer, ticket: String?) async throws -> ServerMcpOAuthStart {
-    switch signInRoute() {
-    case .chatMachine:
-      return try await client.startMcpOAuth(id: server.id, ticket: ticket)
-    case let .localMac(local):
-      guard let copy = try await local.listMcpServers().first(where: { $0.isSamePlugin(as: server) }) else {
-        throw PluginSignInError.notOnThisMac(plugin: server.name)
-      }
-      return try await local.startMcpOAuth(id: copy.id, ticket: ticket)
-    case .unavailable:
-      throw PluginSignInError.needsMac(plugin: server.name)
-    }
+    await signIn(to: server, browser: browser)
   }
 
   private func working(_ operation: () async -> Void) async {

@@ -37,6 +37,7 @@ import { type OAuthRedirects, planRedirect } from "./plugin-oauth-redirects.js"
 export interface OAuthStartInput {
   readonly label?: string
   readonly callbackScheme?: string
+  readonly crossDevice?: boolean
   readonly previous: PluginAccountRecord | undefined
   readonly split: SplitFieldValues
 }
@@ -84,7 +85,14 @@ export const makePluginOAuthFlows = (deps: PluginOAuthFlowsDeps) => {
       const flowId = newFlowId()
       const nonce = newNonce()
       const redirect = await planRedirect(
-        { oauth, client, flowId, nonce, callbackScheme: input.callbackScheme },
+        {
+          oauth,
+          client,
+          flowId,
+          nonce,
+          callbackScheme: input.callbackScheme,
+          crossDevice: input.crossDevice === true
+        },
         deps.redirects
       )
       const started = await beginPluginOAuth(oauth, client, redirect.redirectUri, redirect.state)

@@ -21,6 +21,7 @@ export interface RedirectRequest {
   readonly flowId: string
   readonly nonce: string
   readonly callbackScheme?: string | undefined
+  readonly crossDevice?: boolean
 }
 
 export const appCallbackSchemePattern = /^codevisor(-dev(-[0-9a-f]{10})?)?$/
@@ -33,6 +34,8 @@ export const planRedirect = async (
   if (relayed !== undefined) return relayed
   if (request.oauth.redirectUrl !== undefined)
     return appRedirect(request, request.oauth.redirectUrl)
+  if (request.crossDevice === true)
+    throw new HttpFailure(409, loopbackOnlyMessage, "signInNeedsMachine")
 
   return {
     redirectUri: redirects.loopbackUri,
@@ -75,6 +78,9 @@ const appRedirect = (request: RedirectRequest, redirectUri: string): PlannedRedi
     callbackScheme: scheme
   }
 }
+
+const loopbackOnlyMessage =
+  "This sign-in can only finish in a browser on the machine the plugin runs on, because that machine can't take it through Codevisor Cloud. Sign that machine in to Codevisor Cloud, or sign in from Codevisor on that machine"
 
 const appOnlyMessage =
   "Start this sign-in from the Codevisor app, or sign this machine in to Codevisor Cloud so it can finish from any device"

@@ -1,4 +1,8 @@
-import type { McpOAuthRelay, McpOAuthRelayRequest } from "@codevisor/mcp"
+import {
+  type McpOAuthRelay,
+  type McpOAuthRelayRequest,
+  McpSignInNeedsMachine
+} from "@codevisor/mcp"
 import { describe, expect, it } from "vitest"
 
 import { makeServices } from "../test-support.js"
@@ -13,22 +17,29 @@ import {
 
 const cloudCallback = "https://cloud.example/oauth/callback"
 
-const recordingRelay = () => {
+const recordingRelay = (callback: string | undefined) => {
   const registered: Array<{ readonly state: string; readonly request?: McpOAuthRelayRequest }> = []
   const relay: McpOAuthRelay = {
     signedInPage: (app) => `https://cloud.example/oauth/signed-in?app=${app ?? ""}`,
     register: async (state, request) => {
       registered.push({ state, ...(request === undefined ? {} : { request }) })
-      return cloudCallback
+      return callback
     }
   }
   return { relay, registered }
 }
 
-const relayedMachine = async (options: { readonly loopbackOnly?: boolean } = {}) => {
+interface MachineOptions {
+  readonly loopbackOnly?: boolean
+  readonly offCloud?: boolean
+}
+
+const relayedMachine = async (options: MachineOptions = {}) => {
   const clock = manualOAuthClock()
   const fake = await fakeOAuthMcpServer(clock, 3600, options)
-  const { relay, registered } = recordingRelay()
+  const { relay, registered } = recordingRelay(
+    options.offCloud === true ? undefined : cloudCallback
+  )
   const { services } = await makeServices("server-a", {
     oauthClock: clock,
     oauthRelay: relay,
@@ -49,6 +60,12 @@ const relayedMachine = async (options: { readonly loopbackOnly?: boolean } = {})
   return { fake, manager, registered, loopback, create }
 }
 
+const refusalReason = (start: Promise<string>): Promise<unknown> =>
+  start.then(
+    () => undefined,
+    (cause: unknown) => (cause instanceof McpSignInNeedsMachine ? cause.reason : cause)
+  )
+
 const redirectOf = (authorizationUrl: string) =>
   new URL(authorizationUrl).searchParams.get("redirect_uri")
 
@@ -57,7 +74,7 @@ describe("MCP sign-in through Codevisor Cloud", () => {
     const { fake, manager, registered, create } = await relayedMachine()
     const created = await create()
 
-    const authorizationUrl = await manager.beginOAuth(created.id, undefined, "codevisor")
+    const authorizationUrl = await manager.beginOAuth(created.id, { app: "codevisor" })
     const { code, state, issuer } = fake.approve(authorizationUrl)
     const finished = await manager.finishOAuth(state, code, issuer)
 
@@ -74,7 +91,7 @@ describe("MCP sign-in through Codevisor Cloud", () => {
     const { code, state, issuer } = fake.approve(await manager.beginOAuth(created.id))
     await manager.finishOAuth(state, code, issuer)
 
-    const again = await manager.beginOAuth(created.id, undefined, "codevisor")
+    const again = await manager.beginOAuth(created.id, { app: "codevisor" })
 
     expect(again).toBe("https://cloud.example/oauth/signed-in?app=codevisor")
   })
@@ -99,5 +116,27 @@ describe("MCP sign-in through Codevisor Cloud", () => {
 
     expect(redirectOf(authorizationUrl)).toBe(`${loopback}/v1/mcps/oauth/callback`)
     expect(registered).toEqual([])
+  })
+
+  it("refuses a sign-in started on another device that could only finish on the loopback callback", async () => {
+    const offCloud = await relayedMachine({ offCloud: true })
+    const ownClient = await relayedMachine()
+    const refusesCloud = await relayedMachine({ loopbackOnly: true })
+    const crossDevice = { app: "codevisor", crossDevice: true }
+
+    const starts = [
+      offCloud.manager.beginOAuth((await offCloud.create()).id, crossDevice),
+      ownClient.manager.beginOAuth(
+        (await ownClient.create({ oauthClientId: "users-client" })).id,
+        crossDevice
+      ),
+      refusesCloud.manager.beginOAuth((await refusesCloud.create()).id, crossDevice)
+    ]
+
+    const reasons = await Promise.all(starts.map(refusalReason))
+    expect(reasons).toEqual(["noCloud", "ownClient", "cloudRefused"])
+    await expect(starts[0]).rejects.toThrow(
+      "Tracker sign-in can't finish from this device because the machine it runs on isn't connected to Codevisor Cloud."
+    )
   })
 })

@@ -93,38 +93,61 @@ public final class McpGlobalModel {
     }
   }
 
+  public func connect(serverId: String, on machineId: String, in environment: AppEnvironment) async {
+    do {
+      let server = try await installedServer(serverId, on: machineId, in: environment)
+      await connect(server, on: machineId, in: environment)
+    } catch {
+      failConnect(serverId, on: machineId, error)
+      await load(in: environment)
+    }
+  }
+
   public func connect(
-    serverId: String,
+    _ server: ServerMcpServer,
     on machineId: String,
     in environment: AppEnvironment,
     browser opened: PluginSignInBrowser? = nil
   ) async {
     var browser = opened
     do {
-      let target = try signInTarget(serverId: serverId, on: machineId, in: environment)
-      let client = environment.machines.client(for: target.machineId)
-      let attempt = browser ?? PluginSignInBrowser(client: client, pluginName: target.name, presenter: webSignIn)
+      let route = PluginSignInRoute.resolve(on: machineId, machines: environment.machines)
+      let attempt = try browser ?? route.openBrowser(for: server, presenter: webSignIn)
       browser = attempt
-      let flow = try await client.startMcpOAuth(id: target.serverId, ticket: attempt.ticket)
+      let started = try await route.start(server, ticket: attempt.ticket)
 
       connectError = nil
-      await signIn.run(attempt, at: flow.authorizationUrl, serverId: target.serverId, on: target.machineId)
+      await signIn.run(attempt, at: started.authorizationUrl, serverId: started.serverId, on: started.machineId)
     } catch {
       await browser?.abandon()
-      pluginSignInLog.error(
-        "Connect for MCP \(serverId, privacy: .public) on \(machineId, privacy: .public) failed: \(error, privacy: .public)"
-      )
-      connectError = ErrorReporter.userFacingMessage(for: error)
+      failConnect(server.id, on: machineId, error)
     }
     await load(in: environment)
   }
 
+  public func connectHost(
+    on machineId: String,
+    in environment: AppEnvironment,
+    install: @escaping @MainActor ([String: ServerConfigFieldValue], String?) async throws -> ServerMcpServer,
+    didInstall: @escaping @MainActor (ServerMcpServer) -> Void
+  ) -> PluginConnectHost {
+    PluginConnectHost(
+      install: install,
+      didInstall: didInstall,
+      signIn: { [weak self] server, browser in
+        await self?.connect(server, on: machineId, in: environment, browser: browser)
+      },
+      signInFailed: { [weak self] in self?.connectError = $0 },
+      signInRoute: { PluginSignInRoute.resolve(on: machineId, machines: environment.machines) }
+    )
+  }
+
   public func signIn(_ entry: McpFleetEntry, in environment: AppEnvironment) async {
-    guard let machineId = entry.machineId(preferring: CodevisorMachine.local.id),
-      let serverId = entry.idByMachine[machineId]
+    guard let machineId = entry.machineId(preferring: signInMachine(for: entry, in: environment)),
+      let server = entry.server(on: machineId)
     else { return }
 
-    await connect(serverId: serverId, on: machineId, in: environment)
+    await connect(server, on: machineId, in: environment)
   }
 
   public func disconnect(_ entry: McpFleetEntry, in environment: AppEnvironment) async {
@@ -141,18 +164,32 @@ public final class McpGlobalModel {
     await load(in: environment)
   }
 
-  private func signInTarget(
-    serverId: String, on machineId: String, in environment: AppEnvironment
-  ) throws -> (serverId: String, machineId: String, name: String?) {
-    let local = CodevisorMachine.local.id
-    let entry = entries.first { $0.idByMachine[machineId] == serverId }
-    guard machineId != local else { return (serverId, machineId, entry?.name) }
-    let name = entry?.name ?? "This plugin"
-    guard environment.machines.allMachines.contains(where: \.isLocal) else {
-      throw PluginSignInError.needsMac(plugin: name)
+  private func signInMachine(for entry: McpFleetEntry, in environment: AppEnvironment) -> String {
+    let candidates = [CodevisorMachine.local.id] + entry.serverByMachine.keys.sorted()
+    let direct = candidates.first { machineId in
+      guard entry.server(on: machineId) != nil else { return false }
+      if case .machine = PluginSignInRoute.resolve(on: machineId, machines: environment.machines) { return true }
+      return false
     }
-    guard let localId = entry?.idByMachine[local] else { throw PluginSignInError.notOnThisMac(plugin: name) }
-    return (localId, local, name)
+    return direct ?? CodevisorMachine.local.id
+  }
+
+  private func installedServer(
+    _ serverId: String, on machineId: String, in environment: AppEnvironment
+  ) async throws -> ServerMcpServer {
+    if let known = entries.lazy.compactMap({ $0.server(on: machineId) }).first(where: { $0.id == serverId }) {
+      return known
+    }
+    let servers = try await environment.machines.client(for: machineId).listMcpServers()
+    guard let server = servers.first(where: { $0.id == serverId }) else { throw PluginSignInError.removed }
+    return server
+  }
+
+  private func failConnect(_ serverId: String, on machineId: String, _ error: any Error) {
+    pluginSignInLog.error(
+      "Connect for MCP \(serverId, privacy: .public) on \(machineId, privacy: .public) failed: \(error, privacy: .public)"
+    )
+    connectError = ErrorReporter.userFacingMessage(for: error)
   }
 
   private func fetch(_ machineId: String, from client: any CodevisorServerClienting) async {

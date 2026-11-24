@@ -38,6 +38,24 @@ struct CodevisorServerClientPluginAccountsTests {
     #expect(entry.installFields.isEmpty)
   }
 
+  @Test("Sign-in starts sent to a machine on another device say so, so it won't answer with a loopback callback")
+  func crossDeviceSignInStarts() async throws {
+    let transport = AccountsTransport(response: #"{"flowId":"f","authorizationUrl":"https://a.example"}"#)
+    let here = CodevisorServerClient(config: .init(requestTransport: transport), isOnThisDevice: true)
+    let elsewhere = CodevisorServerClient(config: .init(requestTransport: transport), isOnThisDevice: false)
+
+    _ = try await here.startMcpOAuth(id: "mcp-1", ticket: "t1")
+    _ = try await elsewhere.startMcpOAuth(id: "mcp-1", ticket: nil)
+    _ = try await here.startPluginAccountOAuth(serverId: "mcp-1", request: .init(), ticket: nil)
+    _ = try await elsewhere.startPluginAccountOAuth(serverId: "mcp-1", request: .init(), ticket: "t2")
+
+    let queries = await transport.requests.map { request in
+      URLComponents(url: request.url!, resolvingAgainstBaseURL: false)?.queryItems?
+        .filter { $0.name != "app" }.map { "\($0.name)=\($0.value ?? "")" } ?? []
+    }
+    #expect(queries == [["ticket=t1"], ["crossDevice=1"], [], ["ticket=t2", "crossDevice=1"]])
+  }
+
   private static let accountJSON = """
     {"id":"acc-1","plugin":"grafana","label":"Prod","method":"fields","values":{"url":"https://g.example"},
     "secretsSet":["token"],"status":"ok","createdAt":"2026-10-27T00:00:00.000Z"}

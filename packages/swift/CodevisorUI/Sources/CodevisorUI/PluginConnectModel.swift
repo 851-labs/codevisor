@@ -6,22 +6,22 @@ public struct PluginConnectHost {
   public var install:
     @MainActor (_ values: [String: ServerConfigFieldValue], _ authType: String?) async throws -> ServerMcpServer
   public var didInstall: @MainActor (ServerMcpServer) -> Void
-  public var signIn: (@MainActor (ServerMcpServer, PluginSignInBrowser) async -> Void)?
+  public var signIn: @MainActor (ServerMcpServer, PluginSignInBrowser) async -> Void
   public var signInFailed: @MainActor (String) -> Void
-  public var signInClient: (any CodevisorServerClienting)?
+  public var signInRoute: @MainActor () -> PluginSignInRoute
 
   public init(
     install: @escaping @MainActor ([String: ServerConfigFieldValue], String?) async throws -> ServerMcpServer,
     didInstall: @escaping @MainActor (ServerMcpServer) -> Void,
-    signIn: (@MainActor (ServerMcpServer, PluginSignInBrowser) async -> Void)?,
+    signIn: @escaping @MainActor (ServerMcpServer, PluginSignInBrowser) async -> Void,
     signInFailed: @escaping @MainActor (String) -> Void,
-    signInClient: (any CodevisorServerClienting)? = nil
+    signInRoute: @escaping @MainActor () -> PluginSignInRoute
   ) {
     self.install = install
     self.didInstall = didInstall
     self.signIn = signIn
     self.signInFailed = signInFailed
-    self.signInClient = signInClient
+    self.signInRoute = signInRoute
   }
 }
 
@@ -104,7 +104,7 @@ public final class PluginConnectModel {
     guard !signsInToServerHere, entry.accounts == nil, installed == nil else { return nil }
 
     switch serverSignIn {
-    case .required, .optional: return PluginSignInError.needsMac(plugin: entry.name).errorDescription
+    case .required, .optional: return host.signInRoute().unavailableMessage(plugin: entry.name)
     case .some(.none), nil: return nil
     }
   }
@@ -160,10 +160,10 @@ public final class PluginConnectModel {
 
   private var browserClient: any CodevisorServerClienting {
     guard entry.accounts == nil else { return client }
-    return host.signInClient ?? client
+    return host.signInRoute().client ?? client
   }
 
-  private var signsInToServerHere: Bool { host.signIn != nil }
+  private var signsInToServerHere: Bool { host.signInRoute().client != nil }
 
   private var signInName: String {
     entry.accounts?.providerName ?? entry.name
@@ -180,7 +180,7 @@ public final class PluginConnectModel {
 
   private func signIn(to server: ServerMcpServer, browser: PluginSignInBrowser) async {
     guard let spec = entry.accounts else {
-      await host.signIn?(server, browser)
+      await host.signIn(server, browser)
       return
     }
     let accounts = PluginAccountsModel(server: server, client: client, spec: spec, webSignIn: webSignIn)

@@ -46,6 +46,7 @@ struct McpSettingsScreen: View {
     }
     .sheet(isPresented: $showingCatalog, onDismiss: { openInstalled(signingIn: false) }) {
       PluginCatalogScreen(
+        machineId: authoringMachineId,
         client: environment.machines.client(for: authoringMachineId),
         fleet: model,
         onInstalled: { installed = $0 })

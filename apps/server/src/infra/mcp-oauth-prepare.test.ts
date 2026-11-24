@@ -51,7 +51,9 @@ describe("preparing an MCP sign-in before the plugin is installed", () => {
       transport: "http",
       url: `${acme.url}/mcp`
     })
-    const authorizationUrl = await services.mcp.beginOAuth(created.id, server.url)
+    const authorizationUrl = await services.mcp.beginOAuth(created.id, {
+      redirectBaseUrl: server.url
+    })
 
     expect(offered).toBe(true)
     expect(acme.requests.slice(learned)).toEqual(["POST /register"])

@@ -87,7 +87,7 @@ struct PluginSetupModelTests {
     let remoteClient = Self.lanClient(remote)
     let model = PluginSetupModel(
       request: try Self.request(auth: "mcpOAuth"), client: remoteClient,
-      signInRoute: { .localMac(localClient) }, webSignIn: signIn)
+      signInRoute: { .thisMac(localClient) }, webSignIn: signIn)
     await model.refresh()
 
     let connected = Task {
@@ -141,14 +141,15 @@ struct PluginSetupModelTests {
     await signingIn.value
   }
 
-  @Test("Without a Mac to sign in on, the card says where to sign in instead of opening anything")
+  @Test("When the chat's machine isn't on Cloud and there's no Mac to sign in on, the card says what to do")
   func cardWithoutLocalMachine() async throws {
     let transport = SetupTransport()
     transport.respond("GET /v1/plugins/catalog/grafana", with: Self.remoteEntry)
     transport.respond("GET /v1/mcps", with: "[\(Self.server(authType: "oauth", state: "needsAuthorization"))]")
     let signIn = FakeWebSignIn()
     let model = PluginSetupModel(
-      request: try Self.request(auth: "mcpOAuth"), client: Self.client(transport), signInRoute: { .unavailable },
+      request: try Self.request(auth: "mcpOAuth"), client: Self.client(transport),
+      signInRoute: { .unavailable(machineName: "Studio") },
       webSignIn: signIn)
     await model.refresh()
 
@@ -157,7 +158,35 @@ struct PluginSetupModelTests {
     #expect(signIn.urls.isEmpty)
     #expect(model.connecting == nil)
     #expect(model.step == .signIn)
-    #expect(model.errorMessage?.hasPrefix("Sign in to Grafana from Codevisor on your Mac.") == true)
+    #expect(model.errorMessage?.hasPrefix("Studio isn't signed in to Codevisor Cloud, so Grafana sign-in") == true)
+  }
+
+  @Test("A machine that could only finish sign-in on its own loopback callback says why, and no browser stays open")
+  func crossDeviceRefusalIsShown() async throws {
+    let transport = SetupTransport()
+    transport.respond("GET /v1/plugins/catalog/grafana", with: Self.remoteEntry)
+    transport.respond("GET /v1/mcps", with: "[\(Self.server(authType: "oauth", state: "needsAuthorization"))]")
+    transport.respond(
+      "POST /v1/mcps/mcp-1/oauth-start", with: #"{"error":"Grafana uses your own OAuth client.","code":"x"}"#,
+      status: 409)
+    let signIn = FakeWebSignIn()
+    let client = CodevisorServerClient(
+      config: CodevisorServerConfig(baseURL: URL(string: "http://studio.local:4100")!, requestTransport: transport),
+      isOnThisDevice: false)
+    let model = PluginSetupModel(
+      request: try Self.request(auth: "mcpOAuth"), client: client,
+      signInRoute: { .machine(id: "studio", client: client) }, webSignIn: signIn)
+    await model.refresh()
+    let server = try #require(model.server)
+
+    let browser = try PluginSignInRoute.machine(id: "studio", client: client).openBrowser(
+      for: server, presenter: signIn)
+
+    await model.signIn(to: server, browser: browser)
+
+    #expect(transport.queries(sentTo: "POST /v1/mcps/mcp-1/oauth-start").map { $0.contains("crossDevice=1") } == [true])
+    #expect(model.errorMessage == "Grafana uses your own OAuth client.")
+    #expect(!signIn.isOpen)
   }
 
   @Test("A card that can't read the machine's plugins offers Retry and recovers")
@@ -303,28 +332,34 @@ struct PluginSetupModelTests {
     #expect(model.addingAccount?.draft.fields.map(\.key) == ["url"])
   }
 
-  @Test("Plugin sign-in starts on the chat's machine when it's this Mac or signed in to Cloud, else on this Mac")
-  func signInRouteForChat() {
+  @Test("Sign-in runs on the chosen machine when it's this Mac or on Cloud, else on this Mac, else nowhere")
+  func signInRoute() {
     let statuses = [
       "local": MachineStatus(isReachable: true, label: "MacBook", serverId: "server-macbook"),
       "studio": MachineStatus(isReachable: true, label: "Studio", cloudDeviceId: "device-studio"),
       "loopback-macbook": MachineStatus(isReachable: true, label: "MacBook", serverId: "server-macbook"),
       "lan-box": MachineStatus(isReachable: true, label: "Box", serverId: "server-box"),
     ]
-    let localMac = Self.client(SetupTransport())
-    func route(_ machineId: String) -> String {
-      switch PluginSignInRoute.forChat(on: machineId, statusByMachineId: statuses, localMac: { localMac }) {
-      case .chatMachine: "chat"
-      case .localMac: "local"
-      case .unavailable: "none"
+    let client = Self.client(SetupTransport())
+    func route(_ machineId: String, hasThisMac: Bool = true) -> String {
+      let resolved = PluginSignInRoute.resolve(
+        on: machineId, statusByMachineId: statuses, machineName: statuses[machineId]?.label, hasThisMac: hasThisMac,
+        client: { _ in client })
+      switch resolved {
+      case let .machine(id, _): return id
+      case .thisMac: return "this Mac"
+      case let .unavailable(machineName): return "none: \(machineName)"
       }
     }
 
-    #expect(route("local") == "chat")
-    #expect(route("loopback-macbook") == "chat")
-    #expect(route("studio") == "chat")
-    #expect(route("cloud:device-offline") == "chat")
-    #expect(route("lan-box") == "local")
+    #expect(route("local") == "local")
+    #expect(route("loopback-macbook") == "loopback-macbook")
+    #expect(route("studio") == "studio")
+    #expect(route("cloud:device-offline") == "cloud:device-offline")
+    #expect(route("lan-box") == "this Mac")
+    #expect(route("studio", hasThisMac: false) == "studio")
+    #expect(route("loopback-macbook", hasThisMac: false) == "none: MacBook")
+    #expect(route("lan-box", hasThisMac: false) == "none: Box")
   }
 
   private static func finishConnectSheet(

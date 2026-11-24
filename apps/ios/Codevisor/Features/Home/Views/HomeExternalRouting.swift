@@ -24,6 +24,7 @@ struct HomeExternalRouting: ViewModifier {
             case let .newChat(text): openDiagnosticNewChat(text)
             case .send:
               NotificationCenter.default.post(name: .codevisorDiagnosticSubmitComposer, object: nil)
+            case let .pluginLink(link): _ = openPluginLink(link)
             }
             return
           }

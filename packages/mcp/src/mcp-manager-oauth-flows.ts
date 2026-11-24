@@ -5,9 +5,13 @@ import { auth, RegistrationRejectedError } from "@modelcontextprotocol/client"
 
 import { type ManagedOAuth, managedOAuthOf, managedTokenFetch } from "./mcp-managed-oauth.js"
 import type { McpManagerCore } from "./mcp-manager-core.js"
-import type { McpManager } from "./mcp-manager-types.js"
+import type { McpManager, McpOAuthBegin } from "./mcp-manager-types.js"
 import type { makeMcpOAuthRuntime } from "./mcp-oauth.js"
-import { signInFailure } from "./mcp-sign-in-failure.js"
+import {
+  type McpLoopbackReason,
+  McpSignInNeedsMachine,
+  signInFailure
+} from "./mcp-sign-in-failure.js"
 import { reportBackgroundFailure, requireHttpUrl } from "./mcp-support.js"
 
 type OAuthRuntime = ReturnType<typeof makeMcpOAuthRuntime>
@@ -88,25 +92,33 @@ export const makeMcpOAuthFlows = (core: McpManagerCore, deps: McpOAuthFlowDeps):
     return provider.authorizationUrl.toString()
   }
 
-  const loopbackAuthorizationUrl = (server: McpServerRecord): Promise<string> =>
-    authorizationUrlFor(server, callbackUrl(), newOAuthState(server.id))
+  const loopbackAuthorizationUrl = (
+    server: McpServerRecord,
+    begin: McpOAuthBegin,
+    reason: McpLoopbackReason
+  ): Promise<string> => {
+    if (begin.crossDevice === true) throw new McpSignInNeedsMachine(reason, server.name)
+
+    return authorizationUrlFor(server, callbackUrl(), newOAuthState(server.id))
+  }
 
   const startAuthorization = async (
     server: McpServerRecord,
-    app: string | undefined
+    begin: McpOAuthBegin
   ): Promise<string> => {
-    if (!(await acceptsCloudCallback(server))) return loopbackAuthorizationUrl(server)
+    if (!(await acceptsCloudCallback(server)))
+      return loopbackAuthorizationUrl(server, begin, "ownClient")
 
     const oauthState = newOAuthState(server.id)
     const relayed = await core.config.oauthRelay?.register(
       oauthState,
-      app === undefined ? {} : { app }
+      begin.app === undefined ? {} : { app: begin.app }
     )
-    if (relayed === undefined) return loopbackAuthorizationUrl(server)
+    if (relayed === undefined) return loopbackAuthorizationUrl(server, begin, "noCloud")
 
     return authorizationUrlFor(server, relayed, oauthState).catch((cause: unknown) => {
       if (!(cause instanceof RegistrationRejectedError)) throw cause
-      return loopbackAuthorizationUrl(server)
+      return loopbackAuthorizationUrl(server, begin, "cloudRefused")
     })
   }
 
@@ -114,8 +126,8 @@ export const makeMcpOAuthFlows = (core: McpManagerCore, deps: McpOAuthFlowDeps):
     core.config.oauthRelay?.signedInPage(app) ??
     new URL("/v1/mcps/oauth/complete", state.oauthBaseUrl).toString()
 
-  const beginOAuth: McpManager["beginOAuth"] = async (id, redirectBaseUrl, app) => {
-    if (redirectBaseUrl !== undefined) state.oauthBaseUrl = redirectBaseUrl
+  const beginOAuth: McpManager["beginOAuth"] = async (id, begin = {}) => {
+    if (begin.redirectBaseUrl !== undefined) state.oauthBaseUrl = begin.redirectBaseUrl
     const server = await record(id)
     if (server.transport !== "http" || server.authType !== "oauth") {
       throw new Error("This MCP server is not configured for OAuth")
@@ -127,9 +139,9 @@ export const makeMcpOAuthFlows = (core: McpManagerCore, deps: McpOAuthFlowDeps):
         detail: undefined
       })
       validateInBackground(id)
-      return alreadySignedInPage(app)
+      return alreadySignedInPage(begin.app)
     }
-    const authorizationUrl = await startAuthorization(server, app)
+    const authorizationUrl = await startAuthorization(server, begin)
     await saveRecord(await record(id), {
       connectionState: "needsAuthorization",
       detail: undefined

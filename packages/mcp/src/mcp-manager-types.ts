@@ -117,7 +117,7 @@ export interface McpManager {
   readonly iconSources: (id: string) => Promise<McpServerIconSources | undefined>
   readonly connect: (id: string) => Promise<McpServer>
   readonly setLocalSuppression: (names: ReadonlySet<string>) => Promise<void>
-  readonly beginOAuth: (id: string, redirectBaseUrl?: string, app?: string) => Promise<string>
+  readonly beginOAuth: (id: string, options?: McpOAuthBegin) => Promise<string>
   readonly finishOAuth: (state: string, code: string, issuer?: string) => Promise<McpServer>
   readonly disconnectOAuth: (id: string) => Promise<McpServer>
   readonly resolved: (projectId?: string, sessionId?: string) => Promise<ReadonlyArray<McpServer>>
@@ -223,6 +223,12 @@ export type CatalogLaunch =
 export interface McpCatalogResolver {
   readonly launch: (catalogId: string) => CatalogLaunch | undefined
   readonly oauthClient?: (catalogId: string) => string | undefined
+}
+
+export interface McpOAuthBegin {
+  readonly redirectBaseUrl?: string
+  readonly app?: string
+  readonly crossDevice?: boolean
 }
 
 export interface McpOAuthRelayRequest {

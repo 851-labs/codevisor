@@ -101,6 +101,23 @@ describe("plugin account sign-in through Codevisor Cloud", () => {
     ])
   })
 
+  it("refuses a sign-in started on another device when only the loopback callback could finish it", async () => {
+    const { relay } = recordingRelay()
+    const { accounts, server } = await oauthFixture(
+      installedSpec,
+      {},
+      { catalogId: "example.mail", relay, installedClients: installed(["http://localhost"]) }
+    )
+
+    const started = accounts.startOAuth(server.id, {
+      values: {},
+      callbackScheme: "codevisor",
+      crossDevice: true
+    })
+
+    await expect(started).rejects.toMatchObject({ status: 409, code: "signInNeedsMachine" })
+  })
+
   it("keeps a pending sign-in, sealed, across a server restart", async () => {
     const { db, provider, server, signIn, restarted } = await oauthFixture(exampleSpec)
     const { grant } = await signIn()

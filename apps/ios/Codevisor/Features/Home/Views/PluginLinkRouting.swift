@@ -7,9 +7,12 @@ struct PluginLinkRouting: ViewModifier {
   @Binding var catalogId: String?
   @State private var entry: ServerPluginCatalogEntry?
   @State private var errorMessage: String?
+  @State private var fleet = McpGlobalModel()
+
+  private var machineId: String { environment.defaultComposerServerId }
 
   private var client: any CodevisorServerClienting {
-    environment.machines.client(for: environment.defaultComposerServerId)
+    environment.machines.client(for: machineId)
   }
 
   func body(content: Content) -> some View {
@@ -27,6 +30,7 @@ struct PluginLinkRouting: ViewModifier {
       } message: {
         Text(errorMessage ?? "")
       }
+      .pluginErrorsAlert(fleet)
   }
 
   private func open() async {
@@ -41,14 +45,13 @@ struct PluginLinkRouting: ViewModifier {
   }
 
   private func host(for entry: ServerPluginCatalogEntry) -> PluginConnectHost {
-    PluginConnectHost(
+    fleet.connectHost(
+      on: machineId, in: environment,
       install: { values, authType in
         try await PluginCatalogModel(client: client).install(
           entry, values: values, authType: authType, access: environment.pluginAccess)
       },
-      didInstall: { _ in },
-      signIn: nil,
-      signInFailed: { errorMessage = $0 }
+      didInstall: { _ in }
     )
   }
 }

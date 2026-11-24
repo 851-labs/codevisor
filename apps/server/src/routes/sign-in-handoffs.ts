@@ -12,6 +12,11 @@ export interface SignInHandoffOptions {
 
 export const ticketParameter = "ticket"
 
+export const crossDeviceParameter = "crossDevice"
+
+export const startedOnAnotherDevice = (url: URL): boolean =>
+  url.searchParams.get(crossDeviceParameter) === "1"
+
 export const signInTicket = (value: string | null | undefined): string | undefined =>
   value && ticketPattern.test(value) ? value : undefined
 
