@@ -12,7 +12,6 @@ final class TranscriptPresentationSurface {
   let projection = TranscriptSettledProjection()
   let activeProjection = ActiveTranscriptProjection()
   let workedRowsVisibility = TranscriptWorkedRowsVisibilityCache()
-  let composer = TranscriptComposerMetrics()
   let presentation: ChatPresentationState
 
   private weak var controller: SessionController?

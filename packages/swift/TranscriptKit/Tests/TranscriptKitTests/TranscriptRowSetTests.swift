@@ -39,12 +39,13 @@ struct TranscriptRowSetTests {
 
   @Test func resolveKeepsPlaceholderWhenActiveRowsBelongToAnotherMessage() {
     let turn = UUID()
-    let rows = [settled(UUID()), active(turn), spacer(10)]
+    let rows = [settled(UUID()), active(turn)]
     let resolution = TranscriptRowSet.resolve(
       projectedRows: rows,
-      activeRows: [activeMarkdown(UUID(), ordinal: 0)]
+      activeRows: [activeMarkdown(UUID(), ordinal: 0)],
+      bottomClearance: 10
     )
-    #expect(resolution.rows == rows)
+    #expect(resolution.rows == rows + [spacer(10)])
     #expect(resolution.activeRange == 1..<2)
   }
 
@@ -53,8 +54,9 @@ struct TranscriptRowSetTests {
     let head = settled(UUID())
     let slices = [activeMarkdown(turn, ordinal: 0), activeMarkdown(turn, ordinal: 1)]
     let resolution = TranscriptRowSet.resolve(
-      projectedRows: [head, active(turn), spacer(10)],
-      activeRows: slices
+      projectedRows: [head, active(turn)],
+      activeRows: slices,
+      bottomClearance: 10
     )
     #expect(resolution.rows.map(\.layoutKey) == [head, slices[0], slices[1], spacer(10)].map(\.layoutKey))
     #expect(resolution.activeRange == 1..<3)
@@ -116,12 +118,12 @@ struct TranscriptRowSetTests {
     let turn = UUID()
     let head = settled(UUID())
     var set = TranscriptRowSet()
-    set.projectedRows = [head, active(turn), spacer(10)]
+    set.projectedRows = [head, active(turn)]
+    set.bottomClearance = 10
     let initial = [activeMarkdown(turn, ordinal: 0, height: 20), activeMarkdown(turn, ordinal: 1, height: 20)]
-    #expect(
-      set.replaceActiveRows(initial)
-        == .rebuild(rows: TranscriptRowSet.resolve(projectedRows: set.projectedRows, activeRows: initial).rows))
-    set.replaceRows(TranscriptRowSet.resolve(projectedRows: set.projectedRows, activeRows: initial).rows)
+    let resolved = TranscriptRowSet.resolve(projectedRows: set.projectedRows, activeRows: initial, bottomClearance: 10)
+    #expect(set.replaceActiveRows(initial) == .rebuild(rows: resolved.rows))
+    set.replaceRows(resolved.rows)
 
     let grown = [activeMarkdown(turn, ordinal: 0, height: 20), activeMarkdown(turn, ordinal: 1, height: 55)]
     let replacement = set.replaceActiveRows(grown)
@@ -130,6 +132,24 @@ struct TranscriptRowSetTests {
     #expect(set.rowByKey[grown[1].layoutKey]?.estimatedHeight == 55)
     #expect(set.activeRows == grown)
     #expect(set.activeRowsRange == 1..<3)
+  }
+
+  @Test func bottomClearanceChangeMakesActiveRowsRebuildWithTheNewSpacer() {
+    let turn = UUID()
+    var set = TranscriptRowSet()
+    set.projectedRows = [settled(UUID()), active(turn)]
+    set.bottomClearance = 10
+    let slices = [activeMarkdown(turn, ordinal: 0)]
+    _ = set.replaceActiveRows(slices)
+    set.replaceRows(
+      TranscriptRowSet.resolve(projectedRows: set.projectedRows, activeRows: slices, bottomClearance: 10).rows)
+
+    set.bottomClearance = 30
+    guard case let .rebuild(rows) = set.replaceActiveRows(slices) else {
+      Issue.record("expected rebuild")
+      return
+    }
+    #expect(rows.last == spacer(30))
   }
 
   @Test func replaceActiveRowsRequestsRebuildWhenSliceCountChanges() {

@@ -8,12 +8,12 @@ struct TranscriptProjectionPublicationStateTests {
   private func request(
     controllerRevision: UInt64 = 1,
     modelRevision: UInt64 = 1,
-    bottomSpacerHeight: CGFloat = 80
+    includesConnectingRow: Bool = false
   ) -> TranscriptProjectionRequest {
     TranscriptProjectionRequest(
       key: TranscriptProjectionKey(
         sessionID: Self.sessionID, controllerRevision: controllerRevision, modelRevision: modelRevision),
-      options: .init(includesConnectingRow: false, bottomSpacerHeight: bottomSpacerHeight)
+      options: .init(includesConnectingRow: includesConnectingRow)
     )
   }
 
@@ -40,7 +40,7 @@ struct TranscriptProjectionPublicationStateTests {
 
     #expect(!publication.isPending(currentRequest: request(modelRevision: 9)))
     #expect(publication.isPending(currentRequest: request(modelRevision: 3)))
-    #expect(publication.isPending(currentRequest: request(modelRevision: 9, bottomSpacerHeight: 120)))
+    #expect(publication.isPending(currentRequest: request(modelRevision: 9, includesConnectingRow: true)))
   }
 
   @Test func resetMakesAPreviouslyPublishedRequestPendingAgain() {

@@ -51,7 +51,8 @@ extension VirtualizedTranscriptScrollView: TranscriptSurfaceOwner, TranscriptSur
     projectedRows: [TranscriptVirtualRow],
     activeRows: [TranscriptVirtualRow]
   ) -> (rows: [TranscriptVirtualRow], activeRange: Range<Int>?) {
-    let resolution = TranscriptRowSet.resolve(projectedRows: projectedRows, activeRows: activeRows)
+    let resolution = TranscriptRowSet.resolve(
+      projectedRows: projectedRows, activeRows: activeRows, bottomClearance: rowSet.bottomClearance)
     return (resolution.rows, resolution.activeRange)
   }
 

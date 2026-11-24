@@ -101,6 +101,13 @@ public final class TranscriptSurfaceController {
 
   public var currentScrollCommand = TranscriptScrollCommand()
 
+  public func adoptBottomClearance(_ clearance: CGFloat?) -> Bool {
+    guard let clearance, clearance != rowSet.bottomClearance else { return false }
+
+    rowSet.bottomClearance = clearance
+    return true
+  }
+
   @discardableResult
   public func applyRows(
     _ projectedRows: [TranscriptVirtualRow], layoutChanged: Bool, adapter: any TranscriptSurfaceAdapter

@@ -8,8 +8,7 @@ enum TranscriptBotRowAssembly {
 
   static func assemble(
     _ conversation: TranscriptBotConversation,
-    input: TranscriptProjectionInput,
-    options: TranscriptProjectionOptions
+    input: TranscriptProjectionInput
   ) throws -> [TranscriptPresentationRow] {
     let stoppedTurn = stoppedLatestTurn(in: input)
     let messages = withoutStopNotice(conversation.messages, for: stoppedTurn)
@@ -51,10 +50,6 @@ enum TranscriptBotRowAssembly {
     }
     if conversation.isWorking { rows.append(.init(id: .botTyping, content: .botTyping, estimatedHeight: 38)) }
     TranscriptRowAssembly.appendActivityAndErrors(input, to: &rows)
-    if let requestedHeight = options.bottomSpacerHeight {
-      let height = max(1, requestedHeight)
-      rows.append(.init(id: .bottomSpacer, content: .bottomSpacer(height), estimatedHeight: height))
-    }
     return rows
   }
 
