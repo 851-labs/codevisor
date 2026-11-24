@@ -20,7 +20,7 @@ public struct ProgressStepScreen<Actions: View>: View {
 
   public var body: some View {
     IconAnchoredStack {
-      CodevisorAppIconView(size: 72)
+      CodevisorAppIconView(size: CodevisorAppIconView.screenHeaderSide)
       ProgressStepTitle(title: title)
       if !steps.isEmpty {
         ProgressStepCard(steps: steps)

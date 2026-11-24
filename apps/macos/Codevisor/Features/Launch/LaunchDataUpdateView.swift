@@ -7,7 +7,7 @@ struct LaunchDataUpdateView: View {
 
   var body: some View {
     IconAnchoredStack {
-      CodevisorAppIconView(size: 72)
+      CodevisorAppIconView(size: CodevisorAppIconView.screenHeaderSide)
       ProgressStepTitle(title: "Updating Codevisor")
       ProgressStepCard(steps: upgrades.entries.map(Self.step))
     }

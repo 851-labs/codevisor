@@ -7,7 +7,7 @@ struct LaunchStartingView: View {
 
   var body: some View {
     IconAnchoredStack(spacing: 14) {
-      CodevisorAppIconView(size: 72)
+      CodevisorAppIconView(size: CodevisorAppIconView.screenHeaderSide)
       ProgressView()
         .controlSize(.small)
         .opacity(showsSpinner ? 1 : 0)

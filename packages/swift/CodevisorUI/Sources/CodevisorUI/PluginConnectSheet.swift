@@ -154,15 +154,14 @@ private struct PluginConnectHeader: View {
   var body: some View {
     VStack(spacing: 12) {
       HStack(spacing: 12) {
-        CodevisorAppIconView(size: 74)
+        CodevisorAppIconView(size: Self.iconSide)
         HStack(spacing: 4) {
           ForEach(0..<3, id: \.self) { _ in
             Circle().fill(.tertiary).frame(width: 4, height: 4)
           }
         }
-        PluginCatalogIcon(entry: entry, client: client, side: 60)
-          .clipShape(RoundedRectangle(cornerRadius: 14, style: .continuous))
-          .padding(7)
+        PluginCatalogIcon(entry: entry, client: client, side: Self.iconSide)
+          .clipShape(AppIconTile.shape(side: Self.iconSide))
       }
       .accessibilityHidden(true)
       VStack(spacing: 4) {
@@ -178,6 +177,8 @@ private struct PluginConnectHeader: View {
     }
     .padding(.horizontal, 28)
   }
+
+  private static let iconSide: CGFloat = 60
 }
 
 private struct PluginConnectActions: View {
