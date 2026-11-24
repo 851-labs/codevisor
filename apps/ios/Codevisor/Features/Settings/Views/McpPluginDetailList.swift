@@ -13,8 +13,6 @@ struct McpPluginDetailList: View {
   @State private var accounts: PluginAccountsModel?
   @State private var lists: PluginListsModel?
   @State private var removalError: String?
-  @State private var reporting = false
-  @State private var confirmingBlock = false
 
   private var client: any CodevisorServerClienting {
     environment.machines.client(for: machineId)
@@ -36,14 +34,17 @@ struct McpPluginDetailList: View {
       McpAccountsSection(entry: entry, model: model)
       McpMachinesSection(entry: entry, model: model)
       if let lists { PluginListLinks(model: lists, server: server) }
-      if showsModeration || entry.canRemove { manageSection }
+      if entry.canRemove { manageSection }
     }
     .task(id: server.id) { await loadPluginDetails() }
     .task(id: "\(server.id)|\(isConnected)") { await lists?.loadTools(for: server) }
-    .sheet(isPresented: $reporting) {
-      PluginReportSheet(subject: subject).environment(environment)
+    .toolbar {
+      if showsModeration {
+        ToolbarItem(placement: .topBarTrailing) {
+          PluginModerationMenu(subject: subject)
+        }
+      }
     }
-    .pluginBlockConfirmation(subject: subject, isPresented: $confirmingBlock)
     .alert("Remove \(entry.name)?", isPresented: $confirmingRemoval) {
       Button("Remove", role: .destructive) { Task { await remove() } }
       Button("Cancel", role: .cancel) {}
@@ -54,14 +55,8 @@ struct McpPluginDetailList: View {
 
   private var manageSection: some View {
     Section {
-      if showsModeration {
-        Button("Report…") { reporting = true }
-        PluginBlockMenuItem(subject: subject) { confirmingBlock = true }
-      }
-      if entry.canRemove {
-        Button("Remove Plugin", role: .destructive) { confirmingRemoval = true }
-          .foregroundStyle(.red)
-      }
+      Button("Remove Plugin", role: .destructive) { confirmingRemoval = true }
+        .foregroundStyle(.red)
     } footer: {
       if let removalError { Text(removalError).foregroundStyle(.red) }
     }

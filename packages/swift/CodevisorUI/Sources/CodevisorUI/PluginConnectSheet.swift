@@ -93,12 +93,16 @@ public struct PluginConnectSheet: View {
           }
         }
         configuration
-        if !subject.isFirstParty { PluginModerationSection(subject: subject) }
       }
       .navigationBarTitleDisplayMode(.inline)
       .toolbar {
         ToolbarItem(placement: .cancellationAction) {
           Button("Cancel") { dismiss() }
+        }
+        if !subject.isFirstParty {
+          ToolbarItem(placement: .topBarTrailing) {
+            PluginModerationMenu(subject: subject)
+          }
         }
       }
       .safeAreaInset(edge: .bottom, spacing: 0) {
