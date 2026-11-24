@@ -8,7 +8,7 @@ struct LaunchFailureView: View {
 
   var body: some View {
     IconAnchoredStack {
-      CodevisorAppIconView(size: 72)
+      CodevisorAppIconView(size: CodevisorAppIconView.screenHeaderSide)
       ProgressStepTitle(title: failure.title)
       Text(failure.message)
         .font(.callout)

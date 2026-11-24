@@ -18,7 +18,7 @@ struct FirstLaunchSetupView<Footer: View>: View {
       composerCornerRadius: composerCornerRadius
     )
     IconAnchoredStack {
-      CodevisorAppIconView(size: 72)
+      CodevisorAppIconView(size: CodevisorAppIconView.screenHeaderSide)
         .animation(FirstLaunchMorph.contentFade) { $0.opacity(morph.contentOpacity) }
       FirstLaunchSetupTitle(isFinished: setup.isComplete)
         .animation(FirstLaunchMorph.contentFade) { $0.opacity(morph.contentOpacity) }

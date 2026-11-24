@@ -1,5 +1,11 @@
 import SwiftUI
 
+public enum AppIconTile {
+  public static func shape(side: CGFloat) -> RoundedRectangle {
+    RoundedRectangle(cornerRadius: side * 0.224, style: .continuous)
+  }
+}
+
 #if os(macOS)
   import AppKit
 
@@ -13,10 +19,13 @@ import SwiftUI
     public var body: some View {
       Image(nsImage: NSApp.applicationIconImage)
         .resizable()
+        .frame(width: canvasSide, height: canvasSide)
         .frame(width: size, height: size)
         .shadow(color: .black.opacity(0.18), radius: 9, y: 5)
         .accessibilityHidden(true)
     }
+
+    private var canvasSide: CGFloat { size * 1024 / 824 }
   }
 #else
   import UIKit
@@ -47,12 +56,7 @@ import SwiftUI
       }
       .scaledToFit()
       .frame(width: size, height: size)
-      .clipShape(
-        RoundedRectangle(
-          cornerRadius: size * 0.224,
-          style: .continuous
-        )
-      )
+      .clipShape(AppIconTile.shape(side: size))
       .accessibilityHidden(true)
       .task {
         guard icon == nil else { return }
@@ -109,3 +113,13 @@ import SwiftUI
     }
   }
 #endif
+
+extension CodevisorAppIconView {
+  public static var screenHeaderSide: CGFloat {
+    #if os(macOS)
+      58
+    #else
+      72
+    #endif
+  }
+}
