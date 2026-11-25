@@ -80,6 +80,11 @@ export const makeHarnessAccountOperations = (
       subjectId: account.harnessId,
       payload: { id: accountId, removed: true }
     })
+    emit({
+      kind: "harness.auth.updated",
+      subjectId: account.harnessId,
+      payload: await authSnapshot(account.harnessId)
+    })
   }
 
   const activateAccount = async (harnessId: string, accountId: string): Promise<void> => {

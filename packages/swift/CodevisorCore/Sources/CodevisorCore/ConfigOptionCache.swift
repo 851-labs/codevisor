@@ -44,6 +44,7 @@ public final class ConfigOptionCache {
   @ObservationIgnored private var capabilityRevisions: [String: UInt64] = [:]
   @ObservationIgnored private var capabilityRefreshes: [CapabilityRefreshKey: CapabilityRefresh] = [:]
   @ObservationIgnored private var capabilityValidatedAt: [CapabilityRefreshKey: Date] = [:]
+  @ObservationIgnored private var catalogCwds: [String: String] = [:]
   private static let capabilityFreshnessInterval: TimeInterval = 5 * 60
   private var harnessSkillsCache: [HarnessSkillsKey: SessionSkills] = [:]
   private var codevisorSkillsCache: [CodevisorSkillsScope: [ServerComposerSkill]] = [:]
@@ -127,6 +128,19 @@ public final class ConfigOptionCache {
     return 0
   }
 
+  func hasCatalog(forServer serverId: String) -> Bool {
+    !capabilities(forServer: serverId).isEmpty || !signInRequired(forServer: serverId).isEmpty
+  }
+
+  func catalogCwd(forServer serverId: String) -> String {
+    catalogCwds[serverId] ?? ""
+  }
+
+  func noteCatalogComplete(forServer serverId: String) {
+    let cwd = catalogCwd(forServer: serverId)
+    recordCapabilityValidation(for: CapabilityRefreshKey(serverId: serverId, cwd: cwd), serverId: serverId)
+  }
+
   func needsCapabilityRevalidation(forServer serverId: String, cwd: String) -> Bool {
     let key = CapabilityRefreshKey(serverId: serverId, cwd: cwd)
     guard !capabilities(forServer: serverId).isEmpty,
@@ -184,7 +198,10 @@ public final class ConfigOptionCache {
       }
       let merged = storeCapabilityResponse(response, forServer: serverId)
       storeSkills(from: response, forServer: serverId, cwd: cwd)
-      recordCapabilityValidation(for: key, serverId: serverId)
+      catalogCwds[serverId] = cwd
+      if !response.contains(where: { $0.inspectionFailed == true }) {
+        recordCapabilityValidation(for: key, serverId: serverId)
+      }
       removeCapabilityRefresh(refresh, for: key)
       return merged
     } catch {

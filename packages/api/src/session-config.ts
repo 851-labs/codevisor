@@ -127,7 +127,8 @@ export const HarnessCapability = Schema.Struct({
   supportsSteering: Schema.optional(Schema.Boolean),
   steersAtNextStep: Schema.optional(Schema.Boolean),
   skills: Schema.optional(SessionSkills),
-  unappliedConfigSelections: Schema.optional(Schema.Record(Schema.String, Schema.String))
+  unappliedConfigSelections: Schema.optional(Schema.Record(Schema.String, Schema.String)),
+  inspectionFailed: Schema.optional(Schema.Boolean)
 })
 export type HarnessCapability = typeof HarnessCapability.Type
 

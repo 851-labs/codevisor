@@ -145,8 +145,11 @@ describe("activate-time account rebinding", () => {
 
     expect((await run(db.getSessionSummary(pinnedToDead.id))).harnessAccountId).toBe(fresh.id)
     expect((await run(db.getSessionSummary(pinnedToHealthy.id))).harnessAccountId).toBe(healthy.id)
+    const events: string[] = []
+    manager.subscribe((event) => events.push(event.kind))
     await manager.removeAccount(dead.id)
     expect(await run(db.getHarnessAccount(dead.id))).toBeUndefined()
+    expect(events).toContain("harness.auth.updated")
   })
 })
 
