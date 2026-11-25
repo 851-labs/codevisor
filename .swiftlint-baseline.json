@@ -665,9 +665,9 @@
       "location": {
         "character": 18,
         "file": "packages/swift/CodevisorCore/Sources/CodevisorCore/Persistence/ClientStorageBootstrap.swift",
-        "line": 74
+        "line": 80
       },
-      "reason": "Function body should span 50 lines or less excluding comments and whitespace: currently spans 55 lines",
+      "reason": "Function body should span 50 lines or less excluding comments and whitespace: currently spans 53 lines",
       "ruleDescription": "Function bodies should not span too many lines",
       "ruleIdentifier": "function_body_length",
       "ruleName": "Function Body Length",
@@ -680,9 +680,9 @@
       "location": {
         "character": 11,
         "file": "packages/swift/CodevisorCore/Sources/CodevisorCore/Session/SessionController+Connection.swift",
-        "line": 272
+        "line": 278
       },
-      "reason": "Function body should span 50 lines or less excluding comments and whitespace: currently spans 100 lines",
+      "reason": "Function body should span 50 lines or less excluding comments and whitespace: currently spans 98 lines",
       "ruleDescription": "Function bodies should not span too many lines",
       "ruleIdentifier": "function_body_length",
       "ruleName": "Function Body Length",

@@ -2,6 +2,18 @@ import Foundation
 
 extension CodevisorServerClient {
   public func transcriptPage(id: UUID, before: String?, limit: Int = 32) async throws -> ServerTranscriptPage {
+    try await get(try Self.transcriptPagePath(id: id, before: before, limit: limit))
+  }
+
+  public func transcriptPageReturningData(
+    id: UUID, before: String?, limit: Int
+  ) async throws -> ServerTranscriptPageResult {
+    let path = try Self.transcriptPagePath(id: id, before: before, limit: limit)
+    let data = try await perform(path, method: "GET", body: Optional<EmptyBody>.none)
+    return ServerTranscriptPageResult(page: try decoder.decode(ServerTranscriptPage.self, from: data), data: data)
+  }
+
+  private static func transcriptPagePath(id: UUID, before: String?, limit: Int) throws -> String {
     var components = URLComponents()
     components.path = "/v1/sessions/\(id.uuidString)/transcript"
     components.queryItems = [URLQueryItem(name: "limit", value: String(limit))]
@@ -9,7 +21,7 @@ extension CodevisorServerClient {
       components.queryItems?.append(URLQueryItem(name: "before", value: before))
     }
     guard let path = components.string else { throw CodevisorServerClientError.invalidURL("transcript") }
-    return try await get(path)
+    return path
   }
 
   public func transcriptItemDetails(

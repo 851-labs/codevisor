@@ -255,6 +255,7 @@ public protocol CodevisorServerClienting: BrowserStateClienting, BrowserFaviconC
     transcriptLimit: Int
   ) async throws -> ServerSessionOpenResult?
   func transcriptPage(id: UUID, before: String?, limit: Int) async throws -> ServerTranscriptPage
+  func transcriptPageReturningData(id: UUID, before: String?, limit: Int) async throws -> ServerTranscriptPageResult
   func transcriptItemDetails(
     id: UUID,
     itemId: String,

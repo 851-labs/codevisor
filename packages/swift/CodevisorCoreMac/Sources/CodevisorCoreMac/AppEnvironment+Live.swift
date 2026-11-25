@@ -36,6 +36,7 @@ extension AppEnvironment {
       navigationPersistence: store,
       launchSnapshot: launchSnapshot,
       transcriptCache: .shared,
+      clientCache: storage.cache,
       configCache: ConfigOptionCache(store: store, launchSnapshot: launchSnapshot),
       composerDefaults: ComposerDefaultsStore(store: store),
       composerDrafts: composerDrafts,

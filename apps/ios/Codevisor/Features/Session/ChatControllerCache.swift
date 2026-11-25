@@ -50,6 +50,7 @@ final class ChatControllerCache {
       attachmentFiles: environment.composerDrafts.attachmentFiles
     )
     controller.transcriptCache = environment.transcriptCache
+    controller.clientCache = environment.clientCache
     controller.configureExistingSession(session)
     controller.onAgentSessionCreated = { [weak projectList = environment.projectList] agentSessionId in
       projectList?.setAgentSessionId(

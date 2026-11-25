@@ -42,6 +42,7 @@ public final class AppEnvironment {
   public let workspaces: any WorkspaceRepository
   public let navigationStore: NavigationStore
   public let transcriptCache: TranscriptPageCache?
+  public let clientCache: ClientCache?
   public let workspaceSync: WorkspaceSyncModel
   let harnessServiceOverride: (any HarnessServicing)?
   var harnessCatalogRevisions: [String: UInt64] = [:]
@@ -54,6 +55,7 @@ public final class AppEnvironment {
     navigationPersistence: any PersistenceStore = InMemoryStore(),
     launchSnapshot: ClientLaunchSnapshot? = nil,
     transcriptCache: TranscriptPageCache? = nil,
+    clientCache: ClientCache? = nil,
     configCache: ConfigOptionCache,
     composerDefaults: ComposerDefaultsStore? = nil,
     composerDrafts: ComposerDraftStore? = nil,
@@ -73,9 +75,9 @@ public final class AppEnvironment {
     self.harnessServiceOverride = harnessService
     self.paneGroups = paneGroups
     self.transcriptCache = transcriptCache
-    NavigationStoreMigration.runIfNeeded(
-      store: navigationPersistence, machineIds: [CodevisorMachine.local.id])
-    let navigationStore = NavigationStore(store: navigationPersistence, launchSnapshot: launchSnapshot)
+    self.clientCache = clientCache
+    let navigationStore = Self.navigationStore(
+      persistence: navigationPersistence, launchSnapshot: launchSnapshot, clientCache: clientCache)
     self.navigationStore = navigationStore
     let workspaces = ProjectedWorkspaceRepository(store: navigationStore)
     self.workspaces = workspaces
@@ -118,6 +120,13 @@ public final class AppEnvironment {
     self.pluginAccess = PluginAccessController(cloud: cloud, store: machineStore)
     self.directMachineAdoption = DirectMachineCloudAdoption(store: machineStore)
     configureServices()
+  }
+
+  private static func navigationStore(
+    persistence: any PersistenceStore, launchSnapshot: ClientLaunchSnapshot?, clientCache: ClientCache?
+  ) -> NavigationStore {
+    NavigationStoreMigration.runIfNeeded(store: persistence, machineIds: [CodevisorMachine.local.id])
+    return NavigationStore(store: persistence, launchSnapshot: launchSnapshot, clientCache: clientCache)
   }
 
   private func configureServices() {
