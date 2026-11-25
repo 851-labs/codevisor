@@ -307,7 +307,7 @@
         "file": "apps/macos/Codevisor/Features/Session/SessionStore+Drafts.swift",
         "line": 4
       },
-      "reason": "Function body should span 50 lines or less excluding comments and whitespace: currently spans 52 lines",
+      "reason": "Function body should span 50 lines or less excluding comments and whitespace: currently spans 51 lines",
       "ruleDescription": "Function bodies should not span too many lines",
       "ruleIdentifier": "function_body_length",
       "ruleName": "Function Body Length",
