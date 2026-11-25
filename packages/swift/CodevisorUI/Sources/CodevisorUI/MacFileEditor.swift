@@ -52,7 +52,7 @@
     func connect(_ storage: FileEditorStorage) { textView.delegate = storage }
 
     func update(session: FileEditorSession) {
-      textView.isEditable = session.document.isEditable
+      textView.isEditable = session.isEditable
       container.gutter.isHidden = !session.showsLineNumbers
       container.gutter.update()
       let wraps = session.wrapsLines

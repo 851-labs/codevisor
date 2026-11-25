@@ -72,6 +72,18 @@ struct FileEditorSessionTests {
     #expect(document.text == "one\ntwo\nthree")
   }
 
+  @Test func viewingKeepsAWritableFileReadOnlyUntilEditingStarts() async {
+    let document = document()
+    await document.refresh()
+    let sessions = FileEditorSessions(access: .viewing) { _ in document }
+    let viewing = sessions.editor(for: "/file.md")
+    #expect(document.isEditable)
+    #expect(!viewing.isEditable)
+    sessions.access = .editing
+    #expect(viewing.isEditable)
+    #expect(sessions.editor(for: "/other.md").isEditable)
+  }
+
   @Test func cleanCacheEvictionKeepsIdentityWhileAnEditorOwnsTheDocument() {
     let store = FileDocumentStore(capacity: 1)
     let first = store.document(key: "first") { document() }

@@ -7,9 +7,13 @@ final class FileEditorSessions {
   private let capacity: Int
   private let document: (String) -> FileDocumentModel
   var onEdit: (() -> Void)?
+  var access: FileAccess {
+    didSet { for session in sessions.values { session.access = access } }
+  }
 
-  init(capacity: Int = 32, document: @escaping (String) -> FileDocumentModel) {
+  init(capacity: Int = 32, access: FileAccess = .editing, document: @escaping (String) -> FileDocumentModel) {
     self.capacity = capacity
+    self.access = access
     self.document = document
   }
 
@@ -17,7 +21,7 @@ final class FileEditorSessions {
     order.removeAll { $0 == path }
     order.append(path)
     if let session = sessions[path] { return session }
-    let session = FileEditorSession(document: document(path))
+    let session = FileEditorSession(document: document(path), access: access)
     session.onEdit = { [weak self] in self?.onEdit?() }
     sessions[path] = session
     while order.count > capacity { sessions.removeValue(forKey: order.removeFirst())?.close() }

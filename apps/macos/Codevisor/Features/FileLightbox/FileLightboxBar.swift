@@ -48,6 +48,9 @@ private struct FileLightboxActions: View {
   let page: FilePaneModel?
 
   var body: some View {
+    if let toggle = page.flatMap(FileEditModeToggle.init(page:)) {
+      FileLightboxBarButton(title: toggle.title, systemImage: toggle.systemImage, action: toggle.toggle)
+    }
     if let opener = lightbox.opener {
       if opener.transfers.download != nil {
         FileLightboxDownloadButton(item: opener.transferItem(for: file))
@@ -65,7 +68,7 @@ private struct FileLightboxMoreMenu: View {
 
   var body: some View {
     Menu {
-      if let page, FilePanePreviewToggle.isShown(for: page) {
+      if let page, page.access == .viewing, FilePanePreviewToggle.isShown(for: page) {
         Button(sourceTitle(for: page), systemImage: sourceSymbol(for: page)) { page.editor.preview.toggle() }
         Divider()
       }

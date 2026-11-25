@@ -34,22 +34,7 @@ public struct FilePaneView: View {
   public var body: some View {
     VStack(spacing: 0) {
       if model.showsFind { FileFindBar(model: model) }
-      if document.conflict != nil {
-        HStack {
-          Label("This file changed elsewhere", systemImage: "exclamationmark.triangle")
-            .font(.callout)
-          Spacer()
-          Button("Review Changes") { model.showsConflict = true }
-        }
-        .padding(12).background(.orange.opacity(0.12))
-      }
-      if let error = document.error ?? document.draftError {
-        HStack {
-          Label(error, systemImage: "exclamationmark.circle").font(.callout)
-          Spacer()
-          Button("Retry") { Task { await document.retry() } }
-        }.padding(12).background(.orange.opacity(0.08))
-      }
+      FileDocumentBanners(model: model)
       content
     }
     .frame(maxWidth: .infinity, maxHeight: .infinity)
@@ -59,11 +44,7 @@ public struct FilePaneView: View {
       defer { active.flushAutosave() }
       await model.refreshDocument()
       if active.snapshot != nil, !active.isMissing { model.recordRecent() }
-      guard !FileDocumentLocation.isSavedCopy(model.path) else { return }
-      while !Task.isCancelled {
-        do { try await Task.sleep(for: .seconds(3)) } catch { break }
-        if scenePhase == .active { await model.refreshDocument() }
-      }
+      await model.followDisk { scenePhase == .active }
     }
     .onChange(of: model.editor.preview) { _, preview in
       if preview { model.editor.resignFocus() }
@@ -86,7 +67,6 @@ public struct FilePaneView: View {
         .environment(\.closeFileBrowser, CloseFileBrowserAction { model.showsExplorer = false })
       }
     #endif
-    .sheet(isPresented: $model.showsConflict) { FileConflictView(model: model) }
   }
 
   @ViewBuilder private var content: some View {
