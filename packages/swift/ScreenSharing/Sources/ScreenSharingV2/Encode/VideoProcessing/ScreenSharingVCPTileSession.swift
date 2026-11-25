@@ -13,6 +13,7 @@ final class ScreenSharingVCPTileSession: @unchecked Sendable {
   private let relay: ScreenSharingTileOutputRelay
   private let state: Mutex<ScreenSharingVCPEncoderState>
   private let sessionLock = NSLock()
+  private let labKinds = Mutex<[UInt64: String]>([:])
 
   init(
     tile: Int, factory: ScreenSharingVCPSessionFactory, metrics: ScreenSharingMetrics,
@@ -36,15 +37,20 @@ final class ScreenSharingVCPTileSession: @unchecked Sendable {
     let submission = try state.withLock {
       try $0.begin(request, refresh: request.refreshes[tile], atNs: ScreenSharingMetrics.nowNs)
     }
+    let flipped: Bool
     do {
-      try capQP(refining: request.update.isRefinement)
+      flipped = try capQP(refining: request.update.isRefinement && ScreenSharingVCPLab.qpCap != .steady)
     } catch {
       state.withLock { $0.abandon(submission) }
       throw error
     }
+    let kind = (request.update.isRefinement ? "labRefinement" : "labChange") + (flipped ? "Flipped" : "Steady")
+    labKinds.withLock { $0[submission.id] = kind }
     let status = session.encode(
       pixels, submission: submission.id, presentationNs: submission.presentationNs,
       options: options(refresh: submission.refresh).dictionary)
+    metrics.observe(kind + "Submit", milliseconds: Double(ScreenSharingMetrics.nowNs - submission.submittedNs) / 1e6)
+    metrics.observe(kind + "Admission", milliseconds: Double(submission.submittedNs - request.capturedNs) / 1e6)
     guard status != noErr else { return }
 
     state.withLock {
@@ -54,15 +60,32 @@ final class ScreenSharingVCPTileSession: @unchecked Sendable {
     throw ScreenSharingError.codec("Encode VCP tile \(tile)", status)
   }
 
-  private func capQP(refining: Bool) throws {
+  private func capQP(refining: Bool) throws -> Bool {
     let change = state.withLock { state -> Int? in
       let wanted = state.rate.highestQP(refining: refining)
       return wanted == state.highestQP ? nil : wanted
     }
-    guard let change else { return }
+    guard let change else { return false }
 
+    let startNs = ScreenSharingMetrics.nowNs
     try session.set(kVTCompressionPropertyKey_MaxAllowedFrameQP, change as CFNumber)
+    metrics.observe("labQPCapSet", milliseconds: Double(ScreenSharingMetrics.nowNs - startNs) / 1e6)
     state.withLock { $0.highestQP = change }
+    return true
+  }
+
+  private func restoreCapAfterRefinement(_ submission: ScreenSharingVCPSubmission) {
+    guard ScreenSharingVCPLab.qpCap == .restore, submission.update.isRefinement else { return }
+
+    ScreenSharingVCPLab.restoreQueue.async { [weak self] in
+      guard let self else { return }
+
+      sessionLock.withLock {
+        guard !state.withLock({ $0.stopped }) else { return }
+
+        if (try? capQP(refining: false)) == true { metrics.increment("labQPCapRestores") }
+      }
+    }
   }
 
   func acknowledge(_ tokens: [UInt64]) {
@@ -107,8 +130,19 @@ final class ScreenSharingVCPTileSession: @unchecked Sendable {
     guard let receipt = state.withLock({ $0.receive(output) }) else { return }
 
     switch receipt {
-    case .encoded(let submission): encoded(output, submission: submission)
-    case .skipped(let submission, let unchanged): skipped(submission, unchanged: unchanged)
+    case .encoded(let submission):
+      if let kind = labKinds.withLock({ $0.removeValue(forKey: submission.id) }) {
+        metrics.observe(
+          kind + "Encode", milliseconds: Double(ScreenSharingMetrics.nowNs - submission.submittedNs) / 1e6)
+        metrics.observe(
+          kind + "Total", milliseconds: Double(ScreenSharingMetrics.nowNs - submission.capturedNs) / 1e6)
+      }
+      encoded(output, submission: submission)
+      restoreCapAfterRefinement(submission)
+    case .skipped(let submission, let unchanged):
+      _ = labKinds.withLock { $0.removeValue(forKey: submission.id) }
+      skipped(submission, unchanged: unchanged)
+      restoreCapAfterRefinement(submission)
     case .failed(let submission): failed(submission.refresh, "VCP status \(output.status)")
     }
   }

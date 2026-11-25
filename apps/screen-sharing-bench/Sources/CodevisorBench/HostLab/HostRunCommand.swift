@@ -33,6 +33,7 @@ struct HostRunCommand: BenchCommand {
 
   func run() async throws {
     let metrics = ScreenSharingMetrics()
+    ScreenSharingVCPLab.qpCap = variant.qpCap
     let configuration = try Self.configuration(for: displayID, framesPerSecond: variant.framesPerSecond)
     let layout = variant.tiles.map {
       ScreenSharingV2TileLayout(width: configuration.width, height: configuration.height, count: $0)
