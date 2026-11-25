@@ -101,7 +101,8 @@ const failedHarnessCapability = (harness: Harness, cause: unknown): HarnessCapab
   )
   return {
     harness,
-    configOptions: []
+    configOptions: [],
+    inspectionFailed: true
   }
 }
 
@@ -113,7 +114,7 @@ const rememberedHarnessCapability = (
   console.error(
     `[harnesses] inspecting ${harness.id} failed; showing its last known models: ${conflictFrom(cause).message}`
   )
-  return { ...remembered, harness }
+  return { ...remembered, harness, inspectionFailed: true }
 }
 
 const inspectHarnessCapability = async (

@@ -416,6 +416,7 @@ public struct ServerHarnessCapability: Codable, Equatable, Sendable {
   public var supportsSteering: Bool?
   public var skills: SessionSkills?
   public var unappliedConfigSelections: [String: String]?
+  public var inspectionFailed: Bool?
 
   public init(
     harness: ServerHarness,
@@ -424,7 +425,8 @@ public struct ServerHarnessCapability: Codable, Equatable, Sendable {
     supportsGoals: Bool? = nil,
     supportsSteering: Bool? = nil,
     skills: SessionSkills? = nil,
-    unappliedConfigSelections: [String: String]? = nil
+    unappliedConfigSelections: [String: String]? = nil,
+    inspectionFailed: Bool? = nil
   ) {
     self.harness = harness
     self.modes = modes
@@ -433,5 +435,6 @@ public struct ServerHarnessCapability: Codable, Equatable, Sendable {
     self.supportsSteering = supportsSteering
     self.skills = skills
     self.unappliedConfigSelections = unappliedConfigSelections
+    self.inspectionFailed = inspectionFailed
   }
 }

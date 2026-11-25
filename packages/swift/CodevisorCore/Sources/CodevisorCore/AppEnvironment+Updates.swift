@@ -77,6 +77,7 @@ extension AppEnvironment {
   public func harnessCatalogDidChange(onServer serverId: String) {
     configCache.invalidateCapabilities(forServer: serverId)
     harnessCatalogRevisions[serverId, default: 0] &+= 1
+    harnessCatalogRefresher.refetch(forServer: serverId, client: machines.client(for: serverId))
   }
 
   public func refreshHarnessAuthentication(

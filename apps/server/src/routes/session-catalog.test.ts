@@ -19,15 +19,18 @@ describe("session catalog routes", () => {
   it("keeps showing a harness's last known models when its check times out", async () => {
     const { agents, server, workspaceFolder } = await setUpWorkspace()
     const capabilitiesPath = `/v1/capabilities?cwd=${encodeURIComponent(workspaceFolder)}`
-    const inspected = await jsonRequest(server, capabilitiesPath)
+    await jsonRequest(server, capabilitiesPath)
     agents.timingOutInspections.add(agents.inspections.at(-1)![1])
 
     const timedOut = await jsonRequest(server, capabilitiesPath)
 
-    expect(timedOut.body).toEqual(inspected.body)
     expect(timedOut.body).toMatchObject({
       harnesses: [
-        { harness: { id: "codex" }, configOptions: [{ id: "model" }, { id: "reasoning" }] }
+        {
+          harness: { id: "codex" },
+          configOptions: [{ id: "model" }, { id: "reasoning" }],
+          inspectionFailed: true
+        }
       ]
     })
   })
@@ -37,7 +40,7 @@ describe("session catalog routes", () => {
     agents.timingOutInspections.add(tmpdir())
 
     expect((await jsonRequest(server, "/v1/capabilities")).body).toMatchObject({
-      harnesses: [{ harness: { id: "codex" }, configOptions: [] }]
+      harnesses: [{ harness: { id: "codex" }, configOptions: [], inspectionFailed: true }]
     })
   })
 
@@ -169,8 +172,8 @@ describe("session catalog routes", () => {
     expect(agents.inspections.at(-1)).toEqual(["codex", tmpdir()])
     expect(
       (await jsonRequest(server, `/v1/capabilities?cwd=${encodeURIComponent(noModesFolder)}`)).body
-    ).toMatchObject({
-      harnesses: [{ configOptions: [], harness: { id: "codex" } }]
+    ).toEqual({
+      harnesses: [{ configOptions: [], harness: expect.objectContaining({ id: "codex" }) }]
     })
     expect(
       (
@@ -180,7 +183,7 @@ describe("session catalog routes", () => {
         )
       ).body
     ).toMatchObject({
-      harnesses: [{ configOptions: [], harness: { id: "codex" } }]
+      harnesses: [{ configOptions: [], harness: { id: "codex" }, inspectionFailed: true }]
     })
     expect(
       (

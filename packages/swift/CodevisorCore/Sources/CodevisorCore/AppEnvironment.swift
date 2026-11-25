@@ -35,6 +35,7 @@ public final class AppEnvironment {
   @ObservationIgnored var featureFlagSync: FeatureFlagSync?
   @ObservationIgnored var privacySettingsSync: PrivacySettingsSync?
   @ObservationIgnored let harnessNotices = HarnessNoticeCenter()
+  @ObservationIgnored let harnessCatalogRefresher: HarnessCatalogRefresher
   @ObservationIgnored var localServerDirectPathsSync: Task<Void, Never>?
   public let paneGroups: any PaneGroupRepository
   public let workspaces: any WorkspaceRepository
@@ -91,6 +92,7 @@ public final class AppEnvironment {
     workspaceSync.navigationStore = navigationStore
     navigationStore.attach(projectList: projectList, repository: workspaces)
     self.configCache = configCache
+    self.harnessCatalogRefresher = HarnessCatalogRefresher(cache: configCache)
     self.composerDefaults = composerDefaults ?? ComposerDefaultsStore(store: InMemoryStore())
     self.composerDrafts = composerDrafts ?? ComposerDraftStore(store: InMemoryStore())
     self.settings = settings
