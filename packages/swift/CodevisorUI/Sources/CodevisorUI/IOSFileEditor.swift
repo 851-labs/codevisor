@@ -50,7 +50,7 @@
     func connect(_ storage: FileEditorStorage) { textView.delegate = storage }
 
     func update(session: FileEditorSession) {
-      textView.isEditable = session.document.isEditable
+      textView.isEditable = session.isEditable
       gutter.isHidden = !session.showsLineNumbers
       textView.textContainerInset.left = session.showsLineNumbers ? 48 : 16
     }

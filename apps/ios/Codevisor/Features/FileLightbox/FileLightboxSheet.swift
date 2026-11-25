@@ -41,7 +41,7 @@ private struct FileLightboxSheet: View {
             Button("Close", systemImage: "xmark", action: lightbox.dismiss)
           }
           ToolbarItemGroup(placement: .primaryAction) {
-            if let page { FilePanePreviewToggle(model: page) }
+            if let page { FileLightboxSheetModeButtons(page: page) }
             if let file = lightbox.current, let opener = lightbox.opener {
               FileLightboxSheetActions(opener: opener, file: file)
             }
@@ -56,6 +56,17 @@ private struct FileLightboxSheet: View {
 
   private var title: String {
     page?.title ?? lightbox.current?.name ?? ""
+  }
+}
+
+private struct FileLightboxSheetModeButtons: View {
+  let page: FilePaneModel
+
+  var body: some View {
+    if page.access == .viewing { FilePanePreviewToggle(model: page) }
+    if let toggle = FileEditModeToggle(page: page) {
+      Button(toggle.title, systemImage: toggle.systemImage, action: toggle.toggle)
+    }
   }
 }
 

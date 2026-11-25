@@ -35,6 +35,7 @@ public struct FileLightboxStage: View {
 private struct FileLightboxPage: View {
   let lightbox: FileLightbox
   let file: ViewableFile
+  @Environment(\.scenePhase) private var scenePhase
 
   private static let retryDelay: Duration = .milliseconds(200)
 
@@ -61,17 +62,25 @@ private struct FileLightboxPage: View {
     } else if page.mediaKind == nil, isAwaitingDocument(page) {
       ProgressView("Opening file…").frame(maxWidth: .infinity, maxHeight: .infinity)
     } else {
-      FileViewerContent(model: page, poster: lightbox.opener?.poster(file))
+      VStack(spacing: 0) {
+        FileDocumentBanners(model: page)
+        FileViewerContent(model: page, poster: lightbox.opener?.poster(file))
+      }
     }
   }
 
   private func load(_ page: FilePaneModel) async {
     guard page.mediaKind == nil else { return }
 
+    await open(page)
+    await page.followDisk { scenePhase == .active }
+  }
+
+  private func open(_ page: FilePaneModel) async {
+    await page.refreshDocument()
     while !Task.isCancelled, isAwaitingDocument(page) {
-      await page.refreshDocument()
-      guard isAwaitingDocument(page) else { return }
       try? await Task.sleep(for: Self.retryDelay)
+      await page.refreshDocument()
     }
   }
 

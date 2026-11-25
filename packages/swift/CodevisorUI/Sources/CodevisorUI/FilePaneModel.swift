@@ -5,11 +5,14 @@ import Observation
 @MainActor @Observable
 public final class FilePaneModel {
   public let id: UUID
+  private static let diskRefreshInterval: Duration = .seconds(3)
   public private(set) var path: String
   public let rootPath: String
   public let machineId: String
   public let client: any CodevisorServerClienting
-  public let access: FileAccess
+  public var access: FileAccess {
+    didSet { sessions.access = access }
+  }
   public var showsExplorer = false
   public var showsFind = false
   public var showsReplacement = false
@@ -38,11 +41,8 @@ public final class FilePaneModel {
     self.client = client
     self.access = access
     self.recents = recents
-    sessions = FileEditorSessions { path in
-      switch access {
-      case .editing: FileDocumentStore.shared.document(machineId: machineId, path: path, client: client)
-      case .viewing: FileDocumentStore.shared.viewingDocument(path: path, client: client)
-      }
+    sessions = FileEditorSessions(access: access) { path in
+      FileDocumentStore.shared.document(machineId: machineId, path: path, client: client)
     }
     explorer = FileExplorerModel(root: rootPath, client: client)
   }
@@ -67,6 +67,15 @@ public final class FilePaneModel {
     if fileWasDeletedWithoutEdits(at: path) { onClose?() }
   }
 
+  public func followDisk(while isActive: () -> Bool) async {
+    guard !FileDocumentLocation.isSavedCopy(path) else { return }
+
+    while !Task.isCancelled {
+      do { try await Task.sleep(for: Self.diskRefreshInterval) } catch { return }
+      if isActive() { await refreshDocument() }
+    }
+  }
+
   private func fileWasDeletedWithoutEdits(at path: String) -> Bool {
     document.isMissing && !document.isDirty && pathSeenOnDisk == path
   }
@@ -82,6 +91,20 @@ public final class FilePaneModel {
   public var title: String { isBrowsing ? "Open File" : document.name }
   public var canSave: Bool {
     document.isDirty && document.isEditable && !document.isSaving && document.conflict == nil
+  }
+
+  public var canEdit: Bool { mediaKind == nil && isEditingText && document.isEditable }
+
+  public func startEditing() {
+    access = .editing
+    editor.preview = false
+  }
+
+  public func stopEditing() {
+    editor.resignFocus()
+    document.flushAutosave()
+    access = .viewing
+    editor.preview = document.hasPreview
   }
 
   public func openExplorer() {

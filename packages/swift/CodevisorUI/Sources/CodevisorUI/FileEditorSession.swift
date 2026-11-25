@@ -4,6 +4,7 @@ import Observation
 @MainActor @Observable
 public final class FileEditorSession {
   public let document: FileDocumentModel
+  public internal(set) var access: FileAccess
   public var preview = false
   var onEdit: (() -> Void)?
   public var wrapsLines = false
@@ -15,7 +16,12 @@ public final class FileEditorSession {
   @ObservationIgnored private var pendingLine: Int?
   @ObservationIgnored private var nativeStorage: FileEditorStorage?
 
-  init(document: FileDocumentModel) { self.document = document }
+  init(document: FileDocumentModel, access: FileAccess = .editing) {
+    self.document = document
+    self.access = access
+  }
+
+  public var isEditable: Bool { access == .editing && document.isEditable }
 
   var storage: FileEditorStorage {
     if let nativeStorage { return nativeStorage }

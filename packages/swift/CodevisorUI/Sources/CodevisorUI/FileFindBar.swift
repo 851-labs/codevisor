@@ -2,7 +2,6 @@ import SwiftUI
 
 struct FileFindBar: View {
   @Bindable var model: FilePaneModel
-  private var document: FileDocumentModel { model.document }
   @FocusState private var findFocused: Bool
 
   var body: some View {
@@ -36,7 +35,7 @@ struct FileFindBar: View {
         HStack {
           TextField("Replace with", text: $model.replacement).accessibilityLabel("Replace with")
           Button("Replace") { model.replaceSelection() }
-            .disabled(!document.isEditable || model.findText.isEmpty)
+            .disabled(!model.editor.isEditable || model.findText.isEmpty)
         }
       }
     }
