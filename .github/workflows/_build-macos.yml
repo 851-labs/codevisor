@@ -126,6 +126,7 @@ jobs:
           CODEVISOR_UNSIGNED_APP_ARCHIVE_OUTPUT: dist/release/build-inputs/codevisor-unsigned-app.zip
           CODEVISOR_GOOGLE_OAUTH_CLIENT_JSON: ${{ secrets.CODEVISOR_GOOGLE_OAUTH_CLIENT_JSON }}
           CODEVISOR_LINEAR_OAUTH_CLIENT_JSON: ${{ secrets.CODEVISOR_LINEAR_OAUTH_CLIENT_JSON }}
+          CODEVISOR_SENTRY_OAUTH_CLIENT_JSON: ${{ secrets.CODEVISOR_SENTRY_OAUTH_CLIENT_JSON }}
         run: |
           for attempt in 1 2 3; do
             bun install --frozen-lockfile && break

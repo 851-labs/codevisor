@@ -68,7 +68,7 @@ inboxRoutes.delete("/api/machine/inboxes/:id/devices/self", async (c) => {
 
 inboxRoutes.put(
   "/api/machine/inboxes/:id/routes/:route",
-  bodyLimit({ maxSize: 1_024 }),
+  bodyLimit({ maxSize: 8_192 }),
   async (c) => {
     const inboxId = c.req.param("id")
     if (!(await ownsInbox(c.env.DB, c.var.machine.userId, inboxId)))
@@ -81,7 +81,7 @@ inboxRoutes.put(
     const body = RouteBody.safeParse(await c.req.json<unknown>().catch(() => undefined))
     if (!body.success) return c.json({ error: "invalid route key" }, 400)
 
-    await routeInbox(c.env.DB, inboxId, c.req.param("route"), body.data.key)
+    await routeInbox(c.env.DB, inboxId, c.req.param("route"), routeKeysOf(body.data))
     return c.json({ config: route.config })
   }
 )
@@ -99,7 +99,19 @@ const unknownInbox = { error: "unknown inbox" }
 
 const targetPart = z.string().min(1).max(200)
 
-const RouteBody = z.object({ key: z.string().regex(/^[0-9a-f]{64}$/) })
+export const MAX_ROUTE_KEYS = 50
+
+const routeKey = z.string().regex(/^[0-9a-f]{64}$/)
+
+const RouteBody = z
+  .object({
+    key: routeKey.optional(),
+    keys: z.array(routeKey).min(1).max(MAX_ROUTE_KEYS).optional()
+  })
+  .refine((body) => body.key !== undefined || body.keys !== undefined)
+
+const routeKeysOf = (body: z.infer<typeof RouteBody>): ReadonlyArray<string> =>
+  body.keys ?? (body.key === undefined ? [] : [body.key])
 
 const InboxTargetBody = z.object({
   plugin: targetPart,

@@ -26,7 +26,7 @@ import {
   type PendingOAuthFlow
 } from "./plugin-account-oauth.js"
 import type { PluginAccountRecord } from "./plugin-account-store.js"
-import type { PluginVault } from "./plugin-accounts.js"
+import type { AccountCheck, AccountChecker, PluginVault } from "./plugin-accounts.js"
 import {
   makePendingOAuthFlows,
   memoryPendingOAuthStorage,
@@ -44,6 +44,8 @@ export interface OAuthStartInput {
 
 export interface PluginOAuthFlowsDeps {
   readonly vault: PluginVault
+  readonly server: (serverId: string) => Promise<McpServer>
+  readonly check?: AccountChecker | undefined
   readonly redirects: OAuthRedirects
   readonly pendingStorage?: PendingOAuthStorage | undefined
   readonly installedClients?: InstalledOAuthClients | undefined
@@ -64,14 +66,28 @@ export const makePluginOAuthFlows = (deps: PluginOAuthFlowsDeps) => {
     return parsed === undefined ? undefined : pending.take(parsed.flowId, parsed.nonce)
   }
 
+  const checkSignIn = async (
+    flow: PendingOAuthFlow,
+    accountId: string,
+    accessToken: string
+  ): Promise<AccountCheck> => {
+    if (deps.check === undefined) return {}
+
+    const server = await deps.server(flow.serverId)
+    const fields = { ...flow.values, ...flow.secrets }
+    return (await deps.check(server, { id: accountId, accessToken, fields })) ?? {}
+  }
+
   const finish = async (flow: PendingOAuthFlow, spec: PluginOAuthSpec, code: string) => {
     const tokens = await exchangePluginCode(spec, flow, code, deps.fetch)
+    const accountId = flow.accountId ?? randomUUID()
     const found = await fetchAccountIdentity(spec, tokens.access_token, deps.fetch)
-    const identity = found.identity ?? flow.label ?? "Account"
+    const checked = await checkSignIn(flow, accountId, tokens.access_token)
+    const signedIn = signedInAccount(flow, found, checked)
     const credential = await deps.vault.create(
-      oauthBundle(spec, flow, tokens, identity, deps.now())
+      oauthBundle(spec, flow, tokens, signedIn.identity, deps.now())
     )
-    await deps.save(oauthRecord(flow, { ...found, identity }, tokens.scope, credential))
+    await deps.save(oauthRecord(flow, accountId, signedIn, tokens.scope, credential))
   }
 
   return {
@@ -162,17 +178,37 @@ const flowLabel = (input: OAuthStartInput): { readonly label?: string } => {
   return label === undefined ? {} : { label }
 }
 
+interface SignedInAccount {
+  readonly identity: string
+  readonly label: string
+  readonly routeKey?: string
+  readonly routeKeys?: ReadonlyArray<string>
+}
+
+const signedInAccount = (
+  flow: PendingOAuthFlow,
+  found: AccountIdentity,
+  checked: AccountCheck
+): SignedInAccount => {
+  const identity = checked.identity ?? found.identity ?? flow.label ?? "Account"
+  return {
+    identity,
+    label: flow.label ?? checked.label ?? identity,
+    ...(found.routeKey === undefined ? {} : { routeKey: found.routeKey }),
+    ...(checked.routeKeys === undefined ? {} : { routeKeys: checked.routeKeys })
+  }
+}
+
 const oauthRecord = (
   flow: PendingOAuthFlow,
-  found: AccountIdentity & { readonly identity: string },
+  accountId: string,
+  account: SignedInAccount,
   scope: string | undefined,
   credential: { readonly id: string; readonly key: string }
 ): PluginAccountRecord => ({
-  id: flow.accountId ?? randomUUID(),
+  id: accountId,
   plugin: flow.plugin,
-  label: flow.label ?? found.identity,
-  identity: found.identity,
-  ...(found.routeKey === undefined ? {} : { routeKey: found.routeKey }),
+  ...account,
   method: "oauth2",
   values: flow.values,
   secretsSet: Object.keys(flow.secrets).toSorted(),

@@ -33,6 +33,10 @@ Optional environment:
                                 Linear OAuth app client as {"installed":{client_id,
                                 client_secret}} for Linear plugin sign-in. Written
                                 to config/linear-oauth-client.json; never printed.
+  CODEVISOR_SENTRY_OAUTH_CLIENT_JSON
+                                Sentry OAuth app client as {"installed":{client_id,
+                                client_secret}} for Sentry plugin sign-in. Written
+                                to config/sentry-oauth-client.json; never printed.
                                 For either client, listing
                                 https://cloud.codevisor.dev/oauth/callback in
                                 installed.redirect_uris switches sign-in to the
@@ -170,6 +174,7 @@ write_installed_oauth_client() {
 
 write_installed_oauth_client CODEVISOR_GOOGLE_OAUTH_CLIENT_JSON google-oauth-client.json Google
 write_installed_oauth_client CODEVISOR_LINEAR_OAUTH_CLIENT_JSON linear-oauth-client.json Linear
+write_installed_oauth_client CODEVISOR_SENTRY_OAUTH_CLIENT_JSON sentry-oauth-client.json Sentry
 
 node "$repo_root/scripts/net-artifact.mjs" ensure-node >/dev/null
 mkdir -p "$runtime_dir/packages/net/native/$target"
@@ -288,7 +293,7 @@ printf '{"version":"%s","buildNumber":%s,"sourceRevision":"%s","target":"%s"}\n'
 runtime_root="$(cd "$runtime_dir" && pwd -P)"
 (
   cd /
-  env -u CODEVISOR_GOOGLE_OAUTH_CLIENT_FILE -u CODEVISOR_LINEAR_OAUTH_CLIENT_FILE -u CODEVISOR_DEV_INSTANCE_ID \
+  env -u CODEVISOR_GOOGLE_OAUTH_CLIENT_FILE -u CODEVISOR_LINEAR_OAUTH_CLIENT_FILE -u CODEVISOR_SENTRY_OAUTH_CLIENT_FILE -u CODEVISOR_DEV_INSTANCE_ID \
     CODEVISOR_SMOKE_RUNTIME="$runtime_root" "$runtime_root/bin/node" --input-type=module -e '
     const { existsSync } = await import("node:fs")
     const { pathToFileURL } = await import("node:url")
@@ -312,7 +317,7 @@ runtime_root="$(cd "$runtime_dir" && pwd -P)"
       throw new Error("Packaged Linux Computer Use helper is not discoverable from /")
     }
     const boot = await import(pathToFileURL(`${runtime}/serve-boot.js`))
-    for (const [provider, file] of [["google", "google-oauth-client.json"], ["linear", "linear-oauth-client.json"]]) {
+    for (const [provider, file] of [["google", "google-oauth-client.json"], ["linear", "linear-oauth-client.json"], ["sentry", "sentry-oauth-client.json"]]) {
       if (!existsSync(`${runtime}/config/${file}`)) continue
       if ((await boot.bootInstalledOAuthClients()(provider)) === undefined) {
         throw new Error(`Packaged server cannot find its bundled ${provider} sign-in client`)

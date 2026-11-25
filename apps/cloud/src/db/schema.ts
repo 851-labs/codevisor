@@ -300,10 +300,16 @@ export const inboxRoute = sqliteTable(
     createdAt: integer("created_at").notNull()
   },
   (table) => [
-    primaryKey({ columns: [table.inboxId, table.route] }),
+    primaryKey({ columns: [table.inboxId, table.route, table.routeKey] }),
     index("inbox_route_lookup").on(table.route, table.routeKey)
   ]
 )
+
+export const sentryInstallation = sqliteTable("sentry_installation", {
+  uuid: text("uuid").primaryKey(),
+  organizationId: text("organization_id").notNull(),
+  createdAt: integer("created_at").notNull()
+})
 
 export const oauthFlow = sqliteTable(
   "oauth_flow",

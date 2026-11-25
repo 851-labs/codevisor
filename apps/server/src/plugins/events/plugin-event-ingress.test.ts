@@ -34,7 +34,7 @@ const grafanaFixture = async () => {
     connections: fixture.fake.connections,
     inboxes: cloud.inboxes,
     pluginKey: pluginKeyOf,
-    routeKey: async () => undefined
+    routeKeys: async () => []
   })
   return { fixture, grafana, plain, undiscovered, cloud, ingress }
 }
@@ -55,12 +55,12 @@ const gmailFixture = async () => {
     }
   })
   const cloud = fakeInboxes()
-  const identities: Record<string, string> = { work: " Dylan@851.sh " }
+  const identities: Record<string, ReadonlyArray<string>> = { work: [" Dylan@851.sh "] }
   const ingress = makePluginEventIngress({
     connections: fixture.fake.connections,
     inboxes: cloud.inboxes,
     pluginKey: pluginKeyOf,
-    routeKey: async (_serverId, accountId) => identities[accountId]
+    routeKeys: async (_serverId, accountId) => identities[accountId] ?? []
   })
   return { fixture, gmail, cloud, ingress, removed }
 }

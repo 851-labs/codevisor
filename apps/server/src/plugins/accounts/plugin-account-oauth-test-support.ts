@@ -13,7 +13,7 @@ import { makeServices } from "../../test-support.js"
 import { savePluginRow } from "../events/plugin-events-test-support.js"
 import type { InstalledOAuthClients } from "./installed-oauth-clients.js"
 import { makePluginAccountStore } from "./plugin-account-store.js"
-import { makePluginAccounts } from "./plugin-accounts.js"
+import { type AccountChecker, makePluginAccounts } from "./plugin-accounts.js"
 import { sealedPendingOAuthStorage } from "./plugin-oauth-storage.js"
 import {
   fakeOAuthProvider,
@@ -29,6 +29,7 @@ export const clientFields: PluginAccountSpec["fields"] = [
 ]
 
 export interface FixtureOptions {
+  readonly check?: AccountChecker
   readonly catalogId?: string
   readonly revokeFails?: boolean
   readonly installedClients?: InstalledOAuthClients
@@ -72,6 +73,7 @@ export const oauthFixture = async (
       ...(fixtureOptions.installedClients === undefined
         ? {}
         : { installedClients: fixtureOptions.installedClients }),
+      ...(fixtureOptions.check === undefined ? {} : { check: fixtureOptions.check }),
       onChanged: (entries) => changes.push(entries),
       now: clock.now
     })

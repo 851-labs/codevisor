@@ -170,3 +170,6 @@
 [submodule ".repos/mcp-typescript-sdk"]
 	path = .repos/mcp-typescript-sdk
 	url = https://github.com/modelcontextprotocol/typescript-sdk.git
+[submodule ".repos/sentry-mcp"]
+	path = .repos/sentry-mcp
+	url = https://github.com/getsentry/sentry-mcp.git

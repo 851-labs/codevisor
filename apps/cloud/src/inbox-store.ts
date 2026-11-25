@@ -82,9 +82,15 @@ export const routeInbox = async (
   db: D1Database,
   inboxId: string,
   route: string,
-  routeKey: string
+  routeKeys: ReadonlyArray<string>
 ): Promise<void> => {
-  await db.prepare(inboxSql.route).bind(inboxId, route, routeKey, Date.now()).run()
+  const now = Date.now()
+  await db.batch([
+    db.prepare(inboxSql.unroute).bind(inboxId, route),
+    ...[...new Set(routeKeys)].map((key) =>
+      db.prepare(inboxSql.route).bind(inboxId, route, key, now)
+    )
+  ])
 }
 
 export const routedInboxes = async (
@@ -120,8 +126,8 @@ const inboxSql = {
     "SELECT id FROM inbox WHERE user_id = ? AND plugin = ? AND account_id = ? AND ingress = ?",
   owner: "SELECT user_id FROM inbox WHERE id = ?",
   delete: "DELETE FROM inbox WHERE id = ? AND user_id = ?",
-  route: `INSERT INTO inbox_route (inbox_id, route, route_key, created_at) VALUES (?, ?, ?, ?)
-     ON CONFLICT(inbox_id, route) DO UPDATE SET route_key = excluded.route_key`,
+  unroute: "DELETE FROM inbox_route WHERE inbox_id = ? AND route = ?",
+  route: "INSERT INTO inbox_route (inbox_id, route, route_key, created_at) VALUES (?, ?, ?, ?)",
   routed: `SELECT inbox.id, inbox.user_id FROM inbox_route JOIN inbox ON inbox.id = inbox_route.inbox_id
      WHERE inbox_route.route = ? AND inbox_route.route_key = ? ORDER BY inbox.id`
 }

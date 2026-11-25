@@ -14,6 +14,9 @@ export const GMAIL_PUSH_OFF =
 export const LINEAR_WEBHOOKS_OFF =
   "Linear webhooks are turned off on this Codevisor Cloud: LINEAR_WEBHOOK_SECRET isn't set"
 
+export const SENTRY_WEBHOOKS_OFF =
+  "Sentry webhooks are turned off on this Codevisor Cloud: SENTRY_WEBHOOK_SECRET isn't set"
+
 const routes: ReadonlyMap<string, (env: CloudEnv) => InboxRouteConfig> = new Map([
   [
     "gmail",
@@ -27,6 +30,13 @@ const routes: ReadonlyMap<string, (env: CloudEnv) => InboxRouteConfig> = new Map
     (env: CloudEnv) => ({
       config: env.LINEAR_WEBHOOK_SECRET ? {} : undefined,
       unavailable: LINEAR_WEBHOOKS_OFF
+    })
+  ],
+  [
+    "sentry",
+    (env: CloudEnv) => ({
+      config: env.SENTRY_WEBHOOK_SECRET ? {} : undefined,
+      unavailable: SENTRY_WEBHOOKS_OFF
     })
   ]
 ])

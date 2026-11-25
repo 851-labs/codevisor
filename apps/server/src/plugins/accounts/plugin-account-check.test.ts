@@ -43,6 +43,16 @@ describe("plugin account checks", () => {
     ])
   })
 
+  it("keeps the route keys a plugin returns, dropping anything that isn't a key", async () => {
+    const { connect } = pluginReplying(async () => ({ routeKeys: ["101", "", 7, "202"] }))
+    const malformed = pluginReplying(async () => ({ routeKeys: "101" }))
+
+    expect(await checkPluginAccount(connect, serverId, account)).toEqual({
+      routeKeys: ["101", "202"]
+    })
+    expect(await checkPluginAccount(malformed.connect, serverId, account)).toEqual({})
+  })
+
   it("turns the plugin's rejection into a 400 with its reason", async () => {
     const { connect } = pluginReplying(async () => {
       throw protocolError(-32602, "That's the bot token")

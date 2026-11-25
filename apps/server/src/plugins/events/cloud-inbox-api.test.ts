@@ -56,12 +56,16 @@ describe("cloud inbox api", () => {
     ])
   })
 
-  it("routes an inbox by key and keeps only the string settings the cloud returns", async () => {
+  it("routes an inbox by its keys and keeps only the string settings the cloud returns", async () => {
     const { api, requests } = recordingCloud({ config: { topic: "projects/p/topics/t", ttl: 7 } })
     const bare = recordingCloud({})
 
-    expect(await api.route("inbox/1", "gmail", "abc")).toEqual({ topic: "projects/p/topics/t" })
-    expect(await bare.api.route("inbox-2", "gmail", "abc")).toEqual({})
-    expect(requests).toEqual(['PUT /api/machine/inboxes/inbox%2F1/routes/gmail {"key":"abc"}'])
+    expect(await api.route("inbox/1", "sentry", ["abc", "def"])).toEqual({
+      topic: "projects/p/topics/t"
+    })
+    expect(await bare.api.route("inbox-2", "gmail", ["abc"])).toEqual({})
+    expect(requests).toEqual([
+      'PUT /api/machine/inboxes/inbox%2F1/routes/sentry {"key":"abc","keys":["abc","def"]}'
+    ])
   })
 })

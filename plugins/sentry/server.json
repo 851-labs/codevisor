@@ -1,0 +1,368 @@
+{
+  "$schema": "https://static.modelcontextprotocol.io/schemas/2025-12-11/server.schema.json",
+  "name": "dev.codevisor/sentry",
+  "title": "Sentry",
+  "description": "Find, read and fix Sentry issues and stack traces, and wake bots on new issues and alerts.",
+  "version": "1.0.0",
+  "websiteUrl": "https://codevisor.dev",
+  "icons": [
+    {
+      "src": "https://github.com/getsentry.png"
+    }
+  ],
+  "repository": {
+    "url": "https://github.com/851-labs/codevisor",
+    "source": "github",
+    "subfolder": "plugins/sentry"
+  },
+  "_meta": {
+    "dev.codevisor/plugin": {
+      "bundled": "sentry",
+      "entry": "dist/main.js",
+      "ageRating": 4,
+      "accounts": {
+        "label": "Sentry account",
+        "oauth": {
+          "provider": "sentry",
+          "authorizeUrl": "https://sentry.io/oauth/authorize/",
+          "tokenUrl": "https://sentry.io/oauth/token/",
+          "scopes": [
+            "org:read",
+            "project:read",
+            "project:write",
+            "team:read",
+            "event:read",
+            "event:write"
+          ],
+          "client": "installed",
+          "redirectUrl": "https://cloud.codevisor.dev/oauth/plugins/callback"
+        },
+        "fields": []
+      },
+      "capabilities": {
+        "tools": [
+          {
+            "name": "add_issue_note",
+            "description": "Add a comment (note) to a Sentry issue's activity feed, visible to the whole team. Use it to record findings or decisions; never post secrets or credentials.",
+            "effects": "external-write"
+          },
+          {
+            "name": "analyze_issue_with_seer",
+            "description": "Run Seer AI root cause analysis on a Sentry issue and return the root cause, affected code locations, and a suggested code fix. Returns an existing analysis at once; a new one takes minutes, so call it only when the user asks for Seer or a fix, or the issue details do not show the cause. Does not support metric alert issues.",
+            "effects": "external-write"
+          },
+          {
+            "name": "create_dsn",
+            "description": "Create an additional DSN (client key) for an existing Sentry project, such as a separate production key. Returns the new key's ID, name, and DSN. create_project already provisions a DSN for a new project.",
+            "effects": "external-write"
+          },
+          {
+            "name": "create_project",
+            "description": "Create a new Sentry project for an app or service and provision its DSN (client key) for SDK setup. Optionally links a connected repository with a root code mapping. Returns the project, its DSN, whether the repository linked, and the Sentry signals its platform supports, each with a docs link.",
+            "effects": "external-write"
+          },
+          {
+            "name": "find_alert_rules",
+            "description": "Find Sentry alert rules: Issue Alerts (notification workflows) and Metric Monitor alerts, with their conditions, actions, owner, and environment.\nMetric entries carry legacy IDs; find_metric_monitors returns canonical monitor IDs. Cron and uptime monitors: find_monitors, find_uptime_monitors.",
+            "effects": "read"
+          },
+          {
+            "name": "find_dashboards",
+            "description": "List or search Sentry dashboards in an organization by title, returning dashboard IDs and titles. Open one with get_dashboard_details.",
+            "effects": "read"
+          },
+          {
+            "name": "find_dropped_events",
+            "description": "Find events Sentry dropped before storing them (SDK sampling, filters, rate limits, quota, spike protection), as dropped and accepted volume over time by outcome and reason. Each drop is tagged intentional (sampling, filters) or unintentional (quota, abuse). Use it to explain flat, low, or missing data that searches, charts, and dashboards cannot show; no drops means the data is complete.",
+            "effects": "read"
+          },
+          {
+            "name": "find_dsns",
+            "description": "List the DSNs (client keys) for a Sentry project: the SENTRY_DSN an SDK uses to send events. Returns each key's ID, name, and DSN.",
+            "effects": "read"
+          },
+          {
+            "name": "find_metric_monitors",
+            "description": "Find Sentry Metric Monitors that alert when an error count, latency, log, metric, or crash rate crosses a threshold. Returns monitor IDs, queries, and connected Alerts.\nCron jobs: find_monitors. URL checks: find_uptime_monitors. Notifications: alert rules.",
+            "effects": "read"
+          },
+          {
+            "name": "find_monitors",
+            "description": "Find Sentry cron monitors, which track scheduled jobs through check-ins. Returns each monitor's status, schedule, owner, project, and recent environment state.\nUptime URL checks: find_uptime_monitors. Metric thresholds: find_metric_monitors.\nWhen more results exist, narrow by project, environment, owner, or name.",
+            "effects": "read"
+          },
+          {
+            "name": "find_organizations",
+            "description": "List or search the Sentry organizations the user can access. Returns each organization's slug and region URL, which other Sentry tools take, plus its web URL; 25 per page.",
+            "effects": "read"
+          },
+          {
+            "name": "find_projects",
+            "description": "List or search projects in a Sentry organization. Returns project slugs, 25 per page.",
+            "effects": "read"
+          },
+          {
+            "name": "find_related_issues",
+            "description": "Find Sentry issues related to an issue: likely duplicates with a similar stack trace in the same project, other errors in the same trace, and the error issues behind a metric alert. Returns each related issue with its status and why it's related. Use it before resolving or ignoring an issue. It doesn't compare titles or error messages.",
+            "effects": "read"
+          },
+          {
+            "name": "find_releases",
+            "description": "List or search releases (deployed versions) in a Sentry organization or project. Returns each release's dates, new issue count, last commit, and last deploy. Returns at most 25 releases with no next page; narrow by project or version to see others.",
+            "effects": "read"
+          },
+          {
+            "name": "find_teams",
+            "description": "List or search teams in a Sentry organization. Returns each team's slug and numeric ID, 25 per page.",
+            "effects": "read"
+          },
+          {
+            "name": "find_uptime_monitors",
+            "description": "Find Sentry uptime monitors, which check a URL over HTTP. Returns each monitor's URL, status, interval, owner, and project.\nScheduled jobs (cron): find_monitors. Metric thresholds: find_metric_monitors.\nWhen more results exist, narrow by project, environment, owner, or name.",
+            "effects": "read"
+          },
+          {
+            "name": "get_agent_conversation_details",
+            "description": "Get the transcript of one Sentry agent conversation (formerly AI conversation): user and assistant messages and tool calls in order, with trace and span IDs for debugging. To find conversations, use search_agent_conversations.",
+            "effects": "read"
+          },
+          {
+            "name": "get_alert_rule",
+            "description": "Get one Sentry alert rule by ID or exact name: its triggers, conditions, notification actions, connected monitors, and project scope.\nPrefer get_metric_monitor_details for Metric Monitors; cron and uptime monitors have their own get tools.",
+            "effects": "read"
+          },
+          {
+            "name": "get_dashboard_details",
+            "description": "Get one Sentry dashboard by numeric ID or exact title: its widgets with saved query definitions and transformations, projects, environments, filters, and layout. Returns saved queries, not live widget data. To find a dashboard, use find_dashboards.",
+            "effects": "read"
+          },
+          {
+            "name": "get_doc",
+            "description": "Fetch the full markdown content of a Sentry documentation page.",
+            "effects": "read"
+          },
+          {
+            "name": "get_event_attachment",
+            "description": "List or download the attachments of a Sentry event, such as screenshots, log files, and minidumps uploaded with an error report.",
+            "effects": "read"
+          },
+          {
+            "name": "get_event_stacktrace",
+            "description": "Get the full stack trace (stacktrace) of one thread in a Sentry event, such as a non-crashed thread listed in the issue details. Lists the threads when the selector matches none or several. For an event with no threads, returns its event-level stacktrace.",
+            "effects": "read"
+          },
+          {
+            "name": "get_issue_activity",
+            "description": "Get the activity feed and comments of a Sentry issue: who resolved, ignored, assigned, or commented on it, and when.",
+            "effects": "read"
+          },
+          {
+            "name": "get_issue_breadcrumbs",
+            "description": "Get the breadcrumb trail of a Sentry issue event: the navigation, console, HTTP, and user actions leading up to the error.",
+            "effects": "read"
+          },
+          {
+            "name": "get_issue_details",
+            "description": "Get the details of one Sentry issue, by issue ID, URL, or event ID: title, status, counts, the latest or a chosen event with its stacktrace, Seer root cause, suspect commit, linked tickets, and replays. Can also return installed package versions for one event. Use search_issues to list issues.",
+            "effects": "read"
+          },
+          {
+            "name": "get_issue_tag_values",
+            "description": "Get the tag value distribution of a Sentry issue: counts of each browser, environment, release, URL, or other tag value affected. Tag keys vary by platform, SDK, and custom tags.",
+            "effects": "read"
+          },
+          {
+            "name": "get_issue_user_reports",
+            "description": "Get the legacy User Reports and crash-report feedback attached to a Sentry issue: what users said happened. For User Feedback widget submissions, use search_issues.",
+            "effects": "read"
+          },
+          {
+            "name": "get_latest_base_snapshot",
+            "description": "Get an app's latest UI screenshots (baseline or golden images) from preprod snapshots, such as the current screens, dark mode variants, or the baseline behind a visual regression. Returns each image's file name, display name, and description, grouped. For a snapshot comparison by ID, use get_snapshot.",
+            "effects": "read"
+          },
+          {
+            "name": "get_metric_monitor_details",
+            "description": "Get a Sentry Metric Monitor: its query, dataset, detection mode, thresholds, resolution conditions, and connected Alerts.\nCondition results: 75 critical, 50 warning, 0 resolved. Percent thresholds are absolute: 110 means 10% higher. Windows are in seconds.\nConnected Alerts: get_alert_rule. Cron jobs: find_monitors. URL checks: find_uptime_monitors.",
+            "effects": "read"
+          },
+          {
+            "name": "get_monitor_details",
+            "description": "Get a Sentry cron monitor (scheduled job): schedule, status, owner, environments, recent check-ins (missed, failed, timeout, OK), and check-in stats.\nUptime URL checks: find_uptime_monitors. Metric thresholds: find_metric_monitors.\nIssues for a monitor: search_issues with monitor.slug:<slug>.",
+            "effects": "read"
+          },
+          {
+            "name": "get_profile",
+            "description": "Analyze aggregated CPU profiles (flamegraph) for one Sentry transaction: hot paths, per-function p75/p95/p99, user versus library code, and regressions against a baseline period. For one profile by ID or URL, use get_profile_details.",
+            "effects": "read"
+          },
+          {
+            "name": "get_profile_details",
+            "description": "Inspect one Sentry profile by profile ID, profiler ID, or URL: transaction, trace, release, and runtime details, sample and thread structure, and top frames. Handles transaction and continuous profiles. For aggregated hot paths across a transaction, use get_profile.",
+            "effects": "read"
+          },
+          {
+            "name": "get_release_details",
+            "description": "Get one Sentry release by exact version: its projects, deploys, environments, recent commits, and optionally release health (adoption stages and session bounds). To find issues introduced in a release, use search_issues with `release:<version>`.",
+            "effects": "read"
+          },
+          {
+            "name": "get_replay_details",
+            "description": "Get a Sentry session replay's summary and a timeline of what the user did: page loads and navigations, clicks (including dead and rage clicks), inputs and key presses, console warnings and errors, failed requests, and feedback.",
+            "effects": "read"
+          },
+          {
+            "name": "get_sentry_resource",
+            "description": "Fetch a Sentry resource by URL or ID: issues, events, traces, spans, agent conversations, replays, monitors, metric alerts, dashboards, preprod snapshots, and snapshot images. Start here for any Sentry URL or issue, event, trace, or replay ID; the type is detected from the URL. To list agent conversations, use search_agent_conversations.",
+            "effects": "read"
+          },
+          {
+            "name": "get_snapshot",
+            "description": "Get a preprod snapshot comparison by ID, such as a failed visual regression or screenshot test from CI: its metadata, image counts, and changed images with the percent of pixels that differ. For an app's latest baseline screenshots, use get_latest_base_snapshot. For a snapshot URL, use get_sentry_resource.",
+            "effects": "read"
+          },
+          {
+            "name": "get_snapshot_image",
+            "description": "Get one image from a preprod snapshot: the current, previous, or diff screenshot, with its metadata. Returns a preview image unless full resolution is requested. Get image file names from get_snapshot or get_latest_base_snapshot.",
+            "effects": "read"
+          },
+          {
+            "name": "get_span_details",
+            "description": "Get one span in a Sentry trace by trace ID and span ID: its attributes, timing, errors, and child spans. For a whole-trace overview, use get_trace_details.",
+            "effects": "read"
+          },
+          {
+            "name": "get_trace_details",
+            "description": "Get an overview of one Sentry trace by trace ID: trace statistics, a span breakdown, and a link to the trace in Sentry. Shows a condensed subset of spans, not every span; to list all spans in a trace, use search_traces.",
+            "effects": "read"
+          },
+          {
+            "name": "get_uptime_monitor_details",
+            "description": "Get a Sentry uptime monitor: its URL, interval, thresholds, status, and recent HTTP check results (status code, duration, failures). Request bodies are never returned; sensitive headers are redacted.\nScheduled jobs (cron): find_monitors. Metric thresholds: find_metric_monitors.\nRelated issues: search_issues with uptime_rule:<id>.",
+            "effects": "read"
+          },
+          {
+            "name": "link_issue",
+            "description": "Link an existing external ticket or GitHub pull request to a Sentry issue by URL: Jira, GitHub, GitLab, Bitbucket, Azure DevOps, or an installed Sentry App such as Linear. Adds a reference only; it does not create the ticket or change the issue status (use update_issue).",
+            "effects": "external-write"
+          },
+          {
+            "name": "render_issue_chart",
+            "description": "Chart a Sentry issue's events and affected users over time, like the graph on the issue page. Returns every bucket of both series, and MCP Apps hosts show it as an interactive chart.",
+            "effects": "read"
+          },
+          {
+            "name": "render_sentry_chart",
+            "description": "Chart a count, rate, duration, or other aggregate of Sentry errors, logs, spans, metrics, or profiles over time, optionally split by one attribute into the 5 values with the most events. Returns every bucket of each series, with each group's event count when split, and MCP Apps hosts show it as an interactive chart. To find individual events, use the dataset search tools.",
+            "effects": "read"
+          },
+          {
+            "name": "search_agent_conversations",
+            "description": "Search Sentry agent conversations (formerly AI conversations): one summary row per LLM agent conversation with title, cost, tokens, call counts, and previews. For one conversation's transcript, use get_agent_conversation_details.",
+            "effects": "read"
+          },
+          {
+            "name": "search_docs",
+            "description": "Search Sentry documentation for SDK setup, framework integrations, instrumentation, and configuration such as sampling, data scrubbing, and source maps. Returns matching page paths and snippets only. Use the Sentry tool `get_doc` to read a full page.",
+            "effects": "read"
+          },
+          {
+            "name": "search_errors",
+            "description": "Search Sentry error events: exceptions, crashes, and stack traces, including top errors and trends over time. Returns individual events, counts, and aggregates; for grouped issue lists, use search_issues. For log lines, including error-level logs, use search_logs.",
+            "effects": "read"
+          },
+          {
+            "name": "search_issue_events",
+            "description": "Search and filter the individual events (occurrences) of one Sentry issue, newest first, by environment, release, user, trace, or time. Accepts natural language or Sentry event search syntax. Use search_issues to search across issues.",
+            "effects": "read"
+          },
+          {
+            "name": "search_issues",
+            "description": "Search Sentry issues (grouped errors, crashes, and user feedback) and list them with status, occurrences, users impacted, assignee, and first and last seen. Accepts natural language or Sentry issue search syntax. For individual events, counts, or aggregates, use search_errors, search_logs, or search_traces.",
+            "effects": "read"
+          },
+          {
+            "name": "search_logs",
+            "description": "Search Sentry logs: application log lines at any severity, including trends over time. Returns individual events, counts, and aggregates; for grouped issue lists, use search_issues. For exceptions and crashes, use search_errors; for requests whose trace has a matching log, use search_traces.",
+            "effects": "read"
+          },
+          {
+            "name": "search_metrics",
+            "description": "Search Sentry metrics: counters, gauges, and distributions, for values, percentiles, totals, and trends over time. Returns individual events, counts, and aggregates; for grouped issue lists, use search_issues. For latency recorded on spans, use search_traces.",
+            "effects": "read"
+          },
+          {
+            "name": "search_profiles",
+            "description": "Search Sentry profiles: transaction and continuous profiles, to find profile IDs and profiled transactions. Returns individual events, counts, and aggregates; for grouped issue lists, use search_issues. Open a result with get_profile or get_profile_details for flamegraphs and hotspots.",
+            "effects": "read"
+          },
+          {
+            "name": "search_replays",
+            "description": "Search Sentry session replays by rage clicks, dead clicks, visited pages, errors seen, and users. Returns replay lists, not counts or aggregates.",
+            "effects": "read"
+          },
+          {
+            "name": "search_traces",
+            "description": "Search Sentry traces and spans: requests, endpoints, HTTP and DB calls, and AI/LLM calls, for latency, throughput, and slowness over time. Also finds spans whose trace has a matching log, metric, or span. Returns individual events, counts, and aggregates; for grouped issue lists, use search_issues. For exceptions, use search_errors; for log lines, use search_logs.",
+            "effects": "read"
+          },
+          {
+            "name": "unlink_issue",
+            "description": "Remove a linked external ticket or GitHub pull request from a Sentry issue by URL. Deletes only the association, not the ticket or the issue; safe to repeat.",
+            "effects": "external-write"
+          },
+          {
+            "name": "update_issue",
+            "description": "Update a Sentry issue: resolve, ignore (archive), or reopen it, assign it to a user or team, or change its priority.",
+            "effects": "external-write"
+          },
+          {
+            "name": "whoami",
+            "description": "Identify the authenticated Sentry user: name and email.",
+            "effects": "read"
+          }
+        ],
+        "events": [
+          {
+            "name": "issue.created",
+            "description": "Sentry saw a new issue in an organization you belong to. Filter on organization.slug, issue.project.slug or issue.level."
+          },
+          {
+            "name": "issue.regressed",
+            "description": "A resolved issue came back. release is the release it regressed in, or null."
+          },
+          {
+            "name": "issue.escalating",
+            "description": "An issue is escalating: it's getting many more events than usual."
+          },
+          {
+            "name": "issue.assigned",
+            "description": "An issue was assigned to you (toMe) or to one of your teams (toMyTeam). byMe is true when you assigned it."
+          },
+          {
+            "name": "comment.created",
+            "description": "Someone commented on an issue. byMe is true for your own comments. Arrives only from Sentry organizations that installed the Codevisor integration."
+          },
+          {
+            "name": "alert.fired",
+            "description": "An alert that uses \"Send a notification via Codevisor\" fired. alert.kind is \"issue\" or \"metric\"; issue is null for metric alerts. Arrives only from Sentry organizations that installed the Codevisor integration."
+          }
+        ],
+        "skills": [
+          {
+            "name": "sentry",
+            "description": "Fix production errors from Sentry: find the issue, read its stack trace, fix the code, resolve it in the next release, and react to Sentry events."
+          }
+        ],
+        "panes": [],
+        "ingress": [
+          {
+            "name": "sentry",
+            "title": "Sentry webhooks",
+            "route": "sentry"
+          }
+        ]
+      }
+    }
+  }
+}

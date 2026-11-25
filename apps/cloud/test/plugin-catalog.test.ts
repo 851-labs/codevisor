@@ -11,7 +11,7 @@ const official = {
     isLatest: true
   }
 }
-const ratedIds = ["io.sentry/mcp", "com.stripe/mcp"]
+const ratedIds = ["com.notion/mcp", "com.stripe/mcp"]
 
 const ServerBody = z.looseObject({
   name: z.string(),
@@ -63,7 +63,7 @@ describe("plugin catalog", () => {
 
   it("filters by name or title, ignoring case", async () => {
     expect(names(await listServers("?search=LINEAR"))).toEqual(["dev.codevisor/linear"])
-    expect(names(await listServers("?search=sentry"))).toEqual(["io.sentry/mcp"])
+    expect(names(await listServers("?search=sentry"))).toEqual(["dev.codevisor/sentry"])
     expect(await listServers("?search=no-such-plugin")).toEqual({
       servers: [],
       metadata: { count: 0 }
@@ -71,15 +71,15 @@ describe("plugin catalog", () => {
   })
 
   it("merges age ratings into the Codevisor plugin metadata", async () => {
-    const sentry = "io.sentry/mcp"
-    const unrated = pluginMeta(serverNamed(await listServers(), sentry))
-    await rate(sentry, 16)
+    const notion = "com.notion/mcp"
+    const unrated = pluginMeta(serverNamed(await listServers(), notion))
+    await rate(notion, 16)
     await rate("com.stripe/mcp", 18)
 
     const body = await listServers()
 
     expect(unrated).toEqual({ ageRating: 4 })
-    expect(pluginMeta(serverNamed(body, sentry))).toEqual({
+    expect(pluginMeta(serverNamed(body, notion))).toEqual({
       ...unrated,
       ageRating: 16
     })

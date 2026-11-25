@@ -582,6 +582,19 @@
         "vitest": "4.1.6",
       },
     },
+    "plugins/sentry": {
+      "name": "@codevisor/plugin-sentry",
+      "dependencies": {
+        "@codevisor/plugin-kit": "workspace:*",
+        "@modelcontextprotocol/client": "2.4.0",
+        "@modelcontextprotocol/server": "2.4.0",
+        "zod": "4.4.3",
+      },
+      "devDependencies": {
+        "@codevisor/vitest-config": "workspace:*",
+        "vitest": "4.1.6",
+      },
+    },
     "plugins/slack": {
       "name": "@codevisor/plugin-slack",
       "dependencies": {
@@ -846,6 +859,8 @@
     "@codevisor/plugin-kit": ["@codevisor/plugin-kit@workspace:plugins/kit"],
 
     "@codevisor/plugin-linear": ["@codevisor/plugin-linear@workspace:plugins/linear"],
+
+    "@codevisor/plugin-sentry": ["@codevisor/plugin-sentry@workspace:plugins/sentry"],
 
     "@codevisor/plugin-slack": ["@codevisor/plugin-slack@workspace:plugins/slack"],
 

@@ -11,6 +11,7 @@ import {
   oauthFixture
 } from "./plugin-account-oauth-test-support.js"
 import { oauthFlowLifetimeMs } from "./plugin-account-oauth.js"
+import type { AccountChecker } from "./plugin-accounts.js"
 import type { FakeOAuthProvider } from "./plugin-oauth-test-support.js"
 
 const graphqlSpec = (provider: FakeOAuthProvider): PluginAccountSpec => ({
@@ -131,6 +132,39 @@ describe("plugin account OAuth", () => {
       routeKey: "org-1"
     })
     expect(JSON.stringify(changes)).toContain('"routeKey":"org-1"')
+  })
+
+  it("lets the plugin name a new sign-in and route it by several keys", async () => {
+    const checked: Array<unknown> = []
+    const check: AccountChecker = async (_server, account) => {
+      checked.push(account)
+      if (account.accessToken !== "access-1") throw failure(400, "Sentry rejected the sign-in")
+      return { identity: "dana@acme.com", routeKeys: ["101", "202"] }
+    }
+    const { accounts, server, changes, signIn } = await oauthFixture(
+      exampleSpec,
+      {},
+      { catalogId: "example.mail", check }
+    )
+
+    const { grant } = await signIn()
+    await accounts.completeOAuth(grant.state, grant.code)
+
+    expect(checked).toEqual([
+      {
+        id: expect.any(String),
+        accessToken: "access-1",
+        fields: { clientId: "client-1", clientSecret: "client-secret" }
+      }
+    ])
+    expect(await accounts.list(server.id)).toEqual([
+      expect.objectContaining({ label: "dana@acme.com", identity: "dana@acme.com" })
+    ])
+    expect(await accounts.list(server.id)).toEqual([
+      expect.not.objectContaining({ routeKeys: expect.anything() })
+    ])
+    expect(await accounts.context(server.id)).toMatchObject({ routeKeys: ["101", "202"] })
+    expect(JSON.stringify(changes)).toContain('"routeKeys":["101","202"]')
   })
 
   it("re-authorizes an account in place, keeping its label and revoking the old grant", async () => {

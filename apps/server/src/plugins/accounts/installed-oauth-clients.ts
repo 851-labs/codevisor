@@ -29,6 +29,14 @@ export const installedClientSources: ReadonlyMap<string, InstalledClientSource> 
       bundledFile: join("config", "linear-oauth-client.json"),
       devFile: join(".codevisor-dev-secrets", "linear-dev-oauth-client.json")
     }
+  ],
+  [
+    "sentry",
+    {
+      envVar: "CODEVISOR_SENTRY_OAUTH_CLIENT_FILE",
+      bundledFile: join("config", "sentry-oauth-client.json"),
+      devFile: join(".codevisor-dev-secrets", "sentry-dev-oauth-client.json")
+    }
   ]
 ])
 
