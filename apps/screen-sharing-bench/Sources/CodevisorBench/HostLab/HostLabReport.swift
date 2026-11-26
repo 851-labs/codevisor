@@ -18,13 +18,15 @@ struct HostLabResult: Encodable {
 
 struct HostLabReport: Encodable {
   let resolution: String
+  let displayRefreshHz: Double?
   let seconds: Int
   let results: [HostLabResult]
 
   var markdown: String {
     let header =
       "| Scene | Variant | All % | host-run % | VTEncoder % | WindowServer % | replayd % | player % | Captures | Tiles | "
-      + "Refinements | Converged | Encode p50 ms |"
+      + "Refinements | Converged | Encode p50 ms | Interval p50 ms | Interval p95 ms | Under 12.5 ms /s | Over 25 ms /s | "
+      + "Delivery age p50 ms | Delivery age p95 ms | Idle callbacks /s |"
     let rows = results.map { result in
       let cells = [result.allProcesses?.cpuPct] + HostLabCommand.groups.map { result.cpuPct[$0] }
       let rates = ["captureFrames", "tilesEncoded", "refinementUpdates", "refinementsConverged"].map {
@@ -32,7 +34,7 @@ struct HostLabReport: Encodable {
       }
       let encode = result.run?.timings["encode"]?.p50Ms
       return "| \(result.scene) | \(result.variant) | "
-        + (cells + rates + [encode]).map(Self.number).joined(separator: " | ") + " |"
+        + (cells + rates + [encode] + Self.cadence(result)).map(Self.number).joined(separator: " | ") + " |"
     }
     let passes = results.map { result in
       let sizes = (result.run?.passes ?? []).map {
@@ -41,16 +43,27 @@ struct HostLabReport: Encodable {
       return "- \(result.scene) \(result.variant): " + (sizes.isEmpty ? "no tiles" : sizes.joined(separator: ", "))
     }
     let title = [
-      "## Host lab at \(resolution), \(seconds) s per variant", "",
+      "## Host lab at \(resolution) (\(displayRefreshHz.map { "\($0)" } ?? "unknown") Hz), \(seconds) s per variant",
+      "",
       "Counts are per second of the variant's capture. Captures, tiles and refinements come from its host metrics.", "",
       header,
-      "| --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |",
+      "| --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |",
     ]
     let sizes = ["", "Encoded tile sizes by refinement pass (0 is the change):", ""] + passes
     return (title + rows + sizes).joined(separator: "\n") + "\n"
   }
 
+  private static func cadence(_ result: HostLabResult) -> [Double?] {
+    let interval = result.run?.timings["captureDisplayInterval"]
+    let age = result.run?.timings["captureDeliveryAge"]
+    return [
+      interval?.p50Ms, interval?.p95Ms, result.perSecond("captureIntervalsShort") ?? 0,
+      result.perSecond("captureIntervalsGap") ?? 0, age?.p50Ms, age?.p95Ms,
+      result.perSecond("captureCallbacksIdle") ?? 0,
+    ]
+  }
+
   private static func number(_ value: Double?) -> String {
-    value.map { String(format: "%.1f", $0) } ?? "–"
+    value.map { String(format: "%.2f", $0) } ?? "–"
   }
 }

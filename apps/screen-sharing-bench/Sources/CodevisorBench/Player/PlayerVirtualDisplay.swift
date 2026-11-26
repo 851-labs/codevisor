@@ -6,7 +6,7 @@ import ScreenSharingBenchScenes
 final class PlayerVirtualDisplay {
   private static let name = "CodevisorBench"
   private static let vendorID: UInt32 = 0xC0DB
-  private static let refreshRate = 60.0
+  static var refreshRate = 60.0
   private static let pollInterval = Duration.milliseconds(50)
   private static let pollAttempts = 100
   private static let profileAttempts = 20

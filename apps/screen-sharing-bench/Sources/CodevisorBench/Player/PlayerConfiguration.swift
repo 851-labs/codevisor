@@ -12,4 +12,5 @@ struct PlayerConfiguration {
   let hashLog: String?
   let selfInputHz: Int
   let bottomBarcode: Bool
+  let refresh: Int
 }

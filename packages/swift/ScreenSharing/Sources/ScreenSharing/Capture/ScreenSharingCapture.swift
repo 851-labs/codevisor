@@ -19,6 +19,7 @@
     public nonisolated static let defaultQueueDepth = 3
     public var pixelFormat: OSType
     public var queueDepth = ScreenSharingCapture.defaultQueueDepth
+    public var frameRateCap: Int?
     public private(set) var showsCursor = true
     public private(set) var dynamicRange = ScreenSharingDynamicRange.standard
     public private(set) var capturesAudio = false
@@ -88,7 +89,8 @@
       }
       let streamConfiguration = Self.streamConfiguration(
         configuration, pixelFormat: pixelFormat, showsCursor: showsCursor,
-        capturesAudio: capturesAudio, dynamicRange: dynamicRange, queueDepth: queueDepth)
+        capturesAudio: capturesAudio, dynamicRange: dynamicRange, queueDepth: queueDepth,
+        frameRateCap: frameRateCap)
       metrics.label("captureQueueDepth", String(queueDepth))
       metrics.label("capturePixelFormat", String(pixelFormat))
       metrics.label("captureDynamicRange", dynamicRange.rawValue)
@@ -129,7 +131,7 @@
       try await stream.updateConfiguration(
         Self.streamConfiguration(
           configuration, pixelFormat: pixelFormat, showsCursor: showsCursor, capturesAudio: capturesAudio,
-          dynamicRange: dynamicRange, queueDepth: queueDepth))
+          dynamicRange: dynamicRange, queueDepth: queueDepth, frameRateCap: frameRateCap))
       guard self.generation == generation else { throw CancellationError() }
       video = configuration
     }
@@ -207,7 +209,8 @@
 
     static func streamConfiguration(
       _ video: ScreenSharingVideoConfiguration, pixelFormat: OSType, showsCursor: Bool, capturesAudio: Bool,
-      dynamicRange: ScreenSharingDynamicRange = .standard, queueDepth: Int = defaultQueueDepth
+      dynamicRange: ScreenSharingDynamicRange = .standard, queueDepth: Int = defaultQueueDepth,
+      frameRateCap: Int? = nil
     ) -> SCStreamConfiguration {
       let config: SCStreamConfiguration
       if dynamicRange == .high {
@@ -219,7 +222,8 @@
         config.colorSpaceName = CGColorSpace.sRGB
       }
       config.width = video.width; config.height = video.height
-      config.minimumFrameInterval = CMTime(value: 1, timescale: CMTimeScale(video.framesPerSecond))
+      config.minimumFrameInterval = CMTime(
+        value: 1, timescale: CMTimeScale(frameRateCap ?? video.framesPerSecond))
       config.queueDepth = queueDepth
       config.showsCursor = showsCursor
       config.capturesAudio = capturesAudio

@@ -18,8 +18,12 @@ final class ShareV2Host {
   private var host: ScreenSharingV2Host?
   private var captureError: (any Error)?
 
-  init(displayID: CGDirectDisplayID, control channel: SignalingControlChannel, encoder: V2EncoderChoice) async throws {
+  init(
+    displayID: CGDirectDisplayID, control channel: SignalingControlChannel, encoder: V2EncoderChoice,
+    captureCap: Int? = nil
+  ) async throws {
     self.displayID = displayID
+    capture.frameRateCap = captureCap
     encoderChoice = encoder
     let mode = CGDisplayCopyDisplayMode(displayID)
     configuration = try ScreenSharingV2Profile.captureConfiguration(
@@ -57,7 +61,7 @@ final class ShareV2Host {
     await endpoint.close()
     return ShareV2Result(
       viewer: viewer, display: ShareDisplay(displayID), configuration: configuration, encoder: encoderChoice.kind,
-      captureError: captureError,
+      captureCap: capture.frameRateCap, captureError: captureError,
       metrics: metrics.snapshot(), media: statistics, control: control.summary, captures: captureLog?.recorded ?? [])
   }
 

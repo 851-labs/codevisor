@@ -1,7 +1,7 @@
 import ScreenSharingBench
 
 struct Tier2DispatchesMarkdown {
-  static let systems: [BenchSystem] = [.appleHP, .codevisorV2, .codevisorV2VCP]
+  static let systems: [BenchSystem] = [.appleHP] + BenchSystem.engineV2Systems
   static let verdictMetrics = ["image_age_ms.p50", "image_age_ms.p95"]
 
   private let dispatches: [Tier2Dispatch]

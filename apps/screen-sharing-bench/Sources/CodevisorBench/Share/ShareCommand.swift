@@ -7,7 +7,8 @@ struct ShareCommand: BenchCommand {
   static let name = "share"
   static let summary = "Share this Mac's main display through Codevisor engine v2 (the Tier 2 host)"
   static let usage =
-    "[--port <port>] [--duration <seconds>] \(VirtualDisplayOption.usage) \(V2EncoderChoice.usage) "
+    "[--port <port>] [--duration <seconds>] [--capture-cap <1-240>] \(VirtualDisplayOption.usage) "
+    + "\(V2EncoderChoice.usage) "
     + BenchSignalFiles.usage
 
   private static let durations = 1...7200
@@ -19,6 +20,7 @@ struct ShareCommand: BenchCommand {
   private let signals: BenchSignalFiles
   private let virtualDisplay: BenchSceneResolution?
   private let encoder: V2EncoderChoice
+  private let captureCap: Int?
 
   init(options: BenchOptions) throws {
     port = UInt16(try options.integer("port", default: Int(SignalingSocket.defaultPort), in: Self.ports))
@@ -26,6 +28,8 @@ struct ShareCommand: BenchCommand {
     signals = try BenchSignalFiles(options: options)
     virtualDisplay = try VirtualDisplayOption.read(from: options)
     encoder = try V2EncoderChoice(options: options)
+    let cap = try options.integer("capture-cap", default: 0, in: 0...240)
+    captureCap = cap > 0 ? cap : nil
   }
 
   func run() async throws {
@@ -43,7 +47,8 @@ struct ShareCommand: BenchCommand {
     async throws
   {
     let control = SignalingControlChannel(connection)
-    let host = try await ShareV2Host(displayID: displayID, control: control, encoder: encoder)
+    let host = try await ShareV2Host(
+      displayID: displayID, control: control, encoder: encoder, captureCap: captureCap)
     do {
       try connection.send(host.address)
       try await host.accept(until: deadline)

@@ -25,7 +25,7 @@ struct PlayerSession {
     window.onInput = versions.recordInput
     let loop = try PlayerDisplayLoop(
       renderer: BenchSceneRenderer(setup: setup, device: device, bottomBarcode: configuration.bottomBarcode),
-      device: device, versions: versions, hashes: hashes)
+      device: device, versions: versions, hashes: hashes, refresh: configuration.refresh)
 
     let measurement = try await play(window: window, loop: loop)
     try writeHashes(hashes, setup: setup)
