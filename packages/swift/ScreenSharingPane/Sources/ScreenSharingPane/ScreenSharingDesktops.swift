@@ -109,7 +109,8 @@ public final class ScreenSharingDesktops {
         open: {
           let relay = RFBWebSocketTransport(socket: try await openSocket(machineId, displayId))
           return try await VNCConnection.open(transport: relay, password: nil, serverDrawsPointer: true)
-        }, arbitratedByServer: arbitratedByServer, viewerName: appName, scroll: .touch)
+        }, arbitratedByServer: arbitratedByServer, viewerName: appName,
+        keys: VNCKeyTranslator(layout: VNCUnitedStatesKeyLayout.layout), scroll: .touch)
     }
   }
 

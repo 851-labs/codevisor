@@ -8,15 +8,18 @@ public final class ScreenSharingVNCTransport: ScreenSharingTransport {
   private let openClient: Open
   private let arbitratedByServer: Bool
   private let viewerName: String?
+  private let keys: VNCKeyTranslator
   private let scroll: VNCScrollInput
   private var session: VNCScreenSharingSession?
 
   public init(
-    open: @escaping Open, arbitratedByServer: Bool, viewerName: String? = nil, scroll: VNCScrollInput = .wheel
+    open: @escaping Open, arbitratedByServer: Bool, viewerName: String? = nil,
+    keys: VNCKeyTranslator = VNCKeyTranslator(), scroll: VNCScrollInput = .wheel
   ) {
     openClient = open
     self.arbitratedByServer = arbitratedByServer
     self.viewerName = viewerName
+    self.keys = keys
     self.scroll = scroll
   }
 
@@ -34,7 +37,7 @@ public final class ScreenSharingVNCTransport: ScreenSharingTransport {
     }
 
     let session = VNCScreenSharingSession(
-      client: opened.client, parameters: opened.outcome.parameters,
+      client: opened.client, parameters: opened.outcome.parameters, keys: keys,
       leaseChannel: arbitratedByServer ? opened.client.controlChannel : nil,
       viewerName: viewerName ?? VNCViewerName.thisDevice, scroll: scroll)
     self.session = session
