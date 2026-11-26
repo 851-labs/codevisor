@@ -117,8 +117,9 @@ impl Estimator {
         estimate.clamp(MIN_RATE_BPS, self.max_bps)
     }
 
-    pub fn carried_bps(&self) -> f64 {
-        self.acked.bps().map_or(MIN_RATE_BPS, |carried| carried.clamp(MIN_RATE_BPS, self.estimate_bps()))
+    pub fn carried_bps(&self, now: Instant) -> f64 {
+        let carried = self.acked.bps_until(now).unwrap_or(MIN_RATE_BPS);
+        carried.clamp(MIN_RATE_BPS, self.estimate_bps())
     }
 
     pub fn measured(&self) -> bool {

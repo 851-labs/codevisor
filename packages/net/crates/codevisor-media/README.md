@@ -42,19 +42,23 @@ no jitter buffer and no queue deeper than one frame.
      still arriving isn't lost: in Tier 1 (run 41701359340, N6 and N7) a keyframe of several hundred KB was given up
      while it arrived, and with no acknowledged reference the host answered with another keyframe, which went the same
      way (scroll N6: 11 frames sent in 40 s, all keyframes, all lost).
-     Neither end gives a frame up while it can still arrive (851-4477). The viewer's wait for a frame it has asked
-     for restarts at every media packet that arrives, for any frame, and is at least the time the frame's missing
-     packets take at the pace its own packets came at: a resend waits behind whatever the host sent before the
-     request, so on a slow link (or with another tile's keyframe ahead of it) the frame went silent for longer than
-     a round trip and was given up with its resends still queued. A viewer that jumps 64 frames ahead still skips.
-     The host counts a NACK as an answer: its probe count for that frame starts again, and after six unanswered
-     probes it still waits until everything that was in flight when the frame's last packet left could have crossed
-     at the rate the viewer acknowledged in the last 0.5 s (300 kbit/s before any acknowledgement; never over the
-     estimate). Before, the probes were spaced by a round trip measured before the queue built up: a 190 KB first
-     keyframe on a 1 Mbit/s link was declared lost after 1.7 s, about when its last packets arrived, and with no
-     acknowledged reference the host answered with a second, larger keyframe (Tier 1 lab run 45764155233, scroll and
-     video on N7: 417–455 KB and 1.25 MB). What discards the packets in the first place is below this crate: the
-     viewer's QUIC logs "failed to authenticate packet" for them while the connection opens its extra paths.
+     Neither end gives a frame up while it can still arrive (851-4477), within bounds. The viewer: its wait for a
+     frame it has asked for is at least the time the frame's missing packets take at the pace its own packets came
+     at, and doesn't run out while media packets of any frame are still arriving, since a resend waits behind
+     whatever the host sent before the request. Both extensions stop after 5 s (`MAX_CROSSING`: a 190 KB keyframe at
+     the 300 kbit/s floor), and a complete keyframe or refresh releases every frame of its stream that is still
+     being repaired, because nothing after it needs them: a frame the host has dropped can't hold its tile behind
+     other tiles' traffic. The host: a NACK that names a packet it wasn't asked for before is an answer, so the
+     probe count starts again and the frame gets the time everything then waiting needs to cross; repeats of the
+     same request aren't, so a packet that never gets through still ends in a lost frame. After six unanswered
+     probes it waits until what was in flight could have crossed at the rate the viewer acknowledged over the last
+     0.5 s (300 kbit/s with no acknowledgement in that time, never over the estimate, at most 5 s). Before, the
+     viewer gave a frame up one round trip after its last packet, and the host's probes were spaced by a round trip
+     measured before the queue built up: a 190 KB first keyframe on a 1 Mbit/s link was declared lost after 1.7 s,
+     about when its last packets arrived, and with no acknowledged reference the host answered with a second,
+     larger keyframe (Tier 1 lab run 45764155233, scroll and video on N7: 417–455 KB and 1.25 MB). What discards
+     the packets in the first place is below this crate: the viewer's QUIC logs "failed to authenticate packet" and
+     "discarding possible duplicate packet" for them while the connection has more than one path.
   4. **Refresh requests.** A frame the transport delivered can still fail to decode, and the transport can't see
      that. The viewer calls `request_refresh(stream, keyframe)`, and the host gets `Event::RefreshRequested` once
      per request. The viewer repeats the request every give-up time + RTT until a recovery frame arrives on that

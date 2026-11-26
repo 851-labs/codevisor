@@ -1248,3 +1248,60 @@ fn a_frame_that_never_arrives_on_a_slow_link_is_still_declared_lost() {
 
     assert_eq!(lost_on_the_host(&sim), 1);
 }
+
+fn is_data(datagram: &Bytes, stream: u8, frame: u32, index: u16) -> bool {
+    PacketHeader::decode(datagram.clone()).is_some_and(|(header, _)| {
+        header.kind == Kind::Data && (header.stream, header.frame, header.index) == (stream, frame, index)
+    })
+}
+
+fn skipped(sim: &Sim, stream: u8, frame: u32) -> bool {
+    sim.viewer_events.contains(&Event::FrameSkipped { stream, frame })
+}
+
+#[test]
+fn a_packet_that_never_gets_through_still_ends_in_a_lost_frame() {
+    let mut sim = Sim::new(SLOW_LINK, config(FecMode::Off), 1);
+    sim.stale_rtt = Some(100 * MS);
+    sim.drop_when(|direction, datagram| direction == Direction::ToViewer && is_data(datagram, 0, 0, 5));
+    sim.send(frame(0, &payload(1, 30_000)));
+    sim.run_for(Duration::from_secs(30));
+
+    assert_eq!(lost_on_the_host(&sim), 1, "both ends kept retrying a frame that can't complete");
+    assert!(skipped(&sim, 0, 0));
+}
+
+#[test]
+fn a_complete_recovery_frame_releases_the_frame_before_it() {
+    let mut sim = Sim::new(NetworkConditions::N1, config(FecMode::Off), 1);
+    sim.drop_when(|direction, datagram| direction == Direction::ToViewer && is_data(datagram, 0, 0, 1));
+    sim.send(frame(0, &payload(1, 3_000)));
+    let recovery = payload(2, 3_000);
+    sim.send(OutgoingFrame { refresh: true, ..frame(0, &recovery) });
+    sim.run_for(10 * MS);
+
+    assert!(skipped(&sim, 0, 0), "the frame the refresh replaces was still waited for");
+    assert_eq!(sim.frames().first().map(|frame| frame.data.clone()), Some(recovery));
+}
+
+#[test]
+fn the_viewer_stops_waiting_for_a_frame_within_seconds_even_while_other_tiles_keep_arriving() {
+    let mut sim = Sim::new(NetworkConditions::N1, config(FecMode::Off), 1);
+    sim.drop_when(|direction, datagram| match direction {
+        Direction::ToViewer => is_data(datagram, 0, 0, 1),
+        Direction::ToHost => is_kind(datagram, Kind::Nack),
+    });
+    sim.send(frame(0, &payload(1, 3_000)));
+    let mut skipped_after = None;
+    for index in 0..480u64 {
+        sim.send(frame(1, &payload(index, 3_000)));
+        sim.run_for(INTERVAL);
+        if skipped_after.is_none() && skipped(&sim, 0, 0) {
+            skipped_after = Some(INTERVAL * (index as u32 + 1));
+        }
+    }
+
+    let waited = skipped_after.expect("the first tile's frame was never given up");
+    assert!(waited > Duration::from_secs(1), "given up after {waited:?} with the link still delivering");
+    assert!(waited <= Duration::from_secs(6), "given up only after {waited:?}");
+}

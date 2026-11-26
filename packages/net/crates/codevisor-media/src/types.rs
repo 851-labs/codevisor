@@ -145,6 +145,8 @@ pub struct Stats {
     pub loss_rate: f64,
 }
 
+pub const MAX_CROSSING: Duration = Duration::from_secs(5);
+
 pub fn give_up_after(rtt: Duration, frame_interval: Duration) -> Duration {
     (rtt + Duration::from_millis(2)).max(frame_interval.mul_f64(1.5))
 }
