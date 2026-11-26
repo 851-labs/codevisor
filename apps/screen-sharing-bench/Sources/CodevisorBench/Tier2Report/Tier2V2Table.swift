@@ -1,7 +1,7 @@
 import ScreenSharingBench
 
 struct Tier2V2Table {
-  private static let columns = 20
+  private static let columns = 21
 
   private let results: [BenchResult]
 
@@ -17,7 +17,7 @@ struct Tier2V2Table {
       "| System | Scene | Resolution | Network | Encode p50 ms | Encode p95 ms | Send queue p50 | Send p50 "
         + "| Assemble p50 | Decode p50 | Render queue p50 | Present p50 | Frames lost | NACK repairs | FEC repairs "
         + "| LTR refreshes | LTR refreshes as keyframes | Keyframes "
-        + "| Dropped before encode | Capacity Mbit/s |",
+        + "| Dropped before encode | Capacity Mbit/s | First picture ms |",
       "|" + String(repeating: " --- |", count: Self.columns),
     ]
     return (header + rows).joined(separator: "\n")
@@ -46,6 +46,7 @@ struct Tier2V2Table {
       + [median(runs.compactMap { $0.stagesMs?.encode?.p50 }), median(runs.compactMap { $0.stagesMs?.encode?.p95 })]
       + stages.dropFirst().map { stage in median(runs.compactMap { $0.stagesMs.flatMap(stage)?.p50 }) }
       + counters.map { counter in median(runs.compactMap { $0.media.flatMap(counter) }) }
+      + [median(runs.compactMap(\.firstPictureMs))]
     return "| " + cells.joined(separator: " | ") + " |"
   }
 

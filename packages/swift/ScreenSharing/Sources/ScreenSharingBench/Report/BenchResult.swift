@@ -98,6 +98,7 @@ public struct BenchResult: Codable, Sendable, Equatable {
   public var relay: BenchRelayReport?
   public var media: BenchMediaCounters?
   public var displayPhaseMs: Double?
+  public var firstPictureMs: Double?
   public var networkCheck: NetworkCheck?
   public var unreadableFraction: Double = 0
   public var valid = true

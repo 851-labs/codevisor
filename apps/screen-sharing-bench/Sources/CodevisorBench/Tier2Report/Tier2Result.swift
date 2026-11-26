@@ -35,6 +35,7 @@ enum Tier2Result {
       let engineV2 = BenchSystem.engineV2Systems.contains(system)
       result.stagesMs = Tier2V2Readings.stages(viewer: files.system, host: files.share, engineV2: engineV2)
       result.media = engineV2 ? Tier2V2Readings.counters(viewer: files.system, host: files.share) : nil
+      result.firstPictureMs = Tier2V2Readings.firstPictureMs(viewer: files.system)
     }
     result.valid = measurement.invalidReason == nil
     result.invalidReason = measurement.invalidReason

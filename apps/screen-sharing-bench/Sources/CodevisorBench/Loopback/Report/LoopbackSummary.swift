@@ -26,12 +26,16 @@ enum LoopbackSummary {
       let freezes = result.freezes.map { "\($0.count) (\(format($0.ratio * 100))%)" } ?? "–"
       return row([
         result.scene, result.network, pair(result.e2eMs), format(result.updatesPerS), format(result.shownRatio),
-        freezes, result.bitrateMbps.map { format($0.p50) } ?? "–", loss, result.valid ? "yes" : "no",
+        freezes, result.bitrateMbps.map { format($0.p50) } ?? "–", loss,
+        result.firstPictureMs.map { format($0) } ?? "–", result.valid ? "yes" : "no",
       ])
     }
     return [
-      row(["scene", "network", "e2e p50/p95 ms", "updates/s", "shown", "freezes", "Mbit/s p50", "lost", "valid"]),
-      row(Array(repeating: "---", count: 9)),
+      row([
+        "scene", "network", "e2e p50/p95 ms", "updates/s", "shown", "freezes", "Mbit/s p50", "lost",
+        "first picture ms", "valid",
+      ]),
+      row(Array(repeating: "---", count: 10)),
     ] + rows
   }
 

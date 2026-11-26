@@ -6,7 +6,7 @@ import Testing
 
 struct Tier2V2ReadingsTests {
   private static let viewer = """
-    {"counters": {"decodedFrames": 547, "skippedFrames": 2, "recovered.retransmission": 3,
+    {"first_picture_ms": 412.5, "counters": {"decodedFrames": 547, "skippedFrames": 2, "recovered.retransmission": 3,
       "recovered.forwardErrorCorrection": 1},
      "media": {"nacks_sent": 4, "frames_received": 547},
      "timings": {"assemble": {"count": 547, "p50_ms": 1.2, "p95_ms": 2.5, "maximum_ms": 9}},
@@ -48,6 +48,11 @@ struct Tier2V2ReadingsTests {
           packetsRetransmitted: 6, parityPackets: 7, fecRepairs: 1, nackRepairs: 3, ltrRefreshes: 3, keyframes: 1,
           capacityKbps: 352_000, roundTripMs: 0.79, requestedRefreshes: 0, requestedKeyframes: 0, stalledTiles: 0,
           ltrRefreshKeyframes: 1, staleLtrAcknowledgements: 4))
+  }
+
+  @Test func theViewerSaysHowLongItsFirstPictureTook() throws {
+    #expect(Tier2V2Readings.firstPictureMs(viewer: try Self.object(Self.viewer)) == 412.5)
+    #expect(Tier2V2Readings.firstPictureMs(viewer: try Self.object(Self.host)) == nil)
   }
 
   private static func object(_ json: String) throws -> [String: JSONValue] {
