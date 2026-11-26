@@ -66,6 +66,25 @@ struct ScreenSharingLinuxDesktopTests {
     #expect(model?.isViewing == true, "the picture stays; only control moved")
   }
 
+  @Test("A one-finger drag holds the button down from where the finger landed to where it lifted")
+  func drag() async throws {
+    let harness = try await LinuxDesktopHarness()
+    defer { harness.stop() }
+    let model = await harness.goLive()
+
+    model?.dragBegan(at: ScreenSharingPointer(x: 0.25, y: 0.25))
+    model?.dragMoved(to: Self.centre)
+    model?.dragEnded(at: ScreenSharingPointer(x: 0.75, y: 0.75))
+    await awaitObserved { harness.input.count == 5 }
+
+    #expect(
+      harness.input == [
+        .pointerEvent(buttons: 0, x: 16, y: 12), .pointerEvent(buttons: 1, x: 16, y: 12),
+        .pointerEvent(buttons: 1, x: 32, y: 24), .pointerEvent(buttons: 1, x: 48, y: 36),
+        .pointerEvent(buttons: 0, x: 48, y: 36),
+      ])
+  }
+
   @Test("A two-finger tap right-clicks, and a two-finger drag turns the wheel")
   func rightClickAndScroll() async throws {
     let harness = try await LinuxDesktopHarness()
