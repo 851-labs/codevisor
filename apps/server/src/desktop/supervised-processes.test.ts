@@ -1,47 +1,49 @@
-import { existsSync, mkdtempSync, readFileSync, rmSync, watch } from "node:fs"
-import { tmpdir } from "node:os"
-import { dirname, join } from "node:path"
+import { createServer, type Socket } from "node:net"
 
 import { describe, expect, it, onTestFinished } from "vitest"
 
 import { type Ended, SupervisedProcesses } from "./supervised-processes.js"
 
-const isAlive = (pid: number): boolean => {
-  try {
-    process.kill(pid, 0)
-    return true
-  } catch {
-    return false
-  }
+const stayingAlive = "setInterval(() => undefined, 1000)"
+
+const helperThatConnects = (port: number): string =>
+  `require("node:net").connect(${port}, "127.0.0.1"); ${stayingAlive}`
+
+const sessionThatStarts = (helper: string): string =>
+  `require("node:child_process").spawn(process.execPath, ["-e", ${JSON.stringify(helper)}], { stdio: "ignore" }); ${stayingAlive}`
+
+const listening = async () => {
+  const connected = Promise.withResolvers<Socket>()
+  const server = createServer((socket) => connected.resolve(socket))
+  await new Promise<void>((resolve) => server.listen(0, "127.0.0.1", resolve))
+  onTestFinished(() => new Promise<void>((resolve) => server.close(() => resolve())))
+  const address = server.address()
+  const port = typeof address === "object" && address !== null ? address.port : 0
+  return { port, connected: connected.promise }
 }
 
-const written = (path: string): Promise<string> =>
+const closed = (socket: Socket): Promise<void> =>
   new Promise((resolve) => {
-    const read = () => {
-      if (!existsSync(path)) return
-      watcher.close()
-      resolve(readFileSync(path, "utf8").trim())
-    }
-    const watcher = watch(dirname(path), read)
-    read()
+    socket.once("close", () => resolve())
+    socket.on("error", () => undefined)
   })
 
 describe("the processes a desktop is made of", () => {
-  it("are stopped together with what they started, and stopping waits until they are gone", async () => {
+  it("are stopped together with what they started, and stopping waits for them", async () => {
     const processes = new SupervisedProcesses(() => undefined)
     onTestFinished(() => processes.stop())
-    const folder = mkdtempSync(join(tmpdir(), "cv-run-"))
-    onTestFinished(() => rmSync(folder, { recursive: true, force: true }))
-    const pidFile = join(folder, "helper.pid")
-    const announcePid =
-      'sleep 300 & echo $! > "$PID_FILE.part"; mv "$PID_FILE.part" "$PID_FILE"; wait'
-    const session = processes.start("sh", ["-c", announcePid], { PID_FILE: pidFile })
-    const helper = Number(await written(pidFile))
-    expect(isAlive(helper)).toBe(true)
+    const { port, connected } = await listening()
+    const session = processes.start(
+      process.execPath,
+      ["-e", sessionThatStarts(helperThatConnects(port))],
+      {}
+    )
+    const helper = await connected
+    const helperGone = closed(helper)
 
     await processes.stop()
     expect(session.exitCode !== null || session.signalCode !== null).toBe(true)
-    expect(isAlive(helper)).toBe(false)
+    await helperGone
   })
 
   it("report the one that ends by itself, and say nothing about those it stops", async () => {
@@ -52,21 +54,21 @@ describe("the processes a desktop is made of", () => {
       ended.resolve()
     })
     onTestFinished(() => processes.stop())
-    processes.start("sleep", ["300"], {})
-    processes.start("sh", ["-c", "exit 3"], {})
+    processes.start(process.execPath, ["-e", stayingAlive], {})
+    processes.start(process.execPath, ["-e", "process.exit(3)"], {})
     await ended.promise
     await processes.stop()
-    expect(ends).toEqual([{ program: "sh", reason: "stopped (exit 3)" }])
+    expect(ends).toEqual([{ program: process.execPath, reason: "stopped (exit 3)" }])
   })
 
   it("report a program that isn't installed", async () => {
     const ended = Promise.withResolvers<Ended>()
     const processes = new SupervisedProcesses((end) => ended.resolve(end))
+    onTestFinished(() => processes.stop())
     processes.start("no-such-desktop-program", [], {})
     expect(await ended.promise).toMatchObject({
       program: "no-such-desktop-program",
       reason: expect.stringContaining("couldn't start")
     })
-    await processes.stop()
   })
 })
