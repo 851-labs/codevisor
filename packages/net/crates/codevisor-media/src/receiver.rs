@@ -18,6 +18,7 @@ const TAIL_GAPS: f64 = 1.5;
 const GAP_DECAY: f64 = 63.0 / 64.0;
 const RETRY_MARGIN: Duration = Duration::from_millis(1);
 const MAX_REFRESH_SENDS: u32 = 50;
+const BUSY_WAITS: u32 = 4;
 
 #[derive(Debug)]
 struct Assembly {
@@ -30,6 +31,7 @@ struct Assembly {
     first_rx: Option<Instant>,
     last_original_rx: Option<Instant>,
     original_bytes: usize,
+    originals: usize,
     last_rx: Option<Instant>,
     end_seen: bool,
     highest_index: Option<u16>,
@@ -37,6 +39,7 @@ struct Assembly {
     tail_limit: Option<usize>,
     next_nack: Option<Instant>,
     give_up_at: Option<Instant>,
+    busy_limit: Option<Instant>,
     whole_nacked_at: Option<Instant>,
     repaired: bool,
     used_fec: bool,
@@ -68,6 +71,7 @@ impl Assembly {
             first_rx: None,
             last_original_rx: None,
             original_bytes: 0,
+            originals: 0,
             last_rx: None,
             end_seen: true,
             highest_index: None,
@@ -75,6 +79,7 @@ impl Assembly {
             tail_limit: None,
             next_nack: None,
             give_up_at: None,
+            busy_limit: None,
             whole_nacked_at: None,
             repaired: false,
             used_fec: false,
@@ -127,30 +132,31 @@ impl Assembly {
         (limit < shape.layout.data_count + shape.parity_count).then_some(limit)
     }
 
-    fn still_to_arrive(&self, gap_hint: Duration) -> Duration {
+    fn patience(&self, wait: Wait) -> Duration {
         let Some(shape) = self.shape else {
-            return Duration::ZERO;
+            return wait.give_up;
         };
         let short = shape.layout.data_count.saturating_sub(self.received);
-        let own_pace = match (self.first_rx, self.last_rx) {
-            (Some(first), Some(last)) if self.received > 1 => (last - first) / (self.received - 1) as u32,
+        let own_pace = match (self.first_rx, self.last_original_rx) {
+            (Some(first), Some(last)) if self.originals > 1 => (last - first) / (self.originals - 1) as u32,
             _ => Duration::ZERO,
         };
-        let pace = if own_pace.is_zero() { gap_hint } else { own_pace };
-        (pace * short as u32).min(MAX_CROSSING)
+        let pace = if own_pace.is_zero() { wait.gap_hint } else { own_pace };
+        (pace * short as u32 + wait.rtt).min(MAX_CROSSING).max(wait.give_up)
+    }
+
+    fn keep_waiting(&mut self, now: Instant, wait: Wait) {
+        let patience = self.patience(wait);
+        let own = now + patience;
+        let busy = now + (patience * BUSY_WAITS).min(MAX_CROSSING).max(patience);
+        self.give_up_at = Some(self.give_up_at.map_or(own, |at| at.max(own)));
+        self.busy_limit = Some(self.busy_limit.map_or(busy, |limit| limit.max(busy)));
     }
 
     fn gives_up_at(&self, link_busy_until: Option<Instant>) -> Option<Instant> {
         let own = self.give_up_at?;
         let waited = link_busy_until.map_or(own, |busy| own.max(busy));
-        Some(waited.min(own + MAX_CROSSING))
-    }
-
-    fn recovers(&self) -> bool {
-        let State::Complete { payload, .. } = &self.state else {
-            return false;
-        };
-        FrameFields::parse(payload.clone()).is_some_and(|(fields, _)| fields.keyframe || fields.refresh)
+        Some(waited.min(self.busy_limit.unwrap_or(own)).max(own))
     }
 
     fn due(&self, now: Instant, retry: Duration) -> Vec<u16> {
@@ -158,6 +164,13 @@ impl Assembly {
         wanted.retain(|index| self.requested[usize::from(*index)].is_none_or(|at| now >= at + retry));
         wanted
     }
+}
+
+#[derive(Debug, Clone, Copy)]
+struct Wait {
+    give_up: Duration,
+    rtt: Duration,
+    gap_hint: Duration,
 }
 
 #[derive(Debug, Clone, Copy)]
@@ -293,6 +306,7 @@ impl Receiver {
                     first_requested: vec![assembly.whole_nacked_at; shape.layout.data_count],
                     end_seen: placeholder,
                     give_up_at: assembly.give_up_at,
+                    busy_limit: assembly.busy_limit,
                     whole_nacked_at: assembly.whole_nacked_at,
                     next_nack: assembly.next_nack,
                     ..Assembly::unknown()
@@ -328,6 +342,7 @@ impl Receiver {
             if assembly.first_rx.is_some() {
                 assembly.original_bytes += datagram_len;
             }
+            assembly.originals += 1;
             if let Some(last) = assembly.last_original_rx {
                 self.gap_peak = self.gap_peak.max(now.saturating_duration_since(last));
             }
@@ -335,9 +350,8 @@ impl Receiver {
         }
         assembly.first_rx.get_or_insert(now);
         assembly.last_rx = Some(now);
-        if let Some(at) = assembly.give_up_at {
-            let patience = give_up.max(assembly.still_to_arrive(self.gap_peak) + self.rtt);
-            assembly.give_up_at = Some(at.max(now + patience));
+        if assembly.give_up_at.is_some() {
+            assembly.keep_waiting(now, Wait { give_up, rtt: self.rtt, gap_hint: self.gap_peak });
         }
         let last_index = shape.layout.data_count + shape.parity_count - 1;
         if usize::from(header.index) == last_index {
@@ -348,30 +362,12 @@ impl Receiver {
         assembly.highest_index = Some(assembly.highest_index.map_or(header.index, |highest| highest.max(header.index)));
         assembly.tail_at = Some(now + tail_wait(self.gap_peak, give_up));
 
-        let completed = try_complete(assembly, now, stats);
-        if !completed && (gap_seen || assembly.end_seen) && !assembly.due(now, self.rtt + RETRY_MARGIN).is_empty() {
+        if try_complete(assembly, now, stats) {
+            self.on_resolved(&[(header.stream, header.frame)], events, stats);
+        } else if (gap_seen || assembly.end_seen) && !assembly.due(now, self.rtt + RETRY_MARGIN).is_empty() {
             assembly.next_nack = Some(now);
         }
-        let recovers = completed && assembly.recovers();
-        if completed {
-            let mut resolved = if recovers { self.give_up_before(header.stream, header.frame) } else { Vec::new() };
-            resolved.push((header.stream, header.frame));
-            self.on_resolved(&resolved, events, stats);
-        }
         self.drain(header.stream, events, stats);
-    }
-
-    fn give_up_before(&mut self, stream_id: u8, recovery: u32) -> Vec<(u8, u32)> {
-        let Some(stream) = self.streams.get_mut(&stream_id) else {
-            return Vec::new();
-        };
-        let waiting = stream.frames.range_mut(..recovery).filter(|(_, earlier)| matches!(earlier.state, State::Assembling));
-        waiting
-            .map(|(number, earlier)| {
-                earlier.state = State::GivenUp;
-                (stream_id, *number)
-            })
-            .collect()
     }
 
     pub fn ack_ltr(&mut self, stream_id: u8, token: u64) {
@@ -426,6 +422,7 @@ impl Receiver {
         let tail_wait = self.tail_wait();
         let give_up = self.give_up_after();
         let link_busy_until = self.last_media_rx.map(|at| at + give_up);
+        let wait = Wait { give_up, rtt: self.rtt, gap_hint: self.gap_peak };
         let retry = self.retry_after();
         let mut resolved = Vec::new();
         for (&stream_id, stream) in &mut self.streams {
@@ -466,8 +463,9 @@ impl Receiver {
                     if let Some(nack) = nack {
                         stats.nacks_sent += 1;
                         self.outbox.push_back(nack.encode());
-                        let patience = give_up.max(assembly.still_to_arrive(self.gap_peak) + self.rtt);
-                        assembly.give_up_at.get_or_insert(now + patience);
+                        if assembly.give_up_at.is_none() {
+                            assembly.keep_waiting(now, wait);
+                        }
                     }
                     let wanted = assembly.wanted();
                     let oldest = wanted.iter().filter_map(|index| assembly.requested[usize::from(*index)]).min();
