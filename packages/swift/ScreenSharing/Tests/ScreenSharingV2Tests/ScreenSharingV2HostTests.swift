@@ -58,6 +58,26 @@ struct ScreenSharingV2HostTests {
     #expect(encoder.requests.map(\.update.isRefinement) == [false, false])
   }
 
+  @Test func aChangeOfAFewPixelsReachesTheEncoderAsASmallChangeAndAWholeScreenChangeDoesNot() async throws {
+    let encoder = RecordingTileEncoder(layout: Self.tiled)
+    let host = startedHost(encoder)
+    defer { host.stop() }
+    let typed = try TestPixels.frame(shade: 10, timestampNs: 2_000)
+    TestPixels.paint(typed.pixelBuffer, plane: 0, rows: 100..<108, bytes: 20..<28, value: 200)
+
+    host.push(try TestPixels.frame(shade: 10, timestampNs: 1_000))
+    await encoder.encodes.cancellableWait(for: 1)
+    encoder.emitTiles(of: encoder.requests[0])
+    host.push(typed)
+    await encoder.encodes.cancellableWait(for: 2)
+    encoder.emitTiles(of: encoder.requests[1])
+    host.push(try TestPixels.frame(shade: 90, timestampNs: 3_000))
+    await encoder.encodes.cancellableWait(for: 3)
+
+    #expect(encoder.requests.map(\.update.tiles) == [[0, 1, 2, 3], [1], [0, 1, 2, 3]])
+    #expect(encoder.requests.map(\.smallTiles) == [[], [1], []])
+  }
+
   @Test func aChangeStartsWhileOneIsEncodingAndCapturesBeyondThatWaitWithEveryTileTheyDirtied() async throws {
     let encoder = RecordingTileEncoder(layout: Self.tiled)
     let host = startedHost(encoder)

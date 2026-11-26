@@ -4,12 +4,19 @@ public enum ScreenSharingV2Encoders {
   public static func make(
     _ kind: ScreenSharingV2EncoderKind, configuration: ScreenSharingVideoConfiguration, metrics: ScreenSharingMetrics
   ) async throws -> any ScreenSharingTileEncoder {
+    try await make(kind, configuration: configuration, metrics: metrics, scheduler: ScreenSharingV2SystemScheduler())
+  }
+
+  static func make(
+    _ kind: ScreenSharingV2EncoderKind, configuration: ScreenSharingVideoConfiguration, metrics: ScreenSharingMetrics,
+    scheduler: any ScreenSharingV2Scheduler
+  ) async throws -> any ScreenSharingTileEncoder {
     guard kind == .videoProcessing else {
       return try ScreenSharingVideoToolboxTileEncoder(configuration: configuration, metrics: metrics)
     }
 
     do {
-      return try await videoProcessing(configuration, metrics: metrics)
+      return try await videoProcessing(configuration, metrics: metrics, scheduler: scheduler)
     } catch {
       metrics.increment("encoderFallbacks")
       metrics.label("encoderFallbackReason", error.localizedDescription)
@@ -28,24 +35,25 @@ public enum ScreenSharingV2Encoders {
   }
 
   private static func videoProcessing(
-    _ configuration: ScreenSharingVideoConfiguration, metrics: ScreenSharingMetrics
+    _ configuration: ScreenSharingVideoConfiguration, metrics: ScreenSharingMetrics,
+    scheduler: any ScreenSharingV2Scheduler
   ) async throws -> any ScreenSharingTileEncoder {
     try await ScreenSharingVCPSelfTest.pass()
     let layout = ScreenSharingV2Profile.tileLayout(for: configuration)
     let primary = try ScreenSharingVCPTileEncoder(configuration: configuration, layout: layout, metrics: metrics)
     let fast = withVideoToolboxFallback(primary, configuration: configuration, metrics: metrics)
-    return withVideoToolboxOnSlowLinks(fast, configuration: configuration, metrics: metrics)
+    return withVideoToolboxOnSlowLinks(fast, configuration: configuration, metrics: metrics, scheduler: scheduler)
   }
 
   private static func withVideoToolboxOnSlowLinks(
     _ fast: any ScreenSharingTileEncoder, configuration: ScreenSharingVideoConfiguration,
-    metrics: ScreenSharingMetrics
+    metrics: ScreenSharingMetrics, scheduler: any ScreenSharingV2Scheduler
   ) -> any ScreenSharingTileEncoder {
     do {
       let slow = try ScreenSharingVideoToolboxTileEncoder(
         configuration: configuration, layout: fast.layout, metrics: metrics)
       let switched = try ScreenSharingRateSwitchedTileEncoder(
-        fast: fast, slow: slow, bitrate: configuration.bitrate, metrics: metrics)
+        fast: fast, slow: slow, bitrate: configuration.bitrate, metrics: metrics, scheduler: scheduler)
       metrics.label("encoder", Self.switchedLabel)
       return switched
     } catch {

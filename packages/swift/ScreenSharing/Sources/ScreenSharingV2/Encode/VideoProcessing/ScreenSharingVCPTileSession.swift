@@ -23,7 +23,7 @@ final class ScreenSharingVCPTileSession: @unchecked Sendable {
     height = factory.height
     self.metrics = metrics
     self.relay = relay
-    state = Mutex(ScreenSharingVCPEncoderState(rate: factory.rate))
+    state = Mutex(ScreenSharingVCPEncoderState(tile: tile, rate: factory.rate))
     session = try factory.make()
     session.sink.onOutput { [weak self] output in self?.didEncode(output) }
   }
@@ -37,7 +37,7 @@ final class ScreenSharingVCPTileSession: @unchecked Sendable {
       try $0.begin(request, refresh: request.refreshes[tile], atNs: ScreenSharingMetrics.nowNs)
     }
     do {
-      try capQP(refining: request.update.isRefinement)
+      try capQP(submission.highestQP, refining: request.update.isRefinement)
     } catch {
       state.withLock { $0.abandon(submission) }
       throw error
@@ -54,15 +54,13 @@ final class ScreenSharingVCPTileSession: @unchecked Sendable {
     throw ScreenSharingError.codec("Encode VCP tile \(tile)", status)
   }
 
-  private func capQP(refining: Bool) throws {
-    let change = state.withLock { state -> Int? in
-      let wanted = state.rate.highestQP(refining: refining)
-      return wanted == state.highestQP ? nil : wanted
-    }
-    guard let change else { return }
+  private func capQP(_ wanted: Int, refining: Bool) throws {
+    if !refining, wanted < ScreenSharingVCPRate.highestFrameQP { metrics.increment("changesKeptSharp") }
+    guard state.withLock({ $0.highestQP != wanted }) else { return }
 
-    try session.set(kVTCompressionPropertyKey_MaxAllowedFrameQP, change as CFNumber)
-    state.withLock { $0.highestQP = change }
+    try session.set(kVTCompressionPropertyKey_MaxAllowedFrameQP, wanted as CFNumber)
+    state.withLock { $0.highestQP = wanted }
+    metrics.increment("encoderQPCapChanges")
   }
 
   func acknowledge(_ tokens: [UInt64]) {

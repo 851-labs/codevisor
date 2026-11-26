@@ -8,6 +8,7 @@ public final class ScreenSharingV2Host: ScreenSharingFrameSink, @unchecked Senda
   private struct Plan {
     let capture: ScreenSharingV2Capture
     let tiles: Set<Int>
+    var small: Set<Int> = []
     let isRefinement: Bool
   }
 
@@ -23,6 +24,7 @@ public final class ScreenSharingV2Host: ScreenSharingFrameSink, @unchecked Senda
   private var recovery = ScreenSharingV2Recovery()
   private var refinement: ScreenSharingV2Refinement
   private let policyOverride: ScreenSharingV2RefinementPolicy?
+  private let smallChangePixels: Int
   private var bitrate: ScreenSharingV2BitrateGovernor
   private var networkFeedbackNs: Int64?
   private var estimateTrace = ScreenSharingV2EstimateTrace()
@@ -41,18 +43,20 @@ public final class ScreenSharingV2Host: ScreenSharingFrameSink, @unchecked Senda
   public convenience init(
     transport: any ScreenSharingMediaTransport, encoder: any ScreenSharingTileEncoder, metrics: ScreenSharingMetrics,
     initialBitrate: Int = ScreenSharingV2Profile.bitrateCeiling,
-    refinement: ScreenSharingV2RefinementPolicy? = nil
+    refinement: ScreenSharingV2RefinementPolicy? = nil,
+    smallChangePixels: Int = ScreenSharingV2Profile.smallChangePixels
   ) {
     self.init(
       transport: transport, encoder: encoder, metrics: metrics, initialBitrate: initialBitrate,
-      scheduler: ScreenSharingV2SystemScheduler(), refinement: refinement)
+      scheduler: ScreenSharingV2SystemScheduler(), refinement: refinement, smallChangePixels: smallChangePixels)
   }
 
   init(
     transport: any ScreenSharingMediaTransport, encoder: any ScreenSharingTileEncoder, metrics: ScreenSharingMetrics,
     initialBitrate: Int, scheduler: any ScreenSharingV2Scheduler,
     refinement policy: ScreenSharingV2RefinementPolicy? = nil,
-    refreshPhase: ScreenSharingV2RefreshPhase = ScreenSharingV2RefreshPhase()
+    refreshPhase: ScreenSharingV2RefreshPhase = ScreenSharingV2RefreshPhase(),
+    smallChangePixels: Int = ScreenSharingV2Profile.smallChangePixels
   ) {
     let generation = ScreenSharingV2EncoderGeneration.next()
     self.generation = generation
@@ -67,6 +71,7 @@ public final class ScreenSharingV2Host: ScreenSharingFrameSink, @unchecked Senda
     policyOverride = policy
     refinement = ScreenSharingV2Refinement(passes: (policy ?? encoder.refinementPolicy).passes)
     self.refreshPhase = refreshPhase
+    self.smallChangePixels = smallChangePixels
   }
 
   public func start() {
@@ -104,11 +109,13 @@ public final class ScreenSharingV2Host: ScreenSharingFrameSink, @unchecked Senda
     let previous = (slot.waiting ?? slot.lastEncoded)?.frame.pixelBuffer
     let candidates = reported.subtracting(slot.waitingTiles)
     let comparedNs = ScreenSharingMetrics.nowNs
-    let tiles = ScreenSharingV2TileComparer.changed(
-      candidates, of: layout, from: previous, to: capture.frame.pixelBuffer)
+    let changes = ScreenSharingV2TileComparer.changes(
+      candidates, of: layout, from: previous, to: capture.frame.pixelBuffer, smallUpToPixels: smallChangePixels)
     metrics.observe("tileCompare", milliseconds: Double(ScreenSharingMetrics.nowNs - comparedNs) / 1e6)
-    metrics.increment("tilesUnchangedByPixels", by: candidates.count - tiles.count)
-    if slot.offer(capture, tiles: tiles) { metrics.increment("captureReplacedBeforeEncode") }
+    metrics.increment("tilesUnchangedByPixels", by: candidates.count - changes.changed.count)
+    let replaced = slot.offer(
+      capture, tiles: changes.changed, small: changes.small, changedAgain: reported.subtracting(candidates))
+    if replaced { metrics.increment("captureReplacedBeforeEncode") }
     pump()
   }
 
@@ -144,7 +151,9 @@ public final class ScreenSharingV2Host: ScreenSharingFrameSink, @unchecked Senda
     let refreshing = recovery.pendingTiles
     if let waiting = slot.waiting {
       let tiles = slot.waitingTiles.union(refreshing)
-      if !tiles.isEmpty { return Plan(capture: waiting, tiles: tiles, isRefinement: false) }
+      if !tiles.isEmpty {
+        return Plan(capture: waiting, tiles: tiles, small: slot.smallTiles, isRefinement: false)
+      }
 
       metrics.increment("captureUnchanged")
       slot.encoding(waiting)
@@ -164,9 +173,10 @@ public final class ScreenSharingV2Host: ScreenSharingFrameSink, @unchecked Senda
     let update = ScreenSharingTileUpdate(id: nextUpdate, tiles: plan.tiles, isRefinement: plan.isRefinement)
     let refreshes = recovery.takeRefreshes()
     note(update)
+    metrics.increment("tilesChangedSmall", by: plan.small.count)
     for tile in plan.tiles { inFlight[tile, default: 0] += 1 }
     do {
-      try encoder.encode(plan.capture.request(update: update, refreshes: refreshes))
+      try encoder.encode(plan.capture.request(update: update, refreshes: refreshes, smallTiles: plan.small))
     } catch {
       metrics.increment("encodeErrors")
       metrics.label("lastEncodeError", error.localizedDescription)

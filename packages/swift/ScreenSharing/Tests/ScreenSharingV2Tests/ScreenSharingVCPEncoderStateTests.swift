@@ -50,6 +50,69 @@ struct ScreenSharingVCPEncoderStateTests {
     #expect(second.presentationNs - first.presentationNs == ScreenSharingVCPRate.shortestFrameGapNs)
   }
 
+  @Test func aSmallChangeRightAfterASharpeningPassKeepsTheCapTheSessionHas() throws {
+    var state = ScreenSharingVCPEncoderState()
+
+    let sharpening = try Self.begin(try Self.request(refinement: true), in: &state)
+    let typed = try Self.begin(try Self.request(small: [0]), in: &state)
+
+    #expect(sharpening.highestQP == ScreenSharingVCPRate.highestRefinementQP)
+    #expect(typed.highestQP == ScreenSharingVCPRate.highestRefinementQP)
+  }
+
+  @Test func aLargeChangeOrASmallChangeOfAnotherTileGoesBackToTheNormalCap() throws {
+    for small in [Set<Int>(), [1]] {
+      var state = ScreenSharingVCPEncoderState()
+      _ = try Self.begin(try Self.request(refinement: true), in: &state)
+
+      let change = try Self.begin(try Self.request(small: small), in: &state)
+
+      #expect(change.highestQP == ScreenSharingVCPRate.highestFrameQP)
+    }
+  }
+
+  @Test(arguments: [ScreenSharingTileRefresh.keyframe, .longTermReference])
+  func aSmallChangeThatIsAlsoARefreshGoesBackToTheNormalCap(refresh: ScreenSharingTileRefresh) throws {
+    var state = ScreenSharingVCPEncoderState()
+    _ = try Self.begin(try Self.request(refinement: true), in: &state)
+
+    let change = try Self.begin(try Self.request(small: [0]), refresh: refresh, in: &state)
+
+    #expect(change.highestQP == ScreenSharingVCPRate.highestFrameQP)
+  }
+
+  @Test func theSecondSmallChangeInARowGoesBackToTheNormalCap() throws {
+    var state = ScreenSharingVCPEncoderState()
+    _ = try Self.begin(try Self.request(refinement: true), in: &state)
+
+    let first = try Self.begin(try Self.request(small: [0]), in: &state)
+    let second = try Self.begin(try Self.request(small: [0]), in: &state)
+
+    #expect(first.highestQP == ScreenSharingVCPRate.highestRefinementQP)
+    #expect(second.highestQP == ScreenSharingVCPRate.highestFrameQP)
+  }
+
+  @Test func onceTheBitrateFallsBelowApplesLadderASmallChangeGoesBackToTheNormalCap() throws {
+    var state = ScreenSharingVCPEncoderState()
+    _ = try Self.begin(try Self.request(refinement: true), in: &state)
+
+    let capBeforeTheBitrateFell = state.highestQP
+    state.rate = ScreenSharingVCPRate(bitsPerSecond: ScreenSharingVCPRate.nearLosslessFromBitsPerSecond - 1, tiles: 1)
+    let change = try Self.begin(try Self.request(small: [0]), in: &state)
+
+    #expect(capBeforeTheBitrateFell == ScreenSharingVCPRate.highestRefinementQP)
+    #expect(change.highestQP == ScreenSharingVCPRate.highestFrameQP)
+  }
+
+  private static func begin(
+    _ request: ScreenSharingTileEncodeRequest, refresh: ScreenSharingTileRefresh? = nil,
+    in state: inout ScreenSharingVCPEncoderState
+  ) throws -> ScreenSharingVCPSubmission {
+    let submission = try state.begin(request, refresh: refresh, atNs: 1)
+    state.highestQP = submission.highestQP
+    return submission
+  }
+
   private static func skip(
     _ request: ScreenSharingTileEncodeRequest, in state: inout ScreenSharingVCPEncoderState
   )
@@ -67,11 +130,13 @@ struct ScreenSharingVCPEncoderStateTests {
     }
   }
 
-  private static func request() throws -> ScreenSharingTileEncodeRequest {
+  private static func request(
+    refinement: Bool = false, small: Set<Int> = []
+  ) throws -> ScreenSharingTileEncodeRequest {
     let frame = try TestBGRAPixels.frame(width: 64, height: 64, shades: [10], timestampNs: 1)
     return ScreenSharingTileEncodeRequest(
       pixelBuffer: frame.pixelBuffer, sourceTimestampNs: 1, capturedNs: 1,
-      update: ScreenSharingTileUpdate(id: 1, tiles: [0]))
+      update: ScreenSharingTileUpdate(id: 1, tiles: [0], isRefinement: refinement), smallTiles: small)
   }
 
   private static func output(
