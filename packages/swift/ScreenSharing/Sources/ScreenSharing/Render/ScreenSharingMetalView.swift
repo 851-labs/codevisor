@@ -77,7 +77,6 @@ public final class ScreenSharingMetalView: MTKView, MTKViewDelegate {
     #endif
     metrics.label("maximumDrawableCount", String(Self.drawableCount(offMain: offMainPreparation)))
     metrics.label("frameSelection", "before drawable acquisition")
-    metrics.label("labPresentation", ScreenSharingLabPresentation.current.rawValue)
     metrics.label("renderPreparation", preparer == nil ? "main actor (MTKView)" : "off-main serial worker")
     metrics.label(
       "drawableAcquisitionPath",
@@ -355,38 +354,44 @@ package final class TextureFrame: @unchecked Sendable {
             metrics.increment("renderPreparationNoDrawable")
             return nil
           }
-          var replacement: ScreenSharingVideoFrame?
-          if acquisitionEnded - acquisitionStarted > ScreenSharingMetalPreparer.replacesAfterWaitNs,
-            let newer = request.newer?(), let newerTextures = encoder.textures(for: newer)
-          {
-            frame = newer
-            textures = newerTextures
-            replacement = newer
-            metrics.increment("renderFramesReplacedAfterDrawableWait")
-          }
-          let pass = MTLRenderPassDescriptor()
-          pass.colorAttachments[0].texture = drawable.texture
-          pass.colorAttachments[0].loadAction = .clear
-          pass.colorAttachments[0].storeAction = .store
-          let clear = request.geometry.clearColor
-          let sRGB = MTLClearColor(red: clear.x, green: clear.y, blue: clear.z, alpha: clear.w)
-          pass.colorAttachments[0].clearColor =
-            drawable.texture.pixelFormat == ScreenSharingMetalEncoder.highDynamicRangePixelFormat
-            ? ScreenSharingMetalView.linear(sRGB) : sRGB
+          let waitedNs = acquisitionEnded - acquisitionStarted
+          let replacement = self.newer(than: request, afterWaitingNs: waitedNs)
+          if let replacement { (frame, textures) = replacement }
+          let pass = Self.pass(into: drawable, clear: request.geometry.clearColor)
           guard
             let encoded = encoder.encode(textures, into: Surface(drawable: drawable, pass: pass))
           else { return nil }
           metrics.observe("renderPreparation", milliseconds: Double(ScreenSharingMetrics.nowNs - started) / 1_000_000)
-          var prepared = ScreenSharingPreparedSubmission(
+          return .init(
             submission: ScreenSharingMetalView.MetalSubmission(
               buffer: encoded.buffer, drawable: drawable, metrics: metrics),
-            retained: encoded.retained, videoSize: frame.size)
-          prepared.replacement = replacement
-          prepared.drawableWaitNs = acquisitionEnded - acquisitionStarted
-          return prepared
+            retained: encoded.retained, videoSize: frame.size, replacement: replacement?.0, drawableWaitNs: waitedNs)
         }
         completion(prepared)
       }
+    }
+
+    private func newer(
+      than request: ScreenSharingPreparationRequest, afterWaitingNs waitedNs: Int64
+    ) -> (ScreenSharingVideoFrame, ScreenSharingMetalEncoder.Textures)? {
+      guard waitedNs > Self.replacesAfterWaitNs, let newer = request.newer?(),
+        let textures = encoder.textures(for: newer)
+      else { return nil }
+
+      metrics.increment("renderFramesReplacedAfterDrawableWait")
+      return (newer, textures)
+    }
+
+    private static func pass(into drawable: any CAMetalDrawable, clear: SIMD4<Double>) -> MTLRenderPassDescriptor {
+      let pass = MTLRenderPassDescriptor()
+      pass.colorAttachments[0].texture = drawable.texture
+      pass.colorAttachments[0].loadAction = .clear
+      pass.colorAttachments[0].storeAction = .store
+      let sRGB = MTLClearColor(red: clear.x, green: clear.y, blue: clear.z, alpha: clear.w)
+      pass.colorAttachments[0].clearColor =
+        drawable.texture.pixelFormat == ScreenSharingMetalEncoder.highDynamicRangePixelFormat
+        ? ScreenSharingMetalView.linear(sRGB) : sRGB
+      return pass
     }
   }
 #endif

@@ -29,12 +29,17 @@ package struct ScreenSharingPreparedSubmission: Sendable {
   package let submission: any ScreenSharingRenderSubmission
   package let retained: AnyObject & Sendable
   package let videoSize: CGSize
-  package var replacement: ScreenSharingVideoFrame?
-  package var drawableWaitNs: Int64 = 0
-  package init(submission: any ScreenSharingRenderSubmission, retained: AnyObject & Sendable, videoSize: CGSize) {
+  package let replacement: ScreenSharingVideoFrame?
+  package let drawableWaitNs: Int64
+  package init(
+    submission: any ScreenSharingRenderSubmission, retained: AnyObject & Sendable, videoSize: CGSize,
+    replacement: ScreenSharingVideoFrame? = nil, drawableWaitNs: Int64 = 0
+  ) {
     self.submission = submission
     self.retained = retained
     self.videoSize = videoSize
+    self.replacement = replacement
+    self.drawableWaitNs = drawableWaitNs
   }
 }
 
@@ -107,6 +112,7 @@ package final class ScreenSharingRenderCoordinator {
     self.renderOnArrival = renderOnArrival
     self.redrawsOnDemand = redrawsOnDemand
     self.hop = hop
+    metrics.label("labPresentation", lab.rawValue)
   }
 
   package func bind(requestDraw: @escaping @MainActor () -> Void) {
