@@ -3,21 +3,26 @@ import { createServer } from "node:net"
 import { join } from "node:path"
 
 import { describe, expect, it } from "vitest"
-import { WebSocket, type RawData } from "ws"
+import { WebSocket } from "ws"
 
 import { jsonRequest, makeServices, run, startWithApp } from "../test-support.js"
-import type { ScalerCommands } from "./screen-sharing-vnc-scale.js"
 import {
   parseScreenSharingVNC,
   readDesktopSetup,
   SCREEN_SHARING_CONFIG_FILE,
   VNC_DISPLAY_ID
 } from "./screen-sharing-vnc.js"
-import { fileVNCDesktops } from "./vnc-desktops.js"
 import {
+  closed,
+  closure,
   fakeVNC,
+  nextMessage,
   privateDirectory,
   recordingSession,
+  sharesAScreen,
+  startWithDesktop as start,
+  statusOf,
+  streamsAgentViews,
   writeDesktopConfig
 } from "./vnc-test-support.js"
 
@@ -81,65 +86,6 @@ describe("VNC screen sharing configuration", () => {
       expect(parseScreenSharingVNC(text)).toBeUndefined()
   })
 })
-
-const bytesOf = (data: RawData): Buffer =>
-  Array.isArray(data) ? Buffer.concat(data) : Buffer.from(new Uint8Array(data))
-
-const nextMessage = (socket: WebSocket): Promise<Buffer> =>
-  new Promise((resolve, reject) => {
-    socket.once("message", (data) => resolve(bytesOf(data)))
-    socket.once("error", reject)
-    socket.once("close", (code) => reject(new Error(`closed ${code}`)))
-  })
-
-const closed = (socket: WebSocket): Promise<number> =>
-  new Promise((resolve) => socket.once("close", resolve))
-
-const closure = (socket: WebSocket): Promise<{ code: number; reason: string }> =>
-  new Promise((resolve) =>
-    socket.once("close", (code, reason) => resolve({ code, reason: reason.toString() }))
-  )
-
-const statusOf = (socket: WebSocket) =>
-  new Promise<number>((resolve) => {
-    socket.once("unexpected-response", (_request, response) => resolve(response.statusCode ?? 0))
-    socket.once("error", () => undefined)
-  })
-
-const identity = {
-  workspaceId: "0b0f4a52-6a4f-4f0a-9a43-0d0b2f6d7c11",
-  paneId: "0b0f4a52-6a4f-4f0a-9a43-0d0b2f6d7c12",
-  viewerId: "0b0f4a52-6a4f-4f0a-9a43-0d0b2f6d7c13",
-  app: { key: "a".repeat(64), name: "Studio Mac" }
-}
-
-const sharesAScreen = { features: expect.arrayContaining(["screen-sharing-v1"]) }
-const streamsAgentViews = { features: expect.arrayContaining(["computer-use-stream-v1"]) }
-
-const start = async (
-  vnc?: Record<string, unknown>,
-  auth?: { allowLocalhostWithoutAuth: boolean; requireBearerToken: boolean },
-  commands?: ScalerCommands,
-  log?: (line: string) => void
-) => {
-  const dataDir = privateDirectory()
-  if (vnc !== undefined) writeDesktopConfig(dataDir, vnc)
-  const { services } = await makeServices()
-  const server = await startWithApp(services, undefined, {
-    desktops: fileVNCDesktops(dataDir, commands, log),
-    ...(auth === undefined ? {} : { auth })
-  })
-  const socketUrl = (displayId: string = VNC_DISPLAY_ID) =>
-    `ws://127.0.0.1:${server.port}/v1/screen-sharing/vnc/socket?displayId=${displayId}`
-  const ask = (request: Record<string, unknown>) =>
-    jsonRequest(server, "/v1/screen-sharing", {
-      method: "POST",
-      body: JSON.stringify({ version: 1, ...identity, ...request })
-    })
-  const capabilities = () => ask({ operation: "capabilities" })
-  const info = async (): Promise<unknown> => (await jsonRequest(server, "/v1/info")).body
-  return { services, server, socketUrl, ask, capabilities, info, dataDir }
-}
 
 describe("VNC screen sharing provider", () => {
   it("splices a WebSocket onto the desktop's private socket both ways", async () => {

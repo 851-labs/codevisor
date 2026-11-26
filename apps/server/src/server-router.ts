@@ -11,6 +11,7 @@ import { routeBrowserState } from "./routes/browser-state.js"
 import { routeBrowserUse } from "./routes/browser-use.js"
 import { routeClientControl } from "./routes/client-control.js"
 import { routeCloud } from "./routes/cloud.js"
+import { routeDesktop } from "./routes/desktop.js"
 import { routeExec } from "./routes/exec.js"
 import { routeFeatureFlags } from "./routes/feature-flags.js"
 import { routeFiles } from "./routes/files.js"
@@ -154,6 +155,7 @@ const resourceRouteFamilies: ReadonlyArray<RouteFamily> = [
   ({ services, request, response, url }) => routeSkills(services, request, response, url),
   routeSync,
   routeFeatureFlags,
+  routeDesktop,
   ({ services, request, response, url }) => routeSessionEvents(services, request, response, url),
   ({ routeState, request, response, url }) => routeAutoResume(routeState, request, response, url),
   routeAgents,

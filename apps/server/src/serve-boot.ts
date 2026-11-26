@@ -17,8 +17,11 @@ import {
   type NativeMcpManagerConfig
 } from "@codevisor/mcp"
 
+import { type DesktopManager, makeDesktopManager } from "./desktop/desktop-manager.js"
+import { systemDesktopSystem } from "./desktop/desktop-system.js"
 import { makeCloudServerControl, startCloudBridge } from "./infra/cloud-bridge.js"
 import { makeCloudInbox } from "./infra/cloud-inbox.js"
+import { resolveLogsDir } from "./infra/data-dir.js"
 import { enabledFeatureFlags } from "./infra/feature-flags.js"
 import { makeFleetTickets } from "./infra/fleet-tickets.js"
 import { makeMachineEnrollment } from "./infra/machine-enrollment.js"
@@ -53,11 +56,37 @@ export const screenSharingProvider = (
 ): {
   readonly screenSharing: ((request: ScreenSharingRequest) => Promise<unknown>) | undefined
   readonly desktops: VNCDesktops | undefined
+  readonly desktop: DesktopManager | undefined
 } => {
   const native = nativeScreenSharing(dataDir)
-  if (native !== undefined) return { screenSharing: native, desktops: undefined }
+  if (native !== undefined)
+    return { screenSharing: native, desktops: undefined, desktop: undefined }
 
-  return { screenSharing: undefined, desktops: fileVNCDesktops(dataDir) }
+  const desktops = fileVNCDesktops(dataDir)
+  return { screenSharing: undefined, desktops, desktop: linuxDesktop(dataDir, desktops) }
+}
+
+const linuxDesktop = (dataDir: string, desktops: VNCDesktops): DesktopManager | undefined => {
+  if (process.platform !== "linux") return undefined
+
+  const manager = makeDesktopManager({
+    system: systemDesktopSystem(),
+    dataDir,
+    logsDir: resolveLogsDir(),
+    runner: {
+      program: process.execPath,
+      args: [
+        join(dirname(fileURLToPath(import.meta.url)), "cli.js"),
+        "desktop",
+        "run",
+        "--data-dir",
+        dataDir
+      ]
+    },
+    changed: () => desktops.relays?.recheck()
+  })
+  void manager.resume().catch(() => undefined)
+  return manager
 }
 export const canReadFolder = async (path: string): Promise<boolean> => {
   try {

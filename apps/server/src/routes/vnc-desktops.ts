@@ -11,9 +11,11 @@ import {
   outdatedDesktop,
   readDesktopSetup,
   SCREEN_SHARING_CONFIG_FILE,
+  socketProblemMessages,
   vncScreenSharing,
   x11Environment
 } from "./screen-sharing-vnc.js"
+import { type VNCRelay, VNCRelays } from "./vnc-relays.js"
 
 export const fileVNCDesktops = (
   dataDir: string,
@@ -27,16 +29,27 @@ export const fileVNCDesktops = (
     noteSocket(socket.problem === undefined ? undefined : `not shared: ${socket.detail}`)
     return socket
   }
-  return {
-    current: () => {
-      const setup = readDesktopSetup(dataDir)
-      noteSetup(setupNotices[setup.kind])
-      if (setup.kind === "ready") return desktopFor(setup.config, commands, locate)
-      if (setup.kind === "outdated") return { respond: outdatedDesktop }
+  const current = (): VNCDesktop | undefined => {
+    const setup = readDesktopSetup(dataDir)
+    noteSetup(setupNotices[setup.kind])
+    if (setup.kind === "ready") return desktopFor(setup.config, commands, locate)
+    if (setup.kind === "outdated") return { respond: outdatedDesktop }
 
-      return undefined
-    }
+    return undefined
   }
+  return { current, relays: new VNCRelays((relay) => whyNotShared(relay, current())) }
+}
+
+const withdrawn = "The desktop on this machine was removed."
+
+const whyNotShared = (relay: VNCRelay, desktop: VNCDesktop | undefined): string | undefined => {
+  if (desktop?.config?.socket !== relay.configured) return withdrawn
+
+  const socket = privateSocket(relay.configured)
+  if (socket.problem !== undefined) return socketProblemMessages[socket.problem]
+  if (socket.path !== relay.dialled) return withdrawn
+
+  return undefined
 }
 
 const setupNotices: Record<DesktopSetup["kind"], string | undefined> = {

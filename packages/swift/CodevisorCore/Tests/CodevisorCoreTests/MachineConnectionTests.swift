@@ -182,6 +182,28 @@ struct MachineConnectionTests {
     }
   }
 
+  @Test("server.features.updated events make a desktop set up on a connected machine show up at once")
+  func featuresUpdatedEventRefreshesStatus() async throws {
+    let remote = makeRemote("remote-a")
+    let remoteFake = SyncFakeServerClient(projects: [], sessions: [])
+    let (controller, _) = try makeController(
+      fakes: ["local": SyncFakeServerClient(projects: [], sessions: []), remote.id: remoteFake],
+      remotes: [remote]
+    )
+    defer { controller.stopEventSync() }
+    await controller.prepareMachine(remote.id)
+    try await waitForSync { remoteFake.eventStreamSubscriberCount == 1 }
+    #expect(controller.desktopMachine(for: remote.id) == nil)
+
+    remoteFake._infoFeatures = ["screen-sharing-v1"]
+    remoteFake.emit(kind: "server.features.updated", subjectId: "server", payload: .object([:]))
+    try await waitForSync { controller.desktopMachine(for: remote.id) != nil }
+
+    remoteFake._infoFeatures = []
+    remoteFake.emit(kind: "server.features.updated", subjectId: "server", payload: .object([:]))
+    try await waitForSync { controller.desktopMachine(for: remote.id) == nil }
+  }
+
   @Test("restart.drain.updated events pause sending on that machine until each paused chat resumes")
   func restartDrainEventsPauseSending() async throws {
     let remote = makeRemote("remote-a")

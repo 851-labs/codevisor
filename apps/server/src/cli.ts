@@ -7,7 +7,7 @@ import { fileURLToPath } from "node:url"
 
 import { NodeRuntime, NodeServices } from "@effect/platform-node"
 import { Effect, Option } from "effect"
-import { Command, Flag } from "effect/unstable/cli"
+import { Command, Flag, Prompt } from "effect/unstable/cli"
 
 import { authLoginCommand } from "./cli/cloud-auth.js"
 import { mcpCommand, type McpSession } from "./cli/mcp.js"
@@ -24,11 +24,14 @@ import {
 } from "./cli/support.js"
 import {
   makeAuthCommand,
+  makeDesktopCommand,
   makeFlagsCommand,
   makeMachinesCommand,
   optionalString,
-  portFlag
+  portFlag,
+  runPrompt
 } from "./cli/wiring.js"
+import { runDesktop } from "./desktop/desktop-runner.js"
 import { resolveDataDir, resolveLogsDir } from "./infra/data-dir.js"
 import { bundledVersion, runServe } from "./serve.js"
 
@@ -291,6 +294,21 @@ const setup = Command.make("setup", { port: portFlag }, ({ port }) =>
   Command.withDescription("Onboard this machine: start the server and sign it into Codevisor Cloud")
 )
 
+const desktop = makeDesktopCommand(
+  (command) =>
+    Effect.promise(async () => {
+      process.exitCode = await command({
+        ...makeDeps(),
+        isInteractive: process.stdin.isTTY && process.stdout.isTTY,
+        confirm: (question) => runPrompt(Prompt.confirm({ message: question, initial: false }))
+      })
+    }),
+  (dataDir) =>
+    Effect.promise(async () => {
+      process.exitCode = await runDesktop(dataDir ?? resolveDataDir(), (line) => console.log(line))
+    })
+)
+
 const auth = makeAuthCommand(runCli)
 const machines = makeMachinesCommand(runCli)
 const flags = makeFlagsCommand(runCli)
@@ -302,6 +320,7 @@ const root = Command.make("codevisor").pipe(
     setup,
     auth,
     machines,
+    desktop,
     flags,
     start,
     stop,

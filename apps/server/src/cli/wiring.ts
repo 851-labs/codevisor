@@ -6,6 +6,12 @@ import { Effect, Option } from "effect"
 import { Argument, Command, Flag, Prompt } from "effect/unstable/cli"
 
 import { authLoginCommand, authLogoutCommand, authStatusCommand } from "./cloud-auth.js"
+import {
+  type DesktopCliDeps,
+  desktopRemoveCommand,
+  desktopSetupCommand,
+  desktopStatusCommand
+} from "./desktop.js"
 import { flagsListCommand, flagsSetCommand } from "./feature-flags.js"
 import {
   machinesAddCommand,
@@ -139,6 +145,51 @@ export const makeMachinesCommand = (runCli: RunCli) => {
   return Command.make("machines").pipe(
     Command.withDescription("Add, list, and remove the machines on your Codevisor account"),
     Command.withSubcommands([list, invite, add, remove])
+  )
+}
+
+const yes = (description: string) =>
+  Flag.boolean("yes").pipe(Flag.withAlias("y"), Flag.withDescription(description))
+
+export const makeDesktopCommand = (
+  runDesktopCli: (command: (deps: DesktopCliDeps) => Promise<number>) => Effect.Effect<void>,
+  runInForeground: (dataDir: string | undefined) => Effect.Effect<void>
+) => {
+  const run = Command.make(
+    "run",
+    { dataDir: optionalString("data-dir", "The server's data folder (default ~/.codevisor/data)") },
+    ({ dataDir }) => runInForeground(Option.getOrUndefined(dataDir))
+  ).pipe(Command.withDescription("Run the desktop in the foreground; its boot service uses this"))
+
+  const setup = Command.make(
+    "setup",
+    { port: portFlag, yes: yes("Replace an older root desktop without asking") },
+    ({ port, yes: agreed }) =>
+      runDesktopCli((deps) =>
+        desktopSetupCommand(deps, { port: Option.getOrUndefined(port), yes: agreed })
+      )
+  ).pipe(
+    Command.withDescription(
+      "Set up a desktop on this Linux machine that runs as the server's account and can be viewed from Codevisor"
+    )
+  )
+
+  const status = Command.make("status", { port: portFlag }, ({ port }) =>
+    runDesktopCli((deps) => desktopStatusCommand(deps, { port: Option.getOrUndefined(port) }))
+  ).pipe(Command.withDescription("Show whether this machine's desktop is set up and running"))
+
+  const remove = Command.make(
+    "remove",
+    { port: portFlag, yes: yes("Remove it without asking") },
+    ({ port, yes: agreed }) =>
+      runDesktopCli((deps) =>
+        desktopRemoveCommand(deps, { port: Option.getOrUndefined(port), yes: agreed })
+      )
+  ).pipe(Command.withDescription("Stop this machine's desktop, closing everything open in it"))
+
+  return Command.make("desktop").pipe(
+    Command.withDescription("Set up, check, or remove this Linux machine's desktop"),
+    Command.withSubcommands([setup, status, remove, run])
   )
 }
 

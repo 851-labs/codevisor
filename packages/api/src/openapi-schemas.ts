@@ -17,6 +17,7 @@ import {
 import { ClientContext, ClientNavigationRequest, ClientSummary } from "./client-control.js"
 import { ClientPageRequest, ClientLayoutRequest, ClientWindowRequest } from "./client-ui.js"
 import { MachineRolesResponse } from "./cloud-role-protocol.js"
+import { DesktopStatus } from "./desktop.js"
 import { CreateExternalGatewayRequest, ExternalGateway } from "./external-clients.js"
 import { FeatureFlagsResponse, FeatureFlagState, SetFeatureFlagRequest } from "./feature-flags.js"
 import {
@@ -432,6 +433,11 @@ export const responseSchemas = (): Partial<Record<Endpoint, Schema.Constraint>> 
   "POST /v1/machines/invite": MachineInviteResponse,
   "POST /v1/machines/add": AddMachineResponse,
   "DELETE /v1/machines/:machineId": MachinesResponse,
+  "GET /v1/desktop": DesktopStatus,
+  "POST /v1/desktop/packages": DesktopStatus,
+  "POST /v1/desktop/replace-old": DesktopStatus,
+  "POST /v1/desktop/start": DesktopStatus,
+  "DELETE /v1/desktop": DesktopStatus,
   "GET /v1/feature-flags": FeatureFlagsResponse,
   "PUT /v1/feature-flags/:id": FeatureFlagState,
   "GET /v1/sandbox-providers": SandboxProvidersResponse,

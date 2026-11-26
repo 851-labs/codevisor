@@ -18,6 +18,11 @@ export const endpoints = [
   "POST /v1/machines/invite",
   "POST /v1/machines/add",
   "DELETE /v1/machines/:machineId",
+  "GET /v1/desktop",
+  "POST /v1/desktop/packages",
+  "POST /v1/desktop/replace-old",
+  "POST /v1/desktop/start",
+  "DELETE /v1/desktop",
   "GET /v1/feature-flags",
   "PUT /v1/feature-flags/:id",
   "GET /v1/sandbox-providers",
@@ -275,6 +280,15 @@ export const summaries: Partial<Record<Endpoint, string>> = {
   "POST /v1/machines/invite": "Create a one-time code that adds a new machine to the account",
   "POST /v1/machines/add": "Install Codevisor on a host over SSH and add it to the account",
   "DELETE /v1/machines/:machineId": "Remove another machine from the account",
+  "GET /v1/desktop":
+    "Describe this Linux machine's shared desktop: whether it runs, what is missing to set one up, and how packages can be installed",
+  "POST /v1/desktop/packages":
+    "Install the desktop's packages, when the server's account can use sudo without a password",
+  "POST /v1/desktop/replace-old":
+    "Stop and remove a desktop that an older Codevisor set up as root, when the server's account can use sudo without a password",
+  "POST /v1/desktop/start":
+    "Set the desktop up as the server's own account, start it now and at boot, and share it",
+  "DELETE /v1/desktop": "Stop the desktop, closing everything open in it, and stop sharing it",
   "GET /v1/feature-flags":
     "List experimental features and whether each is on; the Codevisor apps sync them across machines",
   "PUT /v1/feature-flags/:id": "Turn an experimental feature on or off",

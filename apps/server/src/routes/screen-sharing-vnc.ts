@@ -13,6 +13,7 @@ import type { VNCDesktopScaler } from "./screen-sharing-vnc-scale.js"
 import { type DesktopClipboard, VNCClipboardBridge } from "./vnc-clipboard-bridge.js"
 import { systemX11Commands, x11DesktopClipboard } from "./vnc-clipboard-x11.js"
 import { type VNCControlArbiter, vncControlArbiter } from "./vnc-control.js"
+import type { VNCRelays } from "./vnc-relays.js"
 
 export const SCREEN_SHARING_CONFIG_FILE = "screen-sharing.json"
 export const VNC_SOCKET_PATH = "/v1/screen-sharing/vnc/socket"
@@ -92,7 +93,7 @@ const vncReply = (status: string, message?: string): ScreenSharingReply => ({
   displays: []
 })
 
-const socketProblemMessages: Record<PrivateSocketProblem, string> = {
+export const socketProblemMessages: Record<PrivateSocketProblem, string> = {
   missing: "The desktop on this machine isn't running.",
   foreign:
     "The desktop on this machine isn't run by the account Codevisor runs as, so Codevisor won't share it.",
@@ -236,6 +237,7 @@ export interface VNCSpliceOptions {
   readonly highWater?: number
   readonly desktopClipboard?: DesktopClipboard
   readonly locate?: (configured: string) => PrivateSocket
+  readonly relays?: VNCRelays | undefined
 }
 
 const defaultHighWater = 4 * 1024 * 1024
@@ -269,6 +271,11 @@ export const spliceVNCSocket = (
       return
     }
     const upstream = dial(located.path)
+    const leaveRelays = options.relays?.add({
+      configured: config.socket,
+      dialled: located.path,
+      close: (reason) => webSocket.close(1011, reason)
+    })
     const sendText = (text: string) => webSocket.send(text, {}, () => undefined)
     const id = arbiter.join(sendText)
     const clipboard =
@@ -303,6 +310,7 @@ export const spliceVNCSocket = (
     })
     webSocket.once("error", () => upstream.destroy())
     webSocket.once("close", () => {
+      leaveRelays?.()
       clipboard?.close()
       arbiter.leave(id)
       upstream.destroy()

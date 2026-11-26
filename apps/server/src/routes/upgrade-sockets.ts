@@ -113,7 +113,9 @@ const spliceScreenSharing = (upgrade: SocketUpgrade, url: URL): boolean => {
   const relayed = config.desktops?.current()?.config
   if (relayed === undefined) return false
 
-  spliceVNCSocket(relayed, url, request, socket, head, webSocketServer)
+  spliceVNCSocket(relayed, url, request, socket, head, webSocketServer, {
+    relays: config.desktops?.relays
+  })
   return true
 }
 
