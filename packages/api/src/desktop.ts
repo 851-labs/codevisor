@@ -21,6 +21,7 @@ export const DesktopStatus = Schema.Struct({
   system: Schema.String,
   display: Schema.optional(Schema.Number),
   problem: Schema.optional(Schema.String),
+  managed: Schema.optional(Schema.Boolean),
   busy: Schema.optional(Schema.String),
   failure: Schema.optional(Schema.String),
   missing: Schema.Array(Schema.String),

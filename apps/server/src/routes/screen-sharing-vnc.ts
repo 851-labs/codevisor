@@ -271,14 +271,6 @@ export const spliceVNCSocket = (
       return
     }
     const upstream = dial(located.path)
-    const leaveRelays = options.relays?.add({
-      configured: config.socket,
-      dialled: located.path,
-      close: (reason) => {
-        webSocket.close(1011, reason)
-        upstream.destroy()
-      }
-    })
     const sendText = (text: string) => webSocket.send(text, {}, () => undefined)
     const id = arbiter.join(sendText)
     const clipboard =
@@ -286,6 +278,21 @@ export const spliceVNCSocket = (
         ? undefined
         : new VNCClipboardBridge(desktopClipboard, sendText, () => arbiter.mayControl(id))
     clipboard?.start().catch(() => clipboard.close())
+    let cutOff = false
+    const release = () => {
+      clipboard?.close()
+      arbiter.leave(id)
+      upstream.destroy()
+    }
+    const leaveRelays = options.relays?.add({
+      configured: config.socket,
+      dialled: located.path,
+      close: (reason) => {
+        cutOff = true
+        release()
+        webSocket.close(1011, reason)
+      }
+    })
     const filter = new RFBClientStreamFilter()
     const allow = (kind: RFBClientMessageKind) => {
       if (kind === "input" || kind === "clipboard") return arbiter.mayControl(id)
@@ -293,13 +300,12 @@ export const spliceVNCSocket = (
       return true
     }
     webSocket.on("message", (bytes: Buffer, isBinary) => {
+      if (cutOff) return
       if (!isBinary) {
         const text = bytes.toString("utf8")
         if (clipboard?.receive(text) !== true) arbiter.receive(id, text)
         return
       }
-      if (upstream.destroyed) return
-
       const forward = filter.push(bytes, allow)
       if (forward.length > 0) upstream.write(forward)
     })
@@ -316,9 +322,7 @@ export const spliceVNCSocket = (
     webSocket.once("error", () => upstream.destroy())
     webSocket.once("close", () => {
       leaveRelays?.()
-      clipboard?.close()
-      arbiter.leave(id)
-      upstream.destroy()
+      release()
     })
   })
 }

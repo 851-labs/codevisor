@@ -24,6 +24,7 @@ const quickMs = 30_000
 const startMs = 2 * 60 * 1000
 const busyPollMs = 2000
 const busyPolls = 30 * 30
+const unansweredPollsAllowed = 5
 
 export const desktopSetupCommand = async (
   deps: DesktopCliDeps,
@@ -41,7 +42,7 @@ export const desktopSetupCommand = async (
   const equipped = await installWhatIsMissing(deps, server, cleared)
   if (equipped === undefined) return 1
 
-  const alreadyRuns = equipped.state === "running"
+  const alreadyRuns = equipped.state === "running" && equipped.managed === true
   if (!alreadyRuns) deps.log(`==> Starting the desktop as ${equipped.account}`)
   const started = await server.ask("POST", "/start", startMs)
   if (started === undefined) return 1
@@ -87,6 +88,7 @@ interface DesktopServer {
     path: string,
     timeoutMs: number
   ) => Promise<DesktopStatus | undefined>
+  readonly peek: () => Promise<DesktopStatus | undefined>
 }
 
 const desktopServer = async (
@@ -94,16 +96,20 @@ const desktopServer = async (
   options: DesktopCommandOptions
 ): Promise<DesktopServer> => {
   const port = await resolvePort(deps, options.port)
+  const url = `http://127.0.0.1:${port}/v1/desktop`
   return {
     ask: async (method, path, timeoutMs) => {
-      const response = await deps.fetchJson(`http://127.0.0.1:${port}/v1/desktop${path}`, {
-        method,
-        timeoutMs
-      })
+      const response = await deps.fetchJson(`${url}${path}`, { method, timeoutMs })
       if (response?.status === 200) return Schema.decodeUnknownSync(DesktopStatus)(response.body)
 
       deps.error(routeFailure(response, port))
       return undefined
+    },
+    peek: async () => {
+      const response = await deps.fetchJson(url, { timeoutMs: quickMs })
+      if (response?.status !== 200) return undefined
+
+      return Schema.decodeUnknownSync(DesktopStatus)(response.body)
     }
   }
 }
@@ -214,15 +220,26 @@ const whenTheServerIsDone = async (
   begun: DesktopStatus | undefined
 ): Promise<DesktopStatus | undefined> => {
   let status = begun
+  let unanswered = 0
   for (let poll = 0; status?.busy !== undefined && poll < busyPolls; poll += 1) {
     await deps.sleep(busyPollMs)
-    status = await server.ask("GET", "", quickMs)
-  }
-  if (status === undefined || status.failure === undefined) return status
+    const latest = await server.peek()
+    unanswered = latest === undefined ? unanswered + 1 : 0
+    if (unanswered > unansweredPollsAllowed) return server.ask("GET", "", quickMs)
 
-  deps.error(status.failure)
+    status = latest ?? status
+  }
+  if (status === undefined) return undefined
+
+  const problem = status.busy === undefined ? status.failure : stillBusy(status.busy)
+  if (problem === undefined) return status
+
+  deps.error(problem)
   return undefined
 }
+
+const stillBusy = (what: string): string =>
+  `${what} is still going on. Run \`codevisor desktop setup\` again when it is done.`
 
 const asAdministrator = async (
   deps: DesktopCliDeps,

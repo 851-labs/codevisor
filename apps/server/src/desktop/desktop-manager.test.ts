@@ -125,6 +125,20 @@ describe("installing the desktop's packages", () => {
     })
   })
 
+  it("stops reporting a failed install once the programs are there or something else was done since", async () => {
+    const failing = {
+      [`sudo -n ${aptInstall}`]: { code: 100, output: "E: Unable to locate package xfce4\n" }
+    }
+    const fixedByHand = fakeMachine({ files: UBUNTU, results: failing })
+    await fixedByHand.manager.installPackages()
+    expect(await settled(fixedByHand.manager)).not.toHaveProperty("failure")
+
+    const stillMissing = fakeMachine({ programs: bare, files: UBUNTU, results: failing })
+    await stillMissing.manager.installPackages()
+    expect(await settled(stillMissing.manager)).toHaveProperty("failure")
+    expect(await stillMissing.manager.replaceOld()).not.toHaveProperty("failure")
+  })
+
   it("answers at once while a long install runs, runs only one, and holds other changes back until it is done", async () => {
     const apt = Promise.withResolvers<void>()
     const machine = fakeMachine({
@@ -211,7 +225,7 @@ describe("starting the desktop as the server's own account", () => {
     expect(
       machine.commands.some((line) => line.startsWith("sudo") && line !== "sudo -n true")
     ).toBe(false)
-    expect(status).toMatchObject({ state: "running", display: 1 })
+    expect(status).toMatchObject({ state: "running", display: 1, managed: true })
     expect(machine.changes.count).toBe(1)
   })
 
@@ -398,6 +412,41 @@ describe("a server that boots where there is no systemd", () => {
     })
     await removed.manager.remove()
     expect(removed.terminated).toEqual([])
+  })
+
+  it("doesn't start a runner for a config it can't share, whatever service the config names", async () => {
+    const outdated = JSON.stringify({ vnc: { port: 5901 }, service: "process" })
+    const machine = fakeMachine({ ...withoutSystemd, files: { ...UBUNTU, [CONFIG]: outdated } })
+    await machine.manager.resume()
+    expect(machine.spawned).toEqual([])
+  })
+
+  it("waits for a start that is under way instead of starting a second runner beside it", async () => {
+    const rebooted = fakeMachine({
+      ...withoutSystemd,
+      files: { ...UBUNTU, [CONFIG]: await setUpEarlier() }
+    })
+    await Promise.all([rebooted.manager.start(), rebooted.manager.resume()])
+    expect(rebooted.spawned).toHaveLength(1)
+  })
+
+  it("calls a desktop running, and stops its old process, when systemd has become available since", async () => {
+    const nowWithSystemd = fakeMachine({
+      files: {
+        ...UBUNTU,
+        [CONFIG]: await setUpEarlier(),
+        [pidFile]: "4242\n",
+        "/proc/4242/cmdline": "node\0/opt/codevisor/cli.js\0desktop\0run"
+      },
+      alive: [4242]
+    })
+    expect(await nowWithSystemd.manager.status()).toMatchObject({
+      state: "running",
+      managed: false
+    })
+    await nowWithSystemd.manager.start()
+    expect(nowWithSystemd.terminated).toEqual([4242])
+    expect(nowWithSystemd.files.has(UNIT)).toBe(true)
   })
 
   it("leaves alone a stopped desktop that something else set up, like the dev container's", async () => {

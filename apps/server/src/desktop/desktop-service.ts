@@ -25,15 +25,22 @@ export interface ServiceFiles {
   readonly logsDir: string
 }
 
-export const desktopService = async (
+export interface DesktopServices {
+  readonly current: DesktopService
+  readonly other: DesktopService
+}
+
+export const desktopServices = async (
   system: DesktopSystem,
   runner: RunnerCommand,
   files: ServiceFiles
-): Promise<DesktopService> => {
+): Promise<DesktopServices> => {
+  const underSystemd = systemdService(system, runner)
+  const asAProcess = processService(system, runner, files)
   const hasUserSystemd = (await system.run("systemctl", ["--user", "show-environment"])).code === 0
-  if (hasUserSystemd) return systemdService(system, runner)
+  if (hasUserSystemd) return { current: underSystemd, other: asAProcess }
 
-  return processService(system, runner, files)
+  return { current: asAProcess, other: underSystemd }
 }
 
 export const unitText = (runner: RunnerCommand): string =>

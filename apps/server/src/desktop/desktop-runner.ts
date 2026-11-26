@@ -73,6 +73,8 @@ class DesktopRun {
     this.processes.start("Xvnc", this.xvncArguments(), {})
     await this.xvncIsUp()
     await this.tcpStaysClosed()
+    if (this.processes.isStopping) return
+
     this.processes.start(
       "dbus-run-session",
       ["--", "sh", "-c", sessionCommand],

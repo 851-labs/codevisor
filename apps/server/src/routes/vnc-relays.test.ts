@@ -85,7 +85,7 @@ describe("a viewer that is already connected", () => {
   })
 })
 
-it("cuts a withdrawn viewer off from the desktop at once, without waiting for it to answer the close", () => {
+it("cuts a withdrawn viewer off at once: its link to the desktop, its control seat and its messages", () => {
   const closes: Array<[number, string]> = []
   const webSocket = Object.assign(new EventEmitter(), {
     bufferedAmount: 0,
@@ -97,6 +97,9 @@ it("cuts a withdrawn viewer off from the desktop at once, without waiting for it
   const written = vi.spyOn(upstream, "write")
   const client = new Socket()
   const relays = new VNCRelays(() => "The desktop on this machine was removed.")
+  const arbiter = new VNCControlArbiter()
+  const left = vi.spyOn(arbiter, "leave")
+  const received = vi.spyOn(arbiter, "receive")
   const config = { socket: "/run/user/1000/codevisor-desktop.sock", name: "Desktop" }
   try {
     spliceVNCSocket(
@@ -108,7 +111,7 @@ it("cuts a withdrawn viewer off from the desktop at once, without waiting for it
       { handleUpgrade: (_request, _socket, _head, done) => done(webSocket) },
       {
         dial: () => upstream,
-        arbiter: new VNCControlArbiter(),
+        arbiter,
         locate: (path) => ({ path }),
         relays
       }
@@ -116,10 +119,13 @@ it("cuts a withdrawn viewer off from the desktop at once, without waiting for it
     relays.recheck()
     expect(closes).toEqual([[1011, "The desktop on this machine was removed."]])
     expect(upstream.destroyed).toBe(true)
+    expect(left).toHaveBeenCalledOnce()
 
     written.mockClear()
     webSocket.emit("message", Buffer.from("RFB 003.008\n", "latin1"), true)
+    webSocket.emit("message", Buffer.from('{"type":"request","name":"Studio"}'), false)
     expect(written).not.toHaveBeenCalled()
+    expect(received).not.toHaveBeenCalled()
   } finally {
     written.mockRestore()
     upstream.destroy()

@@ -1,11 +1,19 @@
 import { readFileSync } from "node:fs"
 
+export interface KernelTable {
+  readonly path: string
+  readonly absentWithoutIPv6?: boolean
+}
+
 const listening = "0A"
-const kernelTables = ["/proc/net/tcp", "/proc/net/tcp6"]
+const kernelTables: ReadonlyArray<KernelTable> = [
+  { path: "/proc/net/tcp" },
+  { path: "/proc/net/tcp6", absentWithoutIPv6: true }
+]
 
 export const somethingListensOn = (
   port: number,
-  tables: ReadonlyArray<string> = kernelTables
+  tables: ReadonlyArray<KernelTable> = kernelTables
 ): boolean => tables.some((table) => listeningPorts(tableText(table)).has(port))
 
 export const listeningPorts = (procNetTcp: string): ReadonlySet<number> => {
@@ -19,10 +27,17 @@ export const listeningPorts = (procNetTcp: string): ReadonlySet<number> => {
   return ports
 }
 
-const tableText = (table: string): string => {
+const tableText = (table: KernelTable): string => {
   try {
-    return readFileSync(table, "utf8")
-  } catch {
-    return ""
+    return readFileSync(table.path, "utf8")
+  } catch (error) {
+    if (table.absentWithoutIPv6 === true && isMissing(error)) return ""
+
+    throw new Error(`Can't read ${table.path}, so the desktop's TCP port can't be checked`, {
+      cause: error
+    })
   }
 }
+
+const isMissing = (error: unknown): boolean =>
+  error instanceof Error && "code" in error && error.code === "ENOENT"

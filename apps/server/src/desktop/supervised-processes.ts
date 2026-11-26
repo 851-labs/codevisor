@@ -1,6 +1,7 @@
 import { type ChildProcess, spawn } from "node:child_process"
 
-const stopGraceMs = 3000
+const defaultGraceMs = 3000
+const pollMs = 50
 
 export interface Ended {
   readonly program: string
@@ -11,9 +12,14 @@ export class SupervisedProcesses {
   private readonly children: ChildProcess[] = []
   private stopping: Promise<void> | undefined
 
-  constructor(private readonly onEnded: (ended: Ended) => void) {}
+  constructor(
+    private readonly onEnded: (ended: Ended) => void,
+    private readonly graceMs: number = defaultGraceMs
+  ) {}
 
   start(program: string, args: ReadonlyArray<string>, env: Record<string, string>): ChildProcess {
+    if (this.stopping !== undefined) throw new Error(`${program} wasn't started: stopping`)
+
     const child = spawn(program, [...args], {
       env: { ...process.env, ...env },
       stdio: ["ignore", "inherit", "inherit"],
@@ -40,12 +46,27 @@ export class SupervisedProcesses {
 
   private async stopAll(): Promise<void> {
     for (const child of this.children) signalGroup(child, "SIGTERM")
-    const force = setTimeout(() => {
-      for (const child of this.children) signalGroup(child, "SIGKILL")
-    }, stopGraceMs)
+    await this.groupsEnd()
+    for (const child of this.children.filter(groupIsAlive)) signalGroup(child, "SIGKILL")
     await Promise.all(this.children.map(exited))
-    clearTimeout(force)
-    for (const child of this.children) signalGroup(child, "SIGKILL")
+  }
+
+  private async groupsEnd(): Promise<void> {
+    for (let waited = 0; waited < this.graceMs; waited += pollMs) {
+      if (!this.children.some(groupIsAlive)) return
+
+      await new Promise((resolve) => setTimeout(resolve, pollMs))
+    }
+  }
+}
+
+const groupIsAlive = (child: ChildProcess): boolean => {
+  if (child.pid === undefined) return false
+  try {
+    process.kill(-child.pid, 0)
+    return true
+  } catch (error) {
+    return error instanceof Error && "code" in error && error.code === "EPERM"
   }
 }
 

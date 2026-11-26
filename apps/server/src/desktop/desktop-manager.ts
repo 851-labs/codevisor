@@ -17,7 +17,12 @@ import {
   runAsRoot,
   sudoKind
 } from "./desktop-packages.js"
-import { desktopService, type DesktopService, type RunnerCommand } from "./desktop-service.js"
+import {
+  type DesktopService,
+  desktopServices,
+  type DesktopServices,
+  type RunnerCommand
+} from "./desktop-service.js"
 import type { DesktopSystem } from "./desktop-system.js"
 import { oldDesktop } from "./old-desktop.js"
 
@@ -54,7 +59,8 @@ export const makeDesktopManager = (options: DesktopManagerOptions): DesktopManag
   const { system, dataDir, changed } = options
   const locate = options.locate ?? privateSocket
   const configPath = join(dataDir, SCREEN_SHARING_CONFIG_FILE)
-  const service = (): Promise<DesktopService> => desktopService(system, options.runner, options)
+  const services = (): Promise<DesktopServices> => desktopServices(system, options.runner, options)
+  const service = async (): Promise<DesktopService> => (await services()).current
   let busy: string | undefined
   let failure: string | undefined
   let last: Promise<unknown> = Promise.resolve()
@@ -71,6 +77,7 @@ export const makeDesktopManager = (options: DesktopManagerOptions): DesktopManag
         new HttpFailure(409, `${busy} is still going on. Try again when it is done.`)
       )
 
+    failure = undefined
     return oneAtATime(work)
   }
 
@@ -103,7 +110,8 @@ export const makeDesktopManager = (options: DesktopManagerOptions): DesktopManag
 
   const sharedBy = (runs: DesktopService): Shared => {
     const live = shared()
-    const processIsGone = recordedService() === "process" && !runs.isSetUp()
+    const processIsGone =
+      runs.kind === "process" && recordedService() === "process" && !runs.isSetUp()
     if (live.state !== "running" || !processIsGone) return live
 
     return { ...live, state: "stopped", problem: "the desktop's process isn't running" }
@@ -116,13 +124,16 @@ export const makeDesktopManager = (options: DesktopManagerOptions): DesktopManag
     const old = oldDesktop(system)
     const startsAtBoot = await runs.startsAtBoot()
     const needsLinger = runs.kind === "systemd-user" && !startsAtBoot
+    const missing = await missingPrograms(system)
+    if (missing.length === 0) failure = undefined
     return {
       ...sharedBy(runs),
+      managed: runs.isSetUp(),
       ...(busy === undefined ? {} : { busy }),
       ...(failure === undefined ? {} : { failure }),
       account: system.account,
       system: release.name,
-      missing: await missingPrograms(system),
+      missing,
       ...(install === undefined ? {} : { install }),
       sudo: await sudoKind(system),
       ...(old === undefined ? {} : { oldDesktop: old }),
@@ -219,10 +230,11 @@ export const makeDesktopManager = (options: DesktopManagerOptions): DesktopManag
         `The desktop can't start until these are installed: ${missing.join(", ")}`
       )
 
-    const runs = await service()
+    const { current: runs, other } = await services()
     if (sharedBy(runs).state === "running" && runs.isSetUp()) return status()
 
     const layout = layoutToUse()
+    await other.stop()
     writeConfig(layout, runs)
     await runs.start()
     const up = await staysUp(layout)
@@ -235,12 +247,14 @@ export const makeDesktopManager = (options: DesktopManagerOptions): DesktopManag
   const remove = async (): Promise<DesktopStatus> => {
     system.remove(configPath)
     changed()
-    await (await service()).stop()
+    const { current, other } = await services()
+    await current.stop()
+    await other.stop()
     return status()
   }
 
   const resume = async (): Promise<void> => {
-    if (recordedService() !== "process") return
+    if (recordedService() !== "process" || setUp().kind !== "ready") return
 
     const runs = await service()
     if (runs.kind === "process" && !runs.isSetUp()) await runs.start()
@@ -252,6 +266,6 @@ export const makeDesktopManager = (options: DesktopManagerOptions): DesktopManag
     replaceOld: () => unlessBusy(replaceOld),
     start: () => unlessBusy(start),
     remove: () => unlessBusy(remove),
-    resume
+    resume: () => oneAtATime(resume)
   }
 }

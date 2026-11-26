@@ -36,7 +36,7 @@ describe("the TCP ports something on the machine listens on", () => {
     expect(listeningPorts(`${header}\n`).size).toBe(0)
   })
 
-  it("looks in every table that exists, and takes a missing one, as with IPv6 turned off, as empty", () => {
+  it("takes the IPv6 table as empty when it is missing, as it is with IPv6 turned off", () => {
     const folder = mkdtempSync(join(tmpdir(), "cv-tcp-"))
     onTestFinished(() => rmSync(folder, { recursive: true, force: true }))
     const tcp = join(folder, "tcp")
@@ -44,10 +44,18 @@ describe("the TCP ports something on the machine listens on", () => {
       tcp,
       `${header}\n   0: 0100007F:170D 00000000:0000 0A 00000000:00000000 00:00000000 00000000 0 0 1 1 0 100 0 0 10 0\n`
     )
-    const noSuchTable = join(folder, "tcp6")
-    expect(somethingListensOn(5901, [noSuchTable, tcp])).toBe(true)
-    expect(somethingListensOn(5902, [tcp, noSuchTable])).toBe(false)
-    expect(somethingListensOn(5901, [noSuchTable])).toBe(false)
+    const ipv4 = { path: tcp }
+    const ipv6TurnedOff = { path: join(folder, "tcp6"), absentWithoutIPv6: true }
+    expect(somethingListensOn(5901, [ipv6TurnedOff, ipv4])).toBe(true)
+    expect(somethingListensOn(5902, [ipv4, ipv6TurnedOff])).toBe(false)
+    expect(somethingListensOn(5901, [ipv6TurnedOff])).toBe(false)
+  })
+
+  it("refuses to answer when the table it needs can't be read, instead of calling the port closed", () => {
+    const unreadable = { path: join(tmpdir(), "cv-no-such-folder", "tcp") }
+    expect(() => somethingListensOn(5901, [unreadable])).toThrow(
+      `Can't read ${unreadable.path}, so the desktop's TCP port can't be checked`
+    )
   })
 })
 

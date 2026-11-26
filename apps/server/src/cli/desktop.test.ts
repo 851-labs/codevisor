@@ -28,7 +28,7 @@ const status = (changes: Partial<DesktopStatus> = {}): DesktopStatus => ({
 })
 
 const answers = (...bodies: DesktopStatus[]) => bodies.map((body) => ({ status: 200, body }))
-const running = status({ state: "running", display: 1 })
+const running = status({ state: "running", display: 1, managed: true })
 
 const world = (
   http: FakeOptions["http"],
@@ -85,6 +85,47 @@ describe("codevisor desktop setup", () => {
     })
     expect(await desktopSetupCommand(machine.deps)).toBe(1)
     expect(machine.errors).toEqual([failure])
+    expect(machine.httpCalls(`POST ${url("/start")}`)).toBe(0)
+  })
+
+  it("keeps waiting through a few unanswered checks during the install", async () => {
+    const busy = "Installing packages"
+    const machine = world({
+      [`GET ${url()}`]: [
+        ...answers(status({ missing, install })),
+        undefined,
+        undefined,
+        ...answers(status({ install }))
+      ],
+      [`POST ${url("/packages")}`]: answers(status({ missing, install, busy })),
+      [`POST ${url("/start")}`]: answers(running)
+    })
+    expect(await desktopSetupCommand(machine.deps)).toBe(0)
+    expect(machine.errors).toEqual([])
+  })
+
+  it("stops with the server's answer when it stops answering during the install", async () => {
+    const busy = "Installing packages"
+    const machine = world({
+      [`GET ${url()}`]: [...answers(status({ missing, install })), undefined],
+      [`POST ${url("/packages")}`]: answers(status({ missing, install, busy }))
+    })
+    expect(await desktopSetupCommand(machine.deps)).toBe(1)
+    expect(machine.errors).toEqual([
+      "Codevisor server is not running on port 49361; start it with: codevisor start"
+    ])
+  })
+
+  it("says the install is still going on when it outlasts the wait, instead of calling it failed", async () => {
+    const busy = "Installing packages"
+    const machine = world({
+      [`GET ${url()}`]: answers(status({ missing, install }), status({ missing, install, busy })),
+      [`POST ${url("/packages")}`]: answers(status({ missing, install, busy }))
+    })
+    expect(await desktopSetupCommand(machine.deps)).toBe(1)
+    expect(machine.errors).toEqual([
+      "Installing packages is still going on. Run `codevisor desktop setup` again when it is done."
+    ])
     expect(machine.httpCalls(`POST ${url("/start")}`)).toBe(0)
   })
 
@@ -189,6 +230,18 @@ describe("codevisor desktop setup", () => {
       "==> The desktop is already running. Open it from this machine in Codevisor."
     ])
     expect(machine.httpCalls(`POST ${url("/start")}`)).toBe(1)
+  })
+
+  it("says it is starting a desktop that runs but isn't the server's own, since the server will replace it", async () => {
+    const machine = world({
+      [`GET ${url()}`]: answers({ ...running, managed: false }),
+      [`POST ${url("/start")}`]: answers(running)
+    })
+    expect(await desktopSetupCommand(machine.deps)).toBe(0)
+    expect(machine.logs.slice(-2)).toEqual([
+      "==> Starting the desktop as codevisor",
+      "==> The desktop is ready. Open it from this machine in Codevisor."
+    ])
   })
 
   it("reports the server's reason when the desktop doesn't start", async () => {

@@ -9,6 +9,11 @@ const stayingAlive = "setInterval(() => undefined, 1000)"
 const helperThatConnects = (port: number): string =>
   `require("node:net").connect(${port}, "127.0.0.1"); ${stayingAlive}`
 
+const goodbyeDelayMs = 200
+
+const helperThatSaysGoodbye = (port: number): string =>
+  `process.on("SIGTERM", () => setTimeout(() => socket.end("bye", () => process.exit(0)), ${goodbyeDelayMs})); const socket = require("node:net").connect(${port}, "127.0.0.1"); ${stayingAlive}`
+
 const sessionThatStarts = (helper: string): string =>
   `require("node:child_process").spawn(process.execPath, ["-e", ${JSON.stringify(helper)}], { stdio: "ignore" }); ${stayingAlive}`
 
@@ -44,6 +49,32 @@ describe("the processes a desktop is made of", () => {
     await processes.stop()
     expect(session.exitCode !== null || session.signalCode !== null).toBe(true)
     await helperGone
+  })
+
+  it("give what they started time to finish before forcing it, even when they themselves end at once", async () => {
+    const processes = new SupervisedProcesses(() => undefined)
+    onTestFinished(() => processes.stop())
+    const { port, connected } = await listening()
+    processes.start(process.execPath, ["-e", sessionThatStarts(helperThatSaysGoodbye(port))], {})
+    const helper = await connected
+    let said = ""
+    helper.on("data", (chunk: Buffer) => {
+      said += chunk.toString()
+    })
+    const helperGone = closed(helper)
+
+    await processes.stop()
+    await helperGone
+    expect(said).toBe("bye")
+  })
+
+  it("start nothing more once they are being stopped", async () => {
+    const processes = new SupervisedProcesses(() => undefined)
+    processes.start(process.execPath, ["-e", stayingAlive], {})
+    await processes.stop()
+    expect(() => processes.start(process.execPath, ["-e", stayingAlive], {})).toThrow(
+      "wasn't started: stopping"
+    )
   })
 
   it("report the one that ends by itself, and say nothing about those it stops", async () => {
