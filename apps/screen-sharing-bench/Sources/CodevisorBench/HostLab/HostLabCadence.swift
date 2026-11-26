@@ -32,6 +32,7 @@ final class HostLabCadence: ScreenSharingFrameSink {
   private func record(from previous: Stamp, to stamp: Stamp) {
     let displayMs = Double(stamp.displayNs - previous.displayNs) / 1_000_000
     metrics.observe("captureDisplayInterval", milliseconds: displayMs)
+    metrics.observe("captureLead", milliseconds: Double(stamp.displayNs - stamp.callbackNs) / 1_000_000)
     metrics.observe("captureCallbackInterval", milliseconds: Double(stamp.callbackNs - previous.callbackNs) / 1_000_000)
     if displayMs < Self.shortBelowMs { metrics.increment("captureIntervalsShort") }
     if displayMs > Self.gapAboveMs { metrics.increment("captureIntervalsGap") }

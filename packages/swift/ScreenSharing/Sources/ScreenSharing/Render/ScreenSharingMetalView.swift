@@ -77,6 +77,7 @@ public final class ScreenSharingMetalView: MTKView, MTKViewDelegate {
     #endif
     metrics.label("maximumDrawableCount", String(Self.drawableCount(offMain: offMainPreparation)))
     metrics.label("frameSelection", "before drawable acquisition")
+    metrics.label("labPresentation", ScreenSharingLabPresentation.current.rawValue)
     metrics.label("renderPreparation", preparer == nil ? "main actor (MTKView)" : "off-main serial worker")
     metrics.label(
       "drawableAcquisitionPath",
@@ -155,6 +156,7 @@ public final class ScreenSharingMetalView: MTKView, MTKViewDelegate {
       let rate = Self.drawRate(displayRefresh: refresh)
       guard rate != preferredFramesPerSecond else { return }
       preferredFramesPerSecond = rate
+      coordinator.refreshPeriodNs = 1_000_000_000 / Int64(rate)
       refreshObserver?.follow(framesPerSecond: rate)
       metrics.label("drawRate", "\(rate) per second on a \(refresh) Hz display")
     }
@@ -312,6 +314,7 @@ package final class TextureFrame: @unchecked Sendable {
     private let encoder: ScreenSharingMetalEncoder
     private let metrics: ScreenSharingMetrics
     private var layerDynamicRange = ScreenSharingDynamicRange.standard
+    static let replacesAfterWaitNs: Int64 = 1_000_000
 
     init(layer: CAMetalLayer, encoder: ScreenSharingMetalEncoder, metrics: ScreenSharingMetrics) {
       self.layer = layer
@@ -330,7 +333,8 @@ package final class TextureFrame: @unchecked Sendable {
         let prepared: ScreenSharingPreparedSubmission? = autoreleasepool {
           let started = ScreenSharingMetrics.nowNs
           metrics.observe("renderPreparationQueueWait", milliseconds: Double(started - request.queuedAtNs) / 1_000_000)
-          guard let textures = encoder.textures(for: request.frame) else { return nil }
+          var frame = request.frame
+          guard var textures = encoder.textures(for: frame) else { return nil }
           let range = textures.dynamicRange
           if range != self.layerDynamicRange {
             self.layerDynamicRange = range
@@ -351,6 +355,15 @@ package final class TextureFrame: @unchecked Sendable {
             metrics.increment("renderPreparationNoDrawable")
             return nil
           }
+          var replacement: ScreenSharingVideoFrame?
+          if acquisitionEnded - acquisitionStarted > ScreenSharingMetalPreparer.replacesAfterWaitNs,
+            let newer = request.newer?(), let newerTextures = encoder.textures(for: newer)
+          {
+            frame = newer
+            textures = newerTextures
+            replacement = newer
+            metrics.increment("renderFramesReplacedAfterDrawableWait")
+          }
           let pass = MTLRenderPassDescriptor()
           pass.colorAttachments[0].texture = drawable.texture
           pass.colorAttachments[0].loadAction = .clear
@@ -364,10 +377,13 @@ package final class TextureFrame: @unchecked Sendable {
             let encoded = encoder.encode(textures, into: Surface(drawable: drawable, pass: pass))
           else { return nil }
           metrics.observe("renderPreparation", milliseconds: Double(ScreenSharingMetrics.nowNs - started) / 1_000_000)
-          return .init(
+          var prepared = ScreenSharingPreparedSubmission(
             submission: ScreenSharingMetalView.MetalSubmission(
               buffer: encoded.buffer, drawable: drawable, metrics: metrics),
-            retained: encoded.retained, videoSize: request.frame.size)
+            retained: encoded.retained, videoSize: frame.size)
+          prepared.replacement = replacement
+          prepared.drawableWaitNs = acquisitionEnded - acquisitionStarted
+          return prepared
         }
         completion(prepared)
       }

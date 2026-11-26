@@ -8,6 +8,7 @@ struct Tier2RunMeta: Decodable {
     case codevisorV2VCP = "codevisor-v2-vcp"
     case codevisorV2Cap = "codevisor-v2-cap"
     case codevisorV2VCPCap = "codevisor-v2-vcp-cap"
+    case codevisorV2VCPCapView = "codevisor-v2-vcp-cap-view"
     case floor
   }
 
@@ -45,6 +46,7 @@ struct Tier2RunMeta: Decodable {
     case .codevisorV2VCP: .codevisorV2VCP
     case .codevisorV2Cap: .codevisorV2Cap
     case .codevisorV2VCPCap: .codevisorV2VCPCap
+    case .codevisorV2VCPCapView: .codevisorV2VCPCapView
     case .floor: nil
     }
   }

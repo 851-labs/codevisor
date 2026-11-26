@@ -14,6 +14,7 @@ enum Tier2SystemLabel {
     case .codevisorV2VCP: "Codevisor, default encoder (VCP)"
     case .codevisorV2Cap: "LAB: Codevisor, fallback encoder (VideoToolbox), capture cap lifted"
     case .codevisorV2VCPCap: "LAB: Codevisor, default encoder (VCP), capture cap lifted"
+    case .codevisorV2VCPCapView: "LAB: Codevisor, default encoder (VCP), capture cap lifted, viewer variant"
     }
   }
 }

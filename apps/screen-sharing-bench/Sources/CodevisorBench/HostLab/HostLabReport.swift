@@ -26,7 +26,8 @@ struct HostLabReport: Encodable {
     let header =
       "| Scene | Variant | All % | host-run % | VTEncoder % | WindowServer % | replayd % | player % | Captures | Tiles | "
       + "Refinements | Converged | Encode p50 ms | Interval p50 ms | Interval p95 ms | Under 12.5 ms /s | Over 25 ms /s | "
-      + "Delivery age p50 ms | Delivery age p95 ms | Idle callbacks /s |"
+      + "Delivery age p50 ms | Delivery age p95 ms | Idle callbacks /s | Lead p50 ms | "
+      + "Lead p95 ms | Late % |"
     let rows = results.map { result in
       let cells = [result.allProcesses?.cpuPct] + HostLabCommand.groups.map { result.cpuPct[$0] }
       let rates = ["captureFrames", "tilesEncoded", "refinementUpdates", "refinementsConverged"].map {
@@ -47,7 +48,7 @@ struct HostLabReport: Encodable {
       "",
       "Counts are per second of the variant's capture. Captures, tiles and refinements come from its host metrics.", "",
       header,
-      "| --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |",
+      "| --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |",
     ]
     let sizes = ["", "Encoded tile sizes by refinement pass (0 is the change):", ""] + passes
     return (title + rows + sizes).joined(separator: "\n") + "\n"
@@ -56,10 +57,13 @@ struct HostLabReport: Encodable {
   private static func cadence(_ result: HostLabResult) -> [Double?] {
     let interval = result.run?.timings["captureDisplayInterval"]
     let age = result.run?.timings["captureDeliveryAge"]
+    let lead = result.run?.timings["captureLead"]
+    let frames = result.run?.counters["captureFrames"] ?? 0
+    let late = frames > 0 ? 100 * Double(age?.count ?? 0) / Double(frames) : nil
     return [
       interval?.p50Ms, interval?.p95Ms, result.perSecond("captureIntervalsShort") ?? 0,
       result.perSecond("captureIntervalsGap") ?? 0, age?.p50Ms, age?.p95Ms,
-      result.perSecond("captureCallbacksIdle") ?? 0,
+      result.perSecond("captureCallbacksIdle") ?? 0, lead?.p50Ms, lead?.p95Ms, late,
     ]
   }
 

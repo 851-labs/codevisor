@@ -16,7 +16,8 @@
 : "${TIER2_VIEWER_DISPLAY:=main}"
 : "${TIER2_VCP_FAIL_AFTER:=0}"
 : "${TIER2_CAPTURE_CAP:=120}"
-tier2_systems="apple-hp codevisor-v2 codevisor-v2-vcp codevisor-v2-cap codevisor-v2-vcp-cap"
+tier2_systems="apple-hp codevisor-v2 codevisor-v2-vcp codevisor-v2-cap codevisor-v2-vcp-cap codevisor-v2-vcp-cap-view"
+: "${TIER2_VIEWER_VARIANT:=realign}"
 
 tier2_scripts="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 tier2_run_overhead_s=30
@@ -123,11 +124,16 @@ tier2_encoder_options() {
     ((TIER2_VCP_FAIL_AFTER > 0)) && echo --vcp-fail-after "$TIER2_VCP_FAIL_AFTER"
   elif [[ "$1" == codevisor-v2 ]]; then
     echo --encoder vt
-  elif [[ "$1" == codevisor-v2-vcp-cap ]]; then
+  elif [[ "$1" == codevisor-v2-vcp-cap || "$1" == codevisor-v2-vcp-cap-view ]]; then
     echo --encoder vcp --capture-cap "$TIER2_CAPTURE_CAP"
   elif [[ "$1" == codevisor-v2-cap ]]; then
     echo --encoder vt --capture-cap "$TIER2_CAPTURE_CAP"
   fi
+  return 0
+}
+
+tier2_viewer_variant_options() {
+  [[ "$1" == codevisor-v2-vcp-cap-view ]] && echo --viewer-variant "$TIER2_VIEWER_VARIANT"
   return 0
 }
 
@@ -251,7 +257,8 @@ tier2_check_inputs() {
     echo "warm-up must be 0 (none) or 20 to 120 seconds, not $TIER2_WARM_UP_S" >&2
     return 1
   }
-  local system_pattern="(apple-hp|codevisor-v2-vcp-cap|codevisor-v2-cap|codevisor-v2-vcp|codevisor-v2)"
+  local system_pattern="(apple-hp|codevisor-v2-vcp-cap-view|codevisor-v2-vcp-cap|codevisor-v2-cap|codevisor-v2-vcp|codevisor-v2)"
+  [[ "$TIER2_VIEWER_VARIANT" =~ ^(standard|late|realign)$ ]] || { echo "viewer-variant must be standard, late or realign" >&2; return 1; }
   [[ "$TIER2_CAPTURE_CAP" =~ ^[0-9]+$ ]] && ((TIER2_CAPTURE_CAP >= 1 && TIER2_CAPTURE_CAP <= 240)) || {
     echo "capture-cap must be 1 to 240, not $TIER2_CAPTURE_CAP" >&2
     return 1

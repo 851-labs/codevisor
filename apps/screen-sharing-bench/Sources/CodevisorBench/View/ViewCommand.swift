@@ -1,3 +1,4 @@
+import ScreenSharing
 import ScreenSharingBench
 import ScreenSharingBenchScenes
 
@@ -11,7 +12,7 @@ struct ViewCommand: BenchCommand {
   static let summary =
     "Show the Codevisor stream from the host full screen, or (--source null) the floor: barcodes drawn from UDP"
   static let usage = """
-    --source codevisor --host <ipv4> [--port <port>] [--present arrival|display-link] [--tiles on|off] \
+    --source codevisor --host <ipv4> [--port <port>] [--present arrival|display-link] [--tiles on|off] [--viewer-variant standard|late|realign] \
       [--control] [--duration <seconds>] \(VirtualDisplayOption.usage) \(BenchSignalFiles.usage)
       view --source null [--port <udp port>] [--duration <seconds>] \(VirtualDisplayOption.usage) \(BenchSignalFiles.usage)
     """
@@ -35,6 +36,8 @@ struct ViewCommand: BenchCommand {
     source = try options.choice("source", default: Source.codevisor)
     presentation = try options.choice("present", default: V2Presentation.arrival)
     presentsTiles = try options.choice("tiles", default: V2Tiles.on) == .on
+    ScreenSharingLabPresentation.current = try options.choice(
+      "viewer-variant", default: ScreenSharingLabPresentation.standard)
     takesControl = try options.flag("control")
     host = try options.string("host")
     let defaultPort = source == .codevisor ? SignalingSocket.defaultPort : Self.defaultFloorPort

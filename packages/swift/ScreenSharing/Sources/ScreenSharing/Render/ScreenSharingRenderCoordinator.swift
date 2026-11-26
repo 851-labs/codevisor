@@ -22,12 +22,15 @@ package struct ScreenSharingPreparationRequest: Sendable {
   package let isNewFrame: Bool
   package let geometry: ScreenSharingRenderGeometry
   package let queuedAtNs: Int64
+  package var newer: (@Sendable () -> ScreenSharingVideoFrame?)?
 }
 
 package struct ScreenSharingPreparedSubmission: Sendable {
   package let submission: any ScreenSharingRenderSubmission
   package let retained: AnyObject & Sendable
   package let videoSize: CGSize
+  package var replacement: ScreenSharingVideoFrame?
+  package var drawableWaitNs: Int64 = 0
   package init(submission: any ScreenSharingRenderSubmission, retained: AnyObject & Sendable, videoSize: CGSize) {
     self.submission = submission
     self.retained = retained
@@ -85,6 +88,14 @@ package final class ScreenSharingRenderCoordinator {
   private var requestDraw: @MainActor () -> Void = {}
   private let hop: Hop
   private var occupancy = 0
+  private let lab = ScreenSharingLabPresentation.current
+  private var realignment = ScreenSharingRealignment()
+  private var heldFrame: ScreenSharingVideoFrame?
+  private var fallbackScheduled = false
+  package var refreshPeriodNs: Int64 {
+    get { realignment.periodNs }
+    set { realignment.periodNs = newValue }
+  }
 
   package init(
     mailbox: ScreenSharingFrameMailbox, metrics: ScreenSharingMetrics, renderOnArrival: Bool,
@@ -108,6 +119,7 @@ package final class ScreenSharingRenderCoordinator {
 
   package func arrivalScheduled() {
     guard !stopped else { return }
+    realignment.arrived(atNs: ScreenSharingMetrics.nowNs)
     requestDraw()
   }
 
@@ -128,13 +140,46 @@ package final class ScreenSharingRenderCoordinator {
 
   package func select() -> (frame: ScreenSharingVideoFrame, isNewFrame: Bool)? {
     guard !stopped, !inFlight else { return nil }
-    let incoming = mailbox.take()
+    let incoming = takeIncoming()
     guard let frame = incoming ?? (needsRedraw ? lastFrame : nil) else { return nil }
     lastFrame = frame
     needsRedraw = false
     let isNewFrame = incoming != nil || owedPresentation
     owedPresentation = false
     return (frame, isNewFrame)
+  }
+
+  private func takeIncoming() -> ScreenSharingVideoFrame? {
+    let held = heldFrame
+    heldFrame = nil
+    guard let arrived = mailbox.take() else { return held }
+
+    if held != nil { metrics.increment("renderFramesSkippedToRealign") }
+    return arrived
+  }
+
+  private func holdsForRealignment() -> Bool {
+    guard lab == .realign, !inFlight, let waitNs = realignment.holds(atNs: ScreenSharingMetrics.nowNs) else {
+      return false
+    }
+
+    if let arrived = mailbox.take() { heldFrame = arrived }
+    guard !fallbackScheduled else { return true }
+
+    fallbackScheduled = true
+    DispatchQueue.main.asyncAfter(deadline: .now() + .nanoseconds(Int(max(0, waitNs)))) { [weak self] in
+      MainActor.assumeIsolated { self?.realignmentFallback() }
+    }
+    return true
+  }
+
+  private func realignmentFallback() {
+    fallbackScheduled = false
+    realignment.finish(atNs: ScreenSharingMetrics.nowNs)
+    guard !stopped, heldFrame != nil else { return }
+
+    metrics.increment("renderRealignmentFallbacks")
+    requestDraw()
   }
 
   package func deferPresentation() {
@@ -166,15 +211,17 @@ package final class ScreenSharingRenderCoordinator {
 
   @discardableResult
   package func prepare(with preparer: any ScreenSharingRenderPreparer, geometry: ScreenSharingRenderGeometry) -> Bool {
-    guard let (frame, isNewFrame) = select() else { return false }
+    guard !holdsForRealignment(), let (frame, isNewFrame) = select() else { return false }
     inFlight = true
     occupancy += 1
     let token = occupancy
     pending = .init(token: token, frame: SubmittedFrame(frame, isNewFrame: isNewFrame))
     let hop = hop
-    preparer.prepare(
-      .init(frame: frame, isNewFrame: isNewFrame, geometry: geometry, queuedAtNs: ScreenSharingMetrics.nowNs)
-    ) { [weak self] prepared in
+    let mailbox = mailbox
+    var request = ScreenSharingPreparationRequest(
+      frame: frame, isNewFrame: isNewFrame, geometry: geometry, queuedAtNs: ScreenSharingMetrics.nowNs)
+    if lab != .standard { request.newer = { mailbox.take() } }
+    preparer.prepare(request) { [weak self] prepared in
       hop { self?.finishPreparation(token: token, prepared) }
     }
     return true
@@ -198,8 +245,14 @@ package final class ScreenSharingRenderCoordinator {
       inFlight = false
       return
     }
-    submit(
-      prepared.submission, retaining: prepared.retained, frame: pending.frame, submittedAt: CACurrentMediaTime())
+    if let replacement = prepared.replacement { lastFrame = replacement }
+    let drawn = prepared.replacement.map { SubmittedFrame($0, isNewFrame: true) } ?? pending.frame
+    if lab == .realign,
+      realignment.committed(waitedNs: prepared.drawableWaitNs, atNs: ScreenSharingMetrics.nowNs)
+    {
+      metrics.increment("renderRealignments")
+    }
+    submit(prepared.submission, retaining: prepared.retained, frame: drawn, submittedAt: CACurrentMediaTime())
   }
 
   private func submit(
@@ -268,6 +321,7 @@ package final class ScreenSharingRenderCoordinator {
     mailbox.onFrameAvailable(nil)
     mailbox.clear()
     lastFrame = nil
+    heldFrame = nil
     needsRedraw = false
     onFrameSize = nil
     onPresented = nil
