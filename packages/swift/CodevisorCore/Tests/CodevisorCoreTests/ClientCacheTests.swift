@@ -51,14 +51,16 @@ struct ClientCacheTests {
     #expect(try cache.navigation.machineIds().isEmpty)
   }
 
-  @Test("A cache written by another schema version is wiped, and the app's own stored values survive")
+  @Test("A cache written by another schema version is wiped with its files, and the app's own stored values survive")
   func schemaMismatchWipesOnlyTheCache() async throws {
     let fixture = try ClientCacheFixture()
     defer { fixture.tearDown() }
     try fixture.database.setPreference(Data("kept".utf8), forKey: "sidebar")
     try fixture.database.setValue(Data("kept".utf8), forKey: "machines")
     let first = try fixture.makeCache()
+    let file = CachedFileKey(machineId: "local", fileId: "file-1")
     first.recordNavigation(.fixture(cursor: 7), machineId: "local")
+    first.recordFile(Data(repeating: 1, count: 8), variant: .original, file: file)
     await first.flush()
     try fixture.database.run(
       "UPDATE client_metadata SET value = '999' WHERE key = 'client_cache.schema_version'", bindings: [])
@@ -66,6 +68,7 @@ struct ClientCacheTests {
     let reopened = try fixture.makeCache()
 
     #expect(try reopened.navigation.snapshot(machineId: "local") == nil)
+    #expect(reopened.files.read(named: AttachmentCacheTables.fileName(for: file, variant: .original)) == nil)
     #expect(try fixture.database.preference(forKey: "sidebar") == Data("kept".utf8))
     #expect(try fixture.database.value(forKey: "machines") == Data("kept".utf8))
   }

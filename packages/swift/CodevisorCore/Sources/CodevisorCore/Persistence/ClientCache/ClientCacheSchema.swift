@@ -8,11 +8,12 @@ enum ClientCacheSchema {
     "cache_checkouts", "cache_panes", "cache_chats", "cache_workspaces", "cache_projects", "cache_machines",
   ]
 
-  static func prepare(_ database: ClientDatabase) throws {
+  static func prepare(_ database: ClientDatabase) throws -> Bool {
     try database.run(createMetadataSql, bindings: [])
-    guard try storedVersion(in: database) != version else { return }
+    guard try storedVersion(in: database) != version else { return false }
 
     try rebuild(database)
+    return true
   }
 
   static func rebuild(_ database: ClientDatabase) throws {

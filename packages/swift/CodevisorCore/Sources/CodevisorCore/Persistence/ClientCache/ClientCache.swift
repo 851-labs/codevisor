@@ -22,7 +22,7 @@ public final class ClientCache: Sendable {
     self.limits = limits
     self.auditsWrites = auditsWrites
     self.now = now
-    try ClientCacheSchema.prepare(database)
+    if try ClientCacheSchema.prepare(database) { files.removeAll() }
   }
 
   public static func open(databaseURL: URL, filesDirectory: URL) -> ClientCache? {
