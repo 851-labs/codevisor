@@ -175,7 +175,7 @@ struct WorkspaceInspectorPresentation: ViewModifier {
       machineName: environment.machines.fleetMachineName(for: place.serverId),
       machineSymbol: environment.machines.machine(for: place.serverId)?.icon.systemImage,
       showsDebugSection: developerMode,
-      showsBotTranscript: bot != nil,
+      showsBotTranscript: bot != nil && environment.botPages.agentPage(in: workspace) == nil,
       harnessChat: chat,
       tasks: shownTab(for: inspected) == .info ? mainChatTasks(of: workspace, store: store) : [],
       parent: shownTab(for: inspected) == .info ? chat.flatMap { childAgents?.parent(of: $0) } : nil,
@@ -211,7 +211,7 @@ struct WorkspaceInspectorPresentation: ViewModifier {
   }
 
   private func mainChatTasks(of workspace: Workspace, store: SessionStore) -> [WorkspaceInspectorTask] {
-    guard let chat = mainChat(of: workspace) else { return [] }
+    guard let chat = environment.botPages.agentPage(in: workspace) ?? mainChat(of: workspace) else { return [] }
 
     return WorkspaceInspectorMainChatTasks(
       workspace: workspace, chat: chat, store: store, client: environment.machines.client(for: chat.serverId)
@@ -285,11 +285,7 @@ struct WorkspaceInspectorPresentation: ViewModifier {
 
   private func harnessChat(for inspected: Inspected) -> ChatSession? {
     let workspace = inspected.workspace
-    if let bot = environment.bots.bot(forWorkspace: workspace.id, serverId: workspace.serverId),
-      let agent = environment.openAgentChat(of: bot)
-    {
-      return agent
-    }
+    if let agent = environment.botPages.agentPage(in: workspace) { return agent }
     return workspace.focusedChatSessionId.flatMap {
       environment.projectList.chat($0, preferring: workspace.serverId)
     } ?? inspected.chat

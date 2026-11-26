@@ -56,7 +56,7 @@ struct RootView: View {
       )
       .background(
         SidebarSelectionReader(selection: selectionRef) { selection in
-          RootTitlebar(isBotConversation: selection?.owningMode == .bots, panelLayout: panelLayout)
+          RootTitlebar(selection: selection, panelLayout: panelLayout)
         }
       )
       .environment(\.openChat, OpenChatAction(identity: handlerIdentity) { await openChat($0) })
@@ -108,13 +108,7 @@ struct RootView: View {
 
   private func openNotificationSession(_ sessionId: UUID, serverId: String) {
     guard let session = environment.projectList.session(sessionId, serverId: serverId) else { return }
-    let bot = environment.bots.bot(forSession: sessionId, serverId: serverId)
-    let shown = store?.selectChat(session)
-    if let bot {
-      selection = .bot(serverId: serverId, id: bot.id)
-    } else {
-      selection = shown ?? .session(serverId: serverId, id: sessionId)
-    }
+    selection = store?.selectChat(session) ?? .session(serverId: serverId, id: sessionId)
   }
 
   private func applySelectedSessionDisposition(_ disposition: WorkspaceRouteDisposition) {

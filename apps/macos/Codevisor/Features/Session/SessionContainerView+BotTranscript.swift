@@ -6,6 +6,10 @@ extension SessionContainerView {
     environment.bots.bot(forSession: sessionId, serverId: selectedWorkspace.serverId)
   }
 
+  var agentPage: ChatSession? {
+    environment.botPages.agentPage(in: selectedWorkspace)
+  }
+
   func chatPaneRole(for descriptor: PaneDescriptorState) -> ChatPaneRole {
     if descriptor.kind == .transcript { return .fullTranscript }
     if descriptor.chatSessionId.flatMap(botChat) != nil { return .botConversation }

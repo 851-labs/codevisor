@@ -43,7 +43,7 @@ extension SessionStore {
 
   @discardableResult
   func selectChat(_ session: ChatSession) -> SidebarSelection {
-    if case let .bot(bot) = environment.chatHosts.host(of: session) { return showInBot(session, bot: bot) }
+    if let bot = environment.botPages.show(session) { return open(bot) }
     let ownSelection = SidebarSelection.session(serverId: session.serverId, id: session.id)
     guard
       let project = environment.projectList.projects.first(where: {
@@ -77,8 +77,8 @@ extension SessionStore {
     return isGuest ? .workspace(serverId: workspace.serverId, id: workspace.id) : ownSelection
   }
 
-  private func showInBot(_ chat: ChatSession, bot: Bot) -> SidebarSelection {
-    environment.botThreads.showAgent(chat.id, of: bot)
+  private func open(_ bot: Bot) -> SidebarSelection {
+    selectDestination(.chat(bot.sessionId), in: bot.workspaceId)
     return .bot(serverId: bot.serverId, id: bot.id)
   }
 }

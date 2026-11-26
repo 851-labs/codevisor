@@ -28,7 +28,7 @@ struct BotComposeToolbarItem: ToolbarContent {
   private var openThread: OpenBotThread? {
     guard case let .bot(serverId, botId) = selection,
       let bot = environment.bots.bot(serverId: serverId, id: botId),
-      environment.hasOpenPage(bot)
+      environment.botPages.page(of: bot) != .conversation
     else { return nil }
 
     return OpenBotThread(botName: bot.name) { [botThreads = environment.botThreads] in

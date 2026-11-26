@@ -236,7 +236,7 @@ struct SessionContainerView: View {
         onCenterTreeLiveChanged: { visible in liveCenterTree = restoringHiddenLeaves(visible) }
       )
       .overlay { floatingPaneOverlay }
-      .environment(\.usesSlimComposer, isTabless)
+      .environment(\.usesSlimComposer, WorkspaceLayoutPolicy.usesBotChrome(workspace, environment: environment))
     }
     .overlay(alignment: .top) {
       if WorkspaceLayoutPolicy.showsTitlebarDivider(workspace, environment: environment) {

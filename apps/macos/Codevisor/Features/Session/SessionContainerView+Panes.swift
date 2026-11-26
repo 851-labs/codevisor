@@ -130,7 +130,7 @@ extension SessionContainerView {
       leafId: leafId, workspace: workspace, session: session, project: project
     )
     guard let pane = model.state.selectedPane, pane.kind == .chat else { return nil }
-    return pane.chatSessionId
+    return agentPage?.id ?? pane.chatSessionId
   }
 
   func createChat(

@@ -12,9 +12,9 @@ struct BotConversationChrome: ViewModifier {
   func body(content: Content) -> some View {
     content
       .environment(\.transcriptTopChromeHeight, topChromeHeight)
-      .environment(\.hidesWorkspaceTitle, true)
+      .environment(\.hidesWorkspaceTitle, !showsAgent)
       .overlay(alignment: .top) {
-        if !isSplit, !environment.hasOpenPage(bot) {
+        if !isSplit, page == .conversation {
           BotConversationTopBar(bot: bot, showsHeader: showsHeader, onOpenDetails: openDetails)
         }
       }
@@ -25,8 +25,16 @@ struct BotConversationChrome: ViewModifier {
     RootSidebarVisibility(panelLayout: panelLayout).hidesDockedColumn
   }
 
+  private var page: BotPage {
+    environment.botPages.page(of: bot)
+  }
+
+  private var showsAgent: Bool {
+    page.agent != nil
+  }
+
   private var topChromeHeight: CGFloat {
-    isSplit ? 0 : BotConversationTopBar.height(showsHeader: showsHeader)
+    isSplit || showsAgent ? 0 : BotConversationTopBar.height(showsHeader: showsHeader)
   }
 
   private var isSplit: Bool {
