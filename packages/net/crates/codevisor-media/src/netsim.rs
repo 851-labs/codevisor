@@ -164,7 +164,8 @@ impl NetworkModel {
     }
 
     fn released(&self, arrival: Duration) -> Duration {
-        let Some(tick) = self.conditions.release_tick_ms.map(|tick_ms| Duration::from_secs_f64(tick_ms / 1000.0))
+        let tick_ms = self.conditions.release_tick_ms.filter(|tick_ms| *tick_ms > 0.0);
+        let Some(tick) = tick_ms.map(|tick_ms| Duration::from_secs_f64(tick_ms / 1000.0)).filter(|tick| !tick.is_zero())
         else {
             return arrival;
         };

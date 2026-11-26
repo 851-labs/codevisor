@@ -282,6 +282,7 @@ impl Receiver {
     ) {
         stats.packets_received += 1;
         stats.bytes_received += shard.len() as u64 + crate::wire::HEADER_BYTES as u64;
+        self.gaps.expire(now);
         let give_up = self.give_up_after();
         let stream = self.streams.entry(header.stream).or_default();
         if header.frame < stream.next_due {
@@ -448,6 +449,7 @@ impl Receiver {
 
     pub fn handle_timeout(&mut self, now: Instant, events: &mut VecDeque<Event>, stats: &mut Stats) {
         self.send_refresh_requests(now, stats);
+        self.gaps.expire(now);
         let tail_wait = self.tail_wait();
         let gap_peak = self.gap_peak();
         let give_up = self.give_up_after();

@@ -29,7 +29,8 @@ no jitter buffer and no queue deeper than one frame.
      packets in 30 s that were still on their way (2–4 without the tick), the host took the requests for 10–20% loss,
      and its estimate fell from about 110 Mbit/s to 11 (N8, 2 seeds of 3) or by a tenth at every large frame (N9).
      With the 10 s memory it resends 5–10 and the estimate rises as on N3. The price: one long stall inside a
-     frame holds the tail wait at up to the give-up time for 10 s, so a lost tail is asked for that much later. When
+     frame holds the tail wait at up to the give-up time for 10 s, so a lost tail is asked for that much later; the
+     memory is cleared by the clock, not by the next gap, so it can't outlive those 10 s on a quiet stream. When
      the tail wait passes, the viewer asks only for the packets that should have arrived by then at the frame's own
      pace (from every packet of it that arrived), or at the receiver's recent longest gap before the frame has a
      pace, or just the next packet before any gap is known (at least the next one), and waits again, so a slow link's frame isn't requested whole while it's still
