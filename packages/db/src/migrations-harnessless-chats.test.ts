@@ -24,6 +24,10 @@ const seedHarnesslessChats = async (filename: string): Promise<void> => {
       insert into chat_items (id, session_id, position, role, status, created_at, updated_at)
         values ('used-item', '${usedChat}', 0, 'user', 'complete',
           '2026-09-25T00:00:00.000Z', '2026-09-25T00:00:00.000Z');
+      insert into session_state (session_id, state_key, revision, payload)
+        values ('${emptyChat}', 'draft', 1, '{}');
+      insert into session_events (session_id, revision, server_id, kind, created_at, payload)
+        values ('${emptyChat}', 1, 'machine-a', 'session.updated', '2026-09-25T00:00:00.000Z', '{}');
     `)
   } finally {
     sqlite.close()
