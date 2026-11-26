@@ -64,7 +64,7 @@ struct ChatPaneContentView: View {
   }
 
   private var botPage: BotPage {
-    role == .botConversation ? hostBotPage : .conversation
+    conversationBot?.workspaceId == hostWorkspace.id ? hostBotPage : .conversation
   }
 
   private var resetToPlaceholder: (() -> Void)? {

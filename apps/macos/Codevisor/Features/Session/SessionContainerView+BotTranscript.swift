@@ -15,7 +15,7 @@ extension SessionContainerView {
   }
 
   func presentedAgent(in pane: PaneDescriptorState?) -> ChatSession? {
-    guard let chatId = pane?.chatSessionId, botChat(chatId) != nil else { return nil }
+    guard let chatId = pane?.chatSessionId, botChat(chatId)?.workspaceId == selectedWorkspace.id else { return nil }
 
     return agentPage
   }

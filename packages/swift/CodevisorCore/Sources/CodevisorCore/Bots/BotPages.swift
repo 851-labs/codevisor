@@ -15,12 +15,10 @@ public enum BotPage: Equatable {
 public struct BotPages {
   let threads: BotThreadsModel
   let hosts: ChatHosts
-  let resolver: PaneChatResolver
 
-  public init(threads: BotThreadsModel, hosts: ChatHosts, resolver: PaneChatResolver) {
+  public init(threads: BotThreadsModel, hosts: ChatHosts) {
     self.threads = threads
     self.hosts = hosts
-    self.resolver = resolver
   }
 
   public func page(of bot: Bot) -> BotPage {
@@ -49,15 +47,14 @@ public struct BotPages {
     return bot
   }
 
-  public func hasGoneAgent(_ bot: Bot) -> Bool {
+  public func hasArchivedAgent(_ bot: Bot) -> Bool {
     guard let id = threads.openAgent(of: bot) else { return false }
-    if let chat = hosts.projectList.chat(id, preferring: bot.serverId) { return chat.isArchived }
 
-    return resolver.chat(id, on: bot.serverId) == .missing
+    return hosts.projectList.chat(id, preferring: bot.serverId)?.isArchived == true
   }
 
-  public func forgetGoneAgent(of bot: Bot) {
-    guard hasGoneAgent(bot) else { return }
+  public func forgetArchivedAgent(of bot: Bot) {
+    guard hasArchivedAgent(bot) else { return }
 
     threads.closeAgent(of: bot)
   }
@@ -80,7 +77,6 @@ public struct BotPages {
 
 extension AppEnvironment {
   public var botPages: BotPages {
-    BotPages(
-      threads: botThreads, hosts: chatHosts, resolver: PaneChatResolver(projectList: projectList, machines: machines))
+    BotPages(threads: botThreads, hosts: chatHosts)
   }
 }
