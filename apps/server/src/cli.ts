@@ -304,9 +304,11 @@ const desktop = makeDesktopCommand(
       })
     }),
   (dataDir) =>
-    Effect.promise(async () => {
-      process.exitCode = await runDesktop(dataDir ?? resolveDataDir(), (line) => console.log(line))
-    })
+    Effect.uninterruptible(
+      Effect.promise(async () =>
+        process.exit(await runDesktop(dataDir ?? resolveDataDir(), (line) => console.log(line)))
+      )
+    )
 )
 
 const auth = makeAuthCommand(runCli)
