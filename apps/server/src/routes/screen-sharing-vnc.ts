@@ -28,7 +28,7 @@ export const readDesktopConfig = (dataDir: string): string | undefined => {
 
 export const namesOnlyAPort = (text: string): boolean => {
   const vnc = vncSection(text)
-  return vnc !== undefined && absolutePath(vnc.socket) === undefined && typeof vnc.port === "number"
+  return vnc !== undefined && vnc.socket === undefined && isPort(vnc.port)
 }
 
 export const outdatedDesktop = async (): Promise<ScreenSharingReply> =>
@@ -169,6 +169,11 @@ const vncSection = (text: string): VNCSection | undefined => {
   if (typeof vnc !== "object" || vnc === null) return undefined
   return vnc
 }
+
+const highestPort = 65_535
+
+const isPort = (value: unknown): boolean =>
+  typeof value === "number" && Number.isSafeInteger(value) && value >= 1 && value <= highestPort
 
 const absolutePath = (value: unknown): string | undefined =>
   typeof value === "string" && isAbsolute(value) ? value : undefined

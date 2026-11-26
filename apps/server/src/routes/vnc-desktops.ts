@@ -20,33 +20,25 @@ export const fileVNCDesktops = (
   commands: ScalerCommands = systemScalerCommands,
   log: (line: string) => void = (line) => console.error(line)
 ): VNCDesktops => {
-  const noteOutdated = once(() => log(outdatedNotice))
+  let outdatedNoted = false
   return {
     current: () => {
       const text = readDesktopConfig(dataDir)
+      if (text === undefined || !namesOnlyAPort(text)) outdatedNoted = false
       if (text === undefined) return undefined
 
       const config = parseScreenSharingVNC(text)
       if (config !== undefined) return desktopFor(config, commands)
       if (!namesOnlyAPort(text)) return undefined
 
-      noteOutdated()
+      if (!outdatedNoted) log(outdatedNotice)
+      outdatedNoted = true
       return { respond: outdatedDesktop }
     }
   }
 }
 
 const outdatedNotice = `[desktop] ${SCREEN_SHARING_CONFIG_FILE} names a VNC port, which any account on this machine can reach, so the desktop is not shared. Set the desktop up again.`
-
-const once = (act: () => void): (() => void) => {
-  let done = false
-  return () => {
-    if (done) return
-
-    done = true
-    act()
-  }
-}
 
 const desktopFor = (config: ScreenSharingVNCConfig, commands: ScalerCommands): VNCDesktop => ({
   config,

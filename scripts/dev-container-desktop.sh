@@ -51,13 +51,19 @@ give_up() {
   exit 1
 }
 
+refuse_an_open_tcp_port() {
+  tcp_listeners=$(ss -H -ltn "sport = :$TCP_PORT" 2>>"$LOG") ||
+    give_up "couldn't check that Xvnc is off TCP port $TCP_PORT (see $LOG); not sharing it"
+  [ -z "$tcp_listeners" ] ||
+    give_up "TCP port $TCP_PORT is open, and Xvnc must only listen on its socket; not sharing it"
+}
+
 write_cookie() {
   cookie=$(mcookie) || return 1
   (umask 077 && xauth -q -f "$XAUTHORITY" add "$DISPLAY" . "$cookie") >>"$LOG" 2>&1 || return 1
   [ -s "$XAUTHORITY" ]
 }
 
-eval "$(dbus-launch --sh-syntax)"
 rm -f "/tmp/.X$DISPLAY_NUMBER-lock" "/tmp/.X11-unix/X$DISPLAY_NUMBER" "$SOCKET" "$XAUTHORITY"
 write_cookie || give_up "couldn't write the desktop's X11 cookie (see $LOG)"
 setsid Xvnc "$DISPLAY" -auth "$XAUTHORITY" -rfbunixpath "$SOCKET" -rfbunixmode 0600 -rfbport -1 \
@@ -70,11 +76,10 @@ done
 if ! [ -S "$SOCKET" ] || ! [ -S "/tmp/.X11-unix/X$DISPLAY_NUMBER" ]; then
   give_up "Xvnc didn't start (see $LOG)"
 fi
-tcp_listeners=$(ss -H -ltn "sport = :$TCP_PORT" 2>>"$LOG") ||
-  give_up "couldn't check that Xvnc is off TCP port $TCP_PORT (see $LOG); not sharing it"
-if [ -n "$tcp_listeners" ]; then
-  give_up "TCP port $TCP_PORT is open, and Xvnc must only listen on its socket; not sharing it"
-fi
+refuse_an_open_tcp_port
+sleep 1
+refuse_an_open_tcp_port
+eval "$(dbus-launch --sh-syntax)"
 setsid startxfce4 >>"$LOG" 2>&1 </dev/null &
 (
   for _ in $(seq 1 100); do

@@ -39,6 +39,10 @@ describe("a desktop's socket is only used when it is private to the server's acc
     const file = join(privateDirectory(), "file")
     writeFileSync(file, "")
     expect(privateSocket(join(file, "d.sock"))).toEqual({ problem: "missing" })
+
+    const loop = join(privateDirectory(), "loop")
+    symlinkSync(loop, loop)
+    expect(privateSocket(join(loop, "d.sock"))).toEqual({ problem: "missing" })
   })
 
   it.each([0o660, 0o606, 0o666])(

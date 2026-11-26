@@ -114,6 +114,7 @@ const identity = {
 }
 
 const sharesAScreen = { features: expect.arrayContaining(["screen-sharing-v1"]) }
+const streamsAgentViews = { features: expect.arrayContaining(["computer-use-stream-v1"]) }
 
 const start = async (
   vnc?: Record<string, unknown>,
@@ -392,7 +393,7 @@ describe("a desktop set up for an older Codevisor, whose config names a local po
     const address = oldDesktop.address()
     const port = typeof address === "object" && address !== null ? address.port : 0
     const lines: string[] = []
-    const { socketUrl, ask, capabilities, info } = await start(
+    const { socketUrl, ask, capabilities, info, dataDir } = await start(
       { port, name: "Desktop", desktop: "xfce", defaultSize: "1440x900" },
       undefined,
       undefined,
@@ -417,5 +418,26 @@ describe("a desktop set up for an older Codevisor, whose config names a local po
     await expect(nextMessage(new WebSocket(socketUrl()))).rejects.toThrow()
     expect(dialled).toBe(0)
     expect(lines).toEqual([expect.stringContaining("names a VNC port")])
+    expect(await info()).not.toMatchObject(streamsAgentViews)
+
+    const vnc = await fakeVNC()
+    writeDesktopConfig(dataDir, { socket: vnc.socket })
+    expect(await info()).toMatchObject(streamsAgentViews)
+    expect(lines).toHaveLength(1)
+    writeDesktopConfig(dataDir, { port })
+    expect(await capabilities()).toEqual(needsSetup)
+    expect(lines).toHaveLength(2)
+  })
+
+  it.each([
+    { socket: "run/codevisor-desktop.sock", port: 5901 },
+    { port: 0 },
+    { port: 70_000 },
+    { port: "5901" }
+  ])("is not what a config with %j is taken for", async (vnc) => {
+    const lines: string[] = []
+    const { info } = await start(vnc, undefined, undefined, (line) => lines.push(line))
+    expect(await info()).not.toMatchObject(sharesAScreen)
+    expect(lines).toEqual([])
   })
 })

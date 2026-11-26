@@ -29,7 +29,7 @@ const othersMayWrite = 0o022
 const sticky = 0o1000
 const rootUid = 0
 const noUid = -1
-const nothingThere = new Set(["ENOENT", "ENOTDIR"])
+const notAllowed = new Set(["EACCES", "EPERM"])
 
 const ownUid = (): number => process.getuid?.() ?? noUid
 
@@ -37,12 +37,12 @@ const reading = <Found>(read: () => Found): Found | Unreadable => {
   try {
     return read()
   } catch (error) {
-    return isNothingThere(error) ? "missing" : "foreign"
+    return isNotAllowed(error) ? "foreign" : "missing"
   }
 }
 
-const isNothingThere = (error: unknown): boolean =>
-  error instanceof Error && "code" in error && nothingThere.has(String(error.code))
+const isNotAllowed = (error: unknown): boolean =>
+  error instanceof Error && "code" in error && notAllowed.has(String(error.code))
 
 const isUnreadable = (found: unknown): found is Unreadable =>
   found === "missing" || found === "foreign"
