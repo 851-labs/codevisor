@@ -30,6 +30,7 @@ struct WorkspaceInspectorView: View {
   @Binding var tab: WorkspaceInspectorTab
   let media: WorkspaceInspectorMediaModel
   let fileTree: WorkspaceInspectorFileTreeModel
+  let checkoutSize: WorkspaceInspectorCheckoutSize
   let activeFilePath: String?
   let chatUsage: SessionUsage?
   let subscriptionsRevision: Int
@@ -72,7 +73,6 @@ struct WorkspaceInspectorView: View {
   @State private var visited: Set<WorkspaceInspectorTab> = []
   @State private var subscriptions = ChatPluginSubscriptionsModel()
   @State private var workspaceMirrors = WorkspaceInspectorMirrors()
-  @State private var checkoutSize = WorkspaceInspectorCheckoutSize()
   @State private var remoteTasks = WorkspaceInspectorRemoteTasks()
   @ClientPreference("workspace.inspectorCollapsedSections", default: []) private var collapsedSections: [String]
 
@@ -261,7 +261,7 @@ struct WorkspaceInspectorView: View {
           if let worktree = worktreeName {
             detail("Worktree", icon: Image(systemName: CodevisorSymbol.worktreeSystemName), value: worktree)
           }
-          if let size = checkoutSize.formatted {
+          if let size = checkoutSize.formatted(for: workspace.id) {
             detail("Size", icon: Image(systemName: "internaldrive"), value: size)
           }
           if let machineName {

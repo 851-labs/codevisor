@@ -51,6 +51,7 @@ struct WorkspaceInspectorPresentation: ViewModifier {
   @Environment(\.workspaceChildAgents) private var childAgents
   @State private var media = WorkspaceInspectorMediaModel()
   @State private var fileTree = WorkspaceInspectorFileTreeModel()
+  @State private var checkoutSize = WorkspaceInspectorCheckoutSize()
   @State private var imageStores = WorkspaceInspectorImageStores()
   @State private var fileHandlers = HandlerIdentity.unique
   @Environment(\.fileLightbox) private var fileLightbox
@@ -187,6 +188,7 @@ struct WorkspaceInspectorPresentation: ViewModifier {
       tab: Binding(get: { shownTab(for: inspected) }, set: { tab = $0 }),
       media: media,
       fileTree: fileTree,
+      checkoutSize: checkoutSize,
       activeFilePath: activeDocumentPath(in: workspace),
       chatUsage: chat.flatMap(usage(of:)),
       subscriptionsRevision: environment.machines.pluginSubscriptionsRevision,
