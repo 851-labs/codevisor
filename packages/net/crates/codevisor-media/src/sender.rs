@@ -11,7 +11,8 @@ use crate::{
     fec::{self, Layout},
     pacer::{Pacer, PacketTag},
     types::{
-        Admission, Event, FecMode, FrameAck, MediaConfig, OutgoingFrame, Receipt, SendError, Stats, give_up_after,
+        Admission, Event, FecMode, FrameAck, MAX_CROSSING, MediaConfig, OutgoingFrame, Receipt, SendError, Stats,
+        give_up_after,
     },
     windowed::{Keep, Windowed},
     wire::{self, Feedback, FrameFields, Kind, Nack, PacketHeader, RefreshRequest},
@@ -57,7 +58,7 @@ struct SentFrame {
     originals_out: usize,
     bytes_out: usize,
     flight_bytes: usize,
-    asked_at: Option<Instant>,
+    heard: Option<Instant>,
     probes: u32,
     unanswered: u32,
 }
@@ -258,7 +259,7 @@ impl Sender {
                 originals_out: 0,
                 bytes_out: 0,
                 flight_bytes: 0,
-                asked_at: None,
+                heard: None,
                 probes: 0,
                 unanswered: 0,
             },
@@ -367,8 +368,6 @@ impl Sender {
         else {
             return;
         };
-        frame.asked_at = Some(now);
-        frame.unanswered = 0;
         let mut requested = 0;
         let mut first_losses = 0;
         let mut lost_bytes = 0;
@@ -404,6 +403,11 @@ impl Sender {
             }
         }
         stats.retransmissions_skipped += repeated;
+        if first_losses > 0 {
+            frame.heard = Some(now);
+            frame.unanswered = 0;
+            frame.flight_bytes = self.in_flight_bytes + self.pacer.backlog_bytes();
+        }
         if requested > 0 {
             stats.packets_retransmitted += requested;
             self.loss.nacked += first_losses;
@@ -520,7 +524,7 @@ impl Sender {
     }
 
     pub fn handle_timeout(&mut self, now: Instant, events: &mut VecDeque<Event>, stats: &mut Stats) {
-        let waits = self.probe_waits();
+        let waits = self.probe_waits(now);
         let mut probed = false;
         for (&stream_id, stream) in &mut self.streams {
             let mut expired = Vec::new();
@@ -565,11 +569,11 @@ impl Sender {
         (base * (1 << self.tail_backoff)).min(self.ack_timeout())
     }
 
-    fn probe_waits(&self) -> ProbeWaits {
+    fn probe_waits(&self, now: Instant) -> ProbeWaits {
         ProbeWaits {
             tail_probe: self.tail_probe_after(),
             timeout: self.ack_timeout(),
-            carried_bps: self.estimator.carried_bps(),
+            carried_bps: self.estimator.carried_bps(now),
         }
     }
 
@@ -578,7 +582,7 @@ impl Sender {
     }
 
     pub fn poll_timeout(&self, now: Instant) -> Option<Instant> {
-        let waits = self.probe_waits();
+        let waits = self.probe_waits(now);
         let probe = self
             .streams
             .values()
@@ -630,14 +634,14 @@ struct ProbeWaits {
 impl ProbeWaits {
     fn next_wake(self, frame: &SentFrame, newest: bool) -> Option<Instant> {
         let last_tx = frame.last_tx?;
-        let heard = frame.asked_at.map_or(last_tx, |asked| asked.max(last_tx));
-        let first = if newest && frame.asked_at.is_none() { self.tail_probe } else { self.timeout };
+        let heard = frame.heard.map_or(last_tx, |heard| heard.max(last_tx));
+        let first = if newest && frame.heard.is_none() { self.tail_probe } else { self.timeout };
         let due = heard + first + self.timeout * frame.unanswered;
         if frame.unanswered < MAX_PROBES {
             return Some(due);
         }
-        let crossing = Duration::from_secs_f64(frame.flight_bytes as f64 * 8.0 / self.carried_bps);
-        Some(due.max(last_tx + crossing + self.timeout))
+        let crossing = Duration::from_secs_f64(frame.flight_bytes as f64 * 8.0 / self.carried_bps).min(MAX_CROSSING);
+        Some(due.max(heard + crossing + self.timeout))
     }
 }
 

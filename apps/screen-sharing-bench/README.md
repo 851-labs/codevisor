@@ -378,8 +378,9 @@ runs `tier2-report`, which writes `report.json` and `summary.md` (also the job s
   many events. It refuses a schedule longer than `--duration`, and needs **Accessibility**.
 - The Codevisor viewer also reports `first_picture_ms` in `system.json` (851-4477): from the moment it starts to
   connect its endpoint to the host until its first frame is presented, so the handshake is in it, unlike Tier 1's.
-  `tier2-report` copies it to the result and the v2 table's "First picture ms". The viewer waits up to 60 s for that
-  frame (20 s before, which a 1 Mbit/s link can exceed).
+  `tier2-report` copies it to the result and the v2 table's "First picture ms". The viewer waits up to 45 s for that
+  frame (20 s before, which a 1 Mbit/s link can exceed; the viewer job gives the whole start 60 s) and looks every
+  5 ms, so the figure is up to 5 ms late.
 - `view --control` (Codevisor, with `--present arrival`, the presentation with an input surface) takes the control lease like the product's Control mode once
   the first frame is shown, and marks itself ready only once granted: it sends a request, then a heartbeat every second,
   and forwards the product `ScreenSharingVideoSurface`'s input (its keyboard event tap and mouse handling) through

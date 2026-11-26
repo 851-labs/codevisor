@@ -7,8 +7,8 @@ import ScreenSharingV2
 @MainActor
 final class CodevisorV2Viewer {
   private static let connectRetry = Duration.milliseconds(250)
-  private static let firstFrameTimeout = Duration.seconds(60)
-  private static let firstFramePoll = Duration.milliseconds(20)
+  private static let firstFrameTimeout = Duration.seconds(45)
+  private static let firstFramePoll = Duration.milliseconds(5)
   private static let controlTimeout = Duration.seconds(15)
 
   private let endpoint: NetEndpointHandle

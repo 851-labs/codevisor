@@ -45,8 +45,9 @@ public struct BenchLoopbackAnalysis: Sendable {
   private static func firstPictureMs(
     produced: [BenchVersionEvent], frames: [BenchFrameTimestamps], endpoint: BenchEndpoint
   ) -> Double? {
-    guard let startedNs = produced.map(\.ns).min(), let shownNs = frames.compactMap({ $0.endNs(at: endpoint) }).min()
-    else { return nil }
+    guard let startedNs = produced.map(\.ns).min() else { return nil }
+    let ofTheScene = frames.filter { $0.sourceNs >= startedNs }
+    guard let shownNs = ofTheScene.compactMap({ $0.endNs(at: endpoint) }).min() else { return nil }
 
     return Double(shownNs - startedNs) / nanosecondsPerMillisecond
   }

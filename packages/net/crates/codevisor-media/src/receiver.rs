@@ -7,7 +7,7 @@ use bytes::{Bytes, BytesMut};
 
 use crate::{
     fec::{self, Layout},
-    types::{Event, ReceivedFrame, Stats, give_up_after},
+    types::{Event, MAX_CROSSING, ReceivedFrame, Stats, give_up_after},
     wire::{self, Feedback, FrameFields, FrameReceipt, Kind, Nack, PacketHeader, Recovery, RefreshRequest},
 };
 
@@ -132,11 +132,25 @@ impl Assembly {
             return Duration::ZERO;
         };
         let short = shape.layout.data_count.saturating_sub(self.received);
-        let pace = match (self.first_rx, self.last_rx) {
+        let own_pace = match (self.first_rx, self.last_rx) {
             (Some(first), Some(last)) if self.received > 1 => (last - first) / (self.received - 1) as u32,
-            _ => gap_hint,
+            _ => Duration::ZERO,
         };
-        pace * short as u32
+        let pace = if own_pace.is_zero() { gap_hint } else { own_pace };
+        (pace * short as u32).min(MAX_CROSSING)
+    }
+
+    fn gives_up_at(&self, link_busy_until: Option<Instant>) -> Option<Instant> {
+        let own = self.give_up_at?;
+        let waited = link_busy_until.map_or(own, |busy| own.max(busy));
+        Some(waited.min(own + MAX_CROSSING))
+    }
+
+    fn recovers(&self) -> bool {
+        let State::Complete { payload, .. } = &self.state else {
+            return false;
+        };
+        FrameFields::parse(payload.clone()).is_some_and(|(fields, _)| fields.keyframe || fields.refresh)
     }
 
     fn due(&self, now: Instant, retry: Duration) -> Vec<u16> {
@@ -187,6 +201,7 @@ pub struct Receiver {
     rtt: Duration,
     streams: BTreeMap<u8, StreamRx>,
     gap_peak: Duration,
+    last_media_rx: Option<Instant>,
     outbox: VecDeque<Bytes>,
 }
 
@@ -198,6 +213,7 @@ impl Receiver {
             rtt: Duration::ZERO,
             streams: BTreeMap::new(),
             gap_peak: Duration::ZERO,
+            last_media_rx: None,
             outbox: VecDeque::new(),
         }
     }
@@ -233,7 +249,7 @@ impl Receiver {
         stats.packets_received += 1;
         stats.bytes_received += shard.len() as u64 + crate::wire::HEADER_BYTES as u64;
         let give_up = self.give_up_after();
-        self.keep_waiting_while_the_link_delivers(now + give_up);
+        self.last_media_rx = Some(now);
         let stream = self.streams.entry(header.stream).or_default();
         if header.frame < stream.next_due {
             stats.duplicate_packets += 1;
@@ -332,25 +348,30 @@ impl Receiver {
         assembly.highest_index = Some(assembly.highest_index.map_or(header.index, |highest| highest.max(header.index)));
         assembly.tail_at = Some(now + tail_wait(self.gap_peak, give_up));
 
-        if try_complete(assembly, now, stats) {
-            self.on_resolved(&[(header.stream, header.frame)], events, stats);
-        } else if (gap_seen || assembly.end_seen) && !assembly.due(now, self.rtt + RETRY_MARGIN).is_empty() {
+        let completed = try_complete(assembly, now, stats);
+        if !completed && (gap_seen || assembly.end_seen) && !assembly.due(now, self.rtt + RETRY_MARGIN).is_empty() {
             assembly.next_nack = Some(now);
+        }
+        let recovers = completed && assembly.recovers();
+        if completed {
+            let mut resolved = if recovers { self.give_up_before(header.stream, header.frame) } else { Vec::new() };
+            resolved.push((header.stream, header.frame));
+            self.on_resolved(&resolved, events, stats);
         }
         self.drain(header.stream, events, stats);
     }
 
-    fn keep_waiting_while_the_link_delivers(&mut self, until: Instant) {
-        let asked_for = self
-            .streams
-            .values_mut()
-            .flat_map(|stream| stream.frames.values_mut())
-            .filter(|assembly| matches!(assembly.state, State::Assembling));
-        for assembly in asked_for {
-            if let Some(at) = assembly.give_up_at {
-                assembly.give_up_at = Some(at.max(until));
-            }
-        }
+    fn give_up_before(&mut self, stream_id: u8, recovery: u32) -> Vec<(u8, u32)> {
+        let Some(stream) = self.streams.get_mut(&stream_id) else {
+            return Vec::new();
+        };
+        let waiting = stream.frames.range_mut(..recovery).filter(|(_, earlier)| matches!(earlier.state, State::Assembling));
+        waiting
+            .map(|(number, earlier)| {
+                earlier.state = State::GivenUp;
+                (stream_id, *number)
+            })
+            .collect()
     }
 
     pub fn ack_ltr(&mut self, stream_id: u8, token: u64) {
@@ -404,6 +425,7 @@ impl Receiver {
         self.send_refresh_requests(now, stats);
         let tail_wait = self.tail_wait();
         let give_up = self.give_up_after();
+        let link_busy_until = self.last_media_rx.map(|at| at + give_up);
         let retry = self.retry_after();
         let mut resolved = Vec::new();
         for (&stream_id, stream) in &mut self.streams {
@@ -411,7 +433,7 @@ impl Receiver {
                 if !matches!(assembly.state, State::Assembling) {
                     continue;
                 }
-                if assembly.give_up_at.is_some_and(|at| now >= at) {
+                if assembly.gives_up_at(link_busy_until).is_some_and(|at| now >= at) {
                     assembly.state = State::GivenUp;
                     resolved.push((stream_id, number));
                     continue;
@@ -458,6 +480,7 @@ impl Receiver {
     }
 
     pub fn poll_timeout(&self) -> Option<Instant> {
+        let link_busy_until = self.last_media_rx.map(|at| at + self.give_up_after());
         let assembling = self
             .streams
             .values()
@@ -465,7 +488,7 @@ impl Receiver {
             .filter(|assembly| matches!(assembly.state, State::Assembling))
             .flat_map(|assembly| {
                 let tail = assembly.tail_at.filter(|_| !assembly.end_seen);
-                [tail, assembly.next_nack, assembly.give_up_at]
+                [tail, assembly.next_nack, assembly.gives_up_at(link_busy_until)]
             })
             .flatten();
         let refreshes = self.streams.values().filter_map(|stream| Some(stream.refresh?.next_send));
