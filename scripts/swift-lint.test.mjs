@@ -56,3 +56,20 @@ test("the baseline keeps old long functions but fails grown or new ones", (t) =>
   swift.write(swiftFunction("long", 60), swiftFunction("added", 51))
   assert.notEqual(swift.lint(), 0)
 })
+
+const timerWithLeeway = (leeway) =>
+  [
+    "  static func arm(_ timer: any DispatchSourceTimer) {",
+    `    timer.schedule(deadline: .now(), leeway: ${leeway})`,
+    "  }"
+  ].join("\n")
+
+test("a dispatch timer scheduled with leeway never fails SwiftLint", (t) => {
+  const swift = swiftPackage(t)
+  swift.write(timerWithLeeway(".nanoseconds(0)"))
+  assert.equal(swift.lint(), 0)
+  swift.write(timerWithLeeway(".never"))
+  assert.notEqual(swift.lint(), 0)
+  swift.write(timerWithLeeway("DispatchTimeInterval.never"))
+  assert.notEqual(swift.lint(), 0)
+})

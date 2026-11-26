@@ -9,7 +9,7 @@ struct LoopbackRelayTests {
   private static let deadlockGuardMs: Int32 = 2_000
 
   @Test(arguments: [RelayDirection.media, .feedback])
-  func aDelayedPacketArrivesWhenItIsDueWithNoOtherTraffic(_ direction: RelayDirection) throws {
+  func aDelayedPacketLeavesWithoutWaitingForOtherTraffic(_ direction: RelayDirection) throws {
     let relay = try LoopbackRelay(
       conditions: BenchNetworkConditions(id: "delayed", delayMs: Self.delayMs), seed: 1,
       originNs: BenchMachClock.nowNs())
@@ -39,6 +39,8 @@ struct LoopbackRelayTests {
 
   private static func waitUntilReadable(_ socket: RelaySocket) -> Bool {
     var descriptor = pollfd(fd: socket.descriptor, events: Int16(POLLIN), revents: 0)
-    return poll(&descriptor, 1, deadlockGuardMs) == 1
+    var ready = poll(&descriptor, 1, deadlockGuardMs)
+    while ready == -1, errno == EINTR { ready = poll(&descriptor, 1, deadlockGuardMs) }
+    return ready == 1
   }
 }
