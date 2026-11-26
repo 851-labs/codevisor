@@ -1246,6 +1246,80 @@ fn a_packet_asked_for_again_while_its_resend_is_still_queued_on_the_link_is_sent
     assert!(resent <= 150, "{resent} packets resent for 130 that were lost");
 }
 
+fn resent_for_two_tiles_on_a_slow_link(stale_rtt: Duration, lost_once: impl Fn(u16) -> bool + 'static) -> (u64, usize) {
+    let mut sim = Sim::new(SLOW_LINK, config(FecMode::Adaptive), 1);
+    sim.stale_rtt = Some(stale_rtt);
+    sim.drop_when(lost_times(move |header| u32::from(header.stream == 0 && lost_once(header.index))));
+    let data = payload(1, 190_000);
+    for tile in 0..2 {
+        sim.send(OutgoingFrame { keyframe: true, ..frame(tile, &data) });
+    }
+    sim.run_for(Duration::from_secs(12));
+    let delivered = sim.frames().iter().filter(|frame| frame.data == data).count();
+    (sim.host.stats(sim.now).packets_retransmitted, delivered)
+}
+
+#[test]
+fn two_bursts_of_loss_reported_together_dont_make_the_link_look_faster() {
+    let (resent, delivered) =
+        resent_for_two_tiles_on_a_slow_link(100 * MS, |index| (3..40).contains(&index) || (90..150).contains(&index));
+
+    assert_eq!(delivered, 2);
+    assert!(resent <= 115, "{resent} packets resent for 97 that were lost");
+}
+
+#[test]
+fn a_round_trip_figure_above_the_real_one_doesnt_bring_the_repeats_back() {
+    let (resent, delivered) = resent_for_two_tiles_on_a_slow_link(160 * MS, |index| (20..150).contains(&index));
+
+    assert_eq!(delivered, 2);
+    assert!(resent <= 150, "{resent} packets resent for 130 that were lost");
+}
+
+#[test]
+fn a_request_that_names_a_packet_many_times_counts_it_once() {
+    let mut sim = Sim::new(SLOW_LINK, config(FecMode::Off), 1);
+    sim.stale_rtt = Some(100 * MS);
+    sim.drop_when(lost_times(|header| u32::from(header.index < 10)));
+    let data = payload(1, 60_000);
+    sim.send(frame(0, &data));
+    sim.run_for(40 * MS);
+    let repeated = wire::Nack { stream: 0, frame: 0, ranges: vec![(0, 10); 64] };
+    sim.host.handle_datagram(sim.now, repeated.encode());
+    let resent = sim.host.stats(sim.now).packets_retransmitted;
+    let waited = delivered_after(&mut sim, &data, 1, Duration::from_secs(6));
+
+    assert_eq!(resent, 10, "ten packets were named, 64 times each");
+    assert!(waited.is_some(), "the frame never arrived");
+    assert_eq!(lost_on_the_host(&sim), 0);
+}
+
+#[test]
+fn a_frame_with_one_packet_through_isnt_waited_for_as_if_the_rest_were_on_their_way() {
+    let mut sim = Sim::new(SLOW_LINK, config(FecMode::Off), 1);
+    sim.stale_rtt = Some(100 * MS);
+    sim.send(frame(1, &payload(1, 12_000)));
+    sim.run_for(Duration::from_secs(1));
+    sim.drop_when(|direction, datagram| match direction {
+        Direction::ToViewer => {
+            PacketHeader::decode(datagram.clone()).is_some_and(|(header, _)| header.stream == 0 && header.index > 0)
+        }
+        Direction::ToHost => false,
+    });
+    sim.send(frame(0, &payload(2, 180_000)));
+    let mut skipped_after = None;
+    for step in 1..=300u32 {
+        sim.run_for(10 * MS);
+        if skipped(&sim, 0, 0) {
+            skipped_after = Some(10 * MS * step);
+            break;
+        }
+    }
+
+    let waited = skipped_after.expect("the frame was never given up");
+    assert!(waited <= 600 * MS, "given up only after {waited:?} with one packet of 150 through");
+}
+
 #[test]
 fn a_frame_that_never_arrives_on_a_slow_link_is_still_declared_lost() {
     let mut sim = Sim::new(SLOW_LINK, config(FecMode::Adaptive), 1);

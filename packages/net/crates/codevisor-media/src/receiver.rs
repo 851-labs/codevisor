@@ -141,8 +141,7 @@ impl Assembly {
             (Some(first), Some(last)) if self.originals > 1 => (last - first) / (self.originals - 1) as u32,
             _ => Duration::ZERO,
         };
-        let pace = if own_pace.is_zero() { wait.gap_hint } else { own_pace };
-        (pace * short as u32 + wait.rtt).min(MAX_CROSSING).max(wait.give_up)
+        (own_pace * short as u32 + wait.rtt).min(MAX_CROSSING).max(wait.give_up)
     }
 
     fn keep_waiting(&mut self, now: Instant, wait: Wait) {
@@ -170,7 +169,6 @@ impl Assembly {
 struct Wait {
     give_up: Duration,
     rtt: Duration,
-    gap_hint: Duration,
 }
 
 #[derive(Debug, Clone, Copy)]
@@ -351,7 +349,7 @@ impl Receiver {
         assembly.first_rx.get_or_insert(now);
         assembly.last_rx = Some(now);
         if assembly.give_up_at.is_some() {
-            assembly.keep_waiting(now, Wait { give_up, rtt: self.rtt, gap_hint: self.gap_peak });
+            assembly.keep_waiting(now, Wait { give_up, rtt: self.rtt });
         }
         let last_index = shape.layout.data_count + shape.parity_count - 1;
         if usize::from(header.index) == last_index {
@@ -422,7 +420,7 @@ impl Receiver {
         let tail_wait = self.tail_wait();
         let give_up = self.give_up_after();
         let link_busy_until = self.last_media_rx.map(|at| at + give_up);
-        let wait = Wait { give_up, rtt: self.rtt, gap_hint: self.gap_peak };
+        let wait = Wait { give_up, rtt: self.rtt };
         let retry = self.retry_after();
         let mut resolved = Vec::new();
         for (&stream_id, stream) in &mut self.streams {

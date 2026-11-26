@@ -62,6 +62,7 @@ struct SentFrame {
     positions: Vec<u64>,
     flight_bytes: usize,
     heard: Option<Instant>,
+    probe: Option<Resend>,
     probes: u32,
     unanswered: u32,
     expires: Option<Instant>,
@@ -80,6 +81,13 @@ impl SentFrame {
 
     fn arrived_complete(&self) -> Option<u64> {
         self.positions.get(self.data_count.min(self.positions.len()).checked_sub(1)?).copied()
+    }
+
+    fn last_copy(&self, index: usize) -> Resend {
+        match self.resends[index] {
+            Resend::Never if index + 1 == self.data_count => self.probe.unwrap_or(Resend::Never),
+            resend => resend,
+        }
     }
 }
 
@@ -286,6 +294,7 @@ impl Sender {
                 positions: Vec::new(),
                 flight_bytes: 0,
                 heard: None,
+                probe: None,
                 probes: 0,
                 unanswered: 0,
                 expires: None,
@@ -362,7 +371,7 @@ impl Sender {
         stats.packets_sent += 1;
         stats.bytes_sent += packet.len() as u64;
         if tag.original && self.in_flight_bytes == 0 {
-            self.arrived.restart(now + self.rtt, self.sent_total);
+            self.arrived.restart(now + self.min_rtt.best().unwrap_or(self.rtt), self.sent_total);
         }
         let sent_before = self.sent_total;
         self.sent_total += packet.len() as u64;
@@ -374,7 +383,12 @@ impl Sender {
         {
             let known_bps = self.estimator.measured().then(|| self.estimator.estimate_bps());
             let queued_deep = self.arrived.wait_for(now, position, known_bps).is_some_and(|wait| wait > self.rtt);
-            *resend = Resend::Sent { at: now, position, queued_deep };
+            let sent = Resend::Sent { at: now, position, queued_deep };
+            if *resend == Resend::Never {
+                frame.probe = Some(sent);
+            } else {
+                *resend = sent;
+            }
         }
         if tag.original
             && let Some(frame) =
@@ -413,21 +427,21 @@ impl Sender {
             })
         };
         let sent = frame.originals_out.min(frame.data_count);
-        let named = || {
-            nack.ranges.iter().flat_map(|&(start, count)| match count {
-                wire::WHOLE_FRAME => 0..sent,
-                _ => usize::from(start).min(sent)..(usize::from(start) + usize::from(count)).min(sent),
-            })
-        };
-        let newly_missing = || named().filter(|index| frame.resends[*index] == Resend::Never);
-        let follows_an_arrival = |index: &usize| index.checked_sub(1).is_none_or(|previous| !asked(previous));
-        let arrived = newly_missing().filter(follows_an_arrival).filter_map(|index| frame.arrived_before(index));
+        let named = nack.ranges.iter().flat_map(|&(start, count)| match count {
+            wire::WHOLE_FRAME => 0..sent,
+            _ => usize::from(start).min(sent)..(usize::from(start) + usize::from(count)).min(sent),
+        });
+        let mut newly_missing: Vec<usize> = named.filter(|index| frame.resends[*index] == Resend::Never).collect();
+        newly_missing.sort_unstable();
+        newly_missing.dedup();
+        let follows_an_arrival = |index: &&usize| index.checked_sub(1).is_none_or(|previous| !asked(previous));
+        let arrived = newly_missing.iter().filter(follows_an_arrival).filter_map(|index| frame.arrived_before(*index));
+        let bytes = |index: &usize| frame.packets[*index].len() as u64;
         if let Some(position) = arrived.max() {
-            self.arrived.note(now, position);
+            let behind = newly_missing.iter().filter(|index| frame.positions[**index] <= position);
+            self.arrived.note(now, position, behind.map(bytes).sum());
         }
-        for index in newly_missing() {
-            self.arrived.note_lost(frame.positions[index], frame.packets[index].len());
-        }
+        self.arrived.note_lost(newly_missing.iter().map(bytes).sum());
         let known_bps = self.estimator.measured().then(|| self.estimator.estimate_bps());
         let reached = self.arrived.reached(now, known_bps);
         let mut requested = 0;
@@ -445,7 +459,7 @@ impl Sender {
                 if index >= frame.originals_out {
                     continue;
                 }
-                let recent = match frame.resends[index] {
+                let recent = match frame.last_copy(index) {
                     Resend::Never => false,
                     Resend::Queued => true,
                     Resend::Sent { at, position, queued_deep } => {
@@ -505,7 +519,7 @@ impl Sender {
             } else {
                 let ack = acknowledge(feedback.stream, feedback.frame, &frame, now, feedback.receipt.map(receipt));
                 if let Some(position) = frame.arrived_complete() {
-                    self.arrived.note(now, position);
+                    self.arrived.note(now, position, 0);
                 }
                 stats.frames_acked += 1;
                 events.push_back(Event::FrameAcked(ack));
@@ -558,7 +572,7 @@ impl Sender {
                 stats.frames_acked += 1;
                 self.estimator.on_acked(now, frame.bytes_out);
                 if let Some(position) = frame.arrived_complete() {
-                    self.arrived.note(now, position);
+                    self.arrived.note(now, position, 0);
                 }
                 events.push_back(Event::FrameAcked(acknowledge(feedback.stream, number, &frame, now, None)));
                 if let Some(first) = frame.first_tx {
@@ -711,7 +725,7 @@ impl ProbeWaits {
     }
 
     fn expiry(self, frame: &SentFrame, last_probe: Instant, carried_bps: f64) -> Instant {
-        let heard = frame.heard.or(frame.last_tx).unwrap_or(last_probe);
+        let heard = [frame.heard, frame.last_tx].into_iter().flatten().max().unwrap_or(last_probe);
         let crossing = Duration::from_secs_f64(frame.flight_bytes as f64 * 8.0 / carried_bps).min(MAX_CROSSING);
         last_probe.max(heard + crossing) + self.timeout
     }
@@ -734,5 +748,40 @@ fn acknowledge(stream: u8, number: u32, frame: &SentFrame, now: Instant, receipt
         sending: frame.last_tx.unwrap_or(now).saturating_duration_since(first_tx),
         acked_after: now.saturating_duration_since(first_tx),
         receipt,
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn the_wait_for_what_was_in_flight_runs_from_the_end_of_the_send_when_the_viewer_answered_before_it() {
+        let start = Instant::now();
+        let second = Duration::from_secs(1);
+        let frame = SentFrame {
+            packets: Vec::new(),
+            resends: Vec::new(),
+            data_count: 0,
+            submitted: start,
+            first_tx: Some(start),
+            latest_tx: Some(start + 2 * second),
+            last_tx: Some(start + 2 * second),
+            originals_out: 0,
+            bytes_out: 0,
+            sent_before: 0,
+            positions: Vec::new(),
+            flight_bytes: 125_000,
+            heard: Some(start + second / 4),
+            probe: None,
+            probes: MAX_PROBES,
+            unanswered: MAX_PROBES,
+            expires: None,
+        };
+        let waits = ProbeWaits { tail_probe: second / 10, timeout: second / 5 };
+
+        let expiry = waits.expiry(&frame, start + 2 * second + second / 10, 1e6);
+
+        assert_eq!(expiry, start + 3 * second + second / 5, "1 s to cross from the last packet, then one timeout");
     }
 }

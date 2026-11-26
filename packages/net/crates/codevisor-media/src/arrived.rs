@@ -1,61 +1,53 @@
 use std::{
-    cmp::Reverse,
-    collections::{BinaryHeap, VecDeque},
+    collections::VecDeque,
     time::{Duration, Instant},
 };
 
 const MEMORY: Duration = Duration::from_millis(500);
-const MAX_LOST_AHEAD: usize = 4096;
+const MIN_SPAN: Duration = Duration::from_millis(5);
+
+#[derive(Debug, Clone, Copy)]
+struct Sighting {
+    at: Instant,
+    position: u64,
+    carried: u64,
+}
 
 #[derive(Debug, Default)]
 pub struct Arrived {
-    position: u64,
-    carried: VecDeque<(Instant, u64)>,
-    lost_behind: u64,
-    lost_ahead: BinaryHeap<Reverse<(u64, usize)>>,
-    lost_ahead_bytes: u64,
+    seen: VecDeque<Sighting>,
+    lost: u64,
 }
 
 impl Arrived {
     pub fn restart(&mut self, at: Instant, position: u64) {
-        *self = Self { position, ..Self::default() };
-        self.carried.push_back((at, position));
+        self.seen.clear();
+        self.seen.push_back(Sighting { at, position, carried: position.saturating_sub(self.lost) });
     }
 
-    pub fn note(&mut self, at: Instant, position: u64) {
-        if position <= self.position {
+    pub fn note(&mut self, at: Instant, position: u64, lost_behind: u64) {
+        if self.seen.back().is_some_and(|newest| position <= newest.position) {
             return;
         }
-        self.position = position;
-        while let Some(&Reverse((_, bytes))) = self.lost_ahead.peek().filter(|lost| lost.0.0 <= position) {
-            self.lost_ahead.pop();
-            self.lost_behind += bytes as u64;
-            self.lost_ahead_bytes -= bytes as u64;
+        while self.seen.len() > 1 && at.saturating_duration_since(self.seen[1].at) > MEMORY {
+            self.seen.pop_front();
         }
-        while self.carried.len() > 1 && at.saturating_duration_since(self.carried[1].0) > MEMORY {
-            self.carried.pop_front();
+        if let Some(oldest) = self.seen.front_mut() {
+            oldest.at = oldest.at.min(at);
         }
-        self.carried.push_back((at, position - self.lost_behind));
+        let carried = position.saturating_sub(self.lost.saturating_add(lost_behind));
+        self.seen.push_back(Sighting { at, position, carried });
     }
 
-    pub fn note_lost(&mut self, position: u64, bytes: usize) {
-        if position <= self.position {
-            return;
-        }
-        self.lost_ahead.push(Reverse((position, bytes)));
-        self.lost_ahead_bytes += bytes as u64;
-        if self.lost_ahead.len() > MAX_LOST_AHEAD
-            && let Some(Reverse((_, oldest))) = self.lost_ahead.pop()
-        {
-            self.lost_ahead_bytes -= oldest as u64;
-        }
+    pub fn note_lost(&mut self, bytes: u64) {
+        self.lost = self.lost.saturating_add(bytes);
     }
 
     pub fn reached(&self, now: Instant, known_bps: Option<f64>) -> Option<u64> {
-        let &(at, _) = self.carried.back()?;
-        let since = now.saturating_duration_since(at);
+        let newest = self.seen.back()?;
+        let since = now.saturating_duration_since(newest.at);
         let carried = self.rate(known_bps)? / 8.0 * since.as_secs_f64();
-        Some(self.position + self.lost_ahead_bytes + carried as u64)
+        Some(newest.position.saturating_add(carried as u64))
     }
 
     pub fn wait_for(&self, now: Instant, position: u64, known_bps: Option<f64>) -> Option<Duration> {
@@ -68,12 +60,9 @@ impl Arrived {
     }
 
     fn bps(&self) -> Option<f64> {
-        let &(newest_at, newest) = self.carried.back()?;
-        let rates = self.carried.iter().filter_map(|&(at, carried)| {
-            let span = newest_at.checked_duration_since(at).filter(|span| !span.is_zero())?;
-            Some((newest - carried) as f64 * 8.0 / span.as_secs_f64())
-        });
-        rates.reduce(f64::max)
+        let (oldest, newest) = (self.seen.front()?, self.seen.back()?);
+        let span = newest.at.checked_duration_since(oldest.at).filter(|span| *span >= MIN_SPAN)?;
+        Some(newest.carried.saturating_sub(oldest.carried) as f64 * 8.0 / span.as_secs_f64())
     }
 }
 
@@ -90,6 +79,7 @@ mod tests {
         assert_eq!(arrived.reached(start, None), None);
         arrived.restart(start, 1_000);
         assert_eq!(arrived.reached(start + 50 * MS, None), None);
+        assert_eq!(arrived.wait_for(start + 50 * MS, 50_000, None), None);
     }
 
     #[test]
@@ -97,19 +87,21 @@ mod tests {
         let start = Instant::now();
         let mut arrived = Arrived::default();
         arrived.restart(start, 0);
-        arrived.note(start + 100 * MS, 12_500);
+        arrived.note(start + 100 * MS, 12_500, 0);
         assert_eq!(arrived.reached(start + 100 * MS, None), Some(12_500));
         assert_eq!(arrived.reached(start + 300 * MS, None), Some(37_500));
     }
 
     #[test]
-    fn a_burst_after_a_slow_stretch_sets_the_rate() {
+    fn the_wait_for_a_position_is_what_is_ahead_of_it_at_the_rate() {
         let start = Instant::now();
         let mut arrived = Arrived::default();
         arrived.restart(start, 0);
-        arrived.note(start + 400 * MS, 10_000);
-        arrived.note(start + 410 * MS, 110_000);
-        assert_eq!(arrived.reached(start + 420 * MS, None), Some(210_000));
+        arrived.note(start + 100 * MS, 12_500, 0);
+        assert_eq!(arrived.wait_for(start + 100 * MS, 50_000, None), Some(300 * MS));
+        assert_eq!(arrived.wait_for(start + 300 * MS, 50_000, None), Some(100 * MS));
+        assert_eq!(arrived.wait_for(start + 900 * MS, 50_000, None), Some(Duration::ZERO));
+        assert_eq!(arrived.wait_for(start + 100 * MS, 50_000, Some(3e6)), Some(100 * MS));
     }
 
     #[test]
@@ -118,9 +110,23 @@ mod tests {
         let mut arrived = Arrived::default();
         arrived.restart(start, 0);
         assert_eq!(arrived.reached(start + 100 * MS, Some(8e6)), Some(100_000));
-        arrived.note(start + 100 * MS, 12_500);
+        arrived.note(start + 100 * MS, 12_500, 0);
         assert_eq!(arrived.reached(start + 200 * MS, Some(8e6)), Some(112_500));
         assert_eq!(arrived.reached(start + 200 * MS, Some(8e3)), Some(25_000));
+    }
+
+    #[test]
+    fn two_sightings_moments_apart_dont_set_the_rate() {
+        let start = Instant::now();
+        let mut arrived = Arrived::default();
+        arrived.restart(start, 0);
+        arrived.note(start + 20 * Duration::from_micros(1), 12_000, 0);
+        assert_eq!(arrived.reached(start + 100 * MS, None), None);
+
+        arrived.note(start + 100 * MS, 12_500, 0);
+        arrived.note(start + 100 * MS + 20 * Duration::from_micros(1), 25_000, 0);
+        let reached = arrived.reached(start + 200 * MS, None).expect("two sightings 100 ms apart");
+        assert!((49_000..=51_000).contains(&reached), "{reached}");
     }
 
     #[test]
@@ -128,13 +134,13 @@ mod tests {
         let start = Instant::now();
         let mut arrived = Arrived::default();
         arrived.restart(start, 0);
-        arrived.note(start + 100 * MS, 10_000);
-        arrived.note(start + 200 * MS, 10_000);
+        arrived.note(start + 100 * MS, 10_000, 0);
+        arrived.note(start + 200 * MS, 10_000, 0);
         assert_eq!(arrived.reached(start + 200 * MS, None), Some(20_000));
-        arrived.note(start + 900 * MS, 20_000);
-        arrived.note(start + 1_000 * MS, 22_500);
-        assert_eq!(arrived.carried.len(), 3);
-        assert_eq!(arrived.reached(start + 1_100 * MS, None), Some(25_000));
+        arrived.note(start + 900 * MS, 20_000, 0);
+        arrived.note(start + 1_000 * MS, 22_500, 0);
+        assert_eq!(arrived.seen.len(), 3);
+        assert_eq!(arrived.reached(start + 1_100 * MS, None), Some(23_888), "12.5 KB in the 0.9 s it still remembers");
     }
 
     #[test]
@@ -142,72 +148,56 @@ mod tests {
         let start = Instant::now();
         let mut arrived = Arrived::default();
         arrived.restart(start, 0);
-        arrived.note(start + 100 * MS, 10_000);
+        arrived.note(start + 100 * MS, 10_000, 0);
         arrived.restart(start + 5_000 * MS, 10_000);
-        arrived.note(start + 5_010 * MS, 20_000);
+        arrived.note(start + 5_010 * MS, 20_000, 0);
         assert_eq!(arrived.reached(start + 5_020 * MS, None), Some(30_000));
     }
 
     #[test]
-    fn packets_known_lost_take_no_time_to_pass_and_dont_count_towards_the_rate() {
+    fn a_sighting_before_the_restarts_time_moves_the_restart_back_to_it() {
+        let start = Instant::now();
+        let mut arrived = Arrived::default();
+        arrived.restart(start + 100 * MS, 0);
+        arrived.note(start + 62 * MS, 5_000, 0);
+        assert_eq!(arrived.reached(start + 70 * MS, None), None);
+
+        arrived.note(start + 105 * MS, 12_500, 0);
+        assert_eq!(arrived.reached(start + 105 * MS + 43 * MS, None), Some(25_000), "12.5 KB in 43 ms, not in 5");
+    }
+
+    #[test]
+    fn lost_packets_dont_count_towards_the_rate() {
         let start = Instant::now();
         let mut arrived = Arrived::default();
         arrived.restart(start, 0);
-        arrived.note(start + 100 * MS, 12_500);
-        for packet in 0..100 {
-            arrived.note_lost(13_500 + packet * 1_000, 1_000);
-        }
-        assert_eq!(arrived.reached(start + 100 * MS, None), Some(112_500));
+        arrived.note(start + 100 * MS, 12_500, 0);
+        arrived.note_lost(100_000);
+        arrived.note(start + 200 * MS, 125_000, 0);
+        assert_eq!(arrived.reached(start + 300 * MS, None), Some(137_500), "the link still carries 1 Mbit/s");
+    }
+
+    #[test]
+    fn losses_behind_a_sighting_reported_with_it_dont_count_either() {
+        let start = Instant::now();
+        let mut arrived = Arrived::default();
+        arrived.restart(start, 0);
+        arrived.note(start + 100 * MS, 112_500, 100_000);
+        arrived.note_lost(100_000);
         assert_eq!(arrived.reached(start + 200 * MS, None), Some(125_000));
-
-        arrived.note(start + 200 * MS, 125_000);
-        assert_eq!(arrived.reached(start + 300 * MS, None), Some(137_500), "the rate is still 1 Mbit/s");
+        arrived.note(start + 200 * MS, 125_000, 0);
+        assert_eq!(arrived.reached(start + 300 * MS, None), Some(137_500));
     }
 
     #[test]
-    fn the_wait_for_a_position_is_what_is_ahead_of_it_at_the_rate() {
+    fn more_reported_lost_than_sent_gives_no_rate_instead_of_wrapping() {
         let start = Instant::now();
         let mut arrived = Arrived::default();
         arrived.restart(start, 0);
-        assert_eq!(arrived.wait_for(start, 50_000, None), None);
-        arrived.note(start + 100 * MS, 12_500);
-        assert_eq!(arrived.wait_for(start + 100 * MS, 50_000, None), Some(300 * MS));
-        assert_eq!(arrived.wait_for(start + 300 * MS, 50_000, None), Some(100 * MS));
-        assert_eq!(arrived.wait_for(start + 900 * MS, 50_000, None), Some(Duration::ZERO));
-        assert_eq!(arrived.wait_for(start + 100 * MS, 50_000, Some(3e6)), Some(100 * MS));
-    }
-
-    #[test]
-    fn sightings_that_only_pass_lost_packets_give_no_rate() {
-        let start = Instant::now();
-        let mut arrived = Arrived::default();
-        arrived.restart(start, 0);
-        arrived.note_lost(1_000, 1_000);
-        arrived.note(start + 100 * MS, 1_000);
+        arrived.note_lost(u64::MAX);
+        arrived.note_lost(768_000);
+        arrived.note(start + 100 * MS, 12_000, 5_000);
         assert_eq!(arrived.reached(start + 200 * MS, None), None);
-        assert_eq!(arrived.wait_for(start + 200 * MS, 50_000, None), None);
-    }
-
-    #[test]
-    fn losses_ahead_are_remembered_up_to_a_limit() {
-        let start = Instant::now();
-        let mut arrived = Arrived::default();
-        arrived.restart(start, 0);
-        arrived.note(start + 100 * MS, 12_500);
-        for packet in 0..2 * MAX_LOST_AHEAD as u64 {
-            arrived.note_lost(13_500 + packet * 1_000, 1_000);
-        }
-        assert_eq!(arrived.lost_ahead.len(), MAX_LOST_AHEAD);
-        assert_eq!(arrived.reached(start + 100 * MS, None), Some(12_500 + MAX_LOST_AHEAD as u64 * 1_000));
-    }
-
-    #[test]
-    fn a_loss_reported_behind_the_reach_changes_nothing() {
-        let start = Instant::now();
-        let mut arrived = Arrived::default();
-        arrived.restart(start, 0);
-        arrived.note(start + 100 * MS, 12_500);
-        arrived.note_lost(5_000, 1_000);
-        assert_eq!(arrived.reached(start + 200 * MS, None), Some(25_000));
+        assert_eq!(arrived.reached(start + 200 * MS, Some(1e6)), Some(24_500));
     }
 }

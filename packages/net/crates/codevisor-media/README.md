@@ -44,7 +44,8 @@ no jitter buffer and no queue deeper than one frame.
      way (scroll N6: 11 frames sent in 40 s, all keyframes, all lost).
      Neither end gives a frame up while it can still arrive (851-4477), within bounds. The viewer's wait for a frame
      it has asked for is at least the time the frame's missing packets take at the pace its own first-time packets
-     came at (its patience, at most 5 s, `MAX_CROSSING`: a 190 KB keyframe at the 300 kbit/s floor). While media
+     came at (its patience, at most 5 s, `MAX_CROSSING`: a 190 KB keyframe at the 300 kbit/s floor); a frame with
+     fewer than two first-time packets has no pace and gets the plain give-up time. While media
      packets of any frame keep arriving the wait doesn't run out either, since a resend waits behind whatever the
      host sent before the request, but only up to four times the patience after the frame's last packet, again at
      most 5 s: on a fast link that is about four give-up times, so a frame the host no longer holds can't keep its
@@ -53,7 +54,8 @@ no jitter buffer and no queue deeper than one frame.
      to cross. Repeats of the same request don't count, so a packet that never gets through still ends in a lost
      frame. When the sixth unanswered probe goes out, the host fixes how long it still waits: until what was in
      flight could have crossed at the rate the viewer acknowledged over the last 0.5 s (300 kbit/s with no
-     acknowledgement in that time, never over the estimate, at most 5 s). Before, the viewer gave a frame up one
+     acknowledgement in that time, never over the estimate, at most 5 s), counted from the frame's last packet or
+     the viewer's last answer, whichever is later. Before, the viewer gave a frame up one
      round trip after its last packet, and the host's probes were spaced by a round trip measured before the queue
      built up: a 190 KB first keyframe on a 1 Mbit/s link was declared lost after 1.7 s, about when its last packets
      arrived, and with no acknowledged reference the host answered with a second, larger keyframe (Tier 1 lab run
@@ -65,18 +67,23 @@ no jitter buffer and no queue deeper than one frame.
      viewer repeats a request every round trip, both read from QUIC, whose figure stays at the path's delay while a
      slow link's queue holds seconds: one keyframe's 130 missing packets were resent 1,268 times in the sim, and the
      longer waits above would only add to that. The host now gives everything it sends a place in one byte count and
-     follows how far into it the viewer has got (`Arrived`): a request that names a packet for the first time, right
-     after one it never asked for, shows that one arrived, and so does a completed frame. Between sightings the
-     reach moves on at the rate the sightings advanced, or at the estimate once the link has been measured if that
-     is higher; packets known lost take no time to pass and don't count towards the rate, so a burst of loss doesn't
-     make the link look faster. A resend that leaves with more than a round trip's worth of queue ahead of it isn't
-     sent again until the reach has passed it (at most 5 s); a request that still names it then means it was lost,
-     and it goes out at once. A resend with less ahead of it keeps the half-round-trip rule: there a second copy is
-     one packet and repairs a resend that was itself lost a round trip sooner. In the sim's steady stream on N7 (32
-     seeds, 20 s) holding every resend delivered 872 frames against 879 with the old rule, and holding only the
-     deep ones 876. Nothing has been sighted after an idle spell, so a frame sent then starts on the old rule too: a
-     packet lost twice on a fast link is repaired at the viewer's next request (7 ms on N1). A probe for a frame the
-     viewer has already answered is not a tail probe and no longer backs the next frame's tail probe off.
+     follows how far into it the viewer has got (`Arrived`). A sighting is a request that names a packet for the
+     first time right after one it never asked for (that one arrived), or a completed frame. Between sightings the
+     reach moves on at the rate they advanced over the last 0.5 s, less the packets reported lost, which take no
+     link time, or at the estimate once the link has been measured if that is higher. Sightings under 5 ms apart
+     give no rate, and neither does the first one after an idle spell, which starts the count again one lowest
+     round trip after the first packet left (or at the first sighting, if that comes sooner). A resend that leaves
+     with more than a round trip's worth of queue ahead of it isn't sent again until the reach has passed it, at
+     most 5 s; a request that still names it then means it was lost, and it goes out at once. Every other resend
+     keeps the half-round-trip rule, and so does every resend while there is no rate: there a second copy is one
+     packet and repairs a resend that was itself lost a round trip sooner. So a wrong rate costs either the old
+     repeats (too high) or a later repair of a resend that was lost (too low), never a packet that isn't sent. In
+     the sim's steady streams on N7 the rule changes nothing measurable (32 seeds of 20 s: 875 frames delivered
+     against 879 with the old rule and the lowest estimate 0.59 Mbit/s both ways; 16 tiles for 40 s: 9,332 against
+     9,366), where holding every resend, deep or not, cost about 1% of the frames. A packet lost twice on a fast
+     link is repaired at the viewer's next request as before (7 ms on N1). A probe is not a resend the viewer asked
+     for: the viewer's first request for a probed packet still counts as an answer, and a probe for a frame the
+     viewer has already answered doesn't back the next frame's tail probe off.
   4. **Refresh requests.** A frame the transport delivered can still fail to decode, and the transport can't see
      that. The viewer calls `request_refresh(stream, keyframe)`, and the host gets `Event::RefreshRequested` once
      per request. The viewer repeats the request every give-up time + RTT until a recovery frame arrives on that
