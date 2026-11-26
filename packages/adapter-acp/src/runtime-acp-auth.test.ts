@@ -136,13 +136,14 @@ describe("@codevisor/agent-runtime", () => {
     await expect(run(runtime.listAgentSessions("nope"))).rejects.toThrow("Unknown harness: nope")
   })
 
-  it("reads provider usage limits and reports unsupported harnesses", async () => {
+  it("reads provider usage limits and reports harnesses that can't provide them", async () => {
     const account = {
       id: "account-1",
       profileKind: "managed" as const,
       env: { TEST_PROFILE: "account-1" }
     }
     const runtime = makeAcpAgentRuntime({
+      executableExists: (name) => name === "gemini",
       providers: {
         claude: {
           id: "claude",
@@ -178,9 +179,18 @@ describe("@codevisor/agent-runtime", () => {
       state: "unavailable",
       windows: []
     })
-    await expect(run(runtime.readHarnessUsageLimits("nope", "/tmp/project"))).rejects.toThrow(
-      "Unknown harness: nope"
-    )
+    await expect(
+      run(runtime.readHarnessUsageLimits("codex", "/tmp/project"))
+    ).resolves.toMatchObject({
+      detail: "Codex is unavailable: CLI not found on PATH",
+      harnessId: "codex",
+      state: "unavailable"
+    })
+    await expect(run(runtime.readHarnessUsageLimits("", "/tmp/project"))).resolves.toMatchObject({
+      detail: "Unknown harness: ",
+      harnessId: "",
+      state: "unavailable"
+    })
     await expect(run(runtime.listAgentSessions("claude-code"))).resolves.toEqual([])
   })
 })

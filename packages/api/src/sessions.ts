@@ -382,7 +382,7 @@ export const CreateSessionRequest = Schema.Struct({
   sidebarPosition: Schema.optional(WorkspacePosition),
   id: Schema.optional(Schema.String),
   projectId: Schema.String,
-  harnessId: Schema.String,
+  harnessId: Schema.NonEmptyString,
   harnessAccountId: Schema.optional(Schema.String),
   agentSessionId: Schema.optional(Schema.String),
   deferAgentSession: Schema.optional(Schema.Boolean),
@@ -408,7 +408,7 @@ export const UpdateSessionRequest = Schema.Struct({
   worktreeName: Schema.optional(Schema.String),
   projectId: Schema.optional(Schema.String),
   workspaceId: Schema.optional(Schema.String),
-  harnessId: Schema.optional(Schema.String),
+  harnessId: Schema.optional(Schema.NonEmptyString),
   labels: Schema.optional(Labels),
   updatedAt: Schema.optional(Schema.String)
 })

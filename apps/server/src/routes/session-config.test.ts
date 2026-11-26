@@ -334,7 +334,10 @@ describe("session configuration routes", () => {
     ]
     const auth = fakeHarnessAuth({
       accounts: vi.fn(async () => accounts),
-      accountContext: vi.fn(async (id: string) => ({ id, profileKind: "default" as const })),
+      accountContext: vi.fn(async (id: string) => {
+        if (id === "signed-out-account") throw new Error("Harness account requires sign-in")
+        return { id, profileKind: "default" as const }
+      }),
       activeAccountContext: vi.fn(async () => ({
         id: "active-account",
         profileKind: "default" as const
@@ -371,18 +374,29 @@ describe("session configuration routes", () => {
     })
     expect(auth.accountContext).toHaveBeenCalledWith("explicit-account")
 
-    projectedSession = { ...withoutCwd, serverId: "remote-server" }
-    expect(
-      await jsonRequest(authenticatedServer, `/v1/sessions/${session.id}/usage-limits`)
-    ).toMatchObject({
-      body: {
-        detail: "This session has no local workspace from which to query its harness.",
-        harnessId: "codex",
-        state: "unavailable",
-        windows: []
+    const unreadable = [
+      {
+        session: { ...withoutCwd, serverId: "remote-server" },
+        detail: "This session has no local workspace from which to query its harness."
       },
-      status: 200
-    })
+      {
+        session: { ...session, cwd: join(tmpdir(), "codevisor-deleted-worktree") },
+        detail: "This session's workspace folder no longer exists."
+      },
+      {
+        session: { ...session, harnessAccountId: "signed-out-account" },
+        detail: "Harness account requires sign-in"
+      }
+    ]
+    for (const { session: unreadableSession, detail } of unreadable) {
+      projectedSession = unreadableSession
+      expect(
+        await jsonRequest(authenticatedServer, `/v1/sessions/${session.id}/usage-limits`)
+      ).toMatchObject({
+        body: { detail, harnessId: "codex", state: "unavailable", windows: [] },
+        status: 200
+      })
+    }
   })
 
   it("serves live harness usage observations without persisting them or asking again", async () => {
