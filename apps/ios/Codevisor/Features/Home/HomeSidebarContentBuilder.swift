@@ -242,7 +242,7 @@ struct HomeSidebarContentBuilder {
         HomeSidebarTabRow(
           id: pane.id,
           title: paneTitle(pane, chat: chat, in: workspace),
-          icon: paneIcon(pane, chat: chat),
+          icon: paneIcon(pane, chat: chat, serverId: workspace.serverId),
           status: chat.map(status(for:)) ?? status(forTerminal: pane),
           chatSessionId: chat?.id,
           tabId: owner.id,
@@ -251,7 +251,10 @@ struct HomeSidebarContentBuilder {
         )
       )
     }
-    for tab in workspace.centerTabs {
+    let mainTabId = workspace.mainTab.id
+    let sessions = environment.projectList
+    for tab in workspace.centerTabs
+    where tab.id == mainTabId || AgentChatTabs.isListed(tab, in: workspace, sessions: sessions) {
       for group in tab.root.allGroups {
         for pane in group.state.panes {
           append(pane, owner: tab)
@@ -275,7 +278,9 @@ struct HomeSidebarContentBuilder {
     }
   }
 
-  private func paneIcon(_ pane: PaneDescriptorState, chat: ChatSession?) -> HomeSidebarTabRow.Icon {
+  private func paneIcon(
+    _ pane: PaneDescriptorState, chat: ChatSession?, serverId: String
+  ) -> HomeSidebarTabRow.Icon {
     switch pane.kind {
     case .chat:
       .chat(
@@ -298,8 +303,10 @@ struct HomeSidebarContentBuilder {
       .review
     case .newTab:
       .newTab
-    case .subagent, .transcript:
-      .newTab
+    case .subagent:
+      .subagent(harnessId: pane.ownerChatSessionId.flatMap { session($0, serverId: serverId)?.harnessId } ?? "")
+    case .transcript:
+      .transcript
     }
   }
 

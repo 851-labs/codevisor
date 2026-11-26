@@ -51,6 +51,11 @@ struct HomeSidebarTabIcon: View {
         symbol("plusminus")
       case .document:
         FileIcon(path: row.title, size: size)
+      case let .subagent(harnessId):
+        HarnessGlyph(harnessId: harnessId, fallbackSymbolName: "wand.and.sparkles")
+          .foregroundStyle(glyphStyle)
+      case .transcript:
+        symbol("text.page")
       case .newTab:
         symbol("square.dashed")
       }
