@@ -190,6 +190,45 @@ describe("a desktop set up as a process, on a server that now has systemd", () =
     expect(JSON.parse(machine.files.get(CONFIG) ?? "")).toMatchObject({ service: "systemd-user" })
   })
 
+  it("stays down, and says why, when another server on the account owns the desktop unit", async () => {
+    const owner = fakeMachine({ files: UBUNTU })
+    await owner.manager.start()
+    const theirUnit = (owner.files.get(UNIT) ?? "").replaceAll(DATA_DIR, "/home/codevisor/a/data")
+    const machine = fakeMachine({
+      files: { ...UBUNTU, [CONFIG]: await setUpAsAProcess(), [UNIT]: theirUnit },
+      socketAppearsAfterPolls: Number.POSITIVE_INFINITY
+    })
+
+    await machine.manager.resume()
+    expect(machine.files.get(UNIT)).toBe(theirUnit)
+    expect(userSystemctl(machine.commands)).toEqual([])
+    expect(machine.spawned).toEqual([])
+    expect(JSON.parse(machine.files.get(CONFIG) ?? "")).toMatchObject({ service: "process" })
+    expect(await machine.manager.status()).toMatchObject({
+      state: "stopped",
+      problem: expect.stringContaining("Another Codevisor server on this account")
+    })
+  })
+
+  it("has the X server its killed runner left behind stopped first, so the unit can take the display", async () => {
+    const machine = fakeMachine({
+      files: {
+        ...UBUNTU,
+        [CONFIG]: await setUpAsAProcess(),
+        "/tmp/.X1-lock": "  777\n",
+        "/proc/777/cmdline": "Xvnc\0:1\0-rfbunixpath\0/run/user/1001/codevisor-desktop.sock"
+      },
+      alive: [777],
+      socketAppearsAfterPolls: Number.POSITIVE_INFINITY
+    })
+    await machine.manager.resume()
+    expect(machine.terminated).toEqual([777])
+    expect(JSON.parse(machine.files.get(CONFIG) ?? "")).toMatchObject({
+      vnc: { display: 1 },
+      service: "systemd-user"
+    })
+  })
+
   it("is left as it is while its process still runs", async () => {
     const machine = fakeMachine({
       files: {

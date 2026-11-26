@@ -148,6 +148,10 @@ export const makeDesktopManager = (options: DesktopManagerOptions): DesktopManag
 
   const sharedBy = (runs: DesktopService): Shared => {
     const live = shared()
+    const hasADesktop = live.state === "running" || live.state === "stopped"
+    if (hasADesktop && recordedService() !== undefined && runs.belongsToAnother())
+      return { ...live, state: "stopped", problem: anotherServers }
+
     const problem = live.state === "running" ? whyOursIsDown(runs) : undefined
     return problem === undefined ? live : { ...live, state: "stopped", problem }
   }
@@ -303,10 +307,13 @@ export const makeDesktopManager = (options: DesktopManagerOptions): DesktopManag
     return steady >= steadyPolls
   }
 
-  const stopAnOrphanedXServer = async (runs: DesktopService): Promise<void> => {
+  const stopAnOrphanedXServer = async (
+    runs: DesktopService,
+    other: DesktopService
+  ): Promise<void> => {
     const setup = setUp()
     const config = setup.kind === "ready" ? setup.config : undefined
-    if (runs.kind !== "process" || runs.isSetUp() || config?.display === undefined) return
+    if (runs.isSetUp() || other.isSetUp() || config?.display === undefined) return
 
     const orphan = ownXServerOn(system, config.display, config.socket)
     if (orphan === undefined) return
@@ -320,7 +327,7 @@ export const makeDesktopManager = (options: DesktopManagerOptions): DesktopManag
     runs: DesktopService,
     other: DesktopService
   ): Promise<DesktopLayout> => {
-    await stopAnOrphanedXServer(runs)
+    await stopAnOrphanedXServer(runs, other)
     const layout = layoutToUse()
     await other.stop()
     writeConfig(layout, runs)
@@ -372,7 +379,7 @@ export const makeDesktopManager = (options: DesktopManagerOptions): DesktopManag
     await runs.refresh()
     const recorded = recordedService()
     if (recorded === undefined || setUp().kind !== "ready") return
-    if (runs.isSetUp() || other.isSetUp()) return
+    if (runs.isSetUp() || other.isSetUp() || runs.belongsToAnother()) return
     if (recorded === "process" || runs.kind === "systemd-user") await startUnder(runs, other)
   }
 
