@@ -21,8 +21,8 @@ enum LoopbackMatrix {
     guard let list else { return BenchNetworkConditions.matrix }
 
     return try names(list).map { id in
-      guard let conditions = BenchNetworkConditions.matrix.first(where: { $0.id == id }) else {
-        throw BenchUsageError(message: "--networks takes N0 to N7, not \(id)")
+      guard let conditions = BenchNetworkConditions.all.first(where: { $0.id == id }) else {
+        throw BenchUsageError(message: "--networks takes N0 to N9, not \(id)")
       }
       return conditions
     }
