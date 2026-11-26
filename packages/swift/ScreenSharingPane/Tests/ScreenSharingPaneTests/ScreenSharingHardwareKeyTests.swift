@@ -52,6 +52,17 @@ struct ScreenSharingHardwareKeyTests {
     #expect(umlaut.events(asCharacters: true, onScreen: .shift) == [.text("Ö")])
   }
 
+  @Test(
+    "Shift tapped on screen can't know a layout's shifted symbol, so a non-letter is typed as it is, with Shift held")
+  func onScreenShiftOnANonLetter() {
+    let germanTwo = Key(usage: 31, characters: "2", unmodifiedCharacters: "2")
+    let sharpS = Key(usage: 45, characters: "ß", unmodifiedCharacters: "ß")
+    let shiftDown = ScreenSharingInputEvent.key(code: 56, down: true, repeatKey: false, modifiers: 1)
+    let shiftUp = ScreenSharingInputEvent.key(code: 56, down: false, repeatKey: false, modifiers: 0)
+    #expect(germanTwo.events(asCharacters: true, onScreen: .shift) == [shiftDown, .text("2"), shiftUp])
+    #expect(sharpS.events(asCharacters: true, onScreen: .shift) == [shiftDown, .text("ß"), shiftUp])
+  }
+
   @Test("A character the layout makes with Option is typed as that character, not as Alt and the key's letter")
   func optionComposedCharacters() {
     let germanAt = Key(usage: 15, characters: "@", unmodifiedCharacters: "l", modifiers: .option)
@@ -94,9 +105,12 @@ struct ScreenSharingHardwareKeyTests {
 
   @Test("A dead key, which has no character yet, sends nothing to a desktop that takes characters")
   func deadKey() {
-    let deadAcute = Key(usage: 46)
+    let deadAcute = Key(usage: 46, unmodifiedCharacters: "´")
+    let optionDeadKey = Key(usage: 8, unmodifiedCharacters: "e", modifiers: .option)
     let controlPicture = Key(usage: 46, characters: "\u{1b}", unmodifiedCharacters: "\u{1b}")
     #expect(deadAcute.events(asCharacters: true) == [])
+    #expect(deadAcute.events(asCharacters: true, onScreen: .option) == [])
+    #expect(optionDeadKey.events(asCharacters: true) == [])
     #expect(controlPicture.events(asCharacters: true) == [])
     #expect(pressed(deadAcute.events(asCharacters: false)) == [24])
   }
@@ -117,10 +131,18 @@ struct ScreenSharingHardwareKeyTests {
     #expect(pressed(notCombined.events(asCharacters: true, onScreen: .shift)) == [56, 7])
   }
 
-  @Test("Space by itself stays a key position, so Shift and Command with Space still arrive")
+  @Test("Space by itself stays a key position, so Shift, Option and Command with Space still arrive")
   func space() {
     let shiftSpace = Key(usage: 44, characters: " ", unmodifiedCharacters: " ", modifiers: .shift)
+    let optionSpace = Key(usage: 44, characters: "\u{a0}", unmodifiedCharacters: " ", modifiers: .option)
     #expect(pressed(shiftSpace.events(asCharacters: true)) == [56, 49])
+    #expect(pressed(optionSpace.events(asCharacters: true)) == [58, 49])
+  }
+
+  @Test("A shortcut on a key iOS gives no character for goes by the key's position, not nowhere")
+  func chordWithoutACharacter() {
+    let key = Key(usage: 46, modifiers: .command)
+    #expect(pressed(key.events(asCharacters: true)) == [55, 24])
   }
 
   @Test("Keys that have no character go by position")

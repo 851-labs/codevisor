@@ -11,7 +11,7 @@ struct ScreenSharingHardwareKey {
   var modifiers: ScreenSharingModifiers = []
 
   func events(asCharacters: Bool, onScreen: ScreenSharingModifiers = []) -> [ScreenSharingInputEvent]? {
-    if asCharacters, typesCharacters { return typed(onScreen: onScreen) }
+    if asCharacters, typesCharacters, let typed = typed(onScreen: onScreen) { return typed }
     guard let code = ScreenSharingKeyboard.code(forHIDUsage: usage) else { return nil }
 
     return ScreenSharingKeyboard.press(code: code, modifiers: modifiers.union(onScreen))
@@ -22,19 +22,26 @@ struct ScreenSharingHardwareKey {
   }
 
   private var spaceFinishedADeadKey: Bool {
-    usage == Self.spaceUsage && !characters.isEmpty && characters != " "
+    guard usage == Self.spaceUsage, modifiers.isDisjoint(with: Self.chordModifiers) else { return false }
+
+    return !characters.isEmpty && characters != " "
   }
 
-  private func typed(onScreen: ScreenSharingModifiers) -> [ScreenSharingInputEvent] {
+  private func typed(onScreen: ScreenSharingModifiers) -> [ScreenSharingInputEvent]? {
     let held = modifiers.union(onScreen)
-    guard isChord(held) else { return Self.text(characters, shifted: onScreen.contains(.shift)) }
+    let chord = held.intersection(Self.chordModifiers)
+    if isDeadKey(under: chord) { return [] }
+    guard isChord(chord) else { return Self.text(characters, shifted: onScreen.contains(.shift)) }
 
     return Self.chord(on: unmodifiedCharacters, holding: held)
   }
 
-  private func isChord(_ held: ScreenSharingModifiers) -> Bool {
-    let chord = held.intersection(Self.chordModifiers)
-    return !chord.isEmpty && !(chord == .option && optionComposedACharacter)
+  private func isDeadKey(under chord: ScreenSharingModifiers) -> Bool {
+    characters.isEmpty && chord.isSubset(of: .option)
+  }
+
+  private func isChord(_ chord: ScreenSharingModifiers) -> Bool {
+    !chord.isEmpty && !(chord == .option && optionComposedACharacter)
   }
 
   private var optionComposedACharacter: Bool {
@@ -46,13 +53,20 @@ struct ScreenSharingHardwareKey {
   private static func text(_ text: String, shifted: Bool) -> [ScreenSharingInputEvent] {
     guard isPrintable(text) else { return [] }
     guard shifted else { return ScreenSharingKeyboard.type(text, modifiers: []) }
-    guard isOneKey(text) else { return ScreenSharingKeyboard.type(text.uppercased(), modifiers: []) }
+    guard let capitals = capitals(of: text) else {
+      return ScreenSharingKeyboard.holding(.shift) { _ in [.text(text)] }
+    }
 
-    return ScreenSharingKeyboard.type(text, modifiers: .shift)
+    return ScreenSharingKeyboard.type(capitals, modifiers: [])
   }
 
-  private static func chord(on text: String, holding modifiers: ScreenSharingModifiers) -> [ScreenSharingInputEvent] {
-    guard text.count == 1, isPrintable(text) else { return [] }
+  private static func capitals(of text: String) -> String? {
+    let capitals = text.uppercased()
+    return capitals != text && capitals.count == text.count ? capitals : nil
+  }
+
+  private static func chord(on text: String, holding modifiers: ScreenSharingModifiers) -> [ScreenSharingInputEvent]? {
+    guard text.count == 1, isPrintable(text) else { return nil }
     guard !isOneKey(text) else { return ScreenSharingKeyboard.type(text, modifiers: modifiers) }
 
     let letter = modifiers.contains(.shift) ? text.uppercased() : text
