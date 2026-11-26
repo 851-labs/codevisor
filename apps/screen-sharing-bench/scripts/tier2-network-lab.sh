@@ -53,3 +53,5 @@ network_reset
 network_apply N3 && measure N3
 network_reset
 network_apply N6 && measure N6
+network_reset
+network_apply N7 && measure N7
