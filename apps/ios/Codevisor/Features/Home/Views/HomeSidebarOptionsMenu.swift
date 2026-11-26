@@ -6,7 +6,7 @@ struct HomeSidebarOptionsMenu: View {
   let actions: HomeSidebarSectionActions
   var managesSections = true
   var showsGrouping = true
-  @ClientPreference(SidebarGrouping.preferenceKey, default: SidebarGrouping.flat) private var grouping
+  @Environment(AppEnvironment.self) private var environment
 
   var body: some View {
     Menu {
@@ -15,7 +15,7 @@ struct HomeSidebarOptionsMenu: View {
         Divider()
       }
       if showsGrouping {
-        Picker(selection: $grouping) {
+        Picker(selection: SidebarGroupingChoice(environment: environment).selection) {
           ForEach(SidebarGrouping.allCases, id: \.self) { option in
             Label {
               Text(option.title)

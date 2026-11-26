@@ -8,7 +8,6 @@ struct PaletteDestinationsPublisher: ViewModifier {
   let store: SessionStore?
   let revealRequest: SidebarRevealRequest
   let isEnabled: Bool
-  @ClientPreference(SidebarGrouping.preferenceKey, default: SidebarGrouping.flat) private var grouping
   @ClientPreference(SidebarPreferenceKey.pinnedWorkspaces, default: []) private var pinnedWorkspaceIDs: [String]
   @ClientPreference(SidebarPreferenceKey.machineOrder, default: []) private var machineOrder: [String]
   @ClientPreference(SidebarPreferenceKey.projectOrder, default: []) private var projectOrder: [String]
@@ -16,6 +15,8 @@ struct PaletteDestinationsPublisher: ViewModifier {
   func body(content: Content) -> some View {
     content.focusedSceneValue(\.paletteDestinations, isEnabled && store != nil ? destinations : nil)
   }
+
+  private var grouping: SidebarGrouping { SidebarGroupingChoice(environment: environment).effective }
 
   private var destinations: PaletteDestinations {
     PaletteDestinations(bots: { botItems }, workspaces: { workspaceItems })

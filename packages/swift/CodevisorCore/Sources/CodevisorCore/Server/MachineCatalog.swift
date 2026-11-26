@@ -33,6 +33,20 @@ final class MachineCatalog {
       }
   }
 
+  var accountMachineCount: Int? {
+    let thisMac = includesLocalMachine ? 1 : 0
+    guard let cloudProvider else { return thisMac }
+    guard cloudProvider.hasCompletedCloudBootstrap, !cloudProvider.isCloudSigningIn else { return nil }
+    guard cloudProvider.isCloudSignedIn else { return thisMac }
+    guard cloudProvider.isCloudRosterVerified || !cloudProvider.cloudMachines.isEmpty else { return nil }
+
+    let ownDeviceId = connections.statusById[CodevisorMachine.local.id]?.cloudDeviceId
+    guard !includesLocalMachine || ownDeviceId != nil else { return nil }
+
+    let deviceIds = Set(cloudProvider.cloudMachines.filter { $0.ephemeral == nil }.map(\.deviceId))
+    return thisMac + deviceIds.count { $0 != ownDeviceId }
+  }
+
   var cloudOnlyMachines: [CloudMachine] {
     guard let cloudProvider, cloudProvider.isCloudSignedIn else { return [] }
     let knownCloudIds = configuredCloudIds

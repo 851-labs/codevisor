@@ -40,6 +40,7 @@ final class AppRuntime {
     let environment = AppEnvironment.live(storage: storage)
     environment.onDeleteAllData = { DeviceDataDeletion.relaunchIntoDeletion() }
     environment.syncClientPreferences(SyncedPreferences.keys)
+    environment.accountMachineCount.follow()
     environment.syncFeatureFlags()
     environment.syncPrivacySettings()
     if !CodevisorAppVariant.isDevelopment && !StandaloneServerPreference.isEnabled {

@@ -421,6 +421,8 @@ extension CloudAccountController: CloudMachineProviding {
   public var cloudMachines: [CloudMachine] { machines }
 
   public var isCloudRosterVerified: Bool { isRosterVerified }
+  public var hasCompletedCloudBootstrap: Bool { hasCompletedBootstrap }
+  public var isCloudSigningIn: Bool { state == .validating }
 
   public func refreshCloudMachines() async {
     await refreshMachines()
