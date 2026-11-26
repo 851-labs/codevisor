@@ -23,10 +23,6 @@ public struct SidebarGroupingChoice {
     Binding(get: { effective }, set: save)
   }
 
-  public func isSelected(_ grouping: SidebarGrouping) -> Binding<Bool> {
-    Binding(get: { effective == grouping }, set: { _ in save(grouping) })
-  }
-
   public func save(_ grouping: SidebarGrouping) {
     preferences.set(grouping, forKey: SidebarGrouping.preferenceKey)
   }

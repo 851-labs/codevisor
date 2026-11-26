@@ -15,19 +15,19 @@ struct HomeSidebarOptionsMenu: View {
         Divider()
       }
       if showsGrouping {
-        Menu {
+        Picker(selection: SidebarGroupingChoice(environment: environment).selection) {
           ForEach(SidebarGrouping.allCases, id: \.self) { option in
-            Toggle(isOn: SidebarGroupingChoice(environment: environment).isSelected(option)) {
-              Label {
-                Text(option.title)
-              } icon: {
-                option.icon
-              }
+            Label {
+              Text(option.title)
+            } icon: {
+              option.icon
             }
+            .tag(option)
           }
         } label: {
           Label("Grouping", systemImage: "rectangle.3.group")
         }
+        .pickerStyle(.menu)
       }
       Menu {
         Section {
