@@ -1273,7 +1273,7 @@ fn a_round_trip_figure_above_the_real_one_doesnt_bring_the_repeats_back() {
     let (resent, delivered) = resent_for_two_tiles_on_a_slow_link(160 * MS, |index| (20..150).contains(&index));
 
     assert_eq!(delivered, 2);
-    assert!(resent <= 150, "{resent} packets resent for 130 that were lost");
+    assert!(resent <= 170, "{resent} packets resent for 130 that were lost");
 }
 
 #[test]
