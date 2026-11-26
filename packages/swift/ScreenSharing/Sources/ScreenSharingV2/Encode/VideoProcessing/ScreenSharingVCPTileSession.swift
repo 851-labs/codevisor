@@ -14,6 +14,7 @@ final class ScreenSharingVCPTileSession: @unchecked Sendable {
   private let state: Mutex<ScreenSharingVCPEncoderState>
   private let sessionLock = NSLock()
   private let labKinds = Mutex<[UInt64: String]>([:])
+  private let labPasses = Mutex(0)
 
   init(
     tile: Int, factory: ScreenSharingVCPSessionFactory, metrics: ScreenSharingMetrics,
@@ -39,7 +40,7 @@ final class ScreenSharingVCPTileSession: @unchecked Sendable {
     }
     let flipped: Bool
     do {
-      flipped = try capQP(refining: request.update.isRefinement && ScreenSharingVCPLab.qpCap != .steady)
+      flipped = try capQP(refining: labRefining(request.update))
     } catch {
       state.withLock { $0.abandon(submission) }
       throw error
@@ -58,6 +59,19 @@ final class ScreenSharingVCPTileSession: @unchecked Sendable {
       $0.failure = $0.failure ?? "encode status \(status)"
     }
     throw ScreenSharingError.codec("Encode VCP tile \(tile)", status)
+  }
+
+  private func labRefining(_ update: ScreenSharingTileUpdate) -> Bool {
+    let earlierPasses = labPasses.withLock { passes in
+      defer { passes = update.isRefinement ? passes + 1 : 0 }
+      return passes
+    }
+    switch ScreenSharingVCPLab.qpCap {
+    case .flip, .restore: return update.isRefinement
+    case .steady: return false
+    case .settle: return update.isRefinement && earlierPasses == 0
+    case .keep: return true
+    }
   }
 
   private func capQP(refining: Bool) throws -> Bool {

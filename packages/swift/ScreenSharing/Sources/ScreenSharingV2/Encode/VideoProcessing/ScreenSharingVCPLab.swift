@@ -5,6 +5,8 @@ public enum ScreenSharingVCPLab {
     case flip = 0
     case steady = 1
     case restore = 2
+    case settle = 3
+    case keep = 4
   }
 
   public nonisolated(unsafe) static var qpCap = QPCap.flip

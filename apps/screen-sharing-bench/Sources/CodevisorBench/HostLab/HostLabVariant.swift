@@ -80,7 +80,7 @@ struct HostLabVariant: Equatable, Sendable {
     case "ltr": longTermReferences = try Self.check(key, value, [0, 1].contains(value)) == 1
     case "vcp": encoder = try Self.check(key, value, [0, 1].contains(value)) == 1 ? .videoProcessing : .videoToolbox
     case "qpcap":
-      let mode = try Self.check(key, value, (0...2).contains(value))
+      let mode = try Self.check(key, value, (0...4).contains(value))
       qpCap = ScreenSharingVCPLab.QPCap(rawValue: mode) ?? .flip
     case "bgra": capturesBGRA = try Self.check(key, value, [0, 1].contains(value)) == 1
     default: throw BenchUsageError(message: "unknown variant setting \(key); use \(Self.usage)")
