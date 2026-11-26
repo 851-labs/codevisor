@@ -4,7 +4,7 @@ import {
   builtinLostResult,
   builtinUnreachableMessage,
   browserExtensionState,
-  browserLabel,
+  browserLabeler,
   browserStatusReport,
   chromeNotConnectedResult
 } from "./browser-use-status.js"
@@ -16,6 +16,8 @@ const state = (
 ) => browserExtensionState({ connected, chromeAvailable, installationState })
 
 const text = (result: ReturnType<typeof builtinLostResult>) => JSON.stringify(result.content)
+
+const studio = { id: "machine-studio", name: "Mac Studio" }
 
 describe("browser status", () => {
   it("tells the model whether the user's Chrome needs opening, installing, or nothing", () => {
@@ -30,6 +32,7 @@ describe("browser status", () => {
     const macbook = { id: "macbook", name: "MacBook Pro", lastActiveAt: 2 }
     expect(
       browserStatusReport({
+        machine: studio,
         selected: "builtin",
         platform: undefined,
         managedError: "Chromium download failed",
@@ -49,10 +52,15 @@ describe("browser status", () => {
           "The Codevisor app on MacBook Pro can't open this chat. Built-in browser calls fail until a Codevisor Mac app can open this chat; they never fall back to another browser.",
         macs: [{ name: "MacBook Pro", state: "can't open this chat" }]
       },
-      extension: { state: "connected", visibleToUser: true }
+      extension: {
+        state: "connected",
+        machine: { machineId: "machine-studio", name: "Mac Studio" },
+        visibleToUser: true
+      }
     })
     expect(
       browserStatusReport({
+        machine: studio,
         selected: "extension",
         platform: undefined,
         managedError: undefined,
@@ -62,11 +70,13 @@ describe("browser status", () => {
       }).extension
     ).toEqual({
       state: "connected",
+      machine: { machineId: "machine-studio", name: "Mac Studio" },
       visibleToUser: true,
       outdated: true,
       note: "The Codevisor Chrome extension is older than this app."
     })
     const report = browserStatusReport({
+      machine: studio,
       selected: "extension",
       platform: "macos",
       managedError: undefined,
@@ -97,15 +107,19 @@ describe("browser status", () => {
     const refused = chromeNotConnectedResult(report)
     expect(refused.isError).toBe(true)
     expect(JSON.stringify(refused.content)).toContain("installed_not_connected")
+    expect(JSON.stringify(refused.content)).toContain("Chrome on Mac Studio is not connected")
   })
 
-  it("labels where calls run: the pane, a background pane, headless Chromium, or Chrome", () => {
-    expect(browserLabel("builtin", { id: "studio", name: "Mac Studio", showing: false })).toEqual({
+  it("labels where calls run, naming the machine whose Chrome or Chromium it is", () => {
+    const { label } = browserLabeler(studio)
+    expect(label("builtin", { id: "mbp", name: "MacBook Pro", showing: false })).toEqual({
       backend: "builtin",
-      host: expect.stringContaining("Codevisor on Mac Studio, in the background")
+      host: expect.stringContaining("Codevisor on MacBook Pro, in the background")
     })
-    expect(browserLabel("managed", undefined).host).toContain("Headless Chromium")
-    expect(browserLabel("extension", undefined).host).toBe("The user's own Chrome")
+    expect(label("managed", undefined).host).toBe(
+      "Headless Chromium on Mac Studio; the user can't see it"
+    )
+    expect(label("extension", undefined).host).toBe("Chrome on Mac Studio")
   })
 
   it("says when the host Mac went away and that nothing falls back", () => {

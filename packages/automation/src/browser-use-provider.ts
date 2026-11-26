@@ -6,9 +6,9 @@ import { textToolResult } from "./automation-provider.js"
 import { discardTargetState, jsonResult, type BrowserRuntime } from "./browser-cdp-engine.js"
 import { CdpConnection } from "./browser-cdp.js"
 import {
-  downloadedChromiumPath,
+  chromiumBackend,
+  chromiumInstalled,
   runBrowserInstaller,
-  systemChromePath,
   userChromiumIsRunning
 } from "./browser-chromium.js"
 import type { ExchangeBrowserCookies } from "./browser-cookie-sync.js"
@@ -48,11 +48,12 @@ import {
 } from "./browser-use-invoke.js"
 import {
   browserExtensionState,
-  browserLabel,
+  browserLabeler,
   browserStatusReport,
   chromeNotConnectedResult,
   builtinLostResult,
   noBrowserSelectedResult,
+  type BrowserMachine,
   type BuiltinBrowserState
 } from "./browser-use-status.js"
 import { browserUseTools } from "./browser-use-tools.js"
@@ -73,13 +74,8 @@ import type {
 
 const extensionEndpoint = (): string | undefined => process.env.CODEVISOR_BROWSER_CDP_URL
 
-const chromiumBackend = (browsersDir: string): string => {
-  if (systemChromePath() !== undefined) return "systemChrome"
-  if (downloadedChromiumPath(browsersDir) !== undefined) return "downloadedChromium"
-  return "missing"
-}
-
 export interface BrowserUseProviderOptions {
+  readonly machine?: BrowserMachine
   readonly hosts?: BrowserHostRegistry
   readonly exchangeCookies?: ExchangeBrowserCookies
 }
@@ -87,8 +83,9 @@ export interface BrowserUseProviderOptions {
 export const makeBrowserUseProvider = (
   dataDir: string,
   serverBaseUrl: string,
-  { hosts = makeBrowserHostRegistry(), exchangeCookies }: BrowserUseProviderOptions = {}
+  { machine, hosts = makeBrowserHostRegistry(), exchangeCookies }: BrowserUseProviderOptions = {}
 ): BrowserUseProvider => {
+  const labeler = browserLabeler(machine)
   const repls = makeBrowserRepls()
   const contexts = new Map<string, AutomationProviderContext>()
   const browsersDir = join(dataDir, "browser", "browsers")
@@ -143,8 +140,7 @@ export const makeBrowserUseProvider = (
   }
 
   const ensureSetup = async (): Promise<void> => {
-    if (systemChromePath() !== undefined || downloadedChromiumPath(browsersDir) !== undefined)
-      return
+    if (chromiumInstalled(browsersDir)) return
     if (setupPromise !== undefined) return setupPromise
     setupError = undefined
     setupPromise = runBrowserInstaller(browsersDir)
@@ -255,6 +251,7 @@ export const makeBrowserUseProvider = (
 
   const browserStatus = async (context: AutomationProviderContext) =>
     browserStatusReport({
+      machine: labeler.machine,
       selected: sessionBackends.get(context.sessionId),
       platform: clientPlatforms.get(context.sessionId),
       managedError: setupError,
@@ -411,7 +408,7 @@ export const makeBrowserUseProvider = (
         const named = effectiveArgs.tabId
         const shown = typeof named === "string" ? named : selectedTargets.get(key)
         if (shown !== undefined) void previews.activity(context.sessionId, ready, shown)
-        return labelBrowserResult(effectiveTool, result, browserLabel(backend, ready.nativeHost))
+        return labelBrowserResult(effectiveTool, result, labeler.label(backend, ready.nativeHost))
       } catch (cause) {
         if (active?.native && (await browserHostLost(hosts, context.sessionId, active, cause)))
           return dropNativeRuntime(context, active)

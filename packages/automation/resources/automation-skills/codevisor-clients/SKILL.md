@@ -9,11 +9,15 @@ A **client** is one open Codevisor window: a macOS window or the iOS app. The us
 
 ```js
 ;async () => machines.current.clients.list()
-// { items: [{ clientId, name, platform: "macos" | "ios", machine, online, isOrigin, lastActiveAt?,
+// { items: [{ clientId, name, platform: "macos" | "ios", machine, runsOn?, online, isOrigin, lastActiveAt?,
 //    viewing: { workspaceId?, agentId?, page?, panes?, layoutActions? }, capabilities? }] }
+
+;async () => machines.current.clients.origin()
+// the window that sent the message you're handling now, or undefined
 ```
 
-- `isOrigin` marks the window that sent the message you're handling now. Automations and agents started by other agents have **no** origin, so don't assume one exists.
+- `isOrigin` marks the window that sent the message you're handling now, and `machines.current.clients.origin()` returns it. Automations and messages from other agents have **no** origin, so don't assume one exists.
+- `machine` is the machine the window is connected to: where it reaches you. `runsOn` is the machine the window itself runs on, which is the computer the user is sitting at. The two differ when the user talks to an agent on another computer. `runsOn` is absent on iOS and on a Mac that isn't running Codevisor itself.
 - `viewing` is what the window currently shows. It is absent when the window didn't answer in time; the window can still be addressed.
 - `capabilities` says what the window supports. iOS has no free window geometry, for example.
 - `viewing.layoutActions` (and each workspace's `layoutActions` in `c.context()`) says which `layout` actions that workspace takes. It overrides `capabilities.layoutActions`.
@@ -26,7 +30,7 @@ Usually the right client is the origin, or the most recently active window on th
 ;async () => {
   const { items } = await machines.current.clients.list()
   const target =
-    items.find((c) => c.isOrigin) ??
+    (await machines.current.clients.origin()) ??
     items
       .filter((c) => c.online)
       .sort((a, b) => (b.lastActiveAt ?? "").localeCompare(a.lastActiveAt ?? ""))[0]

@@ -25,7 +25,7 @@ export const machinesAndClientsSource: ReadonlyArray<string> = [
   "const __currentMachineInfo = { machineId: typeof __context.machine?.id === 'string' ? __context.machine.id : 'local', name: typeof __context.machine?.name === 'string' ? __context.machine.name : 'This machine' };",
   "const __makeClient = (raw, target, machineInfo) => {",
   "  const clientId = raw.clientId;",
-  "  const isOrigin = typeof raw.isOrigin === 'boolean' ? raw.isOrigin : typeof __context.originClientId === 'string' && clientId === __context.originClientId;",
+  "  const isOrigin = typeof raw.isOrigin === 'boolean' ? raw.isOrigin : typeof __context.originClientId === 'string' && typeof clientId === 'string' && clientId.toLowerCase() === __context.originClientId.toLowerCase();",
   "  return __hidden({ ...raw, clientId, machine: raw.machine ?? machineInfo, isOrigin }, {",
   "    context: () => __callTool('codevisor.clients.context', { clientId }, target),",
   "    navigate: (args = {}) => __callTool('codevisor.clients.navigate', { ...args, clientId }, target),",
@@ -34,7 +34,9 @@ export const machinesAndClientsSource: ReadonlyArray<string> = [
   "    window: (args = {}) => __callTool('codevisor.clients.window', { clientId, body: args }, target)",
   "  });",
   "};",
-  "const __makeClients = (target, machineInfo) => ({ list: async () => ({ items: __itemsOf(await __callTool('codevisor.clients.list', {}, target)).filter((raw) => raw && typeof raw === 'object').map((raw) => __makeClient(raw, target, machineInfo)) }) });",
+  "const __listClients = async (target, machineInfo) => __itemsOf(await __callTool('codevisor.clients.list', {}, target)).filter((raw) => raw && typeof raw === 'object').map((raw) => __makeClient(raw, target, machineInfo));",
+  "const __originClient = async (target, machineInfo) => typeof __context.originClientId === 'string' ? (await __listClients(target, machineInfo)).find((client) => client.isOrigin) : undefined;",
+  "const __makeClients = (target, machineInfo) => ({ list: async () => ({ items: await __listClients(target, machineInfo) }), origin: () => __originClient(target, machineInfo) });",
   "const __mirrorMachine = (args) => {",
   "  const value = typeof args === 'string' || (args && typeof args.machineId === 'string') ? args : args?.machine;",
   "  const machine = value && typeof value === 'object' ? value.machineId : value;",
@@ -140,7 +142,7 @@ interface Machine {
     describe: { tool(input: { path: string }): Promise<Tool> }
     [server: string]: { [tool: string]: (args?: object) => Promise<any> } // plugin and MCP tools on that machine: machine.tools[path](args) or machine.tools.server.tool(args)
   }
-  clients: { list(): Promise<{ items: Client[] }> } // Codevisor app windows attached to that machine
+  clients: { list(): Promise<{ items: Client[] }>; origin(): Promise<Client | undefined> } // Codevisor app windows attached to that machine; origin: the one that sent this message, undefined when an automation or another agent sent it
   exec(args: { command: string; description?: string; timeout?: number; run_in_background?: boolean; cwd?: string }): Promise<{ exitCode: number | null; output: string; timedOut: boolean; durationMs: number; outputPath: string; mirrorBehind?: string } | { taskId: string; outputPath: string }> // a shell command on that machine; timeout ms (default 120000, max 600000); background tasks send an exec.task_finished event
   readFile(args: string | { path: string; offset?: number; limit?: number }): Promise<{ content: string; startLine: number; endLine: number; totalLines: number }>
   taskStop(args: string | { taskId: string }): Promise<object>
@@ -163,7 +165,8 @@ type SearchItem =
   | { kind: "global"; name: string; signature: string; description: string }
 declare function status(text: string): void // live progress label shown to the user; call before slow steps
 interface Client {
-  clientId: string; name: string; platform: "macos" | "ios"; machine: { machineId: string; name: string }
+  clientId: string; name: string; platform: "macos" | "ios"; machine: { machineId: string; name: string } // machine: the one this window is connected to
+  runsOn?: { machineId: string; name: string } // the machine the window itself runs on: the computer the user is at; absent on iOS and on a Mac not running Codevisor
   online?: boolean; isActive?: boolean; lastActiveAt?: string; isOrigin: boolean // isOrigin: the window that sent this prompt; false for every client when an automation or another agent sent it
   viewing?: { workspaceId?: string; agentId?: string; page?: string; panes?: object[]; layoutActions?: string[] } // panes: the selected tab's panes; layoutActions: what layout() takes there (a bot conversation: splits only)
   context(): Promise<object>; navigate(args: object): Promise<object>; openPage(args: object): Promise<object>; layout(args: object): Promise<object>; window(args: object): Promise<object>
@@ -215,9 +218,10 @@ export const SANDBOX_GLOBALS: ReadonlyArray<SandboxGlobal> = [
   },
   {
     name: "machine.clients",
-    signature: "machine.clients.list(): Promise<{ items: Client[] }>",
+    signature:
+      "machine.clients.list(): Promise<{ items: Client[] }>, machines.current.clients.origin(): Promise<Client | undefined>",
     description:
-      "The Codevisor app windows attached to that machine, to see what they show or open a chat, page, or layout.",
+      "The Codevisor app windows attached to that machine, to see what they show or open a chat, page, or layout. origin() is the window that sent this message; its runsOn is the computer the user is at.",
     gate: "codevisor"
   },
   {

@@ -124,11 +124,13 @@ export const makeMcpManagerCore = (config: McpManagerConfig) => {
     memoryLimitBytes: 64 * 1024 * 1024,
     maxStackSizeBytes: 1024 * 1024
   })
+  const selfMachine = config.machine ?? { id: selfServerId, name: hostname() }
   const browserProvider = initializeAutomationProvider(
     "Browser Use",
     config.makeBrowserProvider ??
       (() =>
         makeBrowserUseProvider(config.dataDir, config.baseUrl, {
+          machine: selfMachine,
           exchangeCookies: (mutations) => run(config.db.exchangeBrowserCookies(mutations))
         })),
     unavailableBrowserProvider
@@ -138,7 +140,6 @@ export const makeMcpManagerCore = (config: McpManagerConfig) => {
     config.makeComputerProvider ?? (() => makeComputerUseProvider(config.dataDir)),
     unavailableComputerProvider
   )
-  const selfMachine = config.machine ?? { id: selfServerId, name: hostname() }
   const turnClientIds = new Map<string, string>()
   const externalClientOf = (sessionId: string) => {
     const gatewayId = sessionGatewayIds.get(sessionId)

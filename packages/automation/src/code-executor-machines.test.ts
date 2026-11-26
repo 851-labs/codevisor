@@ -238,6 +238,34 @@ describe.sequential("sandboxes, clients, status, and typed errors", () => {
     ])
   })
 
+  it("finds the window that sent this message, with the computer it runs on, or none", async () => {
+    const runsOn = { machineId: "mbp-1", name: "MacBook Pro" }
+    const respond = (call: CodeToolCall) =>
+      call.path === "codevisor.clients.list"
+        ? {
+            items: [
+              { clientId: "window-1", name: "Studio main", platform: "macos" },
+              { clientId: "WINDOW-2", name: "Laptop", platform: "macos", runsOn }
+            ]
+          }
+        : {}
+    const origin = `async () => (await machines.current.clients.origin())?.name ?? null`
+    const fromLaptop = await execute(
+      `async () => {
+      const origin = await machines.current.clients.origin();
+      return { name: origin.name, runsOn: origin.runsOn };
+    }`,
+      respond
+    )
+    const fromAgent = await execute(origin, respond, {
+      context: { machine: { id: "studio", name: "Mac Studio" } }
+    })
+
+    expect(fromLaptop.result.result).toEqual({ name: "Laptop", runsOn })
+    expect(fromAgent.result.result).toBeNull()
+    expect(fromAgent.calls).toEqual([])
+  })
+
   it("searches every online machine and tags each match with its machine", async () => {
     const { calls, result } = await execute(
       `async () => ({

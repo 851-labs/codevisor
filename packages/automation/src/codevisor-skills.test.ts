@@ -113,7 +113,7 @@ describe("managed Codevisor skills", () => {
       "get(idOrName: string)",
       "list(): Promise<{ items: Machine[] }>",
       "declare const agents: {",
-      "clients: { list(): Promise<{ items: Client[] }> }",
+      "clients: { list(): Promise<{ items: Client[] }>; origin(): Promise<Client | undefined> }",
       "declare function status(",
       "declare class MachineUnavailableError",
       "declare class ClientUnavailableError"

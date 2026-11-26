@@ -38,13 +38,15 @@ public struct ClientControlModifier: ViewModifier {
               .task(
                 id: ConnectionIdentity(
                   route: environment.machines.httpConnectionState(forMachineId: machine.id),
-                  config: environment.machines.serverConfig(for: machine.id)
+                  config: environment.machines.serverConfig(for: machine.id),
+                  runsOn: runsOn
                 )
               ) {
                 await ClientControlConnection.run(
                   clientId: clientId,
                   name: "\(name) (\(clientId.uuidString.prefix(8)))",
                   platform: platform,
+                  runsOn: runsOn,
                   config: environment.machines.serverConfig(for: machine.id),
                   context: { context(machine.id) },
                   navigate: { try await navigate(machine.id, $0) },
@@ -57,8 +59,16 @@ public struct ClientControlModifier: ViewModifier {
     }
   }
 
+  private var runsOn: ClientHostMachine? {
+    let local = CodevisorMachine.local.id
+    guard let serverId = environment.machines.statusByMachineId[local]?.serverId else { return nil }
+    let name = environment.machines.machine(for: local)?.name ?? CodevisorMachine.local.name
+    return ClientHostMachine(machineId: serverId, name: name)
+  }
+
   private struct ConnectionIdentity: Equatable {
     let route: MachineController.HTTPConnectionState
     let config: CodevisorServerConfig
+    let runsOn: ClientHostMachine?
   }
 }
