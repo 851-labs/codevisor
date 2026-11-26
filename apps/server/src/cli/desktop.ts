@@ -22,7 +22,8 @@ interface AdministratorStep {
 
 const quickMs = 30_000
 const startMs = 2 * 60 * 1000
-const installMs = 25 * 60 * 1000
+const busyPollMs = 2000
+const busyPolls = 30 * 30
 
 export const desktopSetupCommand = async (
   deps: DesktopCliDeps,
@@ -40,11 +41,16 @@ export const desktopSetupCommand = async (
   const equipped = await installWhatIsMissing(deps, server, cleared)
   if (equipped === undefined) return 1
 
-  deps.log(`==> Starting the desktop as ${equipped.account}`)
+  const alreadyRuns = equipped.state === "running"
+  if (!alreadyRuns) deps.log(`==> Starting the desktop as ${equipped.account}`)
   const started = await server.ask("POST", "/start", startMs)
   if (started === undefined) return 1
 
-  deps.log("==> The desktop is ready. Open it from this machine in Codevisor.")
+  deps.log(
+    alreadyRuns
+      ? "==> The desktop is already running. Open it from this machine in Codevisor."
+      : "==> The desktop is ready. Open it from this machine in Codevisor."
+  )
   if (started.startAtBootHint !== undefined)
     deps.log(`    It starts at boot once this account lingers: ${started.startAtBootHint}`)
   return 0
@@ -202,13 +208,30 @@ const installWhatIsMissing = async (
   return undefined
 }
 
+const whenTheServerIsDone = async (
+  deps: DesktopCliDeps,
+  server: DesktopServer,
+  begun: DesktopStatus | undefined
+): Promise<DesktopStatus | undefined> => {
+  let status = begun
+  for (let poll = 0; status?.busy !== undefined && poll < busyPolls; poll += 1) {
+    await deps.sleep(busyPollMs)
+    status = await server.ask("GET", "", quickMs)
+  }
+  if (status === undefined || status.failure === undefined) return status
+
+  deps.error(status.failure)
+  return undefined
+}
+
 const asAdministrator = async (
   deps: DesktopCliDeps,
   server: DesktopServer,
   status: DesktopStatus,
   step: AdministratorStep
 ): Promise<DesktopStatus | undefined> => {
-  if (status.sudo === "passwordless") return server.ask("POST", step.path, installMs)
+  if (status.sudo === "passwordless")
+    return whenTheServerIsDone(deps, server, await server.ask("POST", step.path, startMs))
 
   const prefix = deps.isRoot ? [] : ["sudo"]
   const canRunHere = deps.isRoot || (status.sudo === "password" && deps.isInteractive)

@@ -274,7 +274,10 @@ export const spliceVNCSocket = (
     const leaveRelays = options.relays?.add({
       configured: config.socket,
       dialled: located.path,
-      close: (reason) => webSocket.close(1011, reason)
+      close: (reason) => {
+        webSocket.close(1011, reason)
+        upstream.destroy()
+      }
     })
     const sendText = (text: string) => webSocket.send(text, {}, () => undefined)
     const id = arbiter.join(sendText)
@@ -295,6 +298,8 @@ export const spliceVNCSocket = (
         if (clipboard?.receive(text) !== true) arbiter.receive(id, text)
         return
       }
+      if (upstream.destroyed) return
+
       const forward = filter.push(bytes, allow)
       if (forward.length > 0) upstream.write(forward)
     })

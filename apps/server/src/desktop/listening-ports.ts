@@ -1,4 +1,12 @@
+import { readFileSync } from "node:fs"
+
 const listening = "0A"
+const kernelTables = ["/proc/net/tcp", "/proc/net/tcp6"]
+
+export const somethingListensOn = (
+  port: number,
+  tables: ReadonlyArray<string> = kernelTables
+): boolean => tables.some((table) => listeningPorts(tableText(table)).has(port))
 
 export const listeningPorts = (procNetTcp: string): ReadonlySet<number> => {
   const ports = new Set<number>()
@@ -9,4 +17,12 @@ export const listeningPorts = (procNetTcp: string): ReadonlySet<number> => {
     ports.add(Number.parseInt(local.slice(local.lastIndexOf(":") + 1), 16))
   }
   return ports
+}
+
+const tableText = (table: string): string => {
+  try {
+    return readFileSync(table, "utf8")
+  } catch {
+    return ""
+  }
 }

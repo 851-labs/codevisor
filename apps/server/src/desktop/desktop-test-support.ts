@@ -12,6 +12,9 @@ export interface FakeMachineOptions {
   readonly uid?: number
   readonly env?: Record<string, string | undefined>
   readonly socketAppearsAfterPolls?: number
+  readonly socketVanishesAfterPolls?: number
+  readonly alive?: ReadonlyArray<number>
+  readonly holds?: { readonly prefix: string; readonly until: Promise<void> }
 }
 
 export interface FakeMachine {
@@ -53,12 +56,18 @@ const ok: Ran = { code: 0, output: "" }
 const failed: Ran = { code: 1, output: "" }
 const programProbe = /^sh -c command -v "\$1" sh (.+)$/
 
+export const settled = async (manager: DesktopManager) => {
+  let status = await manager.status()
+  while (status.busy !== undefined) status = await manager.status()
+  return status
+}
+
 export const fakeMachine = (options: FakeMachineOptions = {}): FakeMachine => {
   const commands: string[] = []
   const files = new Map<string, string>(Object.entries(options.files ?? {}))
   const spawned: FakeMachine["spawned"] = []
   const terminated: number[] = []
-  const alive = new Set<number>()
+  const alive = new Set<number>(options.alive ?? [])
   const changes = { count: 0 }
   const programs = new Set(options.programs ?? EVERY_PROGRAM)
   let polls = 0
@@ -80,17 +89,21 @@ export const fakeMachine = (options: FakeMachineOptions = {}): FakeMachine => {
     run: async (command, args) => {
       const line = [command, ...args].join(" ")
       if (programProbe.exec(line) === null) commands.push(line)
+      if (options.holds !== undefined && line.startsWith(options.holds.prefix))
+        await options.holds.until
       return answer(line)
     },
     spawnDetached: (command, args, logPath) => {
       spawned.push({ command, args, logPath })
       alive.add(4242)
+      files.set("/proc/4242/cmdline", [command, ...args].join("\0"))
       return 4242
     },
     processAlive: (pid) => alive.has(pid),
     terminate: (pid) => {
       terminated.push(pid)
       alive.delete(pid)
+      files.delete(`/proc/${pid}/cmdline`)
     },
     readText: (path) => files.get(path),
     writeText: (path, text) => void files.set(path, text),
@@ -108,7 +121,9 @@ export const fakeMachine = (options: FakeMachineOptions = {}): FakeMachine => {
   const locate = (configured: string): PrivateSocket => {
     polls += 1
     const appearsAfter = options.socketAppearsAfterPolls ?? 0
-    if (files.has(CONFIG) && polls > appearsAfter) return { path: configured }
+    const vanishesAfter = options.socketVanishesAfterPolls ?? Number.POSITIVE_INFINITY
+    if (files.has(CONFIG) && polls > appearsAfter && polls <= vanishesAfter)
+      return { path: configured }
 
     return { problem: "missing", detail: `nothing at ${configured}` }
   }

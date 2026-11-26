@@ -1,10 +1,19 @@
+import { EventEmitter } from "node:events"
 import { chmodSync, rmSync } from "node:fs"
+import { IncomingMessage } from "node:http"
+import { Socket } from "node:net"
 import { join } from "node:path"
 
-import { describe, expect, it } from "vitest"
+import { describe, expect, it, vi } from "vitest"
 import { WebSocket } from "ws"
 
-import { SCREEN_SHARING_CONFIG_FILE } from "./screen-sharing-vnc.js"
+import {
+  SCREEN_SHARING_CONFIG_FILE,
+  spliceVNCSocket,
+  VNC_DISPLAY_ID
+} from "./screen-sharing-vnc.js"
+import { VNCControlArbiter } from "./vnc-control.js"
+import { VNCRelays } from "./vnc-relays.js"
 import {
   closed,
   closure,
@@ -74,4 +83,46 @@ describe("a viewer that is already connected", () => {
     socket.close()
     await done
   })
+})
+
+it("cuts a withdrawn viewer off from the desktop at once, without waiting for it to answer the close", () => {
+  const closes: Array<[number, string]> = []
+  const webSocket = Object.assign(new EventEmitter(), {
+    bufferedAmount: 0,
+    readyState: WebSocket.OPEN,
+    close: (code: number, reason: string) => void closes.push([code, reason]),
+    send: () => undefined
+  })
+  const upstream = new Socket()
+  const written = vi.spyOn(upstream, "write")
+  const client = new Socket()
+  const relays = new VNCRelays(() => "The desktop on this machine was removed.")
+  const config = { socket: "/run/user/1000/codevisor-desktop.sock", name: "Desktop" }
+  try {
+    spliceVNCSocket(
+      config,
+      new URL(`http://localhost/?displayId=${VNC_DISPLAY_ID}`),
+      new IncomingMessage(client),
+      client,
+      Buffer.alloc(0),
+      { handleUpgrade: (_request, _socket, _head, done) => done(webSocket) },
+      {
+        dial: () => upstream,
+        arbiter: new VNCControlArbiter(),
+        locate: (path) => ({ path }),
+        relays
+      }
+    )
+    relays.recheck()
+    expect(closes).toEqual([[1011, "The desktop on this machine was removed."]])
+    expect(upstream.destroyed).toBe(true)
+
+    written.mockClear()
+    webSocket.emit("message", Buffer.from("RFB 003.008\n", "latin1"), true)
+    expect(written).not.toHaveBeenCalled()
+  } finally {
+    written.mockRestore()
+    upstream.destroy()
+    client.destroy()
+  }
 })

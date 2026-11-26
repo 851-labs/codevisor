@@ -55,8 +55,13 @@ const logLines = 15
 const stopPollMs = 100
 const stopPolls = 50
 
+const runnerWords = "desktop\0run"
+
+const isTheRunner = (commandLine: string | undefined): boolean =>
+  commandLine?.includes(runnerWords) === true
+
 const quotedForSystemd = (value: string): string =>
-  `"${value.replaceAll("\\", "\\\\").replaceAll('"', '\\"').replaceAll("%", "%%")}"`
+  `"${value.replaceAll("\\", "\\\\").replaceAll('"', '\\"').replaceAll("%", "%%").replaceAll("$", "$$$$")}"`
 
 const systemdService = (system: DesktopSystem, runner: RunnerCommand): DesktopService => {
   const systemctl = (...args: string[]) => system.run("systemctl", ["--user", ...args])
@@ -105,7 +110,9 @@ const processService = (
   const logFile = join(files.logsDir, "desktop.log")
   const runningPid = (): number | undefined => {
     const pid = Number(system.readText(pidFile)?.trim() ?? "")
-    return Number.isInteger(pid) && pid > 0 && system.processAlive(pid) ? pid : undefined
+    if (!Number.isInteger(pid) || pid <= 0 || !system.processAlive(pid)) return undefined
+
+    return isTheRunner(system.readText(`/proc/${pid}/cmdline`)) ? pid : undefined
   }
   const stop = async (): Promise<void> => {
     const pid = runningPid()

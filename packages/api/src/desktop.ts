@@ -21,6 +21,8 @@ export const DesktopStatus = Schema.Struct({
   system: Schema.String,
   display: Schema.optional(Schema.Number),
   problem: Schema.optional(Schema.String),
+  busy: Schema.optional(Schema.String),
+  failure: Schema.optional(Schema.String),
   missing: Schema.Array(Schema.String),
   install: Schema.optional(Schema.Array(DesktopCommand)),
   sudo: DesktopSudo,

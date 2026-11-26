@@ -49,12 +49,18 @@ const world = (
 
 describe("codevisor desktop setup", () => {
   it("has the server install and start everything when its account needs no sudo password", async () => {
+    const busy = "Installing packages"
     const machine = world({
-      [`GET ${url()}`]: answers(status({ missing, install })),
-      [`POST ${url("/packages")}`]: answers(status({ install })),
+      [`GET ${url()}`]: answers(
+        status({ missing, install }),
+        status({ missing, install, busy }),
+        status({ install })
+      ),
+      [`POST ${url("/packages")}`]: answers(status({ missing, install, busy })),
       [`POST ${url("/start")}`]: answers(running)
     })
     expect(await desktopSetupCommand(machine.deps)).toBe(0)
+    expect(machine.httpCalls(`GET ${url()}`)).toBe(3)
     expect(machine.logs).toEqual([
       "==> Checking this machine",
       "    Ubuntu 24.04.5 LTS, no desktop set up",
@@ -64,6 +70,22 @@ describe("codevisor desktop setup", () => {
     ])
     expect(machine.interactiveCalls).toEqual([])
     expect(machine.httpCalls(`POST ${url("/packages")}`)).toBe(1)
+  })
+
+  it("waits for the server's install, and passes on why it failed", async () => {
+    const failure = "Installing packages failed:\nE: Unable to locate package xfce4"
+    const machine = world({
+      [`GET ${url()}`]: answers(
+        status({ missing, install }),
+        status({ missing, install, failure })
+      ),
+      [`POST ${url("/packages")}`]: answers(
+        status({ missing, install, busy: "Installing packages" })
+      )
+    })
+    expect(await desktopSetupCommand(machine.deps)).toBe(1)
+    expect(machine.errors).toEqual([failure])
+    expect(machine.httpCalls(`POST ${url("/start")}`)).toBe(0)
   })
 
   it("runs sudo in the terminal when the account's sudo asks for a password", async () => {
@@ -153,6 +175,20 @@ describe("codevisor desktop setup", () => {
     expect(await desktopSetupCommand(machine.deps)).toBe(0)
     expect(machine.logs.at(-1)).toBe(`    It starts at boot once this account lingers: ${hint}`)
     expect(machine.interactiveCalls).toEqual([])
+  })
+
+  it("says a running desktop is already running, and still lets the server make sure", async () => {
+    const machine = world({
+      [`GET ${url()}`]: answers(running),
+      [`POST ${url("/start")}`]: answers(running)
+    })
+    expect(await desktopSetupCommand(machine.deps)).toBe(0)
+    expect(machine.logs).toEqual([
+      "==> Checking this machine",
+      "    Ubuntu 24.04.5 LTS, a desktop is running",
+      "==> The desktop is already running. Open it from this machine in Codevisor."
+    ])
+    expect(machine.httpCalls(`POST ${url("/start")}`)).toBe(1)
   })
 
   it("reports the server's reason when the desktop doesn't start", async () => {

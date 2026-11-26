@@ -1,11 +1,11 @@
 import { type ChildProcess, spawn } from "node:child_process"
-import { existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } from "node:fs"
+import { existsSync, mkdirSync, rmSync, writeFileSync } from "node:fs"
 import { dirname } from "node:path"
 
 import { readDesktopSetup } from "../routes/screen-sharing-vnc.js"
 import type { ScreenSharingVNCConfig } from "../server-context-types.js"
 import { DESKTOP_SIZE, x11SocketOf } from "./desktop-layout.js"
-import { listeningPorts } from "./listening-ports.js"
+import { somethingListensOn } from "./listening-ports.js"
 import { xauthorityEntry } from "./xauthority.js"
 
 const ownerOnlyFile = 0o600
@@ -149,10 +149,7 @@ class DesktopRun {
 
   private refuseAnOpenTcpPort(): void {
     const port = vncBasePort + this.desktop.display
-    const open = ["/proc/net/tcp", "/proc/net/tcp6"].some((table) =>
-      listeningPorts(readFileSync(table, "utf8")).has(port)
-    )
-    if (open)
+    if (somethingListensOn(port))
       throw new Error(`TCP port ${port} is open, and the desktop must only listen on its socket`)
   }
 
