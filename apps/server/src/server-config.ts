@@ -29,6 +29,7 @@ export const defaultServerConfig = (
   sessionActivity: overrides.sessionActivity,
   screenSharing: overrides.screenSharing,
   desktops: overrides.desktops,
+  desktop: overrides.desktop,
   simulators: overrides.simulators,
   cloud: overrides.cloud,
   icon: overrides.icon,

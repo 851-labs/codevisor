@@ -12,6 +12,7 @@ extension MachineController {
     "bot.updated",
     "thread.message",
     "update.changed",
+    "server.features.updated",
     "restart.drain.updated",
     "update.run.updated",
     "sync.changed",
@@ -94,6 +95,8 @@ extension MachineController {
       if let info = ShellSyncPayload.decoded(ServerUpdateInfo.self, from: event.payload) {
         connection(for: serverId).updateInfo = info
       }
+    case "server.features.updated":
+      await refreshStatus(for: serverId)
     case "restart.drain.updated":
       if let drain = ShellSyncPayload.decoded(ServerRestartDrainState.self, from: event.payload) {
         connection(for: serverId).restartDrain = drain

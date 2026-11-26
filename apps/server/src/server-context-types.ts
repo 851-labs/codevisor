@@ -79,6 +79,7 @@ export interface CodevisorServerConfig {
   readonly pausedTurnsPath?: string | undefined
   readonly screenSharing?: ((request: ScreenSharingRequest) => Promise<unknown>) | undefined
   readonly desktops?: VNCDesktops | undefined
+  readonly desktop?: import("./desktop/desktop-manager.js").DesktopManager | undefined
   readonly simulators?: Simulators | undefined
   readonly sessionActivity?: SessionActivityController | undefined
   readonly cloud?: CloudServerControl | undefined
@@ -111,6 +112,7 @@ export interface VNCDesktop {
 
 export interface VNCDesktops {
   readonly current: () => VNCDesktop | undefined
+  readonly relays?: import("./routes/vnc-relays.js").VNCRelays
 }
 
 export interface CloudServerControl {
