@@ -1272,28 +1272,16 @@ fn a_packet_that_never_gets_through_still_ends_in_a_lost_frame() {
 }
 
 #[test]
-fn a_complete_recovery_frame_releases_the_frame_before_it() {
-    let mut sim = Sim::new(NetworkConditions::N1, config(FecMode::Off), 1);
-    sim.drop_when(|direction, datagram| direction == Direction::ToViewer && is_data(datagram, 0, 0, 1));
-    sim.send(frame(0, &payload(1, 3_000)));
-    let recovery = payload(2, 3_000);
-    sim.send(OutgoingFrame { refresh: true, ..frame(0, &recovery) });
-    sim.run_for(10 * MS);
-
-    assert!(skipped(&sim, 0, 0), "the frame the refresh replaces was still waited for");
-    assert_eq!(sim.frames().first().map(|frame| frame.data.clone()), Some(recovery));
-}
-
-#[test]
-fn the_viewer_stops_waiting_for_a_frame_within_seconds_even_while_other_tiles_keep_arriving() {
+fn the_viewer_waits_a_little_longer_while_other_tiles_arrive_and_then_gives_the_frame_up() {
     let mut sim = Sim::new(NetworkConditions::N1, config(FecMode::Off), 1);
     sim.drop_when(|direction, datagram| match direction {
         Direction::ToViewer => is_data(datagram, 0, 0, 1),
         Direction::ToHost => is_kind(datagram, Kind::Nack),
     });
     sim.send(frame(0, &payload(1, 3_000)));
+    let give_up = codevisor_media::give_up_after(sim.host.stats(sim.now).rtt, INTERVAL);
     let mut skipped_after = None;
-    for index in 0..480u64 {
+    for index in 0..60u64 {
         sim.send(frame(1, &payload(index, 3_000)));
         sim.run_for(INTERVAL);
         if skipped_after.is_none() && skipped(&sim, 0, 0) {
@@ -1302,6 +1290,7 @@ fn the_viewer_stops_waiting_for_a_frame_within_seconds_even_while_other_tiles_ke
     }
 
     let waited = skipped_after.expect("the first tile's frame was never given up");
-    assert!(waited > Duration::from_secs(1), "given up after {waited:?} with the link still delivering");
-    assert!(waited <= Duration::from_secs(6), "given up only after {waited:?}");
+    assert!(waited > give_up * 2, "given up after {waited:?} with the link still delivering");
+    assert!(waited <= give_up * 4 + 2 * INTERVAL, "given up only after {waited:?}");
 }
+

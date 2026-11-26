@@ -61,6 +61,7 @@ struct SentFrame {
     heard: Option<Instant>,
     probes: u32,
     unanswered: u32,
+    expires: Option<Instant>,
 }
 
 #[derive(Debug, Default)]
@@ -262,6 +263,7 @@ impl Sender {
                 heard: None,
                 probes: 0,
                 unanswered: 0,
+                expires: None,
             },
         );
         if stream.unresolved.len() > MAX_UNRESOLVED {
@@ -406,6 +408,7 @@ impl Sender {
         if first_losses > 0 {
             frame.heard = Some(now);
             frame.unanswered = 0;
+            frame.expires = None;
             frame.flight_bytes = self.in_flight_bytes + self.pacer.backlog_bytes();
         }
         if requested > 0 {
@@ -545,6 +548,9 @@ impl Sender {
                 }
                 frame.probes += 1;
                 frame.unanswered += 1;
+                if frame.unanswered == MAX_PROBES {
+                    frame.expires = Some(waits.expiry(frame, now));
+                }
                 stats.probes_sent += 1;
                 let index = frame.data_count - 1;
                 let tag = PacketTag { stream: stream_id, frame: number, index: index as u16, original: false };
@@ -637,11 +643,13 @@ impl ProbeWaits {
         let heard = frame.heard.map_or(last_tx, |heard| heard.max(last_tx));
         let first = if newest && frame.heard.is_none() { self.tail_probe } else { self.timeout };
         let due = heard + first + self.timeout * frame.unanswered;
-        if frame.unanswered < MAX_PROBES {
-            return Some(due);
-        }
+        if frame.unanswered < MAX_PROBES { Some(due) } else { frame.expires.or(Some(due)) }
+    }
+
+    fn expiry(self, frame: &SentFrame, last_probe: Instant) -> Instant {
+        let heard = frame.heard.or(frame.last_tx).unwrap_or(last_probe);
         let crossing = Duration::from_secs_f64(frame.flight_bytes as f64 * 8.0 / self.carried_bps).min(MAX_CROSSING);
-        Some(due.max(heard + crossing + self.timeout))
+        last_probe.max(heard + crossing) + self.timeout
     }
 }
 
