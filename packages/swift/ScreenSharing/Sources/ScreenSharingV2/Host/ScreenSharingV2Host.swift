@@ -111,7 +111,7 @@ public final class ScreenSharingV2Host: ScreenSharingFrameSink, @unchecked Senda
     let comparedNs = ScreenSharingMetrics.nowNs
     let changes = ScreenSharingV2TileComparer.changes(
       candidates, of: layout, from: previous, to: capture.frame.pixelBuffer, smallUpToPixels: smallChangePixels,
-      among: refinement.sharpenedLast)
+      among: encoder.keepsItsCapForSmallChanges ? refinement.sharpenedLast : [])
     metrics.observe("tileCompare", milliseconds: Double(ScreenSharingMetrics.nowNs - comparedNs) / 1e6)
     metrics.increment("tilesUnchangedByPixels", by: candidates.count - changes.changed.count)
     let replaced = slot.offer(
@@ -173,11 +173,12 @@ public final class ScreenSharingV2Host: ScreenSharingFrameSink, @unchecked Senda
     nextUpdate &+= 1
     let update = ScreenSharingTileUpdate(id: nextUpdate, tiles: plan.tiles, isRefinement: plan.isRefinement)
     let refreshes = recovery.takeRefreshes()
+    let small = plan.small.subtracting(refreshes.keys)
     note(update)
-    metrics.increment("tilesChangedSmall", by: plan.small.count)
     for tile in plan.tiles { inFlight[tile, default: 0] += 1 }
     do {
-      try encoder.encode(plan.capture.request(update: update, refreshes: refreshes, smallTiles: plan.small))
+      try encoder.encode(plan.capture.request(update: update, refreshes: refreshes, smallTiles: small))
+      metrics.increment("tilesChangedSmall", by: small.count)
     } catch {
       metrics.increment("encodeErrors")
       metrics.label("lastEncodeError", error.localizedDescription)

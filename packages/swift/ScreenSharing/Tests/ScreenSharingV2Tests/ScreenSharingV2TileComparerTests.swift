@@ -66,16 +66,19 @@ struct ScreenSharingV2TileComparerTests {
     #expect(changes == ScreenSharingV2TileChanges(changed: Self.layout.tiles, small: []))
   }
 
-  @Test func everyPlaneOfATwoPlaneCaptureCountsTowardsTheLimit() throws {
+  @Test func eachPlaneOfATwoPlaneCaptureIsHeldToTheLimitOnItsOwn() throws {
     let before = try TestPixels.frame(shade: 10, timestampNs: 1).pixelBuffer
     let colourOnly = try TestPixels.frame(shade: 10, timestampNs: 2).pixelBuffer
     TestPixels.paint(colourOnly, plane: 1, rows: 50..<54, bytes: 20..<28, value: 200)
     let both = try TestPixels.frame(shade: 10, timestampNs: 3).pixelBuffer
     TestPixels.paint(both, plane: 1, rows: 50..<54, bytes: 20..<28, value: 200)
     TestPixels.paint(both, plane: 0, rows: 100..<108, bytes: 20..<28, value: 200)
+    let wideColour = try TestPixels.frame(shade: 10, timestampNs: 4).pixelBuffer
+    TestPixels.paint(wideColour, plane: 1, rows: 50..<51, bytes: 20..<150, value: 200)
 
     #expect(Self.compare(before, colourOnly) == ScreenSharingV2TileChanges(changed: [1], small: [1]))
-    #expect(Self.compare(before, both) == ScreenSharingV2TileChanges(changed: [1], small: []))
+    #expect(Self.compare(before, both) == ScreenSharingV2TileChanges(changed: [1], small: [1]))
+    #expect(Self.compare(before, wideColour) == ScreenSharingV2TileChanges(changed: [1], small: []))
   }
 
   private static func pair() throws -> (CVPixelBuffer, CVPixelBuffer) {

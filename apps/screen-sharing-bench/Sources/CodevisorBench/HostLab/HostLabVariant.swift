@@ -10,8 +10,8 @@ struct HostLabVariant: Equatable, Sendable {
   private static let tileCounts = [1, ScreenSharingV2Profile.tileCount]
   private static let smallChanges = 0...10_000_000
   static let usage =
-    "queue=<1-8>,cursor=0|1,fps=<1-120>,refine=<0-12>,converge=<bytes>,tiles=1|4,ltr=0|1,vcp=0|1,bgra=0|1,small=<pixels>, "
-    + "or base"
+    "queue=<1-8>,cursor=0|1,fps=<1-120>,refine=<0-12>,converge=<bytes>,tiles=1|4,ltr=0|1,vcp=0|1,bgra=0|1, "
+    + "small=<pixels>, or base"
 
   var name = "base"
   var queueDepth = ScreenSharingCapture.defaultQueueDepth

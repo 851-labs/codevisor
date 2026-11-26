@@ -107,8 +107,12 @@ public final class ScreenSharingVCPTileEncoder: ScreenSharingTileEncoder, @unche
   }
 
   public var refinementPolicy: ScreenSharingV2RefinementPolicy {
-    let rate = ScreenSharingVCPRate(bitsPerSecond: bitsPerSecond.load(ordering: .relaxed), tiles: layout.count)
-    return rate.refinesNearLossless ? Self.convergingPolicy : .standard
+    keepsItsCapForSmallChanges ? Self.convergingPolicy : .standard
+  }
+
+  public var keepsItsCapForSmallChanges: Bool {
+    ScreenSharingVCPRate(bitsPerSecond: bitsPerSecond.load(ordering: .relaxed), tiles: layout.count)
+      .refinesNearLossless
   }
 
   public func setBitrate(_ bitsPerSecond: Int) throws {

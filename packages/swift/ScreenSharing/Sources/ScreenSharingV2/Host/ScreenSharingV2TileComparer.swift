@@ -58,15 +58,15 @@ enum ScreenSharingV2TileComparer {
     _ planes: [ScreenSharingV2PixelPlane], rows: Range<Int>, height: Int, _ previous: CVPixelBuffer,
     _ current: CVPixelBuffer, limit: Int
   ) -> Extent {
-    var pixels = 0
+    var changed = false
     for plane in planes {
-      guard
-        let changed = changedPixels(plane, rows: rows, height: height, previous, current, upTo: limit - pixels)
-      else { return .large }
+      guard let pixels = changedPixels(plane, rows: rows, height: height, previous, current, upTo: limit) else {
+        return .large
+      }
 
-      pixels += changed
+      changed = changed || pixels > 0
     }
-    return pixels == 0 ? .unchanged : .small
+    return changed ? .small : .unchanged
   }
 
   private static func changedPixels(

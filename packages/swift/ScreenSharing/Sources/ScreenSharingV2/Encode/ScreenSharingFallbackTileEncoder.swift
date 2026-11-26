@@ -98,6 +98,12 @@ public final class ScreenSharingFallbackTileEncoder: ScreenSharingTileEncoder, @
     return fallback.withLock { $0 }?.refinementPolicy ?? .standard
   }
 
+  public var keepsItsCapForSmallChanges: Bool {
+    guard hasFallenBack else { return primary.keepsItsCapForSmallChanges }
+
+    return fallback.withLock { $0 }?.keepsItsCapForSmallChanges ?? false
+  }
+
   private func primaryOutput(_ output: ScreenSharingTileEncoderOutput) {
     guard !state.withLock({ $0.stopped }) else { return }
     guard !hasFallenBack else { return emit(Self.abandoned(output)) }
