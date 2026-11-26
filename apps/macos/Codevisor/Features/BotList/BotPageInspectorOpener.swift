@@ -17,11 +17,16 @@ struct BotPageInspectorOpener {
     case .botTranscript:
       presentTranscript()
     case let .toolCall(sessionId, toolCallId):
-      store.controllers[SessionStore.SessionKey(serverId: workspace.serverId, sessionId: sessionId)]?
-        .revealToolCall(toolCallId)
+      revealToolCall(toolCallId, inChat: sessionId)
     case .fileRenamed:
       break
     }
+  }
+
+  private func revealToolCall(_ toolCallId: String, inChat sessionId: UUID) {
+    let chat = environment.projectList.chat(sessionId, preferring: workspace.serverId)
+    let key = SessionStore.SessionKey(serverId: chat?.serverId ?? workspace.serverId, sessionId: sessionId)
+    store.controllers[key]?.revealToolCall(toolCallId)
   }
 
   private func preview(_ target: String) {

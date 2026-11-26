@@ -15,6 +15,7 @@ struct WorkspaceInspectorPresentation: ViewModifier {
     let workspace: Workspace
     let project: Project
     let chat: ChatSession?
+    let agent: ChatSession?
   }
 
   private struct InspectedPlace {
@@ -175,9 +176,9 @@ struct WorkspaceInspectorPresentation: ViewModifier {
       machineName: environment.machines.fleetMachineName(for: place.serverId),
       machineSymbol: environment.machines.machine(for: place.serverId)?.icon.systemImage,
       showsDebugSection: developerMode,
-      showsBotTranscript: bot != nil,
+      showsBotTranscript: bot != nil && inspected.agent == nil,
       harnessChat: chat,
-      tasks: shownTab(for: inspected) == .info ? mainChatTasks(of: workspace, store: store) : [],
+      tasks: shownTab(for: inspected) == .info ? mainChatTasks(of: inspected, store: store) : [],
       parent: shownTab(for: inspected) == .info ? chat.flatMap { childAgents?.parent(of: $0) } : nil,
       agents: shownTab(for: inspected) == .info ? chat.flatMap { childAgents?.children(of: $0) } ?? [] : [],
       store: store,
@@ -210,8 +211,9 @@ struct WorkspaceInspectorPresentation: ViewModifier {
       ).opener(lightbox: fileLightbox))
   }
 
-  private func mainChatTasks(of workspace: Workspace, store: SessionStore) -> [WorkspaceInspectorTask] {
-    guard let chat = mainChat(of: workspace) else { return [] }
+  private func mainChatTasks(of inspected: Inspected, store: SessionStore) -> [WorkspaceInspectorTask] {
+    let workspace = inspected.workspace
+    guard let chat = inspected.agent ?? mainChat(of: workspace) else { return [] }
 
     return WorkspaceInspectorMainChatTasks(
       workspace: workspace, chat: chat, store: store, client: environment.machines.client(for: chat.serverId)
@@ -285,11 +287,7 @@ struct WorkspaceInspectorPresentation: ViewModifier {
 
   private func harnessChat(for inspected: Inspected) -> ChatSession? {
     let workspace = inspected.workspace
-    if let bot = environment.bots.bot(forWorkspace: workspace.id, serverId: workspace.serverId),
-      let agent = environment.openAgentChat(of: bot)
-    {
-      return agent
-    }
+    if let agent = inspected.agent { return agent }
     return workspace.focusedChatSessionId.flatMap {
       environment.projectList.chat($0, preferring: workspace.serverId)
     } ?? inspected.chat
@@ -341,8 +339,7 @@ struct WorkspaceInspectorPresentation: ViewModifier {
         let project = project(serverId: serverId, id: session.projectId)
       else { return nil }
       let workspace = environment.navigationStore.workspaceEntries.entry(bot.workspaceId).workspace
-      return Inspected(
-        workspace: workspace ?? store.workspace(for: session, project: project), project: project, chat: session)
+      return inspected(workspace ?? store.workspace(for: session, project: project), project: project, chat: session)
     case let .session(serverId, sessionId):
       guard let session = environment.projectList.session(sessionId, serverId: serverId),
         let project = project(serverId: serverId, id: session.projectId)
@@ -350,18 +347,22 @@ struct WorkspaceInspectorPresentation: ViewModifier {
       let entry = environment.workspaces.workspaceId(forSession: sessionId).map {
         environment.navigationStore.workspaceEntries.entry($0)
       }
-      return Inspected(
-        workspace: entry?.workspace ?? store.workspace(for: session, project: project), project: project,
-        chat: session)
+      return inspected(
+        entry?.workspace ?? store.workspace(for: session, project: project), project: project, chat: session)
     case let .workspace(serverId, workspaceId):
       guard let workspace = environment.navigationStore.workspaceEntries.entry(workspaceId).workspace,
         workspace.serverId == serverId,
         let project = project(serverId: serverId, id: workspace.projectId)
       else { return nil }
-      return Inspected(workspace: workspace, project: project, chat: mainChat(of: workspace))
+      return inspected(workspace, project: project, chat: mainChat(of: workspace))
     case .archivedWorkspace, .newChat, .none:
       return nil
     }
+  }
+
+  private func inspected(_ workspace: Workspace, project: Project, chat: ChatSession?) -> Inspected {
+    Inspected(
+      workspace: workspace, project: project, chat: chat, agent: environment.botPages.agentPage(in: workspace))
   }
 
   private func project(serverId: String, id: UUID) -> Project? {

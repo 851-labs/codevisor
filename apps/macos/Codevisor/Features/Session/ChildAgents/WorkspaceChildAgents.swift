@@ -102,21 +102,12 @@ struct WorkspaceChildAgents {
 
   private func open(_ item: SidebarWorkspaceListItem, showing chat: ChatSession) {
     let workspace = item.workspace
-    if let bot = environment.bots.bot(forWorkspace: workspace.id, serverId: workspace.serverId) {
-      environment.botThreads.closePage(of: bot)
-      selection = .bot(serverId: bot.serverId, id: bot.id)
-      return
-    }
     revealRequest?.rowID = workspace.id
     SidebarWorkspaceNavigator(environment: environment, store: store, selection: $selection)
       .activate(item, tabId: workspace.tabId(containingChat: chat.id))
   }
 
   private func open(_ chat: ChatSession) {
-    if let bot = environment.bots.bot(forSession: chat.id, serverId: chat.serverId) {
-      selection = .bot(serverId: bot.serverId, id: bot.id)
-      return
-    }
     selection = store.selectChat(chat)
   }
 

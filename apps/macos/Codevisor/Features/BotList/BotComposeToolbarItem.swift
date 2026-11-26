@@ -8,6 +8,7 @@ struct BotComposeToolbarItem: ToolbarContent {
   @Environment(AppEnvironment.self) private var environment
 
   @SidebarSelectionRef var selection: SidebarSelection?
+  let store: SessionStore?
   let newBot: () -> Void
 
   var body: some ToolbarContent {
@@ -28,11 +29,13 @@ struct BotComposeToolbarItem: ToolbarContent {
   private var openThread: OpenBotThread? {
     guard case let .bot(serverId, botId) = selection,
       let bot = environment.bots.bot(serverId: serverId, id: botId),
-      environment.hasOpenPage(bot)
+      environment.botPages.hasOpenPage(bot)
     else { return nil }
 
-    return OpenBotThread(botName: bot.name) { [botThreads = environment.botThreads] in
-      botThreads.closePage(of: bot)
+    return OpenBotThread(botName: bot.name) { [store, botThreads = environment.botThreads] in
+      guard let store else { return botThreads.closePage(of: bot) }
+
+      store.closePage(of: bot)
     }
   }
 }

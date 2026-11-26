@@ -103,6 +103,7 @@ struct SessionContainerView: View {
       .onChange(of: leavesCoveredByPage) { before, after in
         showPage(covering: after, uncovering: before.subtracting(after))
       }
+      .modifier(BotPageUpkeep(workspace: workspace, store: store, focusPage: focusVisiblePage))
       .modifier(
         CenterTabRequests(store: store, workspaceId: workspace.id, onClose: closeCenterTab)
       )
@@ -166,7 +167,7 @@ struct SessionContainerView: View {
     sessionFocus.navigationRevision = { store.navigationRevision }
     sessionFocus.canFocusChat = { chatId in
       isVisible && store.navigationWorkspaceId == selectedWorkspace.id
-        && activePaneDescriptor?.chatSessionId == chatId
+        && presentedChatId(in: activePaneDescriptor) == chatId
     }
     setSelectedPanesVisible(true)
     publishFocusedChat(focusedChatCandidate)
@@ -203,14 +204,20 @@ struct SessionContainerView: View {
 
   private func publishFocusedChat(_ candidate: UUID?) {
     let workspace = selectedWorkspace
+    let agent = agentPage.flatMap { $0.id == candidate ? $0 : nil }
     store.setFocusedChat(
-      candidate, serverId: workspace.serverId, sourceId: focusSourceId,
+      candidate, serverId: agent?.serverId ?? workspace.serverId, sourceId: focusSourceId,
       workspaceId: workspace.id, isVisible: isVisible
     )
   }
 
+  private func focusVisiblePage() {
+    if isVisible { focusSelectedCenterPane() }
+  }
+
   var contentColumn: some View {
     let workspace = selectedWorkspace
+    let page = botPage
     return VStack(spacing: 0) {
       SessionScreen(
         centerGroup: activeCenterModel(in: workspace),
@@ -236,10 +243,11 @@ struct SessionContainerView: View {
         onCenterTreeLiveChanged: { visible in liveCenterTree = restoringHiddenLeaves(visible) }
       )
       .overlay { floatingPaneOverlay }
-      .environment(\.usesSlimComposer, isTabless)
+      .environment(\.usesSlimComposer, WorkspaceLayoutPolicy.usesBotChrome(page))
+      .environment(\.botPage, page ?? .conversation)
     }
     .overlay(alignment: .top) {
-      if WorkspaceLayoutPolicy.showsTitlebarDivider(workspace, environment: environment) {
+      if WorkspaceLayoutPolicy.showsTitlebarDivider(workspace, showing: page, environment: environment) {
         Color.separatorColor
           .frame(height: 1)
           .frame(maxWidth: .infinity)

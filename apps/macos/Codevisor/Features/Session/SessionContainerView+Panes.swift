@@ -45,7 +45,7 @@ extension SessionContainerView {
     }
     model.requestComposerFocus = { [weak model] in
       guard let selected = model?.state.selectedPane, selected.kind == .chat else { return }
-      if let chatId = selected.chatSessionId {
+      if let chatId = presentedChatId(in: selected) {
         sessionFocus.requestComposerFocus(forChat: chatId)
       } else {
         sessionFocus.focusComposer()
@@ -130,7 +130,7 @@ extension SessionContainerView {
       leafId: leafId, workspace: workspace, session: session, project: project
     )
     guard let pane = model.state.selectedPane, pane.kind == .chat else { return nil }
-    return pane.chatSessionId
+    return presentedChatId(in: pane)
   }
 
   func createChat(

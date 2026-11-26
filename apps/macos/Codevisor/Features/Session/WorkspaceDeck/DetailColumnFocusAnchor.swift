@@ -9,6 +9,13 @@ final class DetailColumnFocusAnchor {
     Self.owner(of: view?.window?.firstResponder)
   }
 
+  var isFocusInColumnOrNowhere: Bool {
+    guard let window = view?.window, let column else { return false }
+    guard let responder = window.firstResponder as? NSView else { return true }
+
+    return responder.isDescendant(of: column)
+  }
+
   func releaseFocus(heldBy previous: AnyObject?) {
     guard let window = view?.window, let column = column, let responder = window.firstResponder as? NSView,
       Self.owner(of: responder) === previous, responder.isDescendant(of: column)

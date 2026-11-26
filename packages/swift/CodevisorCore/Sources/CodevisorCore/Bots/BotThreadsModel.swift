@@ -56,6 +56,10 @@ public final class BotThreadsModel {
     openAgentByBot[bot.id] = nil
   }
 
+  public func closeAgent(of bot: Bot) {
+    openAgentByBot[bot.id] = nil
+  }
+
   public func refreshThreads(of bot: Bot) async {
     serverByBot[bot.id] = bot.serverId
     guard let threads = try? await machines.client(for: bot.serverId).botThreads(botId: bot.record.id) else { return }

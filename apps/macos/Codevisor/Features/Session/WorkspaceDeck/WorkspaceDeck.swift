@@ -26,6 +26,7 @@ struct WorkspaceDeck<Page: View>: View {
         .accessibilityHidden(!isActive)
       }
     }
+    .environment(\.detailColumnFocus, navigation.detailFocus)
     .onGeometryChange(for: CGSize.self, of: \.size) { sizes.current = $0 }
     .background(DetailColumnFocusAnchor.Capture(anchor: navigation.detailFocus).frame(width: 0, height: 0))
     .onChange(of: navigation.deckSlot, initial: true) { _, _ in navigation.showDeckPage() }

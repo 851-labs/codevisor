@@ -13,29 +13,19 @@ struct ChatPaneContentView: View {
   let environment: AppEnvironment
   var role = ChatPaneRole.chat
   @Environment(\.reusesChatPage) private var reusesChatPage
+  @Environment(\.botPage) private var hostBotPage
 
-  private var isReadOnly: Bool { role.isReadOnly || isArchivedBot }
-
-  private var isArchivedBot: Bool {
-    guard let sessionId = descriptor.chatSessionId else { return false }
-    return environment.bots.bot(forSession: sessionId, serverId: hostWorkspace.serverId)?.isArchived == true
+  private func isArchivedBot(_ chatSession: ChatSession) -> Bool {
+    environment.bots.bot(forSession: chatSession.id, serverId: hostWorkspace.serverId)?.isArchived == true
   }
 
   var body: some View {
-    if let chatSessionId = role.sessionId(of: descriptor) {
+    if case let .agent(agent, agentProject) = botPage {
+      chatScreen(agent, in: agentProject, as: .chat)
+    } else if let chatSessionId = role.sessionId(of: descriptor) {
       switch resolver.chat(chatSessionId, on: hostWorkspace.serverId, machineKey: descriptor.chatMachineKey) {
       case let .ready(chatSession, chatProject):
-        if let bot = conversationBot, let thread = environment.botThreads.openThread(of: bot) {
-          threadScreen(thread, of: bot, chat: chatSession, in: chatProject)
-        } else if let bot = conversationBot, let agent = environment.openAgentChat(of: bot),
-          let agentProject = project(of: agent)
-        {
-          agentScreen(agent, in: agentProject)
-        } else if role.offersNewChat, isUnstarted(chatSession) {
-          unstartedChat(chatSession, in: chatProject)
-        } else {
-          chatScreen(chatSession, in: chatProject)
-        }
+        ready(chatSession, in: chatProject)
       case let .connecting(machine):
         PaneChatUnavailableView(reason: .connecting(machine))
       case let .offline(machine):
@@ -57,9 +47,24 @@ struct ChatPaneContentView: View {
     }
   }
 
+  @ViewBuilder
+  private func ready(_ chatSession: ChatSession, in chatProject: Project) -> some View {
+    if case let .thread(thread) = botPage, let bot = conversationBot {
+      threadScreen(thread, of: bot, chat: chatSession, in: chatProject)
+    } else if role.offersNewChat, isUnstarted(chatSession) {
+      unstartedChat(chatSession, in: chatProject)
+    } else {
+      chatScreen(chatSession, in: chatProject, as: role)
+    }
+  }
+
   private var conversationBot: Bot? {
     guard role == .botConversation, let sessionId = descriptor.chatSessionId else { return nil }
     return environment.bots.bot(forSession: sessionId, serverId: hostWorkspace.serverId)
+  }
+
+  private var botPage: BotPage {
+    conversationBot?.workspaceId == hostWorkspace.id ? hostBotPage : .conversation
   }
 
   private var resetToPlaceholder: (() -> Void)? {
@@ -99,22 +104,12 @@ struct ChatPaneContentView: View {
     .onDisappear { store.releaseTranscriptViewer(paneID: viewerId, sessionID: chatSession.id) }
   }
 
-  private func project(of chat: ChatSession) -> Project? {
-    environment.projectList.projects.first { $0.serverId == chat.serverId && $0.id == chat.projectId }
-  }
-
-  private func agentScreen(_ agent: ChatSession, in agentProject: Project) -> some View {
-    let controller = store.controller(for: agent, project: agentProject)
-    return BotAgentScreen(
-      chat: agent,
-      controller: controller,
-      surface: store.transcriptSurface(for: agent, paneID: agent.id, controller: controller),
-      focus: focus
-    )
-  }
-
-  private func chatScreen(_ chatSession: ChatSession, in chatProject: Project) -> some View {
-    let controller = sessionController(for: chatSession, project: chatProject)
+  private func chatScreen(
+    _ chatSession: ChatSession, in chatProject: Project, as role: ChatPaneRole
+  ) -> some View {
+    let controller = sessionController(for: chatSession, project: chatProject, as: role)
+    let isReadOnly = role.isReadOnly || isArchivedBot(chatSession)
+    let threadsBot = role == .botConversation ? conversationBot : nil
     return ChatScreen(
       controller: controller,
       focus: focus,
@@ -138,8 +133,11 @@ struct ChatPaneContentView: View {
       store.reconcile(controller, for: chatSession, project: updatedProject)
     }
     .attachmentDropTarget(isReadOnly ? nil : controller)
-    .task(id: conversationBot?.id) {
-      if let bot = conversationBot { await environment.botThreads.refreshThreads(of: bot) }
+    .task(id: threadsBot?.id) {
+      if let threadsBot { await environment.botThreads.refreshThreads(of: threadsBot) }
+    }
+    .onChange(of: ChatSignal(controller.userSendSignal, of: controller)) { old, new in
+      if let threadsBot, old.isSameChat(as: new) { environment.botPages.forgetPendingAgent(of: threadsBot) }
     }
   }
 
@@ -152,7 +150,9 @@ struct ChatPaneContentView: View {
       )
   }
 
-  private func sessionController(for chatSession: ChatSession, project chatProject: Project) -> SessionController {
+  private func sessionController(
+    for chatSession: ChatSession, project chatProject: Project, as role: ChatPaneRole
+  ) -> SessionController {
     guard role == .fullTranscript else { return store.controller(for: chatSession, project: chatProject) }
     return store.transcriptViewer(
       for: chatSession, project: chatProject, paneID: descriptor.id, workspaceId: viewerWorkspaceId)
