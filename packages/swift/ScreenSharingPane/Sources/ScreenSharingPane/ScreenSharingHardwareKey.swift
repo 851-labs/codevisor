@@ -46,8 +46,13 @@ struct ScreenSharingHardwareKey {
 
   private var optionComposedACharacter: Bool {
     guard modifiers.contains(.option), Self.isPrintable(characters) else { return false }
+    guard characters.unicodeScalars.allSatisfy(Self.isTypedWithOption) else { return false }
 
     return characters.lowercased() != unmodifiedCharacters.lowercased()
+  }
+
+  private static func isTypedWithOption(_ scalar: Unicode.Scalar) -> Bool {
+    scalar.isASCII || scalar.properties.generalCategory == .currencySymbol
   }
 
   private static func text(_ text: String, shifted: Bool) -> [ScreenSharingInputEvent]? {

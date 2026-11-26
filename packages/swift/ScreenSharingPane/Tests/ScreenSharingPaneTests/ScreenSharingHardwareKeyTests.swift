@@ -67,7 +67,7 @@ struct ScreenSharingHardwareKeyTests {
     let shiftDown = ScreenSharingInputEvent.key(code: 56, down: true, repeatKey: false, modifiers: 1)
     let shiftUp = ScreenSharingInputEvent.key(code: 56, down: false, repeatKey: false, modifiers: 0)
     #expect(germanTwo.events(asCharacters: true, onScreen: .shift) == [shiftDown, .text("2"), shiftUp])
-    let micro = Key(usage: 16, characters: "µ", unmodifiedCharacters: "m", modifiers: .option)
+    let micro = Key(usage: 16, characters: "µ", unmodifiedCharacters: "µ")
     #expect(sharpS.events(asCharacters: true, onScreen: .shift) == [shiftDown, .text("ß"), shiftUp])
     #expect(micro.events(asCharacters: true, onScreen: .shift) == [shiftDown, .text("µ"), shiftUp])
   }
@@ -80,14 +80,36 @@ struct ScreenSharingHardwareKeyTests {
     #expect(umlaut.events(asCharacters: true, onScreen: .shift) == [.text("Ö")])
   }
 
-  @Test("A character the layout makes with Option is typed as that character, not as Alt and the key's letter")
-  func optionComposedCharacters() {
-    let germanAt = Key(usage: 15, characters: "@", unmodifiedCharacters: "l", modifiers: .option)
-    let germanBackslash = Key(usage: 36, characters: "\\", unmodifiedCharacters: "7", modifiers: [.option, .shift])
-    let euro = Key(usage: 8, characters: "€", unmodifiedCharacters: "e", modifiers: .option)
-    #expect(pressed(germanAt.events(asCharacters: true)) == [56, 19])
-    #expect(pressed(germanBackslash.events(asCharacters: true)) == [42])
-    #expect(euro.events(asCharacters: true) == [.text("€")])
+  @Test(
+    "An ASCII or currency character the layout makes with Option is typed as that character, with no Alt",
+    arguments: [
+      (15, "@", "l", [56, 19]), (34, "[", "5", [33]), (36, "|", "7", [56, 42]),
+    ] as [(Int, String, String, [UInt16])])
+  func optionTypesASCII(usage: Int, composed: String, unmodified: String, keys: [UInt16]) {
+    let key = Key(usage: usage, characters: composed, unmodifiedCharacters: unmodified, modifiers: .option)
+    #expect(pressed(key.events(asCharacters: true)) == keys)
+  }
+
+  @Test("Option types the currency sign the layout makes: € on a German keyboard, £ on a US one")
+  func optionTypesCurrency() {
+    let germanEuro = Key(usage: 8, characters: "€", unmodifiedCharacters: "e", modifiers: .option)
+    let americanPound = Key(usage: 32, characters: "£", unmodifiedCharacters: "3", modifiers: .option)
+    #expect(germanEuro.events(asCharacters: true) == [.text("€")])
+    #expect(americanPound.events(asCharacters: true) == [.text("£")])
+  }
+
+  @Test("Shift-Option-7 on a German keyboard still types the backslash")
+  func shiftOptionTypesASCII() {
+    let key = Key(usage: 36, characters: "\\", unmodifiedCharacters: "7", modifiers: [.option, .shift])
+    #expect(pressed(key.events(asCharacters: true)) == [42])
+  }
+
+  @Test("Any other character Option composes is Alt with the key's own letter, so US Alt shortcuts work")
+  func optionOtherwiseIsAlt() {
+    let americanF = Key(usage: 9, characters: "ƒ", unmodifiedCharacters: "f", modifiers: .option)
+    let americanP = Key(usage: 19, characters: "π", unmodifiedCharacters: "p", modifiers: .option)
+    #expect(pressed(americanF.events(asCharacters: true)) == [58, 3])
+    #expect(pressed(americanP.events(asCharacters: true)) == [58, 35])
   }
 
   @Test("Option that composes nothing, or comes from the on-screen bar, is Alt with the key's own letter")
