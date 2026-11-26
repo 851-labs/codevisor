@@ -5,6 +5,7 @@ export const EXEC_MAX_TIMEOUT_MS = 600_000
 export const FLEET_EXEC_TASK_PATH = "fleet.exec_task"
 export const FLEET_EXEC_CONTROL_PATH = "fleet.exec_control"
 export const FLEET_MIRROR_PATH = "fleet.mirror"
+export const FLEET_UPLOAD_FILES_PATH = "fleet.upload_files"
 
 export const ExecRequest = Schema.Struct({
   command: Schema.String,
@@ -109,3 +110,21 @@ export const FleetMirrorAction = Schema.Union([
   Schema.Struct({ action: Schema.Literal("remove"), mirrorId: Schema.String })
 ])
 export type FleetMirrorAction = typeof FleetMirrorAction.Type
+
+export const FleetUploadFilesRequest = Schema.Struct({
+  sessionId: Schema.String,
+  paths: Schema.Array(Schema.String)
+}).annotate({
+  description:
+    "Files a chat's browser upload names, read from that chat's workspace on the machine it runs on."
+})
+export type FleetUploadFilesRequest = typeof FleetUploadFilesRequest.Type
+
+export const FleetUploadFile = Schema.Struct({
+  name: Schema.String,
+  data: Schema.String.annotate({ description: "The file's bytes, base64-encoded." })
+})
+export type FleetUploadFile = typeof FleetUploadFile.Type
+
+export const FleetUploadFiles = Schema.Struct({ files: Schema.Array(FleetUploadFile) })
+export type FleetUploadFiles = typeof FleetUploadFiles.Type

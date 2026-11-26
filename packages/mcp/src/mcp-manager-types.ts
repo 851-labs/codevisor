@@ -3,6 +3,7 @@ import type { IncomingMessage, ServerResponse } from "node:http"
 import type { QuestionAnswer, RuntimeEventSink } from "@codevisor/agent-runtime"
 import type {
   BrowserUseConfiguration,
+  FleetUploadFiles,
   ComposerSkill,
   CreateMcpServerRequest,
   McpAuthDetection,
@@ -162,6 +163,10 @@ export interface McpManager {
     listener: (tool: AutomationTool) => void
   ) => () => void
   readonly browserConfiguration: () => Promise<BrowserUseConfiguration>
+  readonly readUploadFiles: (
+    sessionId: string,
+    paths: ReadonlyArray<string>
+  ) => Promise<FleetUploadFiles>
   readonly openBrowserExtensionInstaller: () => Promise<BrowserUseConfiguration>
   readonly openBrowserExtensionFolder: () => Promise<BrowserUseConfiguration>
   readonly openBrowserExtensionsPage: () => Promise<BrowserUseConfiguration>

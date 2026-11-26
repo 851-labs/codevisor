@@ -1,6 +1,4 @@
 import { randomUUID } from "node:crypto"
-import { realpathSync, statSync } from "node:fs"
-import { isAbsolute, relative, resolve } from "node:path"
 
 import {
   isExternalClientKey,
@@ -24,6 +22,7 @@ import { CallToolResultSchema } from "@modelcontextprotocol/core"
 import type { CallToolResult } from "@modelcontextprotocol/server"
 
 import type { makeGatewayCatalog } from "./mcp-gateway-catalog.js"
+import { makeGatewayUploads, uploadsFiles } from "./mcp-gateway-uploads.js"
 import { isRecord } from "./mcp-guards.js"
 import type {
   GatewayCallContext,
@@ -128,39 +127,6 @@ const assertAutomationToolArguments = (
   }
 }
 
-const uploadTools = new Set([
-  "upload_files",
-  "playwright.fileChooserSetFiles",
-  "playwright.setInputFiles"
-])
-
-const uploadsFiles = (toolName: string, args: Readonly<Record<string, unknown>>): boolean => {
-  if (!uploadTools.has(toolName)) return false
-  const clearsInput =
-    toolName === "playwright.setInputFiles" && Array.isArray(args.paths) && args.paths.length === 0
-  return !clearsInput
-}
-
-const workspaceUploadPaths = (
-  args: Readonly<Record<string, unknown>>,
-  workspaceRoot: string,
-  toolName: string
-): Array<string> => {
-  const paths = Array.isArray(args.paths) ? args.paths : []
-  if (paths.length === 0 || !paths.every((path) => typeof path === "string")) {
-    throw new Error(`${toolName} requires one or more workspace file paths`)
-  }
-  return paths.map((path) => {
-    const candidate = realpathSync(isAbsolute(path) ? path : resolve(workspaceRoot, path))
-    const withinWorkspace = relative(workspaceRoot, candidate)
-    if (withinWorkspace.startsWith("..") || isAbsolute(withinWorkspace)) {
-      throw new Error("Browser Use can only upload files from the current workspace")
-    }
-    if (!statSync(candidate).isFile()) throw new Error(`Upload path is not a file: ${path}`)
-    return candidate
-  })
-}
-
 export const makeGatewayDispatch = (deps: GatewayDispatchDeps) => {
   const {
     appViews,
@@ -174,6 +140,7 @@ export const makeGatewayDispatch = (deps: GatewayDispatchDeps) => {
     record,
     selfMachine
   } = deps
+  const uploads = makeGatewayUploads(config, selfMachine)
 
   const computerUsePermissionPrompt = (
     context: {
@@ -278,21 +245,8 @@ export const makeGatewayDispatch = (deps: GatewayDispatchDeps) => {
     }
     let safeArgs = args
     if (provider.id === "browser" && uploadsFiles(toolName, args)) {
-      if (remote !== undefined) {
-        throw new Error(
-          `Browser Use uploads files from a workspace folder on this machine; a call from ${remote.machineName} has none`
-        )
-      }
-      if (isExternalClientKey(context.sessionId)) {
-        throw new Error(
-          "Browser Use uploads files from a Codevisor chat's workspace folder; an MCP client outside Codevisor has none"
-        )
-      }
-      const session = await run(config.db.getSessionSummary(context.sessionId))
-      if (session.cwd === undefined) throw new Error("This session has no workspace folder")
-      const workspaceRoot = realpathSync(session.cwd)
-      const resolvedPaths = workspaceUploadPaths(args, workspaceRoot, toolName)
-      safeArgs = { ...args, paths: resolvedPaths }
+      const paths = await uploads.uploadPaths(context.sessionId, remote, toolName, args)
+      safeArgs = { ...args, paths }
     }
     if (provider.id === "browser" && toolName === "request_extension_install") {
       const outcome = await browserSetupBroker.requestExtensionInstall(context.sessionId, {

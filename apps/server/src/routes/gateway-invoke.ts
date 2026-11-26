@@ -10,6 +10,7 @@ import {
   FLEET_SANDBOX_ACTION_PATH,
   FLEET_SESSION_EVENT_PATH,
   FLEET_THREAD_MESSAGE_PATH,
+  FLEET_UPLOAD_FILES_PATH,
   FLEET_BOT_IMPORT_PATH,
   FLEET_BOTS_PATH
 } from "@codevisor/api"
@@ -21,7 +22,12 @@ import { receiveBotRoster } from "./bot-roster.js"
 import { receiveAgentsArchived } from "./fleet-agents-archived.js"
 import { receiveAgentsMoved } from "./fleet-agents-moved.js"
 import { fleetCall, invokeForFleet } from "./fleet-calls.js"
-import { receiveExecControl, receiveExecTask, receiveMirrorAction } from "./fleet-machine-files.js"
+import {
+  receiveExecControl,
+  receiveExecTask,
+  receiveMirrorAction,
+  receiveUploadFiles
+} from "./fleet-machine-files.js"
 import { receiveSandboxAction } from "./fleet-sandbox-actions.js"
 import { receiveSessionEvent } from "./fleet-session-events.js"
 import { receiveThreadMessage } from "./fleet-thread-messages.js"
@@ -150,6 +156,10 @@ export const routeGatewayInvoke = async (route: RouteContext): Promise<boolean> 
   }
   if (path === FLEET_EXEC_CONTROL_PATH) {
     await answerSandboxAction(response, () => receiveExecControl(services, call, body.args))
+    return true
+  }
+  if (path === FLEET_UPLOAD_FILES_PATH) {
+    await answerSandboxAction(response, () => receiveUploadFiles(services, call, body.args))
     return true
   }
   if (path === FLEET_EXEC_TASK_PATH) {
