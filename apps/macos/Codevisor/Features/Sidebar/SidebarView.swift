@@ -21,7 +21,6 @@ struct SidebarView: View {
   @State var revealRequest = SidebarRevealRequest()
   @State var selectionModel = SidebarSelectionModel()
   @State var shownRows = SidebarShownRows()
-  @ClientPreference(SidebarGrouping.preferenceKey, default: SidebarGrouping.flat) var grouping
   @ClientPreference(SidebarGrouping.collapsedPreferenceKey, default: []) var collapsedGroupIDs: [String]
   @ClientPreference(SidebarPreferenceKey.archivedExpanded, default: false) var archivedExpanded
   @ClientPreference(SidebarPreferenceKey.pinnedExpanded, default: true) var pinnedExpanded
@@ -33,6 +32,8 @@ struct SidebarView: View {
   @State var dragGeometry = SidebarDragGeometryStore()
 
   var list: ProjectListModel { environment.projectList }
+  var groupingChoice: SidebarGroupingChoice { SidebarGroupingChoice(machines: environment.machines) }
+  var grouping: SidebarGrouping { groupingChoice.effective }
   var rowDetails: [SidebarRowDetail] { ClientPreferences.shared.sidebarRowDetails }
   var isReordering: Bool { reorder.lifted != nil || tabDrag != nil }
 
@@ -93,7 +94,7 @@ struct SidebarView: View {
         .labelStyle(.titleAndIcon)
     }
     Divider()
-    Picker(selection: $grouping) {
+    Picker(selection: groupingChoice.selection) {
       ForEach(SidebarGrouping.allCases, id: \.self) { option in
         Label {
           Text(option.title)

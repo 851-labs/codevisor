@@ -66,7 +66,7 @@ struct HomeSidebarList: View {
 
   @Environment(\.accessibilityReduceMotion) private var reduceMotion
   @Environment(\.scenePhase) private var scenePhase
-  @ClientPreference(SidebarGrouping.preferenceKey, default: SidebarGrouping.flat) private var grouping
+  @Environment(AppEnvironment.self) private var environment
   @ClientPreference(SidebarGrouping.collapsedPreferenceKey, default: []) private var collapsedGroupIDs: [String]
   @ClientPreference(SidebarPreferenceKey.pinnedWorkspaces, default: []) private var pinnedIDs: [String]
   @ClientPreference(SidebarPreferenceKey.machineOrder, default: []) private var machineOrder: [String]
@@ -79,6 +79,7 @@ struct HomeSidebarList: View {
   @State private var pendingSelection: UUID?
 
   private var rowDetails: [SidebarRowDetail] { ClientPreferences.shared.sidebarRowDetails }
+  private var grouping: SidebarGrouping { SidebarGroupingChoice(machines: environment.machines).effective }
 
   private var preferences: HomeSidebarPreferences {
     HomeSidebarPreferences(
