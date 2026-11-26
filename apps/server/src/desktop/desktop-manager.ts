@@ -177,8 +177,19 @@ export const makeDesktopManager = (options: DesktopManagerOptions): DesktopManag
     return status()
   }
 
+  const serverStartsIt = (): boolean => {
+    try {
+      const config: unknown = JSON.parse(system.readText(configPath) ?? "")
+      return typeof config === "object" && config !== null && "service" in config
+        ? config.service === "process"
+        : false
+    } catch {
+      return false
+    }
+  }
+
   const resume = async (): Promise<void> => {
-    if (shared().state !== "stopped") return
+    if (!serverStartsIt() || shared().state !== "stopped") return
 
     const runs = await service()
     if (runs.kind === "process" && !runs.isSetUp()) await runs.start()

@@ -317,6 +317,20 @@ describe("a server that boots where there is no systemd", () => {
     expect(stillUp.spawned).toEqual([])
   })
 
+  it("leaves alone a stopped desktop that something else set up, like the dev container's", async () => {
+    const theirs = JSON.stringify({
+      vnc: { socket: "/tmp/runtime-root/codevisor-desktop.sock", display: 1, desktop: "xfce" },
+      devContainerDesktop: true
+    })
+    const machine = fakeMachine({
+      files: { ...UBUNTU, [CONFIG]: theirs },
+      failing: ["systemctl --user show-environment"],
+      socketAppearsAfterPolls: Number.POSITIVE_INFINITY
+    })
+    await machine.manager.resume()
+    expect(machine.spawned).toEqual([])
+  })
+
   it("does nothing for a desktop that systemd starts", async () => {
     const first = fakeMachine({ files: UBUNTU })
     await first.manager.start()
