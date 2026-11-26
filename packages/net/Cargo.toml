@@ -45,3 +45,6 @@ strip = "symbols"
 
 [profile.dev.package.reed-solomon-simd]
 opt-level = 3
+
+[patch.crates-io]
+noq-proto = { path = "vendor/noq-proto-diag" }

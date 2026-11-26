@@ -18,6 +18,9 @@ pub trait DatagramTransport: Send + Sync + 'static {
     fn send(&self, datagram: Bytes) -> SendOutcome;
     fn recv(&self) -> impl Future<Output = Option<Bytes>> + Send;
     fn rtt(&self) -> Option<Duration>;
+    fn debug(&self) -> Option<String> {
+        None
+    }
 }
 
 pub struct QuicTransport {
@@ -62,6 +65,10 @@ impl DatagramTransport for QuicTransport {
 
     fn rtt(&self) -> Option<Duration> {
         self.connection.rtt()
+    }
+
+    fn debug(&self) -> Option<String> {
+        Some(self.connection.debug_paths())
     }
 }
 

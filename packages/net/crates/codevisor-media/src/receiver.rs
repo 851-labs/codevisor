@@ -220,6 +220,7 @@ impl Receiver {
     ) {
         stats.packets_received += 1;
         stats.bytes_received += shard.len() as u64 + crate::wire::HEADER_BYTES as u64;
+        crate::trace::log(now, format_args!("RP stream={} frame={} index={} of={}+{}", header.stream, header.frame, header.index, header.data_count, header.parity_count));
         let give_up = self.give_up_after();
         let stream = self.streams.entry(header.stream).or_default();
         if header.frame < stream.next_due {
@@ -319,6 +320,7 @@ impl Receiver {
         assembly.tail_at = Some(now + tail_wait(self.gap_peak, give_up));
 
         if try_complete(assembly, now, stats) {
+            crate::trace::log(now, format_args!("RC stream={} frame={} data={} took={:?} recovery={:?}", header.stream, header.frame, shape.layout.data_count, assembly.first_rx.map(|t| now.saturating_duration_since(t).as_micros()), assembly.recovery()));
             self.on_resolved(&[(header.stream, header.frame)], events, stats);
         } else if (gap_seen || assembly.end_seen) && !assembly.due(now, self.rtt + RETRY_MARGIN).is_empty() {
             assembly.next_nack = Some(now);
@@ -385,6 +387,7 @@ impl Receiver {
                     continue;
                 }
                 if assembly.give_up_at.is_some_and(|at| now >= at) {
+                    crate::trace::log(now, format_args!("RG stream={} frame={} received={} shape={:?} end_seen={} highest={:?} first_rx_ago={:?} last_rx_ago={:?} repaired={} rtt={}", stream_id, number, assembly.received, assembly.shape.map(|s| (s.layout.data_count, s.parity_count)), assembly.end_seen, assembly.highest_index, assembly.first_rx.map(|t| now.saturating_duration_since(t).as_micros()), assembly.last_rx.map(|t| now.saturating_duration_since(t).as_micros()), assembly.repaired, self.rtt.as_micros()));
                     assembly.state = State::GivenUp;
                     resolved.push((stream_id, number));
                     continue;
@@ -415,6 +418,7 @@ impl Receiver {
                         }
                     };
                     if let Some(nack) = nack {
+                        crate::trace::log(now, format_args!("RN stream={} frame={} ranges={:?} received={} shape={:?} end_seen={} tail_limit={:?} highest={:?} gap_peak={} give_up_in={:?}", stream_id, number, nack.ranges, assembly.received, assembly.shape.map(|s| (s.layout.data_count, s.parity_count)), assembly.end_seen, assembly.tail_limit, assembly.highest_index, self.gap_peak.as_micros(), assembly.give_up_at.map(|at| at.saturating_duration_since(now).as_micros())));
                         stats.nacks_sent += 1;
                         self.outbox.push_back(nack.encode());
                         assembly.give_up_at.get_or_insert(now + give_up);

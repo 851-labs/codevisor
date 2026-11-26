@@ -359,6 +359,15 @@ impl NetConnection {
         self.connection.max_datagram_size()
     }
 
+    pub fn debug_paths(&self) -> String {
+        self.connection
+            .paths()
+            .iter()
+            .map(|path| format!("[sel={} remote={} rtt={:?} {:?}]", path.is_selected(), transport_addr_string(path.remote_addr()), path.rtt(), path.stats()))
+            .collect::<Vec<_>>()
+            .join(" ")
+    }
+
     pub fn datagram_send_buffer_space(&self) -> usize {
         self.connection.datagram_send_buffer_space()
     }

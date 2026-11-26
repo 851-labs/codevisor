@@ -7,6 +7,7 @@ mod pacer;
 mod receiver;
 mod sender;
 mod session;
+pub mod trace;
 mod transport;
 mod types;
 mod windowed;

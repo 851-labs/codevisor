@@ -241,6 +241,7 @@ impl Sender {
         }
         stats.frames_sent += 1;
         stats.parity_packets_sent += parity_count as u64;
+        crate::trace::log(now, format_args!("S stream={} frame={} bytes={} data={} parity={} kf={} refresh={} backlog={} inflight={}", frame.stream, number, frame.data.len(), layout.data_count, parity_count, frame.keyframe, frame.refresh, self.pacer.backlog_bytes(), self.in_flight_bytes));
         self.loss.sent += layout.data_count as u64;
         stream.unresolved.insert(
             number,
@@ -304,6 +305,7 @@ impl Sender {
             return;
         }
         let current = if self.loss.sent == 0 { 0.0 } else { self.loss.nacked as f64 / self.loss.sent as f64 };
+        crate::trace::log(now, format_args!("W sent={} nacked={} rate={:.3}", self.loss.sent, self.loss.nacked, current));
         if self.loss.sent >= MIN_LOSS_SAMPLE && current > HEAVY_LOSS {
             self.estimator.on_heavy_loss(now, current.min(1.0));
         }
@@ -395,6 +397,7 @@ impl Sender {
             }
         }
         stats.retransmissions_skipped += repeated;
+        crate::trace::log(now, format_args!("N stream={} frame={} requested={} first={} repeated={} ranges={:?} out={} data={}", nack.stream, nack.frame, requested, first_losses, repeated, nack.ranges, frame.originals_out, frame.data_count));
         if requested > 0 {
             stats.packets_retransmitted += requested;
             self.loss.nacked += first_losses;
@@ -419,6 +422,7 @@ impl Sender {
         }
         if let Some(frame) = stream.unresolved.remove(&feedback.frame) {
             self.in_flight_bytes -= frame.bytes_out;
+            crate::trace::log(now, format_args!("F stream={} frame={} lost={} rec={:?} firstrx={:?} rxspan={:?} complete={:?} probes={} data={} bytes={} txspan={:?} sincelast={:?} rtt={}", feedback.stream, feedback.frame, feedback.lost, feedback.receipt.map(|r| r.recovery), feedback.receipt.map(|r| r.first_rx_us as i64 - frame.first_tx.map_or(0, |t| t.saturating_duration_since(self.epoch).as_micros() as i64)), feedback.receipt.map(|r| r.last_rx_offset_us), feedback.receipt.map(|r| r.complete_offset_us), frame.probes, frame.data_count, frame.bytes_out, frame.first_tx.zip(frame.latest_tx).map(|(a, b)| b.saturating_duration_since(a).as_micros()), frame.last_tx.map(|t| now.saturating_duration_since(t).as_micros()), self.rtt.as_micros()));
             if feedback.lost {
                 self.last_loss = Some(now);
                 stats.frames_lost += 1;
@@ -470,6 +474,7 @@ impl Sender {
             self.in_flight_bytes -= frame.bytes_out;
             let age = feedback.resolved_below - 1 - number;
             if age >= 32 || feedback.lost_bitmap & (1 << age) != 0 {
+                crate::trace::log(now, format_args!("SL stream={} frame={} lost by bitmap age={}", feedback.stream, number, age));
                 stats.frames_lost += 1;
                 events.push_back(Event::FrameLost { stream: feedback.stream, frame: number });
             } else {
@@ -539,6 +544,7 @@ impl Sender {
                 probed = true;
             }
             for number in expired {
+                crate::trace::log(now, format_args!("SX stream={} frame={} expired after probes", stream_id, number));
                 if let Some(frame) = stream.unresolved.remove(&number) {
                     self.in_flight_bytes -= frame.bytes_out;
                 }

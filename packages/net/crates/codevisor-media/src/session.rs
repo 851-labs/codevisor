@@ -47,6 +47,7 @@ fn now() -> Instant {
 
 impl<T: DatagramTransport> MediaSession<T> {
     pub fn new(transport: T, config: MediaConfig) -> Self {
+        crate::trace::init_logging();
         let mut core = Core::new(config, now());
         core.set_max_datagram_size(transport.max_datagram_size());
         let (events, receiver) = mpsc::unbounded_channel();
@@ -60,6 +61,15 @@ impl<T: DatagramTransport> MediaSession<T> {
     }
 
     pub fn send_frame(&self, frame: OutgoingFrame<'_>) -> Result<u32, SendError> {
+        static HELD: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
+        if frame.keyframe
+            && let Some(hold) = std::env::var("CODEVISOR_HOLD_FIRST_MS").ok().and_then(|value| value.parse::<u64>().ok())
+        {
+            let session = std::ptr::from_ref(self) as u64;
+            if HELD.swap(session, std::sync::atomic::Ordering::Relaxed) != session {
+                std::thread::sleep(Duration::from_millis(hold));
+            }
+        }
         let now = now();
         let mut state = self.shared.state.lock().unwrap();
         state.core.set_max_datagram_size(self.shared.transport.max_datagram_size());
@@ -143,7 +153,10 @@ impl<T: DatagramTransport> Shared<T> {
                         batch.push_front(datagram);
                         break;
                     }
-                    SendOutcome::Rejected => rejected += 1,
+                    SendOutcome::Rejected => {
+                        crate::trace::log(now, format_args!("TR rejected"));
+                        rejected += 1
+                    }
                 }
             }
             let mut state = self.state.lock().unwrap();
@@ -170,6 +183,9 @@ impl<T: DatagramTransport> Shared<T> {
             if state.rtt_at.is_none_or(|at| now.saturating_duration_since(at) >= RTT_REFRESH) {
                 if let Some(rtt) = self.transport.rtt() {
                     state.core.set_rtt(rtt);
+                }
+                if crate::trace::enabled() {
+                    crate::trace::log(now, format_args!("Q {}", self.transport.debug().unwrap_or_default()));
                 }
                 state.rtt_at = Some(now);
             }

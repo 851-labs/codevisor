@@ -174,6 +174,7 @@ impl Estimator {
 
     pub fn on_delivery(&mut self, now: Instant, delivery: Delivery) {
         let trusted = Duration::from_secs_f64(TRUSTED_SPAN_JITTERS * self.jitter_us / 1e6).max(MIN_SPAN);
+        crate::trace::log(now, format_args!("P bytes={} rx={} tx={} trusted={} ok={}", delivery.bytes, delivery.receive_span.as_micros(), delivery.send_span.as_micros(), trusted.as_micros(), delivery.receive_span >= trusted && delivery.bytes >= MIN_SAMPLE_BYTES));
         if delivery.receive_span >= trusted && delivery.bytes >= MIN_SAMPLE_BYTES {
             let span = delivery.receive_span.max(delivery.send_span);
             let sample = delivery.bytes as f64 * 8.0 / span.as_secs_f64();
@@ -230,9 +231,24 @@ impl Estimator {
         let draining = self.drained_at.is_some_and(|at| now.saturating_duration_since(at) < hold_off * DRAIN_PATIENCE_HOLD_OFFS);
         let standing_too_long = (queue as f64) >= self.max_standing_us + threshold && !draining;
         if rested && (grown || standing_too_long) {
+            crate::trace::log(now, format_args!("B reason={} queue={} standing={} thr={:.0} overuse={}", if grown { "grown" } else { "standing" }, queue, self.standing_us, threshold, self.overuse));
             self.back_off(now);
         }
         self.grow_cap(now);
+        if crate::trace::enabled() {
+            let arm = match (self.cap, self.bursts.best(), self.receive_bps()) {
+                (Some(_), ..) => "cap",
+                (None, Some(_), _) => "burst",
+                (None, None, Some(receive)) if self.link_limited(receive) => "linklimited",
+                (None, None, _) => "initial",
+            };
+            crate::trace::log(now, format_args!(
+                "D oneway={} recent={} base={} queue={} thr={:.0} jit={:.0} overuse={} standing={} est={:.2} arm={} cap={:?} burst={:.2} linkburst={:.2} measured={:.2} sent={:.2} recv={:.2} admitting={}",
+                one_way_us, recent, self.base_delay.best().unwrap_or(0), queue, threshold, self.jitter_us, self.overuse, self.standing_us,
+                self.estimate_bps() / 1e6, arm, self.cap.map(|cap| ((cap.from_bps / 1e4).round() / 100.0, (cap.bps / 1e4).round() / 100.0)),
+                self.bursts.best().unwrap_or(0.0) / 1e6, self.link_bursts.best().unwrap_or(0.0) / 1e6, self.measured_bps / 1e6,
+                self.sent.bps_until(now).unwrap_or(0.0) / 1e6, self.receive_bps().unwrap_or(0.0) / 1e6, self.admitting));
+        }
     }
 
     fn queue_moved(&mut self, now: Instant, queue: i64, delay: i64) -> bool {
@@ -253,6 +269,7 @@ impl Estimator {
     pub fn on_heavy_loss(&mut self, now: Instant, loss: f64) {
         let estimate = self.estimate_bps();
         let target = self.heavy_loss_target(now, estimate, loss).max(MIN_RATE_BPS);
+        crate::trace::log(now, format_args!("H loss={:.3} est={:.2} target={:.2} carried={:.2}", loss, estimate / 1e6, target / 1e6, self.acked.active_bps_until(now).unwrap_or(0.0) / 1e6));
         self.cap = Some(Cap { from_bps: target, since: now, grown_at: now, bps: target });
         self.bursts.clear();
         self.link_bursts.clear();
@@ -285,6 +302,7 @@ impl Estimator {
         let link_limited = self.link_limited(receive);
         let from = if filling || link_limited { receive.min(estimate) } else { estimate };
         let target = (from * BACKOFF).max(MIN_RATE_BPS);
+        crate::trace::log(now, format_args!("BO est={:.2} receive={:.2} sent={:.2} filling={} linklimited={} dropping={} target={:.2}", estimate / 1e6, receive / 1e6, self.sent.bps().unwrap_or(0.0) / 1e6, filling, link_limited, self.dropping(), target / 1e6));
         self.cap = Some(Cap { from_bps: target, since: now, grown_at: now, bps: target });
         self.standing_us = self.queue_delay_us;
         self.drain_floor_us = self.queue_delay_us;
