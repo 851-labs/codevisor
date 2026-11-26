@@ -103,6 +103,9 @@ struct SessionContainerView: View {
       .onChange(of: leavesCoveredByPage) { before, after in
         showPage(covering: after, uncovering: before.subtracting(after))
       }
+      .onChange(of: agentPage?.id) { _, _ in
+        focusSelectedCenterPane()
+      }
       .modifier(
         CenterTabRequests(store: store, workspaceId: workspace.id, onClose: closeCenterTab)
       )
@@ -166,7 +169,7 @@ struct SessionContainerView: View {
     sessionFocus.navigationRevision = { store.navigationRevision }
     sessionFocus.canFocusChat = { chatId in
       isVisible && store.navigationWorkspaceId == selectedWorkspace.id
-        && activePaneDescriptor?.chatSessionId == chatId
+        && presentedChatId(in: activePaneDescriptor) == chatId
     }
     setSelectedPanesVisible(true)
     publishFocusedChat(focusedChatCandidate)
