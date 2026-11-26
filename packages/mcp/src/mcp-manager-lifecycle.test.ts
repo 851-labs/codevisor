@@ -16,6 +16,7 @@ import {
   memoryOAuthVault,
   seedLegacyOAuth
 } from "./mcp-oauth-vault-test-support.js"
+import type { McpServerLifecycleChange } from "./mcp-server-lifecycle.js"
 
 afterEach(cleanupMcpManagerTests)
 
@@ -208,6 +209,55 @@ describe("MCP manager lifecycle", () => {
     unsubscribe()
     await manager.create({ authType: "none", name: "Quiet", transport: "http", url: upstream.url })
     expect(seen).toEqual([])
+  })
+
+  it("tells lifecycle subscribers when a server is turned off, back on, or removed with its subscriptions", async () => {
+    const upstream = await workingUpstream()
+    const { manager, db, directory } = await testManager()
+    const seen: Array<McpServerLifecycleChange> = []
+    manager.subscribeServerLifecycle((change) => seen.push(change))
+    const tracker = await manager.create({
+      authType: "none",
+      name: "Tracker",
+      transport: "http",
+      url: upstream.url
+    })
+    const other = await manager.create({
+      authType: "none",
+      name: "Other",
+      transport: "http",
+      url: upstream.url
+    })
+    const project = await run(db.createProject({ folderPath: directory }))
+    const session = await run(db.createSession({ projectId: project.id, harnessId: "codex" }))
+    const subscribe = (serverId: string, note: string) =>
+      run(
+        db.createPluginEventSubscription({
+          sessionId: session.id,
+          serverId,
+          eventName: "issue.created",
+          arguments: {},
+          explained: "every issue",
+          note,
+          once: false,
+          createdBy: "agent"
+        })
+      )
+    const watch = await subscribe(tracker.id, "Triage new issues")
+    const kept = await subscribe(other.id, "Watch the other one")
+
+    await manager.update(tracker.id, { enabled: false })
+    await manager.update(tracker.id, { enabled: false })
+    await manager.update(tracker.id, { enabled: true })
+    await manager.remove(tracker.id)
+
+    const server = { id: tracker.id, name: "Tracker" }
+    expect(seen).toEqual([
+      { kind: "turnedOff", server },
+      { kind: "turnedOn", server },
+      { kind: "removed", server, subscriptions: [watch] }
+    ])
+    expect(await run(db.listPluginEventSubscriptions())).toEqual([kept])
   })
 
   it("keeps an OAuth server's enabled wish while it needs authorization", async () => {

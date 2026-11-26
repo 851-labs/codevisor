@@ -78,6 +78,14 @@ export const makePluginEventSubscriptionsService = (
   }
 }
 
+export const subscriptionsOfServer = (
+  sqlite: ServiceContext["sqlite"],
+  serverId: string
+): ReadonlyArray<PluginEventSubscriptionRecord> =>
+  subscriptionRows
+    .all(sqlite.prepare(subscriptionSql.byServer).all(serverId))
+    .map(subscriptionFromRow)
+
 const subscriptionsFor = (sqlite: ServiceContext["sqlite"], sessionId: string | undefined) => {
   if (sessionId === undefined)
     return subscriptionRows.all(sqlite.prepare(subscriptionSql.all).all())
@@ -168,6 +176,8 @@ const subscriptionSql = {
   all: "select * from plugin_event_subscriptions order by created_at, rowid",
   bySession:
     "select * from plugin_event_subscriptions where session_id = ? order by created_at, rowid",
+  byServer:
+    "select * from plugin_event_subscriptions where server_id = ? order by created_at, rowid",
   byId: "select * from plugin_event_subscriptions where id = ?",
   delete: "delete from plugin_event_subscriptions where id = ?",
   pause: "update plugin_event_subscriptions set paused_reason = ? where id = ?"

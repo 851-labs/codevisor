@@ -1,14 +1,25 @@
 import { randomUUID } from "node:crypto"
 
 import { isoTimestamp } from "@codevisor/api"
+import type { Effect } from "effect"
 
-import { attempt } from "./errors.js"
+import { attempt, type DatabaseError } from "./errors.js"
 import { canonicalUuid } from "./ids.js"
+import {
+  subscriptionsOfServer,
+  type PluginEventSubscriptionRecord
+} from "./plugin-event-subscriptions-service.js"
 import { mcpServerFromRow, nativeMcpRemovalFromRow } from "./row-mappers.js"
 import { integer, rowReader, text } from "./row-reader.js"
 import { mcpServerRows, nativeConfigBackupRows, nativeMcpRemovalRows } from "./rows.js"
 import type { ServiceContext } from "./service-context.js"
 import type { CodevisorDatabaseService } from "./service.js"
+
+export interface McpServerRemovalService {
+  readonly deleteMcpServer: (
+    id: string
+  ) => Effect.Effect<ReadonlyArray<PluginEventSubscriptionRecord>, DatabaseError>
+}
 
 const mcpSettingRows = rowReader({ mcp_server_id: text, enabled: integer })
 
@@ -98,13 +109,15 @@ export const makeMcpService = (
         return mcpServerFromRow(savedMcpServerRow(sqlite, id))
       }),
     deleteMcpServer: (id) =>
-      attempt("deleteMcpServer", () => {
+      attempt("deleteMcpServer", () =>
         sqlite.transaction(() => {
+          const subscriptions = subscriptionsOfServer(sqlite, id)
           sqlite.prepare(mcpServerSql.deleteEventSubscriptions).run(id)
           sqlite.prepare(mcpServerSql.deleteEvents).run(id)
           sqlite.prepare(mcpServerSql.delete).run(id)
+          return subscriptions
         })()
-      }),
+      ),
     setProjectMcpEnabled: (projectId, mcpServerId, enabled) =>
       attempt("setProjectMcpEnabled", () => {
         sqlite

@@ -12,6 +12,7 @@ import { type AccountContext, pluginKeyOf } from "../accounts/plugin-accounts.js
 import type { PluginPlatform } from "../plugin-platform.js"
 import { makeClockEventSource } from "./clock-event-source.js"
 import { cloudInboxApi } from "./cloud-inbox-api.js"
+import type { EventMachine } from "./plugin-departure-messages.js"
 import type { PluginEventConnections } from "./plugin-event-connections.js"
 import type { PluginEventIngest } from "./plugin-event-ingest.js"
 import { makePluginEventIngress, type PluginEventIngress } from "./plugin-event-ingress.js"
@@ -22,7 +23,8 @@ import { makePluginEvents, type PluginEvents } from "./plugin-events.js"
 export const startPluginEvents = (
   services: CodevisorServerServices,
   fanout: EventFanout,
-  outbox: SessionEventOutbox
+  outbox: SessionEventOutbox,
+  machine: EventMachine
 ): PluginEvents | undefined => {
   if (services.mcp === undefined) return undefined
   const connections = mcpEventConnections(services.mcp)
@@ -33,6 +35,7 @@ export const startPluginEvents = (
     db: services.db,
     connections,
     outbox,
+    machine,
     now: Date.now,
     timers: systemEventTimers,
     builtins: [makeClockEventSource({ now: Date.now, timeZone: localTimeZone() })],
@@ -62,7 +65,8 @@ const localTimeZone = (): string => Intl.DateTimeFormat().resolvedOptions().time
 export const mcpEventConnections = (mcp: McpManager): PluginEventConnections => ({
   servers: () => mcp.list(),
   connection: (serverId) => mcp.pluginConnection(serverId),
-  subscribeConnections: (listener) => mcp.subscribeConnections(listener)
+  subscribeConnections: (listener) => mcp.subscribeConnections(listener),
+  subscribeLifecycle: (listener) => mcp.subscribeServerLifecycle(listener)
 })
 
 const platformIngress = (

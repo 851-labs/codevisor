@@ -1,6 +1,11 @@
 export * from "./mcp-managed-oauth.js"
 export * from "./mcp-manager.js"
 export * from "./mcp-manager-types.js"
+export type {
+  McpServerIdentity,
+  McpServerLifecycleChange,
+  McpServerLifecycleListener
+} from "./mcp-server-lifecycle.js"
 export * from "./native-config-edits.js"
 export * from "./native-config-files.js"
 export * from "./native-config-normalize.js"

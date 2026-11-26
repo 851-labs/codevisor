@@ -8,6 +8,7 @@ import { compileEventFilter, type EventFilterAccepted } from "@codevisor/plugins
 
 import { HttpFailure, run } from "../../server-context.js"
 import type { BuiltinEventSources, PreparedSubscription } from "./builtin-event-sources.js"
+import { turnedOffReason } from "./plugin-departure-messages.js"
 import type { PluginEventTypes } from "./plugin-event-types.js"
 
 export interface PluginEventPreviewRequest {
@@ -28,6 +29,7 @@ export interface PluginEventSubscriptionsDeps {
   readonly types: PluginEventTypes
   readonly builtins: BuiltinEventSources
   readonly pluginName: (serverId: string) => Promise<string>
+  readonly turnedOff: () => Promise<ReadonlySet<string>>
 }
 
 export interface SubscriptionLabels {
@@ -98,9 +100,22 @@ export const listSubscriptions = async (
   sessionId: string | undefined
 ): Promise<ReadonlyArray<PluginEventSubscription>> => {
   const records = await run(deps.db.listPluginEventSubscriptions(sessionId))
+  const turnedOff = await deps.turnedOff()
   return Promise.all(
-    records.map(async (record) => publicSubscription(record, await recordLabels(deps, record)))
+    records.map(async (record) => {
+      const labels = await recordLabels(deps, record)
+      return publicSubscription(heldBy(record, turnedOff, labels), labels)
+    })
   )
+}
+
+const heldBy = (
+  record: PluginEventSubscriptionRecord,
+  turnedOff: ReadonlySet<string>,
+  labels: SubscriptionLabels
+): PluginEventSubscriptionRecord => {
+  if (record.pausedReason !== undefined || !turnedOff.has(record.serverId)) return record
+  return { ...record, pausedReason: turnedOffReason(labels.pluginName) }
 }
 
 export const previewSubscription = async (

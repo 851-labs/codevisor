@@ -3,7 +3,7 @@ import type { CodevisorDatabaseService } from "@codevisor/db"
 
 import { run } from "../../server-context.js"
 import type { BuiltinEventSource, BuiltinEventSources } from "./builtin-event-sources.js"
-import type { PluginEventConnections } from "./plugin-event-connections.js"
+import { turnedOffPlugins, type PluginEventConnections } from "./plugin-event-connections.js"
 import type { PluginEventIngest } from "./plugin-event-ingest.js"
 import { sourceKeyOf, sourceOf, type EventSource } from "./plugin-event-source-key.js"
 import { pollOnce, streamUntilClosed, type SourceRun } from "./plugin-event-source-modes.js"
@@ -55,7 +55,7 @@ export const makePluginEventSources = (deps: PluginEventSourcesDeps): PluginEven
 
   return {
     refresh: async () => {
-      const wanted = await desiredSources(deps.db)
+      const wanted = await desiredSources(deps)
       for (const key of running.keys()) if (!wanted.has(key)) stop(key)
       for (const [key, source] of wanted) if (!running.has(key)) start(source)
       await deps.onSourcesChanged?.([...wanted.values()])
@@ -77,10 +77,12 @@ const maxRetryMs = 5 * 60_000
 const streamReconnectMs = 1_000
 
 const desiredSources = async (
-  db: CodevisorDatabaseService
+  deps: PluginEventSourcesDeps
 ): Promise<ReadonlyMap<string, EventSource>> => {
-  const active = (await run(db.listPluginEventSubscriptions())).filter(
-    (subscription) => subscription.pausedReason === undefined
+  const turnedOff = await turnedOffPlugins(deps.connections)
+  const active = (await run(deps.db.listPluginEventSubscriptions())).filter(
+    (subscription) =>
+      subscription.pausedReason === undefined && !turnedOff.has(subscription.serverId)
   )
   return new Map(active.map((subscription) => [sourceKeyOf(subscription), sourceOf(subscription)]))
 }

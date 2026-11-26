@@ -16,8 +16,10 @@ import {
   type BuiltinEventSource,
   type BuiltinEventSources
 } from "./builtin-event-sources.js"
-import type { PluginEventConnections } from "./plugin-event-connections.js"
+import type { EventMachine } from "./plugin-departure-messages.js"
+import { turnedOffPlugins, type PluginEventConnections } from "./plugin-event-connections.js"
 import { makePluginEventDelivery, type PluginEventOutbox } from "./plugin-event-delivery.js"
+import { handleServerLifecycle } from "./plugin-event-departures.js"
 import {
   makePluginEventIngest,
   type EventOccurrence,
@@ -65,6 +67,7 @@ export interface PluginEventsDeps {
   readonly db: CodevisorDatabaseService
   readonly connections: PluginEventConnections
   readonly outbox: PluginEventOutbox
+  readonly machine: EventMachine
   readonly now: () => number
   readonly timers: EventTimers
   readonly builtins?: ReadonlyArray<BuiltinEventSource>
@@ -115,11 +118,24 @@ export const makePluginEvents = (deps: PluginEventsDeps): PluginEvents => {
     db: deps.db,
     types,
     builtins,
-    pluginName
+    pluginName,
+    turnedOff: () => turnedOffPlugins(deps.connections)
   }
   const unsubscribeConnections = deps.connections.subscribeConnections((serverId) => {
     types.forget(serverId)
     refreshSources()
+  })
+  const unsubscribeLifecycle = deps.connections.subscribeLifecycle((change) => {
+    void handleServerLifecycle(
+      {
+        db: deps.db,
+        outbox: deps.outbox,
+        machine: deps.machine,
+        forgetSubscription: ingest.forgetSubscription,
+        onSubscriptionsChanged: subscriptionsChanged
+      },
+      change
+    ).catch(() => undefined)
   })
 
   return {
@@ -151,6 +167,7 @@ export const makePluginEvents = (deps: PluginEventsDeps): PluginEvents => {
     },
     close: () => {
       unsubscribeConnections()
+      unsubscribeLifecycle()
       sources.close()
     }
   }

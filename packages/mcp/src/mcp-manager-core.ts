@@ -31,6 +31,7 @@ import {
   loadEncryptionKey,
   type StoredSecrets
 } from "./mcp-secret-store.js"
+import { enabledChange, makeMcpServerLifecycle } from "./mcp-server-lifecycle.js"
 import { reportBackgroundFailure, run, type UpstreamConnection } from "./mcp-support.js"
 
 export type ConnectionListener = (id: string, state: "connected" | "closed") => void
@@ -108,6 +109,7 @@ export const makeMcpManagerCore = (config: McpManagerConfig) => {
   const emitConnection: ConnectionListener = (id, connectionState) => {
     for (const listener of Array.from(connectionListeners)) listener(id, connectionState)
   }
+  const lifecycle = makeMcpServerLifecycle()
   const changeListeners = new Set<(id: string) => void>()
   const emitServerChanged = (id: string): void => {
     for (const listener of Array.from(changeListeners)) listener(id)
@@ -315,6 +317,8 @@ export const makeMcpManagerCore = (config: McpManagerConfig) => {
     if (patch.secretCipher !== undefined || visibleSignature(saved) !== visibleSignature(server)) {
       emitServerChanged(saved.id)
     }
+    const change = enabledChange(server, saved)
+    if (change !== undefined) lifecycle.emit(change)
     return saved
   }
 
@@ -415,6 +419,7 @@ export const makeMcpManagerCore = (config: McpManagerConfig) => {
     gatewayBearerToken,
     gateways,
     key,
+    lifecycle,
     oauthClock,
     publicServer,
     record,

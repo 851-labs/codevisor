@@ -32,6 +32,7 @@ import type { McpCredentialReference, McpOAuthVault } from "./mcp-oauth-grant.js
 import type { PluginAccountSource } from "./mcp-plugin-accounts.js"
 import type { PluginAppView } from "./mcp-plugin-apps.js"
 import type { PluginConnection } from "./mcp-plugin-connection.js"
+import type { McpServerLifecycleListener } from "./mcp-server-lifecycle.js"
 
 export type { AutomationTool } from "./mcp-automation-use.js"
 export type { PluginAccountChoice, PluginAccountSource } from "./mcp-plugin-accounts.js"
@@ -112,6 +113,7 @@ export interface McpManager {
   readonly subscribeCredentialsRotated: (listener: (id: string) => void) => () => void
   readonly adoptOAuthOwnership: (legacyOwner: string) => Promise<ReadonlyArray<string>>
   readonly subscribeServersChanged: (listener: (id: string) => void) => () => void
+  readonly subscribeServerLifecycle: (listener: McpServerLifecycleListener) => () => void
   readonly remove: (id: string) => Promise<void>
   readonly tools: (id?: string) => Promise<ReadonlyArray<McpTool>>
   readonly iconSources: (id: string) => Promise<McpServerIconSources | undefined>

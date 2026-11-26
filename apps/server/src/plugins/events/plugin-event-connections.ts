@@ -1,4 +1,5 @@
 import type { McpServer } from "@codevisor/api"
+import type { McpServerLifecycleListener } from "@codevisor/mcp"
 
 export interface EventConnection {
   readonly serverId: string
@@ -34,9 +35,17 @@ export interface PluginEventConnections {
   readonly subscribeConnections: (
     listener: (serverId: string, state: "connected" | "closed") => void
   ) => () => void
+  readonly subscribeLifecycle: (listener: McpServerLifecycleListener) => () => void
 }
 
 export const EVENTS_EXTENSION = "io.modelcontextprotocol/events"
 
 export const offersEvents = (server: McpServer): boolean =>
   server.enabled && (server.capabilities?.events.length ?? 0) > 0
+
+export const turnedOffPlugins = async (
+  connections: PluginEventConnections
+): Promise<ReadonlySet<string>> =>
+  new Set(
+    (await connections.servers()).filter((server) => !server.enabled).map((server) => server.id)
+  )

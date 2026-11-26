@@ -52,6 +52,7 @@ import { DatabaseError, attempt } from "./errors.js"
 import type { FileStorageService } from "./file-storage-service.js"
 import type { FleetBotsService } from "./fleet-bots-service.js"
 import type { FleetOutboxService } from "./fleet-outbox-service.js"
+import type { McpServerRemovalService } from "./mcp-service.js"
 import type { PluginDatabaseService } from "./plugin-database-service.js"
 import type {
   HarnessAccountRecord,
@@ -102,6 +103,7 @@ export interface CodevisorDatabaseService
     BotsService,
     SessionSubscriptionsService,
     PluginDatabaseService,
+    McpServerRemovalService,
     AutoResumeService,
     FileStorageService,
     FleetOutboxService,
@@ -381,7 +383,6 @@ export interface CodevisorDatabaseService
   readonly saveMcpServer: (
     request: SaveMcpServerRecordRequest
   ) => Effect.Effect<McpServerRecord, DatabaseError>
-  readonly deleteMcpServer: (id: string) => Effect.Effect<void, DatabaseError>
   readonly setProjectMcpEnabled: (
     projectId: string,
     mcpServerId: string,

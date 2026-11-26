@@ -4,6 +4,7 @@ import { join } from "node:path"
 
 import type { McpServer, PluginCapabilities } from "@codevisor/api"
 import type { CodevisorDatabaseService } from "@codevisor/db"
+import type { McpServerLifecycleChange, McpServerLifecycleListener } from "@codevisor/mcp"
 import { onTestFinished } from "vitest"
 
 import { fixtureChanged } from "../../changes-test-support.js"
@@ -113,6 +114,7 @@ export const fakeConnections = () => {
   const requests: Array<RecordedRequest> = []
   const streams: Array<OpenedStream> = []
   const listeners = new Set<(serverId: string, state: "connected" | "closed") => void>()
+  const lifecycle = new Set<McpServerLifecycleListener>()
 
   const handle = async (
     serverId: string,
@@ -167,7 +169,17 @@ export const fakeConnections = () => {
       return () => {
         listeners.delete(listener)
       }
+    },
+    subscribeLifecycle: (listener) => {
+      lifecycle.add(listener)
+      return () => {
+        lifecycle.delete(listener)
+      }
     }
+  }
+
+  const changed = (change: McpServerLifecycleChange): void => {
+    for (const listener of lifecycle) listener(change)
   }
 
   return {
@@ -184,6 +196,13 @@ export const fakeConnections = () => {
     },
     reconnected: (serverId: string) => {
       for (const listener of listeners) listener(serverId, "connected")
+    },
+    changed,
+    setEnabled: (serverId: string, enabled: boolean) => {
+      const plugin = plugins.get(serverId)!
+      plugins.set(serverId, { ...plugin, server: { ...plugin.server, enabled } })
+      const server = { id: serverId, name: plugin.server.name }
+      changed(enabled ? { kind: "turnedOn", server } : { kind: "turnedOff", server })
     },
     requestsOf: (method: string) => requests.filter((request) => request.method === method)
   }
@@ -245,6 +264,8 @@ export const recordingOutbox = () => {
   }
 }
 
+export const testMachine = { id: "server-a", name: "Studio Mac" }
+
 export const eventsFixture = async (overrides: Partial<PluginEventsDeps> = {}) => {
   const { services } = await makeServices("server-a")
   const folder = mkdtempSync(join(tmpdir(), "codevisor-plugin-events-"))
@@ -260,6 +281,7 @@ export const eventsFixture = async (overrides: Partial<PluginEventsDeps> = {}) =
     db: services.db,
     connections: fake.connections,
     outbox: outbox.outbox,
+    machine: testMachine,
     now: Date.now,
     timers: clock.timers,
     ...overrides

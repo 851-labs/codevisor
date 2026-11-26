@@ -57,3 +57,9 @@ Plugins can wake you too: a Slack message, a new Linear issue, a Grafana alert.
 - `events.subscriptions()` lists yours, with `pausedReason` if one stopped. A subscription pauses after 200 events in a day.
 - `events.unsubscribe({ subscriptionId })` removes one. Remove any you no longer need, such as a routine the user called off.
 - An archived chat gets no events.
+
+## When the plugin goes away
+
+- **Removed:** the plugin's subscriptions are deleted with it. You get one hidden `<codevisor-event type="plugin.removed">` listing the ones that were yours, each with its event, note, filter, and arguments. Tell the user what stopped. If they want it back, they reinstall the plugin and you subscribe again.
+- **Turned off:** the subscriptions are kept but on hold. You get one hidden `<codevisor-event type="plugin.disabled">` listing yours, and `events.subscriptions()` shows them with `pausedReason` "… is turned off". They start again on their own when the user turns the plugin back on; don't subscribe again.
+- Plugins are shared by all the user's machines, so removing or turning one off on another machine does the same here.

@@ -17,13 +17,14 @@ export const startPlugins = (
   outbox: SessionEventOutbox,
   config: Pick<CodevisorServerConfig, "id" | "name">
 ): (() => void) => {
-  routeState.pluginEvents = startPluginEvents(services, fanout, outbox)
+  const machine = { id: config.id, name: config.name }
+  routeState.pluginEvents = startPluginEvents(services, fanout, outbox, machine)
   routeState.pluginDiscovery = startPluginDiscovery(
     services,
     fanout,
     routeState.pluginEvents,
     outbox,
-    { id: config.id, name: config.name }
+    machine
   )
   const unsubscribeAccounts = services.pluginPlatform?.onAccountsChanged((entries) =>
     publishSyncEntries(services, fanout, PLUGIN_ACCOUNTS_NAMESPACE, entries)

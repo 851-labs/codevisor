@@ -36,6 +36,7 @@ export type McpServerOperations = Pick<
   | "setLocalSuppression"
   | "setProjectEnabled"
   | "setSessionEnabled"
+  | "subscribeServerLifecycle"
   | "subscribeServersChanged"
   | "tools"
   | "update"
@@ -57,6 +58,7 @@ export const makeMcpServerOperations = (
     connections,
     emitServerChanged,
     key,
+    lifecycle,
     publicServer,
     record,
     cancelOAuthRetry,
@@ -284,8 +286,9 @@ export const makeMcpServerOperations = (
     if (!current.canRemove) throw new Error(`${current.name} cannot be removed`)
     await closeConnection(id)
     cancelOAuthRetry(id)
-    await run(config.db.deleteMcpServer(id))
+    const subscriptions = await run(config.db.deleteMcpServer(id))
     emitServerChanged(id)
+    lifecycle.emit({ kind: "removed", server: { id, name: current.name }, subscriptions })
     await refreshGatewayInventories()
   }
 
@@ -356,6 +359,7 @@ export const makeMcpServerOperations = (
     setLocalSuppression,
     setProjectEnabled,
     setSessionEnabled,
+    subscribeServerLifecycle: lifecycle.subscribe,
     subscribeServersChanged,
     tools,
     update

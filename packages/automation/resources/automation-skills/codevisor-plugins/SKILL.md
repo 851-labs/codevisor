@@ -32,5 +32,5 @@ A **plugin** adds tools, events, skills, and panes to Codevisor, usually for one
 
 - **Tools:** call them through `execute` on a machine, like any tool. Find one with `machine.tools.search({ query })`, check its inputs with `machine.tools.describe.tool({ path })`, then call `machine.tools.<server>.<tool>(args)`. The `execute` skill covers this.
 - **Skills:** a plugin can ship its own skills, named `<plugin>:<skill>`, like `linear:linear`. Read one with the `skills` tool before you use that plugin's tools for real work.
-- **Events:** to be woken when something happens in the service, see `codevisor-events`.
+- **Events:** to be woken when something happens in the service, see `codevisor-events`. If the user removes or turns off a plugin you subscribed to, a hidden `plugin.removed` or `plugin.disabled` event tells you which of your subscriptions it took with it.
 - **Accounts:** a plugin can have several signed-in accounts, such as work and personal. `plugins.search` lists them. When there's more than one, its tools take an `account` argument (the account's label), and so does `events.subscribe`.
