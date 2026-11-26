@@ -265,9 +265,9 @@ impl Receiver {
         stats.packets_received += 1;
         stats.bytes_received += shard.len() as u64 + crate::wire::HEADER_BYTES as u64;
         let give_up = self.give_up_after();
-        self.last_media_rx = Some(now);
         let stream = self.streams.entry(header.stream).or_default();
         if header.frame < stream.next_due {
+            self.last_media_rx = Some(now);
             stats.duplicate_packets += 1;
             self.answer_resolved(now, header.stream, header.frame);
             return;
@@ -287,6 +287,7 @@ impl Receiver {
         let placeholder = stream.frames.contains_key(&header.frame);
         let assembly = stream.frames.entry(header.frame).or_insert_with(Assembly::unknown);
         if !matches!(assembly.state, State::Assembling) {
+            self.last_media_rx = Some(now);
             stats.duplicate_packets += 1;
             self.answer_resolved(now, header.stream, header.frame);
             return;
@@ -331,6 +332,7 @@ impl Receiver {
             stats.invalid_datagrams += 1;
             return;
         }
+        self.last_media_rx = Some(now);
         if slot.is_some() {
             stats.duplicate_packets += 1;
             return;

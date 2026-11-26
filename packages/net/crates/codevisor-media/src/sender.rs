@@ -20,6 +20,7 @@ use crate::{
 };
 
 const MAX_PROBES: u32 = 6;
+const DEEP_QUEUE: u32 = 4;
 const MAX_UNRESOLVED: usize = 512;
 const MAX_UNREPORTED: usize = 32;
 const FEC_MEMORY: Duration = Duration::from_secs(10);
@@ -367,9 +368,6 @@ impl Sender {
         let (packet, tag) = self.pacer.poll(now)?;
         stats.packets_sent += 1;
         stats.bytes_sent += packet.len() as u64;
-        if tag.original && self.in_flight_bytes == 0 {
-            self.arrived.restart(now + self.min_rtt.best().unwrap_or(self.rtt), self.sent_total);
-        }
         let sent_before = self.sent_total;
         self.sent_total += packet.len() as u64;
         let position = self.sent_total;
@@ -379,7 +377,8 @@ impl Sender {
             && let Some(resend) = frame.resends.get_mut(usize::from(tag.index))
         {
             let known_bps = self.estimator.measured().then(|| self.estimator.estimate_bps());
-            let queued_deep = self.arrived.wait_for(now, position, known_bps).is_some_and(|wait| wait > self.rtt);
+            let deep = self.rtt.max(self.config.frame_interval) * DEEP_QUEUE;
+            let queued_deep = self.arrived.wait_for(now, position, known_bps).is_some_and(|wait| wait > deep);
             let sent = Resend::Sent { at: now, position, queued_deep };
             if *resend == Resend::Never {
                 frame.probe = Some(sent);
@@ -394,6 +393,9 @@ impl Sender {
             if frame.first_tx.is_none() {
                 frame.first_tx = Some(now);
                 frame.sent_before = sent_before;
+                if self.in_flight_bytes == 0 {
+                    self.arrived.restart(now + self.min_rtt.best().unwrap_or(self.rtt), sent_before);
+                }
             }
             frame.positions.push(position);
             frame.latest_tx = Some(now);
@@ -439,15 +441,14 @@ impl Sender {
         let follows_an_arrival = |index: &usize| index.checked_sub(1).is_none_or(|previous| !asked(previous));
         let sighted =
             named().filter(first_time).filter(follows_an_arrival).filter_map(|index| frame.arrived_before(index)).max();
-        let passed = |index: &usize| sighted.is_some_and(|position| frame.positions[*index] <= position);
-        let lost: Vec<usize> = named().filter(|index| !first_time(index) || passed(index)).collect();
-        for index in lost {
-            if !std::mem::replace(&mut frame.counted_lost[index], true) {
-                self.arrived.note_lost(frame.positions[index], frame.packets[index].len() as u64);
-            }
-        }
         if let Some(position) = sighted {
             self.arrived.note(now, position);
+        }
+        for index in named() {
+            if !frame.counted_lost[index] {
+                let bytes = frame.packets[index].len() as u64;
+                frame.counted_lost[index] = self.arrived.note_lost(frame.positions[index], bytes);
+            }
         }
         let known_bps = self.estimator.measured().then(|| self.estimator.estimate_bps());
         let reached = self.arrived.reached(now, known_bps);
@@ -818,18 +819,20 @@ mod tests {
     }
 
     #[test]
-    fn a_packet_the_viewer_names_once_isnt_counted_lost_until_it_names_it_again() {
+    fn a_packet_is_counted_lost_once_it_is_still_asked_for_with_the_reach_past_it() {
         let mut host = Host::with_a_frame_sent(10);
         let packet = host.frame().packets[5].len() as u64;
 
         host.asked_for(&[(5, 1)]);
-        assert_eq!(host.sender.arrived.lost(), 0, "it may only be late");
-
         host.drain();
         host.now += 101 * MS;
         host.asked_for(&[(5, 1)]);
+        assert_eq!(host.sender.arrived.lost(), 0, "nothing after it is known to have arrived: it may only be late");
+
+        host.asked_for(&[(8, 1)]);
         host.asked_for(&[(5, 1)]);
-        assert_eq!(host.sender.arrived.lost(), packet);
+        host.asked_for(&[(5, 1)]);
+        assert_eq!(host.sender.arrived.lost(), packet, "7 arrived and 5 is still missing");
     }
 
     #[test]
@@ -861,7 +864,6 @@ mod tests {
     #[test]
     fn the_first_request_for_a_probed_packet_is_an_answer_and_a_loss_counted_once() {
         let mut host = Host::with_a_frame_sent(10);
-        let packet = host.frame().packets[9].len() as u64;
         host.probe();
         host.drain();
         assert_eq!(host.frame().unanswered, 1);
@@ -878,7 +880,6 @@ mod tests {
         host.now += 101 * MS;
         host.asked_for(&[(9, 1)]);
         assert_eq!(host.sender.loss.nacked, 1);
-        assert_eq!(host.sender.arrived.lost(), packet);
         assert_eq!(host.stats.packets_retransmitted, 2);
     }
 

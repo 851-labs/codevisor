@@ -73,26 +73,27 @@ no jitter buffer and no queue deeper than one frame.
      slow link's queue holds seconds: one keyframe's 130 missing packets were resent 1,268 times in the sim, and the
      longer waits above would only add to that. The host now gives everything it sends a place in one byte count and
      follows how far into it the viewer has got (`Arrived`). A sighting is a request that names a packet for the
-     first time right after one it never asked for (that one arrived), or a completed frame. Between sightings the
-     reach moves on at the rate they advanced over the last 0.5 s, less the packets known lost that the sightings
-     passed, which took no link time (a packet named behind something the same request shows arrived, or named a
-     second time: one named once may only be late), or at the estimate once the link has been measured if that is
-     higher. A packet the viewer asked for before the host had sent it was a guess, and is never taken as arrived.
-     Sightings under 5 ms apart
-     give no rate, and neither does the first one after an idle spell, which starts the count again one lowest
-     round trip after the first packet left (or at the first sighting, if that comes sooner). A resend that leaves
-     with more than a round trip's worth of queue ahead of it isn't sent again until the reach has passed it, at
-     most 5 s; a request that still names it then means it was lost, and it goes out at once. Every other resend
-     keeps the half-round-trip rule, and so does every resend while there is no rate: there a second copy is one
-     packet and repairs a resend that was itself lost a round trip sooner. So a wrong rate costs either the old
-     repeats (too high) or a later repair of a resend that was lost (too low), never a packet that isn't sent. In
-     the sim's steady streams on N7 the rule changes nothing measurable (32 seeds of 20 s: 877 frames delivered
-     against 879 with the old rule, lowest estimate 0.58 and 0.59 Mbit/s; 16 tiles for 40 s, 16 seeds: 9,358
-     against 9,366), where holding every resend, deep or not, cost about 1% of the frames. A packet lost twice on a fast
-     link is repaired at the viewer's next request as before (7 ms on N1). A probe is not a resend the viewer asked
-     for: the viewer's first request for a probed packet counts as an answer and as a loss, once, whether or not
-     the probe's copy makes another one unnecessary, and a probe for a frame the viewer has already answered
-     doesn't back the next frame's tail probe off.
+     first time right after one it never asked for (that one arrived), or a completed frame; a packet the viewer
+     asked for before the host had sent it was a guess and is never taken as arrived. Between sightings the reach
+     moves on at the rate they advanced over the last 0.5 s, or at the estimate once the link has been measured if
+     that is higher. A packet still asked for after a sighting has passed it is lost and took no link time, so it
+     comes off what that sighting carried and a burst of loss doesn't make the link look faster; one asked for
+     ahead of the reach may only be late and counts for nothing. Sightings under 5 ms apart give no rate, and
+     neither does the first one after an idle spell, which starts the count again one lowest round trip after the
+     frame's first packet left (or at the first sighting, if that comes sooner). A resend that leaves with more
+     than four round trips' worth of queue ahead of it (four frame intervals if that is longer) isn't sent again
+     until the reach has passed it, at most 5 s; a request that still names it then means it was lost, and it goes
+     out at once. Every other resend keeps the half-round-trip rule, and so does every resend while there is no
+     rate: there a second copy costs little and repairs a resend that was itself lost a round trip sooner. So a
+     wrong rate costs either some of the old repeats (too high, which is the side the loss count errs on: losses
+     that parity made up for are never asked for again and stay uncounted) or a later repair of a resend that was
+     lost (too low), never a packet that isn't sent. In the sim the keyframe above now has its 130 packets resent
+     175 times. Steady streams on N7 never have that much queued, so nothing changes there (32 seeds of 20 s, and 16
+     tiles for 40 s: the same frames and estimates as with the old rule, where holding every resend, deep or not,
+     cost about 1% of the frames), and a packet lost twice on a fast link is repaired at the viewer's next request
+     as before (7 ms on N1). A probe is not a resend the viewer asked for: the viewer's first request for a probed
+     packet counts as an answer and as a loss, once, whether or not the probe's copy makes another one unnecessary,
+     and a probe for a frame the viewer has already answered doesn't back the next frame's tail probe off.
   4. **Refresh requests.** A frame the transport delivered can still fail to decode, and the transport can't see
      that. The viewer calls `request_refresh(stream, keyframe)`, and the host gets `Event::RefreshRequested` once
      per request. The viewer repeats the request every give-up time + RTT until a recovery frame arrives on that
