@@ -14,7 +14,9 @@ import {
   desktopLayout,
   type DesktopLayout,
   displayIsOursOrFree,
-  freeDisplay
+  freeDisplay,
+  ownXServerOn,
+  readyMarkOf
 } from "./desktop-layout.js"
 import {
   installCommands,
@@ -30,15 +32,19 @@ import {
   type RunnerCommand
 } from "./desktop-service.js"
 import type { DesktopSystem } from "./desktop-system.js"
-import { oldDesktop, type RootCommand } from "./old-desktop.js"
+import { oldDesktop, oldDesktopLeftovers, type RootCommand } from "./old-desktop.js"
 
 export interface DesktopManager {
   readonly status: () => Promise<DesktopStatus>
   readonly installPackages: () => Promise<DesktopStatus>
   readonly replaceOld: () => Promise<DesktopStatus>
   readonly start: (options?: StartOptions) => Promise<DesktopStatus>
-  readonly remove: () => Promise<DesktopStatus>
+  readonly remove: (options?: RemoveOptions) => Promise<DesktopStatus>
   readonly resume: () => Promise<void>
+}
+
+export interface RemoveOptions {
+  readonly unshareUnmanaged?: boolean
 }
 
 export interface StartOptions {
@@ -66,6 +72,10 @@ const steadyPolls = 10
 const installing = "Installing packages"
 const anotherServers =
   "Another Codevisor server on this account already runs a desktop (codevisor-desktop.service). Remove that desktop first."
+const notOursToRemove =
+  "The desktop shared from this machine wasn't set up by Codevisor, so Codevisor can't remove it. It can stop sharing it, which has to be asked for."
+const orphanPollMs = 100
+const orphanPolls = 50
 const unmanaged =
   "A desktop that Codevisor didn't set up is shared from this machine. Replacing it has to be asked for."
 
@@ -74,7 +84,6 @@ export const makeDesktopManager = (options: DesktopManagerOptions): DesktopManag
   const locate = options.locate ?? privateSocket
   const configPath = join(dataDir, SCREEN_SHARING_CONFIG_FILE)
   const services = (): Promise<DesktopServices> => desktopServices(system, options.runner, options)
-  const service = async (): Promise<DesktopService> => (await services()).current
   let busy: string | undefined
   let failure: string | undefined
   let knownSudo: DesktopSudo | undefined
@@ -123,13 +132,24 @@ export const makeDesktopManager = (options: DesktopManagerOptions): DesktopManag
     return { state: "stopped", ...display, problem: socket.detail }
   }
 
+  const sessionIsUp = (socket: string): boolean => {
+    const runner = Number(system.readText(readyMarkOf(socket))?.trim() ?? "")
+    return Number.isInteger(runner) && runner > 0 && system.processAlive(runner)
+  }
+
+  const whyOursIsDown = (runs: DesktopService): string | undefined => {
+    const setup = setUp()
+    if (setup.kind !== "ready" || recordedService() === undefined) return undefined
+    if (runs.kind === "process" && recordedService() === "process" && !runs.isSetUp())
+      return "the desktop's process isn't running"
+
+    return sessionIsUp(setup.config.socket) ? undefined : "the desktop's session isn't up"
+  }
+
   const sharedBy = (runs: DesktopService): Shared => {
     const live = shared()
-    const processIsGone =
-      runs.kind === "process" && recordedService() === "process" && !runs.isSetUp()
-    if (live.state !== "running" || !processIsGone) return live
-
-    return { ...live, state: "stopped", problem: "the desktop's process isn't running" }
+    const problem = live.state === "running" ? whyOursIsDown(runs) : undefined
+    return problem === undefined ? live : { ...live, state: "stopped", problem }
   }
 
   const sudoForARootStep = async (pending: boolean): Promise<DesktopSudo | undefined> => {
@@ -143,7 +163,7 @@ export const makeDesktopManager = (options: DesktopManagerOptions): DesktopManag
     const release = osRelease(system)
     const { current: runs, other } = await services()
     const install = await installCommands(system, release)
-    const old = oldDesktop(system)
+    const old = await oldDesktop(system)
     const startsAtBoot = await runs.startsAtBoot()
     const needsLinger = runs.kind === "systemd-user" && !startsAtBoot
     const missing = await missingPrograms(system)
@@ -152,7 +172,7 @@ export const makeDesktopManager = (options: DesktopManagerOptions): DesktopManag
     const live = sharedBy(runs)
     return {
       ...live,
-      managed: recordedService() !== undefined || runs.isSetUp() || other.isSetUp(),
+      unmanaged: someoneElsesConfig(runs, other),
       keepsRunning: live.state === "running" && runs.isSetUp(),
       ...(busy === undefined ? {} : { busy }),
       ...(failure === undefined ? {} : { failure }),
@@ -210,11 +230,18 @@ export const makeDesktopManager = (options: DesktopManagerOptions): DesktopManag
   }
 
   const replaceOld = async (): Promise<DesktopStatus> => {
-    const old = oldDesktop(system)
+    const old = await oldDesktop(system)
     if (old === undefined) return status()
 
     await requirePasswordlessSudo("Removing the older desktop")
     await asRoot("Removing the older desktop", old.removal)
+    const left = await oldDesktopLeftovers(system, old)
+    if (left.length > 0)
+      throw new HttpFailure(
+        502,
+        `The older desktop is still running: ${left.join(", ")}. Stop it, then set the desktop up again.`
+      )
+
     return status()
   }
 
@@ -238,7 +265,7 @@ export const makeDesktopManager = (options: DesktopManagerOptions): DesktopManag
   }
 
   const someoneElsesConfig = (runs: DesktopService, other: DesktopService): boolean =>
-    setUp().kind === "ready" &&
+    setUp().kind !== "absent" &&
     recordedService() === undefined &&
     !runs.isSetUp() &&
     !other.isSetUp()
@@ -269,10 +296,36 @@ export const makeDesktopManager = (options: DesktopManagerOptions): DesktopManag
   const staysUp = async (layout: DesktopLayout): Promise<boolean> => {
     let steady = 0
     for (let poll = 0; poll < startPolls && steady < steadyPolls; poll += 1) {
-      steady = locate(layout.socket).problem === undefined ? steady + 1 : 0
+      const isUp = locate(layout.socket).problem === undefined && sessionIsUp(layout.socket)
+      steady = isUp ? steady + 1 : 0
       await system.sleep(startPollMs)
     }
     return steady >= steadyPolls
+  }
+
+  const stopAnOrphanedXServer = async (runs: DesktopService): Promise<void> => {
+    const setup = setUp()
+    const config = setup.kind === "ready" ? setup.config : undefined
+    if (runs.kind !== "process" || runs.isSetUp() || config?.display === undefined) return
+
+    const orphan = ownXServerOn(system, config.display, config.socket)
+    if (orphan === undefined) return
+
+    system.terminate(orphan)
+    for (let poll = 0; poll < orphanPolls && system.processAlive(orphan); poll += 1)
+      await system.sleep(orphanPollMs)
+  }
+
+  const startUnder = async (
+    runs: DesktopService,
+    other: DesktopService
+  ): Promise<DesktopLayout> => {
+    await stopAnOrphanedXServer(runs)
+    const layout = layoutToUse()
+    await other.stop()
+    writeConfig(layout, runs)
+    await runs.start()
+    return layout
   }
 
   const start = async (asked: StartOptions): Promise<DesktopStatus> => {
@@ -292,10 +345,7 @@ export const makeDesktopManager = (options: DesktopManagerOptions): DesktopManag
     if (someoneElsesConfig(runs, other) && asked.replaceUnmanaged !== true)
       throw new HttpFailure(409, unmanaged)
 
-    const layout = layoutToUse()
-    await other.stop()
-    writeConfig(layout, runs)
-    await runs.start()
+    const layout = await startUnder(runs, other)
     const up = await staysUp(layout)
     changed()
     if (!up) throw new HttpFailure(500, `The desktop didn't start.\n${await runs.recentLog()}`)
@@ -303,20 +353,27 @@ export const makeDesktopManager = (options: DesktopManagerOptions): DesktopManag
     return status()
   }
 
-  const remove = async (): Promise<DesktopStatus> => {
+  const remove = async (asked: RemoveOptions): Promise<DesktopStatus> => {
+    const { current, other } = await services()
+    const theirs = someoneElsesConfig(current, other)
+    if (theirs && asked.unshareUnmanaged !== true) throw new HttpFailure(409, notOursToRemove)
+
     system.remove(configPath)
     changed()
-    const { current, other } = await services()
+    if (theirs) return status()
+
     await current.stop()
     await other.stop()
     return status()
   }
 
   const resume = async (): Promise<void> => {
-    const runs = await service()
+    const { current: runs, other } = await services()
     await runs.refresh()
-    if (recordedService() !== "process" || setUp().kind !== "ready") return
-    if (runs.kind === "process" && !runs.isSetUp()) await runs.start()
+    const recorded = recordedService()
+    if (recorded === undefined || setUp().kind !== "ready") return
+    if (runs.isSetUp() || other.isSetUp()) return
+    if (recorded === "process" || runs.kind === "systemd-user") await startUnder(runs, other)
   }
 
   return {
@@ -324,7 +381,7 @@ export const makeDesktopManager = (options: DesktopManagerOptions): DesktopManag
     installPackages,
     replaceOld: () => unlessBusy(replaceOld),
     start: (asked = {}) => unlessBusy(() => start(asked)),
-    remove: () => unlessBusy(remove),
+    remove: (asked = {}) => unlessBusy(() => remove(asked)),
     resume: () => oneAtATime(resume)
   }
 }

@@ -41,7 +41,7 @@ export const status = (changes: Partial<DesktopStatus> = {}): DesktopStatus => (
 })
 
 export const answers = (...bodies: unknown[]) => bodies.map((body) => ({ status: 200, body }))
-export const running = status({ state: "running", display: 1, managed: true, keepsRunning: true })
+export const running = status({ state: "running", display: 1, keepsRunning: true })
 
 export interface Terminal {
   readonly interactive?: boolean

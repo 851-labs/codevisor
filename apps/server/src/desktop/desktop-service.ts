@@ -37,13 +37,34 @@ export const desktopServices = async (
   runner: RunnerCommand,
   files: ServiceFiles
 ): Promise<DesktopServices> => {
-  const underSystemd = systemdService(system, runner, files)
   const asAProcess = processService(system, runner, files)
-  const hasUserSystemd = (await system.run("systemctl", ["--user", "show-environment"])).code === 0
-  if (hasUserSystemd) return { current: underSystemd, other: asAProcess }
+  const reach = await userSystemd(system)
+  if (reach !== undefined)
+    return { current: systemdService(system, runner, files, reach), other: asAProcess }
 
-  return { current: asAProcess, other: underSystemd }
+  return { current: asAProcess, other: systemdService(system, runner, files, []) }
 }
+
+const userSystemd = async (system: DesktopSystem): Promise<ReadonlyArray<string> | undefined> => {
+  const answers = async (through: ReadonlyArray<string>): Promise<boolean> =>
+    (await asUser(system, through, "systemctl", ["show-environment"])).code === 0
+  if (await answers([])) return []
+
+  const runtime = `/run/user/${system.uid}`
+  const through = [`XDG_RUNTIME_DIR=${runtime}`]
+  const mayBeThere = system.env["XDG_RUNTIME_DIR"] !== runtime && system.exists(runtime)
+  return mayBeThere && (await answers(through)) ? through : undefined
+}
+
+const asUser = (
+  system: DesktopSystem,
+  through: ReadonlyArray<string>,
+  program: "systemctl" | "journalctl",
+  args: ReadonlyArray<string>
+) =>
+  through.length === 0
+    ? system.run(program, ["--user", ...args])
+    : system.run("env", [...through, program, "--user", ...args])
 
 export const unitText = (runner: RunnerCommand): string =>
   [
@@ -75,9 +96,10 @@ const quotedForSystemd = (value: string): string =>
 const systemdService = (
   system: DesktopSystem,
   runner: RunnerCommand,
-  files: ServiceFiles
+  files: ServiceFiles,
+  through: ReadonlyArray<string>
 ): DesktopService => {
-  const systemctl = (...args: string[]) => system.run("systemctl", ["--user", ...args])
+  const systemctl = (...args: string[]) => asUser(system, through, "systemctl", args)
   const ourDataFolder = `"--data-dir" ${quotedForSystemd(files.dataDir)}`
   const written = (): string | undefined => system.readText(unitPath(system))
   const isOurs = (): boolean => written()?.includes(ourDataFolder) === true
@@ -108,8 +130,7 @@ const systemdService = (
     belongsToAnother,
     recentLog: async () =>
       (
-        await system.run("journalctl", [
-          "--user",
+        await asUser(system, through, "journalctl", [
           "-u",
           DESKTOP_UNIT,
           "-n",
@@ -119,7 +140,7 @@ const systemdService = (
           "cat"
         ])
       ).output.trim(),
-    logHint: "journalctl --user -u codevisor-desktop",
+    logHint: [...through, "journalctl --user -u codevisor-desktop"].join(" "),
     startsAtBoot: async () =>
       (
         await system.run("loginctl", ["show-user", system.account, "--property=Linger", "--value"])

@@ -3,7 +3,7 @@ import { dirname } from "node:path"
 
 import { readDesktopSetup } from "../routes/screen-sharing-vnc.js"
 import type { ScreenSharingVNCConfig } from "../server-context-types.js"
-import { DESKTOP_SIZE, x11SocketOf } from "./desktop-layout.js"
+import { DESKTOP_SIZE, readyMarkOf, x11SocketOf } from "./desktop-layout.js"
 import { holdsUnixSocket, tcpPortsListenedOnBy } from "./listening-ports.js"
 import { SupervisedProcesses } from "./supervised-processes.js"
 import { xauthorityEntry } from "./xauthority.js"
@@ -13,6 +13,7 @@ const ownerOnlyFolder = 0o700
 const readyPollMs = 100
 const readyPolls = 100
 const portSettleMs = 1000
+const sessionSettleMs = 3000
 const sessionCommand =
   "xfconf-query -c xfwm4 -p /general/use_compositing -n -t bool -s false; exec startxfce4"
 
@@ -91,6 +92,10 @@ class DesktopRun {
       ["--", "sh", "-c", sessionCommand],
       this.sessionEnvironment()
     )
+    await sleep(sessionSettleMs)
+    if (this.processes.isStopping) return
+
+    writeFileSync(readyMarkOf(this.desktop.socket), `${process.pid}\n`, { mode: ownerOnlyFile })
     this.log(`The desktop is running on display :${this.desktop.display}`)
   }
 
@@ -98,6 +103,7 @@ class DesktopRun {
     mkdirSync(dirname(this.desktop.socket), { recursive: true, mode: ownerOnlyFolder })
     rmSync(this.desktop.socket, { force: true })
     rmSync(this.desktop.xauthority, { force: true })
+    rmSync(readyMarkOf(this.desktop.socket), { force: true })
     writeFileSync(this.desktop.xauthority, xauthorityEntry(), { mode: ownerOnlyFile })
   }
 
@@ -169,6 +175,7 @@ class DesktopRun {
     void this.processes.stop().then(() => {
       rmSync(this.desktop.socket, { force: true })
       rmSync(this.desktop.xauthority, { force: true })
+      rmSync(readyMarkOf(this.desktop.socket), { force: true })
       this.ended?.(code)
     })
   }

@@ -322,7 +322,7 @@ describe("a server that boots where there is no systemd", () => {
     })
     expect(await nowWithSystemd.manager.status()).toMatchObject({
       state: "running",
-      managed: true
+      unmanaged: false
     })
     await nowWithSystemd.manager.start()
     expect(nowWithSystemd.terminated).toEqual([4242])
@@ -347,7 +347,11 @@ describe("a server that boots where there is no systemd", () => {
     const first = fakeMachine({ files: UBUNTU })
     await first.manager.start()
     const rebooted = fakeMachine({
-      files: { ...UBUNTU, [CONFIG]: first.files.get(CONFIG) ?? "" },
+      files: {
+        ...UBUNTU,
+        [CONFIG]: first.files.get(CONFIG) ?? "",
+        [UNIT]: first.files.get(UNIT) ?? ""
+      },
       socketAppearsAfterPolls: Number.POSITIVE_INFINITY
     })
     await rebooted.manager.resume()

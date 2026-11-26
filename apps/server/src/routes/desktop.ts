@@ -13,7 +13,8 @@ const actions: Readonly<Record<string, DesktopAction>> = {
   "POST /v1/desktop/replace-old": (desktop) => desktop.replaceOld(),
   "POST /v1/desktop/start": (desktop, url) =>
     desktop.start({ replaceUnmanaged: url.searchParams.get("replace") === "1" }),
-  "DELETE /v1/desktop": (desktop) => desktop.remove()
+  "DELETE /v1/desktop": (desktop, url) =>
+    desktop.remove({ unshareUnmanaged: url.searchParams.get("unshare") === "1" })
 }
 
 const changesWhatIsShared = new Set(["POST /v1/desktop/start", "DELETE /v1/desktop"])

@@ -10,6 +10,7 @@ import { Effect, Option } from "effect"
 import { Command, Flag, Prompt } from "effect/unstable/cli"
 
 import { authLoginCommand } from "./cli/cloud-auth.js"
+import { fetchJson } from "./cli/fetch-json.js"
 import { mcpCommand, type McpSession } from "./cli/mcp.js"
 import { setupCommand, type SetupDeps } from "./cli/setup.js"
 import {
@@ -68,24 +69,7 @@ const makeDeps = (): CliDeps => ({
     child.unref()
     return Promise.resolve(child.pid ?? -1)
   },
-  fetchJson: async (url, init) => {
-    try {
-      const response = await fetch(url, {
-        method: init?.method ?? "GET",
-        signal: AbortSignal.timeout(init?.timeoutMs ?? 5000),
-        ...(init?.body === undefined
-          ? {}
-          : {
-              body: JSON.stringify(init.body),
-              headers: { "content-type": "application/json" }
-            })
-      })
-      const body: unknown = await response.json().catch(() => undefined)
-      return { status: response.status, body }
-    } catch {
-      return undefined
-    }
-  },
+  fetchJson,
   readTextFile: (path) => {
     try {
       return readFileSync(path, "utf8")

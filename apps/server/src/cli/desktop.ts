@@ -8,7 +8,7 @@ import {
   shellText
 } from "../desktop/desktop-packages.js"
 import type { DesktopSystem } from "../desktop/desktop-system.js"
-import { oldDesktop, type RootCommand } from "../desktop/old-desktop.js"
+import { oldDesktop, oldDesktopLeftovers, type RootCommand } from "../desktop/old-desktop.js"
 import { resolvePort, routeFailure, type CliDeps, type CommandOptions } from "./support.js"
 
 export interface DesktopCliDeps extends CliDeps {
@@ -35,7 +35,11 @@ const unansweredPollsAllowed = 5
 const replaceOldQuestion =
   "An older desktop runs as root on this machine. Replace it? Everything open in it will close."
 const replaceUnmanagedQuestion =
-  "A desktop that Codevisor didn't set up is shared from this machine. Replace it with a new one? The old one keeps running but is no longer shared."
+  "This machine has a desktop config that Codevisor didn't write. Replace it with a new desktop? A desktop it points at keeps running but is no longer shared."
+const unshareQuestion =
+  "The desktop shared from this machine wasn't set up by Codevisor. Stop sharing it? It keeps running; Codevisor only forgets it."
+const notUnderstood =
+  "The server's answer about the desktop wasn't understood. The server may be older or newer than this command."
 
 export const desktopSetupCommand = async (
   deps: DesktopCliDeps,
@@ -63,7 +67,7 @@ export const desktopStatusCommand = async (
   const status = await (await desktopServer(deps, options)).ask("GET", "", quickMs)
   if (status === undefined) return 1
 
-  for (const line of statusLines(status, deps.system)) deps.log(line)
+  for (const line of await statusLines(status, deps.system)) deps.log(line)
   return 0
 }
 
@@ -71,13 +75,28 @@ export const desktopRemoveCommand = async (
   deps: DesktopCliDeps,
   options: DesktopCommandOptions = {}
 ): Promise<number> => {
+  const server = await desktopServer(deps, options)
+  const found = await server.ask("GET", "", quickMs)
+  if (found === undefined) return 1
+  if (found.unmanaged === true) return stopSharing(deps, server, options)
+
   const question = "Remove the desktop? This closes everything open in it."
   if (!(await agreed(deps, options, question))) return 1
-
-  const removed = await (await desktopServer(deps, options)).ask("DELETE", "", startMs)
-  if (removed === undefined) return 1
+  if ((await server.ask("DELETE", "", startMs)) === undefined) return 1
 
   deps.log("The desktop is removed. Its packages stay installed.")
+  return 0
+}
+
+const stopSharing = async (
+  deps: DesktopCliDeps,
+  server: DesktopServer,
+  options: DesktopCommandOptions
+): Promise<number> => {
+  if (!(await agreed(deps, options, unshareQuestion))) return 1
+  if ((await server.ask("DELETE", "?unshare=1", startMs)) === undefined) return 1
+
+  deps.log("The desktop is no longer shared. It wasn't Codevisor's, so it was left running.")
   return 0
 }
 
@@ -99,10 +118,12 @@ const desktopServer = async (
   return {
     ask: async (method, path, timeoutMs) => {
       const response = await deps.fetchJson(`${url}${path}`, { method, timeoutMs })
-      if (response?.status === 200) return answered(response.body)
-
-      deps.error(printable(routeFailure(response, port)))
-      return undefined
+      const status = response?.status === 200 ? answered(response.body) : undefined
+      if (status === undefined)
+        deps.error(
+          response?.status === 200 ? notUnderstood : printable(routeFailure(response, port))
+        )
+      return status
     },
     peek: async () => {
       const response = await deps.fetchJson(url, { timeoutMs: quickMs })
@@ -124,8 +145,18 @@ const printable = (text: string): string =>
     .map((line, index) => (index === 0 ? line : `${continued}${line}`))
     .join("\n")
 
-const answered = (body: unknown): DesktopStatus => {
-  const status = Schema.decodeUnknownSync(DesktopStatus)(body)
+const decoded = (body: unknown): DesktopStatus | undefined => {
+  try {
+    return Schema.decodeUnknownSync(DesktopStatus)(body)
+  } catch {
+    return undefined
+  }
+}
+
+const answered = (body: unknown): DesktopStatus | undefined => {
+  const status = decoded(body)
+  if (status === undefined) return undefined
+
   return {
     ...status,
     account: accountName.test(status.account) ? status.account : "the server's account",
@@ -149,8 +180,11 @@ const describeState = (status: DesktopStatus): string => {
   return "no desktop set up"
 }
 
-const statusLines = (status: DesktopStatus, system: DesktopSystem): ReadonlyArray<string> => {
-  const old = oldDesktop(system)
+const statusLines = async (
+  status: DesktopStatus,
+  system: DesktopSystem
+): Promise<ReadonlyArray<string>> => {
+  const old = await oldDesktop(system)
   if (old === undefined) return stateLines(status)
 
   const units = old.units.join(", ") || "vncserver"
@@ -204,16 +238,24 @@ const replaceOldDesktop = async (
   status: DesktopStatus,
   options: DesktopCommandOptions
 ): Promise<DesktopStatus | undefined> => {
-  const old = oldDesktop(deps.system)
+  const old = await oldDesktop(deps.system)
   if (old === undefined) return status
   if (!(await agreed(deps, options, replaceOldQuestion))) return undefined
 
   deps.log("==> Removing the older desktop")
-  return asAdministrator(deps, server, status, {
+  const cleared = await asAdministrator(deps, server, status, {
     what: "Removing the older desktop",
     path: "/replace-old",
     commands: old.removal
   })
+  if (cleared === undefined) return undefined
+
+  const left = await oldDesktopLeftovers(deps.system, old)
+  if (left.length === 0) return cleared
+
+  deps.error(`The older desktop is still running: ${left.join(", ")}.`)
+  deps.error("Stop it, then run `codevisor desktop setup` again.")
+  return undefined
 }
 
 const installWhatIsMissing = async (
@@ -267,8 +309,7 @@ const startTheDesktop = async (
   return 0
 }
 
-const isSomeoneElses = (status: DesktopStatus): boolean =>
-  (status.state === "running" || status.state === "stopped") && status.managed === false
+const isSomeoneElses = (status: DesktopStatus): boolean => status.unmanaged === true
 
 const whenTheServerIsDone = async (
   deps: DesktopCliDeps,

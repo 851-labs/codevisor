@@ -163,7 +163,12 @@ export const makeDesktopCommand = (
 
   const setup = Command.make(
     "setup",
-    { port: portFlag, yes: yes("Replace an older root desktop without asking") },
+    {
+      port: portFlag,
+      yes: yes(
+        "Answer yes to setup's questions: replacing an older root desktop, or a desktop config Codevisor didn't write"
+      )
+    },
     ({ port, yes: agreed }) =>
       runDesktopCli((deps) =>
         desktopSetupCommand(deps, { port: Option.getOrUndefined(port), yes: agreed })
@@ -180,7 +185,12 @@ export const makeDesktopCommand = (
 
   const remove = Command.make(
     "remove",
-    { port: portFlag, yes: yes("Remove it without asking") },
+    {
+      port: portFlag,
+      yes: yes(
+        "Don't ask before removing the desktop, or before unsharing one Codevisor didn't set up"
+      )
+    },
     ({ port, yes: agreed }) =>
       runDesktopCli((deps) =>
         desktopRemoveCommand(deps, { port: Option.getOrUndefined(port), yes: agreed })

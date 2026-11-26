@@ -76,7 +76,7 @@ describe("starting the desktop as the server's own account", () => {
     expect(
       machine.commands.some((line) => line.startsWith("sudo") && line !== "sudo -n true")
     ).toBe(false)
-    expect(status).toMatchObject({ state: "running", display: 1, managed: true })
+    expect(status).toMatchObject({ state: "running", display: 1, unmanaged: false })
     expect(machine.changes.count).toBe(1)
   })
 
@@ -140,13 +140,13 @@ describe("starting the desktop as the server's own account", () => {
       vnc: { socket: "/home/dev/desk.sock", display: 4, name: "Bench", defaultSize: "1280x800" }
     })
     const machine = fakeMachine({ files: { ...UBUNTU, [CONFIG]: theirs } })
-    expect(await machine.manager.status()).toMatchObject({ state: "running", managed: false })
+    expect(await machine.manager.status()).toMatchObject({ state: "running", unmanaged: true })
     await expect(machine.manager.start()).rejects.toMatchObject({ status: 409 })
     const down = fakeMachine({
       files: { ...UBUNTU, [CONFIG]: theirs },
       socketAppearsAfterPolls: Number.POSITIVE_INFINITY
     })
-    expect(await down.manager.status()).toMatchObject({ state: "stopped", managed: false })
+    expect(await down.manager.status()).toMatchObject({ state: "stopped", unmanaged: true })
     await expect(down.manager.start()).rejects.toMatchObject({ status: 409 })
     expect(down.files.get(CONFIG)).toBe(theirs)
     expect(machine.files.get(CONFIG)).toBe(theirs)
@@ -269,7 +269,7 @@ describe("the boot service after the server moved to another folder", () => {
         (line) => line.startsWith("systemctl --user") && !line.endsWith("show-environment")
       )
     ).toEqual([])
-    expect(await machine.manager.status()).toMatchObject({ state: "none", managed: false })
+    expect(await machine.manager.status()).toMatchObject({ state: "none", unmanaged: false })
   })
 
   it("is left alone while it already points there", async () => {

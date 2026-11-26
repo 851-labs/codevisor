@@ -15,6 +15,7 @@ export interface FakeMachineOptions {
   readonly socketVanishesAfterPolls?: number
   readonly alive?: ReadonlyArray<number>
   readonly holds?: { readonly prefix: string; readonly until: Promise<void> }
+  readonly sessionNeverSettles?: boolean
 }
 
 export interface FakeMachine {
@@ -51,6 +52,8 @@ export const UBUNTU = {
 
 export const APT_UPDATE_LOOP = `for try in $(seq 60); do out=$(apt-get update -q 2>&1) && exit 0; echo "$out"; echo "$out" | grep -q "Could not get lock" || exit 1; sleep 10; done; exit 1`
 
+export const SESSION_RUNNER = 4243
+
 export const CHANGED = "(told that what is shared changed)"
 
 const defaultEnv: Record<string, string | undefined> = { XDG_RUNTIME_DIR: "/run/user/1001" }
@@ -82,6 +85,14 @@ export const fakeMachine = (options: FakeMachineOptions = {}): FakeMachine => {
     return options.results?.[line] ?? ok
   }
 
+  const socketIsUp = (): boolean => {
+    const appearsAfter = options.socketAppearsAfterPolls ?? 0
+    const vanishesAfter = options.socketVanishesAfterPolls ?? Number.POSITIVE_INFINITY
+    return files.has(CONFIG) && polls > appearsAfter && polls <= vanishesAfter
+  }
+  const readyMark = (): string | undefined =>
+    options.sessionNeverSettles !== true && socketIsUp() ? `${SESSION_RUNNER}\n` : undefined
+
   const system: DesktopSystem = {
     platform: "linux",
     uid: options.uid ?? 1001,
@@ -101,13 +112,13 @@ export const fakeMachine = (options: FakeMachineOptions = {}): FakeMachine => {
       files.set("/proc/4242/cmdline", [command, ...args].join("\0"))
       return 4242
     },
-    processAlive: (pid) => alive.has(pid),
+    processAlive: (pid) => pid === SESSION_RUNNER || alive.has(pid),
     terminate: (pid) => {
       terminated.push(pid)
       alive.delete(pid)
       files.delete(`/proc/${pid}/cmdline`)
     },
-    readText: (path) => files.get(path),
+    readText: (path) => (path.endsWith(".ready") ? readyMark() : files.get(path)),
     writeText: (path, text) => void files.set(path, text),
     remove: (path) => void files.delete(path),
     exists: (path) =>
@@ -122,10 +133,7 @@ export const fakeMachine = (options: FakeMachineOptions = {}): FakeMachine => {
 
   const locate = (configured: string): PrivateSocket => {
     polls += 1
-    const appearsAfter = options.socketAppearsAfterPolls ?? 0
-    const vanishesAfter = options.socketVanishesAfterPolls ?? Number.POSITIVE_INFINITY
-    if (files.has(CONFIG) && polls > appearsAfter && polls <= vanishesAfter)
-      return { path: configured }
+    if (socketIsUp()) return { path: configured }
 
     return { problem: "missing", detail: `nothing at ${configured}` }
   }

@@ -14,7 +14,7 @@ import {
   withAnOldRootDesktop,
   world
 } from "./desktop-test-support.js"
-import { desktopRemoveCommand, desktopSetupCommand, desktopStatusCommand } from "./desktop.js"
+import { desktopSetupCommand, desktopStatusCommand } from "./desktop.js"
 
 describe("codevisor desktop setup", () => {
   it("has the server install and start everything when its account needs no sudo password", async () => {
@@ -275,9 +275,9 @@ describe("an older desktop that runs as root", () => {
 })
 
 describe("a desktop that runs but that Codevisor didn't set up", () => {
-  const theirs = status({ state: "running", display: 4, managed: false })
+  const theirs = status({ state: "running", display: 4, unmanaged: true })
   const question =
-    "A desktop that Codevisor didn't set up is shared from this machine. Replace it with a new one? The old one keeps running but is no longer shared."
+    "This machine has a desktop config that Codevisor didn't write. Replace it with a new desktop? A desktop it points at keeps running but is no longer shared."
 
   it("is replaced only after asking, and the server is told the answer", async () => {
     const machine = world({
@@ -295,6 +295,15 @@ describe("a desktop that runs but that Codevisor didn't set up", () => {
   it("is asked about just the same while it happens to be down", async () => {
     const machine = world({
       [`GET ${url()}`]: answers({ ...theirs, state: "stopped", problem: "nothing at /x.sock" }),
+      [`POST ${url("/start?replace=1")}`]: answers(running)
+    })
+    expect(await desktopSetupCommand(machine.deps)).toBe(0)
+    expect(machine.questions).toEqual([question])
+  })
+
+  it("is asked about even when its config is one Codevisor can't read a desktop from", async () => {
+    const machine = world({
+      [`GET ${url()}`]: answers(status({ state: "none", unmanaged: true })),
       [`POST ${url("/start?replace=1")}`]: answers(running)
     })
     expect(await desktopSetupCommand(machine.deps)).toBe(0)
@@ -379,28 +388,5 @@ describe("codevisor desktop status", () => {
     })
     expect(await desktopStatusCommand(machine.deps)).toBe(1)
     expect(machine.errors).toEqual(["A desktop can only be set up on a Linux machine"])
-  })
-})
-
-describe("codevisor desktop remove", () => {
-  const question = "Remove the desktop? This closes everything open in it."
-
-  it("asks first, then removes it", async () => {
-    const machine = world({ [`DELETE ${url()}`]: answers(status()) })
-    expect(await desktopRemoveCommand(machine.deps)).toBe(0)
-    expect(machine.questions).toEqual([question])
-    expect(machine.logs).toEqual(["The desktop is removed. Its packages stay installed."])
-  })
-
-  it("removes nothing when the answer is no", async () => {
-    const machine = world({ [`DELETE ${url()}`]: answers(status()) }, { agrees: false })
-    expect(await desktopRemoveCommand(machine.deps)).toBe(1)
-    expect(machine.httpCalls(`DELETE ${url()}`)).toBe(0)
-  })
-
-  it("doesn't ask with --yes", async () => {
-    const machine = world({ [`DELETE ${url()}`]: answers(status()) }, { interactive: false })
-    expect(await desktopRemoveCommand(machine.deps, { yes: true })).toBe(0)
-    expect(machine.questions).toEqual([])
   })
 })
