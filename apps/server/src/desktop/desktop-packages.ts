@@ -1,6 +1,7 @@
-import type { DesktopCommand, DesktopSudo } from "@codevisor/api"
+import type { DesktopSudo } from "@codevisor/api"
 
 import type { DesktopSystem } from "./desktop-system.js"
+import type { RootCommand } from "./old-desktop.js"
 
 export const DESKTOP_PROGRAMS = [
   "Xvnc",
@@ -24,6 +25,7 @@ const aptPackages = [
 ]
 
 const aptFamily = new Set(["debian", "ubuntu"])
+const aptLockWaitSeconds = 600
 const installTimeoutMs = 20 * 60 * 1000
 const outputTailLines = 30
 
@@ -57,11 +59,17 @@ export const hasProgram = async (system: DesktopSystem, program: string): Promis
 export const installCommands = async (
   system: DesktopSystem,
   release: OsRelease
-): Promise<ReadonlyArray<DesktopCommand> | undefined> => {
+): Promise<ReadonlyArray<RootCommand> | undefined> => {
   const usesApt = release.ids.some((id) => aptFamily.has(id))
   if (!usesApt || !(await hasProgram(system, "apt-get"))) return undefined
 
-  const apt = ["env", "DEBIAN_FRONTEND=noninteractive", "apt-get"]
+  const apt = [
+    "env",
+    "DEBIAN_FRONTEND=noninteractive",
+    "apt-get",
+    "-o",
+    `DPkg::Lock::Timeout=${aptLockWaitSeconds}`
+  ]
   return [
     [...apt, "update", "-q"],
     [...apt, "install", "-y", "-q", "--no-install-recommends", ...aptPackages]
@@ -83,7 +91,7 @@ export interface RootRun {
 
 export const runAsRoot = async (
   system: DesktopSystem,
-  commands: ReadonlyArray<DesktopCommand>
+  commands: ReadonlyArray<RootCommand>
 ): Promise<RootRun> => {
   for (const command of commands) {
     const [program, ...args] = system.uid === 0 ? command : ["sudo", "-n", ...command]

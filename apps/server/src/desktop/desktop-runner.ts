@@ -4,27 +4,37 @@ import { dirname } from "node:path"
 import { readDesktopSetup } from "../routes/screen-sharing-vnc.js"
 import type { ScreenSharingVNCConfig } from "../server-context-types.js"
 import { DESKTOP_SIZE, x11SocketOf } from "./desktop-layout.js"
-import { somethingListensOn } from "./listening-ports.js"
+import { tcpPortsListenedOnBy } from "./listening-ports.js"
 import { SupervisedProcesses } from "./supervised-processes.js"
 import { xauthorityEntry } from "./xauthority.js"
 
 const ownerOnlyFile = 0o600
 const ownerOnlyFolder = 0o700
-const vncBasePort = 5900
 const readyPollMs = 100
 const readyPolls = 100
 const portSettleMs = 1000
 const sessionCommand =
   "xfconf-query -c xfwm4 -p /general/use_compositing -n -t bool -s false; exec startxfce4"
 
-export const runDesktop = async (dataDir: string, log: (line: string) => void): Promise<number> => {
+export type StopRequests = (stop: () => void) => void
+
+const stopSignals: StopRequests = (stop) => {
+  for (const signal of ["SIGTERM", "SIGINT", "SIGHUP"] as const) process.once(signal, stop)
+}
+
+export const runDesktop = async (
+  dataDir: string,
+  log: (line: string) => void,
+  stopRequests: StopRequests = stopSignals
+): Promise<number> => {
   const setup = readDesktopSetup(dataDir)
   if (setup.kind !== "ready" || setup.config.display === undefined) {
     log("No desktop is set up in this data folder. Run: codevisor desktop setup")
     return 1
   }
 
-  return new DesktopRun(desktopOf(setup.config, setup.config.display), log).untilItEnds()
+  const run = new DesktopRun(desktopOf(setup.config, setup.config.display), log)
+  return run.untilItEnds(stopRequests)
 }
 
 interface RunningDesktop {
@@ -56,12 +66,13 @@ class DesktopRun {
     private readonly log: (line: string) => void
   ) {}
 
-  untilItEnds(): Promise<number> {
+  untilItEnds(stopRequests: StopRequests): Promise<number> {
     return new Promise((resolve) => {
       this.ended = resolve
-      for (const signal of ["SIGTERM", "SIGINT", "SIGHUP"] as const)
-        process.once(signal, () => this.end(0))
+      stopRequests(() => this.end(0))
       this.start().catch((cause: unknown) => {
+        if (this.processes.isStopping) return
+
         this.log(cause instanceof Error ? cause.message : String(cause))
         this.end(1)
       })
@@ -70,9 +81,9 @@ class DesktopRun {
 
   private async start(): Promise<void> {
     this.writeCookie()
-    this.processes.start("Xvnc", this.xvncArguments(), {})
+    const xvnc = this.processes.start("Xvnc", this.xvncArguments(), {})
     await this.xvncIsUp()
-    await this.tcpStaysClosed()
+    await this.staysOffTcp(xvnc.pid)
     if (this.processes.isStopping) return
 
     this.processes.start(
@@ -123,25 +134,28 @@ class DesktopRun {
   }
 
   private async xvncIsUp(): Promise<void> {
-    for (let poll = 0; poll < readyPolls; poll += 1) {
-      if (this.processes.isStopping) throw new Error("Xvnc didn't start")
+    for (let poll = 0; poll < readyPolls && !this.processes.isStopping; poll += 1) {
       if (existsSync(this.desktop.socket) && existsSync(x11SocketOf(this.desktop.display))) return
 
       await sleep(readyPollMs)
     }
-    throw new Error("Xvnc didn't open its socket")
+    if (!this.processes.isStopping) throw new Error("Xvnc didn't open its socket")
   }
 
-  private async tcpStaysClosed(): Promise<void> {
-    this.refuseAnOpenTcpPort()
+  private async staysOffTcp(xvnc: number | undefined): Promise<void> {
+    this.refuseTcpListeners(xvnc)
     await sleep(portSettleMs)
-    this.refuseAnOpenTcpPort()
+    this.refuseTcpListeners(xvnc)
   }
 
-  private refuseAnOpenTcpPort(): void {
-    const port = vncBasePort + this.desktop.display
-    if (somethingListensOn(port))
-      throw new Error(`TCP port ${port} is open, and the desktop must only listen on its socket`)
+  private refuseTcpListeners(xvnc: number | undefined): void {
+    if (xvnc === undefined || this.processes.isStopping) return
+
+    const ports = tcpPortsListenedOnBy(xvnc)
+    if (ports.length > 0)
+      throw new Error(
+        `Xvnc listens on TCP port ${ports.join(", ")}, and the desktop must only listen on its socket`
+      )
   }
 
   private end(code: number): void {

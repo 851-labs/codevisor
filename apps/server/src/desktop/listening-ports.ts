@@ -1,43 +1,75 @@
-import { readFileSync } from "node:fs"
+import { readdirSync, readFileSync, readlinkSync } from "node:fs"
+import { join } from "node:path"
 
-export interface KernelTable {
-  readonly path: string
+interface KernelTable {
+  readonly name: string
   readonly absentWithoutIPv6?: boolean
 }
 
-const listening = "0A"
-const kernelTables: ReadonlyArray<KernelTable> = [
-  { path: "/proc/net/tcp" },
-  { path: "/proc/net/tcp6", absentWithoutIPv6: true }
-]
-
-export const somethingListensOn = (
-  port: number,
-  tables: ReadonlyArray<KernelTable> = kernelTables
-): boolean => tables.some((table) => listeningPorts(tableText(table)).has(port))
-
-export const listeningPorts = (procNetTcp: string): ReadonlySet<number> => {
-  const ports = new Set<number>()
-  for (const line of procNetTcp.split("\n").slice(1)) {
-    const [, local, , state] = line.trim().split(/\s+/)
-    if (state !== listening || local === undefined) continue
-
-    ports.add(Number.parseInt(local.slice(local.lastIndexOf(":") + 1), 16))
-  }
-  return ports
+interface Listener {
+  readonly port: number
+  readonly inode: string
 }
 
-const tableText = (table: KernelTable): string => {
+const listening = "0A"
+const inodeField = 9
+const socketLink = /^socket:\[(\d+)\]$/
+const kernelTables: ReadonlyArray<KernelTable> = [
+  { name: "tcp" },
+  { name: "tcp6", absentWithoutIPv6: true }
+]
+
+export const tcpPortsListenedOnBy = (pid: number, proc = "/proc"): ReadonlyArray<number> => {
+  const own = socketsOf(pid, proc)
+  return kernelTables
+    .flatMap((table) => listeners(tableText(table, proc)))
+    .filter((listener) => own.has(listener.inode))
+    .map((listener) => listener.port)
+}
+
+export const listeners = (procNetTcp: string): ReadonlyArray<Listener> =>
+  procNetTcp
+    .split("\n")
+    .slice(1)
+    .map((line) => line.trim().split(/\s+/))
+    .filter((fields) => fields[3] === listening && fields[1] !== undefined)
+    .map((fields) => ({
+      port: Number.parseInt(fields[1]!.slice(fields[1]!.lastIndexOf(":") + 1), 16),
+      inode: fields[inodeField] ?? ""
+    }))
+
+const socketsOf = (pid: number, proc: string): ReadonlySet<string> => {
+  const folder = join(proc, String(pid), "fd")
   try {
-    return readFileSync(table.path, "utf8")
+    return new Set(
+      readdirSync(folder).flatMap((fd) => socketLink.exec(linkAt(join(folder, fd)))?.[1] ?? [])
+    )
+  } catch (error) {
+    throw unchecked(folder, error)
+  }
+}
+
+const linkAt = (path: string): string => {
+  try {
+    return readlinkSync(path)
+  } catch {
+    return ""
+  }
+}
+
+const tableText = (table: KernelTable, proc: string): string => {
+  const path = join(proc, "net", table.name)
+  try {
+    return readFileSync(path, "utf8")
   } catch (error) {
     if (table.absentWithoutIPv6 === true && isMissing(error)) return ""
 
-    throw new Error(`Can't read ${table.path}, so the desktop's TCP port can't be checked`, {
-      cause: error
-    })
+    throw unchecked(path, error)
   }
 }
+
+const unchecked = (path: string, cause: unknown): Error =>
+  new Error(`Can't read ${path}, so the desktop's TCP ports can't be checked`, { cause })
 
 const isMissing = (error: unknown): boolean =>
   error instanceof Error && "code" in error && error.code === "ENOENT"

@@ -14,6 +14,7 @@ export interface DesktopService {
   readonly kind: ServiceKind
   readonly start: () => Promise<void>
   readonly stop: () => Promise<void>
+  readonly refresh: () => Promise<void>
   readonly isSetUp: () => boolean
   readonly recentLog: () => Promise<string>
   readonly logHint: string
@@ -80,6 +81,13 @@ const systemdService = (system: DesktopSystem, runner: RunnerCommand): DesktopSe
       await systemctl("enable", DESKTOP_UNIT)
       await systemctl("restart", DESKTOP_UNIT)
     },
+    refresh: async () => {
+      const written = system.readText(unitPath(system))
+      if (written === undefined || written === unitText(runner)) return
+
+      system.writeText(unitPath(system), unitText(runner))
+      await systemctl("daemon-reload")
+    },
     stop: async () => {
       await systemctl("disable", "--now", DESKTOP_UNIT)
       system.remove(unitPath(system))
@@ -138,6 +146,7 @@ const processService = (
       if (pid !== undefined) system.writeText(pidFile, `${pid}\n`)
     },
     stop,
+    refresh: async () => undefined,
     isSetUp: () => runningPid() !== undefined,
     recentLog: async () =>
       (system.readText(logFile) ?? "").trimEnd().split("\n").slice(-logLines).join("\n"),

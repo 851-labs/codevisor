@@ -1,61 +1,61 @@
-import { mkdtempSync, rmSync, writeFileSync } from "node:fs"
+import { mkdirSync, mkdtempSync, rmSync, symlinkSync, writeFileSync } from "node:fs"
 import { tmpdir } from "node:os"
 import { join } from "node:path"
 
 import { describe, expect, it, onTestFinished } from "vitest"
 
 import { unitText } from "./desktop-service.js"
-import { listeningPorts, somethingListensOn } from "./listening-ports.js"
+import { tcpPortsListenedOnBy } from "./listening-ports.js"
 import { xauthorityEntry } from "./xauthority.js"
 
 const header =
   "  sl  local_address rem_address   st tx_queue rx_queue tr tm->when retrnsmt   uid  timeout inode"
 
-describe("the TCP ports something on the machine listens on", () => {
-  it("reads listening IPv4 sockets and leaves connected ones out", () => {
-    const table = [
-      header,
-      "   0: 0100007F:170D 00000000:0000 0A 00000000:00000000 00:00000000 00000000     0        0 1 1 0 100 0 0 10 0",
-      "   1: 00000000:C0E1 00000000:0000 0A 00000000:00000000 00:00000000 00000000  1001        0 2 1 0 100 0 0 10 0",
-      "   2: 0100007F:170E 0100007F:D431 01 00000000:00000000 00:00000000 00000000  1001        0 3 1 0 20 4 30 10 -1",
-      ""
-    ].join("\n")
-    expect([...listeningPorts(table)]).toEqual([5901, 49_377])
-  })
+const line = (local: string, state: string, inode: number): string =>
+  `   0: ${local} 00000000:0000 ${state} 00000000:00000000 00:00000000 00000000  1001        0 ${inode} 1 0000000000000000 100 0 0 10 0`
 
-  it("reads listening IPv6 sockets", () => {
-    const table = [
-      header,
-      "   0: 00000000000000000000000001000000:170D 00000000000000000000000000000000:0000 0A 00000000:00000000 00:00000000 00000000     0        0 4 1 0 100 0 0 10 0",
-      ""
-    ].join("\n")
-    expect(listeningPorts(table).has(5901)).toBe(true)
-  })
-
-  it("finds nothing in an empty table", () => {
-    expect(listeningPorts(`${header}\n`).size).toBe(0)
-  })
-
-  it("takes the IPv6 table as empty when it is missing, as it is with IPv6 turned off", () => {
-    const folder = mkdtempSync(join(tmpdir(), "cv-tcp-"))
-    onTestFinished(() => rmSync(folder, { recursive: true, force: true }))
-    const tcp = join(folder, "tcp")
-    writeFileSync(
-      tcp,
-      `${header}\n   0: 0100007F:170D 00000000:0000 0A 00000000:00000000 00:00000000 00000000 0 0 1 1 0 100 0 0 10 0\n`
+const fakeProc = (tables: Record<string, string>, sockets: Record<number, number[]>): string => {
+  const proc = mkdtempSync(join(tmpdir(), "cv-proc-"))
+  onTestFinished(() => rmSync(proc, { recursive: true, force: true }))
+  mkdirSync(join(proc, "net"))
+  for (const [name, text] of Object.entries(tables)) writeFileSync(join(proc, "net", name), text)
+  for (const [pid, inodes] of Object.entries(sockets)) {
+    mkdirSync(join(proc, pid, "fd"), { recursive: true })
+    symlinkSync("/dev/null", join(proc, pid, "fd", "0"))
+    inodes.forEach((inode, fd) =>
+      symlinkSync(`socket:[${inode}]`, join(proc, pid, "fd", String(fd + 3)))
     )
-    const ipv4 = { path: tcp }
-    const ipv6TurnedOff = { path: join(folder, "tcp6"), absentWithoutIPv6: true }
-    expect(somethingListensOn(5901, [ipv6TurnedOff, ipv4])).toBe(true)
-    expect(somethingListensOn(5902, [ipv4, ipv6TurnedOff])).toBe(false)
-    expect(somethingListensOn(5901, [ipv6TurnedOff])).toBe(false)
+  }
+  return proc
+}
+
+describe("the TCP ports the desktop's own X server listens on", () => {
+  const ipv4 = [header, line("0100007F:170D", "0A", 111), line("00000000:C0E1", "0A", 222)]
+  const ipv6 = [header, line("00000000000000000000000001000000:170E", "0A", 333)]
+
+  it("are the listening sockets that belong to that process, on IPv4 and IPv6", () => {
+    const proc = fakeProc({ tcp: ipv4.join("\n"), tcp6: ipv6.join("\n") }, { 500: [111, 333, 999] })
+    expect(tcpPortsListenedOnBy(500, proc)).toEqual([5901, 5902])
   })
 
-  it("refuses to answer when the table it needs can't be read, instead of calling the port closed", () => {
-    const unreadable = { path: join(tmpdir(), "cv-no-such-folder", "tcp") }
-    expect(() => somethingListensOn(5901, [unreadable])).toThrow(
-      `Can't read ${unreadable.path}, so the desktop's TCP port can't be checked`
+  it("leave out another program's listener on the very port a desktop would use, and connected sockets", () => {
+    const connected = line("0100007F:170D", "01", 444)
+    const proc = fakeProc({ tcp: [...ipv4, connected].join("\n"), tcp6: header }, { 500: [444] })
+    expect(tcpPortsListenedOnBy(500, proc)).toEqual([])
+  })
+
+  it("take the IPv6 table as empty when it is missing, as it is with IPv6 turned off", () => {
+    const proc = fakeProc({ tcp: ipv4.join("\n") }, { 500: [222] })
+    expect(tcpPortsListenedOnBy(500, proc)).toEqual([49_377])
+  })
+
+  it("can't be told when the kernel's table or the process's sockets can't be read, and that is an error", () => {
+    const noTable = fakeProc({}, { 500: [111] })
+    expect(() => tcpPortsListenedOnBy(500, noTable)).toThrow(
+      `Can't read ${join(noTable, "net", "tcp")}, so the desktop's TCP ports can't be checked`
     )
+    const noProcess = fakeProc({ tcp: ipv4.join("\n") }, {})
+    expect(() => tcpPortsListenedOnBy(500, noProcess)).toThrow("can't be checked")
   })
 })
 

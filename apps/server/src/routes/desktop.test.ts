@@ -54,6 +54,20 @@ describe("the desktop routes", () => {
     expect(calls).toEqual(["status", "installPackages", "replaceOld", "start", "remove"])
   })
 
+  it("pass on that replacing a desktop Codevisor didn't set up was asked for, and only then", async () => {
+    const asked: unknown[] = []
+    const { manager } = recordingManager({
+      start: async (options) => {
+        asked.push(options)
+        return status("running")
+      }
+    })
+    const { call } = await start(manager)
+    await call("POST", "/start")
+    await call("POST", "/start?replace=1")
+    expect(asked).toEqual([{ replaceUnmanaged: false }, { replaceUnmanaged: true }])
+  })
+
   it("answer with the manager's reason when it refuses", async () => {
     const { manager } = recordingManager({
       installPackages: async () => {

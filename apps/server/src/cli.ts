@@ -32,6 +32,7 @@ import {
   runPrompt
 } from "./cli/wiring.js"
 import { runDesktop } from "./desktop/desktop-runner.js"
+import { systemDesktopSystem } from "./desktop/desktop-system.js"
 import { resolveDataDir, resolveLogsDir } from "./infra/data-dir.js"
 import { bundledVersion, runServe } from "./serve.js"
 
@@ -300,7 +301,8 @@ const desktop = makeDesktopCommand(
       process.exitCode = await command({
         ...makeDeps(),
         isInteractive: process.stdin.isTTY && process.stdout.isTTY,
-        confirm: (question) => runPrompt(Prompt.confirm({ message: question, initial: false }))
+        confirm: (question) => runPrompt(Prompt.confirm({ message: question, initial: false })),
+        system: systemDesktopSystem()
       })
     }),
   (dataDir) =>

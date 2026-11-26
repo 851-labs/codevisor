@@ -1,6 +1,7 @@
 import { execFile, spawn } from "node:child_process"
 import {
   chmodSync,
+  closeSync,
   existsSync,
   mkdirSync,
   openSync,
@@ -67,13 +68,18 @@ export const systemDesktopSystem = (): DesktopSystem => ({
     mkdirSync(dirname(logPath), { recursive: true })
     const log = openSync(logPath, "a")
     const child = spawn(command, [...args], { detached: true, stdio: ["ignore", log, log] })
+    closeSync(log)
     child.once("error", () => undefined)
     child.unref()
     return child.pid
   },
-  processAlive: (pid) => signalled(pid, 0),
+  processAlive,
   terminate: (pid) => {
-    signalled(pid, "SIGTERM")
+    try {
+      process.kill(pid, "SIGTERM")
+    } catch {
+      return
+    }
   },
   readText: (path) => {
     try {
@@ -104,11 +110,11 @@ export const systemDesktopSystem = (): DesktopSystem => ({
 
 const exitCodeOf = (code: unknown): number => (typeof code === "number" ? code : commandNotFound)
 
-const signalled = (pid: number, signal: NodeJS.Signals | 0): boolean => {
+export const processAlive = (pid: number): boolean => {
   try {
-    process.kill(pid, signal)
+    process.kill(pid, 0)
     return true
-  } catch {
-    return false
+  } catch (error) {
+    return error instanceof Error && "code" in error && error.code === "EPERM"
   }
 }

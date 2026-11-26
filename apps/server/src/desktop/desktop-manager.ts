@@ -1,6 +1,6 @@
 import { join } from "node:path"
 
-import type { DesktopCommand, DesktopState, DesktopStatus } from "@codevisor/api"
+import type { DesktopState, DesktopStatus, DesktopSudo } from "@codevisor/api"
 
 import { type PrivateSocket, privateSocket } from "../routes/private-socket.js"
 import {
@@ -9,7 +9,13 @@ import {
   SCREEN_SHARING_CONFIG_FILE
 } from "../routes/screen-sharing-vnc.js"
 import { HttpFailure } from "../server-context.js"
-import { DESKTOP_SIZE, desktopLayout, type DesktopLayout, freeDisplay } from "./desktop-layout.js"
+import {
+  DESKTOP_SIZE,
+  desktopLayout,
+  type DesktopLayout,
+  displayIsOursOrFree,
+  freeDisplay
+} from "./desktop-layout.js"
 import {
   installCommands,
   missingPrograms,
@@ -24,15 +30,19 @@ import {
   type RunnerCommand
 } from "./desktop-service.js"
 import type { DesktopSystem } from "./desktop-system.js"
-import { oldDesktop } from "./old-desktop.js"
+import { oldDesktop, type RootCommand } from "./old-desktop.js"
 
 export interface DesktopManager {
   readonly status: () => Promise<DesktopStatus>
   readonly installPackages: () => Promise<DesktopStatus>
   readonly replaceOld: () => Promise<DesktopStatus>
-  readonly start: () => Promise<DesktopStatus>
+  readonly start: (options?: StartOptions) => Promise<DesktopStatus>
   readonly remove: () => Promise<DesktopStatus>
   readonly resume: () => Promise<void>
+}
+
+export interface StartOptions {
+  readonly replaceUnmanaged?: boolean
 }
 
 export interface DesktopManagerOptions {
@@ -54,6 +64,8 @@ const startPollMs = 250
 const startPolls = 120
 const steadyPolls = 10
 const installing = "Installing packages"
+const unmanaged =
+  "A desktop that Codevisor didn't set up is shared from this machine. Replacing it has to be asked for."
 
 export const makeDesktopManager = (options: DesktopManagerOptions): DesktopManager => {
   const { system, dataDir, changed } = options
@@ -63,6 +75,7 @@ export const makeDesktopManager = (options: DesktopManagerOptions): DesktopManag
   const service = async (): Promise<DesktopService> => (await services()).current
   let busy: string | undefined
   let failure: string | undefined
+  let knownSudo: DesktopSudo | undefined
   let last: Promise<unknown> = Promise.resolve()
 
   const oneAtATime = <Result>(work: () => Promise<Result>): Promise<Result> => {
@@ -117,26 +130,34 @@ export const makeDesktopManager = (options: DesktopManagerOptions): DesktopManag
     return { ...live, state: "stopped", problem: "the desktop's process isn't running" }
   }
 
+  const sudoForARootStep = async (pending: boolean): Promise<DesktopSudo | undefined> => {
+    if (!pending) return undefined
+    if (busy === undefined || knownSudo === undefined) knownSudo = await sudoKind(system)
+
+    return knownSudo
+  }
+
   const status = async (): Promise<DesktopStatus> => {
     const release = osRelease(system)
-    const runs = await service()
+    const { current: runs, other } = await services()
     const install = await installCommands(system, release)
     const old = oldDesktop(system)
     const startsAtBoot = await runs.startsAtBoot()
     const needsLinger = runs.kind === "systemd-user" && !startsAtBoot
     const missing = await missingPrograms(system)
     if (missing.length === 0) failure = undefined
+    const sudo = await sudoForARootStep(missing.length > 0 || old !== undefined)
     return {
       ...sharedBy(runs),
-      managed: runs.isSetUp(),
+      managed: runs.isSetUp() || other.isSetUp(),
       ...(busy === undefined ? {} : { busy }),
       ...(failure === undefined ? {} : { failure }),
       account: system.account,
       system: release.name,
       missing,
-      ...(install === undefined ? {} : { install }),
-      sudo: await sudoKind(system),
-      ...(old === undefined ? {} : { oldDesktop: old }),
+      ...(install === undefined ? {} : { packageManager: "apt" }),
+      ...(sudo === undefined ? {} : { sudo }),
+      ...(old === undefined ? {} : { oldDesktop: { units: old.units } }),
       startsAtBoot,
       ...(needsLinger ? { startAtBootHint: `sudo loginctl enable-linger ${system.account}` } : {}),
       logHint: runs.logHint
@@ -144,16 +165,17 @@ export const makeDesktopManager = (options: DesktopManagerOptions): DesktopManag
   }
 
   const requirePasswordlessSudo = async (what: string): Promise<void> => {
-    if ((await sudoKind(system)) !== "passwordless")
+    knownSudo = await sudoKind(system)
+    if (knownSudo !== "passwordless")
       throw new HttpFailure(403, `${what} needs an administrator on this machine`)
   }
 
-  const asRoot = async (what: string, commands: ReadonlyArray<DesktopCommand>): Promise<void> => {
+  const asRoot = async (what: string, commands: ReadonlyArray<RootCommand>): Promise<void> => {
     const ran = await runAsRoot(system, commands)
     if (!ran.ok) throw new HttpFailure(502, `${what} failed:\n${ran.output}`)
   }
 
-  const installInTheBackground = (commands: ReadonlyArray<DesktopCommand>): void => {
+  const installInTheBackground = (commands: ReadonlyArray<RootCommand>): void => {
     busy = installing
     failure = undefined
     void oneAtATime(() => asRoot(installing, commands))
@@ -170,8 +192,16 @@ export const makeDesktopManager = (options: DesktopManagerOptions): DesktopManag
     if (commands === undefined)
       throw new HttpFailure(501, "Codevisor doesn't know how to install packages on this system")
 
-    await requirePasswordlessSudo(installing)
-    if (busy === undefined) installInTheBackground(commands)
+    if (busy !== undefined) return status()
+
+    busy = installing
+    try {
+      await requirePasswordlessSudo(installing)
+    } catch (cause) {
+      busy = undefined
+      throw cause
+    }
+    installInTheBackground(commands)
     return status()
   }
 
@@ -187,31 +217,42 @@ export const makeDesktopManager = (options: DesktopManagerOptions): DesktopManag
   const layoutToUse = (): DesktopLayout => {
     const setup = setUp()
     const isOurs = setup.kind === "ready" && recordedService() !== undefined
-    const display = (isOurs ? setup.config.display : undefined) ?? freeDisplay(system)
+    const recorded = isOurs ? setup.config.display : undefined
+    const display = stillUsable(recorded) ?? freeDisplay(system)
     if (display === undefined) throw new HttpFailure(500, "No X11 display number is free")
 
     return desktopLayout(system, display)
   }
 
-  const writeConfig = (layout: DesktopLayout, runs: DesktopService): void =>
-    system.writeText(
-      configPath,
-      `${JSON.stringify(
-        {
-          vnc: {
-            socket: layout.socket,
-            display: layout.display,
-            xauthority: layout.xauthority,
-            name: "Desktop",
-            desktop: "xfce",
-            defaultSize: DESKTOP_SIZE
-          },
-          service: runs.kind
-        },
-        null,
-        2
-      )}\n`
-    )
+  const stillUsable = (display: number | undefined): number | undefined => {
+    if (display === undefined) return undefined
+
+    const ours = desktopLayout(system, display).socket
+    return displayIsOursOrFree(system, display, ours) ? display : undefined
+  }
+
+  const keptSettings = (): { name: string; defaultSize: string } => {
+    const setup = setUp()
+    const config = setup.kind === "ready" ? setup.config : undefined
+    const hasSize = config?.defaultWidth !== undefined && config.defaultHeight !== undefined
+    return {
+      name: config?.name ?? "Desktop",
+      defaultSize: hasSize ? `${config.defaultWidth}x${config.defaultHeight}` : DESKTOP_SIZE
+    }
+  }
+
+  const writeConfig = (layout: DesktopLayout, runs: DesktopService): void => {
+    const { name, defaultSize } = keptSettings()
+    const vnc = {
+      socket: layout.socket,
+      display: layout.display,
+      xauthority: layout.xauthority,
+      name,
+      desktop: "xfce",
+      defaultSize
+    }
+    system.writeText(configPath, `${JSON.stringify({ vnc, service: runs.kind }, null, 2)}\n`)
+  }
 
   const staysUp = async (layout: DesktopLayout): Promise<boolean> => {
     let steady = 0
@@ -222,7 +263,7 @@ export const makeDesktopManager = (options: DesktopManagerOptions): DesktopManag
     return steady >= steadyPolls
   }
 
-  const start = async (): Promise<DesktopStatus> => {
+  const start = async (asked: StartOptions): Promise<DesktopStatus> => {
     const missing = await missingPrograms(system)
     if (missing.length > 0)
       throw new HttpFailure(
@@ -231,7 +272,13 @@ export const makeDesktopManager = (options: DesktopManagerOptions): DesktopManag
       )
 
     const { current: runs, other } = await services()
-    if (sharedBy(runs).state === "running" && runs.isSetUp()) return status()
+    const runsNow = sharedBy(runs).state === "running"
+    if (runsNow && runs.isSetUp()) {
+      await runs.refresh()
+      return status()
+    }
+    if (runsNow && !other.isSetUp() && asked.replaceUnmanaged !== true)
+      throw new HttpFailure(409, unmanaged)
 
     const layout = layoutToUse()
     await other.stop()
@@ -254,9 +301,9 @@ export const makeDesktopManager = (options: DesktopManagerOptions): DesktopManag
   }
 
   const resume = async (): Promise<void> => {
-    if (recordedService() !== "process" || setUp().kind !== "ready") return
-
     const runs = await service()
+    await runs.refresh()
+    if (recordedService() !== "process" || setUp().kind !== "ready") return
     if (runs.kind === "process" && !runs.isSetUp()) await runs.start()
   }
 
@@ -264,7 +311,7 @@ export const makeDesktopManager = (options: DesktopManagerOptions): DesktopManag
     status,
     installPackages,
     replaceOld: () => unlessBusy(replaceOld),
-    start: () => unlessBusy(start),
+    start: (asked = {}) => unlessBusy(() => start(asked)),
     remove: () => unlessBusy(remove),
     resume: () => oneAtATime(resume)
   }

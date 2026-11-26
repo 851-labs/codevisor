@@ -5,16 +5,14 @@ import {
   CONFIG,
   DATA_DIR,
   fakeMachine,
-  LOGS_DIR,
-  RUNNER,
   settled,
   UBUNTU,
   UNIT
 } from "./desktop-test-support.js"
 
-const aptUpdate = "env DEBIAN_FRONTEND=noninteractive apt-get update -q"
+const aptUpdate = "env DEBIAN_FRONTEND=noninteractive apt-get -o DPkg::Lock::Timeout=600 update -q"
 const aptInstall =
-  "env DEBIAN_FRONTEND=noninteractive apt-get install -y -q --no-install-recommends tigervnc-standalone-server tigervnc-common xfce4 xfce4-terminal dbus-x11 xclip python3 fonts-dejavu-core adwaita-icon-theme"
+  "env DEBIAN_FRONTEND=noninteractive apt-get -o DPkg::Lock::Timeout=600 install -y -q --no-install-recommends tigervnc-standalone-server tigervnc-common xfce4 xfce4-terminal dbus-x11 xclip python3 fonts-dejavu-core adwaita-icon-theme"
 const bare = ["apt-get", "sudo"]
 const oldUnit = {
   "/etc/systemd/system/vncserver@.service":
@@ -26,24 +24,24 @@ const oldEnabled = {
 const linger = "loginctl show-user codevisor --property=Linger --value"
 
 describe("what a Linux machine needs before it has a desktop", () => {
-  it("lists what is missing and how apt installs it on a fresh Ubuntu server", async () => {
+  it("lists what is missing and which package manager installs it on a fresh Ubuntu server", async () => {
     const machine = fakeMachine({ programs: bare, files: UBUNTU })
     expect(await machine.manager.status()).toMatchObject({
       state: "none",
       account: "codevisor",
       system: "Ubuntu 24.04.5 LTS",
       missing: ["Xvnc", "startxfce4", "xfconf-query", "dbus-run-session", "xclip", "python3"],
-      install: [aptUpdate.split(" "), aptInstall.split(" ")],
+      packageManager: "apt",
       sudo: "passwordless"
     })
   })
 
-  it("offers no install commands on a system whose package manager it doesn't know", async () => {
+  it("names no package manager on a system whose package manager it doesn't know", async () => {
     const fedora = { "/etc/os-release": 'PRETTY_NAME="Fedora Linux 45"\nID=fedora\n' }
     const status = await fakeMachine({ programs: ["sudo"], files: fedora }).manager.status()
     expect(status.system).toBe("Fedora Linux 45")
     expect(status.missing).toHaveLength(6)
-    expect(status).not.toHaveProperty("install")
+    expect(status).not.toHaveProperty("packageManager")
   })
 
   it.each([
@@ -66,6 +64,14 @@ describe("what a Linux machine needs before it has a desktop", () => {
   ])("tells $name apart", async ({ failing, programs, uid, sudo }) => {
     const machine = fakeMachine({ programs, files: UBUNTU, failing, uid })
     expect((await machine.manager.status()).sudo).toBe(sudo)
+  })
+
+  it("doesn't try sudo when nothing needs root, so a set-up machine's auth log stays quiet", async () => {
+    const machine = fakeMachine({ files: UBUNTU })
+    await machine.manager.start()
+    await machine.manager.status()
+    expect(await machine.manager.status()).not.toHaveProperty("sudo")
+    expect(machine.commands.filter((line) => line.startsWith("sudo"))).toEqual([])
   })
 
   it("says whether the desktop will start at boot, and how to make it", async () => {
@@ -147,6 +153,9 @@ describe("installing the desktop's packages", () => {
     })
     expect(await machine.manager.installPackages()).toMatchObject({ busy: "Installing packages" })
     expect(await machine.manager.installPackages()).toMatchObject({ busy: "Installing packages" })
+    await machine.manager.status()
+    await machine.manager.status()
+    expect(machine.commands.filter((line) => line === "sudo -n true")).toHaveLength(1)
     await expect(machine.manager.start()).rejects.toMatchObject({
       status: 409,
       message: "Installing packages is still going on. Try again when it is done."
@@ -160,16 +169,9 @@ describe("installing the desktop's packages", () => {
 })
 
 describe("an older desktop that runs as root", () => {
-  it("is found by the unit the old script wrote, with the commands that remove it", async () => {
+  it("is found by the unit the old script wrote, and reported without any command to run", async () => {
     const machine = fakeMachine({ files: { ...UBUNTU, ...oldUnit }, folders: oldEnabled })
-    expect((await machine.manager.status()).oldDesktop).toEqual({
-      units: ["vncserver@1.service"],
-      removal: [
-        ["systemctl", "disable", "--now", "vncserver@1.service"],
-        ["rm", "-f", "/etc/systemd/system/vncserver@.service"],
-        ["systemctl", "daemon-reload"]
-      ]
-    })
+    expect((await machine.manager.status()).oldDesktop).toEqual({ units: ["vncserver@1.service"] })
   })
 
   it("is not what someone else's VNC unit is taken for", async () => {
@@ -190,129 +192,6 @@ describe("an older desktop that runs as root", () => {
       "sudo -n rm -f /etc/systemd/system/vncserver@.service",
       "sudo -n systemctl daemon-reload"
     ])
-  })
-})
-
-describe("starting the desktop as the server's own account", () => {
-  it("writes the config in the server's data folder and a boot service of that account, then waits for the socket", async () => {
-    const machine = fakeMachine({ files: UBUNTU, socketAppearsAfterPolls: 3 })
-    const status = await machine.manager.start()
-
-    expect(JSON.parse(machine.files.get(CONFIG) ?? "")).toEqual({
-      vnc: {
-        socket: "/run/user/1001/codevisor-desktop.sock",
-        display: 1,
-        xauthority: "/run/user/1001/codevisor-desktop.xauth",
-        name: "Desktop",
-        desktop: "xfce",
-        defaultSize: "1440x900"
-      },
-      service: "systemd-user"
-    })
-    expect(machine.files.get(UNIT)).toContain(
-      `ExecStart="${RUNNER.program}" "/opt/codevisor/cli.js" "desktop" "run" "--data-dir" "${DATA_DIR}"`
-    )
-    expect(machine.files.get(UNIT)).toContain("WantedBy=default.target")
-    expect(
-      machine.commands.filter(
-        (line) => line.startsWith("systemctl --user") && !line.endsWith("show-environment")
-      )
-    ).toEqual([
-      "systemctl --user daemon-reload",
-      "systemctl --user enable codevisor-desktop.service",
-      "systemctl --user restart codevisor-desktop.service"
-    ])
-    expect(
-      machine.commands.some((line) => line.startsWith("sudo") && line !== "sudo -n true")
-    ).toBe(false)
-    expect(status).toMatchObject({ state: "running", display: 1, managed: true })
-    expect(machine.changes.count).toBe(1)
-  })
-
-  it("takes the next display when an old desktop holds the first one", async () => {
-    const machine = fakeMachine({ files: UBUNTU, existing: ["/tmp/.X11-unix/X1", "/tmp/.X2-lock"] })
-    expect(await machine.manager.start()).toMatchObject({ state: "running", display: 3 })
-  })
-
-  it("keeps its display when a desktop that stopped is set up again", async () => {
-    const machine = fakeMachine({ files: UBUNTU, existing: ["/tmp/.X11-unix/X1"] })
-    await machine.manager.start()
-    const again = fakeMachine({
-      files: { ...UBUNTU, [CONFIG]: machine.files.get(CONFIG) ?? "" },
-      existing: ["/tmp/.X11-unix/X1", "/tmp/.X11-unix/X2"]
-    })
-    expect(await again.manager.start()).toMatchObject({ display: 2 })
-  })
-
-  it("leaves a running desktop alone when it is set up again, so nothing open in it closes", async () => {
-    const machine = fakeMachine({ files: UBUNTU })
-    await machine.manager.start()
-    machine.commands.length = 0
-
-    expect(await machine.manager.start()).toMatchObject({ state: "running", display: 1 })
-    expect(machine.commands.filter((line) => line.includes("restart"))).toEqual([])
-    expect(machine.changes.count).toBe(1)
-  })
-
-  it("takes a free display instead of the one in a config something else wrote", async () => {
-    const theirs = JSON.stringify({
-      vnc: { socket: "/tmp/runtime-root/codevisor-desktop.sock", display: 1, desktop: "xfce" },
-      devContainerDesktop: true
-    })
-    const machine = fakeMachine({
-      files: { ...UBUNTU, [CONFIG]: theirs },
-      existing: ["/tmp/.X11-unix/X1"]
-    })
-    expect(await machine.manager.start()).toMatchObject({ display: 2 })
-  })
-
-  it("refuses to start while programs are missing, and changes nothing", async () => {
-    const machine = fakeMachine({ programs: [...bare, "Xvnc"], files: UBUNTU })
-    await expect(machine.manager.start()).rejects.toMatchObject({
-      status: 409,
-      message:
-        "The desktop can't start until these are installed: startxfce4, xfconf-query, dbus-run-session, xclip, python3"
-    })
-    expect(machine.files.has(CONFIG)).toBe(false)
-    expect(machine.files.has(UNIT)).toBe(false)
-  })
-
-  it("says the desktop didn't start, with its last log lines, when the socket never appears", async () => {
-    const journal = "journalctl --user -u codevisor-desktop.service -n 15 --no-pager -o cat"
-    const machine = fakeMachine({
-      files: UBUNTU,
-      socketAppearsAfterPolls: Number.POSITIVE_INFINITY,
-      results: { [journal]: { code: 0, output: "Xvnc didn't open its socket\n" } }
-    })
-    await expect(machine.manager.start()).rejects.toMatchObject({
-      status: 500,
-      message: "The desktop didn't start.\nXvnc didn't open its socket"
-    })
-    expect(machine.changes.count).toBe(1)
-  })
-
-  it("doesn't call a desktop ready when its socket appears and is gone again a moment later", async () => {
-    const machine = fakeMachine({ files: UBUNTU, socketVanishesAfterPolls: 5 })
-    await expect(machine.manager.start()).rejects.toMatchObject({ status: 500 })
-  })
-
-  it("runs the desktop as a plain process, with its own runtime folder, where there is no systemd", async () => {
-    const machine = fakeMachine({
-      files: UBUNTU,
-      failing: ["systemctl --user show-environment"],
-      env: {}
-    })
-    const status = await machine.manager.start()
-    expect(machine.spawned).toEqual([
-      { command: RUNNER.program, args: RUNNER.args, logPath: `${LOGS_DIR}/desktop.log` }
-    ])
-    expect(machine.files.get(`${DATA_DIR}/desktop.pid`)).toBe("4242\n")
-    expect(JSON.parse(machine.files.get(CONFIG) ?? "")).toMatchObject({
-      vnc: { socket: "/home/codevisor/.codevisor/run/codevisor-desktop.sock" },
-      service: "process"
-    })
-    expect(machine.files.has(UNIT)).toBe(false)
-    expect(status).toMatchObject({ startsAtBoot: false, logHint: `${LOGS_DIR}/desktop.log` })
   })
 })
 
@@ -442,7 +321,7 @@ describe("a server that boots where there is no systemd", () => {
     })
     expect(await nowWithSystemd.manager.status()).toMatchObject({
       state: "running",
-      managed: false
+      managed: true
     })
     await nowWithSystemd.manager.start()
     expect(nowWithSystemd.terminated).toEqual([4242])

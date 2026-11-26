@@ -37,6 +37,20 @@ export const freeDisplay = (system: DesktopSystem): number | undefined => {
   return undefined
 }
 
+export const displayIsOursOrFree = (
+  system: DesktopSystem,
+  display: number,
+  ourSocket: string
+): boolean => {
+  if (!displayIsTaken(system, display)) return true
+
+  const holder = Number(system.readText(x11LockOf(display))?.trim() ?? "")
+  if (!Number.isInteger(holder) || holder <= 0) return false
+  if (!system.processAlive(holder)) return true
+
+  return system.readText(`/proc/${holder}/cmdline`)?.includes(ourSocket) === true
+}
+
 export const x11SocketOf = (display: number): string => `/tmp/.X11-unix/X${display}`
 
 export const x11LockOf = (display: number): string => `/tmp/.X${display}-lock`
