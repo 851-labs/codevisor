@@ -4,10 +4,8 @@ import Testing
 
 @Suite("Scroll distance to wheel clicks on a VNC desktop")
 struct VNCWheelTests {
-  private let start = ContinuousClock.now
-
-  private func clicks(_ wheel: inout VNCWheel, _ deltas: [Int32], every step: Duration = .milliseconds(16)) -> [Int] {
-    deltas.enumerated().map { index, delta in wheel.clicks(for: delta, at: start + step * index) }
+  private func clicks(_ wheel: inout VNCWheel, _ deltas: [Int32]) -> [Int] {
+    deltas.map { wheel.clicks(for: $0) }
   }
 
   @Test("A mouse wheel or trackpad event is always at least one click, and at most eight")
@@ -36,20 +34,11 @@ struct VNCWheelTests {
     #expect(clicks(&wheel, [4000, -4000]) == [8, -8])
   }
 
-  @Test(
-    "Distance left over from one touch drag is forgotten once the fingers have paused, so the next drag starts fresh")
+  @Test("Distance left over from one touch drag is dropped when the next drag begins")
   func leftoverEndsWithTheGesture() {
     var wheel = VNCWheel(input: .touch)
-    let pause = VNCWheel.leftoverLifetime + .milliseconds(1)
-    #expect(wheel.clicks(for: 19, at: start) == 0)
-    #expect(wheel.clicks(for: 1, at: start + pause) == 0)
-    #expect(wheel.clicks(for: 19, at: start + pause + .milliseconds(16)) == 1)
-  }
-
-  @Test("Within one drag, however slow its steps up to the pause, the leftover distance still counts")
-  func leftoverLastsThroughTheGesture() {
-    var wheel = VNCWheel(input: .touch)
-    #expect(wheel.clicks(for: 19, at: start) == 0)
-    #expect(wheel.clicks(for: 1, at: start + VNCWheel.leftoverLifetime) == 1)
+    #expect(clicks(&wheel, [19]) == [0])
+    wheel.gestureBegan()
+    #expect(clicks(&wheel, [1, 19]) == [0, 1])
   }
 }

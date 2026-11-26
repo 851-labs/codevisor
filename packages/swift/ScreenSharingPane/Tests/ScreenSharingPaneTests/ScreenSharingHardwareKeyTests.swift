@@ -103,6 +103,32 @@ struct ScreenSharingHardwareKeyTests {
       ])
   }
 
+  @Test("Shift in a shortcut stays held around a letter or symbol the US table lacks, and never doubles a letter")
+  func shiftedChordOutsideTheTable() {
+    func held(around text: String) -> [ScreenSharingInputEvent] {
+      [
+        .key(code: 55, down: true, repeatKey: false, modifiers: 8),
+        .key(code: 56, down: true, repeatKey: false, modifiers: 9), .text(text),
+        .key(code: 56, down: false, repeatKey: false, modifiers: 8),
+        .key(code: 55, down: false, repeatKey: false, modifiers: 0),
+      ]
+    }
+    for (unmodified, sent) in [("ö", "Ö"), ("ß", "ß"), ("§", "§")] {
+      let key = Key(usage: 51, characters: unmodified, unmodifiedCharacters: unmodified, modifiers: [.command, .shift])
+      #expect(key.events(asCharacters: true) == held(around: sent), "\(unmodified)")
+    }
+  }
+
+  @Test("A shortcut on a key whose own character is a shifted US symbol doesn't gain a Shift")
+  func chordOnAUSShiftedSymbol() {
+    let frenchAmpersand = Key(usage: 30, characters: "&", unmodifiedCharacters: "&", modifiers: .command)
+    #expect(
+      frenchAmpersand.events(asCharacters: true) == [
+        .key(code: 55, down: true, repeatKey: false, modifiers: 8), .text("&"),
+        .key(code: 55, down: false, repeatKey: false, modifiers: 0),
+      ])
+  }
+
   @Test("A dead key, which has no character yet, sends nothing to a desktop that takes characters")
   func deadKey() {
     let deadAcute = Key(usage: 46, unmodifiedCharacters: "´")
@@ -110,6 +136,7 @@ struct ScreenSharingHardwareKeyTests {
     let controlPicture = Key(usage: 46, characters: "\u{1b}", unmodifiedCharacters: "\u{1b}")
     #expect(deadAcute.events(asCharacters: true) == [])
     #expect(deadAcute.events(asCharacters: true, onScreen: .option) == [])
+    #expect(deadAcute.events(asCharacters: true, onScreen: .control) == [])
     #expect(optionDeadKey.events(asCharacters: true) == [])
     #expect(controlPicture.events(asCharacters: true) == [])
     #expect(pressed(deadAcute.events(asCharacters: false)) == [24])

@@ -155,6 +155,10 @@ public final class ScreenSharingPaneModel {
     send(self.pointer.dragEnded(at: pointer))
   }
 
+  func scrollBegan() {
+    session?.scrollGestureBegan()
+  }
+
   func scrolled(at pointer: ScreenSharingPointer, dx: Double, dy: Double) {
     send(self.pointer.scrolled(at: pointer, dx: dx, dy: dy))
   }

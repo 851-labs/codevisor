@@ -123,6 +123,8 @@ public final class VNCScreenSharingSession: ScreenSharingViewingSession {
     if update.resized { resized(width: framebufferSize.width, height: framebufferSize.height) }
   }
 
+  public func scrollGestureBegan() { translator.scrollGestureBegan() }
+
   public func outcome() async -> any Error { await run.value }
 
   public func statistics() async -> [String: String] { ["vnc.transport": transportName] }

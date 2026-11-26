@@ -117,6 +117,23 @@ struct ScreenSharingLinuxDesktopTests {
     #expect(harness.input.filter { $0 == wheelUp }.count == 2, "40 pixels is two clicks")
   }
 
+  @Test("A new two-finger drag starts from nothing: the last drag's leftover distance doesn't turn the wheel")
+  func scrollLeftoverEndsWithTheDrag() async throws {
+    let harness = try await LinuxDesktopHarness()
+    defer { harness.stop() }
+    let model = await harness.goLive()
+
+    model?.scrolled(at: Self.centre, dx: 0, dy: 19)
+    model?.tap(at: Self.centre, location: .zero, time: 0)
+    await awaitObserved { harness.input.count == 3 }
+    model?.scrollBegan()
+    model?.scrolled(at: Self.centre, dx: 0, dy: 1)
+    model?.tap(at: Self.centre, location: .zero, time: 1)
+    await awaitObserved { harness.input.count == 6 }
+
+    #expect(!harness.input.contains(.pointerEvent(buttons: 8, x: 32, y: 24)))
+  }
+
   @Test("Typed text arrives as the characters on the keys, and Command arrives as Control")
   func typing() async throws {
     let harness = try await LinuxDesktopHarness()

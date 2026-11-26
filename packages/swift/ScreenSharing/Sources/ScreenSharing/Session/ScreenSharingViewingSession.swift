@@ -38,6 +38,7 @@ public protocol ScreenSharingViewingSession: AnyObject {
   var linkBitsPerSecond: Double? { get }
   var videoShowsPointer: Bool { get }
   var keysAreCharacters: Bool { get }
+  func scrollGestureBegan()
   var supportsAudio: Bool { get }
   func setAudioEnabled(_ enabled: Bool)
   func setAudioVolume(_ volume: Float)
@@ -57,6 +58,7 @@ extension ScreenSharingViewingSession {
   public var linkBitsPerSecond: Double? { nil }
   public var videoShowsPointer: Bool { true }
   public var keysAreCharacters: Bool { false }
+  public func scrollGestureBegan() {}
   public var supportsAudio: Bool { false }
   public func setAudioEnabled(_ enabled: Bool) {}
   public func setAudioVolume(_ volume: Float) {}

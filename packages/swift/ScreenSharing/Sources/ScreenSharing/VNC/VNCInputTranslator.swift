@@ -10,16 +10,11 @@ final class VNCInputTranslator {
   private var y: UInt16 = 0
   private var vertical: VNCWheel
   private var horizontal: VNCWheel
-  private let now: () -> ContinuousClock.Instant
 
-  init(
-    width: Int, height: Int, keys: VNCKeyTranslator, scroll: VNCScrollInput = .wheel,
-    now: @escaping () -> ContinuousClock.Instant = { .now }
-  ) {
+  init(width: Int, height: Int, keys: VNCKeyTranslator, scroll: VNCScrollInput = .wheel) {
     self.width = width
     self.height = height
     self.keys = keys
-    self.now = now
     vertical = VNCWheel(input: scroll)
     horizontal = VNCWheel(input: scroll)
   }
@@ -36,9 +31,8 @@ final class VNCInputTranslator {
       return [pointerEvent()]
     case .scroll(let pointer, let dx, let dy, _):
       locate(pointer)
-      let at = now()
-      return turns(vertical.clicks(for: dy, at: at), up: 1 << 3, down: 1 << 4)
-        + turns(horizontal.clicks(for: dx, at: at), up: 1 << 5, down: 1 << 6)
+      return turns(vertical.clicks(for: dy), up: 1 << 3, down: 1 << 4)
+        + turns(horizontal.clicks(for: dx), up: 1 << 5, down: 1 << 6)
     case .key(let code, let down, _, let modifiers):
       guard let keysym = keys.keysym(code: code, modifiers: modifiers) else { return [] }
       return [.keyEvent(keysym: keysym, down: down)]
@@ -52,6 +46,11 @@ final class VNCInputTranslator {
 
   private static func withSingleLineBreaks(_ text: String) -> String {
     text.replacingOccurrences(of: "\r\n", with: "\n")
+  }
+
+  func scrollGestureBegan() {
+    vertical.gestureBegan()
+    horizontal.gestureBegan()
   }
 
   func release() -> [RFBClientMessage] {

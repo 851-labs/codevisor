@@ -63,18 +63,15 @@ struct VNCInputTranslatorTests {
       ])
   }
 
-  @Test("A touch viewer's leftover scroll distance doesn't reach into a drag that starts after a pause")
+  @Test("A touch viewer's leftover scroll distance doesn't reach into the next two-finger drag")
   func touchScrollStartsFresh() {
-    let clock = TestInstant()
     let touch = VNCInputTranslator(
-      width: 200, height: 100, keys: VNCKeyTranslator(layout: { _, _ in nil }), scroll: .touch,
-      now: { clock.now })
+      width: 200, height: 100, keys: VNCKeyTranslator(layout: { _, _ in nil }), scroll: .touch)
     let point = ScreenSharingPointer(x: 0.5, y: 0.5)
 
     #expect(touch.translate(.scroll(point, x: 0, y: 19, modifiers: 0)).isEmpty)
-    clock.now += VNCWheel.leftoverLifetime + .milliseconds(1)
+    touch.scrollGestureBegan()
     #expect(touch.translate(.scroll(point, x: 0, y: 1, modifiers: 0)).isEmpty)
-    clock.now += .milliseconds(16)
     #expect(
       touch.translate(.scroll(point, x: 0, y: 19, modifiers: 0)) == [
         .pointerEvent(buttons: 8, x: 100, y: 50), .pointerEvent(buttons: 0, x: 100, y: 50),
@@ -99,9 +96,4 @@ struct VNCInputTranslatorTests {
     #expect(keys.keysym(code: 49, modifiers: 0) == 0x20)
     #expect(keys.keysym(code: 126, modifiers: 0) == RFBKeysym.up)
   }
-}
-
-@MainActor
-private final class TestInstant {
-  var now = ContinuousClock.now
 }
