@@ -16,9 +16,10 @@ export const schemaFixture = (
   return {
     seedRound: () => {
       const schema = readSchema(sqlite, appValues)
+      const plans = rowPlans(sqlite, schema)
       for (const shape of roundShapes(schema)) {
         generation += 1
-        seedGeneration(sqlite, schema, shape, generation)
+        for (const table of shape) plans.get(table)?.insert(generation)
       }
     }
   }
@@ -69,35 +70,60 @@ const withAncestors = (schema: Schema, table: string): ReadonlySet<string> => {
   return found
 }
 
-const seedGeneration = (
+interface RowPlan {
+  readonly insert: (generation: number) => void
+}
+
+type ColumnPlan = (generation: number) => unknown
+
+interface PlannedColumn {
+  readonly name: string
+  readonly value: ColumnPlan
+}
+
+const rowPlans = (sqlite: Database.Database, schema: Schema): ReadonlyMap<string, RowPlan> => {
+  const keys = keyColumns(schema)
+  return new Map(
+    [...schema.values()].map((table) => [table.name, rowPlan(sqlite, schema, keys, table)])
+  )
+}
+
+const rowPlan = (
   sqlite: Database.Database,
   schema: Schema,
-  shape: ReadonlySet<string>,
-  generation: number
-): void => {
-  for (const name of shape) {
-    const table = schema.get(name)
-    if (table !== undefined) insertRow(sqlite, schema, table, generation)
+  keys: ReadonlySet<string>,
+  table: Table
+): RowPlan => {
+  const columns = table.columns.flatMap((column): Array<PlannedColumn> => {
+    const value = columnPlan(schema, keys, table, column, 0)
+    return value === omitted ? [] : [{ name: column.name, value }]
+  })
+  const statement = sqlite.prepare(
+    fixtureSql.insert(
+      table.name,
+      columns.map((column) => column.name)
+    )
+  )
+  return {
+    insert: (generation) =>
+      insertRow(
+        statement,
+        table.name,
+        columns.map((column) => column.value(generation))
+      )
   }
 }
 
 const insertRow = (
-  sqlite: Database.Database,
-  schema: Schema,
-  table: Table,
-  generation: number
+  statement: Database.Statement,
+  table: string,
+  values: ReadonlyArray<unknown>
 ): void => {
-  const values = new Map<string, unknown>()
-  for (const column of table.columns) {
-    const value = columnValue(schema, table, column, generation, 0)
-    if (value !== omitted) values.set(column.name, value)
-  }
-  const columns = [...values.keys()]
   try {
-    sqlite.prepare(fixtureSql.insert(table.name, columns)).run(...values.values())
+    statement.run(...values)
   } catch (cause) {
     if (isSingletonConflict(cause)) return
-    throw new Error(`The schema fixture could not seed ${table.name}: ${String(cause)}`, { cause })
+    throw new Error(`The schema fixture could not seed ${table}: ${String(cause)}`, { cause })
   }
 }
 
@@ -110,23 +136,25 @@ const omitted = Symbol("omitted")
 
 const maxReferenceDepth = 16
 
-const columnValue = (
+const columnPlan = (
   schema: Schema,
+  keys: ReadonlySet<string>,
   table: Table,
   column: Column,
-  generation: number,
   depth: number
-): unknown => {
+): ColumnPlan | typeof omitted => {
   const parentColumn = referencedColumn(schema, table, column.name)
   if (parentColumn !== undefined && depth < maxReferenceDepth) {
-    return columnValue(schema, parentColumn.table, parentColumn.column, generation, depth + 1)
+    return columnPlan(schema, keys, parentColumn.table, parentColumn.column, depth + 1)
   }
 
-  if (column.allowed !== undefined) return column.allowed
-  if (isKey(schema, table, column.name)) return keyValue(table, column, generation)
+  if (column.allowed !== undefined) return () => column.allowed
+  if (keys.has(columnId(table.name, column.name))) {
+    return (generation) => keyValue(table, column, generation)
+  }
   if (column.hasDefault) return omitted
-  if (!column.notNull) return null
-  return zeroValues[column.affinity]
+  if (!column.notNull) return () => null
+  return () => zeroValues[column.affinity]
 }
 
 const zeroValues: Readonly<Record<Column["affinity"], unknown>> = {
@@ -170,17 +198,28 @@ const referencedColumn = (schema: Schema, table: Table, name: string): ParentCol
   return undefined
 }
 
-const isKey = (schema: Schema, table: Table, name: string): boolean =>
-  table.primaryKey.includes(name) ||
-  table.uniqueColumns.has(name) ||
-  [...schema.values()].some((child) =>
-    child.foreignKeys.some(
-      (key) => key.parent === table.name && parentColumns(table, key).includes(name)
-    )
-  )
+const keyColumns = (schema: Schema): ReadonlySet<string> => {
+  const keys = new Set<string>()
+  for (const table of schema.values()) {
+    for (const name of [...table.primaryKey, ...table.uniqueColumns]) {
+      keys.add(columnId(table.name, name))
+    }
+    for (const key of table.foreignKeys) {
+      for (const name of parentColumns(schema.get(key.parent), key)) {
+        keys.add(columnId(key.parent, name ?? ""))
+      }
+    }
+  }
+  return keys
+}
 
-const parentColumns = (table: Table, key: ForeignKey): ReadonlyArray<string | undefined> =>
-  key.to.map((column, index) => column ?? table.primaryKey[index])
+const parentColumns = (
+  parent: Table | undefined,
+  key: ForeignKey
+): ReadonlyArray<string | undefined> =>
+  key.to.map((column, index) => column ?? parent?.primaryKey[index])
+
+const columnId = (table: string, column: string): string => `${table}.${column}`
 
 const readSchema = (sqlite: Database.Database, appValues: ColumnValues): Schema =>
   new Map(

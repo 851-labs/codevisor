@@ -8,6 +8,8 @@ import { run, tempDatabase } from "./test-support.js"
 
 const serverId = "machine-a"
 
+const hangGuard = { timeout: 30_000 }
+
 const valuesTheSchemaDoesNotConstrain = {
   "conversation_items.role": "user",
   "transcript_items.role": "user",
@@ -51,13 +53,17 @@ const chainSql = {
 }
 
 describe("the migration chain", () => {
-  it("opens a database whose every table held linked rows before every migration", async () => {
-    const filename = tempDatabase()
-    migrateWithFixtureRowsBeforeEachStep(filename, migrations.slice(0, -1))
+  it(
+    "opens a database whose every table held linked rows before every migration",
+    hangGuard,
+    async () => {
+      const filename = tempDatabase()
+      migrateWithFixtureRowsBeforeEachStep(filename, migrations.slice(0, -1))
 
-    const db = await run(makeDatabase({ filename, serverId }))
-    onTestFinished(() => run(db.close))
+      const db = await run(makeDatabase({ filename, serverId }))
+      onTestFinished(() => run(db.close))
 
-    expect(await run(db.migrate)).toEqual([])
-  })
+      expect(await run(db.migrate)).toEqual([])
+    }
+  )
 })
