@@ -11,7 +11,7 @@ enum ScreenSharingV2TileComparer {
 
   static func changes(
     _ tiles: Set<Int>, of layout: ScreenSharingV2TileLayout, from previous: CVPixelBuffer?, to current: CVPixelBuffer,
-    smallUpToPixels limit: Int
+    smallUpToPixels limit: Int, among measured: Set<Int>
   ) -> ScreenSharingV2TileChanges {
     guard let previous, previous !== current, comparable(previous, current, layout: layout) else {
       return ScreenSharingV2TileChanges(changed: tiles)
@@ -25,7 +25,9 @@ enum ScreenSharingV2TileComparer {
     }
     let planes = ScreenSharingV2PixelPlane.planes(of: current)
     nonisolated(unsafe) let extent = { (tile: Int) in
-      Self.extent(planes, rows: layout.rows(of: tile), height: layout.height, previous, current, limit: limit)
+      Self.extent(
+        planes, rows: layout.rows(of: tile), height: layout.height, previous, current,
+        limit: measured.contains(tile) ? limit : 0)
     }
     let candidates = Array(tiles)
     let changes = Mutex(ScreenSharingV2TileChanges())

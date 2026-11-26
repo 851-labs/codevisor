@@ -110,7 +110,8 @@ public final class ScreenSharingV2Host: ScreenSharingFrameSink, @unchecked Senda
     let candidates = reported.subtracting(slot.waitingTiles)
     let comparedNs = ScreenSharingMetrics.nowNs
     let changes = ScreenSharingV2TileComparer.changes(
-      candidates, of: layout, from: previous, to: capture.frame.pixelBuffer, smallUpToPixels: smallChangePixels)
+      candidates, of: layout, from: previous, to: capture.frame.pixelBuffer, smallUpToPixels: smallChangePixels,
+      among: refinement.sharpenedLast)
     metrics.observe("tileCompare", milliseconds: Double(ScreenSharingMetrics.nowNs - comparedNs) / 1e6)
     metrics.increment("tilesUnchangedByPixels", by: candidates.count - changes.changed.count)
     let replaced = slot.offer(

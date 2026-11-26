@@ -58,24 +58,32 @@ struct ScreenSharingV2HostTests {
     #expect(encoder.requests.map(\.update.isRefinement) == [false, false])
   }
 
-  @Test func aChangeOfAFewPixelsReachesTheEncoderAsASmallChangeAndAWholeScreenChangeDoesNot() async throws {
-    let encoder = RecordingTileEncoder(layout: Self.tiled)
+  @Test func aChangeOfAFewPixelsIsSmallForTheEncoderOnlyWhenItsTileWasSharpenedLast() async throws {
+    let encoder = RecordingTileEncoder()
     let host = startedHost(encoder)
     defer { host.stop() }
-    let typed = try TestPixels.frame(shade: 10, timestampNs: 2_000)
-    TestPixels.paint(typed.pixelBuffer, plane: 0, rows: 100..<108, bytes: 20..<28, value: 200)
 
     host.push(try TestPixels.frame(shade: 10, timestampNs: 1_000))
     await encoder.encodes.cancellableWait(for: 1)
     encoder.emitTiles(of: encoder.requests[0])
-    host.push(typed)
+    await scheduler.scheduled.cancellableWait(for: 1)
+    scheduler.advance(byNs: ScreenSharingV2Profile.refinementGapNs)
     await encoder.encodes.cancellableWait(for: 2)
     encoder.emitTiles(of: encoder.requests[1])
-    host.push(try TestPixels.frame(shade: 90, timestampNs: 3_000))
+    host.push(try Self.typed(columns: 20..<28, timestampNs: 2_000))
     await encoder.encodes.cancellableWait(for: 3)
+    encoder.emitTiles(of: encoder.requests[2])
+    host.push(try Self.typed(columns: 20..<36, timestampNs: 3_000))
+    await encoder.encodes.cancellableWait(for: 4)
 
-    #expect(encoder.requests.map(\.update.tiles) == [[0, 1, 2, 3], [1], [0, 1, 2, 3]])
-    #expect(encoder.requests.map(\.smallTiles) == [[], [1], []])
+    #expect(encoder.requests.map(\.update.isRefinement) == [false, true, false, false])
+    #expect(encoder.requests.map(\.smallTiles) == [[], [], [0], []])
+  }
+
+  private static func typed(columns: Range<Int>, timestampNs: Int64) throws -> ScreenSharingVideoFrame {
+    let frame = try TestPixels.frame(shade: 10, timestampNs: timestampNs)
+    TestPixels.paint(frame.pixelBuffer, plane: 0, rows: 100..<108, bytes: columns, value: 200)
+    return frame
   }
 
   @Test func aChangeStartsWhileOneIsEncodingAndCapturesBeyondThatWaitWithEveryTileTheyDirtied() async throws {

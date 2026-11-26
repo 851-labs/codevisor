@@ -42,6 +42,14 @@ struct ScreenSharingV2TileComparerTests {
     #expect(Self.compare(before, after, limit: 6) == ScreenSharingV2TileChanges(changed: [1], small: [1]))
   }
 
+  @Test func onlyTheTilesItIsAskedToMeasureCanBeSmall() throws {
+    let (before, after) = try Self.pair()
+    Self.paint(after, rows: 100..<101, columns: 20..<21)
+    Self.paint(after, rows: 300..<301, columns: 20..<21)
+
+    #expect(Self.compare(before, after, among: [3]) == ScreenSharingV2TileChanges(changed: [1, 3], small: [3]))
+  }
+
   @Test func aLimitOfZeroCallsNoChangeSmall() throws {
     let (before, after) = try Self.pair()
     Self.paint(after, rows: 100..<101, columns: 20..<21)
@@ -53,7 +61,7 @@ struct ScreenSharingV2TileComparerTests {
     let (_, after) = try Self.pair()
 
     let changes = ScreenSharingV2TileComparer.changes(
-      Self.layout.tiles, of: Self.layout, from: nil, to: after, smallUpToPixels: Self.limit)
+      Self.layout.tiles, of: Self.layout, from: nil, to: after, smallUpToPixels: Self.limit, among: Self.layout.tiles)
 
     #expect(changes == ScreenSharingV2TileChanges(changed: Self.layout.tiles, small: []))
   }
@@ -82,8 +90,9 @@ struct ScreenSharingV2TileComparerTests {
   }
 
   private static func compare(
-    _ before: CVPixelBuffer, _ after: CVPixelBuffer, limit: Int = limit
+    _ before: CVPixelBuffer, _ after: CVPixelBuffer, limit: Int = limit, among measured: Set<Int> = layout.tiles
   ) -> ScreenSharingV2TileChanges {
-    ScreenSharingV2TileComparer.changes(layout.tiles, of: layout, from: before, to: after, smallUpToPixels: limit)
+    ScreenSharingV2TileComparer.changes(
+      layout.tiles, of: layout, from: before, to: after, smallUpToPixels: limit, among: measured)
   }
 }
