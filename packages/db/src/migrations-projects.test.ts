@@ -3,7 +3,7 @@ import { Effect } from "effect"
 import { describe, expect, it } from "vitest"
 
 import { nameRows } from "./common-rows.js"
-import { DatabaseError, makeDatabase } from "./index.js"
+import { makeDatabase } from "./index.js"
 import { buildV4Fixture, run, tempDatabase } from "./test-support.js"
 
 const tableColumns = (sqlite: Database.Database, table: string): ReadonlyArray<string> =>
@@ -169,7 +169,7 @@ describe("@codevisor/db project and archive upgrades", () => {
     await Effect.runPromise(db.close)
   })
 
-  it("refuses to migrate a database with orphaned child rows", async () => {
+  it("drops a chat whose workspace was already gone, by its cascade rule, and keeps the rest", async () => {
     const filename = tempDatabase()
     buildV4Fixture(filename)
     const sqlite = new Database(filename)
@@ -185,8 +185,11 @@ describe("@codevisor/db project and archive upgrades", () => {
       sqlite.close()
     }
 
-    await expect(run(makeDatabase({ filename, serverId: "local" }))).rejects.toBeInstanceOf(
-      DatabaseError
-    )
+    const db = await run(makeDatabase({ filename, serverId: "local" }))
+    const chats = (await run(db.listSessions)).map((chat) => chat.id)
+    await run(db.close)
+
+    expect(chats).not.toContain("orphan")
+    expect(chats).toContain("sess-1")
   })
 })

@@ -4,6 +4,11 @@ import { runBlockingDataUpgrades } from "./data-upgrades.js"
 import { markFirstRunProjectsPending } from "./machine-settings-service.js"
 import { migrations } from "./migrations.js"
 import { installNavigationJournal } from "./navigation-journal.js"
+import {
+  describeOrphanResolution,
+  resolveOrphanedRows,
+  type OrphanResolution
+} from "./orphaned-rows.js"
 import { migrateProjectLocationState } from "./project-location-state.js"
 import { integer, rowReader } from "./row-reader.js"
 import type { CodevisorDatabaseConfig } from "./service.js"
@@ -52,12 +57,21 @@ const initializeUpdateState = (sqlite: Database.Database): void => {
     .run()
 }
 
-const validateSchemaAndResetAdoption = (sqlite: Database.Database): void => {
-  const violations = sqlite.pragma("foreign_key_check")
-  if (Array.isArray(violations) && violations.length > 0) {
-    throw new Error(`Migration left foreign key violations: ${JSON.stringify(violations)}`)
-  }
+const validateSchemaAndResetAdoption = (
+  sqlite: Database.Database
+): ReadonlyArray<OrphanResolution> => {
+  const resolutions = resolveOrphanedRows(sqlite)
   sqlite.prepare("delete from instance_meta where key = 'adopted-server-id'").run()
+  return resolutions
+}
+
+const logOrphanResolutions = (resolutions: ReadonlyArray<OrphanResolution>): void => {
+  if (resolutions.length === 0) return
+
+  const lines = resolutions.map((resolution) => `  ${describeOrphanResolution(resolution)}`)
+  console.error(
+    `Migrations applied the schema's delete rules to rows left behind:\n${lines.join("\n")}`
+  )
 }
 
 export const runDatabaseMigrations = (
@@ -69,15 +83,14 @@ export const runDatabaseMigrations = (
   const names: Array<string> = []
   sqlite.pragma("foreign_keys = OFF")
   try {
-    const transaction = sqlite.transaction(() => {
+    const transaction = sqlite.transaction((): ReadonlyArray<OrphanResolution> => {
       applyDeclaredMigrations(sqlite, config, applied, names)
       initializeUpdateState(sqlite)
       if (isNewDatabase) markFirstRunProjectsPending(sqlite)
-      if (names.length > 0) {
-        validateSchemaAndResetAdoption(sqlite)
-      }
+      if (names.length === 0) return []
+      return validateSchemaAndResetAdoption(sqlite)
     })
-    transaction()
+    logOrphanResolutions(transaction())
     runBlockingDataUpgrades(sqlite, config)
     migrateProjectLocationState(sqlite)
     installNavigationJournal(sqlite)
