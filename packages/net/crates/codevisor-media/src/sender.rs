@@ -56,7 +56,10 @@ struct SentFrame {
     last_tx: Option<Instant>,
     originals_out: usize,
     bytes_out: usize,
+    flight_bytes: usize,
+    asked_at: Option<Instant>,
     probes: u32,
+    unanswered: u32,
 }
 
 #[derive(Debug, Default)]
@@ -254,7 +257,10 @@ impl Sender {
                 last_tx: None,
                 originals_out: 0,
                 bytes_out: 0,
+                flight_bytes: 0,
+                asked_at: None,
                 probes: 0,
+                unanswered: 0,
             },
         );
         if stream.unresolved.len() > MAX_UNRESOLVED {
@@ -346,6 +352,7 @@ impl Sender {
             self.estimator.on_sent(now, packet.len());
             if frame.originals_out == frame.packets.len() {
                 frame.last_tx = Some(now);
+                frame.flight_bytes = self.in_flight_bytes;
             }
         }
         if self.pacer.is_empty() {
@@ -360,6 +367,8 @@ impl Sender {
         else {
             return;
         };
+        frame.asked_at = Some(now);
+        frame.unanswered = 0;
         let mut requested = 0;
         let mut first_losses = 0;
         let mut lost_bytes = 0;
@@ -511,20 +520,19 @@ impl Sender {
     }
 
     pub fn handle_timeout(&mut self, now: Instant, events: &mut VecDeque<Event>, stats: &mut Stats) {
-        let tail_probe = self.tail_probe_after();
-        let timeout = self.ack_timeout();
+        let waits = self.probe_waits();
         let mut probed = false;
         for (&stream_id, stream) in &mut self.streams {
             let mut expired = Vec::new();
             let newest = stream.next_frame.wrapping_sub(1);
             for (&number, frame) in &mut stream.unresolved {
-                let Some(due) = probe_due(frame, number == newest, tail_probe, timeout) else {
+                let Some(due) = waits.next_wake(frame, number == newest) else {
                     continue;
                 };
                 if now < due {
                     continue;
                 }
-                if frame.probes == MAX_PROBES {
+                if frame.unanswered == MAX_PROBES {
                     expired.push(number);
                     continue;
                 }
@@ -532,6 +540,7 @@ impl Sender {
                     self.tail_backoff = (self.tail_backoff + 1).min(MAX_TAIL_BACKOFF);
                 }
                 frame.probes += 1;
+                frame.unanswered += 1;
                 stats.probes_sent += 1;
                 let index = frame.data_count - 1;
                 let tag = PacketTag { stream: stream_id, frame: number, index: index as u16, original: false };
@@ -556,13 +565,20 @@ impl Sender {
         (base * (1 << self.tail_backoff)).min(self.ack_timeout())
     }
 
+    fn probe_waits(&self) -> ProbeWaits {
+        ProbeWaits {
+            tail_probe: self.tail_probe_after(),
+            timeout: self.ack_timeout(),
+            carried_bps: self.estimator.carried_bps(),
+        }
+    }
+
     fn ack_timeout(&self) -> Duration {
         give_up_after(self.rtt, self.config.frame_interval) + self.rtt + Duration::from_millis(1)
     }
 
     pub fn poll_timeout(&self, now: Instant) -> Option<Instant> {
-        let tail_probe = self.tail_probe_after();
-        let timeout = self.ack_timeout();
+        let waits = self.probe_waits();
         let probe = self
             .streams
             .values()
@@ -570,7 +586,7 @@ impl Sender {
                 let newest = stream.next_frame.wrapping_sub(1);
                 stream.unresolved.iter().map(move |(number, frame)| (*number == newest, frame))
             })
-            .filter_map(|(newest, frame)| probe_due(frame, newest, tail_probe, timeout))
+            .filter_map(|(newest, frame)| waits.next_wake(frame, newest))
             .min();
         [self.pacer.next_send(now), probe].into_iter().flatten().min()
     }
@@ -604,9 +620,25 @@ impl Sender {
     }
 }
 
-fn probe_due(frame: &SentFrame, newest: bool, tail_probe: Duration, timeout: Duration) -> Option<Instant> {
-    let first = if newest { tail_probe } else { timeout };
-    Some(frame.last_tx? + first + timeout * frame.probes)
+#[derive(Debug, Clone, Copy)]
+struct ProbeWaits {
+    tail_probe: Duration,
+    timeout: Duration,
+    carried_bps: f64,
+}
+
+impl ProbeWaits {
+    fn next_wake(self, frame: &SentFrame, newest: bool) -> Option<Instant> {
+        let last_tx = frame.last_tx?;
+        let heard = frame.asked_at.map_or(last_tx, |asked| asked.max(last_tx));
+        let first = if newest && frame.asked_at.is_none() { self.tail_probe } else { self.timeout };
+        let due = heard + first + self.timeout * frame.unanswered;
+        if frame.unanswered < MAX_PROBES {
+            return Some(due);
+        }
+        let crossing = Duration::from_secs_f64(frame.flight_bytes as f64 * 8.0 / self.carried_bps);
+        Some(due.max(last_tx + crossing + self.timeout))
+    }
 }
 
 fn receipt(receipt: wire::FrameReceipt) -> Receipt {

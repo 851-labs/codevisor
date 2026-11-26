@@ -38,6 +38,7 @@ struct Sim {
     sent_to_viewer: Vec<(Instant, Bytes)>,
     original_arrivals: std::collections::HashMap<(u8, u32, u16), Option<Instant>>,
     nacks_to_host: Vec<(Instant, wire::Nack)>,
+    stale_rtt: Option<Duration>,
 }
 
 impl Sim {
@@ -65,6 +66,7 @@ impl Sim {
             sent_to_viewer: Vec::new(),
             original_arrivals: std::collections::HashMap::new(),
             nacks_to_host: Vec::new(),
+            stale_rtt: None,
         }
     }
 
@@ -113,7 +115,7 @@ impl Sim {
                 }
             }
         }
-        let rtt = self.delays[0] + self.delays[1];
+        let rtt = self.stale_rtt.unwrap_or(self.delays[0] + self.delays[1]);
         self.host.set_rtt(rtt);
         self.viewer.set_rtt(rtt);
         while let Some(event) = self.host.poll_event() {
@@ -1177,4 +1179,72 @@ fn a_stream_too_small_to_time_leaves_the_estimate_unmeasured_until_a_frame_is() 
     assert!(!guessed.sampled, "{:.1} Mbit/s from 400-byte frames", guessed.estimate_bps / 1e6);
     assert!(sampled.sampled);
     assert!(sampled.estimate_bps < 45e6, "{:.1} Mbit/s on a 30 Mbit/s link", sampled.estimate_bps / 1e6);
+}
+
+const SLOW_LINK: NetworkConditions =
+    NetworkConditions { id: "1 Mbit/s", delay_ms: 50.0, capacity_kbps: Some(1_000), ..NetworkConditions::N0 };
+
+fn first_keyframe_on_a_slow_link(lost_once: std::ops::Range<u16>) -> (Sim, Bytes) {
+    first_keyframes_on_a_slow_link(lost_once, 1)
+}
+
+fn first_keyframes_on_a_slow_link(lost_once: std::ops::Range<u16>, tiles: u8) -> (Sim, Bytes) {
+    let mut sim = Sim::new(SLOW_LINK, config(FecMode::Adaptive), 1);
+    sim.stale_rtt = Some(100 * MS);
+    sim.drop_when(first_time(move |direction, datagram| {
+        direction == Direction::ToViewer
+            && PacketHeader::decode(datagram.clone()).is_some_and(|(header, _)| {
+                header.stream == 0 && header.kind == Kind::Data && lost_once.contains(&header.index)
+            })
+    }));
+    let data = payload(1, 190_000);
+    for tile in 0..tiles {
+        sim.send(OutgoingFrame { keyframe: true, ..frame(tile, &data) });
+    }
+    sim.run_for(Duration::from_secs(12));
+    (sim, data)
+}
+
+fn lost_on_the_host(sim: &Sim) -> usize {
+    sim.host_events.iter().filter(|event| matches!(event, Event::FrameLost { .. })).count()
+}
+
+#[test]
+fn a_frame_still_crossing_a_slow_link_isnt_declared_lost_while_the_viewer_hasnt_seen_it() {
+    let (sim, data) = first_keyframe_on_a_slow_link(0..150);
+
+    assert_eq!(lost_on_the_host(&sim), 0, "the host gave up while the frame's tail was still in the link's queue");
+    assert_eq!(sim.frames().first().map(|frame| frame.data.clone()), Some(data));
+}
+
+#[test]
+fn a_frame_the_viewer_is_still_asking_for_is_given_up_by_neither_end() {
+    let (sim, data) = first_keyframe_on_a_slow_link(20..150);
+    let skipped = sim.viewer_events.iter().filter(|event| matches!(event, Event::FrameSkipped { .. })).count();
+
+    assert_eq!(lost_on_the_host(&sim), 0, "the host or the viewer gave up while the resends were on their way");
+    assert_eq!(sim.frames().first().map(|frame| frame.data.clone()), Some(data));
+    assert_eq!(skipped, 0);
+}
+
+#[test]
+fn a_frame_whose_resends_wait_behind_another_tile_isnt_given_up_by_the_viewer() {
+    let (sim, data) = first_keyframes_on_a_slow_link(20..150, 2);
+    let skipped = sim.viewer_events.iter().filter(|event| matches!(event, Event::FrameSkipped { .. })).count();
+    let delivered: Vec<u8> = sim.frames().iter().filter(|frame| frame.data == data).map(|frame| frame.stream).collect();
+
+    assert_eq!(skipped, 0, "the viewer gave up the first tile while its resends waited behind the second");
+    assert_eq!(lost_on_the_host(&sim), 0);
+    assert_eq!(delivered.len(), 2);
+}
+
+#[test]
+fn a_frame_that_never_arrives_on_a_slow_link_is_still_declared_lost() {
+    let mut sim = Sim::new(SLOW_LINK, config(FecMode::Adaptive), 1);
+    sim.stale_rtt = Some(100 * MS);
+    sim.drop_when(|direction, _| direction == Direction::ToViewer);
+    sim.send(frame(0, &payload(1, 190_000)));
+    sim.run_for(Duration::from_secs(12));
+
+    assert_eq!(lost_on_the_host(&sim), 1);
 }
