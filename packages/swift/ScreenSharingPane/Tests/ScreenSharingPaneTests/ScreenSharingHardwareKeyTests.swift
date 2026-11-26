@@ -60,7 +60,9 @@ struct ScreenSharingHardwareKeyTests {
     let shiftDown = ScreenSharingInputEvent.key(code: 56, down: true, repeatKey: false, modifiers: 1)
     let shiftUp = ScreenSharingInputEvent.key(code: 56, down: false, repeatKey: false, modifiers: 0)
     #expect(germanTwo.events(asCharacters: true, onScreen: .shift) == [shiftDown, .text("2"), shiftUp])
+    let micro = Key(usage: 16, characters: "µ", unmodifiedCharacters: "m", modifiers: .option)
     #expect(sharpS.events(asCharacters: true, onScreen: .shift) == [shiftDown, .text("ß"), shiftUp])
+    #expect(micro.events(asCharacters: true, onScreen: .shift) == [shiftDown, .text("µ"), shiftUp])
   }
 
   @Test("A character the layout makes with Option is typed as that character, not as Alt and the key's letter")
@@ -119,6 +121,14 @@ struct ScreenSharingHardwareKeyTests {
     }
   }
 
+  @Test("Caps Lock doesn't add Shift to a shortcut, whichever case iOS reports the key in")
+  func capsLockedChord() {
+    let interrupt = Key(usage: 6, characters: "C", unmodifiedCharacters: "C", modifiers: .control)
+    let umlaut = Key(usage: 51, characters: "Ö", unmodifiedCharacters: "Ö", modifiers: .command)
+    #expect(pressed(interrupt.events(asCharacters: true)) == [59, 8])
+    #expect(umlaut.events(asCharacters: true)?.contains(.text("ö")) == true)
+  }
+
   @Test("A shortcut on a key whose own character is a shifted US symbol doesn't gain a Shift")
   func chordOnAUSShiftedSymbol() {
     let frenchAmpersand = Key(usage: 30, characters: "&", unmodifiedCharacters: "&", modifiers: .command)
@@ -138,7 +148,7 @@ struct ScreenSharingHardwareKeyTests {
     #expect(deadAcute.events(asCharacters: true, onScreen: .option) == [])
     #expect(deadAcute.events(asCharacters: true, onScreen: .control) == [])
     #expect(optionDeadKey.events(asCharacters: true) == [])
-    #expect(controlPicture.events(asCharacters: true) == [])
+    #expect(pressed(controlPicture.events(asCharacters: true)) == [24], "not a dead key: it has characters")
     #expect(pressed(deadAcute.events(asCharacters: false)) == [24])
   }
 

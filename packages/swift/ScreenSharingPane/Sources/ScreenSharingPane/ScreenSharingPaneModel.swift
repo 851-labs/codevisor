@@ -156,6 +156,7 @@ public final class ScreenSharingPaneModel {
   }
 
   func scrollBegan() {
+    pointer.scrollBegan()
     session?.scrollGestureBegan()
   }
 
