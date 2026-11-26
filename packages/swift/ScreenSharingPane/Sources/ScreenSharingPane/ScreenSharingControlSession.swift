@@ -19,6 +19,7 @@ public final class ScreenSharingControlSession {
   static let pendingLimit = 64
 
   @ObservationIgnored private let channel: any ScreenSharingMessageChannel<ScreenSharingControlMessage>
+  @ObservationIgnored private let machineName: String
   @ObservationIgnored private let clock: any Clock<Duration>
   @ObservationIgnored private let makeID: () -> UUID
   @ObservationIgnored private var requestID: UUID?
@@ -28,16 +29,17 @@ public final class ScreenSharingControlSession {
   @ObservationIgnored private var timer: Task<Void, Never>?
 
   init(
-    channel: any ScreenSharingMessageChannel<ScreenSharingControlMessage>, clock: any Clock<Duration>,
-    makeID: @escaping () -> UUID = UUID.init
+    channel: any ScreenSharingMessageChannel<ScreenSharingControlMessage>, machineName: String,
+    clock: any Clock<Duration>, makeID: @escaping () -> UUID = UUID.init
   ) {
     self.channel = channel
+    self.machineName = machineName
     self.clock = clock
     self.makeID = makeID
     channel.onMessage = { [weak self] in self?.receive($0) }
     channel.onAvailabilityChanged = { [weak self] available in
       guard !available, let self, self.state != .idle else { return }
-      self.stop(notice: "The connection to the Mac was lost.")
+      self.stop(notice: "The connection to \(self.machineName) was lost.")
     }
   }
 
@@ -78,12 +80,12 @@ public final class ScreenSharingControlSession {
     state = .requesting
     notice = nil
     guard channel.send(.request(id: id)) else {
-      stop(notice: "The Mac isn't ready for control yet.")
+      stop(notice: "\(machineName) isn't ready for control yet.")
       return
     }
     schedule(after: Self.requestTimeout) { [weak self] in
       guard let self, self.requestID == id, self.state == .requesting else { return }
-      self.stop(notice: "The Mac didn't answer the request for control.")
+      self.stop(notice: "\(self.machineName) didn't answer the request for control.")
     }
   }
 
@@ -111,7 +113,7 @@ public final class ScreenSharingControlSession {
     for event in events {
       sequence += 1
       guard channel.send(.input(lease: lease, sequence: sequence, event: event)) else {
-        stop(notice: "The connection to the Mac was lost.")
+        stop(notice: "The connection to \(machineName) was lost.")
         return
       }
     }
@@ -121,7 +123,7 @@ public final class ScreenSharingControlSession {
     schedule(after: Self.heartbeatInterval) { [weak self] in
       guard let self, self.lease == lease, self.state == .controlling else { return }
       guard self.channel.send(.heartbeat(lease: lease)) else {
-        self.stop(notice: "The connection to the Mac was lost.")
+        self.stop(notice: "The connection to \(self.machineName) was lost.")
         return
       }
       self.startHeartbeat(lease)

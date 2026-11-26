@@ -28,7 +28,8 @@ struct ScreenSharingControlSessionTests {
   }
 
   private func session() -> ScreenSharingControlSession {
-    ScreenSharingControlSession(channel: viewer, clock: clock, makeID: { [requestID] in requestID })
+    ScreenSharingControlSession(
+      channel: viewer, machineName: "croissant", clock: clock, makeID: { [requestID] in requestID })
   }
 
   private var inputs: [UInt64] {
@@ -74,7 +75,7 @@ struct ScreenSharingControlSessionTests {
     #expect(control.state == .requesting)
     clock.advance(by: .milliseconds(1))
     await awaitObserved { control.state == .idle }
-    #expect(control.notice == "The Mac didn't answer the request for control.")
+    #expect(control.notice == "croissant didn't answer the request for control.")
   }
 
   @Test("Control is kept alive every second and released on request")

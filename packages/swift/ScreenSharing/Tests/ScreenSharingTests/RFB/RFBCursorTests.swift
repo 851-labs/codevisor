@@ -60,6 +60,22 @@ struct RFBCursorTests {
     #expect(harness.server.advertisedEncodings.isSuperset(of: [-239, -232]))
   }
 
+  @Test("A viewer with no pointer of its own leaves out cursor shapes and positions, and keeps its quality level")
+  func aViewerWithoutItsOwnPointerLeavesItToTheServer() async throws {
+    let server = try await RFBLoopbackServer()
+    defer { server.stop() }
+    let client = try RFBClient(
+      transport: try await RFBNetworkTransport.connect(host: "127.0.0.1", port: server.port), qualityLevel: 6,
+      serverDrawsPointer: true)
+    defer { client.close() }
+    try await client.connect(password: "secret")
+    #expect(await awaitPolled { server.received.count >= 2 })
+    #expect(
+      server.received.prefix(2) == [
+        .setPixelFormat(.bgra32), .setEncodings([7, 16, 1, 0, -223, -312, -313, -308, -1_063_131_698, -26]),
+      ])
+  }
+
   @Test func theConfiguredShapeArrivesWithTheFirstUpdate() async throws {
     var configuration = RFBLoopbackServer.Configuration()
     configuration.cursor = Self.shape

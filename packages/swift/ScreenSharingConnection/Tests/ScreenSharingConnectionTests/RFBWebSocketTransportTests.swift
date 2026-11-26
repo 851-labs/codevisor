@@ -2,7 +2,7 @@ import CodevisorClient
 import Foundation
 import ScreenSharing
 import Testing
-@testable import CodevisorCoreMac
+@testable import ScreenSharingConnection
 
 struct RFBWebSocketTransportTests {
   final class ScriptedSocket: ServerWebSocketConnecting, @unchecked Sendable {

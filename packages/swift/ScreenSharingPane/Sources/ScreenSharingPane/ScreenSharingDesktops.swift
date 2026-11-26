@@ -1,6 +1,7 @@
 import CodevisorCore
 import Foundation
 import Observation
+import ScreenSharing
 import ScreenSharingConnection
 
 #if os(iOS)
@@ -73,6 +74,7 @@ public final class ScreenSharingDesktops {
     guard sources.machineName(machineId) != nil, var machine = machine(machineId, sources) else { return nil }
 
     machine.target = target
+    machine.makeVNCTransport = nil
     targetMachines.insert(machineId)
     startWatching(machineId, sources)
     return manager.connection(for: machine)
@@ -91,10 +93,24 @@ public final class ScreenSharingDesktops {
 
     var machine = ScreenSharingMachine(
       id: machineId, channel: { sources.channel(machineId) }, connector: sources.connector, appName: appName,
-      signer: signer, installId: installId)
+      signer: signer, installId: installId, makeVNCTransport: makeVNCTransport(machineId, sources))
     machine.isReady = { sources.isReady(machineId) }
     machine.userAsked = { sources.userAsked(machineId) }
     return machine
+  }
+
+  private func makeVNCTransport(
+    _ machineId: String, _ sources: ScreenSharingDesktopSources
+  ) -> ScreenSharingMachine.MakeVNCTransport? {
+    guard let openSocket = sources.openVNCSocket else { return nil }
+
+    return { [appName] displayId, arbitratedByServer in
+      ScreenSharingVNCTransport(
+        open: {
+          let relay = RFBWebSocketTransport(socket: try await openSocket(machineId, displayId))
+          return try await VNCConnection.open(transport: relay, password: nil, serverDrawsPointer: true)
+        }, arbitratedByServer: arbitratedByServer, viewerName: appName, scroll: .touch)
+    }
   }
 
   private func startWatching(_ machineId: String, _ sources: ScreenSharingDesktopSources) {

@@ -14,11 +14,13 @@ final class ScreenSharingViewedSession {
   static let statisticsInterval: Duration = .seconds(1)
 
   init(
-    _ session: any ScreenSharingViewingSession, clock: any Clock<Duration> = ContinuousClock(),
+    _ session: any ScreenSharingViewingSession, machineName: String, clock: any Clock<Duration> = ContinuousClock(),
     isLive: @escaping @MainActor () -> Bool
   ) {
     self.session = session
-    control = session.control.map { ScreenSharingControlSession(channel: $0, clock: clock) }
+    control = session.control.map {
+      ScreenSharingControlSession(channel: $0, machineName: machineName, clock: clock)
+    }
     statistics = Task { [weak self] in
       while (try? await clock.sleep(for: Self.statisticsInterval)) != nil {
         guard let self else { return }

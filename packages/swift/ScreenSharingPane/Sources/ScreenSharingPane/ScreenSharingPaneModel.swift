@@ -210,7 +210,7 @@ public final class ScreenSharingPaneModel {
     viewed?.close()
     pointer = ScreenSharingPointerInput()
     viewed = session.map { session in
-      ScreenSharingViewedSession(session) { [weak self] in self?.isViewing == true }
+      ScreenSharingViewedSession(session, machineName: machineName) { [weak self] in self?.isViewing == true }
     }
   }
 }

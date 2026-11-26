@@ -19,7 +19,7 @@
     var body: some View {
       switch model.state {
       case .off, .connecting:
-        ScreenSharingConnectingStatus(step: model.stillConnectingStep)
+        ScreenSharingConnectingStatus(machineName: model.machineName, step: model.stillConnectingStep)
       case .reconnecting:
         ProgressView("Reconnecting…")
       case .live:
@@ -31,6 +31,7 @@
   }
 
   private struct ScreenSharingConnectingStatus: View {
+    let machineName: String
     let step: String?
 
     var body: some View {
@@ -41,7 +42,7 @@
           Text(step).font(.footnote).foregroundStyle(.tertiary)
         }
       } else {
-        ProgressView("Connecting to Mac…")
+        ProgressView("Connecting to \(machineName)…")
       }
     }
   }

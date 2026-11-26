@@ -1710,21 +1710,6 @@
     }
   },
   {
-    "text": "    public init(",
-    "violation": {
-      "location": {
-        "character": 12,
-        "file": "packages/swift/ScreenSharing/Sources/ScreenSharing/VNC/VNCScreenSharingSession.swift",
-        "line": 42
-      },
-      "reason": "Initializer body should span 50 lines or less excluding comments and whitespace: currently spans 73 lines",
-      "ruleDescription": "Function bodies should not span too many lines",
-      "ruleIdentifier": "function_body_length",
-      "ruleName": "Function Body Length",
-      "severity": "error"
-    }
-  },
-  {
     "text": "  func encode(_ rectangles: [Rectangle]) throws -> [UInt8] {",
     "violation": {
       "location": {
