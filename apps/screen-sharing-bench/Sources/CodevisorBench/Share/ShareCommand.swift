@@ -7,7 +7,7 @@ struct ShareCommand: BenchCommand {
   static let name = "share"
   static let summary = "Share this Mac's main display through Codevisor engine v2 (the Tier 2 host)"
   static let usage =
-    "[--port <port>] [--duration <seconds>] [--capture-cap <1-240>] \(VirtualDisplayOption.usage) "
+    "[--port <port>] [--duration <seconds>] [--capture-cap <1-1000>] \(VirtualDisplayOption.usage) "
     + "\(V2EncoderChoice.usage) "
     + BenchSignalFiles.usage
 
@@ -28,7 +28,7 @@ struct ShareCommand: BenchCommand {
     signals = try BenchSignalFiles(options: options)
     virtualDisplay = try VirtualDisplayOption.read(from: options)
     encoder = try V2EncoderChoice(options: options)
-    let cap = try options.integer("capture-cap", default: 0, in: 0...240)
+    let cap = try options.integer("capture-cap", default: 0, in: 0...1000)
     captureCap = cap > 0 ? cap : nil
   }
 

@@ -259,8 +259,8 @@ tier2_check_inputs() {
   }
   local system_pattern="(apple-hp|codevisor-v2-vcp-cap-view|codevisor-v2-vcp-cap|codevisor-v2-cap|codevisor-v2-vcp|codevisor-v2)"
   [[ "$TIER2_VIEWER_VARIANT" =~ ^(standard|late|realign)$ ]] || { echo "viewer-variant must be standard, late or realign" >&2; return 1; }
-  [[ "$TIER2_CAPTURE_CAP" =~ ^[0-9]+$ ]] && ((TIER2_CAPTURE_CAP >= 1 && TIER2_CAPTURE_CAP <= 240)) || {
-    echo "capture-cap must be 1 to 240, not $TIER2_CAPTURE_CAP" >&2
+  [[ "$TIER2_CAPTURE_CAP" =~ ^[0-9]+$ ]] && ((TIER2_CAPTURE_CAP >= 1 && TIER2_CAPTURE_CAP <= 1000)) || {
+    echo "capture-cap must be 1 to 1000, not $TIER2_CAPTURE_CAP" >&2
     return 1
   }
   [[ "$TIER2_SYSTEMS" =~ ^$system_pattern(,$system_pattern)*$ ]] || { echo "unknown system in $TIER2_SYSTEMS" >&2; return 1; }
