@@ -127,6 +127,18 @@ impl Assembly {
         (limit < shape.layout.data_count + shape.parity_count).then_some(limit)
     }
 
+    fn still_to_arrive(&self, gap_hint: Duration) -> Duration {
+        let Some(shape) = self.shape else {
+            return Duration::ZERO;
+        };
+        let short = shape.layout.data_count.saturating_sub(self.received);
+        let pace = match (self.first_rx, self.last_rx) {
+            (Some(first), Some(last)) if self.received > 1 => (last - first) / (self.received - 1) as u32,
+            _ => gap_hint,
+        };
+        pace * short as u32
+    }
+
     fn due(&self, now: Instant, retry: Duration) -> Vec<u16> {
         let mut wanted = self.wanted();
         wanted.retain(|index| self.requested[usize::from(*index)].is_none_or(|at| now >= at + retry));
@@ -221,6 +233,7 @@ impl Receiver {
         stats.packets_received += 1;
         stats.bytes_received += shard.len() as u64 + crate::wire::HEADER_BYTES as u64;
         let give_up = self.give_up_after();
+        self.keep_waiting_while_the_link_delivers(now + give_up);
         let stream = self.streams.entry(header.stream).or_default();
         if header.frame < stream.next_due {
             stats.duplicate_packets += 1;
@@ -307,7 +320,8 @@ impl Receiver {
         assembly.first_rx.get_or_insert(now);
         assembly.last_rx = Some(now);
         if let Some(at) = assembly.give_up_at {
-            assembly.give_up_at = Some(at.max(now + give_up));
+            let patience = give_up.max(assembly.still_to_arrive(self.gap_peak) + self.rtt);
+            assembly.give_up_at = Some(at.max(now + patience));
         }
         let last_index = shape.layout.data_count + shape.parity_count - 1;
         if usize::from(header.index) == last_index {
@@ -324,6 +338,19 @@ impl Receiver {
             assembly.next_nack = Some(now);
         }
         self.drain(header.stream, events, stats);
+    }
+
+    fn keep_waiting_while_the_link_delivers(&mut self, until: Instant) {
+        let asked_for = self
+            .streams
+            .values_mut()
+            .flat_map(|stream| stream.frames.values_mut())
+            .filter(|assembly| matches!(assembly.state, State::Assembling));
+        for assembly in asked_for {
+            if let Some(at) = assembly.give_up_at {
+                assembly.give_up_at = Some(at.max(until));
+            }
+        }
     }
 
     pub fn ack_ltr(&mut self, stream_id: u8, token: u64) {
@@ -417,7 +444,8 @@ impl Receiver {
                     if let Some(nack) = nack {
                         stats.nacks_sent += 1;
                         self.outbox.push_back(nack.encode());
-                        assembly.give_up_at.get_or_insert(now + give_up);
+                        let patience = give_up.max(assembly.still_to_arrive(self.gap_peak) + self.rtt);
+                        assembly.give_up_at.get_or_insert(now + patience);
                     }
                     let wanted = assembly.wanted();
                     let oldest = wanted.iter().filter_map(|index| assembly.requested[usize::from(*index)]).min();
