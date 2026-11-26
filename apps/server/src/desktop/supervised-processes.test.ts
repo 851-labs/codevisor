@@ -18,7 +18,7 @@ const isAlive = (pid: number): boolean => {
 const written = (path: string): Promise<string> =>
   new Promise((resolve) => {
     const read = () => {
-      if (!existsSync(path) || readFileSync(path, "utf8").trim() === "") return
+      if (!existsSync(path)) return
       watcher.close()
       resolve(readFileSync(path, "utf8").trim())
     }
@@ -29,12 +29,13 @@ const written = (path: string): Promise<string> =>
 describe("the processes a desktop is made of", () => {
   it("are stopped together with what they started, and stopping waits until they are gone", async () => {
     const processes = new SupervisedProcesses(() => undefined)
+    onTestFinished(() => processes.stop())
     const folder = mkdtempSync(join(tmpdir(), "cv-run-"))
     onTestFinished(() => rmSync(folder, { recursive: true, force: true }))
     const pidFile = join(folder, "helper.pid")
-    const session = processes.start("sh", ["-c", 'sleep 300 & echo $! > "$PID_FILE"; wait'], {
-      PID_FILE: pidFile
-    })
+    const announcePid =
+      'sleep 300 & echo $! > "$PID_FILE.part"; mv "$PID_FILE.part" "$PID_FILE"; wait'
+    const session = processes.start("sh", ["-c", announcePid], { PID_FILE: pidFile })
     const helper = Number(await written(pidFile))
     expect(isAlive(helper)).toBe(true)
 
@@ -50,6 +51,7 @@ describe("the processes a desktop is made of", () => {
       ends.push(end)
       ended.resolve()
     })
+    onTestFinished(() => processes.stop())
     processes.start("sleep", ["300"], {})
     processes.start("sh", ["-c", "exit 3"], {})
     await ended.promise
