@@ -36,6 +36,13 @@ struct ScreenSharingHardwareKeyTests {
     #expect(shifted.events(asCharacters: true) == [.text("Ö")])
   }
 
+  @Test(
+    "An invisible character a layout types, like Persian's zero-width non-joiner, is typed, not replaced by a US key")
+  func invisibleCharacters() {
+    let nonJoiner = Key(usage: 5, characters: "\u{200c}", unmodifiedCharacters: "\u{630}", modifiers: .shift)
+    #expect(nonJoiner.events(asCharacters: true) == [.text("\u{200c}")])
+  }
+
   @Test("Shift or Caps Lock on the keyboard sends the capital iOS reports, holding Shift for it once")
   func capitals() {
     let shifted = Key(usage: 4, characters: "A", unmodifiedCharacters: "a", modifiers: .shift)
@@ -182,6 +189,8 @@ struct ScreenSharingHardwareKeyTests {
   func space() {
     let shiftSpace = Key(usage: 44, characters: " ", unmodifiedCharacters: " ", modifiers: .shift)
     let optionSpace = Key(usage: 44, characters: "\u{a0}", unmodifiedCharacters: " ", modifiers: .option)
+    let wideSpace = Key(usage: 44, characters: "\u{3000}", unmodifiedCharacters: " ", modifiers: .shift)
+    #expect(pressed(wideSpace.events(asCharacters: true)) == [56, 49])
     #expect(pressed(shiftSpace.events(asCharacters: true)) == [56, 49])
     #expect(pressed(optionSpace.events(asCharacters: true)) == [58, 49])
   }

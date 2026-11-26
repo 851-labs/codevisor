@@ -24,7 +24,7 @@ struct ScreenSharingHardwareKey {
   private var spaceFinishedADeadKey: Bool {
     guard usage == Self.spaceUsage, modifiers.isDisjoint(with: Self.chordModifiers) else { return false }
 
-    return !characters.isEmpty && characters != " "
+    return !characters.isEmpty && !characters.allSatisfy(\.isWhitespace)
   }
 
   private func typed(onScreen: ScreenSharingModifiers) -> [ScreenSharingInputEvent]? {
@@ -94,7 +94,7 @@ struct ScreenSharingHardwareKey {
 
   private static func isPrintable(_ scalar: Unicode.Scalar) -> Bool {
     switch scalar.properties.generalCategory {
-    case .control, .format, .privateUse, .surrogate, .unassigned: false
+    case .control, .privateUse, .surrogate, .unassigned: false
     default: true
     }
   }
