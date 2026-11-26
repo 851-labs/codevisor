@@ -137,6 +137,16 @@ public final class ClientCache: Sendable {
     }
   }
 
+  private func storedFile(_ file: CachedFileKey, variant: AttachmentCacheTables.Variant) -> Data? {
+    guard let name = try? attachments.fileName(of: file, variant: variant) else { return nil }
+    guard let data = files.read(named: name) else {
+      try? attachments.forgetFile(file, variant: variant)
+      return nil
+    }
+    try? attachments.touch(file, at: now())
+    return data
+  }
+
   func flush() async {
     await work.flush()
   }
@@ -208,6 +218,12 @@ public final class ClientCache: Sendable {
 }
 
 extension ClientCache: ServerFileCaching {
+  public func cachedFile(machineId: String, fileId: String, preview: Bool) async -> Data? {
+    let file = CachedFileKey(machineId: machineId, fileId: fileId)
+    let variant: AttachmentCacheTables.Variant = preview ? .preview : .original
+    return await work.perform { [self] in storedFile(file, variant: variant) }
+  }
+
   public func cacheFile(_ data: Data, machineId: String, fileId: String, preview: Bool) {
     recordFile(data, variant: preview ? .preview : .original, file: CachedFileKey(machineId: machineId, fileId: fileId))
   }

@@ -37,6 +37,7 @@ public struct LaunchGate: Equatable, Sendable {
   }
 
   private func startupPhase(_ snapshot: LaunchSnapshot) -> LaunchPhase {
+    if snapshot.hasLocalData, snapshot.hasCachedContent { return .ready }
     if case let .unavailable(message) = snapshot.serverState {
       return .failed(LaunchFailure(stage: .server, message: message))
     }

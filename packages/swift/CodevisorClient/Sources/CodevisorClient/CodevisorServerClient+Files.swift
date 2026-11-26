@@ -27,9 +27,9 @@ extension CodevisorServerClient {
 
   public func filePreview(id: String) async throws -> Data {
     let encoded = id.addingPercentEncoding(withAllowedCharacters: .urlPathAllowed) ?? id
-    let data = try await performRaw("/v1/files/\(encoded)?preview=1", method: "GET", body: nil, contentType: nil)
-    cacheAttachment(data, id: id, preview: true)
-    return data
+    return try await attachment(id: id, preview: true) {
+      try await self.performRaw("/v1/files/\(encoded)?preview=1", method: "GET", body: nil, contentType: nil)
+    }
   }
 
   public func filePreview(path: String, sessionId: UUID?) async throws -> Data {
@@ -43,15 +43,18 @@ extension CodevisorServerClient {
 
   public func fileData(id: String) async throws -> Data {
     let encoded = id.addingPercentEncoding(withAllowedCharacters: .urlPathAllowed) ?? id
-    let data = try await performRaw("/v1/files/\(encoded)", method: "GET", body: nil, contentType: nil)
-    cacheAttachment(data, id: id, preview: false)
-    return data
+    return try await attachment(id: id, preview: false) {
+      try await self.performRaw("/v1/files/\(encoded)", method: "GET", body: nil, contentType: nil)
+    }
   }
 
-  private func cacheAttachment(_ data: Data, id: String, preview: Bool) {
-    guard let fileCache, let machineId else { return }
+  private func attachment(id: String, preview: Bool, fetch: () async throws -> Data) async throws -> Data {
+    guard let fileCache, let machineId else { return try await fetch() }
+    if let cached = await fileCache.cachedFile(machineId: machineId, fileId: id, preview: preview) { return cached }
 
+    let data = try await fetch()
     fileCache.cacheFile(data, machineId: machineId, fileId: id, preview: preview)
+    return data
   }
 
   public func fileData(sessionId: UUID, path: String) async throws -> Data {

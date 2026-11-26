@@ -33,6 +33,7 @@ struct LaunchCover<Content: View>: View {
     return LaunchSnapshot(
       localDataFailure: runtime.startupError,
       hasLocalData: environment != nil,
+      hasCachedContent: environment?.navigationStore.hasCachedContent ?? false,
       serverState: localServer?.state,
       dataUpgrade: localServer?.dataUpgradeProgress,
       availability: environment?.machines.availability(for: CodevisorMachine.local.id) ?? .waiting(.connecting),

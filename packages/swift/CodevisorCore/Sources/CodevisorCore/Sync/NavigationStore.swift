@@ -78,6 +78,8 @@ public final class NavigationStore {
 
   public func hasCache(for machineId: String) -> Bool { cacheSummary[machineId] != nil }
 
+  public var hasCachedContent: Bool { cacheSummary.values.contains(false) }
+
   public func isCacheEmpty(for machineId: String) -> Bool { cacheSummary[machineId] ?? true }
 
   private func refreshCacheSummary() {
