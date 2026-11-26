@@ -136,6 +136,9 @@ struct ChatPaneContentView: View {
     .task(id: threadsBot?.id) {
       if let threadsBot { await environment.botThreads.refreshThreads(of: threadsBot) }
     }
+    .onChange(of: ChatSignal(controller.userSendSignal, of: controller)) { old, new in
+      if let threadsBot, old.isSameChat(as: new) { environment.botPages.forgetPendingAgent(of: threadsBot) }
+    }
   }
 
   private func assignCreatedChat(_ created: ChatSession) {

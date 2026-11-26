@@ -47,6 +47,16 @@ public struct BotPages {
     return bot
   }
 
+  public func hasOpenPage(_ bot: Bot) -> Bool {
+    threads.openThreadByBot[bot.id] != nil || threads.openAgent(of: bot) != nil
+  }
+
+  public func forgetPendingAgent(of bot: Bot) {
+    guard threads.openAgent(of: bot) != nil, page(of: bot).agent == nil else { return }
+
+    threads.closeAgent(of: bot)
+  }
+
   public func hasArchivedAgent(_ bot: Bot) -> Bool {
     guard let id = threads.openAgent(of: bot) else { return false }
 

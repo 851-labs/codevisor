@@ -11,6 +11,7 @@ struct BotPageUpkeep: ViewModifier {
   let store: SessionStore
   let focusPage: () -> Void
   @Environment(AppEnvironment.self) private var environment
+  @Environment(\.detailColumnFocus) private var detailFocus
 
   func body(content: Content) -> some View {
     content
@@ -18,8 +19,14 @@ struct BotPageUpkeep: ViewModifier {
         if request?.workspaceId == workspace.id { focusPage() }
       }
       .onChange(of: botWithArchivedAgent, initial: true) { _, bot in
-        if let bot { environment.botPages.forgetArchivedAgent(of: bot) }
+        if let bot { forgetArchivedAgent(of: bot) }
       }
+  }
+
+  private func forgetArchivedAgent(of bot: Bot) {
+    let mayTakeFocus = detailFocus?.isFocusInColumnOrNowhere == true
+    environment.botPages.forgetArchivedAgent(of: bot)
+    if mayTakeFocus { focusPage() }
   }
 
   private var botWithArchivedAgent: Bot? {

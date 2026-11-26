@@ -29,7 +29,7 @@ struct BotComposeToolbarItem: ToolbarContent {
   private var openThread: OpenBotThread? {
     guard case let .bot(serverId, botId) = selection,
       let bot = environment.bots.bot(serverId: serverId, id: botId),
-      environment.botPages.page(of: bot) != .conversation
+      environment.botPages.hasOpenPage(bot)
     else { return nil }
 
     return OpenBotThread(botName: bot.name) { [store, botThreads = environment.botThreads] in

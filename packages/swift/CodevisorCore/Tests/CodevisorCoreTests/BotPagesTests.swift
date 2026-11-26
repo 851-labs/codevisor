@@ -121,6 +121,28 @@ struct BotPagesTests {
     #expect(pages.page(of: world.bot) == .conversation)
   }
 
+  @Test("An agent that cannot be drawn yet still counts as open, and a message to the bot drops it for good")
+  func pendingAgentCanBeDismissed() async throws {
+    let world = try await BotWorld(botProject: botProject)
+    let agent = world.chat("Christmas list", in: appProject, createdBy: world.botChat)
+    let pages = try await world.pages(projects: [], sessions: [agent])
+    pages.show(agent)
+
+    #expect(pages.page(of: world.bot) == .conversation)
+    #expect(pages.hasOpenPage(world.bot))
+
+    pages.forgetPendingAgent(of: world.bot)
+    _ = try await world.pages(projects: [appProject], sessions: [agent])
+
+    #expect(!pages.hasOpenPage(world.bot))
+    #expect(pages.page(of: world.bot) == .conversation)
+
+    pages.show(agent)
+    pages.forgetPendingAgent(of: world.bot)
+
+    #expect(pages.page(of: world.bot).agent?.id == agent.id)
+  }
+
   @Test("An agent whose project has not loaded yet is kept, and takes the page once it loads")
   func agentWaitingForItsProjectIsKept() async throws {
     let world = try await BotWorld(botProject: botProject)
