@@ -41,7 +41,6 @@ public final class AppEnvironment {
   public let paneGroups: any PaneGroupRepository
   public let workspaces: any WorkspaceRepository
   public let navigationStore: NavigationStore
-  public let transcriptCache: TranscriptPageCache?
   public let clientCache: ClientCache?
   public let workspaceSync: WorkspaceSyncModel
   let harnessServiceOverride: (any HarnessServicing)?
@@ -54,7 +53,6 @@ public final class AppEnvironment {
   public init(
     navigationPersistence: any PersistenceStore = InMemoryStore(),
     launchSnapshot: ClientLaunchSnapshot? = nil,
-    transcriptCache: TranscriptPageCache? = nil,
     clientCache: ClientCache? = nil,
     configCache: ConfigOptionCache,
     composerDefaults: ComposerDefaultsStore? = nil,
@@ -74,7 +72,6 @@ public final class AppEnvironment {
     self.now = now
     self.harnessServiceOverride = harnessService
     self.paneGroups = paneGroups
-    self.transcriptCache = transcriptCache
     self.clientCache = clientCache
     let navigationStore = Self.navigationStore(
       persistence: navigationPersistence, launchSnapshot: launchSnapshot, clientCache: clientCache)

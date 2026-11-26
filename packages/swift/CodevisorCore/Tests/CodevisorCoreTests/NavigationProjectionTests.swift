@@ -39,14 +39,18 @@ struct NavigationProjectionTests {
   }
 
   @Test("The cache is on disk: the next launch shows it before any network")
-  func cacheSurvivesRelaunch() async {
+  func cacheSurvivesRelaunch() async throws {
     let persistence = InMemoryStore()
+    let cacheFixture = try ClientCacheFixture()
+    defer { cacheFixture.tearDown() }
+    let cache = try cacheFixture.makeCache()
     let chat = ChatSession(projectId: project.id, serverId: "m", title: "Fix it")
-    let first = NavigationFixture(persistence: persistence)
+    let first = NavigationFixture(persistence: persistence, clientCache: cache)
     await first.install(machineId: "m", projects: [project], sessions: [chat], workspaces: [workspace(chat: chat)])
     PersistenceEncoding.drain()
+    await cache.flush()
 
-    let relaunched = NavigationFixture(persistence: persistence)
+    let relaunched = NavigationFixture(persistence: persistence, clientCache: try cacheFixture.makeCache())
     #expect(relaunched.store.hasCache(for: "m"))
     #expect(relaunched.projectList.sessions.map(\.id) == [chat.id])
     #expect(relaunched.workspaces.loadAll().count == 1)

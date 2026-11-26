@@ -92,6 +92,24 @@ struct ClientCacheTests {
     #expect(cache.files.read(named: name) == bytes)
   }
 
+  @Test("The sidebar cached by an older version moves into the cache tables once")
+  func legacySidebarIsImported() throws {
+    let fixture = try ClientCacheFixture()
+    defer { fixture.tearDown() }
+    let cache = try fixture.makeCache()
+    let store = InMemoryStore()
+    let project = Project.fromFolder(URL(fileURLWithPath: "/fixture/project"), serverId: "local")
+    let snapshot = ServerNavigationSnapshot.fixture(projects: [project], sessions: [Self.chat("Old", project: project)])
+    try store.saveData(JSONEncoder().encode(["local"]), forKey: LegacyNavigationCacheImport.indexKey)
+    try store.saveData(JSONEncoder().encode(snapshot), forKey: LegacyNavigationCacheImport.keyPrefix + "local")
+
+    LegacyNavigationCacheImport.run(store: store, cache: cache)
+
+    #expect(cache.loadNavigation()["local"] == snapshot)
+    #expect(store.loadData(forKey: LegacyNavigationCacheImport.indexKey) == nil)
+    #expect(store.loadData(forKey: LegacyNavigationCacheImport.keyPrefix + "local") == nil)
+  }
+
   @Test("Transcripts not opened within the retention window age out")
   func oldTranscriptsAgeOut() async throws {
     let fixture = try ClientCacheFixture()

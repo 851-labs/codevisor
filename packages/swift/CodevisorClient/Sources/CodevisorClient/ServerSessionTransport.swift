@@ -17,6 +17,10 @@ public struct ServerSessionTransport: Sendable {
     self.sessionId = sessionId
   }
 
+  public func uses(_ other: any CodevisorServerClienting) -> Bool {
+    (client as AnyObject) === (other as AnyObject)
+  }
+
   private var resolver: ServerTranscriptResolver { ServerTranscriptResolver(transport: self) }
 
   private var eventStream: ServerSessionEventStream { ServerSessionEventStream(transport: self) }

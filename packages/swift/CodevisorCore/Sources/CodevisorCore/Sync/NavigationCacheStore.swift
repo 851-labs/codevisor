@@ -2,77 +2,32 @@ import Foundation
 
 @MainActor
 final class NavigationCacheStore {
-  nonisolated static let keyPrefix = "navigation-cache-v1."
-  nonisolated static let indexKey = "navigation-cache-v1-index"
-
   private(set) var caches: [String: MachineNavigationCache] = [:]
   private(set) var generations: [String: UInt64] = [:]
-  private let store: any PersistenceStore
   private let clientCache: ClientCache?
-  private let persistenceOwner = UUID()
 
-  init(
-    store: any PersistenceStore, preloaded: [String: MachineNavigationCache]? = nil, clientCache: ClientCache? = nil
-  ) {
-    self.store = store
+  init(preloaded: [String: MachineNavigationCache]? = nil, clientCache: ClientCache? = nil) {
     self.clientCache = clientCache
-    caches = preloaded ?? Self.loadCaches(from: store)
-    for cache in caches.values { clientCache?.recordNavigation(cache.snapshot, machineId: cache.machineId) }
+    caches = preloaded ?? Self.loadCaches(from: clientCache)
   }
 
-  nonisolated static func loadCaches(from store: any PersistenceStore) -> [String: MachineNavigationCache] {
-    let decoder = JSONDecoder()
-    let machineIds =
-      store.loadData(forKey: indexKey).flatMap { try? decoder.decode([String].self, from: $0) } ?? []
-    var caches: [String: MachineNavigationCache] = [:]
-    for machineId in machineIds {
-      let key = keyPrefix + machineId
-      guard let data = store.loadData(forKey: key) else { continue }
-      do {
-        let snapshot = try decoder.decode(ServerNavigationSnapshot.self, from: data)
-        caches[machineId] = MachineNavigationCache(machineId: machineId, snapshot: snapshot)
-      } catch {
-        handleCorruptPayload(store: store, key: key, data: data, error: error)
-      }
+  nonisolated static func loadCaches(from clientCache: ClientCache?) -> [String: MachineNavigationCache] {
+    let snapshots = clientCache?.loadNavigation() ?? [:]
+    return snapshots.reduce(into: [:]) { caches, entry in
+      caches[entry.key] = MachineNavigationCache(machineId: entry.key, snapshot: entry.value)
     }
-    return caches
   }
 
   func set(_ cache: MachineNavigationCache) {
-    let isNew = caches[cache.machineId] == nil
     caches[cache.machineId] = cache
     generations[cache.machineId, default: 0] &+= 1
-    let store = store
-    let snapshot = cache.snapshot
-    let key = Self.keyPrefix + cache.machineId
-    clientCache?.recordNavigation(snapshot, machineId: cache.machineId)
-    PersistenceEncoding.enqueueLatest(owner: persistenceOwner, key: key) {
-      do {
-        try store.saveData(PersistenceEncoding.encoder.encode(snapshot), forKey: key)
-      } catch {
-        Log.persistence.error("Failed to save \(key, privacy: .public): \(String(describing: error), privacy: .public)")
-      }
-    }
-    if isNew { persistIndex() }
+    clientCache?.recordNavigation(cache.snapshot, machineId: cache.machineId)
   }
 
   func remove(machineId: String) {
     guard caches.removeValue(forKey: machineId) != nil else { return }
+
     generations[machineId, default: 0] &+= 1
     clientCache?.forgetMachine(machineId)
-    let store = store
-    let key = Self.keyPrefix + machineId
-    PersistenceEncoding.enqueueLatest(owner: persistenceOwner, key: key, delay: 0) {
-      try? store.removeData(forKey: key)
-    }
-    persistIndex()
-  }
-
-  private func persistIndex() {
-    let store = store
-    let machineIds = caches.keys.sorted()
-    PersistenceEncoding.enqueueLatest(owner: persistenceOwner, key: Self.indexKey, delay: 0) {
-      try? store.saveData(JSONEncoder().encode(machineIds), forKey: Self.indexKey)
-    }
   }
 }

@@ -144,8 +144,7 @@ private final class WakeFixture {
   let machines: MachineController
   let provider: FakeCloudProvider
   let controller: SessionController
-  let cacheDirectory = FileManager.default.temporaryDirectory
-    .appendingPathComponent("transcripts-\(UUID().uuidString)", isDirectory: true)
+  let cacheFixture: ClientCacheFixture
 
   init() throws {
     machines = MachineController(
@@ -165,14 +164,15 @@ private final class WakeFixture {
     chat.openSessionResponse = try JSONDecoder().decode(
       ServerSessionOpenResponse.self, from: Self.openResponse(sessionId: sessionId, serverId: sandbox.id, text: "fresh")
     )
-    let cache = TranscriptPageCache(directory: cacheDirectory)
-    cache.store(
-      Self.openResponse(sessionId: sessionId, serverId: sandbox.id, text: "saved"), machineId: sandbox.id,
-      sessionId: sessionId)
+    cacheFixture = try ClientCacheFixture()
+    let cache = try cacheFixture.makeCache()
+    cache.recordOpenedTranscript(
+      Self.openResponse(sessionId: sessionId, serverId: sandbox.id, text: "saved"),
+      chat: CachedChatKey(machineId: sandbox.id, chatId: sessionId))
     controller = SessionController(
       project: project, configCache: ConfigOptionCache(store: InMemoryStore()), serverClient: chat,
       machines: machines)
-    controller.transcriptCache = cache
+    controller.clientCache = cache
     controller.configureExistingSession(
       ChatSession(
         id: sessionId, projectId: project.id, serverId: sandbox.id, harnessId: "codex", agentSessionId: "agent-1",
@@ -202,7 +202,7 @@ private final class WakeFixture {
 
   func tearDown() {
     controller.model?.shutdown()
-    try? FileManager.default.removeItem(at: cacheDirectory)
+    cacheFixture.tearDown()
   }
 
   static func openResponse(sessionId: UUID, serverId: String, text: String) -> Data {

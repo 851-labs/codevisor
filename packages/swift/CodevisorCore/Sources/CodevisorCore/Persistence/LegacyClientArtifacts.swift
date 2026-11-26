@@ -5,7 +5,7 @@ enum LegacyClientArtifacts {
   private static let recoveryRetention: TimeInterval = 30 * 24 * 60 * 60
 
   private static let retiredCacheDirectoryNames = [
-    "Pane Previews"
+    "Pane Previews", "transcripts",
   ]
 
   private static let exactLegacyKeys: Set<String> = [

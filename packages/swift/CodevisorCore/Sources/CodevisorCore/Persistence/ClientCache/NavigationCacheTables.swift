@@ -29,6 +29,14 @@ struct NavigationCacheTables: Sendable {
       checkouts: try Self.checkouts.read(machineId: machineId, from: database))
   }
 
+  func snapshots() throws -> [String: ServerNavigationSnapshot] {
+    var snapshots: [String: ServerNavigationSnapshot] = [:]
+    for machineId in try machineIds() {
+      snapshots[machineId] = try snapshot(machineId: machineId)
+    }
+    return snapshots
+  }
+
   func machineIds() throws -> [String] {
     try database.queryRows(Self.machineIdsSql, bindings: []) { $0.text(0) ?? "" }
   }

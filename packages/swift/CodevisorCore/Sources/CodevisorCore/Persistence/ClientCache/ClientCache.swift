@@ -100,6 +100,43 @@ public final class ClientCache: Sendable {
     }
   }
 
+  func loadNavigation() -> [String: ServerNavigationSnapshot] {
+    do {
+      let snapshots = try navigation.snapshots()
+      for (machineId, snapshot) in snapshots { written.record(snapshot, machineId: machineId) }
+      return snapshots
+    } catch {
+      recover(from: error, during: "navigation.load")
+      return [:]
+    }
+  }
+
+  func adoptLegacyNavigation(_ snapshots: [String: ServerNavigationSnapshot]) throws {
+    guard try navigation.machineIds().isEmpty else { return }
+
+    for (machineId, snapshot) in snapshots {
+      try navigation.write(snapshot, over: nil, machineId: machineId, at: now())
+    }
+  }
+
+  func transcriptPage(of chat: CachedChatKey) async -> Data? {
+    await work.perform { [self] in
+      do {
+        try transcripts.markOpened(chat, at: now())
+        return try transcripts.page(of: chat)
+      } catch {
+        recover(from: error, during: "transcript.load")
+        return nil
+      }
+    }
+  }
+
+  func forgetTranscript(_ chat: CachedChatKey) {
+    enqueueInOrder("transcript.forget.\(chat.machineId).\(chat.chatId)") { cache in
+      try cache.transcripts.remove(chat)
+    }
+  }
+
   func flush() async {
     await work.flush()
   }

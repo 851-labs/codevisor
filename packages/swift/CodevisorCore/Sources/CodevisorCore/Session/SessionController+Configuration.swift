@@ -37,6 +37,7 @@ extension SessionController {
     configurationValidationState = .connecting
     isLoadingInitialHistory = true
     initialHistoryLoadStartedAt = ProcessInfo.processInfo.systemUptime
+    showCachedTranscript()
   }
 
   var hasExistingAgentSession: Bool {

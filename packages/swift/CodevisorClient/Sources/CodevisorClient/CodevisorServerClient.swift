@@ -135,6 +135,10 @@ public struct CodevisorServerConfig: Equatable, Sendable {
 }
 
 public final class CodevisorServerClient: CodevisorServerClienting, @unchecked Sendable {
+  public var isUnreachablePlaceholder: Bool {
+    config.requestTransport is UnreachableRequestTransport
+  }
+
   static let eventWebSocketMaximumMessageSize = 16 * 1024 * 1024
   static let requestGateTimeout: Duration = .seconds(60)
   let config: CodevisorServerConfig

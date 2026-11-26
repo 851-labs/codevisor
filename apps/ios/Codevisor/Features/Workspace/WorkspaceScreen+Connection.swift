@@ -61,7 +61,7 @@ extension WorkspaceScreen {
           $0.serverId == session.serverId && $0.id == session.projectId
         })
       else {
-        missing = true
+        missing = canShowServerContent
         IOSNavigationDiagnostics.record(
           "workspace.prepare.abort",
           "session=\(Self.diagnosticID(sessionId)) reason=session-or-project-missing"
@@ -243,12 +243,26 @@ extension WorkspaceScreen {
       "workspace.connectChat.begin",
       "session=\(Self.diagnosticID(chatId)) localController=\(controllers[chatId] != nil)"
     )
-    if let controller = controllers[chatId] {
-      await retryFailedConnection(of: controller, chatId: chatId)
+    guard let controller = controllers[chatId] ?? makeChatController(for: chatId) else { return }
+    guard canShowServerContent else { return }
+
+    if controller.isServerReady, case .failed = controller.status {
+      await controller.retrySessionFailure()
       return
     }
-    guard let target = chatSessionAndProject(for: chatId) else { return }
-    let (session, project) = target
+    guard controller.model == nil || controller.showsCachedTranscript, !controller.isConnecting else {
+      IOSNavigationDiagnostics.record(
+        "workspace.connectChat.skip",
+        "session=\(Self.diagnosticID(chatId)) reason=\(controller.model != nil ? "model-present" : "already-connecting")"
+      )
+      return
+    }
+    await connect(controller, chatId: chatId)
+  }
+
+  private func makeChatController(for chatId: UUID) -> SessionController? {
+    guard let (session, project) = chatSessionAndProject(for: chatId) else { return nil }
+
     let controller = ChatControllerCache.shared.controller(
       for: session,
       project: project,
@@ -260,14 +274,12 @@ extension WorkspaceScreen {
       "workspace.connectChat.controller",
       "session=\(Self.diagnosticID(chatId)) model=\(controller.model != nil) connecting=\(controller.isConnecting) historyLoading=\(controller.isLoadingInitialHistory)"
     )
-    guard controller.model == nil, !controller.isConnecting else {
-      IOSNavigationDiagnostics.record(
-        "workspace.connectChat.skip",
-        "session=\(Self.diagnosticID(chatId)) reason=\(controller.model != nil ? "model-present" : "already-connecting")"
-      )
-      return
-    }
-    if session.agentSessionId?.isEmpty != false {
+    return controller
+  }
+
+  private func connect(_ controller: SessionController, chatId: UUID) async {
+    controller.replaceUnreachableClient(with: environment.machines.client(for: controller.project.serverId))
+    if controller.serverSession?.agentSessionId?.isEmpty != false {
       await controller.prepare()
       controller.applyComposerDefaults()
     }
@@ -277,15 +289,6 @@ extension WorkspaceScreen {
       "workspace.connectChat.connect.end",
       "session=\(Self.diagnosticID(chatId)) model=\(controller.model != nil) connecting=\(controller.isConnecting) historyLoading=\(controller.isLoadingInitialHistory)"
     )
-  }
-
-  private func retryFailedConnection(of controller: SessionController, chatId: UUID) async {
-    IOSNavigationDiagnostics.record(
-      "workspace.connectChat.skip",
-      "session=\(Self.diagnosticID(chatId)) reason=local-controller-present"
-    )
-    guard controller.isServerReady, case .failed = controller.status else { return }
-    await controller.retrySessionFailure()
   }
 
   private func chatSessionAndProject(for chatId: UUID) -> (ChatSession, Project)? {

@@ -17,12 +17,30 @@ struct SessionCacheRecorder: Sendable {
     return transport
   }
 
+  func cachedPage(through transport: ServerSessionTransport) async -> TranscriptHistoryPage? {
+    guard let data = await cache.transcriptPage(of: chat) else { return nil }
+    guard let page = await Self.decodePage(data, through: transport) else {
+      cache.forgetTranscript(chat)
+      return nil
+    }
+    return page.conversation.isEmpty ? nil : page
+  }
+
   func recordOpened(_ data: Data) {
     cache.recordOpenedTranscript(data, chat: chat)
   }
 
   func recordQueuedSends(_ unsent: [SendQueue.Unsent]) {
     cache.recordQueuedSends(unsent.map(CachedQueuedSend.init), chat: chat)
+  }
+
+  @concurrent
+  private static func decodePage(
+    _ data: Data, through transport: ServerSessionTransport
+  ) async -> TranscriptHistoryPage? {
+    guard let page = try? JSONDecoder().decode(ServerTranscriptPage.self, from: data) else { return nil }
+
+    return transport.historyPage(from: page)
   }
 
   @MainActor
