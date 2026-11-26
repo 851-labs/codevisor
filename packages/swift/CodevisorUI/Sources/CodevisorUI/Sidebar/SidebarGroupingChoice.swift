@@ -6,8 +6,8 @@ public struct SidebarGroupingChoice {
   private let machineCount: AccountMachineCount
   private let preferences: ClientPreferences
 
-  public init(environment: AppEnvironment, preferences: ClientPreferences = .shared) {
-    self.init(machineCount: environment.accountMachineCount, preferences: preferences)
+  public init(environment: AppEnvironment) {
+    self.init(machineCount: environment.accountMachineCount, preferences: environment.preferences)
   }
 
   init(machineCount: AccountMachineCount, preferences: ClientPreferences) {

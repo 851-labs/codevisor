@@ -36,7 +36,7 @@ final class MachineCatalog {
   var accountMachineCount: Int? {
     let thisMac = includesLocalMachine ? 1 : 0
     guard let cloudProvider else { return thisMac }
-    guard cloudProvider.hasCompletedCloudBootstrap else { return nil }
+    guard cloudProvider.hasCompletedCloudBootstrap, !cloudProvider.isCloudSigningIn else { return nil }
     guard cloudProvider.isCloudSignedIn else { return thisMac }
     guard cloudProvider.isCloudRosterVerified || !cloudProvider.cloudMachines.isEmpty else { return nil }
 

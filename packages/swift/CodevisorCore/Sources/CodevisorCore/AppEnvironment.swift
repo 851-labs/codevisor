@@ -47,7 +47,7 @@ public final class AppEnvironment {
   var harnessCatalogRevisions: [String: UInt64] = [:]
   var mcpStateRevisions: [String: UInt64] = [:]
   public internal(set) var pluginAccountsRevision: UInt64 = 0
-  let preferences: ClientPreferences
+  public let preferences: ClientPreferences
   public let now: @MainActor () -> Date
 
   public init(

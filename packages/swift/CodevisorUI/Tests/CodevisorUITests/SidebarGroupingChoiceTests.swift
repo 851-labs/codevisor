@@ -122,6 +122,16 @@ struct SidebarGroupingChoiceTests {
     await awaitObserved { count.lastKnown == 2 }
   }
 
+  @Test("A sign-in that runs again while signed in keeps the grouping until it finishes")
+  func repeatedSignInKeepsTheGrouping() {
+    let account = Account(machines: [.thisMac, .studio])
+    account.startSigningInAgain()
+    #expect(account.choice.effective == .machine)
+
+    account.finishSigningIn()
+    #expect(account.choice.effective == .machine)
+  }
+
   @Test("Signing out returns the default to None")
   func signingOutReturnsToNone() {
     let account = Account(machines: [.thisMac, .studio])
@@ -199,6 +209,18 @@ private final class Account {
     machineCount.update()
   }
 
+  func startSigningInAgain() {
+    cloud.isCloudSignedIn = false
+    cloud.isCloudSigningIn = true
+    machineCount.update()
+  }
+
+  func finishSigningIn() {
+    cloud.isCloudSignedIn = true
+    cloud.isCloudSigningIn = false
+    machineCount.update()
+  }
+
   func signOut() {
     cloud.isCloudSignedIn = false
     cloud.cloudMachines = []
@@ -212,6 +234,7 @@ private final class Cloud: CloudMachineProviding {
   var cloudMachines: [CloudMachine] = []
   var isCloudSignedIn = true
   var hasCompletedCloudBootstrap = true
+  var isCloudSigningIn = false
   var isCloudRosterVerified = true
 
   func relayServerConfig(for machine: CloudMachine) -> CodevisorServerConfig? { nil }
