@@ -141,6 +141,25 @@ struct ScreenSharingLinuxDesktopTests {
       ])
   }
 
+  @Test("A hardware keyboard's key reaches Linux as the character its own layout gives, not its US position")
+  func hardwareKeyboardLayout() async throws {
+    let harness = try await LinuxDesktopHarness()
+    defer { harness.stop() }
+    let model = await harness.goLive()
+    let germanZ = ScreenSharingHardwareKey(usage: 28, characters: "z", unmodifiedCharacters: "z")
+    let germanUmlaut = ScreenSharingHardwareKey(usage: 51, characters: "ö", unmodifiedCharacters: "ö")
+
+    #expect(model?.pressHardwareKey(germanZ) == true)
+    #expect(model?.pressHardwareKey(germanUmlaut) == true)
+    await awaitObserved { harness.input.count == 4 }
+
+    #expect(
+      harness.input == [
+        .keyEvent(keysym: 0x7a, down: true), .keyEvent(keysym: 0x7a, down: false),
+        .keyEvent(keysym: 0xf6, down: true), .keyEvent(keysym: 0xf6, down: false),
+      ])
+  }
+
   @Test("Every printable key on the phone's keyboard reaches Linux as the character it shows")
   func everyPrintableKey() {
     let keys = VNCKeyTranslator(layout: VNCUnitedStatesKeyLayout.layout)

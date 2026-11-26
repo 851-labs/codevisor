@@ -17,13 +17,6 @@ struct VNCUnitedStatesKeyLayoutTests {
     #expect(keys.keysym(code: code, modifiers: 1) == shifted.value)
   }
 
-  @Test("Caps Lock capitalises letters and leaves digits and punctuation alone")
-  func capsLock() {
-    #expect(keys.keysym(code: 0, modifiers: 16) == 0x41)
-    #expect(keys.keysym(code: 18, modifiers: 16) == 0x31)
-    #expect(keys.keysym(code: 27, modifiers: 16) == 0x2d)
-  }
-
   @Test("Option, Control and Command leave the character alone, so Alt and Control shortcuts name the plain key")
   func otherModifiersKeepTheCharacter() {
     for modifiers in [UInt8(2), 4, 8, 14] { #expect(keys.keysym(code: 8, modifiers: modifiers) == 0x63) }

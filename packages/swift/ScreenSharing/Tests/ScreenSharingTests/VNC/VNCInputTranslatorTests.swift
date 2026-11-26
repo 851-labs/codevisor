@@ -63,6 +63,16 @@ struct VNCInputTranslatorTests {
       ])
   }
 
+  @Test("Pasted text with Windows line endings presses Return once per line break")
+  func windowsLineEndings() {
+    let keys = translator.translate(.text("a\r\nb\rc\n")).compactMap { message -> UInt32? in
+      guard case .keyEvent(let keysym, true) = message else { return nil }
+
+      return keysym
+    }
+    #expect(keys == [0x61, RFBKeysym.return, 0x62, RFBKeysym.return, 0x63, RFBKeysym.return])
+  }
+
   @Test func theCurrentKeyboardLayoutProducesLatinLettersAndSpace() throws {
     let keys = VNCKeyTranslator()
     let lower = try #require(keys.keysym(code: 0, modifiers: 0))

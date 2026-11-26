@@ -6,9 +6,7 @@ public enum VNCUnitedStatesKeyLayout {
   public static let layout: VNCKeyTranslator.Layout = { code, carbonModifiers in
     guard let key = keys[code] else { return nil }
 
-    let isShifted = carbonModifiers & shift != 0
-    let isCapitalised = carbonModifiers & capsLock != 0 && key.plain.properties.isAlphabetic
-    return isShifted || isCapitalised ? key.shifted : key.plain
+    return carbonModifiers & shift != 0 ? key.shifted : key.plain
   }
 
   private struct Key {

@@ -37,11 +37,15 @@ final class VNCInputTranslator {
       guard let keysym = keys.keysym(code: code, modifiers: modifiers) else { return [] }
       return [.keyEvent(keysym: keysym, down: down)]
     case .text(let text):
-      return text.unicodeScalars.flatMap { scalar -> [RFBClientMessage] in
+      return Self.withSingleLineBreaks(text).unicodeScalars.flatMap { scalar -> [RFBClientMessage] in
         let keysym = RFBKeysym.keysym(for: scalar)
         return [.keyEvent(keysym: keysym, down: true), .keyEvent(keysym: keysym, down: false)]
       }
     }
+  }
+
+  private static func withSingleLineBreaks(_ text: String) -> String {
+    text.replacingOccurrences(of: "\r\n", with: "\n")
   }
 
   func release() -> [RFBClientMessage] {

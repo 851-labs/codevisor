@@ -13,6 +13,7 @@ public final class VNCScreenSharingSession: ScreenSharingViewingSession {
   public var onConnectionChanged: ((String) -> Void)?
   public var onCursorChanged: ((ScreenSharingCursorUpdate) -> Void)?
   public var videoShowsPointer: Bool { client.serverDrawsPointer }
+  public var keysAreCharacters: Bool { true }
   let client: RFBClient
   private let translator: VNCInputTranslator
   private let emulator: VNCHostEmulator

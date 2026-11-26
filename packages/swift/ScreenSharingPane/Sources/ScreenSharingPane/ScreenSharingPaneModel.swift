@@ -125,10 +125,12 @@ public final class ScreenSharingPaneModel {
     viewsChanged()
   }
 
-  func pressHardwareKey(usage: Int, modifiers flags: ScreenSharingModifiers) -> Bool {
-    guard let code = ScreenSharingKeyboard.code(forHIDUsage: usage) else { return false }
+  func pressHardwareKey(_ pressed: ScreenSharingHardwareKey) -> Bool {
+    var key = pressed
+    key.modifiers.formUnion(modifiers)
+    guard let events = key.events(asCharacters: session?.keysAreCharacters == true) else { return false }
 
-    send(ScreenSharingKeyboard.press(code: code, modifiers: flags.union(modifiers)))
+    send(events)
     modifiers = []
     return true
   }

@@ -99,6 +99,8 @@ public final class ScreenSharingControlSession {
       let queued = pending
       pending = []
       deliver(queued)
+    case .grant(_, let lease) where lease != self.lease:
+      channel.send(.release(lease: lease))
     case .denied(let request, let reason) where request == requestID:
       stop(notice: reason)
     case .revoked(let lease, let reason) where lease == self.lease:
