@@ -29,7 +29,7 @@ start_system() {
     floor) bench_window view --source null --port "$TIER2_FLOOR_PORT" "${signals[@]}" >"$dir/system.json" 2>"$dir/system.err" & ;;
   esac
   system_job=$!
-  wait_for_file "$work/ready" 60 "$system_job" || return 1
+  wait_for_file "$work/ready" 90 "$system_job" || return 1
   viewer_display_id=$(awk '{ print $NF }' "$work/ready")
   [[ "$TIER2_VIEWER_DISPLAY" == main || "$viewer_display_id" =~ ^[0-9]+$ ]] || { say "$system named no display"; return 1; }
 }

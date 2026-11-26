@@ -7,6 +7,7 @@ use bytes::Bytes;
 use reed_solomon_simd::ReedSolomonEncoder;
 
 use crate::{
+    arrived::Arrived,
     estimator::{Delivery, Estimator},
     fec::{self, Layout},
     pacer::{Pacer, PacketTag},
@@ -43,7 +44,7 @@ const IN_FLIGHT_INTERVALS: u32 = 2;
 enum Resend {
     Never,
     Queued,
-    Sent { at: Instant, lands_after: Duration },
+    Sent { at: Instant, position: u64, queued_deep: bool },
 }
 
 #[derive(Debug)]
@@ -57,6 +58,8 @@ struct SentFrame {
     last_tx: Option<Instant>,
     originals_out: usize,
     bytes_out: usize,
+    sent_before: u64,
+    positions: Vec<u64>,
     flight_bytes: usize,
     heard: Option<Instant>,
     probes: u32,
@@ -65,15 +68,18 @@ struct SentFrame {
 }
 
 impl SentFrame {
-    fn newest_resend_that_arrived(&self, nack: &Nack) -> Option<Instant> {
-        let asked = |index: usize| {
-            nack.ranges.iter().any(|&(start, count)| {
-                count == wire::WHOLE_FRAME || (usize::from(start)..usize::from(start) + usize::from(count)).contains(&index)
-            })
-        };
-        let covered = nack.ranges.iter().map(|&(start, _)| usize::from(start)).max()?;
-        let arrived = self.resends.iter().take(covered).enumerate().filter(|(index, _)| !asked(*index));
-        arrived.filter_map(|(_, resend)| if let Resend::Sent { at, .. } = resend { Some(*at) } else { None }).max()
+    fn arrived_before(&self, index: usize) -> Option<u64> {
+        match index.checked_sub(1) {
+            None => self.first_tx.map(|_| self.sent_before),
+            Some(previous) => {
+                let untouched = self.resends.get(previous).is_none_or(|resend| *resend == Resend::Never);
+                self.positions.get(previous).copied().filter(|_| untouched)
+            }
+        }
+    }
+
+    fn arrived_complete(&self) -> Option<u64> {
+        self.positions.get(self.data_count.min(self.positions.len()).checked_sub(1)?).copied()
     }
 }
 
@@ -169,7 +175,8 @@ pub struct Sender {
     in_flight_bytes: usize,
     min_rtt: Windowed<Duration>,
     ceiling_fec_ratio: f64,
-    delivered_past: Option<Instant>,
+    sent_total: u64,
+    arrived: Arrived,
 }
 
 impl Sender {
@@ -188,7 +195,8 @@ impl Sender {
             in_flight_bytes: 0,
             min_rtt: Windowed::new(MIN_RTT_WINDOW, Keep::Smallest),
             ceiling_fec_ratio: 0.0,
-            delivered_past: None,
+            sent_total: 0,
+            arrived: Arrived::default(),
         }
     }
 
@@ -274,6 +282,8 @@ impl Sender {
                 last_tx: None,
                 originals_out: 0,
                 bytes_out: 0,
+                sent_before: 0,
+                positions: Vec::new(),
                 flight_bytes: 0,
                 heard: None,
                 probes: 0,
@@ -351,19 +361,30 @@ impl Sender {
         let (packet, tag) = self.pacer.poll(now)?;
         stats.packets_sent += 1;
         stats.bytes_sent += packet.len() as u64;
-        let lands_after = self.crossing(now, self.in_flight_bytes + self.pacer.backlog_bytes()).max(self.rtt / 2);
+        if tag.original && self.in_flight_bytes == 0 {
+            self.arrived.restart(now + self.rtt, self.sent_total);
+        }
+        let sent_before = self.sent_total;
+        self.sent_total += packet.len() as u64;
+        let position = self.sent_total;
         if !tag.original
             && let Some(frame) =
                 self.streams.get_mut(&tag.stream).and_then(|stream| stream.unresolved.get_mut(&tag.frame))
             && let Some(resend) = frame.resends.get_mut(usize::from(tag.index))
         {
-            *resend = Resend::Sent { at: now, lands_after };
+            let known_bps = self.estimator.measured().then(|| self.estimator.estimate_bps());
+            let queued_deep = self.arrived.wait_for(now, position, known_bps).is_some_and(|wait| wait > self.rtt);
+            *resend = Resend::Sent { at: now, position, queued_deep };
         }
         if tag.original
             && let Some(frame) =
                 self.streams.get_mut(&tag.stream).and_then(|stream| stream.unresolved.get_mut(&tag.frame))
         {
-            frame.first_tx.get_or_insert(now);
+            if frame.first_tx.is_none() {
+                frame.first_tx = Some(now);
+                frame.sent_before = sent_before;
+            }
+            frame.positions.push(position);
             frame.latest_tx = Some(now);
             frame.originals_out += 1;
             frame.bytes_out += packet.len();
@@ -386,7 +407,29 @@ impl Sender {
         else {
             return;
         };
-        let delivered_past = self.delivered_past.max(frame.newest_resend_that_arrived(nack));
+        let asked = |index: usize| {
+            nack.ranges.iter().any(|&(start, count)| {
+                count == wire::WHOLE_FRAME || (usize::from(start)..usize::from(start) + usize::from(count)).contains(&index)
+            })
+        };
+        let sent = frame.originals_out.min(frame.data_count);
+        let named = || {
+            nack.ranges.iter().flat_map(|&(start, count)| match count {
+                wire::WHOLE_FRAME => 0..sent,
+                _ => usize::from(start).min(sent)..(usize::from(start) + usize::from(count)).min(sent),
+            })
+        };
+        let newly_missing = || named().filter(|index| frame.resends[*index] == Resend::Never);
+        let follows_an_arrival = |index: &usize| index.checked_sub(1).is_none_or(|previous| !asked(previous));
+        let arrived = newly_missing().filter(follows_an_arrival).filter_map(|index| frame.arrived_before(index));
+        if let Some(position) = arrived.max() {
+            self.arrived.note(now, position);
+        }
+        for index in newly_missing() {
+            self.arrived.note_lost(frame.positions[index], frame.packets[index].len());
+        }
+        let known_bps = self.estimator.measured().then(|| self.estimator.estimate_bps());
+        let reached = self.arrived.reached(now, known_bps);
         let mut requested = 0;
         let mut first_losses = 0;
         let mut lost_bytes = 0;
@@ -405,9 +448,9 @@ impl Sender {
                 let recent = match frame.resends[index] {
                     Resend::Never => false,
                     Resend::Queued => true,
-                    Resend::Sent { at, lands_after } => {
-                        let overtaken = delivered_past.is_some_and(|past| past > at);
-                        now < at + self.rtt / 2 || !overtaken && now < at + lands_after
+                    Resend::Sent { at, position, queued_deep } => {
+                        let on_its_way = queued_deep && reached.is_some_and(|reached| reached < position);
+                        now < at + self.rtt / 2 || on_its_way && now < at + MAX_CROSSING
                     }
                 };
                 if recent {
@@ -461,6 +504,9 @@ impl Sender {
                 events.push_back(Event::FrameLost { stream: feedback.stream, frame: feedback.frame });
             } else {
                 let ack = acknowledge(feedback.stream, feedback.frame, &frame, now, feedback.receipt.map(receipt));
+                if let Some(position) = frame.arrived_complete() {
+                    self.arrived.note(now, position);
+                }
                 stats.frames_acked += 1;
                 events.push_back(Event::FrameAcked(ack));
             }
@@ -485,7 +531,6 @@ impl Sender {
                     self.estimator.on_delay(now, receipt.first_rx_us as i64 - first_tx_us, hold_off);
                 }
                 if !feedback.lost {
-                    self.delivered_past = self.delivered_past.max(Some(first_tx));
                     self.estimator.on_acked(now, frame.bytes_out);
                     let sent = SendTimes { first: first_tx, latest: frame.latest_tx };
                     self.estimator.on_delivery(now, sent.delivery(receipt));
@@ -512,9 +557,11 @@ impl Sender {
             } else {
                 stats.frames_acked += 1;
                 self.estimator.on_acked(now, frame.bytes_out);
+                if let Some(position) = frame.arrived_complete() {
+                    self.arrived.note(now, position);
+                }
                 events.push_back(Event::FrameAcked(acknowledge(feedback.stream, number, &frame, now, None)));
                 if let Some(first) = frame.first_tx {
-                    self.delivered_past = self.delivered_past.max(Some(first));
                     let sent = SendTimes { first, latest: frame.latest_tx };
                     stream.unreported.insert(number, Unreported { sent, resolved: now });
                     if stream.unreported.len() > MAX_UNREPORTED {
@@ -549,7 +596,7 @@ impl Sender {
     }
 
     pub fn handle_timeout(&mut self, now: Instant, events: &mut VecDeque<Event>, stats: &mut Stats) {
-        let waits = self.probe_waits(now);
+        let waits = self.probe_waits();
         let mut probed = false;
         for (&stream_id, stream) in &mut self.streams {
             let mut expired = Vec::new();
@@ -565,13 +612,13 @@ impl Sender {
                     expired.push(number);
                     continue;
                 }
-                if frame.probes == 0 && number == newest {
+                if frame.probes == 0 && number == newest && frame.heard.is_none() {
                     self.tail_backoff = (self.tail_backoff + 1).min(MAX_TAIL_BACKOFF);
                 }
                 frame.probes += 1;
                 frame.unanswered += 1;
                 if frame.unanswered == MAX_PROBES {
-                    frame.expires = Some(waits.expiry(frame, now));
+                    frame.expires = Some(waits.expiry(frame, now, self.estimator.carried_bps(now)));
                 }
                 stats.probes_sent += 1;
                 let index = frame.data_count - 1;
@@ -597,16 +644,8 @@ impl Sender {
         (base * (1 << self.tail_backoff)).min(self.ack_timeout())
     }
 
-    fn crossing(&self, now: Instant, bytes: usize) -> Duration {
-        Duration::from_secs_f64(bytes as f64 * 8.0 / self.estimator.carried_bps(now)).min(MAX_CROSSING)
-    }
-
-    fn probe_waits(&self, now: Instant) -> ProbeWaits {
-        ProbeWaits {
-            tail_probe: self.tail_probe_after(),
-            timeout: self.ack_timeout(),
-            carried_bps: self.estimator.carried_bps(now),
-        }
+    fn probe_waits(&self) -> ProbeWaits {
+        ProbeWaits { tail_probe: self.tail_probe_after(), timeout: self.ack_timeout() }
     }
 
     fn ack_timeout(&self) -> Duration {
@@ -614,7 +653,7 @@ impl Sender {
     }
 
     pub fn poll_timeout(&self, now: Instant) -> Option<Instant> {
-        let waits = self.probe_waits(now);
+        let waits = self.probe_waits();
         let probe = self
             .streams
             .values()
@@ -660,7 +699,6 @@ impl Sender {
 struct ProbeWaits {
     tail_probe: Duration,
     timeout: Duration,
-    carried_bps: f64,
 }
 
 impl ProbeWaits {
@@ -672,9 +710,9 @@ impl ProbeWaits {
         if frame.unanswered < MAX_PROBES { Some(due) } else { frame.expires.or(Some(due)) }
     }
 
-    fn expiry(self, frame: &SentFrame, last_probe: Instant) -> Instant {
+    fn expiry(self, frame: &SentFrame, last_probe: Instant, carried_bps: f64) -> Instant {
         let heard = frame.heard.or(frame.last_tx).unwrap_or(last_probe);
-        let crossing = Duration::from_secs_f64(frame.flight_bytes as f64 * 8.0 / self.carried_bps).min(MAX_CROSSING);
+        let crossing = Duration::from_secs_f64(frame.flight_bytes as f64 * 8.0 / carried_bps).min(MAX_CROSSING);
         last_probe.max(heard + crossing) + self.timeout
     }
 }

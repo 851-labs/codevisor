@@ -60,18 +60,23 @@ no jitter buffer and no queue deeper than one frame.
      45764155233, scroll and video on N7: 417–455 KB and 1.25 MB). What discards the packets in the first place is
      below this crate: the viewer's QUIC logs "failed to authenticate packet" and "discarding possible duplicate
      packet" for them while the connection has more than one path.
-     The host also stops answering a repeated request while its last resend of that packet can't have arrived
-     (851-4477). It used to resend whenever the last one had left more than half a round trip ago, and the viewer
-     repeats a request every round trip, both read from QUIC, whose figure stays at the path's delay while a slow
-     link's queue holds seconds: one keyframe's 130 missing packets were resent 1,268 times in the sim, and the
-     longer waits above would only add to that. Now a resend counts as on its way until what was in flight and
-     waiting when it left could have crossed at the acknowledged rate (at most 5 s, at least half a round trip),
-     unless something sent after it has arrived: a later frame was acknowledged, or the request no longer names a
-     packet whose resend left later. On tamale (scroll on N7, six repetitions each, lab runs 45892168459,
-     45893125426 and 45894796279) the waits alone resent 205–749 packets a repetition and scrolled at a median of
-     10.9 updates a second against 12.7 before; with this rule it is 104–131 packets and 14.6. In the sim a resend
-     that is itself lost is now sent again a little later, and the lowest estimate on N7 is 0.47–0.53 Mbit/s where
-     it was 0.53–0.55.
+     The host also stops answering a repeated request while its last resend of that packet is still behind a deep
+     queue (851-4477). It used to resend whenever the last one had left more than half a round trip ago, and the
+     viewer repeats a request every round trip, both read from QUIC, whose figure stays at the path's delay while a
+     slow link's queue holds seconds: one keyframe's 130 missing packets were resent 1,268 times in the sim, and the
+     longer waits above would only add to that. The host now gives everything it sends a place in one byte count and
+     follows how far into it the viewer has got (`Arrived`): a request that names a packet for the first time, right
+     after one it never asked for, shows that one arrived, and so does a completed frame. Between sightings the
+     reach moves on at the rate the sightings advanced, or at the estimate once the link has been measured if that
+     is higher; packets known lost take no time to pass and don't count towards the rate, so a burst of loss doesn't
+     make the link look faster. A resend that leaves with more than a round trip's worth of queue ahead of it isn't
+     sent again until the reach has passed it (at most 5 s); a request that still names it then means it was lost,
+     and it goes out at once. A resend with less ahead of it keeps the half-round-trip rule: there a second copy is
+     one packet and repairs a resend that was itself lost a round trip sooner. In the sim's steady stream on N7 (32
+     seeds, 20 s) holding every resend delivered 872 frames against 879 with the old rule, and holding only the
+     deep ones 876. Nothing has been sighted after an idle spell, so a frame sent then starts on the old rule too: a
+     packet lost twice on a fast link is repaired at the viewer's next request (7 ms on N1). A probe for a frame the
+     viewer has already answered is not a tail probe and no longer backs the next frame's tail probe off.
   4. **Refresh requests.** A frame the transport delivered can still fail to decode, and the transport can't see
      that. The viewer calls `request_refresh(stream, keyframe)`, and the host gets `Event::RefreshRequested` once
      per request. The viewer repeats the request every give-up time + RTT until a recovery frame arrives on that
