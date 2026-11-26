@@ -22,6 +22,7 @@ public final class MachineController {
   let localServer: (any LocalServerControlling)?
   let injectedClientFactory: ClientFactory?
   let requestGate: ServerRequestGate
+  var fileCache: (any ServerFileCaching)?
   private let key = "machines"
   let updatePollInterval: Duration
   let updatePollAttempts: Int

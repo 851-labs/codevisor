@@ -21,12 +21,6 @@ struct SessionCacheRecorder: Sendable {
     cache.recordOpenedTranscript(data, chat: chat)
   }
 
-  func recordFile(_ data: Data, from source: PreviewFile.Source, variant: AttachmentCacheTables.Variant) {
-    guard case let .attachment(fileId) = source else { return }
-
-    cache.recordFile(data, variant: variant, file: CachedFileKey(machineId: chat.machineId, fileId: fileId))
-  }
-
   func recordQueuedSends(_ unsent: [SendQueue.Unsent]) {
     cache.recordQueuedSends(unsent.map(CachedQueuedSend.init), chat: chat)
   }

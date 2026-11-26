@@ -108,6 +108,7 @@ public final class AppEnvironment {
       clientFactory: machineClientFactory
     )
     accountMachineCount = AccountMachineCount(machines: machines, preferences: preferences)
+    machines.fileCache = clientCache
     updateCenter = UpdateCenter(machines: machines, appUpdate: self.appUpdate, now: now)
     configSync = ConfigSync(machines: machines)
     bots = BotListModel(machines: machines, navigationStore: navigationStore, store: navigationPersistence)

@@ -3,9 +3,7 @@ import Foundation
 extension SessionController {
   public func fileData(id: String) async throws -> Data {
     guard let serverClient else { throw SessionControllerError.serverUnavailable }
-    let data = try await serverClient.fileData(id: id)
-    cacheRecorder?.recordFile(data, from: .attachment(fileId: id), variant: .original)
-    return data
+    return try await serverClient.fileData(id: id)
   }
 
   public func filePreview(for source: PreviewFile.Source) async throws -> Data {
@@ -15,18 +13,6 @@ extension SessionController {
     if case let .attachment(fileId) = source, let pending = await attachments.sentPreview(pendingFileID: fileId) {
       return pending
     }
-    let data = try await fetchFilePreview(for: source)
-    cacheRecorder?.recordFile(data, from: source, variant: .preview)
-    return data
-  }
-
-  public func fileData(for source: PreviewFile.Source) async throws -> Data {
-    let data = try await fetchFileData(for: source)
-    cacheRecorder?.recordFile(data, from: source, variant: .original)
-    return data
-  }
-
-  private func fetchFilePreview(for source: PreviewFile.Source) async throws -> Data {
     guard let serverClient else { throw SessionControllerError.serverUnavailable }
     switch source {
     case let .attachment(fileId): return try await serverClient.filePreview(id: fileId)
@@ -35,7 +21,7 @@ extension SessionController {
     }
   }
 
-  private func fetchFileData(for source: PreviewFile.Source) async throws -> Data {
+  public func fileData(for source: PreviewFile.Source) async throws -> Data {
     guard let serverClient else { throw SessionControllerError.serverUnavailable }
     switch source {
     case let .attachment(fileId):

@@ -142,6 +142,7 @@ public final class CodevisorServerClient: CodevisorServerClienting, @unchecked S
   let webSocketTransport: any ServerWebSocketTransport
   let requestGate: ServerRequestGate?
   let machineId: String?
+  let fileCache: (any ServerFileCaching)?
   let isOnThisDevice: Bool
   let decoder = JSONDecoder()
   let encoder = JSONEncoder()
@@ -152,6 +153,7 @@ public final class CodevisorServerClient: CodevisorServerClienting, @unchecked S
     urlSession: URLSession = .shared,
     requestGate: ServerRequestGate? = nil,
     machineId: String? = nil,
+    fileCache: (any ServerFileCaching)? = nil,
     isOnThisDevice: Bool = CodevisorServerClient.hostsServers,
     eventSleep: @escaping @Sendable (Duration) async throws -> Void = { try await Task.sleep(for: $0) }
   ) {
@@ -164,6 +166,7 @@ public final class CodevisorServerClient: CodevisorServerClienting, @unchecked S
       ?? URLSessionWebSocketTransport(session: urlSession)
     self.requestGate = requestGate
     self.machineId = machineId
+    self.fileCache = fileCache
     self.isOnThisDevice = isOnThisDevice
     self.eventSleep = eventSleep
   }

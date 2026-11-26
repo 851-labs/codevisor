@@ -169,3 +169,9 @@ public final class ClientCache: Sendable {
 
   private static let writesPerTrim = 50
 }
+
+extension ClientCache: ServerFileCaching {
+  public func cacheFile(_ data: Data, machineId: String, fileId: String, preview: Bool) {
+    recordFile(data, variant: preview ? .preview : .original, file: CachedFileKey(machineId: machineId, fileId: fileId))
+  }
+}

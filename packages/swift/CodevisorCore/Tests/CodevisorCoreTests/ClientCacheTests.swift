@@ -70,6 +70,25 @@ struct ClientCacheTests {
     #expect(try fixture.database.value(forKey: "machines") == Data("kept".utf8))
   }
 
+  @Test("An attachment the app downloads is kept in the cache")
+  func downloadedAttachmentsAreCached() async throws {
+    let fixture = try ClientCacheFixture()
+    defer { fixture.tearDown() }
+    let cache = try fixture.makeCache()
+    let bytes = Data(repeating: 7, count: 32)
+    let client = CodevisorServerClient(
+      config: CodevisorServerConfig(
+        baseURL: URL(string: "http://machine.invalid")!, requestTransport: AttachmentTransport(bytes: bytes)),
+      machineId: "local", fileCache: cache)
+
+    #expect(try await client.fileData(id: "file-1") == bytes)
+    await cache.flush()
+
+    let file = CachedFileKey(machineId: "local", fileId: "file-1")
+    let name = try #require(try cache.attachments.fileName(of: file, variant: .original))
+    #expect(cache.files.read(named: name) == bytes)
+  }
+
   @Test("Transcripts not opened within the retention window age out")
   func oldTranscriptsAgeOut() async throws {
     let fixture = try ClientCacheFixture()
@@ -122,5 +141,13 @@ struct ClientCacheTests {
     ChatSession(
       id: UUID(), projectId: project.id, serverId: "local", harnessId: "codex", title: title,
       createdAt: Date(timeIntervalSince1970: 1))
+  }
+}
+
+private struct AttachmentTransport: ServerRequestTransport {
+  let bytes: Data
+
+  func data(for request: URLRequest) async throws -> (Data, HTTPURLResponse) {
+    (bytes, HTTPURLResponse(url: request.url!, statusCode: 200, httpVersion: nil, headerFields: nil)!)
   }
 }
