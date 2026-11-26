@@ -63,6 +63,16 @@ struct SidebarGroupingChoiceTests {
     #expect(account.choice.effective == .machine)
   }
 
+  @Test("Tapping the grouping that is already checked saves it")
+  func tappingTheCheckedGroupingSavesIt() {
+    let account = Account(machines: [.thisMac, .studio])
+    #expect(account.choice.isSelected(.machine).wrappedValue)
+    account.choice.isSelected(.machine).wrappedValue = false
+
+    account.disconnect(.studio)
+    #expect(account.choice.effective == .machine)
+  }
+
   @Test("Sandboxes don't count as machines")
   func sandboxesDoNotCount() {
     let account = Account(machines: [.thisMac, .sandbox])
