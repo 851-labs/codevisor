@@ -105,7 +105,7 @@ export interface ScreenSharingVNCConfig {
 }
 
 export interface VNCDesktop {
-  readonly config: ScreenSharingVNCConfig
+  readonly config?: ScreenSharingVNCConfig
   readonly respond: (request: ScreenSharingRequest) => Promise<unknown>
 }
 

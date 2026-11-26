@@ -8,9 +8,13 @@ APT_STATE=/codevisor-state/apt
 LOG=/tmp/desktop.log
 PACKAGES="tigervnc-standalone-server tigervnc-common xfce4 xfce4-terminal mousepad dbus-x11
   at-spi2-core python3-gi gir1.2-atspi-2.0 gir1.2-gtk-3.0 xclip xdotool x11-xserver-utils
-  fonts-dejavu-core adwaita-icon-theme xauth"
+  fonts-dejavu-core adwaita-icon-theme xauth iproute2"
 
-if ! command -v Xvnc >/dev/null 2>&1 || ! command -v xauth >/dev/null 2>&1; then
+desktop_tools_installed() {
+  command -v Xvnc >/dev/null 2>&1 && command -v xauth >/dev/null 2>&1 && command -v ss >/dev/null 2>&1
+}
+
+if ! desktop_tools_installed; then
   echo "[container] installing the desktop (Xfce, TigerVNC, accessibility)"
   mkdir -p "$APT_STATE/archives/partial" "$APT_STATE/lists/partial"
   exec 8>"$APT_STATE/.lock"
@@ -34,23 +38,42 @@ mkdir -p "$XDG_RUNTIME_DIR"
 chmod 700 "$XDG_RUNTIME_DIR"
 SOCKET="$XDG_RUNTIME_DIR/codevisor-desktop.sock"
 export XAUTHORITY="$XDG_RUNTIME_DIR/codevisor-desktop.xauth"
+XVNC_PID=""
+: >"$LOG"
+
+give_up() {
+  echo "[container] $1" >&2
+  if [ -n "$XVNC_PID" ]; then
+    kill "$XVNC_PID" 2>/dev/null || true
+    wait "$XVNC_PID" 2>/dev/null || true
+  fi
+  rm -f "$SOCKET" "$XAUTHORITY" "/tmp/.X$DISPLAY_NUMBER-lock" "/tmp/.X11-unix/X$DISPLAY_NUMBER"
+  exit 1
+}
+
+write_cookie() {
+  cookie=$(mcookie) || return 1
+  (umask 077 && xauth -q -f "$XAUTHORITY" add "$DISPLAY" . "$cookie") >>"$LOG" 2>&1 || return 1
+  [ -s "$XAUTHORITY" ]
+}
+
 eval "$(dbus-launch --sh-syntax)"
 rm -f "/tmp/.X$DISPLAY_NUMBER-lock" "/tmp/.X11-unix/X$DISPLAY_NUMBER" "$SOCKET" "$XAUTHORITY"
-(umask 077 && xauth -q -f "$XAUTHORITY" add "$DISPLAY" . "$(mcookie)" 2>/dev/null)
-[ -s "$XAUTHORITY" ] || { echo "[container] couldn't write the desktop's X11 cookie" >&2; exit 1; }
+write_cookie || give_up "couldn't write the desktop's X11 cookie (see $LOG)"
 setsid Xvnc "$DISPLAY" -auth "$XAUTHORITY" -rfbunixpath "$SOCKET" -rfbunixmode 0600 -rfbport -1 \
-  -localhost -nolisten tcp -geometry "$GEOMETRY" -depth 24 -SecurityTypes None >"$LOG" 2>&1 </dev/null &
+  -localhost -nolisten tcp -geometry "$GEOMETRY" -depth 24 -SecurityTypes None >>"$LOG" 2>&1 </dev/null &
+XVNC_PID=$!
 for _ in $(seq 1 50); do
   [ -S "$SOCKET" ] && [ -S "/tmp/.X11-unix/X$DISPLAY_NUMBER" ] && break
   sleep 0.2
 done
 if ! [ -S "$SOCKET" ] || ! [ -S "/tmp/.X11-unix/X$DISPLAY_NUMBER" ]; then
-  echo "[container] Xvnc didn't start (see $LOG)" >&2
-  exit 1
+  give_up "Xvnc didn't start (see $LOG)"
 fi
-if bash -c "exec 3<>/dev/tcp/127.0.0.1/$TCP_PORT" 2>/dev/null; then
-  echo "[container] Xvnc opened TCP port $TCP_PORT instead of only its socket; not sharing it" >&2
-  exit 1
+tcp_listeners=$(ss -H -ltn "sport = :$TCP_PORT" 2>>"$LOG") ||
+  give_up "couldn't check that Xvnc is off TCP port $TCP_PORT (see $LOG); not sharing it"
+if [ -n "$tcp_listeners" ]; then
+  give_up "TCP port $TCP_PORT is open, and Xvnc must only listen on its socket; not sharing it"
 fi
 setsid startxfce4 >>"$LOG" 2>&1 </dev/null &
 (

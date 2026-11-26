@@ -22,6 +22,7 @@ const folderInside = (parent: string, name: string, mode: number): string => {
 }
 
 const exposed = { problem: "exposed" }
+const foreign = { problem: "foreign" }
 
 describe("a desktop's socket is only used when it is private to the server's account", () => {
   it("accepts a socket only its owner can open, in folders only its owner can change", async () => {
@@ -35,6 +36,9 @@ describe("a desktop's socket is only used when it is private to the server's acc
     expect(privateSocket(join(privateDirectory(), "gone", "d.sock"))).toEqual({
       problem: "missing"
     })
+    const file = join(privateDirectory(), "file")
+    writeFileSync(file, "")
+    expect(privateSocket(join(file, "d.sock"))).toEqual({ problem: "missing" })
   })
 
   it.each([0o660, 0o606, 0o666])(
@@ -46,11 +50,27 @@ describe("a desktop's socket is only used when it is private to the server's acc
     }
   )
 
-  it("refuses a socket that belongs to another account", async () => {
+  it("says a socket belongs to another account, as an old desktop run by root does", async () => {
     const socket = await listening()
     const anotherAccount = process.getuid!() + 1
-    expect(privateSocket(socket, anotherAccount)).toEqual(exposed)
+    expect(privateSocket(socket, anotherAccount)).toEqual(foreign)
   })
+
+  it.skipIf(process.getuid?.() === 0)(
+    "says the same of a socket in a folder the server isn't allowed to look into",
+    async () => {
+      const parent = privateDirectory()
+      const locked = folderInside(parent, "locked", 0o700)
+      const socket = await listening(locked)
+      chmodSync(locked, 0o000)
+      onTestFinished(() => chmodSync(locked, 0o700))
+      expect(privateSocket(socket)).toEqual(foreign)
+
+      chmodSync(parent, 0o000)
+      onTestFinished(() => chmodSync(parent, 0o700))
+      expect(privateSocket(socket)).toEqual(foreign)
+    }
+  )
 
   it.each([0o770, 0o707])(
     "refuses a socket in a folder with mode %o, where another account could swap it",
@@ -74,16 +94,16 @@ describe("a desktop's socket is only used when it is private to the server's acc
     expect(privateSocket(socket)).toEqual({ path: realpathSync(socket) })
   })
 
-  it("refuses anything that isn't a socket, including a link to one", async () => {
+  it("says anything that isn't a socket, including a link to one, is not its own", async () => {
     const directory = privateDirectory()
     const file = join(directory, "file")
     writeFileSync(file, "", { mode: 0o600 })
-    expect(privateSocket(file)).toEqual(exposed)
+    expect(privateSocket(file)).toEqual(foreign)
 
     const socket = await listening(directory)
     const link = join(directory, "link")
     symlinkSync(socket, link)
-    expect(privateSocket(link)).toEqual(exposed)
+    expect(privateSocket(link)).toEqual(foreign)
   })
 
   it("checks and dials the real folder when the configured one is a link", async () => {

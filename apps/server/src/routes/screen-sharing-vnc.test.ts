@@ -1,4 +1,5 @@
 import { chmodSync, rmSync, writeFileSync } from "node:fs"
+import { createServer } from "node:net"
 import { join } from "node:path"
 
 import { describe, expect, it } from "vitest"
@@ -8,7 +9,7 @@ import { jsonRequest, makeServices, run, startWithApp } from "../test-support.js
 import type { ScalerCommands } from "./screen-sharing-vnc-scale.js"
 import {
   parseScreenSharingVNC,
-  readScreenSharingVNC,
+  readDesktopConfig,
   SCREEN_SHARING_CONFIG_FILE,
   VNC_DISPLAY_ID
 } from "./screen-sharing-vnc.js"
@@ -23,9 +24,9 @@ import {
 describe("VNC screen sharing configuration", () => {
   it("reads the desktop's socket and names the desktop by default", () => {
     const dir = privateDirectory()
-    expect(readScreenSharingVNC(dir)).toBeUndefined()
+    expect(readDesktopConfig(dir)).toBeUndefined()
     writeDesktopConfig(dir, { socket: "/run/user/1000/codevisor-desktop.sock" })
-    expect(readScreenSharingVNC(dir)).toEqual({
+    expect(parseScreenSharingVNC(readDesktopConfig(dir) ?? "")).toEqual({
       socket: "/run/user/1000/codevisor-desktop.sock",
       name: "Desktop"
     })
@@ -117,13 +118,14 @@ const sharesAScreen = { features: expect.arrayContaining(["screen-sharing-v1"]) 
 const start = async (
   vnc?: Record<string, unknown>,
   auth?: { allowLocalhostWithoutAuth: boolean; requireBearerToken: boolean },
-  commands?: ScalerCommands
+  commands?: ScalerCommands,
+  log?: (line: string) => void
 ) => {
   const dataDir = privateDirectory()
   if (vnc !== undefined) writeDesktopConfig(dataDir, vnc)
   const { services } = await makeServices()
   const server = await startWithApp(services, undefined, {
-    desktops: fileVNCDesktops(dataDir, commands),
+    desktops: fileVNCDesktops(dataDir, commands, log),
     ...(auth === undefined ? {} : { auth })
   })
   const socketUrl = (displayId: string = VNC_DISPLAY_ID) =>
@@ -314,6 +316,20 @@ describe("VNC screen sharing provider", () => {
     )
   })
 
+  it("says the desktop isn't its own when the config names something that isn't its socket", async () => {
+    const stray = join(privateDirectory(), "d.sock")
+    writeFileSync(stray, "")
+    const { capabilities } = await start({ socket: stray })
+    expect((await capabilities()).body).toEqual({
+      version: 1,
+      status: "failed",
+      provider: "vnc",
+      message:
+        "The desktop on this machine isn't run by the account Codevisor runs as, so Codevisor won't share it.",
+      displays: []
+    })
+  })
+
   it("says the desktop isn't running when its socket is gone", async () => {
     const { capabilities } = await start({ socket: join(privateDirectory(), "d.sock") })
     expect((await capabilities()).body).toEqual({
@@ -354,11 +370,52 @@ describe("a desktop that appears or goes away while the server keeps running", (
     expect((await capabilities()).status).toBe(501)
   })
 
-  it("stops offering a desktop whose config no longer names a socket", async () => {
+  it("stops offering a desktop whose config no longer names anything to share", async () => {
     const vnc = await fakeVNC()
     const { info, dataDir } = await start({ socket: vnc.socket })
     expect(await info()).toMatchObject(sharesAScreen)
-    writeFileSync(join(dataDir, SCREEN_SHARING_CONFIG_FILE), '{ "vnc": { "port": 5901 } }')
+    writeFileSync(join(dataDir, SCREEN_SHARING_CONFIG_FILE), '{ "vnc": { "name": "Desktop" } }')
     expect(await info()).not.toMatchObject(sharesAScreen)
+  })
+})
+
+describe("a desktop set up for an older Codevisor, whose config names a local port", () => {
+  it("stays listed and says it needs setting up again, is logged once, and is never dialled", async ({
+    onTestFinished
+  }) => {
+    let dialled = 0
+    const oldDesktop = createServer(() => {
+      dialled += 1
+    })
+    await new Promise<void>((resolve) => oldDesktop.listen(0, "127.0.0.1", resolve))
+    onTestFinished(() => new Promise<void>((resolve) => oldDesktop.close(() => resolve())))
+    const address = oldDesktop.address()
+    const port = typeof address === "object" && address !== null ? address.port : 0
+    const lines: string[] = []
+    const { socketUrl, ask, capabilities, info } = await start(
+      { port, name: "Desktop", desktop: "xfce", defaultSize: "1440x900" },
+      undefined,
+      undefined,
+      (line) => lines.push(line)
+    )
+    const needsSetup = {
+      status: 200,
+      body: {
+        version: 1,
+        status: "failed",
+        provider: "vnc",
+        message:
+          "This machine's desktop was set up for an older version of Codevisor. Set it up again to share it.",
+        displays: []
+      }
+    }
+    expect(await info()).toMatchObject(sharesAScreen)
+    expect(await capabilities()).toEqual(needsSetup)
+    expect(await ask({ operation: "setScale", displayId: VNC_DISPLAY_ID, scale: 2 })).toEqual(
+      needsSetup
+    )
+    await expect(nextMessage(new WebSocket(socketUrl()))).rejects.toThrow()
+    expect(dialled).toBe(0)
+    expect(lines).toEqual([expect.stringContaining("names a VNC port")])
   })
 })

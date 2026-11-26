@@ -18,15 +18,24 @@ export const SCREEN_SHARING_CONFIG_FILE = "screen-sharing.json"
 export const VNC_SOCKET_PATH = "/v1/screen-sharing/vnc/socket"
 export const VNC_DISPLAY_ID = "vnc:desktop"
 
-export const readScreenSharingVNC = (dataDir: string): ScreenSharingVNCConfig | undefined => {
-  let text: string
+export const readDesktopConfig = (dataDir: string): string | undefined => {
   try {
-    text = readFileSync(join(dataDir, SCREEN_SHARING_CONFIG_FILE), "utf8")
+    return readFileSync(join(dataDir, SCREEN_SHARING_CONFIG_FILE), "utf8")
   } catch {
     return undefined
   }
-  return parseScreenSharingVNC(text)
 }
+
+export const namesOnlyAPort = (text: string): boolean => {
+  const vnc = vncSection(text)
+  return vnc !== undefined && absolutePath(vnc.socket) === undefined && typeof vnc.port === "number"
+}
+
+export const outdatedDesktop = async (): Promise<ScreenSharingReply> =>
+  vncReply(
+    "failed",
+    "This machine's desktop was set up for an older version of Codevisor. Set it up again to share it."
+  )
 
 export const parseScreenSharingVNC = (text: string): ScreenSharingVNCConfig | undefined => {
   const vnc = vncSection(text)
@@ -75,6 +84,8 @@ const vncReply = (status: string, message?: string): ScreenSharingReply => ({
 
 const socketProblemMessages: Record<PrivateSocketProblem, string> = {
   missing: "The desktop on this machine isn't running.",
+  foreign:
+    "The desktop on this machine isn't run by the account Codevisor runs as, so Codevisor won't share it.",
   exposed: "Other accounts on this machine can reach its desktop, so Codevisor won't share it."
 }
 
@@ -138,6 +149,7 @@ const setScale = async (
 
 interface VNCSection {
   readonly socket?: unknown
+  readonly port?: unknown
   readonly name?: unknown
   readonly desktop?: unknown
   readonly display?: unknown
