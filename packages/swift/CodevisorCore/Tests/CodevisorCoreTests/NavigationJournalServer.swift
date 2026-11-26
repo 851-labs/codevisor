@@ -280,6 +280,7 @@ final class WorkspaceSyncFixture {
 
   init(
     persistence: InMemoryStore = InMemoryStore(),
+    clientCache: ClientCache? = nil,
     clock: any Clock<Duration> = ContinuousClock(),
     connected: Bool = false,
     customize: (inout Workspace, inout Workspace) -> Void = { _, _ in },
@@ -299,7 +300,7 @@ final class WorkspaceSyncFixture {
     self.workspace = workspace
     otherWorkspace = other
     let session = ChatSession(id: anchorSessionId, projectId: project.id, serverId: "local", createdAt: createdAt)
-    navigation = NavigationFixture(persistence: persistence, clock: clock, now: now)
+    navigation = NavigationFixture(persistence: persistence, clientCache: clientCache, clock: clock, now: now)
     server = NavigationJournalServer(
       .fixture(projects: [project], sessions: [session], workspaces: [workspace, other]))
     await navigation.install(

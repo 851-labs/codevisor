@@ -7,9 +7,9 @@ import Testing
 @MainActor
 struct WorkspaceOrderSyncTests {
   private func makeFixture(
-    persistence: InMemoryStore = InMemoryStore(), revision: Int = 1
+    persistence: InMemoryStore = InMemoryStore(), clientCache: ClientCache? = nil, revision: Int = 1
   ) async -> WorkspaceSyncFixture {
-    await WorkspaceSyncFixture(persistence: persistence) { workspace, other in
+    await WorkspaceSyncFixture(persistence: persistence, clientCache: clientCache) { workspace, other in
       workspace.sidebarOrderRevision = revision
       other.sidebarOrderRevision = revision
     }
@@ -167,12 +167,16 @@ struct WorkspaceOrderSyncTests {
   @Test("A pending move survives a relaunch and is sent afterwards")
   func pendingMovePersists() async throws {
     let persistence = InMemoryStore()
-    let first = await makeFixture(persistence: persistence)
+    let cacheFixture = try ClientCacheFixture()
+    defer { cacheFixture.tearDown() }
+    let cache = try cacheFixture.makeCache()
+    let first = await makeFixture(persistence: persistence, clientCache: cache)
     moveToTop(first)
     let pending = try #require(first.current?.sidebarPosition)
     PersistenceEncoding.drain()
+    await cache.flush()
 
-    let relaunched = NavigationFixture(persistence: persistence)
+    let relaunched = NavigationFixture(persistence: persistence, clientCache: try cacheFixture.makeCache())
     #expect(relaunched.store.pendingIntents.map(\.intent.coalescingKey) == ["ws:\(first.workspace.id):order"])
     #expect(relaunched.workspaces.workspace(id: first.workspace.id)?.sidebarPosition == pending)
 

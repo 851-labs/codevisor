@@ -195,7 +195,10 @@ struct WorkspaceRepositoryTests {
   @Test("Layouts and drafts survive a relaunch")
   func persistenceRoundTrip() async throws {
     let persistence = InMemoryStore()
-    let first = NavigationFixture(persistence: persistence)
+    let cacheFixture = try ClientCacheFixture()
+    defer { cacheFixture.tearDown() }
+    let cache = try cacheFixture.makeCache()
+    let first = NavigationFixture(persistence: persistence, clientCache: cache)
     let installed = await install(first)
     var layout = try #require(first.workspaces.workspace(id: installed.id))
     layout.centerTabs.append(WorkspaceTab(root: .leaf(PaneGroupState.centerInitialWithoutChat())))
@@ -203,8 +206,9 @@ struct WorkspaceRepositoryTests {
     let seed = seed()
     let draft = first.workspaces.ensureWorkspace(for: seed, legacyGroups: nil)
     PersistenceEncoding.drain()
+    await cache.flush()
 
-    let reloaded = NavigationFixture(persistence: persistence).workspaces
+    let reloaded = NavigationFixture(persistence: persistence, clientCache: try cacheFixture.makeCache()).workspaces
     #expect(reloaded.workspace(id: installed.id)?.centerTabs == layout.centerTabs)
     #expect(reloaded.workspace(id: draft.id)?.isDraft == true)
     #expect(reloaded.workspaceId(forSession: seed.sessionId) == draft.id)

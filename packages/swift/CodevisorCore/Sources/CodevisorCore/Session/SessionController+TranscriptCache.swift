@@ -113,7 +113,7 @@ extension SessionController {
 
     Task { [weak model] in
       guard let transport = model?.transport else { return }
-      _ = try? await transport.transcriptPage(limit: SessionModel.initialTranscriptPageSize)
+      guard (try? await transport.transcriptPage(limit: SessionModel.initialTranscriptPageSize)) != nil else { return }
       guard let model else { return }
       recorder.audit(model)
     }
