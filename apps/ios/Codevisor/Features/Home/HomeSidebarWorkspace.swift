@@ -80,6 +80,8 @@ struct HomeSidebarTabRow: Identifiable, Equatable {
     case screenSharing
     case simulator
     case review
+    case subagent(harnessId: String)
+    case transcript
     case newTab
   }
 
