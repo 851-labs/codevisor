@@ -6,14 +6,13 @@ import Observation
 final class WorkspaceInspectorCheckoutSize {
   private static let refreshInterval = Duration.seconds(60)
 
-  private(set) var bytes: Int64?
+  private var bytes: [UUID: Int64] = [:]
 
-  var formatted: String? {
-    bytes?.formatted(.byteCount(style: .file))
+  func formatted(for workspaceId: UUID) -> String? {
+    bytes[workspaceId]?.formatted(.byteCount(style: .file))
   }
 
   func keepLoading(workspaceId: UUID, client: any CodevisorServerClienting) async {
-    bytes = nil
     while !Task.isCancelled {
       await load(workspaceId: workspaceId, client: client)
       try? await Task.sleep(for: Self.refreshInterval)
@@ -22,6 +21,6 @@ final class WorkspaceInspectorCheckoutSize {
 
   private func load(workspaceId: UUID, client: any CodevisorServerClienting) async {
     guard let loaded = try? await client.workspaceSize(workspaceId: workspaceId) else { return }
-    bytes = loaded
+    bytes[workspaceId] = loaded
   }
 }
