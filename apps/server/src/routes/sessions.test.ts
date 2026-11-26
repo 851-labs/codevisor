@@ -327,6 +327,12 @@ describe("sessions routes", () => {
     expect(deferredDetail.session.agentSessionId).toBe("agent-codex-codevisor")
     expect(agents.prompts).toContainEqual(["agent-codex-codevisor", "hello deferred"])
 
+    const harnessless = await jsonRequest(server, "/v1/sessions", {
+      body: JSON.stringify({ projectId: workspace.id, harnessId: "", title: "No harness" }),
+      method: "POST"
+    })
+    expect(harnessless.status).toBe(400)
+
     const concurrentSessionBody = JSON.stringify({
       id: "client-session-concurrent",
       projectId: workspace.id,

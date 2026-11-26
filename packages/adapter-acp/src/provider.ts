@@ -21,9 +21,10 @@ import {
   type RuntimeEmit,
   type SetGoalUpdate,
   type ToolGatewayConfig,
-  turnUsageObserved
+  turnUsageObserved,
+  unavailableUsageLimits
 } from "@codevisor/agent-runtime"
-import { isoTimestamp, type Harness, type HarnessUsageLimits } from "@codevisor/api"
+import { type Harness, type HarnessUsageLimits } from "@codevisor/api"
 import { Effect } from "effect"
 
 import type { AcpAgentConnection, AcpConnector, AcpPromptResult } from "./connection.js"
@@ -141,14 +142,6 @@ const skillListTimeoutMs = (sessionOptions: CreateSessionOptions | undefined): n
 const authProbeTimeoutMs = 10_000
 
 const usageLimitsTimeoutMs = 15_000
-
-const unavailableUsageLimits = (harnessId: string, detail: string): HarnessUsageLimits => ({
-  detail,
-  fetchedAt: isoTimestamp(),
-  harnessId,
-  state: "unavailable",
-  windows: []
-})
 
 const withSignInDetail = (result: AcpPromptResult, harnessName: string): AcpPromptResult => {
   if (result.stopKind !== "authRequired" || result.stopDetail !== undefined) return result

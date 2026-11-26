@@ -1,5 +1,4 @@
 import type { Harness } from "@codevisor/api"
-import { isoTimestamp } from "@codevisor/api"
 import { Effect } from "effect"
 
 import { makeAgentRuntimeCore } from "./agent-runtime-core.js"
@@ -7,8 +6,10 @@ import { makeAgentSessionOperations } from "./agent-runtime-sessions.js"
 import type { AgentRuntimeConfig, AgentRuntimeService } from "./agent-runtime-types.js"
 import { sessionGuardFor } from "./bot-session-guard.js"
 import { harnessCatalog } from "./harness-catalog.js"
+import type { HarnessDefinition } from "./harness-definition-types.js"
 import { inspectHarnessSession } from "./inspect-harness.js"
 import { adapterPromise } from "./types.js"
+import { unavailableUsageLimits } from "./usage-limits.js"
 
 export * from "./types.js"
 export { untrackedSteps, type InspectionSteps } from "./inspection-steps.js"
@@ -24,6 +25,7 @@ export * from "./native-commands.js"
 export * from "./question-events.js"
 export * from "./turn-usage-events.js"
 export * from "./usage-limits-events.js"
+export * from "./usage-limits.js"
 export * from "./steer-events.js"
 export * from "./usage-limit-stops.js"
 export * from "./harness-failure-stops.js"
@@ -53,21 +55,23 @@ export const makeAgentRuntime = (config: AgentRuntimeConfig = {}): AgentRuntimeS
     withSessionLifecycle
   } = core
 
+  const readinessOf = (definition: HarnessDefinition): Harness["readiness"] => {
+    if (definition.disabledReason !== undefined) {
+      return { detail: definition.disabledReason, state: "unavailable" }
+    }
+    const provider = providers.get(definition.provider)
+    /* v8 ignore next 3 */
+    if (provider === undefined) {
+      return { detail: "Provider not available", state: "unavailable" }
+    }
+    return provider.readiness(definition)
+  }
+
   return {
     catalog: harnessCatalog,
     discoverHarnesses: Effect.sync(() =>
       harnessCatalog.map((definition) => {
-        const provider = providers.get(definition.provider)
-        let readiness: Harness["readiness"]
-        if (definition.disabledReason !== undefined) {
-          readiness = { detail: definition.disabledReason, state: "unavailable" }
-          /* v8 ignore start */
-        } else if (provider === undefined) {
-          readiness = { detail: "Provider not available", state: "unavailable" }
-          /* v8 ignore stop */
-        } else {
-          readiness = provider.readiness(definition)
-        }
+        let readiness = readinessOf(definition)
         if (readiness.state === "ready") {
           const path = locateHarnessBinary(definition)
           if (path !== undefined) {
@@ -114,17 +118,20 @@ export const makeAgentRuntime = (config: AgentRuntimeConfig = {}): AgentRuntimeS
     },
     readHarnessUsageLimits: (harnessId, cwd, account) =>
       Effect.gen(function* () {
-        const { definition, provider } = yield* definitionFor(harnessId)
-        if (provider.readUsageLimits === undefined) {
-          return {
-            detail: "This harness does not expose account usage limits.",
-            fetchedAt: isoTimestamp(),
-            harnessId,
-            state: "unavailable" as const,
-            windows: []
-          }
+        const definition = harnessCatalog.find((candidate) => candidate.id === harnessId)
+        if (definition === undefined) {
+          return unavailableUsageLimits(harnessId, `Unknown harness: ${harnessId}`)
         }
-        return yield* provider.readUsageLimits(definition, cwd, account)
+
+        const readiness = readinessOf(definition)
+        if (readiness.state !== "ready") {
+          return unavailableUsageLimits(harnessId, notReadyDetail(definition, readiness))
+        }
+
+        const read = providers.get(definition.provider)?.readUsageLimits
+        if (read === undefined) return unavailableUsageLimits(harnessId, noUsageLimitsDetail)
+
+        return yield* read(definition, cwd, account)
       }),
     refreshEnvironment: adapterPromise("refreshEnvironment", () => {
       const resolveEnv = config.resolveEnv
@@ -240,3 +247,8 @@ export const makeAgentRuntime = (config: AgentRuntimeConfig = {}): AgentRuntimeS
     ...makeAgentSessionOperations(core)
   }
 }
+
+const noUsageLimitsDetail = "This harness does not expose account usage limits."
+
+const notReadyDetail = (definition: HarnessDefinition, readiness: Harness["readiness"]): string =>
+  `${definition.name} is unavailable: ${readiness.detail ?? "it isn't ready"}`
