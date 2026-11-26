@@ -63,7 +63,10 @@ describe("plugin catalog", () => {
 
   it("filters by name or title, ignoring case", async () => {
     expect(names(await listServers("?search=LINEAR"))).toEqual(["dev.codevisor/linear"])
-    expect(names(await listServers("?search=sentry"))).toEqual(["io.sentry/mcp"])
+    expect(names(await listServers("?search=sentry"))).toEqual([
+      "dev.codevisor/sentry",
+      "io.sentry/mcp"
+    ])
     expect(await listServers("?search=no-such-plugin")).toEqual({
       servers: [],
       metadata: { count: 0 }

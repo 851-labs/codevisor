@@ -52,10 +52,18 @@ const invalidParamsCode = -32602
 
 const accountCheckOf = (reply: Record<string, unknown>): AccountCheck => ({
   ...textField(reply, "identity"),
-  ...textField(reply, "label")
+  ...textField(reply, "label"),
+  ...routeKeysField(reply)
 })
 
 const textField = (reply: Record<string, unknown>, key: "identity" | "label") => {
   const value = reply[key]
   return typeof value === "string" && value !== "" ? { [key]: value } : {}
+}
+
+const routeKeysField = (reply: Record<string, unknown>): Pick<AccountCheck, "routeKeys"> => {
+  const keys = reply.routeKeys
+  if (!Array.isArray(keys)) return {}
+
+  return { routeKeys: keys.filter((key): key is string => typeof key === "string" && key !== "") }
 }

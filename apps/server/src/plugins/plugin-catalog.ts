@@ -37,11 +37,11 @@ export const makePluginCatalog = (options: PluginCatalogOptions): PluginCatalog 
     search: source.search,
     browse: async (query) => {
       const enabled = await enabledFlags()
-      return source.search(query).filter((entry) => flagAllows(entry, enabled))
+      return source.search(query).filter((entry) => offered(source, entry, enabled))
     },
     browsable: async (id) => {
       const entry = source.entry(id)
-      if (entry === undefined || !flagAllows(entry, await enabledFlags())) return undefined
+      if (entry === undefined || !offered(source, entry, await enabledFlags())) return undefined
       return entry
     },
     refreshPublished: async (cloudUrl) => {
@@ -81,6 +81,21 @@ export const startCatalogRefresh = (
 }
 
 const noFlags = async (): Promise<ReadonlySet<string>> => new Set()
+
+const offered = (
+  source: CatalogSource,
+  entry: PluginCatalogEntry,
+  enabled: ReadonlySet<string>
+): boolean => flagAllows(entry, enabled) && !replacementOffered(source, entry, enabled)
+
+const replacementOffered = (
+  source: CatalogSource,
+  entry: PluginCatalogEntry,
+  enabled: ReadonlySet<string>
+): boolean => {
+  const replacement = source.entry(source.replacedBy(entry.id) ?? "")
+  return replacement !== undefined && flagAllows(replacement, enabled)
+}
 
 const flagAllows = (entry: PluginCatalogEntry, enabled: ReadonlySet<string>): boolean =>
   entry.featureFlag === undefined || enabled.has(entry.featureFlag)

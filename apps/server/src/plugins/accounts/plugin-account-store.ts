@@ -12,6 +12,7 @@ export interface CredentialReference {
 
 export interface PluginAccountRecord extends PluginAccount {
   readonly routeKey?: string | undefined
+  readonly routeKeys?: ReadonlyArray<string> | undefined
   readonly credential?: CredentialReference
 }
 
@@ -57,7 +58,7 @@ export const makePluginAccountStore = (
 }
 
 export const publicAccount = (record: PluginAccountRecord): PluginAccount => {
-  const { credential: _credential, routeKey: _routeKey, ...visible } = record
+  const { credential: _credential, routeKey: _routeKey, routeKeys: _routeKeys, ...visible } = record
   return visible
 }
 
@@ -72,6 +73,7 @@ const RecordSchema = Schema.Struct({
   label: Schema.optional(Schema.String),
   identity: Schema.optional(Schema.String),
   routeKey: Schema.optional(Schema.String),
+  routeKeys: Schema.optional(Schema.Array(Schema.String)),
   method: PluginAccountMethod,
   values: Schema.Record(
     Schema.String,

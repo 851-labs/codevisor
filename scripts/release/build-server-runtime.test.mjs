@@ -130,19 +130,25 @@ test("dev-only plugins stay out of the packaged runtime", async (t) => {
   await assert.rejects(access(join(runtime, "plugins/test-events/dist")))
 })
 
-test("bundles the Google and Linear sign-in clients from the build's secrets, readable only by their owner", async (t) => {
+test("bundles the Google, Linear and Sentry sign-in clients from the build's secrets, readable only by their owner", async (t) => {
   const google = JSON.stringify({ installed: { client_id: "client.apps.googleusercontent.com" } })
   const linear = JSON.stringify({ installed: { client_id: "linear-client", client_secret: "s" } })
+  const sentry = JSON.stringify({ installed: { client_id: "sentry-client", client_secret: "s" } })
   const { result, runtime } = await packageRuntime(
     t,
     {},
-    { CODEVISOR_GOOGLE_OAUTH_CLIENT_JSON: google, CODEVISOR_LINEAR_OAUTH_CLIENT_JSON: linear }
+    {
+      CODEVISOR_GOOGLE_OAUTH_CLIENT_JSON: google,
+      CODEVISOR_LINEAR_OAUTH_CLIENT_JSON: linear,
+      CODEVISOR_SENTRY_OAUTH_CLIENT_JSON: sentry
+    }
   )
 
   assert.equal(result.status, 73, result.stderr)
   for (const [file, client] of [
     ["config/google-oauth-client.json", google],
-    ["config/linear-oauth-client.json", linear]
+    ["config/linear-oauth-client.json", linear],
+    ["config/sentry-oauth-client.json", sentry]
   ]) {
     const bundled = join(runtime, file)
     assert.equal(await readFile(bundled, "utf8"), client)

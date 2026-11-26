@@ -23,6 +23,7 @@ export interface CodevisorPluginMeta {
   readonly entry?: string
   readonly devOnly?: boolean
   readonly featureFlag?: string
+  readonly replaces?: string
   readonly oauthClient?: string
   readonly accounts?: PluginAccountSpec
   readonly capabilities?: PluginCapabilities

@@ -34,9 +34,20 @@ const entryIds = async (running: CatalogApp, path: string) =>
     (entry) => entry.id
   )
 
-const flaggedApp = async () => {
-  const fixture = await catalogFixture([alertsServer, flaggedServer], [ticketsServer])
+const flaggedApp = async (flagged = flaggedServer) => {
+  const fixture = await catalogFixture([alertsServer, flagged], [ticketsServer])
   return { ...(await startPluginApp({ catalog: fixture.options })), fixture }
+}
+
+const replacingServer = {
+  ...flaggedServer,
+  _meta: {
+    "dev.codevisor/plugin": {
+      bundled: "mail",
+      featureFlag: "mailPlugin",
+      replaces: "io.example/tickets"
+    }
+  }
 }
 
 let flagWrites = 0
@@ -82,6 +93,23 @@ describe("feature-flagged catalog plugins", () => {
     expect(JSON.stringify(searched.body)).not.toContain(flaggedId)
     expect(shown).toEqual(["dev.codevisor/alerts", flaggedId, "io.example/tickets"])
     expect(JSON.stringify(found.body)).toContain(flaggedId)
+  })
+
+  it("hide the popular entry they replace only while their flag is on", async () => {
+    const running = await flaggedApp(replacingServer)
+    await setFlag(running, false)
+
+    const before = await entryIds(running, "/v1/plugins/catalog")
+    await setFlag(running, true)
+    const after = await entryIds(running, "/v1/plugins/catalog")
+    const replaced = await jsonRequest(
+      running.server,
+      `/v1/plugins/catalog/${encodeURIComponent("io.example/tickets")}`
+    )
+
+    expect(before).toEqual(["dev.codevisor/alerts", "io.example/tickets"])
+    expect(after).toEqual(["dev.codevisor/alerts", flaggedId])
+    expect(replaced.status).toBe(404)
   })
 
   it("keeps an installed copy working after the flag is turned off", async () => {

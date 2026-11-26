@@ -20,9 +20,12 @@ export const cloudInboxApi = (request: CloudRequest): CloudInboxApi => ({
   unsubscribe: async (inboxId) => {
     await request("DELETE", deviceSubscriptionPath(inboxId))
   },
-  route: async (inboxId, route, key) =>
+  route: async (inboxId, route, keys) =>
     routeConfigOf(
-      await request("PUT", `${inboxPath(inboxId)}/routes/${encodeURIComponent(route)}`, { key })
+      await request("PUT", `${inboxPath(inboxId)}/routes/${encodeURIComponent(route)}`, {
+        key: keys[0],
+        keys
+      })
     ),
   remove: async (inboxId) => {
     await request("DELETE", inboxPath(inboxId))

@@ -115,7 +115,7 @@ export const makePluginPlatform = (deps: PluginPlatformDeps): PluginPlatform => 
         const context = await accounts.context(serverId, accountId).catch(() => undefined)
         if (context === undefined) return undefined
 
-        const { routeKey: _routeKey, ...meta } = context
+        const { routeKey: _routeKey, routeKeys: _routeKeys, ...meta } = context
         return meta
       }
     }

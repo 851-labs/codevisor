@@ -1,0 +1,3873 @@
+[
+  {
+    "name": "add_issue_note",
+    "title": "Add Issue Note",
+    "description": "Add a comment (note) to a Sentry issue's activity feed, visible to the whole team. Use it to record findings or decisions; never post secrets or credentials.",
+    "inputSchema": {
+      "type": "object",
+      "properties": {
+        "organizationSlug": {
+          "type": "string",
+          "description": "The organization slug, from `find_organizations`. In `org/project` notation, the part before the slash."
+        },
+        "regionUrl": {
+          "default": null,
+          "anyOf": [
+            {
+              "type": "string",
+              "description": "The organization's region URL from `find_organizations`, e.g. `https://us.sentry.io`. Omit for self-hosted Sentry."
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "issueId": {
+          "type": "string",
+          "description": "The issue short ID, e.g. `PROJECT-1Z43`."
+        },
+        "issueUrl": {
+          "type": "string",
+          "format": "uri",
+          "description": "The issue URL, e.g. https://my-org.sentry.io/issues/PROJECT-1Z43"
+        },
+        "text": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 4096,
+          "description": "The comment text, posted as is."
+        }
+      },
+      "required": ["text"]
+    },
+    "annotations": {
+      "readOnlyHint": false,
+      "destructiveHint": false,
+      "openWorldHint": true
+    }
+  },
+  {
+    "name": "analyze_issue_with_seer",
+    "title": "Analyze Issue with Seer",
+    "description": "Run Seer AI root cause analysis on a Sentry issue and return the root cause, affected code locations, and a suggested code fix. Returns an existing analysis at once; a new one takes minutes, so call it only when the user asks for Seer or a fix, or the issue details do not show the cause. Does not support metric alert issues.",
+    "inputSchema": {
+      "type": "object",
+      "properties": {
+        "organizationSlug": {
+          "type": "string",
+          "description": "The organization slug, from `find_organizations`. In `org/project` notation, the part before the slash."
+        },
+        "regionUrl": {
+          "default": null,
+          "anyOf": [
+            {
+              "type": "string",
+              "description": "The organization's region URL from `find_organizations`, e.g. `https://us.sentry.io`. Omit for self-hosted Sentry."
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "issueId": {
+          "type": "string",
+          "description": "The issue short ID, e.g. `PROJECT-1Z43`."
+        },
+        "issueUrl": {
+          "type": "string",
+          "format": "uri",
+          "description": "The issue URL, e.g. https://my-org.sentry.io/issues/PROJECT-1Z43"
+        },
+        "instruction": {
+          "type": "string",
+          "description": "Extra guidance for the analysis."
+        }
+      }
+    },
+    "annotations": {
+      "readOnlyHint": false,
+      "destructiveHint": false,
+      "openWorldHint": true
+    }
+  },
+  {
+    "name": "create_dsn",
+    "title": "Create DSN",
+    "description": "Create an additional DSN (client key) for an existing Sentry project, such as a separate production key. Returns the new key's ID, name, and DSN. create_project already provisions a DSN for a new project.",
+    "inputSchema": {
+      "type": "object",
+      "properties": {
+        "organizationSlug": {
+          "type": "string",
+          "description": "The organization slug, from `find_organizations`. In `org/project` notation, the part before the slash."
+        },
+        "regionUrl": {
+          "default": null,
+          "anyOf": [
+            {
+              "type": "string",
+              "description": "The organization's region URL from `find_organizations`, e.g. `https://us.sentry.io`. Omit for self-hosted Sentry."
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "projectSlug": {
+          "type": "string",
+          "description": "The project slug. In `org/project` notation, the part after the slash."
+        },
+        "name": {
+          "type": "string",
+          "description": "Key name, such as `Production`."
+        }
+      },
+      "required": ["organizationSlug", "projectSlug", "name"]
+    },
+    "annotations": {
+      "readOnlyHint": false,
+      "destructiveHint": false,
+      "openWorldHint": true
+    }
+  },
+  {
+    "name": "create_project",
+    "title": "Create Project",
+    "description": "Create a new Sentry project for an app or service and provision its DSN (client key) for SDK setup. Optionally links a connected repository with a root code mapping. Returns the project, its DSN, whether the repository linked, and the Sentry signals its platform supports, each with a docs link.",
+    "inputSchema": {
+      "type": "object",
+      "properties": {
+        "organizationSlug": {
+          "type": "string",
+          "description": "The organization slug, from `find_organizations`. In `org/project` notation, the part before the slash."
+        },
+        "regionUrl": {
+          "default": null,
+          "anyOf": [
+            {
+              "type": "string",
+              "description": "The organization's region URL from `find_organizations`, e.g. `https://us.sentry.io`. Omit for self-hosted Sentry."
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "teamSlug": {
+          "type": "string",
+          "description": "The team slug."
+        },
+        "name": {
+          "type": "string",
+          "description": "Display name, usually the app or service name."
+        },
+        "slug": {
+          "default": null,
+          "anyOf": [
+            {
+              "type": "string",
+              "description": "Project slug. Sentry derives one from the name when omitted."
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "platform": {
+          "default": null,
+          "anyOf": [
+            {
+              "type": "string",
+              "description": "Sentry platform ID, e.g. `javascript-react`, `javascript-nextjs`, `node`, `python-django`, `apple-ios`, `android`, `dotnet`. Omit if unsure."
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "repository": {
+          "default": null,
+          "description": "Repository to link, as `owner/repo`. Must already be connected to the organization through a VCS integration.",
+          "type": ["string", "null"]
+        }
+      },
+      "required": ["organizationSlug", "teamSlug", "name"]
+    },
+    "annotations": {
+      "readOnlyHint": false,
+      "destructiveHint": false,
+      "openWorldHint": true
+    }
+  },
+  {
+    "name": "find_alert_rules",
+    "title": "Find Alert Rules",
+    "description": "Find Sentry alert rules: Issue Alerts (notification workflows) and Metric Monitor alerts, with their conditions, actions, owner, and environment.\nMetric entries carry legacy IDs; find_metric_monitors returns canonical monitor IDs. Cron and uptime monitors: find_monitors, find_uptime_monitors.",
+    "inputSchema": {
+      "type": "object",
+      "properties": {
+        "organizationSlug": {
+          "type": "string",
+          "description": "The organization slug, from `find_organizations`. In `org/project` notation, the part before the slash."
+        },
+        "regionUrl": {
+          "default": null,
+          "anyOf": [
+            {
+              "type": "string",
+              "description": "The organization's region URL from `find_organizations`, e.g. `https://us.sentry.io`. Omit for self-hosted Sentry."
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "kind": {
+          "default": "all",
+          "type": "string",
+          "enum": ["all", "issue", "metric"],
+          "description": "Alert family: `issue` for Alerts (workflows), `metric` for Metric Monitors."
+        },
+        "projectSlug": {
+          "default": null,
+          "anyOf": [
+            {
+              "type": "string",
+              "description": "The project slug, or lowercase `all` for every project."
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "query": {
+          "default": null,
+          "anyOf": [
+            {
+              "type": "string",
+              "description": "Text to match in the alert rule name."
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "cursor": {
+          "default": null,
+          "anyOf": [
+            {
+              "type": "string",
+              "description": "Next cursor from a previous result. Issue and metric families page separately; reuse a cursor only with its own kind."
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "limit": {
+          "default": 10,
+          "type": "integer",
+          "exclusiveMinimum": 0,
+          "maximum": 100,
+          "description": "Maximum rules per alert family."
+        },
+        "fresh": {
+          "description": "Bypass cached reads.",
+          "type": "boolean"
+        }
+      },
+      "required": ["organizationSlug"]
+    },
+    "annotations": {
+      "readOnlyHint": true,
+      "destructiveHint": false,
+      "openWorldHint": true
+    }
+  },
+  {
+    "name": "find_dashboards",
+    "title": "Find Dashboards",
+    "description": "List or search Sentry dashboards in an organization by title, returning dashboard IDs and titles. Open one with get_dashboard_details.",
+    "inputSchema": {
+      "type": "object",
+      "properties": {
+        "organizationSlug": {
+          "type": "string",
+          "description": "The organization slug, from `find_organizations`. In `org/project` notation, the part before the slash."
+        },
+        "regionUrl": {
+          "default": null,
+          "anyOf": [
+            {
+              "type": "string",
+              "description": "The organization's region URL from `find_organizations`, e.g. `https://us.sentry.io`. Omit for self-hosted Sentry."
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "titleQuery": {
+          "default": null,
+          "anyOf": [
+            {
+              "type": "string",
+              "description": "Title substring to search for."
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "sort": {
+          "default": "title",
+          "type": "string",
+          "enum": ["title", "-title", "dateCreated", "-dateCreated"],
+          "description": "Sort order for dashboard results."
+        },
+        "cursor": {
+          "default": null,
+          "anyOf": [
+            {
+              "type": "string",
+              "description": "Pagination cursor from a previous response with the same search."
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "limit": {
+          "default": 10,
+          "type": "integer",
+          "exclusiveMinimum": 0,
+          "maximum": 100,
+          "description": "Maximum number of dashboards to return."
+        },
+        "fresh": {
+          "description": "Bypass cached reads.",
+          "type": "boolean"
+        }
+      },
+      "required": ["organizationSlug"]
+    },
+    "annotations": {
+      "readOnlyHint": true,
+      "destructiveHint": false,
+      "openWorldHint": true
+    }
+  },
+  {
+    "name": "find_dropped_events",
+    "title": "Find Dropped Events",
+    "description": "Find events Sentry dropped before storing them (SDK sampling, filters, rate limits, quota, spike protection), as dropped and accepted volume over time by outcome and reason. Each drop is tagged intentional (sampling, filters) or unintentional (quota, abuse). Use it to explain flat, low, or missing data that searches, charts, and dashboards cannot show; no drops means the data is complete.",
+    "inputSchema": {
+      "type": "object",
+      "properties": {
+        "organizationSlug": {
+          "type": "string",
+          "description": "The organization slug, from `find_organizations`. In `org/project` notation, the part before the slash."
+        },
+        "regionUrl": {
+          "default": null,
+          "anyOf": [
+            {
+              "type": "string",
+              "description": "The organization's region URL from `find_organizations`, e.g. `https://us.sentry.io`. Omit for self-hosted Sentry."
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "dataset": {
+          "default": "spans",
+          "type": "string",
+          "enum": ["spans", "logs", "metrics", "errors"],
+          "description": "Data type to report drops for."
+        },
+        "projectSlug": {
+          "default": null,
+          "anyOf": [
+            {
+              "type": "string",
+              "description": "The project slug. In `org/project` notation, the part after the slash."
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "statsPeriod": {
+          "default": null,
+          "anyOf": [
+            {
+              "type": "string",
+              "description": "Relative time range such as 24h or 7d. Do not combine with start and end."
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "start": {
+          "default": null,
+          "anyOf": [
+            {
+              "type": "string",
+              "description": "Absolute start, ISO 8601; requires end."
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "end": {
+          "default": null,
+          "anyOf": [
+            {
+              "type": "string",
+              "description": "Absolute end, ISO 8601; requires start."
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "interval": {
+          "default": null,
+          "anyOf": [
+            {
+              "type": "string",
+              "description": "Bucket size such as 1h or 1d, at most 1d. Omit to let Sentry pick."
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "outcome": {
+          "default": null,
+          "anyOf": [
+            {
+              "type": "string",
+              "enum": [
+                "rate_limited",
+                "filtered",
+                "invalid",
+                "abuse",
+                "client_discard",
+                "cardinality_limited"
+              ],
+              "description": "Only count drops of this kind; accepted volume is always returned in full."
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "reason": {
+          "default": null,
+          "anyOf": [
+            {
+              "type": "string",
+              "description": "Only count drops with this sub-cause of an outcome, such as key_quota, sample_rate, or spike_protection."
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "fresh": {
+          "description": "Bypass cached reads.",
+          "type": "boolean"
+        }
+      },
+      "required": ["organizationSlug"]
+    },
+    "annotations": {
+      "readOnlyHint": true,
+      "destructiveHint": false,
+      "openWorldHint": true
+    }
+  },
+  {
+    "name": "find_dsns",
+    "title": "Find DSNs",
+    "description": "List the DSNs (client keys) for a Sentry project: the SENTRY_DSN an SDK uses to send events. Returns each key's ID, name, and DSN.",
+    "inputSchema": {
+      "type": "object",
+      "properties": {
+        "organizationSlug": {
+          "type": "string",
+          "description": "The organization slug, from `find_organizations`. In `org/project` notation, the part before the slash."
+        },
+        "regionUrl": {
+          "default": null,
+          "anyOf": [
+            {
+              "type": "string",
+              "description": "The organization's region URL from `find_organizations`, e.g. `https://us.sentry.io`. Omit for self-hosted Sentry."
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "projectSlug": {
+          "type": "string",
+          "description": "The project slug. In `org/project` notation, the part after the slash."
+        },
+        "fresh": {
+          "description": "Bypass cached reads.",
+          "type": "boolean"
+        }
+      },
+      "required": ["organizationSlug", "projectSlug"]
+    },
+    "annotations": {
+      "readOnlyHint": true,
+      "destructiveHint": false,
+      "openWorldHint": true
+    }
+  },
+  {
+    "name": "find_metric_monitors",
+    "title": "Find Metric Monitors",
+    "description": "Find Sentry Metric Monitors that alert when an error count, latency, log, metric, or crash rate crosses a threshold. Returns monitor IDs, queries, and connected Alerts.\nCron jobs: find_monitors. URL checks: find_uptime_monitors. Notifications: alert rules.",
+    "inputSchema": {
+      "type": "object",
+      "properties": {
+        "organizationSlug": {
+          "type": "string",
+          "description": "The organization slug, from `find_organizations`. In `org/project` notation, the part before the slash."
+        },
+        "regionUrl": {
+          "default": null,
+          "anyOf": [
+            {
+              "type": "string",
+              "description": "The organization's region URL from `find_organizations`, e.g. `https://us.sentry.io`. Omit for self-hosted Sentry."
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "projectSlug": {
+          "type": "string",
+          "description": "The project slug, or lowercase `all` for every project."
+        },
+        "query": {
+          "description": "Monitor search, such as a name or name:\"latency\". Matches monitor metadata, not the monitored event query.",
+          "type": "string",
+          "minLength": 1
+        },
+        "cursor": {
+          "description": "Next cursor from the previous page, with the same filters.",
+          "type": "string"
+        },
+        "limit": {
+          "default": 10,
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 100
+        },
+        "fresh": {
+          "description": "Bypass cached reads.",
+          "type": "boolean"
+        }
+      },
+      "required": ["organizationSlug"]
+    },
+    "annotations": {
+      "readOnlyHint": true,
+      "destructiveHint": false,
+      "openWorldHint": true
+    }
+  },
+  {
+    "name": "find_monitors",
+    "title": "Find Cron Monitors",
+    "description": "Find Sentry cron monitors, which track scheduled jobs through check-ins. Returns each monitor's status, schedule, owner, project, and recent environment state.\nUptime URL checks: find_uptime_monitors. Metric thresholds: find_metric_monitors.\nWhen more results exist, narrow by project, environment, owner, or name.",
+    "inputSchema": {
+      "type": "object",
+      "properties": {
+        "organizationSlug": {
+          "type": "string",
+          "description": "The organization slug, from `find_organizations`. In `org/project` notation, the part before the slash."
+        },
+        "regionUrl": {
+          "default": null,
+          "anyOf": [
+            {
+              "type": "string",
+              "description": "The organization's region URL from `find_organizations`, e.g. `https://us.sentry.io`. Omit for self-hosted Sentry."
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "projectSlug": {
+          "default": null,
+          "anyOf": [
+            {
+              "type": "string",
+              "description": "The project slug, or lowercase `all` for every project."
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "environment": {
+          "default": null,
+          "anyOf": [
+            {
+              "type": "string",
+              "description": "Environment to report monitor state for."
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "owner": {
+          "default": null,
+          "anyOf": [
+            {
+              "type": "string",
+              "description": "Owner filter: `user:123`, `team:456`, `myteams`, or `unassigned`."
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "query": {
+          "default": null,
+          "anyOf": [
+            {
+              "type": "string",
+              "description": "Text to match in the monitor name or slug."
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "limit": {
+          "default": 10,
+          "type": "integer",
+          "exclusiveMinimum": 0,
+          "maximum": 99,
+          "description": "Maximum monitors to return."
+        },
+        "fresh": {
+          "description": "Bypass cached reads.",
+          "type": "boolean"
+        }
+      },
+      "required": ["organizationSlug"]
+    },
+    "annotations": {
+      "readOnlyHint": true,
+      "destructiveHint": false,
+      "openWorldHint": true
+    }
+  },
+  {
+    "name": "find_organizations",
+    "title": "Find Organizations",
+    "description": "List or search the Sentry organizations the user can access. Returns each organization's slug and region URL, which other Sentry tools take, plus its web URL; 25 per page.",
+    "inputSchema": {
+      "type": "object",
+      "properties": {
+        "query": {
+          "default": null,
+          "anyOf": [
+            {
+              "type": "string",
+              "description": "Filter by name or slug."
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "cursor": {
+          "default": null,
+          "anyOf": [
+            {
+              "type": "string",
+              "description": "`nextCursor` from the previous page. Keep the other inputs the same."
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "fresh": {
+          "description": "Bypass cached reads.",
+          "type": "boolean"
+        }
+      }
+    },
+    "annotations": {
+      "readOnlyHint": true,
+      "destructiveHint": false,
+      "openWorldHint": true
+    }
+  },
+  {
+    "name": "find_projects",
+    "title": "Find Projects",
+    "description": "List or search projects in a Sentry organization. Returns project slugs, 25 per page.",
+    "inputSchema": {
+      "type": "object",
+      "properties": {
+        "organizationSlug": {
+          "type": "string",
+          "description": "The organization slug, from `find_organizations`. In `org/project` notation, the part before the slash."
+        },
+        "regionUrl": {
+          "default": null,
+          "anyOf": [
+            {
+              "type": "string",
+              "description": "The organization's region URL from `find_organizations`, e.g. `https://us.sentry.io`. Omit for self-hosted Sentry."
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "query": {
+          "default": null,
+          "anyOf": [
+            {
+              "type": "string",
+              "description": "Filter by name or slug, or pass a numeric project ID."
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "cursor": {
+          "default": null,
+          "anyOf": [
+            {
+              "type": "string",
+              "description": "`nextCursor` from the previous page. Keep the other inputs the same."
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "fresh": {
+          "description": "Bypass cached reads.",
+          "type": "boolean"
+        }
+      },
+      "required": ["organizationSlug"]
+    },
+    "annotations": {
+      "readOnlyHint": true,
+      "destructiveHint": false,
+      "openWorldHint": true
+    }
+  },
+  {
+    "name": "find_related_issues",
+    "title": "Find Related Issues",
+    "description": "Find Sentry issues related to an issue: likely duplicates with a similar stack trace in the same project, other errors in the same trace, and the error issues behind a metric alert. Returns each related issue with its status and why it's related. Use it before resolving or ignoring an issue. It doesn't compare titles or error messages.",
+    "inputSchema": {
+      "type": "object",
+      "properties": {
+        "organizationSlug": {
+          "type": "string",
+          "description": "The organization slug, from `find_organizations`. In `org/project` notation, the part before the slash."
+        },
+        "regionUrl": {
+          "default": null,
+          "anyOf": [
+            {
+              "type": "string",
+              "description": "The organization's region URL from `find_organizations`, e.g. `https://us.sentry.io`. Omit for self-hosted Sentry."
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "issueId": {
+          "type": "string",
+          "description": "The issue short ID, e.g. `PROJECT-1Z43`."
+        },
+        "issueUrl": {
+          "type": "string",
+          "format": "uri",
+          "description": "The issue URL, e.g. https://my-org.sentry.io/issues/PROJECT-1Z43"
+        },
+        "types": {
+          "default": null,
+          "description": "Relation types to return; all when omitted. similar_stacktrace: likely duplicates. same_trace: errors in the same trace, often the other side of a request. contributing: for a metric issue, the error issues behind it.",
+          "anyOf": [
+            {
+              "type": "array",
+              "items": {
+                "type": "string",
+                "enum": ["similar_stacktrace", "same_trace", "contributing"]
+              }
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "limit": {
+          "default": 10,
+          "description": "Maximum related issues per relation type.",
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 100
+        },
+        "fresh": {
+          "description": "Bypass cached reads.",
+          "type": "boolean"
+        }
+      }
+    },
+    "annotations": {
+      "readOnlyHint": true,
+      "destructiveHint": false,
+      "openWorldHint": true
+    }
+  },
+  {
+    "name": "find_releases",
+    "title": "Find Releases",
+    "description": "List or search releases (deployed versions) in a Sentry organization or project. Returns each release's dates, new issue count, last commit, and last deploy. Returns at most 25 releases with no next page; narrow by project or version to see others.",
+    "inputSchema": {
+      "type": "object",
+      "properties": {
+        "organizationSlug": {
+          "type": "string",
+          "description": "The organization slug, from `find_organizations`. In `org/project` notation, the part before the slash."
+        },
+        "regionUrl": {
+          "default": null,
+          "anyOf": [
+            {
+              "type": "string",
+              "description": "The organization's region URL from `find_organizations`, e.g. `https://us.sentry.io`. Omit for self-hosted Sentry."
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "projectSlug": {
+          "default": null,
+          "anyOf": [
+            {
+              "type": "string",
+              "description": "The project slug, or lowercase `all` for every project."
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "query": {
+          "default": null,
+          "anyOf": [
+            {
+              "type": "string",
+              "description": "Substring of the release version, such as a commit SHA prefix."
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "fresh": {
+          "description": "Bypass cached reads.",
+          "type": "boolean"
+        }
+      },
+      "required": ["organizationSlug"]
+    },
+    "annotations": {
+      "readOnlyHint": true,
+      "destructiveHint": false,
+      "openWorldHint": true
+    }
+  },
+  {
+    "name": "find_teams",
+    "title": "Find Teams",
+    "description": "List or search teams in a Sentry organization. Returns each team's slug and numeric ID, 25 per page.",
+    "inputSchema": {
+      "type": "object",
+      "properties": {
+        "organizationSlug": {
+          "type": "string",
+          "description": "The organization slug, from `find_organizations`. In `org/project` notation, the part before the slash."
+        },
+        "regionUrl": {
+          "default": null,
+          "anyOf": [
+            {
+              "type": "string",
+              "description": "The organization's region URL from `find_organizations`, e.g. `https://us.sentry.io`. Omit for self-hosted Sentry."
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "query": {
+          "default": null,
+          "anyOf": [
+            {
+              "type": "string",
+              "description": "Filter by name or slug."
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "cursor": {
+          "default": null,
+          "anyOf": [
+            {
+              "type": "string",
+              "description": "`nextCursor` from the previous page. Keep the other inputs the same."
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "fresh": {
+          "description": "Bypass cached reads.",
+          "type": "boolean"
+        }
+      },
+      "required": ["organizationSlug"]
+    },
+    "annotations": {
+      "readOnlyHint": true,
+      "destructiveHint": false,
+      "openWorldHint": true
+    }
+  },
+  {
+    "name": "find_uptime_monitors",
+    "title": "Find Uptime Monitors",
+    "description": "Find Sentry uptime monitors, which check a URL over HTTP. Returns each monitor's URL, status, interval, owner, and project.\nScheduled jobs (cron): find_monitors. Metric thresholds: find_metric_monitors.\nWhen more results exist, narrow by project, environment, owner, or name.",
+    "inputSchema": {
+      "type": "object",
+      "properties": {
+        "organizationSlug": {
+          "type": "string",
+          "description": "The organization slug, from `find_organizations`. In `org/project` notation, the part before the slash."
+        },
+        "regionUrl": {
+          "default": null,
+          "anyOf": [
+            {
+              "type": "string",
+              "description": "The organization's region URL from `find_organizations`, e.g. `https://us.sentry.io`. Omit for self-hosted Sentry."
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "projectSlug": {
+          "type": "string",
+          "description": "The project slug, or lowercase `all` for every project."
+        },
+        "environment": {
+          "type": "string",
+          "minLength": 1,
+          "description": "Environment to filter monitors by."
+        },
+        "owner": {
+          "type": "string",
+          "minLength": 1,
+          "description": "Owner filter: `user:123`, `team:456`, `myteams`, or `unassigned`."
+        },
+        "query": {
+          "type": "string",
+          "minLength": 1,
+          "description": "Text to match in the monitor name or URL."
+        },
+        "limit": {
+          "default": 10,
+          "type": "integer",
+          "exclusiveMinimum": 0,
+          "maximum": 99,
+          "description": "Maximum monitors to return."
+        },
+        "fresh": {
+          "description": "Bypass cached reads.",
+          "type": "boolean"
+        }
+      },
+      "required": ["organizationSlug"]
+    },
+    "annotations": {
+      "readOnlyHint": true,
+      "destructiveHint": false,
+      "openWorldHint": true
+    }
+  },
+  {
+    "name": "get_agent_conversation_details",
+    "title": "Get Agent Conversation Details",
+    "description": "Get the transcript of one Sentry agent conversation (formerly AI conversation): user and assistant messages and tool calls in order, with trace and span IDs for debugging. To find conversations, use search_agent_conversations.",
+    "inputSchema": {
+      "type": "object",
+      "properties": {
+        "organizationSlug": {
+          "type": "string",
+          "description": "The organization slug, from `find_organizations`. In `org/project` notation, the part before the slash."
+        },
+        "conversationId": {
+          "type": "string",
+          "description": "The agent conversation ID from gen_ai.conversation.id."
+        },
+        "project": {
+          "description": "Numeric project ID to scope the lookup; omit to search all projects.",
+          "type": "string"
+        },
+        "start": {
+          "description": "Start of the lookup window; requires end.",
+          "type": "string"
+        },
+        "end": {
+          "description": "End of the lookup window; requires start.",
+          "type": "string"
+        },
+        "regionUrl": {
+          "type": "string",
+          "description": "The organization's region URL from `find_organizations`, e.g. `https://us.sentry.io`. Omit for self-hosted Sentry."
+        },
+        "fresh": {
+          "description": "Bypass cached reads.",
+          "type": "boolean"
+        }
+      },
+      "required": ["organizationSlug", "conversationId"]
+    },
+    "annotations": {
+      "readOnlyHint": true,
+      "destructiveHint": false,
+      "openWorldHint": true
+    }
+  },
+  {
+    "name": "get_alert_rule",
+    "title": "Get Alert Rule",
+    "description": "Get one Sentry alert rule by ID or exact name: its triggers, conditions, notification actions, connected monitors, and project scope.\nPrefer get_metric_monitor_details for Metric Monitors; cron and uptime monitors have their own get tools.",
+    "inputSchema": {
+      "type": "object",
+      "properties": {
+        "organizationSlug": {
+          "type": "string",
+          "description": "The organization slug, from `find_organizations`. In `org/project` notation, the part before the slash."
+        },
+        "regionUrl": {
+          "default": null,
+          "anyOf": [
+            {
+              "type": "string",
+              "description": "The organization's region URL from `find_organizations`, e.g. `https://us.sentry.io`. Omit for self-hosted Sentry."
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "kind": {
+          "default": "all",
+          "type": "string",
+          "enum": ["all", "issue", "metric"],
+          "description": "Alert family: `issue` for Alerts (workflows), `metric` for Metric Monitors. `all` matches by exact name only."
+        },
+        "projectSlug": {
+          "default": null,
+          "anyOf": [
+            {
+              "type": "string",
+              "description": "The project slug, or lowercase `all` for every project."
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "ruleIdOrName": {
+          "type": "string",
+          "minLength": 1,
+          "description": "Alert ID or exact name. With `metric`, a number is a legacy alert-rule ID; use detector:<id> for a Metric Monitor ID. With `all`, digits are matched as a name."
+        },
+        "fresh": {
+          "description": "Bypass cached reads.",
+          "type": "boolean"
+        }
+      },
+      "required": ["organizationSlug", "ruleIdOrName"]
+    },
+    "annotations": {
+      "readOnlyHint": true,
+      "destructiveHint": false,
+      "openWorldHint": true
+    }
+  },
+  {
+    "name": "get_dashboard_details",
+    "title": "Get Dashboard Details",
+    "description": "Get one Sentry dashboard by numeric ID or exact title: its widgets with saved query definitions and transformations, projects, environments, filters, and layout. Returns saved queries, not live widget data. To find a dashboard, use find_dashboards.",
+    "inputSchema": {
+      "type": "object",
+      "properties": {
+        "organizationSlug": {
+          "type": "string",
+          "description": "The organization slug, from `find_organizations`. In `org/project` notation, the part before the slash."
+        },
+        "regionUrl": {
+          "default": null,
+          "anyOf": [
+            {
+              "type": "string",
+              "description": "The organization's region URL from `find_organizations`, e.g. `https://us.sentry.io`. Omit for self-hosted Sentry."
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "dashboardIdOrTitle": {
+          "type": "string",
+          "minLength": 1,
+          "description": "The dashboard's numeric ID or exact title; a title must match exactly one dashboard, ignoring case."
+        },
+        "fresh": {
+          "description": "Bypass cached reads.",
+          "type": "boolean"
+        }
+      },
+      "required": ["organizationSlug", "dashboardIdOrTitle"]
+    },
+    "annotations": {
+      "readOnlyHint": true,
+      "destructiveHint": false,
+      "openWorldHint": true
+    }
+  },
+  {
+    "name": "get_doc",
+    "title": "Get Sentry Doc",
+    "description": "Fetch the full markdown content of a Sentry documentation page.",
+    "inputSchema": {
+      "type": "object",
+      "properties": {
+        "path": {
+          "type": "string",
+          "description": "Docs page path from search_docs, or a full docs.sentry.io page URL."
+        }
+      },
+      "required": ["path"]
+    },
+    "annotations": {
+      "readOnlyHint": true,
+      "destructiveHint": false,
+      "openWorldHint": true
+    }
+  },
+  {
+    "name": "get_event_attachment",
+    "title": "Get Event Attachment",
+    "description": "List or download the attachments of a Sentry event, such as screenshots, log files, and minidumps uploaded with an error report.",
+    "inputSchema": {
+      "type": "object",
+      "properties": {
+        "organizationSlug": {
+          "type": "string",
+          "description": "The organization slug, from `find_organizations`. In `org/project` notation, the part before the slash."
+        },
+        "projectSlug": {
+          "type": "string",
+          "description": "The project slug. In `org/project` notation, the part after the slash."
+        },
+        "eventId": {
+          "type": "string",
+          "pattern": "^[0-9a-fA-F]{32}$",
+          "description": "The 32-character hex event ID."
+        },
+        "attachmentId": {
+          "default": null,
+          "description": "The attachment to download. Omit to list the event's attachments.",
+          "anyOf": [
+            {
+              "type": "string",
+              "description": "The attachment ID."
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "regionUrl": {
+          "default": null,
+          "anyOf": [
+            {
+              "type": "string",
+              "description": "The organization's region URL from `find_organizations`, e.g. `https://us.sentry.io`. Omit for self-hosted Sentry."
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "fresh": {
+          "description": "Bypass cached reads.",
+          "type": "boolean"
+        }
+      },
+      "required": ["organizationSlug", "projectSlug", "eventId"]
+    },
+    "annotations": {
+      "readOnlyHint": true,
+      "destructiveHint": false,
+      "openWorldHint": true
+    }
+  },
+  {
+    "name": "get_event_stacktrace",
+    "title": "Get Event Stacktrace",
+    "description": "Get the full stack trace (stacktrace) of one thread in a Sentry event, such as a non-crashed thread listed in the issue details. Lists the threads when the selector matches none or several. For an event with no threads, returns its event-level stacktrace.",
+    "inputSchema": {
+      "type": "object",
+      "properties": {
+        "organizationSlug": {
+          "type": "string",
+          "description": "The organization slug, from `find_organizations`. In `org/project` notation, the part before the slash."
+        },
+        "regionUrl": {
+          "default": null,
+          "anyOf": [
+            {
+              "type": "string",
+              "description": "The organization's region URL from `find_organizations`, e.g. `https://us.sentry.io`. Omit for self-hosted Sentry."
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "issueId": {
+          "type": "string",
+          "description": "The issue short ID, e.g. `PROJECT-1Z43`."
+        },
+        "eventId": {
+          "default": "latest",
+          "description": "An event ID in the issue, or `latest`.",
+          "anyOf": [
+            {
+              "type": "string",
+              "const": "latest"
+            },
+            {
+              "type": "string",
+              "pattern": "^[0-9a-fA-F]{32}$",
+              "description": "The 32-character hex event ID."
+            }
+          ]
+        },
+        "thread": {
+          "description": "Numeric thread ID or exact thread name from the issue details. Omit for Sentry's default: the crashed thread, else the first with a stack trace.",
+          "anyOf": [
+            {
+              "type": "integer",
+              "minimum": -9007199254740991,
+              "maximum": 9007199254740991
+            },
+            {
+              "type": "string",
+              "minLength": 1
+            }
+          ]
+        },
+        "fresh": {
+          "description": "Bypass cached reads.",
+          "type": "boolean"
+        }
+      },
+      "required": ["organizationSlug", "issueId"]
+    },
+    "annotations": {
+      "readOnlyHint": true,
+      "destructiveHint": false,
+      "openWorldHint": true
+    }
+  },
+  {
+    "name": "get_issue_activity",
+    "title": "Get Issue Activity",
+    "description": "Get the activity feed and comments of a Sentry issue: who resolved, ignored, assigned, or commented on it, and when.",
+    "inputSchema": {
+      "type": "object",
+      "properties": {
+        "organizationSlug": {
+          "type": "string",
+          "description": "The organization slug, from `find_organizations`. In `org/project` notation, the part before the slash."
+        },
+        "regionUrl": {
+          "default": null,
+          "anyOf": [
+            {
+              "type": "string",
+              "description": "The organization's region URL from `find_organizations`, e.g. `https://us.sentry.io`. Omit for self-hosted Sentry."
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "issueId": {
+          "type": "string",
+          "description": "The issue short ID, e.g. `PROJECT-1Z43`."
+        },
+        "issueUrl": {
+          "type": "string",
+          "format": "uri",
+          "description": "The issue URL, e.g. https://my-org.sentry.io/issues/PROJECT-1Z43"
+        },
+        "includeComments": {
+          "default": true,
+          "type": "boolean"
+        },
+        "limit": {
+          "default": 25,
+          "type": "integer",
+          "exclusiveMinimum": 0,
+          "maximum": 100
+        },
+        "fresh": {
+          "description": "Bypass cached reads.",
+          "type": "boolean"
+        }
+      }
+    },
+    "annotations": {
+      "readOnlyHint": true,
+      "destructiveHint": false,
+      "openWorldHint": true
+    }
+  },
+  {
+    "name": "get_issue_breadcrumbs",
+    "title": "Get Issue Breadcrumbs",
+    "description": "Get the breadcrumb trail of a Sentry issue event: the navigation, console, HTTP, and user actions leading up to the error.",
+    "inputSchema": {
+      "type": "object",
+      "properties": {
+        "organizationSlug": {
+          "type": "string",
+          "description": "The organization slug, from `find_organizations`. In `org/project` notation, the part before the slash."
+        },
+        "regionUrl": {
+          "default": null,
+          "anyOf": [
+            {
+              "type": "string",
+              "description": "The organization's region URL from `find_organizations`, e.g. `https://us.sentry.io`. Omit for self-hosted Sentry."
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "issueId": {
+          "type": "string",
+          "description": "The issue short ID, e.g. `PROJECT-1Z43`."
+        },
+        "issueUrl": {
+          "type": "string",
+          "format": "uri",
+          "description": "The issue URL, e.g. https://my-org.sentry.io/issues/PROJECT-1Z43"
+        },
+        "eventId": {
+          "default": "latest",
+          "description": "An event ID in the issue, or `latest`.",
+          "anyOf": [
+            {
+              "type": "string",
+              "const": "latest"
+            },
+            {
+              "type": "string",
+              "pattern": "^[0-9a-fA-F]{32}$",
+              "description": "The 32-character hex event ID."
+            }
+          ]
+        },
+        "fresh": {
+          "description": "Bypass cached reads.",
+          "type": "boolean"
+        }
+      }
+    },
+    "annotations": {
+      "readOnlyHint": true,
+      "destructiveHint": false,
+      "openWorldHint": true
+    }
+  },
+  {
+    "name": "get_issue_details",
+    "title": "Get Issue Details",
+    "description": "Get the details of one Sentry issue, by issue ID, URL, or event ID: title, status, counts, the latest or a chosen event with its stacktrace, Seer root cause, suspect commit, linked tickets, and replays. Can also return installed package versions for one event. Use search_issues to list issues.",
+    "inputSchema": {
+      "type": "object",
+      "properties": {
+        "organizationSlug": {
+          "type": "string",
+          "description": "The organization slug, from `find_organizations`. In `org/project` notation, the part before the slash."
+        },
+        "regionUrl": {
+          "default": null,
+          "anyOf": [
+            {
+              "type": "string",
+              "description": "The organization's region URL from `find_organizations`, e.g. `https://us.sentry.io`. Omit for self-hosted Sentry."
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "issueId": {
+          "type": "string",
+          "description": "The issue short ID, e.g. `PROJECT-1Z43`."
+        },
+        "eventId": {
+          "type": "string",
+          "pattern": "^[0-9a-fA-F]{32}$",
+          "description": "The 32-character hex event ID."
+        },
+        "issueUrl": {
+          "type": "string",
+          "format": "uri",
+          "description": "The issue URL, e.g. https://my-org.sentry.io/issues/PROJECT-1Z43"
+        },
+        "packageNames": {
+          "description": "Exact, case-sensitive package names recorded on the event. Returns their versions. Requires eventId.",
+          "minItems": 1,
+          "maxItems": 10,
+          "type": "array",
+          "items": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 256
+          }
+        },
+        "fresh": {
+          "description": "Bypass cached reads.",
+          "type": "boolean"
+        }
+      }
+    },
+    "annotations": {
+      "readOnlyHint": true,
+      "destructiveHint": false,
+      "openWorldHint": true
+    }
+  },
+  {
+    "name": "get_issue_tag_values",
+    "title": "Get Issue Tag Values",
+    "description": "Get the tag value distribution of a Sentry issue: counts of each browser, environment, release, URL, or other tag value affected. Tag keys vary by platform, SDK, and custom tags.",
+    "inputSchema": {
+      "type": "object",
+      "properties": {
+        "organizationSlug": {
+          "type": "string",
+          "description": "The organization slug, from `find_organizations`. In `org/project` notation, the part before the slash."
+        },
+        "regionUrl": {
+          "default": null,
+          "anyOf": [
+            {
+              "type": "string",
+              "description": "The organization's region URL from `find_organizations`, e.g. `https://us.sentry.io`. Omit for self-hosted Sentry."
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "issueId": {
+          "type": "string",
+          "description": "The issue short ID, e.g. `PROJECT-1Z43`."
+        },
+        "issueUrl": {
+          "type": "string",
+          "format": "uri",
+          "description": "The issue URL, e.g. https://my-org.sentry.io/issues/PROJECT-1Z43"
+        },
+        "tagKey": {
+          "type": "string",
+          "pattern": "^[a-zA-Z0-9][a-zA-Z0-9._-]*$",
+          "description": "Case-sensitive tag key from the issue's tags, e.g. `environment` or `release`."
+        },
+        "fresh": {
+          "description": "Bypass cached reads.",
+          "type": "boolean"
+        }
+      },
+      "required": ["tagKey"]
+    },
+    "annotations": {
+      "readOnlyHint": true,
+      "destructiveHint": false,
+      "openWorldHint": true
+    }
+  },
+  {
+    "name": "get_issue_user_reports",
+    "title": "Get Issue User Reports",
+    "description": "Get the legacy User Reports and crash-report feedback attached to a Sentry issue: what users said happened. For User Feedback widget submissions, use search_issues.",
+    "inputSchema": {
+      "type": "object",
+      "properties": {
+        "organizationSlug": {
+          "type": "string",
+          "description": "The organization slug, from `find_organizations`. In `org/project` notation, the part before the slash."
+        },
+        "regionUrl": {
+          "default": null,
+          "anyOf": [
+            {
+              "type": "string",
+              "description": "The organization's region URL from `find_organizations`, e.g. `https://us.sentry.io`. Omit for self-hosted Sentry."
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "issueId": {
+          "type": "string",
+          "description": "The issue short ID, e.g. `PROJECT-1Z43`."
+        },
+        "issueUrl": {
+          "type": "string",
+          "format": "uri",
+          "description": "The issue URL, e.g. https://my-org.sentry.io/issues/PROJECT-1Z43"
+        },
+        "cursor": {
+          "default": null,
+          "anyOf": [
+            {
+              "type": "string",
+              "description": "Cursor from the previous page of this issue."
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "limit": {
+          "default": 25,
+          "type": "integer",
+          "exclusiveMinimum": 0,
+          "maximum": 100,
+          "description": "Maximum user reports to return."
+        },
+        "fresh": {
+          "description": "Bypass cached reads.",
+          "type": "boolean"
+        }
+      }
+    },
+    "annotations": {
+      "readOnlyHint": true,
+      "destructiveHint": false,
+      "openWorldHint": true
+    }
+  },
+  {
+    "name": "get_latest_base_snapshot",
+    "title": "Get Latest Base Snapshot",
+    "description": "Get an app's latest UI screenshots (baseline or golden images) from preprod snapshots, such as the current screens, dark mode variants, or the baseline behind a visual regression. Returns each image's file name, display name, and description, grouped. For a snapshot comparison by ID, use get_snapshot.",
+    "inputSchema": {
+      "type": "object",
+      "properties": {
+        "organizationSlug": {
+          "type": "string",
+          "description": "The organization slug, from `find_organizations`. In `org/project` notation, the part before the slash."
+        },
+        "appId": {
+          "type": "string",
+          "description": "App identifier, such as `sentry-frontend` or `com.emergetools.hackernews`."
+        },
+        "branch": {
+          "default": null,
+          "anyOf": [
+            {
+              "type": "string",
+              "description": "Git branch. Omit for the app's default branch."
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "project": {
+          "default": null,
+          "anyOf": [
+            {
+              "type": "string",
+              "description": "Project slug or numeric ID."
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "regionUrl": {
+          "default": null,
+          "anyOf": [
+            {
+              "type": "string",
+              "description": "The organization's region URL from `find_organizations`, e.g. `https://us.sentry.io`. Omit for self-hosted Sentry."
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "fresh": {
+          "description": "Bypass cached reads.",
+          "type": "boolean"
+        }
+      },
+      "required": ["organizationSlug", "appId"]
+    },
+    "annotations": {
+      "readOnlyHint": true,
+      "destructiveHint": false,
+      "openWorldHint": true
+    }
+  },
+  {
+    "name": "get_metric_monitor_details",
+    "title": "Get Metric Monitor Details",
+    "description": "Get a Sentry Metric Monitor: its query, dataset, detection mode, thresholds, resolution conditions, and connected Alerts.\nCondition results: 75 critical, 50 warning, 0 resolved. Percent thresholds are absolute: 110 means 10% higher. Windows are in seconds.\nConnected Alerts: get_alert_rule. Cron jobs: find_monitors. URL checks: find_uptime_monitors.",
+    "inputSchema": {
+      "type": "object",
+      "properties": {
+        "organizationSlug": {
+          "type": "string",
+          "description": "The organization slug, from `find_organizations`. In `org/project` notation, the part before the slash."
+        },
+        "regionUrl": {
+          "default": null,
+          "anyOf": [
+            {
+              "type": "string",
+              "description": "The organization's region URL from `find_organizations`, e.g. `https://us.sentry.io`. Omit for self-hosted Sentry."
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "projectSlug": {
+          "type": "string",
+          "description": "The project slug. In `org/project` notation, the part after the slash."
+        },
+        "monitorId": {
+          "type": "string",
+          "pattern": "^\\d+$",
+          "description": "Metric Monitor ID from find_metric_monitors, not a legacy metric alert ID."
+        },
+        "fresh": {
+          "description": "Bypass cached reads.",
+          "type": "boolean"
+        }
+      },
+      "required": ["organizationSlug", "monitorId"]
+    },
+    "annotations": {
+      "readOnlyHint": true,
+      "destructiveHint": false,
+      "openWorldHint": true
+    }
+  },
+  {
+    "name": "get_monitor_details",
+    "title": "Get Cron Monitor Details",
+    "description": "Get a Sentry cron monitor (scheduled job): schedule, status, owner, environments, recent check-ins (missed, failed, timeout, OK), and check-in stats.\nUptime URL checks: find_uptime_monitors. Metric thresholds: find_metric_monitors.\nIssues for a monitor: search_issues with monitor.slug:<slug>.",
+    "inputSchema": {
+      "type": "object",
+      "properties": {
+        "organizationSlug": {
+          "type": "string",
+          "description": "The organization slug, from `find_organizations`. In `org/project` notation, the part before the slash."
+        },
+        "regionUrl": {
+          "default": null,
+          "anyOf": [
+            {
+              "type": "string",
+              "description": "The organization's region URL from `find_organizations`, e.g. `https://us.sentry.io`. Omit for self-hosted Sentry."
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "projectSlugOrId": {
+          "default": null,
+          "description": "Project slug or numeric ID, to pick between monitors that share a slug.",
+          "type": ["string", "null"]
+        },
+        "monitorSlug": {
+          "type": "string",
+          "minLength": 1,
+          "description": "Monitor slug or GUID."
+        },
+        "environment": {
+          "default": null,
+          "anyOf": [
+            {
+              "type": "string",
+              "description": "Environment to filter environments, check-ins, and stats by."
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "period": {
+          "default": null,
+          "anyOf": [
+            {
+              "type": "string",
+              "pattern": "^\\d+[mhdw]$",
+              "description": "Relative time range, such as 24h or 7d. Defaults to 24h without start and end."
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "start": {
+          "default": null,
+          "anyOf": [
+            {
+              "type": "string",
+              "format": "date-time",
+              "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d:[0-5]\\d(?:\\.\\d+)?(?:Z))$",
+              "description": "Absolute start time. Requires end; not with period."
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "end": {
+          "default": null,
+          "anyOf": [
+            {
+              "type": "string",
+              "format": "date-time",
+              "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d:[0-5]\\d(?:\\.\\d+)?(?:Z))$",
+              "description": "Absolute end time. Requires start; not with period."
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "checkInLimit": {
+          "default": 10,
+          "type": "integer",
+          "exclusiveMinimum": 0,
+          "maximum": 50,
+          "description": "Maximum recent check-ins to include."
+        },
+        "includeStats": {
+          "default": true,
+          "type": "boolean",
+          "description": "Include aggregate check-in stats for the selected time range."
+        },
+        "rollupSeconds": {
+          "default": null,
+          "anyOf": [
+            {
+              "type": "integer",
+              "exclusiveMinimum": 0,
+              "maximum": 9007199254740991,
+              "description": "Stats bucket size in seconds. Omit to let Sentry choose."
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "fresh": {
+          "description": "Bypass cached reads.",
+          "type": "boolean"
+        }
+      },
+      "required": ["organizationSlug", "monitorSlug"]
+    },
+    "annotations": {
+      "readOnlyHint": true,
+      "destructiveHint": false,
+      "openWorldHint": true
+    }
+  },
+  {
+    "name": "get_profile",
+    "title": "Get Transaction Profile",
+    "description": "Analyze aggregated CPU profiles (flamegraph) for one Sentry transaction: hot paths, per-function p75/p95/p99, user versus library code, and regressions against a baseline period. For one profile by ID or URL, use get_profile_details.",
+    "inputSchema": {
+      "type": "object",
+      "properties": {
+        "profileUrl": {
+          "description": "Sentry profile URL; the organization and project come from it. transactionName is still required.",
+          "type": "string",
+          "format": "uri"
+        },
+        "organizationSlug": {
+          "type": "string",
+          "description": "The organization slug, from `find_organizations`. In `org/project` notation, the part before the slash."
+        },
+        "regionUrl": {
+          "default": null,
+          "anyOf": [
+            {
+              "type": "string",
+              "description": "The organization's region URL from `find_organizations`, e.g. `https://us.sentry.io`. Omit for self-hosted Sentry."
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "projectSlugOrId": {
+          "description": "Project slug or numeric ID; required unless profileUrl has it.",
+          "type": ["string", "number"]
+        },
+        "transactionName": {
+          "description": "Exact, case-sensitive transaction name, such as /api/users or POST /graphql. Required; find names with search_traces.",
+          "type": "string"
+        },
+        "period": {
+          "default": "7d",
+          "type": "string",
+          "pattern": "^\\d+[mhdw]$",
+          "description": "Relative time window, e.g. `30m`, `24h`, `7d`, `90d`."
+        },
+        "compareAgainstPeriod": {
+          "description": "Baseline time window to compare against, for regression detection.",
+          "type": "string",
+          "pattern": "^\\d+[mhdw]$"
+        },
+        "focusOnUserCode": {
+          "default": true,
+          "description": "Show only application code; false includes library code.",
+          "type": "boolean"
+        },
+        "maxHotPaths": {
+          "default": 10,
+          "description": "Number of hot paths to show.",
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 20
+        },
+        "fresh": {
+          "description": "Bypass cached reads.",
+          "type": "boolean"
+        }
+      }
+    },
+    "annotations": {
+      "readOnlyHint": true,
+      "destructiveHint": false,
+      "openWorldHint": true
+    }
+  },
+  {
+    "name": "get_profile_details",
+    "title": "Get Profile Details",
+    "description": "Inspect one Sentry profile by profile ID, profiler ID, or URL: transaction, trace, release, and runtime details, sample and thread structure, and top frames. Handles transaction and continuous profiles. For aggregated hot paths across a transaction, use get_profile.",
+    "inputSchema": {
+      "type": "object",
+      "properties": {
+        "profileUrl": {
+          "description": "Sentry transaction or continuous profile URL; the organization, project, and profile IDs come from it.",
+          "type": "string",
+          "format": "uri"
+        },
+        "organizationSlug": {
+          "type": "string",
+          "description": "The organization slug, from `find_organizations`. In `org/project` notation, the part before the slash."
+        },
+        "regionUrl": {
+          "default": null,
+          "anyOf": [
+            {
+              "type": "string",
+              "description": "The organization's region URL from `find_organizations`, e.g. `https://us.sentry.io`. Omit for self-hosted Sentry."
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "projectSlugOrId": {
+          "description": "Project slug or numeric ID; required without profileUrl.",
+          "type": ["string", "number"]
+        },
+        "profileId": {
+          "description": "Transaction profile ID. Do not combine with profilerId.",
+          "type": "string"
+        },
+        "profilerId": {
+          "description": "Continuous profiler session ID; requires start and end.",
+          "type": "string"
+        },
+        "start": {
+          "description": "Continuous profile window start, ISO 8601 such as 2024-01-01T00:00:00Z; only with profilerId.",
+          "type": "string"
+        },
+        "end": {
+          "description": "Continuous profile window end, ISO 8601; only with profilerId.",
+          "type": "string"
+        },
+        "focusOnUserCode": {
+          "default": true,
+          "description": "Show only application frames in the hotspot table; false includes library frames.",
+          "type": "boolean"
+        },
+        "fresh": {
+          "description": "Bypass cached reads.",
+          "type": "boolean"
+        }
+      }
+    },
+    "annotations": {
+      "readOnlyHint": true,
+      "destructiveHint": false,
+      "openWorldHint": true
+    }
+  },
+  {
+    "name": "get_release_details",
+    "title": "Get Release Details",
+    "description": "Get one Sentry release by exact version: its projects, deploys, environments, recent commits, and optionally release health (adoption stages and session bounds). To find issues introduced in a release, use search_issues with `release:<version>`.",
+    "inputSchema": {
+      "type": "object",
+      "properties": {
+        "organizationSlug": {
+          "type": "string",
+          "description": "The organization slug, from `find_organizations`. In `org/project` notation, the part before the slash."
+        },
+        "regionUrl": {
+          "default": null,
+          "anyOf": [
+            {
+              "type": "string",
+              "description": "The organization's region URL from `find_organizations`, e.g. `https://us.sentry.io`. Omit for self-hosted Sentry."
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "releaseVersion": {
+          "type": "string",
+          "minLength": 1,
+          "description": "Exact release version."
+        },
+        "projectSlugOrId": {
+          "default": null,
+          "anyOf": [
+            {
+              "type": "string",
+              "description": "Project slug or numeric ID. Scopes details, deploys, and commits to one project."
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "includeHealth": {
+          "default": false,
+          "type": "boolean",
+          "description": "Include release health for one project. Requires projectSlugOrId unless the session is limited to a project."
+        },
+        "includeDeploys": {
+          "default": true,
+          "type": "boolean",
+          "description": "Include recent deploys."
+        },
+        "includeCommits": {
+          "default": true,
+          "type": "boolean",
+          "description": "Include recent commits."
+        },
+        "limit": {
+          "default": 10,
+          "type": "integer",
+          "exclusiveMinimum": 0,
+          "maximum": 50,
+          "description": "Maximum deploys and commits to return, each."
+        },
+        "fresh": {
+          "description": "Bypass cached reads.",
+          "type": "boolean"
+        }
+      },
+      "required": ["organizationSlug", "releaseVersion"]
+    },
+    "annotations": {
+      "readOnlyHint": true,
+      "destructiveHint": false,
+      "openWorldHint": true
+    }
+  },
+  {
+    "name": "get_replay_details",
+    "title": "Get Replay Details",
+    "description": "Get a Sentry session replay's summary and a timeline of what the user did: page loads and navigations, clicks (including dead and rage clicks), inputs and key presses, console warnings and errors, failed requests, and feedback.",
+    "inputSchema": {
+      "type": "object",
+      "properties": {
+        "replayUrl": {
+          "type": "string",
+          "format": "uri",
+          "description": "The replay URL."
+        },
+        "organizationSlug": {
+          "type": "string",
+          "description": "The organization slug, from `find_organizations`. In `org/project` notation, the part before the slash."
+        },
+        "replayId": {
+          "type": "string",
+          "description": "The replay ID, e.g. `7e07485f-12f9-416b-8b14-26260799b51f`."
+        },
+        "regionUrl": {
+          "anyOf": [
+            {
+              "type": "string",
+              "description": "The organization's region URL from `find_organizations`, e.g. `https://us.sentry.io`. Omit for self-hosted Sentry."
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "categories": {
+          "description": "Timeline categories to show. Omit for notable events only; naming a category shows all its events, such as every request for network or every log level for console.",
+          "anyOf": [
+            {
+              "minItems": 1,
+              "type": "array",
+              "items": {
+                "type": "string",
+                "enum": ["navigation", "click", "input", "console", "network", "other"]
+              }
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "startOffsetSeconds": {
+          "description": "Window start, in seconds from the replay start; negative counts back from the end, so -10 is the last 10 seconds.",
+          "type": ["number", "null"]
+        },
+        "endOffsetSeconds": {
+          "description": "Window end, in seconds from the replay start; negative counts back from the end.",
+          "type": ["number", "null"]
+        },
+        "limit": {
+          "description": "Maximum timeline events to return; defaults to 50.",
+          "anyOf": [
+            {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 200
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "skip": {
+          "description": "Matching timeline events to skip; pass timeline.nextSkip from the previous response to see more.",
+          "anyOf": [
+            {
+              "type": "integer",
+              "minimum": 0,
+              "maximum": 9007199254740991
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "fresh": {
+          "description": "Bypass cached reads.",
+          "type": "boolean"
+        }
+      }
+    },
+    "annotations": {
+      "readOnlyHint": true,
+      "destructiveHint": false,
+      "openWorldHint": true
+    }
+  },
+  {
+    "name": "get_sentry_resource",
+    "title": "Get Sentry Resource",
+    "description": "Fetch a Sentry resource by URL or ID: issues, events, traces, spans, agent conversations, replays, monitors, metric alerts, dashboards, preprod snapshots, and snapshot images. Start here for any Sentry URL or issue, event, trace, or replay ID; the type is detected from the URL. To list agent conversations, use search_agent_conversations.",
+    "inputSchema": {
+      "type": "object",
+      "properties": {
+        "url": {
+          "description": "A Sentry URL. The resource type is detected from it.",
+          "type": "string",
+          "format": "uri"
+        },
+        "resourceType": {
+          "description": "Required without a URL. With a URL, `trace` widens a span URL to its whole trace. `ai_conversation` is a gen_ai.conversation.id; `snapshot` is a preprod snapshot.",
+          "type": "string",
+          "enum": [
+            "issue",
+            "event",
+            "trace",
+            "ai_conversation",
+            "replay",
+            "monitor",
+            "snapshot",
+            "dashboard"
+          ]
+        },
+        "resourceId": {
+          "description": "The ID for the resource type: issue short ID (e.g. `PROJECT-123`), event, trace, replay, or conversation ID, monitor slug, dashboard ID or exact title, or snapshot artifact ID. Required without a URL.",
+          "type": "string"
+        },
+        "organizationSlug": {
+          "type": "string",
+          "description": "The organization slug, from `find_organizations`. In `org/project` notation, the part before the slash."
+        },
+        "packageNames": {
+          "description": "Exact, case-sensitive package names recorded on the event. Returns their versions. Only for an event URL or the `event` type.",
+          "minItems": 1,
+          "maxItems": 10,
+          "type": "array",
+          "items": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 256
+          }
+        },
+        "issueUrl": {
+          "type": "string"
+        },
+        "resourceUrl": {
+          "type": "string"
+        },
+        "issueId": {
+          "type": "string"
+        },
+        "id": {
+          "type": "string"
+        },
+        "fresh": {
+          "description": "Bypass cached reads.",
+          "type": "boolean"
+        }
+      }
+    },
+    "annotations": {
+      "readOnlyHint": true,
+      "destructiveHint": false,
+      "openWorldHint": true
+    }
+  },
+  {
+    "name": "get_snapshot",
+    "title": "Get Snapshot",
+    "description": "Get a preprod snapshot comparison by ID, such as a failed visual regression or screenshot test from CI: its metadata, image counts, and changed images with the percent of pixels that differ. For an app's latest baseline screenshots, use get_latest_base_snapshot. For a snapshot URL, use get_sentry_resource.",
+    "inputSchema": {
+      "type": "object",
+      "properties": {
+        "organizationSlug": {
+          "type": "string",
+          "description": "The organization slug, from `find_organizations`. In `org/project` notation, the part before the slash."
+        },
+        "snapshotId": {
+          "type": "string",
+          "minLength": 1,
+          "description": "Numeric snapshot artifact ID."
+        },
+        "showUnmodified": {
+          "default": false,
+          "type": "boolean",
+          "description": "Also list unchanged and skipped images. Can make large snapshots much bigger."
+        },
+        "regionUrl": {
+          "default": null,
+          "anyOf": [
+            {
+              "type": "string",
+              "description": "The organization's region URL from `find_organizations`, e.g. `https://us.sentry.io`. Omit for self-hosted Sentry."
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "fresh": {
+          "description": "Bypass cached reads.",
+          "type": "boolean"
+        }
+      },
+      "required": ["organizationSlug", "snapshotId"]
+    },
+    "annotations": {
+      "readOnlyHint": true,
+      "destructiveHint": false,
+      "openWorldHint": true
+    }
+  },
+  {
+    "name": "get_snapshot_image",
+    "title": "Get Snapshot Image",
+    "description": "Get one image from a preprod snapshot: the current, previous, or diff screenshot, with its metadata. Returns a preview image unless full resolution is requested. Get image file names from get_snapshot or get_latest_base_snapshot.",
+    "inputSchema": {
+      "type": "object",
+      "properties": {
+        "organizationSlug": {
+          "type": "string",
+          "description": "The organization slug, from `find_organizations`. In `org/project` notation, the part before the slash."
+        },
+        "snapshotId": {
+          "type": "string",
+          "minLength": 1,
+          "description": "Numeric snapshot artifact ID."
+        },
+        "imageIdentifier": {
+          "type": "string",
+          "minLength": 1,
+          "description": "Image file name exactly as get_snapshot lists it, including any slashes."
+        },
+        "imageResolution": {
+          "default": "preview",
+          "type": "string",
+          "enum": ["preview", "full"],
+          "description": "`full` returns the original bytes, which can make the response much larger."
+        },
+        "regionUrl": {
+          "default": null,
+          "anyOf": [
+            {
+              "type": "string",
+              "description": "The organization's region URL from `find_organizations`, e.g. `https://us.sentry.io`. Omit for self-hosted Sentry."
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "fresh": {
+          "description": "Bypass cached reads.",
+          "type": "boolean"
+        }
+      },
+      "required": ["organizationSlug", "snapshotId", "imageIdentifier"]
+    },
+    "annotations": {
+      "readOnlyHint": true,
+      "destructiveHint": false,
+      "openWorldHint": true
+    }
+  },
+  {
+    "name": "get_span_details",
+    "title": "Get Span Details",
+    "description": "Get one span in a Sentry trace by trace ID and span ID: its attributes, timing, errors, and child spans. For a whole-trace overview, use get_trace_details.",
+    "inputSchema": {
+      "type": "object",
+      "properties": {
+        "organizationSlug": {
+          "type": "string",
+          "description": "The organization slug, from `find_organizations`. In `org/project` notation, the part before the slash."
+        },
+        "regionUrl": {
+          "default": null,
+          "anyOf": [
+            {
+              "type": "string",
+              "description": "The organization's region URL from `find_organizations`, e.g. `https://us.sentry.io`. Omit for self-hosted Sentry."
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "traceId": {
+          "type": "string",
+          "pattern": "^[0-9a-fA-F]{32}$",
+          "description": "The 32-character hex trace ID."
+        },
+        "spanId": {
+          "type": "string",
+          "minLength": 1,
+          "description": "A span ID in the trace."
+        },
+        "fresh": {
+          "description": "Bypass cached reads.",
+          "type": "boolean"
+        }
+      },
+      "required": ["organizationSlug", "traceId", "spanId"]
+    },
+    "annotations": {
+      "readOnlyHint": true,
+      "destructiveHint": false,
+      "openWorldHint": true
+    }
+  },
+  {
+    "name": "get_trace_details",
+    "title": "Get Trace Details",
+    "description": "Get an overview of one Sentry trace by trace ID: trace statistics, a span breakdown, and a link to the trace in Sentry. Shows a condensed subset of spans, not every span; to list all spans in a trace, use search_traces.",
+    "inputSchema": {
+      "type": "object",
+      "properties": {
+        "organizationSlug": {
+          "type": "string",
+          "description": "The organization slug, from `find_organizations`. In `org/project` notation, the part before the slash."
+        },
+        "regionUrl": {
+          "default": null,
+          "anyOf": [
+            {
+              "type": "string",
+              "description": "The organization's region URL from `find_organizations`, e.g. `https://us.sentry.io`. Omit for self-hosted Sentry."
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "traceId": {
+          "type": "string",
+          "pattern": "^[0-9a-fA-F]{32}$",
+          "description": "The 32-character hex trace ID."
+        },
+        "spanId": {
+          "description": "A span ID in the trace to focus on; omit for the trace overview.",
+          "type": "string",
+          "minLength": 1
+        },
+        "fresh": {
+          "description": "Bypass cached reads.",
+          "type": "boolean"
+        }
+      },
+      "required": ["organizationSlug", "traceId"]
+    },
+    "annotations": {
+      "readOnlyHint": true,
+      "destructiveHint": false,
+      "openWorldHint": true
+    }
+  },
+  {
+    "name": "get_uptime_monitor_details",
+    "title": "Get Uptime Monitor Details",
+    "description": "Get a Sentry uptime monitor: its URL, interval, thresholds, status, and recent HTTP check results (status code, duration, failures). Request bodies are never returned; sensitive headers are redacted.\nScheduled jobs (cron): find_monitors. Metric thresholds: find_metric_monitors.\nRelated issues: search_issues with uptime_rule:<id>.",
+    "inputSchema": {
+      "type": "object",
+      "properties": {
+        "organizationSlug": {
+          "type": "string",
+          "description": "The organization slug, from `find_organizations`. In `org/project` notation, the part before the slash."
+        },
+        "regionUrl": {
+          "default": null,
+          "anyOf": [
+            {
+              "type": "string",
+              "description": "The organization's region URL from `find_organizations`, e.g. `https://us.sentry.io`. Omit for self-hosted Sentry."
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "projectSlug": {
+          "type": "string",
+          "description": "The project slug. In `org/project` notation, the part after the slash."
+        },
+        "uptimeMonitorId": {
+          "type": "string",
+          "minLength": 1,
+          "description": "Uptime monitor ID from find_uptime_monitors."
+        },
+        "period": {
+          "type": "string",
+          "pattern": "^\\d+[mhdw]$",
+          "description": "Relative time range for recent checks, such as 24h or 7d. Defaults to 24h without start and end."
+        },
+        "start": {
+          "type": "string",
+          "format": "date-time",
+          "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d:[0-5]\\d(?:\\.\\d+)?(?:Z))$",
+          "description": "Absolute start time. Requires end; not with period."
+        },
+        "end": {
+          "type": "string",
+          "format": "date-time",
+          "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d:[0-5]\\d(?:\\.\\d+)?(?:Z))$",
+          "description": "Absolute end time. Requires start; not with period."
+        },
+        "checkLimit": {
+          "default": 10,
+          "type": "integer",
+          "exclusiveMinimum": 0,
+          "maximum": 50,
+          "description": "Maximum recent checks to include."
+        },
+        "fresh": {
+          "description": "Bypass cached reads.",
+          "type": "boolean"
+        }
+      },
+      "required": ["organizationSlug", "projectSlug", "uptimeMonitorId"]
+    },
+    "annotations": {
+      "readOnlyHint": true,
+      "destructiveHint": false,
+      "openWorldHint": true
+    }
+  },
+  {
+    "name": "link_issue",
+    "title": "Link Issue",
+    "description": "Link an existing external ticket or GitHub pull request to a Sentry issue by URL: Jira, GitHub, GitLab, Bitbucket, Azure DevOps, or an installed Sentry App such as Linear. Adds a reference only; it does not create the ticket or change the issue status (use update_issue).",
+    "inputSchema": {
+      "type": "object",
+      "properties": {
+        "organizationSlug": {
+          "type": "string",
+          "description": "The organization slug, from `find_organizations`. In `org/project` notation, the part before the slash."
+        },
+        "regionUrl": {
+          "default": null,
+          "anyOf": [
+            {
+              "type": "string",
+              "description": "The organization's region URL from `find_organizations`, e.g. `https://us.sentry.io`. Omit for self-hosted Sentry."
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "issueId": {
+          "type": "string",
+          "description": "The issue short ID, e.g. `PROJECT-1Z43`."
+        },
+        "issueUrl": {
+          "type": "string",
+          "format": "uri",
+          "description": "The issue URL, e.g. https://my-org.sentry.io/issues/PROJECT-1Z43"
+        },
+        "externalIssueUrl": {
+          "type": "string",
+          "format": "uri",
+          "description": "URL of the existing external ticket or GitHub pull request. For Sentry Apps, the canonical issue URL from the provider."
+        },
+        "integrationId": {
+          "description": "Native integration ID, only needed when multiple installations match the URL.",
+          "type": "string",
+          "pattern": "^\\d+$"
+        },
+        "appSlug": {
+          "description": "Installed Sentry App slug. Inferred for Linear and Shortcut URLs; specify it for other Apps.",
+          "type": "string",
+          "minLength": 1
+        },
+        "fields": {
+          "description": "Extra form values by field name, for a Sentry App that requires them.",
+          "type": "object",
+          "propertyNames": {
+            "type": "string"
+          },
+          "additionalProperties": {
+            "type": ["string", "number"]
+          }
+        }
+      },
+      "required": ["externalIssueUrl"]
+    },
+    "annotations": {
+      "readOnlyHint": false,
+      "destructiveHint": false,
+      "idempotentHint": true,
+      "openWorldHint": true
+    }
+  },
+  {
+    "name": "render_issue_chart",
+    "title": "Render Issue Chart",
+    "description": "Chart a Sentry issue's events and affected users over time, like the graph on the issue page. Returns every bucket of both series, and MCP Apps hosts show it as an interactive chart.",
+    "inputSchema": {
+      "type": "object",
+      "properties": {
+        "organizationSlug": {
+          "type": "string",
+          "description": "The organization slug, from `find_organizations`. In `org/project` notation, the part before the slash."
+        },
+        "regionUrl": {
+          "default": null,
+          "anyOf": [
+            {
+              "type": "string",
+              "description": "The organization's region URL from `find_organizations`, e.g. `https://us.sentry.io`. Omit for self-hosted Sentry."
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "issueId": {
+          "type": "string",
+          "description": "The issue short ID, e.g. `PROJECT-1Z43`."
+        },
+        "issueUrl": {
+          "type": "string",
+          "format": "uri",
+          "description": "The issue URL, e.g. https://my-org.sentry.io/issues/PROJECT-1Z43"
+        },
+        "period": {
+          "default": null,
+          "description": "Relative time window, e.g. `24h`, `7d`; defaults to 14d.",
+          "anyOf": [
+            {
+              "type": "string",
+              "pattern": "^\\d+[mhdw]$",
+              "description": "Relative time window, e.g. `30m`, `24h`, `7d`, `90d`."
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "start": {
+          "default": null,
+          "description": "Absolute start, ISO 8601; requires end.",
+          "type": ["string", "null"]
+        },
+        "end": {
+          "default": null,
+          "description": "Absolute end, ISO 8601; requires start.",
+          "type": ["string", "null"]
+        },
+        "fresh": {
+          "description": "Bypass cached reads.",
+          "type": "boolean"
+        }
+      }
+    },
+    "annotations": {
+      "readOnlyHint": true,
+      "destructiveHint": false,
+      "openWorldHint": true
+    }
+  },
+  {
+    "name": "render_sentry_chart",
+    "title": "Render Sentry Chart",
+    "description": "Chart a count, rate, duration, or other aggregate of Sentry errors, logs, spans, metrics, or profiles over time, optionally split by one attribute into the 5 values with the most events. Returns every bucket of each series, with each group's event count when split, and MCP Apps hosts show it as an interactive chart. To find individual events, use the dataset search tools.",
+    "inputSchema": {
+      "type": "object",
+      "properties": {
+        "organizationSlug": {
+          "type": "string",
+          "description": "The organization slug, from `find_organizations`. In `org/project` notation, the part before the slash."
+        },
+        "regionUrl": {
+          "default": null,
+          "anyOf": [
+            {
+              "type": "string",
+              "description": "The organization's region URL from `find_organizations`, e.g. `https://us.sentry.io`. Omit for self-hosted Sentry."
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "dataset": {
+          "type": "string",
+          "enum": ["spans", "errors", "logs", "metrics", "profiles"],
+          "description": "Data to chart."
+        },
+        "query": {
+          "default": "",
+          "description": "Sentry search syntax filter, such as `level:error environment:production`. Empty matches everything.",
+          "type": "string"
+        },
+        "yAxis": {
+          "type": "string",
+          "minLength": 1,
+          "description": "Aggregate to plot, such as `count()`, `p95(span.duration)`, or `count_unique(user)`."
+        },
+        "groupBy": {
+          "default": null,
+          "description": "Attribute to split by, such as `release` or `transaction`; plots its 5 values with the most events. Not supported for profiles.",
+          "anyOf": [
+            {
+              "type": "string",
+              "minLength": 1
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "projectSlug": {
+          "default": null,
+          "anyOf": [
+            {
+              "type": "string",
+              "description": "The project slug. In `org/project` notation, the part after the slash."
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "period": {
+          "default": null,
+          "description": "Relative time window, e.g. `1h`, `24h`, `7d`; defaults to 24h. Do not combine with start and end.",
+          "anyOf": [
+            {
+              "type": "string",
+              "pattern": "^\\d+[mhdw]$",
+              "description": "Relative time window, e.g. `30m`, `24h`, `7d`, `90d`."
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "start": {
+          "default": null,
+          "description": "Absolute start, ISO 8601; requires end.",
+          "type": ["string", "null"]
+        },
+        "end": {
+          "default": null,
+          "description": "Absolute end, ISO 8601; requires start.",
+          "type": ["string", "null"]
+        },
+        "interval": {
+          "default": null,
+          "description": "Bucket size such as 5m or 1h. Omit to let Sentry pick.",
+          "anyOf": [
+            {
+              "type": "string",
+              "pattern": "^\\d+[mhd]$"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "title": {
+          "default": null,
+          "description": "Chart heading, such as `Checkout errors`; defaults to the aggregate. Leave out the time range: the chart shows it, and the user can change it.",
+          "anyOf": [
+            {
+              "type": "string",
+              "minLength": 1
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "fresh": {
+          "description": "Bypass cached reads.",
+          "type": "boolean"
+        }
+      },
+      "required": ["organizationSlug", "dataset", "yAxis"]
+    },
+    "annotations": {
+      "readOnlyHint": true,
+      "destructiveHint": false,
+      "openWorldHint": true
+    }
+  },
+  {
+    "name": "search_agent_conversations",
+    "title": "Search Agent Conversations",
+    "description": "Search Sentry agent conversations (formerly AI conversations): one summary row per LLM agent conversation with title, cost, tokens, call counts, and previews. For one conversation's transcript, use get_agent_conversation_details.",
+    "inputSchema": {
+      "type": "object",
+      "properties": {
+        "organizationSlug": {
+          "type": "string",
+          "description": "The organization slug, from `find_organizations`. In `org/project` notation, the part before the slash."
+        },
+        "query": {
+          "description": "Search filter for conversations.",
+          "type": "string"
+        },
+        "project": {
+          "description": "Project slug or numeric project ID, or an array of projects.",
+          "anyOf": [
+            {
+              "type": "string",
+              "description": "The project slug. In `org/project` notation, the part after the slash."
+            },
+            {
+              "minItems": 1,
+              "type": "array",
+              "items": {
+                "type": "string",
+                "description": "The project slug. In `org/project` notation, the part after the slash."
+              }
+            }
+          ]
+        },
+        "environment": {
+          "description": "Environment name, or an array of environments.",
+          "anyOf": [
+            {
+              "type": "string",
+              "minLength": 1
+            },
+            {
+              "minItems": 1,
+              "type": "array",
+              "items": {
+                "type": "string",
+                "minLength": 1
+              }
+            }
+          ]
+        },
+        "period": {
+          "default": "30d",
+          "type": "string",
+          "pattern": "^\\d+[mhdw]$",
+          "description": "Relative time window, e.g. `30m`, `24h`, `7d`, `90d`."
+        },
+        "start": {
+          "description": "Start of the search window; requires end and overrides period.",
+          "type": "string"
+        },
+        "end": {
+          "description": "End of the search window; requires start.",
+          "type": "string"
+        },
+        "cursor": {
+          "description": "Pagination cursor from a previous response.",
+          "type": "string"
+        },
+        "limit": {
+          "default": 10,
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 100
+        },
+        "regionUrl": {
+          "type": "string",
+          "description": "The organization's region URL from `find_organizations`, e.g. `https://us.sentry.io`. Omit for self-hosted Sentry."
+        },
+        "fresh": {
+          "description": "Bypass cached reads.",
+          "type": "boolean"
+        }
+      },
+      "required": ["organizationSlug"]
+    },
+    "annotations": {
+      "readOnlyHint": true,
+      "destructiveHint": false,
+      "openWorldHint": true
+    }
+  },
+  {
+    "name": "search_docs",
+    "title": "Search Sentry Docs",
+    "description": "Search Sentry documentation for SDK setup, framework integrations, instrumentation, and configuration such as sampling, data scrubbing, and source maps. Returns matching page paths and snippets only. Use the Sentry tool `get_doc` to read a full page.",
+    "inputSchema": {
+      "type": "object",
+      "properties": {
+        "query": {
+          "type": "string",
+          "minLength": 2,
+          "maxLength": 200,
+          "description": "Natural-language query. Name the SDK option or feature when you know it, such as `beforeSend` or `tracesSampleRate`."
+        },
+        "maxResults": {
+          "default": 3,
+          "description": "Maximum results to return.",
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 10
+        },
+        "guide": {
+          "type": "string",
+          "enum": [
+            "javascript",
+            "python",
+            "java",
+            "dotnet",
+            "go",
+            "php",
+            "ruby",
+            "android",
+            "apple",
+            "unity",
+            "unreal",
+            "rust",
+            "elixir",
+            "kotlin",
+            "native",
+            "dart",
+            "godot",
+            "nintendo-switch",
+            "playstation",
+            "powershell",
+            "react-native",
+            "xbox",
+            "javascript/nextjs",
+            "javascript/react",
+            "javascript/gatsby",
+            "javascript/remix",
+            "javascript/vue",
+            "javascript/angular",
+            "javascript/hono",
+            "javascript/svelte",
+            "javascript/express",
+            "javascript/fastify",
+            "javascript/astro",
+            "javascript/bun",
+            "javascript/capacitor",
+            "javascript/cloudflare",
+            "javascript/connect",
+            "javascript/cordova",
+            "javascript/deno",
+            "javascript/electron",
+            "javascript/ember",
+            "javascript/nuxt",
+            "javascript/solid",
+            "javascript/solidstart",
+            "javascript/sveltekit",
+            "javascript/tanstack-react",
+            "javascript/wasm",
+            "javascript/node",
+            "javascript/koa",
+            "javascript/nestjs",
+            "javascript/hapi",
+            "python/django",
+            "python/flask",
+            "python/fastapi",
+            "python/celery",
+            "python/tornado",
+            "python/pyramid",
+            "python/aiohttp",
+            "python/anthropic",
+            "python/airflow",
+            "python/aws-lambda",
+            "python/boto3",
+            "python/bottle",
+            "python/chalice",
+            "python/dramatiq",
+            "python/falcon",
+            "python/langchain",
+            "python/litestar",
+            "python/logging",
+            "python/loguru",
+            "python/openai",
+            "python/quart",
+            "python/ray",
+            "python/redis",
+            "python/rq",
+            "python/sanic",
+            "python/sqlalchemy",
+            "python/starlette",
+            "dart/flutter",
+            "dotnet/aspnetcore",
+            "dotnet/maui",
+            "dotnet/wpf",
+            "dotnet/winforms",
+            "dotnet/aspnet",
+            "dotnet/aws-lambda",
+            "dotnet/azure-functions",
+            "dotnet/blazor-webassembly",
+            "dotnet/entityframework",
+            "dotnet/google-cloud-functions",
+            "dotnet/extensions-logging",
+            "dotnet/log4net",
+            "dotnet/nlog",
+            "dotnet/serilog",
+            "dotnet/uwp",
+            "dotnet/xamarin",
+            "java/spring",
+            "java/spring-boot",
+            "java/android",
+            "java/jul",
+            "java/log4j2",
+            "java/logback",
+            "java/servlet",
+            "go/echo",
+            "go/fasthttp",
+            "go/fiber",
+            "go/gin",
+            "go/http",
+            "go/iris",
+            "go/logrus",
+            "go/negroni",
+            "go/slog",
+            "go/zerolog",
+            "php/laravel",
+            "php/symfony",
+            "ruby/delayed_job",
+            "ruby/rack",
+            "ruby/rails",
+            "ruby/resque",
+            "ruby/sidekiq",
+            "android/kotlin",
+            "apple/ios",
+            "apple/macos",
+            "apple/watchos",
+            "apple/tvos",
+            "apple/visionos",
+            "kotlin/multiplatform"
+          ],
+          "description": "Limit results to a platform (`python`) or platform/guide (`javascript/nextjs`)."
+        }
+      },
+      "required": ["query"]
+    },
+    "annotations": {
+      "readOnlyHint": true,
+      "destructiveHint": false,
+      "openWorldHint": true
+    }
+  },
+  {
+    "name": "search_errors",
+    "title": "Search Errors",
+    "description": "Search Sentry error events: exceptions, crashes, and stack traces, including top errors and trends over time. Returns individual events, counts, and aggregates; for grouped issue lists, use search_issues. For log lines, including error-level logs, use search_logs.",
+    "inputSchema": {
+      "type": "object",
+      "properties": {
+        "organizationSlug": {
+          "type": "string",
+          "description": "The organization slug, from `find_organizations`. In `org/project` notation, the part before the slash."
+        },
+        "query": {
+          "description": "What to find, in natural language or Sentry search syntax. Put environment, release, and other filters here.",
+          "type": "string"
+        },
+        "fields": {
+          "description": "Columns to return; omit unless you need exact columns. Include aggregates such as count() or avg() for statistics.",
+          "anyOf": [
+            {
+              "type": "array",
+              "items": {
+                "type": "string"
+              }
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "sort": {
+          "description": "Sort field, - prefix for descending, such as -count() for aggregates. Omit unless you need a specific order.",
+          "type": ["string", "null"]
+        },
+        "projectSlug": {
+          "default": null,
+          "anyOf": [
+            {
+              "type": "string",
+              "description": "The project slug. In `org/project` notation, the part after the slash."
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "period": {
+          "type": "string",
+          "pattern": "^\\d+[mhdw]$",
+          "description": "Relative time window, e.g. `30m`, `24h`, `7d`, `90d`."
+        },
+        "regionUrl": {
+          "default": null,
+          "anyOf": [
+            {
+              "type": "string",
+              "description": "The organization's region URL from `find_organizations`, e.g. `https://us.sentry.io`. Omit for self-hosted Sentry."
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "limit": {
+          "default": 10,
+          "description": "Maximum number of results to return.",
+          "type": "number",
+          "minimum": 1,
+          "maximum": 100
+        },
+        "includeExplanation": {
+          "default": false,
+          "description": "Explain how the query was translated or repaired.",
+          "type": "boolean"
+        },
+        "fresh": {
+          "description": "Bypass cached reads.",
+          "type": "boolean"
+        }
+      },
+      "required": ["organizationSlug"]
+    },
+    "annotations": {
+      "readOnlyHint": true,
+      "destructiveHint": false,
+      "openWorldHint": true
+    }
+  },
+  {
+    "name": "search_issue_events",
+    "title": "Search Issue Events",
+    "description": "Search and filter the individual events (occurrences) of one Sentry issue, newest first, by environment, release, user, trace, or time. Accepts natural language or Sentry event search syntax. Use search_issues to search across issues.",
+    "inputSchema": {
+      "type": "object",
+      "properties": {
+        "organizationSlug": {
+          "default": null,
+          "description": "The organization slug, from `find_organizations`. Not needed with an issue URL.",
+          "anyOf": [
+            {
+              "type": "string",
+              "description": "The organization slug, from `find_organizations`. In `org/project` notation, the part before the slash."
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "issueId": {
+          "description": "The issue short ID, e.g. `PROJECT-123`. Give this or issueUrl.",
+          "type": "string"
+        },
+        "issueUrl": {
+          "description": "The Sentry issue URL.",
+          "type": "string",
+          "format": "uri"
+        },
+        "query": {
+          "description": "Natural language or Sentry event search syntax, e.g. `environment:production release:1.0.0 user.email:alice@example.com trace:<id>`.",
+          "type": "string"
+        },
+        "sort": {
+          "description": "Sort for the Sentry link only, e.g. `-timestamp`; returned events are always newest first.",
+          "type": "string"
+        },
+        "period": {
+          "type": "string",
+          "pattern": "^\\d+[mhdw]$",
+          "description": "Relative time window, e.g. `30m`, `24h`, `7d`, `90d`."
+        },
+        "projectSlug": {
+          "default": null,
+          "description": "The project slug. Helps translate project-specific tags.",
+          "anyOf": [
+            {
+              "type": "string",
+              "description": "The project slug. In `org/project` notation, the part after the slash."
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "regionUrl": {
+          "default": null,
+          "anyOf": [
+            {
+              "type": "string",
+              "description": "The organization's region URL from `find_organizations`, e.g. `https://us.sentry.io`. Omit for self-hosted Sentry."
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "limit": {
+          "default": 50,
+          "description": "Maximum events to return.",
+          "type": "number",
+          "minimum": 1,
+          "maximum": 100
+        },
+        "includeExplanation": {
+          "default": false,
+          "description": "Return how the query was translated or repaired.",
+          "type": "boolean"
+        },
+        "fresh": {
+          "description": "Bypass cached reads.",
+          "type": "boolean"
+        }
+      }
+    },
+    "annotations": {
+      "readOnlyHint": true,
+      "destructiveHint": false,
+      "openWorldHint": true
+    }
+  },
+  {
+    "name": "search_issues",
+    "title": "Search Issues",
+    "description": "Search Sentry issues (grouped errors, crashes, and user feedback) and list them with status, occurrences, users impacted, assignee, and first and last seen. Accepts natural language or Sentry issue search syntax. For individual events, counts, or aggregates, use search_errors, search_logs, or search_traces.",
+    "inputSchema": {
+      "type": "object",
+      "properties": {
+        "organizationSlug": {
+          "type": "string",
+          "description": "The organization slug, from `find_organizations`. In `org/project` notation, the part before the slash."
+        },
+        "query": {
+          "default": "is:unresolved",
+          "description": "Natural language or Sentry issue search syntax, e.g. `is:unresolved level:error firstSeen:-24h assigned:me release:latest environment:production issue.priority:high issue.category:feedback userCount:>100`.",
+          "type": "string"
+        },
+        "sort": {
+          "default": "date",
+          "description": "date: last seen; freq: event count; new: first seen; user: user count; recommended: Sentry's priority ranking.",
+          "type": "string",
+          "enum": ["date", "freq", "new", "user", "recommended"]
+        },
+        "projectSlugOrId": {
+          "default": null,
+          "description": "The project slug or numeric ID.",
+          "type": ["string", "null"]
+        },
+        "regionUrl": {
+          "default": null,
+          "anyOf": [
+            {
+              "type": "string",
+              "description": "The organization's region URL from `find_organizations`, e.g. `https://us.sentry.io`. Omit for self-hosted Sentry."
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "limit": {
+          "default": 10,
+          "description": "Maximum issues to return.",
+          "type": "number",
+          "minimum": 1,
+          "maximum": 100
+        },
+        "period": {
+          "default": "30d",
+          "description": "Only issues with activity in this window.",
+          "type": "string",
+          "enum": ["1h", "24h", "7d", "14d", "30d", "90d"]
+        },
+        "includeExplanation": {
+          "default": false,
+          "description": "Return how the query was translated or repaired.",
+          "type": "boolean"
+        },
+        "fresh": {
+          "description": "Bypass cached reads.",
+          "type": "boolean"
+        }
+      },
+      "required": ["organizationSlug"]
+    },
+    "annotations": {
+      "readOnlyHint": true,
+      "destructiveHint": false,
+      "openWorldHint": true
+    }
+  },
+  {
+    "name": "search_logs",
+    "title": "Search Logs",
+    "description": "Search Sentry logs: application log lines at any severity, including trends over time. Returns individual events, counts, and aggregates; for grouped issue lists, use search_issues. For exceptions and crashes, use search_errors; for requests whose trace has a matching log, use search_traces.",
+    "inputSchema": {
+      "type": "object",
+      "properties": {
+        "organizationSlug": {
+          "type": "string",
+          "description": "The organization slug, from `find_organizations`. In `org/project` notation, the part before the slash."
+        },
+        "query": {
+          "description": "What to find, in natural language or Sentry search syntax. Put environment and release filters here. Regex filters are unquoted RE2: `message://timeout \\d+ms//`.",
+          "type": "string"
+        },
+        "fields": {
+          "description": "Columns to return; omit unless you need exact columns. Include aggregates such as count() or avg() for statistics.",
+          "anyOf": [
+            {
+              "type": "array",
+              "items": {
+                "type": "string"
+              }
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "sort": {
+          "description": "Sort field, - prefix for descending, such as -count() for aggregates. Omit unless you need a specific order.",
+          "type": ["string", "null"]
+        },
+        "projectSlug": {
+          "default": null,
+          "anyOf": [
+            {
+              "type": "string",
+              "description": "The project slug. In `org/project` notation, the part after the slash."
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "period": {
+          "type": "string",
+          "pattern": "^\\d+[mhdw]$",
+          "description": "Relative time window, e.g. `30m`, `24h`, `7d`, `90d`."
+        },
+        "regionUrl": {
+          "default": null,
+          "anyOf": [
+            {
+              "type": "string",
+              "description": "The organization's region URL from `find_organizations`, e.g. `https://us.sentry.io`. Omit for self-hosted Sentry."
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "limit": {
+          "default": 10,
+          "description": "Maximum number of results to return.",
+          "type": "number",
+          "minimum": 1,
+          "maximum": 100
+        },
+        "includeExplanation": {
+          "default": false,
+          "description": "Explain how the query was translated or repaired.",
+          "type": "boolean"
+        },
+        "fresh": {
+          "description": "Bypass cached reads.",
+          "type": "boolean"
+        }
+      },
+      "required": ["organizationSlug"]
+    },
+    "annotations": {
+      "readOnlyHint": true,
+      "destructiveHint": false,
+      "openWorldHint": true
+    }
+  },
+  {
+    "name": "search_metrics",
+    "title": "Search Metrics",
+    "description": "Search Sentry metrics: counters, gauges, and distributions, for values, percentiles, totals, and trends over time. Returns individual events, counts, and aggregates; for grouped issue lists, use search_issues. For latency recorded on spans, use search_traces.",
+    "inputSchema": {
+      "type": "object",
+      "properties": {
+        "organizationSlug": {
+          "type": "string",
+          "description": "The organization slug, from `find_organizations`. In `org/project` notation, the part before the slash."
+        },
+        "query": {
+          "description": "What to find, in natural language or Sentry search syntax. Put environment, release, and other filters here.",
+          "type": "string"
+        },
+        "fields": {
+          "description": "Columns to return; omit unless you need exact columns. Include aggregates such as count() or avg() for statistics.",
+          "anyOf": [
+            {
+              "type": "array",
+              "items": {
+                "type": "string"
+              }
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "sort": {
+          "description": "Sort field, - prefix for descending, such as -count() for aggregates. Omit unless you need a specific order.",
+          "type": ["string", "null"]
+        },
+        "projectSlug": {
+          "default": null,
+          "anyOf": [
+            {
+              "type": "string",
+              "description": "The project slug. In `org/project` notation, the part after the slash."
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "period": {
+          "type": "string",
+          "pattern": "^\\d+[mhdw]$",
+          "description": "Relative time window, e.g. `30m`, `24h`, `7d`, `90d`."
+        },
+        "regionUrl": {
+          "default": null,
+          "anyOf": [
+            {
+              "type": "string",
+              "description": "The organization's region URL from `find_organizations`, e.g. `https://us.sentry.io`. Omit for self-hosted Sentry."
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "limit": {
+          "default": 10,
+          "description": "Maximum number of results to return.",
+          "type": "number",
+          "minimum": 1,
+          "maximum": 100
+        },
+        "includeExplanation": {
+          "default": false,
+          "description": "Explain how the query was translated or repaired.",
+          "type": "boolean"
+        },
+        "fresh": {
+          "description": "Bypass cached reads.",
+          "type": "boolean"
+        }
+      },
+      "required": ["organizationSlug"]
+    },
+    "annotations": {
+      "readOnlyHint": true,
+      "destructiveHint": false,
+      "openWorldHint": true
+    }
+  },
+  {
+    "name": "search_profiles",
+    "title": "Search Profiles",
+    "description": "Search Sentry profiles: transaction and continuous profiles, to find profile IDs and profiled transactions. Returns individual events, counts, and aggregates; for grouped issue lists, use search_issues. Open a result with get_profile or get_profile_details for flamegraphs and hotspots.",
+    "inputSchema": {
+      "type": "object",
+      "properties": {
+        "organizationSlug": {
+          "type": "string",
+          "description": "The organization slug, from `find_organizations`. In `org/project` notation, the part before the slash."
+        },
+        "query": {
+          "description": "What to find, in natural language or Sentry search syntax. Put environment, release, and other filters here.",
+          "type": "string"
+        },
+        "fields": {
+          "description": "Columns to return; omit unless you need exact columns. Include aggregates such as count() or avg() for statistics.",
+          "anyOf": [
+            {
+              "type": "array",
+              "items": {
+                "type": "string"
+              }
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "sort": {
+          "description": "Sort field, - prefix for descending, such as -count() for aggregates. Omit unless you need a specific order.",
+          "type": ["string", "null"]
+        },
+        "projectSlug": {
+          "default": null,
+          "anyOf": [
+            {
+              "type": "string",
+              "description": "The project slug. In `org/project` notation, the part after the slash."
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "period": {
+          "type": "string",
+          "pattern": "^\\d+[mhdw]$",
+          "description": "Relative time window, e.g. `30m`, `24h`, `7d`, `90d`."
+        },
+        "regionUrl": {
+          "default": null,
+          "anyOf": [
+            {
+              "type": "string",
+              "description": "The organization's region URL from `find_organizations`, e.g. `https://us.sentry.io`. Omit for self-hosted Sentry."
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "limit": {
+          "default": 10,
+          "description": "Maximum number of results to return.",
+          "type": "number",
+          "minimum": 1,
+          "maximum": 100
+        },
+        "includeExplanation": {
+          "default": false,
+          "description": "Explain how the query was translated or repaired.",
+          "type": "boolean"
+        },
+        "fresh": {
+          "description": "Bypass cached reads.",
+          "type": "boolean"
+        }
+      },
+      "required": ["organizationSlug"]
+    },
+    "annotations": {
+      "readOnlyHint": true,
+      "destructiveHint": false,
+      "openWorldHint": true
+    }
+  },
+  {
+    "name": "search_replays",
+    "title": "Search Replays",
+    "description": "Search Sentry session replays by rage clicks, dead clicks, visited pages, errors seen, and users. Returns replay lists, not counts or aggregates.",
+    "inputSchema": {
+      "type": "object",
+      "properties": {
+        "organizationSlug": {
+          "type": "string",
+          "description": "The organization slug, from `find_organizations`. In `org/project` notation, the part before the slash."
+        },
+        "query": {
+          "description": "What to find, in natural language or replay search syntax such as count_errors:>0 or url:*checkout*.",
+          "type": "string"
+        },
+        "sort": {
+          "description": "Replay sort, - prefix for descending: -started_at (default), -count_errors, -count_rage_clicks, or -duration.",
+          "type": ["string", "null"]
+        },
+        "projectSlug": {
+          "default": null,
+          "anyOf": [
+            {
+              "type": "string",
+              "description": "The project slug. In `org/project` notation, the part after the slash."
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "environment": {
+          "description": "Environment name or list of names.",
+          "anyOf": [
+            {
+              "type": "string",
+              "minLength": 1
+            },
+            {
+              "minItems": 1,
+              "type": "array",
+              "items": {
+                "type": "string",
+                "minLength": 1
+              }
+            }
+          ]
+        },
+        "period": {
+          "type": "string",
+          "pattern": "^\\d+[mhdw]$",
+          "description": "Relative time window, e.g. `30m`, `24h`, `7d`, `90d`."
+        },
+        "regionUrl": {
+          "default": null,
+          "anyOf": [
+            {
+              "type": "string",
+              "description": "The organization's region URL from `find_organizations`, e.g. `https://us.sentry.io`. Omit for self-hosted Sentry."
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "limit": {
+          "default": 10,
+          "description": "Maximum number of results to return.",
+          "type": "number",
+          "minimum": 1,
+          "maximum": 100
+        },
+        "includeExplanation": {
+          "default": false,
+          "description": "Explain how the query was translated or repaired.",
+          "type": "boolean"
+        },
+        "fresh": {
+          "description": "Bypass cached reads.",
+          "type": "boolean"
+        }
+      },
+      "required": ["organizationSlug"]
+    },
+    "annotations": {
+      "readOnlyHint": true,
+      "destructiveHint": false,
+      "openWorldHint": true
+    }
+  },
+  {
+    "name": "search_traces",
+    "title": "Search Traces",
+    "description": "Search Sentry traces and spans: requests, endpoints, HTTP and DB calls, and AI/LLM calls, for latency, throughput, and slowness over time. Also finds spans whose trace has a matching log, metric, or span. Returns individual events, counts, and aggregates; for grouped issue lists, use search_issues. For exceptions, use search_errors; for log lines, use search_logs.",
+    "inputSchema": {
+      "type": "object",
+      "properties": {
+        "organizationSlug": {
+          "type": "string",
+          "description": "The organization slug, from `find_organizations`. In `org/project` notation, the part before the slash."
+        },
+        "query": {
+          "description": "What to find, in natural language or Sentry search syntax. Put environment, release, and other filters here.",
+          "type": "string"
+        },
+        "fields": {
+          "description": "Columns to return; omit unless you need exact columns. Include aggregates such as count() or avg() for statistics.",
+          "anyOf": [
+            {
+              "type": "array",
+              "items": {
+                "type": "string"
+              }
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "sort": {
+          "description": "Sort field, - prefix for descending, such as -count() for aggregates. Omit unless you need a specific order.",
+          "type": ["string", "null"]
+        },
+        "projectSlug": {
+          "default": null,
+          "anyOf": [
+            {
+              "type": "string",
+              "description": "The project slug. In `org/project` notation, the part after the slash."
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "period": {
+          "type": "string",
+          "pattern": "^\\d+[mhdw]$",
+          "description": "Relative time window, e.g. `30m`, `24h`, `7d`, `90d`."
+        },
+        "regionUrl": {
+          "default": null,
+          "anyOf": [
+            {
+              "type": "string",
+              "description": "The organization's region URL from `find_organizations`, e.g. `https://us.sentry.io`. Omit for self-hosted Sentry."
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "limit": {
+          "default": 10,
+          "description": "Maximum number of results to return.",
+          "type": "number",
+          "minimum": 1,
+          "maximum": 100
+        },
+        "includeExplanation": {
+          "default": false,
+          "description": "Explain how the query was translated or repaired.",
+          "type": "boolean"
+        },
+        "fresh": {
+          "description": "Bypass cached reads.",
+          "type": "boolean"
+        }
+      },
+      "required": ["organizationSlug"]
+    },
+    "annotations": {
+      "readOnlyHint": true,
+      "destructiveHint": false,
+      "openWorldHint": true
+    }
+  },
+  {
+    "name": "unlink_issue",
+    "title": "Unlink Issue",
+    "description": "Remove a linked external ticket or GitHub pull request from a Sentry issue by URL. Deletes only the association, not the ticket or the issue; safe to repeat.",
+    "inputSchema": {
+      "type": "object",
+      "properties": {
+        "organizationSlug": {
+          "type": "string",
+          "description": "The organization slug, from `find_organizations`. In `org/project` notation, the part before the slash."
+        },
+        "regionUrl": {
+          "default": null,
+          "anyOf": [
+            {
+              "type": "string",
+              "description": "The organization's region URL from `find_organizations`, e.g. `https://us.sentry.io`. Omit for self-hosted Sentry."
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "issueId": {
+          "type": "string",
+          "description": "The issue short ID, e.g. `PROJECT-1Z43`."
+        },
+        "issueUrl": {
+          "type": "string",
+          "format": "uri",
+          "description": "The issue URL, e.g. https://my-org.sentry.io/issues/PROJECT-1Z43"
+        },
+        "externalIssueUrl": {
+          "type": "string",
+          "format": "uri",
+          "description": "URL of the existing external ticket or GitHub pull request. For Sentry Apps, the canonical issue URL from the provider."
+        },
+        "integrationId": {
+          "description": "Native integration ID, only needed when multiple installations match the URL.",
+          "type": "string",
+          "pattern": "^\\d+$"
+        },
+        "appSlug": {
+          "description": "Installed Sentry App slug. Inferred for Linear and Shortcut URLs; specify it for other Apps.",
+          "type": "string",
+          "minLength": 1
+        }
+      },
+      "required": ["externalIssueUrl"]
+    },
+    "annotations": {
+      "readOnlyHint": false,
+      "destructiveHint": true,
+      "idempotentHint": true,
+      "openWorldHint": true
+    }
+  },
+  {
+    "name": "update_issue",
+    "title": "Update Issue",
+    "description": "Update a Sentry issue: resolve, ignore (archive), or reopen it, assign it to a user or team, or change its priority.",
+    "inputSchema": {
+      "type": "object",
+      "properties": {
+        "organizationSlug": {
+          "type": "string",
+          "description": "The organization slug, from `find_organizations`. In `org/project` notation, the part before the slash."
+        },
+        "regionUrl": {
+          "default": null,
+          "anyOf": [
+            {
+              "type": "string",
+              "description": "The organization's region URL from `find_organizations`, e.g. `https://us.sentry.io`. Omit for self-hosted Sentry."
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "issueId": {
+          "type": "string",
+          "description": "The issue short ID, e.g. `PROJECT-1Z43`."
+        },
+        "issueUrl": {
+          "type": "string",
+          "format": "uri",
+          "description": "The issue URL, e.g. https://my-org.sentry.io/issues/PROJECT-1Z43"
+        },
+        "status": {
+          "type": "string",
+          "enum": ["resolved", "resolvedInNextRelease", "unresolved", "ignored"],
+          "description": "The new issue status."
+        },
+        "assignedTo": {
+          "anyOf": [
+            {
+              "type": "string",
+              "minLength": 1
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "description": "`user:<id>`, `team:<id>`, or `team:<slug>`. `null` unassigns. `whoami` returns your user ID."
+        },
+        "priority": {
+          "type": "string",
+          "enum": ["low", "medium", "high"],
+          "description": "The new issue priority. Setting it stops Sentry from changing it automatically."
+        },
+        "ignoreMode": {
+          "type": "string",
+          "enum": [
+            "untilEscalating",
+            "forever",
+            "forDuration",
+            "untilOccurrenceCount",
+            "untilUserCount"
+          ],
+          "description": "When an ignored issue comes back. `untilEscalating` is the Sentry UI default. The `forDuration`, `untilOccurrenceCount`, and `untilUserCount` modes need their matching ignore fields."
+        },
+        "ignoreDurationMinutes": {
+          "type": "integer",
+          "exclusiveMinimum": 0,
+          "maximum": 9007199254740991,
+          "description": "Minutes to ignore the issue. Only with ignoreMode `forDuration`."
+        },
+        "ignoreCount": {
+          "type": "integer",
+          "exclusiveMinimum": 0,
+          "maximum": 9007199254740991,
+          "description": "Occurrences before the issue stops being ignored. Only with ignoreMode `untilOccurrenceCount`."
+        },
+        "ignoreWindowMinutes": {
+          "type": "integer",
+          "exclusiveMinimum": 0,
+          "maximum": 10080,
+          "description": "Window in minutes for ignoreCount. Omit to count all occurrences."
+        },
+        "ignoreUserCount": {
+          "type": "integer",
+          "exclusiveMinimum": 0,
+          "maximum": 9007199254740991,
+          "description": "Affected users before the issue stops being ignored. Only with ignoreMode `untilUserCount`."
+        },
+        "ignoreUserWindowMinutes": {
+          "type": "integer",
+          "exclusiveMinimum": 0,
+          "maximum": 10080,
+          "description": "Window in minutes for ignoreUserCount. Omit to count all users."
+        },
+        "inRelease": {
+          "type": "string",
+          "minLength": 1,
+          "description": "Full version of the release that fixes the issue, exactly as find_releases returns it (e.g. `my-app@1.2.3+45`). Requires status `resolved`. Events from newer releases reopen it as a regression."
+        },
+        "inCommit": {
+          "type": "string",
+          "minLength": 1,
+          "description": "SHA of a commit Sentry knows that fixes the issue. Requires status `resolved` and inCommitRepository."
+        },
+        "inCommitRepository": {
+          "type": "string",
+          "minLength": 1,
+          "description": "Repository of inCommit as Sentry names it, e.g. `getsentry/sentry`."
+        },
+        "reason": {
+          "type": "string",
+          "minLength": 1,
+          "description": "Posted as a comment on the issue's activity."
+        }
+      }
+    },
+    "annotations": {
+      "readOnlyHint": false,
+      "destructiveHint": true,
+      "idempotentHint": false,
+      "openWorldHint": true
+    }
+  },
+  {
+    "name": "whoami",
+    "title": "Who Am I",
+    "description": "Identify the authenticated Sentry user: name and email.",
+    "inputSchema": {
+      "type": "object",
+      "properties": {
+        "fresh": {
+          "description": "Bypass cached reads.",
+          "type": "boolean"
+        }
+      }
+    },
+    "annotations": {
+      "readOnlyHint": true,
+      "destructiveHint": false,
+      "openWorldHint": true
+    }
+  }
+]

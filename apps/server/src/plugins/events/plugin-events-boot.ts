@@ -8,7 +8,7 @@ import {
   type CodevisorServerServices,
   type EventFanout
 } from "../../server-context.js"
-import { pluginKeyOf } from "../accounts/plugin-accounts.js"
+import { type AccountContext, pluginKeyOf } from "../accounts/plugin-accounts.js"
 import type { PluginPlatform } from "../plugin-platform.js"
 import { makeClockEventSource } from "./clock-event-source.js"
 import { cloudInboxApi } from "./cloud-inbox-api.js"
@@ -75,16 +75,21 @@ const platformIngress = (
     connections,
     inboxes: cloudInboxApi(request),
     pluginKey: pluginKeyOf,
-    routeKey: async (serverId, accountId) => {
-      const context = await platform.accounts.context(serverId, accountId)
-      return context?.routeKey ?? context?.identity
-    }
+    routeKeys: async (serverId, accountId) =>
+      accountRouteKeys(await platform.accounts.context(serverId, accountId))
   })
   platform.inbox.onWebhook((webhook) => ingress.deliver(webhook))
   platform.onAccountRemoving((serverId, accountId) =>
     signOutOfPlugin(connections, ingress, serverId, accountId)
   )
   return ingress
+}
+
+const accountRouteKeys = (account: AccountContext | undefined): ReadonlyArray<string> => {
+  if (account?.routeKeys !== undefined) return account.routeKeys
+
+  const key = account?.routeKey ?? account?.identity
+  return key === undefined ? [] : [key]
 }
 
 export const signOutOfPlugin = async (

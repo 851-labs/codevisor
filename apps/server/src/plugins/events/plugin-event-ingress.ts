@@ -17,7 +17,11 @@ export interface CloudInboxApi {
   readonly find: (target: InboxTarget) => Promise<string | undefined>
   readonly subscribe: (inboxId: string) => Promise<void>
   readonly unsubscribe: (inboxId: string) => Promise<void>
-  readonly route: (inboxId: string, route: string, key: string) => Promise<RouteConfig>
+  readonly route: (
+    inboxId: string,
+    route: string,
+    keys: ReadonlyArray<string>
+  ) => Promise<RouteConfig>
   readonly remove: (inboxId: string) => Promise<void>
 }
 
@@ -41,7 +45,7 @@ export interface PluginEventIngressDeps {
   readonly connections: PluginEventConnections
   readonly inboxes: CloudInboxApi
   readonly pluginKey: (server: McpServer) => string
-  readonly routeKey: (serverId: string, accountId: string) => Promise<string | undefined>
+  readonly routeKeys: (serverId: string, accountId: string) => Promise<ReadonlyArray<string>>
 }
 
 export const ingressMetaKey = "dev.codevisor/ingress"
@@ -58,10 +62,10 @@ export const makePluginEventIngress = (deps: PluginEventIngressDeps): PluginEven
   ): Promise<RouteConfig | undefined> => {
     if (ingress.route === undefined) return undefined
 
-    const key = await deps.routeKey(server.id, accountId)
-    if (key === undefined) return undefined
+    const keys = await deps.routeKeys(server.id, accountId)
+    if (keys.length === 0) return undefined
 
-    return deps.inboxes.route(inboxId, ingress.route, hashedRouteKey(key))
+    return deps.inboxes.route(inboxId, ingress.route, keys.map(hashedRouteKey))
   }
 
   const provision = async (

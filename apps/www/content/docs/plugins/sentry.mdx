@@ -1,0 +1,93 @@
+---
+title: Sentry
+description: Let agents find, read, and fix Sentry issues with their stack traces, and wake up when a new issue, a regression, an assignment, or an alert comes in.
+icon: Bug
+---
+
+The Sentry plugin connects your Sentry account to Codevisor, so your agents can work on production
+errors: search issues, read an event's stack trace and breadcrumbs, fix the code in your workspace,
+and resolve, assign, or comment on the issue. An agent can also wait for something to happen in
+Sentry and start on it.
+
+<Callout title="Preview">
+  The Sentry plugin is in preview and isn't in the plugin catalog for everyone yet. Until it is,
+  Browse Plugins offers Sentry's own MCP server instead.
+</Callout>
+
+## What agents can do
+
+The tools are Sentry's own [MCP tools](https://docs.sentry.io/product/sentry-mcp/), run with your
+Sentry account. They cover:
+
+| Area                    | Tools                                                                                                                                                                               |
+| ----------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Issues and stack traces | `search_issues`, `get_issue_details`, `search_issue_events`, `get_event_stacktrace`, `get_issue_breadcrumbs`, `get_issue_tag_values`, `find_related_issues`, `get_event_attachment` |
+| Triage                  | `update_issue` (resolve, resolve in next release, archive, assign, set priority), `add_issue_note`, `link_issue`, `unlink_issue`                                                    |
+| Root cause              | `analyze_issue_with_seer`, Sentry's AI debugger                                                                                                                                     |
+| Releases                | `find_releases`, `get_release_details`                                                                                                                                              |
+| Search                  | `search_errors`, `search_logs`, `search_traces`, `search_metrics`, `search_replays`, `search_profiles`, and their detail tools                                                      |
+| Your organization       | `find_organizations`, `find_projects`, `find_teams`, dashboards, monitors, alert rules, and `whoami`                                                                                |
+| Setting up Sentry       | `create_project`, `create_dsn`, `find_dsns`                                                                                                                                         |
+| Docs                    | `search_docs`, `get_doc`                                                                                                                                                            |
+
+The plugin leaves out Sentry's admin tools that change or delete alert rules, monitors, teams, and
+project settings. The plugin's skill teaches agents the usual loop: find the issue, read its stack
+trace, fix it in the repository, then resolve it in the next release with a note that links the fix.
+
+## Events
+
+Agents can subscribe to these events, usually with a filter, and wake up when they fire. See
+[plugin events](/docs/plugins#events).
+
+| Event              | Fires when                                                     | Arrives                   |
+| ------------------ | -------------------------------------------------------------- | ------------------------- |
+| `issue.created`    | Sentry sees a new issue                                        | Within about a minute     |
+| `issue.regressed`  | A resolved issue comes back                                    | Within about a minute     |
+| `issue.escalating` | An issue gets many more events than usual                      | Within about a minute     |
+| `issue.assigned`   | An issue is assigned to you or one of your teams               | Within about a minute     |
+| `comment.created`  | Someone comments on an issue                                   | With the integration only |
+| `alert.fired`      | An alert that uses **Send a notification via Codevisor** fires | With the integration only |
+
+Every event carries the organization and the issue's short ID, title, culprit, level, project,
+counts, assignee, and link, so filters such as `issue.project.slug == "web" && issue.level == "fatal"`
+work. In organizations that installed the Codevisor integration in Sentry, every event arrives within
+seconds.
+
+## Connect your account
+
+1. In Codevisor, open **Settings › Plugins**, choose **Browse Plugins…**, and install **Sentry**.
+2. Choose **Sign in with Sentry** and approve the access Codevisor asks for. One sign-in covers every
+   Sentry organization you belong to.
+
+The sign-in asks Sentry for: reading your organizations, projects, and teams (`org:read`,
+`project:read`, `team:read`), reading and updating issues and events (`event:read`, `event:write`),
+and creating projects and their DSNs (`project:write`).
+
+## Get events instantly
+
+An owner or manager of a Sentry organization can install the **Codevisor** integration once for
+everyone in it: in Sentry, open **Settings › Integrations**, find **Codevisor**, and choose
+**Install**. After that, Sentry tells Codevisor about new issues, regressions, assignments, and
+comments as they happen. To have an alert wake your agents, add the **Send a notification via
+Codevisor** action to the alert.
+
+## Where your data goes
+
+The plugin runs on your own computer and talks to Sentry directly with your account.
+
+- **Your AI provider.** Issues and events an agent reads become part of that chat. Your computer
+  sends them to the AI provider you chose for the agent so it can do what you asked. That provider's
+  terms govern it.
+- **Events.** Your computer checks Sentry for new issues itself. With the integration installed,
+  Sentry sends its notifications to Codevisor Cloud, which checks Sentry's signature and passes on
+  only the IDs of what changed, plus an alert's name and status. Your computer then reads the issue
+  from Sentry with your own account, so you only see what you can see in Sentry.
+- **Your token** is stored in Codevisor's credential vault, encrypted on your computer with a key
+  only your devices hold. Codevisor refreshes it as needed.
+
+## Disconnect
+
+Sign out of the account in Sentry's plugin settings, or uninstall the plugin. Codevisor deletes the
+token and removes the account's inbox. To revoke Codevisor's access in Sentry too, remove it under
+**User Settings › Authorized Applications**. Uninstalling the integration from an organization stops
+its instant events.

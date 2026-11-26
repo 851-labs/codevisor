@@ -315,8 +315,8 @@ export const fakeInboxes = () => {
       fixtureChanged()
       if (unsubscribeFails) throw new Error("cloud unavailable")
     },
-    route: async (inboxId, route, key) => {
-      calls.push(`route ${inboxId} ${route} ${key}`)
+    route: async (inboxId, route, keys) => {
+      calls.push(`route ${inboxId} ${route} ${keys.join(",")}`)
       return { topic: `projects/test/topics/${route}` }
     },
     remove: async (inboxId) => {

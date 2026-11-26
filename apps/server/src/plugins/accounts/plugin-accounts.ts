@@ -41,6 +41,7 @@ export interface AccountContext {
   readonly label?: string
   readonly identity?: string
   readonly routeKey?: string
+  readonly routeKeys?: ReadonlyArray<string>
   readonly accessToken?: string
   readonly fields: Readonly<Record<string, string | number | boolean>>
 }
@@ -48,6 +49,7 @@ export interface AccountContext {
 export interface AccountCheck {
   readonly identity?: string
   readonly label?: string
+  readonly routeKeys?: ReadonlyArray<string>
 }
 
 export type AccountChecker = (
@@ -225,6 +227,7 @@ export const accountContext = (
   ...(record.label === undefined ? {} : { label: record.label }),
   ...(record.identity === undefined ? {} : { identity: record.identity }),
   ...(record.routeKey === undefined ? {} : { routeKey: record.routeKey }),
+  ...(record.routeKeys === undefined ? {} : { routeKeys: record.routeKeys }),
   ...(bundle === undefined || bundle.authMethod === "apiKey"
     ? {}
     : { accessToken: bundle.accessToken }),

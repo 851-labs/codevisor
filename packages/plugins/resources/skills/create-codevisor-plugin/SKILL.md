@@ -241,9 +241,10 @@ emit them on your open `events/stream` streams for that account. Return
 `{ accepted: <events emitted>, status?: <http status> }`, for example
 `{ accepted: 0, status: 401 }` on a bad signature.
 
-An ingress with a `route` (first-party only, today `"gmail"` and `"linear"`) isn't pasted
+An ingress with a `route` (first-party only, today `"gmail"`, `"linear"` and `"sentry"`) isn't pasted
 anywhere: Codevisor Cloud routes a provider's push notifications to it by the
-account's route key: the OAuth spec's `routeKeyField` from userinfo (Linear's
+account's route keys: the `routeKeys` its `codevisor/account/check` returned at sign-in
+(Sentry's organization ids), else the OAuth spec's `routeKeyField` from userinfo (Linear's
 workspace id), else its identity (Gmail's address). Each `events/stream` request then carries
 `params._meta["dev.codevisor/ingress"] = { ingress: [{ name, url, route?: { name, ...settings } }] }`,
 where the route settings come from the cloud (for Gmail, the Pub/Sub `topic`).
@@ -261,10 +262,11 @@ In the SDK it is `ctx.mcpReq._meta`.
 - Codevisor refreshes OAuth tokens. Plugins only ever see access tokens, never refresh tokens.
 - Scope stream state by `account.id` so one account's events never reach another's subscribers.
 - Missing or invalid account: return a tool error, or `-32024` from `events/*`.
-- To check field values before an account is saved, handle `codevisor/account/check`. It
-  carries the unsaved account's `_meta`. Return `{ identity?, label? }` to name the account, or
-  throw `-32602` (InvalidParams) with a message for the user to refuse it. Plugins without the
-  method are saved unchecked.
+- To check an account before it is saved, handle `codevisor/account/check`. It carries the
+  unsaved account's `_meta`: its field values, or its new access token right after an OAuth
+  sign-in. Return `{ identity?, label?, routeKeys? }` to name the account and route its pushes,
+  or throw `-32602` (InvalidParams) with a message for the user to refuse it. Plugins without
+  the method are saved unchecked.
 - A `guide` (`{ title, summary, steps: [{ title, detail, link?, fields? }] }`) replaces the
   account form with numbered setup steps. Each field appears in the step that lists it. A link's
   `query` values are added to its URL, objects as JSON, and `{{ingress.<name>}}` anywhere in it

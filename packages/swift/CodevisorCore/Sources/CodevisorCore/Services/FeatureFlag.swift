@@ -4,6 +4,7 @@ public enum FeatureFlag: String, CaseIterable, Identifiable, Sendable {
   case developerMode
   case gmailPlugin
   case slackPlugin
+  case sentryPlugin
 
   public var id: String { rawValue }
 
@@ -14,6 +15,7 @@ public enum FeatureFlag: String, CaseIterable, Identifiable, Sendable {
     case .developerMode: "Developer Mode"
     case .gmailPlugin: "Gmail Plugin"
     case .slackPlugin: "Slack Plugin"
+    case .sentryPlugin: "Sentry Plugin"
     }
   }
 
@@ -24,6 +26,8 @@ public enum FeatureFlag: String, CaseIterable, Identifiable, Sendable {
       "Shows Gmail in Browse Plugins on all your devices. In testing: only @851.sh Google accounts can sign in."
     case .slackPlugin:
       "Shows Slack in Browse Plugins on all your devices. You connect it through a Slack app you create in your workspace."
+    case .sentryPlugin:
+      "Shows Sentry in Browse Plugins on all your devices, in place of Sentry's own MCP server. You sign in with Sentry."
     }
   }
 

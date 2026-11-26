@@ -31,6 +31,7 @@ import {
   TUNNEL_ENDPOINT_HEADER
 } from "./relay-routes.js"
 import { roleRoutes } from "./role-routes.js"
+import { sentryPush } from "./sentry-push.js"
 import { HUB_DEVICE_ID_HEADER, HUB_KIND_HEADER, UserHub } from "./user-hub.js"
 import { CLOUD_VERSION } from "./version.js"
 
@@ -60,6 +61,7 @@ app.route("/", inboxRoutes)
 app.route("/", inboxIngress)
 app.route("/", gmailPush)
 app.route("/", linearPush)
+app.route("/", sentryPush)
 app.route("/", pluginOAuthCallback)
 app.route("/", oauthClientRoutes)
 app.route("/", oauthRelayRoutes)
