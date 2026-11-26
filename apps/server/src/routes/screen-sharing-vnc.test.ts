@@ -1,4 +1,4 @@
-import { chmodSync, rmSync, writeFileSync } from "node:fs"
+import { chmodSync, realpathSync, rmSync, writeFileSync } from "node:fs"
 import { createServer } from "node:net"
 import { join } from "node:path"
 
@@ -9,7 +9,7 @@ import { jsonRequest, makeServices, run, startWithApp } from "../test-support.js
 import type { ScalerCommands } from "./screen-sharing-vnc-scale.js"
 import {
   parseScreenSharingVNC,
-  readDesktopConfig,
+  readDesktopSetup,
   SCREEN_SHARING_CONFIG_FILE,
   VNC_DISPLAY_ID
 } from "./screen-sharing-vnc.js"
@@ -24,11 +24,11 @@ import {
 describe("VNC screen sharing configuration", () => {
   it("reads the desktop's socket and names the desktop by default", () => {
     const dir = privateDirectory()
-    expect(readDesktopConfig(dir)).toBeUndefined()
+    expect(readDesktopSetup(dir)).toEqual({ kind: "absent" })
     writeDesktopConfig(dir, { socket: "/run/user/1000/codevisor-desktop.sock" })
-    expect(parseScreenSharingVNC(readDesktopConfig(dir) ?? "")).toEqual({
-      socket: "/run/user/1000/codevisor-desktop.sock",
-      name: "Desktop"
+    expect(readDesktopSetup(dir)).toEqual({
+      kind: "ready",
+      config: { socket: "/run/user/1000/codevisor-desktop.sock", name: "Desktop" }
     })
   })
 
@@ -331,6 +331,27 @@ describe("VNC screen sharing provider", () => {
     })
   })
 
+  it("logs which folder lets other accounts in, once, however often viewers ask", async () => {
+    const home = privateDirectory()
+    const vnc = await fakeVNC(home)
+    const lines: string[] = []
+    const { capabilities } = await start({ socket: vnc.socket }, undefined, undefined, (line) =>
+      lines.push(line)
+    )
+    chmodSync(home, 0o775)
+    await capabilities()
+    await capabilities()
+    expect(lines).toEqual([
+      `[desktop] not shared: ${realpathSync(home)} can be changed by other accounts (mode 775, belongs to uid ${process.getuid!()})`
+    ])
+
+    chmodSync(home, 0o700)
+    expect((await capabilities()).body).toMatchObject({ status: "available" })
+    chmodSync(home, 0o775)
+    await capabilities()
+    expect(lines).toHaveLength(2)
+  })
+
   it("says the desktop isn't running when its socket is gone", async () => {
     const { capabilities } = await start({ socket: join(privateDirectory(), "d.sock") })
     expect((await capabilities()).body).toEqual({
@@ -369,6 +390,19 @@ describe("a desktop that appears or goes away while the server keeps running", (
     rmSync(join(dataDir, SCREEN_SHARING_CONFIG_FILE))
     expect(await info()).not.toMatchObject(sharesAScreen)
     expect((await capabilities()).status).toBe(501)
+  })
+
+  it("lists a desktop's features from one look at it, so they can't disagree mid-rewrite", async () => {
+    const config = { socket: "/run/user/1000/codevisor-desktop.sock", name: "Desktop" }
+    const looks = [{ config, respond: async () => undefined }, undefined]
+    const { services } = await makeServices()
+    const server = await startWithApp(services, undefined, {
+      desktops: { current: () => looks.shift() }
+    })
+    expect((await jsonRequest(server, "/v1/info")).body).toMatchObject({
+      features: expect.arrayContaining(["screen-sharing-v1", "computer-use-stream-v1"])
+    })
+    expect(looks).toHaveLength(1)
   })
 
   it("stops offering a desktop whose config no longer names anything to share", async () => {
@@ -431,12 +465,28 @@ describe("a desktop set up for an older Codevisor, whose config names a local po
 
   it.each([
     { socket: "run/codevisor-desktop.sock", port: 5901 },
+    { socket: "", port: 5901 },
+    { socket: null, port: 5901 },
     { port: 0 },
-    { port: 70_000 },
-    { port: "5901" }
-  ])("is not what a config with %j is taken for", async (vnc) => {
+    { port: "5901" },
+    { name: "Desktop" }
+  ])(
+    "is not what %j is taken for: that is not offered, and logged once as unusable",
+    async (vnc) => {
+      const lines: string[] = []
+      const { info } = await start(vnc, undefined, undefined, (line) => lines.push(line))
+      expect(await info()).not.toMatchObject(sharesAScreen)
+      expect(await info()).not.toMatchObject(sharesAScreen)
+      expect(lines).toEqual([expect.stringContaining("has no usable socket")])
+    }
+  )
+
+  it("logs nothing for a file with no vnc section", async () => {
     const lines: string[] = []
-    const { info } = await start(vnc, undefined, undefined, (line) => lines.push(line))
+    const { info, dataDir } = await start(undefined, undefined, undefined, (line) =>
+      lines.push(line)
+    )
+    writeFileSync(join(dataDir, SCREEN_SHARING_CONFIG_FILE), '{ "devContainerDesktop": true }')
     expect(await info()).not.toMatchObject(sharesAScreen)
     expect(lines).toEqual([])
   })

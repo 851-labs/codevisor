@@ -18,17 +18,27 @@ export const SCREEN_SHARING_CONFIG_FILE = "screen-sharing.json"
 export const VNC_SOCKET_PATH = "/v1/screen-sharing/vnc/socket"
 export const VNC_DISPLAY_ID = "vnc:desktop"
 
-export const readDesktopConfig = (dataDir: string): string | undefined => {
+export type DesktopSetup =
+  | { readonly kind: "ready"; readonly config: ScreenSharingVNCConfig }
+  | { readonly kind: "outdated" | "unusable" | "absent" }
+
+export const readDesktopSetup = (dataDir: string): DesktopSetup => {
   try {
-    return readFileSync(join(dataDir, SCREEN_SHARING_CONFIG_FILE), "utf8")
+    return desktopSetup(readFileSync(join(dataDir, SCREEN_SHARING_CONFIG_FILE), "utf8"))
   } catch {
-    return undefined
+    return { kind: "absent" }
   }
 }
 
-export const namesOnlyAPort = (text: string): boolean => {
+export const desktopSetup = (text: string): DesktopSetup => {
   const vnc = vncSection(text)
-  return vnc !== undefined && vnc.socket === undefined && isPort(vnc.port)
+  if (vnc === undefined) return { kind: "absent" }
+
+  const config = parseScreenSharingVNC(text)
+  if (config !== undefined) return { kind: "ready", config }
+  if (vnc.socket === undefined && isPort(vnc.port)) return { kind: "outdated" }
+
+  return { kind: "unusable" }
 }
 
 export const outdatedDesktop = async (): Promise<ScreenSharingReply> =>

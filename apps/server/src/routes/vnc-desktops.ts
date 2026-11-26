@@ -1,4 +1,5 @@
 import type { ScreenSharingVNCConfig, VNCDesktop, VNCDesktops } from "../server-context-types.js"
+import { type PrivateSocket, privateSocket } from "./private-socket.js"
 import {
   type ScalerCommands,
   systemScalerCommands,
@@ -6,10 +7,9 @@ import {
   xfceScaler
 } from "./screen-sharing-vnc-scale.js"
 import {
-  namesOnlyAPort,
+  type DesktopSetup,
   outdatedDesktop,
-  parseScreenSharingVNC,
-  readDesktopConfig,
+  readDesktopSetup,
   SCREEN_SHARING_CONFIG_FILE,
   vncScreenSharing,
   x11Environment
@@ -20,29 +20,49 @@ export const fileVNCDesktops = (
   commands: ScalerCommands = systemScalerCommands,
   log: (line: string) => void = (line) => console.error(line)
 ): VNCDesktops => {
-  let outdatedNoted = false
+  const noteSetup = whenItChanges(log)
+  const noteSocket = whenItChanges(log)
+  const locate = (configured: string): PrivateSocket => {
+    const socket = privateSocket(configured)
+    noteSocket(socket.problem === undefined ? undefined : `not shared: ${socket.detail}`)
+    return socket
+  }
   return {
     current: () => {
-      const text = readDesktopConfig(dataDir)
-      if (text === undefined || !namesOnlyAPort(text)) outdatedNoted = false
-      if (text === undefined) return undefined
+      const setup = readDesktopSetup(dataDir)
+      noteSetup(setupNotices[setup.kind])
+      if (setup.kind === "ready") return desktopFor(setup.config, commands, locate)
+      if (setup.kind === "outdated") return { respond: outdatedDesktop }
 
-      const config = parseScreenSharingVNC(text)
-      if (config !== undefined) return desktopFor(config, commands)
-      if (!namesOnlyAPort(text)) return undefined
-
-      if (!outdatedNoted) log(outdatedNotice)
-      outdatedNoted = true
-      return { respond: outdatedDesktop }
+      return undefined
     }
   }
 }
 
-const outdatedNotice = `[desktop] ${SCREEN_SHARING_CONFIG_FILE} names a VNC port, which any account on this machine can reach, so the desktop is not shared. Set the desktop up again.`
+const setupNotices: Record<DesktopSetup["kind"], string | undefined> = {
+  ready: undefined,
+  absent: undefined,
+  outdated: `not shared: ${SCREEN_SHARING_CONFIG_FILE} names a VNC port, which any account on this machine can reach. Set the desktop up again.`,
+  unusable: `not shared: the vnc section of ${SCREEN_SHARING_CONFIG_FILE} has no usable socket. It needs "socket" set to an absolute path.`
+}
 
-const desktopFor = (config: ScreenSharingVNCConfig, commands: ScalerCommands): VNCDesktop => ({
+const whenItChanges = (log: (line: string) => void): ((notice: string | undefined) => void) => {
+  let last: string | undefined
+  return (notice) => {
+    if (notice === last) return
+
+    last = notice
+    if (notice !== undefined) log(`[desktop] ${notice}`)
+  }
+}
+
+const desktopFor = (
+  config: ScreenSharingVNCConfig,
+  commands: ScalerCommands,
+  locate: (configured: string) => PrivateSocket
+): VNCDesktop => ({
   config,
-  respond: vncScreenSharing(config, scalerFor(config, commands))
+  respond: vncScreenSharing(config, scalerFor(config, commands), locate)
 })
 
 const scalerFor = (

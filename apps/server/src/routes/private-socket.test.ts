@@ -21,8 +21,9 @@ const folderInside = (parent: string, name: string, mode: number): string => {
   return folder
 }
 
-const exposed = { problem: "exposed" }
-const foreign = { problem: "foreign" }
+const exposed = expect.objectContaining({ problem: "exposed" })
+const foreign = expect.objectContaining({ problem: "foreign" })
+const missing = expect.objectContaining({ problem: "missing" })
 
 describe("a desktop's socket is only used when it is private to the server's account", () => {
   it("accepts a socket only its owner can open, in folders only its owner can change", async () => {
@@ -32,17 +33,15 @@ describe("a desktop's socket is only used when it is private to the server's acc
   })
 
   it("reports a desktop that isn't running", () => {
-    expect(privateSocket(join(privateDirectory(), "d.sock"))).toEqual({ problem: "missing" })
-    expect(privateSocket(join(privateDirectory(), "gone", "d.sock"))).toEqual({
-      problem: "missing"
-    })
+    expect(privateSocket(join(privateDirectory(), "d.sock"))).toEqual(missing)
+    expect(privateSocket(join(privateDirectory(), "gone", "d.sock"))).toEqual(missing)
     const file = join(privateDirectory(), "file")
     writeFileSync(file, "")
-    expect(privateSocket(join(file, "d.sock"))).toEqual({ problem: "missing" })
+    expect(privateSocket(join(file, "d.sock"))).toEqual(missing)
 
     const loop = join(privateDirectory(), "loop")
     symlinkSync(loop, loop)
-    expect(privateSocket(join(loop, "d.sock"))).toEqual({ problem: "missing" })
+    expect(privateSocket(join(loop, "d.sock"))).toEqual(missing)
   })
 
   it.each([0o660, 0o606, 0o666])(
@@ -90,6 +89,15 @@ describe("a desktop's socket is only used when it is private to the server's acc
     const open = folderInside(privateDirectory(), "open", 0o777)
     const socket = await listening(folderInside(open, "desk", 0o700))
     expect(privateSocket(socket)).toEqual(exposed)
+  })
+
+  it("names the folder a group can write to, its mode and its owner, as a umask of 002 leaves it", async () => {
+    const home = folderInside(privateDirectory(), "home", 0o775)
+    const socket = await listening(folderInside(home, "run", 0o700))
+    expect(privateSocket(socket)).toEqual({
+      problem: "exposed",
+      detail: `${realpathSync(home)} can be changed by other accounts (mode 775, belongs to uid ${process.getuid!()})`
+    })
   })
 
   it("accepts a private folder inside a sticky shared folder, where only owners rename", async () => {

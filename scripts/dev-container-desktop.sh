@@ -41,13 +41,23 @@ export XAUTHORITY="$XDG_RUNTIME_DIR/codevisor-desktop.xauth"
 XVNC_PID=""
 : >"$LOG"
 
+FINISHED=0
+CONFIG=""
+
+stop_unless_finished() {
+  [ "$FINISHED" = 1 ] && return
+  for pid in "$XVNC_PID" "${DBUS_SESSION_BUS_PID:-}"; do
+    [ -n "$pid" ] || continue
+    kill "$pid" 2>/dev/null || true
+    wait "$pid" 2>/dev/null || true
+  done
+  rm -f "$SOCKET" "$XAUTHORITY" "/tmp/.X$DISPLAY_NUMBER-lock" "/tmp/.X11-unix/X$DISPLAY_NUMBER"
+  [ -z "$CONFIG" ] || rm -f "$CONFIG"
+}
+trap stop_unless_finished EXIT
+
 give_up() {
   echo "[container] $1" >&2
-  if [ -n "$XVNC_PID" ]; then
-    kill "$XVNC_PID" 2>/dev/null || true
-    wait "$XVNC_PID" 2>/dev/null || true
-  fi
-  rm -f "$SOCKET" "$XAUTHORITY" "/tmp/.X$DISPLAY_NUMBER-lock" "/tmp/.X11-unix/X$DISPLAY_NUMBER"
   exit 1
 }
 
@@ -79,7 +89,8 @@ fi
 refuse_an_open_tcp_port
 sleep 1
 refuse_an_open_tcp_port
-eval "$(dbus-launch --sh-syntax)"
+dbus_session=$(dbus-launch --sh-syntax) || give_up "the desktop's D-Bus session didn't start"
+eval "$dbus_session"
 setsid startxfce4 >>"$LOG" 2>&1 </dev/null &
 (
   for _ in $(seq 1 100); do
@@ -89,14 +100,16 @@ setsid startxfce4 >>"$LOG" 2>&1 </dev/null &
   xfconf-query -c xfwm4 -p /general/use_compositing -n -t bool -s false
 ) >>"$LOG" 2>&1 &
 
-data_dir=${CODEVISOR_DATA_DIR:?}
-mkdir -p "$data_dir"
-printf '{ "vnc": { "socket": "%s", "display": %s, "xauthority": "%s", "name": "Desktop", "desktop": "xfce", "defaultSize": "%s" }, "devContainerDesktop": true }\n' \
-  "$SOCKET" "$DISPLAY_NUMBER" "$XAUTHORITY" "$GEOMETRY" >"$data_dir/screen-sharing.json"
 cat >/tmp/desktop.env <<ENV
 export DISPLAY='$DISPLAY'
 export XDG_RUNTIME_DIR='$XDG_RUNTIME_DIR'
 export XAUTHORITY='$XAUTHORITY'
 export DBUS_SESSION_BUS_ADDRESS='$DBUS_SESSION_BUS_ADDRESS'
 ENV
+data_dir=${CODEVISOR_DATA_DIR:?}
+mkdir -p "$data_dir"
+CONFIG="$data_dir/screen-sharing.json"
+printf '{ "vnc": { "socket": "%s", "display": %s, "xauthority": "%s", "name": "Desktop", "desktop": "xfce", "defaultSize": "%s" }, "devContainerDesktop": true }\n' \
+  "$SOCKET" "$DISPLAY_NUMBER" "$XAUTHORITY" "$GEOMETRY" >"$CONFIG"
 echo "[container] desktop on $DISPLAY (VNC socket $SOCKET)"
+FINISHED=1
