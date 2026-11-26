@@ -71,6 +71,15 @@ export const downloadedChromiumPath = (browsersDir: string): string | undefined 
   return undefined
 }
 
+export const chromiumBackend = (browsersDir: string): string => {
+  if (systemChromePath() !== undefined) return "systemChrome"
+  if (downloadedChromiumPath(browsersDir) !== undefined) return "downloadedChromium"
+  return "missing"
+}
+
+export const chromiumInstalled = (browsersDir: string): boolean =>
+  chromiumBackend(browsersDir) !== "missing"
+
 export const runBrowserInstaller = async (browsersDir: string): Promise<void> => {
   const require = createRequire(import.meta.url)
   const packageJson = require.resolve("playwright/package.json")

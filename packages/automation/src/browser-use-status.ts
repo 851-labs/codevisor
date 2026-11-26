@@ -1,3 +1,5 @@
+import { hostname } from "node:os"
+
 import { textToolResult } from "./automation-provider.js"
 import type { NativeBrowserHost } from "./browser-cdp-engine.js"
 import type { BrowserExtensionInstallation } from "./browser-extension-relay.js"
@@ -24,6 +26,13 @@ export interface BrowserLabel {
   readonly host: string
 }
 
+export interface BrowserMachine {
+  readonly id: string
+  readonly name: string
+}
+
+const thisMachine: BrowserMachine = { id: "local", name: hostname() }
+
 const lostTabs = (host: string) =>
   `The Codevisor app on ${host} disconnected, so this chat's built-in browser tabs were lost.`
 
@@ -39,6 +48,7 @@ export const browserExtensionState = (inputs: {
 }
 
 export const browserStatusReport = (inputs: {
+  readonly machine: BrowserMachine
   readonly selected: BrowserBackend | undefined
   readonly platform: BrowserClientPlatform | undefined
   readonly managedError: string | undefined
@@ -56,6 +66,7 @@ export const browserStatusReport = (inputs: {
   builtin: builtinReport(inputs.builtin),
   extension: {
     state: inputs.extension,
+    machine: { machineId: inputs.machine.id, name: inputs.machine.name },
     visibleToUser: inputs.extension === "connected",
     ...(inputs.extensionNote === undefined ? {} : { outdated: true, note: inputs.extensionNote })
   }
@@ -68,12 +79,15 @@ const availability = (report: BrowserStatusReport) =>
 
 export const noBrowserSelectedResult = (report: BrowserStatusReport) =>
   textToolResult(
-    `No browser is selected for this chat. Pick one with browser.use_backend({ backend }): managed (headless; the user can't see it), builtin (this chat's browser pane in the Codevisor Mac app), or extension (the user's own Chrome). ${availability(report)}`,
+    `No browser is selected for this chat. Pick one with browser.use_backend({ backend }): managed (headless; the user can't see it), builtin (this chat's browser pane in the Codevisor Mac app), or extension (Chrome on ${report.extension.machine.name}). ${availability(report)}`,
     true
   )
 
 export const chromeNotConnectedResult = (report: BrowserStatusReport) =>
-  textToolResult(`Chrome is not connected to Codevisor. ${availability(report)}`, true)
+  textToolResult(
+    `Chrome on ${report.extension.machine.name} is not connected to Codevisor. ${availability(report)}`,
+    true
+  )
 
 const unreachableTabs = (host: string) =>
   `The Codevisor app on ${host} stopped responding, so this chat's built-in browser tabs can't be reached. Check that Mac for a blocking dialog.`
@@ -93,15 +107,22 @@ export const builtinLostResult = (lostHost: string | undefined, silentHost?: str
 export const builtinUnreachableMessage = (reason: string) =>
   `The built-in browser can't be reached, so nothing ran. ${reason} Ask the user to open this chat in the Codevisor Mac app, or pick another browser with browser.use_backend (managed is headless, so the user can't see it).`
 
-export const browserLabel = (
-  backend: BrowserBackend,
-  nativeHost: NativeBrowserHost | undefined
-): BrowserLabel => ({ backend, host: labelHost(backend, nativeHost) })
+export const browserLabeler = (machine: BrowserMachine = thisMachine) => ({
+  machine,
+  label: (backend: BrowserBackend, nativeHost: NativeBrowserHost | undefined): BrowserLabel => ({
+    backend,
+    host: labelHost(backend, nativeHost, machine)
+  })
+})
 
-const labelHost = (backend: BrowserBackend, nativeHost: NativeBrowserHost | undefined) => {
+const labelHost = (
+  backend: BrowserBackend,
+  nativeHost: NativeBrowserHost | undefined,
+  machine: BrowserMachine
+) => {
   if (nativeHost !== undefined) return builtinWhere(nativeHost)
-  if (backend === "extension") return "The user's own Chrome"
-  return "Headless Chromium on this server; the user can't see it"
+  if (backend === "extension") return `Chrome on ${machine.name}`
+  return `Headless Chromium on ${machine.name}; the user can't see it`
 }
 
 const builtinWhere = ({ name, showing }: NativeBrowserHost) => {

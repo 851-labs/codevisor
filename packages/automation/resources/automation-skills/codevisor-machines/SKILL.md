@@ -21,6 +21,7 @@ There are two ways to work on another of the user's machines. Codevisor's own to
 - `agents.start({ …, machine: m })` starts an agent on that machine, linked to you (see `codevisor-agents`). Every other Codevisor tool that acts on one machine takes `machine` the same way. A machine is a `Machine`, its `machineId`, or its name.
 - `agents.start({ checkout: "none", machine: m, title, prompt })` starts a throwaway chat on `m` in a fresh empty folder, without adding a project there. Use it when you just need that machine's tools, or it has no projects.
 - `m.clients.list()` lists apps connected to that machine (see `codevisor-clients`).
+- `machines.current` is the machine you run on, which may not be the computer the user is at. That computer is `(await machines.current.clients.origin())?.runsOn`; it is absent when the message came from iOS, another agent, or an automation.
 - `m.exec(…)`, `m.readFile(…)` and `m.taskStop(…)` run shell commands and read files on `m` (see below).
 - `machines.current.tools.search({ query, machines: "all" })` searches every online machine. Each result has `machine: { machineId, name }`.
 

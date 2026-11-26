@@ -73,6 +73,7 @@ export class ClientControlBroker {
           name: client.name,
           platform: client.platform,
           machine: { id: machine.id, name: machine.name },
+          ...(client.runsOn === undefined ? {} : { runsOn: client.runsOn }),
           online: true,
           ...(origin === undefined ? {} : { isOrigin: client.clientId.toLowerCase() === origin }),
           ...(context === undefined ? {} : { isActive: context.isActive }),
@@ -103,7 +104,7 @@ export class ClientControlBroker {
       try {
         const frame = decode(ClientControlFrame)(JSON.parse(data.toString()))
         if (frame.type === "hello") {
-          connection.hello = { clientId, name: frame.name, platform: frame.platform }
+          connection.hello = helloOf(clientId, frame)
           clearTimeout(handshakeTimer)
           return
         }
@@ -125,7 +126,10 @@ export class ClientControlBroker {
   request(
     clientId: string,
     command: Omit<ClientControlCommand, "requestId">,
-    options: { readonly timeoutMs?: number; readonly keepOnTimeout?: boolean } = {}
+    options: {
+      readonly timeoutMs?: number
+      readonly keepOnTimeout?: boolean
+    } = {}
   ): Promise<ClientContext> {
     const connection = this.connections.get(clientId)
     if (!connection?.hello)
@@ -194,6 +198,15 @@ const lowercaseIds = (value: unknown, key = ""): unknown => {
   const isIdField = key === "id" || key.endsWith("Id")
   return isIdField && typeof value === "string" && UUID.test(value) ? value.toLowerCase() : value
 }
+
+type ClientHello = Extract<typeof ClientControlFrame.Type, { readonly type: "hello" }>
+
+const helloOf = (clientId: string, frame: ClientHello): ConnectedClient => ({
+  clientId,
+  name: frame.name,
+  platform: frame.platform,
+  ...(frame.runsOn === undefined ? {} : { runsOn: frame.runsOn })
+})
 
 const viewingOf = (context: ClientContext): NonNullable<ClientSummary["viewing"]> => {
   const workspace = context.workspaces.find((candidate) => candidate.id === context.workspaceId)

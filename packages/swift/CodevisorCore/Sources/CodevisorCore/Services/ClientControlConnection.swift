@@ -18,6 +18,12 @@ public enum ClientControlConnection {
     var layout: ClientLayoutRequest?
     var window: ClientWindowRequest?
   }
+  struct Hello: Encodable {
+    var type = "hello"
+    let name: String
+    let platform: String
+    let runsOn: ClientHostMachine?
+  }
   struct Response: Encodable {
     var type = "response"
     let requestId: String
@@ -29,6 +35,7 @@ public enum ClientControlConnection {
     clientId: UUID,
     name: String,
     platform: String,
+    runsOn: ClientHostMachine? = nil,
     config: CodevisorServerConfig,
     context: @escaping ContextReader,
     navigate: @escaping Navigator,
@@ -51,7 +58,7 @@ public enum ClientControlConnection {
       await withTaskCancellationHandler {
         defer { socket.cancel(with: .goingAway, reason: nil) }
         do {
-          let hello = ["type": "hello", "name": name, "platform": platform]
+          let hello = Hello(name: name, platform: platform, runsOn: runsOn)
           try await socket.send(.data(JSONEncoder().encode(hello)))
           while !Task.isCancelled {
             let data: Data

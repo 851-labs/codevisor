@@ -59,10 +59,20 @@ export const ClientContext = Schema.Struct({
 })
 export type ClientContext = typeof ClientContext.Type
 
+export const ClientHostMachine = Schema.Struct({
+  machineId: Schema.String,
+  name: Schema.String
+}).annotate({
+  description:
+    "The Codevisor machine the client itself runs on: the computer the user is at. Absent on iOS and on a Mac that isn't running Codevisor itself."
+})
+export type ClientHostMachine = typeof ClientHostMachine.Type
+
 export const ConnectedClient = Schema.Struct({
   clientId: Schema.String,
   name: Schema.String,
-  platform: Schema.Literals(["macos", "ios"])
+  platform: Schema.Literals(["macos", "ios"]),
+  runsOn: Schema.optional(ClientHostMachine)
 })
 export type ConnectedClient = typeof ConnectedClient.Type
 
@@ -81,6 +91,7 @@ export const ClientSummary = Schema.Struct({
   name: Schema.String,
   platform: ConnectedClient.fields.platform,
   machine: Schema.Struct({ id: Schema.String, name: Schema.String }),
+  runsOn: ConnectedClient.fields.runsOn,
   online: Schema.Boolean,
   isOrigin: Schema.optional(Schema.Boolean),
   isActive: Schema.optional(Schema.Boolean),
@@ -94,7 +105,8 @@ export const ClientControlFrame = Schema.Union([
   Schema.Struct({
     type: Schema.Literal("hello"),
     name: Schema.String,
-    platform: ConnectedClient.fields.platform
+    platform: ConnectedClient.fields.platform,
+    runsOn: ConnectedClient.fields.runsOn
   }),
   Schema.Struct({
     type: Schema.Literal("response"),

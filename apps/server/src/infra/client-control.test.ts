@@ -35,10 +35,14 @@ class ClientSocket extends WebSocket {
   }
 }
 const context = { isActive: true, workspaces: [] }
-const attach = (broker: ClientControlBroker, id: string) => {
+const attach = (
+  broker: ClientControlBroker,
+  id: string,
+  runsOn?: { machineId: string; name: string }
+) => {
   const socket = new ClientSocket()
   broker.attach(id, socket)
-  socket.frame({ type: "hello", name: id, platform: "macos" })
+  socket.frame({ type: "hello", name: id, platform: "macos", ...(runsOn ? { runsOn } : {}) })
   return socket
 }
 
@@ -165,7 +169,8 @@ describe("native client control", () => {
   it("lists what each window views without waiting on, or detaching, a slow one", async () => {
     vi.useFakeTimers({ now: new Date("2026-01-02T03:04:05.000Z") })
     const broker = new ClientControlBroker()
-    const focused = attach(broker, "focused")
+    const laptop = { machineId: "machine-laptop", name: "MacBook Pro" }
+    const focused = attach(broker, "focused", laptop)
     const slow = attach(broker, "slow")
     const machine = { id: "server", name: "Studio" }
     const capabilities = {
@@ -205,6 +210,7 @@ describe("native client control", () => {
         name: "focused",
         platform: "macos",
         machine,
+        runsOn: laptop,
         online: true,
         isActive: true,
         lastActiveAt: "2026-01-02T03:04:05.000Z",

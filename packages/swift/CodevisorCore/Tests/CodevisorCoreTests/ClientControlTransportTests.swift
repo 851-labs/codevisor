@@ -72,7 +72,8 @@ struct ClientControlTransportTests {
     )
     let task = Task {
       await ClientControlConnection.run(
-        clientId: id, name: "Fixture", platform: "macos", config: config,
+        clientId: id, name: "Fixture", platform: "macos",
+        runsOn: ClientHostMachine(machineId: "machine-laptop", name: "MacBook Pro"), config: config,
         context: { NativeClientContext(isActive: true, workspaceId: nil, workspaces: []) },
         navigate: { _ in Issue.record("Context reads must not navigate") }
       )
@@ -93,6 +94,15 @@ struct ClientControlTransportTests {
     task.cancel()
     await task.value
     #expect(transport.socket.closeCode == .goingAway)
+    let helloData = try #require(
+      transport.socket.output.first.flatMap { message -> Data? in
+        if case let .data(data) = message { return data }
+        return nil
+      })
+    let hello = try #require(JSONSerialization.jsonObject(with: helloData) as? [String: Any])
+    #expect(hello["type"] as? String == "hello")
+    #expect(
+      hello["runsOn"] as? [String: String] == ["machineId": "machine-laptop", "name": "MacBook Pro"])
     let data = try #require(
       transport.socket.output.last.flatMap { message -> Data? in
         if case let .data(data) = message { return data }
