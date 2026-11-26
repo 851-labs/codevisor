@@ -160,6 +160,42 @@ struct ScreenSharingLinuxDesktopTests {
       ])
   }
 
+  @Test("Shift tapped on screen capitalises the next hardware key and is then released")
+  func onScreenShiftWithAHardwareKey() async throws {
+    let harness = try await LinuxDesktopHarness()
+    defer { harness.stop() }
+    let model = await harness.goLive()
+
+    model?.toggle(.shift)
+    #expect(
+      model?.pressHardwareKey(ScreenSharingHardwareKey(usage: 4, characters: "a", unmodifiedCharacters: "a")) == true)
+    await awaitObserved { harness.input.count == 4 }
+
+    #expect(
+      harness.input == [
+        .keyEvent(keysym: RFBKeysym.shiftLeft, down: true), .keyEvent(keysym: 0x41, down: true),
+        .keyEvent(keysym: 0x41, down: false), .keyEvent(keysym: RFBKeysym.shiftLeft, down: false),
+      ])
+    #expect(model?.modifiers == [])
+  }
+
+  @Test("A dead key reaches Linux as nothing, keeps a modifier tapped on screen, and the next key arrives")
+  func deadKeyIsSwallowed() async throws {
+    let harness = try await LinuxDesktopHarness()
+    defer { harness.stop() }
+    let model = await harness.goLive()
+
+    model?.toggle(.shift)
+    #expect(model?.pressHardwareKey(ScreenSharingHardwareKey(usage: 46)) == true)
+    #expect(model?.modifiers == .shift)
+    model?.toggle(.shift)
+    #expect(
+      model?.pressHardwareKey(ScreenSharingHardwareKey(usage: 8, characters: "é", unmodifiedCharacters: "e")) == true)
+    await awaitObserved { harness.input.count == 2 }
+
+    #expect(harness.input == [.keyEvent(keysym: 0xe9, down: true), .keyEvent(keysym: 0xe9, down: false)])
+  }
+
   @Test("Every printable key on the phone's keyboard reaches Linux as the character it shows")
   func everyPrintableKey() {
     let keys = VNCKeyTranslator(layout: VNCUnitedStatesKeyLayout.layout)

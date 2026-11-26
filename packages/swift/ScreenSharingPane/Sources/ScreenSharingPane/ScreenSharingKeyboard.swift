@@ -30,14 +30,24 @@ public enum ScreenSharingKey: UInt16, Sendable {
 
 enum ScreenSharingKeyboard {
   static func press(code: UInt16, modifiers: ScreenSharingModifiers) -> [ScreenSharingInputEvent] {
+    holding(modifiers) { held in
+      [
+        .key(code: code, down: true, repeatKey: false, modifiers: held),
+        .key(code: code, down: false, repeatKey: false, modifiers: held),
+      ]
+    }
+  }
+
+  static func holding(
+    _ modifiers: ScreenSharingModifiers, _ pressed: (_ held: UInt8) -> [ScreenSharingInputEvent]
+  ) -> [ScreenSharingInputEvent] {
     var held: ScreenSharingModifiers = []
     var events: [ScreenSharingInputEvent] = []
     for (modifier, key) in ScreenSharingModifiers.ordered where modifiers.contains(modifier) {
       held.insert(modifier)
       events.append(.key(code: key, down: true, repeatKey: false, modifiers: held.rawValue))
     }
-    events.append(.key(code: code, down: true, repeatKey: false, modifiers: held.rawValue))
-    events.append(.key(code: code, down: false, repeatKey: false, modifiers: held.rawValue))
+    events += pressed(held.rawValue)
     for (modifier, key) in ScreenSharingModifiers.ordered.reversed() where modifiers.contains(modifier) {
       held.remove(modifier)
       events.append(.key(code: key, down: false, repeatKey: false, modifiers: held.rawValue))

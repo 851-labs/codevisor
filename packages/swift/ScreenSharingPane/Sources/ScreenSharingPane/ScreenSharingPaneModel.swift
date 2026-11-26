@@ -125,10 +125,10 @@ public final class ScreenSharingPaneModel {
     viewsChanged()
   }
 
-  func pressHardwareKey(_ pressed: ScreenSharingHardwareKey) -> Bool {
-    var key = pressed
-    key.modifiers.formUnion(modifiers)
-    guard let events = key.events(asCharacters: session?.keysAreCharacters == true) else { return false }
+  func pressHardwareKey(_ key: ScreenSharingHardwareKey) -> Bool {
+    let asCharacters = session?.keysAreCharacters == true
+    guard let events = key.events(asCharacters: asCharacters, onScreen: modifiers) else { return false }
+    guard !events.isEmpty else { return true }
 
     send(events)
     modifiers = []
