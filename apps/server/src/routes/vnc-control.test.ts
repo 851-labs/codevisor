@@ -76,7 +76,7 @@ describe("VNC control lease (851-2338)", () => {
   })
 
   it("keeps one arbiter per desktop", () => {
-    expect(vncControlArbiter(41901)).toBe(vncControlArbiter(41901))
-    expect(vncControlArbiter(41901)).not.toBe(vncControlArbiter(41902))
+    expect(vncControlArbiter("/run/a/d.sock")).toBe(vncControlArbiter("/run/a/d.sock"))
+    expect(vncControlArbiter("/run/a/d.sock")).not.toBe(vncControlArbiter("/run/b/d.sock"))
   })
 })

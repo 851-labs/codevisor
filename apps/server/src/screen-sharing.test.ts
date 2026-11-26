@@ -206,13 +206,16 @@ describe("viewers without an app identity", () => {
     expect(helper).toHaveBeenCalledWith(stop)
   })
 
-  it("leave a VNC machine's requests to its provider, as before", async () => {
-    const helper = vi.fn(async () => reply)
-    const { post } = await fixture(helper, { screenSharingVNC: { port: 5901, name: "Desktop" } })
+  it("leave a VNC machine's requests to its desktop, as before", async () => {
+    const native = vi.fn(async () => reply)
+    const respond = vi.fn(async () => ({ ...reply, provider: "vnc" }))
+    const config = { socket: "/run/user/1000/codevisor-desktop.sock", name: "Desktop" }
+    const { post } = await fixture(native, { desktops: { current: () => ({ config, respond }) } })
     const answered = await post(capabilities())
     expect(answered.status).toBe(200)
-    expect(answered.body).toEqual(reply)
-    expect(helper).toHaveBeenCalledOnce()
+    expect(answered.body).toEqual({ ...reply, provider: "vnc" })
+    expect(respond).toHaveBeenCalledOnce()
+    expect(native).not.toHaveBeenCalled()
   })
 })
 

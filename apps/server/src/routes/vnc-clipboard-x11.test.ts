@@ -173,13 +173,13 @@ describe("system X11 commands", () => {
         'case "$*" in',
         "  *quiet*) exit 3 ;;",
         '  *fail*) echo "Error: target not available" >&2; exit 1 ;;',
-        '  *) printf "%s %s" "$DISPLAY" "$*" ;;',
+        '  *) printf "%s %s %s" "$DISPLAY" "$XAUTHORITY" "$*" ;;',
         "esac"
       ].join("\n")
     )
     chmodSync(xclip, 0o755)
-    const system = systemX11Commands(7, xclip)
-    expect((await system.run(["-o"])).toString()).toBe(":7 -selection clipboard -o")
+    const system = systemX11Commands({ DISPLAY: ":7", XAUTHORITY: "/run/cookie" }, xclip)
+    expect((await system.run(["-o"])).toString()).toBe(":7 /run/cookie -selection clipboard -o")
     await expect(system.run(["fail"])).rejects.toThrow("Error: target not available")
     await expect(system.run(["quiet"])).rejects.toThrow("Command failed")
     const child = system.spawn("sh", ["-c", 'printf "%s" "$DISPLAY"'])

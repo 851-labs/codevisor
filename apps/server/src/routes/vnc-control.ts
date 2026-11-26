@@ -61,13 +61,13 @@ export class VNCControlArbiter {
   }
 }
 
-const arbiters = new Map<number, VNCControlArbiter>()
+const arbiters = new Map<string, VNCControlArbiter>()
 
-export const vncControlArbiter = (port: number): VNCControlArbiter => {
-  let arbiter = arbiters.get(port)
+export const vncControlArbiter = (socketPath: string): VNCControlArbiter => {
+  let arbiter = arbiters.get(socketPath)
   if (arbiter === undefined) {
     arbiter = new VNCControlArbiter()
-    arbiters.set(port, arbiter)
+    arbiters.set(socketPath, arbiter)
   }
   return arbiter
 }
