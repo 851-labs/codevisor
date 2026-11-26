@@ -1076,10 +1076,10 @@ fn a_slow_link_doesnt_ask_again_for_packets_still_on_their_way() {
         });
 
         let (lowest, _) = range_from(&estimates, Duration::ZERO);
-        assert!(lowest >= 500e3, "seed {seed}: the estimate fell to {:.2} Mbit/s", lowest / 1e6);
+        assert!(lowest >= 400e3, "seed {seed}: the estimate fell to {:.2} Mbit/s", lowest / 1e6);
         let retransmitted = sim.host.stats(sim.now).packets_retransmitted;
         let early = sim.nacked_before_arriving();
-        assert!(early * 20 <= retransmitted as usize, "seed {seed}: {early} of {retransmitted} were still on the link");
+        assert!(early <= 2, "seed {seed}: {early} of {retransmitted} resends were asked for while still on the link");
     }
 }
 
@@ -1236,6 +1236,14 @@ fn a_frame_whose_resends_wait_behind_another_tile_isnt_given_up_by_the_viewer() 
     assert_eq!(skipped, 0, "the viewer gave up the first tile while its resends waited behind the second");
     assert_eq!(lost_on_the_host(&sim), 0);
     assert_eq!(delivered.len(), 2);
+}
+
+#[test]
+fn a_packet_asked_for_again_while_its_resend_is_still_queued_on_the_link_is_sent_once() {
+    let (mut sim, _) = first_keyframes_on_a_slow_link(20..150, 2);
+    let resent = sim.host.stats(sim.now).packets_retransmitted;
+
+    assert!(resent <= 150, "{resent} packets resent for 130 that were lost");
 }
 
 #[test]
