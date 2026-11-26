@@ -1076,7 +1076,8 @@ fn a_slow_link_doesnt_ask_again_for_packets_still_on_their_way() {
         });
 
         let (lowest, _) = range_from(&estimates, Duration::ZERO);
-        assert!(lowest >= 450e3, "seed {seed}: the estimate fell to {:.2} Mbit/s", lowest / 1e6);
+        let lowest_mbps = lowest / 1e6;
+        assert!(lowest >= 450e3, "seed {seed}: {lowest_mbps:.2} Mbit/s, where 32 seeds read 0.47 to 0.69");
         let retransmitted = sim.host.stats(sim.now).packets_retransmitted;
         let early = sim.nacked_before_arriving();
         assert!(early <= 1, "seed {seed}: {early} of {retransmitted} resends were asked for while still on the link");
@@ -1478,4 +1479,17 @@ fn a_probe_for_a_frame_the_viewer_already_answered_doesnt_delay_the_next_tail_pr
 
     let acked_after = sim.acks().iter().find(|ack| ack.frame == number).expect("the frame is acknowledged").acked_after;
     assert!(acked_after < 250 * MS, "the lost acknowledgement was only asked for again after {acked_after:?}");
+}
+
+#[test]
+fn a_frame_missing_two_packets_isnt_given_up_while_its_resends_wait_behind_other_tiles() {
+    for tiles in [2, 3] {
+        let (sim, data) = first_keyframes_on_a_slow_link(20..22, tiles);
+        let skipped = sim.viewer_events.iter().filter(|event| matches!(event, Event::FrameSkipped { .. })).count();
+        let delivered = sim.frames().iter().filter(|frame| frame.data == data).count();
+
+        assert_eq!(skipped, 0, "{tiles} tiles: the viewer gave the first tile up with its resends still queued");
+        assert_eq!(lost_on_the_host(&sim), 0, "{tiles} tiles");
+        assert_eq!(delivered, usize::from(tiles), "{tiles} tiles");
+    }
 }

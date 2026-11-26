@@ -52,6 +52,7 @@ struct SentFrame {
     packets: Vec<Bytes>,
     resends: Vec<Resend>,
     counted_lost: Vec<bool>,
+    guessed_to: usize,
     data_count: usize,
     submitted: Instant,
     first_tx: Option<Instant>,
@@ -75,7 +76,7 @@ impl SentFrame {
             None => self.first_tx.map(|_| self.sent_before),
             Some(previous) => {
                 let untouched = self.resends.get(previous).is_none_or(|resend| *resend == Resend::Never);
-                self.positions.get(previous).copied().filter(|_| untouched)
+                self.positions.get(previous).copied().filter(|_| untouched && previous >= self.guessed_to)
             }
         }
     }
@@ -278,6 +279,7 @@ impl Sender {
                 packets,
                 resends: vec![Resend::Never; layout.data_count],
                 counted_lost: vec![false; layout.data_count],
+                guessed_to: 0,
                 data_count: layout.data_count,
                 submitted: now,
                 first_tx: None,
@@ -422,6 +424,11 @@ impl Sender {
             })
         };
         let sent = frame.originals_out.min(frame.data_count);
+        let ends = nack.ranges.iter().map(|&(start, count)| usize::from(start) + usize::from(count));
+        let named_to = ends.max();
+        if let Some(named_to) = named_to.filter(|named_to| *named_to > sent) {
+            frame.guessed_to = frame.guessed_to.max(named_to.min(frame.data_count));
+        }
         let named = || {
             nack.ranges.iter().flat_map(|&(start, count)| match count {
                 wire::WHOLE_FRAME => 0..sent,
@@ -436,7 +443,7 @@ impl Sender {
         let lost: Vec<usize> = named().filter(|index| !first_time(index) || passed(index)).collect();
         for index in lost {
             if !std::mem::replace(&mut frame.counted_lost[index], true) {
-                self.arrived.note_lost(frame.packets[index].len() as u64);
+                self.arrived.note_lost(frame.positions[index], frame.packets[index].len() as u64);
             }
         }
         if let Some(position) = sighted {
@@ -765,6 +772,12 @@ mod tests {
 
     impl Host {
         fn with_a_frame_sent(packets: usize) -> Self {
+            let mut host = Self::with_a_frame_queued(packets);
+            host.drain();
+            host
+        }
+
+        fn with_a_frame_queued(packets: usize) -> Self {
             let now = Instant::now();
             let config = MediaConfig { fec: FecMode::Off, ..MediaConfig::default() };
             let mut host = Self { sender: Sender::new(config, now), now, stats: Stats::default(), events: VecDeque::new() };
@@ -772,8 +785,14 @@ mod tests {
             let data = vec![7u8; packets * 1_100];
             let frame = OutgoingFrame { data: &data, ..OutgoingFrame::default() };
             host.sender.send_frame(now, frame, 1_200, &mut host.events, &mut host.stats).expect("the frame is valid");
-            host.drain();
             host
+        }
+
+        fn leave(&mut self, packets: usize) {
+            for _ in 0..packets {
+                self.now = self.sender.pacer.next_send(self.now).expect("a packet is waiting");
+                self.sender.poll_transmit(self.now, &mut self.stats).expect("the pacer has credit");
+            }
         }
 
         fn drain(&mut self) {
@@ -825,6 +844,21 @@ mod tests {
     }
 
     #[test]
+    fn a_packet_the_viewer_asked_for_before_it_was_sent_is_never_taken_as_arrived() {
+        let mut host = Host::with_a_frame_queued(12);
+        host.leave(5);
+        host.asked_for(&[(3, 4)]);
+        host.drain();
+        assert_eq!(host.sender.arrived.position(), Some(0), "the viewer is guessing: 5 and 6 hadn't left");
+
+        host.asked_for(&[(7, 1)]);
+        assert_eq!(host.sender.arrived.position(), Some(0), "6 was asked for before it was sent");
+
+        host.asked_for(&[(9, 1)]);
+        assert_eq!(host.sender.arrived.position(), Some(host.frame().positions[8]));
+    }
+
+    #[test]
     fn the_first_request_for_a_probed_packet_is_an_answer_and_a_loss_counted_once() {
         let mut host = Host::with_a_frame_sent(10);
         let packet = host.frame().packets[9].len() as u64;
@@ -866,6 +900,7 @@ mod tests {
             packets: Vec::new(),
             resends: Vec::new(),
             counted_lost: Vec::new(),
+            guessed_to: 0,
             data_count: 0,
             submitted: start,
             first_tx: Some(start),

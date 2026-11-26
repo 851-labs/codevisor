@@ -19,6 +19,8 @@ const GAP_DECAY: f64 = 63.0 / 64.0;
 const RETRY_MARGIN: Duration = Duration::from_millis(1);
 const MAX_REFRESH_SENDS: u32 = 50;
 const BUSY_WAITS: u32 = 4;
+const BUSY_PACKETS: u32 = 512;
+const PACE_GAIN: u32 = 16;
 
 #[derive(Debug)]
 struct Assembly {
@@ -147,7 +149,7 @@ impl Assembly {
     fn keep_waiting(&mut self, now: Instant, wait: Wait) {
         let patience = self.patience(wait);
         let own = now + patience;
-        let busy = now + (patience * BUSY_WAITS).min(MAX_CROSSING).max(patience);
+        let busy = now + (patience * BUSY_WAITS).max(wait.pace * BUSY_PACKETS).min(MAX_CROSSING).max(patience);
         self.give_up_at = Some(self.give_up_at.map_or(own, |at| at.max(own)));
         self.busy_limit = Some(self.busy_limit.map_or(busy, |limit| limit.max(busy)));
     }
@@ -169,6 +171,7 @@ impl Assembly {
 struct Wait {
     give_up: Duration,
     rtt: Duration,
+    pace: Duration,
 }
 
 #[derive(Debug, Clone, Copy)]
@@ -212,6 +215,7 @@ pub struct Receiver {
     rtt: Duration,
     streams: BTreeMap<u8, StreamRx>,
     gap_peak: Duration,
+    pace: Duration,
     last_media_rx: Option<Instant>,
     outbox: VecDeque<Bytes>,
 }
@@ -224,6 +228,7 @@ impl Receiver {
             rtt: Duration::ZERO,
             streams: BTreeMap::new(),
             gap_peak: Duration::ZERO,
+            pace: Duration::ZERO,
             last_media_rx: None,
             outbox: VecDeque::new(),
         }
@@ -342,14 +347,16 @@ impl Receiver {
             }
             assembly.originals += 1;
             if let Some(last) = assembly.last_original_rx {
-                self.gap_peak = self.gap_peak.max(now.saturating_duration_since(last));
+                let gap = now.saturating_duration_since(last);
+                self.gap_peak = self.gap_peak.max(gap);
+                self.pace = (self.pace * (PACE_GAIN - 1) + gap) / PACE_GAIN;
             }
             assembly.last_original_rx = Some(now);
         }
         assembly.first_rx.get_or_insert(now);
         assembly.last_rx = Some(now);
         if assembly.give_up_at.is_some() {
-            assembly.keep_waiting(now, Wait { give_up, rtt: self.rtt });
+            assembly.keep_waiting(now, Wait { give_up, rtt: self.rtt, pace: self.pace });
         }
         let last_index = shape.layout.data_count + shape.parity_count - 1;
         if usize::from(header.index) == last_index {
@@ -420,7 +427,7 @@ impl Receiver {
         let tail_wait = self.tail_wait();
         let give_up = self.give_up_after();
         let link_busy_until = self.last_media_rx.map(|at| at + give_up);
-        let wait = Wait { give_up, rtt: self.rtt };
+        let wait = Wait { give_up, rtt: self.rtt, pace: self.pace };
         let retry = self.retry_after();
         let mut resolved = Vec::new();
         for (&stream_id, stream) in &mut self.streams {
