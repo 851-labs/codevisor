@@ -52,12 +52,16 @@ struct ScreenSharingHardwareKey {
 
   private static func text(_ text: String, shifted: Bool) -> [ScreenSharingInputEvent]? {
     guard isPrintable(text) else { return nil }
-    guard shifted else { return ScreenSharingKeyboard.type(text, modifiers: []) }
+    guard shifted, !isAlreadyCapital(text) else { return ScreenSharingKeyboard.type(text, modifiers: []) }
     guard let capitals = capitals(of: text) else {
       return ScreenSharingKeyboard.holding(.shift) { _ in [.text(text)] }
     }
 
     return ScreenSharingKeyboard.type(capitals, modifiers: [])
+  }
+
+  private static func isAlreadyCapital(_ text: String) -> Bool {
+    text.lowercased() != text
   }
 
   private static func capitals(of text: String) -> String? {
@@ -81,7 +85,7 @@ struct ScreenSharingHardwareKey {
 
   private static func withoutCapsLock(_ text: String) -> String {
     let small = text.lowercased()
-    return small.count == text.count ? small : text
+    return small.unicodeScalars.count == text.unicodeScalars.count ? small : text
   }
 
   private static func isPrintable(_ text: String) -> Bool {

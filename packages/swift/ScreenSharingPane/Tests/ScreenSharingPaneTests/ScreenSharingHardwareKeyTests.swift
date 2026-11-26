@@ -65,6 +65,14 @@ struct ScreenSharingHardwareKeyTests {
     #expect(micro.events(asCharacters: true, onScreen: .shift) == [shiftDown, .text("µ"), shiftUp])
   }
 
+  @Test("Shift tapped on screen adds nothing to a letter Caps Lock or the keyboard's Shift already capitalised")
+  func onScreenShiftOnACapital() {
+    let capsLocked = Key(usage: 4, characters: "A", unmodifiedCharacters: "a")
+    let umlaut = Key(usage: 51, characters: "Ö", unmodifiedCharacters: "ö", modifiers: .shift)
+    #expect(pressed(capsLocked.events(asCharacters: true, onScreen: .shift)) == [56, 0])
+    #expect(umlaut.events(asCharacters: true, onScreen: .shift) == [.text("Ö")])
+  }
+
   @Test("A character the layout makes with Option is typed as that character, not as Alt and the key's letter")
   func optionComposedCharacters() {
     let germanAt = Key(usage: 15, characters: "@", unmodifiedCharacters: "l", modifiers: .option)
@@ -126,7 +134,9 @@ struct ScreenSharingHardwareKeyTests {
     let interrupt = Key(usage: 6, characters: "C", unmodifiedCharacters: "C", modifiers: .control)
     let umlaut = Key(usage: 51, characters: "Ö", unmodifiedCharacters: "Ö", modifiers: .command)
     #expect(pressed(interrupt.events(asCharacters: true)) == [59, 8])
+    let dottedI = Key(usage: 12, characters: "İ", unmodifiedCharacters: "İ", modifiers: .command)
     #expect(umlaut.events(asCharacters: true)?.contains(.text("ö")) == true)
+    #expect(dottedI.events(asCharacters: true)?.contains(.text("İ")) == true, "its small form is two scalars")
   }
 
   @Test("A shortcut on a key whose own character is a shifted US symbol doesn't gain a Shift")
