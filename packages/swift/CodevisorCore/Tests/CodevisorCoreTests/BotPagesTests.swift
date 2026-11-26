@@ -102,21 +102,52 @@ struct BotPagesTests {
     #expect(pages.page(of: world.bot) == .conversation)
   }
 
-  @Test("An agent forgotten while it was unavailable does not take the page back when it loads again")
-  func forgottenAgentStaysClosed() async throws {
+  @Test("An archived agent is forgotten, so the page does not go back to it if it is restored")
+  func archivedAgentIsForgotten() async throws {
+    let world = try await BotWorld(botProject: botProject)
+    let agent = world.chat("Christmas list", in: appProject, createdBy: world.botChat)
+    var archived = agent
+    archived.isArchived = true
+    let pages = try await world.pages(projects: [appProject], sessions: [agent])
+    pages.show(agent)
+
+    pages.forgetGoneAgent(of: world.bot)
+    #expect(pages.page(of: world.bot).agent?.id == agent.id)
+
+    _ = try await world.pages(projects: [appProject], sessions: [archived])
+    pages.forgetGoneAgent(of: world.bot)
+    _ = try await world.pages(projects: [appProject], sessions: [agent])
+
+    #expect(pages.page(of: world.bot) == .conversation)
+  }
+
+  @Test("An agent deleted on a connected machine is forgotten, and one whose machine cannot be reached is kept")
+  func deletedAgentIsForgotten() async throws {
     let world = try await BotWorld(botProject: botProject)
     let agent = world.chat("Christmas list", in: appProject, createdBy: world.botChat)
     let pages = try await world.pages(projects: [appProject], sessions: [agent])
     pages.show(agent)
+    _ = try await world.pages(projects: [appProject], sessions: [])
 
-    pages.forgetUnavailableAgent(of: world.bot)
-    #expect(pages.page(of: world.bot).agent?.id == agent.id)
+    world.machines.markFailed(for: world.bot.serverId, message: "Unreachable")
+    #expect(!pages.hasGoneAgent(world.bot))
 
-    _ = try await world.pages(projects: [], sessions: [agent])
-    #expect(pages.hasUnavailableAgent(world.bot))
-    pages.forgetUnavailableAgent(of: world.bot)
+    world.machines.markReady(for: world.bot.serverId)
+    #expect(pages.hasGoneAgent(world.bot))
+  }
+
+  @Test("An agent whose project has not loaded yet is kept, and takes the page once it loads")
+  func agentWaitingForItsProjectIsKept() async throws {
+    let world = try await BotWorld(botProject: botProject)
+    let agent = world.chat("Christmas list", in: appProject, createdBy: world.botChat)
+    let pages = try await world.pages(projects: [], sessions: [agent])
+    pages.show(agent)
+
+    pages.forgetGoneAgent(of: world.bot)
+    #expect(pages.page(of: world.bot) == .conversation)
+
     _ = try await world.pages(projects: [appProject], sessions: [agent])
 
-    #expect(pages.page(of: world.bot) == .conversation)
+    #expect(pages.page(of: world.bot).agent?.id == agent.id)
   }
 }

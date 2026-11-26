@@ -17,14 +17,14 @@ struct BotPageUpkeep: ViewModifier {
       .onChange(of: store.botPageFocusRequest) { _, request in
         if request?.workspaceId == workspace.id { focusPage() }
       }
-      .onChange(of: botWithUnavailableAgent, initial: true) { _, bot in
-        if let bot { environment.botPages.forgetUnavailableAgent(of: bot) }
+      .onChange(of: botWithGoneAgent, initial: true) { _, bot in
+        if let bot { environment.botPages.forgetGoneAgent(of: bot) }
       }
   }
 
-  private var botWithUnavailableAgent: Bot? {
+  private var botWithGoneAgent: Bot? {
     guard let bot = environment.bots.bot(forWorkspace: workspace.id, serverId: workspace.serverId),
-      environment.botPages.hasUnavailableAgent(bot)
+      environment.botPages.hasGoneAgent(bot)
     else { return nil }
     return bot
   }

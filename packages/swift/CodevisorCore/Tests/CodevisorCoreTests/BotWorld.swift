@@ -15,6 +15,7 @@ struct BotWorld {
   let bot: Bot
   let threads: BotThreadsModel
   let server: SyncFakeServerClient
+  let machines: MachineController
 
   init(botProject: Project) async throws {
     self.botProject = botProject
@@ -29,6 +30,7 @@ struct BotWorld {
     let machines = MachineController(
       store: InMemoryStore(), projectList: navigation.projectList, workspaceSync: navigation.workspaceSync,
       clientFactory: { _ in fake })
+    self.machines = machines
     await machines.refreshStatus(for: CodevisorMachine.local.id)
     bots = BotListModel(machines: machines)
     threads = BotThreadsModel(machines: machines)
@@ -71,6 +73,8 @@ struct BotWorld {
   }
 
   func pages(projects: [Project], sessions: [ChatSession]) async throws -> BotPages {
-    BotPages(threads: threads, hosts: try await hosts(projects: projects, sessions: sessions, workspaces: []))
+    BotPages(
+      threads: threads, hosts: try await hosts(projects: projects, sessions: sessions, workspaces: []),
+      resolver: PaneChatResolver(projectList: navigation.projectList, machines: machines))
   }
 }
