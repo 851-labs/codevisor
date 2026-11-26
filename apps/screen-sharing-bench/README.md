@@ -165,6 +165,17 @@ CodevisorBench loopback --source own-window --scenes scroll --networks N0
   the traffic and are counted in `queue_overflow`; a packet that is both is counted as an overflow, which no N0–N7
   condition can produce because only N5 limits the queue and N5 has no random loss). Each peer socket gets its own
   mapping socket, like a NAT.
+- **Delivery on time (851-4477).** The relay sends each packet when the model says it is due, from one strict
+  dispatch timer armed with no leeway (`.nanoseconds(0)`). From the first Tier 1 run (28 October 2026) until 851-4477
+  it was armed with `leeway: .never`, which reads like "no leeway" but is an infinite one: macOS 27.2 never fires such
+  a timer. A delayed packet then left only when the next packet in either direction reached the relay, so every
+  network with a delay (N1–N7) delivered late and in clumps. On tamale N3's 1 ms delay was a 9.2–9.6 ms network stage
+  against 1.3 ms with the timer fixed, scroll at N3 took 18 ms from capture to committed against 9.5 ms, and 2 of 6
+  repetitions froze against 0 of 6 (lab runs 45732785446 and 45732802831, back to back). The clumps made the viewer
+  ask for packets that were still on their way (108–308 resent a repetition against 1), which the host's heavy-loss
+  rule took for 10–64% loss, and its estimate fell to 1.7 Mbit/s. So Tier 1 numbers on N1–N7 from before 851-4477
+  aren't comparable with later ones, and N0, Tier 2 and the labs never went through that timer. SwiftLint's
+  `timer_leeway_never` rule now rejects `leeway: .never`.
 - **Measurement.** Each scene runs `--duration` seconds (12 by default; the matrix takes about 11 minutes) and
   the first `--warm-up` seconds (5) are left out. `--repetitions <n>` runs the whole list n times, interleaved (every
   cell once, then every cell again), and each result carries its `repetition`; consumers take the median per cell
@@ -184,7 +195,9 @@ CodevisorBench loopback --source own-window --scenes scroll --networks N0
   sent and given up, tiles skipped, captures replaced before encode (dropped by admission) and admission deferrals,
   NACKs, retransmissions, parity packets, FEC and NACK repairs, LTR refreshes, LTR refreshes the encoder answered with
   a keyframe instead (`ltr_refresh_keyframes`, the host's `encodedLTRRefreshKeyFrames`; the Tier 2 v2 table's "LTR
-  refreshes as keyframes"), keyframes, and the capacity estimate and round trip at the end. Drops are whole-scene counters.
+  refreshes as keyframes"), the reference acknowledgements the host rejected as stale (`stale_ltr_acknowledgements`,
+  the host's `staleLTRAcknowledgements`: an acknowledgement for a token the host no longer holds for that tile;
+  absent in reports from before 851-4477), keyframes, and the capacity estimate and round trip at the end. Drops are whole-scene counters.
 - **Output.** stdout is the report JSON (`--output` also writes it); stderr has one progress line per scene and a
   Markdown summary with per-stage p50/p95. `--frames` writes one line per measured frame (version and every
   timestamp). A scene that fails (for example the connection never opens) is reported as invalid with the error, and

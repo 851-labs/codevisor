@@ -114,10 +114,10 @@ final class LoopbackRelay: @unchecked Sendable {
 
   private func scheduleNextDue(after nowNs: Int64) {
     guard let dueNs = [media.nextDueNs, feedback.nextDueNs].compactMap(\.self).min() else {
-      timer.schedule(deadline: .distantFuture, leeway: .never)
+      timer.schedule(deadline: .distantFuture, leeway: .nanoseconds(0))
       return
     }
 
-    timer.schedule(deadline: .now() + .nanoseconds(Int(max(0, dueNs - nowNs))), leeway: .never)
+    timer.schedule(deadline: .now() + .nanoseconds(Int(max(0, dueNs - nowNs))), leeway: .nanoseconds(0))
   }
 }
