@@ -52,6 +52,23 @@ struct BotPagesTests {
     #expect(pages.page(of: world.bot).agent?.id == helper.id)
   }
 
+  @Test("An agent the bot started on another machine opens as the bot's page and stays that machine's chat")
+  func agentOnAnotherMachineKeepsItsMachine() async throws {
+    let world = try await BotWorld(botProject: botProject)
+    let remoteProject = Project.fromFolder(URL(fileURLWithPath: "/src/app"), serverId: "remote")
+    let agent = ChatSession(
+      projectId: remoteProject.id, serverId: "remote", title: "Christmas list", createdBy: .agent,
+      createdByAgent: AgentReference(agentId: world.botChat.id, machineId: "local"))
+    let pages = try await world.pages(projects: [], sessions: [])
+    await world.navigation.install(machineId: "remote", projects: [remoteProject], sessions: [agent])
+
+    #expect(pages.show(agent) == world.bot)
+
+    let shown = try #require(pages.agentPage(in: world.botWorkspace()))
+    #expect(shown.id == agent.id)
+    #expect(shown.serverId == "remote")
+  }
+
   @Test("An open agent that was archived, or whose project is not loaded, gives the page back to the conversation")
   func unavailableAgentShowsTheConversation() async throws {
     let world = try await BotWorld(botProject: botProject)

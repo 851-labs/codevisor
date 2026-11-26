@@ -43,8 +43,9 @@ extension SessionStore {
 
   @discardableResult
   func selectChat(_ session: ChatSession) -> SidebarSelection {
-    if let bot = environment.botPages.show(session) { return open(bot) }
-    let ownSelection = SidebarSelection.session(serverId: session.serverId, id: session.id)
+    let bot = environment.botPages.show(session)
+    if let bot, bot.sessionId != session.id { return selection(of: bot) }
+    let ownSelection = bot.map(selection(of:)) ?? .session(serverId: session.serverId, id: session.id)
     guard
       let project = environment.projectList.projects.first(where: {
         $0.serverId == session.serverId && $0.id == session.projectId
@@ -77,8 +78,7 @@ extension SessionStore {
     return isGuest ? .workspace(serverId: workspace.serverId, id: workspace.id) : ownSelection
   }
 
-  private func open(_ bot: Bot) -> SidebarSelection {
-    selectDestination(.chat(bot.sessionId), in: bot.workspaceId)
-    return .bot(serverId: bot.serverId, id: bot.id)
+  private func selection(of bot: Bot) -> SidebarSelection {
+    .bot(serverId: bot.serverId, id: bot.id)
   }
 }

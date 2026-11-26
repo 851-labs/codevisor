@@ -8,7 +8,7 @@ import SwiftUI
 extension SessionContainerView {
   var chrome: WorkspaceChrome {
     let source = activeToolbarSource
-    if let agent = agentPage { return chrome(showing: agent, toolbar: source) }
+    if let agent = presentedAgent(in: activePaneDescriptor) { return chrome(showing: agent, toolbar: source) }
     return WorkspaceChrome(
       title: source?.file?.title ?? paneTitle(showing: source),
       renamedChat: source?.file == nil ? renamedChat : nil,
@@ -21,7 +21,7 @@ extension SessionContainerView {
 
   private func chrome(showing agent: ChatSession, toolbar: PaneToolbarSource?) -> WorkspaceChrome {
     WorkspaceChrome(
-      title: selectedWorkspace.title(ofChat: agent),
+      title: agent.title.isEmpty ? "Agent" : agent.title,
       renamedChat: WorkspaceChrome.RenamedChat(id: agent.id, serverId: agent.serverId),
       removesTitle: hidesWorkspaceTitle,
       toolbar: toolbar,

@@ -10,11 +10,14 @@ extension SessionContainerView {
     environment.botPages.agentPage(in: selectedWorkspace)
   }
 
-  func presentedChatId(in pane: PaneDescriptorState?) -> UUID? {
-    guard let chatId = pane?.chatSessionId else { return nil }
-    guard let agent = agentPage, botChat(chatId) != nil else { return chatId }
+  func presentedAgent(in pane: PaneDescriptorState?) -> ChatSession? {
+    guard let chatId = pane?.chatSessionId, botChat(chatId) != nil else { return nil }
 
-    return agent.id
+    return agentPage
+  }
+
+  func presentedChatId(in pane: PaneDescriptorState?) -> UUID? {
+    presentedAgent(in: pane)?.id ?? pane?.chatSessionId
   }
 
   func chatPaneRole(for descriptor: PaneDescriptorState) -> ChatPaneRole {

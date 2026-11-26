@@ -108,7 +108,14 @@ struct RootView: View {
 
   private func openNotificationSession(_ sessionId: UUID, serverId: String) {
     guard let session = environment.projectList.session(sessionId, serverId: serverId) else { return }
-    selection = store?.selectChat(session) ?? .session(serverId: serverId, id: sessionId)
+    selection = store?.selectChat(session) ?? unopenedSelection(of: session)
+  }
+
+  private func unopenedSelection(of session: ChatSession) -> SidebarSelection {
+    guard let bot = environment.bots.bot(forSession: session.id, serverId: session.serverId) else {
+      return .session(serverId: session.serverId, id: session.id)
+    }
+    return .bot(serverId: bot.serverId, id: bot.id)
   }
 
   private func applySelectedSessionDisposition(_ disposition: WorkspaceRouteDisposition) {

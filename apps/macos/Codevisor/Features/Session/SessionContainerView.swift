@@ -104,7 +104,7 @@ struct SessionContainerView: View {
         showPage(covering: after, uncovering: before.subtracting(after))
       }
       .onChange(of: agentPage?.id) { _, _ in
-        focusSelectedCenterPane()
+        if isVisible { focusSelectedCenterPane() }
       }
       .modifier(
         CenterTabRequests(store: store, workspaceId: workspace.id, onClose: closeCenterTab)
@@ -206,8 +206,9 @@ struct SessionContainerView: View {
 
   private func publishFocusedChat(_ candidate: UUID?) {
     let workspace = selectedWorkspace
+    let agent = agentPage.flatMap { $0.id == candidate ? $0 : nil }
     store.setFocusedChat(
-      candidate, serverId: workspace.serverId, sourceId: focusSourceId,
+      candidate, serverId: agent?.serverId ?? workspace.serverId, sourceId: focusSourceId,
       workspaceId: workspace.id, isVisible: isVisible
     )
   }
