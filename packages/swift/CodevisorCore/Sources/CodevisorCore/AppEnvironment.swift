@@ -122,7 +122,6 @@ public final class AppEnvironment {
 
   private func configureServices() {
     machines.cloudProvider = cloud
-    accountMachineCount.follow()
     if localServer != nil {
       cloud.localServerClient = machines.client(for: CodevisorMachine.local.id)
     }

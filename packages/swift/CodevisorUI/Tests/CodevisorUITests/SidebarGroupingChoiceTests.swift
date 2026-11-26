@@ -109,6 +109,29 @@ struct SidebarGroupingChoiceTests {
     #expect(account.choice.effective == .flat)
   }
 
+  @Test("Signed in with the machine list not loaded yet, the last result still shows")
+  func waitsForTheMachineList() {
+    let lastSession = Account(machines: [.thisMac, .studio])
+    let launch = Account(machines: [], preferences: lastSession.preferences, rosterIsVerified: false)
+    #expect(launch.choice.effective == .machine)
+
+    launch.loadRoster([.thisMac])
+    #expect(launch.choice.effective == .flat)
+  }
+
+  @Test("A cloud account attached after the count is being followed is picked up")
+  func followsAReplacedCloudProvider() async {
+    let environment = AppEnvironment.preview()
+    let count = AccountMachineCount(machines: environment.machines, preferences: ClientPreferences())
+    count.follow()
+
+    let cloud = Cloud()
+    cloud.cloudMachines = [.thisMac, .studio]
+    environment.machines.adoptLocalCloudIdentity(deviceId: CloudMachine.thisMac.deviceId)
+    environment.machines.cloudProvider = cloud
+    await awaitObserved { count.lastKnown == 2 }
+  }
+
   @Test("Signing out returns the default to None")
   func signingOutReturnsToNone() {
     let account = Account(machines: [.thisMac, .studio])
@@ -133,12 +156,13 @@ private final class Account {
 
   init(
     machines: [CloudMachine], preferences: ClientPreferences = ClientPreferences(), cloudHasLoaded: Bool = true,
-    knowsOwnIdentity: Bool = true
+    knowsOwnIdentity: Bool = true, rosterIsVerified: Bool = true
   ) {
     self.preferences = preferences
     cloud.cloudMachines = machines
     cloud.isCloudSignedIn = cloudHasLoaded
     cloud.hasCompletedCloudBootstrap = cloudHasLoaded
+    cloud.isCloudRosterVerified = rosterIsVerified
     environment.machines.cloudProvider = cloud
     machineCount = AccountMachineCount(machines: environment.machines, preferences: preferences)
     if knowsOwnIdentity { environment.machines.adoptLocalCloudIdentity(deviceId: CloudMachine.thisMac.deviceId) }
@@ -174,6 +198,12 @@ private final class Account {
     machineCount.follow()
   }
 
+  func loadRoster(_ machines: [CloudMachine]) {
+    cloud.cloudMachines = machines
+    cloud.isCloudRosterVerified = true
+    machineCount.follow()
+  }
+
   func learnOwnIdentity() {
     environment.machines.adoptLocalCloudIdentity(deviceId: CloudMachine.thisMac.deviceId)
     machineCount.follow()
@@ -192,7 +222,7 @@ private final class Cloud: CloudMachineProviding {
   var cloudMachines: [CloudMachine] = []
   var isCloudSignedIn = true
   var hasCompletedCloudBootstrap = true
-  let isCloudRosterVerified = true
+  var isCloudRosterVerified = true
 
   func relayServerConfig(for machine: CloudMachine) -> CodevisorServerConfig? { nil }
 }

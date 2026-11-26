@@ -6,6 +6,7 @@ import Observation
 public final class MachineController {
   public internal(set) var registry: MachineRegistry
   public var serverUpdateChannel: ServerUpdateChannel = .stable
+  private var cloudProviderRevision: UInt64 = 0
   public let sandboxProfiles = SandboxProfileCatalog()
   public let sandboxMachineProfiles = SandboxMachineProfiles()
   var sandboxAvailabilityRevision = 0
@@ -98,7 +99,10 @@ public final class MachineController {
 
   public var cloudProvider: (any CloudMachineProviding)? {
     get { catalog.cloudProvider }
-    set { catalog.cloudProvider = newValue }
+    set {
+      catalog.cloudProvider = newValue
+      cloudProviderRevision &+= 1
+    }
   }
 
   var connectionsById: [String: MachineConnection] { connections.byId }
@@ -119,7 +123,10 @@ public final class MachineController {
   public func machine(for id: String) -> CodevisorMachine? { catalog.machine(for: id) }
   public func cloudMachine(forMachineId id: String) -> CloudMachine? { catalog.cloudMachine(forMachineId: id) }
   public var chatMachines: [CodevisorMachine] { allMachines.filter { !isSandbox($0.id) } }
-  public var accountMachineCount: Int? { catalog.accountMachineCount }
+  public var accountMachineCount: Int? {
+    _ = cloudProviderRevision
+    return catalog.accountMachineCount
+  }
 
   public func isSandbox(_ id: String) -> Bool { cloudMachine(forMachineId: id)?.ephemeral != nil }
   public func chatMachine(for id: String) -> CodevisorMachine? { isSandbox(id) ? nil : machine(for: id) }

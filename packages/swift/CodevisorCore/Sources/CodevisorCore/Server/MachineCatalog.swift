@@ -38,6 +38,7 @@ final class MachineCatalog {
     guard let cloudProvider else { return thisMac }
     guard cloudProvider.hasCompletedCloudBootstrap else { return nil }
     guard cloudProvider.isCloudSignedIn else { return thisMac }
+    guard cloudProvider.isCloudRosterVerified || !cloudProvider.cloudMachines.isEmpty else { return nil }
 
     let ownDeviceId = connections.statusById[CodevisorMachine.local.id]?.cloudDeviceId
     guard !includesLocalMachine || ownDeviceId != nil else { return nil }
