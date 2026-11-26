@@ -1,0 +1,4158 @@
+{
+  "calibration" : {
+
+  },
+  "comparisons" : [
+
+  ],
+  "environment" : {
+    "host" : {
+      "chip" : "Apple M6",
+      "display" : "1920x1080 1x, synthetic, committed",
+      "load1_at_start" : 1.6025390625,
+      "name" : "tamales-Mini.localdomain",
+      "os" : "27.2",
+      "spotlight_busy" : false,
+      "thermal" : "nominal"
+    },
+    "link" : "in-process UDP relay"
+  },
+  "results" : [
+    {
+      "bitrate_mbps" : {
+        "max" : 0.075296,
+        "p50" : 0.064248,
+        "p95" : 0.075296,
+        "total_mb" : 0.157632
+      },
+      "codec_errors" : 0,
+      "drops" : {
+        "capture" : 0,
+        "encoder" : 4,
+        "jitter" : 0,
+        "network" : 0
+      },
+      "e2e_endpoint" : "committed",
+      "e2e_ms" : {
+        "count" : 300,
+        "max" : 11.228793,
+        "p50" : 7.452334,
+        "p95" : 9.73096
+      },
+      "e2e_outside_jitter_buffer_ms" : {
+        "count" : 300,
+        "max" : 11.228793,
+        "p50" : 7.452334,
+        "p95" : 9.73096
+      },
+      "freezes" : {
+        "count" : 0,
+        "pauses" : 0,
+        "pauses_total_ms" : 0,
+        "per_minute" : 0,
+        "ratio" : 0,
+        "total_ms" : 0
+      },
+      "gap_ms" : {
+        "count" : 299,
+        "max" : 103.799333,
+        "p50" : 34.75925,
+        "p95" : 101.80675
+      },
+      "judder_ms" : 1.8067499999999939,
+      "media" : {
+        "admission_deferrals" : 0,
+        "capacity_kbps" : 100000,
+        "dropped_before_encode" : 0,
+        "encoded_bytes" : 122752,
+        "encoded_frames" : 873,
+        "encoded_key_frame_bytes" : 664,
+        "estimate_min_mbps_per_second" : [
+          100,
+          100,
+          100,
+          100,
+          100,
+          100,
+          100,
+          100,
+          100,
+          100,
+          100,
+          100,
+          100,
+          100,
+          100,
+          100,
+          100,
+          100,
+          100,
+          100,
+          100,
+          100,
+          100,
+          100,
+          100,
+          100,
+          100
+        ],
+        "fec_repairs" : 0,
+        "frames_lost" : 0,
+        "frames_sent" : 873,
+        "keyframes" : 1,
+        "ltr_refresh_keyframes" : 0,
+        "ltr_refreshes" : 0,
+        "nack_repairs" : 0,
+        "nacks_sent" : 0,
+        "packets_retransmitted" : 0,
+        "parity_packets" : 0,
+        "requested_keyframes" : 0,
+        "requested_refreshes" : 0,
+        "round_trip_ms" : 1.969,
+        "stale_ltr_acknowledgements" : 0,
+        "stalled_tiles" : 0,
+        "tiles_skipped" : 0
+      },
+      "network" : "N0",
+      "relay" : {
+        "feedback" : {
+          "bytes" : 160340,
+          "first_losses" : [
+
+          ],
+          "lost" : 0,
+          "packets" : 2532,
+          "queue_overflow" : 0,
+          "send_failures" : 0
+        },
+        "media" : {
+          "bytes" : 258707,
+          "first_losses" : [
+
+          ],
+          "lost" : 0,
+          "packets" : 1806,
+          "queue_overflow" : 0,
+          "send_failures" : 0
+        }
+      },
+      "repetition" : 1,
+      "resolution" : "R1",
+      "scene" : "typing",
+      "seed" : 7,
+      "shown_ratio" : 1,
+      "skipped_versions" : 0,
+      "stages_ms" : {
+        "capture" : {
+          "count" : 300,
+          "max" : 0.003,
+          "p50" : 0.001,
+          "p95" : 0.002
+        },
+        "capture_queue" : {
+          "count" : 300,
+          "max" : 2.855,
+          "p50" : 0.068,
+          "p95" : 2.04
+        },
+        "decode" : {
+          "count" : 300,
+          "max" : 1.213792,
+          "p50" : 0.81625,
+          "p95" : 0.996875
+        },
+        "decode_queue" : {
+          "count" : 300,
+          "max" : 0,
+          "p50" : 0,
+          "p95" : 0
+        },
+        "encode" : {
+          "count" : 300,
+          "max" : 7.455,
+          "p50" : 6.145,
+          "p95" : 6.649
+        },
+        "media" : {
+          "assemble" : {
+            "count" : 300,
+            "max" : 0,
+            "p50" : 0,
+            "p95" : 0
+          },
+          "hand_off" : {
+            "count" : 300,
+            "max" : 0.016125,
+            "p50" : 0.009,
+            "p95" : 0.01175
+          },
+          "network" : {
+            "count" : 300,
+            "max" : 0.379209,
+            "p50" : 0.230084,
+            "p95" : 0.270083
+          },
+          "queue" : {
+            "count" : 300,
+            "max" : 0.044,
+            "p50" : 0.024,
+            "p95" : 0.031
+          },
+          "send" : {
+            "count" : 300,
+            "max" : 0,
+            "p50" : 0,
+            "p95" : 0
+          }
+        },
+        "network_residual" : {
+          "count" : 300,
+          "max" : 0.435334,
+          "p50" : 0.26375,
+          "p95" : 0.309167
+        },
+        "render_queue" : {
+          "count" : 300,
+          "max" : 0.370251,
+          "p50" : 0.13571,
+          "p95" : 0.175834
+        },
+        "send" : {
+          "count" : 300,
+          "max" : 0.435334,
+          "p50" : 0.26375,
+          "p95" : 0.309167
+        }
+      },
+      "system" : "codevisor-v2",
+      "unreadable_fraction" : 0,
+      "updates_per_s" : 15,
+      "valid" : true
+    },
+    {
+      "bitrate_mbps" : {
+        "max" : 0.078096,
+        "p50" : 0.068888,
+        "p95" : 0.078096,
+        "total_mb" : 0.166018
+      },
+      "codec_errors" : 0,
+      "drops" : {
+        "capture" : 0,
+        "encoder" : 4,
+        "jitter" : 0,
+        "network" : 0
+      },
+      "e2e_endpoint" : "committed",
+      "e2e_ms" : {
+        "count" : 300,
+        "max" : 17.789543,
+        "p50" : 8.958877,
+        "p95" : 9.399876
+      },
+      "e2e_outside_jitter_buffer_ms" : {
+        "count" : 300,
+        "max" : 17.789543,
+        "p50" : 8.958877,
+        "p95" : 9.399876
+      },
+      "freezes" : {
+        "count" : 0,
+        "pauses" : 0,
+        "pauses_total_ms" : 0,
+        "per_minute" : 0,
+        "ratio" : 0,
+        "total_ms" : 0
+      },
+      "gap_ms" : {
+        "count" : 299,
+        "max" : 104.300416,
+        "p50" : 39.478876,
+        "p95" : 100.417667
+      },
+      "judder_ms" : 0.41766699999999446,
+      "media" : {
+        "admission_deferrals" : 0,
+        "capacity_kbps" : 100000,
+        "dropped_before_encode" : 0,
+        "encoded_bytes" : 126057,
+        "encoded_frames" : 901,
+        "encoded_key_frame_bytes" : 664,
+        "estimate_min_mbps_per_second" : [
+          100,
+          100,
+          100,
+          100,
+          100,
+          100,
+          100,
+          100,
+          100,
+          100,
+          100,
+          100,
+          100,
+          100,
+          100,
+          100,
+          100,
+          100,
+          100,
+          100,
+          100,
+          100,
+          100,
+          100,
+          100,
+          100,
+          100
+        ],
+        "fec_repairs" : 0,
+        "frames_lost" : 0,
+        "frames_sent" : 901,
+        "keyframes" : 1,
+        "ltr_refresh_keyframes" : 0,
+        "ltr_refreshes" : 0,
+        "nack_repairs" : 0,
+        "nacks_sent" : 0,
+        "packets_retransmitted" : 0,
+        "parity_packets" : 0,
+        "requested_keyframes" : 0,
+        "requested_refreshes" : 0,
+        "round_trip_ms" : 3.588,
+        "stale_ltr_acknowledgements" : 0,
+        "stalled_tiles" : 0,
+        "tiles_skipped" : 0
+      },
+      "network" : "N3",
+      "relay" : {
+        "feedback" : {
+          "bytes" : 171367,
+          "first_losses" : [
+            28,
+            56,
+            61,
+            106,
+            117,
+            244,
+            413,
+            495,
+            499,
+            522,
+            571,
+            581,
+            600,
+            805,
+            864,
+            1004
+          ],
+          "lost" : 31,
+          "packets" : 2699,
+          "queue_overflow" : 0,
+          "send_failures" : 0
+        },
+        "media" : {
+          "bytes" : 269427,
+          "first_losses" : [
+            172,
+            212,
+            398,
+            740,
+            752,
+            763,
+            798,
+            1022,
+            1109,
+            1113,
+            1150,
+            1215,
+            1277,
+            1280,
+            1296,
+            1416
+          ],
+          "lost" : 21,
+          "packets" : 1907,
+          "queue_overflow" : 0,
+          "send_failures" : 0
+        }
+      },
+      "repetition" : 1,
+      "resolution" : "R1",
+      "scene" : "typing",
+      "seed" : 7,
+      "shown_ratio" : 1,
+      "skipped_versions" : 0,
+      "stages_ms" : {
+        "capture" : {
+          "count" : 300,
+          "max" : 0.002,
+          "p50" : 0.001,
+          "p95" : 0.001
+        },
+        "capture_queue" : {
+          "count" : 300,
+          "max" : 2.262,
+          "p50" : 0.065,
+          "p95" : 0.116
+        },
+        "decode" : {
+          "count" : 300,
+          "max" : 1.062208,
+          "p50" : 0.906667,
+          "p95" : 0.962958
+        },
+        "decode_queue" : {
+          "count" : 300,
+          "max" : 0,
+          "p50" : 0,
+          "p95" : 0
+        },
+        "encode" : {
+          "count" : 300,
+          "max" : 6.948,
+          "p50" : 6.522,
+          "p95" : 6.703
+        },
+        "media" : {
+          "assemble" : {
+            "count" : 300,
+            "max" : 0,
+            "p50" : 0,
+            "p95" : 0
+          },
+          "hand_off" : {
+            "count" : 300,
+            "max" : 0.012875,
+            "p50" : 0.00825,
+            "p95" : 0.010583
+          },
+          "network" : {
+            "count" : 300,
+            "max" : 10.066791,
+            "p50" : 1.258584,
+            "p95" : 1.297125
+          },
+          "queue" : {
+            "count" : 300,
+            "max" : 0.053,
+            "p50" : 0.023,
+            "p95" : 0.026
+          },
+          "send" : {
+            "count" : 300,
+            "max" : 0,
+            "p50" : 0,
+            "p95" : 0
+          }
+        },
+        "network_residual" : {
+          "count" : 300,
+          "max" : 10.100041,
+          "p50" : 1.290167,
+          "p95" : 1.330375
+        },
+        "render_queue" : {
+          "count" : 300,
+          "max" : 0.243877,
+          "p50" : 0.149917,
+          "p95" : 0.176042
+        },
+        "send" : {
+          "count" : 300,
+          "max" : 10.100041,
+          "p50" : 1.290167,
+          "p95" : 1.330375
+        }
+      },
+      "system" : "codevisor-v2",
+      "unreadable_fraction" : 0,
+      "updates_per_s" : 15,
+      "valid" : true
+    },
+    {
+      "bitrate_mbps" : {
+        "max" : 2.656488,
+        "p50" : 1.382304,
+        "p95" : 2.656488,
+        "total_mb" : 3.748114
+      },
+      "codec_errors" : 0,
+      "drops" : {
+        "capture" : 0,
+        "encoder" : 4,
+        "jitter" : 0,
+        "network" : 0
+      },
+      "e2e_endpoint" : "committed",
+      "e2e_ms" : {
+        "count" : 1200,
+        "max" : 14.032668,
+        "p50" : 8.119876,
+        "p95" : 8.414167
+      },
+      "e2e_outside_jitter_buffer_ms" : {
+        "count" : 1200,
+        "max" : 14.032668,
+        "p50" : 8.119876,
+        "p95" : 8.414167
+      },
+      "freezes" : {
+        "count" : 0,
+        "pauses" : 0,
+        "pauses_total_ms" : 0,
+        "per_minute" : 0,
+        "ratio" : 0,
+        "total_ms" : 0
+      },
+      "gap_ms" : {
+        "count" : 1199,
+        "max" : 22.290208,
+        "p50" : 16.659666,
+        "p95" : 16.896375
+      },
+      "judder_ms" : 0.22970833333333118,
+      "media" : {
+        "admission_deferrals" : 0,
+        "capacity_kbps" : 859524,
+        "dropped_before_encode" : 0,
+        "encoded_bytes" : 5994697,
+        "encoded_frames" : 1804,
+        "encoded_key_frame_bytes" : 193511,
+        "estimate_min_mbps_per_second" : [
+          100,
+          1157.7,
+          1157.7,
+          1157.7,
+          1157.7,
+          1157.7,
+          1157.7,
+          1157.7,
+          1157.7,
+          1157.7,
+          984.7,
+          984.7,
+          984.7,
+          984.7,
+          907.4,
+          907.4,
+          907.4,
+          907.4,
+          907.4,
+          904.7,
+          904.7,
+          904.7,
+          904.7,
+          904.7,
+          859.5,
+          859.5,
+          859.5,
+          859.5
+        ],
+        "fec_repairs" : 0,
+        "frames_lost" : 0,
+        "frames_sent" : 1804,
+        "keyframes" : 1,
+        "ltr_refresh_keyframes" : 0,
+        "ltr_refreshes" : 0,
+        "nack_repairs" : 0,
+        "nacks_sent" : 0,
+        "packets_retransmitted" : 0,
+        "parity_packets" : 0,
+        "requested_keyframes" : 0,
+        "requested_refreshes" : 0,
+        "round_trip_ms" : 1.796,
+        "stale_ltr_acknowledgements" : 0,
+        "stalled_tiles" : 0,
+        "tiles_skipped" : 0
+      },
+      "network" : "N0",
+      "relay" : {
+        "feedback" : {
+          "bytes" : 338389,
+          "first_losses" : [
+
+          ],
+          "lost" : 0,
+          "packets" : 5460,
+          "queue_overflow" : 0,
+          "send_failures" : 0
+        },
+        "media" : {
+          "bytes" : 6424221,
+          "first_losses" : [
+
+          ],
+          "lost" : 0,
+          "packets" : 7090,
+          "queue_overflow" : 0,
+          "send_failures" : 0
+        }
+      },
+      "repetition" : 1,
+      "resolution" : "R1",
+      "scene" : "scroll",
+      "seed" : 7,
+      "shown_ratio" : 1,
+      "skipped_versions" : 0,
+      "stages_ms" : {
+        "capture" : {
+          "count" : 1200,
+          "max" : 0.002,
+          "p50" : 0.001,
+          "p95" : 0.001
+        },
+        "capture_queue" : {
+          "count" : 1200,
+          "max" : 0.285,
+          "p50" : 0.062,
+          "p95" : 0.105
+        },
+        "decode" : {
+          "count" : 1200,
+          "max" : 1.686833,
+          "p50" : 0.927375,
+          "p95" : 0.999208
+        },
+        "decode_queue" : {
+          "count" : 1200,
+          "max" : 0,
+          "p50" : 0,
+          "p95" : 0
+        },
+        "encode" : {
+          "count" : 1200,
+          "max" : 7.5,
+          "p50" : 6.658,
+          "p95" : 6.838
+        },
+        "media" : {
+          "assemble" : {
+            "count" : 1200,
+            "max" : 1.395,
+            "p50" : 0,
+            "p95" : 0.076
+          },
+          "hand_off" : {
+            "count" : 1200,
+            "max" : 0.015333,
+            "p50" : 0.0085,
+            "p95" : 0.010667
+          },
+          "network" : {
+            "count" : 1200,
+            "max" : 4.457375,
+            "p50" : 0.271042,
+            "p95" : 0.343458
+          },
+          "queue" : {
+            "count" : 1200,
+            "max" : 0.13,
+            "p50" : 0.026,
+            "p95" : 0.029
+          },
+          "send" : {
+            "count" : 1200,
+            "max" : 0,
+            "p50" : 0,
+            "p95" : 0
+          }
+        },
+        "network_residual" : {
+          "count" : 1200,
+          "max" : 4.588375,
+          "p50" : 0.305541,
+          "p95" : 0.380042
+        },
+        "render_queue" : {
+          "count" : 1200,
+          "max" : 0.391126,
+          "p50" : 0.149001,
+          "p95" : 0.164751
+        },
+        "send" : {
+          "count" : 1200,
+          "max" : 4.588375,
+          "p50" : 0.305541,
+          "p95" : 0.380042
+        }
+      },
+      "system" : "codevisor-v2",
+      "unreadable_fraction" : 0,
+      "updates_per_s" : 60,
+      "valid" : true
+    },
+    {
+      "bitrate_mbps" : {
+        "max" : 3.305456,
+        "p50" : 1.960616,
+        "p95" : 3.305456,
+        "total_mb" : 5.1331
+      },
+      "codec_errors" : 0,
+      "drops" : {
+        "capture" : 0,
+        "encoder" : 4,
+        "jitter" : 0,
+        "network" : 0
+      },
+      "e2e_endpoint" : "committed",
+      "e2e_ms" : {
+        "count" : 1200,
+        "max" : 17.886459,
+        "p50" : 9.202543,
+        "p95" : 9.651959
+      },
+      "e2e_outside_jitter_buffer_ms" : {
+        "count" : 1200,
+        "max" : 17.886459,
+        "p50" : 9.202543,
+        "p95" : 9.651959
+      },
+      "freezes" : {
+        "count" : 0,
+        "pauses" : 0,
+        "pauses_total_ms" : 0,
+        "per_minute" : 0,
+        "ratio" : 0,
+        "total_ms" : 0
+      },
+      "gap_ms" : {
+        "count" : 1199,
+        "max" : 25.467042,
+        "p50" : 16.658417,
+        "p95" : 16.991208
+      },
+      "judder_ms" : 0.32454133333333246,
+      "media" : {
+        "admission_deferrals" : 0,
+        "capacity_kbps" : 1047592,
+        "dropped_before_encode" : 0,
+        "encoded_bytes" : 5994697,
+        "encoded_frames" : 1804,
+        "encoded_key_frame_bytes" : 193511,
+        "estimate_min_mbps_per_second" : [
+          100,
+          785.6,
+          785.6,
+          785.6,
+          785.6,
+          974,
+          974,
+          974,
+          974,
+          974,
+          974,
+          974,
+          974,
+          974,
+          974,
+          974,
+          974,
+          974,
+          862.9,
+          861.8,
+          861.8,
+          861.8,
+          861.8,
+          861.8,
+          1047.6,
+          1047.6,
+          1047.6,
+          1047.6,
+          1047.6
+        ],
+        "fec_repairs" : 48,
+        "frames_lost" : 0,
+        "frames_sent" : 1804,
+        "keyframes" : 1,
+        "ltr_refresh_keyframes" : 0,
+        "ltr_refreshes" : 0,
+        "nack_repairs" : 1,
+        "nacks_sent" : 1,
+        "packets_retransmitted" : 1,
+        "parity_packets" : 1842,
+        "requested_keyframes" : 0,
+        "requested_refreshes" : 0,
+        "round_trip_ms" : 3.194,
+        "stale_ltr_acknowledgements" : 0,
+        "stalled_tiles" : 0,
+        "tiles_skipped" : 0
+      },
+      "network" : "N3",
+      "relay" : {
+        "feedback" : {
+          "bytes" : 462996,
+          "first_losses" : [
+            28,
+            56,
+            61,
+            106,
+            117,
+            244,
+            413,
+            495,
+            499,
+            522,
+            571,
+            581,
+            600,
+            805,
+            864,
+            1004
+          ],
+          "lost" : 74,
+          "packets" : 6905,
+          "queue_overflow" : 0,
+          "send_failures" : 0
+        },
+        "media" : {
+          "bytes" : 8628370,
+          "first_losses" : [
+            172,
+            212,
+            398,
+            740,
+            752,
+            763,
+            798,
+            1022,
+            1109,
+            1113,
+            1150,
+            1215,
+            1277,
+            1280,
+            1296,
+            1416
+          ],
+          "lost" : 91,
+          "packets" : 9130,
+          "queue_overflow" : 0,
+          "send_failures" : 0
+        }
+      },
+      "repetition" : 1,
+      "resolution" : "R1",
+      "scene" : "scroll",
+      "seed" : 7,
+      "shown_ratio" : 1,
+      "skipped_versions" : 0,
+      "stages_ms" : {
+        "capture" : {
+          "count" : 1200,
+          "max" : 0.002,
+          "p50" : 0.001,
+          "p95" : 0.001
+        },
+        "capture_queue" : {
+          "count" : 1200,
+          "max" : 0.36,
+          "p50" : 0.062,
+          "p95" : 0.103
+        },
+        "decode" : {
+          "count" : 1200,
+          "max" : 1.623209,
+          "p50" : 0.933416,
+          "p95" : 1.010125
+        },
+        "decode_queue" : {
+          "count" : 1200,
+          "max" : 0,
+          "p50" : 0,
+          "p95" : 0
+        },
+        "encode" : {
+          "count" : 1200,
+          "max" : 7.418,
+          "p50" : 6.68,
+          "p95" : 6.868
+        },
+        "media" : {
+          "assemble" : {
+            "count" : 1200,
+            "max" : 1.408,
+            "p50" : 0,
+            "p95" : 0.083
+          },
+          "hand_off" : {
+            "count" : 1200,
+            "max" : 0.013667,
+            "p50" : 0.008584,
+            "p95" : 0.010833
+          },
+          "network" : {
+            "count" : 1200,
+            "max" : 7.884833,
+            "p50" : 1.298083,
+            "p95" : 1.394875
+          },
+          "queue" : {
+            "count" : 1200,
+            "max" : 0.519,
+            "p50" : 0.033,
+            "p95" : 0.04
+          },
+          "recover" : {
+            "count" : 30,
+            "max" : 1.391,
+            "p50" : 0.059,
+            "p95" : 1.383
+          },
+          "send" : {
+            "count" : 1200,
+            "max" : 0,
+            "p50" : 0,
+            "p95" : 0
+          }
+        },
+        "network_residual" : {
+          "count" : 1200,
+          "max" : 8.386,
+          "p50" : 1.339292,
+          "p95" : 1.447625
+        },
+        "render_queue" : {
+          "count" : 1200,
+          "max" : 0.593043,
+          "p50" : 0.151668,
+          "p95" : 0.185126
+        },
+        "send" : {
+          "count" : 1200,
+          "max" : 8.386,
+          "p50" : 1.339292,
+          "p95" : 1.447625
+        }
+      },
+      "system" : "codevisor-v2",
+      "unreadable_fraction" : 0,
+      "updates_per_s" : 60,
+      "valid" : true
+    },
+    {
+      "bitrate_mbps" : {
+        "max" : 31.011576,
+        "p50" : 25.599648,
+        "p95" : 31.011576,
+        "total_mb" : 61.074203
+      },
+      "codec_errors" : 0,
+      "drops" : {
+        "capture" : 0,
+        "encoder" : 6,
+        "jitter" : 0,
+        "network" : 0
+      },
+      "e2e_endpoint" : "committed",
+      "e2e_ms" : {
+        "count" : 1200,
+        "max" : 12.052543,
+        "p50" : 10.265709,
+        "p95" : 11.017543
+      },
+      "e2e_outside_jitter_buffer_ms" : {
+        "count" : 1200,
+        "max" : 12.052543,
+        "p50" : 10.265709,
+        "p95" : 11.017543
+      },
+      "freezes" : {
+        "count" : 0,
+        "pauses" : 0,
+        "pauses_total_ms" : 0,
+        "per_minute" : 0,
+        "ratio" : 0,
+        "total_ms" : 0
+      },
+      "gap_ms" : {
+        "count" : 1199,
+        "max" : 18.238333,
+        "p50" : 16.65725,
+        "p95" : 16.939
+      },
+      "judder_ms" : 0.2723333333333322,
+      "media" : {
+        "admission_deferrals" : 2,
+        "capacity_kbps" : 2143346,
+        "dropped_before_encode" : 2,
+        "encoded_bytes" : 89189975,
+        "encoded_frames" : 1802,
+        "encoded_key_frame_bytes" : 251919,
+        "estimate_min_mbps_per_second" : [
+          100,
+          2273.3,
+          2500,
+          2500,
+          2500,
+          2500,
+          2500,
+          2500,
+          2500,
+          2500,
+          2500,
+          2211.1,
+          2211.1,
+          2211.1,
+          2211.1,
+          2211.1,
+          2211.1,
+          2211.1,
+          2211.1,
+          2167.5,
+          1578.7,
+          1578.7,
+          2143.3,
+          2143.3,
+          2143.3,
+          2143.3,
+          2143.3,
+          2143.3,
+          2143.3
+        ],
+        "fec_repairs" : 0,
+        "frames_lost" : 0,
+        "frames_sent" : 1802,
+        "keyframes" : 1,
+        "ltr_refresh_keyframes" : 0,
+        "ltr_refreshes" : 0,
+        "nack_repairs" : 0,
+        "nacks_sent" : 0,
+        "packets_retransmitted" : 0,
+        "parity_packets" : 0,
+        "requested_keyframes" : 0,
+        "requested_refreshes" : 0,
+        "round_trip_ms" : 1.709,
+        "stale_ltr_acknowledgements" : 0,
+        "stalled_tiles" : 0,
+        "tiles_skipped" : 0
+      },
+      "network" : "N0",
+      "relay" : {
+        "feedback" : {
+          "bytes" : 372312,
+          "first_losses" : [
+
+          ],
+          "lost" : 0,
+          "packets" : 6300,
+          "queue_overflow" : 0,
+          "send_failures" : 0
+        },
+        "media" : {
+          "bytes" : 92298918,
+          "first_losses" : [
+
+          ],
+          "lost" : 0,
+          "packets" : 66696,
+          "queue_overflow" : 0,
+          "send_failures" : 0
+        }
+      },
+      "repetition" : 1,
+      "resolution" : "R1",
+      "scene" : "video",
+      "seed" : 7,
+      "shown_ratio" : 1,
+      "skipped_versions" : 0,
+      "stages_ms" : {
+        "capture" : {
+          "count" : 1200,
+          "max" : 0.015,
+          "p50" : 0.001,
+          "p95" : 0.001
+        },
+        "capture_queue" : {
+          "count" : 1200,
+          "max" : 0.24,
+          "p50" : 0.063,
+          "p95" : 0.106
+        },
+        "decode" : {
+          "count" : 1200,
+          "max" : 1.778541,
+          "p50" : 1.243458,
+          "p95" : 1.394542
+        },
+        "decode_queue" : {
+          "count" : 1200,
+          "max" : 0,
+          "p50" : 0,
+          "p95" : 0
+        },
+        "encode" : {
+          "count" : 1200,
+          "max" : 7.894,
+          "p50" : 7.261,
+          "p95" : 7.515
+        },
+        "media" : {
+          "assemble" : {
+            "count" : 1200,
+            "max" : 0.608,
+            "p50" : 0.328,
+            "p95" : 0.475
+          },
+          "hand_off" : {
+            "count" : 1200,
+            "max" : 0.016166,
+            "p50" : 0.008625,
+            "p95" : 0.011166
+          },
+          "network" : {
+            "count" : 1200,
+            "max" : 2.612958,
+            "p50" : 1.47325,
+            "p95" : 1.916458
+          },
+          "queue" : {
+            "count" : 1200,
+            "max" : 0.227,
+            "p50" : 0.048,
+            "p95" : 0.062
+          },
+          "send" : {
+            "count" : 1200,
+            "max" : 0,
+            "p50" : 0,
+            "p95" : 0
+          }
+        },
+        "network_residual" : {
+          "count" : 1200,
+          "max" : 2.676583,
+          "p50" : 1.531375,
+          "p95" : 1.986375
+        },
+        "render_queue" : {
+          "count" : 1200,
+          "max" : 0.421835,
+          "p50" : 0.151667,
+          "p95" : 0.174418
+        },
+        "send" : {
+          "count" : 1200,
+          "max" : 2.676583,
+          "p50" : 1.531375,
+          "p95" : 1.986375
+        }
+      },
+      "system" : "codevisor-v2",
+      "unreadable_fraction" : 0,
+      "updates_per_s" : 60,
+      "valid" : true
+    },
+    {
+      "bitrate_mbps" : {
+        "max" : 33.83136,
+        "p50" : 27.982488,
+        "p95" : 33.83136,
+        "total_mb" : 66.475932
+      },
+      "codec_errors" : 0,
+      "drops" : {
+        "capture" : 0,
+        "encoder" : 6,
+        "jitter" : 0,
+        "network" : 0
+      },
+      "e2e_endpoint" : "committed",
+      "e2e_ms" : {
+        "count" : 1200,
+        "max" : 16.105918,
+        "p50" : 11.698001,
+        "p95" : 14.464085
+      },
+      "e2e_outside_jitter_buffer_ms" : {
+        "count" : 1200,
+        "max" : 16.105918,
+        "p50" : 11.698001,
+        "p95" : 14.464085
+      },
+      "freezes" : {
+        "count" : 0,
+        "pauses" : 0,
+        "pauses_total_ms" : 0,
+        "per_minute" : 0,
+        "ratio" : 0,
+        "total_ms" : 0
+      },
+      "gap_ms" : {
+        "count" : 1199,
+        "max" : 20.804917,
+        "p50" : 16.656917,
+        "p95" : 19.447125
+      },
+      "judder_ms" : 2.780458333333332,
+      "media" : {
+        "admission_deferrals" : 1,
+        "capacity_kbps" : 532563,
+        "dropped_before_encode" : 2,
+        "encoded_bytes" : 89174673,
+        "encoded_frames" : 1802,
+        "encoded_key_frame_bytes" : 251919,
+        "estimate_min_mbps_per_second" : [
+          100,
+          1026.3,
+          1026.3,
+          1026.3,
+          1026.3,
+          1026.3,
+          1026.3,
+          1026.3,
+          1026.3,
+          1026.3,
+          641.1,
+          641.1,
+          641.1,
+          641.1,
+          556.2,
+          556.2,
+          556.2,
+          556.2,
+          556.2,
+          556.2,
+          556.2,
+          551.9,
+          551.9,
+          551.9,
+          551.9,
+          532.6,
+          532.6,
+          532.6
+        ],
+        "fec_repairs" : 591,
+        "frames_lost" : 0,
+        "frames_sent" : 1802,
+        "keyframes" : 1,
+        "ltr_refresh_keyframes" : 0,
+        "ltr_refreshes" : 0,
+        "nack_repairs" : 3,
+        "nacks_sent" : 4,
+        "packets_retransmitted" : 4,
+        "parity_packets" : 5685,
+        "requested_keyframes" : 0,
+        "requested_refreshes" : 0,
+        "round_trip_ms" : 3.209,
+        "stale_ltr_acknowledgements" : 0,
+        "stalled_tiles" : 0,
+        "tiles_skipped" : 0
+      },
+      "network" : "N3",
+      "relay" : {
+        "feedback" : {
+          "bytes" : 560195,
+          "first_losses" : [
+            28,
+            56,
+            61,
+            106,
+            117,
+            244,
+            413,
+            495,
+            499,
+            522,
+            571,
+            581,
+            600,
+            805,
+            864,
+            1004
+          ],
+          "lost" : 96,
+          "packets" : 9097,
+          "queue_overflow" : 0,
+          "send_failures" : 0
+        },
+        "media" : {
+          "bytes" : 100414629,
+          "first_losses" : [
+            172,
+            212,
+            398,
+            740,
+            752,
+            763,
+            798,
+            1022,
+            1109,
+            1113,
+            1150,
+            1215,
+            1277,
+            1280,
+            1296,
+            1416
+          ],
+          "lost" : 821,
+          "packets" : 80324,
+          "queue_overflow" : 0,
+          "send_failures" : 0
+        }
+      },
+      "repetition" : 1,
+      "resolution" : "R1",
+      "scene" : "video",
+      "seed" : 7,
+      "shown_ratio" : 1,
+      "skipped_versions" : 0,
+      "stages_ms" : {
+        "capture" : {
+          "count" : 1200,
+          "max" : 0.002,
+          "p50" : 0.001,
+          "p95" : 0.001
+        },
+        "capture_queue" : {
+          "count" : 1200,
+          "max" : 0.243,
+          "p50" : 0.064,
+          "p95" : 0.108
+        },
+        "decode" : {
+          "count" : 1200,
+          "max" : 1.685875,
+          "p50" : 1.265542,
+          "p95" : 1.398875
+        },
+        "decode_queue" : {
+          "count" : 1200,
+          "max" : 0,
+          "p50" : 0,
+          "p95" : 0
+        },
+        "encode" : {
+          "count" : 1200,
+          "max" : 8.044,
+          "p50" : 7.284,
+          "p95" : 7.499
+        },
+        "media" : {
+          "assemble" : {
+            "count" : 1200,
+            "max" : 3.363,
+            "p50" : 1.007,
+            "p95" : 1.109
+          },
+          "hand_off" : {
+            "count" : 1200,
+            "max" : 0.01575,
+            "p50" : 0.009041,
+            "p95" : 0.011334
+          },
+          "network" : {
+            "count" : 1200,
+            "max" : 7.259083,
+            "p50" : 2.57425,
+            "p95" : 5.368458
+          },
+          "queue" : {
+            "count" : 1200,
+            "max" : 0.297,
+            "p50" : 0.16,
+            "p95" : 0.208
+          },
+          "recover" : {
+            "count" : 408,
+            "max" : 3.363,
+            "p50" : 1.046,
+            "p95" : 1.13
+          },
+          "send" : {
+            "count" : 1200,
+            "max" : 0,
+            "p50" : 0,
+            "p95" : 0
+          }
+        },
+        "network_residual" : {
+          "count" : 1200,
+          "max" : 7.41025,
+          "p50" : 2.763125,
+          "p95" : 5.573459
+        },
+        "render_queue" : {
+          "count" : 1200,
+          "max" : 0.389084,
+          "p50" : 0.150877,
+          "p95" : 0.17771
+        },
+        "send" : {
+          "count" : 1200,
+          "max" : 7.41025,
+          "p50" : 2.763125,
+          "p95" : 5.573459
+        }
+      },
+      "system" : "codevisor-v2",
+      "unreadable_fraction" : 0,
+      "updates_per_s" : 60,
+      "valid" : true
+    },
+    {
+      "bitrate_mbps" : {
+        "max" : 0.074704,
+        "p50" : 0.065504,
+        "p95" : 0.074704,
+        "total_mb" : 0.159574
+      },
+      "codec_errors" : 0,
+      "drops" : {
+        "capture" : 0,
+        "encoder" : 4,
+        "jitter" : 0,
+        "network" : 0
+      },
+      "e2e_endpoint" : "committed",
+      "e2e_ms" : {
+        "count" : 300,
+        "max" : 9.947543,
+        "p50" : 8.022459,
+        "p95" : 9.563917
+      },
+      "e2e_outside_jitter_buffer_ms" : {
+        "count" : 300,
+        "max" : 9.947543,
+        "p50" : 8.022459,
+        "p95" : 9.563917
+      },
+      "freezes" : {
+        "count" : 0,
+        "pauses" : 0,
+        "pauses_total_ms" : 0,
+        "per_minute" : 0,
+        "ratio" : 0,
+        "total_ms" : 0
+      },
+      "gap_ms" : {
+        "count" : 299,
+        "max" : 102.291875,
+        "p50" : 33.891667,
+        "p95" : 101.61325
+      },
+      "judder_ms" : 1.6132499999999936,
+      "media" : {
+        "admission_deferrals" : 0,
+        "capacity_kbps" : 100000,
+        "dropped_before_encode" : 0,
+        "encoded_bytes" : 121655,
+        "encoded_frames" : 863,
+        "encoded_key_frame_bytes" : 664,
+        "estimate_min_mbps_per_second" : [
+          100,
+          100,
+          100,
+          100,
+          100,
+          100,
+          100,
+          100,
+          100,
+          100,
+          100,
+          100,
+          100,
+          100,
+          100,
+          100,
+          100,
+          100,
+          100,
+          100,
+          100,
+          100,
+          100,
+          100,
+          100,
+          100,
+          100
+        ],
+        "fec_repairs" : 0,
+        "frames_lost" : 0,
+        "frames_sent" : 863,
+        "keyframes" : 1,
+        "ltr_refresh_keyframes" : 0,
+        "ltr_refreshes" : 0,
+        "nack_repairs" : 0,
+        "nacks_sent" : 0,
+        "packets_retransmitted" : 0,
+        "parity_packets" : 0,
+        "requested_keyframes" : 0,
+        "requested_refreshes" : 0,
+        "round_trip_ms" : 1.923,
+        "stale_ltr_acknowledgements" : 0,
+        "stalled_tiles" : 0,
+        "tiles_skipped" : 0
+      },
+      "network" : "N0",
+      "relay" : {
+        "feedback" : {
+          "bytes" : 155283,
+          "first_losses" : [
+
+          ],
+          "lost" : 0,
+          "packets" : 2461,
+          "queue_overflow" : 0,
+          "send_failures" : 0
+        },
+        "media" : {
+          "bytes" : 254709,
+          "first_losses" : [
+
+          ],
+          "lost" : 0,
+          "packets" : 1783,
+          "queue_overflow" : 0,
+          "send_failures" : 0
+        }
+      },
+      "repetition" : 2,
+      "resolution" : "R1",
+      "scene" : "typing",
+      "seed" : 7,
+      "shown_ratio" : 1,
+      "skipped_versions" : 0,
+      "stages_ms" : {
+        "capture" : {
+          "count" : 300,
+          "max" : 0.003,
+          "p50" : 0.001,
+          "p95" : 0.002
+        },
+        "capture_queue" : {
+          "count" : 300,
+          "max" : 2.4,
+          "p50" : 0.071,
+          "p95" : 1.987
+        },
+        "decode" : {
+          "count" : 300,
+          "max" : 1.104834,
+          "p50" : 0.915042,
+          "p95" : 0.985958
+        },
+        "decode_queue" : {
+          "count" : 300,
+          "max" : 0,
+          "p50" : 0,
+          "p95" : 0
+        },
+        "encode" : {
+          "count" : 300,
+          "max" : 7.064,
+          "p50" : 6.527,
+          "p95" : 6.758
+        },
+        "media" : {
+          "assemble" : {
+            "count" : 300,
+            "max" : 0,
+            "p50" : 0,
+            "p95" : 0
+          },
+          "hand_off" : {
+            "count" : 300,
+            "max" : 0.012916,
+            "p50" : 0.008,
+            "p95" : 0.010417
+          },
+          "network" : {
+            "count" : 300,
+            "max" : 0.34925,
+            "p50" : 0.231833,
+            "p95" : 0.260916
+          },
+          "queue" : {
+            "count" : 300,
+            "max" : 0.071,
+            "p50" : 0.023,
+            "p95" : 0.026
+          },
+          "send" : {
+            "count" : 300,
+            "max" : 0,
+            "p50" : 0,
+            "p95" : 0
+          }
+        },
+        "network_residual" : {
+          "count" : 300,
+          "max" : 0.388166,
+          "p50" : 0.2635,
+          "p95" : 0.296917
+        },
+        "render_queue" : {
+          "count" : 300,
+          "max" : 0.255043,
+          "p50" : 0.145835,
+          "p95" : 0.170918
+        },
+        "send" : {
+          "count" : 300,
+          "max" : 0.388166,
+          "p50" : 0.2635,
+          "p95" : 0.296917
+        }
+      },
+      "system" : "codevisor-v2",
+      "unreadable_fraction" : 0,
+      "updates_per_s" : 15,
+      "valid" : true
+    },
+    {
+      "bitrate_mbps" : {
+        "max" : 0.136344,
+        "p50" : 0.116968,
+        "p95" : 0.136344,
+        "total_mb" : 0.277266
+      },
+      "codec_errors" : 0,
+      "drops" : {
+        "capture" : 0,
+        "encoder" : 4,
+        "jitter" : 0,
+        "network" : 0
+      },
+      "e2e_endpoint" : "committed",
+      "e2e_ms" : {
+        "count" : 300,
+        "max" : 15.840626,
+        "p50" : 9.048334,
+        "p95" : 10.626168
+      },
+      "e2e_outside_jitter_buffer_ms" : {
+        "count" : 300,
+        "max" : 15.840626,
+        "p50" : 9.048334,
+        "p95" : 10.626168
+      },
+      "freezes" : {
+        "count" : 0,
+        "pauses" : 0,
+        "pauses_total_ms" : 0,
+        "per_minute" : 0,
+        "ratio" : 0,
+        "total_ms" : 0
+      },
+      "gap_ms" : {
+        "count" : 299,
+        "max" : 106.031417,
+        "p50" : 39.276667,
+        "p95" : 101.807583
+      },
+      "judder_ms" : 1.807582999999994,
+      "media" : {
+        "admission_deferrals" : 0,
+        "capacity_kbps" : 100000,
+        "dropped_before_encode" : 0,
+        "encoded_bytes" : 121773,
+        "encoded_frames" : 864,
+        "encoded_key_frame_bytes" : 664,
+        "estimate_min_mbps_per_second" : [
+          100,
+          100,
+          100,
+          100,
+          100,
+          100,
+          100,
+          100,
+          100,
+          100,
+          100,
+          100,
+          100,
+          100,
+          100,
+          100,
+          100,
+          100,
+          100,
+          100,
+          100,
+          100,
+          100,
+          100,
+          100,
+          100,
+          100
+        ],
+        "fec_repairs" : 0,
+        "frames_lost" : 0,
+        "frames_sent" : 864,
+        "keyframes" : 1,
+        "ltr_refresh_keyframes" : 0,
+        "ltr_refreshes" : 0,
+        "nack_repairs" : 2,
+        "nacks_sent" : 2,
+        "packets_retransmitted" : 2,
+        "parity_packets" : 522,
+        "requested_keyframes" : 0,
+        "requested_refreshes" : 0,
+        "round_trip_ms" : 3.09,
+        "stale_ltr_acknowledgements" : 0,
+        "stalled_tiles" : 0,
+        "tiles_skipped" : 0
+      },
+      "network" : "N3",
+      "relay" : {
+        "feedback" : {
+          "bytes" : 183687,
+          "first_losses" : [
+            28,
+            56,
+            61,
+            106,
+            117,
+            244,
+            413,
+            495,
+            499,
+            522,
+            571,
+            581,
+            600,
+            805,
+            864,
+            1004
+          ],
+          "lost" : 29,
+          "packets" : 2519,
+          "queue_overflow" : 0,
+          "send_failures" : 0
+        },
+        "media" : {
+          "bytes" : 377796,
+          "first_losses" : [
+            172,
+            212,
+            398,
+            740,
+            752,
+            763,
+            798,
+            1022,
+            1109,
+            1113,
+            1150,
+            1215,
+            1277,
+            1280,
+            1296,
+            1416
+          ],
+          "lost" : 18,
+          "packets" : 1829,
+          "queue_overflow" : 0,
+          "send_failures" : 0
+        }
+      },
+      "repetition" : 2,
+      "resolution" : "R1",
+      "scene" : "typing",
+      "seed" : 7,
+      "shown_ratio" : 1,
+      "skipped_versions" : 0,
+      "stages_ms" : {
+        "capture" : {
+          "count" : 300,
+          "max" : 0.004,
+          "p50" : 0.001,
+          "p95" : 0.002
+        },
+        "capture_queue" : {
+          "count" : 300,
+          "max" : 2.212,
+          "p50" : 0.07,
+          "p95" : 1.992
+        },
+        "decode" : {
+          "count" : 300,
+          "max" : 1.1535,
+          "p50" : 0.907958,
+          "p95" : 0.973958
+        },
+        "decode_queue" : {
+          "count" : 300,
+          "max" : 0,
+          "p50" : 0,
+          "p95" : 0
+        },
+        "encode" : {
+          "count" : 300,
+          "max" : 7.229,
+          "p50" : 6.527,
+          "p95" : 6.719
+        },
+        "media" : {
+          "assemble" : {
+            "count" : 300,
+            "max" : 0,
+            "p50" : 0,
+            "p95" : 0
+          },
+          "hand_off" : {
+            "count" : 300,
+            "max" : 0.014208,
+            "p50" : 0.007875,
+            "p95" : 0.010083
+          },
+          "network" : {
+            "count" : 300,
+            "max" : 7.5995,
+            "p50" : 1.264375,
+            "p95" : 1.310416
+          },
+          "queue" : {
+            "count" : 300,
+            "max" : 0.101,
+            "p50" : 0.026,
+            "p95" : 0.031
+          },
+          "send" : {
+            "count" : 300,
+            "max" : 0,
+            "p50" : 0,
+            "p95" : 0
+          }
+        },
+        "network_residual" : {
+          "count" : 300,
+          "max" : 7.638375,
+          "p50" : 1.299083,
+          "p95" : 1.355958
+        },
+        "render_queue" : {
+          "count" : 300,
+          "max" : 0.338084,
+          "p50" : 0.150043,
+          "p95" : 0.172418
+        },
+        "send" : {
+          "count" : 300,
+          "max" : 7.638375,
+          "p50" : 1.299083,
+          "p95" : 1.355958
+        }
+      },
+      "system" : "codevisor-v2",
+      "unreadable_fraction" : 0,
+      "updates_per_s" : 15,
+      "valid" : true
+    },
+    {
+      "bitrate_mbps" : {
+        "max" : 2.656424,
+        "p50" : 1.38228,
+        "p95" : 2.656424,
+        "total_mb" : 3.74803
+      },
+      "codec_errors" : 0,
+      "drops" : {
+        "capture" : 0,
+        "encoder" : 4,
+        "jitter" : 0,
+        "network" : 0
+      },
+      "e2e_endpoint" : "committed",
+      "e2e_ms" : {
+        "count" : 1200,
+        "max" : 14.016626,
+        "p50" : 8.136959,
+        "p95" : 8.449418
+      },
+      "e2e_outside_jitter_buffer_ms" : {
+        "count" : 1200,
+        "max" : 14.016626,
+        "p50" : 8.136959,
+        "p95" : 8.449418
+      },
+      "freezes" : {
+        "count" : 0,
+        "pauses" : 0,
+        "pauses_total_ms" : 0,
+        "per_minute" : 0,
+        "ratio" : 0,
+        "total_ms" : 0
+      },
+      "gap_ms" : {
+        "count" : 1199,
+        "max" : 22.225124,
+        "p50" : 16.661417,
+        "p95" : 16.909542
+      },
+      "judder_ms" : 0.24287533333333045,
+      "media" : {
+        "admission_deferrals" : 0,
+        "capacity_kbps" : 960464,
+        "dropped_before_encode" : 0,
+        "encoded_bytes" : 5994697,
+        "encoded_frames" : 1804,
+        "encoded_key_frame_bytes" : 193511,
+        "estimate_min_mbps_per_second" : [
+          100,
+          1179.3,
+          1179.3,
+          1179.3,
+          1179.3,
+          1179.3,
+          1179.3,
+          1179.3,
+          1179.3,
+          1179.3,
+          977.8,
+          977.8,
+          977.8,
+          977.8,
+          917.7,
+          917.7,
+          917.7,
+          917.7,
+          917.7,
+          917.7,
+          960.5,
+          960.5,
+          960.5,
+          960.5,
+          960.5,
+          960.5,
+          960.5,
+          960.5,
+          960.5
+        ],
+        "fec_repairs" : 0,
+        "frames_lost" : 0,
+        "frames_sent" : 1804,
+        "keyframes" : 1,
+        "ltr_refresh_keyframes" : 0,
+        "ltr_refreshes" : 0,
+        "nack_repairs" : 0,
+        "nacks_sent" : 0,
+        "packets_retransmitted" : 0,
+        "parity_packets" : 0,
+        "requested_keyframes" : 0,
+        "requested_refreshes" : 0,
+        "round_trip_ms" : 1.643,
+        "stale_ltr_acknowledgements" : 0,
+        "stalled_tiles" : 0,
+        "tiles_skipped" : 0
+      },
+      "network" : "N0",
+      "relay" : {
+        "feedback" : {
+          "bytes" : 338712,
+          "first_losses" : [
+
+          ],
+          "lost" : 0,
+          "packets" : 5461,
+          "queue_overflow" : 0,
+          "send_failures" : 0
+        },
+        "media" : {
+          "bytes" : 6424916,
+          "first_losses" : [
+
+          ],
+          "lost" : 0,
+          "packets" : 7096,
+          "queue_overflow" : 0,
+          "send_failures" : 0
+        }
+      },
+      "repetition" : 2,
+      "resolution" : "R1",
+      "scene" : "scroll",
+      "seed" : 7,
+      "shown_ratio" : 1,
+      "skipped_versions" : 0,
+      "stages_ms" : {
+        "capture" : {
+          "count" : 1200,
+          "max" : 0.002,
+          "p50" : 0.001,
+          "p95" : 0.001
+        },
+        "capture_queue" : {
+          "count" : 1200,
+          "max" : 0.239,
+          "p50" : 0.062,
+          "p95" : 0.105
+        },
+        "decode" : {
+          "count" : 1200,
+          "max" : 1.632,
+          "p50" : 0.930292,
+          "p95" : 1.014417
+        },
+        "decode_queue" : {
+          "count" : 1200,
+          "max" : 0,
+          "p50" : 0,
+          "p95" : 0
+        },
+        "encode" : {
+          "count" : 1200,
+          "max" : 7.632,
+          "p50" : 6.672,
+          "p95" : 6.86
+        },
+        "media" : {
+          "assemble" : {
+            "count" : 1200,
+            "max" : 1.4,
+            "p50" : 0,
+            "p95" : 0.077
+          },
+          "hand_off" : {
+            "count" : 1200,
+            "max" : 0.017209,
+            "p50" : 0.008542,
+            "p95" : 0.010708
+          },
+          "network" : {
+            "count" : 1200,
+            "max" : 4.451208,
+            "p50" : 0.267833,
+            "p95" : 0.349791
+          },
+          "queue" : {
+            "count" : 1200,
+            "max" : 0.124,
+            "p50" : 0.025,
+            "p95" : 0.029
+          },
+          "send" : {
+            "count" : 1200,
+            "max" : 0,
+            "p50" : 0,
+            "p95" : 0
+          }
+        },
+        "network_residual" : {
+          "count" : 1200,
+          "max" : 4.585417,
+          "p50" : 0.303167,
+          "p95" : 0.389166
+        },
+        "render_queue" : {
+          "count" : 1200,
+          "max" : 0.577626,
+          "p50" : 0.148418,
+          "p95" : 0.168835
+        },
+        "send" : {
+          "count" : 1200,
+          "max" : 4.585417,
+          "p50" : 0.303167,
+          "p95" : 0.389166
+        }
+      },
+      "system" : "codevisor-v2",
+      "unreadable_fraction" : 0,
+      "updates_per_s" : 60,
+      "valid" : true
+    },
+    {
+      "bitrate_mbps" : {
+        "max" : 3.312048,
+        "p50" : 1.957536,
+        "p95" : 3.312048,
+        "total_mb" : 5.131088
+      },
+      "codec_errors" : 0,
+      "drops" : {
+        "capture" : 0,
+        "encoder" : 4,
+        "jitter" : 0,
+        "network" : 0
+      },
+      "e2e_endpoint" : "committed",
+      "e2e_ms" : {
+        "count" : 1200,
+        "max" : 31.483377,
+        "p50" : 9.187793,
+        "p95" : 9.672918
+      },
+      "e2e_outside_jitter_buffer_ms" : {
+        "count" : 1200,
+        "max" : 31.483377,
+        "p50" : 9.187793,
+        "p95" : 9.672918
+      },
+      "freezes" : {
+        "count" : 0,
+        "pauses" : 0,
+        "pauses_total_ms" : 0,
+        "per_minute" : 0,
+        "ratio" : 0,
+        "total_ms" : 0
+      },
+      "gap_ms" : {
+        "count" : 1199,
+        "max" : 38.874709,
+        "p50" : 16.661292,
+        "p95" : 17.016459
+      },
+      "judder_ms" : 0.34979233333333326,
+      "media" : {
+        "admission_deferrals" : 0,
+        "capacity_kbps" : 888841,
+        "dropped_before_encode" : 0,
+        "encoded_bytes" : 5994697,
+        "encoded_frames" : 1804,
+        "encoded_key_frame_bytes" : 193511,
+        "estimate_min_mbps_per_second" : [
+          100,
+          938.5,
+          938.5,
+          938.5,
+          938.5,
+          938.5,
+          938.5,
+          938.5,
+          938.5,
+          938.5,
+          938.5,
+          938.5,
+          938.5,
+          938.5,
+          907.4,
+          907.4,
+          907.4,
+          907.4,
+          907.4,
+          907.4,
+          907.4,
+          907.4,
+          907.4,
+          907.4,
+          888.8,
+          888.8,
+          888.8,
+          888.8
+        ],
+        "fec_repairs" : 50,
+        "frames_lost" : 0,
+        "frames_sent" : 1804,
+        "keyframes" : 1,
+        "ltr_refresh_keyframes" : 0,
+        "ltr_refreshes" : 0,
+        "nack_repairs" : 1,
+        "nacks_sent" : 1,
+        "packets_retransmitted" : 1,
+        "parity_packets" : 1843,
+        "requested_keyframes" : 0,
+        "requested_refreshes" : 0,
+        "round_trip_ms" : 3.482,
+        "stale_ltr_acknowledgements" : 0,
+        "stalled_tiles" : 0,
+        "tiles_skipped" : 0
+      },
+      "network" : "N3",
+      "relay" : {
+        "feedback" : {
+          "bytes" : 464298,
+          "first_losses" : [
+            28,
+            56,
+            61,
+            106,
+            117,
+            244,
+            413,
+            495,
+            499,
+            522,
+            571,
+            581,
+            600,
+            805,
+            864,
+            1004
+          ],
+          "lost" : 74,
+          "packets" : 6947,
+          "queue_overflow" : 0,
+          "send_failures" : 0
+        },
+        "media" : {
+          "bytes" : 8622898,
+          "first_losses" : [
+            172,
+            212,
+            398,
+            740,
+            752,
+            763,
+            798,
+            1022,
+            1109,
+            1113,
+            1150,
+            1215,
+            1277,
+            1280,
+            1296,
+            1416
+          ],
+          "lost" : 90,
+          "packets" : 9108,
+          "queue_overflow" : 0,
+          "send_failures" : 0
+        }
+      },
+      "repetition" : 2,
+      "resolution" : "R1",
+      "scene" : "scroll",
+      "seed" : 7,
+      "shown_ratio" : 1,
+      "skipped_versions" : 0,
+      "stages_ms" : {
+        "capture" : {
+          "count" : 1200,
+          "max" : 0.003,
+          "p50" : 0.001,
+          "p95" : 0.001
+        },
+        "capture_queue" : {
+          "count" : 1200,
+          "max" : 0.335,
+          "p50" : 0.062,
+          "p95" : 0.105
+        },
+        "decode" : {
+          "count" : 1200,
+          "max" : 1.630375,
+          "p50" : 0.936459,
+          "p95" : 1.014542
+        },
+        "decode_queue" : {
+          "count" : 1200,
+          "max" : 0,
+          "p50" : 0,
+          "p95" : 0
+        },
+        "encode" : {
+          "count" : 1200,
+          "max" : 7.371,
+          "p50" : 6.669,
+          "p95" : 6.878
+        },
+        "media" : {
+          "assemble" : {
+            "count" : 1200,
+            "max" : 1.402,
+            "p50" : 0,
+            "p95" : 0.084
+          },
+          "hand_off" : {
+            "count" : 1200,
+            "max" : 0.016334,
+            "p50" : 0.008625,
+            "p95" : 0.010917
+          },
+          "network" : {
+            "count" : 1200,
+            "max" : 8.023167,
+            "p50" : 1.299542,
+            "p95" : 1.397625
+          },
+          "queue" : {
+            "count" : 1200,
+            "max" : 22.374,
+            "p50" : 0.033,
+            "p95" : 0.039
+          },
+          "recover" : {
+            "count" : 33,
+            "max" : 1.343,
+            "p50" : 0.056,
+            "p95" : 1.341
+          },
+          "send" : {
+            "count" : 1200,
+            "max" : 0,
+            "p50" : 0,
+            "p95" : 0
+          }
+        },
+        "network_residual" : {
+          "count" : 1200,
+          "max" : 23.62275,
+          "p50" : 1.342833,
+          "p95" : 1.447083
+        },
+        "render_queue" : {
+          "count" : 1200,
+          "max" : 0.435042,
+          "p50" : 0.151918,
+          "p95" : 0.185126
+        },
+        "send" : {
+          "count" : 1200,
+          "max" : 23.62275,
+          "p50" : 1.342833,
+          "p95" : 1.447083
+        }
+      },
+      "system" : "codevisor-v2",
+      "unreadable_fraction" : 0,
+      "updates_per_s" : 60,
+      "valid" : true
+    },
+    {
+      "bitrate_mbps" : {
+        "max" : 31.012168,
+        "p50" : 25.599616,
+        "p95" : 31.012168,
+        "total_mb" : 61.073699
+      },
+      "codec_errors" : 0,
+      "drops" : {
+        "capture" : 0,
+        "encoder" : 6,
+        "jitter" : 0,
+        "network" : 0
+      },
+      "e2e_endpoint" : "committed",
+      "e2e_ms" : {
+        "count" : 1200,
+        "max" : 12.499293,
+        "p50" : 10.315418,
+        "p95" : 11.048043
+      },
+      "e2e_outside_jitter_buffer_ms" : {
+        "count" : 1200,
+        "max" : 12.499293,
+        "p50" : 10.315418,
+        "p95" : 11.048043
+      },
+      "freezes" : {
+        "count" : 0,
+        "pauses" : 0,
+        "pauses_total_ms" : 0,
+        "per_minute" : 0,
+        "ratio" : 0,
+        "total_ms" : 0
+      },
+      "gap_ms" : {
+        "count" : 1199,
+        "max" : 17.704667,
+        "p50" : 16.653542,
+        "p95" : 16.955792
+      },
+      "judder_ms" : 0.289125333333331,
+      "media" : {
+        "admission_deferrals" : 2,
+        "capacity_kbps" : 1954343,
+        "dropped_before_encode" : 2,
+        "encoded_bytes" : 89189975,
+        "encoded_frames" : 1802,
+        "encoded_key_frame_bytes" : 251919,
+        "estimate_min_mbps_per_second" : [
+          100,
+          2304.4,
+          2304.4,
+          2304.4,
+          2304.4,
+          2304.4,
+          2304.4,
+          2304.4,
+          2304.4,
+          2304.4,
+          2241.6,
+          1749.4,
+          1749.4,
+          1674,
+          1674,
+          1674,
+          1674,
+          1674,
+          1674,
+          1674,
+          1674,
+          1674,
+          1954.3,
+          1954.3,
+          1954.3,
+          1954.3,
+          1954.3,
+          1954.3
+        ],
+        "fec_repairs" : 0,
+        "frames_lost" : 0,
+        "frames_sent" : 1802,
+        "keyframes" : 1,
+        "ltr_refresh_keyframes" : 0,
+        "ltr_refreshes" : 0,
+        "nack_repairs" : 0,
+        "nacks_sent" : 0,
+        "packets_retransmitted" : 0,
+        "parity_packets" : 0,
+        "requested_keyframes" : 0,
+        "requested_refreshes" : 0,
+        "round_trip_ms" : 1.64,
+        "stale_ltr_acknowledgements" : 0,
+        "stalled_tiles" : 0,
+        "tiles_skipped" : 0
+      },
+      "network" : "N0",
+      "relay" : {
+        "feedback" : {
+          "bytes" : 374198,
+          "first_losses" : [
+
+          ],
+          "lost" : 0,
+          "packets" : 6329,
+          "queue_overflow" : 0,
+          "send_failures" : 0
+        },
+        "media" : {
+          "bytes" : 92300159,
+          "first_losses" : [
+
+          ],
+          "lost" : 0,
+          "packets" : 66682,
+          "queue_overflow" : 0,
+          "send_failures" : 0
+        }
+      },
+      "repetition" : 2,
+      "resolution" : "R1",
+      "scene" : "video",
+      "seed" : 7,
+      "shown_ratio" : 1,
+      "skipped_versions" : 0,
+      "stages_ms" : {
+        "capture" : {
+          "count" : 1200,
+          "max" : 0.008,
+          "p50" : 0.001,
+          "p95" : 0.001
+        },
+        "capture_queue" : {
+          "count" : 1200,
+          "max" : 0.242,
+          "p50" : 0.063,
+          "p95" : 0.107
+        },
+        "decode" : {
+          "count" : 1200,
+          "max" : 1.71925,
+          "p50" : 1.245583,
+          "p95" : 1.402375
+        },
+        "decode_queue" : {
+          "count" : 1200,
+          "max" : 0,
+          "p50" : 0,
+          "p95" : 0
+        },
+        "encode" : {
+          "count" : 1200,
+          "max" : 8.032,
+          "p50" : 7.281,
+          "p95" : 7.527
+        },
+        "media" : {
+          "assemble" : {
+            "count" : 1200,
+            "max" : 0.591,
+            "p50" : 0.337,
+            "p95" : 0.467
+          },
+          "hand_off" : {
+            "count" : 1200,
+            "max" : 0.018166,
+            "p50" : 0.008875,
+            "p95" : 0.011417
+          },
+          "network" : {
+            "count" : 1200,
+            "max" : 2.391125,
+            "p50" : 1.489833,
+            "p95" : 1.914417
+          },
+          "queue" : {
+            "count" : 1200,
+            "max" : 0.104,
+            "p50" : 0.049,
+            "p95" : 0.065
+          },
+          "send" : {
+            "count" : 1200,
+            "max" : 0,
+            "p50" : 0,
+            "p95" : 0
+          }
+        },
+        "network_residual" : {
+          "count" : 1200,
+          "max" : 2.467042,
+          "p50" : 1.55325,
+          "p95" : 1.984625
+        },
+        "render_queue" : {
+          "count" : 1200,
+          "max" : 0.628126,
+          "p50" : 0.152168,
+          "p95" : 0.172793
+        },
+        "send" : {
+          "count" : 1200,
+          "max" : 2.467042,
+          "p50" : 1.55325,
+          "p95" : 1.984625
+        }
+      },
+      "system" : "codevisor-v2",
+      "unreadable_fraction" : 0,
+      "updates_per_s" : 60,
+      "valid" : true
+    },
+    {
+      "bitrate_mbps" : {
+        "max" : 33.679432,
+        "p50" : 28.002504,
+        "p95" : 33.679432,
+        "total_mb" : 66.400897
+      },
+      "codec_errors" : 0,
+      "drops" : {
+        "capture" : 0,
+        "encoder" : 6,
+        "jitter" : 0,
+        "network" : 0
+      },
+      "e2e_endpoint" : "committed",
+      "e2e_ms" : {
+        "count" : 1200,
+        "max" : 17.060001,
+        "p50" : 11.387168,
+        "p95" : 14.368627
+      },
+      "e2e_outside_jitter_buffer_ms" : {
+        "count" : 1200,
+        "max" : 17.060001,
+        "p50" : 11.387168,
+        "p95" : 14.368627
+      },
+      "freezes" : {
+        "count" : 0,
+        "pauses" : 0,
+        "pauses_total_ms" : 0,
+        "per_minute" : 0,
+        "ratio" : 0,
+        "total_ms" : 0
+      },
+      "gap_ms" : {
+        "count" : 1199,
+        "max" : 22.039,
+        "p50" : 16.660708,
+        "p95" : 19.464167
+      },
+      "judder_ms" : 2.797500333333332,
+      "media" : {
+        "admission_deferrals" : 1,
+        "capacity_kbps" : 2153463,
+        "dropped_before_encode" : 2,
+        "encoded_bytes" : 89174673,
+        "encoded_frames" : 1802,
+        "encoded_key_frame_bytes" : 251919,
+        "estimate_min_mbps_per_second" : [
+          100,
+          1113.6,
+          1113.6,
+          1113.6,
+          1113.6,
+          1113.6,
+          1113.6,
+          1113.6,
+          1113.6,
+          1113.6,
+          1091.3,
+          1084.9,
+          1084.9,
+          1084.9,
+          1084.9,
+          1084.9,
+          1084.9,
+          1084.9,
+          1084.9,
+          1084.9,
+          2153.5,
+          2153.5,
+          2153.5,
+          2153.5,
+          2153.5,
+          2153.5,
+          2153.5,
+          2153.5,
+          2153.5
+        ],
+        "fec_repairs" : 566,
+        "frames_lost" : 0,
+        "frames_sent" : 1802,
+        "keyframes" : 1,
+        "ltr_refresh_keyframes" : 0,
+        "ltr_refreshes" : 0,
+        "nack_repairs" : 3,
+        "nacks_sent" : 4,
+        "packets_retransmitted" : 4,
+        "parity_packets" : 5434,
+        "requested_keyframes" : 0,
+        "requested_refreshes" : 0,
+        "round_trip_ms" : 3.415,
+        "stale_ltr_acknowledgements" : 0,
+        "stalled_tiles" : 0,
+        "tiles_skipped" : 0
+      },
+      "network" : "N3",
+      "relay" : {
+        "feedback" : {
+          "bytes" : 547676,
+          "first_losses" : [
+            28,
+            56,
+            61,
+            106,
+            117,
+            244,
+            413,
+            495,
+            499,
+            522,
+            571,
+            581,
+            600,
+            805,
+            864,
+            1004
+          ],
+          "lost" : 93,
+          "packets" : 8873,
+          "queue_overflow" : 0,
+          "send_failures" : 0
+        },
+        "media" : {
+          "bytes" : 100251005,
+          "first_losses" : [
+            172,
+            212,
+            398,
+            740,
+            752,
+            763,
+            798,
+            1022,
+            1109,
+            1113,
+            1150,
+            1215,
+            1277,
+            1280,
+            1296,
+            1416
+          ],
+          "lost" : 764,
+          "packets" : 76126,
+          "queue_overflow" : 0,
+          "send_failures" : 0
+        }
+      },
+      "repetition" : 2,
+      "resolution" : "R1",
+      "scene" : "video",
+      "seed" : 7,
+      "shown_ratio" : 1,
+      "skipped_versions" : 0,
+      "stages_ms" : {
+        "capture" : {
+          "count" : 1200,
+          "max" : 0.002,
+          "p50" : 0.001,
+          "p95" : 0.001
+        },
+        "capture_queue" : {
+          "count" : 1200,
+          "max" : 0.244,
+          "p50" : 0.065,
+          "p95" : 0.107
+        },
+        "decode" : {
+          "count" : 1200,
+          "max" : 1.690667,
+          "p50" : 1.255416,
+          "p95" : 1.39675
+        },
+        "decode_queue" : {
+          "count" : 1200,
+          "max" : 0,
+          "p50" : 0,
+          "p95" : 0
+        },
+        "encode" : {
+          "count" : 1200,
+          "max" : 7.815,
+          "p50" : 7.276,
+          "p95" : 7.529
+        },
+        "media" : {
+          "assemble" : {
+            "count" : 1200,
+            "max" : 3.492,
+            "p50" : 0.899,
+            "p95" : 1.097
+          },
+          "hand_off" : {
+            "count" : 1200,
+            "max" : 0.016666,
+            "p50" : 0.009125,
+            "p95" : 0.011541
+          },
+          "network" : {
+            "count" : 1200,
+            "max" : 7.678041,
+            "p50" : 2.388625,
+            "p95" : 5.256292
+          },
+          "queue" : {
+            "count" : 1200,
+            "max" : 0.229,
+            "p50" : 0.154,
+            "p95" : 0.203
+          },
+          "recover" : {
+            "count" : 387,
+            "max" : 3.492,
+            "p50" : 0.958,
+            "p95" : 1.116
+          },
+          "send" : {
+            "count" : 1200,
+            "max" : 0,
+            "p50" : 0,
+            "p95" : 0
+          }
+        },
+        "network_residual" : {
+          "count" : 1200,
+          "max" : 7.900791,
+          "p50" : 2.587,
+          "p95" : 5.454875
+        },
+        "render_queue" : {
+          "count" : 1200,
+          "max" : 0.367334,
+          "p50" : 0.150626,
+          "p95" : 0.176084
+        },
+        "send" : {
+          "count" : 1200,
+          "max" : 7.900791,
+          "p50" : 2.587,
+          "p95" : 5.454875
+        }
+      },
+      "system" : "codevisor-v2",
+      "unreadable_fraction" : 0,
+      "updates_per_s" : 60,
+      "valid" : true
+    },
+    {
+      "bitrate_mbps" : {
+        "max" : 0.07476,
+        "p50" : 0.064616,
+        "p95" : 0.07476,
+        "total_mb" : 0.157434
+      },
+      "codec_errors" : 0,
+      "drops" : {
+        "capture" : 0,
+        "encoder" : 4,
+        "jitter" : 0,
+        "network" : 0
+      },
+      "e2e_endpoint" : "committed",
+      "e2e_ms" : {
+        "count" : 300,
+        "max" : 10.23346,
+        "p50" : 7.997793,
+        "p95" : 9.788251
+      },
+      "e2e_outside_jitter_buffer_ms" : {
+        "count" : 300,
+        "max" : 10.23346,
+        "p50" : 7.997793,
+        "p95" : 9.788251
+      },
+      "freezes" : {
+        "count" : 0,
+        "pauses" : 0,
+        "pauses_total_ms" : 0,
+        "per_minute" : 0,
+        "ratio" : 0,
+        "total_ms" : 0
+      },
+      "gap_ms" : {
+        "count" : 299,
+        "max" : 102.412458,
+        "p50" : 34.037749,
+        "p95" : 101.811625
+      },
+      "judder_ms" : 1.8116250000000065,
+      "media" : {
+        "admission_deferrals" : 0,
+        "capacity_kbps" : 100000,
+        "dropped_before_encode" : 0,
+        "encoded_bytes" : 121773,
+        "encoded_frames" : 864,
+        "encoded_key_frame_bytes" : 664,
+        "estimate_min_mbps_per_second" : [
+          100,
+          100,
+          100,
+          100,
+          100,
+          100,
+          100,
+          100,
+          100,
+          100,
+          100,
+          100,
+          100,
+          100,
+          100,
+          100,
+          100,
+          100,
+          100,
+          100,
+          100,
+          100,
+          100,
+          100,
+          100,
+          100,
+          100
+        ],
+        "fec_repairs" : 0,
+        "frames_lost" : 0,
+        "frames_sent" : 864,
+        "keyframes" : 1,
+        "ltr_refresh_keyframes" : 0,
+        "ltr_refreshes" : 0,
+        "nack_repairs" : 0,
+        "nacks_sent" : 0,
+        "packets_retransmitted" : 0,
+        "parity_packets" : 0,
+        "requested_keyframes" : 0,
+        "requested_refreshes" : 0,
+        "round_trip_ms" : 1.492,
+        "stale_ltr_acknowledgements" : 0,
+        "stalled_tiles" : 0,
+        "tiles_skipped" : 0
+      },
+      "network" : "N0",
+      "relay" : {
+        "feedback" : {
+          "bytes" : 158727,
+          "first_losses" : [
+
+          ],
+          "lost" : 0,
+          "packets" : 2520,
+          "queue_overflow" : 0,
+          "send_failures" : 0
+        },
+        "media" : {
+          "bytes" : 255686,
+          "first_losses" : [
+
+          ],
+          "lost" : 0,
+          "packets" : 1798,
+          "queue_overflow" : 0,
+          "send_failures" : 0
+        }
+      },
+      "repetition" : 3,
+      "resolution" : "R1",
+      "scene" : "typing",
+      "seed" : 7,
+      "shown_ratio" : 1,
+      "skipped_versions" : 0,
+      "stages_ms" : {
+        "capture" : {
+          "count" : 300,
+          "max" : 0.004,
+          "p50" : 0.001,
+          "p95" : 0.002
+        },
+        "capture_queue" : {
+          "count" : 300,
+          "max" : 2.482,
+          "p50" : 0.069,
+          "p95" : 2.074
+        },
+        "decode" : {
+          "count" : 300,
+          "max" : 1.13575,
+          "p50" : 0.918,
+          "p95" : 0.996042
+        },
+        "decode_queue" : {
+          "count" : 300,
+          "max" : 0,
+          "p50" : 0,
+          "p95" : 0
+        },
+        "encode" : {
+          "count" : 300,
+          "max" : 7.106,
+          "p50" : 6.519,
+          "p95" : 6.831
+        },
+        "media" : {
+          "assemble" : {
+            "count" : 300,
+            "max" : 0,
+            "p50" : 0,
+            "p95" : 0
+          },
+          "hand_off" : {
+            "count" : 300,
+            "max" : 0.014833,
+            "p50" : 0.008166,
+            "p95" : 0.010375
+          },
+          "network" : {
+            "count" : 300,
+            "max" : 0.396667,
+            "p50" : 0.231375,
+            "p95" : 0.266791
+          },
+          "queue" : {
+            "count" : 300,
+            "max" : 0.044,
+            "p50" : 0.023,
+            "p95" : 0.028
+          },
+          "send" : {
+            "count" : 300,
+            "max" : 0,
+            "p50" : 0,
+            "p95" : 0
+          }
+        },
+        "network_residual" : {
+          "count" : 300,
+          "max" : 0.454167,
+          "p50" : 0.263042,
+          "p95" : 0.3045
+        },
+        "render_queue" : {
+          "count" : 300,
+          "max" : 0.259751,
+          "p50" : 0.148835,
+          "p95" : 0.169584
+        },
+        "send" : {
+          "count" : 300,
+          "max" : 0.454167,
+          "p50" : 0.263042,
+          "p95" : 0.3045
+        }
+      },
+      "system" : "codevisor-v2",
+      "unreadable_fraction" : 0,
+      "updates_per_s" : 15,
+      "valid" : true
+    },
+    {
+      "bitrate_mbps" : {
+        "max" : 0.075672,
+        "p50" : 0.06672,
+        "p95" : 0.075672,
+        "total_mb" : 0.160346
+      },
+      "codec_errors" : 0,
+      "drops" : {
+        "capture" : 0,
+        "encoder" : 4,
+        "jitter" : 0,
+        "network" : 0
+      },
+      "e2e_endpoint" : "committed",
+      "e2e_ms" : {
+        "count" : 300,
+        "max" : 13.801501,
+        "p50" : 9.077418,
+        "p95" : 10.513293
+      },
+      "e2e_outside_jitter_buffer_ms" : {
+        "count" : 300,
+        "max" : 13.801501,
+        "p50" : 9.077418,
+        "p95" : 10.513293
+      },
+      "freezes" : {
+        "count" : 0,
+        "pauses" : 0,
+        "pauses_total_ms" : 0,
+        "per_minute" : 0,
+        "ratio" : 0,
+        "total_ms" : 0
+      },
+      "gap_ms" : {
+        "count" : 299,
+        "max" : 103.436375,
+        "p50" : 37.820792,
+        "p95" : 101.67475
+      },
+      "judder_ms" : 1.674750000000003,
+      "media" : {
+        "admission_deferrals" : 0,
+        "capacity_kbps" : 100000,
+        "dropped_before_encode" : 0,
+        "encoded_bytes" : 121655,
+        "encoded_frames" : 863,
+        "encoded_key_frame_bytes" : 664,
+        "estimate_min_mbps_per_second" : [
+          100,
+          100,
+          100,
+          100,
+          100,
+          100,
+          100,
+          100,
+          100,
+          100,
+          100,
+          100,
+          100,
+          100,
+          100,
+          100,
+          100,
+          100,
+          100,
+          100,
+          100,
+          100,
+          100,
+          100,
+          100,
+          100,
+          100
+        ],
+        "fec_repairs" : 0,
+        "frames_lost" : 0,
+        "frames_sent" : 863,
+        "keyframes" : 1,
+        "ltr_refresh_keyframes" : 0,
+        "ltr_refreshes" : 0,
+        "nack_repairs" : 0,
+        "nacks_sent" : 0,
+        "packets_retransmitted" : 0,
+        "parity_packets" : 0,
+        "requested_keyframes" : 0,
+        "requested_refreshes" : 0,
+        "round_trip_ms" : 3.152,
+        "stale_ltr_acknowledgements" : 0,
+        "stalled_tiles" : 0,
+        "tiles_skipped" : 0
+      },
+      "network" : "N3",
+      "relay" : {
+        "feedback" : {
+          "bytes" : 161073,
+          "first_losses" : [
+            28,
+            56,
+            61,
+            106,
+            117,
+            244,
+            413,
+            495,
+            499,
+            522,
+            571,
+            581,
+            600,
+            805,
+            864,
+            1004
+          ],
+          "lost" : 29,
+          "packets" : 2516,
+          "queue_overflow" : 0,
+          "send_failures" : 0
+        },
+        "media" : {
+          "bytes" : 258095,
+          "first_losses" : [
+            172,
+            212,
+            398,
+            740,
+            752,
+            763,
+            798,
+            1022,
+            1109,
+            1113,
+            1150,
+            1215,
+            1277,
+            1280,
+            1296,
+            1416
+          ],
+          "lost" : 18,
+          "packets" : 1820,
+          "queue_overflow" : 0,
+          "send_failures" : 0
+        }
+      },
+      "repetition" : 3,
+      "resolution" : "R1",
+      "scene" : "typing",
+      "seed" : 7,
+      "shown_ratio" : 1,
+      "skipped_versions" : 0,
+      "stages_ms" : {
+        "capture" : {
+          "count" : 300,
+          "max" : 0.004,
+          "p50" : 0.001,
+          "p95" : 0.002
+        },
+        "capture_queue" : {
+          "count" : 300,
+          "max" : 2.336,
+          "p50" : 0.07,
+          "p95" : 2.004
+        },
+        "decode" : {
+          "count" : 300,
+          "max" : 1.209875,
+          "p50" : 0.911167,
+          "p95" : 0.989542
+        },
+        "decode_queue" : {
+          "count" : 300,
+          "max" : 0,
+          "p50" : 0,
+          "p95" : 0
+        },
+        "encode" : {
+          "count" : 300,
+          "max" : 7.123,
+          "p50" : 6.546,
+          "p95" : 6.776
+        },
+        "media" : {
+          "assemble" : {
+            "count" : 300,
+            "max" : 0,
+            "p50" : 0,
+            "p95" : 0
+          },
+          "hand_off" : {
+            "count" : 300,
+            "max" : 0.014834,
+            "p50" : 0.008,
+            "p95" : 0.0105
+          },
+          "network" : {
+            "count" : 300,
+            "max" : 6.318875,
+            "p50" : 1.258542,
+            "p95" : 1.296542
+          },
+          "queue" : {
+            "count" : 300,
+            "max" : 0.059,
+            "p50" : 0.023,
+            "p95" : 0.027
+          },
+          "send" : {
+            "count" : 300,
+            "max" : 0,
+            "p50" : 0,
+            "p95" : 0
+          }
+        },
+        "network_residual" : {
+          "count" : 300,
+          "max" : 6.343333,
+          "p50" : 1.29,
+          "p95" : 1.332584
+        },
+        "render_queue" : {
+          "count" : 300,
+          "max" : 0.225043,
+          "p50" : 0.150334,
+          "p95" : 0.185168
+        },
+        "send" : {
+          "count" : 300,
+          "max" : 6.343333,
+          "p50" : 1.29,
+          "p95" : 1.332584
+        }
+      },
+      "system" : "codevisor-v2",
+      "unreadable_fraction" : 0,
+      "updates_per_s" : 15,
+      "valid" : true
+    },
+    {
+      "bitrate_mbps" : {
+        "max" : 2.656464,
+        "p50" : 1.382264,
+        "p95" : 2.656464,
+        "total_mb" : 3.748043
+      },
+      "codec_errors" : 0,
+      "drops" : {
+        "capture" : 0,
+        "encoder" : 4,
+        "jitter" : 0,
+        "network" : 0
+      },
+      "e2e_endpoint" : "committed",
+      "e2e_ms" : {
+        "count" : 1200,
+        "max" : 13.793876,
+        "p50" : 8.145793,
+        "p95" : 8.528543
+      },
+      "e2e_outside_jitter_buffer_ms" : {
+        "count" : 1200,
+        "max" : 13.793876,
+        "p50" : 8.145793,
+        "p95" : 8.528543
+      },
+      "freezes" : {
+        "count" : 0,
+        "pauses" : 0,
+        "pauses_total_ms" : 0,
+        "per_minute" : 0,
+        "ratio" : 0,
+        "total_ms" : 0
+      },
+      "gap_ms" : {
+        "count" : 1199,
+        "max" : 22.322458,
+        "p50" : 16.662833,
+        "p95" : 16.91575
+      },
+      "judder_ms" : 0.24908333333333132,
+      "media" : {
+        "admission_deferrals" : 0,
+        "capacity_kbps" : 896866,
+        "dropped_before_encode" : 0,
+        "encoded_bytes" : 5994697,
+        "encoded_frames" : 1804,
+        "encoded_key_frame_bytes" : 193511,
+        "estimate_min_mbps_per_second" : [
+          100,
+          2057.7,
+          2057.7,
+          2057.7,
+          2057.7,
+          2057.7,
+          2057.7,
+          2057.7,
+          2057.7,
+          2057.7,
+          1001.3,
+          1001.3,
+          1001.3,
+          1001.3,
+          923.3,
+          923.3,
+          923.3,
+          923.3,
+          923.3,
+          896.9,
+          896.9,
+          896.9,
+          896.9,
+          896.9,
+          896.9,
+          896.9,
+          896.9,
+          896.9,
+          896.9
+        ],
+        "fec_repairs" : 0,
+        "frames_lost" : 0,
+        "frames_sent" : 1804,
+        "keyframes" : 1,
+        "ltr_refresh_keyframes" : 0,
+        "ltr_refreshes" : 0,
+        "nack_repairs" : 0,
+        "nacks_sent" : 0,
+        "packets_retransmitted" : 0,
+        "parity_packets" : 0,
+        "requested_keyframes" : 0,
+        "requested_refreshes" : 0,
+        "round_trip_ms" : 1.709,
+        "stale_ltr_acknowledgements" : 0,
+        "stalled_tiles" : 0,
+        "tiles_skipped" : 0
+      },
+      "network" : "N0",
+      "relay" : {
+        "feedback" : {
+          "bytes" : 338996,
+          "first_losses" : [
+
+          ],
+          "lost" : 0,
+          "packets" : 5468,
+          "queue_overflow" : 0,
+          "send_failures" : 0
+        },
+        "media" : {
+          "bytes" : 6425843,
+          "first_losses" : [
+
+          ],
+          "lost" : 0,
+          "packets" : 7099,
+          "queue_overflow" : 0,
+          "send_failures" : 0
+        }
+      },
+      "repetition" : 3,
+      "resolution" : "R1",
+      "scene" : "scroll",
+      "seed" : 7,
+      "shown_ratio" : 1,
+      "skipped_versions" : 0,
+      "stages_ms" : {
+        "capture" : {
+          "count" : 1200,
+          "max" : 0.003,
+          "p50" : 0.001,
+          "p95" : 0.001
+        },
+        "capture_queue" : {
+          "count" : 1200,
+          "max" : 0.244,
+          "p50" : 0.062,
+          "p95" : 0.105
+        },
+        "decode" : {
+          "count" : 1200,
+          "max" : 1.628208,
+          "p50" : 0.929375,
+          "p95" : 1.027166
+        },
+        "decode_queue" : {
+          "count" : 1200,
+          "max" : 0,
+          "p50" : 0,
+          "p95" : 0
+        },
+        "encode" : {
+          "count" : 1200,
+          "max" : 7.429,
+          "p50" : 6.681,
+          "p95" : 6.891
+        },
+        "media" : {
+          "assemble" : {
+            "count" : 1200,
+            "max" : 1.381,
+            "p50" : 0.028,
+            "p95" : 0.078
+          },
+          "hand_off" : {
+            "count" : 1200,
+            "max" : 0.016459,
+            "p50" : 0.008375,
+            "p95" : 0.010833
+          },
+          "network" : {
+            "count" : 1200,
+            "max" : 4.412958,
+            "p50" : 0.270541,
+            "p95" : 0.350541
+          },
+          "queue" : {
+            "count" : 1200,
+            "max" : 0.128,
+            "p50" : 0.026,
+            "p95" : 0.03
+          },
+          "send" : {
+            "count" : 1200,
+            "max" : 0,
+            "p50" : 0,
+            "p95" : 0
+          }
+        },
+        "network_residual" : {
+          "count" : 1200,
+          "max" : 4.543041,
+          "p50" : 0.306375,
+          "p95" : 0.387
+        },
+        "render_queue" : {
+          "count" : 1200,
+          "max" : 0.381084,
+          "p50" : 0.149418,
+          "p95" : 0.172085
+        },
+        "send" : {
+          "count" : 1200,
+          "max" : 4.543041,
+          "p50" : 0.306375,
+          "p95" : 0.387
+        }
+      },
+      "system" : "codevisor-v2",
+      "unreadable_fraction" : 0,
+      "updates_per_s" : 60,
+      "valid" : true
+    },
+    {
+      "bitrate_mbps" : {
+        "max" : 3.321632,
+        "p50" : 1.960136,
+        "p95" : 3.321632,
+        "total_mb" : 5.132179
+      },
+      "codec_errors" : 0,
+      "drops" : {
+        "capture" : 0,
+        "encoder" : 4,
+        "jitter" : 0,
+        "network" : 0
+      },
+      "e2e_endpoint" : "committed",
+      "e2e_ms" : {
+        "count" : 1200,
+        "max" : 17.875835,
+        "p50" : 9.196126,
+        "p95" : 9.607751
+      },
+      "e2e_outside_jitter_buffer_ms" : {
+        "count" : 1200,
+        "max" : 17.875835,
+        "p50" : 9.196126,
+        "p95" : 9.607751
+      },
+      "freezes" : {
+        "count" : 0,
+        "pauses" : 0,
+        "pauses_total_ms" : 0,
+        "per_minute" : 0,
+        "ratio" : 0,
+        "total_ms" : 0
+      },
+      "gap_ms" : {
+        "count" : 1199,
+        "max" : 25.192583,
+        "p50" : 16.659,
+        "p95" : 16.971
+      },
+      "judder_ms" : 0.30433333333333223,
+      "media" : {
+        "admission_deferrals" : 0,
+        "capacity_kbps" : 994295,
+        "dropped_before_encode" : 0,
+        "encoded_bytes" : 5994697,
+        "encoded_frames" : 1804,
+        "encoded_key_frame_bytes" : 193511,
+        "estimate_min_mbps_per_second" : [
+          100,
+          1084,
+          1084,
+          1084,
+          1084,
+          1084,
+          1084,
+          1084,
+          1084,
+          1084,
+          1084,
+          1084,
+          1084,
+          1084,
+          873.7,
+          873.7,
+          873.7,
+          873.7,
+          873.7,
+          873.7,
+          991.6,
+          991.6,
+          991.6,
+          991.6,
+          991.6,
+          994.3,
+          994.3,
+          994.3,
+          994.3
+        ],
+        "fec_repairs" : 47,
+        "frames_lost" : 0,
+        "frames_sent" : 1804,
+        "keyframes" : 1,
+        "ltr_refresh_keyframes" : 0,
+        "ltr_refreshes" : 0,
+        "nack_repairs" : 1,
+        "nacks_sent" : 1,
+        "packets_retransmitted" : 1,
+        "parity_packets" : 1842,
+        "requested_keyframes" : 0,
+        "requested_refreshes" : 0,
+        "round_trip_ms" : 3.508,
+        "stale_ltr_acknowledgements" : 0,
+        "stalled_tiles" : 0,
+        "tiles_skipped" : 0
+      },
+      "network" : "N3",
+      "relay" : {
+        "feedback" : {
+          "bytes" : 461948,
+          "first_losses" : [
+            28,
+            56,
+            61,
+            106,
+            117,
+            244,
+            413,
+            495,
+            499,
+            522,
+            571,
+            581,
+            600,
+            805,
+            864,
+            1004
+          ],
+          "lost" : 74,
+          "packets" : 6916,
+          "queue_overflow" : 0,
+          "send_failures" : 0
+        },
+        "media" : {
+          "bytes" : 8624183,
+          "first_losses" : [
+            172,
+            212,
+            398,
+            740,
+            752,
+            763,
+            798,
+            1022,
+            1109,
+            1113,
+            1150,
+            1215,
+            1277,
+            1280,
+            1296,
+            1416
+          ],
+          "lost" : 90,
+          "packets" : 9096,
+          "queue_overflow" : 0,
+          "send_failures" : 0
+        }
+      },
+      "repetition" : 3,
+      "resolution" : "R1",
+      "scene" : "scroll",
+      "seed" : 7,
+      "shown_ratio" : 1,
+      "skipped_versions" : 0,
+      "stages_ms" : {
+        "capture" : {
+          "count" : 1200,
+          "max" : 0.002,
+          "p50" : 0.001,
+          "p95" : 0.001
+        },
+        "capture_queue" : {
+          "count" : 1200,
+          "max" : 0.242,
+          "p50" : 0.062,
+          "p95" : 0.104
+        },
+        "decode" : {
+          "count" : 1200,
+          "max" : 1.580625,
+          "p50" : 0.931042,
+          "p95" : 1.005375
+        },
+        "decode_queue" : {
+          "count" : 1200,
+          "max" : 0,
+          "p50" : 0,
+          "p95" : 0
+        },
+        "encode" : {
+          "count" : 1200,
+          "max" : 7.32,
+          "p50" : 6.68,
+          "p95" : 6.861
+        },
+        "media" : {
+          "assemble" : {
+            "count" : 1200,
+            "max" : 1.417,
+            "p50" : 0,
+            "p95" : 0.085
+          },
+          "hand_off" : {
+            "count" : 1200,
+            "max" : 0.014334,
+            "p50" : 0.008875,
+            "p95" : 0.011083
+          },
+          "network" : {
+            "count" : 1200,
+            "max" : 7.984708,
+            "p50" : 1.299333,
+            "p95" : 1.392208
+          },
+          "queue" : {
+            "count" : 1200,
+            "max" : 0.524,
+            "p50" : 0.033,
+            "p95" : 0.04
+          },
+          "recover" : {
+            "count" : 30,
+            "max" : 1.417,
+            "p50" : 0.058,
+            "p95" : 1.371
+          },
+          "send" : {
+            "count" : 1200,
+            "max" : 0,
+            "p50" : 0,
+            "p95" : 0
+          }
+        },
+        "network_residual" : {
+          "count" : 1200,
+          "max" : 8.517,
+          "p50" : 1.341667,
+          "p95" : 1.442042
+        },
+        "render_queue" : {
+          "count" : 1200,
+          "max" : 0.612168,
+          "p50" : 0.151376,
+          "p95" : 0.185293
+        },
+        "send" : {
+          "count" : 1200,
+          "max" : 8.517,
+          "p50" : 1.341667,
+          "p95" : 1.442042
+        }
+      },
+      "system" : "codevisor-v2",
+      "unreadable_fraction" : 0,
+      "updates_per_s" : 60,
+      "valid" : true
+    },
+    {
+      "bitrate_mbps" : {
+        "max" : 31.000792,
+        "p50" : 25.624784,
+        "p95" : 31.000792,
+        "total_mb" : 61.07405
+      },
+      "codec_errors" : 0,
+      "drops" : {
+        "capture" : 0,
+        "encoder" : 7,
+        "jitter" : 0,
+        "network" : 0
+      },
+      "e2e_endpoint" : "committed",
+      "e2e_ms" : {
+        "count" : 1200,
+        "max" : 11.71746,
+        "p50" : 10.306085,
+        "p95" : 11.039792
+      },
+      "e2e_outside_jitter_buffer_ms" : {
+        "count" : 1200,
+        "max" : 11.71746,
+        "p50" : 10.306085,
+        "p95" : 11.039792
+      },
+      "freezes" : {
+        "count" : 0,
+        "pauses" : 0,
+        "pauses_total_ms" : 0,
+        "per_minute" : 0,
+        "ratio" : 0,
+        "total_ms" : 0
+      },
+      "gap_ms" : {
+        "count" : 1199,
+        "max" : 18.28225,
+        "p50" : 16.653292,
+        "p95" : 16.980458
+      },
+      "judder_ms" : 0.31379133333333087,
+      "media" : {
+        "admission_deferrals" : 5,
+        "capacity_kbps" : 2500000,
+        "dropped_before_encode" : 3,
+        "encoded_bytes" : 89155515,
+        "encoded_frames" : 1801,
+        "encoded_key_frame_bytes" : 251919,
+        "estimate_min_mbps_per_second" : [
+          52.6,
+          89.8,
+          183.5,
+          379.6,
+          768,
+          1458.7,
+          1841.6,
+          1841.6,
+          1841.6,
+          1841.6,
+          1841.6,
+          2107.2,
+          2107.2,
+          2107.2,
+          2107.2,
+          2107.2,
+          2107.2,
+          2107.2,
+          2107.2,
+          2107.2,
+          2048.9,
+          2048.9,
+          2048.9,
+          2048.9,
+          2048.9,
+          2048.9,
+          2048.9,
+          2048.9
+        ],
+        "fec_repairs" : 0,
+        "frames_lost" : 0,
+        "frames_sent" : 1801,
+        "keyframes" : 1,
+        "ltr_refresh_keyframes" : 0,
+        "ltr_refreshes" : 0,
+        "nack_repairs" : 1,
+        "nacks_sent" : 19,
+        "packets_retransmitted" : 104,
+        "parity_packets" : 1622,
+        "requested_keyframes" : 0,
+        "requested_refreshes" : 0,
+        "round_trip_ms" : 1.285,
+        "stale_ltr_acknowledgements" : 0,
+        "stalled_tiles" : 0,
+        "tiles_skipped" : 0
+      },
+      "network" : "N0",
+      "relay" : {
+        "feedback" : {
+          "bytes" : 413066,
+          "first_losses" : [
+
+          ],
+          "lost" : 0,
+          "packets" : 6705,
+          "queue_overflow" : 0,
+          "send_failures" : 0
+        },
+        "media" : {
+          "bytes" : 94714855,
+          "first_losses" : [
+
+          ],
+          "lost" : 0,
+          "packets" : 68409,
+          "queue_overflow" : 0,
+          "send_failures" : 0
+        }
+      },
+      "repetition" : 3,
+      "resolution" : "R1",
+      "scene" : "video",
+      "seed" : 7,
+      "shown_ratio" : 1,
+      "skipped_versions" : 0,
+      "stages_ms" : {
+        "capture" : {
+          "count" : 1200,
+          "max" : 0.003,
+          "p50" : 0.001,
+          "p95" : 0.001
+        },
+        "capture_queue" : {
+          "count" : 1200,
+          "max" : 0.25,
+          "p50" : 0.063,
+          "p95" : 0.106
+        },
+        "decode" : {
+          "count" : 1200,
+          "max" : 1.769875,
+          "p50" : 1.243667,
+          "p95" : 1.392541
+        },
+        "decode_queue" : {
+          "count" : 1200,
+          "max" : 0,
+          "p50" : 0,
+          "p95" : 0
+        },
+        "encode" : {
+          "count" : 1200,
+          "max" : 7.87,
+          "p50" : 7.288,
+          "p95" : 7.52
+        },
+        "media" : {
+          "assemble" : {
+            "count" : 1200,
+            "max" : 0.697,
+            "p50" : 0.318,
+            "p95" : 0.465
+          },
+          "hand_off" : {
+            "count" : 1200,
+            "max" : 0.023917,
+            "p50" : 0.009125,
+            "p95" : 0.011875
+          },
+          "network" : {
+            "count" : 1200,
+            "max" : 2.277791,
+            "p50" : 1.473042,
+            "p95" : 1.912584
+          },
+          "queue" : {
+            "count" : 1200,
+            "max" : 0.195,
+            "p50" : 0.047,
+            "p95" : 0.062
+          },
+          "send" : {
+            "count" : 1200,
+            "max" : 0,
+            "p50" : 0,
+            "p95" : 0
+          }
+        },
+        "network_residual" : {
+          "count" : 1200,
+          "max" : 2.387041,
+          "p50" : 1.535125,
+          "p95" : 1.982916
+        },
+        "render_queue" : {
+          "count" : 1200,
+          "max" : 0.367042,
+          "p50" : 0.151835,
+          "p95" : 0.178251
+        },
+        "send" : {
+          "count" : 1200,
+          "max" : 2.387041,
+          "p50" : 1.535125,
+          "p95" : 1.982916
+        }
+      },
+      "system" : "codevisor-v2",
+      "unreadable_fraction" : 0,
+      "updates_per_s" : 60,
+      "valid" : true
+    },
+    {
+      "bitrate_mbps" : {
+        "max" : 33.712456,
+        "p50" : 27.992912,
+        "p95" : 33.712456,
+        "total_mb" : 66.270322
+      },
+      "codec_errors" : 0,
+      "drops" : {
+        "capture" : 0,
+        "encoder" : 6,
+        "jitter" : 0,
+        "network" : 0
+      },
+      "e2e_endpoint" : "committed",
+      "e2e_ms" : {
+        "count" : 1200,
+        "max" : 17.794834,
+        "p50" : 11.481918,
+        "p95" : 14.377251
+      },
+      "e2e_outside_jitter_buffer_ms" : {
+        "count" : 1200,
+        "max" : 17.794834,
+        "p50" : 11.481918,
+        "p95" : 14.377251
+      },
+      "freezes" : {
+        "count" : 0,
+        "pauses" : 0,
+        "pauses_total_ms" : 0,
+        "per_minute" : 0,
+        "ratio" : 0,
+        "total_ms" : 0
+      },
+      "gap_ms" : {
+        "count" : 1199,
+        "max" : 21.485333,
+        "p50" : 16.659417,
+        "p95" : 19.495875
+      },
+      "judder_ms" : 2.8292083333333338,
+      "media" : {
+        "admission_deferrals" : 1,
+        "capacity_kbps" : 907445,
+        "dropped_before_encode" : 2,
+        "encoded_bytes" : 89174673,
+        "encoded_frames" : 1802,
+        "encoded_key_frame_bytes" : 251919,
+        "estimate_min_mbps_per_second" : [
+          100,
+          1080.3,
+          1105.8,
+          1105.8,
+          1105.8,
+          1105.8,
+          1105.8,
+          1105.8,
+          1138.1,
+          1138.1,
+          1138.1,
+          1138.1,
+          1138.1,
+          1138.1,
+          1138.1,
+          1138.1,
+          1138.1,
+          1020.9,
+          1020.9,
+          1020.9,
+          1020.9,
+          1020.9,
+          1020.9,
+          1020.9,
+          1020.9,
+          547.2,
+          558.5,
+          558.5
+        ],
+        "fec_repairs" : 545,
+        "frames_lost" : 0,
+        "frames_sent" : 1802,
+        "keyframes" : 1,
+        "ltr_refresh_keyframes" : 0,
+        "ltr_refreshes" : 0,
+        "nack_repairs" : 2,
+        "nacks_sent" : 2,
+        "packets_retransmitted" : 2,
+        "parity_packets" : 5131,
+        "requested_keyframes" : 0,
+        "requested_refreshes" : 0,
+        "round_trip_ms" : 3.344,
+        "stale_ltr_acknowledgements" : 0,
+        "stalled_tiles" : 0,
+        "tiles_skipped" : 0
+      },
+      "network" : "N3",
+      "relay" : {
+        "feedback" : {
+          "bytes" : 542445,
+          "first_losses" : [
+            28,
+            56,
+            61,
+            106,
+            117,
+            244,
+            413,
+            495,
+            499,
+            522,
+            571,
+            581,
+            600,
+            805,
+            864,
+            1004
+          ],
+          "lost" : 92,
+          "packets" : 8773,
+          "queue_overflow" : 0,
+          "send_failures" : 0
+        },
+        "media" : {
+          "bytes" : 100045169,
+          "first_losses" : [
+            172,
+            212,
+            398,
+            740,
+            752,
+            763,
+            798,
+            1022,
+            1109,
+            1113,
+            1150,
+            1215,
+            1277,
+            1280,
+            1296,
+            1416
+          ],
+          "lost" : 739,
+          "packets" : 72247,
+          "queue_overflow" : 0,
+          "send_failures" : 0
+        }
+      },
+      "repetition" : 3,
+      "resolution" : "R1",
+      "scene" : "video",
+      "seed" : 7,
+      "shown_ratio" : 1,
+      "skipped_versions" : 0,
+      "stages_ms" : {
+        "capture" : {
+          "count" : 1200,
+          "max" : 0.002,
+          "p50" : 0.001,
+          "p95" : 0.001
+        },
+        "capture_queue" : {
+          "count" : 1200,
+          "max" : 0.243,
+          "p50" : 0.065,
+          "p95" : 0.108
+        },
+        "decode" : {
+          "count" : 1200,
+          "max" : 1.675416,
+          "p50" : 1.270333,
+          "p95" : 1.425167
+        },
+        "decode_queue" : {
+          "count" : 1200,
+          "max" : 0,
+          "p50" : 0,
+          "p95" : 0
+        },
+        "encode" : {
+          "count" : 1200,
+          "max" : 7.938,
+          "p50" : 7.321,
+          "p95" : 7.577
+        },
+        "media" : {
+          "assemble" : {
+            "count" : 1200,
+            "max" : 5.453,
+            "p50" : 0.881,
+            "p95" : 1.108
+          },
+          "hand_off" : {
+            "count" : 1200,
+            "max" : 0.0155,
+            "p50" : 0.009209,
+            "p95" : 0.011625
+          },
+          "network" : {
+            "count" : 1200,
+            "max" : 9.063834,
+            "p50" : 2.333375,
+            "p95" : 5.212041
+          },
+          "queue" : {
+            "count" : 1200,
+            "max" : 0.249,
+            "p50" : 0.159,
+            "p95" : 0.206
+          },
+          "recover" : {
+            "count" : 365,
+            "max" : 5.453,
+            "p50" : 0.95,
+            "p95" : 1.137
+          },
+          "send" : {
+            "count" : 1200,
+            "max" : 0,
+            "p50" : 0,
+            "p95" : 0
+          }
+        },
+        "network_residual" : {
+          "count" : 1200,
+          "max" : 9.190375,
+          "p50" : 2.527541,
+          "p95" : 5.416833
+        },
+        "render_queue" : {
+          "count" : 1200,
+          "max" : 0.338251,
+          "p50" : 0.151793,
+          "p95" : 0.182917
+        },
+        "send" : {
+          "count" : 1200,
+          "max" : 9.190375,
+          "p50" : 2.527541,
+          "p95" : 5.416833
+        }
+      },
+      "system" : "codevisor-v2",
+      "unreadable_fraction" : 0,
+      "updates_per_s" : 60,
+      "valid" : true
+    }
+  ],
+  "run" : {
+    "git_sha" : "bcd7dd8ec5a16744c77206ddd216069baf4d611e",
+    "id" : "gha-45806762905-1-gate-v2",
+    "method" : {
+      "duration_s" : 30,
+      "plan" : "gate-v2",
+      "repetitions" : 3,
+      "warm_up_s" : 10
+    },
+    "started_at" : "2026-11-26T11:24:25Z",
+    "tier" : 1,
+    "trigger" : "nightly"
+  },
+  "schema" : "codevisor.screen-sharing.bench/v1"
+}
