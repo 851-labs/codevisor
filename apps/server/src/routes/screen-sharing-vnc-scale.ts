@@ -45,7 +45,7 @@ export const systemScalerCommands: ScalerCommands = {
 }
 
 export const xfceScaler =
-  (display: number, commands: ScalerCommands): VNCDesktopScaler =>
+  (x11: Record<string, string>, commands: ScalerCommands): VNCDesktopScaler =>
   async (scale) => {
     const panel = (await commands.run("pgrep", ["-o", "xfce4-panel"], {}).catch(() => "")).trim()
     if (panel === "") throw new Error("The desktop session isn't running")
@@ -55,7 +55,7 @@ export const xfceScaler =
       .find((entry) => entry.startsWith("DBUS_SESSION_BUS_ADDRESS="))
       ?.slice("DBUS_SESSION_BUS_ADDRESS=".length)
     if (bus === undefined || bus === "") throw new Error("The desktop session has no D-Bus address")
-    const env = { DISPLAY: `:${display}`, DBUS_SESSION_BUS_ADDRESS: bus }
+    const env = { ...x11, DBUS_SESSION_BUS_ADDRESS: bus }
     const xfconf = (...args: string[]) => commands.run("xfconf-query", args, env)
     const previous = (
       await xfconf("-c", "xsettings", "-p", "/Gdk/WindowScalingFactor").catch(() => "1")

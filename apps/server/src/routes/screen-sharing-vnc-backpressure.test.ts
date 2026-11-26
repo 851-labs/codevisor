@@ -5,7 +5,7 @@ import { Socket } from "node:net"
 import { expect, it, vi } from "vitest"
 import { WebSocket } from "ws"
 
-import { spliceVNCSocket, vncDisplayId } from "./screen-sharing-vnc.js"
+import { spliceVNCSocket, VNC_DISPLAY_ID } from "./screen-sharing-vnc.js"
 import { VNCControlArbiter } from "./vnc-control.js"
 
 it.each([4, 5])(
@@ -34,17 +34,20 @@ it.each([4, 5])(
     const pause = vi.spyOn(upstream, "pause")
     const resume = vi.spyOn(upstream, "resume")
     try {
-      const config = { port: 5901, name: "Desktop" }
+      const config = { socket: "/run/user/1000/codevisor-desktop.sock", name: "Desktop" }
       spliceVNCSocket(
         config,
-        new URL(`http://localhost/?displayId=${vncDisplayId(config)}`),
+        new URL(`http://localhost/?displayId=${VNC_DISPLAY_ID}`),
         new IncomingMessage(client),
         client,
         Buffer.alloc(0),
         server,
-        () => upstream,
-        new VNCControlArbiter(),
-        4
+        {
+          dial: () => upstream,
+          arbiter: new VNCControlArbiter(),
+          highWater: 4,
+          socketProblem: () => undefined
+        }
       )
       resume.mockClear()
 

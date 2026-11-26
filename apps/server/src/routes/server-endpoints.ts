@@ -127,6 +127,9 @@ const serverIdentity = (config: CodevisorServerConfig): ServerIdentity => ({
   bindHost: config.host
 })
 
+const sharesAScreen = (config: CodevisorServerConfig): boolean =>
+  config.screenSharing !== undefined || config.desktops?.current() !== undefined
+
 const configuredFeatures = (
   services: CodevisorServerServices,
   config: CodevisorServerConfig
@@ -134,7 +137,7 @@ const configuredFeatures = (
   "browser-proxy-v1",
   "browser-http-proxy-v1",
   "browser-state-v1",
-  ...(config.screenSharing === undefined ? [] : ["screen-sharing-v1", "computer-use-stream-v1"]),
+  ...(sharesAScreen(config) ? ["screen-sharing-v1", "computer-use-stream-v1"] : []),
   ...(services.mcp === undefined ? [] : ["live-preview-v1", "browser-host-v1"]),
   "canonical-chat-v1",
   ...(config.workspaceGit === true ? ["workspace-git-v1"] : []),

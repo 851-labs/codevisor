@@ -7,6 +7,7 @@ import {
 } from "@codevisor/api"
 import { Schema } from "effect"
 
+import type { VNCDesktop } from "../server-context-types.js"
 import {
   BoundedBody,
   HttpFailure,
@@ -14,6 +15,7 @@ import {
   type CodevisorServerConfig,
   type CodevisorServerServices
 } from "../server-context.js"
+import { VNC_DISPLAY_ID } from "./screen-sharing-vnc.js"
 
 const maxRequestBytes = 300 * 1024
 const uuid = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i
@@ -23,6 +25,9 @@ const simulatorTarget = /^simulator:[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]
 
 const isKnownTarget = (displayId: string): boolean =>
   uuid.test(displayId) || computerUseTarget.test(displayId) || simulatorTarget.test(displayId)
+
+const namesADisplay = (displayId: string, desktop: VNCDesktop | undefined): boolean =>
+  isKnownTarget(displayId) || (desktop !== undefined && displayId === VNC_DISPLAY_ID)
 
 const endpointId = /^[0-9a-f]{64}$/i
 const maxMediaAddrs = 32
@@ -74,6 +79,11 @@ const updateNeeded = (config: CodevisorServerConfig): ScreenSharingReply => ({
   displays: []
 })
 
+const nothingToShare = (config: CodevisorServerConfig): string =>
+  config.desktops === undefined
+    ? "Screen Sharing requires the native Codevisor app on a Mac"
+    : "This machine has no desktop to share"
+
 const isMediaAddress = (media: ScreenSharingMediaAddress | undefined): boolean =>
   media !== undefined &&
   endpointId.test(media.endpointId) &&
@@ -111,13 +121,14 @@ export const routeScreenSharing = async (
     )
   if (![payload.workspaceId, payload.paneId, payload.viewerId].every((id) => uuid.test(id)))
     throw new HttpFailure(400, "Invalid Screen Sharing identity")
-  if (config.screenSharingVNC === undefined && !isIdentified(payload)) {
+  const desktop = config.desktops?.current()
+  if (desktop === undefined && !isIdentified(payload)) {
     writeJson(response, 200, updateNeeded(config))
     return true
   }
   if (!appIsWellFormed(payload) || !sessionIsWellFormed(payload))
     throw new HttpFailure(400, "Invalid Screen Sharing identity")
-  if (config.screenSharingVNC === undefined && payload.operation === "restart")
+  if (desktop === undefined && payload.operation === "restart")
     throw new HttpFailure(400, "Invalid Screen Sharing request")
   const starts = payload.operation === "start" || payload.operation === "restart"
   if (
@@ -127,15 +138,13 @@ export const routeScreenSharing = async (
     throw new HttpFailure(400, "Invalid Screen Sharing media or display")
   if (starts && !appStartIsComplete(payload))
     throw new HttpFailure(400, "Invalid Screen Sharing identity")
-  if (payload.displayId !== undefined && !isKnownTarget(payload.displayId))
+  if (payload.displayId !== undefined && !namesADisplay(payload.displayId, desktop))
     throw new HttpFailure(400, "Invalid Screen Sharing display")
-  if (config.screenSharing === undefined)
-    throw new HttpFailure(501, "Screen Sharing requires the native Codevisor app on a Mac")
+  const respond = desktop?.respond ?? config.screenSharing
+  if (respond === undefined) throw new HttpFailure(501, nothingToShare(config))
   let result: ScreenSharingReply
   try {
-    result = Schema.decodeUnknownSync(ScreenSharingReply)(
-      await config.screenSharing(withDisplayName(payload))
-    )
+    result = Schema.decodeUnknownSync(ScreenSharingReply)(await respond(withDisplayName(payload)))
   } catch (cause) {
     throw screenSharingHostFailure(cause)
   }

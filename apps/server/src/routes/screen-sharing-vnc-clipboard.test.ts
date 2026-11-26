@@ -5,7 +5,7 @@ import { Socket } from "node:net"
 import { expect, it, vi } from "vitest"
 import { WebSocket } from "ws"
 
-import { spliceVNCSocket, vncDesktopClipboard, vncDisplayId } from "./screen-sharing-vnc.js"
+import { spliceVNCSocket, vncDesktopClipboard, VNC_DISPLAY_ID } from "./screen-sharing-vnc.js"
 import { type DesktopClipboard, VNCClipboardBridge } from "./vnc-clipboard-bridge.js"
 import { VNCControlArbiter } from "./vnc-control.js"
 
@@ -36,18 +36,15 @@ it("routes clipboard frames to the desktop's clipboard and everything else to th
   const arbiter = new VNCControlArbiter()
   const receive = vi.spyOn(arbiter, "receive")
   try {
-    const config = { port: 5901, name: "Desktop" }
+    const config = { socket: "/run/user/1000/codevisor-desktop.sock", name: "Desktop" }
     spliceVNCSocket(
       config,
-      new URL(`http://localhost/?displayId=${vncDisplayId(config)}`),
+      new URL(`http://localhost/?displayId=${VNC_DISPLAY_ID}`),
       new IncomingMessage(client),
       client,
       Buffer.alloc(0),
       { handleUpgrade: (_request, _socket, _head, done) => done(webSocket) },
-      () => upstream,
-      arbiter,
-      4 * 1024 * 1024,
-      desktop
+      { dial: () => upstream, arbiter, desktopClipboard: desktop, socketProblem: () => undefined }
     )
     await announcement.promise
     expect(texts).toEqual([JSON.stringify({ type: "clipboard-host", richContent: true })])
@@ -96,21 +93,23 @@ it("closes the bridge and stays silent when the desktop's clipboard can't be wat
   const upstream = new Socket()
   const client = new Socket()
   try {
-    const config = { port: 5901, name: "Desktop" }
+    const config = { socket: "/run/user/1000/codevisor-desktop.sock", name: "Desktop" }
     spliceVNCSocket(
       config,
-      new URL(`http://localhost/?displayId=${vncDisplayId(config)}`),
+      new URL(`http://localhost/?displayId=${VNC_DISPLAY_ID}`),
       new IncomingMessage(client),
       client,
       Buffer.alloc(0),
       { handleUpgrade: (_request, _socket, _head, done) => done(webSocket) },
-      () => upstream,
-      new VNCControlArbiter(),
-      4 * 1024 * 1024,
       {
-        watch: () => Promise.reject(new Error("xclip isn't installed")),
-        read: () => Promise.resolve([]),
-        write: (content) => Promise.resolve(content)
+        dial: () => upstream,
+        arbiter: new VNCControlArbiter(),
+        socketProblem: () => undefined,
+        desktopClipboard: {
+          watch: () => Promise.reject(new Error("xclip isn't installed")),
+          read: () => Promise.resolve([]),
+          write: (content) => Promise.resolve(content)
+        }
       }
     )
     await bridgeClosed.promise
@@ -123,7 +122,8 @@ it("closes the bridge and stays silent when the desktop's clipboard can't be wat
 })
 
 it("only a desktop the server set up gets the clipboard bridge", () => {
-  expect(vncDesktopClipboard({ port: 5901, name: "Desktop" })).toBeUndefined()
-  expect(vncDesktopClipboard({ port: 5901, name: "Desktop", desktop: "xfce" })).toBeDefined()
-  expect(vncDesktopClipboard({ port: 6100, name: "Desktop", desktop: "xfce" })).toBeUndefined()
+  const desktop = { socket: "/run/user/1000/codevisor-desktop.sock", name: "Desktop" }
+  expect(vncDesktopClipboard({ ...desktop, display: 1 })).toBeUndefined()
+  expect(vncDesktopClipboard({ ...desktop, desktop: "xfce", display: 1 })).toBeDefined()
+  expect(vncDesktopClipboard({ ...desktop, desktop: "xfce" })).toBeUndefined()
 })

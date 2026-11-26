@@ -110,9 +110,10 @@ const acceptLivePreview = (upgrade: SocketUpgrade, url: URL): boolean => {
 const spliceScreenSharing = (upgrade: SocketUpgrade, url: URL): boolean => {
   const { config, request, socket, head, webSocketServer } = upgrade
   if (!isGetTo(request, url, VNC_SOCKET_PATH)) return false
-  if (config.screenSharingVNC === undefined) return false
+  const desktop = config.desktops?.current()
+  if (desktop === undefined) return false
 
-  spliceVNCSocket(config.screenSharingVNC, url, request, socket, head, webSocketServer)
+  spliceVNCSocket(desktop.config, url, request, socket, head, webSocketServer)
   return true
 }
 

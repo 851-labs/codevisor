@@ -37,9 +37,8 @@ import {
   startCatalogRefresh,
   type PluginCatalog
 } from "./plugins/plugin-catalog.js"
-import { systemScalerCommands, xfceScaler } from "./routes/screen-sharing-vnc-scale.js"
-import { readScreenSharingVNC, vncScreenSharing } from "./routes/screen-sharing-vnc.js"
-import type { ScreenSharingVNCConfig } from "./server-context-types.js"
+import { fileVNCDesktops } from "./routes/vnc-desktops.js"
+import type { VNCDesktops } from "./server-context-types.js"
 import { makeSimulators, systemSimulatorEnvironment, type Simulators } from "./simulators.js"
 import type { StartupReporter } from "./startup-progress.js"
 import { field, stringField } from "./unknown-values.js"
@@ -53,15 +52,12 @@ export const screenSharingProvider = (
   dataDir: string
 ): {
   readonly screenSharing: ((request: ScreenSharingRequest) => Promise<unknown>) | undefined
-  readonly screenSharingVNC: ScreenSharingVNCConfig | undefined
+  readonly desktops: VNCDesktops | undefined
 } => {
   const native = nativeScreenSharing(dataDir)
-  if (native !== undefined) return { screenSharing: native, screenSharingVNC: undefined }
-  const vnc = readScreenSharingVNC(dataDir)
-  if (vnc === undefined) return { screenSharing: undefined, screenSharingVNC: undefined }
-  const scaler =
-    vnc.desktop === "xfce" ? xfceScaler(vnc.port - 5900, systemScalerCommands) : undefined
-  return { screenSharing: vncScreenSharing(vnc, scaler), screenSharingVNC: vnc }
+  if (native !== undefined) return { screenSharing: native, desktops: undefined }
+
+  return { screenSharing: undefined, desktops: fileVNCDesktops(dataDir) }
 }
 export const canReadFolder = async (path: string): Promise<boolean> => {
   try {

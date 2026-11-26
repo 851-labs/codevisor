@@ -78,7 +78,7 @@ export interface CodevisorServerConfig {
   readonly restartSnapshotPath?: string | undefined
   readonly pausedTurnsPath?: string | undefined
   readonly screenSharing?: ((request: ScreenSharingRequest) => Promise<unknown>) | undefined
-  readonly screenSharingVNC?: ScreenSharingVNCConfig | undefined
+  readonly desktops?: VNCDesktops | undefined
   readonly simulators?: Simulators | undefined
   readonly sessionActivity?: SessionActivityController | undefined
   readonly cloud?: CloudServerControl | undefined
@@ -95,11 +95,22 @@ export interface FirstRunProjectsConfig {
 }
 
 export interface ScreenSharingVNCConfig {
-  readonly port: number
+  readonly socket: string
   readonly name: string
   readonly desktop?: "xfce"
+  readonly display?: number
+  readonly xauthority?: string
   readonly defaultWidth?: number
   readonly defaultHeight?: number
+}
+
+export interface VNCDesktop {
+  readonly config: ScreenSharingVNCConfig
+  readonly respond: (request: ScreenSharingRequest) => Promise<unknown>
+}
+
+export interface VNCDesktops {
+  readonly current: () => VNCDesktop | undefined
 }
 
 export interface CloudServerControl {

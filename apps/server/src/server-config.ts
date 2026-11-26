@@ -28,7 +28,7 @@ export const defaultServerConfig = (
   pausedTurnsPath: overrides.pausedTurnsPath,
   sessionActivity: overrides.sessionActivity,
   screenSharing: overrides.screenSharing,
-  screenSharingVNC: overrides.screenSharingVNC,
+  desktops: overrides.desktops,
   simulators: overrides.simulators,
   cloud: overrides.cloud,
   icon: overrides.icon,

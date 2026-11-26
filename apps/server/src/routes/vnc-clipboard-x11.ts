@@ -69,8 +69,8 @@ export interface X11Commands {
   readonly spawn: (command: string, args: readonly string[]) => ChildProcessWithoutNullStreams
 }
 
-export const systemX11Commands = (display: number, xclip = "xclip"): X11Commands => {
-  const env = { ...process.env, DISPLAY: `:${display}` }
+export const systemX11Commands = (x11: Record<string, string>, xclip = "xclip"): X11Commands => {
+  const env = { ...process.env, ...x11 }
   return {
     run: (args) =>
       new Promise((resolve, reject) =>

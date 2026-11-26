@@ -57,33 +57,35 @@ const fakeSession = (
   return { commands, values, log }
 }
 
+const running = () => undefined
+
 describe("Xfce desktop scale (851-2339)", () => {
   it("sets 2× through the session's own D-Bus, with the 2× borders, and restarts the desktop once", async () => {
     const session = fakeSession()
-    await xfceScaler(1, session.commands)(2)
+    await xfceScaler({ DISPLAY: ":1" }, session.commands)(2)
     expect(session.values.get("xsettings /Gdk/WindowScalingFactor")).toBe("2")
     expect(session.values.get("xfwm4 /general/theme")).toBe("Default-xhdpi")
     for (const line of session.log.filter((entry) => !entry.startsWith("pgrep")))
       expect(line).toContain("[:1 unix:path=/tmp/dbus-session]")
     expect(session.log.filter((entry) => entry.startsWith("spawn xfdesktop"))).toHaveLength(1)
     session.log.length = 0
-    await xfceScaler(1, session.commands)(2)
+    await xfceScaler({ DISPLAY: ":1" }, session.commands)(2)
     expect(session.log.some((entry) => entry.includes("xfdesktop"))).toBe(false)
   })
 
   it("goes back to 1× and undoes only its own theme, never one the user picked", async () => {
     const own = fakeSession({ scale: "2", theme: "Default-xhdpi" })
-    await xfceScaler(1, own.commands)(1)
+    await xfceScaler({ DISPLAY: ":1" }, own.commands)(1)
     expect(own.values.get("xsettings /Gdk/WindowScalingFactor")).toBe("1")
     expect(own.values.get("xfwm4 /general/theme")).toBe("Default")
     const picked = fakeSession({ scale: "2", theme: "Greybird" })
-    await xfceScaler(1, picked.commands)(1)
+    await xfceScaler({ DISPLAY: ":1" }, picked.commands)(1)
     expect(picked.values.get("xfwm4 /general/theme")).toBe("Greybird")
   })
 
   it("treats unset properties as 1× and the default theme, and a desktop that isn't running as fine", async () => {
     const session = fakeSession({ failReads: true })
-    await xfceScaler(1, session.commands)(2)
+    await xfceScaler({ DISPLAY: ":1" }, session.commands)(2)
     expect(session.values.get("xsettings /Gdk/WindowScalingFactor")).toBe("2")
     expect(session.values.get("xfwm4 /general/theme")).toBe("Default-xhdpi")
     expect(session.log.filter((entry) => entry.startsWith("spawn xfdesktop"))).toHaveLength(1)
@@ -127,17 +129,17 @@ describe("Xfce desktop scale (851-2339)", () => {
   })
 
   it("fails clearly when the session isn't running or has no bus", async () => {
-    await expect(xfceScaler(1, fakeSession({ panel: "" }).commands)(2)).rejects.toThrow(
-      "The desktop session isn't running"
-    )
-    await expect(xfceScaler(1, fakeSession({ bus: "" }).commands)(2)).rejects.toThrow(
-      "no D-Bus address"
-    )
+    await expect(
+      xfceScaler({ DISPLAY: ":1" }, fakeSession({ panel: "" }).commands)(2)
+    ).rejects.toThrow("The desktop session isn't running")
+    await expect(
+      xfceScaler({ DISPLAY: ":1" }, fakeSession({ bus: "" }).commands)(2)
+    ).rejects.toThrow("no D-Bus address")
   })
 
   it("advertises the scales and default size, and answers setScale only with a scaler", async () => {
     const config = {
-      port: 5901,
+      socket: "/run/user/1000/codevisor-desktop.sock",
       name: "Desktop",
       desktop: "xfce" as const,
       defaultWidth: 1440,
@@ -148,12 +150,16 @@ describe("Xfce desktop scale (851-2339)", () => {
       workspaceId: "w",
       paneId: "p",
       viewerId: "v",
-      displayId: "vnc:5901"
+      displayId: "vnc:desktop"
     }
     const scales: (1 | 2)[] = []
-    const provider = vncScreenSharing(config, async (scale) => {
-      scales.push(scale)
-    })
+    const provider = vncScreenSharing(
+      config,
+      async (scale) => {
+        scales.push(scale)
+      },
+      running
+    )
     const capabilities = await provider({ ...request, operation: "capabilities" })
     expect(capabilities.displays[0]).toMatchObject({
       scales: [1, 2],
@@ -180,13 +186,13 @@ describe("Xfce desktop scale (851-2339)", () => {
       status: "error",
       message: "The desktop's scale couldn't be set"
     })
-    const plain = vncScreenSharing({ port: 5901, name: "Desktop" })
+    const plain = vncScreenSharing({ socket: config.socket, name: "Desktop" }, undefined, running)
     expect(await plain({ ...request, operation: "capabilities" })).toEqual({
       version: 1,
       status: "available",
       provider: "vnc",
       controlLease: true,
-      displays: [{ id: "vnc:5901", name: "Desktop", width: 0, height: 0 }]
+      displays: [{ id: "vnc:desktop", name: "Desktop", width: 0, height: 0 }]
     })
     expect((await plain({ ...request, operation: "setScale", scale: 2 })).status).toBe(
       "unsupported"
