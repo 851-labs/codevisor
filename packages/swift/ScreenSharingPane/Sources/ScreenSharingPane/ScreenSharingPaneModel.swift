@@ -125,10 +125,12 @@ public final class ScreenSharingPaneModel {
     viewsChanged()
   }
 
-  func pressHardwareKey(usage: Int, modifiers flags: ScreenSharingModifiers) -> Bool {
-    guard let code = ScreenSharingKeyboard.code(forHIDUsage: usage) else { return false }
+  func pressHardwareKey(_ key: ScreenSharingHardwareKey) -> Bool {
+    let asCharacters = session?.keysAreCharacters == true
+    guard let events = key.events(asCharacters: asCharacters, onScreen: modifiers) else { return false }
+    guard !events.isEmpty else { return true }
 
-    send(ScreenSharingKeyboard.press(code: code, modifiers: flags.union(modifiers)))
+    send(events)
     modifiers = []
     return true
   }
@@ -151,6 +153,11 @@ public final class ScreenSharingPaneModel {
 
   func dragEnded(at pointer: ScreenSharingPointer) {
     send(self.pointer.dragEnded(at: pointer))
+  }
+
+  func scrollBegan() {
+    pointer.scrollBegan()
+    session?.scrollGestureBegan()
   }
 
   func scrolled(at pointer: ScreenSharingPointer, dx: Double, dy: Double) {
@@ -210,7 +217,7 @@ public final class ScreenSharingPaneModel {
     viewed?.close()
     pointer = ScreenSharingPointerInput()
     viewed = session.map { session in
-      ScreenSharingViewedSession(session) { [weak self] in self?.isViewing == true }
+      ScreenSharingViewedSession(session, machineName: machineName) { [weak self] in self?.isViewing == true }
     }
   }
 }

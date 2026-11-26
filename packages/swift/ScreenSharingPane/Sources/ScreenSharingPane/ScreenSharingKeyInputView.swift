@@ -75,7 +75,10 @@
         if key.modifierFlags.contains(.control) { modifiers.insert(.control) }
         if key.modifierFlags.contains(.alternate) { modifiers.insert(.option) }
         if key.modifierFlags.contains(.command) { modifiers.insert(.command) }
-        return !model.pressHardwareKey(usage: key.keyCode.rawValue, modifiers: modifiers)
+        let pressed = ScreenSharingHardwareKey(
+          usage: key.keyCode.rawValue, characters: key.characters,
+          unmodifiedCharacters: key.charactersIgnoringModifiers, modifiers: modifiers)
+        return !model.pressHardwareKey(pressed)
       }
     }
   }

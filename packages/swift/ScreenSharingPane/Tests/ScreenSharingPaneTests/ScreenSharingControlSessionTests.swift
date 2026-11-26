@@ -28,7 +28,8 @@ struct ScreenSharingControlSessionTests {
   }
 
   private func session() -> ScreenSharingControlSession {
-    ScreenSharingControlSession(channel: viewer, clock: clock, makeID: { [requestID] in requestID })
+    ScreenSharingControlSession(
+      channel: viewer, machineName: "croissant", clock: clock, makeID: { [requestID] in requestID })
   }
 
   private var inputs: [UInt64] {
@@ -74,7 +75,32 @@ struct ScreenSharingControlSessionTests {
     #expect(control.state == .requesting)
     clock.advance(by: .milliseconds(1))
     await awaitObserved { control.state == .idle }
-    #expect(control.notice == "The Mac didn't answer the request for control.")
+    #expect(control.notice == "croissant didn't answer the request for control.")
+  }
+
+  @Test("A grant that arrives after the request was given up is handed back, so the machine isn't left controlled")
+  func lateGrantIsHandedBack() async {
+    let control = session()
+    control.send([.move(point, modifiers: 0)])
+    await clock.waitForSleep(ScreenSharingControlSession.requestTimeout)
+    clock.advance(by: ScreenSharingControlSession.requestTimeout)
+    await awaitObserved { control.state == .idle }
+
+    host.send(.grant(request: requestID, lease: lease))
+
+    #expect(received.messages == [.request(id: requestID), .release(lease: lease)])
+    #expect(control.state == .idle)
+  }
+
+  @Test("A repeated grant of the control already held changes nothing")
+  func repeatedGrant() {
+    let control = session()
+    control.send([.move(point, modifiers: 0)])
+    host.send(.grant(request: requestID, lease: lease))
+    host.send(.grant(request: requestID, lease: lease))
+
+    #expect(control.state == .controlling)
+    #expect(!received.messages.contains(.release(lease: lease)))
   }
 
   @Test("Control is kept alive every second and released on request")

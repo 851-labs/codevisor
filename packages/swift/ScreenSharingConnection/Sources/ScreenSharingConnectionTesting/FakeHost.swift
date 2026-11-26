@@ -40,6 +40,7 @@ public final class FakeHost: ScreenSharingHostChannel {
   public var displaySwitchAnswer = DisplaySwitchAnswer.switches
   public private(set) var sharedDisplayId: String?
   public var provider: String?
+  public var controlLease: Bool?
   public var displays = [FakeHost.display]
   public var isReconnecting = false
   public var onStart: (() -> Void)?
@@ -151,6 +152,7 @@ public final class FakeHost: ScreenSharingHostChannel {
     switch request.operation {
     case .capabilities:
       reply = ServerScreenSharingReply(status: "available", displays: displays, provider: provider)
+      reply.controlLease = controlLease
       reply.engines = ["v2"]
       if verifiesApps, request.app != nil { reply.challenge = mintChallenge() }
     case .start, .restart:

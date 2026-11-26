@@ -63,6 +63,31 @@ struct VNCInputTranslatorTests {
       ])
   }
 
+  @Test("A touch viewer's leftover scroll distance doesn't reach into the next two-finger drag")
+  func touchScrollStartsFresh() {
+    let touch = VNCInputTranslator(
+      width: 200, height: 100, keys: VNCKeyTranslator(layout: { _, _ in nil }), scroll: .touch)
+    let point = ScreenSharingPointer(x: 0.5, y: 0.5)
+
+    #expect(touch.translate(.scroll(point, x: 0, y: 19, modifiers: 0)).isEmpty)
+    touch.scrollGestureBegan()
+    #expect(touch.translate(.scroll(point, x: 0, y: 1, modifiers: 0)).isEmpty)
+    #expect(
+      touch.translate(.scroll(point, x: 0, y: 19, modifiers: 0)) == [
+        .pointerEvent(buttons: 8, x: 100, y: 50), .pointerEvent(buttons: 0, x: 100, y: 50),
+      ])
+  }
+
+  @Test("Pasted text with Windows line endings presses Return once per line break")
+  func windowsLineEndings() {
+    let keys = translator.translate(.text("a\r\nb\rc\n")).compactMap { message -> UInt32? in
+      guard case .keyEvent(let keysym, true) = message else { return nil }
+
+      return keysym
+    }
+    #expect(keys == [0x61, RFBKeysym.return, 0x62, RFBKeysym.return, 0x63, RFBKeysym.return])
+  }
+
   @Test func theCurrentKeyboardLayoutProducesLatinLettersAndSpace() throws {
     let keys = VNCKeyTranslator()
     let lower = try #require(keys.keysym(code: 0, modifiers: 0))

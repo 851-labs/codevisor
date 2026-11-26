@@ -6,12 +6,16 @@ import ScreenSharingV2
 
 @MainActor
 struct ScreenSharingDesktopSources {
+  typealias OpenVNCSocket =
+    @Sendable (_ machineId: String, _ displayId: String) async throws -> any ServerWebSocketConnecting
+
   var signer: () throws -> ScreenSharingStartSigner
   var channel: (_ machineId: String) -> any ScreenSharingHostChannel
   var connector: ScreenSharingV2Connector
   var machineName: (_ machineId: String) -> String?
   var isReady: (_ machineId: String) -> Bool
   var userAsked: (_ machineId: String) -> Void = { _ in }
+  var openVNCSocket: OpenVNCSocket?
 
   init(
     signer: @escaping () throws -> ScreenSharingStartSigner,
@@ -38,6 +42,9 @@ struct ScreenSharingDesktopSources {
       machineName: { machines.machine(for: $0)?.name },
       isReady: { machines.availability(for: $0) == .ready })
     userAsked = { machines.redialTunnel(for: $0) }
+    openVNCSocket = { machineId, displayId in
+      try await machines.client(for: machineId).screenSharingVNCSocket(displayId: displayId)
+    }
   }
 
   private static var liveConnector: ScreenSharingV2Connector {

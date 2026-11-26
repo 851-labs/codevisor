@@ -53,6 +53,14 @@ struct ScreenSharingTouchInputTests {
     #expect(input.dragEnded(at: end).isEmpty)
   }
 
+  @Test("A new scroll gesture starts without the fraction of a pixel the last one left")
+  func scrollGestureStartsFresh() {
+    var input = ScreenSharingPointerInput()
+    #expect(input.scrolled(at: point, dx: 0, dy: 0.9).isEmpty)
+    input.scrollBegan()
+    #expect(input.scrolled(at: point, dx: 0, dy: 0.2).isEmpty)
+  }
+
   @Test("Fractional scroll deltas accumulate instead of being dropped")
   func scroll() {
     var input = ScreenSharingPointerInput()

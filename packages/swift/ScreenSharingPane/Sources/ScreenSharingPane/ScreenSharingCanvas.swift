@@ -290,6 +290,7 @@
         scrollZoom = scrollView.zoomScale
         scrollTranslation = .zero
         scrollSuppressed = false
+        model.scrollBegan()
       case .changed:
         if abs(scrollView.zoomScale - scrollZoom) / scrollZoom > 0.03 { scrollSuppressed = true }
         guard !scrollSuppressed, let video = videoSize, content.bounds.width > 0 else { return }

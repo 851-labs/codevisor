@@ -2,6 +2,7 @@ import Foundation
 
 public actor RFBClient {
   public nonisolated let framebuffer: RFBFramebuffer
+  public nonisolated let serverDrawsPointer: Bool
   private let transport: any RFBTransport
   public nonisolated var controlChannel: (any RFBControlChannel)? { transport as? any RFBControlChannel }
   private let stream: RFBInputStream
@@ -22,9 +23,10 @@ public actor RFBClient {
   public init(
     transport: any RFBTransport, framebuffer: RFBFramebuffer? = nil,
     now: @escaping @Sendable () -> ContinuousClock.Instant = { ContinuousClock.now },
-    qualityLevel: Int? = nil
+    qualityLevel: Int? = nil, serverDrawsPointer: Bool = false
   ) throws {
     self.transport = transport
+    self.serverDrawsPointer = serverDrawsPointer
     self.qualityLevel = qualityLevel.map { min(max($0, 0), 9) }
     self.now = now
     stream = RFBInputStream(transport: transport)
@@ -46,7 +48,12 @@ public actor RFBClient {
   }
 
   private var encodings: [Int32] {
-    advertisedEncodings ?? RFBEncoding.supported.map(\.rawValue) + (qualityLevel.map { [Int32(-32 + $0)] } ?? [])
+    advertisedEncodings ?? supportedEncodings.map(\.rawValue) + (qualityLevel.map { [Int32(-32 + $0)] } ?? [])
+  }
+  private var supportedEncodings: [RFBEncoding] {
+    guard serverDrawsPointer else { return RFBEncoding.supported }
+
+    return RFBEncoding.supported.filter { !RFBEncoding.localPointer.contains($0) }
   }
   public var advertisedEncodings: [Int32]?
   public func advertise(_ encodings: [Int32]?) { advertisedEncodings = encodings }

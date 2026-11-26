@@ -1,0 +1,106 @@
+import ScreenSharing
+
+struct ScreenSharingHardwareKey {
+  static let characterUsages: Set<Int> = Set(4...39).union(45...56).union([100])
+  static let spaceUsage = 44
+  static let chordModifiers: ScreenSharingModifiers = [.control, .option, .command]
+
+  var usage: Int
+  var characters = ""
+  var unmodifiedCharacters = ""
+  var modifiers: ScreenSharingModifiers = []
+
+  func events(asCharacters: Bool, onScreen: ScreenSharingModifiers = []) -> [ScreenSharingInputEvent]? {
+    if asCharacters, typesCharacters, let typed = typed(onScreen: onScreen) { return typed }
+    guard let code = ScreenSharingKeyboard.code(forHIDUsage: usage) else { return nil }
+
+    return ScreenSharingKeyboard.press(code: code, modifiers: modifiers.union(onScreen))
+  }
+
+  private var typesCharacters: Bool {
+    Self.characterUsages.contains(usage) || spaceFinishedADeadKey
+  }
+
+  private var spaceFinishedADeadKey: Bool {
+    guard usage == Self.spaceUsage, modifiers.isDisjoint(with: Self.chordModifiers) else { return false }
+
+    return !characters.isEmpty && !characters.unicodeScalars.allSatisfy(\.properties.isWhitespace)
+  }
+
+  private func typed(onScreen: ScreenSharingModifiers) -> [ScreenSharingInputEvent]? {
+    let held = modifiers.union(onScreen)
+    let chord = held.intersection(Self.chordModifiers)
+    if isDeadKey { return [] }
+    guard isChord(chord) else { return Self.text(characters, shifted: onScreen.contains(.shift)) }
+
+    return Self.chord(on: unmodifiedCharacters, holding: held)
+  }
+
+  private var isDeadKey: Bool {
+    characters.isEmpty && modifiers.intersection(Self.chordModifiers).isSubset(of: .option)
+  }
+
+  private func isChord(_ chord: ScreenSharingModifiers) -> Bool {
+    !chord.isEmpty && !(chord == .option && optionComposedACharacter)
+  }
+
+  private var optionComposedACharacter: Bool {
+    guard modifiers.contains(.option), Self.isPrintable(characters) else { return false }
+    guard characters.unicodeScalars.allSatisfy(Self.isTypedWithOption) else { return false }
+
+    return characters.lowercased() != unmodifiedCharacters.lowercased()
+  }
+
+  private static func isTypedWithOption(_ scalar: Unicode.Scalar) -> Bool {
+    scalar.isASCII || scalar.properties.generalCategory == .currencySymbol
+  }
+
+  private static func text(_ text: String, shifted: Bool) -> [ScreenSharingInputEvent]? {
+    guard isPrintable(text) else { return nil }
+    guard shifted, !isAlreadyCapital(text) else { return ScreenSharingKeyboard.type(text, modifiers: []) }
+    guard let capitals = capitals(of: text) else {
+      return ScreenSharingKeyboard.holding(.shift) { _ in [.text(text)] }
+    }
+
+    return ScreenSharingKeyboard.type(capitals, modifiers: [])
+  }
+
+  private static func isAlreadyCapital(_ text: String) -> Bool {
+    text.lowercased() != text
+  }
+
+  private static func capitals(of text: String) -> String? {
+    let capitals = text.uppercased()
+    guard capitals != text, capitals.count == text.count, capitals.lowercased() == text else { return nil }
+
+    return capitals
+  }
+
+  private static func chord(on text: String, holding modifiers: ScreenSharingModifiers) -> [ScreenSharingInputEvent]? {
+    guard text.count == 1, isPrintable(text) else { return nil }
+
+    let plain = withoutCapsLock(text)
+    if let character = plain.first, let key = ScreenSharingKeyboard.key(for: character), !key.shifted {
+      return ScreenSharingKeyboard.press(code: key.code, modifiers: modifiers)
+    }
+
+    let shifted = modifiers.contains(.shift) ? capitals(of: plain) : nil
+    return ScreenSharingKeyboard.holding(modifiers) { _ in [.text(shifted ?? plain)] }
+  }
+
+  private static func withoutCapsLock(_ text: String) -> String {
+    let small = text.lowercased()
+    return small.unicodeScalars.count == text.unicodeScalars.count ? small : text
+  }
+
+  private static func isPrintable(_ text: String) -> Bool {
+    !text.isEmpty && text.unicodeScalars.allSatisfy(isPrintable)
+  }
+
+  private static func isPrintable(_ scalar: Unicode.Scalar) -> Bool {
+    switch scalar.properties.generalCategory {
+    case .control, .privateUse, .surrogate, .unassigned: false
+    default: true
+    }
+  }
+}

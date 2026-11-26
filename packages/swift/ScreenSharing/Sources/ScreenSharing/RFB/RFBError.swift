@@ -128,6 +128,8 @@ public enum RFBEncoding: Int32, Sendable, CaseIterable {
     .tight, .zrle, .copyRect, .raw, .desktopSize, .cursor, .pointerPosition, .fence, .continuousUpdates,
     .extendedDesktopSize, .extendedClipboard,
   ]
+
+  public static let localPointer: Set<RFBEncoding> = [.cursor, .pointerPosition]
 }
 
 public struct RFBRectangle: Sendable, Equatable, Hashable {

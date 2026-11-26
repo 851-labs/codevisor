@@ -46,6 +46,10 @@ struct ScreenSharingPointerInput {
     return [.move(pointer, modifiers: 0), .button(pointer, button: 0, down: false, clicks: 1, modifiers: 0)]
   }
 
+  mutating func scrollBegan() {
+    scroll = ScreenSharingScrollAccumulator()
+  }
+
   mutating func scrolled(at pointer: ScreenSharingPointer, dx: Double, dy: Double) -> [ScreenSharingInputEvent] {
     let delta = scroll.add(x: dx, y: dy)
     guard delta.x != 0 || delta.y != 0 else { return [] }

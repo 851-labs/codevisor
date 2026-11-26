@@ -32,6 +32,7 @@ final class DesktopsHarness {
   let defaults: UserDefaults
   private let suite = "ScreenSharingDesktopsTests.\(UUID().uuidString)"
   var connector: ScreenSharingV2Connector?
+  var openVNCSocket: ScreenSharingDesktopSources.OpenVNCSocket?
   private var managers: [ScreenSharingConnectionManager] = []
   private var panes: [UUID: UUID] = [:]
   private var startedSessions = 0
@@ -43,9 +44,11 @@ final class DesktopsHarness {
   }
 
   var sources: ScreenSharingDesktopSources {
-    ScreenSharingDesktopSources(
+    var sources = ScreenSharingDesktopSources(
       signer: { [signer] in signer.signer }, channel: { [host] _ in host }, connector: connector ?? media.connector,
       machineName: { [world] _ in world.machineName }, isReady: { [world] _ in world.isReady })
+    sources.openVNCSocket = openVNCSocket
+    return sources
   }
 
   func makeDesktops() -> ScreenSharingDesktops {

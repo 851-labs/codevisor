@@ -135,19 +135,6 @@ struct ScreenSharingDesktopsTests {
     #expect(harness.host.starts.map(\.displayId) == [FakeHost.second.id])
   }
 
-  @Test("A Linux desktop, which the phone has no viewer for, says it can only be viewed from a Mac and offers no retry")
-  func linuxDesktopIsMacOnly() async {
-    let harness = DesktopsHarness()
-    harness.host.provider = "vnc"
-    let model = harness.model()
-    harness.show(model)
-    await awaitObserved { model?.state == .failed(.unsupportedOnThisDevice) }
-
-    #expect(model?.failure?.sentence == "croissant's desktop can only be viewed from a Mac.")
-    #expect(model?.failure?.action == nil)
-    #expect(harness.host.starts.isEmpty)
-  }
-
   @Test("When another device takes the desktop, the phone says who is viewing, and View here takes it back")
   func viewHereTakesTheDesktopBack() async throws {
     let harness = DesktopsHarness()
