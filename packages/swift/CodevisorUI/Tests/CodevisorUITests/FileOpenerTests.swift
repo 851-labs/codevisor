@@ -119,19 +119,41 @@ struct FileOpenerTests {
     #expect(fixture.transport.requests.isEmpty)
   }
 
-  @Test("The lightbox shows a file read-only even when the machine would let it be edited")
-  func lightboxPagesAreReadOnly() async throws {
+  @Test("The lightbox opens a file for viewing, and only the pencil makes it editable")
+  func lightboxEditsOnlyAfterThePencil() async throws {
+    let page = try await openedPage(writable: true)
+    #expect(page.document.text == "hello")
+    #expect(!page.editor.isEditable)
+    let pencil = try #require(FileEditModeToggle(page: page))
+    #expect(pencil.systemImage == "pencil")
+
+    pencil.toggle()
+    #expect(page.editor.isEditable)
+    let eye = try #require(FileEditModeToggle(page: page))
+    #expect(eye.systemImage == "eye")
+
+    eye.toggle()
+    #expect(!page.editor.isEditable)
+  }
+
+  @Test("The lightbox offers no pencil for a file the machine won't let you edit")
+  func lightboxNeverEditsAReadOnlyFile() async throws {
+    let page = try await openedPage(writable: false)
+
+    #expect(page.document.text == "hello")
+    #expect(FileEditModeToggle(page: page) == nil)
+    #expect(!page.editor.isEditable)
+  }
+
+  private func openedPage(writable: Bool) async throws -> FilePaneModel {
     let fixture = OpenerFixture()
     fixture.transport.respond(
-      #"{"path":"/project/notes.txt","content":"hello","version":"v1","size":5,"writable":true}"#)
+      #"{"path":"/project/notes.txt","content":"hello","version":"v1","size":5,"writable":\#(writable)}"#)
     let notes = file("notes.txt")
     fixture.opener.open(notes)
     let page = try #require(fixture.lightbox.page(for: notes))
-
     await page.refreshDocument()
-
-    #expect(page.document.text == "hello")
-    #expect(!page.document.isEditable)
+    return page
   }
 
   private func file(_ path: String) -> ViewableFile {
@@ -149,7 +171,7 @@ private final class OpenerFixture {
 
   init(hasTabs: Bool = true) {
     let site = FileOpener.Site(
-      rootPath: "/project", machineId: "machine",
+      rootPath: "/project", machineId: UUID().uuidString,
       client: CodevisorServerClient(config: CodevisorServerConfig(requestTransport: transport)))
     opener = FileOpener(identity: .unique, site: site, lightbox: lightbox)
     if hasTabs {
