@@ -49,6 +49,8 @@ export const UBUNTU = {
   "/etc/os-release": 'PRETTY_NAME="Ubuntu 24.04.5 LTS"\nID=ubuntu\nID_LIKE=debian\n'
 }
 
+export const APT_UPDATE_LOOP = `for try in $(seq 60); do out=$(apt-get update -q 2>&1) && exit 0; echo "$out"; echo "$out" | grep -q "Could not get lock" || exit 1; sleep 10; done; exit 1`
+
 export const CHANGED = "(told that what is shared changed)"
 
 const defaultEnv: Record<string, string | undefined> = { XDG_RUNTIME_DIR: "/run/user/1001" }

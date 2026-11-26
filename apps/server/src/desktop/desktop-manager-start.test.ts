@@ -85,6 +85,15 @@ describe("starting the desktop as the server's own account", () => {
     expect(await machine.manager.start()).toMatchObject({ state: "running", display: 3 })
   })
 
+  it("knows its own X server by the socket in its config, wherever it would put a new one", async () => {
+    const again = await stoppedOnDisplay2({
+      files: { "/tmp/.X2-lock": "  777\n", "/proc/777/cmdline": ourXvnc },
+      alive: [777],
+      env: {}
+    })
+    expect(await again.manager.start()).toMatchObject({ display: 2 })
+  })
+
   it.each([
     { name: "its old X server left a lock behind", files: { "/tmp/.X2-lock": "  777\n" } },
     {
@@ -133,6 +142,13 @@ describe("starting the desktop as the server's own account", () => {
     const machine = fakeMachine({ files: { ...UBUNTU, [CONFIG]: theirs } })
     expect(await machine.manager.status()).toMatchObject({ state: "running", managed: false })
     await expect(machine.manager.start()).rejects.toMatchObject({ status: 409 })
+    const down = fakeMachine({
+      files: { ...UBUNTU, [CONFIG]: theirs },
+      socketAppearsAfterPolls: Number.POSITIVE_INFINITY
+    })
+    expect(await down.manager.status()).toMatchObject({ state: "stopped", managed: false })
+    await expect(down.manager.start()).rejects.toMatchObject({ status: 409 })
+    expect(down.files.get(CONFIG)).toBe(theirs)
     expect(machine.files.get(CONFIG)).toBe(theirs)
     expect(machine.files.has(UNIT)).toBe(false)
 
@@ -167,7 +183,7 @@ describe("starting the desktop as the server's own account", () => {
       existing: ["/tmp/.X11-unix/X1"],
       socketAppearsAfterPolls: 1
     })
-    expect(await machine.manager.start()).toMatchObject({ display: 2 })
+    expect(await machine.manager.start({ replaceUnmanaged: true })).toMatchObject({ display: 2 })
   })
 
   it("refuses to start while programs are missing, and changes nothing", async () => {
@@ -233,6 +249,27 @@ describe("the boot service after the server moved to another folder", () => {
     await machine.manager.start()
     expect(machine.files.get(UNIT)).toBe(current)
     expect(reloadsAndRestarts(machine.commands)).toEqual(["systemctl --user daemon-reload"])
+  })
+
+  it("is left alone, and so is its desktop, when it belongs to another Codevisor server on this account", async () => {
+    const first = fakeMachine({ files: UBUNTU })
+    await first.manager.start()
+    const theirs = (first.files.get(UNIT) ?? "").replaceAll(DATA_DIR, "/home/codevisor/alpha/data")
+    const machine = fakeMachine({ files: { ...UBUNTU, [UNIT]: theirs } })
+
+    await machine.manager.resume()
+    await expect(machine.manager.start()).rejects.toMatchObject({
+      status: 409,
+      message: expect.stringContaining("Another Codevisor server on this account")
+    })
+    await machine.manager.remove()
+    expect(machine.files.get(UNIT)).toBe(theirs)
+    expect(
+      machine.commands.filter(
+        (line) => line.startsWith("systemctl --user") && !line.endsWith("show-environment")
+      )
+    ).toEqual([])
+    expect(await machine.manager.status()).toMatchObject({ state: "none", managed: false })
   })
 
   it("is left alone while it already points there", async () => {

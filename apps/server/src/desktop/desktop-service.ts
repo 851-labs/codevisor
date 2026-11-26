@@ -16,6 +16,7 @@ export interface DesktopService {
   readonly stop: () => Promise<void>
   readonly refresh: () => Promise<void>
   readonly isSetUp: () => boolean
+  readonly belongsToAnother: () => boolean
   readonly recentLog: () => Promise<string>
   readonly logHint: string
   readonly startsAtBoot: () => Promise<boolean>
@@ -36,7 +37,7 @@ export const desktopServices = async (
   runner: RunnerCommand,
   files: ServiceFiles
 ): Promise<DesktopServices> => {
-  const underSystemd = systemdService(system, runner)
+  const underSystemd = systemdService(system, runner, files)
   const asAProcess = processService(system, runner, files)
   const hasUserSystemd = (await system.run("systemctl", ["--user", "show-environment"])).code === 0
   if (hasUserSystemd) return { current: underSystemd, other: asAProcess }
@@ -71,8 +72,16 @@ const isTheRunner = (commandLine: string | undefined): boolean =>
 const quotedForSystemd = (value: string): string =>
   `"${value.replaceAll("\\", "\\\\").replaceAll('"', '\\"').replaceAll("%", "%%").replaceAll("$", "$$$$")}"`
 
-const systemdService = (system: DesktopSystem, runner: RunnerCommand): DesktopService => {
+const systemdService = (
+  system: DesktopSystem,
+  runner: RunnerCommand,
+  files: ServiceFiles
+): DesktopService => {
   const systemctl = (...args: string[]) => system.run("systemctl", ["--user", ...args])
+  const ourDataFolder = `"--data-dir" ${quotedForSystemd(files.dataDir)}`
+  const written = (): string | undefined => system.readText(unitPath(system))
+  const isOurs = (): boolean => written()?.includes(ourDataFolder) === true
+  const belongsToAnother = (): boolean => written() !== undefined && !isOurs()
   return {
     kind: "systemd-user",
     start: async () => {
@@ -82,19 +91,21 @@ const systemdService = (system: DesktopSystem, runner: RunnerCommand): DesktopSe
       await systemctl("restart", DESKTOP_UNIT)
     },
     refresh: async () => {
-      const written = system.readText(unitPath(system))
-      if (written === undefined || written === unitText(runner)) return
+      if (!isOurs() || written() === unitText(runner)) return
 
       system.writeText(unitPath(system), unitText(runner))
       await systemctl("daemon-reload")
     },
     stop: async () => {
+      if (belongsToAnother()) return
+
       await systemctl("disable", "--now", DESKTOP_UNIT)
       system.remove(unitPath(system))
       await systemctl("daemon-reload")
       await systemctl("reset-failed", DESKTOP_UNIT)
     },
-    isSetUp: () => system.exists(unitPath(system)),
+    isSetUp: isOurs,
+    belongsToAnother,
     recentLog: async () =>
       (
         await system.run("journalctl", [
@@ -148,6 +159,7 @@ const processService = (
     stop,
     refresh: async () => undefined,
     isSetUp: () => runningPid() !== undefined,
+    belongsToAnother: () => false,
     recentLog: async () =>
       (system.readText(logFile) ?? "").trimEnd().split("\n").slice(-logLines).join("\n"),
     logHint: logFile,

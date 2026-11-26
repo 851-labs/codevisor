@@ -26,6 +26,12 @@ const aptPackages = [
 
 const aptFamily = new Set(["debian", "ubuntu"])
 const aptLockWaitSeconds = 600
+const updateTries = aptLockWaitSeconds / 10
+const updateUntilTheListsLockIsFree = `for try in $(seq ${updateTries}); do out=$(apt-get update -q 2>&1) && exit 0; echo "$out"; echo "$out" | grep -q "Could not get lock" || exit 1; sleep 10; done; exit 1`
+const plainWord = /^[A-Za-z0-9_@%+=:,./-]+$/
+
+const shellWord = (word: string): string =>
+  plainWord.test(word) ? word : `'${word.replaceAll("'", "'\\''")}'`
 const installTimeoutMs = 20 * 60 * 1000
 const outputTailLines = 30
 
@@ -63,18 +69,25 @@ export const installCommands = async (
   const usesApt = release.ids.some((id) => aptFamily.has(id))
   if (!usesApt || !(await hasProgram(system, "apt-get"))) return undefined
 
-  const apt = [
-    "env",
-    "DEBIAN_FRONTEND=noninteractive",
-    "apt-get",
-    "-o",
-    `DPkg::Lock::Timeout=${aptLockWaitSeconds}`
-  ]
+  const quietly = ["env", "DEBIAN_FRONTEND=noninteractive"]
+  const lockWait = `DPkg::Lock::Timeout=${aptLockWaitSeconds}`
   return [
-    [...apt, "update", "-q"],
-    [...apt, "install", "-y", "-q", "--no-install-recommends", ...aptPackages]
+    [...quietly, "sh", "-c", updateUntilTheListsLockIsFree],
+    [
+      ...quietly,
+      "apt-get",
+      "-o",
+      lockWait,
+      "install",
+      "-y",
+      "-q",
+      "--no-install-recommends",
+      ...aptPackages
+    ]
   ]
 }
+
+export const shellText = (command: RootCommand): string => command.map(shellWord).join(" ")
 
 export const sudoKind = async (system: DesktopSystem): Promise<DesktopSudo> => {
   if (system.uid === 0) return "passwordless"

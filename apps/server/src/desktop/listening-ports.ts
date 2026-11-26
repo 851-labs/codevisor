@@ -27,6 +27,13 @@ export const tcpPortsListenedOnBy = (pid: number, proc = "/proc"): ReadonlyArray
     .map((listener) => listener.port)
 }
 
+export const holdsUnixSocket = (pid: number, socketPath: string, proc = "/proc"): boolean => {
+  const own = socketsOf(pid, proc)
+  return unixSockets(proc)
+    .filter((socket) => socket.path === socketPath)
+    .some((socket) => own.has(socket.inode))
+}
+
 export const listeners = (procNetTcp: string): ReadonlyArray<Listener> =>
   procNetTcp
     .split("\n")
@@ -46,6 +53,24 @@ const socketsOf = (pid: number, proc: string): ReadonlySet<string> => {
     )
   } catch (error) {
     throw unchecked(folder, error)
+  }
+}
+
+const unixInodeField = 6
+
+const unixSockets = (proc: string): ReadonlyArray<{ inode: string; path: string }> => {
+  const path = join(proc, "net", "unix")
+  try {
+    return readFileSync(path, "utf8")
+      .split("\n")
+      .slice(1)
+      .map((line) => line.trim().split(/\s+/))
+      .map((fields) => ({
+        inode: fields[unixInodeField] ?? "",
+        path: fields.slice(unixInodeField + 1).join(" ")
+      }))
+  } catch (error) {
+    throw unchecked(path, error)
   }
 }
 

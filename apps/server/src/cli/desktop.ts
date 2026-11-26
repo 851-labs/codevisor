@@ -1,7 +1,12 @@
 import { DesktopStatus } from "@codevisor/api"
 import { Schema } from "effect"
 
-import { DESKTOP_PROGRAMS, installCommands, osRelease } from "../desktop/desktop-packages.js"
+import {
+  DESKTOP_PROGRAMS,
+  installCommands,
+  osRelease,
+  shellText
+} from "../desktop/desktop-packages.js"
 import type { DesktopSystem } from "../desktop/desktop-system.js"
 import { oldDesktop, type RootCommand } from "../desktop/old-desktop.js"
 import { resolvePort, routeFailure, type CliDeps, type CommandOptions } from "./support.js"
@@ -110,10 +115,13 @@ const controlCharacters = /[\p{Cc}\p{Cf}\p{Zl}\p{Zp}]/gu
 const accountName = /^[a-z_][a-z0-9_.-]{0,31}\$?$/i
 const knownPrograms = new Set<string>(DESKTOP_PROGRAMS)
 
+const continued = "    | "
+
 const printable = (text: string): string =>
   text
     .split("\n")
-    .map((line) => line.replace(controlCharacters, ""))
+    .map((line) => line.replaceAll("\t", "  ").replace(controlCharacters, ""))
+    .map((line, index) => (index === 0 ? line : `${continued}${line}`))
     .join("\n")
 
 const answered = (body: unknown): DesktopStatus => {
@@ -241,16 +249,12 @@ const startTheDesktop = async (
   status: DesktopStatus,
   options: DesktopCommandOptions
 ): Promise<number> => {
-  const runs = status.state === "running"
-  const alreadyOurs = runs && status.managed === true
-  if (runs && !alreadyOurs && !(await agreed(deps, options, replaceUnmanagedQuestion))) return 1
+  const alreadyOurs = status.keepsRunning === true
+  const theirs = isSomeoneElses(status)
+  if (theirs && !(await agreed(deps, options, replaceUnmanagedQuestion))) return 1
   if (!alreadyOurs) deps.log(`==> Starting the desktop as ${status.account}`)
 
-  const started = await server.ask(
-    "POST",
-    runs && !alreadyOurs ? "/start?replace=1" : "/start",
-    startMs
-  )
+  const started = await server.ask("POST", theirs ? "/start?replace=1" : "/start", startMs)
   if (started === undefined) return 1
 
   deps.log(
@@ -262,6 +266,9 @@ const startTheDesktop = async (
     deps.log(`    It starts at boot once this account lingers: ${lingerCommand(started)}`)
   return 0
 }
+
+const isSomeoneElses = (status: DesktopStatus): boolean =>
+  (status.state === "running" || status.state === "stopped") && status.managed === false
 
 const whenTheServerIsDone = async (
   deps: DesktopCliDeps,
@@ -303,14 +310,14 @@ const asAdministrator = async (
   const canRunHere = deps.isRoot || (status.sudo === "password" && deps.isInteractive)
   if (!canRunHere) {
     deps.error(`${step.what} needs an administrator. Ask one to run:`)
-    for (const command of step.commands) deps.error(`  ${command.join(" ")}`)
+    for (const command of step.commands) deps.error(`  ${shellText(command)}`)
     deps.error("then run `codevisor desktop setup` again.")
     return undefined
   }
 
   for (const command of step.commands) {
     const [program, ...args] = [...prefix, ...command]
-    deps.log(`    ${[...prefix, ...command].join(" ")}`)
+    deps.log(`    ${shellText([...prefix, ...command])}`)
     if ((await deps.execInteractive(program!, args)) === 0) continue
 
     deps.error(`${step.what} failed.`)

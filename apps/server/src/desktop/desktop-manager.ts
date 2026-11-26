@@ -64,6 +64,8 @@ const startPollMs = 250
 const startPolls = 120
 const steadyPolls = 10
 const installing = "Installing packages"
+const anotherServers =
+  "Another Codevisor server on this account already runs a desktop (codevisor-desktop.service). Remove that desktop first."
 const unmanaged =
   "A desktop that Codevisor didn't set up is shared from this machine. Replacing it has to be asked for."
 
@@ -147,9 +149,11 @@ export const makeDesktopManager = (options: DesktopManagerOptions): DesktopManag
     const missing = await missingPrograms(system)
     if (missing.length === 0) failure = undefined
     const sudo = await sudoForARootStep(missing.length > 0 || old !== undefined)
+    const live = sharedBy(runs)
     return {
-      ...sharedBy(runs),
-      managed: runs.isSetUp() || other.isSetUp(),
+      ...live,
+      managed: recordedService() !== undefined || runs.isSetUp() || other.isSetUp(),
+      keepsRunning: live.state === "running" && runs.isSetUp(),
       ...(busy === undefined ? {} : { busy }),
       ...(failure === undefined ? {} : { failure }),
       account: system.account,
@@ -217,19 +221,27 @@ export const makeDesktopManager = (options: DesktopManagerOptions): DesktopManag
   const layoutToUse = (): DesktopLayout => {
     const setup = setUp()
     const isOurs = setup.kind === "ready" && recordedService() !== undefined
-    const recorded = isOurs ? setup.config.display : undefined
-    const display = stillUsable(recorded) ?? freeDisplay(system)
+    const recorded = isOurs ? setup.config : undefined
+    const display = stillUsable(recorded?.display, recorded?.socket) ?? freeDisplay(system)
     if (display === undefined) throw new HttpFailure(500, "No X11 display number is free")
 
     return desktopLayout(system, display)
   }
 
-  const stillUsable = (display: number | undefined): number | undefined => {
-    if (display === undefined) return undefined
+  const stillUsable = (
+    display: number | undefined,
+    socket: string | undefined
+  ): number | undefined => {
+    if (display === undefined || socket === undefined) return undefined
 
-    const ours = desktopLayout(system, display).socket
-    return displayIsOursOrFree(system, display, ours) ? display : undefined
+    return displayIsOursOrFree(system, display, socket) ? display : undefined
   }
+
+  const someoneElsesConfig = (runs: DesktopService, other: DesktopService): boolean =>
+    setUp().kind === "ready" &&
+    recordedService() === undefined &&
+    !runs.isSetUp() &&
+    !other.isSetUp()
 
   const keptSettings = (): { name: string; defaultSize: string } => {
     const setup = setUp()
@@ -272,12 +284,12 @@ export const makeDesktopManager = (options: DesktopManagerOptions): DesktopManag
       )
 
     const { current: runs, other } = await services()
-    const runsNow = sharedBy(runs).state === "running"
-    if (runsNow && runs.isSetUp()) {
+    if (runs.belongsToAnother()) throw new HttpFailure(409, anotherServers)
+    if (sharedBy(runs).state === "running" && runs.isSetUp()) {
       await runs.refresh()
       return status()
     }
-    if (runsNow && !other.isSetUp() && asked.replaceUnmanaged !== true)
+    if (someoneElsesConfig(runs, other) && asked.replaceUnmanaged !== true)
       throw new HttpFailure(409, unmanaged)
 
     const layout = layoutToUse()

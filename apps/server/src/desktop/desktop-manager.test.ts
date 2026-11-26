@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest"
 
 import {
+  APT_UPDATE_LOOP,
   CHANGED,
   CONFIG,
   DATA_DIR,
@@ -10,7 +11,7 @@ import {
   UNIT
 } from "./desktop-test-support.js"
 
-const aptUpdate = "env DEBIAN_FRONTEND=noninteractive apt-get -o DPkg::Lock::Timeout=600 update -q"
+const aptUpdate = `env DEBIAN_FRONTEND=noninteractive sh -c ${APT_UPDATE_LOOP}`
 const aptInstall =
   "env DEBIAN_FRONTEND=noninteractive apt-get -o DPkg::Lock::Timeout=600 install -y -q --no-install-recommends tigervnc-standalone-server tigervnc-common xfce4 xfce4-terminal dbus-x11 xclip python3 fonts-dejavu-core adwaita-icon-theme"
 const bare = ["apt-get", "sudo"]

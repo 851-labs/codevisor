@@ -4,8 +4,9 @@ import { join } from "node:path"
 
 import { describe, expect, it, onTestFinished } from "vitest"
 
+import { shellText } from "./desktop-packages.js"
 import { unitText } from "./desktop-service.js"
-import { tcpPortsListenedOnBy } from "./listening-ports.js"
+import { holdsUnixSocket, tcpPortsListenedOnBy } from "./listening-ports.js"
 import { xauthorityEntry } from "./xauthority.js"
 
 const header =
@@ -49,6 +50,21 @@ describe("the TCP ports the desktop's own X server listens on", () => {
     expect(tcpPortsListenedOnBy(500, proc)).toEqual([49_377])
   })
 
+  it("says whether a process holds the desktop's own socket, so a wrapper isn't taken for the X server", () => {
+    const proc = fakeProc({ tcp: header }, { 500: [777], 600: [888] })
+    writeFileSync(
+      join(proc, "net", "unix"),
+      [
+        "Num       RefCount Protocol Flags    Type St Inode Path",
+        "0000000000000000: 00000002 00000000 00010000 0001 01 777 /run/user/1001/codevisor-desktop.sock",
+        "0000000000000000: 00000002 00000000 00010000 0001 01 888 /tmp/.X11-unix/X1",
+        ""
+      ].join("\n")
+    )
+    expect(holdsUnixSocket(500, "/run/user/1001/codevisor-desktop.sock", proc)).toBe(true)
+    expect(holdsUnixSocket(600, "/run/user/1001/codevisor-desktop.sock", proc)).toBe(false)
+  })
+
   it("can't be told when the kernel's table or the process's sockets can't be read, and that is an error", () => {
     const noTable = fakeProc({}, { 500: [111] })
     expect(() => tcpPortsListenedOnBy(500, noTable)).toThrow(
@@ -75,6 +91,17 @@ describe("the X11 cookie file", () => {
 
   it("gets a different cookie each time", () => {
     expect(xauthorityEntry().equals(xauthorityEntry())).toBe(false)
+  })
+})
+
+describe("a root command shown for an administrator to paste", () => {
+  it("is quoted so the shell runs exactly the words the command would have run", () => {
+    expect(shellText(["env", "A=1", "sh", "-c", 'echo "it\'s" $HOME; exit 1'])).toBe(
+      "env A=1 sh -c 'echo \"it'\\''s\" $HOME; exit 1'"
+    )
+    expect(shellText(["systemctl", "disable", "--now", "vncserver@1.service"])).toBe(
+      "systemctl disable --now vncserver@1.service"
+    )
   })
 })
 

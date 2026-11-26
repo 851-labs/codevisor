@@ -4,7 +4,7 @@ import { dirname } from "node:path"
 import { readDesktopSetup } from "../routes/screen-sharing-vnc.js"
 import type { ScreenSharingVNCConfig } from "../server-context-types.js"
 import { DESKTOP_SIZE, x11SocketOf } from "./desktop-layout.js"
-import { tcpPortsListenedOnBy } from "./listening-ports.js"
+import { holdsUnixSocket, tcpPortsListenedOnBy } from "./listening-ports.js"
 import { SupervisedProcesses } from "./supervised-processes.js"
 import { xauthorityEntry } from "./xauthority.js"
 
@@ -150,6 +150,11 @@ class DesktopRun {
 
   private refuseTcpListeners(xvnc: number | undefined): void {
     if (xvnc === undefined || this.processes.isStopping) return
+    if (!existsSync(`/proc/${xvnc}`)) return
+    if (!holdsUnixSocket(xvnc, this.desktop.socket))
+      throw new Error(
+        "The process started as Xvnc doesn't hold the desktop's socket, so its TCP ports can't be checked"
+      )
 
     const ports = tcpPortsListenedOnBy(xvnc)
     if (ports.length > 0)
