@@ -57,19 +57,37 @@ test("the baseline keeps old long functions but fails grown or new ones", (t) =>
   assert.notEqual(swift.lint(), 0)
 })
 
-const timerWithLeeway = (leeway) =>
+const timerWithLeeway = (leeway, constant = "") =>
   [
     "  static func arm(_ timer: any DispatchSourceTimer) {",
+    ...(constant === "" ? [] : [`    ${constant}`]),
     `    timer.schedule(deadline: .now(), leeway: ${leeway})`,
     "  }"
   ].join("\n")
 
-test("a dispatch timer scheduled with leeway never fails SwiftLint", (t) => {
+const acceptedLeeways = [
+  timerWithLeeway(".nanoseconds(0)"),
+  timerWithLeeway("leeway", "let leeway: DispatchTimeInterval = .milliseconds(1)"),
+  "  static func arm(_ timer: any DispatchSourceTimer) {\n    timer.schedule(deadline: .now(), repeating: .never)\n  }"
+]
+
+const rejectedLeeways = [
+  timerWithLeeway(".never"),
+  timerWithLeeway("DispatchTimeInterval.never"),
+  timerWithLeeway("Dispatch.DispatchTimeInterval.never"),
+  timerWithLeeway("leeway", "let leeway: DispatchTimeInterval = .never"),
+  timerWithLeeway("leeway", "let leeway = DispatchTimeInterval.never"),
+  timerWithLeeway("leeway", "let leeway: Dispatch.DispatchTimeInterval = .never")
+]
+
+test("a dispatch timer leeway of never fails SwiftLint in every spelling", (t) => {
   const swift = swiftPackage(t)
-  swift.write(timerWithLeeway(".nanoseconds(0)"))
-  assert.equal(swift.lint(), 0)
-  swift.write(timerWithLeeway(".never"))
-  assert.notEqual(swift.lint(), 0)
-  swift.write(timerWithLeeway("DispatchTimeInterval.never"))
-  assert.notEqual(swift.lint(), 0)
+  for (const accepted of acceptedLeeways) {
+    swift.write(accepted)
+    assert.equal(swift.lint(), 0, accepted)
+  }
+  for (const rejected of rejectedLeeways) {
+    swift.write(rejected)
+    assert.notEqual(swift.lint(), 0, rejected)
+  }
 })

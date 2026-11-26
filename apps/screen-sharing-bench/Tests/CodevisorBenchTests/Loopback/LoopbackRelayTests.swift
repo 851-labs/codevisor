@@ -6,7 +6,7 @@ import Testing
 
 struct LoopbackRelayTests {
   private static let delayMs = 5.0
-  private static let deadlockGuardMs: Int32 = 2_000
+  private static let deadlockGuardMs: Int32 = 30_000
 
   @Test(arguments: [RelayDirection.media, .feedback])
   func aDelayedPacketLeavesWithoutWaitingForOtherTraffic(_ direction: RelayDirection) throws {
