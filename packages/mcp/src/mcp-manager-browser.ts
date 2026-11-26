@@ -1,5 +1,6 @@
 import type { BrowserPreviewSubscription, BrowserPreviewViewer } from "@codevisor/automation"
 
+import { makeGatewayUploads } from "./mcp-gateway-uploads.js"
 import type { McpManagerCore } from "./mcp-manager-core.js"
 import type { McpManager } from "./mcp-manager-types.js"
 
@@ -16,6 +17,7 @@ export type McpBrowserOperations = Pick<
   | "openBrowserExtensionInstaller"
   | "openBrowserExtensionWebStore"
   | "openBrowserExtensionsPage"
+  | "readUploadFiles"
   | "setBaseUrl"
   | "subscribeAutomationUse"
   | "subscribeBrowserPreview"
@@ -57,6 +59,7 @@ export const makeMcpBrowserOperations = (core: McpManagerCore): McpBrowserOperat
     acceptBrowserNativeHost: (socket) => browserProvider.acceptNativeHostConnection(socket),
     acceptBrowserHost: (socket) => browserProvider.acceptBrowserHost(socket),
     browserConfiguration,
+    readUploadFiles: makeGatewayUploads(core.config, core.selfMachine).readForMachine,
     openBrowserExtensionInstaller: async () => {
       await browserProvider.openDevelopmentExtensionInstaller()
       return browserConfiguration()

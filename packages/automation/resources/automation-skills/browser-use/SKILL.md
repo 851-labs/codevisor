@@ -65,7 +65,7 @@ Use `browser.js` cells for multi-step work; variables and tabs survive between c
 
 - `tab.playwright` is Playwright's `Page`. Prefer `getByRole` and other locators, and check the page after every action instead of assuming it worked.
 - `evaluate` is read-only; act with locators. There is no `setTimeout`; use `tab.playwright.waitForTimeout(ms)`.
-- Uploads take only files inside the workspace.
+- Uploads take only files inside your workspace. That holds for Chrome on another computer too: Codevisor sends the files there for you (up to 20 MB per upload), so don't mirror or copy them first.
 - On a site with its own tools, `tab.webmcp.list()` and prefer them over clicking.
 - `await browser.documentation()` lists every method and option. Read it instead of guessing.
 

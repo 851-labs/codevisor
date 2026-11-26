@@ -3,6 +3,7 @@ import {
   ExecTaskEvent,
   FleetExecControl,
   FleetMirrorAction,
+  FleetUploadFilesRequest,
   type ExecTaskEvent as ExecTaskEventType
 } from "@codevisor/api"
 
@@ -41,6 +42,18 @@ export const receiveExecControl = (
 ): Promise<unknown> => {
   if (!call.verified) throw new HttpFailure(403, "Only machines on this account can do that")
   return execControl(services, decodeExecControl(args))
+}
+
+export const receiveUploadFiles = (
+  services: CodevisorServerServices,
+  call: FleetCall,
+  args: unknown
+): Promise<unknown> => {
+  if (!call.verified) throw new HttpFailure(403, "Only machines on this account can fetch uploads")
+  const mcp = services.mcp
+  if (mcp === undefined) throw new HttpFailure(501, "Browser uploads aren't available here")
+  const { sessionId, paths } = decodeUploadFilesRequest(args)
+  return mcp.readUploadFiles(sessionId, paths)
 }
 
 const execControl = (
@@ -88,5 +101,13 @@ const decodeExecTask = (args: unknown): ExecTaskEventType => {
     return decode(ExecTaskEvent)(args)
   } catch {
     throw new HttpFailure(400, "Expected { sessionId, task, outputTail }")
+  }
+}
+
+const decodeUploadFilesRequest = (args: unknown): FleetUploadFilesRequest => {
+  try {
+    return decode(FleetUploadFilesRequest)(args)
+  } catch {
+    throw new HttpFailure(400, "Expected { sessionId, paths }")
   }
 }
