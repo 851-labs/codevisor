@@ -13,25 +13,19 @@ struct ChatPaneContentView: View {
   let environment: AppEnvironment
   var role = ChatPaneRole.chat
   @Environment(\.reusesChatPage) private var reusesChatPage
+  @Environment(\.botPage) private var hostBotPage
 
   private func isArchivedBot(_ chatSession: ChatSession) -> Bool {
     environment.bots.bot(forSession: chatSession.id, serverId: hostWorkspace.serverId)?.isArchived == true
   }
 
   var body: some View {
-    if let chatSessionId = role.sessionId(of: descriptor) {
+    if case let .agent(agent, agentProject) = botPage {
+      chatScreen(agent, in: agentProject, as: .chat)
+    } else if let chatSessionId = role.sessionId(of: descriptor) {
       switch resolver.chat(chatSessionId, on: hostWorkspace.serverId, machineKey: descriptor.chatMachineKey) {
       case let .ready(chatSession, chatProject):
-        switch botPage {
-        case let .thread(thread):
-          if let bot = conversationBot { threadScreen(thread, of: bot, chat: chatSession, in: chatProject) }
-        case let .agent(agent, agentProject):
-          chatScreen(agent, in: agentProject, as: .chat)
-        case .conversation where role.offersNewChat && isUnstarted(chatSession):
-          unstartedChat(chatSession, in: chatProject)
-        case .conversation:
-          chatScreen(chatSession, in: chatProject, as: role)
-        }
+        ready(chatSession, in: chatProject)
       case let .connecting(machine):
         PaneChatUnavailableView(reason: .connecting(machine))
       case let .offline(machine):
@@ -53,13 +47,24 @@ struct ChatPaneContentView: View {
     }
   }
 
+  @ViewBuilder
+  private func ready(_ chatSession: ChatSession, in chatProject: Project) -> some View {
+    if case let .thread(thread) = botPage, let bot = conversationBot {
+      threadScreen(thread, of: bot, chat: chatSession, in: chatProject)
+    } else if role.offersNewChat, isUnstarted(chatSession) {
+      unstartedChat(chatSession, in: chatProject)
+    } else {
+      chatScreen(chatSession, in: chatProject, as: role)
+    }
+  }
+
   private var conversationBot: Bot? {
     guard role == .botConversation, let sessionId = descriptor.chatSessionId else { return nil }
     return environment.bots.bot(forSession: sessionId, serverId: hostWorkspace.serverId)
   }
 
   private var botPage: BotPage {
-    conversationBot.map(environment.botPages.page(of:)) ?? .conversation
+    role == .botConversation ? hostBotPage : .conversation
   }
 
   private var resetToPlaceholder: (() -> Void)? {

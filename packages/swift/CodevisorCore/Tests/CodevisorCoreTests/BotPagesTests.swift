@@ -26,14 +26,31 @@ struct BotPagesTests {
     #expect(pages.agentPage(in: elsewhere) == nil)
   }
 
-  @Test("Opening the bot's own conversation from its agent's page closes that page")
-  func conversationClosesTheAgentPage() async throws {
+  @Test("Opening the bot's own conversation closes its agent's page and leaves an open thread alone")
+  func conversationClosesOnlyTheAgentPage() async throws {
     let world = try await BotWorld(botProject: botProject)
     let agent = world.chat("Christmas list", in: appProject, createdBy: world.botChat)
     let pages = try await world.pages(projects: [appProject], sessions: [agent])
     pages.show(agent)
 
     #expect(pages.show(world.botChat) == world.bot)
+    #expect(pages.page(of: world.bot) == .conversation)
+
+    await world.openThread("t1")
+    pages.show(world.botChat)
+
+    #expect(world.threads.openThread(of: world.bot)?.threadId == "t1")
+  }
+
+  @Test("A thread is the bot's page only while the bot's own chat is loaded to draw it in")
+  func threadNeedsTheBotsChat() async throws {
+    let world = try await BotWorld(botProject: botProject)
+    let pages = try await world.pages(projects: [], sessions: [])
+    await world.openThread("t1")
+
+    #expect(pages.page(of: world.bot) == .thread(try #require(world.threads.openThread(of: world.bot))))
+
+    await world.navigation.install(projects: [], sessions: [], workspaces: [world.botWorkspace()])
 
     #expect(pages.page(of: world.bot) == .conversation)
   }
@@ -82,6 +99,24 @@ struct BotPagesTests {
     #expect(pages.page(of: world.bot) == .conversation)
 
     _ = try await world.pages(projects: [], sessions: [agent])
+    #expect(pages.page(of: world.bot) == .conversation)
+  }
+
+  @Test("An agent forgotten while it was unavailable does not take the page back when it loads again")
+  func forgottenAgentStaysClosed() async throws {
+    let world = try await BotWorld(botProject: botProject)
+    let agent = world.chat("Christmas list", in: appProject, createdBy: world.botChat)
+    let pages = try await world.pages(projects: [appProject], sessions: [agent])
+    pages.show(agent)
+
+    pages.forgetUnavailableAgent(of: world.bot)
+    #expect(pages.page(of: world.bot).agent?.id == agent.id)
+
+    _ = try await world.pages(projects: [], sessions: [agent])
+    #expect(pages.hasUnavailableAgent(world.bot))
+    pages.forgetUnavailableAgent(of: world.bot)
+    _ = try await world.pages(projects: [appProject], sessions: [agent])
+
     #expect(pages.page(of: world.bot) == .conversation)
   }
 }

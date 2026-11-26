@@ -6,8 +6,12 @@ extension SessionContainerView {
     environment.bots.bot(forSession: sessionId, serverId: selectedWorkspace.serverId)
   }
 
+  var botPage: BotPage? {
+    environment.botPages.page(in: selectedWorkspace)
+  }
+
   var agentPage: ChatSession? {
-    environment.botPages.agentPage(in: selectedWorkspace)
+    botPage?.agent
   }
 
   func presentedAgent(in pane: PaneDescriptorState?) -> ChatSession? {

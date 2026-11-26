@@ -3,7 +3,7 @@ import SwiftUI
 
 extension SessionContainerView {
   var leavesCoveredByPage: Set<UUID> {
-    let covered = WorkspaceLayoutPolicy.leavesCoveredByBotPage(in: selectedWorkspace, environment: environment)
+    let covered = WorkspaceLayoutPolicy.leavesCovered(by: botPage, in: selectedWorkspace, environment: environment)
     let leaves = Set(selectedWorkspace.centerTree.allGroups.map(\.id))
     return leaves.isSubset(of: covered.union(floatingLayout.floating)) ? [] : covered
   }

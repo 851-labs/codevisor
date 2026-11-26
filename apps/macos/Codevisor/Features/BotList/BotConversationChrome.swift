@@ -10,9 +10,12 @@ struct BotConversationChrome: ViewModifier {
   @Environment(WorkspaceActivity.self) private var workspaceActivity: WorkspaceActivity?
 
   func body(content: Content) -> some View {
-    content
-      .environment(\.transcriptTopChromeHeight, topChromeHeight)
-      .environment(\.hidesWorkspaceTitle, !showsAgent)
+    let page = environment.botPages.page(of: bot)
+    let isSplit = isSplit(showing: page)
+    return
+      content
+      .environment(\.transcriptTopChromeHeight, topChromeHeight(showing: page, isSplit: isSplit))
+      .environment(\.hidesWorkspaceTitle, page.agent == nil)
       .overlay(alignment: .top) {
         if !isSplit, page == .conversation {
           BotConversationTopBar(bot: bot, showsHeader: showsHeader, onOpenDetails: openDetails)
@@ -25,23 +28,17 @@ struct BotConversationChrome: ViewModifier {
     RootSidebarVisibility(panelLayout: panelLayout).hidesDockedColumn
   }
 
-  private var page: BotPage {
-    environment.botPages.page(of: bot)
+  private func topChromeHeight(showing page: BotPage, isSplit: Bool) -> CGFloat {
+    guard !isSplit, page.agent == nil else { return 0 }
+
+    return BotConversationTopBar.height(showsHeader: showsHeader)
   }
 
-  private var showsAgent: Bool {
-    page.agent != nil
-  }
-
-  private var topChromeHeight: CGFloat {
-    isSplit || showsAgent ? 0 : BotConversationTopBar.height(showsHeader: showsHeader)
-  }
-
-  private var isSplit: Bool {
+  private func isSplit(showing page: BotPage) -> Bool {
     guard let workspace = environment.navigationStore.workspaceEntries.entry(bot.workspaceId).workspace else {
       return false
     }
-    return WorkspaceLayoutPolicy.isSplit(workspace, environment: environment)
+    return WorkspaceLayoutPolicy.isSplit(workspace, showing: page, environment: environment)
   }
 
   private var isActive: Bool {

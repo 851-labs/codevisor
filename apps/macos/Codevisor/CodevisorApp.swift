@@ -111,7 +111,7 @@ struct RootView: View {
     selection = store?.selectChat(session) ?? unopenedSelection(of: session)
   }
 
-  private func unopenedSelection(of session: ChatSession) -> SidebarSelection {
+  func unopenedSelection(of session: ChatSession) -> SidebarSelection {
     guard let bot = environment.bots.bot(forSession: session.id, serverId: session.serverId) else {
       return .session(serverId: session.serverId, id: session.id)
     }
@@ -168,7 +168,7 @@ struct RootView: View {
       }
       .navigationSubtitle(detailSubtitle)
       .toolbar {
-        BotComposeToolbarItem(selection: selectionRef, newBot: openNewBot)
+        BotComposeToolbarItem(selection: selectionRef, store: store, newBot: openNewBot)
       }
     }
     .modifier(WorkspaceInspectorPresentation(store: store, selection: selectionRef))

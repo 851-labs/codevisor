@@ -73,6 +73,7 @@ final class SessionStore {
   var closeCenterTabRequest: CloseCenterTabRequest?
   var archivedTabSelection: [UUID: UUID] = [:]
   var inspectorOpenRequest: WorkspaceInspectorOpenRequest?
+  var botPageFocusRequest: BotPageFocusRequest?
   @ObservationIgnored private(set) var workspaceStepHandler: ((Int) -> Void)?
   @ObservationIgnored private var workspaceStepOwner: UUID?
   @ObservationIgnored var isSidebarVisible = true

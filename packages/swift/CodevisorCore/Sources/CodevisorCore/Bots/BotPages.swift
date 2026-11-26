@@ -22,27 +22,43 @@ public struct BotPages {
   }
 
   public func page(of bot: Bot) -> BotPage {
-    if let thread = threads.openThread(of: bot) { return .thread(thread) }
+    if let thread = threads.openThread(of: bot), isListed(bot) { return .thread(thread) }
     if let agent = openAgent(of: bot), let project = project(of: agent) { return .agent(agent, in: project) }
     return .conversation
   }
 
-  public func agentPage(in workspace: Workspace) -> ChatSession? {
-    guard let bot = hosts.bots.bot(forWorkspace: workspace.id, serverId: workspace.serverId) else { return nil }
+  public func page(in workspace: Workspace) -> BotPage? {
+    hosts.bots.bot(forWorkspace: workspace.id, serverId: workspace.serverId).map(page(of:))
+  }
 
-    return page(of: bot).agent
+  public func agentPage(in workspace: Workspace) -> ChatSession? {
+    page(in: workspace)?.agent
   }
 
   @discardableResult
   public func show(_ chat: ChatSession) -> Bot? {
     if let bot = hosts.bots.bot(forSession: chat.id, serverId: chat.serverId) {
-      threads.closePage(of: bot)
+      threads.closeAgent(of: bot)
       return bot
     }
     guard let bot = hosts.botShowing(chat) else { return nil }
 
     threads.showAgent(chat.id, of: bot)
     return bot
+  }
+
+  public func hasUnavailableAgent(_ bot: Bot) -> Bool {
+    threads.openAgent(of: bot) != nil && page(of: bot).agent == nil
+  }
+
+  public func forgetUnavailableAgent(of bot: Bot) {
+    guard hasUnavailableAgent(bot) else { return }
+
+    threads.closeAgent(of: bot)
+  }
+
+  private func isListed(_ bot: Bot) -> Bool {
+    hosts.projectList.chat(bot.sessionId, preferring: bot.serverId).flatMap(project(of:)) != nil
   }
 
   private func openAgent(of bot: Bot) -> ChatSession? {

@@ -103,9 +103,7 @@ struct SessionContainerView: View {
       .onChange(of: leavesCoveredByPage) { before, after in
         showPage(covering: after, uncovering: before.subtracting(after))
       }
-      .onChange(of: agentPage?.id) { _, _ in
-        if isVisible { focusSelectedCenterPane() }
-      }
+      .modifier(BotPageUpkeep(workspace: workspace, store: store, focusPage: focusVisiblePage))
       .modifier(
         CenterTabRequests(store: store, workspaceId: workspace.id, onClose: closeCenterTab)
       )
@@ -213,8 +211,13 @@ struct SessionContainerView: View {
     )
   }
 
+  private func focusVisiblePage() {
+    if isVisible { focusSelectedCenterPane() }
+  }
+
   var contentColumn: some View {
     let workspace = selectedWorkspace
+    let page = botPage
     return VStack(spacing: 0) {
       SessionScreen(
         centerGroup: activeCenterModel(in: workspace),
@@ -240,10 +243,11 @@ struct SessionContainerView: View {
         onCenterTreeLiveChanged: { visible in liveCenterTree = restoringHiddenLeaves(visible) }
       )
       .overlay { floatingPaneOverlay }
-      .environment(\.usesSlimComposer, WorkspaceLayoutPolicy.usesBotChrome(workspace, environment: environment))
+      .environment(\.usesSlimComposer, WorkspaceLayoutPolicy.usesBotChrome(page))
+      .environment(\.botPage, page ?? .conversation)
     }
     .overlay(alignment: .top) {
-      if WorkspaceLayoutPolicy.showsTitlebarDivider(workspace, environment: environment) {
+      if WorkspaceLayoutPolicy.showsTitlebarDivider(workspace, showing: page, environment: environment) {
         Color.separatorColor
           .frame(height: 1)
           .frame(maxWidth: .infinity)

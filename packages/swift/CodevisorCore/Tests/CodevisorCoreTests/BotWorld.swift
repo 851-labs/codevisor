@@ -14,12 +14,14 @@ struct BotWorld {
   let bots: BotListModel
   let bot: Bot
   let threads: BotThreadsModel
+  let server: SyncFakeServerClient
 
   init(botProject: Project) async throws {
     self.botProject = botProject
     let botChat = ChatSession(projectId: botProject.id, serverId: "local", title: "Helper")
     self.botChat = botChat
     let fake = SyncFakeServerClient(projects: [], sessions: [])
+    server = fake
     fake.configureInfoFeatures(["bots-v1"])
     fake.setBots([
       .fixture(projectId: botProject.id, sessionId: botChat.id, workspaceId: botWorkspaceId)
@@ -60,6 +62,12 @@ struct BotWorld {
       projects: [botProject] + projects, sessions: [botChat] + sessions,
       workspaces: (ownsBotWorkspace ? [] : [botWorkspace()]) + workspaces)
     return ChatHosts(projectList: navigation.projectList, bots: bots, workspaces: navigation.workspaces)
+  }
+
+  func openThread(_ threadId: String) async {
+    let side = ServerThreadParticipant(kind: .bot, name: bot.name, agentId: bot.record.sessionId, botId: bot.record.id)
+    server.setThreads([ServerThread(threadId: threadId, participants: [side])], ofBot: bot.record.id)
+    await threads.open(threadId, of: bot)
   }
 
   func pages(projects: [Project], sessions: [ChatSession]) async throws -> BotPages {
