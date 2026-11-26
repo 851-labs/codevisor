@@ -29,6 +29,12 @@ export const featureFlagCatalog: ReadonlyArray<FeatureFlagDefinition> = [
     title: "Slack Plugin",
     description:
       "Shows Slack in Browse Plugins on all your devices. You connect it through a Slack app you create in your workspace."
+  },
+  {
+    id: "sentryPlugin",
+    title: "Sentry Plugin",
+    description:
+      "Shows Sentry in Browse Plugins on all your devices, in place of Sentry's own MCP server. You sign in with Sentry."
   }
 ]
 

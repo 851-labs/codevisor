@@ -19,6 +19,8 @@
     "dev.codevisor/plugin": {
       "bundled": "sentry",
       "entry": "dist/main.js",
+      "featureFlag": "sentryPlugin",
+      "replaces": "io.sentry/mcp",
       "ageRating": 4,
       "accounts": {
         "label": "Sentry account",

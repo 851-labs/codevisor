@@ -27,6 +27,31 @@
     },
     {
       "server": {
+        "name": "io.sentry/mcp",
+        "title": "Sentry",
+        "description": "Search Sentry issues and events, and read stack traces.",
+        "version": "remote",
+        "websiteUrl": "https://docs.sentry.io/product/sentry-mcp/",
+        "icons": [
+          {
+            "src": "https://github.com/getsentry.png"
+          }
+        ],
+        "remotes": [
+          {
+            "type": "streamable-http",
+            "url": "https://mcp.sentry.dev/mcp"
+          }
+        ],
+        "_meta": {
+          "dev.codevisor/plugin": {
+            "ageRating": 4
+          }
+        }
+      }
+    },
+    {
+      "server": {
         "name": "com.stripe/mcp",
         "title": "Stripe",
         "description": "Work with Stripe customers, products, payments and more.",

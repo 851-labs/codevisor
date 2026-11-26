@@ -23,6 +23,7 @@ export interface PluginCatalog {
   readonly search: (query: string | undefined) => ReadonlyArray<PluginCatalogEntry>
   readonly bundledLaunch: (id: string) => ResolvedStdioLaunch | undefined
   readonly oauthClient: (id: string) => string | undefined
+  readonly replacedBy: (id: string) => string | undefined
   readonly publish: (servers: ReadonlyArray<RegistryServer>) => void
 }
 
@@ -37,6 +38,8 @@ export const makeCatalog = (options: PluginCatalogOptions): PluginCatalog => {
     search: (query) => featured.filter((candidate) => matchesQuery(candidate, query)),
     bundledLaunch: (id) => bundledLaunch(local, options.execPath, id),
     oauthClient: (id) => oauthClientOf([...local.firstParty, ...popular], id),
+    replacedBy: (id) =>
+      local.firstParty.find((server) => pluginMetaOf(server)?.replaces === id)?.name,
     publish: (servers) => {
       popular = servers.filter((server) => pluginMetaOf(server)?.bundled === undefined)
       featured = featuredEntries(local.firstParty, popular, options.dev)

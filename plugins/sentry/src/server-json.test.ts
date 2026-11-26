@@ -40,6 +40,8 @@ it("publishes a server.json whose capability digest matches what the server serv
       "dev.codevisor/plugin": {
         bundled: "sentry",
         entry: "dist/main.js",
+        featureFlag: "sentryPlugin",
+        replaces: "io.sentry/mcp",
         ageRating: expect.toBeOneOf([4, 9, 13, 16, 18]),
         accounts: {
           oauth: {
