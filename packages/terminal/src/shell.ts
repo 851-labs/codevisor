@@ -46,6 +46,9 @@ export const resolveDefaultShell = (
   return "/bin/sh"
 }
 
+export const resolveUserId = (config: TerminalManagerConfig): number | undefined =>
+  config.userId ?? process.getuid?.()
+
 export const resolveTerminalName = (platform: NodeJS.Platform): string =>
   platform === "darwin" ? GHOSTTY_TERM : PORTABLE_TERM
 

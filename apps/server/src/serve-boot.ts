@@ -301,6 +301,7 @@ export const restoreTerminalPersistence = (
   persistence.restore()
   persistence.installExitHooks()
   persistence.startPeriodicFlush()
+  persistence.flushOnResumeChange()
 }
 
 export const selfUpdateServeArgs = (options: {

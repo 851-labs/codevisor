@@ -154,6 +154,22 @@ Return; the prompt that follows drops the record:
 printf '\e]7501;state=blocked:kind=question\e\\'; read -r
 ```
 
+## Server restarts and program resume (OSC 7577)
+
+When the server restarts, for an update or any other reason, every terminal that was open comes
+back under the same `terminalId`: its earlier output, then a new shell in the folder its shell last
+reported (OSC 7), or where it started when that folder is gone. Clients reconnect as usual. A pane
+the user closed or a shell that exited stays gone.
+
+Programs that speak the [Program Resume Protocol](https://www.superlogical.com/rex/docs/build/program-resume)
+(OSC 7577) come back running too. zsh and bash 4 and later receive an `OSC7577_TOKEN`; a program
+reports its resume command signed with that token, and after a restart the new shell runs it once
+its startup files have loaded, as if it were typed, so quitting the program leaves the user at a
+prompt. The server applies the specification's checks: the signature, a 60-second time window,
+and that the reporting process runs in that terminal. A record ends when the program clears it or
+exits, and a resumed program has to report again to be resumed after the next restart. Servers
+running as root give out no token.
+
 ## Reading the screen
 
 `GET /v1/terminals/{id}/screen?format=text` returns the terminal's current screen and scrollback as

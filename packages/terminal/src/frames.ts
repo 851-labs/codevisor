@@ -3,14 +3,16 @@ import { Effect } from "effect"
 
 import type { ReplayBuffer } from "./replay-buffer.js"
 import type { SizeArbiter } from "./size-arbiter.js"
-import type { TerminalProcess } from "./types.js"
+import type { TerminalLaunch, TerminalProcess } from "./types.js"
 import { TerminalError } from "./types.js"
 import type { VtTerminal } from "./vt/ghostty-vt.js"
 
 export interface RunningTerminal {
   readonly terminalId: string
   readonly sessionId: string
-  readonly process: TerminalProcess
+  process: TerminalProcess
+  readonly launch?: TerminalLaunch | undefined
+  resumeToken?: string | undefined
   readonly sinks: Set<(frame: TerminalServerFrame) => void>
   readonly frames: ReplayBuffer
   readonly clientSeqs: Map<string, number>

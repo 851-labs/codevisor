@@ -37,14 +37,36 @@ const initialState = (pid, table, detached) => {
 }
 
 const POLL_MS = 250
+const DEPARTURE_LIMIT = 64
+
+/** @param {{pid: number, startedAt: string}} entry */
+const identityKey = (entry) => `${entry.pid}:${entry.startedAt}`
+
+/**
+ * @param {Map<string, number>} departures
+ * @param {Iterable<import('./index.mjs').ProcessIdentity>} before
+ * @param {Map<number, import('./index.mjs').ProcessIdentity>} after
+ * @param {number} at
+ */
+const recordDepartures = (departures, before, after, at) => {
+  for (const entry of before) {
+    if (after.get(entry.pid)?.startedAt === entry.startedAt) continue
+    departures.delete(identityKey(entry))
+    departures.set(identityKey(entry), at)
+  }
+  while (departures.size > DEPARTURE_LIMIT) departures.delete(departures.keys().next().value ?? "")
+}
 
 /**
  * @param {number} pid
- * @param {{detached?: boolean, list?: (options?: import('./index.mjs').ListOptions) => Promise<import('./index.mjs').ProcessIdentity[]>, stop?: typeof stopProcesses}} [options]
+ * @param {{detached?: boolean, list?: (options?: import('./index.mjs').ListOptions) => Promise<import('./index.mjs').ProcessIdentity[]>, stop?: typeof stopProcesses, now?: () => number}} [options]
  */
 export async function trackProcessTree(pid, options = {}) {
   const list = options.list ?? listProcessIdentities
   const stop = options.stop ?? stopProcesses
+  const now = options.now ?? (() => performance.now())
+  /** @type {Map<string, number>} */
+  const departures = new Map()
   const { owner, known, group } = initialState(pid, await list(), options.detached ?? false)
   let trackGroup = group
   let polling = Promise.resolve()
@@ -62,6 +84,7 @@ export async function trackProcessTree(pid, options = {}) {
     trackGroup &&=
       (root === undefined || root.startedAt === owner?.startedAt) &&
       table.some((entry) => entry.pgid === pid && !entry.state.startsWith("Z"))
+    const before = [...known.values()]
     known.clear()
     for (const entry of table) {
       if (
@@ -71,6 +94,7 @@ export async function trackProcessTree(pid, options = {}) {
         known.set(entry.pid, identity(entry))
       }
     }
+    recordDepartures(departures, before, known, now())
   }
   let disposed = false
   /** @type {ReturnType<typeof setTimeout> | undefined} */
@@ -110,6 +134,17 @@ export async function trackProcessTree(pid, options = {}) {
         throw error
       })
       return stopping
+    },
+    /** @param {number} member */
+    member: async (member) => {
+      if (!known.has(member)) await capture()
+      return known.get(member)
+    },
+    /** @param {import('./index.mjs').ProcessIdentity} member @param {number} withinMs */
+    recentlyAlive: (member, withinMs) => {
+      if (known.get(member.pid)?.startedAt === member.startedAt) return true
+      const departed = departures.get(identityKey(member))
+      return departed !== undefined && now() - departed <= withinMs
     },
     dispose
   }

@@ -15,10 +15,19 @@ import {
 } from "./frames.js"
 import { nodePtySpawner } from "./node-pty-spawner.js"
 import { ReplayBuffer } from "./replay-buffer.js"
+import { resolveUserId } from "./shell.js"
 import { SizeArbiter, type TerminalSize } from "./size-arbiter.js"
 import { makeTerminalLaunch } from "./terminal-launch.js"
+import { restartLaunchFor } from "./terminal-restart-launch.js"
+import { restartTerminal } from "./terminal-restart.js"
+import { makeTerminalResume } from "./terminal-resume.js"
 import { createTerminalScreen, replayCovers, resyncFrames } from "./terminal-screen.js"
-import { RESTORED_TERMINAL_SIZE, restoreEntry, snapshotEntry } from "./terminal-snapshot.js"
+import {
+  RESTORED_TERMINAL_SIZE,
+  restoredSize,
+  restoreEntry,
+  snapshotEntry
+} from "./terminal-snapshot.js"
 import { makeTerminalTitles } from "./terminal-titles.js"
 import type { TerminalManagerConfig, TerminalManagerService } from "./types.js"
 import { TerminalError } from "./types.js"
@@ -45,6 +54,8 @@ export const makeTerminalManager = (config: TerminalManagerConfig = {}): Termina
   const terminalsBySession = new Map<string, string>()
   const stopping = new Map<string, Promise<void>>()
   const titles = makeTerminalTitles()
+  const userId = resolveUserId(config)
+  const resume = makeTerminalResume(userId)
   let revision = 0
 
   /* v8 ignore next */
@@ -60,10 +71,12 @@ export const makeTerminalManager = (config: TerminalManagerConfig = {}): Termina
       if (!terminal.removed) {
         terminal.screen.write(sequenced.data)
         titles.observe(terminal, sequenced.data)
+        resume.observe(terminal, sequenced.data)
       }
     } else {
       terminal.exitFrame = sequenced
       titles.end(terminal)
+      resume.end(terminal)
     }
     for (const sink of terminal.sinks) {
       sink(sequenced)
@@ -92,6 +105,7 @@ export const makeTerminalManager = (config: TerminalManagerConfig = {}): Termina
     if (terminals.get(terminal.terminalId) === terminal) terminals.delete(terminal.terminalId)
     terminal.removed = true
     titles.end(terminal)
+    resume.end(terminal)
     terminal.screen.free()
   }
 
@@ -105,6 +119,20 @@ export const makeTerminalManager = (config: TerminalManagerConfig = {}): Termina
     if (terminal.closed && !terminal.external && terminal.sinks.size === 0) {
       dropTerminal(terminal)
     }
+  }
+
+  const markExited = (terminal: RunningTerminal): void => {
+    terminal.closed = true
+    clearSessionMapping(terminal)
+    reapIfUnwatched(terminal)
+  }
+
+  const restartContext = {
+    spawner,
+    pushFrame,
+    markExited,
+    attachSession: (terminal: RunningTerminal) =>
+      terminalsBySession.set(terminal.sessionId, terminal.terminalId)
   }
 
   const stopTerminal = (terminal: RunningTerminal): Promise<void> => {
@@ -172,9 +200,7 @@ export const makeTerminalManager = (config: TerminalManagerConfig = {}): Termina
             if (runningTerminal === undefined) {
               exitedBeforeRegistration = true
             } else {
-              runningTerminal.closed = true
-              clearSessionMapping(runningTerminal)
-              reapIfUnwatched(runningTerminal)
+              markExited(runningTerminal)
             }
           }
         })
@@ -182,6 +208,8 @@ export const makeTerminalManager = (config: TerminalManagerConfig = {}): Termina
           terminalId,
           sessionId: request.sessionId,
           process,
+          launch: { cwd: request.cwd, shell: request.shell, args: request.args },
+          resumeToken: spawnRequest.resumeToken,
           sinks: new Set(),
           frames: new ReplayBuffer(),
           clientSeqs: new Map(),
@@ -314,10 +342,10 @@ export const makeTerminalManager = (config: TerminalManagerConfig = {}): Termina
         return closed
       }),
     snapshotTerminals: () => ({
-      version: 3,
+      version: 4,
       terminals: [...terminals.values()]
         .filter((terminal) => terminal.external || !terminal.closed)
-        .map(snapshotEntry)
+        .map((terminal) => snapshotEntry(terminal, resume.saved(terminal)))
     }),
     readScreen: (terminalId, format) =>
       terminalAttempt("readScreen", () => {
@@ -326,30 +354,35 @@ export const makeTerminalManager = (config: TerminalManagerConfig = {}): Termina
       }),
     outputRevision: () => revision,
     subscribeTitles: titles.subscribe,
+    subscribeResumes: resume.subscribe,
     restoreTerminals: (snapshot) => {
       for (const entry of snapshot.terminals) {
         if (terminals.has(entry.terminalId)) continue
         if (entry.external && snapshot.version < 3) continue
+        const restart = restartLaunchFor(entry, prepareSpawn, userId)
+        const size = restoredSize(entry)
         const terminal: RunningTerminal = {
           terminalId: entry.terminalId,
           sessionId: entry.sessionId,
           process: noopProcess,
+          launch: entry.launch,
           sinks: new Set(),
           frames: new ReplayBuffer(),
           clientSeqs: new Map(),
-          screen: createVtTerminal({
-            cols: entry.cols ?? RESTORED_TERMINAL_SIZE.cols,
-            rows: entry.rows ?? RESTORED_TERMINAL_SIZE.rows
-          }),
-          sizes: new SizeArbiter(RESTORED_TERMINAL_SIZE),
+          screen:
+            restart === undefined
+              ? createVtTerminal(size)
+              : createTerminalScreen(() => terminal, size),
+          sizes: new SizeArbiter(restart === undefined ? RESTORED_TERMINAL_SIZE : size),
           removed: false,
           nextOutputSeq: entry.nextOutputSeq,
-          closed: true,
+          closed: restart === undefined,
           external: entry.external
         }
         restoreEntry(terminal, entry)
-        if (!entry.closed) pushFrame(terminal, { type: "exit" })
         terminals.set(entry.terminalId, terminal)
+        if (restart !== undefined) restartTerminal(restartContext, terminal, restart)
+        else if (!entry.closed) pushFrame(terminal, { type: "exit" })
         if (entry.external && !terminalsBySession.has(entry.sessionId)) {
           terminalsBySession.set(entry.sessionId, entry.terminalId)
         }

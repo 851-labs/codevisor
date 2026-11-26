@@ -7,9 +7,23 @@ import { Schema } from "effect"
 
 const SNAPSHOT_FILE = "terminal-buffers.json"
 export const PERIODIC_FLUSH_INTERVAL_MS = 30_000
+export const RESUME_FLUSH_DELAY_MS = 1000
+
+const SavedResume = Schema.Struct({
+  argv: Schema.Array(Schema.String),
+  cwd: Schema.optionalKey(Schema.String),
+  cwdFromReport: Schema.Boolean,
+  uid: Schema.Number
+})
+
+const TerminalLaunch = Schema.Struct({
+  cwd: Schema.String,
+  shell: Schema.optionalKey(Schema.String),
+  args: Schema.optionalKey(Schema.Array(Schema.String))
+})
 
 const TerminalSnapshot = Schema.Struct({
-  version: Schema.Literals([1, 2, 3]),
+  version: Schema.Literals([1, 2, 3, 4]),
   terminals: Schema.Array(
     Schema.Struct({
       terminalId: Schema.String,
@@ -21,7 +35,10 @@ const TerminalSnapshot = Schema.Struct({
       cols: Schema.optionalKey(Schema.Number),
       rows: Schema.optionalKey(Schema.Number),
       exitCode: Schema.optionalKey(Schema.Number),
-      frames: Schema.optionalKey(Schema.Array(TerminalServerFrame))
+      frames: Schema.optionalKey(Schema.Array(TerminalServerFrame)),
+      launch: Schema.optionalKey(TerminalLaunch),
+      cwd: Schema.optionalKey(Schema.String),
+      resume: Schema.optionalKey(SavedResume)
     })
   )
 })
@@ -37,6 +54,7 @@ export interface TerminalPersistenceOptions {
     readonly exit: (code: number) => void
   }
   readonly setInterval?: (run: () => void, ms: number) => { unref?: () => void }
+  readonly setTimeout?: (run: () => void, ms: number) => { unref?: () => void }
 }
 
 export interface TerminalPersistence {
@@ -44,6 +62,7 @@ export interface TerminalPersistence {
   readonly flush: () => void
   readonly installExitHooks: () => void
   readonly startPeriodicFlush: () => void
+  readonly flushOnResumeChange: () => void
 }
 
 export const makeTerminalPersistence = (
@@ -107,6 +126,20 @@ export const makeTerminalPersistence = (
     timer.unref?.()
   }
 
+  let resumeFlushPending = false
+  const flushOnResumeChange = (): void => {
+    /* v8 ignore next */
+    const schedule = options.setTimeout ?? ((run: () => void, ms: number) => setTimeout(run, ms))
+    options.terminal.subscribeResumes(() => {
+      if (resumeFlushPending) return
+      resumeFlushPending = true
+      schedule(() => {
+        resumeFlushPending = false
+        flush()
+      }, RESUME_FLUSH_DELAY_MS).unref?.()
+    })
+  }
+
   const installExitHooks = (): void => {
     /* v8 ignore next */
     const processHandle = options.processHandle ?? process
@@ -121,5 +154,5 @@ export const makeTerminalPersistence = (
     }
   }
 
-  return { restore, flush, installExitHooks, startPeriodicFlush }
+  return { restore, flush, installExitHooks, startPeriodicFlush, flushOnResumeChange }
 }

@@ -6,6 +6,7 @@ import { describe, expect, it, onTestFinished, vi } from "vitest"
 import {
   createProcessSampler,
   parseProcessTable,
+  processCwd,
   processIdentity,
   processTree,
   readProcessTable,
@@ -338,5 +339,17 @@ describe("owned process shutdown", () => {
     } finally {
       await cleanup()
     }
+  })
+})
+
+describe("process working directory", () => {
+  it("reads a live process's directory and nothing for a missing process", async () => {
+    const child = spawn(process.execPath, ["-e", "setInterval(() => {}, 1000)"], { cwd: "/" })
+    onTestFinished(() => {
+      child.kill("SIGKILL")
+    })
+    await once(child, "spawn")
+    expect(await processCwd(child.pid!)).toBe("/")
+    expect(await processCwd(0x7fffffff)).toBeUndefined()
   })
 })

@@ -172,7 +172,7 @@ describe("terminal persistence", () => {
 
     const snapshotPath = join(dataDir, "terminal-buffers.json")
     expect(existsSync(`${snapshotPath}.tmp`)).toBe(false)
-    expect(JSON.parse(readFileSync(snapshotPath, "utf8"))).toMatchObject({ version: 3 })
+    expect(JSON.parse(readFileSync(snapshotPath, "utf8"))).toMatchObject({ version: 4 })
     expect(statSync(snapshotPath).mode & 0o777).toBe(0o600)
   })
 
@@ -229,5 +229,54 @@ describe("terminal persistence", () => {
     handle.output("second")
     tick.run()
     expect(existsSync(snapshotPath)).toBe(true)
+  })
+
+  it("saves soon after a program reports how to resume, and reads the record back", () => {
+    const dataDir = makeDataDir()
+    const manager = makeTerminalManager()
+    manager.registerExternalTerminal({ sessionId: "agent:bg:resume" }, noopProcess).output("x")
+    const listeners: Array<() => void> = []
+    const timers: Array<{ run: () => void; ms: number }> = []
+    makeTerminalPersistence({
+      dataDir,
+      terminal: {
+        ...manager,
+        subscribeResumes: (listener) => {
+          listeners.push(listener)
+          return () => undefined
+        }
+      },
+      setTimeout: (run, ms) => {
+        timers.push({ run, ms })
+        return {}
+      }
+    }).flushOnResumeChange()
+
+    const snapshotPath = join(dataDir, "terminal-buffers.json")
+    listeners[0]!()
+    listeners[0]!()
+    expect(timers.map(({ ms }) => ms)).toEqual([1000])
+    expect(existsSync(snapshotPath)).toBe(false)
+    timers[0]!.run()
+    expect(existsSync(snapshotPath)).toBe(true)
+
+    const resume = {
+      argv: ["claude", "--resume", "abc"],
+      cwd: "/srv/project",
+      cwdFromReport: true,
+      uid: 501
+    }
+    const saved = JSON.parse(readFileSync(snapshotPath, "utf8"))
+    Object.assign(saved.terminals[0], { resume, launch: { cwd: "/srv" }, cwd: "/srv/project" })
+    writeFileSync(snapshotPath, JSON.stringify(saved))
+    const restored: Array<unknown> = []
+    makeTerminalPersistence({
+      dataDir,
+      terminal: {
+        ...makeTerminalManager(),
+        restoreTerminals: (snapshot) => restored.push(...snapshot.terminals)
+      }
+    }).restore()
+    expect(restored).toMatchObject([{ resume, launch: { cwd: "/srv" }, cwd: "/srv/project" }])
   })
 })

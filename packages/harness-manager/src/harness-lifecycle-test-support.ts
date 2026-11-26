@@ -113,6 +113,7 @@ export const fakeTerminalManager = (
   readScreen: unstubbedEffect("readScreen"),
   outputRevision: unstubbed("outputRevision"),
   subscribeTitles: unstubbed("subscribeTitles"),
+  subscribeResumes: unstubbed("subscribeResumes"),
   releaseClient: unstubbed("releaseClient"),
   ...overrides
 })

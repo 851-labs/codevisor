@@ -209,3 +209,24 @@ it("stops a running child's tree when it exits, absorbing a failed stop", async 
   expect(tree.stop).toHaveBeenCalledOnce()
   await expect(tree.stop.mock.results[0]!.value).rejects.toThrow("ps failed")
 })
+
+it("finds a member that started after the last poll and remembers when it left", async () => {
+  let clock = 0
+  let table = [entry(30)]
+  const list = vi.fn(async () => table)
+  const tree = await trackProcessTree(30, { list, stop: vi.fn(), now: () => clock })
+  onTestFinished(() => tree.dispose())
+  table = [entry(30), entry(31, 30, 31)]
+  const child = (await tree.member(31))!
+  expect(child).toEqual(entry(31, 30, 31))
+  expect(await tree.member(99)).toBeUndefined()
+  expect(tree.recentlyAlive(child, 0)).toBe(true)
+
+  table = [entry(30)]
+  clock = 1000
+  await vi.advanceTimersByTimeAsync(250)
+  clock = 2500
+  expect(tree.recentlyAlive(child, 2000)).toBe(true)
+  expect(tree.recentlyAlive(child, 1000)).toBe(false)
+  expect(tree.recentlyAlive({ ...child, startedAt: "reused" }, 2000)).toBe(false)
+})
