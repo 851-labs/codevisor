@@ -59,40 +59,25 @@ test("the baseline keeps old long functions but fails grown or new ones", (t) =>
 
 const armTimer = (...lines) =>
   [
-    "  static func arm(_ timer: any DispatchSourceTimer) {",
+    "  static func arm(_ timer: any DispatchSourceTimer, leeway: DispatchTimeInterval) {",
     ...lines.map((line) => `    ${line}`),
     "  }"
   ].join("\n")
 
-const scheduled = (leeway) => `timer.schedule(deadline: .now(), leeway: ${leeway})`
-
 const acceptedTimers = [
-  armTimer(scheduled(".nanoseconds(0)")),
-  armTimer("let leeway: DispatchTimeInterval = .milliseconds(1)", scheduled("leeway")),
-  armTimer("timer.schedule(deadline: .now(), repeating: .never)"),
-  armTimer(
-    "timer.schedule(deadline: .now(), repeating: DispatchTimeInterval.never, leeway: .nanoseconds(0))"
-  ),
-  armTimer("if interval == DispatchTimeInterval.never { return }", scheduled(".nanoseconds(0)"))
+  armTimer("timer.schedule(deadline: .now(), leeway: .nanoseconds(0))"),
+  armTimer("timer.schedule(deadline: .now(), repeating: .never, leeway: .nanoseconds(0))"),
+  armTimer("timer.schedule(deadline: .now(), leeway: leeway == .never ? .nanoseconds(0) : leeway)")
 ]
 
 const rejectedTimers = [
-  armTimer(scheduled(".never")),
-  armTimer(scheduled("DispatchTimeInterval.never")),
-  armTimer(scheduled("Dispatch.DispatchTimeInterval.never")),
-  armTimer(scheduled("(.never)")),
-  armTimer(scheduled("isStrict ? .nanoseconds(0) : .never")),
-  armTimer("let leeway: DispatchTimeInterval = .never", scheduled("leeway")),
-  armTimer("let leeway = DispatchTimeInterval.never", scheduled("leeway")),
-  armTimer("let leeway: Dispatch.DispatchTimeInterval = .never", scheduled("leeway")),
-  armTimer("let leeway: DispatchTimeInterval? = .never", scheduled("leeway ?? .nanoseconds(0)")),
-  armTimer(
-    "let leeway: DispatchTimeInterval = isStrict ? .nanoseconds(0) : .never",
-    scheduled("leeway")
-  )
+  armTimer("timer.schedule(deadline: .now(), leeway: .never)"),
+  armTimer("timer.schedule(deadline: .now(), leeway: DispatchTimeInterval.never)"),
+  armTimer("timer.schedule(deadline: .now(), leeway: Dispatch.DispatchTimeInterval.never)"),
+  armTimer("timer.schedule(", "  deadline: .now(),", "  leeway:", "    .never)")
 ]
 
-test("a dispatch timer leeway of never fails SwiftLint in every spelling", (t) => {
+test("a dispatch timer armed with the literal leeway never fails SwiftLint", (t) => {
   const swift = swiftPackage(t)
   for (const accepted of acceptedTimers) {
     swift.write(accepted)

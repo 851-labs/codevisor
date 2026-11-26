@@ -53,9 +53,8 @@ custom_rules:
     name: Timer leeway never
     message: >-
       A dispatch timer scheduled with leeway .never is never fired by macOS. For a timer that must fire
-      on time, pass .nanoseconds(0). A DispatchTimeInterval declared as .never is flagged too,
-      because it can reach a leeway.
-    regex: '(?:leeway:[^,\n]*|DispatchTimeInterval[?!]?\s*=[^,\n]*|(?<![=!<>])=\s*(?:Dispatch\.)?DispatchTimeInterval)\.never\b'
+      on time, pass .nanoseconds(0).
+    regex: 'leeway:\s*(?:[\w.]*\.)?never\b'
     excluded_match_kinds: [comment, doccomment, string]
     severity: error
   pane_keyboard_shortcut:

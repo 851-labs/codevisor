@@ -175,13 +175,12 @@ CodevisorBench loopback --source own-window --scenes scroll --networks N0
   ask for packets that were still on their way (108–308 resent a repetition against 1), which the host's heavy-loss
   rule took for 10–64% loss, and its estimate fell to 1.7 Mbit/s. So Tier 1 numbers on N1–N7 from before 851-4477
   aren't comparable with later ones, and N0, Tier 2 and the labs never went through that timer. SwiftLint's
-  `timer_leeway_never` rule rejects a `leeway:` argument with `.never` anywhere in it (any spelling, in parentheses or
-  in a ternary) and any `DispatchTimeInterval` declared as `.never` (a constant, an optional, a parameter's default).
-  It reads text, so it can't see a `.never` that reaches a leeway another way: a function's result, or a variable
-  assigned `.never` after it was declared. It also flags a `DispatchTimeInterval` declared as `.never` for another
-  use, since it can't tell where the value goes; `repeating: .never` and comparisons pass. The
-  relay's own test waits up to 30 s for its packet: the wait only bounds a hang, and 2 s could run out on a loaded
-  machine with the relay delivering correctly.
+  `timer_leeway_never` rule is only a tripwire for the literal spelling: a `leeway:` argument that is `.never`, with
+  or without a type or module name in front, also when it is wrapped onto the next line. It reads text, so it can't
+  see a `.never` that reaches a leeway any other way (a constant, a ternary, a function's result). The real guard is
+  the relay's own test, `LoopbackRelayTests`: one delayed packet with no other traffic has to arrive. That test waits
+  up to 30 s for it: the wait only bounds a hang, and 2 s could run out on a loaded machine with the relay
+  delivering correctly.
 - **Measurement.** Each scene runs `--duration` seconds (12 by default; the matrix takes about 11 minutes) and
   the first `--warm-up` seconds (5) are left out. `--repetitions <n>` runs the whole list n times, interleaved (every
   cell once, then every cell again), and each result carries its `repetition`; consumers take the median per cell
