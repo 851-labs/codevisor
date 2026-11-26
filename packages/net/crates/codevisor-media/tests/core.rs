@@ -668,6 +668,29 @@ fn scroll_on(conditions: NetworkConditions, seed: u64) -> (Sim, usize) {
 }
 
 #[test]
+fn a_gap_older_than_ten_seconds_no_longer_delays_the_request_for_a_lost_tail() {
+    let mut sim = Sim::new(NetworkConditions::N1, config(FecMode::Off), 1);
+    sim.links[0].conditions.release_tick_ms = Some(3.0);
+    sim.send(frame(0, &payload(1, 120_000)));
+    sim.run_for(100 * MS);
+    sim.links[0].conditions.release_tick_ms = None;
+    for index in 0..700u64 {
+        sim.send(frame(0, &payload(index, 300)));
+        sim.run_for(INTERVAL);
+    }
+    sim.drop_when(first_time(|direction, datagram| {
+        direction == Direction::ToViewer
+            && PacketHeader::decode(datagram.clone()).is_some_and(|(header, _)| header.frame == 701 && header.index > 0)
+    }));
+    let sent = sim.now;
+    sim.send(frame(0, &payload(9, 3_000)));
+    sim.run_for(100 * MS);
+
+    let asked_after = sim.nacks_to_host.iter().find(|(_, nack)| nack.frame == 701).map(|(at, _)| *at - sent);
+    assert!(asked_after.is_some_and(|after| after < 3 * MS), "the lost tail was asked for after {asked_after:?}");
+}
+
+#[test]
 fn a_link_that_delivers_in_clumps_isnt_asked_for_packets_still_on_their_way() {
     for conditions in [NetworkConditions::N8, NetworkConditions::N9] {
         for seed in 1..=3 {
