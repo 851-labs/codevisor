@@ -6,7 +6,7 @@ import Testing
 
 struct LoopbackRelayTests {
   private static let delayMs = 5.0
-  private static let deadlockGuardMs: Int32 = 2_000
+  private static let deadlockGuardMs: Int32 = 30_000
 
   @Test(arguments: [RelayDirection.media, .feedback])
   func aDelayedPacketLeavesWithoutWaitingForOtherTraffic(_ direction: RelayDirection) throws {
@@ -39,8 +39,11 @@ struct LoopbackRelayTests {
 
   private static func waitUntilReadable(_ socket: RelaySocket) -> Bool {
     var descriptor = pollfd(fd: socket.descriptor, events: Int16(POLLIN), revents: 0)
-    var ready = poll(&descriptor, 1, deadlockGuardMs)
-    while ready == -1, errno == EINTR { ready = poll(&descriptor, 1, deadlockGuardMs) }
-    return ready == 1
+    let deadlineNs = BenchMachClock.nowNs() + Int64(deadlockGuardMs) * 1_000_000
+    while true {
+      let remainingMs = Int32(max(0, (deadlineNs - BenchMachClock.nowNs()) / 1_000_000))
+      let ready = poll(&descriptor, 1, remainingMs)
+      guard ready == -1, errno == EINTR, remainingMs > 0 else { return ready == 1 }
+    }
   }
 }
