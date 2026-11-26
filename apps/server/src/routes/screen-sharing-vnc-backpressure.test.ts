@@ -46,7 +46,7 @@ it.each([4, 5])(
           dial: () => upstream,
           arbiter: new VNCControlArbiter(),
           highWater: 4,
-          socketProblem: () => undefined
+          locate: (path) => ({ path })
         }
       )
       resume.mockClear()

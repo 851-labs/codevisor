@@ -94,6 +94,11 @@ const nextMessage = (socket: WebSocket): Promise<Buffer> =>
 const closed = (socket: WebSocket): Promise<number> =>
   new Promise((resolve) => socket.once("close", resolve))
 
+const closure = (socket: WebSocket): Promise<{ code: number; reason: string }> =>
+  new Promise((resolve) =>
+    socket.once("close", (code, reason) => resolve({ code, reason: reason.toString() }))
+  )
+
 const statusOf = (socket: WebSocket) =>
   new Promise<number>((resolve) => {
     socket.once("unexpected-response", (_request, response) => resolve(response.statusCode ?? 0))
@@ -246,7 +251,10 @@ describe("VNC screen sharing provider", () => {
     ).toBe(403)
     await new Promise<void>((resolve) => vnc.server.close(() => resolve()))
     const orphan = new WebSocket(socketUrl())
-    expect(await closed(orphan)).toBe(1011)
+    expect(await closure(orphan)).toEqual({
+      code: 1011,
+      reason: "The desktop on this machine isn't running."
+    })
   })
 
   it("requires the machine token when loopback is not trusted", async () => {
@@ -275,13 +283,15 @@ describe("VNC screen sharing provider", () => {
     const vnc = await fakeVNC()
     const { socketUrl, capabilities } = await start({ socket: vnc.socket })
     chmodSync(vnc.socket, 0o666)
-    expect(await closed(new WebSocket(socketUrl()))).toBe(1011)
+    const message =
+      "Other accounts on this machine can reach its desktop, so Codevisor won't share it."
+    expect(await closure(new WebSocket(socketUrl()))).toEqual({ code: 1011, reason: message })
     expect(vnc.connections).toHaveLength(0)
     expect((await capabilities()).body).toEqual({
       version: 1,
       status: "failed",
       provider: "vnc",
-      message: "Other accounts on this machine can reach its desktop, so Codevisor won't share it.",
+      message,
       displays: []
     })
   })

@@ -44,7 +44,7 @@ it("routes clipboard frames to the desktop's clipboard and everything else to th
       client,
       Buffer.alloc(0),
       { handleUpgrade: (_request, _socket, _head, done) => done(webSocket) },
-      { dial: () => upstream, arbiter, desktopClipboard: desktop, socketProblem: () => undefined }
+      { dial: () => upstream, arbiter, desktopClipboard: desktop, locate: (path) => ({ path }) }
     )
     await announcement.promise
     expect(texts).toEqual([JSON.stringify({ type: "clipboard-host", richContent: true })])
@@ -104,7 +104,7 @@ it("closes the bridge and stays silent when the desktop's clipboard can't be wat
       {
         dial: () => upstream,
         arbiter: new VNCControlArbiter(),
-        socketProblem: () => undefined,
+        locate: (path) => ({ path }),
         desktopClipboard: {
           watch: () => Promise.reject(new Error("xclip isn't installed")),
           read: () => Promise.resolve([]),

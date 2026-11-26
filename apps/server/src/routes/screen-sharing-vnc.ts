@@ -7,7 +7,7 @@ import type { ScreenSharingReply, ScreenSharingRequest } from "@codevisor/api"
 import { WebSocket } from "ws"
 
 import type { ScreenSharingVNCConfig } from "../server-context-types.js"
-import { type PrivateSocketProblem, privateSocketProblem } from "./private-socket.js"
+import { type PrivateSocket, type PrivateSocketProblem, privateSocket } from "./private-socket.js"
 import { type RFBClientMessageKind, RFBClientStreamFilter } from "./rfb-client-filter.js"
 import type { VNCDesktopScaler } from "./screen-sharing-vnc-scale.js"
 import { type DesktopClipboard, VNCClipboardBridge } from "./vnc-clipboard-bridge.js"
@@ -82,11 +82,11 @@ export const vncScreenSharing =
   (
     config: ScreenSharingVNCConfig,
     scaler?: VNCDesktopScaler,
-    socketProblem: () => PrivateSocketProblem | undefined = () =>
-      privateSocketProblem(config.socket)
+    locate: (configured: string) => PrivateSocket = privateSocket
   ) =>
   async (request: ScreenSharingRequest): Promise<ScreenSharingReply> => {
-    if (request.operation === "capabilities") return capabilities(config, scaler, socketProblem())
+    if (request.operation === "capabilities")
+      return capabilities(config, scaler, locate(config.socket).problem)
     if (request.operation === "setScale") return setScale(request, scaler)
     return vncReply("unsupported", "This machine streams its display over the VNC socket")
   }
@@ -208,7 +208,7 @@ export interface VNCSpliceOptions {
   readonly arbiter?: VNCControlArbiter
   readonly highWater?: number
   readonly desktopClipboard?: DesktopClipboard
-  readonly socketProblem?: () => PrivateSocketProblem | undefined
+  readonly locate?: (configured: string) => PrivateSocket
 }
 
 const defaultHighWater = 4 * 1024 * 1024
@@ -226,7 +226,7 @@ export const spliceVNCSocket = (
   const arbiter = options.arbiter ?? vncControlArbiter(config.socket)
   const highWater = options.highWater ?? defaultHighWater
   const desktopClipboard = options.desktopClipboard ?? vncDesktopClipboard(config)
-  const socketProblem = options.socketProblem ?? (() => privateSocketProblem(config.socket))
+  const locate = options.locate ?? privateSocket
   if (request.headers.origin !== undefined || request.headers["sec-fetch-site"] !== undefined) {
     refuse(socket, "403 Forbidden")
     return
@@ -236,11 +236,12 @@ export const spliceVNCSocket = (
     return
   }
   webSocketServer.handleUpgrade(request, socket, head, (webSocket) => {
-    if (socketProblem() !== undefined) {
-      webSocket.close(1011, "VNC server unavailable")
+    const located = locate(config.socket)
+    if (located.path === undefined) {
+      webSocket.close(1011, socketProblemMessages[located.problem])
       return
     }
-    const upstream = dial(config.socket)
+    const upstream = dial(located.path)
     const sendText = (text: string) => webSocket.send(text, {}, () => undefined)
     const id = arbiter.join(sendText)
     const clipboard =

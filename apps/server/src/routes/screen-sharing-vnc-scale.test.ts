@@ -57,7 +57,7 @@ const fakeSession = (
   return { commands, values, log }
 }
 
-const running = () => undefined
+const running = (path: string) => ({ path })
 
 describe("Xfce desktop scale (851-2339)", () => {
   it("sets 2× through the session's own D-Bus, with the 2× borders, and restarts the desktop once", async () => {

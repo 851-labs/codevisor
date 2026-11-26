@@ -3,6 +3,7 @@ set -eu
 
 DISPLAY_NUMBER=1
 GEOMETRY=1440x900
+TCP_PORT=$((5900 + DISPLAY_NUMBER))
 APT_STATE=/codevisor-state/apt
 LOG=/tmp/desktop.log
 PACKAGES="tigervnc-standalone-server tigervnc-common xfce4 xfce4-terminal mousepad dbus-x11
@@ -35,14 +36,22 @@ SOCKET="$XDG_RUNTIME_DIR/codevisor-desktop.sock"
 export XAUTHORITY="$XDG_RUNTIME_DIR/codevisor-desktop.xauth"
 eval "$(dbus-launch --sh-syntax)"
 rm -f "/tmp/.X$DISPLAY_NUMBER-lock" "/tmp/.X11-unix/X$DISPLAY_NUMBER" "$SOCKET" "$XAUTHORITY"
-(umask 077 && xauth -q -f "$XAUTHORITY" add "$DISPLAY" . "$(mcookie)")
+(umask 077 && xauth -q -f "$XAUTHORITY" add "$DISPLAY" . "$(mcookie)" 2>/dev/null)
+[ -s "$XAUTHORITY" ] || { echo "[container] couldn't write the desktop's X11 cookie" >&2; exit 1; }
 setsid Xvnc "$DISPLAY" -auth "$XAUTHORITY" -rfbunixpath "$SOCKET" -rfbunixmode 0600 -rfbport -1 \
-  -nolisten tcp -geometry "$GEOMETRY" -depth 24 -SecurityTypes None >"$LOG" 2>&1 </dev/null &
+  -localhost -nolisten tcp -geometry "$GEOMETRY" -depth 24 -SecurityTypes None >"$LOG" 2>&1 </dev/null &
 for _ in $(seq 1 50); do
   [ -S "$SOCKET" ] && [ -S "/tmp/.X11-unix/X$DISPLAY_NUMBER" ] && break
   sleep 0.2
 done
-[ -S "$SOCKET" ] || { echo "[container] Xvnc didn't start (see $LOG)" >&2; exit 1; }
+if ! [ -S "$SOCKET" ] || ! [ -S "/tmp/.X11-unix/X$DISPLAY_NUMBER" ]; then
+  echo "[container] Xvnc didn't start (see $LOG)" >&2
+  exit 1
+fi
+if bash -c "exec 3<>/dev/tcp/127.0.0.1/$TCP_PORT" 2>/dev/null; then
+  echo "[container] Xvnc opened TCP port $TCP_PORT instead of only its socket; not sharing it" >&2
+  exit 1
+fi
 setsid startxfce4 >>"$LOG" 2>&1 </dev/null &
 (
   for _ in $(seq 1 100); do
