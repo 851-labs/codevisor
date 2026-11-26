@@ -175,19 +175,19 @@ private final class Account {
 
   func connect(_ machine: CloudMachine) {
     cloud.cloudMachines.append(machine)
-    machineCount.follow()
+    machineCount.update()
   }
 
   func disconnect(_ machine: CloudMachine) {
     cloud.cloudMachines.removeAll { $0.deviceId == machine.deviceId }
-    machineCount.follow()
+    machineCount.update()
   }
 
   func sleep(_ machine: CloudMachine) {
     var asleep = machine
     asleep.online = false
     cloud.cloudMachines = cloud.cloudMachines.map { $0.deviceId == machine.deviceId ? asleep : $0 }
-    machineCount.follow()
+    machineCount.update()
   }
 
   func finishLoadingCloud(machines: [CloudMachine]) {
@@ -195,24 +195,24 @@ private final class Account {
     cloud.isCloudSignedIn = true
     cloud.hasCompletedCloudBootstrap = true
     environment.machines.adoptLocalCloudIdentity(deviceId: CloudMachine.thisMac.deviceId)
-    machineCount.follow()
+    machineCount.update()
   }
 
   func loadRoster(_ machines: [CloudMachine]) {
     cloud.cloudMachines = machines
     cloud.isCloudRosterVerified = true
-    machineCount.follow()
+    machineCount.update()
   }
 
   func learnOwnIdentity() {
     environment.machines.adoptLocalCloudIdentity(deviceId: CloudMachine.thisMac.deviceId)
-    machineCount.follow()
+    machineCount.update()
   }
 
   func signOut() {
     cloud.isCloudSignedIn = false
     cloud.cloudMachines = []
-    machineCount.follow()
+    machineCount.update()
   }
 }
 

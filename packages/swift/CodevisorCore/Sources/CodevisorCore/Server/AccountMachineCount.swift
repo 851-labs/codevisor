@@ -9,6 +9,8 @@ public final class AccountMachineCount {
   public private(set) var lastKnown: Int
   private let machines: MachineController
   private let preferences: ClientPreferences
+  @ObservationIgnored private var isFollowing = false
+  @ObservationIgnored private var observation: UInt64 = 0
 
   public init(machines: MachineController, preferences: ClientPreferences) {
     self.machines = machines
@@ -17,14 +19,26 @@ public final class AccountMachineCount {
   }
 
   public func follow() {
+    guard !isFollowing else { return }
+    isFollowing = true
+    update()
+  }
+
+  func update() {
+    observation &+= 1
     let current = withObservationTracking {
       machines.accountMachineCount
-    } onChange: { [weak self] in
-      Task { @MainActor in self?.follow() }
+    } onChange: { [weak self, observation] in
+      Task { @MainActor in self?.observedChange(during: observation) }
     }
     guard let current, current != lastKnown else { return }
 
     lastKnown = current
     preferences.set(current, forKey: Self.preferenceKey)
+  }
+
+  private func observedChange(during observed: UInt64) {
+    guard observed == observation else { return }
+    update()
   }
 }
