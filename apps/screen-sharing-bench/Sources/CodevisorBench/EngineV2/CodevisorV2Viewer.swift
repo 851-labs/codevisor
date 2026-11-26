@@ -7,7 +7,7 @@ import ScreenSharingV2
 @MainActor
 final class CodevisorV2Viewer {
   private static let connectRetry = Duration.milliseconds(250)
-  private static let firstFrameTimeout = Duration.seconds(20)
+  private static let firstFrameTimeout = Duration.seconds(60)
   private static let firstFramePoll = Duration.milliseconds(20)
   private static let controlTimeout = Duration.seconds(15)
 
@@ -17,6 +17,8 @@ final class CodevisorV2Viewer {
   private let viewer: ScreenSharingV2Viewer
   private let continuousMinusAbsoluteNs: Int64
   private let surface: V2Surface
+  private let connectingAt: ContinuousClock.Instant
+  private var firstPictureMs: Double?
   private var control: BenchViewerControl?
 
   static func run(
@@ -50,6 +52,7 @@ final class CodevisorV2Viewer {
     host: String, address: V2EndpointMessage, presentation: V2Presentation, presentsTiles: Bool
   ) async throws {
     let endpoint = try await V2Endpoint.bind()
+    connectingAt = ContinuousClock.now
     let connection = try await endpoint.connect(
       addr: address.addr(reachingHost: host), alpn: mediaAlpn(), cancel: nil)
     let transport = ScreenSharingIrohMediaTransport(
@@ -81,12 +84,13 @@ final class CodevisorV2Viewer {
 
       try await Task.sleep(for: Self.firstFramePoll)
     }
+    firstPictureMs = (ContinuousClock.now - connectingAt) / .milliseconds(1)
   }
 
   private func result(host: String, presentation: V2Presentation) -> CodevisorV2ViewResult {
     CodevisorV2ViewResult(
       host: host, presentation: presentation, metrics: viewer.metrics, droppedFrames: viewer.frames.droppedFrames,
-      continuousMinusAbsoluteNs: continuousMinusAbsoluteNs,
+      continuousMinusAbsoluteNs: continuousMinusAbsoluteNs, firstPictureMs: firstPictureMs,
       media: V2MediaStatistics.dictionary(transport.session.stats()),
       paths: connection.paths().map { "\($0.isRelay ? "relay" : "direct") \($0.remote) \($0.rttMs) ms" },
       control: control?.summary)

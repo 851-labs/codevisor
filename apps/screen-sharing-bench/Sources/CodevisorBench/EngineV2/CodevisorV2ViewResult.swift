@@ -9,6 +9,7 @@ struct CodevisorV2ViewResult: Encodable {
   let frames: [ScreenSharingFrameRecord]
   let commits: [ScreenSharingCommitRecord]
   let continuousMinusAbsoluteNs: Int64
+  let firstPictureMs: Double?
   let counters: [String: Int]
   let labels: [String: String]
   let timings: [String: ScreenSharingMetrics.Timing]
@@ -20,7 +21,7 @@ struct CodevisorV2ViewResult: Encodable {
 
   init(
     host: String, presentation: V2Presentation, metrics: ScreenSharingMetrics, droppedFrames: Int,
-    continuousMinusAbsoluteNs: Int64,
+    continuousMinusAbsoluteNs: Int64, firstPictureMs: Double?,
     media: [String: Double], paths: [String], control: BenchViewerControlSummary?
   ) {
     let snapshot = metrics.snapshot()
@@ -30,6 +31,7 @@ struct CodevisorV2ViewResult: Encodable {
     frames = metrics.timeline.records(after: 0)
     commits = metrics.commits.all()
     self.continuousMinusAbsoluteNs = continuousMinusAbsoluteNs
+    self.firstPictureMs = firstPictureMs
     counters = snapshot.counters
     labels = snapshot.labels
     timings = snapshot.timings

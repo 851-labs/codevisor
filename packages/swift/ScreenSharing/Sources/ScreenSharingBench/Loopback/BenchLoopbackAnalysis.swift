@@ -9,6 +9,7 @@ public struct BenchLoopbackAnalysis: Sendable {
   private let windowNs: Range<Int64>
   private let cadence: BenchSceneCadence
   private let endpoint: BenchEndpoint
+  private let firstPictureMs: Double?
 
   public init(
     produced: [BenchVersionEvent], frames: [BenchFrameTimestamps], windowNs: Range<Int64>,
@@ -24,6 +25,7 @@ public struct BenchLoopbackAnalysis: Sendable {
     self.windowNs = windowNs
     self.cadence = cadence
     self.endpoint = endpoint
+    firstPictureMs = Self.firstPictureMs(produced: produced, frames: frames, endpoint: endpoint)
   }
 
   public func apply(to result: inout BenchResult) {
@@ -38,6 +40,16 @@ public struct BenchLoopbackAnalysis: Sendable {
     result.e2eEndpoint = endpoint
     result.e2eOutsideJitterBufferMs = BenchDistribution(frames.compactMap(e2eOutsideJitterBufferMs))
     result.stagesMs = BenchStageTimings(frames: frames)
+    result.firstPictureMs = firstPictureMs
+  }
+
+  private static func firstPictureMs(
+    produced: [BenchVersionEvent], frames: [BenchFrameTimestamps], endpoint: BenchEndpoint
+  ) -> Double? {
+    guard let startedNs = produced.map(\.ns).min(), let shownNs = frames.compactMap({ $0.endNs(at: endpoint) }).min()
+    else { return nil }
+
+    return Double(shownNs - startedNs) / nanosecondsPerMillisecond
   }
 
   private var windowSeconds: Double {

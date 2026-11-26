@@ -27,15 +27,16 @@ enum LoopbackSummary {
       return row([
         result.scene, result.network, pair(result.e2eMs), format(result.updatesPerS), format(result.shownRatio),
         freezes, tally(result.longGaps?.over250Ms), tally(result.longGaps?.over500Ms),
-        result.bitrateMbps.map { format($0.p50) } ?? "–", loss, result.valid ? "yes" : "no",
+        result.bitrateMbps.map { format($0.p50) } ?? "–", loss, result.firstPictureMs.map { format($0) } ?? "–",
+        result.valid ? "yes" : "no",
       ])
     }
     return [
       row([
         "scene", "network", "e2e p50/p95 ms", "updates/s", "shown", "freezes", "gaps > 250 ms", "gaps > 500 ms",
-        "Mbit/s p50", "lost", "valid",
+        "Mbit/s p50", "lost", "first picture ms", "valid",
       ]),
-      row(Array(repeating: "---", count: 11)),
+      row(Array(repeating: "---", count: 12)),
     ] + rows
   }
 
