@@ -30,6 +30,20 @@ struct SidebarGroupingChoiceTests {
     #expect(account.choice.effective == .project)
   }
 
+  @Test("A saved grouping this build can't read shows None, as before, not the machine default")
+  func unreadableSavedGroupingShowsNone() {
+    let account = Account(machines: [.thisMac, .studio])
+    account.preferences.set("a-grouping-from-a-newer-build", forKey: SidebarGrouping.preferenceKey)
+    #expect(account.choice.effective == .flat)
+  }
+
+  @Test("The machine count matches the machines the sidebar lists, without sandboxes")
+  func countMatchesListedMachines() {
+    let account = Account(machines: [.thisMac, .studio, .sandbox, .secondMacWithSameName, .staleRecordOfThisMac])
+    #expect(account.environment.machines.chatMachineCount == account.environment.machines.chatMachines.count)
+    #expect(account.environment.machines.chatMachineCount == 3)
+  }
+
   @Test("Picking the grouping that is already shown keeps it when the machine count changes")
   func pickingTheShownGroupingSavesIt() {
     let account = Account(machines: [.thisMac, .studio])

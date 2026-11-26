@@ -33,6 +33,10 @@ final class MachineCatalog {
       }
   }
 
+  var chatMachineCount: Int {
+    (includesLocalMachine ? 1 : 0) + cloudOnlyMachines.count { $0.ephemeral == nil }
+  }
+
   var cloudOnlyMachines: [CloudMachine] {
     guard let cloudProvider, cloudProvider.isCloudSignedIn else { return [] }
     let knownCloudIds = configuredCloudIds

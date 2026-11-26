@@ -119,6 +119,7 @@ public final class MachineController {
   public func machine(for id: String) -> CodevisorMachine? { catalog.machine(for: id) }
   public func cloudMachine(forMachineId id: String) -> CloudMachine? { catalog.cloudMachine(forMachineId: id) }
   public var chatMachines: [CodevisorMachine] { allMachines.filter { !isSandbox($0.id) } }
+  public var chatMachineCount: Int { catalog.chatMachineCount }
 
   public func isSandbox(_ id: String) -> Bool { cloudMachine(forMachineId: id)?.ephemeral != nil }
   public func chatMachine(for id: String) -> CodevisorMachine? { isSandbox(id) ? nil : machine(for: id) }

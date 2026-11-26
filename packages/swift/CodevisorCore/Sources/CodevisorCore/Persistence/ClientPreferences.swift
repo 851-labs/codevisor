@@ -49,6 +49,11 @@ public final class ClientPreferences {
     return try? JSONDecoder().decode(Value.self, from: data)
   }
 
+  public func hasValue(forKey key: String) -> Bool {
+    observe(key)
+    return data(forKey: key) != nil
+  }
+
   public func set<Value: Codable>(_ value: Value, forKey key: String) {
     do {
       let data = try JSONEncoder().encode(value)

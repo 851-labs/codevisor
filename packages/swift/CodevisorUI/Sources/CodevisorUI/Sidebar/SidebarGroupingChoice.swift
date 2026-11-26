@@ -12,7 +12,7 @@ public struct SidebarGroupingChoice {
   }
 
   public var effective: SidebarGrouping {
-    saved ?? Self.automatic(machineCount: machines.chatMachines.count)
+    saved ?? Self.automatic(machineCount: machines.chatMachineCount)
   }
 
   public var selection: Binding<SidebarGrouping> {
@@ -28,6 +28,7 @@ public struct SidebarGroupingChoice {
   }
 
   private var saved: SidebarGrouping? {
-    preferences.valueIfPresent(forKey: SidebarGrouping.preferenceKey)
+    guard preferences.hasValue(forKey: SidebarGrouping.preferenceKey) else { return nil }
+    return preferences.value(forKey: SidebarGrouping.preferenceKey, default: SidebarGrouping.flat)
   }
 }
