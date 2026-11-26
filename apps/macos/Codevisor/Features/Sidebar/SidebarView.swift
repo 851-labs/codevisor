@@ -32,7 +32,7 @@ struct SidebarView: View {
   @State var dragGeometry = SidebarDragGeometryStore()
 
   var list: ProjectListModel { environment.projectList }
-  var groupingChoice: SidebarGroupingChoice { SidebarGroupingChoice(machines: environment.machines) }
+  var groupingChoice: SidebarGroupingChoice { SidebarGroupingChoice(environment: environment) }
   var grouping: SidebarGrouping { groupingChoice.effective }
   var rowDetails: [SidebarRowDetail] { ClientPreferences.shared.sidebarRowDetails }
   var isReordering: Bool { reorder.lifted != nil || tabDrag != nil }

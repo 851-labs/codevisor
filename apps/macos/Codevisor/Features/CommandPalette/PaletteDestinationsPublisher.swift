@@ -16,7 +16,7 @@ struct PaletteDestinationsPublisher: ViewModifier {
     content.focusedSceneValue(\.paletteDestinations, isEnabled && store != nil ? destinations : nil)
   }
 
-  private var grouping: SidebarGrouping { SidebarGroupingChoice(machines: environment.machines).effective }
+  private var grouping: SidebarGrouping { SidebarGroupingChoice(environment: environment).effective }
 
   private var destinations: PaletteDestinations {
     PaletteDestinations(bots: { botItems }, workspaces: { workspaceItems })

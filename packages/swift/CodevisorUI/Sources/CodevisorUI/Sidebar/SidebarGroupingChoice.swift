@@ -3,16 +3,20 @@ import SwiftUI
 
 @MainActor
 public struct SidebarGroupingChoice {
-  private let machines: MachineController
+  private let machineCount: AccountMachineCount
   private let preferences: ClientPreferences
 
-  public init(machines: MachineController, preferences: ClientPreferences = .shared) {
-    self.machines = machines
+  public init(environment: AppEnvironment, preferences: ClientPreferences = .shared) {
+    self.init(machineCount: environment.accountMachineCount, preferences: preferences)
+  }
+
+  init(machineCount: AccountMachineCount, preferences: ClientPreferences) {
+    self.machineCount = machineCount
     self.preferences = preferences
   }
 
   public var effective: SidebarGrouping {
-    saved ?? Self.automatic(machineCount: machines.chatMachineCount)
+    saved ?? Self.automatic(machineCount: machineCount.lastKnown)
   }
 
   public var selection: Binding<SidebarGrouping> {

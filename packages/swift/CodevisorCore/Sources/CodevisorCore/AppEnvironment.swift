@@ -12,6 +12,7 @@ public final class AppEnvironment {
   public let composerDrafts: ComposerDraftStore
   public let settings: AppSettingsModel
   public let machines: MachineController
+  public let accountMachineCount: AccountMachineCount
   public let cloud: CloudAccountController
   public let directMachineAdoption: DirectMachineCloudAdoption
   public let pluginAccess: PluginAccessController
@@ -104,6 +105,7 @@ public final class AppEnvironment {
       localServer: localServer,
       clientFactory: machineClientFactory
     )
+    accountMachineCount = AccountMachineCount(machines: machines, preferences: preferences)
     updateCenter = UpdateCenter(machines: machines, appUpdate: self.appUpdate, now: now)
     configSync = ConfigSync(machines: machines)
     bots = BotListModel(machines: machines, navigationStore: navigationStore, store: navigationPersistence)
@@ -120,6 +122,7 @@ public final class AppEnvironment {
 
   private func configureServices() {
     machines.cloudProvider = cloud
+    accountMachineCount.follow()
     if localServer != nil {
       cloud.localServerClient = machines.client(for: CodevisorMachine.local.id)
     }

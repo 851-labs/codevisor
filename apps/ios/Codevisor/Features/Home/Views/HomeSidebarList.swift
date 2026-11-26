@@ -79,7 +79,7 @@ struct HomeSidebarList: View {
   @State private var pendingSelection: UUID?
 
   private var rowDetails: [SidebarRowDetail] { ClientPreferences.shared.sidebarRowDetails }
-  private var grouping: SidebarGrouping { SidebarGroupingChoice(machines: environment.machines).effective }
+  private var grouping: SidebarGrouping { SidebarGroupingChoice(environment: environment).effective }
 
   private var preferences: HomeSidebarPreferences {
     HomeSidebarPreferences(

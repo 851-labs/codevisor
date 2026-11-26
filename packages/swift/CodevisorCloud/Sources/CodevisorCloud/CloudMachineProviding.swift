@@ -6,6 +6,7 @@ public protocol CloudMachineProviding: AnyObject {
   var isCloudSignedIn: Bool { get }
   var cloudMachines: [CloudMachine] { get }
   var isCloudRosterVerified: Bool { get }
+  var hasCompletedCloudBootstrap: Bool { get }
   func relayServerConfig(for machine: CloudMachine) -> CodevisorServerConfig?
   func relayServerConfig(forDeviceId deviceId: String) -> CodevisorServerConfig?
   func loopbackBaseURL(for machine: CloudMachine) -> URL?
@@ -19,6 +20,7 @@ public protocol CloudMachineProviding: AnyObject {
 }
 
 public extension CloudMachineProviding {
+  var hasCompletedCloudBootstrap: Bool { true }
   func relayServerConfig(forDeviceId deviceId: String) -> CodevisorServerConfig? { nil }
   func loopbackBaseURL(for machine: CloudMachine) -> URL? { nil }
   func loopbackRevision(for machine: CloudMachine) -> UInt64 { 0 }

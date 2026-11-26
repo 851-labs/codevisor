@@ -15,7 +15,7 @@ struct HomeSidebarOptionsMenu: View {
         Divider()
       }
       if showsGrouping {
-        Picker(selection: SidebarGroupingChoice(machines: environment.machines).selection) {
+        Picker(selection: SidebarGroupingChoice(environment: environment).selection) {
           ForEach(SidebarGrouping.allCases, id: \.self) { option in
             Label {
               Text(option.title)

@@ -26,6 +26,7 @@
       ] {
         ClientPreferences.shared.removeValue(forKey: key)
       }
+      ClientPreferences.shared.set(SidebarGrouping.flat, forKey: SidebarGrouping.preferenceKey)
     }
 
     struct Entry {

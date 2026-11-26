@@ -33,8 +33,17 @@ final class MachineCatalog {
       }
   }
 
-  var chatMachineCount: Int {
-    (includesLocalMachine ? 1 : 0) + cloudOnlyMachines.count { $0.ephemeral == nil }
+  var accountMachineCount: Int? {
+    let thisMac = includesLocalMachine ? 1 : 0
+    guard let cloudProvider else { return thisMac }
+    guard cloudProvider.hasCompletedCloudBootstrap else { return nil }
+    guard cloudProvider.isCloudSignedIn else { return thisMac }
+
+    let ownDeviceId = connections.statusById[CodevisorMachine.local.id]?.cloudDeviceId
+    guard !includesLocalMachine || ownDeviceId != nil else { return nil }
+
+    let deviceIds = Set(cloudProvider.cloudMachines.filter { $0.ephemeral == nil }.map(\.deviceId))
+    return thisMac + deviceIds.count { $0 != ownDeviceId }
   }
 
   var cloudOnlyMachines: [CloudMachine] {
