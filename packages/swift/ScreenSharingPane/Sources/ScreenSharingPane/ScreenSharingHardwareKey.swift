@@ -24,7 +24,7 @@ struct ScreenSharingHardwareKey {
   private var spaceFinishedADeadKey: Bool {
     guard usage == Self.spaceUsage, modifiers.isDisjoint(with: Self.chordModifiers) else { return false }
 
-    return !characters.isEmpty && !characters.allSatisfy(\.isWhitespace)
+    return !characters.isEmpty && !characters.unicodeScalars.allSatisfy(\.properties.isWhitespace)
   }
 
   private func typed(onScreen: ScreenSharingModifiers) -> [ScreenSharingInputEvent]? {

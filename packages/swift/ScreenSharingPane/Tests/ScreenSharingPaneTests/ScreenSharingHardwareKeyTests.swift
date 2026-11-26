@@ -173,6 +173,8 @@ struct ScreenSharingHardwareKeyTests {
   func afterADeadKey() {
     let combined = Key(usage: 8, characters: "é", unmodifiedCharacters: "e")
     let accentAlone = Key(usage: 44, characters: "´", unmodifiedCharacters: " ")
+    let combiningAccent = Key(usage: 44, characters: " \u{301}", unmodifiedCharacters: " ")
+    #expect(combiningAccent.events(asCharacters: true) == [.text(" \u{301}")])
     let notCombined = Key(usage: 27, characters: "´x", unmodifiedCharacters: "x")
     #expect(combined.events(asCharacters: true) == [.text("é")])
     #expect(accentAlone.events(asCharacters: true) == [.text("´")])
