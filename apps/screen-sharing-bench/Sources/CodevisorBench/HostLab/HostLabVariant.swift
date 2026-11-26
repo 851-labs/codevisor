@@ -2,21 +2,25 @@ import ScreenSharing
 import ScreenSharingV2
 
 struct HostLabVariant: Equatable, Sendable {
-  private static let keys = ["queue", "cursor", "fps", "refine", "converge", "tiles", "ltr", "vcp", "bgra", "small"]
+  private static let keys = [
+    "queue", "cursor", "fps", "cap", "refine", "converge", "tiles", "ltr", "vcp", "bgra", "small",
+  ]
   private static let queueDepths = 1...8
   private static let rates = 1...120
+  private static let caps = 1...240
   private static let passes = 0...12
   private static let convergedBytes = 0...1_000_000
   private static let tileCounts = [1, ScreenSharingV2Profile.tileCount]
   private static let smallChanges = 0...10_000_000
   static let usage =
-    "queue=<1-8>,cursor=0|1,fps=<1-120>,refine=<0-12>,converge=<bytes>,tiles=1|4,ltr=0|1,vcp=0|1,bgra=0|1, "
-    + "small=<pixels>, or base"
+    "queue=<1-8>,cursor=0|1,fps=<1-120>,cap=<1-240>,refine=<0-12>,converge=<bytes>,tiles=1|4,ltr=0|1,vcp=0|1,"
+    + "bgra=0|1,small=<pixels>, or base"
 
   var name = "base"
   var queueDepth = ScreenSharingCapture.defaultQueueDepth
   var showsCursor = true
   var framesPerSecond = ScreenSharingV2Profile.framesPerSecond
+  var captureCap: Int?
   var refinement: ScreenSharingV2RefinementPolicy?
   var tiles: Int?
   var longTermReferences = true
@@ -61,6 +65,7 @@ struct HostLabVariant: Equatable, Sendable {
       arguments += ["--refine", "\(refinement.passes)", "--converge", "\(refinement.convergedBelowBytes)"]
     }
     if let tiles { arguments += ["--tiles", "\(tiles)"] }
+    if let captureCap { arguments += ["--cap", "\(captureCap)"] }
     return arguments
   }
 
@@ -69,6 +74,7 @@ struct HostLabVariant: Equatable, Sendable {
     case "queue": queueDepth = try Self.check(key, value, Self.queueDepths.contains(value))
     case "cursor": showsCursor = try Self.check(key, value, [0, 1].contains(value)) == 1
     case "fps": framesPerSecond = try Self.check(key, value, Self.rates.contains(value))
+    case "cap": captureCap = try Self.check(key, value, Self.caps.contains(value))
     case "refine":
       var policy = refinement ?? .standard
       policy.passes = try Self.check(key, value, Self.passes.contains(value))

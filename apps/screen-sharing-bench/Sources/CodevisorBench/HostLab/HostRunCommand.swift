@@ -9,7 +9,8 @@ struct HostRunCommand: BenchCommand {
   static let summary = "Run the engine v2 host pipeline on a display into a null transport (one host-lab variant)"
   static let usage =
     "--display-id <id> --output <file.json> [--seconds <n>] [--variant <name>] [--queue n] [--cursor 0|1] "
-    + "[--fps n] [--refine n] [--converge bytes] [--tiles 1|4] [--ltr 0|1] [--vcp 0|1] [--bgra 0|1] [--small pixels]"
+    + "[--fps n] [--cap n] [--refine n] [--converge bytes] [--tiles 1|4] [--ltr 0|1] [--vcp 0|1] [--bgra 0|1] "
+    + "[--small pixels]"
 
   private static let durations = 1...600
 
@@ -47,13 +48,16 @@ struct HostRunCommand: BenchCommand {
     let capture = ScreenSharingCapture(
       pixelFormat: variant.capturesBGRA ? kCVPixelFormatType_32BGRA : encoder.sourcePixelFormat)
     capture.queueDepth = variant.queueDepth
+    capture.frameRateCap = variant.captureCap
     try await capture.setShowsCursor(variant.showsCursor)
     host.start()
     var captureError: String?
     let clock = ContinuousClock()
     var started = clock.now
     do {
-      try await capture.start(displayID: displayID, configuration: configuration, sink: host, metrics: metrics)
+      try await capture.start(
+        displayID: displayID, configuration: configuration, sink: HostLabCadence(forwardingTo: host, metrics: metrics),
+        metrics: metrics)
       started = clock.now
       try await Task.sleep(for: .seconds(seconds))
     } catch {

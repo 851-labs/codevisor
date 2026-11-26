@@ -10,6 +10,7 @@ struct ShareV2Result: Encodable {
   let captureSize: String
   let encoder: String
   let bitrateCeiling = ScreenSharingV2Profile.bitrateCeiling
+  let captureCap: Int?
   let captureError: String?
   let counters: [String: Int]
   let labels: [String: String]
@@ -20,7 +21,7 @@ struct ShareV2Result: Encodable {
 
   init(
     viewer: String, display: ShareDisplay, configuration: ScreenSharingVideoConfiguration,
-    encoder: ScreenSharingV2EncoderKind, captureError: (any Error)?,
+    encoder: ScreenSharingV2EncoderKind, captureCap: Int?, captureError: (any Error)?,
     metrics: ScreenSharingMetrics.Snapshot, media: [String: Double], control: BenchHostControlSummary,
     captures: [V2CaptureLog.Entry]
   ) {
@@ -28,6 +29,7 @@ struct ShareV2Result: Encodable {
     self.display = display
     captureSize = "\(configuration.width)x\(configuration.height)"
     self.encoder = encoder.rawValue
+    self.captureCap = captureCap
     self.captureError = captureError.map { "\($0)" }
     counters = metrics.counters
     labels = metrics.labels

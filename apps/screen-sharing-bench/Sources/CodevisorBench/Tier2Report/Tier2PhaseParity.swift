@@ -30,7 +30,7 @@ struct Tier2PhaseParity {
   static let network = "N0"
   static let p50MarginMs = Tier2InputTable.m3MarginMs
   static let p95MarginMs = 17.0
-  static let systems: [BenchSystem] = [.codevisorV2, .codevisorV2VCP]
+  static let systems: [BenchSystem] = BenchSystem.engineV2Systems
 
   let phaseMs: Double?
   let runPhasesMs: [Double]

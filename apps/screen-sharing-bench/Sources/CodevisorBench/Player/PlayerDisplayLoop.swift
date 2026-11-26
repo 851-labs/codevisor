@@ -5,8 +5,8 @@ import ScreenSharingBenchScenes
 
 @MainActor
 final class PlayerDisplayLoop: NSObject, CAMetalDisplayLinkDelegate {
-  private static let ticksPerSecond = Double(BenchSceneTimeline.ticksPerSecond)
-  private static let frameRate = CAFrameRateRange(minimum: 60, maximum: 60, preferred: 60)
+  private let ticksPerSecond: Double
+  private let frameRate: CAFrameRateRange
 
   private let renderer: BenchSceneRenderer
   private let queue: any MTLCommandQueue
@@ -20,7 +20,8 @@ final class PlayerDisplayLoop: NSObject, CAMetalDisplayLinkDelegate {
   private var failure: (any Error)?
 
   init(
-    renderer: BenchSceneRenderer, device: any MTLDevice, versions: PlayerVersionSource, hashes: PlayerHashRecorder?
+    renderer: BenchSceneRenderer, device: any MTLDevice, versions: PlayerVersionSource, hashes: PlayerHashRecorder?,
+    refresh: Int = BenchSceneTimeline.ticksPerSecond
   ) throws {
     guard let queue = device.makeCommandQueue() else { throw BenchSceneError.metalUnavailable }
 
@@ -28,11 +29,13 @@ final class PlayerDisplayLoop: NSObject, CAMetalDisplayLinkDelegate {
     self.queue = queue
     self.versions = versions
     self.hashes = hashes
+    ticksPerSecond = Double(refresh)
+    frameRate = CAFrameRateRange(minimum: Float(refresh), maximum: Float(refresh), preferred: Float(refresh))
   }
 
   func start(layer: CAMetalLayer) {
     let link = CAMetalDisplayLink(metalLayer: layer)
-    link.preferredFrameRateRange = Self.frameRate
+    link.preferredFrameRateRange = frameRate
     link.delegate = self
     cpu = ProcessUsageMeter()
     link.add(to: .main, forMode: .common)
@@ -81,7 +84,7 @@ final class PlayerDisplayLoop: NSObject, CAMetalDisplayLinkDelegate {
   private func tick(at target: CFTimeInterval) -> Int {
     let first = firstTarget ?? target
     firstTarget = first
-    return Int(((target - first) * Self.ticksPerSecond).rounded())
+    return Int(((target - first) * ticksPerSecond).rounded())
   }
 
   private func present(_ version: Int, on drawable: any CAMetalDrawable) throws {

@@ -8,7 +8,8 @@ struct HostLabCommand: BenchCommand {
   static let summary =
     "Measure the engine v2 host's CPU per variant on one Mac: a scene on a virtual display, captured and encoded"
   static let usage =
-    "[--scenes <scene,…>] [--variants <variant/…>] [--seconds <n>] [--settle <n>] \(VirtualDisplayOption.usage) "
+    "[--scenes <scene,…>] [--variants <variant/…>] [--seconds <n>] [--settle <n>] [--refresh 60|120] "
+    + "\(VirtualDisplayOption.usage) "
     + "[--output <file.json>] [--markdown <file.md>]; a variant is \(HostLabVariant.usage)"
 
   nonisolated static let groups = [
@@ -26,6 +27,7 @@ struct HostLabCommand: BenchCommand {
   private let seconds: Int
   private let settle: Int
   private let resolution: BenchSceneResolution
+  private let refresh: Int
   private let output: String?
   private let markdown: String?
 
@@ -43,18 +45,22 @@ struct HostLabCommand: BenchCommand {
     seconds = try options.integer("seconds", default: 30, in: Self.durations)
     settle = try options.integer("settle", default: 5, in: Self.settles)
     resolution = try VirtualDisplayOption.read(from: options) ?? .r1HiDPI
+    refresh = try options.integer("refresh", default: 60, in: 60...120)
     output = try options.string("output")
     markdown = try options.string("markdown")
   }
 
   func run() async throws {
+    PlayerVirtualDisplay.refreshRate = Double(refresh)
     let display = try await SharedDisplay.make(resolution)
     defer { withExtendedLifetime(display) {} }
     var results: [HostLabResult] = []
     for scene in scenes {
       results += try await measure(scene, on: display.id)
     }
-    let report = HostLabReport(resolution: resolution.rawValue, seconds: seconds, results: results)
+    let report = HostLabReport(
+      resolution: resolution.rawValue, displayRefreshHz: CGDisplayCopyDisplayMode(display.id)?.refreshRate,
+      seconds: seconds, results: results)
     if let output { try BenchOutput.writeLines([report], to: output) }
     if let markdown { try report.markdown.write(toFile: markdown, atomically: true, encoding: .utf8) }
     BenchConsole.error(report.markdown)
@@ -65,7 +71,7 @@ struct HostLabCommand: BenchCommand {
     let perVariant = seconds + settle + Self.childSlackSeconds + Self.variantStartupSeconds
     let player = try HostLabChild.launch([
       "player", "--scene", scene.rawValue, "--display-id", "\(displayID)", "--duration",
-      "\(Self.playerLeadSeconds + perVariant * variants.count + 5)",
+      "\(Self.playerLeadSeconds + perVariant * variants.count + 5)", "--refresh", "\(refresh)",
     ])
     defer { player.stop() }
     try await Task.sleep(for: .seconds(Self.playerLeadSeconds))

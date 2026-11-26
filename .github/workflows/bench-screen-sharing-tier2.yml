@@ -39,7 +39,7 @@ on:
         default: arrival
         type: string
       systems:
-        description: Comma-separated systems to run besides the floor (apple-hp, codevisor-v2, codevisor-v2-vcp)
+        description: Comma-separated systems to run besides the floor (apple-hp, codevisor-v2, codevisor-v2-vcp, and the lab systems codevisor-v2-cap, codevisor-v2-vcp-cap)
         required: false
         default: apple-hp,codevisor-v2-vcp
         type: string
@@ -62,6 +62,11 @@ on:
         description: Space presses and clicks of each kind per input-scene run, 1 to 400 (they must fit the run's duration)
         required: false
         default: "200"
+        type: string
+      capture-cap:
+        description: LAB (851-4475), the frame-rate cap the host gives ScreenCaptureKit in the codevisor-v2-cap and codevisor-v2-vcp-cap systems, 1 to 240
+        required: false
+        default: "120"
         type: string
   workflow_call:
     inputs:
@@ -101,7 +106,7 @@ on:
         default: arrival
         type: string
       systems:
-        description: Comma-separated systems to run besides the floor (apple-hp, codevisor-v2, codevisor-v2-vcp)
+        description: Comma-separated systems to run besides the floor (apple-hp, codevisor-v2, codevisor-v2-vcp, and the lab systems codevisor-v2-cap, codevisor-v2-vcp-cap)
         required: false
         default: apple-hp,codevisor-v2-vcp
         type: string
@@ -124,6 +129,11 @@ on:
         description: Space presses and clicks of each kind per input-scene run, 1 to 400 (they must fit the run's duration)
         required: false
         default: "200"
+        type: string
+      capture-cap:
+        description: LAB (851-4475), the frame-rate cap the host gives ScreenCaptureKit in the codevisor-v2-cap and codevisor-v2-vcp-cap systems, 1 to 240
+        required: false
+        default: "120"
         type: string
       label:
         description: Names this dispatch's artifacts (tier2-<label>-*) when one workflow run calls Tier 2 more than once
@@ -159,6 +169,7 @@ env:
   TIER2_PROFILE: ${{ inputs.profile && '1' || '0' }}
   TIER2_VCP_FAIL_AFTER: ${{ inputs.vcp-fail-after }}
   TIER2_INPUT_EVENTS: ${{ inputs.input-events || '200' }}
+  TIER2_CAPTURE_CAP: ${{ inputs.capture-cap || '120' }}
   TIER2_ARTIFACTS: tier2${{ inputs.label && format('-{0}', inputs.label) || '' }}
   TIER2_RENDEZVOUS_S: 1800
 
