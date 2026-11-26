@@ -1,4 +1,4 @@
-import { join } from "node:path"
+import { dirname, join } from "node:path"
 
 import type { DesktopSystem } from "./desktop-system.js"
 
@@ -14,11 +14,21 @@ export const DESKTOP_SIZE = "1440x900"
 const firstDisplay = 1
 const lastDisplay = 99
 
+const ownRuntimeFolder = (system: DesktopSystem): string => join(system.home, ".codevisor", "run")
+
 export const runtimeFolder = (system: DesktopSystem): string => {
   const runtime = system.env["XDG_RUNTIME_DIR"]
   if (runtime !== undefined && runtime !== "" && system.exists(runtime)) return runtime
 
-  return join(system.home, ".codevisor", "run")
+  return ownRuntimeFolder(system)
+}
+
+export const keepOwnFoldersPrivate = (system: DesktopSystem, layout: DesktopLayout): void => {
+  const folder = dirname(layout.socket)
+  if (folder !== ownRuntimeFolder(system)) return
+
+  system.makePrivateFolder(folder)
+  system.closeToOtherAccounts(dirname(folder))
 }
 
 export const desktopLayout = (system: DesktopSystem, display: number): DesktopLayout => {

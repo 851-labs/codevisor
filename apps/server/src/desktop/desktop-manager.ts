@@ -11,20 +11,16 @@ import {
 import { HttpFailure } from "../server-context.js"
 import {
   DESKTOP_SIZE,
-  desktopLayout,
+  DESKTOP_UNIT,
   type DesktopLayout,
+  desktopLayout,
   displayIsOursOrFree,
   freeDisplay,
+  keepOwnFoldersPrivate,
   ownXServerOn,
   readyMarkOf
 } from "./desktop-layout.js"
-import {
-  installCommands,
-  missingPrograms,
-  osRelease,
-  runAsRoot,
-  sudoKind
-} from "./desktop-packages.js"
+import { installPlan, missingPrograms, osRelease, runAsRoot, sudoKind } from "./desktop-packages.js"
 import {
   type DesktopService,
   desktopServices,
@@ -78,6 +74,12 @@ const orphanPollMs = 100
 const orphanPolls = 50
 const unmanaged =
   "A desktop that Codevisor didn't set up is shared from this machine. Replacing it has to be asked for."
+
+const notStartedBeside = (found: Shared): string =>
+  `The desktop is set up but not shared: ${found.problem ?? "no reason found"}. It can't be started again while another Codevisor server on this account owns the desktop unit (${DESKTOP_UNIT}). Remove this desktop with \`codevisor desktop remove\`.`
+
+const keeperOf = (runs: DesktopService, other: DesktopService): DesktopService =>
+  runs.belongsToAnother() && other.isSetUp() ? other : runs
 
 export const makeDesktopManager = (options: DesktopManagerOptions): DesktopManager => {
   const { system, dataDir, changed } = options
@@ -146,10 +148,11 @@ export const makeDesktopManager = (options: DesktopManagerOptions): DesktopManag
     return sessionIsUp(setup.config.socket) ? undefined : "the desktop's session isn't up"
   }
 
-  const sharedBy = (runs: DesktopService): Shared => {
+  const sharedBy = (runs: DesktopService, other: DesktopService): Shared => {
     const live = shared()
     const hasADesktop = live.state === "running" || live.state === "stopped"
-    if (hasADesktop && recordedService() !== undefined && runs.belongsToAnother())
+    const isAnothers = runs.belongsToAnother() && !other.isSetUp()
+    if (hasADesktop && recordedService() !== undefined && isAnothers)
       return { ...live, state: "stopped", problem: anotherServers }
 
     const problem = live.state === "running" ? whyOursIsDown(runs) : undefined
@@ -166,29 +169,31 @@ export const makeDesktopManager = (options: DesktopManagerOptions): DesktopManag
   const status = async (): Promise<DesktopStatus> => {
     const release = osRelease(system)
     const { current: runs, other } = await services()
-    const install = await installCommands(system, release)
+    const install = await installPlan(system, release)
     const old = await oldDesktop(system)
-    const startsAtBoot = await runs.startsAtBoot()
-    const needsLinger = runs.kind === "systemd-user" && !startsAtBoot
+    const keeper = keeperOf(runs, other)
+    const startsAtBoot = await keeper.startsAtBoot()
+    const needsLinger = keeper.kind === "systemd-user" && !startsAtBoot
     const missing = await missingPrograms(system)
     if (missing.length === 0) failure = undefined
     const sudo = await sudoForARootStep(missing.length > 0 || old !== undefined)
-    const live = sharedBy(runs)
+    const live = sharedBy(runs, other)
     return {
       ...live,
       unmanaged: someoneElsesConfig(runs, other),
-      keepsRunning: live.state === "running" && runs.isSetUp(),
+      keepsRunning: live.state === "running" && keeper.isSetUp(),
+      ...(keeper === runs ? {} : { unitOwnedByAnother: true }),
       ...(busy === undefined ? {} : { busy }),
       ...(failure === undefined ? {} : { failure }),
       account: system.account,
       system: release.name,
       missing,
-      ...(install === undefined ? {} : { packageManager: "apt" }),
+      ...(install === undefined ? {} : { packageManager: install.manager }),
       ...(sudo === undefined ? {} : { sudo }),
       ...(old === undefined ? {} : { oldDesktop: { units: old.units } }),
       startsAtBoot,
       ...(needsLinger ? { startAtBootHint: `sudo loginctl enable-linger ${system.account}` } : {}),
-      logHint: runs.logHint
+      logHint: keeper.logHint
     }
   }
 
@@ -216,8 +221,8 @@ export const makeDesktopManager = (options: DesktopManagerOptions): DesktopManag
   }
 
   const installPackages = async (): Promise<DesktopStatus> => {
-    const commands = await installCommands(system, osRelease(system))
-    if (commands === undefined)
+    const plan = await installPlan(system, osRelease(system))
+    if (plan === undefined)
       throw new HttpFailure(501, "Codevisor doesn't know how to install packages on this system")
 
     if (busy !== undefined) return status()
@@ -229,7 +234,7 @@ export const makeDesktopManager = (options: DesktopManagerOptions): DesktopManag
       busy = undefined
       throw cause
     }
-    installInTheBackground(commands)
+    installInTheBackground(plan.commands)
     return status()
   }
 
@@ -329,6 +334,7 @@ export const makeDesktopManager = (options: DesktopManagerOptions): DesktopManag
   ): Promise<DesktopLayout> => {
     await stopAnOrphanedXServer(runs, other)
     const layout = layoutToUse()
+    keepOwnFoldersPrivate(system, layout)
     await other.stop()
     writeConfig(layout, runs)
     await runs.start()
@@ -344,11 +350,13 @@ export const makeDesktopManager = (options: DesktopManagerOptions): DesktopManag
       )
 
     const { current: runs, other } = await services()
-    if (runs.belongsToAnother()) throw new HttpFailure(409, anotherServers)
-    if (sharedBy(runs).state === "running" && runs.isSetUp()) {
+    const found = sharedBy(runs, other)
+    if (found.state === "running" && keeperOf(runs, other).isSetUp()) {
       await runs.refresh()
       return status()
     }
+    if (runs.belongsToAnother())
+      throw new HttpFailure(409, other.isSetUp() ? notStartedBeside(found) : anotherServers)
     if (someoneElsesConfig(runs, other) && asked.replaceUnmanaged !== true)
       throw new HttpFailure(409, unmanaged)
 

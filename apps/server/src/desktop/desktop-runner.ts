@@ -5,6 +5,7 @@ import { readDesktopSetup } from "../routes/screen-sharing-vnc.js"
 import type { ScreenSharingVNCConfig } from "../server-context-types.js"
 import { DESKTOP_SIZE, readyMarkOf, x11SocketOf } from "./desktop-layout.js"
 import { holdsUnixSocket, tcpPortsListenedOnBy } from "./listening-ports.js"
+import { removeSessionConfig, sessionConfigFolders } from "./session-autostart.js"
 import { SupervisedProcesses } from "./supervised-processes.js"
 import { xauthorityEntry } from "./xauthority.js"
 
@@ -131,11 +132,13 @@ class DesktopRun {
   }
 
   private sessionEnvironment(): Record<string, string> {
+    const runtimeFolder = dirname(this.desktop.socket)
     return {
       DISPLAY: `:${this.desktop.display}`,
       XAUTHORITY: this.desktop.xauthority,
       XDG_SESSION_TYPE: "x11",
-      XDG_RUNTIME_DIR: process.env["XDG_RUNTIME_DIR"] ?? dirname(this.desktop.socket)
+      XDG_RUNTIME_DIR: process.env["XDG_RUNTIME_DIR"] ?? runtimeFolder,
+      XDG_CONFIG_DIRS: sessionConfigFolders(runtimeFolder, process.env["XDG_CONFIG_DIRS"])
     }
   }
 
@@ -176,6 +179,7 @@ class DesktopRun {
       rmSync(this.desktop.socket, { force: true })
       rmSync(this.desktop.xauthority, { force: true })
       rmSync(readyMarkOf(this.desktop.socket), { force: true })
+      removeSessionConfig(dirname(this.desktop.socket))
       this.ended?.(code)
     })
   }

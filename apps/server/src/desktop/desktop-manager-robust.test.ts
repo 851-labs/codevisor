@@ -1,16 +1,19 @@
 import { describe, expect, it } from "vitest"
 
 import {
+  AS_ROOT,
   CONFIG,
   DATA_DIR,
   fakeMachine,
   type FakeMachineOptions,
+  LOGS_DIR,
   UBUNTU,
   UNIT
 } from "./desktop-test-support.js"
 
 const withoutSystemd = { files: UBUNTU, failing: ["systemctl --user show-environment"] }
 const pidFile = `${DATA_DIR}/desktop.pid`
+const linger = "loginctl show-user codevisor --property=Linger --value"
 const oldUnit = {
   "/etc/systemd/system/vncserver@.service": "[Unit]\nDescription=Codevisor desktop, TigerVNC\n"
 }
@@ -49,10 +52,10 @@ describe("an older root desktop", () => {
     expect(
       machine.commands.filter((line) => line.startsWith("sudo -n ") && line !== "sudo -n true")
     ).toEqual([
-      "sudo -n systemctl disable --now vncserver@1.service",
-      "sudo -n systemctl disable --now vncserver@2.service",
-      "sudo -n rm -f /etc/systemd/system/vncserver@.service",
-      "sudo -n systemctl daemon-reload"
+      `${AS_ROOT} systemctl disable --now vncserver@1.service`,
+      `${AS_ROOT} systemctl disable --now vncserver@2.service`,
+      `${AS_ROOT} rm -f /etc/systemd/system/vncserver@.service`,
+      `${AS_ROOT} systemctl daemon-reload`
     ])
   })
 
@@ -168,6 +171,23 @@ describe("a server that can't see its account's systemd by itself", () => {
     expect(JSON.parse(machine.files.get(CONFIG) ?? "")).toMatchObject({ service: "systemd-user" })
   })
 
+  it("closes its own folders above the socket to other accounts, so an account whose umask leaves them group-writable still gets a desktop", async () => {
+    const machine = fakeMachine(asASystemService)
+    await machine.manager.start()
+    expect(JSON.parse(machine.files.get(CONFIG) ?? "")).toMatchObject({
+      vnc: { socket: "/home/codevisor/.codevisor/run/codevisor-desktop.sock" }
+    })
+    expect(machine.madePrivate).toEqual(["/home/codevisor/.codevisor/run"])
+    expect(machine.closedToOthers).toEqual(["/home/codevisor/.codevisor"])
+  })
+
+  it("leaves the folders alone when the socket is in the runtime folder systemd made", async () => {
+    const machine = fakeMachine({ files: UBUNTU })
+    await machine.manager.start()
+    expect(machine.madePrivate).toEqual([])
+    expect(machine.closedToOthers).toEqual([])
+  })
+
   it("runs the desktop as a process only when the account has no systemd to reach", async () => {
     const machine = fakeMachine({ ...asASystemService, existing: [] })
     await machine.manager.start()
@@ -208,6 +228,71 @@ describe("a desktop set up as a process, on a server that now has systemd", () =
       state: "stopped",
       problem: expect.stringContaining("Another Codevisor server on this account")
     })
+  })
+
+  it("is reported as running while it is alive and shared, even when another server owns the desktop unit", async () => {
+    const owner = fakeMachine({ files: UBUNTU })
+    await owner.manager.start()
+    const theirUnit = (owner.files.get(UNIT) ?? "").replaceAll(DATA_DIR, "/home/codevisor/a/data")
+    const machine = fakeMachine({
+      files: {
+        ...UBUNTU,
+        [CONFIG]: await setUpAsAProcess(),
+        [UNIT]: theirUnit,
+        [pidFile]: "777\n",
+        "/proc/777/cmdline": "node\0cli.js\0desktop\0run\0--data-dir\0x"
+      },
+      alive: [777],
+      results: { [linger]: { code: 0, output: "yes\n" } }
+    })
+
+    const status = await machine.manager.status()
+    expect(status).toMatchObject({
+      state: "running",
+      keepsRunning: true,
+      unitOwnedByAnother: true,
+      startsAtBoot: false,
+      logHint: `${LOGS_DIR}/desktop.log`
+    })
+    expect(status).not.toHaveProperty("problem")
+    expect(status).not.toHaveProperty("startAtBootHint")
+    expect(await machine.manager.start()).toMatchObject({ state: "running" })
+    expect(machine.files.get(UNIT)).toBe(theirUnit)
+    expect(machine.terminated).toEqual([])
+    expect(machine.spawned).toEqual([])
+    expect(userSystemctl(machine.commands)).toEqual([])
+  })
+
+  it("keeps its own reason when it is alive but not shared, and setup doesn't restart it over the other server's desktop", async () => {
+    const owner = fakeMachine({ files: UBUNTU })
+    await owner.manager.start()
+    const theirUnit = (owner.files.get(UNIT) ?? "").replaceAll(DATA_DIR, "/home/codevisor/a/data")
+    const machine = fakeMachine({
+      files: {
+        ...UBUNTU,
+        [CONFIG]: await setUpAsAProcess(),
+        [UNIT]: theirUnit,
+        [pidFile]: "777\n",
+        "/proc/777/cmdline": "node\0cli.js\0desktop\0run\0--data-dir\0x"
+      },
+      alive: [777],
+      socketAppearsAfterPolls: Number.POSITIVE_INFINITY
+    })
+    const ownReason = "nothing at /run/user/1001/codevisor-desktop.sock"
+
+    expect(await machine.manager.status()).toMatchObject({
+      state: "stopped",
+      problem: ownReason,
+      unitOwnedByAnother: true
+    })
+    await expect(machine.manager.start()).rejects.toMatchObject({
+      status: 409,
+      message: `The desktop is set up but not shared: ${ownReason}. It can't be started again while another Codevisor server on this account owns the desktop unit (codevisor-desktop.service). Remove this desktop with \`codevisor desktop remove\`.`
+    })
+    expect(machine.terminated).toEqual([])
+    expect(machine.spawned).toEqual([])
+    expect(machine.files.get(UNIT)).toBe(theirUnit)
+    expect(userSystemctl(machine.commands)).toEqual([])
   })
 
   it("has the X server its killed runner left behind stopped first, so the unit can take the display", async () => {

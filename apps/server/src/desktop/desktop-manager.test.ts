@@ -2,11 +2,13 @@ import { describe, expect, it } from "vitest"
 
 import {
   APT_UPDATE_LOOP,
+  AS_ROOT,
   CHANGED,
   CONFIG,
   DATA_DIR,
   fakeMachine,
   settled,
+  TIME_LIMIT,
   UBUNTU,
   UNIT
 } from "./desktop-test-support.js"
@@ -35,14 +37,6 @@ describe("what a Linux machine needs before it has a desktop", () => {
       packageManager: "apt",
       sudo: "passwordless"
     })
-  })
-
-  it("names no package manager on a system whose package manager it doesn't know", async () => {
-    const fedora = { "/etc/os-release": 'PRETTY_NAME="Fedora Linux 45"\nID=fedora\n' }
-    const status = await fakeMachine({ programs: ["sudo"], files: fedora }).manager.status()
-    expect(status.system).toBe("Fedora Linux 45")
-    expect(status.missing).toHaveLength(6)
-    expect(status).not.toHaveProperty("packageManager")
   })
 
   it.each([
@@ -94,15 +88,15 @@ describe("installing the desktop's packages", () => {
     const machine = fakeMachine({ programs: bare, files: UBUNTU })
     await machine.manager.installPackages()
     expect(await settled(machine.manager)).not.toHaveProperty("failure")
-    expect(machine.commands).toContain(`sudo -n ${aptUpdate}`)
-    expect(machine.commands).toContain(`sudo -n ${aptInstall}`)
+    expect(machine.commands).toContain(`${AS_ROOT} ${aptUpdate}`)
+    expect(machine.commands).toContain(`${AS_ROOT} ${aptInstall}`)
   })
 
   it("runs apt directly when the server is root", async () => {
     const machine = fakeMachine({ programs: ["apt-get"], files: UBUNTU, uid: 0 })
     await machine.manager.installPackages()
     await settled(machine.manager)
-    expect(machine.commands).toContain(aptInstall)
+    expect(machine.commands).toContain(`${TIME_LIMIT} ${aptInstall}`)
     expect(machine.commands.filter((line) => line.startsWith("sudo"))).toEqual([])
   })
 
@@ -120,7 +114,7 @@ describe("installing the desktop's packages", () => {
       programs: bare,
       files: UBUNTU,
       results: {
-        [`sudo -n ${aptInstall}`]: {
+        [`${AS_ROOT} ${aptInstall}`]: {
           code: 100,
           output: "Reading lists\nE: Unable to locate package xfce4\n"
         }
@@ -134,7 +128,7 @@ describe("installing the desktop's packages", () => {
 
   it("stops reporting a failed install once the programs are there or something else was done since", async () => {
     const failing = {
-      [`sudo -n ${aptInstall}`]: { code: 100, output: "E: Unable to locate package xfce4\n" }
+      [`${AS_ROOT} ${aptInstall}`]: { code: 100, output: "E: Unable to locate package xfce4\n" }
     }
     const fixedByHand = fakeMachine({ files: UBUNTU, results: failing })
     await fixedByHand.manager.installPackages()
@@ -150,7 +144,7 @@ describe("installing the desktop's packages", () => {
     const apt = Promise.withResolvers<void>()
     const machine = fakeMachine({
       files: UBUNTU,
-      holds: { prefix: `sudo -n ${aptInstall}`, until: apt.promise }
+      holds: { prefix: `${AS_ROOT} ${aptInstall}`, until: apt.promise }
     })
     expect(await machine.manager.installPackages()).toMatchObject({ busy: "Installing packages" })
     expect(await machine.manager.installPackages()).toMatchObject({ busy: "Installing packages" })
@@ -164,7 +158,7 @@ describe("installing the desktop's packages", () => {
 
     apt.resolve()
     expect(await settled(machine.manager)).not.toHaveProperty("busy")
-    expect(machine.commands.filter((line) => line === `sudo -n ${aptInstall}`)).toHaveLength(1)
+    expect(machine.commands.filter((line) => line === `${AS_ROOT} ${aptInstall}`)).toHaveLength(1)
     expect(await machine.manager.start()).toMatchObject({ state: "running" })
   })
 })
@@ -189,9 +183,9 @@ describe("an older desktop that runs as root", () => {
     expect(
       machine.commands.filter((line) => line.startsWith("sudo -n ") && line !== "sudo -n true")
     ).toEqual([
-      "sudo -n systemctl disable --now vncserver@1.service",
-      "sudo -n rm -f /etc/systemd/system/vncserver@.service",
-      "sudo -n systemctl daemon-reload"
+      `${AS_ROOT} systemctl disable --now vncserver@1.service`,
+      `${AS_ROOT} rm -f /etc/systemd/system/vncserver@.service`,
+      `${AS_ROOT} systemctl daemon-reload`
     ])
   })
 })

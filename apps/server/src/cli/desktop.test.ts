@@ -28,7 +28,7 @@ describe("codevisor desktop setup", () => {
     expect(machine.logs).toEqual([
       "==> Checking this machine",
       "    Ubuntu 24.04.5 LTS, no desktop set up",
-      "==> Installing Xfce and TigerVNC (about 640 MB)",
+      "==> Installing Xfce and TigerVNC with apt (about 640 MB)",
       "==> Starting the desktop as codevisor",
       "==> The desktop is ready. Open it from this machine in Codevisor."
     ])
@@ -129,22 +129,6 @@ describe("codevisor desktop setup", () => {
       "then run `codevisor desktop setup` again."
     ])
     expect(machine.interactiveCalls).toEqual([])
-    expect(machine.httpCalls(`POST ${url("/start")}`)).toBe(0)
-  })
-
-  it("names what to install on a system whose package manager it doesn't know", async () => {
-    const fedora = { "/etc/os-release": 'PRETTY_NAME="Fedora Linux 45"\nID=fedora\n' }
-    const machine = world(
-      { [`GET ${url()}`]: answers(status({ missing })) },
-      { machine: { files: fedora, programs: ["sudo"] } }
-    )
-    expect(await desktopSetupCommand(machine.deps)).toBe(1)
-    expect(machine.logs).toContain("    Fedora Linux 45, no desktop set up")
-    expect(machine.errors).toEqual([
-      "Codevisor doesn't know how to install packages on this system.",
-      "Install these, then run setup again: Xvnc, startxfce4",
-      "(TigerVNC 1.12 or newer for Xvnc, Xfce, xclip, dbus and python3.)"
-    ])
     expect(machine.httpCalls(`POST ${url("/start")}`)).toBe(0)
   })
 
@@ -350,6 +334,21 @@ describe("codevisor desktop status", () => {
         "The desktop is running as codevisor on display :1.",
         "It starts at boot.",
         "Log: journalctl --user -u codevisor-desktop"
+      ]
+    },
+    {
+      given: status({
+        state: "running",
+        display: 1,
+        keepsRunning: true,
+        unitOwnedByAnother: true,
+        startsAtBoot: false,
+        logHint: "/home/codevisor/.codevisor/logs/desktop.log"
+      }),
+      lines: [
+        "The desktop is running as codevisor on display :1.",
+        "It won't come back by itself once it stops: another Codevisor server on this account owns the desktop unit (codevisor-desktop.service).",
+        "Log: /home/codevisor/.codevisor/logs/desktop.log"
       ]
     },
     {

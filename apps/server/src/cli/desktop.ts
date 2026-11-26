@@ -3,8 +3,11 @@ import { Schema } from "effect"
 
 import {
   DESKTOP_PROGRAMS,
-  installCommands,
+  type InstallPlan,
+  installPlan,
+  type OsRelease,
   osRelease,
+  packageManagerFor,
   shellText
 } from "../desktop/desktop-packages.js"
 import type { DesktopSystem } from "../desktop/desktop-system.js"
@@ -50,11 +53,18 @@ export const desktopSetupCommand = async (
   const found = await server.ask("GET", "", quickMs)
   if (found === undefined) return 1
 
-  deps.log(`    ${osRelease(deps.system).name}, ${describeState(found)}`)
+  const release = osRelease(deps.system)
+  deps.log(`    ${release.name}, ${describeState(found)}`)
+  const plan = await installPlan(deps.system, release)
+  if (found.missing.length > 0 && plan === undefined) {
+    deps.error(installThemYourself(release, found.missing))
+    return 1
+  }
+
   const cleared = await replaceOldDesktop(deps, server, found, options)
   if (cleared === undefined) return 1
 
-  const equipped = await installWhatIsMissing(deps, server, cleared)
+  const equipped = await installWhatIsMissing(deps, server, cleared, plan)
   if (equipped === undefined) return 1
 
   return startTheDesktop(deps, server, equipped, options)
@@ -212,6 +222,8 @@ const stateLines = (status: DesktopStatus): ReadonlyArray<string> => {
 }
 
 const bootLine = (status: DesktopStatus): string => {
+  if (status.unitOwnedByAnother === true)
+    return "It won't come back by itself once it stops: another Codevisor server on this account owns the desktop unit (codevisor-desktop.service)."
   if (status.startsAtBoot) return "It starts at boot."
   if (status.startAtBootHint !== undefined)
     return `It starts at boot once this account lingers: ${lingerCommand(status)}`
@@ -261,23 +273,20 @@ const replaceOldDesktop = async (
 const installWhatIsMissing = async (
   deps: DesktopCliDeps,
   server: DesktopServer,
-  status: DesktopStatus
+  status: DesktopStatus,
+  plan: InstallPlan | undefined
 ): Promise<DesktopStatus | undefined> => {
   if (status.missing.length === 0) return status
-
-  const commands = await installCommands(deps.system, osRelease(deps.system))
-  if (commands === undefined) {
-    deps.error("Codevisor doesn't know how to install packages on this system.")
-    deps.error(`Install these, then run setup again: ${status.missing.join(", ")}`)
-    deps.error("(TigerVNC 1.12 or newer for Xvnc, Xfce, xclip, dbus and python3.)")
+  if (plan === undefined) {
+    deps.error(installThemYourself(osRelease(deps.system), status.missing))
     return undefined
   }
 
-  deps.log("==> Installing Xfce and TigerVNC (about 640 MB)")
+  deps.log(`==> Installing Xfce and TigerVNC with ${plan.manager} (about ${plan.megabytes} MB)`)
   const equipped = await asAdministrator(deps, server, status, {
     what: "Installing packages",
     path: "/packages",
-    commands
+    commands: plan.commands
   })
   if (equipped === undefined || equipped.missing.length === 0) return equipped
 
@@ -308,6 +317,27 @@ const startTheDesktop = async (
     deps.log(`    It starts at boot once this account lingers: ${lingerCommand(started)}`)
   return 0
 }
+
+const comesWith: Record<string, string> = {
+  Xvnc: "Xvnc (TigerVNC 1.12 or newer)",
+  startxfce4: "startxfce4 (Xfce)",
+  "xfconf-query": "xfconf-query (Xfce)",
+  "dbus-run-session": "dbus-run-session (dbus)"
+}
+
+const whyNotHere = (release: OsRelease): string => {
+  const manager = packageManagerFor(release)
+  if (manager === undefined)
+    return "it only installs with apt on Debian and Ubuntu, dnf on Fedora, pacman on Arch and zypper on openSUSE"
+
+  return `it would use ${manager}, which is missing here or can't change this system's files`
+}
+
+const installThemYourself = (release: OsRelease, missing: ReadonlyArray<string>): string =>
+  [
+    `Codevisor can't install what the desktop needs on ${release.name}: ${whyNotHere(release)}.`,
+    `Install these yourself, then run \`codevisor desktop setup\` again: ${missing.map((program) => comesWith[program] ?? program).join(", ")}.`
+  ].join("\n")
 
 const isSomeoneElses = (status: DesktopStatus): boolean => status.unmanaged === true
 

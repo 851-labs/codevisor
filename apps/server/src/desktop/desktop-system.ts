@@ -8,6 +8,7 @@ import {
   readdirSync,
   readFileSync,
   rmSync,
+  statSync,
   writeFileSync
 } from "node:fs"
 import { homedir, userInfo } from "node:os"
@@ -38,6 +39,7 @@ export interface DesktopSystem {
   readonly exists: (path: string) => boolean
   readonly listFolder: (path: string) => ReadonlyArray<string>
   readonly makePrivateFolder: (path: string) => void
+  readonly closeToOtherAccounts: (path: string) => void
   readonly sleep: (ms: number) => Promise<void>
 }
 
@@ -45,6 +47,8 @@ const commandNotFound = 127
 const defaultTimeoutMs = 20_000
 const outputLimitBytes = 8 * 1024 * 1024
 const ownerOnly = 0o700
+const permissionBits = 0o7777
+const othersMayWrite = 0o022
 
 export const systemDesktopSystem = (): DesktopSystem => ({
   platform: process.platform,
@@ -102,8 +106,22 @@ export const systemDesktopSystem = (): DesktopSystem => ({
     }
   },
   makePrivateFolder: (path) => {
-    mkdirSync(path, { recursive: true, mode: ownerOnly })
-    chmodSync(path, ownerOnly)
+    try {
+      mkdirSync(path, { recursive: true, mode: ownerOnly })
+      chmodSync(path, ownerOnly)
+    } catch {
+      return
+    }
+  },
+  closeToOtherAccounts: (path) => {
+    try {
+      const entry = statSync(path)
+      if (entry.uid !== process.getuid?.()) return
+
+      chmodSync(path, entry.mode & permissionBits & ~othersMayWrite)
+    } catch {
+      return
+    }
   },
   sleep: (ms) => new Promise((resolve) => setTimeout(resolve, ms))
 })

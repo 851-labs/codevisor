@@ -2,42 +2,30 @@ import type { DesktopSudo } from "@codevisor/api"
 
 import type { DesktopSystem } from "./desktop-system.js"
 import type { RootCommand } from "./old-desktop.js"
+import {
+  DESKTOP_PROGRAMS,
+  type OsRelease,
+  type PackageManager,
+  packageFamilies
+} from "./package-managers.js"
 
-export const DESKTOP_PROGRAMS = [
-  "Xvnc",
-  "startxfce4",
-  "xfconf-query",
-  "dbus-run-session",
-  "xclip",
-  "python3"
-] as const
+export { DESKTOP_PROGRAMS, type OsRelease } from "./package-managers.js"
 
-const aptPackages = [
-  "tigervnc-standalone-server",
-  "tigervnc-common",
-  "xfce4",
-  "xfce4-terminal",
-  "dbus-x11",
-  "xclip",
-  "python3",
-  "fonts-dejavu-core",
-  "adwaita-icon-theme"
-]
-
-const aptFamily = new Set(["debian", "ubuntu"])
-const aptLockWaitSeconds = 600
-const updateTries = aptLockWaitSeconds / 10
-const updateUntilTheListsLockIsFree = `for try in $(seq ${updateTries}); do out=$(apt-get update -q 2>&1) && exit 0; echo "$out"; echo "$out" | grep -q "Could not get lock" || exit 1; sleep 10; done; exit 1`
 const plainWord = /^[A-Za-z0-9_@%+=:,./-]+$/
 
 const shellWord = (word: string): string =>
   plainWord.test(word) ? word : `'${word.replaceAll("'", "'\\''")}'`
-const installTimeoutMs = 20 * 60 * 1000
+const mountFields = 4
+const rootStepSeconds = 20 * 60
+const killAfterSeconds = 30
+const timeLimit = ["timeout", `--kill-after=${killAfterSeconds}`, String(rootStepSeconds)]
+const giveUpMs = (rootStepSeconds + 2 * killAfterSeconds) * 1000
 const outputTailLines = 30
 
-export interface OsRelease {
-  readonly name: string
-  readonly ids: ReadonlyArray<string>
+export interface InstallPlan {
+  readonly manager: PackageManager
+  readonly megabytes: number
+  readonly commands: ReadonlyArray<RootCommand>
 }
 
 export const osRelease = (system: DesktopSystem): OsRelease => {
@@ -46,11 +34,11 @@ export const osRelease = (system: DesktopSystem): OsRelease => {
     const match = /^([A-Z_]+)=(.*)$/.exec(line.trim())
     if (match !== null) fields.set(match[1]!, unquoted(match[2]!))
   }
+  const id = fields.get("ID") ?? ""
   return {
     name: fields.get("PRETTY_NAME") ?? fields.get("NAME") ?? "this system",
-    ids: [fields.get("ID") ?? "", ...(fields.get("ID_LIKE") ?? "").split(/\s+/)].filter(
-      (id) => id !== ""
-    )
+    id,
+    ids: [id, ...(fields.get("ID_LIKE") ?? "").split(/\s+/)].filter((like) => like !== "")
   }
 }
 
@@ -62,29 +50,29 @@ export const missingPrograms = async (system: DesktopSystem): Promise<ReadonlyAr
 export const hasProgram = async (system: DesktopSystem, program: string): Promise<boolean> =>
   (await system.run("sh", ["-c", 'command -v "$1"', "sh", program])).code === 0
 
-export const installCommands = async (
+export const packageManagerFor = (release: OsRelease): PackageManager | undefined =>
+  packageFamilies.find((candidate) => candidate.serves(release))?.manager
+
+const systemFilesAreReadOnly = (system: DesktopSystem): boolean => {
+  const mounts = (system.readText("/proc/mounts") ?? "")
+    .split("\n")
+    .map((line) => line.split(" "))
+    .filter((fields) => fields.length >= mountFields)
+  const holding =
+    mounts.findLast((fields) => fields[1] === "/usr") ??
+    mounts.findLast((fields) => fields[1] === "/")
+  return holding?.[3]?.split(",").includes("ro") === true
+}
+
+export const installPlan = async (
   system: DesktopSystem,
   release: OsRelease
-): Promise<ReadonlyArray<RootCommand> | undefined> => {
-  const usesApt = release.ids.some((id) => aptFamily.has(id))
-  if (!usesApt || !(await hasProgram(system, "apt-get"))) return undefined
+): Promise<InstallPlan | undefined> => {
+  const family = packageFamilies.find((candidate) => candidate.serves(release))
+  if (family === undefined || systemFilesAreReadOnly(system)) return undefined
+  if (!(await hasProgram(system, family.program))) return undefined
 
-  const quietly = ["env", "DEBIAN_FRONTEND=noninteractive"]
-  const lockWait = `DPkg::Lock::Timeout=${aptLockWaitSeconds}`
-  return [
-    [...quietly, "sh", "-c", updateUntilTheListsLockIsFree],
-    [
-      ...quietly,
-      "apt-get",
-      "-o",
-      lockWait,
-      "install",
-      "-y",
-      "-q",
-      "--no-install-recommends",
-      ...aptPackages
-    ]
-  ]
+  return { manager: family.manager, megabytes: family.megabytes, commands: family.commands }
 }
 
 export const shellText = (command: RootCommand): string => command.map(shellWord).join(" ")
@@ -107,8 +95,9 @@ export const runAsRoot = async (
   commands: ReadonlyArray<RootCommand>
 ): Promise<RootRun> => {
   for (const command of commands) {
-    const [program, ...args] = system.uid === 0 ? command : ["sudo", "-n", ...command]
-    const ran = await system.run(program!, args, installTimeoutMs)
+    const asRoot = system.uid === 0 ? [] : ["sudo", "-n"]
+    const [program, ...args] = [...asRoot, ...timeLimit, ...command]
+    const ran = await system.run(program!, args, giveUpMs)
     if (ran.code !== 0) return { ok: false, output: tail(ran.output) }
   }
   return { ok: true, output: "" }

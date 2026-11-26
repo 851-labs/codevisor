@@ -19,6 +19,7 @@ export const DesktopStatus = Schema.Struct({
   problem: Schema.optional(Schema.String),
   unmanaged: Schema.optional(Schema.Boolean),
   keepsRunning: Schema.optional(Schema.Boolean),
+  unitOwnedByAnother: Schema.optional(Schema.Boolean),
   busy: Schema.optional(Schema.String),
   failure: Schema.optional(Schema.String),
   missing: Schema.Array(Schema.String),
