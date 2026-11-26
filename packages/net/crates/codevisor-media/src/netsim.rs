@@ -9,6 +9,7 @@ pub struct NetworkConditions {
     pub average_burst_loss: Option<u32>,
     pub capacity_kbps: Option<u64>,
     pub queue_packets: Option<usize>,
+    pub release_tick_ms: Option<f64>,
 }
 
 impl NetworkConditions {
@@ -20,6 +21,7 @@ impl NetworkConditions {
         average_burst_loss: None,
         capacity_kbps: None,
         queue_packets: None,
+        release_tick_ms: None,
     };
     pub const N0: Self = Self::NONE;
     pub const N1: Self = Self { id: "N1", delay_ms: 1.0, capacity_kbps: Some(1_000_000), ..Self::NONE };
@@ -45,7 +47,10 @@ impl NetworkConditions {
         ..Self::NONE
     };
     pub const N7: Self = Self { id: "N7", delay_ms: 50.0, loss_percent: 5.0, capacity_kbps: Some(1_000), ..Self::NONE };
-    pub const ALL: [Self; 8] = [Self::N0, Self::N1, Self::N2, Self::N3, Self::N4, Self::N5, Self::N6, Self::N7];
+    pub const N8: Self = Self { id: "N8", release_tick_ms: Some(4.0), ..Self::N3 };
+    pub const N9: Self = Self { id: "N9", release_tick_ms: Some(10.0), ..Self::N3 };
+    pub const ALL: [Self; 10] =
+        [Self::N0, Self::N1, Self::N2, Self::N3, Self::N4, Self::N5, Self::N6, Self::N7, Self::N8, Self::N9];
 
     pub fn by_id(id: &str) -> Option<Self> {
         Self::ALL.into_iter().find(|conditions| conditions.id.eq_ignore_ascii_case(id))
@@ -153,8 +158,18 @@ impl NetworkModel {
         if lost {
             return Fate::Lost;
         }
-        self.last_arrival = (self.link_free + self.delay()).max(self.last_arrival);
+        let arrival = self.link_free + self.delay();
+        self.last_arrival = self.released(arrival).max(self.last_arrival);
         Fate::Delivered(self.last_arrival)
+    }
+
+    fn released(&self, arrival: Duration) -> Duration {
+        let Some(tick) = self.conditions.release_tick_ms.map(|tick_ms| Duration::from_secs_f64(tick_ms / 1000.0))
+        else {
+            return arrival;
+        };
+        let ticks = arrival.as_nanos().div_ceil(tick.as_nanos());
+        Duration::from_nanos((ticks * tick.as_nanos()) as u64)
     }
 
     fn delay(&mut self) -> Duration {
@@ -193,6 +208,16 @@ mod tests {
         assert_eq!(model.send(1000, Duration::ZERO), Fate::Delivered(Duration::from_millis(3)));
         assert_eq!(model.send(1000, Duration::ZERO), Fate::QueueOverflow);
         assert_eq!(model.send(1000, Duration::from_millis(1)), Fate::Delivered(Duration::from_millis(4)));
+    }
+
+    #[test]
+    fn a_release_tick_holds_packets_until_the_next_tick_and_lets_them_out_together() {
+        let conditions = NetworkConditions { id: "test", delay_ms: 1.0, release_tick_ms: Some(4.0), ..NetworkConditions::N0 };
+        let mut model = NetworkModel::new(conditions, 1);
+        let arrivals: Vec<Fate> =
+            [0, 1, 2, 3, 4, 7].into_iter().map(|sent_ms| model.send(1000, Duration::from_millis(sent_ms))).collect();
+        let at = |ms| Fate::Delivered(Duration::from_millis(ms));
+        assert_eq!(arrivals, vec![at(4), at(4), at(4), at(4), at(8), at(8)]);
     }
 
     #[test]
