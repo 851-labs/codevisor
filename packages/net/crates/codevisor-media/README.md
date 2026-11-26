@@ -120,6 +120,11 @@ no jitter buffer and no queue deeper than one frame.
   waits. So the queue in the network counts too: before this, N7 (1 Mbit/s) took a whole 45 Mbit/s second into its
   unlimited queue before the first ack, and every frame after that arrived too late to repair. The encoder ceiling is
   85% of the estimate over 1 + the FEC ratio, since parity shares the link.
+- **Tier 1 runs cited above, before 851-4477.** Until 851-4477 the bench's one-Mac relay delivered a delayed packet
+  only when the next packet in either direction reached it (its timer never fired; see "Delivery on time" in
+  `apps/screen-sharing-bench/README.md`). Every Tier 1 run this file cites on a network with a delay went through
+  that relay, and its "standing offset", "batched deliveries" and clumped arrivals were that bug. The rules those
+  runs led to are unchanged.
 - **Constrained links in the sim** (`tests/core.rs`: a 60 Hz scene whose encoder follows the ceiling every 250 ms,
   with frames sized for one interval or for all the time since the last encode, 30 s after 5 s of warm-up, seeds
   1–3): N5 keeps 55–60 frames a second at a p50 of 23–25 ms and p95 under 32 ms (RTT 20 ms), with the estimate at

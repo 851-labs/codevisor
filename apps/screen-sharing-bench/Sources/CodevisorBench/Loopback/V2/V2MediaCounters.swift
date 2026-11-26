@@ -22,7 +22,8 @@ enum V2MediaCounters {
       encodedFrames: host["encodedFrames"], encodedBytes: host["encodedBytes"],
       encodedKeyFrameBytes: host["encodedKeyFrameBytes"], encoderSwitches: host["encoderSwitches"],
       ltrRefreshKeyframes: host["encodedLTRRefreshKeyFrames", default: 0],
-      estimateMinMbpsPerSecond: estimateTrace(hostLabels[ScreenSharingV2EstimateTraceLabel.name]))
+      estimateMinMbpsPerSecond: estimateTrace(hostLabels[ScreenSharingV2EstimateTraceLabel.name]),
+      staleLtrAcknowledgements: host["staleLTRAcknowledgements", default: 0])
   }
 
   private static func estimateTrace(_ label: String?) -> [Double]? {

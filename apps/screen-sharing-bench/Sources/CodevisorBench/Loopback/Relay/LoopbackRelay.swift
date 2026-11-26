@@ -109,15 +109,16 @@ final class LoopbackRelay: @unchecked Sendable {
     let nowNs = BenchMachClock.nowNs()
     for delivery in media.takeDue(atNs: nowNs) where !delivery.send() { media.recordSendFailure() }
     for delivery in feedback.takeDue(atNs: nowNs) where !delivery.send() { feedback.recordSendFailure() }
-    scheduleNextDue(after: nowNs)
+    scheduleNextDue()
   }
 
-  private func scheduleNextDue(after nowNs: Int64) {
+  private func scheduleNextDue() {
     guard let dueNs = [media.nextDueNs, feedback.nextDueNs].compactMap(\.self).min() else {
-      timer.schedule(deadline: .distantFuture, leeway: .never)
+      timer.schedule(deadline: .distantFuture, leeway: .nanoseconds(0))
       return
     }
 
-    timer.schedule(deadline: .now() + .nanoseconds(Int(max(0, dueNs - nowNs))), leeway: .never)
+    let waitNs = max(0, dueNs - BenchMachClock.nowNs())
+    timer.schedule(deadline: .now() + .nanoseconds(Int(waitNs)), leeway: .nanoseconds(0))
   }
 }

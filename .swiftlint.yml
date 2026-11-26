@@ -49,6 +49,14 @@ custom_rules:
     regex: '(?://|/\*)(?!\s*(?:swift-tools-version:|swiftlint:(?:disable|enable)))'
     match_kinds: [comment, comment.mark, comment.url, doccomment, doccomment.field]
     severity: error
+  timer_leeway_never:
+    name: Timer leeway never
+    message: >-
+      A dispatch timer scheduled with leeway .never is never fired by macOS. For a timer that must fire
+      on time, pass .nanoseconds(0).
+    regex: 'leeway:\s*(?:DispatchTimeInterval)?\.never\b'
+    excluded_match_kinds: [comment, doccomment, string]
+    severity: error
   pane_keyboard_shortcut:
     name: Pane keyboard shortcut
     message: >-
