@@ -1,4 +1,5 @@
 import type { TerminalClientFrame, TerminalServerFrame } from "@codevisor/api"
+import type { ProcessIdentity } from "@codevisor/processes"
 import { Effect } from "effect"
 
 import type {
@@ -6,6 +7,7 @@ import type {
   TerminalHandlers,
   TerminalManagerService,
   TerminalProcess,
+  TerminalProcessTree,
   TerminalSpawnRequest,
   TerminalSpawner
 } from "./index.js"
@@ -29,7 +31,25 @@ export const replayedFrames = (
   )
 }
 
+export class FakeProcessTree implements TerminalProcessTree {
+  readonly members = new Map<number, ProcessIdentity>()
+  readonly cwds = new Map<number, string>()
+
+  async member(pid: number): Promise<ProcessIdentity | undefined> {
+    return this.members.get(pid)
+  }
+
+  recentlyAlive(process: ProcessIdentity): boolean {
+    return this.members.get(process.pid)?.startedAt === process.startedAt
+  }
+
+  async cwd(pid: number): Promise<string | undefined> {
+    return this.cwds.get(pid)
+  }
+}
+
 export class FakeProcess implements TerminalProcess {
+  readonly tree = new FakeProcessTree()
   readonly writes: Array<string> = []
   readonly resizes: Array<readonly [number, number]> = []
   killCount = 0

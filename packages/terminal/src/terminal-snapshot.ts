@@ -1,13 +1,24 @@
 import type { RunningTerminal } from "./frames.js"
-import type { TerminalSnapshotEntry } from "./types.js"
+import { shellDirectory } from "./shell-directory.js"
+import type { TerminalSize } from "./size-arbiter.js"
+import type { SavedResume, TerminalSnapshotEntry } from "./types.js"
 
 const decoder = new TextDecoder()
 
 export const RESTORED_TERMINAL_SIZE = { cols: 80, rows: 24 } as const
 
-export const snapshotEntry = (terminal: RunningTerminal): TerminalSnapshotEntry => {
+export const restoredSize = (entry: TerminalSnapshotEntry): TerminalSize => ({
+  cols: entry.cols ?? RESTORED_TERMINAL_SIZE.cols,
+  rows: entry.rows ?? RESTORED_TERMINAL_SIZE.rows
+})
+
+export const snapshotEntry = (
+  terminal: RunningTerminal,
+  resume: SavedResume | undefined
+): TerminalSnapshotEntry => {
   const { cols, rows } = terminal.screen.state()
   const exitCode = terminal.exitFrame?.exitCode
+  const cwd = shellDirectory(terminal.screen.pwd())
   return {
     terminalId: terminal.terminalId,
     sessionId: terminal.sessionId,
@@ -17,7 +28,10 @@ export const snapshotEntry = (terminal: RunningTerminal): TerminalSnapshotEntry 
     screen: decoder.decode(terminal.screen.reconstruct()),
     cols,
     rows,
-    ...(exitCode === undefined ? {} : { exitCode })
+    ...(exitCode === undefined ? {} : { exitCode }),
+    ...(terminal.launch === undefined ? {} : { launch: terminal.launch }),
+    ...(cwd === undefined ? {} : { cwd }),
+    ...(resume === undefined ? {} : { resume })
   }
 }
 

@@ -5,7 +5,7 @@ import { makeTerminalManager, TerminalError } from "./index.js"
 import { run, FakeProcess, makeSpawner, inputFrame, replayedFrames } from "./test-support.js"
 
 describe("@codevisor/terminal terminal manager snapshots", () => {
-  it("restores snapshotted terminals as closed scrollback with a synthetic exit", async () => {
+  it("restores terminals saved without their launch as closed scrollback with a synthetic exit", async () => {
     const spawner = makeSpawner()
     const manager = makeTerminalManager({ defaultShell: "/bin/sh", env: {}, spawner })
     const created = await run(
@@ -16,8 +16,9 @@ describe("@codevisor/terminal terminal manager snapshots", () => {
     await run(manager.handleClientFrame(created.terminalId, inputFrame(1, "ls\n")))
 
     const snapshot = manager.snapshotTerminals()
+    const legacy = snapshot.terminals.map(({ launch: _launch, ...entry }) => entry)
     const restored = makeTerminalManager({ defaultShell: "/bin/sh", env: {}, spawner })
-    restored.restoreTerminals(snapshot)
+    restored.restoreTerminals({ version: 3, terminals: legacy })
 
     expect(await run(restored.readScreen(created.terminalId, "text"))).toBe("hello world")
     const frames: Array<TerminalServerFrame> = []

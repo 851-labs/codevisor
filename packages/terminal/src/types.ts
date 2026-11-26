@@ -5,6 +5,7 @@ import type {
   TerminalServerFrame,
   TerminalActivity
 } from "@codevisor/api"
+import type { ProcessIdentity } from "@codevisor/processes"
 import type { Effect } from "effect"
 import { Schema } from "effect"
 
@@ -19,11 +20,33 @@ export interface TerminalProcess {
   readonly kill: () => void
   readonly stop?: () => Promise<void>
   readonly isShellInForeground?: () => boolean
+  readonly tree?: TerminalProcessTree
+}
+
+export interface TerminalProcessTree {
+  readonly member: (pid: number) => Promise<ProcessIdentity | undefined>
+  readonly recentlyAlive: (process: ProcessIdentity, withinMs: number) => boolean
+  readonly cwd: (pid: number) => Promise<string | undefined>
 }
 
 export interface TerminalSpawnRequest extends TerminalCreateRequest {
   readonly shell: string
   readonly env: NodeJS.ProcessEnv
+  readonly resumeToken?: string
+  readonly resumesProgram?: boolean
+}
+
+export interface TerminalLaunch {
+  readonly cwd: string
+  readonly shell?: string | undefined
+  readonly args?: ReadonlyArray<string> | undefined
+}
+
+export interface SavedResume {
+  readonly argv: ReadonlyArray<string>
+  readonly cwd?: string | undefined
+  readonly cwdFromReport: boolean
+  readonly uid: number
 }
 
 export interface TerminalHandlers {
@@ -46,6 +69,7 @@ export interface TerminalManagerConfig {
   readonly userShell?: () => string | undefined
   readonly executableExists?: (path: string) => boolean
   readonly ghosttyResourcesDirectory?: string
+  readonly userId?: number
 }
 
 export interface TerminalTitleStatus {
@@ -79,10 +103,13 @@ export interface TerminalSnapshotEntry {
   readonly rows?: number
   readonly exitCode?: number
   readonly frames?: ReadonlyArray<TerminalServerFrame>
+  readonly launch?: TerminalLaunch
+  readonly cwd?: string
+  readonly resume?: SavedResume
 }
 
 export interface TerminalSnapshot {
-  readonly version: 1 | 2 | 3
+  readonly version: 1 | 2 | 3 | 4
   readonly terminals: ReadonlyArray<TerminalSnapshotEntry>
 }
 
@@ -117,5 +144,6 @@ export interface TerminalManagerService {
   ) => Effect.Effect<string, TerminalError>
   readonly outputRevision: () => number
   readonly subscribeTitles: (listener: TerminalTitleListener) => () => void
+  readonly subscribeResumes: (listener: () => void) => () => void
   readonly releaseClient: (terminalId: string, clientId: string) => void
 }

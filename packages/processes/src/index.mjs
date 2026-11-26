@@ -1,4 +1,5 @@
 import { execFile } from "node:child_process"
+import { readlink } from "node:fs/promises"
 import { setTimeout as sleep } from "node:timers/promises"
 import { promisify } from "node:util"
 
@@ -109,6 +110,25 @@ export async function processIdentity(pid) {
   return (await readProcessTable()).find(
     (entry) => entry.pid === pid && !entry.state.startsWith("Z")
   )
+}
+
+/** @param {string} output @returns {string | undefined} */
+function parseLsofCwd(output) {
+  return output
+    .split("\n")
+    .find((line) => line.startsWith("n/"))
+    ?.slice(1)
+}
+
+/** @param {number} pid @param {NodeJS.Platform} [platform] @returns {Promise<string | undefined>} */
+export async function processCwd(pid, platform = process.platform) {
+  try {
+    if (platform === "linux") return await readlink(`/proc/${pid}/cwd`)
+    const { stdout } = await exec("/usr/sbin/lsof", ["-a", "-p", String(pid), "-d", "cwd", "-Fn"])
+    return parseLsofCwd(stdout)
+  } catch {
+    return undefined
+  }
 }
 
 /**

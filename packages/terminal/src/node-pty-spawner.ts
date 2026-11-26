@@ -1,6 +1,6 @@
 import { basename } from "node:path"
 
-import { trackProcessTree } from "@codevisor/processes"
+import { processCwd, trackProcessTree } from "@codevisor/processes"
 import { Effect } from "effect"
 
 import { PORTABLE_TERM } from "./shell.js"
@@ -45,6 +45,7 @@ export const nodePtySpawner: TerminalSpawner = {
             void tree.stop().catch(() => child.kill("SIGKILL"))
           },
           stop: () => tree.stop(),
+          tree: { member: tree.member, recentlyAlive: tree.recentlyAlive, cwd: processCwd },
           isShellInForeground: () =>
             basename(child.process).replace(/^-/, "") === basename(request.shell)
         }

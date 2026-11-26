@@ -113,6 +113,7 @@ export interface VtTerminal {
   reconstruct(): Uint8Array
   text(): string
   title(): string
+  pwd(): string
   state(): VtState
   free(): void
 }
@@ -414,6 +415,7 @@ export const createVtTerminal = (options: VtTerminalOptions): VtTerminal => {
     },
     text: () => decoder.decode(vt.format(live(), "PLAIN")),
     title: () => vt.getString(live(), "TITLE"),
+    pwd: () => vt.getString(live(), "PWD"),
     state: () => {
       const id = live()
       return {

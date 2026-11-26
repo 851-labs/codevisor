@@ -1,5 +1,8 @@
 import type { TerminalActivity } from "@codevisor/api"
 
+import { decodeBase64Text } from "./base64-text.js"
+import { makeOscScanner, type OscEvent } from "./osc-scanner.js"
+
 type ReportState = TerminalActivity | "clear"
 
 const STATES: ReadonlySet<string> = new Set<ReportState>([
@@ -32,10 +35,6 @@ export const MAX_PROGRAM_STATUS_RECORDS = 256
 const KEY = /^[a-z]+$/u
 const VALUE = /^[A-Za-z0-9_.,+/=-]*$/u
 const ID_SEGMENT = /^[A-Za-z0-9_.+-]{1,32}$/u
-const BASE64 = /^[A-Za-z0-9+/]*={0,2}$/u
-// oxlint-disable-next-line no-control-regex
-const CONTROL = /[\u0000-\u001f\u007f-\u009f]/u
-const utf8 = new TextDecoder("utf-8", { fatal: true })
 
 const validId = (id: string): boolean => {
   const segments = id.split("/")
@@ -46,18 +45,8 @@ const validId = (id: string): boolean => {
   )
 }
 
-const validText = (encoded: string, maxBytes: number): boolean => {
-  if (!BASE64.test(encoded)) return false
-  const padded = encoded.endsWith("=")
-  if (padded ? encoded.length % 4 !== 0 : encoded.length % 4 === 1) return false
-  const bytes = Buffer.from(encoded, "base64")
-  if (bytes.length > maxBytes) return false
-  try {
-    return !CONTROL.test(utf8.decode(bytes))
-  } catch {
-    return false
-  }
-}
+const validText = (encoded: string, maxBytes: number): boolean =>
+  decodeBase64Text(encoded, maxBytes) !== undefined
 
 export type ProgramStatusReport =
   | { readonly type: "query" }
@@ -121,54 +110,21 @@ export interface ProgramStatusScanner {
 const PROMPT = "133;A"
 const MAX_PROMPT = 256
 
-const pendingBody = (body: string): boolean => {
-  if (body.startsWith(PREFIX)) return body.length - PREFIX.length <= MAX_BODY
-  if (body.startsWith(PROMPT)) return body.length <= MAX_PROMPT
-  return PREFIX.startsWith(body) || PROMPT.startsWith(body)
+export const makeProgramStatusScanner = (): ProgramStatusScanner => {
+  const osc = makeOscScanner([
+    { prefix: PREFIX, maxLength: PREFIX.length + MAX_BODY },
+    { prefix: PROMPT, maxLength: MAX_PROMPT }
+  ])
+  return { scan: (data) => osc.scan(data).flatMap(programStatusEvents) }
 }
 
-export const makeProgramStatusScanner = (): ProgramStatusScanner => {
-  let carry = ""
-  return {
-    scan: (data) => {
-      const text = carry + data
-      carry = ""
-      const events: Array<ProgramStatusEvent> = []
-      let index = text.indexOf("\u001b")
-      while (index !== -1) {
-        const next = text[index + 1]
-        if (next === undefined) {
-          carry = text.slice(index)
-          break
-        }
-        if (next === "c") events.push({ type: "reset" })
-        if (next !== "]") {
-          index = text.indexOf("\u001b", index + 1)
-          continue
-        }
-        const start = index + 2
-        const bel = text.indexOf("\u0007", start)
-        const esc = text.indexOf("\u001b", start)
-        const end = bel !== -1 && (esc === -1 || bel < esc) ? bel : esc
-        if (end === -1 || (end === esc && text[esc + 1] === undefined)) {
-          if (pendingBody(text.slice(start))) carry = text.slice(index)
-          break
-        }
-        const terminated = end === bel || text[esc + 1] === "\\"
-        const body = text.slice(start, end)
-        if (terminated && body.startsWith(PREFIX)) {
-          const report = parseProgramStatus(body.slice(PREFIX.length))
-          if (report?.type === "query")
-            events.push({ ...report, terminator: text.slice(end, end + (end === bel ? 1 : 2)) })
-          else if (report !== undefined) events.push(report)
-        } else if (terminated && body.startsWith(PROMPT)) {
-          events.push({ type: "prompt" })
-        }
-        index = terminated ? text.indexOf("\u001b", end + 1) : end
-      }
-      return events
-    }
-  }
+const programStatusEvents = (event: OscEvent): ReadonlyArray<ProgramStatusEvent> => {
+  if (event.type === "reset") return [event]
+  if (event.body.startsWith(PROMPT)) return [{ type: "prompt" }]
+  const report = parseProgramStatus(event.body.slice(PREFIX.length))
+  if (report === undefined) return []
+  if (report.type === "query") return [{ ...report, terminator: event.terminator }]
+  return [report]
 }
 
 const URGENCY: ReadonlyArray<TerminalActivity> = ["error", "blocked", "working", "done", "idle"]
