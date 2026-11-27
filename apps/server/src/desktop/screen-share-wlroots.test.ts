@@ -4,12 +4,21 @@ import { CONFIG, EVERY_PROGRAM, LOGS_DIR } from "./desktop-test-support.js"
 import { onSway, refusal, screenEntry, socket, workstation } from "./screen-share-test-support.js"
 
 const withWayvnc = [...EVERY_PROGRAM, "wayvnc", "notify-send"]
+const unixSocketOption = "  -u,--unix-socket     Create a UNIX domain socket instead of TCP.\n"
+const wayvnc05 = { "wayvnc --help": { code: 0, output: unixSocketOption } }
 const wayvncWithAControlSocket = {
-  "wayvnc --help": { code: 0, output: "  -S,--socket=<path>        Control socket path.\n" }
+  "wayvnc --help": {
+    code: 0,
+    output: `  -S,--socket=<path>        Control socket path.\n${unixSocketOption}`
+  }
 }
 
 const sway = (scene: Parameters<typeof workstation>[0] = {}) => {
-  const machine = workstation({ programs: withWayvnc, ...scene })
+  const machine = workstation({
+    programs: withWayvnc,
+    ...scene,
+    results: { ...wayvnc05, ...scene.results }
+  })
   machine.logIn(onSway)
   machine.runCompositor("sway")
   return machine
@@ -140,6 +149,60 @@ describe("sharing the screen of a wlroots session", () => {
 
     expect(await refusal(machine.screen.installPackages())).toMatchObject({ status: 409 })
     expect(machine.commands.filter((command) => command.includes("install"))).toEqual([])
+  })
+
+  it("with nobody at the screen of a Sway machine, asks for wayvnc and not x0vncserver", async () => {
+    const machine = workstation({ programs: [...EVERY_PROGRAM, "sway"] })
+
+    expect(await refusal(machine.screen.setUp())).toEqual({
+      status: 409,
+      message: "The screen can't be shared until these are installed: wayvnc, notify-send"
+    })
+    await machine.screen.installPackages()
+    await machine.settled()
+
+    const installs = machine.commands.filter((command) => command.includes(" install "))
+    expect(installs).toEqual([
+      expect.stringMatching(/--no-install-recommends wayvnc libnotify-bin$/)
+    ])
+  })
+
+  it("with nobody at the screen, asks for both helpers on a machine with X11 and Sway sessions", async () => {
+    const machine = workstation({
+      programs: [...EVERY_PROGRAM, "sway"],
+      folders: { "/usr/share/xsessions": ["xfce.desktop"] }
+    })
+
+    expect((await machine.screen.status()).missing).toEqual([
+      "x0vncserver",
+      "wayvnc",
+      "notify-send"
+    ])
+  })
+
+  it("says which wayvnc is too old instead of starting it", async () => {
+    const machine = sway({
+      results: {
+        "wayvnc --help": { code: 0, output: "  -C,--config=<path>  Select a config file.\n" },
+        "wayvnc --version": { code: 0, output: "wayvnc: 0.4.1\nneatvnc: 0.4.0\n" }
+      }
+    })
+
+    expect(await refusal(machine.screen.setUp())).toEqual({
+      status: 409,
+      message: "wayvnc 0.4.1 is too old; 0.5 or newer is needed"
+    })
+    expect(machine.spawned).toEqual([])
+  })
+
+  it("doesn't ask wayvnc anything while it shares an X11 session", async () => {
+    const machine = workstation({ programs: [...withWayvnc, "X0tigervnc"] })
+    machine.logIn()
+
+    await machine.screen.setUp()
+    await machine.screen.status()
+
+    expect(machine.asked.filter((line) => line.startsWith("wayvnc"))).toEqual([])
   })
 
   it("records the screen like any other", async () => {

@@ -1,5 +1,4 @@
 import type { RootCommand } from "./old-desktop.js"
-import type { ScreenKind } from "./screen-commands.js"
 
 export type PackageManager = "apt" | "dnf" | "pacman" | "zypper"
 
@@ -17,6 +16,8 @@ export const X11_SCREEN_PROGRAMS = ["x0vncserver", SCREEN_NOTIFIER] as const
 export const WLROOTS_SCREEN_PROGRAMS = ["wayvnc", SCREEN_NOTIFIER] as const
 export const SCREEN_PROGRAMS = ["x0vncserver", "wayvnc", SCREEN_NOTIFIER] as const
 
+export type ScreenProgram = (typeof SCREEN_PROGRAMS)[number]
+
 export interface OsRelease {
   readonly name: string
   readonly id: string
@@ -32,7 +33,7 @@ export interface PackageFamily {
   readonly screenCommands: ScreenCommands
 }
 
-export type ScreenCommands = Readonly<Record<ScreenKind, ReadonlyArray<RootCommand>>>
+export type ScreenCommands = (programs: ReadonlyArray<ScreenProgram>) => ReadonlyArray<RootCommand>
 
 const lockWaitSeconds = 600
 const retrySeconds = 10
@@ -97,39 +98,44 @@ const zypperPackages = [
   "adwaita-icon-theme"
 ]
 
-const aptScreenPackages = {
-  x11: ["tigervnc-scraping-server"],
-  wlroots: ["wayvnc"],
-  notifier: "libnotify-bin"
+type ScreenPackages = Readonly<Record<ScreenProgram, string>>
+
+const aptScreenPackages: ScreenPackages = {
+  x0vncserver: "tigervnc-scraping-server",
+  wayvnc: "wayvnc",
+  "notify-send": "libnotify-bin"
 }
-const dnfScreenPackages = {
-  x11: ["tigervnc-x11-server"],
-  wlroots: ["wayvnc"],
-  notifier: "libnotify"
+const dnfScreenPackages: ScreenPackages = {
+  x0vncserver: "tigervnc-x11-server",
+  wayvnc: "wayvnc",
+  "notify-send": "libnotify"
 }
-const pacmanScreenPackages = { x11: ["tigervnc"], wlroots: ["wayvnc"], notifier: "libnotify" }
-const zypperScreenPackages = {
-  x11: ["xorg-x11-Xvnc"],
-  wlroots: ["wayvnc"],
-  notifier: "libnotify-tools"
+const pacmanScreenPackages: ScreenPackages = {
+  x0vncserver: "tigervnc",
+  wayvnc: "wayvnc",
+  "notify-send": "libnotify"
+}
+const zypperScreenPackages: ScreenPackages = {
+  x0vncserver: "xorg-x11-Xvnc",
+  wayvnc: "wayvnc",
+  "notify-send": "libnotify-tools"
 }
 
-interface ScreenPackages {
-  readonly x11: ReadonlyArray<string>
-  readonly wlroots: ReadonlyArray<string>
-  readonly notifier: string
-}
-
-const forEachKind = (
-  packages: ScreenPackages,
-  install: (kind: ScreenKind, names: ReadonlyArray<string>) => ReadonlyArray<RootCommand>
-): ScreenCommands => ({
-  x11: install("x11", [...packages.x11, packages.notifier]),
-  wlroots: install("wlroots", [...packages.wlroots, packages.notifier])
-})
-
-const programsOf = (kind: ScreenKind): ReadonlyArray<string> =>
-  kind === "x11" ? X11_SCREEN_PROGRAMS : WLROOTS_SCREEN_PROGRAMS
+const installing =
+  (
+    packages: ScreenPackages,
+    install: (
+      names: ReadonlyArray<string>,
+      programs: ReadonlyArray<ScreenProgram>
+    ) => ReadonlyArray<RootCommand>
+  ): ScreenCommands =>
+  (programs) =>
+    programs.length === 0
+      ? []
+      : install(
+          programs.map((program) => packages[program]),
+          programs
+        )
 
 const aptFamily = new Set(["debian", "ubuntu"])
 const withoutXfceOfTheirOwn = new Set(["rhel", "centos", "ol", "amzn"])
@@ -179,7 +185,7 @@ export const packageFamilies: ReadonlyArray<PackageFamily> = [
     megabytes: 640,
     serves: (release) => release.ids.some((id) => aptFamily.has(id)),
     commands: aptInstall(aptPackages),
-    screenCommands: forEachKind(aptScreenPackages, (_kind, names) => aptInstall(names))
+    screenCommands: installing(aptScreenPackages, (names) => aptInstall(names))
   },
   {
     manager: "dnf",
@@ -188,7 +194,7 @@ export const packageFamilies: ReadonlyArray<PackageFamily> = [
     serves: (release) =>
       release.ids.includes("fedora") && !release.ids.some((id) => withoutXfceOfTheirOwn.has(id)),
     commands: [["sh", "-c", dnfUntilTheRpmLockIsFree, "sh", ...dnfPackages]],
-    screenCommands: forEachKind(dnfScreenPackages, (_kind, names) => [
+    screenCommands: installing(dnfScreenPackages, (names) => [
       ["sh", "-c", dnfUntilTheRpmLockIsFree, "sh", ...names]
     ])
   },
@@ -200,7 +206,7 @@ export const packageFamilies: ReadonlyArray<PackageFamily> = [
     commands: [
       ["sh", "-c", pacmanUntilItsLockIsFree(setTheDesktopUpAgain), "sh", ...pacmanPackages]
     ],
-    screenCommands: forEachKind(pacmanScreenPackages, (_kind, names) => [
+    screenCommands: installing(pacmanScreenPackages, (names) => [
       ["sh", "-c", pacmanUntilItsLockIsFree(shareTheScreenAgain), "sh", ...names]
     ])
   },
@@ -210,8 +216,8 @@ export const packageFamilies: ReadonlyArray<PackageFamily> = [
     megabytes: 740,
     serves: (release) => release.ids.includes("opensuse"),
     commands: [["sh", "-c", zypperWithTheStockPanel, "sh", ...zypperPackages]],
-    screenCommands: forEachKind(zypperScreenPackages, (kind, names) => [
-      ["sh", "-c", zypperGiving(programsOf(kind)), "sh", ...names]
+    screenCommands: installing(zypperScreenPackages, (names, programs) => [
+      ["sh", "-c", zypperGiving(programs), "sh", ...names]
     ])
   }
 ]

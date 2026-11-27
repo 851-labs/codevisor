@@ -36,9 +36,12 @@ const notSharedLines = (screen: ScreenStatus): ReadonlyArray<string> => {
 const where = (screen: ScreenStatus): string =>
   screen.display === undefined ? "" : ` (${sessionName(screen)}display ${screen.display})`
 
-const sessionNames: Readonly<Record<string, string>> = { x11: "X11, ", wlroots: "Wayland, " }
+const sessionNames: ReadonlyMap<string, string> = new Map([
+  ["x11", "X11, "],
+  ["wlroots", "Wayland, "]
+])
 
-const sessionName = (screen: ScreenStatus): string => sessionNames[screen.session ?? ""] ?? ""
+const sessionName = (screen: ScreenStatus): string => sessionNames.get(screen.session ?? "") ?? ""
 
 const whoIs = (screen: ScreenStatus): string => {
   if (screen.others.length === 0) return ""

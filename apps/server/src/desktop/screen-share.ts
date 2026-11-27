@@ -21,9 +21,7 @@ import {
   installPlan,
   osRelease,
   runAsRoot,
-  missingFor,
-  type ScreenPrograms,
-  screenPrograms,
+  type ScreenProgram,
   sudoKind
 } from "./desktop-packages.js"
 import type { DesktopSystem } from "./desktop-system.js"
@@ -35,6 +33,7 @@ import {
   stillRunning,
   type TcpPortsOf
 } from "./screen-helper.js"
+import { knownScreenPrograms, noScraperFor, tooOldText } from "./screen-programs.js"
 import {
   accountsAtTheScreen,
   type AtTheScreen,
@@ -107,7 +106,7 @@ export const makeScreenShare = (options: ScreenShareOptions): ScreenShare => {
   let retryAt: number | undefined
   let retryFor: number | undefined
   let notifiedAt: number | undefined
-  let installed: Known<ScreenPrograms> | undefined
+  const installed = knownScreenPrograms(system, now)
   let knownSudo: Known<DesktopSudo> | undefined
   let startedAt: number | undefined
   let busy: string | undefined
@@ -162,23 +161,24 @@ export const makeScreenShare = (options: ScreenShareOptions): ScreenShare => {
   const isFresh = <Value>(known: Known<Value> | undefined): known is Known<Value> =>
     known !== undefined && now() - known.at < programsStayKnownMs
 
-  const programs = async (kind: ScreenKind): Promise<ScreenPrograms> => {
-    if (isFresh(installed) && missingFor(installed.value, kind).length === 0) return installed.value
+  const kindsWanted = async (
+    found: GraphicalSession | undefined
+  ): Promise<ReadonlyArray<ScreenKind>> => {
+    if (found === undefined) return installed.kindsOfTheMachine()
 
-    const found = await screenPrograms(system)
-    installed = { value: found, at: now() }
-    return found
+    const shown = shownFrom(found)
+    return shown === undefined ? [] : [shown.kind]
   }
+
+  const missingGiven = async (
+    found: GraphicalSession | undefined
+  ): Promise<ReadonlyArray<ScreenProgram>> => installed.missing(await kindsWanted(found))
 
   const sudo = async (): Promise<DesktopSudo> => {
     if (isFresh(knownSudo)) return knownSudo.value
 
     knownSudo = { value: await sudoKind(system), at: now() }
     return knownSudo.value
-  }
-
-  const checkProgramsAgain = (): void => {
-    installed = undefined
   }
 
   const whyItDidNotStart = async (
@@ -188,8 +188,9 @@ export const makeScreenShare = (options: ScreenShareOptions): ScreenShare => {
     const shown = shownFrom(found)
     if (shown === undefined) return waylandIsNotShared
 
-    const scraper = (await programs(shown.kind)).scrapers[shown.kind]
+    const scraper = (await installed.programs([shown.kind])).scrapers.get(shown.kind)
     if (scraper === undefined) return noScraperFor(shown.kind)
+    if (scraper.tooOld !== undefined) return tooOldText(scraper)
 
     return helpers.start(socket, shown, scraper)
   }
@@ -276,9 +277,9 @@ export const makeScreenShare = (options: ScreenShareOptions): ScreenShare => {
     found: GraphicalSession | undefined,
     asked: ScreenStatusOptions
   ) => {
-    const kind = kindToShare(found)
-    const missing = missingFor(await programs(kind), kind)
+    const missing = await missingGiven(found)
     const shown = found === undefined ? undefined : shownFrom(found)
+    const display = shown?.shows ?? found?.display
     if (missing.length === 0) failure = undefined
     return {
       missing,
@@ -287,7 +288,7 @@ export const makeScreenShare = (options: ScreenShareOptions): ScreenShare => {
       ...(busy === undefined ? {} : { busy }),
       ...(failure === undefined ? {} : { failure }),
       ...(found === undefined ? {} : { session: found.kind }),
-      ...(shown === undefined ? {} : { display: shown.shows })
+      ...(display === undefined ? {} : { display })
     }
   }
 
@@ -324,14 +325,16 @@ export const makeScreenShare = (options: ScreenShareOptions): ScreenShare => {
     refuseAConfigItCannotRead()
     const present = await accountsAtTheScreen(system)
     refuseWhatCannotBeShared(present)
-    checkProgramsAgain()
-    const kind = kindToShare(sessionGiven(present))
-    const missing = missingFor(await programs(kind), kind)
+    installed.checkAgain()
+    const found = sessionGiven(present)
+    const missing = await missingGiven(found)
     if (missing.length > 0)
       throw new HttpFailure(
         409,
         `The screen can't be shared until these are installed: ${missing.join(", ")}`
       )
+    const tooOld = await installed.tooOld(await kindsWanted(found))
+    if (tooOld !== undefined) throw new HttpFailure(409, tooOld)
 
     const socket = recordedSocket() ?? ownSocket()
     const entry = { id: SCREEN_ENTRY, vnc: { socket, name: "Screen" }, service: "server" }
@@ -372,7 +375,7 @@ export const makeScreenShare = (options: ScreenShareOptions): ScreenShare => {
       })
       .finally(() => {
         busy = undefined
-        checkProgramsAgain()
+        installed.checkAgain()
       })
   }
 
@@ -387,7 +390,8 @@ export const makeScreenShare = (options: ScreenShareOptions): ScreenShare => {
     if (found !== undefined && shownFrom(found) === undefined)
       throw new HttpFailure(409, waylandIsNotShared)
 
-    return plan.screenCommands[kindToShare(found)]
+    installed.checkAgain()
+    return plan.screenCommands(await missingGiven(found))
   }
 
   const installPackages = async (): Promise<ScreenStatus> => {
@@ -459,9 +463,6 @@ export const shownFrom = (session: GraphicalSession): ShownScreen | undefined =>
   return { kind: "x11", shows: session.display, env: session.env }
 }
 
-const kindToShare = (session: GraphicalSession | undefined): ScreenKind =>
-  session === undefined ? "x11" : (shownFrom(session)?.kind ?? "x11")
-
 const showsTheSame = (running: RunningHelper, found: GraphicalSession | undefined): boolean => {
   const shown = found === undefined ? undefined : shownFrom(found)
   if (shown === undefined) return false
@@ -470,8 +471,3 @@ const showsTheSame = (running: RunningHelper, found: GraphicalSession | undefine
     ? sameDisplay(running.shows, shown.shows)
     : running.shows === shown.shows
 }
-
-const noScraperFor = (kind: ScreenKind): string =>
-  kind === "x11"
-    ? "x0vncserver (TigerVNC's server for an existing screen) isn't installed"
-    : "wayvnc (the VNC server for wlroots sessions) isn't installed"

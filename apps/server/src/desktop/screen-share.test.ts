@@ -144,6 +144,19 @@ describe("sharing the screen the server's account is logged in at", () => {
     expect(machine.files.has(CONFIG)).toBe(false)
   })
 
+  it("reports a Wayland session it can't share with its display, and nothing to install", async () => {
+    const machine = workstation({ programs: EVERY_PROGRAM })
+    machine.logIn({ XDG_SEAT: "seat0", WAYLAND_DISPLAY: "wayland-0", DISPLAY: ":0" })
+
+    expect(await machine.screen.status({ askSudo: true })).toEqual({
+      state: "none",
+      session: "wayland",
+      display: ":0",
+      missing: [],
+      others: []
+    })
+  })
+
   it("names what is missing instead of setting up without it", async () => {
     const machine = workstation({ programs: EVERY_PROGRAM })
     machine.logIn()

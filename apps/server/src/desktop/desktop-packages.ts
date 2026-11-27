@@ -9,12 +9,25 @@ import {
   packageFamilies,
   type ScreenCommands,
   SCREEN_NOTIFIER,
+  SCREEN_PROGRAMS,
+  type ScreenProgram,
   WLROOTS_SCREEN_PROGRAMS,
   X11_SCREEN_PROGRAMS
 } from "./package-managers.js"
-import { type Scraper, type ScreenKind, WLROOTS_SCRAPERS, X11_SCRAPERS } from "./screen-commands.js"
+import {
+  type Scraper,
+  type ScreenKind,
+  WLROOTS_COMPOSITORS,
+  WLROOTS_SCRAPERS,
+  X11_SCRAPERS
+} from "./screen-commands.js"
 
-export { DESKTOP_PROGRAMS, type OsRelease, SCREEN_PROGRAMS } from "./package-managers.js"
+export {
+  DESKTOP_PROGRAMS,
+  type OsRelease,
+  SCREEN_PROGRAMS,
+  type ScreenProgram
+} from "./package-managers.js"
 
 const plainWord = /^[A-Za-z0-9_@%+=:,./-]+$/
 
@@ -54,34 +67,75 @@ export const missingPrograms = async (system: DesktopSystem): Promise<ReadonlyAr
 }
 
 export interface ScreenPrograms {
-  readonly scrapers: Readonly<Record<ScreenKind, Scraper | undefined>>
+  readonly scrapers: ReadonlyMap<ScreenKind, Scraper | undefined>
   readonly hasNotifier: boolean
 }
 
-export const screenPrograms = async (system: DesktopSystem): Promise<ScreenPrograms> => ({
-  scrapers: {
-    x11: asScraper(await firstInstalled(system, X11_SCRAPERS)),
-    wlroots: await wlrootsScraper(system)
-  },
-  hasNotifier: await hasProgram(system, SCREEN_NOTIFIER)
-})
+export const screenPrograms = async (
+  system: DesktopSystem,
+  kinds: ReadonlyArray<ScreenKind>
+): Promise<ScreenPrograms> => {
+  const scrapers = new Map<ScreenKind, Scraper | undefined>()
+  for (const kind of kinds) scrapers.set(kind, await scraperFor(system, kind))
+  return { scrapers, hasNotifier: await hasProgram(system, SCREEN_NOTIFIER) }
+}
 
-const asScraper = (program: string | undefined): Scraper | undefined =>
-  program === undefined ? undefined : { program }
+export const knowsAbout = (found: ScreenPrograms, kinds: ReadonlyArray<ScreenKind>): boolean =>
+  kinds.every((kind) => found.scrapers.has(kind))
+
+const scraperFor = (system: DesktopSystem, kind: ScreenKind): Promise<Scraper | undefined> =>
+  kind === "x11" ? x11Scraper(system) : wlrootsScraper(system)
+
+const x11Scraper = async (system: DesktopSystem): Promise<Scraper | undefined> => {
+  const program = await firstInstalled(system, X11_SCRAPERS)
+  return program === undefined ? undefined : { program }
+}
 
 const wlrootsScraper = async (system: DesktopSystem): Promise<Scraper | undefined> => {
   const program = await firstInstalled(system, WLROOTS_SCRAPERS)
-  if (program !== "wayvnc") return asScraper(program)
+  if (program === undefined) return undefined
 
-  const help = await system.run("wayvnc", ["--help"])
-  return { program, hasControlSocket: help.output.includes("--socket") }
+  const help = (await system.run(program, ["--help"])).output
+  if (!help.includes("--unix-socket")) return { program, tooOld: await versionOf(system, program) }
+
+  return { program, hasControlSocket: help.includes("--socket") }
 }
 
-export const missingFor = (found: ScreenPrograms, kind: ScreenKind): ReadonlyArray<string> => {
-  const needed = kind === "x11" ? X11_SCREEN_PROGRAMS : WLROOTS_SCREEN_PROGRAMS
-  return needed.filter((program) =>
-    program === SCREEN_NOTIFIER ? !found.hasNotifier : found.scrapers[kind] === undefined
+const versionOf = async (system: DesktopSystem, program: string): Promise<string> => {
+  const answer = (await system.run(program, ["--version"])).output
+  return /^\S+:\s*(\S+)/.exec(answer.trim())?.[1] ?? "of this version"
+}
+
+export const missingFor = (
+  found: ScreenPrograms,
+  kinds: ReadonlyArray<ScreenKind>
+): ReadonlyArray<ScreenProgram> => {
+  const needed = new Set<ScreenProgram>(
+    kinds.flatMap((kind) => (kind === "x11" ? X11_SCREEN_PROGRAMS : WLROOTS_SCREEN_PROGRAMS))
   )
+  return SCREEN_PROGRAMS.filter((program) => needed.has(program) && isMissing(found, program))
+}
+
+const isMissing = (found: ScreenPrograms, program: ScreenProgram): boolean => {
+  if (program === SCREEN_NOTIFIER) return !found.hasNotifier
+
+  return found.scrapers.get(program === "wayvnc" ? "wlroots" : "x11") === undefined
+}
+
+const xSessions = "/usr/share/xsessions"
+
+export const screenKindsOfTheMachine = async (
+  system: DesktopSystem
+): Promise<ReadonlyArray<ScreenKind>> => {
+  const wlroots = await firstInstalled(system, [...WLROOTS_COMPOSITORS])
+  const x11 =
+    system.listFolder(xSessions).some((name) => name.endsWith(".desktop")) ||
+    (await hasProgram(system, "Xorg"))
+  const kinds: ReadonlyArray<ScreenKind> = [
+    ...(x11 ? (["x11"] as const) : []),
+    ...(wlroots === undefined ? [] : (["wlroots"] as const))
+  ]
+  return kinds.length === 0 ? ["x11"] : kinds
 }
 
 const firstInstalled = async (

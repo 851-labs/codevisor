@@ -249,6 +249,10 @@ describe("codevisor desktop status, about the screen", () => {
     [
       { state: "none" as const, ...loggedIn },
       "This machine's screen isn't shared. Share it with: codevisor desktop setup --screen"
+    ],
+    [
+      { state: "running" as const, session: "constructor", display: ":0" },
+      "The screen (display :0) is shared as codevisor."
     ]
   ])("adds a line for the screen: %j", async (found, line) => {
     expect((await statusLines({ ...running, screen: screen(found) })).at(-1)).toBe(line)

@@ -1,7 +1,11 @@
-import type { DesktopStatus, ScreenStatus } from "@codevisor/api"
+import type { DesktopStatus } from "@codevisor/api"
 
-import { installPlan, osRelease } from "../desktop/desktop-packages.js"
-import type { ScreenKind } from "../desktop/screen-commands.js"
+import {
+  installPlan,
+  osRelease,
+  SCREEN_PROGRAMS,
+  type ScreenProgram
+} from "../desktop/desktop-packages.js"
 import { someoneElseIsThere, waylandIsNotShared } from "../desktop/screen-share.js"
 import { describeScreen } from "./desktop-screen-status.js"
 import {
@@ -15,8 +19,9 @@ import {
 } from "./desktop.js"
 
 const rerun = "codevisor desktop setup --screen"
-const kindOf = (screen: ScreenStatus | undefined): ScreenKind =>
-  screen?.session === "wlroots" ? "wlroots" : "x11"
+const screenPrograms: ReadonlyArray<string> = SCREEN_PROGRAMS
+const isScreenProgram = (program: string): program is ScreenProgram =>
+  screenPrograms.includes(program)
 const tooOld =
   "Codevisor on this machine is too old to share its screen. Update it, then run this again."
 
@@ -88,7 +93,7 @@ const installWhatIsMissing = async (
   const equipped = await asAdministrator(deps, server, status, {
     what: "Installing packages",
     path: "/screen/packages",
-    commands: plan.screenCommands[kindOf(status.screen)],
+    commands: plan.screenCommands(missing.filter(isScreenProgram)),
     rerun,
     progress: (answer) => answer.screen
   })

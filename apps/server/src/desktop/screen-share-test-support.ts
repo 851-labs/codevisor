@@ -90,12 +90,14 @@ export const workstation = (scene: Scene = {}) => {
       return pid
     }
   }
+  const started = { by: 1 }
+  const statusOf = (): string => `PPid:\t${started.by}\nUid:\t1001\t1001\n`
   const logIn = (
     env: Record<string, string> = aliceAtTheMonitor,
     type = env["WAYLAND_DISPLAY"] === undefined ? "x11" : "wayland",
     login: Login = firstLogin
   ): void => {
-    machine.files.set(`/proc/${login.process}/status`, "Uid:\t1001\t1001\n")
+    machine.files.set(`/proc/${login.process}/status`, statusOf())
     machine.files.set(`/proc/${login.process}/environ`, environ(env))
     machine.files.set(
       `/proc/${login.process}/cgroup`,
@@ -104,6 +106,8 @@ export const workstation = (scene: Scene = {}) => {
     Object.assign(logind, seated("codevisor", type, env["DISPLAY"], login.session))
   }
   const runCompositor = (name: string, session = firstLogin.session): void => {
+    started.by = compositor
+    machine.files.set(`/proc/${sessionProcess}/status`, statusOf())
     machine.files.set(`/proc/${compositor}/status`, "Uid:\t1001\t1001\n")
     machine.files.set(`/proc/${compositor}/comm`, `${name}\n`)
     machine.files.set(

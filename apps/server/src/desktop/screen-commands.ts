@@ -9,6 +9,7 @@ export interface ShownScreen {
 export interface Scraper {
   readonly program: string
   readonly hasControlSocket?: boolean
+  readonly tooOld?: string
 }
 
 export interface HelperCommand {
@@ -18,6 +19,13 @@ export interface HelperCommand {
 
 export const X11_SCRAPERS = ["X0tigervnc", "x0vncserver"] as const
 export const WLROOTS_SCRAPERS = ["wayvnc"] as const
+export const WLROOTS_COMPOSITORS: ReadonlySet<string> = new Set([
+  "sway",
+  "Hyprland",
+  "river",
+  "labwc",
+  "wayfire"
+])
 
 export const helperCommand = (
   scraper: Scraper,
