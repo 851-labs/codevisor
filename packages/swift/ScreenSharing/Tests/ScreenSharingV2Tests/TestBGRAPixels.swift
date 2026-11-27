@@ -29,6 +29,24 @@ enum TestBGRAPixels {
     return ScreenSharingVideoFrame(pixelBuffer: buffer, timestampNs: timestampNs)
   }
 
+  static func paint(
+    _ buffer: CVPixelBuffer, rows: Range<Int>, columns: Range<Int>, shade: (_ row: Int, _ column: Int) -> UInt8
+  ) {
+    CVPixelBufferLockBaseAddress(buffer, [])
+    defer { CVPixelBufferUnlockBaseAddress(buffer, []) }
+    let base = CVPixelBufferGetBaseAddress(buffer)!
+    let stride = CVPixelBufferGetBytesPerRow(buffer)
+    for row in rows {
+      let bytes = (base + row * stride).assumingMemoryBound(to: UInt8.self)
+      for column in columns {
+        let value = shade(row, column)
+        bytes[column * 4] = value
+        bytes[column * 4 + 1] = value
+        bytes[column * 4 + 2] = value
+      }
+    }
+  }
+
   static func noiseShade(row: Int, column: Int) -> UInt8 {
     var hash = UInt32(truncatingIfNeeded: column) &* 0x9E37_79B1 ^ UInt32(truncatingIfNeeded: row) &* 0x85EB_CA77
     hash ^= hash >> 15

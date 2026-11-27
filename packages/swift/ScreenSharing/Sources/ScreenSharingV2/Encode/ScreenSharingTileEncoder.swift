@@ -4,6 +4,7 @@ public protocol ScreenSharingTileEncoder: AnyObject, Sendable {
   var layout: ScreenSharingV2TileLayout { get }
   var sourcePixelFormat: OSType { get }
   var refinementPolicy: ScreenSharingV2RefinementPolicy { get }
+  var keepsItsCapForSmallChanges: Bool { get }
   func onOutput(_ handler: @escaping @Sendable (ScreenSharingTileEncoderOutput) -> Void)
   func encode(_ request: ScreenSharingTileEncodeRequest) throws
   func acknowledge(_ tokens: [UInt64], tile: Int)
@@ -23,4 +24,5 @@ extension ScreenSharingTileEncoder {
 
 extension ScreenSharingTileEncoder {
   public var refinementPolicy: ScreenSharingV2RefinementPolicy { .standard }
+  public var keepsItsCapForSmallChanges: Bool { false }
 }

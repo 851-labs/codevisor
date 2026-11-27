@@ -19,5 +19,8 @@ struct ScreenSharingTileMetrics {
     if tile.ltrToken != nil { metrics.increment("encodedLTRFrames") }
     if tile.update.isRefinement { metrics.increment("encodedRefinements") }
     metrics.observe("encode", milliseconds: Double(tile.encodedNs - tile.submittedNs) / 1_000_000)
+    guard !tile.update.isRefinement, requested == nil else { return }
+
+    metrics.observe("changeEncoded", milliseconds: Double(tile.encodedNs - tile.capturedNs) / 1_000_000)
   }
 }

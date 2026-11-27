@@ -6,12 +6,14 @@ struct ScreenSharingVCPEncoderState {
   var feedback: ScreenSharingTileNetworkFeedback?
   var failure: String?
   var stopped = false
+  var tile = 0
   var highestQP = ScreenSharingVCPRate.highestFrameQP
   var rate = ScreenSharingVCPRate(bitsPerSecond: ScreenSharingV2Profile.bitrateCeiling, tiles: 1)
   private var inFlight: [UInt64: ScreenSharingVCPSubmission] = [:]
   private var lastEncodedCapture: Int64?
   private var nextSubmission: UInt64 = 0
   private var lastPresentationNs: Int64 = 0
+  private var sharpenedLast = false
 
   mutating func begin(
     _ request: ScreenSharingTileEncodeRequest, refresh: ScreenSharingTileRefresh?, atNs nowNs: Int64
@@ -25,9 +27,18 @@ struct ScreenSharingVCPEncoderState {
     lastPresentationNs = max(lastPresentationNs + ScreenSharingVCPRate.shortestFrameGapNs, nowNs)
     let submission = ScreenSharingVCPSubmission(
       id: nextSubmission, update: request.update, sourceTimestampNs: request.sourceTimestampNs,
-      capturedNs: request.capturedNs, refresh: refresh, submittedNs: nowNs, presentationNs: lastPresentationNs)
+      capturedNs: request.capturedNs, refresh: refresh, submittedNs: nowNs, presentationNs: lastPresentationNs,
+      highestQP: highestQP(for: request, refresh: refresh))
+    sharpenedLast = request.update.isRefinement
     inFlight[submission.id] = submission
     return submission
+  }
+
+  private func highestQP(for request: ScreenSharingTileEncodeRequest, refresh: ScreenSharingTileRefresh?) -> Int {
+    guard !request.update.isRefinement else { return rate.highestQP(refining: true) }
+
+    let keepsItsCap = sharpenedLast && refresh == nil && request.smallTiles.contains(tile)
+    return keepsItsCap && rate.refinesNearLossless ? highestQP : ScreenSharingVCPRate.highestFrameQP
   }
 
   mutating func takeAcknowledged() -> [UInt64] {

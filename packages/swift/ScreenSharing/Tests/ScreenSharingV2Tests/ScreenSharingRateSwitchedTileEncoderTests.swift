@@ -197,6 +197,17 @@ struct ScreenSharingRateSwitchedTileEncoderTests {
     #expect(slow.acknowledgedTokens.isEmpty)
   }
 
+  @Test func whetherSmallChangesKeepTheirCapFollowsTheEncoderOnTheRoute() throws {
+    let keeping = RecordingTileEncoder(layout: Self.tiled, keepsItsCapForSmallChanges: true)
+    let encoder = try switched(bitrate: Self.fastBitrate, fast: keeping)
+    let onTheSlowRoute = encoder.keepsItsCapForSmallChanges
+
+    switchToFast(encoder)
+
+    #expect(!onTheSlowRoute)
+    #expect(encoder.keepsItsCapForSmallChanges)
+  }
+
   @Test func aSlowLinkMovesBackToTheSlowEncoderWithoutAskingForKeyframes() throws {
     let encoder = try switched(bitrate: Self.fastBitrate)
     try encoder.encode(try Self.request(id: 1, tiles: [0, 1, 2, 3]))

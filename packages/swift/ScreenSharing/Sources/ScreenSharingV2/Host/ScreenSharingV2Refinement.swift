@@ -4,6 +4,7 @@ struct ScreenSharingV2Refinement {
   private var remaining: [Int: Int] = [:]
   private var encodedNs: [Int: Int64] = [:]
   private var changedBy: [Int: UInt32] = [:]
+  private(set) var sharpenedLast: Set<Int> = []
 
   init(passes: Int = ScreenSharingV2Profile.refinementPasses, gapNs: Int64 = ScreenSharingV2Profile.refinementGapNs) {
     self.passes = passes
@@ -16,6 +17,7 @@ struct ScreenSharingV2Refinement {
       encodedNs[tile] = nowNs
       changedBy[tile] = update
     }
+    sharpenedLast.subtract(tiles)
   }
 
   mutating func refined(_ tiles: Set<Int>, atNs nowNs: Int64) {
@@ -24,6 +26,7 @@ struct ScreenSharingV2Refinement {
       remaining[tile] = left > 0 ? left : nil
       encodedNs[tile] = nowNs
     }
+    sharpenedLast.formUnion(tiles)
   }
 
   mutating func settled(_ tile: Int, by update: UInt32) {
@@ -45,5 +48,6 @@ struct ScreenSharingV2Refinement {
     remaining = [:]
     encodedNs = [:]
     changedBy = [:]
+    sharpenedLast = []
   }
 }

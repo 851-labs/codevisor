@@ -25,6 +25,14 @@ enum TestPixels {
     return base[row * CVPixelBufferGetBytesPerRowOfPlane(buffer, 0) + column]
   }
 
+  static func paint(_ buffer: CVPixelBuffer, plane: Int, rows: Range<Int>, bytes: Range<Int>, value: UInt8) {
+    CVPixelBufferLockBaseAddress(buffer, [])
+    defer { CVPixelBufferUnlockBaseAddress(buffer, []) }
+    let base = CVPixelBufferGetBaseAddressOfPlane(buffer, plane)!
+    let stride = CVPixelBufferGetBytesPerRowOfPlane(buffer, plane)
+    for row in rows { memset(base + row * stride + bytes.lowerBound, Int32(value), bytes.count) }
+  }
+
   private static func buffer(width: Int, height: Int, shades: [UInt8]) throws -> CVPixelBuffer {
     var buffer: CVPixelBuffer?
     let attributes = [kCVPixelBufferIOSurfacePropertiesKey: [:] as [String: Any]] as CFDictionary

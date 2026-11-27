@@ -679,10 +679,17 @@ CodevisorBench host-lab --scenes scroll,typing --seconds 30 --settle 5 --virtual
   child: ScreenSharingCapture → ScreenSharingV2Host → the VideoToolbox tile encoder → a null transport that drops
   the tiles and acknowledges every LTR token at once. After `--settle` seconds it samples CPU for `--seconds`.
 - A variant is `base` or comma-separated settings: `queue` (ScreenCaptureKit queue depth), `cursor`, `fps` (capture
-  and encoder rate), `refine` (refinement passes), `converge` (a refinement pass under this many bytes ends the tile's refinement; 0 is off); either one replaces the encoder's own policy (VCP's 200-byte convergence included); without either, the run uses the encoder's policy, as the product does, `tiles` (1 or 4), `ltr`, `vcp` (1 runs the VCP tile encoder instead of VideoToolbox, on its BGRA capture) and
-  `bgra` (1 captures BGRA for VideoToolbox too, so the capture format's cost shows apart from VCP's, 851-3975).
+  and encoder rate), `refine` (refinement passes), `converge` (a refinement pass under this many bytes ends the tile's refinement; 0 is off); either one replaces the encoder's own policy (VCP's 200-byte convergence included); without either, the run uses the encoder's policy, as the product does, `tiles` (1 or 4), `ltr`, `vcp` (1 runs the VCP tile encoder instead of VideoToolbox, on its BGRA capture),
+  `bgra` (1 captures BGRA for VideoToolbox too, so the capture format's cost shows apart from VCP's, 851-3975) and
+  `small` (the most pixels a change may span and still be small for the host, 16,384 in the product; 0 turns the rule off, 851-4476).
+- One player runs every variant of a scene, in order, so each variant sees a later part of the scene. Typing repeats every
+  20 s (`--seconds 12` with the default settle makes a variant's run one whole cycle), and its typed line later leaves the
+  first tile, after which a keystroke changes two tiles. Put the baseline on both sides of a variant (`small=0/base/small=0`),
+  and name a scene twice to play it again from the start.
 - The table gives the whole system (`all_processes`), the `host-run` child, `VTEncoderXPCService`, `WindowServer`,
-  `replayd` and the player, plus captures, tile encodes and refinements per second and the encode p50. The network
+  `replayd` and the player, plus captures, tile encodes and refinements per second and the encode p50. The JSON has every
+  host metric of each variant, such as `changeEncoded` (a change's capture callback to the encoder's output),
+  `tilesChangedSmall`, `changesKeptSharp` and `encoderQPCapChanges`. The network
   send path isn't in it; `media-transport` measures that.
 - **CI.** `-f lab='tamale host-lab --scenes scroll,typing --variants base/cursor=0'` runs it in the lab job; the table
   is in the job summary.

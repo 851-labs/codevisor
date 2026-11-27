@@ -2,15 +2,16 @@ import ScreenSharing
 import ScreenSharingV2
 
 struct HostLabVariant: Equatable, Sendable {
-  private static let keys = ["queue", "cursor", "fps", "refine", "converge", "tiles", "ltr", "vcp", "bgra"]
+  private static let keys = ["queue", "cursor", "fps", "refine", "converge", "tiles", "ltr", "vcp", "bgra", "small"]
   private static let queueDepths = 1...8
   private static let rates = 1...120
   private static let passes = 0...12
   private static let convergedBytes = 0...1_000_000
   private static let tileCounts = [1, ScreenSharingV2Profile.tileCount]
+  private static let smallChanges = 0...10_000_000
   static let usage =
     "queue=<1-8>,cursor=0|1,fps=<1-120>,refine=<0-12>,converge=<bytes>,tiles=1|4,ltr=0|1,vcp=0|1,bgra=0|1, "
-    + "or base"
+    + "small=<pixels>, or base"
 
   var name = "base"
   var queueDepth = ScreenSharingCapture.defaultQueueDepth
@@ -21,6 +22,7 @@ struct HostLabVariant: Equatable, Sendable {
   var longTermReferences = true
   var encoder = ScreenSharingV2EncoderKind.videoToolbox
   var capturesBGRA = false
+  var smallChangePixels = ScreenSharingV2Profile.smallChangePixels
 
   init() {}
 
@@ -53,7 +55,7 @@ struct HostLabVariant: Equatable, Sendable {
       "--variant", name, "--queue", "\(queueDepth)", "--cursor", showsCursor ? "1" : "0", "--fps",
       "\(framesPerSecond)", "--ltr", longTermReferences ? "1" : "0", "--vcp", encoder == .videoProcessing ? "1" : "0",
       "--bgra",
-      capturesBGRA ? "1" : "0",
+      capturesBGRA ? "1" : "0", "--small", "\(smallChangePixels)",
     ]
     if let refinement {
       arguments += ["--refine", "\(refinement.passes)", "--converge", "\(refinement.convergedBelowBytes)"]
@@ -78,6 +80,7 @@ struct HostLabVariant: Equatable, Sendable {
     case "tiles": tiles = try Self.check(key, value, Self.tileCounts.contains(value))
     case "ltr": longTermReferences = try Self.check(key, value, [0, 1].contains(value)) == 1
     case "vcp": encoder = try Self.check(key, value, [0, 1].contains(value)) == 1 ? .videoProcessing : .videoToolbox
+    case "small": smallChangePixels = try Self.check(key, value, Self.smallChanges.contains(value))
     case "bgra": capturesBGRA = try Self.check(key, value, [0, 1].contains(value)) == 1
     default: throw BenchUsageError(message: "unknown variant setting \(key); use \(Self.usage)")
     }

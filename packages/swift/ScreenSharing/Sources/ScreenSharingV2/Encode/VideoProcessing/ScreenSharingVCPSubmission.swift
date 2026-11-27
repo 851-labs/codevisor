@@ -6,4 +6,5 @@ struct ScreenSharingVCPSubmission: Sendable {
   let refresh: ScreenSharingTileRefresh?
   let submittedNs: Int64
   let presentationNs: Int64
+  let highestQP: Int
 }

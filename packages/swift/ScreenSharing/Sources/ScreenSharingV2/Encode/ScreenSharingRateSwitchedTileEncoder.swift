@@ -59,6 +59,10 @@ public final class ScreenSharingRateSwitchedTileEncoder: ScreenSharingTileEncode
     encoder(state.withLock { $0.route.choice }).refinementPolicy
   }
 
+  public var keepsItsCapForSmallChanges: Bool {
+    encoder(state.withLock { $0.route.choice }).keepsItsCapForSmallChanges
+  }
+
   public func onOutput(_ handler: @escaping @Sendable (ScreenSharingTileEncoderOutput) -> Void) {
     state.withLock { $0.output = handler }
   }
@@ -238,6 +242,6 @@ public final class ScreenSharingRateSwitchedTileEncoder: ScreenSharingTileEncode
     for tile in tiles { refreshes[tile] = .keyframe }
     return ScreenSharingTileEncodeRequest(
       pixelBuffer: request.pixelBuffer, sourceTimestampNs: request.sourceTimestampNs, capturedNs: request.capturedNs,
-      update: request.update, refreshes: refreshes)
+      update: request.update, refreshes: refreshes, smallTiles: request.smallTiles)
   }
 }

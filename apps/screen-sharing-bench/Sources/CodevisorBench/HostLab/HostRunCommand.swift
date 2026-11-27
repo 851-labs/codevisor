@@ -9,7 +9,7 @@ struct HostRunCommand: BenchCommand {
   static let summary = "Run the engine v2 host pipeline on a display into a null transport (one host-lab variant)"
   static let usage =
     "--display-id <id> --output <file.json> [--seconds <n>] [--variant <name>] [--queue n] [--cursor 0|1] "
-    + "[--fps n] [--refine n] [--converge bytes] [--tiles 1|4] [--ltr 0|1] [--vcp 0|1] [--bgra 0|1]"
+    + "[--fps n] [--refine n] [--converge bytes] [--tiles 1|4] [--ltr 0|1] [--vcp 0|1] [--bgra 0|1] [--small pixels]"
 
   private static let durations = 1...600
 
@@ -43,7 +43,7 @@ struct HostRunCommand: BenchCommand {
     let transport = HostLabNullTransport()
     let host = ScreenSharingV2Host(
       transport: transport, encoder: encoder, metrics: metrics,
-      refinement: variant.refinement)
+      refinement: variant.refinement, smallChangePixels: variant.smallChangePixels)
     let capture = ScreenSharingCapture(
       pixelFormat: variant.capturesBGRA ? kCVPixelFormatType_32BGRA : encoder.sourcePixelFormat)
     capture.queueDepth = variant.queueDepth

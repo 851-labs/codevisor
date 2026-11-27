@@ -16,6 +16,7 @@ public enum ScreenSharingV2Profile {
   public static let refinementGapFrames = 2
   public static let refinementConvergedBelowBytes = 0
   public static let refinementRefreshOffsetNs: Int64 = 2_000_000
+  public static let smallChangePixels = 16_384
   public static let initialEstimateKbps: UInt32 = 100_000
 
   public static var frameIntervalUs: UInt32 { UInt32(1_000_000 / framesPerSecond) }
