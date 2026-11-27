@@ -102,6 +102,7 @@ public final class ScreenSharingPaneModel {
   public func select(displayId id: String) {
     guard id != pickedDisplayId, displays.contains(where: { $0.id == id }) else { return }
 
+    dismissedDisplaySwitch = nil
     chosenDisplay.choose(id)
     connection.switchDisplay(to: id)
   }

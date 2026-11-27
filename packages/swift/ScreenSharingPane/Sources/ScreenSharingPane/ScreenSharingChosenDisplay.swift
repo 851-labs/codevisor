@@ -19,12 +19,19 @@ final class ScreenSharingChosenDisplay {
   }
 
   private func watch() {
-    let preferred = withObservationTracking {
-      connection.preferredDisplayId
+    let (preferred, result) = withObservationTracking {
+      (connection.preferredDisplayId, connection.displaySwitch)
     } onChange: { [weak self] in
       Task { @MainActor [weak self] in self?.watch() }
     }
+    forgetIfRefused(result)
     saveIfAdopted(preferred)
+  }
+
+  private func forgetIfRefused(_ result: ScreenSharingDisplaySwitch?) {
+    guard let result, result.displayId == chosen, result.failure != nil else { return }
+
+    chosen = nil
   }
 
   private func saveIfAdopted(_ preferred: String?) {

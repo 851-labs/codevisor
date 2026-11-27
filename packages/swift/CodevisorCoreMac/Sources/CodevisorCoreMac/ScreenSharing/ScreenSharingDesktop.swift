@@ -216,6 +216,7 @@ public final class ScreenSharingDesktop {
 
   private func saveTheChosenDisplay(preferred: String?, shared: String?) {
     guard let chosenDisplayId, chosenDisplayId == preferred || chosenDisplayId == shared else { return }
+    guard connection.displaySwitch?.phase != .switching else { return }
 
     preferences.setPreferredDisplay(chosenDisplayId, machineId: machineId)
     self.chosenDisplayId = nil

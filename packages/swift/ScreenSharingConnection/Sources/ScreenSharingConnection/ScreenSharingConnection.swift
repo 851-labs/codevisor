@@ -67,17 +67,21 @@ public final class ScreenSharingConnection {
     guard preferredDisplayId != displayId else { return }
 
     preferredDisplayId = displayId
-    guard state == .reconnecting else { return }
-
-    restart()
+    returnTo = nil
   }
 
   func end() { handle(.ended) }
 
   private var wantedDisplayId: String? { pendingSwitch?.displayId ?? returnTo ?? preferredDisplayId }
 
+  private var picksByReconnecting: Bool {
+    state.isConnecting || state == .reconnecting || (state == .live && reconnectsToSwitch)
+  }
+
+  private var isOnScreen: Bool { surfaces.contains(where: \.isOnScreen) }
+
   private func switchByReconnecting(to displayId: String) -> Bool {
-    guard reconnectsToSwitch, state.isUnderway else { return false }
+    guard picksByReconnecting else { return false }
     guard (pendingSwitch?.displayId ?? display?.id) != displayId else { return true }
 
     pendingSwitch = ScreenSharingReconnectSwitch(displayId: displayId, returnTo: pendingSwitch?.returnTo ?? display?.id)
@@ -137,6 +141,7 @@ public final class ScreenSharingConnection {
     pendingSwitch = nil
     returnTo = pending.returnTo
     displaySwitch = switching(to: pending.displayId, .unavailable(message: problem(of: pending.displayId)))
+    display = displays.first { $0.id == pending.returnTo }
     return true
   }
 
@@ -275,7 +280,9 @@ public final class ScreenSharingConnection {
     }
     attempt?.runner = runner
     guard let end = await runner.run(), attempt?.id == id else { return }
-    guard returnFromPendingSwitch() else { return handle(.attemptEnded(end)) }
+    guard returnFromPendingSwitch(), isOnScreen, end != .dropped(.cantReach) else {
+      return handle(.attemptEnded(end))
+    }
 
     handle(.displayPicked)
   }
@@ -326,6 +333,7 @@ public final class ScreenSharingConnection {
   private func stop() {
     cancelAttempt()
     if !unavailableDisplays.isEmpty { unavailableDisplays = [] }
+    returnTo = nil
     display = nil
     stopOnHost()
   }

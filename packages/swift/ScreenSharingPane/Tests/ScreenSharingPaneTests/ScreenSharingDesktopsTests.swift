@@ -143,6 +143,10 @@ struct ScreenSharingDesktopsTests {
     #expect(saved.preferredDisplay(machineId: DesktopsHarness.machineId) == nil)
     model?.dismissDisplaySwitchFailure()
     #expect(model?.displaySwitchFailure == nil)
+
+    model?.select(displayId: FakeHost.second.id)
+    await awaitObserved { model?.displaySwitchFailure != nil }
+    #expect(model?.displaySwitchFailure == "That display is asleep.", "picking it again shows the reason again")
   }
 
   @Test(

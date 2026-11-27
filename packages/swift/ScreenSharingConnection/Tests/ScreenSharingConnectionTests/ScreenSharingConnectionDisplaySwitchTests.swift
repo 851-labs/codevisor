@@ -187,6 +187,24 @@ struct ScreenSharingConnectionDisplaySwitchTests {
     #expect(harness.connection.display == Self.second, "the older heartbeat's answer is not shown")
   }
 
+  @Test("A pick while the connection is still coming up opens the picked display, and is saved once it shows")
+  func picksWhileConnecting() async {
+    let host = FakeHost()
+    host.displays = [Self.first, Self.second]
+    let harness = ConnectionHarness(host: host)
+    harness.show()
+
+    harness.connection.switchDisplay(to: Self.second.id)
+    #expect(harness.connection.preferredDisplayId == nil)
+    #expect(harness.connection.displaySwitch?.phase == .switching)
+    await harness.goLive()
+
+    #expect(harness.host.starts.last?.displayId == Self.second.id)
+    #expect(
+      harness.connection.displaySwitch == Switch(displayId: Self.second.id, name: Self.second.name, phase: .confirmed))
+    #expect(harness.connection.preferredDisplayId == Self.second.id)
+  }
+
   @Test("A display that comes back leaves the Not Available list, and the next reply's list replaces it")
   func unavailableListFollowsTheDisplays() async {
     let host = FakeHost()

@@ -14,7 +14,8 @@
           .glassEffect(.regular, in: .capsule)
           .transition(.move(edge: .top).combined(with: .opacity))
           .task(id: failure) {
-            try? await Task.sleep(for: .seconds(4))
+            guard (try? await Task.sleep(for: .seconds(4))) != nil else { return }
+
             model.dismissDisplaySwitchFailure()
           }
       }
