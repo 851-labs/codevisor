@@ -314,7 +314,7 @@ export const spliceVNCSocket = (
       return
     }
     const upstream = dial(located.path)
-    options.viewerJoined?.(config)
+    upstream.once("connect", () => options.viewerJoined?.(config))
     const sendText = (text: string) => webSocket.send(text, {}, () => undefined)
     const id = arbiter.join(sendText)
     const clipboard =

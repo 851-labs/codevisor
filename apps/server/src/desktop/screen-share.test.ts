@@ -1,108 +1,18 @@
 import { describe, expect, it } from "vitest"
 
-import type { PrivateSocket } from "../routes/private-socket.js"
+import { CONFIG, EVERY_PROGRAM, LOGS_DIR } from "./desktop-test-support.js"
 import {
-  CONFIG,
-  DATA_DIR,
-  EVERY_PROGRAM,
-  fakeMachine,
-  type FakeMachineOptions,
-  LOGS_DIR,
-  UBUNTU
-} from "./desktop-test-support.js"
-import { makeScreenShare } from "./screen-share.js"
-
-const socket = "/run/user/1001/codevisor-screen.sock"
-const pidFile = `${DATA_DIR}/screen.pid`
-const helper = 4242
-const sessionProcess = 400
-const withTheScreenPrograms = [...EVERY_PROGRAM, "X0tigervnc", "notify-send"]
-const desktopEntry = {
-  id: "desktop",
-  vnc: { socket: "/run/user/1001/codevisor-desktop.sock", display: 1, xauthority: "/x.auth" },
-  service: "systemd-user"
-}
-const screenEntry = { id: "screen", vnc: { socket, name: "Screen" }, service: "server" }
-const setUp = `${JSON.stringify({ displays: [screenEntry] })}\n`
-
-const environ = (env: Record<string, string>): string =>
-  Object.entries(env)
-    .map(([name, value]) => `${name}=${value}\0`)
-    .join("")
-
-const aliceAtTheMonitor = {
-  XDG_SEAT: "seat0",
-  DISPLAY: ":0",
-  XAUTHORITY: "/home/codevisor/.Xauthority",
-  DBUS_SESSION_BUS_ADDRESS: "unix:path=/run/user/1001/bus"
-}
-
-const seated = (account: string) => ({
-  "loginctl list-sessions --no-legend": { code: 0, output: ` 2 1002 ${account} seat0 tty2\n` },
-  "loginctl show-session 2 -p Name -p Seat -p Class -p Remote -p State": {
-    code: 0,
-    output: `Name=${account}\nSeat=seat0\nClass=user\nRemote=no\nState=active\n`
-  }
-})
-const someoneElseIsSeated = seated("alice")
-const nobodyIsSeated = { "loginctl list-sessions --no-legend": { code: 0, output: "" } }
-
-interface Scene extends FakeMachineOptions {
-  readonly tcpPorts?: () => ReadonlyArray<number> | undefined
-}
-
-const workstation = (scene: Scene = {}) => {
-  const logind: NonNullable<FakeMachineOptions["results"]> = { ...nobodyIsSeated, ...scene.results }
-  const machine = fakeMachine({
-    programs: withTheScreenPrograms,
-    folders: { "/proc": [String(sessionProcess)] },
-    ...scene,
-    results: logind,
-    files: { ...UBUNTU, ...scene.files }
-  })
-  const clock = { now: 1_000_000 }
-  const logIn = (env: Record<string, string> = aliceAtTheMonitor): void => {
-    machine.files.set(`/proc/${sessionProcess}/status`, "Uid:\t1001\t1001\n")
-    machine.files.set(`/proc/${sessionProcess}/environ`, environ(env))
-    Object.assign(logind, seated("codevisor"))
-  }
-  const endTheSession = (): void => {
-    Object.assign(logind, nobodyIsSeated)
-    machine.system.terminate(helper)
-  }
-  const logOut = (): void => {
-    machine.files.delete(`/proc/${sessionProcess}/environ`)
-    endTheSession()
-  }
-  const settled = async () => {
-    let status = await screen.status()
-    while (status.busy !== undefined) status = await screen.status()
-    return status
-  }
-  const locate = (configured: string): PrivateSocket =>
-    machine.system.processAlive(helper)
-      ? { path: configured }
-      : { problem: "missing", detail: `nothing at ${configured}` }
-  const screen = makeScreenShare({
-    system: machine.system,
-    dataDir: DATA_DIR,
-    logsDir: LOGS_DIR,
-    changed: () => void (machine.changes.count += 1),
-    locate,
-    tcpPortsOf: () => (scene.tcpPorts === undefined ? [] : scene.tcpPorts()),
-    now: () => clock.now
-  })
-  return { ...machine, screen, logIn, logOut, endTheSession, settled, clock }
-}
-
-const refusal = (promise: Promise<unknown>) =>
-  promise.then(
-    () => undefined,
-    (cause: { status?: number; message?: string }) => ({
-      status: cause.status,
-      message: cause.message
-    })
-  )
+  desktopEntry,
+  helper,
+  pidFile,
+  refusal,
+  screenEntry,
+  setUp,
+  socket,
+  someoneElseIsSeated,
+  aliceAtTheMonitor,
+  workstation
+} from "./screen-share-test-support.js"
 
 describe("sharing the screen the server's account is logged in at", () => {
   it("records the screen beside the desktop and starts x0vncserver on that session's display", async () => {
@@ -315,6 +225,74 @@ describe("sharing the screen the server's account is logged in at", () => {
     expect(await machine.screen.status()).toMatchObject({ state: "running" })
   })
 
+  it("stops sharing when its account has left the screen, though processes still carry the session", async () => {
+    const machine = workstation()
+    machine.logIn()
+    await machine.screen.setUp()
+
+    machine.leaveTheScreen()
+    await machine.screen.follow()
+
+    expect(machine.terminated).toEqual([helper])
+    expect(await machine.screen.status()).toMatchObject({ state: "waiting" })
+  })
+
+  it("starts the helper again when its socket is gone though the helper still runs", async () => {
+    const machine = workstation()
+    machine.logIn()
+    await machine.screen.setUp()
+
+    machine.socketState.gone = true
+    await machine.screen.follow()
+
+    expect(machine.terminated).toEqual([helper])
+    expect(machine.spawned).toHaveLength(2)
+  })
+
+  it("kills a helper that ignores being asked to stop, and forgets it only once it has gone", async () => {
+    const machine = workstation({ ignoresSigterm: [helper] })
+    machine.logIn()
+    await machine.screen.setUp()
+
+    machine.leaveTheScreen()
+    await machine.screen.follow()
+
+    expect([machine.terminated, machine.killed]).toEqual([[helper], [helper]])
+    expect(machine.files.has(pidFile)).toBe(false)
+  })
+
+  it("names its socket after its data folder, so two servers on one account don't share one", async () => {
+    const machine = workstation()
+    machine.logIn()
+
+    await machine.screen.setUp()
+
+    expect(JSON.parse(machine.files.get(CONFIG) ?? "").displays[0].vnc.socket).toBe(socket)
+  })
+
+  it("leaves alone a socket it neither recorded nor started", async () => {
+    const otherServers = "/run/user/1001/codevisor-screen-54e65e34be47.sock"
+    const machine = workstation({ files: { [socket]: "", [otherServers]: "" } })
+    machine.logIn()
+
+    await machine.screen.follow()
+
+    expect([machine.files.has(socket), machine.files.has(otherServers)]).toEqual([true, true])
+  })
+
+  it("asks logind about the screen once for each status, and checks the programs once a while", async () => {
+    const machine = workstation()
+    machine.logIn()
+
+    await machine.screen.status()
+    await machine.screen.status()
+
+    const listed = machine.asked.filter((line) => line === "loginctl list-sessions --no-legend")
+    const probed = machine.asked.filter((line) => line.startsWith("sh -c command -v"))
+    expect(listed).toHaveLength(2)
+    expect(probed).toHaveLength(2)
+  })
+
   it("stops sharing and forgets the screen when it is removed, keeping the desktop", async () => {
     const machine = workstation({
       files: { [CONFIG]: JSON.stringify({ displays: [desktopEntry] }) }
@@ -335,66 +313,5 @@ describe("sharing the screen the server's account is logged in at", () => {
     await machine.screen.remove()
 
     expect(machine.files.has(CONFIG)).toBe(false)
-  })
-})
-
-describe("telling the person at the screen that someone is viewing it", () => {
-  const notification =
-    "env DISPLAY=:0 XAUTHORITY=/home/codevisor/.Xauthority DBUS_SESSION_BUS_ADDRESS=unix:path=/run/user/1001/bus notify-send -a Codevisor Codevisor Someone started viewing this screen."
-
-  it("shows a notification in that session, and not again for every reconnect", async () => {
-    const machine = workstation({ files: { [CONFIG]: setUp } })
-    machine.logIn()
-    const shown = () => machine.commands.filter((line) => line === notification)
-
-    machine.screen.viewerJoined()
-    machine.screen.viewerJoined()
-    expect(shown()).toHaveLength(1)
-
-    machine.clock.now += 30_000
-    machine.screen.viewerJoined()
-    expect(shown()).toHaveLength(2)
-  })
-
-  it("shows nothing when nobody is logged in", () => {
-    const machine = workstation({ files: { [CONFIG]: setUp } })
-
-    machine.screen.viewerJoined()
-
-    expect(machine.commands).toEqual([])
-  })
-})
-
-describe("installing what sharing the screen needs", () => {
-  const install =
-    /^sudo -n timeout .* apt-get .* install -y -q --no-install-recommends tigervnc-scraping-server libnotify-bin$/
-
-  it("installs the scraping server and the notifier as root, and says it is busy meanwhile", async () => {
-    const installed = Promise.withResolvers<void>()
-    const machine = workstation({
-      programs: [...EVERY_PROGRAM],
-      holds: { prefix: "sudo -n timeout", until: installed.promise }
-    })
-
-    expect(await machine.screen.installPackages()).toMatchObject({ busy: "Installing packages" })
-
-    installed.resolve()
-    expect(await machine.settled()).not.toHaveProperty("failure")
-    expect(machine.commands).toContainEqual(expect.stringMatching(install))
-  })
-
-  it("keeps why an install failed until what was missing is there", async () => {
-    const machine = workstation({ programs: [...EVERY_PROGRAM], failing: ["sudo -n timeout"] })
-
-    await machine.screen.installPackages()
-
-    expect(await machine.settled()).toMatchObject({ failure: "Installing packages failed:\n" })
-  })
-
-  it("leaves it to an administrator when the server's account needs a password", async () => {
-    const machine = workstation({ programs: [...EVERY_PROGRAM, "sudo"], failing: ["sudo -n true"] })
-
-    expect(await refusal(machine.screen.installPackages())).toMatchObject({ status: 403 })
-    expect(await machine.screen.status()).toMatchObject({ sudo: "password" })
   })
 })

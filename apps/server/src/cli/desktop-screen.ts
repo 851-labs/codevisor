@@ -56,8 +56,13 @@ export const screenRemoveCommand = async (
   return 0
 }
 
-const refused = (deps: DesktopCliDeps, why: string): number => {
-  deps.error(why)
+const setUpButNotShared = (problem: string | undefined): ReadonlyArray<string> => [
+  `The screen is set up, but isn't shared yet: ${problem ?? "no reason found"}.`,
+  "Codevisor tries again every 30 seconds. To undo the setup: codevisor desktop remove --screen"
+]
+
+const refused = (deps: DesktopCliDeps, ...lines: ReadonlyArray<string>): number => {
+  for (const line of lines) deps.error(line)
   return 1
 }
 
@@ -96,7 +101,7 @@ const shareTheScreen = async (deps: DesktopCliDeps, server: DesktopServer): Prom
   const shared = await server.ask("POST", "/screen", startMs)
   const screen = shared?.screen
   if (shared === undefined || screen === undefined) return 1
-  if (screen.state === "stopped") return refused(deps, `The screen isn't shared: ${screen.problem}`)
+  if (screen.state === "stopped") return refused(deps, ...setUpButNotShared(screen.problem))
 
   deps.log(
     screen.state === "running"

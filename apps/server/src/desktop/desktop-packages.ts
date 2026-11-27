@@ -51,20 +51,24 @@ export const missingPrograms = async (system: DesktopSystem): Promise<ReadonlyAr
   return DESKTOP_PROGRAMS.filter((_, index) => !found[index])
 }
 
-export const screenScraper = async (system: DesktopSystem): Promise<string | undefined> => {
+export interface ScreenPrograms {
+  readonly scraper: string | undefined
+  readonly missing: ReadonlyArray<string>
+}
+
+export const screenPrograms = async (system: DesktopSystem): Promise<ScreenPrograms> => {
+  const scraper = await screenScraper(system)
+  const hasNotifier = await hasProgram(system, SCREEN_NOTIFIER)
+  const missing = SCREEN_PROGRAMS.filter((program) =>
+    program === SCREEN_NOTIFIER ? !hasNotifier : scraper === undefined
+  )
+  return { scraper, missing }
+}
+
+const screenScraper = async (system: DesktopSystem): Promise<string | undefined> => {
   for (const program of SCREEN_SCRAPERS) if (await hasProgram(system, program)) return program
 
   return undefined
-}
-
-export const missingScreenPrograms = async (
-  system: DesktopSystem
-): Promise<ReadonlyArray<string>> => {
-  const hasScraper = (await screenScraper(system)) !== undefined
-  const hasNotifier = await hasProgram(system, SCREEN_NOTIFIER)
-  return SCREEN_PROGRAMS.filter((program) =>
-    program === SCREEN_NOTIFIER ? !hasNotifier : !hasScraper
-  )
 }
 
 export const hasProgram = async (system: DesktopSystem, program: string): Promise<boolean> =>

@@ -32,7 +32,7 @@ export interface DesktopSystem {
     logPath: string
   ) => number | undefined
   readonly processAlive: (pid: number) => boolean
-  readonly terminate: (pid: number) => void
+  readonly terminate: (pid: number, signal?: "SIGTERM" | "SIGKILL") => void
   readonly readText: (path: string) => string | undefined
   readonly writeText: (path: string, text: string) => void
   readonly remove: (path: string) => void
@@ -78,9 +78,9 @@ export const systemDesktopSystem = (): DesktopSystem => ({
     return child.pid
   },
   processAlive,
-  terminate: (pid) => {
+  terminate: (pid, signal = "SIGTERM") => {
     try {
-      process.kill(pid, "SIGTERM")
+      process.kill(pid, signal)
     } catch {
       return
     }

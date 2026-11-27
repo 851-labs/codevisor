@@ -10,7 +10,8 @@ import { WebSocket } from "ws"
 import {
   SCREEN_SHARING_CONFIG_FILE,
   spliceVNCSocket,
-  VNC_DISPLAY_ID
+  VNC_DISPLAY_ID,
+  VNC_SCREEN_ID
 } from "./screen-sharing-vnc.js"
 import { VNCControlArbiter } from "./vnc-control.js"
 import { VNCRelays } from "./vnc-relays.js"
@@ -128,6 +129,46 @@ it("cuts a withdrawn viewer off at once: its link to the desktop, its control se
     expect(received).not.toHaveBeenCalled()
   } finally {
     written.mockRestore()
+    upstream.destroy()
+    client.destroy()
+  }
+})
+
+it("tells the screen a viewer has joined only once the connection to its VNC server is made", () => {
+  const webSocket = Object.assign(new EventEmitter(), {
+    bufferedAmount: 0,
+    readyState: WebSocket.OPEN,
+    close: () => undefined,
+    send: () => undefined
+  })
+  const upstream = new Socket()
+  const client = new Socket()
+  const joined: string[] = []
+  const screen = {
+    socket: "/run/user/1000/codevisor-screen.sock",
+    name: "Screen",
+    screen: true as const
+  }
+  try {
+    spliceVNCSocket(
+      screen,
+      new URL(`http://localhost/?displayId=${VNC_SCREEN_ID}`),
+      new IncomingMessage(client),
+      client,
+      Buffer.alloc(0),
+      { handleUpgrade: (_request, _socket, _head, done) => done(webSocket) },
+      {
+        dial: () => upstream,
+        arbiter: new VNCControlArbiter(),
+        locate: (path) => ({ path }),
+        viewerJoined: (display) => void joined.push(display.name)
+      }
+    )
+    expect(joined).toEqual([])
+
+    upstream.emit("connect")
+    expect(joined).toEqual(["Screen"])
+  } finally {
     upstream.destroy()
     client.destroy()
   }

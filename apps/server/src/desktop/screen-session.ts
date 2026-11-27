@@ -33,9 +33,9 @@ export const accountsAtTheScreen = async (
   system: Pick<DesktopSystem, "run">
 ): Promise<ReadonlyArray<string> | undefined> => {
   const seated = await seatedAccounts(system)
-  if (seated !== undefined && seated.length > 0) return seated
+  if (seated !== undefined) return seated
 
-  return (await loggedInOnADisplay(system)) ?? seated
+  return loggedInOnADisplay(system)
 }
 
 const carried = [

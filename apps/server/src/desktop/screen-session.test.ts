@@ -123,9 +123,17 @@ describe("who is logged in at the machine's screen", () => {
     expect(await accountsAtTheScreen(system)).toEqual(["alice"])
   })
 
-  it("falls back to who is recorded on a display when logind has no sessions", async () => {
+  it("trusts logind when it lists nobody at a seat, whatever who says about remote displays", async () => {
     const system = answering({
       "loginctl list-sessions --no-legend": { output: "" },
+      who: { output: "carol    :10          2026-11-26 17:18 (:10)\n" }
+    })
+
+    expect(await accountsAtTheScreen(system)).toEqual([])
+  })
+
+  it("asks who, for those recorded on a display, only where loginctl can't be asked", async () => {
+    const system = answering({
       who: {
         output:
           "alice    tty7         2026-11-26 17:18 (:0)\nlightdm  :1           2026-11-26 17:10\nbob      pts/0        2026-11-26 17:19 (10.0.0.4)\n"
@@ -133,15 +141,6 @@ describe("who is logged in at the machine's screen", () => {
     })
 
     expect(await accountsAtTheScreen(system)).toEqual(["alice"])
-  })
-
-  it("is nobody when both answer and list no one", async () => {
-    const system = answering({
-      "loginctl list-sessions --no-legend": { output: "" },
-      who: { output: "" }
-    })
-
-    expect(await accountsAtTheScreen(system)).toEqual([])
   })
 
   it("is unknown when neither can be asked", async () => {

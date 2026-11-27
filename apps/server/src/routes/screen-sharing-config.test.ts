@@ -45,6 +45,22 @@ describe("the displays a server's config names", () => {
     expect(displayEntry(rewritten, "screen")).toEqual(screen)
   })
 
+  it("carries over what else a config holds, such as the dev container's marker", () => {
+    const devContainer = JSON.stringify({ vnc: desktopVnc, devContainerDesktop: true })
+
+    const both = withDisplayEntry(devContainer, screen)
+    const back = withoutDisplayEntry(both, "screen")
+
+    expect(JSON.parse(both)).toEqual({
+      devContainerDesktop: true,
+      displays: [{ id: "desktop", vnc: desktopVnc }, screen]
+    })
+    expect(JSON.parse(back ?? "")).toEqual({
+      devContainerDesktop: true,
+      displays: [{ id: "desktop", vnc: desktopVnc }]
+    })
+  })
+
   it("keeps what is left when one display is removed, and nothing when it was the last", () => {
     const both = withDisplayEntry(oneEntry, screen)
 

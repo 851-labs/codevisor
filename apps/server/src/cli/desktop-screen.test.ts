@@ -146,7 +146,7 @@ describe("codevisor desktop setup --screen", () => {
     }
   )
 
-  it("passes on why the screen isn't shared after all", async () => {
+  it("says the screen is set up and will be tried again when it isn't shared yet, and how to undo it", async () => {
     const problem = "x0vncserver didn't open its socket (see /home/codevisor/screen.log)"
     const machine = world({
       [`GET ${url()}`]: answers(withScreen(loggedIn)),
@@ -154,7 +154,10 @@ describe("codevisor desktop setup --screen", () => {
     })
 
     expect(await screenSetupCommand(machine.deps)).toBe(1)
-    expect(machine.errors).toEqual([`The screen isn't shared: ${problem}`])
+    expect(machine.errors).toEqual([
+      `The screen is set up, but isn't shared yet: ${problem}.`,
+      "Codevisor tries again every 30 seconds. To undo the setup: codevisor desktop remove --screen"
+    ])
   })
 
   it("says to update a server that doesn't know about screens", async () => {

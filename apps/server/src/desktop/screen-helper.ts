@@ -30,8 +30,9 @@ export interface ScreenHelpers {
     shown: ShownScreen,
     scraper: string
   ) => Promise<string | undefined>
-  readonly stop: (helper: RunningHelper, socket: string) => Promise<void>
+  readonly stop: (helper: RunningHelper, socket: string) => Promise<boolean>
   readonly forget: (socket: string) => boolean
+  readonly started: () => boolean
 }
 
 const pollMs = 100
@@ -39,6 +40,9 @@ const socketPolls = 50
 const stopPolls = 50
 const portSettleMs = 1000
 const unchecked = "couldn't check that x0vncserver stays off the network"
+
+export const stillRunning = (pid: number): string =>
+  `x0vncserver (process ${pid}) doesn't stop, even when killed`
 
 export const screenHelpers = (options: ScreenHelperOptions): ScreenHelpers => {
   const { system, pidFile, logFile, locate } = options
@@ -61,12 +65,22 @@ export const screenHelpers = (options: ScreenHelperOptions): ScreenHelpers => {
     return wasThere
   }
 
-  const stop = async (helper: RunningHelper, socket: string): Promise<void> => {
-    system.terminate(helper.pid)
-    for (let poll = 0; poll < stopPolls && system.processAlive(helper.pid); poll += 1)
+  const exits = async (pid: number): Promise<boolean> => {
+    for (let poll = 0; poll < stopPolls && system.processAlive(pid); poll += 1)
       await system.sleep(pollMs)
-    forget(socket)
+    return !system.processAlive(pid)
   }
+
+  const stop = async (helper: RunningHelper, socket: string): Promise<boolean> => {
+    system.terminate(helper.pid)
+    if (!(await exits(helper.pid))) system.terminate(helper.pid, "SIGKILL")
+    if (!(await exits(helper.pid))) return false
+
+    forget(socket)
+    return true
+  }
+
+  const started = (): boolean => system.exists(pidFile)
 
   const socketOpens = async (socket: string): Promise<boolean> => {
     for (let poll = 0; poll < socketPolls; poll += 1) {
@@ -112,11 +126,14 @@ export const screenHelpers = (options: ScreenHelperOptions): ScreenHelpers => {
 
     system.writeText(pidFile, `${pid}\n`)
     const why = await whyItMayNotBeShared(pid, socket)
-    if (why !== undefined) await stop({ pid, display: shown.display }, socket)
+    if (why === undefined) return undefined
+    if (!(await stop({ pid, display: shown.display }, socket)))
+      return `${why}; ${stillRunning(pid)}`
+
     return why
   }
 
-  return { running, start, stop, forget }
+  return { running, start, stop, forget, started }
 }
 
 export const asAssignments = (env: Readonly<Record<string, string>>): ReadonlyArray<string> =>
