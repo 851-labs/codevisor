@@ -27,7 +27,7 @@ describe("the desktop a server offers from its data folder", () => {
       xauthority: "/run/user/1000/codevisor-desktop.xauth"
     })
     const session = recordingSession()
-    const desktop = fileVNCDesktops(dataDir, session.commands).current()
+    const desktop = fileVNCDesktops(dataDir, { commands: session.commands }).current()
     expect(await desktop?.respond({ ...request, operation: "setScale", scale: 2 })).toMatchObject({
       status: "ok"
     })
@@ -47,7 +47,7 @@ describe("the desktop a server offers from its data folder", () => {
     const capabilitiesWith = async (settings: Record<string, unknown>) => {
       const dataDir = privateDirectory()
       writeDesktopConfig(dataDir, { socket: vnc.socket, ...settings })
-      const desktop = fileVNCDesktops(dataDir, recordingSession().commands).current()
+      const desktop = fileVNCDesktops(dataDir, { commands: recordingSession().commands }).current()
       return desktop?.respond({ ...request, operation: "capabilities" })
     }
     const scalable = { status: "available", displays: [{ scales: [1, 2] }] }

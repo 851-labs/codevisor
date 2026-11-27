@@ -14,6 +14,8 @@ export interface FakeMachineOptions {
   readonly socketAppearsAfterPolls?: number
   readonly socketVanishesAfterPolls?: number
   readonly alive?: ReadonlyArray<number>
+  readonly ignoresSigterm?: ReadonlyArray<number>
+  readonly unkillable?: ReadonlyArray<number>
   readonly holds?: { readonly prefix: string; readonly until: Promise<void> }
   readonly sessionNeverSettles?: boolean
 }
@@ -25,6 +27,8 @@ export interface FakeMachine {
   readonly files: Map<string, string>
   readonly spawned: Array<{ command: string; args: ReadonlyArray<string>; logPath: string }>
   readonly terminated: number[]
+  readonly killed: number[]
+  readonly programs: Set<string>
   readonly madePrivate: string[]
   readonly closedToOthers: string[]
   readonly changes: { count: number }
@@ -67,6 +71,11 @@ const ok: Ran = { code: 0, output: "" }
 const failed: Ran = { code: 1, output: "" }
 const programProbe = /^sh -c command -v "\$1" sh (.+)$/
 
+export const recordedDesktop = (machine: Pick<FakeMachine, "files">) =>
+  JSON.parse(machine.files.get(CONFIG) ?? "").displays.find(
+    (entry: { id: string }) => entry.id === "desktop"
+  )
+
 export const settled = async (manager: DesktopManager) => {
   let status = await manager.status()
   while (status.busy !== undefined) status = await manager.status()
@@ -78,6 +87,7 @@ export const fakeMachine = (options: FakeMachineOptions = {}): FakeMachine => {
   const files = new Map<string, string>(Object.entries(options.files ?? {}))
   const spawned: FakeMachine["spawned"] = []
   const terminated: number[] = []
+  const killed: number[] = []
   const madePrivate: string[] = []
   const closedToOthers: string[] = []
   const alive = new Set<number>(options.alive ?? [])
@@ -122,8 +132,11 @@ export const fakeMachine = (options: FakeMachineOptions = {}): FakeMachine => {
       return 4242
     },
     processAlive: (pid) => pid === SESSION_RUNNER || alive.has(pid),
-    terminate: (pid) => {
-      terminated.push(pid)
+    terminate: (pid, signal = "SIGTERM") => {
+      if (signal === "SIGKILL") killed.push(pid)
+      else terminated.push(pid)
+      if (signal === "SIGTERM" && options.ignoresSigterm?.includes(pid) === true) return
+      if (options.unkillable?.includes(pid) === true) return
       alive.delete(pid)
       files.delete(`/proc/${pid}/cmdline`)
     },
@@ -174,6 +187,8 @@ export const fakeMachine = (options: FakeMachineOptions = {}): FakeMachine => {
     files,
     spawned,
     terminated,
+    killed,
+    programs,
     madePrivate,
     closedToOthers,
     changes,

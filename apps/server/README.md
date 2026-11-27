@@ -6,12 +6,14 @@
 
 `codevisor desktop setup` gives a Linux machine a desktop that the Codevisor apps can view. The command talks to the running server, and the server does the work as its own account, so the desktop, its config and its boot service always belong to the account the server runs as.
 
-| Command                    | What it does                                                                                                                                                                                   |
-| -------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `codevisor desktop setup`  | Installs what is missing, starts the desktop now and at boot, and shares it. Safe to run again.                                                                                                |
-| `codevisor desktop status` | Says whether a desktop is set up and running, as which account, and where its log is.                                                                                                          |
-| `codevisor desktop remove` | Stops the desktop, closing everything open in it, and stops sharing it. Packages stay installed. A desktop Codevisor didn't set up is only unshared, after its own question, and left running. |
-| `codevisor desktop run`    | Runs the desktop in the foreground. The boot service uses this; nobody types it.                                                                                                               |
+| Command                             | What it does                                                                                                                                                                                   |
+| ----------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `codevisor desktop setup`           | Installs what is missing, starts the desktop now and at boot, and shares it. Safe to run again.                                                                                                |
+| `codevisor desktop status`          | Says whether a desktop is set up and running, as which account, and where its log is, and whether the real screen is shared.                                                                   |
+| `codevisor desktop remove`          | Stops the desktop, closing everything open in it, and stops sharing it. Packages stay installed. A desktop Codevisor didn't set up is only unshared, after its own question, and left running. |
+| `codevisor desktop run`             | Runs the desktop in the foreground. The boot service uses this; nobody types it.                                                                                                               |
+| `codevisor desktop setup --screen`  | Shares the machine's real screen: the session the server's account is logged in to at the monitor. See [The machine's real screen](#the-machines-real-screen).                                 |
+| `codevisor desktop remove --screen` | Stops sharing the real screen. Nothing on it closes, and the desktop is left alone.                                                                                                            |
 
 What setup does, in order:
 
@@ -101,30 +103,87 @@ The config is read each time a process is started, never kept. A desktop that is
 
 **When the server starts**, it starts two things by itself, and the desktop may still be coming up, started again by the server or by systemd after a reboot: the terminals it restores, and the agent turns it continues after a restart or an update. Both wait for the desktop. Restored terminals are back at once with their saved screens, but their shells start only when the desktop is up, with the environment as it is then; a harness started in that time waits the same way. The wait ends after 15 seconds at the latest, counted from the server's start. The server doesn't wait for a desktop that nothing is going to start: none set up, one that belongs to another server, or one under a systemd it can't reach.
 
-Not done yet: removing the packages again (`remove` leaves them installed).
+### The machine's real screen
+
+A Linux machine where someone is logged in at the monitor can list two displays, like a Mac with two monitors: **Desktop**, the virtual one above, and **Screen**, the real one. `codevisor desktop setup --screen` sets the second one up, `codevisor desktop status` says how both are doing, and `codevisor desktop remove --screen` stops sharing it. The two are independent: either can be set up without the other.
+
+**Whose screen.** Only the session of the account the server runs as. The server never crosses accounts and never uses root for this.
+
+| At the screen                               | `setup --screen`                                                                                                                                                                                                                       |
+| ------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| The server's own account, in an X11 session | Shares it.                                                                                                                                                                                                                             |
+| Nobody                                      | Sets it up; the screen is shared whenever the server's account logs in.                                                                                                                                                                |
+| Another account                             | Refuses in one sentence and offers the virtual desktop: "alice is logged in at this machine's screen, and Codevisor runs as codevisor here, so it can't share that screen. Set up a separate desktop instead: codevisor desktop setup" |
+| The server's own account, on Wayland        | Refuses: only X11 sessions can be shared so far. Sway and Hyprland, and GNOME and KDE on Wayland, are later steps.                                                                                                                     |
+
+**Who is at the screen** (`src/desktop/screen-logind.ts`) comes from logind: its local, seated user sessions that are active (in the foreground of their seat, so not one switched to the background) and are graphical (`Type` x11, wayland or mir), or a text-console login that runs an X server (`startx`), which logind lists as `tty`. A plain text-console login doesn't count. Only on a machine where `loginctl` can't be asked does it fall back to `who`, taking the display each login is recorded on, and an empty answer from logind is trusted, so a remote X session (xrdp, a standalone Xvnc) never counts as someone at the screen. The same list says who else is there. logind is asked once per status.
+
+**How the session is found** (`src/desktop/screen-session.ts`). The display comes from the account's own seated graphical session in logind: its `Display` (or, for `startx`, the display the X server was started on), and its type decides X11 or Wayland. The cookie file and the session bus come from a process of the account that belongs to that session (its `session-<Id>.scope`) and shows that display; a process from an earlier session that is still around, such as a tmux pane or anything given the old variables with `systemctl --user import-environment`, doesn't count. Its own virtual desktop and anything started with that desktop's display are left out. Where logind can't be asked, the server takes processes on the display `who` recorded, or with no such display, processes that have a seat (`XDG_SEAT`); either way only a live display (its socket in `/tmp/.X11-unix` is there) counts, newest process first. `:0.0` and `:0` are the same display. The account must be at the screen before the server starts sharing, and every time it checks while sharing; `status` calls the screen shared only while it is.
+
+A finding that nothing is missing is reused for 30 seconds; while something is missing, the programs are looked for again on every status, so an install done by `setup --screen` itself shows at once. Whether the account has sudo is only checked when `setup --screen` asks (`GET /v1/desktop?screen=1`). If looking at the screen fails (say `loginctl` or `/proc` misbehave on a minimal system), the desktop routes answer without the screen rather than failing.
+
+**How it is shared** (`src/desktop/screen-share.ts`). There is no extra service. While the screen is set up, the server checks every three seconds:
+
+- When its account's session appears, it starts TigerVNC's `x0vncserver` (`X0tigervnc` on Debian and Ubuntu) against that display, on `codevisor-screen-<12 hex digits>.sock` in the account's runtime folder: mode 0600, no TCP port. The hex digits come from the server's data folder, so two servers on one account never share a socket, and a server only removes a socket it recorded or a helper it started. The same checks as for Xvnc apply: the socket and the folders above it must be private, and a helper that listens on a TCP port is stopped and reported.
+- A helper whose socket has gone, or that shows a display the account is no longer at, is stopped and started again.
+- A helper is stopped with SIGTERM, and with SIGKILL when it is still there after five seconds. It is forgotten only once it has exited, so a second one is never started beside it. The server finds its helper by the socket on the helper's own command line, so it can stop one started on a socket that is no longer recorded.
+- A helper that stops within 30 seconds of starting is started again only after 30 seconds.
+- When the session ends, the helper goes with the X server; the server removes what it left behind, and a viewer that is connected is disconnected with "This machine's screen isn't being shared right now: nobody is logged in at it, or its session can't be shared."
+- Nothing runs at the login screen, and nothing is shared from it.
+- A helper that fails to start, or whose ports can't be checked, is stopped and tried again after 30 seconds. `setup --screen` says so: the screen is set up but not shared yet, it is tried again, and `remove --screen` undoes the setup.
+- `remove --screen` stops the helper before it forgets the screen, and fails, keeping the setup, when the helper can't be stopped.
+- The 30-second wait after a failed start belongs to the session it failed in; a new login is shared at once.
+- A `screen-sharing.json` that can't be read as a config is left alone: `setup --screen` refuses to rewrite it, and `remove --screen` doesn't touch a file that records no screen.
+- The socket's path is the one recorded when the screen was set up, so a server started later with another runtime folder keeps sharing where viewers look.
+
+A server restart may take the helper with it (under systemd it does). The new server picks up a helper that is still running and starts one otherwise; viewers are cut by a server restart either way, because the relay lives in the server.
+
+**What the person at the screen sees.** Nobody has to approve a viewer. When one connects (once the relay reaches the screen's VNC server), a notification appears on that screen ("Someone started viewing this screen."), at most one every 30 seconds, through `notify-send` in that session.
+
+**What is different from the virtual desktop.** The monitor decides the size, so viewers can't resize it and there is no 2× switch. Several monitors arrive as one wide picture. There is no clipboard bridge. The person at the machine sees everything a viewer does.
+
+**What it installs.** `x0vncserver` and `notify-send`, with the same three ways of getting root as above (`POST /v1/desktop/screen/packages` when the account needs no password): `tigervnc-scraping-server` and `libnotify-bin` with apt, `tigervnc-x11-server` and `libnotify` with dnf, `tigervnc` and `libnotify` with pacman, `xorg-x11-Xvnc` and `libnotify-tools` with zypper (on openSUSE, `x0vncserver` is part of the Xvnc package; `tigervnc-x11vnc` is only an x11vnc-style wrapper around it). zypper's "installed, but" exit codes count as done, and a skipped repository counts as done when both programs are there, as for the desktop. Each set was installed in a container of its distro (Ubuntu, Fedora, Arch, openSUSE Tumbleweed and Leap 15.6) and gave both programs; only the apt path has been run end to end with a login.
+
+Not done yet: removing the packages again (`remove` leaves them installed), and sharing a Wayland session.
 
 ### What the server shares
 
-A Linux machine shares a desktop when its data folder holds `screen-sharing.json`:
+A Linux machine shares what `screen-sharing.json` in its data folder lists:
 
 ```json
 {
-  "vnc": {
-    "socket": "/run/user/1000/codevisor-desktop.sock",
-    "display": 1,
-    "xauthority": "/run/user/1000/codevisor-desktop.xauth",
-    "name": "Desktop",
-    "desktop": "xfce",
-    "defaultSize": "1440x900"
-  }
+  "displays": [
+    {
+      "id": "desktop",
+      "vnc": {
+        "socket": "/run/user/1000/codevisor-desktop.sock",
+        "display": 1,
+        "xauthority": "/run/user/1000/codevisor-desktop.xauth",
+        "name": "Desktop",
+        "desktop": "xfce",
+        "defaultSize": "1440x900"
+      },
+      "service": "systemd-user"
+    },
+    {
+      "id": "screen",
+      "vnc": { "socket": "/run/user/1000/codevisor-screen-1a2b3c4d5e6f.sock", "name": "Screen" },
+      "service": "server"
+    }
+  ]
 }
 ```
 
-- `socket` is the Unix socket the desktop's VNC server listens on. It is the only required field.
+- `desktop` is the virtual desktop and `screen` the real one. Viewers see them as the displays `vnc:desktop` and `vnc:screen`, the desktop first, so a machine that had only a desktop opens the same display as before. A display is listed while its socket is there and private.
+- Each display that can't be viewed is reported on its own: the reply lists it under `unavailable` with its own reason (the desktop isn't running, isn't private, was set up for an older Codevisor; nobody is at the screen), while the others stay viewable. When none can be viewed, the reply fails naming each one's reason; with a single display it fails with that display's reason alone, exactly as before. The Mac and iPhone apps don't show `unavailable` yet.
+- `/v1/info` lists `computer-use-stream-v1`, which lets agents drive a display, only while a display other than the real screen is listed. Agents never drive the screen a person sits at.
+- A config written before there was a list has the desktop's `vnc` and `service` at the top instead of `displays`. It is read as a list with that one desktop and is not rewritten until setup next changes something, which is also how a hand-made config such as the dev container's keeps working. When it is rewritten, keys other than the display list are carried over, such as the dev container's `devContainerDesktop` marker.
+- `service` says who runs the display: `systemd-user` or `process` for a desktop Codevisor set up, `server` for the screen. An entry without it is one Codevisor didn't set up; a screen entry without it is not shared.
+- `socket` is the Unix socket the display's VNC server listens on. It is the only required field of `vnc`.
 - `display` and `xauthority` are the desktop's X11 display number and cookie file. With `desktop: "xfce"` and a `display`, the server offers 2× scaling and the rich clipboard, both of which reach into the X11 session.
 - `name` and `defaultSize` are what viewers see before they connect.
 
-The server reads the file on every request, so a desktop is offered or withdrawn without a restart: `/v1/info` lists `screen-sharing-v1` only while the file names a desktop. A viewer that is already connected is disconnected within a few seconds, with the reason, when the file is removed or the socket stops being private.
+The server reads the file on every request, so a desktop is offered or withdrawn without a restart: `/v1/info` lists `screen-sharing-v1` only while the file lists a display. A viewer that is already connected is disconnected within a few seconds, with the reason, when the file is removed or the socket stops being private.
 
 A config from an older Codevisor names a TCP `port` and no `socket`. Any account on the machine can dial a local port, so the server never connects to it. The desktop stays listed, viewers are told "This machine's desktop was set up for an older version of Codevisor. Set it up again to share it.", and the server logs one line each time it starts seeing such a config. A `vnc` section that names neither a usable socket (an absolute path) nor only a port is not offered at all, and is logged the same way. Only `screen-sharing-v1` is listed for it; `computer-use-stream-v1` needs a desktop that can be relayed.
 

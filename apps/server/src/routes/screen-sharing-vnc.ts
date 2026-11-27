@@ -3,12 +3,17 @@ import type { IncomingMessage } from "node:http"
 import { connect, type Socket } from "node:net"
 import { isAbsolute, join } from "node:path"
 
-import type { ScreenSharingReply, ScreenSharingRequest } from "@codevisor/api"
+import type {
+  ScreenSharingReply,
+  ScreenSharingRequest,
+  ScreenSharingUnavailableDisplay
+} from "@codevisor/api"
 import { WebSocket } from "ws"
 
 import type { ScreenSharingVNCConfig } from "../server-context-types.js"
 import { type PrivateSocket, type PrivateSocketProblem, privateSocket } from "./private-socket.js"
 import { type RFBClientMessageKind, RFBClientStreamFilter } from "./rfb-client-filter.js"
+import { DESKTOP_ENTRY, displayEntry, SCREEN_ENTRY } from "./screen-sharing-config.js"
 import type { VNCDesktopScaler } from "./screen-sharing-vnc-scale.js"
 import { type DesktopClipboard, VNCClipboardBridge } from "./vnc-clipboard-bridge.js"
 import { systemX11Commands, x11DesktopClipboard } from "./vnc-clipboard-x11.js"
@@ -18,10 +23,36 @@ import type { VNCRelays } from "./vnc-relays.js"
 export const SCREEN_SHARING_CONFIG_FILE = "screen-sharing.json"
 export const VNC_SOCKET_PATH = "/v1/screen-sharing/vnc/socket"
 export const VNC_DISPLAY_ID = "vnc:desktop"
+export const VNC_SCREEN_ID = "vnc:screen"
 
 export type DesktopSetup =
   | { readonly kind: "ready"; readonly config: ScreenSharingVNCConfig }
   | { readonly kind: "outdated" | "unusable" | "absent" }
+
+export interface SharedDisplay {
+  readonly config: ScreenSharingVNCConfig
+  readonly scaler?: VNCDesktopScaler | undefined
+}
+
+export const displayIdOf = (config: ScreenSharingVNCConfig): string =>
+  config.screen === true ? VNC_SCREEN_ID : VNC_DISPLAY_ID
+
+export const readScreenSetup = (dataDir: string): ScreenSharingVNCConfig | undefined => {
+  try {
+    return screenSetup(readFileSync(join(dataDir, SCREEN_SHARING_CONFIG_FILE), "utf8"))
+  } catch {
+    return undefined
+  }
+}
+
+export const screenSetup = (text: string | undefined): ScreenSharingVNCConfig | undefined => {
+  const entry = displayEntry(text, SCREEN_ENTRY)
+  const vnc = sectionOf(entry?.vnc)
+  const socket = absolutePath(vnc?.socket)
+  if (socket === undefined || typeof entry?.service !== "string") return undefined
+
+  return { socket, name: nameOr(vnc?.name, "Screen"), screen: true }
+}
 
 export const readDesktopSetup = (dataDir: string): DesktopSetup => {
   try {
@@ -43,15 +74,15 @@ export const desktopSetup = (text: string): DesktopSetup => {
 }
 
 export const recordedDesktopService = (text: string): string | undefined => {
-  const service = jsonObject(text)?.service
+  const service = displayEntry(text, DESKTOP_ENTRY)?.service
   return typeof service === "string" ? service : undefined
 }
 
+export const OUTDATED_DESKTOP =
+  "This machine's desktop was set up for an older version of Codevisor. Set it up again to share it."
+
 export const outdatedDesktop = async (): Promise<ScreenSharingReply> =>
-  vncReply(
-    "failed",
-    "This machine's desktop was set up for an older version of Codevisor. Set it up again to share it."
-  )
+  vncReply("failed", OUTDATED_DESKTOP)
 
 export const parseScreenSharingVNC = (text: string): ScreenSharingVNCConfig | undefined => {
   const vnc = vncSection(text)
@@ -62,7 +93,7 @@ export const parseScreenSharingVNC = (text: string): ScreenSharingVNCConfig | un
   const xauthority = absolutePath(vnc.xauthority)
   return {
     socket,
-    name: desktopName(vnc.name),
+    name: nameOr(vnc.name, "Desktop"),
     ...(vnc.desktop === "xfce" ? { desktop: vnc.desktop } : {}),
     ...(display === undefined ? {} : { display }),
     ...(xauthority === undefined ? {} : { xauthority }),
@@ -105,52 +136,94 @@ export const socketProblemMessages: Record<PrivateSocketProblem, string> = {
   exposed: "Other accounts on this machine can reach its desktop, so Codevisor won't share it."
 }
 
+const screenIsNotShown =
+  "This machine's screen isn't being shared right now: nobody is logged in at it, or its session can't be shared."
+
+export const whyNotReachable = (
+  config: ScreenSharingVNCConfig,
+  problem: PrivateSocketProblem
+): string =>
+  config.screen === true && problem === "missing"
+    ? screenIsNotShown
+    : socketProblemMessages[problem]
+
 export const vncScreenSharing =
   (
-    config: ScreenSharingVNCConfig,
-    scaler?: VNCDesktopScaler,
-    locate: (configured: string) => PrivateSocket = privateSocket
+    shared: ReadonlyArray<SharedDisplay>,
+    locate: (configured: string) => PrivateSocket = privateSocket,
+    known: ReadonlyArray<ScreenSharingUnavailableDisplay> = []
   ) =>
   async (request: ScreenSharingRequest): Promise<ScreenSharingReply> => {
-    if (request.operation === "capabilities")
-      return capabilities(config, scaler, locate(config.socket).problem)
-    if (request.operation === "setScale") return setScale(request, scaler)
+    if (request.operation === "capabilities") return capabilities(shared, locate, known)
+    if (request.operation === "setScale") return setScale(request, shared)
     return vncReply("unsupported", "This machine streams its display over the VNC socket")
   }
 
+interface Looked {
+  readonly display: SharedDisplay
+  readonly problem: PrivateSocketProblem | undefined
+}
+
 const capabilities = (
-  config: ScreenSharingVNCConfig,
-  scaler: VNCDesktopScaler | undefined,
-  problem: PrivateSocketProblem | undefined
+  shared: ReadonlyArray<SharedDisplay>,
+  locate: (configured: string) => PrivateSocket,
+  known: ReadonlyArray<ScreenSharingUnavailableDisplay>
 ): ScreenSharingReply => {
-  if (problem !== undefined) return vncReply("failed", socketProblemMessages[problem])
+  const looked = shared.map((display) => ({
+    display,
+    problem: locate(display.config.socket).problem
+  }))
+  const reachable = looked.filter((one) => one.problem === undefined)
+  const unavailable = [...known, ...looked.flatMap(unavailableDisplay)]
+  if (reachable.length === 0 && unavailable.length > 0) return noneCanBeViewed(unavailable)
 
   return {
     version: 1,
     status: "available",
     provider: "vnc",
     controlLease: true,
-    displays: [
-      {
-        id: VNC_DISPLAY_ID,
-        name: config.name,
-        width: 0,
-        height: 0,
-        ...(scaler === undefined ? {} : { scales: [1, 2] }),
-        ...(config.defaultWidth === undefined || config.defaultHeight === undefined
-          ? {}
-          : { defaultWidth: config.defaultWidth, defaultHeight: config.defaultHeight })
-      }
-    ]
+    displays: reachable.map((one) => listed(one.display)),
+    ...(unavailable.length === 0 ? {} : { unavailable })
   }
 }
 
+const noneCanBeViewed = (
+  unavailable: ReadonlyArray<ScreenSharingUnavailableDisplay>
+): ScreenSharingReply => {
+  const [only] = unavailable
+  if (unavailable.length === 1 && only !== undefined) return vncReply("failed", only.problem)
+
+  const why = unavailable.map((display) => `${display.name}: ${display.problem}`).join("\n")
+  return { ...vncReply("failed", why), unavailable }
+}
+
+const unavailableDisplay = ({
+  display: { config },
+  problem
+}: Looked): ReadonlyArray<ScreenSharingUnavailableDisplay> =>
+  problem === undefined
+    ? []
+    : [{ id: displayIdOf(config), name: config.name, problem: whyNotReachable(config, problem) }]
+
+const listed = ({ config, scaler }: SharedDisplay) => ({
+  id: displayIdOf(config),
+  name: config.name,
+  width: 0,
+  height: 0,
+  ...(scaler === undefined ? {} : { scales: [1, 2] }),
+  ...(config.defaultWidth === undefined || config.defaultHeight === undefined
+    ? {}
+    : { defaultWidth: config.defaultWidth, defaultHeight: config.defaultHeight })
+})
+
 const setScale = async (
   request: ScreenSharingRequest,
-  scaler: VNCDesktopScaler | undefined
+  shared: ReadonlyArray<SharedDisplay>
 ): Promise<ScreenSharingReply> => {
+  const asked = shared.find((display) => displayIdOf(display.config) === request.displayId)
+  const scaler = (asked ?? shared[0])?.scaler
   if (scaler === undefined) return vncReply("unsupported", "This desktop's scale can't be set")
-  if (request.displayId !== VNC_DISPLAY_ID) return vncReply("error", "Unknown display")
+  if (asked === undefined) return vncReply("error", "Unknown display")
   if (request.scale === undefined) return vncReply("error", "No scale")
   try {
     await scaler(request.scale)
@@ -173,22 +246,11 @@ interface VNCSection {
   readonly defaultSize?: unknown
 }
 
-const vncSection = (text: string): VNCSection | undefined => {
-  const vnc = jsonObject(text)?.vnc
-  if (typeof vnc !== "object" || vnc === null) return undefined
-  return vnc
-}
+const vncSection = (text: string): VNCSection | undefined =>
+  sectionOf(displayEntry(text, DESKTOP_ENTRY)?.vnc)
 
-const jsonObject = (text: string): { vnc?: unknown; service?: unknown } | undefined => {
-  let parsed: unknown
-  try {
-    parsed = JSON.parse(text)
-  } catch {
-    return undefined
-  }
-  if (typeof parsed !== "object" || parsed === null) return undefined
-  return parsed
-}
+const sectionOf = (vnc: unknown): VNCSection | undefined =>
+  typeof vnc === "object" && vnc !== null ? vnc : undefined
 
 const highestPort = 65_535
 
@@ -208,8 +270,8 @@ const displayNumber = (value: unknown): number | undefined =>
     ? value
     : undefined
 
-const desktopName = (value: unknown): string =>
-  typeof value === "string" && value.trim() !== "" ? value.trim() : "Desktop"
+const nameOr = (value: unknown, fallback: string): string =>
+  typeof value === "string" && value.trim() !== "" ? value.trim() : fallback
 
 const defaultSize = (
   value: unknown
@@ -247,6 +309,7 @@ export interface VNCSpliceOptions {
   readonly desktopClipboard?: DesktopClipboard
   readonly locate?: (configured: string) => PrivateSocket
   readonly relays?: VNCRelays | undefined
+  readonly viewerJoined?: ((display: ScreenSharingVNCConfig) => void) | undefined
 }
 
 const defaultHighWater = 4 * 1024 * 1024
@@ -269,17 +332,18 @@ export const spliceVNCSocket = (
     refuse(socket, "403 Forbidden")
     return
   }
-  if (url.searchParams.get("displayId") !== VNC_DISPLAY_ID) {
+  if (url.searchParams.get("displayId") !== displayIdOf(config)) {
     refuse(socket, "404 Not Found")
     return
   }
   webSocketServer.handleUpgrade(request, socket, head, (webSocket) => {
     const located = locate(config.socket)
     if (located.path === undefined) {
-      webSocket.close(1011, socketProblemMessages[located.problem])
+      webSocket.close(1011, whyNotReachable(config, located.problem))
       return
     }
     const upstream = dial(located.path)
+    upstream.once("connect", () => options.viewerJoined?.(config))
     const sendText = (text: string) => webSocket.send(text, {}, () => undefined)
     const id = arbiter.join(sendText)
     const clipboard =
@@ -294,6 +358,7 @@ export const spliceVNCSocket = (
       upstream.destroy()
     }
     const leaveRelays = options.relays?.add({
+      screen: config.screen === true,
       configured: config.socket,
       dialled: located.path,
       close: (reason) => {
@@ -305,7 +370,7 @@ export const spliceVNCSocket = (
     const filter = new RFBClientStreamFilter()
     const allow = (kind: RFBClientMessageKind) => {
       if (kind === "input" || kind === "clipboard") return arbiter.mayControl(id)
-      if (kind === "resize") return arbiter.mayResize(id)
+      if (kind === "resize") return config.screen !== true && arbiter.mayResize(id)
       return true
     }
     webSocket.on("message", (bytes: Buffer, isBinary) => {

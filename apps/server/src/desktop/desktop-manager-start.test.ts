@@ -8,7 +8,8 @@ import {
   LOGS_DIR,
   RUNNER,
   UBUNTU,
-  UNIT
+  UNIT,
+  recordedDesktop
 } from "./desktop-test-support.js"
 
 const bare = ["apt-get", "sudo"]
@@ -49,7 +50,8 @@ describe("starting the desktop as the server's own account", () => {
     const machine = fakeMachine({ files: UBUNTU, socketAppearsAfterPolls: 3 })
     const status = await machine.manager.start()
 
-    expect(JSON.parse(machine.files.get(CONFIG) ?? "")).toEqual({
+    expect(recordedDesktop(machine)).toEqual({
+      id: "desktop",
       vnc: {
         socket: "/run/user/1001/codevisor-desktop.sock",
         display: 1,
@@ -122,14 +124,14 @@ describe("starting the desktop as the server's own account", () => {
     const machine = fakeMachine({ files: UBUNTU })
     await machine.manager.start()
     const renamed = JSON.parse(machine.files.get(CONFIG) ?? "")
-    renamed.vnc.name = "Lab bench"
-    renamed.vnc.defaultSize = "1920x1080"
+    renamed.displays[0].vnc.name = "Lab bench"
+    renamed.displays[0].vnc.defaultSize = "1920x1080"
     const again = fakeMachine({
       files: { ...UBUNTU, [CONFIG]: JSON.stringify(renamed) },
       socketAppearsAfterPolls: 1
     })
     await again.manager.start()
-    expect(JSON.parse(again.files.get(CONFIG) ?? "").vnc).toMatchObject({
+    expect(recordedDesktop(again).vnc).toMatchObject({
       name: "Lab bench",
       defaultSize: "1920x1080"
     })
@@ -153,7 +155,7 @@ describe("starting the desktop as the server's own account", () => {
     expect(machine.files.has(UNIT)).toBe(false)
 
     await machine.manager.start({ replaceUnmanaged: true })
-    expect(JSON.parse(machine.files.get(CONFIG) ?? "")).toMatchObject({
+    expect(recordedDesktop(machine)).toMatchObject({
       vnc: {
         socket: "/run/user/1001/codevisor-desktop.sock",
         name: "Bench",
@@ -227,7 +229,7 @@ describe("starting the desktop as the server's own account", () => {
       { command: RUNNER.program, args: RUNNER.args, logPath: `${LOGS_DIR}/desktop.log` }
     ])
     expect(machine.files.get(`${DATA_DIR}/desktop.pid`)).toBe("4242\n")
-    expect(JSON.parse(machine.files.get(CONFIG) ?? "")).toMatchObject({
+    expect(recordedDesktop(machine)).toMatchObject({
       vnc: { socket: "/home/codevisor/.codevisor/run/codevisor-desktop.sock" },
       service: "process"
     })

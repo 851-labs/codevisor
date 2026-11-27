@@ -30,6 +30,7 @@ export const defaultServerConfig = (
   screenSharing: overrides.screenSharing,
   desktops: overrides.desktops,
   desktop: overrides.desktop,
+  screen: overrides.screen,
   simulators: overrides.simulators,
   cloud: overrides.cloud,
   icon: overrides.icon,

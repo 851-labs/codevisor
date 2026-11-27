@@ -22,6 +22,13 @@ export const ScreenSharingDisplay = Schema.Struct({
 })
 export type ScreenSharingDisplay = typeof ScreenSharingDisplay.Type
 
+export const ScreenSharingUnavailableDisplay = Schema.Struct({
+  id: Schema.String,
+  name: Schema.String,
+  problem: Schema.String
+})
+export type ScreenSharingUnavailableDisplay = typeof ScreenSharingUnavailableDisplay.Type
+
 export const ScreenSharingRequest = Schema.Struct({
   version: Schema.Literal(1),
   operation: Schema.Literals(["capabilities", "start", "restart", "heartbeat", "stop", "setScale"]),
@@ -47,6 +54,7 @@ export const ScreenSharingReply = Schema.Struct({
   provider: Schema.optional(Schema.Literals(["native", "vnc"])),
   controlLease: Schema.optional(Schema.Boolean),
   displays: Schema.Array(ScreenSharingDisplay),
+  unavailable: Schema.optional(Schema.Array(ScreenSharingUnavailableDisplay)),
   engines: Schema.optional(Schema.Array(Schema.String)),
   media: Schema.optional(
     Schema.Struct({ ...ScreenSharingMediaAddress.fields, token: Schema.String })
