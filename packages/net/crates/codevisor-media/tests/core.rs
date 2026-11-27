@@ -1357,24 +1357,19 @@ const BUSY_FAST_LINK: NetworkConditions =
     NetworkConditions { id: "50 Mbit/s", delay_ms: 25.0, capacity_kbps: Some(50_000), ..NetworkConditions::N0 };
 
 fn viewer_wait_for_a_packet_that_never_arrives_among_four_tiles_of_video() -> (Duration, Duration) {
+    const LOST: u32 = 30;
     let mut sim = Sim::new(BUSY_FAST_LINK, config(FecMode::Off), 1);
-    for index in 0..30u64 {
-        for tile in 0..4 {
-            sim.send(frame(tile, &payload(index * 4 + u64::from(tile), 20_000)));
-        }
-        sim.run_for(INTERVAL);
-    }
-    let lost = sim.host.stats(sim.now).frames_sent / 4;
-    sim.drop_when(move |direction, datagram| direction == Direction::ToViewer && is_data(datagram, 0, lost as u32, 1));
+    sim.drop_when(|direction, datagram| direction == Direction::ToViewer && is_data(datagram, 0, LOST, 1));
     let give_up = codevisor_media::give_up_after(sim.host.stats(sim.now).rtt, INTERVAL);
     let mut skipped_at = None;
-    for index in 30..90u64 {
+    for index in 0..90u64 {
         for tile in 0..4 {
             sim.send(frame(tile, &payload(index * 4 + u64::from(tile), 20_000)));
         }
-        for _ in 0..17 {
-            sim.run_for(MS);
-            if skipped_at.is_none() && skipped(&sim, 0, lost as u32) {
+        let next = sim.now + INTERVAL;
+        while sim.now < next {
+            sim.run_for(MS.min(next - sim.now));
+            if skipped_at.is_none() && skipped(&sim, 0, LOST) {
                 skipped_at = Some(sim.now);
             }
         }
@@ -1382,7 +1377,7 @@ fn viewer_wait_for_a_packet_that_never_arrives_among_four_tiles_of_video() -> (D
     let asked_at = sim
         .nacks_to_host
         .iter()
-        .find(|(_, nack)| (nack.stream, nack.frame) == (0, lost as u32))
+        .find(|(_, nack)| (nack.stream, nack.frame) == (0, LOST))
         .map(|(at, _)| *at)
         .expect("the viewer never asked for the lost packet");
     (skipped_at.expect("the frame was never given up") - asked_at, give_up)
@@ -1543,4 +1538,21 @@ fn a_resend_held_behind_a_slow_links_queue_keeps_its_frame_alive_while_the_viewe
 
     assert!(waited.is_some(), "the four keyframes never arrived");
     assert!(!given_up_with_resends_held, "the host gave a keyframe up while the viewer was still asking for its resends");
+}
+
+#[test]
+fn a_frame_whose_resend_waits_behind_another_tiles_keyframe_on_a_fast_link_isnt_given_up() {
+    let mut sim = Sim::new(BUSY_FAST_LINK, config(FecMode::Off), 1);
+    for index in 0..30u64 {
+        sim.send(frame(0, &payload(index, 3_000)));
+        sim.run_for(INTERVAL);
+    }
+    sim.drop_when(lost_times(|header| u32::from((header.stream, header.frame, header.index) == (0, 30, 1))));
+    let data = payload(99, 20_000);
+    sim.send(frame(0, &data));
+    sim.send(OutgoingFrame { keyframe: true, ..frame(1, &payload(100, 1_500_000)) });
+    let waited = delivered_after(&mut sim, &data, 1, Duration::from_secs(2));
+
+    assert!(!skipped(&sim, 0, 30), "the viewer gave the frame up while the keyframe ahead of its resend arrived");
+    assert!(waited.is_some());
 }

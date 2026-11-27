@@ -22,7 +22,6 @@ const BUSY_WAITS: u32 = 4;
 const BUSY_PACKETS: u32 = 512;
 const PACE_GAIN: u32 = 16;
 const BACK_TO_BACK: u32 = 8;
-const MIN_BACK_TO_BACK: Duration = Duration::from_millis(1);
 
 #[derive(Debug)]
 struct Assembly {
@@ -249,7 +248,7 @@ impl Receiver {
     }
 
     fn link_busy_until(&self) -> Option<Instant> {
-        let gap = (self.pace * BACK_TO_BACK).max(MIN_BACK_TO_BACK).min(self.give_up_after());
+        let gap = (self.pace * BACK_TO_BACK).max(self.tail_wait()).min(self.give_up_after());
         self.last_media_rx.map(|at| at + gap)
     }
 

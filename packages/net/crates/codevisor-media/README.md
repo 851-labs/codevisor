@@ -47,7 +47,7 @@ no jitter buffer and no queue deeper than one frame.
      came at (its patience, at most 5 s, `MAX_CROSSING`: a 190 KB keyframe at the 300 kbit/s floor); a frame with
      fewer than two first-time packets has no pace and gets the plain give-up time. While media
      packets of any frame keep arriving back to back (no gap longer than eight times the pace packets of one frame
-     have been arriving at, at least 1 ms), the wait doesn't run out either: a link delivering back to back has a
+     have been arriving at, or than the tail wait, which follows the longest gap seen inside a frame), the wait doesn't run out either: a link delivering back to back has a
      queue, and a resend waits behind whatever the host sent before the request. A link with gaps has nothing
      queued ahead of the resend, so other traffic doesn't hold the frame: with 60 fps video on four tiles at
      50 Mbit/s, counting any packet kept a packet that never arrived waiting 218 ms after its request in the sim,
@@ -89,9 +89,10 @@ no jitter buffer and no queue deeper than one frame.
      ahead of the reach may only be late and counts for nothing. Sightings under 5 ms apart give no rate, and
      neither does the first one after an idle spell, which starts the count again one lowest round trip after the
      frame's first packet left (or at the first sighting, if that comes sooner). An idle spell is one where no frame
-     is in flight and the reach has passed everything sent; with nothing in flight but the reach still short (fresh
-     resends, trailing parity, or a given-up frame's packets still queued), the count carries on, and what is known
-     lost always carries over. A resend that leaves with more
+     is in flight and, once the link has been measured, the reach has passed everything sent. With nothing in flight
+     but the reach still short (fresh resends, trailing parity, or a given-up frame's packets still queued), the
+     count carries on with what it has seen and what is known lost. Before the link is measured it starts again
+     regardless: sightings across app-limited gaps understate the rate, so their reach always looks short. A resend that leaves with more
      than four round trips' worth of queue ahead of it (four frame intervals if that is longer) isn't sent again
      until the reach has passed it, at most 5 s; a request that still names it then means it was lost, and it goes
      out at once. Every other resend keeps the half-round-trip rule, and so does every resend while there is no

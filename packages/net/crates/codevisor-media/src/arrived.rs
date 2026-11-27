@@ -21,11 +21,11 @@ pub struct Arrived {
 
 impl Arrived {
     pub fn restart(&mut self, at: Instant, position: u64, known_bps: Option<f64>) {
-        if self.reached(at, known_bps).is_some_and(|reached| reached < position) {
+        if known_bps.is_some() && self.reached(at, known_bps).is_some_and(|reached| reached < position) {
             return;
         }
-        self.seen.clear();
-        self.seen.push_back(Sighting { at, position, carried: position.saturating_sub(self.lost) });
+        *self = Self::default();
+        self.seen.push_back(Sighting { at, position, carried: position });
     }
 
     pub fn note(&mut self, at: Instant, position: u64) {
@@ -174,28 +174,26 @@ mod tests {
     }
 
     #[test]
-    fn a_restart_while_the_reach_is_still_short_of_it_keeps_what_was_seen() {
-        let start = Instant::now();
-        let mut arrived = Arrived::default();
-        arrived.restart(start, 0, None);
-        arrived.note(start + 100 * MS, 12_500);
-        arrived.restart(start + 150 * MS, 100_000, None);
-        assert_eq!(arrived.reached(start + 200 * MS, None), Some(25_000), "the link is still carrying what was sent");
-        assert_eq!(arrived.wait_for(start + 200 * MS, 100_000, None), Some(600 * MS));
-    }
-
-    #[test]
-    fn a_restart_keeps_what_is_known_lost() {
+    fn a_restart_while_the_measured_reach_is_still_short_of_it_keeps_what_was_seen_and_lost() {
         let start = Instant::now();
         let mut arrived = Arrived::default();
         arrived.restart(start, 0, None);
         arrived.note(start + 100 * MS, 20_000);
         assert!(arrived.note_lost(5_000, 7_500));
-        arrived.restart(start + 5_000 * MS, 30_000, None);
-        arrived.note(start + 5_100 * MS, 50_000);
+        arrived.restart(start + 150 * MS, 100_000, Some(1e6));
         assert_eq!(arrived.lost(), 7_500);
-        assert!(arrived.note_lost(40_000, 7_500));
-        assert_eq!(arrived.reached(start + 5_200 * MS, None), Some(62_500), "12.5 KB carried in 100 ms");
+        assert_eq!(arrived.reached(start + 200 * MS, Some(1e6)), Some(32_500), "the link is still carrying what was sent");
+    }
+
+    #[test]
+    fn a_restart_without_a_measured_rate_forgets_the_idle_time_even_if_the_reach_looks_short() {
+        let start = Instant::now();
+        let mut arrived = Arrived::default();
+        arrived.restart(start, 0, None);
+        arrived.note(start + 1_000 * MS, 1_000);
+        arrived.restart(start + 1_010 * MS, 100_000, None);
+        arrived.note(start + 1_020 * MS, 110_000);
+        assert_eq!(arrived.reached(start + 1_030 * MS, None), Some(120_000));
     }
 
     #[test]
