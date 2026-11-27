@@ -20,9 +20,9 @@ public struct BotMascotFigure: View {
   public var body: some View {
     Group {
       if canAnimate {
-        BotMascotRiveView(key: key, mascot: mascot)
+        BotMascotRiveView(key: key, mascot: mascot, pose: motion)
       } else {
-        BotMascotImage(mascot: mascot, serverId: bot.serverId, kind: .figure)
+        BotMascotImage(BotMascotStill(mascot, framing: .figure, pose: motion))
       }
     }
     .frame(width: figureSide, height: figureSide)

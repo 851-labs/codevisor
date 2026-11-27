@@ -30,7 +30,7 @@ private struct TranscriptEventBotIcon: View {
 
   var body: some View {
     if let mascot = bot.mascot {
-      BotMascotAvatar(mascot: mascot, serverId: bot.serverId, size: size)
+      BotMascotAvatar(mascot: mascot, size: size)
     } else {
       Image(systemName: bot.symbolName).font(.system(size: size * 0.85))
     }

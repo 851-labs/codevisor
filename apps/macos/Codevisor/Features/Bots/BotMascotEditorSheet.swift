@@ -10,7 +10,6 @@ struct BotMascotEditorSheet: View {
   private static let columns = [GridItem(.adaptive(minimum: 76), spacing: 12)]
 
   let options: ServerBotMascotOptions
-  let serverId: String
   let onSave: (ServerBotMascot) -> Void
 
   @Environment(\.dismiss) private var dismiss
@@ -20,11 +19,9 @@ struct BotMascotEditorSheet: View {
   init(
     mascot: ServerBotMascot,
     options: ServerBotMascotOptions,
-    serverId: String,
     onSave: @escaping (ServerBotMascot) -> Void
   ) {
     self.options = options
-    self.serverId = serverId
     self.onSave = onSave
     _mascot = State(initialValue: mascot)
   }
@@ -35,7 +32,7 @@ struct BotMascotEditorSheet: View {
         .frame(width: Self.sidebarWidth)
       Divider()
       VStack(spacing: 0) {
-        BotMascotImage(mascot: mascot, serverId: serverId)
+        BotMascotImage(mascot: mascot)
           .frame(width: Self.previewSide, height: Self.previewSide)
           .frame(maxWidth: .infinity)
           .padding(.vertical, 20)
@@ -53,7 +50,6 @@ struct BotMascotEditorSheet: View {
     BotMascotCategoryControls(
       category: category,
       options: options,
-      serverId: serverId,
       columns: Self.columns,
       swatchSide: Self.swatchSide,
       mascot: $mascot

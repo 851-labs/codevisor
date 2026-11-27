@@ -36,6 +36,6 @@ struct BotEditableAvatar: View {
   }
 
   private var avatar: some View {
-    BotAvatar(mascot: editor.mascot, serverId: editor.serverId, symbolName: editor.symbolName, size: size)
+    BotAvatar(mascot: editor.mascot, symbolName: editor.symbolName, size: size)
   }
 }

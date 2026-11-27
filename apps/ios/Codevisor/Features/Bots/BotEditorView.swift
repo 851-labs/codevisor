@@ -98,7 +98,7 @@ struct BotEditorView: View {
   @ViewBuilder
   private var mascotEditor: some View {
     if let mascot = editor.mascot, let options = editor.mascotOptions {
-      BotMascotEditorScreen(mascot: mascot, options: options, serverId: editor.serverId) { editor.mascot = $0 }
+      BotMascotEditorScreen(mascot: mascot, options: options) { editor.mascot = $0 }
     }
   }
 

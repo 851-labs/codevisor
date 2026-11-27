@@ -1,18 +1,33 @@
+import CodevisorClient
 import Foundation
 @preconcurrency import RiveRuntime
 
-struct BotMascotRiveValues: Sendable {
+struct BotMascotRiveValues: Sendable, Equatable {
   enum Value: Sendable, Equatable {
     case color(UInt32)
     case choice(String)
     case number(Float)
   }
 
+  private struct Slot {
+    let prefix: String
+    let category: String
+    let item: String
+    let choice: String
+  }
+
   let entries: [String: Value]
 
-  init(json data: Data) throws {
-    let raw = try JSONDecoder().decode([String: Raw].self, from: data)
-    entries = raw.mapValues(\.value)
+  init(_ mascot: ServerBotMascot, colors: BotMascotColorTable) {
+    let look = colors.drawable(mascot)
+    var entries = Self.choices(of: look)
+    for slot in Self.slots(of: look) {
+      let values = colors.colors(of: slot.item, in: slot.category, choice: slot.choice, body: look.color)
+      for (index, hex) in values.enumerated() {
+        entries["\(slot.prefix)\(index)"] = UInt32(hex, radix: 16).map(Value.color)
+      }
+    }
+    self.entries = entries
   }
 
   @MainActor
@@ -26,29 +41,34 @@ struct BotMascotRiveValues: Sendable {
     }
   }
 
-  private enum Raw: Decodable {
-    case text(String)
-    case number(Float)
+  private static func choices(of look: ServerBotMascot) -> [String: Value] {
+    [
+      "hat": .choice(look.hat),
+      "outfit": .choice(BotMascotColorTable.none),
+      "face/eyewear": .choice(look.eyewear),
+      "face/lashesOn": .number(0),
+      "face/blushOn": .number(0),
+      "face/frecklesOn": .number(0),
+    ]
+  }
 
-    init(from decoder: any Decoder) throws {
-      let container = try decoder.singleValueContainer()
-      if let number = try? container.decode(Float.self) {
-        self = .number(number)
-      } else {
-        self = .text(try container.decode(String.self))
-      }
-    }
+  private static func slots(of look: ServerBotMascot) -> [Slot] {
+    let auto = ServerBotMascot.autoColor
+    let always = [
+      Slot(prefix: "body", category: "body", item: "body", choice: auto),
+      Slot(prefix: "face/face", category: "face", item: "face", choice: auto),
+      Slot(prefix: "face/blush", category: "blush", item: "blush", choice: auto),
+      Slot(prefix: "face/freckles", category: "freckles", item: "freckles", choice: auto),
+      Slot(prefix: "phone", category: "phone", item: "phone", choice: auto),
+      Slot(prefix: "clipboard", category: "clipboard", item: "clipboard", choice: auto),
+      Slot(prefix: "watch", category: "watch", item: "watch", choice: auto),
+    ]
+    return always + worn(look.hat, look.hatColor, prefix: "hat", category: "hat")
+      + worn(look.eyewear, look.eyewearColor, prefix: "face/eyewear", category: "eyewear")
+  }
 
-    var value: Value {
-      switch self {
-      case let .number(number): .number(number)
-      case let .text(text): Self.color(text).map(Value.color) ?? .choice(text)
-      }
-    }
-
-    private static func color(_ text: String) -> UInt32? {
-      guard text.count == 8, text.allSatisfy(\.isHexDigit), text == text.uppercased() else { return nil }
-      return UInt32(text, radix: 16)
-    }
+  private static func worn(_ item: String, _ choice: String, prefix: String, category: String) -> [Slot] {
+    guard item != BotMascotColorTable.none else { return [] }
+    return [Slot(prefix: prefix, category: category, item: item, choice: choice)]
   }
 }

@@ -11,17 +11,15 @@ public struct BotMascotAvatar: View {
   )
 
   let mascot: ServerBotMascot
-  let serverId: String
   let size: CGFloat
 
-  public init(mascot: ServerBotMascot, serverId: String, size: CGFloat) {
+  public init(mascot: ServerBotMascot, size: CGFloat) {
     self.mascot = mascot
-    self.serverId = serverId
     self.size = size
   }
 
   public var body: some View {
-    BotMascotImage(mascot: mascot, serverId: serverId)
+    BotMascotImage(mascot: mascot)
       .frame(width: size * Self.scale, height: size * Self.scale)
       .offset(y: size * Self.drop)
       .frame(width: size, height: size)

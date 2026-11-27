@@ -4,9 +4,10 @@ import SwiftUI
 struct BotMascotRiveView: View {
   let key: BotMascotStageKey
   let mascot: ServerBotMascot
+  let pose: BotMascotMotion
 
-  @Environment(AppEnvironment.self) private var environment: AppEnvironment?
   @State private var pointer = BotMascotPointer()
+  @State private var isCanvasShowing = false
 
   private var stage: BotMascotStage { BotMascotStages.shared.stage(for: key) }
 
@@ -15,10 +16,11 @@ struct BotMascotRiveView: View {
       let scale = geometry.size.width / BotMascotFraming.figureBox.width
       let side = BotMascotFraming.artboardSide * scale
       ZStack(alignment: .topLeading) {
-        if !stage.isReady {
-          BotMascotImage(mascot: mascot, serverId: key.serverId, kind: .figure)
+        if !isCanvasShowing {
+          BotMascotImage(BotMascotStill(mascot, framing: .figure, pose: pose))
+            .frame(width: geometry.size.width, height: geometry.size.height)
         }
-        BotMascotRiveCanvas(stage: stage, pointer: pointer)
+        BotMascotRiveCanvas(stage: stage, pointer: pointer) { isCanvasShowing = true }
           .frame(width: side, height: side)
           .offset(x: -BotMascotFraming.figureBox.minX * scale, y: -BotMascotFraming.figureBox.minY * scale)
           .opacity(stage.isReady ? 1 : 0)
@@ -28,12 +30,6 @@ struct BotMascotRiveView: View {
       .clipped()
     }
     .accessibilityHidden(true)
-    .task(id: mascot) { dress() }
-  }
-
-  private func dress() {
-    guard let environment else { return }
-
-    stage.dress(as: mascot, retrying: MachineRetry(machineId: key.serverId, machines: environment.machines))
+    .task(id: mascot) { stage.dress(as: mascot) }
   }
 }

@@ -45,7 +45,7 @@
         AnyView(BotMascotFigure(bot: bot, mascot: Self.mascot, slot: slot))
       case .rive:
         AnyView(
-          BotMascotRiveView(key: BotMascotStageKey(bot), mascot: Self.mascot)
+          BotMascotRiveView(key: BotMascotStageKey(bot), mascot: Self.mascot, pose: .idle)
             .frame(width: slot, height: slot))
       }
     }

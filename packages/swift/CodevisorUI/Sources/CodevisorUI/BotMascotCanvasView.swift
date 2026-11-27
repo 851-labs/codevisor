@@ -14,6 +14,8 @@ import QuartzCore
 
 final class BotMascotCanvasView: BotMascotPlatformView {
   var onWindowChange: (() -> Void)?
+  var onFirstFrame: (() -> Void)?
+  private var hasShownFrame = false
 
   #if os(macOS)
     override init(frame: NSRect) {
@@ -92,6 +94,13 @@ final class BotMascotCanvasView: BotMascotPlatformView {
     guard drawableSide != nil else { return nil }
 
     return metalLayer?.nextDrawable()
+  }
+
+  func showedFrame() {
+    guard !hasShownFrame else { return }
+
+    hasShownFrame = true
+    onFirstFrame?()
   }
 
   private var metalLayer: CAMetalLayer? {

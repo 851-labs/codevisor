@@ -4,7 +4,6 @@ import SwiftUI
 public struct BotMascotCategoryControls: View {
   let category: BotMascotCategory
   let options: ServerBotMascotOptions
-  let serverId: String
   let columns: [GridItem]
   let swatchSide: CGFloat
   @Binding var mascot: ServerBotMascot
@@ -12,14 +11,12 @@ public struct BotMascotCategoryControls: View {
   public init(
     category: BotMascotCategory,
     options: ServerBotMascotOptions,
-    serverId: String,
     columns: [GridItem],
     swatchSide: CGFloat,
     mascot: Binding<ServerBotMascot>
   ) {
     self.category = category
     self.options = options
-    self.serverId = serverId
     self.columns = columns
     self.swatchSide = swatchSide
     _mascot = mascot
@@ -38,7 +35,7 @@ public struct BotMascotCategoryControls: View {
 
   private func itemPicker(_ part: ServerBotMascotPart) -> some View {
     BotMascotItemPicker(
-      part: part, options: options, serverId: serverId, columns: columns, swatchSide: swatchSide, mascot: $mascot
+      part: part, options: options, columns: columns, swatchSide: swatchSide, mascot: $mascot
     )
   }
 }
