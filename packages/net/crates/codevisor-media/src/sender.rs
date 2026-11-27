@@ -69,7 +69,7 @@ struct SentFrame {
     probes: u32,
     unanswered: u32,
     expires: Option<Instant>,
-    first_losses: u64,
+    charged: Vec<Option<Instant>>,
     losses_counted: Option<(Instant, Instant)>,
 }
 
@@ -167,13 +167,18 @@ struct LossWindow {
 }
 
 impl LossWindow {
-    fn take_back(&mut self, frame: &SentFrame, late_originals: u16) {
-        let Some((window, _)) = frame.losses_counted else {
+    fn take_back(&mut self, frame: &mut SentFrame, late: &wire::LateOriginals) {
+        let Some(window) = self.started else {
             return;
         };
-        if self.started == Some(window) {
-            self.nacked -= frame.first_losses.min(u64::from(late_originals)).min(self.nacked);
+        let mut taken = 0;
+        for index in late.indices() {
+            if let Some(charged) = frame.charged.get_mut(index).filter(|charged| **charged == Some(window)) {
+                *charged = None;
+                taken += 1;
+            }
         }
+        self.nacked -= taken.min(self.nacked);
     }
 }
 
@@ -309,7 +314,7 @@ impl Sender {
                 probes: 0,
                 unanswered: 0,
                 expires: None,
-                first_losses: 0,
+                charged: vec![None; layout.data_count],
                 losses_counted: None,
             },
         );
@@ -498,6 +503,7 @@ impl Sender {
                 {
                     frame.resends[index] = probe;
                 }
+                frame.charged[index] = Some(*self.loss.started.get_or_insert(now));
             }
             let recent = match frame.resends[index] {
                 Resend::Never => false,
@@ -525,7 +531,6 @@ impl Sender {
             frame.flight_bytes = self.in_flight_bytes + self.pacer.backlog_bytes();
         }
         if first_losses > 0 {
-            frame.first_losses += first_losses;
             frame.losses_counted = self.loss.started.map(|window| (window, now));
         }
         self.loss.nacked += first_losses;
@@ -538,6 +543,12 @@ impl Sender {
     }
 
     pub fn on_feedback(&mut self, now: Instant, feedback: &Feedback, events: &mut VecDeque<Event>, stats: &mut Stats) {
+        if let Some(receipt) = feedback.receipt.filter(|_| !feedback.lost)
+            && let Some(frame) =
+                self.streams.get_mut(&feedback.stream).and_then(|stream| stream.unresolved.get_mut(&feedback.frame))
+        {
+            self.loss.take_back(frame, &receipt.late_originals);
+        }
         self.note_rtt(now);
         self.ceiling_fec_ratio = self.fec_ratio(now);
         self.estimator.set_admitting(self.admission().admit);
@@ -552,9 +563,6 @@ impl Sender {
         }
         if let Some(frame) = stream.unresolved.remove(&feedback.frame) {
             self.in_flight_bytes -= frame.bytes_out;
-            if let Some(receipt) = feedback.receipt.filter(|_| !feedback.lost) {
-                self.loss.take_back(&frame, receipt.late_originals);
-            }
             if feedback.lost {
                 self.last_loss = Some(now);
                 stats.frames_lost += 1;
@@ -985,7 +993,7 @@ mod tests {
             probes: MAX_PROBES,
             unanswered: MAX_PROBES,
             expires: None,
-            first_losses: 0,
+            charged: Vec::new(),
             losses_counted: None,
         };
         let waits = ProbeWaits { tail_probe: second / 10, timeout: second / 5 };

@@ -147,16 +147,19 @@ no jitter buffer and no queue deeper than one frame.
     85% of the receive rate. A short queue like N5's (30 packets, under 10 ms) turns overuse into loss rather than
     delay, and the Tier 1 relay's batched deliveries let burst samples read 35–44 Mbit/s on its 30 Mbit/s link: with
     only the delay detector, local Tier 1 video N5 stalled in 3 of 4 runs, against 0 of 4 with this.
-  - **late originals (851-4501):** a request is not a loss when the packet was only late. The viewer counts, per
-    frame, the packets it asked for whose first copy arrived within half a round trip of the request (too soon for
-    the resend, the same split it already uses to call a frame repaired), and reports the count with the frame's
-    receipt. The host takes up to that many of the frame's first-time requests back off the loss window, and when a
-    window ends while a frame whose losses it counted could still answer (one round trip and two frame intervals),
-    it waits up to that long before deciding. On the 50 Mbit/s lab network (25 ms ± 5) a pause in arrivals during a
+  - **late originals (851-4501):** a request is not a loss when the packet was only late. The viewer notes, per
+    frame, the packets it asked for whose first copy arrived within half the session's lowest round trip of the
+    request (too soon for the resend), and reports them with the frame's receipt as up to eight index ranges. The
+    host takes back off the loss window only those it charged as first losses in the current window, so a packet it
+    never charged (not sent yet, or named in a request that was lost) can't cancel a real loss, and a window doesn't
+    pay for another window's take-back. The take-back runs before the window can roll, and when a window ends while a
+    frame whose losses it counted could still answer (one round trip and two frame intervals), it waits up to that
+    long before deciding. On the 50 Mbit/s lab network (25 ms ± 5) a pause in arrivals during a
     large frame made the viewer ask for 30–170 packets still on their way; the window read 13–32% on a link that lost
     0.1%, the cut threw the measured rate away and the estimate fell to the next small sample, about 3 Mbit/s, for the
     rest of the run (16 traced local runs, 5 of 8 collapsed on main). The count only misses late originals (a copy
-    after half a round trip counts as the resend), so it never hides a real loss. An older viewer sends no count and
+    later than that counts as the resend), so it can hide a real loss only if the round trip falls below half its
+    session low. An older viewer sends no count and
     the host counts as before; an older host ignores the flag and the two bytes.
   - **back-off:** when frames' first packets keep finding a growing standing queue, at most once per round trip +
     frame interval, the estimate becomes 85% of the receive rate (at most the estimate) and the burst samples are
