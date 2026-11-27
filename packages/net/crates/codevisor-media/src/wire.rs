@@ -147,6 +147,7 @@ pub struct FrameReceipt {
     pub complete_offset_us: u32,
     pub original_bytes: u32,
     pub recovery: Recovery,
+    pub late_originals: u16,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -163,10 +164,12 @@ pub struct Feedback {
 const FLAG_LOST: u8 = 1;
 const FLAG_RECEIPT: u8 = 2;
 const FLAG_LTR: u8 = 4;
+const FLAG_LATE_ORIGINALS: u8 = 8;
+const LATE_ORIGINALS_BYTES: usize = 2;
 
 impl Feedback {
     pub fn encode(&self) -> Bytes {
-        let mut out = BytesMut::with_capacity(FEEDBACK_BYTES + LTR_BYTES);
+        let mut out = BytesMut::with_capacity(FEEDBACK_BYTES + LTR_BYTES + LATE_ORIGINALS_BYTES);
         out.put_u8(first_byte(Kind::Feedback));
         out.put_u8(self.stream);
         out.put_u32(self.frame);
@@ -179,6 +182,10 @@ impl Feedback {
         }
         if self.ltr_token.is_some() {
             flags |= FLAG_LTR;
+        }
+        let late_originals = self.receipt.map_or(0, |receipt| receipt.late_originals);
+        if late_originals > 0 {
+            flags |= FLAG_LATE_ORIGINALS;
         }
         out.put_u8(flags);
         out.put_u8(match self.receipt.map(|receipt| receipt.recovery) {
@@ -194,6 +201,7 @@ impl Feedback {
             complete_offset_us: 0,
             original_bytes: 0,
             recovery: Recovery::None,
+            late_originals: 0,
         });
         out.put_u64(receipt.first_rx_us);
         out.put_u32(receipt.last_rx_offset_us);
@@ -201,6 +209,9 @@ impl Feedback {
         out.put_u32(receipt.original_bytes);
         if let Some(token) = self.ltr_token {
             out.put_u64(token);
+        }
+        if late_originals > 0 {
+            out.put_u16(late_originals);
         }
         out.freeze()
     }
@@ -225,6 +236,13 @@ impl Feedback {
         } else {
             None
         };
+        let late_at = FEEDBACK_BYTES + if ltr_token.is_some() { LTR_BYTES } else { 0 };
+        let late_originals = if flags & FLAG_LATE_ORIGINALS != 0 {
+            let bytes = datagram.get(late_at..late_at + LATE_ORIGINALS_BYTES)?;
+            u16::from_be_bytes(bytes.try_into().ok()?)
+        } else {
+            0
+        };
         Some(Self {
             stream: datagram[1],
             frame: u32_at(2),
@@ -235,6 +253,7 @@ impl Feedback {
                 complete_offset_us: u32_at(28),
                 original_bytes: u32_at(32),
                 recovery,
+                late_originals,
             }),
             resolved_below: u32_at(8),
             lost_bitmap: u32_at(12),
@@ -437,6 +456,45 @@ mod tests {
         assert_eq!(PacketHeader::decode(Bytes::from(other_version)), None);
     }
 
+    fn late(late_originals: u16, ltr_token: Option<u64>) -> Feedback {
+        Feedback {
+            stream: 1,
+            frame: 9,
+            lost: false,
+            receipt: Some(FrameReceipt {
+                first_rx_us: 5,
+                last_rx_offset_us: 6,
+                complete_offset_us: 7,
+                original_bytes: 8,
+                recovery: Recovery::Nack,
+                late_originals,
+            }),
+            resolved_below: 9,
+            lost_bitmap: 0,
+            ltr_token,
+        }
+    }
+
+    #[test]
+    fn feedback_carries_the_late_originals_after_the_ltr_token_only_when_there_are_some() {
+        for token in [None, Some(77)] {
+            let none = late(0, token).encode();
+            let some = late(169, token).encode();
+            assert_eq!(some.len(), none.len() + 2);
+            assert_eq!(Feedback::decode(&none), Some(late(0, token)));
+            assert_eq!(Feedback::decode(&some), Some(late(169, token)));
+        }
+    }
+
+    #[test]
+    fn feedback_from_a_viewer_that_reports_no_late_originals_decodes_as_none_and_a_newer_field_is_ignored() {
+        let mut old = BytesMut::from(&late(0, Some(77)).encode()[..]);
+        assert_eq!(Feedback::decode(&old).and_then(|feedback| feedback.receipt).map(|receipt| receipt.late_originals), Some(0));
+        old[6] |= 0x40;
+        old.put_u32(0xDEAD_BEEF);
+        assert_eq!(Feedback::decode(&old), Some(late(0, Some(77))));
+    }
+
     #[test]
     fn feedback_carries_receipt_history_and_ltr_token() {
         let feedback = Feedback {
@@ -449,6 +507,7 @@ mod tests {
                 complete_offset_us: 2100,
                 original_bytes: 48_000,
                 recovery: Recovery::Nack,
+                late_originals: 0,
             }),
             resolved_below: 40,
             lost_bitmap: 0b101,

@@ -22,6 +22,7 @@ enum Direction {
 }
 
 type DropRule = Box<dyn FnMut(Direction, &Bytes) -> bool>;
+type HoldRule = Box<dyn FnMut(Direction, &Bytes) -> Duration>;
 
 struct Sim {
     epoch: Instant,
@@ -32,6 +33,7 @@ struct Sim {
     in_flight: BinaryHeap<Reverse<(Instant, u64, Direction, Bytes)>>,
     sequence: u64,
     drop_rule: Option<DropRule>,
+    hold_rule: Option<HoldRule>,
     delays: [Duration; 2],
     host_events: Vec<Event>,
     viewer_events: Vec<Event>,
@@ -60,6 +62,7 @@ impl Sim {
             in_flight: BinaryHeap::new(),
             sequence: 0,
             drop_rule: None,
+            hold_rule: None,
             delays: [delay; 2],
             host_events: Vec::new(),
             viewer_events: Vec::new(),
@@ -72,6 +75,10 @@ impl Sim {
 
     fn drop_when(&mut self, rule: impl FnMut(Direction, &Bytes) -> bool + 'static) {
         self.drop_rule = Some(Box::new(rule));
+    }
+
+    fn hold_when(&mut self, rule: impl FnMut(Direction, &Bytes) -> Duration + 'static) {
+        self.hold_rule = Some(Box::new(rule));
     }
 
     fn send(&mut self, frame: OutgoingFrame<'_>) -> u32 {
@@ -99,7 +106,11 @@ impl Sim {
                     self.nacks_to_host.push((self.now, nack));
                 }
                 let link = &mut self.links[direction as usize];
-                let fate = link.send(datagram.len(), self.now - self.epoch);
+                let held = self.hold_rule.as_mut().map_or(Duration::ZERO, |rule| rule(direction, &datagram));
+                let fate = match link.send(datagram.len(), self.now - self.epoch) {
+                    Fate::Delivered(at) => Fate::Delivered(at + held),
+                    lost => lost,
+                };
                 if direction == Direction::ToViewer
                     && let Some((header, _)) = PacketHeader::decode(datagram.clone())
                     && header.kind == Kind::Data
@@ -1555,4 +1566,68 @@ fn a_frame_whose_resend_waits_behind_another_tiles_keyframe_on_a_fast_link_isnt_
 
     assert!(!skipped(&sim, 0, 30), "the viewer gave the frame up while the keyframe ahead of its resend arrived");
     assert!(waited.is_some());
+}
+
+const LONG_STEADY_LINK: NetworkConditions =
+    NetworkConditions { id: "25 ms, 50 Mbit/s", delay_ms: 25.0, capacity_kbps: Some(50_000), ..NetworkConditions::N0 };
+
+fn after_a_keyframe_whose_tail_is_late(late: Duration) -> (f64, codevisor_media::Stats) {
+    after_a_keyframe_whose_tail_is(late, false, 60, 60_000)
+}
+
+fn after_a_keyframe_whose_tail_is(
+    late: Duration, lost: bool, frames_before: u32, bytes_before: usize,
+) -> (f64, codevisor_media::Stats) {
+    let mut sim = Sim::new(LONG_STEADY_LINK, config(FecMode::Off), 1);
+    let small = payload(3, 3_000);
+    let mut number = 0;
+    for _ in 0..frames_before {
+        sim.send(OutgoingFrame { keyframe: number == 0, ..frame(0, &payload(4, bytes_before)) });
+        number += 1;
+        sim.run_for(INTERVAL);
+    }
+    sim.hold_when(move |direction, datagram| {
+        let late_tail = direction == Direction::ToViewer
+            && PacketHeader::decode(datagram.clone()).is_some_and(|(header, _)| header.frame == number && header.index >= 80);
+        if late_tail { late } else { Duration::ZERO }
+    });
+    sim.drop_when(first_time(move |direction, datagram| {
+        lost && direction == Direction::ToViewer
+            && PacketHeader::decode(datagram.clone()).is_some_and(|(header, _)| header.frame == number && header.index >= 80)
+    }));
+    sim.send(OutgoingFrame { keyframe: true, ..frame(0, &payload(1, 190_000)) });
+    let mut lowest = f64::MAX;
+    for _ in 0..120 {
+        sim.send(frame(0, &small));
+        sim.run_for(INTERVAL);
+        lowest = lowest.min(sim.host.admission().estimate_bps);
+    }
+    (lowest, sim.host.stats(sim.now))
+}
+
+#[test]
+fn a_keyframe_tail_that_arrives_late_after_the_viewer_asked_for_it_is_not_heavy_loss() {
+    let (on_time, _) = after_a_keyframe_whose_tail_is_late(Duration::ZERO);
+    let (late, stats) = after_a_keyframe_whose_tail_is_late(Duration::from_millis(15));
+
+    assert!(stats.packets_retransmitted > 30, "the late tail was never asked for ({} resends)", stats.packets_retransmitted);
+    assert!(stats.loss_rate < 0.02, "a link that lost nothing read {:.1}% loss", stats.loss_rate * 100.0);
+    assert!(late >= on_time * 0.95, "the estimate fell to {:.1} Mbit/s, {:.1} with the tail on time", late / 1e6, on_time / 1e6);
+}
+
+#[test]
+fn a_keyframe_tail_that_was_really_lost_still_counts_as_loss() {
+    let (_, stats) = after_a_keyframe_whose_tail_is(Duration::ZERO, true, 60, 60_000);
+
+    assert!(stats.packets_retransmitted > 30, "the lost tail was never asked for ({} resends)", stats.packets_retransmitted);
+    assert!(stats.loss_rate > 0.1, "a tail that was lost read only {:.1}% loss", stats.loss_rate * 100.0);
+}
+
+#[test]
+fn a_late_keyframe_tail_is_not_heavy_loss_whichever_moment_of_the_loss_window_it_lands_in() {
+    for frames_before in 52..=70 {
+        let (_, stats) = after_a_keyframe_whose_tail_is(Duration::from_millis(15), false, frames_before, 6_000);
+
+        assert!(stats.loss_rate < 0.02, "{frames_before} frames in: a link that lost nothing read {:.1}% loss", stats.loss_rate * 100.0);
+    }
 }

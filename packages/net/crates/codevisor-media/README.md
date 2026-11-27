@@ -142,10 +142,22 @@ no jitter buffer and no queue deeper than one frame.
     bytes are too few for their spread. A flooded first keyframe on N5 read as 0.68 Mbit/s and paced the next one at
     0.55 Mbit/s for 15 s (local Tier 1, video N5).
   - **heavy loss:** when more than 10% of a second's data packets are lost (at least 30 sent; each packet counted at
-    its first NACK, plus one per frame parity repaired), the estimate becomes `estimate × (1 − loss / 2)` (GCC's rule), but not under
+    its first NACK, plus one per frame parity repaired, less the late originals below), the estimate becomes
+    `estimate × (1 − loss / 2)` (GCC's rule), but not under
     85% of the receive rate. A short queue like N5's (30 packets, under 10 ms) turns overuse into loss rather than
     delay, and the Tier 1 relay's batched deliveries let burst samples read 35–44 Mbit/s on its 30 Mbit/s link: with
     only the delay detector, local Tier 1 video N5 stalled in 3 of 4 runs, against 0 of 4 with this.
+  - **late originals (851-4501):** a request is not a loss when the packet was only late. The viewer counts, per
+    frame, the packets it asked for whose first copy arrived within half a round trip of the request (too soon for
+    the resend, the same split it already uses to call a frame repaired), and reports the count with the frame's
+    receipt. The host takes up to that many of the frame's first-time requests back off the loss window, and when a
+    window ends while a frame whose losses it counted could still answer (one round trip and two frame intervals),
+    it waits up to that long before deciding. On the 50 Mbit/s lab network (25 ms ± 5) a pause in arrivals during a
+    large frame made the viewer ask for 30–170 packets still on their way; the window read 13–32% on a link that lost
+    0.1%, the cut threw the measured rate away and the estimate fell to the next small sample, about 3 Mbit/s, for the
+    rest of the run (16 traced local runs, 5 of 8 collapsed on main). The count only misses late originals (a copy
+    after half a round trip counts as the resend), so it never hides a real loss. An older viewer sends no count and
+    the host counts as before; an older host ignores the flag and the two bytes.
   - **back-off:** when frames' first packets keep finding a growing standing queue, at most once per round trip +
     frame interval, the estimate becomes 85% of the receive rate (at most the estimate) and the burst samples are
     cleared. When the receive rate is under half the estimate and the viewer received at least 75% of what was sent
@@ -284,12 +296,13 @@ Feedback (kind 2, viewer to host), one per resolved frame and per LTR acknowledg
 | Bytes  | Field                                                                                                                                                     |
 | ------ | --------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | 2..6   | the frame reported on (`u32::MAX` for none)                                                                                                               |
-| 6      | flags: 1 lost, 2 receipt present, 4 LTR token present                                                                                                     |
+| 6      | flags: 1 lost, 2 receipt present, 4 LTR token present, 8 late originals present                                                                           |
 | 7      | recovery of the reported frame: 0 none, 1 FEC, 2 NACK                                                                                                     |
 | 8..12  | `resolved_below`: every earlier frame is delivered or given up                                                                                            |
 | 12..16 | lost bitmap: bit `i` set means frame `resolved_below - 1 - i` was given up                                                                                |
 | 16..36 | receipt: first arrival (u64 µs), last first-time arrival and completion (u32 µs after it), bytes that arrived the first time after the first packet (u32) |
 | 36..44 | the newest LTR token the viewer's decoder acknowledged on this stream (optional)                                                                          |
+| then   | late originals (u16, optional): packets of the frame the viewer asked for whose first copy came before a resend could have                                |
 
 NACK (kind 3): the frame (u32), a range count (u16, at most 64), then `(first index, count)` pairs of u16. A count of
 `0xFFFF` asks for every data packet of a frame the viewer never saw.

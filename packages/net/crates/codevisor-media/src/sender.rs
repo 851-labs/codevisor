@@ -69,6 +69,8 @@ struct SentFrame {
     probes: u32,
     unanswered: u32,
     expires: Option<Instant>,
+    first_losses: u64,
+    losses_counted: Option<(Instant, Instant)>,
 }
 
 impl SentFrame {
@@ -162,6 +164,17 @@ struct LossWindow {
     sent: u64,
     nacked: u64,
     rate: f64,
+}
+
+impl LossWindow {
+    fn take_back(&mut self, frame: &SentFrame, late_originals: u16) {
+        let Some((window, _)) = frame.losses_counted else {
+            return;
+        };
+        if self.started == Some(window) {
+            self.nacked -= frame.first_losses.min(u64::from(late_originals)).min(self.nacked);
+        }
+    }
 }
 
 #[derive(Debug)]
@@ -296,6 +309,8 @@ impl Sender {
                 probes: 0,
                 unanswered: 0,
                 expires: None,
+                first_losses: 0,
+                losses_counted: None,
             },
         );
         if stream.unresolved.len() > MAX_UNRESOLVED {
@@ -341,7 +356,12 @@ impl Sender {
 
     fn roll_loss_window(&mut self, now: Instant) {
         let started = *self.loss.started.get_or_insert(now);
-        if now.saturating_duration_since(started) < LOSS_WINDOW {
+        let age = now.saturating_duration_since(started);
+        if age < LOSS_WINDOW {
+            return;
+        }
+        let answer_due = self.rtt + self.config.frame_interval * IN_FLIGHT_INTERVALS;
+        if age < LOSS_WINDOW + answer_due && self.losses_still_to_be_answered(started, now, answer_due) {
             return;
         }
         let current = if self.loss.sent == 0 { 0.0 } else { self.loss.nacked as f64 / self.loss.sent as f64 };
@@ -350,6 +370,12 @@ impl Sender {
         }
         self.loss.rate = current.max(self.loss.rate / 2.0).min(1.0);
         self.loss = LossWindow { started: Some(now), sent: 0, nacked: 0, rate: self.loss.rate };
+    }
+
+    fn losses_still_to_be_answered(&self, window: Instant, now: Instant, answer_due: Duration) -> bool {
+        self.streams.values().flat_map(|stream| stream.unresolved.values()).any(|frame| {
+            frame.losses_counted.is_some_and(|(counted_in, at)| counted_in == window && now < at + answer_due)
+        })
     }
 
     fn update_pacing_rate(&mut self, now: Instant) {
@@ -498,6 +524,10 @@ impl Sender {
             frame.expires = None;
             frame.flight_bytes = self.in_flight_bytes + self.pacer.backlog_bytes();
         }
+        if first_losses > 0 {
+            frame.first_losses += first_losses;
+            frame.losses_counted = self.loss.started.map(|window| (window, now));
+        }
         self.loss.nacked += first_losses;
         if first_losses > 0 || requested > 0 {
             self.estimator.on_lost(now, lost_bytes);
@@ -522,6 +552,9 @@ impl Sender {
         }
         if let Some(frame) = stream.unresolved.remove(&feedback.frame) {
             self.in_flight_bytes -= frame.bytes_out;
+            if let Some(receipt) = feedback.receipt.filter(|_| !feedback.lost) {
+                self.loss.take_back(&frame, receipt.late_originals);
+            }
             if feedback.lost {
                 self.last_loss = Some(now);
                 stats.frames_lost += 1;
@@ -952,6 +985,8 @@ mod tests {
             probes: MAX_PROBES,
             unanswered: MAX_PROBES,
             expires: None,
+            first_losses: 0,
+            losses_counted: None,
         };
         let waits = ProbeWaits { tail_probe: second / 10, timeout: second / 5 };
 

@@ -31,6 +31,7 @@ struct Assembly {
     received: usize,
     requested: Vec<Option<Instant>>,
     first_requested: Vec<Option<Instant>>,
+    late_originals: u16,
     first_rx: Option<Instant>,
     last_original_rx: Option<Instant>,
     original_bytes: usize,
@@ -71,6 +72,7 @@ impl Assembly {
             received: 0,
             requested: Vec::new(),
             first_requested: Vec::new(),
+            late_originals: 0,
             first_rx: None,
             last_original_rx: None,
             original_bytes: 0,
@@ -349,6 +351,9 @@ impl Receiver {
         let retransmission = header.kind == Kind::Data
             && assembly.first_requested[index].is_some_and(|asked| now >= asked + self.rtt / 2);
         assembly.repaired |= retransmission;
+        if !retransmission && header.kind == Kind::Data && assembly.first_requested[index].is_some() {
+            assembly.late_originals = assembly.late_originals.saturating_add(1);
+        }
         if !retransmission {
             if assembly.first_rx.is_some() {
                 assembly.original_bytes += datagram_len;
@@ -530,6 +535,7 @@ impl Receiver {
                 complete_offset_us: completed.map_or(0, |at| micros(at - first)),
                 original_bytes: assembly.original_bytes.min(u32::MAX as usize) as u32,
                 recovery: assembly.recovery(),
+                late_originals: assembly.late_originals,
             })
         };
         let outcome = match &assembly.state {
