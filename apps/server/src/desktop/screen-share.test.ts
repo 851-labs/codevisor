@@ -285,13 +285,14 @@ describe("sharing the screen the server's account is logged in at", () => {
     const machine = workstation()
     machine.logIn()
 
+    const probes = () => machine.asked.filter((line) => line.startsWith("sh -c command -v")).length
     await machine.screen.status()
+    const afterOne = probes()
     await machine.screen.status()
 
     const listed = machine.asked.filter((line) => line === "loginctl list-sessions --no-legend")
-    const probed = machine.asked.filter((line) => line.startsWith("sh -c command -v"))
     expect(listed).toHaveLength(2)
-    expect(probed).toHaveLength(2)
+    expect(probes()).toBe(afterOne)
   })
 
   it("goes by the session type logind reports, not by one process's variables", async () => {
@@ -381,7 +382,7 @@ describe("sharing the screen the server's account is logged in at", () => {
 
     expect(await refusal(machine.screen.remove())).toMatchObject({
       status: 500,
-      message: "x0vncserver (process 4242) doesn't stop, even when killed"
+      message: "the screen's VNC server (process 4242) doesn't stop, even when killed"
     })
     expect(JSON.parse(machine.files.get(CONFIG) ?? "").displays).toEqual([screenEntry])
   })

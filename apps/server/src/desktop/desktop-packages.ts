@@ -7,10 +7,12 @@ import {
   type OsRelease,
   type PackageManager,
   packageFamilies,
+  type ScreenCommands,
   SCREEN_NOTIFIER,
-  SCREEN_PROGRAMS,
-  SCREEN_SCRAPERS
+  WLROOTS_SCREEN_PROGRAMS,
+  X11_SCREEN_PROGRAMS
 } from "./package-managers.js"
+import { type Scraper, type ScreenKind, WLROOTS_SCRAPERS, X11_SCRAPERS } from "./screen-commands.js"
 
 export { DESKTOP_PROGRAMS, type OsRelease, SCREEN_PROGRAMS } from "./package-managers.js"
 
@@ -29,7 +31,7 @@ export interface InstallPlan {
   readonly manager: PackageManager
   readonly megabytes: number
   readonly commands: ReadonlyArray<RootCommand>
-  readonly screenCommands: ReadonlyArray<RootCommand>
+  readonly screenCommands: ScreenCommands
 }
 
 export const osRelease = (system: DesktopSystem): OsRelease => {
@@ -52,21 +54,41 @@ export const missingPrograms = async (system: DesktopSystem): Promise<ReadonlyAr
 }
 
 export interface ScreenPrograms {
-  readonly scraper: string | undefined
-  readonly missing: ReadonlyArray<string>
+  readonly scrapers: Readonly<Record<ScreenKind, Scraper | undefined>>
+  readonly hasNotifier: boolean
 }
 
-export const screenPrograms = async (system: DesktopSystem): Promise<ScreenPrograms> => {
-  const scraper = await screenScraper(system)
-  const hasNotifier = await hasProgram(system, SCREEN_NOTIFIER)
-  const missing = SCREEN_PROGRAMS.filter((program) =>
-    program === SCREEN_NOTIFIER ? !hasNotifier : scraper === undefined
+export const screenPrograms = async (system: DesktopSystem): Promise<ScreenPrograms> => ({
+  scrapers: {
+    x11: asScraper(await firstInstalled(system, X11_SCRAPERS)),
+    wlroots: await wlrootsScraper(system)
+  },
+  hasNotifier: await hasProgram(system, SCREEN_NOTIFIER)
+})
+
+const asScraper = (program: string | undefined): Scraper | undefined =>
+  program === undefined ? undefined : { program }
+
+const wlrootsScraper = async (system: DesktopSystem): Promise<Scraper | undefined> => {
+  const program = await firstInstalled(system, WLROOTS_SCRAPERS)
+  if (program !== "wayvnc") return asScraper(program)
+
+  const help = await system.run("wayvnc", ["--help"])
+  return { program, hasControlSocket: help.output.includes("--socket") }
+}
+
+export const missingFor = (found: ScreenPrograms, kind: ScreenKind): ReadonlyArray<string> => {
+  const needed = kind === "x11" ? X11_SCREEN_PROGRAMS : WLROOTS_SCREEN_PROGRAMS
+  return needed.filter((program) =>
+    program === SCREEN_NOTIFIER ? !found.hasNotifier : found.scrapers[kind] === undefined
   )
-  return { scraper, missing }
 }
 
-const screenScraper = async (system: DesktopSystem): Promise<string | undefined> => {
-  for (const program of SCREEN_SCRAPERS) if (await hasProgram(system, program)) return program
+const firstInstalled = async (
+  system: DesktopSystem,
+  programs: ReadonlyArray<string>
+): Promise<string | undefined> => {
+  for (const program of programs) if (await hasProgram(system, program)) return program
 
   return undefined
 }

@@ -11,7 +11,7 @@ import { packageFamilies } from "./package-managers.js"
 const run = promisify(execFile)
 
 const zypperScreenInstall = packageFamilies.find((family) => family.manager === "zypper")
-  ?.screenCommands[0]
+  ?.screenCommands.x11[0]
 
 const machineWhereZypperExits = (code: number, installs: ReadonlyArray<string>): string => {
   const bin = mkdtempSync(join(tmpdir(), "cv-zypper-"))

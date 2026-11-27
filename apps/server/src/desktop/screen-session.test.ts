@@ -129,6 +129,25 @@ describe("the graphical session the server's account has at the screen", () => {
   })
 
   it.each([
+    ["wlroots", "sway"],
+    ["wlroots", "Hyprland"],
+    ["wayland", "gnome-shell"],
+    ["wayland", "kwin_wayland"]
+  ])("calls a Wayland session %s when its compositor is %s", (kind, comm) => {
+    const wayland = { WAYLAND_DISPLAY: "wayland-1", DBUS_SESSION_BUS_ADDRESS: bus }
+    const system = at({ 400: { env: wayland, session: "9" }, 401: { comm, session: "9" } })
+
+    expect(ownGraphicalSession(system, { session: "9" })?.kind).toBe(kind)
+  })
+
+  it("doesn't take another session's compositor for this one's", () => {
+    const wayland = { WAYLAND_DISPLAY: "wayland-1" }
+    const system = at({ 400: { env: wayland, session: "9" }, 401: { comm: "sway", session: "4" } })
+
+    expect(ownGraphicalSession(system, { session: "9" })?.kind).toBe("wayland")
+  })
+
+  it.each([
     ["wlroots", { SWAYSOCK: "/run/user/1000/sway-ipc.sock" }],
     ["wlroots", { HYPRLAND_INSTANCE_SIGNATURE: "abc" }],
     ["wayland", {}]

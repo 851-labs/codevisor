@@ -27,11 +27,24 @@ export const ownGraphicalSession = (
 ): GraphicalSession | undefined => {
   const known =
     search.lookFirstAt === undefined ? undefined : candidate(system, search.lookFirstAt, search)
-  if (known !== undefined) return known
+  if (known !== undefined && known.kind !== "wayland") return known
 
   const found = processIds(system).flatMap((pid) => candidate(system, pid, search) ?? [])
-  return newestOf(system, withTheBus(found))
+  const chosen = newestOf(system, withTheBus(found))
+  if (chosen?.kind !== "wayland" || !runsAWlrootsCompositor(system, search.session)) return chosen
+
+  return { ...chosen, kind: "wlroots" }
 }
+
+export const WLROOTS_COMPOSITORS = new Set(["sway", "Hyprland", "river", "labwc", "wayfire"])
+
+const runsAWlrootsCompositor = (system: SessionSystem, session: string | undefined): boolean =>
+  processIds(system).some(
+    (pid) =>
+      ownerOf(system, pid) === system.uid &&
+      WLROOTS_COMPOSITORS.has(system.readText(`/proc/${pid}/comm`)?.trim() ?? "") &&
+      (session === undefined || isInSession(system, pid, session))
+  )
 
 const carried = [
   "DISPLAY",
