@@ -13,6 +13,7 @@ final class ScreenSharingAttempt {
 
   enum Report {
     case transport(ScreenSharingTransportEvent)
+    case unavailable([ServerScreenSharingUnavailableDisplay])
     case takingLong
     case firstFrameDecoded
   }
@@ -67,6 +68,10 @@ final class ScreenSharingAttempt {
     transport?.switchDisplay(to: displayId) ?? false
   }
 
+  var switchesDisplayByReconnecting: Bool {
+    transport?.switchesDisplayByReconnecting ?? false
+  }
+
   func close() {
     isClosed = true
     deadline?.meet()
@@ -104,6 +109,7 @@ final class ScreenSharingAttempt {
 
   private func makeTransport(for capabilities: ScreenSharingHostReply) throws -> any ScreenSharingTransport {
     let displays = capabilities.base.displays
+    report(.unavailable(capabilities.base.unavailable ?? []))
     report(.transport(.sharing(display: nil, displays: displays)))
 
     if machine.target == nil, capabilities.base.provider == "vnc", let makeVNC = machine.makeVNCTransport {

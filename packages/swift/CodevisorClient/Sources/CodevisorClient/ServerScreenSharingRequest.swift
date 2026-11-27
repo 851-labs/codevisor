@@ -17,6 +17,18 @@ public struct ServerScreenSharingDisplay: Codable, Sendable, Equatable, Identifi
   }
 }
 
+public struct ServerScreenSharingUnavailableDisplay: Codable, Sendable, Equatable, Identifiable {
+  public let id: String
+  public let name: String
+  public let problem: String
+
+  public init(id: String, name: String, problem: String) {
+    self.id = id; self.name = name; self.problem = problem
+  }
+
+  public var summary: String { "\(name): \(problem)" }
+}
+
 public struct ServerScreenSharingRequest: Codable, Sendable {
   public enum Operation: String, Codable, Sendable { case capabilities, start, restart, heartbeat, stop, setScale }
   public enum Intent: String, Codable, Sendable { case open, attach }
@@ -50,6 +62,7 @@ public struct ServerScreenSharingReply: Codable, Sendable {
   public var status: String
   public var message: String?
   public var displays: [ServerScreenSharingDisplay]
+  public var unavailable: [ServerScreenSharingUnavailableDisplay]?
   public var provider: String?
   public var controlLease: Bool?
   public var engines: [String]?

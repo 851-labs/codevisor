@@ -186,6 +186,7 @@ public final class ScreenSharingDesktopSurface {
     snapshot.isTakingLong = desktop.connection.isTakingLong
     snapshot.hostNotice = desktop.connection.hostNotice
     snapshot.displays = desktop.connection.displays
+    snapshot.unavailableDisplays = desktop.connection.unavailableDisplays
     snapshot.displayId = desktop.connection.display?.id
     snapshot.displaySwitch = desktop.connection.displaySwitch
     snapshot.endpoint = desktop.endpoint

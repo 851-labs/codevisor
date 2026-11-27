@@ -1,4 +1,5 @@
 #if os(iOS)
+  import CodevisorClient
   import SwiftUI
   import UIKit
 
@@ -78,7 +79,7 @@
     public var body: some ToolbarContent {
       ToolbarItem(id: "screen-sharing.actions", placement: .topBarTrailing) {
         Menu {
-          if model.displays.count > 1 {
+          if model.offersAChoiceOfDisplays {
             Picker(
               "Display",
               selection: Binding(
@@ -87,6 +88,13 @@
             ) {
               ForEach(model.displays, id: \.id) { display in
                 Text(display.name).tag(display.id)
+              }
+              if !model.unavailableDisplays.isEmpty {
+                Section("Not Available") {
+                  ForEach(model.unavailableDisplays) { display in
+                    Text(display.summary).tag(display.id).disabled(true)
+                  }
+                }
               }
             }
           }

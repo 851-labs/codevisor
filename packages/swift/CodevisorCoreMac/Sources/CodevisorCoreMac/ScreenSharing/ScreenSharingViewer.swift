@@ -24,6 +24,8 @@ public struct ScreenSharingViewer {
 
     public var endpoint: ScreenSharingViewerEndpoint? { surface.endpoint }
     public var displays: [ServerScreenSharingDisplay] { surface.displays }
+    public var unavailableDisplays: [ServerScreenSharingUnavailableDisplay] { surface.unavailableDisplays }
+    public var offersAChoiceOfDisplays: Bool { displays.count + unavailableDisplays.count > 1 }
     public var selectedDisplayId: String? {
       guard let pending = surface.displaySwitch, pending.phase == .switching else { return surface.displayId }
 

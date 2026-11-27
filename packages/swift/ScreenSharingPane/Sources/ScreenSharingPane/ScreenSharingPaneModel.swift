@@ -64,6 +64,10 @@ public final class ScreenSharingPaneModel {
 
   public var displays: [ServerScreenSharingDisplay] { connection.displays }
 
+  public var unavailableDisplays: [ServerScreenSharingUnavailableDisplay] { connection.unavailableDisplays }
+
+  public var offersAChoiceOfDisplays: Bool { displays.count + unavailableDisplays.count > 1 }
+
   public var selectedDisplay: ServerScreenSharingDisplay? { connection.display }
 
   public var control: ScreenSharingControlSession? { viewed?.control }

@@ -87,7 +87,7 @@ private struct ScreenSharingDisplayPicker: View {
   let store: StoreOf<ScreenSharingViewer>
 
   var body: some View {
-    if store.displays.count > 1 {
+    if store.offersAChoiceOfDisplays {
       Picker(
         "Display",
         selection: Binding(
@@ -95,9 +95,16 @@ private struct ScreenSharingDisplayPicker: View {
           set: { store.send(.displaySelected($0)) })
       ) {
         ForEach(store.displays) { display in Text(display.name).tag(display.id) }
+        if !store.unavailableDisplays.isEmpty {
+          Section("Not Available") {
+            ForEach(store.unavailableDisplays) { display in
+              Text(display.summary).tag(display.id).disabled(true)
+            }
+          }
+        }
       }
       .pickerStyle(.menu).labelsHidden().fixedSize()
-      .help("Switch to another display of this Mac")
+      .help("Switch to another display of this machine")
     }
   }
 }

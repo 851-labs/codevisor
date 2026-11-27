@@ -1,3 +1,4 @@
+import CodevisorClient
 import CodevisorTestSupport
 import Foundation
 import ScreenSharing
@@ -122,6 +123,21 @@ struct ScreenSharingDesktopsTests {
 
     #expect(harness.host.starts.map(\.displayId) == [nil, FakeHost.second.id])
     #expect(relaunched?.selectedDisplay == FakeHost.second)
+  }
+
+  @Test("A display the machine can't share is listed with its reason, and can't be picked")
+  func unavailableDisplayIsExplained() async {
+    let harness = DesktopsHarness()
+    let missing = ServerScreenSharingUnavailableDisplay(
+      id: "vnc:desktop", name: "Desktop", problem: "The desktop on this machine isn't running.")
+    harness.host.unavailable = [missing]
+    let model = harness.model()
+    harness.show(model)
+    await harness.goLive(model)
+
+    #expect(model?.unavailableDisplays == [missing] && model?.offersAChoiceOfDisplays == true)
+    model?.select(displayId: missing.id)
+    #expect(harness.host.starts.count == 1 && model?.selectedDisplay == FakeHost.display)
   }
 
   @Test("Until a display is picked for the machine, the one saved on the pane is asked for")
