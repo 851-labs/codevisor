@@ -46,21 +46,26 @@ no jitter buffer and no queue deeper than one frame.
      it has asked for is at least the time the frame's missing packets take at the pace its own first-time packets
      came at (its patience, at most 5 s, `MAX_CROSSING`: a 190 KB keyframe at the 300 kbit/s floor); a frame with
      fewer than two first-time packets has no pace and gets the plain give-up time. While media
-     packets of any frame keep arriving the wait doesn't run out either, since a resend waits behind whatever the
-     host sent before the request. Copies the viewer already has count too: the host's probes are queued ahead of
-     its resends, and with only new packets counted the sim's viewer gave a keyframe up during the 100 ms in which
-     twelve probe copies arrived just before its 130 resends. That extra wait ends four times the patience after
-     the frame's last packet, or after the time 512 packets take at the pace packets of one frame have been
-     arriving at if that is longer, again at most 5 s. On a fast link that is about four give-up times, so a frame
-     the host no longer holds can't keep its tile waiting behind other tiles' traffic for long; on 1 Mbit/s it is
-     the 5 s, so a keyframe missing two packets is still there when their resends come through behind two more
-     tiles' keyframes (it was given up 0.5 s after its last packet). The host counts a NACK that names a packet it wasn't asked
+     packets of any frame keep arriving back to back (no gap longer than eight times the pace packets of one frame
+     have been arriving at, at least 1 ms), the wait doesn't run out either: a link delivering back to back has a
+     queue, and a resend waits behind whatever the host sent before the request. A link with gaps has nothing
+     queued ahead of the resend, so other traffic doesn't hold the frame: with 60 fps video on four tiles at
+     50 Mbit/s, counting any packet kept a packet that never arrived waiting 218 ms after its request in the sim,
+     against a 53 ms give-up time, with the stream's later frames held behind it; back to back it is 66 ms (the
+     tiles' frames take 13 ms to come through). Copies the viewer already has count too: the host's probes are
+     queued ahead of its resends, and with only new packets counted the sim's viewer gave a keyframe up during the
+     100 ms in which twelve probe copies arrived just before its 130 resends. That extra wait ends four times the
+     patience after the frame's last packet, or after the time 512 packets take at that pace if that is longer,
+     again at most 5 s; on 1 Mbit/s it is the 5 s, so a keyframe missing two packets is still there when their
+     resends come through behind two more tiles' keyframes (it was given up 0.5 s after its last packet). The host counts a NACK that names a packet it wasn't asked
      for before as an answer: its probe count starts again and the frame gets the time everything then waiting needs
-     to cross. Repeats of the same request count only while the host is holding that packet's resend behind a deep
-     queue (below): the viewer is still waiting for it, and without that a frame on 1 Mbit/s with four keyframes in
-     the queue was given up by the host while its resends were on their way. Otherwise repeats don't count, so a
-     packet that never gets through still ends in a lost frame, and a held one ends there once the viewer gives
-     its frame up. When the sixth unanswered probe goes out, the host fixes how long it still waits: until what was in
+     to cross. A repeat counts too when the host sends that packet again, or while it is holding
+     the packet's resend behind a deep queue (below): either way the viewer is still waiting for the frame. Without
+     the first, a frame whose repeats the host kept sending still used up its six probes while the viewer was
+     asking, and was given up; without the second, a frame on 1 Mbit/s with four keyframes in the queue
+     was given up by the host while its resends were on their way. A repeat the host skips because its resend left
+     under half a round trip ago doesn't count. A packet that never gets through still ends in a lost frame: the
+     viewer gives its frame up within its bounds above and says so. When the sixth unanswered probe goes out, the host fixes how long it still waits: until what was in
      flight could have crossed at the rate the viewer acknowledged over the last 0.5 s (300 kbit/s with no
      acknowledgement in that time, never over the estimate, at most 5 s), counted from the frame's last packet or
      the viewer's last answer, whichever is later. Before, the viewer gave a frame up one
@@ -83,7 +88,10 @@ no jitter buffer and no queue deeper than one frame.
      comes off what that sighting carried and a burst of loss doesn't make the link look faster; one asked for
      ahead of the reach may only be late and counts for nothing. Sightings under 5 ms apart give no rate, and
      neither does the first one after an idle spell, which starts the count again one lowest round trip after the
-     frame's first packet left (or at the first sighting, if that comes sooner). A resend that leaves with more
+     frame's first packet left (or at the first sighting, if that comes sooner). An idle spell is one where no frame
+     is in flight and the reach has passed everything sent; with nothing in flight but the reach still short (fresh
+     resends, trailing parity, or a given-up frame's packets still queued), the count carries on, and what is known
+     lost always carries over. A resend that leaves with more
      than four round trips' worth of queue ahead of it (four frame intervals if that is longer) isn't sent again
      until the reach has passed it, at most 5 s; a request that still names it then means it was lost, and it goes
      out at once. Every other resend keeps the half-round-trip rule, and so does every resend while there is no

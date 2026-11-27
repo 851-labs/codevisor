@@ -20,9 +20,12 @@ pub struct Arrived {
 }
 
 impl Arrived {
-    pub fn restart(&mut self, at: Instant, position: u64) {
-        *self = Self::default();
-        self.seen.push_back(Sighting { at, position, carried: position });
+    pub fn restart(&mut self, at: Instant, position: u64, known_bps: Option<f64>) {
+        if self.reached(at, known_bps).is_some_and(|reached| reached < position) {
+            return;
+        }
+        self.seen.clear();
+        self.seen.push_back(Sighting { at, position, carried: position.saturating_sub(self.lost) });
     }
 
     pub fn note(&mut self, at: Instant, position: u64) {
@@ -93,7 +96,7 @@ mod tests {
         let start = Instant::now();
         let mut arrived = Arrived::default();
         assert_eq!(arrived.reached(start, None), None);
-        arrived.restart(start, 1_000);
+        arrived.restart(start, 1_000, None);
         assert_eq!(arrived.reached(start + 50 * MS, None), None);
         assert_eq!(arrived.wait_for(start + 50 * MS, 50_000, None), None);
     }
@@ -102,7 +105,7 @@ mod tests {
     fn the_reach_grows_at_the_rate_the_sightings_advanced() {
         let start = Instant::now();
         let mut arrived = Arrived::default();
-        arrived.restart(start, 0);
+        arrived.restart(start, 0, None);
         arrived.note(start + 100 * MS, 12_500);
         assert_eq!(arrived.reached(start + 100 * MS, None), Some(12_500));
         assert_eq!(arrived.reached(start + 300 * MS, None), Some(37_500));
@@ -112,7 +115,7 @@ mod tests {
     fn the_wait_for_a_position_is_what_is_ahead_of_it_at_the_rate() {
         let start = Instant::now();
         let mut arrived = Arrived::default();
-        arrived.restart(start, 0);
+        arrived.restart(start, 0, None);
         arrived.note(start + 100 * MS, 12_500);
         assert_eq!(arrived.wait_for(start + 100 * MS, 50_000, None), Some(300 * MS));
         assert_eq!(arrived.wait_for(start + 300 * MS, 50_000, None), Some(100 * MS));
@@ -124,7 +127,7 @@ mod tests {
     fn a_rate_known_from_elsewhere_is_used_when_it_is_higher() {
         let start = Instant::now();
         let mut arrived = Arrived::default();
-        arrived.restart(start, 0);
+        arrived.restart(start, 0, None);
         assert_eq!(arrived.reached(start + 100 * MS, Some(8e6)), Some(100_000));
         arrived.note(start + 100 * MS, 12_500);
         assert_eq!(arrived.reached(start + 200 * MS, Some(8e6)), Some(112_500));
@@ -135,7 +138,7 @@ mod tests {
     fn two_sightings_moments_apart_dont_set_the_rate() {
         let start = Instant::now();
         let mut arrived = Arrived::default();
-        arrived.restart(start, 0);
+        arrived.restart(start, 0, None);
         arrived.note(start + 20 * Duration::from_micros(1), 12_000);
         assert_eq!(arrived.reached(start + 100 * MS, None), None);
 
@@ -149,7 +152,7 @@ mod tests {
     fn a_sighting_that_doesnt_advance_is_ignored_and_old_ones_fall_away_but_one() {
         let start = Instant::now();
         let mut arrived = Arrived::default();
-        arrived.restart(start, 0);
+        arrived.restart(start, 0, None);
         arrived.note(start + 100 * MS, 10_000);
         arrived.note(start + 200 * MS, 10_000);
         assert_eq!(arrived.reached(start + 200 * MS, None), Some(20_000));
@@ -163,18 +166,43 @@ mod tests {
     fn a_restart_forgets_the_idle_time_before_it() {
         let start = Instant::now();
         let mut arrived = Arrived::default();
-        arrived.restart(start, 0);
+        arrived.restart(start, 0, None);
         arrived.note(start + 100 * MS, 10_000);
-        arrived.restart(start + 5_000 * MS, 10_000);
+        arrived.restart(start + 5_000 * MS, 10_000, None);
         arrived.note(start + 5_010 * MS, 20_000);
         assert_eq!(arrived.reached(start + 5_020 * MS, None), Some(30_000));
+    }
+
+    #[test]
+    fn a_restart_while_the_reach_is_still_short_of_it_keeps_what_was_seen() {
+        let start = Instant::now();
+        let mut arrived = Arrived::default();
+        arrived.restart(start, 0, None);
+        arrived.note(start + 100 * MS, 12_500);
+        arrived.restart(start + 150 * MS, 100_000, None);
+        assert_eq!(arrived.reached(start + 200 * MS, None), Some(25_000), "the link is still carrying what was sent");
+        assert_eq!(arrived.wait_for(start + 200 * MS, 100_000, None), Some(600 * MS));
+    }
+
+    #[test]
+    fn a_restart_keeps_what_is_known_lost() {
+        let start = Instant::now();
+        let mut arrived = Arrived::default();
+        arrived.restart(start, 0, None);
+        arrived.note(start + 100 * MS, 20_000);
+        assert!(arrived.note_lost(5_000, 7_500));
+        arrived.restart(start + 5_000 * MS, 30_000, None);
+        arrived.note(start + 5_100 * MS, 50_000);
+        assert_eq!(arrived.lost(), 7_500);
+        assert!(arrived.note_lost(40_000, 7_500));
+        assert_eq!(arrived.reached(start + 5_200 * MS, None), Some(62_500), "12.5 KB carried in 100 ms");
     }
 
     #[test]
     fn a_sighting_before_the_restarts_time_moves_the_restart_back_to_it() {
         let start = Instant::now();
         let mut arrived = Arrived::default();
-        arrived.restart(start + 100 * MS, 0);
+        arrived.restart(start + 100 * MS, 0, None);
         arrived.note(start + 62 * MS, 5_000);
         assert_eq!(arrived.reached(start + 70 * MS, None), None);
 
@@ -186,7 +214,7 @@ mod tests {
     fn a_packet_still_asked_for_behind_the_reach_is_lost_and_took_no_link_time() {
         let start = Instant::now();
         let mut arrived = Arrived::default();
-        arrived.restart(start, 0);
+        arrived.restart(start, 0, None);
         arrived.note(start + 100 * MS, 112_500);
         assert_eq!(arrived.reached(start + 200 * MS, None), Some(225_000), "nothing is known lost yet");
 
@@ -201,7 +229,7 @@ mod tests {
     fn a_packet_asked_for_ahead_of_the_reach_may_only_be_late() {
         let start = Instant::now();
         let mut arrived = Arrived::default();
-        arrived.restart(start, 0);
+        arrived.restart(start, 0, None);
         arrived.note(start + 100 * MS, 12_500);
         assert!(!arrived.note_lost(400_000, 190_000));
         assert_eq!(arrived.lost(), 0);
@@ -213,7 +241,7 @@ mod tests {
     fn more_reported_lost_than_was_carried_gives_no_rate_instead_of_wrapping() {
         let start = Instant::now();
         let mut arrived = Arrived::default();
-        arrived.restart(start, 0);
+        arrived.restart(start, 0, None);
         arrived.note(start + 100 * MS, 12_500);
         arrived.note(start + 200 * MS, 25_000);
         assert!(arrived.note_lost(1, u64::MAX));
@@ -226,7 +254,7 @@ mod tests {
     fn a_loss_sent_before_every_remembered_sighting_leaves_their_rate_alone() {
         let start = Instant::now();
         let mut arrived = Arrived::default();
-        arrived.restart(start, 0);
+        arrived.restart(start, 0, None);
         arrived.note(start + 100 * MS, 100_000);
         arrived.note(start + 700 * MS, 200_000);
         assert!(arrived.note_lost(50_000, 30_000));

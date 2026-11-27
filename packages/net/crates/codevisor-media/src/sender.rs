@@ -394,7 +394,9 @@ impl Sender {
                 frame.first_tx = Some(now);
                 frame.sent_before = sent_before;
                 if self.in_flight_bytes == 0 {
-                    self.arrived.restart(now + self.min_rtt.best().unwrap_or(self.rtt), sent_before);
+                    let known_bps = self.estimator.measured().then(|| self.estimator.estimate_bps());
+                    let at = now + self.min_rtt.best().unwrap_or(self.rtt);
+                    self.arrived.restart(at, sent_before, known_bps);
                 }
             }
             frame.positions.push(position);
@@ -426,7 +428,11 @@ impl Sender {
             })
         };
         let sent = frame.originals_out.min(frame.data_count);
-        let ends = nack.ranges.iter().map(|&(start, count)| usize::from(start) + usize::from(count));
+        let ends = nack
+            .ranges
+            .iter()
+            .filter(|&&(_, count)| count != wire::WHOLE_FRAME)
+            .map(|&(start, count)| usize::from(start) + usize::from(count));
         let named_to = ends.max();
         if let Some(named_to) = named_to.filter(|named_to| *named_to > sent) {
             frame.guessed_to = frame.guessed_to.max(named_to.min(frame.data_count));
@@ -486,7 +492,7 @@ impl Sender {
             requested += 1;
         }
         stats.retransmissions_skipped += repeated;
-        if first_losses > 0 || held > 0 {
+        if first_losses > 0 || held > 0 || requested > 0 {
             frame.heard = Some(now);
             frame.unanswered = 0;
             frame.expires = None;
@@ -881,6 +887,35 @@ mod tests {
         host.asked_for(&[(9, 1)]);
         assert_eq!(host.sender.loss.nacked, 1);
         assert_eq!(host.stats.packets_retransmitted, 2);
+    }
+
+    #[test]
+    fn a_repeat_the_host_sends_again_is_an_answer() {
+        let mut host = Host::with_a_frame_sent(10);
+        host.asked_for(&[(5, 1)]);
+        host.drain();
+        for _ in 0..2 {
+            host.probe();
+            host.drain();
+        }
+        assert_eq!(host.frame().unanswered, 2);
+
+        host.asked_for(&[(5, 1)]);
+
+        assert_eq!(host.stats.packets_retransmitted, 2);
+        assert_eq!((host.frame().heard, host.frame().unanswered), (Some(host.now), 0));
+    }
+
+    #[test]
+    fn a_whole_frame_request_doesnt_make_the_viewer_look_like_it_is_guessing_past_what_was_sent() {
+        let mut host = Host::with_a_frame_queued(12);
+        host.leave(5);
+        host.sender.on_nack(host.now, &Nack::whole_frame(0, 0), &mut host.stats);
+        host.drain();
+
+        host.asked_for(&[(9, 1)]);
+
+        assert_eq!(host.sender.arrived.position(), Some(host.frame().positions[8]));
     }
 
     #[test]

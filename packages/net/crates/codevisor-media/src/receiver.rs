@@ -21,6 +21,8 @@ const MAX_REFRESH_SENDS: u32 = 50;
 const BUSY_WAITS: u32 = 4;
 const BUSY_PACKETS: u32 = 512;
 const PACE_GAIN: u32 = 16;
+const BACK_TO_BACK: u32 = 8;
+const MIN_BACK_TO_BACK: Duration = Duration::from_millis(1);
 
 #[derive(Debug)]
 struct Assembly {
@@ -246,6 +248,11 @@ impl Receiver {
         give_up_after(self.rtt, self.frame_interval)
     }
 
+    fn link_busy_until(&self) -> Option<Instant> {
+        let gap = (self.pace * BACK_TO_BACK).max(MIN_BACK_TO_BACK).min(self.give_up_after());
+        self.last_media_rx.map(|at| at + gap)
+    }
+
     fn retry_after(&self) -> Duration {
         self.rtt + RETRY_MARGIN
     }
@@ -428,7 +435,7 @@ impl Receiver {
         self.send_refresh_requests(now, stats);
         let tail_wait = self.tail_wait();
         let give_up = self.give_up_after();
-        let link_busy_until = self.last_media_rx.map(|at| at + give_up);
+        let link_busy_until = self.link_busy_until();
         let wait = Wait { give_up, rtt: self.rtt, pace: self.pace };
         let retry = self.retry_after();
         let mut resolved = Vec::new();
@@ -485,7 +492,7 @@ impl Receiver {
     }
 
     pub fn poll_timeout(&self) -> Option<Instant> {
-        let link_busy_until = self.last_media_rx.map(|at| at + self.give_up_after());
+        let link_busy_until = self.link_busy_until();
         let assembling = self
             .streams
             .values()

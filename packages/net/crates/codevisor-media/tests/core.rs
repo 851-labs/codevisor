@@ -1353,29 +1353,47 @@ fn a_packet_that_never_gets_through_still_ends_in_a_lost_frame() {
     assert!(skipped(&sim, 0, 0));
 }
 
-#[test]
-fn the_viewer_waits_a_little_longer_while_other_tiles_arrive_and_then_gives_the_frame_up() {
-    let mut sim = Sim::new(NetworkConditions::N1, config(FecMode::Off), 1);
-    sim.drop_when(|direction, datagram| match direction {
-        Direction::ToViewer => is_data(datagram, 0, 0, 1),
-        Direction::ToHost => is_kind(datagram, Kind::Nack),
-    });
-    sim.send(frame(0, &payload(1, 3_000)));
-    let give_up = codevisor_media::give_up_after(sim.host.stats(sim.now).rtt, INTERVAL);
-    let mut skipped_after = None;
-    for index in 0..60u64 {
-        sim.send(frame(1, &payload(index, 3_000)));
+const BUSY_FAST_LINK: NetworkConditions =
+    NetworkConditions { id: "50 Mbit/s", delay_ms: 25.0, capacity_kbps: Some(50_000), ..NetworkConditions::N0 };
+
+fn viewer_wait_for_a_packet_that_never_arrives_among_four_tiles_of_video() -> (Duration, Duration) {
+    let mut sim = Sim::new(BUSY_FAST_LINK, config(FecMode::Off), 1);
+    for index in 0..30u64 {
+        for tile in 0..4 {
+            sim.send(frame(tile, &payload(index * 4 + u64::from(tile), 20_000)));
+        }
         sim.run_for(INTERVAL);
-        if skipped_after.is_none() && skipped(&sim, 0, 0) {
-            skipped_after = Some(INTERVAL * (index as u32 + 1));
+    }
+    let lost = sim.host.stats(sim.now).frames_sent / 4;
+    sim.drop_when(move |direction, datagram| direction == Direction::ToViewer && is_data(datagram, 0, lost as u32, 1));
+    let give_up = codevisor_media::give_up_after(sim.host.stats(sim.now).rtt, INTERVAL);
+    let mut skipped_at = None;
+    for index in 30..90u64 {
+        for tile in 0..4 {
+            sim.send(frame(tile, &payload(index * 4 + u64::from(tile), 20_000)));
+        }
+        for _ in 0..17 {
+            sim.run_for(MS);
+            if skipped_at.is_none() && skipped(&sim, 0, lost as u32) {
+                skipped_at = Some(sim.now);
+            }
         }
     }
-
-    let waited = skipped_after.expect("the first tile's frame was never given up");
-    assert!(waited > give_up * 2, "given up after {waited:?} with the link still delivering");
-    assert!(waited <= give_up * 4 + 2 * INTERVAL, "given up only after {waited:?}");
+    let asked_at = sim
+        .nacks_to_host
+        .iter()
+        .find(|(_, nack)| (nack.stream, nack.frame) == (0, lost as u32))
+        .map(|(at, _)| *at)
+        .expect("the viewer never asked for the lost packet");
+    (skipped_at.expect("the frame was never given up") - asked_at, give_up)
 }
 
+#[test]
+fn a_lost_frame_isnt_held_while_other_tiles_video_arrives_with_gaps_between_frames() {
+    let (waited, give_up) = viewer_wait_for_a_packet_that_never_arrives_among_four_tiles_of_video();
+
+    assert!(waited <= give_up + INTERVAL, "given up {waited:?} after the request, against a give-up time of {give_up:?}");
+}
 
 fn lost_times(times: impl Fn(PacketHeader) -> u32 + 'static) -> impl FnMut(Direction, &Bytes) -> bool {
     let mut dropped = std::collections::HashMap::new();
