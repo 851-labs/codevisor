@@ -5,6 +5,9 @@ import { onSway, refusal, screenEntry, socket, workstation } from "./screen-shar
 
 const withWayvnc = [...EVERY_PROGRAM, "wayvnc", "notify-send"]
 const unixSocketOption = "  -u,--unix-socket     Create a UNIX domain socket instead of TCP.\n"
+const wayvnc041 = {
+  "wayvnc --version": { code: 0, output: "wayvnc: 0.4.1\nneatvnc: 0.4.0\naml: 0.2.1\n" }
+}
 const wayvnc05 = { "wayvnc --help": { code: 0, output: unixSocketOption } }
 const wayvncWithAControlSocket = {
   "wayvnc --help": {
@@ -181,18 +184,34 @@ describe("sharing the screen of a wlroots session", () => {
   })
 
   it("says which wayvnc is too old instead of starting it", async () => {
-    const machine = sway({
-      results: {
-        "wayvnc --help": { code: 0, output: "  -C,--config=<path>  Select a config file.\n" },
-        "wayvnc --version": { code: 0, output: "wayvnc: 0.4.1\nneatvnc: 0.4.0\n" }
-      }
-    })
+    const machine = sway({ results: wayvnc041 })
 
     expect(await refusal(machine.screen.setUp())).toEqual({
       status: 409,
       message: "wayvnc 0.4.1 is too old; 0.5 or newer is needed"
     })
     expect(machine.spawned).toEqual([])
+  })
+
+  it.each([
+    ["fails to answer", { code: 1, output: "wayvnc: unrecognized option '--version'\n" }],
+    ["answers something else", { code: 0, output: "Usage: wayvnc [options]\n" }]
+  ])("doesn't call wayvnc too old when --version %s", async (_how, answer) => {
+    const machine = sway({ results: { "wayvnc --version": answer } })
+
+    await machine.screen.setUp()
+
+    expect(machine.spawned).toEqual([wayvncCommand([])])
+  })
+
+  it("with nobody at the screen, doesn't refuse X11 over a wayvnc too old for Sway", async () => {
+    const machine = workstation({
+      programs: [...withWayvnc, "X0tigervnc", "sway"],
+      folders: { "/usr/share/xsessions": ["xfce.desktop"] },
+      results: wayvnc041
+    })
+
+    expect((await machine.screen.setUp()).state).toBe("waiting")
   })
 
   it("doesn't ask wayvnc anything while it shares an X11 session", async () => {

@@ -6,7 +6,7 @@ export interface Process {
   readonly session?: string
   readonly started?: number
   readonly comm?: string
-  readonly parent?: number
+  readonly fds?: ReadonlyArray<string>
   readonly cmdline?: ReadonlyArray<string>
 }
 
@@ -20,12 +20,19 @@ export const machine = ({ processes, liveDisplays = ["X0"], answers = {} }: Mach
   uid: ownUid,
   listFolder: (path: string): ReadonlyArray<string> => {
     if (path === "/proc") return [...Object.keys(processes), "self", "cpuinfo"]
+    const fds = /^\/proc\/(\d+)\/fd$/.exec(path)?.[1]
+    if (fds !== undefined)
+      return (processes[Number(fds)]?.fds ?? []).map((_, index) => String(index))
     return path === "/tmp/.X11-unix" ? liveDisplays : []
   },
   readText: (path: string): string | undefined => {
     const [, pid, file] = /^\/proc\/(\d+)\/(\w+)$/.exec(path) ?? []
     const process = processes[Number(pid)]
     return process === undefined ? undefined : procFile(Number(pid), process, file ?? "")
+  },
+  readLink: (path: string): string | undefined => {
+    const [, pid, fd] = /^\/proc\/(\d+)\/fd\/(\d+)$/.exec(path) ?? []
+    return processes[Number(pid)]?.fds?.[Number(fd)]
   },
   run: async (command: string, args: ReadonlyArray<string>) => {
     const answer = answers[[command, ...args].join(" ")]
@@ -34,8 +41,7 @@ export const machine = ({ processes, liveDisplays = ["X0"], answers = {} }: Mach
 })
 
 const procFile = (pid: number, process: Process, file: string): string | undefined => {
-  if (file === "status")
-    return `Name:\tx\nPPid:\t${process.parent ?? 1}\nUid:\t${process.uid ?? ownUid}\t0\t0\t0\n`
+  if (file === "status") return `Name:\tx\nUid:\t${process.uid ?? ownUid}\t0\t0\t0\n`
   if (file === "environ") return pairs(process.env ?? {})
   if (file === "cgroup")
     return `0::/user.slice/user-${process.uid ?? ownUid}.slice/session-${process.session ?? "none"}.scope\n`

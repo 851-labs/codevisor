@@ -95,15 +95,31 @@ const wlrootsScraper = async (system: DesktopSystem): Promise<Scraper | undefine
   const program = await firstInstalled(system, WLROOTS_SCRAPERS)
   if (program === undefined) return undefined
 
-  const help = (await system.run(program, ["--help"])).output
-  if (!help.includes("--unix-socket")) return { program, tooOld: await versionOf(system, program) }
+  const version = await versionOf(system, program)
+  if (version !== undefined && isOlderThan(version, firstWithAUnixSocket))
+    return { program, tooOld: version.join(".") }
 
-  return { program, hasControlSocket: help.includes("--socket") }
+  const help = await system.run(program, ["--help"])
+  return { program, hasControlSocket: help.code === 0 && help.output.includes("--socket") }
 }
 
-const versionOf = async (system: DesktopSystem, program: string): Promise<string> => {
-  const answer = (await system.run(program, ["--version"])).output
-  return /^\S+:\s*(\S+)/.exec(answer.trim())?.[1] ?? "of this version"
+const firstWithAUnixSocket = [0, 5]
+
+const versionOf = async (
+  system: DesktopSystem,
+  program: string
+): Promise<ReadonlyArray<number> | undefined> => {
+  const answer = await system.run(program, ["--version"])
+  const line = answer.output.split("\n").find((text) => text.startsWith(`${program}:`))
+  const version = /^\S+:\s*v?(\d+)\.(\d+)(?:\.(\d+))?\s*$/.exec(line?.trim() ?? "")
+  if (answer.code !== 0 || version === null) return undefined
+
+  return version.slice(1).flatMap((part) => (part === undefined ? [] : [Number(part)]))
+}
+
+const isOlderThan = (version: ReadonlyArray<number>, other: ReadonlyArray<number>): boolean => {
+  const at = other.findIndex((part, index) => (version[index] ?? 0) !== part)
+  return at >= 0 && (version[at] ?? 0) < other[at]!
 }
 
 export const missingFor = (

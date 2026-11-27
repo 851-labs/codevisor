@@ -59,10 +59,12 @@ export const knownScreenPrograms = (
     missing: async (kinds) => missingFor(await programs(kinds), kinds),
     tooOld: async (kinds) => {
       const scrapers = (await programs(kinds)).scrapers
-      return kinds.map((kind) => tooOldText(scrapers.get(kind))).find((text) => text !== undefined)
+      const texts = kinds.map((kind) => tooOldText(scrapers.get(kind)))
+      return texts.every((text) => text !== undefined) ? texts[0] : undefined
     },
     checkAgain: () => {
       installed = undefined
+      machineKinds = undefined
     }
   }
 }
