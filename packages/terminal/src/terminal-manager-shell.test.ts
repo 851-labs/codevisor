@@ -58,12 +58,46 @@ describe("@codevisor/terminal terminal manager shell resolution", () => {
       spawner,
       launchEnvironment: (env) => (env.DISPLAY === undefined ? { ...env, DISPLAY: display } : env)
     })
+
     await run(manager.createTerminal(terminal("first")))
     display = ":4"
     await run(manager.createTerminal(terminal("after-the-desktop-moved")))
     await run(manager.createTerminal(terminal("with-its-own-display"), { DISPLAY: ":9" }))
 
     expect(spawner.requests.map((request) => request.env.DISPLAY)).toEqual([":1", ":4", ":9"])
+  })
+
+  it("starts restored terminals once what they wait for is there, with the environment as it is then", async () => {
+    const saved = makeTerminalManager({
+      env: { SHELL: "/bin/sh" },
+      platform: "linux",
+      spawner: makeSpawner()
+    })
+    await run(saved.createTerminal(terminal("kept")))
+    await run(saved.createTerminal(terminal("closed-while-waiting")))
+    const snapshot = saved.snapshotTerminals()
+    const desktop = Promise.withResolvers<void>()
+    const spawner = makeSpawner()
+    let display: string | undefined
+    const manager = makeTerminalManager({
+      env: { SHELL: "/bin/sh" },
+      platform: "linux",
+      spawner,
+      launchEnvironment: (env) => (display === undefined ? env : { ...env, DISPLAY: display }),
+      restoreAfter: desktop.promise
+    })
+
+    manager.restoreTerminals(snapshot)
+    await run(manager.closeTerminalForSession("closed-while-waiting"))
+    expect(spawner.requests).toEqual([])
+
+    display = ":1"
+    desktop.resolve()
+    await desktop.promise
+
+    expect(spawner.requests.map((request) => [request.sessionId, request.env.DISPLAY])).toEqual([
+      ["kept", ":1"]
+    ])
   })
 
   it("uses the portable 256-color terminal name for Linux profiles", async () => {

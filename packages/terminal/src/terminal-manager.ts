@@ -17,7 +17,7 @@ import { nodePtySpawner } from "./node-pty-spawner.js"
 import { ReplayBuffer } from "./replay-buffer.js"
 import { resolveUserId } from "./shell.js"
 import { SizeArbiter, type TerminalSize } from "./size-arbiter.js"
-import { makeTerminalLaunch } from "./terminal-launch.js"
+import { makeTerminalLaunch, spawnerWithLaunchEnvironment } from "./terminal-launch.js"
 import { restartLaunchFor } from "./terminal-restart-launch.js"
 import { restartTerminal } from "./terminal-restart.js"
 import { makeTerminalResume } from "./terminal-resume.js"
@@ -59,7 +59,10 @@ export const makeTerminalManager = (config: TerminalManagerConfig = {}): Termina
   let revision = 0
 
   /* v8 ignore next */
-  const spawner = config.spawner ?? nodePtySpawner
+  const spawner = spawnerWithLaunchEnvironment(
+    config.spawner ?? nodePtySpawner,
+    config.launchEnvironment
+  )
   const prepareSpawn = makeTerminalLaunch(config)
 
   const pushFrame = (terminal: RunningTerminal, frame: TerminalFramePayload): SequencedFrame => {
@@ -129,6 +132,7 @@ export const makeTerminalManager = (config: TerminalManagerConfig = {}): Termina
 
   const restartContext = {
     spawner,
+    after: config.restoreAfter,
     pushFrame,
     markExited,
     attachSession: (terminal: RunningTerminal) =>

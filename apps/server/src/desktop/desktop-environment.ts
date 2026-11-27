@@ -1,4 +1,3 @@
-import { readFileSync } from "node:fs"
 import { join } from "node:path"
 
 import {
@@ -6,31 +5,35 @@ import {
   recordedDesktopService,
   SCREEN_SHARING_CONFIG_FILE
 } from "../routes/screen-sharing-vnc.js"
-import { sessionIsUp } from "./desktop-layout.js"
-import { processAlive } from "./desktop-system.js"
+import { desktopIsUp, type DesktopProcesses, type LocateSocket } from "./desktop-liveness.js"
+import { type DesktopSystem, systemDesktopSystem } from "./desktop-system.js"
 
 export type LaunchEnvironment = (env: NodeJS.ProcessEnv) => NodeJS.ProcessEnv
 
 export interface DesktopEnvironmentOptions {
   readonly dataDir: string
-  readonly platform?: NodeJS.Platform
+  readonly system?: DesktopProcesses & Pick<DesktopSystem, "platform">
+  readonly locate?: LocateSocket
 }
 
-const DESKTOP_DISPLAY_MARK = "CODEVISOR_DESKTOP_DISPLAY"
-
 export const desktopEnvironment = (options: DesktopEnvironmentOptions): LaunchEnvironment => {
-  const platform = options.platform ?? process.platform
-  if (platform !== "linux") return (env) => env
+  const system = options.system ?? systemDesktopSystem()
+  if (system.platform !== "linux") return (env) => env
 
-  const configPath = join(options.dataDir, SCREEN_SHARING_CONFIG_FILE)
+  const config = join(options.dataDir, SCREEN_SHARING_CONFIG_FILE)
+  const ownDisplay = (): DesktopDisplay | undefined =>
+    runningDesktop(system, config, options.locate)
   return (env) => {
-    const chosen = withoutCodevisorsDisplay(env)
-    if (alreadyHasADisplay(chosen)) return env
+    const from = whoseDisplay(env, config)
+    if (from === "chosen") return env
 
-    const display = runningDesktopDisplay(configPath)
-    if (display === undefined) return chosen
+    const own = ownDisplay()
+    if (from === "another-server" && own === undefined) return env
 
-    return { ...chosen, ...display, [DESKTOP_DISPLAY_MARK]: display.DISPLAY }
+    const bare = withoutCodevisorsDisplay(env)
+    if (own === undefined || alreadyHasADisplay(bare)) return bare
+
+    return { ...bare, ...own, [DISPLAY_MARK]: own.DISPLAY, [CONFIG_MARK]: config }
   }
 }
 
@@ -39,8 +42,18 @@ interface DesktopDisplay {
   readonly XAUTHORITY: string
 }
 
-const runningDesktopDisplay = (configPath: string): DesktopDisplay | undefined => {
-  const text = readText(configPath)
+type DisplaySource = "none" | "chosen" | "this-server" | "another-server"
+
+const DISPLAY_MARK = "CODEVISOR_DESKTOP_DISPLAY"
+const CONFIG_MARK = "CODEVISOR_DESKTOP_CONFIG"
+const codevisorsOwn = new Set(["DISPLAY", "XAUTHORITY", DISPLAY_MARK, CONFIG_MARK])
+
+const runningDesktop = (
+  system: DesktopProcesses,
+  configPath: string,
+  locate: LocateSocket | undefined
+): DesktopDisplay | undefined => {
+  const text = system.readText(configPath)
   if (text === undefined || recordedDesktopService(text) === undefined) return undefined
 
   const setup = desktopSetup(text)
@@ -48,29 +61,26 @@ const runningDesktopDisplay = (configPath: string): DesktopDisplay | undefined =
 
   const { display, xauthority, socket } = setup.config
   if (display === undefined || xauthority === undefined) return undefined
-  if (!sessionIsUp({ readText, processAlive }, socket)) return undefined
+  if (!desktopIsUp(system, socket, locate)) return undefined
 
   return { DISPLAY: `:${display}`, XAUTHORITY: xauthority }
 }
+
+const whoseDisplay = (env: NodeJS.ProcessEnv, config: string): DisplaySource => {
+  if (isCodevisorsDisplay(env))
+    return env[CONFIG_MARK] === config ? "this-server" : "another-server"
+
+  return alreadyHasADisplay(env) ? "chosen" : "none"
+}
+
+const isCodevisorsDisplay = (env: NodeJS.ProcessEnv): boolean =>
+  env[DISPLAY_MARK] !== undefined && env.DISPLAY === env[DISPLAY_MARK]
 
 const alreadyHasADisplay = (env: NodeJS.ProcessEnv): boolean =>
   env.DISPLAY !== undefined || env.WAYLAND_DISPLAY !== undefined
 
 const withoutCodevisorsDisplay = (env: NodeJS.ProcessEnv): NodeJS.ProcessEnv => {
-  if (!hasCodevisorsDisplay(env)) return env
+  if (!isCodevisorsDisplay(env)) return env
 
   return Object.fromEntries(Object.entries(env).filter(([name]) => !codevisorsOwn.has(name)))
-}
-
-const hasCodevisorsDisplay = (env: NodeJS.ProcessEnv): boolean =>
-  env[DESKTOP_DISPLAY_MARK] !== undefined && env.DISPLAY === env[DESKTOP_DISPLAY_MARK]
-
-const codevisorsOwn = new Set(["DISPLAY", "XAUTHORITY", DESKTOP_DISPLAY_MARK])
-
-const readText = (path: string): string | undefined => {
-  try {
-    return readFileSync(path, "utf8")
-  } catch {
-    return undefined
-  }
 }

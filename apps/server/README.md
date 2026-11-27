@@ -67,7 +67,7 @@ When a desktop is set up or removed, the server publishes `server.features.updat
 
 ### Apps opened by agents and terminals
 
-While a desktop that `codevisor desktop setup` set up is running, what the server starts for you gets that desktop's `DISPLAY` and `XAUTHORITY`, so a window it opens (a browser under test, a GUI app run from a terminal) appears in the desktop you are watching:
+While a desktop that `codevisor desktop setup` set up is up, what the server starts for you gets that desktop's `DISPLAY` and `XAUTHORITY`, so a window it opens (a browser under test, a GUI app run from a terminal) appears in the desktop you are watching:
 
 | Started by the server                                   | Gets the desktop's display |
 | ------------------------------------------------------- | -------------------------- |
@@ -81,12 +81,19 @@ All four go through one function, `desktopEnvironment` (`src/desktop/desktop-env
 
 1. **An environment that already has a display is left exactly as it is**, cookie included. That is any environment where `DISPLAY` or `WAYLAND_DISPLAY` is set, even to nothing. It covers a server started inside a graphical login or with `DISPLAY` in its unit, and a process whose own configuration sets one (an MCP server's `env`, a terminal's own variables).
 2. **Otherwise `DISPLAY` and `XAUTHORITY` are set together** from `screen-sharing.json`, never one without the other. An `XAUTHORITY` that came without a `DISPLAY` is replaced, because a cookie only works with its own display.
-3. **A display Codevisor put there itself is not somebody's choice.** The pair is marked with `CODEVISOR_DESKTOP_DISPLAY`, set to the same display. A server started from a Codevisor terminal inherits all three; it treats that display as its own to replace or take away, so it keeps following the config. Change `DISPLAY` in such an environment and rule 1 applies again.
+3. **A display Codevisor put there is not somebody's choice, and it has an owner.** The pair comes with two marks: `CODEVISOR_DESKTOP_DISPLAY`, the display that was set, and `CODEVISOR_DESKTOP_CONFIG`, the `screen-sharing.json` it came from. A server started from a Codevisor terminal inherits all four.
+   - When the config is the server's own, the pair is its to manage: it is replaced when the desktop moved, and taken away when the desktop is down or removed.
+   - When the config is another server's (a dev server with its own data folder, started in a Codevisor terminal), the pair is left exactly as it is, unless this server has a desktop of its own that is up, which then replaces it.
+   - Change `DISPLAY` in such an environment and rule 1 applies again.
 4. **Whatever runs later still wins.** A shell profile that exports `DISPLAY` overrides it in that terminal, like any other variable.
 
-Nothing is set when there is no desktop, when the desktop is not running (its session's mark, `<socket>.ready`, is missing or names a runner that is gone), when the config has no `service` key (a desktop Codevisor didn't set up, which includes the dev container's own script), when the config is an older one that names a port, or on macOS. A display that isn't there would make an app that can run without one, a headless browser say, fail instead.
+Nothing is set when there is no desktop, when the desktop is not up, when the config has no `service` key (a desktop Codevisor didn't set up, which includes the dev container's own script), when the config is an older one that names a port, or on macOS. A display that isn't there would make an app that can run without one, a headless browser say, fail instead.
 
-The config is read each time a process is started, never kept. A desktop that is set up, moves to another display number or is removed while the server runs is followed by the next agent session, terminal, command or MCP server that starts. What is already running keeps the environment it started with: open a new terminal or start a new session to pick up a desktop that was set up, or came back, afterwards.
+"Up" is one check (`src/desktop/desktop-liveness.ts`), the same one `codevisor desktop status` reports: the socket is there and private, and the session's mark, `<socket>.ready`, names a process that is alive and is a desktop runner (`codevisor desktop run`). A mark left behind by a runner that was killed, whose process id something else has since been given, doesn't count.
+
+The config is read each time a process is started, never kept. A desktop that is set up, moves to another display number or is removed while the server runs is followed by the next agent session, terminal, command or MCP server that starts. What is already running keeps the environment it started with: open a new terminal or start a new session to pick up a desktop that was set up, or came back, afterwards. That holds for a harness that serves several sessions from one process, too: OpenCode sessions already running keep the display their server started with, and a session started after the display changed gets a server of its own (an OpenCode server stops a minute after its last session ends).
+
+**When the server starts**, the terminals it restores are the one thing it starts by itself, and the desktop may still be coming up: started again by the server, or by systemd after a reboot. The restored terminals are back at once with their saved screens, but their shells start only when the desktop is up, with the environment as it is then. The server waits at most 15 seconds for that; with no desktop of its own it doesn't wait at all.
 
 Not done yet: removing the packages again (`remove` leaves them installed).
 

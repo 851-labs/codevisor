@@ -229,8 +229,12 @@ export const runServe = (
             })
           })
     startup.checkpoint("restoringTerminals")
+    const { desktopResumed, ...sharing } = screenSharingProvider(dirname(databasePath))
     const withDesktop = desktopEnvironment({ dataDir: dirname(databasePath) })
-    const terminal = makeTerminalManager({ launchEnvironment: withDesktop })
+    const terminal = makeTerminalManager({
+      launchEnvironment: withDesktop,
+      restoreAfter: desktopResumed
+    })
     restoreTerminalPersistence(dirname(databasePath), terminal, startup)
     startup.checkpoint("initializingServices")
     const machineName = args.name ?? hostname()
@@ -467,7 +471,7 @@ export const runServe = (
           }, 250)
         },
         sessionActivity,
-        ...screenSharingProvider(dirname(databasePath)),
+        ...sharing,
         simulators: simulatorsProvider(dirname(databasePath)),
         updater
       }),

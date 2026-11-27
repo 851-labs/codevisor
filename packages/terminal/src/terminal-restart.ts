@@ -11,6 +11,7 @@ import type { TerminalHandlers, TerminalProcess, TerminalSpawner } from "./types
 
 export interface RestartContext {
   readonly spawner: TerminalSpawner
+  readonly after?: Promise<unknown> | undefined
   readonly pushFrame: (terminal: RunningTerminal, frame: TerminalFramePayload) => void
   readonly markExited: (terminal: RunningTerminal) => void
   readonly attachSession: (terminal: RunningTerminal) => void
@@ -26,6 +27,22 @@ export const restartTerminal = (
   terminal.process = queued
   terminal.resumeToken = launch.request.resumeToken
   context.pushFrame(terminal, { type: "output", data: restartPreamble(terminal.screen.state()) })
+
+  const start = (): void => startRestartedProcess(context, terminal, launch, queued)
+  if (context.after === undefined) start()
+  else void context.after.then(start, start)
+}
+
+const startRestartedProcess = (
+  context: RestartContext,
+  terminal: RunningTerminal,
+  launch: RestartLaunch,
+  queued: QueuedProcess
+): void => {
+  if (terminal.closed) {
+    launch.discard()
+    return
+  }
 
   const spawned = context.spawner.spawn(
     launch.request,

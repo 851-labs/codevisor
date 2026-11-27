@@ -1,72 +1,75 @@
-import { mkdtempSync, rmSync, writeFileSync } from "node:fs"
-import { tmpdir } from "node:os"
-import { join } from "node:path"
-
 import { describe, expect, it } from "vitest"
 
-import { tempDirs } from "../test-support.js"
+import type { PrivateSocket } from "../routes/private-socket.js"
 import { desktopEnvironment } from "./desktop-environment.js"
 
-const dataFolder = (): string => {
-  const dataDir = mkdtempSync(join(tmpdir(), "codevisor-desktop-env-"))
-  tempDirs.push(dataDir)
-  return dataDir
-}
+const dataDir = "/home/codevisor/.codevisor/data"
+const config = `${dataDir}/screen-sharing.json`
+const socket = "/run/user/1001/codevisor-desktop.sock"
+const cookie = "/run/user/1001/codevisor-desktop.xauth"
+const runner = 4243
+const runnerCommand =
+  "/opt/codevisor/bin/node\0/opt/codevisor/cli.js\0desktop\0run\0--data-dir\0/d\0"
 
-const configPath = (dataDir: string): string => join(dataDir, "screen-sharing.json")
-const socketPath = (dataDir: string): string => join(dataDir, "codevisor-desktop.sock")
-const cookiePath = (dataDir: string): string => join(dataDir, "codevisor-desktop.xauth")
-const readyMark = (dataDir: string): string => `${socketPath(dataDir)}.ready`
+const managed = (display: number): string =>
+  JSON.stringify({
+    vnc: { socket, display, xauthority: cookie, name: "Desktop", desktop: "xfce" },
+    service: "systemd-user"
+  })
 
-const noSuchProcess = 2_147_483_646
-
-const sessionRunBy = (dataDir: string, runner: number): void =>
-  writeFileSync(readyMark(dataDir), `${runner}\n`)
-
-const setUpDesktop = (dataDir: string, display: number): void => {
-  const vnc = {
-    socket: socketPath(dataDir),
-    display,
-    xauthority: cookiePath(dataDir),
-    name: "Desktop",
-    desktop: "xfce"
+const linuxMachine = (platform: NodeJS.Platform = "linux") => {
+  const files = new Map<string, string>()
+  const state = { sessionIsUp: true }
+  const system = {
+    platform,
+    readText: (path: string): string | undefined => files.get(path),
+    processAlive: (pid: number): boolean => state.sessionIsUp && pid === runner
   }
-  writeFileSync(configPath(dataDir), JSON.stringify({ vnc, service: "systemd-user" }))
-  sessionRunBy(dataDir, process.pid)
+  const locate = (configured: string): PrivateSocket =>
+    files.has(config) ? { path: configured } : { problem: "missing", detail: "nothing there" }
+  const setUpDesktop = (display: number, text = managed(display)): void => {
+    files.set(config, text)
+    files.set(`${socket}.ready`, `${runner}\n`)
+    files.set(`/proc/${runner}/cmdline`, runnerCommand)
+  }
+  return {
+    files,
+    setUpDesktop,
+    removeDesktop: () => files.delete(config),
+    stopSession: () => void (state.sessionIsUp = false),
+    withDesktop: desktopEnvironment({ dataDir, system, locate }),
+    asAnotherServer: desktopEnvironment({ dataDir: "/home/codevisor/dev/data", system, locate })
+  }
 }
-
-const onLinux = (dataDir: string) => desktopEnvironment({ dataDir, platform: "linux" })
 
 const shell = { PATH: "/usr/bin", HOME: "/home/codevisor" }
-
-const inherited = (dataDir: string) => onLinux(dataDir)({ ...shell, LANG: "C.UTF-8" })
+const onDisplay = (display: string) => ({
+  DISPLAY: display,
+  XAUTHORITY: cookie,
+  CODEVISOR_DESKTOP_DISPLAY: display,
+  CODEVISOR_DESKTOP_CONFIG: config
+})
 
 describe("the desktop's display for what the server starts", () => {
-  it("adds the display and cookie of a running desktop Codevisor set up", () => {
-    const dataDir = dataFolder()
-    setUpDesktop(dataDir, 1)
+  it("adds the display and cookie of a running desktop Codevisor set up, marked as its own", () => {
+    const machine = linuxMachine()
+    machine.setUpDesktop(1)
 
-    expect(onLinux(dataDir)(shell)).toEqual({
-      ...shell,
-      DISPLAY: ":1",
-      XAUTHORITY: cookiePath(dataDir),
-      CODEVISOR_DESKTOP_DISPLAY: ":1"
-    })
+    expect(machine.withDesktop(shell)).toEqual({ ...shell, ...onDisplay(":1") })
   })
 
   it("reads the config each time, so a desktop that appears, moves or goes is followed", () => {
-    const dataDir = dataFolder()
-    const withDesktop = onLinux(dataDir)
-    expect(withDesktop(shell)).toEqual(shell)
+    const machine = linuxMachine()
+    expect(machine.withDesktop(shell)).toEqual(shell)
 
-    setUpDesktop(dataDir, 1)
-    expect(withDesktop(shell).DISPLAY).toBe(":1")
+    machine.setUpDesktop(1)
+    expect(machine.withDesktop(shell).DISPLAY).toBe(":1")
 
-    setUpDesktop(dataDir, 4)
-    expect(withDesktop(shell).DISPLAY).toBe(":4")
+    machine.setUpDesktop(4)
+    expect(machine.withDesktop(shell).DISPLAY).toBe(":4")
 
-    rmSync(configPath(dataDir))
-    expect(withDesktop(shell)).toEqual(shell)
+    machine.removeDesktop()
+    expect(machine.withDesktop(shell)).toEqual(shell)
   })
 
   it.each([
@@ -74,110 +77,123 @@ describe("the desktop's display for what the server starts", () => {
     ["a DISPLAY and no cookie", { DISPLAY: ":0" }],
     ["an emptied DISPLAY", { DISPLAY: "" }],
     ["a Wayland display", { WAYLAND_DISPLAY: "wayland-0" }],
-    ["a DISPLAY chosen after Codevisor's", { DISPLAY: ":0", CODEVISOR_DESKTOP_DISPLAY: ":1" }]
+    ["a DISPLAY chosen after Codevisor's", { ...onDisplay(":1"), DISPLAY: ":0" }]
   ])("leaves an environment that already has %s as it is", (_name, display) => {
-    const dataDir = dataFolder()
-    setUpDesktop(dataDir, 1)
+    const machine = linuxMachine()
+    machine.setUpDesktop(1)
     const env = { ...shell, ...display }
 
-    expect(onLinux(dataDir)(env)).toEqual(env)
+    expect(machine.withDesktop(env)).toEqual(env)
   })
 
   it("replaces a cookie that came without a display, because the pair belongs together", () => {
-    const dataDir = dataFolder()
-    setUpDesktop(dataDir, 1)
+    const machine = linuxMachine()
+    machine.setUpDesktop(1)
     const env = { ...shell, XAUTHORITY: "/home/codevisor/.Xauthority" }
 
-    expect(onLinux(dataDir)(env)).toMatchObject({
-      DISPLAY: ":1",
-      XAUTHORITY: cookiePath(dataDir)
-    })
+    expect(machine.withDesktop(env)).toEqual({ ...shell, ...onDisplay(":1") })
   })
 
-  describe("in an environment that got its display from Codevisor", () => {
+  it("adds nothing while the desktop is set up but not up", () => {
+    const machine = linuxMachine()
+    machine.setUpDesktop(1)
+    machine.stopSession()
+
+    expect(machine.withDesktop(shell)).toEqual(shell)
+  })
+
+  describe("in an environment that got its display from this server", () => {
+    const inherited = { ...shell, LANG: "C.UTF-8", ...onDisplay(":1") }
+
     it("follows the desktop to its new display", () => {
-      const dataDir = dataFolder()
-      setUpDesktop(dataDir, 1)
-      const fromATerminal = inherited(dataDir)
+      const machine = linuxMachine()
+      machine.setUpDesktop(4)
 
-      setUpDesktop(dataDir, 4)
-
-      expect(onLinux(dataDir)(fromATerminal)).toEqual({
+      expect(machine.withDesktop(inherited)).toEqual({
         ...shell,
         LANG: "C.UTF-8",
-        DISPLAY: ":4",
-        XAUTHORITY: cookiePath(dataDir),
-        CODEVISOR_DESKTOP_DISPLAY: ":4"
+        ...onDisplay(":4")
       })
     })
 
-    it("takes the display away again once the desktop is removed", () => {
-      const dataDir = dataFolder()
-      setUpDesktop(dataDir, 1)
-      const fromATerminal = inherited(dataDir)
+    it.each([
+      ["removed", (machine: ReturnType<typeof linuxMachine>) => void machine.removeDesktop()],
+      ["down", (machine: ReturnType<typeof linuxMachine>) => machine.stopSession()]
+    ])("takes the display away once the desktop is %s", (_name, change) => {
+      const machine = linuxMachine()
+      machine.setUpDesktop(1)
+      change(machine)
 
-      rmSync(configPath(dataDir))
+      expect(machine.withDesktop(inherited)).toEqual({ ...shell, LANG: "C.UTF-8" })
+    })
 
-      expect(onLinux(dataDir)(fromATerminal)).toEqual({ ...shell, LANG: "C.UTF-8" })
+    it("takes it away and adds nothing when a Wayland display is there too", () => {
+      const machine = linuxMachine()
+      machine.setUpDesktop(1)
+      const env = { ...inherited, WAYLAND_DISPLAY: "wayland-0" }
+
+      expect(machine.withDesktop(env)).toEqual({
+        ...shell,
+        LANG: "C.UTF-8",
+        WAYLAND_DISPLAY: "wayland-0"
+      })
     })
   })
 
-  it.each([
-    ["has no session running", (dataDir: string) => rmSync(readyMark(dataDir))],
-    ["was left by a runner that is gone", (dataDir: string) => sessionRunBy(dataDir, noSuchProcess)]
-  ])("adds nothing while the desktop %s", (_name, stop) => {
-    const dataDir = dataFolder()
-    setUpDesktop(dataDir, 1)
-    stop(dataDir)
+  describe("in an environment that got its display from another Codevisor server", () => {
+    const inherited = { ...shell, ...onDisplay(":1") }
 
-    expect(onLinux(dataDir)(shell)).toEqual(shell)
+    it("leaves it exactly as it is while this server has no desktop of its own up", () => {
+      const machine = linuxMachine()
+      machine.setUpDesktop(1)
+
+      expect(machine.asAnotherServer(inherited)).toEqual(inherited)
+    })
+
+    it("replaces it with this server's own desktop when that is up", () => {
+      const machine = linuxMachine()
+      machine.setUpDesktop(4)
+      const fromElsewhere = {
+        ...inherited,
+        CODEVISOR_DESKTOP_CONFIG: "/srv/other/screen-sharing.json"
+      }
+
+      expect(machine.withDesktop(fromElsewhere)).toEqual({ ...shell, ...onDisplay(":4") })
+    })
   })
 
   it.each([
     [
       "a desktop someone else set up",
-      (dataDir: string) => ({
-        vnc: { socket: socketPath(dataDir), display: 1, xauthority: cookiePath(dataDir) },
-        devContainerDesktop: true
-      })
+      { vnc: { socket, display: 1, xauthority: cookie }, devContainerDesktop: true }
     ],
     [
       "a desktop from an older Codevisor, on a port",
-      () => ({ vnc: { port: 5901, display: 1 }, service: "systemd-user" })
+      { vnc: { port: 5901, display: 1 }, service: "systemd-user" }
     ],
     [
       "a desktop with no display number",
-      (dataDir: string) => ({
-        vnc: { socket: socketPath(dataDir), xauthority: cookiePath(dataDir) },
-        service: "process"
-      })
+      { vnc: { socket, xauthority: cookie }, service: "process" }
     ],
-    [
-      "a desktop with no cookie",
-      (dataDir: string) => ({
-        vnc: { socket: socketPath(dataDir), display: 1 },
-        service: "process"
-      })
-    ]
-  ])("adds nothing for %s, even with a session running", (_name, config) => {
-    const dataDir = dataFolder()
-    writeFileSync(configPath(dataDir), JSON.stringify(config(dataDir)))
-    sessionRunBy(dataDir, process.pid)
+    ["a desktop with no cookie", { vnc: { socket, display: 1 }, service: "process" }]
+  ])("adds nothing for %s, even with a session running", (_name, written) => {
+    const machine = linuxMachine()
+    machine.setUpDesktop(1, JSON.stringify(written))
 
-    expect(onLinux(dataDir)(shell)).toEqual(shell)
+    expect(machine.withDesktop(shell)).toEqual(shell)
   })
 
   it("adds nothing for a config that can't be read", () => {
-    const dataDir = dataFolder()
-    writeFileSync(configPath(dataDir), "{ not json")
+    const machine = linuxMachine()
+    machine.setUpDesktop(1, "{ not json")
 
-    expect(onLinux(dataDir)(shell)).toEqual(shell)
+    expect(machine.withDesktop(shell)).toEqual(shell)
   })
 
   it("adds nothing on a Mac, whatever the data folder holds", () => {
-    const dataDir = dataFolder()
-    setUpDesktop(dataDir, 1)
+    const machine = linuxMachine("darwin")
+    machine.setUpDesktop(1)
 
-    expect(desktopEnvironment({ dataDir, platform: "darwin" })(shell)).toEqual(shell)
+    expect(machine.withDesktop(shell)).toEqual(shell)
   })
 })

@@ -57,17 +57,24 @@ export const screenSharingProvider = (
   readonly screenSharing: ((request: ScreenSharingRequest) => Promise<unknown>) | undefined
   readonly desktops: VNCDesktops | undefined
   readonly desktop: DesktopManager | undefined
+  readonly desktopResumed: Promise<void>
 } => {
   const native = nativeScreenSharing(dataDir)
-  if (native !== undefined)
-    return { screenSharing: native, desktops: undefined, desktop: undefined }
+  if (native !== undefined) return { screenSharing: native, ...noLinuxDesktop, desktops: undefined }
 
   const desktops = fileVNCDesktops(dataDir)
-  return { screenSharing: undefined, desktops, desktop: linuxDesktop(dataDir, desktops) }
+  return { screenSharing: undefined, desktops, ...linuxDesktop(dataDir, desktops) }
 }
 
-const linuxDesktop = (dataDir: string, desktops: VNCDesktops): DesktopManager | undefined => {
-  if (process.platform !== "linux") return undefined
+interface ResumedDesktop {
+  readonly desktop: DesktopManager | undefined
+  readonly desktopResumed: Promise<void>
+}
+
+const noLinuxDesktop: ResumedDesktop = { desktop: undefined, desktopResumed: Promise.resolve() }
+
+const linuxDesktop = (dataDir: string, desktops: VNCDesktops): ResumedDesktop => {
+  if (process.platform !== "linux") return noLinuxDesktop
 
   const manager = makeDesktopManager({
     system: systemDesktopSystem(),
@@ -85,8 +92,11 @@ const linuxDesktop = (dataDir: string, desktops: VNCDesktops): DesktopManager | 
     },
     changed: () => desktops.relays?.recheck()
   })
-  void manager.resume().catch(() => undefined)
-  return manager
+  const desktopResumed = manager
+    .resume()
+    .then(manager.waitUntilUp)
+    .catch(() => undefined)
+  return { desktop: manager, desktopResumed }
 }
 export const canReadFolder = async (path: string): Promise<boolean> => {
   try {

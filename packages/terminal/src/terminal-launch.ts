@@ -1,4 +1,5 @@
 import type { TerminalCreateRequest } from "@codevisor/api"
+import { Effect } from "effect"
 
 import { withoutInheritedResume, withProgramResume } from "./program-resume-shell.js"
 import { BUNDLED_GHOSTTY_RESOURCES_DIRECTORY, withShellIntegration } from "./shell-integration.js"
@@ -10,11 +11,10 @@ import {
   resolveUserId,
   withDefaultLocale
 } from "./shell.js"
-import type { TerminalManagerConfig, TerminalSpawnRequest } from "./types.js"
+import type { TerminalManagerConfig, TerminalSpawner, TerminalSpawnRequest } from "./types.js"
 
 interface LaunchDefaults {
   readonly env: NodeJS.ProcessEnv
-  readonly launchEnvironment: (env: NodeJS.ProcessEnv) => NodeJS.ProcessEnv
   readonly defaultShell: string
   readonly platform: NodeJS.Platform
   readonly terminalName: string
@@ -35,8 +35,7 @@ const captureDefaults = (config: TerminalManagerConfig): LaunchDefaults => {
   const terminalName = resolveTerminalName(platform)
   const ghosttyResources = config.ghosttyResourcesDirectory ?? BUNDLED_GHOSTTY_RESOURCES_DIRECTORY
   const userId = resolveUserId(config)
-  const launchEnvironment = config.launchEnvironment ?? ((launched) => launched)
-  return { env, launchEnvironment, defaultShell, platform, terminalName, ghosttyResources, userId }
+  return { env, defaultShell, platform, terminalName, ghosttyResources, userId }
 }
 
 const prepareEnvironment = (
@@ -55,7 +54,7 @@ const prepareEnvironment = (
   } else {
     delete env.TERMINFO
   }
-  return defaults.launchEnvironment(env)
+  return env
 }
 
 const prepareLaunch = (
@@ -81,6 +80,20 @@ const prepareLaunch = (
     resumeFile
   })
   return { ...request, shell, ...resumable }
+}
+
+export const spawnerWithLaunchEnvironment = (
+  spawner: TerminalSpawner,
+  launchEnvironment: TerminalManagerConfig["launchEnvironment"]
+): TerminalSpawner => {
+  if (launchEnvironment === undefined) return spawner
+
+  return {
+    spawn: (request, handlers) =>
+      Effect.suspend(() =>
+        spawner.spawn({ ...request, env: launchEnvironment(request.env) }, handlers)
+      )
+  }
 }
 
 export const makeTerminalLaunch = (config: TerminalManagerConfig): PrepareSpawn => {

@@ -18,9 +18,9 @@ import {
   displayIsOursOrFree,
   freeDisplay,
   keepOwnFoldersPrivate,
-  ownXServerOn,
-  sessionIsUp
+  ownXServerOn
 } from "./desktop-layout.js"
+import { desktopIsUp, whyDesktopIsDown } from "./desktop-liveness.js"
 import { installPlan, missingPrograms, osRelease, runAsRoot, sudoKind } from "./desktop-packages.js"
 import {
   type DesktopService,
@@ -38,6 +38,7 @@ export interface DesktopManager {
   readonly start: (options?: StartOptions) => Promise<DesktopStatus>
   readonly remove: (options?: RemoveOptions) => Promise<DesktopStatus>
   readonly resume: () => Promise<void>
+  readonly waitUntilUp: () => Promise<void>
 }
 
 export interface RemoveOptions {
@@ -66,6 +67,7 @@ interface Shared {
 const startPollMs = 250
 const startPolls = 120
 const steadyPolls = 10
+const comingUpPolls = 60
 const installing = "Installing packages"
 const anotherServers =
   "Another Codevisor server on this account already runs a desktop (codevisor-desktop.service). Remove that desktop first."
@@ -134,7 +136,7 @@ export const makeDesktopManager = (options: DesktopManagerOptions): DesktopManag
     if (runs.kind === "process" && recordedService() === "process" && !runs.isSetUp())
       return "the desktop's process isn't running"
 
-    return sessionIsUp(system, setup.config.socket) ? undefined : "the desktop's session isn't up"
+    return whyDesktopIsDown(system, setup.config.socket, locate)
   }
 
   const sharedBy = (runs: DesktopService, other: DesktopService): Shared => {
@@ -294,8 +296,7 @@ export const makeDesktopManager = (options: DesktopManagerOptions): DesktopManag
   const staysUp = async (layout: DesktopLayout): Promise<boolean> => {
     let steady = 0
     for (let poll = 0; poll < startPolls && steady < steadyPolls; poll += 1) {
-      const isUp = locate(layout.socket).problem === undefined && sessionIsUp(system, layout.socket)
-      steady = isUp ? steady + 1 : 0
+      steady = desktopIsUp(system, layout.socket, locate) ? steady + 1 : 0
       await system.sleep(startPollMs)
     }
     return steady >= steadyPolls
@@ -380,12 +381,25 @@ export const makeDesktopManager = (options: DesktopManagerOptions): DesktopManag
     if (recorded === "process" || runs.kind === "systemd-user") await startUnder(runs, other)
   }
 
+  const isStillComingUp = (): boolean => {
+    const setup = setUp()
+    if (setup.kind !== "ready" || recordedService() === undefined) return false
+
+    return !desktopIsUp(system, setup.config.socket, locate)
+  }
+
+  const waitUntilUp = async (): Promise<void> => {
+    for (let poll = 0; poll < comingUpPolls && isStillComingUp(); poll += 1)
+      await system.sleep(startPollMs)
+  }
+
   return {
     status,
     installPackages,
     replaceOld: () => unlessBusy(replaceOld),
     start: (asked = {}) => unlessBusy(() => start(asked)),
     remove: (asked = {}) => unlessBusy(() => remove(asked)),
-    resume: () => oneAtATime(resume)
+    resume: () => oneAtATime(resume),
+    waitUntilUp
   }
 }
