@@ -65,6 +65,51 @@ struct ScreenSharingVCPEncoderStateTests {
     #expect(unknown.presentationNs - late.presentationNs == Self.twoFramesNs)
   }
 
+  @Test func aRefinementPassThatWaitedIsPresentedTheWholeWaitAfterThePreviousFrame() throws {
+    var state = ScreenSharingVCPEncoderState()
+    let frameNs = 1_000_000_000 / Int64(ScreenSharingV2Profile.framesPerSecond)
+
+    let change = try state.begin(try Self.request(contentIntervalsNs: [0: frameNs]), refresh: nil, atNs: 1_000)
+    let refinement = try state.begin(try Self.request(refinement: true), refresh: nil, atNs: 1_000 + 15 * frameNs)
+
+    #expect(refinement.presentationNs - change.presentationNs == 15 * frameNs)
+  }
+
+  @Test func aRefreshOnARefinementPassGetsTwoFrameIntervalsNotTheWholeWait() throws {
+    var state = ScreenSharingVCPEncoderState()
+    let frameNs = 1_000_000_000 / Int64(ScreenSharingV2Profile.framesPerSecond)
+
+    let change = try state.begin(try Self.request(contentIntervalsNs: [0: frameNs]), refresh: nil, atNs: 1_000)
+    let refreshed = try state.begin(try Self.request(refinement: true), refresh: .keyframe, atNs: 1_000 + 15 * frameNs)
+
+    #expect(refreshed.presentationNs - change.presentationNs == Self.twoFramesNs)
+  }
+
+  @Test func aChangeThatRepeatsAnEncodedCaptureGetsTwoFrameIntervalsWhateverItWasGiven() throws {
+    var state = ScreenSharingVCPEncoderState()
+    let frameNs = 1_000_000_000 / Int64(ScreenSharingV2Profile.framesPerSecond)
+
+    let change = try state.begin(try Self.request(contentIntervalsNs: [0: frameNs]), refresh: nil, atNs: 1_000)
+    let repeated = try Self.request(repeated: [0], contentIntervalsNs: [0: frameNs])
+    let again = try state.begin(repeated, refresh: nil, atNs: 1_000 + 15 * frameNs)
+
+    #expect(repeated.contentIntervalsNs.isEmpty)
+    #expect(again.presentationNs - change.presentationNs == Self.twoFramesNs)
+  }
+
+  @Test func aSubmissionTheSessionNeverTookLeavesThePresentationClockWhereItWas() throws {
+    var state = ScreenSharingVCPEncoderState()
+    let frameNs = 1_000_000_000 / Int64(ScreenSharingV2Profile.framesPerSecond)
+    let changedEveryFrame = try Self.request(contentIntervalsNs: [0: frameNs])
+
+    let first = try state.begin(changedEveryFrame, refresh: nil, atNs: 1_000)
+    let abandoned = try state.begin(changedEveryFrame, refresh: nil, atNs: 1_000 + frameNs)
+    state.abandon(abandoned)
+    let next = try state.begin(changedEveryFrame, refresh: nil, atNs: 1_000 + 2 * frameNs)
+
+    #expect(next.presentationNs - first.presentationNs == frameNs)
+  }
+
   @Test(arguments: [ScreenSharingTileRefresh.keyframe, .longTermReference])
   func aRefreshThatWaitedGetsTwoFrameIntervalsWhateverItsContentInterval(refresh: ScreenSharingTileRefresh) throws {
     var state = ScreenSharingVCPEncoderState()
@@ -158,13 +203,13 @@ struct ScreenSharingVCPEncoderStateTests {
   }
 
   private static func request(
-    refinement: Bool = false, small: Set<Int> = [], contentIntervalsNs: [Int: Int64] = [:]
+    refinement: Bool = false, small: Set<Int> = [], repeated: Set<Int> = [], contentIntervalsNs: [Int: Int64] = [:]
   ) throws -> ScreenSharingTileEncodeRequest {
     let frame = try TestBGRAPixels.frame(width: 64, height: 64, shades: [10], timestampNs: 1)
     return ScreenSharingTileEncodeRequest(
       pixelBuffer: frame.pixelBuffer, sourceTimestampNs: 1, capturedNs: 1,
       update: ScreenSharingTileUpdate(id: 1, tiles: [0], isRefinement: refinement), smallTiles: small,
-      contentIntervalsNs: contentIntervalsNs)
+      repeatedTiles: repeated, contentIntervalsNs: contentIntervalsNs)
   }
 
   private static func output(

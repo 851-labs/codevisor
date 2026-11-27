@@ -13,12 +13,14 @@ final class ScreenSharingVCPTileSession: @unchecked Sendable {
   private let relay: ScreenSharingTileOutputRelay
   private let state: Mutex<ScreenSharingVCPEncoderState>
   private let sessionLock = NSLock()
+  private let nowNs: @Sendable () -> Int64
 
   init(
     tile: Int, factory: ScreenSharingVCPSessionFactory, metrics: ScreenSharingMetrics,
-    relay: ScreenSharingTileOutputRelay
+    relay: ScreenSharingTileOutputRelay, nowNs: @escaping @Sendable () -> Int64
   ) throws {
     self.tile = tile
+    self.nowNs = nowNs
     width = factory.width
     height = factory.height
     self.metrics = metrics
@@ -36,7 +38,7 @@ final class ScreenSharingVCPTileSession: @unchecked Sendable {
 
   private func submit(_ pixels: CVPixelBuffer, request: ScreenSharingTileEncodeRequest) throws {
     let submission = try state.withLock {
-      try $0.begin(request, refresh: request.refreshes[tile], atNs: ScreenSharingMetrics.nowNs)
+      try $0.begin(request, refresh: request.refreshes[tile], atNs: nowNs())
     }
     do {
       try capQP(submission.highestQP)

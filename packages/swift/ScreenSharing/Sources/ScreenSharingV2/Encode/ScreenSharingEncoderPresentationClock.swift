@@ -1,4 +1,10 @@
 struct ScreenSharingEncoderPresentationClock {
+  enum Gap {
+    case standard
+    case content(Int64)
+    case wallClock
+  }
+
   static let longestGapFrames: Int64 = 2
 
   private let shortestGapNs: Int64
@@ -13,12 +19,20 @@ struct ScreenSharingEncoderPresentationClock {
     longestGapNs = max(shortestGapNs, Self.longestGapFrames * 1_000_000_000 / Int64(max(1, framesPerSecond)))
   }
 
-  mutating func presentationNs(submittedAtNs submittedNs: Int64, contentIntervalNs: Int64? = nil) -> Int64 {
-    let longestNs = contentIntervalNs.map { min(longestGapNs, max(frameNs, $0)) } ?? longestGapNs
+  mutating func presentationNs(submittedAtNs submittedNs: Int64, gap: Gap = .standard) -> Int64 {
+    let longestNs = longestNs(gap)
     let presentationNs = lastPresentationNs.map { $0 + gapNs(to: submittedNs, longestNs: longestNs) } ?? submittedNs
     lastPresentationNs = presentationNs
     lastSubmittedNs = submittedNs
     return presentationNs
+  }
+
+  private func longestNs(_ gap: Gap) -> Int64 {
+    switch gap {
+    case .standard: longestGapNs
+    case .content(let intervalNs): min(longestGapNs, max(frameNs, intervalNs))
+    case .wallClock: .max
+    }
   }
 
   private func gapNs(to submittedNs: Int64, longestNs: Int64) -> Int64 {

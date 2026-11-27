@@ -41,9 +41,18 @@ struct ScreenSharingEncoderPresentationClockTests {
     let first = clock.presentationNs(submittedAtNs: 5_000)
     let contentIntervalNs = Int64(contentFrames * Double(Self.frameNs))
     let late = clock.presentationNs(
-      submittedAtNs: 5_000 + submittedFrames * Self.frameNs, contentIntervalNs: contentIntervalNs)
+      submittedAtNs: 5_000 + submittedFrames * Self.frameNs, gap: .content(contentIntervalNs))
 
     #expect(late - first == Int64(stampedFrames * Double(Self.frameNs)))
+  }
+
+  @Test func aFrameOnTheWallClockAfterAPauseIsStampedTheWholePauseLater() {
+    var clock = ScreenSharingEncoderPresentationClock(framesPerSecond: 60)
+
+    let first = clock.presentationNs(submittedAtNs: 5_000)
+    let late = clock.presentationNs(submittedAtNs: 5_000 + 30 * Self.frameNs, gap: .wallClock)
+
+    #expect(late - first == 30 * Self.frameNs)
   }
 
   @Test func framesSubmittedCloserThanTheShortestGapAreSpreadToIt() {

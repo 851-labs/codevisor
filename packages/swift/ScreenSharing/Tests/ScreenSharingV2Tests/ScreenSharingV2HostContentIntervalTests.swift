@@ -7,6 +7,7 @@ import Testing
 @Suite(.timeLimit(.minutes(1)))
 struct ScreenSharingV2HostContentIntervalTests {
   private static let frameNs: Int64 = 1_000_000_000 / 60
+  private static let everything = [CGRect(x: 0, y: 0, width: 640, height: 360)]
 
   private let transport = LoopbackMediaTransport()
   private let scheduler = ManualScheduler()
@@ -101,18 +102,32 @@ struct ScreenSharingV2HostContentIntervalTests {
     let encoder = RecordingTileEncoder()
     let host = started(encoder)
     defer { host.stop() }
-    let everything = [CGRect(x: 0, y: 0, width: 640, height: 360)]
 
     host.push(try TestPixels.frame(shade: 10, timestampNs: Self.at(frames: 0)))
     await encoder.encodes.cancellableWait(for: 1)
     host.push(try TestPixels.frame(shade: 20, timestampNs: Self.at(frames: 1)))
     host.push(try TestPixels.frame(shade: 30, timestampNs: Self.at(frames: 2)))
-    host.push(try TestPixels.frame(shade: 40, timestampNs: Self.at(frames: 5), dirtyRects: everything))
+    host.push(try TestPixels.frame(shade: 40, timestampNs: Self.at(frames: 5), dirtyRects: Self.everything))
     encoder.emitTiles(of: encoder.requests[0])
     await encoder.encodes.cancellableWait(for: 2)
 
     #expect(encoder.requests.map(\.sourceTimestampNs) == [Self.at(frames: 0), Self.at(frames: 5)])
     #expect(encoder.requests.map(\.contentIntervalsNs) == [[:], [0: 4 * Self.frameNs]])
+  }
+
+  @Test func aChangeWhoseTimestampDidNotMoveForwardCarriesTheShortestInterval() async throws {
+    let encoder = RecordingTileEncoder()
+    let host = started(encoder)
+    defer { host.stop() }
+
+    host.push(try TestPixels.frame(shade: 10, timestampNs: Self.at(frames: 0)))
+    await encoder.encodes.cancellableWait(for: 1)
+    host.push(try TestPixels.frame(shade: 20, timestampNs: Self.at(frames: 1)))
+    host.push(try TestPixels.frame(shade: 30, timestampNs: Self.at(frames: 1), dirtyRects: Self.everything))
+    encoder.emitTiles(of: encoder.requests[0])
+    await encoder.encodes.cancellableWait(for: 2)
+
+    #expect(encoder.requests.map(\.contentIntervalsNs) == [[:], [0: ScreenSharingV2Profile.frameNs]])
   }
 
   @Test func aCaptureThatChangedNothingKeepsTheIntervalsOfTheOneItReplaced() async throws {

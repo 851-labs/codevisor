@@ -131,8 +131,8 @@ public final class ScreenSharingV2Host: ScreenSharingFrameSink, @unchecked Senda
     var timed = capture
     timed.contentIntervalsNs = slot.waiting?.contentIntervalsNs ?? [:]
     for tile in tiles {
-      if let intervalNs = lastChangeSourceNs[tile].map({ sourceNs - $0 }), intervalNs > 0 {
-        timed.contentIntervalsNs[tile] = intervalNs
+      if let intervalNs = lastChangeSourceNs[tile].map({ sourceNs - $0 }) {
+        timed.contentIntervalsNs[tile] = max(intervalNs, ScreenSharingV2Profile.frameNs)
       }
       lastChangeSourceNs[tile] = sourceNs
     }

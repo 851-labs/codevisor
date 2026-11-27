@@ -20,15 +20,24 @@ public final class ScreenSharingVCPTileEncoder: ScreenSharingTileEncoder, @unche
       configuration: configuration, layout: ScreenSharingV2Profile.tileLayout(for: configuration), metrics: metrics)
   }
 
-  public init(
+  public convenience init(
     configuration: ScreenSharingVideoConfiguration, layout: ScreenSharingV2TileLayout, metrics: ScreenSharingMetrics
+  ) throws {
+    try self.init(
+      configuration: configuration, layout: layout, metrics: metrics, submissionNs: { ScreenSharingMetrics.nowNs })
+  }
+
+  init(
+    configuration: ScreenSharingVideoConfiguration, layout: ScreenSharingV2TileLayout, metrics: ScreenSharingMetrics,
+    submissionNs: @escaping @Sendable () -> Int64
   ) throws {
     self.layout = layout
     self.metrics = metrics
     bitsPerSecond = Atomic(configuration.bitrate)
     converter = try ScreenSharingVCPPixelConverter(layout: layout)
     cutter = ScreenSharingV2TileCutter(layout: layout)
-    sessions = try Self.sessions(layout: layout, configuration: configuration, metrics: metrics, relay: relay)
+    sessions = try Self.sessions(
+      layout: layout, configuration: configuration, metrics: metrics, relay: relay, nowNs: submissionNs)
     metrics.label("encoder", "VideoProcessing VCP HEVC 4:4:4 (Usage 42), one session per tile, acknowledged references")
     metrics.label("encoderSize", "\(layout.width)x\(layout.height)")
     metrics.label("encoderTiles", "\(layout.count) of \(layout.width)x\(layout.tileHeight)")
@@ -85,7 +94,7 @@ public final class ScreenSharingVCPTileEncoder: ScreenSharingTileEncoder, @unche
 
   private static func sessions(
     layout: ScreenSharingV2TileLayout, configuration: ScreenSharingVideoConfiguration, metrics: ScreenSharingMetrics,
-    relay: ScreenSharingTileOutputRelay
+    relay: ScreenSharingTileOutputRelay, nowNs: @escaping @Sendable () -> Int64
   ) throws -> [ScreenSharingVCPTileSession] {
     let rate = ScreenSharingVCPRate(bitsPerSecond: configuration.bitrate, tiles: layout.count)
     var sessions: [ScreenSharingVCPTileSession] = []
@@ -94,7 +103,8 @@ public final class ScreenSharingVCPTileEncoder: ScreenSharingTileEncoder, @unche
         let factory = ScreenSharingVCPSessionFactory(
           width: layout.width, height: layout.rows(of: tile).count, framesPerSecond: configuration.framesPerSecond,
           rate: rate)
-        sessions.append(try ScreenSharingVCPTileSession(tile: tile, factory: factory, metrics: metrics, relay: relay))
+        sessions.append(
+          try ScreenSharingVCPTileSession(tile: tile, factory: factory, metrics: metrics, relay: relay, nowNs: nowNs))
       }
       return sessions
     } catch {

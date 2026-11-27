@@ -155,7 +155,10 @@ extension HardwareCodecTests {
     @Test(.enabled(if: available, "No VideoProcessing encoder on this machine."))
     func aFrameThatWaitedForContentChangingEveryFrameGetsAFewFrameIntervalsOfBitsNotTheWholeWait() async throws {
       try await HardwareEncoderBudget.require(vcpTiles: 1)
-      let encoder = try Self.vcp(tiles: 1, metrics: ScreenSharingMetrics())
+      let submissionNs = Atomic<Int64>(1_000)
+      let encoder = try ScreenSharingVCPTileEncoder(
+        configuration: try Self.configuration(), layout: ScreenSharingV2TileLayout(width: 640, height: 360, count: 1),
+        metrics: ScreenSharingMetrics(), submissionNs: { submissionNs.load(ordering: .relaxed) })
       defer { encoder.stop() }
       try encoder.setBitrate(Self.fadingBitrate)
       let sizes = Mutex<[Int]>([])
@@ -164,12 +167,10 @@ extension HardwareCodecTests {
         if case .tile(let tile) = output { sizes.withLock { $0.append(tile.accessUnit.count) } }
         answered.signal()
       }
-      let startNs = ScreenSharingMetrics.nowNs
-
       for frame in 1...Self.fadingFrames {
-        try encoder.encode(try Self.fading(frame, elapsedNs: ScreenSharingMetrics.nowNs - startNs))
+        try encoder.encode(try Self.fading(frame, elapsedNs: Int64(frame) * Self.longGapNs))
         await answered.cancellableWait(for: frame)
-        try await Task.sleep(for: .nanoseconds(Self.longGapNs))
+        submissionNs.add(Self.longGapNs, ordering: .relaxed)
       }
 
       let encoded = sizes.withLock { $0 }
@@ -226,7 +227,7 @@ extension HardwareCodecTests {
     private static let fadingFrames = 10
     private static let settlingFrames = 2
     private static let allowedIntervals = 3
-    private static let longGapNs: UInt64 = 250_000_000
+    private static let longGapNs: Int64 = 250_000_000
 
     private static func fading(_ frame: Int, elapsedNs: Int64) throws -> ScreenSharingTileEncodeRequest {
       let picture = try TestBGRAPixels.frame(shades: [100], timestampNs: Int64(frame) * 1_000)
