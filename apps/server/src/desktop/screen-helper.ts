@@ -62,8 +62,8 @@ export const screenHelpers = (options: ScreenHelperOptions): ScreenHelpers => {
     if (!Number.isInteger(pid) || pid <= 0 || !system.processAlive(pid)) return undefined
 
     const words = (system.readText(`/proc/${pid}/cmdline`) ?? "").split("\0")
-    const socket = words.find(isOurSocket)
-    if (socket === undefined) return undefined
+    const socket = valueOf(words, "-rfbunixpath") ?? valueOf(words, "--unix-socket")
+    if (socket === undefined || !isOurSocket(socket)) return undefined
 
     return { pid, shows: valueOf(words, "-display") ?? waylandOf(pid), socket }
   }

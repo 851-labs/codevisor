@@ -6,6 +6,7 @@ export interface Process {
   readonly session?: string
   readonly started?: number
   readonly comm?: string
+  readonly parent?: number
   readonly cmdline?: ReadonlyArray<string>
 }
 
@@ -33,7 +34,8 @@ export const machine = ({ processes, liveDisplays = ["X0"], answers = {} }: Mach
 })
 
 const procFile = (pid: number, process: Process, file: string): string | undefined => {
-  if (file === "status") return `Name:\tx\nUid:\t${process.uid ?? ownUid}\t0\t0\t0\n`
+  if (file === "status")
+    return `Name:\tx\nPPid:\t${process.parent ?? 1}\nUid:\t${process.uid ?? ownUid}\t0\t0\t0\n`
   if (file === "environ") return pairs(process.env ?? {})
   if (file === "cgroup")
     return `0::/user.slice/user-${process.uid ?? ownUid}.slice/session-${process.session ?? "none"}.scope\n`

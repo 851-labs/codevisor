@@ -147,6 +147,33 @@ describe("the graphical session the server's account has at the screen", () => {
     expect(ownGraphicalSession(system, { session: "9" })?.kind).toBe("wayland")
   })
 
+  it("takes a Wayland session's Wayland processes over a newer app started for XWayland alone", () => {
+    const wayland = { WAYLAND_DISPLAY: "wayland-1", DBUS_SESSION_BUS_ADDRESS: bus }
+    const xwaylandOnly = { DISPLAY: ":0", DBUS_SESSION_BUS_ADDRESS: bus }
+    const system = at({
+      400: { env: wayland, session: "9", started: 1 },
+      401: { comm: "sway", session: "9" },
+      402: { env: xwaylandOnly, session: "9", started: 5 }
+    })
+
+    expect(ownGraphicalSession(system, { session: "9", type: "wayland" })).toMatchObject({
+      kind: "wlroots",
+      process: 400
+    })
+    expect(
+      ownGraphicalSession(system, { session: "9", type: "wayland", lookFirstAt: 402 })?.process
+    ).toBe(400)
+  })
+
+  it("without logind, takes a compositor for the session's only when it started the session", () => {
+    const seated = { XDG_SEAT: "seat0", WAYLAND_DISPLAY: "wayland-1" }
+    const startedByLabwc = at({ 400: { env: seated, parent: 300 }, 300: { comm: "labwc" } })
+    const swayElsewhere = at({ 400: { env: seated, parent: 300 }, 500: { comm: "sway" } })
+
+    expect(ownGraphicalSession(startedByLabwc)?.kind).toBe("wlroots")
+    expect(ownGraphicalSession(swayElsewhere)?.kind).toBe("wayland")
+  })
+
   it.each([
     ["wlroots", { SWAYSOCK: "/run/user/1000/sway-ipc.sock" }],
     ["wlroots", { HYPRLAND_INSTANCE_SIGNATURE: "abc" }],

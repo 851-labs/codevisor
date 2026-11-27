@@ -329,7 +329,7 @@ describe("sharing the screen the server's account is logged in at", () => {
     expect(machine.spawned).toHaveLength(1)
     expect(await machine.screen.status()).toMatchObject({
       state: "stopped",
-      problem: "x0vncserver stopped right after it started; see its log"
+      problem: "the screen's VNC server stopped right after it started; see its log"
     })
 
     machine.clock.now += 30_000

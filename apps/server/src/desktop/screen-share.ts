@@ -77,7 +77,7 @@ const notifyEveryMs = 30_000
 const retryAfterMs = 30_000
 const programsStayKnownMs = 30_000
 const diesTooSoonMs = 30_000
-const diedSoon = "x0vncserver stopped right after it started; see its log"
+const diedSoon = "the screen's VNC server stopped right after it started; see its log"
 const installing = "Installing packages"
 const notRunning = "the helper that shares the screen isn't running"
 
@@ -135,7 +135,8 @@ export const makeScreenShare = (options: ScreenShareOptions): ScreenShare => {
       ignoreDisplay: virtualDisplay(),
       lookFirstAt: seenAt,
       session: own?.session,
-      display: own?.display
+      display: own?.display,
+      type: own?.type
     })
     seenAt = found?.process
     return found
@@ -382,8 +383,11 @@ export const makeScreenShare = (options: ScreenShareOptions): ScreenShare => {
     if ((await sudoKind(system)) !== "passwordless")
       throw new HttpFailure(403, `${installing} needs an administrator on this machine`)
 
-    const kind = kindToShare(sessionGiven(await accountsAtTheScreen(system)))
-    return plan.screenCommands[kind]
+    const found = sessionGiven(await accountsAtTheScreen(system))
+    if (found !== undefined && shownFrom(found) === undefined)
+      throw new HttpFailure(409, waylandIsNotShared)
+
+    return plan.screenCommands[kindToShare(found)]
   }
 
   const installPackages = async (): Promise<ScreenStatus> => {

@@ -72,6 +72,30 @@ describe("sharing the screen of a wlroots session", () => {
     expect(machine.spawned.at(-1)?.args).toContain("WAYLAND_DISPLAY=wayland-2")
   })
 
+  it("doesn't take a process that only names the socket for its helper", async () => {
+    const machine = sway()
+    await machine.screen.setUp()
+    machine.files.set("/proc/4242/cmdline", ["stat", socket].join("\0"))
+
+    machine.logIn({ ...onSway, WAYLAND_DISPLAY: "wayland-2" })
+    await machine.screen.follow()
+
+    expect(machine.terminated).toEqual([])
+  })
+
+  it("keeps sharing when an app started for XWayland alone is the session's newest process", async () => {
+    const machine = sway()
+    await machine.screen.setUp()
+
+    const { WAYLAND_DISPLAY: _, ...xwaylandOnly } = { ...onSway, DISPLAY: ":0" }
+    machine.logIn(xwaylandOnly, "wayland", { process: 401, session: "2" })
+    machine.files.set("/proc/401/stat", `401 (x) S ${"0 ".repeat(18)}99 0 0\n`)
+    await machine.screen.follow()
+
+    expect(machine.terminated).toEqual([])
+    expect((await machine.screen.status()).state).toBe("running")
+  })
+
   it("asks for wayvnc, not x0vncserver, when it is missing", async () => {
     const machine = sway({ programs: [...EVERY_PROGRAM, "X0tigervnc", "notify-send"] })
 
@@ -108,6 +132,15 @@ describe("sharing the screen of a wlroots session", () => {
       })
     }
   )
+
+  it("installs nothing for a Wayland session it can't share", async () => {
+    const machine = workstation({ programs: [...EVERY_PROGRAM] })
+    machine.logIn(onSway)
+    machine.runCompositor("gnome-shell")
+
+    expect(await refusal(machine.screen.installPackages())).toMatchObject({ status: 409 })
+    expect(machine.commands.filter((command) => command.includes("install"))).toEqual([])
+  })
 
   it("records the screen like any other", async () => {
     const machine = sway()

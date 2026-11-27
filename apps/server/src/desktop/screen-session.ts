@@ -19,6 +19,7 @@ export interface SessionSearch {
   readonly lookFirstAt?: number | undefined
   readonly session?: string | undefined
   readonly display?: string | undefined
+  readonly type?: string | undefined
 }
 
 export const ownGraphicalSession = (
@@ -27,24 +28,68 @@ export const ownGraphicalSession = (
 ): GraphicalSession | undefined => {
   const known =
     search.lookFirstAt === undefined ? undefined : candidate(system, search.lookFirstAt, search)
-  if (known !== undefined && known.kind !== "wayland") return known
-
-  const found = processIds(system).flatMap((pid) => candidate(system, pid, search) ?? [])
-  const chosen = newestOf(system, withTheBus(found))
-  if (chosen?.kind !== "wayland" || !runsAWlrootsCompositor(system, search.session)) return chosen
-
-  return { ...chosen, kind: "wlroots" }
+  const found =
+    known !== undefined && fitsTheType(known, search.type)
+      ? [known]
+      : processIds(system).flatMap((pid) => candidate(system, pid, search) ?? [])
+  const chosen = newestOf(system, ofTheSessionsType(withTheBus(found), search.type))
+  return chosen === undefined ? undefined : withItsCompositor(system, chosen, search.session)
 }
 
 export const WLROOTS_COMPOSITORS = new Set(["sway", "Hyprland", "river", "labwc", "wayfire"])
 
-const runsAWlrootsCompositor = (system: SessionSystem, session: string | undefined): boolean =>
-  processIds(system).some(
-    (pid) =>
-      ownerOf(system, pid) === system.uid &&
-      WLROOTS_COMPOSITORS.has(system.readText(`/proc/${pid}/comm`)?.trim() ?? "") &&
-      (session === undefined || isInSession(system, pid, session))
-  )
+const isWayland = (session: GraphicalSession): boolean =>
+  session.env["WAYLAND_DISPLAY"] !== undefined
+
+const fitsTheType = (session: GraphicalSession, type: string | undefined): boolean =>
+  type !== "wayland" || isWayland(session)
+
+const ofTheSessionsType = (
+  found: ReadonlyArray<GraphicalSession>,
+  type: string | undefined
+): ReadonlyArray<GraphicalSession> => {
+  if (type === "x11") return found
+
+  const wayland = found.filter(isWayland)
+  return wayland.length > 0 ? wayland : found
+}
+
+const withItsCompositor = (
+  system: SessionSystem,
+  chosen: GraphicalSession,
+  session: string | undefined
+): GraphicalSession => {
+  if (chosen.kind !== "wayland") return chosen
+
+  const runsWlroots =
+    session === undefined
+      ? ancestorsOf(system, chosen.process).some((pid) => isAWlrootsCompositor(system, pid))
+      : processIds(system).some(
+          (pid) => isAWlrootsCompositor(system, pid) && isInSession(system, pid, session)
+        )
+  return runsWlroots ? { ...chosen, kind: "wlroots" } : chosen
+}
+
+const isAWlrootsCompositor = (system: SessionSystem, pid: number): boolean =>
+  ownerOf(system, pid) === system.uid &&
+  WLROOTS_COMPOSITORS.has(system.readText(`/proc/${pid}/comm`)?.trim() ?? "")
+
+const deepestAncestry = 64
+
+const ancestorsOf = (system: SessionSystem, pid: number): ReadonlyArray<number> => {
+  const ancestors: Array<number> = []
+  let current = parentOf(system, pid)
+  while (current !== undefined && current > 1 && ancestors.length < deepestAncestry) {
+    ancestors.push(current)
+    current = parentOf(system, current)
+  }
+  return ancestors
+}
+
+const parentOf = (system: SessionSystem, pid: number): number | undefined => {
+  const parent = /^PPid:\s+(\d+)/m.exec(system.readText(`/proc/${pid}/status`) ?? "")?.[1]
+  return parent === undefined ? undefined : Number(parent)
+}
 
 const carried = [
   "DISPLAY",
