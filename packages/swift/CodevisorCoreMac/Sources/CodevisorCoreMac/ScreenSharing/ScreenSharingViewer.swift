@@ -35,10 +35,11 @@ public struct ScreenSharingViewer {
     public var displaySwitchLine: ScreenSharingDisplaySwitchLine? {
       guard isLive, let result = surface.displaySwitch, result != dismissedDisplaySwitch else { return nil }
 
-      let name = surface.displays.first { $0.id == result.displayId }?.name ?? "the other display"
+      let name = surface.displays.first { $0.id == result.displayId }?.name ?? result.name
+      let named = ScreenSharingDisplaySwitch(displayId: result.displayId, name: name, phase: result.phase)
       switch result.phase {
-      case .switching: return .switching("Switching to \(name)…")
-      case .unavailable(let message): return .failed(message ?? "Couldn't switch to \(name).")
+      case .switching: return .switching("Switching to \(name ?? "the other display")…")
+      case .unavailable: return named.failure.map(ScreenSharingDisplaySwitchLine.failed)
       case .confirmed: return nil
       }
     }

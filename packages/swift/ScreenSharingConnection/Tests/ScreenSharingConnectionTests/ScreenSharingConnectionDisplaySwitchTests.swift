@@ -38,7 +38,7 @@ struct ScreenSharingConnectionDisplaySwitchTests {
 
     connection.switchDisplay(to: Self.second.id)
     #expect(connection.state == .live && connection.preferredDisplayId == nil)
-    #expect(connection.displaySwitch == Switch(displayId: Self.second.id, phase: .switching))
+    #expect(connection.displaySwitch == Switch(displayId: Self.second.id, name: Self.second.name, phase: .switching))
     await awaitObserved { connection.displaySwitch?.phase == .confirmed }
 
     #expect(connection.display == Self.second && connection.preferredDisplayId == Self.second.id)
@@ -78,7 +78,8 @@ struct ScreenSharingConnectionDisplaySwitchTests {
     await awaitObserved { harness.connection.displaySwitch?.phase != .switching }
     await harness.beat()
 
-    let unavailable = Switch(displayId: Self.second.id, phase: .unavailable(message: "That display is asleep."))
+    let unavailable = Switch(
+      displayId: Self.second.id, name: Self.second.name, phase: .unavailable(message: "That display is asleep."))
     #expect(harness.connection.displaySwitch == unavailable)
     #expect(harness.connection.display == Self.first && harness.connection.preferredDisplayId == nil)
     #expect(harness.connection.state == .live && !session.isClosed && harness.connection.hostNotice == nil)
@@ -120,7 +121,8 @@ struct ScreenSharingConnectionDisplaySwitchTests {
     await harness.tick()
     await awaitObserved { harness.host.requests(.heartbeat).count == 2 }
     #expect(askedDisplays(harness) == [Self.second.id, nil], "the regular heartbeat goes out plain meanwhile")
-    #expect(harness.connection.displaySwitch == Switch(displayId: Self.third.id, phase: .switching))
+    #expect(
+      harness.connection.displaySwitch == Switch(displayId: Self.third.id, name: Self.third.name, phase: .switching))
 
     harness.host.release(.heartbeat)
     await awaitObserved { harness.connection.displaySwitch?.phase == .confirmed }
@@ -141,7 +143,8 @@ struct ScreenSharingConnectionDisplaySwitchTests {
     await harness.tick()
     await heartbeats(harness, answered: 1)
     #expect(harness.connection.display == Self.first)
-    #expect(harness.connection.displaySwitch == Switch(displayId: Self.first.id, phase: .switching))
+    #expect(
+      harness.connection.displaySwitch == Switch(displayId: Self.first.id, name: Self.first.name, phase: .switching))
 
     held.signal()
     await awaitObserved { harness.connection.displaySwitch?.phase == .confirmed }
@@ -184,6 +187,26 @@ struct ScreenSharingConnectionDisplaySwitchTests {
     #expect(harness.connection.display == Self.second, "the older heartbeat's answer is not shown")
   }
 
+  @Test("A display that comes back leaves the Not Available list, and the next reply's list replaces it")
+  func unavailableListFollowsTheDisplays() async {
+    let host = FakeHost()
+    host.displays = [Self.first]
+    host.unavailable = [ServerScreenSharingUnavailableDisplay(id: Self.second.id, name: "Studio", problem: "Asleep.")]
+    let harness = ConnectionHarness(host: host)
+    harness.show()
+    await harness.goLive()
+    #expect(harness.connection.unavailableDisplays.map(\.id) == [Self.second.id])
+
+    host.displays = [Self.first, Self.second]
+    await harness.beat()
+    await awaitObserved { harness.connection.displays.count == 2 }
+    #expect(harness.connection.unavailableDisplays.isEmpty)
+
+    host.displays = [Self.first]
+    harness.connection.restart()
+    await awaitObserved { harness.connection.unavailableDisplays.map(\.id) == [Self.second.id] }
+  }
+
   @Test("A session that drops in the middle of a switch reports it as not done and reconnects on the saved display")
   func dropsAPendingSwitchWithTheSession() async {
     let (harness, session) = await liveHarness()
@@ -193,7 +216,9 @@ struct ScreenSharingConnectionDisplaySwitchTests {
 
     session.host.report(connection: "failed")
     await harness.settle(.reconnecting)
-    #expect(harness.connection.displaySwitch == Switch(displayId: Self.second.id, phase: .unavailable(message: nil)))
+    #expect(
+      harness.connection.displaySwitch
+        == Switch(displayId: Self.second.id, name: Self.second.name, phase: .unavailable(message: nil)))
     await harness.goLive()
 
     #expect(harness.host.starts.map(\.displayId) == [nil, nil] && harness.connection.preferredDisplayId == nil)

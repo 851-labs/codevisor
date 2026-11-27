@@ -25,12 +25,19 @@
         ScreenSharingPaneStatus(model: model)
       }
       .background { ScreenSharingOnScreenProbe(model: model, pane: pane) }
-      .overlay(alignment: .top) { controlNotice.padding(.top, 8) }
+      .overlay(alignment: .top) {
+        VStack(spacing: 6) {
+          controlNotice
+          ScreenSharingDisplaySwitchNotice(model: model)
+        }
+        .padding(.top, 8)
+      }
       .overlay(alignment: .bottom) {
         if showsHint { hint.padding(.bottom, 16).transition(.move(edge: .bottom).combined(with: .opacity)) }
       }
       .sheet(isPresented: Bindable(model).connectionDetailsShown) { ScreenSharingConnectionDetails(model: model) }
       .animation(.snappy, value: model.control?.notice)
+      .animation(.snappy, value: model.displaySwitchFailure)
       .animation(.snappy, value: showsHint)
       .task(id: model.isViewing) {
         guard model.isViewing, !hintShown else { return }

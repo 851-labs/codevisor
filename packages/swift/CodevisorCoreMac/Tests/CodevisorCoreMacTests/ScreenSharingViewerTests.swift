@@ -98,6 +98,14 @@ struct ScreenSharingViewerTests {
     #expect(state.displays == [Self.display])
   }
 
+  @Test func aFailedSwitchNamesThePickedDisplayEvenOnceItIsNoLongerListed() {
+    var state = ScreenSharingViewer.State(machineName: "workstation")
+    state.surface = Self.live(
+      switch: ScreenSharingDisplaySwitch(displayId: "vnc:screen", name: "Screen", phase: .unavailable(message: nil)))
+
+    #expect(state.displaySwitchLine == .failed("Couldn't switch to Screen."))
+  }
+
   @Test func thePickerShowsADisplayBeingSwitchedToAndGoesBackWhenTheSwitchFails() {
     var state = ScreenSharingViewer.State(machineName: "croissant")
     state.surface = Self.live(switch: ScreenSharingDisplaySwitch(displayId: "studio", phase: .switching))

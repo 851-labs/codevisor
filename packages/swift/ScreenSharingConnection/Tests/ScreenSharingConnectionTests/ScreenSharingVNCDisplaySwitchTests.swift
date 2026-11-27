@@ -1,6 +1,7 @@
 import CodevisorClient
 import CodevisorTestSupport
 import Foundation
+import Observation
 import ScreenSharing
 import ScreenSharingConnection
 import ScreenSharingConnectionTesting
@@ -11,11 +12,14 @@ import Testing
 @Suite("Screen share connection: switching display on a live VNC connection", .timeLimit(.minutes(1)))
 struct ScreenSharingVNCDisplaySwitchTests {
   @MainActor
-  private final class OpenedDisplays {
+  @Observable
+  final class OpenedDisplays {
     var ids: [String] = []
   }
 
   private typealias Switch = ScreenSharingDisplaySwitch
+
+  nonisolated private static let closedPort: UInt16 = 1
 
   nonisolated private static let desktop = ServerScreenSharingDisplay(
     id: "vnc:desktop", name: "Desktop", width: 64, height: 48)
@@ -24,7 +28,7 @@ struct ScreenSharingVNCDisplaySwitchTests {
 
   private func linuxMachine(
     port: UInt16, displays: [ServerScreenSharingDisplay] = [desktop, screen],
-    unavailable: [ServerScreenSharingUnavailableDisplay]? = nil
+    unavailable: [ServerScreenSharingUnavailableDisplay]? = nil, unreachable: Set<String> = []
   ) -> (ConnectionHarness, OpenedDisplays) {
     let host = FakeHost(abilities: [])
     host.provider = "vnc"
@@ -34,8 +38,9 @@ struct ScreenSharingVNCDisplaySwitchTests {
     let opened = OpenedDisplays()
     harness.makeVNCTransport = { displayId, arbitratedByServer in
       opened.ids.append(displayId)
+      let reached = unreachable.contains(displayId) ? Self.closedPort : port
       return ScreenSharingVNCTransport(
-        open: { try await VNCConnection.open(host: "127.0.0.1", port: port, password: "secret") },
+        open: { try await VNCConnection.open(host: "127.0.0.1", port: reached, password: "secret") },
         arbitratedByServer: arbitratedByServer)
     }
     return (harness, opened)
@@ -51,11 +56,11 @@ struct ScreenSharingVNCDisplaySwitchTests {
     await awaitObserved { connection.state == .live }
 
     connection.switchDisplay(to: Self.screen.id)
-    #expect(connection.displaySwitch == Switch(displayId: Self.screen.id, phase: .switching))
+    #expect(connection.displaySwitch == Switch(displayId: Self.screen.id, name: Self.screen.name, phase: .switching))
     await awaitObserved { connection.state == .live && connection.display == Self.screen }
 
     #expect(opened.ids == [Self.desktop.id, Self.screen.id])
-    #expect(connection.displaySwitch == Switch(displayId: Self.screen.id, phase: .confirmed))
+    #expect(connection.displaySwitch == Switch(displayId: Self.screen.id, name: Self.screen.name, phase: .confirmed))
     #expect(connection.preferredDisplayId == Self.screen.id)
   }
 
@@ -89,7 +94,9 @@ struct ScreenSharingVNCDisplaySwitchTests {
     connection.switchDisplay(to: Self.screen.id)
     await awaitObserved { connection.displaySwitch?.phase != .switching && connection.state == .live }
 
-    #expect(connection.displaySwitch == Switch(displayId: Self.screen.id, phase: .unavailable(message: why)))
+    #expect(
+      connection.displaySwitch
+        == Switch(displayId: Self.screen.id, name: Self.screen.name, phase: .unavailable(message: why)))
     #expect(connection.display == Self.desktop && connection.preferredDisplayId == nil)
     #expect(opened.ids == [Self.desktop.id, Self.desktop.id])
   }
@@ -107,8 +114,44 @@ struct ScreenSharingVNCDisplaySwitchTests {
     connection.switchDisplay(to: Self.desktop.id)
     await awaitObserved { connection.displaySwitch?.phase != .switching && connection.state == .live }
 
-    #expect(connection.displaySwitch == Switch(displayId: Self.desktop.id, phase: .confirmed))
+    #expect(connection.displaySwitch == Switch(displayId: Self.desktop.id, name: Self.desktop.name, phase: .confirmed))
     #expect(connection.display == Self.desktop && opened.ids.last == Self.desktop.id)
+  }
+
+  @Test("A picked display that fails to open is reported at once, and the display shown before comes back")
+  func returnsToTheDisplayShownBefore() async throws {
+    let server = try await RFBLoopbackServer()
+    defer { server.stop() }
+    let (harness, opened) = linuxMachine(port: server.port, unreachable: [Self.screen.id])
+    let connection = harness.connection
+    _ = harness.show()
+    await awaitObserved { connection.state == .live }
+
+    connection.switchDisplay(to: Self.screen.id)
+    await awaitObserved { connection.displaySwitch?.phase != .switching && connection.state == .live }
+
+    let failed = Switch(displayId: Self.screen.id, name: Self.screen.name, phase: .unavailable(message: nil))
+    #expect(connection.displaySwitch == failed && failed.failure == "Couldn't switch to Screen.")
+    #expect(connection.display == Self.desktop && connection.preferredDisplayId == nil)
+    #expect(opened.ids == [Self.desktop.id, Self.screen.id, Self.desktop.id])
+  }
+
+  @Test("A pick while the connection is still coming up opens the picked display, and isn't saved before it shows")
+  func picksWhileConnecting() async throws {
+    var configuration = RFBLoopbackServer.Configuration()
+    configuration.sendsFramebuffer = false
+    let server = try await RFBLoopbackServer(configuration: configuration)
+    defer { server.stop() }
+    let (harness, opened) = linuxMachine(port: server.port)
+    let connection = harness.connection
+    _ = harness.show()
+    await awaitObserved { connection.session != nil }
+
+    connection.switchDisplay(to: Self.screen.id)
+    await awaitObserved { opened.ids.count == 2 }
+
+    #expect(opened.ids == [Self.desktop.id, Self.screen.id])
+    #expect(connection.displaySwitch?.phase == .switching && connection.preferredDisplayId == nil)
   }
 
   @Test("The displays the machine can't share are kept with the reason it gives")

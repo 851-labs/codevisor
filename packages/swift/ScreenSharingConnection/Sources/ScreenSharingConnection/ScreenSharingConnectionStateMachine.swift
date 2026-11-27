@@ -7,6 +7,7 @@ struct ScreenSharingConnectionStateMachine: Equatable, Sendable {
     case openRequested
     case retryRequested
     case restartRequested
+    case displayPicked
     case stepEntered(ScreenSharingConnectStage)
     case firstFrameDecoded
     case attemptEnded(ScreenSharingAttemptEnd)
@@ -61,6 +62,7 @@ struct ScreenSharingConnectionStateMachine: Equatable, Sendable {
     case .openRequested: return userAsked()
     case .retryRequested: return attached ? userAsked() : nil
     case .restartRequested: return restart()
+    case .displayPicked: return displayPicked()
     case .stepEntered(let stage): return enter(stage)
     case .firstFrameDecoded: return goLive()
     case .attemptEnded(let end): return attemptEnded(end)
@@ -124,6 +126,12 @@ struct ScreenSharingConnectionStateMachine: Equatable, Sendable {
     retriedWhileReady = false
     if !visible { unseen = .briefly }
     return connect(open: true)
+  }
+
+  private mutating func displayPicked() -> Command? {
+    guard state.isConnecting else { return restart() }
+
+    return .start(attemptIntent, after: .zero, asksWhyItEnded: false)
   }
 
   private mutating func restart() -> Command? {

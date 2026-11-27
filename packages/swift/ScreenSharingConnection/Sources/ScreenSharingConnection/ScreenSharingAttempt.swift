@@ -8,12 +8,13 @@ import ScreenSharingV2
 final class ScreenSharingAttempt {
   struct Plan {
     var intent: ServerScreenSharingRequest.Intent
-    var preferredDisplayId: String?
+    var wantedDisplayId: @MainActor () -> String?
   }
 
   enum Report {
     case transport(ScreenSharingTransportEvent)
     case unavailable([ServerScreenSharingUnavailableDisplay])
+    case switchesDisplayByReconnecting(Bool)
     case takingLong
     case firstFrameDecoded
   }
@@ -68,10 +69,6 @@ final class ScreenSharingAttempt {
     transport?.switchDisplay(to: displayId) ?? false
   }
 
-  var switchesDisplayByReconnecting: Bool {
-    transport?.switchesDisplayByReconnecting ?? false
-  }
-
   func close() {
     isClosed = true
     deadline?.meet()
@@ -89,6 +86,7 @@ final class ScreenSharingAttempt {
       try checkOpen()
       let transport = try makeTransport(for: capabilities)
       self.transport = transport
+      report(.switchesDisplayByReconnecting(transport.switchesDisplayByReconnecting))
       try await transport.open { [weak self] in self?.handle($0) }
       guard let end = await transport.monitor() else { throw CancellationError() }
 
@@ -112,7 +110,8 @@ final class ScreenSharingAttempt {
     report(.transport(.sharing(display: nil, displays: displays)))
 
     if machine.target == nil, capabilities.base.provider == "vnc", let makeVNC = machine.makeVNCTransport {
-      guard let display = displays.first(where: { $0.id == plan.preferredDisplayId }) ?? displays.first else {
+      let wanted = plan.wantedDisplayId()
+      guard let display = displays.first(where: { $0.id == wanted }) ?? displays.first else {
         throw ScreenSharingAttemptEnd.refused(.noDisplay)
       }
 
@@ -126,7 +125,7 @@ final class ScreenSharingAttempt {
 
     return ScreenSharingMediaSessionTransport(
       host: host, machine: machine, clock: clock,
-      plan: .init(capabilities: capabilities, intent: plan.intent, preferredDisplayId: plan.preferredDisplayId))
+      plan: .init(capabilities: capabilities, intent: plan.intent, preferredDisplayId: plan.wantedDisplayId()))
   }
 
   private func handle(_ event: ScreenSharingTransportEvent) {

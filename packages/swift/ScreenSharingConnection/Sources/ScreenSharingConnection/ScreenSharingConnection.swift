@@ -31,7 +31,9 @@ public final class ScreenSharingConnection {
   @ObservationIgnored private var pendingOpen: (surface: UUID, at: ContinuousClock.Instant)?
   @ObservationIgnored private var unseenTimer: Task<Void, Never>?
   @ObservationIgnored private var liveSince: ContinuousClock.Instant?
-  @ObservationIgnored private var reconnectingTo: String?
+  @ObservationIgnored private var pendingSwitch: ScreenSharingReconnectSwitch?
+  @ObservationIgnored private var returnTo: String?
+  @ObservationIgnored private var reconnectsToSwitch = false
 
   init(machine: ScreenSharingMachine, clock: ScreenSharingConnectionClock) {
     self.machine = machine
@@ -72,41 +74,17 @@ public final class ScreenSharingConnection {
 
   func end() { handle(.ended) }
 
-  private var switchesByReconnecting: Bool {
-    reconnectingTo != nil || (state == .live && attempt?.runner?.switchesDisplayByReconnecting == true)
-  }
-
-  private var wantedDisplayId: String? { reconnectingTo ?? preferredDisplayId }
+  private var wantedDisplayId: String? { pendingSwitch?.displayId ?? returnTo ?? preferredDisplayId }
 
   private func switchByReconnecting(to displayId: String) -> Bool {
-    guard switchesByReconnecting else { return false }
-    guard (reconnectingTo ?? display?.id) != displayId else { return true }
+    guard reconnectsToSwitch, state.isUnderway else { return false }
+    guard (pendingSwitch?.displayId ?? display?.id) != displayId else { return true }
 
-    reconnectingTo = displayId
-    restart()
-    displaySwitch = ScreenSharingDisplaySwitch(displayId: displayId, phase: .switching)
+    pendingSwitch = ScreenSharingReconnectSwitch(displayId: displayId, returnTo: pendingSwitch?.returnTo ?? display?.id)
+    machine.userAsked()
+    handle(.displayPicked)
+    displaySwitch = switching(to: displayId, .switching)
     return true
-  }
-
-  private func settleReconnectSwitch(showing shown: ServerScreenSharingDisplay) {
-    guard let wanted = reconnectingTo else { return }
-
-    reconnectingTo = nil
-    guard shown.id == wanted else {
-      let problem = unavailableDisplays.first { $0.id == wanted }?.problem
-      displaySwitch = ScreenSharingDisplaySwitch(displayId: wanted, phase: .unavailable(message: problem))
-      return
-    }
-
-    displaySwitch = ScreenSharingDisplaySwitch(displayId: wanted, phase: .confirmed)
-    preferredDisplayId = wanted
-  }
-
-  private func abandonReconnectSwitch() {
-    guard let wanted = reconnectingTo else { return }
-
-    reconnectingTo = nil
-    displaySwitch = ScreenSharingDisplaySwitch(displayId: wanted, phase: .unavailable(message: nil))
   }
 
   private func switchInSession(to displayId: String) -> Bool {
@@ -114,15 +92,60 @@ public final class ScreenSharingConnection {
     guard displaySwitch?.phase == .switching || display?.id != displayId else { return false }
     guard runner.switchDisplay(to: displayId) else { return false }
 
-    displaySwitch = ScreenSharingDisplaySwitch(displayId: displayId, phase: .switching)
+    displaySwitch = switching(to: displayId, .switching)
     return true
   }
 
-  private func settle(_ result: ScreenSharingDisplaySwitch) {
-    guard displaySwitch?.displayId == result.displayId, displaySwitch?.phase == .switching else { return }
+  private func switching(to displayId: String, _ phase: ScreenSharingDisplaySwitch.Phase) -> ScreenSharingDisplaySwitch
+  {
+    let name = displays.first { $0.id == displayId }?.name ?? unavailableDisplays.first { $0.id == displayId }?.name
+    return ScreenSharingDisplaySwitch(displayId: displayId, name: name, phase: phase)
+  }
 
-    displaySwitch = result
+  private func problem(of displayId: String) -> String? {
+    unavailableDisplays.first { $0.id == displayId }?.problem
+  }
+
+  private func settle(_ result: ScreenSharingDisplaySwitch) {
+    guard let pending = displaySwitch, pending.displayId == result.displayId, pending.phase == .switching else {
+      return
+    }
+
+    displaySwitch = pending.with(result.phase)
     if result.phase == .confirmed { preferredDisplayId = result.displayId }
+  }
+
+  private func settlePendingSwitch(showing shown: ServerScreenSharingDisplay) {
+    returnTo = nil
+    guard let pending = pendingSwitch, shown.id != pending.displayId else { return }
+
+    pendingSwitch = nil
+    displaySwitch = switching(to: pending.displayId, .unavailable(message: problem(of: pending.displayId)))
+  }
+
+  private func confirmPendingSwitch() {
+    guard let pending = pendingSwitch, display?.id == pending.displayId else { return }
+
+    pendingSwitch = nil
+    displaySwitch = switching(to: pending.displayId, .confirmed)
+    preferredDisplayId = pending.displayId
+  }
+
+  private func returnFromPendingSwitch() -> Bool {
+    guard let pending = pendingSwitch else { return false }
+
+    pendingSwitch = nil
+    returnTo = pending.returnTo
+    displaySwitch = switching(to: pending.displayId, .unavailable(message: problem(of: pending.displayId)))
+    return true
+  }
+
+  private func abandonPendingSwitch() {
+    guard let pending = pendingSwitch else { return }
+
+    pendingSwitch = nil
+    returnTo = nil
+    displaySwitch = switching(to: pending.displayId, .unavailable(message: nil))
   }
 
   private func confirmLateSwitch(showing display: ServerScreenSharingDisplay) {
@@ -130,7 +153,7 @@ public final class ScreenSharingConnection {
       return
     }
 
-    displaySwitch = ScreenSharingDisplaySwitch(displayId: display.id, phase: .confirmed)
+    displaySwitch = pending.with(.confirmed)
     preferredDisplayId = display.id
   }
 
@@ -211,15 +234,16 @@ public final class ScreenSharingConnection {
     switch command {
     case .start(let intent, let wait, let asksWhyItEnded):
       if asksWhyItEnded { host.sessionDropped() }
-      start(.init(intent: intent, preferredDisplayId: wantedDisplayId), after: wait)
+      start(.init(intent: intent, wantedDisplayId: wantedDisplay), after: wait)
     case .restart:
       stopOnHost()
-      start(.init(intent: .attach, preferredDisplayId: wantedDisplayId), after: .zero)
+      start(.init(intent: .attach, wantedDisplayId: wantedDisplay), after: .zero)
     case .stop:
       stop()
+      abandonPendingSwitch()
     case .stopAndTryQuietly(let wait):
       stop()
-      start(.init(intent: .attach, preferredDisplayId: wantedDisplayId), after: wait)
+      start(.init(intent: .attach, wantedDisplayId: wantedDisplay), after: wait)
     case nil:
       break
     }
@@ -251,8 +275,9 @@ public final class ScreenSharingConnection {
     }
     attempt?.runner = runner
     guard let end = await runner.run(), attempt?.id == id else { return }
+    guard returnFromPendingSwitch() else { return handle(.attemptEnded(end)) }
 
-    handle(.attemptEnded(end))
+    handle(.displayPicked)
   }
 
   private func receive(_ report: ScreenSharingAttempt.Report, from id: UUID) {
@@ -263,9 +288,12 @@ public final class ScreenSharingConnection {
       isTakingLong = true
     case .unavailable(let unavailable):
       if unavailableDisplays != unavailable { unavailableDisplays = unavailable }
+    case .switchesDisplayByReconnecting(let reconnects):
+      reconnectsToSwitch = reconnects
     case .firstFrameDecoded:
       isTakingLong = false
       handle(.firstFrameDecoded)
+      confirmPendingSwitch()
     case .transport(.entered(let stage)):
       handle(.stepEntered(stage))
     case .transport(.opened(let session)):
@@ -275,17 +303,29 @@ public final class ScreenSharingConnection {
       if hostNotice != notice { hostNotice = notice }
     case .transport(.sharing(let display, let displays)):
       if let display, self.display != display { self.display = display }
-      if self.displays != displays { self.displays = displays }
-      if let display { settleReconnectSwitch(showing: display) }
+      if self.displays != displays { offer(displays) }
+      if let display { settlePendingSwitch(showing: display) }
       if let display { confirmLateSwitch(showing: display) }
     case .transport(.displaySwitch(let result)):
       settle(result)
     }
   }
 
+  private func offer(_ offered: [ServerScreenSharingDisplay]) {
+    displays = offered
+    let ids = Set(offered.map(\.id))
+    guard unavailableDisplays.contains(where: { ids.contains($0.id) }) else { return }
+
+    unavailableDisplays.removeAll { ids.contains($0.id) }
+  }
+
+  private var wantedDisplay: @MainActor () -> String? {
+    { [weak self] in self?.wantedDisplayId }
+  }
+
   private func stop() {
     cancelAttempt()
-    abandonReconnectSwitch()
+    if !unavailableDisplays.isEmpty { unavailableDisplays = [] }
     display = nil
     stopOnHost()
   }
@@ -303,8 +343,8 @@ public final class ScreenSharingConnection {
     session = nil
     if isTakingLong { isTakingLong = false }
     if hostNotice != nil { hostNotice = nil }
-    if let pending = displaySwitch, pending.phase == .switching, pending.displayId != reconnectingTo {
-      displaySwitch = ScreenSharingDisplaySwitch(displayId: pending.displayId, phase: .unavailable(message: nil))
+    if let pending = displaySwitch, pending.phase == .switching, pending.displayId != pendingSwitch?.displayId {
+      displaySwitch = pending.with(.unavailable(message: nil))
     }
   }
 

@@ -1,4 +1,5 @@
 import CodevisorClient
+import CodevisorCore
 import CodevisorTestSupport
 import Foundation
 import ScreenSharing
@@ -123,6 +124,25 @@ struct ScreenSharingDesktopsTests {
 
     #expect(harness.host.starts.map(\.displayId) == [nil, FakeHost.second.id])
     #expect(relaunched?.selectedDisplay == FakeHost.second)
+  }
+
+  @Test("A pick the machine can't switch to isn't saved, and the phone says why until it's dismissed")
+  func failedPickIsNotSaved() async {
+    let harness = DesktopsHarness()
+    harness.host.displays = [FakeHost.display, FakeHost.second]
+    harness.host.displaySwitchAnswer = .unavailable(message: "That display is asleep.")
+    let model = harness.model()
+    harness.show(model)
+    await harness.goLive(model)
+
+    model?.select(displayId: FakeHost.second.id)
+    await awaitObserved { model?.displaySwitchFailure != nil }
+
+    #expect(model?.displaySwitchFailure == "That display is asleep.")
+    let saved = ScreenSharingMachinePreferences(defaults: harness.defaults)
+    #expect(saved.preferredDisplay(machineId: DesktopsHarness.machineId) == nil)
+    model?.dismissDisplaySwitchFailure()
+    #expect(model?.displaySwitchFailure == nil)
   }
 
   @Test(
